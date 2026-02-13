@@ -1,0 +1,17 @@
+[project]
+name = "dina"
+version = "0.2.0"
+description = "The Architecture of Agency. A protocol for Sovereign Personal Agents."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic-ai>=0.1",
+    "youtube-transcript-api>=1.0",
+    "chromadb>=1.0",
+    "ollama>=0.4",
+]
+
+[project.scripts]
+dina = "run_dina:main"
+dina-chat = "dina.chat:repl"
