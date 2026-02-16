@@ -38,3 +38,19 @@ class ProductVerdict(BaseModel):
     expert_source: str = Field(
         description="The channel name or source of the review."
     )
+
+    # --- v0.3 Identity fields (set by application, not the LLM) ---
+    signature_hex: str | None = Field(
+        default=None,
+        description="Ed25519 signature over canonical verdict JSON (hex-encoded).",
+    )
+    signer_did: str | None = Field(
+        default=None,
+        description="did:key of the agent that signed this verdict.",
+    )
+
+    # --- v0.4 Vault fields (set by application, not the LLM) ---
+    stream_id: str | None = Field(
+        default=None,
+        description="Ceramic StreamID for the published verdict document.",
+    )

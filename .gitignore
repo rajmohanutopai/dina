@@ -209,3 +209,10 @@ __marimo__/
 # Dina — local vector memory (lives in ~/.dina/, but ignore if copied here)
 .dina/
 chroma_data/
+
+# Rust build artifacts (did:dht crate)
+dina-dht/target/
+Cargo.lock
+
+# Vault stream index (lives in ~/.dina/vault/, but ignore if copied here)
+stream_index.json

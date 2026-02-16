@@ -1,6 +1,6 @@
 [project]
 name = "dina"
-version = "0.2.0"
+version = "0.4.0"
 description = "The Architecture of Agency. A protocol for Sovereign Personal Agents."
 readme = "README.md"
 license = {text = "MIT"}
@@ -10,7 +10,15 @@ dependencies = [
     "youtube-transcript-api>=1.0",
     "chromadb>=1.0",
     "ollama>=0.4",
+    "google-genai>=1.0",
+    "python-dotenv>=1.0",
+    "base58>=2.1",
+    "cryptography>=41.0",
 ]
+
+[project.optional-dependencies]
+dht = ["dina-dht>=0.3.0"]
+ceramic = ["ceramicsdk>=0.1"]
 
 [project.scripts]
 dina = "run_dina:main"

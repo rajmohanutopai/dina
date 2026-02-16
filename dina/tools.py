@@ -52,6 +52,6 @@ def fetch_youtube_transcript(url: str) -> str:
     intro (context) and outro (verdict) while trimming the middle.
     """
     video_id = extract_video_id(url)
-    transcript_segments = YouTubeTranscriptApi.get_transcript(video_id)
-    full_text = " ".join(segment["text"] for segment in transcript_segments)
+    transcript_segments = YouTubeTranscriptApi().fetch(video_id)
+    full_text = " ".join(segment.text for segment in transcript_segments)
     return _truncate_middle(full_text, _MAX_CHARS)

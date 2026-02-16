@@ -1,10 +1,13 @@
-"""The Brain — Dina's reasoning core powered by a local LLM."""
+"""The Brain — Dina's reasoning core powered by a local or cloud LLM.
+
+Agents are defined without a default model; the model is passed at
+runtime via ``run_sync(model=...)`` so that :mod:`dina.providers` can
+route tasks to the appropriate light or heavy model.
+"""
 
 from __future__ import annotations
 
 from pydantic_ai import Agent
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.ollama import OllamaProvider
 
 from dina.models import ProductVerdict
 
@@ -27,19 +30,12 @@ CHAT_SYSTEM_PROMPT = (
     "If you don't have enough context, say so honestly."
 )
 
-_ollama_model = OpenAIChatModel(
-    model_name="gemma3",
-    provider=OllamaProvider(base_url="http://localhost:11434/v1"),
-)
-
 verdict_agent = Agent(
-    _ollama_model,
     output_type=ProductVerdict,
     instructions=VERDICT_SYSTEM_PROMPT,
 )
 
 chat_agent = Agent(
-    _ollama_model,
     output_type=str,
     instructions=CHAT_SYSTEM_PROMPT,
 )
