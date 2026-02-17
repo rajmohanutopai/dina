@@ -2,11 +2,44 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Important:** Always consult `README.md` for the full product vision, design philosophy, and long-term direction. Every technical decision should align with the principles described there.
+
 ## Project Overview
 
-**Dina** — The Architecture of Agency. Inspired by the novel *UTOPAI*.
+**Dina** — The Architecture of Agency. Inspired by the novel *[UTOPAI](https://github.com/rajmohanutopai/utopai/blob/main/UTOPAI_2017_full.pdf)* (2012–2017).
 
-Dina is the user's personal agent — a digital extension of *their* will, interests, and values. She serves one master: the human who created her. Not advertisers, not platforms, not corporations. This singular loyalty naturally produces a "Pull Economy" where the agent fetches verified truth on demand instead of being fed ads. Three laws govern every design decision: Silence First (never push), Verified Truth (reputation over marketing), Absolute Loyalty (user holds the keys).
+Dina is a **sovereign personal AI** and the **safety layer for autonomous agents**. She is a digital extension of *your* will, interests, and values. She serves one master: the human who created her. Not advertisers, not platforms, not corporations. This singular loyalty naturally produces a "Pull Economy" where the agent fetches verified truth on demand instead of being fed ads.
+
+Dina also solves a critical safety gap: autonomous agents today operate without oversight — leaking credentials, accepting commands from anyone, acting without guardrails. Any agent supporting the Dina protocol submits its **intent** to Dina before acting. Dina checks: does this violate your privacy rules? Is this vendor trusted? Are you in the right state to make this decision? Safe tasks pass through silently. Risky actions (sending email, moving money, sharing data) are flagged for your review. The agent never holds your keys, never sees your full history, and never acts without oversight. Regardless of which autonomous agent does the work, the safety layer stays the same.
+
+### The Three Laws
+
+Every design decision must honour these:
+
+1. **Silence First** — Default state is quiet. Only break silence when silence causes harm. Three tiers: Fiduciary (interrupt — silence causes harm), Requested (notify — user asked), Engagement (save for briefing — silence merely misses an opportunity).
+2. **Verified Truth** — Reputation earned, never bought. The Reputation Graph replaces marketing.
+3. **Absolute Loyalty** — User holds the keys. No advertiser, no platform, no corporation in the loop. Dina is open source, trustworthy, and incorruptible.
+
+### Core Principles
+
+- **Anti-Her:** Dina must never become an emotional crutch. She connects you to humans, never replaces them. If she senses loneliness, she nudges toward friends, not deeper engagement.
+- **Thin Agent:** Dina is an orchestrator, not an omniscient brain. She delegates to specialist bots (review, legal, recipe) and routes based on Reputation Graph scores. Raw data never leaves the Home Node — external bots get questions only.
+- **Sovereign Identity:** One root identity (user holds the keys), multiple **personas** as separate cryptographic compartments. A seller sees "verified buyer, wants a chair." The government sees full legal identity. No external system can cross compartments.
+- **Trust Rings:** Unverified → Verified (ZKP, no real name needed) → Verified + Actioned (transactions, time, peer attestation). Trust is a composite function: `f(identity anchors, transaction history, outcome data, peer attestations, time)`.
+- **Deep Link Default:** Dina credits sources — "MKBHD says the battery is bad, here's the timestamp" — not just extracts. Creators get traffic, users get truth. Configurable, but the default is fair.
+- **Cart Handover:** Dina advises on purchases but never touches money. She hands control back to you for the final decision.
+- **Agent Safety Layer:** Dina is the oversight protocol for all autonomous agents. Any agent acting on your behalf submits intent to Dina first. Safe tasks pass silently; risky actions (email, money, data sharing) require approval. The agent never holds your keys or sees your full history.
+
+### Target Architecture (see README.md)
+
+The long-term architecture is a **Home Node** (always-on, encrypted, sovereign):
+
+- **Rust Core** (Axum) — identity, storage, crypto, API
+- **Python Brain** (sidecar) — LLM reasoning, agent logic
+- **SQLite** — local structured storage
+- **Dina-to-Dina protocol** — P2P communication between sovereign agents
+- **Reputation Graph** — expert knowledge + passive outcome data from millions of Dinas
+- **PII Scrubber** — raw data never leaves the Home Node
 
 ### The Full Vision (Phases)
 

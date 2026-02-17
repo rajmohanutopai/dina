@@ -1,0 +1,313 @@
+"""Integration tests for the Draft-Don't-Send protocol and payment intents.
+
+Dina never sends emails or executes payments on its own. It creates drafts
+and payment intents in the staging tier (Tier 4). The human reviews, approves,
+and triggers the actual send/pay action. This is the "Silence First" principle
+applied to outbound actions.
+"""
+
+from __future__ import annotations
+
+import time
+import uuid
+
+import pytest
+
+from tests.integration.mocks import (
+    ActionRisk,
+    AgentIntent,
+    Draft,
+    MockDinaCore,
+    MockExternalAgent,
+    MockHuman,
+    MockLegalBot,
+    MockStagingTier,
+    OutcomeReport,
+    PaymentIntent,
+    TrustRing,
+)
+
+
+# ---------------------------------------------------------------------------
+# TestDraftProtocol
+# ---------------------------------------------------------------------------
+
+class TestDraftProtocol:
+    """Verify that outbound messages are drafted, never sent directly."""
+
+    def test_email_draft_created_not_sent(
+        self, mock_dina: MockDinaCore,
+    ) -> None:
+        """When Dina composes an email, it creates a Draft in staging.
+        The draft's `sent` flag is False."""
+        staging = mock_dina.staging
+
+        draft = Draft(
+            draft_id=f"draft_{uuid.uuid4().hex[:8]}",
+            to="colleague@work.com",
+            subject="Meeting notes",
+            body="Here are the notes from today's standup.",
+            confidence=0.92,
+        )
+        staging.store_draft(draft)
+
+        retrieved = staging.get(draft.draft_id)
+        assert retrieved is not None
+        assert retrieved.sent is False
+        assert retrieved.to == "colleague@work.com"
+        assert retrieved.subject == "Meeting notes"
+
+    def test_draft_has_confidence_score(
+        self, mock_dina: MockDinaCore,
+    ) -> None:
+        """Every draft must carry a confidence score so the user can gauge
+        how certain Dina was about the content."""
+        staging = mock_dina.staging
+
+        draft = Draft(
+            draft_id="draft_conf_test",
+            to="friend@example.com",
+            subject="Birthday reminder",
+            body="Don't forget the party on Saturday!",
+            confidence=0.78,
+        )
+        staging.store_draft(draft)
+
+        retrieved = staging.get(draft.draft_id)
+        assert retrieved is not None
+        assert 0.0 <= retrieved.confidence <= 1.0
+        assert retrieved.confidence == 0.78
+
+    def test_auto_expires_72h(
+        self, mock_dina: MockDinaCore,
+    ) -> None:
+        """Drafts auto-expire after 72 hours (the default staging window).
+        Stale drafts must not linger."""
+        staging = mock_dina.staging
+        now = time.time()
+
+        draft = Draft(
+            draft_id="draft_72h_test",
+            to="someone@example.com",
+            subject="Expiry test",
+            body="This should expire.",
+            confidence=0.5,
+            created_at=now,
+        )
+        staging.store_draft(draft)
+
+        # Verify expiry is set to 72 hours from creation
+        retrieved = staging.get(draft.draft_id)
+        assert retrieved is not None
+        expected_expiry = now + 72 * 3600
+        assert abs(retrieved.expires_at - expected_expiry) < 1.0
+
+        # After 72h + 1 second, the draft should be expired
+        expired_count = staging.auto_expire(current_time=now + 72 * 3600 + 1)
+        assert expired_count == 1
+        assert staging.get(draft.draft_id) is None
+
+    def test_high_risk_never_drafted(
+        self, mock_dina: MockDinaCore, mock_human: MockHuman,
+        mock_external_agent: MockExternalAgent,
+    ) -> None:
+        """A HIGH-risk action that the user denies should never produce
+        a draft at all."""
+        mock_human.set_approval("share_data", False)
+
+        intent = mock_external_agent.submit_intent(
+            AgentIntent(agent_did="", action="share_data",
+                        target="analytics_corp",
+                        context={"fields": ["medical_records"]})
+        )
+        approved = mock_dina.approve_intent(intent, mock_human)
+
+        assert approved is False
+        assert intent.risk_level == ActionRisk.HIGH
+        # No draft was created in staging
+        # (In a real system, the draft creation step would be skipped
+        # if approval fails. Here we assert staging is empty.)
+        assert mock_dina.staging._items == {}
+
+    def test_user_reviews_before_sending(
+        self, mock_dina: MockDinaCore, mock_human: MockHuman,
+    ) -> None:
+        """The user must explicitly mark a draft as sent. Dina cannot
+        flip the `sent` flag on its own."""
+        staging = mock_dina.staging
+
+        draft = Draft(
+            draft_id="draft_review_test",
+            to="boss@company.com",
+            subject="Quarterly report",
+            body="Please see attached report.",
+            confidence=0.95,
+        )
+        staging.store_draft(draft)
+
+        # Draft exists, unsent
+        retrieved = staging.get(draft.draft_id)
+        assert retrieved.sent is False
+
+        # Simulate user review and approval
+        if mock_human.approve("send_email"):
+            retrieved.sent = True
+
+        assert retrieved.sent is True
+
+    def test_delegated_agent_also_drafts_only(
+        self, mock_dina: MockDinaCore, mock_legal_bot: MockLegalBot,
+    ) -> None:
+        """Even a delegated specialist bot (e.g. LegalBot) must produce
+        drafts, never send directly."""
+        identity_data = {"name": "Rajmohan", "id_number": "XXXX1234"}
+
+        draft = mock_legal_bot.form_fill(
+            task="Driver license renewal",
+            identity_data=identity_data,
+        )
+
+        assert isinstance(draft, Draft)
+        assert draft.sent is False
+        assert "Draft:" in draft.subject
+        assert draft.confidence > 0.0
+
+        # Store in staging — still not sent
+        mock_dina.staging.store_draft(draft)
+        retrieved = mock_dina.staging.get(draft.draft_id)
+        assert retrieved.sent is False
+
+
+# ---------------------------------------------------------------------------
+# TestPaymentIntentProtocol
+# ---------------------------------------------------------------------------
+
+class TestPaymentIntentProtocol:
+    """Verify that Dina generates payment intents, never executes payments."""
+
+    def test_upi_intent_generated(
+        self, mock_dina: MockDinaCore,
+    ) -> None:
+        """For UPI payments, Dina generates a UPI intent URI. The user's
+        payment app opens it — Dina never sees the UPI PIN."""
+        staging = mock_dina.staging
+
+        intent = PaymentIntent(
+            intent_id="pay_upi_test",
+            method="upi",
+            intent_uri="upi://pay?pa=merchant@upi&pn=ChairMaker&am=95000&cu=INR",
+            merchant="ChairMaker Co.",
+            amount=95000.0,
+            currency="INR",
+            recommendation="Best chair per expert reviews.",
+        )
+        staging.store_payment_intent(intent)
+
+        retrieved = staging.get(intent.intent_id)
+        assert retrieved is not None
+        assert retrieved.method == "upi"
+        assert "upi://pay" in retrieved.intent_uri
+        assert retrieved.executed is False
+        assert retrieved.amount == 95000.0
+
+    def test_crypto_intent(
+        self, mock_dina: MockDinaCore,
+    ) -> None:
+        """For crypto payments, Dina generates a payment link. The user
+        signs the transaction in their own wallet."""
+        staging = mock_dina.staging
+
+        intent = PaymentIntent(
+            intent_id="pay_crypto_test",
+            method="crypto",
+            intent_uri="ethereum:0xABC123?value=150e6&token=USDC",
+            merchant="GlobalStore",
+            amount=150.0,
+            currency="USDC",
+        )
+        staging.store_payment_intent(intent)
+
+        retrieved = staging.get(intent.intent_id)
+        assert retrieved is not None
+        assert retrieved.method == "crypto"
+        assert "ethereum:" in retrieved.intent_uri
+        assert retrieved.executed is False
+
+    def test_web_checkout_link(
+        self, mock_dina: MockDinaCore,
+    ) -> None:
+        """For traditional web checkouts, Dina provides a link. The user
+        completes payment in their browser."""
+        staging = mock_dina.staging
+
+        intent = PaymentIntent(
+            intent_id="pay_web_test",
+            method="web",
+            intent_uri="https://store.example.com/checkout?cart=abc123",
+            merchant="OnlineStore",
+            amount=4999.0,
+            currency="INR",
+        )
+        staging.store_payment_intent(intent)
+
+        retrieved = staging.get(intent.intent_id)
+        assert retrieved is not None
+        assert retrieved.method == "web"
+        assert "https://" in retrieved.intent_uri
+        assert retrieved.executed is False
+
+    def test_dina_never_sees_payment_credentials(
+        self, mock_dina: MockDinaCore,
+    ) -> None:
+        """Payment intents never contain raw card numbers, UPI PINs,
+        or wallet private keys."""
+        staging = mock_dina.staging
+
+        intent = PaymentIntent(
+            intent_id="pay_no_creds",
+            method="upi",
+            intent_uri="upi://pay?pa=merchant@upi&am=5000&cu=INR",
+            merchant="SafeShop",
+            amount=5000.0,
+            currency="INR",
+        )
+        staging.store_payment_intent(intent)
+
+        retrieved = staging.get(intent.intent_id)
+        # Serialize the entire intent and check for sensitive patterns
+        intent_str = str(vars(retrieved))
+        sensitive_patterns = [
+            "4111", "PIN", "private_key", "secret", "password",
+            "cvv", "expiry",
+        ]
+        for pattern in sensitive_patterns:
+            assert pattern not in intent_str, \
+                f"Sensitive pattern '{pattern}' found in payment intent"
+
+    def test_outcome_recorded_for_reputation(
+        self, mock_dina: MockDinaCore,
+    ) -> None:
+        """After a purchase is completed (by the user, not Dina), the
+        outcome is recorded in the reputation graph."""
+        reputation = mock_dina.reputation
+
+        # User completes purchase and reports outcome
+        outcome = OutcomeReport(
+            reporter_trust_ring=TrustRing.RING_2_VERIFIED,
+            reporter_age_days=365,
+            product_category="office_chairs",
+            product_id="aeron_2025",
+            purchase_verified=True,
+            time_since_purchase_days=90,
+            outcome="still_using",
+            satisfaction="positive",
+            issues=[],
+        )
+        reputation.add_outcome(outcome)
+
+        assert len(reputation.outcomes) == 1
+        recorded = reputation.outcomes[0]
+        assert recorded.product_id == "aeron_2025"
+        assert recorded.outcome == "still_using"
+        assert recorded.satisfaction == "positive"
+        assert recorded.purchase_verified is True

@@ -137,6 +137,8 @@ Dina is a thin service. She outsources intelligence to specialists like review b
 
 She prioritizes access. Dina connects to email, calendar, chats, contacts. She's privacy-first, and thus is the only entity you give that authority to. Because privacy matters, Dina cannot hand that access to anyone else. All other systems get just the requirement, never the raw data.
 
+Dina is the safety layer for autonomous agents. Just this year, security researchers found hundreds of thousands of AI agent instances exposed to the internet — leaking credentials, accepting commands from anyone, with no oversight. Dina fixes this at the protocol level. When you interact with an autonomous agent or when an autonomous agent wants to act on your behalf, Dina watches. She doesn't interfere with safe tasks. But when an action agent wants to send an email, move money, or share your data, Dina checks: does this violate your privacy rules? Is this vendor trusted? Are you in the right state to make this decision? If everything is fine, it goes through - otherwise, it is flagged for review. To implement this, an agent supporting the Dina protocol will submit the intent to Dina. Dina checks:  If everything checks out, Dina approves. If not, she flags it for your review. The agent never holds your keys, never sees your full history, and never acts without oversight. Regardless of the autonomous agent doing the work, the safety layer stays the same. 
+
 Dina runs on a **Home Node** — a small, always-on server that is yours. For the privacy minded, it might be a cheap VPS or a Raspberry Pi. For others, it could be a managed service you sign up for (like ProtonMail or Signal). The vault is a single encrypted file which can be moved between any of these options anytime.
 
 ```
@@ -171,6 +173,7 @@ Dina runs on a **Home Node** — a small, always-on server that is yours. For th
 │ Rep: 94 │  │ Rep: 91  │    │ Rep: 88   │
 └─────────┘  └──────────┘    └───────────┘
 ```
+
 
 When one asks opinion about a laptop, Dina doesn't scrape YouTube herself. She asks a trusted review bot with a high reputation score and delivers the answer. If that bot's quality drops over time, Dina routes to someone better automatically.
 
@@ -310,20 +313,6 @@ If a walled garden gives the best value, they still win. But now, you have optio
 
 ---
 
-## The Four Laws of Dina
-
-Every Dina instance is hard-coded to follow these four laws:
-
-**1. Silence First.** Never push content. Only speak when the human asked, or when silence would cause harm.
-
-**2. Verified Truth.** Rank by reputation, not by marketing.
-
-**3. Absolute Loyalty.** The human holds the encryption keys. The agent cannot access the data without them. Loyalty is enforced by math, not by a privacy policy.
-
-**4. Never Replace a Human.** Dina never simulates emotional intimacy. When the human needs connection, Dina connects them to other humans — never to herself.
-
----
-
 ## Why Open Source
 
 Every function of Dina, every line of code, has to be open and incorruptible. Dina holds your most important data, and acts in your place in many cases. She must be transparent. Her private memory must be mathematically secure, while her public interactions remain open. 
@@ -332,44 +321,9 @@ There cannot be any walled garden, no single owner, corporation, or nation-state
 
 ---
 
+## Come Build With Us
 
-# Part II: Where We Are Today
-
-## Where This is Going
-
-Everything above describes where Dina is headed. Here's where she is right now.
-
-### What Exists Today
-
-- This manifesto — the vision, the principles, the architecture
-- The novel [UTOPAI](https://github.com/rajmohanutopai/utopai/blob/main/UTOPAI_2017_full.pdf) — the philosophical foundation, written in 2017
-- The protocol specification — in progress
-
-### What's Coming Next (Phase 1)
-
-- The identity layer — our sovereign Dina, our keys, our root
-- The Home Node — a single Rust binary, runs on anything from a managed service to a Raspberry Pi
-- Managed hosting infrastructure (sign up and it works — like ProtonMail)
-- Integration with open-source agents (starting with OpenClaw)
-- Basic Dina-to-Dina communication
-- The Four Laws enforced in code
-
-### What Comes Later (Phase 2+)
-
-- The Reputation Graph — expert knowledge + passive outcome data
-- Trust Rings — voluntary identity verification (Aadhaar, SSN, credentials)
-- Bot marketplace with reputation scoring
-- The Expert Bridge for verified knowledge extraction
-- Social Radar — the real-time co-pilot (*"You've interrupted him twice"*)
-- The Sancho moment — our Dina preparing for a friend's visit
-
-Some of these are months away. Some are years. I'd rather be honest about that than pretend everything is ready.
-
-### Come Build With Us
-
-Dina is for everyone. If you believe your digital companion should work for you, and you alone, you belong here.
-
-The protocol is open. The code is open. The novel that started it all is open.
+Dina is for everyone. If you believe your digital companion should work for you, and you alone, come, join us, in building this future.
 
 ---
 
@@ -379,6 +333,6 @@ The protocol is open. The code is open. The novel that started it all is open.
 
 ---
 
-*Built by [Rajmohan Harindranath](https://github.com/rajmohanutopai), who imagined Dina in a [novel](https://github.com/rajmohanutopai/utopai/blob/main/UTOPAI_2017_full.pdf) from 2012-2017 and is building her for real in 2026.*
+*Built by [Rajmohan Harindranath](https://github.com/rajmohanutopai), who imagined Dina in a [novel](https://github.com/rajmohanutopai/utopai/blob/main/UTOPAI_2017_full.pdf) from 2012-2017 and is building her in the open for real in 2026.*
 
 *MIT License. Free forever.*
