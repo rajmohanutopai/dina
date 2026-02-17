@@ -1,6 +1,6 @@
 """Integration tests for persona compartments.
 
-Tests BIP-32 derivation, isolation between personas, and real interaction
+Tests SLIP-0010 derivation, isolation between personas, and real interaction
 scenarios where Dina auto-selects the correct persona by context.
 """
 
@@ -23,7 +23,7 @@ from tests.integration.mocks import (
 # ---------------------------------------------------------------------------
 
 class TestPersonaCreation:
-    """Root identity generates personas via BIP-32 derivation."""
+    """Root identity generates personas via SLIP-0010 derivation."""
 
     def test_root_identity_generates_consumer_persona(
         self, mock_identity: MockIdentity
@@ -98,8 +98,8 @@ class TestPersonaCreation:
 
     def test_different_roots_produce_different_personas(self) -> None:
         """Two root identities produce completely different persona keys."""
-        alice = MockIdentity(did="did:dht:z6MkAlice12345678901234567890abcd")
-        bob = MockIdentity(did="did:dht:z6MkBob1234567890123456789012abcd")
+        alice = MockIdentity(did="did:plc:Alice12345678901234567890abcd")
+        bob = MockIdentity(did="did:plc:Bob1234567890123456789012abcd")
 
         alice_consumer = alice.derive_persona(PersonaType.CONSUMER)
         bob_consumer = bob.derive_persona(PersonaType.CONSUMER)
@@ -205,7 +205,7 @@ class TestPersonaIsolation:
     ) -> None:
         """All persona keys are derived from the single root private key.
 
-        This mirrors BIP-32: one master seed produces deterministic child keys.
+        This mirrors SLIP-0010: one master seed produces deterministic child keys.
         """
         consumer = mock_identity.derive_persona(PersonaType.CONSUMER)
         health = mock_identity.derive_persona(PersonaType.HEALTH)

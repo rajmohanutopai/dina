@@ -60,7 +60,7 @@ class TestWhisperAssembly:
         self, mock_vault: MockVault, mock_whisper: MockWhisperAssembler,
     ) -> None:
         """Whisper assembles context for an upcoming meeting."""
-        colleague_did = "did:dht:z6MkColleague000000000000000000000"
+        colleague_did = "did:plc:Colleague000000000000000000000"
 
         mock_vault.store(1, "meeting_context_colleague", {
             "contact": colleague_did,
@@ -167,7 +167,7 @@ class TestDisconnectDetection:
         self, mock_vault: MockVault, mock_whisper: MockWhisperAssembler,
     ) -> None:
         """Whisper picks up social cues stored in the vault."""
-        contact_did = "did:dht:z6MkMaria000000000000000000000000000"
+        contact_did = "did:plc:Maria000000000000000000000000000"
 
         # Store social cue context
         mock_vault.store(1, "social_cue_maria", {

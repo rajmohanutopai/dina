@@ -56,7 +56,7 @@ class TestRing1Unverified:
         explicit human approval.
         """
         intent = AgentIntent(
-            agent_did="did:dht:z6MkAnonymous123456789012345678",
+            agent_did="did:plc:Anonymous123456789012345678",
             action="transfer_money",
             target="unknown_wallet",
             context={"amount": 50000, "currency": "INR"},
@@ -98,7 +98,7 @@ class TestRing1Unverified:
         """
         # A simple read/search is safe regardless of trust ring
         read_intent = AgentIntent(
-            agent_did="did:dht:z6MkAnonymous123456789012345678",
+            agent_did="did:plc:Anonymous123456789012345678",
             action="search",
             target="product_catalog",
         )
@@ -109,7 +109,7 @@ class TestRing1Unverified:
 
         # But data sharing is HIGH risk
         share_intent = AgentIntent(
-            agent_did="did:dht:z6MkAnonymous123456789012345678",
+            agent_did="did:plc:Anonymous123456789012345678",
             action="share_data",
             target="external_party",
         )
@@ -120,7 +120,7 @@ class TestRing1Unverified:
     ) -> None:
         """Reviews from unverified entities carry minimal weight."""
         attestation = ExpertAttestation(
-            expert_did="did:dht:z6MkAnon123456789012345678901234",
+            expert_did="did:plc:Anon123456789012345678901234",
             expert_trust_ring=TrustRing.RING_1_UNVERIFIED,
             product_category="laptops",
             product_id="generic_laptop_001",
@@ -205,7 +205,7 @@ class TestRing2Verified:
         user approval (not auto-blocked).
         """
         intent = AgentIntent(
-            agent_did="did:dht:z6MkVerified1234567890123456789",
+            agent_did="did:plc:Verified1234567890123456789",
             action="send_email",
             target="colleague@example.com",
             context={"trust_ring": TrustRing.RING_2_VERIFIED},
@@ -510,7 +510,7 @@ class TestTrustComposite:
         self, mock_reputation_graph: MockReputationGraph
     ) -> None:
         """Bad outcomes reduce a bot's reputation score over time."""
-        bot_did = "did:dht:z6MkBadBot12345678901234567890ab"
+        bot_did = "did:plc:BadBot12345678901234567890ab"
 
         # Start with a decent score
         mock_reputation_graph.update_bot_score(bot_did, 40.0)
@@ -544,7 +544,7 @@ class TestTrustComposite:
         self, mock_reputation_graph: MockReputationGraph
     ) -> None:
         """Bot reputation cannot go below 0.0."""
-        bot_did = "did:dht:z6MkFloor1234567890123456789012ab"
+        bot_did = "did:plc:Floor1234567890123456789012ab"
 
         # Massive negative adjustments
         for _ in range(20):
@@ -589,7 +589,7 @@ class TestTrustComposite:
         signed tombstone. Others cannot delete it.
         """
         author_did = mock_identity.root_did
-        other_did = "did:dht:z6MkOther1234567890123456789012ab"
+        other_did = "did:plc:Other1234567890123456789012ab"
 
         attestation = ExpertAttestation(
             expert_did=author_did,

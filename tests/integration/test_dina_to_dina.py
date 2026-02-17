@@ -15,7 +15,7 @@ import pytest
 from tests.integration.mocks import (
     DIDDocument,
     DinaMessage,
-    MockDHTResolver,
+    MockPLCResolver,
     MockDinaCore,
     MockHuman,
     MockIdentity,
@@ -252,7 +252,7 @@ class TestDinaToDinaProtocol:
         mock_identity: MockIdentity,
     ) -> None:
         """Messages from unknown (unauthenticated) DIDs are rejected."""
-        unknown_did = "did:dht:z6MkUnknown0000000000000000000000"
+        unknown_did = "did:plc:Unknown0000000000000000000000"
         msg = DinaMessage(
             type="dina/social/arrival",
             from_did=unknown_did,
@@ -441,7 +441,7 @@ class TestSellerNegotiation:
         mock_human: MockHuman,
     ) -> None:
         """If a seller has low reputation, Dina flags it to the user before proceeding."""
-        low_rep_seller = "did:dht:z6MkLowRep123456789012345678901234"
+        low_rep_seller = "did:plc:LowRep123456789012345678901234"
         mock_dina.reputation.set_trust_score(low_rep_seller, 15.0)
 
         score = mock_dina.reputation.get_trust_score(low_rep_seller)

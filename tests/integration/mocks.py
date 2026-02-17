@@ -246,10 +246,10 @@ class MockHuman:
 # ---------------------------------------------------------------------------
 
 class MockIdentity:
-    """Root identity with BIP-32 persona derivation."""
+    """Root identity with SLIP-0010 persona derivation."""
 
     def __init__(self, did: str | None = None) -> None:
-        self.root_did = did or f"did:dht:z6Mk{uuid.uuid4().hex[:40]}"
+        self.root_did = did or f"did:plc:{uuid.uuid4().hex[:40]}"
         self.root_private_key = hashlib.sha256(self.root_did.encode()).hexdigest()
         self.bip39_mnemonic = "abandon " * 23 + "art"  # placeholder 24 words
         self.personas: dict[PersonaType, MockPersona] = {}
@@ -257,7 +257,7 @@ class MockIdentity:
 
     def derive_persona(self, persona_type: PersonaType) -> MockPersona:
         if persona_type not in self.personas:
-            # BIP-32 style derivation (mocked)
+            # SLIP-0010 Ed25519 hardened derivation (mocked)
             path = f"/persona/{persona_type.value}"
             derived_key = hashlib.sha256(
                 f"{self.root_private_key}{path}".encode()
@@ -478,10 +478,13 @@ class MockKeyManager:
     def derive_device_key(self, device_id: str) -> str:
         return self._identity.register_device(device_id)
 
-    def argon2id_encrypt(self, plaintext: str, passphrase: str) -> str:
-        """Mock Argon2id key derivation + encryption."""
-        key = hashlib.sha256(passphrase.encode()).hexdigest()
-        return f"ARGON2ID[{key[:8]}]:{hashlib.sha256(plaintext.encode()).hexdigest()}"
+    def key_wrap(self, plaintext: str, passphrase: str) -> str:
+        """Mock key wrapping: passphrase → Argon2id (KEK) → AES-256-GCM wraps plaintext (DEK)."""
+        kek = hashlib.sha256(passphrase.encode()).hexdigest()
+        return f"WRAPPED[{kek[:8]}]:{hashlib.sha256(plaintext.encode()).hexdigest()}"
+
+    # Backward compat alias
+    argon2id_encrypt = key_wrap
 
 
 # ---------------------------------------------------------------------------
@@ -687,8 +690,8 @@ class MockP2PChannel:
         self.allowed_contacts.add(did)
 
 
-class MockDHTResolver:
-    """Resolves did:dht to DID Documents via DHT lookup."""
+class MockPLCResolver:
+    """Resolves did:plc to DID Documents via PLC Directory lookup."""
 
     def __init__(self) -> None:
         self._registry: dict[str, DIDDocument] = {}
@@ -725,7 +728,7 @@ class MockExternalAgent:
     """Task agent that executes delegated work via MCP protocol."""
 
     def __init__(self, agent_did: str = "", name: str = "OpenClaw") -> None:
-        self.agent_did = agent_did or f"did:dht:z6MkAgent{uuid.uuid4().hex[:32]}"
+        self.agent_did = agent_did or f"did:plc:Agent{uuid.uuid4().hex[:32]}"
         self.name = name
         self.intents_submitted: list[AgentIntent] = []
         self.tasks_executed: list[dict[str, Any]] = []
@@ -775,7 +778,7 @@ class MockReviewBot:
     """Specialist review bot with reputation score and source attribution."""
 
     def __init__(self, bot_did: str = "", reputation: int = 90) -> None:
-        self.bot_did = bot_did or f"did:dht:z6MkBot{uuid.uuid4().hex[:34]}"
+        self.bot_did = bot_did or f"did:plc:Bot{uuid.uuid4().hex[:34]}"
         self.reputation_score = reputation
         self.queries: list[dict[str, Any]] = []
         self._responses: dict[str, dict[str, Any]] = {}
@@ -811,7 +814,7 @@ class MockLegalBot:
     """Specialist legal bot — form filling, draft-only mode."""
 
     def __init__(self, bot_did: str = "", reputation: int = 91) -> None:
-        self.bot_did = bot_did or f"did:dht:z6MkLegal{uuid.uuid4().hex[:32]}"
+        self.bot_did = bot_did or f"did:plc:Legal{uuid.uuid4().hex[:32]}"
         self.reputation_score = reputation
         self.form_fills: list[dict[str, Any]] = []
 

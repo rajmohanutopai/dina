@@ -213,18 +213,18 @@ class TestConnectorSecurityRules:
         mock_identity: MockIdentity,
         mock_vault: MockVault,
     ) -> None:
-        """OAuth tokens must be stored encrypted in Tier 0 (secrets)."""
+        """OAuth tokens must be stored key-wrapped in Tier 0 (secrets)."""
         key_manager = MockKeyManager(mock_identity)
         oauth_token = "ya29.AHES6ZRVmB7FkLtD1z1Amc-w-Kx8C8"
-        encrypted_token = key_manager.argon2id_encrypt(
+        wrapped_token = key_manager.key_wrap(
             oauth_token, "user_passphrase"
         )
-        mock_vault.store(0, "oauth_gmail", encrypted_token)
+        mock_vault.store(0, "oauth_gmail", wrapped_token)
 
         retrieved = mock_vault.retrieve(0, "oauth_gmail")
         assert retrieved is not None
-        # Must be the encrypted form — not the raw token
-        assert "ARGON2ID[" in retrieved
+        # Must be the wrapped form — not the raw token
+        assert "WRAPPED[" in retrieved
         assert oauth_token not in retrieved
 
     def test_connectors_sandboxed_no_cross_persona_access(

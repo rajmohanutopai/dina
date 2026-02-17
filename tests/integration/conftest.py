@@ -10,7 +10,7 @@ from tests.integration.mocks import (
     EstatePlan,
     ExpertAttestation,
     MockCalendarConnector,
-    MockDHTResolver,
+    MockPLCResolver,
     MockDinaCore,
     MockEstateManager,
     MockExternalAgent,
@@ -52,7 +52,7 @@ def mock_human() -> MockHuman:
 
 @pytest.fixture
 def mock_identity() -> MockIdentity:
-    return MockIdentity(did="did:dht:z6MkTestUser1234567890abcdefghijk")
+    return MockIdentity(did="did:plc:TestUser1234567890abcdefghijk")
 
 
 @pytest.fixture
@@ -67,7 +67,7 @@ def mock_dina(mock_identity: MockIdentity, mock_vault: MockVault) -> MockDinaCor
 
 @pytest.fixture
 def sancho_identity() -> MockIdentity:
-    return MockIdentity(did="did:dht:z6MkSancho12345678901234567890abc")
+    return MockIdentity(did="did:plc:Sancho12345678901234567890abc")
 
 
 @pytest.fixture
@@ -77,7 +77,7 @@ def mock_another_dina(sancho_identity: MockIdentity) -> MockDinaCore:
 
 @pytest.fixture
 def seller_identity() -> MockIdentity:
-    return MockIdentity(did="did:dht:z6MkSeller12345678901234567890abc")
+    return MockIdentity(did="did:plc:Seller12345678901234567890abc")
 
 
 @pytest.fixture
@@ -227,8 +227,8 @@ def mock_p2p() -> MockP2PChannel:
 
 
 @pytest.fixture
-def mock_dht_resolver() -> MockDHTResolver:
-    return MockDHTResolver()
+def mock_plc_resolver() -> MockPLCResolver:
+    return MockPLCResolver()
 
 
 @pytest.fixture
@@ -281,19 +281,19 @@ def mock_estate_manager(mock_identity: MockIdentity) -> MockEstateManager:
         beneficiaries=[
             EstateBeneficiary(
                 name="Daughter",
-                dina_did="did:dht:z6MkDaughter1234567890123456789",
+                dina_did="did:plc:Daughter1234567890123456789",
                 receives_personas=[PersonaType.SOCIAL, PersonaType.HEALTH],
                 access_type="full_decrypt",
             ),
             EstateBeneficiary(
                 name="Spouse",
-                dina_did="did:dht:z6MkSpouse123456789012345678901",
+                dina_did="did:plc:Spouse123456789012345678901",
                 receives_personas=[PersonaType.FINANCIAL, PersonaType.CITIZEN],
                 access_type="full_decrypt",
             ),
             EstateBeneficiary(
                 name="Colleague",
-                dina_did="did:dht:z6MkColleague12345678901234567",
+                dina_did="did:plc:Colleague12345678901234567",
                 receives_personas=[PersonaType.PROFESSIONAL],
                 access_type="read_only_90_days",
             ),
@@ -320,7 +320,7 @@ def sample_contacts(sancho_identity: MockIdentity,
             "notes": "Mother was ill last month",
         },
         "maria": {
-            "did": "did:dht:z6MkMaria123456789012345678901234",
+            "did": "did:plc:Maria123456789012345678901234",
             "name": "Maria",
             "relationship": "friend",
             "trust_ring": TrustRing.RING_2_VERIFIED,

@@ -186,7 +186,7 @@ class TestConnectionNudges:
         # Store a contact with old interaction timestamp
         old_ts = time.time() - (45 * 86400)  # 45 days ago
         mock_dina.vault.store(1, "contact_old_friend", {
-            "contact": "did:dht:z6MkOldFriend",
+            "contact": "did:plc:OldFriend",
             "name": "Old Friend",
             "last_interaction_ts": old_ts,
             "relationship": "close_friend",
@@ -194,7 +194,7 @@ class TestConnectionNudges:
 
         # Store a recent contact
         mock_dina.vault.store(1, "contact_recent", {
-            "contact": "did:dht:z6MkRecent",
+            "contact": "did:plc:Recent",
             "name": "Recent Friend",
             "last_interaction_ts": time.time() - (5 * 86400),  # 5 days ago
             "relationship": "friend",
@@ -210,13 +210,13 @@ class TestConnectionNudges:
         """When Dina knows two contacts share an interest, she can suggest
         the user connect them or reach out about that shared topic."""
         mock_dina.vault.store(1, "contact_alice", {
-            "contact": "did:dht:z6MkAlice",
+            "contact": "did:plc:Alice",
             "name": "Alice",
             "interests": ["hiking", "photography"],
             "last_interaction_ts": time.time() - (20 * 86400),
         })
         mock_dina.vault.store(1, "contact_bob", {
-            "contact": "did:dht:z6MkBob",
+            "contact": "did:plc:Bob",
             "name": "Bob",
             "interests": ["hiking", "cooking"],
             "last_interaction_ts": time.time() - (25 * 86400),
@@ -241,7 +241,7 @@ class TestConnectionNudges:
         maintenance — never interrupts, just includes in the digest."""
         # Store a contact whose birthday is approaching
         mock_dina.vault.store(1, "contact_birthday_soon", {
-            "contact": "did:dht:z6MkBirthdayFriend",
+            "contact": "did:plc:BirthdayFriend",
             "name": "Birthday Friend",
             "birthday": "2026-02-20",
             "last_interaction_ts": time.time() - (60 * 86400),

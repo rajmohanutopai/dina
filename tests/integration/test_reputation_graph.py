@@ -43,7 +43,7 @@ class TestExpertAttestations:
         """A YouTube product review is transformed into a signed attestation
         in the reputation graph."""
         attestation = ExpertAttestation(
-            expert_did="did:dht:z6MkMKBHD12345678901234567890123456",
+            expert_did="did:plc:MKBHD12345678901234567890123456",
             expert_trust_ring=TrustRing.RING_3_SKIN_IN_GAME,
             product_category="laptops",
             product_id="thinkpad_x1_2025",
@@ -74,7 +74,7 @@ class TestExpertAttestations:
         mock_identity: MockIdentity,
     ) -> None:
         """Every attestation carries a cryptographic signature from the expert's DID."""
-        expert_did = "did:dht:z6MkExpert12345678901234567890123456"
+        expert_did = "did:plc:Expert12345678901234567890123456"
         verdict_data = {
             "product_id": "thinkpad_x1_2025",
             "rating": 92,
@@ -109,9 +109,9 @@ class TestExpertAttestations:
         """Multiple experts can attest to the same product. All attestations
         are preserved for aggregation."""
         experts = [
-            ("did:dht:z6MkMKBHD", "MKBHD", 92),
-            ("did:dht:z6MkDaveL", "Dave2D", 88),
-            ("did:dht:z6MkLinus", "LTT", 85),
+            ("did:plc:MKBHD", "MKBHD", 92),
+            ("did:plc:DaveL", "Dave2D", 88),
+            ("did:plc:Linus", "LTT", 85),
         ]
         for did, name, rating in experts:
             att = ExpertAttestation(
@@ -311,7 +311,7 @@ class TestBotReputation:
     ) -> None:
         """If a bot is found compromised or gives bad recommendations,
         its reputation score drops sharply."""
-        bot_did = "did:dht:z6MkCompromisedBot000000000000000000"
+        bot_did = "did:plc:CompromisedBot000000000000000000"
         mock_reputation_graph.update_bot_score(bot_did, 30)  # Start at 80
         initial = mock_reputation_graph.get_bot_score(bot_did)
         assert initial == 80.0
@@ -333,9 +333,9 @@ class TestBotReputation:
     ) -> None:
         """Dina auto-routes queries to the highest-reputation bot for a category."""
         bots = {
-            "did:dht:z6MkBotA": ("BotA", 45.0),
-            "did:dht:z6MkBotB": ("BotB", 88.0),
-            "did:dht:z6MkBotC": ("BotC", 72.0),
+            "did:plc:BotA": ("BotA", 45.0),
+            "did:plc:BotB": ("BotB", 88.0),
+            "did:plc:BotC": ("BotC", 72.0),
         }
         for bot_did, (_name, delta) in bots.items():
             # Start from 0: update_bot_score starts from default 50, so
@@ -347,16 +347,16 @@ class TestBotReputation:
             mock_reputation_graph.bot_scores,
             key=lambda did: mock_reputation_graph.get_bot_score(did),
         )
-        assert best_bot_did == "did:dht:z6MkBotB"
+        assert best_bot_did == "did:plc:BotB"
         assert mock_reputation_graph.get_bot_score(best_bot_did) == 88.0
 
         # If BotB's reputation drops below BotC, routing switches
-        mock_reputation_graph.update_bot_score("did:dht:z6MkBotB", -20)
+        mock_reputation_graph.update_bot_score("did:plc:BotB", -20)
         new_best = max(
             mock_reputation_graph.bot_scores,
             key=lambda did: mock_reputation_graph.get_bot_score(did),
         )
-        assert new_best == "did:dht:z6MkBotC"
+        assert new_best == "did:plc:BotC"
 
     def test_reputation_visible_to_user(
         self,
@@ -379,7 +379,7 @@ class TestBotReputation:
         self, mock_reputation_graph: MockReputationGraph
     ) -> None:
         """Reputation score cannot exceed 100.0."""
-        bot_did = "did:dht:z6MkPerfectBot0000000000000000000000"
+        bot_did = "did:plc:PerfectBot0000000000000000000000"
         mock_reputation_graph.update_bot_score(bot_did, 60)  # 50 + 60 = 110 -> capped at 100
         score = mock_reputation_graph.get_bot_score(bot_did)
         assert score == 100.0

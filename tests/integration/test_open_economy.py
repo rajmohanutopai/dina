@@ -186,7 +186,7 @@ class TestPluginEconomy:
     ):
         """A product maker's trust score increases with positive outcomes
         and verified transactions."""
-        seller_did = "did:dht:z6MkChairMaker"
+        seller_did = "did:plc:ChairMaker"
         score = mock_trust_evaluator.compute_composite(
             ring=TrustRing.RING_3_SKIN_IN_GAME,
             time_alive_days=730,
@@ -216,7 +216,7 @@ class TestPluginEconomy:
     ):
         """A review bot's reputation increases when its recommendations
         lead to good outcomes, and decreases for bad ones."""
-        bot_did = "did:dht:z6MkReviewBot"
+        bot_did = "did:plc:ReviewBot"
         mock_reputation_graph.bot_scores[bot_did] = 50.0
 
         # Good outcomes raise the score
@@ -238,7 +238,7 @@ class TestPluginEconomy:
     ):
         """An expert reviewer (e.g., MKBHD) earns trust through consistent,
         verified reviews that match real-world outcomes."""
-        expert_did = "did:dht:z6MkMKBHD"
+        expert_did = "did:plc:MKBHD"
         score = mock_trust_evaluator.compute_composite(
             ring=TrustRing.RING_3_SKIN_IN_GAME,
             time_alive_days=3650,  # 10 years

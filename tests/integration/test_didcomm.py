@@ -1,6 +1,6 @@
 """Integration tests for DIDComm v2.1 protocol, message types, sharing rules.
 
-Tests the peer-to-peer communication layer: DID exchange, DHT resolution,
+Tests the peer-to-peer communication layer: DID exchange, PLC resolution,
 mutual authentication, X25519 key exchange, relay fallback, typed messages,
 sharing rules, and offline queuing.
 """
@@ -14,7 +14,7 @@ import pytest
 from tests.integration.mocks import (
     DIDDocument,
     DinaMessage,
-    MockDHTResolver,
+    MockPLCResolver,
     MockDinaCore,
     MockIdentity,
     MockP2PChannel,
@@ -30,7 +30,7 @@ from tests.integration.mocks import (
 
 
 class TestConnectionEstablishment:
-    """DIDComm v2.1 connection setup — QR, DHT, mutual auth, key exchange, relay."""
+    """DIDComm v2.1 connection setup — QR, PLC resolution, mutual auth, key exchange, relay."""
 
     def test_did_exchanged_via_qr(
         self,
@@ -47,51 +47,51 @@ class TestConnectionEstablishment:
 
         assert qr_payload_user["did"] == user_did
         assert qr_payload_sancho["did"] == sancho_did
-        # Both DIDs are valid did:dht strings
-        assert user_did.startswith("did:dht:")
-        assert sancho_did.startswith("did:dht:")
+        # Both DIDs are valid did:plc strings
+        assert user_did.startswith("did:plc:")
+        assert sancho_did.startswith("did:plc:")
 
-    def test_dht_lookup_resolves_endpoint(
+    def test_plc_lookup_resolves_endpoint(
         self,
-        mock_dht_resolver: MockDHTResolver,
+        mock_plc_resolver: MockPLCResolver,
         sancho_identity: MockIdentity,
     ) -> None:
-        """DHT lookup resolves a DID to a DID Document with service endpoint."""
+        """PLC Directory lookup resolves a DID to a DID Document with service endpoint."""
         doc = DIDDocument(
             did=sancho_identity.root_did,
             public_key="ed25519_pub_sancho_key",
             service_endpoint="https://sancho.homenode.example.com/didcomm",
             verification_method=f"{sancho_identity.root_did}#key-1",
         )
-        mock_dht_resolver.register(doc)
+        mock_plc_resolver.register(doc)
 
-        resolved = mock_dht_resolver.resolve(sancho_identity.root_did)
+        resolved = mock_plc_resolver.resolve(sancho_identity.root_did)
         assert resolved is not None
         assert resolved.did == sancho_identity.root_did
         assert resolved.service_endpoint == "https://sancho.homenode.example.com/didcomm"
 
-    def test_dht_lookup_returns_none_for_unknown(
-        self, mock_dht_resolver: MockDHTResolver
+    def test_plc_lookup_returns_none_for_unknown(
+        self, mock_plc_resolver: MockPLCResolver
     ) -> None:
-        """DHT lookup returns None for an unregistered DID."""
-        result = mock_dht_resolver.resolve("did:dht:z6MkUnknown0000000000000000000000")
+        """PLC Directory lookup returns None for an unregistered DID."""
+        result = mock_plc_resolver.resolve("did:plc:z6MkUnknown0000000000000000000000")
         assert result is None
 
     def test_direct_home_node_connection(
         self,
-        mock_dht_resolver: MockDHTResolver,
+        mock_plc_resolver: MockPLCResolver,
         mock_identity: MockIdentity,
         sancho_identity: MockIdentity,
         mock_p2p: MockP2PChannel,
     ) -> None:
-        """After DHT resolution, P2P channel connects directly to peer's home node."""
+        """After PLC resolution, P2P channel connects directly to peer's home node."""
         doc = DIDDocument(
             did=sancho_identity.root_did,
             public_key="ed25519_pub_sancho_key",
             service_endpoint="https://sancho.homenode.example.com/didcomm",
         )
-        mock_dht_resolver.register(doc)
-        resolved = mock_dht_resolver.resolve(sancho_identity.root_did)
+        mock_plc_resolver.register(doc)
+        resolved = mock_plc_resolver.resolve(sancho_identity.root_did)
         assert resolved is not None
 
         # Permit contact and authenticate

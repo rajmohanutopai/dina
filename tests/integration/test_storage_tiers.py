@@ -1,6 +1,6 @@
 """Integration tests for the six-tier encrypted storage system.
 
-Tier 0 — Identity Vault (root keypair, BIP-39 recovery, BIP-32 derivation)
+Tier 0 — Identity Vault (root keypair, BIP-39 recovery, SLIP-0010 derivation)
 Tier 1 — Personal Vault (encrypted, FTS5, per-persona partitions)
 Tier 4 — Staging (drafts, payment intents, auto-expire 72h)
 Tier 5 — Deep Archive (encrypted snapshots, immutable, right to delete)
@@ -30,24 +30,24 @@ from tests.integration.mocks import (
 # ---------------------------------------------------------------------------
 
 class TestTier0IdentityVault:
-    """Tier 0 holds the root keypair, BIP-39 mnemonic, and BIP-32 derivation."""
+    """Tier 0 holds the root keypair, BIP-39 mnemonic, and SLIP-0010 derivation."""
 
     def test_root_keypair_encrypted_at_rest(
         self, mock_identity: MockIdentity
     ) -> None:
-        """The root private key must be encrypted when stored.
+        """The root private key (DEK) must be key-wrapped when stored.
 
-        In production, Argon2id derives the encryption key from a
-        passphrase. Here we verify the mock produces an encrypted blob
+        In production: passphrase → Argon2id (KEK) → AES-256-GCM wraps the
+        Master Key (DEK). Here we verify the mock produces a wrapped blob
         that differs from the plaintext key.
         """
         km = MockKeyManager(mock_identity)
-        encrypted = km.argon2id_encrypt(
+        wrapped = km.key_wrap(
             mock_identity.root_private_key, passphrase="strong-passphrase"
         )
 
-        assert encrypted.startswith("ARGON2ID[")
-        assert mock_identity.root_private_key not in encrypted
+        assert wrapped.startswith("WRAPPED[")
+        assert mock_identity.root_private_key not in wrapped
 
     def test_bip39_recovery_mnemonic_exists(
         self, mock_identity: MockIdentity
@@ -64,7 +64,7 @@ class TestTier0IdentityVault:
     def test_bip32_derivation_produces_child_keys(
         self, mock_identity: MockIdentity
     ) -> None:
-        """BIP-32 derivation from root produces distinct child keys."""
+        """SLIP-0010 derivation from root produces distinct child keys."""
         consumer_key = MockKeyManager(mock_identity).derive_persona_key(
             PersonaType.CONSUMER
         )
@@ -112,7 +112,7 @@ class TestTier0IdentityVault:
     ) -> None:
         """The root identity material lives exclusively in Tier 0."""
         km = MockKeyManager(mock_identity)
-        encrypted_root = km.argon2id_encrypt(
+        encrypted_root = km.key_wrap(
             mock_identity.root_private_key, passphrase="vault-pass"
         )
 

@@ -74,14 +74,34 @@ Same containers, same SQLite vault, same Docker image at every level. Migration 
 
 Dina promises two things that conflict: "always on" and "encrypted at rest with your keys."
 
-If the Home Node reboots at 2 AM (kernel panic, power outage, OS patch), Dina cannot restart — the vault decryption key is derived from the user's passphrase, so she sits at a locked prompt until the user wakes up at 8 AM. Six hours of missed monitoring.
+If the Home Node reboots at 2 AM (kernel panic, power outage, OS patch), Dina cannot restart — the Master Key (DEK) that SQLCipher needs to open the vault files is gone from RAM. She sits at a locked prompt until the user wakes up at 8 AM. Six hours of missed monitoring.
 
 **This is a user choice, presented during setup:**
 
-| Mode | How It Works | Risk | Best For |
-|------|-------------|------|----------|
-| **Convenience** | Decryption key stored on the server's filesystem. Dina auto-unlocks on reboot. | Physical theft or root compromise of the server exposes the key. On managed hosting with Confidential Computing, this risk is mitigated by hardware isolation. | Managed hosting users, anyone who prioritizes uptime. |
-| **Security** | Key exists only in RAM. Every reboot requires manual unlock via passphrase from a client device. | Downtime after every reboot until user intervenes. | Self-hosted users, sovereign box users, privacy maximalists. |
+| Mode | What's on Disk | Boot Process | Risk | Best For |
+|------|---------------|-------------|------|----------|
+| **Security** | `keys/master.key.enc` (Master Key wrapped by passphrase-derived KEK) | App prompts for passphrase → Argon2id → KEK → unwrap DEK → `PRAGMA key` → SQLCipher opens | Downtime after every reboot until user intervenes | Self-hosted, sovereign box, privacy maximalists |
+| **Convenience** | `keys/master.key` (raw 32-byte Master Key, `chmod 600`) | App reads DEK from file → `PRAGMA key` → SQLCipher opens automatically | Physical theft or root compromise exposes the key. Mitigated by Confidential Computing on managed hosting. | Managed hosting, anyone who prioritizes uptime |
+
+**The exact boot sequence (both modes):**
+```
+1. dina-core starts
+2. Read config.json → determine mode (security or convenience)
+3. Obtain Master Key (DEK):
+     Security mode:  prompt client device → receive passphrase
+                     → Argon2id(passphrase, salt) → KEK
+                     → AES-256-GCM unwrap master.key.enc → DEK
+     Convenience:    read master.key from disk → DEK
+4. Derive per-persona SQLCipher keys:
+     DEK → SLIP-0010 → persona keys → HKDF → SQLCipher passphrases
+5. Open each persona vault:
+     PRAGMA key = 'x<hex-encoded-passphrase>'
+     PRAGMA cipher_page_size = 4096
+     PRAGMA journal_mode = WAL
+6. SQLCipher decrypts pages in-memory on demand
+   — the .sqlite files on disk are NEVER decrypted to a temp file
+7. Notify brain: POST brain:8200/v1/process {event: "vault_unlocked"}
+```
 
 **Implementation:** The setup wizard asks: "If your Home Node restarts, should Dina unlock automatically or wait for you?" The choice is stored in `config.json` (not in the vault — the vault is what needs unlocking). Users can change this setting at any time. On managed hosting, the default is Convenience. On self-hosted, the default is Security.
 
@@ -93,6 +113,30 @@ Serverless (Lambda + S3) doesn't work for Dina. SQLite on network storage corrup
 
 The right architecture is three lightweight, always-on containers via `docker compose up -d`.
 
+### Connectivity & Ingress (Multi-Lane Networking)
+
+dina-core **never binds to port 443 directly.** It listens on localhost only:
+- Port 8100 — internal API (brain ↔ core)
+- Port 8443 — DIDComm endpoint + client WebSockets (localhost, not exposed to internet)
+
+The public ingress is always a layer in front — a tunnel, a reverse proxy, or a mesh network. This solves NAT traversal, port conflicts, TLS termination, and DDoS protection in one architectural decision.
+
+**Three ingress tiers, running simultaneously if needed:**
+
+| Tier | Name | Mechanism | Who It's For | Public Endpoint |
+|------|------|-----------|-------------|-----------------|
+| **1: Community** | Zero-config | Tailscale Funnel (or Zrok) | Testing, non-technical users, onboarding | `https://node.tailnet.ts.net` (auto-TLS) |
+| **2: Production** | Tunneled | Cloudflare Tunnel (`cloudflared`) | Daily drivers, anyone who wants DDoS protection | `https://dina.alice.com` (custom domain, WAF, geo-blocking) |
+| **3: Sovereign** | Mesh | Yggdrasil | Censorship resistance, no central authority | Stable IPv6 derived from node's public key |
+
+**Why not Tor for Tier 3?** Dina has a DID — she's not trying to be anonymous, she's trying to be sovereign. DIDComm already provides E2E encryption, making Tor's encryption layer redundant. Tor's 3-second round trip kills whispers and real-time interactions. Yggdrasil provides censorship resistance with low latency and NAT traversal, and its key-derived IPv6 addresses are philosophically aligned with DIDs. Users who need anonymity (hiding that they run a Dina) can route Yggdrasil over Tor — that's an ops choice, not an architecture tier.
+
+**How it connects to DIDComm:** The DID Document (resolved via `did:plc` or `did:web`) points to whatever public endpoint the tunnel exposes. DIDComm doesn't care whether that's a Tailscale URL, a Cloudflare domain, or a Yggdrasil IPv6. When the user changes ingress tier, they sign a `did:plc` rotation operation to update their service endpoint.
+
+**Future: Wildcard Relay.** The Dina Foundation will operate a relay (`*.dina.host` via `frp`) to provide free, secure subdomains to Community tier users — replacing the Tailscale Funnel dependency. Not a Phase 1 dependency.
+
+See [`NETWORKING.md`](NETWORKING.md) for setup instructions per tier, or [`QUICKSTART.md`](QUICKSTART.md) to get running in 3 commands.
+
 ### One User, One File (Tenancy Model)
 
 Dina NEVER uses a shared database. Every user gets their own SQLite file.
@@ -101,20 +145,26 @@ Dina NEVER uses a shared database. Every user gets their own SQLite file.
 /var/lib/dina/
 ├── users/
 │   ├── did_user_A/
-│   │   ├── vault.sqlite    ← User A's encrypted vault
+│   │   ├── identity.sqlite      ← Tier 0: root keys, persona keys (SQLCipher)
+│   │   ├── consumer.sqlite      ← Consumer persona vault (SQLCipher, own key)
+│   │   ├── social.sqlite        ← Social persona vault (SQLCipher, own key)
+│   │   ├── health.sqlite        ← Health persona vault (SQLCipher, own key)
+│   │   ├── staging.sqlite       ← Tier 4: drafts, payment intents (SQLCipher)
+│   │   ├── reputation.sqlite    ← Tier 3: bot scores, outcome data (SQLCipher)
 │   │   └── config.json
 │   ├── did_user_B/
-│   │   ├── vault.sqlite    ← User B's encrypted vault
-│   │   └── config.json
+│   │   ├── identity.sqlite
+│   │   ├── consumer.sqlite
+│   │   └── ...
 │   └── ...
 └── system.db               ← Tiny: routing, auth, billing only
 ```
 
 **Why this matters:**
-- **Isolation.** User A's process has no file handle to User B's vault. OS enforces privacy, not just code.
-- **Portability.** User leaves → send them `vault.sqlite`. Done. 100% of history, instantly.
-- **Right to delete.** `rm user_b/vault.sqlite`. Data physically annihilated.
-- **Breach containment.** Compromise of one user's vault does not expose others. No shared secret, no master key.
+- **Isolation.** User A's process has no file handle to User B's vault. OS enforces privacy, not just code. Within a user, each persona file is independently encrypted — compromise of `consumer.sqlite` reveals nothing about `health.sqlite`.
+- **Portability.** User leaves → send them their directory of `.sqlite` files. Done. 100% of history, instantly.
+- **Right to delete.** `rm user_b/`. Data physically annihilated. Or finer: `rm user_b/health.sqlite` to delete only medical data.
+- **Breach containment.** Compromise of one user's vault does not expose others. Compromise of one persona file does not expose other personas. No shared secret, no master key.
 
 ### The Sidecar Pattern: Go Core + Python Brain
 
@@ -135,7 +185,7 @@ docker-compose.yml:
 │  ┌──────────────────────────────────────────────┐    │
 │  │  dina-core (Go + net/http)                    │    │
 │  │  Port 8100 (internal)                         │    │
-│  │  Port 443  (external — DIDComm + clients)     │    │
+│  │  Port 8443 (DIDComm + clients, localhost only)  │    │
 │  │                                                │    │
 │  │  - SQLite vault + encryption                   │    │
 │  │  - DID / key operations                        │    │
@@ -201,7 +251,220 @@ docker-compose.yml:
 
 **The internal API between core and brain is the protocol surface.** If a future community member wants to build a Rust brain, a TypeScript brain, or consolidate into a single Go binary, they implement the same `/v1/process` and `/v1/reason` endpoints. The core doesn't care what language the brain speaks.
 
+### Data Flow: Who Touches What
+
+The core principle: **Go owns the file. Python owns the thinking.**
+
+```
+WHO TOUCHES SQLITE?
+
+  dina-core (Go)     ← ONLY process that opens vault .sqlite files
+  dina-brain (Python) ← NEVER touches SQLite. Talks to core via HTTP API.
+  llama-server        ← Stateless. No database access.
+```
+
+#### Writing
+
+**1. Ingestion (core writes directly)**
+```
+Gmail API → core/connectors/gmail.go → normalize → core writes to consumer.sqlite
+Calendar  → core/connectors/calendar.go → same
+Contacts  → core/connectors/contacts.go → same
+WhatsApp  → phone pushes to core via DIDComm → core writes to social.sqlite
+
+Core then notifies brain:
+  POST brain:8200/v1/process {item_id, source, type}
+```
+
+**2. Brain-generated data (brain asks core to write)**
+```
+Brain generates a draft     → POST core:8100/v1/vault/store {type: "draft", ...}
+Brain creates staging item  → POST core:8100/v1/vault/store {type: "payment_intent", ...}
+Brain extracts relationship → POST core:8100/v1/vault/store {type: "relationship", ...}
+```
+
+**3. Embeddings (brain generates, core stores)**
+```
+New email ingested by core
+  → core notifies brain: POST brain:8200/v1/process
+  → brain calls llama-server:8300 to generate embedding (EmbeddingGemma)
+  → brain sends embedding back to core: POST core:8100/v1/vault/store
+      {type: "embedding", vector: [...], source_id: "..."}
+  → core writes vector into sqlite-vec
+```
+
+Brain generates the embedding because it already has the LLM routing logic and knows which model to use. Core just stores the vector — it doesn't need to understand embeddings, just execute the sqlite-vec INSERT.
+
+#### Reading
+
+**4. Simple search (core handles alone — fast path)**
+```
+Client: "find emails from Sancho"
+  → client WebSocket → core
+  → core runs FTS5 query: SELECT * FROM documents_fts WHERE body_text MATCH 'Sancho'
+  → core returns results to client
+
+  Brain is not involved. This is a fast-path lookup.
+```
+
+**5. Semantic search (core executes, brain orchestrates)**
+```
+Client: "what was that deal Sancho was worried about?"
+  → client WebSocket → core
+  → core sees this needs reasoning → POST brain:8200/v1/reason {query: "..."}
+  → brain generates query embedding via llama-server:8300
+  → brain asks core for vector search:
+      POST core:8100/v1/vault/query {vector: [...], top_k: 10}
+  → core runs sqlite-vec nearest-neighbor search → returns results to brain
+  → brain also asks core for FTS5 results:
+      POST core:8100/v1/vault/query {text: "Sancho deal"}
+  → brain merges both result sets (hybrid search)
+  → brain reasons over combined context via LLM
+  → brain returns answer to core
+  → core pushes to client
+```
+
+**6. Agentic multi-step search (brain drives, core serves)**
+```
+Sancho's Dina sends "arriving in 15 minutes"
+  → core receives via DIDComm → POST brain:8200/v1/process
+
+  Brain runs guardian angel loop (Google ADK agent):
+    Step 1: brain → core: /v1/vault/query {text: "Sancho", type: "relationship"}
+            → gets: last interaction 3 weeks ago, mother was ill
+    Step 2: brain → core: /v1/vault/query {text: "Sancho", type: "message", limit: 5}
+            → gets: recent message history
+    Step 3: brain → core: /v1/vault/query {text: "Sancho", type: "event", upcoming: true}
+            → gets: no upcoming calendar events
+    Step 4: brain → llama-server: "Given this context, assemble a whisper"
+            → generates: "Sancho is 15 min away. Mother was ill. Likes strong chai."
+    Step 5: brain → core: POST /v1/notify {type: "whisper", text: "...", client: "phone"}
+            → core pushes to phone via WebSocket
+```
+
+#### Ownership Summary
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  dina-core (Go) — THE VAULT KEEPER                      │
+│                                                         │
+│  OWNS:                                                  │
+│  - Per-persona .sqlite files (open, read, write, backup)│
+│  - SQLCipher encryption/decryption                      │
+│  - FTS5 queries                                         │
+│  - sqlite-vec queries (given a vector, find neighbors)  │
+│  - Connectors (ingest external data)                    │
+│  - WebSocket to clients                                 │
+│  - DIDComm endpoint                                     │
+│                                                         │
+│  DOES NOT:                                              │
+│  - Generate embeddings                                  │
+│  - Decide what to search for                            │
+│  - Reason over results                                  │
+│  - Classify urgency                                     │
+│  - Assemble whispers                                    │
+└─────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────┐
+│  dina-brain (Python + ADK) — THE ANALYST                │
+│                                                         │
+│  OWNS:                                                  │
+│  - Search strategy (what to query, in what order)       │
+│  - Embedding generation (calls llama-server)            │
+│  - LLM reasoning (calls llama-server or cloud)          │
+│  - Silence classification (Tier 1/2/3)                  │
+│  - Whisper assembly                                     │
+│  - Agent orchestration (multi-step, ADK agents)         │
+│  - MCP delegation (OpenClaw)                            │
+│                                                         │
+│  DOES NOT:                                              │
+│  - Open SQLite files                                    │
+│  - Manage encryption keys                               │
+│  - Talk to clients directly                             │
+│  - Handle DIDComm                                       │
+└─────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────┐
+│  llama-server (llama.cpp) — THE HIRED CALCULATOR        │
+│                                                         │
+│  OWNS:                                                  │
+│  - Model inference (Gemma 3n, FunctionGemma, embeddings)│
+│                                                         │
+│  Called by BOTH core and brain:                          │
+│  - Core calls it for: PII scrubbing (regex misses)      │
+│  - Brain calls it for: everything else                  │
+│                                                         │
+│  Stateless. No database. No business logic.             │
+└─────────────────────────────────────────────────────────┘
+```
+
+The analogy: **core is the vault keeper** (stores, retrieves, encrypts, never interprets). **Brain is the analyst** (thinks, searches strategically, reasons, never holds keys). **llama-server is the hired calculator** (computes what it's asked, remembers nothing).
+
+### Observability & Self-Healing
+
+A sovereign node must stay alive without human intervention. A process can be "running" (PID exists) while the SQLite database is locked or a goroutine is deadlocked — Docker won't restart it because the container hasn't crashed. That's a zombie, not an agent.
+
+**Health endpoints** (on dina-core, port 8100 — internal only, never exposed to the internet):
+
+| Endpoint | Type | What It Checks | Cost |
+|----------|------|---------------|------|
+| `GET /healthz` | Liveness | HTTP server is responding | Near-zero — returns `200 OK` immediately |
+| `GET /readyz` | Readiness | SQLite vault is reachable and queryable | One `db.PingContext()` call with strict timeout |
+
+If `/healthz` times out, the Go runtime is likely deadlocked. If `/readyz` fails, the vault is locked or corrupted. Either way, Docker kills and restarts the container.
+
+**docker-compose healthcheck:**
+
+```yaml
+services:
+  dina-core:
+    restart: always
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8100/readyz"]
+      interval: 60s        # Check every minute
+      timeout: 5s          # Fail if response takes >5s
+      retries: 3           # Restart after 3 consecutive failures (3 min of downtime)
+      start_period: 20s    # Grace period for boot + vault unlock
+
+  dina-brain:
+    restart: always
+    depends_on:
+      dina-core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8200/healthz"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  llama-server:
+    restart: always
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8300/health"]
+      interval: 60s
+      timeout: 10s         # Model loading can be slow
+      retries: 3
+      start_period: 60s    # Gemma 3n takes ~30-45s to load
+```
+
+**Why `wget`?** Minimal Alpine-based images include `wget` but not `curl`. Works on the smallest possible containers.
+
+**Dependency chain:** dina-brain starts only after dina-core is healthy. This prevents the brain from crashing on startup because the vault isn't ready yet.
+
+**Structured logging** — all containers emit JSON to stdout via Go's `slog` and Python's `structlog`:
+
+```
+{"time":"2026-02-17T10:30:00Z","level":"ERROR","msg":"vault query failed","module":"storage","error":"database is locked","persona":"consumer"}
+```
+
+- **No file logs.** Prevents storage exhaustion over years of unattended runtime.
+- **Docker log rotation.** Capped via daemon.json or compose `logging` driver (max 10MB, 3 files).
+- **Future-proof.** If you ever add Dozzle or Loki, structured JSON is parsed automatically — search and filtering for free.
+
 ### Eight Layers
+
+The layers are numbered 0-7 but the diagram reads **top-down** (7 → 0), like the OSI model — Layer 7 is closest to the user, Layer 0 is the cryptographic foundation. Layer 3 (Reputation Graph) sits to the side because it's a shared data layer that multiple upper layers query, not a step in the linear flow.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -265,7 +528,7 @@ Every Dina has exactly one root identity — a cryptographic keypair generated d
 
 ```
 Root Identity
-├── Root keypair (Ed25519 or X25519)
+├── Root keypair (Ed25519)
 ├── Created: timestamp
 ├── Device origin: device fingerprint
 └── Recovery: BIP-39 mnemonic (24 words, written on paper)
@@ -275,47 +538,133 @@ Root Identity
 
 **Recovery:** BIP-39 standard mnemonic phrase. 24 words. User writes them down on paper. This is the only backup of the root identity. If you lose both the device and the paper, the identity is gone. This is by design — there is no "password reset" because there is no server that knows your password.
 
-**Technology choice: W3C Decentralized Identifiers (DIDs).** Specifically `did:dht` — which uses the Mainline DHT (BitTorrent's distributed hash table, the largest working DHT on the planet, 15M+ nodes). This gives every Dina a globally resolvable identity with no blockchain dependency and no central registry. Other Dinas find yours by looking up your DID in the DHT, which returns only your service endpoint (how to reach you) — never your name, location, or personal data.
+**Technology choice: W3C Decentralized Identifiers (DIDs).** Specifically `did:plc` — Bluesky's DID method, proven at scale (30M+ identities). `did:plc` stores a signed operation log in a public directory (the PLC Directory), giving every Dina a globally resolvable, key-rotatable identity with no blockchain dependency. Other Dinas find yours by resolving your DID against the PLC Directory, which returns only your DID Document (public key + service endpoint) — never your name, location, or personal data.
+
+**Why `did:plc`:**
+- **Key rotation.** If a key is compromised, the user signs a rotation operation with the old key. The PLC Directory updates the DID Document. No identity loss, no new DID needed.
+- **Account recovery.** Recovery keys (stored offline, separate from signing keys) can reclaim a DID even if the primary key is lost. Aligns with BIP-39 recovery philosophy.
+- **Go implementation exists.** Bluesky's `indigo` repository provides a production Go implementation of `did:plc` resolution and operations.
+- **Proven at scale.** 30M+ identities. The method works.
+- **Escape hatch via rotation op.** If Bluesky's PLC Directory ever becomes hostile, a rotation operation can redirect the DID to a `did:web` endpoint the user controls: "I am leaving `did:plc`. My new identity lives at `did:web:dina.alice.com`." The rotation is signed by the user's key — no permission needed from anyone.
+
+**Fallback: `did:web` as escape hatch.** If the PLC Directory becomes unavailable or adversarial, Dina supports `did:web` as a sovereignty escape. A `did:web` identifier resolves to a DID Document hosted at a well-known HTTPS path on the user's domain (e.g., `did:web:dina.alice.com` → `https://dina.alice.com/.well-known/did.json`). It piggybacks on the same Cloudflare/Tailscale ingress the Home Node already has. The tradeoff: `did:web` depends on DNS and a web server, so it's not fully decentralized. Both methods use the same Ed25519 keypair and DID Document format — the rotation op handles the transition transparently.
 
 ```
-did:dht:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK
+did:plc:z72i7hdynmk6r22z27h6tvur
 ```
 
-This DID resolves to a DID Document — a small public record containing the public key and relay endpoint:
+This DID resolves to a DID Document — a small public record containing the public key and service endpoint:
 
 ```json
 {
-    "id": "did:dht:z6Mk...",
+    "id": "did:plc:z72i7hdynmk6...",
     "service": [
         {
             "type": "DinaMessaging",
-            "serviceEndpoint": "https://relay3.dina.network/z6Mk..."
+            "serviceEndpoint": "https://dina.alice.com/didcomm"
         }
     ],
-    "verificationMethod": [{ "publicKeyMultibase": "z6Mk..." }]
+    "verificationMethod": [{ "type": "Multikey", "publicKeyMultibase": "z6Mk..." }]
 }
 ```
 
-The endpoint points to a relay server, not the user's device. The relay forwards encrypted blobs without reading them.
+The endpoint points to the user's Home Node (via tunnel). The PLC Directory only stores the signed operation log — it never holds keys, never reads messages, and can be exited via rotation op at any time.
 
 ### Personas (Compartments)
 
-Each persona is a derived keypair from the root, using hierarchical deterministic derivation (BIP-32 style).
+Each persona is a derived keypair from the root, using hierarchical deterministic derivation.
+
+### Key Derivation
+
+Two separate derivation schemes serve two different purposes:
+
+| Component | Purpose | Algorithm | Why |
+|-----------|---------|-----------|-----|
+| **Master Seed (DEK)** | The Root | BIP-39 mnemonic (24 words, 256-bit entropy) → PBKDF2 → 512-bit seed | Industry standard recovery. The seed IS the DEK — key-wrapped on disk by the passphrase-derived KEK. |
+| **Identity Keys** | Signing (`did:plc`), persona keypairs | **SLIP-0010** (Ed25519 hardened derivation) | Ed25519 is incompatible with BIP-32's secp256k1 math. SLIP-0010 provides equivalent HD paths with hardened-only derivation (no unsafe public derivation). |
+| **Vault Keys** | SQLCipher database encryption | **HKDF-SHA256** from persona key | Domain-separated symmetric keys for each persona's encrypted SQLite file |
+
+**Why not BIP-32:** BIP-32 uses point addition on the secp256k1 curve. Ed25519 keys use SHA-512 and bit clamping — fundamentally different algebra. Implementing BIP-32 on Ed25519 produces invalid keys or weakens curve security. BIP-32 also allows public derivation (`xpub` → child public keys), which is mathematically unsafe on Ed25519 without complex cryptographic tweaks. SLIP-0010 explicitly disables public derivation (hardened-only) to prevent this.
+
+**SLIP-0010 derivation paths:**
 
 ```
-Root Key
-├── /persona/consumer     → keypair for shopping, product interactions
-├── /persona/professional → keypair for work, LinkedIn-style interactions  
-├── /persona/social       → keypair for friends, Dina-to-Dina social
-├── /persona/health       → keypair for medical data
-├── /persona/financial    → keypair for banking, tax, insurance
-├── /persona/citizen      → keypair for government, legal identity
-└── /persona/custom/*     → user-defined compartments
+BIP-39 Mnemonic (24 words = 256-bit entropy)
+    │
+    ▼  PBKDF2 (mnemonic + optional passphrase → 512-bit seed)
+    │
+    Master Seed (512-bit) — this IS the DEK (Data Encryption Key)
+    │
+    └── SLIP-0010 Ed25519 Hardened Derivation
+        │
+        ├── m/44'/0'  → Root Identity Key (signs DID Document, root of trust)
+        │
+        ├── m/44'/1'  → /persona/consumer     (shopping, product interactions)
+        ├── m/44'/2'  → /persona/professional  (work, LinkedIn-style)
+        ├── m/44'/3'  → /persona/social        (friends, Dina-to-Dina)
+        ├── m/44'/4'  → /persona/health        (medical data)
+        ├── m/44'/5'  → /persona/financial     (banking, tax, insurance)
+        ├── m/44'/6'  → /persona/citizen       (government, legal identity)
+        └── m/44'/N'  → /persona/custom/*      (user-defined compartments)
 ```
 
-**Critical security property:** Personas are cryptographically unlinkable. Knowing the consumer keypair tells you nothing about the health keypair. Even Dina's own code cannot cross compartments without the root key authorizing a specific, logged operation. This is enforced by the key derivation — each persona's key is derived independently and cannot be reversed to the root without the root seed.
+Each persona's Ed25519 keypair is then used for two purposes:
+1. **Signing** — the persona's private key signs DIDComm messages and Reputation Graph entries
+2. **Vault encryption** — the persona's private key is fed through HKDF-SHA256 with a domain separator to derive the SQLCipher passphrase:
 
-**Data isolation:** Each persona has its own encrypted storage partition. The consumer persona's SQLite database is encrypted with the consumer key. The health persona's database is encrypted with the health key. Even if an attacker compromises one persona's key, they see nothing from the others.
+```
+Persona Key (Ed25519 private key from SLIP-0010)
+    │
+    └── HKDF-SHA256(ikm=persona_key, salt=user_salt, info="dina:vault:consumer:v1")
+        → 256-bit SQLCipher passphrase for consumer.sqlite
+    │
+    └── HKDF-SHA256(ikm=persona_key, salt=user_salt, info="dina:index:consumer:v1")
+        → 256-bit SQLCipher passphrase for consumer_index.sqlite
+```
+
+**Go implementation:** Use `github.com/stellar/go/exp/crypto/derivation` or equivalent SLIP-0010 library. Do not roll custom Ed25519 HD derivation.
+
+**Critical security property:** Personas are cryptographically unlinkable. Knowing the consumer keypair tells you nothing about the health keypair — hardened derivation means each child key is derived from the parent seed plus an index, with no mathematical relationship between siblings. Even Dina's own code cannot cross compartments without the root key authorizing a specific, logged operation.
+
+**Data isolation: Separate SQLite files per persona (Multi-Vault Architecture).** Each persona gets its own SQLCipher-encrypted SQLite file, with its own passphrase derived from the persona key. This is physical separation, not logical — there is no shared database with a `persona_id` column.
+
+```
+data/vaults/
+├── consumer.sqlite     ← Encrypted with consumer persona key
+├── social.sqlite       ← Encrypted with social persona key
+├── health.sqlite       ← Encrypted with health persona key
+├── financial.sqlite    ← Encrypted with financial persona key
+├── citizen.sqlite      ← Encrypted with citizen persona key
+├── professional.sqlite ← Encrypted with professional persona key
+└── identity.sqlite     ← Tier 0: root keys, persona keys, ZKP credentials
+```
+
+**Why physical separation, not a single DB:**
+- **The Exit Interview Test.** Leave your job? `rm professional.sqlite`. Physics guarantees the data is gone. No complex SQL queries, no missed FTS index entries, no lingering vector embeddings.
+- **Context fences at the OS level.** In "Weekend Mode," Dina only unlocks `social.sqlite` and `consumer.sqlite`. She literally *cannot* bother you about work because the work vault is locked.
+- **Blast radius containment.** Compromise of one persona's key exposes one file. The others are encrypted with independent keys.
+- **Right to delete.** `rm health.sqlite`. All medical data physically annihilated. No forensic recovery possible.
+
+**Unified search via SQLCipher ATTACH:** When the user authorizes multi-persona queries, Dina uses SQLite's `ATTACH DATABASE` to mount multiple vaults simultaneously with different keys:
+
+```go
+// Open primary vault
+db, _ := sql.Open("sqlite3", "file:consumer.sqlite?_pragma_key=consumerKey")
+
+// Attach secondary vault with its own key
+db.Exec("ATTACH DATABASE 'social.sqlite' AS social KEY 'socialKey'")
+
+// Query across both (unified search)
+rows, _ := db.Query(`
+    SELECT body_text FROM main.documents
+    UNION ALL
+    SELECT body_text FROM social.documents
+`)
+```
+
+**Context modes:**
+- **Single-persona mode (default):** Only the active persona's vault is unlocked. Health bot queries? Only `health.sqlite` is mounted. Shopping? Only `consumer.sqlite`.
+- **Unified mode:** User explicitly authorizes cross-persona search. "Does my daughter's recital clash with the board meeting?" requires both `social.sqlite` and `professional.sqlite` to be mounted. Authorization is explicit and logged.
 
 ### Zero-Knowledge Proof Credentials (Trust Rings)
 
@@ -372,41 +721,46 @@ Six tiers (Tier 0-5). Each with different encryption, sync, and backup strategie
 | Property | Value |
 |----------|-------|
 | Contents | Emails, chat messages, calendar events, contacts, photos, documents |
-| Encryption | AES-256-GCM, key derived from persona key (each persona has own partition) |
-| Storage engine | SQLite with FTS5 (full-text search) |
+| Encryption | SQLCipher whole-database encryption (AES-256-CBC, per-page). Key derived from persona key via HKDF (persona key → HKDF-SHA256 → SQLCipher passphrase). Each persona is a separate `.sqlite` file. |
+| Storage engine | SQLite with FTS5 (full-text search). FTS index is encrypted transparently by SQLCipher. |
 | Location | Home node (source of truth). Rich clients cache configurable subsets. |
 | Client cache | Phone: recent 6 months. Laptop: configurable (up to everything). Thin clients: no local cache. |
-| Backup | Encrypted snapshot to blob storage of user's choice (S3, Backblaze, NAS, second VPS) |
-| Breach impact | Private communications exposed. Serious but persona isolation limits blast radius. |
+| Backup | Encrypted snapshot to blob storage of user's choice (S3, Backblaze, NAS, second VPS). Each persona file backed up independently. |
+| Breach impact | Compromise of one persona's SQLite file exposes that persona only. Physical file separation limits blast radius. |
 
-**Schema sketch for Vault:**
+**Schema sketch for Vault (per-persona SQLCipher database):**
 ```sql
+-- DINA VAULT SCHEMA (v2)
+-- Storage: SQLCipher Encrypted Database (whole-file, AES-256-CBC per page)
+-- Key: Master Key → SLIP-0010 → persona key → HKDF-SHA256 → SQLCipher passphrase
+-- One file per persona: consumer.sqlite, health.sqlite, etc.
+
 -- Core ingestion table
-CREATE TABLE vault_items (
+CREATE TABLE documents (
     id TEXT PRIMARY KEY,           -- UUID
-    persona TEXT NOT NULL,         -- which persona owns this
     source TEXT NOT NULL,          -- 'gmail', 'whatsapp', 'calendar', etc.
     source_id TEXT,                -- original ID in source system
     item_type TEXT NOT NULL,       -- 'email', 'message', 'event', 'contact', 'photo'
     timestamp INTEGER NOT NULL,   -- unix timestamp of original item
     ingested_at INTEGER NOT NULL,  -- when Dina pulled it
-    content_encrypted BLOB,        -- AES-256-GCM encrypted content
-    metadata_json TEXT,            -- non-sensitive metadata (for search indexing)
-    fts_text TEXT                  -- plaintext for FTS5 (encrypted at DB level)
+    body_text TEXT,                -- the actual content (encrypted at rest by SQLCipher)
+    author TEXT,                   -- sender/creator
+    recipients TEXT,               -- JSON array of recipients
+    metadata_json TEXT             -- structured metadata (encrypted at rest by SQLCipher)
 );
 
--- Full-text search index
-CREATE VIRTUAL TABLE vault_fts USING fts5(fts_text, content=vault_items, content_rowid=rowid);
+-- Full-text search index (encrypted at rest by SQLCipher — no plaintext leakage)
+CREATE VIRTUAL TABLE documents_fts USING fts5(body_text, content=documents, content_rowid=rowid, tokenize='porter');
 
 -- Relationships (who sent what to whom)
+-- No persona column needed — the persona is implicit from which .sqlite file this lives in
 CREATE TABLE relationships (
     id TEXT PRIMARY KEY,
-    persona TEXT NOT NULL,
     entity_name TEXT,              -- "Sancho", "Priya", "Dr. Kumar"
     entity_type TEXT,              -- 'person', 'org', 'bot'
     last_interaction INTEGER,
     interaction_count INTEGER,
-    notes_encrypted BLOB           -- Dina's inferred notes about this relationship
+    notes TEXT                     -- Dina's inferred notes (encrypted at rest by SQLCipher)
 );
 ```
 
@@ -415,8 +769,8 @@ CREATE TABLE relationships (
 | Property | Value |
 |----------|-------|
 | Contents | Embeddings, summaries, relationship graphs, inferred patterns |
-| Encryption | AES-256-GCM, separate key from Tier 1 |
-| Storage engine | SQLite for structured data + vector store for embeddings |
+| Encryption | SQLCipher whole-database encryption, per-persona file, key derived from persona key (separate from Tier 1 vault key via HKDF domain separation) |
+| Storage engine | SQLite for structured data + sqlite-vec for vector embeddings |
 | Location | Home node (primary). Rich clients may build a local subset from their cache for offline search. |
 | Backup | Not backed up separately. Regenerable from Tier 1. |
 | Breach impact | Attacker sees Dina's inferences. Metadata, not raw data. |
@@ -505,19 +859,25 @@ Last-resort recovery. Survives Home Node destruction, backup ransomware, and tot
 ### Encryption Architecture
 
 ```
-Root Key (stored encrypted on Home Node; hardware-backed on client devices)
+Master Seed (BIP-39 mnemonic → stored encrypted on Home Node; hardware-backed on client devices)
     │
-    ├── Persona Key: /consumer
-    │       ├── Vault Key (Tier 1, consumer partition)
-    │       ├── Index Key (Tier 2, consumer partition)
-    │       └── Staging Key (Tier 4)
+    ├── m/44'/0' → Root Identity Key (signs DID Document)
     │
-    ├── Persona Key: /health
-    │       ├── Vault Key (Tier 1, health partition)
-    │       └── Index Key (Tier 2, health partition)
+    ├── m/44'/1' → Persona Key: /consumer
+    │       ├── HKDF("dina:vault:consumer:v1") → SQLCipher key for consumer.sqlite (Tier 1)
+    │       └── HKDF("dina:index:consumer:v1") → SQLCipher key for consumer_index.sqlite (Tier 2)
+    │
+    ├── m/44'/4' → Persona Key: /health
+    │       ├── HKDF("dina:vault:health:v1") → SQLCipher key for health.sqlite (Tier 1)
+    │       └── HKDF("dina:index:health:v1") → SQLCipher key for health_index.sqlite (Tier 2)
+    │
+    ├── m/44'/2'-6' → Persona Keys: /professional, /social, /financial, /citizen
+    │       └── (same HKDF pattern — one .sqlite file per persona per tier)
+    │
+    ├── Staging Key → SQLCipher passphrase for staging.sqlite (Tier 4, shared)
     │
     ├── Backup Encryption Key (for off-node backups)
-    │       └── Wraps Tier 1 + Tier 3 snapshots for backup storage
+    │       └── Wraps per-persona .sqlite files for backup storage
     │
     ├── Archive Key (for Tier 5 Deep Archive)
     │       └── Wraps full vault snapshots for cold storage
@@ -530,28 +890,56 @@ Root Key (stored encrypted on Home Node; hardware-backed on client devices)
             └── Signs anonymized outcome data
 ```
 
-All derived using HKDF (HMAC-based Key Derivation Function) from the root. Each key is domain-separated so compromise of one doesn't reveal others.
+**Two derivation layers:** Identity keys (Ed25519 keypairs for signing) are derived via SLIP-0010 hardened paths from the master seed. Vault keys (256-bit symmetric keys for SQLCipher) are derived via HKDF-SHA256 from the persona's private key, domain-separated by info string. Compromise of one vault key reveals nothing about other vaults or identity keys.
 
-**Home node key management:** The root key is stored on the home node encrypted with a key derived from the user's passphrase (Argon2id). On client devices with hardware security modules, delegated device keys are generated and stored in Secure Enclave / StrongBox / TPM. The root key is NEVER stored in plaintext at rest on any system.
+### Master Key Storage (Key Wrapping)
+
+The Master Seed (DEK — Data Encryption Key) is the 512-bit seed derived from the BIP-39 mnemonic via PBKDF2. It is stored on disk, encrypted by a Key Encryption Key (KEK) derived from the user's passphrase. This is standard key wrapping, not "password-encrypted storage."
+
+```
+Passphrase ("correct horse battery staple")
+    │
+    ▼  Argon2id v1.3 (memory: 64 MB, time: 1 iteration, parallelism: 4 lanes)
+    │
+    KEK (32-byte Key Encryption Key)
+    │
+    ▼  AES-256-GCM wrap (or XChaCha20-Poly1305)
+    │
+    Encrypted Master Key blob → stored at keys/master.key.enc
+    │  (plus cleartext 16-byte salt for Argon2id)
+    │
+    ▼  On unlock: KEK decrypts blob → Master Key loaded into RAM
+    │
+    Master Key (DEK)
+    │
+    ├── SLIP-0010 derivation → persona identity keys (Ed25519)
+    └── HKDF derivation → per-persona SQLCipher passphrases
+```
+
+**Why key wrapping:** Changing the user's passphrase re-wraps the Master Key with a new KEK — no need to re-encrypt the entire multi-gigabyte database. The Master Key itself never changes unless the identity is rotated.
+
+**Home node:** `keys/master.key.enc` + salt stored on filesystem. On client devices with hardware security modules, delegated device keys are generated and stored in Secure Enclave / StrongBox / TPM. The Master Key is NEVER stored in plaintext at rest on any system.
 
 ### Data Safety Protocol (Corruption Immunity)
 
 In a sovereign architecture, there's no SRE team to restore the database. The architecture must defend against code bugs, power failures, and operator error at every level.
 
-**Layer 1: Atomic Writes (Database Level)**
+**Protection 1: Atomic Writes (Database Level)**
 
 SQLite is robust, but only if configured correctly. A power outage mid-write can corrupt the file.
 
 ```sql
 -- Run on every connection open (Home Node and client cache)
-PRAGMA journal_mode=WAL;       -- Write-Ahead Logging: changes go to -wal file first
-PRAGMA synchronous=NORMAL;     -- Safe in WAL mode, significantly faster than FULL
-PRAGMA foreign_keys=ON;        -- Prevent orphaned data corruption
+PRAGMA key='<hex-encoded-256-bit-key>';  -- SQLCipher: unlock the encrypted database
+PRAGMA cipher_page_size=4096;            -- SQLCipher: page size (match default)
+PRAGMA journal_mode=WAL;                 -- Write-Ahead Logging: changes go to -wal file first
+PRAGMA synchronous=NORMAL;               -- Safe in WAL mode, significantly faster than FULL
+PRAGMA foreign_keys=ON;                  -- Prevent orphaned data corruption
 ```
 
 WAL mode means: if the server crashes mid-write, the main `.sqlite` is untouched. On restart, SQLite sees the incomplete `-wal` file and automatically rolls back. The database is always in a consistent state.
 
-**Layer 2: Pre-Flight Snapshots (Application Level)**
+**Protection 2: Pre-Flight Snapshots (Application Level)**
 
 Before any schema migration or major operation, Dina creates a point-in-time backup.
 
@@ -570,9 +958,9 @@ MIGRATION SAFETY PROTOCOL:
   4b. If integrity_check ≠ "ok" → ROLLBACK. Restore from backup. Alert user.
 ```
 
-This runs automatically on every `dina-server` update. The user never sees it unless something goes wrong — in which case their vault is restored to the state 1 second before the update.
+This runs automatically on every `dina-core` update. The user never sees it unless something goes wrong — in which case their vault is restored to the state 1 second before the update.
 
-**Layer 3: File System Snapshots (Infrastructure Level)**
+**Protection 3: File System Snapshots (Infrastructure Level)**
 
 For managed hosting (Level 1/2) and power-user self-hosting:
 
@@ -582,11 +970,11 @@ For managed hosting (Level 1/2) and power-user self-hosting:
 
 Recovery: `zfs rollback dina/users/did_user_A@15min_ago` — file system instantly reverts to that point in time.
 
-**Layer 4: Off-Site Backup (Network Level)**
+**Protection 4: Off-Site Backup (Network Level)**
 
 Encrypted vault snapshots pushed to remote blob storage (S3, Backblaze, second VPS). Covers disk failure, datacenter outage, theft.
 
-**Layer 5: Deep Archive (Tier 5)**
+**Protection 5: Deep Archive (Storage Tier 5)**
 
 Immutable cold storage with compliance lock. Covers ransomware, total infrastructure loss, catastrophic operator error.
 
@@ -821,7 +1209,7 @@ Whisper delivered:
 
 ### Interrupt Classification (Silence Protocol)
 
-Every incoming notification/event passes through the Silence Filter:
+Every incoming notification/event passes through the Silence Filter. The filter assigns one of three **priority levels** (not to be confused with storage tiers 0-5):
 
 ```
 Incoming signal (email, notification, calendar alert, etc.)
@@ -829,7 +1217,7 @@ Incoming signal (email, notification, calendar alert, etc.)
 ┌─────────────────────────────────────┐
 │  Silence Filter                     │
 │                                     │
-│  1. Is this a Tier 1 (Fiduciary)?  │
+│  1. Is this Priority 1 (Fiduciary)? │
 │     Heuristics + local LLM check:  │
 │     - Contains "urgent" + sender   │
 │       is in trusted contacts?      │
@@ -838,19 +1226,19 @@ Incoming signal (email, notification, calendar alert, etc.)
 │     - Health alert?                │
 │     → YES: Interrupt immediately   │
 │                                     │
-│  2. Is this Tier 2 (Solicited)?    │
+│  2. Is this Priority 2 (Solicited)?│
 │     Check user's pre-authorized    │
 │     notification rules:            │
 │     - "Alert me if Bitcoin > $100K"│
 │     - "Wake me at 7 AM"           │
 │     → YES: Notify                  │
 │                                     │
-│  3. Everything else = Tier 3       │
+│  3. Everything else = Priority 3   │
 │     → SILENT. Queue for briefing.  │
 └─────────────────────────────────────┘
 ```
 
-The daily briefing summarizes queued Tier 3 items. Optional — user can disable.
+The daily briefing summarizes queued Priority 3 items. Optional — user can disable.
 
 ---
 
@@ -917,7 +1305,7 @@ Response:
         }
     ],
     "bot_signature": "...",           // cryptographic signature for verification
-    "bot_did": "did:dht:z6Mk..."     // bot's identity in Reputation Graph
+    "bot_did": "did:plc:..."           // bot's identity in Reputation Graph
 }
 ```
 
@@ -950,7 +1338,7 @@ How does Dina find bots in the first place?
 
 - **Phase 1:** Hardcoded registry. The protocol ships with a default list of known bots (including the first review bot you build). Users can add/remove.
 - **Phase 2:** Decentralized bot registry on the Reputation Graph. Bots self-register, and their reputation determines visibility.
-- **Phase 3:** Bot-to-bot recommendations. "This query is outside my domain. Try the Medical Bot at did:dht:z6Mk..."
+- **Phase 3:** Bot-to-bot recommendations. "This query is outside my domain. Try the Medical Bot at did:plc:..."
 
 ---
 
@@ -965,11 +1353,11 @@ Your Dina wants to talk to Sancho's Dina
         ↓
 Step 1: You already have Sancho's DID (exchanged via QR code when you first connected)
         ↓
-Step 2: Resolve DID via DHT lookup
-  - Query Mainline DHT for did:dht:z6Mk...(sancho)
+Step 2: Resolve DID via PLC Directory
+  - Query PLC Directory for did:plc:...(sancho)
   - Returns Sancho's DID Document
   - DID Document contains: public key + Home Node endpoint
-  - DHT reveals nothing about Sancho — just how to reach his Dina
+  - PLC Directory reveals nothing about Sancho — just how to reach his Dina
         ↓
 Step 3: Connect to Sancho's Home Node directly
   - https://sancho-dina.example.com/didcomm  (or IP:port)
@@ -993,8 +1381,8 @@ Dina-to-Dina messages follow a strict schema:
 ```json
 {
     "type": "dina/social/arrival",
-    "from": "did:dht:z6Mk...(sancho)",
-    "to": "did:dht:z6Mk...(you)",
+    "from": "did:plc:...(sancho)",
+    "to": "did:plc:...(you)",
     "timestamp": "2026-02-15T10:30:00Z",
     "payload": {
         "event": "departing_home",
@@ -1037,7 +1425,7 @@ Sharing Rules for "Seller ABC" (consumer persona):
 How do messages physically travel between Dinas?
 
 **Phase 1: Direct Home Node to Home Node**
-- Your DID Document in the DHT points to your Home Node's endpoint
+- Your DID Document (via PLC Directory) points to your Home Node's endpoint
 - Messages go directly: Your Home Node → Sancho's Home Node
 - Both are always-on servers — no relay needed for the common case
 - End-to-end encrypted (DIDComm v2.1). Even if traffic is intercepted, content is unreadable.
@@ -1116,7 +1504,7 @@ The Reputation Graph is NOT a single database. It's a distributed system with th
 ```json
 {
     "type": "expert_attestation",
-    "expert_did": "did:dht:z6Mk...",
+    "expert_did": "did:plc:...",
     "expert_trust_ring": 3,
     "expert_credentials": ["youtube_channel_500k_subs", "verified_engineer"],
     "product_category": "office_chairs",
@@ -1177,12 +1565,12 @@ Handles two threats: (1) Chair Company trying to delete your bad review, (2) you
 
 **Creation:** When you write a review, you sign it with your private key.
 ```
-Review { content: "Bad Chair", author: "did:dht:123...", sig: "abc..." }
+Review { content: "Bad Chair", author: "did:plc:abc...", sig: "abc..." }
 ```
 
 **Deletion:** To delete, you send a Tombstone message signed by the same key.
 ```
-Tombstone { target: "review_id_555", author: "did:dht:123...", sig: "xyz..." }
+Tombstone { target: "review_id_555", author: "did:plc:abc...", sig: "xyz..." }
 ```
 
 **Server logic:** Receive deletion request → look up original review → verify signature matches author → if match: delete. If no match: reject. The Chair Company cannot forge a deletion request because they don't have your private key.
@@ -1348,7 +1736,7 @@ User's license needs renewal
 dina-brain detects (from ingested email or calendar):
   "License expires in 7 days. User hasn't acted."
         ↓
-dina-brain classifies: Tier 2 (user should know) or Tier 1 (fiduciary — harm if missed)
+dina-brain classifies: Priority 2 (user should know) or Priority 1 (fiduciary — harm if missed)
         ↓
 Option A — Notify only:
   Whisper: "Your license expires next week."
@@ -1478,19 +1866,19 @@ Estate plan stored in Tier 0:
         "beneficiaries": [
             {
                 "name": "Daughter",
-                "dina_did": "did:dht:z6Mk...",
+                "dina_did": "did:plc:...",
                 "receives": ["/persona/social", "/persona/health"],
                 "access_type": "full_decrypt"
             },
             {
                 "name": "Spouse",
-                "dina_did": "did:dht:z6Mk...",
+                "dina_did": "did:plc:...",
                 "receives": ["/persona/financial", "/persona/citizen"],
                 "access_type": "full_decrypt"
             },
             {
                 "name": "Colleague",
-                "dina_did": "did:dht:z6Mk...",
+                "dina_did": "did:plc:...",
                 "receives": ["/persona/professional"],
                 "access_type": "read_only_90_days"
             }
@@ -1547,8 +1935,8 @@ Blockchain has exactly one role: **timestamp anchoring.** Federated servers repo
 |-----------|-----------|-----|
 | **Home Node (dina-core)** | | |
 | Core runtime | Go + net/http (HTTP server) | Fast compilation, single static binary, excellent crypto stdlib, goroutines for concurrency |
-| Database | SQLite + FTS5 (via modernc.org/sqlite — pure Go, no CGO) | Battle-tested, single file, no separate DB server |
-| Vector search | sqlite-vec via CGO (Phase 1), or Go-native vector search (Phase 2) | sqlite-vec requires CGO; alternatively, embed vectors in brain and query via internal API |
+| Database | SQLite + SQLCipher + FTS5 (via `mattn/go-sqlite3` with CGO) | Battle-tested, one encrypted file per persona, no separate DB server. SQLCipher provides transparent whole-database AES-256 encryption. |
+| Vector search | Phase 1: vectors stored and queried in dina-brain (Python, sqlite-vec). Phase 2: sqlite-vec in core via CGO. | Brain handles embeddings initially; core handles structured/FTS queries. Clean separation. |
 | PII scrubbing (hot path) | Regex + calls to llama-server | Fast path in Go, LLM fallback for ambiguous cases |
 | Client ↔ Node protocol | DIDComm v2.1 over WebSocket (TLS) | Encrypted, authenticated, standards-based |
 | Home Node ↔ Home Node | DIDComm v2.1 (direct or via relay), Hyperledger Aries Framework Go | Always-on agent communication, Apache 2.0 |
@@ -1564,11 +1952,13 @@ Blockchain has exactly one role: **timestamp anchoring.** Federated servers repo
 | Development | docker-compose (3 containers: core, brain, llama-server) | One-command startup, clean separation |
 | Managed hosting | docker-compose or Fly.io | Same containers, orchestrated by hosting operator |
 | **Identity & Crypto** | | |
-| Identity | W3C DIDs (did:dht on Mainline DHT) | Open standard, globally resolvable, no blockchain, 15M+ nodes |
-| Key management | BIP-32 HD derivation, BIP-39 mnemonic | Proven, widely supported |
-| Encryption | AES-256-GCM, X25519, Ed25519 | Industry standard, fast, hardware-accelerated |
-| Key derivation | HKDF | Standard, domain-separated |
-| Key storage (Home Node) | Argon2id-encrypted keyfile | Passphrase-protected at rest |
+| Identity | W3C DIDs (`did:plc` via PLC Directory) | Open standard, globally resolvable, key rotation, 30M+ identities, Go implementation available. Escape hatch: rotation op to `did:web`. |
+| Key management | SLIP-0010 HD derivation (Ed25519), BIP-39 mnemonic | Proven, Ed25519-compatible |
+| Vault encryption | SQLCipher (AES-256-CBC per page, transparent) | Whole-database encryption for persona vaults. FTS5/sqlite-vec indices encrypted transparently. |
+| Wire/key encryption | AES-256-GCM, X25519, Ed25519 | Industry standard for DIDComm, key wrapping, archive snapshots |
+| Identity key derivation | SLIP-0010 (hardened Ed25519 HD paths) | Ed25519-compatible, no unsafe public derivation. Go: `stellar/go/exp/crypto/derivation` |
+| Vault key derivation | HKDF-SHA256 (from persona key, domain-separated) | Symmetric keys for SQLCipher, independent per persona per tier |
+| Key storage (Home Node) | Key Wrapping: Passphrase → Argon2id (KEK) → AES-256-GCM wraps Master Key (DEK) | Standard key wrapping. Passphrase change re-wraps DEK without re-encrypting database. |
 | Key storage (client) | Secure Enclave (iOS), StrongBox (Android), TPM (desktop) | Hardware-backed where available |
 | **Client Devices** | | |
 | Android client | Kotlin + Jetpack Compose | Native Android, NotificationListener for WhatsApp |
@@ -1577,13 +1967,17 @@ Blockchain has exactly one role: **timestamp anchoring.** Federated servers repo
 | On-device LLM (rich clients) | LiteRT-LM (Android), llama.cpp (desktop) | Latency-sensitive tasks: quick classification, offline drafting |
 | Thin clients (glasses, watch) | Web-based via authenticated WebSocket | No local processing, streams from Home Node |
 | **Infrastructure** | | |
-| DID resolution | Mainline DHT (did:dht) | Largest working DHT, 15M+ nodes, battle-tested |
+| DID resolution | PLC Directory (`did:plc`), `did:web` escape hatch | `did:plc`: proven at 30M+ scale, key rotation, Go implementation (`bluesky-social/indigo`). `did:web`: sovereignty escape if PLC Directory becomes adversarial — rotation op transitions transparently. |
 | Push to clients | FCM/APNs (Phase 1), UnifiedPush (Phase 2) | Wake clients when Home Node has updates |
 | Backup | Any blob storage (S3, Backblaze, NAS) | Encrypted snapshots of Home Node vault |
 | Reputation Graph | Federated servers + signed tombstones (permanent). Merkle root hash anchoring to L2 (Phase 3) for timestamp proofs. | Sovereignty requires deletion. Federation + crypto signatures = deletable + verifiable. |
 | ZKP | Semaphore V4 (PSE/Ethereum Foundation) | Production-proven (World ID), off-chain proof generation |
-| Serialization | MessagePack (Phase 1), Protobuf (Phase 2) | Binary, compact, faster than JSON |
+| Serialization | JSON (Phase 1), MessagePack or Protobuf (Phase 2) | JSON is debuggable and sufficient for core↔brain traffic volume. Binary serialization deferred until profiling shows it matters. |
 | Containerization | Docker + docker-compose | Single-command Home Node deployment: `docker compose up -d` |
+| **Observability** | | |
+| Health probes | `/healthz` (liveness), `/readyz` (readiness) | Docker kills and restarts zombie containers automatically |
+| Logging | Go `slog` + Python `structlog` → JSON to stdout | No file logs; Docker log rotation handles retention |
+| Self-healing | `restart: always` + healthcheck + dependency chain | Brain waits for core; all containers auto-recover |
 | **Data Safety** | | |
 | Database config | WAL mode + `synchronous=NORMAL` | Crash-safe atomic writes |
 | Migration safety | `VACUUM INTO` + `PRAGMA integrity_check` | Pre-flight snapshot before every schema change |
@@ -1604,7 +1998,7 @@ Blockchain has exactly one role: **timestamp anchoring.** Federated servers repo
 The Home Node runs three containers orchestrated by docker-compose: dina-core (Go/net/http — vault, keys, DIDComm), dina-brain (Python/Google ADK — agent reasoning), and llama-server (llama.cpp — local LLM). No separate database server, no Kubernetes.
 
 **The docker-compose stack:**
-- dina-core: Go binary + SQLite vault
+- dina-core: Go binary + SQLCipher vaults (one encrypted file per persona)
 - dina-brain: Python + Google ADK agent loop
 - llama-server: llama.cpp + Gemma 3n GGUF model
 - Input: `VAULT_PASSPHRASE` (env var or passed via client device at startup)
@@ -1663,7 +2057,7 @@ When the Home Node has new data (ingested email, incoming Dina-to-Dina message, 
 | Android | Android Keystore API (StrongBox-backed) | Key generation, signing (Ed25519), key agreement (X25519). `setIsStrongBoxBacked(true)`. |
 | iOS | Security Framework + Secure Enclave | `SecKeyCreateRandomKey` with `kSecAttrTokenIDSecureEnclave`. |
 | Desktop | TPM 2.0 via `tpm2-tss` (Linux), CryptoAPI: NCrypt (Windows), Secure Enclave (macOS) | Falls back to encrypted keyfile if no TPM. |
-| Home Node (VPS) | Argon2id-encrypted keyfile | No hardware security on most VPS. Compensated by full-disk encryption + process isolation. |
+| Home Node (VPS) | Key-wrapped Master Key (Argon2id KEK → AES-256-GCM) | No hardware security on most VPS. Compensated by full-disk encryption + process isolation. |
 
 ### What We Explicitly Don't Need
 
@@ -1678,7 +2072,7 @@ When the Home Node has new data (ingested email, incoming Dina-to-Dina message, 
 | **Blockchain (L1)** | Gas costs, latency, complexity. Immutability violates sovereignty (right to delete). Federated servers + signed tombstones handle the Reputation Graph. Only use case is L2 Merkle root hash anchoring for timestamp proofs (Phase 3). |
 | **CRDTs / Automerge** | Designed for peer-to-peer conflict resolution. With a Home Node as source of truth, client-server sync is simpler and sufficient. May reconsider for Phase 3 if we add collaborative features. |
 
-Guiding principle: **one user, three containers, one machine, one SQLite database, one always-on endpoint.**
+Guiding principle: **one user, three containers, one machine, one SQLite file per persona, one always-on endpoint.**
 
 ---
 
@@ -1700,11 +2094,13 @@ Guiding principle: **one user, three containers, one machine, one SQLite databas
 
 **8. Home Node security surface.** An always-on server with your encrypted data is a target. Must be hardened: automatic updates, minimal attack surface (three containers, no open ports except DIDComm endpoint), fail2ban-style rate limiting, encrypted at rest. If the VPS is compromised, the attacker gets encrypted blobs they can't read — but they can DoS your Dina.
 
-**9. Data corruption in sovereign model.** No SRE team to restore the database. A bug that corrupts `vault.sqlite` means loss of user's memory. The 5-layer corruption immunity stack (WAL → pre-flight snapshots → ZFS → off-site backup → Tier 5) addresses this, but must be implemented from Day 1.
+**9. Data corruption in sovereign model.** No SRE team to restore the database. A bug that corrupts a persona vault file means loss of that persona's memory. The 5-level corruption immunity stack (WAL → pre-flight snapshots → ZFS → off-site backup → Tier 5) addresses this, but must be implemented from Day 1.
 
 ---
 
-## Current State (v0.01) → Target Architecture
+## Current State (v0.4) → Target Architecture
+
+> **Version note:** The README uses phase-based versioning (v0.1 Eyes, v0.2 Voice, v0.3 Identity, v0.4 Memory). This section refers to the entire current monolith as "v0.4" — the state at the end of the Memory phase, before the rewrite into the three-container sidecar architecture.
 
 ### What Works Today
 
@@ -1714,22 +2110,22 @@ Guiding principle: **one user, three containers, one machine, one SQLite databas
 | Semantic memory | Local vector database at `~/.dina/memory/`, persists across sessions | Layer 1 (Storage) — Tier 2 Index |
 | RAG-powered Q&A | Natural language → search memory → contextual answer | Layer 6 (Intelligence) |
 | Cryptographic signing | Ed25519 signature on every verdict, `/verify` command | Layer 0 (Identity) |
-| Self-sovereign identity | did:key (pure Python) + did:dht (optional) | Layer 0 (Identity) |
+| Self-sovereign identity | did:key (pure Python) + did:plc (target) | Layer 0 (Identity) |
 | Decentralized vault | Dual-write to Ceramic Network (when configured) | Layer 1 (Storage) — will migrate to federated Reputation Graph |
 | Multi-provider LLM | Ollama (local) + Gemini (cloud), configurable routing | Layer 6 (Intelligence) |
 | REPL interface | `/history`, `/search`, `/identity`, `/verify`, `/vault`, `/quit` | Human Interface |
 
 ### Migration Path
 
-v0.01 is a monolithic Python application. The target is the three-container sidecar architecture. The migration is incremental:
+v0.4 is a monolithic Python application. The target is the three-container sidecar architecture. The migration is incremental:
 
-1. **Phase 1a (now → 6 weeks):** Extract the agent reasoning logic from v0.01 into dina-brain running on Google ADK. The YouTube review bot, memory search, and RAG become ADK tools. The REPL becomes a thin client that talks to the brain.
+1. **Phase 1a (now → 6 weeks):** Extract the agent reasoning logic from v0.4 into dina-brain running on Google ADK. The YouTube review bot, memory search, and RAG become ADK tools. The REPL becomes a thin client that talks to the brain.
 
 2. **Phase 1b (parallel):** Build dina-core in Go. Start with the SQLite vault skeleton, DID key management (porting the Ed25519/did:key logic from Python to Go), and the internal API (`/v1/vault/query`, `/v1/vault/store`, `/v1/did/sign`). Go's standard library `crypto/ed25519` and `crypto/aes` handle the cryptography natively.
 
 3. **Phase 1c (integration):** Wire dina-brain to call dina-core's API instead of managing its own storage. Add llama-server container. `docker-compose up` runs all three.
 
-4. **v0.01 retirement:** Once the sidecar architecture handles everything v0.01 does, the monolithic REPL is deprecated. Its code lives on as reference.
+4. **v0.4 retirement:** Once the sidecar architecture handles everything v0.4 does, the monolithic REPL is deprecated. Its code lives on as reference.
 
 ---
 
@@ -1753,8 +2149,8 @@ DINA-BRAIN (Python + Google ADK):
   ✓ Guardian angel reasoning loop
   ✓ Silence filter / interrupt classification
   ✓ Context assembly for whispers
-  ✓ YouTube review bot (ported from v0.01)
-  ✓ Semantic memory search (ported from v0.01)
+  ✓ YouTube review bot (ported from v0.4)
+  ✓ Semantic memory search (ported from v0.4)
   ✓ LLM routing: local (llama-server) vs cloud (Claude/Gemini)
   ✓ MCP integration for external agents (OpenClaw)
   ✗ Multi-agent orchestration (Phase 2)
@@ -1769,11 +2165,19 @@ DOCKER-COMPOSE:
   ✓ Three-container orchestration (core + brain + llama-server)
   ✓ Internal network (containers talk on localhost)
   ✓ Single `docker compose up -d` deployment
+  ✓ Healthchecks on all three containers (/healthz, /readyz)
+  ✓ Dependency chain (brain waits for core healthy)
+  ✓ `restart: always` with automatic recovery on failure
+
+OBSERVABILITY:
+  ✓ Structured JSON logging (Go slog, Python structlog) to stdout
+  ✓ No file logs (Docker log rotation handles retention)
+  ✗ Dozzle/Loki log viewer (optional, Phase 2)
 
 Layer 0: Identity
-  ✓ Root key generation + Argon2id-encrypted storage on Home Node
+  ✓ Root key generation + key-wrapped storage on Home Node (Argon2id KEK → AES-256-GCM)
   ✓ BIP-39 recovery
-  ✓ DID generation (did:dht on Mainline DHT)
+  ✓ DID generation (did:plc via PLC Directory, did:web as escape hatch)
   ✓ Two personas: /consumer and /social
   ✓ Device-delegated keys for client authentication
   ✗ ZKP credentials (Phase 2)
@@ -1817,7 +2221,7 @@ Layer 7: Action Layer
 
 Layer 4: Dina-to-Dina
   ✓ DID exchange via QR code
-  ✓ DHT-based endpoint resolution (points to Home Node)
+  ✓ PLC Directory endpoint resolution (points to Home Node)
   ✓ Basic encrypted messaging (Home Node ↔ Home Node)
   ✗ Full protocol with sharing rules (Phase 2)
 
@@ -1838,8 +2242,8 @@ CLIENT (Phase 1: Android only):
 
 **Build order:**
 1. llama-server — `docker run` with Gemma 3n (day 1, 5 minutes)
-2. dina-brain — Python + Google ADK, guardian angel loop, port v0.01 review bot and memory into ADK tools (2-3 weeks)
-3. dina-core — Go + net/http, SQLite vault skeleton (modernc.org/sqlite), DID key management (crypto/ed25519), internal API (2-3 weeks, parallel with brain)
+2. dina-brain — Python + Google ADK, guardian angel loop, port v0.4 review bot and memory into ADK tools (2-3 weeks)
+3. dina-core — Go + net/http, SQLCipher vault skeleton (mattn/go-sqlite3), DID key management (crypto/ed25519), internal API (2-3 weeks, parallel with brain)
 4. Wire together — docker-compose, core↔brain API integration, end-to-end Sancho moment flow (1 week)
 5. Android client — Kotlin, connect to Home Node (Phase 1 follow-on)
 
@@ -1858,7 +2262,7 @@ CLIENT (Phase 1: Android only):
 
 Every item below is sequenced by dependency — you can't build later items without earlier ones. Items within the same step can be built in parallel.
 
-### ✅ Done (v0.01)
+### ✅ Done (v0.4)
 
 | # | Item | Layer | What It Is | Status |
 |---|------|-------|-----------|--------|
@@ -1866,7 +2270,7 @@ Every item below is sequenced by dependency — you can't build later items with
 | 0.2 | Semantic memory (vector DB) | L1 Storage | Local vector store at `~/.dina/memory/`, persists across sessions | ✅ Built |
 | 0.3 | RAG-powered Q&A | L6 Intelligence | Natural language questions → memory search → contextual answer | ✅ Built |
 | 0.4 | Cryptographic signing | L0 Identity | Ed25519 signature on every verdict, `/verify` command | ✅ Built |
-| 0.5 | Self-sovereign identity | L0 Identity | did:key (pure Python) + did:dht (optional) | ✅ Built |
+| 0.5 | Self-sovereign identity | L0 Identity | did:key (pure Python) + did:plc (target) | ✅ Built |
 | 0.6 | Ceramic dual-write | L1 Storage | Verdicts written to Ceramic Network when configured | ✅ Built |
 | 0.7 | Multi-provider LLM routing | L6 Intelligence | Ollama (local) + Gemini (cloud), configurable | ✅ Built |
 | 0.8 | REPL interface | Human Interface | `/history`, `/search`, `/identity`, `/verify`, `/vault`, `/quit` | ✅ Built |
@@ -1881,12 +2285,12 @@ Goal: Get the three-container architecture running. Brain thinks, core stores, l
 | 1.2 | dina-brain skeleton | L6 Intelligence | Python + Google ADK, basic agent loop, `/v1/process` and `/v1/reason` endpoints on port 8200 | 1.1 | dina-brain |
 | 1.3 | Port review bot to ADK tool | L5 Bot Interface | YouTube analysis as a Google ADK tool callable by the agent loop | 1.2 | dina-brain |
 | 1.4 | Port memory search to ADK tool | L6 Intelligence | Vector search + RAG as ADK tools | 1.2 | dina-brain |
-| 1.5 | Silence filter (basic) | L6 Intelligence | Three-tier classification (Fiduciary / Solicited / Engagement) using llama-server | 1.2, 1.1 | dina-brain |
+| 1.5 | Silence filter (basic) | L6 Intelligence | Three-priority classification (Fiduciary / Solicited / Engagement) using llama-server | 1.2, 1.1 | dina-brain |
 | 1.6 | LLM routing in brain | L6 Intelligence | Simple → llama-server, Complex → Claude/Gemini API | 1.1, 1.2 | dina-brain |
-| 1.7 | dina-core skeleton | L1 Storage | Go + net/http server on port 8100, SQLite vault (modernc.org/sqlite, pure Go) with WAL mode, basic `/v1/vault/query` and `/v1/vault/store` endpoints | Nothing | dina-core |
-| 1.8 | DID key management in core | L0 Identity | Ed25519 key generation (crypto/ed25519), Argon2id encryption at rest (golang.org/x/crypto/argon2), `/v1/did/sign` and `/v1/did/verify` endpoints. Port from v0.01 Python to Go. | 1.7 | dina-core |
+| 1.7 | dina-core skeleton | L1 Storage | Go + net/http server on port 8100, SQLCipher vault (mattn/go-sqlite3 with CGO, one file per persona) with WAL mode, basic `/v1/vault/query` and `/v1/vault/store` endpoints | Nothing | dina-core |
+| 1.8 | DID key management in core | L0 Identity | BIP-39 seed → Master Key (DEK), key wrapping (passphrase → Argon2id KEK → AES-256-GCM wraps DEK), SLIP-0010 persona key derivation (Ed25519), HKDF persona key → SQLCipher vault unlock. `/v1/did/sign` and `/v1/did/verify` endpoints. Go: `crypto/ed25519`, `x/crypto/argon2`, `stellar/go/exp/crypto/derivation`. | 1.7 | dina-core |
 | 1.9 | PII scrubber (regex) | L6 Intelligence | Regex-based PII detection in Go (credit cards, phone numbers, Aadhaar, emails). `/v1/pii/scrub` endpoint. | 1.7 | dina-core |
-| 1.10 | docker-compose wiring | Infra | Three-container orchestration. Internal network. Brain calls core API. Both call llama-server. Single `docker compose up -d`. | 1.2, 1.7, 1.1 | All |
+| 1.10 | docker-compose wiring | Infra | Three-container orchestration. Internal network. Brain calls core API. Both call llama-server. Single `docker compose up -d`. Healthchecks (`/healthz`, `/readyz`) on all containers. Dependency chain: brain waits for core healthy. `restart: always`. Structured JSON logging (Go `slog`, Python `structlog`) to stdout. | 1.2, 1.7, 1.1 | All |
 
 ### Phase 1b — Guardian Angel Loop (Weeks 3-6)
 
@@ -1897,10 +2301,10 @@ Goal: Dina watches your world, stays quiet, and whispers when it matters. The Sa
 | 1.11 | Gmail connector (read-only) | L2 Ingestion | OAuth read-only access, poll for new emails, store encrypted in vault via core API | 1.7, 1.10 | dina-core |
 | 1.12 | Calendar connector | L2 Ingestion | CalDAV sync, store events in vault | 1.7, 1.10 | dina-core |
 | 1.13 | Contacts connector | L2 Ingestion | CardDAV sync, store contacts in vault | 1.7, 1.10 | dina-core |
-| 1.14 | Connector scheduler | L2 Ingestion | Cron-style polling: check Gmail every 5 min, calendar every 15 min. Triggers brain on new data. | 1.11, 1.12, 1.13, 1.10 | dina-core |
+| 1.14 | Connector scheduler | L2 Ingestion | Cron-style polling: check Gmail every 15 min (configurable), calendar every 30 min. Triggers brain on new data. | 1.11, 1.12, 1.13, 1.10 | dina-core |
 | 1.15 | Context assembly for whispers | L6 Intelligence | Brain queries vault for relevant context (relationships, history), assembles whisper text | 1.10, 1.4 | dina-brain |
 | 1.16 | Whisper delivery (WebSocket) | L7 Action | Core pushes whisper to connected client device via WebSocket. `/v1/notify` endpoint. | 1.15, 1.7 | dina-core |
-| 1.17 | DIDComm endpoint (external) | L4 Dina-to-Dina | Always-on HTTPS endpoint on port 443. Receives encrypted messages from other Dinas. | 1.8, 1.7 | dina-core |
+| 1.17 | DIDComm endpoint | L4 Dina-to-Dina | Always-on HTTPS endpoint on localhost:8443 (exposed to internet via ingress tier — Tailscale Funnel, Cloudflare Tunnel, or Yggdrasil). Receives encrypted messages from other Dinas. | 1.8, 1.7 | dina-core |
 | 1.18 | DID exchange (QR code) | L4 Dina-to-Dina | Generate QR code containing your DID. Scan another Dina's QR to establish connection. | 1.8, 1.17 | dina-core |
 | 1.19 | Basic Dina-to-Dina messaging | L4 Dina-to-Dina | Send/receive encrypted messages between two Home Nodes via DIDComm v2.1. | 1.17, 1.18 | dina-core |
 | 1.20 | **The Sancho Moment (E2E)** | All | Sancho's Dina sends "leaving home" → your core receives → brain checks vault for Sancho context → brain assembles whisper ("his mother was ill, put the kettle on") → core pushes to your phone. | 1.19, 1.15, 1.16 | All |
@@ -1932,7 +2336,7 @@ Goal: Data is safe. Actions go through approval gates. Bot protocol is standardi
 | 1.34 | FunctionGemma 270M routing | L6 Intelligence | Ultra-lightweight model (529MB) for fast intent classification and tool routing. Runs alongside Gemma 3n on llama-server. | 1.1 | llama-server |
 | 1.35 | WhatsApp connector (Android) | L2 Ingestion | NotificationListenerService captures WhatsApp notifications → pushes to Home Node via authenticated channel. | 1.30, 1.29 | Android |
 | 1.36 | MCP integration (OpenClaw) | L7 Action | Delegate tasks to OpenClaw via MCP. License renewal, form filling, task automation — all with `draft_only` constraint. | 1.25 | dina-brain |
-| 1.37 | Daily briefing | L6 Intelligence | End-of-day summary of Tier 3 items. "Here's what you missed that wasn't important enough to interrupt." | 1.5, 1.15 | dina-brain |
+| 1.37 | Daily briefing | L6 Intelligence | End-of-day summary of Priority 3 items. "Here's what you missed that wasn't important enough to interrupt." | 1.5, 1.15 | dina-brain |
 | 1.38 | Push notifications (FCM/APNs) | Infra | When client is disconnected, wake it via FCM/APNs. Payload contains NO data — just "connect to your Home Node." | 1.16, 1.30 | dina-core + client |
 
 ### Phase 2 — Intelligence & Trust (Months 4-9)
@@ -1976,7 +2380,7 @@ Goal: Data is safe. Actions go through approval gates. Bot protocol is standardi
 
 | Phase | Duration | Milestone | What You Can Demo |
 |-------|----------|-----------|------------------|
-| **v0.01** | ✅ Done | Proof of concept | YouTube analysis with signed verdicts, memory, DID identity |
+| **v0.4** | ✅ Done | Proof of concept | YouTube analysis with signed verdicts, memory, DID identity |
 | **1a** | Weeks 1-3 | Sidecar running | Three containers up, brain reasons, core stores, review bot works via ADK |
 | **1b** | Weeks 3-6 | Sancho Moment | Two Dinas talk, whisper delivered to phone, guardian angel loop end-to-end |
 | **1c** | Weeks 6-8 | Safety & bots | Data backed up, drafts work, bot protocol standardized |

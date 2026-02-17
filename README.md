@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Status: Phase 1](https://img.shields.io/badge/Status-Alpha-orange)]()
-[![Stack: Rust + Python](https://img.shields.io/badge/Stack-Rust%20%7C%20Python-blue)]()
+[![Stack: Go + Python](https://img.shields.io/badge/Stack-Go%20%7C%20Python-blue)]()
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-purple)]()
 
 > **Dina is a sovereign personal AI that watches your world, breaks silence only when it matters, and never works for anyone but you.**
@@ -11,29 +11,29 @@
 
 ### ⚡ Developer Cockpit
 
-* **The Stack:** Rust Core + Python Brain (Sidecar Pattern) + SQLite.
+* **Quick Start:** [3 commands to get Dina running](./QUICKSTART.md)
+* **The Stack:** Go Core + Python Brain (Sidecar Pattern) + SQLite/SQLCipher.
 * **The Architecture:** [Read the Engineering Spec](./ARCHITECTURE.md)
+* **Networking:** [Tailscale / Cloudflare / Yggdrasil setup](./NETWORKING.md)
 * **The Roadmap:** [See Project Status](#part-ii-where-we-are-today)
 * **Discussion:** [Join the Discord](#)
 
 ---
 
-You can run the full Sovereign Triad (Core + Brain + Local LLM) with one command.
+You can run the full Sovereign Triad (Core + Brain + Local LLM) with one command. See [`QUICKSTART.md`](./QUICKSTART.md) for the full guide including networking setup.
 
 **Prerequisites:** Docker & Docker Compose.
 
 ```bash
-# 1. Clone the repo
-git clone [https://github.com/rajmohanutopai/dina.git](https://github.com/rajmohanutopai/dina.git)
-cd dina
-
-# 2. Start the Sovereign Triad
-# This spins up: dina-core (Rust/Axum - Port 8000), dina-brain (Python/Google ADK) and llama-server for local inference.
+# 1. Clone and start
+git clone https://github.com/rajmohanutopai/dina.git && cd dina
 docker compose up -d
 
-# 3. Initialize your Identity
-# Generates your Root DID and Encryption Keys locally.
-curl -X POST http://localhost:8000/v1/identity/init
+# 2. Initialize your identity (generates Root DID + encryption keys)
+curl -X POST http://localhost:8100/v1/identity/init
+
+# 3. Go online (Tailscale Funnel — zero-config public endpoint)
+sudo tailscale up && sudo tailscale funnel 8443
 ```
 
 ---

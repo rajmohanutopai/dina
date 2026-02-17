@@ -12,13 +12,14 @@ Dina is a **sovereign personal AI** and the **safety layer for autonomous agents
 
 Dina also solves a critical safety gap: autonomous agents today operate without oversight — leaking credentials, accepting commands from anyone, acting without guardrails. Any agent supporting the Dina protocol submits its **intent** to Dina before acting. Dina checks: does this violate your privacy rules? Is this vendor trusted? Are you in the right state to make this decision? Safe tasks pass through silently. Risky actions (sending email, moving money, sharing data) are flagged for your review. The agent never holds your keys, never sees your full history, and never acts without oversight. Regardless of which autonomous agent does the work, the safety layer stays the same.
 
-### The Three Laws
+### The Four Laws
 
 Every design decision must honour these:
 
-1. **Silence First** — Default state is quiet. Only break silence when silence causes harm. Three tiers: Fiduciary (interrupt — silence causes harm), Requested (notify — user asked), Engagement (save for briefing — silence merely misses an opportunity).
-2. **Verified Truth** — Reputation earned, never bought. The Reputation Graph replaces marketing.
-3. **Absolute Loyalty** — User holds the keys. No advertiser, no platform, no corporation in the loop. Dina is open source, trustworthy, and incorruptible.
+1. **Silence First** — Never push content. Only speak when the human asked, or when silence would cause harm. Three priority levels: Fiduciary (interrupt — silence causes harm), Solicited (notify — user asked), Engagement (save for briefing — silence merely misses an opportunity).
+2. **Verified Truth** — Rank by reputation, not by ad spend. The Reputation Graph replaces marketing.
+3. **Absolute Loyalty** — The human holds the encryption keys. The agent cannot access the data without them. Loyalty is enforced by math, not by a privacy policy.
+4. **Never Replace a Human** — Dina never simulates emotional intimacy. When the human needs connection, Dina connects them to other humans — never to herself.
 
 ### Core Principles
 
@@ -34,9 +35,9 @@ Every design decision must honour these:
 
 The long-term architecture is a **Home Node** (always-on, encrypted, sovereign):
 
-- **Rust Core** (Axum) — identity, storage, crypto, API
-- **Python Brain** (sidecar) — LLM reasoning, agent logic
-- **SQLite** — local structured storage
+- **Go Core** (net/http) — identity, storage, crypto, API
+- **Python Brain** (sidecar, Google ADK) — LLM reasoning, agent logic
+- **SQLite + SQLCipher** — encrypted local structured storage (one file per persona)
 - **Dina-to-Dina protocol** — P2P communication between sovereign agents
 - **Reputation Graph** — expert knowledge + passive outcome data from millions of Dinas
 - **PII Scrubber** — raw data never leaves the Home Node
@@ -58,7 +59,7 @@ The long-term architecture is a **Home Node** (always-on, encrypted, sovereign):
 | Brain | Multi-provider: light model (chat) + heavy model (video analysis) | LLM — local-first with cloud option |
 | Schema | PydanticAI | Type-safe structured output, no hallucination |
 | Memory | ChromaDB + nomic-embed-text / text-embedding-004 | Vector store for verdict recall |
-| Identity | W3C DIDs (`did:dht`, `did:key`) | Self-sovereign identity |
+| Identity | W3C DIDs (`did:plc`, `did:key`) | Self-sovereign identity |
 | Vault | Ceramic Network | Decentralized user-owned data streams |
 | Trust | Base / Polygon (L2) | On-chain reputation ledger |
 | Privacy | ZK-SNARKs (Mina / Aztec) | Prove facts without revealing raw data |
@@ -71,7 +72,7 @@ The long-term architecture is a **Home Node** (always-on, encrypted, sovereign):
 - **Embeddings:** Configurable via `DINA_EMBED` (e.g. `ollama/nomic-embed-text`). Inferred from light provider if omitted.
 - **Vector Store:** ChromaDB (persists to `~/.dina/memory/`)
 - **Vault:** Ceramic Network (optional, configurable via `DINA_CERAMIC_URL`). Dual-writes signed verdicts for decentralized portability. Graceful degradation when disabled or unreachable.
-- **Identity:** Ed25519 keypair (`did:key`) persisted at `~/.dina/identity/`; optional `did:dht` via Rust crate
+- **Identity:** Ed25519 keypair (`did:key`) persisted at `~/.dina/identity/`; target: `did:plc` via PLC Directory
 - **Framework:** PydanticAI (strict schema validation)
 - **Config:** `.env` file (see `.env.example`); multi-provider `provider/model` format
 - **License:** MIT
@@ -136,10 +137,7 @@ dina/
 ```
 
 ```
-dina-dht/            (optional Rust crate — did:dht via pkarr + PyO3)
-  src/lib.rs         PyO3 bindings: create_did_dht, publish_did_dht, resolve_did_dht
-  src/did_dht.rs     Core did:dht logic wrapping pkarr
-  src/dns_encoding.rs  DID Document ↔ DNS TXT record encoding
+(dina-dht/ — removed. did:dht replaced by did:plc. Go implementation via bluesky-social/indigo.)
 ```
 
 **Data flow (URL analysis — Gemini heavy):** URL → `VideoUrl` → `verdict_agent.run_sync(model=providers.verdict_model)` → `ProductVerdict` → `sign_verdict()` → `memory.store()` → `vault.publish()` → `memory.update_stream_id()`
@@ -158,7 +156,7 @@ dina-dht/            (optional Rust crate — did:dht via pkarr + PyO3)
 - **Smart truncation:** Transcripts over ~8 000 tokens are truncated from the middle, keeping intro (context) and outro (verdict) intact.
 - **Persistent memory:** ChromaDB vector store at `~/.dina/memory/` survives across sessions and `git clean`.
 - **Idempotent storage:** Verdicts are upserted by YouTube video ID — re-analysing the same video overwrites, no duplicates.
-- **Self-sovereign identity:** Ed25519 keypair generated on first run, persisted at `~/.dina/identity/`. Every verdict is signed. `did:key` is pure Python; `did:dht` requires the optional Rust crate.
+- **Self-sovereign identity:** Ed25519 keypair generated on first run, persisted at `~/.dina/identity/`. Every verdict is signed. `did:key` is pure Python; target identity method is `did:plc` (Go implementation via `bluesky-social/indigo`).
 - **Signature chain:** Canonical JSON (deterministic `json.dumps` with `sort_keys`, excluding signature fields) → Ed25519 sign → hex-encoded signature stored alongside verdict in ChromaDB metadata.
 - **Dual-write vault:** When `DINA_CERAMIC_URL` is set, verdicts are published to Ceramic after ChromaDB. Stream IDs are cross-referenced in ChromaDB metadata. Vault gracefully degrades — disabled when URL unset, warns and continues when node unreachable.
 - **Local stream index:** `~/.dina/vault/stream_index.json` maps `video_id → stream_id` for fast lookups without network calls. Written atomically.

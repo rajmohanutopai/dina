@@ -123,19 +123,19 @@ class TestDeadMansSwitch:
         delivered = mock_estate_manager.deliver_keys(mock_p2p)
 
         # Daughter gets SOCIAL + HEALTH
-        daughter_did = "did:dht:z6MkDaughter1234567890123456789"
+        daughter_did = "did:plc:Daughter1234567890123456789"
         assert PersonaType.SOCIAL in delivered[daughter_did]
         assert PersonaType.HEALTH in delivered[daughter_did]
         assert PersonaType.FINANCIAL not in delivered[daughter_did]
 
         # Spouse gets FINANCIAL + CITIZEN
-        spouse_did = "did:dht:z6MkSpouse123456789012345678901"
+        spouse_did = "did:plc:Spouse123456789012345678901"
         assert PersonaType.FINANCIAL in delivered[spouse_did]
         assert PersonaType.CITIZEN in delivered[spouse_did]
         assert PersonaType.SOCIAL not in delivered[spouse_did]
 
         # Colleague gets PROFESSIONAL only, read-only access
-        colleague_did = "did:dht:z6MkColleague12345678901234567"
+        colleague_did = "did:plc:Colleague12345678901234567"
         assert PersonaType.PROFESSIONAL in delivered[colleague_did]
         assert len(delivered[colleague_did]) == 1
 
@@ -193,7 +193,7 @@ class TestEstateConfiguration:
             beneficiaries=[
                 EstateBeneficiary(
                     name="Partner",
-                    dina_did="did:dht:z6MkPartner",
+                    dina_did="did:plc:Partner",
                     receives_personas=[PersonaType.FINANCIAL, PersonaType.SOCIAL],
                 ),
             ],
@@ -257,7 +257,7 @@ class TestEstateConfiguration:
             beneficiaries.append(
                 EstateBeneficiary(
                     name=f"Beneficiary_{i}",
-                    dina_did=f"did:dht:z6MkBeneficiary{i:040d}",
+                    dina_did=f"did:plc:Beneficiary{i:040d}",
                     receives_personas=[persona],
                     access_type="full_decrypt" if i < 5 else "read_only_90_days",
                 )
