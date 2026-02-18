@@ -293,14 +293,21 @@ docker-compose.yml:
 │                      │ localhost:8100                   │
 │  ┌──────────────────▼───────────────────────────┐    │
 │  │  dina-brain (Python + Google ADK)             │    │
-│  │  Port 8200 (internal)                         │    │
+│  │  Port 8200 (internal) — Brain API              │    │
+│  │  Port 8500 (internal) — Admin UI               │    │
 │  │                                                │    │
+│  │  Brain API (BRAIN_TOKEN):                      │    │
 │  │  - Guardian angel reasoning loop               │    │
 │  │  - Silence filter / interrupt classification   │    │
 │  │  - Context assembly for whispers               │    │
 │  │  - Disconnect detection                        │    │
 │  │  - Agent orchestration (e.g. delegate to       │    │
 │  │    OpenClaw via MCP)                           │    │
+│  │                                                │    │
+│  │  Admin UI (CLIENT_TOKEN):                      │    │
+│  │  - Dashboard, connector status, vault health   │    │
+│  │  - Whisper history, contacts, sharing rules    │    │
+│  │  - Settings, personas, onboarding flow         │    │
 │  │                                                │    │
 │  │  LLM routing:                                  │    │
 │  │    Simple → llama-server (localhost:8300)       │    │
@@ -371,7 +378,7 @@ BRAIN_TOKEN (generated at boot, injected via Docker Secrets):
     reputation/query, process, reason
   ✗ did/sign, did/rotate, vault/backup, persona/unlock, admin/*
 
-CLIENT_TOKEN (per-device, issued during QR pairing):
+CLIENT_TOKEN (per-device, issued during pairing):
   ✓ Everything — including admin endpoints
   ✓ did/sign, did/rotate, vault/backup, persona/unlock
 ```
@@ -404,6 +411,77 @@ func auth(next http.Handler) http.Handler {
 A static allowlist is simpler to audit (reviewable at compile time), has zero runtime overhead (no JWT signing/verification/expiry tracking), and achieves identical security for the current architecture.
 
 **This is the permanent design.** Dina is a kernel, not a platform — no plugins, no untrusted code inside the process (see "Core Philosophy" above). Two-tier auth is sufficient because child agents (OpenClaw etc.) communicate via MCP, not by running code inside Dina.
+
+### Admin UI: Python, Not Go
+
+The admin UI (dashboard, settings, connector status, onboarding flow) runs as a **separate FastAPI app** in the brain container on port 8500. It is not the brain — it shares the Python runtime but is a completely independent application with its own auth.
+
+```
+brain container:
+  port 8200 → Brain API     (BRAIN_TOKEN — agent operations)
+  port 8500 → Admin UI      (CLIENT_TOKEN — full admin access)
+
+  Two separate FastAPI apps. They share nothing except the Python runtime.
+  Admin UI calls core:8100 with CLIENT_TOKEN.
+```
+
+**Why Python, not Go:** Go templates are painful for forms, tables, and interactive pages. FastAPI + Jinja2 ships a decent admin interface in days, not weeks. The extra HTTP hop to core (`admin → core:8100 → vault → core → admin → browser`) is ~5ms on localhost Docker networking — imperceptible for a dashboard that refreshes every 30 seconds.
+
+**Why not in the brain process:** The brain is an untrusted tenant with `BRAIN_TOKEN` (agent capabilities only). The admin UI needs `CLIENT_TOKEN` (full access including settings, persona management, signing). Running them as separate FastAPI apps with separate tokens enforces the permission boundary even though they share a container.
+
+```
+brain/
+  src/
+    dina_brain/           # Brain API (port 8200, BRAIN_TOKEN)
+      main.py
+      ...
+    dina_admin/           # Admin UI (port 8500, CLIENT_TOKEN)
+      app.py
+      core_client.py      # Calls core:8100 with CLIENT_TOKEN
+      templates/
+        dashboard.html    # Connector status, health, vault size
+        history.html      # Whisper history, searchable
+        contacts.html     # Contact list, sharing rules
+        settings.html     # Personas, reboot mode, connectors
+      routes/
+        dashboard.py
+        history.py
+        contacts.py
+        settings.py
+```
+
+### Onboarding: Progressive Disclosure
+
+Complexity exists on day one, but the user doesn't see it. The principle is Signal-level simplicity: **email → OAuth → done.**
+
+```
+What the user sees (managed hosting):
+  1. "Enter email and password"
+  2. "Connect Gmail" (OAuth popup)
+  3. Done. Dina starts ingesting.
+
+What happens silently:
+  1. Core generates Ed25519 keypair
+  2. Core registers did:plc with plc.directory
+  3. Core derives root key from password via Argon2id
+  4. Core creates vault.sqlite with SQLCipher
+  5. Core creates single default persona (/personal — no compartments yet)
+  6. Core sets convenience mode (auto-unlock)
+  7. Core starts Gmail connector with OAuth token
+  8. Brain starts guardian angel loop
+```
+
+Features unlock as the user is ready:
+
+| When | What |
+|------|------|
+| **Day 1** | Email + calendar ingestion, basic whispers |
+| **Day 7** | Prompt: "Write down these 24 words. They're your recovery key." |
+| **Day 14** | Prompt: "Want to connect WhatsApp too?" |
+| **Day 30** | Prompt: "You can separate health and financial data into private compartments" |
+| **Month 3** | Power user discovers personas, sharing rules, self-hosting option |
+
+One default persona (`/personal`), not five. The multi-persona key hierarchy exists in the code but only `/personal` is created at setup. Adding `/health`, `/financial`, `/citizen` is a settings screen action, not an onboarding step. Mnemonic backup is deferred, not skipped — generated at setup, prompted after the user has had a week to see value. Sharing rules default to empty.
 
 ### Data Flow: Who Touches What
 
@@ -1257,7 +1335,7 @@ Most connectors run on the **Home Node** — this is one of the main reasons the
 | Connector | Runs On | Why |
 |-----------|---------|-----|
 | Gmail | Home Node | OAuth API, needs reliable polling |
-| Calendar | Home Node | CalDAV API, needs reliable polling |
+| Calendar | Home Node | Google Calendar REST API (Phase 1), CalDAV (Phase 2) |
 | Contacts | Home Node | CardDAV API, infrequent sync |
 | WhatsApp | Phone (Android) | Requires NotificationListenerService |
 | SMS | Phone (Android) | Requires Content Provider access |
@@ -1475,9 +1553,20 @@ REVOKED ─(user re-authorizes)──────► ACTIVE
 - **Limitation:** Weakest connector. Fragile, text-only, no history. Requires WhatsApp to open up or regulation to force interoperability (EU DMA).
 
 ### Calendar Connector
+
+**Time is a Sense, not a Tool.** The Calendar is not something Dina delegates to an external agent — it's core sensory input. When an email says "Can we meet at 4 PM?", Dina must instantly know you have a dentist appointment. That requires a local SQLite check (microseconds), not a round-trip to OpenClaw (seconds). Calendar data is ingested into the vault like email — read-only cache of the external calendar, rolling window (-1 month / +1 year).
+
+The read/write split:
+
+| Direction | What | How |
+|-----------|------|-----|
+| **Read (Context)** | "Am I free at 4?" | Brain queries local vault — zero latency, zero network |
+| **Write (Simple)** | "Book 2 PM Tuesday" | Connector writes via Calendar API |
+| **Write (Complex)** | "Find a slot for 5 people across 3 timezones" | Delegate to OpenClaw — that's a *task*, not context |
+
 - **Runs on:** Home Node
-- **API:** CalDAV (works with Google Calendar, Apple Calendar, any standard calendar)
-- **Alt:** Google Calendar REST API for Google-specific features
+- **Phase 1 API:** Google Calendar REST API (`google.golang.org/api/calendar/v3`). Covers vast majority of users. Well-documented, official Go client, 100% reliable.
+- **Phase 2 API:** CalDAV for non-Google users (Nextcloud, Apple Calendar, EteSync). Deferred because CalDAV implementations are mutually incompatible across providers on recurring events, timezone handling, and shared calendars.
 - **Pull:** Every 30 minutes or on-change webhook
 - **What's pulled:** Events, attendees, locations, descriptions
 
@@ -1757,8 +1846,8 @@ Dina knows (from Vault):
   - User's past chair purchases and outcomes
   - User's back issue history (from health persona)
 
-What Dina sends to Review Bot:
-  "Best ergonomic office chair for long sitting hours (10+/day), 
+What Dina sends externally (to OpenClaw in Phase 1, to specialist bots in Phase 2+):
+  "Best ergonomic office chair for long sitting hours (10+/day),
    lumbar support critical, budget under ₹80,000"
 
 What Dina does NOT send:
@@ -1835,7 +1924,7 @@ Dina tracks bot scores locally. If a bot's accuracy drops below a threshold, Din
 
 How does Dina find bots in the first place?
 
-- **Phase 1:** Hardcoded registry. The protocol ships with a default list of known bots (including the first review bot you build). Users can add/remove.
+- **Phase 1:** No bot registry needed. Brain delegates research to OpenClaw (web search). Users can configure preferred specialist bots manually.
 - **Phase 2:** Decentralized bot registry on the Reputation Graph. Bots self-register, and their reputation determines visibility.
 - **Phase 3:** Bot-to-bot recommendations. "This query is outside my domain. Try the Medical Bot at did:plc:..."
 
@@ -1870,7 +1959,7 @@ The mesh protocol. How your Dina talks to Sancho's Dina.
 ```
 Your Dina wants to talk to Sancho's Dina
         ↓
-Step 1: You already have Sancho's DID (exchanged via QR code when you first connected)
+Step 1: You already have Sancho's DID (exchanged when you first connected)
         ↓
 Step 2: Resolve DID via PLC Directory
   - Query PLC Directory for did:plc:...(sancho)
@@ -2441,38 +2530,18 @@ The hash reveals nothing about the content. Privacy is preserved. When you delet
 
 **Timeline:** Not needed for Phase 1 or 2. Becomes valuable in Phase 3 when real money flows through the system (Expert Bridge, Open Economy) and disputes have economic stakes.
 
-### The First Reputation Bot
+### Cold Start Strategy: Tool First, Network Second
 
-Open-source seed bot. Solves the cold start problem — ships with the protocol.
+The Reputation Graph needs scale to be useful. With 10 users, there's no statistically meaningful outcome data. **Phase 1 value must not depend on the Reputation Graph.**
 
-```
-┌────────────────────────────────┐
-│  Dina Review Bot v1            │
-│                                │
-│  Ingests:                      │
-│  - YouTube review transcripts  │
-│  - Reddit product discussions  │
-│  - Wirecutter / rtings.com    │
-│  - Open Food Facts             │
-│  - Government recall databases │
-│                                │
-│  Processes:                    │
-│  - Extracts structured verdicts│
-│  - Cross-references sources    │
-│  - Generates confidence scores │
-│                                │
-│  Outputs:                      │
-│  - Expert attestation format   │
-│  - Queryable via Bot Interface │
-│                                │
-│  Hosted: by you (free, v1)     │
-│  Code: MIT licensed in repo    │
-│  Anyone can fork and run their │
-│  own instance                  │
-└────────────────────────────────┘
-```
+| Phase | How Dina answers "What's the best office chair?" |
+|-------|--------------------------------------------------|
+| **Phase 1 (Single Player)** | Brain has no reputation data. Delegates to OpenClaw: "search web for best office chair reviews 2026." OpenClaw returns results. Brain synthesizes, applies user context from vault ("You had back pain last month. You sit 10+ hours. Budget was ₹50-80K based on previous purchases.") Whisper: "Based on web reviews and your back issues, the Steelcase Leap or Herman Miller Aeron. The Aeron is within your budget at ₹72,000." |
+| **Phase 2 (Multiplayer)** | Brain queries the Reputation AppView alongside web search. Whisper now includes: "34 people in the network bought the Aeron, but 5 returned it complaining about the mesh. Your friend Alice recommends the Steelcase Leap instead." |
 
-This bot solves the cold start problem. Day 1, even with zero users contributing outcome data, Dina can answer "what laptop should I buy?" by querying the Review Bot, which has aggregated expert knowledge from public sources.
+The transition is gradual and invisible to the user. One day the whisper includes network data alongside web results. No flag day, no "activate reputation" moment.
+
+**There is no "Review Bot" to build.** No scraping infrastructure, no crawlers, no YouTube/Reddit/RTINGS ingestion pipeline. In Phase 1, Dina researches the public web for you using her Brain + OpenClaw — the same way a human would Google things, but with your personal context applied. The Reputation Graph activates when it activates.
 
 ---
 
@@ -3055,13 +3124,28 @@ secrets:
 Rich and thin clients authenticate to the Home Node using device-delegated keys:
 
 ```
-DEVICE ONBOARDING:
-  1. User opens Dina client on new device
-  2. Scans QR code displayed by existing authenticated device (or enters pairing code)
-  3. Home Node generates a device-specific keypair (delegated from root)
-  4. Device stores its key in hardware security module (Secure Enclave / StrongBox / TPM)
-  5. Home Node registers device in allowed-devices list
-  6. All subsequent communication: TLS + device-key mutual authentication
+FIRST DEVICE (docker compose up):
+  1. Core prints to terminal:
+       Dina is running on http://192.168.1.42:8100
+       Pairing code: 847 291
+       Expires in 15 minutes.
+  2. User opens Dina app on phone
+  3. mDNS auto-discovery finds Home Node on LAN
+     (or user types the IP manually)
+  4. User enters 6-digit pairing code
+  5. Home Node generates a device-specific keypair (delegated from root)
+  6. Device stores its key in hardware security module (Secure Enclave / StrongBox / TPM)
+  7. Home Node registers device in allowed-devices list
+
+SUBSEQUENT DEVICES:
+  Same flow — Home Node generates a new pairing code via admin UI or terminal.
+
+MANAGED HOSTING:
+  Signup flow provides the pairing code. No terminal.
+
+QR CODE:
+  Deferred. Nice-to-have for non-developers. Pairing code is sufficient.
+  6 digits + mDNS solves the real friction (finding the IP).
 ```
 
 ### Push Notifications (Home Node → Client)
@@ -3112,7 +3196,7 @@ Guiding principle: **one user, a handful of containers, one machine, one SQLite 
 
 **4. ZKP for government ID.** No government currently offers ZKP-native verification. The first implementation will be a compromise (local verification, attestation stored).
 
-**5. Reputation Graph cold start.** The first review bot helps. But outcome data needs scale. This is a years-long build.
+**5. Reputation Graph cold start.** Phase 1 doesn't depend on it — Brain uses web search via OpenClaw. Outcome data needs scale. The Graph activates gradually as the network grows. This is a years-long build.
 
 **6. iOS restrictions.** No NotificationListenerService equivalent. No Accessibility Service. iOS client will always be more limited for device-local ingestion. But with Home Node running API connectors (Gmail, Calendar, Contacts), iOS users still get most functionality. WhatsApp ingestion requires an Android device somewhere in the ecosystem.
 
@@ -3132,7 +3216,7 @@ Guiding principle: **one user, a handful of containers, one machine, one SQLite 
 
 | Capability | Implementation | Target Layer |
 |-----------|---------------|-------------|
-| YouTube product review analysis | Gemini video analysis + transcript extraction → structured verdict (BUY/WAIT/AVOID) | Layer 5 (Bot Interface) — first review bot |
+| YouTube product review analysis | Gemini video analysis + transcript extraction → structured verdict (BUY/WAIT/AVOID) | Layer 5 (Bot Interface) |
 | Semantic memory | Local vector database at `~/.dina/memory/`, persists across sessions | Layer 1 (Storage) — Tier 2 Index |
 | RAG-powered Q&A | Natural language → search memory → contextual answer | Layer 6 (Intelligence) |
 | Cryptographic signing | Ed25519 signature on every verdict, `/verify` command | Layer 0 (Identity) |
@@ -3145,7 +3229,7 @@ Guiding principle: **one user, a handful of containers, one machine, one SQLite 
 
 v0.4 is a monolithic Python application. The target is the three-container sidecar architecture. The migration is incremental:
 
-1. **Phase 1a (now → 6 weeks):** Extract the agent reasoning logic from v0.4 into dina-brain running on Google ADK. The YouTube review bot, memory search, and RAG become ADK tools. The REPL becomes a thin client that talks to the brain.
+1. **Phase 1a (now → 6 weeks):** Extract the agent reasoning logic from v0.4 into dina-brain running on Google ADK. The YouTube analysis, memory search, and RAG become ADK tools. The REPL becomes a thin client that talks to the brain.
 
 2. **Phase 1b (parallel):** Build dina-core in Go. Start with the SQLite vault skeleton, DID key management (porting the Ed25519/did:key logic from Python to Go), and the internal API (`/v1/vault/query`, `/v1/vault/store`, `/v1/did/sign`). Go's standard library `crypto/ed25519` and `crypto/aes` handle the cryptography natively.
 

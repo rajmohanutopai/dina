@@ -10,7 +10,7 @@ Extracted from [ARCHITECTURE.md](ARCHITECTURE.md). Every item is sequenced by de
 
 v0.4 is a monolithic Python application. The target is the three-container sidecar architecture. The migration is incremental:
 
-1. **Phase 1a:** Extract agent reasoning from v0.4 into dina-brain (Google ADK). Review bot, memory search, RAG become ADK tools.
+1. **Phase 1a:** Extract agent reasoning from v0.4 into dina-brain (Google ADK). YouTube analysis, memory search, RAG become ADK tools.
 2. **Phase 1b (parallel):** Build dina-core in Go. SQLite vault, DID key management, internal API.
 3. **Phase 1c:** Wire together. Safety gates, backup, bot protocol.
 4. **Phase 1.5:** Android client, managed hosting, WhatsApp ingestion.
@@ -41,7 +41,7 @@ v0.4 is a monolithic Python application. The target is the three-container sidec
 |---|------|-------|-----------|-----------|-----------|--------|
 | 1.1 | Cloud API setup | Infra | Configure Gemini 2.5 Flash Lite API key (text LLM), Deepgram Nova-3 API key (voice STT), `gemini-embedding-001` (embeddings). Brain's LLM router calls cloud APIs based on `DINA_MODE=online`. | — | Cloud APIs | NOT STARTED |
 | 1.2 | dina-brain skeleton | L6 Intelligence | Python + Google ADK, basic agent loop, `/v1/process` and `/v1/reason` endpoints on port 8200. LLM router calls Gemini Flash Lite for text, Deepgram WebSocket for voice STT. | 1.1 | dina-brain | NOT STARTED |
-| 1.3 | Port review bot to ADK tool | L5 Bot Interface | YouTube analysis as a Google ADK tool callable by the agent loop | 1.2 | dina-brain | NOT STARTED |
+| 1.3 | Port YouTube analysis to ADK tool | L5 Bot Interface | YouTube video analysis as a Google ADK tool callable by the agent loop | 1.2 | dina-brain | NOT STARTED |
 | 1.4 | Port memory search to ADK tool | L6 Intelligence | Vector search + RAG as ADK tools | 1.2 | dina-brain | NOT STARTED |
 | 1.5 | Silence filter (basic) | L6 Intelligence | Three-priority classification (Fiduciary / Solicited / Engagement) using Gemini Flash Lite | 1.2, 1.1 | dina-brain | NOT STARTED |
 | 1.6 | LLM routing in brain | L6 Intelligence | Simple → Flash Lite, Complex → Flash/Pro/Claude, Voice → Deepgram STT. Sensitive personas → reject with "local model required" error (no local model in Online Mode Phase 1). | 1.1, 1.2 | dina-brain | NOT STARTED |
@@ -50,6 +50,7 @@ v0.4 is a monolithic Python application. The target is the three-container sidec
 | 1.9 | PII scrubber (regex) | L6 Intelligence | Regex-based PII detection in Go (credit cards, phone numbers, Aadhaar, emails). `/v1/pii/scrub` endpoint. Returns replacement map (`[PERSON_1]` → original) for de-sanitization of LLM responses. | 1.7 | dina-core | NOT STARTED |
 | 1.10 | docker-compose wiring | Infra | 2-container orchestration (core, brain). Optional PDS via `--profile with-pds` (Type B: VPS users). Type A (home users): core pushes signed records to external PDS (`pds.dina.host`) via outbound HTTPS. Internal network. Brain calls core API + cloud APIs (Gemini, Deepgram). Single `DINA_MODE=online docker compose up -d`. Healthchecks (`/healthz`, `/readyz`) on all containers. Dependency chain: brain waits for core healthy. `restart: always`. Structured JSON logging (Go `slog`, Python `structlog`) to stdout. Vault passphrase via Docker Secrets (tmpfs-mounted, never in env vars or CLI). | 1.2, 1.7, 1.1 | All | NOT STARTED |
 | 1.10a | Gatekeeper: Brain→Core API auth | Infra | **Brain is an untrusted tenant.** Two-tier static token auth, no JWTs: `BRAIN_TOKEN` (boot-generated, Docker Secrets) grants agent capabilities only (vault/query, vault/store, pii/scrub, notify, msg/send, reputation/query). `CLIENT_TOKEN` (per-device, QR pairing) grants everything including admin (did/sign, did/rotate, vault/backup, persona/unlock). Static allowlist in `gatekeeper.go` middleware — `isAdminEndpoint()` rejects `BRAIN_TOKEN` on admin paths. Brain never calls `/v1/did/sign` directly — it triggers high-level ops (`/v1/msg/send`) and core handles crypto internally. Persona access tiers also enforced: open (serve + log), restricted (serve + log + notify), locked (reject until user unlocks with TTL). | 1.7, 1.2 | dina-core + brain | NOT STARTED |
+| 1.10b | Admin UI | Infra | Separate FastAPI app in brain container on port 8500 with `CLIENT_TOKEN` auth. Dashboard (connector status, vault health, brain responsiveness), whisper history, contacts/sharing rules, settings/personas. Calls `core:8100` with `CLIENT_TOKEN`. **Build early — a UI to inspect vault, connectors, and whispers accelerates development of everything that follows.** | 1.10, 1.10a | dina-brain container | NOT STARTED |
 
 ---
 
@@ -88,7 +89,7 @@ v0.4 is a monolithic Python application. The target is the three-container sidec
 | 1.26 | Cart Handover (basic) | L7 Action | Brain assembles payment intent (UPI deep link). Stored in Tier 4. User taps to pay. Dina never touches money. | 1.15, 1.7 | dina-brain + core | NOT STARTED |
 | 1.27 | Bot response protocol | L5 Bot Interface | Standardized JSON response format with mandatory `creator_name`, `source_url`, `deep_link`, `deep_link_context` attribution fields. Deep links point to specific moments (e.g., video timestamp), not just source URLs. | 1.3 | dina-brain | NOT STARTED |
 | 1.28 | Local bot reputation tracking | L3 Reputation | Track bot accuracy, response time, uptime locally. Route to better bots when quality drops. | 1.27 | dina-brain | NOT STARTED |
-| 1.29 | Client authentication | Infra | Device-delegated keys. **First device bootstrap:** `docker compose up` prints pairing URL + QR to terminal. Managed hosting: signup flow provides QR. LAN: mDNS zero-config discovery. **Subsequent devices:** scan QR from existing authenticated device (or enter pairing code for desktop). Home Node generates device-specific keypair (delegated from root). Key stored in hardware security module (Secure Enclave / StrongBox / TPM). All communication over TLS + device-key mutual auth. | 1.8, 1.17 | dina-core | NOT STARTED |
+| 1.29 | Client authentication | Infra | Device-delegated keys. **First device:** `docker compose up` prints local IP + 6-digit pairing code to terminal (expires in 15 min). Phone app finds Home Node via mDNS (`github.com/hashicorp/mdns`) or manual IP entry. User enters pairing code → done. **Managed hosting:** signup flow provides pairing code. **Subsequent devices:** same flow — new pairing code via admin UI or terminal. **QR code deferred** — cosmetic, not needed for Phase 1. Home Node generates device-specific keypair (delegated from root). Key stored in hardware security module (Secure Enclave / StrongBox / TPM). All communication over TLS + device-key mutual auth. | 1.8, 1.17 | dina-core | NOT STARTED |
 | 1.29a | Supply chain security | Infra | Graduated approach: **(1) Day one:** pin base image digests (`@sha256:...`) in Dockerfile and `docker-compose.yml` — never `:latest`. **(2) When CI exists:** Cosign image signing in GitHub Actions (keyless via OIDC), SBOM generation with `syft` (SPDX format), verification in install/upgrade script. **(3) Skip:** reproducible builds (extremely hard with Python/CUDA, low ROI). Pinning prevents breakage, signing prevents tampering, SBOM enables auditing. | 1.10 | CI/CD | NOT STARTED |
 | 1.29b | Watchdog & self-notifications | Infra | **Internal Go ticker (not Prometheus).** Lightweight background goroutine in dina-core checks system health every hour. Tracks: connector liveness (last sync timestamp), disk usage, brain responsiveness, vault size per persona. When thresholds breach (connector dead > 48h, disk > 90%, brain unresponsive), injects Tier 2 system message into user's notification stream: "Gmail hasn't synced in 48 hours. Did your password change?" No external monitoring stack needed — zero extra RAM, zero user setup, works on Raspberry Pi. **Optional:** `/metrics` endpoint (Prometheus format, protected by `CLIENT_TOKEN`) for power users with existing homelab dashboards. | 1.7, 1.16 | dina-core | NOT STARTED |
 
@@ -101,7 +102,7 @@ v0.4 is a monolithic Python application. The target is the three-container sidec
 | 1.30 | Android client (basic) | Client | Kotlin + Jetpack Compose app. Connects to Home Node via WebSocket. Displays whispers, notifications, daily briefing. | 1.16, 1.29 | Android | NOT STARTED |
 | 1.31 | Android local vault cache | Client | SQLite cache of recent 6 months. Offline search. Checkpoint-based sync with Home Node. | 1.30 | Android | NOT STARTED |
 | 1.32 | Android on-device LLM | Client | LiteRT-LM + Gemma 3n E2B for offline classification, quick replies. | 1.30 | Android | NOT STARTED |
-| 1.33 | Managed hosting infra | Infra | Multi-tenant hosting. One SQLite per user. **Onboarding UX:** "Sign up with email. Connect Gmail. Done." Everything else happens silently. Prompt mnemonic backup after 7 days (not during signup). Start with one default persona. Persona separation as power-user feature. Billing ($5-10/month). | 1.10, 1.29 | Server | NOT STARTED |
+| 1.33 | Managed hosting infra | Infra | Multi-tenant hosting. One SQLite per user. **Onboarding UX:** "Sign up with email. Connect Gmail. Done." Everything else happens silently. Prompt mnemonic backup after 7 days (not during signup). Start with one default persona (`/personal`). Persona separation as power-user feature. Billing ($5-10/month). | 1.10, 1.29, 1.10b | Server | NOT STARTED |
 | 1.34 | FunctionGemma 270M routing | L6 Intelligence | Ultra-lightweight model (529MB) for fast intent classification and tool routing. Runs alongside Gemma 3n on llama-server. | 1.1 | llama-server | NOT STARTED |
 | 1.35 | WhatsApp connector (Android) | L2 Ingestion | NotificationListenerService captures WhatsApp notifications → pushes to Home Node via authenticated channel. **Warning:** weakest connector — fragile, text-only, no history. Breaks if WhatsApp changes notification format. May never be fully solved without regulation (EU DMA). | 1.30, 1.29 | Android | NOT STARTED |
 | 1.36 | Agent delegation (OpenClaw) | L7 Action | Delegate tasks to OpenClaw and other child agents via MCP. License renewal, form filling, task automation — all with `draft_only` constraint. No plugins — agents are external processes. | 1.25 | dina-brain | NOT STARTED |
@@ -165,7 +166,7 @@ v0.4 is a monolithic Python application. The target is the three-container sidec
 | Phase | Milestone | What You Can Demo |
 |-------|-----------|------------------|
 | **v0.4** | Proof of concept | YouTube analysis with signed verdicts, memory, DID identity |
-| **1a** | Sidecar running (Online Mode) | 2 containers up (core, brain), brain reasons via Gemini Flash Lite + Deepgram STT, core stores, reputation pushed to external PDS, review bot works via ADK |
+| **1a** | Sidecar running (Online Mode) | 2 containers up (core, brain), brain reasons via Gemini Flash Lite + Deepgram STT, core stores, reputation pushed to external PDS, YouTube analysis via ADK, admin UI on port 8500 |
 | **1b** | Sancho Moment | Two Dinas talk, whisper delivered to phone, guardian angel loop end-to-end |
 | **1c** | Safety & bots | Data backed up, drafts work, bot protocol standardized |
 | **1.5** | Real product | Android app, managed hosting, WhatsApp ingestion, daily briefing |
@@ -186,7 +187,7 @@ The following items were **missing from the original roadmap** but are described
 | 1.19a Simple relay for NAT | 1b | Described in architecture transport layer, no roadmap item |
 | 1.21 `sqlcipher_export()` backup | 1c | Issue #8 — `VACUUM INTO` creates unencrypted copies (CVE-level) |
 | 1.24 persona access tiers (open/restricted/locked) | 1c | Issue #9 — brain compromise risk. No `ATTACH DATABASE`. Per-persona API calls with tiered access control. |
-| 1.29 first device bootstrap | 1c | Issue #22 — no existing device to scan QR from |
+| 1.29 first device bootstrap | 1c | Issue #22 — mDNS discovery + 6-digit pairing code. QR deferred (cosmetic). |
 | 1.29a Container image signing | 1c | Issue #14 — supply chain risk |
 | 1.29b Monitoring & self-notifications | 1c | Issue #16 — silent connector failures |
 | 1.33 onboarding UX | 1.5 | Issue #21 — UX too complex for normal users |
@@ -208,6 +209,10 @@ The following items were **missing from the original roadmap** but are described
 | (architectural decision) Kernel model | All | Dina has no plugins. Child agents (OpenClaw etc.) are external processes via MCP. NaCl over HTTPS for peers. Two-tier auth is the permanent design. |
 | (architectural decision) Attachment storage | 1b | Issue #17 — never store binary blobs in SQLite. Metadata + reference + LLM summary only. Voice memos: transcript in vault, optional `media/` directory on disk. |
 | (architectural decision) Three-tier scheduling | 1b | No general-purpose scheduler. Go tickers for periodic tasks, reminder loop on vault for one-shots, delegate complex scheduling to calendar via OpenClaw. |
+| (architectural decision) Cold start: tool first, network second | All | Issue #20 — no "Review Bot" to build. Phase 1 is single-player: Brain + OpenClaw web search with user context. Reputation Graph activates gradually in Phase 2+ as network grows. |
+| (architectural decision) Calendar is a Sense, not a Tool | 1b | Issue #18 — Calendar data ingested into vault (read-only cache), not delegated to OpenClaw. Google REST API Phase 1, CalDAV Phase 2. Complex scheduling (multi-person) delegated to OpenClaw. |
+| 1.10b Admin UI (Python) | 1a | Issue #21 — Separate FastAPI app in brain container (port 8500, CLIENT_TOKEN). Dashboard, settings, onboarding flow. Python for speed of development, not Go templates. Moved to Phase 1a — a dev UI accelerates everything that follows. |
+| 1.33 (updated) Progressive onboarding | 1.5 | Issue #21 — Signal-level simplicity: email → OAuth → done. One default persona. Mnemonic backup deferred to day 7. Features unlock progressively over weeks. |
 
 ## Known Inconsistencies Resolved
 
