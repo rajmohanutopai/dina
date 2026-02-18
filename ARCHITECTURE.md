@@ -234,9 +234,9 @@ docker-compose.yml:
 
 **Why the sidecar pattern, not a single binary:**
 
-- **Best tools for each job.** Go has excellent crypto/DID libraries (standard library `crypto/*` + Hyperledger Aries Framework Go for DIDComm). Python has the best agent/AI frameworks. Running them side-by-side is the industry standard.
+- **Best tools for each job.** Go has excellent crypto/DID libraries (standard library `crypto/*`, libsodium via `GoKillers/libsodium-go`, AT Protocol via `bluesky-social/indigo`). Python has the best agent/AI frameworks. Running them side-by-side is the industry standard.
 - **Independent development and testing.** `python3 brain.py` works on its own. `go run ./cmd/core` works on its own. You iterate on agent logic at Python speed without recompiling Go.
-- **Crash isolation.** If the Python brain OOMs or crashes, the Go core catches it and restarts it. The vault, keys, and DIDComm endpoint never go down.
+- **Crash isolation.** If the Python brain OOMs or crashes, the Go core catches it and restarts it. The vault, keys, and messaging endpoint never go down.
 - **Swappable brain.** Switch from Google ADK to Claude Agent SDK, or from Python to Go (Google ADK now supports Go). The core's internal API doesn't change.
 - **Future consolidation path.** Google ADK already supports Go. As Go's AI ecosystem matures, the brain could be rewritten in Go, collapsing the sidecar into a single binary. The internal API makes this a clean migration.
 - **Docker-native.** In production (managed hosting), these are containers orchestrated by docker-compose or Fly.io. In development, they're just two terminal windows.
@@ -1346,6 +1346,26 @@ How does Dina find bots in the first place?
 
 The mesh protocol. How your Dina talks to Sancho's Dina.
 
+### Encryption Protocol Decision
+
+**Problem:** There is no actively maintained DIDComm v2.1 library in Go (or any language except Rust and Python). Hyperledger Aries Framework Go was archived in March 2024. DIDComm v2 itself lacks forward secrecy — the 2024 ACM CCS security analysis confirmed this. Building a full DIDComm v2.1 implementation from scratch would cost 2-3 months for marginal interoperability gain (the DIDComm ecosystem is small and concentrated in verifiable credentials, not agent-to-agent messaging).
+
+**Decision: Phased encryption approach.**
+
+| Phase | Encryption | Forward Secrecy | Interop |
+|-------|-----------|-----------------|---------|
+| **Phase 1** | libsodium `crypto_box_seal` (ephemeral sender keys) + DIDComm-shaped plaintext | Sender FS only (ephemeral key destroyed after send) | Dina-to-Dina only |
+| **Phase 2** | Full JWE (ECDH-1PU+A256KW, A256CBC-HS512) | Same as DIDComm v2 (sender FS only) | Wire-compatible with DIDComm v2 libraries |
+| **Phase 3** | Noise XX session establishment between Home Nodes | **Full FS** (both sender + receiver, per-session ephemeral keys) | Dina-to-Dina; DIDComm plaintext over Noise channel |
+
+**Why this works:** The plaintext message structure inside the encryption envelope is DIDComm-compatible from day one (`{id, type, from, to, created_time, body}`). Migration between phases means swapping the encryption wrapper — application code and message types don't change.
+
+**Why not full DIDComm v2 in Phase 1:**
+1. No Go library exists. Rust FFI adds build complexity.
+2. DIDComm's multi-recipient JWE, mediator routing, and ECDH-1PU are unnecessary — Dina-to-Dina is 1:1 between always-on Home Nodes.
+3. DIDComm v2 doesn't provide forward secrecy anyway. Noise XX in Phase 3 provides better security than DIDComm ever would.
+4. libsodium is available in every language and has a trivial API.
+
 ### Connection Establishment
 
 ```
@@ -1364,34 +1384,49 @@ Step 3: Connect to Sancho's Home Node directly
   - Home Node is always on — no relay needed, no waiting for phone to wake up
         ↓
 Step 4: Mutual authentication
-  - DIDComm v2.1 protocol (DIF Ratified Specification, with v3 IETF standard in planning)
-  - Both Dinas present DIDs, verify cryptographic signatures
+  - Both Dinas present DIDs, verify Ed25519 signatures
   - Both must be in each other's "allowed contacts" list
         ↓
-Step 5: Encrypted channel established
-  - X25519 key exchange → shared secret
-  - All messages encrypted end-to-end
+Step 5: Encrypted message sent
+  - Ed25519 signing key → X25519 encryption key (crypto_sign_ed25519_sk_to_curve25519)
+  - Sender generates ephemeral X25519 keypair per message (crypto_box_seal)
+  - Message encrypted with ephemeral key → recipient's static X25519 public key
+  - Ephemeral private key destroyed immediately (sender forward secrecy)
   - Even if the VPS provider intercepts traffic, they see only encrypted blobs
 ```
 
 ### Message Types
 
-Dina-to-Dina messages follow a strict schema:
+Dina-to-Dina messages follow a strict schema. The **plaintext** (inside the encryption envelope) uses DIDComm-compatible structure:
 
 ```json
 {
+    "id": "msg_20260215_a1b2c3",
     "type": "dina/social/arrival",
     "from": "did:plc:...(sancho)",
-    "to": "did:plc:...(you)",
-    "timestamp": "2026-02-15T10:30:00Z",
-    "payload": {
+    "to": ["did:plc:...(you)"],
+    "created_time": 1739612400,
+    "body": {
         "event": "departing_home",
         "eta_minutes": 15,
-        "context_flags": ["mother_was_ill"]     // Sancho's Dina chose to share this
-    },
-    "signature": "..."
+        "context_flags": ["mother_was_ill"]
+    }
 }
 ```
+
+This plaintext is signed (Ed25519) and encrypted (libsodium `crypto_box_seal` in Phase 1) into an envelope:
+
+```json
+{
+    "typ": "application/dina-encrypted+json",
+    "from_kid": "did:plc:...(sancho)#key-1",
+    "to_kid": "did:plc:...(you)#key-1",
+    "ciphertext": "<base64url-encoded encrypted blob>",
+    "sig": "<Ed25519 signature over plaintext>"
+}
+```
+
+In Phase 2, the envelope becomes standard JWE (`application/didcomm-encrypted+json`) — the plaintext inside stays identical.
 
 **Message categories:**
 - `dina/social/*` — arrival, departure, mood flags, context sharing
@@ -1428,23 +1463,26 @@ How do messages physically travel between Dinas?
 - Your DID Document (via PLC Directory) points to your Home Node's endpoint
 - Messages go directly: Your Home Node → Sancho's Home Node
 - Both are always-on servers — no relay needed for the common case
-- End-to-end encrypted (DIDComm v2.1). Even if traffic is intercepted, content is unreadable.
+- End-to-end encrypted (libsodium `crypto_box_seal`). Even if traffic is intercepted, content is unreadable.
+- Sender forward secrecy: ephemeral key destroyed after send. Compromise of sender's static key doesn't expose past messages.
 - If a Home Node is temporarily down, the sending Dina queues the message and retries with exponential backoff.
 
 **Phase 1 fallback: Relay for NAT/firewall situations**
 - Some home servers (Raspberry Pi behind a router) can't accept inbound connections
 - For these cases, the DID Document points to a relay endpoint instead
-- Relay sees only: encrypted blob, sender DID, recipient DID
+- Relay receives a simple forward envelope: `{type: "dina/forward", to: "did:plc:...", payload: "<encrypted blob>"}`. Relay peels the outer layer, forwards the inner blob. ~100 lines of code.
+- Relay sees only: encrypted blob + recipient DID. Cannot read content.
 - Community-run or self-hosted relays. User chooses which — and can switch by updating their DID Document.
 
-**Phase 2: Direct peer-to-peer (device level)**
-- When user is actively interacting on phone, latency-sensitive messages route directly via WebRTC
-- Bypasses Home Node for real-time conversations
-- Falls back to Home Node path if peer unreachable
+**Phase 2: Full DIDComm v2 wire compatibility + direct peer-to-peer**
+- Encryption envelope upgraded to standard JWE (ECDH-1PU+A256KW). Plaintext messages unchanged.
+- Wire-compatible with any DIDComm v2 library (Rust, Python, WASM).
+- When user is actively interacting on phone, latency-sensitive messages route directly via WebRTC.
+- Falls back to Home Node path if peer unreachable.
 
-**Phase 3: Mesh routing**
-- Messages hop through other Dinas (like Tor but for agent messages)
-- Maximum privacy — even the transport layer doesn't know who's talking to whom
+**Phase 3: Noise XX sessions + mesh routing**
+- Noise XX handshake between always-on Home Nodes establishes sessions with **full forward secrecy** (both sender and receiver). DIDComm plaintext flows over the Noise channel.
+- Messages can hop through other Dinas (like Tor but for agent messages) — maximum privacy.
 
 ### The Sancho Moment — Complete Flow
 
@@ -1469,35 +1507,91 @@ How do messages physically travel between Dinas?
 
 ## Layer 3: Reputation Graph
 
-Distributed system for verified product reviews, expert attestations, and outcome data.
+Distributed system for verified product reviews, expert attestations, and outcome data. **Built on AT Protocol** — reputation data is inherently public and benefits from federation, Merkle tree integrity, and ecosystem discoverability.
 
 ### Architecture
 
-The Reputation Graph is NOT a single database. It's a distributed system with three components:
+The Reputation Graph is NOT a single database. It's a distributed system built on AT Protocol's federated infrastructure:
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│               REPUTATION GRAPH                          │
-│                                                         │
-│  ┌─────────────────┐  ┌──────────────┐  ┌───────────┐ │
-│  │ Expert           │  │ Outcome      │  │ Bot       │ │
-│  │ Attestations     │  │ Data Store   │  │ Registry  │ │
-│  │                  │  │              │  │           │ │
-│  │ Signed reviews   │  │ Anonymized   │  │ Bot DIDs  │ │
-│  │ from verified    │  │ purchase     │  │ Bot scores│ │
-│  │ experts          │  │ outcomes     │  │ Bot APIs  │ │
-│  │                  │  │ from Dinas   │  │           │ │
-│  └─────────────────┘  └──────────────┘  └───────────┘ │
-│                                                         │
-│  Storage: Federated servers                               │
-│           Signed entries + signed tombstones               │
-│           L2 Merkle root anchoring for timestamps (Phase 3)│
-│                                                         │
-│  Rule: Only the keyholder can delete their own data.      │
-│        Server operators can censor but not forge.         │
-│        Replication defeats censorship.                    │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│               REPUTATION GRAPH (AT Protocol)                  │
+│                                                               │
+│  ┌─────────────────┐  ┌──────────────┐  ┌───────────┐       │
+│  │ Expert           │  │ Outcome      │  │ Bot       │       │
+│  │ Attestations     │  │ Data Store   │  │ Registry  │       │
+│  │                  │  │              │  │           │       │
+│  │ Signed reviews   │  │ Anonymized   │  │ Bot DIDs  │       │
+│  │ from verified    │  │ purchase     │  │ Bot scores│       │
+│  │ experts          │  │ outcomes     │  │ Bot APIs  │       │
+│  │                  │  │ from Dinas   │  │           │       │
+│  └─────────────────┘  └──────────────┘  └───────────┘       │
+│                                                               │
+│  Storage: AT Protocol PDS (one per Home Node)                 │
+│           Records stored in signed Merkle repos               │
+│           Federated via AT Protocol Relay + AppView           │
+│           Custom Lexicons: com.dina.reputation.*              │
+│           Signed tombstones for deletion                      │
+│           L2 Merkle root anchoring for timestamps (Phase 3)   │
+│                                                               │
+│  Data flow:                                                   │
+│    Home Node → PDS (stores signed records in user's repo)     │
+│         ↓                                                     │
+│    AT Protocol Relay (aggregates firehose from all PDSes)     │
+│         ↓                                                     │
+│    Reputation AppView (indexes attestations, outcomes, bots)  │
+│                                                               │
+│  Rule: Only the keyholder can delete their own data.          │
+│        Repo is cryptographically signed — operators            │
+│        can censor but not forge.                               │
+│        Relay replication defeats censorship.                   │
+└──────────────────────────────────────────────────────────────┘
 ```
+
+### Why AT Protocol for Reputation
+
+| Property | AT Protocol Fit |
+|----------|----------------|
+| **Public data** | Reputation data is inherently public — AT Protocol repos are public by design |
+| **Signed records** | AT Protocol repos are Merkle trees of signed CBOR records — tamper-evident by default |
+| **Federation** | Relays aggregate data from all PDSes — no single point of failure or censorship |
+| **Custom schemas** | Lexicons let us define `com.dina.reputation.attestation`, `com.dina.reputation.outcome`, etc. |
+| **Identity** | `did:plc` is native to AT Protocol — zero integration work |
+| **Deletion** | Users can delete records from their repo. Signed tombstones prevent unauthorized deletion. |
+| **Ecosystem** | Any AT Protocol AppView can index Dina's Reputation Graph. Handles (`alice.dina.host`) provide human-readable discovery. |
+| **Implementations** | Go (`bluesky-social/indigo`), Python (`MarshalX/atproto`), Rust (`atrium-rs`), TypeScript (official reference) |
+
+### Custom Lexicons
+
+```json
+{
+  "lexicon": 1,
+  "id": "com.dina.reputation.attestation",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["expertDid", "productCategory", "productId", "rating", "verdict"],
+        "properties": {
+          "expertDid": {"type": "string", "format": "did"},
+          "expertTrustRing": {"type": "integer"},
+          "productCategory": {"type": "string"},
+          "productId": {"type": "string"},
+          "rating": {"type": "integer", "minimum": 0, "maximum": 100},
+          "verdict": {"type": "ref", "ref": "#verdictDetail"},
+          "sourceUrl": {"type": "string", "format": "uri"},
+          "deepLink": {"type": "string", "format": "uri"},
+          "createdAt": {"type": "string", "format": "datetime"}
+        }
+      }
+    }
+  }
+}
+```
+
+Additional Lexicons: `com.dina.reputation.outcome` (anonymized purchase outcomes), `com.dina.reputation.bot` (bot registration and scores), `com.dina.trust.membership` (trust ring public info).
 
 ### Expert Attestations
 
@@ -1546,16 +1640,19 @@ The Reputation Graph is NOT a single database. It's a distributed system with th
 
 ### Storage Options for the Graph
 
-**Decision: Federated servers with signed tombstones. Permanently.**
+**Decision: AT Protocol (federated PDS + Relay + AppView) with signed tombstones. From day one.**
 
-We evaluated four options:
+We evaluated five options:
 
 | Option | Pros | Cons | Verdict |
 |--------|------|------|---------|
 | **A: IPFS + IPNS** | Decentralized, content-addressed | Slow queries, pinning economics, no guaranteed deletion | ❌ Rejected |
 | **B: DHT (Kademlia)** | No central server, good for key lookup | Can't do complex queries ("all chairs rated > 80") | ❌ Rejected |
 | **C: L2 blockchain** | Tamper-proof, auditable timestamps | **Cannot delete.** Immutability violates sovereignty. | ❌ Rejected for data storage |
-| **D: Federated servers** | Fast queries, simple to build, deletable | Server operators can censor (but not forge) | ✅ Chosen |
+| **D: Custom federated servers** | Fast queries, simple to build, deletable | Must build federation, sync, discovery from scratch | ❌ Rejected — AT Protocol does this better |
+| **E: AT Protocol** | Federation built-in, signed Merkle repos, `did:plc` native, Lexicon schemas, relay infrastructure exists, Go/Python/Rust/TS SDKs | Public by design (fine — reputation IS public) | ✅ Chosen |
+
+**Why AT Protocol wins over custom federation:** AT Protocol provides signed repos (Merkle tree integrity), relay-based federation (replication defeats censorship), custom Lexicons (schema-enforced records), `did:plc` identity (already our DID method), and an existing ecosystem of SDKs and infrastructure. Building custom federation would duplicate what AT Protocol already provides.
 
 **Why blockchain is rejected for data storage:** Immutability violates sovereignty. If you cannot delete data, you are not sovereign.
 
@@ -1906,12 +2003,12 @@ Every N days (configurable, default 90), Dina asks: "Still here?" If the user do
 
 ## Architectural Decision: Why Not IPFS / Ceramic / Web3?
 
-**Decision: SQLite for private data. Federated servers for public data. No IPFS, no Ceramic, no blockchain for storage.**
+**Decision: SQLite for private data. AT Protocol for public data. No IPFS, no Ceramic, no blockchain for storage.**
 
 | Data Type | Requirements | Tech |
 |-----------|-------------|------|
 | Emails, chats, contacts, health, financials | Private, fast, deletable | SQLite (Home Node) |
-| Product reviews, outcome data, bot scores | Public, deletable by author, censorship-resistant | Federated Reputation Graph |
+| Product reviews, outcome data, bot scores | Public, deletable by author, censorship-resistant | AT Protocol PDS + Reputation AppView |
 
 ### Why Not IPFS/Ceramic
 
@@ -1925,7 +2022,60 @@ Every N days (configurable, default 90), Dina asks: "Still here?" If the user do
 
 Blockchain has exactly one role: **timestamp anchoring.** Federated servers report timestamps, but a malicious operator can backdate entries. Periodic Merkle root hash anchoring to an L2 chain provides provable timestamps for dispute resolution. Phase 3 addition, not a dependency. See Layer 3 "Timestamp Anchoring" for full design.
 
-**Boundary: private data → SQLite on Home Node. Public data → federated servers. Blockchain → timestamp anchoring only.**
+**Boundary: private data → SQLite on Home Node. Public data → AT Protocol. Blockchain → timestamp anchoring only.**
+
+---
+
+## Architectural Decision: AT Protocol — Where It Fits and Where It Doesn't
+
+**Decision: AT Protocol for the Reputation Graph (public layer). Independent protocol for messaging and vault (private layer).**
+
+Dina uses `did:plc` (Bluesky's DID method) for identity. The question was whether to adopt the full AT Protocol stack (PDS, Relay, AppView, Lexicons) for more than just identity.
+
+### What AT Protocol provides
+
+AT Protocol is a federated protocol for public, signed, replicated data. Each user's data lives in a Personal Data Server (PDS) as a signed Merkle tree of records. Relays aggregate data from many PDSes into a unified firehose. AppViews consume the firehose and build application-specific indexes.
+
+### Where it fits: Reputation Graph
+
+The Reputation Graph is inherently public data — expert attestations, anonymized outcome reports, bot scores. AT Protocol is a natural fit:
+
+- **Public data → public protocol.** Reputation records should be visible, discoverable, and verifiable. AT Protocol repos are all of these.
+- **Signed Merkle repos.** Every record is part of a cryptographically signed tree. Operators can censor but not forge. Replication defeats censorship.
+- **Federation for free.** Relays replicate data across the network. No need to build custom federation, sync, or discovery.
+- **`did:plc` native.** Dina's identity method is AT Protocol's identity method. Zero integration work.
+- **Custom Lexicons.** Schema-enforced records: `com.dina.reputation.attestation`, `com.dina.reputation.outcome`, `com.dina.reputation.bot`.
+- **Ecosystem.** Any AT Protocol AppView can index Dina's Reputation Graph. Handles (`alice.dina.host`) provide human-readable discovery.
+
+### Where it doesn't fit: Messaging and Vault
+
+AT Protocol is fundamentally a **public data protocol**. All repository records are visible to relays and any consumer. The Bluesky team explicitly says private/encrypted content in repos is "not a good idea" and that private data is "an entire second phase of protocol development" — not built, not specified.
+
+| Dina Requirement | AT Protocol Status |
+|-----------------|-------------------|
+| E2E encrypted messaging | Not supported. Explicitly discouraged in repos. |
+| Private data vault | Not supported. All repo data is public. |
+| Persona compartments | Not supported. One DID = one repo. |
+| Per-record access control | Not supported. |
+| P2P direct messaging | Not the model. Data routes through relays. |
+
+For messaging and vault, Dina uses its own stack: libsodium encryption for Dina-to-Dina messages, SQLCipher for the encrypted vault, persona compartments as separate encrypted databases.
+
+### The Home Node architecture
+
+```
+Home Node
+├── dina-core (Go)      ← Private layer: encrypted vault, keys, DIDComm-shaped messaging
+├── dina-brain (Python)  ← Private layer: reasoning, classification, agent orchestration
+├── llama-server         ← Private layer: local LLM inference
+└── dina-pds             ← Public layer: AT Protocol PDS for Reputation Graph only
+```
+
+The PDS runs alongside the private stack. It hosts only reputation data (`com.dina.reputation.*` Lexicons). Private data (messages, personal vault, persona compartments) never touches the AT Protocol stack.
+
+### Precedent
+
+This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — which uses AT Protocol for identity and blob storage but builds its entire messaging/encryption infrastructure independently. It also mirrors **Groundmist Sync** — a local-first sync server linked to AT Protocol identity, using AT Protocol for optional publishing while keeping private data local.
 
 ---
 
@@ -1938,8 +2088,8 @@ Blockchain has exactly one role: **timestamp anchoring.** Federated servers repo
 | Database | SQLite + SQLCipher + FTS5 (via `mattn/go-sqlite3` with CGO) | Battle-tested, one encrypted file per persona, no separate DB server. SQLCipher provides transparent whole-database AES-256 encryption. |
 | Vector search | Phase 1: vectors stored and queried in dina-brain (Python, sqlite-vec). Phase 2: sqlite-vec in core via CGO. | Brain handles embeddings initially; core handles structured/FTS queries. Clean separation. |
 | PII scrubbing (hot path) | Regex + calls to llama-server | Fast path in Go, LLM fallback for ambiguous cases |
-| Client ↔ Node protocol | DIDComm v2.1 over WebSocket (TLS) | Encrypted, authenticated, standards-based |
-| Home Node ↔ Home Node | DIDComm v2.1 (direct or via relay), Hyperledger Aries Framework Go | Always-on agent communication, Apache 2.0 |
+| Client ↔ Node protocol | Authenticated WebSocket (TLS + device-delegated key) | Encrypted channel, device key proves identity |
+| Home Node ↔ Home Node | Phase 1: libsodium `crypto_box_seal` (ephemeral sender keys) + DIDComm-shaped plaintext. Phase 2: full JWE (ECDH-1PU). Phase 3: Noise XX sessions for full forward secrecy. | Sender FS from day one. Full FS in Phase 3. Plaintext format is DIDComm-compatible throughout — migration is encryption-layer only. |
 | **Home Node (dina-brain)** | | |
 | Brain runtime | Python + Google ADK (v1.25+, Apache 2.0) | Model-agnostic agent framework, multi-agent orchestration |
 | Local LLM inference | llama-server (llama.cpp) + Gemma 3n GGUF | OpenAI-compatible API, CPU inference, shared by core and brain |
@@ -1949,13 +2099,15 @@ Blockchain has exactly one role: **timestamp anchoring.** Federated servers repo
 | External agent integration | MCP (Model Context Protocol) | Connect to OpenClaw and other action agents |
 | Embeddings | EmbeddingGemma (308M, Phase 1), Nomic Embed V2 (Phase 2) | <200MB RAM, 100+ languages, Matryoshka dims |
 | **Container orchestration** | | |
-| Development | docker-compose (3 containers: core, brain, llama-server) | One-command startup, clean separation |
+| Development | docker-compose (4 containers: core, brain, llama-server, pds) | One-command startup, clean separation |
 | Managed hosting | docker-compose or Fly.io | Same containers, orchestrated by hosting operator |
 | **Identity & Crypto** | | |
 | Identity | W3C DIDs (`did:plc` via PLC Directory) | Open standard, globally resolvable, key rotation, 30M+ identities, Go implementation available. Escape hatch: rotation op to `did:web`. |
 | Key management | SLIP-0010 HD derivation (Ed25519), BIP-39 mnemonic | Proven, Ed25519-compatible |
 | Vault encryption | SQLCipher (AES-256-CBC per page, transparent) | Whole-database encryption for persona vaults. FTS5/sqlite-vec indices encrypted transparently. |
-| Wire/key encryption | AES-256-GCM, X25519, Ed25519 | Industry standard for DIDComm, key wrapping, archive snapshots |
+| Wire encryption (Phase 1) | libsodium: X25519 + XSalsa20-Poly1305 (`crypto_box_seal`) | Ephemeral sender keys, ISC license, available in every language |
+| Wire encryption (Phase 3) | Noise XX: X25519 + ChaChaPoly + SHA256 | Full forward secrecy for always-on Home Node sessions |
+| Key wrapping / archive | AES-256-GCM, X25519, Ed25519 | Industry standard for key wrapping, archive snapshots |
 | Identity key derivation | SLIP-0010 (hardened Ed25519 HD paths) | Ed25519-compatible, no unsafe public derivation. Go: `stellar/go/exp/crypto/derivation` |
 | Vault key derivation | HKDF-SHA256 (from persona key, domain-separated) | Symmetric keys for SQLCipher, independent per persona per tier |
 | Key storage (Home Node) | Key Wrapping: Passphrase → Argon2id (KEK) → AES-256-GCM wraps Master Key (DEK) | Standard key wrapping. Passphrase change re-wraps DEK without re-encrypting database. |
@@ -1970,7 +2122,7 @@ Blockchain has exactly one role: **timestamp anchoring.** Federated servers repo
 | DID resolution | PLC Directory (`did:plc`), `did:web` escape hatch | `did:plc`: proven at 30M+ scale, key rotation, Go implementation (`bluesky-social/indigo`). `did:web`: sovereignty escape if PLC Directory becomes adversarial — rotation op transitions transparently. |
 | Push to clients | FCM/APNs (Phase 1), UnifiedPush (Phase 2) | Wake clients when Home Node has updates |
 | Backup | Any blob storage (S3, Backblaze, NAS) | Encrypted snapshots of Home Node vault |
-| Reputation Graph | Federated servers + signed tombstones (permanent). Merkle root hash anchoring to L2 (Phase 3) for timestamp proofs. | Sovereignty requires deletion. Federation + crypto signatures = deletable + verifiable. |
+| Reputation Graph | AT Protocol PDS + Relay + AppView. Custom Lexicons (`com.dina.reputation.*`). Signed tombstones for deletion. L2 Merkle root anchoring (Phase 3) for timestamp proofs. | AT Protocol provides federation, signed Merkle repos, `did:plc` identity, and ecosystem SDKs. Reputation data is public — AT Protocol's public-by-design model is the right fit. |
 | ZKP | Semaphore V4 (PSE/Ethereum Foundation) | Production-proven (World ID), off-chain proof generation |
 | Serialization | JSON (Phase 1), MessagePack or Protobuf (Phase 2) | JSON is debuggable and sufficient for core↔brain traffic volume. Binary serialization deferred until profiling shows it matters. |
 | Containerization | Docker + docker-compose | Single-command Home Node deployment: `docker compose up -d` |
@@ -1995,14 +2147,15 @@ Blockchain has exactly one role: **timestamp anchoring.** Federated servers repo
 
 ### Home Node Deployment
 
-The Home Node runs three containers orchestrated by docker-compose: dina-core (Go/net/http — vault, keys, DIDComm), dina-brain (Python/Google ADK — agent reasoning), and llama-server (llama.cpp — local LLM). No separate database server, no Kubernetes.
+The Home Node runs four containers orchestrated by docker-compose: dina-core (Go/net/http — vault, keys, encrypted messaging), dina-brain (Python/Google ADK — agent reasoning), llama-server (llama.cpp — local LLM), and dina-pds (AT Protocol PDS — public Reputation Graph). No separate database server, no Kubernetes.
 
 **The docker-compose stack:**
-- dina-core: Go binary + SQLCipher vaults (one encrypted file per persona)
-- dina-brain: Python + Google ADK agent loop
-- llama-server: llama.cpp + Gemma 3n GGUF model
+- dina-core: Go binary + SQLCipher vaults (one encrypted file per persona) — **private layer**
+- dina-brain: Python + Google ADK agent loop — **private layer**
+- llama-server: llama.cpp + Gemma 3n GGUF model — **private layer**
+- dina-pds: AT Protocol PDS for Reputation Graph — **public layer** (reputation data only)
 - Input: `VAULT_PASSPHRASE` (env var or passed via client device at startup)
-- Output: DIDComm endpoint + WebSocket API for clients
+- Output: Encrypted messaging endpoint + WebSocket API for clients + AT Protocol firehose
 - Deployment: `docker compose up -d`
 
 **Minimum requirements:**
@@ -2035,7 +2188,7 @@ DEVICE ONBOARDING:
   3. Home Node generates a device-specific keypair (delegated from root)
   4. Device stores its key in hardware security module (Secure Enclave / StrongBox / TPM)
   5. Home Node registers device in allowed-devices list
-  6. All subsequent communication: TLS + DIDComm v2.1 mutual authentication
+  6. All subsequent communication: TLS + device-key mutual authentication
 ```
 
 ### Push Notifications (Home Node → Client)
@@ -2137,7 +2290,7 @@ DINA-CORE (Go + net/http):
   ✓ SQLite vault (Tier 0 + Tier 1 + Tier 4)
   ✓ WAL mode + synchronous=NORMAL (default config, non-negotiable)
   ✓ Pre-flight snapshot on every update (VACUUM INTO + integrity_check)
-  ✓ DIDComm v2.1 endpoint (always-on, external)
+  ✓ Encrypted messaging endpoint (libsodium crypto_box_seal + DIDComm-shaped plaintext, always-on)
   ✓ WebSocket server for client connections
   ✓ Client authentication (device-delegated keys)
   ✓ PII scrubber (regex hot path + llama-server fallback)
@@ -2162,11 +2315,11 @@ LLAMA-SERVER:
   ✓ FunctionGemma 270M for routing (Phase 1.5)
 
 DOCKER-COMPOSE:
-  ✓ Three-container orchestration (core + brain + llama-server)
+  ✓ Four-container orchestration (core + brain + llama-server + pds)
   ✓ Internal network (containers talk on localhost)
   ✓ Single `docker compose up -d` deployment
-  ✓ Healthchecks on all three containers (/healthz, /readyz)
-  ✓ Dependency chain (brain waits for core healthy)
+  ✓ Healthchecks on all containers (/healthz, /readyz)
+  ✓ Dependency chain (brain waits for core healthy, pds independent)
   ✓ `restart: always` with automatic recovery on failure
 
 OBSERVABILITY:
@@ -2222,16 +2375,24 @@ Layer 7: Action Layer
 Layer 4: Dina-to-Dina
   ✓ DID exchange via QR code
   ✓ PLC Directory endpoint resolution (points to Home Node)
-  ✓ Basic encrypted messaging (Home Node ↔ Home Node)
-  ✗ Full protocol with sharing rules (Phase 2)
+  ✓ Encrypted messaging (libsodium crypto_box_seal, sender forward secrecy)
+  ✓ DIDComm-compatible plaintext format (id, type, from, to, created_time, body)
+  ✓ Simple relay forwarding for NAT situations
+  ✗ Full DIDComm v2 JWE wire compatibility (Phase 2)
+  ✗ Noise XX sessions for full forward secrecy (Phase 3)
+  ✗ Sharing rules enforcement (Phase 2)
 
-Layer 3: Reputation Graph
-  ✗ Distributed graph (Phase 2)
-  ✓ Local bot reputation tracking only
+Layer 3: Reputation Graph (AT Protocol)
+  ✓ AT Protocol PDS running alongside Home Node
+  ✓ Custom Lexicons: com.dina.reputation.attestation, com.dina.reputation.outcome
+  ✓ Federation via AT Protocol Relay
+  ✓ Local bot reputation tracking
+  ✗ Reputation AppView (Phase 1.5 — separate service indexes the firehose)
+  ✗ L2 Merkle root anchoring for timestamps (Phase 3)
 
 CLIENT (Phase 1: Android only):
   ✓ Kotlin app — rich client
-  ✓ Connect to Home Node via WebSocket + DIDComm
+  ✓ Connect to Home Node via authenticated WebSocket
   ✓ Local vault cache (recent 6 months)
   ✓ On-device LLM (LiteRT-LM + Gemma 3n E2B) for offline/low-latency
   ✗ WhatsApp NotificationListener (Phase 1.5)
@@ -2304,9 +2465,9 @@ Goal: Dina watches your world, stays quiet, and whispers when it matters. The Sa
 | 1.14 | Connector scheduler | L2 Ingestion | Cron-style polling: check Gmail every 15 min (configurable), calendar every 30 min. Triggers brain on new data. | 1.11, 1.12, 1.13, 1.10 | dina-core |
 | 1.15 | Context assembly for whispers | L6 Intelligence | Brain queries vault for relevant context (relationships, history), assembles whisper text | 1.10, 1.4 | dina-brain |
 | 1.16 | Whisper delivery (WebSocket) | L7 Action | Core pushes whisper to connected client device via WebSocket. `/v1/notify` endpoint. | 1.15, 1.7 | dina-core |
-| 1.17 | DIDComm endpoint | L4 Dina-to-Dina | Always-on HTTPS endpoint on localhost:8443 (exposed to internet via ingress tier — Tailscale Funnel, Cloudflare Tunnel, or Yggdrasil). Receives encrypted messages from other Dinas. | 1.8, 1.7 | dina-core |
+| 1.17 | Encrypted messaging endpoint | L4 Dina-to-Dina | Always-on HTTPS endpoint on localhost:8443 (exposed to internet via ingress tier — Tailscale Funnel, Cloudflare Tunnel, or Yggdrasil). Receives encrypted messages from other Dinas. libsodium `crypto_box_seal` + DIDComm-shaped plaintext. | 1.8, 1.7 | dina-core |
 | 1.18 | DID exchange (QR code) | L4 Dina-to-Dina | Generate QR code containing your DID. Scan another Dina's QR to establish connection. | 1.8, 1.17 | dina-core |
-| 1.19 | Basic Dina-to-Dina messaging | L4 Dina-to-Dina | Send/receive encrypted messages between two Home Nodes via DIDComm v2.1. | 1.17, 1.18 | dina-core |
+| 1.19 | Basic Dina-to-Dina messaging | L4 Dina-to-Dina | Send/receive encrypted messages between two Home Nodes. Sender FS via ephemeral keys. DIDComm-compatible plaintext format. | 1.17, 1.18 | dina-core |
 | 1.20 | **The Sancho Moment (E2E)** | All | Sancho's Dina sends "leaving home" → your core receives → brain checks vault for Sancho context → brain assembles whisper ("his mother was ill, put the kettle on") → core pushes to your phone. | 1.19, 1.15, 1.16 | All |
 
 ### Phase 1c — Safety & Persistence (Weeks 6-8)
@@ -2345,7 +2506,7 @@ Goal: Data is safe. Actions go through approval gates. Bot protocol is standardi
 |---|------|-------|-----------|-----------|
 | 2.1 | Embedding generation (EmbeddingGemma) | L1 Storage | 308M param model generates embeddings. Stored in Tier 2 Index via sqlite-vec. Enables semantic search across all vault data. | 1.7, 1.1 |
 | 2.2 | Tier 2 Index (embeddings) | L1 Storage | sqlite-vec vector store alongside SQLite FTS5. Hybrid search: keyword + semantic. | 2.1 |
-| 2.3 | Reputation Graph (federated) | L3 Reputation | Federated servers store expert attestations + anonymized outcome data. Cryptographically signed entries. Bots and Dinas query it. | 1.28 |
+| 2.3 | Reputation AppView | L3 Reputation | AT Protocol AppView indexes `com.dina.reputation.*` records from the relay firehose. Query API for attestations, outcomes, bot scores. | 1.28 |
 | 2.4 | Outcome data collection | L3 Reputation | Dina tracks purchases via Cart Handover. Months later, gently asks "How's that chair?" Anonymized outcome → Reputation Graph. | 1.26, 2.3 |
 | 2.5 | Trust Rings (Ring 1-2) | L0 Identity | Ring 1 (unverified) = anyone. Ring 2 (verified unique person) = ZKP or external verification. Higher rings get more trust weight. | 1.24, 2.3 |
 | 2.6 | Fine-tuned PII model | L6 Intelligence | Gemma 3n E4B fine-tuned for PII detection. Replaces generic NER prompting. Higher accuracy, fewer leaks. | 1.9, 1.1 |
