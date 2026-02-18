@@ -8,6 +8,30 @@ This is the engineering blueprint for Dina. It covers every layer, every connect
 
 Dina has eight layers. Each is independent and can be built, tested, and replaced separately.
 
+### Core Philosophy: Dina is a Kernel, Not a Platform
+
+**No internal plugins. No untrusted third-party code inside Dina's process. Ever.**
+
+Dina is an orchestrator — she decides *what* needs to be done, but delegates *doing* it to specialized child agents. This is the "CEO vs. Contractor" model:
+
+| | Dina (The CEO) | Child Agents (The Contractors) |
+|---|---|---|
+| **Role** | Holds intent, memory, identity, reputation | Specialized workers (browser, coding, travel, legal) |
+| **Code** | Clean, minimal, high-security Go + Python | Whatever works — can crash without affecting Dina |
+| **Security** | No third-party code in-process | Run in separate containers or servers |
+| **Protocol** | Issues tasks, verifies results | Executes and reports back |
+
+**Two external protocols, no plugin API:**
+
+- **Dina-to-Dina** (peer communication): NaCl `crypto_box_seal` over HTTPS
+- **Dina-to-Agent** (task delegation to OpenClaw etc.): MCP (Model Context Protocol)
+
+Both talk to external processes. Neither runs code inside Dina. Child agents cannot touch Dina's vault, keys, or personas — they receive task messages via MCP and return results. If a child agent gets compromised, it's just a misbehaving external process that Dina can disconnect.
+
+**Why this matters for security:** The biggest attack surface in any system is third-party code. Plugins running inside your process can crash your vault, read across persona boundaries, or exfiltrate data. By refusing to run external code inside the process, entire categories of vulnerabilities are eliminated. A compromised child agent is contained — it can only respond to MCP calls, never initiate access to Dina's internals.
+
+**Why this matters for architecture:** No plugin store to maintain, no plugin review process, no sandboxing, no scoped tokens, no plugin API versioning. The two-tier auth model (`BRAIN_TOKEN` + `CLIENT_TOKEN`) is the permanent design, not a stepping stone. NaCl (for peers) and MCP (for agents) are the only extension points.
+
 ### Deployment Model: Home Node + Client Devices
 
 **Dina is not an app on your phone. Dina is a service that runs on infrastructure you control.**
@@ -319,7 +343,7 @@ docker-compose.yml:
 
 **The brain is an untrusted tenant. It does not have rights; it only has capabilities granted by the core.**
 
-Brain is a Python process with a massive dependency tree (Google ADK, httpx, llama-cpp-python, whatever MCP tools get added later). It's the most likely entry point for compromise — PyPI supply chain attacks, prompt injection that escapes the sandbox, deserialization bugs. Core must treat every request from brain the same way it treats a request from any external client: verify, authorize, log.
+Brain is a Python process with a massive dependency tree (Google ADK, httpx, llama-cpp-python). It's the most likely entry point for compromise — PyPI supply chain attacks, prompt injection that escapes the sandbox, deserialization bugs. Core must treat every request from brain the same way it treats a request from any external client: verify, authorize, log.
 
 ```
 Brain requests data  →  Core checks the ACL (gatekeeper.go)  →
@@ -335,9 +359,51 @@ Think of it as filesystem permissions. You don't get a popup every time an app r
 
 **The key architectural insight:** brain never knows personas exist as separate databases. Brain says `POST /v1/vault/query {persona: "/financial", text: "tax"}` and core decides whether to serve, reject, or gate. The persona isolation is enforced entirely by `gatekeeper.go` in core, invisible to brain.
 
-**What a compromised brain can do:** access open personas (social, consumer, professional). That's it. It cannot touch locked personas (financial, citizen) without human approval. It cannot touch restricted personas (health) without creating a detection trail the user sees in their daily briefing. It cannot sign DIDs, export keys, or bypass the PII scrubber — those are all core-side gates.
+**What a compromised brain can do:** access open personas (social, consumer, professional) via `BRAIN_TOKEN`. That's it. It cannot touch locked personas (financial, citizen) without human approval. It cannot touch restricted personas (health) without creating a detection trail the user sees in their daily briefing. It cannot call admin endpoints (`did/sign`, `did/rotate`, `vault/backup`, `persona/unlock`) — `BRAIN_TOKEN` is rejected by `isAdminEndpoint()`. It cannot bypass the PII scrubber — that's a core-side gate. The damage radius of a compromised brain is limited to open persona data.
 
-**Authentication:** Shared secret between brain and core, rotated on each boot (injected via Docker Secrets). Per-endpoint authorization: brain can call `/v1/vault/query` but background tasks cannot call `/v1/did/sign`. Every API call from brain includes the secret in the `Authorization` header. Core rejects requests without it.
+**Authentication: Two-tier static tokens, no JWTs.**
+
+```
+Two token types:
+
+BRAIN_TOKEN (generated at boot, injected via Docker Secrets):
+  ✓ vault/query, vault/store, pii/scrub, notify, msg/send,
+    reputation/query, process, reason
+  ✗ did/sign, did/rotate, vault/backup, persona/unlock, admin/*
+
+CLIENT_TOKEN (per-device, issued during QR pairing):
+  ✓ Everything — including admin endpoints
+  ✓ did/sign, did/rotate, vault/backup, persona/unlock
+```
+
+Core's middleware is a static allowlist checked at request time:
+
+```go
+func auth(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        token := r.Header.Get("Authorization")
+
+        switch identifyToken(token) {
+        case BrainToken:
+            if isAdminEndpoint(r.URL.Path) {
+                http.Error(w, "Forbidden", 403)
+                return
+            }
+            next.ServeHTTP(w, r)
+        case ClientToken:
+            next.ServeHTTP(w, r)
+        default:
+            http.Error(w, "Unauthorized", 401)
+        }
+    })
+}
+```
+
+**Why not JWTs or scoped task tokens?** Brain never needs `/v1/did/sign` directly. When brain wants to send a message to Sancho's Dina, it calls `POST /v1/msg/send {to: "did:plc:sancho", body: "..."}` — core handles NaCl encryption + signing internally. Same for reputation record publishing (core signs and pushes to PDS) and DIDComm outbox. Brain triggers high-level operations; core handles crypto. No endpoint requires brain to hold a signing capability.
+
+A static allowlist is simpler to audit (reviewable at compile time), has zero runtime overhead (no JWT signing/verification/expiry tracking), and achieves identical security for the current architecture.
+
+**This is the permanent design.** Dina is a kernel, not a platform — no plugins, no untrusted code inside the process (see "Core Philosophy" above). Two-tier auth is sufficient because child agents (OpenClaw etc.) communicate via MCP, not by running code inside Dina.
 
 ### Data Flow: Who Touches What
 
@@ -1225,6 +1291,36 @@ HOME NODE                              PHONE (Android)
 │          ▼              │  channel    │  DIDComm         │
 │    Vault (Tier 1)       │            └──────────────────┘
 └─────────────────────────┘
+```
+
+### Attachment & Media Storage: References, Not Copies
+
+**Never store binary blobs in SQLite.** A single user's vault goes from 50MB to 50GB if you store email attachments, and everything breaks — backups, sync, portability, encryption overhead. The "copy your vault file and go" promise dies.
+
+```
+What Dina stores (in vault.sqlite):
+  - Metadata: filename, size, MIME type, source_id, timestamp
+  - Reference: URI back to source (Gmail message ID, Drive file ID)
+  - Context: LLM-generated summary of the attachment content
+
+What Dina does NOT store:
+  - The actual PDF, image, spreadsheet, video
+```
+
+**Why references beat copies:** The user already has the attachment — it's in Gmail, Drive, or their local filesystem. Duplicating it means encrypting 50GB with SQLCipher (slow), backing up 50GB to S3 (expensive), syncing 50GB to client devices (impossible on mobile), and `vault.sqlite` becomes unmovable.
+
+**What brain actually needs:** Brain doesn't need the raw PDF to assemble a whisper. Brain needs: "Sancho sent a contract (PDF, 2.3MB) titled 'Partnership_Agreement_v3.pdf' on Feb 15. Key terms: 60/40 revenue split, 2-year lock-in, exit clause in Section 7." That summary is a few KB, fully searchable via FTS5, embeddable via sqlite-vec.
+
+**When the user needs the file:** Brain returns a deep link to the source — the client app opens Gmail/Drive. The file was always there.
+
+**Dead references:** If the user deletes the email from Gmail, the reference is dead. This is acceptable. Dina is memory and context, not a backup service. The summary survives in the vault even if the source is gone.
+
+**Exception — voice memos and WhatsApp voice notes:** These are small (typically under 1MB), have no stable source URI to link back to, and the transcript is the valuable part. For these: store the transcript in the vault, discard the audio. If the user wants to keep audio, it goes to a `media/` directory alongside the vault — files on disk, not inside SQLite.
+
+```
+vault.sqlite     → text, metadata, references, summaries (small, portable)
+media/           → optional voice notes, images user explicitly wants to keep
+                   (not inside SQLite, just files on disk, encrypted at rest)
 ```
 
 ### Gmail Connector
@@ -2463,9 +2559,9 @@ Dina records outcome in Tier 3 for future Reputation Graph contribution
 
 **Dina never sees:** Bank balance, UPI PIN, card numbers, payment credentials. She generates the link. The OS handles the rest.
 
-### Agent Orchestration (via MCP)
+### Agent Delegation (via MCP)
 
-For tasks beyond drafting and payments, Dina delegates to external action agents. The integration protocol is MCP (Model Context Protocol) — the same standard used by Claude, OpenClaw, and the broader agent ecosystem.
+For tasks beyond drafting and payments, Dina delegates to external child agents. The integration protocol is MCP (Model Context Protocol) — the same standard used by Claude, OpenClaw, and the broader agent ecosystem. **Dina has no plugins — child agents are external processes.** MCP is a wire protocol for task delegation, not a mechanism for running code inside Dina.
 
 ```
 User's license needs renewal
@@ -2498,6 +2594,40 @@ Option B — Delegate (if user has pre-authorized):
 2. Every delegated action passes through the Silence Protocol first — Dina decides IF to act, not just HOW.
 3. Action agents operate under Dina's constraints. If Dina says `draft_only: true`, the agent cannot send.
 4. Outcomes are recorded in Tier 3 for the agent's reputation score. If OpenClaw's form-fill quality drops, Dina routes to a better agent.
+
+### Scheduling: Three Tiers, No Scheduler
+
+Dina does not have a general-purpose scheduler. Scheduling is hard when you try to build one. It's easy when you limit yourself to "what's the next thing, and when is it due."
+
+| Problem | Solution | Complexity |
+|---------|----------|-----------|
+| **Periodic tasks** (watchdog, connector polling, integrity checks) | Go ticker (`time.NewTicker`) | Trivial. Loop with a sleep. If you miss one, catch it next tick. No persistence needed — tickers restart with the process. |
+| **One-shot reminders** ("wake me at 5 AM", "license expires in 7 days") | Reminder loop on vault | 20 lines of Go. Store reminder in vault with trigger timestamp. One loop checks "what's next." |
+| **Complex scheduling** ("every Monday at 9 AM except holidays") | Delegate to calendar service via OpenClaw | Don't build it. Recurrence rules, timezone math, daylight saving — Google Calendar spent years getting this right. |
+
+**The reminder loop:**
+
+```go
+func reminderLoop(vault *Vault) {
+    for {
+        next := vault.NextPendingReminder()  // SELECT ... ORDER BY trigger_at LIMIT 1
+        if next == nil {
+            time.Sleep(1 * time.Minute)      // nothing pending, check again later
+            continue
+        }
+        sleepDuration := time.Until(next.TriggerAt)
+        if sleepDuration > 0 {
+            time.Sleep(sleepDuration)
+        }
+        notify(next)                          // push to client device
+        vault.MarkFired(next.ID)
+    }
+}
+```
+
+On reboot, the loop starts, finds the next reminder, sleeps until it's due. If the server was down when the reminder should have fired, `sleepDuration` is negative — it fires immediately. Missed reminders are caught on startup. No cron library, no scheduler dependency, no complexity.
+
+**For recurring schedules:** Brain tells the user "I've noted this. Want me to create a recurring calendar event?" Then delegates to the calendar service via OpenClaw. Don't rebuild Google Calendar inside Dina.
 
 ### Design Notes: Future Action Layer Features
 
@@ -2745,7 +2875,7 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 | Voice STT (Offline) | whisper.cpp + Whisper Large v3 Turbo (~3GB) | 4.4% WER, battle-tested, mature chunking pipeline |
 | Cloud LLM (escalation) | User's choice (Gemini 2.5 Flash/Pro, Claude, GPT-4) | For complex reasoning that Flash Lite can't handle. Goes through PII scrubber. |
 | Agent orchestration | Google ADK Sequential/Parallel/Loop agents | Multi-step reasoning, tool calling with retries |
-| External agent integration | MCP (Model Context Protocol) | Connect to OpenClaw and other action agents |
+| External agent integration | MCP (Model Context Protocol) | Connect to OpenClaw and other child agents. No plugins — agents are external processes. |
 | Embeddings (Online) | `gemini-embedding-001` ($0.01/1M tokens) | 768/3072 dims, 100+ languages |
 | Embeddings (Offline) | EmbeddingGemma 308M (GGUF) via llama-server | ~300MB RAM, 100+ languages, Matryoshka dims |
 | **Container orchestration** | | |
@@ -2779,10 +2909,13 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 | ZKP | Semaphore V4 (PSE/Ethereum Foundation) | Production-proven (World ID), off-chain proof generation |
 | Serialization | JSON (Phase 1), MessagePack or Protobuf (Phase 2) | JSON is debuggable and sufficient for core↔brain traffic volume. Binary serialization deferred until profiling shows it matters. |
 | Containerization | Docker + docker-compose | Single-command Home Node deployment: `docker compose up -d` |
+| Supply chain | Digest pinning (`@sha256:...`, never `:latest`), Cosign image signing, SBOM (`syft`, SPDX) | Pinning prevents breakage, signing prevents tampering, SBOM enables auditing. Reproducible builds skipped (too hard with Python/CUDA). See [SECURITY.md](SECURITY.md). |
 | **Observability** | | |
+| Watchdog | Internal Go ticker (1-hour interval) | Checks connector liveness, disk usage, brain health. Breaches inject Tier 2 system messages into user's notification stream. No external monitoring stack. Zero extra RAM. |
 | Health probes | `/healthz` (liveness), `/readyz` (readiness) | Docker kills and restarts zombie containers automatically |
 | Logging | Go `slog` + Python `structlog` → JSON to stdout | No file logs; Docker log rotation handles retention |
 | Self-healing | `restart: always` + healthcheck + dependency chain | Brain waits for core; all containers auto-recover |
+| Metrics (optional) | `/metrics` (Prometheus format, protected by `CLIENT_TOKEN`) | For power users with existing homelab dashboards. Not required for default operation. |
 | **Data Safety** | | |
 | Database config | WAL mode + `synchronous=NORMAL` | Crash-safe atomic writes |
 | Migration safety | `sqlcipher_export()` + `PRAGMA integrity_check` | Pre-flight snapshot before every schema change. **Never `VACUUM INTO`** — creates unencrypted copies on SQLCipher (CVE-level vulnerability). |

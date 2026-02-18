@@ -1,0 +1,190 @@
+# Supply Chain Security
+
+Dina is a sovereign agent. If a user can't verify that the code running on their Home Node is the code they intended to run, sovereignty is meaningless. This document covers how Dina protects against supply chain attacks, accidental breakage, and hidden vulnerabilities in dependencies.
+
+---
+
+## The Three Problems
+
+### 1. The "It Worked Yesterday" Problem
+
+**Without digest pinning:**
+
+Your `docker-compose.yml` pulls `python:latest`. Python releases 3.14. A library your brain depends on (`numpy`, `httpx`, whatever) hasn't updated yet. Your Home Node auto-restarts at 3 AM, pulls the new base image, crashes. You wake up and Dina is dead. You spend hours debugging only to realize "latest" changed under your feet.
+
+**With digest pinning:**
+
+Your `docker-compose.yml` pins `python@sha256:a1b2c3...`. The image is frozen. It runs the same way in 10 years as it does today. External changes cannot break it. You upgrade when *you* choose, not when a dependency author pushes a release.
+
+### 2. The "Supply Chain Attack" Problem
+
+**Without image signing:**
+
+A hacker compromises the Docker Hub account (or a CI pipeline, or a dependency). They push a new image that looks like Dina but contains a crypto miner, a keylogger, or a backdoor. A user runs `docker compose pull` to get an update. They unknowingly download malware. Their "sovereign" agent hands their keys to the attacker.
+
+**With image signing:**
+
+Every Dina image is signed with a cryptographic key during CI. The install/upgrade script verifies the signature before applying the update. If the signature doesn't match, the update is rejected:
+
+```
+ERROR: Untrusted image. Signature verification failed.
+Update aborted. Your current installation is unchanged.
+```
+
+The user is protected from compromised updates — even if the attacker has write access to the container registry.
+
+### 3. The "Hidden Rot" Problem
+
+**Without an SBOM:**
+
+A massive vulnerability is found in `openssl` (like Heartbleed) or `libsodium` or `numpy`. Users ask: "Is my Dina vulnerable?" You have to manually check every container, every dependency, every transitive dependency. This takes days. Users panic or get exploited while you investigate.
+
+**With an SBOM:**
+
+Every release ships a Software Bill of Materials listing every dependency and its version. A user runs one command and gets an instant answer:
+
+```bash
+# Scan your running Dina for known vulnerabilities
+grype ghcr.io/dina/core@sha256:a1b2c3...
+
+# Output:
+# NAME        VERSION   VULNERABILITY   SEVERITY
+# libssl3     3.0.2     CVE-2024-XXXX   Critical
+# numpy       1.26.4    (none)          -
+```
+
+It turns a panic into a 5-second check.
+
+---
+
+## Implementation
+
+### Priority 1: Digest Pinning (day one)
+
+**Never use `:latest` or floating tags in production.** Every image reference in `docker-compose.yml` uses a full digest.
+
+```yaml
+# Bad — floating tag, changes without warning
+services:
+  core:
+    image: ghcr.io/dina/core:latest
+
+# Good — pinned digest, immutable
+services:
+  core:
+    image: ghcr.io/dina/core@sha256:a1b2c3d4e5f6...
+```
+
+The same applies to base images in Dockerfiles:
+
+```dockerfile
+# Bad
+FROM python:3.12-slim
+
+# Good
+FROM python:3.12-slim@sha256:9a1b2c3d4e5f...
+```
+
+**Release process:** Each release publishes a versioned `docker-compose.v1.0.0.yml` with all digests pre-filled. Users download the specific version file, not a mutable "latest" compose file.
+
+### Priority 2: Image Signing with Cosign (when CI pipeline exists)
+
+All container images are signed during the CI/CD pipeline using [Cosign](https://docs.sigstore.dev/cosign/overview/) (part of the Sigstore project).
+
+**CI pipeline (GitHub Actions):**
+
+```yaml
+# Simplified — actual workflow will have more steps
+- name: Build and push
+  run: docker build -t ghcr.io/dina/core:${{ github.sha }} .
+
+- name: Sign with Cosign (keyless, OIDC)
+  run: cosign sign ghcr.io/dina/core@${{ steps.build.outputs.digest }}
+```
+
+**Verification on user's machine:**
+
+```bash
+# Verify before running (built into dina-cli or install script)
+cosign verify ghcr.io/dina/core@sha256:a1b2c3... \
+  --certificate-identity=https://github.com/rajmohanutopai/dina/.github/workflows/release.yml@refs/tags/v1.0.0 \
+  --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+```
+
+**Keyless signing (recommended):** Cosign supports keyless signing via OIDC identity from GitHub Actions. No private key to manage or protect. The signature proves "this image was built by this specific GitHub Actions workflow in this specific repository." If someone forks the repo and builds from their fork, the identity won't match.
+
+**Key-based signing (alternative):** For users who don't trust GitHub's OIDC, Cosign also supports traditional key-pair signing. The Dina project publishes its public key, and users verify against it.
+
+### Priority 3: SBOM Generation (alongside signing)
+
+Every release ships a Software Bill of Materials in SPDX format, generated by [syft](https://github.com/anchore/syft).
+
+**CI pipeline:**
+
+```yaml
+- name: Generate SBOM
+  run: syft ghcr.io/dina/core@${{ steps.build.outputs.digest }} -o spdx-json > sbom-core.spdx.json
+
+- name: Attach SBOM to image
+  run: cosign attach sbom --sbom sbom-core.spdx.json ghcr.io/dina/core@${{ steps.build.outputs.digest }}
+```
+
+**User scanning:**
+
+```bash
+# Scan for vulnerabilities using the attached SBOM
+grype ghcr.io/dina/core@sha256:a1b2c3...
+
+# Or download and scan the SBOM directly
+cosign download sbom ghcr.io/dina/core@sha256:a1b2c3... | grype
+```
+
+SBOMs are published alongside each release on the GitHub Releases page.
+
+### Not Planned: Reproducible Builds
+
+Reproducible builds (given the same source, produce bit-identical binaries) are extremely hard to achieve with Python dependencies, CUDA kernels, and AI model files. Non-deterministic compilation, floating transitive dependencies, and platform-specific optimizations make bit-identical output impractical.
+
+**The Go core binary is closer to reproducible** (Go has good reproducibility support), but the Python brain and llama-server containers are not.
+
+**Our position:** Digest pinning + signing + SBOM provides sufficient supply chain integrity for Phase 1. Reproducible builds may be revisited if demand warrants the effort, but they are not on the roadmap.
+
+---
+
+## The Upgrade Flow
+
+```
+User decides to upgrade
+        │
+        ▼
+Download new docker-compose.v1.1.0.yml
+(all images pinned by digest)
+        │
+        ▼
+dina-cli verify (or install script)
+  ├── For each image digest:
+  │     cosign verify → signature matches? ✓
+  │     SBOM attached? ✓
+  │     Known critical CVEs? Check and warn.
+  │
+  ├── All checks pass → "Verified. Apply update? [Y/n]"
+  │     └── docker compose down && docker compose up -d
+  │
+  └── Any check fails → "WARNING: Verification failed. Update aborted."
+        └── Current installation unchanged.
+```
+
+**No auto-updates.** Dina never pulls new images without the user's knowledge. The user initiates upgrades. The verification happens before anything changes. This is sovereignty — you run exactly the code you verified.
+
+---
+
+## Summary
+
+| Measure | What it prevents | Difficulty | Phase |
+|---------|-----------------|------------|-------|
+| **Digest pinning** | Accidental breakage from upstream changes | Low (10 minutes) | Day one |
+| **Cosign signing** | Malicious image tampering, compromised CI/registry | Medium | Phase 1a (when CI exists) |
+| **SBOM (syft)** | Hidden vulnerabilities in dependencies | Medium | Phase 1a (when CI exists) |
+| **Reproducible builds** | Non-deterministic build output | Extreme | Not planned |
+
+For a sovereign agent that people rely on for their identity, finances, and personal data, the first three are functional requirements — not nice-to-haves.

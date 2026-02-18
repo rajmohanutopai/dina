@@ -135,6 +135,8 @@ Because every person's Dina is a sovereign identity, Dinas can talk to each othe
 
 Dina is a thin service. She outsources intelligence to specialists like review bots, legal bots, recipe bots, or general purpose bots like OpenClaw.
 
+**Dina has no plugins.** No third-party code runs inside Dina's process — ever. Child agents (OpenClaw, review bots, legal bots) are external services that communicate with Dina via MCP (Model Context Protocol). If a child agent gets compromised, it cannot touch your vault, your keys, or your data — it's an external process that Dina can disconnect. This is the "kernel, not platform" design: Dina is the brain, child agents are the hands.
+
 She prioritizes access. Dina connects to email, calendar, chats, contacts. She's privacy-first, and thus is the only entity you give that authority to. Because privacy matters, Dina cannot hand that access to anyone else. All other systems get just the requirement, never the raw data.
 
 Dina is the safety layer for autonomous agents. Just this year, security researchers found hundreds of thousands of AI agent instances exposed to the internet — leaking credentials, accepting commands from anyone, with no oversight. Dina fixes this at the protocol level. When you interact with an autonomous agent or when an autonomous agent wants to act on your behalf, Dina watches. She doesn't interfere with safe tasks. But when an action agent wants to send an email, move money, or share your data, Dina checks: does this violate your privacy rules? Is this vendor trusted? Are you in the right state to make this decision? If everything is fine, it goes through - otherwise, it is flagged for review. To implement this, an agent supporting the Dina protocol will submit the intent to Dina. Dina checks:  If everything checks out, Dina approves. If not, she flags it for your review. The agent never holds your keys, never sees your full history, and never acts without oversight. Regardless of the autonomous agent doing the work, the safety layer stays the same. 
@@ -275,7 +277,7 @@ Trust = f(
 
 ---
 
-## The Plugin Economy
+## The Merit Economy
 
 Because Dina uses Reputation Graph, a new kind of economy can possibly emerge — one where people make money by being *good at what they do*, not solely dependent on marketing.
 
@@ -330,6 +332,8 @@ Dina is for everyone. If you believe your digital companion should work for you,
 # Part III: Technical Architecture
 
 *See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full engineering blueprint.*
+*See [SECURITY.md](./SECURITY.md) for supply chain security (image signing, digest pinning, SBOM).*
+*See [Build Roadmap with Status Tracking](./ROADMAP.md) for project status.*
 
 ---
 
