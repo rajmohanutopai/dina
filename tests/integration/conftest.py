@@ -34,6 +34,7 @@ from tests.integration.mocks import (
     MockVault,
     MockWhatsAppConnector,
     MockWhisperAssembler,
+    OAuthToken,
     OutcomeReport,
     PersonaType,
     SharingRule,
@@ -197,7 +198,14 @@ def mock_whisper(mock_vault: MockVault) -> MockWhisperAssembler:
 
 @pytest.fixture
 def mock_llm_router() -> MockLLMRouter:
-    return MockLLMRouter()
+    """Offline Mode LLM router (llama-server + whisper-server available)."""
+    return MockLLMRouter(profile="offline")
+
+
+@pytest.fixture
+def mock_cloud_llm_router() -> MockLLMRouter:
+    """Online Mode LLM router (Gemini Flash Lite + Deepgram, no local LLM)."""
+    return MockLLMRouter(profile="online")
 
 
 @pytest.fixture

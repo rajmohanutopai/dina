@@ -14,7 +14,9 @@ import pytest
 
 from tests.integration.mocks import (
     Draft,
+    MockConnector,
     MockDinaCore,
+    MockGmailConnector,
     MockIdentity,
     MockKeyManager,
     MockPersona,
@@ -137,6 +139,74 @@ class TestTier0IdentityVault:
         assert phone_key != mock_identity.root_private_key
         assert "phone_001" in mock_identity.devices
         assert "laptop_001" in mock_identity.devices
+
+
+# ---------------------------------------------------------------------------
+# TestEncryptionVerification — Mandatory CI safety catch
+# ---------------------------------------------------------------------------
+
+class TestEncryptionVerification:
+    """Mandatory CI test: prove the .sqlite files are actually encrypted.
+
+    A standard SQLite file always begins with the 16-byte magic header:
+    ``SQLite format 3\\x00``.  If our "encrypted" vault file starts with
+    those bytes, encryption failed silently — the vault is plaintext.
+
+    In production this is a Go test that reads raw file bytes.
+    Here we encode the *contract*: MockVault.raw_file_header() must never
+    return the SQLite magic header for a vault that contains data.
+    """
+
+    SQLITE_MAGIC = b"SQLite format 3\x00"
+
+    def test_encrypted_vault_has_no_sqlite_header(
+        self, mock_vault: MockVault, mock_identity: MockIdentity
+    ) -> None:
+        """After storing data, the raw file header must NOT be the SQLite
+        magic string — proving SQLCipher encryption is active."""
+        consumer = mock_identity.derive_persona(PersonaType.CONSUMER)
+        mock_vault.store(
+            tier=1, key="test_item", value=consumer.encrypt("secret data"),
+            persona=PersonaType.CONSUMER,
+        )
+
+        header = mock_vault.raw_file_header(PersonaType.CONSUMER)
+
+        assert header != self.SQLITE_MAGIC, (
+            "CRITICAL SECURITY FAILURE: Database is not encrypted! "
+            "Raw SQLite header detected. SQLCipher PRAGMA key likely "
+            "failed to activate. Check mutecomm/go-sqlcipher CGO flags."
+        )
+        assert len(header) == 16
+
+    def test_all_persona_vaults_encrypted(
+        self, mock_vault: MockVault, mock_identity: MockIdentity
+    ) -> None:
+        """Every persona vault must pass the encryption header check."""
+        for ptype in [PersonaType.CONSUMER, PersonaType.HEALTH,
+                      PersonaType.SOCIAL, PersonaType.FINANCIAL,
+                      PersonaType.PROFESSIONAL]:
+            persona = mock_identity.derive_persona(ptype)
+            mock_vault.store(
+                tier=1, key=f"test_{ptype.value}",
+                value=persona.encrypt("data"), persona=ptype,
+            )
+            header = mock_vault.raw_file_header(ptype)
+            assert header != self.SQLITE_MAGIC, (
+                f"CRITICAL: {ptype.value}.sqlite is not encrypted!"
+            )
+
+    def test_empty_vault_would_fail_check(
+        self, mock_vault: MockVault
+    ) -> None:
+        """An uninitialized vault returns the SQLite magic header —
+        this is the failure case the CI test is designed to catch."""
+        # CITIZEN persona has no data stored — simulates failed encryption
+        header = mock_vault.raw_file_header(PersonaType.CITIZEN)
+        assert header == self.SQLITE_MAGIC, (
+            "Mock should return SQLite magic for empty partitions "
+            "to simulate the failure case"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -524,3 +594,154 @@ class TestTier5DeepArchive:
 
         consumer = mock_identity.derive_persona(PersonaType.CONSUMER)
         assert consumer.decrypt(retrieved) is None
+
+
+# ---------------------------------------------------------------------------
+# SQLite Concurrent Access (Issue #7)
+# ---------------------------------------------------------------------------
+
+
+class TestSQLiteConcurrentAccess:
+    """Single-writer / read-pool pattern and batch ingestion.
+
+    dina-core is a concurrent Go server. WAL allows concurrent reads but
+    only one writer at a time. Without proper connection management, writes
+    back up during heavy ingestion and brain queries time out.
+
+    Contract:
+    - busy_timeout = 5000 (wait, don't fail immediately)
+    - Single write connection (serialized), unlimited read connections
+    - Batch ingestion: 100 items per transaction, one brain notification per batch
+    """
+
+    # --- PRAGMA contract ---
+
+    def test_wal_mode_configured(self, mock_vault: MockVault) -> None:
+        """Vault must use WAL journal mode for concurrent read access."""
+        assert mock_vault.PRAGMAS["journal_mode"] == "WAL"
+
+    def test_busy_timeout_configured(self, mock_vault: MockVault) -> None:
+        """busy_timeout must be set to avoid immediate SQLITE_BUSY errors."""
+        assert mock_vault.PRAGMAS["busy_timeout"] == 5000
+
+    def test_synchronous_normal(self, mock_vault: MockVault) -> None:
+        """synchronous=NORMAL is safe in WAL mode and faster than FULL."""
+        assert mock_vault.PRAGMAS["synchronous"] == "NORMAL"
+
+    def test_foreign_keys_on(self, mock_vault: MockVault) -> None:
+        """Foreign keys must be enforced to prevent orphaned data."""
+        assert mock_vault.PRAGMAS["foreign_keys"] == "ON"
+
+    # --- Single-writer pattern ---
+
+    def test_single_write_increments_tx_count(self, mock_vault: MockVault) -> None:
+        """Each individual store() is one transaction."""
+        mock_vault.store(1, "key_a", "val_a")
+        mock_vault.store(1, "key_b", "val_b")
+        assert mock_vault._write_count == 2
+        assert mock_vault._tx_count == 2
+
+    def test_reads_never_blocked_by_writes(self, mock_vault: MockVault) -> None:
+        """Reads use the read pool and succeed even during writes.
+
+        In production: read connections have PRAGMA query_only=ON.
+        In mock: retrieve() never touches the write path.
+        """
+        mock_vault.store(1, "concurrent_key", "concurrent_val")
+        # Read immediately after write — should always succeed
+        assert mock_vault.retrieve(1, "concurrent_key") == "concurrent_val"
+        # FTS read also succeeds
+        mock_vault.index_for_fts("concurrent_key", "concurrent test")
+        assert "concurrent_key" in mock_vault.search_fts("concurrent")
+
+    # --- Batch ingestion ---
+
+    def test_batch_store_one_transaction(self, mock_vault: MockVault) -> None:
+        """store_batch() writes N items in a single transaction."""
+        items = [(f"batch_{i}", {"data": i}) for i in range(50)]
+        written = mock_vault.store_batch(1, items, persona=PersonaType.CONSUMER)
+
+        assert written == 50
+        assert mock_vault._write_count == 50  # 50 individual writes
+        assert mock_vault._tx_count == 1      # but only 1 transaction
+
+    def test_batch_store_emits_notification(self, mock_vault: MockVault) -> None:
+        """Each batch emits one brain notification (not one per item)."""
+        items = [(f"notif_{i}", {"data": i}) for i in range(100)]
+        mock_vault.store_batch(1, items, persona=PersonaType.PROFESSIONAL)
+
+        assert len(mock_vault._batch_notifications) == 1
+        notif = mock_vault._batch_notifications[0]
+        assert notif["count"] == 100
+        assert notif["persona"] == PersonaType.PROFESSIONAL
+
+    def test_batch_data_readable_after_commit(self, mock_vault: MockVault) -> None:
+        """All items in a batch are readable after the batch commits."""
+        items = [(f"read_{i}", f"value_{i}") for i in range(10)]
+        mock_vault.store_batch(1, items, persona=PersonaType.SOCIAL)
+
+        for i in range(10):
+            assert mock_vault.retrieve(1, f"read_{i}") == f"value_{i}"
+            assert mock_vault.retrieve(
+                1, f"read_{i}", persona=PersonaType.SOCIAL
+            ) == f"value_{i}"
+
+    def test_batch_size_is_100(self, mock_vault: MockVault) -> None:
+        """Default batch size for ingestion is 100 items."""
+        assert mock_vault.BATCH_SIZE == 100
+
+    # --- Connector batch ingestion ---
+
+    def test_connector_batch_ingest_uses_batches(
+        self, mock_vault: MockVault
+    ) -> None:
+        """Connector.batch_ingest() splits items into vault batch_size chunks."""
+        connector = MockGmailConnector()
+        # Simulate 250 emails — should produce 3 batches (100 + 100 + 50)
+        items = [
+            {"id": f"email_{i}", "content": f"Email body {i}"}
+            for i in range(250)
+        ]
+        total = connector.batch_ingest(items, mock_vault)
+
+        assert total == 250
+        assert connector.items_ingested == 250
+        # 3 batch transactions (100 + 100 + 50)
+        assert mock_vault._tx_count == 3
+        # 3 brain notifications (one per batch)
+        assert len(mock_vault._batch_notifications) == 3
+        assert mock_vault._batch_notifications[0]["count"] == 100
+        assert mock_vault._batch_notifications[1]["count"] == 100
+        assert mock_vault._batch_notifications[2]["count"] == 50
+
+    def test_connector_batch_ingest_small_set(
+        self, mock_vault: MockVault
+    ) -> None:
+        """A small set of items (< batch_size) is still one transaction."""
+        connector = MockGmailConnector()
+        items = [
+            {"id": f"small_{i}", "content": f"Content {i}"}
+            for i in range(5)
+        ]
+        total = connector.batch_ingest(items, mock_vault)
+
+        assert total == 5
+        assert mock_vault._tx_count == 1
+        assert len(mock_vault._batch_notifications) == 1
+
+    def test_initial_gmail_sync_transaction_count(
+        self, mock_vault: MockVault
+    ) -> None:
+        """10,000 email initial sync produces ~100 transactions, not 10,000."""
+        connector = MockGmailConnector()
+        items = [
+            {"id": f"gmail_{i}", "content": f"Email {i}"}
+            for i in range(10_000)
+        ]
+        connector.batch_ingest(items, mock_vault)
+
+        # 10,000 / 100 = exactly 100 batch transactions
+        assert mock_vault._tx_count == 100
+        assert mock_vault._write_count == 10_000
+        # 100 brain notifications instead of 10,000
+        assert len(mock_vault._batch_notifications) == 100

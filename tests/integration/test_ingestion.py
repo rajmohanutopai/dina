@@ -20,7 +20,9 @@ from tests.integration.mocks import (
     MockKeyManager,
     MockVault,
     MockWhatsAppConnector,
+    OAuthToken,
     PersonaType,
+    SilenceTier,
 )
 
 
@@ -293,3 +295,226 @@ class TestConnectorSecurityRules:
         assert mock_calendar_connector.name == "calendar"
         assert mock_calendar_connector.persona == PersonaType.PROFESSIONAL
         assert mock_calendar_connector.poll_interval_minutes == 30
+
+
+# ---------------------------------------------------------------------------
+# OAuth Token Lifecycle (Issue #6)
+# ---------------------------------------------------------------------------
+
+
+class TestOAuthTokenLifecycle:
+    """OAuth token health state machine.
+
+    States: ACTIVE → NEEDS_REFRESH → ACTIVE (refresh OK)
+            ACTIVE → NEEDS_REFRESH → EXPIRED (refresh failed) → notification
+            EXPIRED → ACTIVE (user re-authorizes)
+            REVOKED → ACTIVE (user re-authorizes)
+
+    Gmail tokens expire every hour. Refresh tokens rotate on use.
+    Revocation on password change, security event, or manual revoke.
+    """
+
+    def _make_token(self, expires_in: float = 3600) -> OAuthToken:
+        """Helper: create a token expiring in ``expires_in`` seconds."""
+        return OAuthToken(
+            access_token="ya29.mock_access_token",
+            refresh_token="1//mock_refresh_token",
+            expires_at=time.time() + expires_in,
+        )
+
+    # --- Healthy token ---
+
+    def test_healthy_token_stays_active(
+        self, mock_gmail_connector: MockGmailConnector
+    ) -> None:
+        """Token with >5 min remaining keeps connector ACTIVE."""
+        token = self._make_token(expires_in=3600)
+        mock_gmail_connector.set_oauth_token(token)
+
+        status = mock_gmail_connector.check_token_health()
+        assert status == ConnectorStatus.ACTIVE
+
+    # --- Needs refresh ---
+
+    def test_token_near_expiry_triggers_needs_refresh(
+        self, mock_gmail_connector: MockGmailConnector
+    ) -> None:
+        """Token expiring in <5 min transitions to NEEDS_REFRESH."""
+        token = self._make_token(expires_in=120)  # 2 minutes left
+        mock_gmail_connector.set_oauth_token(token)
+
+        status = mock_gmail_connector.check_token_health()
+        # Should have attempted refresh — since no handler set, falls to EXPIRED
+        assert status in (ConnectorStatus.NEEDS_REFRESH, ConnectorStatus.EXPIRED)
+
+    def test_auto_refresh_succeeds(
+        self, mock_gmail_connector: MockGmailConnector
+    ) -> None:
+        """Successful auto-refresh transitions NEEDS_REFRESH → ACTIVE."""
+        old_token = self._make_token(expires_in=120)
+        new_token = self._make_token(expires_in=3600)
+
+        def refresh_handler(token: OAuthToken) -> OAuthToken:
+            return new_token
+
+        mock_gmail_connector.set_oauth_token(old_token)
+        mock_gmail_connector.set_refresh_handler(refresh_handler)
+
+        status = mock_gmail_connector.check_token_health()
+        assert status == ConnectorStatus.ACTIVE
+        assert mock_gmail_connector.refresh_attempts == 1
+        # No notification emitted on success
+        assert len(mock_gmail_connector.notifications_emitted) == 0
+
+    def test_auto_refresh_fails_transitions_to_expired(
+        self, mock_gmail_connector: MockGmailConnector
+    ) -> None:
+        """Failed auto-refresh transitions NEEDS_REFRESH → EXPIRED."""
+        old_token = self._make_token(expires_in=120)
+
+        def failing_handler(token: OAuthToken) -> OAuthToken | None:
+            return None  # Refresh failed
+
+        mock_gmail_connector.set_oauth_token(old_token)
+        mock_gmail_connector.set_refresh_handler(failing_handler)
+
+        status = mock_gmail_connector.check_token_health()
+        assert status == ConnectorStatus.EXPIRED
+        assert mock_gmail_connector.refresh_attempts == 1
+
+    # --- Expired token ---
+
+    def test_expired_token_emits_tier2_notification(
+        self, mock_gmail_connector: MockGmailConnector
+    ) -> None:
+        """Expired token emits a Tier 2 'Re-authorize' notification."""
+        token = self._make_token(expires_in=-10)  # Already expired
+        mock_gmail_connector.set_oauth_token(token)
+
+        mock_gmail_connector.check_token_health()
+
+        assert mock_gmail_connector.status == ConnectorStatus.EXPIRED
+        assert len(mock_gmail_connector.notifications_emitted) == 1
+        notif = mock_gmail_connector.notifications_emitted[0]
+        assert notif.tier == SilenceTier.TIER_2_SOLICITED
+        assert "Gmail" in notif.title
+        assert "Re-authorize" in notif.body
+
+    def test_expired_connector_returns_no_data_on_poll(
+        self, mock_gmail_connector: MockGmailConnector
+    ) -> None:
+        """An EXPIRED connector must not poll the API — returns empty."""
+        token = self._make_token(expires_in=-10)
+        mock_gmail_connector.set_oauth_token(token)
+        mock_gmail_connector.add_data([
+            {"message_id": "msg_nopoll", "content": "Should not be returned"},
+        ])
+
+        items = mock_gmail_connector.poll()
+        assert items == []
+
+    def test_user_reauthorize_restores_active(
+        self, mock_gmail_connector: MockGmailConnector
+    ) -> None:
+        """User re-authorization with fresh token restores ACTIVE."""
+        expired_token = self._make_token(expires_in=-10)
+        mock_gmail_connector.set_oauth_token(expired_token)
+        mock_gmail_connector.check_token_health()
+        assert mock_gmail_connector.status == ConnectorStatus.EXPIRED
+
+        fresh_token = self._make_token(expires_in=3600)
+        mock_gmail_connector.reauthorize(fresh_token)
+        assert mock_gmail_connector.status == ConnectorStatus.ACTIVE
+
+    # --- Revoked token ---
+
+    def test_revoked_token_emits_notification(
+        self, mock_gmail_connector: MockGmailConnector
+    ) -> None:
+        """Token revocation (e.g. password change) emits Tier 2 notification."""
+        token = self._make_token(expires_in=3600)
+        mock_gmail_connector.set_oauth_token(token)
+        assert mock_gmail_connector.status == ConnectorStatus.ACTIVE
+
+        mock_gmail_connector.revoke()
+
+        assert mock_gmail_connector.status == ConnectorStatus.REVOKED
+        assert len(mock_gmail_connector.notifications_emitted) == 1
+        notif = mock_gmail_connector.notifications_emitted[0]
+        assert notif.tier == SilenceTier.TIER_2_SOLICITED
+        assert "revoked" in notif.body.lower()
+
+    def test_revoked_check_token_health_stays_revoked(
+        self, mock_gmail_connector: MockGmailConnector
+    ) -> None:
+        """Once revoked, check_token_health confirms REVOKED status."""
+        token = self._make_token(expires_in=3600)
+        mock_gmail_connector.set_oauth_token(token)
+        mock_gmail_connector.revoke()
+
+        status = mock_gmail_connector.check_token_health()
+        assert status == ConnectorStatus.REVOKED
+
+    def test_revoked_reauthorize_restores_active(
+        self, mock_gmail_connector: MockGmailConnector
+    ) -> None:
+        """User can re-authorize after revocation."""
+        token = self._make_token(expires_in=3600)
+        mock_gmail_connector.set_oauth_token(token)
+        mock_gmail_connector.revoke()
+        assert mock_gmail_connector.status == ConnectorStatus.REVOKED
+
+        fresh_token = self._make_token(expires_in=3600)
+        mock_gmail_connector.reauthorize(fresh_token)
+        assert mock_gmail_connector.status == ConnectorStatus.ACTIVE
+
+    # --- No token ---
+
+    def test_no_token_set_is_expired(
+        self, mock_gmail_connector: MockGmailConnector
+    ) -> None:
+        """Connector with no OAuth token reports EXPIRED."""
+        status = mock_gmail_connector.check_token_health()
+        assert status == ConnectorStatus.EXPIRED
+
+    # --- Status log ---
+
+    def test_status_transitions_logged(
+        self, mock_gmail_connector: MockGmailConnector
+    ) -> None:
+        """Every status transition is logged for observability."""
+        token = self._make_token(expires_in=3600)
+        mock_gmail_connector.set_oauth_token(token)
+        mock_gmail_connector.revoke()
+        fresh = self._make_token(expires_in=3600)
+        mock_gmail_connector.reauthorize(fresh)
+
+        # token_set → ACTIVE, revoke → REVOKED, reauthorize → ACTIVE
+        assert len(mock_gmail_connector.status_log) >= 3
+        reasons = [e["reason"] for e in mock_gmail_connector.status_log]
+        assert "token_set" in reasons
+        assert "provider_revoked" in reasons
+        assert "user_reauthorized" in reasons
+
+    # --- Refresh token rotation ---
+
+    def test_refresh_rotates_token(
+        self, mock_gmail_connector: MockGmailConnector
+    ) -> None:
+        """Successful refresh replaces the old token entirely (rotation)."""
+        old_token = self._make_token(expires_in=120)
+        rotated_token = OAuthToken(
+            access_token="ya29.new_access",
+            refresh_token="1//new_refresh",
+            expires_at=time.time() + 3600,
+        )
+
+        def rotating_handler(token: OAuthToken) -> OAuthToken:
+            return rotated_token
+
+        mock_gmail_connector.set_oauth_token(old_token)
+        mock_gmail_connector.set_refresh_handler(rotating_handler)
+        mock_gmail_connector.check_token_health()
+
+        assert mock_gmail_connector.status == ConnectorStatus.ACTIVE
+        assert mock_gmail_connector._oauth_token is rotated_token

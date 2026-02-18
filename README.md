@@ -14,8 +14,8 @@
 * **Quick Start:** [3 commands to get Dina running](./QUICKSTART.md)
 * **The Stack:** Go Core + Python Brain (Sidecar Pattern) + SQLite/SQLCipher.
 * **The Architecture:** [Read the Engineering Spec](./ARCHITECTURE.md)
-* **Networking:** [Tailscale / Cloudflare / Yggdrasil setup](./NETWORKING.md)
-* **The Roadmap:** [See Project Status](#part-ii-where-we-are-today)
+* **Advanced Setup:** [Offline Mode / Networking / Yggdrasil](./ADVANCED-SETUP.md)
+* **The Roadmap:** [Build Roadmap with Status Tracking](./ROADMAP.md)
 * **Discussion:** [Join the Discord](#)
 
 ---

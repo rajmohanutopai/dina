@@ -107,11 +107,75 @@ If the Home Node reboots at 2 AM (kernel panic, power outage, OS patch), Dina ca
 
 **No obfuscation.** The codebase is open source — "hiding" the key on disk via obfuscation provides zero real security. In Convenience mode, the key is stored plainly and the security boundary is the server's access controls (filesystem permissions, Confidential Computing enclave, hosting provider trust). This is honest engineering, not security theater.
 
+### Dead Drop Ingress (Message Queuing While Locked)
+
+**Problem:** "Sancho is 15 minutes away" has a 15-minute relevance window. If the Home Node just rebooted into Security mode (vault locked), the DIDComm endpoint rejects the message. The sender retries with exponential backoff. By the time the user wakes up and types their passphrase, the message is 6 hours old and useless.
+
+**A locked door should not prevent the postman from sliding mail through the slot.** The message is already encrypted with Dina's public key — storing it on disk is safe because the private key needed to read it is locked inside the vault.
+
+**The fix: decouple ingress from processing.**
+
+```
+DEAD DROP ARCHITECTURE:
+
+  Ingress (HTTP listener) ← "dumb" and fast, runs 24/7
+    │                        Does NOT need the vault key.
+    │                        Writes encrypted blobs to disk.
+    │                        Returns 202 Accepted immediately.
+    │
+    ▼
+  ./data/inbox/             ← Flat file spool
+    msg_abc123.blob            Encrypted with Dina's public key.
+    msg_def456.blob            Safe on disk — no one can read them
+    msg_ghi789.blob            without the private key.
+    │
+    ▼
+  Inbox Sweeper (Worker)   ← Needs the vault key.
+    │                        Runs on startup + after vault unlock.
+    │                        Decrypts, checks TTL, processes.
+    ▼
+  SQLite Vault + Brain
+```
+
+**The workflow:**
+
+1. **State:** Node is LOCKED (after reboot, Security mode).
+2. **Event:** `POST /didcomm/inbox` arrives with "Sancho is leaving home."
+3. **Action:** Ingress writes raw encrypted bytes to `./data/inbox/msg_123.blob`.
+4. **Response:** Returns `202 Accepted` immediately. Sender's Dina thinks: delivered.
+5. **State change:** User types passphrase. Vault UNLOCKS.
+6. **Action:** Inbox Sweeper wakes up, reads `msg_123.blob`, decrypts with now-available key, checks TTL, processes normally.
+
+**TTL (Time-To-Live) prevents zombie notifications:**
+
+Since the outer envelope is encrypted, the ingress handler cannot see the TTL — it must accept everything. The Inbox Sweeper applies TTL logic after decryption:
+
+```go
+// After decrypting the message
+if msg.Timestamp.Add(msg.TTL).Before(time.Now()) {
+    log.Info("Message expired while queued, storing silently",
+        "from", msg.From, "type", msg.Type, "age", time.Since(msg.Timestamp))
+    storeAsExpired(msg) // Log to vault history, no user notification
+    return
+}
+// Message still valid — process normally
+processMessage(msg)
+```
+
+| Scenario | Message | Vault State | Result |
+|----------|---------|-------------|--------|
+| Normal operation | "Sancho leaving home" | Unlocked | Processed immediately, whisper delivered |
+| Locked, unlocked within TTL | "Sancho leaving home" (TTL: 30 min) | Locked → Unlocked 10 min later | Processed, whisper delivered (still relevant) |
+| Locked, unlocked after TTL | "Pizza arriving in 5 min" (TTL: 15 min) | Locked → Unlocked 3 hours later | Stored silently in history, no notification (expired news) |
+| Convenience mode reboot | Any message | Auto-unlocked on boot | Processed immediately (no queuing needed) |
+
+**Security:** The inbox spool (`./data/inbox/`) contains only encrypted blobs. An attacker with filesystem access sees the same thing they'd see in the vault — encrypted data they can't read. The blobs are cleaned up (deleted from spool) after successful processing.
+
 ### Why Not Serverless?
 
 Serverless (Lambda + S3) doesn't work for Dina. SQLite on network storage corrupts under concurrent access. Cold starts take 30-60 seconds to load a 2GB LLM. Lambda can't maintain persistent WebSocket or DIDComm connections. Continuous polling (Gmail, Calendar, Dina-to-Dina messages) costs more on Lambda than an always-on container.
 
-The right architecture is three lightweight, always-on containers via `docker compose up -d`.
+The right architecture is lightweight, always-on containers via `docker compose up -d` — 3 containers in Online Mode (core, brain, pds) or 5 in Offline Mode (+ llama-server + whisper-server).
 
 ### Connectivity & Ingress (Multi-Lane Networking)
 
@@ -135,7 +199,7 @@ The public ingress is always a layer in front — a tunnel, a reverse proxy, or 
 
 **Future: Wildcard Relay.** The Dina Foundation will operate a relay (`*.dina.host` via `frp`) to provide free, secure subdomains to Community tier users — replacing the Tailscale Funnel dependency. Not a Phase 1 dependency.
 
-See [`NETWORKING.md`](NETWORKING.md) for setup instructions per tier, or [`QUICKSTART.md`](QUICKSTART.md) to get running in 3 commands.
+See [`ADVANCED-SETUP.md`](ADVANCED-SETUP.md) for setup instructions per tier (networking) and Offline Mode, or [`QUICKSTART.md`](QUICKSTART.md) to get running in 3 commands.
 
 ### One User, One File (Tenancy Model)
 
@@ -251,15 +315,40 @@ docker-compose.yml:
 
 **The internal API between core and brain is the protocol surface.** If a future community member wants to build a Rust brain, a TypeScript brain, or consolidate into a single Go binary, they implement the same `/v1/process` and `/v1/reason` endpoints. The core doesn't care what language the brain speaks.
 
+### Security Model: The Brain is a Guest
+
+**The brain is an untrusted tenant. It does not have rights; it only has capabilities granted by the core.**
+
+Brain is a Python process with a massive dependency tree (Google ADK, httpx, llama-cpp-python, whatever MCP tools get added later). It's the most likely entry point for compromise — PyPI supply chain attacks, prompt injection that escapes the sandbox, deserialization bugs. Core must treat every request from brain the same way it treats a request from any external client: verify, authorize, log.
+
+```
+Brain requests data  →  Core checks the ACL (gatekeeper.go)  →
+
+  If persona is "open":       serve immediately, log silently
+  If persona is "restricted":  serve immediately, log + notify user in daily briefing
+  If persona is "locked":      reject with 403. Brain must request unlock via
+                                POST /v1/persona/unlock → core asks human →
+                                human approves with TTL → core serves for that window
+```
+
+Think of it as filesystem permissions. You don't get a popup every time an app reads a file in its sandbox. You do get a popup when it tries to access your contacts for the first time. And it can never access your keychain without biometric auth. Same model.
+
+**The key architectural insight:** brain never knows personas exist as separate databases. Brain says `POST /v1/vault/query {persona: "/financial", text: "tax"}` and core decides whether to serve, reject, or gate. The persona isolation is enforced entirely by `gatekeeper.go` in core, invisible to brain.
+
+**What a compromised brain can do:** access open personas (social, consumer, professional). That's it. It cannot touch locked personas (financial, citizen) without human approval. It cannot touch restricted personas (health) without creating a detection trail the user sees in their daily briefing. It cannot sign DIDs, export keys, or bypass the PII scrubber — those are all core-side gates.
+
+**Authentication:** Shared secret between brain and core, rotated on each boot (injected via Docker Secrets). Per-endpoint authorization: brain can call `/v1/vault/query` but background tasks cannot call `/v1/did/sign`. Every API call from brain includes the secret in the `Authorization` header. Core rejects requests without it.
+
 ### Data Flow: Who Touches What
 
-The core principle: **Go owns the file. Python owns the thinking.**
+The core principle: **Go owns the file. Python owns the thinking. Core is the gatekeeper.**
 
 ```
 WHO TOUCHES SQLITE?
 
   dina-core (Go)     ← ONLY process that opens vault .sqlite files
   dina-brain (Python) ← NEVER touches SQLite. Talks to core via HTTP API.
+                        Core decides what brain can access (gatekeeper.go).
   llama-server        ← Stateless. No database access.
 ```
 
@@ -645,26 +734,40 @@ data/vaults/
 - **Blast radius containment.** Compromise of one persona's key exposes one file. The others are encrypted with independent keys.
 - **Right to delete.** `rm health.sqlite`. All medical data physically annihilated. No forensic recovery possible.
 
-**Unified search via SQLCipher ATTACH:** When the user authorizes multi-persona queries, Dina uses SQLite's `ATTACH DATABASE` to mount multiple vaults simultaneously with different keys:
+**Cross-persona queries and the Gatekeeper:** The brain needs data from multiple personas constantly (see [Security Model: The Brain is a Guest](#security-model-the-brain-is-a-guest) above). The Sancho Moment whisper at 3 AM needs `/social` (relationship with Sancho, his mother's illness), `/professional` (calendar — is user free?), and `/consumer` (tea preference). That's three persona crosses for one whisper — dozens of times daily. Requiring user approval for each would kill the always-on agent.
 
-```go
-// Open primary vault
-db, _ := sql.Open("sqlite3", "file:consumer.sqlite?_pragma_key=consumerKey")
+**The model: personas have access tiers, not per-query gates.** Enforced by `gatekeeper.go` in core.
 
-// Attach secondary vault with its own key
-db.Exec("ATTACH DATABASE 'social.sqlite' AS social KEY 'socialKey'")
+```
+Persona Access Tiers (configured by user, stored in config.json):
 
-// Query across both (unified search)
-rows, _ := db.Query(`
-    SELECT body_text FROM main.documents
-    UNION ALL
-    SELECT body_text FROM social.documents
-`)
+  "brain_access": {
+    "/social":       "open",        ← brain can query freely
+    "/consumer":     "open",        ← brain can query freely
+    "/professional": "open",        ← brain can query freely
+    "/health":       "restricted",  ← brain can query, but every access logged + user notified
+    "/financial":    "locked",      ← requires client device approval per session (not per query)
+  }
 ```
 
-**Context modes:**
-- **Single-persona mode (default):** Only the active persona's vault is unlocked. Health bot queries? Only `health.sqlite` is mounted. Shopping? Only `consumer.sqlite`.
-- **Unified mode:** User explicitly authorizes cross-persona search. "Does my daughter's recital clash with the board meeting?" requires both `social.sqlite` and `professional.sqlite` to be mounted. Authorization is explicit and logged.
+| Tier | Behavior | Use Case |
+|------|----------|----------|
+| **Open** | Brain queries freely. Core serves. Logged but no gate. | Social, consumer, professional — the personas brain needs constantly for whispers. |
+| **Restricted** | Brain can query, but core logs every access to Tier 0 audit log AND pushes a silent notification to client device. User sees "Dina accessed your health data 3 times today" in daily briefing. | Health — brain sometimes needs it (e.g., "you have a doctor's appointment"), but user should know when. |
+| **Locked** | Brain cannot query at all until user unlocks the persona for a time-limited session via client device. `POST /v1/persona/unlock {persona: "/financial", ttl: "15m"}`. Core auto-locks after TTL expires. | Financial — brain almost never needs this. When it does, it's high-stakes (tax filing, insurance claim). Worth the friction. |
+
+**What this fixes:**
+
+1. **Compromised brain can't touch locked personas at all.** Financial data requires user interaction. The attack surface is limited to open personas.
+2. **Restricted personas create a detection trail.** If a compromised brain starts scraping health data, the user sees it in the audit log.
+3. **Open personas stay fast.** The whisper flow works without friction for everyday contexts.
+4. **Cross-persona ATTACH is never done.** Core doesn't use `ATTACH DATABASE`. Each persona query is a separate API call to `/v1/vault/query` with a `persona` field. Core opens each persona's partition independently, checks the access tier, and responds. Brain never sees the SQLite handle.
+
+**The audit log (Tier 0) records every persona access:**
+
+```json
+{"ts": "2026-02-18T03:15:00Z", "persona": "/health", "action": "query", "requester": "brain", "query_type": "fts", "reason": "whisper_assembly"}
+```
 
 ### Zero-Knowledge Proof Credentials (Trust Rings)
 
@@ -935,19 +1038,74 @@ PRAGMA cipher_page_size=4096;            -- SQLCipher: page size (match default)
 PRAGMA journal_mode=WAL;                 -- Write-Ahead Logging: changes go to -wal file first
 PRAGMA synchronous=NORMAL;               -- Safe in WAL mode, significantly faster than FULL
 PRAGMA foreign_keys=ON;                  -- Prevent orphaned data corruption
+PRAGMA busy_timeout=5000;                -- Wait up to 5s for write lock (prevents SQLITE_BUSY under load)
 ```
 
 WAL mode means: if the server crashes mid-write, the main `.sqlite` is untouched. On restart, SQLite sees the incomplete `-wal` file and automatically rolls back. The database is always in a consistent state.
+
+**Protection 1b: Concurrent Access (Single-Writer Pattern)**
+
+dina-core is a concurrent Go server: WebSocket clients, connector polling, DIDComm reception, and brain API requests all hit the same persona SQLite file. WAL mode allows concurrent readers, but only **one writer at a time**. Without proper connection management, writes back up during heavy ingestion (e.g. initial Gmail sync of 10,000 emails) and brain queries time out.
+
+**Connection pool design (per persona file):**
+
+```go
+// One write connection (serialized), unlimited read connections
+type VaultPool struct {
+    writeConn *sql.DB  // MaxOpenConns=1, busy_timeout=5000
+    readPool  *sql.DB  // MaxOpenConns=N (cpu_count * 2), read-only
+}
+```
+
+```sql
+-- Write connection PRAGMAs (in addition to Protection 1 PRAGMAs)
+PRAGMA busy_timeout = 5000;        -- Wait up to 5s for lock instead of returning SQLITE_BUSY immediately
+PRAGMA wal_autocheckpoint = 1000;  -- Checkpoint every 1000 pages (~4MB)
+
+-- Read connections
+PRAGMA query_only = ON;            -- Prevents accidental writes on read connections
+```
+
+**Why single-writer:** SQLite's WAL allows only one writer. Attempting concurrent writes causes `SQLITE_BUSY`. The alternatives — retry loops, random backoff, connection-level mutexes — are fragile. A single dedicated write connection with `busy_timeout` is deterministic: writes queue up, readers never block.
+
+**Batch ingestion pattern (connectors):**
+
+During initial sync, connectors ingest thousands of items. Writing each one individually creates lock contention and WAL bloat.
+
+```
+BATCH INGESTION PROTOCOL:
+
+  Connector polls for new items (e.g. 10,000 Gmail messages)
+           ↓
+  Collect into batches of 100 items
+           ↓
+  Per batch: BEGIN → INSERT 100 rows → COMMIT (one transaction)
+           ↓
+  After each batch: notify brain "100 new items in consumer vault"
+           ↓
+  Brain processes in background (reads from read pool — never blocked by writer)
+```
+
+The batch size (100) balances write throughput against WAL file growth. At 100 rows per transaction, a 10,000-email initial sync completes in ~100 transactions instead of 10,000 individual writes — roughly 50x faster and with minimal lock contention.
 
 **Protection 2: Pre-Flight Snapshots (Application Level)**
 
 Before any schema migration or major operation, Dina creates a point-in-time backup.
 
+> **CRITICAL WARNING — CVE-level vulnerability:**
+> Do **NOT** use the standard SQLite `VACUUM INTO` command for backups. In SQLCipher, `VACUUM INTO 'backup.sqlite'` does **not** inherit the encryption context of the parent database. It produces a **plaintext** copy — completely bypassing the encryption layer. Shipping this would mean every backup vomits secrets into a plaintext file that anyone with filesystem access could read.
+>
+> Backups **MUST** be performed using `sqlcipher_export()` via the `ATTACH DATABASE` method. This is the only mathematically safe way to back up a SQLCipher database.
+
 ```
 MIGRATION SAFETY PROTOCOL:
 
-  1. Create backup: VACUUM INTO 'vault.v{old_version}.bak'
-     (Atomic, non-blocking copy of entire database)
+  1. Create encrypted backup using sqlcipher_export():
+     ATTACH DATABASE 'vault.v{old_version}.bak' AS backup KEY '<same_key>';
+     SELECT sqlcipher_export('backup');
+     DETACH DATABASE backup;
+     (Keyed-to-Keyed transaction: decrypts page-by-page from main,
+      re-encrypts page-by-page into backup. Plaintext never touches disk.)
            ↓
   2. Apply schema changes inside a transaction
            ↓
@@ -957,6 +1115,36 @@ MIGRATION SAFETY PROTOCOL:
   4a. If integrity_check = "ok" → Commit. Delete backup after 24h.
   4b. If integrity_check ≠ "ok" → ROLLBACK. Restore from backup. Alert user.
 ```
+
+```go
+// Go implementation using mutecomm/go-sqlcipher
+func (s *Store) SecureBackup(backupPath string, key string) error {
+    // 1. Ensure backup file does not exist (SQLite will create it)
+    if _, err := os.Stat(backupPath); err == nil {
+        os.Remove(backupPath)
+    }
+
+    // 2. Atomic Keyed-to-Keyed backup via sqlcipher_export()
+    //    ATTACH initializes the new file with encryption header + derived key
+    //    before any data is written. sqlcipher_export() decrypts from main
+    //    and re-encrypts into backup — plaintext never touches disk.
+    query := `
+        ATTACH DATABASE ? AS backup KEY ?;
+        SELECT sqlcipher_export('backup');
+        DETACH DATABASE backup;
+    `
+
+    // 3. Execute — same key for seamless restoration
+    _, err := s.db.Exec(query, backupPath, key)
+    if err != nil {
+        return fmt.Errorf("secure backup failed: %w", err)
+    }
+
+    return nil
+}
+```
+
+**CI/CD verification (mandatory):** The backup test suite must attempt to open the resulting `backup.sqlite` as a standard plaintext SQLite file. If the file opens successfully (valid `SQLite format 3\0` header), the build **MUST** fail. This catches any regression where someone replaces `sqlcipher_export()` with `VACUUM INTO`.
 
 This runs automatically on every `dina-core` update. The user never sees it unless something goes wrong — in which case their vault is restored to the state 1 second before the update.
 
@@ -983,7 +1171,7 @@ Immutable cold storage with compliance lock. Covers ransomware, total infrastruc
 | Threat | Protection | Tech | Recovery Time |
 |--------|-----------|------|---------------|
 | Power outage mid-write | Atomic commits | `PRAGMA journal_mode=WAL` | Automatic (on restart) |
-| Bad migration / code bug | Pre-flight snapshot | `VACUUM INTO` + integrity check | Seconds (auto-rollback) |
+| Bad migration / code bug | Pre-flight snapshot | `sqlcipher_export()` (Keyed-to-Keyed backup) + integrity check | Seconds (auto-rollback) |
 | Accidental deletion / logic bug | File system snapshot | ZFS/Btrfs snapshots (15 min) | Seconds (rollback) |
 | Disk failure / hardware death | Off-site backup | Encrypted S3/Backblaze sync | Minutes to hours |
 | Ransomware / total destruction | Immutable archive | Tier 5 Deep Archive (Object Lock) | 12-48 hours |
@@ -1042,11 +1230,145 @@ HOME NODE                              PHONE (Android)
 ### Gmail Connector
 - **Runs on:** Home Node
 - **API:** Gmail REST API, `readonly` scope only
-- **Auth:** OAuth 2.0 token stored in Tier 0 (encrypted)
-- **Pull frequency:** Every 15 minutes (configurable)
-- **What's pulled:** Message headers, body (plain + HTML), attachments (metadata only, full download optional)
+- **Auth:** OAuth 2.0 token stored in Tier 0 (key-wrapped with Argon2id KEK)
+- **Pull frequency:** Every 15 minutes (configurable) for new emails; startup sync follows the Living Window protocol (30-day fast sync → background backfill to 365 days)
+- **What's pulled:** Headers first, then full body only for emails that pass triage (see Ingestion Triage below). Attachments: metadata only, full download optional. Only messages within `DINA_HISTORY_DAYS` (default 365). Older messages are never downloaded — accessed via pass-through search when needed.
 - **Dedup:** By Gmail message ID
 - **Persona routing:** Emails go to whatever persona the user configures (most go to /professional or /consumer)
+
+#### Ingestion Triage (Two-Pass Filter)
+
+Most email is noise — even in Primary. A typical Primary inbox contains newsletters (LessWrong, Substack), recruiter spam (Crossover), product updates (Google Cloud, AWS), storage alerts (iCloud), automated notifications (GitHub, Google security), and OTP codes — mixed in with the handful of emails that actually matter. Downloading, parsing, embedding, and indexing all of it wastes bandwidth, storage, CPU, and — most importantly — dilutes signal with noise.
+
+**The fix: two-pass triage before full download.**
+
+Gmail API supports `format=metadata` — returns only headers (Subject, From, Date, Labels) at a fraction of the cost of `format=full`. Dina uses this to decide what's worth ingesting.
+
+```
+INGESTION TRIAGE PROTOCOL:
+
+  1. METADATA FETCH: messages.get(format=metadata)
+     → Returns: Subject, From, To, Date, Gmail Labels/Categories
+     → Cost: ~200 bytes per message vs ~5-50 KB for full body
+
+  2. PASS 1 — GMAIL CATEGORY FILTER (free, instant, no LLM):
+     Gmail Categories:
+       PROMOTIONS  → Skip (thin record only)
+       SOCIAL      → Skip (thin record only)
+       UPDATES     → Skip (thin record only)
+       FORUMS      → Skip (thin record only)
+       PRIMARY     → Proceed to Pass 2
+
+     This kills ~60-70% of total email volume immediately.
+
+  3. PASS 2 — SUBJECT+SENDER TRIAGE (within PRIMARY):
+     Gmail's Primary category is not enough. A real Primary inbox
+     looks like this:
+
+       LessWrong newsletter                    → not important
+       Punjab National Bank TDS certificate     → important (tax document)
+       iCloud "storage is full"                 → not important
+       Substack newsletter                      → not important
+       Crossover recruiter spam                 → not important
+       no-reply@amazonaws "AWS credits"         → not important
+       GoDaddy "domains cancel in 5 days"       → important (fiduciary!)
+       GitHub "identity linked to account"      → low importance
+       Google "Security alert"                  → important (fiduciary!)
+       Google Cloud "Product Update"            → not important
+
+     ~80% of PRIMARY is still noise. Two sub-passes handle this:
+
+     3a. REGEX PRE-FILTER (instant, no LLM):
+         Sender patterns:
+           noreply@*, no-reply@*              → Thin record
+           *@notifications.*, *@marketing.*   → Thin record
+           *@bounce.*, mailer-daemon@*        → Thin record
+         Subject patterns:
+           "[Product Update]*", "Weekly digest" → Thin record
+           "OTP", "verification code"           → Thin record
+
+     3b. LLM BATCH CLASSIFICATION (cheap, batched):
+         Remaining PRIMARY emails that survive regex are batched
+         and classified by subject + sender in a single LLM call.
+
+         Batch 50 subjects per call (~500 input tokens, ~200 output):
+           "Classify each email as INGEST or SKIP:
+            1. From: Punjab National Bank | Subject: TDS Certificate (Form 16A)
+            2. From: The Substack Post | Subject: 'If you're going to show us...'
+            3. From: GoDaddy Renewals | Subject: Your domains cancel in 5 days
+            ..."
+
+         Classification categories:
+           INGEST    → Real human correspondence, important documents,
+                       actionable items (renewals, security alerts, tax docs)
+           SKIP      → Newsletters, automated notifications, recruiter spam,
+                       product updates, marketing disguised as Primary
+
+         Cost: ~50 emails classified per LLM call.
+           Online Mode:  Gemini Flash Lite — ~700 tokens = $0.00007 per batch.
+                         Classifying 2,000 emails/year = 40 batches = $0.003/year.
+           Offline Mode: Gemma 3n via llama-server — ~0.5 seconds per batch.
+
+  4. FULL DOWNLOAD: Only PRIMARY emails classified as INGEST
+     get messages.get(format=full).
+     → These are vectorized, FTS-indexed, and stored in Tier 1.
+
+  5. THIN RECORDS: All skipped emails (Pass 1, Pass 2 regex,
+     Pass 2 LLM) still get a minimal record:
+     {source_id, subject, sender, timestamp, category: "skipped", skip_reason}
+     → Searchable by subject/sender via FTS5
+     → If user later asks about a skipped email, Dina can fetch
+       the full body on demand from Gmail API (pass-through retrieval)
+     → NOT embedded (no vector cost)
+     → Takes ~0.1% of the storage of a full record
+```
+
+**Why two passes, not just LLM:**
+- Pass 1 (Gmail categories) is free and instant — kills 60-70% of volume before any processing.
+- Pass 2 regex is free and instant — catches obvious automated senders within Primary.
+- Pass 2 LLM only runs on the ~30% that survives both filters. Batched, it costs essentially nothing.
+- The LLM sees only subject + sender (never the body at this stage) — no privacy concern, minimal tokens.
+
+**Why this matters (real numbers):**
+
+| Metric | Full Ingestion | With Triage |
+|--------|---------------|-------------|
+| Emails in inbox (1 year) | 5,000 | 5,000 |
+| After Pass 1 (Gmail categories) | 5,000 | ~1,500 (Primary only) |
+| After Pass 2 (regex + LLM) | 5,000 | ~300-500 |
+| Full bodies downloaded | 5,000 | ~300-500 |
+| API bandwidth | ~100-250 MB | ~10-20 MB |
+| Embeddings generated | 5,000 | ~300-500 |
+| Vector index size | 100% | ~8-10% |
+| Ingestion time | 100% | ~15% |
+| LLM triage cost (Online Mode) | $0 | ~$0.003/year |
+| Signal-to-noise | Very low | High (real correspondence + actionable items) |
+
+**User override:** The triage categories are configurable. If a user wants to index their newsletters (e.g., they subscribe to high-quality technical newsletters), they can add sender exceptions: `"always_ingest": ["newsletter@stratechery.com", "*@substack.com"]`. If they want everything, `DINA_TRIAGE=off` disables filtering entirely.
+
+**Fiduciary override:** Even during triage, certain patterns always trigger full ingestion regardless of category — security alerts, financial documents, domain/account expiration warnings. These align with Tier 1 (Fiduciary) classification: silence would cause harm. The triage LLM is specifically instructed to never skip anything that looks actionable or time-sensitive.
+
+#### OAuth Token Lifecycle
+
+Gmail access tokens expire every **60 minutes**. Refresh tokens rotate on each use (Google's rotation policy). Tokens are revoked when the user changes their Google password, removes the app from their Google account, or a security event triggers forced revocation.
+
+**Connector health state machine:**
+
+```
+ACTIVE ─(token expiring in <5 min)─► NEEDS_REFRESH
+NEEDS_REFRESH ─(refresh succeeds)──► ACTIVE         (new token, rotated refresh token)
+NEEDS_REFRESH ─(refresh fails)─────► EXPIRED         + Tier 2 notification
+EXPIRED ─(user re-authorizes)──────► ACTIVE
+EXPIRED ─(provider revokes)────────► REVOKED         + Tier 2 notification
+REVOKED ─(user re-authorizes)──────► ACTIVE
+```
+
+**Rules:**
+1. **Auto-refresh before expiry.** The connector scheduler calls `check_token_health()` on every poll cycle. If the token expires within 5 minutes, refresh is attempted automatically. If refresh succeeds, the user never notices.
+2. **Never poll with a bad token.** If the connector is in EXPIRED or REVOKED state, `poll()` returns empty — no API call is made. This prevents 401 storms and avoids triggering Google's abuse detection.
+3. **Tier 2 notification on failure.** When auto-refresh fails or the token is revoked, emit a Tier 2 (solicited) notification: *"Gmail access expired. [Re-authorize]"*. This is not Tier 1 (fiduciary) because missing emails is an inconvenience, not a harm.
+4. **Status transitions are logged.** Every state change is recorded with timestamp and reason for observability. User can see: connector name, current status, last successful poll, reason for current state.
+5. **Refresh token rotation.** On successful refresh, the old refresh token is discarded and the new one is key-wrapped and stored in Tier 0. The old access token is also replaced.
 
 ### WhatsApp Connector (Android)
 - **Runs on:** Phone (Android only) — pushes to Home Node
@@ -1076,13 +1398,94 @@ HOME NODE                              PHONE (Android)
 - **Bank statements:** Home Node (PDF parsing or Open Banking APIs — India: Account Aggregator framework)
 - **Location:** Phone (background location for context "You're near Sancho's office") — pushed to Home Node
 
+### Memory Strategy: The Living Window
+
+Dina acknowledges that user identity evolves. Syncing 10 years of email history doesn't make Dina smarter — it makes her confused. If you were a Java developer in 2018 and a Rust developer now, 5,000 old Java emails pollute her understanding of who you are today. This is **Identity Drift**: outdated data degrades current performance.
+
+**The goal is usefulness, not completeness.**
+
+#### Two Zones
+
+| | **Zone 1: The Living Self** | **Zone 2: The Archive** |
+|--|---|---|
+| **Timeframe** | Last 1 year (configurable via `DINA_HISTORY_DAYS`, default 365) | Older than 1 year |
+| **Storage** | Vault (Tier 1) — vectorized, FTS-indexed, hot | Provider API (Gmail, etc.) — cold, not downloaded |
+| **Status** | Indexed and embedded | Ignored (on-demand only) |
+| **Access** | Proactive — Dina "thinks" with this data | Reactive — Dina searches only if user explicitly asks |
+| **Logic** | "This is who you *are*." | "This is who you *were*." |
+
+#### Startup Sync: Ready in Seconds, Not Hours
+
+The mistake: syncing all history on first connect, blocking the main thread for hours. The fix: **sync recent data first, backfill later.**
+
+```
+STARTUP SYNC PROTOCOL:
+
+  1. FAST SYNC (blocking): Fetch last 30 days (or 100 items, whichever is smaller)
+     └─► Metadata fetch → triage → full download only for PRIMARY emails
+     └─► Takes seconds. Connector status → ACTIVE. Agent is "Ready."
+         User can ask questions immediately.
+
+  2. BACKFILL ("The Historian"): Low-priority background thread fetches
+     remaining data up to DINA_HISTORY_DAYS (default: 365 days).
+     └─► Metadata fetch → triage → full download for PRIMARY only.
+     └─► Skipped emails stored as thin records (subject + sender only).
+     └─► Processes in batches of 100 (see batch ingestion protocol).
+     └─► Pauses when user issues a query (user queries always take priority).
+     └─► Resumes when idle.
+     └─► Progress visible: "Gmail sync: 2,400 / 8,000 emails (30%)"
+
+  3. STOP: Historian stops at the time horizon. Data older than
+     DINA_HISTORY_DAYS is NEVER downloaded.
+```
+
+**Why 30 days for fast sync:** Most user questions ("What did Sancho say last week?", "Where is my meeting tomorrow?") reference the last few weeks. 30 days gives Dina enough context to be immediately useful. The remaining 11 months backfill in the background.
+
+**Why 365 days as the default horizon:** One year captures seasonal patterns (annual reviews, tax season, holiday plans) without drowning in irrelevant history. Configurable — privacy maximalists can set `DINA_HISTORY_DAYS=90`, archivists can set it to `730`.
+
+#### Cold Archive: Pass-Through Search
+
+When the user asks for data older than the horizon ("Find that invoice from the contractor in 2022"), Dina doesn't have it locally. Instead:
+
+```
+PASS-THROUGH SEARCH PROTOCOL:
+
+  1. User query: "Find that invoice from the contractor"
+  2. Step 1 (Hot Memory): Search local vault (last 365 days)
+     └─► Found? Show it. Done.
+  3. Step 2 (Cold Fallback): Not found, or query explicitly mentions old date.
+     └─► Construct provider API query: Gmail search "invoice contractor before:2025/02/18"
+     └─► Fetch matching emails from Gmail API (read-only)
+     └─► Show results to user
+     └─► Do NOT save to vault. This data stays cold.
+```
+
+**Privacy note:** Pass-through search queries traverse the provider's API (e.g., Gmail Search), exposing search metadata to the provider. This is an inherent trade-off: Dina cannot search what she hasn't downloaded, and she doesn't download data outside the time horizon. The user is informed: *"Searching Gmail directly for older emails. Your search query is visible to Google."*
+
+**Why not save cold results to vault:** Saving them would silently expand the time horizon and introduce Identity Drift. The user asked for a specific old document — that's a point lookup, not a signal that old data is relevant to current identity.
+
+#### Performance Impact
+
+| Metric | Sync Everything (10 years) | Living Window (1 year) | Living Window + Triage |
+|--------|---------------------------|------------------------|------------------------|
+| Emails in scope | 50,000+ | ~5,000 | ~5,000 (but only ~400 fully ingested) |
+| Full bodies downloaded | 50,000+ | ~5,000 | ~300-500 |
+| Initial sync | Hours | Minutes | Minutes (~400 full + 4,500 thin records) |
+| "Ready" state | After full sync completes | After 30 seconds | After 30 seconds |
+| Vault size | ~2-5 GB | ~200-500 MB | ~30-80 MB |
+| Embeddings generated | 50,000+ | ~5,000 | ~300-500 |
+| Vector search latency | Slow (massive index) | Moderate | Fast (small, high-signal index) |
+| RAM (embeddings) | Very heavy | Moderate | Minimal |
+| Signal-to-noise | Very low (90%+ noise) | Low-moderate (70%+ noise in Primary) | High (noise filtered at source) |
+
 ### Connector Security Rules
 1. Every connector uses the minimum possible permission scope (read-only always)
-2. OAuth tokens are encrypted in Tier 0, stored on the Home Node
+2. OAuth tokens are key-wrapped (passphrase → Argon2id KEK → AES-256-GCM) in Tier 0, stored on the Home Node. Never stored as plaintext config values.
 3. Raw data is encrypted immediately upon ingestion — the normalizer outputs encrypted vault_items
 4. Connectors are sandboxed — a compromised Gmail connector cannot access WhatsApp data
 5. User can see every connector's status, last pull time, and data volume. Full transparency.
 6. Phone-based connectors (WhatsApp, SMS) authenticate to Home Node with device-delegated keys before pushing data
+7. OAuth token lifecycle is managed by a health state machine (ACTIVE → NEEDS_REFRESH → EXPIRED → REVOKED). Auto-refresh before expiry. On failure, Tier 2 notification. Never poll with an invalid token.
 
 ---
 
@@ -1090,7 +1493,7 @@ HOME NODE                              PHONE (Android)
 
 Where Dina thinks. This is the most complex layer.
 
-**Sidecar mapping:** In the three-container architecture, Layer 6 is split across dina-core and dina-brain. The PII scrubber's regex hot path runs in dina-core (Go — fast, no external calls). The LLM-based NER fallback, silence classification, context assembly, whisper generation, and all agent reasoning run in dina-brain (Python + Google ADK). Both call llama-server for local LLM inference.
+**Sidecar mapping:** Layer 6 is split across dina-core and dina-brain. The PII scrubber's regex hot path runs in dina-core (Go — fast, no external calls). The LLM-based NER fallback, silence classification, context assembly, whisper generation, and all agent reasoning run in dina-brain (Python + Google ADK). In Online Mode, brain calls Gemini Flash Lite for text and Deepgram Nova-3 for voice STT. In Offline Mode, brain calls llama-server for text and whisper-server for voice.
 
 ### The PII Scrubber
 
@@ -1527,7 +1930,8 @@ The Reputation Graph is NOT a single database. It's a distributed system built o
 │  │                  │  │ from Dinas   │  │           │       │
 │  └─────────────────┘  └──────────────┘  └───────────┘       │
 │                                                               │
-│  Storage: AT Protocol PDS (one per Home Node)                 │
+│  Storage: AT Protocol PDS (external or bundled — Split         │
+│           Sovereignty model, see section below)               │
 │           Records stored in signed Merkle repos               │
 │           Federated via AT Protocol Relay + AppView           │
 │           Custom Lexicons: com.dina.reputation.*              │
@@ -1655,6 +2059,242 @@ We evaluated five options:
 **Why AT Protocol wins over custom federation:** AT Protocol provides signed repos (Merkle tree integrity), relay-based federation (replication defeats censorship), custom Lexicons (schema-enforced records), `did:plc` identity (already our DID method), and an existing ecosystem of SDKs and infrastructure. Building custom federation would duplicate what AT Protocol already provides.
 
 **Why blockchain is rejected for data storage:** Immutability violates sovereignty. If you cannot delete data, you are not sovereign.
+
+### PDS Hosting: Split Sovereignty
+
+**Problem:** Reputation data must be queryable 24/7 — even when the seller's Home Node is a Raspberry Pi behind CGNAT that's currently offline. If your PDS goes down, your reviews, attestations, and trust score become invisible to the network. AT Protocol relays only crawl live PDSes.
+
+**Principle: Split Sovereignty.** Separate *cryptographic authority* (who signs records) from *infrastructure availability* (who hosts the PDS). You always hold the signing keys. The PDS is a dumb host — it stores your signed Merkle repo and serves it to relays. It cannot forge records because it doesn't have your keys. It can censor (refuse to serve) but cannot fabricate. And if it censors, you move to another PDS — AT Protocol's account portability guarantees this.
+
+This is the same model as email: you own your messages (cryptographic authority via PGP/S-MIME), but Gmail hosts the mailbox (infrastructure availability). You can move to Fastmail without losing your identity.
+
+#### Two PDS Topologies
+
+| | Type A: External PDS | Type B: Bundled PDS |
+|---|---|---|
+| **Who** | Home users (Raspberry Pi, Mac Mini, NAS behind CGNAT/NAT) | VPS users, advanced self-hosters with static IP |
+| **PDS location** | Community-hosted (e.g., `pds.dina.host`) or any AT Protocol PDS provider | Co-located with Home Node in docker-compose |
+| **Signing** | Home Node signs records locally → pushes signed commits to external PDS | Home Node signs records locally → writes directly to co-located PDS |
+| **Availability** | PDS is always online (cloud/community infrastructure) | PDS is as available as your VPS (99.9%+ uptime typical) |
+| **Incoming traffic** | Zero — PDS absorbs all read traffic from relays and AppViews | PDS handles relay crawl requests alongside Home Node traffic |
+| **docker-compose** | Default: `docker compose up -d` (2 containers: core, brain) | `docker compose --profile with-pds up -d` (adds PDS container) |
+| **Best for** | Getting started, home hardware, unreliable connectivity | Production, always-on VPS, full control |
+
+**Type A flow (External PDS):**
+```
+Home Node (Raspberry Pi, behind NAT)
+    │
+    │  Signs attestation/outcome record with user's Ed25519 key
+    │  Pushes signed commit to external PDS (outbound HTTPS)
+    ▼
+External PDS (pds.dina.host or any AT Protocol PDS)
+    │
+    │  Stores signed Merkle repo
+    │  Serves to relay on crawl request
+    ▼
+AT Protocol Relay (firehose aggregation)
+    │
+    ▼
+Reputation AppView (indexes com.dina.reputation.* records)
+```
+
+The Home Node never receives inbound reputation traffic. The external PDS absorbs all read load. The Home Node only makes outbound pushes when it has new records to publish — a few requests per day for a typical user. Your Raspberry Pi is safe.
+
+**Type B flow (Bundled PDS):**
+```
+Home Node (VPS with static IP)
+    │
+    ├── dina-core (Go)     ← Private layer
+    ├── dina-brain (Python) ← Private layer
+    ├── llama-server        ← Private layer (Offline Mode)
+    └── dina-pds            ← Public layer: AT Protocol PDS
+            │
+            │  Serves signed repo to relay on crawl
+            ▼
+       AT Protocol Relay → Reputation AppView
+```
+
+The PDS container runs alongside the private stack but serves only reputation data (`com.dina.reputation.*` Lexicons). It handles relay crawl requests — infrequent, lightweight, and cacheable.
+
+#### Why Your Machine Isn't Overwhelmed (AT Protocol's Three Layers)
+
+AT Protocol separates read traffic from write traffic across three architectural layers:
+
+```
+                Write path                    Read path
+                (your PDS)                    (AppView)
+
+User writes    ─────►  PDS  ◄─────  Relay crawls (pull, not push)
+review                  │                │
+                        │                │
+                        ▼                ▼
+                    Relay (Firehose)──► AppView (Query Index)
+                                            │
+                                            ▼
+                                    Other Dinas query
+                                    reputation here
+```
+
+| Layer | Role | Traffic pattern |
+|-------|------|----------------|
+| **PDS** (yours) | Stores your signed Merkle repo | Low: relay crawls periodically (delta sync via Merkle Search Trees). No end-user queries hit your PDS. |
+| **Relay** | Aggregates firehose from all PDSes | High: crawls thousands of PDSes, streams unified firehose to AppViews. Not your problem — relay operators handle this. |
+| **AppView** | Builds application-specific query indexes | High: serves all end-user queries ("show me all chairs rated > 80"). Not your problem — AppView operators handle this. |
+
+**Key insight: your PDS only talks to the relay.** It never serves end-user queries. When another Dina asks "what's the reputation of this seller?", that query hits the Reputation AppView — not your PDS. Your PDS's only job is to store your signed records and let the relay crawl them.
+
+**Merkle Search Trees make crawling cheap.** The relay doesn't download your entire repo on every crawl. AT Protocol repos use Merkle Search Trees (MSTs) — a self-balancing tree where the structure is determined by record key hashes. The relay stores the last root hash it saw. On the next crawl, it walks only the diff — new records since the last sync. For a typical user publishing a few attestations per week, delta sync transfers a few kilobytes.
+
+#### The Dina Foundation PDS (`pds.dina.host`)
+
+> Planned for Phase 1. Free tier for all Dina users.
+
+The Dina Foundation will operate an AT Protocol PDS at `pds.dina.host` as the default Type A host. Users get a handle like `alice.dina.host` and a PDS that's always online.
+
+- **What it stores:** Only `com.dina.reputation.*` records (attestations, outcomes, bot scores). No private data ever touches it.
+- **What it can do:** Serve your signed repo to relays. That's it.
+- **What it cannot do:** Forge records (no signing keys), read private vault data (different protocol entirely), prevent you from leaving (AT Protocol account portability).
+- **If it goes down:** Your records are already replicated to relays. You migrate to another PDS. Zero data loss.
+- **If it turns evil:** You rotate your PDS in your `did:plc` document. All existing records remain valid (signed by your key, not the PDS's key).
+
+#### Choosing Your PDS Topology
+
+```
+Start here
+    │
+    ├── Home hardware (Pi, Mac Mini, NAS)?
+    │       └── Type A: External PDS (pds.dina.host)
+    │           docker compose up -d  (no PDS container)
+    │
+    └── VPS or dedicated server with static IP?
+            └── Type B: Bundled PDS
+                docker compose --profile with-pds up -d
+```
+
+Both topologies produce identical results on the network. A relay crawling `pds.dina.host/alice` and a relay crawling `your-vps:pds-port` see the same signed Merkle repo format. The choice is purely about infrastructure preference and availability guarantees.
+
+### Reputation AppView (Aggregation & Query Layer)
+
+Personal data lives on user PDSes, but global queries ("who are the top-rated sellers?", "what's the best laptop under ₹80K?") require an aggregation layer. This is the AppView.
+
+The AppView does not hold user keys or create data. It is a **read-only indexer** that consumes the network firehose, filters for Dina-specific records, and serves a high-speed query API.
+
+#### Phase 1: The Monolith (0–1M users)
+
+**Philosophy: keep it simple.** Dina filters for a specific Lexicon (`com.dina.reputation.*`), so the data volume is <1% of the full AT Protocol firehose. A single optimized node handles this for years.
+
+**Stack:**
+
+| Component | Technology | Why |
+|-----------|-----------|-----|
+| Runtime | Go (single binary) | Matches ecosystem, `indigo` firehose consumer library |
+| Database | PostgreSQL 16 + `pg_trgm` | Text search, normalized schema, mature tooling |
+| Ingestion | `indigo` library connecting to `bsky.network` Relay | Proven AT Protocol firehose consumer |
+| Deployment | 1x VPS (4 vCPU, 8GB RAM, NVMe) | Blue/green zero-downtime updates |
+| Resilience | WAL archiving + periodic snapshots (PITR) | Point-in-time recovery |
+
+**Architecture:**
+
+```
+AT Protocol Relay (bsky.network)
+        │
+        │ WebSocket firehose
+        ▼
+┌─────────────────────────────────────────┐
+│  Reputation AppView (Single Go Binary)  │
+│                                         │
+│  1. Firehose Consumer                   │
+│     └─ Connects to Relay WebSocket      │
+│     └─ Tracks cursor (seq number)       │
+│                                         │
+│  2. Filter                              │
+│     └─ Discards all events except       │
+│        com.dina.reputation.*            │
+│        com.dina.identity.attestation    │
+│                                         │
+│  3. Verifier                            │
+│     └─ Cryptographically verifies       │
+│        signature on every record        │
+│     └─ Rejects unsigned/invalid         │
+│                                         │
+│  4. Indexer                             │
+│     └─ Upserts valid records into       │
+│        PostgreSQL (sellers, reviews,    │
+│        trust_scores, bot_scores)        │
+│                                         │
+│  5. Query API                           │
+│     └─ GET /v1/reputation?did=...       │
+│     └─ GET /v1/product?id=...           │
+│     └─ GET /v1/bot?did=...             │
+│     └─ Serves signed payloads for       │
+│        client-side verification         │
+└─────────────────────────────────────────┘
+        │
+        │ JSON API
+        ▼
+   Dina Agents query here
+```
+
+**Aggregate scores are computed, not stored in any PDS.** The AppView independently calculates product ratings, seller trust composites, and bot accuracy scores from the signed individual records it holds. Any AppView processing the same firehose computes the same scores — the math is deterministic.
+
+**API contract: signed payloads from day one.** Every query response includes the raw signed record payloads alongside computed scores. This is cheap (the records are already in Postgres) and locks in the right API shape. Agent-side verification of these signatures is deferred — no agent checks them in Phase 1, but when verification lands (Phase 3), the API doesn't need to change.
+
+```json
+{
+  "product_id": "herman_miller_aeron_2025",
+  "score": 92,
+  "review_count": 14,
+  "reviews": [
+    {
+      "expert_did": "did:plc:abc...",
+      "rating": 95,
+      "signed_record": "...",
+      "signature": "..."
+    }
+  ]
+}
+```
+
+#### Future: Scaling & Verification (deferred until multiple AppViews exist)
+
+> **Not needed for Phase 1.** The sections below document the scaling path and trust model for when the ecosystem grows beyond a single Foundation-operated AppView.
+
+**The Sharded Cluster (10M+ users)**
+
+When write load (new reviews) or read load (agent queries) exceeds a single Postgres instance:
+
+```
+Relay firehose
+      │
+      ▼
+Stateless Go workers (Ingestion Layer — The Writer)
+      │
+      ▼
+Kafka / NATS JetStream (event buffer: dina-events topic)
+      │
+      ▼
+Indexer Workers → ScyllaDB (sharded by DID) for high-velocity tables
+                  PostgreSQL (read replicas) for metadata/identity
+      │
+      ▼
+Independent API cluster (Query Layer — The Reader)
+      └─ Autoscales horizontally (Kubernetes HPA)
+      └─ Reads from ScyllaDB + Postgres read replicas
+```
+
+**Cursor tracking:** Each worker tracks its `seq` number. Crash → resume exactly where it left off. Zero data loss. **Janitor process:** periodically spot-checks AppView against random PDS samples to detect index drift.
+
+**Three-Layer Verification: Trust but Verify**
+
+The AppView provides speed, but it is **not the ultimate source of truth**. Signed records on PDSes are. When multiple AppViews exist, a Dina agent employs a three-layer verification strategy:
+
+**Layer 1: Cryptographic Proof.** When the AppView returns a reputation record ("Alice rated this seller 92"), it includes the raw signed data payload and Alice's signature. The agent verifies the signature against Alice's public key (from her DID Document). The AppView cannot fake a record — it can only serve records actually signed by the author.
+
+**Layer 2: Consensus Check (anti-censorship).** An AppView cannot fake data, but it *can* hide it (e.g., censoring bad reviews for a paying seller). For high-value transactions, the agent queries multiple AppViews. If Provider A returns 5 reviews and Provider B returns 50, the agent detects censorship and alerts the user.
+
+**Layer 3: Direct PDS Spot-Check (the audit).** Randomly (e.g., 1 in 100 queries), or when a score seems suspicious, the agent bypasses the AppView entirely — resolves the target's DID to their PDS URL and fetches records directly via `com.atproto.repo.listRecords`. Discrepancies downgrade the AppView's trust score.
+
+**Why this makes the AppView a commodity:** The AppView has no power to manipulate the market — it only has the power to serve data fast. Agents verify its work, so a dishonest AppView gets caught and abandoned. The network switches to a competitor. **The AppView is infrastructure, not a gatekeeper.** Anyone can run one. Competition is on speed and uptime, not on data access.
 
 ### Signed Tombstones (Deletion Protocol)
 
@@ -2064,14 +2704,21 @@ For messaging and vault, Dina uses its own stack: libsodium encryption for Dina-
 ### The Home Node architecture
 
 ```
-Home Node
+Home Node (Type B: Bundled PDS — VPS with static IP)
 ├── dina-core (Go)      ← Private layer: encrypted vault, keys, DIDComm-shaped messaging
 ├── dina-brain (Python)  ← Private layer: reasoning, classification, agent orchestration
-├── llama-server         ← Private layer: local LLM inference
+├── llama-server         ← Private layer: local LLM inference (Offline Mode)
 └── dina-pds             ← Public layer: AT Protocol PDS for Reputation Graph only
+                            (docker compose --profile with-pds)
+
+Home Node (Type A: External PDS — home hardware behind NAT)
+├── dina-core (Go)      ← Private layer: encrypted vault, keys, DIDComm-shaped messaging
+├── dina-brain (Python)  ← Private layer: reasoning, classification, agent orchestration
+├── llama-server         ← Private layer: local LLM inference (Offline Mode)
+└── (no PDS container — reputation records pushed to external PDS via outbound HTTPS)
 ```
 
-The PDS runs alongside the private stack. It hosts only reputation data (`com.dina.reputation.*` Lexicons). Private data (messages, personal vault, persona compartments) never touches the AT Protocol stack.
+In Type B, the PDS container runs alongside the private stack, hosting only reputation data (`com.dina.reputation.*` Lexicons). In Type A, the Home Node signs records locally and pushes them to an external PDS (e.g., `pds.dina.host`). In both cases, private data (messages, personal vault, persona compartments) never touches the AT Protocol stack. See Layer 3 "PDS Hosting: Split Sovereignty" for the full design.
 
 ### Precedent
 
@@ -2085,21 +2732,25 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 |-----------|-----------|-----|
 | **Home Node (dina-core)** | | |
 | Core runtime | Go + net/http (HTTP server) | Fast compilation, single static binary, excellent crypto stdlib, goroutines for concurrency |
-| Database | SQLite + SQLCipher + FTS5 (via `mattn/go-sqlite3` with CGO) | Battle-tested, one encrypted file per persona, no separate DB server. SQLCipher provides transparent whole-database AES-256 encryption. |
+| Database | SQLite + SQLCipher + FTS5 (via `mutecomm/go-sqlcipher` with CGO) | Battle-tested, one encrypted file per persona, no separate DB server. SQLCipher provides transparent whole-database AES-256 encryption. **Not** `mattn/go-sqlite3` — SQLCipher support was never merged into mainline mattn; it only exists in forks. `mutecomm/go-sqlcipher` embeds SQLCipher directly. CI must assert raw `.sqlite` bytes are not valid SQLite headers (proving encryption is active). |
 | Vector search | Phase 1: vectors stored and queried in dina-brain (Python, sqlite-vec). Phase 2: sqlite-vec in core via CGO. | Brain handles embeddings initially; core handles structured/FTS queries. Clean separation. |
 | PII scrubbing (hot path) | Regex + calls to llama-server | Fast path in Go, LLM fallback for ambiguous cases |
 | Client ↔ Node protocol | Authenticated WebSocket (TLS + device-delegated key) | Encrypted channel, device key proves identity |
 | Home Node ↔ Home Node | Phase 1: libsodium `crypto_box_seal` (ephemeral sender keys) + DIDComm-shaped plaintext. Phase 2: full JWE (ECDH-1PU). Phase 3: Noise XX sessions for full forward secrecy. | Sender FS from day one. Full FS in Phase 3. Plaintext format is DIDComm-compatible throughout — migration is encryption-layer only. |
 | **Home Node (dina-brain)** | | |
 | Brain runtime | Python + Google ADK (v1.25+, Apache 2.0) | Model-agnostic agent framework, multi-agent orchestration |
-| Local LLM inference | llama-server (llama.cpp) + Gemma 3n GGUF | OpenAI-compatible API, CPU inference, shared by core and brain |
-| Function calling | FunctionGemma 270M (GGUF) via llama-server | 529MB, fast structured tool routing |
-| Cloud LLM (optional) | User's choice (Claude, Gemini, GPT-4, self-hosted) | For complex reasoning tasks, goes through PII scrubber |
+| Text LLM (Online) | Gemini 2.5 Flash Lite API ($0.10/$0.40 per 1M tokens) | Cheapest Gemini model, 1M context, native function calling + JSON mode, 305+ t/s |
+| Text LLM (Offline) | llama-server (llama.cpp) + Gemma 3n E4B GGUF (~3GB RAM) | OpenAI-compatible API, CPU/Apple Silicon inference, full offline capability |
+| Voice STT (Online) | Deepgram Nova-3 ($0.0077/min, WebSocket streaming) | ~150-300ms latency, purpose-built real-time STT. Fallback: Gemini Flash Lite Live API. |
+| Voice STT (Offline) | whisper.cpp + Whisper Large v3 Turbo (~3GB) | 4.4% WER, battle-tested, mature chunking pipeline |
+| Cloud LLM (escalation) | User's choice (Gemini 2.5 Flash/Pro, Claude, GPT-4) | For complex reasoning that Flash Lite can't handle. Goes through PII scrubber. |
 | Agent orchestration | Google ADK Sequential/Parallel/Loop agents | Multi-step reasoning, tool calling with retries |
 | External agent integration | MCP (Model Context Protocol) | Connect to OpenClaw and other action agents |
-| Embeddings | EmbeddingGemma (308M, Phase 1), Nomic Embed V2 (Phase 2) | <200MB RAM, 100+ languages, Matryoshka dims |
+| Embeddings (Online) | `gemini-embedding-001` ($0.01/1M tokens) | 768/3072 dims, 100+ languages |
+| Embeddings (Offline) | EmbeddingGemma 308M (GGUF) via llama-server | ~300MB RAM, 100+ languages, Matryoshka dims |
 | **Container orchestration** | | |
-| Development | docker-compose (4 containers: core, brain, llama-server, pds) | One-command startup, clean separation |
+| Online Mode | docker-compose (2 containers: core, brain). Add PDS with `--profile with-pds` (Type B). | 2GB RAM minimum. No local LLM/STT needed. Type A users push to external PDS instead. |
+| Offline Mode | docker-compose (4 containers: core, brain, llama-server, whisper-server). Add PDS with `--profile with-pds` (Type B). | 8GB RAM minimum. Mac Mini M4 (16GB) recommended. Full offline capability. |
 | Managed hosting | docker-compose or Fly.io | Same containers, orchestrated by hosting operator |
 | **Identity & Crypto** | | |
 | Identity | W3C DIDs (`did:plc` via PLC Directory) | Open standard, globally resolvable, key rotation, 30M+ identities, Go implementation available. Escape hatch: rotation op to `did:web`. |
@@ -2122,7 +2773,9 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 | DID resolution | PLC Directory (`did:plc`), `did:web` escape hatch | `did:plc`: proven at 30M+ scale, key rotation, Go implementation (`bluesky-social/indigo`). `did:web`: sovereignty escape if PLC Directory becomes adversarial — rotation op transitions transparently. |
 | Push to clients | FCM/APNs (Phase 1), UnifiedPush (Phase 2) | Wake clients when Home Node has updates |
 | Backup | Any blob storage (S3, Backblaze, NAS) | Encrypted snapshots of Home Node vault |
-| Reputation Graph | AT Protocol PDS + Relay + AppView. Custom Lexicons (`com.dina.reputation.*`). Signed tombstones for deletion. L2 Merkle root anchoring (Phase 3) for timestamp proofs. | AT Protocol provides federation, signed Merkle repos, `did:plc` identity, and ecosystem SDKs. Reputation data is public — AT Protocol's public-by-design model is the right fit. |
+| Reputation Graph (PDS) | AT Protocol PDS (external or bundled — Split Sovereignty). Custom Lexicons (`com.dina.reputation.*`). Signed tombstones for deletion. | Type A: home users push signed records to external PDS (`pds.dina.host`). Type B: VPS users run bundled PDS (`--profile with-pds`). See Layer 3 "PDS Hosting: Split Sovereignty". |
+| Reputation Graph (AppView) | Go + PostgreSQL 16 (`pg_trgm`). `indigo` firehose consumer. Phase 1: single monolith (0–1M users). Phase 3: sharded cluster (ScyllaDB + Kafka + K8s). | Read-only indexer. Signature verification on every record. Three-layer trust-but-verify: cryptographic proof, consensus check, direct PDS spot-check. AppView is a commodity — anyone can run one. See Layer 3 "Reputation AppView". |
+| Reputation Graph (timestamps) | L2 Merkle root anchoring (Phase 3). Base or Polygon. | Provable "this existed before this date" for dispute resolution. Not needed until real money flows through the system. |
 | ZKP | Semaphore V4 (PSE/Ethereum Foundation) | Production-proven (World ID), off-chain proof generation |
 | Serialization | JSON (Phase 1), MessagePack or Protobuf (Phase 2) | JSON is debuggable and sufficient for core↔brain traffic volume. Binary serialization deferred until profiling shows it matters. |
 | Containerization | Docker + docker-compose | Single-command Home Node deployment: `docker compose up -d` |
@@ -2132,7 +2785,7 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 | Self-healing | `restart: always` + healthcheck + dependency chain | Brain waits for core; all containers auto-recover |
 | **Data Safety** | | |
 | Database config | WAL mode + `synchronous=NORMAL` | Crash-safe atomic writes |
-| Migration safety | `VACUUM INTO` + `PRAGMA integrity_check` | Pre-flight snapshot before every schema change |
+| Migration safety | `sqlcipher_export()` + `PRAGMA integrity_check` | Pre-flight snapshot before every schema change. **Never `VACUUM INTO`** — creates unencrypted copies on SQLCipher (CVE-level vulnerability). |
 | File system (managed hosting) | ZFS or Btrfs | Copy-on-write snapshots every 15 min |
 | Off-site backup | Encrypted snapshots to S3/Backblaze | Covers disk failure, theft |
 | Deep archive (Tier 5) | AWS Glacier Deep Archive (Object Lock) or physical drive | Immutable cold storage — survives ransomware |
@@ -2152,30 +2805,117 @@ The Home Node runs four containers orchestrated by docker-compose: dina-core (Go
 **The docker-compose stack:**
 - dina-core: Go binary + SQLCipher vaults (one encrypted file per persona) — **private layer**
 - dina-brain: Python + Google ADK agent loop — **private layer**
-- llama-server: llama.cpp + Gemma 3n GGUF model — **private layer**
+- llama-server: llama.cpp + Gemma 3n E4B GGUF — **private layer** (Offline Mode only)
+- whisper-server: whisper.cpp + Whisper Large v3 Turbo — **private layer** (Offline Mode only)
 - dina-pds: AT Protocol PDS for Reputation Graph — **public layer** (reputation data only)
-- Input: `VAULT_PASSPHRASE` (env var or passed via client device at startup)
 - Output: Encrypted messaging endpoint + WebSocket API for clients + AT Protocol firehose
-- Deployment: `docker compose up -d`
+- Deployment: `DINA_MODE=online docker compose up -d` (or `offline`)
 
-**Minimum requirements:**
-- 4GB RAM (Gemma 3n E2B quantized + Python brain + Go core)
-- 2 CPU cores
-- 10GB storage (grows with vault size)
-- Always-on internet connection
-- No GPU required
+**Encryption key passing (docker-compose):**
 
-### LLM Inference
+The vault passphrase never appears in `docker-compose.yml`, command history, or process listings:
 
-| Where | Runtime | Model | Use Cases |
-|-------|---------|-------|-----------|
-| Home Node | llama.cpp (GGUF) | Gemma 3n E2B (default), E4B (if RAM allows) | PII scrubbing, context injection, drafting, summarization, Dina-to-Dina response generation |
-| Home Node | llama.cpp (GGUF) | FunctionGemma 270M | Fast intent classification, query routing, connector orchestration |
-| Home Node | llama.cpp (GGUF) | EmbeddingGemma 308M | Embedding generation for Tier 2 Index |
-| Home Node | Cloud API (optional) | Gemini / Claude / GPT-4 | Complex multi-step reasoning (scrubbed through PII layer first) |
-| Android client | LiteRT-LM | Gemma 3n E2B | Offline drafting, quick replies, on-device search |
-| Desktop client | llama.cpp | Gemma 3n E2B | Same as Android — latency-sensitive local tasks |
-| Thin client | None | None | All inference routed to Home Node |
+```yaml
+services:
+  dina-core:
+    image: dina-core:latest
+    environment:
+      - DINA_VAULT_MODE          # "security" or "convenience" (from .env)
+    secrets:
+      - vault_passphrase         # Injected as /run/secrets/vault_passphrase
+    volumes:
+      - ./data:/data             # Persistent vault storage
+
+secrets:
+  vault_passphrase:
+    file: ./secrets/vault_passphrase.txt   # chmod 600, .gitignored
+```
+
+| Mode | What dina-core does at boot |
+|------|---------------------------|
+| **Security** | Reads `/run/secrets/vault_passphrase` → Argon2id → KEK → unwrap `master.key.enc` → DEK → `PRAGMA key`. Secret file can be a one-time read (tmpfs mount, deleted after boot). |
+| **Convenience** | Ignores the secret. Reads `master.key` directly from `./data/keys/master.key` (raw 32-byte DEK, `chmod 600`). |
+
+**Rules:**
+- `DINA_VAULT_PASSPHRASE` is **never** set as a plain `environment:` variable — it would appear in `docker inspect`, process listings, and container logs.
+- Docker Secrets mount as in-memory tmpfs files at `/run/secrets/` — they never touch disk inside the container.
+- The `secrets/` directory is in `.gitignore` and `.dockerignore`.
+- For managed hosting (Fly.io), use `fly secrets set VAULT_PASSPHRASE=...` — Fly injects as an env var visible only to the process, not in logs or inspect output.
+
+**Two deployment modes:**
+
+| | **Online Mode** (default, Phase 1) | **Offline Mode** (safety-conscious, Phase 2) |
+|--|---|---|
+| **Containers** | 3 (core, brain, pds) | 5 (core, brain, llama-server, whisper-server, pds) |
+| **Text LLM** | Gemini 2.5 Flash Lite (cloud API) | Gemma 3n E4B via llama-server (local) |
+| **Voice STT** | Deepgram Nova-3 (WebSocket streaming, ~150-300ms latency). Fallback: Gemini Flash Lite Live API. | whisper.cpp + Whisper Large v3 Turbo (~3GB, 4.4% WER) |
+| **PII scrubbing** | Regex in Go (always local) | Regex + Gemma 3n (local) |
+| **Embeddings** | `gemini-embedding-001` (cloud, $0.01/1M tokens) | EmbeddingGemma 308M via llama-server (local) |
+| **Minimum RAM** | **2GB** (Go core ~200MB + Python brain ~500MB + PDS ~100MB + OS ~300MB + headroom) | **8GB** (Gemma 3n E4B ~3GB + Whisper Turbo ~3GB + Go ~200MB + Python ~500MB + PDS ~100MB + OS ~300MB + headroom). Mac Mini M4 (16GB+) recommended. |
+| **CPU** | 2 cores | 4+ cores. Apple Silicon (MLX) or x86 with AVX2. |
+| **Storage** | 10GB (grows with vault) | 20GB (+ model files ~6GB: Gemma E4B ~3GB + Whisper ~3GB) |
+| **GPU** | Not needed | Not needed on Apple Silicon (unified memory). Discrete GPU helps on x86. |
+| **Internet** | Required (LLM + STT + messaging) | Required for messaging only. LLM + STT work fully offline. |
+| **Monthly cost** | ~$5-15 (Flash Lite: ~$1-5 for text. Deepgram: ~$10 for voice at 45 min/day. Embeddings: <$1.) | Hardware + electricity only |
+| **Offline capability** | Degraded — messaging queued, LLM + STT unavailable, vault still works | Full — everything works, messages queued for later delivery |
+| **Best for** | Raspberry Pi, cheap VPS, managed hosting, Phase 1 development, users who want it working fast | Mac Mini, NUC, dedicated server, privacy maximalists, unreliable internet |
+
+**Phase 1 implements Online Mode only.** Offline Mode ships once the end-to-end flow works without issues. Both modes share identical vault, identity, messaging, and persona layers — only the inference and STT backends differ.
+
+**Why these defaults for Online Mode:**
+
+*Text — Gemini 2.5 Flash Lite:*
+- Cheapest Gemini model: $0.10 input / $0.40 output per 1M tokens (8.75x cheaper than Flash output, 25x cheaper than Pro).
+- 1M token context window, native function calling + JSON mode, 305+ t/s, 0.3-0.5s TTFT.
+- Paid API: prompts/responses NOT used for training. 55-day abuse monitoring retention only.
+- Free tier: 15 RPM, 1000 RPD — enough for personal dev/testing.
+
+*Voice — Deepgram Nova-3:*
+- Purpose-built real-time STT (not a repurposed LLM). Aligns with Dina's "Thin Agent" principle: delegate to specialists.
+- ~150-300ms WebSocket streaming latency — fastest in class. Critical for natural voice interaction.
+- $0.0077/min (~$10/month at 45 min/day). $200 one-time free credit covers months of testing.
+- Fallback: Gemini Flash Lite Live API ($0.30/1M audio tokens, ~$0.78/month) — already in the stack, no additional integration.
+
+*Voice — Why not Gemini alone for STT:*
+- Gemini Live API is a conversational LLM, not a dedicated ASR service. It adds LLM inference overhead to what should be a fast transcription step.
+- No independent WER benchmarks for pure transcription. Latency spikes to 780ms at p95.
+- Better reserved for the reasoning layer where Dina already uses it.
+
+**Why Whisper for Offline Mode (not Gemma 3n audio):**
+- Gemma 3n audio: ~13% WER (1 in 8 words wrong). Whisper Large v3 Turbo: ~4.4% WER. For voice commands, accuracy matters.
+- Gemma 3n audio does NOT work in Ollama or llama.cpp today — only via MLX (Apple) or Hugging Face Transformers. whisper.cpp is battle-tested and works everywhere.
+- Whisper has mature chunking pipelines for continuous voice. Gemma 3n audio is limited to 30-second clips with no streaming.
+- Future: if Gemma 3n audio lands in llama.cpp with improved WER, the stack could consolidate.
+
+**What always stays local regardless of mode:**
+- PII scrubbing (regex first pass — always in Go core, never touches cloud)
+- Vault encryption/decryption (SQLCipher, never leaves Home Node)
+- DID signing/verification (Ed25519, never leaves Home Node)
+- Persona compartment enforcement (cryptographic, never leaves Home Node)
+
+**Sensitive persona rule (both modes):** Health and financial persona data is NEVER sent to cloud LLMs or cloud STT. Even in Online Mode, queries involving health/financial context are routed to on-device Gemma 3n (if available) or rejected with a "local model required" error. Voice input containing medical/financial context is transcribed locally (Whisper on-device) before processing. This is enforced at the LLM router level in dina-brain.
+
+**Switching modes:** Set `DINA_MODE=online` or `DINA_MODE=offline` in `.env`. The brain routes accordingly. Users can switch at any time — the vault, identity, and messaging layers are identical in both modes.
+
+### LLM & Voice Inference
+
+| Where | Runtime | Model | Use Cases | Mode |
+|-------|---------|-------|-----------|------|
+| **Text LLM** | | | | |
+| Home Node | Cloud API | Gemini 2.5 Flash Lite ($0.10/$0.40 per 1M tokens) | Summarization, drafting, context assembly, classification, routing | Online |
+| Home Node | llama.cpp (GGUF) | Gemma 3n E4B (~3GB RAM) | Same as above, but local. Also: PII scrubbing fallback (ambiguous cases) | Offline |
+| Home Node | Cloud API | Gemini 2.5 Flash / Pro / Claude / GPT-4 | Complex multi-step reasoning when Flash Lite quality is insufficient | Online (escalation) |
+| **Voice STT** | | | | |
+| Home Node | Cloud API (WebSocket) | Deepgram Nova-3 ($0.0077/min, ~150-300ms) | Real-time voice command transcription, continuous dictation | Online |
+| Home Node | Cloud API (WebSocket) | Gemini Flash Lite Live API ($0.30/1M audio tokens) | Fallback STT when Deepgram is unavailable | Online (fallback) |
+| Home Node | whisper.cpp | Whisper Large v3 Turbo (~3GB, 4.4% WER) | Same: voice transcription, fully offline | Offline |
+| **Embeddings** | | | | |
+| Home Node | Cloud API | `gemini-embedding-001` ($0.01/1M tokens) | Embedding generation for Tier 2 Index | Online |
+| Home Node | llama.cpp (GGUF) | EmbeddingGemma 308M (~300MB) | Same: embedding generation, fully offline | Offline |
+| **On-device** | | | | |
+| Android client | LiteRT-LM | Gemma 3n E2B | Offline drafting, quick replies, on-device search | Both |
+| Desktop client | llama.cpp / MLX | Gemma 3n E4B | Same as Android — latency-sensitive local tasks | Both |
+| Thin client | None | None | All inference routed to Home Node | Both |
 
 ### Client Authentication
 
@@ -2219,13 +2959,13 @@ When the Home Node has new data (ingested email, incoming Dina-to-Dina message, 
 | **Kafka / RabbitMQ / NATS** | Message brokers for millions of events/sec across clusters. Dina is one person, ~1000 events/day. SQLite IS the event processor. |
 | **Redis** | In-memory cache for server workloads. Dina's data is already in SQLite on the Home Node. No separate cache needed. |
 | **PostgreSQL / MySQL** | Server databases designed for multi-tenant workloads. SQLite is the right database for a single-user personal agent. |
-| **Kubernetes** | Container orchestration for distributed services. Dina's Home Node is three containers on one machine. `docker compose up` is the entire deployment. |
+| **Kubernetes** | Container orchestration for distributed services. Dina's Home Node is 3-5 containers on one machine. `docker compose up` is the entire deployment. |
 | **GraphQL** | API layer for complex multi-consumer APIs. Dina has one consumer: you. Direct SQLite queries from the agent loop. |
 | **Elasticsearch** | Distributed search cluster. SQLite FTS5 + sqlite-vec handles search for a single user's data. |
 | **Blockchain (L1)** | Gas costs, latency, complexity. Immutability violates sovereignty (right to delete). Federated servers + signed tombstones handle the Reputation Graph. Only use case is L2 Merkle root hash anchoring for timestamp proofs (Phase 3). |
 | **CRDTs / Automerge** | Designed for peer-to-peer conflict resolution. With a Home Node as source of truth, client-server sync is simpler and sufficient. May reconsider for Phase 3 if we add collaborative features. |
 
-Guiding principle: **one user, three containers, one machine, one SQLite file per persona, one always-on endpoint.**
+Guiding principle: **one user, a handful of containers, one machine, one SQLite file per persona, one always-on endpoint.**
 
 ---
 
@@ -2245,7 +2985,7 @@ Guiding principle: **one user, three containers, one machine, one SQLite file pe
 
 **7. Key management UX.** Asking normal people to write down 24 words on paper is a known failure mode in crypto. Most people will lose them. Better UX needed (social recovery? hardware backup?) but security trade-offs are real.
 
-**8. Home Node security surface.** An always-on server with your encrypted data is a target. Must be hardened: automatic updates, minimal attack surface (three containers, no open ports except DIDComm endpoint), fail2ban-style rate limiting, encrypted at rest. If the VPS is compromised, the attacker gets encrypted blobs they can't read — but they can DoS your Dina.
+**8. Home Node security surface.** An always-on server with your encrypted data is a target. Must be hardened: automatic updates, minimal attack surface (3-5 containers, no open ports except messaging endpoint), fail2ban-style rate limiting, encrypted at rest. If the VPS is compromised, the attacker gets encrypted blobs they can't read — but they can DoS your Dina.
 
 **9. Data corruption in sovereign model.** No SRE team to restore the database. A bug that corrupts a persona vault file means loss of that persona's memory. The 5-level corruption immunity stack (WAL → pre-flight snapshots → ZFS → off-site backup → Tier 5) addresses this, but must be implemented from Day 1.
 
@@ -2282,272 +3022,11 @@ v0.4 is a monolithic Python application. The target is the three-container sidec
 
 ---
 
-## Phase 1 Scope (What Gets Built First)
+## Phase 1 Scope, Build Roadmap & Timeline
 
-```
-DINA-CORE (Go + net/http):
-  ✓ HTTP server exposing internal API (/v1/vault/*, /v1/did/*, /v1/pii/*)
-  ✓ SQLite vault (Tier 0 + Tier 1 + Tier 4)
-  ✓ WAL mode + synchronous=NORMAL (default config, non-negotiable)
-  ✓ Pre-flight snapshot on every update (VACUUM INTO + integrity_check)
-  ✓ Encrypted messaging endpoint (libsodium crypto_box_seal + DIDComm-shaped plaintext, always-on)
-  ✓ WebSocket server for client connections
-  ✓ Client authentication (device-delegated keys)
-  ✓ PII scrubber (regex hot path + llama-server fallback)
-  ✓ Connector scheduler (triggers brain on new data)
-  ✗ Managed hosting infrastructure (Phase 1.5 — multi-tenant, one SQLite per user)
-  ✗ Confidential computing / Nitro Enclaves (Phase 2-3)
-
-DINA-BRAIN (Python + Google ADK):
-  ✓ Guardian angel reasoning loop
-  ✓ Silence filter / interrupt classification
-  ✓ Context assembly for whispers
-  ✓ YouTube review bot (ported from v0.4)
-  ✓ Semantic memory search (ported from v0.4)
-  ✓ LLM routing: local (llama-server) vs cloud (Claude/Gemini)
-  ✓ MCP integration for external agents (OpenClaw)
-  ✗ Multi-agent orchestration (Phase 2)
-  ✗ Emotional state awareness (Phase 2)
-
-LLAMA-SERVER:
-  ✓ Gemma 3n E2B GGUF model
-  ✓ OpenAI-compatible API (shared by core and brain)
-  ✓ FunctionGemma 270M for routing (Phase 1.5)
-
-DOCKER-COMPOSE:
-  ✓ Four-container orchestration (core + brain + llama-server + pds)
-  ✓ Internal network (containers talk on localhost)
-  ✓ Single `docker compose up -d` deployment
-  ✓ Healthchecks on all containers (/healthz, /readyz)
-  ✓ Dependency chain (brain waits for core healthy, pds independent)
-  ✓ `restart: always` with automatic recovery on failure
-
-OBSERVABILITY:
-  ✓ Structured JSON logging (Go slog, Python structlog) to stdout
-  ✓ No file logs (Docker log rotation handles retention)
-  ✗ Dozzle/Loki log viewer (optional, Phase 2)
-
-Layer 0: Identity
-  ✓ Root key generation + key-wrapped storage on Home Node (Argon2id KEK → AES-256-GCM)
-  ✓ BIP-39 recovery
-  ✓ DID generation (did:plc via PLC Directory, did:web as escape hatch)
-  ✓ Two personas: /consumer and /social
-  ✓ Device-delegated keys for client authentication
-  ✗ ZKP credentials (Phase 2)
-
-Layer 1: Storage  
-  ✓ Tier 0 (Identity Vault on Home Node)
-  ✓ Tier 1 (Vault with SQLite + FTS5 on Home Node)
-  ✓ Tier 4 (Staging)
-  ✓ Client cache sync protocol (checkpoint-based)
-  ✓ Off-site encrypted backup to blob storage (S3/Backblaze)
-  ✗ Tier 2 (Index with embeddings — Phase 2)
-  ✗ Tier 3 (Reputation — Phase 2)
-  ✗ Tier 5 Deep Archive with Object Lock (Phase 2)
-
-Layer 2: Ingestion (runs on Home Node)
-  ✓ Gmail connector (read-only, OAuth)
-  ✓ Calendar connector (CalDAV)
-  ✓ Contacts connector (CardDAV)
-  ✗ WhatsApp connector on Android client → push to Home Node (Phase 1.5)
-
-Layer 6: Intelligence (runs in dina-brain + dina-core)
-  ✓ PII scrubber — regex in core, LLM fallback via llama-server
-  ✓ FTS5 search (core)
-  ✓ Context injection via Gemma 3n E2B (brain)
-  ✓ Silence filter / interrupt classification (brain)
-  ✓ Guardian angel reasoning loop (brain, Google ADK)
-  ✗ Fine-tuned PII model (Phase 2)
-  ✗ Embedding generation / Tier 2 Index (Phase 2)
-
-Layer 5: Bot Interface
-  ✓ First Review Bot (your build)
-  ✓ Simple query/response protocol
-  ✗ Full bot discovery (Phase 2)
-
-Layer 7: Action Layer
-  ✓ Draft-don't-send (Gmail — via Home Node)
-  ✓ Cart Handover (UPI deep links — via client device)
-  ✓ OpenClaw delegation via MCP (basic task handoff)
-  ✗ Emotional state awareness / purchase hold (Phase 2)
-  ✗ Content verification / C2PA (Phase 2+)
-
-Layer 4: Dina-to-Dina
-  ✓ DID exchange via QR code
-  ✓ PLC Directory endpoint resolution (points to Home Node)
-  ✓ Encrypted messaging (libsodium crypto_box_seal, sender forward secrecy)
-  ✓ DIDComm-compatible plaintext format (id, type, from, to, created_time, body)
-  ✓ Simple relay forwarding for NAT situations
-  ✗ Full DIDComm v2 JWE wire compatibility (Phase 2)
-  ✗ Noise XX sessions for full forward secrecy (Phase 3)
-  ✗ Sharing rules enforcement (Phase 2)
-
-Layer 3: Reputation Graph (AT Protocol)
-  ✓ AT Protocol PDS running alongside Home Node
-  ✓ Custom Lexicons: com.dina.reputation.attestation, com.dina.reputation.outcome
-  ✓ Federation via AT Protocol Relay
-  ✓ Local bot reputation tracking
-  ✗ Reputation AppView (Phase 1.5 — separate service indexes the firehose)
-  ✗ L2 Merkle root anchoring for timestamps (Phase 3)
-
-CLIENT (Phase 1: Android only):
-  ✓ Kotlin app — rich client
-  ✓ Connect to Home Node via authenticated WebSocket
-  ✓ Local vault cache (recent 6 months)
-  ✓ On-device LLM (LiteRT-LM + Gemma 3n E2B) for offline/low-latency
-  ✗ WhatsApp NotificationListener (Phase 1.5)
-  ✗ Desktop client via Tauri (Phase 2)
-  ✗ iOS client (Phase 3)
-  ✗ Thin clients — glasses, watch, browser (Phase 3)
-```
-
-**Build order:**
-1. llama-server — `docker run` with Gemma 3n (day 1, 5 minutes)
-2. dina-brain — Python + Google ADK, guardian angel loop, port v0.4 review bot and memory into ADK tools (2-3 weeks)
-3. dina-core — Go + net/http, SQLCipher vault skeleton (mattn/go-sqlite3), DID key management (crypto/ed25519), internal API (2-3 weeks, parallel with brain)
-4. Wire together — docker-compose, core↔brain API integration, end-to-end Sancho moment flow (1 week)
-5. Android client — Kotlin, connect to Home Node (Phase 1 follow-on)
-
-**Timeline to working Sancho Moment:** 6-8 weeks from start.
-
-**The product analogy:** Dina is Signal, not WordPress.
-- Signal Foundation builds the protocol AND operates the servers. Users sign up and it works.
-- Self-hosting Signal is possible (the server is open source) but almost nobody does it.
-- Dina builds the protocol. A foundation operates the managed service. Self-hosters run the same binary.
-- You own the content (your Vault). You choose the host. Zero lock-in.
-- **But the default experience is: sign up, and your Dina is running. No Raspberry Pi required.**
-
----
-
-## Build Roadmap
-
-Every item below is sequenced by dependency — you can't build later items without earlier ones. Items within the same step can be built in parallel.
-
-### ✅ Done (v0.4)
-
-| # | Item | Layer | What It Is | Status |
-|---|------|-------|-----------|--------|
-| 0.1 | YouTube review analysis | L5 Bot Interface | Gemini video analysis → structured BUY/WAIT/AVOID verdict | ✅ Built |
-| 0.2 | Semantic memory (vector DB) | L1 Storage | Local vector store at `~/.dina/memory/`, persists across sessions | ✅ Built |
-| 0.3 | RAG-powered Q&A | L6 Intelligence | Natural language questions → memory search → contextual answer | ✅ Built |
-| 0.4 | Cryptographic signing | L0 Identity | Ed25519 signature on every verdict, `/verify` command | ✅ Built |
-| 0.5 | Self-sovereign identity | L0 Identity | did:key (pure Python) + did:plc (target) | ✅ Built |
-| 0.6 | Ceramic dual-write | L1 Storage | Verdicts written to Ceramic Network when configured | ✅ Built |
-| 0.7 | Multi-provider LLM routing | L6 Intelligence | Ollama (local) + Gemini (cloud), configurable | ✅ Built |
-| 0.8 | REPL interface | Human Interface | `/history`, `/search`, `/identity`, `/verify`, `/vault`, `/quit` | ✅ Built |
-
-### Phase 1a — Sidecar Foundation (Weeks 1-3)
-
-Goal: Get the three-container architecture running. Brain thinks, core stores, llama-server infers.
-
-| # | Item | Layer | What It Is | Depends On | Container |
-|---|------|-------|-----------|-----------|-----------|
-| 1.1 | llama-server setup | Infra | Docker container running Gemma 3n E2B GGUF, OpenAI-compatible API on port 8300 | Nothing | llama-server |
-| 1.2 | dina-brain skeleton | L6 Intelligence | Python + Google ADK, basic agent loop, `/v1/process` and `/v1/reason` endpoints on port 8200 | 1.1 | dina-brain |
-| 1.3 | Port review bot to ADK tool | L5 Bot Interface | YouTube analysis as a Google ADK tool callable by the agent loop | 1.2 | dina-brain |
-| 1.4 | Port memory search to ADK tool | L6 Intelligence | Vector search + RAG as ADK tools | 1.2 | dina-brain |
-| 1.5 | Silence filter (basic) | L6 Intelligence | Three-priority classification (Fiduciary / Solicited / Engagement) using llama-server | 1.2, 1.1 | dina-brain |
-| 1.6 | LLM routing in brain | L6 Intelligence | Simple → llama-server, Complex → Claude/Gemini API | 1.1, 1.2 | dina-brain |
-| 1.7 | dina-core skeleton | L1 Storage | Go + net/http server on port 8100, SQLCipher vault (mattn/go-sqlite3 with CGO, one file per persona) with WAL mode, basic `/v1/vault/query` and `/v1/vault/store` endpoints | Nothing | dina-core |
-| 1.8 | DID key management in core | L0 Identity | BIP-39 seed → Master Key (DEK), key wrapping (passphrase → Argon2id KEK → AES-256-GCM wraps DEK), SLIP-0010 persona key derivation (Ed25519), HKDF persona key → SQLCipher vault unlock. `/v1/did/sign` and `/v1/did/verify` endpoints. Go: `crypto/ed25519`, `x/crypto/argon2`, `stellar/go/exp/crypto/derivation`. | 1.7 | dina-core |
-| 1.9 | PII scrubber (regex) | L6 Intelligence | Regex-based PII detection in Go (credit cards, phone numbers, Aadhaar, emails). `/v1/pii/scrub` endpoint. | 1.7 | dina-core |
-| 1.10 | docker-compose wiring | Infra | Three-container orchestration. Internal network. Brain calls core API. Both call llama-server. Single `docker compose up -d`. Healthchecks (`/healthz`, `/readyz`) on all containers. Dependency chain: brain waits for core healthy. `restart: always`. Structured JSON logging (Go `slog`, Python `structlog`) to stdout. | 1.2, 1.7, 1.1 | All |
-
-### Phase 1b — Guardian Angel Loop (Weeks 3-6)
-
-Goal: Dina watches your world, stays quiet, and whispers when it matters. The Sancho Moment works end-to-end.
-
-| # | Item | Layer | What It Is | Depends On | Container |
-|---|------|-------|-----------|-----------|-----------|
-| 1.11 | Gmail connector (read-only) | L2 Ingestion | OAuth read-only access, poll for new emails, store encrypted in vault via core API | 1.7, 1.10 | dina-core |
-| 1.12 | Calendar connector | L2 Ingestion | CalDAV sync, store events in vault | 1.7, 1.10 | dina-core |
-| 1.13 | Contacts connector | L2 Ingestion | CardDAV sync, store contacts in vault | 1.7, 1.10 | dina-core |
-| 1.14 | Connector scheduler | L2 Ingestion | Cron-style polling: check Gmail every 15 min (configurable), calendar every 30 min. Triggers brain on new data. | 1.11, 1.12, 1.13, 1.10 | dina-core |
-| 1.15 | Context assembly for whispers | L6 Intelligence | Brain queries vault for relevant context (relationships, history), assembles whisper text | 1.10, 1.4 | dina-brain |
-| 1.16 | Whisper delivery (WebSocket) | L7 Action | Core pushes whisper to connected client device via WebSocket. `/v1/notify` endpoint. | 1.15, 1.7 | dina-core |
-| 1.17 | Encrypted messaging endpoint | L4 Dina-to-Dina | Always-on HTTPS endpoint on localhost:8443 (exposed to internet via ingress tier — Tailscale Funnel, Cloudflare Tunnel, or Yggdrasil). Receives encrypted messages from other Dinas. libsodium `crypto_box_seal` + DIDComm-shaped plaintext. | 1.8, 1.7 | dina-core |
-| 1.18 | DID exchange (QR code) | L4 Dina-to-Dina | Generate QR code containing your DID. Scan another Dina's QR to establish connection. | 1.8, 1.17 | dina-core |
-| 1.19 | Basic Dina-to-Dina messaging | L4 Dina-to-Dina | Send/receive encrypted messages between two Home Nodes. Sender FS via ephemeral keys. DIDComm-compatible plaintext format. | 1.17, 1.18 | dina-core |
-| 1.20 | **The Sancho Moment (E2E)** | All | Sancho's Dina sends "leaving home" → your core receives → brain checks vault for Sancho context → brain assembles whisper ("his mother was ill, put the kettle on") → core pushes to your phone. | 1.19, 1.15, 1.16 | All |
-
-### Phase 1c — Safety & Persistence (Weeks 6-8)
-
-Goal: Data is safe. Actions go through approval gates. Bot protocol is standardized.
-
-| # | Item | Layer | What It Is | Depends On | Container |
-|---|------|-------|-----------|-----------|-----------|
-| 1.21 | Pre-flight snapshots | L1 Storage | `VACUUM INTO` + `PRAGMA integrity_check` before every schema migration | 1.7 | dina-core |
-| 1.22 | Off-site encrypted backup | L1 Storage | Encrypted vault snapshot pushed to S3/Backblaze on schedule | 1.7, 1.8 | dina-core |
-| 1.23 | BIP-39 recovery | L0 Identity | Generate 24-word mnemonic from root key. Restore identity from mnemonic. | 1.8 | dina-core |
-| 1.24 | Persona system (basic) | L0 Identity | Two personas: `/consumer` and `/social`. Separate cryptographic compartments. | 1.8 | dina-core |
-| 1.25 | Draft-Don't-Send (Gmail) | L7 Action | Brain drafts email reply → stored in Tier 4 (Staging) → user reviews in Gmail → user presses Send. Dina NEVER calls `messages.send`. | 1.11, 1.15 | dina-brain + core |
-| 1.26 | Cart Handover (basic) | L7 Action | Brain assembles payment intent (UPI deep link). Stored in Tier 4. User taps to pay. Dina never touches money. | 1.15, 1.7 | dina-brain + core |
-| 1.27 | Bot response protocol | L5 Bot Interface | Standardized JSON response format with mandatory `creator_name`, `source_url`, `deep_link` attribution fields. | 1.3 | dina-brain |
-| 1.28 | Local bot reputation tracking | L3 Reputation | Track bot accuracy, response time, uptime locally. Route to better bots when quality drops. | 1.27 | dina-brain |
-| 1.29 | Client authentication | Infra | Device-delegated keys. Client scans QR code → Home Node registers device → all communication over TLS + DIDComm mutual auth. | 1.8, 1.17 | dina-core |
-
-### Phase 1.5 — Client & Managed Hosting (Weeks 8-16)
-
-| # | Item | Layer | What It Is | Depends On | Container/Platform |
-|---|------|-------|-----------|-----------|-------------------|
-| 1.30 | Android client (basic) | Client | Kotlin + Jetpack Compose app. Connects to Home Node via WebSocket. Displays whispers, notifications, daily briefing. | 1.16, 1.29 | Android |
-| 1.31 | Android local vault cache | Client | SQLite cache of recent 6 months. Offline search. Checkpoint-based sync with Home Node. | 1.30 | Android |
-| 1.32 | Android on-device LLM | Client | LiteRT-LM + Gemma 3n E2B for offline classification, quick replies. | 1.30 | Android |
-| 1.33 | Managed hosting infra | Infra | Multi-tenant hosting. One SQLite per user. Sign-up flow. Billing ($5-10/month). | 1.10, 1.29 | Server |
-| 1.34 | FunctionGemma 270M routing | L6 Intelligence | Ultra-lightweight model (529MB) for fast intent classification and tool routing. Runs alongside Gemma 3n on llama-server. | 1.1 | llama-server |
-| 1.35 | WhatsApp connector (Android) | L2 Ingestion | NotificationListenerService captures WhatsApp notifications → pushes to Home Node via authenticated channel. | 1.30, 1.29 | Android |
-| 1.36 | MCP integration (OpenClaw) | L7 Action | Delegate tasks to OpenClaw via MCP. License renewal, form filling, task automation — all with `draft_only` constraint. | 1.25 | dina-brain |
-| 1.37 | Daily briefing | L6 Intelligence | End-of-day summary of Priority 3 items. "Here's what you missed that wasn't important enough to interrupt." | 1.5, 1.15 | dina-brain |
-| 1.38 | Push notifications (FCM/APNs) | Infra | When client is disconnected, wake it via FCM/APNs. Payload contains NO data — just "connect to your Home Node." | 1.16, 1.30 | dina-core + client |
-
-### Phase 2 — Intelligence & Trust (Months 4-9)
-
-| # | Item | Layer | What It Is | Depends On |
-|---|------|-------|-----------|-----------|
-| 2.1 | Embedding generation (EmbeddingGemma) | L1 Storage | 308M param model generates embeddings. Stored in Tier 2 Index via sqlite-vec. Enables semantic search across all vault data. | 1.7, 1.1 |
-| 2.2 | Tier 2 Index (embeddings) | L1 Storage | sqlite-vec vector store alongside SQLite FTS5. Hybrid search: keyword + semantic. | 2.1 |
-| 2.3 | Reputation AppView | L3 Reputation | AT Protocol AppView indexes `com.dina.reputation.*` records from the relay firehose. Query API for attestations, outcomes, bot scores. | 1.28 |
-| 2.4 | Outcome data collection | L3 Reputation | Dina tracks purchases via Cart Handover. Months later, gently asks "How's that chair?" Anonymized outcome → Reputation Graph. | 1.26, 2.3 |
-| 2.5 | Trust Rings (Ring 1-2) | L0 Identity | Ring 1 (unverified) = anyone. Ring 2 (verified unique person) = ZKP or external verification. Higher rings get more trust weight. | 1.24, 2.3 |
-| 2.6 | Fine-tuned PII model | L6 Intelligence | Gemma 3n E4B fine-tuned for PII detection. Replaces generic NER prompting. Higher accuracy, fewer leaks. | 1.9, 1.1 |
-| 2.7 | Multi-agent orchestration | L6 Intelligence | Google ADK Sequential, Parallel, Loop agents. Complex multi-step reasoning (e.g., research laptop → check reputation → compare prices → assemble recommendation). | 1.2 |
-| 2.8 | Emotional state awareness | L7 Action | Lightweight classifier flags "user may be upset/impulsive" before large purchases or high-stakes communications. Cooling-off suggestion. | 1.15, 2.1 |
-| 2.9 | Anti-Her safeguard | L7 Action | Track interaction patterns. If user treats Dina as emotional replacement, redirect: "You haven't talked to Sancho in a while." | 1.19, 1.15 |
-| 2.10 | Bot discovery (decentralized) | L5 Bot Interface | Bots self-register on Reputation Graph. Reputation determines visibility. Bot-to-bot referrals. | 2.3 |
-| 2.11 | Dina-to-Dina sharing rules | L4 Dina-to-Dina | Fine-grained control over what each connection can see. "Sancho's Dina can see my location, but not my calendar." Per-connection permissions. | 1.19, 1.24 |
-| 2.12 | Desktop client (Wails/Tauri) | Client | Cross-platform desktop app via Wails (Go + WebView) or Tauri 2. Connects to Home Node same as Android. | 1.29 |
-| 2.13 | Tier 5 Deep Archive | L1 Storage | Weekly encrypted snapshots to S3 Glacier Deep Archive with Compliance Mode Object Lock. Immutable. Survives ransomware. | 1.22 |
-| 2.14 | UnifiedPush (de-Googled) | Infra | Self-hosted push notification relay. Replaces FCM for users who don't want Google dependency. | 1.38 |
-| 2.15 | Nomic Embed V2 (upgrade) | L1 Storage | 475M MoE embedding model. Better retrieval quality for complex queries. Drop-in replacement for EmbeddingGemma. | 2.1 |
-| 2.16 | Confidential Computing (pilot) | Infra | AWS Nitro Enclaves / AMD SEV-SNP for managed hosting. Remote attestation proves unmodified binary. Eliminates honeypot problem at hardware level. | 1.33 |
-
-### Phase 3 — Open Economy & Scale (Months 9-18+)
-
-| # | Item | Layer | What It Is | Depends On |
-|---|------|-------|-----------|-----------|
-| 3.1 | Trust Rings (Ring 3+) | L0 Identity | Credential anchors: LinkedIn, GitHub, business registration. Transaction history + time + peer attestation → composite trust score. | 2.5 |
-| 3.2 | Content verification (C2PA) | L7 Action | Media provenance via Content Credentials. Cross-reference claims against Reputation Graph. "This video appears AI-generated." | 2.3 |
-| 3.3 | Social Radar (real-time co-pilot) | L6 Intelligence | "You've interrupted him twice." Context Injection from camera/microphone (glasses, phone). Requires on-device processing. | 2.7, 1.32 |
-| 3.4 | Open Economy (ONDC + UPI) | L7 Action | Dina negotiates directly with manufacturer's Dina via ONDC. UPI/crypto for payment. Marketplace middlemen become optional. | 2.3, 1.26, 1.19 |
-| 3.5 | Expert Bridge | L3 Reputation | Verified experts opt in to having their knowledge structured. Attribution + economic value when their knowledge drives decisions. | 2.3, 1.27 |
-| 3.6 | Direct value exchange | L3 Reputation | Creators earn when their reviews drive purchases. Truth pays better than clicks. Micropayments via UPI/crypto. | 3.5, 3.4 |
-| 3.7 | iOS client | Client | Swift + SwiftUI. More limited than Android (no NotificationListener). Home Node API connectors compensate. | 1.29 |
-| 3.8 | Thin clients (glasses, watch, browser) | Client | Web-based via authenticated WebSocket. No local processing. Streams from Home Node. | 1.29, 1.16 |
-| 3.9 | Foundation formation | Org | Nonprofit foundation takes over managed hosting operations. Multiple certified hosting partners across jurisdictions. | 1.33, 2.16 |
-| 3.10 | Full Dina-to-Dina commerce protocol | L4 Dina-to-Dina | Buyer Dina ↔ Seller Dina negotiation, reputation check, payment intent, delivery tracking — all sovereign. | 3.4, 2.11, 3.1 |
-| 3.11 | Timestamp anchoring (L2) | L3 Reputation | Weekly Merkle root hash of all Reputation Graph entries anchored to L2 chain. Provable "this existed before this date" for dispute resolution, anti-gaming, and Expert Bridge economics. | 2.3, 3.5 |
-
-### Summary Timeline
-
-| Phase | Duration | Milestone | What You Can Demo |
-|-------|----------|-----------|------------------|
-| **v0.4** | ✅ Done | Proof of concept | YouTube analysis with signed verdicts, memory, DID identity |
-| **1a** | Weeks 1-3 | Sidecar running | Three containers up, brain reasons, core stores, review bot works via ADK |
-| **1b** | Weeks 3-6 | Sancho Moment | Two Dinas talk, whisper delivered to phone, guardian angel loop end-to-end |
-| **1c** | Weeks 6-8 | Safety & bots | Data backed up, drafts work, bot protocol standardized |
-| **1.5** | Weeks 8-16 | Real product | Android app, managed hosting, WhatsApp ingestion, daily briefing |
-| **2** | Months 4-9 | Intelligence | Semantic search across all data, Reputation Graph live, trust rings, desktop client |
-| **3** | Months 9-18+ | Economy | Direct commerce via ONDC, expert marketplace, iOS, thin clients, foundation |
+> **Moved to [ROADMAP.md](ROADMAP.md)** — the full build roadmap with status tracking, dependency chains, and cross-referenced items from this architecture document.
+>
+> The roadmap includes 18 items that were described in this architecture but had no explicit roadmap entries (digital estate, rate limiting, brain→core auth, relay, container signing, monitoring, and more). See "Items Added During Architecture Review" in ROADMAP.md for the full list.
 
 ---
 

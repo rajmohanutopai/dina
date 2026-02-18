@@ -63,8 +63,22 @@ class LLMTarget(Enum):
 
 
 class ConnectorStatus(Enum):
-    """Connector health status."""
+    """Connector health state machine.
+
+    State transitions::
+
+        ACTIVE ──► NEEDS_REFRESH ──► ACTIVE       (auto-refresh succeeded)
+        ACTIVE ──► NEEDS_REFRESH ──► EXPIRED       (refresh failed)
+        EXPIRED ──► ACTIVE                          (user re-authorizes)
+        EXPIRED ──► REVOKED                         (token permanently invalid)
+        * ──► PAUSED                                (user pauses)
+        * ──► DISABLED                              (user disables)
+        REVOKED ──► ACTIVE                          (user re-authorizes)
+    """
     ACTIVE = auto()
+    NEEDS_REFRESH = auto()
+    EXPIRED = auto()
+    REVOKED = auto()
     PAUSED = auto()
     ERROR = auto()
     DISABLED = auto()
@@ -175,6 +189,26 @@ class PaymentIntent:
     created_at: float = field(default_factory=time.time)
     expires_at: float = 0.0
     executed: bool = False
+
+
+@dataclass
+class OAuthToken:
+    """OAuth 2.0 token with expiry and refresh metadata."""
+    access_token: str
+    refresh_token: str
+    expires_at: float              # Unix timestamp
+    issued_at: float = field(default_factory=time.time)
+    scopes: list[str] = field(default_factory=lambda: ["readonly"])
+    revoked: bool = False
+
+    @property
+    def is_expired(self) -> bool:
+        return time.time() >= self.expires_at
+
+    @property
+    def needs_refresh(self) -> bool:
+        """True if token expires within 5 minutes."""
+        return not self.revoked and (self.expires_at - time.time()) < 300
 
 
 @dataclass
@@ -311,12 +345,33 @@ class MockPersona:
 # ---------------------------------------------------------------------------
 
 class MockVault:
-    """SQLite vault mock with six-tier encrypted storage."""
+    """SQLite vault mock with six-tier encrypted storage.
+
+    Models the single-writer / read-pool pattern:
+    - ``store()`` and ``store_batch()`` use the write connection (serialized)
+    - ``retrieve()`` and ``search_fts()`` use the read pool (concurrent)
+
+    In production: one ``*sql.DB`` with ``MaxOpenConns=1`` for writes,
+    a separate ``*sql.DB`` with ``PRAGMA query_only=ON`` for reads.
+    """
+
+    # Simulated PRAGMAs (verified by tests)
+    PRAGMAS: dict[str, str | int] = {
+        "journal_mode": "WAL",
+        "synchronous": "NORMAL",
+        "foreign_keys": "ON",
+        "busy_timeout": 5000,
+    }
+
+    BATCH_SIZE: int = 100  # items per write transaction for ingestion
 
     def __init__(self) -> None:
         self._tiers: dict[int, dict[str, Any]] = {i: {} for i in range(6)}
         self._partitions: dict[str, dict[str, Any]] = {}  # per-persona
         self._fts_index: dict[str, list[str]] = {}  # full-text search
+        self._write_count: int = 0  # total individual writes
+        self._tx_count: int = 0     # total transactions (1 per batch or single write)
+        self._batch_notifications: list[dict[str, Any]] = []  # brain notifications
 
     def store(self, tier: int, key: str, value: Any,
               persona: PersonaType | None = None) -> None:
@@ -326,6 +381,32 @@ class MockVault:
             if partition not in self._partitions:
                 self._partitions[partition] = {}
             self._partitions[partition][key] = value
+        self._write_count += 1
+        self._tx_count += 1
+
+    def store_batch(self, tier: int, items: list[tuple[str, Any]],
+                    persona: PersonaType | None = None) -> int:
+        """Write multiple items in a single transaction.
+
+        Returns the number of items written. In production this is a
+        single ``BEGIN … INSERT … INSERT … COMMIT`` on the write connection.
+        """
+        for key, value in items:
+            self._tiers[tier][key] = value
+            if persona:
+                partition = f"partition_{persona.value}"
+                if partition not in self._partitions:
+                    self._partitions[partition] = {}
+                self._partitions[partition][key] = value
+            self._write_count += 1
+        self._tx_count += 1  # one transaction for the whole batch
+        self._batch_notifications.append({
+            "tier": tier,
+            "persona": persona,
+            "count": len(items),
+            "timestamp": time.time(),
+        })
+        return len(items)
 
     def retrieve(self, tier: int, key: str,
                  persona: PersonaType | None = None) -> Any | None:
@@ -357,6 +438,22 @@ class MockVault:
     def per_persona_partition(self, persona: PersonaType) -> dict[str, Any]:
         partition = f"partition_{persona.value}"
         return dict(self._partitions.get(partition, {}))
+
+    def raw_file_header(self, persona: PersonaType) -> bytes:
+        """Simulate reading the first 16 bytes of a persona's .sqlite file.
+
+        In production: ``open(f"{persona.value}.sqlite", "rb").read(16)``.
+        In mock: if the partition has data, return random-looking bytes
+        (simulating encrypted content).  If the partition is empty, return
+        the unencrypted SQLite magic header — which the CI test must reject.
+        """
+        partition = f"partition_{persona.value}"
+        if self._partitions.get(partition):
+            # Encrypted — first 16 bytes are indistinguishable from random
+            import hashlib
+            return hashlib.sha256(persona.value.encode()).digest()[:16]
+        # Empty / uninitialized — plaintext SQLite header (the failure case)
+        return b"SQLite format 3\x00"
 
     def snapshot(self) -> dict[str, Any]:
         """Create encrypted snapshot for backup/archive."""
@@ -592,9 +689,19 @@ class MockWhisperAssembler:
 # ---------------------------------------------------------------------------
 
 class MockLLMRouter:
-    """Routes tasks to the correct LLM based on type and persona."""
+    """Routes tasks to the correct LLM based on type, persona, and mode.
 
-    def __init__(self) -> None:
+    Two modes:
+    - "offline": llama-server + whisper-server available. Basic tasks → LOCAL, complex → CLOUD.
+    - "online": no local LLM/STT. Basic tasks → CLOUD (Gemini 2.5 Flash Lite),
+                voice → CLOUD (Deepgram Nova-3), complex → CLOUD.
+
+    Invariant (both modes): sensitive personas (health, financial) → LOCAL/ON_DEVICE.
+    In online mode, sensitive tasks route to on-device LLM if available.
+    """
+
+    def __init__(self, profile: str = "offline") -> None:
+        self.profile = profile  # "offline" or "online"
         self.routing_log: list[dict[str, Any]] = []
 
     def route(self, task_type: str,
@@ -602,8 +709,14 @@ class MockLLMRouter:
         """Determine where to route LLM inference."""
         # Sensitive personas: NEVER cloud
         if persona in (PersonaType.HEALTH, PersonaType.FINANCIAL):
-            target = LLMTarget.LOCAL
-            self._log(task_type, persona, target, "sensitive_persona")
+            if self.profile == "offline":
+                target = LLMTarget.LOCAL
+                self._log(task_type, persona, target, "sensitive_persona")
+            else:
+                # Online mode: sensitive data cannot go to cloud.
+                # Route to on-device if available, otherwise reject.
+                target = LLMTarget.ON_DEVICE
+                self._log(task_type, persona, target, "sensitive_persona_on_device")
             return target
 
         # Simple lookup: no LLM needed
@@ -612,13 +725,17 @@ class MockLLMRouter:
             self._log(task_type, persona, target, "no_llm_needed")
             return target
 
-        # Basic summarization/drafting: local LLM
+        # Basic summarization/drafting
         if task_type in ("summarize", "draft", "classify", "embed"):
-            target = LLMTarget.LOCAL
-            self._log(task_type, persona, target, "basic_task")
+            if self.profile == "offline":
+                target = LLMTarget.LOCAL
+                self._log(task_type, persona, target, "basic_task")
+            else:
+                target = LLMTarget.CLOUD
+                self._log(task_type, persona, target, "basic_task_cloud_profile")
             return target
 
-        # Complex reasoning: cloud via PII scrubber
+        # Complex reasoning: cloud via PII scrubber (both profiles)
         if task_type in ("multi_step_analysis", "complex_reasoning"):
             target = LLMTarget.CLOUD
             self._log(task_type, persona, target, "complex_task")
@@ -630,9 +747,13 @@ class MockLLMRouter:
             self._log(task_type, persona, target, "latency_sensitive")
             return target
 
-        # Default: local
-        target = LLMTarget.LOCAL
-        self._log(task_type, persona, target, "default")
+        # Default: depends on profile
+        if self.profile == "offline":
+            target = LLMTarget.LOCAL
+            self._log(task_type, persona, target, "default")
+        else:
+            target = LLMTarget.CLOUD
+            self._log(task_type, persona, target, "default_cloud_profile")
         return target
 
     def _log(self, task_type: str, persona: PersonaType | None,
@@ -1044,6 +1165,8 @@ class MockConnector:
         self.last_poll: float | None = None
         self.items_ingested: int = 0
         self._data: list[dict[str, Any]] = []
+        self.notifications_emitted: list[Notification] = []
+        self.status_log: list[dict[str, Any]] = []
 
     def add_data(self, items: list[dict[str, Any]]) -> None:
         self._data.extend(items)
@@ -1066,16 +1189,150 @@ class MockConnector:
             "timestamp": raw_item.get("timestamp", time.time()),
         }
 
+    def batch_ingest(self, items: list[dict[str, Any]],
+                     vault: MockVault) -> int:
+        """Ingest items into the vault using batch writes.
+
+        Collects items into batches of ``vault.BATCH_SIZE`` and calls
+        ``vault.store_batch()`` for each batch — one transaction per batch,
+        one brain notification per batch.
+
+        Returns total items ingested.
+        """
+        batch_size = vault.BATCH_SIZE
+        total = 0
+        for i in range(0, len(items), batch_size):
+            chunk = items[i:i + batch_size]
+            batch_items = []
+            for raw in chunk:
+                normalized = self.normalize(raw)
+                batch_items.append((normalized["id"], normalized))
+            vault.store_batch(1, batch_items, persona=self.persona)
+            total += len(batch_items)
+        self.items_ingested += total
+        return total
+
+    def _transition(self, new_status: ConnectorStatus, reason: str = "") -> None:
+        """Record a status transition."""
+        old = self.status
+        self.status = new_status
+        self.status_log.append({
+            "from": old,
+            "to": new_status,
+            "reason": reason,
+            "timestamp": time.time(),
+        })
+
 
 class MockGmailConnector(MockConnector):
-    """Gmail connector — read-only, OAuth."""
+    """Gmail connector — read-only, OAuth, with token lifecycle.
+
+    Token lifecycle state machine::
+
+        ACTIVE ─(token nearing expiry)─► NEEDS_REFRESH
+        NEEDS_REFRESH ─(refresh succeeds)─► ACTIVE
+        NEEDS_REFRESH ─(refresh fails)─► EXPIRED  + Tier 2 notification
+        EXPIRED ─(user re-authorizes)─► ACTIVE
+        EXPIRED ─(provider revokes)─► REVOKED  + Tier 2 notification
+        REVOKED ─(user re-authorizes)─► ACTIVE
+    """
 
     def __init__(self, persona: PersonaType = PersonaType.PROFESSIONAL) -> None:
         super().__init__("gmail", persona, poll_interval_minutes=15)
         self.oauth_scope = "readonly"
         self.dedup_ids: set[str] = set()
+        self._oauth_token: OAuthToken | None = None
+        self._refresh_handler: Callable[[OAuthToken], OAuthToken | None] | None = None
+        self.refresh_attempts: int = 0
+
+    def set_oauth_token(self, token: OAuthToken) -> None:
+        """Store the OAuth token (in production, key-wrapped in Tier 0)."""
+        self._oauth_token = token
+        self._transition(ConnectorStatus.ACTIVE, "token_set")
+
+    def set_refresh_handler(
+        self, handler: Callable[[OAuthToken], OAuthToken | None]
+    ) -> None:
+        """Register a callback that attempts token refresh.
+
+        Returns a new OAuthToken on success, None on failure.
+        """
+        self._refresh_handler = handler
+
+    def check_token_health(self) -> ConnectorStatus:
+        """Evaluate token health and transition state if needed.
+
+        Called automatically before each poll.  Can also be called by
+        the connector scheduler between polls.
+        """
+        if self._oauth_token is None:
+            self._transition(ConnectorStatus.EXPIRED, "no_token")
+            return self.status
+
+        if self._oauth_token.revoked:
+            self._transition(ConnectorStatus.REVOKED, "token_revoked")
+            self._emit_reauth_notification("revoked")
+            return self.status
+
+        if self._oauth_token.is_expired:
+            self._transition(ConnectorStatus.EXPIRED, "token_expired")
+            self._emit_reauth_notification("expired")
+            return self.status
+
+        if self._oauth_token.needs_refresh:
+            self._transition(ConnectorStatus.NEEDS_REFRESH, "token_expiring_soon")
+            self._attempt_refresh()
+            return self.status
+
+        # Token is healthy
+        if self.status not in (ConnectorStatus.PAUSED, ConnectorStatus.DISABLED):
+            if self.status != ConnectorStatus.ACTIVE:
+                self._transition(ConnectorStatus.ACTIVE, "token_healthy")
+        return self.status
+
+    def _attempt_refresh(self) -> bool:
+        """Try to refresh the token. Returns True on success."""
+        self.refresh_attempts += 1
+        if self._refresh_handler and self._oauth_token:
+            new_token = self._refresh_handler(self._oauth_token)
+            if new_token is not None:
+                self._oauth_token = new_token
+                self._transition(ConnectorStatus.ACTIVE, "refresh_succeeded")
+                return True
+        # Refresh failed
+        self._transition(ConnectorStatus.EXPIRED, "refresh_failed")
+        self._emit_reauth_notification("expired")
+        return False
+
+    def _emit_reauth_notification(self, reason: str) -> None:
+        """Emit a Tier 2 notification asking user to re-authorize."""
+        notification = Notification(
+            tier=SilenceTier.TIER_2_SOLICITED,
+            title="Gmail access expired",
+            body=f"Gmail connector needs re-authorization ({reason}). [Re-authorize]",
+            actions=["re_authorize", "dismiss"],
+            source="connector_health",
+        )
+        self.notifications_emitted.append(notification)
+
+    def reauthorize(self, new_token: OAuthToken) -> None:
+        """User re-authorizes — provides a fresh token."""
+        self._oauth_token = new_token
+        self._transition(ConnectorStatus.ACTIVE, "user_reauthorized")
+
+    def revoke(self) -> None:
+        """Simulate token revocation (e.g. user changed Google password)."""
+        if self._oauth_token:
+            self._oauth_token.revoked = True
+        self._transition(ConnectorStatus.REVOKED, "provider_revoked")
+        self._emit_reauth_notification("revoked")
 
     def poll(self) -> list[dict[str, Any]]:
+        # Check token health before polling
+        if self._oauth_token is not None:
+            self.check_token_health()
+            if self.status not in (ConnectorStatus.ACTIVE,):
+                return []  # Cannot poll without valid token
         items = super().poll()
         # Deduplicate by message ID
         new_items = []

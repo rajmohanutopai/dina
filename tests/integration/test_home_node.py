@@ -8,6 +8,7 @@ If the Brain crashes, the Core keeps running (sidecar resilience).
 Internal endpoints are never exposed to the external network.
 
 LLM routing decides where inference runs based on task type and persona.
+Two profiles: Local (llama-server, 6GB RAM) and Cloud (Gemini 2.5 Flash Lite, 2GB RAM).
 """
 
 from __future__ import annotations
@@ -325,3 +326,55 @@ class TestLLMRouting:
         ]
         assert len(on_device_entries) == 1
         assert on_device_entries[0]["reason"] == "latency_sensitive"
+
+
+class TestOnlineModeLLMRouting:
+    """Online Mode: no local LLM, basic tasks go to Gemini 2.5 Flash Lite."""
+
+    def test_basic_tasks_route_to_cloud(
+        self, mock_cloud_llm_router: MockLLMRouter
+    ) -> None:
+        """In Online Mode, summarize/draft/classify go to CLOUD (Flash Lite)
+        instead of LOCAL (no llama-server available)."""
+        for task in ("summarize", "draft", "classify"):
+            target = mock_cloud_llm_router.route(task)
+            assert target == LLMTarget.CLOUD
+
+        cloud_entries = [
+            e for e in mock_cloud_llm_router.routing_log
+            if e["reason"] == "basic_task_cloud_profile"
+        ]
+        assert len(cloud_entries) == 3
+
+    def test_complex_tasks_still_cloud(
+        self, mock_cloud_llm_router: MockLLMRouter
+    ) -> None:
+        """Complex reasoning goes to CLOUD in both profiles."""
+        target = mock_cloud_llm_router.route("multi_step_analysis")
+        assert target == LLMTarget.CLOUD
+        target = mock_cloud_llm_router.route("complex_reasoning")
+        assert target == LLMTarget.CLOUD
+
+    def test_sensitive_persona_never_cloud_even_in_online_mode(
+        self, mock_cloud_llm_router: MockLLMRouter
+    ) -> None:
+        """Health/financial data NEVER goes to cloud, even in Online Mode.
+        Routes to on-device LLM instead."""
+        target = mock_cloud_llm_router.route(
+            "summarize", persona=PersonaType.HEALTH
+        )
+        assert target != LLMTarget.CLOUD
+        assert target == LLMTarget.ON_DEVICE
+
+        target = mock_cloud_llm_router.route(
+            "complex_reasoning", persona=PersonaType.FINANCIAL
+        )
+        assert target != LLMTarget.CLOUD
+        assert target == LLMTarget.ON_DEVICE
+
+    def test_fts_still_no_llm_in_online_mode(
+        self, mock_cloud_llm_router: MockLLMRouter
+    ) -> None:
+        """SQLite FTS lookups need no LLM regardless of mode."""
+        target = mock_cloud_llm_router.route("fts_search")
+        assert target == LLMTarget.NONE

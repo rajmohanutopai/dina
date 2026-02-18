@@ -15,10 +15,11 @@ cd dina
 docker compose up -d
 ```
 
-This starts the Sovereign Triad:
+This starts Dina in **Online Mode** (the default):
 - **dina-core** (Go) — your encrypted vault, keys, and DIDComm endpoint
-- **dina-brain** (Python) — the guardian angel reasoning loop
-- **llama-server** — local LLM (Gemma 3n), no cloud required
+- **dina-brain** (Python) — the guardian angel reasoning loop (uses Gemini Flash Lite + Deepgram)
+
+Your reputation data (reviews, attestations) is pushed to the Dina Foundation PDS (`pds.dina.host`) — no extra container needed. If you're on a VPS and want to self-host your PDS, see [Advanced Setup](ADVANCED-SETUP.md).
 
 ## 2. Initialize your identity
 
@@ -49,14 +50,17 @@ Your Dina is running, has a cryptographic identity, and is reachable by other Di
 - **Connect Gmail** — `dina connector add gmail` (read-only, OAuth)
 - **Connect Calendar** — `dina connector add calendar` (CalDAV)
 - **Add a friend's Dina** — Scan their QR code or exchange DIDs
-- **Set up production networking** — See [Networking Guide](NETWORKING.md) for Cloudflare Tunnel (custom domain, DDoS protection) or Yggdrasil (censorship resistance)
+- **Run Offline Mode** — See [Advanced Setup](ADVANCED-SETUP.md) for local LLM + voice (Gemma 3n + Whisper, no cloud APIs)
+- **Set up production networking** — See [Advanced Setup](ADVANCED-SETUP.md) for Cloudflare Tunnel (custom domain, DDoS protection) or Yggdrasil (censorship resistance)
 
-## System Requirements
+## System Requirements (Online Mode)
 
 | Resource | Minimum |
 |----------|---------|
-| RAM | 4 GB |
+| RAM | 2 GB |
 | CPU | 2 cores |
 | Storage | 10 GB (grows with your data) |
 | Network | Always-on internet connection |
 | GPU | Not required |
+
+> Want to run everything locally with no cloud APIs? See [Advanced Setup — Offline Mode](ADVANCED-SETUP.md) (requires 8GB+ RAM).
