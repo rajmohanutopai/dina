@@ -36,7 +36,7 @@ Both talk to external processes. Neither runs code inside Dina. Child agents can
 
 **Dina is not an app on your phone. Dina is a service that runs on infrastructure you control.**
 
-An agent that goes offline when your phone battery dies isn't an agent — it's an app. Dina needs to be always-available: other Dinas need to reach it, connectors need to pull data at 3am, glasses and watches need a brain to talk to.
+An agent that goes offline when your phone battery dies isn't an agent — it's an app. Dina needs to be always-available: other Dinas need to reach it, brain needs to schedule sync cycles via OpenClaw at 3am, glasses and watches need a brain to talk to.
 
 Dina runs on a **Home Node** — a small, always-on server. Your phone, laptop, glasses, and watch are **client devices** that connect to it. Think of it like email: your mail server is always running, and your phone is just a window into it.
 
@@ -104,27 +104,31 @@ If the Home Node reboots at 2 AM (kernel panic, power outage, OS patch), Dina ca
 
 | Mode | What's on Disk | Boot Process | Risk | Best For |
 |------|---------------|-------------|------|----------|
-| **Security** | `keys/master.key.enc` (Master Key wrapped by passphrase-derived KEK) | App prompts for passphrase → Argon2id → KEK → unwrap DEK → `PRAGMA key` → SQLCipher opens | Downtime after every reboot until user intervenes | Self-hosted, sovereign box, privacy maximalists |
-| **Convenience** | `keys/master.key` (raw 32-byte Master Key, `chmod 600`) | App reads DEK from file → `PRAGMA key` → SQLCipher opens automatically | Physical theft or root compromise exposes the key. Mitigated by Confidential Computing on managed hosting. | Managed hosting, anyone who prioritizes uptime |
+| **Security** | No `keyfile` on disk. Master Seed wrapped by passphrase-derived KEK, stored in a separate `wrapped_seed.bin` file. | App prompts for passphrase → Argon2id → KEK → unwrap seed → derive per-database DEKs → `PRAGMA key` → SQLCipher opens | Downtime after every reboot until user intervenes | Self-hosted, sovereign box, privacy maximalists |
+| **Convenience** | `keyfile` in `/var/lib/dina/keyfile` (raw master seed, `chmod 600`) | App reads seed from keyfile → derive per-database DEKs → `PRAGMA key` → SQLCipher opens automatically | Physical theft or root compromise exposes the key. Mitigated by Confidential Computing on managed hosting. | Managed hosting, anyone who prioritizes uptime |
 
 **The exact boot sequence (both modes):**
 ```
 1. dina-core starts
 2. Read config.json → determine mode (security or convenience)
-3. Obtain Master Key (DEK):
+3. Obtain Master Seed:
      Security mode:  prompt client device → receive passphrase
                      → Argon2id(passphrase, salt) → KEK
-                     → AES-256-GCM unwrap master.key.enc → DEK
-     Convenience:    read master.key from disk → DEK
-4. Derive per-persona SQLCipher keys:
-     DEK → SLIP-0010 → persona keys → HKDF → SQLCipher passphrases
-5. Open each persona vault:
-     PRAGMA key = 'x<hex-encoded-passphrase>'
+                     → AES-256-GCM unwrap Master Seed
+     Convenience:    read Master Seed from /var/lib/dina/keyfile
+4. Derive per-database DEKs from Master Seed:
+     HKDF(seed, info="dina:vault:identity:v1")  → identity DEK
+     HKDF(seed, info="dina:vault:personal:v1")  → personal DEK
+5. Open identity.sqlite first (gatekeeper needs contacts + sharing policy):
+     PRAGMA key = 'x<hex-encoded-identity-DEK>'
      PRAGMA cipher_page_size = 4096
      PRAGMA journal_mode = WAL
-6. SQLCipher decrypts pages in-memory on demand
-   — the .sqlite files on disk are NEVER decrypted to a temp file
-7. Notify brain: POST brain:8200/v1/process {event: "vault_unlocked"}
+6. Open personal.sqlite (default persona, always unlocked):
+     PRAGMA key = 'x<hex-encoded-personal-DEK>'
+     (same PRAGMAs)
+7. Other persona databases remain CLOSED until explicitly unlocked
+   — DEKs not derived until needed, never held in RAM unnecessarily
+8. Notify brain: POST brain:8200/v1/process {event: "vault_unlocked"}
 ```
 
 **Implementation:** The setup wizard asks: "If your Home Node restarts, should Dina unlock automatically or wait for you?" The choice is stored in `config.json` (not in the vault — the vault is what needs unlocking). Users can change this setting at any time. On managed hosting, the default is Convenience. On self-hosted, the default is Security.
@@ -297,7 +301,7 @@ func inboxHandler(w http.ResponseWriter, r *http.Request) {
 
 ### Portability & Migration (The `.dina` Archive)
 
-A Dina node's state is not a single file — it's a directory tree: persona SQLite databases, encrypted master key, Argon2id salt, media blobs, and configuration. Telling a user "migration = copy one file" when there are 10+ files across 4 directories is a recipe for corrupted imports and lost data.
+A Dina node's state is a small directory tree: the encrypted vault, optional keyfile, inbox spool, and configuration. `dina export` compiles this into a single portable archive.
 
 **The fix: `dina export` compiles the state into a single encrypted archive. `dina import` restores it.**
 
@@ -315,20 +319,14 @@ Import (new machine):
 
 ```
 my-dina.dina (encrypted tar.gz, encrypted with passphrase-derived key)
+├── identity.sqlite            ← Tier 0: contacts, sharing policy, audit log
 ├── vault/
-│   ├── identity.sqlite        ← Root DID, persona keys (Tier 0)
-│   ├── consumer.sqlite        ← Consumer persona vault
-│   ├── social.sqlite          ← Social persona vault
-│   ├── health.sqlite          ← Health persona vault (if exists)
-│   ├── financial.sqlite       ← Financial persona vault (if exists)
-│   ├── citizen.sqlite         ← Citizen persona vault (if exists)
-│   └── staging.sqlite         ← Drafts, payment intents (Tier 4)
-├── keys/
-│   ├── master.key.enc         ← Encrypted master key (Security mode)
-│   │   (or master.key)        ← Raw master key (Convenience mode)
-│   └── salt                   ← Argon2id salt
-├── media/                     ← Attachment blobs (voice memos, etc.)
-├── config.json                ← Mode, connector settings, preferences
+│   ├── personal.sqlite        ← Phase 1: all content here
+│   ├── health.sqlite          ← Phase 2: per-persona files (if enabled)
+│   ├── financial.sqlite
+│   └── ...
+├── keyfile                    ← Convenience mode only (raw master seed, chmod 600)
+├── config.json                ← Mode, gatekeeper tiers, preferences
 └── manifest.json              ← Version, export timestamp, file checksums
 ```
 
@@ -338,16 +336,16 @@ my-dina.dina (encrypted tar.gz, encrypted with passphrase-derived key)
 |----------|-----|
 | `BRAIN_TOKEN` | Regenerated by `install.sh` on new machine. Per-machine secret. |
 | `CLIENT_TOKEN` | Device tokens re-paired on new machine. Per-device secret. |
-| OAuth tokens (Gmail, Calendar) | Bound to old machine's IP/identity. Re-authenticate on new machine. |
 | `DINA_PASSPHRASE` | The user knows it. Archive is encrypted *with* it, not *containing* it. |
 | PDS data | Replicated via AT Protocol. New PDS re-syncs from relay. |
 | Docker secrets directory | Regenerated by `install.sh`. |
+| OpenClaw state | OpenClaw manages its own credentials (Gmail OAuth, etc.). Re-configure on new machine. |
 
 **The export process:**
 
 ```
-1. Pause database writes (PRAGMA wal_checkpoint(TRUNCATE) on all persona files)
-2. Create tar.gz of vault/, keys/, media/, config.json
+1. Pause database writes (PRAGMA wal_checkpoint(TRUNCATE) on all open databases)
+2. Create tar.gz of identity.sqlite, vault/*.sqlite, config.json
 3. Encrypt the tar.gz with Argon2id(passphrase) → AES-256-GCM
 4. Write manifest.json (version, checksums, timestamp) into archive
 5. Resume database writes
@@ -361,8 +359,8 @@ my-dina.dina (encrypted tar.gz, encrypted with passphrase-derived key)
 2. Decrypt archive (Argon2id → AES-256-GCM)
 3. Verify manifest.json checksums (detect corruption)
 4. Verify version compatibility (reject archives from incompatible versions)
-5. Restore vault/, keys/, media/, config.json to /var/lib/dina/
-6. Derive persona keys from master key → open each SQLite to verify integrity
+5. Restore identity.sqlite, vault/*.sqlite, config.json to /var/lib/dina/
+6. Open each database with its derived DEK to verify integrity (PRAGMA integrity_check)
 7. Notify: "Import complete. Re-pair your devices and re-authenticate connectors."
 ```
 
@@ -370,7 +368,7 @@ my-dina.dina (encrypted tar.gz, encrypted with passphrase-derived key)
 
 ### Why Not Serverless?
 
-Serverless (Lambda + S3) doesn't work for Dina. SQLite on network storage corrupts under concurrent access. Cold starts take 30-60 seconds to load a 2GB LLM. Lambda can't maintain persistent WebSocket or DIDComm connections. Continuous polling (Gmail, Calendar, Dina-to-Dina messages) costs more on Lambda than an always-on container.
+Serverless (Lambda + S3) doesn't work for Dina. SQLite on network storage corrupts under concurrent access. Cold starts take 30-60 seconds to load a 2GB LLM. Lambda can't maintain persistent WebSocket or DIDComm connections. Scheduled MCP sync cycles and always-on DIDComm reception cost more on Lambda than an always-on container.
 
 The right architecture is lightweight, always-on containers via `docker compose up -d` — 3 containers by default (core, brain, pds). Add a local LLM with `docker compose --profile local-llm up -d` (4 containers: + llama).
 
@@ -398,42 +396,63 @@ The public ingress is a tunnel or reverse proxy in front of port 443. This solve
 
 See [`ADVANCED-SETUP.md`](ADVANCED-SETUP.md) for setup instructions per tier (networking) and Local LLM profile, or [`QUICKSTART.md`](QUICKSTART.md) to get running in 3 commands.
 
-### One User, One File (Tenancy Model)
+### One User, Many Vaults (Tenancy Model)
 
-Dina NEVER uses a shared database. Every user gets their own SQLite file.
+Phase 1 is single-user, single-machine. Contacts and identity live in `identity.sqlite`. Content lives in per-persona SQLite files — each encrypted with its own DEK.
+
+**Canonical directory layout:**
 
 ```
-/var/lib/dina/
-├── users/
-│   ├── did_user_A/
-│   │   ├── identity.sqlite      ← Tier 0: root keys, persona keys (SQLCipher)
-│   │   ├── consumer.sqlite      ← Consumer persona vault (SQLCipher, own key)
-│   │   ├── social.sqlite        ← Social persona vault (SQLCipher, own key)
-│   │   ├── health.sqlite        ← Health persona vault (SQLCipher, own key)
-│   │   ├── staging.sqlite       ← Tier 4: drafts, payment intents (SQLCipher)
-│   │   ├── reputation.sqlite    ← Tier 3: bot scores, outcome data (SQLCipher)
-│   │   └── config.json
-│   ├── did_user_B/
-│   │   ├── identity.sqlite
-│   │   ├── consumer.sqlite
-│   │   └── ...
-│   └── ...
-└── system.db               ← Tiny: routing, auth, billing only
+On disk (what the developer sees):
+  dina/
+  └── data/
+      ├── identity.sqlite              ← Tier 0: contacts, sharing policy, audit log, kv_store
+      ├── vault/
+      │   ├── personal.sqlite          ← Phase 1: everything here (single persona)
+      │   ├── health.sqlite            ← Phase 2: per-persona files
+      │   ├── financial.sqlite
+      │   ├── social.sqlite
+      │   └── consumer.sqlite
+      ├── keyfile                      ← Convenience mode only (master seed, chmod 600)
+      ├── inbox/                       ← Dead Drop spool (locked state, encrypted blobs)
+      ├── pds/                         ← AT Protocol repo data
+      ├── models/                      ← GGUF files (optional, --profile local-llm)
+      └── config.json                  ← Gatekeeper tiers, settings
+
+Inside container (what the code sees):
+  /var/lib/dina/
+  ├── identity.sqlite
+  ├── vault/
+  │   ├── personal.sqlite
+  │   ├── health.sqlite              (Phase 2)
+  │   └── ...
+  ├── keyfile
+  ├── inbox/
+  ├── pds/
+  ├── models/
+  └── config.json
 ```
+
+**Path rules:**
+1. Code always uses absolute paths: `/var/lib/dina/vault/personal.sqlite`
+2. Docker-compose uses relative paths: `./data/vault`
+3. Always singular: `vault`, not `vaults`
+4. Multi-tenant (managed hosting): future problem, different compose file. `/var/lib/dina/users/<did>/vault/` — only in managed hosting docs, not Phase 1.
 
 **Why this matters:**
-- **Isolation.** User A's process has no file handle to User B's vault. OS enforces privacy, not just code. Within a user, each persona file is independently encrypted — compromise of `consumer.sqlite` reveals nothing about `health.sqlite`.
-- **Portability.** User leaves → `dina export` bundles their vault, media, and keys into a single encrypted `.dina` archive. `dina import` on the new machine restores everything. 100% of history, one command.
-- **Right to delete.** `rm user_b/`. Data physically annihilated. Or finer: `rm user_b/health.sqlite` to delete only medical data.
-- **Breach containment.** Compromise of one user's vault does not expose others. Compromise of one persona file does not expose other personas. No shared secret, no master key.
+- **True cryptographic isolation.** Each persona is encrypted with a different DEK derived from a unique HKDF path. Your health data is encrypted with a different key than your financial data, even on the same machine. Locked persona = DEK not in RAM = file is opaque bytes.
+- **Portability.** User leaves → `dina export` bundles identity + persona files + config into a single encrypted `.dina` archive. `dina import` on the new machine restores everything.
+- **Right to delete.** `rm data/vault/health.sqlite`. Persona physically annihilated — no SQL needed, no VACUUM, no residual data. The entire file is gone.
+- **Selective unlock.** `identity.sqlite` always unlocked first (gatekeeper needs contacts/sharing policy). `/personal` unlocked by default. Other personas remain locked until explicitly requested. Locked = DEK not in RAM = invisible, not just access-controlled.
+- **Phase 1 simplicity.** Single `personal.sqlite` — same developer experience as one file. Per-persona files appear only when multi-persona is enabled in Phase 2.
 
 ### The Sidecar Pattern: Go Core + Python Brain
 
 The Home Node is split into two services that communicate over a local HTTP API:
 
-- **dina-core (Go + net/http):** The sovereignty layer. Holds the encrypted vault, manages keys, runs the DIDComm endpoint, serves client WebSockets, schedules connector polling, and enforces PII scrubbing. This is the part that must never fail, must never leak data, and must run for years without maintenance. Go is the right language for this — fast compilation, simple deployment (single static binary), excellent standard library for crypto (Ed25519, AES-256-GCM, X25519 all built-in), and strong concurrency primitives for managing connectors and WebSockets.
+- **dina-core (Go + net/http):** The sovereign cryptographic kernel. Holds the encrypted vault, manages keys, runs the DIDComm endpoint, serves client WebSockets, and enforces gatekeeper RBAC + PII scrubbing. **Core never calls external APIs** — no OAuth, no Gmail, no connector code. This is the part that must never fail, must never leak data, and must run for years without maintenance. Go is the right language for this — fast compilation, simple deployment (single static binary), excellent standard library for crypto (Ed25519, AES-256-GCM, X25519 all built-in), and strong concurrency primitives for WebSockets and DIDComm.
 
-- **dina-brain (Python + Google ADK):** The intelligence layer. Runs the guardian angel reasoning loop — silence classification, disconnect detection, nudge assembly, agent orchestration. This is where LLM tool-calling, multi-step reasoning, and multi-agent coordination happen. Python is the right language for this because the AI/ML ecosystem (Google ADK, llama-cpp-python, embedding models) is Python-first.
+- **dina-brain (Python + Google ADK):** The intelligence and orchestration layer. Runs the guardian angel reasoning loop — silence classification, disconnect detection, nudge assembly, agent orchestration. **Brain also orchestrates data ingestion**: schedules sync cycles, delegates fetching to OpenClaw via MCP, triages results, and stores memories in the vault via Core's API. Python is the right language for this because the AI/ML ecosystem (Google ADK, llama-cpp-python, embedding models) is Python-first.
 
 An optional fourth container runs a local LLM:
 
@@ -549,7 +568,7 @@ Brain requests data  →  Core checks the ACL (gatekeeper.go)  →
 
 Think of it as filesystem permissions. You don't get a popup every time an app reads a file in its sandbox. You do get a popup when it tries to access your contacts for the first time. And it can never access your keychain without biometric auth. Same model.
 
-**The key architectural insight:** brain never knows personas exist as separate databases. Brain says `POST /v1/vault/query {persona: "/financial", text: "tax"}` and core decides whether to serve, reject, or gate. The persona isolation is enforced entirely by `gatekeeper.go` in core, invisible to brain.
+**The key architectural insight:** brain sends `POST /v1/vault/query {persona: "/financial", q: "tax"}` and core decides whether to serve, reject, or gate. Core routes the query to the correct persona database file (if open) or returns `403 Persona Locked` (if the DEK isn't in RAM). The persona isolation is enforced by per-file encryption + `gatekeeper.go` in core — brain has no direct database access and cannot bypass access tiers. See [Core ↔ Brain API Contract](#core--brain-api-contract) for the full request/response spec.
 
 **What a compromised brain can do:** access open personas (social, consumer, professional) via `BRAIN_TOKEN`. That's it. It cannot touch locked personas (financial, citizen) without human approval. It cannot touch restricted personas (health) without creating a detection trail the user sees in their daily briefing. It cannot call admin endpoints (`did/sign`, `did/rotate`, `vault/backup`, `persona/unlock`) — `BRAIN_TOKEN` is rejected by `isAdminEndpoint()`. It cannot bypass the PII scrubber — that's a core-side gate. The damage radius of a compromised brain is limited to open persona data.
 
@@ -771,23 +790,23 @@ brain/
 
 ### Onboarding: Progressive Disclosure
 
-Complexity exists on day one, but the user doesn't see it. The principle is Signal-level simplicity: **email → OAuth → done.**
+Complexity exists on day one, but the user doesn't see it. The principle is Signal-level simplicity: **password → done.**
 
 ```
 What the user sees (managed hosting):
   1. "Enter email and password"
-  2. "Connect Gmail" (OAuth popup)
-  3. Done. Dina starts ingesting.
+  2. Done. Dina starts ingesting via OpenClaw.
 
 What happens silently:
-  1. Core generates Ed25519 keypair
-  2. Core registers did:plc with plc.directory
-  3. Core derives root key from password via Argon2id
-  4. Core creates vault.sqlite with SQLCipher
-  5. Core creates single default persona (/personal — no compartments yet)
-  6. Core sets convenience mode (auto-unlock)
-  7. Core starts Gmail connector with OAuth token
-  8. Brain starts guardian angel loop
+  1. Core generates BIP-39 mnemonic (24 words) → master seed (512-bit)
+  2. Core derives root Ed25519 keypair via SLIP-0010 (m/9999'/0')
+  3. Core registers did:plc with plc.directory
+  4. Core derives per-database DEKs from master seed via HKDF
+  5. Password → Argon2id → KEK → wraps master seed (key wrapping, not derivation)
+  6. Core creates identity.sqlite (contacts, audit, kv_store) and personal.sqlite (all content)
+  7. Core sets convenience mode (auto-unlock, writes master seed to keyfile)
+  9. Brain starts guardian angel loop
+  10. Brain triggers initial sync via MCP → OpenClaw fetches Gmail/Calendar
 ```
 
 Features unlock as the user is ready:
@@ -809,23 +828,36 @@ The core principle: **Go owns the file. Python owns the thinking. Core is the ga
 ```
 WHO TOUCHES SQLITE?
 
-  dina-core (Go)     ← ONLY process that opens vault .sqlite files
+  dina-core (Go)     ← ONLY process that opens identity.sqlite + persona .sqlite files
   dina-brain (Python) ← NEVER touches SQLite. Talks to core via HTTP API.
-                        Core decides what brain can access (gatekeeper.go).
-  llama (optional) ← Stateless. No database access.
+                        Core decides which persona databases brain can access (gatekeeper.go).
+  llama (optional)   ← Stateless. No database access.
 ```
 
 #### Writing
 
-**1. Ingestion (core writes directly)**
-```
-Gmail API → core/connectors/gmail.go → normalize → core writes to consumer.sqlite
-Calendar  → core/connectors/calendar.go → same
-Contacts  → core/connectors/contacts.go → same
-WhatsApp  → phone pushes to core via DIDComm → core writes to social.sqlite
+**1. Ingestion (brain orchestrates via MCP, core stores)**
 
-Core then notifies brain:
-  POST brain:8200/v1/process {item_id, source, type}
+**Content routing is brain's job.** Contacts don't belong to personas — people span contexts. Dr. Patel sends lab results (→ `/health`) AND cricket chat (→ `/social`). Brain classifies each piece of content by its subject matter, not by who sent it. Phase 1: everything goes to `/personal` (single persona). Phase 2: brain uses LLM classification.
+
+```
+Brain → MCP → OpenClaw: "fetch emails since last sync cursor"
+  → OpenClaw calls Gmail API → returns structured JSON
+  → Brain classifies each email by content:
+      Subject: "Your lab results"     → persona='health'
+      Subject: "Team standup notes"   → persona='professional'
+      Subject: "Dinner Friday?"       → persona='social'
+      Subject: "Your order shipped"   → persona='consumer'
+      (Phase 1: all → persona='personal')
+  → Brain → POST core:8100/v1/vault/store (persona=<classified>)
+  → Brain → PUT core:8100/v1/vault/kv/gmail_cursor {timestamp: "..."}
+
+Brain → MCP → OpenClaw: "fetch calendar events"
+  → OpenClaw calls Calendar API → returns structured JSON
+  → Brain → POST core:8100/v1/vault/store (persona='professional', or 'personal' in Phase 1)
+
+WhatsApp → phone pushes to core via DIDComm → core writes to social.sqlite (or personal.sqlite in Phase 1)
+  → Core notifies brain: POST brain:8200/v1/process {item_id, source, type}
 ```
 
 **2. Brain-generated data (brain asks core to write)**
@@ -837,8 +869,7 @@ Brain extracts relationship → POST core:8100/v1/vault/store {type: "relationsh
 
 **3. Embeddings (brain generates, core stores)**
 ```
-New email ingested by core
-  → core notifies brain: POST brain:8200/v1/process
+Brain ingests new item via MCP
   → brain generates embedding:
       With llama: calls llama:8080 (EmbeddingGemma, local)
       Without llama: calls gemini-embedding-001 (cloud API)
@@ -903,13 +934,13 @@ Sancho's Dina sends "arriving in 15 minutes"
 │  dina-core (Go) — THE VAULT KEEPER                      │
 │                                                         │
 │  OWNS:                                                  │
-│  - Per-persona .sqlite files (open, read, write, backup)│
+│  - identity.sqlite + persona .sqlite files (open/close/read/write/backup) │
 │  - SQLCipher encryption/decryption                      │
 │  - FTS5 queries                                         │
 │  - sqlite-vec queries (given a vector, find neighbors)  │
-│  - Connectors (ingest external data)                    │
 │  - WebSocket to clients                                 │
 │  - DIDComm endpoint                                     │
+│  - Gatekeeper RBAC (persona access, egress filtering)   │
 │                                                         │
 │  DOES NOT:                                              │
 │  - Generate embeddings                                  │
@@ -923,13 +954,14 @@ Sancho's Dina sends "arriving in 15 minutes"
 │  dina-brain (Python + ADK) — THE ANALYST                │
 │                                                         │
 │  OWNS:                                                  │
+│  - MCP orchestration (OpenClaw — fetch email, calendar) │
+│  - Sync scheduling (morning routine, hourly checks)     │
 │  - Search strategy (what to query, in what order)       │
-│  - Embedding generation (calls llama or cloud)    │
-│  - LLM reasoning (calls llama or cloud)           │
+│  - Embedding generation (calls llama or cloud)          │
+│  - LLM reasoning (calls llama or cloud)                 │
 │  - Silence classification (Tier 1/2/3)                  │
-│  - Nudge assembly                                     │
+│  - Nudge assembly                                       │
 │  - Agent orchestration (multi-step, ADK agents)         │
-│  - MCP delegation (OpenClaw)                            │
 │                                                         │
 │  DOES NOT:                                              │
 │  - Open SQLite files                                    │
@@ -955,7 +987,106 @@ Sancho's Dina sends "arriving in 15 minutes"
 └─────────────────────────────────────────────────────────┘
 ```
 
-The analogy: **core is the vault keeper** (stores, retrieves, encrypts, never interprets). **Brain is the analyst** (thinks, searches strategically, reasons, never holds keys). **llama is the hired calculator** (computes what it's asked, remembers nothing — optional, replaceable by cloud APIs).
+The analogy: **core is the vault keeper** (stores, retrieves, encrypts, never interprets, never calls external APIs). **Brain is the orchestrator** (thinks, searches strategically, reasons, delegates fetching to OpenClaw via MCP, never holds keys). **OpenClaw is the senses** (fetches email, calendar, web — returns structured data, holds no memory). **llama is the hired calculator** (computes what it's asked, remembers nothing — optional, replaceable by cloud APIs).
+
+#### Core ↔ Brain API Contract
+
+The internal API between core and brain. All endpoints require `Authorization: Bearer <BRAIN_TOKEN>` (or `CLIENT_TOKEN` for admin endpoints). All requests/responses are JSON. Core enforces gatekeeper access tiers before any query executes.
+
+**`POST /v1/vault/query` — Search the vault**
+
+```json
+// Request
+{
+  "persona": "/social",                // required — gatekeeper checks access tier
+  "q": "meeting with Sancho",          // search query (FTS5 and/or embedding)
+  "mode": "hybrid",                    // "fts5" | "semantic" | "hybrid" (default)
+  "filters": {
+    "types": ["email", "calendar"],    // optional — filter by item_type
+    "after": "2026-01-01T00:00:00Z",   // optional — time range start
+    "before": null                     // optional — time range end (null = now)
+  },
+  "include_content": false,            // default false — summary only (safe path)
+  "limit": 20,                         // default 20, max 100
+  "offset": 0                          // pagination
+}
+
+// Response (200 OK)
+{
+  "status": "ok",
+  "items": [
+    {
+      "id": "vault_a1b2c3",
+      "type": "email",
+      "persona": "/social",
+      "summary": "Meeting confirmed with Sancho for Thursday 3pm",
+      "source": "gmail:msg:18d4f2a1b3",
+      "timestamp": "2026-02-18T10:30:00Z",
+      "relevance": 0.87,
+      "metadata": {
+        "from": "sancho@example.com",
+        "subject": "Re: Thursday meeting",
+        "has_attachment": true
+      }
+    }
+  ],
+  "pagination": {
+    "has_more": true,
+    "next_offset": 20
+  }
+}
+
+// Response (403 — persona locked)
+{
+  "error": "persona_locked",
+  "message": "/financial requires CLIENT_TOKEN approval",
+  "code": 403
+}
+```
+
+**Search modes:**
+
+| Mode | Engine | Best for | `relevance` field |
+|------|--------|----------|-------------------|
+| `fts5` | SQLite FTS5 (`unicode61` tokenizer) | Exact keyword matching, fast | FTS5 rank score (normalized) |
+| `semantic` | sqlite-vec cosine similarity | Fuzzy meaning-based matching | Cosine similarity 0.0–1.0 |
+| `hybrid` (default) | Both, merged + deduplicated | Most queries | `0.4 × fts5_rank + 0.6 × cosine_similarity` |
+
+**`include_content` design decision:** Default is `false` — brain gets `summary` only (LLM-generated at ingestion, already scrubbed). This makes the safe path the default. Setting `include_content: true` returns the raw `body_text` — brain is then responsible for PII scrubbing before sending to any cloud LLM. This flag is a signal to the developer that they're opting into a higher-trust path.
+
+**`POST /v1/vault/store` — Write processed data**
+
+```json
+// Request
+{
+  "persona": "/social",
+  "type": "email",                     // "email", "message", "event", "relationship", "draft", "scratchpad", etc.
+  "source": "gmail:msg:18d4f2a1b3",
+  "summary": "Meeting with Sancho confirmed for Thursday 3pm",
+  "embedding": [0.012, -0.034, ...],   // 768-dim vector (optional — for semantic search)
+  "metadata": { "from": "sancho@example.com", "subject": "Re: Thursday meeting" },
+  "timestamp": "2026-02-18T10:30:00Z"
+}
+
+// Response (201 Created)
+{ "status": "ok", "id": "vault_a1b2c3" }
+```
+
+**`GET /v1/vault/item/:id` — Retrieve single item**
+
+**`DELETE /v1/vault/item/:id` — Delete single item (right to forget)**
+
+**`POST /v1/vault/crash` — Store crash traceback (encrypted)**
+
+```json
+{
+  "error": "RuntimeError at line 142",
+  "traceback": "...",
+  "task_id": "task_abc123"
+}
+```
+
+**What brain NEVER gets via this API:** encryption keys, raw attachment blobs, other users' data (managed hosting). Brain gets summaries and metadata. Raw content stays in source (Gmail, WhatsApp). The vault API enforces this — `gatekeeper.go` routes queries to the correct persona database (if open) or returns `403 Persona Locked` (if the DEK isn't in RAM). (Note: OAuth tokens live in OpenClaw, not in Dina — Core never holds external API credentials.)
 
 ### Brain Crash Recovery
 
@@ -987,7 +1118,7 @@ Core → Brain task lifecycle:
 ```
 
 ```sql
--- In core's system.sqlite (not per-persona — shared task queue)
+-- In identity.sqlite (shared task queue — not persona-partitioned)
 CREATE TABLE dina_tasks (
     id TEXT PRIMARY KEY,              -- ULID
     type TEXT NOT NULL,               -- 'process', 'reason', 'embed'
@@ -1047,7 +1178,7 @@ async def assemble_nudge(task_id: str, event: dict):
     await core.vault_store(type="scratchpad_delete", task_id=task_id)
 ```
 
-Scratchpad entries are stored in staging.sqlite (Tier 4) and auto-expire after 24 hours — stale reasoning from yesterday's crash is not useful today.
+Scratchpad entries are stored in identity.sqlite (Tier 4 staging tables) and auto-expire after 24 hours — stale reasoning from yesterday's crash is not useful today.
 
 **External memory services:** If the scratchpad pattern proves insufficient for complex multi-agent reasoning, Mem0 or SuperMemory can be evaluated as a managed memory layer. For Phase 1, the vault-backed scratchpad keeps things simple.
 
@@ -1125,7 +1256,7 @@ NEVER log:
   - Brain reasoning output ("user appears to have health concerns about...")
   - NaCl message plaintext
   - Passphrase or derived keys
-  - OAuth tokens or refresh tokens
+  - API tokens or credentials (OAuth tokens live in OpenClaw, not in Dina)
 
 ALWAYS log:
   - Timestamps, endpoint called, persona name
@@ -1143,20 +1274,36 @@ log.Info("processing query", "query", userQuery)
 log.Info("processing query", "persona", "/social", "type", "fts5", "results", len(results))
 ```
 
-**Brain crash tracebacks:** Python tracebacks include local variable values. If brain crashes mid-reasoning, the traceback could contain `query="find emails about my cancer diagnosis"`. Fix: wrap the main loop in a catch-all that logs only the exception type and line number to stdout. Full tracebacks go into the encrypted vault directory.
+**Brain crash tracebacks:** Python tracebacks include local variable values. If brain crashes mid-reasoning, the traceback could contain `query="find emails about my cancer diagnosis"`. Fix: wrap the main loop in a catch-all that logs only the exception type and line number to stdout. Full tracebacks go into identity.sqlite via core's API — never to a plain text file on disk.
+
+```sql
+-- In identity.sqlite — crash log table (encrypted at rest by SQLCipher)
+CREATE TABLE crash_log (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    error     TEXT,    -- exception type + line number (safe for Docker logs too)
+    traceback TEXT,    -- full traceback with variables (PII risk — encrypted at rest)
+    task_id   TEXT     -- which task was in-flight when crash occurred
+);
+```
 
 ```python
 # brain/src/main.py — safe crash handler
 try:
     await guardian_loop()
 except Exception as e:
-    # Docker logs get sanitized one-liner only
+    # Docker logs get sanitized one-liner only (no PII)
     logger.error(f"guardian crash: {type(e).__name__} at {e.__traceback__.tb_lineno}")
-    # Full traceback with variables → encrypted vault (PII-safe)
-    with open("/var/lib/dina/vault/crash.log", "a") as f:
-        traceback.print_exc(file=f)
+    # Full traceback → encrypted vault via core API (PII-safe)
+    requests.post("http://core:8100/api/v1/vault/crash", json={
+        "error": f"{type(e).__name__} at {e.__traceback__.tb_lineno}",
+        "traceback": traceback.format_exc(),
+        "task_id": current_task_id
+    }, headers={"Authorization": f"Bearer {BRAIN_TOKEN}"})
     raise
 ```
+
+**Why identity.sqlite, not an encrypted file:** SQLCipher already encrypts the database. A plain `crash.log` sitting on disk is not encrypted — anyone with filesystem access reads it. Writing to a table in identity.sqlite means: zero new infrastructure, queryable ("show crashes from last week"), included in backup/migration automatically, and the admin UI can display crash history. **Retention:** 90-day rolling window, same as audit logs. Watchdog cleans old entries.
 
 **CI enforcement — banned log patterns (linting, not runtime):**
 
@@ -1293,7 +1440,7 @@ Two separate derivation schemes serve two different purposes:
 |-----------|---------|-----------|-----|
 | **Master Seed (DEK)** | The Root | BIP-39 mnemonic (24 words, 256-bit entropy) → PBKDF2 → 512-bit seed | Industry standard recovery. The seed IS the DEK — key-wrapped on disk by the passphrase-derived KEK. |
 | **Identity Keys** | Signing (`did:plc`), persona keypairs | **SLIP-0010** (Ed25519 hardened derivation) | Ed25519 is incompatible with BIP-32's secp256k1 math. SLIP-0010 provides equivalent HD paths with hardened-only derivation (no unsafe public derivation). |
-| **Vault Keys** | SQLCipher database encryption | **HKDF-SHA256** from persona key | Domain-separated symmetric keys for each persona's encrypted SQLite file |
+| **Vault DEKs** | SQLCipher database encryption | **Per-persona HKDF-SHA256** from Master Seed with persona-specific info string (e.g. `"dina:vault:personal:v1"`, `"dina:vault:health:v1"`) | Each persona file has its own 256-bit DEK. Compromise of one persona's DEK does not expose other personas. |
 
 **Why not BIP-32:** BIP-32 uses point addition on the secp256k1 curve. Ed25519 keys use SHA-512 and bit clamping — fundamentally different algebra. Implementing BIP-32 on Ed25519 produces invalid keys or weakens curve security. BIP-32 also allows public derivation (`xpub` → child public keys), which is mathematically unsafe on Ed25519 without complex cryptographic tweaks. SLIP-0010 explicitly disables public derivation (hardened-only) to prevent this.
 
@@ -1321,19 +1468,29 @@ BIP-39 Mnemonic (24 words = 256-bit entropy)
         └── m/9999'/N'  → /persona/custom/*      (user-defined compartments)
 ```
 
-Each persona's Ed25519 keypair is then used for two purposes:
-1. **Signing** — the persona's private key signs DIDComm messages and Reputation Graph entries
-2. **Vault encryption** — the persona's private key is fed through HKDF-SHA256 with a domain separator to derive the SQLCipher passphrase:
+Each persona's Ed25519 keypair is used for **signing** — the persona's private key signs DIDComm messages and Reputation Graph entries.
+
+**Vault encryption** uses per-persona DEKs — each persona file has its own 256-bit SQLCipher key:
 
 ```
-Persona Key (Ed25519 private key from SLIP-0010)
+Master Seed (512-bit, from BIP-39)
     │
-    └── HKDF-SHA256(ikm=persona_key, salt=user_salt, info="dina:vault:consumer:v1")
-        → 256-bit SQLCipher passphrase for consumer.sqlite
+    ├── HKDF-SHA256(ikm=seed, salt=user_salt, info="dina:vault:identity:v1")
+    │       → 256-bit SQLCipher passphrase for identity.sqlite
     │
-    └── HKDF-SHA256(ikm=persona_key, salt=user_salt, info="dina:index:consumer:v1")
-        → 256-bit SQLCipher passphrase for consumer_index.sqlite
+    ├── HKDF-SHA256(ikm=seed, salt=user_salt, info="dina:vault:personal:v1")
+    │       → 256-bit SQLCipher passphrase for personal.sqlite
+    │
+    ├── HKDF-SHA256(ikm=seed, salt=user_salt, info="dina:vault:health:v1")
+    │       → 256-bit SQLCipher passphrase for health.sqlite  (Phase 2)
+    │
+    ├── HKDF-SHA256(ikm=seed, salt=user_salt, info="dina:vault:financial:v1")
+    │       → 256-bit SQLCipher passphrase for financial.sqlite  (Phase 2)
+    │
+    └── ... (one HKDF derivation per persona)
 ```
+
+Persona isolation is enforced by **cryptographic separation** — each persona is a separate encrypted file with its own DEK. A locked persona's DEK is not in RAM; the file is opaque bytes. This is not application-level access control — it is file-level crypto.
 
 **Go implementation:** Use `github.com/stellar/go/exp/crypto/derivation` or equivalent SLIP-0010 library. Do not roll custom Ed25519 HD derivation.
 
@@ -1341,55 +1498,81 @@ Persona Key (Ed25519 private key from SLIP-0010)
 
 **Critical security property:** Personas are cryptographically unlinkable. Knowing the consumer keypair tells you nothing about the health keypair — hardened derivation means each child key is derived from the parent seed plus an index, with no mathematical relationship between siblings. Even Dina's own code cannot cross compartments without the root key authorizing a specific, logged operation.
 
-**Data isolation: Separate SQLite files per persona (Multi-Vault Architecture).** Each persona gets its own SQLCipher-encrypted SQLite file, with its own passphrase derived from the persona key. This is physical separation, not logical — there is no shared database with a `persona_id` column.
+**Data isolation: Per-persona files with per-file encryption.** Each persona is a separate SQLCipher-encrypted database with its own DEK. Isolation is enforced by cryptography, not application logic.
 
 ```
-data/vaults/
-├── consumer.sqlite     ← Encrypted with consumer persona key
-├── social.sqlite       ← Encrypted with social persona key
-├── health.sqlite       ← Encrypted with health persona key
-├── financial.sqlite    ← Encrypted with financial persona key
-├── citizen.sqlite      ← Encrypted with citizen persona key
-├── professional.sqlite ← Encrypted with professional persona key
-└── identity.sqlite     ← Tier 0: root keys, persona keys, ZKP credentials
+/var/lib/dina/
+├── identity.sqlite              ← Tier 0: contacts, sharing policy, audit log
+└── vault/
+    ├── personal.sqlite          ← Phase 1: everything here
+    ├── health.sqlite            ← Phase 2: separate DEK from HKDF("dina:vault:health:v1")
+    ├── financial.sqlite         ← Phase 2: separate DEK from HKDF("dina:vault:financial:v1")
+    ├── social.sqlite            ← Phase 2: separate DEK from HKDF("dina:vault:social:v1")
+    └── consumer.sqlite          ← Phase 2: separate DEK from HKDF("dina:vault:consumer:v1")
 ```
 
-**Why physical separation, not a single DB:**
-- **The Exit Interview Test.** Leave your job? `rm professional.sqlite`. Physics guarantees the data is gone. No complex SQL queries, no missed FTS index entries, no lingering vector embeddings.
-- **Context fences at the OS level.** In "Weekend Mode," Dina only unlocks `social.sqlite` and `consumer.sqlite`. She literally *cannot* bother you about work because the work vault is locked.
-- **Blast radius containment.** Compromise of one persona's key exposes one file. The others are encrypted with independent keys.
-- **Right to delete.** `rm health.sqlite`. All medical data physically annihilated. No forensic recovery possible.
+**Why per-persona files, not a single vault:**
+- **True cryptographic isolation.** "Your health data is encrypted with a different key than your financial data, even on the same machine." One-sentence pitch that non-technical people understand and trust.
+- **Locked = invisible, not just access-controlled.** When `/health` is locked, the DEK is not in RAM. The file is opaque bytes. No application bug, no brain compromise, no code path can read it. Math enforces the boundary.
+- **Right to delete = `rm`.** `rm data/vault/health.sqlite` — persona physically annihilated. No SQL, no VACUUM, no residual data in shared indices.
+- **Selective unlock.** User opens `/financial` for 15 minutes → core derives the DEK, opens the file, serves queries, then closes and zeroes the DEK from RAM. The other persona files are unaffected.
+- **Breach containment.** Compromise of one persona file exposes only that persona's data. Attacker still needs the master seed (or that persona's specific DEK) to read other files.
 
-**Cross-persona queries and the Gatekeeper:** The brain needs data from multiple personas constantly (see [Security Model: The Brain is a Guest](#security-model-the-brain-is-a-guest) above). The Sancho Moment nudge at 3 AM needs `/social` (relationship with Sancho, his mother's illness), `/professional` (calendar — is user free?), and `/consumer` (tea preference). That's three persona crosses for one nudge — dozens of times daily. Requiring user approval for each would kill the always-on agent.
+**Cross-persona queries and the Gatekeeper:** The brain needs data from multiple personas constantly (see [Security Model: The Brain is a Guest](#security-model-the-brain-is-a-guest) above). The Sancho Moment nudge at 3 AM needs `/social` (relationship with Sancho, his mother's illness), `/professional` (calendar — is user free?), and `/consumer` (tea preference). That's three persona crosses for one nudge — dozens of times daily.
 
-**The model: personas have access tiers, not per-query gates.** Enforced by `gatekeeper.go` in core.
+Core's `gatekeeper.go` manages which databases are open. Brain makes separate API calls per persona: `POST /v1/vault/query {persona: "/social", ...}`. Core routes the query to the correct open database. If the persona is locked, core returns `403 Persona Locked`.
+
+**The model: personas have access tiers, enforced by which databases are open.** Configured in `config.json`, enforced by `gatekeeper.go` in core.
 
 ```
 Persona Access Tiers (configured by user, stored in config.json):
 
   "brain_access": {
-    "/social":       "open",        ← brain can query freely
-    "/consumer":     "open",        ← brain can query freely
-    "/professional": "open",        ← brain can query freely
-    "/health":       "restricted",  ← brain can query, but every access logged + user notified
-    "/financial":    "locked",      ← requires client device approval per session (not per query)
+    "/personal":     "open",        ← always open (Phase 1: everything here)
+    "/social":       "open",        ← database open, brain queries freely
+    "/consumer":     "open",        ← database open, brain queries freely
+    "/professional": "open",        ← database open, brain queries freely
+    "/health":       "restricted",  ← database open, but every access logged + user notified
+    "/financial":    "locked",      ← database CLOSED. DEK not in RAM. Brain gets 403.
   }
 ```
 
 | Tier | Behavior | Use Case |
 |------|----------|----------|
-| **Open** | Brain queries freely. Core serves. Logged but no gate. | Social, consumer, professional — the personas brain needs constantly for nudges. |
-| **Restricted** | Brain can query, but core logs every access to Tier 0 audit log AND pushes a silent notification to client device. User sees "Dina accessed your health data 3 times today" in daily briefing. | Health — brain sometimes needs it (e.g., "you have a doctor's appointment"), but user should know when. |
-| **Locked** | Brain cannot query at all until user unlocks the persona for a time-limited session via client device. `POST /v1/persona/unlock {persona: "/financial", ttl: "15m"}`. Core auto-locks after TTL expires. | Financial — brain almost never needs this. When it does, it's high-stakes (tax filing, insurance claim). Worth the friction. |
+| **Open** | Database file is open. Brain queries freely. Core serves. Logged but no gate. | Social, consumer, professional — the personas brain needs constantly for nudges. |
+| **Restricted** | Database file is open. Brain can query, but core logs every access to `identity.sqlite` audit log AND pushes a silent notification to client device. User sees "Dina accessed your health data 3 times today" in daily briefing. | Health — brain sometimes needs it (e.g., "you have a doctor's appointment"), but user should know when. |
+| **Locked** | Database file is **CLOSED**. DEK not in RAM. Brain gets `403 Persona Locked` — must request unlock via client device: `POST /v1/persona/unlock {persona: "/financial", ttl: "15m"}`. Core derives the DEK, opens the file, auto-closes after TTL expires, zeroes DEK from RAM. | Financial — brain almost never needs this. When it does, it's high-stakes (tax filing, insurance claim). Worth the friction. |
 
 **What this fixes:**
 
-1. **Compromised brain can't touch locked personas at all.** Financial data requires user interaction. The attack surface is limited to open personas.
+1. **Compromised brain can't touch locked personas at all.** The DEK isn't in memory. No amount of application-level bypass can decrypt the file. Math, not code, enforces this.
 2. **Restricted personas create a detection trail.** If a compromised brain starts scraping health data, the user sees it in the audit log.
 3. **Open personas stay fast.** The nudge flow works without friction for everyday contexts.
-4. **Cross-persona ATTACH is never done.** Core doesn't use `ATTACH DATABASE`. Each persona query is a separate API call to `/v1/vault/query` with a `persona` field. Core opens each persona's partition independently, checks the access tier, and responds. Brain never sees the SQLite handle.
+4. **Cross-persona queries use parallel reads.** Brain requests data from `/social` + `/professional` + `/consumer`. Core queries each open database independently, merges results. Brain never sees SQLite handles — it gets JSON responses.
 
-**The audit log (Tier 0) records every persona access:**
+**"Which personas have data about Dr. Patel?"** — derived, never cached:
+
+```go
+// core/internal/vault/roster.go
+func (v *VaultManager) GetPersonasForContact(contactDID string) []string {
+    var personas []string
+    for name, db := range v.openDatabases {
+        var exists bool
+        db.QueryRow(
+            "SELECT EXISTS(SELECT 1 FROM vault_items WHERE contact_did = ?)",
+            contactDID,
+        ).Scan(&exists)
+        if exists {
+            personas = append(personas, name)
+        }
+    }
+    return personas
+}
+// Only checks UNLOCKED databases. Locked personas are invisible.
+// This is a security feature: you shouldn't know what's in a locked persona.
+```
+
+**The audit log (`identity.sqlite`, Tier 0) records every persona access:**
 
 ```json
 {"ts": "2026-02-18T03:15:00Z", "persona": "/health", "action": "query", "requester": "brain", "query_type": "fts", "reason": "nudge_assembly"}
@@ -1452,42 +1635,83 @@ Six tiers (Tier 0-5). Each with different encryption, sync, and backup strategie
 | Property | Value |
 |----------|-------|
 | Contents | Emails, chat messages, calendar events, contacts, photos, documents |
-| Encryption | SQLCipher whole-database encryption (AES-256-CBC, per-page). Key derived from persona key via HKDF (persona key → HKDF-SHA256 → SQLCipher passphrase). Each persona is a separate `.sqlite` file. |
+| Encryption | SQLCipher whole-database encryption (AES-256-CBC, per-page). Per-persona DEKs derived from master seed via HKDF with persona-specific info strings. Each persona is a separate encrypted file. |
 | Storage engine | SQLite with FTS5 (full-text search, `unicode61 remove_diacritics 1` tokenizer — multilingual, handles Indic scripts natively). Porter stemmer is forbidden (English-only, mangles non-Latin). FTS index is encrypted transparently by SQLCipher. Phase 3: ICU tokenizer for CJK word segmentation. |
 | Location | Home node (source of truth). Rich clients cache configurable subsets. |
 | Client cache | Phone: recent 6 months. Laptop: configurable (up to everything). Thin clients: no local cache. |
-| Backup | Encrypted snapshot to blob storage of user's choice (S3, Backblaze, NAS, second VPS). Each persona file backed up independently. |
-| Breach impact | Compromise of one persona's SQLite file exposes that persona only. Physical file separation limits blast radius. |
+| Backup | Encrypted snapshot of all persona files to blob storage of user's choice (S3, Backblaze, NAS, second VPS). |
+| Breach impact | Compromise of one persona file exposes ONLY that persona's data. Each file has its own DEK. Locked persona files have DEKs not in RAM — opaque bytes even if file is stolen. |
 
-**Schema sketch for Vault (per-persona SQLCipher database):**
+**Schema sketch for Identity (`identity.sqlite` — Tier 0, always unlocked first):**
+
 ```sql
--- DINA VAULT SCHEMA (v2)
--- Storage: SQLCipher Encrypted Database (whole-file, AES-256-CBC per page)
--- Key: Master Key → SLIP-0010 → persona key → HKDF-SHA256 → SQLCipher passphrase
--- One file per persona: consumer.sqlite, health.sqlite, etc.
+-- DINA IDENTITY SCHEMA (v1)
+-- Storage: SQLCipher Encrypted Database
+-- Key: Master Seed → HKDF-SHA256("dina:vault:identity:v1") → SQLCipher passphrase
+-- Always unlocked first — gatekeeper needs contacts and sharing policy.
+
+-- Contacts: global, NO persona field. People are cross-cutting.
+-- Dr. Patel is a contact. His lab results go in /health, his cricket chat in /social.
+CREATE TABLE contacts (
+    did              TEXT PRIMARY KEY,
+    name             TEXT,
+    alias            TEXT,
+    trust_level      TEXT DEFAULT 'unknown',  -- 'blocked', 'unknown', 'trusted'
+    sharing_policy   TEXT,                    -- JSON blob (the rulebook)
+    created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_contacts_trust ON contacts(trust_level);
+
+-- Audit log: every persona access, every brain query
+CREATE TABLE audit_log (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    persona   TEXT NOT NULL,
+    action    TEXT NOT NULL,
+    requester TEXT NOT NULL,
+    query_type TEXT,
+    reason    TEXT,
+    metadata  TEXT
+);
+
+-- Key-value store for sync cursors (brain is stateless)
+CREATE TABLE kv_store (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**Schema sketch for Persona Vault (per-persona SQLCipher database):**
+
+```sql
+-- DINA VAULT SCHEMA (v3)
+-- Storage: SQLCipher Encrypted Database (per-persona file, AES-256-CBC per page)
+-- Key: Master Seed → HKDF-SHA256("dina:vault:<persona>:v1") → SQLCipher passphrase
+-- Phase 1: only personal.sqlite exists. Phase 2: per-persona files.
 
 -- Core ingestion table
-CREATE TABLE documents (
+CREATE TABLE vault_items (
     id TEXT PRIMARY KEY,           -- UUID
+    type TEXT NOT NULL,            -- 'email', 'message', 'event', 'note', 'photo'
     source TEXT NOT NULL,          -- 'gmail', 'whatsapp', 'calendar', etc.
     source_id TEXT,                -- original ID in source system
-    item_type TEXT NOT NULL,       -- 'email', 'message', 'event', 'contact', 'photo'
+    contact_did TEXT,              -- optional: link to contacts in identity.sqlite
+    summary TEXT,                  -- brain-generated summary
+    body_text TEXT,                -- the actual content (encrypted at rest by SQLCipher)
     timestamp INTEGER NOT NULL,   -- unix timestamp of original item
     ingested_at INTEGER NOT NULL,  -- when Dina pulled it
-    body_text TEXT,                -- the actual content (encrypted at rest by SQLCipher)
-    author TEXT,                   -- sender/creator
-    recipients TEXT,               -- JSON array of recipients
-    metadata_json TEXT             -- structured metadata (encrypted at rest by SQLCipher)
+    metadata TEXT                  -- JSON: structured metadata
 );
 
 -- Full-text search index (encrypted at rest by SQLCipher — no plaintext leakage)
 -- unicode61: multilingual tokenizer (Hindi, Tamil, Kannada, etc.). Porter stemmer is
 -- English-only and mangles non-Latin scripts — explicitly forbidden.
 -- Phase 3: ICU tokenizer for CJK word segmentation (languages without spaces).
-CREATE VIRTUAL TABLE documents_fts USING fts5(body_text, content=documents, content_rowid=rowid, tokenize='unicode61 remove_diacritics 1');
+CREATE VIRTUAL TABLE vault_items_fts USING fts5(body_text, summary, content=vault_items, content_rowid=rowid, tokenize='unicode61 remove_diacritics 1');
 
 -- Relationships (who sent what to whom)
--- No persona column needed — the persona is implicit from which .sqlite file this lives in
 CREATE TABLE relationships (
     id TEXT PRIMARY KEY,
     entity_name TEXT,              -- "Sancho", "Priya", "Dr. Kumar"
@@ -1503,7 +1727,7 @@ CREATE TABLE relationships (
 | Property | Value |
 |----------|-------|
 | Contents | Embeddings, summaries, relationship graphs, inferred patterns |
-| Encryption | SQLCipher whole-database encryption, per-persona file, key derived from persona key (separate from Tier 1 vault key via HKDF domain separation) |
+| Encryption | Same per-persona `.sqlite` files — embeddings and indices stored in dedicated tables within each persona's encrypted database |
 | Storage engine | SQLite for structured data + sqlite-vec for vector embeddings |
 | Location | Home node (primary). Rich clients may build a local subset from their cache for offline search. |
 | Backup | Not backed up separately. Regenerable from Tier 1. |
@@ -1597,36 +1821,42 @@ Last-resort recovery. Survives Home Node destruction, backup ransomware, and tot
 ```
 Master Seed (BIP-39 mnemonic → stored encrypted on Home Node; hardware-backed on client devices)
     │
-    ├── m/9999'/0' → Root Identity Key (signs DID Document)
+    ├── Per-Persona Vault DEKs (HKDF-SHA256, one per persona file)
+    │   ├── HKDF(info="dina:vault:identity:v1")   → DEK for identity.sqlite
+    │   ├── HKDF(info="dina:vault:personal:v1")   → DEK for personal.sqlite
+    │   ├── HKDF(info="dina:vault:health:v1")     → DEK for health.sqlite (Phase 2)
+    │   ├── HKDF(info="dina:vault:financial:v1")  → DEK for financial.sqlite (Phase 2)
+    │   ├── HKDF(info="dina:vault:social:v1")     → DEK for social.sqlite (Phase 2)
+    │   ├── HKDF(info="dina:vault:consumer:v1")   → DEK for consumer.sqlite (Phase 2)
+    │   └── HKDF(info="dina:vault:<custom>:v1")   → DEK for user-defined personas
     │
-    ├── m/9999'/1' → Persona Key: /consumer
-    │       ├── HKDF("dina:vault:consumer:v1") → SQLCipher key for consumer.sqlite (Tier 1)
-    │       └── HKDF("dina:index:consumer:v1") → SQLCipher key for consumer_index.sqlite (Tier 2)
+    ├── SLIP-0010 Ed25519 Hardened Derivation (purpose: 9999')
+    │   │
+    │   ├── m/9999'/0' → Root Identity Key (signs DID Document)
+    │   │
+    │   ├── m/9999'/1' → Persona Key: /consumer     (signing + DIDComm encryption)
+    │   ├── m/9999'/2' → Persona Key: /professional  (signing + DIDComm encryption)
+    │   ├── m/9999'/3' → Persona Key: /social        (signing + DIDComm encryption)
+    │   ├── m/9999'/4' → Persona Key: /health        (signing + DIDComm encryption)
+    │   ├── m/9999'/5' → Persona Key: /financial     (signing + DIDComm encryption)
+    │   ├── m/9999'/6' → Persona Key: /citizen       (signing + DIDComm encryption)
+    │   └── m/9999'/N' → Persona Key: /custom/*      (user-defined)
     │
-    ├── m/9999'/4' → Persona Key: /health
-    │       ├── HKDF("dina:vault:health:v1") → SQLCipher key for health.sqlite (Tier 1)
-    │       └── HKDF("dina:index:health:v1") → SQLCipher key for health_index.sqlite (Tier 2)
+    ├── Backup Encryption Key (HKDF, info="dina:backup:v1")
+    │       └── Wraps persona file snapshots for off-node backup storage
     │
-    ├── m/9999'/2'-6' → Persona Keys: /professional, /social, /financial, /citizen
-    │       └── (same HKDF pattern — one .sqlite file per persona per tier)
-    │
-    ├── Staging Key → SQLCipher passphrase for staging.sqlite (Tier 4, shared)
-    │
-    ├── Backup Encryption Key (for off-node backups)
-    │       └── Wraps per-persona .sqlite files for backup storage
-    │
-    ├── Archive Key (for Tier 5 Deep Archive)
-    │       └── Wraps full vault snapshots for cold storage
+    ├── Archive Key (HKDF, info="dina:archive:v1")
+    │       └── Wraps full vault snapshots for Tier 5 cold storage
     │       └── Separate from Backup Key so archive survives backup key rotation
     │
-    ├── Client Sync Key (for home node ↔ client device communication)
+    ├── Client Sync Key (HKDF, info="dina:sync:v1")
     │       └── Encrypts vault cache pushes to client devices
     │
-    └── Reputation Signing Key (for Graph submissions)
+    └── Reputation Signing Key (HKDF, info="dina:reputation:v1")
             └── Signs anonymized outcome data
 ```
 
-**Two derivation layers:** Identity keys (Ed25519 keypairs for signing) are derived via SLIP-0010 hardened paths from the master seed. Vault keys (256-bit symmetric keys for SQLCipher) are derived via HKDF-SHA256 from the persona's private key, domain-separated by info string. Compromise of one vault key reveals nothing about other vaults or identity keys.
+**Two derivation layers:** Identity keys (Ed25519 keypairs for signing) are derived via SLIP-0010 hardened paths from the master seed. Per-persona vault DEKs (256-bit symmetric keys for SQLCipher) are derived via HKDF-SHA256 from the master seed with persona-specific domain separators (e.g. `"dina:vault:health:v1"`). Each persona file has its own DEK — compromise of one file does not expose other persona files.
 
 ### Master Key Storage (Key Wrapping)
 
@@ -1641,7 +1871,8 @@ Passphrase ("correct horse battery staple")
     │
     ▼  AES-256-GCM wrap (or XChaCha20-Poly1305)
     │
-    Encrypted Master Key blob → stored at keys/master.key.enc
+    Encrypted Master Seed blob → stored in /var/lib/dina/wrapped_seed.bin
+    In convenience mode: raw seed → /var/lib/dina/keyfile (chmod 600)
     │  (plus cleartext 16-byte salt for Argon2id)
     │
     ▼  On unlock: KEK decrypts blob → Master Key loaded into RAM
@@ -1649,7 +1880,7 @@ Passphrase ("correct horse battery staple")
     Master Key (DEK)
     │
     ├── SLIP-0010 derivation → persona identity keys (Ed25519)
-    └── HKDF derivation → per-persona SQLCipher passphrases
+    └── HKDF derivation → per-persona vault DEKs (one per .sqlite file)
 ```
 
 **Why key wrapping:** Changing the user's passphrase re-wraps the Master Key with a new KEK — no need to re-encrypt the entire multi-gigabyte database. The Master Key itself never changes unless the identity is rotated.
@@ -1675,7 +1906,7 @@ Passphrase ("correct horse battery staple")
 
 This runs **once at unlock**, not per-request. The derived KEK stays in RAM for the process lifetime. The one-time cost is a ~1-2 second spike during vault unlock — acceptable for a passphrase prompt.
 
-**Home node:** `keys/master.key.enc` + salt stored on filesystem. On client devices with hardware security modules, delegated device keys are generated and stored in Secure Enclave / StrongBox / TPM. The Master Key is NEVER stored in plaintext at rest on any system.
+**Home node:** In security mode, the encrypted Master Seed blob is stored at `/var/lib/dina/wrapped_seed.bin` (AES-256-GCM wrapped by the passphrase-derived KEK). In convenience mode, the raw seed is stored at `/var/lib/dina/keyfile` (`chmod 600`). Per-persona DEKs are derived at runtime via HKDF and held in RAM only while the persona database is open. On client devices with hardware security modules, delegated device keys are generated and stored in Secure Enclave / StrongBox / TPM. The Master Seed is NEVER stored in plaintext at rest in security mode.
 
 ### Data Safety Protocol (Corruption Immunity)
 
@@ -1699,12 +1930,19 @@ WAL mode means: if the server crashes mid-write, the main `.sqlite` is untouched
 
 **Protection 1b: Concurrent Access (Single-Writer Pattern)**
 
-dina-core is a concurrent Go server: WebSocket clients, connector polling, DIDComm reception, and brain API requests all hit the same persona SQLite file. WAL mode allows concurrent readers, but only **one writer at a time**. Without proper connection management, writes back up during heavy ingestion (e.g. initial Gmail sync of 10,000 emails) and brain queries time out.
+dina-core is a concurrent Go server: WebSocket clients, DIDComm reception, and brain API requests (including bulk ingestion from MCP sync cycles) all hit the persona databases. WAL mode allows concurrent readers, but only **one writer at a time per file**. Without proper connection management, writes back up during heavy ingestion (e.g. initial Gmail sync of 10,000 emails) and brain queries time out.
 
-**Connection pool design (per persona file):**
+**Connection pool design (multi-database vault manager):**
 
 ```go
-// One write connection (serialized), unlimited read connections
+// Per-database: one write connection (serialized), unlimited read connections
+// VaultManager holds pools for all currently open persona databases
+type VaultManager struct {
+    identity  *VaultPool                    // always open (contacts, audit, kv_store)
+    personas  map[string]*VaultPool         // "personal" → pool, "health" → pool, etc.
+    mu        sync.RWMutex                  // protects the personas map
+}
+
 type VaultPool struct {
     writeConn *sql.DB  // MaxOpenConns=1, busy_timeout=5000
     readPool  *sql.DB  // MaxOpenConns=N (cpu_count * 2), read-only
@@ -1720,24 +1958,24 @@ PRAGMA wal_autocheckpoint = 1000;  -- Checkpoint every 1000 pages (~4MB)
 PRAGMA query_only = ON;            -- Prevents accidental writes on read connections
 ```
 
-**Why single-writer:** SQLite's WAL allows only one writer. Attempting concurrent writes causes `SQLITE_BUSY`. The alternatives — retry loops, random backoff, connection-level mutexes — are fragile. A single dedicated write connection with `busy_timeout` is deterministic: writes queue up, readers never block.
+**Why single-writer per file:** SQLite's WAL allows only one writer per database. Attempting concurrent writes to the same file causes `SQLITE_BUSY`. The alternatives — retry loops, random backoff, connection-level mutexes — are fragile. A single dedicated write connection per persona file with `busy_timeout` is deterministic: writes queue up, readers never block. Bonus: writes to different persona files are fully independent — bulk-ingesting emails into `/personal` doesn't block a query to `/health`.
 
-**Batch ingestion pattern (connectors):**
+**Batch ingestion pattern (MCP sync):**
 
-During initial sync, connectors ingest thousands of items. Writing each one individually creates lock contention and WAL bloat.
+During initial sync, brain fetches thousands of items from OpenClaw. Writing each one individually to vault creates lock contention and WAL bloat.
 
 ```
 BATCH INGESTION PROTOCOL:
 
-  Connector polls for new items (e.g. 10,000 Gmail messages)
+  Brain fetches items via MCP (e.g. 5,000 Gmail messages from OpenClaw)
            ↓
-  Collect into batches of 100 items
+  Brain triages and summarizes in batches
            ↓
-  Per batch: BEGIN → INSERT 100 rows → COMMIT (one transaction)
+  Brain calls POST /v1/vault/store/batch (100 items per request)
            ↓
-  After each batch: notify brain "100 new items in consumer vault"
+  Core: BEGIN → INSERT 100 rows → COMMIT (one transaction)
            ↓
-  Brain processes in background (reads from read pool — never blocked by writer)
+  Brain generates embeddings in background for stored items
 ```
 
 The batch size (100) balances write throughput against WAL file growth. At 100 rows per transaction, a 10,000-email initial sync completes in ~100 transactions instead of 10,000 individual writes — roughly 50x faster and with minimal lock contention.
@@ -1806,11 +2044,11 @@ This runs automatically on every `dina-core` update. The user never sees it unle
 
 For managed hosting (Level 1/2) and power-user self-hosting:
 
-- Format the `/var/lib/dina/users/` volume as **ZFS** or **Btrfs**
+- Format the `/var/lib/dina/vault/` volume as **ZFS** or **Btrfs** (managed hosting: `/var/lib/dina/users/<did>/vault/`)
 - Auto-snapshot every 15 minutes (copy-on-write: instant, near-zero space cost until data changes)
 - Retain: 24h of 15-minute snapshots, 7 days of hourly, 30 days of daily
 
-Recovery: `zfs rollback dina/users/did_user_A@15min_ago` — file system instantly reverts to that point in time.
+Recovery: `zfs rollback dina/vault@15min_ago` — file system instantly reverts to that point in time.
 
 **Protection 4: Off-Site Backup (Network Level)**
 
@@ -1836,22 +2074,21 @@ Immutable cold storage with compliance lock. Covers ransomware, total infrastruc
 
 How Dina pulls data from the outside world into the Vault.
 
-### Where Connectors Run
+### Where Data Comes From
 
-Most connectors run on the **Home Node** — this is one of the main reasons the home node exists. API-based connectors (Gmail, Calendar, Contacts) work better from an always-on server than from a phone that sleeps, loses connectivity, and has battery constraints.
+Phase 1 uses the **MCP Delegation Pattern**: Brain orchestrates, OpenClaw fetches. No connector code in Core. API-based data sources (Gmail, Calendar, Contacts) are fetched by OpenClaw on Brain's schedule.
 
-**Exception: WhatsApp.** The NotificationListenerService requires an Android device. WhatsApp ingestion runs on the phone and pushes captured messages to the home node.
+**Exception: WhatsApp.** The NotificationListenerService requires an Android device. WhatsApp ingestion runs on the phone and pushes captured messages directly to Core via DIDComm — it bypasses MCP.
 
-| Connector | Runs On | Why |
-|-----------|---------|-----|
-| Gmail | Home Node | OAuth API, needs reliable polling |
-| Calendar | Home Node | Google Calendar REST API (Phase 1), CalDAV (Phase 2) |
-| Contacts | Home Node | CardDAV API, infrequent sync |
-| WhatsApp | Phone (Android) | Requires NotificationListenerService |
-| SMS | Phone (Android) | Requires Content Provider access |
-| Photos | Phone | Local photo library access |
-| Browser history | Laptop / Phone | Local browser database |
-| Bank statements | Home Node | PDF parsing or Open Banking APIs |
+| Source | Fetched By | Mechanism |
+|--------|-----------|-----------|
+| Gmail | Brain → MCP → OpenClaw | OpenClaw calls Gmail API. Hourly sync + morning routine. |
+| Calendar | Brain → MCP → OpenClaw | OpenClaw calls Calendar API. Every 30 min + morning routine. |
+| Contacts | Brain → MCP → OpenClaw | OpenClaw calls People API/CardDAV. Daily sync. |
+| WhatsApp | Phone → Core (direct) | Android NotificationListenerService → DIDComm push |
+| Web search | Brain → MCP → OpenClaw | On-demand: user asks or brain needs context |
+| SMS (Phase 2+) | Phone → Core (direct) | Android Content Provider → DIDComm push |
+| Photos (Phase 2+) | Phone → Core (direct) | Local photo library scan → metadata push |
 
 ### Connectors
 
@@ -1886,7 +2123,7 @@ HOME NODE                              PHONE (Android)
 **Never store binary blobs in SQLite.** A single user's vault goes from 50MB to 50GB if you store email attachments, and everything breaks — backups, sync, portability, encryption overhead. The "copy your vault file and go" promise dies.
 
 ```
-What Dina stores (in vault.sqlite):
+What Dina stores (in persona databases):
   - Metadata: filename, size, MIME type, source_id, timestamp
   - Reference: URI back to source (Gmail message ID, Drive file ID)
   - Context: LLM-generated summary of the attachment content
@@ -1895,7 +2132,7 @@ What Dina does NOT store:
   - The actual PDF, image, spreadsheet, video
 ```
 
-**Why references beat copies:** The user already has the attachment — it's in Gmail, Drive, or their local filesystem. Duplicating it means encrypting 50GB with SQLCipher (slow), backing up 50GB to S3 (expensive), syncing 50GB to client devices (impossible on mobile), and `vault.sqlite` becomes unmovable.
+**Why references beat copies:** The user already has the attachment — it's in Gmail, Drive, or their local filesystem. Duplicating it means encrypting 50GB with SQLCipher (slow), backing up 50GB to S3 (expensive), syncing 50GB to client devices (impossible on mobile), and the persona databases become unmovable.
 
 **What brain actually needs:** Brain doesn't need the raw PDF to assemble a nudge. Brain needs: "Sancho sent a contract (PDF, 2.3MB) titled 'Partnership_Agreement_v3.pdf' on Feb 15. Key terms: 60/40 revenue split, 2-year lock-in, exit clause in Section 7." That summary is a few KB, fully searchable via FTS5, embeddable via sqlite-vec.
 
@@ -1906,18 +2143,89 @@ What Dina does NOT store:
 **Exception — voice memos and WhatsApp voice notes:** These are small (typically under 1MB), have no stable source URI to link back to, and the transcript is the valuable part. For these: store the transcript in the vault, discard the audio. If the user wants to keep audio, it goes to a `media/` directory alongside the vault — files on disk, not inside SQLite.
 
 ```
-vault.sqlite     → text, metadata, references, summaries (small, portable)
+persona databases → text, metadata, references, summaries (small, portable)
 media/           → optional voice notes, images user explicitly wants to keep
                    (not inside SQLite, just files on disk, encrypted at rest)
 ```
 
-### Gmail Connector
-- **Runs on:** Home Node
-- **API:** Gmail REST API, `readonly` scope only
-- **Auth:** OAuth 2.0 token stored in Tier 0 (key-wrapped with Argon2id KEK)
-- **Pull frequency:** Every 15 minutes (configurable) for new emails; startup sync follows the Living Window protocol (30-day fast sync → background backfill to 365 days)
-- **What's pulled:** Headers first, then full body only for emails that pass triage (see Ingestion Triage below). Attachments: metadata only, full download optional. Only messages within `DINA_HISTORY_DAYS` (default 365). Older messages are never downloaded — accessed via pass-through search when needed.
-- **Dedup:** By Gmail message ID
+### Connectors & Senses (The MCP Delegation Pattern)
+
+**Philosophy: Senses vs. Memory.** The Go Core is a strict cryptographic storage kernel and does not contain any third-party API clients, OAuth logic, or connector code. Dina relies entirely on **Model Context Protocol (MCP)** to interact with the outside world. OpenClaw is the sensory system — it fetches email, calendar, web. Brain is the orchestrator — it schedules syncs, triages results, and stores memories in the vault via Core's API.
+
+```
+Old (connector in core):  Gmail API → core/connectors/gmail.go → vault
+New (MCP delegation):     Brain → MCP → OpenClaw → Gmail API → Brain → core API → vault
+```
+
+**What you gain:**
+- No OAuth flow in Go core. No Gmail/Calendar API clients. No token refresh logic. No polling scheduler.
+- Core becomes a pure sovereign kernel: vault, identity, keys, gatekeeper. Zero external API calls.
+- OpenClaw already has Gmail/Calendar access. No duplicate auth.
+- Clean separation: OpenClaw = senses, Brain = memory + reasoning, Core = encryption + storage.
+
+**What you accept:**
+- Sync frequency is hourly (MCP round-trip), not every 5 minutes (direct API polling).
+- Hard dependency on OpenClaw for memory pipeline (OpenClaw down = no new memories).
+- For Phase 1 developer audience: hourly is fine. Nobody expects a v0.1 to be instant.
+
+**The sync rhythm:**
+
+```
+MORNING ROUTINE (6:00 AM or user-configured):
+  Brain → MCP → OpenClaw: "fetch emails since {gmail_cursor}"
+    → OpenClaw calls Gmail API → returns structured JSON
+    → Brain triages (see Ingestion Triage below)
+    → Brain stores in vault: POST core:8100/v1/vault/store
+    → Brain updates cursor: PUT core:8100/v1/vault/kv/gmail_cursor
+  Brain → MCP → OpenClaw: "fetch calendar events for today + tomorrow"
+    → Brain stores in vault
+    → Brain updates cursor: PUT core:8100/v1/vault/kv/calendar_cursor
+  Brain reasons over new items → generates morning briefing
+  Brain → whisper: "Good morning. Here's what's new..."
+
+HOURLY CHECK (throughout the day):
+  Brain → MCP → OpenClaw: "any new emails since {gmail_cursor}?"
+    → OpenClaw returns 0-5 new emails
+    → Brain triages, stores, checks for urgency
+    → If urgent: whisper immediately ("Sancho confirmed dinner at 7")
+    → If routine: save for next briefing
+
+ON-DEMAND (user asks):
+  User: "Check my email"
+  Brain → MCP → OpenClaw: "fetch emails since {gmail_cursor}"
+    → Immediate sync cycle
+```
+
+**Sync state management (the cursor):** Brain is stateless — it relies on the vault for memory. To prevent duplicate ingestion, sync cursors (timestamps, `historyId`s) are stored in Core via a key-value API:
+
+```
+PUT  /v1/vault/kv/:key    → store cursor value
+GET  /v1/vault/kv/:key    → read cursor value
+Authorization: Bearer <BRAIN_TOKEN>
+
+Examples:
+  PUT /v1/vault/kv/gmail_cursor    {"value": "2026-02-19T10:00:00Z"}
+  PUT /v1/vault/kv/calendar_cursor {"value": "2026-02-19T06:00:00Z"}
+  GET /v1/vault/kv/gmail_cursor    → {"value": "2026-02-19T10:00:00Z"}
+```
+
+```sql
+-- In identity.sqlite — simple key-value store for sync state
+CREATE TABLE kv_store (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**Phase 2 evolution:** If real-time latency (5-minute polling) becomes a strict requirement, dedicated lightweight Go polling workers can be reintroduced to bypass MCP overhead. Phase 1 strictly relies on agentic delegation.
+
+#### Gmail (via OpenClaw MCP)
+- **Fetched by:** Brain → MCP → OpenClaw (Gmail API, `readonly` scope)
+- **Auth:** OpenClaw manages OAuth credentials — Dina never touches Gmail tokens
+- **Sync frequency:** Morning full sync + hourly light sync (configurable)
+- **What's fetched:** Headers first, then full body only for emails that pass triage (see below). Attachments: metadata only. Only messages within `DINA_HISTORY_DAYS` (default 365).
+- **Dedup:** By Gmail message ID (upsert in vault)
 - **Persona routing:** Emails go to whatever persona the user configures (most go to /professional or /consumer)
 
 #### Ingestion Triage (Two-Pass Filter)
@@ -2032,27 +2340,20 @@ INGESTION TRIAGE PROTOCOL:
 
 **Fiduciary override:** Even during triage, certain patterns always trigger full ingestion regardless of category — security alerts, financial documents, domain/account expiration warnings. These align with Tier 1 (Fiduciary) classification: silence would cause harm. The triage LLM is specifically instructed to never skip anything that looks actionable or time-sensitive.
 
-#### OAuth Token Lifecycle
+#### OpenClaw Health Monitoring
 
-Gmail access tokens expire every **60 minutes**. Refresh tokens rotate on each use (Google's rotation policy). Tokens are revoked when the user changes their Google password, removes the app from their Google account, or a security event triggers forced revocation.
-
-**Connector health state machine:**
+Brain monitors OpenClaw availability on every sync cycle. If OpenClaw is unreachable:
 
 ```
-ACTIVE ─(token expiring in <5 min)─► NEEDS_REFRESH
-NEEDS_REFRESH ─(refresh succeeds)──► ACTIVE         (new token, rotated refresh token)
-NEEDS_REFRESH ─(refresh fails)─────► EXPIRED         + Tier 2 notification
-EXPIRED ─(user re-authorizes)──────► ACTIVE
-EXPIRED ─(provider revokes)────────► REVOKED         + Tier 2 notification
-REVOKED ─(user re-authorizes)──────► ACTIVE
+HEALTHY ─(MCP call fails)──────────► DEGRADED   + Tier 2 notification
+DEGRADED ─(3 consecutive failures)─► OFFLINE    + Tier 2 notification: "OpenClaw is down. No new memories."
+OFFLINE ─(MCP call succeeds)───────► HEALTHY    (resume sync, fetch since last cursor)
 ```
 
 **Rules:**
-1. **Auto-refresh before expiry.** The connector scheduler calls `check_token_health()` on every poll cycle. If the token expires within 5 minutes, refresh is attempted automatically. If refresh succeeds, the user never notices.
-2. **Never poll with a bad token.** If the connector is in EXPIRED or REVOKED state, `poll()` returns empty — no API call is made. This prevents 401 storms and avoids triggering Google's abuse detection.
-3. **Tier 2 notification on failure.** When auto-refresh fails or the token is revoked, emit a Tier 2 (solicited) notification: *"Gmail access expired. [Re-authorize]"*. This is not Tier 1 (fiduciary) because missing emails is an inconvenience, not a harm.
-4. **Status transitions are logged.** Every state change is recorded with timestamp and reason for observability. User can see: connector name, current status, last successful poll, reason for current state.
-5. **Refresh token rotation.** On successful refresh, the old refresh token is discarded and the new one is key-wrapped and stored in Tier 0. The old access token is also replaced.
+1. **Never lose data.** Cursors are preserved in vault. When OpenClaw recovers, brain resumes from the exact point it left off — no gap, no duplicates.
+2. **Tier 2 notification on degradation.** Missing emails is an inconvenience, not a harm. Not Tier 1 (fiduciary).
+3. **User can see sync status.** Last successful sync, current state, reason for current state — all visible in admin UI.
 
 ### WhatsApp Connector (Android)
 - **Runs on:** Phone (Android only) — pushes to Home Node
@@ -2062,31 +2363,30 @@ REVOKED ─(user re-authorizes)──────► ACTIVE
 - **Alternative (Phase 2+):** WhatsApp Cloud API (requires business account) or WhatsApp Web protocol (legally gray, e.g. Baileys)
 - **Limitation:** Weakest connector. Fragile, text-only, no history. Requires WhatsApp to open up or regulation to force interoperability (EU DMA).
 
-### Calendar Connector
+### Calendar (via OpenClaw MCP)
 
-**Time is a Sense, not a Tool.** The Calendar is not something Dina delegates to an external agent — it's core sensory input. When an email says "Can we meet at 4 PM?", Dina must instantly know you have a dentist appointment. That requires a local SQLite check (microseconds), not a round-trip to OpenClaw (seconds). Calendar data is ingested into the vault like email — read-only cache of the external calendar, rolling window (-1 month / +1 year).
+**Time is a Sense, not a Tool.** Calendar data is ingested into the vault like email — a read-only cache of the external calendar, rolling window (-1 month / +1 year). When an email says "Can we meet at 4 PM?", brain queries the local vault (microseconds), not OpenClaw (seconds).
 
 The read/write split:
 
 | Direction | What | How |
 |-----------|------|-----|
 | **Read (Context)** | "Am I free at 4?" | Brain queries local vault — zero latency, zero network |
-| **Write (Simple)** | "Book 2 PM Tuesday" | Connector writes via Calendar API |
-| **Write (Complex)** | "Find a slot for 5 people across 3 timezones" | Delegate to OpenClaw — that's a *task*, not context |
+| **Write (Simple)** | "Book 2 PM Tuesday" | Brain → MCP → OpenClaw → Calendar API |
+| **Write (Complex)** | "Find a slot for 5 people across 3 timezones" | Brain → MCP → OpenClaw — that's a *task*, not context |
 
-- **Runs on:** Home Node
-- **Phase 1 API:** Google Calendar REST API (`google.golang.org/api/calendar/v3`). Covers vast majority of users. Well-documented, official Go client, 100% reliable.
-- **Phase 2 API:** CalDAV for non-Google users (Nextcloud, Apple Calendar, EteSync). Deferred because CalDAV implementations are mutually incompatible across providers on recurring events, timezone handling, and shared calendars.
-- **Pull:** Every 30 minutes or on-change webhook
-- **What's pulled:** Events, attendees, locations, descriptions
+- **Fetched by:** Brain → MCP → OpenClaw (Google Calendar API, `readonly` scope)
+- **Sync frequency:** Morning full sync + every 30 minutes
+- **What's fetched:** Events, attendees, locations, descriptions
+- **Phase 2:** CalDAV for non-Google users (Nextcloud, Apple Calendar). Deferred because CalDAV implementations are mutually incompatible across providers.
 
-### Contacts Connector
-- **Runs on:** Home Node
-- **API:** CardDAV (standard) or platform-specific (Google People API, Apple Contacts)
-- **Pull:** On-change sync
-- **What's pulled:** Names, phone numbers, emails, notes, relationships
+### Contacts (via OpenClaw MCP)
+- **Fetched by:** Brain → MCP → OpenClaw (Google People API or CardDAV)
+- **Sync frequency:** Daily (contacts change infrequently)
+- **What's fetched:** Names, phone numbers, emails, notes, relationships
 
-### Future Connectors (Phase 2+)
+### Future Senses (Phase 2+ — only after major traction)
+- **Direct Go polling connectors:** Reintroduce lightweight Go polling workers in core for 5-minute latency if hourly MCP sync proves insufficient. OAuth flow in core at that point.
 - **SMS:** Phone (Android Content Provider, read-only) — pushes to Home Node
 - **Photos:** Phone (local photo library scan: EXIF data, face detection for relationship mapping) — metadata pushed to Home Node
 - **Browser history:** Extension or local database read — pushes to Home Node
@@ -2114,16 +2414,17 @@ Dina acknowledges that user identity evolves. Syncing 10 years of email history 
 The mistake: syncing all history on first connect, blocking the main thread for hours. The fix: **sync recent data first, backfill later.**
 
 ```
-STARTUP SYNC PROTOCOL:
+STARTUP SYNC PROTOCOL (Brain orchestrates via MCP):
 
-  1. FAST SYNC (blocking): Fetch last 30 days (or 100 items, whichever is smaller)
-     └─► Metadata fetch → triage → full download only for PRIMARY emails
-     └─► Takes seconds. Connector status → ACTIVE. Agent is "Ready."
+  1. FAST SYNC (blocking): Brain → MCP → OpenClaw: "fetch last 30 days of email"
+     └─► OpenClaw returns structured JSON
+     └─► Brain triages (see Ingestion Triage) → stores in vault
+     └─► Takes seconds. Sync status → ACTIVE. Agent is "Ready."
          User can ask questions immediately.
 
-  2. BACKFILL ("The Historian"): Low-priority background thread fetches
-     remaining data up to DINA_HISTORY_DAYS (default: 365 days).
-     └─► Metadata fetch → triage → full download for PRIMARY only.
+  2. BACKFILL ("The Historian"): Brain fetches remaining data via MCP
+     up to DINA_HISTORY_DAYS (default: 365 days).
+     └─► OpenClaw returns batches → Brain triages → stores PRIMARY only.
      └─► Skipped emails stored as thin records (subject + sender only).
      └─► Processes in batches of 100 (see batch ingestion protocol).
      └─► Pauses when user issues a query (user queries always take priority).
@@ -2149,8 +2450,8 @@ PASS-THROUGH SEARCH PROTOCOL:
   2. Step 1 (Hot Memory): Search local vault (last 365 days)
      └─► Found? Show it. Done.
   3. Step 2 (Cold Fallback): Not found, or query explicitly mentions old date.
-     └─► Construct provider API query: Gmail search "invoice contractor before:2025/02/18"
-     └─► Fetch matching emails from Gmail API (read-only)
+     └─► Brain → MCP → OpenClaw: "search Gmail for 'invoice contractor before:2025/02/18'"
+     └─► OpenClaw fetches matching emails from Gmail API (read-only)
      └─► Show results to user
      └─► Do NOT save to vault. This data stays cold.
 ```
@@ -2173,14 +2474,14 @@ PASS-THROUGH SEARCH PROTOCOL:
 | RAM (embeddings) | Very heavy | Moderate | Minimal |
 | Signal-to-noise | Very low (90%+ noise) | Low-moderate (70%+ noise in Primary) | High (noise filtered at source) |
 
-### Connector Security Rules
-1. Every connector uses the minimum possible permission scope (read-only always)
-2. OAuth tokens are key-wrapped (passphrase → Argon2id KEK → AES-256-GCM) in Tier 0, stored on the Home Node. Never stored as plaintext config values.
-3. Raw data is encrypted immediately upon ingestion — the normalizer outputs encrypted vault_items
-4. Connectors are sandboxed — a compromised Gmail connector cannot access WhatsApp data
-5. User can see every connector's status, last pull time, and data volume. Full transparency.
-6. Phone-based connectors (WhatsApp, SMS) authenticate to Home Node with device-delegated keys before pushing data
-7. OAuth token lifecycle is managed by a health state machine (ACTIVE → NEEDS_REFRESH → EXPIRED → REVOKED). Auto-refresh before expiry. On failure, Tier 2 notification. Never poll with an invalid token.
+### Ingestion Security Rules
+1. **Core never calls external APIs.** All fetching goes through Brain → MCP → OpenClaw. Core is a pure storage kernel.
+2. **Data is encrypted immediately upon storage.** Brain calls `POST /v1/vault/store` → Core writes to the SQLCipher-encrypted persona database. No plaintext staging.
+3. **OpenClaw is sandboxed.** OpenClaw has no access to the vault, keys, or personas. It receives task requests ("fetch emails") and returns structured JSON. A compromised OpenClaw cannot read existing memories.
+4. **Brain scrubs before storing.** Data from OpenClaw passes through PII scrubbing (Tier 1 regex + Tier 2 spaCy) before brain sends summaries to cloud LLMs for reasoning.
+5. **User can see sync status.** Last successful sync, items ingested, current state — all visible in admin UI.
+6. **Phone-based connectors (WhatsApp, SMS) authenticate to Home Node with device-delegated keys** before pushing data. These bypass MCP — phone pushes directly to Core via DIDComm.
+7. **OAuth tokens live in OpenClaw, not in Dina.** Dina never touches Gmail/Calendar credentials. If OpenClaw is compromised, revoke its tokens — Dina's vault and identity are unaffected.
 
 ---
 
@@ -2662,24 +2963,246 @@ In Phase 2, the envelope becomes standard JWE (`application/didcomm-encrypted+js
 
 ### What Gets Shared (And What Doesn't)
 
-This is controlled by the sending Dina's sharing rules — configured by the user.
+This is controlled by the sending Dina's **Sharing Policy** — the Egress Gatekeeper. Default deny: if a rule doesn't exist for a contact + category combination, the data is blocked.
 
 ```
-Sharing Rules for "Sancho" (social persona):
-  ✓ Share: arrival/departure notifications
-  ✓ Share: context flags (family health, mood, life events)
-  ✓ Share: social preferences (tea preference, dietary)
-  ✗ Never share: financial data
-  ✗ Never share: health details beyond flags
-  ✗ Never share: professional data
-  
-Sharing Rules for "Seller ABC" (consumer persona):
-  ✓ Share: product requirements
-  ✓ Share: budget range (not exact budget)
-  ✓ Share: trust ring level
-  ✗ Never share: name, address, contact details
-  ✗ Never share: anything from any other persona
+Sharing Policy for "Sancho" (trust_level: trusted):
+  presence:      eta_only     ← "Arriving in 15 minutes" (not GPS coords)
+  availability:  free_busy    ← "Busy 2-3pm" (not meeting details)
+  context:       summary      ← "Working" (not "meeting with Dr. Patel")
+  preferences:   full         ← "Chai, no sugar, served warm"
+  location:      none         ← blocked
+  health:        none         ← blocked
+
+Sharing Policy for "Seller ABC" (trust_level: unknown):
+  preferences:   summary      ← "Looking for a chair under ₹15,000"
+  (all other categories: absent = none = blocked)
 ```
+
+#### Sharing Policy Storage
+
+Sharing policies are stored in `identity.sqlite` in the `contacts` table. Contacts are global — they belong to identity, not to a persona. People span contexts (Dr. Patel sends lab results AND cricket chat). Each contact has a `sharing_policy` JSON column defining per-category sharing tiers.
+
+```sql
+-- In identity.sqlite (Tier 0) — NO persona column. People are cross-cutting.
+CREATE TABLE contacts (
+    did              TEXT PRIMARY KEY,
+    name             TEXT,
+    alias            TEXT,
+    trust_level      TEXT DEFAULT 'unknown',  -- 'blocked', 'unknown', 'trusted'
+    sharing_policy   TEXT,                    -- JSON blob (the rulebook)
+    created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_contacts_trust ON contacts(trust_level);
+```
+
+#### Policy Tier System
+
+Every category uses a consistent tier system. Missing key = `"none"` = denied.
+
+| Tier | Meaning | Example |
+|------|---------|---------|
+| `"none"` | Nothing shared. Same as key being absent. | — |
+| `"summary"` | High-level only. No names, times, or specifics. | "Busy this afternoon" |
+| `"full"` | Complete details. | "In meeting with Dr. Patel at Apollo Hospital until 3pm" |
+
+Domain-specific tiers map to base tiers:
+
+| Category | Custom Tiers | Maps To |
+|----------|-------------|---------|
+| `presence` | `"eta_only"` → summary, `"exact_location"` → full | Arriving ~15min vs GPS coords |
+| `availability` | `"free_busy"` → summary, `"full_details"` → full | "Busy 2-3pm" vs "Meeting with Sancho re: quarterly review" |
+
+**Recognized categories (Phase 1):**
+
+| Category | Description | Example Data |
+|----------|-------------|-------------|
+| `presence` | Home/away/arriving/departing | "Arriving in 15 minutes" |
+| `availability` | Calendar-derived free/busy | "Free at 3pm, next meeting at 4:30" |
+| `context` | Current activity state | "Working", "In a meeting", "Driving" |
+| `preferences` | Food, drink, environment | "Prefers chai, no sugar" |
+| `location` | Geographic position | City-level or GPS coordinates |
+| `health` | Wellness, medical, fitness | "Recovering from flu" |
+
+New categories can be added over time via chat or admin UI — the system is not limited to this list.
+
+#### Sharing Policy API
+
+**`GET /v1/contacts/:did/policy` — Read policy**
+
+```json
+// Request
+// GET /v1/contacts/did:plc:sancho.../policy
+// Authorization: Bearer <BRAIN_TOKEN>
+
+// Response 200
+{
+  "did": "did:plc:sancho...",
+  "name": "Sancho",
+  "trust_level": "trusted",
+  "sharing_policy": {
+    "presence": "eta_only",
+    "availability": "free_busy",
+    "context": "summary",
+    "preferences": "full",
+    "location": "none",
+    "health": "none"
+  }
+}
+```
+
+**`PATCH /v1/contacts/:did/policy` — Partial update (only specified keys change)**
+
+```json
+// Request
+// PATCH /v1/contacts/did:plc:sancho.../policy
+// Authorization: Bearer <BRAIN_TOKEN>
+{
+  "location": "exact_location",
+  "health": "summary"
+}
+
+// Response 200
+{
+  "did": "did:plc:sancho...",
+  "sharing_policy": {
+    "presence": "eta_only",
+    "availability": "free_busy",
+    "context": "summary",
+    "preferences": "full",
+    "location": "exact_location",
+    "health": "summary"
+  }
+}
+```
+
+**`PATCH /v1/contacts/policy/bulk` — Bulk update by filter**
+
+```json
+// Request — turn off location sharing for all trusted contacts
+{
+  "filter": { "trust_level": "trusted" },
+  "policy": { "location": "none" }
+}
+
+// Response 200
+{ "updated": 12 }
+```
+
+#### Egress Enforcement (Go Core)
+
+**Enforcement is at egress, not ingress.** Core inspects outbound data payloads, not inbound questions. This eliminates the risk of LLM misclassification causing data leaks — a crafted incoming message cannot trick the system into sharing more than the policy allows.
+
+```
+Brain prepares response payload for Sancho
+  → Brain calls POST /v1/dina/send with payload
+  → Core intercepts
+  → Core inspects payload: what categories of data are present?
+  → Core queries: SELECT sharing_policy FROM contacts WHERE did = ?
+  → For each data category in payload:
+       policy tier >= required tier?  → allow
+       policy tier < required tier?   → strip from payload
+       policy key missing?            → strip (default deny)
+  → Core sends sanitized payload via NaCl
+  → Core logs egress decision to audit_log
+```
+
+**Brain payload convention:** Brain always provides maximum detail in a tiered structure. Core strips down based on policy. Brain never needs to know the policy.
+
+```json
+// Brain sends this to core:
+{
+  "to": "did:plc:sancho...",
+  "data": {
+    "availability": {
+      "summary": "Busy from 2-3pm",
+      "full": "Meeting with Dr. Patel at Apollo Hospital, 2-3pm, quarterly review"
+    },
+    "preferences": {
+      "summary": "Prefers hot beverages",
+      "full": "Chai, no sugar, served warm. Allergic to dairy."
+    },
+    "presence": {
+      "summary": "Arriving in about 15 minutes",
+      "full": "Currently at 12.9716° N, 77.5946° E, ETA 14 min via MG Road"
+    }
+  }
+}
+
+// Core picks "summary" or "full" per category based on sharing_policy.
+// If tier is "none" or missing, the entire category is dropped.
+```
+
+**Security invariants:**
+1. **Default deny.** Missing key = `"none"` = blocked. No exceptions.
+2. **Egress, not ingress.** Policy is checked on outbound data, not inbound questions.
+3. **Core enforces, Brain suggests.** Brain can recommend policy changes. Only Core enforces them.
+4. **Strict typing.** Malformed payload (raw string instead of `{"summary": "...", "full": "..."}`) → category dropped entirely. Malformed = denied.
+5. **Prompt injection irrelevant.** Enforcement is in compiled Go code checking a SQL table — not in LLM reasoning.
+6. **Trust level ≠ sharing.** A contact being "trusted" doesn't auto-share anything. Trust and policy are independent.
+7. **Audit everything.** Every egress decision is logged with timestamp, contact, category, decision, and reason. 90-day rolling retention.
+
+8. **No implicit sharing.** A contact being "trusted" doesn't auto-share anything beyond the defaults. Trust level and sharing policy are independent.
+
+#### User Configuration (UX)
+
+Users manage sharing rules through three interfaces. All three call the same Core API.
+
+**1. Chat (primary — natural language):**
+
+```
+User: "Let Sancho see when I'm arriving"
+Brain: PATCH /v1/contacts/did:plc:sancho/policy → {"presence": "eta_only"}
+Brain: "Done. Sancho can see your estimated arrival time,
+        but not your exact location."
+
+User: "Stop sharing my location with everyone"
+Brain: PATCH /v1/contacts/policy/bulk → {"filter": {}, "policy": {"location": "none"}}
+Brain: "Location sharing turned off for all contacts."
+
+User: "What can Sancho see about me?"
+Brain: GET /v1/contacts/did:plc:sancho/policy
+Brain: "Sancho can see:
+        ✓ Arrival ETA (but not exact location)
+        ✓ Whether you're free or busy (but not meeting details)
+        ✓ General context (working/relaxing)
+        ✓ All preferences (food, drinks, environment)
+        ✗ Exact location
+        ✗ Health information"
+```
+
+**2. Admin Web UI:** `/admin/contacts/:did` — toggle switches and dropdown selectors per category. Maps directly to `PATCH /v1/contacts/:did/policy`.
+
+**3. Defaults for new contacts** (applied when a contact is first added):
+
+```json
+// config.json
+{
+  "sharing_defaults": {
+    "presence": "eta_only",
+    "availability": "free_busy",
+    "context": "summary",
+    "preferences": "full",
+    "location": "none",
+    "health": "none"
+  }
+}
+```
+
+Safe defaults: harmless context shared (arrival ETA, free/busy, preferences). Sensitive data off (exact location, health). User can override per-contact at any time.
+
+#### Sharing Audit Trail
+
+Every egress decision is logged:
+
+```sql
+INSERT INTO audit_log (timestamp, action, contact_did, category, decision, reason)
+VALUES (datetime('now'), 'egress_check', 'did:plc:sancho...', 'location', 'denied', 'tier_none');
+```
+
+Creates a complete record of what was shared, with whom, and when. Subject to the 90-day rolling retention policy.
 
 ### Transport Layer
 
@@ -2696,7 +3219,7 @@ How do messages physically travel between Dinas?
 **Outbound message retry specification:**
 
 ```sql
--- In core's system.sqlite — outbound message queue
+-- In identity.sqlite — outbound message queue
 CREATE TABLE outbox (
     id          TEXT PRIMARY KEY,     -- ULID
     to_did      TEXT NOT NULL,
@@ -2713,7 +3236,7 @@ CREATE TABLE outbox (
 | **Max retries** | 5 |
 | **Backoff schedule** | 30s → 1m → 5m → 30m → 2h (exponential with jitter) |
 | **Message TTL** | 24 hours (messages older than this are dropped, not retried) |
-| **Queue persistence** | Outbox is in system.sqlite — survives reboot |
+| **Queue persistence** | Outbox is in identity.sqlite — survives reboot |
 | **Queue size limit** | 100 pending messages (reject new sends if full) |
 | **After exhaustion** | Mark `status = 'failed'`, notify user via Tier 2 nudge |
 | **Scheduler** | Core checks outbox every 30s: `next_retry < now() AND status = 'pending'` |
@@ -3336,7 +3859,7 @@ Dina does not have a general-purpose scheduler. Scheduling is hard when you try 
 
 | Problem | Solution | Complexity |
 |---------|----------|-----------|
-| **Periodic tasks** (watchdog, connector polling, integrity checks) | Go ticker (`time.NewTicker`) | Trivial. Loop with a sleep. If you miss one, catch it next tick. No persistence needed — tickers restart with the process. |
+| **Periodic tasks** (watchdog, integrity checks) | Go ticker (`time.NewTicker`) | Trivial. Loop with a sleep. If you miss one, catch it next tick. No persistence needed — tickers restart with the process. Sync scheduling lives in brain, not core. |
 | **One-shot reminders** ("wake me at 5 AM", "license expires in 7 days") | Reminder loop on vault | 20 lines of Go. Store reminder in vault with trigger timestamp. One loop checks "what's next." |
 | **Complex scheduling** ("every Monday at 9 AM except holidays") | Delegate to calendar service via OpenClaw | Don't build it. Recurrence rules, timezone math, daylight saving — Google Calendar spent years getting this right. |
 
@@ -3602,8 +4125,8 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 | Component | Technology | Why |
 |-----------|-----------|-----|
 | **Home Node (dina-core)** | | |
-| Core runtime | Go + net/http (HTTP server) | Fast compilation, single static binary, excellent crypto stdlib, goroutines for concurrency |
-| Database | SQLite + SQLCipher + FTS5 (via `mutecomm/go-sqlcipher` with CGO) | Battle-tested, one encrypted file per persona, no separate DB server. SQLCipher provides transparent whole-database AES-256 encryption. FTS5 tokenizer: `unicode61 remove_diacritics 1` (multilingual — Hindi, Tamil, Kannada, etc.). Porter stemmer forbidden (English-only). Phase 3: ICU tokenizer for CJK. **Not** `mattn/go-sqlite3` — SQLCipher support was never merged into mainline mattn; it only exists in forks. `mutecomm/go-sqlcipher` embeds SQLCipher directly. CI must assert raw `.sqlite` bytes are not valid SQLite headers (proving encryption is active). |
+| Core runtime | Go + net/http (HTTP server) | Fast compilation, single static binary, excellent crypto stdlib, goroutines for concurrency. Pure sovereign kernel — no external API calls, no OAuth, no connector code. |
+| Database | SQLite + SQLCipher + FTS5 (via `mutecomm/go-sqlcipher` with CGO) | Battle-tested, per-persona encrypted `.sqlite` files (`identity.sqlite`, `personal.sqlite`, `health.sqlite`, etc.). Each file has its own HKDF-derived DEK. No separate DB server. SQLCipher provides transparent whole-database AES-256 encryption. FTS5 tokenizer: `unicode61 remove_diacritics 1` (multilingual — Hindi, Tamil, Kannada, etc.). Porter stemmer forbidden (English-only). Phase 3: ICU tokenizer for CJK. **Not** `mattn/go-sqlite3` — SQLCipher support was never merged into mainline mattn; it only exists in forks. `mutecomm/go-sqlcipher` embeds SQLCipher directly. CI must assert raw `.sqlite` bytes are not valid SQLite headers (proving encryption is active). |
 | Vector search | Phase 1: vectors stored and queried in dina-brain (Python, sqlite-vec). Phase 2: sqlite-vec in core via CGO. | Brain handles embeddings initially; core handles structured/FTS queries. Clean separation. |
 | PII scrubbing | Three tiers: (1) Regex in Go core (always), (2) spaCy NER in Python brain (always, ~15MB model), (3) LLM NER via llama:8080 (optional, `--profile local-llm`). | Tier 1+2 catch structured + contextual PII in all profiles. Tier 3 adds LLM-based detection for edge cases. |
 | Client ↔ Node protocol | Authenticated WebSocket (TLS + device-delegated key) | Encrypted channel, device key proves identity |
@@ -3627,13 +4150,13 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 | **Identity & Crypto** | | |
 | Identity | W3C DIDs (`did:plc` via PLC Directory) | Open standard, globally resolvable, key rotation, 30M+ identities, Go implementation available. Escape hatch: rotation op to `did:web`. |
 | Key management | SLIP-0010 HD derivation (Ed25519), BIP-39 mnemonic | Proven, Ed25519-compatible |
-| Vault encryption | SQLCipher (AES-256-CBC per page, transparent) | Whole-database encryption for persona vaults. FTS5/sqlite-vec indices encrypted transparently. |
+| Vault encryption | SQLCipher (AES-256-CBC per page, transparent) | Per-persona file encryption (`identity.sqlite`, `personal.sqlite`, `health.sqlite`, etc.). Each file has its own DEK. FTS5/sqlite-vec indices encrypted transparently within each file. |
 | Wire encryption (Phase 1) | libsodium: X25519 + XSalsa20-Poly1305 (`crypto_box_seal`) | Ephemeral sender keys, ISC license, available in every language |
 | Wire encryption (Phase 3) | Noise XX: X25519 + ChaChaPoly + SHA256 | Full forward secrecy for always-on Home Node sessions |
 | Key wrapping / archive | AES-256-GCM, X25519, Ed25519 | Industry standard for key wrapping, archive snapshots |
 | Identity key derivation | SLIP-0010 (hardened Ed25519 HD paths) | Ed25519-compatible, no unsafe public derivation. Go: `stellar/go/exp/crypto/derivation` |
-| Vault key derivation | HKDF-SHA256 (from persona key, domain-separated) | Symmetric keys for SQLCipher, independent per persona per tier |
-| Key storage (Home Node) | Key Wrapping: Passphrase → Argon2id (KEK) → AES-256-GCM wraps Master Key (DEK) | Standard key wrapping. Passphrase change re-wraps DEK without re-encrypting database. |
+| Vault key derivation | HKDF-SHA256 (from master seed, per-persona info strings) | Per-persona DEKs: `HKDF(info="dina:vault:personal:v1")`, `HKDF(info="dina:vault:health:v1")`, etc. |
+| Key storage (Home Node) | Key Wrapping: Passphrase → Argon2id (KEK) → AES-256-GCM wraps Master Seed | Standard key wrapping. Passphrase change re-wraps seed without re-encrypting any database. Per-persona DEKs derived at runtime via HKDF. |
 | Key storage (client) | Secure Enclave (iOS), StrongBox (Android), TPM (desktop) | Hardware-backed where available |
 | **Client Devices** | | |
 | Android client | Kotlin + Jetpack Compose | Native Android, NotificationListener for WhatsApp |
@@ -3665,9 +4188,9 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 | Off-site backup | Encrypted snapshots to S3/Backblaze | Covers disk failure, theft |
 | Deep archive (Tier 5) | AWS Glacier Deep Archive (Object Lock) or physical drive | Immutable cold storage — survives ransomware |
 | **Managed Hosting** | | |
-| Tenancy model | One SQLite file per user | OS-level isolation, trivial portability, true right-to-delete |
+| Tenancy model | Per-persona `.sqlite` files per user (Phase 1: `identity.sqlite` + `personal.sqlite`) | Per-file crypto isolation, trivial portability (`rm persona.sqlite`), true right-to-delete. Multi-tenant: `/var/lib/dina/users/<did>/` (future). |
 | Confidential computing | AWS Nitro Enclaves / AMD SEV-SNP / Intel TDX | Operator cannot read enclave memory, even with root access |
-| System database | SQLite or Postgres (tiny) | Routing, auth, billing only — no personal data |
+| System database | SQLite or Postgres (tiny) | Routing, auth, billing only — no personal data. Separate from user vaults. |
 
 ---
 
@@ -3678,7 +4201,7 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 The Home Node runs three containers by default, orchestrated by docker-compose: dina-core (Go/net/http — vault, keys, NaCl messaging, admin proxy), dina-brain (Python/Google ADK — agent reasoning + admin UI), and dina-pds (AT Protocol PDS — public Reputation Graph). An optional fourth container (llama — llama.cpp, local LLM) is available via `--profile local-llm`. No separate database server, no Kubernetes.
 
 **The docker-compose stack:**
-- **dina-core**: Go binary + SQLCipher vaults (one encrypted file per persona) — **private layer**. Ports: 443 (external), 8100 (internal). Reverse-proxies `/admin` to brain:8200/admin. Browser authentication gateway (session cookie → Bearer token translation).
+- **dina-core**: Go binary + SQLCipher vaults (`identity.sqlite` + per-persona `.sqlite` files) — **private layer**. Ports: 443 (external), 8100 (internal). Reverse-proxies `/admin` to brain:8200/admin. Browser authentication gateway (session cookie → Bearer token translation).
 - **dina-brain**: Python + Google ADK agent loop + Admin UI — **private layer**. Port: 8200 (unified — `/api/*` brain API, `/admin/*` admin UI, `/healthz` health).
 - **dina-pds**: AT Protocol PDS for Reputation Graph — **public layer** (reputation data only). Port: 2583 (external).
 - **llama** (optional): llama.cpp + Gemma 3n E4B GGUF — **private layer**. Port: 8080 (internal). Enabled via `--profile local-llm`.
@@ -3723,8 +4246,6 @@ services:
     secrets:
       - dina_passphrase
       - brain_token
-      - gmail_client_id
-      - gmail_client_secret
 
     # HEALTH: Brain won't start until this passes
     healthcheck:
@@ -3735,8 +4256,7 @@ services:
       start_period: 5s
 
     volumes:
-      - ./data/vault:/var/lib/dina/vault
-      - ./data/certs:/var/lib/dina/certs
+      - ./data:/var/lib/dina    # identity.sqlite, vault/, inbox/, keyfile, config.json
 
     depends_on:
       pds:
@@ -3769,6 +4289,14 @@ services:
     secrets:
       - brain_token
 
+    # HEALTH: Detects zombie brain process (reasoning loop hung, OOM, etc.)
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8200/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
     # DEPENDENCY: Won't start until Core is healthy (vault unlocked, DB ready)
     depends_on:
       core:
@@ -3797,6 +4325,14 @@ services:
     environment:
       - PDS_HOSTNAME=${DOMAIN:-localhost}
 
+    # HEALTH: Detects PDS crash or federation failure
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2583/xrpc/_health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   # -------------------------------------------------------------------
   # 4. LOCAL LLM (Optional — enabled via --profile local-llm)
   # -------------------------------------------------------------------
@@ -3812,6 +4348,14 @@ services:
     volumes:
       - ./data/models:/models
 
+    # HEALTH: Detects model load failure or inference hang
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s  # models take time to load into RAM
+
 # -------------------------------------------------------------------
 # SECRETS: File-based, never environment variables
 # -------------------------------------------------------------------
@@ -3820,10 +4364,6 @@ secrets:
     file: ./secrets/dina_passphrase.txt
   brain_token:
     file: ./secrets/brain_token.txt
-  gmail_client_id:
-    file: ./secrets/gmail_client_id.txt
-  gmail_client_secret:
-    file: ./secrets/gmail_client_secret.txt
 
 # -------------------------------------------------------------------
 # NETWORKS: Bowtie topology — Core is the hub
@@ -3913,7 +4453,7 @@ Run once before `docker compose up`. Generates secrets, sets permissions, preven
 set -e
 
 # 1. Create directory structure
-mkdir -p secrets data/vault data/certs data/pds
+mkdir -p secrets data/vault data/inbox data/pds data/models
 
 # 2. Generate the Brain Token (pre-shared secret, read by both core and brain)
 echo "Generating Brain Token..."
@@ -3925,16 +4465,7 @@ read -s -p "Enter a strong passphrase for your Vault: " pass
 echo ""
 echo "$pass" > secrets/dina_passphrase.txt
 
-# 4. Optional: OAuth credentials (can be added later via admin UI)
-echo ""
-echo "Press Enter to skip if you don't have these yet."
-read -p "Gmail OAuth Client ID: " gmail_id
-echo "$gmail_id" > secrets/gmail_client_id.txt
-read -s -p "Gmail OAuth Client Secret: " gmail_secret
-echo ""
-echo "$gmail_secret" > secrets/gmail_client_secret.txt
-
-# 5. Lock down permissions
+# 4. Lock down permissions
 chmod 700 secrets
 chmod 600 secrets/*
 
@@ -3962,10 +4493,13 @@ data/
 
 ```
 core:
-  ./data/vault/vault.sqlite     — encrypted vault (SQLCipher)
-  ./data/vault/keys/master.key  — convenience mode DEK (chmod 600)
-  ./data/vault/config.json      — gatekeeper tiers, connector config
-  ./data/certs/                 — TLS certificates (production only)
+  ./data/identity.sqlite        — Tier 0: contacts, sharing policy, audit log, kv_store (SQLCipher)
+  ./data/vault/personal.sqlite  — Phase 1: all content (SQLCipher, per-persona DEK)
+  ./data/vault/health.sqlite    — Phase 2: per-persona files (each with own DEK)
+  ./data/vault/...
+  ./data/keyfile                — convenience mode master seed (chmod 600, absent in security mode)
+  ./data/inbox/                 — Dead Drop spool (encrypted blobs, locked state)
+  ./data/config.json            — gatekeeper tiers, settings
 
 brain:
   (stateless — all state lives in core's vault)
@@ -3993,8 +4527,8 @@ brain:
 
 | Mode | What dina-core does at boot |
 |------|---------------------------|
-| **Security** | Reads `/run/secrets/dina_passphrase` → Argon2id → KEK → unwrap `master.key.enc` → DEK → `PRAGMA key`. Secret file is tmpfs-mounted, never on disk inside the container. |
-| **Convenience** | Ignores the secret. Reads `master.key` directly from `./data/vault/keys/master.key` (raw 32-byte DEK, `chmod 600`). |
+| **Security** | Reads `/run/secrets/dina_passphrase` → Argon2id → KEK → unwrap Master Seed → derive per-database DEKs via HKDF → `PRAGMA key` each database. Secret file is tmpfs-mounted, never on disk inside the container. |
+| **Convenience** | Ignores the secret. Reads Master Seed directly from `/var/lib/dina/keyfile` (`chmod 600`) → derive per-database DEKs via HKDF. |
 
 **Secret management rules:**
 - Credentials are **never** set as `environment:` variables in docker-compose — they would appear in `docker inspect`, `/proc/*/environ`, process listings, and crash dumps.
@@ -4020,7 +4554,7 @@ OPENCLAW_MCP_URL=http://host.docker.internal:3000  # OpenClaw on host machine
 DINA_VAULT_MODE=security         # "security" (passphrase) or "convenience" (auto-unlock)
 ```
 
-Six things total: domain, API key, OpenClaw URL, vault mode, plus the secrets generated by `install.sh` (passphrase, brain token, optional OAuth). Developer fills in `.env`, runs `./install.sh`, runs `docker compose up`, has a working Dina.
+Four things total: domain, API key, OpenClaw URL, vault mode, plus two secrets generated by `install.sh` (passphrase, brain token). No OAuth credentials needed — OpenClaw manages external API auth. Developer fills in `.env`, runs `./install.sh`, runs `docker compose up`, has a working Dina.
 
 **Three deployment profiles:**
 
@@ -4123,6 +4657,154 @@ QR CODE:
   6 digits + mDNS solves the real friction (finding the IP).
 ```
 
+### Client ↔ Home Node WebSocket Protocol
+
+After pairing, clients communicate with the Home Node over an authenticated WebSocket connection. This is the primary real-time channel for queries, responses, proactive whispers, and system notifications.
+
+**Connection and authentication:**
+
+```
+Phase 1 (auth frame — no token in URL):
+
+  1. Client connects:  wss://dina.local:8100/ws
+  2. Core accepts upgrade, starts 5-second auth timer
+  3. Client sends auth frame:
+       {"type": "auth", "token": "<CLIENT_TOKEN>"}
+  4. Core validates CLIENT_TOKEN against allowed-devices list
+       Valid:   {"type": "auth_ok", "device": "phone_pixel7"}
+       Invalid: {"type": "auth_fail"} → core closes connection
+       Timeout: core closes connection after 5s with no auth frame
+
+Phase 2 (session tokens — reduces token exposure):
+  POST /v1/auth/session {token: CLIENT_TOKEN}
+    → returns short-lived session_token (24h TTL)
+  Client connects with session_token in auth frame instead
+```
+
+**Message envelope — all messages are JSON with `type`/`id`/`payload`:**
+
+```json
+// ─── Client → Core ───
+
+// User asks a question
+{
+  "type": "query",
+  "id": "req_001",
+  "payload": {
+    "text": "Am I free at 3pm today?",
+    "persona": "/personal"
+  }
+}
+
+// User action (connect service, unlock persona, etc.)
+{
+  "type": "command",
+  "id": "req_002",
+  "payload": { "action": "unlock_persona", "persona": "/financial" }
+}
+
+// Client acknowledges receipt of a message
+{
+  "type": "ack",
+  "id": "evt_003"
+}
+
+// Heartbeat response
+{ "type": "pong", "ts": 1708300000 }
+```
+
+```json
+// ─── Core → Client ───
+
+// Streaming response to a query (brain is thinking)
+{
+  "type": "whisper_stream",
+  "reply_to": "req_001",
+  "payload": { "chunk": "Looking at your calendar... " }
+}
+
+// Final response to a query
+{
+  "type": "whisper",
+  "reply_to": "req_001",
+  "payload": {
+    "text": "You're free at 3pm. Your next meeting is at 4:30.",
+    "sources": ["calendar:event:abc123"]
+  }
+}
+
+// Proactive whisper (no request — brain initiated)
+{
+  "type": "whisper",
+  "id": "evt_003",
+  "payload": {
+    "text": "Sancho just left home. He'll arrive in about 15 minutes.",
+    "trigger": "didcomm:geofence:sancho:departed",
+    "tier": 2
+  }
+}
+
+// System notification (watchdog, connector status)
+{
+  "type": "system",
+  "id": "sys_004",
+  "payload": {
+    "level": "warning",
+    "text": "Gmail hasn't synced in 48 hours. Re-authenticate?"
+  }
+}
+
+// Heartbeat
+{ "type": "ping", "ts": 1708300000 }
+
+// Error
+{
+  "type": "error",
+  "reply_to": "req_002",
+  "payload": { "code": 403, "message": "/financial requires approval" }
+}
+```
+
+**Message type summary:**
+
+| Direction | Type | Purpose |
+|-----------|------|---------|
+| Client → Core | `auth` | Authenticate after connect (5s timeout) |
+| Client → Core | `query` | User asks a question |
+| Client → Core | `command` | User action (unlock persona, connect service) |
+| Client → Core | `ack` | Acknowledge receipt of proactive message |
+| Client → Core | `pong` | Heartbeat response |
+| Core → Client | `auth_ok` / `auth_fail` | Auth result |
+| Core → Client | `whisper_stream` | Streaming response chunk (`reply_to` links to request) |
+| Core → Client | `whisper` | Final response or proactive insight |
+| Core → Client | `system` | Watchdog alerts, connector status |
+| Core → Client | `ping` | Heartbeat (every 30s) |
+| Core → Client | `error` | Failed request |
+
+**Routing logic:** `reply_to` present → response to a client request (match to pending `id`). `reply_to` absent → proactive event from brain or system.
+
+**Heartbeat and reconnection:**
+
+```
+Heartbeat:
+  Core sends {"type": "ping"} every 30 seconds
+  Client responds {"type": "pong"} within 10 seconds
+  3 missed pongs → core closes connection, marks device offline
+
+Reconnection (client-side):
+  Client detects disconnect → exponential backoff
+  1s → 2s → 4s → 8s → 16s → max 30s
+  On reconnect: send auth frame again → core replays buffered messages
+
+Missed message buffer (core-side, per device):
+  Max 50 messages, max 5 minutes retention
+  On reconnect: core sends buffered messages in order
+  Client ACKs each → ACKed messages removed from buffer
+  After 5 min: buffer expires, messages gone
+  Why 5 min, not longer: if phone is offline for hours, brain
+  generates a fresh briefing instead of replaying stale notifications
+```
+
 ### Push Notifications (Home Node → Client)
 
 When the Home Node has new data (ingested email, incoming Dina-to-Dina message, scheduled reminder), how does the client find out?
@@ -4157,7 +4839,7 @@ When the Home Node has new data (ingested email, incoming Dina-to-Dina message, 
 | **Blockchain (L1)** | Gas costs, latency, complexity. Immutability violates sovereignty (right to delete). Federated servers + signed tombstones handle the Reputation Graph. Only use case is L2 Merkle root hash anchoring for timestamp proofs (Phase 3). |
 | **CRDTs / Automerge** | Designed for peer-to-peer conflict resolution. With a Home Node as source of truth, client-server sync is simpler and sufficient. May reconsider for Phase 3 if we add collaborative features. |
 
-Guiding principle: **one user, a handful of containers, one machine, one SQLite file per persona, one always-on endpoint.**
+Guiding principle: **one user, a handful of containers, one machine, per-persona encrypted vaults, one always-on endpoint.**
 
 ---
 
