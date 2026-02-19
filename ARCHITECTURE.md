@@ -1337,6 +1337,8 @@ Persona Key (Ed25519 private key from SLIP-0010)
 
 **Go implementation:** Use `github.com/stellar/go/exp/crypto/derivation` or equivalent SLIP-0010 library. Do not roll custom Ed25519 HD derivation.
 
+**Design decision: Ed25519→X25519 key reuse.** Each persona's Ed25519 signing key is also used for DIDComm encryption by converting it to an X25519 key via libsodium's `crypto_sign_ed25519_sk_to_curve25519`. This is a conscious decision, not an oversight. The Ed25519→X25519 conversion is mathematically well-defined (both curves are birationally equivalent — Ed25519 is a twisted Edwards form of Curve25519), and libsodium explicitly supports and tests this path. The alternative — maintaining separate signing and encryption keypairs per persona — doubles key management complexity, doubles SLIP-0010 derivation paths, and doubles the backup surface, with no practical security benefit for our threat model. This reuse is safe specifically because Ed25519→X25519 is a one-way derivation (the signing key derives the encryption key, not vice versa), and because we use ephemeral X25519 keypairs per message (`crypto_box_seal`), so compromise of any single message's ephemeral key does not compromise the static signing key.
+
 **Critical security property:** Personas are cryptographically unlinkable. Knowing the consumer keypair tells you nothing about the health keypair — hardened derivation means each child key is derived from the parent seed plus an index, with no mathematical relationship between siblings. Even Dina's own code cannot cross compartments without the root key authorizing a specific, logged operation.
 
 **Data isolation: Separate SQLite files per persona (Multi-Vault Architecture).** Each persona gets its own SQLCipher-encrypted SQLite file, with its own passphrase derived from the persona key. This is physical separation, not logical — there is no shared database with a `persona_id` column.
@@ -1392,6 +1394,8 @@ Persona Access Tiers (configured by user, stored in config.json):
 ```json
 {"ts": "2026-02-18T03:15:00Z", "persona": "/health", "action": "query", "requester": "brain", "query_type": "fts", "reason": "nudge_assembly"}
 ```
+
+**Audit log retention:** Rolling 90-day window (configurable via `config.json`: `"audit": {"retention_days": 90}`). Core's watchdog runs `DELETE FROM audit_log WHERE timestamp < datetime('now', '-90 days')` daily. At ~100 entries/day × 200 bytes, this is ~1.8MB for 90 days — trivial, but unbounded growth is still a bug. Raw entries are kept for forensics (not summarized — "brain accessed /financial 847 times" is useless vs. timestamped entries showing when a suspicious pattern started).
 
 ### Zero-Knowledge Proof Credentials (Trust Rings)
 

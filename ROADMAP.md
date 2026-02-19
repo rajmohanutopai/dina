@@ -228,6 +228,8 @@ The following items were **missing from the original roadmap** but are described
 | (architectural decision) Outbound message retry | 1b | Issue #19 — Outbox table in system.sqlite. 5 retries, 30s→2h exponential backoff, 24h TTL, 100-message queue cap. User notified after exhaustion. |
 | (architectural decision) Embedding migration | 2 | Issue #16 — Model name stored in vault metadata. On change: drop sqlite-vec index, background re-embed, FTS5 stays available. No dual-index needed — vault sizes are small enough for full rebuild. |
 | (architectural decision) Dead Drop 3-valve DoS defense | 1b | Issue #10 — State-aware ingress: fast path (in-memory) when unlocked, dead drop when locked. Valve 1: IP rate limit. Valve 2: 500MB spool cap, reject-new. Valve 3: sweeper feedback blocklist. |
+| (architectural decision) Audit log 90-day retention | 1a | Issue #20 — Rolling 90-day window, daily watchdog cleanup, configurable. |
+| (architectural decision) Ed25519→X25519 key reuse | All | Issue #25 — Documented as conscious design decision. Conversion is mathematically safe (birational equivalence, libsodium-supported), avoids doubling key management. Ephemeral X25519 per message adds forward secrecy. |
 
 ## Known Inconsistencies Resolved
 
