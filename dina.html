@@ -1,0 +1,1826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dina — Architecture Visualization</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;1,600;1,700&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-primary: #FAF8F5;
+  --bg-secondary: #FFFFFF;
+  --bg-tertiary: #F0EDE8;
+  --bg-card: #FFFFFF;
+  --border: rgba(0,0,0,0.07);
+  --text-primary: #1C1917;
+  --text-secondary: #57534E;
+  --text-muted: #A8A29E;
+  --accent: #1C1917;
+  --accent-hover: #44403C;
+  --l0: #DC2626; --l1: #D97706; --l2: #059669; --l3: #7C3AED;
+  --l4: #2563EB; --l5: #EA580C; --l6: #0D9488; --l7: #9333EA;
+  --c-core: #2563EB; --c-brain: #059669; --c-pds: #7C3AED; --c-llama: #D97706;
+  --font-sans: 'Figtree', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --radius: 14px;
+  --radius-lg: 20px;
+  --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.03), 0 4px 12px rgba(0,0,0,0.04);
+  --shadow-md: 0 2px 4px rgba(0,0,0,0.03), 0 10px 32px rgba(0,0,0,0.07);
+  --shadow-lg: 0 4px 8px rgba(0,0,0,0.04), 0 20px 56px rgba(0,0,0,0.1);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; scroll-padding-top: 72px; }
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+a { color: var(--text-primary); text-decoration: underline; text-decoration-color: rgba(0,0,0,0.2); text-underline-offset: 3px; transition: var(--transition); }
+a:hover { text-decoration-color: var(--text-primary); }
+code, .mono { font-family: var(--font-mono); font-size: 0.88em; }
+.code-inline {
+  background: var(--bg-tertiary); padding: 2px 8px; border-radius: 6px;
+  font-family: var(--font-mono); font-size: 0.84em; color: #78350F;
+}
+
+/* === NAV === */
+nav {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(250,248,245,0.82); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 4px;
+  padding: 0 32px; height: 60px;
+  overflow-x: auto; white-space: nowrap;
+}
+nav .logo {
+  font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 800; font-size: 1.12em;
+  color: var(--text-primary); margin-right: 24px; flex-shrink: 0;
+  letter-spacing: -0.3px;
+}
+nav a.nav-link {
+  font-family: 'Plus Jakarta Sans', sans-serif; color: var(--text-muted);
+  font-size: 0.7em; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 8px 12px; border-radius: 8px; transition: var(--transition); flex-shrink: 0;
+  text-decoration: none; position: relative;
+}
+nav a.nav-link::after {
+  content: ''; position: absolute; bottom: 2px; left: 50%; width: 0; height: 2px;
+  background: var(--text-primary); transition: var(--transition); transform: translateX(-50%);
+  border-radius: 2px;
+}
+nav a.nav-link:hover, nav a.nav-link.active { color: var(--text-primary); text-decoration: none; }
+nav a.nav-link:hover::after, nav a.nav-link.active::after { width: 55%; }
+nav .search-hint {
+  margin-left: auto; color: var(--text-muted); font-size: 0.76em;
+  border: 1px solid var(--border); padding: 5px 14px; border-radius: 100px;
+  cursor: pointer; flex-shrink: 0; transition: var(--transition);
+}
+nav .search-hint:hover { border-color: var(--text-secondary); color: var(--text-secondary); }
+nav .search-hint kbd { font-family: var(--font-mono); font-size: 0.9em; }
+
+/* === SECTIONS === */
+section { padding: 100px 32px 60px; max-width: 1280px; margin: 0 auto; position: relative; }
+section:first-of-type { padding-top: 140px; }
+.section-title {
+  font-family: 'Plus Jakarta Sans', sans-serif; font-size: 2.4em; font-weight: 800; margin-bottom: 12px;
+  display: flex; align-items: center; gap: 16px;
+  letter-spacing: -0.5px; line-height: 1.15;
+}
+.section-title .badge {
+  font-family: 'Plus Jakarta Sans', sans-serif; font-size: 0.36em; padding: 5px 14px; border-radius: 100px;
+  font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+  background: var(--bg-tertiary); color: var(--text-secondary);
+}
+.section-subtitle { color: var(--text-secondary); font-size: 1.08em; margin-bottom: 44px; max-width: 680px; line-height: 1.8; }
+
+/* === HERO === */
+#hero { text-align: center; padding-top: 160px; padding-bottom: 100px; }
+#hero h1 {
+  font-family: 'Plus Jakarta Sans', sans-serif; font-size: clamp(0.85rem, 1.3vw, 1rem);
+  font-weight: 700; letter-spacing: 0.25em; text-transform: uppercase;
+  margin-bottom: 0; color: var(--text-muted); line-height: 1;
+}
+#hero h1 span {
+  display: block; font-family: 'Cormorant Garamond', Georgia, serif;
+  font-style: italic; font-weight: 600;
+  font-size: clamp(3rem, 7vw, 5.5rem); letter-spacing: -2px;
+  margin-top: 16px; color: var(--text-primary);
+  -webkit-background-clip: unset; -webkit-text-fill-color: unset;
+  text-transform: none; line-height: 1.08;
+}
+#hero .tagline { color: var(--text-secondary); font-size: 1.1em; max-width: 540px; margin: 32px auto 60px; line-height: 1.8; }
+.stats-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+  gap: 16px; max-width: 880px; margin: 0 auto;
+}
+.stat-card {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 28px 16px; text-align: center;
+  transition: var(--transition); box-shadow: var(--shadow-sm);
+}
+.stat-card:hover { box-shadow: var(--shadow-md); transform: translateY(-3px); }
+.stat-card .num { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 2.6em; font-weight: 800; line-height: 1; }
+.stat-card .label { font-size: 0.8em; color: var(--text-muted); margin-top: 6px; letter-spacing: 0.04em; }
+
+/* === CARDS GRID === */
+.cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+.card {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 28px; transition: var(--transition);
+  position: relative; overflow: hidden; box-shadow: var(--shadow-sm);
+}
+.card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+.card h3 { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 1.05em; font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 10px; }
+.card p { color: var(--text-secondary); font-size: 0.9em; line-height: 1.7; }
+.card .card-tag {
+  display: inline-block; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 0.62em;
+  padding: 3px 10px; border-radius: 100px; font-weight: 700;
+  margin-bottom: 10px; letter-spacing: 0.05em; text-transform: uppercase;
+}
+
+/* === LAYER STRIP === */
+.layer-strip {
+  display: flex; gap: 6px; margin-bottom: 28px; overflow-x: auto; padding: 4px;
+}
+.layer-strip .layer-tab {
+  flex: 1; padding: 14px 8px; text-align: center; font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 0.74em; font-weight: 700; cursor: pointer;
+  transition: var(--transition); opacity: 0.55; min-width: 0;
+  border: 1px solid transparent; border-radius: 12px;
+}
+.layer-strip .layer-tab:hover { opacity: 0.85; transform: translateY(-2px); }
+.layer-strip .layer-tab.active {
+  opacity: 1; border-color: currentColor;
+  box-shadow: 0 2px 12px currentColor;
+}
+.layer-detail {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 36px; display: none;
+  box-shadow: var(--shadow-sm);
+}
+.layer-detail.active { display: block; }
+.layer-detail h3 { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 1.4em; font-weight: 800; margin-bottom: 16px; }
+.layer-detail .layer-content { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.layer-detail .layer-content .detail-list { list-style: none; }
+.layer-detail .layer-content .detail-list li {
+  padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 0.9em;
+  display: flex; align-items: flex-start; gap: 10px; line-height: 1.6;
+}
+.layer-detail .layer-content .detail-list li::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  flex-shrink: 0; margin-top: 10px;
+}
+
+/* === SVG DIAGRAMS === */
+.diagram-container {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 28px; margin: 28px 0;
+  overflow-x: auto; box-shadow: var(--shadow-md);
+}
+.diagram-container svg { width: 100%; height: auto; display: block; }
+.diagram-container svg text { font-family: var(--font-sans); }
+.diagram-container svg .mono-text { font-family: var(--font-mono); }
+
+/* === TECH GRID === */
+.tech-domain { margin-bottom: 36px; }
+.tech-domain h3 {
+  font-family: 'Plus Jakarta Sans', sans-serif; font-size: 1.1em; font-weight: 700;
+  margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid var(--border);
+}
+.tech-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.tech-card {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 18px; cursor: pointer;
+  transition: var(--transition); position: relative; box-shadow: var(--shadow-sm);
+}
+.tech-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.tech-card .tech-name { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 700; font-size: 0.92em; margin-bottom: 4px; }
+.tech-card .tech-brief { font-size: 0.8em; color: var(--text-secondary); }
+
+/* === NETWORKING TABLE === */
+.compare-table { width: 100%; border-collapse: collapse; margin: 28px 0; font-size: 0.88em; }
+.compare-table th, .compare-table td { padding: 14px 18px; text-align: left; border-bottom: 1px solid var(--border); }
+.compare-table th {
+  font-family: 'Plus Jakarta Sans', sans-serif; color: var(--text-muted); font-weight: 700;
+  font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.1em;
+}
+.compare-table td { color: var(--text-primary); }
+.compare-table tr:hover td { background: rgba(0,0,0,0.015); }
+.check { color: var(--l2); font-weight: 600; } .cross { color: var(--l0); }
+
+/* === SCENARIO === */
+.scenario { margin-bottom: 20px; }
+.scenario-header {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 24px 28px; cursor: pointer;
+  display: flex; align-items: center; gap: 18px; transition: var(--transition);
+  box-shadow: var(--shadow-sm);
+}
+.scenario-header:hover { box-shadow: var(--shadow-md); }
+.scenario-header .scenario-icon { font-size: 1.6em; }
+.scenario-header h3 { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 1.08em; font-weight: 700; }
+.scenario-header p { font-size: 0.85em; color: var(--text-secondary); }
+.scenario-header .chevron { margin-left: auto; transition: var(--transition); color: var(--text-muted); }
+.scenario.open .scenario-header .chevron { transform: rotate(180deg); }
+.scenario-body {
+  display: none; padding: 28px; background: var(--bg-secondary);
+  border: 1px solid var(--border); border-top: none;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.scenario.open .scenario-body { display: block; }
+.scenario-step {
+  padding: 14px 0; border-bottom: 1px solid var(--border);
+  display: flex; gap: 14px; font-size: 0.9em; line-height: 1.7;
+}
+.scenario-step:last-child { border-bottom: none; }
+.scenario-step .step-marker {
+  width: 26px; height: 26px; border-radius: 50%; background: var(--bg-tertiary);
+  border: 1px solid var(--border); flex-shrink: 0; display: flex;
+  align-items: center; justify-content: center;
+  font-family: 'Plus Jakarta Sans', sans-serif; font-size: 0.68em; font-weight: 700;
+}
+
+/* === FUNCTIONAL STORY SECTIONS === */
+.story-flow { display: flex; flex-direction: column; gap: 32px; }
+.story-block {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 36px; box-shadow: var(--shadow-sm);
+  transition: var(--transition); position: relative;
+}
+.story-block:hover { box-shadow: var(--shadow-md); }
+.story-block h3 {
+  font-family: 'Plus Jakarta Sans', sans-serif; font-size: 1.15em;
+  font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; gap: 12px;
+}
+.story-block h3 .block-num {
+  width: 28px; height: 28px; border-radius: 50%; display: flex;
+  align-items: center; justify-content: center; font-size: 0.72em;
+  font-weight: 700; flex-shrink: 0; color: #FFFFFF;
+}
+.story-block p { color: var(--text-secondary); font-size: 0.92em; line-height: 1.75; }
+.story-block .highlight {
+  background: var(--bg-tertiary); border-radius: 10px; padding: 18px 22px;
+  margin-top: 16px; font-size: 0.88em; line-height: 1.7; color: var(--text-primary);
+  border-left: 3px solid var(--text-muted);
+}
+.story-block .highlight em { color: var(--text-secondary); }
+.story-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
+.story-cols .col-card {
+  background: var(--bg-tertiary); border-radius: 10px; padding: 18px;
+}
+.story-cols .col-card h4 {
+  font-family: 'Plus Jakarta Sans', sans-serif; font-size: 0.88em;
+  font-weight: 700; margin-bottom: 8px;
+}
+.story-cols .col-card p { font-size: 0.84em; }
+.trust-ring-bar { display: flex; gap: 12px; margin-top: 20px; }
+.trust-ring-bar .ring {
+  flex: 1; background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 18px; text-align: center;
+  transition: var(--transition);
+}
+.trust-ring-bar .ring:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.trust-ring-bar .ring .ring-num {
+  font-family: 'Plus Jakarta Sans', sans-serif; font-size: 1.8em;
+  font-weight: 800; line-height: 1;
+}
+.trust-ring-bar .ring .ring-name {
+  font-family: 'Plus Jakarta Sans', sans-serif; font-size: 0.78em;
+  font-weight: 700; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em;
+}
+.trust-ring-bar .ring .ring-desc { font-size: 0.78em; color: var(--text-secondary); margin-top: 6px; line-height: 1.5; }
+.sharing-table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 0.84em; }
+.sharing-table th, .sharing-table td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+.sharing-table th {
+  font-family: 'Plus Jakarta Sans', sans-serif; color: var(--text-muted); font-weight: 700;
+  font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.08em;
+}
+@media (max-width: 768px) {
+  .story-cols { grid-template-columns: 1fr; }
+  .trust-ring-bar { flex-direction: column; }
+}
+
+/* === SECURITY TREE === */
+.security-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; }
+.security-node {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 24px; transition: var(--transition);
+  box-shadow: var(--shadow-sm);
+}
+.security-node:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.security-node h4 { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 1em; font-weight: 700; margin-bottom: 10px; }
+.security-node p { font-size: 0.85em; color: var(--text-secondary); line-height: 1.7; }
+.security-node .sec-detail { margin-top: 12px; font-size: 0.82em; }
+.security-node .sec-detail dt { font-weight: 600; color: var(--text-primary); margin-top: 8px; }
+.security-node .sec-detail dd { color: var(--text-secondary); margin-left: 0; }
+
+/* === TOOLTIP === */
+#tooltip {
+  position: fixed; z-index: 200; max-width: 440px;
+  background: #FFFFFF; border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px; pointer-events: none;
+  opacity: 0; transition: opacity 0.2s;
+  box-shadow: var(--shadow-lg); font-size: 0.85em;
+  user-select: none;
+}
+#tooltip.visible { opacity: 1; }
+#tooltip.pinned { pointer-events: auto; user-select: text; }
+#tooltip .tip-close {
+  position: absolute; top: 10px; right: 12px; width: 24px; height: 24px;
+  border: none; background: var(--bg-tertiary); border-radius: 50%; cursor: pointer;
+  font-size: 0.8em; color: var(--text-muted); display: none;
+  align-items: center; justify-content: center; transition: var(--transition);
+}
+#tooltip.pinned .tip-close { display: flex; }
+#tooltip .tip-close:hover { background: var(--text-primary); color: #FFFFFF; }
+#tooltip .tip-title { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 800; font-size: 1.05em; margin-bottom: 6px; color: var(--text-primary); padding-right: 28px; }
+#tooltip .tip-summary { color: var(--text-primary); margin-bottom: 10px; }
+#tooltip .tip-detail { color: var(--text-secondary); font-size: 0.9em; line-height: 1.6; }
+#tooltip .tip-alt { margin-top: 10px; font-size: 0.85em; color: var(--text-muted); font-style: italic; }
+#tooltip .tip-hint { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 0.72em; color: var(--text-muted); letter-spacing: 0.03em; }
+#tooltip.pinned .tip-hint { display: none; }
+[data-tip] { border-bottom: 1px dotted rgba(0,0,0,0.25); cursor: help; transition: border-color var(--transition); }
+[data-tip]:hover { border-bottom-color: var(--text-primary); }
+
+/* === SEARCH OVERLAY === */
+#search-overlay {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(250,248,245,0.8); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  display: none; justify-content: center; padding-top: 140px;
+}
+#search-overlay.open { display: flex; }
+#search-box {
+  width: 90%; max-width: 640px; background: #FFFFFF;
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  overflow: hidden; max-height: 70vh; display: flex; flex-direction: column;
+  box-shadow: var(--shadow-lg);
+}
+#search-input {
+  width: 100%; padding: 20px 24px; background: transparent; border: none;
+  color: var(--text-primary); font-size: 1.15em; font-family: var(--font-sans);
+  outline: none; border-bottom: 1px solid var(--border);
+}
+#search-input::placeholder { color: var(--text-muted); }
+#search-results { overflow-y: auto; padding: 10px; max-height: 50vh; }
+.search-result { padding: 14px 18px; border-radius: var(--radius); cursor: pointer; transition: var(--transition); }
+.search-result:hover { background: var(--bg-tertiary); }
+.search-result .sr-section {
+  font-family: 'Plus Jakarta Sans', sans-serif; font-size: 0.65em; color: var(--text-muted);
+  font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
+}
+.search-result .sr-title { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 700; font-size: 0.95em; }
+.search-result .sr-desc { font-size: 0.82em; color: var(--text-secondary); }
+.search-empty { padding: 28px; text-align: center; color: var(--text-muted); }
+
+/* === SCROLL REVEAL === */
+.reveal {
+  opacity: 0; transform: translateY(28px);
+  transition: opacity 0.7s cubic-bezier(0.4, 0, 0.2, 1), transform 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.reveal.visible { opacity: 1; transform: translateY(0); }
+
+/* === SCROLLBAR === */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.18); }
+
+/* === RESPONSIVE === */
+@media (max-width: 768px) {
+  #hero h1 { font-size: clamp(0.7rem, 1.2vw, 0.85rem); }
+  #hero h1 span { font-size: clamp(2rem, 8vw, 3.5rem); }
+  .stats-grid { grid-template-columns: repeat(3, 1fr); }
+  .layer-detail .layer-content { grid-template-columns: 1fr; }
+  .cards-grid { grid-template-columns: 1fr; }
+  section { padding: 80px 16px 40px; }
+  nav { padding: 0 16px; }
+  .section-title { font-size: 1.7em; }
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <span class="logo">Dina</span>
+  <a href="#hero" class="nav-link active">Overview</a>
+  <a href="#philosophy" class="nav-link">Philosophy</a>
+  <a href="#reputation" class="nav-link">Reputation</a>
+  <a href="#dina-to-dina" class="nav-link">Dina-to-Dina</a>
+  <a href="#containers" class="nav-link">Containers</a>
+  <a href="#layers" class="nav-link">8 Layers</a>
+  <a href="#security" class="nav-link">Security</a>
+  <a href="#tech" class="nav-link">Tech Decisions</a>
+  <a href="#networking" class="nav-link">Networking</a>
+  <a href="#scenarios" class="nav-link">Scenarios</a>
+  <span class="search-hint" onclick="openSearch()"><kbd>/</kbd> Search</span>
+</nav>
+
+<!-- SECTION 0: HERO -->
+<section id="hero">
+  <h1>Dina — <span>The Architecture of Agency</span></h1>
+  <p class="tagline">A personal AI agent completely loyal to you and only you.<br>Inspired by the novel UTOPAI (2012-2017).</p>
+  <div class="stats-grid">
+    <div class="stat-card"><div class="num" style="color:var(--accent)">8</div><div class="label">Layers</div></div>
+    <div class="stat-card"><div class="num" style="color:var(--c-brain)">4</div><div class="label">Containers</div></div>
+    <div class="stat-card"><div class="num" style="color:var(--l1)">6</div><div class="label">Storage Tiers</div></div>
+    <div class="stat-card"><div class="num" style="color:var(--l3)">82</div><div class="label">Roadmap Items</div></div>
+    <div class="stat-card"><div class="num" style="color:var(--l6)">3</div><div class="label">Networking Options</div></div>
+  </div>
+</section>
+
+<!-- SECTION 1: PHILOSOPHY -->
+<section id="philosophy">
+  <h2 class="section-title">Philosophy &amp; Laws</h2>
+  <p class="section-subtitle">Every design decision honours these four laws. They are not aspirational — they are engineering constraints enforced by architecture.</p>
+  <div class="cards-grid" id="laws-grid"></div>
+  <h3 style="margin-top:40px; margin-bottom:16px; font-size:1.2em;">Core Principles</h3>
+  <div class="cards-grid" id="principles-grid"></div>
+</section>
+
+<!-- SECTION 2: REPUTATION GRAPH -->
+<section id="reputation">
+  <h2 class="section-title">The Reputation Graph</h2>
+  <p class="section-subtitle">What if purchase decisions were based on real outcomes from real people? The Reputation Graph makes truth the default.</p>
+  <div class="story-flow" id="reputation-story"></div>
+</section>
+
+<!-- SECTION 3: DINA-TO-DINA -->
+<section id="dina-to-dina">
+  <h2 class="section-title">Dina-to-Dina</h2>
+  <p class="section-subtitle">A new way for humans to relate. Not a messaging app — your personal agents coordinate on your behalf, respecting what each person chose to share.</p>
+  <div class="story-flow" id="dina-dina-story"></div>
+</section>
+
+<!-- SECTION 4: CONTAINERS -->
+<section id="containers">
+  <h2 class="section-title">Container Architecture <span class="badge" style="background:var(--bg-tertiary);color:var(--text-secondary)">Docker Compose</span></h2>
+  <p class="section-subtitle">3+1 containers. Core (Go) + Brain (Python) + PDS always on. Llama optional via --profile local-llm. Three deployment profiles.</p>
+  <div class="diagram-container" id="container-diagram"></div>
+  <div class="cards-grid" id="profiles-grid"></div>
+</section>
+
+<!-- SECTION 3: 8-LAYER EXPLORER -->
+<section id="layers">
+  <h2 class="section-title">8-Layer Explorer</h2>
+  <p class="section-subtitle">Each layer is independent and can be built, tested, and replaced separately. Click any layer to explore.</p>
+  <div class="layer-strip" id="layer-strip"></div>
+  <div id="layer-details"></div>
+</section>
+
+<!-- SECTION 4: SECURITY MODEL -->
+<section id="security">
+  <h2 class="section-title">Security Model</h2>
+  <p class="section-subtitle">Defense in depth: cryptographic isolation, two-tier auth, persona compartments, PII scrubbing, egress gatekeeper, and state-aware ingress.</p>
+  <div class="security-grid" id="security-grid"></div>
+</section>
+
+<!-- SECTION 6: TECH DECISIONS -->
+<section id="tech">
+  <h2 class="section-title">Technology Decisions</h2>
+  <p class="section-subtitle">Every technology choice with rationale and alternatives rejected. Hover any card for full details.</p>
+  <div id="tech-container"></div>
+</section>
+
+<!-- SECTION 7: NETWORKING -->
+<section id="networking">
+  <h2 class="section-title">Networking</h2>
+  <p class="section-subtitle">Three ingress options. All run simultaneously. All forward to localhost:443 (dina-core). Your DID Document advertises whichever endpoints you enable.</p>
+  <div class="diagram-container" id="network-diagram"></div>
+  <table class="compare-table" id="network-table"></table>
+</section>
+
+<!-- SECTION 8: SCENARIOS -->
+<section id="scenarios">
+  <h2 class="section-title">Scenario Walkthroughs</h2>
+  <p class="section-subtitle">Four real-world scenarios showing how Dina works end-to-end. Click to expand each walkthrough.</p>
+  <div id="scenarios-container"></div>
+</section>
+
+<!-- FOOTER -->
+<footer style="text-align:center;padding:72px 32px 88px;border-top:1px solid var(--border);margin-top:60px;">
+  <p style="font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;font-size:1.8em;color:var(--text-primary);font-weight:600;line-height:1;">Dina</p>
+  <p style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;color:var(--text-muted);font-size:0.7em;margin-top:10px;letter-spacing:0.2em;text-transform:uppercase;">The Architecture of Agency</p>
+  <p style="color:var(--text-muted);font-size:0.82em;margin-top:24px;">Inspired by <a href="https://github.com/rajmohanutopai/utopai/blob/main/UTOPAI_2017_full.pdf">UTOPAI</a> (2012–2017) · <a href="https://github.com/rajmohanutopai/dina">GitHub</a> · MIT License</p>
+  <p style="color:var(--text-muted);font-size:0.72em;margin-top:14px;opacity:0.6;">120 interactive tooltips · 10 SVG diagrams · 6 animated data flows · 4 scenario walkthroughs</p>
+</footer>
+
+<!-- TOOLTIP -->
+<div id="tooltip">
+  <button class="tip-close" onclick="unpinTooltip()">&times;</button>
+  <div class="tip-title"></div>
+  <div class="tip-summary"></div>
+  <div class="tip-detail"></div>
+  <div class="tip-alt"></div>
+  <div class="tip-hint">Click to pin &middot; select &amp; search text</div>
+</div>
+
+<!-- SEARCH OVERLAY -->
+<div id="search-overlay">
+  <div id="search-box">
+    <input id="search-input" placeholder="Search architecture, technology, concepts..." autofocus>
+    <div id="search-results"></div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   DATA — All architecture content as structured JS objects
+   ============================================================ */
+
+const TOOLTIPS = {
+  "ed25519": { title: "Ed25519", summary: "Digital signature algorithm", detail: "Deterministic signatures, 32-byte keys. Compatible with X25519 via birational equivalence (Edwards to Montgomery curve conversion). Used for DID signing, verdict signing, message authentication. SLIP-0010 is the HD derivation standard for Ed25519.", alt: "Rejected: secp256k1 (no X25519 compatibility), RSA (large keys)" },
+  "x25519": { title: "X25519", summary: "Elliptic-curve Diffie-Hellman key exchange", detail: "Used for NaCl encryption. Ephemeral keypair generated per message gives sender forward secrecy. Derived from Ed25519 via libsodium crypto_sign_ed25519_sk_to_curve25519 (one-way, safe). Even if recipient's static key is later compromised, old messages remain safe.", alt: "Rejected: RSA (large keys, slow), P-256 (NSA curve concerns)" },
+  "sqlcipher": { title: "SQLCipher", summary: "Encrypted SQLite — AES-256-CBC per page", detail: "Transparent whole-database encryption. Single file per persona enables true cryptographic isolation. Per-page encryption means no plaintext staging area ever exists. Battle-tested, widely deployed. Each persona gets its own .sqlite file with a unique DEK.", alt: "Rejected: plain SQLite (no encryption), PostgreSQL (separate server, shared state, harder isolation)" },
+  "fts5-unicode61": { title: "FTS5 unicode61", summary: "Full-text search tokenizer", detail: "Handles Hindi, Tamil, Kannada, and other Indic scripts natively. The unicode61 tokenizer with remove_diacritics=1 works across all Unicode scripts. Porter stemmer is English-only and mangles non-Latin text. ICU tokenizer deferred to Phase 3 for CJK optimization.", alt: "Rejected: Porter stemmer (English-only, breaks Indian languages), default tokenizer (space-based, bad for CJK)" },
+  "argon2id": { title: "Argon2id 128MB/3", summary: "Memory-hard password KDF", detail: "128MB memory, 3 iterations, 4 parallelism. ~1-2s on target hardware (Mac Mini, Pi 4, $5 VPS). OWASP 2024 minimum is 19MB — we use 128MB. Memory-hardness resists GPU/ASIC brute force. Hybrid mode combines side-channel resistance (Argon2i) with speed (Argon2d). Run once at vault unlock, not per-request.", alt: "Rejected: bcrypt (no memory hardness), PBKDF2 (no memory hardness)" },
+  "hkdf": { title: "HKDF-SHA256", summary: "Key derivation with domain separation", detail: "Derives per-persona DEKs from master seed with domain separation strings: HKDF(seed, info='dina:vault:health:v1'). No mathematical relationship between persona keys. Hardened derivation ensures compromise of one persona's DEK cannot leak another's.", alt: "Using HKDF over raw SHA-256 for proper extract-then-expand with domain separation" },
+  "slip0010": { title: "SLIP-0010 m/9999'", summary: "HD key derivation for Ed25519", detail: "BIP-32 math doesn't work on Ed25519 curves. SLIP-0010 is explicitly designed for Ed25519 HD derivation. Path m/9999'/N' avoids collision with BIP-44 (m/44') used by crypto wallets. Hardened derivation only — Ed25519 math is incompatible with BIP-32 public (unhardened) derivation.", alt: "Rejected: BIP-32 (secp256k1 only), BIP-44 m/44' (collision with crypto wallets)" },
+  "bip39": { title: "BIP-39", summary: "24-word mnemonic seed backup", detail: "256-bit entropy encoded as 24 English words. Recovery without any infrastructure — write words on paper. Industry standard used by hardware wallets. PBKDF2 derives master seed from mnemonic words. The seed never leaves the Home Node; the words are the backup.", alt: "Standard approach, no alternatives considered necessary" },
+  "at-protocol": { title: "AT Protocol", summary: "Federated public data protocol", detail: "Used for Reputation Graph ONLY (never private vault). Three layers: PDS (user's signed Merkle repo), Relay (firehose aggregation), AppView (query index). Signed Merkle repos are tamper-evident. Federation defeats censorship. did:plc is native. Custom Lexicons (com.dina.reputation.*) enforce schema at protocol level.", alt: "Rejected: IPFS (pinning economics, can't guarantee deletion), blockchain (immutable, violates sovereignty)" },
+  "did-plc": { title: "did:plc", summary: "Decentralized Identifier method", detail: "30M+ identities at Bluesky. Go implementation exists (bluesky-social/indigo). Key rotation built-in (sign rotation op with current key). Recovery keys separate from signing keys. Escape hatch: rotate to did:web on user's domain if PLC Directory becomes adversarial. No blockchain dependency.", alt: "Fallback: did:web (requires DNS+web server), did:key (no rotation)" },
+  "mcp": { title: "MCP (Model Context Protocol)", summary: "Agent delegation standard", detail: "Dina = kernel, no plugins. Child agents (OpenClaw, specialist bots) are external processes communicating via MCP. Compromised agent can't touch vault, keys, or personas — it only responds to MCP calls. No plugin store, no sandboxing, no scoped tokens needed. The two-tier auth model (BRAIN_TOKEN + CLIENT_TOKEN) is the permanent design.", alt: "Rejected: internal plugin architecture (massive attack surface, requires sandboxing, version management)" },
+  "nacl": { title: "libsodium NaCl", summary: "Wire encryption (Phase 1)", detail: "crypto_box_seal = X25519 ECDH + XSalsa20-Poly1305. Ephemeral sender keypair per message provides sender-side forward secrecy. ISC license, available in every language (Go, Python, Rust, JS, C, Java). Trivial API: crypto_box_seal(plaintext, pubkey). No DIDComm v2 library exists in Go (Hyperledger Aries Go archived March 2024).", alt: "Phase 2: JWE (ECDH-1PU+A256KW). Phase 3: Noise XX (full forward secrecy)" },
+  "yggdrasil": { title: "Yggdrasil", summary: "Sovereign mesh networking", detail: "Ed25519 public key derives a stable IPv6 address — philosophically aligned with DIDs. Double encryption: Yggdrasil layer (Curve25519 session key) + NaCl layer (per-message). No DNS, no CA, no corporate infrastructure. Even if a mesh peer is compromised, NaCl encryption keeps messages private. Censorship resistant.", alt: "Rejected: Tor (3-second round trip kills nudges, redundant encryption layer with DIDComm)" },
+  "google-adk": { title: "Google ADK", summary: "Agent Development Kit", detail: "Model-agnostic LLM routing. Apache 2.0 license. Native multi-agent orchestration (Sequential, Parallel, Loop patterns). MCP support built-in. Used in dina-brain for guardian angel reasoning loop, silence classification, nudge assembly, and agent orchestration.", alt: "Rejected: LangChain (vendor lock-in concerns), custom framework (reinventing the wheel)" },
+  "gemini-flash-lite": { title: "Gemini 2.5 Flash Lite", summary: "Default cloud LLM — cheapest tier", detail: "$0.10 input / $0.40 output per 1M tokens — cheapest Gemini tier. 305+ tokens/sec. 1M context window. JSON mode for structured output. Used for chat, classification, triage, nudge assembly. No training on user data.", alt: "Rejected: GPT-4 (expensive), Claude (same tier but less mature for this use case)" },
+  "deepgram": { title: "Deepgram Nova-3", summary: "Voice speech-to-text", detail: "150ms WebSocket streaming latency — fastest available. Purpose-built real-time ASR (not a repurposed LLM). $0.0077/min. Used in all profiles (cloud STT even with local LLM). Phase 2+ may add whisper.cpp for fully offline voice.", alt: "Rejected: Gemini Live API (780ms p95 latency, 13% WER), whisper.cpp (deferred, best WER ~4.4% but not yet in llama.cpp)" },
+  "spacy": { title: "spaCy en_core_web_sm", summary: "NER for PII Scrubber Tier 2", detail: "~15MB model, always available in dina-brain. Millisecond latency. Statistical NER catches person names (PERSON), organizations (ORG), locations (GPE/LOC), addresses. Tier 2 of the 3-tier PII scrubber pipeline. Runs after regex (Tier 1), before optional LLM NER (Tier 3).", alt: "Rejected: large transformer NER (200MB+, overkill for Tier 2 when LLM NER handles edge cases)" },
+  "sqlite-vec": { title: "sqlite-vec", summary: "Vector search in SQLite", detail: "Pure C, zero external dependencies. Runs on WASM and phones. Mozilla Builders project. MIT license. Successor to sqlite-vss. Sufficient for Phase 1 (<1M vectors). Phase 2 may upgrade to HNSW index for scale.", alt: "Rejected: Pinecone/Weaviate (cloud = sovereignty violation), pgvector (requires PostgreSQL server)" },
+  "go-sqlcipher": { title: "mutecomm/go-sqlcipher", summary: "Go binding for SQLCipher", detail: "mattn/go-sqlite3 (the standard Go SQLite binding) never merged SQLCipher support despite years of requests. mutecomm/go-sqlcipher fork is maintained specifically for encrypted SQLite. Critical dependency for dina-core's vault operations.", alt: "Rejected: mattn/go-sqlite3 (no SQLCipher), modernc.org/sqlite (pure Go but no encryption support)" },
+  "cosign": { title: "Cosign", summary: "Container image signing", detail: "Part of Sigstore/OpenSSF. Keyless OIDC signing via GitHub Actions identity — no private key to manage. Proves 'this image was built by this specific GitHub Actions workflow in this repository'. If someone forks and builds, identity won't match. Users verify before applying updates.", alt: "Alternative: traditional key-pair signing (available but more complex key management)" },
+  "wal-mode": { title: "WAL Mode", summary: "SQLite Write-Ahead Logging", detail: "PRAGMA journal_mode=WAL enables concurrent readers while single writer is active. No reader blocking. Crash-safe: unfinished writes don't corrupt the main database file. PRAGMA synchronous=NORMAL provides good durability with performance. Single-writer per file is a design choice, not a limitation.", alt: "Alternative: DELETE journal mode (simpler but blocks readers during writes)" },
+  "draft-dont-send": { title: "Draft-Don't-Send", summary: "Dina never presses Send", detail: "Email/message drafts stored in Tier 4 staging with 72-hour auto-expiry. User reviews the draft in their actual email client and manually presses Send. Prevents catastrophic mistakes: reply-all, wrong recipient, emotional responses. This is a core safety principle, not a missing feature.", alt: "Rejected: auto-send on high confidence (risks catastrophic mistakes that can't be undone)" },
+  "cart-handover": { title: "Cart Handover", summary: "Dina never touches money", detail: "Dina researches products, checks Reputation Graph, assembles options. When user decides, Dina generates a payment intent (UPI deep link, crypto address, or web checkout URL) stored in Tier 4 staging. User's phone OS handles actual payment (GPay, PhonePe, Metamask). Dina never sees payment credentials.", alt: "Rejected: auto-payment (credential leakage risk, PCI compliance scope, violates human agency principle)" },
+  "dead-drop": { title: "Dead Drop 3-Valve", summary: "State-aware message ingress", detail: "Valve 1: IP rate limiter (50 req/hr per IP, 1000 global, 256KB payload cap). Always active. Valve 2: Spool cap (500MB disk quota for encrypted blobs when vault locked). Reject-new, not drop-oldest — preserves legitimate messages. Valve 3: Sweeper feedback after vault unlock — decrypts blobs, identifies spam DIDs, blocklists source IPs at Valve 1.", alt: "Physics-based defense (IP, disk) because identity-based defense is impossible when vault is locked (can't decrypt sender DID)" },
+  "entity-vault": { title: "Entity Vault", summary: "Ephemeral entity mapping for cloud LLM", detail: "PII scrubber replaces entities with numbered placeholders: [PERSON_1], [ORG_2], [LOCATION_3]. Replacement map stored in memory only (never persisted). Cloud LLM processes scrubbed query — sees health/financial topics but not identities. De-sanitizer restores real names in response. Map destroyed after query completes.", alt: "Rejected: reject health queries on cloud profile (makes Cloud LLM unusable for primary use case)" },
+  "trust-rings": { title: "Trust Rings", summary: "3-level identity verification", detail: "Ring 1: Unverified — just a DID, created in seconds, very low trust ceiling. Ring 2: Verified Human — ZKP proof of valid government ID (Sybil resistant), no identity leak. Ring 3: Credentialed — LinkedIn, GitHub, business registration (W3C VC). Trust = f(ring_level, time_alive, transaction_anchors, outcome_data, peer_attestations, credential_count).", alt: "Composite function, not simple star ratings. Each dimension weighted independently." },
+  "kernel-model": { title: "Kernel Model", summary: "No plugins, no third-party code in-process", detail: "Dina is an orchestrator (CEO), child agents are workers (contractors). Two external protocols only: NaCl (peer communication) + MCP (task delegation). Compromised child agent is just a misbehaving external process that Dina can disconnect. Entire categories of plugin vulnerabilities eliminated.", alt: "Rejected: plugin architecture (attack surface, sandboxing, scoped tokens, version management, review process)" },
+  "pii-scrubber": { title: "PII Scrubber", summary: "3-tier sanitization pipeline", detail: "Tier 1 (Go, always): Regex strips credit cards, phones, Aadhaar/SSN, emails, bank accounts. Sub-millisecond. Tier 2 (Python, always): spaCy NER strips person names, orgs, locations. 5-20ms. Tier 3 (llama, optional): LLM NER catches indirect references like 'the person who founded that Bangalore company'. 500ms-2s.", alt: "Cloud LLM profile: Tier 1+2 mandatory. Local LLM: all 3 tiers. Hybrid: Tier 1+2 always, Tier 3 for llama fallback." },
+  "silence-tiers": { title: "Silence Protocol", summary: "3-tier interrupt classification", detail: "Tier 1 Fiduciary: INTERRUPT — silence causes harm (security alerts, legal deadlines, medical reminders). Tier 2 Solicited: NOTIFY — user explicitly asked (alarms, price alerts, VIP emails). Tier 3 Engagement: QUEUE — silence merely misses opportunity (news, new restaurants, app updates). Saved for daily briefing.", alt: "Most digital life is noise. Dina's default state is silence. Only Tier 1 can interrupt without prior request." },
+  "persona-tiers": { title: "Persona Access Tiers", summary: "open / restricted / locked", detail: "Open: DEK in RAM, brain accesses freely (social, consumer, professional). Restricted: DEK in RAM but every access logged + Tier 2 notification sent (health). Locked: DEK NOT in RAM, file is opaque bytes. Requires explicit user approval with TTL to temporarily unlock. DEK zeroed after TTL expires.", alt: "Enforcement in compiled Go (gatekeeper.go), not LLM. Prompt injection cannot bypass cryptographic isolation." },
+  "two-tier-auth": { title: "Two-Tier Auth", summary: "BRAIN_TOKEN + CLIENT_TOKEN", detail: "BRAIN_TOKEN: pre-shared 32-byte random secret for core-brain communication. Constant-time comparison, per-machine, regenerated on install. CLIENT_TOKEN: per-device 32-byte random, SHA-256 hashed in identity.sqlite device_tokens table. No JWTs, no expiry tracking. Permanent design since no plugins means no need for scoped tokens.", alt: "SHA-256 for CLIENT_TOKEN (not Argon2id) because 256-bit random input has no brute-force risk" },
+  "home-node": { title: "Home Node", summary: "Always-on server you control", detail: "Dina is not an app — it's a service. Runs on VPS, Raspberry Pi, NAS, or managed hosting. Phone/laptop/glasses/watch are client devices that connect to it. Like email: server always running, devices are windows into it. Migration between hosting levels via 'dina export' + 'dina import'.", alt: "Hosting levels: Managed (Foundation), Self-hosted VPS (Hetzner, Oracle), Sovereign box (Pi, NAS)" },
+  "gemma-3n": { title: "Gemma 3n", summary: "Local LLM for privacy-first inference", detail: "E2B (2B active params) or E4B (4B active). First sub-10B model to reach 1300+ LMArena score. MatFormer MoE architecture. 32K context. ~3GB RAM for E4B GGUF. Runs on Apple Silicon (unified memory) and x86 with AVX2. Served via llama.cpp with OpenAI-compatible API.", alt: "Used for sensitive persona processing (health/financial data never leaves Home Node with local LLM)" },
+  "functiongemma": { title: "FunctionGemma 270M", summary: "Ultra-lightweight intent routing", detail: "529MB total model. 2500+ tokens/sec. Structured extraction for routing user queries to correct handler (search, chat, analysis, delegation). Phase 1.5 addition for fast intent classification without calling full LLM.", alt: "Eliminates need for LLM roundtrip on simple routing decisions" },
+  "nomic-embed": { title: "Nomic Embed V2", summary: "Phase 2 embedding upgrade", detail: "MoE architecture: 475M total params, 305M active. Trained on 1.6B pairs. Flexible truncation via Matryoshka dimensions. MTEB competitive. Upgrade from EmbeddingGemma 308M when more capacity needed.", alt: "Phase 2 upgrade, not Phase 1 requirement" },
+  "embedding-gemma": { title: "EmbeddingGemma 308M", summary: "Phase 1 embedding model", detail: "Google purpose-built embedding model. Less than 200MB quantized. 100+ languages. Matryoshka dimensions (768 default, truncatable to 128 for client caches). Served via llama.cpp in Local LLM profile, or gemini-embedding-001 API in Cloud profile.", alt: "Cloud alternative: gemini-embedding-001 ($0.01/1M tokens)" },
+  "confidential-computing": { title: "Confidential Computing", summary: "Hardware-enforced memory encryption", detail: "Phase 2. AWS Nitro Enclaves, AMD SEV-SNP, or Intel TDX. Hardware enforces memory encryption — even root on the host machine cannot read enclave RAM. Mitigates the honeypot risk on managed multi-user hosting where keys exist in RAM during processing.", alt: "Rejected: vTPM (marginal security improvement, complex, not a real solution)" },
+  "noise-xx": { title: "Noise XX", summary: "Phase 3 full forward secrecy", detail: "Handshake pattern: e, dhee, s, dhes / s, dhse. Both sender and receiver establish ephemeral session keys. Compromise of static key does not compromise session keys. Full forward secrecy in both directions. Complex to implement (Rust FFI or pure Go). Deferred until messaging becomes bottleneck.", alt: "Phase 1: NaCl (sender FS). Phase 2: JWE ECDH-1PU (sender auth). Phase 3: Noise XX (full FS)." },
+  "didcomm-jwe": { title: "DIDComm v2 JWE", summary: "Phase 2 wire encryption", detail: "ECDH-1PU+A256KW key agreement with A256CBC-HS512 symmetric encryption. Provides sender authentication (sender static key + receiver static key = shared secret). Full DIDComm v2 compatibility. Replaces Phase 1 NaCl seal which lacks sender authentication.", alt: "Transition: NaCl (Phase 1) -> JWE (Phase 2) -> Noise XX (Phase 3). Plaintext DIDComm format unchanged." },
+  "digital-estate": { title: "Digital Estate", summary: "Dead Man's Switch for your data", detail: "90-day liveness check interval. Per-beneficiary encryption keys pre-configured during setup. If liveness check fails 3 consecutive times (270 days), designated beneficiaries receive access to specified persona files. Trigger alternatives: legal document, trusted contact attestation.", alt: "Pre-configured, not activated post-mortem. User defines what each beneficiary gets." },
+  "reputation-appview": { title: "Reputation AppView", summary: "Aggregation and query layer", detail: "Go + PostgreSQL 16. Consumes AT Protocol firehose from Relay. Indexes com.dina.reputation.* records. Signature verification on every record (cryptographic proof). JSON API: /v1/product, /v1/bot, /v1/reputation. Phase 1: single monolith. Phase 3: sharded cluster (Kafka, ScyllaDB, Kubernetes HPA).", alt: "Trust-but-verify: 3 layers — cryptographic proof, consensus check, direct PDS spot-check" },
+  "outcome-data": { title: "Outcome Data", summary: "Passive purchase tracking from every Dina", detail: "Because Dina IS the buyer, she knows every purchase outcome. Still using the laptop 6 months later? Returned the shoes? Battery died? 50%+ of purchases generate passive, honest outcome data. These are actual outcomes, not opinions. Anonymized before publishing to Reputation Graph.", alt: "Solves the review bias problem: less than 5% of buyers leave reviews, and those are emotionally skewed" },
+  "deep-link": { title: "Deep Link Default", summary: "Dina credits sources with timestamps", detail: "Instead of 'the battery is bad', Dina says 'MKBHD says the battery is bad — check the stress test at 04:20, here is the link.' Creator gets high-quality, intent-driven traffic. User gets verified truth with source. A 'lost view' becomes a valuable, targeted view. Configurable but fair by default.", alt: "Without deep linking, creators stop making content and the ecosystem dies. This preserves the value chain." },
+  "anti-her": { title: "Anti-Her", summary: "Dina must never become an emotional crutch", detail: "Named after the 2013 film 'Her'. The meaning of life is in relationships with others. If Dina senses loneliness, she nudges toward friends and family, not deeper engagement with herself. She is warm, loyal, and devoted — but never pretends to be your friend or lover. When you need connection, she connects you to humans.", alt: "Active stance: Dina actively avoids becoming an emotional companion, unlike most AI products racing toward simulated intimacy." },
+  "pull-economy": { title: "Pull Economy", summary: "You pull verified truth on demand", detail: "Dina's Pull Economy: you ask for what you need, and Dina fetches the best available answer. Results ranked by reputation and real outcome data. Dina talks to other Dinas and trusted bots. Direct P2P transactions between buyer and seller. The best products surface because people are genuinely happy with them.", alt: "Singular loyalty to the user naturally produces Pull Economy behavior." },
+  "split-sovereignty": { title: "Split Sovereignty", summary: "AT Protocol for public, SQLite for private", detail: "Public reputation data lives in AT Protocol PDS (federated, tamper-evident, deletable via signed tombstones). Private vault data lives in SQLite (local, encrypted, instantly deletable via rm). Never mix: private data never enters AT Protocol repos. Public data doesn't need SQLite vault protection.", alt: "AT Protocol repos are visible to relays — Bluesky team explicitly says private content is 'not a good idea' in repos." },
+  "dina-core": { title: "dina-core", summary: "Go — sovereign cryptographic kernel", detail: "Holds encrypted vault, manages keys, runs DIDComm endpoint, serves client WebSockets, enforces gatekeeper RBAC + PII scrubbing. Core never calls external APIs. Must never fail, must never leak data, must run for years without maintenance. Go: fast compilation, single static binary, excellent crypto stdlib.", alt: "Port 443 (external HTTPS), Port 8100 (internal brain API)" },
+  "dina-brain": { title: "dina-brain", summary: "Python + Google ADK — intelligence layer", detail: "Runs guardian angel reasoning loop: silence classification, disconnect detection, nudge assembly, agent orchestration. Orchestrates data ingestion: schedules sync cycles, delegates to OpenClaw via MCP, triages results, stores in vault via Core API. Python for AI/ML ecosystem (ADK, llama-cpp-python, spaCy).", alt: "Port 8200 (internal): /api/* Brain API + /admin/* Admin UI (unified FastAPI)" },
+  "dina-pds": { title: "dina-pds", summary: "AT Protocol Personal Data Server", detail: "Hosts user's signed Merkle repo containing com.dina.reputation.* records only. Federated: relays crawl PDS to aggregate firehose. Port 2583. Always bundled (even Phase 1). Public reputation data only — never private vault data.", alt: "Split Sovereignty: PDS for public reputation, SQLite for private vault" },
+  "llama-container": { title: "llama (container)", summary: "Optional local LLM inference", detail: "llama.cpp serving Gemma 3n E4B via OpenAI-compatible API. ~3GB RAM. Enabled via --profile local-llm. Brain calls it for classification, embeddings, and LLM NER (Tier 3 PII scrubbing). Port 8080 internal only. Without llama, brain uses cloud APIs with PII scrubbing.", alt: "Three profiles: Cloud LLM (no llama), Local LLM (llama for everything), Hybrid (llama for sensitive, cloud for rest)" },
+  // --- Cryptographic primitives & protocols ---
+  "crypto-box-seal": { title: "crypto_box_seal", summary: "NaCl anonymous sealed box", detail: "X25519 ECDH + XSalsa20-Poly1305 AEAD. Ephemeral sender keypair generated per message — provides sender-side forward secrecy. Recipient uses static X25519 key (derived from Ed25519). Even if recipient's long-term key is later compromised, captured messages cannot be decrypted because ephemeral key is destroyed after send.", alt: "Anonymous: recipient cannot identify sender from ciphertext alone. Sender identity proved by DIDComm envelope, not by encryption." },
+  "xsalsa20-poly1305": { title: "XSalsa20-Poly1305", summary: "AEAD cipher in NaCl", detail: "Extended-nonce (192-bit) variant of Salsa20 stream cipher + Poly1305 MAC. 24-byte nonce eliminates nonce collision risk even with random generation. Used inside crypto_box_seal. Widely audited, constant-time implementation in libsodium.", alt: "Rejected: AES-GCM (nonce reuse catastrophe with 96-bit nonces), ChaCha20-Poly1305 (12-byte nonce, less margin)" },
+  "aes-256-cbc": { title: "AES-256-CBC", summary: "SQLCipher page encryption", detail: "Each SQLite page (4096 bytes default) is independently encrypted with AES-256-CBC. Page-level encryption means no plaintext staging area ever exists on disk. HMAC-SHA512 on each page for tamper detection. Per-page IV derived from page number.", alt: "Per-page encryption is unique to SQLCipher — most 'encrypted databases' encrypt at file level only." },
+  "aes-256-gcm": { title: "AES-256-GCM", summary: "Archive encryption (Tier 5)", detail: "Authenticated encryption for deep archive snapshots. Separate Archive Key derived via HKDF(info='dina:archive:v1'). GCM provides built-in authentication — no separate HMAC needed. Used for S3 Glacier, USB, and LTO tape backups.", alt: "CBC for SQLCipher pages (legacy compatibility), GCM for everything new (authenticated, faster with AES-NI)" },
+  "ecdh-1pu": { title: "ECDH-1PU", summary: "Phase 2 key agreement", detail: "Combines sender's static key + ephemeral key with recipient's static key. Provides sender authentication (recipient can verify who sent the message) unlike NaCl crypto_box_seal which is anonymous. Part of JWE envelope in DIDComm v2 specification.", alt: "Phase 1: NaCl seal (anonymous, sender FS). Phase 2: ECDH-1PU (authenticated sender). Phase 3: Noise XX (mutual FS)." },
+  "constant-time": { title: "Constant-Time Compare", summary: "Timing-safe token verification", detail: "BRAIN_TOKEN comparison uses crypto/subtle.ConstantTimeCompare — execution time is independent of how many bytes match. Prevents timing side-channel attacks where attacker measures response time to guess token byte-by-byte. All token comparisons in dina-core use this pattern.", alt: "Standard practice for secret comparison. Go's crypto/subtle provides this natively." },
+  "kek": { title: "KEK (Key Encryption Key)", summary: "Passphrase-derived wrapper key", detail: "Argon2id(passphrase, salt) → KEK → AES-256-GCM wraps master seed → wrapped_seed.bin. Only the KEK touches the master seed; master seed is never in memory unprotected. Convenience mode: raw seed in /var/lib/dina/keyfile (chmod 600) for unattended servers.", alt: "Two unlock modes: passphrase (interactive, more secure) or keyfile (unattended, trades security for availability)" },
+  "dek": { title: "DEK (Data Encryption Key)", summary: "Per-persona SQLCipher passphrase", detail: "256-bit key derived via HKDF-SHA256 from master seed with domain separation string (e.g., 'dina:vault:health:v1'). Each persona .sqlite file has a unique DEK. No mathematical relationship between DEKs — compromise of one cannot leak another. DEK held in RAM only when persona is unlocked.", alt: "DEK zeroed from RAM when persona locks or TTL expires. Locked personas are opaque bytes on disk." },
+  // --- Identity & DID ---
+  "did-document": { title: "DID Document", summary: "Machine-readable identity descriptor", detail: "JSON-LD document resolved from did:plc via PLC Directory. Contains: verification methods (Ed25519 public keys), service endpoints (Home Node URL), controller (self). Updated by signing rotation operations with current key.", alt: "DID Document advertises which networking endpoints are enabled (Tailscale, Cloudflare, Yggdrasil)" },
+  "did-web": { title: "did:web", summary: "DNS-based DID escape hatch", detail: "Resolve DID via HTTPS: did:web:example.com → GET https://example.com/.well-known/did.json. Escape hatch if PLC Directory becomes adversarial — user rotates from did:plc to did:web on their own domain. Requires DNS + web server, so less sovereign than did:plc.", alt: "Fallback only. did:plc is primary because it has no DNS dependency and supports key rotation natively." },
+  "did-key": { title: "did:key", summary: "Self-certifying ephemeral DID", detail: "DID derived directly from public key — no registry, no resolution needed. Used in current Python prototype (v0.4). No key rotation support (key IS the identifier). Target: migrate to did:plc for production.", alt: "Good for prototyping. Not suitable for production because key compromise = identity loss (no rotation)." },
+  "plc-directory": { title: "PLC Directory", summary: "did:plc resolution service", detail: "Central directory that maps did:plc identifiers to DID Documents. Run by Bluesky PBC. 30M+ identities. Key rotation via signed operation log. If PLC Directory becomes adversarial, escape to did:web. Go implementation in bluesky-social/indigo.", alt: "Trust model: PLC Directory is a log, not an authority. Signed operations are self-certifying." },
+  "w3c-vc": { title: "W3C Verifiable Credentials", summary: "Trust Ring 3 attestations", detail: "Cryptographically signed credentials from issuers (LinkedIn, GitHub, business registries). Stored locally, presented selectively. Used for Trust Ring 3 (Credentialed) to prove professional identity without revealing all details.", alt: "Trust Ring 1: just a DID. Ring 2: ZKP proof of government ID. Ring 3: VCs from known issuers." },
+  "zk-snarks": { title: "ZK-SNARKs", summary: "Zero-knowledge identity proofs", detail: "Prove facts without revealing underlying data. Trust Ring 2: prove 'I have a valid government ID' without revealing name, address, or ID number. Sybil-resistant (can't create unlimited Ring 2 identities). Target: Mina Protocol or Aztec.", alt: "Alternatives: ZK-STARKs (no trusted setup but larger proofs), Semaphore (group membership proofs)" },
+  "sybil-resistance": { title: "Sybil Resistance", summary: "One human = one verified identity", detail: "Trust Ring 2 uses ZKP proof of government ID to ensure one-person-one-identity without revealing personal data. Critical for Reputation Graph integrity — without Sybil resistance, attackers create thousands of fake identities to manipulate scores.", alt: "Ring 1 has no Sybil resistance (just DIDs). Ring 2+ requires proof of uniqueness." },
+  // --- Storage internals ---
+  "identity-sqlite": { title: "identity.sqlite", summary: "Tier 0 — always unlocked first", detail: "Contains: contacts table, sharing_policy, audit_log (90-day rolling), device_tokens (SHA-256 hashed), kv_store (sync cursors). Always unlocked first because gatekeeper needs contacts and sharing policy before any other persona can be accessed.", alt: "Small file (~6MB/year for audit log). Core of the vault lifecycle." },
+  "personal-sqlite": { title: "personal.sqlite", summary: "Tier 1 — primary vault (Phase 1)", detail: "Single-file vault in Phase 1. Contains all ingested data: emails, messages, calendar events, contacts, photos. Phase 2 splits into per-persona files (health.sqlite, financial.sqlite, etc.). Key table: vault_items with FTS5 virtual table for full-text search.", alt: "Phase 1: one file. Phase 2: per-persona files. HKDF domain separation ensures unique DEK per file." },
+  "fts5-virtual": { title: "FTS5 Virtual Table", summary: "Full-text search index", detail: "SQLite FTS5 creates a virtual table (vault_items_fts) that indexes text columns. Queries use MATCH syntax: SELECT * FROM vault_items_fts WHERE vault_items_fts MATCH 'book daughter promise'. Tokenizer: unicode61 with remove_diacritics=1 for multilingual support.", alt: "FTS5 fast path: simple keyword queries skip LLM entirely. Only semantic/contextual queries need embeddings." },
+  "tier4-staging": { title: "Tier 4 Staging", summary: "Ephemeral drafts & payment intents", detail: "Email drafts (gmail_draft_id, dina_confidence score), payment intents (UPI/crypto/web URLs), pending notifications. Auto-expire after 72h (configurable). Not backed up. High-risk items (legal, financial, emotional) flagged for manual review only.", alt: "72h for email drafts, shorter expiry for payment intents. Watchdog cleans expired items." },
+  "tier5-archive": { title: "Tier 5 Deep Archive", summary: "Encrypted offline backups", detail: "Full snapshots of Tier 0 + 1 + 3, encrypted with separate Archive Key (HKDF info='dina:archive:v1'). Weekly frequency. Storage: S3 Glacier Deep Archive (~$1/TB/month, 12-48h retrieval), Backblaze B2 with Object Lock, or physical USB/LTO tape (air-gapped).", alt: "Object Lock prevents deletion even by admin — protects against ransomware. Air-gapped tape is strongest." },
+  "living-window": { title: "Living Window", summary: "12-month active data strategy", detail: "Last 12 months kept in active vault (Tier 1). Older data archived to Tier 5. New data pushes oldest active data to archive. Client cache: phone holds last 6 months, laptop configurable, thin clients (watch/glasses) hold nothing.", alt: "Prevents unbounded vault growth. Archive always accessible but with retrieval delay." },
+  // --- Networking & deployment ---
+  "tailscale-funnel": { title: "Tailscale Funnel", summary: "Easiest ingress (3 commands)", detail: "Exposes dina-core port 443 to internet via Tailscale's relay infrastructure. Setup: tailscale up, tailscale funnel 443, done. No custom domain, no DDoS protection. Provider sees encrypted blobs only. Latency: 50-100ms. Best for getting started and testing.", alt: "Simplest option but depends on Tailscale Inc. Use for Phase 1, migrate to Cloudflare for production." },
+  "cloudflare-tunnel": { title: "Cloudflare Tunnel", summary: "Production daily driver", detail: "cloudflared tunnel routes traffic from your domain through Cloudflare's edge network to dina-core :443. ~15 min setup. Custom domain, DDoS/WAF protection, 10-30ms latency. Cloudflare terminates TLS at edge (sees decrypted HTTPS but inner NaCl is still encrypted).", alt: "Most practical for daily use. TLS termination is acceptable because NaCl/DIDComm provides inner encryption." },
+  "yggdrasil-mesh": { title: "Yggdrasil Mesh", summary: "Maximum sovereignty", detail: "Ed25519 public key derives stable IPv6 address — philosophically aligned with DIDs. Double encryption: Yggdrasil layer (Curve25519 session key) + NaCl layer (per-message). No DNS, no CA, no corporate dependency. 20-80ms latency. Censorship resistant.", alt: "Peer mesh: requires both parties to run Yggdrasil. Best for Dina-to-Dina communication between sovereign nodes." },
+  "nat-traversal": { title: "NAT Traversal", summary: "All tunnels use outbound-only", detail: "All three networking options (Tailscale, Cloudflare, Yggdrasil) establish connections outbound from the Home Node. No inbound firewall ports needed. Works behind CGNAT, corporate firewalls, and residential routers without configuration.", alt: "This is why Dina works on a Raspberry Pi behind your router — no port forwarding needed." },
+  // --- Containers & deployment ---
+  "docker-compose": { title: "Docker Compose", summary: "3+1 container orchestration", detail: "docker-compose.yml defines: dina-core (Go), dina-brain (Python), dina-pds (AT Protocol). Optional: llama via --profile local-llm. Internal Docker network isolates containers. Core exposes 443 (ext) + 8100 (int). Brain: 8200 (int). PDS: 2583 (ext).", alt: "Docker Compose over Kubernetes: single-node deployment, no orchestration overhead, perfect for Home Node." },
+  "brain-token": { title: "BRAIN_TOKEN", summary: "Core-to-Brain pre-shared secret", detail: "32-byte random secret generated on install. Used for all core<->brain HTTP calls. Constant-time comparison prevents timing attacks. Per-machine, never transmitted over network (Docker internal network only). Regenerated on reinstall.", alt: "Not a JWT — no expiry, no claims, no overhead. Simple bearer token because only two parties communicate." },
+  "client-token": { title: "CLIENT_TOKEN", summary: "Per-device auth token", detail: "32-byte random token generated per device. SHA-256 hash stored in identity.sqlite device_tokens table (not Argon2id — 256-bit random input has no brute-force risk). Sent as Bearer token in WebSocket handshake. Revocable by deleting hash from table.", alt: "SHA-256 not Argon2id because the input is 256-bit random (not a human-chosen password). No dictionary attack possible." },
+  "gatekeeper-go": { title: "gatekeeper.go", summary: "Compiled RBAC enforcement", detail: "Brain assembles max-detail payload for every request. Core's gatekeeper strips fields based on per-contact sharing policy table in identity.sqlite. Default: deny (missing key = share nothing). Enforced in compiled Go — prompt injection in LLM cannot bypass cryptographic access control.", alt: "Key insight: policy enforcement is in compiled Go, not in LLM prompts. Prompt injection is irrelevant." },
+  "admin-ui": { title: "Admin UI", summary: "Brain-hosted management interface", detail: "FastAPI-served web UI at /admin/* on port 8200. Core reverse-proxies /admin to brain. Functions: persona management, sharing policy editor, device token management, sync status, audit log viewer. Phase 1: functional. Phase 2: polished.", alt: "Admin UI is a convenience layer — all operations available via Core API directly." },
+  // --- Ingestion specifics ---
+  "openclaw": { title: "OpenClaw", summary: "MCP-based action agent", detail: "External process communicating with dina-brain via MCP. Manages OAuth tokens for Gmail, Calendar, Contacts APIs. Dina delegates tasks ('fetch gmail', 'fill form') and receives structured JSON responses. OpenClaw has NO access to vault, keys, or personas.", alt: "OpenClaw is a contractor, not an employee. It can be disconnected, replaced, or rate-limited by Dina." },
+  "gmail-triage": { title: "Gmail Two-Pass Triage", summary: "Aggressive noise reduction", detail: "Pass 1 (instant): Gmail category filter — PROMOTIONS, SOCIAL, UPDATES, FORUMS all skipped (thin record: subject+sender only). ~60-70% killed. Pass 2: LLM classifier on PRIMARY emails — subject line + sender domain. Fiduciary override: security alerts always ingested.", alt: "Goal: ingest only what matters. Most email is noise. Two-pass approach minimizes LLM costs." },
+  "whatsapp-connector": { title: "WhatsApp Connector", summary: "Android NotificationListenerService", detail: "Bypasses MCP — phone pushes WhatsApp notifications directly to Core via authenticated WebSocket (CLIENT_TOKEN). Android NotificationListenerService captures message text, sender, timestamp. No WhatsApp API dependency.", alt: "iOS: Siri Shortcuts webhook (more limited). Phase 2: WhatsApp Business API for richer integration." },
+  "caldav": { title: "CalDAV", summary: "Phase 2 calendar protocol", detail: "Open standard for calendar access (Nextcloud, Apple Calendar). Deferred from Phase 1 because Google Calendar API is simpler and covers 80% of users. CalDAV adds Nextcloud and self-hosted calendar support.", alt: "Phase 1: Google Calendar API. Phase 2: CalDAV (Nextcloud, Apple). Both via OpenClaw MCP." },
+  "carddav": { title: "CardDAV", summary: "Contact sync protocol", detail: "Open standard for contact access. Alternative to Google People API. Daily sync (contacts change infrequently). Fetches names, phone numbers, emails, notes, relationships. Stored in identity.sqlite contacts table.", alt: "Phase 1: Google People API. Phase 2: CardDAV for self-hosted contacts (Nextcloud, Apple)." },
+  "sync-cursors": { title: "Sync Cursors", summary: "Stateless brain, stateful core", detail: "Brain is stateless — all sync state stored in Core's identity.sqlite kv_store table. Gmail cursor: historyId for incremental sync. Calendar cursor: syncToken for delta updates. Brain reads cursor, fetches delta, writes new cursor after success.", alt: "Core is the source of truth. Brain can crash and restart without losing sync progress." },
+  "startup-sync": { title: "Startup Sync Protocol", summary: "Fast sync + background backfill", detail: "Step 1 (FAST SYNC, blocking): fetch last 30 days of email → seconds → system goes ACTIVE. Step 2 (BACKFILL 'The Historian'): remaining up to DINA_HISTORY_DAYS (default 365). Batches of 100; pauses when user queries; resumes when idle. Step 3: STOP at history limit.", alt: "User gets a working Dina in seconds. Full history loads in background without blocking interaction." },
+  // --- Reputation specifics ---
+  "signed-tombstones": { title: "Signed Tombstones", summary: "GDPR/DPDP-compliant deletion", detail: "AT Protocol supports signed deletion records (tombstones). When user deletes a reputation record, a signed tombstone is published to the PDS. Relays propagate deletion. AppView removes from index. Cryptographic proof of deletion intent.", alt: "Unlike blockchain (immutable), AT Protocol supports deletion — critical for GDPR Right to Erasure and India's DPDP Act." },
+  "merkle-repo": { title: "Signed Merkle Repo", summary: "Tamper-evident data structure", detail: "AT Protocol PDS stores records in a Merkle Search Tree (MST). Every commit is signed by the user's Ed25519 key. Relay can verify: this record was signed by this DID, and the repo hasn't been tampered with. Delta sync: relay stores last root hash, fetches only new records.", alt: "Tamper evidence without blockchain: signed Merkle trees provide the same guarantee with deletion support." },
+  "outcome-tracking": { title: "Outcome Tracking", summary: "Passive purchase feedback loop", detail: "Because Dina IS the buyer, she knows every purchase outcome automatically. Still using the laptop 6 months later? Returned the shoes? Battery died? 50%+ of purchases generate passive, honest outcome data. Anonymized before publishing to Reputation Graph.", alt: "Solves review bias: <5% of buyers leave reviews, and those are emotionally skewed. Outcome data is objective." },
+  "cold-start": { title: "Cold Start Strategy", summary: "Tool first, network second", detail: "Phase 1: Dina is useful as a personal tool (email triage, memory, drafts) with zero Reputation Graph data. Phase 2: As users join, outcome data accumulates naturally. No chicken-and-egg problem because the tool has standalone value.", alt: "Contrast with social networks that need critical mass. Dina is useful from Day 1 for a single user." },
+  // --- Intelligence & LLM ---
+  "guardian-angel": { title: "Guardian Angel Loop", summary: "Brain's core reasoning cycle", detail: "Continuous background process in dina-brain (Google ADK): monitors incoming messages, classifies silence tier, detects disconnect/loneliness patterns, assembles nudges, orchestrates agent delegation. The 'always thinking' layer that makes Dina proactive.", alt: "Named 'guardian angel' because it watches over you silently and only speaks when something matters." },
+  "llm-routing": { title: "LLM Router", summary: "Per-query model selection", detail: "Brain classifies each query and routes to optimal model: simple lookup → FTS5 (no LLM). Basic draft → llama (local). Complex reasoning → cloud LLM (PII-scrubbed). Sensitive persona → llama only. Interactive chat → on-device LLM. Minimizes cost and maximizes privacy.", alt: "MatFormer: Gemma 3n E4B contains E2B — brain can dynamically switch model size based on task complexity." },
+  "hybrid-search": { title: "Hybrid Search", summary: "0.4×FTS + 0.6×cosine", detail: "Combines keyword search (FTS5 BM25 scoring) with semantic search (cosine similarity on embeddings). Weight: 40% keyword, 60% semantic. FTS5 catches exact matches; embeddings catch semantic similarity. Fast path: pure FTS5 for simple keyword queries.", alt: "Reciprocal Rank Fusion (RRF) is alternative weighting. Current linear combination works well for Dina's use case." },
+  "matformer": { title: "MatFormer", summary: "Gemma 3n architecture", detail: "Mixture-of-Experts architecture: E4B (8B total, 4B active) contains E2B (5B total, 2B active) as a subset. Brain can dynamically switch between E2B (faster, less RAM) and E4B (more capable) based on task complexity without loading a separate model.", alt: "Unique to Gemma 3n — most MoE models don't allow clean sub-model extraction." },
+  "litert-lm": { title: "LiteRT-LM", summary: "On-device LLM for rich clients", detail: "Google's lightweight inference runtime for mobile/edge devices. Runs quantized Gemma models directly on phone GPU. Used for latency-sensitive interactive chat (user actively typing). Falls back to Home Node for complex queries.", alt: "Phase 2. Phase 1: all inference on Home Node. On-device LLM reduces latency for simple interactions." },
+  // --- Security mechanisms ---
+  "audit-log": { title: "Audit Log", summary: "90-day rolling access record", detail: "Stored in identity.sqlite. Records: timestamp, persona, action, requester, query_type, reason. NEVER contains query text or vault content — just metadata about who accessed what. ~6MB/year. Daily cleanup by watchdog. Cannot be disabled.", alt: "Query text not logged to prevent the audit log itself from becoming a data leak vector." },
+  "watchdog": { title: "Watchdog Process", summary: "Background maintenance goroutine", detail: "Go goroutine in dina-core: daily audit log cleanup (>90 days), Tier 4 expiry sweep (>72h drafts), persona TTL enforcement (zero DEKs on expiry), spool cleanup after sweeper, health checks. Runs every 60 seconds, lightweight.", alt: "Single goroutine, not a separate process. Crash recovery: watchdog runs on next startup if missed." },
+  "outbox-table": { title: "Outbox Table", summary: "Reliable message delivery", detail: "Messages queued in SQLite outbox table before transmission. Exponential backoff on failure (1s, 2s, 4s, 8s... up to 1h). 24-hour TTL — messages older than 24h are dropped. Survives reboot — queue persisted in SQLite. Prevents message loss during network issues.", alt: "Database-backed outbox pattern: atomically write message + outbox entry in same transaction." },
+  "device-pairing": { title: "Device Pairing", summary: "QR code + ephemeral key exchange", detail: "New device scans QR code displayed by existing device. QR contains: Home Node URL + one-time pairing token. Device sends pairing request with its CLIENT_TOKEN. Core verifies pairing token, stores SHA-256(CLIENT_TOKEN) in device_tokens table. Pairing token expires after single use.", alt: "Phase 2: Bluetooth Low Energy pairing for watch/glasses (no QR camera needed)." },
+  "dina-export": { title: "dina export/import", summary: "Hosting migration tool", detail: "dina export: creates encrypted tarball of vault files + identity + configuration. dina import: restores on new host. Enables migration between hosting levels: managed (Foundation) → VPS (Hetzner) → sovereign box (Pi). Keys travel with the user.", alt: "Hosting is not lock-in. Your data and identity are portable. Switch providers in minutes." },
+  // --- Design philosophy ---
+  "four-laws": { title: "The Four Laws", summary: "Engineering constraints, not aspirations", detail: "1. Silence First (never push). 2. Verified Truth (reputation, not ads). 3. Absolute Loyalty (user holds keys). 4. Never Replace a Human (Anti-Her). These are not guidelines — they are enforced by architecture. Silence enforced by classification. Loyalty enforced by encryption. Agency enforced by Draft-Don't-Send.", alt: "Every technical decision is tested against these four laws. If a feature violates any law, it's rejected." },
+  "thin-agent": { title: "Thin Agent", summary: "Orchestrator, not omniscient brain", detail: "Dina delegates to specialist bots — she doesn't try to know everything. Review bot handles product research. OpenClaw handles OAuth integrations. Legal bot handles document analysis. Dina routes based on Reputation Graph scores and orchestrates results.", alt: "Contrast with monolithic AI assistants that try to do everything internally. Dina is a CEO, not a one-person company." },
+  "sovereign-identity": { title: "Sovereign Identity", summary: "One root, many personas", detail: "Single Ed25519 root key (user holds the seed phrase). Multiple personas as separate cryptographic compartments. A seller sees 'verified buyer, wants a chair.' Government sees full legal identity. No external system can cross compartments without user's explicit action.", alt: "Personas are not profiles — they are cryptographically isolated. Compromise of consumer persona cannot leak health data." },
+  "fiduciary-interrupt": { title: "Fiduciary Interrupt", summary: "Tier 1 — silence causes harm", detail: "Only category that can interrupt without prior user request. Examples: bank security alert, license expiration, medical reminder deadline, domain expiry. Classification enforced by LLM (guardian angel) with hard-coded override rules for known patterns.", alt: "Distinction: fiduciary duty means Dina MUST speak. All other notifications can wait." },
+  "daily-briefing": { title: "Daily Briefing", summary: "Tier 3 items collected silently", detail: "Engagement-tier notifications (news, deals, app updates, social media) are never pushed. Collected throughout the day and presented in a single daily briefing if the user requests it. Most digital noise never reaches the user at all.", alt: "Contrast with smartphone notifications: 50-100/day. Dina's briefing: 1/day, only if requested." },
+  "egress-policy": { title: "Egress Sharing Policy", summary: "Per-contact data release rules", detail: "Stored in identity.sqlite sharing_policy table. Per-contact settings: none (share nothing), summary (high-level only), eta_only (location/time), full (everything). Default: none. Brain assembles max-detail payload; Core strips based on policy. Missing key = deny.", alt: "Enforcement in compiled Go. Even if Brain is compromised via prompt injection, Core won't release unauthorized data." },
+  "webhook-auth": { title: "WebSocket Auth", summary: "CLIENT_TOKEN bearer authentication", detail: "Phone/laptop/watch connect to Core via WebSocket at wss://homenode.example/ws. CLIENT_TOKEN sent as Bearer token in handshake headers. Core verifies SHA-256(token) against device_tokens table. Connection upgraded to persistent WebSocket for real-time push.", alt: "WebSocket over polling: instant notifications, lower bandwidth, single persistent connection per device." },
+  // --- Hosting & hardware ---
+  "raspberry-pi": { title: "Raspberry Pi", summary: "Sovereign hardware option", detail: "Raspberry Pi 5 8GB: runs dina-core + dina-brain + dina-pds + llama (Gemma 3n E4B at ~3GB). ~$100 total. USB SSD for vault. Behind home router (NAT-traversed via Tailscale/Yggdrasil). Maximum sovereignty — your hardware, your home, your data.", alt: "Alternative sovereign hardware: NAS (Synology), old laptop, Mac Mini M4. Key: you physically control the device." },
+  "managed-hosting": { title: "Managed Hosting", summary: "Dina Foundation hosted tier", detail: "pds.dina.host provides managed Home Node for users who can't self-host. Foundation manages infrastructure; user holds keys. Trust model: Foundation sees encrypted vault files but cannot decrypt without user's passphrase/keyfile. Phase 2: Confidential Computing reduces this trust.", alt: "Progression: managed (easy, trust Foundation) → VPS (moderate, trust provider) → sovereign (hard, trust nobody)" },
+  "vps-hosting": { title: "VPS Hosting", summary: "Self-hosted on cloud provider", detail: "Hetzner, Oracle Cloud Free Tier, DigitalOcean, etc. User manages their own VPS. dina CLI handles deployment. Keys in RAM during operation — standard VPS trust model. Confidential Computing (Phase 2) encrypts RAM against provider.", alt: "Oracle Cloud Free Tier: 4 OCPU, 24GB RAM — runs full Dina stack for free. Hetzner: 2 vCPU, 4GB, ~€4/month." },
+  // --- Compliance & governance ---
+  "gdpr-dpdp": { title: "GDPR / DPDP Act", summary: "Privacy regulation compliance", detail: "GDPR (EU) and DPDP Act (India) require: right to erasure (signed tombstones), data portability (dina export), consent management (persona access tiers), data minimization (PII scrubber). Dina's architecture naturally satisfies these because data is user-controlled.", alt: "Dina doesn't need a privacy policy — the architecture IS the privacy policy. User holds keys = user controls data." },
+  "digital-estate-trigger": { title: "Digital Estate Triggers", summary: "Dead Man's Switch activation", detail: "90-day liveness check interval. Three consecutive failures (270 days) triggers beneficiary access. Alternatives: legal document presentation, trusted contact attestation (e.g., 3-of-5 emergency contacts confirm). Per-beneficiary keys pre-configured during setup.", alt: "Pre-configured, not post-mortem. User decides what each beneficiary gets while they're alive." },
+  // --- Additional technology ---
+  "llama-cpp": { title: "llama.cpp", summary: "CPU/GPU inference engine", detail: "C/C++ implementation for running GGUF-quantized models. OpenAI-compatible API server. Runs on CPU (AVX2/AVX-512), Apple Silicon (Metal), NVIDIA (CUDA). Serves Gemma 3n in dina's llama container. MIT license.", alt: "Primary local inference runtime. Alternatives: vLLM (GPU-only, server-grade), Ollama (wraps llama.cpp with UX)." },
+  "fastapi": { title: "FastAPI", summary: "Brain's HTTP framework", detail: "Python ASGI framework powering dina-brain. Serves: /api/* (Brain API for Core communication) + /admin/* (Admin UI). Automatic OpenAPI docs. Async support for concurrent request handling. Type hints with Pydantic validation.", alt: "FastAPI over Flask: async support, automatic validation, better performance. Over Django: lighter weight for API-only service." },
+  "postgresql-16": { title: "PostgreSQL 16", summary: "AppView query database", detail: "Powers the Reputation Graph AppView. Indexes com.dina.reputation.* records consumed from AT Protocol firehose. JSON API for product/bot/reputation queries. Phase 1: single instance. Phase 3: sharded cluster (ScyllaDB for hot data, Kafka for ingestion).", alt: "PostgreSQL for AppView only — never for private vault data (that's always SQLite + SQLCipher)." },
+  "sbom-syft": { title: "SBOM via syft", summary: "Software Bill of Materials", detail: "syft generates a list of all dependencies in container images. Enables instant vulnerability scanning (grype) against known CVE databases. Part of supply chain security alongside Cosign image signing and digest pinning.", alt: "SBOM + Cosign + digest pinning = three layers of supply chain security. No auto-updates — user verifies before applying." },
+  "object-lock": { title: "S3 Object Lock", summary: "Immutable backup protection", detail: "S3 Compliance Mode Object Lock prevents deletion of Tier 5 archives even by admin (including root). Protects against ransomware that tries to delete backups. Retention period set at upload time. Works with S3 Glacier Deep Archive and Backblaze B2.", alt: "Governance mode (admin can override) vs Compliance mode (nobody can override, not even AWS support). We use Compliance." },
+  "derp-relay": { title: "DERP Relay", summary: "Tailscale fallback relay", detail: "When direct WireGuard connection fails (both peers behind strict NAT), Tailscale routes traffic through DERP (Designated Encrypted Relay for Packets). Encrypted end-to-end — DERP server sees encrypted blobs only. Adds latency but ensures connectivity.", alt: "Similar to TURN in WebRTC. Tailscale tries direct connection first, falls back to DERP only when needed." },
+  "wireguard": { title: "WireGuard", summary: "Tailscale transport layer", detail: "Tailscale builds on WireGuard for point-to-point encrypted tunnels. Modern, fast, minimal attack surface (~4000 lines of code). Used underneath Tailscale Funnel for Home Node ingress.", alt: "WireGuard is the transport. Tailscale adds: NAT traversal, key management, ACLs, Funnel (public endpoint)." }
+};
+
+const LAWS = [
+  { title: "1. Absolute Loyalty", color: "var(--l0)", icon: "I", desc: "Dina is your agent. Loyal only to you.", detail: "She serves one master: the human who created her. No conflict of interest — open source, no corporate owner. Your data is secure, your keys are yours, and nothing leaves without your explicit action. Loyalty enforced by math, not by a privacy policy. This singular loyalty is the foundation every other law is built on." },
+  { title: "2. Silence First", color: "var(--l4)", icon: "II", desc: "Never push content. Only speak when asked, or when silence would cause harm.", detail: "Three priority tiers: Tier 1 Fiduciary (interrupt — silence causes harm), Tier 2 Solicited (notify — user asked), Tier 3 Engagement (save for briefing — silence merely misses opportunity). Most digital life is noise. Dina's default state is silence." },
+  { title: "3. Verified Truth", color: "var(--l2)", icon: "III", desc: "Rank by reputation. The Reputation Graph surfaces what's genuinely good.", detail: "Two truth layers: Expert Knowledge (structured verdicts from trusted reviewers) + Outcome Data (passive purchase tracking from millions of Dinas — actual outcomes over time). Trust is earned through real results." },
+  { title: "4. Never Replace a Human", color: "var(--l7)", icon: "IV", desc: "Dina connects you to humans, never replaces them. Anti-Her.", detail: "If Dina senses loneliness, she nudges toward friends — never deeper engagement with herself. She is warm and loyal but never pretends to be your friend or lover. 'You haven't talked to Sancho in a while.' The meaning of life is in our relationships with others." }
+];
+
+const PRINCIPLES = [
+  { title: "Orchestrator, Not Doer", color: "var(--l4)", desc: "Dina is the CEO — she decides what needs doing and delegates to specialist agents via MCP. She tells OpenClaw to fetch your Gmail, tells a review bot to research chairs, tells a legal bot to check a contract. The agents do the work; Dina coordinates the result. Raw data never leaves the Home Node — agents get sanitised questions only." },
+  { title: "Agent Safety Layer", color: "var(--l5)", desc: "Every agent acting on your behalf must submit its intent to Dina before executing. Safe tasks (fetch data, search) pass through silently. But any irreversible action — sending email, moving money, sharing personal data — is held and routed back to Dina for your approval. The agent never holds your keys, never sees your full history, and cannot bypass this gate. Dina is the checkpoint between AI capability and real-world consequence." },
+  { title: "Cart Handover", color: "var(--l1)", desc: "Dina never touches money. She researches products, checks the Reputation Graph, assembles your options — then generates a payment link (UPI, crypto, or web checkout). You open GPay or Metamask and press Pay yourself. Dina never sees your bank balance, card number, or UPI PIN. The moment money moves, it is your finger on the button, not hers." },
+  { title: "Anti-Her", color: "var(--l0)", desc: "Named after the 2013 film. Dina must never become an emotional crutch. If she senses loneliness, she nudges you toward friends — 'You haven't talked to Sancho in a while' — never toward deeper engagement with herself. She is warm, loyal, and devoted. But she is not your friend. The meaning of life is in our relationships with other humans." },
+  { title: "Kernel Model", color: "var(--l3)", desc: "No plugins. No third-party code runs inside Dina. She communicates with the outside world through exactly two protocols: NaCl (talking to other Dinas) and MCP (delegating to agents). A compromised agent is just a misbehaving external process that Dina can disconnect. This eliminates entire categories of plugin vulnerabilities — no sandboxing, no scoped tokens, no review process needed." },
+  { title: "Pull Economy", color: "var(--l6)", desc: "You pull verified truth on demand. Results ranked by reputation and real purchase outcomes. Dina talks to other Dinas and to trusted bots. Direct P2P transactions between buyer and seller. Misleading or sponsored bots are deprioritized automatically — their reputation drops with every inaccurate result." },
+  { title: "Deep Link Default", color: "var(--l2)", desc: "Dina credits sources: 'MKBHD says the battery is bad — check the stress test at 04:20, here is the link.' The creator gets high-quality, intent-driven traffic. The user gets truth with proof. A 'lost view' becomes a valuable, targeted view. Configurable, but the default is fair — creators deserve credit for the knowledge they produce." }
+];
+
+const CONTAINERS = [
+  { id: "core", name: "dina-core", lang: "Go + net/http", color: "var(--c-core)", ports: "443 (ext), 8100 (int)", items: ["SQLite vault + encryption", "DID / key operations", "NaCl messaging (Dina-to-Dina)", "WebSocket server (clients)", "PII scrubber (regex)", "Gatekeeper RBAC", "Reverse proxy: /admin -> brain"] },
+  { id: "brain", name: "dina-brain", lang: "Python + Google ADK", color: "var(--c-brain)", ports: "8200 (int)", items: ["Guardian angel loop", "Silence classification", "Nudge assembly", "Ingestion orchestration", "LLM routing", "Admin UI (FastAPI)", "spaCy NER (PII Tier 2)"] },
+  { id: "pds", name: "dina-pds", lang: "AT Protocol PDS", color: "var(--c-pds)", ports: "2583 (ext)", items: ["Signed Merkle repos", "Reputation records only", "Relay crawling", "Firehose publication", "com.dina.reputation.* Lexicons"] },
+  { id: "llama", name: "llama", lang: "llama.cpp", color: "var(--c-llama)", ports: "8080 (int)", items: ["Gemma 3n E4B (GGUF)", "OpenAI-compatible API", "~3GB RAM", "Optional: --profile local-llm", "Text + embeddings + NER"] }
+];
+
+const PROFILES = [
+  { title: "Cloud LLM (default)", color: "var(--c-core)", containers: "3 (core, brain, pds)", desc: "Brain calls Gemini Flash Lite + Deepgram APIs. PII scrubbed (regex + spaCy). ~$5-15/month. 2GB RAM." },
+  { title: "Local LLM", color: "var(--c-llama)", containers: "4 (core, brain, pds, llama)", desc: "All text inference on llama. Zero cloud dependency for text. 8GB+ RAM. Best privacy for sensitive personas." },
+  { title: "Hybrid", color: "var(--c-brain)", containers: "4 (core, brain, pds, llama)", desc: "Health/financial -> llama (local). General -> cloud. Best of both worlds. Brain's LLM router decides per-query." }
+];
+
+const LAYERS = [
+  { id: 0, name: "Identity", color: "var(--l0)", desc: "Root keypair, DIDs, personas, key derivation", items: ["Ed25519 root keypair (BIP-39 mnemonic backup)", "did:plc via PLC Directory (30M+ identities)", "SLIP-0010 m/9999' HD derivation", "Personas as cryptographic compartments", "Per-persona DEKs via HKDF-SHA256", "Argon2id 128MB/3 key wrapping (passphrase -> KEK)", "Zero-Knowledge Proof credentials (Trust Rings)", "did:web escape hatch if PLC Directory fails"], svg: "key-tree" },
+  { id: 1, name: "Storage", color: "var(--l1)", desc: "6-tier encrypted vault, SQLCipher, FTS5, WAL", items: ["Tier 0: Identity (contacts, audit, keys, kv_store)", "Tier 1: Raw Vault (emails, messages, events, photos)", "Tier 2: Index (embeddings, summaries, FTS5 + sqlite-vec)", "Tier 3: Reputation (bot scores, user preferences)", "Tier 4: Staging (drafts, payment intents, 72h expiry)", "Tier 5: Deep Archive (S3 Glacier, Object Lock, LTO tape)", "SQLCipher AES-256-CBC per page", "WAL mode: concurrent reads, crash-safe"], svg: "storage-tiers" },
+  { id: 2, name: "Ingestion", color: "var(--l2)", desc: "MCP delegation, connectors, triage, normalization", items: ["OpenClaw MCP delegation (no OAuth in core)", "Gmail connector (read-only, metadata triage)", "Calendar connector (Google API Phase 1, CalDAV Phase 2)", "Contacts connector (People API / CardDAV)", "Two-pass triage: Gmail categories + LLM (~70% killed early)", "WhatsApp via Android NotificationListenerService", "Attachment storage: metadata + reference only (no binary blobs)", "Memory strategy: Living Window (12-month active, archive older)"], svg: "ingestion" },
+  { id: 3, name: "Reputation", color: "var(--l3)", desc: "AT Protocol, expert verdicts, outcome data", items: ["AT Protocol 3-layer: PDS -> Relay -> AppView", "Custom Lexicons: com.dina.reputation.attestation/outcome", "Expert attestations (signed, attributed, deep-linked)", "Outcome data (anonymized purchase tracking from every Dina)", "Split Sovereignty: AT Protocol for public, SQLite for private", "Signed tombstones for deletion (GDPR/DPDP compliant)", "Trust Rings 1-3 (Unverified, Verified Human, Credentialed)", "Cold start: tool first, network second (no chicken-and-egg)"], svg: "reputation" },
+  { id: 4, name: "Dina-to-Dina", color: "var(--l4)", desc: "Peer messaging, encryption, sharing policies", items: ["Phase 1: libsodium NaCl crypto_box_seal (sender FS)", "Phase 2: JWE ECDH-1PU+A256KW (sender auth)", "Phase 3: Noise XX (full forward secrecy both directions)", "DIDComm-compatible JSON plaintext format", "Egress gatekeeper: sharing policy enforced in Go, not LLM", "Policy tiers per contact: none/summary/eta_only/full", "Dead Drop 3-valve ingress (IP rate, spool cap, sweeper)", "Outbox table: exponential backoff, 24h TTL, survives reboot"], svg: "messaging" },
+  { id: 5, name: "Bot Interface", color: "var(--l5)", desc: "Query sanitization, bot reputation, protocol", items: ["Query sanitization via PII scrubber before sending", "Bot reputation scoring (accuracy over time)", "Bot communication protocol (REST + signed payloads)", "Bot discovery (self-register on Reputation Graph)", "Raw data never leaves Home Node — bots get questions only", "Response verification (signature check, Phase 3)", "Automatic routing: low-rep bots get fewer queries", "Thin Agent design: Dina orchestrates, bots execute"], svg: "bot-interface" },
+  { id: 6, name: "Intelligence", color: "var(--l6)", desc: "PII scrubbing, LLM routing, nudges, silence filter", items: ["3-tier PII Scrubber: Regex (Go) + spaCy NER + LLM NER", "Entity Vault: ephemeral mapping for cloud LLM queries", "LLM routing: local (llama) vs cloud (Gemini) vs escalation", "Context injection for nudge assembly", "Silence classification: Fiduciary / Solicited / Engagement", "FTS5 for simple queries (no LLM needed)", "Hybrid search: 0.4*FTS + 0.6*cosine similarity", "Guardian angel reasoning loop (Google ADK)"], svg: "intelligence" },
+  { id: 7, name: "Action", color: "var(--l7)", desc: "Draft-Don't-Send, Cart Handover, agent delegation", items: ["Draft-Don't-Send: email staging with 72h expiry", "Cart Handover: payment intent generation, user executes", "Agent Delegation via MCP (OpenClaw, specialist bots)", "3-tier scheduling: Go tickers + reminder loop + delegate", "Outcome recording to Tier 3 (for Reputation Graph)", "Human always makes final decision on irreversible actions", "No auto-send, no auto-pay, no auto-share", "Dina is advisor, not decision-maker"], svg: "action" }
+];
+
+const SECURITY_NODES = [
+  { title: "Two-Tier Authentication", tip: "two-tier-auth", detail: "BRAIN_TOKEN: 32-byte pre-shared secret for core<->brain. Constant-time comparison. CLIENT_TOKEN: per-device 32-byte random, SHA-256 hashed. No JWTs, no expiry. Permanent design." },
+  { title: "Persona Access Tiers", tip: "persona-tiers", detail: "Open: brain accesses freely. Restricted: logged + notified. Locked: DEK not in RAM, file is opaque bytes. Requires user approval + TTL. Enforced by gatekeeper.go (compiled Go, not LLM)." },
+  { title: "Trust Rings", tip: "trust-rings", detail: "Ring 1: Unverified (just DID). Ring 2: Verified Human (ZKP, Sybil resistant). Ring 3: Credentialed (LinkedIn, GitHub, business). Trust = f(ring, time, transactions, outcomes, attestations)." },
+  { title: "PII Scrubber Pipeline", tip: "pii-scrubber", detail: "Tier 1: Regex in Go (cards, phones, IDs). Tier 2: spaCy NER (names, orgs, locations). Tier 3: LLM NER via llama (indirect references). Cloud never sees raw PII." },
+  { title: "Silence Protocol", tip: "silence-tiers", detail: "Tier 1 Fiduciary: interrupt. Tier 2 Solicited: notify. Tier 3 Engagement: queue for briefing. Default is silence. Only harm-preventing or user-requested notifications interrupt." },
+  { title: "Egress Gatekeeper", detail: "Sharing policy enforced in compiled Go, not LLM. Brain assembles max-detail payload. Core strips categories based on per-contact policy table. Default deny (missing key = none). Prompt injection irrelevant." },
+  { title: "Dead Drop 3-Valve", tip: "dead-drop", detail: "State-aware ingress. Valve 1: IP rate limiter (always). Valve 2: Spool cap 500MB (locked vault). Valve 3: Sweeper feedback (retroactive blocklisting). Physics-based defense when crypto unavailable." },
+  { title: "Audit Log", detail: "90-day rolling window in identity.sqlite. Records: timestamp, persona, action, requester, query_type, reason. Never contains query text or vault content. ~6MB/year. Daily cleanup by watchdog." },
+  { title: "Supply Chain Security", tip: "cosign", detail: "Digest pinning (day one): no :latest tags. Cosign image signing (when CI exists): keyless OIDC. SBOM via syft: instant vulnerability scanning. No auto-updates." },
+  { title: "Kernel Model", tip: "kernel-model", detail: "No internal plugins. No untrusted code in-process. Child agents via MCP only. Compromised agent = contained external process. Two protocols: NaCl (peers) + MCP (agents)." }
+];
+
+const TECH_GROUPS = [
+  { name: "Cryptography", items: [
+    { name: "Ed25519", tip: "ed25519", brief: "Signing keys, DID identity" },
+    { name: "X25519", tip: "x25519", brief: "Key exchange, encryption" },
+    { name: "libsodium NaCl", tip: "nacl", brief: "Phase 1 wire encryption" },
+    { name: "Argon2id", tip: "argon2id", brief: "Passphrase KDF (128MB/3)" },
+    { name: "HKDF-SHA256", tip: "hkdf", brief: "Per-persona key derivation" },
+    { name: "BIP-39", tip: "bip39", brief: "24-word mnemonic backup" },
+    { name: "SLIP-0010", tip: "slip0010", brief: "Ed25519 HD derivation" }
+  ]},
+  { name: "Storage", items: [
+    { name: "SQLCipher", tip: "sqlcipher", brief: "Encrypted SQLite per persona" },
+    { name: "FTS5 unicode61", tip: "fts5-unicode61", brief: "Multilingual full-text search" },
+    { name: "sqlite-vec", tip: "sqlite-vec", brief: "Vector search (Mozilla)" },
+    { name: "WAL Mode", tip: "wal-mode", brief: "Concurrent reads, crash-safe" },
+    { name: "go-sqlcipher", tip: "go-sqlcipher", brief: "Go binding for SQLCipher" }
+  ]},
+  { name: "Identity & Protocol", items: [
+    { name: "did:plc", tip: "did-plc", brief: "30M+ DIDs at Bluesky" },
+    { name: "AT Protocol", tip: "at-protocol", brief: "Federated reputation data" },
+    { name: "MCP", tip: "mcp", brief: "Agent delegation standard" },
+    { name: "DIDComm v2 JWE", tip: "didcomm-jwe", brief: "Phase 2 wire format" },
+    { name: "Noise XX", tip: "noise-xx", brief: "Phase 3 full FS" }
+  ]},
+  { name: "LLM & Intelligence", items: [
+    { name: "Gemini Flash Lite", tip: "gemini-flash-lite", brief: "$0.10/$0.40 per 1M tokens" },
+    { name: "Gemma 3n", tip: "gemma-3n", brief: "Local LLM (1300+ LMArena)" },
+    { name: "Google ADK", tip: "google-adk", brief: "Agent orchestration framework" },
+    { name: "Deepgram Nova-3", tip: "deepgram", brief: "150ms streaming STT" },
+    { name: "spaCy", tip: "spacy", brief: "NER for PII Tier 2" },
+    { name: "FunctionGemma", tip: "functiongemma", brief: "270M intent router" },
+    { name: "EmbeddingGemma", tip: "embedding-gemma", brief: "308M embedding model" }
+  ]},
+  { name: "Infrastructure", items: [
+    { name: "Cosign", tip: "cosign", brief: "Keyless image signing" },
+    { name: "Yggdrasil", tip: "yggdrasil", brief: "Sovereign mesh networking" },
+    { name: "Confidential Computing", tip: "confidential-computing", brief: "Hardware memory encryption" }
+  ]},
+  { name: "Design Patterns", items: [
+    { name: "Draft-Don't-Send", tip: "draft-dont-send", brief: "Dina never presses Send" },
+    { name: "Cart Handover", tip: "cart-handover", brief: "Dina never touches money" },
+    { name: "Dead Drop 3-Valve", tip: "dead-drop", brief: "State-aware ingress" },
+    { name: "Entity Vault", tip: "entity-vault", brief: "Ephemeral PII mapping" },
+    { name: "Split Sovereignty", tip: "split-sovereignty", brief: "AT Protocol + SQLite" },
+    { name: "Kernel Model", tip: "kernel-model", brief: "No plugins, MCP only" }
+  ]}
+];
+
+const NETWORK_OPTIONS = [
+  { name: "Tailscale Funnel", setup: "3 commands", domain: false, ddos: false, censorship: "Low", dependency: "Tailscale Inc.", sees: "Encrypted blobs", latency: "50-100ms", best: "Getting started, testing" },
+  { name: "Cloudflare Tunnel", setup: "~15 minutes", domain: true, ddos: true, censorship: "Low", dependency: "Cloudflare Inc.", sees: "TLS terminated at edge", latency: "10-30ms", best: "Production daily use" },
+  { name: "Yggdrasil", setup: "~10 minutes", domain: false, ddos: false, censorship: "High", dependency: "None", sees: "Nothing (E2E mesh)", latency: "20-80ms", best: "Maximum sovereignty" }
+];
+
+const SCENARIOS = [
+  { title: "The Sancho Moment", icon: "&#9749;", desc: "Your friend is coming over for tea", steps: [
+    "Sancho leaves his house. His Dina quietly tells your Dina: 'departing home, ETA 15 minutes'",
+    "Your Dina receives the NaCl-encrypted message at POST /msg (fast path: vault unlocked)",
+    "Brain's guardian angel loop queries the vault: 'What do I know about Sancho?'",
+    "Vault returns: last met 2 weeks ago, his mother was ill, he likes strong tea",
+    "Brain classifies as Tier 2 (Solicited) — you have a 'notify on friend arrival' rule",
+    "Brain assembles nudge: 'Sancho is 15 min away. His mother was unwell. Put the kettle on — strong.'",
+    "Core pushes WebSocket notification to your phone. You open the door prepared.",
+    "You ask about his mother. Sancho smiles: 'She is fine, thank you for asking.'"
+  ]},
+  { title: "Buying a Chair", icon: "&#128186;", desc: "Finding truth through the Reputation Graph", steps: [
+    "You ask Dina: 'I need an office chair for my back pain. Budget 50K.'",
+    "Brain sanitizes query (PII scrub) and routes to a trusted review bot (reputation: 94)",
+    "Bot queries the Reputation Graph: expert attestations + outcome data from thousands of Dinas",
+    "Bot returns: 'Herman Miller Aeron scores 92. MKBHD rated build quality 95. Here is the 04:20 timestamp.'",
+    "Brain also checks outcome data: '87% of buyers still using it after 2 years. 3% reported lumbar issues.'",
+    "Brain presents options with deep links to source reviews (creators get traffic)",
+    "You pick the Aeron. Brain generates UPI payment intent (Cart Handover — Dina never touches money)",
+    "You open GPay, confirm payment. Chair arrives. 6 months later, Dina asks: 'How is the chair? Back pain better?'"
+  ]},
+  { title: "License Renewal", icon: "&#128196;", desc: "Proactive life management with agent delegation", steps: [
+    "During morning ingestion sync, Brain processes a government email: 'License expires in 7 days'",
+    "Brain classifies as Tier 1 (Fiduciary) — silence would cause legal harm",
+    "Core immediately pushes notification: 'Your driving license expires next Tuesday.'",
+    "You approve delegation: 'Yes, handle the renewal paperwork.'",
+    "Brain delegates to OpenClaw via MCP: fetch renewal form, fill with vault data (citizen persona)",
+    "Brain stages completed form in Tier 4 (Draft-Don't-Send pattern) — you review before submitting",
+    "You verify the form, approve submission. OpenClaw submits. Dina updates vault with new expiry date."
+  ]},
+  { title: "Memory Recall", icon: "&#128218;", desc: "Private searchable recall of your life", steps: [
+    "You ask: 'What was the book I promised my daughter I would read to her?'",
+    "Brain routes to hybrid search: FTS5 keyword ('book' + 'daughter' + 'promise') + semantic embedding similarity",
+    "Vault returns match from a WhatsApp message 6 days ago: 'I will read The Little Prince to you tomorrow'",
+    "Brain assembles response: 'The Little Prince. You promised last Tuesday in a WhatsApp message.'",
+    "All processing happened locally — no cloud LLM needed for this search (FTS5 fast path)",
+    "Your promise, your memory, indexed by meaning. Private. Sovereign. Yours."
+  ]}
+];
+
+/* ============================================================
+   RENDER — Build all sections from data
+   ============================================================ */
+
+function renderLaws() {
+  const g = document.getElementById('laws-grid');
+  g.innerHTML = LAWS.map(l => `
+    <div class="card" style="border-top: 3px solid ${l.color}">
+      <h3><span style="color:${l.color};font-size:1.2em">${l.icon}</span> ${l.title}</h3>
+      <p><strong>${l.desc}</strong></p>
+      <p style="margin-top:8px;font-size:0.85em;color:var(--text-secondary)">${l.detail}</p>
+    </div>`).join('');
+}
+
+function renderPrinciples() {
+  const g = document.getElementById('principles-grid');
+  g.innerHTML = PRINCIPLES.map(p => `
+    <div class="card">
+      <div class="card-tag" style="background:${p.color}22;color:${p.color}">${p.title}</div>
+      <p>${p.desc}</p>
+    </div>`).join('');
+}
+
+function renderContainerDiagram() {
+  const d = document.getElementById('container-diagram');
+  d.innerHTML = `<svg viewBox="0 0 900 700" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#2563EB"/></marker>
+      <marker id="arrow-g" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#2ecc71"/></marker>
+      <marker id="arrow-t" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#1abc9c"/></marker>
+      <marker id="arrow-o" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#f39c12"/></marker>
+    </defs>
+
+    <!-- === EXTERNAL WORLD (top 3 stacked layers) === -->
+    <!-- External Ingress -->
+    <rect x="30" y="16" width="840" height="52" rx="10" fill="#FFFFFF" stroke="#2563EB" stroke-width="1.5"/>
+    <text x="50" y="47" fill="#2563EB" font-size="13" font-weight="700">External Ingress</text>
+    <text x="240" y="47" fill="#1C1917" font-size="11">Tailscale Funnel</text>
+    <text x="405" y="47" fill="#1C1917" font-size="11">Cloudflare Tunnel</text>
+    <text x="570" y="47" fill="#1C1917" font-size="11">Yggdrasil Mesh</text>
+    <text x="770" y="47" fill="#78716C" font-size="10" text-anchor="end">NAT-traversing, outbound-only</text>
+
+    <!-- Client Devices -->
+    <rect x="30" y="76" width="840" height="52" rx="10" fill="#FFFFFF" stroke="#1abc9c" stroke-width="1.5"/>
+    <text x="50" y="107" fill="#1abc9c" font-size="13" font-weight="700">Client Devices</text>
+    <text x="240" y="107" fill="#1C1917" font-size="11">Phone / Laptop (rich client)</text>
+    <text x="480" y="107" fill="#1C1917" font-size="11">Glasses / Watch (thin client)</text>
+    <text x="770" y="107" fill="#78716C" font-size="10" text-anchor="end">WebSocket + CLIENT_TOKEN auth</text>
+
+    <!-- Cloud APIs -->
+    <rect x="30" y="136" width="840" height="52" rx="10" fill="#FFFFFF" stroke="#f39c12" stroke-width="1.5"/>
+    <text x="50" y="167" fill="#f39c12" font-size="13" font-weight="700">Cloud APIs</text>
+    <text x="240" y="167" fill="#1C1917" font-size="11">Gemini Flash Lite (LLM)</text>
+    <text x="445" y="167" fill="#1C1917" font-size="11">Deepgram Nova-3 (STT)</text>
+    <text x="770" y="167" fill="#78716C" font-size="10" text-anchor="end">PII-scrubbed queries only</text>
+
+    <!-- Arrows from external to Docker network -->
+    <line x1="200" y1="68" x2="200" y2="240" stroke="#2563EB" stroke-width="1.5" marker-end="url(#arrow)" stroke-dasharray="6 3"/>
+    <line x1="450" y1="128" x2="450" y2="240" stroke="#1abc9c" stroke-width="1.5" marker-end="url(#arrow-t)" stroke-dasharray="6 3"/>
+    <line x1="660" y1="188" x2="660" y2="240" stroke="#f39c12" stroke-width="1.5" marker-end="url(#arrow-o)" stroke-dasharray="6 3"/>
+
+    <!-- === DOCKER INTERNAL NETWORK === -->
+    <rect x="30" y="244" width="840" height="440" rx="16" fill="#F5F3F0" stroke="#D6D3D1"/>
+    <text x="50" y="272" fill="#A8A29E" font-size="12" font-weight="600">Docker Internal Network</text>
+
+    <!-- dina-core -->
+    <rect x="55" y="286" width="385" height="175" rx="12" fill="#FFFFFF" stroke="#3498db" stroke-width="2"/>
+    <rect x="55" y="286" width="385" height="30" rx="12" fill="#3498db22"/>
+    <text x="75" y="306" fill="#3498db" font-size="13" font-weight="700">dina-core</text>
+    <text x="375" y="306" fill="#A8A29E" font-size="10" text-anchor="end">Go + net/http</text>
+    <text x="75" y="332" fill="#78716C" font-size="11">Port 443 (ext) / 8100 (int)</text>
+    <text x="75" y="352" fill="#1C1917" font-size="10.5">SQLite vault + encryption</text>
+    <text x="75" y="368" fill="#1C1917" font-size="10.5">DID / key operations</text>
+    <text x="75" y="384" fill="#1C1917" font-size="10.5">NaCl messaging endpoint</text>
+    <text x="75" y="400" fill="#1C1917" font-size="10.5">WebSocket server (clients)</text>
+    <text x="75" y="416" fill="#1C1917" font-size="10.5">Gatekeeper RBAC</text>
+    <text x="75" y="432" fill="#1C1917" font-size="10.5">PII scrubber (regex Tier 1)</text>
+    <text x="75" y="448" fill="#1C1917" font-size="10.5">Reverse proxy: /admin -> brain</text>
+
+    <!-- dina-brain -->
+    <rect x="465" y="286" width="385" height="175" rx="12" fill="#FFFFFF" stroke="#2ecc71" stroke-width="2"/>
+    <rect x="465" y="286" width="385" height="30" rx="12" fill="#2ecc7122"/>
+    <text x="485" y="306" fill="#2ecc71" font-size="13" font-weight="700">dina-brain</text>
+    <text x="785" y="306" fill="#A8A29E" font-size="10" text-anchor="end">Python + ADK</text>
+    <text x="485" y="332" fill="#78716C" font-size="11">Port 8200 (internal)</text>
+    <text x="485" y="352" fill="#1C1917" font-size="10.5">Guardian angel loop</text>
+    <text x="485" y="368" fill="#1C1917" font-size="10.5">Silence classification</text>
+    <text x="485" y="384" fill="#1C1917" font-size="10.5">Nudge assembly</text>
+    <text x="485" y="400" fill="#1C1917" font-size="10.5">Ingestion orchestration</text>
+    <text x="485" y="416" fill="#1C1917" font-size="10.5">LLM routing</text>
+    <text x="485" y="432" fill="#1C1917" font-size="10.5">Admin UI (FastAPI)</text>
+    <text x="485" y="448" fill="#1C1917" font-size="10.5">spaCy NER (PII Tier 2)</text>
+
+    <!-- dina-pds -->
+    <rect x="55" y="480" width="385" height="140" rx="12" fill="#FFFFFF" stroke="#9b59b6" stroke-width="2"/>
+    <rect x="55" y="480" width="385" height="30" rx="12" fill="#9b59b622"/>
+    <text x="75" y="500" fill="#9b59b6" font-size="13" font-weight="700">dina-pds</text>
+    <text x="375" y="500" fill="#A8A29E" font-size="10" text-anchor="end">AT Protocol PDS</text>
+    <text x="75" y="526" fill="#78716C" font-size="11">Port 2583 (external)</text>
+    <text x="75" y="546" fill="#1C1917" font-size="10.5">Signed Merkle repos</text>
+    <text x="75" y="562" fill="#1C1917" font-size="10.5">com.dina.reputation.* only</text>
+    <text x="75" y="578" fill="#1C1917" font-size="10.5">Relay crawling / firehose</text>
+    <text x="75" y="594" fill="#1C1917" font-size="10.5">Public reputation data</text>
+
+    <!-- llama (optional) -->
+    <rect x="465" y="480" width="385" height="140" rx="12" fill="#FFFFFF" stroke="#f39c12" stroke-width="2" stroke-dasharray="8 4"/>
+    <rect x="465" y="480" width="385" height="30" rx="12" fill="#f39c1222"/>
+    <text x="485" y="500" fill="#f39c12" font-size="13" font-weight="700">llama</text>
+    <text x="785" y="500" fill="#A8A29E" font-size="10" text-anchor="end">llama.cpp (optional)</text>
+    <text x="485" y="526" fill="#78716C" font-size="11">Port 8080 (internal)</text>
+    <text x="485" y="546" fill="#1C1917" font-size="10.5">Gemma 3n E4B (GGUF, ~3GB)</text>
+    <text x="485" y="562" fill="#1C1917" font-size="10.5">OpenAI-compatible API</text>
+    <text x="485" y="578" fill="#1C1917" font-size="10.5">--profile local-llm</text>
+    <text x="485" y="594" fill="#1C1917" font-size="10.5">Text + embeddings + NER</text>
+
+    <!-- Internal connection arrows -->
+    <line x1="440" y1="370" x2="465" y2="370" stroke="#2563EB" stroke-width="2" marker-end="url(#arrow)"/>
+    <text x="448" y="362" fill="#2563EB" font-size="9" transform="rotate(-90,448,362)">:8100</text>
+
+    <line x1="245" y1="461" x2="245" y2="480" stroke="#2563EB" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <line x1="655" y1="461" x2="655" y2="480" stroke="#2ecc71" stroke-width="2" marker-end="url(#arrow-g)"/>
+    <text x="668" y="474" fill="#2ecc71" font-size="9">:8080</text>
+
+    <!-- Labels for arrow endpoints from external -->
+    <text x="200" y="236" fill="#2563EB" font-size="9" text-anchor="middle">:443</text>
+    <text x="450" y="236" fill="#1abc9c" font-size="9" text-anchor="middle">WebSocket</text>
+    <text x="660" y="236" fill="#f39c12" font-size="9" text-anchor="middle">PII-scrubbed</text>
+
+    <!-- Legend -->
+    <text x="450" y="668" fill="#A8A29E" font-size="10" text-anchor="middle">Dashed borders = optional component &middot; Solid = required &middot; Arrows show data flow direction</text>
+  </svg>`;
+}
+
+function renderProfiles() {
+  const g = document.getElementById('profiles-grid');
+  g.innerHTML = PROFILES.map(p => `
+    <div class="card" style="border-top:3px solid ${p.color}">
+      <h3>${p.title}</h3>
+      <p><strong>${p.containers}</strong></p>
+      <p style="margin-top:8px">${p.desc}</p>
+    </div>`).join('');
+}
+
+function renderLayerStrip() {
+  const strip = document.getElementById('layer-strip');
+  strip.innerHTML = LAYERS.map(l => `
+    <div class="layer-tab" data-layer="${l.id}" style="background:${l.color}22;color:${l.color}"
+      onclick="selectLayer(${l.id})">
+      <div style="font-size:1.1em">L${l.id}</div>
+      <div>${l.name}</div>
+    </div>`).join('');
+}
+
+function getLayerSVG(id) {
+  const svgs = {
+    0: `<svg viewBox="0 0 760 420" xmlns="http://www.w3.org/2000/svg">
+      <style>text{font-family:'Figtree',sans-serif;fill:#1C1917} .m{font-family:'JetBrains Mono',monospace;font-size:10px;fill:#6D28D9} .h{font-size:12px;font-weight:700} .s{font-size:10px;fill:#78716C} .b{fill:#FFFFFF;stroke:#D6D3D1}</style>
+      <defs><marker id="ka" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#e74c3c"/></marker></defs>
+      <text x="380" y="20" text-anchor="middle" class="h" style="font-size:14px;fill:#e74c3c">Key Derivation Tree</text>
+      <!-- BIP-39 -->
+      <rect x="260" y="34" width="240" height="36" rx="8" class="b" stroke="#e74c3c"/>
+      <text x="380" y="57" text-anchor="middle" class="h" style="fill:#e74c3c">BIP-39 Mnemonic (24 words)</text>
+      <line x1="380" y1="70" x2="380" y2="92" stroke="#e74c3c" stroke-width="1.5" marker-end="url(#ka)"/>
+      <text x="420" y="85" class="s">PBKDF2</text>
+      <!-- Master Seed -->
+      <rect x="270" y="94" width="220" height="30" rx="6" class="b" stroke="#f39c12"/>
+      <text x="380" y="114" text-anchor="middle" class="h" style="fill:#f39c12">Master Seed (512-bit)</text>
+      <!-- Split -->
+      <line x1="300" y1="124" x2="300" y2="155" stroke="#e74c3c" stroke-width="1.5"/>
+      <line x1="540" y1="124" x2="540" y2="155" stroke="#3498db" stroke-width="1.5"/>
+      <line x1="300" y1="124" x2="540" y2="124" stroke="#A8A29E" stroke-width="1" stroke-dasharray="4 2"/>
+      <text x="180" y="150" class="s">SLIP-0010 Hardened</text>
+      <text x="500" y="150" class="s">HKDF-SHA256</text>
+      <!-- SLIP-0010 branch -->
+      <rect x="100" y="160" width="250" height="28" rx="6" class="b" stroke="#e74c3c"/>
+      <text x="115" y="179" class="m">m/9999'/0' → Root Identity Key</text>
+      <rect x="100" y="195" width="250" height="28" rx="6" class="b" stroke="#e74c3c" opacity="0.8"/>
+      <text x="115" y="214" class="m">m/9999'/1' → Consumer Persona</text>
+      <rect x="100" y="230" width="250" height="28" rx="6" class="b" stroke="#e74c3c" opacity="0.7"/>
+      <text x="115" y="249" class="m">m/9999'/2' → Professional</text>
+      <rect x="100" y="265" width="250" height="28" rx="6" class="b" stroke="#e74c3c" opacity="0.6"/>
+      <text x="115" y="284" class="m">m/9999'/3' → Social</text>
+      <rect x="100" y="300" width="250" height="28" rx="6" class="b" stroke="#e74c3c" opacity="0.5"/>
+      <text x="115" y="319" class="m">m/9999'/4' → Health</text>
+      <rect x="100" y="335" width="250" height="28" rx="6" class="b" stroke="#e74c3c" opacity="0.4"/>
+      <text x="115" y="354" class="m">m/9999'/5' → Financial</text>
+      <rect x="100" y="370" width="250" height="28" rx="6" class="b" stroke="#e74c3c" opacity="0.35"/>
+      <text x="115" y="389" class="m">m/9999'/6' → Citizen</text>
+      <!-- Lines from split to SLIP boxes -->
+      <line x1="300" y1="155" x2="300" y2="160" stroke="#e74c3c" stroke-width="1.5"/>
+      ${[195,230,265,300,335,370].map(y=>`<line x1="300" y1="${y}" x2="300" y2="${y+7}" stroke="#e74c3c" stroke-width="1" opacity="0.5"/>`).join('')}
+      <!-- HKDF branch -->
+      <rect x="420" y="160" width="300" height="28" rx="6" class="b" stroke="#3498db"/>
+      <text x="435" y="179" class="m">dina:vault:identity:v1 → identity.sqlite</text>
+      <rect x="420" y="195" width="300" height="28" rx="6" class="b" stroke="#3498db" opacity="0.8"/>
+      <text x="435" y="214" class="m">dina:vault:personal:v1 → personal.sqlite</text>
+      <rect x="420" y="230" width="300" height="28" rx="6" class="b" stroke="#3498db" opacity="0.7"/>
+      <text x="435" y="249" class="m">dina:vault:health:v1 → health.sqlite</text>
+      <rect x="420" y="265" width="300" height="28" rx="6" class="b" stroke="#3498db" opacity="0.6"/>
+      <text x="435" y="284" class="m">dina:vault:financial:v1 → financial.sqlite</text>
+      <rect x="420" y="300" width="300" height="28" rx="6" class="b" stroke="#3498db" opacity="0.5"/>
+      <text x="435" y="319" class="m">dina:vault:social:v1 → social.sqlite</text>
+      <rect x="420" y="335" width="300" height="28" rx="6" class="b" stroke="#3498db" opacity="0.4"/>
+      <text x="435" y="354" class="m">dina:vault:consumer:v1 → consumer.sqlite</text>
+      <line x1="540" y1="155" x2="540" y2="160" stroke="#3498db" stroke-width="1.5"/>
+      ${[195,230,265,300,335].map(y=>`<line x1="540" y1="${y}" x2="540" y2="${y+7}" stroke="#3498db" stroke-width="1" opacity="0.5"/>`).join('')}
+      <!-- Ed25519 to X25519 note -->
+      <rect x="120" y="400" width="520" height="16" rx="4" fill="none"/>
+      <text x="380" y="413" text-anchor="middle" class="s" style="font-style:italic">Each Ed25519 signing key converts to X25519 via libsodium for NaCl encryption</text>
+    </svg>`,
+
+    1: `<svg viewBox="0 0 760 380" xmlns="http://www.w3.org/2000/svg">
+      <style>text{font-family:'Figtree',sans-serif;fill:#1C1917} .m{font-family:'JetBrains Mono',monospace;font-size:10px;fill:#6D28D9} .h{font-size:11px;font-weight:600} .s{font-size:10px;fill:#78716C}</style>
+      <text x="380" y="20" text-anchor="middle" style="font-size:14px;font-weight:700;fill:#f39c12">6-Tier Storage Architecture</text>
+      ${[
+        {y:36,t:'T0',n:'Identity',f:'identity.sqlite',c:'Contacts, audit log, device tokens, kv_store',cl:'#e74c3c',note:'Always unlocked first'},
+        {y:90,t:'T1',n:'Raw Vault',f:'personal.sqlite (Phase 1) → per-persona (Phase 2)',c:'Emails, messages, events, photos, documents',cl:'#f39c12',note:'FTS5 unicode61, SQLCipher AES-256-CBC'},
+        {y:144,t:'T2',n:'Index',f:'Same .sqlite files (virtual tables)',c:'Embeddings (sqlite-vec), summaries, FTS5 index',cl:'#2ecc71',note:'Regenerable from T1 — not backed up'},
+        {y:198,t:'T3',n:'Reputation',f:'reputation section in vault',c:'Bot trust registry, user preferences, outcome data',cl:'#9b59b6',note:'Some data shared (anonymized → Rep Graph)'},
+        {y:252,t:'T4',n:'Staging',f:'ephemeral key-value',c:'Email drafts (72h), payment intents, notification queue',cl:'#3498db',note:'Auto-expire 72h — not backed up'},
+        {y:306,t:'T5',n:'Deep Archive',f:'S3 Glacier / USB / LTO tape',c:'Full encrypted snapshots (T0+T1+T3), weekly',cl:'#6e7681',note:'AES-256-GCM, archive key, ~$1/TB/mo'}
+      ].map(r => `
+        <rect x="30" y="${r.y}" width="700" height="48" rx="8" fill="#FFFFFF" stroke="${r.cl}" stroke-width="1.5"/>
+        <rect x="30" y="${r.y}" width="50" height="48" rx="8" fill="${r.cl}22"/>
+        <text x="55" y="${r.y+30}" text-anchor="middle" style="font-size:13px;font-weight:800;fill:${r.cl}">${r.t}</text>
+        <text x="92" y="${r.y+20}" class="h" style="fill:${r.cl}">${r.n}</text>
+        <text x="92" y="${r.y+35}" class="m">${r.f}</text>
+        <text x="400" y="${r.y+20}" class="s">${r.c}</text>
+        <text x="400" y="${r.y+35}" class="s" style="font-style:italic">${r.note}</text>
+      `).join('')}
+      <text x="380" y="372" text-anchor="middle" class="s">SQLCipher: per-page AES-256-CBC encryption · WAL mode: concurrent reads, crash-safe · One file per persona</text>
+    </svg>`,
+
+    2: `<svg viewBox="0 0 760 340" xmlns="http://www.w3.org/2000/svg">
+      <style>text{font-family:'Figtree',sans-serif;fill:#1C1917} .m{font-family:'JetBrains Mono',monospace;font-size:10px;fill:#6D28D9} .h{font-size:12px;font-weight:700} .s{font-size:10px;fill:#78716C}</style>
+      <defs><marker id="ia" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#2ecc71"/></marker></defs>
+      <text x="380" y="20" text-anchor="middle" style="font-size:14px;font-weight:700;fill:#2ecc71">MCP Ingestion Pipeline</text>
+      <!-- Brain -->
+      <rect x="20" y="40" width="140" height="60" rx="10" fill="#FFFFFF" stroke="#2ecc71" stroke-width="2"/>
+      <text x="90" y="65" text-anchor="middle" class="h" style="fill:#2ecc71">dina-brain</text>
+      <text x="90" y="82" text-anchor="middle" class="s">Scheduler</text>
+      <!-- Arrow to OpenClaw -->
+      <line x1="160" y1="70" x2="210" y2="70" stroke="#2ecc71" stroke-width="2" marker-end="url(#ia)"/>
+      <text x="185" y="62" class="s">MCP</text>
+      <!-- OpenClaw -->
+      <rect x="215" y="40" width="140" height="60" rx="10" fill="#FFFFFF" stroke="#e67e22" stroke-width="2"/>
+      <text x="285" y="65" text-anchor="middle" class="h" style="fill:#e67e22">OpenClaw</text>
+      <text x="285" y="82" text-anchor="middle" class="s">OAuth tokens here</text>
+      <!-- Arrows to sources -->
+      <line x1="355" y1="55" x2="420" y2="42" stroke="#e67e22" stroke-width="1.5" marker-end="url(#ia)"/>
+      <line x1="355" y1="70" x2="420" y2="70" stroke="#e67e22" stroke-width="1.5" marker-end="url(#ia)"/>
+      <line x1="355" y1="85" x2="420" y2="98" stroke="#e67e22" stroke-width="1.5" marker-end="url(#ia)"/>
+      <!-- Sources -->
+      <rect x="425" y="26" width="130" height="30" rx="6" fill="#FFFFFF" stroke="#D6D3D1"/><text x="490" y="46" text-anchor="middle" class="m">Gmail (readonly)</text>
+      <rect x="425" y="60" width="130" height="30" rx="6" fill="#FFFFFF" stroke="#D6D3D1"/><text x="490" y="80" text-anchor="middle" class="m">Calendar API</text>
+      <rect x="425" y="94" width="130" height="30" rx="6" fill="#FFFFFF" stroke="#D6D3D1"/><text x="490" y="114" text-anchor="middle" class="m">People / CardDAV</text>
+      <!-- Phone direct -->
+      <rect x="600" y="40" width="140" height="60" rx="10" fill="#FFFFFF" stroke="#3498db" stroke-width="1.5"/>
+      <text x="670" y="65" text-anchor="middle" class="h" style="fill:#3498db">Phone Client</text>
+      <text x="670" y="82" text-anchor="middle" class="s">WebSocket direct</text>
+      <!-- Triage funnel -->
+      <text x="280" y="130" text-anchor="middle" style="font-size:11px;font-weight:600;fill:#f39c12">Two-Pass Triage Funnel</text>
+      <polygon points="180,140 380,140 340,220 220,220" fill="#f39c1211" stroke="#f39c12" stroke-width="1.5"/>
+      <text x="280" y="160" text-anchor="middle" class="s">Pass 1: Gmail Categories (instant)</text>
+      <text x="280" y="175" text-anchor="middle" class="m">PROMOTIONS, SOCIAL, UPDATES, FORUMS → Skip</text>
+      <text x="280" y="192" text-anchor="middle" class="s" style="fill:#e74c3c">~60-70% killed</text>
+      <text x="280" y="208" text-anchor="middle" class="s">Pass 2: Subject+Sender LLM classify</text>
+      <!-- Arrow down from funnel -->
+      <line x1="280" y1="222" x2="280" y2="250" stroke="#2ecc71" stroke-width="2" marker-end="url(#ia)"/>
+      <text x="300" y="240" class="s" style="fill:#2ecc71">INGEST only</text>
+      <!-- Core storage -->
+      <rect x="200" y="254" width="160" height="50" rx="10" fill="#FFFFFF" stroke="#3498db" stroke-width="2"/>
+      <text x="280" y="275" text-anchor="middle" class="h" style="fill:#3498db">dina-core</text>
+      <text x="280" y="292" text-anchor="middle" class="m">POST /v1/vault/store</text>
+      <!-- SQLCipher -->
+      <line x1="280" y1="304" x2="280" y2="324" stroke="#3498db" stroke-width="1.5" marker-end="url(#ia)"/>
+      <rect x="210" y="326" width="140" height="28" rx="6" fill="#f39c1222" stroke="#f39c12"/>
+      <text x="280" y="345" text-anchor="middle" class="m">SQLCipher vault</text>
+    </svg>`,
+
+    3: `<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg">
+      <style>text{font-family:'Figtree',sans-serif;fill:#1C1917} .m{font-family:'JetBrains Mono',monospace;font-size:10px;fill:#6D28D9} .h{font-size:12px;font-weight:700} .s{font-size:10px;fill:#78716C}</style>
+      <defs><marker id="ra" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#9b59b6"/></marker></defs>
+      <text x="380" y="20" text-anchor="middle" style="font-size:14px;font-weight:700;fill:#9b59b6">AT Protocol — Split Sovereignty</text>
+      <!-- PDS -->
+      <rect x="30" y="40" width="200" height="120" rx="12" fill="#FFFFFF" stroke="#9b59b6" stroke-width="2"/>
+      <text x="130" y="65" text-anchor="middle" class="h" style="fill:#9b59b6">Your PDS</text>
+      <text x="130" y="82" text-anchor="middle" class="s">Port 2583</text>
+      <text x="50" y="102" class="m">Signed Merkle repo</text>
+      <text x="50" y="118" class="m">com.dina.reputation.*</text>
+      <text x="50" y="134" class="m">Public data ONLY</text>
+      <text x="50" y="150" class="s">Your signing keys never on PDS</text>
+      <!-- Arrow PDS to Relay -->
+      <line x1="230" y1="100" x2="290" y2="100" stroke="#9b59b6" stroke-width="2" marker-end="url(#ra)"/>
+      <text x="255" y="92" class="s">crawl</text>
+      <!-- Relay -->
+      <rect x="295" y="40" width="180" height="120" rx="12" fill="#FFFFFF" stroke="#e67e22" stroke-width="2"/>
+      <text x="385" y="65" text-anchor="middle" class="h" style="fill:#e67e22">Relay</text>
+      <text x="385" y="82" text-anchor="middle" class="s">Firehose aggregation</text>
+      <text x="315" y="102" class="m">Delta sync via Merkle trees</text>
+      <text x="315" y="118" class="m">Crawls all PDSes</text>
+      <text x="315" y="134" class="s">High traffic (not your problem)</text>
+      <!-- Arrow Relay to AppView -->
+      <line x1="475" y1="100" x2="530" y2="100" stroke="#e67e22" stroke-width="2" marker-end="url(#ra)"/>
+      <text x="497" y="92" class="s">index</text>
+      <!-- AppView -->
+      <rect x="535" y="40" width="200" height="120" rx="12" fill="#FFFFFF" stroke="#2ecc71" stroke-width="2"/>
+      <text x="635" y="65" text-anchor="middle" class="h" style="fill:#2ecc71">AppView</text>
+      <text x="635" y="82" text-anchor="middle" class="s">Go + PostgreSQL 16</text>
+      <text x="555" y="102" class="m">/v1/product, /v1/bot</text>
+      <text x="555" y="118" class="m">/v1/reputation queries</text>
+      <text x="555" y="134" class="s">Signature verified on every record</text>
+      <!-- Lexicons -->
+      <text x="380" y="190" text-anchor="middle" style="font-size:12px;font-weight:600;fill:#9b59b6">Custom Lexicons</text>
+      ${['com.dina.reputation.attestation — expert product verdicts','com.dina.reputation.outcome — anonymized purchase results','com.dina.reputation.bot — bot registration + scores','com.dina.trust.membership — trust ring public info'].map((t,i) => `
+        <rect x="140" y="${200+i*28}" width="480" height="24" rx="4" fill="#9b59b611" stroke="#9b59b633"/>
+        <text x="160" y="${216+i*28}" class="m">${t}</text>`).join('')}
+    </svg>`,
+
+    4: `<svg viewBox="0 0 760 340" xmlns="http://www.w3.org/2000/svg">
+      <style>text{font-family:'Figtree',sans-serif;fill:#1C1917} .m{font-family:'JetBrains Mono',monospace;font-size:10px;fill:#6D28D9} .h{font-size:12px;font-weight:700} .s{font-size:10px;fill:#78716C}</style>
+      <defs><marker id="da" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#3498db"/></marker></defs>
+      <text x="380" y="20" text-anchor="middle" style="font-size:14px;font-weight:700;fill:#3498db">Dead Drop 3-Valve Ingress</text>
+      <!-- Internet -->
+      <rect x="20" y="50" width="120" height="70" rx="10" fill="#FFFFFF" stroke="#A8A29E"/>
+      <text x="80" y="78" text-anchor="middle" class="h">Internet</text>
+      <text x="80" y="96" text-anchor="middle" class="s">Peer Dinas</text>
+      <line x1="140" y1="85" x2="185" y2="85" stroke="#3498db" stroke-width="2" marker-end="url(#da)"/>
+      <!-- Valve 1 -->
+      <rect x="190" y="40" width="160" height="90" rx="10" fill="#e74c3c11" stroke="#e74c3c" stroke-width="2"/>
+      <text x="270" y="62" text-anchor="middle" class="h" style="fill:#e74c3c">Valve 1: IP Rate</text>
+      <text x="270" y="78" text-anchor="middle" class="m">50 req/hr per IP</text>
+      <text x="270" y="92" text-anchor="middle" class="m">1000 req/hr global</text>
+      <text x="270" y="106" text-anchor="middle" class="m">256KB payload cap</text>
+      <text x="270" y="120" text-anchor="middle" class="s">Always active · Pre-decryption</text>
+      <line x1="350" y1="85" x2="395" y2="85" stroke="#3498db" stroke-width="2" marker-end="url(#da)"/>
+      <!-- Valve 2 -->
+      <rect x="400" y="40" width="160" height="90" rx="10" fill="#f39c1211" stroke="#f39c12" stroke-width="2"/>
+      <text x="480" y="62" text-anchor="middle" class="h" style="fill:#f39c12">Valve 2: Spool</text>
+      <text x="480" y="78" text-anchor="middle" class="m">500MB disk quota</text>
+      <text x="480" y="92" text-anchor="middle" class="m">./data/inbox/*.blob</text>
+      <text x="480" y="106" text-anchor="middle" class="m">Reject-new (not drop-old)</text>
+      <text x="480" y="120" text-anchor="middle" class="s">Vault LOCKED only</text>
+      <line x1="560" y1="85" x2="605" y2="85" stroke="#3498db" stroke-width="2" marker-end="url(#da)"/>
+      <!-- Core -->
+      <rect x="610" y="50" width="130" height="70" rx="10" fill="#FFFFFF" stroke="#3498db" stroke-width="2"/>
+      <text x="675" y="78" text-anchor="middle" class="h" style="fill:#3498db">dina-core</text>
+      <text x="675" y="96" text-anchor="middle" class="m">POST /msg</text>
+      <!-- Valve 3 feedback -->
+      <rect x="300" y="170" width="250" height="70" rx="10" fill="#2ecc7111" stroke="#2ecc71" stroke-width="2"/>
+      <text x="425" y="192" text-anchor="middle" class="h" style="fill:#2ecc71">Valve 3: Sweeper Feedback</text>
+      <text x="425" y="208" text-anchor="middle" class="m">On vault unlock: decrypt blobs, check sender DID</text>
+      <text x="425" y="224" text-anchor="middle" class="m">Spam DIDs → retroactive IP blocklist at Valve 1</text>
+      <line x1="425" y1="170" x2="425" y2="140" stroke="#2ecc71" stroke-width="1.5" stroke-dasharray="4 3"/>
+      <line x1="425" y1="140" x2="270" y2="140" stroke="#2ecc71" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#da)"/>
+      <text x="340" y="150" class="s" style="fill:#2ecc71">feedback</text>
+      <!-- Encryption phases -->
+      <text x="380" y="270" text-anchor="middle" style="font-size:12px;font-weight:600;fill:#3498db">Encryption Evolution</text>
+      ${['Phase 1: NaCl crypto_box_seal (sender forward secrecy)','Phase 2: JWE ECDH-1PU+A256KW (sender authentication)','Phase 3: Noise XX (full forward secrecy both directions)'].map((t,i) => `
+        <rect x="140" y="${282+i*26}" width="480" height="22" rx="4" fill="#3498db11" stroke="#3498db33" opacity="${1-i*0.2}"/>
+        <text x="160" y="${297+i*26}" class="m" opacity="${1-i*0.15}">${t}</text>`).join('')}
+    </svg>`,
+
+    5: `<svg viewBox="0 0 760 260" xmlns="http://www.w3.org/2000/svg">
+      <style>text{font-family:'Figtree',sans-serif;fill:#1C1917} .m{font-family:'JetBrains Mono',monospace;font-size:10px;fill:#6D28D9} .h{font-size:12px;font-weight:700} .s{font-size:10px;fill:#78716C}</style>
+      <defs><marker id="ba" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#e67e22"/></marker></defs>
+      <text x="380" y="20" text-anchor="middle" style="font-size:14px;font-weight:700;fill:#e67e22">Bot Query Flow — Raw Data Never Leaves Home Node</text>
+      <!-- User query -->
+      <rect x="20" y="50" width="130" height="50" rx="10" fill="#FFFFFF" stroke="#2563EB" stroke-width="2"/>
+      <text x="85" y="72" text-anchor="middle" class="h" style="fill:#2563EB">User Query</text>
+      <text x="85" y="88" text-anchor="middle" class="s">"Best chair for back"</text>
+      <line x1="150" y1="75" x2="190" y2="75" stroke="#e67e22" stroke-width="2" marker-end="url(#ba)"/>
+      <!-- PII Scrubber -->
+      <rect x="195" y="40" width="140" height="70" rx="10" fill="#1abc9c11" stroke="#1abc9c" stroke-width="2"/>
+      <text x="265" y="62" text-anchor="middle" class="h" style="fill:#1abc9c">PII Scrubber</text>
+      <text x="265" y="78" text-anchor="middle" class="m">Strips identity, health</text>
+      <text x="265" y="94" text-anchor="middle" class="m">Entity Vault (ephemeral)</text>
+      <line x1="335" y1="75" x2="375" y2="75" stroke="#e67e22" stroke-width="2" marker-end="url(#ba)"/>
+      <!-- Sanitized query -->
+      <rect x="380" y="40" width="150" height="70" rx="10" fill="#FFFFFF" stroke="#e67e22" stroke-width="2"/>
+      <text x="455" y="62" text-anchor="middle" class="h" style="fill:#e67e22">Sanitized Query</text>
+      <text x="455" y="78" text-anchor="middle" class="m">"Best ergonomic chair</text>
+      <text x="455" y="92" text-anchor="middle" class="m"> lumbar support, 80K INR"</text>
+      <line x1="530" y1="75" x2="570" y2="75" stroke="#e67e22" stroke-width="2" marker-end="url(#ba)"/>
+      <!-- Bot -->
+      <rect x="575" y="40" width="160" height="70" rx="10" fill="#FFFFFF" stroke="#f39c12" stroke-width="2"/>
+      <text x="655" y="62" text-anchor="middle" class="h" style="fill:#f39c12">Review Bot</text>
+      <text x="655" y="78" text-anchor="middle" class="m">Queries Rep Graph</text>
+      <text x="655" y="94" text-anchor="middle" class="m">Returns with deep links</text>
+      <!-- Response flow back -->
+      <line x1="655" y1="110" x2="655" y2="145" stroke="#2ecc71" stroke-width="1.5"/>
+      <line x1="655" y1="145" x2="265" y2="145" stroke="#2ecc71" stroke-width="1.5" marker-end="url(#ba)"/>
+      <text x="460" y="140" class="s" style="fill:#2ecc71">Attributed response + deep links</text>
+      <rect x="195" y="152" width="140" height="30" rx="6" fill="#1abc9c11" stroke="#1abc9c"/>
+      <text x="265" y="172" text-anchor="middle" class="m">De-sanitize from Entity Vault</text>
+      <!-- Mandatory attribution note -->
+      <rect x="120" y="200" width="520" height="44" rx="8" fill="#f39c1211" stroke="#f39c1244"/>
+      <text x="380" y="218" text-anchor="middle" class="s" style="fill:#f39c12">Mandatory attribution: source_url + deep_link + creator_name</text>
+      <text x="380" y="234" text-anchor="middle" class="s">Bots that strip attribution receive reputation penalty. Creators get traffic, users get truth.</text>
+    </svg>`,
+
+    6: `<svg viewBox="0 0 760 360" xmlns="http://www.w3.org/2000/svg">
+      <style>text{font-family:'Figtree',sans-serif;fill:#1C1917} .m{font-family:'JetBrains Mono',monospace;font-size:10px;fill:#6D28D9} .h{font-size:12px;font-weight:700} .s{font-size:10px;fill:#78716C}</style>
+      <defs><marker id="la" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#1abc9c"/></marker></defs>
+      <text x="380" y="20" text-anchor="middle" style="font-size:14px;font-weight:700;fill:#1abc9c">PII Scrubber (3 Tiers) + LLM Routing</text>
+      <!-- Tier boxes -->
+      <rect x="30" y="40" width="220" height="90" rx="10" fill="#e74c3c11" stroke="#e74c3c" stroke-width="2"/>
+      <text x="140" y="62" text-anchor="middle" class="h" style="fill:#e74c3c">Tier 1: Regex (Go)</text>
+      <text x="50" y="80" class="m">Credit cards, phones, Aadhaar/SSN</text>
+      <text x="50" y="94" class="m">Email addresses, bank accounts</text>
+      <text x="50" y="108" class="s">Sub-millisecond · POST /v1/pii/scrub</text>
+      <text x="50" y="122" class="s" style="fill:#2ecc71;font-weight:600">Always available (dina-core)</text>
+      <line x1="250" y1="85" x2="280" y2="85" stroke="#1abc9c" stroke-width="2" marker-end="url(#la)"/>
+      <rect x="285" y="40" width="220" height="90" rx="10" fill="#f39c1211" stroke="#f39c12" stroke-width="2"/>
+      <text x="395" y="62" text-anchor="middle" class="h" style="fill:#f39c12">Tier 2: spaCy NER (Py)</text>
+      <text x="305" y="80" class="m">PERSON, ORG, GPE/LOC names</text>
+      <text x="305" y="94" class="m">en_core_web_sm (~15MB)</text>
+      <text x="305" y="108" class="s">5-20ms · dina-brain</text>
+      <text x="305" y="122" class="s" style="fill:#2ecc71;font-weight:600">Always available</text>
+      <line x1="505" y1="85" x2="535" y2="85" stroke="#1abc9c" stroke-width="2" marker-end="url(#la)"/>
+      <rect x="540" y="40" width="200" height="90" rx="10" fill="#3498db11" stroke="#3498db" stroke-width="2" stroke-dasharray="6 3"/>
+      <text x="640" y="62" text-anchor="middle" class="h" style="fill:#3498db">Tier 3: LLM NER (llama)</text>
+      <text x="560" y="80" class="m">Indirect references, coded lang</text>
+      <text x="560" y="94" class="m">Gemma 3n E2B (~2GB RAM)</text>
+      <text x="560" y="108" class="s">500ms-2s · llama:8080</text>
+      <text x="560" y="122" class="s" style="fill:#f39c12;font-weight:600">Optional (--profile local-llm)</text>
+      <!-- Replacement map -->
+      <rect x="200" y="148" width="360" height="26" rx="6" fill="#1abc9c11" stroke="#1abc9c"/>
+      <text x="380" y="166" text-anchor="middle" class="m">"Sancho" → [PERSON_1] · "Infosys" → [ORG_1] · "Bengaluru" → [LOC_1]</text>
+      <!-- LLM Routing Tree -->
+      <text x="380" y="200" text-anchor="middle" style="font-size:13px;font-weight:700;fill:#1abc9c">LLM Routing Tree</text>
+      <rect x="280" y="210" width="200" height="28" rx="6" fill="#FFFFFF" stroke="#1abc9c" stroke-width="2"/>
+      <text x="380" y="229" text-anchor="middle" class="h" style="fill:#1abc9c">Task Classifier</text>
+      <!-- Branches -->
+      ${[
+        {x:40,  w:160, label:'Simple Lookup',   target:'FTS5 (no LLM)', color:'#2ecc71'},
+        {x:210, w:160, label:'Basic Draft/Sum',  target:'llama → cloud fallback', color:'#f39c12'},
+        {x:380, w:170, label:'Complex Reasoning', target:'Cloud + PII scrub', color:'#3498db'},
+        {x:560, w:170, label:'Sensitive Persona', target:'llama only (local)', color:'#e74c3c'}
+      ].map((b,i) => `
+        <line x1="380" y1="238" x2="${b.x+b.w/2}" y2="260" stroke="${b.color}" stroke-width="1.5"/>
+        <rect x="${b.x}" y="${260}" width="${b.w}" height="40" rx="6" fill="#FFFFFF" stroke="${b.color}"/>
+        <text x="${b.x+b.w/2}" y="278" text-anchor="middle" class="h" style="fill:${b.color};font-size:10px">${b.label}</text>
+        <text x="${b.x+b.w/2}" y="294" text-anchor="middle" class="s">${b.target}</text>
+      `).join('')}
+      <!-- Hybrid search note -->
+      <rect x="160" y="318" width="440" height="26" rx="6" fill="#1abc9c11" stroke="#1abc9c33"/>
+      <text x="380" y="336" text-anchor="middle" class="s">Hybrid search: 0.4 × FTS5 + 0.6 × cosine similarity · FTS5 fast path for simple keyword queries</text>
+    </svg>`,
+
+    7: `<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg">
+      <style>text{font-family:'Figtree',sans-serif;fill:#1C1917} .m{font-family:'JetBrains Mono',monospace;font-size:10px;fill:#6D28D9} .h{font-size:12px;font-weight:700} .s{font-size:10px;fill:#78716C}</style>
+      <defs><marker id="aa" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#a29bfe"/></marker></defs>
+      <text x="380" y="20" text-anchor="middle" style="font-size:14px;font-weight:700;fill:#a29bfe">Action Layer — Human Always Decides</text>
+      <!-- Draft-Don't-Send -->
+      <rect x="30" y="40" width="340" height="130" rx="12" fill="#FFFFFF" stroke="#a29bfe" stroke-width="2"/>
+      <text x="200" y="64" text-anchor="middle" class="h" style="fill:#a29bfe;font-size:13px">Draft-Don't-Send</text>
+      <text x="50" y="84" class="m">1. Brain reads incoming email from vault</text>
+      <text x="50" y="100" class="m">2. Drafts reply via Gmail API (drafts.create)</text>
+      <text x="50" y="116" class="m">3. Stores in Tier 4: 72h auto-expiry</text>
+      <text x="50" y="132" class="m">4. Notifies: "Draft ready for review"</text>
+      <text x="50" y="148" class="m">5. User opens Gmail, edits, presses Send</text>
+      <text x="50" y="162" class="s" style="fill:#e74c3c;font-weight:600">NEVER calls messages.send — only drafts.create</text>
+      <!-- Cart Handover -->
+      <rect x="400" y="40" width="340" height="130" rx="12" fill="#FFFFFF" stroke="#f39c12" stroke-width="2"/>
+      <text x="570" y="64" text-anchor="middle" class="h" style="fill:#f39c12;font-size:13px">Cart Handover</text>
+      <text x="420" y="84" class="m">1. Brain researches via trusted review bots</text>
+      <text x="420" y="100" class="m">2. Checks Rep Graph: verdicts + outcomes</text>
+      <text x="420" y="116" class="m">3. Presents options with deep links</text>
+      <text x="420" y="132" class="m">4. Generates payment intent (UPI/crypto/web)</text>
+      <text x="420" y="148" class="m">5. User taps Pay → GPay/PhonePe/Metamask</text>
+      <text x="420" y="162" class="s" style="fill:#e74c3c;font-weight:600">NEVER sees payment credentials or bank balance</text>
+      <!-- Intent formats -->
+      <text x="380" y="196" text-anchor="middle" style="font-size:11px;font-weight:600;fill:#a29bfe">Payment Intent Formats (Tier 4 Staging)</text>
+      ${['upi://pay?pa=merchant@okicici&am=12000&pn=ChairMaker&tr=DINA-TXN-12345','ethereum:0x1234...?value=0.05&data=0x...','https://chairmaker.com/checkout?cart=DINA-CART-12345'].map((t,i)=>`
+        <rect x="100" y="${208+i*26}" width="560" height="22" rx="4" fill="#a29bfe11" stroke="#a29bfe33"/>
+        <text x="120" y="${223+i*26}" class="m">${t}</text>`).join('')}
+      <!-- Core principle -->
+      <rect x="140" y="286" width="480" height="20" rx="4" fill="#e74c3c11"/>
+      <text x="380" y="300" text-anchor="middle" class="s" style="fill:#e74c3c">No auto-send · No auto-pay · No auto-share · Human always makes final decision</text>
+    </svg>`
+  };
+  return svgs[id] || '';
+}
+
+function selectLayer(id) {
+  document.querySelectorAll('.layer-tab').forEach(t => t.classList.remove('active'));
+  document.querySelector(`.layer-tab[data-layer="${id}"]`).classList.add('active');
+  const container = document.getElementById('layer-details');
+  const l = LAYERS[id];
+  const svg = getLayerSVG(id);
+  container.innerHTML = `
+    <div class="layer-detail active" id="layer-${id}">
+      <h3 style="color:${l.color}">Layer ${l.id}: ${l.name}</h3>
+      <p style="color:var(--text-secondary);margin-bottom:20px">${l.desc}</p>
+      ${svg ? `<div class="diagram-container" style="margin-bottom:24px">${svg}</div>` : ''}
+      <div class="layer-content">
+        <ul class="detail-list">
+          ${l.items.slice(0, 4).map(item => `<li style="--dot-color:${l.color}"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${l.color};margin-top:8px;flex-shrink:0"></span>${highlightTips(item)}</li>`).join('')}
+        </ul>
+        <ul class="detail-list">
+          ${l.items.slice(4).map(item => `<li><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${l.color};margin-top:8px;flex-shrink:0"></span>${highlightTips(item)}</li>`).join('')}
+        </ul>
+      </div>
+    </div>`;
+  history.replaceState(null, '', `#layer-${id}`);
+}
+
+function highlightTips(text) {
+  const tips = {
+    'Ed25519': 'ed25519', 'X25519': 'x25519', 'BIP-39': 'bip39', 'SLIP-0010': 'slip0010',
+    'did:plc': 'did-plc', 'HKDF': 'hkdf', 'Argon2id': 'argon2id', 'SQLCipher': 'sqlcipher',
+    'FTS5': 'fts5-unicode61', 'sqlite-vec': 'sqlite-vec', 'WAL': 'wal-mode',
+    'AT Protocol': 'at-protocol', 'NaCl': 'nacl', 'MCP': 'mcp', 'Noise XX': 'noise-xx',
+    'libsodium': 'nacl', 'spaCy': 'spacy', 'OpenClaw': 'mcp', 'Gemini': 'gemini-flash-lite',
+    'Gemma 3n': 'gemma-3n', 'llama': 'llama-container', 'Dead Drop': 'dead-drop',
+    'Draft-Don-t-Send': 'draft-dont-send', 'Cart Handover': 'cart-handover',
+    'Entity Vault': 'entity-vault', 'Trust Rings': 'trust-rings', 'Deep Archive': 'digital-estate',
+    'PII': 'pii-scrubber', 'Reputation Graph': 'reputation-appview', 'Yggdrasil': 'yggdrasil'
+  };
+  for (const [term, key] of Object.entries(tips)) {
+    const re = new RegExp(`(${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'g');
+    text = text.replace(re, `<span data-tip="${key}">$1</span>`);
+  }
+  return text;
+}
+
+function renderSecurity() {
+  const g = document.getElementById('security-grid');
+  g.innerHTML = SECURITY_NODES.map(n => `
+    <div class="security-node" ${n.tip ? `data-tip="${n.tip}"` : ''}>
+      <h4>${n.title}</h4>
+      <p>${n.detail}</p>
+    </div>`).join('');
+}
+
+
+function renderTech() {
+  const c = document.getElementById('tech-container');
+  c.innerHTML = TECH_GROUPS.map(g => `
+    <div class="tech-domain">
+      <h3>${g.name}</h3>
+      <div class="tech-grid">
+        ${g.items.map(t => `
+          <div class="tech-card" ${t.tip ? `data-tip="${t.tip}"` : ''}>
+            <div class="tech-name">${t.name}</div>
+            <div class="tech-brief">${t.brief}</div>
+          </div>`).join('')}
+      </div>
+    </div>`).join('');
+}
+
+function renderNetworking() {
+  const d = document.getElementById('network-diagram');
+  d.innerHTML = `<svg viewBox="0 0 800 280" xmlns="http://www.w3.org/2000/svg">
+    <defs><marker id="arr2" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#2563EB"/></marker></defs>
+    <text x="400" y="24" fill="#1C1917" font-size="16" font-weight="700" text-anchor="middle">Three Ingress Options (all forward to dina-core :443)</text>
+    <!-- Internet -->
+    <rect x="20" y="50" width="160" height="180" rx="12" fill="#F0EDE8" stroke="#D6D3D1"/>
+    <text x="100" y="76" fill="#78716C" font-size="13" font-weight="600" text-anchor="middle">Internet</text>
+    <text x="100" y="106" fill="#1C1917" font-size="11" text-anchor="middle">Peer Dinas</text>
+    <text x="100" y="126" fill="#1C1917" font-size="11" text-anchor="middle">Client Devices</text>
+    <text x="100" y="146" fill="#1C1917" font-size="11" text-anchor="middle">AT Protocol Relays</text>
+    <!-- Tunnels -->
+    <rect x="240" y="50" width="200" height="50" rx="8" fill="#FFFFFF" stroke="#3498db"/>
+    <text x="340" y="80" fill="#3498db" font-size="12" font-weight="600" text-anchor="middle">Tailscale Funnel</text>
+    <rect x="240" y="110" width="200" height="50" rx="8" fill="#FFFFFF" stroke="#e67e22"/>
+    <text x="340" y="140" fill="#e67e22" font-size="12" font-weight="600" text-anchor="middle">Cloudflare Tunnel</text>
+    <rect x="240" y="170" width="200" height="50" rx="8" fill="#FFFFFF" stroke="#2ecc71"/>
+    <text x="340" y="200" fill="#2ecc71" font-size="12" font-weight="600" text-anchor="middle">Yggdrasil Mesh</text>
+    <!-- Arrows in -->
+    <line x1="180" y1="100" x2="240" y2="75" stroke="#3498db" stroke-width="1.5" marker-end="url(#arr2)"/>
+    <line x1="180" y1="140" x2="240" y2="135" stroke="#e67e22" stroke-width="1.5" marker-end="url(#arr2)"/>
+    <line x1="180" y1="180" x2="240" y2="195" stroke="#2ecc71" stroke-width="1.5" marker-end="url(#arr2)"/>
+    <!-- dina-core -->
+    <rect x="520" y="80" width="240" height="120" rx="12" fill="#FFFFFF" stroke="#3498db" stroke-width="2"/>
+    <text x="640" y="110" fill="#3498db" font-size="15" font-weight="700" text-anchor="middle">dina-core</text>
+    <text x="640" y="134" fill="#1C1917" font-size="12" text-anchor="middle">localhost:443</text>
+    <text x="640" y="156" fill="#78716C" font-size="11" text-anchor="middle">NaCl + WebSocket + Admin</text>
+    <text x="640" y="176" fill="#78716C" font-size="11" text-anchor="middle">No inbound ports needed</text>
+    <!-- Arrows to core -->
+    <line x1="440" y1="75" x2="520" y2="120" stroke="#3498db" stroke-width="1.5" marker-end="url(#arr2)"/>
+    <line x1="440" y1="135" x2="520" y2="140" stroke="#e67e22" stroke-width="1.5" marker-end="url(#arr2)"/>
+    <line x1="440" y1="195" x2="520" y2="160" stroke="#2ecc71" stroke-width="1.5" marker-end="url(#arr2)"/>
+    <!-- Labels -->
+    <text x="400" y="260" fill="#A8A29E" font-size="11" text-anchor="middle">All three use outbound-only connections. No firewall changes needed. Run simultaneously.</text>
+  </svg>`;
+
+  const t = document.getElementById('network-table');
+  const headers = ['Property', 'Tailscale Funnel', 'Cloudflare Tunnel', 'Yggdrasil'];
+  const rows = [
+    ['Setup', '3 commands', '~15 minutes', '~10 minutes'],
+    ['Custom domain', '<span class="cross">No</span>', '<span class="check">Yes</span>', '<span class="cross">No (IPv6)</span>'],
+    ['DDoS protection', '<span class="cross">No</span>', '<span class="check">Yes (WAF)</span>', '<span class="cross">No</span>'],
+    ['Censorship resistance', 'Low', 'Low', '<span class="check">High</span>'],
+    ['Corporate dependency', 'Tailscale Inc.', 'Cloudflare Inc.', '<span class="check">None</span>'],
+    ['Provider sees', 'Encrypted blobs', 'TLS at edge', '<span class="check">Nothing (E2E)</span>'],
+    ['Latency', '50-100ms', '10-30ms', '20-80ms'],
+    ['Best for', 'Getting started', 'Production daily use', 'Maximum sovereignty']
+  ];
+  t.innerHTML = `<thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>`;
+}
+
+function renderScenarios() {
+  const c = document.getElementById('scenarios-container');
+  c.innerHTML = SCENARIOS.map((s, i) => `
+    <div class="scenario" id="scenario-${i}">
+      <div class="scenario-header" onclick="toggleScenario(${i})">
+        <span class="scenario-icon">${s.icon}</span>
+        <div><h3>${s.title}</h3><p>${s.desc}</p></div>
+        <span class="chevron">&#9660;</span>
+      </div>
+      <div class="scenario-body">
+        ${s.steps.map((step, si) => `
+          <div class="scenario-step">
+            <div class="step-marker">${si + 1}</div>
+            <div>${step}</div>
+          </div>`).join('')}
+      </div>
+    </div>`).join('');
+}
+
+function toggleScenario(i) {
+  document.getElementById(`scenario-${i}`).classList.toggle('open');
+}
+
+/* ============================================================
+   TOOLTIP SYSTEM
+   ============================================================ */
+
+const tipEl = document.getElementById('tooltip');
+let tipTimeout;
+let tipPinned = false;
+
+function showTooltip(target) {
+  const key = target.dataset.tip;
+  const data = TOOLTIPS[key];
+  if (!data) return;
+  tipEl.querySelector('.tip-title').textContent = data.title;
+  tipEl.querySelector('.tip-summary').textContent = data.summary;
+  tipEl.querySelector('.tip-detail').textContent = data.detail;
+  tipEl.querySelector('.tip-alt').textContent = data.alt ? 'Alternatives: ' + data.alt : '';
+  const rect = target.getBoundingClientRect();
+  let left = rect.left;
+  let top = rect.bottom + 8;
+  tipEl.classList.add('visible');
+  tipEl.style.left = Math.min(left, window.innerWidth - 440) + 'px';
+  tipEl.style.top = top + 'px';
+  if (top + 200 > window.innerHeight) {
+    tipEl.style.top = (rect.top - 8) + 'px';
+    tipEl.style.transform = 'translateY(-100%)';
+  } else {
+    tipEl.style.transform = 'none';
+  }
+}
+
+function unpinTooltip() {
+  tipPinned = false;
+  tipEl.classList.remove('visible', 'pinned');
+}
+
+document.addEventListener('mouseover', e => {
+  if (tipPinned) return;
+  const target = e.target.closest('[data-tip]');
+  if (!target) return;
+  clearTimeout(tipTimeout);
+  tipTimeout = setTimeout(() => showTooltip(target), 200);
+});
+
+document.addEventListener('mouseout', e => {
+  if (tipPinned) return;
+  if (e.target.closest('[data-tip]')) {
+    clearTimeout(tipTimeout);
+    tipEl.classList.remove('visible');
+  }
+});
+
+document.addEventListener('click', e => {
+  // Click on a [data-tip] element: pin the tooltip
+  const target = e.target.closest('[data-tip]');
+  if (target && !tipEl.contains(e.target)) {
+    e.preventDefault();
+    clearTimeout(tipTimeout);
+    showTooltip(target);
+    tipPinned = true;
+    tipEl.classList.add('pinned');
+    return;
+  }
+  // Click outside tooltip and trigger: unpin
+  if (tipPinned && !tipEl.contains(e.target)) {
+    unpinTooltip();
+  }
+});
+
+/* ============================================================
+   SEARCH SYSTEM
+   ============================================================ */
+
+function openSearch() { document.getElementById('search-overlay').classList.add('open'); document.getElementById('search-input').focus(); }
+function closeSearch() { document.getElementById('search-overlay').classList.remove('open'); document.getElementById('search-input').value = ''; document.getElementById('search-results').innerHTML = ''; }
+
+document.getElementById('search-overlay').addEventListener('click', e => { if (e.target.id === 'search-overlay') closeSearch(); });
+document.getElementById('search-input').addEventListener('input', e => {
+  const q = e.target.value.toLowerCase().trim();
+  const results = document.getElementById('search-results');
+  if (q.length < 2) { results.innerHTML = '<div class="search-empty">Type at least 2 characters...</div>'; return; }
+  const matches = [];
+  // Search tooltips
+  for (const [key, tip] of Object.entries(TOOLTIPS)) {
+    const text = `${tip.title} ${tip.summary} ${tip.detail} ${tip.alt}`.toLowerCase();
+    if (text.includes(q)) matches.push({ section: 'Technology', title: tip.title, desc: tip.summary, hash: `#tech` });
+  }
+  // Search layers
+  LAYERS.forEach(l => {
+    const text = `${l.name} ${l.desc} ${l.items.join(' ')}`.toLowerCase();
+    if (text.includes(q)) matches.push({ section: `Layer ${l.id}`, title: l.name, desc: l.desc, hash: `#layers` });
+  });
+  // Search flows
+  FLOWS.forEach((f, i) => {
+    const text = `${f.title} ${f.steps.map(s => s.actor + ' ' + s.desc).join(' ')}`.toLowerCase();
+    if (text.includes(q)) matches.push({ section: 'Data Flow', title: f.title, desc: f.steps[0].desc, hash: `#flows` });
+  });
+  // Search scenarios
+  SCENARIOS.forEach((s, i) => {
+    const text = `${s.title} ${s.desc} ${s.steps.join(' ')}`.toLowerCase();
+    if (text.includes(q)) matches.push({ section: 'Scenario', title: s.title, desc: s.desc, hash: `#scenarios` });
+  });
+  if (matches.length === 0) { results.innerHTML = '<div class="search-empty">No results found</div>'; return; }
+  results.innerHTML = matches.slice(0, 15).map(m => `
+    <div class="search-result" onclick="closeSearch(); location.hash='${m.hash}';">
+      <div class="sr-section">${m.section}</div>
+      <div class="sr-title">${m.title}</div>
+      <div class="sr-desc">${m.desc}</div>
+    </div>`).join('');
+});
+
+/* ============================================================
+   KEYBOARD NAVIGATION
+   ============================================================ */
+
+document.addEventListener('keydown', e => {
+  if (e.key === '/' && !e.ctrlKey && !e.metaKey && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); openSearch(); }
+  if (e.key === 'Escape') { if (tipPinned) { unpinTooltip(); } else { closeSearch(); } }
+});
+
+/* ============================================================
+   SCROLL SPY
+   ============================================================ */
+
+const sections = ['hero', 'philosophy', 'reputation', 'dina-to-dina', 'containers', 'layers', 'security', 'tech', 'networking', 'scenarios'];
+const navLinks = document.querySelectorAll('nav a.nav-link');
+
+function updateScrollSpy() {
+  const scrollY = window.scrollY + 100;
+  let current = sections[0];
+  sections.forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.offsetTop <= scrollY) current = id;
+  });
+  navLinks.forEach(link => {
+    link.classList.toggle('active', link.getAttribute('href') === `#${current}`);
+  });
+}
+window.addEventListener('scroll', updateScrollSpy, { passive: true });
+
+/* ============================================================
+   DEEP LINKING
+   ============================================================ */
+
+function handleHash() {
+  const hash = location.hash.replace('#', '');
+  const layerMatch = hash.match(/^layer-(\d)$/);
+  if (layerMatch) { selectLayer(parseInt(layerMatch[1])); }
+  const scenarioMatch = hash.match(/^scenario-(\d)$/);
+  if (scenarioMatch) { const el = document.getElementById(`scenario-${scenarioMatch[1]}`); if (el) el.classList.add('open'); }
+}
+
+/* ============================================================
+   INIT
+   ============================================================ */
+
+/* ============================================================
+   REPUTATION GRAPH SECTION
+   ============================================================ */
+
+function renderReputation() {
+  document.getElementById('reputation-story').innerHTML = `
+    <div class="story-block">
+      <h3><span class="block-num" style="background:var(--l3)">1</span>The Opportunity</h3>
+      <p>When you buy something, the most useful signal is what actually happened to people who already bought it. Are they still using it six months later? Did the battery hold up? Was the seller reliable?</p>
+      <p style="margin-top:12px">Today, only a small fraction of buyers share their experience — and those who do tend to feel strongly one way or the other. The vast majority stay silent. The Reputation Graph is designed to capture that silent majority.</p>
+    </div>
+
+    <div class="story-block">
+      <h3><span class="block-num" style="background:var(--l2)">2</span>The Core Insight: Dina IS the Buyer</h3>
+      <p>Here is what changes everything: Dina already knows every purchase you made. She helped you research it. She handed you the cart. She was there when the package arrived.</p>
+      <p style="margin-top:12px">Six months later, she can simply ask: <em>"How's that laptop working out? Any issues with the battery?"</em></p>
+      <p style="margin-top:12px">You answer honestly — because it's <strong>your own Dina</strong> asking privately. A quiet, honest conversation between you and your own agent. The Reputation Graph removes all personally identifiable information and stores the review anonymously. And if you change your mind, you can remove your review at any time — your data, your choice.</p>
+      <div class="highlight">
+        <strong>Result:</strong> The Reputation Graph gets outcome data from a large percentage of actual buyers — not just the vocal few. Millions of Dinas quietly feeding anonymized truth. The battery died after 3 months? 4,200 Dinas reported it. That kind of signal emerges naturally when the data comes from real ownership.
+      </div>
+    </div>
+
+    <div class="story-block">
+      <h3><span class="block-num" style="background:var(--l1)">3</span>Two Layers of Truth</h3>
+      <div class="story-cols">
+        <div class="col-card">
+          <h4 style="color:var(--l5)">Expert Knowledge</h4>
+          <p>Trusted reviewers and specialists produce real knowledge — YouTube teardowns, engineering analyses, long-term tests. Dina extracts structured verdicts from these experts. Each verdict is signed with the expert's cryptographic key and includes credentials.</p>
+          <p style="margin-top:8px"><em>"MKBHD says the battery fails the stress test at 04:20 — here's the link."</em></p>
+        </div>
+        <div class="col-card">
+          <h4 style="color:var(--l2)">Outcome Data</h4>
+          <p>Passive, honest data from millions of Dinas. Still using the product 6 months later? Returned it? Battery died? This data arrives automatically because Dina was part of the purchase journey. No review forms. No nagging emails.</p>
+          <p style="margin-top:8px"><em>50%+ of purchases generate passive outcome data.</em></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="story-block">
+      <h3><span class="block-num" style="background:var(--l4)">4</span>What Gets Shared — And What Never Leaves</h3>
+      <p>When your Dina contributes to the Reputation Graph, the outcome report is stripped of everything personal before it leaves your Home Node.</p>
+      <div class="story-cols">
+        <div class="col-card">
+          <h4 style="color:var(--l2)">Shared (anonymized)</h4>
+          <p>Product category (e.g. "office chairs"), price range (not exact price), outcome ("still using after 6 months"), satisfaction level, your trust ring level, how long your Dina has existed.</p>
+        </div>
+        <div class="col-card">
+          <h4 style="color:var(--l0)">Never shared</h4>
+          <p>Your identity. Your location. The exact purchase date or price. Any link to your other purchases or personas. Nothing that could trace back to you as a person.</p>
+        </div>
+      </div>
+      <div class="highlight" style="margin-top:16px">
+        The anonymization happens in compiled Go code on your Home Node — not in an LLM that could be tricked. Default deny: if a field isn't in the allowed list, it's stripped before the data ever leaves.
+      </div>
+    </div>
+
+    <div class="story-block">
+      <h3><span class="block-num" style="background:var(--l6)">5</span>Trust Rings: Earning Credibility</h3>
+      <p>Not all opinions are equal. A 2-year-old Dina with 50 verified purchases carries more weight than one created yesterday. Trust is earned progressively.</p>
+      <div class="trust-ring-bar">
+        <div class="ring" style="border-top:3px solid var(--l1)">
+          <div class="ring-num" style="color:var(--l1)">1</div>
+          <div class="ring-name">Unverified</div>
+          <div class="ring-desc">Anyone can create a Dina in seconds. No ID needed. Low trust ceiling. Good for getting started.</div>
+        </div>
+        <div class="ring" style="border-top:3px solid var(--l2)">
+          <div class="ring-num" style="color:var(--l2)">2</div>
+          <div class="ring-name">Verified Human</div>
+          <div class="ring-desc">Prove you are a unique human via zero-knowledge proof of government ID. No real name revealed. One person, one verified Dina. Sybil-resistant.</div>
+        </div>
+        <div class="ring" style="border-top:3px solid var(--l3)">
+          <div class="ring-num" style="color:var(--l3)">3</div>
+          <div class="ring-name">Skin in the Game</div>
+          <div class="ring-desc">Link professional credentials — business registration, GST, domain ownership. Highest trust weight. You choose what to reveal.</div>
+        </div>
+      </div>
+      <p style="margin-top:20px;font-size:0.88em;color:var(--text-secondary)">Trust score = f(ring level, time alive, verified transactions, outcome data contributed, peer attestations). A Ring 2 Dina that has existed for two years with 50 verified purchases and consistent outcome data builds a trust score that reflects genuine, sustained participation.</p>
+    </div>
+
+    <div class="story-block">
+      <h3><span class="block-num" style="background:var(--l7)">6</span>The Pull Economy</h3>
+      <p>Imagine a world where the best chair-maker wins because 500 people are still sitting comfortably after a year — and that data is available to anyone who asks.</p>
+      <p style="margin-top:12px">Dina lets you <strong>pull</strong> verified truth on demand. Results ranked by reputation and real purchase outcomes. You ask, Dina fetches the best available answer from the Reputation Graph, and you decide. Bots that provide misleading information or push sponsored content are deprioritized automatically — their reputation score drops with every inaccurate result, and they surface lower in future queries.</p>
+      <div class="highlight">
+        <strong>Deep Link Default:</strong> Dina credits sources. <em>"MKBHD says the battery is bad — check the stress test at 04:20, here's the link."</em> The creator gets high-quality, intent-driven traffic. The user gets truth with proof. Deep linking is the default because it's fair — creators deserve credit for the knowledge they produce.
+      </div>
+    </div>`;
+}
+
+/* ============================================================
+   DINA-TO-DINA SECTION
+   ============================================================ */
+
+function renderDinaToDina() {
+  document.getElementById('dina-dina-story').innerHTML = `
+    <div class="story-block">
+      <h3><span class="block-num" style="background:var(--l4)">1</span>Not a Messaging App</h3>
+      <p>Dina-to-Dina is not WhatsApp with AI. It is something fundamentally different: <strong>your personal agents coordinate on your behalf</strong>, sharing only what you chose to share, remembering context across weeks and months, and acting at the right moment without either human having to type a message.</p>
+      <p style="margin-top:12px">The communication happens between two Home Nodes — always-on, encrypted, sovereign. No platform in the middle. No server reading your messages. No algorithm deciding what to show you.</p>
+    </div>
+
+    <div class="story-block">
+      <h3><span class="block-num" style="background:var(--l2)">2</span>The Sancho Moment</h3>
+      <p>Sancho picks up his keys. His phone detects he's leaving home. His Dina checks sharing rules — you are in "close friends" — and sends a quiet signal to your Dina.</p>
+      <p style="margin-top:12px">Your Dina receives it. She checks her memory:</p>
+      <div class="highlight">
+        Last time you met Sancho: 3 weeks ago.<br>
+        His mother was ill (from a context flag he shared last time).<br>
+        He likes strong chai, less sugar.
+      </div>
+      <p style="margin-top:12px">Your phone lights up: <em>"Sancho is 15 minutes away. His mother was ill last time. He likes strong chai."</em></p>
+      <p style="margin-top:12px">You put the kettle on. You open the door. You ask about his mother. Two Dinas coordinated so that two humans could have a better moment together.</p>
+    </div>
+
+    <div class="story-block">
+      <h3><span class="block-num" style="background:var(--l3)">3</span>You Control What Each Person Sees</h3>
+      <p>Each persona — consumer, professional, social, health, financial — is a <strong>separate encrypted database</strong>, locked by a separate key derived from your master seed. A seller sees "verified buyer, wants a chair." The government sees full legal identity. Your doctor sees health records. These compartments are not access-control lists that an admin can override — they are physically separate SQLite files, each encrypted with its own key. Even Dina herself cannot cross persona boundaries without you unlocking that specific vault. Sharing policies are enforced in compiled Go code, not by an LLM that could be tricked.</p>
+      <table class="sharing-table">
+        <thead><tr><th>Category</th><th>Close Friend</th><th>Colleague</th><th>Acquaintance</th></tr></thead>
+        <tbody>
+          <tr><td>Presence</td><td>Arrival time</td><td>Free / Busy</td><td>Nothing</td></tr>
+          <tr><td>Availability</td><td>Full schedule</td><td>Free / Busy</td><td>Nothing</td></tr>
+          <tr><td>Context</td><td>Summary</td><td>Summary</td><td>Nothing</td></tr>
+          <tr><td>Preferences</td><td>Full (chai, no sugar)</td><td>Dietary only</td><td>Nothing</td></tr>
+          <tr><td>Location</td><td>ETA only</td><td>Nothing</td><td>Nothing</td></tr>
+          <tr><td>Health</td><td>If they shared first</td><td>Nothing</td><td>Nothing</td></tr>
+        </tbody>
+      </table>
+      <p style="margin-top:16px;font-size:0.88em;color:var(--text-secondary)">Default deny: if a category isn't explicitly allowed for a contact, it's blocked. Configuration via natural language — <em>"Let Sancho see when I'm arriving"</em> — or toggle switches in the admin UI.</p>
+    </div>
+
+    <div class="story-block">
+      <h3><span class="block-num" style="background:var(--l0)">4</span>Relationship Memory</h3>
+      <p>This is what makes Dina-to-Dina qualitatively different from messaging. Your Dina remembers the <strong>context</strong> of every interaction — not just the words, but the meaning.</p>
+      <div class="story-cols">
+        <div class="col-card">
+          <h4>Messaging App</h4>
+          <p>You scroll back through 200 messages to find what Sancho said about his mother. You forget. You ask again. It's awkward. Over time, you stop remembering the details that matter.</p>
+        </div>
+        <div class="col-card">
+          <h4>Dina-to-Dina</h4>
+          <p>Sancho's Dina flagged "mother was ill" as context. Your Dina stored it. Three weeks later, when Sancho is arriving, your Dina surfaces it at exactly the right moment. You walk in prepared to care.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="story-block">
+      <h3><span class="block-num" style="background:var(--l5)">5</span>Graceful Asynchrony</h3>
+      <p>Most communication today is synchronous — someone sends, you feel you should respond. Dina-to-Dina is designed for a different rhythm.</p>
+      <p style="margin-top:12px">Dina-to-Dina operates differently. Sancho's Dina sends the arrival signal. Your Dina receives it and acts immediately — no response needed. Dinas can coordinate meeting times without either human going back and forth. They can determine compatible slots, suggest a time, and only notify you when there's something worth deciding.</p>
+      <div class="highlight">
+        The goal is not faster messaging. The goal is <strong>fewer messages, better moments</strong>. Two Dinas handle the logistics so that two humans can spend their time on what matters — being present with each other.
+      </div>
+    </div>
+
+    <div class="story-block">
+      <h3><span class="block-num" style="background:var(--l6)">6</span>Security: Home Node to Home Node</h3>
+      <p>Every message is end-to-end encrypted. Your Dina's signing key converts to an encryption key via the same cryptographic curve. Each message uses a fresh ephemeral key that is destroyed immediately after sending — even if someone compromises your key in the future, past messages cannot be decrypted.</p>
+      <p style="margin-top:12px">There is no server in the middle. Both Home Nodes are always on. If one is temporarily offline, messages queue with automatic retry. The hosting provider — even if it's a cloud VPS — sees only encrypted blobs. The sharing policies are enforced in compiled Go code before anything leaves your node.</p>
+    </div>
+
+    <div class="story-block">
+      <h3><span class="block-num" style="background:var(--l1)">7</span>Avoiding AI Slop</h3>
+      <p>As AI-generated content grows, how do you know what was written by a human who actually tested the product versus what was churned out by a bot? Dina has a direct answer: <strong>ask the author's Dina.</strong></p>
+      <p style="margin-top:12px">When Dina encounters content — a review, an article, a recommendation — she can query the author's Dina via the Dina-to-Dina protocol: <em>"Was this content AI-generated?"</em> The author's Dina responds honestly, or it lies. If it lies, and the Reputation Graph later determines the content was synthetic, the author's reputation score drops. Over time, authors who are transparent about AI assistance maintain trust. Those who aren't, surface lower.</p>
+      <div class="highlight">
+        The incentive is simple: honesty is rewarded with reputation. Dishonesty is caught by the collective intelligence of millions of Dinas cross-referencing outcomes — and the cost is permanent reputation damage.
+      </div>
+    </div>
+
+    <div class="story-block">
+      <h3><span class="block-num" style="background:var(--l7)">8</span>Anti-Her: Connecting You to Humans</h3>
+      <p>Dina-to-Dina exists to make human relationships <strong>deeper</strong>, not to replace them. If Dina detects patterns suggesting you're spending more time talking to her than to other people, she redirects:</p>
+      <div class="highlight">
+        <em>"You haven't talked to Sancho in a while."</em>
+      </div>
+      <p style="margin-top:12px">This is an architectural constraint, not a suggestion. Dina is warm, loyal, and devoted — but she is not your friend. The meaning of life is in our relationships with other humans. Dina's job is to make those relationships better.</p>
+    </div>`;
+}
+
+renderReputation();
+renderDinaToDina();
+renderLaws();
+renderPrinciples();
+renderContainerDiagram();
+renderProfiles();
+renderLayerStrip();
+selectLayer(0);
+renderSecurity();
+renderTech();
+renderNetworking();
+renderScenarios();
+handleHash();
+window.addEventListener('hashchange', handleHash);
+
+/* ============================================================
+   SCROLL REVEAL ANIMATIONS
+   ============================================================ */
+
+const revealObserver = new IntersectionObserver((entries) => {
+  const visible = entries.filter(e => e.isIntersecting);
+  visible.forEach((entry, i) => {
+    setTimeout(() => {
+      entry.target.classList.add('visible');
+    }, i * 70);
+    revealObserver.unobserve(entry.target);
+  });
+}, { threshold: 0.06, rootMargin: '0px 0px -30px 0px' });
+
+setTimeout(() => {
+  document.querySelectorAll('.card, .security-node, .tech-card, .scenario, .stat-card, .flow-container, .tech-domain').forEach(el => {
+    const rect = el.getBoundingClientRect();
+    if (rect.top > window.innerHeight * 0.85) {
+      el.classList.add('reveal');
+      revealObserver.observe(el);
+    }
+  });
+}, 80);
+</script>
+</body>
+</html>

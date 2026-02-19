@@ -11,6 +11,7 @@
 
 ### ⚡ Developer Cockpit
 
+* **Start Here:** [**Open dina.html**](./dina.html) — Interactive visual guide to everything Dina.
 * **Quick Start:** [3 commands to get Dina running](./QUICKSTART.md)
 * **The Stack:** Go Core + Python Brain (Sidecar Pattern) + SQLite/SQLCipher.
 * **The Architecture:** [Read the Engineering Spec](./ARCHITECTURE.md)
