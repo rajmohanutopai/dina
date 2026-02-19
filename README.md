@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Status: Phase 1](https://img.shields.io/badge/Status-Alpha-orange)]()
 [![Stack: Go + Python](https://img.shields.io/badge/Stack-Go%20%7C%20Python-blue)]()
-[![Discord](https://img.shields.io/badge/Discord-Join%20Us-purple)]()
+[![Discord](https://img.shields.io/badge/Discord-Join%20Us-purple)](https://discord.gg/gDRcrEwy)
 
 > **Dina is a sovereign personal AI that watches your world, breaks silence only when it matters, and never works for anyone but you.**
 
@@ -14,9 +14,9 @@
 * **Quick Start:** [3 commands to get Dina running](./QUICKSTART.md)
 * **The Stack:** Go Core + Python Brain (Sidecar Pattern) + SQLite/SQLCipher.
 * **The Architecture:** [Read the Engineering Spec](./ARCHITECTURE.md)
-* **Advanced Setup:** [Offline Mode / Networking / Yggdrasil](./ADVANCED-SETUP.md)
+* **Advanced Setup:** [Local LLM / Networking / Yggdrasil](./ADVANCED-SETUP.md)
 * **The Roadmap:** [Build Roadmap with Status Tracking](./ROADMAP.md)
-* **Discussion:** [Join the Discord](#)
+* **Discussion:** [Join the Discord](https://discord.gg/gDRcrEwy)
 
 ---
 
@@ -33,7 +33,7 @@ docker compose up -d
 curl -X POST http://localhost:8100/v1/identity/init
 
 # 3. Go online (Tailscale Funnel — zero-config public endpoint)
-sudo tailscale up && sudo tailscale funnel 8443
+sudo tailscale up && sudo tailscale funnel 443
 ```
 
 ---

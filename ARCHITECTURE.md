@@ -57,7 +57,7 @@ Dina runs on a **Home Node** — a small, always-on server. Your phone, laptop, 
 │  │ Local LLM    │  │ Python Brain (dina-brain)     │  │
 │  │ (llama.cpp   │  │ - Guardian angel loop (ADK)   │  │
 │  │  + Gemma 3n) │  │ - Silence classification      │  │
-│  └──────────────┘  │ - Whisper assembly             │  │
+│  └──────────────┘  │ - Nudge assembly             │  │
 │                     │ - Agent orchestration          │  │
 │                     └──────────────────────────────┘  │
 └──────────┬──────────────┬──────────────┬─────────────┘
@@ -84,7 +84,7 @@ Dina runs on a **Home Node** — a small, always-on server. Your phone, laptop, 
 
 ### Hosting Levels
 
-Same containers, same SQLite vault, same Docker image at every level. Migration between levels = copy one file.
+Same containers, same SQLite vault, same Docker image at every level. Migration between levels = `dina export` on old machine, `dina import` on new machine (see "Portability & Migration" below).
 
 | Level | Host | Trust Model |
 |-------|------|------------|
@@ -137,42 +137,86 @@ If the Home Node reboots at 2 AM (kernel panic, power outage, OS patch), Dina ca
 
 **A locked door should not prevent the postman from sliding mail through the slot.** The message is already encrypted with Dina's public key — storing it on disk is safe because the private key needed to read it is locked inside the vault.
 
-**The fix: decouple ingress from processing.**
+**The cryptographic catch-22:** NaCl messages use authenticated encryption — the sender's DID is inside the encrypted envelope. When the vault is locked, Core doesn't have the private key in RAM. It **cannot identify the sender** before writing to disk. Per-DID rate limiting is mathematically impossible when locked. This is why the ingress defense must be physics-based (IP addresses, disk quotas), not identity-based.
+
+**The fix: state-aware ingress with a 3-valve pressure system.**
 
 ```
-DEAD DROP ARCHITECTURE:
+STATE-AWARE INGRESS:
 
-  Ingress (HTTP listener) ← "dumb" and fast, runs 24/7
-    │                        Does NOT need the vault key.
-    │                        Writes encrypted blobs to disk.
-    │                        Returns 202 Accepted immediately.
-    │
-    ▼
-  ./data/inbox/             ← Flat file spool
-    msg_abc123.blob            Encrypted with Dina's public key.
-    msg_def456.blob            Safe on disk — no one can read them
-    msg_ghi789.blob            without the private key.
-    │
-    ▼
-  Inbox Sweeper (Worker)   ← Needs the vault key.
-    │                        Runs on startup + after vault unlock.
-    │                        Decrypts, checks TTL, processes.
-    ▼
-  SQLite Vault + Brain
+  POST /msg arrives
+        │
+        ▼
+  ┌─ Valve 1: IP Rate Limiter ────────────────────────┐
+  │  Token bucket per IP: 50 req/hour                  │
+  │  Global bucket: 1000 req/hour (botnet defense)     │
+  │  Payload cap: 256KB (DIDComm is JSON, no media)     │
+  │  Fail → HTTP 429 immediately                       │
+  └───────────────────────────┬────────────────────────┘
+                              │ pass
+                              ▼
+                    Is vault UNLOCKED?
+                     /            \
+                   YES             NO
+                   /                \
+          ┌──────▼──────┐   ┌──────▼──────┐
+          │ FAST PATH   │   │ DEAD DROP   │
+          │ (in-memory)  │   │ (disk spool) │
+          │              │   │              │
+          │ Decrypt msg  │   │ Check spool  │
+          │ Check DID in │   │ size < 500MB? │
+          │ contacts     │   │  YES → write  │
+          │ Per-DID rate │   │    blob to    │
+          │ limiting     │   │    ./data/    │
+          │ Check trust  │   │    inbox/     │
+          │ ring         │   │    202 OK     │
+          │ Process      │   │  NO → reject  │
+          │ immediately  │   │    429 full   │
+          └──────────────┘   └──────────────┘
+                                    │
+                              (on vault unlock)
+                                    │
+                              ┌─────▼─────┐
+                              │ Valve 3:  │
+                              │ SWEEPER   │
+                              │ Decrypt,  │
+                              │ check DID,│
+                              │ check TTL,│
+                              │ blocklist │
+                              │ spam IPs  │
+                              └───────────┘
 ```
 
-**The workflow:**
+**The three valves:**
 
-1. **State:** Node is LOCKED (after reboot, Security mode).
-2. **Event:** `POST /didcomm/inbox` arrives with "Sancho is leaving home."
-3. **Action:** Ingress writes raw encrypted bytes to `./data/inbox/msg_123.blob`.
-4. **Response:** Returns `202 Accepted` immediately. Sender's Dina thinks: delivered.
-5. **State change:** User types passphrase. Vault UNLOCKS.
-6. **Action:** Inbox Sweeper wakes up, reads `msg_123.blob`, decrypts with now-available key, checks TTL, processes normally.
+| Valve | When | What | Defense |
+|-------|------|------|---------|
+| **1: IP Rate Limiter** | Always (pre-decryption) | Token bucket per IP (50 req/hr), global (1000 req/hr), 256KB payload cap (HTTP 413 if exceeded) | Stops flooding before any disk I/O |
+| **2: Spool Cap** | Vault locked only | Hard quota on `./data/inbox/` (500MB default, configurable via `DINA_SPOOL_MAX`). **Reject-new when full, not drop-oldest.** | Prevents disk exhaustion. Reject-new preserves existing legitimate messages — drop-oldest would let attackers flush real mail. |
+| **3: Sweeper Feedback** | After vault unlock | Decrypt blobs, identify sender DID, check trust ring. Spam DIDs → add source IP to Valve 1 blocklist. | Retroactive blocklisting. Known spam IPs get permanently blocked at Valve 1. |
+
+**State 1: Vault UNLOCKED (fast path — zero disk I/O):**
+
+1. Message arrives at `POST /msg`.
+2. Valve 1 passes (IP rate limit OK, payload < 256KB).
+3. Core decrypts NaCl envelope in-memory (private key available).
+4. Core checks sender DID: in contacts? Trust ring? Per-DID rate limit?
+5. Passes directly to brain's processing queue. No disk write.
+6. Result: sub-millisecond, lightning fast.
+
+**State 2: Vault LOCKED (dead drop — survival mode):**
+
+1. Message arrives at `POST /msg`.
+2. Valve 1 passes (IP rate limit OK, payload < 256KB).
+3. Core cannot decrypt (no private key in RAM). Cannot identify sender.
+4. Check spool size: `./data/inbox/` < 500MB?
+5. **YES:** Write raw encrypted bytes to `./data/inbox/msg_{ulid}.blob`. Return `202 Accepted`.
+6. **NO (spool full):** Return `429 Too Many Requests`. Sender retries later.
+7. On vault unlock: Sweeper wakes up, processes all blobs.
 
 **TTL (Time-To-Live) prevents zombie notifications:**
 
-Since the outer envelope is encrypted, the ingress handler cannot see the TTL — it must accept everything. The Inbox Sweeper applies TTL logic after decryption:
+Since the outer envelope is encrypted, the ingress handler cannot see the TTL — it must accept everything. The Sweeper applies TTL logic after decryption:
 
 ```go
 // After decrypting the message
@@ -188,26 +232,155 @@ processMessage(msg)
 
 | Scenario | Message | Vault State | Result |
 |----------|---------|-------------|--------|
-| Normal operation | "Sancho leaving home" | Unlocked | Processed immediately, whisper delivered |
-| Locked, unlocked within TTL | "Sancho leaving home" (TTL: 30 min) | Locked → Unlocked 10 min later | Processed, whisper delivered (still relevant) |
-| Locked, unlocked after TTL | "Pizza arriving in 5 min" (TTL: 15 min) | Locked → Unlocked 3 hours later | Stored silently in history, no notification (expired news) |
-| Convenience mode reboot | Any message | Auto-unlocked on boot | Processed immediately (no queuing needed) |
+| Normal operation | "Sancho leaving home" | Unlocked | **Fast path:** decrypted in-memory, nudge delivered instantly |
+| Locked, unlocked within TTL | "Sancho leaving home" (TTL: 30 min) | Locked → Unlocked 10 min later | **Dead drop → sweeper:** processed, nudge delivered (still relevant) |
+| Locked, unlocked after TTL | "Pizza arriving in 5 min" (TTL: 15 min) | Locked → Unlocked 3 hours later | **Dead drop → sweeper:** stored silently in history, no notification (expired news) |
+| Convenience mode reboot | Any message | Auto-unlocked on boot | **Fast path:** processed immediately (no dead drop needed) |
+| DoS attack (locked) | Millions of garbage payloads | Locked | **Valve 1** rejects most (IP rate limit). Remainder fills spool to 500MB cap. **Valve 2** rejects rest (429). Disk safe. |
+| DoS attack (unlocked) | Millions of garbage payloads | Unlocked | **Valve 1** rejects most (IP rate limit). Survivors decrypted — unknown DID → dropped. No disk I/O. |
 
-**Security:** The inbox spool (`./data/inbox/`) contains only encrypted blobs. An attacker with filesystem access sees the same thing they'd see in the vault — encrypted data they can't read. The blobs are cleaned up (deleted from spool) after successful processing.
+**Spool management:**
+
+```go
+const (
+    DefaultMaxSpoolBytes = 500 * 1024 * 1024  // 500MB, configurable via DINA_SPOOL_MAX
+    MaxPayloadBytes      = 256 * 1024           // 256KB per message (DIDComm is JSON metadata, no media/attachments)
+    IPRateLimit          = 50                    // requests per hour per IP
+    GlobalRateLimit      = 1000                  // requests per hour total
+)
+
+func inboxHandler(w http.ResponseWriter, r *http.Request) {
+    // Valve 1: IP rate limit (checked before reading body)
+    if !ipLimiter.Allow(r.RemoteAddr) {
+        http.Error(w, "Rate limited", http.StatusTooManyRequests)
+        return
+    }
+
+    // Valve 1: Payload size cap (checked before reading body)
+    // Valve 1: Payload size cap — DIDComm is JSON metadata, no media.
+    // 256KB is generous. Slowloris-style attacks with oversized payloads cut off immediately.
+    r.Body = http.MaxBytesReader(w, r.Body, MaxPayloadBytes)
+    blob, err := io.ReadAll(r.Body)
+    if err != nil {
+        http.Error(w, "Payload too large", http.StatusRequestEntityTooLarge) // 413
+        return
+    }
+
+    // Fast path: vault unlocked → decrypt + process in-memory
+    if vault.IsUnlocked() {
+        msg, err := vault.DecryptNaCl(blob)
+        if err != nil {
+            http.Error(w, "Invalid", 400)
+            return
+        }
+        if !didLimiter.Allow(msg.From) {  // Per-DID rate limit (unlocked only)
+            http.Error(w, "Rate limited", 429)
+            return
+        }
+        go processMessage(msg)
+        w.WriteHeader(http.StatusOK)
+        return
+    }
+
+    // Dead drop: vault locked → write to spool (Valve 2)
+    spoolSize := getSpoolSize()
+    if spoolSize+int64(len(blob)) > MaxSpoolBytes {
+        http.Error(w, "Spool full", http.StatusTooManyRequests)
+        return
+    }
+    writeToSpool(blob)  // ./data/inbox/msg_{ulid}.blob
+    w.WriteHeader(http.StatusAccepted)
+}
+```
+
+**Security:** The inbox spool (`./data/inbox/`) contains only encrypted blobs. An attacker with filesystem access sees the same thing they'd see in the vault — encrypted data they can't read. The blobs are cleaned up (deleted from spool) after successful processing. The spool cap (500MB) guarantees that even a sustained DoS attack against a locked vault cannot crash the Home Node by filling the disk.
+
+### Portability & Migration (The `.dina` Archive)
+
+A Dina node's state is not a single file — it's a directory tree: persona SQLite databases, encrypted master key, Argon2id salt, media blobs, and configuration. Telling a user "migration = copy one file" when there are 10+ files across 4 directories is a recipe for corrupted imports and lost data.
+
+**The fix: `dina export` compiles the state into a single encrypted archive. `dina import` restores it.**
+
+```
+Export (old machine):
+  docker exec dina-core dina export --output /backup/my-dina.dina
+
+Import (new machine):
+  # Run install.sh first (generates new BRAIN_TOKEN, sets up directories)
+  docker exec -i dina-core dina import --input /backup/my-dina.dina
+  # Prompts for passphrase → unlocks master key → restores vault
+```
+
+**What's in the `.dina` archive:**
+
+```
+my-dina.dina (encrypted tar.gz, encrypted with passphrase-derived key)
+├── vault/
+│   ├── identity.sqlite        ← Root DID, persona keys (Tier 0)
+│   ├── consumer.sqlite        ← Consumer persona vault
+│   ├── social.sqlite          ← Social persona vault
+│   ├── health.sqlite          ← Health persona vault (if exists)
+│   ├── financial.sqlite       ← Financial persona vault (if exists)
+│   ├── citizen.sqlite         ← Citizen persona vault (if exists)
+│   └── staging.sqlite         ← Drafts, payment intents (Tier 4)
+├── keys/
+│   ├── master.key.enc         ← Encrypted master key (Security mode)
+│   │   (or master.key)        ← Raw master key (Convenience mode)
+│   └── salt                   ← Argon2id salt
+├── media/                     ← Attachment blobs (voice memos, etc.)
+├── config.json                ← Mode, connector settings, preferences
+└── manifest.json              ← Version, export timestamp, file checksums
+```
+
+**What's NOT in the archive:**
+
+| Excluded | Why |
+|----------|-----|
+| `BRAIN_TOKEN` | Regenerated by `install.sh` on new machine. Per-machine secret. |
+| `CLIENT_TOKEN` | Device tokens re-paired on new machine. Per-device secret. |
+| OAuth tokens (Gmail, Calendar) | Bound to old machine's IP/identity. Re-authenticate on new machine. |
+| `DINA_PASSPHRASE` | The user knows it. Archive is encrypted *with* it, not *containing* it. |
+| PDS data | Replicated via AT Protocol. New PDS re-syncs from relay. |
+| Docker secrets directory | Regenerated by `install.sh`. |
+
+**The export process:**
+
+```
+1. Pause database writes (PRAGMA wal_checkpoint(TRUNCATE) on all persona files)
+2. Create tar.gz of vault/, keys/, media/, config.json
+3. Encrypt the tar.gz with Argon2id(passphrase) → AES-256-GCM
+4. Write manifest.json (version, checksums, timestamp) into archive
+5. Resume database writes
+6. Stream encrypted archive to stdout or --output path
+```
+
+**The import process:**
+
+```
+1. Prompt for passphrase
+2. Decrypt archive (Argon2id → AES-256-GCM)
+3. Verify manifest.json checksums (detect corruption)
+4. Verify version compatibility (reject archives from incompatible versions)
+5. Restore vault/, keys/, media/, config.json to /var/lib/dina/
+6. Derive persona keys from master key → open each SQLite to verify integrity
+7. Notify: "Import complete. Re-pair your devices and re-authenticate connectors."
+```
+
+**Migration between hosting levels** (managed → self-hosted, Pi → Mac Mini, etc.) is just export + import. Same archive, same command, any hardware. The promise of "zero lock-in" is enforced by the CLI, not by hoping users manually copy the right files.
 
 ### Why Not Serverless?
 
 Serverless (Lambda + S3) doesn't work for Dina. SQLite on network storage corrupts under concurrent access. Cold starts take 30-60 seconds to load a 2GB LLM. Lambda can't maintain persistent WebSocket or DIDComm connections. Continuous polling (Gmail, Calendar, Dina-to-Dina messages) costs more on Lambda than an always-on container.
 
-The right architecture is lightweight, always-on containers via `docker compose up -d` — 3 containers in Online Mode (core, brain, pds) or 5 in Offline Mode (+ llama-server + whisper-server).
+The right architecture is lightweight, always-on containers via `docker compose up -d` — 3 containers by default (core, brain, pds). Add a local LLM with `docker compose --profile local-llm up -d` (4 containers: + llama).
 
 ### Connectivity & Ingress (Multi-Lane Networking)
 
-dina-core **never binds to port 443 directly.** It listens on localhost only:
-- Port 8100 — internal API (brain ↔ core)
-- Port 8443 — DIDComm endpoint + client WebSockets (localhost, not exposed to internet)
+dina-core exposes two ports:
+- **Port 443** — external HTTPS: client WebSockets, NaCl messaging (Dina-to-Dina), admin UI proxy (`/admin` → brain:8200/admin). Behind a tunnel (Tailscale/Cloudflare/Yggdrasil) for NAT traversal and DDoS protection.
+- **Port 8100** — internal API (brain ↔ core, Docker network only)
 
-The public ingress is always a layer in front — a tunnel, a reverse proxy, or a mesh network. This solves NAT traversal, port conflicts, TLS termination, and DDoS protection in one architectural decision.
+The public ingress is a tunnel or reverse proxy in front of port 443. This solves NAT traversal, port conflicts, TLS termination, and DDoS protection in one architectural decision. The PDS exposes port 2583 separately for AT Protocol relay crawling.
 
 **Three ingress tiers, running simultaneously if needed:**
 
@@ -217,13 +390,13 @@ The public ingress is always a layer in front — a tunnel, a reverse proxy, or 
 | **2: Production** | Tunneled | Cloudflare Tunnel (`cloudflared`) | Daily drivers, anyone who wants DDoS protection | `https://dina.alice.com` (custom domain, WAF, geo-blocking) |
 | **3: Sovereign** | Mesh | Yggdrasil | Censorship resistance, no central authority | Stable IPv6 derived from node's public key |
 
-**Why not Tor for Tier 3?** Dina has a DID — she's not trying to be anonymous, she's trying to be sovereign. DIDComm already provides E2E encryption, making Tor's encryption layer redundant. Tor's 3-second round trip kills whispers and real-time interactions. Yggdrasil provides censorship resistance with low latency and NAT traversal, and its key-derived IPv6 addresses are philosophically aligned with DIDs. Users who need anonymity (hiding that they run a Dina) can route Yggdrasil over Tor — that's an ops choice, not an architecture tier.
+**Why not Tor for Tier 3?** Dina has a DID — she's not trying to be anonymous, she's trying to be sovereign. DIDComm already provides E2E encryption, making Tor's encryption layer redundant. Tor's 3-second round trip kills nudges and real-time interactions. Yggdrasil provides censorship resistance with low latency and NAT traversal, and its key-derived IPv6 addresses are philosophically aligned with DIDs. Users who need anonymity (hiding that they run a Dina) can route Yggdrasil over Tor — that's an ops choice, not an architecture tier.
 
 **How it connects to DIDComm:** The DID Document (resolved via `did:plc` or `did:web`) points to whatever public endpoint the tunnel exposes. DIDComm doesn't care whether that's a Tailscale URL, a Cloudflare domain, or a Yggdrasil IPv6. When the user changes ingress tier, they sign a `did:plc` rotation operation to update their service endpoint.
 
 **Future: Wildcard Relay.** The Dina Foundation will operate a relay (`*.dina.host` via `frp`) to provide free, secure subdomains to Community tier users — replacing the Tailscale Funnel dependency. Not a Phase 1 dependency.
 
-See [`ADVANCED-SETUP.md`](ADVANCED-SETUP.md) for setup instructions per tier (networking) and Offline Mode, or [`QUICKSTART.md`](QUICKSTART.md) to get running in 3 commands.
+See [`ADVANCED-SETUP.md`](ADVANCED-SETUP.md) for setup instructions per tier (networking) and Local LLM profile, or [`QUICKSTART.md`](QUICKSTART.md) to get running in 3 commands.
 
 ### One User, One File (Tenancy Model)
 
@@ -250,7 +423,7 @@ Dina NEVER uses a shared database. Every user gets their own SQLite file.
 
 **Why this matters:**
 - **Isolation.** User A's process has no file handle to User B's vault. OS enforces privacy, not just code. Within a user, each persona file is independently encrypted — compromise of `consumer.sqlite` reveals nothing about `health.sqlite`.
-- **Portability.** User leaves → send them their directory of `.sqlite` files. Done. 100% of history, instantly.
+- **Portability.** User leaves → `dina export` bundles their vault, media, and keys into a single encrypted `.dina` archive. `dina import` on the new machine restores everything. 100% of history, one command.
 - **Right to delete.** `rm user_b/`. Data physically annihilated. Or finer: `rm user_b/health.sqlite` to delete only medical data.
 - **Breach containment.** Compromise of one user's vault does not expose others. Compromise of one persona file does not expose other personas. No shared secret, no master key.
 
@@ -260,78 +433,90 @@ The Home Node is split into two services that communicate over a local HTTP API:
 
 - **dina-core (Go + net/http):** The sovereignty layer. Holds the encrypted vault, manages keys, runs the DIDComm endpoint, serves client WebSockets, schedules connector polling, and enforces PII scrubbing. This is the part that must never fail, must never leak data, and must run for years without maintenance. Go is the right language for this — fast compilation, simple deployment (single static binary), excellent standard library for crypto (Ed25519, AES-256-GCM, X25519 all built-in), and strong concurrency primitives for managing connectors and WebSockets.
 
-- **dina-brain (Python + Google ADK):** The intelligence layer. Runs the guardian angel reasoning loop — silence classification, disconnect detection, whisper assembly, agent orchestration. This is where LLM tool-calling, multi-step reasoning, and multi-agent coordination happen. Python is the right language for this because the AI/ML ecosystem (Google ADK, llama-cpp-python, embedding models) is Python-first.
+- **dina-brain (Python + Google ADK):** The intelligence layer. Runs the guardian angel reasoning loop — silence classification, disconnect detection, nudge assembly, agent orchestration. This is where LLM tool-calling, multi-step reasoning, and multi-agent coordination happen. Python is the right language for this because the AI/ML ecosystem (Google ADK, llama-cpp-python, embedding models) is Python-first.
 
-A third container runs the local LLM:
+An optional fourth container runs a local LLM:
 
-- **llama-server (llama.cpp):** Serves Gemma 3n via an OpenAI-compatible API on localhost. Both core (for PII scrubbing) and brain (for classification) call it. Cloud LLM APIs (Claude, Gemini) are the escalation path for complex reasoning.
+- **llama (llama.cpp):** Serves Gemma 3n via an OpenAI-compatible API on localhost. Brain calls it for classification, embeddings, and LLM-based NER (Tier 3 PII scrubbing). Core calls it for PII scrubbing NER fallback. Enabled via `--profile local-llm`. Without llama, brain calls cloud LLM APIs (Gemini, Claude) directly — PII scrubbing uses regex (core) + spaCy NER (brain), which catches structured and most contextual PII.
 
 ```
-docker-compose.yml:
-┌─────────────────────────────────────────────────────┐
-│                                                       │
-│  ┌──────────────────────────────────────────────┐    │
-│  │  dina-core (Go + net/http)                    │    │
-│  │  Port 8100 (internal)                         │    │
-│  │  Port 8443 (DIDComm + clients, localhost only)  │    │
-│  │                                                │    │
-│  │  - SQLite vault + encryption                   │    │
-│  │  - DID / key operations                        │    │
-│  │  - DIDComm endpoint (external)                 │    │
-│  │  - WebSocket server (client devices)           │    │
-│  │  - PII scrubber (regex hot path)               │    │
-│  │  - Connector scheduler (triggers brain)        │    │
-│  │                                                │    │
-│  │  Exposes to brain:                             │    │
-│  │    POST /v1/vault/query                        │    │
-│  │    POST /v1/vault/store                        │    │
-│  │    POST /v1/did/sign                           │    │
-│  │    POST /v1/did/verify                         │    │
-│  │    POST /v1/pii/scrub                          │    │
-│  │    POST /v1/notify (push to client)            │    │
-│  └──────────────────┬───────────────────────────┘    │
-│                      │ localhost:8100                   │
-│  ┌──────────────────▼───────────────────────────┐    │
-│  │  dina-brain (Python + Google ADK)             │    │
-│  │  Port 8200 (internal) — Brain API              │    │
-│  │  Port 8500 (internal) — Admin UI               │    │
-│  │                                                │    │
-│  │  Brain API (BRAIN_TOKEN):                      │    │
-│  │  - Guardian angel reasoning loop               │    │
-│  │  - Silence filter / interrupt classification   │    │
-│  │  - Context assembly for whispers               │    │
-│  │  - Disconnect detection                        │    │
-│  │  - Agent orchestration (e.g. delegate to       │    │
-│  │    OpenClaw via MCP)                           │    │
-│  │                                                │    │
-│  │  Admin UI (CLIENT_TOKEN):                      │    │
-│  │  - Dashboard, connector status, vault health   │    │
-│  │  - Whisper history, contacts, sharing rules    │    │
-│  │  - Settings, personas, onboarding flow         │    │
-│  │                                                │    │
-│  │  LLM routing:                                  │    │
-│  │    Simple → llama-server (localhost:8300)       │    │
-│  │    Complex → Claude/Gemini API                 │    │
-│  │                                                │    │
-│  │  Exposes to core:                              │    │
-│  │    POST /v1/process (new data to analyze)      │    │
-│  │    POST /v1/reason (complex decision needed)   │    │
-│  └──────────────────────────────────────────────┘    │
-│                                                       │
-│  ┌──────────────────────────────────────────────┐    │
-│  │  llama-server (llama.cpp)                     │    │
-│  │  Port 8300 (internal)                         │    │
-│  │  Gemma 3n E2B model, OpenAI-compatible API    │    │
-│  └──────────────────────────────────────────────┘    │
-│                                                       │
-└─────────────────────────────────────────────────────┘
+docker-compose.yml (4 containers — llama optional via --profile local-llm):
+
+┌─────────────────────────────────────────────────────────┐
+│                                                           │
+│  ┌──────────────────────────────────────────────────┐    │
+│  │  dina-core (Go + net/http)                        │    │
+│  │  Port 443  (external) — HTTPS: clients,           │    │
+│  │                         NaCl messaging,            │    │
+│  │                         /admin proxy → brain:8200   │    │
+│  │  Port 8100 (internal) — API for brain + admin      │    │
+│  │                                                    │    │
+│  │  - SQLite vault + encryption                       │    │
+│  │  - DID / key operations                            │    │
+│  │  - NaCl messaging endpoint (Dina-to-Dina)         │    │
+│  │  - WebSocket server (client devices)               │    │
+│  │  - PII scrubber (regex hot path)                   │    │
+│  │  - Connector scheduler (triggers brain)            │    │
+│  │  - Reverse proxy: /admin → brain:8200/admin         │    │
+│  │                                                    │    │
+│  │  Exposes to brain:                                 │    │
+│  │    POST /v1/vault/query                            │    │
+│  │    POST /v1/vault/store                            │    │
+│  │    POST /v1/did/sign                               │    │
+│  │    POST /v1/did/verify                             │    │
+│  │    POST /v1/pii/scrub                              │    │
+│  │    POST /v1/notify (push to client)                │    │
+│  └──────────────────┬───────────────────────────────┘    │
+│                      │ localhost:8100                       │
+│  ┌──────────────────▼───────────────────────────────┐    │
+│  │  dina-brain (Python + Google ADK)                 │    │
+│  │  Port 8200 (internal) — unified FastAPI              │    │
+│  │    /api/* → Brain API, /admin/* → Admin UI          │    │
+│  │                                                    │    │
+│  │  /api/* — Brain API (BRAIN_TOKEN):                  │    │
+│  │  - Guardian angel reasoning loop                   │    │
+│  │  - Silence filter / interrupt classification       │    │
+│  │  - Context assembly for nudges                   │    │
+│  │  - Disconnect detection                            │    │
+│  │  - Agent orchestration (e.g. delegate to           │    │
+│  │    OpenClaw via MCP)                               │    │
+│  │                                                    │    │
+│  │  /admin/* — Admin UI (CLIENT_TOKEN, proxied via core:443): │    │
+│  │  - Dashboard, connector status, vault health       │    │
+│  │  - Nudge history, contacts, sharing rules        │    │
+│  │  - Settings, personas, onboarding flow             │    │
+│  │                                                    │    │
+│  │  LLM routing:                                      │    │
+│  │    Local → llama:8080 (if available)               │    │
+│  │    Cloud → Gemini/Claude API (PII-scrubbed)        │    │
+│  │                                                    │    │
+│  │  Exposes to core:                                  │    │
+│  │    POST /v1/process (new data to analyze)          │    │
+│  │    POST /v1/reason (complex decision needed)       │    │
+│  └──────────────────────────────────────────────────┘    │
+│                                                           │
+│  ┌──────────────────────────────────────────────────┐    │
+│  │  llama (llama.cpp)                [local-llm]     │    │
+│  │  Port 8080 (internal)                              │    │
+│  │  Gemma 3n E4B model, OpenAI-compatible API         │    │
+│  │  Optional: docker compose --profile local-llm up   │    │
+│  └──────────────────────────────────────────────────┘    │
+│                                                           │
+│  ┌──────────────────────────────────────────────────┐    │
+│  │  dina-pds (AT Protocol PDS)                       │    │
+│  │  Port 2583 (external) — Relay crawling             │    │
+│  │  Reputation Graph records only                     │    │
+│  │  Core pushes signed records here                   │    │
+│  └──────────────────────────────────────────────────┘    │
+│                                                           │
+└─────────────────────────────────────────────────────────┘
 ```
 
 **Why the sidecar pattern, not a single binary:**
 
 - **Best tools for each job.** Go has excellent crypto/DID libraries (standard library `crypto/*`, libsodium via `GoKillers/libsodium-go`, AT Protocol via `bluesky-social/indigo`). Python has the best agent/AI frameworks. Running them side-by-side is the industry standard.
 - **Independent development and testing.** `python3 brain.py` works on its own. `go run ./cmd/core` works on its own. You iterate on agent logic at Python speed without recompiling Go.
-- **Crash isolation.** If the Python brain OOMs or crashes, the Go core catches it and restarts it. The vault, keys, and messaging endpoint never go down.
+- **Crash isolation.** If the Python brain OOMs or crashes, Docker restarts it (`restart: unless-stopped`). The vault, keys, and messaging endpoint in core never go down. In-flight operations survive via the Task Queue (core requeues unacknowledged tasks) and Scratchpad (brain checkpoints reasoning to vault). See "Brain Crash Recovery" below.
 - **Swappable brain.** Switch from Google ADK to Claude Agent SDK, or from Python to Go (Google ADK now supports Go). The core's internal API doesn't change.
 - **Future consolidation path.** Google ADK already supports Go. As Go's AI ecosystem matures, the brain could be rewritten in Go, collapsing the sidecar into a single binary. The internal API makes this a clean migration.
 - **Docker-native.** In production (managed hosting), these are containers orchestrated by docker-compose or Fly.io. In development, they're just two terminal windows.
@@ -339,7 +524,7 @@ docker-compose.yml:
 **Why Google ADK for the brain:**
 
 - Apache 2.0 license (aligns with Dina's MIT license)
-- Model-agnostic: routes to local Gemma (via llama-server), Claude, Gemini, or any OpenAI-compatible endpoint
+- Model-agnostic: routes to local Gemma (via llama:8080 when available), Claude, Gemini, or any OpenAI-compatible endpoint
 - Native multi-agent orchestration: Sequential, Parallel, and Loop agents for complex reasoning
 - MCP support: exposes Dina's vault, connectors, and reputation data as MCP tools, and connects to external agents (OpenClaw) via MCP
 - Mature ecosystem: v1.25+, large community, Google-backed
@@ -373,12 +558,12 @@ Think of it as filesystem permissions. You don't get a popup every time an app r
 ```
 Two token types:
 
-BRAIN_TOKEN (generated at boot, injected via Docker Secrets):
+BRAIN_TOKEN (generated by install script, injected via Docker Secrets):
   ✓ vault/query, vault/store, pii/scrub, notify, msg/send,
     reputation/query, process, reason
   ✗ did/sign, did/rotate, vault/backup, persona/unlock, admin/*
 
-CLIENT_TOKEN (per-device, issued during pairing):
+CLIENT_TOKEN (per-device, issued during pairing; also used for /admin proxy):
   ✓ Everything — including admin endpoints
   ✓ did/sign, did/rotate, vault/backup, persona/unlock
 ```
@@ -414,35 +599,169 @@ A static allowlist is simpler to audit (reviewable at compile time), has zero ru
 
 ### Admin UI: Python, Not Go
 
-The admin UI (dashboard, settings, connector status, onboarding flow) runs as a **separate FastAPI app** in the brain container on port 8500. It is not the brain — it shares the Python runtime but is a completely independent application with its own auth.
+The admin UI (dashboard, settings, connector status, onboarding flow) and the brain API are **sub-mounted into a single FastAPI master app** in the brain container on port 8200. One Uvicorn process, one port, one healthcheck. Users access the admin UI via `https://my-dina.example.com/admin` — core reverse-proxies the request to brain:8200/admin.
 
 ```
-brain container:
-  port 8200 → Brain API     (BRAIN_TOKEN — agent operations)
-  port 8500 → Admin UI      (CLIENT_TOKEN — full admin access)
+brain container (single Uvicorn process on port 8200):
 
-  Two separate FastAPI apps. They share nothing except the Python runtime.
+  master app
+    ├── /api/*    → Brain API sub-app   (BRAIN_TOKEN — agent operations)
+    └── /admin/*  → Admin UI sub-app    (CLIENT_TOKEN — full admin access)
+    └── /healthz  → health endpoint     (no auth)
+
+  Two separate FastAPI sub-apps. They share nothing except the Uvicorn process.
+  Auth is per-sub-app: brain API checks BRAIN_TOKEN, admin UI checks CLIENT_TOKEN.
   Admin UI calls core:8100 with CLIENT_TOKEN.
+
+External access (browser — see "Browser Authentication Gateway" below):
+  User hits https://my-dina.example.com/admin
+    → core checks for valid dina_session cookie
+    → no cookie? → core serves static login page (Go embed.FS)
+    → user enters DINA_PASSPHRASE → core validates via Argon2id
+    → core sets HttpOnly/Secure/SameSite=Strict session cookie
+    → core injects CLIENT_TOKEN header, proxies to brain:8200/admin
+    → admin UI sees Bearer token, renders page
+    → response flows back through core to browser
+
+External access (device app — existing flow):
+  App sends Authorization: Bearer <CLIENT_TOKEN>
+    → core validates token, proxies to brain:8200/admin
+    → same as browser, no cookie needed
+
+  One Uvicorn process, one port, one healthcheck, one external port (443).
+```
+
+**Why a single Uvicorn process:** Two separate processes (port 8200 + port 8300) in one container is the fat container antipattern — Docker healthcheck can only monitor one port, so the other process dies silently. Sub-mounting both apps into one FastAPI master gives a single process, a single healthcheck (`/healthz`), and one port for core to proxy to. Clean.
+
+```python
+# brain/src/main.py — master app
+from fastapi import FastAPI
+from dina_brain.app import brain_api
+from dina_admin.app import admin_ui
+
+master = FastAPI()
+master.mount("/api", brain_api)      # BRAIN_TOKEN auth
+master.mount("/admin", admin_ui)     # CLIENT_TOKEN auth
+
+@master.get("/healthz")
+async def healthz():
+    return {"status": "ok"}
 ```
 
 **Why Python, not Go:** Go templates are painful for forms, tables, and interactive pages. FastAPI + Jinja2 ships a decent admin interface in days, not weeks. The extra HTTP hop to core (`admin → core:8100 → vault → core → admin → browser`) is ~5ms on localhost Docker networking — imperceptible for a dashboard that refreshes every 30 seconds.
 
-**Why not in the brain process:** The brain is an untrusted tenant with `BRAIN_TOKEN` (agent capabilities only). The admin UI needs `CLIENT_TOKEN` (full access including settings, persona management, signing). Running them as separate FastAPI apps with separate tokens enforces the permission boundary even though they share a container.
+**Why core proxies admin UI:** Only two external ports (443 for core, 2583 for PDS). One TLS certificate, one auth layer. The user never needs to know admin is in the brain container. Core checks CLIENT_TOKEN on `/admin/*` requests, then proxies to brain:8200/admin. Smaller attack surface than exposing brain ports directly.
+
+**Why separate sub-apps (not one monolith):** The brain API is an untrusted tenant with `BRAIN_TOKEN` (agent capabilities only). The admin UI needs `CLIENT_TOKEN` (full access including settings, persona management, signing). Sub-mounting as separate FastAPI apps with per-app auth middleware enforces the permission boundary even though they share a process. Neither sub-app can import or call the other — isolation via Python module boundaries.
+
+### Browser Authentication Gateway
+
+The Admin UI uses `CLIENT_TOKEN` for authorization, but browsers can't inject Bearer tokens into requests like device apps can. Copy-pasting a 64-character hex token into a browser is a UX failure. Building a separate auth system in Python Brain would violate the "Core is the Gatekeeper" model.
+
+The fix: **Core handles browser sessions natively and translates them into Bearer tokens before proxying.** The brain never knows about cookies, sessions, or web logins.
+
+```
+Browser Authentication Flow:
+
+  ┌─────────┐     GET /admin      ┌──────────┐
+  │ Browser │ ──────────────────→ │ Go Core  │
+  └─────────┘                     └────┬─────┘
+                                       │
+                              Has valid dina_session cookie?
+                                       │
+                          ┌────────────┴────────────┐
+                          │ NO                       │ YES
+                          ▼                          ▼
+                   Serve login page          Validate session
+                   (Go embed.FS,             (in-memory map,
+                    ~30 lines HTML)           check TTL)
+                          │                          │
+                          ▼                          ▼
+                   User enters               Inject CLIENT_TOKEN
+                   DINA_PASSPHRASE           as Authorization header
+                          │                          │
+                          ▼                          ▼
+                   Core validates             Proxy to brain:8200/admin
+                   (same Argon2id            (brain sees Bearer token,
+                    as vault unlock)          serves page normally)
+                          │
+                          ▼
+                   Generate session ID
+                   (crypto/rand, 32 bytes)
+                          │
+                          ▼
+                   Set cookie:
+                     dina_session=<id>
+                     HttpOnly ✓
+                     Secure ✓
+                     SameSite=Strict ✓
+                     Max-Age=86400 (24h)
+                          │
+                          ▼
+                   302 Redirect → /admin
+```
+
+**Key properties:**
+
+| Property | Value |
+|----------|-------|
+| **Login credential** | `DINA_PASSPHRASE` — same passphrase that unlocks the vault. No additional password. |
+| **Session storage** | In-memory map in Go Core (`map[string]session`). Lost on restart — user logs in again. |
+| **Session TTL** | 24 hours (configurable via `DINA_SESSION_TTL`). Auto-expires. |
+| **Cookie flags** | `HttpOnly` (no JS access), `Secure` (HTTPS only), `SameSite=Strict` (no cross-site) |
+| **CSRF protection** | `SameSite=Strict` blocks cross-origin requests. Core also generates a CSRF token per session, injected as `X-CSRF-Token` header. Admin UI embeds it in forms. |
+| **Rate limiting** | 5 login attempts per minute per IP. Argon2id is intentionally slow (~1s with 128MB/3 iter defaults), making brute force impractical. |
+| **Convenience mode** | Same login flow. Vault auto-unlocks on boot, but browser access still requires passphrase. Defense in depth — an open network shouldn't mean open admin access. |
+| **Login page** | ~30-line static HTML form, compiled into Go binary via `embed.FS`. Zero external dependencies. Posts to `POST /admin/login`. |
+| **Brain changes** | Zero. Brain continues to check Bearer token on every request. Browser and device app look identical to brain. |
+
+**The bridge — session-to-token translation (Go middleware):**
+
+```go
+// In core's admin proxy middleware
+func adminProxyHandler(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        // Path 1: Device app with Bearer token — pass through
+        if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+            if validateClientToken(auth[7:]) {
+                proxyToBrain(w, r)
+                return
+            }
+            http.Error(w, "Unauthorized", 401)
+            return
+        }
+
+        // Path 2: Browser with session cookie — translate to Bearer
+        cookie, err := r.Cookie("dina_session")
+        if err != nil || !validateSession(cookie.Value) {
+            serveLoginPage(w, r)  // embed.FS static HTML
+            return
+        }
+
+        // Inject CLIENT_TOKEN before proxying (brain sees Bearer token)
+        r.Header.Set("Authorization", "Bearer "+clientToken)
+        proxyToBrain(w, r)
+    })
+}
+```
+
+**Why passphrase, not a separate admin password:** Adding another credential means another thing to lose, another thing to brute-force, another thing to configure in `install.sh`. The passphrase is already the user's "master key" for Dina — vault encryption, identity recovery, and now admin access. One credential, one responsibility. Users who want passwordless admin access can use device apps (Bearer token from pairing flow).
 
 ```
 brain/
   src/
-    dina_brain/           # Brain API (port 8200, BRAIN_TOKEN)
-      main.py
-      ...
-    dina_admin/           # Admin UI (port 8500, CLIENT_TOKEN)
+    main.py               # Master FastAPI app (sub-mounts brain + admin)
+    dina_brain/            # Brain API sub-app (/api/*, BRAIN_TOKEN)
       app.py
-      core_client.py      # Calls core:8100 with CLIENT_TOKEN
+      ...
+    dina_admin/            # Admin UI sub-app (/admin/*, CLIENT_TOKEN)
+      app.py
+      core_client.py       # Calls core:8100 with CLIENT_TOKEN
       templates/
-        dashboard.html    # Connector status, health, vault size
-        history.html      # Whisper history, searchable
-        contacts.html     # Contact list, sharing rules
-        settings.html     # Personas, reboot mode, connectors
+        dashboard.html     # Connector status, health, vault size
+        history.html       # Nudge history, searchable
+        contacts.html      # Contact list, sharing rules
+        settings.html      # Personas, reboot mode, connectors
       routes/
         dashboard.py
         history.py
@@ -475,7 +794,7 @@ Features unlock as the user is ready:
 
 | When | What |
 |------|------|
-| **Day 1** | Email + calendar ingestion, basic whispers |
+| **Day 1** | Email + calendar ingestion, basic nudges |
 | **Day 7** | Prompt: "Write down these 24 words. They're your recovery key." |
 | **Day 14** | Prompt: "Want to connect WhatsApp too?" |
 | **Day 30** | Prompt: "You can separate health and financial data into private compartments" |
@@ -493,7 +812,7 @@ WHO TOUCHES SQLITE?
   dina-core (Go)     ← ONLY process that opens vault .sqlite files
   dina-brain (Python) ← NEVER touches SQLite. Talks to core via HTTP API.
                         Core decides what brain can access (gatekeeper.go).
-  llama-server        ← Stateless. No database access.
+  llama (optional) ← Stateless. No database access.
 ```
 
 #### Writing
@@ -520,7 +839,9 @@ Brain extracts relationship → POST core:8100/v1/vault/store {type: "relationsh
 ```
 New email ingested by core
   → core notifies brain: POST brain:8200/v1/process
-  → brain calls llama-server:8300 to generate embedding (EmbeddingGemma)
+  → brain generates embedding:
+      With llama: calls llama:8080 (EmbeddingGemma, local)
+      Without llama: calls gemini-embedding-001 (cloud API)
   → brain sends embedding back to core: POST core:8100/v1/vault/store
       {type: "embedding", vector: [...], source_id: "..."}
   → core writes vector into sqlite-vec
@@ -545,7 +866,7 @@ Client: "find emails from Sancho"
 Client: "what was that deal Sancho was worried about?"
   → client WebSocket → core
   → core sees this needs reasoning → POST brain:8200/v1/reason {query: "..."}
-  → brain generates query embedding via llama-server:8300
+  → brain generates query embedding via llama:8080 (or cloud API)
   → brain asks core for vector search:
       POST core:8100/v1/vault/query {vector: [...], top_k: 10}
   → core runs sqlite-vec nearest-neighbor search → returns results to brain
@@ -569,9 +890,9 @@ Sancho's Dina sends "arriving in 15 minutes"
             → gets: recent message history
     Step 3: brain → core: /v1/vault/query {text: "Sancho", type: "event", upcoming: true}
             → gets: no upcoming calendar events
-    Step 4: brain → llama-server: "Given this context, assemble a whisper"
+    Step 4: brain → LLM (llama:8080 or cloud): "Given this context, assemble a nudge"
             → generates: "Sancho is 15 min away. Mother was ill. Likes strong chai."
-    Step 5: brain → core: POST /v1/notify {type: "whisper", text: "...", client: "phone"}
+    Step 5: brain → core: POST /v1/notify {type: "nudge", text: "...", client: "phone"}
             → core pushes to phone via WebSocket
 ```
 
@@ -595,7 +916,7 @@ Sancho's Dina sends "arriving in 15 minutes"
 │  - Decide what to search for                            │
 │  - Reason over results                                  │
 │  - Classify urgency                                     │
-│  - Assemble whispers                                    │
+│  - Assemble nudges                                    │
 └─────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────┐
@@ -603,10 +924,10 @@ Sancho's Dina sends "arriving in 15 minutes"
 │                                                         │
 │  OWNS:                                                  │
 │  - Search strategy (what to query, in what order)       │
-│  - Embedding generation (calls llama-server)            │
-│  - LLM reasoning (calls llama-server or cloud)          │
+│  - Embedding generation (calls llama or cloud)    │
+│  - LLM reasoning (calls llama or cloud)           │
 │  - Silence classification (Tier 1/2/3)                  │
-│  - Whisper assembly                                     │
+│  - Nudge assembly                                     │
 │  - Agent orchestration (multi-step, ADK agents)         │
 │  - MCP delegation (OpenClaw)                            │
 │                                                         │
@@ -618,20 +939,117 @@ Sancho's Dina sends "arriving in 15 minutes"
 └─────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────┐
-│  llama-server (llama.cpp) — THE HIRED CALCULATOR        │
+│  llama (llama.cpp) — THE HIRED CALCULATOR  [optional]   │
 │                                                         │
 │  OWNS:                                                  │
 │  - Model inference (Gemma 3n, FunctionGemma, embeddings)│
 │                                                         │
-│  Called by BOTH core and brain:                          │
-│  - Core calls it for: PII scrubbing (regex misses)      │
-│  - Brain calls it for: everything else                  │
+│  Called by BOTH core and brain (when present):           │
+│  - Core calls it for: PII Tier 3 (LLM NER fallback)     │
+│  - Brain calls it for: reasoning, classification,       │
+│    embeddings, Tier 3 PII scrubbing                     │
 │                                                         │
 │  Stateless. No database. No business logic.             │
+│  Without llama: brain uses cloud APIs + spaCy NER,      │
+│  core uses regex. PII scrubbing: Tier 1+2 (no Tier 3). │
 └─────────────────────────────────────────────────────────┘
 ```
 
-The analogy: **core is the vault keeper** (stores, retrieves, encrypts, never interprets). **Brain is the analyst** (thinks, searches strategically, reasons, never holds keys). **llama-server is the hired calculator** (computes what it's asked, remembers nothing).
+The analogy: **core is the vault keeper** (stores, retrieves, encrypts, never interprets). **Brain is the analyst** (thinks, searches strategically, reasons, never holds keys). **llama is the hired calculator** (computes what it's asked, remembers nothing — optional, replaceable by cloud APIs).
+
+### Brain Crash Recovery
+
+When brain OOMs or crashes mid-reasoning, Docker restarts it. But what happens to in-flight operations? If brain was mid-way through assembling a Sancho nudge (Step 3 of 5), the operation state is gone from RAM. Two mechanisms ensure nothing is lost:
+
+**1. Task Queue (Outbox Pattern — in core)**
+
+Core does not fire-and-forget when sending events to brain. It treats brain as an unreliable worker.
+
+```
+Core → Brain task lifecycle:
+
+  Core receives event (ingestion, DIDComm message, client query)
+      │
+      ▼
+  Core writes to dina_tasks table:
+    {id: ulid, type: "process", payload: {...}, status: "pending", created_at: now()}
+      │
+      ▼
+  Core sends to brain: POST brain:8200/api/v1/process {task_id: "...", ...}
+  Core updates: status = "processing", timeout_at = now() + 5 minutes
+      │
+      ├── Brain succeeds → ACKs: POST core:8100/v1/task/ack {task_id: "..."}
+      │   Core deletes task from dina_tasks. Done.
+      │
+      └── Brain crashes → no ACK → timeout expires
+          Core's watchdog (background goroutine) resets: status = "pending"
+          Restarted brain picks up the task on next poll/push.
+```
+
+```sql
+-- In core's system.sqlite (not per-persona — shared task queue)
+CREATE TABLE dina_tasks (
+    id TEXT PRIMARY KEY,              -- ULID
+    type TEXT NOT NULL,               -- 'process', 'reason', 'embed'
+    payload_json TEXT NOT NULL,       -- event data (item_id, source, etc.)
+    status TEXT NOT NULL DEFAULT 'pending',  -- pending → processing → done
+    attempts INTEGER DEFAULT 0,       -- retry count
+    timeout_at INTEGER,               -- unix timestamp, NULL when pending
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX idx_tasks_status ON dina_tasks(status, timeout_at);
+```
+
+**Dead letter:** After 3 failed attempts, task moves to `status = 'dead'`. Core injects a Tier 2 notification: "Brain failed to process an event 3 times. Check crash logs." No silent data loss.
+
+**2. Scratchpad (Cognitive Checkpointing — in brain)**
+
+For multi-step agentic operations (the Sancho nudge is 5 steps), brain checkpoints intermediate reasoning to the vault. On restart, brain checks "did I already start this?" and resumes from the last checkpoint.
+
+```
+Brain receives retried task from core:
+      │
+      ▼
+  Check scratchpad: POST core:8100/v1/vault/query
+    {type: "scratchpad", task_id: "..."}
+      │
+      ├── No scratchpad → start fresh (Step 1)
+      │
+      └── Scratchpad found:
+          {task_id: "abc", step: 3, context: {relationship: "...", messages: [...]}}
+          → Resume from Step 3 (skip 1 & 2)
+```
+
+```python
+# brain/src/guardian.py — checkpoint during multi-step reasoning
+async def assemble_nudge(task_id: str, event: dict):
+    # Step 1: Get relationship context
+    scratchpad = await core.vault_query(type="scratchpad", task_id=task_id)
+    if scratchpad and scratchpad["step"] >= 1:
+        relationship = scratchpad["context"]["relationship"]
+    else:
+        relationship = await core.vault_query(text=event["from"], type="relationship")
+        await core.vault_store(type="scratchpad", task_id=task_id,
+                               data={"step": 1, "context": {"relationship": relationship}})
+
+    # Step 2: Get recent messages (skip if already checkpointed)
+    if scratchpad and scratchpad["step"] >= 2:
+        messages = scratchpad["context"]["messages"]
+    else:
+        messages = await core.vault_query(text=event["from"], type="message", limit=5)
+        await core.vault_store(type="scratchpad", task_id=task_id,
+                               data={"step": 2, "context": {"relationship": relationship,
+                                                              "messages": messages}})
+
+    # Steps 3-5: Continue with checkpointed context...
+    # On completion: delete scratchpad
+    await core.vault_store(type="scratchpad_delete", task_id=task_id)
+```
+
+Scratchpad entries are stored in staging.sqlite (Tier 4) and auto-expire after 24 hours — stale reasoning from yesterday's crash is not useful today.
+
+**External memory services:** If the scratchpad pattern proves insufficient for complex multi-agent reasoning, Mem0 or SuperMemory can be evaluated as a managed memory layer. For Phase 1, the vault-backed scratchpad keeps things simple.
 
 ### Observability & Self-Healing
 
@@ -671,10 +1089,11 @@ services:
       retries: 3
       start_period: 30s
 
-  llama-server:
+  llama:
     restart: always
+    profiles: ["local-llm"]
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8300/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 60s
       timeout: 10s         # Model loading can be slow
       retries: 3
@@ -695,6 +1114,65 @@ services:
 - **Docker log rotation.** Capped via daemon.json or compose `logging` driver (max 10MB, 3 files).
 - **Future-proof.** If you ever add Dozzle or Loki, structured JSON is parsed automatically — search and filtering for free.
 
+**Logging policy — PII MUST NOT reach stdout:**
+
+Log messages MUST NOT contain vault content, user queries, or PII. Only metadata is logged: persona name, query type, error code, item counts, latency. This policy is enforced by code review — any log statement containing user-supplied strings is rejected.
+
+```
+NEVER log:
+  - Vault content (email bodies, calendar events, contact details)
+  - User queries ("find emails about my divorce")
+  - Brain reasoning output ("user appears to have health concerns about...")
+  - NaCl message plaintext
+  - Passphrase or derived keys
+  - OAuth tokens or refresh tokens
+
+ALWAYS log:
+  - Timestamps, endpoint called, persona name
+  - Item counts ("returned 5 results")
+  - Error codes (401, 403, 500)
+  - Connector status ("gmail: sync complete, 12 new items")
+  - Performance metrics ("query took 150ms")
+```
+
+```go
+// BAD — PII in log output:
+log.Info("processing query", "query", userQuery)
+
+// GOOD — metadata only:
+log.Info("processing query", "persona", "/social", "type", "fts5", "results", len(results))
+```
+
+**Brain crash tracebacks:** Python tracebacks include local variable values. If brain crashes mid-reasoning, the traceback could contain `query="find emails about my cancer diagnosis"`. Fix: wrap the main loop in a catch-all that logs only the exception type and line number to stdout. Full tracebacks go into the encrypted vault directory.
+
+```python
+# brain/src/main.py — safe crash handler
+try:
+    await guardian_loop()
+except Exception as e:
+    # Docker logs get sanitized one-liner only
+    logger.error(f"guardian crash: {type(e).__name__} at {e.__traceback__.tb_lineno}")
+    # Full traceback with variables → encrypted vault (PII-safe)
+    with open("/var/lib/dina/vault/crash.log", "a") as f:
+        traceback.print_exc(file=f)
+    raise
+```
+
+**CI enforcement — banned log patterns (linting, not runtime):**
+
+```python
+# In CI pipeline — catches bad habits before merge, zero runtime cost
+BANNED_LOG_PATTERNS = [
+    r'log\.\w+\(.*query.*=',      # logging query content
+    r'log\.\w+\(.*content.*=',    # logging message content
+    r'log\.\w+\(.*body.*=',       # logging request body
+    r'log\.\w+\(.*plaintext.*=',  # logging decrypted content
+    r'log\.\w+\(.*f".*{.*user',   # f-string with user data
+]
+```
+
+No spaCy NER on log lines — wrong layer, expensive, unreliable. PII scrubbing belongs on the data path to cloud LLMs (`/v1/pii/scrub`), not on internal log output. Don't add runtime complexity for a problem solved by writing better code.
+
 ### Eight Layers
 
 The layers are numbered 0-7 but the diagram reads **top-down** (7 → 0), like the OSI model — Layer 7 is closest to the user, Layer 0 is the cryptographic foundation. Layer 3 (Reputation Graph) sits to the side because it's a shared data layer that multiple upper layers query, not a step in the linear flow.
@@ -712,7 +1190,7 @@ The layers are numbered 0-7 but the diagram reads **top-down** (7 → 0), like t
                       │
 ┌─────────────────────▼───────────────────────────────────────┐
 │  Layer 6: INTELLIGENCE LAYER                                │
-│  PII Scrubber, LLM Routing, Context Injection, Whisper      │
+│  PII Scrubber, LLM Routing, Context Injection, Nudge      │
 └─────────────────────┬───────────────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────────────┐
@@ -821,6 +1299,8 @@ Two separate derivation schemes serve two different purposes:
 
 **SLIP-0010 derivation paths:**
 
+**Namespace isolation:** Dina uses purpose code `9999'` — a high unregistered number that will never collide with BIP-44 (`44'`) cryptocurrency wallet derivation. If a user reuses a BIP-39 mnemonic across a crypto wallet and their Dina node, the cryptographic domains remain mathematically walled off. Purpose `44'` is **strictly forbidden** in Dina derivation paths.
+
 ```
 BIP-39 Mnemonic (24 words = 256-bit entropy)
     │
@@ -828,17 +1308,17 @@ BIP-39 Mnemonic (24 words = 256-bit entropy)
     │
     Master Seed (512-bit) — this IS the DEK (Data Encryption Key)
     │
-    └── SLIP-0010 Ed25519 Hardened Derivation
+    └── SLIP-0010 Ed25519 Hardened Derivation (purpose: 9999')
         │
-        ├── m/44'/0'  → Root Identity Key (signs DID Document, root of trust)
+        ├── m/9999'/0'  → Root Identity Key (signs DID Document, root of trust)
         │
-        ├── m/44'/1'  → /persona/consumer     (shopping, product interactions)
-        ├── m/44'/2'  → /persona/professional  (work, LinkedIn-style)
-        ├── m/44'/3'  → /persona/social        (friends, Dina-to-Dina)
-        ├── m/44'/4'  → /persona/health        (medical data)
-        ├── m/44'/5'  → /persona/financial     (banking, tax, insurance)
-        ├── m/44'/6'  → /persona/citizen       (government, legal identity)
-        └── m/44'/N'  → /persona/custom/*      (user-defined compartments)
+        ├── m/9999'/1'  → /persona/consumer     (shopping, product interactions)
+        ├── m/9999'/2'  → /persona/professional  (work, LinkedIn-style)
+        ├── m/9999'/3'  → /persona/social        (friends, Dina-to-Dina)
+        ├── m/9999'/4'  → /persona/health        (medical data)
+        ├── m/9999'/5'  → /persona/financial     (banking, tax, insurance)
+        ├── m/9999'/6'  → /persona/citizen       (government, legal identity)
+        └── m/9999'/N'  → /persona/custom/*      (user-defined compartments)
 ```
 
 Each persona's Ed25519 keypair is then used for two purposes:
@@ -878,7 +1358,7 @@ data/vaults/
 - **Blast radius containment.** Compromise of one persona's key exposes one file. The others are encrypted with independent keys.
 - **Right to delete.** `rm health.sqlite`. All medical data physically annihilated. No forensic recovery possible.
 
-**Cross-persona queries and the Gatekeeper:** The brain needs data from multiple personas constantly (see [Security Model: The Brain is a Guest](#security-model-the-brain-is-a-guest) above). The Sancho Moment whisper at 3 AM needs `/social` (relationship with Sancho, his mother's illness), `/professional` (calendar — is user free?), and `/consumer` (tea preference). That's three persona crosses for one whisper — dozens of times daily. Requiring user approval for each would kill the always-on agent.
+**Cross-persona queries and the Gatekeeper:** The brain needs data from multiple personas constantly (see [Security Model: The Brain is a Guest](#security-model-the-brain-is-a-guest) above). The Sancho Moment nudge at 3 AM needs `/social` (relationship with Sancho, his mother's illness), `/professional` (calendar — is user free?), and `/consumer` (tea preference). That's three persona crosses for one nudge — dozens of times daily. Requiring user approval for each would kill the always-on agent.
 
 **The model: personas have access tiers, not per-query gates.** Enforced by `gatekeeper.go` in core.
 
@@ -896,7 +1376,7 @@ Persona Access Tiers (configured by user, stored in config.json):
 
 | Tier | Behavior | Use Case |
 |------|----------|----------|
-| **Open** | Brain queries freely. Core serves. Logged but no gate. | Social, consumer, professional — the personas brain needs constantly for whispers. |
+| **Open** | Brain queries freely. Core serves. Logged but no gate. | Social, consumer, professional — the personas brain needs constantly for nudges. |
 | **Restricted** | Brain can query, but core logs every access to Tier 0 audit log AND pushes a silent notification to client device. User sees "Dina accessed your health data 3 times today" in daily briefing. | Health — brain sometimes needs it (e.g., "you have a doctor's appointment"), but user should know when. |
 | **Locked** | Brain cannot query at all until user unlocks the persona for a time-limited session via client device. `POST /v1/persona/unlock {persona: "/financial", ttl: "15m"}`. Core auto-locks after TTL expires. | Financial — brain almost never needs this. When it does, it's high-stakes (tax filing, insurance claim). Worth the friction. |
 
@@ -904,13 +1384,13 @@ Persona Access Tiers (configured by user, stored in config.json):
 
 1. **Compromised brain can't touch locked personas at all.** Financial data requires user interaction. The attack surface is limited to open personas.
 2. **Restricted personas create a detection trail.** If a compromised brain starts scraping health data, the user sees it in the audit log.
-3. **Open personas stay fast.** The whisper flow works without friction for everyday contexts.
+3. **Open personas stay fast.** The nudge flow works without friction for everyday contexts.
 4. **Cross-persona ATTACH is never done.** Core doesn't use `ATTACH DATABASE`. Each persona query is a separate API call to `/v1/vault/query` with a `persona` field. Core opens each persona's partition independently, checks the access tier, and responds. Brain never sees the SQLite handle.
 
 **The audit log (Tier 0) records every persona access:**
 
 ```json
-{"ts": "2026-02-18T03:15:00Z", "persona": "/health", "action": "query", "requester": "brain", "query_type": "fts", "reason": "whisper_assembly"}
+{"ts": "2026-02-18T03:15:00Z", "persona": "/health", "action": "query", "requester": "brain", "query_type": "fts", "reason": "nudge_assembly"}
 ```
 
 ### Zero-Knowledge Proof Credentials (Trust Rings)
@@ -969,7 +1449,7 @@ Six tiers (Tier 0-5). Each with different encryption, sync, and backup strategie
 |----------|-------|
 | Contents | Emails, chat messages, calendar events, contacts, photos, documents |
 | Encryption | SQLCipher whole-database encryption (AES-256-CBC, per-page). Key derived from persona key via HKDF (persona key → HKDF-SHA256 → SQLCipher passphrase). Each persona is a separate `.sqlite` file. |
-| Storage engine | SQLite with FTS5 (full-text search). FTS index is encrypted transparently by SQLCipher. |
+| Storage engine | SQLite with FTS5 (full-text search, `unicode61 remove_diacritics 1` tokenizer — multilingual, handles Indic scripts natively). Porter stemmer is forbidden (English-only, mangles non-Latin). FTS index is encrypted transparently by SQLCipher. Phase 3: ICU tokenizer for CJK word segmentation. |
 | Location | Home node (source of truth). Rich clients cache configurable subsets. |
 | Client cache | Phone: recent 6 months. Laptop: configurable (up to everything). Thin clients: no local cache. |
 | Backup | Encrypted snapshot to blob storage of user's choice (S3, Backblaze, NAS, second VPS). Each persona file backed up independently. |
@@ -997,7 +1477,10 @@ CREATE TABLE documents (
 );
 
 -- Full-text search index (encrypted at rest by SQLCipher — no plaintext leakage)
-CREATE VIRTUAL TABLE documents_fts USING fts5(body_text, content=documents, content_rowid=rowid, tokenize='porter');
+-- unicode61: multilingual tokenizer (Hindi, Tamil, Kannada, etc.). Porter stemmer is
+-- English-only and mangles non-Latin scripts — explicitly forbidden.
+-- Phase 3: ICU tokenizer for CJK word segmentation (languages without spaces).
+CREATE VIRTUAL TABLE documents_fts USING fts5(body_text, content=documents, content_rowid=rowid, tokenize='unicode61 remove_diacritics 1');
 
 -- Relationships (who sent what to whom)
 -- No persona column needed — the persona is implicit from which .sqlite file this lives in
@@ -1031,6 +1514,8 @@ CREATE TABLE relationships (
 - **Phase 1: `EmbeddingGemma`** (308M params, <200MB RAM quantized, 100+ languages). Google's purpose-built on-device embedding model based on Gemma 3 architecture. Best-in-class on MTEB for models under 500M params. Supports Matryoshka representation (768 down to 128 dims) and 2K–8K context. Runs fully offline on phones.
 - **Phase 2: `Nomic Embed Text V2`** (475M params, MoE architecture — only 305M active during inference). Trained on 1.6B multilingual pairs, 100+ languages. Flexible dimension truncation (768 → 256). Competitive with models twice its size on BEIR/MIRACL. Needs more hardware but significantly better quality for complex retrieval.
 - The embedding model is pluggable. Start small, upgrade later.
+
+**Embedding migration:** The embedding model name and version are stored in vault metadata (`embedding_model` column in the system table). On model change, core detects the mismatch, drops the sqlite-vec index, and triggers a background re-embed job. Brain processes items in batches → new embeddings → core writes to sqlite-vec. FTS5 keyword search remains available during re-indexing; only semantic search is temporarily unavailable. No dual-index or versioning needed — vault sizes are small enough for full rebuild (~25MB of vectors for 50K items, ~2-3 hours on local llama, ~5 minutes via cloud API).
 
 ### Tier 3 — Reputation & Preferences
 
@@ -1108,17 +1593,17 @@ Last-resort recovery. Survives Home Node destruction, backup ransomware, and tot
 ```
 Master Seed (BIP-39 mnemonic → stored encrypted on Home Node; hardware-backed on client devices)
     │
-    ├── m/44'/0' → Root Identity Key (signs DID Document)
+    ├── m/9999'/0' → Root Identity Key (signs DID Document)
     │
-    ├── m/44'/1' → Persona Key: /consumer
+    ├── m/9999'/1' → Persona Key: /consumer
     │       ├── HKDF("dina:vault:consumer:v1") → SQLCipher key for consumer.sqlite (Tier 1)
     │       └── HKDF("dina:index:consumer:v1") → SQLCipher key for consumer_index.sqlite (Tier 2)
     │
-    ├── m/44'/4' → Persona Key: /health
+    ├── m/9999'/4' → Persona Key: /health
     │       ├── HKDF("dina:vault:health:v1") → SQLCipher key for health.sqlite (Tier 1)
     │       └── HKDF("dina:index:health:v1") → SQLCipher key for health_index.sqlite (Tier 2)
     │
-    ├── m/44'/2'-6' → Persona Keys: /professional, /social, /financial, /citizen
+    ├── m/9999'/2'-6' → Persona Keys: /professional, /social, /financial, /citizen
     │       └── (same HKDF pattern — one .sqlite file per persona per tier)
     │
     ├── Staging Key → SQLCipher passphrase for staging.sqlite (Tier 4, shared)
@@ -1146,7 +1631,7 @@ The Master Seed (DEK — Data Encryption Key) is the 512-bit seed derived from t
 ```
 Passphrase ("correct horse battery staple")
     │
-    ▼  Argon2id v1.3 (memory: 64 MB, time: 1 iteration, parallelism: 4 lanes)
+    ▼  Argon2id v1.3 (memory: 128 MB, time: 3 iterations, parallelism: 4 lanes)
     │
     KEK (32-byte Key Encryption Key)
     │
@@ -1164,6 +1649,27 @@ Passphrase ("correct horse battery staple")
 ```
 
 **Why key wrapping:** Changing the user's passphrase re-wraps the Master Key with a new KEK — no need to re-encrypt the entire multi-gigabyte database. The Master Key itself never changes unless the identity is rotated.
+
+**Argon2id parameters (configurable in `config.json`):**
+
+| Parameter | Default | Rationale |
+|-----------|---------|-----------|
+| `memory_mb` | 128 | ~1s on Mac Mini, ~2s on Pi 4. Safe on 2GB VPS (12.5% spike). 256MB risks OOM on $5 VPS with 1GB RAM. |
+| `iterations` | 3 | OWASP 2024 minimum is 2. Three iterations with 128MB memory makes brute force infeasible (~billions of years for a decent passphrase on stolen disk). |
+| `parallelism` | 4 | Matches typical core count on target hardware (Pi 4, Mac Mini M4, VPS). |
+
+```json
+// config.json — power users can tune
+{
+  "argon2id": {
+    "memory_mb": 128,
+    "iterations": 3,
+    "parallelism": 4
+  }
+}
+```
+
+This runs **once at unlock**, not per-request. The derived KEK stays in RAM for the process lifetime. The one-time cost is a ~1-2 second spike during vault unlock — acceptable for a passphrase prompt.
 
 **Home node:** `keys/master.key.enc` + salt stored on filesystem. On client devices with hardware security modules, delegated device keys are generated and stored in Secure Enclave / StrongBox / TPM. The Master Key is NEVER stored in plaintext at rest on any system.
 
@@ -1387,7 +1893,7 @@ What Dina does NOT store:
 
 **Why references beat copies:** The user already has the attachment — it's in Gmail, Drive, or their local filesystem. Duplicating it means encrypting 50GB with SQLCipher (slow), backing up 50GB to S3 (expensive), syncing 50GB to client devices (impossible on mobile), and `vault.sqlite` becomes unmovable.
 
-**What brain actually needs:** Brain doesn't need the raw PDF to assemble a whisper. Brain needs: "Sancho sent a contract (PDF, 2.3MB) titled 'Partnership_Agreement_v3.pdf' on Feb 15. Key terms: 60/40 revenue split, 2-year lock-in, exit clause in Section 7." That summary is a few KB, fully searchable via FTS5, embeddable via sqlite-vec.
+**What brain actually needs:** Brain doesn't need the raw PDF to assemble a nudge. Brain needs: "Sancho sent a contract (PDF, 2.3MB) titled 'Partnership_Agreement_v3.pdf' on Feb 15. Key terms: 60/40 revenue split, 2-year lock-in, exit clause in Section 7." That summary is a few KB, fully searchable via FTS5, embeddable via sqlite-vec.
 
 **When the user needs the file:** Brain returns a deep link to the source — the client app opens Gmail/Drive. The file was always there.
 
@@ -1479,9 +1985,9 @@ INGESTION TRIAGE PROTOCOL:
                        product updates, marketing disguised as Primary
 
          Cost: ~50 emails classified per LLM call.
-           Online Mode:  Gemini Flash Lite — ~700 tokens = $0.00007 per batch.
+           Cloud LLM profile:  Gemini Flash Lite — ~700 tokens = $0.00007 per batch.
                          Classifying 2,000 emails/year = 40 batches = $0.003/year.
-           Offline Mode: Gemma 3n via llama-server — ~0.5 seconds per batch.
+           Local LLM profile: Gemma 3n via llama:8080 — ~0.5 seconds per batch.
 
   4. FULL DOWNLOAD: Only PRIMARY emails classified as INGEST
      get messages.get(format=full).
@@ -1515,7 +2021,7 @@ INGESTION TRIAGE PROTOCOL:
 | Embeddings generated | 5,000 | ~300-500 |
 | Vector index size | 100% | ~8-10% |
 | Ingestion time | 100% | ~15% |
-| LLM triage cost (Online Mode) | $0 | ~$0.003/year |
+| LLM triage cost (Cloud LLM profile) | $0 | ~$0.003/year |
 | Signal-to-noise | Very low | High (real correspondence + actionable items) |
 
 **User override:** The triage categories are configurable. If a user wants to index their newsletters (e.g., they subscribe to high-quality technical newsletters), they can add sender exceptions: `"always_ingest": ["newsletter@stratechery.com", "*@substack.com"]`. If they want everything, `DINA_TRIAGE=off` disables filtering entirely.
@@ -1678,70 +2184,196 @@ PASS-THROUGH SEARCH PROTOCOL:
 
 Where Dina thinks. This is the most complex layer.
 
-**Sidecar mapping:** Layer 6 is split across dina-core and dina-brain. The PII scrubber's regex hot path runs in dina-core (Go — fast, no external calls). The LLM-based NER fallback, silence classification, context assembly, whisper generation, and all agent reasoning run in dina-brain (Python + Google ADK). In Online Mode, brain calls Gemini Flash Lite for text and Deepgram Nova-3 for voice STT. In Offline Mode, brain calls llama-server for text and whisper-server for voice.
+**Sidecar mapping:** Layer 6 is split across dina-core and dina-brain. The PII scrubber has three tiers: Tier 1 (regex) runs in dina-core (Go — fast, no external calls); Tier 2 (spaCy NER) runs in dina-brain (Python — always available, ~15MB model); Tier 3 (LLM NER via Gemma 3n) runs on llama when available. Silence classification, context assembly, nudge generation, and all agent reasoning run in dina-brain (Python + Google ADK). In the default Cloud profile, brain calls Gemini Flash Lite for text and Deepgram Nova-3 for voice STT. With `--profile local-llm`, brain routes text inference to llama:8080.
 
 ### The PII Scrubber
 
-Before any text leaves the device for LLM processing, it passes through local sanitization.
+Before any text leaves the device for LLM processing, it passes through local sanitization. The scrubber has three tiers — the first two are always available, the third requires llama.
 
 ```
 Raw text from Vault
         ↓
-┌─────────────────────────────┐
-│  PII Scrubber (Local)       │
-│                             │
-│  Regex patterns:            │
-│  - Credit card numbers      │
-│  - Phone numbers            │
-│  - Aadhaar / SSN            │
-│  - Email addresses          │
-│  - Bank account numbers     │
-│                             │
-│  NER model (Gemma 3n E2B): │
-│  - Person names             │
-│  - Addresses                │
-│  - Organization names       │
-│  - Medical terms            │
-│                             │
-│  Replacement map:           │
-│  "Sancho" → [PERSON_1]     │
-│  "4111-2222" → [CC_NUM]    │
-│  "sancho@email" → [EMAIL_1]│
-└──────────────┬──────────────┘
+┌─────────────────────────────────────┐
+│  Tier 1: Regex (Go core)            │  ← Always. Fast hot path.
+│  POST /v1/pii/scrub                 │
+│                                     │
+│  - Credit card numbers              │
+│  - Phone numbers                    │
+│  - Aadhaar / SSN                    │
+│  - Email addresses                  │
+│  - Bank account numbers             │
+└──────────────┬──────────────────────┘
+               ↓
+┌─────────────────────────────────────┐
+│  Tier 2: spaCy NER (Python brain)   │  ← Always. ~15MB model, milliseconds.
+│  Local, runs in brain container      │
+│                                     │
+│  en_core_web_sm (or _md for better  │
+│  accuracy, ~50MB):                  │
+│  - Person names       (PERSON)      │
+│  - Organizations      (ORG)         │
+│  - Locations           (GPE/LOC)    │
+│  - Addresses                        │
+│  - Medical terms       (custom)     │
+└──────────────┬──────────────────────┘
+               ↓
+┌─────────────────────────────────────┐
+│  Tier 3: LLM NER (llama)           │  ← Optional. --profile local-llm.
+│  Gemma 3n via llama:8080            │
+│                                     │
+│  Catches highly indirect references │
+│  that spaCy misses:                 │
+│  - "The CEO of [ORG] who wrote a   │
+│     novel about AI in 2017"         │
+│  - Coded language, paraphrasing     │
+└──────────────┬──────────────────────┘
+               ↓
+┌─────────────────────────────────────┐
+│  Replacement map (all tiers):       │
+│  "Sancho" → [PERSON_1]             │
+│  "4111-2222" → [CC_NUM]            │
+│  "Infosys" → [ORG_1]              │
+│  "sancho@email" → [EMAIL_1]        │
+│  "Bengaluru" → [LOC_1]            │
+└──────────────┬──────────────────────┘
                ↓
 Sanitized text → sent to LLM for reasoning
                ↓
 Response received
                ↓
-┌─────────────────────────────┐
-│  De-sanitizer (Local)       │
-│  [PERSON_1] → "Sancho"     │
-│  [EMAIL_1] → "sancho@email"│
-└─────────────────────────────┘
+┌─────────────────────────────────────┐
+│  De-sanitizer (Local)               │
+│  [PERSON_1] → "Sancho"             │
+│  [ORG_1] → "Infosys"              │
+│  [EMAIL_1] → "sancho@email"        │
+└─────────────────────────────────────┘
                ↓
 Final response with real names restored
 ```
 
-**NER model:** Runs on Home Node (primary) and on rich client devices (for offline fallback). Options:
-- **Phase 1: `Gemma 3n E2B`** (2B active params, ~2GB RAM). Google's mobile-first multimodal model handles NER/PII detection as a general task — no separate NER model needed. Prompt it: "Extract all PII entities from this text." 32K context, 1.5x faster than previous generation. Runs on Home Node via llama.cpp.
-- **Phase 1 fallback: `FunctionGemma 270M`** (270M params, ~529MB). Google's ultra-lightweight model fine-tuned for structured function calling. Can be fine-tuned for PII extraction specifically. Runs at 2500+ tok/sec. Perfect for the "fast regex + small model" PII pipeline.
-- **Phase 2: Fine-tuned Gemma 3n E4B** (4B active, ~3GB RAM). Higher accuracy NER with custom PII-detection fine-tuning using Unsloth or similar efficient fine-tuning frameworks.
+**The flow:** Brain gets a task requiring cloud LLM → calls `core:/v1/pii/scrub` (Tier 1: regex) → runs spaCy NER locally (Tier 2: contextual entities) → optionally calls llama for LLM NER (Tier 3: ambiguous cases) → sends fully scrubbed text to cloud LLM. Tiers 1 and 2 are always available. Tier 3 requires `--profile local-llm`.
 
-**Known limitation:** PII scrubbing is not perfect. Contextual re-identification is possible ("The CEO of [COMPANY_1] who wrote a novel about AI in 2017"). Mitigation: sensitive personas (health, financial) process entirely on Home Node — never sent to cloud LLMs.
+**Tier 1 — Regex (Go core, always available):** Fast pattern matching in Go. Catches structured PII: credit cards, phone numbers, Aadhaar/SSN, emails, bank accounts. Sub-millisecond. Runs as `POST /v1/pii/scrub` endpoint.
+
+**Tier 2 — spaCy NER (Python brain, always available):** spaCy's statistical NER model runs in the brain container. `en_core_web_sm` (~15MB) for Phase 1, upgrade to `en_core_web_md` (~50MB) for better accuracy. Catches contextual PII that regex cannot: person names, organizations, locations, addresses. Runs in milliseconds on CPU. No llama, no GPU, no extra container required. This is the default NER layer for all deployment profiles.
+
+**Tier 3 — LLM NER (llama, optional):** For edge cases where spaCy misses highly indirect or paraphrased references. Runs Gemma 3n via llama:8080. Only available with `--profile local-llm`. Options:
+- **Phase 1: `Gemma 3n E2B`** (2B active params, ~2GB RAM). Prompt: "Extract all PII entities from this text." General-purpose — no fine-tuning needed.
+- **Phase 1 fallback: `FunctionGemma 270M`** (270M params, ~529MB). Fine-tuned for structured extraction. 2500+ tok/sec.
+- **Phase 2: Fine-tuned Gemma 3n E4B** (4B active, ~3GB RAM). Custom PII-detection fine-tuning for highest accuracy.
+
+**PII scrubbing by deployment profile:**
+
+| | **Cloud LLM** (default, Phase 1) | **Local LLM** / **Hybrid** |
+|---|---|---|
+| **Method** | Regex (Go) + spaCy NER (Python) | Regex (Go) + spaCy NER (Python) + LLM NER (llama) |
+| **Catches** | Structured PII + contextual PII (names, orgs, locations, addresses) | All of the above + highly indirect references, coded language |
+| **Misses** | Highly indirect references: "The person who founded that Bangalore software company and wrote fiction about AI" — no explicit entity for spaCy to tag | Near-zero misses. LLM understands paraphrasing and context. |
+| **Sensitive personas** | Health/financial queries scrubbed via **Entity Vault** (Tier 1+2 mandatory) then routed to cloud. Cloud sees topics but cannot identify who. | Best privacy — processed entirely on llama, never leaves Home Node |
+| **Model size** | spaCy `en_core_web_sm`: ~15MB (included in brain image) | spaCy + Gemma 3n E4B: ~3GB |
+| **Latency** | Regex: <1ms. spaCy: ~5-20ms. | Regex: <1ms. spaCy: ~5-20ms. LLM NER: ~500ms-2s. |
+
+**Why not use a cloud LLM for PII scrubbing?** Circular dependency: to scrub PII from text before sending it to a cloud LLM, you would have to send the un-scrubbed text to a cloud LLM first. The routing itself constitutes the leak. PII scrubbing must always be local. Dina will never route data to a cloud API for the purpose of PII detection.
+
+**Residual risk (all profiles):** Even with three tiers, PII scrubbing cannot guarantee zero leakage for extremely indirect references. Mitigations:
+1. **spaCy NER closes the biggest gap** — person names, organizations, and locations are the most common contextual PII. With Tier 1 + Tier 2, the vast majority of identifying information is caught in all profiles.
+2. **The Entity Vault pattern** (see below) ensures the cloud LLM processes reasoning logic without observing the underlying entities. It sees health/financial **topics** but cannot identify **who**.
+3. **Users handling highly sensitive non-persona data** (e.g., confidential business communications) should use Local LLM or Hybrid profile for LLM NER as a third layer.
+
+### The Entity Vault Pattern
+
+**Challenge:** In the Cloud LLM profile (Phase 1 default), managed hosting users on thin clients (browser, glasses, watch) have no local LLM and no on-device LLM. Without a policy for sensitive personas, health/financial queries would be rejected — making Dina unusable for the most common deployment scenario.
+
+**Solution:** The Python brain container implements a mandatory, local NLP pipeline that scrubs all identifying entities before any data reaches a cloud LLM. The cloud LLM processes **reasoning logic** without ever observing the **underlying sensitive entities**.
+
+**Mechanism — the Entity Vault:**
+
+```
+User query: "What did Dr. Sharma say about my blood sugar at Apollo Hospital?"
+        │
+        ▼
+┌─────────────────────────────────────────────────────┐
+│  Stage 1: Regex (Go core, /v1/pii/scrub)            │
+│  No structured PII found in this query.             │
+└──────────────────────┬──────────────────────────────┘
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│  Stage 2: spaCy NER (Python brain, local)           │
+│                                                     │
+│  Detected entities:                                 │
+│    "Dr. Sharma"      → PERSON  → [PERSON_1]        │
+│    "Apollo Hospital" → ORG     → [ORG_1]           │
+│                                                     │
+│  Entity Vault (ephemeral, in-memory dict):          │
+│    { "[PERSON_1]": "Dr. Sharma",                    │
+│      "[ORG_1]": "Apollo Hospital" }                 │
+│                                                     │
+│  Scrubbed query:                                    │
+│    "What did [PERSON_1] say about my blood sugar    │
+│     at [ORG_1]?"                                    │
+└──────────────────────┬──────────────────────────────┘
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│  Cloud LLM (Gemini / Claude / GPT-4)                │
+│                                                     │
+│  Sees: "What did [PERSON_1] say about my blood      │
+│         sugar at [ORG_1]?"                          │
+│                                                     │
+│  Processes reasoning. Returns:                      │
+│  "[PERSON_1] at [ORG_1] noted your A1C was 11.2.   │
+│   This is above the target range of 7.0..."         │
+└──────────────────────┬──────────────────────────────┘
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│  Rehydration (Python brain, local)                  │
+│                                                     │
+│  Reads Entity Vault, replaces tokens:               │
+│    [PERSON_1] → "Dr. Sharma"                        │
+│    [ORG_1]    → "Apollo Hospital"                   │
+│                                                     │
+│  Final response to user:                            │
+│  "Dr. Sharma at Apollo Hospital noted your A1C was  │
+│   11.2. This is above the target range of 7.0..."   │
+└─────────────────────────────────────────────────────┘
+```
+
+**What the cloud LLM sees vs. what it doesn't:**
+
+| Cloud LLM sees | Cloud LLM does NOT see |
+|---|---|
+| Health **topics** (blood sugar, A1C, medication) | **Who** the patient is (name, email, location) |
+| Financial **concepts** (portfolio, tax, returns) | **Whose** finances (name, account numbers, SSN) |
+| Reasoning **logic** (compare, analyze, summarize) | **Which** doctor, hospital, bank, employer |
+| Placeholder tokens: `[PERSON_1]`, `[ORG_1]` | The real entities behind those tokens |
+
+**Why this is safe enough for Phase 1:**
+1. The cloud LLM cannot link `[PERSON_1]`'s blood sugar to any real human. There is no name, no email, no location, no account number in the query.
+2. This is **strictly better** than the alternative — if Dina rejects health queries, the user types the same question directly into ChatGPT with **zero scrubbing**.
+3. Health/financial **topics** are not PII. Millions of people ask cloud LLMs about blood sugar and tax returns. The privacy risk is in the **identity**, which is scrubbed.
+
+**Entity Vault lifecycle:**
+- **Created** per-request in brain's memory. Not persisted to disk.
+- **Scope:** one request-response cycle. Each cloud LLM call gets its own vault.
+- **Destroyed** after rehydration. No Entity Vault outlives its request.
+- **Never sent** to cloud, never logged, never stored in the main vault.
+
+**With llama available (Local LLM / Hybrid profile):** Health/financial queries skip the Entity Vault entirely — processed on llama, never leave the Home Node. This is the best privacy option. The Entity Vault is a **pragmatic fallback** for Cloud LLM profile users who don't have llama.
+
+**User consent:** During initial setup, Cloud LLM profile users see: *"Health and financial queries will be processed by your configured cloud LLM (e.g., Gemini). All identifying information (names, organizations, locations) is scrubbed before sending. The cloud provider sees health/financial topics but cannot identify you. For maximum privacy, enable the Local LLM profile."* User must explicitly acknowledge this.
 
 ### LLM Routing
 
-Not all tasks need the same model. The dina-brain routes intelligently, using llama-server for local inference and cloud APIs for complex reasoning.
+Not all tasks need the same model. The dina-brain routes intelligently based on available infrastructure.
 
 ```
-Task Classification (dina-brain, via llama-server)
+Task Classification (dina-brain)
         │
         ├── Simple lookup / search
         │   → dina-core: SQLite FTS5 query. No LLM needed.
         │
         ├── Basic summarization / drafting
-        │   → llama-server: Gemma 3n E2B (2B active, multimodal)
-        │     or Gemma 3n E4B (4B active, higher quality) if RAM allows
+        │   → llama:8080 if available (Gemma 3n E4B, local)
+        │   → Cloud API if no llama (Gemini Flash Lite, PII-scrubbed)
         │
         ├── Complex reasoning / multi-step analysis
         │   → Cloud LLM via PII scrubber (dina-brain → dina-core scrub → cloud API)
@@ -1749,8 +2381,10 @@ Task Classification (dina-brain, via llama-server)
         │   → User configures which provider they trust
         │
         ├── Sensitive persona (health, financial)
-        │   → llama-server only. Never external cloud. Regardless of task complexity.
-        │   → With Gemma 3n E4B, quality trade-off is now minimal for most tasks.
+        │   → llama:8080 if available (best privacy — never leaves Home Node)
+        │   → Without llama: Entity Vault scrubbing (Tier 1+2 mandatory),
+        │     then cloud LLM. Cloud sees topics, not identities.
+        │   → On-device LLM on rich client as alternative local path.
         │
         └── Latency-sensitive interactive (user actively chatting)
             → Rich client on-device LLM (LiteRT-LM / llama.cpp)
@@ -1768,7 +2402,7 @@ Task Classification (dina-brain, via llama-server)
 
 Architecture remains model-agnostic. When Gemma 4n or equivalent arrives, swap in.
 
-### Context Injection (The Whisper)
+### Context Injection (The Nudge)
 
 When the user opens an app or starts an interaction, Dina searches the Vault for relevant context.
 
@@ -1786,13 +2420,13 @@ Context assembled:
   "His mother was ill last month"
   "You have lunch planned next Thursday"
         ↓
-Whisper delivered:
+Nudge delivered:
   Overlay/notification: "He asked for the PDF last week. Mom was ill."
 ```
 
 **Platform implementations:**
 - **Android:** Accessibility Service reads current screen context. Dina runs query in background, pushes floating overlay or notification.
-- **iOS:** Limited. No Accessibility Service equivalent. Options: Siri Intents (limited), keyboard extension, Share sheet. Full whisper capability requires Android or desktop.
+- **iOS:** Limited. No Accessibility Service equivalent. Options: Siri Intents (limited), keyboard extension, Share sheet. Full nudge capability requires Android or desktop.
 - **Desktop:** Browser extension reads current tab/app. Dina runs as background service.
 
 ### Interrupt Classification (Silence Protocol)
@@ -2053,7 +2687,35 @@ How do messages physically travel between Dinas?
 - Both are always-on servers — no relay needed for the common case
 - End-to-end encrypted (libsodium `crypto_box_seal`). Even if traffic is intercepted, content is unreadable.
 - Sender forward secrecy: ephemeral key destroyed after send. Compromise of sender's static key doesn't expose past messages.
-- If a Home Node is temporarily down, the sending Dina queues the message and retries with exponential backoff.
+- If a Home Node is temporarily down, the sending Dina queues the message in an outbox and retries with exponential backoff (see retry spec below).
+
+**Outbound message retry specification:**
+
+```sql
+-- In core's system.sqlite — outbound message queue
+CREATE TABLE outbox (
+    id          TEXT PRIMARY KEY,     -- ULID
+    to_did      TEXT NOT NULL,
+    payload     BLOB NOT NULL,        -- NaCl encrypted, ready to send
+    created_at  INTEGER NOT NULL,     -- unix timestamp
+    next_retry  INTEGER NOT NULL,     -- unix timestamp
+    retries     INTEGER DEFAULT 0,
+    status      TEXT DEFAULT 'pending' -- pending / sending / failed / delivered
+);
+```
+
+| Parameter | Value |
+|-----------|-------|
+| **Max retries** | 5 |
+| **Backoff schedule** | 30s → 1m → 5m → 30m → 2h (exponential with jitter) |
+| **Message TTL** | 24 hours (messages older than this are dropped, not retried) |
+| **Queue persistence** | Outbox is in system.sqlite — survives reboot |
+| **Queue size limit** | 100 pending messages (reject new sends if full) |
+| **After exhaustion** | Mark `status = 'failed'`, notify user via Tier 2 nudge |
+| **Scheduler** | Core checks outbox every 30s: `next_retry < now() AND status = 'pending'` |
+| **Cleanup** | Delivered messages deleted after 1 hour. Failed messages after 24 hours. |
+
+After 5 retries (~3 hours): nudge to user: *"I couldn't reach Sancho's Dina. His node may be offline. Want me to try again later?"* User can approve (requeue with fresh count), decline (archived), or ignore (expires at 24h TTL).
 
 **Phase 1 fallback: Relay for NAT/firewall situations**
 - Some home servers (Raspberry Pi behind a router) can't accept inbound connections
@@ -2086,7 +2748,7 @@ How do messages physically travel between Dinas?
    - His mother was ill (from previous Dina-to-Dina context flag)
    - His tea preference: strong chai, less sugar
 8. Your Home Node pushes notification to your phone:
-   - Whisper: "Sancho is 15 minutes away. His mother was ill. He likes strong chai."
+   - Nudge: "Sancho is 15 minutes away. His mother was ill. He likes strong chai."
    - Draft action: Clear calendar for next 2 hours (you approve on phone)
 9. You put the kettle on. You open the door. You ask about his mother.
 ```
@@ -2262,8 +2924,8 @@ This is the same model as email: you own your messages (cryptographic authority 
 | **Signing** | Home Node signs records locally → pushes signed commits to external PDS | Home Node signs records locally → writes directly to co-located PDS |
 | **Availability** | PDS is always online (cloud/community infrastructure) | PDS is as available as your VPS (99.9%+ uptime typical) |
 | **Incoming traffic** | Zero — PDS absorbs all read traffic from relays and AppViews | PDS handles relay crawl requests alongside Home Node traffic |
-| **docker-compose** | Default: `docker compose up -d` (2 containers: core, brain) | `docker compose --profile with-pds up -d` (adds PDS container) |
-| **Best for** | Getting started, home hardware, unreliable connectivity | Production, always-on VPS, full control |
+| **docker-compose** | `docker compose up -d` (3 containers: core, brain, external PDS push) | `docker compose up -d` (3 containers: core, brain, bundled PDS) |
+| **Best for** | Home hardware behind CGNAT, unreliable connectivity | Default (Phase 1), VPS, managed hosting, full control |
 
 **Type A flow (External PDS):**
 ```
@@ -2291,7 +2953,7 @@ Home Node (VPS with static IP)
     │
     ├── dina-core (Go)     ← Private layer
     ├── dina-brain (Python) ← Private layer
-    ├── llama-server        ← Private layer (Offline Mode)
+    ├── llama        ← Private layer (local-llm profile)
     └── dina-pds            ← Public layer: AT Protocol PDS
             │
             │  Serves signed repo to relay on crawl
@@ -2347,16 +3009,16 @@ The Dina Foundation will operate an AT Protocol PDS at `pds.dina.host` as the de
 ```
 Start here
     │
-    ├── Home hardware (Pi, Mac Mini, NAS)?
+    ├── Home hardware behind CGNAT (Pi, NAS, no static IP)?
     │       └── Type A: External PDS (pds.dina.host)
-    │           docker compose up -d  (no PDS container)
+    │           Core pushes signed records to external PDS via outbound HTTPS
     │
-    └── VPS or dedicated server with static IP?
-            └── Type B: Bundled PDS
-                docker compose --profile with-pds up -d
+    └── VPS, Mac Mini with tunnel, or dedicated server?
+            └── Type B: Bundled PDS (default)
+                docker compose up -d  (PDS container always included)
 ```
 
-Both topologies produce identical results on the network. A relay crawling `pds.dina.host/alice` and a relay crawling `your-vps:pds-port` see the same signed Merkle repo format. The choice is purely about infrastructure preference and availability guarantees.
+Both topologies produce identical results on the network. A relay crawling `pds.dina.host/alice` and a relay crawling `your-vps:2583` see the same signed Merkle repo format. The choice is purely about infrastructure preference and availability guarantees. **Phase 1 default is Type B** — PDS is always in docker-compose.
 
 ### Reputation AppView (Aggregation & Query Layer)
 
@@ -2536,10 +3198,10 @@ The Reputation Graph needs scale to be useful. With 10 users, there's no statist
 
 | Phase | How Dina answers "What's the best office chair?" |
 |-------|--------------------------------------------------|
-| **Phase 1 (Single Player)** | Brain has no reputation data. Delegates to OpenClaw: "search web for best office chair reviews 2026." OpenClaw returns results. Brain synthesizes, applies user context from vault ("You had back pain last month. You sit 10+ hours. Budget was ₹50-80K based on previous purchases.") Whisper: "Based on web reviews and your back issues, the Steelcase Leap or Herman Miller Aeron. The Aeron is within your budget at ₹72,000." |
-| **Phase 2 (Multiplayer)** | Brain queries the Reputation AppView alongside web search. Whisper now includes: "34 people in the network bought the Aeron, but 5 returned it complaining about the mesh. Your friend Alice recommends the Steelcase Leap instead." |
+| **Phase 1 (Single Player)** | Brain has no reputation data. Delegates to OpenClaw: "search web for best office chair reviews 2026." OpenClaw returns results. Brain synthesizes, applies user context from vault ("You had back pain last month. You sit 10+ hours. Budget was ₹50-80K based on previous purchases.") Nudge: "Based on web reviews and your back issues, the Steelcase Leap or Herman Miller Aeron. The Aeron is within your budget at ₹72,000." |
+| **Phase 2 (Multiplayer)** | Brain queries the Reputation AppView alongside web search. Nudge now includes: "34 people in the network bought the Aeron, but 5 returned it complaining about the mesh. Your friend Alice recommends the Steelcase Leap instead." |
 
-The transition is gradual and invisible to the user. One day the whisper includes network data alongside web results. No flag day, no "activate reputation" moment.
+The transition is gradual and invisible to the user. One day the nudge includes network data alongside web results. No flag day, no "activate reputation" moment.
 
 **There is no "Review Bot" to build.** No scraping infrastructure, no crawlers, no YouTube/Reddit/RTINGS ingestion pipeline. In Phase 1, Dina researches the public web for you using her Brain + OpenClaw — the same way a human would Google things, but with your personal context applied. The Reputation Graph activates when it activates.
 
@@ -2641,7 +3303,7 @@ dina-brain detects (from ingested email or calendar):
 dina-brain classifies: Priority 2 (user should know) or Priority 1 (fiduciary — harm if missed)
         ↓
 Option A — Notify only:
-  Whisper: "Your license expires next week."
+  Nudge: "Your license expires next week."
         ↓
 Option B — Delegate (if user has pre-authorized):
   dina-brain calls OpenClaw via MCP:
@@ -2903,21 +3565,27 @@ For messaging and vault, Dina uses its own stack: libsodium encryption for Dina-
 ### The Home Node architecture
 
 ```
-Home Node (Type B: Bundled PDS — VPS with static IP)
-├── dina-core (Go)      ← Private layer: encrypted vault, keys, DIDComm-shaped messaging
-├── dina-brain (Python)  ← Private layer: reasoning, classification, agent orchestration
-├── llama-server         ← Private layer: local LLM inference (Offline Mode)
+Home Node (default — 3 containers, PDS always bundled):
+├── dina-core (Go)      ← Private layer: encrypted vault, keys, NaCl messaging
+│                          Port 443 (external), Port 8100 (internal)
+├── dina-brain (Python)  ← Private layer: reasoning, admin UI, agent orchestration
+│                          Port 8200 (unified: /api/* brain, /admin/* admin UI)
 └── dina-pds             ← Public layer: AT Protocol PDS for Reputation Graph only
-                            (docker compose --profile with-pds)
+                            Port 2583 (external, relay crawling)
 
-Home Node (Type A: External PDS — home hardware behind NAT)
-├── dina-core (Go)      ← Private layer: encrypted vault, keys, DIDComm-shaped messaging
-├── dina-brain (Python)  ← Private layer: reasoning, classification, agent orchestration
-├── llama-server         ← Private layer: local LLM inference (Offline Mode)
+Home Node (with local LLM — 4 containers):
+├── dina-core (Go)      ← same
+├── dina-brain (Python)  ← same, but routes to llama:8080 instead of cloud APIs
+├── llama (llama.cpp)    ← Private layer: local LLM inference
+│                          Port 8080 (internal), profiles: ["local-llm"]
+└── dina-pds             ← same
+
+Type A variation (home hardware behind CGNAT):
+├── dina-core, dina-brain ← same private layer
 └── (no PDS container — reputation records pushed to external PDS via outbound HTTPS)
 ```
 
-In Type B, the PDS container runs alongside the private stack, hosting only reputation data (`com.dina.reputation.*` Lexicons). In Type A, the Home Node signs records locally and pushes them to an external PDS (e.g., `pds.dina.host`). In both cases, private data (messages, personal vault, persona compartments) never touches the AT Protocol stack. See Layer 3 "PDS Hosting: Split Sovereignty" for the full design.
+The PDS container runs alongside the private stack, hosting only reputation data (`com.dina.reputation.*` Lexicons). For Type A users behind CGNAT, the Home Node signs records locally and pushes them to an external PDS (e.g., `pds.dina.host`). In all cases, private data (messages, personal vault, persona compartments) never touches the AT Protocol stack. See Layer 3 "PDS Hosting: Split Sovereignty" for the full design.
 
 ### Precedent
 
@@ -2931,25 +3599,26 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 |-----------|-----------|-----|
 | **Home Node (dina-core)** | | |
 | Core runtime | Go + net/http (HTTP server) | Fast compilation, single static binary, excellent crypto stdlib, goroutines for concurrency |
-| Database | SQLite + SQLCipher + FTS5 (via `mutecomm/go-sqlcipher` with CGO) | Battle-tested, one encrypted file per persona, no separate DB server. SQLCipher provides transparent whole-database AES-256 encryption. **Not** `mattn/go-sqlite3` — SQLCipher support was never merged into mainline mattn; it only exists in forks. `mutecomm/go-sqlcipher` embeds SQLCipher directly. CI must assert raw `.sqlite` bytes are not valid SQLite headers (proving encryption is active). |
+| Database | SQLite + SQLCipher + FTS5 (via `mutecomm/go-sqlcipher` with CGO) | Battle-tested, one encrypted file per persona, no separate DB server. SQLCipher provides transparent whole-database AES-256 encryption. FTS5 tokenizer: `unicode61 remove_diacritics 1` (multilingual — Hindi, Tamil, Kannada, etc.). Porter stemmer forbidden (English-only). Phase 3: ICU tokenizer for CJK. **Not** `mattn/go-sqlite3` — SQLCipher support was never merged into mainline mattn; it only exists in forks. `mutecomm/go-sqlcipher` embeds SQLCipher directly. CI must assert raw `.sqlite` bytes are not valid SQLite headers (proving encryption is active). |
 | Vector search | Phase 1: vectors stored and queried in dina-brain (Python, sqlite-vec). Phase 2: sqlite-vec in core via CGO. | Brain handles embeddings initially; core handles structured/FTS queries. Clean separation. |
-| PII scrubbing (hot path) | Regex + calls to llama-server | Fast path in Go, LLM fallback for ambiguous cases |
+| PII scrubbing | Three tiers: (1) Regex in Go core (always), (2) spaCy NER in Python brain (always, ~15MB model), (3) LLM NER via llama:8080 (optional, `--profile local-llm`). | Tier 1+2 catch structured + contextual PII in all profiles. Tier 3 adds LLM-based detection for edge cases. |
 | Client ↔ Node protocol | Authenticated WebSocket (TLS + device-delegated key) | Encrypted channel, device key proves identity |
 | Home Node ↔ Home Node | Phase 1: libsodium `crypto_box_seal` (ephemeral sender keys) + DIDComm-shaped plaintext. Phase 2: full JWE (ECDH-1PU). Phase 3: Noise XX sessions for full forward secrecy. | Sender FS from day one. Full FS in Phase 3. Plaintext format is DIDComm-compatible throughout — migration is encryption-layer only. |
 | **Home Node (dina-brain)** | | |
 | Brain runtime | Python + Google ADK (v1.25+, Apache 2.0) | Model-agnostic agent framework, multi-agent orchestration |
+| PII scrubbing (Tier 2) | spaCy + `en_core_web_sm` (~15MB) | Statistical NER: person names, orgs, locations. Always available, milliseconds on CPU. Upgrade to `en_core_web_md` (~50MB) for better accuracy. |
 | Text LLM (Online) | Gemini 2.5 Flash Lite API ($0.10/$0.40 per 1M tokens) | Cheapest Gemini model, 1M context, native function calling + JSON mode, 305+ t/s |
-| Text LLM (Offline) | llama-server (llama.cpp) + Gemma 3n E4B GGUF (~3GB RAM) | OpenAI-compatible API, CPU/Apple Silicon inference, full offline capability |
+| Text LLM (Local) | llama (llama.cpp) + Gemma 3n E4B GGUF (~3GB RAM) | OpenAI-compatible API on port 8080, CPU/Apple Silicon inference. Optional via `--profile local-llm`. |
 | Voice STT (Online) | Deepgram Nova-3 ($0.0077/min, WebSocket streaming) | ~150-300ms latency, purpose-built real-time STT. Fallback: Gemini Flash Lite Live API. |
-| Voice STT (Offline) | whisper.cpp + Whisper Large v3 Turbo (~3GB) | 4.4% WER, battle-tested, mature chunking pipeline |
+| Voice STT (Local, future) | whisper.cpp + Whisper Large v3 Turbo (~3GB) | 4.4% WER, battle-tested. Not in Phase 1 — deferred until local LLM profile is stable. |
 | Cloud LLM (escalation) | User's choice (Gemini 2.5 Flash/Pro, Claude, GPT-4) | For complex reasoning that Flash Lite can't handle. Goes through PII scrubber. |
 | Agent orchestration | Google ADK Sequential/Parallel/Loop agents | Multi-step reasoning, tool calling with retries |
 | External agent integration | MCP (Model Context Protocol) | Connect to OpenClaw and other child agents. No plugins — agents are external processes. |
 | Embeddings (Online) | `gemini-embedding-001` ($0.01/1M tokens) | 768/3072 dims, 100+ languages |
-| Embeddings (Offline) | EmbeddingGemma 308M (GGUF) via llama-server | ~300MB RAM, 100+ languages, Matryoshka dims |
+| Embeddings (Local) | EmbeddingGemma 308M (GGUF) via llama:8080 | ~300MB RAM, 100+ languages, Matryoshka dims. Available with `--profile local-llm`. |
 | **Container orchestration** | | |
-| Online Mode | docker-compose (2 containers: core, brain). Add PDS with `--profile with-pds` (Type B). | 2GB RAM minimum. No local LLM/STT needed. Type A users push to external PDS instead. |
-| Offline Mode | docker-compose (4 containers: core, brain, llama-server, whisper-server). Add PDS with `--profile with-pds` (Type B). | 8GB RAM minimum. Mac Mini M4 (16GB) recommended. Full offline capability. |
+| Default (cloud LLM) | docker-compose (3 containers: core, brain, pds). | 2GB RAM minimum. Cloud LLM for reasoning, regex + spaCy NER PII scrubbing. |
+| With local LLM | docker-compose (4 containers: core, brain, pds, llama). `--profile local-llm`. | 8GB RAM minimum. Mac Mini M4 (16GB) recommended. Three-tier PII scrubbing (regex + spaCy + LLM NER), full offline LLM. |
 | Managed hosting | docker-compose or Fly.io | Same containers, orchestrated by hosting operator |
 | **Identity & Crypto** | | |
 | Identity | W3C DIDs (`did:plc` via PLC Directory) | Open standard, globally resolvable, key rotation, 30M+ identities, Go implementation available. Escape hatch: rotation op to `did:web`. |
@@ -2972,7 +3641,7 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 | DID resolution | PLC Directory (`did:plc`), `did:web` escape hatch | `did:plc`: proven at 30M+ scale, key rotation, Go implementation (`bluesky-social/indigo`). `did:web`: sovereignty escape if PLC Directory becomes adversarial — rotation op transitions transparently. |
 | Push to clients | FCM/APNs (Phase 1), UnifiedPush (Phase 2) | Wake clients when Home Node has updates |
 | Backup | Any blob storage (S3, Backblaze, NAS) | Encrypted snapshots of Home Node vault |
-| Reputation Graph (PDS) | AT Protocol PDS (external or bundled — Split Sovereignty). Custom Lexicons (`com.dina.reputation.*`). Signed tombstones for deletion. | Type A: home users push signed records to external PDS (`pds.dina.host`). Type B: VPS users run bundled PDS (`--profile with-pds`). See Layer 3 "PDS Hosting: Split Sovereignty". |
+| Reputation Graph (PDS) | AT Protocol PDS (bundled by default — Split Sovereignty). Custom Lexicons (`com.dina.reputation.*`). Signed tombstones for deletion. | PDS always in docker-compose (port 2583). Type A variation: home users behind CGNAT push to external PDS (`pds.dina.host`). See Layer 3 "PDS Hosting: Split Sovereignty". |
 | Reputation Graph (AppView) | Go + PostgreSQL 16 (`pg_trgm`). `indigo` firehose consumer. Phase 1: single monolith (0–1M users). Phase 3: sharded cluster (ScyllaDB + Kafka + K8s). | Read-only indexer. Signature verification on every record. Three-layer trust-but-verify: cryptographic proof, consensus check, direct PDS spot-check. AppView is a commodity — anyone can run one. See Layer 3 "Reputation AppView". |
 | Reputation Graph (timestamps) | L2 Merkle root anchoring (Phase 3). Base or Polygon. | Provable "this existed before this date" for dispute resolution. Not needed until real money flows through the system. |
 | ZKP | Semaphore V4 (PSE/Ethereum Foundation) | Production-proven (World ID), off-chain proof generation |
@@ -2982,7 +3651,7 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 | **Observability** | | |
 | Watchdog | Internal Go ticker (1-hour interval) | Checks connector liveness, disk usage, brain health. Breaches inject Tier 2 system messages into user's notification stream. No external monitoring stack. Zero extra RAM. |
 | Health probes | `/healthz` (liveness), `/readyz` (readiness) | Docker kills and restarts zombie containers automatically |
-| Logging | Go `slog` + Python `structlog` → JSON to stdout | No file logs; Docker log rotation handles retention |
+| Logging | Go `slog` + Python `structlog` → JSON to stdout | No file logs; Docker log rotation handles retention. **PII policy:** log metadata only (persona, type, count, error code). Never log vault content, queries, or plaintext. Brain crash tracebacks → encrypted vault, not stdout. CI linter rejects banned patterns. |
 | Self-healing | `restart: always` + healthcheck + dependency chain | Brain waits for core; all containers auto-recover |
 | Metrics (optional) | `/metrics` (Prometheus format, protected by `CLIENT_TOKEN`) | For power users with existing homelab dashboards. Not required for default operation. |
 | **Data Safety** | | |
@@ -3002,69 +3671,372 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 
 ### Home Node Deployment
 
-The Home Node runs four containers orchestrated by docker-compose: dina-core (Go/net/http — vault, keys, encrypted messaging), dina-brain (Python/Google ADK — agent reasoning), llama-server (llama.cpp — local LLM), and dina-pds (AT Protocol PDS — public Reputation Graph). No separate database server, no Kubernetes.
+The Home Node runs three containers by default, orchestrated by docker-compose: dina-core (Go/net/http — vault, keys, NaCl messaging, admin proxy), dina-brain (Python/Google ADK — agent reasoning + admin UI), and dina-pds (AT Protocol PDS — public Reputation Graph). An optional fourth container (llama — llama.cpp, local LLM) is available via `--profile local-llm`. No separate database server, no Kubernetes.
 
 **The docker-compose stack:**
-- dina-core: Go binary + SQLCipher vaults (one encrypted file per persona) — **private layer**
-- dina-brain: Python + Google ADK agent loop — **private layer**
-- llama-server: llama.cpp + Gemma 3n E4B GGUF — **private layer** (Offline Mode only)
-- whisper-server: whisper.cpp + Whisper Large v3 Turbo — **private layer** (Offline Mode only)
-- dina-pds: AT Protocol PDS for Reputation Graph — **public layer** (reputation data only)
-- Output: Encrypted messaging endpoint + WebSocket API for clients + AT Protocol firehose
-- Deployment: `DINA_MODE=online docker compose up -d` (or `offline`)
+- **dina-core**: Go binary + SQLCipher vaults (one encrypted file per persona) — **private layer**. Ports: 443 (external), 8100 (internal). Reverse-proxies `/admin` to brain:8200/admin. Browser authentication gateway (session cookie → Bearer token translation).
+- **dina-brain**: Python + Google ADK agent loop + Admin UI — **private layer**. Port: 8200 (unified — `/api/*` brain API, `/admin/*` admin UI, `/healthz` health).
+- **dina-pds**: AT Protocol PDS for Reputation Graph — **public layer** (reputation data only). Port: 2583 (external).
+- **llama** (optional): llama.cpp + Gemma 3n E4B GGUF — **private layer**. Port: 8080 (internal). Enabled via `--profile local-llm`.
+- Output: NaCl messaging endpoint + WebSocket API for clients + Admin UI + AT Protocol firehose
+- Deployment: `docker compose up -d` (3 containers) or `docker compose --profile local-llm up -d` (4 containers)
 
-**Encryption key passing (docker-compose):**
-
-The vault passphrase never appears in `docker-compose.yml`, command history, or process listings:
+**The docker-compose.yml (Phase 1 — strict):**
 
 ```yaml
-services:
-  dina-core:
-    image: dina-core:latest
-    environment:
-      - DINA_VAULT_MODE          # "security" or "convenience" (from .env)
-    secrets:
-      - vault_passphrase         # Injected as /run/secrets/vault_passphrase
-    volumes:
-      - ./data:/data             # Persistent vault storage
+# docker-compose.yml
+# DINA: Phase 1 Developer Preview
+# Security: Docker Secrets, network isolation, healthchecks
 
+services:
+  # -------------------------------------------------------------------
+  # 1. THE KERNEL (Go)
+  # Role: Gateway, Vault Manager, Ingress, Admin Proxy
+  # -------------------------------------------------------------------
+  core:
+    image: ghcr.io/dinakernel/core:v0.1
+    container_name: dina-core
+    restart: unless-stopped
+
+    # PORTS: 8100 for local dev (no TLS). Production: add ingress tunnel to 443.
+    ports:
+      - "8100:8100"
+
+    # NETWORK: The Hub (connects to everything)
+    networks:
+      - dina-public
+      - dina-brain-net
+      - dina-pds-net
+
+    # CONFIG: Non-sensitive only
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+      - PDS_ENDPOINT=http://pds:2583
+      - DINA_VAULT_MODE=${DINA_VAULT_MODE:-security}  # "security" or "convenience"
+      - TZ=UTC
+
+    # SECRETS: Mounted read-only to /run/secrets/ (tmpfs, never on disk)
+    secrets:
+      - dina_passphrase
+      - brain_token
+      - gmail_client_id
+      - gmail_client_secret
+
+    # HEALTH: Brain won't start until this passes
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8100/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+    volumes:
+      - ./data/vault:/var/lib/dina/vault
+      - ./data/certs:/var/lib/dina/certs
+
+    depends_on:
+      pds:
+        condition: service_started
+
+  # -------------------------------------------------------------------
+  # 2. THE WORKER (Python)
+  # Role: LLM Logic, Admin UI. Needs outbound internet (Gemini, OpenClaw).
+  # -------------------------------------------------------------------
+  brain:
+    image: ghcr.io/dinakernel/brain:v0.1
+    container_name: dina-brain
+    restart: unless-stopped
+
+    # NETWORK: Isolated from PDS, but has outbound internet (standard bridge)
+    networks:
+      - dina-brain-net
+
+    # HOST BRIDGE: For OpenClaw running on developer's machine
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    # ENV: Non-sensitive external service config only
+    environment:
+      - DINA_CORE_URL=http://core:8100
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - OPENCLAW_MCP_URL=${OPENCLAW_MCP_URL:-http://host.docker.internal:3000}
+
+    # SECRETS
+    secrets:
+      - brain_token
+
+    # DEPENDENCY: Won't start until Core is healthy (vault unlocked, DB ready)
+    depends_on:
+      core:
+        condition: service_healthy
+
+  # -------------------------------------------------------------------
+  # 3. THE REPUTATION (AT Protocol PDS)
+  # Role: Public federation — relay crawling, reputation data
+  # -------------------------------------------------------------------
+  pds:
+    image: ghcr.io/bluesky-social/pds@sha256:...  # PINNED DIGEST — never :latest
+    container_name: dina-pds
+    restart: unless-stopped
+
+    # NETWORK: Public (relay crawling) + internal (core pushes records)
+    networks:
+      - dina-public
+      - dina-pds-net
+
+    ports:
+      - "2583:2583"
+
+    volumes:
+      - ./data/pds:/pds
+
+    environment:
+      - PDS_HOSTNAME=${DOMAIN:-localhost}
+
+  # -------------------------------------------------------------------
+  # 4. LOCAL LLM (Optional — enabled via --profile local-llm)
+  # -------------------------------------------------------------------
+  llama:
+    image: ghcr.io/dinakernel/llama@sha256:...  # PINNED DIGEST
+    container_name: dina-llama
+    restart: unless-stopped
+    profiles: ["local-llm"]
+
+    networks:
+      - dina-brain-net
+
+    volumes:
+      - ./data/models:/models
+
+# -------------------------------------------------------------------
+# SECRETS: File-based, never environment variables
+# -------------------------------------------------------------------
 secrets:
-  vault_passphrase:
-    file: ./secrets/vault_passphrase.txt   # chmod 600, .gitignored
+  dina_passphrase:
+    file: ./secrets/dina_passphrase.txt
+  brain_token:
+    file: ./secrets/brain_token.txt
+  gmail_client_id:
+    file: ./secrets/gmail_client_id.txt
+  gmail_client_secret:
+    file: ./secrets/gmail_client_secret.txt
+
+# -------------------------------------------------------------------
+# NETWORKS: Bowtie topology — Core is the hub
+# -------------------------------------------------------------------
+networks:
+  dina-public:       # Internet-facing (core ingress, PDS federation)
+  dina-brain-net:    # Core ↔ Brain (standard bridge — brain needs outbound internet
+                     #   for Gemini/Claude API and host.docker.internal for OpenClaw)
+  dina-pds-net:      # Core ↔ PDS (internal — PDS only needs inbound from relay + core)
+    internal: true
 ```
+
+**Network topology — "The Bowtie":**
+
+Core is the knot. Brain and PDS are the loops. They never touch each other.
+
+```
+                    ┌─────────────────┐
+ Internet ◄────────┤  dina-public     │
+                    │  (standard)      │
+                    │                  │
+         ┌─────────┤  core ◄──────────┤  pds
+         │         │                  │
+         │         └──────────────────┘
+         │
+         │         ┌─────────────────┐
+         └─────────┤  dina-brain-net  │
+                   │  (standard)      │
+                   │                  │
+         core ◄────┤  brain ──────────┼──► api.google.com (Gemini)
+                   │                  ├──► api.anthropic.com (Claude)
+                   │           ┌──────┼──► host.docker.internal (OpenClaw)
+                   │  llama ◄──┘      │
+                   └──────────────────┘
+
+  Isolation guarantee: brain ✗ → pds (no shared network)
+                       pds   ✗ → brain (no shared network)
+                       core  ✓ → both (the hub)
+```
+
+**Port mapping:**
+
+```
+Phase 1 (local dev — no TLS):
+  Host:8100  → core:8100   (developer access: API, admin proxy, messaging)
+  Host:2583  → pds:2583    (AT Protocol relay crawling)
+
+Production (behind ingress tunnel):
+  Tunnel:443 → core:443    (clients, Dina-to-Dina NaCl messaging, /admin proxy)
+  Host:2583  → pds:2583    (AT Protocol relay crawling)
+
+Internal (Docker network only):
+  8100 → core   (brain calls this for vault, PII scrub, signing)
+  8200 → brain  (core calls this for /api/* reasoning + /admin/* UI proxy)
+  8080 → llama  (brain + core call this, when present)
+```
+
+**External URL surface (production):**
+
+```
+  https://my-dina.example.com/                       → signup/unlock (core)
+  https://my-dina.example.com/admin                  → admin UI (core auth gateway → brain:8200/admin)
+  https://my-dina.example.com/msg                    → NaCl messaging endpoint (core)
+  https://my-dina.example.com/.well-known/atproto-did → DID document for PDS federation (core)
+  https://my-dina.example.com:2583                   → PDS (AT Protocol relay crawling)
+```
+
+**AT Protocol discovery (critical):** Core must serve `GET /.well-known/atproto-did` on port 443 (or 8100 in dev mode). This returns the user's `did:plc:...` string, which AT Protocol relays use to find the PDS on port 2583. Without this one-line handler in core's router, PDS federation silently fails:
+
+```go
+// In core's HTTP router — required for AT Protocol discovery
+mux.HandleFunc("/.well-known/atproto-did", func(w http.ResponseWriter, r *http.Request) {
+    did, _ := vault.GetRootDID()
+    w.Header().Set("Content-Type", "text/plain")
+    w.Write([]byte(did)) // e.g., "did:plc:abc123..."
+})
+```
+
+**Bootstrap script (`install.sh`):**
+
+Run once before `docker compose up`. Generates secrets, sets permissions, prevents accidental git commits.
+
+```bash
+#!/bin/bash
+# install.sh — Run this ONCE before 'docker compose up'
+
+set -e
+
+# 1. Create directory structure
+mkdir -p secrets data/vault data/certs data/pds
+
+# 2. Generate the Brain Token (pre-shared secret, read by both core and brain)
+echo "Generating Brain Token..."
+openssl rand -hex 32 > secrets/brain_token.txt
+
+# 3. Vault passphrase
+echo ""
+read -s -p "Enter a strong passphrase for your Vault: " pass
+echo ""
+echo "$pass" > secrets/dina_passphrase.txt
+
+# 4. Optional: OAuth credentials (can be added later via admin UI)
+echo ""
+echo "Press Enter to skip if you don't have these yet."
+read -p "Gmail OAuth Client ID: " gmail_id
+echo "$gmail_id" > secrets/gmail_client_id.txt
+read -s -p "Gmail OAuth Client Secret: " gmail_secret
+echo ""
+echo "$gmail_secret" > secrets/gmail_client_secret.txt
+
+# 5. Lock down permissions
+chmod 700 secrets
+chmod 600 secrets/*
+
+echo ""
+echo "Setup complete. Secrets in ./secrets/ (gitignored)."
+echo "Run: docker compose up"
+```
+
+**`.gitignore` (security-critical — must include):**
+
+```gitignore
+# Security: NEVER commit secrets
+secrets/
+*.env
+
+# Runtime data
+data/
+
+# IDE
+.DS_Store
+.vscode/
+```
+
+**Data volumes:**
+
+```
+core:
+  ./data/vault/vault.sqlite     — encrypted vault (SQLCipher)
+  ./data/vault/keys/master.key  — convenience mode DEK (chmod 600)
+  ./data/vault/config.json      — gatekeeper tiers, connector config
+  ./data/certs/                 — TLS certificates (production only)
+
+brain:
+  (stateless — all state lives in core's vault)
+
+llama:
+  ./data/models/                — GGUF model files (auto-downloaded on first start)
+
+pds:
+  ./data/pds/                   — AT Protocol repo data
+```
+
+**Host bridge for OpenClaw (MCP):**
+
+Phase 1 agents (OpenClaw) run on the developer's machine, outside Docker. The brain container reaches them via `host.docker.internal` — a Docker DNS name that resolves to the host machine's IP. The `extra_hosts` directive ensures this works on Linux (macOS has it built-in):
+
+```yaml
+brain:
+  extra_hosts:
+    - "host.docker.internal:host-gateway"  # Linux support
+  environment:
+    - OPENCLAW_MCP_URL=http://host.docker.internal:3000
+```
+
+**Encryption key passing:**
 
 | Mode | What dina-core does at boot |
 |------|---------------------------|
-| **Security** | Reads `/run/secrets/vault_passphrase` → Argon2id → KEK → unwrap `master.key.enc` → DEK → `PRAGMA key`. Secret file can be a one-time read (tmpfs mount, deleted after boot). |
-| **Convenience** | Ignores the secret. Reads `master.key` directly from `./data/keys/master.key` (raw 32-byte DEK, `chmod 600`). |
+| **Security** | Reads `/run/secrets/dina_passphrase` → Argon2id → KEK → unwrap `master.key.enc` → DEK → `PRAGMA key`. Secret file is tmpfs-mounted, never on disk inside the container. |
+| **Convenience** | Ignores the secret. Reads `master.key` directly from `./data/vault/keys/master.key` (raw 32-byte DEK, `chmod 600`). |
 
-**Rules:**
-- `DINA_VAULT_PASSPHRASE` is **never** set as a plain `environment:` variable — it would appear in `docker inspect`, process listings, and container logs.
-- Docker Secrets mount as in-memory tmpfs files at `/run/secrets/` — they never touch disk inside the container.
+**Secret management rules:**
+- Credentials are **never** set as `environment:` variables in docker-compose — they would appear in `docker inspect`, `/proc/*/environ`, process listings, and crash dumps.
+- All secrets use Docker Secrets (file-based), mounted as in-memory tmpfs files at `/run/secrets/` — they never touch disk inside the container.
 - The `secrets/` directory is in `.gitignore` and `.dockerignore`.
+- `BRAIN_TOKEN` is generated once by `install.sh` (`openssl rand -hex 32`). Both core and brain read the same file. No runtime generation. Phase 2 can rotate it on every boot; Phase 1, a static pre-shared secret in a file is sufficient.
+- `GOOGLE_API_KEY` is the one exception — it lives in `.env` (not secrets) because it's a cloud API key, not a local credential. If compromised, you revoke it in the Google Console. It doesn't unlock your vault or compromise your identity.
 - For managed hosting (Fly.io), use `fly secrets set VAULT_PASSPHRASE=...` — Fly injects as an env var visible only to the process, not in logs or inspect output.
 
-**Two deployment modes:**
+**`.env.example` (the 2-minute start):**
 
-| | **Online Mode** (default, Phase 1) | **Offline Mode** (safety-conscious, Phase 2) |
-|--|---|---|
-| **Containers** | 3 (core, brain, pds) | 5 (core, brain, llama-server, whisper-server, pds) |
-| **Text LLM** | Gemini 2.5 Flash Lite (cloud API) | Gemma 3n E4B via llama-server (local) |
-| **Voice STT** | Deepgram Nova-3 (WebSocket streaming, ~150-300ms latency). Fallback: Gemini Flash Lite Live API. | whisper.cpp + Whisper Large v3 Turbo (~3GB, 4.4% WER) |
-| **PII scrubbing** | Regex in Go (always local) | Regex + Gemma 3n (local) |
-| **Embeddings** | `gemini-embedding-001` (cloud, $0.01/1M tokens) | EmbeddingGemma 308M via llama-server (local) |
-| **Minimum RAM** | **2GB** (Go core ~200MB + Python brain ~500MB + PDS ~100MB + OS ~300MB + headroom) | **8GB** (Gemma 3n E4B ~3GB + Whisper Turbo ~3GB + Go ~200MB + Python ~500MB + PDS ~100MB + OS ~300MB + headroom). Mac Mini M4 (16GB+) recommended. |
-| **CPU** | 2 cores | 4+ cores. Apple Silicon (MLX) or x86 with AVX2. |
-| **Storage** | 10GB (grows with vault) | 20GB (+ model files ~6GB: Gemma E4B ~3GB + Whisper ~3GB) |
-| **GPU** | Not needed | Not needed on Apple Silicon (unified memory). Discrete GPU helps on x86. |
-| **Internet** | Required (LLM + STT + messaging) | Required for messaging only. LLM + STT work fully offline. |
-| **Monthly cost** | ~$5-15 (Flash Lite: ~$1-5 for text. Deepgram: ~$10 for voice at 45 min/day. Embeddings: <$1.) | Hardware + electricity only |
-| **Offline capability** | Degraded — messaging queued, LLM + STT unavailable, vault still works | Full — everything works, messages queued for later delivery |
-| **Best for** | Raspberry Pi, cheap VPS, managed hosting, Phase 1 development, users who want it working fast | Mac Mini, NUC, dedicated server, privacy maximalists, unreliable internet |
+```bash
+# .env.example — copy to .env and fill in
 
-**Phase 1 implements Online Mode only.** Offline Mode ships once the end-to-end flow works without issues. Both modes share identical vault, identity, messaging, and persona layers — only the inference and STT backends differ.
+# NETWORK
+DOMAIN=192.168.1.42              # Your machine's LAN IP (or localhost for dev)
 
-**Why these defaults for Online Mode:**
+# INTELLIGENCE
+GOOGLE_API_KEY=AIzaSy...         # Gemini API key (for LLM reasoning)
+OPENCLAW_MCP_URL=http://host.docker.internal:3000  # OpenClaw on host machine
+
+# VAULT MODE
+DINA_VAULT_MODE=security         # "security" (passphrase) or "convenience" (auto-unlock)
+```
+
+Six things total: domain, API key, OpenClaw URL, vault mode, plus the secrets generated by `install.sh` (passphrase, brain token, optional OAuth). Developer fills in `.env`, runs `./install.sh`, runs `docker compose up`, has a working Dina.
+
+**Three deployment profiles:**
+
+| | **Cloud LLM** (default, Phase 1) | **Local LLM** (`--profile local-llm`) | **Hybrid** (recommended long-term) |
+|--|---|---|---|
+| **Containers** | 3 (core, brain, pds) | 4 (core, brain, pds, llama) | 4 (core, brain, pds, llama) |
+| **Text LLM** | Gemini Flash Lite / Claude (cloud API) | Gemma 3n E4B via llama:8080 (local) | llama for simple tasks, cloud for complex reasoning |
+| **Voice STT** | Deepgram Nova-3 (WebSocket streaming, ~150-300ms). Fallback: Gemini Flash Lite Live API. | Deepgram (or future: whisper.cpp when added) | Deepgram for streaming, local for batch |
+| **PII scrubbing** | Tier 1 (regex in Go) + Tier 2 (spaCy NER in Python) | Tier 1 + 2 + Tier 3 (LLM NER via Gemma 3n on llama) | Tier 1 + 2 + 3 (llama always available) |
+| **Embeddings** | `gemini-embedding-001` (cloud, $0.01/1M tokens) | EmbeddingGemma 308M via llama:8080 (local) | Local via llama (never leaves machine) |
+| **Minimum RAM** | **2GB** (Go core ~200MB + Python brain ~500MB + PDS ~100MB + OS ~300MB + headroom) | **8GB** (+ Gemma 3n E4B ~3GB). Mac Mini M4 (16GB+) recommended. | **8GB** (same as local) |
+| **CPU** | 2 cores | 4+ cores. Apple Silicon or x86 with AVX2. | 4+ cores |
+| **Storage** | 10GB (grows with vault) | 15GB (+ model files ~3GB: Gemma E4B) | 15GB |
+| **Internet** | Required (LLM + STT + messaging) | Required for messaging + PDS. LLM works offline. | Required for cloud LLM escalation + messaging |
+| **Monthly cost** | ~$5-15 (Flash Lite: ~$1-5. Deepgram: ~$10 at 45 min/day.) | Hardware + electricity only (LLM). Still need Deepgram for voice. | ~$5 (cloud for complex reasoning only) |
+| **Best for** | Phase 1 development, cheap VPS, getting started fast | Privacy maximalists, unreliable internet | Daily drivers — local for PII/embeddings, cloud for hard reasoning |
+
+**Phase 1 ships Cloud LLM profile only.** Local LLM and Hybrid profiles ship once the end-to-end flow works without issues. All profiles share identical vault, identity, messaging, and persona layers — only the inference backends differ.
+
+**Why these defaults for the Cloud LLM profile:**
 
 *Text — Gemini 2.5 Flash Lite:*
 - Cheapest Gemini model: $0.10 input / $0.40 output per 1M tokens (8.75x cheaper than Flash output, 25x cheaper than Pro).
@@ -3083,7 +4055,7 @@ secrets:
 - No independent WER benchmarks for pure transcription. Latency spikes to 780ms at p95.
 - Better reserved for the reasoning layer where Dina already uses it.
 
-**Why Whisper for Offline Mode (not Gemma 3n audio):**
+**Why Whisper for local voice STT (not Gemma 3n audio):**
 - Gemma 3n audio: ~13% WER (1 in 8 words wrong). Whisper Large v3 Turbo: ~4.4% WER. For voice commands, accuracy matters.
 - Gemma 3n audio does NOT work in Ollama or llama.cpp today — only via MLX (Apple) or Hugging Face Transformers. whisper.cpp is battle-tested and works everywhere.
 - Whisper has mature chunking pipelines for continuous voice. Gemma 3n audio is limited to 30-second clips with no streaming.
@@ -3095,29 +4067,28 @@ secrets:
 - DID signing/verification (Ed25519, never leaves Home Node)
 - Persona compartment enforcement (cryptographic, never leaves Home Node)
 
-**Sensitive persona rule (both modes):** Health and financial persona data is NEVER sent to cloud LLMs or cloud STT. Even in Online Mode, queries involving health/financial context are routed to on-device Gemma 3n (if available) or rejected with a "local model required" error. Voice input containing medical/financial context is transcribed locally (Whisper on-device) before processing. This is enforced at the LLM router level in dina-brain.
+**Sensitive persona rule (all profiles):** Health and financial persona data is always processed through the strongest available privacy path. With llama: processed locally, never leaves the Home Node (best privacy). Without llama (Cloud LLM profile): mandatory Entity Vault scrubbing — Tier 1 (regex) + Tier 2 (spaCy NER) strip all identifying entities before routing to cloud LLM. The cloud provider sees health/financial **topics** but cannot identify **who**. User must consent to this tradeoff during setup. This is enforced at the LLM router level in dina-brain. See "The Entity Vault Pattern" in Layer 6 for the full mechanism.
 
-**Switching modes:** Set `DINA_MODE=online` or `DINA_MODE=offline` in `.env`. The brain routes accordingly. Users can switch at any time — the vault, identity, and messaging layers are identical in both modes.
+**Switching profiles:** `docker compose up -d` (cloud LLM) or `docker compose --profile local-llm up -d` (local LLM). Brain auto-detects whether llama:8080 is available and routes accordingly. Users can switch at any time — the vault, identity, and messaging layers are identical across all profiles.
 
 ### LLM & Voice Inference
 
-| Where | Runtime | Model | Use Cases | Mode |
-|-------|---------|-------|-----------|------|
+| Where | Runtime | Model | Use Cases | Profile |
+|-------|---------|-------|-----------|---------|
 | **Text LLM** | | | | |
-| Home Node | Cloud API | Gemini 2.5 Flash Lite ($0.10/$0.40 per 1M tokens) | Summarization, drafting, context assembly, classification, routing | Online |
-| Home Node | llama.cpp (GGUF) | Gemma 3n E4B (~3GB RAM) | Same as above, but local. Also: PII scrubbing fallback (ambiguous cases) | Offline |
-| Home Node | Cloud API | Gemini 2.5 Flash / Pro / Claude / GPT-4 | Complex multi-step reasoning when Flash Lite quality is insufficient | Online (escalation) |
+| Home Node | Cloud API | Gemini 2.5 Flash Lite ($0.10/$0.40 per 1M tokens) | Summarization, drafting, context assembly, classification, routing | Cloud (default) |
+| Home Node | llama.cpp (GGUF) | Gemma 3n E4B (~3GB RAM) | Same as above, but local. Also: PII scrubbing NER fallback | Local LLM |
+| Home Node | Cloud API | Gemini 2.5 Flash / Pro / Claude / GPT-4 | Complex multi-step reasoning when Flash Lite quality is insufficient | Cloud (escalation), Hybrid |
 | **Voice STT** | | | | |
-| Home Node | Cloud API (WebSocket) | Deepgram Nova-3 ($0.0077/min, ~150-300ms) | Real-time voice command transcription, continuous dictation | Online |
-| Home Node | Cloud API (WebSocket) | Gemini Flash Lite Live API ($0.30/1M audio tokens) | Fallback STT when Deepgram is unavailable | Online (fallback) |
-| Home Node | whisper.cpp | Whisper Large v3 Turbo (~3GB, 4.4% WER) | Same: voice transcription, fully offline | Offline |
+| Home Node | Cloud API (WebSocket) | Deepgram Nova-3 ($0.0077/min, ~150-300ms) | Real-time voice command transcription, continuous dictation | All profiles |
+| Home Node | Cloud API (WebSocket) | Gemini Flash Lite Live API ($0.30/1M audio tokens) | Fallback STT when Deepgram is unavailable | All profiles (fallback) |
 | **Embeddings** | | | | |
-| Home Node | Cloud API | `gemini-embedding-001` ($0.01/1M tokens) | Embedding generation for Tier 2 Index | Online |
-| Home Node | llama.cpp (GGUF) | EmbeddingGemma 308M (~300MB) | Same: embedding generation, fully offline | Offline |
+| Home Node | Cloud API | `gemini-embedding-001` ($0.01/1M tokens) | Embedding generation for Tier 2 Index | Cloud |
+| Home Node | llama.cpp (GGUF) | EmbeddingGemma 308M (~300MB) | Same: embedding generation, fully local | Local LLM, Hybrid |
 | **On-device** | | | | |
-| Android client | LiteRT-LM | Gemma 3n E2B | Offline drafting, quick replies, on-device search | Both |
-| Desktop client | llama.cpp / MLX | Gemma 3n E4B | Same as Android — latency-sensitive local tasks | Both |
-| Thin client | None | None | All inference routed to Home Node | Both |
+| Android client | LiteRT-LM | Gemma 3n E2B | Offline drafting, quick replies, on-device search | All profiles |
+| Desktop client | llama.cpp / MLX | Gemma 3n E4B | Same as Android — latency-sensitive local tasks | All profiles |
+| Thin client | None | None | All inference routed to Home Node | All profiles |
 
 ### Client Authentication
 
@@ -3176,7 +4147,7 @@ When the Home Node has new data (ingested email, incoming Dina-to-Dina message, 
 | **Kafka / RabbitMQ / NATS** | Message brokers for millions of events/sec across clusters. Dina is one person, ~1000 events/day. SQLite IS the event processor. |
 | **Redis** | In-memory cache for server workloads. Dina's data is already in SQLite on the Home Node. No separate cache needed. |
 | **PostgreSQL / MySQL** | Server databases designed for multi-tenant workloads. SQLite is the right database for a single-user personal agent. |
-| **Kubernetes** | Container orchestration for distributed services. Dina's Home Node is 3-5 containers on one machine. `docker compose up` is the entire deployment. |
+| **Kubernetes** | Container orchestration for distributed services. Dina's Home Node is 3-4 containers on one machine. `docker compose up` is the entire deployment. |
 | **GraphQL** | API layer for complex multi-consumer APIs. Dina has one consumer: you. Direct SQLite queries from the agent loop. |
 | **Elasticsearch** | Distributed search cluster. SQLite FTS5 + sqlite-vec handles search for a single user's data. |
 | **Blockchain (L1)** | Gas costs, latency, complexity. Immutability violates sovereignty (right to delete). Federated servers + signed tombstones handle the Reputation Graph. Only use case is L2 Merkle root hash anchoring for timestamp proofs (Phase 3). |
@@ -3202,7 +4173,7 @@ Guiding principle: **one user, a handful of containers, one machine, one SQLite 
 
 **7. Key management UX.** Asking normal people to write down 24 words on paper is a known failure mode in crypto. Most people will lose them. Better UX needed (social recovery? hardware backup?) but security trade-offs are real.
 
-**8. Home Node security surface.** An always-on server with your encrypted data is a target. Must be hardened: automatic updates, minimal attack surface (3-5 containers, no open ports except messaging endpoint), fail2ban-style rate limiting, encrypted at rest. If the VPS is compromised, the attacker gets encrypted blobs they can't read — but they can DoS your Dina.
+**8. Home Node security surface.** An always-on server with your encrypted data is a target. Must be hardened: automatic updates, minimal attack surface (3-4 containers, two external ports: 443 + 2583), fail2ban-style rate limiting, encrypted at rest. If the VPS is compromised, the attacker gets encrypted blobs they can't read — but they can DoS your Dina.
 
 **9. Data corruption in sovereign model.** No SRE team to restore the database. A bug that corrupts a persona vault file means loss of that persona's memory. The 5-level corruption immunity stack (WAL → pre-flight snapshots → ZFS → off-site backup → Tier 5) addresses this, but must be implemented from Day 1.
 
@@ -3233,7 +4204,7 @@ v0.4 is a monolithic Python application. The target is the three-container sidec
 
 2. **Phase 1b (parallel):** Build dina-core in Go. Start with the SQLite vault skeleton, DID key management (porting the Ed25519/did:key logic from Python to Go), and the internal API (`/v1/vault/query`, `/v1/vault/store`, `/v1/did/sign`). Go's standard library `crypto/ed25519` and `crypto/aes` handle the cryptography natively.
 
-3. **Phase 1c (integration):** Wire dina-brain to call dina-core's API instead of managing its own storage. Add llama-server container. `docker-compose up` runs all three.
+3. **Phase 1c (integration):** Wire dina-brain to call dina-core's API instead of managing its own storage. Add PDS container. `docker compose up` runs all three (core, brain, pds). llama available via `--profile local-llm` for local inference.
 
 4. **v0.4 retirement:** Once the sidecar architecture handles everything v0.4 does, the monolithic REPL is deprecated. Its code lives on as reference.
 

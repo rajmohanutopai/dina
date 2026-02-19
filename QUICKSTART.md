@@ -15,11 +15,12 @@ cd dina
 docker compose up -d
 ```
 
-This starts Dina in **Online Mode** (the default):
-- **dina-core** (Go) — your encrypted vault, keys, and DIDComm endpoint
+This starts Dina in the **Cloud LLM profile** (the default) — 3 containers:
+- **dina-core** (Go) — your encrypted vault, keys, and messaging endpoint (port 443 external, port 8100 internal)
 - **dina-brain** (Python) — the guardian angel reasoning loop (uses Gemini Flash Lite + Deepgram)
+- **dina-pds** — AT Protocol Personal Data Server for your reputation data (port 2583)
 
-Your reputation data (reviews, attestations) is pushed to the Dina Foundation PDS (`pds.dina.host`) — no extra container needed. If you're on a VPS and want to self-host your PDS, see [Advanced Setup](ADVANCED-SETUP.md).
+Want a local LLM too? `docker compose --profile local-llm up -d` adds a 4th container (llama with Gemma 3n). See [Advanced Setup](ADVANCED-SETUP.md).
 
 ## 2. Initialize your identity
 
@@ -32,7 +33,7 @@ This generates your root DID and encryption keys. You'll get a 24-word recovery 
 ## 3. Go online
 
 ```bash
-sudo tailscale up && sudo tailscale funnel 8443
+sudo tailscale up && sudo tailscale funnel 443
 ```
 
 Your Dina is now reachable at `https://<machine-name>.<tailnet>.ts.net/`. Other Dinas can find you and send encrypted messages.
@@ -50,10 +51,10 @@ Your Dina is running, has a cryptographic identity, and is reachable by other Di
 - **Connect Gmail** — `dina connector add gmail` (read-only, OAuth)
 - **Connect Calendar** — `dina connector add calendar` (CalDAV)
 - **Add a friend's Dina** — Scan their QR code or exchange DIDs
-- **Run Offline Mode** — See [Advanced Setup](ADVANCED-SETUP.md) for local LLM + voice (Gemma 3n + Whisper, no cloud APIs)
+- **Run with Local LLM** — See [Advanced Setup](ADVANCED-SETUP.md) for local LLM (Gemma 3n, no cloud APIs for inference)
 - **Set up production networking** — See [Advanced Setup](ADVANCED-SETUP.md) for Cloudflare Tunnel (custom domain, DDoS protection) or Yggdrasil (censorship resistance)
 
-## System Requirements (Online Mode)
+## System Requirements (Cloud LLM Profile)
 
 | Resource | Minimum |
 |----------|---------|
@@ -63,4 +64,4 @@ Your Dina is running, has a cryptographic identity, and is reachable by other Di
 | Network | Always-on internet connection |
 | GPU | Not required |
 
-> Want to run everything locally with no cloud APIs? See [Advanced Setup — Offline Mode](ADVANCED-SETUP.md) (requires 8GB+ RAM).
+> Want to run everything locally with no cloud APIs? See [Advanced Setup — Local LLM Profile](ADVANCED-SETUP.md) (requires 8GB+ RAM).

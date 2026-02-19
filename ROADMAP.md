@@ -8,7 +8,7 @@ Extracted from [ARCHITECTURE.md](ARCHITECTURE.md). Every item is sequenced by de
 
 ## Current State (v0.4) → Target Architecture
 
-v0.4 is a monolithic Python application. The target is the three-container sidecar architecture. The migration is incremental:
+v0.4 is a monolithic Python application. The target is the 3+1 container sidecar architecture (core, brain, pds always-on; llama optional via `--profile local-llm`). The migration is incremental:
 
 1. **Phase 1a:** Extract agent reasoning from v0.4 into dina-brain (Google ADK). YouTube analysis, memory search, RAG become ADK tools.
 2. **Phase 1b (parallel):** Build dina-core in Go. SQLite vault, DID key management, internal API.
@@ -35,28 +35,29 @@ v0.4 is a monolithic Python application. The target is the three-container sidec
 
 ## Phase 1a — Sidecar Foundation
 
-**Goal:** Get the 3-container Online Mode running. Brain thinks (via Gemini Flash Lite + Deepgram), core stores. Phase 1 is Online Mode only — Offline Mode ships in Phase 2 once end-to-end flow works.
+**Goal:** Get the 3-container Cloud LLM profile running (core, brain, pds). Brain thinks (via Gemini Flash Lite + Deepgram), core stores, PDS hosts reputation data. Phase 1 uses cloud LLMs only — Local LLM profile ships in Phase 2 once end-to-end flow works.
 
 | # | Item | Layer | What It Is | Depends On | Container | Status |
 |---|------|-------|-----------|-----------|-----------|--------|
-| 1.1 | Cloud API setup | Infra | Configure Gemini 2.5 Flash Lite API key (text LLM), Deepgram Nova-3 API key (voice STT), `gemini-embedding-001` (embeddings). Brain's LLM router calls cloud APIs based on `DINA_MODE=online`. | — | Cloud APIs | NOT STARTED |
+| 1.1 | Cloud API setup | Infra | Configure Gemini 2.5 Flash Lite API key (text LLM), Deepgram Nova-3 API key (voice STT), `gemini-embedding-001` (embeddings). Brain's LLM router calls cloud APIs in Cloud LLM profile (default). | — | Cloud APIs | NOT STARTED |
 | 1.2 | dina-brain skeleton | L6 Intelligence | Python + Google ADK, basic agent loop, `/v1/process` and `/v1/reason` endpoints on port 8200. LLM router calls Gemini Flash Lite for text, Deepgram WebSocket for voice STT. | 1.1 | dina-brain | NOT STARTED |
 | 1.3 | Port YouTube analysis to ADK tool | L5 Bot Interface | YouTube video analysis as a Google ADK tool callable by the agent loop | 1.2 | dina-brain | NOT STARTED |
 | 1.4 | Port memory search to ADK tool | L6 Intelligence | Vector search + RAG as ADK tools | 1.2 | dina-brain | NOT STARTED |
 | 1.5 | Silence filter (basic) | L6 Intelligence | Three-priority classification (Fiduciary / Solicited / Engagement) using Gemini Flash Lite | 1.2, 1.1 | dina-brain | NOT STARTED |
-| 1.6 | LLM routing in brain | L6 Intelligence | Simple → Flash Lite, Complex → Flash/Pro/Claude, Voice → Deepgram STT. Sensitive personas → reject with "local model required" error (no local model in Online Mode Phase 1). | 1.1, 1.2 | dina-brain | NOT STARTED |
+| 1.6 | LLM routing in brain | L6 Intelligence | Simple → Flash Lite, Complex → Flash/Pro/Claude, Voice → Deepgram STT. Sensitive personas → llama if available (best privacy), otherwise Entity Vault scrubbing (Tier 1+2 mandatory) then cloud LLM. Cloud sees topics, not identities. | 1.1, 1.2 | dina-brain | NOT STARTED |
 | 1.7 | dina-core skeleton | L1 Storage | Go + net/http server on port 8100, SQLCipher vault (`mutecomm/go-sqlcipher` with CGO, one file per persona) with WAL mode + `busy_timeout=5000`. Single-writer pattern: one write connection (`MaxOpenConns=1`), separate read pool (`MaxOpenConns=cpu*2`, `PRAGMA query_only=ON`). Basic `/v1/vault/query` and `/v1/vault/store` endpoints. **Mandatory CI test:** read raw `.sqlite` bytes and assert first 16 bytes ≠ `SQLite format 3\0` (proving encryption is active). | — | dina-core | NOT STARTED |
 | 1.8 | DID key management in core | L0 Identity | BIP-39 seed → Master Key (DEK), key wrapping (passphrase → Argon2id KEK → AES-256-GCM wraps DEK), SLIP-0010 persona key derivation (Ed25519), HKDF persona key → SQLCipher vault unlock. `/v1/did/sign` and `/v1/did/verify` endpoints. Go: `crypto/ed25519`, `x/crypto/argon2`, `stellar/go/exp/crypto/derivation`. | 1.7 | dina-core | NOT STARTED |
-| 1.9 | PII scrubber (regex) | L6 Intelligence | Regex-based PII detection in Go (credit cards, phone numbers, Aadhaar, emails). `/v1/pii/scrub` endpoint. Returns replacement map (`[PERSON_1]` → original) for de-sanitization of LLM responses. | 1.7 | dina-core | NOT STARTED |
-| 1.10 | docker-compose wiring | Infra | 2-container orchestration (core, brain). Optional PDS via `--profile with-pds` (Type B: VPS users). Type A (home users): core pushes signed records to external PDS (`pds.dina.host`) via outbound HTTPS. Internal network. Brain calls core API + cloud APIs (Gemini, Deepgram). Single `DINA_MODE=online docker compose up -d`. Healthchecks (`/healthz`, `/readyz`) on all containers. Dependency chain: brain waits for core healthy. `restart: always`. Structured JSON logging (Go `slog`, Python `structlog`) to stdout. Vault passphrase via Docker Secrets (tmpfs-mounted, never in env vars or CLI). | 1.2, 1.7, 1.1 | All | NOT STARTED |
+| 1.9 | PII scrubber (three-tier) | L6 Intelligence | **Tier 1:** Regex-based PII detection in Go core (credit cards, phone numbers, Aadhaar, emails). `/v1/pii/scrub` endpoint. Returns replacement map (`[PERSON_1]` → original) for de-sanitization. **Tier 2:** spaCy NER in Python brain (`en_core_web_sm`, ~15MB) catches contextual PII (names, orgs, locations). Always available, no llama required. **Tier 3 (optional):** LLM NER via llama for edge cases. | 1.7, 1.2 | dina-core + dina-brain | NOT STARTED |
+| 1.10 | docker-compose wiring | Infra | 3-container orchestration (core, brain, pds — always on). Optional llama via `--profile local-llm` (4th container). Internal network. Brain calls core API + cloud APIs (Gemini, Deepgram). Single `docker compose up -d` for Cloud LLM profile, `docker compose --profile local-llm up -d` for Local LLM. Healthchecks (`/healthz`, `/readyz`) on all containers. Dependency chain: brain waits for core healthy. `restart: always`. Structured JSON logging (Go `slog`, Python `structlog`) to stdout. Vault passphrase via Docker Secrets (tmpfs-mounted, never in env vars or CLI). | 1.2, 1.7, 1.1 | All | NOT STARTED |
+| 1.10c | Brain crash recovery (task queue + scratchpad) | Infra | **Task Queue (Outbox Pattern):** Core writes tasks to `dina_tasks` table before sending to brain. Brain ACKs on completion. Unacknowledged tasks requeued after 5-min timeout. Dead letter after 3 attempts → Tier 2 notification. **Scratchpad:** Brain checkpoints multi-step reasoning to vault (`type: "scratchpad"` in staging.sqlite). On restart, brain resumes from last checkpoint. Auto-expires 24h. No Mem0/SuperMemory — vault IS the memory store. | 1.7, 1.2 | dina-core + dina-brain | NOT STARTED |
 | 1.10a | Gatekeeper: Brain→Core API auth | Infra | **Brain is an untrusted tenant.** Two-tier static token auth, no JWTs: `BRAIN_TOKEN` (boot-generated, Docker Secrets) grants agent capabilities only (vault/query, vault/store, pii/scrub, notify, msg/send, reputation/query). `CLIENT_TOKEN` (per-device, QR pairing) grants everything including admin (did/sign, did/rotate, vault/backup, persona/unlock). Static allowlist in `gatekeeper.go` middleware — `isAdminEndpoint()` rejects `BRAIN_TOKEN` on admin paths. Brain never calls `/v1/did/sign` directly — it triggers high-level ops (`/v1/msg/send`) and core handles crypto internally. Persona access tiers also enforced: open (serve + log), restricted (serve + log + notify), locked (reject until user unlocks with TTL). | 1.7, 1.2 | dina-core + brain | NOT STARTED |
-| 1.10b | Admin UI | Infra | Separate FastAPI app in brain container on port 8500 with `CLIENT_TOKEN` auth. Dashboard (connector status, vault health, brain responsiveness), whisper history, contacts/sharing rules, settings/personas. Calls `core:8100` with `CLIENT_TOKEN`. **Build early — a UI to inspect vault, connectors, and whispers accelerates development of everything that follows.** | 1.10, 1.10a | dina-brain container | NOT STARTED |
+| 1.10b | Admin UI | Infra | FastAPI sub-app mounted at `/admin/*` in brain's unified Uvicorn (port 8200) with `CLIENT_TOKEN` auth. Externally accessible via core reverse proxy at `443/admin` with browser authentication gateway (passphrase login → session cookie → Bearer token translation). Dashboard (connector status, vault health, brain responsiveness), nudge history, contacts/sharing rules, settings/personas. Calls `core:8100` with `CLIENT_TOKEN`. **Build early — a UI to inspect vault, connectors, and nudges accelerates development of everything that follows.** | 1.10, 1.10a | dina-brain container | NOT STARTED |
 
 ---
 
 ## Phase 1b — Guardian Angel Loop
 
-**Goal:** Dina watches your world, stays quiet, and whispers when it matters. The Sancho Moment works end-to-end.
+**Goal:** Dina watches your world, stays quiet, and nudges when it matters. The Sancho Moment works end-to-end.
 
 | # | Item | Layer | What It Is | Depends On | Container | Status |
 |---|------|-------|-----------|-----------|-----------|--------|
@@ -64,14 +65,14 @@ v0.4 is a monolithic Python application. The target is the three-container sidec
 | 1.12 | Calendar connector | L2 Ingestion | **Phase 1: Google Calendar REST API** (well-documented, official Go client). CalDAV deferred to Phase 2 for non-Google users (CalDAV implementations are mutually incompatible across Google/Apple/Nextcloud on recurring events, timezone handling, shared calendars). Store events in vault. | 1.7, 1.10 | dina-core | NOT STARTED |
 | 1.13 | Contacts connector | L2 Ingestion | Google People API for Phase 1 (CardDAV as Phase 2 alternative). Store contacts in vault. | 1.7, 1.10 | dina-core | NOT STARTED |
 | 1.14 | Connector scheduler | L2 Ingestion | Cron-style polling: check Gmail every 15 min (configurable), calendar every 30 min. Triggers brain on new data. | 1.11, 1.12, 1.13, 1.10 | dina-core | NOT STARTED |
-| 1.15 | Context assembly for whispers | L6 Intelligence | Brain queries vault for relevant context (relationships, history), assembles whisper text | 1.10, 1.4 | dina-brain | NOT STARTED |
-| 1.16 | Whisper delivery (WebSocket) | L7 Action | Core pushes whisper to connected client device via WebSocket. `/v1/notify` endpoint. | 1.15, 1.7 | dina-core | NOT STARTED |
-| 1.17 | Encrypted messaging endpoint + Dead Drop | L4 Dina-to-Dina | Always-on HTTPS endpoint on localhost:8443 (exposed via ingress tier). Receives encrypted messages from other Dinas. libsodium `crypto_box_seal` + DIDComm-shaped plaintext. **Dead Drop ingress:** decouple HTTP listener from vault. When vault is locked (Security mode after reboot), ingress writes encrypted blobs to `./data/inbox/*.blob` and returns `202 Accepted`. Inbox Sweeper runs on vault unlock — decrypts, checks TTL, processes. Expired messages (timestamp + TTL < now) stored silently in history without notification. Prevents zombie alerts ("Pizza arriving!" 3 hours late). Spool cleaned after processing. | 1.8, 1.7 | dina-core | NOT STARTED |
-| 1.17a | Rate limiting | L4 Dina-to-Dina | Three-level rate limiting: (1) Ingress tier — Cloudflare WAF rules if using CF Tunnel, (2) Application — per-DID limits on DIDComm endpoint, per-device on WebSocket, (3) Circuit breaker on brain→core calls (prevent runaway loops). Default: 60 req/min per DID, 120 req/min per device. | 1.17, 1.7 | dina-core | NOT STARTED |
+| 1.15 | Context assembly for nudges | L6 Intelligence | Brain queries vault for relevant context (relationships, history), assembles nudge text | 1.10, 1.4 | dina-brain | NOT STARTED |
+| 1.16 | Nudge delivery (WebSocket) | L7 Action | Core pushes nudge to connected client device via WebSocket. `/v1/notify` endpoint. | 1.15, 1.7 | dina-core | NOT STARTED |
+| 1.17 | Encrypted messaging endpoint + Dead Drop | L4 Dina-to-Dina | Always-on HTTPS endpoint on core:443 (exposed via ingress tier). Receives encrypted messages from other Dinas. libsodium `crypto_box_seal` + DIDComm-shaped plaintext. **State-aware ingress:** Vault unlocked → fast path (decrypt in-memory, per-DID rate limiting, zero disk I/O). Vault locked → Dead Drop (write encrypted blobs to `./data/inbox/*.blob`, return `202 Accepted`). **3-valve DoS defense:** Valve 1 — IP token bucket (50 req/hr per IP, 1000 global, 256KB payload cap). Valve 2 — spool cap (500MB, reject-new when full, never drop-oldest). Valve 3 — sweeper feedback (post-unlock: decrypt, check DID, blocklist spam IPs). Inbox Sweeper runs on vault unlock — decrypts, checks TTL, processes. Expired messages stored silently (no zombie notifications). | 1.8, 1.7 | dina-core | NOT STARTED |
+| 1.17a | Rate limiting | L4 Dina-to-Dina | **State-dependent:** (1) Ingress tier — Cloudflare WAF rules if using CF Tunnel. (2) Pre-decryption (always) — IP token bucket per IP (50/hr), global (1000/hr), 256KB payload cap (HTTP 413). (3) Post-decryption (vault unlocked only) — per-DID limits (60/min), per-device on WebSocket (120/min). Per-DID limiting is mathematically impossible when vault is locked (sender DID encrypted inside NaCl envelope). (4) Circuit breaker on brain→core calls (prevent runaway loops). | 1.17, 1.7 | dina-core | NOT STARTED |
 | 1.18 | DID exchange (QR code) | L4 Dina-to-Dina | Generate QR code containing your DID. Scan another Dina's QR to establish connection. | 1.8, 1.17 | dina-core | NOT STARTED |
 | 1.19 | Basic Dina-to-Dina messaging | L4 Dina-to-Dina | Send/receive encrypted messages between two Home Nodes. Sender FS via ephemeral keys. DIDComm-compatible plaintext format. | 1.17, 1.18 | dina-core | NOT STARTED |
 | 1.19a | Simple relay for NAT | L4 Dina-to-Dina | ~100 lines of code relay for Home Nodes behind NAT/firewall. Receives forward envelope `{type: "dina/forward", to: "did:plc:...", payload: "<encrypted blob>"}`. Peels outer layer, forwards inner blob. Relay sees only encrypted blob + recipient DID. Community-run or self-hosted. | 1.17, 1.19 | relay | NOT STARTED |
-| 1.20 | **The Sancho Moment (E2E)** | All | Sancho's Dina sends "leaving home" → your core receives → brain checks vault for Sancho context → brain assembles whisper ("his mother was ill, put the kettle on") → core pushes to your phone. | 1.19, 1.15, 1.16 | All | NOT STARTED |
+| 1.20 | **The Sancho Moment (E2E)** | All | Sancho's Dina sends "leaving home" → your core receives → brain checks vault for Sancho context → brain assembles nudge ("his mother was ill, put the kettle on") → core pushes to your phone. | 1.19, 1.15, 1.16 | All | NOT STARTED |
 
 ---
 
@@ -83,6 +84,7 @@ v0.4 is a monolithic Python application. The target is the three-container sidec
 |---|------|-------|-----------|-----------|-----------|--------|
 | 1.21 | Pre-flight snapshots | L1 Storage | `sqlcipher_export()` via `ATTACH DATABASE ... KEY` (Keyed-to-Keyed backup — **NEVER `VACUUM INTO`**, which creates unencrypted copies on SQLCipher, CVE-level vulnerability). + `PRAGMA integrity_check` before every schema migration. Auto-rollback on failure. **CI/CD:** backup test must assert backup file has no valid plaintext SQLite header. | 1.7 | dina-core | NOT STARTED |
 | 1.22 | Off-site encrypted backup | L1 Storage | Encrypted vault snapshot pushed to S3/Backblaze on schedule | 1.7, 1.8 | dina-core | NOT STARTED |
+| 1.22a | Migration CLI (`dina export/import`) | L1 Storage | `dina export` bundles all node state (persona SQLite files, encrypted master key, salt, media, config) into a single AES-256-GCM encrypted `.dina` archive. `dina import` restores on new machine after passphrase verification. Excludes BRAIN_TOKEN, OAuth tokens, device tokens (regenerated on new machine). Enables zero-lock-in migration between hosting levels. | 1.7, 1.8, 1.21 | dina-core | NOT STARTED |
 | 1.23 | BIP-39 recovery | L0 Identity | Generate 24-word mnemonic from root key. Restore identity from mnemonic. | 1.8 | dina-core | NOT STARTED |
 | 1.24 | Persona system (basic) | L0 Identity | Two personas: `/consumer` and `/social`. Separate cryptographic compartments. **Persona access tiers:** Open (brain queries freely, logged), Restricted (brain can query but every access logged + user notified in daily briefing), Locked (requires user to unlock via client device with TTL, auto-locks on expiry). No `ATTACH DATABASE` — each persona query is a separate `/v1/vault/query` API call. Core checks access tier and enforces. Tier 0 audit log records every persona access. | 1.8 | dina-core | NOT STARTED |
 | 1.25 | Draft-Don't-Send (Gmail) | L7 Action | Brain drafts email reply → stored in Tier 4 (Staging, auto-expires 72h) → user reviews in Gmail → user presses Send. Dina NEVER calls `messages.send`. | 1.11, 1.15 | dina-brain + core | NOT STARTED |
@@ -99,11 +101,11 @@ v0.4 is a monolithic Python application. The target is the three-container sidec
 
 | # | Item | Layer | What It Is | Depends On | Container/Platform | Status |
 |---|------|-------|-----------|-----------|-------------------|--------|
-| 1.30 | Android client (basic) | Client | Kotlin + Jetpack Compose app. Connects to Home Node via WebSocket. Displays whispers, notifications, daily briefing. | 1.16, 1.29 | Android | NOT STARTED |
+| 1.30 | Android client (basic) | Client | Kotlin + Jetpack Compose app. Connects to Home Node via WebSocket. Displays nudges, notifications, daily briefing. | 1.16, 1.29 | Android | NOT STARTED |
 | 1.31 | Android local vault cache | Client | SQLite cache of recent 6 months. Offline search. Checkpoint-based sync with Home Node. | 1.30 | Android | NOT STARTED |
 | 1.32 | Android on-device LLM | Client | LiteRT-LM + Gemma 3n E2B for offline classification, quick replies. | 1.30 | Android | NOT STARTED |
 | 1.33 | Managed hosting infra | Infra | Multi-tenant hosting. One SQLite per user. **Onboarding UX:** "Sign up with email. Connect Gmail. Done." Everything else happens silently. Prompt mnemonic backup after 7 days (not during signup). Start with one default persona (`/personal`). Persona separation as power-user feature. Billing ($5-10/month). | 1.10, 1.29, 1.10b | Server | NOT STARTED |
-| 1.34 | FunctionGemma 270M routing | L6 Intelligence | Ultra-lightweight model (529MB) for fast intent classification and tool routing. Runs alongside Gemma 3n on llama-server. | 1.1 | llama-server | NOT STARTED |
+| 1.34 | FunctionGemma 270M routing | L6 Intelligence | Ultra-lightweight model (529MB) for fast intent classification and tool routing. Runs alongside Gemma 3n on llama. | 1.1 | llama | NOT STARTED |
 | 1.35 | WhatsApp connector (Android) | L2 Ingestion | NotificationListenerService captures WhatsApp notifications → pushes to Home Node via authenticated channel. **Warning:** weakest connector — fragile, text-only, no history. Breaks if WhatsApp changes notification format. May never be fully solved without regulation (EU DMA). | 1.30, 1.29 | Android | NOT STARTED |
 | 1.36 | Agent delegation (OpenClaw) | L7 Action | Delegate tasks to OpenClaw and other child agents via MCP. License renewal, form filling, task automation — all with `draft_only` constraint. No plugins — agents are external processes. | 1.25 | dina-brain | NOT STARTED |
 | 1.37 | Daily briefing | L6 Intelligence | End-of-day summary of Priority 3 items. "Here's what you missed that wasn't important enough to interrupt." | 1.5, 1.15 | dina-brain | NOT STARTED |
@@ -132,7 +134,7 @@ v0.4 is a monolithic Python application. The target is the three-container sidec
 | 2.14 | UnifiedPush (de-Googled) | Infra | Self-hosted push notification relay. Replaces FCM for users who don't want Google dependency. | 1.38 | NOT STARTED |
 | 2.15 | Nomic Embed V2 (upgrade) | L1 Storage | 475M MoE embedding model. Better retrieval quality for complex queries. Drop-in replacement for EmbeddingGemma. | 2.1 | NOT STARTED |
 | 2.16 | Confidential Computing (pilot) | Infra | AWS Nitro Enclaves / AMD SEV-SNP for managed hosting. Remote attestation proves unmodified binary. Eliminates honeypot problem at hardware level. **No vTPM for Convenience mode** — root on a running machine = game over regardless. vTPM only prevents offline attacks (stolen disk images), which is marginal protection for significant complexity. Users who care use Security mode (passphrase-gated). Confidential Computing is the real fix. | 1.33 | NOT STARTED |
-| 2.17 | Offline Mode (llama-server + whisper-server) | Infra | Add llama-server (Gemma 3n E4B GGUF, ~3GB RAM) + whisper-server (Whisper Large v3 Turbo, ~3GB RAM) to docker-compose. `DINA_MODE=offline` activates 5-container stack. LLM router fallback: cloud → local. 8GB minimum RAM. | 1.10, 1.6 | NOT STARTED |
+| 2.17 | Local LLM profile (llama) | Infra | Enable llama container (Gemma 3n E4B GGUF, ~3GB RAM) via `--profile local-llm`. 4-container stack (core, brain, pds, llama). LLM router: sensitive personas → local only (best privacy, skips Entity Vault), everything else → cloud with local fallback. Tier 3 PII scrubbing (LLM NER). 8GB minimum RAM. whisper.cpp STT deferred — voice via Deepgram in all profiles for Phase 2. | 1.10, 1.6 | NOT STARTED |
 | 2.18 | CalDAV connector (non-Google) | L2 Ingestion | CalDAV support for Apple Calendar, Nextcloud, etc. Handles incompatibilities in recurring events, timezone handling, shared calendars across providers. | 1.12 | NOT STARTED |
 | 2.19 | DIDComm v2 JWE wire upgrade | L4 Dina-to-Dina | Encryption envelope upgraded from libsodium `crypto_box_seal` to standard JWE (ECDH-1PU+A256KW, A256CBC-HS512). Wire-compatible with any DIDComm v2 library (Rust, Python, WASM). Plaintext format unchanged. | 1.19 | NOT STARTED |
 | 2.20 | Digital Estate (Dead Man's Switch) | L0 Identity | Periodic liveness check (every 90 days, configurable). No response → 3 attempts over 2 weeks → estate mode. Per-beneficiary keys delivered via Dina-to-Dina. Estate plan stored in Tier 0. Manual trigger with recovery phrase as alternative. Remaining data destroyed per config. | 1.24, 1.19, 1.22 | NOT STARTED |
@@ -166,11 +168,11 @@ v0.4 is a monolithic Python application. The target is the three-container sidec
 | Phase | Milestone | What You Can Demo |
 |-------|-----------|------------------|
 | **v0.4** | Proof of concept | YouTube analysis with signed verdicts, memory, DID identity |
-| **1a** | Sidecar running (Online Mode) | 2 containers up (core, brain), brain reasons via Gemini Flash Lite + Deepgram STT, core stores, reputation pushed to external PDS, YouTube analysis via ADK, admin UI on port 8500 |
-| **1b** | Sancho Moment | Two Dinas talk, whisper delivered to phone, guardian angel loop end-to-end |
+| **1a** | Sidecar running (Cloud LLM) | 3 containers up (core, brain, pds), brain reasons via Gemini Flash Lite + Deepgram STT, core stores, PDS hosts reputation data, YouTube analysis via ADK, admin UI proxied via core:443/admin |
+| **1b** | Sancho Moment | Two Dinas talk, nudge delivered to phone, guardian angel loop end-to-end |
 | **1c** | Safety & bots | Data backed up, drafts work, bot protocol standardized |
 | **1.5** | Real product | Android app, managed hosting, WhatsApp ingestion, daily briefing |
-| **2** | Intelligence | Semantic search, Reputation Graph live, trust rings, offline mode, digital estate, desktop client |
+| **2** | Intelligence | Semantic search, Reputation Graph live, trust rings, Local LLM profile, digital estate, desktop client |
 | **3** | Economy | Direct commerce via ONDC, expert marketplace, iOS, thin clients, foundation |
 
 ---
@@ -193,13 +195,13 @@ The following items were **missing from the original roadmap** but are described
 | 1.33 onboarding UX | 1.5 | Issue #21 — UX too complex for normal users |
 | 1.39 Security hardening | 1.5 | Issue #11 + architecture "What's Hard" #8 |
 | 2.16 Confidential Computing (no vTPM) | 2 | Issue #13 — root on VPS = game over. vTPM rejected (marginal offline-only protection, significant complexity). Confidential Computing is the real fix. Users who care use Security mode. |
-| 2.17 Offline Mode | 2 | Was in scope but no explicit roadmap item |
+| 2.17 Local LLM profile | 2 | Was in scope but no explicit roadmap item |
 | 2.18 CalDAV connector | 2 | Issue #18 — CalDAV compatibility nightmare |
 | 2.19 DIDComm v2 JWE upgrade | 2 | Described in transport layer phasing, no roadmap item |
 | 2.20 Digital Estate | 2 | Fully designed in architecture, zero roadmap items |
 | 2.21 Key management UX | 2 | Architecture "What's Hard" #7, no roadmap item |
 | 3.12 Noise XX sessions | 3 | Described in transport layer Phase 3, no roadmap item |
-| 1.10 (updated) PDS Split Sovereignty | 1a | PDS deployment model clarified: Type A (external, for home users) vs Type B (bundled via `--profile with-pds`, for VPS). Default container count reduced from 3 to 2. |
+| 1.10 (updated) 3+1 container model | 1a | PDS always bundled (3 containers: core, brain, pds). llama optional via `--profile local-llm` (4th container). Three deployment profiles: Cloud LLM (default, 3 containers), Local LLM (4 containers), Hybrid (4 containers). |
 | 2.3 (expanded) Reputation AppView monolith | 2 | Was a one-liner. Now specifies full stack: Go + PostgreSQL + `indigo` firehose consumer, signature verification, query API, aggregate score computation. |
 | 3.13 AppView sharded cluster | 3 | Migration path for 10M+ users: Kafka, ScyllaDB, Kubernetes HPA. Explicitly deferred. |
 | 3.14 AppView verification (trust-but-verify) | 3 | Three-layer verification: cryptographic proof, consensus check across AppViews, direct PDS spot-check. Meaningful only when multiple AppViews exist. |
@@ -211,8 +213,21 @@ The following items were **missing from the original roadmap** but are described
 | (architectural decision) Three-tier scheduling | 1b | No general-purpose scheduler. Go tickers for periodic tasks, reminder loop on vault for one-shots, delegate complex scheduling to calendar via OpenClaw. |
 | (architectural decision) Cold start: tool first, network second | All | Issue #20 — no "Review Bot" to build. Phase 1 is single-player: Brain + OpenClaw web search with user context. Reputation Graph activates gradually in Phase 2+ as network grows. |
 | (architectural decision) Calendar is a Sense, not a Tool | 1b | Issue #18 — Calendar data ingested into vault (read-only cache), not delegated to OpenClaw. Google REST API Phase 1, CalDAV Phase 2. Complex scheduling (multi-person) delegated to OpenClaw. |
-| 1.10b Admin UI (Python) | 1a | Issue #21 — Separate FastAPI app in brain container (port 8500, CLIENT_TOKEN). Dashboard, settings, onboarding flow. Python for speed of development, not Go templates. Moved to Phase 1a — a dev UI accelerates everything that follows. |
+| 1.10b Admin UI (Python) | 1a | Issue #21 — FastAPI sub-app at `/admin/*` in brain's unified Uvicorn (port 8200, CLIENT_TOKEN, proxied via core:443/admin with browser auth gateway). Dashboard, settings, onboarding flow. Python for speed of development, not Go templates. Moved to Phase 1a — a dev UI accelerates everything that follows. |
 | 1.33 (updated) Progressive onboarding | 1.5 | Issue #21 — Signal-level simplicity: email → OAuth → done. One default persona. Mnemonic backup deferred to day 7. Features unlock progressively over weeks. |
+
+| 1.10c Brain crash recovery (task queue + scratchpad) | 1a | Issue #18 — Outbox pattern: core tracks tasks in `dina_tasks` table, requeues unacknowledged after timeout. Scratchpad: brain checkpoints multi-step reasoning to vault. No external memory service needed for Phase 1. |
+| 1.22a Migration CLI (`dina export/import`) | 1c | Issue #9 — "Copy one file" was misleading. `dina export` bundles vault, keys, media, config into encrypted `.dina` archive. `dina import` restores. Zero lock-in. |
+| (architectural decision) Unified Uvicorn | 1a | Issue #5 — Brain runs single FastAPI master on port 8200 with sub-mounted `/api/*` (brain) and `/admin/*` (admin UI). Eliminates fat container antipattern (two processes, one healthcheck). |
+| (architectural decision) Browser auth gateway | 1a | Issue #6 — Core serves static login page, validates passphrase via Argon2id, sets HttpOnly/Secure/SameSite=Strict session cookie, translates to Bearer token before proxying to brain. Brain never knows about cookies. |
+| (architectural decision) FTS5 unicode61 tokenizer | All | Issue #7 — Porter stemmer forbidden (English-only, mangles Indic scripts). `unicode61 remove_diacritics 1` for Phase 1. ICU tokenizer for CJK deferred to Phase 3. |
+| (architectural decision) SLIP-0010 purpose code 9999' | All | Issue #17 — `m/44'` collides with BIP-44 crypto wallets. All derivation paths use `m/9999'/N'` to isolate Dina's cryptographic namespace. |
+| (architectural decision) Argon2id 128MB/3 iter | All | Issue #14 — Up from 64MB/1 iter. Configurable in `config.json`. Runs once at unlock, not per-request. |
+| (architectural decision) Logging PII policy | All | Log metadata only (persona, type, count, error code). Never log vault content, queries, or plaintext. Brain crash tracebacks → encrypted vault, not stdout. CI linter rejects banned patterns. |
+| (architectural decision) DIDComm 256KB payload cap | 1b | Issue #11 — DIDComm is JSON metadata, no media. 256KB max, HTTP 413 if exceeded. |
+| (architectural decision) Outbound message retry | 1b | Issue #19 — Outbox table in system.sqlite. 5 retries, 30s→2h exponential backoff, 24h TTL, 100-message queue cap. User notified after exhaustion. |
+| (architectural decision) Embedding migration | 2 | Issue #16 — Model name stored in vault metadata. On change: drop sqlite-vec index, background re-embed, FTS5 stays available. No dual-index needed — vault sizes are small enough for full rebuild. |
+| (architectural decision) Dead Drop 3-valve DoS defense | 1b | Issue #10 — State-aware ingress: fast path (in-memory) when unlocked, dead drop when locked. Valve 1: IP rate limit. Valve 2: 500MB spool cap, reject-new. Valve 3: sweeper feedback blocklist. |
 
 ## Known Inconsistencies Resolved
 
@@ -224,7 +239,7 @@ The following items were **missing from the original roadmap** but are described
 | Architecture says sqlite-vec is "Phase 1" | Clarified: sqlite-vec integration lands in Phase 2 with embeddings (2.1/2.2). Phase 1 uses FTS5 only. |
 | PII scrubber had no de-sanitization | Added replacement map + de-sanitization to 1.9 description |
 | No relay in roadmap despite architecture describing it | Added as 1.19a |
-| Container count included PDS as mandatory | Fixed: PDS is optional (`--profile with-pds` for Type B). Type A users push to external PDS. Default is 2 containers (core, brain), not 3. |
+| Container model was inconsistent | Fixed: 3+1 model. PDS always bundled (core, brain, pds = 3 containers). llama optional via `--profile local-llm`. Three deployment profiles: Cloud LLM (default), Local LLM, Hybrid. |
 
 ---
 

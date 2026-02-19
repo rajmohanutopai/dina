@@ -2,104 +2,119 @@
 
 This guide covers configuration beyond the defaults in [QUICKSTART.md](QUICKSTART.md). Two main areas:
 
-1. **Offline Mode** — Run Dina with local LLM and voice (no cloud APIs)
+1. **Local LLM Profile** — Run Dina with a local LLM (no cloud APIs for inference)
 2. **Advanced Networking** — Custom domains, censorship resistance, sovereign mesh
 
-> **Prerequisite:** You've already completed the [Quick Start](QUICKSTART.md) and have Dina running in Online Mode (`docker compose up -d`).
+> **Prerequisite:** You've already completed the [Quick Start](QUICKSTART.md) and have Dina running in the Cloud LLM profile (`docker compose up -d`).
 
 ---
 
-## Part 1: Offline Mode (Local LLM + Local Voice)
+## Part 1: Local LLM Profile
 
-Online Mode (the default) uses Gemini Flash Lite for text and Deepgram Nova-3 for voice — cheap, fast, and requires only 2GB RAM. Offline Mode runs everything locally — no cloud API calls for inference or speech-to-text. All data stays on your hardware.
+The Cloud LLM profile (the default) uses Gemini Flash Lite for text and Deepgram Nova-3 for voice — cheap, fast, and requires only 2GB RAM across 3 containers (core, brain, pds). The Local LLM profile adds a 4th container running a local LLM — no cloud API calls for text inference. Voice STT still uses Deepgram in all profiles for Phase 1.
 
-### When to use Offline Mode
+### When to use Local LLM profile
 
-- You want **zero cloud dependency** for LLM and voice processing
+- You want **zero cloud dependency** for LLM text processing
 - You're on unreliable or metered internet
 - You're a privacy maximalist — even PII-scrubbed queries shouldn't leave the device
+- You want **maximum sensitive persona privacy** (health/financial data processed entirely locally, never leaves Home Node)
 - You have the hardware (8GB+ RAM, Apple Silicon or x86 with AVX2)
 
 ### Hardware requirements
 
-| Resource | Online Mode (default) | Offline Mode |
+| Resource | Cloud LLM (default) | Local LLM |
 |----------|----------------------|--------------|
 | **RAM** | 2GB | **8GB minimum**, 16GB recommended |
 | **CPU** | 2 cores | 4+ cores. Apple Silicon (unified memory) or x86 with AVX2. |
-| **Storage** | 10GB | 20GB (+ ~6GB for model files) |
+| **Storage** | 10GB | 20GB (+ ~3GB for model files) |
 | **GPU** | Not needed | Not needed on Apple Silicon. Discrete GPU helps on x86. |
 | **Best hardware** | Raspberry Pi, cheap VPS | **Mac Mini M4 (16GB+)**, Intel NUC, dedicated server |
 
 ### What changes
 
-| Component | Online Mode | Offline Mode |
+| Component | Cloud LLM | Local LLM |
 |-----------|------------|--------------|
-| **Text LLM** | Gemini 2.5 Flash Lite (cloud) | Gemma 3n E4B via llama-server (local) |
-| **Voice STT** | Deepgram Nova-3 (cloud) | Whisper Large v3 Turbo via whisper-server (local) |
-| **Embeddings** | gemini-embedding-001 (cloud) | EmbeddingGemma 308M via llama-server (local) |
-| **PII scrubbing** | Regex in Go (always local) | Regex + Gemma 3n NER (local) |
-| **Containers** | 2 (core, brain). Add PDS with `--profile with-pds`. | 4 (core, brain, llama-server, whisper-server). Add PDS with `--profile with-pds`. |
+| **Text LLM** | Gemini 2.5 Flash Lite (cloud) | Gemma 3n E4B via llama (local) |
+| **Voice STT** | Deepgram Nova-3 (cloud) | Deepgram Nova-3 (cloud) |
+| **Embeddings** | gemini-embedding-001 (cloud) | EmbeddingGemma 308M via llama (local) |
+| **PII scrubbing** | Regex (Go) + spaCy NER (Python) — always local | Regex + spaCy NER + LLM NER via Gemma 3n (local) |
+| **Containers** | 3 (core, brain, pds) | 4 (core, brain, pds, llama) |
+| **Sensitive personas** | Supported via Entity Vault (names/orgs/locations scrubbed, cloud sees topics only) | Best privacy — processed entirely on llama, never leaves Home Node |
 | **Monthly cost** | ~$5-15 (API calls) | Hardware + electricity only |
 
-Everything else — vault, identity, personas, messaging, DIDComm — is identical in both modes.
+Everything else — vault, identity, personas, messaging, PDS — is identical across profiles.
 
-### Switching to Offline Mode
+### Switching to Local LLM profile
 
 ```bash
-# 1. Set the mode in your .env file
-echo "DINA_MODE=offline" >> .env
-
-# 2. Restart with all 4 containers
-docker compose up -d
+# Start with the local-llm profile (adds llama container)
+docker compose --profile local-llm up -d
 ```
 
-Docker Compose will automatically start the two additional containers:
-- **llama-server** — llama.cpp serving Gemma 3n E4B (GGUF format, ~3GB RAM)
-- **whisper-server** — whisper.cpp serving Whisper Large v3 Turbo (~3GB RAM)
+This starts 4 containers:
+- **dina-core** — vault, keys, messaging (always on)
+- **dina-brain** — reasoning, agent loop (always on)
+- **dina-pds** — AT Protocol PDS for reputation data (always on)
+- **llama** — llama.cpp serving Gemma 3n E4B (GGUF format, ~3GB RAM)
 
 Model files are downloaded automatically on first start. This takes 5-10 minutes depending on your internet speed.
 
-### Verifying Offline Mode
+### Verifying Local LLM profile
 
 ```bash
 # Check all 4 containers are running
-docker compose ps
+docker compose --profile local-llm ps
 
-# Verify llama-server is healthy
-curl http://localhost:8300/health
-
-# Verify whisper-server is healthy
-curl http://localhost:8400/health
+# Verify llama is healthy
+curl http://localhost:8080/health
 
 # Test text inference (should respond without cloud calls)
-curl -X POST http://localhost:8300/v1/chat/completions \
+curl -X POST http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"messages":[{"role":"user","content":"Hello"}],"max_tokens":50}'
 ```
 
 ### Performance expectations
 
-| Task | Online Mode | Offline Mode (Mac Mini M4) |
+| Task | Cloud LLM | Local LLM (Mac Mini M4) |
 |------|------------|---------------------------|
 | Text response (first token) | ~300-500ms | ~1-2s |
-| Voice transcription | ~150-300ms (streaming) | ~2-5s (batch, depends on clip length) |
+| Voice transcription | ~150-300ms (streaming) | ~150-300ms (streaming, Deepgram) |
 | Embedding generation | ~100ms | ~500ms |
 
-Offline Mode is slower but fully private. For interactive chat, the on-device LLM on your phone/laptop handles latency-sensitive tasks regardless of mode.
+Local LLM is slower for text but fully private. For interactive chat, the on-device LLM on your phone/laptop handles latency-sensitive tasks regardless of profile.
 
-### Switching back to Online Mode
+### Switching back to Cloud LLM profile
 
 ```bash
-# Change mode
-sed -i 's/DINA_MODE=offline/DINA_MODE=online/' .env
-
-# Restart (llama-server and whisper-server will stop)
+# Restart without the local-llm profile (llama container stops)
 docker compose up -d
 ```
 
-### Sensitive persona rule (both modes)
+### Hybrid profile
 
-Health and financial persona data is **never** sent to cloud LLMs or cloud STT, even in Online Mode. Queries involving health/financial context are routed to on-device LLM (if available) or rejected with a "local model required" error. This is enforced at the LLM router level in dina-brain.
+You can also run in **Hybrid mode** — llama handles sensitive personas and PII scrubbing, cloud handles everything else:
+
+```bash
+# Same command — brain's LLM router decides per-query
+docker compose --profile local-llm up -d
+```
+
+The LLM router in dina-brain automatically routes:
+- Health/financial persona queries → llama (local only, never cloud)
+- Simple lookups → SQLite FTS5 (no LLM at all)
+- Complex reasoning → cloud LLM (via PII scrubber: regex + spaCy NER)
+- PII scrubbing → regex + spaCy NER + llama LLM NER (three tiers, most accurate)
+
+### Sensitive persona rule (all profiles)
+
+Health and financial persona data always takes the strongest available privacy path:
+
+- **With llama (Local LLM / Hybrid):** Processed entirely on llama. Never leaves the Home Node. Best privacy.
+- **Without llama (Cloud LLM):** Mandatory Entity Vault scrubbing — all identifying entities (names, organizations, locations) are stripped by spaCy NER before routing to cloud LLM. The cloud provider sees health/financial **topics** but cannot identify **who**. User consents to this during setup.
+
+This is enforced at the LLM router level in dina-brain. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full Entity Vault mechanism.
 
 ---
 
@@ -107,7 +122,7 @@ Health and financial persona data is **never** sent to cloud LLMs or cloud STT, 
 
 Dina supports three ingress options. The [Quick Start](QUICKSTART.md) uses Tailscale Funnel. This section covers production and sovereign networking setups.
 
-Each option exposes your Home Node's DIDComm endpoint to the internet so other Dinas can reach you. dina-core listens on `localhost:8443` (DIDComm + WebSocket) and `localhost:8100` (internal brain ↔ core API). Neither port is exposed to the internet until you set up ingress below.
+Each option exposes your Home Node's messaging endpoint to the internet so other Dinas can reach you. dina-core listens on `localhost:443` (NaCl messaging + WebSocket + admin proxy) and `localhost:8100` (internal brain ↔ core API). Neither port is exposed to the internet until you set up ingress below.
 
 ### Option A: Tailscale Funnel (Getting Started)
 
@@ -123,7 +138,7 @@ curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up
 
 # 3. Expose Dina to the internet
-sudo tailscale funnel 8443
+sudo tailscale funnel 443
 ```
 
 Done. Your Dina is reachable at `https://<machine-name>.<tailnet>.ts.net/`.
@@ -142,7 +157,7 @@ dina network set-endpoint "https://<machine-name>.<tailnet>.ts.net/"
 | Firewall changes | None — outbound-only connection |
 | Latency | ~50-100 ms |
 
-**Stopping it:** `sudo tailscale funnel --off 8443`
+**Stopping it:** `sudo tailscale funnel --off 443`
 
 **Alternative: Zrok (fully open source)**
 
@@ -151,7 +166,7 @@ If you prefer not to depend on Tailscale, [Zrok](https://zrok.io/) provides a si
 ```bash
 curl -sSf https://get.openziti.io/install-zrok.bash | bash
 zrok enable <your-token>
-zrok share public localhost:8443
+zrok share public localhost:443
 ```
 
 ---
@@ -178,7 +193,7 @@ credentials-file: /home/dina/.cloudflared/<TUNNEL_ID>.json
 
 ingress:
   - hostname: dina.yourdomain.com
-    service: https://localhost:8443
+    service: https://localhost:443
     originRequest:
       noTLSVerify: true
   - service: http_status:404
@@ -262,15 +277,15 @@ yggdrasilctl getSelf
 dina network enable-yggdrasil
 ```
 
-Done. Your Dina is reachable at `https://[200:abcd:...]:8443/` from any other Yggdrasil node.
+Done. Your Dina is reachable at `https://[200:abcd:...]:443/` from any other Yggdrasil node.
 
 ```bash
-dina network set-endpoint "https://[200:1234:5678:abcd::1]:8443/"
+dina network set-endpoint "https://[200:1234:5678:abcd::1]:443/"
 ```
 
 | Property | Value |
 |----------|-------|
-| TLS | Yggdrasil encryption (E2E) + DIDComm encryption (double layer) |
+| TLS | Yggdrasil encryption (E2E) + NaCl encryption (double layer) |
 | NAT traversal | Full mesh — automatic via Yggdrasil overlay |
 | DDoS protection | None (but address is not in public DNS) |
 | Custom domain | No (IPv6 address only) |
@@ -281,9 +296,9 @@ dina network set-endpoint "https://[200:1234:5678:abcd::1]:8443/"
 **Why double encryption?** Traffic between two Dinas on Yggdrasil is encrypted twice:
 
 1. **Yggdrasil layer** — Curve25519 session key, protects against mesh eavesdropping
-2. **DIDComm layer** — X25519 per-message key, ensures only the intended DID can read it
+2. **NaCl layer** — libsodium `crypto_box_seal` per-message encryption, ensures only the intended DID can read it
 
-Even if a Yggdrasil peer node is compromised, DIDComm encryption keeps your messages private.
+Even if a Yggdrasil peer node is compromised, NaCl encryption keeps your messages private.
 
 **Stopping it:** `sudo systemctl stop yggdrasil && dina network disable-yggdrasil`
 
@@ -291,13 +306,13 @@ Even if a Yggdrasil peer node is compromised, DIDComm encryption keeps your mess
 
 ### Running Multiple Ingress Options Simultaneously
 
-All three can run at the same time. Each independently forwards traffic to `localhost:8443`:
+All three can run at the same time. Each independently forwards traffic to `localhost:443`:
 
 ```
 Internet
-  ├── Tailscale Funnel ──→ localhost:8443
-  ├── Cloudflare Tunnel ──→ localhost:8443
-  └── Yggdrasil mesh ──→ [ygg_ipv6]:8443
+  ├── Tailscale Funnel ──→ localhost:443
+  ├── Cloudflare Tunnel ──→ localhost:443
+  └── Yggdrasil mesh ──→ [ygg_ipv6]:443
                               │
                           dina-core
 ```
@@ -307,7 +322,7 @@ Your DID Document can advertise multiple endpoints. Connecting Dinas pick whiche
 ```bash
 # Register multiple endpoints
 dina network set-endpoint "https://dina.yourdomain.com/" --id didcomm-cf
-dina network set-endpoint "https://[200:abcd:...]:8443/" --id didcomm-ygg
+dina network set-endpoint "https://[200:abcd:...]:443/" --id didcomm-ygg
 ```
 
 This publishes a DID Document with both service endpoints:
@@ -323,7 +338,7 @@ This publishes a DID Document with both service endpoints:
     {
       "id": "#didcomm-ygg",
       "type": "DIDCommMessaging",
-      "serviceEndpoint": "https://[200:abcd:...]:8443/"
+      "serviceEndpoint": "https://[200:abcd:...]:443/"
     }
   ]
 }

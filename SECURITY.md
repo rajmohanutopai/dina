@@ -145,7 +145,7 @@ SBOMs are published alongside each release on the GitHub Releases page.
 
 Reproducible builds (given the same source, produce bit-identical binaries) are extremely hard to achieve with Python dependencies, CUDA kernels, and AI model files. Non-deterministic compilation, floating transitive dependencies, and platform-specific optimizations make bit-identical output impractical.
 
-**The Go core binary is closer to reproducible** (Go has good reproducibility support), but the Python brain and llama-server containers are not.
+**The Go core binary is closer to reproducible** (Go has good reproducibility support), but the Python brain and llama containers are not.
 
 **Our position:** Digest pinning + signing + SBOM provides sufficient supply chain integrity for Phase 1. Reproducible builds may be revisited if demand warrants the effort, but they are not on the roadmap.
 
