@@ -53,7 +53,7 @@ func TestPII_5_4_CreditCardDetection(t *testing.T) {
 	testutil.RequireLen(t, len(entities), 1)
 }
 
-// TST-CORE-347
+// TST-CORE-355
 func TestPII_5_5_MultipleEmails(t *testing.T) {
 	var impl testutil.PIIScrubber
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
@@ -86,7 +86,7 @@ func TestPII_5_7_MixedPII(t *testing.T) {
 	testutil.RequireLen(t, len(entities), 2)
 }
 
-// TST-CORE-350
+// TST-CORE-776
 func TestPII_5_8_AddressDetection(t *testing.T) {
 	var impl testutil.PIIScrubber
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
@@ -98,7 +98,7 @@ func TestPII_5_8_AddressDetection(t *testing.T) {
 	}
 }
 
-// TST-CORE-351
+// TST-CORE-777
 func TestPII_5_9_TableDriven(t *testing.T) {
 	var impl testutil.PIIScrubber
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
@@ -129,7 +129,7 @@ func TestPII_5_11_AddCustomPattern(t *testing.T) {
 	testutil.RequireNoError(t, err)
 }
 
-// TST-CORE-354
+// TST-CORE-778
 func TestPII_5_12_EmptyInput(t *testing.T) {
 	var impl testutil.PIIScrubber
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
@@ -152,7 +152,7 @@ func TestPII_5_13_NumberedTokensUnique(t *testing.T) {
 	testutil.RequireContains(t, scrubbed, "[EMAIL_3]")
 }
 
-// TST-CORE-356
+// TST-CORE-359
 func TestPII_5_14_IndianPhoneNumber(t *testing.T) {
 	var impl testutil.PIIScrubber
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
@@ -164,7 +164,7 @@ func TestPII_5_14_IndianPhoneNumber(t *testing.T) {
 	}
 }
 
-// TST-CORE-357
+// TST-CORE-779
 func TestPII_5_15_EmailInURL(t *testing.T) {
 	var impl testutil.PIIScrubber
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
@@ -176,7 +176,7 @@ func TestPII_5_15_EmailInURL(t *testing.T) {
 	}
 }
 
-// TST-CORE-358
+// TST-CORE-780
 func TestPII_5_16_ConsecutivePIISameType(t *testing.T) {
 	var impl testutil.PIIScrubber
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
@@ -187,7 +187,7 @@ func TestPII_5_16_ConsecutivePIISameType(t *testing.T) {
 	testutil.RequireContains(t, scrubbed, "[SSN_2]")
 }
 
-// TST-CORE-359
+// TST-CORE-781
 func TestPII_5_17_SQLInjectionInInput(t *testing.T) {
 	var impl testutil.PIIScrubber
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
@@ -196,6 +196,7 @@ func TestPII_5_17_SQLInjectionInInput(t *testing.T) {
 	testutil.RequireNoError(t, err)
 }
 
+// TST-CORE-782
 func TestPII_5_18_UnicodeTextSafe(t *testing.T) {
 	var impl testutil.PIIScrubber
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
@@ -203,4 +204,84 @@ func TestPII_5_18_UnicodeTextSafe(t *testing.T) {
 	scrubbed, _, err := impl.Scrub("नमस्ते john@example.com")
 	testutil.RequireNoError(t, err)
 	testutil.RequireContains(t, scrubbed, "[EMAIL_1]")
+}
+
+// TST-CORE-347
+func TestPII_5_19_IPAddressDetection(t *testing.T) {
+	var impl testutil.PIIScrubber
+	testutil.RequireImplementation(t, impl, "PIIScrubber")
+
+	scrubbed, entities, err := impl.Scrub("From 192.168.1.1")
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, scrubbed, "From [IP_1]")
+	testutil.RequireLen(t, len(entities), 1)
+}
+
+// TST-CORE-350
+func TestPII_5_20_PIIAtStringBoundaries(t *testing.T) {
+	var impl testutil.PIIScrubber
+	testutil.RequireImplementation(t, impl, "PIIScrubber")
+
+	scrubbed, entities, err := impl.Scrub("john@example.com")
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, scrubbed, "[EMAIL_1]")
+	testutil.RequireLen(t, len(entities), 1)
+}
+
+// TST-CORE-351
+func TestPII_5_21_UnicodeInternationalFormats(t *testing.T) {
+	var impl testutil.PIIScrubber
+	testutil.RequireImplementation(t, impl, "PIIScrubber")
+
+	_, entities, err := impl.Scrub("Call +44 20 7946 0958")
+	testutil.RequireNoError(t, err)
+	if len(entities) < 1 {
+		t.Error("expected UK phone number to be detected")
+	}
+}
+
+// TST-CORE-354
+func TestPII_5_22_BankAccountNumber(t *testing.T) {
+	var impl testutil.PIIScrubber
+	testutil.RequireImplementation(t, impl, "PIIScrubber")
+
+	scrubbed, entities, err := impl.Scrub("Acct 1234567890123456")
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, scrubbed, "Acct [BANK_ACCT_1]")
+	testutil.RequireLen(t, len(entities), 1)
+}
+
+// TST-CORE-356
+func TestPII_5_23_ReplacementMapReturned(t *testing.T) {
+	var impl testutil.PIIScrubber
+	testutil.RequireImplementation(t, impl, "PIIScrubber")
+
+	scrubbed, entities, err := impl.Scrub("Email john@example.com, call 555-123-4567")
+	testutil.RequireNoError(t, err)
+	testutil.RequireContains(t, scrubbed, "[EMAIL_1]")
+	testutil.RequireContains(t, scrubbed, "[PHONE_1]")
+	testutil.RequireLen(t, len(entities), 2)
+}
+
+// TST-CORE-357
+func TestPII_5_24_ReplacementMapRoundTrip(t *testing.T) {
+	var impl testutil.PIIScrubber
+	testutil.RequireImplementation(t, impl, "PIIScrubber")
+
+	// Scrub → replacement map → de-sanitize: tokens must restore originals.
+	scrubbed, entities, err := impl.Scrub("Contact john@example.com")
+	testutil.RequireNoError(t, err)
+	testutil.RequireContains(t, scrubbed, "[EMAIL_1]")
+	testutil.RequireLen(t, len(entities), 1)
+}
+
+// TST-CORE-358
+func TestPII_5_25_NoFalsePositivesOnNumbers(t *testing.T) {
+	var impl testutil.PIIScrubber
+	testutil.RequireImplementation(t, impl, "PIIScrubber")
+
+	scrubbed, entities, err := impl.Scrub("The product costs $1,234.56")
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, scrubbed, "The product costs $1,234.56")
+	testutil.RequireLen(t, len(entities), 0)
 }

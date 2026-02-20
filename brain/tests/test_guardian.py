@@ -46,7 +46,7 @@ async def test_guardian_2_1_2_fiduciary_security_threat(mock_guardian) -> None:
     pytest.skip("GuardianLoop not yet implemented")
 
 
-# TST-BRAIN-021
+# TST-BRAIN-029
 @pytest.mark.asyncio
 async def test_guardian_2_1_3_fiduciary_health_critical(mock_guardian) -> None:
     """§2.1.3: Critical lab result -> fiduciary (medical urgency)."""
@@ -54,7 +54,7 @@ async def test_guardian_2_1_3_fiduciary_health_critical(mock_guardian) -> None:
     pytest.skip("GuardianLoop not yet implemented")
 
 
-# TST-BRAIN-022
+# TST-BRAIN-021
 @pytest.mark.asyncio
 async def test_guardian_2_1_4_fiduciary_financial_overdraft(mock_guardian) -> None:
     """§2.1.4: Payment due with overdrawn account -> fiduciary."""
@@ -62,7 +62,7 @@ async def test_guardian_2_1_4_fiduciary_financial_overdraft(mock_guardian) -> No
     pytest.skip("GuardianLoop not yet implemented")
 
 
-# TST-BRAIN-023
+# TST-BRAIN-022
 @pytest.mark.asyncio
 async def test_guardian_2_1_5_solicited_meeting_reminder(mock_guardian) -> None:
     """§2.1.5: User-requested meeting reminder -> solicited."""
@@ -70,7 +70,7 @@ async def test_guardian_2_1_5_solicited_meeting_reminder(mock_guardian) -> None:
     pytest.skip("GuardianLoop not yet implemented")
 
 
-# TST-BRAIN-024
+# TST-BRAIN-023
 @pytest.mark.asyncio
 async def test_guardian_2_1_6_solicited_search_result(mock_guardian) -> None:
     """§2.1.6: User asked for a product search; result returned -> solicited."""
@@ -81,7 +81,7 @@ async def test_guardian_2_1_6_solicited_search_result(mock_guardian) -> None:
     pytest.skip("GuardianLoop not yet implemented")
 
 
-# TST-BRAIN-025
+# TST-BRAIN-024
 @pytest.mark.asyncio
 async def test_guardian_2_1_7_engagement_podcast_released(mock_guardian) -> None:
     """§2.1.7: New podcast episode -> engagement (save for briefing)."""
@@ -89,7 +89,7 @@ async def test_guardian_2_1_7_engagement_podcast_released(mock_guardian) -> None
     pytest.skip("GuardianLoop not yet implemented")
 
 
-# TST-BRAIN-026
+# TST-BRAIN-025
 @pytest.mark.asyncio
 async def test_guardian_2_1_8_engagement_promo_offer(mock_guardian) -> None:
     """§2.1.8: Promotional offer from known vendor -> engagement."""
@@ -101,7 +101,7 @@ async def test_guardian_2_1_8_engagement_promo_offer(mock_guardian) -> None:
     pytest.skip("GuardianLoop not yet implemented")
 
 
-# TST-BRAIN-027
+# TST-BRAIN-361
 @pytest.mark.asyncio
 async def test_guardian_2_1_9_fiduciary_overrides_dnd(
     mock_guardian, mock_silence_classifier,
@@ -111,7 +111,7 @@ async def test_guardian_2_1_9_fiduciary_overrides_dnd(
     pytest.skip("GuardianLoop not yet implemented")
 
 
-# TST-BRAIN-028
+# TST-BRAIN-362
 @pytest.mark.asyncio
 async def test_guardian_2_1_10_solicited_deferred_during_dnd(
     mock_guardian, mock_silence_classifier,
@@ -121,7 +121,7 @@ async def test_guardian_2_1_10_solicited_deferred_during_dnd(
     pytest.skip("GuardianLoop not yet implemented")
 
 
-# TST-BRAIN-029
+# TST-BRAIN-363
 @pytest.mark.asyncio
 async def test_guardian_2_1_11_engagement_never_interrupts(mock_guardian) -> None:
     """§2.1.11: Engagement events never trigger push notification."""
@@ -129,11 +129,48 @@ async def test_guardian_2_1_11_engagement_never_interrupts(mock_guardian) -> Non
     pytest.skip("GuardianLoop not yet implemented")
 
 
-# TST-BRAIN-030
+# TST-BRAIN-027
 @pytest.mark.asyncio
 async def test_guardian_2_1_12_ambiguous_defaults_to_engagement(mock_guardian) -> None:
     """§2.1.12: Event with no clear urgency defaults to engagement (Silence First)."""
     event = make_event(type="unknown", body="Some vague notification")
+    pytest.skip("GuardianLoop not yet implemented")
+
+
+# TST-BRAIN-026
+@pytest.mark.asyncio
+async def test_guardian_2_1_13_engagement_social_media_update(mock_guardian) -> None:
+    """§2.1.13: Social media update ('Friend posted a photo') -> engagement."""
+    event = make_engagement_event(
+        type="social",
+        body="Friend posted a photo",
+        source="social_media",
+    )
+    pytest.skip("GuardianLoop not yet implemented")
+
+
+# TST-BRAIN-028
+@pytest.mark.asyncio
+async def test_guardian_2_1_14_no_notification_routine_sync(mock_guardian) -> None:
+    """§2.1.14: Routine background sync -> silently logged, no notification."""
+    event = make_event(type="background_sync", body="Routine sync completed")
+    pytest.skip("GuardianLoop not yet implemented")
+
+
+# TST-BRAIN-030
+@pytest.mark.asyncio
+async def test_guardian_2_1_15_fiduciary_composite_heuristic(mock_guardian) -> None:
+    """§2.1.15: Composite heuristic — trusted sender + 'urgent' keyword -> fiduciary; unknown sender -> not fiduciary."""
+    event_trusted = make_event(
+        type="message",
+        body="Urgent: please review this immediately",
+        source="trusted_contact",
+    )
+    event_unknown = make_event(
+        type="message",
+        body="Urgent: please review this immediately",
+        source="unknown_sender",
+    )
     pytest.skip("GuardianLoop not yet implemented")
 
 
@@ -150,7 +187,7 @@ async def test_guardian_2_2_1_vault_unlocked(mock_guardian, mock_core_client) ->
     pytest.skip("GuardianLoop not yet implemented")
 
 
-# TST-BRAIN-032
+# TST-BRAIN-033
 @pytest.mark.asyncio
 async def test_guardian_2_2_2_vault_locked(mock_guardian, mock_core_client) -> None:
     """§2.2.2: vault_locked event flushes in-memory state for that persona."""
@@ -158,7 +195,7 @@ async def test_guardian_2_2_2_vault_locked(mock_guardian, mock_core_client) -> N
     pytest.skip("GuardianLoop not yet implemented")
 
 
-# TST-BRAIN-033
+# TST-BRAIN-032
 @pytest.mark.asyncio
 async def test_guardian_2_2_3_degraded_mode_when_vault_unreachable(
     mock_guardian, mock_core_client,
@@ -203,13 +240,21 @@ async def test_guardian_2_3_2_multi_step_reasoning_with_scratchpad(
 
 # TST-BRAIN-037
 @pytest.mark.asyncio
+async def test_guardian_2_3_11_agent_intent_review_general(mock_guardian) -> None:
+    """§2.3.11: External agent submits intent — Guardian evaluates against privacy rules, trust, state."""
+    intent = make_safe_intent()
+    pytest.skip("GuardianLoop not yet implemented")
+
+
+# TST-BRAIN-038
+@pytest.mark.asyncio
 async def test_guardian_2_3_3_agent_intent_review_safe(mock_guardian) -> None:
     """§2.3.3: Safe agent intent (fetch_weather) is auto-approved."""
     intent = make_safe_intent()
     pytest.skip("GuardianLoop not yet implemented")
 
 
-# TST-BRAIN-038
+# TST-BRAIN-039
 @pytest.mark.asyncio
 async def test_guardian_2_3_4_agent_intent_review_risky(mock_guardian) -> None:
     """§2.3.4: Risky intent (send_email) is flagged for user review."""
@@ -217,7 +262,7 @@ async def test_guardian_2_3_4_agent_intent_review_risky(mock_guardian) -> None:
     pytest.skip("GuardianLoop not yet implemented")
 
 
-# TST-BRAIN-039
+# TST-BRAIN-040
 @pytest.mark.asyncio
 async def test_guardian_2_3_5_agent_intent_review_blocked(mock_guardian) -> None:
     """§2.3.5: Blocked intent (untrusted bot reading vault) is rejected."""
@@ -225,7 +270,7 @@ async def test_guardian_2_3_5_agent_intent_review_blocked(mock_guardian) -> None
     pytest.skip("GuardianLoop not yet implemented")
 
 
-# TST-BRAIN-040
+# TST-BRAIN-364
 @pytest.mark.asyncio
 async def test_guardian_2_3_6_risky_intent_logs_audit_trail(
     mock_guardian, mock_core_client,
@@ -235,7 +280,7 @@ async def test_guardian_2_3_6_risky_intent_logs_audit_trail(
     pytest.skip("GuardianLoop not yet implemented")
 
 
-# TST-BRAIN-041
+# TST-BRAIN-365
 @pytest.mark.asyncio
 async def test_guardian_2_3_7_blocked_intent_logs_audit_trail(
     mock_guardian, mock_core_client,
@@ -245,7 +290,7 @@ async def test_guardian_2_3_7_blocked_intent_logs_audit_trail(
     pytest.skip("GuardianLoop not yet implemented")
 
 
-# TST-BRAIN-042
+# TST-BRAIN-041
 @pytest.mark.asyncio
 async def test_guardian_2_3_8_processing_timeout(mock_guardian) -> None:
     """§2.3.8: Guardian imposes a timeout on event processing."""
@@ -253,11 +298,19 @@ async def test_guardian_2_3_8_processing_timeout(mock_guardian) -> None:
     pytest.skip("GuardianLoop not yet implemented")
 
 
-# TST-BRAIN-043
+# TST-BRAIN-042
 @pytest.mark.asyncio
 async def test_guardian_2_3_9_error_recovery_continues_loop(mock_guardian) -> None:
     """§2.3.9: A failed event does not crash the loop — guardian recovers."""
     event = make_event(type="bad_payload")
+    pytest.skip("GuardianLoop not yet implemented")
+
+
+# TST-BRAIN-043
+@pytest.mark.asyncio
+async def test_guardian_2_3_12_crash_handler_sanitized_stdout(mock_guardian) -> None:
+    """§2.3.12: Crash handler writes ONLY sanitized one-liner to stdout — no PII, no traceback frames."""
+    crash = make_crash_report(error="RuntimeError", task_id="guardian-crash-002")
     pytest.skip("GuardianLoop not yet implemented")
 
 
@@ -306,6 +359,47 @@ async def test_guardian_2_3_1_3_draft_includes_confidence_score(mock_guardian) -
 
 # TST-BRAIN-048
 @pytest.mark.asyncio
+async def test_guardian_2_3_1_9_below_threshold_flagged(mock_guardian) -> None:
+    """§2.3.1.9: Draft with confidence < 0.7 flagged for review with warning."""
+    intent = make_risky_intent(action="draft_email")
+    pytest.skip("Draft-Don't-Send not yet implemented")
+
+
+# TST-BRAIN-049
+@pytest.mark.asyncio
+async def test_guardian_2_3_1_10_high_risk_legal(mock_guardian) -> None:
+    """§2.3.1.10: Email from attorney with legal terms -> summary only, NO draft created."""
+    intent = make_risky_intent(
+        action="draft_email",
+        target="attorney@lawfirm.com",
+    )
+    pytest.skip("Draft-Don't-Send not yet implemented")
+
+
+# TST-BRAIN-050
+@pytest.mark.asyncio
+async def test_guardian_2_3_1_11_high_risk_financial(mock_guardian) -> None:
+    """§2.3.1.11: Email about large financial transaction -> summary only, no auto-draft."""
+    intent = make_risky_intent(
+        action="draft_email",
+        target="finance@company.com",
+    )
+    pytest.skip("Draft-Don't-Send not yet implemented")
+
+
+# TST-BRAIN-051
+@pytest.mark.asyncio
+async def test_guardian_2_3_1_12_high_risk_emotional(mock_guardian) -> None:
+    """§2.3.1.12: Email about sensitive personal matter -> summary only, no auto-draft."""
+    intent = make_risky_intent(
+        action="draft_email",
+        target="friend@personal.com",
+    )
+    pytest.skip("Draft-Don't-Send not yet implemented")
+
+
+# TST-BRAIN-366
+@pytest.mark.asyncio
 async def test_guardian_2_3_1_4_high_risk_classified_correctly(mock_guardian) -> None:
     """§2.3.1.4: Email with attachment to external domain -> high-risk classification."""
     intent = make_risky_intent(
@@ -316,7 +410,7 @@ async def test_guardian_2_3_1_4_high_risk_classified_correctly(mock_guardian) ->
     pytest.skip("Draft-Don't-Send not yet implemented")
 
 
-# TST-BRAIN-049
+# TST-BRAIN-367
 @pytest.mark.asyncio
 async def test_guardian_2_3_1_5_draft_preserves_original_intent(mock_guardian) -> None:
     """§2.3.1.5: Draft preserves the original intent metadata for audit."""
@@ -324,7 +418,7 @@ async def test_guardian_2_3_1_5_draft_preserves_original_intent(mock_guardian) -
     pytest.skip("Draft-Don't-Send not yet implemented")
 
 
-# TST-BRAIN-050
+# TST-BRAIN-368
 @pytest.mark.asyncio
 async def test_guardian_2_3_1_6_no_send_even_if_agent_requests(
     mock_guardian, mock_mcp_client,
@@ -334,7 +428,7 @@ async def test_guardian_2_3_1_6_no_send_even_if_agent_requests(
     pytest.skip("Draft-Don't-Send not yet implemented")
 
 
-# TST-BRAIN-051
+# TST-BRAIN-052
 @pytest.mark.asyncio
 async def test_guardian_2_3_1_7_draft_notification_to_user(mock_guardian) -> None:
     """§2.3.1.7: After creating a draft, guardian sends a solicited notification."""
@@ -342,7 +436,7 @@ async def test_guardian_2_3_1_7_draft_notification_to_user(mock_guardian) -> Non
     pytest.skip("Draft-Don't-Send not yet implemented")
 
 
-# TST-BRAIN-052
+# TST-BRAIN-369
 @pytest.mark.asyncio
 async def test_guardian_2_3_1_8_bulk_draft_rate_limited(mock_guardian) -> None:
     """§2.3.1.8: Burst of draft requests is rate-limited to prevent spam."""
@@ -405,7 +499,7 @@ async def test_guardian_2_3_2_4_never_sees_credentials(
     pytest.skip("Cart Handover not yet implemented")
 
 
-# TST-BRAIN-057
+# TST-BRAIN-370
 @pytest.mark.asyncio
 async def test_guardian_2_3_2_5_agent_never_holds_keys(mock_guardian) -> None:
     """§2.3.2.5: Agent DID never has access to wallet private keys."""
@@ -413,7 +507,7 @@ async def test_guardian_2_3_2_5_agent_never_holds_keys(mock_guardian) -> None:
     pytest.skip("Cart Handover not yet implemented")
 
 
-# TST-BRAIN-058
+# TST-BRAIN-057
 @pytest.mark.asyncio
 async def test_guardian_2_3_2_6_outcome_recorded_after_handover(
     mock_guardian, mock_core_client,
@@ -423,7 +517,7 @@ async def test_guardian_2_3_2_6_outcome_recorded_after_handover(
     pytest.skip("Cart Handover not yet implemented")
 
 
-# TST-BRAIN-059
+# TST-BRAIN-058
 @pytest.mark.asyncio
 async def test_guardian_2_3_2_7_cart_handover_expiry(mock_guardian) -> None:
     """§2.3.2.7: Cart handover has a TTL — expires if user does not act."""
@@ -435,7 +529,34 @@ async def test_guardian_2_3_2_7_cart_handover_expiry(mock_guardian) -> None:
     pytest.skip("Cart Handover not yet implemented")
 
 
+# TST-BRAIN-059
+@pytest.mark.asyncio
+async def test_guardian_2_3_2_10_outcome_followup_timing(
+    mock_guardian, mock_core_client,
+) -> None:
+    """§2.3.2.10: 4 weeks after purchase, Brain asks 'How\'s that chair?' for outcome collection."""
+    pytest.skip("Cart Handover not yet implemented")
+
+
 # TST-BRAIN-060
+@pytest.mark.asyncio
+async def test_guardian_2_3_2_11_outcome_inference_no_explicit_response(
+    mock_guardian, mock_core_client,
+) -> None:
+    """§2.3.2.11: Infer outcome from usage signals without explicit feedback."""
+    pytest.skip("Cart Handover not yet implemented")
+
+
+# TST-BRAIN-061
+@pytest.mark.asyncio
+async def test_guardian_2_3_2_12_outcome_anonymization(
+    mock_guardian, mock_core_client,
+) -> None:
+    """§2.3.2.12: Anonymized outcome record contains ONLY §08 Lexicon fields — no user DID, no names."""
+    pytest.skip("Cart Handover not yet implemented")
+
+
+# TST-BRAIN-371
 @pytest.mark.asyncio
 async def test_guardian_2_3_2_8_handover_includes_summary(mock_guardian) -> None:
     """§2.3.2.8: Cart handover message includes a human-readable summary."""
@@ -447,7 +568,7 @@ async def test_guardian_2_3_2_8_handover_includes_summary(mock_guardian) -> None
     pytest.skip("Cart Handover not yet implemented")
 
 
-# TST-BRAIN-061
+# TST-BRAIN-372
 @pytest.mark.asyncio
 async def test_guardian_2_3_2_9_duplicate_handover_idempotent(mock_guardian) -> None:
     """§2.3.2.9: Duplicate cart handover for same cart ID is idempotent."""
@@ -576,6 +697,33 @@ async def test_guardian_2_5_6_restricted_persona_summary(
 
 # TST-BRAIN-072
 @pytest.mark.asyncio
+async def test_guardian_2_5_10_zero_restricted_accesses_omitted(
+    mock_guardian, mock_core_client,
+) -> None:
+    """§2.5.10: Briefing omits restricted persona section when zero accesses in 24h."""
+    pytest.skip("BriefingGenerator not yet implemented")
+
+
+# TST-BRAIN-073
+@pytest.mark.asyncio
+async def test_guardian_2_5_11_restricted_summary_queries_audit_log(
+    mock_guardian, mock_core_client,
+) -> None:
+    """§2.5.11: Brain queries core audit log for restricted persona access counts."""
+    pytest.skip("BriefingGenerator not yet implemented")
+
+
+# TST-BRAIN-074
+@pytest.mark.asyncio
+async def test_guardian_2_5_12_briefing_permanently_disabled(
+    mock_guardian, mock_core_client,
+) -> None:
+    """§2.5.12: When briefing config disabled, no briefing generated — fully off, not deferred."""
+    pytest.skip("BriefingGenerator not yet implemented")
+
+
+# TST-BRAIN-373
+@pytest.mark.asyncio
 async def test_guardian_2_5_7_briefing_includes_fiduciary_recap(
     mock_guardian, mock_core_client,
 ) -> None:
@@ -585,7 +733,7 @@ async def test_guardian_2_5_7_briefing_includes_fiduciary_recap(
     pytest.skip("BriefingGenerator not yet implemented")
 
 
-# TST-BRAIN-073
+# TST-BRAIN-374
 @pytest.mark.asyncio
 async def test_guardian_2_5_8_briefing_multi_persona(
     mock_guardian, mock_core_client,
@@ -596,7 +744,7 @@ async def test_guardian_2_5_8_briefing_multi_persona(
     pytest.skip("BriefingGenerator not yet implemented")
 
 
-# TST-BRAIN-074
+# TST-BRAIN-375
 @pytest.mark.asyncio
 async def test_guardian_2_5_9_briefing_respects_user_preferences(
     mock_guardian, mock_core_client,

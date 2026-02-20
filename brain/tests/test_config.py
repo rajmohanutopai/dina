@@ -26,7 +26,7 @@ def test_config_9_1_1_core_url_from_env(monkeypatch, brain_config) -> None:
     # assert cfg["CORE_URL"] == "http://core:9300"
 
 
-# TST-BRAIN-289
+# TST-BRAIN-376
 def test_config_9_1_2_core_url_default(monkeypatch, brain_config) -> None:
     """§9.1.2: CORE_URL defaults to http://core:8300 when not set."""
     pytest.skip("BrainConfig loader not yet implemented")
@@ -40,7 +40,7 @@ def test_config_9_1_2_core_url_default(monkeypatch, brain_config) -> None:
 # ---------------------------------------------------------------------------
 
 
-# TST-BRAIN-290
+# TST-BRAIN-377
 def test_config_9_2_1_brain_token_from_env(monkeypatch, brain_config) -> None:
     """§9.2.1: BRAIN_TOKEN is read from the DINA_BRAIN_TOKEN environment variable."""
     pytest.skip("BrainConfig loader not yet implemented")
@@ -65,7 +65,7 @@ def test_config_9_2_2_brain_token_from_docker_secret(monkeypatch, tmp_path, brai
 # ---------------------------------------------------------------------------
 
 
-# TST-BRAIN-291
+# TST-BRAIN-378
 def test_config_9_3_1_listen_port_default(monkeypatch, brain_config) -> None:
     """§9.3.1: LISTEN_PORT defaults to 8200."""
     pytest.skip("BrainConfig loader not yet implemented")
@@ -74,7 +74,7 @@ def test_config_9_3_1_listen_port_default(monkeypatch, brain_config) -> None:
     # assert cfg["LISTEN_PORT"] == 8200
 
 
-# TST-BRAIN-291
+# TST-BRAIN-379
 def test_config_9_3_2_log_level_default(monkeypatch, brain_config) -> None:
     """§9.3.2: LOG_LEVEL defaults to INFO."""
     pytest.skip("BrainConfig loader not yet implemented")
@@ -88,7 +88,7 @@ def test_config_9_3_2_log_level_default(monkeypatch, brain_config) -> None:
 # ---------------------------------------------------------------------------
 
 
-# TST-BRAIN-292
+# TST-BRAIN-380
 def test_config_9_4_1_missing_brain_token_raises(monkeypatch) -> None:
     """§9.4.1: Startup fails if BRAIN_TOKEN is missing and no secret file exists."""
     pytest.skip("BrainConfig loader not yet implemented")
@@ -106,3 +106,36 @@ def test_config_9_4_2_invalid_core_url_raises(monkeypatch) -> None:
     # monkeypatch.setenv("DINA_CORE_URL", "not-a-url")
     # with pytest.raises(ValueError, match="CORE_URL"):
     #     load_brain_config()
+
+
+# ---------------------------------------------------------------------------
+# New tests for uncovered plan scenarios
+# ---------------------------------------------------------------------------
+
+
+# TST-BRAIN-290
+def test_config_9_llm_url_from_env(monkeypatch) -> None:
+    """§9 row 2: LLM_URL is read from the DINA_LLM_URL environment variable."""
+    pytest.skip("BrainConfig loader not yet implemented")
+    # monkeypatch.setenv("DINA_LLM_URL", "http://llm:8080")
+    # cfg = load_brain_config()
+    # assert cfg["LLM_URL"] == "http://llm:8080"
+
+
+# TST-BRAIN-291
+def test_config_9_missing_core_url_fails(monkeypatch) -> None:
+    """§9 row 3: Startup fails with descriptive error when CORE_URL is not set."""
+    pytest.skip("BrainConfig loader not yet implemented")
+    # monkeypatch.delenv("DINA_CORE_URL", raising=False)
+    # with pytest.raises(ValueError, match="CORE_URL"):
+    #     load_brain_config()
+
+
+# TST-BRAIN-292
+def test_config_9_missing_llm_url_graceful(monkeypatch) -> None:
+    """§9 row 4: Brain starts but LLM routing disabled when LLM_URL is not set."""
+    pytest.skip("BrainConfig loader not yet implemented")
+    # monkeypatch.delenv("DINA_LLM_URL", raising=False)
+    # cfg = load_brain_config()
+    # assert cfg.get("LLM_URL") is None
+    # assert cfg["llm_routing_enabled"] is False

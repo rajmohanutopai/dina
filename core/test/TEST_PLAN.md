@@ -570,6 +570,14 @@
 | 15 | **[TST-CORE-357]** Replacement map round-trip | Scrub → send to brain → brain sends back with tokens → core de-sanitizes | All `[TOKEN_N]` replaced with originals from map — no data loss |
 | 16 | **[TST-CORE-358]** No false positives on numbers | "The product costs $1,234.56" | NOT redacted — price is not PII |
 | 17 | **[TST-CORE-359]** Indian phone format | "+91 98765 43210" | "[PHONE_1]" — Indian mobile number format |
+| 18 | **[TST-CORE-776]** Address detection (optional) | "Lives at 42 Baker Street, London" | Address entities detected if pattern configured |
+| 19 | **[TST-CORE-777]** Table-driven PII test suite | Multiple test cases from PIITestCases fixture | All expected scrubs pass |
+| 20 | **[TST-CORE-778]** Empty input handling | "" (empty string) | Unchanged — empty scrubbed text, no entities |
+| 21 | **[TST-CORE-779]** Email in URL (mailto:) | "Visit mailto:john@example.com" | Email extracted from mailto: prefix |
+| 22 | **[TST-CORE-780]** Consecutive same-type PII | "SSN 123-45-6789 and 987-65-4321" | Both scrubbed: [SSN_1] and [SSN_2] |
+| 23 | **[TST-CORE-781]** SQL injection in scrubber input | "'; DROP TABLE users; --" | Safely handled, no error or injection |
+| 24 | **[TST-CORE-782]** Unicode text with PII | "नमस्ते john@example.com" | Email detected in Unicode context |
+
 
 ---
 
@@ -630,6 +638,50 @@
 | 8 | **[TST-CORE-392]** Audit includes denied categories | Category blocked by policy | Audit entry: `decision='denied', reason='tier_none'` — even denials are logged |
 | 9 | **[TST-CORE-393]** NaCl encryption after policy check | Payload passes egress check | Payload encrypted with `crypto_box_seal` (ephemeral key + recipient X25519) → transmitted |
 
+
+### 6.4 Intent Evaluation (Agent Gatekeeper)
+
+> Tests the EvaluateIntent interface: agent submits intent → gatekeeper allows/blocks/audits.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-783]** Safe intent allowed | Trusted agent, safe action (fetch_weather) | Allowed, no audit |
+| 2 | **[TST-CORE-784]** Risky intent flagged | Trusted agent, risky action (send_email) | Audit entry generated |
+| 3 | **[TST-CORE-785]** Blocked intent denied | Untrusted agent, dangerous action (transfer_money) | Denied |
+| 4 | **[TST-CORE-786]** Vault read by untrusted denied | Untrusted agent reads vault | Denied |
+| 5 | **[TST-CORE-787]** Empty action rejected | Intent with empty action field | Error returned |
+| 6 | **[TST-CORE-788]** Empty agent DID rejected | Intent with empty agent DID | Error returned |
+| 7 | **[TST-CORE-789]** Decision contains reason | Denied intent | Decision struct includes reason string |
+| 8 | **[TST-CORE-790]** Safe intent no audit | Safe intent passes | No audit entry (silent pass) |
+| 9 | **[TST-CORE-791]** Mock allow all | MockGatekeeper configured to allow | All intents allowed |
+| 10 | **[TST-CORE-792]** Mock deny all | MockGatekeeper configured to deny | All intents denied with audit |
+
+### 6.5 Egress Safety Checks
+
+> Tests the CheckEgress interface: validates outbound data destinations and content.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-793]** Egress to trusted destination | Trusted API URL + safe data | Allowed |
+| 2 | **[TST-CORE-794]** Egress to blocked destination | Blocked tracker URL | Denied |
+| 3 | **[TST-CORE-795]** Egress with PII blocked | Data containing email + SSN | Denied (raw PII never leaves) |
+| 4 | **[TST-CORE-796]** Egress empty destination rejected | Empty URL string | Error returned |
+| 5 | **[TST-CORE-797]** Egress nil data allowed | Trusted URL + nil data (health check) | Allowed |
+| 6 | **[TST-CORE-798]** Mock egress deny | MockGatekeeper denies all egress | Egress denied |
+
+### 6.6 Trust Ring & Persona Access Control
+
+> Tests agent access to persona vaults based on trust levels and compartment isolation.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-799]** Trusted agent accesses open persona | Trusted agent reads consumer vault | Allowed |
+| 2 | **[TST-CORE-800]** Untrusted agent denied locked persona | Untrusted agent reads health vault | Denied |
+| 3 | **[TST-CORE-801]** Verified agent restricted persona | Verified (not trusted) agent on professional | Audit triggered, review required |
+| 4 | **[TST-CORE-802]** Cross-persona access denied | Consumer-only agent accesses financial | Denied (compartment isolation) |
+| 5 | **[TST-CORE-803]** Money action requires trusted ring | Verified agent attempts transfer_money | Denied — requires Verified+Actioned |
+| 6 | **[TST-CORE-804]** Data sharing action flagged | Trusted agent shares data externally | Audit entry (risky per Four Laws) |
+
 ---
 
 ## 7. Transport Layer
@@ -658,6 +710,12 @@
 | 15 | **[TST-CORE-408]** Payload is pre-encrypted | Inspect outbox payload column | BLOB is NaCl-encrypted — ready to send, no re-encryption on retry |
 | 16 | **[TST-CORE-409]** `sending` status during delivery attempt | Message in outbox, delivery in progress | Status transitions: `pending` → `sending` (while HTTP request in flight) → `delivered` (on 200) or back to `pending` with incremented retries (on failure) |
 | 17 | **[TST-CORE-410]** User ignores nudge → message expires at 24h TTL | Retries exhausted → user notified → user does nothing | Message remains `failed` → cleanup deletes after 24 hours. No infinite retry loop |
+| 18 | **[TST-CORE-805]** Send to unresolvable DID fails | `impl.Send("did:key:z6MkNonexistent", envelope)` | Error returned — DID not resolvable |
+| 19 | **[TST-CORE-806]** Send empty envelope rejected | `impl.Send(did, []byte{})` | Error returned — empty payload |
+| 20 | **[TST-CORE-807]** Send nil envelope rejected | `impl.Send(did, nil)` | Error returned — nil payload |
+| 21 | **[TST-CORE-808]** Mock send records messages | `mock.Send(did, envelope)` | Message recorded in `mock.Sent` slice |
+| 22 | **[TST-CORE-809]** Outbox enqueue persists message | `mock.Enqueue(msg)` + `mock.GetByID(id)` | Message persisted with `pending` status, retrievable by ID |
+
 
 ### 7.2 Inbox (3-Valve Ingress)
 
@@ -686,6 +744,11 @@
 | 21 | **[TST-CORE-431]** Spool directory is safe | Inspect `./data/inbox/` contents | Only encrypted blobs — attacker with filesystem access sees ciphertext only |
 | 22 | **[TST-CORE-432]** DoS while locked | Millions of payloads, vault locked | Valve 1 rejects most (IP rate). Remainder fills spool to 500MB cap. Valve 2 rejects rest (429). Disk safe. |
 | 23 | **[TST-CORE-433]** DoS while unlocked | Millions of payloads, vault unlocked | Valve 1 rejects most. Survivors decrypted — unknown DID → dropped. No disk I/O. |
+| 24 | **[TST-CORE-810]** Basic inbox receive | `impl.Receive()` on inbox | Returns nil for empty inbox, message bytes for non-empty |
+| 25 | **[TST-CORE-811]** Empty inbox returns nil | Mock inbox with no messages | `Receive()` returns nil, no error |
+| 26 | **[TST-CORE-812]** Inbox FIFO order | 3 messages enqueued | Received in FIFO order |
+| 27 | **[TST-CORE-813]** Inbox spool when locked | Message arrives, persona locked | Message spooled up to SpoolMax |
+| 28 | **[TST-CORE-814]** Inbox reject when spool full | Spool at capacity | New message rejected with error |
 
 ### 7.3 DID Resolution & Caching
 
@@ -696,6 +759,9 @@
 | 3 | **[TST-CORE-436]** Cache expiry | Resolution after cache TTL | Fresh resolution from network |
 | 4 | **[TST-CORE-437]** Unresolvable DID | Non-existent DID | Error returned, not cached |
 | 5 | **[TST-CORE-438]** Malformed DID | `did:invalid:!!!` | Validation error |
+| 6 | **[TST-CORE-815]** Mock resolve endpoint | `mock.ResolveEndpoint(did)` with pre-configured endpoint | Returns configured endpoint URL |
+| 7 | **[TST-CORE-816]** Mock resolve unknown fails | `mock.ResolveEndpoint(unknown_did)` | Error returned |
+| 8 | **[TST-CORE-817]** Unresolvable DID not cached | Error result for non-existent DID | Error not cached — next attempt retries network |
 
 ### 7.4 Message Format (DIDComm-Compatible)
 
@@ -714,6 +780,10 @@
 | 7 | **[TST-CORE-445]** Ephemeral key per message | Send two messages to same recipient | Each uses fresh ephemeral X25519 keypair for `crypto_box_seal` — different ciphertext |
 | 8 | **[TST-CORE-446]** `from_kid`/`to_kid` DID fragment format | Inspect envelope `from_kid` and `to_kid` | Format: `did:plc:...#key-1` — DID URL with fragment identifier referencing the correct `verificationMethod` entry in sender/recipient's DID Document |
 | 9 | **[TST-CORE-447]** Phase migration invariant: plaintext unchanged | Compare Phase 1 and Phase 2 envelopes for same message | Plaintext `{id, type, from, to, created_time, body}` is IDENTICAL — only the encryption wrapper changes (libsodium → JWE). Application code and message types don't change |
+| 10 | **[TST-CORE-818]** Envelope contains required fields | `testutil.TestEnvelope()` | Contains `from`, `to`, `type`, `body` fields |
+| 11 | **[TST-CORE-819]** Envelope from field is DID | Inspect envelope `from` field | Contains `did:key:` prefix |
+| 12 | **[TST-CORE-820]** Envelope max size rejection | Envelope >1 MiB | Error returned — oversized rejected |
+| 13 | **[TST-CORE-821]** Envelope invalid JSON rejected | `{not valid json` | Error returned — malformed payload |
 
 ### 7.5 Connection Establishment
 
@@ -723,6 +793,9 @@
 | 2 | **[TST-CORE-449]** Mutual authentication | Both Dinas present DIDs | Both verify Ed25519 signatures, both must be in each other's contacts list |
 | 3 | **[TST-CORE-450]** Contact allowlist check | Message to non-contact DID | Rejected — both sides must have each other in contacts |
 | 4 | **[TST-CORE-451]** Endpoint from DID Document | Resolve `did:plc:sancho` | DID Document → `service[0].serviceEndpoint` = `https://sancho-dina.example.com/didcomm` |
+| 5 | **[TST-CORE-822]** Envelope encrypted in transit | Inspect wire format | NaCl `crypto_box_seal` encryption verified |
+| 6 | **[TST-CORE-823]** Encrypt/decrypt roundtrip | Seal → transmit → open | Plaintext matches after roundtrip |
+| 7 | **[TST-CORE-824]** Wrong recipient cannot decrypt | Sealed for A, opened by B | Error — decryption fails |
 
 ### 7.6 Relay Fallback (NAT/Firewall)
 
@@ -735,6 +808,9 @@
 | 2 | **[TST-CORE-453]** Relay cannot read content | Inspect relay's view | Only recipient DID + encrypted blob — no plaintext access |
 | 3 | **[TST-CORE-454]** DID Document points to relay | Recipient behind NAT | DID Document `serviceEndpoint` points to relay, not direct Home Node |
 | 4 | **[TST-CORE-455]** User can switch relays | Update DID Document | Change relay endpoint via `did:plc` rotation — messages route to new relay |
+| 5 | **[TST-CORE-825]** Direct delivery preferred | Recipient directly reachable | No relay used — direct transport |
+| 6 | **[TST-CORE-826]** Relay used when direct fails | Direct delivery timeout | Message routed through relay server |
+| 7 | **[TST-CORE-827]** Mock send error | `mock.SendErr` set | Error propagated to caller |
 
 ---
 
@@ -755,6 +831,10 @@
 | 6 | **[TST-CORE-461]** Task types | Different event types | Valid types: `process`, `reason`, `embed` — unknown type rejected |
 | 7 | **[TST-CORE-462]** Task persistence across restart | Core crashes and restarts | All pending/processing tasks still in `dina_tasks`, re-dispatched |
 | 8 | **[TST-CORE-463]** Concurrent workers | Multiple goroutines dequeuing | No duplicate processing (SQLite row-level locking) |
+| 9 | **[TST-CORE-828]** Dequeue returns pending task | Enqueue then dequeue | Task returned with `running` status |
+| 10 | **[TST-CORE-829]** Dequeue empty returns nil | Empty queue | `Dequeue()` returns nil, no error |
+| 11 | **[TST-CORE-830]** Complete task | Enqueue, dequeue, complete | No error on `Complete(id)` |
+| 12 | **[TST-CORE-831]** Mock enqueue/dequeue | Mock TaskQueuer | FIFO behavior, correct status transitions |
 
 ### 8.2 Watchdog (Timeout Recovery)
 
@@ -764,6 +844,9 @@
 | 2 | **[TST-CORE-465]** Watchdog runs periodically | Background goroutine | Scans `dina_tasks WHERE status = 'processing' AND timeout_at < now()` every 30s |
 | 3 | **[TST-CORE-466]** Watchdog does not touch healthy tasks | Task processing, timeout not expired | Task left alone |
 | 4 | **[TST-CORE-467]** Reset task re-dispatched | Watchdog resets task to pending | Next dispatch cycle picks it up, sends to brain again |
+| 5 | **[TST-CORE-832]** High priority first | Low then high priority enqueued | High priority dequeued first |
+| 6 | **[TST-CORE-833]** Same priority FIFO | Two same-priority tasks | Dequeued in insertion order |
+| 7 | **[TST-CORE-834]** Mock priority not enforced | Mock with two priorities | Mock uses simple FIFO (documented limitation) |
 
 ### 8.3 Dead Letter & Retry
 
@@ -775,6 +858,10 @@
 | 4 | **[TST-CORE-471]** Task cancellation | Cancel pending task by ID | `status = "cancelled"` |
 | 5 | **[TST-CORE-472]** Index on status + timeout | Inspect SQLite schema | `CREATE INDEX idx_tasks_status ON dina_tasks(status, timeout_at)` exists |
 | 6 | **[TST-CORE-473]** No silent data loss | Task hits dead letter | User notification via Tier 2 — not silently dropped |
+| 7 | **[TST-CORE-835]** Fail task | Task running, failure reported | `Fail(id, reason)` succeeds |
+| 8 | **[TST-CORE-836]** Retry increments counter | Task failed then retried | `retries` incremented, status back to pending |
+| 9 | **[TST-CORE-837]** Retry non-failed task fails | Task pending (not failed) | `Retry(id)` returns error |
+| 10 | **[TST-CORE-838]** Fail non-existent task fails | Non-existent task ID | `Fail(id)` returns error |
 
 ### 8.4 Reminder Loop (One-Shot Scheduling)
 
@@ -791,6 +878,10 @@
 | 6 | **[TST-CORE-479]** No pending → sleep 1 minute | No reminders in vault | `NextPendingReminder()` returns nil → loop sleeps 1 minute → checks again |
 | 7 | **[TST-CORE-480]** No cron library | Code audit | No `robfig/cron`, no scheduling library — just `time.Sleep` and vault query |
 | 8 | **[TST-CORE-481]** Complex scheduling → delegate | User asks "every Monday at 9 AM" | Brain tells user: "Want me to create a recurring calendar event?" → delegates to OpenClaw/Calendar service |
+| 9 | **[TST-CORE-839]** Crash recovery re-enqueues running tasks | Core crashes with running tasks | Tasks reset to pending after restart |
+| 10 | **[TST-CORE-840]** Retry schedule exponential backoff | Outbox retry | 30s → 1m → 5m → 30m → 2h |
+| 11 | **[TST-CORE-841]** Max retries exceeded marks dead letter | 5+ retries exhausted | Task moved to dead-letter state |
+| 12 | **[TST-CORE-842]** Persistence across restart | Core restarts | All tasks recoverable from SQLite WAL |
 
 ---
 
@@ -917,6 +1008,14 @@
 | 2 | **[TST-CORE-538]** Brain unhealthy | `/v1/health` fails 3 consecutive times | Alert dispatched, circuit breaker opened |
 | 3 | **[TST-CORE-539]** Brain recovery | Health restored after failure | Alert cleared, normal operation |
 | 4 | **[TST-CORE-540]** Watchdog interval | Check frequency | Every 10s (configurable) |
+| 5 | **[TST-CORE-843]** Send event to brain (mock) | Mock brain returns success | `ProcessEvent()` returns result |
+| 6 | **[TST-CORE-844]** Brain returns error (mock) | Mock brain returns error | `ProcessEvent()` returns error |
+| 7 | **[TST-CORE-845]** Brain returns malformed JSON | Brain response is invalid JSON | Error returned gracefully |
+| 8 | **[TST-CORE-846]** Concurrent requests | 20 goroutines calling ProcessEvent | Thread-safe, no panics |
+| 9 | **[TST-CORE-847]** Empty URL returns error | BrainClient with empty URL | Error on any operation |
+| 10 | **[TST-CORE-848]** Connection pooling | 10 sequential requests | Reuses HTTP connections |
+| 11 | **[TST-CORE-849]** Mock health success | Healthy mock | `Health()` returns nil, `IsAvailable()` true |
+| 12 | **[TST-CORE-850]** Mock health failure | Unhealthy mock | `Health()` returns error, `IsAvailable()` false |
 
 ---
 
@@ -954,6 +1053,13 @@
 | 4 | **[TST-CORE-554]** Default values | Optional config not set | Sensible defaults applied (e.g., spool max 500MB) |
 | 5 | **[TST-CORE-555]** Config validation | Invalid port number, negative TTL | Startup fails with validation error |
 | 6 | **[TST-CORE-556]** DINA_SPOOL_MAX enforcement | Spool directory exceeds configured max | New spooling rejected (Valve 2 closes) |
+| 7 | **[TST-CORE-851]** Partial env vars | Only some env vars set | Missing fields use defaults |
+| 8 | **[TST-CORE-852]** Env var type parsing | Numeric env vars | Correctly parsed to int fields |
+| 9 | **[TST-CORE-853]** Default security mode | No DINA_MODE set | Defaults to "security" (not "convenience") |
+| 10 | **[TST-CORE-854]** Negative session TTL rejected | `SessionTTL = -1` | Validation fails |
+| 11 | **[TST-CORE-855]** Load from config.json | `DINA_CONFIG_PATH` set | Config loaded from JSON file |
+| 12 | **[TST-CORE-856]** Env overrides config.json | Both config.json and env var set | Env var takes precedence |
+| 13 | **[TST-CORE-857]** Docker secret overrides env token | Both `DINA_BRAIN_TOKEN` and `_FILE` set | Secret file takes precedence |
 
 ---
 

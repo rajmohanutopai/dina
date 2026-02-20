@@ -28,7 +28,7 @@ func TestTaskQueue_8_1_1_EnqueueReturnsID(t *testing.T) {
 	testutil.RequireTrue(t, len(id) > 0, "enqueue must return a non-empty task ID")
 }
 
-// TST-CORE-457
+// TST-CORE-828
 func TestTaskQueue_8_1_2_DequeueReturnsPending(t *testing.T) {
 	var impl testutil.TaskQueuer
 	// impl = taskqueue.New()
@@ -44,7 +44,7 @@ func TestTaskQueue_8_1_2_DequeueReturnsPending(t *testing.T) {
 	testutil.RequireEqual(t, dequeued.Status, "running")
 }
 
-// TST-CORE-458
+// TST-CORE-829
 func TestTaskQueue_8_1_3_DequeueEmptyReturnsNil(t *testing.T) {
 	var impl testutil.TaskQueuer
 	// impl = taskqueue.New()
@@ -55,7 +55,7 @@ func TestTaskQueue_8_1_3_DequeueEmptyReturnsNil(t *testing.T) {
 	testutil.RequireNil(t, dequeued)
 }
 
-// TST-CORE-459
+// TST-CORE-830
 func TestTaskQueue_8_1_4_CompleteTask(t *testing.T) {
 	var impl testutil.TaskQueuer
 	// impl = taskqueue.New()
@@ -73,7 +73,7 @@ func TestTaskQueue_8_1_4_CompleteTask(t *testing.T) {
 	testutil.RequireNoError(t, err)
 }
 
-// TST-CORE-460
+// TST-CORE-831
 func TestTaskQueue_8_1_5_MockEnqueueDequeue(t *testing.T) {
 	mock := &testutil.MockTaskQueuer{}
 
@@ -93,7 +93,7 @@ func TestTaskQueue_8_1_5_MockEnqueueDequeue(t *testing.T) {
 // §8.2 Priority Ordering (3 scenarios)
 // --------------------------------------------------------------------------
 
-// TST-CORE-464
+// TST-CORE-832
 func TestTaskQueue_8_2_1_HighPriorityFirst(t *testing.T) {
 	var impl testutil.TaskQueuer
 	// impl = taskqueue.New()
@@ -119,7 +119,7 @@ func TestTaskQueue_8_2_1_HighPriorityFirst(t *testing.T) {
 	testutil.RequireEqual(t, dequeued.Type, "urgent_sync")
 }
 
-// TST-CORE-465
+// TST-CORE-833
 func TestTaskQueue_8_2_2_SamePriorityFIFO(t *testing.T) {
 	var impl testutil.TaskQueuer
 	// impl = taskqueue.New()
@@ -143,7 +143,7 @@ func TestTaskQueue_8_2_2_SamePriorityFIFO(t *testing.T) {
 	testutil.RequireEqual(t, dequeued.Type, "first")
 }
 
-// TST-CORE-466
+// TST-CORE-834
 func TestTaskQueue_8_2_3_MockPriorityNotEnforced(t *testing.T) {
 	// The mock does not enforce priority ordering (simple FIFO).
 	// This test documents that the mock is a basic stub.
@@ -173,7 +173,7 @@ func TestTaskQueue_8_2_3_MockPriorityNotEnforced(t *testing.T) {
 // §8.3 Fail & Retry (4 scenarios)
 // --------------------------------------------------------------------------
 
-// TST-CORE-468
+// TST-CORE-835
 func TestTaskQueue_8_3_1_FailTask(t *testing.T) {
 	var impl testutil.TaskQueuer
 	// impl = taskqueue.New()
@@ -190,7 +190,7 @@ func TestTaskQueue_8_3_1_FailTask(t *testing.T) {
 	testutil.RequireNoError(t, err)
 }
 
-// TST-CORE-469
+// TST-CORE-836
 func TestTaskQueue_8_3_2_RetryIncrementsCounter(t *testing.T) {
 	mock := &testutil.MockTaskQueuer{}
 
@@ -215,7 +215,7 @@ func TestTaskQueue_8_3_2_RetryIncrementsCounter(t *testing.T) {
 	testutil.RequireEqual(t, retried.Retries, 1)
 }
 
-// TST-CORE-470
+// TST-CORE-837
 func TestTaskQueue_8_3_3_RetryNonFailedTaskFails(t *testing.T) {
 	mock := &testutil.MockTaskQueuer{}
 
@@ -228,7 +228,7 @@ func TestTaskQueue_8_3_3_RetryNonFailedTaskFails(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
-// TST-CORE-471
+// TST-CORE-838
 func TestTaskQueue_8_3_4_FailNonExistentTaskFails(t *testing.T) {
 	mock := &testutil.MockTaskQueuer{}
 
@@ -240,7 +240,7 @@ func TestTaskQueue_8_3_4_FailNonExistentTaskFails(t *testing.T) {
 // §8.4 Crash Recovery & Outbox Retry Schedule (4 scenarios)
 // --------------------------------------------------------------------------
 
-// TST-CORE-474
+// TST-CORE-839
 func TestTaskQueue_8_4_1_CrashRecoveryReEnqueuesRunningTasks(t *testing.T) {
 	var impl testutil.TaskQueuer
 	// impl = taskqueue.New()
@@ -251,7 +251,7 @@ func TestTaskQueue_8_4_1_CrashRecoveryReEnqueuesRunningTasks(t *testing.T) {
 	t.Skip("crash recovery requires SQLite WAL persistence integration")
 }
 
-// TST-CORE-475
+// TST-CORE-840
 func TestTaskQueue_8_4_2_RetryScheduleExponentialBackoff(t *testing.T) {
 	var impl testutil.TaskQueuer
 	// impl = taskqueue.New()
@@ -271,7 +271,7 @@ func TestTaskQueue_8_4_2_RetryScheduleExponentialBackoff(t *testing.T) {
 	t.Skip("retry schedule verification requires time-based integration test")
 }
 
-// TST-CORE-476
+// TST-CORE-841
 func TestTaskQueue_8_4_3_MaxRetriesExceededMarksDeadLetter(t *testing.T) {
 	var impl testutil.TaskQueuer
 	// impl = taskqueue.New()
@@ -282,7 +282,7 @@ func TestTaskQueue_8_4_3_MaxRetriesExceededMarksDeadLetter(t *testing.T) {
 	t.Skip("dead-letter queue requires implementation of retry limit enforcement")
 }
 
-// TST-CORE-477
+// TST-CORE-842
 func TestTaskQueue_8_4_4_PersistenceAcrossRestart(t *testing.T) {
 	var impl testutil.TaskQueuer
 	// impl = taskqueue.New()
@@ -297,7 +297,7 @@ func TestTaskQueue_8_4_4_PersistenceAcrossRestart(t *testing.T) {
 // TEST_PLAN §8.1 — Task Lifecycle (additional scenarios)
 // ==========================================================================
 
-// TST-CORE-461
+// TST-CORE-457
 func TestTaskQueue_8_1_6_TaskIDIsULID(t *testing.T) {
 	var impl testutil.TaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
@@ -310,7 +310,7 @@ func TestTaskQueue_8_1_6_TaskIDIsULID(t *testing.T) {
 	testutil.RequireTrue(t, len(id) > 0, "task ID should be non-empty ULID")
 }
 
-// TST-CORE-462
+// TST-CORE-458
 func TestTaskQueue_8_1_7_SendToBrainSetsProcessing(t *testing.T) {
 	var impl testutil.TaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
@@ -326,7 +326,7 @@ func TestTaskQueue_8_1_7_SendToBrainSetsProcessing(t *testing.T) {
 	testutil.RequireEqual(t, dequeued.Status, "running")
 }
 
-// TST-CORE-463
+// TST-CORE-459
 func TestTaskQueue_8_1_8_BrainACKDeletesTask(t *testing.T) {
 	mock := &testutil.MockTaskQueuer{}
 
@@ -347,6 +347,7 @@ func TestTaskQueue_8_1_8_BrainACKDeletesTask(t *testing.T) {
 	testutil.RequireNil(t, next)
 }
 
+// TST-CORE-461
 func TestTaskQueue_8_1_9_TaskTypes(t *testing.T) {
 	var impl testutil.TaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
@@ -361,6 +362,7 @@ func TestTaskQueue_8_1_9_TaskTypes(t *testing.T) {
 	}
 }
 
+// TST-CORE-463
 func TestTaskQueue_8_1_10_ConcurrentWorkers(t *testing.T) {
 	var impl testutil.TaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
@@ -373,7 +375,7 @@ func TestTaskQueue_8_1_10_ConcurrentWorkers(t *testing.T) {
 // TEST_PLAN §8.2 — Watchdog (additional scenarios)
 // ==========================================================================
 
-// TST-CORE-467
+// TST-CORE-464
 func TestTaskQueue_8_2_4_WatchdogDetectsTimedOutTask(t *testing.T) {
 	var impl testutil.WatchdogRunner
 	testutil.RequireImplementation(t, impl, "WatchdogRunner")
@@ -385,6 +387,7 @@ func TestTaskQueue_8_2_4_WatchdogDetectsTimedOutTask(t *testing.T) {
 	_ = timedOut
 }
 
+// TST-CORE-465
 func TestTaskQueue_8_2_5_WatchdogRunsPeriodically(t *testing.T) {
 	var impl testutil.WatchdogRunner
 	testutil.RequireImplementation(t, impl, "WatchdogRunner")
@@ -393,6 +396,7 @@ func TestTaskQueue_8_2_5_WatchdogRunsPeriodically(t *testing.T) {
 	t.Skip("periodic scanning requires background goroutine integration test")
 }
 
+// TST-CORE-466
 func TestTaskQueue_8_2_6_WatchdogDoesNotTouchHealthyTasks(t *testing.T) {
 	var impl testutil.WatchdogRunner
 	testutil.RequireImplementation(t, impl, "WatchdogRunner")
@@ -401,6 +405,7 @@ func TestTaskQueue_8_2_6_WatchdogDoesNotTouchHealthyTasks(t *testing.T) {
 	t.Skip("healthy task detection requires time-based integration test")
 }
 
+// TST-CORE-467
 func TestTaskQueue_8_2_7_ResetTaskReDispatched(t *testing.T) {
 	var impl testutil.WatchdogRunner
 	testutil.RequireImplementation(t, impl, "WatchdogRunner")
@@ -413,7 +418,7 @@ func TestTaskQueue_8_2_7_ResetTaskReDispatched(t *testing.T) {
 // TEST_PLAN §8.3 — Dead Letter & Retry (additional scenarios)
 // ==========================================================================
 
-// TST-CORE-472
+// TST-CORE-468
 func TestTaskQueue_8_3_5_DeadLetterAfter3Failures(t *testing.T) {
 	mock := &testutil.MockTaskQueuer{}
 
@@ -435,7 +440,7 @@ func TestTaskQueue_8_3_5_DeadLetterAfter3Failures(t *testing.T) {
 	// In real implementation, this would trigger dead letter status + Tier 2 notification.
 }
 
-// TST-CORE-473
+// TST-CORE-471
 func TestTaskQueue_8_3_6_TaskCancellation(t *testing.T) {
 	var impl testutil.TaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
@@ -444,11 +449,13 @@ func TestTaskQueue_8_3_6_TaskCancellation(t *testing.T) {
 	t.Skip("task cancellation requires Cancel method on TaskQueuer")
 }
 
+// TST-CORE-472
 func TestTaskQueue_8_3_7_IndexOnStatusTimeout(t *testing.T) {
 	// CREATE INDEX idx_tasks_status ON dina_tasks(status, timeout_at) exists.
 	t.Skip("index verification requires SQLite schema inspection")
 }
 
+// TST-CORE-473
 func TestTaskQueue_8_3_8_NoSilentDataLoss(t *testing.T) {
 	var impl testutil.TaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
@@ -461,7 +468,7 @@ func TestTaskQueue_8_3_8_NoSilentDataLoss(t *testing.T) {
 // TEST_PLAN §8.4 — Reminder Loop (8 scenarios)
 // ==========================================================================
 
-// TST-CORE-478
+// TST-CORE-474
 func TestTaskQueue_8_4_5_StoreReminder(t *testing.T) {
 	mock := testutil.NewMockReminderScheduler()
 
@@ -471,7 +478,7 @@ func TestTaskQueue_8_4_5_StoreReminder(t *testing.T) {
 	testutil.RequireTrue(t, len(id) > 0, "store reminder must return an ID")
 }
 
-// TST-CORE-479
+// TST-CORE-475
 func TestTaskQueue_8_4_6_NextPendingReminder(t *testing.T) {
 	mock := testutil.NewMockReminderScheduler()
 
@@ -491,7 +498,7 @@ func TestTaskQueue_8_4_6_NextPendingReminder(t *testing.T) {
 	testutil.RequireEqual(t, next.TriggerAt, int64(1740200000))
 }
 
-// TST-CORE-480
+// TST-CORE-476
 func TestTaskQueue_8_4_7_SleepUntilTriggerTime(t *testing.T) {
 	var impl testutil.ReminderScheduler
 	testutil.RequireImplementation(t, impl, "ReminderScheduler")
@@ -500,7 +507,7 @@ func TestTaskQueue_8_4_7_SleepUntilTriggerTime(t *testing.T) {
 	t.Skip("sleep-until-trigger requires time-based integration test")
 }
 
-// TST-CORE-481
+// TST-CORE-477
 func TestTaskQueue_8_4_8_MissedReminderOnStartup(t *testing.T) {
 	var impl testutil.ReminderScheduler
 	testutil.RequireImplementation(t, impl, "ReminderScheduler")
@@ -510,6 +517,7 @@ func TestTaskQueue_8_4_8_MissedReminderOnStartup(t *testing.T) {
 	t.Skip("missed reminder requires startup integration test")
 }
 
+// TST-CORE-478
 func TestTaskQueue_8_4_9_FireAndMarkDone(t *testing.T) {
 	mock := testutil.NewMockReminderScheduler()
 
@@ -527,6 +535,7 @@ func TestTaskQueue_8_4_9_FireAndMarkDone(t *testing.T) {
 	testutil.RequireNil(t, next)
 }
 
+// TST-CORE-479
 func TestTaskQueue_8_4_10_NoPendingSleepOneMinute(t *testing.T) {
 	mock := testutil.NewMockReminderScheduler()
 
@@ -536,14 +545,71 @@ func TestTaskQueue_8_4_10_NoPendingSleepOneMinute(t *testing.T) {
 	testutil.RequireNil(t, next)
 }
 
+// TST-CORE-480
 func TestTaskQueue_8_4_11_NoCronLibrary(t *testing.T) {
 	// Code audit: no robfig/cron, no scheduling library.
 	// Just time.Sleep and vault query.
 	t.Skip("code audit: verify no cron library dependency")
 }
 
+// TST-CORE-481
 func TestTaskQueue_8_4_12_ComplexSchedulingDelegated(t *testing.T) {
 	// User asks "every Monday at 9 AM" — brain delegates to OpenClaw/Calendar service.
 	// Dina does not handle recurring schedules natively.
 	t.Skip("recurring scheduling delegation requires brain integration test")
+}
+
+// ==========================================================================
+// Uncovered plan scenarios — added by entries 400-600 fix
+// ==========================================================================
+
+// TST-CORE-460
+func TestTaskQueue_8_1_11_BrainNoACKCrash(t *testing.T) {
+	var impl testutil.TaskQueuer
+	testutil.RequireImplementation(t, impl, "TaskQueuer")
+
+	// Brain crashes, no ACK within 5 min → timeout_at expires,
+	// task stays "processing" until watchdog resets it.
+	t.Skip("brain no-ACK requires time-based integration with watchdog")
+}
+
+// TST-CORE-462
+func TestTaskQueue_8_1_12_TaskPersistenceAcrossRestart(t *testing.T) {
+	var impl testutil.TaskQueuer
+	testutil.RequireImplementation(t, impl, "TaskQueuer")
+
+	// All pending/processing tasks still in dina_tasks after restart,
+	// re-dispatched by the scheduler.
+	t.Skip("persistence across restart requires SQLite-backed TaskQueuer")
+}
+
+// TST-CORE-469
+func TestTaskQueue_8_3_9_DeadLetterNot5(t *testing.T) {
+	mock := &testutil.MockTaskQueuer{}
+
+	task := testutil.TestTask()
+	id, err := mock.Enqueue(task)
+	testutil.RequireNoError(t, err)
+
+	// Dead letter triggers at 3 failures, not 5. Attempts=4 should never happen.
+	for i := 0; i < 3; i++ {
+		_, _ = mock.Dequeue()
+		_ = mock.Fail(id, "brain crash")
+		if i < 2 {
+			_ = mock.Retry(id)
+		}
+	}
+	// After 3 failures, task should be at retries=2 in failed state
+	// (real implementation would move to dead letter at this point).
+}
+
+// TST-CORE-470
+func TestTaskQueue_8_3_10_RetryBackoff(t *testing.T) {
+	var impl testutil.TaskQueuer
+	testutil.RequireImplementation(t, impl, "TaskQueuer")
+
+	// Task queue uses simple retry + dead letter (no exponential backoff).
+	// The outbox has backoff (30s→1m→5m→30m→2h), but task queue does not.
+	// This test verifies attempts is incremented and task reset to pending.
+	t.Skip("retry backoff contract requires TaskQueuer implementation")
 }

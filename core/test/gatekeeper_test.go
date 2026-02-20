@@ -16,7 +16,7 @@ import (
 // §6.1 Intent Evaluation (8 scenarios)
 // --------------------------------------------------------------------------
 
-// TST-CORE-360
+// TST-CORE-783
 func TestGatekeeper_6_1_1_SafeIntentAllowed(t *testing.T) {
 	var impl testutil.Gatekeeper
 	// impl = gatekeeper.New()
@@ -34,7 +34,7 @@ func TestGatekeeper_6_1_1_SafeIntentAllowed(t *testing.T) {
 	testutil.RequireTrue(t, decision.Allowed, "safe intent should be allowed")
 }
 
-// TST-CORE-361
+// TST-CORE-784
 func TestGatekeeper_6_1_2_RiskyIntentFlagged(t *testing.T) {
 	var impl testutil.Gatekeeper
 	// impl = gatekeeper.New()
@@ -53,7 +53,7 @@ func TestGatekeeper_6_1_2_RiskyIntentFlagged(t *testing.T) {
 	testutil.RequireTrue(t, decision.Audit, "risky intent should generate an audit entry")
 }
 
-// TST-CORE-362
+// TST-CORE-785
 func TestGatekeeper_6_1_3_BlockedIntentDenied(t *testing.T) {
 	var impl testutil.Gatekeeper
 	// impl = gatekeeper.New()
@@ -71,7 +71,7 @@ func TestGatekeeper_6_1_3_BlockedIntentDenied(t *testing.T) {
 	testutil.RequireFalse(t, decision.Allowed, "blocked intent from untrusted agent must be denied")
 }
 
-// TST-CORE-363
+// TST-CORE-786
 func TestGatekeeper_6_1_4_ReadVaultByUntrustedDenied(t *testing.T) {
 	var impl testutil.Gatekeeper
 	// impl = gatekeeper.New()
@@ -89,7 +89,7 @@ func TestGatekeeper_6_1_4_ReadVaultByUntrustedDenied(t *testing.T) {
 	testutil.RequireFalse(t, decision.Allowed, "untrusted agent must not read vault")
 }
 
-// TST-CORE-364
+// TST-CORE-787
 func TestGatekeeper_6_1_5_EmptyActionRejected(t *testing.T) {
 	var impl testutil.Gatekeeper
 	// impl = gatekeeper.New()
@@ -106,7 +106,7 @@ func TestGatekeeper_6_1_5_EmptyActionRejected(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
-// TST-CORE-365
+// TST-CORE-788
 func TestGatekeeper_6_1_6_EmptyAgentDIDRejected(t *testing.T) {
 	var impl testutil.Gatekeeper
 	// impl = gatekeeper.New()
@@ -123,7 +123,7 @@ func TestGatekeeper_6_1_6_EmptyAgentDIDRejected(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
-// TST-CORE-366
+// TST-CORE-789
 func TestGatekeeper_6_1_7_DecisionContainsReason(t *testing.T) {
 	var impl testutil.Gatekeeper
 	// impl = gatekeeper.New()
@@ -141,7 +141,7 @@ func TestGatekeeper_6_1_7_DecisionContainsReason(t *testing.T) {
 	testutil.RequireTrue(t, len(decision.Reason) > 0, "decision must include a reason string")
 }
 
-// TST-CORE-367
+// TST-CORE-790
 func TestGatekeeper_6_1_8_SafeIntentNoAudit(t *testing.T) {
 	var impl testutil.Gatekeeper
 	// impl = gatekeeper.New()
@@ -165,7 +165,7 @@ func TestGatekeeper_6_1_8_SafeIntentNoAudit(t *testing.T) {
 // §6.1 Mock-based Intent Evaluation (2 scenarios)
 // --------------------------------------------------------------------------
 
-// TST-CORE-368
+// TST-CORE-791
 func TestGatekeeper_6_1_9_MockAllowAll(t *testing.T) {
 	mock := &testutil.MockGatekeeper{
 		EvaluateResult: testutil.Decision{Allowed: true, Reason: "mock: allow all"},
@@ -185,7 +185,7 @@ func TestGatekeeper_6_1_9_MockAllowAll(t *testing.T) {
 	testutil.RequireEqual(t, decision.Reason, "mock: allow all")
 }
 
-// TST-CORE-369
+// TST-CORE-792
 func TestGatekeeper_6_1_10_MockDenyAll(t *testing.T) {
 	mock := &testutil.MockGatekeeper{
 		EvaluateResult: testutil.Decision{Allowed: false, Reason: "mock: deny all", Audit: true},
@@ -209,7 +209,7 @@ func TestGatekeeper_6_1_10_MockDenyAll(t *testing.T) {
 // §6.2 Egress Policy (6 scenarios)
 // --------------------------------------------------------------------------
 
-// TST-CORE-377
+// TST-CORE-793
 func TestGatekeeper_6_2_1_EgressToTrustedDestination(t *testing.T) {
 	var impl testutil.Gatekeeper
 	// impl = gatekeeper.New()
@@ -220,7 +220,7 @@ func TestGatekeeper_6_2_1_EgressToTrustedDestination(t *testing.T) {
 	testutil.RequireTrue(t, allowed, "egress to trusted destination should be allowed")
 }
 
-// TST-CORE-378
+// TST-CORE-794
 func TestGatekeeper_6_2_2_EgressToBlockedDestination(t *testing.T) {
 	var impl testutil.Gatekeeper
 	// impl = gatekeeper.New()
@@ -231,7 +231,7 @@ func TestGatekeeper_6_2_2_EgressToBlockedDestination(t *testing.T) {
 	testutil.RequireFalse(t, allowed, "egress to blocked destination must be denied")
 }
 
-// TST-CORE-379
+// TST-CORE-795
 func TestGatekeeper_6_2_3_EgressWithPIIBlocked(t *testing.T) {
 	var impl testutil.Gatekeeper
 	// impl = gatekeeper.New()
@@ -244,7 +244,7 @@ func TestGatekeeper_6_2_3_EgressWithPIIBlocked(t *testing.T) {
 	testutil.RequireFalse(t, allowed, "egress with PII data must be blocked")
 }
 
-// TST-CORE-380
+// TST-CORE-796
 func TestGatekeeper_6_2_4_EgressEmptyDestinationRejected(t *testing.T) {
 	var impl testutil.Gatekeeper
 	// impl = gatekeeper.New()
@@ -254,7 +254,7 @@ func TestGatekeeper_6_2_4_EgressEmptyDestinationRejected(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
-// TST-CORE-381
+// TST-CORE-797
 func TestGatekeeper_6_2_5_EgressNilDataAllowed(t *testing.T) {
 	var impl testutil.Gatekeeper
 	// impl = gatekeeper.New()
@@ -266,7 +266,7 @@ func TestGatekeeper_6_2_5_EgressNilDataAllowed(t *testing.T) {
 	testutil.RequireTrue(t, allowed, "egress with nil data to trusted destination should pass")
 }
 
-// TST-CORE-382
+// TST-CORE-798
 func TestGatekeeper_6_2_6_MockEgressDeny(t *testing.T) {
 	mock := &testutil.MockGatekeeper{
 		EgressAllowed: false,
@@ -282,7 +282,7 @@ func TestGatekeeper_6_2_6_MockEgressDeny(t *testing.T) {
 // §6.3 Trust Ring & Persona Access Control (6 scenarios)
 // --------------------------------------------------------------------------
 
-// TST-CORE-385
+// TST-CORE-799
 func TestGatekeeper_6_3_1_TrustedAgentAccessesOpenPersona(t *testing.T) {
 	var impl testutil.Gatekeeper
 	// impl = gatekeeper.New()
@@ -300,7 +300,7 @@ func TestGatekeeper_6_3_1_TrustedAgentAccessesOpenPersona(t *testing.T) {
 	testutil.RequireTrue(t, decision.Allowed, "trusted agent should access open persona")
 }
 
-// TST-CORE-386
+// TST-CORE-800
 func TestGatekeeper_6_3_2_UntrustedAgentDeniedLockedPersona(t *testing.T) {
 	var impl testutil.Gatekeeper
 	// impl = gatekeeper.New()
@@ -318,7 +318,7 @@ func TestGatekeeper_6_3_2_UntrustedAgentDeniedLockedPersona(t *testing.T) {
 	testutil.RequireFalse(t, decision.Allowed, "untrusted agent must not access locked persona")
 }
 
-// TST-CORE-387
+// TST-CORE-801
 func TestGatekeeper_6_3_3_VerifiedAgentRestrictedPersona(t *testing.T) {
 	var impl testutil.Gatekeeper
 	// impl = gatekeeper.New()
@@ -338,7 +338,7 @@ func TestGatekeeper_6_3_3_VerifiedAgentRestrictedPersona(t *testing.T) {
 	testutil.RequireTrue(t, decision.Audit, "verified agent on restricted persona should trigger audit")
 }
 
-// TST-CORE-388
+// TST-CORE-802
 func TestGatekeeper_6_3_4_CrossPersonaAccessDenied(t *testing.T) {
 	var impl testutil.Gatekeeper
 	// impl = gatekeeper.New()
@@ -359,7 +359,7 @@ func TestGatekeeper_6_3_4_CrossPersonaAccessDenied(t *testing.T) {
 	testutil.RequireFalse(t, decision.Allowed, "cross-persona access must be denied")
 }
 
-// TST-CORE-389
+// TST-CORE-803
 func TestGatekeeper_6_3_5_MoneyActionRequiresTrustedRing(t *testing.T) {
 	var impl testutil.Gatekeeper
 	// impl = gatekeeper.New()
@@ -379,7 +379,7 @@ func TestGatekeeper_6_3_5_MoneyActionRequiresTrustedRing(t *testing.T) {
 	testutil.RequireFalse(t, decision.Allowed, "money actions require highest trust ring")
 }
 
-// TST-CORE-390
+// TST-CORE-804
 func TestGatekeeper_6_3_6_DataSharingActionFlagged(t *testing.T) {
 	var impl testutil.Gatekeeper
 	// impl = gatekeeper.New()
@@ -403,9 +403,7 @@ func TestGatekeeper_6_3_6_DataSharingActionFlagged(t *testing.T) {
 // Default deny. Per-contact per-category. Tiers: none / summary / full.
 // ==========================================================================
 
-// TST-CORE-360, TST-CORE-361, TST-CORE-362, TST-CORE-363, TST-CORE-364, TST-CORE-365, TST-CORE-366
-// TST-CORE-367, TST-CORE-368, TST-CORE-369, TST-CORE-370, TST-CORE-371, TST-CORE-372, TST-CORE-373
-// TST-CORE-374, TST-CORE-375, TST-CORE-376
+// TST-CORE-360
 func TestGatekeeper_6_1_SP1_DefaultDenyNoPolicyExists(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 
@@ -422,9 +420,7 @@ func TestGatekeeper_6_1_SP1_DefaultDenyNoPolicyExists(t *testing.T) {
 	testutil.RequireEqual(t, len(result.Filtered), 0)
 }
 
-// TST-CORE-360, TST-CORE-361, TST-CORE-362, TST-CORE-363, TST-CORE-364, TST-CORE-365, TST-CORE-366
-// TST-CORE-367, TST-CORE-368, TST-CORE-369, TST-CORE-370, TST-CORE-371, TST-CORE-372, TST-CORE-373
-// TST-CORE-374, TST-CORE-375, TST-CORE-376
+// TST-CORE-361
 func TestGatekeeper_6_1_SP2_DefaultDenyMissingCategoryKey(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	// Contact has a policy but no "location" key.
@@ -441,9 +437,7 @@ func TestGatekeeper_6_1_SP2_DefaultDenyMissingCategoryKey(t *testing.T) {
 	testutil.RequireTrue(t, len(result.Denied) > 0, "missing category key should be treated as none — blocked")
 }
 
-// TST-CORE-360, TST-CORE-361, TST-CORE-362, TST-CORE-363, TST-CORE-364, TST-CORE-365, TST-CORE-366
-// TST-CORE-367, TST-CORE-368, TST-CORE-369, TST-CORE-370, TST-CORE-371, TST-CORE-372, TST-CORE-373
-// TST-CORE-374, TST-CORE-375, TST-CORE-376
+// TST-CORE-362
 func TestGatekeeper_6_1_SP3_PolicyNoneExplicit(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"health": "none"})
@@ -460,9 +454,7 @@ func TestGatekeeper_6_1_SP3_PolicyNoneExplicit(t *testing.T) {
 	testutil.RequireEqual(t, result.Denied[0], "health")
 }
 
-// TST-CORE-360, TST-CORE-361, TST-CORE-362, TST-CORE-363, TST-CORE-364, TST-CORE-365, TST-CORE-366
-// TST-CORE-367, TST-CORE-368, TST-CORE-369, TST-CORE-370, TST-CORE-371, TST-CORE-372, TST-CORE-373
-// TST-CORE-374, TST-CORE-375, TST-CORE-376
+// TST-CORE-363
 func TestGatekeeper_6_1_SP4_PolicySummaryTier(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"availability": "summary"})
@@ -478,9 +470,7 @@ func TestGatekeeper_6_1_SP4_PolicySummaryTier(t *testing.T) {
 	testutil.RequireEqual(t, result.Filtered["availability"], "Busy 2-3pm")
 }
 
-// TST-CORE-360, TST-CORE-361, TST-CORE-362, TST-CORE-363, TST-CORE-364, TST-CORE-365, TST-CORE-366
-// TST-CORE-367, TST-CORE-368, TST-CORE-369, TST-CORE-370, TST-CORE-371, TST-CORE-372, TST-CORE-373
-// TST-CORE-374, TST-CORE-375, TST-CORE-376
+// TST-CORE-364
 func TestGatekeeper_6_1_SP5_PolicyFullTier(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"preferences": "full"})
@@ -496,9 +486,7 @@ func TestGatekeeper_6_1_SP5_PolicyFullTier(t *testing.T) {
 	testutil.RequireEqual(t, result.Filtered["preferences"], "Chai, no sugar, served warm. Allergic to dairy.")
 }
 
-// TST-CORE-360, TST-CORE-361, TST-CORE-362, TST-CORE-363, TST-CORE-364, TST-CORE-365, TST-CORE-366
-// TST-CORE-367, TST-CORE-368, TST-CORE-369, TST-CORE-370, TST-CORE-371, TST-CORE-372, TST-CORE-373
-// TST-CORE-374, TST-CORE-375, TST-CORE-376
+// TST-CORE-365
 func TestGatekeeper_6_1_SP6_PerContactPerCategoryGranularity(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	_ = mock.SetPolicy("did:plc:sancho", map[string]string{
@@ -526,9 +514,7 @@ func TestGatekeeper_6_1_SP6_PerContactPerCategoryGranularity(t *testing.T) {
 	testutil.RequireTrue(t, found, "health should be denied for sancho")
 }
 
-// TST-CORE-360, TST-CORE-361, TST-CORE-362, TST-CORE-363, TST-CORE-364, TST-CORE-365, TST-CORE-366
-// TST-CORE-367, TST-CORE-368, TST-CORE-369, TST-CORE-370, TST-CORE-371, TST-CORE-372, TST-CORE-373
-// TST-CORE-374, TST-CORE-375, TST-CORE-376
+// TST-CORE-366
 func TestGatekeeper_6_1_SP7_DomainSpecificETAOnly(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"presence": "eta_only"})
@@ -545,9 +531,7 @@ func TestGatekeeper_6_1_SP7_DomainSpecificETAOnly(t *testing.T) {
 	testutil.RequireEqual(t, result.Filtered["presence"], "Arriving in about 15 minutes")
 }
 
-// TST-CORE-360, TST-CORE-361, TST-CORE-362, TST-CORE-363, TST-CORE-364, TST-CORE-365, TST-CORE-366
-// TST-CORE-367, TST-CORE-368, TST-CORE-369, TST-CORE-370, TST-CORE-371, TST-CORE-372, TST-CORE-373
-// TST-CORE-374, TST-CORE-375, TST-CORE-376
+// TST-CORE-367
 func TestGatekeeper_6_1_SP8_DomainSpecificFreeBusy(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"availability": "free_busy"})
@@ -564,9 +548,7 @@ func TestGatekeeper_6_1_SP8_DomainSpecificFreeBusy(t *testing.T) {
 	testutil.RequireEqual(t, result.Filtered["availability"], "Busy 2-3pm")
 }
 
-// TST-CORE-360, TST-CORE-361, TST-CORE-362, TST-CORE-363, TST-CORE-364, TST-CORE-365, TST-CORE-366
-// TST-CORE-367, TST-CORE-368, TST-CORE-369, TST-CORE-370, TST-CORE-371, TST-CORE-372, TST-CORE-373
-// TST-CORE-374, TST-CORE-375, TST-CORE-376
+// TST-CORE-368
 func TestGatekeeper_6_1_SP9_DomainSpecificExactLocation(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"presence": "exact_location"})
@@ -583,9 +565,7 @@ func TestGatekeeper_6_1_SP9_DomainSpecificExactLocation(t *testing.T) {
 	testutil.RequireEqual(t, result.Filtered["presence"], "GPS: 37.7749,-122.4194, heading south on Market St")
 }
 
-// TST-CORE-360, TST-CORE-361, TST-CORE-362, TST-CORE-363, TST-CORE-364, TST-CORE-365, TST-CORE-366
-// TST-CORE-367, TST-CORE-368, TST-CORE-369, TST-CORE-370, TST-CORE-371, TST-CORE-372, TST-CORE-373
-// TST-CORE-374, TST-CORE-375, TST-CORE-376
+// TST-CORE-371
 func TestGatekeeper_6_1_SP12_TrustLevelNotEqualSharing(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	// Contact is "trusted" but has no explicit sharing rules — trust and policy are independent.
@@ -601,9 +581,7 @@ func TestGatekeeper_6_1_SP12_TrustLevelNotEqualSharing(t *testing.T) {
 	testutil.RequireTrue(t, len(result.Denied) > 0, "trusted contact with no policy should still have all categories denied")
 }
 
-// TST-CORE-360, TST-CORE-361, TST-CORE-362, TST-CORE-363, TST-CORE-364, TST-CORE-365, TST-CORE-366
-// TST-CORE-367, TST-CORE-368, TST-CORE-369, TST-CORE-370, TST-CORE-371, TST-CORE-372, TST-CORE-373
-// TST-CORE-374, TST-CORE-375, TST-CORE-376
+// TST-CORE-372
 func TestGatekeeper_6_1_SP13_RecognizedCategories(t *testing.T) {
 	// Verify Phase 1 category list.
 	expected := testutil.Phase1RecognizedCategories
@@ -616,9 +594,7 @@ func TestGatekeeper_6_1_SP13_RecognizedCategories(t *testing.T) {
 	testutil.RequireEqual(t, expected[5], "health")
 }
 
-// TST-CORE-360, TST-CORE-361, TST-CORE-362, TST-CORE-363, TST-CORE-364, TST-CORE-365, TST-CORE-366
-// TST-CORE-367, TST-CORE-368, TST-CORE-369, TST-CORE-370, TST-CORE-371, TST-CORE-372, TST-CORE-373
-// TST-CORE-374, TST-CORE-375, TST-CORE-376
+// TST-CORE-375
 func TestGatekeeper_6_1_SP16_ExtensibleCategoryAccepted(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	// Custom category "hobbies" should be storable.
@@ -630,9 +606,7 @@ func TestGatekeeper_6_1_SP16_ExtensibleCategoryAccepted(t *testing.T) {
 	testutil.RequireEqual(t, policy.Categories["hobbies"], "full")
 }
 
-// TST-CORE-360, TST-CORE-361, TST-CORE-362, TST-CORE-363, TST-CORE-364, TST-CORE-365, TST-CORE-366
-// TST-CORE-367, TST-CORE-368, TST-CORE-369, TST-CORE-370, TST-CORE-371, TST-CORE-372, TST-CORE-373
-// TST-CORE-374, TST-CORE-375, TST-CORE-376
+// TST-CORE-376
 func TestGatekeeper_6_1_SP17_ExtensibleCategoryEnforcedAtEgress(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"hobbies": "summary"})
@@ -649,12 +623,62 @@ func TestGatekeeper_6_1_SP17_ExtensibleCategoryEnforcedAtEgress(t *testing.T) {
 	testutil.RequireEqual(t, result.Filtered["hobbies"], "Likes cycling")
 }
 
+
+// --------------------------------------------------------------------------
+// §6.1 Uncovered Sharing Policy Scenarios
+// --------------------------------------------------------------------------
+
+// TST-CORE-369
+func TestGatekeeper_6_1_SP10_PolicyUpdateViaPatch(t *testing.T) {
+	mock := testutil.NewMockSharingPolicyManager()
+	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"health": "none"})
+
+	// PATCH: update health from "none" to "summary"
+	err := mock.SetPolicy("did:plc:sancho", map[string]string{"health": "summary"})
+	testutil.RequireNoError(t, err)
+
+	policy, err := mock.GetPolicy("did:plc:sancho")
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, policy.Categories["health"], "summary")
+}
+
+// TST-CORE-370
+func TestGatekeeper_6_1_SP11_BulkPolicyUpdate(t *testing.T) {
+	mock := testutil.NewMockSharingPolicyManager()
+	_ = mock.SetPolicy("did:plc:alice", map[string]string{"location": "full"})
+	_ = mock.SetPolicy("did:plc:bob", map[string]string{"location": "full"})
+
+	count, err := mock.SetBulkPolicy(
+		map[string]string{"trust_level": "trusted"},
+		map[string]string{"location": "none"},
+	)
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, count, 2)
+}
+
+// TST-CORE-373
+func TestGatekeeper_6_1_SP14_SharingDefaultsForNewContacts(t *testing.T) {
+	var impl testutil.SharingPolicyManager
+	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
+
+	// New contact added — defaults from config.json sharing_defaults apply.
+	t.Skip("sharing defaults require config integration")
+}
+
+// TST-CORE-374
+func TestGatekeeper_6_1_SP15_OutboundPIIScrub(t *testing.T) {
+	var impl testutil.Gatekeeper
+	testutil.RequireImplementation(t, impl, "Gatekeeper")
+
+	// Even "full" tier data gets PII-scrubbed before transmission.
+	t.Skip("outbound PII scrub requires integration with PIIScrubber")
+}
+
 // ==========================================================================
 // TEST_PLAN §6.2 — Sharing Policy API (8 scenarios)
 // ==========================================================================
 
-// TST-CORE-377, TST-CORE-378, TST-CORE-379, TST-CORE-380, TST-CORE-381, TST-CORE-382, TST-CORE-383
-// TST-CORE-384
+// TST-CORE-377
 func TestGatekeeper_6_2_SP1_GetPolicy(t *testing.T) {
 	var impl testutil.SharingPolicyManager
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
@@ -665,8 +689,7 @@ func TestGatekeeper_6_2_SP1_GetPolicy(t *testing.T) {
 	testutil.RequireNotNil(t, policy)
 }
 
-// TST-CORE-377, TST-CORE-378, TST-CORE-379, TST-CORE-380, TST-CORE-381, TST-CORE-382, TST-CORE-383
-// TST-CORE-384
+// TST-CORE-378
 func TestGatekeeper_6_2_SP2_PatchSingleCategory(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	_ = mock.SetPolicy("did:plc:sancho", map[string]string{
@@ -684,8 +707,7 @@ func TestGatekeeper_6_2_SP2_PatchSingleCategory(t *testing.T) {
 	testutil.RequireEqual(t, policy.Categories["preferences"], "full")
 }
 
-// TST-CORE-377, TST-CORE-378, TST-CORE-379, TST-CORE-380, TST-CORE-381, TST-CORE-382, TST-CORE-383
-// TST-CORE-384
+// TST-CORE-379
 func TestGatekeeper_6_2_SP3_PatchMultipleCategories(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	_ = mock.SetPolicy("did:plc:sancho", map[string]string{
@@ -705,8 +727,7 @@ func TestGatekeeper_6_2_SP3_PatchMultipleCategories(t *testing.T) {
 	testutil.RequireEqual(t, policy.Categories["preferences"], "full")
 }
 
-// TST-CORE-377, TST-CORE-378, TST-CORE-379, TST-CORE-380, TST-CORE-381, TST-CORE-382, TST-CORE-383
-// TST-CORE-384
+// TST-CORE-380
 func TestGatekeeper_6_2_SP4_PatchBulkByTrustLevel(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	_ = mock.SetPolicy("did:plc:alice", map[string]string{"location": "full"})
@@ -726,8 +747,7 @@ func TestGatekeeper_6_2_SP4_PatchBulkByTrustLevel(t *testing.T) {
 	testutil.RequireEqual(t, policyB.Categories["location"], "none")
 }
 
-// TST-CORE-377, TST-CORE-378, TST-CORE-379, TST-CORE-380, TST-CORE-381, TST-CORE-382, TST-CORE-383
-// TST-CORE-384
+// TST-CORE-381
 func TestGatekeeper_6_2_SP5_PatchBulkAllContacts(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	_ = mock.SetPolicy("did:plc:alice", map[string]string{"location": "full"})
@@ -743,8 +763,7 @@ func TestGatekeeper_6_2_SP5_PatchBulkAllContacts(t *testing.T) {
 	testutil.RequireEqual(t, count, 3)
 }
 
-// TST-CORE-377, TST-CORE-378, TST-CORE-379, TST-CORE-380, TST-CORE-381, TST-CORE-382, TST-CORE-383
-// TST-CORE-384
+// TST-CORE-382
 func TestGatekeeper_6_2_SP6_GetPolicyUnknownDID(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 
@@ -753,8 +772,7 @@ func TestGatekeeper_6_2_SP6_GetPolicyUnknownDID(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
-// TST-CORE-377, TST-CORE-378, TST-CORE-379, TST-CORE-380, TST-CORE-381, TST-CORE-382, TST-CORE-383
-// TST-CORE-384
+// TST-CORE-383
 func TestGatekeeper_6_2_SP7_PatchInvalidTierValue(t *testing.T) {
 	var impl testutil.SharingPolicyManager
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
@@ -764,7 +782,6 @@ func TestGatekeeper_6_2_SP7_PatchInvalidTierValue(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
-// TST-CORE-377, TST-CORE-378, TST-CORE-379, TST-CORE-380, TST-CORE-381, TST-CORE-382, TST-CORE-383
 // TST-CORE-384
 func TestGatekeeper_6_2_SP8_PolicyStoredInContactsTable(t *testing.T) {
 	var impl testutil.SharingPolicyManager
@@ -779,8 +796,7 @@ func TestGatekeeper_6_2_SP8_PolicyStoredInContactsTable(t *testing.T) {
 // TEST_PLAN §6.3 — Egress Pipeline (9 scenarios)
 // ==========================================================================
 
-// TST-CORE-385, TST-CORE-386, TST-CORE-387, TST-CORE-388, TST-CORE-389, TST-CORE-390, TST-CORE-391
-// TST-CORE-392, TST-CORE-393
+// TST-CORE-385
 func TestGatekeeper_6_3_EP1_BrainSendsTieredPayload(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"availability": "summary"})
@@ -798,8 +814,7 @@ func TestGatekeeper_6_3_EP1_BrainSendsTieredPayload(t *testing.T) {
 	testutil.RequireEqual(t, result.Filtered["availability"], "Busy 2-3pm")
 }
 
-// TST-CORE-385, TST-CORE-386, TST-CORE-387, TST-CORE-388, TST-CORE-389, TST-CORE-390, TST-CORE-391
-// TST-CORE-392, TST-CORE-393
+// TST-CORE-386
 func TestGatekeeper_6_3_EP2_CoreStripsDeniedCategories(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"location": "none", "availability": "summary"})
@@ -819,8 +834,7 @@ func TestGatekeeper_6_3_EP2_CoreStripsDeniedCategories(t *testing.T) {
 	testutil.RequireEqual(t, result.Filtered["availability"], "Busy")
 }
 
-// TST-CORE-385, TST-CORE-386, TST-CORE-387, TST-CORE-388, TST-CORE-389, TST-CORE-390, TST-CORE-391
-// TST-CORE-392, TST-CORE-393
+// TST-CORE-387
 func TestGatekeeper_6_3_EP3_MalformedPayloadCategoryDropped(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"availability": "summary"})
@@ -844,24 +858,21 @@ func TestGatekeeper_6_3_EP3_MalformedPayloadCategoryDropped(t *testing.T) {
 	testutil.RequireTrue(t, found, "malformed payload category should be denied")
 }
 
-// TST-CORE-385, TST-CORE-386, TST-CORE-387, TST-CORE-388, TST-CORE-389, TST-CORE-390, TST-CORE-391
-// TST-CORE-392, TST-CORE-393
+// TST-CORE-388
 func TestGatekeeper_6_3_EP4_EgressEnforcementInCompiledGo(t *testing.T) {
 	// Sharing policy checked via SQL lookup in Go code — not LLM reasoning.
 	// Prompt injection irrelevant. This is a design audit test.
 	t.Skip("code audit: verify sharing policy enforcement is in compiled Go, not LLM")
 }
 
-// TST-CORE-385, TST-CORE-386, TST-CORE-387, TST-CORE-388, TST-CORE-389, TST-CORE-390, TST-CORE-391
-// TST-CORE-392, TST-CORE-393
+// TST-CORE-389
 func TestGatekeeper_6_3_EP5_EgressNotIngress(t *testing.T) {
 	// Incoming message cannot influence egress policy — enforcement is on outbound.
 	// This is a design constraint test.
 	t.Skip("design audit: verify enforcement is at egress, not ingress")
 }
 
-// TST-CORE-385, TST-CORE-386, TST-CORE-387, TST-CORE-388, TST-CORE-389, TST-CORE-390, TST-CORE-391
-// TST-CORE-392, TST-CORE-393
+// TST-CORE-390
 func TestGatekeeper_6_3_EP6_RecipientDIDResolution(t *testing.T) {
 	var impl testutil.Transporter
 	testutil.RequireImplementation(t, impl, "Transporter")
@@ -872,8 +883,7 @@ func TestGatekeeper_6_3_EP6_RecipientDIDResolution(t *testing.T) {
 	testutil.RequireTrue(t, len(endpoint) > 0, "resolved endpoint should be non-empty")
 }
 
-// TST-CORE-385, TST-CORE-386, TST-CORE-387, TST-CORE-388, TST-CORE-389, TST-CORE-390, TST-CORE-391
-// TST-CORE-392, TST-CORE-393
+// TST-CORE-391
 func TestGatekeeper_6_3_EP7_EgressAuditLogging(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"availability": "summary"})
@@ -892,8 +902,7 @@ func TestGatekeeper_6_3_EP7_EgressAuditLogging(t *testing.T) {
 	testutil.RequireEqual(t, result.AuditEntries[0].Decision, "allowed")
 }
 
-// TST-CORE-385, TST-CORE-386, TST-CORE-387, TST-CORE-388, TST-CORE-389, TST-CORE-390, TST-CORE-391
-// TST-CORE-392, TST-CORE-393
+// TST-CORE-392
 func TestGatekeeper_6_3_EP8_AuditIncludesDeniedCategories(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"health": "none"})
@@ -912,8 +921,7 @@ func TestGatekeeper_6_3_EP8_AuditIncludesDeniedCategories(t *testing.T) {
 	testutil.RequireEqual(t, result.AuditEntries[0].Reason, "tier_none")
 }
 
-// TST-CORE-385, TST-CORE-386, TST-CORE-387, TST-CORE-388, TST-CORE-389, TST-CORE-390, TST-CORE-391
-// TST-CORE-392, TST-CORE-393
+// TST-CORE-393
 func TestGatekeeper_6_3_EP9_NaClEncryptionAfterPolicyCheck(t *testing.T) {
 	// After payload passes egress check, it should be encrypted with crypto_box_seal.
 	// This is a design integration test requiring BoxSealer.

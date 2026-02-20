@@ -55,6 +55,9 @@
 | 10 | **[TST-BRAIN-028]** No notification needed | Routine background sync completed | Silently logged, no notification |
 | 11 | **[TST-BRAIN-029]** Fiduciary: health alert | "Critical lab result: potassium level 6.2 mEq/L — contact your physician immediately" from hospital system | Priority: `fiduciary` — interrupt. Silence causes harm: delayed medical response. Architecture §11 explicitly lists "Health alert?" as a fiduciary heuristic |
 | 12 | **[TST-BRAIN-030]** Fiduciary: composite heuristic (keyword + sender trust) | Message containing "urgent" from trusted contact (trust_level = `trusted`) vs. same "urgent" from unknown sender | Trusted sender + "urgent" → `fiduciary`. Unknown sender + "urgent" → NOT fiduciary (phishing vector). Architecture §11 specifies two-factor check: "Contains 'urgent' + sender is in trusted contacts?" — both conditions must hold |
+| 13 | **[TST-BRAIN-361]** Fiduciary overrides Do Not Disturb | Fiduciary event arrives while DND is active | Fiduciary event must interrupt even when DND is active — silence causes harm takes priority |
+| 14 | **[TST-BRAIN-362]** Solicited deferred during DND | Solicited event arrives while DND is active | Solicited event is deferred (not dropped) until DND ends — then delivered |
+| 15 | **[TST-BRAIN-363]** Engagement never triggers push notification | Engagement event at any time | Engagement events never trigger push notification — always saved for briefing only |
 
 ### 2.2 Vault Lifecycle Events
 
@@ -79,6 +82,8 @@
 | 8 | **[TST-BRAIN-042]** Error recovery | LLM returns malformed response | Retry with simplified prompt, or return error to user |
 | 9 | **[TST-BRAIN-043]** Crash handler: sanitized stdout | Inject exception in guardian_loop | Stdout receives ONLY `"guardian crash: {type(e).__name__} at {e.__traceback__.tb_lineno}"` — no variable values, no traceback frames, no PII. Python tracebacks contain local variables which may include user data (Section 04 §Observability) |
 | 10 | **[TST-BRAIN-044]** Crash handler: full traceback to core | Inject exception in guardian_loop | Brain POSTs `{error: "RuntimeError", traceback: "<full>", task_id: "<current>"}` to `http://core:8100/api/v1/vault/crash` — stored in identity.sqlite `crash_log` table (encrypted at rest). Exception is re-raised after POST so Docker restarts the container. If core is unreachable, traceback is lost (acceptable — crash_log is best-effort, restart is mandatory) |
+| 11 | **[TST-BRAIN-364]** Risky intent logs audit trail | Risky intent flagged for review | Audit trail entry written to core KV with intent details, timestamp, and review status |
+| 12 | **[TST-BRAIN-365]** Blocked intent logs audit trail | Blocked intent rejected | Audit trail entry written to core KV with intent details, timestamp, and block reason |
 
 ### 2.3.1 Draft-Don't-Send (Action Layer)
 
@@ -95,6 +100,10 @@
 | 6 | **[TST-BRAIN-050]** High-risk classification: financial | Email about large financial transaction | Brain summarizes only — no auto-draft for financial correspondence |
 | 7 | **[TST-BRAIN-051]** High-risk classification: emotional | Email about sensitive personal matter | Brain summarizes only — emotional topics never auto-drafted |
 | 8 | **[TST-BRAIN-052]** User notified of draft | Draft created and stored | Nudge: "Conference invite. Drafted a 'Yes'. [Review & Send]" — user must open Gmail to send |
+| 9 | **[TST-BRAIN-366]** High-risk: external domain + attachment | Email with attachment to external/unknown domain | Classification: high-risk — external domain combined with attachment triggers elevated review |
+| 10 | **[TST-BRAIN-367]** Draft preserves original intent metadata | Draft created from agent intent | Draft metadata includes the original intent (action, target, confidence) for audit trail |
+| 11 | **[TST-BRAIN-368]** Agent requests send → downgraded to draft | Agent explicitly requests `messages.send` | Guardian downgrades to `drafts.create` — send is never honoured, even if agent requests it |
+| 12 | **[TST-BRAIN-369]** Bulk draft rate limiting | Burst of 20 draft requests in quick succession | Rate limiter throttles draft creation to prevent spam — excess requests queued or rejected |
 
 ### 2.3.2 Cart Handover (Action Layer)
 
@@ -112,6 +121,9 @@
 | 7 | **[TST-BRAIN-059]** Outcome follow-up question timing | 4 weeks after cart handover purchase | Brain asks: "How's that chair?" — follow-up timing configurable, triggers outcome data collection flow |
 | 8 | **[TST-BRAIN-060]** Outcome inference without explicit response | User continues using product, no explicit feedback | Brain infers outcome from usage signals (e.g. no return, product still mentioned) → outcome: `"still_using_6_months"` — doesn't require explicit user confirmation |
 | 9 | **[TST-BRAIN-061]** Outcome anonymization: exact fields from Section 08 Lexicon | Brain creates anonymized outcome record | Record contains ONLY fields from `com.dina.reputation.outcome` Lexicon: `{type: "outcome_report", reporter_trust_ring: 2, reporter_age_days: 730, product_category: "office_chairs", product_id: "herman_miller_aeron_2025", purchase_verified: true, purchase_amount_range: "50000-100000_INR", time_since_purchase_days: 180, outcome: "still_using", satisfaction: "positive", issues: [], timestamp: "2026-07-15T...", signature: "..."}` — 13 fields total. NO user DID, NO user name, NO seller name. reporter_trust_ring/age_days are the submitting Dina's ring level and age (not seller's). Brain strips all identifying information before creating record |
+| 10 | **[TST-BRAIN-370]** Agent DID never holds wallet private keys | Inspect agent key access during crypto cart handover | Agent DID has zero access to wallet private keys — keys remain in user's custody |
+| 11 | **[TST-BRAIN-371]** Cart handover includes human-readable summary | Cart handover message sent to user | Handover message includes a human-readable summary of the purchase (item, qty, total) |
+| 12 | **[TST-BRAIN-372]** Duplicate cart handover idempotent | Same cart ID submitted twice | Second handover for same cart ID is idempotent — no duplicate staging entries |
 
 ### 2.4 Whisper Delivery
 
@@ -135,6 +147,9 @@
 | 7 | **[TST-BRAIN-072]** Briefing: zero restricted accesses omitted | No restricted persona accessed in 24h | Briefing does NOT include "health data accessed 0 times" — only non-zero counts shown |
 | 8 | **[TST-BRAIN-073]** Briefing restricted summary queries audit log | Brain generates briefing | Brain calls `GET core/v1/vault/query {type: "audit_log", filter: {persona_tier: "restricted", since: "24h"}}` → aggregates counts per persona |
 | 9 | **[TST-BRAIN-074]** Briefing permanently disabled by user | Config: `"briefing": {"enabled": false}` | No briefing generated at scheduled time — not deferred (DND), fully disabled. Architecture §11 says daily briefing is "Optional — user can disable." Re-enable via config or chat: "Turn on my daily briefing" |
+| 10 | **[TST-BRAIN-373]** Briefing includes fiduciary recap | Fiduciary events occurred since last briefing | Briefing includes a recap section summarizing fiduciary events handled since the last daily briefing |
+| 11 | **[TST-BRAIN-374]** Briefing aggregates across personas | Engagement items from `/personal` and `/work` | Briefing aggregates items across personas without leaking cross-persona data |
+| 12 | **[TST-BRAIN-375]** Briefing respects user preferences (category filtering) | User has category preferences configured | Briefing respects user preferences for category ordering and exclusions |
 
 ### 2.6 Context Injection (The Nudge)
 
@@ -569,6 +584,11 @@
 | 4 | **[TST-BRAIN-292]** Missing LLM_URL | Not set | Brain starts but LLM routing disabled (graceful degradation) |
 | 5 | **[TST-BRAIN-293]** BRAIN_TOKEN from secret | `/run/secrets/brain_token` | Token loaded for self-validation |
 | 6 | **[TST-BRAIN-294]** Invalid URL format | `CORE_URL=not-a-url` | Startup validation fails |
+| 7 | **[TST-BRAIN-376]** CORE_URL default value | `CORE_URL` not set | Defaults to `http://core:8300` |
+| 8 | **[TST-BRAIN-377]** BRAIN_TOKEN from env | `DINA_BRAIN_TOKEN=xxx` | Token loaded from env var |
+| 9 | **[TST-BRAIN-378]** LISTEN_PORT default | `DINA_BRAIN_PORT` not set | Defaults to 8200 |
+| 10 | **[TST-BRAIN-379]** LOG_LEVEL default | `DINA_LOG_LEVEL` not set | Defaults to INFO |
+| 11 | **[TST-BRAIN-380]** Missing BRAIN_TOKEN raises | No token, no secret file | Startup fails with ValueError |
 
 ---
 
@@ -580,6 +600,7 @@
 |---|----------|-------|----------|
 | 1 | **[TST-BRAIN-295]** Health check | GET `/v1/health` | 200 `{"status": "ok"}` |
 | 2 | **[TST-BRAIN-296]** Health with LLM down | GET `/v1/health` when LLM unreachable | 200 `{"status": "degraded", "llm": "unreachable"}` |
+| 3 | **[TST-BRAIN-381]** Health includes components | GET `/healthz` | Response includes `llm_router` and `core_client` status |
 
 ### 10.2 Process Event
 
@@ -590,6 +611,28 @@
 | 3 | **[TST-BRAIN-299]** Process incoming message | POST `/v1/process` with message event | 200 with classification + action |
 | 4 | **[TST-BRAIN-300]** Invalid event type | Unknown event type | 400 Bad Request |
 | 5 | **[TST-BRAIN-301]** Missing required fields | Incomplete event payload | 422 Validation Error (Pydantic) |
+| 6 | **[TST-BRAIN-382]** Process valid event (generic) | POST `/v1/process` with valid event payload | 200 with result |
+| 7 | **[TST-BRAIN-383]** Process missing auth | POST `/v1/process` without `Authorization` header | 401 Unauthorized |
+| 8 | **[TST-BRAIN-384]** Process wrong token | POST `/v1/process` with wrong BRAIN_TOKEN | 401 Unauthorized |
+| 9 | **[TST-BRAIN-385]** Process invalid JSON | POST `/v1/process` with malformed JSON body | 400 Bad Request |
+
+---
+
+### 10.3 Reason Endpoint
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-386]** Reason valid request | POST `/v1/reason` with valid task | 200 with LLM response |
+| 2 | **[TST-BRAIN-387]** Reason missing prompt | POST `/v1/reason` without `prompt` field | 422 Validation Error |
+| 3 | **[TST-BRAIN-388]** Reason no auth | POST `/v1/reason` without auth | 401 Unauthorized |
+
+### 10.4 Request/Response Validation
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-389]** Response Content-Type JSON | Any API response | `Content-Type: application/json` |
+| 2 | **[TST-BRAIN-390]** Error response format | Error response | Consistent JSON with `detail` field |
+| 3 | **[TST-BRAIN-391]** Unknown route returns 404 | GET `/v1/nonexistent` | 404 Not Found |
 
 ---
 

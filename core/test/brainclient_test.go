@@ -17,7 +17,7 @@ import (
 // §11.1 Brain Client Basic Operations (6 scenarios)
 // --------------------------------------------------------------------------
 
-// TST-CORE-537
+// TST-CORE-531
 func TestBrainClient_11_1_1_HealthyBrain(t *testing.T) {
 	var impl testutil.BrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
@@ -29,7 +29,7 @@ func TestBrainClient_11_1_1_HealthyBrain(t *testing.T) {
 	testutil.RequireNotNil(t, result)
 }
 
-// TST-CORE-538
+// TST-CORE-532
 func TestBrainClient_11_1_2_BrainTimeout(t *testing.T) {
 	var impl testutil.BrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
@@ -42,7 +42,7 @@ func TestBrainClient_11_1_2_BrainTimeout(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
-// TST-CORE-539
+// TST-CORE-533
 func TestBrainClient_11_1_3_CircuitBreakerOpens(t *testing.T) {
 	var impl testutil.BrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
@@ -59,7 +59,7 @@ func TestBrainClient_11_1_3_CircuitBreakerOpens(t *testing.T) {
 	testutil.RequireFalse(t, impl.IsAvailable(), "circuit breaker should be open after 5 consecutive failures")
 }
 
-// TST-CORE-540
+// TST-CORE-534
 func TestBrainClient_11_1_4_CircuitBreakerHalfOpen(t *testing.T) {
 	var impl testutil.BrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
@@ -71,7 +71,7 @@ func TestBrainClient_11_1_4_CircuitBreakerHalfOpen(t *testing.T) {
 	t.Skip("half-open state requires time-based cooldown integration test")
 }
 
-// TST-CORE-531
+// TST-CORE-535
 func TestBrainClient_11_1_5_CircuitBreakerCloses(t *testing.T) {
 	var impl testutil.BrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
@@ -82,7 +82,7 @@ func TestBrainClient_11_1_5_CircuitBreakerCloses(t *testing.T) {
 	t.Skip("circuit breaker close requires time-based cooldown and a healthy brain endpoint")
 }
 
-// TST-CORE-531
+// TST-CORE-536
 func TestBrainClient_11_1_6_BrainCrashRecovery(t *testing.T) {
 	var impl testutil.BrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
@@ -97,7 +97,7 @@ func TestBrainClient_11_1_6_BrainCrashRecovery(t *testing.T) {
 // §11.2 Watchdog (4 scenarios)
 // --------------------------------------------------------------------------
 
-// TST-CORE-532
+// TST-CORE-537
 func TestBrainClient_11_2_1_BrainHealthy(t *testing.T) {
 	var impl testutil.BrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
@@ -108,7 +108,7 @@ func TestBrainClient_11_2_1_BrainHealthy(t *testing.T) {
 	testutil.RequireNoError(t, err)
 }
 
-// TST-CORE-532
+// TST-CORE-538
 func TestBrainClient_11_2_2_BrainUnhealthy(t *testing.T) {
 	var impl testutil.BrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
@@ -121,7 +121,7 @@ func TestBrainClient_11_2_2_BrainUnhealthy(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
-// TST-CORE-532
+// TST-CORE-539
 func TestBrainClient_11_2_3_BrainRecovery(t *testing.T) {
 	var impl testutil.BrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
@@ -132,7 +132,7 @@ func TestBrainClient_11_2_3_BrainRecovery(t *testing.T) {
 	t.Skip("recovery detection requires watchdog polling integration test")
 }
 
-// TST-CORE-532
+// TST-CORE-540
 func TestBrainClient_11_2_4_WatchdogInterval(t *testing.T) {
 	var impl testutil.BrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
@@ -148,7 +148,7 @@ func TestBrainClient_11_2_4_WatchdogInterval(t *testing.T) {
 // §11.3 Additional Edge Cases (6 scenarios)
 // --------------------------------------------------------------------------
 
-// TST-CORE-533
+// TST-CORE-843
 func TestBrainClient_11_3_1_SendEventToBrain(t *testing.T) {
 	mock := &testutil.MockBrainClient{
 		ProcessResult: []byte(`{"status":"ok","action":"none"}`),
@@ -162,7 +162,7 @@ func TestBrainClient_11_3_1_SendEventToBrain(t *testing.T) {
 	testutil.RequireContains(t, string(result), `"status":"ok"`)
 }
 
-// TST-CORE-533
+// TST-CORE-844
 func TestBrainClient_11_3_2_BrainReturnsError(t *testing.T) {
 	mock := &testutil.MockBrainClient{
 		ProcessErr: testutil.ErrNotImplemented,
@@ -175,7 +175,7 @@ func TestBrainClient_11_3_2_BrainReturnsError(t *testing.T) {
 	testutil.RequireEqual(t, err.Error(), testutil.ErrNotImplemented.Error())
 }
 
-// TST-CORE-533
+// TST-CORE-845
 func TestBrainClient_11_3_3_BrainReturnsMalformedJSON(t *testing.T) {
 	var impl testutil.BrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
@@ -188,7 +188,7 @@ func TestBrainClient_11_3_3_BrainReturnsMalformedJSON(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
-// TST-CORE-533
+// TST-CORE-846
 func TestBrainClient_11_3_4_ConcurrentRequests(t *testing.T) {
 	mock := &testutil.MockBrainClient{
 		ProcessResult: []byte(`{"status":"ok"}`),
@@ -217,7 +217,7 @@ func TestBrainClient_11_3_4_ConcurrentRequests(t *testing.T) {
 	}
 }
 
-// TST-CORE-533
+// TST-CORE-847
 func TestBrainClient_11_3_5_EmptyURLReturnsError(t *testing.T) {
 	var impl testutil.BrainClient
 	// impl = brainclient.New("", testutil.TestBrainToken)
@@ -230,7 +230,7 @@ func TestBrainClient_11_3_5_EmptyURLReturnsError(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
-// TST-CORE-533
+// TST-CORE-848
 func TestBrainClient_11_3_6_ConnectionPooling(t *testing.T) {
 	var impl testutil.BrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
@@ -251,7 +251,7 @@ func TestBrainClient_11_3_6_ConnectionPooling(t *testing.T) {
 // §11 Mock-based Verification (additional mock coverage)
 // --------------------------------------------------------------------------
 
-// TST-CORE-531, TST-CORE-532, TST-CORE-533, TST-CORE-534, TST-CORE-535, TST-CORE-536
+// TST-CORE-849
 func TestBrainClient_11_Mock_HealthSuccess(t *testing.T) {
 	mock := &testutil.MockBrainClient{
 		Available: true,
@@ -262,7 +262,7 @@ func TestBrainClient_11_Mock_HealthSuccess(t *testing.T) {
 	testutil.RequireTrue(t, mock.IsAvailable(), "healthy mock should report available")
 }
 
-// TST-CORE-531, TST-CORE-532, TST-CORE-533, TST-CORE-534, TST-CORE-535, TST-CORE-536
+// TST-CORE-850
 func TestBrainClient_11_Mock_HealthFailure(t *testing.T) {
 	mock := &testutil.MockBrainClient{
 		HealthErr: testutil.ErrNotImplemented,

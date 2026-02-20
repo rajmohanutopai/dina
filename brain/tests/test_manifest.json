@@ -2159,6 +2159,192 @@
       "row": 3,
       "scenario": "Enclave-sealed keys",
       "line": 749
+    },
+    "TST-BRAIN-361": {
+      "path": "2.1",
+      "row": 13,
+      "scenario": "Fiduciary overrides Do Not Disturb",
+      "line": 0
+    },
+    "TST-BRAIN-362": {
+      "path": "2.1",
+      "row": 14,
+      "scenario": "Solicited deferred during DND",
+      "line": 0
+    },
+    "TST-BRAIN-363": {
+      "path": "2.1",
+      "row": 15,
+      "scenario": "Engagement never triggers push notification",
+      "line": 0
+    },
+    "TST-BRAIN-364": {
+      "path": "2.3",
+      "row": 11,
+      "scenario": "Risky intent logs audit trail",
+      "line": 0
+    },
+    "TST-BRAIN-365": {
+      "path": "2.3",
+      "row": 12,
+      "scenario": "Blocked intent logs audit trail",
+      "line": 0
+    },
+    "TST-BRAIN-366": {
+      "path": "2.3.1",
+      "row": 9,
+      "scenario": "High-risk: external domain + attachment",
+      "line": 0
+    },
+    "TST-BRAIN-367": {
+      "path": "2.3.1",
+      "row": 10,
+      "scenario": "Draft preserves original intent metadata",
+      "line": 0
+    },
+    "TST-BRAIN-368": {
+      "path": "2.3.1",
+      "row": 11,
+      "scenario": "Agent requests send downgraded to draft",
+      "line": 0
+    },
+    "TST-BRAIN-369": {
+      "path": "2.3.1",
+      "row": 12,
+      "scenario": "Bulk draft rate limiting",
+      "line": 0
+    },
+    "TST-BRAIN-370": {
+      "path": "2.3.2",
+      "row": 10,
+      "scenario": "Agent DID never holds wallet private keys",
+      "line": 0
+    },
+    "TST-BRAIN-371": {
+      "path": "2.3.2",
+      "row": 11,
+      "scenario": "Cart handover includes human-readable summary",
+      "line": 0
+    },
+    "TST-BRAIN-372": {
+      "path": "2.3.2",
+      "row": 12,
+      "scenario": "Duplicate cart handover idempotent",
+      "line": 0
+    },
+    "TST-BRAIN-373": {
+      "path": "2.5",
+      "row": 10,
+      "scenario": "Briefing includes fiduciary recap",
+      "line": 0
+    },
+    "TST-BRAIN-374": {
+      "path": "2.5",
+      "row": 11,
+      "scenario": "Briefing aggregates across personas",
+      "line": 0
+    },
+    "TST-BRAIN-375": {
+      "path": "2.5",
+      "row": 12,
+      "scenario": "Briefing respects user preferences (category filtering)",
+      "line": 0
+    },
+    "TST-BRAIN-376": {
+      "path": "9",
+      "row": 7,
+      "scenario": "CORE_URL default value",
+      "line": 0
+    },
+    "TST-BRAIN-377": {
+      "path": "9",
+      "row": 8,
+      "scenario": "BRAIN_TOKEN from env",
+      "line": 0
+    },
+    "TST-BRAIN-378": {
+      "path": "9",
+      "row": 9,
+      "scenario": "LISTEN_PORT default",
+      "line": 0
+    },
+    "TST-BRAIN-379": {
+      "path": "9",
+      "row": 10,
+      "scenario": "LOG_LEVEL default",
+      "line": 0
+    },
+    "TST-BRAIN-380": {
+      "path": "9",
+      "row": 11,
+      "scenario": "Missing BRAIN_TOKEN raises",
+      "line": 0
+    },
+    "TST-BRAIN-381": {
+      "path": "10.1",
+      "row": 3,
+      "scenario": "Health includes components",
+      "line": 0
+    },
+    "TST-BRAIN-382": {
+      "path": "10.2",
+      "row": 6,
+      "scenario": "Process valid event (generic)",
+      "line": 0
+    },
+    "TST-BRAIN-383": {
+      "path": "10.2",
+      "row": 7,
+      "scenario": "Process missing auth",
+      "line": 0
+    },
+    "TST-BRAIN-384": {
+      "path": "10.2",
+      "row": 8,
+      "scenario": "Process wrong token",
+      "line": 0
+    },
+    "TST-BRAIN-385": {
+      "path": "10.2",
+      "row": 9,
+      "scenario": "Process invalid JSON",
+      "line": 0
+    },
+    "TST-BRAIN-386": {
+      "path": "10.3",
+      "row": 1,
+      "scenario": "Reason valid request",
+      "line": 0
+    },
+    "TST-BRAIN-387": {
+      "path": "10.3",
+      "row": 2,
+      "scenario": "Reason missing prompt",
+      "line": 0
+    },
+    "TST-BRAIN-388": {
+      "path": "10.3",
+      "row": 3,
+      "scenario": "Reason no auth",
+      "line": 0
+    },
+    "TST-BRAIN-389": {
+      "path": "10.4",
+      "row": 1,
+      "scenario": "Response Content-Type JSON",
+      "line": 0
+    },
+    "TST-BRAIN-390": {
+      "path": "10.4",
+      "row": 2,
+      "scenario": "Error response format",
+      "line": 0
+    },
+    "TST-BRAIN-391": {
+      "path": "10.4",
+      "row": 3,
+      "scenario": "Unknown route returns 404",
+      "line": 0
     }
   },
   "sections": {
@@ -2623,5 +2809,5 @@
       "TST-BRAIN-360"
     ]
   },
-  "total": 360
+  "total": 375
 }

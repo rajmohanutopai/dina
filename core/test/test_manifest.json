@@ -4649,6 +4649,498 @@
       "row": 4,
       "scenario": "Cache encrypted with Sync Key",
       "line": 1368
+    },
+    "TST-CORE-776": {
+      "path": "5",
+      "row": 18,
+      "scenario": "Address detection (optional)",
+      "line": 0
+    },
+    "TST-CORE-777": {
+      "path": "5",
+      "row": 19,
+      "scenario": "Table-driven PII test suite",
+      "line": 0
+    },
+    "TST-CORE-778": {
+      "path": "5",
+      "row": 20,
+      "scenario": "Empty input handling",
+      "line": 0
+    },
+    "TST-CORE-779": {
+      "path": "5",
+      "row": 21,
+      "scenario": "Email in URL (mailto:)",
+      "line": 0
+    },
+    "TST-CORE-780": {
+      "path": "5",
+      "row": 22,
+      "scenario": "Consecutive same-type PII",
+      "line": 0
+    },
+    "TST-CORE-781": {
+      "path": "5",
+      "row": 23,
+      "scenario": "SQL injection in scrubber input",
+      "line": 0
+    },
+    "TST-CORE-782": {
+      "path": "5",
+      "row": 24,
+      "scenario": "Unicode text with PII",
+      "line": 0
+    },
+    "TST-CORE-783": {
+      "path": "6.4",
+      "row": 1,
+      "scenario": "Safe intent allowed",
+      "line": 0
+    },
+    "TST-CORE-784": {
+      "path": "6.4",
+      "row": 2,
+      "scenario": "Risky intent flagged",
+      "line": 0
+    },
+    "TST-CORE-785": {
+      "path": "6.4",
+      "row": 3,
+      "scenario": "Blocked intent denied",
+      "line": 0
+    },
+    "TST-CORE-786": {
+      "path": "6.4",
+      "row": 4,
+      "scenario": "Vault read by untrusted denied",
+      "line": 0
+    },
+    "TST-CORE-787": {
+      "path": "6.4",
+      "row": 5,
+      "scenario": "Empty action rejected",
+      "line": 0
+    },
+    "TST-CORE-788": {
+      "path": "6.4",
+      "row": 6,
+      "scenario": "Empty agent DID rejected",
+      "line": 0
+    },
+    "TST-CORE-789": {
+      "path": "6.4",
+      "row": 7,
+      "scenario": "Decision contains reason",
+      "line": 0
+    },
+    "TST-CORE-790": {
+      "path": "6.4",
+      "row": 8,
+      "scenario": "Safe intent no audit",
+      "line": 0
+    },
+    "TST-CORE-791": {
+      "path": "6.4",
+      "row": 9,
+      "scenario": "Mock allow all",
+      "line": 0
+    },
+    "TST-CORE-792": {
+      "path": "6.4",
+      "row": 10,
+      "scenario": "Mock deny all",
+      "line": 0
+    },
+    "TST-CORE-793": {
+      "path": "6.5",
+      "row": 1,
+      "scenario": "Egress to trusted destination",
+      "line": 0
+    },
+    "TST-CORE-794": {
+      "path": "6.5",
+      "row": 2,
+      "scenario": "Egress to blocked destination",
+      "line": 0
+    },
+    "TST-CORE-795": {
+      "path": "6.5",
+      "row": 3,
+      "scenario": "Egress with PII blocked",
+      "line": 0
+    },
+    "TST-CORE-796": {
+      "path": "6.5",
+      "row": 4,
+      "scenario": "Egress empty destination rejected",
+      "line": 0
+    },
+    "TST-CORE-797": {
+      "path": "6.5",
+      "row": 5,
+      "scenario": "Egress nil data allowed",
+      "line": 0
+    },
+    "TST-CORE-798": {
+      "path": "6.5",
+      "row": 6,
+      "scenario": "Mock egress deny",
+      "line": 0
+    },
+    "TST-CORE-799": {
+      "path": "6.6",
+      "row": 1,
+      "scenario": "Trusted agent accesses open persona",
+      "line": 0
+    },
+    "TST-CORE-800": {
+      "path": "6.6",
+      "row": 2,
+      "scenario": "Untrusted agent denied locked persona",
+      "line": 0
+    },
+    "TST-CORE-801": {
+      "path": "6.6",
+      "row": 3,
+      "scenario": "Verified agent restricted persona",
+      "line": 0
+    },
+    "TST-CORE-802": {
+      "path": "6.6",
+      "row": 4,
+      "scenario": "Cross-persona access denied",
+      "line": 0
+    },
+    "TST-CORE-803": {
+      "path": "6.6",
+      "row": 5,
+      "scenario": "Money action requires trusted ring",
+      "line": 0
+    },
+    "TST-CORE-804": {
+      "path": "6.6",
+      "row": 6,
+      "scenario": "Data sharing action flagged",
+      "line": 0
+    },
+    "TST-CORE-805": {
+      "path": "7.1",
+      "row": 18,
+      "scenario": "Send to unresolvable DID fails",
+      "line": 0
+    },
+    "TST-CORE-806": {
+      "path": "7.1",
+      "row": 19,
+      "scenario": "Send empty envelope rejected",
+      "line": 0
+    },
+    "TST-CORE-807": {
+      "path": "7.1",
+      "row": 20,
+      "scenario": "Send nil envelope rejected",
+      "line": 0
+    },
+    "TST-CORE-808": {
+      "path": "7.1",
+      "row": 21,
+      "scenario": "Mock send records messages",
+      "line": 0
+    },
+    "TST-CORE-809": {
+      "path": "7.1",
+      "row": 22,
+      "scenario": "Outbox enqueue persists message",
+      "line": 0
+    },
+    "TST-CORE-810": {
+      "path": "7.2",
+      "row": 24,
+      "scenario": "Basic inbox receive",
+      "line": 0
+    },
+    "TST-CORE-811": {
+      "path": "7.2",
+      "row": 25,
+      "scenario": "Empty inbox returns nil",
+      "line": 0
+    },
+    "TST-CORE-812": {
+      "path": "7.2",
+      "row": 26,
+      "scenario": "Inbox FIFO order",
+      "line": 0
+    },
+    "TST-CORE-813": {
+      "path": "7.2",
+      "row": 27,
+      "scenario": "Inbox spool when locked",
+      "line": 0
+    },
+    "TST-CORE-814": {
+      "path": "7.2",
+      "row": 28,
+      "scenario": "Inbox reject when spool full",
+      "line": 0
+    },
+    "TST-CORE-815": {
+      "path": "7.3",
+      "row": 6,
+      "scenario": "Mock resolve endpoint",
+      "line": 0
+    },
+    "TST-CORE-816": {
+      "path": "7.3",
+      "row": 7,
+      "scenario": "Mock resolve unknown fails",
+      "line": 0
+    },
+    "TST-CORE-817": {
+      "path": "7.3",
+      "row": 8,
+      "scenario": "Unresolvable DID not cached",
+      "line": 0
+    },
+    "TST-CORE-818": {
+      "path": "7.4",
+      "row": 10,
+      "scenario": "Envelope contains required fields",
+      "line": 0
+    },
+    "TST-CORE-819": {
+      "path": "7.4",
+      "row": 11,
+      "scenario": "Envelope from field is DID",
+      "line": 0
+    },
+    "TST-CORE-820": {
+      "path": "7.4",
+      "row": 12,
+      "scenario": "Envelope max size rejection",
+      "line": 0
+    },
+    "TST-CORE-821": {
+      "path": "7.4",
+      "row": 13,
+      "scenario": "Envelope invalid JSON rejected",
+      "line": 0
+    },
+    "TST-CORE-822": {
+      "path": "7.5",
+      "row": 5,
+      "scenario": "Envelope encrypted in transit",
+      "line": 0
+    },
+    "TST-CORE-823": {
+      "path": "7.5",
+      "row": 6,
+      "scenario": "Encrypt/decrypt roundtrip",
+      "line": 0
+    },
+    "TST-CORE-824": {
+      "path": "7.5",
+      "row": 7,
+      "scenario": "Wrong recipient cannot decrypt",
+      "line": 0
+    },
+    "TST-CORE-825": {
+      "path": "7.6",
+      "row": 5,
+      "scenario": "Direct delivery preferred",
+      "line": 0
+    },
+    "TST-CORE-826": {
+      "path": "7.6",
+      "row": 6,
+      "scenario": "Relay used when direct fails",
+      "line": 0
+    },
+    "TST-CORE-827": {
+      "path": "7.6",
+      "row": 7,
+      "scenario": "Mock send error",
+      "line": 0
+    },
+    "TST-CORE-828": {
+      "path": "8.1",
+      "row": 9,
+      "scenario": "Dequeue returns pending task",
+      "line": 0
+    },
+    "TST-CORE-829": {
+      "path": "8.1",
+      "row": 10,
+      "scenario": "Dequeue empty returns nil",
+      "line": 0
+    },
+    "TST-CORE-830": {
+      "path": "8.1",
+      "row": 11,
+      "scenario": "Complete task",
+      "line": 0
+    },
+    "TST-CORE-831": {
+      "path": "8.1",
+      "row": 12,
+      "scenario": "Mock enqueue/dequeue",
+      "line": 0
+    },
+    "TST-CORE-832": {
+      "path": "8.2",
+      "row": 5,
+      "scenario": "High priority first",
+      "line": 0
+    },
+    "TST-CORE-833": {
+      "path": "8.2",
+      "row": 6,
+      "scenario": "Same priority FIFO",
+      "line": 0
+    },
+    "TST-CORE-834": {
+      "path": "8.2",
+      "row": 7,
+      "scenario": "Mock priority not enforced",
+      "line": 0
+    },
+    "TST-CORE-835": {
+      "path": "8.3",
+      "row": 7,
+      "scenario": "Fail task",
+      "line": 0
+    },
+    "TST-CORE-836": {
+      "path": "8.3",
+      "row": 8,
+      "scenario": "Retry increments counter",
+      "line": 0
+    },
+    "TST-CORE-837": {
+      "path": "8.3",
+      "row": 9,
+      "scenario": "Retry non-failed task fails",
+      "line": 0
+    },
+    "TST-CORE-838": {
+      "path": "8.3",
+      "row": 10,
+      "scenario": "Fail non-existent task fails",
+      "line": 0
+    },
+    "TST-CORE-839": {
+      "path": "8.4",
+      "row": 9,
+      "scenario": "Crash recovery re-enqueues running tasks",
+      "line": 0
+    },
+    "TST-CORE-840": {
+      "path": "8.4",
+      "row": 10,
+      "scenario": "Retry schedule exponential backoff",
+      "line": 0
+    },
+    "TST-CORE-841": {
+      "path": "8.4",
+      "row": 11,
+      "scenario": "Max retries exceeded marks dead letter",
+      "line": 0
+    },
+    "TST-CORE-842": {
+      "path": "8.4",
+      "row": 12,
+      "scenario": "Persistence across restart",
+      "line": 0
+    },
+    "TST-CORE-843": {
+      "path": "11.3",
+      "row": 5,
+      "scenario": "Send event to brain (mock)",
+      "line": 0
+    },
+    "TST-CORE-844": {
+      "path": "11.3",
+      "row": 6,
+      "scenario": "Brain returns error (mock)",
+      "line": 0
+    },
+    "TST-CORE-845": {
+      "path": "11.3",
+      "row": 7,
+      "scenario": "Brain returns malformed JSON",
+      "line": 0
+    },
+    "TST-CORE-846": {
+      "path": "11.3",
+      "row": 8,
+      "scenario": "Concurrent requests",
+      "line": 0
+    },
+    "TST-CORE-847": {
+      "path": "11.3",
+      "row": 9,
+      "scenario": "Empty URL returns error",
+      "line": 0
+    },
+    "TST-CORE-848": {
+      "path": "11.3",
+      "row": 10,
+      "scenario": "Connection pooling",
+      "line": 0
+    },
+    "TST-CORE-849": {
+      "path": "11",
+      "row": 11,
+      "scenario": "Mock health success",
+      "line": 0
+    },
+    "TST-CORE-850": {
+      "path": "11",
+      "row": 12,
+      "scenario": "Mock health failure",
+      "line": 0
+    },
+    "TST-CORE-851": {
+      "path": "14.1",
+      "row": 7,
+      "scenario": "Partial env vars",
+      "line": 0
+    },
+    "TST-CORE-852": {
+      "path": "14.1",
+      "row": 8,
+      "scenario": "Env var type parsing",
+      "line": 0
+    },
+    "TST-CORE-853": {
+      "path": "14.2",
+      "row": 9,
+      "scenario": "Default security mode",
+      "line": 0
+    },
+    "TST-CORE-854": {
+      "path": "14.3",
+      "row": 10,
+      "scenario": "Negative session TTL rejected",
+      "line": 0
+    },
+    "TST-CORE-855": {
+      "path": "14.4",
+      "row": 11,
+      "scenario": "Load from config.json",
+      "line": 0
+    },
+    "TST-CORE-856": {
+      "path": "14.6",
+      "row": 12,
+      "scenario": "Env overrides config.json",
+      "line": 0
+    },
+    "TST-CORE-857": {
+      "path": "14.6",
+      "row": 13,
+      "scenario": "Docker secret overrides env token",
+      "line": 0
     }
   },
   "sections": {

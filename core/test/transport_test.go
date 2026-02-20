@@ -27,7 +27,7 @@ func TestTransport_7_1_1_SendToKnownRecipient(t *testing.T) {
 	testutil.RequireNoError(t, err)
 }
 
-// TST-CORE-395
+// TST-CORE-805
 func TestTransport_7_1_2_SendToUnresolvableDIDFails(t *testing.T) {
 	var impl testutil.Transporter
 	// impl = transport.New()
@@ -38,7 +38,7 @@ func TestTransport_7_1_2_SendToUnresolvableDIDFails(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
-// TST-CORE-396
+// TST-CORE-806
 func TestTransport_7_1_3_SendEmptyEnvelopeRejected(t *testing.T) {
 	var impl testutil.Transporter
 	// impl = transport.New()
@@ -48,7 +48,7 @@ func TestTransport_7_1_3_SendEmptyEnvelopeRejected(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
-// TST-CORE-397
+// TST-CORE-807
 func TestTransport_7_1_4_SendNilEnvelopeRejected(t *testing.T) {
 	var impl testutil.Transporter
 	// impl = transport.New()
@@ -58,7 +58,7 @@ func TestTransport_7_1_4_SendNilEnvelopeRejected(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
-// TST-CORE-398
+// TST-CORE-808
 func TestTransport_7_1_5_MockSendRecordsMessages(t *testing.T) {
 	mock := testutil.NewMockTransporter()
 
@@ -71,11 +71,26 @@ func TestTransport_7_1_5_MockSendRecordsMessages(t *testing.T) {
 	testutil.RequireBytesEqual(t, mock.Sent[0].Envelope, envelope)
 }
 
+
+// --------------------------------------------------------------------------
+// §7.1 Uncovered Outbox Scenarios
+// --------------------------------------------------------------------------
+
+// TST-CORE-395
+func TestTransport_7_1_OutboxSchema(t *testing.T) {
+	var impl testutil.Transporter
+	testutil.RequireImplementation(t, impl, "Transporter")
+
+	// Outbox table schema: id TEXT PK, to_did TEXT, payload BLOB,
+	// created_at INTEGER, next_retry INTEGER, retries INTEGER, status TEXT
+	t.Skip("outbox schema verification requires real SQLite inspection")
+}
+
 // --------------------------------------------------------------------------
 // §7.2 Inbox 3-Valve (5 scenarios)
 // --------------------------------------------------------------------------
 
-// TST-CORE-411
+// TST-CORE-810
 func TestTransport_7_2_1_ReceiveFromInbox(t *testing.T) {
 	var impl testutil.Transporter
 	// impl = transport.New()
@@ -89,7 +104,7 @@ func TestTransport_7_2_1_ReceiveFromInbox(t *testing.T) {
 	}
 }
 
-// TST-CORE-412
+// TST-CORE-811
 func TestTransport_7_2_2_EmptyInboxReturnsNil(t *testing.T) {
 	mock := testutil.NewMockTransporter()
 	// No messages in inbox.
@@ -98,7 +113,7 @@ func TestTransport_7_2_2_EmptyInboxReturnsNil(t *testing.T) {
 	testutil.RequireNil(t, msg)
 }
 
-// TST-CORE-413
+// TST-CORE-812
 func TestTransport_7_2_3_InboxFIFOOrder(t *testing.T) {
 	mock := testutil.NewMockTransporter()
 	msg1 := []byte(`{"seq":1}`)
@@ -120,7 +135,7 @@ func TestTransport_7_2_3_InboxFIFOOrder(t *testing.T) {
 	testutil.RequireBytesEqual(t, received3, msg3)
 }
 
-// TST-CORE-414
+// TST-CORE-813
 func TestTransport_7_2_4_InboxSpoolWhenLocked(t *testing.T) {
 	var impl testutil.Transporter
 	// impl = transport.New()
@@ -131,7 +146,7 @@ func TestTransport_7_2_4_InboxSpoolWhenLocked(t *testing.T) {
 	t.Skip("spool behavior requires integration with PersonaManager lock state")
 }
 
-// TST-CORE-415
+// TST-CORE-814
 func TestTransport_7_2_5_InboxRejectWhenSpoolFull(t *testing.T) {
 	var impl testutil.Transporter
 	// impl = transport.New()
@@ -156,7 +171,7 @@ func TestTransport_7_3_1_ResolveKnownDID(t *testing.T) {
 	testutil.RequireTrue(t, len(endpoint) > 0, "resolved endpoint should be non-empty")
 }
 
-// TST-CORE-435
+// TST-CORE-437
 func TestTransport_7_3_2_ResolveUnknownDIDFails(t *testing.T) {
 	var impl testutil.Transporter
 	// impl = transport.New()
@@ -166,7 +181,7 @@ func TestTransport_7_3_2_ResolveUnknownDIDFails(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
-// TST-CORE-436
+// TST-CORE-815
 func TestTransport_7_3_3_MockResolveEndpoint(t *testing.T) {
 	mock := testutil.NewMockTransporter()
 	mock.Endpoints["did:key:z6MkPeerA"] = "https://peer-a.example.com/dina"
@@ -176,7 +191,7 @@ func TestTransport_7_3_3_MockResolveEndpoint(t *testing.T) {
 	testutil.RequireEqual(t, endpoint, "https://peer-a.example.com/dina")
 }
 
-// TST-CORE-437
+// TST-CORE-816
 func TestTransport_7_3_4_MockResolveUnknownFails(t *testing.T) {
 	mock := testutil.NewMockTransporter()
 
@@ -188,7 +203,7 @@ func TestTransport_7_3_4_MockResolveUnknownFails(t *testing.T) {
 // §7.4 Message Format (4 scenarios)
 // --------------------------------------------------------------------------
 
-// TST-CORE-439
+// TST-CORE-818
 func TestTransport_7_4_1_EnvelopeContainsRequiredFields(t *testing.T) {
 	var impl testutil.Transporter
 	// impl = transport.New()
@@ -202,7 +217,7 @@ func TestTransport_7_4_1_EnvelopeContainsRequiredFields(t *testing.T) {
 	testutil.RequireContains(t, string(envelope), `"body"`)
 }
 
-// TST-CORE-440
+// TST-CORE-819
 func TestTransport_7_4_2_EnvelopeFromFieldIsDID(t *testing.T) {
 	var impl testutil.Transporter
 	// impl = transport.New()
@@ -212,7 +227,7 @@ func TestTransport_7_4_2_EnvelopeFromFieldIsDID(t *testing.T) {
 	testutil.RequireContains(t, string(envelope), "did:key:")
 }
 
-// TST-CORE-441
+// TST-CORE-820
 func TestTransport_7_4_3_EnvelopeMaxSize(t *testing.T) {
 	var impl testutil.Transporter
 	// impl = transport.New()
@@ -227,7 +242,7 @@ func TestTransport_7_4_3_EnvelopeMaxSize(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
-// TST-CORE-442
+// TST-CORE-821
 func TestTransport_7_4_4_EnvelopeInvalidJSONRejected(t *testing.T) {
 	var impl testutil.Transporter
 	// impl = transport.New()
@@ -242,7 +257,7 @@ func TestTransport_7_4_4_EnvelopeInvalidJSONRejected(t *testing.T) {
 // §7.5 NaCl Encryption (3 scenarios)
 // --------------------------------------------------------------------------
 
-// TST-CORE-448
+// TST-CORE-822
 func TestTransport_7_5_1_EnvelopeEncryptedInTransit(t *testing.T) {
 	var impl testutil.Transporter
 	// impl = transport.New()
@@ -255,7 +270,7 @@ func TestTransport_7_5_1_EnvelopeEncryptedInTransit(t *testing.T) {
 	t.Skip("requires wire-level inspection of encrypted transport")
 }
 
-// TST-CORE-449
+// TST-CORE-823
 func TestTransport_7_5_2_EncryptDecryptRoundtrip(t *testing.T) {
 	// End-to-end: seal envelope → transmit → open at recipient.
 	// Requires both BoxSealer and KeyConverter implementations.
@@ -295,7 +310,7 @@ func TestTransport_7_5_2_EncryptDecryptRoundtrip(t *testing.T) {
 	testutil.RequireBytesEqual(t, plaintext, opened)
 }
 
-// TST-CORE-450
+// TST-CORE-824
 func TestTransport_7_5_3_WrongRecipientCannotDecrypt(t *testing.T) {
 	var boxImpl testutil.BoxSealer
 	// boxImpl = box.New()
@@ -341,7 +356,7 @@ func TestTransport_7_5_3_WrongRecipientCannotDecrypt(t *testing.T) {
 // §7.6 Relay Fallback (3 scenarios)
 // --------------------------------------------------------------------------
 
-// TST-CORE-452
+// TST-CORE-825
 func TestTransport_7_6_1_DirectDeliveryPreferred(t *testing.T) {
 	var impl testutil.Transporter
 	// impl = transport.New()
@@ -353,7 +368,7 @@ func TestTransport_7_6_1_DirectDeliveryPreferred(t *testing.T) {
 	t.Skip("relay fallback logic requires network integration test")
 }
 
-// TST-CORE-453
+// TST-CORE-826
 func TestTransport_7_6_2_RelayUsedWhenDirectFails(t *testing.T) {
 	var impl testutil.Transporter
 	// impl = transport.New()
@@ -364,7 +379,7 @@ func TestTransport_7_6_2_RelayUsedWhenDirectFails(t *testing.T) {
 	t.Skip("relay fallback logic requires network integration test")
 }
 
-// TST-CORE-454
+// TST-CORE-827
 func TestTransport_7_6_3_MockSendError(t *testing.T) {
 	mock := testutil.NewMockTransporter()
 	mock.SendErr = testutil.ErrNotImplemented
@@ -378,7 +393,7 @@ func TestTransport_7_6_3_MockSendError(t *testing.T) {
 // TEST_PLAN §7.1 — Outbox (Reliable Delivery) — additional scenarios
 // ==========================================================================
 
-// TST-CORE-399
+// TST-CORE-809
 func TestTransport_7_1_6_OutboxEnqueuePersistsMessage(t *testing.T) {
 	mock := testutil.NewMockOutboxManager()
 
@@ -394,7 +409,7 @@ func TestTransport_7_1_6_OutboxEnqueuePersistsMessage(t *testing.T) {
 	testutil.RequireEqual(t, retrieved.Status, "pending")
 }
 
-// TST-CORE-400
+// TST-CORE-396
 func TestTransport_7_1_7_SuccessfulDeliveryMarked(t *testing.T) {
 	mock := testutil.NewMockOutboxManager()
 
@@ -411,7 +426,7 @@ func TestTransport_7_1_7_SuccessfulDeliveryMarked(t *testing.T) {
 	testutil.RequireEqual(t, retrieved.Status, "delivered")
 }
 
-// TST-CORE-401
+// TST-CORE-397
 func TestTransport_7_1_8_DeliveryFailureRetry(t *testing.T) {
 	mock := testutil.NewMockOutboxManager()
 
@@ -429,7 +444,7 @@ func TestTransport_7_1_8_DeliveryFailureRetry(t *testing.T) {
 	testutil.RequireEqual(t, retrieved.Retries, 1)
 }
 
-// TST-CORE-402
+// TST-CORE-398
 func TestTransport_7_1_9_MaxRetriesExhaustedNudge(t *testing.T) {
 	var impl testutil.OutboxManager
 	testutil.RequireImplementation(t, impl, "OutboxManager")
@@ -439,7 +454,7 @@ func TestTransport_7_1_9_MaxRetriesExhaustedNudge(t *testing.T) {
 	t.Skip("max retry exhaustion requires time-based integration test with 5 failures")
 }
 
-// TST-CORE-403
+// TST-CORE-399
 func TestTransport_7_1_10_UserRequeueAfterFailure(t *testing.T) {
 	mock := testutil.NewMockOutboxManager()
 
@@ -460,7 +475,7 @@ func TestTransport_7_1_10_UserRequeueAfterFailure(t *testing.T) {
 	testutil.RequireEqual(t, retrieved.Retries, 0)
 }
 
-// TST-CORE-404
+// TST-CORE-400
 func TestTransport_7_1_11_TTL24Hours(t *testing.T) {
 	var impl testutil.OutboxManager
 	testutil.RequireImplementation(t, impl, "OutboxManager")
@@ -469,7 +484,7 @@ func TestTransport_7_1_11_TTL24Hours(t *testing.T) {
 	t.Skip("24-hour TTL requires time-based integration test")
 }
 
-// TST-CORE-405
+// TST-CORE-401
 func TestTransport_7_1_12_QueueSizeLimit100(t *testing.T) {
 	mock := testutil.NewMockOutboxManager()
 	mock.MaxQueue = 100
@@ -487,7 +502,7 @@ func TestTransport_7_1_12_QueueSizeLimit100(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
-// TST-CORE-406
+// TST-CORE-402
 func TestTransport_7_1_13_OutboxSurvivesRestart(t *testing.T) {
 	var impl testutil.OutboxManager
 	testutil.RequireImplementation(t, impl, "OutboxManager")
@@ -496,7 +511,7 @@ func TestTransport_7_1_13_OutboxSurvivesRestart(t *testing.T) {
 	t.Skip("persistence test requires SQLite-backed OutboxManager")
 }
 
-// TST-CORE-407
+// TST-CORE-404
 func TestTransport_7_1_14_IdempotentDelivery(t *testing.T) {
 	var impl testutil.OutboxManager
 	testutil.RequireImplementation(t, impl, "OutboxManager")
@@ -505,7 +520,7 @@ func TestTransport_7_1_14_IdempotentDelivery(t *testing.T) {
 	t.Skip("idempotent delivery requires recipient-side deduplication")
 }
 
-// TST-CORE-408
+// TST-CORE-407
 func TestTransport_7_1_15_PriorityOrdering(t *testing.T) {
 	mock := testutil.NewMockOutboxManager()
 
@@ -526,7 +541,7 @@ func TestTransport_7_1_15_PriorityOrdering(t *testing.T) {
 	testutil.RequireEqual(t, count, 2)
 }
 
-// TST-CORE-409
+// TST-CORE-408
 func TestTransport_7_1_16_PayloadIsPreEncrypted(t *testing.T) {
 	mock := testutil.NewMockOutboxManager()
 
@@ -541,7 +556,7 @@ func TestTransport_7_1_16_PayloadIsPreEncrypted(t *testing.T) {
 	testutil.RequireBytesEqual(t, retrieved.Payload, []byte("encrypted-nacl-blob"))
 }
 
-// TST-CORE-410
+// TST-CORE-409
 func TestTransport_7_1_17_SendingStatusDuringDelivery(t *testing.T) {
 	var impl testutil.OutboxManager
 	testutil.RequireImplementation(t, impl, "OutboxManager")
@@ -550,6 +565,7 @@ func TestTransport_7_1_17_SendingStatusDuringDelivery(t *testing.T) {
 	t.Skip("sending status requires HTTP delivery integration")
 }
 
+// TST-CORE-410
 func TestTransport_7_1_18_UserIgnoresNudgeExpires(t *testing.T) {
 	var impl testutil.OutboxManager
 	testutil.RequireImplementation(t, impl, "OutboxManager")
@@ -562,7 +578,7 @@ func TestTransport_7_1_18_UserIgnoresNudgeExpires(t *testing.T) {
 // TEST_PLAN §7.2 — Inbox 3-Valve (additional scenarios)
 // ==========================================================================
 
-// TST-CORE-416
+// TST-CORE-411
 func TestTransport_7_2_6_Valve1IPRateLimitExceeded(t *testing.T) {
 	mock := testutil.NewMockInboxManager()
 	mock.IPRateLimit = 50
@@ -575,7 +591,7 @@ func TestTransport_7_2_6_Valve1IPRateLimitExceeded(t *testing.T) {
 	testutil.RequireFalse(t, mock.CheckIPRate("192.168.1.1"), "request exceeding IP rate limit should be rejected")
 }
 
-// TST-CORE-417
+// TST-CORE-412
 func TestTransport_7_2_7_Valve1NormalTraffic(t *testing.T) {
 	mock := testutil.NewMockInboxManager()
 	mock.IPRateLimit = 50
@@ -584,7 +600,7 @@ func TestTransport_7_2_7_Valve1NormalTraffic(t *testing.T) {
 	testutil.RequireTrue(t, mock.CheckIPRate("192.168.1.1"), "normal traffic should be accepted")
 }
 
-// TST-CORE-418
+// TST-CORE-413
 func TestTransport_7_2_8_Valve1GlobalRateLimit(t *testing.T) {
 	mock := testutil.NewMockInboxManager()
 	mock.GlobalRateLimit = 1000
@@ -597,7 +613,7 @@ func TestTransport_7_2_8_Valve1GlobalRateLimit(t *testing.T) {
 	testutil.RequireFalse(t, mock.CheckGlobalRate(), "request exceeding global rate limit should be rejected")
 }
 
-// TST-CORE-419
+// TST-CORE-414
 func TestTransport_7_2_9_Valve1PayloadCap256KB(t *testing.T) {
 	mock := testutil.NewMockInboxManager()
 
@@ -606,7 +622,7 @@ func TestTransport_7_2_9_Valve1PayloadCap256KB(t *testing.T) {
 	testutil.RequireFalse(t, mock.CheckPayloadSize(oversized), "payload >256KB should be rejected")
 }
 
-// TST-CORE-420
+// TST-CORE-415
 func TestTransport_7_2_10_Valve1PayloadWithinCap(t *testing.T) {
 	mock := testutil.NewMockInboxManager()
 
@@ -615,7 +631,7 @@ func TestTransport_7_2_10_Valve1PayloadWithinCap(t *testing.T) {
 	testutil.RequireTrue(t, mock.CheckPayloadSize(normal), "payload within cap should be accepted")
 }
 
-// TST-CORE-421
+// TST-CORE-416
 func TestTransport_7_2_11_Valve2SpoolWhenLocked(t *testing.T) {
 	mock := testutil.NewMockInboxManager()
 
@@ -629,7 +645,7 @@ func TestTransport_7_2_11_Valve2SpoolWhenLocked(t *testing.T) {
 	testutil.RequireTrue(t, size > 0, "spool size should increase after spooling")
 }
 
-// TST-CORE-422
+// TST-CORE-417
 func TestTransport_7_2_12_Valve2SpoolCapExceeded(t *testing.T) {
 	mock := testutil.NewMockInboxManager()
 	mock.SpoolMaxBytes = 100 // Very small cap for testing.
@@ -643,7 +659,7 @@ func TestTransport_7_2_12_Valve2SpoolCapExceeded(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
-// TST-CORE-423
+// TST-CORE-418
 func TestTransport_7_2_13_Valve2RejectNewPreservesExisting(t *testing.T) {
 	mock := testutil.NewMockInboxManager()
 	mock.SpoolMaxBytes = 100
@@ -663,7 +679,7 @@ func TestTransport_7_2_13_Valve2RejectNewPreservesExisting(t *testing.T) {
 	testutil.RequireEqual(t, sizeAfter, int64(100))
 }
 
-// TST-CORE-424
+// TST-CORE-419
 func TestTransport_7_2_14_Valve3SweeperOnUnlock(t *testing.T) {
 	mock := testutil.NewMockInboxManager()
 
@@ -682,7 +698,7 @@ func TestTransport_7_2_14_Valve3SweeperOnUnlock(t *testing.T) {
 	testutil.RequireEqual(t, size, int64(0))
 }
 
-// TST-CORE-425
+// TST-CORE-422
 func TestTransport_7_2_15_Valve3TTLEnforcement(t *testing.T) {
 	var impl testutil.InboxManager
 	testutil.RequireImplementation(t, impl, "InboxManager")
@@ -691,7 +707,7 @@ func TestTransport_7_2_15_Valve3TTLEnforcement(t *testing.T) {
 	t.Skip("TTL enforcement requires time-based integration with message expiry")
 }
 
-// TST-CORE-426
+// TST-CORE-423
 func TestTransport_7_2_16_Valve3MessageWithinTTL(t *testing.T) {
 	var impl testutil.InboxManager
 	testutil.RequireImplementation(t, impl, "InboxManager")
@@ -700,7 +716,7 @@ func TestTransport_7_2_16_Valve3MessageWithinTTL(t *testing.T) {
 	t.Skip("TTL-within-window requires time-based integration test")
 }
 
-// TST-CORE-427
+// TST-CORE-425
 func TestTransport_7_2_17_FastPathVaultUnlocked(t *testing.T) {
 	var impl testutil.InboxManager
 	testutil.RequireImplementation(t, impl, "InboxManager")
@@ -709,7 +725,7 @@ func TestTransport_7_2_17_FastPathVaultUnlocked(t *testing.T) {
 	t.Skip("fast path requires full inbox pipeline integration")
 }
 
-// TST-CORE-428
+// TST-CORE-426
 func TestTransport_7_2_18_FastPathPerDIDRateLimit(t *testing.T) {
 	mock := testutil.NewMockInboxManager()
 	mock.DIDRateLimit = 5
@@ -722,7 +738,7 @@ func TestTransport_7_2_18_FastPathPerDIDRateLimit(t *testing.T) {
 	testutil.RequireFalse(t, mock.CheckDIDRate("did:plc:sender"), "per-DID rate limit exceeded")
 }
 
-// TST-CORE-429
+// TST-CORE-427
 func TestTransport_7_2_19_DeadDropPerDIDImpossibleWhenLocked(t *testing.T) {
 	// When vault is locked, per-DID rate limiting is impossible — identity is inside encrypted envelope.
 	// Only physics-based defense (IP rate limiting) applies.
@@ -730,7 +746,7 @@ func TestTransport_7_2_19_DeadDropPerDIDImpossibleWhenLocked(t *testing.T) {
 	t.Skip("design audit: per-DID rate limiting impossible when vault is locked")
 }
 
-// TST-CORE-430
+// TST-CORE-428
 func TestTransport_7_2_20_DIDVerificationOnInbound(t *testing.T) {
 	var impl testutil.InboxManager
 	testutil.RequireImplementation(t, impl, "InboxManager")
@@ -739,7 +755,7 @@ func TestTransport_7_2_20_DIDVerificationOnInbound(t *testing.T) {
 	t.Skip("DID verification requires Ed25519 signature validation integration")
 }
 
-// TST-CORE-431
+// TST-CORE-429
 func TestTransport_7_2_21_DIDVerificationFailure(t *testing.T) {
 	var impl testutil.InboxManager
 	testutil.RequireImplementation(t, impl, "InboxManager")
@@ -748,7 +764,7 @@ func TestTransport_7_2_21_DIDVerificationFailure(t *testing.T) {
 	t.Skip("DID verification failure requires signature validation integration")
 }
 
-// TST-CORE-432
+// TST-CORE-430
 func TestTransport_7_2_22_UnknownSenderDID(t *testing.T) {
 	var impl testutil.InboxManager
 	testutil.RequireImplementation(t, impl, "InboxManager")
@@ -757,13 +773,14 @@ func TestTransport_7_2_22_UnknownSenderDID(t *testing.T) {
 	t.Skip("unknown sender handling requires contact directory integration")
 }
 
-// TST-CORE-433
+// TST-CORE-431
 func TestTransport_7_2_23_SpoolDirectoryIsSafe(t *testing.T) {
 	// Inspect ./data/inbox/ contents — only encrypted blobs.
 	// Attacker with filesystem access sees ciphertext only.
 	t.Skip("spool directory safety is a design audit test")
 }
 
+// TST-CORE-432
 func TestTransport_7_2_24_DoSWhileLocked(t *testing.T) {
 	mock := testutil.NewMockInboxManager()
 	mock.IPRateLimit = 50
@@ -780,6 +797,7 @@ func TestTransport_7_2_24_DoSWhileLocked(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
+// TST-CORE-433
 func TestTransport_7_2_25_DoSWhileUnlocked(t *testing.T) {
 	var impl testutil.InboxManager
 	testutil.RequireImplementation(t, impl, "InboxManager")
@@ -802,6 +820,7 @@ func TestTransport_7_3_5_MalformedDIDValidationError(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
+// TST-CORE-435
 func TestTransport_7_3_6_DIDCacheHit(t *testing.T) {
 	var impl testutil.DIDResolver
 	testutil.RequireImplementation(t, impl, "DIDResolver")
@@ -810,6 +829,7 @@ func TestTransport_7_3_6_DIDCacheHit(t *testing.T) {
 	t.Skip("cache hit verification requires DIDResolver with cache metrics")
 }
 
+// TST-CORE-436
 func TestTransport_7_3_7_DIDCacheExpiry(t *testing.T) {
 	var impl testutil.DIDResolver
 	testutil.RequireImplementation(t, impl, "DIDResolver")
@@ -818,6 +838,7 @@ func TestTransport_7_3_7_DIDCacheExpiry(t *testing.T) {
 	t.Skip("cache expiry requires time-based integration test")
 }
 
+// TST-CORE-817
 func TestTransport_7_3_8_UnresolvableDIDNotCached(t *testing.T) {
 	var impl testutil.DIDResolver
 	testutil.RequireImplementation(t, impl, "DIDResolver")
@@ -830,7 +851,7 @@ func TestTransport_7_3_8_UnresolvableDIDNotCached(t *testing.T) {
 // TEST_PLAN §7.4 — Message Format DIDComm (additional scenarios)
 // ==========================================================================
 
-// TST-CORE-443
+// TST-CORE-439
 func TestTransport_7_4_5_PlaintextStructure(t *testing.T) {
 	msg := testutil.TestD2DMessage()
 
@@ -842,7 +863,7 @@ func TestTransport_7_4_5_PlaintextStructure(t *testing.T) {
 	testutil.RequireTrue(t, msg.CreatedTime > 0, "message must have a timestamp")
 }
 
-// TST-CORE-444
+// TST-CORE-440
 func TestTransport_7_4_6_MessageIDFormat(t *testing.T) {
 	msg := testutil.TestD2DMessage()
 
@@ -850,7 +871,7 @@ func TestTransport_7_4_6_MessageIDFormat(t *testing.T) {
 	testutil.RequireHasPrefix(t, msg.ID, "msg_")
 }
 
-// TST-CORE-445
+// TST-CORE-443
 func TestTransport_7_4_7_MessageCategories(t *testing.T) {
 	// Valid message type categories.
 	validTypes := []string{
@@ -864,7 +885,7 @@ func TestTransport_7_4_7_MessageCategories(t *testing.T) {
 	}
 }
 
-// TST-CORE-446
+// TST-CORE-444
 func TestTransport_7_4_8_UnknownMessageTypeAccepted(t *testing.T) {
 	// Unknown message types should be accepted and stored (extensible).
 	msg := testutil.TestD2DMessage()
@@ -874,7 +895,7 @@ func TestTransport_7_4_8_UnknownMessageTypeAccepted(t *testing.T) {
 	testutil.RequireHasPrefix(t, msg.Type, "dina/")
 }
 
-// TST-CORE-447
+// TST-CORE-441, TST-CORE-446
 func TestTransport_7_4_9_EnvelopeFormat(t *testing.T) {
 	// Verify encrypted envelope structure.
 	envelope := testutil.D2DEnvelope{
@@ -894,7 +915,7 @@ func TestTransport_7_4_9_EnvelopeFormat(t *testing.T) {
 // TEST_PLAN §7.5 — Connection Establishment (4 scenarios)
 // ==========================================================================
 
-// TST-CORE-451
+// TST-CORE-448
 func TestTransport_7_5_4_FullConnectionFlow(t *testing.T) {
 	var impl testutil.Transporter
 	testutil.RequireImplementation(t, impl, "Transporter")
@@ -907,6 +928,7 @@ func TestTransport_7_5_4_FullConnectionFlow(t *testing.T) {
 	t.Skip("full connection flow requires network integration test")
 }
 
+// TST-CORE-449
 func TestTransport_7_5_5_MutualAuthentication(t *testing.T) {
 	var impl testutil.Transporter
 	testutil.RequireImplementation(t, impl, "Transporter")
@@ -915,6 +937,7 @@ func TestTransport_7_5_5_MutualAuthentication(t *testing.T) {
 	t.Skip("mutual auth requires two-node integration test")
 }
 
+// TST-CORE-450
 func TestTransport_7_5_6_ContactAllowlistCheck(t *testing.T) {
 	var impl testutil.Transporter
 	testutil.RequireImplementation(t, impl, "Transporter")
@@ -923,6 +946,7 @@ func TestTransport_7_5_6_ContactAllowlistCheck(t *testing.T) {
 	t.Skip("contact allowlist requires ContactDirectory integration")
 }
 
+// TST-CORE-451
 func TestTransport_7_5_7_EndpointFromDIDDocument(t *testing.T) {
 	// DID Document -> service[0].serviceEndpoint = URL.
 	mock := testutil.NewMockTransporter()
@@ -937,7 +961,7 @@ func TestTransport_7_5_7_EndpointFromDIDDocument(t *testing.T) {
 // TEST_PLAN §7.6 — Relay Fallback (additional scenarios)
 // ==========================================================================
 
-// TST-CORE-455
+// TST-CORE-452
 func TestTransport_7_6_4_RelayForwardEnvelope(t *testing.T) {
 	var impl testutil.Transporter
 	testutil.RequireImplementation(t, impl, "Transporter")
@@ -946,12 +970,14 @@ func TestTransport_7_6_4_RelayForwardEnvelope(t *testing.T) {
 	t.Skip("relay forward requires relay server integration")
 }
 
+// TST-CORE-453
 func TestTransport_7_6_5_RelayCannotReadContent(t *testing.T) {
 	// Relay only sees recipient DID + encrypted blob — no plaintext access.
 	// This is a design constraint test.
 	t.Skip("relay content privacy is a design audit test")
 }
 
+// TST-CORE-454
 func TestTransport_7_6_6_DIDDocumentPointsToRelay(t *testing.T) {
 	// Recipient behind NAT — DID Document serviceEndpoint points to relay.
 	mock := testutil.NewMockTransporter()
@@ -962,10 +988,101 @@ func TestTransport_7_6_6_DIDDocumentPointsToRelay(t *testing.T) {
 	testutil.RequireContains(t, endpoint, "relay")
 }
 
+// TST-CORE-455
 func TestTransport_7_6_7_UserCanSwitchRelays(t *testing.T) {
 	var impl testutil.Transporter
 	testutil.RequireImplementation(t, impl, "Transporter")
 
 	// Update DID Document to change relay endpoint via did:plc rotation.
 	t.Skip("relay switching requires DID Document rotation integration")
+}
+
+// ==========================================================================
+// Uncovered plan scenarios — added by entries 400-600 fix
+// ==========================================================================
+
+// TST-CORE-403
+func TestTransport_7_1_19_SchedulerInterval30s(t *testing.T) {
+	var impl testutil.OutboxManager
+	testutil.RequireImplementation(t, impl, "OutboxManager")
+
+	// Outbox scheduler runs every 30 seconds:
+	// SELECT * FROM outbox WHERE next_retry < now() AND status = 'pending'
+	t.Skip("scheduler interval verification requires time-based integration test")
+}
+
+// TST-CORE-405
+func TestTransport_7_1_20_DeliveredMessagesCleanup(t *testing.T) {
+	var impl testutil.OutboxManager
+	testutil.RequireImplementation(t, impl, "OutboxManager")
+
+	// Delivered messages deleted from outbox after 1 hour.
+	t.Skip("delivered message cleanup requires time-based integration test")
+}
+
+// TST-CORE-406
+func TestTransport_7_1_21_FailedMessagesCleanup(t *testing.T) {
+	var impl testutil.OutboxManager
+	testutil.RequireImplementation(t, impl, "OutboxManager")
+
+	// Failed messages (after 5 retries) deleted from outbox after 24 hours.
+	t.Skip("failed message cleanup requires time-based integration test")
+}
+
+// TST-CORE-420
+func TestTransport_7_2_26_SweeperDecryptsChecksDID(t *testing.T) {
+	var impl testutil.InboxManager
+	testutil.RequireImplementation(t, impl, "InboxManager")
+
+	// After unlock, sweeper decrypts each blob, identifies sender DID,
+	// checks trust ring and contacts directory.
+	t.Skip("sweeper DID verification requires crypto + contacts integration")
+}
+
+// TST-CORE-421
+func TestTransport_7_2_27_SweeperBlocklistFeedback(t *testing.T) {
+	var impl testutil.InboxManager
+	testutil.RequireImplementation(t, impl, "InboxManager")
+
+	// Spam DID detected in spool → source IP added to Valve 1 permanent blocklist.
+	t.Skip("blocklist feedback requires sweeper + rate limiter integration")
+}
+
+// TST-CORE-424
+func TestTransport_7_2_28_Valve3BlobCleanup(t *testing.T) {
+	var impl testutil.InboxManager
+	testutil.RequireImplementation(t, impl, "InboxManager")
+
+	// Spool blob processed successfully → blob file deleted from ./data/inbox/.
+	t.Skip("blob cleanup requires filesystem + spool integration")
+}
+
+// TST-CORE-442
+func TestTransport_7_4_10_Ed25519SignatureOnPlaintext(t *testing.T) {
+	var impl testutil.Transporter
+	testutil.RequireImplementation(t, impl, "Transporter")
+
+	// sig field is Ed25519 signature over canonical plaintext.
+	// Recipient decrypts ciphertext → recovers plaintext → verifies sig against from_kid.
+	t.Skip("signature verification requires crypto + DIDComm integration")
+}
+
+// TST-CORE-445
+func TestTransport_7_4_11_EphemeralKeyPerMessage(t *testing.T) {
+	var impl testutil.Transporter
+	testutil.RequireImplementation(t, impl, "Transporter")
+
+	// Each message uses a fresh ephemeral X25519 keypair for crypto_box_seal.
+	// Two messages to same recipient must produce different ciphertext.
+	t.Skip("ephemeral key verification requires crypto_box_seal integration")
+}
+
+// TST-CORE-447
+func TestTransport_7_4_12_PhaseMigrationInvariant(t *testing.T) {
+	var impl testutil.Transporter
+	testutil.RequireImplementation(t, impl, "Transporter")
+
+	// Plaintext {id, type, from, to, created_time, body} is IDENTICAL
+	// across Phase 1 (libsodium) and Phase 2 (JWE). Only encryption wrapper changes.
+	t.Skip("phase migration invariant requires dual-format envelope comparison")
 }

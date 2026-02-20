@@ -668,6 +668,17 @@ func TestVault_4_3_3_HybridSearch(t *testing.T) {
 }
 
 // TST-CORE-251
+func TestVault_4_3_HybridSearchFormulaVerified(t *testing.T) {
+	var impl testutil.VaultManager
+	// impl = vault.NewManager(dir)
+	testutil.RequireImplementation(t, impl, "VaultManager")
+
+	// Hybrid search formula: relevance = 0.4 * fts5_rank + 0.6 * cosine_similarity
+	// Known items with known FTS5 + cosine scores must produce expected relevance.
+	t.Skip("requires real vault with pre-computed FTS5 + cosine scores for formula verification")
+}
+
+// TST-CORE-252
 func TestVault_4_3_4_EmptyResults(t *testing.T) {
 	vm := testutil.NewMockVaultManager()
 	persona := "test-search-empty"
@@ -683,7 +694,7 @@ func TestVault_4_3_4_EmptyResults(t *testing.T) {
 	testutil.RequireLen(t, len(results), 0)
 }
 
-// TST-CORE-252
+// TST-CORE-253
 func TestVault_4_3_5_CrossPersonaBoundary(t *testing.T) {
 	vm := testutil.NewMockVaultManager()
 	dek := testutil.TestDEK[:]
@@ -700,7 +711,7 @@ func TestVault_4_3_5_CrossPersonaBoundary(t *testing.T) {
 	testutil.RequireLen(t, len(results), 0)
 }
 
-// TST-CORE-253
+// TST-CORE-254
 func TestVault_4_3_6_FTS5Injection(t *testing.T) {
 	var impl testutil.VaultManager
 	// impl = vault.NewManager(dir)
@@ -720,7 +731,7 @@ func TestVault_4_3_6_FTS5Injection(t *testing.T) {
 	_ = err
 }
 
-// TST-CORE-254
+// TST-CORE-255
 func TestVault_4_3_7_IncludeContentFalseDefault(t *testing.T) {
 	var impl testutil.VaultManager
 	// impl = vault.NewManager(dir)
@@ -747,7 +758,7 @@ func TestVault_4_3_7_IncludeContentFalseDefault(t *testing.T) {
 	}
 }
 
-// TST-CORE-255, TST-CORE-256
+// TST-CORE-256
 func TestVault_4_3_8_IncludeContentTrue(t *testing.T) {
 	var impl testutil.VaultManager
 	// impl = vault.NewManager(dir)

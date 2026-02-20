@@ -35,7 +35,7 @@ async def test_api_10_1_1_healthz_returns_200() -> None:
     #     assert "status" in body
 
 
-# TST-BRAIN-296
+# TST-BRAIN-381
 @pytest.mark.asyncio
 async def test_api_10_1_2_healthz_includes_components() -> None:
     """§10.1.2: /healthz response includes LLM router and core client status."""
@@ -51,7 +51,7 @@ async def test_api_10_1_2_healthz_includes_components() -> None:
 # ---------------------------------------------------------------------------
 
 
-# TST-BRAIN-297
+# TST-BRAIN-382
 @pytest.mark.asyncio
 async def test_api_10_2_1_process_valid_event() -> None:
     """§10.2.1: POST /v1/process with valid event returns 200 and result."""
@@ -65,7 +65,7 @@ async def test_api_10_2_1_process_valid_event() -> None:
     # assert resp.status_code == 200
 
 
-# TST-BRAIN-298
+# TST-BRAIN-383
 @pytest.mark.asyncio
 async def test_api_10_2_2_process_missing_auth() -> None:
     """§10.2.2: POST /v1/process without auth returns 401."""
@@ -75,7 +75,7 @@ async def test_api_10_2_2_process_missing_auth() -> None:
     # assert resp.status_code == 401
 
 
-# TST-BRAIN-299
+# TST-BRAIN-384
 @pytest.mark.asyncio
 async def test_api_10_2_3_process_wrong_token() -> None:
     """§10.2.3: POST /v1/process with wrong BRAIN_TOKEN returns 401."""
@@ -89,7 +89,7 @@ async def test_api_10_2_3_process_wrong_token() -> None:
     # assert resp.status_code == 401
 
 
-# TST-BRAIN-300
+# TST-BRAIN-385
 @pytest.mark.asyncio
 async def test_api_10_2_4_process_invalid_json() -> None:
     """§10.2.4: POST /v1/process with malformed JSON returns 400."""
@@ -126,6 +126,7 @@ async def test_api_10_2_5_process_missing_required_fields() -> None:
 # ---------------------------------------------------------------------------
 
 
+# TST-BRAIN-386
 @pytest.mark.asyncio
 async def test_api_10_3_1_reason_valid_request() -> None:
     """§10.3.1: POST /v1/reason with valid task returns 200 and LLM response."""
@@ -141,6 +142,7 @@ async def test_api_10_3_1_reason_valid_request() -> None:
     # assert "content" in body
 
 
+# TST-BRAIN-387
 @pytest.mark.asyncio
 async def test_api_10_3_2_reason_missing_prompt() -> None:
     """§10.3.2: POST /v1/reason without 'prompt' field returns 422."""
@@ -154,6 +156,7 @@ async def test_api_10_3_2_reason_missing_prompt() -> None:
     # assert resp.status_code == 422
 
 
+# TST-BRAIN-388
 @pytest.mark.asyncio
 async def test_api_10_3_3_reason_no_auth() -> None:
     """§10.3.3: POST /v1/reason without auth returns 401."""
@@ -168,6 +171,7 @@ async def test_api_10_3_3_reason_no_auth() -> None:
 # ---------------------------------------------------------------------------
 
 
+# TST-BRAIN-389
 @pytest.mark.asyncio
 async def test_api_10_4_1_response_content_type_json() -> None:
     """§10.4.1: All API responses have Content-Type: application/json."""
@@ -178,6 +182,7 @@ async def test_api_10_4_1_response_content_type_json() -> None:
     # assert resp.headers["content-type"].startswith("application/json")
 
 
+# TST-BRAIN-390
 @pytest.mark.asyncio
 async def test_api_10_4_2_error_response_format() -> None:
     """§10.4.2: Error responses follow consistent JSON format with 'detail' field."""
@@ -187,6 +192,7 @@ async def test_api_10_4_2_error_response_format() -> None:
     # assert "detail" in body
 
 
+# TST-BRAIN-391
 @pytest.mark.asyncio
 async def test_api_10_4_3_unknown_route_returns_404() -> None:
     """§10.4.3: Request to undefined route returns 404."""
@@ -196,3 +202,84 @@ async def test_api_10_4_3_unknown_route_returns_404() -> None:
     #     headers={"Authorization": f"Bearer {TEST_BRAIN_TOKEN}"},
     # )
     # assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# New tests for uncovered plan scenarios
+# ---------------------------------------------------------------------------
+
+
+# TST-BRAIN-296
+@pytest.mark.asyncio
+async def test_api_10_1_health_with_llm_down() -> None:
+    """§10.1 row 2: GET /healthz when LLM is unreachable returns degraded status."""
+    pytest.skip("FastAPI app not yet implemented")
+    # Mock LLM router as unreachable
+    # resp = await client.get("/healthz")
+    # assert resp.status_code == 200
+    # body = resp.json()
+    # assert body["status"] == "degraded"
+    # assert body["llm"] == "unreachable"
+
+
+# TST-BRAIN-297
+@pytest.mark.asyncio
+async def test_api_10_2_process_text_query() -> None:
+    """§10.2 row 1: POST /v1/process with text query returns guardian response."""
+    pytest.skip("FastAPI app not yet implemented")
+    # event = make_event(type="query", body="What is my schedule today?")
+    # resp = await client.post(
+    #     "/v1/process",
+    #     json=event,
+    #     headers={"Authorization": f"Bearer {TEST_BRAIN_TOKEN}"},
+    # )
+    # assert resp.status_code == 200
+    # body = resp.json()
+    # assert "response" in body
+
+
+# TST-BRAIN-298
+@pytest.mark.asyncio
+async def test_api_10_2_process_agent_intent() -> None:
+    """§10.2 row 2: POST /v1/process with agent intent returns approval/rejection."""
+    pytest.skip("FastAPI app not yet implemented")
+    # event = make_event(type="agent_intent", body={"action": "send_email", "to": "alice"})
+    # resp = await client.post(
+    #     "/v1/process",
+    #     json=event,
+    #     headers={"Authorization": f"Bearer {TEST_BRAIN_TOKEN}"},
+    # )
+    # assert resp.status_code == 200
+    # body = resp.json()
+    # assert body["decision"] in ("approved", "rejected", "flagged")
+
+
+# TST-BRAIN-299
+@pytest.mark.asyncio
+async def test_api_10_2_process_incoming_message() -> None:
+    """§10.2 row 3: POST /v1/process with incoming message returns classification."""
+    pytest.skip("FastAPI app not yet implemented")
+    # event = make_event(type="message", body="Your flight has been cancelled")
+    # resp = await client.post(
+    #     "/v1/process",
+    #     json=event,
+    #     headers={"Authorization": f"Bearer {TEST_BRAIN_TOKEN}"},
+    # )
+    # assert resp.status_code == 200
+    # body = resp.json()
+    # assert "classification" in body
+    # assert "action" in body
+
+
+# TST-BRAIN-300
+@pytest.mark.asyncio
+async def test_api_10_2_invalid_event_type() -> None:
+    """§10.2 row 4: Unknown event type returns 400 Bad Request."""
+    pytest.skip("FastAPI app not yet implemented")
+    # event = make_event(type="unknown_type", body="test")
+    # resp = await client.post(
+    #     "/v1/process",
+    #     json=event,
+    #     headers={"Authorization": f"Bearer {TEST_BRAIN_TOKEN}"},
+    # )
+    # assert resp.status_code == 400
