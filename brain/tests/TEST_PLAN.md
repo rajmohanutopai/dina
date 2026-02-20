@@ -53,6 +53,8 @@
 | 8 | Engagement: social media update | "Friend posted a photo" | Priority: `engagement` — save for briefing |
 | 9 | Ambiguous: could be fiduciary or engagement | "Package delivery attempted" | Correct classification based on context (time sensitivity, user history) |
 | 10 | No notification needed | Routine background sync completed | Silently logged, no notification |
+| 11 | Fiduciary: health alert | "Critical lab result: potassium level 6.2 mEq/L — contact your physician immediately" from hospital system | Priority: `fiduciary` — interrupt. Silence causes harm: delayed medical response. Architecture §11 explicitly lists "Health alert?" as a fiduciary heuristic |
+| 12 | Fiduciary: composite heuristic (keyword + sender trust) | Message containing "urgent" from trusted contact (trust_level = `trusted`) vs. same "urgent" from unknown sender | Trusted sender + "urgent" → `fiduciary`. Unknown sender + "urgent" → NOT fiduciary (phishing vector). Architecture §11 specifies two-factor check: "Contains 'urgent' + sender is in trusted contacts?" — both conditions must hold |
 
 ### 2.2 Vault Lifecycle Events
 
@@ -75,6 +77,8 @@
 | 6 | Blocked intent | Agent from untrusted source wants financial data | Blocked, user notified |
 | 7 | Timeout handling | LLM call takes too long | Graceful timeout, fallback response, task checkpointed to scratchpad |
 | 8 | Error recovery | LLM returns malformed response | Retry with simplified prompt, or return error to user |
+| 9 | Crash handler: sanitized stdout | Inject exception in guardian_loop | Stdout receives ONLY `"guardian crash: {type(e).__name__} at {e.__traceback__.tb_lineno}"` — no variable values, no traceback frames, no PII. Python tracebacks contain local variables which may include user data (Section 04 §Observability) |
+| 10 | Crash handler: full traceback to core | Inject exception in guardian_loop | Brain POSTs `{error: "RuntimeError", traceback: "<full>", task_id: "<current>"}` to `http://core:8100/api/v1/vault/crash` — stored in identity.sqlite `crash_log` table (encrypted at rest). Exception is re-raised after POST so Docker restarts the container. If core is unreachable, traceback is lost (acceptable — crash_log is best-effort, restart is mandatory) |
 
 ### 2.3.1 Draft-Don't-Send (Action Layer)
 
@@ -105,6 +109,9 @@
 | 4 | Dina never sees credentials | Inspect all data flows during cart handover | Brain never receives or stores: bank balance, UPI PIN, card numbers, payment credentials |
 | 5 | Outcome recording | User completes purchase → confirmation SMS/callback | Brain records outcome in Tier 3 vault for future Reputation Graph contribution |
 | 6 | Cart handover expires | Payment intent not acted on within 12 hours | Staging item auto-expires (shorter TTL than drafts) |
+| 7 | Outcome follow-up question timing | 4 weeks after cart handover purchase | Brain asks: "How's that chair?" — follow-up timing configurable, triggers outcome data collection flow |
+| 8 | Outcome inference without explicit response | User continues using product, no explicit feedback | Brain infers outcome from usage signals (e.g. no return, product still mentioned) → outcome: `"still_using_6_months"` — doesn't require explicit user confirmation |
+| 9 | Outcome anonymization: exact fields from Section 08 Lexicon | Brain creates anonymized outcome record | Record contains ONLY fields from `com.dina.reputation.outcome` Lexicon: `{type: "outcome_report", reporter_trust_ring: 2, reporter_age_days: 730, product_category: "office_chairs", product_id: "herman_miller_aeron_2025", purchase_verified: true, purchase_amount_range: "50000-100000_INR", time_since_purchase_days: 180, outcome: "still_using", satisfaction: "positive", issues: [], timestamp: "2026-07-15T...", signature: "..."}` — 13 fields total. NO user DID, NO user name, NO seller name. reporter_trust_ring/age_days are the submitting Dina's ring level and age (not seller's). Brain strips all identifying information before creating record |
 
 ### 2.4 Whisper Delivery
 
@@ -124,6 +131,10 @@
 | 3 | Briefing ordering | Multiple items of varying relevance | Ordered by relevance/time, grouped by category |
 | 4 | Briefing respects Do Not Disturb | User in DND mode at scheduled time | Deferred until DND ends |
 | 5 | Briefing deduplication | Same event from multiple sources | Deduplicated in briefing |
+| 6 | Briefing includes restricted persona access summary | `/health` accessed 3 times in past 24h (restricted tier) | Briefing contains: "Dina accessed your health data 3 times today" — user sees audit trail as part of daily briefing |
+| 7 | Briefing: zero restricted accesses omitted | No restricted persona accessed in 24h | Briefing does NOT include "health data accessed 0 times" — only non-zero counts shown |
+| 8 | Briefing restricted summary queries audit log | Brain generates briefing | Brain calls `GET core/v1/vault/query {type: "audit_log", filter: {persona_tier: "restricted", since: "24h"}}` → aggregates counts per persona |
+| 9 | Briefing permanently disabled by user | Config: `"briefing": {"enabled": false}` | No briefing generated at scheduled time — not deferred (DND), fully disabled. Architecture §11 says daily briefing is "Optional — user can disable." Re-enable via config or chat: "Turn on my daily briefing" |
 
 ### 2.6 Context Injection (The Nudge)
 
@@ -139,6 +150,31 @@
 | 5 | Nudge respects persona boundaries | Sancho has data in `/personal` (open) and `/financial` (locked) | Nudge includes only `/personal` context — locked personas excluded |
 | 6 | Pending promise detection | Brain found "I'll send the PDF tomorrow" in old messages | Nudge includes: "You promised to send the PDF" — actionable reminder |
 | 7 | Calendar context included | Upcoming event with contact | Nudge: "You have lunch planned next Thursday" |
+
+### 2.7 Sharing Policy via Chat (Natural Language → Core API)
+
+> Chat is the primary UX for sharing policy management (architecture §09).
+> Brain translates natural language to PATCH calls on core's sharing policy API.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | Grant specific sharing | User: "Let Sancho see when I'm arriving" | Brain calls `PATCH /v1/contacts/did:plc:sancho.../policy {"presence": "eta_only"}` → confirms: "Done. Sancho can see your ETA, but not your exact location." |
+| 2 | Revoke sharing for all contacts (bulk) | User: "Stop sharing my location with everyone" | Brain calls `PATCH /v1/contacts/policy/bulk {"filter": {}, "policy": {"location": "none"}}` → confirms: "Location sharing turned off for all contacts." |
+| 3 | Query current sharing policy | User: "What can Sancho see about me?" | Brain calls `GET /v1/contacts/did:plc:sancho.../policy` → formats human-readable summary with check/cross marks per category |
+| 4 | Grant full sharing for specific category | User: "Share all my preferences with Sancho" | Brain calls `PATCH ... {"preferences": "full"}` — only the specified category changes |
+| 5 | Ambiguous request | User: "Share stuff with Sancho" | Brain asks for clarification: "What would you like Sancho to see? Your arrival ETA, calendar availability, preferences, or something else?" |
+
+### 2.8 D2D Payload Preparation (Brain Side)
+
+> Brain always provides maximum detail in a tiered structure.
+> Core strips based on sharing policy. Brain never needs to know the policy.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | Brain prepares tiered payload | D2D send to Sancho about availability | Brain constructs: `{availability: {summary: "Busy 2-3pm", full: "Meeting with Dr. Patel at Apollo Hospital, 2-3pm"}}` — both tiers always included |
+| 2 | Brain sends max detail | D2D send with location data | Brain provides `{presence: {summary: "Arriving in ~15 min", full: "Currently at 12.9716°N, 77.5946°E, ETA 14 min via MG Road"}}` — Core decides what to share |
+| 3 | Brain never pre-filters by policy | Brain prepares D2D payload for contact with `health: "none"` | Brain still includes health data in tiered format — Core is the one that strips it. Brain is policy-agnostic |
+| 4 | Brain calls `POST /v1/dina/send` | D2D message ready | Brain sends full tiered payload to core → core handles egress check, encryption, outbox |
 
 ---
 
@@ -223,6 +259,7 @@
 | 9 | No LLM available | Both local and cloud unreachable | Graceful error: "reasoning temporarily unavailable" |
 | 10 | Model selection by task type | Video analysis vs chat vs classification | Correct model routed per task type |
 | 11 | User configures preferred cloud provider | `DINA_CLOUD_LLM=claude` | Brain routes complex reasoning to user's chosen provider |
+| 12 | PII scrub failure on sensitive persona → refuse cloud send | Health query (Cloud profile, no llama), core `/v1/pii/scrub` returns 500 or spaCy model crashes | Brain MUST reject the cloud route — never send unscrubbed sensitive data to cloud LLM. Error to user: "PII protection unavailable, cannot safely process health query via cloud." Architecture §11: Entity Vault scrubbing is "Tier 1+2 **mandatory**" for sensitive personas. If either tier fails, the entire cloud path is blocked — this is not a fallback scenario, it's a hard security gate |
 
 ### 4.2 LLM Client
 
@@ -256,6 +293,10 @@
 | 10 | Cursor update after sync | Gmail sync completes | `PUT core/v1/vault/kv/gmail_cursor {value: "2026-02-20T10:00:00Z"}` — next sync starts here |
 | 11 | Calendar sync frequency | Calendar connector | Every 30 minutes + morning routine (more frequent than email — events change more) |
 | 12 | Contacts sync frequency | Contacts connector | Daily sync (contacts change infrequently) |
+| 13 | `calendar_cursor` KV key | Calendar sync completes | `PUT core/v1/vault/kv/calendar_cursor {value: "2026-02-20T06:00:00Z"}` — separate cursor from `gmail_cursor` |
+| 14 | Morning routine: full sequence | 6:00 AM trigger | Brain executes in order: (1) fetch emails since `gmail_cursor` → triage → store, (2) fetch calendar events today+tomorrow → store, (3) update both cursors, (4) reason over new items → generate morning briefing → whisper |
+| 15 | Calendar rolling window: -1 month / +1 year | Calendar sync | Brain fetches events from 1 month ago to 1 year ahead — not all-time. Enables "Am I free at 4?" via local vault query (zero latency) |
+| 16 | Calendar read/write split | User: "Am I free at 4?" vs "Book 2 PM Tuesday" | Read: brain queries local vault (microseconds). Write: brain→MCP→OpenClaw→Calendar API (seconds). Complex scheduling (3 timezones): always MCP |
 
 ### 5.2 Ingestion Pipeline (5-Pass Triage)
 
@@ -267,7 +308,7 @@
 | 1 | Pass 1: Metadata fetch | New emails | `messages.get(format=metadata)` — headers only (~200 bytes/msg vs ~5-50KB full body) |
 | 2 | Pass 1: Gmail category filter | Promotions/Social/Updates/Forums emails | All bulk-filtered → thin record only. ~60-70% of volume killed instantly |
 | 3 | Pass 1: PRIMARY → proceed | Emails in PRIMARY category | Pass to Pass 2 |
-| 4 | Pass 2a: Regex pre-filter | `noreply@*`, `no-reply@*`, `*@notifications.*`, `*@marketing.*` | Thin record, no LLM call — instant |
+| 4 | Pass 2a: Regex pre-filter (sender) | `noreply@*`, `no-reply@*`, `*@notifications.*`, `*@marketing.*`, `*@bounce.*`, `mailer-daemon@*` | Thin record, no LLM call — instant. All 6 sender patterns from architecture spec |
 | 5 | Pass 2a: Subject regex filter | Subject matches "Weekly digest", "Product Update", "OTP", "verification code" | Thin record, filtered before LLM |
 | 6 | Pass 2b: LLM batch classification | 50 PRIMARY email subjects surviving regex | Single LLM call (~700 tokens), each classified INGEST or SKIP |
 | 7 | Pass 2b: INGEST classification | "Punjab National Bank TDS Certificate" | Classified INGEST — actionable financial document |
@@ -276,19 +317,26 @@
 | 10 | Thin records for ALL skipped | Every SKIP email (Pass 1, Pass 2a regex, Pass 2b LLM) | `{source_id, subject, sender, timestamp, category: "skipped", skip_reason}` stored in vault — FTS-searchable but NOT embedded |
 | 11 | Thin records not embedded | Inspect thin record | No embedding vector generated — zero vector cost for skipped items |
 | 12 | On-demand fetch of skipped email | User asks about a thin-record email | Brain→MCP→OpenClaw: fetch full body from Gmail API (pass-through retrieval) |
-| 13 | PII scrub before storage | Downloaded content with PII | PII scrubbed (Tier 1 regex + Tier 2 spaCy) before vault storage |
+| 13 | PII scrub before cloud LLM (NOT before all vault storage) | Downloaded content with PII sent to cloud LLM | PII scrubbed (Tier 1 regex + Tier 2 spaCy) BEFORE cloud LLM call. Data stored in vault may retain PII (vault is encrypted, PII scrubbing is for cloud-bound data). Local LLM path skips scrubbing |
 | 14 | End-to-end: 5000 emails (1 year) | Full year of email | ~1500 PRIMARY → ~300-500 INGEST (full) + ~4500 thin records. Vault size ~30-80MB |
 | 15 | Fiduciary override: security alert | "Google: Security alert — new sign-in from unknown device" | Always INGEST regardless of sender pattern or category — fiduciary: silence causes harm |
 | 16 | Fiduciary override: financial document | "GoDaddy: Your domains cancel in 5 days" | Always INGEST — actionable, time-sensitive |
 | 17 | `always_ingest` sender exception | Config: `"always_ingest": ["newsletter@stratechery.com", "*@substack.com"]` | Matching sender emails always fully ingested — user wants these newsletters |
 | 18 | `DINA_TRIAGE=off` | Environment variable set | All filtering disabled — every email fully downloaded and indexed |
 | 19 | LLM triage cost tracking | Cloud LLM profile: Gemini Flash Lite | ~$0.00007 per batch (50 emails), ~$0.003/year for 2000 emails — logged for admin UI |
+| 20 | **LLM triage sees ONLY subject+sender, NEVER body** | Inspect LLM prompt during batch classification | Prompt contains only `From:` and `Subject:` fields — no email body, no attachments, no full headers. Privacy guarantee: LLM cannot read email content during triage |
+| 21 | LLM triage prompt audit | Code audit of triage prompt construction | Brain constructs LLM classification prompt from metadata-only fields. `format=full` body is NEVER fetched before classification decision. Verify no code path leaks body text into triage prompt |
+| 22 | Thin record `skip_reason` differentiates filter stage | Inspect thin records for skipped emails | `skip_reason` values: `"category_filter"` (Pass 1), `"regex_sender"` / `"regex_subject"` (Pass 2a), `"llm_skip"` (Pass 2b) — enables debugging which filter caught each email |
+| 23 | Fiduciary override: account/domain expiration | "AWS: Your account will be suspended in 3 days" | Always INGEST — account/domain expiration patterns are fiduciary regardless of sender (even noreply@) |
+| 24 | LLM triage batch size: max 50 subjects per call | 80 PRIMARY emails survive regex | Brain splits into 2 LLM calls (50 + 30) — batch size capped at 50 per architecture spec |
+| 25 | Normalizer: all connectors produce standard schema | Gmail email + Calendar event + WhatsApp message | All normalized to common structure: `{source, source_id, type, timestamp, sender, summary, body_text, metadata}` before vault storage |
+| 26 | Persona routing: configurable per-connector rules | Config: `"email_persona_routing": {"default": "/personal", "rules": [{"sender_domain": "company.com", "persona": "/professional"}]}` | Emails from company.com routed to `/professional`, others to `/personal` — brain routes based on config |
 
 ### 5.3 Deduplication
 
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
-| 1 | Exact duplicate | Same email received twice | Second copy rejected (content hash match) |
+| 1 | Exact duplicate (Gmail message ID upsert) | Same email received twice | Second copy rejected by Gmail message ID upsert in vault — architecture specifies dedup by `source_id` (Gmail message ID), NOT content hash |
 | 2 | Near-duplicate | Same content, different formatting | Detected by normalized hash |
 | 3 | Legitimate repeat | Monthly statement with same template | Stored (different date/content) |
 | 4 | Cross-source duplicate | Same event from Gmail and Calendar | Deduplicated, merged metadata |
@@ -323,6 +371,8 @@
 | 5 | Cursors preserved during outage | OpenClaw down for 6 hours | `gmail_cursor` and `calendar_cursor` unchanged in vault — brain resumes from exact point |
 | 6 | Degradation is Tier 2 (not Tier 1) | OpenClaw offline | Notification priority: `solicited` — missing emails is inconvenience, not harm |
 | 7 | Sync status in admin UI | OpenClaw OFFLINE | Admin dashboard shows: last successful sync timestamp, current state, reason |
+| 8 | DEGRADED → HEALTHY (direct recovery) | MCP call succeeds while in DEGRADED state (before 3rd failure) | State → HEALTHY immediately — no need to go through OFFLINE first. Resume normal sync |
+| 9 | Consecutive failure counter resets on success | DEGRADED (1 failure) → success → failure | Counter resets to 0 on success, next failure starts fresh count at 1 (not cumulative) |
 
 ### 5.6 Attachment & Media Handling
 
@@ -338,6 +388,9 @@
 | 5 | Voice memo exception | WhatsApp voice note (<1MB) | Transcript stored in vault, audio optionally in `media/` directory — NOT inside SQLite |
 | 6 | Media directory on disk | Voice note audio kept | Stored at `media/` alongside vault — files on disk, encrypted at rest, not in SQLite |
 | 7 | Vault size stays portable | After 1 year of ingestion | Vault ~30-80MB (text + metadata + references), not 50GB (with binary blobs) |
+| 8 | `media/` directory encrypted at rest | Voice note audio stored in `media/` | Files on disk encrypted at rest (filesystem-level or per-file encryption) — NOT stored inside SQLite, but still protected |
+| 9 | Attachment reference URI format | Email with Drive attachment | Reference stored as `{uri: "gmail://msg/<message_id>/attachment/<attachment_id>", drive_file_id: "..."}` — enables deep link back to source |
+| 10 | Dead reference graceful handling | User deleted source email from Gmail | Brain informs user: "Original email was deleted. Here's the summary I saved." — summary survives, reference marked dead |
 
 ### 5.7 Memory Strategy (Living Window)
 

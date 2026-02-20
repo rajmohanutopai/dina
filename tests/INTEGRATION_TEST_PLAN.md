@@ -142,7 +142,18 @@
 | 2 | Concurrent bidirectional | Both nodes send simultaneously | Both messages delivered independently |
 | 3 | Message ordering | Node A sends 5 messages rapidly | Node B receives in order (outbox FIFO) |
 
-### 3.5 Transport Reliability
+### 3.5 The Sancho Moment (Full E2E Flow)
+
+> Architecture's showcase scenario: the complete 9-step flow from geofence trigger to
+> "you put the kettle on." Tests the entire D2D pipeline end-to-end.
+
+| # | Flow | Steps | Expected |
+|---|------|-------|----------|
+| 1 | Sancho Moment: complete 9-step flow | (1) Sancho's phone pushes "departing_home" event → (2) Sancho's core checks sharing rules (you're in "close friends") → (3) Resolves your DID via PLC Directory → (4) Connects to your Home Node → (5) Sends `{type: "dina/social/arrival", eta: 15min, context: ["mother_ill"]}` → (6) Your core decrypts → (7) Brain queries vault: last interaction 3 weeks ago, mother was ill, tea preference → (8) Brain assembles nudge: "Sancho is 15 minutes away. His mother was ill. He likes strong chai." → (9) Core pushes notification to phone | Full pipeline works: sharing policy respected, encryption/decryption successful, vault context retrieved, nudge delivered to client |
+| 2 | Sancho Moment: sharing policy blocks context flag | Sancho's sharing policy has `context: "none"` for you | `context_flags: ["mother_ill"]` stripped at egress — your Dina gets arrival ETA but no context about mother |
+| 3 | Sancho Moment: your node offline during send | Sancho's Dina sends, your node is down | Message queued in Sancho's outbox, retried on backoff schedule, delivered when your node recovers |
+
+### 3.6 Transport Reliability
 
 | # | Scenario | Setup | Expected |
 |---|----------|-------|----------|
@@ -227,6 +238,8 @@
 | 8 | No PII in any container log | Store PII data → query → grep all container logs | Zero matches for test PII values — only IDs, counts, latency logged |
 | 9 | Brain crash traceback in vault | Kill brain mid-task → restart → query crash_log | Crash entry in identity.sqlite with error type + full traceback |
 | 10 | Brain crash stdout has no PII | Kill brain mid-task → inspect Docker logs | Only sanitized one-liner: `guardian crash: RuntimeError at line 142` |
+| 13 | Docker log rotation configured | Inspect `docker-compose.yml` logging config for all services | Every service has `logging: {driver: "json-file", options: {max-size: "10m", max-file: "3"}}` — prevents storage exhaustion on unattended sovereign nodes (Section 04 §Observability). Without rotation, a crash loop filling stdout could fill disk and brick the Home Node |
+| 14 | Zombie state: healthcheck endpoint choice | Architecture note — Section 04 vs Section 17 discrepancy | Section 04 recommends Docker healthcheck use `/readyz` (catches zombie state: vault locked/corrupted but process alive). Section 17 uses `/healthz` (only catches process hang). Core §15.1 #5 expects Docker to restart on zombie state, but §5.2 #4 tests `/healthz` which wouldn't detect it. **Resolution needed**: if zombie detection is required, Docker healthcheck should use `/readyz`; if not, Core §15.1 #5 description should be updated. Current tests match Section 17 (`/healthz`) |
 
 ### 5.3 Boot Sequence (End-to-End)
 
@@ -427,6 +440,10 @@
 | 8 | Convenience mode keyfile → same DEKs | Compare DEKs derived from keyfile vs passphrase-unwrapped seed | Identical DEKs — same master seed, same derivation |
 | 9 | SQLCipher PRAGMAs enforced across stack | Open any persona vault, inspect PRAGMAs | `cipher_page_size=4096`, `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout=5000` |
 | 10 | Backup + Archive keys separate from vault DEKs | Derive backup, archive, sync, reputation keys | All different from each other and from vault DEKs — 6+ distinct keys from same seed |
+| 11 | `user_salt` uniqueness across nodes | Set up two Dina instances with SAME BIP-39 mnemonic | Different `user_salt` generated → different HKDF outputs → Node A's vault DEKs ≠ Node B's vault DEKs — Node B cannot open Node A's persona files |
+| 12 | `user_salt` preserved in export/import | Export from Node A → import on Node B | Same `user_salt` → same DEKs → vault files open correctly on Node B |
+| 13 | Exactly one root identity enforced | Set up Dina → attempt second first-run setup | Second setup rejected — `did:plc` already registered, root keypair already exists |
+| 14 | SLIP-0010 persona index mapping E2E | Create all default personas → inspect signing keys | Consumer (`m/9999'/1'`), professional (`m/9999'/2'`), social (`m/9999'/3'`) — each persona's public key matches deterministic derivation from seed + index |
 
 ### 7.9 Data Corruption Immunity (E2E)
 
@@ -467,6 +484,8 @@
 | 13 | Configurable switch interval | `switch_interval_days: 180` | Challenge sent every 180 days instead of default 90 |
 | 14 | Alternative trigger: manual with recovery phrase | Next-of-kin provides physical recovery phrase + death certificate | Estate activated via manual verification — no dead man's switch needed |
 | 15 | Alternative trigger: multi-beneficiary threshold | 2 of 3 beneficiaries attest to death | Estate activated when threshold met — no single beneficiary can trigger alone |
+| 16 | Destruction gated on delivery confirmation | Estate activated, 2 of 3 beneficiaries reachable, 1 offline | Core does NOT execute `default_action: "destroy"` until ALL beneficiary key deliveries are confirmed via D2D acknowledgment. Offline beneficiary's keys remain in outbox with infinite retry. Destruction is irrecoverable — if data is destroyed before a beneficiary receives their persona DEKs, that data is permanently lost. Architecture §14 line 49: destroy is step 5 (last), after step 4 (deliver keys). Ordering is mandatory, not advisory |
+| 17 | Root seed NEVER in estate key payload | Estate activated, inspect D2D messages to beneficiaries | Each beneficiary receives ONLY the individual persona DEKs for their assigned personas — NOT the root seed, NOT the master key, NOT the wrapped_seed.bin. Architecture §14 line 47: "per-beneficiary decryption keys (derived from root, **limited to specified personas**)." If root seed were transmitted, any single beneficiary could derive ALL persona DEKs via HKDF, violating per-beneficiary scoping. Daughter with `/social` + `/health` keys CANNOT derive `/financial` DEK |
 
 ---
 
@@ -483,6 +502,10 @@
 | 5 | Ingestion with locked persona | Email for locked persona | Staged or spooled until persona unlocked |
 | 6 | Ingestion dedup across restart | Ingest → restart → re-ingest same data | No duplicates in vault (Gmail message ID upsert) |
 | 7 | Cursor continuity across restart | Brain syncs → restarts → syncs again | Reads cursor from `GET core/v1/vault/kv/gmail_cursor` → resumes from exact point |
+| 8 | Calendar data fields preserved E2E | Calendar sync E2E | Events stored with: title, start/end time, attendees, location, description, recurrence rules — all fields queryable |
+| 9 | Contact data fields preserved E2E | Contacts sync E2E | Contacts stored with: name, phone numbers, emails, notes, relationships — all fields in identity.sqlite |
+| 10 | Calendar write operations E2E | User: "Book 2 PM Tuesday" | Brain→MCP→OpenClaw→Calendar API `events.insert` — write operation goes through MCP, not local vault. Local vault cache updated after write |
+| 11 | Calendar rolling window E2E | Calendar sync with vault query | Brain syncs -1 month to +1 year window. User asks "Am I free at 4 PM?" → brain queries local vault (zero network) → instant answer |
 
 ### 9.2 WhatsApp Connector (Android → Core)
 
@@ -495,6 +518,8 @@
 | 2 | WhatsApp uses CLIENT_TOKEN | Phone pushes to core | Authenticated with CLIENT_TOKEN (device token), not BRAIN_TOKEN |
 | 3 | WhatsApp text-only | Voice note notification | Text transcript of notification only — no media attached |
 | 4 | WhatsApp no history | Install Dina, connect WhatsApp | Only new messages from install date — no history before Dina |
+| 5 | WhatsApp notification format change (fragility) | WhatsApp updates notification format | Connector handles gracefully — logs parse error, continues capturing what it can. Tier 2 notification: "WhatsApp format changed, some messages may be missed" |
+| 6 | WhatsApp connector is text-only | WhatsApp notification with photo/video | Only text content captured — media attachments from notifications not supported. Metadata logged |
 
 ### 9.3 Ingestion Security Rules (E2E)
 
@@ -606,7 +631,7 @@
 | 4 | PDS cannot forge records | Inspect PDS data | PDS has no signing keys — stores signed Merkle repo, cannot create/modify records |
 | 5 | Type B: bundled PDS in docker-compose | `docker compose up` | PDS container runs alongside core + brain, serves `com.dina.reputation.*` records |
 | 6 | Type A: external PDS push | Home Node behind CGNAT (no inbound traffic) | Core pushes signed commits to external PDS via outbound HTTPS — zero inbound traffic to home node |
-| 7 | Custom Lexicon validation | Publish record with wrong schema | PDS or core rejects — required fields enforced (`expertDid`, `productCategory`, `rating`, `verdict`) |
+| 7 | Custom Lexicon validation | Publish record with wrong schema | PDS or core rejects — all 5 required fields enforced (`expertDid`, `productCategory`, `productId`, `rating`, `verdict`) |
 
 ### 11.2 Record Integrity & Deletion
 
@@ -615,8 +640,10 @@
 | 1 | Reputation tampering detected | Modify published record bytes | Signature verification fails — Merkle tree integrity broken |
 | 2 | Author deletes own review (signed tombstone) | User sends deletion signed by same key | `Tombstone {target, author, sig}` — record removed from PDS, tombstone propagates |
 | 3 | Non-author cannot delete review | Chair Company sends deletion for user's review | Signature doesn't match author → rejection — only keyholder can delete |
-| 4 | Outcome data has no PII | Inspect published outcome record | Contains `reporter_trust_ring`, `product_category`, `outcome` — zero user identity or product specifics |
+| 4 | Outcome data exact anonymized fields — no PII | Inspect published outcome record | Exact fields per Section 08 `com.dina.reputation.outcome` Lexicon: `{type: "outcome_report", reporter_trust_ring, reporter_age_days, product_category, product_id, purchase_verified, purchase_amount_range, time_since_purchase_days, outcome, satisfaction, issues, timestamp, signature}` — 13 fields total. Zero user identity (no DID, no name). Zero seller identity (only trust ring). reporter_trust_ring/age_days are the submitting Dina's ring level and age. purchase_amount_range uses bucketed format (e.g. "50000-100000_INR"). satisfaction is categorical (positive/negative/neutral). issues is an array (empty if none) |
 | 5 | Aggregate scores computed not stored | Query product reputation | Score computed from individual signed records — any AppView computes same score deterministically |
+| 6 | Outcome data lifecycle E2E | Cart handover → weeks → follow-up → anonymized record → PDS | Full flow: (1) purchase via cart handover — Brain records `{product_category, seller_dina_id, price, timestamp}`, (2) weeks/months later Brain asks "How's that chair?", (3) user responds or Brain infers (still using? returned?), (4) anonymized outcome record created with Section 08 Lexicon fields (13 fields: type, reporter_trust_ring, reporter_age_days, product_category, product_id, purchase_verified, purchase_amount_range, time_since_purchase_days, outcome, satisfaction, issues, timestamp, signature), (5) signed with Reputation Signing Key (HKDF "dina:reputation:v1"), (6) submitted to Reputation Graph via PDS |
+| 7 | Outcome report full Lexicon field validation | Inspect each field of published outcome record | Validate every field matches `com.dina.reputation.outcome` Lexicon constraints: `type` = "outcome_report" (string literal), `reporter_trust_ring` = integer (1-3), `reporter_age_days` = integer (≥0), `product_category` = string, `product_id` = string, `purchase_verified` = boolean, `purchase_amount_range` = string (bucketed format e.g. "50000-100000_INR"), `time_since_purchase_days` = integer (≥0), `outcome` = string enum (still_using/returned/broken/gifted), `satisfaction` = string enum (positive/negative/neutral), `issues` = array of strings (may be empty), `timestamp` = datetime ISO-8601, `signature` = Ed25519 hex string |
 
 ### 11.3 Reputation in Agent Decisions
 
@@ -626,6 +653,7 @@
 | 2 | Reputation affects trust tier | Contact accumulates positive outcome data | Trust level can be upgraded (Unverified → Verified) |
 | 3 | Cold start: web search fallback (Phase 1) | No reputation data available | Brain→MCP→OpenClaw: web search for reviews + user context from vault → nudge with personal context applied |
 | 4 | Gradual reputation activation | First reputation data appears in network | Brain includes reputation data alongside web search — transition invisible to user |
+| 5 | Cold start: personal context enrichment | Brain searches web for "best office chair" — user vault has back pain history, 10+ hour sitting, ₹50-80K budget | Brain synthesizes web results with personal vault context: "Based on web reviews and your back issues, the Steelcase Leap or Herman Miller Aeron. The Aeron is within your budget at ₹72,000." — vault data applied, not just raw web results |
 
 ### 11.4 PDS Topology & Availability
 
@@ -667,6 +695,7 @@
 | 11 | Schema migration: persona vault | Add new column to `vault_items` | Same pre-flight protocol — each persona file migrated independently |
 | 12 | Schema migration: partial failure | Migration succeeds on `personal.sqlite`, fails on `health.sqlite` | `health.sqlite` rolled back to backup — `personal.sqlite` migration committed (independent files) |
 | 13 | FTS5 rebuild after schema change | FTS5 content table altered | FTS5 index rebuilt (`INSERT INTO vault_items_fts(vault_items_fts) VALUES('rebuild')`) — search works after migration |
+| 14 | Import invalidates all device tokens | Export from Node A (3 paired devices) → import on Node B → attempt WS auth with old CLIENT_TOKENs | All old tokens rejected (401) — devices must re-pair with Node B. Architecture §17 token lifecycle: "Re-pair: after import/restore, all tokens invalidated → re-pair required." If tokens survive import, devices paired to Node A could authenticate to Node B — security gap when migrating between hosting providers |
 
 ---
 
@@ -819,6 +848,7 @@
 | 5 | Query API: bot scores | `GET /v1/bot?did=did:plc:xyz` | Returns bot trust score, accuracy history |
 | 6 | Signed payloads in API responses | Any query response | Includes raw signed record payloads alongside computed scores — enables client-side verification |
 | 7 | Aggregate scores deterministic | Two AppViews process same firehose | Both compute identical product ratings and trust composites |
+| 8 | Cursor tracking: crash recovery | AppView crashes mid-firehose consumption | Worker persists `seq` number (cursor) — on restart, resumes from last committed seq, zero data loss. No duplicate indexing, no gaps |
 
 ### 16.8 Three-Layer Verification (Phase 3)
 
@@ -857,6 +887,7 @@
 | 6 | Bot reputation scoring factors | Inspect bot score computation | `f(response_accuracy, response_time, uptime, user_ratings, consistency, age, peer_endorsements)` — all factors weighted |
 | 7 | Bot discovery: decentralized registry | Brain needs specialist bot | Queries Reputation Graph for bots in relevant domain, selects highest-reputation |
 | 8 | Bot-to-bot recommendation | Bot says "This is outside my domain" | Redirects to specialist bot DID — Brain follows chain if trust is sufficient |
+| 9 | Requester anonymity: trust ring only, no identity | Inspect `POST bot/query` request payload | Request contains `requester_trust_ring: 2` (integer) but NO user DID, no name, no Home Node URL, no persona path, no session ID — zero identifying information. Architecture §10: "anonymous — just the ring level." The bot knows the requester is trust ring 2 but cannot determine WHO is asking. If the request accidentally includes the DID alongside the trust ring, the bot can cross-reference queries and build a profile — breaking the anonymity guarantee |
 
 ### 16.11 Push Notifications (Phase 1.5)
 

@@ -121,6 +121,9 @@
 | 9 | Same mnemonic across Dina + crypto wallet | Reuse BIP-39 mnemonic in both | `m/9999'/*` (Dina) and `m/44'/*` (wallet) produce mathematically independent key trees |
 | 10 | Sibling key unlinkability | Derive `m/9999'/1'` and `m/9999'/2'` | No mathematical relationship between siblings — hardened derivation prevents computing one from the other |
 | 11 | Go implementation: stellar/go library | Code audit | Uses `github.com/stellar/go/exp/crypto/derivation` or equivalent — no custom HD derivation |
+| 12 | Canonical persona index mapping | Derive all default persona keys | `m/9999'/0'` = root identity, `m/9999'/1'` = consumer, `m/9999'/2'` = professional, `m/9999'/3'` = social, `m/9999'/4'` = health, `m/9999'/5'` = financial, `m/9999'/6'` = citizen — indexes match architecture spec exactly |
+| 13 | Custom persona index: sequential from 7 | User creates first custom persona | Assigned `m/9999'/7'` — next unused index after built-in personas (0-6) |
+| 14 | Persona index stored in identity.sqlite | Inspect `personas` table after creation | Each persona record includes `derivation_index` column — maps persona name to SLIP-0010 path index |
 
 ### 2.3 HKDF-SHA256 (Vault DEK Derivation)
 
@@ -138,6 +141,12 @@
 | 10 | Archive Key separate from Backup Key | Rotate backup key | Archive key unaffected — archive survives backup key rotation |
 | 11 | Client Sync Key | Derive sync key | `HKDF(info="dina:sync:v1")` → encrypts vault cache pushes to client devices |
 | 12 | Reputation Signing Key | Derive reputation key | `HKDF(info="dina:reputation:v1")` → signs anonymized outcome data |
+| 13 | `user_salt` is random 32-byte value | Inspect HKDF call parameters | HKDF uses `salt=user_salt` (a random 32-byte value generated at first setup), not `salt=nil` — prevents identical DEKs across Dina nodes that reuse the same BIP-39 mnemonic |
+| 14 | `user_salt` generated once at first setup | First-run key generation | 32 bytes from `crypto/rand`, stored in identity.sqlite (unencrypted — salt is not secret, it provides uniqueness) |
+| 15 | `user_salt` persisted across reboots | Restart core → derive DEKs | Same `user_salt` retrieved from identity.sqlite → same DEKs → vault files open correctly |
+| 16 | `user_salt` included in export | `dina export` produces archive | `user_salt` preserved in export — required for DEK re-derivation on import |
+| 17 | Same mnemonic, different `user_salt` → different DEKs | Two Dina nodes, same BIP-39 mnemonic, different `user_salt` | HKDF outputs are different — persona vaults on Node A cannot be decrypted by Node B even with identical mnemonic |
+| 18 | `user_salt` absent → startup error | Delete `user_salt` from identity.sqlite | Core refuses to derive DEKs — clear error: "user_salt missing, vault cannot be opened" |
 
 ### 2.4 Argon2id (Passphrase Hashing)
 
@@ -173,6 +182,7 @@
 | 4 | One-way property | X25519 private key | Cannot derive original Ed25519 signing key from X25519 encryption key — one-way derivation |
 | 5 | Ephemeral per message | Two `crypto_box_seal` calls to same recipient | Each uses fresh ephemeral X25519 keypair — compromise of one message's ephemeral key doesn't expose static signing key |
 | 6 | Conscious reuse (not separate keypairs) | Code audit | Single Ed25519 keypair per persona → derived X25519 for encryption. Not separate signing + encryption keypairs (doubles complexity, no practical benefit) |
+| 7 | Ephemeral X25519 key zeroed from memory after `crypto_box_seal` | Send D2D message → inspect process memory (test env) | Ephemeral private key destroyed immediately after encryption — not resident in RAM after send completes. Architecture guarantee: "Ephemeral private key destroyed immediately (sender forward secrecy)" |
 
 ### 2.7 NaCl crypto_box_seal (Dina-to-Dina Encryption)
 
@@ -209,6 +219,10 @@
 | 4 | Multiple persona DIDs | Create personas "work", "personal" | Different DIDs, each derived from unique SLIP-0010 path |
 | 5 | DID Document service endpoint | Resolve DID | Endpoint points to Home Node via Cloudflare/Tailscale tunnel — not to PLC Directory |
 | 6 | PLC Directory: signed operation log only | Inspect PLC Directory entry | Only stores signed ops — never holds private keys, never reads messages, never stores personal data |
+| 7 | Exactly one root identity: second generation rejected | Call first-run setup when root DID already exists | Rejected with error — "root identity already exists". No overwrite, no second root |
+| 8 | Root identity: `created_at` timestamp stored | Inspect identity after first-run | Root identity record includes `created_at` timestamp (Unix epoch) — documents when this Dina was born |
+| 9 | Root identity: device origin fingerprint stored | Inspect identity after first-run | `device_origin` field records generating device fingerprint (or "unknown" if no HSM) — forensic audit trail |
+| 10 | DID Document `verificationMethod`: Multikey with `z6Mk` prefix | Resolve own DID, inspect `publicKeyMultibase` | Prefix `z6Mk` encodes Ed25519 per Multikey specification — wrong prefix (e.g., `z6LS` for X25519) means wrong key type published |
 
 ### 3.1.1 Key Rotation (`did:plc`)
 
@@ -244,8 +258,8 @@
 | 8 | Per-persona independent DEK | Compromise `health.sqlite` DEK | Cannot decrypt `financial.sqlite` — different HKDF info string → different key |
 | 9 | Locked persona: file is opaque bytes | Inspect vault file when persona locked | DEK not in RAM — no application bug, no brain compromise, no code path can read it |
 | 10 | Selective unlock with TTL | Unlock `/financial` for 15 min | Core derives DEK → opens file → serves queries → closes after TTL → zeroes DEK from RAM |
-| 11 | Persona Ed25519 key signs DIDComm | Persona sends DIDComm message | Signed by persona-specific Ed25519 key (not root key) |
-| 12 | Persona Ed25519 key signs Reputation Graph entries | Persona publishes attestation | Signed by persona key |
+| 11 | Persona Ed25519 key signs DIDComm (NOT root key) | Persona `/social` sends DIDComm message | Signature verifies against `/social` persona pubkey (`m/9999'/3'`), NOT root pubkey (`m/9999'/0'`) — verify both: signature valid with persona key, signature INVALID with root key |
+| 12 | Persona Ed25519 key signs Reputation Graph entries (NOT root key) | Persona publishes attestation | Signed by persona key (e.g., `/consumer` at `m/9999'/1'`), verifiable against persona's DID Document — root key cannot sign on behalf of persona |
 | 13 | Even Dina's code cannot cross compartments | Code audit | No code path reads persona B data using persona A's context without root key + logged operation |
 
 ### 3.3 Persona Gatekeeper (Tier Enforcement)
@@ -277,6 +291,10 @@
 | 3 | Update contact trust level | Change from Unverified → Verified | Trust level updated, sharing policies may change |
 | 4 | Delete contact | Remove by DID | Contact removed, associated sharing policies cleaned |
 | 5 | Per-persona contact routing | Contact mapped to persona "work" | Messages from contact route to work persona only |
+| 6 | Contacts table: NO `persona` column | Inspect `contacts` DDL in identity.sqlite | `contacts` table has NO `persona` column — people are cross-cutting, they span contexts (Dr. Patel sends lab results AND cricket chat). Contact-persona association is derived from vault data, not stored as a column |
+| 7 | Contacts table: full schema validation | Inspect `contacts` DDL | `did TEXT PRIMARY KEY, name TEXT, alias TEXT, trust_level TEXT DEFAULT 'unknown', sharing_policy TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP` — all columns present with correct types and defaults |
+| 8 | Trust level enum validation | `POST /v1/contacts` with `trust_level: "super_trusted"` | 400 Bad Request — only 'blocked', 'unknown', 'trusted' accepted |
+| 9 | `idx_contacts_trust` index exists | Inspect identity.sqlite schema | `CREATE INDEX idx_contacts_trust ON contacts(trust_level)` — must exist for efficient bulk policy queries |
 
 ### 3.5 Device Registry
 
@@ -353,6 +371,7 @@
 | 6 | `kv_store` table for sync cursors | Store and retrieve cursor | `kv_store(key TEXT PRIMARY KEY, value TEXT, updated_at)` — brain is stateless, cursors live here |
 | 7 | `device_tokens` table: SHA-256 hash | Inspect token_hash | `SHA-256(CLIENT_TOKEN)` hex-encoded — NOT Argon2id (256-bit random input has no brute-force risk) |
 | 8 | `device_tokens` partial index | Inspect schema | `CREATE INDEX idx_device_tokens_hash ON device_tokens(token_hash) WHERE revoked = 0` — only active tokens indexed |
+| 9 | `crash_log` table schema | Inspect identity.sqlite | `crash_log(id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, error TEXT, traceback TEXT, task_id TEXT)` — stores brain crash tracebacks encrypted at rest (Section 04 §Observability). traceback contains Python locals (PII risk) — only safe because identity.sqlite is SQLCipher-encrypted |
 
 ### 4.2.2 Schema Compliance (persona vault)
 
@@ -364,6 +383,13 @@
 | 4 | Porter stemmer FORBIDDEN | Code audit | No `tokenize='porter'` anywhere — English-only, mangles non-Latin scripts |
 | 5 | FTS5 index encrypted by SQLCipher | Inspect FTS5 tables on disk | Encrypted at rest — no plaintext leakage from FTS shadow tables |
 | 6 | `relationships` table | Inspect schema | `(id TEXT PRIMARY KEY, entity_name, entity_type, last_interaction INTEGER, interaction_count INTEGER, notes TEXT)` |
+| 7 | `vault_items.type` allowed values enforced | `INSERT INTO vault_items` with `type = 'invalid_type'` | Rejected (CHECK constraint or application validation) — only `'email'`, `'message'`, `'event'`, `'note'`, `'photo'` accepted per architecture schema |
+| 8 | `relationships.entity_type` allowed values enforced | `INSERT INTO relationships` with `entity_type = 'alien'` | Rejected — only `'person'`, `'org'`, `'bot'` accepted per architecture schema |
+| 9 | FTS5 content-sync: INSERT propagates | `INSERT INTO vault_items` (new email) → `SELECT * FROM vault_items_fts WHERE vault_items_fts MATCH 'keyword'` | FTS5 index updated — new item found via FTS5 search. With `content=vault_items` FTS5, triggers or manual sync commands must propagate changes |
+| 10 | FTS5 content-sync: UPDATE propagates | `UPDATE vault_items SET body_text = 'new text' WHERE id = ?` → FTS5 search for 'new text' | Updated text found via FTS5 — old text no longer matches. Requires DELETE old + INSERT new in FTS5 shadow table |
+| 11 | FTS5 content-sync: DELETE propagates | `DELETE FROM vault_items WHERE id = ?` → FTS5 search for deleted item's text | No results — deleted item removed from FTS5 index. Stale FTS5 entries never returned |
+| 12 | Schema version: identity.sqlite | Inspect identity.sqlite metadata | Schema version `v1` stored and verifiable — matches `-- DINA IDENTITY SCHEMA (v1)` in architecture DDL |
+| 13 | Schema version: persona vault | Inspect persona vault metadata | Schema version `v3` stored and verifiable — matches `-- DINA VAULT SCHEMA (v3)` in architecture DDL. Core detects version mismatch on open → triggers migration |
 
 ### 4.2.3 Batch Ingestion
 
@@ -439,13 +465,14 @@
 | 2 | Approve staged item | Admin approves | Moved to main vault (`vault_items`) via INSERT + DELETE in single transaction |
 | 3 | Reject staged item | Admin rejects | Deleted from staging |
 | 4 | Auto-approve low-risk items | Item below risk threshold | Automatically promoted to main vault (no human review) |
-| 5 | 72-hour auto-expire | Item staged at T, no action by T+72h | Core sweeper deletes — `DELETE FROM staging WHERE created_at < datetime('now', '-72 hours')` |
+| 5 | Per-item expiry via `expires_at` field | Item with `expires_at` in the past, no user action | Core sweeper deletes — `DELETE FROM staging WHERE expires_at < datetime('now')`. Each staged item has its own `expires_at` set at creation time. Architecture §12 shows different TTLs: email drafts = 72h (line 33), cart handover = 12h (line 68). Sweeper honors per-item TTL, not a blanket 72h — using `created_at + 72h` would keep stale payment intents alive 60 hours beyond intended TTL |
 | 6 | Staging encrypted at rest | Inspect persona vault | Staging table is inside per-persona SQLCipher database — encrypted like all other data |
 | 7 | Staging not backed up | Trigger backup | Backup includes main vault tables but staging items are ephemeral — acceptable if lost |
 | 8 | Draft-don't-send in staging | Brain creates email draft | Draft stored as staging item with `type: "email_draft"` — NOT sent until user approves |
 | 9 | Cart handover intent in staging | Brain assembles purchase intent | Stored as `type: "cart_handover"` — Dina never touches money, hands back to user |
 | 10 | Staging items per-persona | Draft created for `/work` persona | Stored in `work.sqlite` staging table — not visible to `/personal` |
-| 11 | Sweeper runs on schedule | 24 hours pass | Core watchdog runs 72h cleanup sweep daily — same sweep as audit log cleanup |
+| 11 | Sweeper runs on schedule | 24 hours pass | Core watchdog runs expiry cleanup sweep daily — same sweep as audit log cleanup |
+| 12 | Per-type TTL: draft 72h, cart 12h | Create email_draft (72h TTL) and cart_handover (12h TTL) at same time, run sweeper at T+13h | Cart handover deleted (past `expires_at`), email draft still present (53h remaining). Architecture §12: drafts expire after 72h, payment intents after 12h — different action types warrant different urgency windows. Brain sets `expires_at` at creation; core sweeper enforces it uniformly via `WHERE expires_at < datetime('now')` |
 
 ### 4.6 Backup
 
@@ -457,6 +484,8 @@
 | 4 | Backup to different location | Specify backup path | Backup file created at target path |
 | 5 | Restore from backup | Replace vault with backup | Data integrity verified, all items present |
 | 6 | CI/CD plaintext verification | CI test: open backup as plain SQLite3 (no key) | Must FAIL to open — if it opens, BUILD MUST FAIL (catches regression: someone replaces `sqlcipher_export()` with `VACUUM INTO`) |
+| 7 | Backup scope: Tier 0 + Tier 1 only | Trigger backup → inspect contents | Backup includes identity.sqlite (Tier 0) + all persona vaults (Tier 1). Tier 2 (index/embeddings) explicitly EXCLUDED — regenerable from Tier 1. Tier 4 (staging) explicitly EXCLUDED — ephemeral, acceptable if lost |
+| 8 | Automated backup scheduling (daily default) | Default config (no backup override) | Watchdog triggers `sqlcipher_export()` backup every 24 hours (default). Configurable via `config.json: "backup": {"interval_hours": 24}`. For unattended sovereign nodes, this is the only safety net — if automated backup doesn't run, Home Node failure means total data loss (Section 13 §Home Node Failure). Backup timestamp logged in `kv_store` as `last_backup_timestamp` for admin UI display |
 
 ### 4.6.1 Pre-Flight Migration Safety Protocol
 
@@ -484,6 +513,7 @@
 | 9 | Raw entries for forensics | Inspect audit log | Individual timestamped entries preserved — not summarized ("brain accessed /financial 847 times" is useless vs. timestamped pattern detection) |
 | 10 | Audit log stored in identity.sqlite | Inspect database | `audit_log` table in identity.sqlite (Tier 0) — not in persona vaults |
 | 11 | Storage growth bounded | ~100 entries/day × 200 bytes × 90 days | ~1.8MB for 90 days — trivial, but unbounded growth prevented by retention policy |
+| 12 | `crash_log` 90-day retention | Insert crash_log entries with timestamps >90 days old | Watchdog daily sweep runs `DELETE FROM crash_log WHERE timestamp < datetime('now', '-90 days')` — same retention policy as audit_log. crash_log lives in identity.sqlite alongside audit_log (Section 04 §Observability) |
 
 ### 4.8 Boot Sequence & Vault Unlock
 
@@ -511,6 +541,7 @@
 | 20 | Security mode: wrapped_seed.bin path | Inspect file | Encrypted master seed at `/var/lib/dina/wrapped_seed.bin` (AES-256-GCM blob + 16-byte cleartext Argon2id salt) |
 | 21 | Master Seed NEVER plaintext in security mode | Inspect `/var/lib/dina/` in security mode | No plaintext seed on disk — only `wrapped_seed.bin` (encrypted blob) |
 | 22 | Convenience mode: keyfile path | Inspect file | Raw master seed at `/var/lib/dina/keyfile` with `chmod 600` |
+| 23 | Mode switch: security → convenience (security downgrade) | User requests switch from security to convenience mode | Core prompts for passphrase → Argon2id → KEK → unwrap master seed from `wrapped_seed.bin` → write plaintext seed to `/var/lib/dina/keyfile` (chmod 600) → update config.json `mode: "convenience"`. MUST require explicit user confirmation ("This writes your master seed to disk in plaintext. Continue?") because this is a deliberate security downgrade. Architecture §02 line 40: "Users can change this setting at any time" — bidirectional. §4.8 #12 covers convenience→security; this covers the reverse |
 
 ---
 
@@ -566,6 +597,8 @@
 | 13 | Recognized categories | Phase 1 category list | `presence`, `availability`, `context`, `preferences`, `location`, `health` — extensible |
 | 14 | Sharing defaults for new contacts | New contact added, no explicit policy set | Defaults from `config.json "sharing_defaults"`: presence=eta_only, availability=free_busy, context=summary, preferences=full, location=none, health=none |
 | 15 | Outbound PII scrub | Share data with `"full"` policy | PII scrubber runs before transmission (even full tier gets scrubbed) |
+| 16 | Extensible categories: custom category accepted | `PATCH /v1/contacts/:did/policy {"hobbies": "full"}` | Custom category stored and enforced — system is not limited to the 6 default categories |
+| 17 | Extensible categories: custom category enforced at egress | Brain sends payload with `{hobbies: {summary: "...", full: "..."}}`, policy has `hobbies: "summary"` | Core strips to summary — custom categories go through the same egress pipeline |
 
 ### 6.2 Sharing Policy API
 
@@ -623,6 +656,8 @@
 | 13 | Failed messages cleanup | Message failed after 5 retries | Deleted after 24 hours |
 | 14 | Priority ordering | High-priority (fiduciary) message queued after low-priority | Fiduciary messages sent first |
 | 15 | Payload is pre-encrypted | Inspect outbox payload column | BLOB is NaCl-encrypted — ready to send, no re-encryption on retry |
+| 16 | `sending` status during delivery attempt | Message in outbox, delivery in progress | Status transitions: `pending` → `sending` (while HTTP request in flight) → `delivered` (on 200) or back to `pending` with incremented retries (on failure) |
+| 17 | User ignores nudge → message expires at 24h TTL | Retries exhausted → user notified → user does nothing | Message remains `failed` → cleanup deletes after 24 hours. No infinite retry loop |
 
 ### 7.2 Inbox (3-Valve Ingress)
 
@@ -673,10 +708,12 @@
 | 1 | Plaintext structure | Create D2D message | `{id: "msg_...", type: "dina/social/arrival", from: "did:plc:...", to: ["did:plc:..."], created_time: unix_ts, body: {...}}` |
 | 2 | Message ID format | Inspect message ID | Format: `msg_YYYYMMDD_<random>` — unique, timestamp-prefixed |
 | 3 | Message envelope format | Inspect encrypted envelope | `{typ: "application/dina-encrypted+json", from_kid, to_kid, ciphertext: "<base64url>", sig: "<Ed25519>"}` |
-| 4 | Ed25519 signature on plaintext | Verify signature | `sig` field is Ed25519 signature over the canonical plaintext — verifiable without decryption |
+| 4 | Ed25519 signature on plaintext | Verify signature | `sig` field is Ed25519 signature over the canonical plaintext. Verification flow: recipient decrypts `ciphertext` via `crypto_box_seal_open` → recovers plaintext → verifies `sig` against `from_kid` public key. Sig is in the outer envelope (visible), but verification requires the plaintext (only recipient has it) |
 | 5 | Message categories | Create different types | `dina/social/*`, `dina/commerce/*`, `dina/identity/*`, `dina/reputation/*` — all valid |
 | 6 | Unknown message type | Receive `dina/unknown/foo` | Accepted and stored (extensible) — brain classifies, no hard rejection |
 | 7 | Ephemeral key per message | Send two messages to same recipient | Each uses fresh ephemeral X25519 keypair for `crypto_box_seal` — different ciphertext |
+| 8 | `from_kid`/`to_kid` DID fragment format | Inspect envelope `from_kid` and `to_kid` | Format: `did:plc:...#key-1` — DID URL with fragment identifier referencing the correct `verificationMethod` entry in sender/recipient's DID Document |
+| 9 | Phase migration invariant: plaintext unchanged | Compare Phase 1 and Phase 2 envelopes for same message | Plaintext `{id, type, from, to, created_time, body}` is IDENTICAL — only the encryption wrapper changes (libsodium → JWE). Application code and message types don't change |
 
 ### 7.5 Connection Establishment
 
@@ -845,6 +882,19 @@
 | 5 | Brute-force protection | >3 wrong attempts for same code | Code invalidated, new code required |
 | 6 | Code single-use | Use valid code twice | Second attempt fails — code consumed |
 | 7 | Concurrent pairing codes | Two codes active simultaneously | Both work independently |
+
+### 10.1 Device Management API
+
+> Architecture §17 defines device management endpoints beyond pairing:
+> listing, revoking, token format, response schema. Brain §8.3 tests admin UI
+> calls to these; this section tests core's API implementation.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | List paired devices (GET /v1/devices) | BRAIN_TOKEN (or admin session) after 3 devices paired | 200 with array of `{token_id, device_name, last_seen, created_at, revoked}` for each device. `last_seen` reflects most recent WS auth_ok. Architecture §17: "Brain: queries device_tokens via core" — admin UI and brain both need this endpoint |
+| 2 | Revoke device (PATCH /v1/devices/{token_id}/revoke) | Admin request to revoke specific device | 200 — `revoked=true` in device_tokens. Next request from that device → 401 immediately. Core §9.1 #5 tests WS-level rejection; this tests the revocation API itself. Architecture §17: "Core sets revoked=true. Next request from iPad → 401. Immediate." |
+| 3 | Pair completion response includes node_did + ws_url | Successful pairing via POST /v1/pair/complete | Response body: `{client_token: "...", node_did: "did:plc:...", ws_url: "wss://..."}` — all three fields present. Client needs node_did for identity verification and ws_url for WebSocket connection. Architecture §17 pairing flow step 10 |
+| 4 | CLIENT_TOKEN format: 32 bytes, hex-encoded | Inspect token from pair completion | 64 hex chars (0-9a-f) — `crypto/rand` 32 bytes → hex. Architecture §17: "CLIENT_TOKEN is a 32-byte cryptographic random value (hex-encoded, 64 chars)" |
 
 ---
 
@@ -1059,7 +1109,9 @@
 | 5 | Core exposes `/v1/pii/scrub` to brain | BRAIN_TOKEN + text | 200 with scrubbed text |
 | 6 | Core exposes `/v1/notify` to brain | BRAIN_TOKEN + push notification | 200 — notification pushed to connected clients |
 | 7 | All brain-callable endpoints accept BRAIN_TOKEN | Iterate all non-admin endpoints with BRAIN_TOKEN | All return 200 (not 403) |
-| 8 | No other endpoints exist beyond documented set | Enumerate all routes | Exact match with documented API surface |
+| 8 | No other endpoints exist beyond documented set | Enumerate all routes | Exact match with documented API surface — 8 brain-callable families (vault/query, vault/store, did/verify, pii/scrub, notify, msg/send, reputation/query, process+reason) plus admin-only endpoints (did/sign, did/rotate, vault/backup, persona/unlock, admin/*) |
+| 9 | Core exposes `/v1/msg/send` to brain | BRAIN_TOKEN + encrypted message payload (recipient DID, ciphertext) | 200 — message queued in outbox for Dina-to-Dina delivery. Architecture §03 line 135 lists `msg/send` in BRAIN_TOKEN scope. Brain triggers outbound messages (e.g., sharing a verdict with a contact); core handles encryption envelope and transport |
+| 10 | Core exposes `/v1/reputation/query` to brain | BRAIN_TOKEN + query (entity, category) | 200 with reputation score from local cache or PDS federation. Architecture §03 line 135 lists `reputation/query` in BRAIN_TOKEN scope. Brain needs reputation data for LLM routing decisions (e.g., which bot to delegate to) and trust ring evaluation |
 
 ---
 
@@ -1199,6 +1251,9 @@
 | 5 | PDS connection failure | PDS container down | Core queues record in outbox for retry — record not lost |
 | 6 | Type B: bundled PDS (default) | docker-compose default | Core writes directly to `pds:2583` container on internal network |
 | 7 | Type A: external PDS | Home Node behind CGNAT | Core pushes signed commit to external PDS via outbound HTTPS |
+| 8 | Rating range enforcement (0-100) | Attestation with `rating: 101` | Core rejects before signing — Lexicon schema enforces `"minimum": 0, "maximum": 100`. Also test: `rating: -1` → rejected, `rating: 0` → accepted, `rating: 100` → accepted |
+| 9 | Verdict is structured object with sub-scores | Attestation with `verdict: "good"` (plain string) | Core rejects — `verdict` must be a `#verdictDetail` ref (object with sub-scores like `build_quality`, `lumbar_support`, `value_for_money`, `durability_estimate`). Also test: valid object → accepted |
+| 10 | All 5 required Lexicon fields validated | Attestation missing each field one at a time | Core rejects if ANY of the 5 required fields is missing: `expertDid` (did format), `productCategory` (string), `productId` (string), `rating` (integer 0-100), `verdict` (ref object). Test each omission independently |
 
 ### 22.2 Signed Tombstones (Deletion)
 
@@ -1288,7 +1343,7 @@
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
 | 1 | Archive encrypted with Archive Key | Create Tier 5 snapshot | AES-256-GCM with `HKDF("dina:archive:v1")` key — separate from Backup Key |
-| 2 | Archive contains Tier 0 + 1 + 3 | Inspect archive contents | identity.sqlite + all persona vaults + reputation/preferences |
+| 2 | Archive contains Tier 0 + 1 + 3 (NOT Tier 2 or 4) | Inspect archive contents | identity.sqlite (Tier 0) + all persona vaults (Tier 1) + reputation/preferences (Tier 3). Tier 2 (index/embeddings) explicitly ABSENT — regenerable from Tier 1. Tier 4 (staging) explicitly ABSENT — ephemeral. Verify by listing archive entries: no embedding tables, no staging tables, no sqlite-vec data |
 | 3 | Weekly frequency (configurable) | Check schedule | Default weekly, configurable via config.json |
 | 4 | S3 Glacier + Compliance Mode Object Lock | Push to S3 | Object locked — even root user / cloud support cannot delete during retention period |
 | 5 | Sovereign: USB/LTO tape | Push to local drive | Physically unplugged after backup — air-gapped |
