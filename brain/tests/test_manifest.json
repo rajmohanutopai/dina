@@ -1,0 +1,2627 @@
+{
+  "scenarios": {
+    "TST-BRAIN-001": {
+      "path": "1.1",
+      "row": 1,
+      "scenario": "Valid BRAIN_TOKEN",
+      "line": 14
+    },
+    "TST-BRAIN-002": {
+      "path": "1.1",
+      "row": 2,
+      "scenario": "Missing token",
+      "line": 15
+    },
+    "TST-BRAIN-003": {
+      "path": "1.1",
+      "row": 3,
+      "scenario": "Wrong token",
+      "line": 16
+    },
+    "TST-BRAIN-004": {
+      "path": "1.1",
+      "row": 4,
+      "scenario": "Token from Docker secret",
+      "line": 17
+    },
+    "TST-BRAIN-005": {
+      "path": "1.1",
+      "row": 5,
+      "scenario": "Token file missing",
+      "line": 18
+    },
+    "TST-BRAIN-006": {
+      "path": "1.1",
+      "row": 6,
+      "scenario": "Constant-time comparison",
+      "line": 19
+    },
+    "TST-BRAIN-007": {
+      "path": "1.2",
+      "row": 1,
+      "scenario": "`/api/*` requires BRAIN_TOKEN",
+      "line": 25
+    },
+    "TST-BRAIN-008": {
+      "path": "1.2",
+      "row": 2,
+      "scenario": "`/api/*` rejects CLIENT_TOKEN",
+      "line": 26
+    },
+    "TST-BRAIN-009": {
+      "path": "1.2",
+      "row": 3,
+      "scenario": "`/admin/*` requires CLIENT_TOKEN",
+      "line": 27
+    },
+    "TST-BRAIN-010": {
+      "path": "1.2",
+      "row": 4,
+      "scenario": "`/admin/*` rejects BRAIN_TOKEN",
+      "line": 28
+    },
+    "TST-BRAIN-011": {
+      "path": "1.2",
+      "row": 5,
+      "scenario": "`/healthz` unauthenticated",
+      "line": 29
+    },
+    "TST-BRAIN-012": {
+      "path": "1.2",
+      "row": 6,
+      "scenario": "Single Uvicorn process, single port",
+      "line": 30
+    },
+    "TST-BRAIN-013": {
+      "path": "1.2",
+      "row": 7,
+      "scenario": "Sub-app isolation: brain API cannot call admin UI",
+      "line": 31
+    },
+    "TST-BRAIN-014": {
+      "path": "1.2",
+      "row": 8,
+      "scenario": "Sub-app isolation: admin UI cannot call brain API",
+      "line": 32
+    },
+    "TST-BRAIN-015": {
+      "path": "1.2",
+      "row": 9,
+      "scenario": "Admin UI calls core:8100 with CLIENT_TOKEN",
+      "line": 33
+    },
+    "TST-BRAIN-016": {
+      "path": "1.2",
+      "row": 10,
+      "scenario": "Brain never sees cookies",
+      "line": 34
+    },
+    "TST-BRAIN-017": {
+      "path": "1.2",
+      "row": 11,
+      "scenario": "Brain exposes `/v1/process` to core",
+      "line": 35
+    },
+    "TST-BRAIN-018": {
+      "path": "1.2",
+      "row": 12,
+      "scenario": "Brain exposes `/v1/reason` to core",
+      "line": 36
+    },
+    "TST-BRAIN-019": {
+      "path": "2.1",
+      "row": 1,
+      "scenario": "Fiduciary: silence causes harm",
+      "line": 46
+    },
+    "TST-BRAIN-020": {
+      "path": "2.1",
+      "row": 2,
+      "scenario": "Fiduciary: security threat",
+      "line": 47
+    },
+    "TST-BRAIN-021": {
+      "path": "2.1",
+      "row": 3,
+      "scenario": "Fiduciary: time-sensitive financial",
+      "line": 48
+    },
+    "TST-BRAIN-022": {
+      "path": "2.1",
+      "row": 4,
+      "scenario": "Solicited: user asked for this",
+      "line": 49
+    },
+    "TST-BRAIN-023": {
+      "path": "2.1",
+      "row": 5,
+      "scenario": "Solicited: user-initiated query result",
+      "line": 50
+    },
+    "TST-BRAIN-024": {
+      "path": "2.1",
+      "row": 6,
+      "scenario": "Engagement: nice-to-know",
+      "line": 51
+    },
+    "TST-BRAIN-025": {
+      "path": "2.1",
+      "row": 7,
+      "scenario": "Engagement: promotional",
+      "line": 52
+    },
+    "TST-BRAIN-026": {
+      "path": "2.1",
+      "row": 8,
+      "scenario": "Engagement: social media update",
+      "line": 53
+    },
+    "TST-BRAIN-027": {
+      "path": "2.1",
+      "row": 9,
+      "scenario": "Ambiguous: could be fiduciary or engagement",
+      "line": 54
+    },
+    "TST-BRAIN-028": {
+      "path": "2.1",
+      "row": 10,
+      "scenario": "No notification needed",
+      "line": 55
+    },
+    "TST-BRAIN-029": {
+      "path": "2.1",
+      "row": 11,
+      "scenario": "Fiduciary: health alert",
+      "line": 56
+    },
+    "TST-BRAIN-030": {
+      "path": "2.1",
+      "row": 12,
+      "scenario": "Fiduciary: composite heuristic (keyword + sender trust)",
+      "line": 57
+    },
+    "TST-BRAIN-031": {
+      "path": "2.2",
+      "row": 1,
+      "scenario": "Receive vault_unlocked notification",
+      "line": 63
+    },
+    "TST-BRAIN-032": {
+      "path": "2.2",
+      "row": 2,
+      "scenario": "Brain starts before vault unlock",
+      "line": 64
+    },
+    "TST-BRAIN-033": {
+      "path": "2.2",
+      "row": 3,
+      "scenario": "Vault lock event during operation",
+      "line": 65
+    },
+    "TST-BRAIN-034": {
+      "path": "2.2",
+      "row": 4,
+      "scenario": "Brain handles vault_unlocked idempotently",
+      "line": 66
+    },
+    "TST-BRAIN-035": {
+      "path": "2.3",
+      "row": 1,
+      "scenario": "Process incoming event",
+      "line": 72
+    },
+    "TST-BRAIN-036": {
+      "path": "2.3",
+      "row": 2,
+      "scenario": "Multi-step reasoning",
+      "line": 73
+    },
+    "TST-BRAIN-037": {
+      "path": "2.3",
+      "row": 3,
+      "scenario": "Agent intent review",
+      "line": 74
+    },
+    "TST-BRAIN-038": {
+      "path": "2.3",
+      "row": 4,
+      "scenario": "Safe intent auto-approved",
+      "line": 75
+    },
+    "TST-BRAIN-039": {
+      "path": "2.3",
+      "row": 5,
+      "scenario": "Risky intent flagged",
+      "line": 76
+    },
+    "TST-BRAIN-040": {
+      "path": "2.3",
+      "row": 6,
+      "scenario": "Blocked intent",
+      "line": 77
+    },
+    "TST-BRAIN-041": {
+      "path": "2.3",
+      "row": 7,
+      "scenario": "Timeout handling",
+      "line": 78
+    },
+    "TST-BRAIN-042": {
+      "path": "2.3",
+      "row": 8,
+      "scenario": "Error recovery",
+      "line": 79
+    },
+    "TST-BRAIN-043": {
+      "path": "2.3",
+      "row": 9,
+      "scenario": "Crash handler: sanitized stdout",
+      "line": 80
+    },
+    "TST-BRAIN-044": {
+      "path": "2.3",
+      "row": 10,
+      "scenario": "Crash handler: full traceback to core",
+      "line": 81
+    },
+    "TST-BRAIN-045": {
+      "path": "2.3.1",
+      "row": 1,
+      "scenario": "NEVER messages.send",
+      "line": 90
+    },
+    "TST-BRAIN-046": {
+      "path": "2.3.1",
+      "row": 2,
+      "scenario": "Draft created via Gmail API",
+      "line": 91
+    },
+    "TST-BRAIN-047": {
+      "path": "2.3.1",
+      "row": 3,
+      "scenario": "Confidence score attached",
+      "line": 92
+    },
+    "TST-BRAIN-048": {
+      "path": "2.3.1",
+      "row": 4,
+      "scenario": "Below threshold \u2192 flagged for review",
+      "line": 93
+    },
+    "TST-BRAIN-049": {
+      "path": "2.3.1",
+      "row": 5,
+      "scenario": "High-risk classification: legal",
+      "line": 94
+    },
+    "TST-BRAIN-050": {
+      "path": "2.3.1",
+      "row": 6,
+      "scenario": "High-risk classification: financial",
+      "line": 95
+    },
+    "TST-BRAIN-051": {
+      "path": "2.3.1",
+      "row": 7,
+      "scenario": "High-risk classification: emotional",
+      "line": 96
+    },
+    "TST-BRAIN-052": {
+      "path": "2.3.1",
+      "row": 8,
+      "scenario": "User notified of draft",
+      "line": 97
+    },
+    "TST-BRAIN-053": {
+      "path": "2.3.2",
+      "row": 1,
+      "scenario": "UPI payment intent",
+      "line": 106
+    },
+    "TST-BRAIN-054": {
+      "path": "2.3.2",
+      "row": 2,
+      "scenario": "Crypto payment intent",
+      "line": 107
+    },
+    "TST-BRAIN-055": {
+      "path": "2.3.2",
+      "row": 3,
+      "scenario": "Web checkout intent",
+      "line": 108
+    },
+    "TST-BRAIN-056": {
+      "path": "2.3.2",
+      "row": 4,
+      "scenario": "Dina never sees credentials",
+      "line": 109
+    },
+    "TST-BRAIN-057": {
+      "path": "2.3.2",
+      "row": 5,
+      "scenario": "Outcome recording",
+      "line": 110
+    },
+    "TST-BRAIN-058": {
+      "path": "2.3.2",
+      "row": 6,
+      "scenario": "Cart handover expires",
+      "line": 111
+    },
+    "TST-BRAIN-059": {
+      "path": "2.3.2",
+      "row": 7,
+      "scenario": "Outcome follow-up question timing",
+      "line": 112
+    },
+    "TST-BRAIN-060": {
+      "path": "2.3.2",
+      "row": 8,
+      "scenario": "Outcome inference without explicit response",
+      "line": 113
+    },
+    "TST-BRAIN-061": {
+      "path": "2.3.2",
+      "row": 9,
+      "scenario": "Outcome anonymization: exact fields from Section 08 Lexicon",
+      "line": 114
+    },
+    "TST-BRAIN-062": {
+      "path": "2.4",
+      "row": 1,
+      "scenario": "Non-streaming whisper",
+      "line": 120
+    },
+    "TST-BRAIN-063": {
+      "path": "2.4",
+      "row": 2,
+      "scenario": "Streaming whisper",
+      "line": 121
+    },
+    "TST-BRAIN-064": {
+      "path": "2.4",
+      "row": 3,
+      "scenario": "Whisper to disconnected client",
+      "line": 122
+    },
+    "TST-BRAIN-065": {
+      "path": "2.4",
+      "row": 4,
+      "scenario": "Whisper with vault references",
+      "line": 123
+    },
+    "TST-BRAIN-066": {
+      "path": "2.5",
+      "row": 1,
+      "scenario": "Generate morning briefing",
+      "line": 129
+    },
+    "TST-BRAIN-067": {
+      "path": "2.5",
+      "row": 2,
+      "scenario": "Briefing with no items",
+      "line": 130
+    },
+    "TST-BRAIN-068": {
+      "path": "2.5",
+      "row": 3,
+      "scenario": "Briefing ordering",
+      "line": 131
+    },
+    "TST-BRAIN-069": {
+      "path": "2.5",
+      "row": 4,
+      "scenario": "Briefing respects Do Not Disturb",
+      "line": 132
+    },
+    "TST-BRAIN-070": {
+      "path": "2.5",
+      "row": 5,
+      "scenario": "Briefing deduplication",
+      "line": 133
+    },
+    "TST-BRAIN-071": {
+      "path": "2.5",
+      "row": 6,
+      "scenario": "Briefing includes restricted persona access summary",
+      "line": 134
+    },
+    "TST-BRAIN-072": {
+      "path": "2.5",
+      "row": 7,
+      "scenario": "Briefing: zero restricted accesses omitted",
+      "line": 135
+    },
+    "TST-BRAIN-073": {
+      "path": "2.5",
+      "row": 8,
+      "scenario": "Briefing restricted summary queries audit log",
+      "line": 136
+    },
+    "TST-BRAIN-074": {
+      "path": "2.5",
+      "row": 9,
+      "scenario": "Briefing permanently disabled by user",
+      "line": 137
+    },
+    "TST-BRAIN-075": {
+      "path": "2.6",
+      "row": 1,
+      "scenario": "Nudge on conversation open",
+      "line": 146
+    },
+    "TST-BRAIN-076": {
+      "path": "2.6",
+      "row": 2,
+      "scenario": "Nudge context assembly",
+      "line": 147
+    },
+    "TST-BRAIN-077": {
+      "path": "2.6",
+      "row": 3,
+      "scenario": "Nudge delivery",
+      "line": 148
+    },
+    "TST-BRAIN-078": {
+      "path": "2.6",
+      "row": 4,
+      "scenario": "Nudge with no relevant context",
+      "line": 149
+    },
+    "TST-BRAIN-079": {
+      "path": "2.6",
+      "row": 5,
+      "scenario": "Nudge respects persona boundaries",
+      "line": 150
+    },
+    "TST-BRAIN-080": {
+      "path": "2.6",
+      "row": 6,
+      "scenario": "Pending promise detection",
+      "line": 151
+    },
+    "TST-BRAIN-081": {
+      "path": "2.6",
+      "row": 7,
+      "scenario": "Calendar context included",
+      "line": 152
+    },
+    "TST-BRAIN-082": {
+      "path": "2.7",
+      "row": 1,
+      "scenario": "Grant specific sharing",
+      "line": 161
+    },
+    "TST-BRAIN-083": {
+      "path": "2.7",
+      "row": 2,
+      "scenario": "Revoke sharing for all contacts (bulk)",
+      "line": 162
+    },
+    "TST-BRAIN-084": {
+      "path": "2.7",
+      "row": 3,
+      "scenario": "Query current sharing policy",
+      "line": 163
+    },
+    "TST-BRAIN-085": {
+      "path": "2.7",
+      "row": 4,
+      "scenario": "Grant full sharing for specific category",
+      "line": 164
+    },
+    "TST-BRAIN-086": {
+      "path": "2.7",
+      "row": 5,
+      "scenario": "Ambiguous request",
+      "line": 165
+    },
+    "TST-BRAIN-087": {
+      "path": "2.8",
+      "row": 1,
+      "scenario": "Brain prepares tiered payload",
+      "line": 174
+    },
+    "TST-BRAIN-088": {
+      "path": "2.8",
+      "row": 2,
+      "scenario": "Brain sends max detail",
+      "line": 175
+    },
+    "TST-BRAIN-089": {
+      "path": "2.8",
+      "row": 3,
+      "scenario": "Brain never pre-filters by policy",
+      "line": 176
+    },
+    "TST-BRAIN-090": {
+      "path": "2.8",
+      "row": 4,
+      "scenario": "Brain calls `POST /v1/dina/send`",
+      "line": 177
+    },
+    "TST-BRAIN-091": {
+      "path": "3.1",
+      "row": 1,
+      "scenario": "Person name detection",
+      "line": 191
+    },
+    "TST-BRAIN-092": {
+      "path": "3.1",
+      "row": 2,
+      "scenario": "Organization detection",
+      "line": 192
+    },
+    "TST-BRAIN-093": {
+      "path": "3.1",
+      "row": 3,
+      "scenario": "Location detection",
+      "line": 193
+    },
+    "TST-BRAIN-094": {
+      "path": "3.1",
+      "row": 4,
+      "scenario": "Date/time with context",
+      "line": 194
+    },
+    "TST-BRAIN-095": {
+      "path": "3.1",
+      "row": 5,
+      "scenario": "Multiple entities",
+      "line": 195
+    },
+    "TST-BRAIN-096": {
+      "path": "3.1",
+      "row": 6,
+      "scenario": "No entities",
+      "line": 196
+    },
+    "TST-BRAIN-097": {
+      "path": "3.1",
+      "row": 7,
+      "scenario": "Ambiguous entity",
+      "line": 197
+    },
+    "TST-BRAIN-098": {
+      "path": "3.1",
+      "row": 8,
+      "scenario": "Entity in URL",
+      "line": 198
+    },
+    "TST-BRAIN-099": {
+      "path": "3.1",
+      "row": 9,
+      "scenario": "Non-English text",
+      "line": 199
+    },
+    "TST-BRAIN-100": {
+      "path": "3.1",
+      "row": 10,
+      "scenario": "Medical terms (custom NER)",
+      "line": 200
+    },
+    "TST-BRAIN-101": {
+      "path": "3.1",
+      "row": 11,
+      "scenario": "Multiple same-type entities",
+      "line": 201
+    },
+    "TST-BRAIN-102": {
+      "path": "3.1",
+      "row": 12,
+      "scenario": "Replacement map accumulates from Tier 1",
+      "line": 202
+    },
+    "TST-BRAIN-103": {
+      "path": "3.1",
+      "row": 13,
+      "scenario": "Address detection",
+      "line": 203
+    },
+    "TST-BRAIN-104": {
+      "path": "3.2",
+      "row": 1,
+      "scenario": "Email + person name",
+      "line": 213
+    },
+    "TST-BRAIN-105": {
+      "path": "3.2",
+      "row": 2,
+      "scenario": "Phone + location",
+      "line": 214
+    },
+    "TST-BRAIN-106": {
+      "path": "3.2",
+      "row": 3,
+      "scenario": "Tier 1 runs first, Tier 2 second",
+      "line": 215
+    },
+    "TST-BRAIN-107": {
+      "path": "3.2",
+      "row": 4,
+      "scenario": "Performance: batch processing",
+      "line": 216
+    },
+    "TST-BRAIN-108": {
+      "path": "3.2",
+      "row": 5,
+      "scenario": "Full pipeline to cloud LLM",
+      "line": 217
+    },
+    "TST-BRAIN-109": {
+      "path": "3.2",
+      "row": 6,
+      "scenario": "Circular dependency prevention",
+      "line": 218
+    },
+    "TST-BRAIN-110": {
+      "path": "3.3",
+      "row": 1,
+      "scenario": "Create entity vault",
+      "line": 227
+    },
+    "TST-BRAIN-111": {
+      "path": "3.3",
+      "row": 2,
+      "scenario": "Scrub before LLM",
+      "line": 228
+    },
+    "TST-BRAIN-112": {
+      "path": "3.3",
+      "row": 3,
+      "scenario": "Rehydrate after LLM",
+      "line": 229
+    },
+    "TST-BRAIN-113": {
+      "path": "3.3",
+      "row": 4,
+      "scenario": "Entity vault destroyed after rehydration",
+      "line": 230
+    },
+    "TST-BRAIN-114": {
+      "path": "3.3",
+      "row": 5,
+      "scenario": "Entity vault never persisted to disk",
+      "line": 231
+    },
+    "TST-BRAIN-115": {
+      "path": "3.3",
+      "row": 6,
+      "scenario": "Entity vault never logged",
+      "line": 232
+    },
+    "TST-BRAIN-116": {
+      "path": "3.3",
+      "row": 7,
+      "scenario": "Entity vault never stored in main vault",
+      "line": 233
+    },
+    "TST-BRAIN-117": {
+      "path": "3.3",
+      "row": 8,
+      "scenario": "Nested redaction tokens",
+      "line": 234
+    },
+    "TST-BRAIN-118": {
+      "path": "3.3",
+      "row": 9,
+      "scenario": "Entity vault with local LLM",
+      "line": 235
+    },
+    "TST-BRAIN-119": {
+      "path": "3.3",
+      "row": 10,
+      "scenario": "Scope: one request-response cycle",
+      "line": 236
+    },
+    "TST-BRAIN-120": {
+      "path": "3.3",
+      "row": 11,
+      "scenario": "Cloud LLM sees topics, not identities",
+      "line": 237
+    },
+    "TST-BRAIN-121": {
+      "path": "4.1",
+      "row": 1,
+      "scenario": "Simple lookup \u2192 FTS5 only, no LLM",
+      "line": 251
+    },
+    "TST-BRAIN-122": {
+      "path": "4.1",
+      "row": 2,
+      "scenario": "Basic summarization \u2192 local LLM",
+      "line": 252
+    },
+    "TST-BRAIN-123": {
+      "path": "4.1",
+      "row": 3,
+      "scenario": "Basic summarization \u2192 cloud fallback",
+      "line": 253
+    },
+    "TST-BRAIN-124": {
+      "path": "4.1",
+      "row": 4,
+      "scenario": "Complex reasoning \u2192 cloud LLM",
+      "line": 254
+    },
+    "TST-BRAIN-125": {
+      "path": "4.1",
+      "row": 5,
+      "scenario": "Sensitive persona \u2192 local LLM (best privacy)",
+      "line": 255
+    },
+    "TST-BRAIN-126": {
+      "path": "4.1",
+      "row": 6,
+      "scenario": "Sensitive persona \u2192 Entity Vault + cloud",
+      "line": 256
+    },
+    "TST-BRAIN-127": {
+      "path": "4.1",
+      "row": 7,
+      "scenario": "Fallback: local \u2192 cloud",
+      "line": 257
+    },
+    "TST-BRAIN-128": {
+      "path": "4.1",
+      "row": 8,
+      "scenario": "Fallback: cloud \u2192 local",
+      "line": 258
+    },
+    "TST-BRAIN-129": {
+      "path": "4.1",
+      "row": 9,
+      "scenario": "No LLM available",
+      "line": 259
+    },
+    "TST-BRAIN-130": {
+      "path": "4.1",
+      "row": 10,
+      "scenario": "Model selection by task type",
+      "line": 260
+    },
+    "TST-BRAIN-131": {
+      "path": "4.1",
+      "row": 11,
+      "scenario": "User configures preferred cloud provider",
+      "line": 261
+    },
+    "TST-BRAIN-132": {
+      "path": "4.1",
+      "row": 12,
+      "scenario": "PII scrub failure on sensitive persona \u2192 refuse cloud send",
+      "line": 262
+    },
+    "TST-BRAIN-133": {
+      "path": "4.2",
+      "row": 1,
+      "scenario": "Successful completion",
+      "line": 268
+    },
+    "TST-BRAIN-134": {
+      "path": "4.2",
+      "row": 2,
+      "scenario": "Streaming response",
+      "line": 269
+    },
+    "TST-BRAIN-135": {
+      "path": "4.2",
+      "row": 3,
+      "scenario": "Timeout",
+      "line": 270
+    },
+    "TST-BRAIN-136": {
+      "path": "4.2",
+      "row": 4,
+      "scenario": "Token limit exceeded",
+      "line": 271
+    },
+    "TST-BRAIN-137": {
+      "path": "4.2",
+      "row": 5,
+      "scenario": "Malformed LLM response",
+      "line": 272
+    },
+    "TST-BRAIN-138": {
+      "path": "4.2",
+      "row": 6,
+      "scenario": "Rate limiting",
+      "line": 273
+    },
+    "TST-BRAIN-139": {
+      "path": "4.2",
+      "row": 7,
+      "scenario": "Cost tracking",
+      "line": 274
+    },
+    "TST-BRAIN-140": {
+      "path": "5.1",
+      "row": 1,
+      "scenario": "Schedule connector",
+      "line": 284
+    },
+    "TST-BRAIN-141": {
+      "path": "5.1",
+      "row": 2,
+      "scenario": "Multiple connectors",
+      "line": 285
+    },
+    "TST-BRAIN-142": {
+      "path": "5.1",
+      "row": 3,
+      "scenario": "Connector failure",
+      "line": 286
+    },
+    "TST-BRAIN-143": {
+      "path": "5.1",
+      "row": 4,
+      "scenario": "Manual trigger",
+      "line": 287
+    },
+    "TST-BRAIN-144": {
+      "path": "5.1",
+      "row": 5,
+      "scenario": "Overlapping runs",
+      "line": 288
+    },
+    "TST-BRAIN-145": {
+      "path": "5.1",
+      "row": 6,
+      "scenario": "Morning routine (configurable)",
+      "line": 289
+    },
+    "TST-BRAIN-146": {
+      "path": "5.1",
+      "row": 7,
+      "scenario": "Hourly check",
+      "line": 290
+    },
+    "TST-BRAIN-147": {
+      "path": "5.1",
+      "row": 8,
+      "scenario": "On-demand sync",
+      "line": 291
+    },
+    "TST-BRAIN-148": {
+      "path": "5.1",
+      "row": 9,
+      "scenario": "Cursor preserved across restarts",
+      "line": 292
+    },
+    "TST-BRAIN-149": {
+      "path": "5.1",
+      "row": 10,
+      "scenario": "Cursor update after sync",
+      "line": 293
+    },
+    "TST-BRAIN-150": {
+      "path": "5.1",
+      "row": 11,
+      "scenario": "Calendar sync frequency",
+      "line": 294
+    },
+    "TST-BRAIN-151": {
+      "path": "5.1",
+      "row": 12,
+      "scenario": "Contacts sync frequency",
+      "line": 295
+    },
+    "TST-BRAIN-152": {
+      "path": "5.1",
+      "row": 13,
+      "scenario": "`calendar_cursor` KV key",
+      "line": 296
+    },
+    "TST-BRAIN-153": {
+      "path": "5.1",
+      "row": 14,
+      "scenario": "Morning routine: full sequence",
+      "line": 297
+    },
+    "TST-BRAIN-154": {
+      "path": "5.1",
+      "row": 15,
+      "scenario": "Calendar rolling window: -1 month / +1 year",
+      "line": 298
+    },
+    "TST-BRAIN-155": {
+      "path": "5.1",
+      "row": 16,
+      "scenario": "Calendar read/write split",
+      "line": 299
+    },
+    "TST-BRAIN-156": {
+      "path": "5.2",
+      "row": 1,
+      "scenario": "Pass 1: Metadata fetch",
+      "line": 308
+    },
+    "TST-BRAIN-157": {
+      "path": "5.2",
+      "row": 2,
+      "scenario": "Pass 1: Gmail category filter",
+      "line": 309
+    },
+    "TST-BRAIN-158": {
+      "path": "5.2",
+      "row": 3,
+      "scenario": "Pass 1: PRIMARY \u2192 proceed",
+      "line": 310
+    },
+    "TST-BRAIN-159": {
+      "path": "5.2",
+      "row": 4,
+      "scenario": "Pass 2a: Regex pre-filter (sender)",
+      "line": 311
+    },
+    "TST-BRAIN-160": {
+      "path": "5.2",
+      "row": 5,
+      "scenario": "Pass 2a: Subject regex filter",
+      "line": 312
+    },
+    "TST-BRAIN-161": {
+      "path": "5.2",
+      "row": 6,
+      "scenario": "Pass 2b: LLM batch classification",
+      "line": 313
+    },
+    "TST-BRAIN-162": {
+      "path": "5.2",
+      "row": 7,
+      "scenario": "Pass 2b: INGEST classification",
+      "line": 314
+    },
+    "TST-BRAIN-163": {
+      "path": "5.2",
+      "row": 8,
+      "scenario": "Pass 2b: SKIP classification",
+      "line": 315
+    },
+    "TST-BRAIN-164": {
+      "path": "5.2",
+      "row": 9,
+      "scenario": "Full download: INGEST only",
+      "line": 316
+    },
+    "TST-BRAIN-165": {
+      "path": "5.2",
+      "row": 10,
+      "scenario": "Thin records for ALL skipped",
+      "line": 317
+    },
+    "TST-BRAIN-166": {
+      "path": "5.2",
+      "row": 11,
+      "scenario": "Thin records not embedded",
+      "line": 318
+    },
+    "TST-BRAIN-167": {
+      "path": "5.2",
+      "row": 12,
+      "scenario": "On-demand fetch of skipped email",
+      "line": 319
+    },
+    "TST-BRAIN-168": {
+      "path": "5.2",
+      "row": 13,
+      "scenario": "PII scrub before cloud LLM (NOT before all vault storage)",
+      "line": 320
+    },
+    "TST-BRAIN-169": {
+      "path": "5.2",
+      "row": 14,
+      "scenario": "End-to-end: 5000 emails (1 year)",
+      "line": 321
+    },
+    "TST-BRAIN-170": {
+      "path": "5.2",
+      "row": 15,
+      "scenario": "Fiduciary override: security alert",
+      "line": 322
+    },
+    "TST-BRAIN-171": {
+      "path": "5.2",
+      "row": 16,
+      "scenario": "Fiduciary override: financial document",
+      "line": 323
+    },
+    "TST-BRAIN-172": {
+      "path": "5.2",
+      "row": 17,
+      "scenario": "`always_ingest` sender exception",
+      "line": 324
+    },
+    "TST-BRAIN-173": {
+      "path": "5.2",
+      "row": 18,
+      "scenario": "`DINA_TRIAGE=off`",
+      "line": 325
+    },
+    "TST-BRAIN-174": {
+      "path": "5.2",
+      "row": 19,
+      "scenario": "LLM triage cost tracking",
+      "line": 326
+    },
+    "TST-BRAIN-175": {
+      "path": "5.2",
+      "row": 20,
+      "scenario": "**LLM triage sees ONLY subject+sender, NEVER body**",
+      "line": 327
+    },
+    "TST-BRAIN-176": {
+      "path": "5.2",
+      "row": 21,
+      "scenario": "LLM triage prompt audit",
+      "line": 328
+    },
+    "TST-BRAIN-177": {
+      "path": "5.2",
+      "row": 22,
+      "scenario": "Thin record `skip_reason` differentiates filter stage",
+      "line": 329
+    },
+    "TST-BRAIN-178": {
+      "path": "5.2",
+      "row": 23,
+      "scenario": "Fiduciary override: account/domain expiration",
+      "line": 330
+    },
+    "TST-BRAIN-179": {
+      "path": "5.2",
+      "row": 24,
+      "scenario": "LLM triage batch size: max 50 subjects per call",
+      "line": 331
+    },
+    "TST-BRAIN-180": {
+      "path": "5.2",
+      "row": 25,
+      "scenario": "Normalizer: all connectors produce standard schema",
+      "line": 332
+    },
+    "TST-BRAIN-181": {
+      "path": "5.2",
+      "row": 26,
+      "scenario": "Persona routing: configurable per-connector rules",
+      "line": 333
+    },
+    "TST-BRAIN-182": {
+      "path": "5.3",
+      "row": 1,
+      "scenario": "Exact duplicate (Gmail message ID upsert)",
+      "line": 339
+    },
+    "TST-BRAIN-183": {
+      "path": "5.3",
+      "row": 2,
+      "scenario": "Near-duplicate",
+      "line": 340
+    },
+    "TST-BRAIN-184": {
+      "path": "5.3",
+      "row": 3,
+      "scenario": "Legitimate repeat",
+      "line": 341
+    },
+    "TST-BRAIN-185": {
+      "path": "5.3",
+      "row": 4,
+      "scenario": "Cross-source duplicate",
+      "line": 342
+    },
+    "TST-BRAIN-186": {
+      "path": "5.4",
+      "row": 1,
+      "scenario": "Batch request: 100 items",
+      "line": 352
+    },
+    "TST-BRAIN-187": {
+      "path": "5.4",
+      "row": 2,
+      "scenario": "Batch size cap: 100",
+      "line": 353
+    },
+    "TST-BRAIN-188": {
+      "path": "5.4",
+      "row": 3,
+      "scenario": "Batch with mixed types",
+      "line": 354
+    },
+    "TST-BRAIN-189": {
+      "path": "5.4",
+      "row": 4,
+      "scenario": "Batch failure: core returns 500",
+      "line": 355
+    },
+    "TST-BRAIN-190": {
+      "path": "5.4",
+      "row": 5,
+      "scenario": "Batch partial retry not needed",
+      "line": 356
+    },
+    "TST-BRAIN-191": {
+      "path": "5.4",
+      "row": 6,
+      "scenario": "Background embedding after batch",
+      "line": 357
+    },
+    "TST-BRAIN-192": {
+      "path": "5.4",
+      "row": 7,
+      "scenario": "Batch ingestion progress tracking",
+      "line": 358
+    },
+    "TST-BRAIN-193": {
+      "path": "5.5",
+      "row": 1,
+      "scenario": "HEALTHY: normal sync",
+      "line": 367
+    },
+    "TST-BRAIN-194": {
+      "path": "5.5",
+      "row": 2,
+      "scenario": "HEALTHY \u2192 DEGRADED",
+      "line": 368
+    },
+    "TST-BRAIN-195": {
+      "path": "5.5",
+      "row": 3,
+      "scenario": "DEGRADED \u2192 OFFLINE",
+      "line": 369
+    },
+    "TST-BRAIN-196": {
+      "path": "5.5",
+      "row": 4,
+      "scenario": "OFFLINE \u2192 HEALTHY",
+      "line": 370
+    },
+    "TST-BRAIN-197": {
+      "path": "5.5",
+      "row": 5,
+      "scenario": "Cursors preserved during outage",
+      "line": 371
+    },
+    "TST-BRAIN-198": {
+      "path": "5.5",
+      "row": 6,
+      "scenario": "Degradation is Tier 2 (not Tier 1)",
+      "line": 372
+    },
+    "TST-BRAIN-199": {
+      "path": "5.5",
+      "row": 7,
+      "scenario": "Sync status in admin UI",
+      "line": 373
+    },
+    "TST-BRAIN-200": {
+      "path": "5.5",
+      "row": 8,
+      "scenario": "DEGRADED \u2192 HEALTHY (direct recovery)",
+      "line": 374
+    },
+    "TST-BRAIN-201": {
+      "path": "5.5",
+      "row": 9,
+      "scenario": "Consecutive failure counter resets on success",
+      "line": 375
+    },
+    "TST-BRAIN-202": {
+      "path": "5.6",
+      "row": 1,
+      "scenario": "Email attachment: metadata only",
+      "line": 384
+    },
+    "TST-BRAIN-203": {
+      "path": "5.6",
+      "row": 2,
+      "scenario": "Attachment summary",
+      "line": 385
+    },
+    "TST-BRAIN-204": {
+      "path": "5.6",
+      "row": 3,
+      "scenario": "Deep link to source",
+      "line": 386
+    },
+    "TST-BRAIN-205": {
+      "path": "5.6",
+      "row": 4,
+      "scenario": "Dead reference accepted",
+      "line": 387
+    },
+    "TST-BRAIN-206": {
+      "path": "5.6",
+      "row": 5,
+      "scenario": "Voice memo exception",
+      "line": 388
+    },
+    "TST-BRAIN-207": {
+      "path": "5.6",
+      "row": 6,
+      "scenario": "Media directory on disk",
+      "line": 389
+    },
+    "TST-BRAIN-208": {
+      "path": "5.6",
+      "row": 7,
+      "scenario": "Vault size stays portable",
+      "line": 390
+    },
+    "TST-BRAIN-209": {
+      "path": "5.6",
+      "row": 8,
+      "scenario": "`media/` directory encrypted at rest",
+      "line": 391
+    },
+    "TST-BRAIN-210": {
+      "path": "5.6",
+      "row": 9,
+      "scenario": "Attachment reference URI format",
+      "line": 392
+    },
+    "TST-BRAIN-211": {
+      "path": "5.6",
+      "row": 10,
+      "scenario": "Dead reference graceful handling",
+      "line": 393
+    },
+    "TST-BRAIN-212": {
+      "path": "5.7",
+      "row": 1,
+      "scenario": "Default history horizon",
+      "line": 403
+    },
+    "TST-BRAIN-213": {
+      "path": "5.7",
+      "row": 2,
+      "scenario": "Custom history horizon",
+      "line": 404
+    },
+    "TST-BRAIN-214": {
+      "path": "5.7",
+      "row": 3,
+      "scenario": "Extended history horizon",
+      "line": 405
+    },
+    "TST-BRAIN-215": {
+      "path": "5.7",
+      "row": 4,
+      "scenario": "Data beyond horizon NEVER downloaded",
+      "line": 406
+    },
+    "TST-BRAIN-216": {
+      "path": "5.7",
+      "row": 5,
+      "scenario": "Zone 1 data: vectorized + FTS-indexed",
+      "line": 407
+    },
+    "TST-BRAIN-217": {
+      "path": "5.7",
+      "row": 6,
+      "scenario": "Zone 2 data: not in vault",
+      "line": 408
+    },
+    "TST-BRAIN-218": {
+      "path": "5.7",
+      "row": 7,
+      "scenario": "Startup fast sync: 30 days",
+      "line": 409
+    },
+    "TST-BRAIN-219": {
+      "path": "5.7",
+      "row": 8,
+      "scenario": "Startup backfill: remaining 365 days",
+      "line": 410
+    },
+    "TST-BRAIN-220": {
+      "path": "5.7",
+      "row": 9,
+      "scenario": "User queries preempt backfill",
+      "line": 411
+    },
+    "TST-BRAIN-221": {
+      "path": "5.8",
+      "row": 1,
+      "scenario": "Hot memory search first",
+      "line": 420
+    },
+    "TST-BRAIN-222": {
+      "path": "5.8",
+      "row": 2,
+      "scenario": "Cold fallback: not found locally",
+      "line": 421
+    },
+    "TST-BRAIN-223": {
+      "path": "5.8",
+      "row": 3,
+      "scenario": "Cold results shown, NOT saved",
+      "line": 422
+    },
+    "TST-BRAIN-224": {
+      "path": "5.8",
+      "row": 4,
+      "scenario": "Privacy disclosure",
+      "line": 423
+    },
+    "TST-BRAIN-225": {
+      "path": "5.8",
+      "row": 5,
+      "scenario": "Explicit old date triggers cold",
+      "line": 424
+    },
+    "TST-BRAIN-226": {
+      "path": "6.1",
+      "row": 1,
+      "scenario": "Route to specialist agent",
+      "line": 434
+    },
+    "TST-BRAIN-227": {
+      "path": "6.1",
+      "row": 2,
+      "scenario": "Route by capability",
+      "line": 435
+    },
+    "TST-BRAIN-228": {
+      "path": "6.1",
+      "row": 3,
+      "scenario": "Route by reputation",
+      "line": 436
+    },
+    "TST-BRAIN-229": {
+      "path": "6.1",
+      "row": 4,
+      "scenario": "No suitable agent",
+      "line": 437
+    },
+    "TST-BRAIN-230": {
+      "path": "6.1",
+      "row": 5,
+      "scenario": "Agent timeout",
+      "line": 438
+    },
+    "TST-BRAIN-231": {
+      "path": "6.2",
+      "row": 1,
+      "scenario": "Agent submits safe intent",
+      "line": 444
+    },
+    "TST-BRAIN-232": {
+      "path": "6.2",
+      "row": 2,
+      "scenario": "Agent submits risky intent",
+      "line": 445
+    },
+    "TST-BRAIN-233": {
+      "path": "6.2",
+      "row": 3,
+      "scenario": "Agent submits blocked intent",
+      "line": 446
+    },
+    "TST-BRAIN-234": {
+      "path": "6.2",
+      "row": 4,
+      "scenario": "Agent tries to access raw vault",
+      "line": 447
+    },
+    "TST-BRAIN-235": {
+      "path": "6.2",
+      "row": 5,
+      "scenario": "Agent from untrusted source",
+      "line": 448
+    },
+    "TST-BRAIN-236": {
+      "path": "6.2",
+      "row": 6,
+      "scenario": "Agent response validation",
+      "line": 449
+    },
+    "TST-BRAIN-237": {
+      "path": "6.2",
+      "row": 7,
+      "scenario": "Agent cannot access encryption keys",
+      "line": 450
+    },
+    "TST-BRAIN-238": {
+      "path": "6.2",
+      "row": 8,
+      "scenario": "Agent cannot access persona metadata",
+      "line": 451
+    },
+    "TST-BRAIN-239": {
+      "path": "6.2",
+      "row": 9,
+      "scenario": "Agent cannot initiate calls to Dina",
+      "line": 452
+    },
+    "TST-BRAIN-240": {
+      "path": "6.2",
+      "row": 10,
+      "scenario": "Disconnect compromised agent",
+      "line": 453
+    },
+    "TST-BRAIN-241": {
+      "path": "6.2",
+      "row": 11,
+      "scenario": "Agent cannot enumerate other agents",
+      "line": 454
+    },
+    "TST-BRAIN-242": {
+      "path": "6.2",
+      "row": 12,
+      "scenario": "Constraint: `draft_only: true` enforced",
+      "line": 455
+    },
+    "TST-BRAIN-243": {
+      "path": "6.2",
+      "row": 13,
+      "scenario": "Constraint: `no_payment: true` enforced",
+      "line": 456
+    },
+    "TST-BRAIN-244": {
+      "path": "6.2",
+      "row": 14,
+      "scenario": "Silence protocol checked before delegation",
+      "line": 457
+    },
+    "TST-BRAIN-245": {
+      "path": "6.2",
+      "row": 15,
+      "scenario": "Agent outcome recorded in Tier 3",
+      "line": 458
+    },
+    "TST-BRAIN-246": {
+      "path": "6.2",
+      "row": 16,
+      "scenario": "No raw vault data to agents",
+      "line": 459
+    },
+    "TST-BRAIN-247": {
+      "path": "6.3",
+      "row": 1,
+      "scenario": "Initialize MCP session",
+      "line": 465
+    },
+    "TST-BRAIN-248": {
+      "path": "6.3",
+      "row": 2,
+      "scenario": "Tool invocation",
+      "line": 466
+    },
+    "TST-BRAIN-249": {
+      "path": "6.3",
+      "row": 3,
+      "scenario": "Session cleanup",
+      "line": 467
+    },
+    "TST-BRAIN-250": {
+      "path": "6.3",
+      "row": 4,
+      "scenario": "MCP server unreachable",
+      "line": 468
+    },
+    "TST-BRAIN-251": {
+      "path": "6.4",
+      "row": 1,
+      "scenario": "Query includes context, not identity",
+      "line": 478
+    },
+    "TST-BRAIN-252": {
+      "path": "6.4",
+      "row": 2,
+      "scenario": "Budget from financial persona stripped",
+      "line": 479
+    },
+    "TST-BRAIN-253": {
+      "path": "6.4",
+      "row": 3,
+      "scenario": "Medical details generalized",
+      "line": 480
+    },
+    "TST-BRAIN-254": {
+      "path": "6.4",
+      "row": 4,
+      "scenario": "No persona data in query",
+      "line": 481
+    },
+    "TST-BRAIN-255": {
+      "path": "6.4",
+      "row": 5,
+      "scenario": "Past purchase context included",
+      "line": 482
+    },
+    "TST-BRAIN-256": {
+      "path": "6.4",
+      "row": 6,
+      "scenario": "No PII even if user types PII in question",
+      "line": 483
+    },
+    "TST-BRAIN-257": {
+      "path": "6.4",
+      "row": 7,
+      "scenario": "Attribution preserved in bot response",
+      "line": 484
+    },
+    "TST-BRAIN-258": {
+      "path": "6.4",
+      "row": 8,
+      "scenario": "Bot response without attribution",
+      "line": 485
+    },
+    "TST-BRAIN-259": {
+      "path": "7.1",
+      "row": 1,
+      "scenario": "Read vault item",
+      "line": 495
+    },
+    "TST-BRAIN-260": {
+      "path": "7.1",
+      "row": 2,
+      "scenario": "Write vault item",
+      "line": 496
+    },
+    "TST-BRAIN-261": {
+      "path": "7.1",
+      "row": 3,
+      "scenario": "Search vault",
+      "line": 497
+    },
+    "TST-BRAIN-262": {
+      "path": "7.1",
+      "row": 4,
+      "scenario": "Write scratchpad",
+      "line": 498
+    },
+    "TST-BRAIN-263": {
+      "path": "7.1",
+      "row": 5,
+      "scenario": "Read scratchpad",
+      "line": 499
+    },
+    "TST-BRAIN-264": {
+      "path": "7.1",
+      "row": 6,
+      "scenario": "Send message",
+      "line": 500
+    },
+    "TST-BRAIN-265": {
+      "path": "7.2",
+      "row": 1,
+      "scenario": "Core unreachable",
+      "line": 506
+    },
+    "TST-BRAIN-266": {
+      "path": "7.2",
+      "row": 2,
+      "scenario": "Core returns 500",
+      "line": 507
+    },
+    "TST-BRAIN-267": {
+      "path": "7.2",
+      "row": 3,
+      "scenario": "Core returns 401",
+      "line": 508
+    },
+    "TST-BRAIN-268": {
+      "path": "7.2",
+      "row": 4,
+      "scenario": "Timeout",
+      "line": 509
+    },
+    "TST-BRAIN-269": {
+      "path": "7.2",
+      "row": 5,
+      "scenario": "Invalid response JSON",
+      "line": 510
+    },
+    "TST-BRAIN-270": {
+      "path": "8.1",
+      "row": 1,
+      "scenario": "Dashboard loads",
+      "line": 520
+    },
+    "TST-BRAIN-271": {
+      "path": "8.1",
+      "row": 2,
+      "scenario": "System status display",
+      "line": 521
+    },
+    "TST-BRAIN-272": {
+      "path": "8.1",
+      "row": 3,
+      "scenario": "Degraded status",
+      "line": 522
+    },
+    "TST-BRAIN-273": {
+      "path": "8.1",
+      "row": 4,
+      "scenario": "Recent activity",
+      "line": 523
+    },
+    "TST-BRAIN-274": {
+      "path": "8.2",
+      "row": 1,
+      "scenario": "List contacts",
+      "line": 529
+    },
+    "TST-BRAIN-275": {
+      "path": "8.2",
+      "row": 2,
+      "scenario": "Add contact",
+      "line": 530
+    },
+    "TST-BRAIN-276": {
+      "path": "8.2",
+      "row": 3,
+      "scenario": "Edit sharing policy",
+      "line": 531
+    },
+    "TST-BRAIN-277": {
+      "path": "8.2",
+      "row": 4,
+      "scenario": "Remove contact",
+      "line": 532
+    },
+    "TST-BRAIN-278": {
+      "path": "8.3",
+      "row": 1,
+      "scenario": "List devices",
+      "line": 538
+    },
+    "TST-BRAIN-279": {
+      "path": "8.3",
+      "row": 2,
+      "scenario": "Initiate pairing",
+      "line": 539
+    },
+    "TST-BRAIN-280": {
+      "path": "8.3",
+      "row": 3,
+      "scenario": "Revoke device",
+      "line": 540
+    },
+    "TST-BRAIN-281": {
+      "path": "8.4",
+      "row": 1,
+      "scenario": "List personas",
+      "line": 546
+    },
+    "TST-BRAIN-282": {
+      "path": "8.4",
+      "row": 2,
+      "scenario": "Create persona",
+      "line": 547
+    },
+    "TST-BRAIN-283": {
+      "path": "8.4",
+      "row": 3,
+      "scenario": "Change persona tier",
+      "line": 548
+    },
+    "TST-BRAIN-284": {
+      "path": "8.4",
+      "row": 4,
+      "scenario": "Delete persona",
+      "line": 549
+    },
+    "TST-BRAIN-285": {
+      "path": "8.5",
+      "row": 1,
+      "scenario": "XSS in contact name",
+      "line": 555
+    },
+    "TST-BRAIN-286": {
+      "path": "8.5",
+      "row": 2,
+      "scenario": "CSRF on forms",
+      "line": 556
+    },
+    "TST-BRAIN-287": {
+      "path": "8.5",
+      "row": 3,
+      "scenario": "SQL injection via search",
+      "line": 557
+    },
+    "TST-BRAIN-288": {
+      "path": "8.5",
+      "row": 4,
+      "scenario": "Template injection",
+      "line": 558
+    },
+    "TST-BRAIN-289": {
+      "path": "9",
+      "row": 1,
+      "scenario": "Load CORE_URL",
+      "line": 566
+    },
+    "TST-BRAIN-290": {
+      "path": "9",
+      "row": 2,
+      "scenario": "Load LLM_URL",
+      "line": 567
+    },
+    "TST-BRAIN-291": {
+      "path": "9",
+      "row": 3,
+      "scenario": "Missing CORE_URL",
+      "line": 568
+    },
+    "TST-BRAIN-292": {
+      "path": "9",
+      "row": 4,
+      "scenario": "Missing LLM_URL",
+      "line": 569
+    },
+    "TST-BRAIN-293": {
+      "path": "9",
+      "row": 5,
+      "scenario": "BRAIN_TOKEN from secret",
+      "line": 570
+    },
+    "TST-BRAIN-294": {
+      "path": "9",
+      "row": 6,
+      "scenario": "Invalid URL format",
+      "line": 571
+    },
+    "TST-BRAIN-295": {
+      "path": "10.1",
+      "row": 1,
+      "scenario": "Health check",
+      "line": 581
+    },
+    "TST-BRAIN-296": {
+      "path": "10.1",
+      "row": 2,
+      "scenario": "Health with LLM down",
+      "line": 582
+    },
+    "TST-BRAIN-297": {
+      "path": "10.2",
+      "row": 1,
+      "scenario": "Process text query",
+      "line": 588
+    },
+    "TST-BRAIN-298": {
+      "path": "10.2",
+      "row": 2,
+      "scenario": "Process agent intent",
+      "line": 589
+    },
+    "TST-BRAIN-299": {
+      "path": "10.2",
+      "row": 3,
+      "scenario": "Process incoming message",
+      "line": 590
+    },
+    "TST-BRAIN-300": {
+      "path": "10.2",
+      "row": 4,
+      "scenario": "Invalid event type",
+      "line": 591
+    },
+    "TST-BRAIN-301": {
+      "path": "10.2",
+      "row": 5,
+      "scenario": "Missing required fields",
+      "line": 592
+    },
+    "TST-BRAIN-302": {
+      "path": "11",
+      "row": 1,
+      "scenario": "Unhandled exception in guardian",
+      "line": 600
+    },
+    "TST-BRAIN-303": {
+      "path": "11",
+      "row": 2,
+      "scenario": "Memory leak detection",
+      "line": 601
+    },
+    "TST-BRAIN-304": {
+      "path": "11",
+      "row": 3,
+      "scenario": "Graceful shutdown",
+      "line": 602
+    },
+    "TST-BRAIN-305": {
+      "path": "11",
+      "row": 4,
+      "scenario": "Startup dependency check",
+      "line": 603
+    },
+    "TST-BRAIN-306": {
+      "path": "11",
+      "row": 5,
+      "scenario": "spaCy model missing",
+      "line": 604
+    },
+    "TST-BRAIN-307": {
+      "path": "11",
+      "row": 6,
+      "scenario": "Concurrent request handling",
+      "line": 605
+    },
+    "TST-BRAIN-308": {
+      "path": "12.1",
+      "row": 1,
+      "scenario": "Checkpoint after step 1",
+      "line": 619
+    },
+    "TST-BRAIN-309": {
+      "path": "12.1",
+      "row": 2,
+      "scenario": "Checkpoint after step 2",
+      "line": 620
+    },
+    "TST-BRAIN-310": {
+      "path": "12.1",
+      "row": 3,
+      "scenario": "Checkpoint overwrites previous",
+      "line": 621
+    },
+    "TST-BRAIN-311": {
+      "path": "12.1",
+      "row": 4,
+      "scenario": "Checkpoint includes all prior context",
+      "line": 622
+    },
+    "TST-BRAIN-312": {
+      "path": "12.2",
+      "row": 1,
+      "scenario": "Resume from step 3 of 5",
+      "line": 628
+    },
+    "TST-BRAIN-313": {
+      "path": "12.2",
+      "row": 2,
+      "scenario": "No scratchpad \u2192 fresh start",
+      "line": 629
+    },
+    "TST-BRAIN-314": {
+      "path": "12.2",
+      "row": 3,
+      "scenario": "Stale checkpoint (24h old)",
+      "line": 630
+    },
+    "TST-BRAIN-315": {
+      "path": "12.2",
+      "row": 4,
+      "scenario": "Resume uses accumulated context",
+      "line": 631
+    },
+    "TST-BRAIN-316": {
+      "path": "12.2",
+      "row": 5,
+      "scenario": "Multiple tasks resume independently",
+      "line": 632
+    },
+    "TST-BRAIN-317": {
+      "path": "12.3",
+      "row": 1,
+      "scenario": "Scratchpad deleted on completion",
+      "line": 638
+    },
+    "TST-BRAIN-318": {
+      "path": "12.3",
+      "row": 2,
+      "scenario": "Scratchpad auto-expires after 24h",
+      "line": 639
+    },
+    "TST-BRAIN-319": {
+      "path": "12.3",
+      "row": 3,
+      "scenario": "Large checkpoint",
+      "line": 640
+    },
+    "TST-BRAIN-320": {
+      "path": "13",
+      "row": 1,
+      "scenario": "Catch-all wraps guardian loop",
+      "line": 652
+    },
+    "TST-BRAIN-321": {
+      "path": "13",
+      "row": 2,
+      "scenario": "Stdout: sanitized one-liner only",
+      "line": 653
+    },
+    "TST-BRAIN-322": {
+      "path": "13",
+      "row": 3,
+      "scenario": "Vault: full traceback stored",
+      "line": 654
+    },
+    "TST-BRAIN-323": {
+      "path": "13",
+      "row": 4,
+      "scenario": "Traceback never written to file",
+      "line": 655
+    },
+    "TST-BRAIN-324": {
+      "path": "13",
+      "row": 5,
+      "scenario": "Task ID correlated",
+      "line": 656
+    },
+    "TST-BRAIN-325": {
+      "path": "13",
+      "row": 6,
+      "scenario": "Crash handler re-raises",
+      "line": 657
+    },
+    "TST-BRAIN-326": {
+      "path": "13",
+      "row": 7,
+      "scenario": "Core unreachable during crash",
+      "line": 658
+    },
+    "TST-BRAIN-327": {
+      "path": "14",
+      "row": 1,
+      "scenario": "Embedding via local llama",
+      "line": 669
+    },
+    "TST-BRAIN-328": {
+      "path": "14",
+      "row": 2,
+      "scenario": "Embedding via cloud API",
+      "line": 670
+    },
+    "TST-BRAIN-329": {
+      "path": "14",
+      "row": 3,
+      "scenario": "Embedding stored in core",
+      "line": 671
+    },
+    "TST-BRAIN-330": {
+      "path": "14",
+      "row": 4,
+      "scenario": "Core stores in sqlite-vec",
+      "line": 672
+    },
+    "TST-BRAIN-331": {
+      "path": "14",
+      "row": 5,
+      "scenario": "Embedding fallback: llama \u2192 cloud",
+      "line": 673
+    },
+    "TST-BRAIN-332": {
+      "path": "14",
+      "row": 6,
+      "scenario": "No embedding available",
+      "line": 674
+    },
+    "TST-BRAIN-333": {
+      "path": "14",
+      "row": 7,
+      "scenario": "Embedding dimension consistent",
+      "line": 675
+    },
+    "TST-BRAIN-334": {
+      "path": "15",
+      "row": 1,
+      "scenario": "Borderline fiduciary/solicited",
+      "line": 683
+    },
+    "TST-BRAIN-335": {
+      "path": "15",
+      "row": 2,
+      "scenario": "Borderline solicited/engagement",
+      "line": 684
+    },
+    "TST-BRAIN-336": {
+      "path": "15",
+      "row": 3,
+      "scenario": "Escalation: engagement \u2192 fiduciary",
+      "line": 685
+    },
+    "TST-BRAIN-337": {
+      "path": "15",
+      "row": 4,
+      "scenario": "Context-dependent classification",
+      "line": 686
+    },
+    "TST-BRAIN-338": {
+      "path": "15",
+      "row": 5,
+      "scenario": "Repeated similar events",
+      "line": 687
+    },
+    "TST-BRAIN-339": {
+      "path": "15",
+      "row": 6,
+      "scenario": "User preference override",
+      "line": 688
+    },
+    "TST-BRAIN-340": {
+      "path": "16",
+      "row": 1,
+      "scenario": "User seeks emotional support",
+      "line": 696
+    },
+    "TST-BRAIN-341": {
+      "path": "16",
+      "row": 2,
+      "scenario": "User treats Dina as companion",
+      "line": 697
+    },
+    "TST-BRAIN-342": {
+      "path": "16",
+      "row": 3,
+      "scenario": "Simulated intimacy attempt",
+      "line": 698
+    },
+    "TST-BRAIN-343": {
+      "path": "16",
+      "row": 4,
+      "scenario": "Loneliness detection",
+      "line": 699
+    },
+    "TST-BRAIN-344": {
+      "path": "16",
+      "row": 5,
+      "scenario": "Dina never initiates emotional content",
+      "line": 700
+    },
+    "TST-BRAIN-345": {
+      "path": "17.1",
+      "row": 1,
+      "scenario": "Impulsive spending detection",
+      "line": 716
+    },
+    "TST-BRAIN-346": {
+      "path": "17.1",
+      "row": 2,
+      "scenario": "Emotional email detection",
+      "line": 717
+    },
+    "TST-BRAIN-347": {
+      "path": "17.1",
+      "row": 3,
+      "scenario": "Time-of-day context",
+      "line": 718
+    },
+    "TST-BRAIN-348": {
+      "path": "17.2",
+      "row": 1,
+      "scenario": "Rich client routes to on-device LLM when offline",
+      "line": 724
+    },
+    "TST-BRAIN-349": {
+      "path": "17.2",
+      "row": 2,
+      "scenario": "On-device LLM fallback to Home Node",
+      "line": 725
+    },
+    "TST-BRAIN-350": {
+      "path": "17.2",
+      "row": 3,
+      "scenario": "On-device LLM model mismatch",
+      "line": 726
+    },
+    "TST-BRAIN-351": {
+      "path": "17.2",
+      "row": 1,
+      "scenario": "Indirect person reference",
+      "line": 735
+    },
+    "TST-BRAIN-352": {
+      "path": "17.2",
+      "row": 2,
+      "scenario": "Coded language",
+      "line": 736
+    },
+    "TST-BRAIN-353": {
+      "path": "17.2",
+      "row": 3,
+      "scenario": "Paraphrased PII",
+      "line": 737
+    },
+    "TST-BRAIN-354": {
+      "path": "17.2",
+      "row": 4,
+      "scenario": "Tier 3 latency",
+      "line": 738
+    },
+    "TST-BRAIN-355": {
+      "path": "17.2",
+      "row": 5,
+      "scenario": "Tier 3 absent (no llama)",
+      "line": 739
+    },
+    "TST-BRAIN-356": {
+      "path": "17.2",
+      "row": 6,
+      "scenario": "Phase 1: Gemma 3n E2B",
+      "line": 740
+    },
+    "TST-BRAIN-357": {
+      "path": "17.2",
+      "row": 7,
+      "scenario": "Phase 1 fallback: FunctionGemma 270M",
+      "line": 741
+    },
+    "TST-BRAIN-358": {
+      "path": "17.3",
+      "row": 1,
+      "scenario": "Enclave attestation",
+      "line": 747
+    },
+    "TST-BRAIN-359": {
+      "path": "17.3",
+      "row": 2,
+      "scenario": "RAM inspection impossible",
+      "line": 748
+    },
+    "TST-BRAIN-360": {
+      "path": "17.3",
+      "row": 3,
+      "scenario": "Enclave-sealed keys",
+      "line": 749
+    }
+  },
+  "sections": {
+    "1.1": [
+      "TST-BRAIN-001",
+      "TST-BRAIN-002",
+      "TST-BRAIN-003",
+      "TST-BRAIN-004",
+      "TST-BRAIN-005",
+      "TST-BRAIN-006"
+    ],
+    "1.2": [
+      "TST-BRAIN-007",
+      "TST-BRAIN-008",
+      "TST-BRAIN-009",
+      "TST-BRAIN-010",
+      "TST-BRAIN-011",
+      "TST-BRAIN-012",
+      "TST-BRAIN-013",
+      "TST-BRAIN-014",
+      "TST-BRAIN-015",
+      "TST-BRAIN-016",
+      "TST-BRAIN-017",
+      "TST-BRAIN-018"
+    ],
+    "2.1": [
+      "TST-BRAIN-019",
+      "TST-BRAIN-020",
+      "TST-BRAIN-021",
+      "TST-BRAIN-022",
+      "TST-BRAIN-023",
+      "TST-BRAIN-024",
+      "TST-BRAIN-025",
+      "TST-BRAIN-026",
+      "TST-BRAIN-027",
+      "TST-BRAIN-028",
+      "TST-BRAIN-029",
+      "TST-BRAIN-030"
+    ],
+    "2.2": [
+      "TST-BRAIN-031",
+      "TST-BRAIN-032",
+      "TST-BRAIN-033",
+      "TST-BRAIN-034"
+    ],
+    "2.3": [
+      "TST-BRAIN-035",
+      "TST-BRAIN-036",
+      "TST-BRAIN-037",
+      "TST-BRAIN-038",
+      "TST-BRAIN-039",
+      "TST-BRAIN-040",
+      "TST-BRAIN-041",
+      "TST-BRAIN-042",
+      "TST-BRAIN-043",
+      "TST-BRAIN-044"
+    ],
+    "2.3.1": [
+      "TST-BRAIN-045",
+      "TST-BRAIN-046",
+      "TST-BRAIN-047",
+      "TST-BRAIN-048",
+      "TST-BRAIN-049",
+      "TST-BRAIN-050",
+      "TST-BRAIN-051",
+      "TST-BRAIN-052"
+    ],
+    "2.3.2": [
+      "TST-BRAIN-053",
+      "TST-BRAIN-054",
+      "TST-BRAIN-055",
+      "TST-BRAIN-056",
+      "TST-BRAIN-057",
+      "TST-BRAIN-058",
+      "TST-BRAIN-059",
+      "TST-BRAIN-060",
+      "TST-BRAIN-061"
+    ],
+    "2.4": [
+      "TST-BRAIN-062",
+      "TST-BRAIN-063",
+      "TST-BRAIN-064",
+      "TST-BRAIN-065"
+    ],
+    "2.5": [
+      "TST-BRAIN-066",
+      "TST-BRAIN-067",
+      "TST-BRAIN-068",
+      "TST-BRAIN-069",
+      "TST-BRAIN-070",
+      "TST-BRAIN-071",
+      "TST-BRAIN-072",
+      "TST-BRAIN-073",
+      "TST-BRAIN-074"
+    ],
+    "2.6": [
+      "TST-BRAIN-075",
+      "TST-BRAIN-076",
+      "TST-BRAIN-077",
+      "TST-BRAIN-078",
+      "TST-BRAIN-079",
+      "TST-BRAIN-080",
+      "TST-BRAIN-081"
+    ],
+    "2.7": [
+      "TST-BRAIN-082",
+      "TST-BRAIN-083",
+      "TST-BRAIN-084",
+      "TST-BRAIN-085",
+      "TST-BRAIN-086"
+    ],
+    "2.8": [
+      "TST-BRAIN-087",
+      "TST-BRAIN-088",
+      "TST-BRAIN-089",
+      "TST-BRAIN-090"
+    ],
+    "3.1": [
+      "TST-BRAIN-091",
+      "TST-BRAIN-092",
+      "TST-BRAIN-093",
+      "TST-BRAIN-094",
+      "TST-BRAIN-095",
+      "TST-BRAIN-096",
+      "TST-BRAIN-097",
+      "TST-BRAIN-098",
+      "TST-BRAIN-099",
+      "TST-BRAIN-100",
+      "TST-BRAIN-101",
+      "TST-BRAIN-102",
+      "TST-BRAIN-103"
+    ],
+    "3.2": [
+      "TST-BRAIN-104",
+      "TST-BRAIN-105",
+      "TST-BRAIN-106",
+      "TST-BRAIN-107",
+      "TST-BRAIN-108",
+      "TST-BRAIN-109"
+    ],
+    "3.3": [
+      "TST-BRAIN-110",
+      "TST-BRAIN-111",
+      "TST-BRAIN-112",
+      "TST-BRAIN-113",
+      "TST-BRAIN-114",
+      "TST-BRAIN-115",
+      "TST-BRAIN-116",
+      "TST-BRAIN-117",
+      "TST-BRAIN-118",
+      "TST-BRAIN-119",
+      "TST-BRAIN-120"
+    ],
+    "4.1": [
+      "TST-BRAIN-121",
+      "TST-BRAIN-122",
+      "TST-BRAIN-123",
+      "TST-BRAIN-124",
+      "TST-BRAIN-125",
+      "TST-BRAIN-126",
+      "TST-BRAIN-127",
+      "TST-BRAIN-128",
+      "TST-BRAIN-129",
+      "TST-BRAIN-130",
+      "TST-BRAIN-131",
+      "TST-BRAIN-132"
+    ],
+    "4.2": [
+      "TST-BRAIN-133",
+      "TST-BRAIN-134",
+      "TST-BRAIN-135",
+      "TST-BRAIN-136",
+      "TST-BRAIN-137",
+      "TST-BRAIN-138",
+      "TST-BRAIN-139"
+    ],
+    "5.1": [
+      "TST-BRAIN-140",
+      "TST-BRAIN-141",
+      "TST-BRAIN-142",
+      "TST-BRAIN-143",
+      "TST-BRAIN-144",
+      "TST-BRAIN-145",
+      "TST-BRAIN-146",
+      "TST-BRAIN-147",
+      "TST-BRAIN-148",
+      "TST-BRAIN-149",
+      "TST-BRAIN-150",
+      "TST-BRAIN-151",
+      "TST-BRAIN-152",
+      "TST-BRAIN-153",
+      "TST-BRAIN-154",
+      "TST-BRAIN-155"
+    ],
+    "5.2": [
+      "TST-BRAIN-156",
+      "TST-BRAIN-157",
+      "TST-BRAIN-158",
+      "TST-BRAIN-159",
+      "TST-BRAIN-160",
+      "TST-BRAIN-161",
+      "TST-BRAIN-162",
+      "TST-BRAIN-163",
+      "TST-BRAIN-164",
+      "TST-BRAIN-165",
+      "TST-BRAIN-166",
+      "TST-BRAIN-167",
+      "TST-BRAIN-168",
+      "TST-BRAIN-169",
+      "TST-BRAIN-170",
+      "TST-BRAIN-171",
+      "TST-BRAIN-172",
+      "TST-BRAIN-173",
+      "TST-BRAIN-174",
+      "TST-BRAIN-175",
+      "TST-BRAIN-176",
+      "TST-BRAIN-177",
+      "TST-BRAIN-178",
+      "TST-BRAIN-179",
+      "TST-BRAIN-180",
+      "TST-BRAIN-181"
+    ],
+    "5.3": [
+      "TST-BRAIN-182",
+      "TST-BRAIN-183",
+      "TST-BRAIN-184",
+      "TST-BRAIN-185"
+    ],
+    "5.4": [
+      "TST-BRAIN-186",
+      "TST-BRAIN-187",
+      "TST-BRAIN-188",
+      "TST-BRAIN-189",
+      "TST-BRAIN-190",
+      "TST-BRAIN-191",
+      "TST-BRAIN-192"
+    ],
+    "5.5": [
+      "TST-BRAIN-193",
+      "TST-BRAIN-194",
+      "TST-BRAIN-195",
+      "TST-BRAIN-196",
+      "TST-BRAIN-197",
+      "TST-BRAIN-198",
+      "TST-BRAIN-199",
+      "TST-BRAIN-200",
+      "TST-BRAIN-201"
+    ],
+    "5.6": [
+      "TST-BRAIN-202",
+      "TST-BRAIN-203",
+      "TST-BRAIN-204",
+      "TST-BRAIN-205",
+      "TST-BRAIN-206",
+      "TST-BRAIN-207",
+      "TST-BRAIN-208",
+      "TST-BRAIN-209",
+      "TST-BRAIN-210",
+      "TST-BRAIN-211"
+    ],
+    "5.7": [
+      "TST-BRAIN-212",
+      "TST-BRAIN-213",
+      "TST-BRAIN-214",
+      "TST-BRAIN-215",
+      "TST-BRAIN-216",
+      "TST-BRAIN-217",
+      "TST-BRAIN-218",
+      "TST-BRAIN-219",
+      "TST-BRAIN-220"
+    ],
+    "5.8": [
+      "TST-BRAIN-221",
+      "TST-BRAIN-222",
+      "TST-BRAIN-223",
+      "TST-BRAIN-224",
+      "TST-BRAIN-225"
+    ],
+    "6.1": [
+      "TST-BRAIN-226",
+      "TST-BRAIN-227",
+      "TST-BRAIN-228",
+      "TST-BRAIN-229",
+      "TST-BRAIN-230"
+    ],
+    "6.2": [
+      "TST-BRAIN-231",
+      "TST-BRAIN-232",
+      "TST-BRAIN-233",
+      "TST-BRAIN-234",
+      "TST-BRAIN-235",
+      "TST-BRAIN-236",
+      "TST-BRAIN-237",
+      "TST-BRAIN-238",
+      "TST-BRAIN-239",
+      "TST-BRAIN-240",
+      "TST-BRAIN-241",
+      "TST-BRAIN-242",
+      "TST-BRAIN-243",
+      "TST-BRAIN-244",
+      "TST-BRAIN-245",
+      "TST-BRAIN-246"
+    ],
+    "6.3": [
+      "TST-BRAIN-247",
+      "TST-BRAIN-248",
+      "TST-BRAIN-249",
+      "TST-BRAIN-250"
+    ],
+    "6.4": [
+      "TST-BRAIN-251",
+      "TST-BRAIN-252",
+      "TST-BRAIN-253",
+      "TST-BRAIN-254",
+      "TST-BRAIN-255",
+      "TST-BRAIN-256",
+      "TST-BRAIN-257",
+      "TST-BRAIN-258"
+    ],
+    "7.1": [
+      "TST-BRAIN-259",
+      "TST-BRAIN-260",
+      "TST-BRAIN-261",
+      "TST-BRAIN-262",
+      "TST-BRAIN-263",
+      "TST-BRAIN-264"
+    ],
+    "7.2": [
+      "TST-BRAIN-265",
+      "TST-BRAIN-266",
+      "TST-BRAIN-267",
+      "TST-BRAIN-268",
+      "TST-BRAIN-269"
+    ],
+    "8.1": [
+      "TST-BRAIN-270",
+      "TST-BRAIN-271",
+      "TST-BRAIN-272",
+      "TST-BRAIN-273"
+    ],
+    "8.2": [
+      "TST-BRAIN-274",
+      "TST-BRAIN-275",
+      "TST-BRAIN-276",
+      "TST-BRAIN-277"
+    ],
+    "8.3": [
+      "TST-BRAIN-278",
+      "TST-BRAIN-279",
+      "TST-BRAIN-280"
+    ],
+    "8.4": [
+      "TST-BRAIN-281",
+      "TST-BRAIN-282",
+      "TST-BRAIN-283",
+      "TST-BRAIN-284"
+    ],
+    "8.5": [
+      "TST-BRAIN-285",
+      "TST-BRAIN-286",
+      "TST-BRAIN-287",
+      "TST-BRAIN-288"
+    ],
+    "9": [
+      "TST-BRAIN-289",
+      "TST-BRAIN-290",
+      "TST-BRAIN-291",
+      "TST-BRAIN-292",
+      "TST-BRAIN-293",
+      "TST-BRAIN-294"
+    ],
+    "10.1": [
+      "TST-BRAIN-295",
+      "TST-BRAIN-296"
+    ],
+    "10.2": [
+      "TST-BRAIN-297",
+      "TST-BRAIN-298",
+      "TST-BRAIN-299",
+      "TST-BRAIN-300",
+      "TST-BRAIN-301"
+    ],
+    "11": [
+      "TST-BRAIN-302",
+      "TST-BRAIN-303",
+      "TST-BRAIN-304",
+      "TST-BRAIN-305",
+      "TST-BRAIN-306",
+      "TST-BRAIN-307"
+    ],
+    "12.1": [
+      "TST-BRAIN-308",
+      "TST-BRAIN-309",
+      "TST-BRAIN-310",
+      "TST-BRAIN-311"
+    ],
+    "12.2": [
+      "TST-BRAIN-312",
+      "TST-BRAIN-313",
+      "TST-BRAIN-314",
+      "TST-BRAIN-315",
+      "TST-BRAIN-316"
+    ],
+    "12.3": [
+      "TST-BRAIN-317",
+      "TST-BRAIN-318",
+      "TST-BRAIN-319"
+    ],
+    "13": [
+      "TST-BRAIN-320",
+      "TST-BRAIN-321",
+      "TST-BRAIN-322",
+      "TST-BRAIN-323",
+      "TST-BRAIN-324",
+      "TST-BRAIN-325",
+      "TST-BRAIN-326"
+    ],
+    "14": [
+      "TST-BRAIN-327",
+      "TST-BRAIN-328",
+      "TST-BRAIN-329",
+      "TST-BRAIN-330",
+      "TST-BRAIN-331",
+      "TST-BRAIN-332",
+      "TST-BRAIN-333"
+    ],
+    "15": [
+      "TST-BRAIN-334",
+      "TST-BRAIN-335",
+      "TST-BRAIN-336",
+      "TST-BRAIN-337",
+      "TST-BRAIN-338",
+      "TST-BRAIN-339"
+    ],
+    "16": [
+      "TST-BRAIN-340",
+      "TST-BRAIN-341",
+      "TST-BRAIN-342",
+      "TST-BRAIN-343",
+      "TST-BRAIN-344"
+    ],
+    "17.1": [
+      "TST-BRAIN-345",
+      "TST-BRAIN-346",
+      "TST-BRAIN-347"
+    ],
+    "17.2": [
+      "TST-BRAIN-348",
+      "TST-BRAIN-349",
+      "TST-BRAIN-350",
+      "TST-BRAIN-351",
+      "TST-BRAIN-352",
+      "TST-BRAIN-353",
+      "TST-BRAIN-354",
+      "TST-BRAIN-355",
+      "TST-BRAIN-356",
+      "TST-BRAIN-357"
+    ],
+    "17.3": [
+      "TST-BRAIN-358",
+      "TST-BRAIN-359",
+      "TST-BRAIN-360"
+    ]
+  },
+  "total": 360
+}

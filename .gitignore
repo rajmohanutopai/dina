@@ -229,3 +229,12 @@ secrets/*
 
 # Go build artifacts
 core/dina-core
+
+# Swap files
+*.swp
+*.swo
+*~
+
+# Scratch / personal notes
+issues.txt
+marketing.txt

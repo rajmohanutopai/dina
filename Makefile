@@ -1,6 +1,6 @@
 # Dina — build, test, run targets
 
-.PHONY: build test lint run docker-up docker-down clean
+.PHONY: build test lint run docker-up docker-down clean check-tests
 
 # --- Build ---
 build:
@@ -32,6 +32,10 @@ docker-down:
 
 docker-dev:
 	docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+
+# --- Test Traceability ---
+check-tests:
+	python scripts/verify_tests.py
 
 # --- Clean ---
 clean:
