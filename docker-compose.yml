@@ -1,0 +1,44 @@
+# Dina Home Node — 3+1 container stack
+# core:  Go — identity, vault, crypto, transport (port 8300)
+# brain: Python — LLM reasoning, guardian loop, admin UI (port 8200)
+# llm:   llama.cpp server — local LLM inference (port 8080)
+# Optional: Ceramic node for decentralized vault (port 7007)
+
+services:
+  core:
+    build: ./core
+    ports:
+      - "8300:8300"
+    volumes:
+      - ./data:/data
+    secrets:
+      - brain_token
+    environment:
+      - BRAIN_URL=http://brain:8200
+      - DINA_DATA_DIR=/data
+      - DINA_SPOOL_MAX=524288000  # 500MB
+    depends_on:
+      brain:
+        condition: service_started
+
+  brain:
+    build: ./brain
+    expose:
+      - "8200"
+    secrets:
+      - brain_token
+    environment:
+      - CORE_URL=http://core:8300
+      - LLM_URL=http://llm:8080
+
+  llm:
+    image: ghcr.io/ggerganov/llama.cpp:server
+    expose:
+      - "8080"
+    volumes:
+      - ./data/models:/models
+    command: ["--model", "/models/gemma-3n.gguf", "--port", "8080", "--host", "0.0.0.0"]
+
+secrets:
+  brain_token:
+    file: ./secrets/brain_token

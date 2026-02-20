@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Dina Admin{% endblock %}</title>
+    <link rel="stylesheet" href="/admin/static/style.css">
+</head>
+<body>
+    <nav>
+        <a href="/admin/">Dashboard</a>
+        <a href="/admin/contacts">Contacts</a>
+        <a href="/admin/devices">Devices</a>
+        <a href="/admin/personas">Personas</a>
+    </nav>
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

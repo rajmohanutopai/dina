@@ -216,3 +216,16 @@ Cargo.lock
 
 # Vault stream index (lives in ~/.dina/vault/, but ignore if copied here)
 stream_index.json
+
+# v2 — Runtime data (keep .gitkeep files)
+data/**
+!data/**/
+!data/.gitkeep
+!data/**/.gitkeep
+
+# v2 — Docker secrets (keep .gitkeep)
+secrets/*
+!secrets/.gitkeep
+
+# Go build artifacts
+core/dina-core

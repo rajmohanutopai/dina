@@ -1,0 +1,27 @@
+# Dev overrides — mount source code, enable hot reload, verbose logging.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  core:
+    build:
+      context: ./core
+      dockerfile: Dockerfile
+    volumes:
+      - ./core:/src
+      - ./data:/data
+    environment:
+      - DINA_LOG_LEVEL=debug
+
+  brain:
+    build:
+      context: ./brain
+      dockerfile: Dockerfile
+    volumes:
+      - ./brain/src:/app/src
+    environment:
+      - DINA_LOG_LEVEL=debug
+    command: ["uvicorn", "dina_brain.main:app", "--host", "0.0.0.0", "--port", "8200", "--reload"]
+
+  llm:
+    ports:
+      - "8080:8080"
