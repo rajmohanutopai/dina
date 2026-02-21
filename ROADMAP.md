@@ -13,7 +13,7 @@ v0.4 is a monolithic Python application. The target is the 3+1 container sidecar
 1. **Phase 1a:** Extract agent reasoning from v0.4 into dina-brain (Google ADK). YouTube analysis, memory search, RAG become ADK tools.
 2. **Phase 1b (parallel):** Build dina-core in Go. SQLite vault, DID key management, internal API.
 3. **Phase 1c:** Wire together. Safety gates, backup, bot protocol.
-4. **Phase 1.5:** Android client, managed hosting, WhatsApp ingestion.
+4. **Phase 1.5:** Android client, managed hosting, Telegram ingestion.
 5. **v0.4 retirement:** Once sidecar handles everything, monolith deprecated.
 
 ---
@@ -106,7 +106,7 @@ v0.4 is a monolithic Python application. The target is the 3+1 container sidecar
 | 1.32 | Android on-device LLM | Client | LiteRT-LM + Gemma 3n E2B for offline classification, quick replies. | 1.30 | Android | NOT STARTED |
 | 1.33 | Managed hosting infra | Infra | Multi-tenant hosting. Per-user directory with `identity.sqlite` + persona files. OS-level isolation. **Onboarding UX:** "Sign up with email. Connect Gmail (via OpenClaw). Done." Everything else happens silently. Prompt mnemonic backup after 7 days (not during signup). Start with one default persona (`/personal` → single `personal.sqlite`). Persona separation as power-user feature. Billing ($5-10/month). | 1.10, 1.29, 1.10b | Server | NOT STARTED |
 | 1.34 | FunctionGemma 270M routing | L6 Intelligence | Ultra-lightweight model (529MB) for fast intent classification and tool routing. Runs alongside Gemma 3n on llama. | 1.1 | llama | NOT STARTED |
-| 1.35 | WhatsApp connector (Android) | L2 Ingestion | NotificationListenerService captures WhatsApp notifications → pushes to Home Node via authenticated channel. **Warning:** weakest connector — fragile, text-only, no history. Breaks if WhatsApp changes notification format. May never be fully solved without regulation (EU DMA). | 1.30, 1.29 | Android | NOT STARTED |
+| 1.35 | Telegram connector | L2 Ingestion | Telegram Bot API — user creates bot via @BotFather, configures token in Dina. Home Node receives messages via webhook/long polling. Full message content, media, group context. Server-side, cross-platform. | 1.30 | dina-core + dina-brain | NOT STARTED |
 | 1.36 | Agent delegation (OpenClaw) | L7 Action | Delegate tasks to OpenClaw and other child agents via MCP. License renewal, form filling, task automation — all with `draft_only` constraint. No plugins — agents are external processes. | 1.25 | dina-brain | NOT STARTED |
 | 1.37 | Daily briefing | L6 Intelligence | End-of-day summary of Priority 3 items. "Here's what you missed that wasn't important enough to interrupt." | 1.5, 1.15 | dina-brain | NOT STARTED |
 | 1.38 | Push notifications (FCM/APNs) | Infra | When client is disconnected, wake it via FCM/APNs. Payload contains NO data — just "connect to your Home Node." | 1.16, 1.30 | dina-core + client | NOT STARTED |
@@ -152,7 +152,7 @@ v0.4 is a monolithic Python application. The target is the 3+1 container sidecar
 | 3.4 | Open Economy (ONDC + UPI) | L7 Action | Dina negotiates directly with manufacturer's Dina via ONDC. UPI/crypto for payment. Marketplace middlemen become optional. | 2.3, 1.26, 1.19 | NOT STARTED |
 | 3.5 | Expert Bridge | L3 Reputation | Verified experts opt in to having their knowledge structured. Attribution + economic value when their knowledge drives decisions. | 2.3, 1.27 | NOT STARTED |
 | 3.6 | Direct value exchange | L3 Reputation | Creators earn when their reviews drive purchases. Truth pays better than clicks. Micropayments via UPI/crypto. | 3.5, 3.4 | NOT STARTED |
-| 3.7 | iOS client | Client | Swift + SwiftUI. **Known limitations:** no NotificationListenerService equivalent, no Accessibility Service. WhatsApp ingestion requires an Android device somewhere in the ecosystem. Home Node API connectors (Gmail, Calendar, Contacts) compensate for missing device-local ingestion. | 1.29 | NOT STARTED |
+| 3.7 | iOS client | Client | Swift + SwiftUI. Home Node API connectors (Gmail, Calendar, Contacts, Telegram) work identically on all platforms. | 1.29 | NOT STARTED |
 | 3.8 | Thin clients (glasses, watch, browser) | Client | Web-based via authenticated WebSocket. No local processing. Streams from Home Node. | 1.29, 1.16 | NOT STARTED |
 | 3.9 | Foundation formation | Org | Nonprofit foundation takes over managed hosting operations. Multiple certified hosting partners across jurisdictions. Regulatory compliance (GDPR, DPDP Act), security operations, incident response. | 1.33, 2.16 | NOT STARTED |
 | 3.10 | Full Dina-to-Dina commerce protocol | L4 Dina-to-Dina | Buyer Dina ↔ Seller Dina negotiation, reputation check, payment intent, delivery tracking — all sovereign. | 3.4, 2.11, 3.1 | NOT STARTED |
@@ -171,7 +171,7 @@ v0.4 is a monolithic Python application. The target is the 3+1 container sidecar
 | **1a** | Sidecar running (Cloud LLM) | 3 containers up (core, brain, pds), brain reasons via Gemini Flash Lite + Deepgram STT, core stores, PDS hosts reputation data, YouTube analysis via ADK, admin UI proxied via core:443/admin |
 | **1b** | Sancho Moment | Two Dinas talk, nudge delivered to phone, guardian angel loop end-to-end |
 | **1c** | Safety & bots | Data backed up, drafts work, bot protocol standardized |
-| **1.5** | Real product | Android app, managed hosting, WhatsApp ingestion, daily briefing |
+| **1.5** | Real product | Android app, managed hosting, Telegram ingestion, daily briefing |
 | **2** | Intelligence | Semantic search, Reputation Graph live, trust rings, Local LLM profile, digital estate, desktop client |
 | **3** | Economy | Direct commerce via ONDC, expert marketplace, iOS, thin clients, foundation |
 
@@ -237,7 +237,7 @@ The following items were **missing from the original roadmap** but are described
 |-------|------------|
 | Roadmap said `VACUUM INTO` for pre-flight snapshots | Fixed: `sqlcipher_export()` via `ATTACH DATABASE ... KEY` (Keyed-to-Keyed — plaintext never touches disk). `VACUUM INTO` is a CVE-level vulnerability on SQLCipher. |
 | Calendar connector said "CalDAV" for Phase 1 | Fixed: Google Calendar REST API for Phase 1, CalDAV deferred to 2.18 |
-| WhatsApp in Phase 1.5 but architecture calls it "weakest link" | Kept in 1.5 but added warning about fragility |
+| Telegram replaces WhatsApp — official Bot API eliminates fragility | WhatsApp connector was the weakest link (fragile NotificationListenerService hack, Android-only). Replaced with Telegram Bot API: official, stable, server-side, cross-platform. |
 | Architecture says sqlite-vec is "Phase 1" | Clarified: sqlite-vec integration lands in Phase 2 with embeddings (2.1/2.2). Phase 1 uses FTS5 only. |
 | PII scrubber had no de-sanitization | Added replacement map + de-sanitization to 1.9 description |
 | No relay in roadmap despite architecture describing it | Added as 1.19a |

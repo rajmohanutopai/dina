@@ -39,8 +39,8 @@
 | Key storage (Home Node) | Key Wrapping: Passphrase → Argon2id (KEK) → AES-256-GCM wraps Master Seed | Standard key wrapping. Passphrase change re-wraps seed without re-encrypting any database. Per-persona DEKs derived at runtime via HKDF. |
 | Key storage (client) | Secure Enclave (iOS), StrongBox (Android), TPM (desktop) | Hardware-backed where available |
 | **Client Devices** | | |
-| Android client | Kotlin + Jetpack Compose | Native Android, NotificationListener for WhatsApp |
-| iOS client | Swift + SwiftUI (Phase 3) | Limited — no NotificationListener equivalent |
+| Android client | Kotlin + Jetpack Compose | Native Android client |
+| iOS client | Swift + SwiftUI (Phase 3) | Native iOS client |
 | Desktop client | Tauri 2 (Rust + WebView, v2.10+) or Wails (Go + WebView) | Cross-platform, tiny binaries, native performance |
 | On-device LLM (rich clients) | LiteRT-LM (Android), llama.cpp (desktop) | Latency-sensitive tasks: quick classification, offline drafting |
 | Thin clients (glasses, watch) | Web-based via authenticated WebSocket | No local processing, streams from Home Node |

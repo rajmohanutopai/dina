@@ -227,7 +227,7 @@ Architecture remains model-agnostic. When Gemma 4n or equivalent arrives, swap i
 When the user opens an app or starts an interaction, Dina searches the Vault for relevant context.
 
 ```
-Trigger: User opens WhatsApp conversation with "Sancho"
+Trigger: User opens Telegram conversation with "Sancho"
         ↓
 Dina queries Vault:
   - Recent messages with Sancho (Tier 1)

@@ -6,16 +6,14 @@ How Dina pulls data from the outside world into the Vault.
 
 ### Where Data Comes From
 
-Phase 1 uses the **MCP Delegation Pattern**: Brain orchestrates, OpenClaw fetches. No connector code in Core. API-based data sources (Gmail, Calendar, Contacts) are fetched by OpenClaw on Brain's schedule.
-
-**Exception: WhatsApp.** The NotificationListenerService requires an Android device. WhatsApp ingestion runs on the phone and pushes captured messages directly to Core via DIDComm — it bypasses MCP.
+Phase 1 uses the **MCP Delegation Pattern**: Brain orchestrates, OpenClaw fetches. No connector code in Core. API-based data sources (Gmail, Calendar, Contacts) are fetched by OpenClaw on Brain's schedule. Telegram runs on the Home Node via official Bot API, delegated through MCP like other connectors.
 
 | Source | Fetched By | Mechanism |
 |--------|-----------|-----------|
 | Gmail | Brain → MCP → OpenClaw | OpenClaw calls Gmail API. Hourly sync + morning routine. |
 | Calendar | Brain → MCP → OpenClaw | OpenClaw calls Calendar API. Every 30 min + morning routine. |
 | Contacts | Brain → MCP → OpenClaw | OpenClaw calls People API/CardDAV. Daily sync. |
-| WhatsApp | Phone → Core (direct) | Android NotificationListenerService → DIDComm push |
+| Telegram | Home Node (MCP) | Telegram Bot API — webhook or long polling |
 | Web search | Brain → MCP → OpenClaw | On-demand: user asks or brain needs context |
 | SMS (Phase 2+) | Phone → Core (direct) | Android Content Provider → DIDComm push |
 | Photos (Phase 2+) | Phone → Core (direct) | Local photo library scan → metadata push |
@@ -25,27 +23,27 @@ Phase 1 uses the **MCP Delegation Pattern**: Brain orchestrates, OpenClaw fetche
 Each data source gets a connector — a small, isolated module that knows how to pull data from one service.
 
 ```
-HOME NODE                              PHONE (Android)
-┌─────────────────────────┐            ┌──────────────────┐
-│    INGESTION LAYER      │            │ DEVICE INGESTION │
-│                         │            │                  │
-│ ┌──────────┐ ┌───────┐ │            │ ┌──────────────┐ │
-│ │ Gmail    │ │Calend.│ │            │ │ WhatsApp     │ │
-│ │Connector │ │Connect│ │            │ │ Connector    │ │
-│ │(API)     │ │(API)  │ │            │ │ (Notif.Lstnr)│ │
-│ └────┬─────┘ └───┬───┘ │            │ └──────┬───────┘ │
-│      │           │      │            │        │         │
-│      ▼           ▼      │            │        ▼         │
-│ ┌─────────────────────┐ │            │ ┌──────────────┐ │
-│ │  Normalizer         │ │            │ │ Normalizer   │ │
-│ └────────┬────────────┘ │            │ └──────┬───────┘ │
-│          ▼              │            │        │         │
-│ ┌─────────────────────┐ │            │        ▼         │
-│ │  Encryptor          │ │  ◄─────────│  Push to Home   │
-│ └────────┬────────────┘ │  encrypted │  Node via        │
-│          ▼              │  channel    │  DIDComm         │
-│    Vault (Tier 1)       │            └──────────────────┘
-└─────────────────────────┘
+HOME NODE
+┌──────────────────────────────────────┐
+│         INGESTION LAYER              │
+│                                      │
+│ ┌──────────┐ ┌───────┐ ┌──────────┐ │
+│ │ Gmail    │ │Calend.│ │ Telegram │ │
+│ │Connector │ │Connect│ │Connector │ │
+│ │(MCP)     │ │(MCP)  │ │(Bot API) │ │
+│ └────┬─────┘ └───┬───┘ └────┬─────┘ │
+│      │           │           │       │
+│      ▼           ▼           ▼       │
+│ ┌────────────────────────────────┐   │
+│ │  Normalizer                    │   │
+│ └────────────┬───────────────────┘   │
+│              ▼                       │
+│ ┌────────────────────────────────┐   │
+│ │  Encryptor                     │   │
+│ └────────────┬───────────────────┘   │
+│              ▼                       │
+│        Vault (Tier 1)                │
+└──────────────────────────────────────┘
 ```
 
 ### Attachment & Media Storage: References, Not Copies
@@ -70,7 +68,7 @@ What Dina does NOT store:
 
 **Dead references:** If the user deletes the email from Gmail, the reference is dead. This is acceptable. Dina is memory and context, not a backup service. The summary survives in the vault even if the source is gone.
 
-**Exception — voice memos and WhatsApp voice notes:** These are small (typically under 1MB), have no stable source URI to link back to, and the transcript is the valuable part. For these: store the transcript in the vault, discard the audio. If the user wants to keep audio, it goes to a `media/` directory alongside the vault — files on disk, not inside SQLite.
+**Exception — voice memos and Telegram voice messages:** These are small (typically under 1MB), have no stable source URI to link back to, and the transcript is the valuable part. For these: store the transcript in the vault, discard the audio. If the user wants to keep audio, it goes to a `media/` directory alongside the vault — files on disk, not inside SQLite.
 
 ```
 persona databases → text, metadata, references, summaries (small, portable)
@@ -285,13 +283,11 @@ OFFLINE ─(MCP call succeeds)───────► HEALTHY    (resume sync, 
 2. **Tier 2 notification on degradation.** Missing emails is an inconvenience, not a harm. Not Tier 1 (fiduciary).
 3. **User can see sync status.** Last successful sync, current state, reason for current state — all visible in admin UI.
 
-### WhatsApp Connector (Android)
-- **Runs on:** Phone (Android only) — pushes to Home Node
-- **Method:** Android NotificationListenerService
-- **How:** When a WhatsApp notification arrives, the service copies sender, message text, and timestamp. Encrypts and pushes to Home Node via authenticated channel.
-- **Limitations:** No message history before Dina was installed. No media (photos/videos) — text only via notifications. Fragile — breaks if WhatsApp changes notification format.
-- **Alternative (Phase 2+):** WhatsApp Cloud API (requires business account) or WhatsApp Web protocol (legally gray, e.g. Baileys)
-- **Limitation:** Weakest connector. Fragile, text-only, no history. Requires WhatsApp to open up or regulation to force interoperability (EU DMA).
+### Telegram Connector
+- **Method:** Telegram Bot API (official, server-side)
+- **How:** User creates a Telegram bot via @BotFather, configures the bot token in Dina. Home Node runs the connector which receives messages via webhook or long polling. Full message content, media, group context, reply chains.
+- **Cross-platform:** Works on Android, iOS, web, and desktop — no device-specific code needed.
+- **Persona routing:** Messages default to `/social` persona. User can configure per-chat or per-group routing.
 
 ### Calendar (via OpenClaw MCP)
 
@@ -410,7 +406,7 @@ PASS-THROUGH SEARCH PROTOCOL:
 3. **OpenClaw is sandboxed.** OpenClaw has no access to the vault, keys, or personas. It receives task requests ("fetch emails") and returns structured JSON. A compromised OpenClaw cannot read existing memories.
 4. **Brain scrubs before storing.** Data from OpenClaw passes through PII scrubbing (Tier 1 regex + Tier 2 spaCy) before brain sends summaries to cloud LLMs for reasoning.
 5. **User can see sync status.** Last successful sync, items ingested, current state — all visible in admin UI.
-6. **Phone-based connectors (WhatsApp, SMS) authenticate to Home Node with CLIENT_TOKEN** before pushing data. These bypass MCP — phone pushes directly to Core via authenticated WebSocket.
+6. **Phone-based connectors (SMS, Photos) authenticate to Home Node with CLIENT_TOKEN** before pushing data. These bypass MCP — phone pushes directly to Core via authenticated WebSocket. Telegram runs server-side on the Home Node via MCP.
 7. **OAuth tokens live in OpenClaw, not in Dina.** Dina never touches Gmail/Calendar credentials. If OpenClaw is compromised, revoke its tokens — Dina's vault and identity are unaffected.
 
 ---

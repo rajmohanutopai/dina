@@ -35,7 +35,7 @@ Brain → MCP → OpenClaw: "fetch calendar events"
   → OpenClaw calls Calendar API → returns structured JSON
   → Brain → POST core:8100/v1/vault/store (persona='professional', or 'personal' in Phase 1)
 
-WhatsApp → phone pushes to core via DIDComm → core writes to social.sqlite (or personal.sqlite in Phase 1)
+Telegram → Home Node connector receives via Bot API → core writes to social.sqlite (or personal.sqlite in Phase 1)
   → Core notifies brain: POST brain:8200/v1/process {item_id, source, type}
 ```
 
@@ -265,7 +265,7 @@ The internal API between core and brain. All endpoints require `Authorization: B
 }
 ```
 
-**What brain NEVER gets via this API:** encryption keys, raw attachment blobs, other users' data (managed hosting). Brain gets summaries and metadata. Raw content stays in source (Gmail, WhatsApp). The vault API enforces this — `gatekeeper.go` routes queries to the correct persona database (if open) or returns `403 Persona Locked` (if the DEK isn't in RAM). (Note: OAuth tokens live in OpenClaw, not in Dina — Core never holds external API credentials.)
+**What brain NEVER gets via this API:** encryption keys, raw attachment blobs, other users' data (managed hosting). Brain gets summaries and metadata. Raw content stays in source (Gmail, Telegram). The vault API enforces this — `gatekeeper.go` routes queries to the correct persona database (if open) or returns `403 Persona Locked` (if the DEK isn't in RAM). (Note: OAuth tokens live in OpenClaw, not in Dina — Core never holds external API credentials.)
 
 ### Brain Crash Recovery
 
@@ -539,7 +539,7 @@ The layers are numbered 0-7 but the diagram reads **top-down** (7 → 0), like t
 
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 2: INGESTION LAYER                                   │
-│  Gmail API, WhatsApp Notifications, Calendar, Contacts      │
+│  Gmail API, Telegram Bot API, Calendar, Contacts            │
 └─────────────────────┬───────────────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────────────┐

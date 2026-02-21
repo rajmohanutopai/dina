@@ -33,7 +33,7 @@ CLIENT STARTUP:
   2. Send: "My last sync checkpoint was timestamp X"
   3. Home Node responds with all vault_items changed since X
   4. Client applies changes to local SQLite cache
-  5. Client sends any locally-created items (e.g. WhatsApp captures) to Home Node
+  5. Client sends any locally-created items (e.g. offline drafts) to Home Node
   6. Home Node applies and acknowledges
   7. Both are now in sync
 ```
@@ -60,7 +60,7 @@ THIN CLIENT (glasses, watch, browser):
 - Adding a new device = authenticate + full sync
 
 **The one conflict case:**
-- Phone captures a WhatsApp message while offline
+- Phone captures a message while offline
 - Laptop creates a manual note while offline
 - Both reconnect to Home Node
 - **These are different items. No conflict.** Both get inserted.

@@ -93,7 +93,7 @@ CREATE INDEX idx_device_tokens_hash ON device_tokens(token_hash) WHERE revoked =
 CREATE TABLE vault_items (
     id TEXT PRIMARY KEY,           -- UUID
     type TEXT NOT NULL,            -- 'email', 'message', 'event', 'note', 'photo'
-    source TEXT NOT NULL,          -- 'gmail', 'whatsapp', 'calendar', etc.
+    source TEXT NOT NULL,          -- 'gmail', 'telegram', 'calendar', etc.
     source_id TEXT,                -- original ID in source system
     contact_did TEXT,              -- optional: link to contacts in identity.sqlite
     summary TEXT,                  -- brain-generated summary

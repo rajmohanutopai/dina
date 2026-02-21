@@ -837,7 +837,7 @@ Features unlock as the user is ready:
 |------|------|
 | **Day 1** | Email + calendar ingestion, basic nudges |
 | **Day 7** | Prompt: "Write down these 24 words. They're your recovery key." (Phase 2: "You have trusted contacts now — set up social recovery so you don't depend on paper alone.") |
-| **Day 14** | Prompt: "Want to connect WhatsApp too?" |
+| **Day 14** | Prompt: "Want to connect Telegram too?" |
 | **Day 30** | Prompt: "You can separate health and financial data into private compartments" |
 | **Month 3** | Power user discovers personas, sharing rules, self-hosting option |
 
@@ -878,7 +878,7 @@ Brain → MCP → OpenClaw: "fetch calendar events"
   → OpenClaw calls Calendar API → returns structured JSON
   → Brain → POST core:8100/v1/vault/store (persona='professional', or 'personal' in Phase 1)
 
-WhatsApp → phone pushes to core via DIDComm → core writes to social.sqlite (or personal.sqlite in Phase 1)
+Telegram → Bot API → Home Node (MCP connector) → core writes to social.sqlite (or personal.sqlite in Phase 1)
   → Core notifies brain: POST brain:8200/v1/process {item_id, source, type}
 ```
 
@@ -1108,7 +1108,7 @@ The internal API between core and brain. All endpoints require `Authorization: B
 }
 ```
 
-**What brain NEVER gets via this API:** encryption keys, raw attachment blobs, other users' data (managed hosting). Brain gets summaries and metadata. Raw content stays in source (Gmail, WhatsApp). The vault API enforces this — `gatekeeper.go` routes queries to the correct persona database (if open) or returns `403 Persona Locked` (if the DEK isn't in RAM). (Note: OAuth tokens live in OpenClaw, not in Dina — Core never holds external API credentials.)
+**What brain NEVER gets via this API:** encryption keys, raw attachment blobs, other users' data (managed hosting). Brain gets summaries and metadata. Raw content stays in source (Gmail, Telegram). The vault API enforces this — `gatekeeper.go` routes queries to the correct persona database (if open) or returns `403 Persona Locked` (if the DEK isn't in RAM). (Note: OAuth tokens live in OpenClaw, not in Dina — Core never holds external API credentials.)
 
 ### Brain Crash Recovery
 
@@ -1382,7 +1382,7 @@ The layers are numbered 0-7 but the diagram reads **top-down** (7 → 0), like t
 
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 2: INGESTION LAYER                                   │
-│  Gmail API, WhatsApp Notifications, Calendar, Contacts      │
+│  Gmail API, Telegram Bot API, Calendar, Contacts             │
 └─────────────────────┬───────────────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────────────┐
@@ -1735,7 +1735,7 @@ CREATE INDEX idx_device_tokens_hash ON device_tokens(token_hash) WHERE revoked =
 CREATE TABLE vault_items (
     id TEXT PRIMARY KEY,           -- UUID
     type TEXT NOT NULL,            -- 'email', 'message', 'event', 'note', 'photo'
-    source TEXT NOT NULL,          -- 'gmail', 'whatsapp', 'calendar', etc.
+    source TEXT NOT NULL,          -- 'gmail', 'telegram', 'calendar', etc.
     source_id TEXT,                -- original ID in source system
     contact_did TEXT,              -- optional: link to contacts in identity.sqlite
     summary TEXT,                  -- brain-generated summary
@@ -2118,14 +2118,12 @@ How Dina pulls data from the outside world into the Vault.
 
 Phase 1 uses the **MCP Delegation Pattern**: Brain orchestrates, OpenClaw fetches. No connector code in Core. API-based data sources (Gmail, Calendar, Contacts) are fetched by OpenClaw on Brain's schedule.
 
-**Exception: WhatsApp.** The NotificationListenerService requires an Android device. WhatsApp ingestion runs on the phone and pushes captured messages directly to Core via DIDComm — it bypasses MCP.
-
 | Source | Fetched By | Mechanism |
 |--------|-----------|-----------|
 | Gmail | Brain → MCP → OpenClaw | OpenClaw calls Gmail API. Hourly sync + morning routine. |
 | Calendar | Brain → MCP → OpenClaw | OpenClaw calls Calendar API. Every 30 min + morning routine. |
 | Contacts | Brain → MCP → OpenClaw | OpenClaw calls People API/CardDAV. Daily sync. |
-| WhatsApp | Phone → Core (direct) | Android NotificationListenerService → DIDComm push |
+| Telegram | Brain → MCP → Telegram Connector | Telegram Bot API webhook/long polling. Real-time. |
 | Web search | Brain → MCP → OpenClaw | On-demand: user asks or brain needs context |
 | SMS (Phase 2+) | Phone → Core (direct) | Android Content Provider → DIDComm push |
 | Photos (Phase 2+) | Phone → Core (direct) | Local photo library scan → metadata push |
@@ -2135,27 +2133,27 @@ Phase 1 uses the **MCP Delegation Pattern**: Brain orchestrates, OpenClaw fetche
 Each data source gets a connector — a small, isolated module that knows how to pull data from one service.
 
 ```
-HOME NODE                              PHONE (Android)
-┌─────────────────────────┐            ┌──────────────────┐
-│    INGESTION LAYER      │            │ DEVICE INGESTION │
-│                         │            │                  │
-│ ┌──────────┐ ┌───────┐ │            │ ┌──────────────┐ │
-│ │ Gmail    │ │Calend.│ │            │ │ WhatsApp     │ │
-│ │Connector │ │Connect│ │            │ │ Connector    │ │
-│ │(API)     │ │(API)  │ │            │ │ (Notif.Lstnr)│ │
-│ └────┬─────┘ └───┬───┘ │            │ └──────┬───────┘ │
-│      │           │      │            │        │         │
-│      ▼           ▼      │            │        ▼         │
-│ ┌─────────────────────┐ │            │ ┌──────────────┐ │
-│ │  Normalizer         │ │            │ │ Normalizer   │ │
-│ └────────┬────────────┘ │            │ └──────┬───────┘ │
-│          ▼              │            │        │         │
-│ ┌─────────────────────┐ │            │        ▼         │
-│ │  Encryptor          │ │  ◄─────────│  Push to Home   │
-│ └────────┬────────────┘ │  encrypted │  Node via        │
-│          ▼              │  channel    │  DIDComm         │
-│    Vault (Tier 1)       │            └──────────────────┘
-└─────────────────────────┘
+HOME NODE
+┌──────────────────────────────────────────┐
+│           INGESTION LAYER                │
+│                                          │
+│ ┌──────────┐ ┌───────┐ ┌──────────────┐ │
+│ │ Gmail    │ │Calend.│ │ Telegram     │ │
+│ │Connector │ │Connect│ │ Connector    │ │
+│ │(API)     │ │(API)  │ │ (Bot API)    │ │
+│ └────┬─────┘ └───┬───┘ └──────┬───────┘ │
+│      │           │             │         │
+│      ▼           ▼             ▼         │
+│ ┌──────────────────────────────────────┐ │
+│ │  Normalizer                          │ │
+│ └────────────────┬─────────────────────┘ │
+│                  ▼                       │
+│ ┌──────────────────────────────────────┐ │
+│ │  Encryptor                           │ │
+│ └────────────────┬─────────────────────┘ │
+│                  ▼                       │
+│            Vault (Tier 1)                │
+└──────────────────────────────────────────┘
 ```
 
 ### Attachment & Media Storage: References, Not Copies
@@ -2180,7 +2178,7 @@ What Dina does NOT store:
 
 **Dead references:** If the user deletes the email from Gmail, the reference is dead. This is acceptable. Dina is memory and context, not a backup service. The summary survives in the vault even if the source is gone.
 
-**Exception — voice memos and WhatsApp voice notes:** These are small (typically under 1MB), have no stable source URI to link back to, and the transcript is the valuable part. For these: store the transcript in the vault, discard the audio. If the user wants to keep audio, it goes to a `media/` directory alongside the vault — files on disk, not inside SQLite.
+**Exception — voice memos and Telegram voice messages:** These are small (typically under 1MB), have no stable source URI to link back to, and the transcript is the valuable part. For these: store the transcript in the vault, discard the audio. If the user wants to keep audio, it goes to a `media/` directory alongside the vault — files on disk, not inside SQLite.
 
 ```
 persona databases → text, metadata, references, summaries (small, portable)
@@ -2395,13 +2393,11 @@ OFFLINE ─(MCP call succeeds)───────► HEALTHY    (resume sync, 
 2. **Tier 2 notification on degradation.** Missing emails is an inconvenience, not a harm. Not Tier 1 (fiduciary).
 3. **User can see sync status.** Last successful sync, current state, reason for current state — all visible in admin UI.
 
-### WhatsApp Connector (Android)
-- **Runs on:** Phone (Android only) — pushes to Home Node
-- **Method:** Android NotificationListenerService
-- **How:** When a WhatsApp notification arrives, the service copies sender, message text, and timestamp. Encrypts and pushes to Home Node via authenticated channel.
-- **Limitations:** No message history before Dina was installed. No media (photos/videos) — text only via notifications. Fragile — breaks if WhatsApp changes notification format.
-- **Alternative (Phase 2+):** WhatsApp Cloud API (requires business account) or WhatsApp Web protocol (legally gray, e.g. Baileys)
-- **Limitation:** Weakest connector. Fragile, text-only, no history. Requires WhatsApp to open up or regulation to force interoperability (EU DMA).
+### Telegram Connector
+- **Method:** Telegram Bot API (official, server-side)
+- **How:** User creates a Telegram bot via @BotFather, configures the bot token in Dina. Home Node runs the connector which receives messages via webhook or long polling. Full message content, media, group context, reply chains.
+- **Cross-platform:** Works on Android, iOS, web, and desktop — no device-specific code needed.
+- **Persona routing:** Messages default to `/social` persona. User can configure per-chat or per-group routing.
 
 ### Calendar (via OpenClaw MCP)
 
@@ -2520,7 +2516,7 @@ PASS-THROUGH SEARCH PROTOCOL:
 3. **OpenClaw is sandboxed.** OpenClaw has no access to the vault, keys, or personas. It receives task requests ("fetch emails") and returns structured JSON. A compromised OpenClaw cannot read existing memories.
 4. **Brain scrubs before storing.** Data from OpenClaw passes through PII scrubbing (Tier 1 regex + Tier 2 spaCy) before brain sends summaries to cloud LLMs for reasoning.
 5. **User can see sync status.** Last successful sync, items ingested, current state — all visible in admin UI.
-6. **Phone-based connectors (WhatsApp, SMS) authenticate to Home Node with CLIENT_TOKEN** before pushing data. These bypass MCP — phone pushes directly to Core via authenticated WebSocket.
+6. **Phone-based connectors (SMS) authenticate to Home Node with CLIENT_TOKEN** before pushing data. These bypass MCP — phone pushes directly to Core via authenticated WebSocket.
 7. **OAuth tokens live in OpenClaw, not in Dina.** Dina never touches Gmail/Calendar credentials. If OpenClaw is compromised, revoke its tokens — Dina's vault and identity are unaffected.
 
 ---
@@ -2752,7 +2748,7 @@ Architecture remains model-agnostic. When Gemma 4n or equivalent arrives, swap i
 When the user opens an app or starts an interaction, Dina searches the Vault for relevant context.
 
 ```
-Trigger: User opens WhatsApp conversation with "Sancho"
+Trigger: User opens Telegram conversation with "Sancho"
         ↓
 Dina queries Vault:
   - Recent messages with Sancho (Tier 1)
@@ -3972,7 +3968,7 @@ CLIENT STARTUP:
   2. Send: "My last sync checkpoint was timestamp X"
   3. Home Node responds with all vault_items changed since X
   4. Client applies changes to local SQLite cache
-  5. Client sends any locally-created items (e.g. WhatsApp captures) to Home Node
+  5. Client sends any locally-created items (e.g. notes, drafts) to Home Node
   6. Home Node applies and acknowledges
   7. Both are now in sync
 ```
@@ -3999,7 +3995,7 @@ THIN CLIENT (glasses, watch, browser):
 - Adding a new device = authenticate + full sync
 
 **The one conflict case:**
-- Phone captures a WhatsApp message while offline
+- Phone captures a message while offline
 - Laptop creates a manual note while offline
 - Both reconnect to Home Node
 - **These are different items. No conflict.** Both get inserted.
@@ -4199,8 +4195,8 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 | Key storage (Home Node) | Key Wrapping: Passphrase → Argon2id (KEK) → AES-256-GCM wraps Master Seed | Standard key wrapping. Passphrase change re-wraps seed without re-encrypting any database. Per-persona DEKs derived at runtime via HKDF. |
 | Key storage (client) | Secure Enclave (iOS), StrongBox (Android), TPM (desktop) | Hardware-backed where available |
 | **Client Devices** | | |
-| Android client | Kotlin + Jetpack Compose | Native Android, NotificationListener for WhatsApp |
-| iOS client | Swift + SwiftUI (Phase 3) | Limited — no NotificationListener equivalent |
+| Android client | Kotlin + Jetpack Compose | Native Android rich client |
+| iOS client | Swift + SwiftUI (Phase 3) | Native iOS rich client |
 | Desktop client | Tauri 2 (Rust + WebView, v2.10+) or Wails (Go + WebView) | Cross-platform, tiny binaries, native performance |
 | On-device LLM (rich clients) | LiteRT-LM (Android), llama.cpp (desktop) | Latency-sensitive tasks: quick classification, offline drafting |
 | Thin clients (glasses, watch) | Web-based via authenticated WebSocket | No local processing, streams from Home Node |
@@ -4969,7 +4965,7 @@ Guiding principle: **one user, a handful of containers, one machine, per-persona
 
 ## What's Hard (Honest Assessment)
 
-**1. WhatsApp ingestion.** Still the weakest link. NotificationListener on Android is fragile, and now the captured data has to travel from phone to Home Node. More moving parts, same underlying problem. No real API. May never be fully solved without regulation.
+**1. Messaging beyond Telegram.** Telegram is the primary messaging connector — official Bot API, full access, cross-platform. For WhatsApp, iMessage, Signal, and other closed platforms, Dina delegates to MCP agents (like OpenClaw) which handle each platform's API or integration method. No single fragile connector — Dina's plugin architecture means each messaging platform is an independent agent.
 
 **2. Managed hosting operations.** Running a hosted service requires: regulatory compliance (GDPR, DPDP Act), security operations, incident response, billing. The protocol creator should not be the hosting operator (separation of concerns).
 
@@ -4979,7 +4975,7 @@ Guiding principle: **one user, a handful of containers, one machine, per-persona
 
 **5. Reputation Graph cold start.** Phase 1 doesn't depend on it — Brain uses web search via OpenClaw. Outcome data needs scale. The Graph activates gradually as the network grows. This is a years-long build.
 
-**6. iOS restrictions.** No NotificationListenerService equivalent. No Accessibility Service. iOS client will always be more limited for device-local ingestion. But with Home Node running API connectors (Gmail, Calendar, Contacts), iOS users still get most functionality. WhatsApp ingestion requires an Android device somewhere in the ecosystem.
+**6. iOS restrictions.** iOS client will always be more limited for device-local ingestion (no background services equivalent). But with Home Node running server-side API connectors (Gmail, Calendar, Contacts, Telegram), iOS users get full functionality for all API-based data sources.
 
 **7. Key management UX.** Asking normal people to write down 24 words on paper is a known failure mode in crypto. Most people will lose them. **Phase 2 answer: Shamir's Secret Sharing (3-of-5)** — split the seed into 5 shares distributed to trusted Dina contacts and physical backups, any 3 reconstruct it. Leverages existing Trust Rings and Dina-to-Dina NaCl. See Layer 0: Identity for full design.
 

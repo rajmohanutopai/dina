@@ -2,7 +2,7 @@
 
 ## What's Hard (Honest Assessment)
 
-**1. WhatsApp ingestion.** Still the weakest link. NotificationListener on Android is fragile, and now the captured data has to travel from phone to Home Node. More moving parts, same underlying problem. No real API. May never be fully solved without regulation.
+**1. Messaging beyond Telegram.** Telegram is the primary messaging connector — official Bot API, full access, cross-platform. For WhatsApp, iMessage, Signal, and other closed platforms, Dina delegates to MCP agents which handle each platform's integration. No single fragile connector — Dina's plugin architecture means each messaging platform is an independent agent.
 
 **2. Managed hosting operations.** Running a hosted service requires: regulatory compliance (GDPR, DPDP Act), security operations, incident response, billing. The protocol creator should not be the hosting operator (separation of concerns).
 
@@ -12,7 +12,7 @@
 
 **5. Reputation Graph cold start.** Phase 1 doesn't depend on it — Brain uses web search via OpenClaw. Outcome data needs scale. The Graph activates gradually as the network grows. This is a years-long build.
 
-**6. iOS restrictions.** No NotificationListenerService equivalent. No Accessibility Service. iOS client will always be more limited for device-local ingestion. But with Home Node running API connectors (Gmail, Calendar, Contacts), iOS users still get most functionality. WhatsApp ingestion requires an Android device somewhere in the ecosystem.
+**6. iOS restrictions.** No Accessibility Service equivalent for on-screen context injection. iOS client will always be more limited for device-local context features. But with Home Node running API connectors (Gmail, Calendar, Contacts, Telegram), iOS users get full ingestion functionality.
 
 **7. Key management UX.** Asking normal people to write down 24 words on paper is a known failure mode in crypto. Most people will lose them. **Phase 2 answer: Shamir's Secret Sharing (3-of-5)** — split the seed into 5 shares distributed to trusted Dina contacts and physical backups, any 3 reconstruct it. Leverages existing Trust Rings and Dina-to-Dina NaCl. See Layer 0: Identity for full design.
 
