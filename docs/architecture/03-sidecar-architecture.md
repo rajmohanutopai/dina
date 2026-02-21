@@ -390,7 +390,7 @@ Features unlock as the user is ready:
 | When | What |
 |------|------|
 | **Day 1** | Email + calendar ingestion, basic nudges |
-| **Day 7** | Prompt: "Write down these 24 words. They're your recovery key." |
+| **Day 7** | Prompt: "Write down these 24 words. They're your recovery key." (Phase 2: "You have trusted contacts now — set up social recovery so you don't depend on paper alone.") |
 | **Day 14** | Prompt: "Want to connect WhatsApp too?" |
 | **Day 30** | Prompt: "You can separate health and financial data into private compartments" |
 | **Month 3** | Power user discovers personas, sharing rules, self-hosting option |

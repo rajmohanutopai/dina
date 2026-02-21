@@ -14,7 +14,7 @@
 
 **6. iOS restrictions.** No NotificationListenerService equivalent. No Accessibility Service. iOS client will always be more limited for device-local ingestion. But with Home Node running API connectors (Gmail, Calendar, Contacts), iOS users still get most functionality. WhatsApp ingestion requires an Android device somewhere in the ecosystem.
 
-**7. Key management UX.** Asking normal people to write down 24 words on paper is a known failure mode in crypto. Most people will lose them. Better UX needed (social recovery? hardware backup?) but security trade-offs are real.
+**7. Key management UX.** Asking normal people to write down 24 words on paper is a known failure mode in crypto. Most people will lose them. **Phase 2 answer: Shamir's Secret Sharing (3-of-5)** — split the seed into 5 shares distributed to trusted Dina contacts and physical backups, any 3 reconstruct it. Leverages existing Trust Rings and Dina-to-Dina NaCl. See Layer 0: Identity for full design.
 
 **8. Home Node security surface.** An always-on server with your encrypted data is a target. Must be hardened: automatic updates, minimal attack surface (3-4 containers, two external ports: 443 + 2583), fail2ban-style rate limiting, encrypted at rest. If the VPS is compromised, the attacker gets encrypted blobs they can't read — but they can DoS your Dina.
 

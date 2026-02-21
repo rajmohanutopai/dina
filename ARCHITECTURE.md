@@ -836,7 +836,7 @@ Features unlock as the user is ready:
 | When | What |
 |------|------|
 | **Day 1** | Email + calendar ingestion, basic nudges |
-| **Day 7** | Prompt: "Write down these 24 words. They're your recovery key." |
+| **Day 7** | Prompt: "Write down these 24 words. They're your recovery key." (Phase 2: "You have trusted contacts now — set up social recovery so you don't depend on paper alone.") |
 | **Day 14** | Prompt: "Want to connect WhatsApp too?" |
 | **Day 30** | Prompt: "You can separate health and financial data into private compartments" |
 | **Month 3** | Power user discovers personas, sharing rules, self-hosting option |
@@ -1411,12 +1411,15 @@ Root Identity
 ├── Root keypair (Ed25519)
 ├── Created: timestamp
 ├── Device origin: device fingerprint
-└── Recovery: BIP-39 mnemonic (24 words, written on paper)
+├── Recovery (Phase 1): BIP-39 mnemonic (24 words, written on paper)
+└── Recovery (Phase 2): Shamir's Secret Sharing (3-of-5, trusted contacts + physical)
 ```
 
 **Key generation:** Happens locally using device entropy (Secure Enclave on iOS, StrongBox on Android, TPM on desktop). The private key never leaves the hardware security module.
 
-**Recovery:** BIP-39 standard mnemonic phrase. 24 words. User writes them down on paper. This is the only backup of the root identity. If you lose both the device and the paper, the identity is gone. This is by design — there is no "password reset" because there is no server that knows your password.
+**Recovery (Phase 1):** BIP-39 standard mnemonic phrase. 24 words. User writes them down on paper. This is the baseline backup of the root identity. If you lose both the device and the paper, the identity is gone. This is by design — there is no "password reset" because there is no server that knows your password.
+
+**Recovery (Phase 2): Shamir's Secret Sharing (3-of-5).** The BIP-39 entropy is split into 5 Shamir shares — any 3 reconstruct the seed, no single share reveals anything. Custodians: trusted Dina contacts (Ring 2+), family members' Dinas, physical storage (QR code in a bank safe), self-held (USB). Digital shards are encrypted to each custodian's public key and delivered via Dina-to-Dina NaCl. Recovery flow: contact 3+ custodians → each approves on their Dina → shards reassemble locally → seed restored. Share rotation: re-split with new randomness when trust changes — old shares become mathematically useless. A signed recovery manifest on the PDS lists custodian DIDs (not the shards themselves) so a fresh Dina knows who to contact. SSS is architecturally native to Dina — it leverages existing Trust Rings for custodian eligibility, Dina-to-Dina NaCl for shard transport, and aligns with "Trust No One" (no single custodian can compromise the seed). Implementation: ~100 lines of Go (GF(256) polynomial interpolation), same scheme used by Gnosis Safe and Argent wallet.
 
 **Technology choice: W3C Decentralized Identifiers (DIDs).** Specifically `did:plc` — Bluesky's DID method, proven at scale (30M+ identities). `did:plc` stores a signed operation log in a public directory (the PLC Directory), giving every Dina a globally resolvable, key-rotatable identity with no blockchain dependency. Other Dinas find yours by resolving your DID against the PLC Directory, which returns only your DID Document (public key + service endpoint) — never your name, location, or personal data.
 
@@ -1634,6 +1637,7 @@ Trust Score = f(
 ### Open Questions — Identity
 - **Key rotation:** If root key is compromised, how does the user rotate while preserving reputation? Possible: pre-signed rotation certificate stored in recovery.
 - **Multi-device root:** ~~Does each device get a copy of the root key, or do devices get delegated sub-keys?~~ **Resolved:** Devices never hold the root key. Each device gets a CLIENT_TOKEN (32-byte random Bearer token) during the pairing ceremony. Root key stays on the Home Node. Compromised device = revoke one token, not lose root identity. Phase 2 may add Ed25519 device keypairs for signed requests/mutual TLS.
+- **Seed recovery:** ~~Single point of failure — BIP-39 mnemonic on paper is the only backup. Non-technical users will lose it.~~ **Resolved (Phase 2):** Shamir's Secret Sharing (3-of-5) splits the seed across trusted contacts and physical backups. Day 1 still uses paper mnemonic; SSS activates once the user has a sufficient trust graph.
 - **Death detection:** How does the Digital Estate know the user has died? Manual trigger by next-of-kin with physical access to recovery phrase? Time-based dead man's switch?
 
 ---
@@ -1649,7 +1653,7 @@ Six tiers (Tier 0-5). Each with different encryption, sync, and backup strategie
 | Contents | Root keypair, persona keys, ZKP credentials, recovery config |
 | Encryption | Hardware-backed (Secure Enclave / StrongBox / TPM) where available |
 | Location | Home node (primary) + each client device holds delegated device keys |
-| Backup | BIP-39 mnemonic on paper. Home node stores encrypted root key blob (decryptable only with mnemonic or hardware key). |
+| Backup | Phase 1: BIP-39 mnemonic on paper. Phase 2: Shamir's Secret Sharing (3-of-5) — seed split across trusted Dina contacts + physical backups. Home node stores encrypted root key blob (decryptable only with mnemonic or hardware key). |
 | Breach impact | Total identity compromise. Catastrophic. |
 
 ### Tier 1 — The Vault (Raw Ingested Data)
@@ -4977,7 +4981,7 @@ Guiding principle: **one user, a handful of containers, one machine, per-persona
 
 **6. iOS restrictions.** No NotificationListenerService equivalent. No Accessibility Service. iOS client will always be more limited for device-local ingestion. But with Home Node running API connectors (Gmail, Calendar, Contacts), iOS users still get most functionality. WhatsApp ingestion requires an Android device somewhere in the ecosystem.
 
-**7. Key management UX.** Asking normal people to write down 24 words on paper is a known failure mode in crypto. Most people will lose them. Better UX needed (social recovery? hardware backup?) but security trade-offs are real.
+**7. Key management UX.** Asking normal people to write down 24 words on paper is a known failure mode in crypto. Most people will lose them. **Phase 2 answer: Shamir's Secret Sharing (3-of-5)** — split the seed into 5 shares distributed to trusted Dina contacts and physical backups, any 3 reconstruct it. Leverages existing Trust Rings and Dina-to-Dina NaCl. See Layer 0: Identity for full design.
 
 **8. Home Node security surface.** An always-on server with your encrypted data is a target. Must be hardened: automatic updates, minimal attack surface (3-4 containers, two external ports: 443 + 2583), fail2ban-style rate limiting, encrypted at rest. If the VPS is compromised, the attacker gets encrypted blobs they can't read — but they can DoS your Dina.
 

@@ -11,7 +11,7 @@ Six tiers (Tier 0-5). Each with different encryption, sync, and backup strategie
 | Contents | Root keypair, persona keys, ZKP credentials, recovery config |
 | Encryption | Hardware-backed (Secure Enclave / StrongBox / TPM) where available |
 | Location | Home node (primary) + each client device holds delegated device keys |
-| Backup | BIP-39 mnemonic on paper. Home node stores encrypted root key blob (decryptable only with mnemonic or hardware key). |
+| Backup | Phase 1: BIP-39 mnemonic on paper. Phase 2: Shamir's Secret Sharing (3-of-5) — seed split across trusted Dina contacts + physical backups. Home node stores encrypted root key blob (decryptable only with mnemonic or hardware key). |
 | Breach impact | Total identity compromise. Catastrophic. |
 
 ### Tier 1 — The Vault (Raw Ingested Data)
