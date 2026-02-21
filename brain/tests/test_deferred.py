@@ -313,3 +313,39 @@ async def test_deferred_17_3_3_enclave_sealed_keys() -> None:
     """
     pytest.skip("Confidential computing sealed keys not yet implemented (Phase 2+)")
     # Full test: Keys sealed to enclave, non-extractable by hosting operator
+
+
+# ---------------------------------------------------------------------------
+# §17.4 Digital Estate (3 scenarios) — arch §14
+# ---------------------------------------------------------------------------
+
+
+# TST-BRAIN-420
+def test_deferred_17_4_1_estate_recovery_queue_tasks() -> None:
+    """§17.4.1: Brain queues non-critical tasks during estate recovery.
+
+    Architecture §14: During active recovery procedures, brain queues/rejects
+    non-critical tasks while estate recovery is in-flight. Phase 2+ feature.
+    """
+    pytest.skip("Digital Estate Phase 2+ — not yet implemented")
+
+
+# TST-BRAIN-421
+def test_deferred_17_4_2_zkp_credential_verification() -> None:
+    """§17.4.2: Brain verifies Ring 2+ ZKP credentials for agent reputation.
+
+    Architecture §05: Brain verifies ZKP credentials when evaluating agent
+    intent reputation. Phase 3 feature (ZK-SNARKs on L2).
+    """
+    pytest.skip("ZKP credential verification Phase 3 — not yet implemented")
+
+
+# TST-BRAIN-422
+def test_deferred_17_4_3_sss_recovery_coordination() -> None:
+    """§17.4.3: Brain coordinates SSS custodian recovery via DIDComm.
+
+    Architecture §14: Brain's role in Shamir Secret Sharing custodian recovery
+    coordination. Core handles crypto; brain coordinates human approval flow.
+    Phase 2+ feature.
+    """
+    pytest.skip("SSS recovery coordination Phase 2+ — not yet implemented")

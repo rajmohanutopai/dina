@@ -450,3 +450,122 @@ def make_embedding(
     }
     base.update(overrides)
     return base
+
+
+# ---------- Task ACK (§2.3) ----------
+
+
+def make_task_ack(task_id: str = "task-001", **overrides: Any) -> dict:
+    """Create a task ACK payload for core."""
+    base = {
+        "task_id": task_id,
+        "status": "done",
+        "processed_at": "2026-01-15T10:30:00Z",
+    }
+    base.update(overrides)
+    return base
+
+
+def make_task_event(task_id: str = "task-001", **overrides: Any) -> dict:
+    """Create a task event as received from core's task queue."""
+    base = {
+        "task_id": task_id,
+        "type": "process",
+        "payload": {"event": "sync_complete", "source": "gmail", "count": 42},
+        "attempt": 1,
+        "timeout_at": "2026-01-15T10:35:00Z",
+    }
+    base.update(overrides)
+    return base
+
+
+# ---------- Voice STT (§18) ----------
+
+
+def make_voice_transcription(text: str = "Check my email", **overrides: Any) -> dict:
+    """Create a voice transcription result."""
+    base = {
+        "text": text,
+        "confidence": 0.95,
+        "provider": "deepgram",
+        "latency_ms": 180,
+        "model": "nova-3",
+    }
+    base.update(overrides)
+    return base
+
+
+# ---------- Bot Response (§6.2) ----------
+
+
+def make_bot_response(content: str = "The Aeron chair is highly rated", **overrides: Any) -> dict:
+    """Create a bot/agent response for PII validation tests."""
+    base = {
+        "content": content,
+        "bot_did": "did:key:z6MkChairBot",
+        "attribution": {
+            "source_url": "https://example.com/review",
+            "creator_name": "Expert Reviewer",
+        },
+        "confidence": 0.88,
+    }
+    base.update(overrides)
+    return base
+
+
+# ---------- Reputation (§6.1) ----------
+
+
+def make_reputation_score(did: str = "did:key:z6MkChairBot", **overrides: Any) -> dict:
+    """Create a reputation score result from AppView."""
+    base = {
+        "did": did,
+        "overall_score": 0.85,
+        "transaction_count": 42,
+        "attestation_count": 7,
+        "last_updated": "2026-01-10T00:00:00Z",
+    }
+    base.update(overrides)
+    return base
+
+
+# ---------- D2D Messages (§2.8) ----------
+
+
+def make_didcomm_message(
+    msg_type: str = "dina/social/arrival",
+    from_did: str = "did:plc:sancho123",
+    **overrides: Any,
+) -> dict:
+    """Create a DIDComm message for D2D tests."""
+    base = {
+        "type": msg_type,
+        "from": from_did,
+        "to": "did:plc:user123",
+        "body": {"summary": "Arriving in 15 minutes"},
+        "created_time": "2026-01-15T10:30:00Z",
+    }
+    base.update(overrides)
+    return base
+
+
+# ---------- Hybrid Search (§4.1) ----------
+
+
+def make_search_result(
+    item_id: str = "item-001",
+    fts5_rank: float = 0.8,
+    cosine_sim: float = 0.7,
+    **overrides: Any,
+) -> dict:
+    """Create a search result with both FTS5 rank and cosine similarity scores."""
+    base = {
+        "id": item_id,
+        "type": "email",
+        "summary": "Meeting notes from Thursday",
+        "fts5_rank": fts5_rank,
+        "cosine_similarity": cosine_sim,
+        "relevance": 0.4 * fts5_rank + 0.6 * cosine_sim,
+    }
+    base.update(overrides)
+    return base

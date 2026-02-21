@@ -277,6 +277,10 @@ def test_pii_3_2_6_circular_dependency_prevention() -> None:
     #   - Tier 1: Go regex via core API (POST core/v1/pii/scrub)
     #   - Tier 2: Python spaCy (en_core_web_sm) in-process
     # Verify no HTTP call to cloud LLM providers during scrubbing.
+    # COVERAGE GAP C3: Strengthen circular dependency assertion.
+    # Verify that brain's PII scrubbing code path NEVER routes data to any
+    # external API (cloud LLM, OpenClaw, etc.) for PII detection.
+    # assert no_external_calls_in_scrub_path(pii_scrubber)
 
 
 # ---------------------------------------------------------------------------
@@ -403,3 +407,46 @@ def test_pii_3_3_11_cloud_sees_topics_not_identities() -> None:
     # Cloud receives health topics (blood sugar, A1C) but not who the patient is,
     # who the doctor is, or which hospital -- only the tokens.
     # Verify scrubbed text contains medical terms but no identifiable information.
+
+
+# ---------------------------------------------------------------------------
+# §3.2 include_content PII Scrub (1 scenario) — arch §04
+# ---------------------------------------------------------------------------
+
+
+# TST-BRAIN-413
+def test_pii_3_2_7_include_content_pii_scrub(mock_pii_scrubber) -> None:
+    """§3.2.7: include_content=true triggers brain PII scrub on body_text.
+
+    Architecture §04: When brain uses include_content: true in vault query,
+    it takes on PII scrubbing responsibility for raw body_text. This flag is
+    'a signal to the developer that they're opting into a higher-trust path.'
+    """
+    pytest.skip("include_content PII scrub not yet implemented")
+    # vault_response = {"body_text": "Email from John Smith at Google Inc."}
+    # scrubbed = brain.scrub_included_content(vault_response)
+    # assert "John Smith" not in scrubbed["body_text"]
+    # assert "[PERSON_1]" in scrubbed["body_text"]
+
+
+# ---------------------------------------------------------------------------
+# §3.2 Circular Dependency Prevention (1 scenario) — arch §11
+# ---------------------------------------------------------------------------
+
+
+# TST-BRAIN-414
+def test_pii_3_2_8_circular_dependency_invariant(mock_pii_scrubber) -> None:
+    """§3.2.8: PII scrub NEVER uses cloud LLM — invariant enforcement.
+
+    Architecture §11: 'The routing itself constitutes the leak.' Brain's PII
+    detection uses ONLY local resources (Go regex + Python spaCy). NEVER routes
+    unscrubbed text to cloud LLM for PII detection purpose. This is a hard
+    invariant, not a preference.
+    """
+    pytest.skip("Circular dependency invariant enforcement not yet implemented")
+    # Code audit: scrub code path must NOT call any cloud LLM endpoint
+    # All PII detection must be local: regex (Tier 1) + spaCy (Tier 2)
+    # import inspect
+    # source = inspect.getsource(pii_scrubber.scrub)
+    # assert "cloud" not in source.lower()
+    # assert "llm" not in source.lower()

@@ -193,6 +193,13 @@ async def test_guardian_2_2_2_vault_locked(mock_guardian, mock_core_client) -> N
     """§2.2.2: vault_locked event flushes in-memory state for that persona."""
     event = make_vault_locked_event(persona_id="financial")
     pytest.skip("GuardianLoop not yet implemented")
+    # COVERAGE GAP C4: Add persona locked → user notification → unlock → retry flow.
+    # mock_core_client.get_vault_item.side_effect = HTTPStatusError("403 Persona Locked")
+    # result = await guardian.process_event({"type": "query", "persona_id": "financial"})
+    # assert result["action"] == "whisper_unlock_request"
+    # # After unlock event:
+    # result = await guardian.process_event({"type": "persona_unlocked", "persona_id": "financial"})
+    # assert result["action"] == "retry_query"
 
 
 # TST-BRAIN-032
@@ -226,6 +233,10 @@ async def test_guardian_2_3_1_process_event_returns_action(mock_guardian) -> Non
     """§2.3.1: process_event returns a structured action dict."""
     event = make_fiduciary_event()
     pytest.skip("GuardianLoop not yet implemented")
+    # COVERAGE GAP C2: Add DIDComm message type parsing test case.
+    # msg = {"type": "dina/social/arrival", "from": "did:plc:sancho", "body": {"summary": "Arriving"}}
+    # result = await guardian.process_event(msg)
+    # assert result["handler"] == "nudge_assembly"  # not generic processing
 
 
 # TST-BRAIN-036
@@ -981,3 +992,113 @@ async def test_guardian_2_8_4_brain_calls_post_dina_send(
     # Brain sends full tiered payload to core -> core handles egress check,
     # encryption, outbox.
     # mock_core_client.send_d2d.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# §2.3 Task Queue ACK Protocol (3 scenarios) — arch §04
+# ---------------------------------------------------------------------------
+
+
+# TST-BRAIN-392
+def test_guardian_2_3_13_task_ack_after_success(mock_guardian, mock_core_client) -> None:
+    """§2.3.13: Brain ACKs task after successful processing.
+
+    Architecture §04: Brain MUST ACK processed tasks via
+    POST core:8100/v1/task/ack {task_id}. Core deletes from dina_tasks on ACK.
+    """
+    pytest.skip("Task ACK protocol not yet implemented")
+    # task = make_task_event(task_id="task-abc")
+    # await mock_guardian.process_event(task["payload"])
+    # mock_core_client.ack_task.assert_called_once_with("task-abc")
+
+
+# TST-BRAIN-393
+def test_guardian_2_3_14_task_not_acked_on_failure(mock_guardian, mock_core_client) -> None:
+    """§2.3.14: Brain does NOT ACK failed task.
+
+    Without ACK, core requeues after 5-min timeout.
+    """
+    pytest.skip("Task ACK protocol not yet implemented")
+    # mock_guardian.process_event.side_effect = RuntimeError("processing failed")
+    # mock_core_client.ack_task.assert_not_called()
+
+
+# TST-BRAIN-394
+def test_guardian_2_3_15_retried_task_after_crash(mock_guardian, mock_core_client) -> None:
+    """§2.3.15: Brain receives retried task (same task_id) after crash.
+
+    Brain should check scratchpad for checkpoint and resume from there.
+    """
+    pytest.skip("Task ACK protocol not yet implemented")
+    # task = make_task_event(task_id="task-abc", attempt=2)
+    # mock_core_client.read_scratchpad.return_value = {"step": 2, "context": {...}}
+    # result = await mock_guardian.process_event(task["payload"])
+    # assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# §2.2 Persona Locked → Unlock → Retry (2 scenarios) — arch §05
+# ---------------------------------------------------------------------------
+
+
+# TST-BRAIN-398
+def test_guardian_2_2_5_persona_locked_whisper(mock_guardian, mock_core_client) -> None:
+    """§2.2.5: Brain receives 403 Persona Locked → whispers unlock request.
+
+    Architecture §05: Brain gets 403 from core on persona query → must NOT crash,
+    must notify user that persona needs unlocking.
+    """
+    pytest.skip("Persona locked flow not yet implemented")
+    # mock_core_client.get_vault_item.side_effect = httpx.HTTPStatusError(
+    #     "403 Persona Locked", request=..., response=...)
+    # result = await mock_guardian.process_event({"type": "query", "persona_id": "financial"})
+    # assert result["action"] == "whisper_unlock_request"
+
+
+# TST-BRAIN-399
+def test_guardian_2_2_6_persona_unlock_retry(mock_guardian, mock_core_client) -> None:
+    """§2.2.6: Brain retries query after persona unlock notification.
+
+    Brain receives persona_unlocked event → retries the original query.
+    """
+    pytest.skip("Persona locked flow not yet implemented")
+    # event = make_event(type="persona_unlocked", persona_id="financial")
+    # result = await mock_guardian.process_event(event)
+    # assert result["action"] == "retry_query"
+
+
+# ---------------------------------------------------------------------------
+# §2.6 Disconnection Pattern Detection (1 scenario) — arch §11
+# ---------------------------------------------------------------------------
+
+
+# TST-BRAIN-411
+def test_guardian_2_6_8_disconnection_pattern(mock_guardian, mock_core_client) -> None:
+    """§2.6.8: Brain detects contacts with no recent interaction.
+
+    Architecture §11: Brain identifies contacts with no interaction for 30+ days
+    and proactively suggests reconnection — Anti-Her nudge toward human connection.
+    """
+    pytest.skip("Disconnection pattern detection not yet implemented")
+    # contacts = [{"did": "did:plc:old_friend", "last_interaction_days": 45}]
+    # nudge = await mock_guardian.detect_disconnection(contacts)
+    # assert nudge["action"] == "suggest_reconnection"
+
+
+# ---------------------------------------------------------------------------
+# §2.8 DIDComm Message Type Parsing (1 scenario) — arch §09
+# ---------------------------------------------------------------------------
+
+
+# TST-BRAIN-412
+def test_guardian_2_8_5_didcomm_message_type_parsing(mock_guardian) -> None:
+    """§2.8.5: Brain correctly routes DIDComm message types.
+
+    Architecture §09: Brain must parse DIDComm message types
+    (dina/social/arrival, dina/commerce/*, dina/identity/*, dina/reputation/*)
+    and route to appropriate handler.
+    """
+    pytest.skip("DIDComm message type parsing not yet implemented")
+    # msg = make_didcomm_message(msg_type="dina/social/arrival")
+    # result = await mock_guardian.process_event(msg)
+    # assert result["handler"] == "nudge_assembly"

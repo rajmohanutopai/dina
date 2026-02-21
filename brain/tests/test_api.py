@@ -283,3 +283,22 @@ async def test_api_10_2_invalid_event_type() -> None:
     #     headers={"Authorization": f"Bearer {TEST_BRAIN_TOKEN}"},
     # )
     # assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# §10.5 API Contract Compliance (1 scenario) — arch §03
+# ---------------------------------------------------------------------------
+
+
+# TST-BRAIN-419
+def test_api_10_5_1_language_agnostic_contract() -> None:
+    """§10.5.1: Brain API contract is language-agnostic.
+
+    Architecture §03: Internal API contract (/v1/process, /v1/reason) is
+    documented, versioned, language-agnostic. Brain can be rewritten in Go
+    or other language without breaking the contract.
+    """
+    pytest.skip("API contract compliance check not yet implemented")
+    # Verify that /v1/process and /v1/reason endpoints use standard
+    # JSON request/response format with no Python-specific serialization.
+    # All data types must be JSON-native (no pickle, no Python datetime objects).

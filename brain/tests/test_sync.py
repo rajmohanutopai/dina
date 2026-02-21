@@ -845,3 +845,36 @@ async def test_sync_5_8_5_explicit_old_date_triggers_cold(
     """SS5.8.5: Explicit old date triggers cold — "Find that 2022 invoice" skips local, cold search directly."""
     pytest.skip("Cold archive not yet implemented")
     # Brain detects date reference older than horizon -> cold search directly.
+
+
+# ---------------------------------------------------------------------------
+# §5.2 LLM Triage Timeout Fallback (2 scenarios) — arch §15
+# ---------------------------------------------------------------------------
+
+
+# TST-BRAIN-405
+def test_sync_5_2_27_llm_triage_timeout_fallback(mock_sync_engine, mock_llm_client) -> None:
+    """§5.2.27: LLM triage fails 3x → all remaining emails classified SKIP.
+
+    After 3 failed LLM classification attempts, brain classifies ALL remaining
+    emails as SKIP (conservative, safe). User sees fewer emails indexed.
+    """
+    pytest.skip("LLM triage timeout fallback not yet implemented")
+    # mock_llm_client.complete.side_effect = TimeoutError("LLM timeout")
+    # emails = make_email_batch(n=50)
+    # results = await brain.triage_emails(emails)
+    # assert all(r["classification"] == "SKIP" for r in results)
+
+
+# TST-BRAIN-406
+def test_sync_5_2_28_llm_triage_timeout_admin_status(mock_sync_engine) -> None:
+    """§5.2.28: Admin UI shows triage LLM timeout status.
+
+    After LLM triage failure, admin UI displays timeout status with
+    timestamp and affected batch count.
+    """
+    pytest.skip("LLM triage timeout admin status not yet implemented")
+    # status = await brain.get_triage_status()
+    # assert status["llm_triage_timeout"] is True
+    # assert "timestamp" in status
+    # assert "affected_batch_count" in status

@@ -208,3 +208,27 @@ async def test_core_client_7_2_5_invalid_response_json(mock_core_client) -> None
     # )
     # with pytest.raises(ValueError, match="Invalid JSON"):
     #     await mock_core_client.get_vault_item("personal", "item-001")
+
+
+# ---------------------------------------------------------------------------
+# §7.2 Dead Letter Notification (1 scenario) — arch §04
+# ---------------------------------------------------------------------------
+
+
+# TST-BRAIN-407
+def test_core_client_7_2_6_dead_letter_notification(mock_core_client) -> None:
+    """§7.2.6: Task fails 3x → dead letter → Tier 2 notification.
+
+    Architecture §04: After 3 failed task processing attempts, task moves to
+    status='dead'. Brain receives Tier 2 notification: "Brain failed to process
+    an event 3 times. Check crash logs."
+    """
+    pytest.skip("Dead letter notification not yet implemented")
+    # notification = {
+    #     "type": "dead_letter",
+    #     "task_id": "task-abc",
+    #     "attempts": 3,
+    #     "message": "Brain failed to process an event 3 times. Check crash logs.",
+    # }
+    # result = await brain.handle_dead_letter(notification)
+    # assert result["notification_priority"] == "solicited"  # Tier 2

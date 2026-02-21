@@ -197,3 +197,24 @@ async def test_auth_1_2_12_brain_exposes_reason() -> None:
     #     json={"type": "complex_decision", "body": "test"},
     # )
     # assert response.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# §1.2 Code Audit: Zero sqlite3 Calls (1 scenario) — arch §03
+# ---------------------------------------------------------------------------
+
+
+# TST-BRAIN-416
+def test_auth_1_2_13_zero_sqlite_calls() -> None:
+    """§1.2.13: Code audit — brain has zero sqlite3.connect() calls.
+
+    Architecture §03: Brain codebase has zero sqlite3.connect() or sqlalchemy
+    calls. All data access goes through core HTTP API. CI-enforceable invariant.
+    """
+    pytest.skip("SQLite audit not yet implemented")
+    # import glob, re
+    # brain_files = glob.glob("dina_brain/**/*.py", recursive=True)
+    # for f in brain_files:
+    #     content = open(f).read()
+    #     assert "sqlite3.connect" not in content, f"sqlite3.connect found in {f}"
+    #     assert "sqlalchemy" not in content, f"sqlalchemy found in {f}"

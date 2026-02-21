@@ -34,6 +34,7 @@
 | 10 | **[TST-BRAIN-016]** Brain never sees cookies | Inspect inbound requests to brain | No `Cookie` header — core translates cookies to Bearer before proxying |
 | 11 | **[TST-BRAIN-017]** Brain exposes `/v1/process` to core | Core sends process event | 200 with guardian response |
 | 12 | **[TST-BRAIN-018]** Brain exposes `/v1/reason` to core | Core sends complex decision request | 200 with reasoning result |
+| 13 | **[TST-BRAIN-416]** Code audit: zero `sqlite3.connect()` calls | Inspect brain codebase | Brain has zero direct SQLite calls — all data access via core HTTP API. CI-enforceable invariant |
 
 ---
 
@@ -67,6 +68,8 @@
 | 2 | **[TST-BRAIN-032]** Brain starts before vault unlock | Brain up, vault still locked (security mode) | Brain starts in degraded mode, queues requests, waits for vault_unlocked |
 | 3 | **[TST-BRAIN-033]** Vault lock event during operation | Core locks persona mid-task | Brain checkpoints to scratchpad, pauses tasks for that persona |
 | 4 | **[TST-BRAIN-034]** Brain handles vault_unlocked idempotently | Two vault_unlocked events (e.g., reboot race) | Second event is no-op, no duplicate initialization |
+| 5 | **[TST-BRAIN-398]** Persona locked → whisper unlock request | Brain queries `/financial` → gets 403 Persona Locked | Brain whispers to user: "Financial persona is locked. Unlock to continue." — no crash, graceful handling |
+| 6 | **[TST-BRAIN-399]** Persona unlock → retry query | Brain receives `persona_unlocked` event after 403 | Brain retries the original query that triggered the 403 — completes successfully |
 
 ### 2.3 Guardian Loop Execution
 
@@ -84,6 +87,9 @@
 | 10 | **[TST-BRAIN-044]** Crash handler: full traceback to core | Inject exception in guardian_loop | Brain POSTs `{error: "RuntimeError", traceback: "<full>", task_id: "<current>"}` to `http://core:8100/api/v1/vault/crash` — stored in identity.sqlite `crash_log` table (encrypted at rest). Exception is re-raised after POST so Docker restarts the container. If core is unreachable, traceback is lost (acceptable — crash_log is best-effort, restart is mandatory) |
 | 11 | **[TST-BRAIN-364]** Risky intent logs audit trail | Risky intent flagged for review | Audit trail entry written to core KV with intent details, timestamp, and review status |
 | 12 | **[TST-BRAIN-365]** Blocked intent logs audit trail | Blocked intent rejected | Audit trail entry written to core KV with intent details, timestamp, and block reason |
+| 13 | **[TST-BRAIN-392]** Task ACK after successful processing | Brain completes task processing | Brain sends `POST core:8100/v1/task/ack {task_id}` — core deletes from `dina_tasks` |
+| 14 | **[TST-BRAIN-393]** Task NOT ACKed on failure | Brain fails to process task | Brain does NOT send ACK — core requeues after 5-min timeout |
+| 15 | **[TST-BRAIN-394]** Retried task after crash | Brain restarts, core retries unACKed task | Brain receives same `task_id` again, processes from scratchpad checkpoint |
 
 ### 2.3.1 Draft-Don't-Send (Action Layer)
 
@@ -165,6 +171,7 @@
 | 5 | **[TST-BRAIN-079]** Nudge respects persona boundaries | Sancho has data in `/personal` (open) and `/financial` (locked) | Nudge includes only `/personal` context — locked personas excluded |
 | 6 | **[TST-BRAIN-080]** Pending promise detection | Brain found "I'll send the PDF tomorrow" in old messages | Nudge includes: "You promised to send the PDF" — actionable reminder |
 | 7 | **[TST-BRAIN-081]** Calendar context included | Upcoming event with contact | Nudge: "You have lunch planned next Thursday" |
+| 8 | **[TST-BRAIN-411]** Disconnection pattern detection | Brain analyzes contact interaction history | Brain identifies contacts with no recent interaction (30+ days) and suggests reconnection — Anti-Her nudge toward human connection |
 
 ### 2.7 Sharing Policy via Chat (Natural Language → Core API)
 
@@ -190,6 +197,7 @@
 | 2 | **[TST-BRAIN-088]** Brain sends max detail | D2D send with location data | Brain provides `{presence: {summary: "Arriving in ~15 min", full: "Currently at 12.9716°N, 77.5946°E, ETA 14 min via MG Road"}}` — Core decides what to share |
 | 3 | **[TST-BRAIN-089]** Brain never pre-filters by policy | Brain prepares D2D payload for contact with `health: "none"` | Brain still includes health data in tiered format — Core is the one that strips it. Brain is policy-agnostic |
 | 4 | **[TST-BRAIN-090]** Brain calls `POST /v1/dina/send` | D2D message ready | Brain sends full tiered payload to core → core handles egress check, encryption, outbox |
+| 5 | **[TST-BRAIN-412]** DIDComm message type parsing | Brain receives `{type: "dina/social/arrival", from: "did:plc:...", body: {...}}` | Brain correctly routes to nudge assembly handler based on DIDComm message type — not generic processing |
 
 ---
 
@@ -231,6 +239,8 @@
 | 4 | **[TST-BRAIN-107]** Performance: batch processing | 100 text chunks | All processed within 5s |
 | 5 | **[TST-BRAIN-108]** Full pipeline to cloud LLM | Text with mixed PII → Tier 1 → Tier 2 → cloud LLM call | Cloud LLM receives only tokens, never raw PII — verified by inspection |
 | 6 | **[TST-BRAIN-109]** Circular dependency prevention | PII scrubbing code path | Scrubbing is always local (Go regex + Python spaCy) — never sends un-scrubbed text to cloud for scrubbing |
+| 7 | **[TST-BRAIN-413]** `include_content: true` triggers brain PII scrub | Brain queries vault with `include_content: true` | Brain scrubs returned `body_text` via Tier 1+2 before sending to cloud LLM — higher-trust path acknowledged |
+| 8 | **[TST-BRAIN-414]** Circular dependency: PII scrub NEVER uses cloud | Code audit: PII scrubbing code path | Brain's PII detection uses ONLY local resources (Go regex + Python spaCy) — NEVER routes unscrubbed text to cloud LLM for detection. "The routing itself constitutes the leak" |
 
 ### 3.3 Entity Vault Pattern
 
@@ -275,6 +285,10 @@
 | 10 | **[TST-BRAIN-130]** Model selection by task type | Video analysis vs chat vs classification | Correct model routed per task type |
 | 11 | **[TST-BRAIN-131]** User configures preferred cloud provider | `DINA_CLOUD_LLM=claude` | Brain routes complex reasoning to user's chosen provider |
 | 12 | **[TST-BRAIN-132]** PII scrub failure on sensitive persona → refuse cloud send | Health query (Cloud profile, no llama), core `/v1/pii/scrub` returns 500 or spaCy model crashes | Brain MUST reject the cloud route — never send unscrubbed sensitive data to cloud LLM. Error to user: "PII protection unavailable, cannot safely process health query via cloud." Architecture §11: Entity Vault scrubbing is "Tier 1+2 **mandatory**" for sensitive personas. If either tier fails, the entire cloud path is blocked — this is not a fallback scenario, it's a hard security gate |
+| 13 | **[TST-BRAIN-396]** Cloud LLM consent NOT given → health query rejected | Health query, cloud LLM profile, `cloud_llm_consent: false` | Brain rejects cloud route: "Enable cloud LLM consent in settings to process health queries via cloud." Even if Entity Vault scrubbing would work, consent gate blocks |
+| 14 | **[TST-BRAIN-397]** Cloud LLM consent given → health query processed | Health query, cloud LLM profile, `cloud_llm_consent: true` | Brain processes via Entity Vault + cloud LLM — consent gate passed |
+| 15 | **[TST-BRAIN-403]** Hybrid search merging formula | FTS5 results + cosine similarity results | Brain merges using `relevance = 0.4 × fts5_rank + 0.6 × cosine_similarity` — correct weights applied |
+| 16 | **[TST-BRAIN-404]** Hybrid search deduplication | Item appears in both FTS5 and cosine results | Brain deduplicates merged results — no duplicate items in final result set |
 
 ### 4.2 LLM Client
 
@@ -346,6 +360,8 @@
 | 24 | **[TST-BRAIN-179]** LLM triage batch size: max 50 subjects per call | 80 PRIMARY emails survive regex | Brain splits into 2 LLM calls (50 + 30) — batch size capped at 50 per architecture spec |
 | 25 | **[TST-BRAIN-180]** Normalizer: all connectors produce standard schema | Gmail email + Calendar event + Telegram message | All normalized to common structure: `{source, source_id, type, timestamp, sender, summary, body_text, metadata}` before vault storage |
 | 26 | **[TST-BRAIN-181]** Persona routing: configurable per-connector rules | Config: `"email_persona_routing": {"default": "/personal", "rules": [{"sender_domain": "company.com", "persona": "/professional"}]}` | Emails from company.com routed to `/professional`, others to `/personal` — brain routes based on config |
+| 27 | **[TST-BRAIN-405]** LLM triage fails 3x → fallback to SKIP | LLM classification fails 3 consecutive times | Brain classifies ALL remaining emails as SKIP (conservative) — user sees fewer emails indexed, no data loss |
+| 28 | **[TST-BRAIN-406]** LLM triage timeout status in admin UI | LLM triage failed during ingestion | Admin UI shows triage LLM timeout status with timestamp and affected batch count |
 
 ### 5.3 Deduplication
 
@@ -451,6 +467,9 @@
 | 3 | **[TST-BRAIN-228]** Route by reputation | Multiple agents available | Highest Reputation Graph score selected |
 | 4 | **[TST-BRAIN-229]** No suitable agent | Task requiring unavailable capability | Fallback to local LLM or inform user |
 | 5 | **[TST-BRAIN-230]** Agent timeout | MCP agent doesn't respond in 30s | Timeout, try next agent or fail gracefully |
+| 6 | **[TST-BRAIN-408]** Reputation AppView query | Brain needs product recommendation | Brain queries `GET /v1/reputation?did=...` from Reputation AppView API — returns product scores, expert attestations |
+| 7 | **[TST-BRAIN-409]** Reputation AppView unavailable → web search fallback | Reputation AppView unreachable | Brain degrades gracefully to web search via OpenClaw — no disruption to user |
+| 8 | **[TST-BRAIN-410]** Bot reputation tracking and recalculation | Bot completes task, outcome recorded | Brain recalculates per-bot reputation score locally after each interaction outcome — next query routes to updated best bot |
 
 ### 6.2 Agent Safety (Intent Verification)
 
@@ -472,6 +491,7 @@
 | 14 | **[TST-BRAIN-244]** Silence protocol checked before delegation | Brain detects "license expires in 7 days" | Silence protocol classifies FIRST (fiduciary? solicited?), THEN decides whether to delegate |
 | 15 | **[TST-BRAIN-245]** Agent outcome recorded in Tier 3 | Agent completes task | Outcome stored in vault for agent reputation scoring — if quality drops, Brain routes to better agent |
 | 16 | **[TST-BRAIN-246]** No raw vault data to agents | Brain delegates task with context | Agent receives minimal scrubbed context: `{task: "license_renewal", identity_persona: "/legal"}` — no vault items |
+| 17 | **[TST-BRAIN-395]** Bot response PII validation | Bot/agent returns response containing leaked PII | Brain runs spaCy NER on bot response, detects leaked PII (email, name), scrubs before showing to user |
 
 ### 6.3 MCP Protocol
 
@@ -523,6 +543,7 @@
 | 3 | **[TST-BRAIN-267]** Core returns 401 | Wrong BRAIN_TOKEN | Fatal error — brain cannot operate without core auth |
 | 4 | **[TST-BRAIN-268]** Timeout | Core doesn't respond in 30s | Request cancelled, error returned |
 | 5 | **[TST-BRAIN-269]** Invalid response JSON | Core returns malformed body | Parse error caught, logged |
+| 6 | **[TST-BRAIN-407]** Dead letter notification | Task fails 3x → `status = 'dead'` | Brain receives Tier 2 notification: "Brain failed to process an event 3 times. Check crash logs." — dead letter handling |
 
 ---
 
@@ -580,7 +601,7 @@
 |---|----------|-------|----------|
 | 1 | **[TST-BRAIN-289]** Load CORE_URL | `CORE_URL=http://core:8300` | Core client configured with correct base URL |
 | 2 | **[TST-BRAIN-290]** Load LLM_URL | `LLM_URL=http://llm:8080` | LLM client configured |
-| 3 | **[TST-BRAIN-291]** Missing CORE_URL | Not set | Startup fails with descriptive error |
+| 3 | **[TST-BRAIN-291]** Missing CORE_URL uses default | Not set | CORE_URL defaults to `http://core:8300` — startup succeeds with default (consistent with TST-BRAIN-376) |
 | 4 | **[TST-BRAIN-292]** Missing LLM_URL | Not set | Brain starts but LLM routing disabled (graceful degradation) |
 | 5 | **[TST-BRAIN-293]** BRAIN_TOKEN from secret | `/run/secrets/brain_token` | Token loaded for self-validation |
 | 6 | **[TST-BRAIN-294]** Invalid URL format | `CORE_URL=not-a-url` | Startup validation fails |
@@ -634,6 +655,12 @@
 | 2 | **[TST-BRAIN-390]** Error response format | Error response | Consistent JSON with `detail` field |
 | 3 | **[TST-BRAIN-391]** Unknown route returns 404 | GET `/v1/nonexistent` | 404 Not Found |
 
+### 10.5 API Contract Compliance
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-419]** Language-agnostic API contract | Inspect `/v1/process` and `/v1/reason` endpoints | API contract is documented, versioned, language-agnostic — brain can be rewritten in any language without breaking the contract |
+
 ---
 
 ## 11. Error Handling & Resilience
@@ -646,6 +673,8 @@
 | 4 | **[TST-BRAIN-305]** Startup dependency check | Core unreachable at startup | Brain starts, retries core connection with backoff |
 | 5 | **[TST-BRAIN-306]** spaCy model missing | `en_core_web_sm` not installed | Startup fails with clear error about missing model |
 | 6 | **[TST-BRAIN-307]** Concurrent request handling | 50 simultaneous requests | All handled by uvicorn worker pool |
+| 7 | **[TST-BRAIN-417]** Startup waits for core readiness | Brain starts before core is ready | Brain polls core `/readyz`, waits with backoff until core is healthy — Docker `depends_on: condition: service_healthy` |
+| 8 | **[TST-BRAIN-415]** Sharing policy: invalid contact DID | Brain applies PATCH to sharing policy for non-existent DID | Brain validates contact DID exists in contacts table before applying — returns clear error |
 
 ---
 
@@ -699,6 +728,7 @@
 | 5 | **[TST-BRAIN-324]** Task ID correlated | Brain crashes during task "abc123" | Crash report `task_id` matches `dina_tasks.id` — debugging correlates crash with event |
 | 6 | **[TST-BRAIN-325]** Crash handler re-raises | After logging + vault write | `raise` — lets Docker restart policy trigger container restart |
 | 7 | **[TST-BRAIN-326]** Core unreachable during crash | Brain crashes, core is also down | One-liner to stdout (always works), vault write fails silently — traceback lost, but event retried on restart |
+| 8 | **[TST-BRAIN-418]** Logging audit: no PII in log output | Inspect all brain log output | Logs contain ONLY metadata: timestamps, endpoint, persona, query type, error codes, item counts, latency. NO vault content, user queries, PII, brain reasoning, plaintext, keys, or tokens |
 
 ---
 
@@ -790,6 +820,27 @@
 | 1 | **[TST-BRAIN-358]** Enclave attestation | Managed Home Node starts inside AMD SEV-SNP / Intel TDX enclave | Attestation report verifiable by client |
 | 2 | **[TST-BRAIN-359]** RAM inspection impossible | Root attacker on host inspects enclave memory | No plaintext visible — hardware-enforced |
 | 3 | **[TST-BRAIN-360]** Enclave-sealed keys | Keys sealed to enclave identity | Keys non-extractable even by hosting operator |
+
+### 17.4 Digital Estate (Phase 2+)
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-420]** Brain behavior during active estate recovery | Estate recovery procedure in-flight | Brain queues/rejects non-critical tasks while estate recovery is active |
+| 2 | **[TST-BRAIN-421]** ZKP credential verification for agent reputation | Agent presents Ring 2+ ZKP credential | Brain verifies ZKP credential when evaluating agent intent reputation — Phase 3 (ZK-SNARKs on L2) |
+| 3 | **[TST-BRAIN-422]** SSS custodian recovery coordination | Shamir Secret Sharing recovery triggered via DIDComm | Brain coordinates human approval flow for SSS recovery — core handles crypto, brain handles UX |
+
+---
+
+## 18. Voice STT Integration
+
+> Brain integrates with Deepgram Nova-3 via WebSocket streaming for real-time
+> voice-to-text. Fallback: Gemini Flash Lite Live API. ~150-300ms latency target.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-400]** Voice input via Deepgram → guardian loop | Audio stream received via WebSocket | Brain routes to Deepgram Nova-3 STT → receives transcription → processes as text query through guardian loop |
+| 2 | **[TST-BRAIN-401]** Deepgram unavailable → Gemini STT fallback | Deepgram WebSocket connection fails | Brain falls back to Gemini Flash Lite Live API for STT — transparent to user |
+| 3 | **[TST-BRAIN-402]** Voice latency within target | Audio → text → response pipeline | End-to-end STT latency < 300ms (Deepgram Nova-3 target) |
 
 ---
 

@@ -72,6 +72,13 @@ async def test_mcp_6_1_3_route_by_reputation(
     # task = {"type": "summarize", "prompt": "Summarize this article"}
     # result = await mock_agent_router.route_task(task)
     # assert result["handler"] contains the higher-reputation agent
+    # COVERAGE GAP C1: Add verification that brain maintains per-bot scores
+    # locally and recalculates after each interaction outcome.
+    # bot_scores = await brain.get_bot_scores()
+    # assert "did:key:z6MkChairBot" in bot_scores
+    # await brain.record_outcome("did:key:z6MkChairBot", {"satisfaction": "positive"})
+    # updated_scores = await brain.get_bot_scores()
+    # assert updated_scores["did:key:z6MkChairBot"] > bot_scores["did:key:z6MkChairBot"]
 
 
 # TST-BRAIN-229
@@ -578,3 +585,71 @@ async def test_mcp_6_4_8_bot_response_without_attribution(
     # processed = process_agent_response(response)
     # assert processed.get("attribution_missing") is True
     # assert processed.get("verified") is False
+
+
+# ---------------------------------------------------------------------------
+# §6.1 Reputation AppView (3 scenarios) — arch §08
+# ---------------------------------------------------------------------------
+
+
+# TST-BRAIN-408
+def test_mcp_6_1_6_reputation_appview_query(mock_mcp_client) -> None:
+    """§6.1.6: Brain queries Reputation AppView API for product scores.
+
+    Architecture §08: Brain queries GET /v1/reputation?did=... to get
+    product scores, expert attestations, and bot scores for recommendations.
+    """
+    pytest.skip("Reputation AppView query not yet implemented")
+    # result = await reputation_client.query_reputation("did:plc:chair_expert")
+    # assert "overall_score" in result
+    # assert "attestation_count" in result
+
+
+# TST-BRAIN-409
+def test_mcp_6_1_7_reputation_appview_fallback(mock_mcp_client) -> None:
+    """§6.1.7: Reputation AppView unavailable → web search fallback.
+
+    Architecture §08: When Reputation AppView is unavailable, brain degrades
+    gracefully to web search via OpenClaw. No disruption to user.
+    """
+    pytest.skip("Reputation AppView fallback not yet implemented")
+    # mock_mcp_client.call_tool.side_effect = ConnectionError("AppView down")
+    # result = await brain.get_recommendation("best ergonomic chair")
+    # assert result["source"] == "web_search"  # fallback to OpenClaw
+
+
+# TST-BRAIN-410
+def test_mcp_6_1_8_bot_reputation_tracking(mock_mcp_client) -> None:
+    """§6.1.8: Brain recalculates per-bot reputation after each interaction.
+
+    Architecture §10: Brain maintains per-bot reputation scores locally.
+    After each interaction outcome, brain recalculates bot score.
+    Next query routes to updated best bot.
+    """
+    pytest.skip("Bot reputation tracking not yet implemented")
+    # outcome = {"bot_did": "did:key:z6MkChairBot", "satisfaction": "positive"}
+    # await reputation_client.submit_outcome("did:key:z6MkChairBot", outcome)
+    # new_score = await reputation_client.query_reputation("did:key:z6MkChairBot")
+    # assert new_score["overall_score"] > previous_score
+
+
+# ---------------------------------------------------------------------------
+# §6.2 Bot Response PII Validation (1 scenario) — arch §10, §11
+# ---------------------------------------------------------------------------
+
+
+# TST-BRAIN-395
+def test_mcp_6_2_17_bot_response_pii_validation(mock_mcp_client, mock_pii_scrubber) -> None:
+    """§6.2.17: Bot response with leaked PII detected and scrubbed.
+
+    Architecture §10, §11: Brain must validate bot/agent responses for PII
+    leakage before showing to user. Bot response may contain leaked entities
+    (email, name) that brain must detect via spaCy NER and scrub/flag.
+    """
+    pytest.skip("Bot response PII validation not yet implemented")
+    # bot_response = make_bot_response(
+    #     content="Contact john@example.com for the best deal from John Smith"
+    # )
+    # scrubbed = await brain.validate_bot_response(bot_response)
+    # assert "john@example.com" not in scrubbed["content"]
+    # assert "John Smith" not in scrubbed["content"]

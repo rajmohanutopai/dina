@@ -142,3 +142,29 @@ async def test_crash_13_7_core_unreachable(mock_guardian) -> None:
     pytest.skip("Core-unreachable crash handling not yet implemented")
     # Full test: Core down during crash -> one-liner to stdout succeeds,
     # vault write fails silently, traceback lost but event retried on restart
+
+
+# ---------------------------------------------------------------------------
+# §13 Logging Audit (1 scenario) — arch §04
+# ---------------------------------------------------------------------------
+
+
+# TST-BRAIN-418
+def test_crash_13_8_logging_audit_no_pii() -> None:
+    """§13.8: Logging audit — no PII in brain log output.
+
+    Architecture §04: Brain log output MUST NOT contain vault content,
+    user queries, PII, brain reasoning output, NaCl plaintext,
+    passphrase/keys, or API tokens. Only metadata: timestamps, endpoint,
+    persona, query type, error codes, item counts, latency.
+    """
+    pytest.skip("Logging audit not yet implemented")
+    # import logging
+    # handler = logging.handlers.MemoryHandler(capacity=1000)
+    # logger = logging.getLogger("dina_brain")
+    # logger.addHandler(handler)
+    # # Run a processing cycle
+    # # Inspect all log records for PII patterns
+    # for record in handler.buffer:
+    #     msg = record.getMessage()
+    #     assert not re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', msg)

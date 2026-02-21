@@ -123,12 +123,12 @@ def test_config_9_llm_url_from_env(monkeypatch) -> None:
 
 
 # TST-BRAIN-291
-def test_config_9_missing_core_url_fails(monkeypatch) -> None:
-    """§9 row 3: Startup fails with descriptive error when CORE_URL is not set."""
+def test_config_9_missing_core_url_uses_default(monkeypatch) -> None:
+    """§9 row 3: Missing CORE_URL uses default http://core:8300."""
     pytest.skip("BrainConfig loader not yet implemented")
     # monkeypatch.delenv("DINA_CORE_URL", raising=False)
-    # with pytest.raises(ValueError, match="CORE_URL"):
-    #     load_brain_config()
+    # cfg = load_brain_config()
+    # assert cfg["CORE_URL"] == "http://core:8300"
 
 
 # TST-BRAIN-292

@@ -279,3 +279,55 @@ class SilenceClassifier(Protocol):
     async def apply_dnd(self, event: dict, dnd_active: bool) -> dict:
         """Apply Do Not Disturb rules to a classified event."""
         ...
+
+
+# ---------- §6.1 Reputation / AppView ----------
+
+
+@runtime_checkable
+class ReputationClient(Protocol):
+    """Contract for Reputation AppView queries (§6.1, arch §08)."""
+
+    async def query_reputation(self, did: str) -> dict:
+        """Query reputation scores for a DID from AppView API."""
+        ...
+
+    async def submit_outcome(self, bot_did: str, outcome: dict) -> None:
+        """Submit an interaction outcome for bot reputation scoring."""
+        ...
+
+
+# ---------- §18 Voice STT ----------
+
+
+@runtime_checkable
+class VoiceSTTClient(Protocol):
+    """Contract for voice-to-text integration (§18, arch §16)."""
+
+    async def transcribe_stream(self, audio_stream: bytes) -> str:
+        """Transcribe audio via Deepgram Nova-3 WebSocket streaming."""
+        ...
+
+    async def transcribe_fallback(self, audio_stream: bytes) -> str:
+        """Fallback transcription via Gemini Flash Lite Live API."""
+        ...
+
+    def is_primary_available(self) -> bool:
+        """Check if primary STT provider (Deepgram) is available."""
+        ...
+
+
+# ---------- §2.3 Task Queue ACK ----------
+
+
+@runtime_checkable
+class TaskAckHandler(Protocol):
+    """Contract for task queue ACK protocol (§2.3, arch §04)."""
+
+    async def ack_task(self, task_id: str) -> None:
+        """Send ACK to core after successful task processing."""
+        ...
+
+    async def handle_retry(self, task_id: str, checkpoint: dict | None) -> dict:
+        """Handle a retried task, resuming from checkpoint if available."""
+        ...

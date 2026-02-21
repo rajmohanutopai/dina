@@ -2345,6 +2345,192 @@
       "row": 3,
       "scenario": "Enclave-sealed keys",
       "line": 792
+    },
+    "TST-BRAIN-392": {
+      "path": "2.3",
+      "row": 13,
+      "scenario": "Task ACK after successful processing",
+      "line": 86
+    },
+    "TST-BRAIN-393": {
+      "path": "2.3",
+      "row": 14,
+      "scenario": "Task NOT ACKed on failure",
+      "line": 86
+    },
+    "TST-BRAIN-394": {
+      "path": "2.3",
+      "row": 15,
+      "scenario": "Retried task after crash",
+      "line": 86
+    },
+    "TST-BRAIN-395": {
+      "path": "6.2",
+      "row": 17,
+      "scenario": "Bot response PII validation",
+      "line": 456
+    },
+    "TST-BRAIN-396": {
+      "path": "4.1",
+      "row": 13,
+      "scenario": "Cloud LLM consent NOT given rejects health query",
+      "line": 264
+    },
+    "TST-BRAIN-397": {
+      "path": "4.1",
+      "row": 14,
+      "scenario": "Cloud LLM consent given processes health query",
+      "line": 264
+    },
+    "TST-BRAIN-398": {
+      "path": "2.2",
+      "row": 5,
+      "scenario": "Persona locked whisper unlock request",
+      "line": 62
+    },
+    "TST-BRAIN-399": {
+      "path": "2.2",
+      "row": 6,
+      "scenario": "Persona unlock retry query",
+      "line": 62
+    },
+    "TST-BRAIN-400": {
+      "path": "18",
+      "row": 1,
+      "scenario": "Voice input via Deepgram to guardian loop",
+      "line": 830
+    },
+    "TST-BRAIN-401": {
+      "path": "18",
+      "row": 2,
+      "scenario": "Deepgram unavailable fallback to Gemini STT",
+      "line": 830
+    },
+    "TST-BRAIN-402": {
+      "path": "18",
+      "row": 3,
+      "scenario": "Voice latency within target",
+      "line": 830
+    },
+    "TST-BRAIN-403": {
+      "path": "4.1",
+      "row": 15,
+      "scenario": "Hybrid search merging formula",
+      "line": 264
+    },
+    "TST-BRAIN-404": {
+      "path": "4.1",
+      "row": 16,
+      "scenario": "Hybrid search deduplication",
+      "line": 264
+    },
+    "TST-BRAIN-405": {
+      "path": "5.2",
+      "row": 27,
+      "scenario": "LLM triage fails 3x fallback to SKIP",
+      "line": 316
+    },
+    "TST-BRAIN-406": {
+      "path": "5.2",
+      "row": 28,
+      "scenario": "LLM triage timeout status in admin UI",
+      "line": 316
+    },
+    "TST-BRAIN-407": {
+      "path": "7.2",
+      "row": 6,
+      "scenario": "Dead letter notification",
+      "line": 519
+    },
+    "TST-BRAIN-408": {
+      "path": "6.1",
+      "row": 6,
+      "scenario": "Reputation AppView query",
+      "line": 446
+    },
+    "TST-BRAIN-409": {
+      "path": "6.1",
+      "row": 7,
+      "scenario": "Reputation AppView unavailable fallback",
+      "line": 446
+    },
+    "TST-BRAIN-410": {
+      "path": "6.1",
+      "row": 8,
+      "scenario": "Bot reputation tracking and recalculation",
+      "line": 446
+    },
+    "TST-BRAIN-411": {
+      "path": "2.6",
+      "row": 8,
+      "scenario": "Disconnection pattern detection",
+      "line": 154
+    },
+    "TST-BRAIN-412": {
+      "path": "2.8",
+      "row": 5,
+      "scenario": "DIDComm message type parsing",
+      "line": 182
+    },
+    "TST-BRAIN-413": {
+      "path": "3.2",
+      "row": 7,
+      "scenario": "include_content true triggers brain PII scrub",
+      "line": 220
+    },
+    "TST-BRAIN-414": {
+      "path": "3.2",
+      "row": 8,
+      "scenario": "Circular dependency PII scrub never uses cloud",
+      "line": 220
+    },
+    "TST-BRAIN-415": {
+      "path": "11",
+      "row": 8,
+      "scenario": "Sharing policy invalid contact DID",
+      "line": 639
+    },
+    "TST-BRAIN-416": {
+      "path": "1.2",
+      "row": 13,
+      "scenario": "Code audit zero sqlite3 calls",
+      "line": 25
+    },
+    "TST-BRAIN-417": {
+      "path": "11",
+      "row": 7,
+      "scenario": "Startup waits for core readiness",
+      "line": 639
+    },
+    "TST-BRAIN-418": {
+      "path": "13",
+      "row": 8,
+      "scenario": "Logging audit no PII in log output",
+      "line": 687
+    },
+    "TST-BRAIN-419": {
+      "path": "10.5",
+      "row": 1,
+      "scenario": "Language-agnostic API contract",
+      "line": 620
+    },
+    "TST-BRAIN-420": {
+      "path": "17.4",
+      "row": 1,
+      "scenario": "Brain behavior during active estate recovery",
+      "line": 790
+    },
+    "TST-BRAIN-421": {
+      "path": "17.4",
+      "row": 2,
+      "scenario": "ZKP credential verification for agent reputation",
+      "line": 790
+    },
+    "TST-BRAIN-422": {
+      "path": "17.4",
+      "row": 3,
+      "scenario": "SSS custodian recovery coordination",
+      "line": 790
     }
   },
   "sections": {

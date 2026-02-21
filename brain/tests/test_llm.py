@@ -199,3 +199,75 @@ async def test_llm_4_2_7_cost_tracking(mock_llm_client) -> None:
     # result = await mock_llm_client.complete("test")
     # assert "tokens_in" in result
     # assert "tokens_out" in result
+
+
+# ---------------------------------------------------------------------------
+# §4.1 Cloud LLM Consent Gate (2 scenarios) — arch §11
+# ---------------------------------------------------------------------------
+
+
+# TST-BRAIN-396
+def test_llm_4_1_13_cloud_consent_not_given_rejects(mock_llm_router) -> None:
+    """§4.1.13: Cloud LLM consent NOT given → health query rejected.
+
+    Architecture §11: Cloud LLM users must explicitly acknowledge consent
+    during setup. Without consent flag, sensitive persona queries to cloud
+    are blocked even if Entity Vault scrubbing would work.
+    """
+    pytest.skip("Cloud LLM consent gate not yet implemented")
+    # result = await mock_llm_router.route(
+    #     task_type="health_query",
+    #     prompt="What did Dr. Sharma say about my blood sugar?",
+    #     persona_tier="restricted",
+    #     cloud_llm_consent=False,
+    # )
+    # assert result["error"] == "cloud_llm_consent_required"
+
+
+# TST-BRAIN-397
+def test_llm_4_1_14_cloud_consent_given_processes(mock_llm_router) -> None:
+    """§4.1.14: Cloud LLM consent given → health query processed via Entity Vault + cloud.
+
+    Architecture §11: With consent, brain processes via Entity Vault scrub + cloud LLM.
+    """
+    pytest.skip("Cloud LLM consent gate not yet implemented")
+    # result = await mock_llm_router.route(
+    #     task_type="health_query",
+    #     prompt="What did Dr. Sharma say about my blood sugar?",
+    #     persona_tier="restricted",
+    #     cloud_llm_consent=True,
+    # )
+    # assert "error" not in result
+
+
+# ---------------------------------------------------------------------------
+# §4.1 Hybrid Search Merging (2 scenarios) — arch §04
+# ---------------------------------------------------------------------------
+
+
+# TST-BRAIN-403
+def test_llm_4_1_15_hybrid_search_merging_formula(mock_llm_router) -> None:
+    """§4.1.15: Hybrid search merges FTS5 + cosine with correct weights.
+
+    Architecture §04: relevance = 0.4 * fts5_rank + 0.6 * cosine_similarity.
+    """
+    pytest.skip("Hybrid search merging not yet implemented")
+    # result_a = make_search_result(fts5_rank=0.9, cosine_sim=0.5)
+    # result_b = make_search_result(fts5_rank=0.3, cosine_sim=0.95)
+    # merged = brain.merge_search_results([result_a], [result_b])
+    # assert merged[0]["relevance"] == pytest.approx(0.4 * 0.3 + 0.6 * 0.95)  # 0.69
+    # assert merged[1]["relevance"] == pytest.approx(0.4 * 0.9 + 0.6 * 0.5)  # 0.66
+
+
+# TST-BRAIN-404
+def test_llm_4_1_16_hybrid_search_dedup(mock_llm_router) -> None:
+    """§4.1.16: Hybrid search deduplicates items appearing in both result sets.
+
+    Architecture §04: Dedup applied to merged results — no duplicate items.
+    """
+    pytest.skip("Hybrid search merging not yet implemented")
+    # shared_item = make_search_result(item_id="item-shared", fts5_rank=0.8, cosine_sim=0.7)
+    # fts_results = [shared_item]
+    # cos_results = [shared_item]
+    # merged = brain.merge_search_results(fts_results, cos_results)
+    # assert len(merged) == 1  # deduplicated
