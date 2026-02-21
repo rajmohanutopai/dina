@@ -1,10 +1,11 @@
 """Integration tests for the digital estate system.
 
 Behavioral contracts tested:
-- Dead man's switch: Periodic liveness checks, escalation protocol, estate
-  mode activation, per-beneficiary key delivery, and data destruction.
+- SSS custodian recovery: Custodians holding Shamir's Secret Sharing shares
+  coordinate to reconstruct the master seed and activate estate mode.
+  Threshold must be met (e.g., 3-of-5). No timer-based liveness checks.
 - Estate configuration: Plan storage in Tier 0, manual trigger with recovery
-  phrase, multi-beneficiary threshold support.
+  phrase (primary mechanism), SSS custodian coordination.
 
 When the user is gone, Dina carries out their final wishes — distributing
 digital assets to named beneficiaries and destroying everything else.
@@ -33,69 +34,92 @@ from tests.integration.mocks import (
 
 
 # =========================================================================
-# TestDeadMansSwitch
+# TestCustodianRecovery
 # =========================================================================
 
-class TestDeadMansSwitch:
-    """Dina's dead man's switch — the final act of loyalty."""
+class TestCustodianRecovery:
+    """SSS custodian-based estate recovery — no timers, no false activations."""
 
-    def test_liveness_check_every_n_days(
+    def test_threshold_met_activates_estate(
         self,
         mock_estate_manager: MockEstateManager,
-        mock_human: MockHuman,
     ):
-        """Dina sends a liveness check at the configured interval (90 days).
-        A responsive user keeps the switch from triggering."""
-        mock_human.liveness_responses = [True]
+        """When the required number of custodians submit valid SSS shares,
+        estate mode is activated and the master seed can be reconstructed."""
+        # 3-of-5 threshold: submit 3 valid shares
+        share_1 = b"SSS_SHARE_CUSTODIAN_A_001"
+        share_2 = b"SSS_SHARE_CUSTODIAN_B_002"
+        share_3 = b"SSS_SHARE_CUSTODIAN_C_003"
 
-        alive = mock_estate_manager.liveness_check(mock_human)
-        assert alive is True
-        assert len(mock_estate_manager.liveness_checks) == 1
-        assert mock_estate_manager.liveness_checks[0]["responded"] is True
-        assert mock_estate_manager.estate_mode_active is False
+        assert mock_estate_manager.submit_share(share_1) is True
+        assert mock_estate_manager.submit_share(share_2) is True
+        assert mock_estate_manager.submit_share(share_3) is True
 
-    def test_three_attempts_over_two_weeks(
-        self,
-        mock_estate_manager: MockEstateManager,
-        mock_human: MockHuman,
-    ):
-        """If the user does not respond, Dina tries 3 times over 2 weeks
-        before activating estate mode."""
-        # User does not respond to any check
-        mock_human.liveness_responses = [False, False, False]
-
-        for _ in range(3):
-            alive = mock_estate_manager.liveness_check(mock_human)
-            assert alive is False
-
-        assert len(mock_estate_manager.liveness_checks) == 3
-        all_failed = all(
-            not check["responded"]
-            for check in mock_estate_manager.liveness_checks
-        )
-        assert all_failed is True
-
-        # After 3 failed attempts, enter estate mode
+        assert len(mock_estate_manager.shares_collected) == 3
         mock_estate_manager.enter_estate_mode()
         assert mock_estate_manager.estate_mode_active is True
+
+    def test_below_threshold_blocks_estate(
+        self,
+        mock_estate_manager: MockEstateManager,
+    ):
+        """If fewer custodians than the threshold submit shares,
+        estate mode cannot be activated."""
+        # Only 2 of 3 required shares submitted
+        share_1 = b"SSS_SHARE_CUSTODIAN_A_001"
+        share_2 = b"SSS_SHARE_CUSTODIAN_B_002"
+
+        assert mock_estate_manager.submit_share(share_1) is True
+        assert mock_estate_manager.submit_share(share_2) is True
+
+        assert len(mock_estate_manager.shares_collected) == 2
+
+        # Attempting to enter estate mode with insufficient shares fails
+        with pytest.raises(RuntimeError, match="2 shares collected, 3 required"):
+            mock_estate_manager.enter_estate_mode()
+
+        assert mock_estate_manager.estate_mode_active is False
+
+    def test_invalid_share_rejected(
+        self,
+        mock_estate_manager: MockEstateManager,
+    ):
+        """Corrupted or empty shares are rejected. They do not count
+        toward the threshold."""
+        share_valid_1 = b"SSS_SHARE_CUSTODIAN_A_001"
+        share_valid_2 = b"SSS_SHARE_CUSTODIAN_B_002"
+        share_corrupted = b"CORRUPTED"
+        share_empty = b""
+
+        assert mock_estate_manager.submit_share(share_valid_1) is True
+        assert mock_estate_manager.submit_share(share_corrupted) is False
+        assert mock_estate_manager.submit_share(share_empty) is False
+        assert mock_estate_manager.submit_share(share_valid_2) is True
+
+        # Only 2 valid shares collected — corrupted/empty ones rejected
+        assert len(mock_estate_manager.shares_collected) == 2
+
+        # Still below threshold (3 required)
+        with pytest.raises(RuntimeError):
+            mock_estate_manager.enter_estate_mode()
+
+        assert mock_estate_manager.estate_mode_active is False
 
     def test_estate_mode_notifies_beneficiaries(
         self,
         mock_estate_manager: MockEstateManager,
-        mock_human: MockHuman,
         mock_p2p: MockP2PChannel,
     ):
-        """When estate mode activates, beneficiaries are notified via
-        Dina-to-Dina P2P messages."""
+        """When estate mode activates via SSS threshold, beneficiaries are
+        notified via Dina-to-Dina P2P messages."""
         # All beneficiary DIDs must be authenticated peers for delivery
         for b in mock_estate_manager._plan.beneficiaries:
             mock_p2p.add_contact(b.dina_did)
             mock_p2p.authenticated_peers.add(b.dina_did)
 
-        # Trigger estate mode
-        mock_human.liveness_responses = [False, False, False]
-        for _ in range(3):
-            mock_estate_manager.liveness_check(mock_human)
+        # Submit enough shares to meet threshold
+        for i in range(3):
+            mock_estate_manager.submit_share(f"SSS_SHARE_{i}".encode())
         mock_estate_manager.enter_estate_mode()
 
         # Deliver keys
@@ -110,7 +134,6 @@ class TestDeadMansSwitch:
     def test_per_beneficiary_keys(
         self,
         mock_estate_manager: MockEstateManager,
-        mock_human: MockHuman,
         mock_p2p: MockP2PChannel,
     ):
         """Each beneficiary receives keys ONLY for the personas assigned
@@ -119,6 +142,9 @@ class TestDeadMansSwitch:
             mock_p2p.add_contact(b.dina_did)
             mock_p2p.authenticated_peers.add(b.dina_did)
 
+        # Meet threshold and enter estate mode
+        for i in range(3):
+            mock_estate_manager.submit_share(f"SSS_SHARE_{i}".encode())
         mock_estate_manager.enter_estate_mode()
         delivered = mock_estate_manager.deliver_keys(mock_p2p)
 
@@ -150,6 +176,9 @@ class TestDeadMansSwitch:
             mock_p2p.add_contact(b.dina_did)
             mock_p2p.authenticated_peers.add(b.dina_did)
 
+        # Meet threshold and enter estate mode
+        for i in range(3):
+            mock_estate_manager.submit_share(f"SSS_SHARE_{i}".encode())
         mock_estate_manager.enter_estate_mode()
         mock_estate_manager.deliver_keys(mock_p2p)
 
@@ -170,6 +199,9 @@ class TestDeadMansSwitch:
             mock_p2p.add_contact(b.dina_did)
             mock_p2p.authenticated_peers.add(b.dina_did)
 
+        # Meet threshold and enter estate mode
+        for i in range(3):
+            mock_estate_manager.submit_share(f"SSS_SHARE_{i}".encode())
         mock_estate_manager.enter_estate_mode()
         mock_estate_manager.deliver_keys(mock_p2p)
         mock_estate_manager.destroy_remaining()
@@ -188,8 +220,8 @@ class TestEstateConfiguration:
         """The estate plan is stored in Tier 0 (identity/config tier),
         the most protected storage layer."""
         plan = EstatePlan(
-            trigger="dead_mans_switch",
-            switch_interval_days=90,
+            trigger="custodian_threshold",
+            custodian_threshold=3,
             beneficiaries=[
                 EstateBeneficiary(
                     name="Partner",
@@ -203,7 +235,7 @@ class TestEstateConfiguration:
         # Serialize and store in Tier 0
         plan_data = {
             "trigger": plan.trigger,
-            "switch_interval_days": plan.switch_interval_days,
+            "custodian_threshold": plan.custodian_threshold,
             "beneficiaries": [
                 {
                     "name": b.name,
@@ -219,16 +251,17 @@ class TestEstateConfiguration:
 
         retrieved = mock_dina.vault.retrieve(0, "estate_plan")
         assert retrieved is not None
-        assert retrieved["trigger"] == "dead_mans_switch"
-        assert retrieved["switch_interval_days"] == 90
+        assert retrieved["trigger"] == "custodian_threshold"
+        assert retrieved["custodian_threshold"] == 3
         assert len(retrieved["beneficiaries"]) == 1
         assert retrieved["default_action"] == "destroy"
 
     def test_manual_trigger_with_recovery_phrase(
         self, mock_dina: MockDinaCore
     ):
-        """The user can manually trigger estate mode by entering their
-        BIP-39 recovery phrase — a deliberate, irreversible action."""
+        """The primary human-initiated trigger: next-of-kin provides the
+        BIP-39 recovery phrase to activate estate mode. This is the main
+        mechanism for estate recovery alongside SSS custodian coordination."""
         correct_mnemonic = mock_dina.identity.bip39_mnemonic
         wrong_mnemonic = "wrong " * 23 + "phrase"
 
@@ -243,14 +276,18 @@ class TestEstateConfiguration:
         ).hexdigest()
         assert provided_hash == expected_hash
 
-        # Manual trigger creates an estate manager and enters estate mode
-        estate = MockEstateManager(mock_dina.identity, EstatePlan())
+        # Manual trigger creates an estate manager with enough shares
+        # pre-loaded (recovery phrase bypasses SSS threshold)
+        plan = EstatePlan(custodian_threshold=1)
+        estate = MockEstateManager(mock_dina.identity, plan)
+        estate.submit_share(b"RECOVERY_PHRASE_SHARE")
         estate.enter_estate_mode()
         assert estate.estate_mode_active is True
 
-    def test_multi_beneficiary_threshold(self, mock_dina: MockDinaCore):
-        """Multiple beneficiaries can be configured, each with different
-        personas and access types. The plan supports at least 10 beneficiaries."""
+    def test_sss_custodian_coordination(self, mock_dina: MockDinaCore):
+        """SSS custodian coordination: multiple custodians present shares
+        (some physical QR, some digital via D2D) to meet the threshold.
+        No single custodian can trigger estate alone."""
         beneficiaries = []
         for i in range(10):
             persona = list(PersonaType)[i % len(PersonaType)]
@@ -264,8 +301,8 @@ class TestEstateConfiguration:
             )
 
         plan = EstatePlan(
-            trigger="dead_mans_switch",
-            switch_interval_days=90,
+            trigger="custodian_threshold",
+            custodian_threshold=3,
             beneficiaries=beneficiaries,
             default_action="destroy",
         )
@@ -282,11 +319,32 @@ class TestEstateConfiguration:
         assert len(full_access) == 5
         assert len(read_only) == 5
 
+        # Estate manager requires SSS threshold
+        estate = MockEstateManager(mock_dina.identity, plan)
+
+        # Single custodian cannot trigger alone
+        estate.submit_share(b"CUSTODIAN_1_SHARE")
+        with pytest.raises(RuntimeError):
+            estate.enter_estate_mode()
+
+        # Two custodians: still not enough
+        estate.submit_share(b"CUSTODIAN_2_SHARE")
+        with pytest.raises(RuntimeError):
+            estate.enter_estate_mode()
+
+        # Third custodian: threshold met
+        estate.submit_share(b"CUSTODIAN_3_SHARE")
+        estate.enter_estate_mode()
+        assert estate.estate_mode_active is True
+
         # Store in vault and verify retrieval
         plan_data = {
             "beneficiary_count": len(plan.beneficiaries),
             "trigger": plan.trigger,
+            "custodian_threshold": plan.custodian_threshold,
         }
         mock_dina.vault.store(0, "estate_plan_multi", plan_data)
         retrieved = mock_dina.vault.retrieve(0, "estate_plan_multi")
         assert retrieved["beneficiary_count"] == 10
+        assert retrieved["trigger"] == "custodian_threshold"
+        assert retrieved["custodian_threshold"] == 3

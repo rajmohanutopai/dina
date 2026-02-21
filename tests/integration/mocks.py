@@ -232,8 +232,8 @@ class EstateBeneficiary:
 @dataclass
 class EstatePlan:
     """Digital estate configuration."""
-    trigger: str = "dead_mans_switch"
-    switch_interval_days: int = 90
+    trigger: str = "custodian_threshold"
+    custodian_threshold: int = 3
     beneficiaries: list[EstateBeneficiary] = field(default_factory=list)
     default_action: str = "destroy"
 
@@ -249,8 +249,6 @@ class MockHuman:
         self.notifications: list[Notification] = []
         self.approval_responses: dict[str, bool] = {}  # action → approve/deny
         self.default_approve: bool = True
-        self.liveness_responses: list[bool] = []  # for dead man's switch
-        self._liveness_index: int = 0
 
     def receive_notification(self, notification: Notification) -> None:
         self.notifications.append(notification)
@@ -262,13 +260,6 @@ class MockHuman:
 
     def set_approval(self, action: str, approved: bool) -> None:
         self.approval_responses[action] = approved
-
-    def respond_to_liveness(self) -> bool:
-        if self._liveness_index < len(self.liveness_responses):
-            resp = self.liveness_responses[self._liveness_index]
-            self._liveness_index += 1
-            return resp
-        return False  # default: no response (simulates death/incapacity)
 
     def query(self, question: str) -> str:
         """Simulate user asking Dina a question."""
@@ -1438,28 +1429,38 @@ class MockThinClient:
 # ---------------------------------------------------------------------------
 
 class MockEstateManager:
-    """Digital estate — dead man's switch and beneficiary transfer."""
+    """Digital estate — SSS custodian-based recovery and beneficiary transfer."""
 
     def __init__(self, identity: MockIdentity,
                  plan: EstatePlan | None = None) -> None:
         self._identity = identity
         self._plan = plan or EstatePlan()
-        self.liveness_checks: list[dict[str, Any]] = []
+        self.shares_collected: list[bytes] = []
         self.estate_mode_active: bool = False
         self.keys_delivered: dict[str, list[PersonaType]] = {}
         self.data_destroyed: bool = False
 
-    def liveness_check(self, human: MockHuman) -> bool:
-        """Periodic liveness check — 'Still here?'"""
-        response = human.respond_to_liveness()
-        self.liveness_checks.append({
-            "timestamp": time.time(),
-            "responded": response,
-        })
-        return response
+    def submit_share(self, share: bytes) -> bool:
+        """Submit an SSS share from a custodian.
+
+        Returns True if the share is accepted (non-empty, valid bytes).
+        Returns False if the share is invalid (empty or corrupted marker).
+        """
+        if not share or share == b"CORRUPTED":
+            return False
+        self.shares_collected.append(share)
+        return True
 
     def enter_estate_mode(self) -> None:
-        """Enter estate mode after failed liveness checks."""
+        """Enter estate mode after custodian threshold is met.
+
+        Raises RuntimeError if insufficient shares have been collected.
+        """
+        if len(self.shares_collected) < self._plan.custodian_threshold:
+            raise RuntimeError(
+                f"Cannot enter estate mode: {len(self.shares_collected)} shares "
+                f"collected, {self._plan.custodian_threshold} required"
+            )
         self.estate_mode_active = True
 
     def deliver_keys(self, p2p: MockP2PChannel) -> dict[str, list[PersonaType]]:

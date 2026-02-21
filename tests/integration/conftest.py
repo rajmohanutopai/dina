@@ -284,8 +284,8 @@ def mock_thin_client() -> MockThinClient:
 @pytest.fixture
 def mock_estate_manager(mock_identity: MockIdentity) -> MockEstateManager:
     plan = EstatePlan(
-        trigger="dead_mans_switch",
-        switch_interval_days=90,
+        trigger="custodian_threshold",
+        custodian_threshold=3,
         beneficiaries=[
             EstateBeneficiary(
                 name="Daughter",

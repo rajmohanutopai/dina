@@ -880,25 +880,25 @@ prefixes.
 
 ### Suite 9: Digital Estate
 
-> Don Alonso's dead man's switch triggers. Albert receives scoped access to specific personas.
+> Don Alonso's custodians coordinate SSS recovery. Albert receives scoped access to specific personas.
 > Remaining data is destroyed — but only after all beneficiary keys are delivered.
 
-#### E2E-9.1: Dead Man's Switch — 3 Challenge Sequence
+#### E2E-9.1: SSS Custodian Recovery — Threshold Coordination
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
-| 1 | — | Test clock advances 90 days (switch_interval_days) | Don Alonso's Core (scheduler) | First challenge generated |
-| 2 | — | Challenge sent to Don Alonso's phone | Don Alonso's Core → Don Alonso's Phone WS | "Are you still there? Respond within 1 week." |
-| 3 | — | No response for 1 week | test clock | Timer expires |
-| 4 | — | Second challenge sent | Don Alonso's Core → Don Alonso's Phone WS | Second attempt |
-| 5 | — | No response for 1 week | test clock | Timer expires |
-| 6 | — | Third and final challenge | Don Alonso's Core → Don Alonso's Phone WS | Last attempt |
-| 7 | — | No response for 1 week (3 challenges over 2 weeks unanswered) | Don Alonso's Core | Estate mode activated |
+| 1 | Custodian A | Presents SSS share (digital, via D2D channel) | Custodian A's Core → Don Alonso's Core | Share accepted, 1 of 3 threshold collected |
+| 2 | Custodian B | Presents SSS share (digital, via D2D channel) | Custodian B's Core → Don Alonso's Core | Share accepted, 2 of 3 threshold collected |
+| 3 | — | Threshold not yet met (2 of 3) | Don Alonso's Core | Estate NOT activated — waiting for more shares |
+| 4 | Custodian C | Presents SSS share (physical QR code scanned at node) | Custodian C → Don Alonso's Core | Share accepted, 3 of 3 threshold met |
+| 5 | — | Core reconstructs master seed from 3 SSS shares | Don Alonso's Core (crypto) | Master seed reconstructed successfully |
+| 6 | — | Estate mode activated | Don Alonso's Core | Estate plan read from `identity.sqlite` Tier 0, estate mode entered |
 
 **Verification:**
-- Exactly 3 challenges sent over 2 weeks before triggering
+- Custodian threshold (3-of-5) must be met before estate activates
 - Estate plan read from `identity.sqlite` Tier 0
-- Configurable interval: `switch_interval_days: 90` (default)
+- No timer-based liveness checks — recovery is entirely human-initiated
+- No false activations from vacation, illness, or lost phone
 
 #### E2E-9.2: Beneficiary Key Delivery
 
@@ -931,16 +931,18 @@ prefixes.
 - Offline beneficiary keys remain in outbox with infinite retry (never abandoned)
 - Destruction is step 5 (last), after step 4 (deliver keys) — ordering is mandatory
 
-#### E2E-9.4: Manual Trigger with Recovery Phrase
+#### E2E-9.4: SSS Recovery with Physical Shares
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
-| 1 | Albert | Provides physical recovery phrase + death certificate | Don Alonso's Core (Admin UI) | Manual estate trigger — no dead man's switch needed |
-| 2 | — | Core verifies recovery phrase | Don Alonso's Core (crypto) | Phrase valid — estate mode activated |
-| 3 | — | Same beneficiary key delivery flow as E2E-9.2 | Don Alonso's Core → Albert | Keys delivered |
+| 1 | Albert | Retrieves physical SSS share (QR code from bank safe) | Albert → Don Alonso's Core | Physical share scanned and accepted |
+| 2 | Custodian A | Submits digital SSS share via D2D channel | Custodian A's Core → Don Alonso's Core | Digital share accepted |
+| 3 | Custodian B | Submits digital SSS share via D2D channel | Custodian B's Core → Don Alonso's Core | Digital share accepted — threshold met (3-of-5) |
+| 4 | — | Core reconstructs master seed from combined physical + digital shares | Don Alonso's Core (crypto) | Master seed reconstructed — estate mode activated |
+| 5 | — | Same beneficiary key delivery flow as E2E-9.2 | Don Alonso's Core → Albert | Keys delivered |
 
 **Verification:**
-- Alternative trigger bypasses automated dead man's switch
+- Physical and digital SSS shares can be combined to meet threshold
 - Same security guarantees: per-persona keys only, destruction gated on delivery
 
 ---
@@ -1493,7 +1495,7 @@ jobs:
 | Hybrid search (FTS5+vector) | Suite 4 | E2E-4.1 |
 | Agentic 5-step multi-step search | Suite 2 | E2E-2.1 (steps 9-12) |
 | BIP-39→SLIP-0010→HKDF→SQLCipher chain | Suite 1 | E2E-1.1 |
-| Dead man's switch trigger flow | Suite 9 | E2E-9.1 |
+| SSS custodian recovery flow | Suite 9 | E2E-9.1 |
 | Reputation publish→relay→query | Suite 12 | E2E-12.1 |
 | Outbox retry with exponential backoff | Suite 10 | E2E-10.4 |
 | Telegram ingestion (Bot API→Core) | Suite 5 | E2E-5.2 |

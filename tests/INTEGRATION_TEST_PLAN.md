@@ -465,27 +465,24 @@
 
 ---
 
-## 8. Digital Estate (Dead Man's Switch)
+## 8. Digital Estate (SSS Custodian Recovery)
 
 | # | Scenario | Setup | Expected |
 |---|----------|-------|----------|
-| 1 | Owner responds to challenge | Configurable interval passes → challenge sent | Owner responds → timer reset |
-| 2 | Owner misses first challenge | First challenge unanswered | Second challenge sent (1 week later) |
-| 3 | Owner misses all challenges | 3 challenges over 2 weeks unanswered | Digital estate activated |
+| 1 | Custodian threshold met | 3 of 5 custodians submit valid SSS shares | Estate mode activated, master seed reconstructed |
+| 2 | Below threshold | 2 of 5 custodians submit shares | Estate NOT activated — insufficient shares |
+| 3 | Invalid share submitted | 2 valid shares + 1 corrupted | Reconstruction fails, estate not activated |
 | 4 | Beneficiary key derivation | Estate activated for beneficiary A | Beneficiary receives keys for scoped personas only |
 | 5 | Beneficiary cannot access other personas | Beneficiary A tries persona not assigned to them | Access denied — key derivation only for assigned personas |
-| 6 | False positive prevention | Owner on vacation (auto-reply configured) | Challenge deferred by auto-reply or manual pre-configuration |
-| 7 | Estate cancellation | Owner returns after partial activation | Estate deactivated, all beneficiary keys revoked |
-| 8 | Estate plan stored in Tier 0 | Inspect identity.sqlite | `estate_plan` JSON in identity.sqlite (Tier 0) with `trigger`, `switch_interval_days`, `beneficiaries[]`, `default_action` |
-| 9 | Access type: `full_decrypt` | Beneficiary daughter receives `/persona/social` + `/persona/health` with `full_decrypt` | Per-beneficiary HKDF-derived keys for specified personas — full read/write access |
-| 10 | Access type: `read_only_90_days` | Colleague receives `/persona/professional` with `read_only_90_days` | Time-limited read-only access — keys expire after 90 days |
-| 11 | Default action: `destroy` | Estate fully executed, all beneficiary keys delivered | Remaining non-assigned data destroyed per `default_action: "destroy"` |
-| 12 | Keys delivered via D2D | Estate activates | Per-beneficiary decryption keys delivered via Dina-to-Dina encrypted channel (beneficiaries must have Dina) |
-| 13 | Configurable switch interval | `switch_interval_days: 180` | Challenge sent every 180 days instead of default 90 |
-| 14 | Alternative trigger: manual with recovery phrase | Next-of-kin provides physical recovery phrase + death certificate | Estate activated via manual verification — no dead man's switch needed |
-| 15 | Alternative trigger: multi-beneficiary threshold | 2 of 3 beneficiaries attest to death | Estate activated when threshold met — no single beneficiary can trigger alone |
-| 16 | Destruction gated on delivery confirmation | Estate activated, 2 of 3 beneficiaries reachable, 1 offline | Core does NOT execute `default_action: "destroy"` until ALL beneficiary key deliveries are confirmed via D2D acknowledgment. Offline beneficiary's keys remain in outbox with infinite retry. Destruction is irrecoverable — if data is destroyed before a beneficiary receives their persona DEKs, that data is permanently lost. Architecture §14 line 49: destroy is step 5 (last), after step 4 (deliver keys). Ordering is mandatory, not advisory |
-| 17 | Root seed NEVER in estate key payload | Estate activated, inspect D2D messages to beneficiaries | Each beneficiary receives ONLY the individual persona DEKs for their assigned personas — NOT the root seed, NOT the master key, NOT the wrapped_seed.bin. Architecture §14 line 47: "per-beneficiary decryption keys (derived from root, **limited to specified personas**)." If root seed were transmitted, any single beneficiary could derive ALL persona DEKs via HKDF, violating per-beneficiary scoping. Daughter with `/social` + `/health` keys CANNOT derive `/financial` DEK |
+| 6 | Estate plan stored in Tier 0 | Inspect identity.sqlite | `estate_plan` JSON in identity.sqlite (Tier 0) with `trigger`, `custodian_threshold`, `beneficiaries[]`, `default_action` |
+| 7 | Access type: `full_decrypt` | Beneficiary daughter receives `/persona/social` + `/persona/health` with `full_decrypt` | Per-beneficiary HKDF-derived keys for specified personas — full read/write access |
+| 8 | Access type: `read_only_90_days` | Colleague receives `/persona/professional` with `read_only_90_days` | Time-limited read-only access — keys expire after 90 days |
+| 9 | Default action: `destroy` | Estate fully executed, all beneficiary keys delivered | Remaining non-assigned data destroyed per `default_action: "destroy"` |
+| 10 | Keys delivered via D2D | Estate activates | Per-beneficiary decryption keys delivered via Dina-to-Dina encrypted channel (beneficiaries must have Dina) |
+| 11 | Manual trigger with recovery phrase | Next-of-kin provides physical recovery phrase + death certificate | Estate activated via manual verification — the primary human-initiated trigger for estate recovery |
+| 12 | SSS custodian coordination | 3 of 5 custodians present shares (some physical QR, some digital via D2D) | Estate activated when custodian threshold met — no single custodian can trigger alone. Shares are collected and verified; reconstruction requires the configured threshold (e.g., 3-of-5) |
+| 13 | Destruction gated on delivery confirmation | Estate activated, 2 of 3 beneficiaries reachable, 1 offline | Core does NOT execute `default_action: "destroy"` until ALL beneficiary key deliveries are confirmed via D2D acknowledgment. Offline beneficiary's keys remain in outbox with infinite retry. Destruction is irrecoverable — if data is destroyed before a beneficiary receives their persona DEKs, that data is permanently lost. Architecture §14 line 49: destroy is step 5 (last), after step 4 (deliver keys). Ordering is mandatory, not advisory |
+| 14 | Root seed NEVER in estate key payload | Estate activated, inspect D2D messages to beneficiaries | Each beneficiary receives ONLY the individual persona DEKs for their assigned personas — NOT the root seed, NOT the master key, NOT the wrapped_seed.bin. Architecture §14 line 47: "per-beneficiary decryption keys (derived from root, **limited to specified personas**)." If root seed were transmitted, any single beneficiary could derive ALL persona DEKs via HKDF, violating per-beneficiary scoping. Daughter with `/social` + `/health` keys CANNOT derive `/financial` DEK |
 
 ---
 

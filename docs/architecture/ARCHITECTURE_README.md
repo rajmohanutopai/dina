@@ -36,7 +36,7 @@
 | # | File | Lines | Topics |
 |---|------|------:|--------|
 | 13 | [Client Sync](13-client-sync.md) | 76 | Home node ↔ client sync model, sync protocol, failure handling |
-| 14 | [Digital Estate](14-digital-estate.md) | 54 | Pre-configuration, dead man's switch, alternative triggers |
+| 14 | [Digital Estate](14-digital-estate.md) | 54 | Pre-configuration, SSS custodian recovery, estate instructions |
 | 15 | [Architecture Decisions](15-architecture-decisions.md) | 91 | Why not IPFS/Ceramic/Web3, AT Protocol fit analysis |
 | 16 | [Technology Stack](16-technology-stack.md) | 74 | Full stack summary table |
 | 17 | [Infrastructure](17-infrastructure.md) | 733 | Docker deployment, LLM inference, client auth, WebSocket protocol, push notifications, HSM |

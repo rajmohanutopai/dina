@@ -238,7 +238,7 @@ Trust Score = f(
 - **Key rotation:** If root key is compromised, how does the user rotate while preserving reputation? Possible: pre-signed rotation certificate stored in recovery.
 - **Multi-device root:** ~~Does each device get a copy of the root key, or do devices get delegated sub-keys?~~ **Resolved:** Devices never hold the root key. Each device gets a CLIENT_TOKEN (32-byte random Bearer token) during the pairing ceremony. Root key stays on the Home Node. Compromised device = revoke one token, not lose root identity. Phase 2 may add Ed25519 device keypairs for signed requests/mutual TLS.
 - **Seed recovery:** ~~Single point of failure — BIP-39 mnemonic on paper is the only backup. Non-technical users will lose it.~~ **Resolved (Phase 2):** Shamir's Secret Sharing (3-of-5) splits the seed across trusted contacts and physical backups. Day 1 still uses paper mnemonic; SSS activates once the user has a sufficient trust graph.
-- **Death detection:** How does the Digital Estate know the user has died? Manual trigger by next-of-kin with physical access to recovery phrase? Time-based dead man's switch?
+- **Death detection:** ~~How does the Digital Estate know the user has died? Timer-based dead man's switch?~~ **Resolved:** Human-initiated via SSS custodian coordination. Same Shamir shares used for identity recovery. No timer — avoids false activations. Aligns with real-world probate.
 
 ---
 
