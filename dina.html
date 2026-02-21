@@ -426,13 +426,12 @@ section:first-of-type { padding-top: 140px; }
 
 <!-- SECTION 0: HERO -->
 <section id="hero">
-  <h1>Dina — <span>The Architecture of Agency</span></h1>
+  <h1>Dina <span>The Architecture of Agency</span></h1>
   <p class="tagline">A personal AI agent completely loyal to you and only you.<br>Inspired by the novel UTOPAI (2012-2017).</p>
   <div class="stats-grid">
     <div class="stat-card"><div class="num" style="color:var(--accent)">8</div><div class="label">Layers</div></div>
     <div class="stat-card"><div class="num" style="color:var(--c-brain)">4</div><div class="label">Containers</div></div>
     <div class="stat-card"><div class="num" style="color:var(--l1)">6</div><div class="label">Storage Tiers</div></div>
-    <div class="stat-card"><div class="num" style="color:var(--l3)">82</div><div class="label">Roadmap Items</div></div>
     <div class="stat-card"><div class="num" style="color:var(--l6)">3</div><div class="label">Networking Options</div></div>
   </div>
 </section>
@@ -634,6 +633,7 @@ const TOOLTIPS = {
   "signed-tombstones": { title: "Signed Tombstones", summary: "GDPR/DPDP-compliant deletion", detail: "AT Protocol supports signed deletion records (tombstones). When user deletes a reputation record, a signed tombstone is published to the PDS. Relays propagate deletion. AppView removes from index. Cryptographic proof of deletion intent.", alt: "Unlike blockchain (immutable), AT Protocol supports deletion — critical for GDPR Right to Erasure and India's DPDP Act." },
   "merkle-repo": { title: "Signed Merkle Repo", summary: "Tamper-evident data structure", detail: "AT Protocol PDS stores records in a Merkle Search Tree (MST). Every commit is signed by the user's Ed25519 key. Relay can verify: this record was signed by this DID, and the repo hasn't been tampered with. Delta sync: relay stores last root hash, fetches only new records.", alt: "Tamper evidence without blockchain: signed Merkle trees provide the same guarantee with deletion support." },
   "outcome-tracking": { title: "Outcome Tracking", summary: "Passive purchase feedback loop", detail: "Because Dina IS the buyer, she knows every purchase outcome automatically. Still using the laptop 6 months later? Returned the shoes? Battery died? 50%+ of purchases generate passive, honest outcome data. Anonymized before publishing to Reputation Graph.", alt: "Solves review bias: <5% of buyers leave reviews, and those are emotionally skewed. Outcome data is objective." },
+  "reputation-privacy-risk": { title: "Reputation Privacy Risk", summary: "DID linkability in reputation records", detail: "Reputation records are published to the user's PDS, which is tied to their did:plc. Even though content is anonymized (no name, no exact price), the DID itself is public — anyone who resolves a DID can see all that identity's reputation contributions and correlate purchases over time. Two candidate fixes: (1) SD-JWT (Selective Disclosure JWT): reputation record contains a blinded credential proving Ring 2 membership without revealing the DID. Verifier sees 'a unique verified human submitted this outcome' but cannot link it to other submissions. (2) ZKP with Nullifiers (Semaphore-style): user generates a ZK proof of group membership (Ring 2) plus a deterministic nullifier per product — prevents double-voting without revealing identity. Both approaches preserve Sybil resistance while breaking the DID-to-reputation link.", alt: "Current state: PDS records are pseudonymous (DID, not name) but linkable. Future state: unlinkable contributions with Sybil resistance. SD-JWT is simpler (IETF draft, JSON-based). ZKP with nullifiers is stronger (cryptographic unlinkability) but harder to implement." },
   "cold-start": { title: "Cold Start Strategy", summary: "Tool first, network second", detail: "Phase 1: Dina is useful as a personal tool (email triage, memory, drafts) with zero Reputation Graph data. Phase 2: As users join, outcome data accumulates naturally. No chicken-and-egg problem because the tool has standalone value.", alt: "Contrast with social networks that need critical mass. Dina is useful from Day 1 for a single user." },
   // --- Intelligence & LLM ---
   "guardian-angel": { title: "Guardian Angel Loop", summary: "Brain's core reasoning cycle", detail: "Continuous background process in dina-brain (Google ADK): monitors incoming messages, classifies silence tier, detects disconnect/loneliness patterns, assembles nudges, orchestrates agent delegation. The 'always thinking' layer that makes Dina proactive.", alt: "Named 'guardian angel' because it watches over you silently and only speaks when something matters." },
@@ -683,10 +683,11 @@ const PRINCIPLES = [
   { title: "Orchestrator, Not Doer", color: "var(--l4)", desc: "Dina is the CEO — she decides what needs doing and delegates to specialist agents via MCP. She tells OpenClaw to fetch your Gmail, tells a review bot to research chairs, tells a legal bot to check a contract. The agents do the work; Dina coordinates the result. Raw data never leaves the Home Node — agents get sanitised questions only." },
   { title: "Agent Safety Layer", color: "var(--l5)", desc: "Every agent acting on your behalf must submit its intent to Dina before executing. Safe tasks (fetch data, search) pass through silently. But any irreversible action — sending email, moving money, sharing personal data — is held and routed back to Dina for your approval. The agent never holds your keys, never sees your full history, and cannot bypass this gate. Dina is the checkpoint between AI capability and real-world consequence." },
   { title: "Cart Handover", color: "var(--l1)", desc: "Dina never touches money. She researches products, checks the Reputation Graph, assembles your options — then generates a payment link (UPI, crypto, or web checkout). You open GPay or Metamask and press Pay yourself. Dina never sees your bank balance, card number, or UPI PIN. The moment money moves, it is your finger on the button, not hers." },
-  { title: "Anti-Her", color: "var(--l0)", desc: "Named after the 2013 film. Dina must never become an emotional crutch. If she senses loneliness, she nudges you toward friends — 'You haven't talked to Sancho in a while' — never toward deeper engagement with herself. She is warm, loyal, and devoted. But she is not your friend. The meaning of life is in our relationships with other humans." },
-  { title: "Kernel Model", color: "var(--l3)", desc: "No plugins. No third-party code runs inside Dina. She communicates with the outside world through exactly two protocols: NaCl (talking to other Dinas) and MCP (delegating to agents). A compromised agent is just a misbehaving external process that Dina can disconnect. This eliminates entire categories of plugin vulnerabilities — no sandboxing, no scoped tokens, no review process needed." },
+  { title: "Anti-Her", color: "var(--l0)", desc: "Avoid becoming the AI in the 2013 film Her. Dina must never become an emotional crutch. If she senses loneliness, she nudges you toward friends — 'You haven't talked to Sancho in a while' — never toward deeper engagement with herself. She is warm, loyal, and devoted. But she is not your friend. The meaning of life is in our relationships with other humans." },
+  { title: "Kernel Model", color: "var(--l3)", desc: "No plugins. No third-party code runs inside Dina. She communicates with the outside world through exactly two protocols: NaCl (talking to other Dinas) and MCP (delegating to agents). A compromised agent is just a misbehaving external process that Dina can disconnect. This eliminates entire categories of plugin vulnerabilities." },
+  { title: "Trust No One", color: "var(--l7)", desc: "Dina assumes every layer could be compromised. The LLM could be prompt-injected. The network could be surveilled. There could be malware hiding in skills. Agents can be malicious. So the architecture is designed so that compromising any single layer doesn't breach the next: even Dina's own Brain never sees raw PII, the agent never holds your keys, the PDS never stores plaintext, and the vault is encrypted with keys only you possess. Paranoia is the design principle that makes every other principle enforceable." },
   { title: "Pull Economy", color: "var(--l6)", desc: "You pull verified truth on demand. Results ranked by reputation and real purchase outcomes. Dina talks to other Dinas and to trusted bots. Direct P2P transactions between buyer and seller. Misleading or sponsored bots are deprioritized automatically — their reputation drops with every inaccurate result." },
-  { title: "Deep Link Default", color: "var(--l2)", desc: "Dina credits sources: 'MKBHD says the battery is bad — check the stress test at 04:20, here is the link.' The creator gets high-quality, intent-driven traffic. The user gets truth with proof. A 'lost view' becomes a valuable, targeted view. Configurable, but the default is fair — creators deserve credit for the knowledge they produce." }
+  { title: "Deep Link Default", color: "var(--l2)", desc: "Dina credits sources: 'MKBHD says the battery is bad — check the stress test at 04:20, here is the link.' The creator gets high-quality, intent-driven traffic. The user gets truth with proof. A 'lost view' becomes a valuable, targeted view. Configurable, but the default is fair." }
 ];
 
 const CONTAINERS = [
@@ -968,7 +969,7 @@ function renderLayerStrip() {
   const strip = document.getElementById('layer-strip');
   strip.innerHTML = LAYERS.map(l => `
     <div class="layer-tab" data-layer="${l.id}" style="background:${l.color}22;color:${l.color}"
-      onclick="selectLayer(${l.id})">
+      onclick="selectLayerAndHash(${l.id})">
       <div style="font-size:1.1em">L${l.id}</div>
       <div>${l.name}</div>
     </div>`).join('');
@@ -1326,6 +1327,10 @@ function selectLayer(id) {
         </ul>
       </div>
     </div>`;
+}
+
+function selectLayerAndHash(id) {
+  selectLayer(id);
   history.replaceState(null, '', `#layer-${id}`);
 }
 
@@ -1657,6 +1662,9 @@ function renderReputation() {
       <div class="highlight" style="margin-top:16px">
         The anonymization happens in compiled Go code on your Home Node — not in an LLM that could be tricked. Default deny: if a field isn't in the allowed list, it's stripped before the data ever leaves.
       </div>
+      <div class="highlight" style="margin-top:16px; border-left: 3px solid #e74c6f; background: rgba(231,76,111,0.07);">
+        <strong>Open risk:</strong> Reputation records are published to your PDS, which is linked to your did:plc. Even though the <em>content</em> is anonymized, the DID is public — anyone who resolves your DID can see all your reputation contributions, correlating purchases over time. Fix: <strong>SD-JWT</strong> (Selective Disclosure JWT) or <strong>ZKP with Nullifiers</strong> (Semaphore-style) to decouple reputation contributions from identity while still preventing Sybil attacks — each human can contribute once per product without revealing which DID they are. To be addressed in a future phase.
+      </div>
     </div>
 
     <div class="story-block">
@@ -1687,7 +1695,7 @@ function renderReputation() {
       <p>Imagine a world where the best chair-maker wins because 500 people are still sitting comfortably after a year — and that data is available to anyone who asks.</p>
       <p style="margin-top:12px">Dina lets you <strong>pull</strong> verified truth on demand. Results ranked by reputation and real purchase outcomes. You ask, Dina fetches the best available answer from the Reputation Graph, and you decide. Bots that provide misleading information or push sponsored content are deprioritized automatically — their reputation score drops with every inaccurate result, and they surface lower in future queries.</p>
       <div class="highlight">
-        <strong>Deep Link Default:</strong> Dina credits sources. <em>"MKBHD says the battery is bad — check the stress test at 04:20, here's the link."</em> The creator gets high-quality, intent-driven traffic. The user gets truth with proof. Deep linking is the default because it's fair — creators deserve credit for the knowledge they produce.
+        <strong>Deep Link Default:</strong> Dina credits sources. <em>"MKBHD says the battery is bad — check the stress test at 04:20, here's the link."</em> The creator gets high-quality, intent-driven traffic. The user gets truth with proof. Deep linking is the default because it's fair.
       </div>
     </div>`;
 }
@@ -1790,7 +1798,7 @@ renderPrinciples();
 renderContainerDiagram();
 renderProfiles();
 renderLayerStrip();
-selectLayer(0);
+if (!location.hash.match(/^#layer-\d$/)) selectLayer(0);
 renderSecurity();
 renderTech();
 renderNetworking();
