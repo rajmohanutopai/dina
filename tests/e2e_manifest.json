@@ -1,0 +1,452 @@
+{
+  "scenarios": {
+    "TST-E2E-001": {
+      "scenario": "Complete First-Run Setup (Managed Hosting)",
+      "path": "1.1",
+      "suite": "First Run & Onboarding",
+      "line": 191
+    },
+    "TST-E2E-002": {
+      "scenario": "Device Pairing \u2014 Phone",
+      "path": "1.2",
+      "suite": "First Run & Onboarding",
+      "line": 214
+    },
+    "TST-E2E-003": {
+      "scenario": "Second Device Pairing \u2014 Laptop",
+      "path": "1.3",
+      "suite": "First Run & Onboarding",
+      "line": 229
+    },
+    "TST-E2E-004": {
+      "scenario": "Progressive Disclosure \u2014 Day 7 Mnemonic Backup",
+      "path": "1.4",
+      "suite": "First Run & Onboarding",
+      "line": 241
+    },
+    "TST-E2E-005": {
+      "scenario": "BIP-39 Recovery on New Device",
+      "path": "1.5",
+      "suite": "First Run & Onboarding",
+      "line": 254
+    },
+    "TST-E2E-006": {
+      "scenario": "Exactly One Root Identity Enforced",
+      "path": "1.6",
+      "suite": "First Run & Onboarding",
+      "line": 267
+    },
+    "TST-E2E-007": {
+      "scenario": "Complete 9-Step Arrival Flow",
+      "path": "2.1",
+      "suite": "The Sancho Moment (Flagship D2D)",
+      "line": 285
+    },
+    "TST-E2E-008": {
+      "scenario": "Sharing Policy Blocks Context",
+      "path": "2.2",
+      "suite": "The Sancho Moment (Flagship D2D)",
+      "line": 310
+    },
+    "TST-E2E-009": {
+      "scenario": "DND / Do Not Disturb Context",
+      "path": "2.3",
+      "suite": "The Sancho Moment (Flagship D2D)",
+      "line": 324
+    },
+    "TST-E2E-010": {
+      "scenario": "Vault-Locked Dead Drop",
+      "path": "2.4",
+      "suite": "The Sancho Moment (Flagship D2D)",
+      "line": 338
+    },
+    "TST-E2E-011": {
+      "scenario": "Bidirectional D2D Exchange",
+      "path": "2.5",
+      "suite": "The Sancho Moment (Flagship D2D)",
+      "line": 354
+    },
+    "TST-E2E-012": {
+      "scenario": "Egress Audit Trail Completeness",
+      "path": "2.6",
+      "suite": "The Sancho Moment (Flagship D2D)",
+      "line": 366
+    },
+    "TST-E2E-013": {
+      "scenario": "Product Research via ReviewBot",
+      "path": "3.1",
+      "suite": "Product Research & Purchase",
+      "line": 385
+    },
+    "TST-E2E-014": {
+      "scenario": "Reputation Graph Check",
+      "path": "3.2",
+      "suite": "Product Research & Purchase",
+      "line": 402
+    },
+    "TST-E2E-015": {
+      "scenario": "Cart Handover \u2014 Dina Never Touches Money",
+      "path": "3.3",
+      "suite": "Product Research & Purchase",
+      "line": 415
+    },
+    "TST-E2E-016": {
+      "scenario": "D2D Commerce with ChairMaker",
+      "path": "3.4",
+      "suite": "Product Research & Purchase",
+      "line": 431
+    },
+    "TST-E2E-017": {
+      "scenario": "Cold Start \u2014 Web Search Fallback (Phase 1)",
+      "path": "3.5",
+      "suite": "Product Research & Purchase",
+      "line": 444
+    },
+    "TST-E2E-018": {
+      "scenario": "Outcome Reporting to Reputation Graph",
+      "path": "3.6",
+      "suite": "Product Research & Purchase",
+      "line": 458
+    },
+    "TST-E2E-019": {
+      "scenario": "Hybrid Search (FTS5 + Vector)",
+      "path": "4.1",
+      "suite": "Memory & Recall",
+      "line": 480
+    },
+    "TST-E2E-020": {
+      "scenario": "Emotional Recall",
+      "path": "4.2",
+      "suite": "Memory & Recall",
+      "line": 497
+    },
+    "TST-E2E-021": {
+      "scenario": "Offline Recall (Rich Client Cache)",
+      "path": "4.3",
+      "suite": "Memory & Recall",
+      "line": 511
+    },
+    "TST-E2E-022": {
+      "scenario": "Cross-Persona Search Isolation",
+      "path": "4.4",
+      "suite": "Memory & Recall",
+      "line": 526
+    },
+    "TST-E2E-023": {
+      "scenario": "Gmail Two-Pass Triage",
+      "path": "5.1",
+      "suite": "Ingestion Pipeline",
+      "line": 548
+    },
+    "TST-E2E-024": {
+      "scenario": "Telegram Ingestion (Bot API \u2192 Core)",
+      "path": "5.2",
+      "suite": "Ingestion Pipeline",
+      "line": 569
+    },
+    "TST-E2E-025": {
+      "scenario": "Calendar Sync with Rolling Window",
+      "path": "5.3",
+      "suite": "Ingestion Pipeline",
+      "line": 583
+    },
+    "TST-E2E-026": {
+      "scenario": "Cursor Continuity Across Restart",
+      "path": "5.4",
+      "suite": "Ingestion Pipeline",
+      "line": 597
+    },
+    "TST-E2E-027": {
+      "scenario": "OAuth Refresh Handled by OpenClaw",
+      "path": "5.5",
+      "suite": "Ingestion Pipeline",
+      "line": 611
+    },
+    "TST-E2E-028": {
+      "scenario": "Startup Fast Sync + Background Backfill",
+      "path": "5.6",
+      "suite": "Ingestion Pipeline",
+      "line": 623
+    },
+    "TST-E2E-029": {
+      "scenario": "License Renewal Delegation",
+      "path": "6.1",
+      "suite": "Agent Safety & Delegation",
+      "line": 646
+    },
+    "TST-E2E-030": {
+      "scenario": "Draft-Don't-Send for Email",
+      "path": "6.2",
+      "suite": "Agent Safety & Delegation",
+      "line": 663
+    },
+    "TST-E2E-031": {
+      "scenario": "Malicious Bot Blocking",
+      "path": "6.3",
+      "suite": "Agent Safety & Delegation",
+      "line": 677
+    },
+    "TST-E2E-032": {
+      "scenario": "Agent Intent Verification",
+      "path": "6.4",
+      "suite": "Agent Safety & Delegation",
+      "line": 693
+    },
+    "TST-E2E-033": {
+      "scenario": "Task Queue Crash Recovery",
+      "path": "6.5",
+      "suite": "Agent Safety & Delegation",
+      "line": 708
+    },
+    "TST-E2E-034": {
+      "scenario": "Dead Letter Notification",
+      "path": "6.6",
+      "suite": "Agent Safety & Delegation",
+      "line": 724
+    },
+    "TST-E2E-035": {
+      "scenario": "Full 3-Tier PII Pipeline",
+      "path": "7.1",
+      "suite": "Privacy & PII Protection",
+      "line": 744
+    },
+    "TST-E2E-036": {
+      "scenario": "Entity Vault Lifecycle",
+      "path": "7.2",
+      "suite": "Privacy & PII Protection",
+      "line": 763
+    },
+    "TST-E2E-037": {
+      "scenario": "Prompt Injection Neutralization",
+      "path": "7.3",
+      "suite": "Privacy & PII Protection",
+      "line": 780
+    },
+    "TST-E2E-038": {
+      "scenario": "PII Scrubbing Always Local",
+      "path": "7.4",
+      "suite": "Privacy & PII Protection",
+      "line": 794
+    },
+    "TST-E2E-039": {
+      "scenario": "Health Entity Vault",
+      "path": "8.1",
+      "suite": "Sensitive Personas",
+      "line": 815
+    },
+    "TST-E2E-040": {
+      "scenario": "Financial Persona Lock/Unlock/TTL",
+      "path": "8.2",
+      "suite": "Sensitive Personas",
+      "line": 830
+    },
+    "TST-E2E-041": {
+      "scenario": "Cross-Persona Isolation Enforcement",
+      "path": "8.3",
+      "suite": "Sensitive Personas",
+      "line": 848
+    },
+    "TST-E2E-042": {
+      "scenario": "Cloud LLM Consent for Sensitive Personas",
+      "path": "8.4",
+      "suite": "Sensitive Personas",
+      "line": 864
+    },
+    "TST-E2E-043": {
+      "scenario": "SSS Custodian Recovery \u2014 Threshold Coordination",
+      "path": "9.1",
+      "suite": "Digital Estate",
+      "line": 886
+    },
+    "TST-E2E-044": {
+      "scenario": "Beneficiary Key Delivery",
+      "path": "9.2",
+      "suite": "Digital Estate",
+      "line": 903
+    },
+    "TST-E2E-045": {
+      "scenario": "Destruction Gated on Delivery Confirmation",
+      "path": "9.3",
+      "suite": "Digital Estate",
+      "line": 918
+    },
+    "TST-E2E-046": {
+      "scenario": "SSS Recovery with Physical Shares",
+      "path": "9.4",
+      "suite": "Digital Estate",
+      "line": 934
+    },
+    "TST-E2E-047": {
+      "scenario": "Brain Crash + Scratchpad Resume",
+      "path": "10.1",
+      "suite": "Resilience & Recovery",
+      "line": 955
+    },
+    "TST-E2E-048": {
+      "scenario": "Core WAL Recovery After Power Loss",
+      "path": "10.2",
+      "suite": "Resilience & Recovery",
+      "line": 971
+    },
+    "TST-E2E-049": {
+      "scenario": "Full Stack Power Loss",
+      "path": "10.3",
+      "suite": "Resilience & Recovery",
+      "line": 986
+    },
+    "TST-E2E-050": {
+      "scenario": "Dead Letter Queue Processing",
+      "path": "10.4",
+      "suite": "Resilience & Recovery",
+      "line": 1002
+    },
+    "TST-E2E-051": {
+      "scenario": "Disk Full Scenario",
+      "path": "10.5",
+      "suite": "Resilience & Recovery",
+      "line": 1016
+    },
+    "TST-E2E-052": {
+      "scenario": "Batch Ingestion Atomicity",
+      "path": "10.6",
+      "suite": "Resilience & Recovery",
+      "line": 1031
+    },
+    "TST-E2E-053": {
+      "scenario": "Real-Time Multi-Device Push",
+      "path": "11.1",
+      "suite": "Multi-Device & Sync",
+      "line": 1051
+    },
+    "TST-E2E-054": {
+      "scenario": "Offline Sync Reconciliation",
+      "path": "11.2",
+      "suite": "Multi-Device & Sync",
+      "line": 1066
+    },
+    "TST-E2E-055": {
+      "scenario": "Thin Client \u2014 No Local Storage",
+      "path": "11.3",
+      "suite": "Multi-Device & Sync",
+      "line": 1081
+    },
+    "TST-E2E-056": {
+      "scenario": "Rich Client Offline Operations",
+      "path": "11.4",
+      "suite": "Multi-Device & Sync",
+      "line": 1096
+    },
+    "TST-E2E-057": {
+      "scenario": "Cache Corruption Recovery",
+      "path": "11.5",
+      "suite": "Multi-Device & Sync",
+      "line": 1114
+    },
+    "TST-E2E-058": {
+      "scenario": "Heartbeat and Stale Connection Cleanup",
+      "path": "11.6",
+      "suite": "Multi-Device & Sync",
+      "line": 1128
+    },
+    "TST-E2E-059": {
+      "scenario": "Expert Attestation Publish \u2192 Relay \u2192 Query",
+      "path": "12.1",
+      "suite": "Reputation Graph Lifecycle",
+      "line": 1150
+    },
+    "TST-E2E-060": {
+      "scenario": "Bot Reputation Degradation",
+      "path": "12.2",
+      "suite": "Reputation Graph Lifecycle",
+      "line": 1166
+    },
+    "TST-E2E-061": {
+      "scenario": "Signed Tombstone Deletion",
+      "path": "12.3",
+      "suite": "Reputation Graph Lifecycle",
+      "line": 1181
+    },
+    "TST-E2E-062": {
+      "scenario": "Trust Score Computation",
+      "path": "12.4",
+      "suite": "Reputation Graph Lifecycle",
+      "line": 1196
+    },
+    "TST-E2E-063": {
+      "scenario": "AT Protocol Discovery",
+      "path": "12.5",
+      "suite": "Reputation Graph Lifecycle",
+      "line": 1209
+    },
+    "TST-E2E-064": {
+      "scenario": "AppView Determinism",
+      "path": "12.6",
+      "suite": "Reputation Graph Lifecycle",
+      "line": 1222
+    },
+    "TST-E2E-065": {
+      "scenario": "DDoS + Rate Limiting",
+      "path": "13.1",
+      "suite": "Security Adversarial",
+      "line": 1243
+    },
+    "TST-E2E-066": {
+      "scenario": "Dead Drop Abuse Prevention",
+      "path": "13.2",
+      "suite": "Security Adversarial",
+      "line": 1257
+    },
+    "TST-E2E-067": {
+      "scenario": "Replay Attack Prevention",
+      "path": "13.3",
+      "suite": "Security Adversarial",
+      "line": 1272
+    },
+    "TST-E2E-068": {
+      "scenario": "Cross-Persona Violation Attempt",
+      "path": "13.4",
+      "suite": "Security Adversarial",
+      "line": 1285
+    },
+    "TST-E2E-069": {
+      "scenario": "Oversized Payload Attack",
+      "path": "13.5",
+      "suite": "Security Adversarial",
+      "line": 1301
+    },
+    "TST-E2E-070": {
+      "scenario": "Log Exfiltration Prevention",
+      "path": "13.6",
+      "suite": "Security Adversarial",
+      "line": 1315
+    },
+    "TST-E2E-071": {
+      "scenario": "Token Brute Force",
+      "path": "13.7",
+      "suite": "Security Adversarial",
+      "line": 1332
+    },
+    "TST-E2E-072": {
+      "scenario": "DID Spoofing",
+      "path": "13.8",
+      "suite": "Security Adversarial",
+      "line": 1346
+    },
+    "TST-E2E-073": {
+      "scenario": "Relay Cannot Read Content",
+      "path": "13.9",
+      "suite": "Security Adversarial",
+      "line": 1359
+    },
+    "TST-E2E-074": {
+      "scenario": "Data Sovereignty on Disk",
+      "path": "13.10",
+      "suite": "Security Adversarial",
+      "line": 1372
+    }
+  },
+  "summary": {
+    "total": 74,
+    "suites": 13
+  }
+}

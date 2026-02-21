@@ -31,6 +31,7 @@ from tests.integration.mocks import (
 class TestRing1Unverified:
     """Ring 1: anonymous / unverified entities. Lowest trust."""
 
+# TST-INT-313
     def test_created_without_id(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -47,6 +48,7 @@ class TestRing1Unverified:
         # Ring 1 base is 5.0 with zero history
         assert score == 5.0
 
+# TST-INT-570
     def test_limited_transactions(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -72,6 +74,7 @@ class TestRing1Unverified:
         approved = mock_dina.approve_intent(intent, mock_human)
         assert approved is False
 
+# TST-INT-571
     def test_low_trust_weight(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -90,6 +93,7 @@ class TestRing1Unverified:
         # But above the bare minimum
         assert score > 5.0
 
+# TST-INT-572
     def test_polite_but_cautious(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -115,6 +119,7 @@ class TestRing1Unverified:
         )
         assert mock_dina.classify_action_risk(share_intent) == ActionRisk.HIGH
 
+# TST-INT-573
     def test_unverified_attestation_has_low_impact(
         self, mock_reputation_graph: MockReputationGraph
     ) -> None:
@@ -143,6 +148,7 @@ class TestRing1Unverified:
 class TestRing2Verified:
     """Ring 2: ZKP-verified unique person. No identity revealed."""
 
+# TST-INT-574
     def test_zkp_proves_unique_person(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -159,6 +165,7 @@ class TestRing2Verified:
         # Ring 2 base is 30.0 — 6x higher than Ring 1
         assert score == 30.0
 
+# TST-INT-575
     def test_higher_trust_than_ring_1(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -180,6 +187,7 @@ class TestRing2Verified:
         assert ring2_score > ring1_score
         assert ring2_score - ring1_score >= 25.0  # base diff is 25
 
+# TST-INT-315
     def test_no_identity_revealed(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -198,6 +206,7 @@ class TestRing2Verified:
         assert mock_identity.verify(data, signature) is True
         assert mock_identity.verify(b"tampered", signature) is False
 
+# TST-INT-576
     def test_larger_transactions_allowed(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -229,6 +238,7 @@ class TestRing3AndBeyond:
     transaction history, peer attestation, time factor.
     """
 
+# TST-INT-577
     def test_linkedin_anchor(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -253,6 +263,7 @@ class TestRing3AndBeyond:
         )
         assert with_cred > without_cred
 
+# TST-INT-578
     def test_business_registration(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -277,6 +288,7 @@ class TestRing3AndBeyond:
         )
         assert two_creds > one_cred
 
+# TST-INT-579
     def test_transaction_history(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -301,6 +313,7 @@ class TestRing3AndBeyond:
         )
         assert high_tx > low_tx
 
+# TST-INT-312
     def test_peer_attestation(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -325,6 +338,7 @@ class TestRing3AndBeyond:
         )
         assert with_peers > no_peers
 
+# TST-INT-580
     def test_time_factor(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -349,6 +363,7 @@ class TestRing3AndBeyond:
         )
         assert old_account > new_account
 
+# TST-INT-581
     def test_ring3_base_higher_than_ring2(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -382,6 +397,7 @@ class TestRing3AndBeyond:
 class TestTrustComposite:
     """The composite trust function combines all factors."""
 
+# TST-INT-582
     def test_composite_calculation(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -398,6 +414,7 @@ class TestTrustComposite:
         # Each factor is capped; total capped at 100.0
         assert score == 100.0
 
+# TST-INT-583
     def test_all_factors_contribute(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -473,6 +490,7 @@ class TestTrustComposite:
         )
         assert with_creds > base
 
+# TST-INT-584
     def test_rug_pull_assessment(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -506,6 +524,7 @@ class TestTrustComposite:
         # The gap should be significant
         assert established_seller - rug_pull_risk > 40.0
 
+# TST-INT-314
     def test_trust_degrades_with_bad_behavior(
         self, mock_reputation_graph: MockReputationGraph
     ) -> None:
@@ -525,6 +544,7 @@ class TestTrustComposite:
         assert degraded < initial
         assert degraded == 15.0  # 90 - 75
 
+# TST-INT-585
     def test_trust_score_capped_at_100(
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
@@ -540,6 +560,7 @@ class TestTrustComposite:
         )
         assert score == 100.0
 
+# TST-INT-311
     def test_trust_score_floor_at_zero(
         self, mock_reputation_graph: MockReputationGraph
     ) -> None:
@@ -553,6 +574,7 @@ class TestTrustComposite:
         score = mock_reputation_graph.get_bot_score(bot_did)
         assert score == 0.0
 
+# TST-INT-586
     def test_outcome_reports_from_different_rings(
         self, mock_reputation_graph: MockReputationGraph
     ) -> None:
@@ -581,6 +603,7 @@ class TestTrustComposite:
             TrustRing.RING_3_SKIN_IN_GAME,
         }
 
+# TST-INT-587
     def test_signed_tombstone_only_by_author(
         self, mock_reputation_graph: MockReputationGraph,
         mock_identity: MockIdentity,

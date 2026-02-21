@@ -35,6 +35,7 @@ from tests.integration.mocks import (
 class TestDraftProtocol:
     """Verify that outbound messages are drafted, never sent directly."""
 
+# TST-INT-487
     def test_email_draft_created_not_sent(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -57,6 +58,7 @@ class TestDraftProtocol:
         assert retrieved.to == "colleague@work.com"
         assert retrieved.subject == "Meeting notes"
 
+# TST-INT-488
     def test_draft_has_confidence_score(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -78,6 +80,7 @@ class TestDraftProtocol:
         assert 0.0 <= retrieved.confidence <= 1.0
         assert retrieved.confidence == 0.78
 
+# TST-INT-489
     def test_auto_expires_72h(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -107,6 +110,7 @@ class TestDraftProtocol:
         assert expired_count == 1
         assert staging.get(draft.draft_id) is None
 
+# TST-INT-296
     def test_high_risk_never_drafted(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -129,6 +133,7 @@ class TestDraftProtocol:
         # if approval fails. Here we assert staging is empty.)
         assert mock_dina.staging._items == {}
 
+# TST-INT-490
     def test_user_reviews_before_sending(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
     ) -> None:
@@ -155,6 +160,7 @@ class TestDraftProtocol:
 
         assert retrieved.sent is True
 
+# TST-INT-292
     def test_delegated_agent_also_drafts_only(
         self, mock_dina: MockDinaCore, mock_legal_bot: MockLegalBot,
     ) -> None:
@@ -185,6 +191,7 @@ class TestDraftProtocol:
 class TestPaymentIntentProtocol:
     """Verify that Dina generates payment intents, never executes payments."""
 
+# TST-INT-491
     def test_upi_intent_generated(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -210,6 +217,7 @@ class TestPaymentIntentProtocol:
         assert retrieved.executed is False
         assert retrieved.amount == 95000.0
 
+# TST-INT-492
     def test_crypto_intent(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -233,6 +241,7 @@ class TestPaymentIntentProtocol:
         assert "ethereum:" in retrieved.intent_uri
         assert retrieved.executed is False
 
+# TST-INT-293
     def test_web_checkout_link(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -256,6 +265,7 @@ class TestPaymentIntentProtocol:
         assert "https://" in retrieved.intent_uri
         assert retrieved.executed is False
 
+# TST-INT-493
     def test_dina_never_sees_payment_credentials(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -284,6 +294,7 @@ class TestPaymentIntentProtocol:
             assert pattern not in intent_str, \
                 f"Sensitive pattern '{pattern}' found in payment intent"
 
+# TST-INT-494
     def test_outcome_recorded_for_reputation(
         self, mock_dina: MockDinaCore,
     ) -> None:

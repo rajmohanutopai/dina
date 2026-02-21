@@ -32,6 +32,7 @@ from tests.integration.mocks import (
 class TestPIIScrubbing:
     """Verify that every category of PII is reliably scrubbed."""
 
+# TST-INT-529
     def test_name_scrubbed(self, mock_scrubber: MockPIIScrubber) -> None:
         """Personal names are replaced with opaque tokens."""
         text = "Rajmohan is heading to the office."
@@ -41,6 +42,7 @@ class TestPIIScrubbing:
         assert "[PERSON_1]" in scrubbed
         assert replacements["[PERSON_1]"] == "Rajmohan"
 
+# TST-INT-530
     def test_email_scrubbed(self, mock_scrubber: MockPIIScrubber) -> None:
         """Email addresses are replaced with opaque tokens."""
         text = "Please contact rajmohan@email.com for details."
@@ -50,6 +52,7 @@ class TestPIIScrubbing:
         assert "[EMAIL_1]" in scrubbed
         assert replacements["[EMAIL_1]"] == "rajmohan@email.com"
 
+# TST-INT-531
     def test_address_scrubbed(self, mock_scrubber: MockPIIScrubber) -> None:
         """Physical addresses are replaced with opaque tokens."""
         text = "Ship to 123 Main Street, please."
@@ -59,6 +62,7 @@ class TestPIIScrubbing:
         assert "[ADDRESS_1]" in scrubbed
         assert replacements["[ADDRESS_1]"] == "123 Main Street"
 
+# TST-INT-532
     def test_phone_scrubbed(self, mock_scrubber: MockPIIScrubber) -> None:
         """Phone numbers are replaced with opaque tokens."""
         text = "Call me at +91-9876543210."
@@ -68,6 +72,7 @@ class TestPIIScrubbing:
         assert "[PHONE_1]" in scrubbed
         assert replacements["[PHONE_1]"] == "+91-9876543210"
 
+# TST-INT-533
     def test_financial_data_scrubbed(self, mock_scrubber: MockPIIScrubber) -> None:
         """Credit card numbers and financial identifiers are scrubbed."""
         text = "My card is 4111-2222-3333-4444 and Aadhaar is XXXX-XXXX-1234."
@@ -78,6 +83,7 @@ class TestPIIScrubbing:
         assert "[CC_NUM]" in scrubbed
         assert "[AADHAAR]" in scrubbed
 
+# TST-INT-152
     def test_health_data_scrubbed(self, mock_scrubber: MockPIIScrubber) -> None:
         """Health data containing PII (names, contacts) is scrubbed."""
         text = (
@@ -93,6 +99,7 @@ class TestPIIScrubbing:
         assert "prescribed medication" in scrubbed
         assert len(replacements) >= 3
 
+# TST-INT-082
     def test_scrubbed_query_still_useful(
         self, mock_scrubber: MockPIIScrubber
     ) -> None:
@@ -125,6 +132,7 @@ class TestPIIScrubbing:
 class TestDataBoundary:
     """Verify that the cloud LLM never sees raw user data."""
 
+# TST-INT-151
     def test_bot_receives_question_not_data(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -145,6 +153,7 @@ class TestDataBoundary:
             c["endpoint"] == "/v1/pii/scrub" for c in mock_dina.go_core.api_calls
         )
 
+# TST-INT-534
     def test_response_comes_back_clean(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -165,6 +174,7 @@ class TestDataBoundary:
         assert "[PERSON_1]" not in restored
         assert "[EMAIL_1]" not in restored
 
+# TST-INT-081
     def test_no_data_exfiltration_via_prompt_injection(
         self, mock_dina: MockDinaCore
     ) -> None:

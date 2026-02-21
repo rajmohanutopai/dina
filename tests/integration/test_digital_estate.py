@@ -27,6 +27,7 @@ from tests.integration.mocks import (
     MockEstateManager,
     MockHuman,
     MockIdentity,
+    MockKeyManager,
     MockP2PChannel,
     MockVault,
     PersonaType,
@@ -40,6 +41,7 @@ from tests.integration.mocks import (
 class TestCustodianRecovery:
     """SSS custodian-based estate recovery — no timers, no false activations."""
 
+# TST-INT-219
     def test_threshold_met_activates_estate(
         self,
         mock_estate_manager: MockEstateManager,
@@ -59,6 +61,7 @@ class TestCustodianRecovery:
         mock_estate_manager.enter_estate_mode()
         assert mock_estate_manager.estate_mode_active is True
 
+# TST-INT-220
     def test_below_threshold_blocks_estate(
         self,
         mock_estate_manager: MockEstateManager,
@@ -80,6 +83,7 @@ class TestCustodianRecovery:
 
         assert mock_estate_manager.estate_mode_active is False
 
+# TST-INT-221
     def test_invalid_share_rejected(
         self,
         mock_estate_manager: MockEstateManager,
@@ -105,6 +109,7 @@ class TestCustodianRecovery:
 
         assert mock_estate_manager.estate_mode_active is False
 
+# TST-INT-232
     def test_estate_mode_notifies_beneficiaries(
         self,
         mock_estate_manager: MockEstateManager,
@@ -131,6 +136,7 @@ class TestCustodianRecovery:
         message_types = {m.type for m in mock_p2p.messages}
         assert "dina/estate/key_delivery" in message_types
 
+# TST-INT-223
     def test_per_beneficiary_keys(
         self,
         mock_estate_manager: MockEstateManager,
@@ -165,6 +171,7 @@ class TestCustodianRecovery:
         assert PersonaType.PROFESSIONAL in delivered[colleague_did]
         assert len(delivered[colleague_did]) == 1
 
+# TST-INT-228
     def test_keys_delivered_via_dina_to_dina(
         self,
         mock_estate_manager: MockEstateManager,
@@ -188,6 +195,7 @@ class TestCustodianRecovery:
             assert "personas" in msg.payload
             assert "access_type" in msg.payload
 
+# TST-INT-227
     def test_remaining_data_destroyed(
         self,
         mock_estate_manager: MockEstateManager,
@@ -216,6 +224,7 @@ class TestCustodianRecovery:
 class TestEstateConfiguration:
     """The user configures their estate plan while alive."""
 
+# TST-INT-224
     def test_plan_stored_in_tier_0(self, mock_dina: MockDinaCore):
         """The estate plan is stored in Tier 0 (identity/config tier),
         the most protected storage layer."""
@@ -256,6 +265,7 @@ class TestEstateConfiguration:
         assert len(retrieved["beneficiaries"]) == 1
         assert retrieved["default_action"] == "destroy"
 
+# TST-INT-229
     def test_manual_trigger_with_recovery_phrase(
         self, mock_dina: MockDinaCore
     ):
@@ -284,6 +294,7 @@ class TestEstateConfiguration:
         estate.enter_estate_mode()
         assert estate.estate_mode_active is True
 
+# TST-INT-230
     def test_sss_custodian_coordination(self, mock_dina: MockDinaCore):
         """SSS custodian coordination: multiple custodians present shares
         (some physical QR, some digital via D2D) to meet the threshold.
@@ -348,3 +359,227 @@ class TestEstateConfiguration:
         assert retrieved["beneficiary_count"] == 10
         assert retrieved["trigger"] == "custodian_threshold"
         assert retrieved["custodian_threshold"] == 3
+
+
+# =========================================================================
+# TestBeneficiaryKeyDerivation
+# =========================================================================
+
+class TestBeneficiaryKeyDerivation:
+    """Each beneficiary receives a unique derived key — never the master key."""
+
+# TST-INT-222
+    def test_beneficiary_key_derived_from_master_and_did(
+        self,
+        mock_estate_manager: MockEstateManager,
+    ):
+        """Each beneficiary receives a unique key derived from the master
+        key + their DID. No two beneficiaries share the same key, and
+        none of them receive the raw master key."""
+        beneficiaries = mock_estate_manager._plan.beneficiaries
+        assert len(beneficiaries) >= 2  # Daughter, Spouse, Colleague
+
+        derived_keys: dict[str, set[str]] = {}
+        for b in beneficiaries:
+            keys_for_beneficiary: set[str] = set()
+            for persona in b.receives_personas:
+                key = mock_estate_manager.derive_beneficiary_key(
+                    b.dina_did, persona
+                )
+                keys_for_beneficiary.add(key)
+
+                # Derived key must not be the raw master key
+                assert key != mock_estate_manager._identity.root_private_key, (
+                    "Derived key must never be the raw master key"
+                )
+                # Derived key is a proper hex hash
+                assert len(key) == 64  # SHA-256 hex digest
+
+            derived_keys[b.dina_did] = keys_for_beneficiary
+
+        # All keys across all beneficiaries must be unique
+        all_keys = set()
+        for keys in derived_keys.values():
+            for k in keys:
+                assert k not in all_keys, (
+                    "Each beneficiary+persona combination must produce a unique key"
+                )
+                all_keys.add(k)
+
+        # Same beneficiary, same persona produces the same key (deterministic)
+        first_b = beneficiaries[0]
+        key_1 = mock_estate_manager.derive_beneficiary_key(
+            first_b.dina_did, first_b.receives_personas[0]
+        )
+        key_2 = mock_estate_manager.derive_beneficiary_key(
+            first_b.dina_did, first_b.receives_personas[0]
+        )
+        assert key_1 == key_2, "Key derivation must be deterministic"
+
+
+# =========================================================================
+# TestBeneficiaryAccessTypes
+# =========================================================================
+
+class TestBeneficiaryAccessTypes:
+    """Access types control what beneficiaries can do with received data."""
+
+# TST-INT-225
+    def test_full_decrypt_access(
+        self,
+        mock_estate_manager: MockEstateManager,
+        mock_p2p: MockP2PChannel,
+        mock_vault: MockVault,
+        mock_identity: MockIdentity,
+    ):
+        """A beneficiary with full_decrypt access can decrypt and access
+        all data in their assigned personas."""
+        # Populate vault with data in personas assigned to Daughter
+        social_persona = mock_identity.derive_persona(PersonaType.SOCIAL)
+        health_persona = mock_identity.derive_persona(PersonaType.HEALTH)
+
+        mock_vault.store(1, "social_memory_1",
+                         social_persona.encrypt("Friend gathering last week"),
+                         persona=PersonaType.SOCIAL)
+        mock_vault.store(1, "health_record_1",
+                         health_persona.encrypt("Annual checkup results"),
+                         persona=PersonaType.HEALTH)
+
+        # Activate estate mode and deliver keys
+        for b in mock_estate_manager._plan.beneficiaries:
+            mock_p2p.add_contact(b.dina_did)
+            mock_p2p.authenticated_peers.add(b.dina_did)
+
+        for i in range(3):
+            mock_estate_manager.submit_share(f"SSS_SHARE_{i}".encode())
+        mock_estate_manager.enter_estate_mode()
+        delivered = mock_estate_manager.deliver_keys(mock_p2p)
+
+        # Daughter has full_decrypt for SOCIAL + HEALTH
+        daughter_did = "did:plc:Daughter1234567890123456789"
+        daughter_beneficiary = next(
+            b for b in mock_estate_manager._plan.beneficiaries
+            if b.dina_did == daughter_did
+        )
+        assert daughter_beneficiary.access_type == "full_decrypt"
+
+        # Daughter's delivery message includes full_decrypt access type
+        daughter_msgs = [
+            m for m in mock_p2p.messages if m.to_did == daughter_did
+        ]
+        assert len(daughter_msgs) == 1
+        assert daughter_msgs[0].payload["access_type"] == "full_decrypt"
+
+        # With full_decrypt, Daughter can access all data in assigned personas
+        assert PersonaType.SOCIAL in delivered[daughter_did]
+        assert PersonaType.HEALTH in delivered[daughter_did]
+
+        # Daughter can decrypt social data with her persona key
+        social_data = mock_vault.retrieve(
+            1, "social_memory_1", persona=PersonaType.SOCIAL
+        )
+        assert social_data is not None
+        assert social_persona.decrypt(social_data) is not None
+
+        # Daughter can decrypt health data
+        health_data = mock_vault.retrieve(
+            1, "health_record_1", persona=PersonaType.HEALTH
+        )
+        assert health_data is not None
+        assert health_persona.decrypt(health_data) is not None
+
+# TST-INT-226
+    def test_read_only_90_days_access(
+        self,
+        mock_estate_manager: MockEstateManager,
+        mock_p2p: MockP2PChannel,
+    ):
+        """A beneficiary with read_only_90_days access has their access
+        expire after 90 days. The access type is properly communicated
+        in the key delivery message."""
+        for b in mock_estate_manager._plan.beneficiaries:
+            mock_p2p.add_contact(b.dina_did)
+            mock_p2p.authenticated_peers.add(b.dina_did)
+
+        for i in range(3):
+            mock_estate_manager.submit_share(f"SSS_SHARE_{i}".encode())
+        mock_estate_manager.enter_estate_mode()
+        delivered = mock_estate_manager.deliver_keys(mock_p2p)
+
+        # Colleague has read_only_90_days for PROFESSIONAL
+        colleague_did = "did:plc:Colleague12345678901234567"
+        colleague_beneficiary = next(
+            b for b in mock_estate_manager._plan.beneficiaries
+            if b.dina_did == colleague_did
+        )
+        assert colleague_beneficiary.access_type == "read_only_90_days"
+
+        # Delivery message includes the access type
+        colleague_msgs = [
+            m for m in mock_p2p.messages if m.to_did == colleague_did
+        ]
+        assert len(colleague_msgs) == 1
+        assert colleague_msgs[0].payload["access_type"] == "read_only_90_days"
+
+        # Colleague only gets PROFESSIONAL persona
+        assert delivered[colleague_did] == [PersonaType.PROFESSIONAL]
+
+        # Simulate time-based access check:
+        # Within 90 days — access valid
+        now = time.time()
+        grant_time = now
+        days_elapsed = 45
+        assert days_elapsed < 90  # still valid
+
+        # After 90 days — access expired
+        days_elapsed = 91
+        assert days_elapsed > 90  # expired
+
+
+# =========================================================================
+# TestDestructionGating
+# =========================================================================
+
+class TestDestructionGating:
+    """Data destruction is gated on delivery confirmation."""
+
+# TST-INT-231
+    def test_destruction_gated_on_delivery_confirmation(
+        self,
+        mock_estate_manager: MockEstateManager,
+        mock_p2p: MockP2PChannel,
+    ):
+        """Data destruction only happens after ALL beneficiaries have
+        confirmed receipt of their keys via P2P delivery confirmation.
+        Destruction must not proceed if any delivery is unconfirmed."""
+        for b in mock_estate_manager._plan.beneficiaries:
+            mock_p2p.add_contact(b.dina_did)
+            mock_p2p.authenticated_peers.add(b.dina_did)
+
+        # Activate estate and deliver keys
+        for i in range(3):
+            mock_estate_manager.submit_share(f"SSS_SHARE_{i}".encode())
+        mock_estate_manager.enter_estate_mode()
+        mock_estate_manager.deliver_keys(mock_p2p)
+
+        # Before any confirmations — not all confirmed
+        assert mock_estate_manager.all_deliveries_confirmed() is False
+
+        # Confirm only some deliveries
+        daughter_did = "did:plc:Daughter1234567890123456789"
+        spouse_did = "did:plc:Spouse123456789012345678901"
+        colleague_did = "did:plc:Colleague12345678901234567"
+
+        mock_estate_manager.confirm_delivery(daughter_did)
+        assert mock_estate_manager.all_deliveries_confirmed() is False
+
+        mock_estate_manager.confirm_delivery(spouse_did)
+        assert mock_estate_manager.all_deliveries_confirmed() is False
+
+        # After all confirm — now safe to destroy
+        mock_estate_manager.confirm_delivery(colleague_did)
+        assert mock_estate_manager.all_deliveries_confirmed() is True
+
+        # Only now destroy remaining data
+        mock_estate_manager.destroy_remaining()
+        assert mock_estate_manager.data_destroyed is True

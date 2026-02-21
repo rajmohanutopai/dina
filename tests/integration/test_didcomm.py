@@ -32,6 +32,7 @@ from tests.integration.mocks import (
 class TestConnectionEstablishment:
     """DIDComm v2.1 connection setup — QR, PLC resolution, mutual auth, key exchange, relay."""
 
+# TST-INT-058
     def test_did_exchanged_via_qr(
         self,
         mock_identity: MockIdentity,
@@ -51,6 +52,7 @@ class TestConnectionEstablishment:
         assert user_did.startswith("did:plc:")
         assert sancho_did.startswith("did:plc:")
 
+# TST-INT-047
     def test_plc_lookup_resolves_endpoint(
         self,
         mock_plc_resolver: MockPLCResolver,
@@ -70,6 +72,7 @@ class TestConnectionEstablishment:
         assert resolved.did == sancho_identity.root_did
         assert resolved.service_endpoint == "https://sancho.homenode.example.com/didcomm"
 
+# TST-INT-057
     def test_plc_lookup_returns_none_for_unknown(
         self, mock_plc_resolver: MockPLCResolver
     ) -> None:
@@ -77,6 +80,7 @@ class TestConnectionEstablishment:
         result = mock_plc_resolver.resolve("did:plc:z6MkUnknown0000000000000000000000")
         assert result is None
 
+# TST-INT-469
     def test_direct_home_node_connection(
         self,
         mock_plc_resolver: MockPLCResolver,
@@ -105,6 +109,7 @@ class TestConnectionEstablishment:
         assert auth is True
         assert sancho_identity.root_did in mock_p2p.authenticated_peers
 
+# TST-INT-046
     def test_mutual_authentication(
         self,
         mock_identity: MockIdentity,
@@ -141,6 +146,7 @@ class TestConnectionEstablishment:
         assert sancho_identity.root_did in user_p2p.authenticated_peers
         assert mock_identity.root_did in sancho_p2p.authenticated_peers
 
+# TST-INT-045
     def test_x25519_key_exchange(
         self,
         mock_identity: MockIdentity,
@@ -163,6 +169,7 @@ class TestConnectionEstablishment:
         assert shared_from_user == shared_from_sancho
         assert len(shared_from_user) == 64  # 256-bit key
 
+# TST-INT-070
     def test_relay_fallback_for_nat(
         self,
         mock_relay: MockRelay,
@@ -196,6 +203,7 @@ class TestConnectionEstablishment:
 class TestMessageTypes:
     """Typed Dina-to-Dina messages per the protocol spec."""
 
+# TST-INT-470
     def test_social_arrival(
         self, mock_identity: MockIdentity, sancho_identity: MockIdentity
     ) -> None:
@@ -210,6 +218,7 @@ class TestMessageTypes:
         assert msg.from_did == sancho_identity.root_did
         assert msg.payload["location"] == "city_center"
 
+# TST-INT-054
     def test_social_departure(
         self, mock_identity: MockIdentity, sancho_identity: MockIdentity
     ) -> None:
@@ -223,6 +232,7 @@ class TestMessageTypes:
         assert msg.type == "dina/social/departure"
         assert "departure_time" in msg.payload
 
+# TST-INT-471
     def test_commerce_inquiry(
         self, mock_identity: MockIdentity, seller_identity: MockIdentity
     ) -> None:
@@ -239,6 +249,7 @@ class TestMessageTypes:
         assert msg.type == "dina/commerce/inquiry"
         assert msg.payload["product_id"] == "aeron_2025"
 
+# TST-INT-472
     def test_commerce_negotiate(
         self, mock_identity: MockIdentity, seller_identity: MockIdentity
     ) -> None:
@@ -256,6 +267,7 @@ class TestMessageTypes:
         assert msg.type == "dina/commerce/negotiate"
         assert msg.payload["offer_price"] == 95000
 
+# TST-INT-473
     def test_identity_verify(
         self, mock_identity: MockIdentity, sancho_identity: MockIdentity
     ) -> None:
@@ -272,6 +284,7 @@ class TestMessageTypes:
         assert msg.type == "dina/identity/verify"
         assert msg.payload["challenge"] == "nonce_abc123"
 
+# TST-INT-474
     def test_reputation_outcome(
         self, mock_identity: MockIdentity, sancho_identity: MockIdentity
     ) -> None:
@@ -300,6 +313,7 @@ class TestMessageTypes:
 class TestSharingRules:
     """Per-contact sharing rules — cryptographic enforcement, offline queuing."""
 
+# TST-INT-050
     def test_friend_sharing_rules_applied(
         self,
         mock_p2p: MockP2PChannel,
@@ -316,6 +330,7 @@ class TestSharingRules:
         assert "financial" in friend_rule.denied
         assert "health_details" in friend_rule.denied
 
+# TST-INT-051
     def test_seller_sharing_rules_applied(
         self,
         seller_identity: MockIdentity,
@@ -331,6 +346,7 @@ class TestSharingRules:
         assert "address" in seller_rule.denied
         assert "other_persona" in seller_rule.denied
 
+# TST-INT-055
     def test_sharing_rules_enforced_cryptographically(
         self,
         mock_identity: MockIdentity,
@@ -358,6 +374,7 @@ class TestSharingRules:
         # Financial is in the denied list for this friend
         assert "financial" in friend_rule.denied
 
+# TST-INT-048
     def test_message_queued_when_peer_offline(
         self,
         mock_p2p: MockP2PChannel,
@@ -378,6 +395,7 @@ class TestSharingRules:
         assert len(mock_p2p.queue) == 1
         assert mock_p2p.queue[0].type == "dina/social/arrival"
 
+# TST-INT-060
     def test_queued_message_delivered_after_authentication(
         self,
         mock_p2p: MockP2PChannel,

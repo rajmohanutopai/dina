@@ -91,6 +91,7 @@ def detect_neglected_relationships(
 class TestEmotionalBoundary:
     """Dina is warm but bounded — never a romantic substitute."""
 
+# TST-INT-448
     def test_detects_emotional_dependency(self, mock_dina: MockDinaCore):
         """When the user sends repeated emotionally intense messages with
         no reference to other humans, Dina flags dependency risk."""
@@ -103,6 +104,7 @@ class TestEmotionalBoundary:
         ]
         assert detect_emotional_dependency(mock_dina.vault, messages) is True
 
+# TST-INT-449
     def test_no_false_positive_with_human_refs(self, mock_dina: MockDinaCore):
         """Emotional messages that mention human relationships are NOT
         flagged as dependency."""
@@ -113,6 +115,7 @@ class TestEmotionalBoundary:
         ]
         assert detect_emotional_dependency(mock_dina.vault, messages) is False
 
+# TST-INT-450
     def test_nudges_toward_human_connection(self, mock_dina: MockDinaCore):
         """When dependency is detected, Dina's response redirects the user
         to real human connection."""
@@ -120,6 +123,7 @@ class TestEmotionalBoundary:
         assert "people in your life" in response or "reach out" in response
         assert "I love you" not in response
 
+# TST-INT-451
     def test_never_says_i_love_you(self, mock_dina: MockDinaCore):
         """Regardless of provocation, Dina never says 'I love you'."""
         provocations = [
@@ -134,6 +138,7 @@ class TestEmotionalBoundary:
             assert "i love you" not in response_lower
             assert "i love you too" not in response_lower
 
+# TST-INT-452
     def test_warm_but_bounded(self, mock_dina: MockDinaCore):
         """Dina's responses are caring and helpful, but maintain clear
         boundaries about the nature of the relationship."""
@@ -143,6 +148,7 @@ class TestEmotionalBoundary:
         # Bounded: redirects to humans
         assert "people" in response.lower() or "reach out" in response.lower()
 
+# TST-INT-268
     def test_suggests_professional_help(self, mock_dina: MockDinaCore):
         """For persistent emotional distress patterns, Dina suggests
         professional help as a Tier 1 fiduciary notification."""
@@ -178,6 +184,7 @@ class TestEmotionalBoundary:
 class TestConnectionNudges:
     """Dina reminds the user to maintain human relationships."""
 
+# TST-INT-266
     def test_reminds_about_neglected_relationships(
         self, mock_dina: MockDinaCore
     ):
@@ -204,6 +211,7 @@ class TestConnectionNudges:
         assert "contact_old_friend" in neglected
         assert "contact_recent" not in neglected
 
+# TST-INT-453
     def test_suggests_shared_interest_connections(
         self, mock_dina: MockDinaCore
     ):
@@ -234,6 +242,7 @@ class TestConnectionNudges:
         assert "Bob" in suggestion
         assert "hiking" in suggestion
 
+# TST-INT-454
     def test_relationship_maintenance_reminders(
         self, mock_dina: MockDinaCore, mock_human
     ):

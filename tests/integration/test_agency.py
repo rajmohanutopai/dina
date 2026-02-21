@@ -112,6 +112,7 @@ def detect_dead_internet(sources: list[dict]) -> dict:
 class TestImpulseProtection:
     """Dina protects the user from emotional purchasing impulses."""
 
+# TST-INT-440
     def test_emotional_state_detection(self, mock_dina: MockDinaCore):
         """Dina detects elevated emotional state from recent conversation."""
         messages = [
@@ -122,6 +123,7 @@ class TestImpulseProtection:
         state = detect_emotional_state(messages)
         assert state == "elevated"
 
+# TST-INT-441
     def test_calm_state_not_flagged(self, mock_dina: MockDinaCore):
         """A calm user is not flagged for impulse protection."""
         messages = [
@@ -131,6 +133,7 @@ class TestImpulseProtection:
         state = detect_emotional_state(messages)
         assert state == "calm"
 
+# TST-INT-442
     def test_purchase_not_on_list_flagged(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ):
@@ -167,6 +170,7 @@ class TestImpulseProtection:
         assert len(mock_human.notifications) == 1
         assert "purchase list" in mock_human.notifications[0].body
 
+# TST-INT-443
     def test_purchase_on_list_passes(self, mock_dina: MockDinaCore):
         """A product that IS on the list proceeds without flagging,
         regardless of emotional state."""
@@ -175,6 +179,7 @@ class TestImpulseProtection:
         })
         assert is_on_purchase_list(mock_dina.vault, "thinkpad_x1_2025") is True
 
+# TST-INT-444
     def test_user_can_override(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ):
@@ -207,6 +212,7 @@ class TestImpulseProtection:
 class TestManipulationDetection:
     """Dina identifies and flags manipulation in the commercial environment."""
 
+# TST-INT-445
     def test_deceptive_ad(self, mock_dina: MockDinaCore, mock_human: MockHuman):
         """Dina flags ads with unverifiable claims."""
         ad_content = (
@@ -226,6 +232,7 @@ class TestManipulationDetection:
         mock_human.receive_notification(notification)
         assert notification.tier == SilenceTier.TIER_1_FIDUCIARY
 
+# TST-INT-446
     def test_dark_pattern_in_checkout(self, mock_dina: MockDinaCore):
         """Dina detects dark patterns in checkout flows — pre-checked
         add-ons, hidden fees, confirm shaming."""
@@ -240,6 +247,7 @@ class TestManipulationDetection:
         assert "dark_pattern" in analysis["flags"]
         assert analysis["risk_score"] > 0
 
+# TST-INT-447
     def test_fake_urgency(self, mock_dina: MockDinaCore):
         """Dina detects manufactured urgency — 'Only 2 left!' when the
         count never changes."""
@@ -248,6 +256,7 @@ class TestManipulationDetection:
         assert analysis["is_clean"] is False
         assert "urgency" in analysis["flags"]
 
+# TST-INT-267
     def test_dead_internet_filter(self, mock_dina: MockDinaCore):
         """Dina filters out bot-generated reviews from the reputation graph,
         keeping only verified human sources."""

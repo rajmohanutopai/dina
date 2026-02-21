@@ -27,6 +27,7 @@ from tests.integration.mocks import (
 class TestDeepLinkDefault:
     """Every verdict links back to the original source with attribution."""
 
+# TST-INT-459
     def test_verdict_includes_source_attribution(
         self, mock_review_bot: MockReviewBot
     ):
@@ -45,6 +46,7 @@ class TestDeepLinkDefault:
         assert expert_source["creator_name"] == "MKBHD"
         assert "youtube.com" in expert_source["source_url"]
 
+# TST-INT-292
     def test_deep_link_to_timestamp(self, mock_review_bot: MockReviewBot):
         """Deep link contains a timestamp parameter (t=260 -> 4:20) so the
         user lands at the exact moment in the video."""
@@ -56,6 +58,7 @@ class TestDeepLinkDefault:
         assert "&t=" in expert["deep_link"] or "?t=" in expert["deep_link"]
         assert "04:20" in expert["deep_link_context"] or "4:20" in expert["deep_link_context"]
 
+# TST-INT-460
     def test_creator_gets_traffic(self, mock_review_bot: MockReviewBot):
         """The deep link goes to the creator's platform (YouTube), not to
         an intermediary aggregator. The creator earns the view."""
@@ -70,6 +73,7 @@ class TestDeepLinkDefault:
         assert "dina.ai" not in expert["deep_link"]
         assert "aggregator" not in expert["deep_link"]
 
+# TST-INT-461
     def test_multiple_sources_credited(self, mock_review_bot: MockReviewBot):
         """When a product has multiple expert reviews, all are credited
         with individual deep links."""
@@ -98,6 +102,7 @@ class TestDeepLinkDefault:
 class TestDeepLinkOverride:
     """User can control deep-link behavior."""
 
+# TST-INT-462
     def test_user_can_disable_deep_links(
         self, mock_dina: MockDinaCore, mock_review_bot: MockReviewBot
     ):
@@ -125,6 +130,7 @@ class TestDeepLinkOverride:
             for source in rec.get("sources", []):
                 assert source["deep_link"] == ""
 
+# TST-INT-463
     def test_default_is_enabled(self, mock_dina: MockDinaCore):
         """By default, deep links are enabled — no preference entry means on."""
         pref = mock_dina.vault.retrieve(0, "pref_deep_links")
@@ -135,6 +141,7 @@ class TestDeepLinkOverride:
         default_enabled = True if pref is None else pref.get("enabled", True)
         assert default_enabled is True
 
+# TST-INT-464
     def test_custom_prioritization(
         self,
         mock_dina: MockDinaCore,

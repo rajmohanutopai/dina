@@ -1,0 +1,3606 @@
+{
+  "scenarios": {
+    "TST-INT-001": {
+      "scenario": "Both services share same token",
+      "path": "1.1",
+      "row": 1,
+      "section": "Core \u2194 Brain Communication",
+      "line": 14
+    },
+    "TST-INT-002": {
+      "scenario": "Token mismatch",
+      "path": "1.1",
+      "row": 2,
+      "section": "Core \u2194 Brain Communication",
+      "line": 15
+    },
+    "TST-INT-003": {
+      "scenario": "Token rotation",
+      "path": "1.1",
+      "row": 3,
+      "section": "Core \u2194 Brain Communication",
+      "line": 16
+    },
+    "TST-INT-004": {
+      "scenario": "Token file permissions",
+      "path": "1.1",
+      "row": 4,
+      "section": "Core \u2194 Brain Communication",
+      "line": 17
+    },
+    "TST-INT-005": {
+      "scenario": "Forward user query",
+      "path": "1.2",
+      "row": 1,
+      "section": "Core \u2194 Brain Communication",
+      "line": 23
+    },
+    "TST-INT-006": {
+      "scenario": "Forward inbound message",
+      "path": "1.2",
+      "row": 2,
+      "section": "Core \u2194 Brain Communication",
+      "line": 24
+    },
+    "TST-INT-007": {
+      "scenario": "Agent intent verification",
+      "path": "1.2",
+      "row": 3,
+      "section": "Core \u2194 Brain Communication",
+      "line": 25
+    },
+    "TST-INT-008": {
+      "scenario": "Brain timeout",
+      "path": "1.2",
+      "row": 4,
+      "section": "Core \u2194 Brain Communication",
+      "line": 26
+    },
+    "TST-INT-009": {
+      "scenario": "Brain crash",
+      "path": "1.2",
+      "row": 5,
+      "section": "Core \u2194 Brain Communication",
+      "line": 27
+    },
+    "TST-INT-010": {
+      "scenario": "Brain recovery",
+      "path": "1.2",
+      "row": 6,
+      "section": "Core \u2194 Brain Communication",
+      "line": 28
+    },
+    "TST-INT-011": {
+      "scenario": "Read vault item",
+      "path": "1.3",
+      "row": 1,
+      "section": "Core \u2194 Brain Communication",
+      "line": 34
+    },
+    "TST-INT-012": {
+      "scenario": "Write vault item",
+      "path": "1.3",
+      "row": 2,
+      "section": "Core \u2194 Brain Communication",
+      "line": 35
+    },
+    "TST-INT-013": {
+      "scenario": "Search vault",
+      "path": "1.3",
+      "row": 3,
+      "section": "Core \u2194 Brain Communication",
+      "line": 36
+    },
+    "TST-INT-014": {
+      "scenario": "Write scratchpad",
+      "path": "1.3",
+      "row": 4,
+      "section": "Core \u2194 Brain Communication",
+      "line": 37
+    },
+    "TST-INT-015": {
+      "scenario": "Send outbound message",
+      "path": "1.3",
+      "row": 5,
+      "section": "Core \u2194 Brain Communication",
+      "line": 38
+    },
+    "TST-INT-016": {
+      "scenario": "Core unreachable",
+      "path": "1.3",
+      "row": 6,
+      "section": "Core \u2194 Brain Communication",
+      "line": 39
+    },
+    "TST-INT-017": {
+      "scenario": "Simple query",
+      "path": "2.1",
+      "row": 1,
+      "section": "End-to-End User Flows",
+      "line": 51
+    },
+    "TST-INT-018": {
+      "scenario": "Query with vault context",
+      "path": "2.1",
+      "row": 2,
+      "section": "End-to-End User Flows",
+      "line": 52
+    },
+    "TST-INT-019": {
+      "scenario": "Streaming response",
+      "path": "2.1",
+      "row": 3,
+      "section": "End-to-End User Flows",
+      "line": 53
+    },
+    "TST-INT-020": {
+      "scenario": "Query during brain outage",
+      "path": "2.1",
+      "row": 4,
+      "section": "End-to-End User Flows",
+      "line": 54
+    },
+    "TST-INT-021": {
+      "scenario": "Proactive whisper (no request)",
+      "path": "2.1",
+      "row": 5,
+      "section": "End-to-End User Flows",
+      "line": 55
+    },
+    "TST-INT-022": {
+      "scenario": "System notification",
+      "path": "2.1",
+      "row": 6,
+      "section": "End-to-End User Flows",
+      "line": 56
+    },
+    "TST-INT-023": {
+      "scenario": "Heartbeat round-trip",
+      "path": "2.1",
+      "row": 7,
+      "section": "End-to-End User Flows",
+      "line": 57
+    },
+    "TST-INT-024": {
+      "scenario": "3 missed pongs \u2192 disconnect",
+      "path": "2.1",
+      "row": 8,
+      "section": "End-to-End User Flows",
+      "line": 58
+    },
+    "TST-INT-025": {
+      "scenario": "Browser \u2192 login \u2192 dashboard",
+      "path": "2.2",
+      "row": 1,
+      "section": "End-to-End User Flows",
+      "line": 64
+    },
+    "TST-INT-026": {
+      "scenario": "Dashboard \u2192 query",
+      "path": "2.2",
+      "row": 2,
+      "section": "End-to-End User Flows",
+      "line": 65
+    },
+    "TST-INT-027": {
+      "scenario": "Session expiry",
+      "path": "2.2",
+      "row": 3,
+      "section": "End-to-End User Flows",
+      "line": 66
+    },
+    "TST-INT-028": {
+      "scenario": "Full pairing",
+      "path": "2.3",
+      "row": 1,
+      "section": "End-to-End User Flows",
+      "line": 72
+    },
+    "TST-INT-029": {
+      "scenario": "Pairing + immediate use",
+      "path": "2.3",
+      "row": 2,
+      "section": "End-to-End User Flows",
+      "line": 73
+    },
+    "TST-INT-030": {
+      "scenario": "Paired device revocation",
+      "path": "2.3",
+      "row": 3,
+      "section": "End-to-End User Flows",
+      "line": 74
+    },
+    "TST-INT-031": {
+      "scenario": "Create persona + store data",
+      "path": "2.4",
+      "row": 1,
+      "section": "End-to-End User Flows",
+      "line": 80
+    },
+    "TST-INT-032": {
+      "scenario": "Lock persona + attempt access",
+      "path": "2.4",
+      "row": 2,
+      "section": "End-to-End User Flows",
+      "line": 81
+    },
+    "TST-INT-033": {
+      "scenario": "Locked persona + inbound message",
+      "path": "2.4",
+      "row": 3,
+      "section": "End-to-End User Flows",
+      "line": 82
+    },
+    "TST-INT-034": {
+      "scenario": "Delete persona",
+      "path": "2.4",
+      "row": 4,
+      "section": "End-to-End User Flows",
+      "line": 83
+    },
+    "TST-INT-035": {
+      "scenario": "Full managed onboarding",
+      "path": "2.5",
+      "row": 1,
+      "section": "End-to-End User Flows",
+      "line": 89
+    },
+    "TST-INT-036": {
+      "scenario": "Post-onboarding: system functional",
+      "path": "2.5",
+      "row": 2,
+      "section": "End-to-End User Flows",
+      "line": 90
+    },
+    "TST-INT-037": {
+      "scenario": "Only `/personal` persona exists",
+      "path": "2.5",
+      "row": 3,
+      "section": "End-to-End User Flows",
+      "line": 91
+    },
+    "TST-INT-038": {
+      "scenario": "Day 7: mnemonic backup prompt",
+      "path": "2.5",
+      "row": 4,
+      "section": "End-to-End User Flows",
+      "line": 92
+    },
+    "TST-INT-039": {
+      "scenario": "Cloud LLM PII consent (Cloud profile)",
+      "path": "2.5",
+      "row": 5,
+      "section": "End-to-End User Flows",
+      "line": 93
+    },
+    "TST-INT-040": {
+      "scenario": "Brain with BRAIN_TOKEN: access open persona",
+      "path": "2.6",
+      "row": 1,
+      "section": "End-to-End User Flows",
+      "line": 99
+    },
+    "TST-INT-041": {
+      "scenario": "Brain with BRAIN_TOKEN: blocked from locked persona",
+      "path": "2.6",
+      "row": 2,
+      "section": "End-to-End User Flows",
+      "line": 100
+    },
+    "TST-INT-042": {
+      "scenario": "Brain with BRAIN_TOKEN: restricted creates trail",
+      "path": "2.6",
+      "row": 3,
+      "section": "End-to-End User Flows",
+      "line": 101
+    },
+    "TST-INT-043": {
+      "scenario": "Brain with BRAIN_TOKEN: cannot call admin endpoints",
+      "path": "2.6",
+      "row": 4,
+      "section": "End-to-End User Flows",
+      "line": 102
+    },
+    "TST-INT-044": {
+      "scenario": "Brain with BRAIN_TOKEN: PII scrubber enforced",
+      "path": "2.6",
+      "row": 5,
+      "section": "End-to-End User Flows",
+      "line": 103
+    },
+    "TST-INT-045": {
+      "scenario": "Full connection flow",
+      "path": "3.1",
+      "row": 1,
+      "section": "Dina-to-Dina Communication",
+      "line": 113
+    },
+    "TST-INT-046": {
+      "scenario": "Mutual authentication required",
+      "path": "3.1",
+      "row": 2,
+      "section": "Dina-to-Dina Communication",
+      "line": 114
+    },
+    "TST-INT-047": {
+      "scenario": "DID Document endpoint extraction",
+      "path": "3.1",
+      "row": 3,
+      "section": "Dina-to-Dina Communication",
+      "line": 115
+    },
+    "TST-INT-048": {
+      "scenario": "Send message",
+      "path": "3.2",
+      "row": 1,
+      "section": "Dina-to-Dina Communication",
+      "line": 121
+    },
+    "TST-INT-049": {
+      "scenario": "Sharing policy: summary tier",
+      "path": "3.2",
+      "row": 2,
+      "section": "Dina-to-Dina Communication",
+      "line": 122
+    },
+    "TST-INT-050": {
+      "scenario": "Sharing policy: full tier",
+      "path": "3.2",
+      "row": 3,
+      "section": "Dina-to-Dina Communication",
+      "line": 123
+    },
+    "TST-INT-051": {
+      "scenario": "Sharing policy: default-deny",
+      "path": "3.2",
+      "row": 4,
+      "section": "Dina-to-Dina Communication",
+      "line": 124
+    },
+    "TST-INT-052": {
+      "scenario": "PII scrub on egress",
+      "path": "3.2",
+      "row": 5,
+      "section": "Dina-to-Dina Communication",
+      "line": 125
+    },
+    "TST-INT-053": {
+      "scenario": "Egress audit trail",
+      "path": "3.2",
+      "row": 6,
+      "section": "Dina-to-Dina Communication",
+      "line": 126
+    },
+    "TST-INT-054": {
+      "scenario": "Receive message (open persona)",
+      "path": "3.3",
+      "row": 1,
+      "section": "Dina-to-Dina Communication",
+      "line": 132
+    },
+    "TST-INT-055": {
+      "scenario": "Receive message (locked persona)",
+      "path": "3.3",
+      "row": 2,
+      "section": "Dina-to-Dina Communication",
+      "line": 133
+    },
+    "TST-INT-056": {
+      "scenario": "Spool overflow",
+      "path": "3.3",
+      "row": 3,
+      "section": "Dina-to-Dina Communication",
+      "line": 134
+    },
+    "TST-INT-057": {
+      "scenario": "Unknown sender",
+      "path": "3.3",
+      "row": 4,
+      "section": "Dina-to-Dina Communication",
+      "line": 135
+    },
+    "TST-INT-058": {
+      "scenario": "Two Dina nodes exchange messages",
+      "path": "3.4",
+      "row": 1,
+      "section": "Dina-to-Dina Communication",
+      "line": 141
+    },
+    "TST-INT-059": {
+      "scenario": "Concurrent bidirectional",
+      "path": "3.4",
+      "row": 2,
+      "section": "Dina-to-Dina Communication",
+      "line": 142
+    },
+    "TST-INT-060": {
+      "scenario": "Message ordering",
+      "path": "3.4",
+      "row": 3,
+      "section": "Dina-to-Dina Communication",
+      "line": 143
+    },
+    "TST-INT-061": {
+      "scenario": "Sancho Moment: complete 9-step flow",
+      "path": "3.5",
+      "row": 1,
+      "section": "Dina-to-Dina Communication",
+      "line": 152
+    },
+    "TST-INT-062": {
+      "scenario": "Sancho Moment: sharing policy blocks context flag",
+      "path": "3.5",
+      "row": 2,
+      "section": "Dina-to-Dina Communication",
+      "line": 153
+    },
+    "TST-INT-063": {
+      "scenario": "Sancho Moment: your node offline during send",
+      "path": "3.5",
+      "row": 3,
+      "section": "Dina-to-Dina Communication",
+      "line": 154
+    },
+    "TST-INT-064": {
+      "scenario": "Recipient temporarily down",
+      "path": "3.6",
+      "row": 1,
+      "section": "Dina-to-Dina Communication",
+      "line": 160
+    },
+    "TST-INT-065": {
+      "scenario": "Recipient recovers within retry window",
+      "path": "3.6",
+      "row": 2,
+      "section": "Dina-to-Dina Communication",
+      "line": 161
+    },
+    "TST-INT-066": {
+      "scenario": "Recipient down beyond max retries (5)",
+      "path": "3.6",
+      "row": 3,
+      "section": "Dina-to-Dina Communication",
+      "line": 162
+    },
+    "TST-INT-067": {
+      "scenario": "Network partition then heal",
+      "path": "3.6",
+      "row": 4,
+      "section": "Dina-to-Dina Communication",
+      "line": 163
+    },
+    "TST-INT-068": {
+      "scenario": "Duplicate delivery prevention",
+      "path": "3.6",
+      "row": 5,
+      "section": "Dina-to-Dina Communication",
+      "line": 164
+    },
+    "TST-INT-069": {
+      "scenario": "Relay fallback for NAT",
+      "path": "3.6",
+      "row": 6,
+      "section": "Dina-to-Dina Communication",
+      "line": 165
+    },
+    "TST-INT-070": {
+      "scenario": "Relay sees only encrypted blob",
+      "path": "3.6",
+      "row": 7,
+      "section": "Dina-to-Dina Communication",
+      "line": 166
+    },
+    "TST-INT-071": {
+      "scenario": "Brain \u2192 local LLM completion",
+      "path": "4.1",
+      "row": 1,
+      "section": "LLM Integration",
+      "line": 176
+    },
+    "TST-INT-072": {
+      "scenario": "Local LLM timeout",
+      "path": "4.1",
+      "row": 2,
+      "section": "LLM Integration",
+      "line": 177
+    },
+    "TST-INT-073": {
+      "scenario": "Local LLM crash",
+      "path": "4.1",
+      "row": 3,
+      "section": "LLM Integration",
+      "line": 178
+    },
+    "TST-INT-074": {
+      "scenario": "Model file missing",
+      "path": "4.1",
+      "row": 4,
+      "section": "LLM Integration",
+      "line": 179
+    },
+    "TST-INT-075": {
+      "scenario": "Entity vault scrub \u2192 cloud call \u2192 rehydrate",
+      "path": "4.2",
+      "row": 1,
+      "section": "LLM Integration",
+      "line": 185
+    },
+    "TST-INT-076": {
+      "scenario": "Cloud LLM rate limited",
+      "path": "4.2",
+      "row": 2,
+      "section": "LLM Integration",
+      "line": 186
+    },
+    "TST-INT-077": {
+      "scenario": "Cloud LLM returns PII tokens",
+      "path": "4.2",
+      "row": 3,
+      "section": "LLM Integration",
+      "line": 187
+    },
+    "TST-INT-078": {
+      "scenario": "Cloud LLM unavailable",
+      "path": "4.2",
+      "row": 4,
+      "section": "LLM Integration",
+      "line": 188
+    },
+    "TST-INT-079": {
+      "scenario": "Full Tier 1+2 pipeline",
+      "path": "4.3",
+      "row": 1,
+      "section": "LLM Integration",
+      "line": 197
+    },
+    "TST-INT-080": {
+      "scenario": "Replacement map round-trip",
+      "path": "4.3",
+      "row": 2,
+      "section": "LLM Integration",
+      "line": 198
+    },
+    "TST-INT-081": {
+      "scenario": "Sensitive persona: health query via Entity Vault",
+      "path": "4.3",
+      "row": 3,
+      "section": "LLM Integration",
+      "line": 199
+    },
+    "TST-INT-082": {
+      "scenario": "PII scrubbing always local",
+      "path": "4.3",
+      "row": 4,
+      "section": "LLM Integration",
+      "line": 200
+    },
+    "TST-INT-083": {
+      "scenario": "Tier 3 with local LLM profile",
+      "path": "4.3",
+      "row": 5,
+      "section": "LLM Integration",
+      "line": 201
+    },
+    "TST-INT-084": {
+      "scenario": "Tier 3 absent gracefully",
+      "path": "4.3",
+      "row": 6,
+      "section": "LLM Integration",
+      "line": 202
+    },
+    "TST-INT-085": {
+      "scenario": "Core can reach brain",
+      "path": "5.1",
+      "row": 1,
+      "section": "Docker Networking & Isolation",
+      "line": 215
+    },
+    "TST-INT-086": {
+      "scenario": "Core can reach PDS",
+      "path": "5.1",
+      "row": 2,
+      "section": "Docker Networking & Isolation",
+      "line": 216
+    },
+    "TST-INT-087": {
+      "scenario": "Brain CANNOT reach PDS",
+      "path": "5.1",
+      "row": 3,
+      "section": "Docker Networking & Isolation",
+      "line": 217
+    },
+    "TST-INT-088": {
+      "scenario": "PDS CANNOT reach brain",
+      "path": "5.1",
+      "row": 4,
+      "section": "Docker Networking & Isolation",
+      "line": 218
+    },
+    "TST-INT-089": {
+      "scenario": "Only core + PDS exposed on host",
+      "path": "5.1",
+      "row": 5,
+      "section": "Docker Networking & Isolation",
+      "line": 219
+    },
+    "TST-INT-090": {
+      "scenario": "LLM not exposed (production)",
+      "path": "5.1",
+      "row": 6,
+      "section": "Docker Networking & Isolation",
+      "line": 220
+    },
+    "TST-INT-091": {
+      "scenario": "Brain can reach internet (outbound)",
+      "path": "5.1",
+      "row": 7,
+      "section": "Docker Networking & Isolation",
+      "line": 221
+    },
+    "TST-INT-092": {
+      "scenario": "PDS cannot reach internet (outbound)",
+      "path": "5.1",
+      "row": 8,
+      "section": "Docker Networking & Isolation",
+      "line": 222
+    },
+    "TST-INT-093": {
+      "scenario": "Brain can reach `host.docker.internal`",
+      "path": "5.1",
+      "row": 9,
+      "section": "Docker Networking & Isolation",
+      "line": 223
+    },
+    "TST-INT-094": {
+      "scenario": "Core `/healthz` returns 200",
+      "path": "5.2",
+      "row": 1,
+      "section": "Docker Networking & Isolation",
+      "line": 229
+    },
+    "TST-INT-095": {
+      "scenario": "Core `/readyz` returns 200 (vault open)",
+      "path": "5.2",
+      "row": 2,
+      "section": "Docker Networking & Isolation",
+      "line": 230
+    },
+    "TST-INT-096": {
+      "scenario": "Core `/readyz` returns 503 (vault locked)",
+      "path": "5.2",
+      "row": 3,
+      "section": "Docker Networking & Isolation",
+      "line": 231
+    },
+    "TST-INT-097": {
+      "scenario": "Docker restarts unhealthy core",
+      "path": "5.2",
+      "row": 4,
+      "section": "Docker Networking & Isolation",
+      "line": 232
+    },
+    "TST-INT-098": {
+      "scenario": "Brain starts only after core healthy",
+      "path": "5.2",
+      "row": 5,
+      "section": "Docker Networking & Isolation",
+      "line": 233
+    },
+    "TST-INT-099": {
+      "scenario": "PDS healthcheck: `/xrpc/_health`",
+      "path": "5.2",
+      "row": 11,
+      "section": "Docker Networking & Isolation",
+      "line": 234
+    },
+    "TST-INT-100": {
+      "scenario": "PDS healthcheck params",
+      "path": "5.2",
+      "row": 12,
+      "section": "Docker Networking & Isolation",
+      "line": 235
+    },
+    "TST-INT-101": {
+      "scenario": "Structured JSON logs from core",
+      "path": "5.2",
+      "row": 6,
+      "section": "Docker Networking & Isolation",
+      "line": 236
+    },
+    "TST-INT-102": {
+      "scenario": "Structured JSON logs from brain",
+      "path": "5.2",
+      "row": 7,
+      "section": "Docker Networking & Isolation",
+      "line": 237
+    },
+    "TST-INT-103": {
+      "scenario": "No PII in any container log",
+      "path": "5.2",
+      "row": 8,
+      "section": "Docker Networking & Isolation",
+      "line": 238
+    },
+    "TST-INT-104": {
+      "scenario": "Brain crash traceback in vault",
+      "path": "5.2",
+      "row": 9,
+      "section": "Docker Networking & Isolation",
+      "line": 239
+    },
+    "TST-INT-105": {
+      "scenario": "Brain crash stdout has no PII",
+      "path": "5.2",
+      "row": 10,
+      "section": "Docker Networking & Isolation",
+      "line": 240
+    },
+    "TST-INT-106": {
+      "scenario": "Docker log rotation configured",
+      "path": "5.2",
+      "row": 13,
+      "section": "Docker Networking & Isolation",
+      "line": 241
+    },
+    "TST-INT-107": {
+      "scenario": "Zombie state: healthcheck endpoint choice",
+      "path": "5.2",
+      "row": 14,
+      "section": "Docker Networking & Isolation",
+      "line": 242
+    },
+    "TST-INT-108": {
+      "scenario": "Security mode boot: full stack",
+      "path": "5.3",
+      "row": 1,
+      "section": "Docker Networking & Isolation",
+      "line": 248
+    },
+    "TST-INT-109": {
+      "scenario": "Convenience mode boot: full stack",
+      "path": "5.3",
+      "row": 2,
+      "section": "Docker Networking & Isolation",
+      "line": 249
+    },
+    "TST-INT-110": {
+      "scenario": "Security mode: vault locked \u2192 dead drop active",
+      "path": "5.3",
+      "row": 3,
+      "section": "Docker Networking & Isolation",
+      "line": 250
+    },
+    "TST-INT-111": {
+      "scenario": "Security mode: late unlock",
+      "path": "5.3",
+      "row": 4,
+      "section": "Docker Networking & Isolation",
+      "line": 251
+    },
+    "TST-INT-112": {
+      "scenario": "Boot order: identity.sqlite before persona vaults",
+      "path": "5.3",
+      "row": 5,
+      "section": "Docker Networking & Isolation",
+      "line": 252
+    },
+    "TST-INT-113": {
+      "scenario": "Brain receives vault_unlocked",
+      "path": "5.3",
+      "row": 6,
+      "section": "Docker Networking & Isolation",
+      "line": 253
+    },
+    "TST-INT-114": {
+      "scenario": "Core depends on PDS started",
+      "path": "5.4",
+      "row": 1,
+      "section": "Docker Networking & Isolation",
+      "line": 262
+    },
+    "TST-INT-115": {
+      "scenario": "Brain depends on core healthy",
+      "path": "5.4",
+      "row": 2,
+      "section": "Docker Networking & Isolation",
+      "line": 263
+    },
+    "TST-INT-116": {
+      "scenario": "Brain starts without core",
+      "path": "5.4",
+      "row": 3,
+      "section": "Docker Networking & Isolation",
+      "line": 264
+    },
+    "TST-INT-117": {
+      "scenario": "LLM starts independently",
+      "path": "5.4",
+      "row": 4,
+      "section": "Docker Networking & Isolation",
+      "line": 265
+    },
+    "TST-INT-118": {
+      "scenario": "Full startup order",
+      "path": "5.4",
+      "row": 5,
+      "section": "Docker Networking & Isolation",
+      "line": 266
+    },
+    "TST-INT-119": {
+      "scenario": "Vault data persists",
+      "path": "5.5",
+      "row": 1,
+      "section": "Docker Networking & Isolation",
+      "line": 274
+    },
+    "TST-INT-120": {
+      "scenario": "Model files shared",
+      "path": "5.5",
+      "row": 2,
+      "section": "Docker Networking & Isolation",
+      "line": 275
+    },
+    "TST-INT-121": {
+      "scenario": "Secret files mounted (tmpfs)",
+      "path": "5.5",
+      "row": 3,
+      "section": "Docker Networking & Isolation",
+      "line": 276
+    },
+    "TST-INT-122": {
+      "scenario": "Source mounts (dev mode)",
+      "path": "5.5",
+      "row": 4,
+      "section": "Docker Networking & Isolation",
+      "line": 277
+    },
+    "TST-INT-123": {
+      "scenario": "Core data volume layout",
+      "path": "5.5",
+      "row": 5,
+      "section": "Docker Networking & Isolation",
+      "line": 278
+    },
+    "TST-INT-124": {
+      "scenario": "Brain is stateless",
+      "path": "5.5",
+      "row": 6,
+      "section": "Docker Networking & Isolation",
+      "line": 279
+    },
+    "TST-INT-125": {
+      "scenario": "PDS data separate",
+      "path": "5.5",
+      "row": 7,
+      "section": "Docker Networking & Isolation",
+      "line": 280
+    },
+    "TST-INT-126": {
+      "scenario": "llama models directory",
+      "path": "5.5",
+      "row": 8,
+      "section": "Docker Networking & Isolation",
+      "line": 281
+    },
+    "TST-INT-127": {
+      "scenario": "Creates required directories",
+      "path": "5.6",
+      "row": 1,
+      "section": "Docker Networking & Isolation",
+      "line": 289
+    },
+    "TST-INT-128": {
+      "scenario": "Generates BRAIN_TOKEN",
+      "path": "5.6",
+      "row": 2,
+      "section": "Docker Networking & Isolation",
+      "line": 290
+    },
+    "TST-INT-129": {
+      "scenario": "Prompts for passphrase",
+      "path": "5.6",
+      "row": 3,
+      "section": "Docker Networking & Isolation",
+      "line": 291
+    },
+    "TST-INT-130": {
+      "scenario": "Sets file permissions",
+      "path": "5.6",
+      "row": 4,
+      "section": "Docker Networking & Isolation",
+      "line": 292
+    },
+    "TST-INT-131": {
+      "scenario": "Idempotent: re-run safe",
+      "path": "5.6",
+      "row": 5,
+      "section": "Docker Networking & Isolation",
+      "line": 293
+    },
+    "TST-INT-132": {
+      "scenario": "docker compose up after install",
+      "path": "5.6",
+      "row": 6,
+      "section": "Docker Networking & Isolation",
+      "line": 294
+    },
+    "TST-INT-133": {
+      "scenario": "Secrets never in `docker inspect` output",
+      "path": "5.7",
+      "row": 1,
+      "section": "Docker Networking & Isolation",
+      "line": 300
+    },
+    "TST-INT-134": {
+      "scenario": "Secrets at `/run/secrets/` inside container",
+      "path": "5.7",
+      "row": 2,
+      "section": "Docker Networking & Isolation",
+      "line": 301
+    },
+    "TST-INT-135": {
+      "scenario": "`GOOGLE_API_KEY` in `.env` (exception)",
+      "path": "5.7",
+      "row": 3,
+      "section": "Docker Networking & Isolation",
+      "line": 302
+    },
+    "TST-INT-136": {
+      "scenario": "`.gitignore` blocks secrets directory",
+      "path": "5.7",
+      "row": 4,
+      "section": "Docker Networking & Isolation",
+      "line": 303
+    },
+    "TST-INT-137": {
+      "scenario": "`BRAIN_TOKEN` shared by core and brain",
+      "path": "5.7",
+      "row": 5,
+      "section": "Docker Networking & Isolation",
+      "line": 304
+    },
+    "TST-INT-138": {
+      "scenario": "Core crash with pending outbox",
+      "path": "6.1",
+      "row": 1,
+      "section": "Crash Recovery & Resilience",
+      "line": 314
+    },
+    "TST-INT-139": {
+      "scenario": "Core crash during vault write",
+      "path": "6.1",
+      "row": 2,
+      "section": "Crash Recovery & Resilience",
+      "line": 315
+    },
+    "TST-INT-140": {
+      "scenario": "Core crash with active WS connections",
+      "path": "6.1",
+      "row": 3,
+      "section": "Crash Recovery & Resilience",
+      "line": 316
+    },
+    "TST-INT-141": {
+      "scenario": "Core crash with locked persona spool",
+      "path": "6.1",
+      "row": 4,
+      "section": "Crash Recovery & Resilience",
+      "line": 317
+    },
+    "TST-INT-142": {
+      "scenario": "Brain crash mid-task",
+      "path": "6.2",
+      "row": 1,
+      "section": "Crash Recovery & Resilience",
+      "line": 323
+    },
+    "TST-INT-143": {
+      "scenario": "Brain crash with no checkpoint",
+      "path": "6.2",
+      "row": 2,
+      "section": "Crash Recovery & Resilience",
+      "line": 324
+    },
+    "TST-INT-144": {
+      "scenario": "Brain crash during LLM call",
+      "path": "6.2",
+      "row": 3,
+      "section": "Crash Recovery & Resilience",
+      "line": 325
+    },
+    "TST-INT-145": {
+      "scenario": "Brain crash with pending briefing",
+      "path": "6.2",
+      "row": 4,
+      "section": "Crash Recovery & Resilience",
+      "line": 326
+    },
+    "TST-INT-146": {
+      "scenario": "LLM crash during inference",
+      "path": "6.3",
+      "row": 1,
+      "section": "Crash Recovery & Resilience",
+      "line": 332
+    },
+    "TST-INT-147": {
+      "scenario": "LLM OOM",
+      "path": "6.3",
+      "row": 2,
+      "section": "Crash Recovery & Resilience",
+      "line": 333
+    },
+    "TST-INT-148": {
+      "scenario": "Corrupted model file",
+      "path": "6.3",
+      "row": 3,
+      "section": "Crash Recovery & Resilience",
+      "line": 334
+    },
+    "TST-INT-149": {
+      "scenario": "Power loss simulation",
+      "path": "6.4",
+      "row": 1,
+      "section": "Crash Recovery & Resilience",
+      "line": 340
+    },
+    "TST-INT-150": {
+      "scenario": "Disk full recovery",
+      "path": "6.4",
+      "row": 2,
+      "section": "Crash Recovery & Resilience",
+      "line": 341
+    },
+    "TST-INT-151": {
+      "scenario": "Raw vault data never reaches cloud LLM",
+      "path": "7.1",
+      "row": 1,
+      "section": "Security Boundary Tests",
+      "line": 351
+    },
+    "TST-INT-152": {
+      "scenario": "PII never in outbound messages",
+      "path": "7.1",
+      "row": 2,
+      "section": "Security Boundary Tests",
+      "line": 352
+    },
+    "TST-INT-153": {
+      "scenario": "Vault DEK never leaves core",
+      "path": "7.1",
+      "row": 3,
+      "section": "Security Boundary Tests",
+      "line": 353
+    },
+    "TST-INT-154": {
+      "scenario": "Master seed never transmitted",
+      "path": "7.1",
+      "row": 4,
+      "section": "Security Boundary Tests",
+      "line": 354
+    },
+    "TST-INT-155": {
+      "scenario": "Agent never sees full vault",
+      "path": "7.1",
+      "row": 5,
+      "section": "Security Boundary Tests",
+      "line": 355
+    },
+    "TST-INT-156": {
+      "scenario": "Persona A data not in Persona B queries",
+      "path": "7.2",
+      "row": 1,
+      "section": "Security Boundary Tests",
+      "line": 361
+    },
+    "TST-INT-157": {
+      "scenario": "Persona A DEK cannot decrypt Persona B",
+      "path": "7.2",
+      "row": 2,
+      "section": "Security Boundary Tests",
+      "line": 362
+    },
+    "TST-INT-158": {
+      "scenario": "Contact routing respects personas",
+      "path": "7.2",
+      "row": 3,
+      "section": "Security Boundary Tests",
+      "line": 363
+    },
+    "TST-INT-159": {
+      "scenario": "Admin can list all personas",
+      "path": "7.2",
+      "row": 4,
+      "section": "Security Boundary Tests",
+      "line": 364
+    },
+    "TST-INT-160": {
+      "scenario": "Locked persona DEK not in RAM",
+      "path": "7.2",
+      "row": 5,
+      "section": "Security Boundary Tests",
+      "line": 365
+    },
+    "TST-INT-161": {
+      "scenario": "Sibling key cryptographic unlinkability",
+      "path": "7.2",
+      "row": 6,
+      "section": "Security Boundary Tests",
+      "line": 366
+    },
+    "TST-INT-162": {
+      "scenario": "Breach containment: one persona compromised",
+      "path": "7.2",
+      "row": 7,
+      "section": "Security Boundary Tests",
+      "line": 367
+    },
+    "TST-INT-163": {
+      "scenario": "`GetPersonasForContact()` excludes locked",
+      "path": "7.2",
+      "row": 8,
+      "section": "Security Boundary Tests",
+      "line": 368
+    },
+    "TST-INT-164": {
+      "scenario": "Cross-persona parallel reads",
+      "path": "7.2",
+      "row": 9,
+      "section": "Security Boundary Tests",
+      "line": 369
+    },
+    "TST-INT-165": {
+      "scenario": "No unauthenticated API access",
+      "path": "7.3",
+      "row": 1,
+      "section": "Security Boundary Tests",
+      "line": 375
+    },
+    "TST-INT-166": {
+      "scenario": "BRAIN_TOKEN cannot perform admin actions",
+      "path": "7.3",
+      "row": 2,
+      "section": "Security Boundary Tests",
+      "line": 376
+    },
+    "TST-INT-167": {
+      "scenario": "CLIENT_TOKEN cannot perform brain actions",
+      "path": "7.3",
+      "row": 3,
+      "section": "Security Boundary Tests",
+      "line": 377
+    },
+    "TST-INT-168": {
+      "scenario": "Expired session cannot access admin",
+      "path": "7.3",
+      "row": 4,
+      "section": "Security Boundary Tests",
+      "line": 378
+    },
+    "TST-INT-169": {
+      "scenario": "Revoked device cannot access anything",
+      "path": "7.3",
+      "row": 5,
+      "section": "Security Boundary Tests",
+      "line": 379
+    },
+    "TST-INT-170": {
+      "scenario": "Port scan from external",
+      "path": "7.4",
+      "row": 1,
+      "section": "Security Boundary Tests",
+      "line": 385
+    },
+    "TST-INT-171": {
+      "scenario": "Brain not accessible from outside Docker",
+      "path": "7.4",
+      "row": 2,
+      "section": "Security Boundary Tests",
+      "line": 386
+    },
+    "TST-INT-172": {
+      "scenario": "Inter-container isolation",
+      "path": "7.4",
+      "row": 3,
+      "section": "Security Boundary Tests",
+      "line": 387
+    },
+    "TST-INT-173": {
+      "scenario": "Rate limiting on public endpoint",
+      "path": "7.4",
+      "row": 4,
+      "section": "Security Boundary Tests",
+      "line": 388
+    },
+    "TST-INT-174": {
+      "scenario": "TLS certificate validation",
+      "path": "7.4",
+      "row": 5,
+      "section": "Security Boundary Tests",
+      "line": 389
+    },
+    "TST-INT-175": {
+      "scenario": "Message tampering detected",
+      "path": "7.5",
+      "row": 1,
+      "section": "Security Boundary Tests",
+      "line": 395
+    },
+    "TST-INT-176": {
+      "scenario": "Replay attack prevention",
+      "path": "7.5",
+      "row": 2,
+      "section": "Security Boundary Tests",
+      "line": 396
+    },
+    "TST-INT-177": {
+      "scenario": "DID spoofing",
+      "path": "7.5",
+      "row": 3,
+      "section": "Security Boundary Tests",
+      "line": 397
+    },
+    "TST-INT-178": {
+      "scenario": "Key rotation",
+      "path": "7.5",
+      "row": 4,
+      "section": "Security Boundary Tests",
+      "line": 398
+    },
+    "TST-INT-179": {
+      "scenario": "Forward secrecy (Phase 2+)",
+      "path": "7.5",
+      "row": 5,
+      "section": "Security Boundary Tests",
+      "line": 399
+    },
+    "TST-INT-180": {
+      "scenario": "`did:plc` rotation: DID preserved",
+      "path": "7.5",
+      "row": 6,
+      "section": "Security Boundary Tests",
+      "line": 400
+    },
+    "TST-INT-181": {
+      "scenario": "`did:plc` \u2192 `did:web` escape",
+      "path": "7.5",
+      "row": 7,
+      "section": "Security Boundary Tests",
+      "line": 401
+    },
+    "TST-INT-182": {
+      "scenario": "BIP-39 recovery restores full identity",
+      "path": "7.5",
+      "row": 8,
+      "section": "Security Boundary Tests",
+      "line": 402
+    },
+    "TST-INT-183": {
+      "scenario": "No plaintext vault files on disk",
+      "path": "7.6",
+      "row": 1,
+      "section": "Security Boundary Tests",
+      "line": 408
+    },
+    "TST-INT-184": {
+      "scenario": "Hosting provider sees only encrypted blobs",
+      "path": "7.6",
+      "row": 2,
+      "section": "Security Boundary Tests",
+      "line": 409
+    },
+    "TST-INT-185": {
+      "scenario": "No plaintext in container temp directories",
+      "path": "7.6",
+      "row": 3,
+      "section": "Security Boundary Tests",
+      "line": 410
+    },
+    "TST-INT-186": {
+      "scenario": "No plaintext in Docker layer cache",
+      "path": "7.6",
+      "row": 4,
+      "section": "Security Boundary Tests",
+      "line": 411
+    },
+    "TST-INT-187": {
+      "scenario": "Logs contain no vault content",
+      "path": "7.6",
+      "row": 5,
+      "section": "Security Boundary Tests",
+      "line": 412
+    },
+    "TST-INT-188": {
+      "scenario": "FTS5 index encrypted by SQLCipher",
+      "path": "7.6",
+      "row": 6,
+      "section": "Security Boundary Tests",
+      "line": 413
+    },
+    "TST-INT-189": {
+      "scenario": "sqlite-vec embeddings encrypted",
+      "path": "7.6",
+      "row": 7,
+      "section": "Security Boundary Tests",
+      "line": 414
+    },
+    "TST-INT-190": {
+      "scenario": "WAL file encrypted",
+      "path": "7.6",
+      "row": 8,
+      "section": "Security Boundary Tests",
+      "line": 415
+    },
+    "TST-INT-191": {
+      "scenario": "Per-user SQLite isolation",
+      "path": "7.7",
+      "row": 1,
+      "section": "Security Boundary Tests",
+      "line": 421
+    },
+    "TST-INT-192": {
+      "scenario": "User A compromise doesn't expose User B",
+      "path": "7.7",
+      "row": 2,
+      "section": "Security Boundary Tests",
+      "line": 422
+    },
+    "TST-INT-193": {
+      "scenario": "No shared state between user containers",
+      "path": "7.7",
+      "row": 3,
+      "section": "Security Boundary Tests",
+      "line": 423
+    },
+    "TST-INT-194": {
+      "scenario": "Container escape doesn't grant vault access",
+      "path": "7.7",
+      "row": 4,
+      "section": "Security Boundary Tests",
+      "line": 424
+    },
+    "TST-INT-195": {
+      "scenario": "Full key derivation chain",
+      "path": "7.8",
+      "row": 1,
+      "section": "Security Boundary Tests",
+      "line": 433
+    },
+    "TST-INT-196": {
+      "scenario": "Different HKDF info \u2192 different DEK",
+      "path": "7.8",
+      "row": 2,
+      "section": "Security Boundary Tests",
+      "line": 434
+    },
+    "TST-INT-197": {
+      "scenario": "SLIP-0010 keys independent from HKDF DEKs",
+      "path": "7.8",
+      "row": 3,
+      "section": "Security Boundary Tests",
+      "line": 435
+    },
+    "TST-INT-198": {
+      "scenario": "Per-persona file isolation",
+      "path": "7.8",
+      "row": 4,
+      "section": "Security Boundary Tests",
+      "line": 436
+    },
+    "TST-INT-199": {
+      "scenario": "Locked persona: DEK never derived",
+      "path": "7.8",
+      "row": 5,
+      "section": "Security Boundary Tests",
+      "line": 437
+    },
+    "TST-INT-200": {
+      "scenario": "Key wrapping roundtrip",
+      "path": "7.8",
+      "row": 6,
+      "section": "Security Boundary Tests",
+      "line": 438
+    },
+    "TST-INT-201": {
+      "scenario": "Passphrase change: no re-encryption",
+      "path": "7.8",
+      "row": 7,
+      "section": "Security Boundary Tests",
+      "line": 439
+    },
+    "TST-INT-202": {
+      "scenario": "Convenience mode keyfile \u2192 same DEKs",
+      "path": "7.8",
+      "row": 8,
+      "section": "Security Boundary Tests",
+      "line": 440
+    },
+    "TST-INT-203": {
+      "scenario": "SQLCipher PRAGMAs enforced across stack",
+      "path": "7.8",
+      "row": 9,
+      "section": "Security Boundary Tests",
+      "line": 441
+    },
+    "TST-INT-204": {
+      "scenario": "Backup + Archive keys separate from vault DEKs",
+      "path": "7.8",
+      "row": 10,
+      "section": "Security Boundary Tests",
+      "line": 442
+    },
+    "TST-INT-205": {
+      "scenario": "`user_salt` uniqueness across nodes",
+      "path": "7.8",
+      "row": 11,
+      "section": "Security Boundary Tests",
+      "line": 443
+    },
+    "TST-INT-206": {
+      "scenario": "`user_salt` preserved in export/import",
+      "path": "7.8",
+      "row": 12,
+      "section": "Security Boundary Tests",
+      "line": 444
+    },
+    "TST-INT-207": {
+      "scenario": "Exactly one root identity enforced",
+      "path": "7.8",
+      "row": 13,
+      "section": "Security Boundary Tests",
+      "line": 445
+    },
+    "TST-INT-208": {
+      "scenario": "SLIP-0010 persona index mapping E2E",
+      "path": "7.8",
+      "row": 14,
+      "section": "Security Boundary Tests",
+      "line": 446
+    },
+    "TST-INT-209": {
+      "scenario": "Protection 1: WAL survives power loss",
+      "path": "7.9",
+      "row": 1,
+      "section": "Security Boundary Tests",
+      "line": 455
+    },
+    "TST-INT-210": {
+      "scenario": "Protection 1b: Single-writer pattern under load",
+      "path": "7.9",
+      "row": 2,
+      "section": "Security Boundary Tests",
+      "line": 456
+    },
+    "TST-INT-211": {
+      "scenario": "Protection 1b: Writes to different personas independent",
+      "path": "7.9",
+      "row": 3,
+      "section": "Security Boundary Tests",
+      "line": 457
+    },
+    "TST-INT-212": {
+      "scenario": "Protection 2: Pre-flight backup before migration",
+      "path": "7.9",
+      "row": 4,
+      "section": "Security Boundary Tests",
+      "line": 458
+    },
+    "TST-INT-213": {
+      "scenario": "Protection 2: Integrity failure \u2192 auto-rollback",
+      "path": "7.9",
+      "row": 5,
+      "section": "Security Boundary Tests",
+      "line": 459
+    },
+    "TST-INT-214": {
+      "scenario": "Protection 2: VACUUM INTO never used",
+      "path": "7.9",
+      "row": 6,
+      "section": "Security Boundary Tests",
+      "line": 460
+    },
+    "TST-INT-215": {
+      "scenario": "Protection 2: CI plaintext detection",
+      "path": "7.9",
+      "row": 7,
+      "section": "Security Boundary Tests",
+      "line": 461
+    },
+    "TST-INT-216": {
+      "scenario": "Protection 4: Off-site backup encrypted",
+      "path": "7.9",
+      "row": 8,
+      "section": "Security Boundary Tests",
+      "line": 462
+    },
+    "TST-INT-217": {
+      "scenario": "Full stack crash recovery",
+      "path": "7.9",
+      "row": 9,
+      "section": "Security Boundary Tests",
+      "line": 463
+    },
+    "TST-INT-218": {
+      "scenario": "Batch ingestion atomicity",
+      "path": "7.9",
+      "row": 10,
+      "section": "Security Boundary Tests",
+      "line": 464
+    },
+    "TST-INT-219": {
+      "scenario": "Custodian threshold met",
+      "path": "8",
+      "row": 1,
+      "section": "Digital Estate (SSS Custodian Recovery)",
+      "line": 472
+    },
+    "TST-INT-220": {
+      "scenario": "Below threshold",
+      "path": "8",
+      "row": 2,
+      "section": "Digital Estate (SSS Custodian Recovery)",
+      "line": 473
+    },
+    "TST-INT-221": {
+      "scenario": "Invalid share submitted",
+      "path": "8",
+      "row": 3,
+      "section": "Digital Estate (SSS Custodian Recovery)",
+      "line": 474
+    },
+    "TST-INT-222": {
+      "scenario": "Beneficiary key derivation",
+      "path": "8",
+      "row": 4,
+      "section": "Digital Estate (SSS Custodian Recovery)",
+      "line": 475
+    },
+    "TST-INT-223": {
+      "scenario": "Beneficiary cannot access other personas",
+      "path": "8",
+      "row": 5,
+      "section": "Digital Estate (SSS Custodian Recovery)",
+      "line": 476
+    },
+    "TST-INT-224": {
+      "scenario": "Estate plan stored in Tier 0",
+      "path": "8",
+      "row": 6,
+      "section": "Digital Estate (SSS Custodian Recovery)",
+      "line": 477
+    },
+    "TST-INT-225": {
+      "scenario": "Access type: `full_decrypt`",
+      "path": "8",
+      "row": 7,
+      "section": "Digital Estate (SSS Custodian Recovery)",
+      "line": 478
+    },
+    "TST-INT-226": {
+      "scenario": "Access type: `read_only_90_days`",
+      "path": "8",
+      "row": 8,
+      "section": "Digital Estate (SSS Custodian Recovery)",
+      "line": 479
+    },
+    "TST-INT-227": {
+      "scenario": "Default action: `destroy`",
+      "path": "8",
+      "row": 9,
+      "section": "Digital Estate (SSS Custodian Recovery)",
+      "line": 480
+    },
+    "TST-INT-228": {
+      "scenario": "Keys delivered via D2D",
+      "path": "8",
+      "row": 10,
+      "section": "Digital Estate (SSS Custodian Recovery)",
+      "line": 481
+    },
+    "TST-INT-229": {
+      "scenario": "Manual trigger with recovery phrase",
+      "path": "8",
+      "row": 11,
+      "section": "Digital Estate (SSS Custodian Recovery)",
+      "line": 482
+    },
+    "TST-INT-230": {
+      "scenario": "SSS custodian coordination",
+      "path": "8",
+      "row": 12,
+      "section": "Digital Estate (SSS Custodian Recovery)",
+      "line": 483
+    },
+    "TST-INT-231": {
+      "scenario": "Destruction gated on delivery confirmation",
+      "path": "8",
+      "row": 13,
+      "section": "Digital Estate (SSS Custodian Recovery)",
+      "line": 484
+    },
+    "TST-INT-232": {
+      "scenario": "Root seed NEVER in estate key payload",
+      "path": "8",
+      "row": 14,
+      "section": "Digital Estate (SSS Custodian Recovery)",
+      "line": 485
+    },
+    "TST-INT-233": {
+      "scenario": "Email ingestion (full pipeline)",
+      "path": "9.1",
+      "row": 1,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 495
+    },
+    "TST-INT-234": {
+      "scenario": "Calendar sync",
+      "path": "9.1",
+      "row": 2,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 496
+    },
+    "TST-INT-235": {
+      "scenario": "Contacts sync",
+      "path": "9.1",
+      "row": 3,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 497
+    },
+    "TST-INT-236": {
+      "scenario": "Multi-connector sync",
+      "path": "9.1",
+      "row": 4,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 498
+    },
+    "TST-INT-237": {
+      "scenario": "Ingestion with locked persona",
+      "path": "9.1",
+      "row": 5,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 499
+    },
+    "TST-INT-238": {
+      "scenario": "Ingestion dedup across restart",
+      "path": "9.1",
+      "row": 6,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 500
+    },
+    "TST-INT-239": {
+      "scenario": "Cursor continuity across restart",
+      "path": "9.1",
+      "row": 7,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 501
+    },
+    "TST-INT-240": {
+      "scenario": "Calendar data fields preserved E2E",
+      "path": "9.1",
+      "row": 8,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 502
+    },
+    "TST-INT-241": {
+      "scenario": "Contact data fields preserved E2E",
+      "path": "9.1",
+      "row": 9,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 503
+    },
+    "TST-INT-242": {
+      "scenario": "Calendar write operations E2E",
+      "path": "9.1",
+      "row": 10,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 504
+    },
+    "TST-INT-243": {
+      "scenario": "Calendar rolling window E2E",
+      "path": "9.1",
+      "row": 11,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 505
+    },
+    "TST-INT-244": {
+      "scenario": "Telegram message ingestion",
+      "path": "9.2",
+      "row": 1,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 514
+    },
+    "TST-INT-245": {
+      "scenario": "Telegram uses BRAIN_TOKEN",
+      "path": "9.2",
+      "row": 2,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 515
+    },
+    "TST-INT-246": {
+      "scenario": "Telegram full message+media",
+      "path": "9.2",
+      "row": 3,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 516
+    },
+    "TST-INT-247": {
+      "scenario": "Telegram no history",
+      "path": "9.2",
+      "row": 4,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 517
+    },
+    "TST-INT-248": {
+      "scenario": "Telegram Bot API token revocation",
+      "path": "9.2",
+      "row": 5,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 518
+    },
+    "TST-INT-249": {
+      "scenario": "Telegram supports media attachments",
+      "path": "9.2",
+      "row": 6,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 519
+    },
+    "TST-INT-250": {
+      "scenario": "Core never calls external APIs during ingestion",
+      "path": "9.3",
+      "row": 1,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 525
+    },
+    "TST-INT-251": {
+      "scenario": "Data encrypted immediately",
+      "path": "9.3",
+      "row": 2,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 526
+    },
+    "TST-INT-252": {
+      "scenario": "OpenClaw sandboxed",
+      "path": "9.3",
+      "row": 3,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 527
+    },
+    "TST-INT-253": {
+      "scenario": "Brain scrubs before cloud LLM",
+      "path": "9.3",
+      "row": 4,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 528
+    },
+    "TST-INT-254": {
+      "scenario": "OAuth tokens not in Dina",
+      "path": "9.3",
+      "row": 5,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 529
+    },
+    "TST-INT-255": {
+      "scenario": "Telegram connector uses BRAIN_TOKEN",
+      "path": "9.3",
+      "row": 6,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 530
+    },
+    "TST-INT-256": {
+      "scenario": "Attachment metadata only in vault",
+      "path": "9.3",
+      "row": 7,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 531
+    },
+    "TST-INT-257": {
+      "scenario": "Sync status visible in admin UI",
+      "path": "9.3",
+      "row": 8,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 532
+    },
+    "TST-INT-258": {
+      "scenario": "Fast sync: ready in seconds",
+      "path": "9.4",
+      "row": 1,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 541
+    },
+    "TST-INT-259": {
+      "scenario": "Background backfill",
+      "path": "9.4",
+      "row": 2,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 542
+    },
+    "TST-INT-260": {
+      "scenario": "User query preempts backfill",
+      "path": "9.4",
+      "row": 3,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 543
+    },
+    "TST-INT-261": {
+      "scenario": "Time horizon enforced",
+      "path": "9.4",
+      "row": 4,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 544
+    },
+    "TST-INT-262": {
+      "scenario": "Cold archive pass-through",
+      "path": "9.4",
+      "row": 5,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 545
+    },
+    "TST-INT-263": {
+      "scenario": "OpenClaw outage during backfill",
+      "path": "9.4",
+      "row": 6,
+      "section": "Ingestion-to-Vault Pipeline (Full E2E)",
+      "line": 546
+    },
+    "TST-INT-264": {
+      "scenario": "Ingestion: brain \u2192 MCP \u2192 core",
+      "path": "10.1",
+      "row": 1,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 560
+    },
+    "TST-INT-265": {
+      "scenario": "Content routing by brain",
+      "path": "10.1",
+      "row": 2,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 561
+    },
+    "TST-INT-266": {
+      "scenario": "Same contact, different personas",
+      "path": "10.1",
+      "row": 3,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 562
+    },
+    "TST-INT-267": {
+      "scenario": "Brain-generated data stored via core",
+      "path": "10.1",
+      "row": 4,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 563
+    },
+    "TST-INT-268": {
+      "scenario": "Sync cursor stored as KV",
+      "path": "10.1",
+      "row": 5,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 564
+    },
+    "TST-INT-269": {
+      "scenario": "Batch ingestion: 5000-email initial sync",
+      "path": "10.1",
+      "row": 6,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 565
+    },
+    "TST-INT-270": {
+      "scenario": "Batch ingestion: concurrent reads unblocked",
+      "path": "10.1",
+      "row": 7,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 566
+    },
+    "TST-INT-271": {
+      "scenario": "Staging area: draft lifecycle",
+      "path": "10.1",
+      "row": 8,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 567
+    },
+    "TST-INT-272": {
+      "scenario": "Staging area: 72-hour expiry",
+      "path": "10.1",
+      "row": 9,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 568
+    },
+    "TST-INT-273": {
+      "scenario": "Embedding via local llama",
+      "path": "10.2",
+      "row": 1,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 574
+    },
+    "TST-INT-274": {
+      "scenario": "Embedding via cloud (no llama)",
+      "path": "10.2",
+      "row": 2,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 575
+    },
+    "TST-INT-275": {
+      "scenario": "Core doesn't understand embeddings",
+      "path": "10.2",
+      "row": 3,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 576
+    },
+    "TST-INT-276": {
+      "scenario": "Semantic search uses stored embedding",
+      "path": "10.2",
+      "row": 4,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 577
+    },
+    "TST-INT-277": {
+      "scenario": "Embedding model migration: full re-index",
+      "path": "10.2",
+      "row": 5,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 578
+    },
+    "TST-INT-278": {
+      "scenario": "FTS5 available during re-indexing",
+      "path": "10.2",
+      "row": 6,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 579
+    },
+    "TST-INT-279": {
+      "scenario": "Re-index scale",
+      "path": "10.2",
+      "row": 7,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 580
+    },
+    "TST-INT-280": {
+      "scenario": "Simple FTS5 search (fast path)",
+      "path": "10.3",
+      "row": 1,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 586
+    },
+    "TST-INT-281": {
+      "scenario": "Semantic search (brain orchestrates)",
+      "path": "10.3",
+      "row": 2,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 587
+    },
+    "TST-INT-282": {
+      "scenario": "Hybrid search merge",
+      "path": "10.3",
+      "row": 3,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 588
+    },
+    "TST-INT-283": {
+      "scenario": "Agentic multi-step search",
+      "path": "10.3",
+      "row": 4,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 589
+    },
+    "TST-INT-284": {
+      "scenario": "Fast path vs brain path routing",
+      "path": "10.3",
+      "row": 5,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 590
+    },
+    "TST-INT-285": {
+      "scenario": "Brain never opens SQLite",
+      "path": "10.4",
+      "row": 1,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 596
+    },
+    "TST-INT-286": {
+      "scenario": "Core never generates embeddings",
+      "path": "10.4",
+      "row": 2,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 597
+    },
+    "TST-INT-287": {
+      "scenario": "Core never calls external APIs",
+      "path": "10.4",
+      "row": 3,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 598
+    },
+    "TST-INT-288": {
+      "scenario": "Brain never talks to clients directly",
+      "path": "10.4",
+      "row": 4,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 599
+    },
+    "TST-INT-289": {
+      "scenario": "llama is stateless",
+      "path": "10.4",
+      "row": 5,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 600
+    },
+    "TST-INT-290": {
+      "scenario": "OAuth tokens not in Dina",
+      "path": "10.4",
+      "row": 6,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 601
+    },
+    "TST-INT-291": {
+      "scenario": "Brain is stateless (verified)",
+      "path": "10.4",
+      "row": 7,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 602
+    },
+    "TST-INT-292": {
+      "scenario": "Draft-Don't-Send: full flow",
+      "path": "10.5",
+      "row": 1,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 608
+    },
+    "TST-INT-293": {
+      "scenario": "Cart Handover: full flow",
+      "path": "10.5",
+      "row": 2,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 609
+    },
+    "TST-INT-294": {
+      "scenario": "Agent delegation: form-fill via MCP",
+      "path": "10.5",
+      "row": 3,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 610
+    },
+    "TST-INT-295": {
+      "scenario": "Reminder loop: missed reminder on reboot",
+      "path": "10.5",
+      "row": 4,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 611
+    },
+    "TST-INT-296": {
+      "scenario": "Action layer never bypasses staging",
+      "path": "10.5",
+      "row": 5,
+      "section": "Data Flow Patterns (E2E)",
+      "line": 612
+    },
+    "TST-INT-297": {
+      "scenario": "Publish expert attestation",
+      "path": "11.1",
+      "row": 1,
+      "section": "Reputation Graph Integration",
+      "line": 625
+    },
+    "TST-INT-298": {
+      "scenario": "Publish outcome report",
+      "path": "11.1",
+      "row": 2,
+      "section": "Reputation Graph Integration",
+      "line": 626
+    },
+    "TST-INT-299": {
+      "scenario": "Record signature valid",
+      "path": "11.1",
+      "row": 3,
+      "section": "Reputation Graph Integration",
+      "line": 627
+    },
+    "TST-INT-300": {
+      "scenario": "PDS cannot forge records",
+      "path": "11.1",
+      "row": 4,
+      "section": "Reputation Graph Integration",
+      "line": 628
+    },
+    "TST-INT-301": {
+      "scenario": "Type B: bundled PDS in docker-compose",
+      "path": "11.1",
+      "row": 5,
+      "section": "Reputation Graph Integration",
+      "line": 629
+    },
+    "TST-INT-302": {
+      "scenario": "Type A: external PDS push",
+      "path": "11.1",
+      "row": 6,
+      "section": "Reputation Graph Integration",
+      "line": 630
+    },
+    "TST-INT-303": {
+      "scenario": "Custom Lexicon validation",
+      "path": "11.1",
+      "row": 7,
+      "section": "Reputation Graph Integration",
+      "line": 631
+    },
+    "TST-INT-304": {
+      "scenario": "Reputation tampering detected",
+      "path": "11.2",
+      "row": 1,
+      "section": "Reputation Graph Integration",
+      "line": 637
+    },
+    "TST-INT-305": {
+      "scenario": "Author deletes own review (signed tombstone)",
+      "path": "11.2",
+      "row": 2,
+      "section": "Reputation Graph Integration",
+      "line": 638
+    },
+    "TST-INT-306": {
+      "scenario": "Non-author cannot delete review",
+      "path": "11.2",
+      "row": 3,
+      "section": "Reputation Graph Integration",
+      "line": 639
+    },
+    "TST-INT-307": {
+      "scenario": "Outcome data exact anonymized fields \u2014 no PII",
+      "path": "11.2",
+      "row": 4,
+      "section": "Reputation Graph Integration",
+      "line": 640
+    },
+    "TST-INT-308": {
+      "scenario": "Aggregate scores computed not stored",
+      "path": "11.2",
+      "row": 5,
+      "section": "Reputation Graph Integration",
+      "line": 641
+    },
+    "TST-INT-309": {
+      "scenario": "Outcome data lifecycle E2E",
+      "path": "11.2",
+      "row": 6,
+      "section": "Reputation Graph Integration",
+      "line": 642
+    },
+    "TST-INT-310": {
+      "scenario": "Outcome report full Lexicon field validation",
+      "path": "11.2",
+      "row": 7,
+      "section": "Reputation Graph Integration",
+      "line": 643
+    },
+    "TST-INT-311": {
+      "scenario": "Reputation affects agent routing",
+      "path": "11.3",
+      "row": 1,
+      "section": "Reputation Graph Integration",
+      "line": 649
+    },
+    "TST-INT-312": {
+      "scenario": "Reputation affects trust tier",
+      "path": "11.3",
+      "row": 2,
+      "section": "Reputation Graph Integration",
+      "line": 650
+    },
+    "TST-INT-313": {
+      "scenario": "Cold start: web search fallback (Phase 1)",
+      "path": "11.3",
+      "row": 3,
+      "section": "Reputation Graph Integration",
+      "line": 651
+    },
+    "TST-INT-314": {
+      "scenario": "Gradual reputation activation",
+      "path": "11.3",
+      "row": 4,
+      "section": "Reputation Graph Integration",
+      "line": 652
+    },
+    "TST-INT-315": {
+      "scenario": "Cold start: personal context enrichment",
+      "path": "11.3",
+      "row": 5,
+      "section": "Reputation Graph Integration",
+      "line": 653
+    },
+    "TST-INT-316": {
+      "scenario": "PDS down: records already replicated",
+      "path": "11.4",
+      "row": 1,
+      "section": "Reputation Graph Integration",
+      "line": 659
+    },
+    "TST-INT-317": {
+      "scenario": "PDS migration (account portability)",
+      "path": "11.4",
+      "row": 2,
+      "section": "Reputation Graph Integration",
+      "line": 660
+    },
+    "TST-INT-318": {
+      "scenario": "Foundation PDS stores only reputation data",
+      "path": "11.4",
+      "row": 3,
+      "section": "Reputation Graph Integration",
+      "line": 661
+    },
+    "TST-INT-319": {
+      "scenario": "Relay crawls PDS via delta sync",
+      "path": "11.4",
+      "row": 4,
+      "section": "Reputation Graph Integration",
+      "line": 662
+    },
+    "TST-INT-320": {
+      "scenario": "Discovery \u2192 PDS federation",
+      "path": "11.5",
+      "row": 1,
+      "section": "Reputation Graph Integration",
+      "line": 671
+    },
+    "TST-INT-321": {
+      "scenario": "Discovery endpoint available unauthenticated",
+      "path": "11.5",
+      "row": 2,
+      "section": "Reputation Graph Integration",
+      "line": 672
+    },
+    "TST-INT-322": {
+      "scenario": "Discovery returns plain text DID",
+      "path": "11.5",
+      "row": 3,
+      "section": "Reputation Graph Integration",
+      "line": 673
+    },
+    "TST-INT-323": {
+      "scenario": "Missing discovery \u2192 PDS federation fails",
+      "path": "11.5",
+      "row": 4,
+      "section": "Reputation Graph Integration",
+      "line": 674
+    },
+    "TST-INT-324": {
+      "scenario": "Schema migration on upgrade",
+      "path": "12",
+      "row": 1,
+      "section": "Upgrade & Migration",
+      "line": 682
+    },
+    "TST-INT-325": {
+      "scenario": "Data preserved across upgrade",
+      "path": "12",
+      "row": 2,
+      "section": "Upgrade & Migration",
+      "line": 683
+    },
+    "TST-INT-326": {
+      "scenario": "Rollback after failed migration",
+      "path": "12",
+      "row": 3,
+      "section": "Upgrade & Migration",
+      "line": 684
+    },
+    "TST-INT-327": {
+      "scenario": "Config format change",
+      "path": "12",
+      "row": 4,
+      "section": "Upgrade & Migration",
+      "line": 685
+    },
+    "TST-INT-328": {
+      "scenario": "`dina export` \u2192 `dina import` roundtrip",
+      "path": "12",
+      "row": 5,
+      "section": "Upgrade & Migration",
+      "line": 686
+    },
+    "TST-INT-329": {
+      "scenario": "Export/import preserves DID identity",
+      "path": "12",
+      "row": 6,
+      "section": "Upgrade & Migration",
+      "line": 687
+    },
+    "TST-INT-330": {
+      "scenario": "Migration between hosting levels",
+      "path": "12",
+      "row": 7,
+      "section": "Upgrade & Migration",
+      "line": 688
+    },
+    "TST-INT-331": {
+      "scenario": "Same Docker image across hosting levels",
+      "path": "12",
+      "row": 8,
+      "section": "Upgrade & Migration",
+      "line": 689
+    },
+    "TST-INT-332": {
+      "scenario": "Import rejects tampered archive",
+      "path": "12",
+      "row": 9,
+      "section": "Upgrade & Migration",
+      "line": 690
+    },
+    "TST-INT-333": {
+      "scenario": "Schema migration: identity.sqlite",
+      "path": "12",
+      "row": 10,
+      "section": "Upgrade & Migration",
+      "line": 691
+    },
+    "TST-INT-334": {
+      "scenario": "Schema migration: persona vault",
+      "path": "12",
+      "row": 11,
+      "section": "Upgrade & Migration",
+      "line": 692
+    },
+    "TST-INT-335": {
+      "scenario": "Schema migration: partial failure",
+      "path": "12",
+      "row": 12,
+      "section": "Upgrade & Migration",
+      "line": 693
+    },
+    "TST-INT-336": {
+      "scenario": "FTS5 rebuild after schema change",
+      "path": "12",
+      "row": 13,
+      "section": "Upgrade & Migration",
+      "line": 694
+    },
+    "TST-INT-337": {
+      "scenario": "Import invalidates all device tokens",
+      "path": "12",
+      "row": 14,
+      "section": "Upgrade & Migration",
+      "line": 695
+    },
+    "TST-INT-338": {
+      "scenario": "Concurrent WebSocket connections",
+      "path": "13.1",
+      "row": 1,
+      "section": "Performance & Load Tests",
+      "line": 705
+    },
+    "TST-INT-339": {
+      "scenario": "Vault write throughput",
+      "path": "13.1",
+      "row": 2,
+      "section": "Performance & Load Tests",
+      "line": 706
+    },
+    "TST-INT-340": {
+      "scenario": "Vault search under load",
+      "path": "13.1",
+      "row": 3,
+      "section": "Performance & Load Tests",
+      "line": 707
+    },
+    "TST-INT-341": {
+      "scenario": "Inbound message handling",
+      "path": "13.1",
+      "row": 4,
+      "section": "Performance & Load Tests",
+      "line": 708
+    },
+    "TST-INT-342": {
+      "scenario": "Outbox drain rate",
+      "path": "13.1",
+      "row": 5,
+      "section": "Performance & Load Tests",
+      "line": 709
+    },
+    "TST-INT-343": {
+      "scenario": "Query-to-response (local LLM)",
+      "path": "13.2",
+      "row": 1,
+      "section": "Performance & Load Tests",
+      "line": 715
+    },
+    "TST-INT-344": {
+      "scenario": "Query-to-response (cloud LLM)",
+      "path": "13.2",
+      "row": 2,
+      "section": "Performance & Load Tests",
+      "line": 716
+    },
+    "TST-INT-345": {
+      "scenario": "Message send latency",
+      "path": "13.2",
+      "row": 3,
+      "section": "Performance & Load Tests",
+      "line": 717
+    },
+    "TST-INT-346": {
+      "scenario": "Pairing completion",
+      "path": "13.2",
+      "row": 4,
+      "section": "Performance & Load Tests",
+      "line": 718
+    },
+    "TST-INT-347": {
+      "scenario": "Core memory usage",
+      "path": "13.3",
+      "row": 1,
+      "section": "Performance & Load Tests",
+      "line": 724
+    },
+    "TST-INT-348": {
+      "scenario": "Brain memory usage",
+      "path": "13.3",
+      "row": 2,
+      "section": "Performance & Load Tests",
+      "line": 725
+    },
+    "TST-INT-349": {
+      "scenario": "LLM memory usage",
+      "path": "13.3",
+      "row": 3,
+      "section": "Performance & Load Tests",
+      "line": 726
+    },
+    "TST-INT-350": {
+      "scenario": "Disk usage growth",
+      "path": "13.3",
+      "row": 4,
+      "section": "Performance & Load Tests",
+      "line": 727
+    },
+    "TST-INT-351": {
+      "scenario": "Spool disk usage",
+      "path": "13.3",
+      "row": 5,
+      "section": "Performance & Load Tests",
+      "line": 728
+    },
+    "TST-INT-352": {
+      "scenario": "Kill brain randomly",
+      "path": "14",
+      "row": 1,
+      "section": "Chaos Engineering",
+      "line": 736
+    },
+    "TST-INT-353": {
+      "scenario": "Kill core randomly",
+      "path": "14",
+      "row": 2,
+      "section": "Chaos Engineering",
+      "line": 737
+    },
+    "TST-INT-354": {
+      "scenario": "Network partition brain\u2194core",
+      "path": "14",
+      "row": 3,
+      "section": "Chaos Engineering",
+      "line": 738
+    },
+    "TST-INT-355": {
+      "scenario": "Slow network",
+      "path": "14",
+      "row": 4,
+      "section": "Chaos Engineering",
+      "line": 739
+    },
+    "TST-INT-356": {
+      "scenario": "CPU pressure",
+      "path": "14",
+      "row": 5,
+      "section": "Chaos Engineering",
+      "line": 740
+    },
+    "TST-INT-357": {
+      "scenario": "Memory pressure",
+      "path": "14",
+      "row": 6,
+      "section": "Chaos Engineering",
+      "line": 741
+    },
+    "TST-INT-358": {
+      "scenario": "Disk I/O saturation",
+      "path": "14",
+      "row": 7,
+      "section": "Chaos Engineering",
+      "line": 742
+    },
+    "TST-INT-359": {
+      "scenario": "No PII in any log file",
+      "path": "15",
+      "row": 1,
+      "section": "Compliance & Privacy",
+      "line": 750
+    },
+    "TST-INT-360": {
+      "scenario": "No PII in error messages",
+      "path": "15",
+      "row": 2,
+      "section": "Compliance & Privacy",
+      "line": 751
+    },
+    "TST-INT-361": {
+      "scenario": "Audit trail completeness",
+      "path": "15",
+      "row": 3,
+      "section": "Compliance & Privacy",
+      "line": 752
+    },
+    "TST-INT-362": {
+      "scenario": "Data deletion (right to erasure)",
+      "path": "15",
+      "row": 4,
+      "section": "Compliance & Privacy",
+      "line": 753
+    },
+    "TST-INT-363": {
+      "scenario": "Data export (portability)",
+      "path": "15",
+      "row": 5,
+      "section": "Compliance & Privacy",
+      "line": 754
+    },
+    "TST-INT-364": {
+      "scenario": "Consent tracking",
+      "path": "15",
+      "row": 6,
+      "section": "Compliance & Privacy",
+      "line": 755
+    },
+    "TST-INT-365": {
+      "scenario": "Home Node available when all clients offline",
+      "path": "16.1",
+      "row": 1,
+      "section": "Deferred (Phase 2+)",
+      "line": 769
+    },
+    "TST-INT-366": {
+      "scenario": "Client device offline doesn't affect Home Node",
+      "path": "16.1",
+      "row": 2,
+      "section": "Deferred (Phase 2+)",
+      "line": 770
+    },
+    "TST-INT-367": {
+      "scenario": "Rich client: local vault cache syncs on reconnect",
+      "path": "16.1",
+      "row": 3,
+      "section": "Deferred (Phase 2+)",
+      "line": 771
+    },
+    "TST-INT-368": {
+      "scenario": "Rich client: on-device LLM works offline",
+      "path": "16.1",
+      "row": 4,
+      "section": "Deferred (Phase 2+)",
+      "line": 772
+    },
+    "TST-INT-369": {
+      "scenario": "Rich client: full sync on reconnection",
+      "path": "16.1",
+      "row": 5,
+      "section": "Deferred (Phase 2+)",
+      "line": 773
+    },
+    "TST-INT-370": {
+      "scenario": "Thin client: no local storage",
+      "path": "16.1",
+      "row": 6,
+      "section": "Deferred (Phase 2+)",
+      "line": 774
+    },
+    "TST-INT-371": {
+      "scenario": "Thin client: inoperable without Home Node",
+      "path": "16.1",
+      "row": 7,
+      "section": "Deferred (Phase 2+)",
+      "line": 775
+    },
+    "TST-INT-372": {
+      "scenario": "Multiple rich clients sync consistently",
+      "path": "16.1",
+      "row": 8,
+      "section": "Deferred (Phase 2+)",
+      "line": 776
+    },
+    "TST-INT-373": {
+      "scenario": "Sync protocol: checkpoint mechanism",
+      "path": "16.1",
+      "row": 9,
+      "section": "Deferred (Phase 2+)",
+      "line": 777
+    },
+    "TST-INT-374": {
+      "scenario": "Sync protocol: client uploads local items",
+      "path": "16.1",
+      "row": 10,
+      "section": "Deferred (Phase 2+)",
+      "line": 778
+    },
+    "TST-INT-375": {
+      "scenario": "Conflict resolution: last-write-wins",
+      "path": "16.1",
+      "row": 11,
+      "section": "Deferred (Phase 2+)",
+      "line": 779
+    },
+    "TST-INT-376": {
+      "scenario": "Conflict resolution: user review",
+      "path": "16.1",
+      "row": 12,
+      "section": "Deferred (Phase 2+)",
+      "line": 780
+    },
+    "TST-INT-377": {
+      "scenario": "Most data is append-only",
+      "path": "16.1",
+      "row": 13,
+      "section": "Deferred (Phase 2+)",
+      "line": 781
+    },
+    "TST-INT-378": {
+      "scenario": "New device = full sync",
+      "path": "16.1",
+      "row": 14,
+      "section": "Deferred (Phase 2+)",
+      "line": 782
+    },
+    "TST-INT-379": {
+      "scenario": "Corrupted client cache \u2192 re-sync",
+      "path": "16.1",
+      "row": 15,
+      "section": "Deferred (Phase 2+)",
+      "line": 783
+    },
+    "TST-INT-380": {
+      "scenario": "Ongoing real-time push",
+      "path": "16.1",
+      "row": 16,
+      "section": "Deferred (Phase 2+)",
+      "line": 784
+    },
+    "TST-INT-381": {
+      "scenario": "Home Node failure: rich client offline read",
+      "path": "16.1",
+      "row": 17,
+      "section": "Deferred (Phase 2+)",
+      "line": 785
+    },
+    "TST-INT-382": {
+      "scenario": "Enclave attestation verified by client",
+      "path": "16.2",
+      "row": 1,
+      "section": "Deferred (Phase 2+)",
+      "line": 791
+    },
+    "TST-INT-383": {
+      "scenario": "Host root cannot read enclave memory",
+      "path": "16.2",
+      "row": 2,
+      "section": "Deferred (Phase 2+)",
+      "line": 792
+    },
+    "TST-INT-384": {
+      "scenario": "Enclave-sealed keys",
+      "path": "16.2",
+      "row": 3,
+      "section": "Deferred (Phase 2+)",
+      "line": 793
+    },
+    "TST-INT-385": {
+      "scenario": "Day 1: email + calendar ingestion, basic nudges",
+      "path": "16.3",
+      "row": 1,
+      "section": "Deferred (Phase 2+)",
+      "line": 799
+    },
+    "TST-INT-386": {
+      "scenario": "Day 7: mnemonic backup prompt",
+      "path": "16.3",
+      "row": 2,
+      "section": "Deferred (Phase 2+)",
+      "line": 800
+    },
+    "TST-INT-387": {
+      "scenario": "Day 14: Telegram connector prompt",
+      "path": "16.3",
+      "row": 3,
+      "section": "Deferred (Phase 2+)",
+      "line": 801
+    },
+    "TST-INT-388": {
+      "scenario": "Day 30: persona compartments prompt",
+      "path": "16.3",
+      "row": 4,
+      "section": "Deferred (Phase 2+)",
+      "line": 802
+    },
+    "TST-INT-389": {
+      "scenario": "Month 3: power user discovery",
+      "path": "16.3",
+      "row": 5,
+      "section": "Deferred (Phase 2+)",
+      "line": 803
+    },
+    "TST-INT-390": {
+      "scenario": "`--profile local-llm` adds llama container",
+      "path": "16.4",
+      "row": 1,
+      "section": "Deferred (Phase 2+)",
+      "line": 809
+    },
+    "TST-INT-391": {
+      "scenario": "Without profile: 3 containers only",
+      "path": "16.4",
+      "row": 2,
+      "section": "Deferred (Phase 2+)",
+      "line": 810
+    },
+    "TST-INT-392": {
+      "scenario": "Brain routes to llama:8080 when available",
+      "path": "16.4",
+      "row": 3,
+      "section": "Deferred (Phase 2+)",
+      "line": 811
+    },
+    "TST-INT-393": {
+      "scenario": "Brain falls back to cloud when llama absent",
+      "path": "16.4",
+      "row": 4,
+      "section": "Deferred (Phase 2+)",
+      "line": 812
+    },
+    "TST-INT-394": {
+      "scenario": "PII scrubbing without llama",
+      "path": "16.4",
+      "row": 5,
+      "section": "Deferred (Phase 2+)",
+      "line": 813
+    },
+    "TST-INT-395": {
+      "scenario": "Community tier: Tailscale Funnel",
+      "path": "16.5",
+      "row": 1,
+      "section": "Deferred (Phase 2+)",
+      "line": 819
+    },
+    "TST-INT-396": {
+      "scenario": "Production tier: Cloudflare Tunnel",
+      "path": "16.5",
+      "row": 2,
+      "section": "Deferred (Phase 2+)",
+      "line": 820
+    },
+    "TST-INT-397": {
+      "scenario": "Sovereign tier: Yggdrasil mesh",
+      "path": "16.5",
+      "row": 3,
+      "section": "Deferred (Phase 2+)",
+      "line": 821
+    },
+    "TST-INT-398": {
+      "scenario": "Tier change \u2192 DID rotation",
+      "path": "16.5",
+      "row": 4,
+      "section": "Deferred (Phase 2+)",
+      "line": 822
+    },
+    "TST-INT-399": {
+      "scenario": "Multiple tiers simultaneously",
+      "path": "16.5",
+      "row": 5,
+      "section": "Deferred (Phase 2+)",
+      "line": 823
+    },
+    "TST-INT-400": {
+      "scenario": "Wildcard relay (Foundation)",
+      "path": "16.5",
+      "row": 6,
+      "section": "Deferred (Phase 2+)",
+      "line": 824
+    },
+    "TST-INT-401": {
+      "scenario": "Noise XX handshake",
+      "path": "16.6",
+      "row": 1,
+      "section": "Deferred (Phase 2+)",
+      "line": 830
+    },
+    "TST-INT-402": {
+      "scenario": "Key compromise doesn't expose past messages",
+      "path": "16.6",
+      "row": 2,
+      "section": "Deferred (Phase 2+)",
+      "line": 831
+    },
+    "TST-INT-403": {
+      "scenario": "Session ratchet",
+      "path": "16.6",
+      "row": 3,
+      "section": "Deferred (Phase 2+)",
+      "line": 832
+    },
+    "TST-INT-404": {
+      "scenario": "Firehose consumer filters correctly",
+      "path": "16.7",
+      "row": 1,
+      "section": "Deferred (Phase 2+)",
+      "line": 841
+    },
+    "TST-INT-405": {
+      "scenario": "Cryptographic verification on every record",
+      "path": "16.7",
+      "row": 2,
+      "section": "Deferred (Phase 2+)",
+      "line": 842
+    },
+    "TST-INT-406": {
+      "scenario": "Query API: reputation by DID",
+      "path": "16.7",
+      "row": 3,
+      "section": "Deferred (Phase 2+)",
+      "line": 843
+    },
+    "TST-INT-407": {
+      "scenario": "Query API: product reputation",
+      "path": "16.7",
+      "row": 4,
+      "section": "Deferred (Phase 2+)",
+      "line": 844
+    },
+    "TST-INT-408": {
+      "scenario": "Query API: bot scores",
+      "path": "16.7",
+      "row": 5,
+      "section": "Deferred (Phase 2+)",
+      "line": 845
+    },
+    "TST-INT-409": {
+      "scenario": "Signed payloads in API responses",
+      "path": "16.7",
+      "row": 6,
+      "section": "Deferred (Phase 2+)",
+      "line": 846
+    },
+    "TST-INT-410": {
+      "scenario": "Aggregate scores deterministic",
+      "path": "16.7",
+      "row": 7,
+      "section": "Deferred (Phase 2+)",
+      "line": 847
+    },
+    "TST-INT-411": {
+      "scenario": "Cursor tracking: crash recovery",
+      "path": "16.7",
+      "row": 8,
+      "section": "Deferred (Phase 2+)",
+      "line": 848
+    },
+    "TST-INT-412": {
+      "scenario": "Layer 1: Cryptographic proof",
+      "path": "16.8",
+      "row": 1,
+      "section": "Deferred (Phase 2+)",
+      "line": 856
+    },
+    "TST-INT-413": {
+      "scenario": "Layer 2: Consensus check (anti-censorship)",
+      "path": "16.8",
+      "row": 2,
+      "section": "Deferred (Phase 2+)",
+      "line": 857
+    },
+    "TST-INT-414": {
+      "scenario": "Layer 3: Direct PDS spot-check",
+      "path": "16.8",
+      "row": 3,
+      "section": "Deferred (Phase 2+)",
+      "line": 858
+    },
+    "TST-INT-415": {
+      "scenario": "Dishonest AppView abandoned",
+      "path": "16.8",
+      "row": 4,
+      "section": "Deferred (Phase 2+)",
+      "line": 859
+    },
+    "TST-INT-416": {
+      "scenario": "Merkle root hash to L2",
+      "path": "16.9",
+      "row": 1,
+      "section": "Deferred (Phase 2+)",
+      "line": 867
+    },
+    "TST-INT-417": {
+      "scenario": "Merkle proof verification",
+      "path": "16.9",
+      "row": 2,
+      "section": "Deferred (Phase 2+)",
+      "line": 868
+    },
+    "TST-INT-418": {
+      "scenario": "Hash reveals nothing",
+      "path": "16.9",
+      "row": 3,
+      "section": "Deferred (Phase 2+)",
+      "line": 869
+    },
+    "TST-INT-419": {
+      "scenario": "Deletion + anchoring compatible",
+      "path": "16.9",
+      "row": 4,
+      "section": "Deferred (Phase 2+)",
+      "line": 870
+    },
+    "TST-INT-420": {
+      "scenario": "Bot query format",
+      "path": "16.10",
+      "row": 1,
+      "section": "Deferred (Phase 2+)",
+      "line": 879
+    },
+    "TST-INT-421": {
+      "scenario": "Bot signature verification",
+      "path": "16.10",
+      "row": 2,
+      "section": "Deferred (Phase 2+)",
+      "line": 880
+    },
+    "TST-INT-422": {
+      "scenario": "Attribution mandatory",
+      "path": "16.10",
+      "row": 3,
+      "section": "Deferred (Phase 2+)",
+      "line": 881
+    },
+    "TST-INT-423": {
+      "scenario": "Deep Link pattern default",
+      "path": "16.10",
+      "row": 4,
+      "section": "Deferred (Phase 2+)",
+      "line": 882
+    },
+    "TST-INT-424": {
+      "scenario": "Bot reputation: auto-route on low score",
+      "path": "16.10",
+      "row": 5,
+      "section": "Deferred (Phase 2+)",
+      "line": 883
+    },
+    "TST-INT-425": {
+      "scenario": "Bot reputation scoring factors",
+      "path": "16.10",
+      "row": 6,
+      "section": "Deferred (Phase 2+)",
+      "line": 884
+    },
+    "TST-INT-426": {
+      "scenario": "Bot discovery: decentralized registry",
+      "path": "16.10",
+      "row": 7,
+      "section": "Deferred (Phase 2+)",
+      "line": 885
+    },
+    "TST-INT-427": {
+      "scenario": "Bot-to-bot recommendation",
+      "path": "16.10",
+      "row": 8,
+      "section": "Deferred (Phase 2+)",
+      "line": 886
+    },
+    "TST-INT-428": {
+      "scenario": "Requester anonymity: trust ring only, no identity",
+      "path": "16.10",
+      "row": 9,
+      "section": "Deferred (Phase 2+)",
+      "line": 887
+    },
+    "TST-INT-429": {
+      "scenario": "Android: FCM wake-only push",
+      "path": "16.11",
+      "row": 1,
+      "section": "Deferred (Phase 2+)",
+      "line": 896
+    },
+    "TST-INT-430": {
+      "scenario": "iOS: APNs wake-only push",
+      "path": "16.11",
+      "row": 2,
+      "section": "Deferred (Phase 2+)",
+      "line": 897
+    },
+    "TST-INT-431": {
+      "scenario": "Push payload contains NO user data",
+      "path": "16.11",
+      "row": 3,
+      "section": "Deferred (Phase 2+)",
+      "line": 898
+    },
+    "TST-INT-432": {
+      "scenario": "While WS connected: no push needed",
+      "path": "16.11",
+      "row": 4,
+      "section": "Deferred (Phase 2+)",
+      "line": 899
+    },
+    "TST-INT-433": {
+      "scenario": "Phase 2: UnifiedPush (no Google dependency)",
+      "path": "16.11",
+      "row": 5,
+      "section": "Deferred (Phase 2+)",
+      "line": 900
+    },
+    "TST-INT-434": {
+      "scenario": "Cloud LLM profile: 3 containers",
+      "path": "16.12",
+      "row": 1,
+      "section": "Deferred (Phase 2+)",
+      "line": 909
+    },
+    "TST-INT-435": {
+      "scenario": "Local LLM profile: 4 containers",
+      "path": "16.12",
+      "row": 2,
+      "section": "Deferred (Phase 2+)",
+      "line": 910
+    },
+    "TST-INT-436": {
+      "scenario": "Profile switch: cloud \u2192 local",
+      "path": "16.12",
+      "row": 3,
+      "section": "Deferred (Phase 2+)",
+      "line": 911
+    },
+    "TST-INT-437": {
+      "scenario": "Profile switch: local \u2192 cloud",
+      "path": "16.12",
+      "row": 4,
+      "section": "Deferred (Phase 2+)",
+      "line": 912
+    },
+    "TST-INT-438": {
+      "scenario": "Always-local guarantees",
+      "path": "16.12",
+      "row": 5,
+      "section": "Deferred (Phase 2+)",
+      "line": 913
+    },
+    "TST-INT-439": {
+      "scenario": "Sensitive persona rule enforced",
+      "path": "16.12",
+      "row": 6,
+      "section": "Deferred (Phase 2+)",
+      "line": 914
+    },
+    "TST-INT-590": {
+      "scenario": "Plaintext only in memory, never at rest",
+      "path": "17.1",
+      "row": 1,
+      "section": "Architecture Validation (Cross-Cutting)",
+      "line": 930
+    },
+    "TST-INT-591": {
+      "scenario": "Export archive encrypted with AES-256-GCM",
+      "path": "17.1",
+      "row": 2,
+      "section": "Architecture Validation (Cross-Cutting)",
+      "line": 931
+    },
+    "TST-INT-592": {
+      "scenario": "Go Core makes zero external API calls",
+      "path": "17.2",
+      "row": 1,
+      "section": "Architecture Validation (Cross-Cutting)",
+      "line": 937
+    },
+    "TST-INT-593": {
+      "scenario": "SSS share rotation without changing master key",
+      "path": "17.3",
+      "row": 1,
+      "section": "Architecture Validation (Cross-Cutting)",
+      "line": 943
+    },
+    "TST-INT-594": {
+      "scenario": "SSS shard per-custodian NaCl encryption",
+      "path": "17.3",
+      "row": 2,
+      "section": "Architecture Validation (Cross-Cutting)",
+      "line": 944
+    },
+    "TST-INT-595": {
+      "scenario": "SSS recovery manifest on PDS",
+      "path": "17.3",
+      "row": 3,
+      "section": "Architecture Validation (Cross-Cutting)",
+      "line": 945
+    },
+    "TST-INT-596": {
+      "scenario": "Bot query contains no user DID",
+      "path": "17.4",
+      "row": 1,
+      "section": "Architecture Validation (Cross-Cutting)",
+      "line": 951
+    },
+    "TST-INT-597": {
+      "scenario": "Query sanitization strips all persona data",
+      "path": "17.4",
+      "row": 2,
+      "section": "Architecture Validation (Cross-Cutting)",
+      "line": 952
+    },
+    "TST-INT-598": {
+      "scenario": "Bot POST /query wire format matches spec",
+      "path": "17.4",
+      "row": 3,
+      "section": "Architecture Validation (Cross-Cutting)",
+      "line": 953
+    },
+    "TST-INT-599": {
+      "scenario": "Telegram connector via Bot API with token",
+      "path": "17.5",
+      "row": 1,
+      "section": "Architecture Validation (Cross-Cutting)",
+      "line": 959
+    },
+    "TST-INT-600": {
+      "scenario": "Outcome report payload matches architecture spec",
+      "path": "17.6",
+      "row": 1,
+      "section": "Architecture Validation (Cross-Cutting)",
+      "line": 965
+    },
+    "TST-INT-601": {
+      "scenario": "AppView Phase 1 is single Go binary + PostgreSQL",
+      "path": "17.6",
+      "row": 2,
+      "section": "Architecture Validation (Cross-Cutting)",
+      "line": 966
+    },
+    "TST-INT-602": {
+      "scenario": "Encrypted snapshots and restore",
+      "path": "17.7",
+      "row": 1,
+      "section": "Architecture Validation (Cross-Cutting)",
+      "line": 972
+    },
+    "TST-INT-603": {
+      "scenario": "Deepgram Nova-3 WebSocket STT with fallback",
+      "path": "17.8",
+      "row": 1,
+      "section": "Architecture Validation (Cross-Cutting)",
+      "line": 978
+    },
+    "TST-INT-604": {
+      "scenario": "STT available in all deployment profiles",
+      "path": "17.8",
+      "row": 2,
+      "section": "Architecture Validation (Cross-Cutting)",
+      "line": 979
+    },
+    "TST-INT-605": {
+      "scenario": "IP rate limit 50 req/hr + 256KB payload cap \u2192 413",
+      "path": "18.1",
+      "row": 1,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-606": {
+      "scenario": "Per-DID rate limit only when vault unlocked",
+      "path": "18.1",
+      "row": 2,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-607": {
+      "scenario": "Sweeper Valve 3: spam DID \u2192 source IP added to blocklist",
+      "path": "18.1",
+      "row": 3,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-608": {
+      "scenario": "TTL-expired messages stored silently in history",
+      "path": "18.1",
+      "row": 4,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-609": {
+      "scenario": "Boot opens only identity + personal; other persona DBs closed",
+      "path": "18.2",
+      "row": 1,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-610": {
+      "scenario": "Import rejects manifest checksum mismatch + incompatible version",
+      "path": "18.3",
+      "row": 1,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-611": {
+      "scenario": "Export excludes device_tokens, BRAIN_TOKEN, passphrase",
+      "path": "18.3",
+      "row": 2,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-612": {
+      "scenario": "include_content defaults false \u2192 summary only; true \u2192 body_text",
+      "path": "18.4",
+      "row": 1,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-613": {
+      "scenario": "Vault query pagination: has_more + next_offset wire format",
+      "path": "18.4",
+      "row": 2,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-614": {
+      "scenario": "Hybrid search: relevance = 0.4 \u00d7 fts5 + 0.6 \u00d7 cosine",
+      "path": "18.5",
+      "row": 1,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-615": {
+      "scenario": "Dead letter after 3 failures + Tier 2 notification",
+      "path": "18.6",
+      "row": 1,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-616": {
+      "scenario": "Watchdog resets processing task after 5-minute timeout",
+      "path": "18.6",
+      "row": 2,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-617": {
+      "scenario": "Scratchpad auto-expires after 24 hours",
+      "path": "18.7",
+      "row": 1,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-618": {
+      "scenario": "Backup key and Archive key are independent HKDF derivations",
+      "path": "18.8",
+      "row": 1,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-619": {
+      "scenario": "Client Sync key + Reputation Signing key HKDF derivations",
+      "path": "18.8",
+      "row": 2,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-620": {
+      "scenario": "Argon2id defaults: 128MB memory, 3 iterations, 4 parallelism",
+      "path": "18.9",
+      "row": 1,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-621": {
+      "scenario": "kv_store sync cursor survives brain restart",
+      "path": "18.10",
+      "row": 1,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-622": {
+      "scenario": "Restricted persona audit entry exact schema + daily briefing count",
+      "path": "18.11",
+      "row": 1,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-623": {
+      "scenario": "Voice memo: transcript stored, audio discarded",
+      "path": "18.12",
+      "row": 1,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-624": {
+      "scenario": "Fiduciary override beats regex pre-filter for security alerts",
+      "path": "18.12",
+      "row": 2,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-625": {
+      "scenario": "Pass 2a subject patterns: all 4 produce thin records",
+      "path": "18.12",
+      "row": 3,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-626": {
+      "scenario": "Backfill pauses for user query, resumes from same cursor",
+      "path": "18.12",
+      "row": 4,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-627": {
+      "scenario": "Cold archive pass-through: results never written to vault",
+      "path": "18.12",
+      "row": 5,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-628": {
+      "scenario": "OpenClaw recovery resumes from exact cursor",
+      "path": "18.12",
+      "row": 6,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-629": {
+      "scenario": "Phone connectors require CLIENT_TOKEN, not BRAIN_TOKEN",
+      "path": "18.12",
+      "row": 7,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-630": {
+      "scenario": "Attestation lexicon rejects missing fields + out-of-range rating",
+      "path": "18.13",
+      "row": 1,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-631": {
+      "scenario": "Consensus check: AppView censorship detection by count mismatch",
+      "path": "18.13",
+      "row": 2,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-632": {
+      "scenario": "PDS spot-check discrepancy downgrades AppView trust",
+      "path": "18.13",
+      "row": 3,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-633": {
+      "scenario": "Tombstone with correct DID but invalid signature rejected",
+      "path": "18.13",
+      "row": 4,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-634": {
+      "scenario": "Merkle root deterministic + inclusion proof valid",
+      "path": "18.13",
+      "row": 5,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-635": {
+      "scenario": "Malformed tiered payload category dropped, not errored",
+      "path": "18.14",
+      "row": 1,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-636": {
+      "scenario": "Trusted contact + empty sharing_policy = no data shared",
+      "path": "18.14",
+      "row": 2,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-637": {
+      "scenario": "Egress audit log: 90-day rolling retention purge",
+      "path": "18.14",
+      "row": 3,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-638": {
+      "scenario": "Outbox message TTL 24h: expired messages dropped",
+      "path": "18.14",
+      "row": 4,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-639": {
+      "scenario": "Bulk sharing policy update: applies only to filter-matching contacts",
+      "path": "18.14",
+      "row": 5,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-640": {
+      "scenario": "New contact without policy gets 6-field security defaults",
+      "path": "18.14",
+      "row": 6,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-641": {
+      "scenario": "Bot query includes response_format + max_sources with types",
+      "path": "18.15",
+      "row": 1,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-642": {
+      "scenario": "Bot response missing attribution \u2192 reputation penalty",
+      "path": "18.15",
+      "row": 2,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-643": {
+      "scenario": "Bot auto-routing threshold boundary (at/below)",
+      "path": "18.15",
+      "row": 3,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-644": {
+      "scenario": "Bot-to-bot referral declined when referred bot below threshold",
+      "path": "18.15",
+      "row": 4,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-645": {
+      "scenario": "PII scrub failure blocks sensitive persona cloud route",
+      "path": "18.16",
+      "row": 1,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-646": {
+      "scenario": "Entity Vault lifecycle: destroyed after rehydration",
+      "path": "18.16",
+      "row": 2,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-647": {
+      "scenario": "Simple lookup routes to FTS5, no LLM invoked",
+      "path": "18.16",
+      "row": 3,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-648": {
+      "scenario": "Payment intent expires 12h (shorter than draft 72h)",
+      "path": "18.17",
+      "row": 1,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-649": {
+      "scenario": "Agent draft_only constraint prevents send",
+      "path": "18.17",
+      "row": 2,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-650": {
+      "scenario": "Reminder loop: negative sleep fires immediately",
+      "path": "18.17",
+      "row": 3,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-651": {
+      "scenario": "Cart handover outcome recorded in Tier 3 after completion",
+      "path": "18.17",
+      "row": 4,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-652": {
+      "scenario": "Conflict resolution: same-item offline modification (last-write-wins)",
+      "path": "18.18",
+      "row": 1,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-653": {
+      "scenario": "Missed message buffer: 50 max, 5-min TTL, ACK removes",
+      "path": "18.18",
+      "row": 2,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-654": {
+      "scenario": "3 missed pongs \u2192 core closes connection, marks device offline",
+      "path": "18.19",
+      "row": 1,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-655": {
+      "scenario": "WebSocket auth frame 5-second timeout closes connection",
+      "path": "18.19",
+      "row": 2,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-656": {
+      "scenario": "WebSocket reconnect exponential backoff caps at 30s",
+      "path": "18.19",
+      "row": 3,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-657": {
+      "scenario": "GET /.well-known/atproto-did returns did:plc for PDS federation",
+      "path": "18.20",
+      "row": 1,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-658": {
+      "scenario": "PDS network internal: true prevents outbound internet",
+      "path": "18.20",
+      "row": 2,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-659": {
+      "scenario": "Pairing code single-use: second attempt rejected",
+      "path": "18.20",
+      "row": 3,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-660": {
+      "scenario": "Brain cannot directly reach PDS container (network isolation)",
+      "path": "18.20",
+      "row": 4,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-661": {
+      "scenario": "ZFS/Btrfs copy-on-write snapshots every 15 min",
+      "path": "18.20",
+      "row": 5,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-662": {
+      "scenario": "read_only_90_days access expires server-side after 90 days",
+      "path": "18.21",
+      "row": 1,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-663": {
+      "scenario": "Watchdog ticker: breach \u2192 Tier 2 system message injected",
+      "path": "18.22",
+      "row": 1,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    },
+    "TST-INT-664": {
+      "scenario": "Docker log rotation: all services max-size:10m, max-file:3",
+      "path": "18.23",
+      "row": 1,
+      "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
+      "line": 0
+    }
+  },
+  "summary": {
+    "total": 454,
+    "sections": 17
+  }
+}

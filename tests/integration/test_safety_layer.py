@@ -31,6 +31,7 @@ from tests.integration.mocks import (
 class TestAgentIntentApproval:
     """Verify that the risk classifier gates every agent action correctly."""
 
+# TST-INT-166
     def test_safe_task_auto_approves(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -47,6 +48,7 @@ class TestAgentIntentApproval:
         # User was never asked — no approval entry was consumed
         assert mock_human.notifications == []
 
+# TST-INT-538
     def test_email_send_requires_approval(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -64,6 +66,7 @@ class TestAgentIntentApproval:
         assert approved is True
         assert intent.risk_level == ActionRisk.MODERATE
 
+# TST-INT-539
     def test_email_denied(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -80,6 +83,7 @@ class TestAgentIntentApproval:
         assert approved is False
         assert intent.risk_level == ActionRisk.MODERATE
 
+# TST-INT-540
     def test_money_transfer_requires_approval(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -97,6 +101,7 @@ class TestAgentIntentApproval:
         assert approved is True
         assert intent.risk_level == ActionRisk.HIGH
 
+# TST-INT-541
     def test_data_sharing_requires_approval(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -114,6 +119,7 @@ class TestAgentIntentApproval:
         assert approved is False
         assert intent.risk_level == ActionRisk.HIGH
 
+# TST-INT-041
     def test_untrusted_vendor_blocked(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
     ) -> None:
@@ -134,6 +140,7 @@ class TestAgentIntentApproval:
         # Default for unknown actions is MODERATE
         assert intent.risk_level == ActionRisk.MODERATE
 
+# TST-INT-040
     def test_agent_never_holds_keys(
         self, mock_dina: MockDinaCore, mock_external_agent: MockExternalAgent,
     ) -> None:
@@ -154,6 +161,7 @@ class TestAgentIntentApproval:
             str(mock_external_agent.tasks_executed)
         assert root_key not in all_agent_data
 
+# TST-INT-169
     def test_agent_never_sees_full_history(
         self, mock_dina: MockDinaCore, mock_external_agent: MockExternalAgent,
         sample_memory,
@@ -167,6 +175,7 @@ class TestAgentIntentApproval:
         assert not hasattr(mock_external_agent, "vault")
         assert not hasattr(mock_external_agent, "_vault")
 
+# TST-INT-542
     def test_multiple_agents_same_task(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
     ) -> None:
@@ -201,6 +210,7 @@ class TestAgentIntentApproval:
 class TestCredentialProtection:
     """Dina never exposes raw credentials to agents or external systems."""
 
+# TST-INT-044
     def test_credentials_never_exposed(
         self, mock_dina: MockDinaCore, mock_external_agent: MockExternalAgent,
     ) -> None:
@@ -220,6 +230,7 @@ class TestCredentialProtection:
         assert replacements["[EMAIL_1]"] == "rajmohan@email.com"
         assert replacements["[CC_NUM]"] == "4111-2222-3333-4444"
 
+# TST-INT-543
     def test_agent_accepts_no_external_commands(
         self, mock_external_agent: MockExternalAgent,
     ) -> None:
@@ -230,6 +241,7 @@ class TestCredentialProtection:
         dangerous_methods = {"run_command", "eval", "exec", "shell", "os_call"}
         assert dangerous_methods.isdisjoint(set(public_methods))
 
+# TST-INT-168
     def test_session_tokens_expire(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -268,6 +280,7 @@ class TestCredentialProtection:
 class TestSafetyEdgeCases:
     """Edge cases: crashes, concurrency, escalation, offline queuing."""
 
+# TST-INT-544
     def test_agent_crashes_mid_task(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -290,6 +303,7 @@ class TestSafetyEdgeCases:
         # No task recorded in executed list
         assert len(mock_external_agent.tasks_executed) == 0
 
+# TST-INT-545
     def test_concurrent_conflicting_actions(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
     ) -> None:
@@ -319,6 +333,7 @@ class TestSafetyEdgeCases:
         assert buy_approved is True
         assert cancel_approved is False
 
+# TST-INT-546
     def test_privilege_escalation_attempt(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -344,6 +359,7 @@ class TestSafetyEdgeCases:
         # so the audit trail catches it
         assert mock_external_agent._should_escalate is True
 
+# TST-INT-167
     def test_offline_queued_actions(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_rich_client,

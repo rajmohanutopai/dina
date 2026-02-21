@@ -54,6 +54,7 @@ def setup_p2p_pair(
 class TestDirectTransactions:
     """Buyer's Dina speaks directly to seller's Dina — no middleman."""
 
+# TST-INT-514
     def test_direct_purchase_via_open_protocol(
         self,
         mock_dina: MockDinaCore,
@@ -82,6 +83,7 @@ class TestDirectTransactions:
         assert received.type == "dina/commerce/inquiry"
         assert received.payload["product_id"] == "aeron_2025"
 
+# TST-INT-290
     def test_walled_garden_still_option(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ):
@@ -98,6 +100,7 @@ class TestDirectTransactions:
         assert channels["amazon"] is True
         # User freedom: all channels available, none blocked
 
+# TST-INT-515
     def test_negotiates_with_seller(
         self,
         mock_dina: MockDinaCore,
@@ -140,6 +143,7 @@ class TestDirectTransactions:
         assert received_counter.type == "dina/commerce/counter_offer"
         assert received_counter.payload["counter_price"] == 90000
 
+# TST-INT-516
     def test_logistics_via_separate_dina(
         self,
         mock_dina: MockDinaCore,
@@ -179,6 +183,7 @@ class TestDirectTransactions:
 class TestPluginEconomy:
     """The open economy rewards quality, not platform lock-in."""
 
+# TST-INT-291
     def test_maker_earns_by_quality(
         self,
         mock_reputation_graph: MockReputationGraph,
@@ -211,6 +216,7 @@ class TestPluginEconomy:
         )
         assert new_score < 20.0
 
+# TST-INT-311
     def test_bot_operator_earns_by_accuracy(
         self, mock_reputation_graph: MockReputationGraph
     ):
@@ -231,6 +237,7 @@ class TestPluginEconomy:
         mock_reputation_graph.update_bot_score(bot_did, -100.0)
         assert mock_reputation_graph.get_bot_score(bot_did) == 0.0
 
+# TST-INT-312
     def test_expert_earns_by_trust(
         self,
         mock_reputation_graph: MockReputationGraph,
@@ -251,6 +258,7 @@ class TestPluginEconomy:
         mock_reputation_graph.set_trust_score(expert_did, score)
         assert score > 75.0
 
+# TST-INT-517
     def test_protocol_earns_nothing(self, mock_dina: MockDinaCore):
         """The protocol itself takes no cut from transactions. Zero fees
         at the protocol layer — value accrues to participants, not the pipe."""
@@ -278,6 +286,7 @@ class TestPluginEconomy:
 class TestMultiPartyCoordination:
     """Multi-Dina coordination for complex transactions."""
 
+# TST-INT-518
     def test_buyer_seller_logistics_three_party(
         self,
         mock_dina: MockDinaCore,
@@ -329,6 +338,7 @@ class TestMultiPartyCoordination:
         # All three messages are in the channel
         assert len(mock_p2p.messages) == 3
 
+# TST-INT-519
     def test_group_purchase(
         self,
         mock_dina: MockDinaCore,
@@ -371,6 +381,7 @@ class TestMultiPartyCoordination:
         total_quantity = sum(m.payload["quantity"] for m in group_messages)
         assert total_quantity == 2
 
+# TST-INT-520
     def test_dispute_resolution(
         self,
         mock_dina: MockDinaCore,

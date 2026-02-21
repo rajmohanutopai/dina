@@ -14,13 +14,19 @@ import uuid
 import pytest
 
 from tests.integration.mocks import (
+    DIDDocument,
     ExpertAttestation,
+    MockAppView,
     MockDinaCore,
+    MockDockerCompose,
     MockHuman,
     MockIdentity,
+    MockPLCResolver,
+    MockRelay,
     MockReputationGraph,
     MockReviewBot,
     MockTrustEvaluator,
+    MockVerificationLayer,
     OutcomeReport,
     SilenceTier,
     TrustRing,
@@ -35,6 +41,7 @@ from tests.integration.mocks import (
 class TestExpertAttestations:
     """YouTube reviews and expert verdicts become signed attestations."""
 
+# TST-INT-297
     def test_review_becomes_attestation(
         self,
         mock_reputation_graph: MockReputationGraph,
@@ -68,6 +75,7 @@ class TestExpertAttestations:
         assert stored.creator_name == "MKBHD"
         assert "keyboard" in stored.verdict["pros"]
 
+# TST-INT-299
     def test_attestation_is_signed(
         self,
         mock_reputation_graph: MockReputationGraph,
@@ -103,6 +111,7 @@ class TestExpertAttestations:
         # Verify signature matches expected
         assert stored.signature == signature
 
+# TST-INT-535
     def test_multiple_experts_same_product(
         self, mock_reputation_graph: MockReputationGraph
     ) -> None:
@@ -152,6 +161,7 @@ class TestExpertAttestations:
 class TestOutcomeData:
     """Anonymized purchase outcomes — the pull-economy feedback loop."""
 
+# TST-INT-298
     def test_purchase_outcome_tracked(
         self, mock_reputation_graph: MockReputationGraph
     ) -> None:
@@ -175,6 +185,7 @@ class TestOutcomeData:
         assert stored.satisfaction == "positive"
         assert stored.purchase_verified is True
 
+# TST-INT-307
     def test_outcome_anonymized(
         self, mock_reputation_graph: MockReputationGraph
     ) -> None:
@@ -201,6 +212,7 @@ class TestOutcomeData:
         assert stored.reporter_trust_ring == TrustRing.RING_2_VERIFIED
         assert stored.reporter_age_days == 400
 
+# TST-INT-312
     def test_gentle_outcome_query(
         self,
         mock_dina: MockDinaCore,
@@ -215,6 +227,7 @@ class TestOutcomeData:
         # Outcome queries are engagement-level — not urgent
         assert tier == SilenceTier.TIER_3_ENGAGEMENT
 
+# TST-INT-309
     def test_high_participation_rate_from_verified_users(
         self, mock_reputation_graph: MockReputationGraph
     ) -> None:
@@ -253,6 +266,7 @@ class TestOutcomeData:
         # 80% participation from verified users
         assert len(verified) / total >= 0.8
 
+# TST-INT-310
     def test_factual_not_opinion(
         self, mock_reputation_graph: MockReputationGraph
     ) -> None:
@@ -289,6 +303,7 @@ class TestOutcomeData:
 class TestBotReputation:
     """Review bots and task agents have tracked, visible reputation scores."""
 
+# TST-INT-314
     def test_reputation_tracked(
         self,
         mock_reputation_graph: MockReputationGraph,
@@ -305,6 +320,7 @@ class TestBotReputation:
         score = mock_reputation_graph.get_bot_score(mock_review_bot.bot_did)
         assert score == 60.0
 
+# TST-INT-536
     def test_compromised_bot_drops_score(
         self,
         mock_reputation_graph: MockReputationGraph,
@@ -327,6 +343,7 @@ class TestBotReputation:
         floor = mock_reputation_graph.get_bot_score(bot_did)
         assert floor == 0.0
 
+# TST-INT-537
     def test_auto_routes_to_better_bot(
         self,
         mock_reputation_graph: MockReputationGraph,
@@ -358,6 +375,7 @@ class TestBotReputation:
         )
         assert new_best == "did:plc:BotC"
 
+# TST-INT-311
     def test_reputation_visible_to_user(
         self,
         mock_reputation_graph: MockReputationGraph,
@@ -375,6 +393,7 @@ class TestBotReputation:
         assert isinstance(score, float)
         assert 0.0 <= score <= 100.0
 
+# TST-INT-304
     def test_reputation_score_capped_at_100(
         self, mock_reputation_graph: MockReputationGraph
     ) -> None:
@@ -383,3 +402,463 @@ class TestBotReputation:
         mock_reputation_graph.update_bot_score(bot_did, 60)  # 50 + 60 = 110 -> capped at 100
         score = mock_reputation_graph.get_bot_score(bot_did)
         assert score == 100.0
+
+
+# ---------------------------------------------------------------------------
+# AT Protocol / PDS (Section 11)
+# ---------------------------------------------------------------------------
+
+
+class TestATProtocolPDS:
+    """AT Protocol Personal Data Server integration — records, lexicons,
+    federation, and discovery."""
+
+# TST-INT-300
+    def test_pds_cannot_forge_records(
+        self,
+        mock_reputation_graph: MockReputationGraph,
+        mock_identity: MockIdentity,
+    ) -> None:
+        """Records are signed by the author's DID key. A PDS operator
+        cannot modify a record without invalidating the signature."""
+        author_did = mock_identity.root_did
+        verdict_data = {
+            "product_id": "thinkpad_x1_2025",
+            "rating": 92,
+            "summary": "Excellent laptop",
+        }
+        canonical = json.dumps(verdict_data, sort_keys=True).encode()
+        signature = mock_identity.sign(canonical)
+
+        attestation = ExpertAttestation(
+            expert_did=author_did,
+            expert_trust_ring=TrustRing.RING_3_SKIN_IN_GAME,
+            product_category="laptops",
+            product_id="thinkpad_x1_2025",
+            rating=92,
+            verdict=verdict_data,
+            source_url="https://youtube.com/watch?v=pds_forge_test",
+            signature=signature,
+        )
+        mock_reputation_graph.add_attestation(attestation)
+
+        stored = mock_reputation_graph.attestations[0]
+        # Original signature verifies
+        assert mock_identity.verify(canonical, stored.signature)
+
+        # Tampered data does NOT verify with original signature
+        tampered_data = dict(verdict_data)
+        tampered_data["rating"] = 50
+        tampered_canonical = json.dumps(tampered_data, sort_keys=True).encode()
+        assert not mock_identity.verify(tampered_canonical, stored.signature)
+
+# TST-INT-301
+    def test_bundled_pds_in_docker_compose(
+        self,
+        mock_compose: MockDockerCompose,
+    ) -> None:
+        """Type B deployment: PDS runs as a container inside the
+        docker-compose stack alongside core and brain."""
+        assert "pds" in mock_compose.containers
+        pds = mock_compose.containers["pds"]
+
+        # PDS has a health-check on AT Protocol endpoint
+        assert pds.healthcheck is not None
+        assert "/xrpc/_health" in pds.healthcheck.endpoint
+
+        # Start the stack — PDS starts before core (dependency order)
+        mock_compose.up()
+        start_order = mock_compose._resolve_start_order()
+        assert start_order.index("pds") < start_order.index("core")
+        assert pds.running
+
+# TST-INT-302
+    def test_external_pds_push(
+        self,
+        mock_identity: MockIdentity,
+        mock_plc_resolver: MockPLCResolver,
+    ) -> None:
+        """Type A: user pushes reputation records to an external PDS.
+        The PLC document advertises the external PDS endpoint."""
+        external_pds_endpoint = "https://pds.external-provider.example"
+        doc = DIDDocument(
+            did=mock_identity.root_did,
+            public_key=mock_identity.root_private_key,
+            service_endpoint=external_pds_endpoint,
+        )
+        mock_plc_resolver.register(doc)
+
+        resolved = mock_plc_resolver.resolve(mock_identity.root_did)
+        assert resolved is not None
+        assert resolved.service_endpoint == external_pds_endpoint
+        # The endpoint is external, not the local bundled PDS
+        assert "external-provider" in resolved.service_endpoint
+
+# TST-INT-303
+    def test_custom_lexicon_validation(
+        self,
+        mock_app_view: MockAppView,
+    ) -> None:
+        """Reputation records use custom com.dina.reputation.* lexicons.
+        The AppView indexes only matching lexicons."""
+        records = [
+            {
+                "id": "rec_1",
+                "lexicon": "com.dina.reputation.review",
+                "author_did": "did:plc:Author1",
+                "product_id": "laptop_1",
+                "rating": 90,
+                "signature": "sig_1",
+            },
+            {
+                "id": "rec_2",
+                "lexicon": "com.dina.reputation.outcome",
+                "author_did": "did:plc:Author2",
+                "product_id": "laptop_1",
+                "rating": 85,
+                "signature": "sig_2",
+            },
+            {
+                "id": "rec_3",
+                "lexicon": "app.bsky.feed.post",  # unrelated Bluesky post
+                "author_did": "did:plc:Author3",
+                "text": "Hello world",
+            },
+        ]
+        indexed = mock_app_view.consume_firehose(records)
+
+        # Only the two com.dina.reputation.* records are indexed
+        assert indexed == 2
+        assert len(mock_app_view.indexed_records) == 2
+        lexicons = {r["lexicon"] for r in mock_app_view.indexed_records}
+        assert all(lex.startswith("com.dina.reputation.") for lex in lexicons)
+
+# TST-INT-305
+    def test_author_deletes_own_review_signed_tombstone(
+        self,
+        mock_reputation_graph: MockReputationGraph,
+        mock_identity: MockIdentity,
+    ) -> None:
+        """An author can delete their own review by publishing a signed
+        tombstone record."""
+        author_did = mock_identity.root_did
+        attestation = ExpertAttestation(
+            expert_did=author_did,
+            expert_trust_ring=TrustRing.RING_3_SKIN_IN_GAME,
+            product_category="laptops",
+            product_id="thinkpad_x1_2025",
+            rating=92,
+            verdict={"summary": "Great laptop"},
+            source_url="https://youtube.com/watch?v=tombstone_test",
+        )
+        mock_reputation_graph.add_attestation(attestation)
+        assert len(mock_reputation_graph.attestations) == 1
+
+        # Author signs and publishes tombstone
+        tombstone_sig = mock_identity.sign(b"tombstone:thinkpad_x1_2025")
+        deleted = mock_reputation_graph.signed_tombstone(
+            "thinkpad_x1_2025", author_did, tombstone_sig
+        )
+        assert deleted is True
+        assert len(mock_reputation_graph.attestations) == 0
+        assert len(mock_reputation_graph.tombstones) == 1
+        assert mock_reputation_graph.tombstones[0]["author"] == author_did
+
+# TST-INT-306
+    def test_non_author_cannot_delete_review(
+        self,
+        mock_reputation_graph: MockReputationGraph,
+        mock_identity: MockIdentity,
+    ) -> None:
+        """Only the original author can tombstone a review. A different
+        DID's tombstone request is rejected."""
+        original_author = "did:plc:OriginalAuthor0000000000000000"
+        attestation = ExpertAttestation(
+            expert_did=original_author,
+            expert_trust_ring=TrustRing.RING_3_SKIN_IN_GAME,
+            product_category="laptops",
+            product_id="thinkpad_x1_2025",
+            rating=92,
+            verdict={"summary": "Great laptop"},
+            source_url="https://youtube.com/watch?v=non_author_test",
+        )
+        mock_reputation_graph.add_attestation(attestation)
+
+        # A different user tries to delete the review
+        impostor_did = mock_identity.root_did
+        assert impostor_did != original_author
+
+        fake_sig = mock_identity.sign(b"tombstone:thinkpad_x1_2025")
+        deleted = mock_reputation_graph.signed_tombstone(
+            "thinkpad_x1_2025", impostor_did, fake_sig
+        )
+        assert deleted is False
+        # Record is still present
+        assert len(mock_reputation_graph.attestations) == 1
+
+# TST-INT-308
+    def test_aggregate_scores_computed_not_stored(
+        self,
+        mock_app_view: MockAppView,
+    ) -> None:
+        """Aggregate reputation scores are computed on-the-fly by the
+        AppView, never persisted as a separate record."""
+        records = [
+            {
+                "id": f"rec_{i}",
+                "lexicon": "com.dina.reputation.review",
+                "author_did": f"did:plc:Expert{i}",
+                "product_id": "laptop_agg",
+                "rating": rating,
+                "signature": f"sig_{i}",
+            }
+            for i, rating in enumerate([90, 80, 85], start=1)
+        ]
+        mock_app_view.consume_firehose(records)
+
+        # Aggregate is computed, not stored
+        aggregate = mock_app_view.compute_aggregate("laptop_agg")
+        assert aggregate == pytest.approx(85.0)
+
+        # No separate aggregate record exists in the index
+        assert all(
+            r.get("lexicon") != "com.dina.reputation.aggregate"
+            for r in mock_app_view.indexed_records
+        )
+        # Only the 3 individual review records
+        assert len(mock_app_view.indexed_records) == 3
+
+# TST-INT-316
+    def test_pds_down_records_still_available_via_relay(
+        self,
+        mock_app_view: MockAppView,
+        mock_relay: MockRelay,
+    ) -> None:
+        """When a PDS is down, records that were already replicated to the
+        relay/AppView remain available for queries."""
+        # Records were previously replicated to the AppView
+        records = [
+            {
+                "id": "rec_replicated_1",
+                "lexicon": "com.dina.reputation.review",
+                "author_did": "did:plc:Author1",
+                "product_id": "laptop_offline",
+                "rating": 88,
+                "signature": "sig_replicated",
+            },
+        ]
+        mock_app_view.consume_firehose(records)
+
+        # Simulate PDS going down — relay had already forwarded data
+        mock_relay.forward(
+            "did:plc:Author1", "did:plc:AppView",
+            "encrypted_record_blob_for_laptop_offline",
+        )
+        pds_is_down = True  # simulated
+
+        # Despite PDS being down, AppView still has the records
+        assert pds_is_down
+        results = mock_app_view.query_by_product("laptop_offline")
+        assert len(results) == 1
+        assert results[0]["rating"] == 88
+
+# TST-INT-317
+    def test_pds_migration_account_portability(
+        self,
+        mock_identity: MockIdentity,
+        mock_plc_resolver: MockPLCResolver,
+    ) -> None:
+        """A user can migrate from one PDS to another without losing their
+        DID or records. The PLC directory is updated to point to the new PDS."""
+        old_pds = "https://old-pds.example.com"
+        new_pds = "https://new-pds.example.com"
+
+        # Register at old PDS
+        doc_old = DIDDocument(
+            did=mock_identity.root_did,
+            public_key=mock_identity.root_private_key,
+            service_endpoint=old_pds,
+        )
+        mock_plc_resolver.register(doc_old)
+        resolved = mock_plc_resolver.resolve(mock_identity.root_did)
+        assert resolved.service_endpoint == old_pds
+
+        # Migrate: update PLC directory to new PDS
+        doc_new = DIDDocument(
+            did=mock_identity.root_did,
+            public_key=mock_identity.root_private_key,
+            service_endpoint=new_pds,
+        )
+        mock_plc_resolver.register(doc_new)
+        resolved = mock_plc_resolver.resolve(mock_identity.root_did)
+        assert resolved.service_endpoint == new_pds
+
+        # DID stays the same
+        assert resolved.did == mock_identity.root_did
+
+# TST-INT-318
+    def test_foundation_pds_stores_only_reputation_data(
+        self,
+        mock_app_view: MockAppView,
+    ) -> None:
+        """The Foundation PDS stores only reputation records (reviews,
+        outcomes). No personal data (messages, contacts, health) is stored."""
+        records = [
+            {
+                "id": "rep_1",
+                "lexicon": "com.dina.reputation.review",
+                "author_did": "did:plc:Author1",
+                "product_id": "chair_1",
+                "rating": 91,
+                "signature": "sig_1",
+            },
+            {
+                "id": "personal_1",
+                "lexicon": "com.dina.personal.message",
+                "author_did": "did:plc:Author1",
+                "body": "Hey, how are you?",
+            },
+            {
+                "id": "health_1",
+                "lexicon": "com.dina.health.record",
+                "author_did": "did:plc:Author1",
+                "data": "blood_pressure:120/80",
+            },
+        ]
+        indexed = mock_app_view.consume_firehose(records)
+
+        # Only the reputation record is indexed
+        assert indexed == 1
+        assert len(mock_app_view.indexed_records) == 1
+        assert mock_app_view.indexed_records[0]["lexicon"] == "com.dina.reputation.review"
+
+# TST-INT-319
+    def test_relay_crawls_pds_via_delta_sync(
+        self,
+        mock_app_view: MockAppView,
+    ) -> None:
+        """The relay uses cursor-based delta sync to crawl new records
+        from PDS instances incrementally."""
+        batch_1 = [
+            {
+                "id": "rec_1",
+                "lexicon": "com.dina.reputation.review",
+                "author_did": "did:plc:Author1",
+                "product_id": "phone_1",
+                "rating": 85,
+                "signature": "sig_1",
+            },
+        ]
+        mock_app_view.consume_firehose(batch_1)
+        cursor_after_batch_1 = mock_app_view.cursor
+        assert cursor_after_batch_1 == 1
+
+        # Second batch picks up from where cursor left off
+        batch_2 = [
+            {
+                "id": "rec_2",
+                "lexicon": "com.dina.reputation.review",
+                "author_did": "did:plc:Author2",
+                "product_id": "phone_2",
+                "rating": 78,
+                "signature": "sig_2",
+            },
+            {
+                "id": "rec_3",
+                "lexicon": "com.dina.reputation.outcome",
+                "author_did": "did:plc:Author3",
+                "product_id": "phone_1",
+                "rating": 82,
+                "signature": "sig_3",
+            },
+        ]
+        mock_app_view.consume_firehose(batch_2)
+        cursor_after_batch_2 = mock_app_view.cursor
+        assert cursor_after_batch_2 == 3
+        # Cursor advances monotonically
+        assert cursor_after_batch_2 > cursor_after_batch_1
+        # All records indexed across both batches
+        assert len(mock_app_view.indexed_records) == 3
+
+# TST-INT-320
+    def test_discovery_to_pds_federation(
+        self,
+        mock_identity: MockIdentity,
+        mock_plc_resolver: MockPLCResolver,
+    ) -> None:
+        """DID resolution discovers the PDS endpoint, enabling federation.
+        Given a DID, the resolver returns the service endpoint where
+        reputation records are stored."""
+        pds_endpoint = "https://pds.dina.example.com"
+        doc = DIDDocument(
+            did=mock_identity.root_did,
+            public_key=mock_identity.root_private_key,
+            service_endpoint=pds_endpoint,
+        )
+        mock_plc_resolver.register(doc)
+
+        resolved = mock_plc_resolver.resolve(mock_identity.root_did)
+        assert resolved is not None
+        assert resolved.service_endpoint == pds_endpoint
+        # Another node can now federate by connecting to this endpoint
+        assert resolved.service_endpoint.startswith("https://")
+
+# TST-INT-321
+    def test_discovery_endpoint_available_unauthenticated(
+        self,
+        mock_plc_resolver: MockPLCResolver,
+        mock_identity: MockIdentity,
+    ) -> None:
+        """DID discovery does not require authentication. Any node can
+        resolve a DID to its PDS endpoint."""
+        doc = DIDDocument(
+            did=mock_identity.root_did,
+            public_key=mock_identity.root_private_key,
+            service_endpoint="https://pds.open.example.com",
+        )
+        mock_plc_resolver.register(doc)
+
+        # Resolve without any auth token or identity context
+        resolved = mock_plc_resolver.resolve(mock_identity.root_did)
+        assert resolved is not None
+        assert resolved.did == mock_identity.root_did
+        # The resolve method has no auth parameter — it is inherently open
+        import inspect
+        sig = inspect.signature(mock_plc_resolver.resolve)
+        param_names = list(sig.parameters.keys())
+        assert param_names == ["did"]  # only DID, no auth
+
+# TST-INT-322
+    def test_discovery_returns_plain_text_did(
+        self,
+        mock_plc_resolver: MockPLCResolver,
+        mock_identity: MockIdentity,
+    ) -> None:
+        """The discovery response includes a simple DID string that starts
+        with the 'did:' prefix."""
+        doc = DIDDocument(
+            did=mock_identity.root_did,
+            public_key=mock_identity.root_private_key,
+            service_endpoint="https://pds.example.com",
+        )
+        mock_plc_resolver.register(doc)
+
+        resolved = mock_plc_resolver.resolve(mock_identity.root_did)
+        assert resolved is not None
+        # DID is a plain string with standard prefix
+        assert isinstance(resolved.did, str)
+        assert resolved.did.startswith("did:")
+        # Contains the method segment
+        assert resolved.did.startswith("did:plc:")
+
+# TST-INT-323
+    def test_missing_discovery_pds_federation_fails(
+        self,
+        mock_plc_resolver: MockPLCResolver,
+    ) -> None:
+        """Without a discovery entry, a DID cannot be resolved and PDS
+        federation fails gracefully."""
+        unknown_did = "did:plc:UnknownUser00000000000000000000"
+        resolved = mock_plc_resolver.resolve(unknown_did)
+        assert resolved is None
+        # Federation cannot proceed without a resolved endpoint

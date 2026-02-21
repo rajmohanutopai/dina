@@ -9,32 +9,72 @@ from tests.integration.mocks import (
     EstateBeneficiary,
     EstatePlan,
     ExpertAttestation,
+    MockAdminAPI,
+    MockAppView,
+    MockAuditLog,
+    MockBrainTokenAuth,
     MockCalendarConnector,
-    MockPLCResolver,
-    MockDinaCore,
-    MockEstateManager,
+    MockChaosMonkey,
+    MockCrashLog,
+    MockDeploymentProfile,
+    MockDockerCompose,
+    MockExportArchive,
     MockExternalAgent,
     MockGmailConnector,
     MockGoCore,
     MockHuman,
     MockIdentity,
+    MockInboxSpool,
+    MockIngressTier,
     MockLegalBot,
     MockLLMRouter,
+    MockNoiseSession,
+    MockOnboardingManager,
+    MockOutbox,
     MockP2PChannel,
+    MockPairingManager,
+    MockPerformanceMetrics,
     MockPIIScrubber,
+    MockPLCResolver,
+    MockPushProvider,
     MockPythonBrain,
     MockRelay,
     MockReputationGraph,
     MockReviewBot,
     MockRichClient,
+    MockSchemaMigration,
+    MockScratchpad,
     MockSilenceClassifier,
     MockStagingTier,
     MockThinClient,
+    MockTimestampAnchor,
     MockTrustEvaluator,
+    MockDinaCore,
+    MockEstateManager,
     MockVault,
     MockTelegramConnector,
+    MockVerificationLayer,
+    MockWebSocketServer,
     MockWhisperAssembler,
+    MockBackupManager,
+    MockBootManager,
+    MockBotQuerySanitizer,
+    MockDeadDropIngress,
+    MockHKDFKeyManager,
+    MockHybridSearch,
+    MockKVStore,
+    MockReconnectBackoff,
+    MockSharingPolicyManager,
+    MockSSSManager,
+    MockSTTProvider,
+    MockSTTRouter,
+    MockTaskQueue,
+    MockVaultQuery,
+    MockWatchdog,
+    MockWSSessionManager,
+    Argon2idParams,
     OAuthToken,
+    OnboardingStep,
     OutcomeReport,
     PersonaType,
     SharingRule,
@@ -435,3 +475,228 @@ def sample_sharing_rules(
             denied=["name", "address", "contact_details", "other_persona"],
         ),
     ]
+
+
+# ---------------------------------------------------------------------------
+# Infrastructure: Auth & WebSocket (§1, §2)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def mock_brain_token_auth() -> MockBrainTokenAuth:
+    return MockBrainTokenAuth()
+
+
+@pytest.fixture
+def mock_ws_server() -> MockWebSocketServer:
+    return MockWebSocketServer()
+
+
+@pytest.fixture
+def mock_admin_api(
+    mock_identity: MockIdentity, mock_vault: MockVault
+) -> MockAdminAPI:
+    return MockAdminAPI(mock_identity, mock_vault)
+
+
+@pytest.fixture
+def mock_pairing_manager() -> MockPairingManager:
+    return MockPairingManager()
+
+
+@pytest.fixture
+def mock_onboarding(
+    mock_identity: MockIdentity, mock_vault: MockVault
+) -> MockOnboardingManager:
+    return MockOnboardingManager(mock_identity, mock_vault)
+
+
+# ---------------------------------------------------------------------------
+# Infrastructure: Docker & Crash Recovery (§5, §6)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def mock_compose() -> MockDockerCompose:
+    return MockDockerCompose()
+
+
+@pytest.fixture
+def mock_compose_local_llm() -> MockDockerCompose:
+    return MockDockerCompose(profile="local-llm")
+
+
+@pytest.fixture
+def mock_scratchpad() -> MockScratchpad:
+    return MockScratchpad()
+
+
+@pytest.fixture
+def mock_outbox() -> MockOutbox:
+    return MockOutbox()
+
+
+@pytest.fixture
+def mock_inbox_spool() -> MockInboxSpool:
+    return MockInboxSpool()
+
+
+@pytest.fixture
+def mock_crash_log() -> MockCrashLog:
+    return MockCrashLog()
+
+
+# ---------------------------------------------------------------------------
+# Infrastructure: Migration & Performance (§12, §13, §14)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def mock_schema_migration() -> MockSchemaMigration:
+    return MockSchemaMigration()
+
+
+@pytest.fixture
+def mock_export_archive() -> MockExportArchive:
+    return MockExportArchive()
+
+
+@pytest.fixture
+def mock_perf_metrics() -> MockPerformanceMetrics:
+    return MockPerformanceMetrics()
+
+
+@pytest.fixture
+def mock_chaos_monkey() -> MockChaosMonkey:
+    return MockChaosMonkey()
+
+
+# ---------------------------------------------------------------------------
+# Infrastructure: Compliance & Audit (§15)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def mock_audit_log() -> MockAuditLog:
+    return MockAuditLog()
+
+
+# ---------------------------------------------------------------------------
+# Infrastructure: Phase 2+ (§16)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def mock_push_provider() -> MockPushProvider:
+    return MockPushProvider()
+
+
+@pytest.fixture
+def mock_deployment_profile() -> MockDeploymentProfile:
+    return MockDeploymentProfile()
+
+
+@pytest.fixture
+def mock_noise_session(mock_identity: MockIdentity,
+                       sancho_identity: MockIdentity) -> MockNoiseSession:
+    return MockNoiseSession(mock_identity.root_did, sancho_identity.root_did)
+
+
+@pytest.fixture
+def mock_app_view() -> MockAppView:
+    return MockAppView()
+
+
+@pytest.fixture
+def mock_ingress_community() -> MockIngressTier:
+    return MockIngressTier.community("my-dina")
+
+
+@pytest.fixture
+def mock_verification_layer() -> MockVerificationLayer:
+    return MockVerificationLayer()
+
+
+@pytest.fixture
+def mock_timestamp_anchor() -> MockTimestampAnchor:
+    return MockTimestampAnchor()
+
+
+# ---------------------------------------------------------------------------
+# Architecture Validation: SSS, Backup, STT, Bot Sanitizer (§17)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def mock_sss_manager(mock_identity: MockIdentity) -> MockSSSManager:
+    return MockSSSManager(mock_identity, threshold=3, total_shares=5)
+
+
+@pytest.fixture
+def mock_backup_manager(
+    mock_vault: MockVault, mock_identity: MockIdentity
+) -> MockBackupManager:
+    return MockBackupManager(mock_vault, mock_identity)
+
+
+@pytest.fixture
+def mock_stt_router() -> MockSTTRouter:
+    return MockSTTRouter()
+
+
+@pytest.fixture
+def mock_bot_sanitizer() -> MockBotQuerySanitizer:
+    return MockBotQuerySanitizer()
+
+
+# ---------------------------------------------------------------------------
+# Architecture Validation: MEDIUM gap mocks
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def mock_dead_drop() -> MockDeadDropIngress:
+    return MockDeadDropIngress()
+
+
+@pytest.fixture
+def mock_task_queue() -> MockTaskQueue:
+    return MockTaskQueue()
+
+
+@pytest.fixture
+def mock_hkdf(mock_identity: MockIdentity) -> MockHKDFKeyManager:
+    return MockHKDFKeyManager(mock_identity.root_private_key)
+
+
+@pytest.fixture
+def mock_vault_query(mock_vault: MockVault) -> MockVaultQuery:
+    return MockVaultQuery(mock_vault)
+
+
+@pytest.fixture
+def mock_hybrid_search() -> MockHybridSearch:
+    return MockHybridSearch()
+
+
+@pytest.fixture
+def mock_kv_store() -> MockKVStore:
+    return MockKVStore()
+
+
+@pytest.fixture
+def mock_boot_manager(mock_identity: MockIdentity) -> MockBootManager:
+    return MockBootManager(mock_identity)
+
+
+@pytest.fixture
+def mock_sharing_policy() -> MockSharingPolicyManager:
+    return MockSharingPolicyManager()
+
+
+@pytest.fixture
+def mock_watchdog() -> MockWatchdog:
+    return MockWatchdog()
+
+
+@pytest.fixture
+def mock_ws_session_mgr() -> MockWSSessionManager:
+    return MockWSSessionManager()
+
+
+@pytest.fixture
+def mock_reconnect_backoff() -> MockReconnectBackoff:
+    return MockReconnectBackoff()

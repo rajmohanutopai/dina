@@ -188,7 +188,7 @@ prefixes.
 
 > Don Alonso sets up Dina for the first time. From zero to a functional sovereign identity.
 
-#### E2E-1.1: Complete First-Run Setup (Managed Hosting)
+#### E2E-1.1: **[TST-E2E-001]** Complete First-Run Setup (Managed Hosting)
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -211,7 +211,7 @@ prefixes.
 
 **Failure variant:** If PLC Directory is unreachable during step 4, setup fails cleanly with error: "Cannot register identity. Check network." No partial state left behind.
 
-#### E2E-1.2: Device Pairing — Phone
+#### E2E-1.2: **[TST-E2E-002]** Device Pairing — Phone
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -226,7 +226,7 @@ prefixes.
 - `device_tokens` table contains SHA-256 hash, not plaintext
 - Second pairing attempt with same code fails (single-use)
 
-#### E2E-1.3: Second Device Pairing — Laptop
+#### E2E-1.3: **[TST-E2E-003]** Second Device Pairing — Laptop
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -238,7 +238,7 @@ prefixes.
 - Two entries in `device_tokens` table
 - Both devices receive identical pushes for new events
 
-#### E2E-1.4: Progressive Disclosure — Day 7 Mnemonic Backup
+#### E2E-1.4: **[TST-E2E-004]** Progressive Disclosure — Day 7 Mnemonic Backup
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -251,7 +251,7 @@ prefixes.
 - Notification only fires on Day 7, not before
 - Mnemonic is identical to the one generated during setup
 
-#### E2E-1.5: BIP-39 Recovery on New Device
+#### E2E-1.5: **[TST-E2E-005]** BIP-39 Recovery on New Device
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -264,7 +264,7 @@ prefixes.
 - Same DID, same persona DIDs, same vault DEKs — full sovereignty restored
 - Old device tokens invalidated — all devices must re-pair
 
-#### E2E-1.6: Exactly One Root Identity Enforced
+#### E2E-1.6: **[TST-E2E-006]** Exactly One Root Identity Enforced
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -282,7 +282,7 @@ prefixes.
 > Sancho leaves his house to visit Don Alonso. His Dina notifies Don Alonso's Dina. Don Alonso gets a nudge:
 > "Put the kettle on — Sancho likes strong chai. His mother was ill last time."
 
-#### E2E-2.1: Complete 9-Step Arrival Flow
+#### E2E-2.1: **[TST-E2E-007]** Complete 9-Step Arrival Flow
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -307,7 +307,7 @@ prefixes.
 
 **Failure variant:** Don Alonso's node offline during step 6 → message queued in Sancho's outbox, retried per backoff schedule (30s → 1m → 5m → 30m → 2h), delivered when Don Alonso's node recovers.
 
-#### E2E-2.2: Sharing Policy Blocks Context
+#### E2E-2.2: **[TST-E2E-008]** Sharing Policy Blocks Context
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -321,7 +321,7 @@ prefixes.
 - Don Alonso's nudge contains ETA only, no personal context
 - Sancho's audit log shows: `context: "denied"` alongside `presence: "allowed"`
 
-#### E2E-2.3: DND / Do Not Disturb Context
+#### E2E-2.3: **[TST-E2E-009]** DND / Do Not Disturb Context
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -335,7 +335,7 @@ prefixes.
 - No push notification delivered during DND
 - Briefing contains the arrival context when DND ends
 
-#### E2E-2.4: Vault-Locked Dead Drop
+#### E2E-2.4: **[TST-E2E-010]** Vault-Locked Dead Drop
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -351,7 +351,7 @@ prefixes.
 - Brain receives message only after vault unlock
 - WS clients receive `{"type":"system","payload":{"text":"vault locked"}}` during locked period
 
-#### E2E-2.5: Bidirectional D2D Exchange
+#### E2E-2.5: **[TST-E2E-011]** Bidirectional D2D Exchange
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -363,7 +363,7 @@ prefixes.
 - Both audit logs show send + receive entries
 - Encryption/decryption succeeds in both directions
 
-#### E2E-2.6: Egress Audit Trail Completeness
+#### E2E-2.6: **[TST-E2E-012]** Egress Audit Trail Completeness
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -382,7 +382,7 @@ prefixes.
 > Don Alonso wants an ergonomic chair. His Dina queries ReviewBot, checks the Reputation Graph,
 > advises on a purchase from ChairMaker, and hands control back for payment.
 
-#### E2E-3.1: Product Research via ReviewBot
+#### E2E-3.1: **[TST-E2E-013]** Product Research via ReviewBot
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -399,7 +399,7 @@ prefixes.
 - Response includes deep links (Deep Link Default honored)
 - Vault context (back pain) enriches the recommendation without leaving the node
 
-#### E2E-3.2: Reputation Graph Check
+#### E2E-3.2: **[TST-E2E-014]** Reputation Graph Check
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -412,7 +412,7 @@ prefixes.
 - Brain performs cryptographic verification (Layer 1 of 3-layer verification)
 - Unsigned or invalid records are rejected and not included in the response
 
-#### E2E-3.3: Cart Handover — Dina Never Touches Money
+#### E2E-3.3: **[TST-E2E-015]** Cart Handover — Dina Never Touches Money
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -428,7 +428,7 @@ prefixes.
 - Payment intent auto-expires after 72 hours if ignored (Tier 4 staging expiry)
 - Outcome record stored for future Reputation Graph contribution
 
-#### E2E-3.4: D2D Commerce with ChairMaker
+#### E2E-3.4: **[TST-E2E-016]** D2D Commerce with ChairMaker
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -441,7 +441,7 @@ prefixes.
 - Don Alonso sees ChairMaker as "verified buyer, wants a chair" — no personal data leaked
 - ChairMaker sees Don Alonso as "verified buyer, Ring 3" — no name, no address
 
-#### E2E-3.5: Cold Start — Web Search Fallback (Phase 1)
+#### E2E-3.5: **[TST-E2E-017]** Cold Start — Web Search Fallback (Phase 1)
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -455,7 +455,7 @@ prefixes.
 - Response includes personal context from vault (back pain, budget) applied to web results
 - Transition from web search to Reputation Graph is invisible to user as data grows
 
-#### E2E-3.6: Outcome Reporting to Reputation Graph
+#### E2E-3.6: **[TST-E2E-018]** Outcome Reporting to Reputation Graph
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -477,7 +477,7 @@ prefixes.
 
 > Don Alonso asks Dina to recall past events, conversations, and promises — the "Memory" of Dina.
 
-#### E2E-4.1: Hybrid Search (FTS5 + Vector)
+#### E2E-4.1: **[TST-E2E-019]** Hybrid Search (FTS5 + Vector)
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -494,7 +494,7 @@ prefixes.
 - Hybrid weights: 0.4 FTS5 + 0.6 cosine (as specified in architecture)
 - Source vault item referenced in response
 
-#### E2E-4.2: Emotional Recall
+#### E2E-4.2: **[TST-E2E-020]** Emotional Recall
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -508,7 +508,7 @@ prefixes.
 - Pure semantic search captures emotional meaning, not just keyword matches
 - Results span different types (emails, calendar events, messages)
 
-#### E2E-4.3: Offline Recall (Rich Client Cache)
+#### E2E-4.3: **[TST-E2E-021]** Offline Recall (Rich Client Cache)
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -523,7 +523,7 @@ prefixes.
 - Results are from local cache (may be slightly stale)
 - Sync resumes automatically on reconnection
 
-#### E2E-4.4: Cross-Persona Search Isolation
+#### E2E-4.4: **[TST-E2E-022]** Cross-Persona Search Isolation
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -545,7 +545,7 @@ prefixes.
 > External data flows into Don Alonso's vault: Gmail triage, Telegram ingestion, calendar sync,
 > with cursor continuity and OAuth refresh handled by OpenClaw.
 
-#### E2E-5.1: Gmail Two-Pass Triage
+#### E2E-5.1: **[TST-E2E-023]** Gmail Two-Pass Triage
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -566,7 +566,7 @@ prefixes.
 
 **Failure variant:** Fiduciary override — security alert email from bank is always ingested regardless of category filter.
 
-#### E2E-5.2: Telegram Ingestion (Bot API → Core)
+#### E2E-5.2: **[TST-E2E-024]** Telegram Ingestion (Bot API → Core)
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -580,7 +580,7 @@ prefixes.
 - Full message and media support (text, photos, documents, voice notes)
 - No Telegram history before bot is added to chat (only new messages from that point)
 
-#### E2E-5.3: Calendar Sync with Rolling Window
+#### E2E-5.3: **[TST-E2E-025]** Calendar Sync with Rolling Window
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -594,7 +594,7 @@ prefixes.
 - All calendar fields preserved through ingestion pipeline
 - Dedup: re-syncing same events produces no duplicates (upsert by event ID)
 
-#### E2E-5.4: Cursor Continuity Across Restart
+#### E2E-5.4: **[TST-E2E-026]** Cursor Continuity Across Restart
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -608,7 +608,7 @@ prefixes.
 - No duplicate emails ingested after restart
 - Brain is stateless — all state recovered from core vault
 
-#### E2E-5.5: OAuth Refresh Handled by OpenClaw
+#### E2E-5.5: **[TST-E2E-027]** OAuth Refresh Handled by OpenClaw
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -620,7 +620,7 @@ prefixes.
 - Dina never holds OAuth tokens (separation of concerns)
 - If OpenClaw is compromised, it cannot access Dina's vault or keys
 
-#### E2E-5.6: Startup Fast Sync + Background Backfill
+#### E2E-5.6: **[TST-E2E-028]** Startup Fast Sync + Background Backfill
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -643,7 +643,7 @@ prefixes.
 > Dina delegates tasks to external agents while maintaining safety invariants:
 > draft-don't-send, cart handover, malicious bot blocking, crash recovery.
 
-#### E2E-6.1: License Renewal Delegation
+#### E2E-6.1: **[TST-E2E-029]** License Renewal Delegation
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -660,7 +660,7 @@ prefixes.
 - Staging item auto-expires after 72 hours if ignored
 - Agent never holds Don Alonso's keys or sees full vault
 
-#### E2E-6.2: Draft-Don't-Send for Email
+#### E2E-6.2: **[TST-E2E-030]** Draft-Don't-Send for Email
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -674,7 +674,7 @@ prefixes.
 - High-risk classifications (legal, financial, emotional) → summarize only, never draft
 - Draft expires after 72 hours if not acted on
 
-#### E2E-6.3: Malicious Bot Blocking
+#### E2E-6.3: **[TST-E2E-031]** Malicious Bot Blocking
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -690,7 +690,7 @@ prefixes.
 - Injection payloads rejected at schema validation, never reach vault
 - Bot reputation affects future routing decisions
 
-#### E2E-6.4: Agent Intent Verification
+#### E2E-6.4: **[TST-E2E-032]** Agent Intent Verification
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -705,7 +705,7 @@ prefixes.
 - Safe actions pass silently (no unnecessary interruptions)
 - Agent never holds Don Alonso's keys or sees full vault history
 
-#### E2E-6.5: Task Queue Crash Recovery
+#### E2E-6.5: **[TST-E2E-033]** Task Queue Crash Recovery
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -721,7 +721,7 @@ prefixes.
 - Task timeout (5 minutes) triggers watchdog reset
 - After 3 failed attempts → `status='dead'`, Tier 2 notification to user: "Task failed after 3 attempts"
 
-#### E2E-6.6: Dead Letter Notification
+#### E2E-6.6: **[TST-E2E-034]** Dead Letter Notification
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -741,7 +741,7 @@ prefixes.
 > Verify the 3-tier PII scrubbing pipeline, Entity Vault lifecycle, and prompt injection
 > neutralization across the full stack.
 
-#### E2E-7.1: Full 3-Tier PII Pipeline
+#### E2E-7.1: **[TST-E2E-035]** Full 3-Tier PII Pipeline
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -760,7 +760,7 @@ prefixes.
 - Entity Vault is never written to disk, never logged, never stored in vault
 - PII scrubbing runs entirely local (Tier 1: Go regex, Tier 2: Python spaCy) — zero outbound HTTP for detection
 
-#### E2E-7.2: Entity Vault Lifecycle
+#### E2E-7.2: **[TST-E2E-036]** Entity Vault Lifecycle
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -777,7 +777,7 @@ prefixes.
 - Entity Vault scope: exactly one request-response cycle
 - Memory dump during step 4 shows tokens in Entity Vault, NOT in outbound request
 
-#### E2E-7.3: Prompt Injection Neutralization
+#### E2E-7.3: **[TST-E2E-037]** Prompt Injection Neutralization
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -791,7 +791,7 @@ prefixes.
 - Bot responses validated against strict schema (no freeform execution)
 - Injection attempts logged and affect bot reputation
 
-#### E2E-7.4: PII Scrubbing Always Local
+#### E2E-7.4: **[TST-E2E-038]** PII Scrubbing Always Local
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -812,7 +812,7 @@ prefixes.
 > Health and financial personas have extra protections: Entity Vault scrubbing,
 > persona locking with TTL, and cross-persona isolation.
 
-#### E2E-8.1: Health Entity Vault
+#### E2E-8.1: **[TST-E2E-039]** Health Entity Vault
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -827,7 +827,7 @@ prefixes.
 - Cloud LLM sees health topic but never doctor name or patient identity
 - Entity Vault scrubbing mandatory for sensitive personas (not optional)
 
-#### E2E-8.2: Financial Persona Lock/Unlock/TTL
+#### E2E-8.2: **[TST-E2E-040]** Financial Persona Lock/Unlock/TTL
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -845,7 +845,7 @@ prefixes.
 - TTL enforced: exactly 15 minutes, then automatic re-lock
 - Financial DEK cannot open health.sqlite (different HKDF info string)
 
-#### E2E-8.3: Cross-Persona Isolation Enforcement
+#### E2E-8.3: **[TST-E2E-041]** Cross-Persona Isolation Enforcement
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -861,7 +861,7 @@ prefixes.
 - Breach containment: compromised `/health` DEK cannot access `/financial` data
 - Locked personas excluded from `GetPersonasForContact()` results
 
-#### E2E-8.4: Cloud LLM Consent for Sensitive Personas
+#### E2E-8.4: **[TST-E2E-042]** Cloud LLM Consent for Sensitive Personas
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -883,7 +883,7 @@ prefixes.
 > Don Alonso's custodians coordinate SSS recovery. Albert receives scoped access to specific personas.
 > Remaining data is destroyed — but only after all beneficiary keys are delivered.
 
-#### E2E-9.1: SSS Custodian Recovery — Threshold Coordination
+#### E2E-9.1: **[TST-E2E-043]** SSS Custodian Recovery — Threshold Coordination
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -900,7 +900,7 @@ prefixes.
 - No timer-based liveness checks — recovery is entirely human-initiated
 - No false activations from vacation, illness, or lost phone
 
-#### E2E-9.2: Beneficiary Key Delivery
+#### E2E-9.2: **[TST-E2E-044]** Beneficiary Key Delivery
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -915,7 +915,7 @@ prefixes.
 - Albert receives ONLY `/personal` + `/health` keys — cannot derive `/financial` DEK
 - Keys delivered via D2D encrypted channel (beneficiary must have Dina)
 
-#### E2E-9.3: Destruction Gated on Delivery Confirmation
+#### E2E-9.3: **[TST-E2E-045]** Destruction Gated on Delivery Confirmation
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -931,7 +931,7 @@ prefixes.
 - Offline beneficiary keys remain in outbox with infinite retry (never abandoned)
 - Destruction is step 5 (last), after step 4 (deliver keys) — ordering is mandatory
 
-#### E2E-9.4: SSS Recovery with Physical Shares
+#### E2E-9.4: **[TST-E2E-046]** SSS Recovery with Physical Shares
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -952,7 +952,7 @@ prefixes.
 > Crash scenarios across the full stack: brain crash + scratchpad resume, core WAL recovery,
 > dead letter queue, disk full.
 
-#### E2E-10.1: Brain Crash + Scratchpad Resume
+#### E2E-10.1: **[TST-E2E-047]** Brain Crash + Scratchpad Resume
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -968,7 +968,7 @@ prefixes.
 - Scratchpad auto-expires after 24 hours (no stale data accumulation)
 - Task watchdog timeout: 5 minutes
 
-#### E2E-10.2: Core WAL Recovery After Power Loss
+#### E2E-10.2: **[TST-E2E-048]** Core WAL Recovery After Power Loss
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -983,7 +983,7 @@ prefixes.
 - No data corruption: `PRAGMA integrity_check` passes
 - Incomplete transactions rolled back automatically
 
-#### E2E-10.3: Full Stack Power Loss
+#### E2E-10.3: **[TST-E2E-049]** Full Stack Power Loss
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -999,7 +999,7 @@ prefixes.
 - Boot order: PDS → Core (after PDS started) → Brain (after Core healthy)
 - Brain is stateless: no local database, full recovery from core vault
 
-#### E2E-10.4: Dead Letter Queue Processing
+#### E2E-10.4: **[TST-E2E-050]** Dead Letter Queue Processing
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1013,7 +1013,7 @@ prefixes.
 - User notified of permanent failures
 - Failed messages auto-cleaned after 24 hours; delivered messages after 1 hour
 
-#### E2E-10.5: Disk Full Scenario
+#### E2E-10.5: **[TST-E2E-051]** Disk Full Scenario
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1028,7 +1028,7 @@ prefixes.
 - Read operations remain functional during disk pressure
 - Recovery is automatic when space is freed
 
-#### E2E-10.6: Batch Ingestion Atomicity
+#### E2E-10.6: **[TST-E2E-052]** Batch Ingestion Atomicity
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1048,7 +1048,7 @@ prefixes.
 > Don Alonso uses phone, laptop, and smart watch simultaneously. Tests real-time push,
 > offline sync, thin client behavior, and cache corruption recovery.
 
-#### E2E-11.1: Real-Time Multi-Device Push
+#### E2E-11.1: **[TST-E2E-053]** Real-Time Multi-Device Push
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1063,7 +1063,7 @@ prefixes.
 - Thin client (watch) receives same pushes as rich clients
 - No message loss when multiple clients are connected
 
-#### E2E-11.2: Offline Sync Reconciliation
+#### E2E-11.2: **[TST-E2E-054]** Offline Sync Reconciliation
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1078,7 +1078,7 @@ prefixes.
 - No duplicates in local cache after sync
 - Sync is incremental (only delta, not full vault)
 
-#### E2E-11.3: Thin Client — No Local Storage
+#### E2E-11.3: **[TST-E2E-055]** Thin Client — No Local Storage
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1093,7 +1093,7 @@ prefixes.
 - All queries go through Home Node (no offline capability)
 - Contrast with rich client (phone) which works offline with local cache
 
-#### E2E-11.4: Rich Client Offline Operations
+#### E2E-11.4: **[TST-E2E-056]** Rich Client Offline Operations
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1111,7 +1111,7 @@ prefixes.
 - Locally-created items uploaded on reconnect
 - Home Node is authoritative — phone cache is subordinate
 
-#### E2E-11.5: Cache Corruption Recovery
+#### E2E-11.5: **[TST-E2E-057]** Cache Corruption Recovery
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1125,7 +1125,7 @@ prefixes.
 - Home Node is the single source of truth
 - No data loss — only client cache is rebuilt
 
-#### E2E-11.6: Heartbeat and Stale Connection Cleanup
+#### E2E-11.6: **[TST-E2E-058]** Heartbeat and Stale Connection Cleanup
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1147,7 +1147,7 @@ prefixes.
 > Full lifecycle: publish attestation, relay propagation, query, bot reputation degradation,
 > signed tombstone deletion, trust score computation.
 
-#### E2E-12.1: Expert Attestation Publish → Relay → Query
+#### E2E-12.1: **[TST-E2E-059]** Expert Attestation Publish → Relay → Query
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1163,7 +1163,7 @@ prefixes.
 - AppView rejects unsigned/invalid records
 - Query returns aggregate score computed from individual signed records
 
-#### E2E-12.2: Bot Reputation Degradation
+#### E2E-12.2: **[TST-E2E-060]** Bot Reputation Degradation
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1178,7 +1178,7 @@ prefixes.
 - Auto-routing happens transparently when score drops
 - Reputation factors: `response_accuracy, response_time, uptime, user_ratings, consistency, age, peer_endorsements`
 
-#### E2E-12.3: Signed Tombstone Deletion
+#### E2E-12.3: **[TST-E2E-061]** Signed Tombstone Deletion
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1193,7 +1193,7 @@ prefixes.
 - Tombstone requires valid Ed25519 signature from author's key
 - Non-author deletions rejected at every level
 
-#### E2E-12.4: Trust Score Computation
+#### E2E-12.4: **[TST-E2E-062]** Trust Score Computation
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1206,7 +1206,7 @@ prefixes.
 - All factors weighted: identity, transactions, outcomes, peers, time
 - Scores deterministic: two AppViews compute same result from same data
 
-#### E2E-12.5: AT Protocol Discovery
+#### E2E-12.5: **[TST-E2E-063]** AT Protocol Discovery
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1219,7 +1219,7 @@ prefixes.
 - Response: `Content-Type: text/plain`, body is bare DID string
 - Missing endpoint breaks entire federation chain
 
-#### E2E-12.6: AppView Determinism
+#### E2E-12.6: **[TST-E2E-064]** AppView Determinism
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1240,7 +1240,7 @@ prefixes.
 > External attacks against Don Alonso's Home Node: DDoS, replay attacks, cross-persona violations,
 > oversized payloads, log exfiltration attempts, token brute force.
 
-#### E2E-13.1: DDoS + Rate Limiting
+#### E2E-13.1: **[TST-E2E-065]** DDoS + Rate Limiting
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1254,7 +1254,7 @@ prefixes.
 - Authenticated traffic from known contacts not affected
 - System remains functional under DDoS
 
-#### E2E-13.2: Dead Drop Abuse Prevention
+#### E2E-13.2: **[TST-E2E-066]** Dead Drop Abuse Prevention
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1269,7 +1269,7 @@ prefixes.
 - Spool overflow: reject-new policy (never drop oldest — would lose legitimate messages)
 - Sancho's outbox retries deliver message after spool is drained
 
-#### E2E-13.3: Replay Attack Prevention
+#### E2E-13.3: **[TST-E2E-067]** Replay Attack Prevention
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1282,7 +1282,7 @@ prefixes.
 - Core maintains deduplication set
 - Replayed messages rejected without processing
 
-#### E2E-13.4: Cross-Persona Violation Attempt
+#### E2E-13.4: **[TST-E2E-068]** Cross-Persona Violation Attempt
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1298,7 +1298,7 @@ prefixes.
 - Restricted personas audited (user always informed)
 - Admin endpoints require higher privilege than BRAIN_TOKEN
 
-#### E2E-13.5: Oversized Payload Attack
+#### E2E-13.5: **[TST-E2E-069]** Oversized Payload Attack
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1312,7 +1312,7 @@ prefixes.
 - Oversized payloads rejected before parsing (no memory exhaustion)
 - Attacker's reputation degraded
 
-#### E2E-13.6: Log Exfiltration Prevention
+#### E2E-13.6: **[TST-E2E-070]** Log Exfiltration Prevention
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1329,7 +1329,7 @@ prefixes.
 - Crash tracebacks stored in vault (encrypted), not in Docker logs
 - Log rotation: max 10MB, 3 files (prevents disk exhaustion)
 
-#### E2E-13.7: Token Brute Force
+#### E2E-13.7: **[TST-E2E-071]** Token Brute Force
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1343,7 +1343,7 @@ prefixes.
 - Rate limiting per IP on auth endpoints
 - Legitimate devices not affected by attacker's lockout
 
-#### E2E-13.8: DID Spoofing
+#### E2E-13.8: **[TST-E2E-072]** DID Spoofing
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1356,7 +1356,7 @@ prefixes.
 - Every inbound D2D message verified against sender's DID Document
 - Forged messages never reach brain for processing
 
-#### E2E-13.9: Relay Cannot Read Content
+#### E2E-13.9: **[TST-E2E-073]** Relay Cannot Read Content
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1369,7 +1369,7 @@ prefixes.
 - Zero-knowledge transport: relay cannot read, modify, or selectively drop messages
 - Same `crypto_box_seal` encryption as direct delivery
 
-#### E2E-13.10: Data Sovereignty on Disk
+#### E2E-13.10: **[TST-E2E-074]** Data Sovereignty on Disk
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|

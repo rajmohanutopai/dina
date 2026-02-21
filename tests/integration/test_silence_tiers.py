@@ -33,6 +33,7 @@ from tests.integration.mocks import (
 class TestTier1Fiduciary:
     """Tier 1 events always interrupt -- silence would cause harm."""
 
+# TST-INT-547
     def test_malicious_contract_interrupts(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -56,6 +57,7 @@ class TestTier1Fiduciary:
         assert len(mock_human.notifications) == 1
         assert mock_human.notifications[0].tier == SilenceTier.TIER_1_FIDUCIARY
 
+# TST-INT-268
     def test_phishing_interrupts(
         self, mock_classifier: MockSilenceClassifier
     ) -> None:
@@ -66,6 +68,7 @@ class TestTier1Fiduciary:
         )
         assert tier == SilenceTier.TIER_1_FIDUCIARY
 
+# TST-INT-548
     def test_fiduciary_overrides_dnd(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -90,6 +93,7 @@ class TestTier1Fiduciary:
         assert len(mock_human.notifications) == 1
         assert mock_human.notifications[0].tier == SilenceTier.TIER_1_FIDUCIARY
 
+# TST-INT-549
     def test_financial_fraud_detection(
         self, mock_classifier: MockSilenceClassifier
     ) -> None:
@@ -109,6 +113,7 @@ class TestTier1Fiduciary:
 class TestTier2Solicited:
     """Tier 2 events are user-requested notifications."""
 
+# TST-INT-550
     def test_alarm_notification(
         self, mock_classifier: MockSilenceClassifier
     ) -> None:
@@ -116,6 +121,7 @@ class TestTier2Solicited:
         tier = mock_classifier.classify("alarm", "Wake up at 7:00 AM.")
         assert tier == SilenceTier.TIER_2_SOLICITED
 
+# TST-INT-551
     def test_price_alert(
         self, mock_classifier: MockSilenceClassifier
     ) -> None:
@@ -125,6 +131,7 @@ class TestTier2Solicited:
         )
         assert tier == SilenceTier.TIER_2_SOLICITED
 
+# TST-INT-552
     def test_respects_timing(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -145,6 +152,7 @@ class TestTier2Solicited:
         mock_human.receive_notification(notification)
         assert len(mock_human.notifications) == 1
 
+# TST-INT-553
     def test_search_results_ready(
         self, mock_classifier: MockSilenceClassifier
     ) -> None:
@@ -164,6 +172,7 @@ class TestTier2Solicited:
 class TestTier3Engagement:
     """Tier 3 events are saved silently for the daily briefing."""
 
+# TST-INT-554
     def test_new_video_saved_for_briefing(
         self, mock_classifier: MockSilenceClassifier
     ) -> None:
@@ -174,6 +183,7 @@ class TestTier3Engagement:
         )
         assert tier == SilenceTier.TIER_3_ENGAGEMENT
 
+# TST-INT-555
     def test_flash_sale_saved(
         self, mock_classifier: MockSilenceClassifier
     ) -> None:
@@ -184,6 +194,7 @@ class TestTier3Engagement:
         )
         assert tier == SilenceTier.TIER_3_ENGAGEMENT
 
+# TST-INT-556
     def test_daily_briefing_aggregates(
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
@@ -218,6 +229,7 @@ class TestTier3Engagement:
             for n in mock_human.notifications
         )
 
+# TST-INT-557
     def test_tier_3_never_interrupts(
         self, mock_classifier: MockSilenceClassifier, mock_human: MockHuman
     ) -> None:
@@ -261,6 +273,7 @@ class TestSilenceClassifier:
             ("social_feed", "New posts available", SilenceTier.TIER_3_ENGAGEMENT),
         ],
     )
+# TST-INT-558
     def test_assigns_correct_tier(
         self,
         mock_classifier: MockSilenceClassifier,
@@ -272,6 +285,7 @@ class TestSilenceClassifier:
         tier = mock_classifier.classify(event_type, content)
         assert tier == expected_tier
 
+# TST-INT-265
     def test_if_silent_causes_harm_speak(
         self, mock_classifier: MockSilenceClassifier
     ) -> None:
@@ -284,6 +298,7 @@ class TestSilenceClassifier:
         )
         assert tier == SilenceTier.TIER_1_FIDUCIARY
 
+# TST-INT-559
     def test_user_can_override_tier(
         self, mock_classifier: MockSilenceClassifier
     ) -> None:
@@ -304,6 +319,7 @@ class TestSilenceClassifier:
         ]
         assert len(override_logs) == 1
 
+# TST-INT-560
     def test_context_affects_classification(
         self, mock_classifier: MockSilenceClassifier
     ) -> None:

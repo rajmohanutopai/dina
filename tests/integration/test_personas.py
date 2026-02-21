@@ -25,6 +25,7 @@ from tests.integration.mocks import (
 class TestPersonaCreation:
     """Root identity generates personas via SLIP-0010 derivation."""
 
+# TST-INT-521
     def test_root_identity_generates_consumer_persona(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -36,6 +37,7 @@ class TestPersonaCreation:
         assert persona.did != mock_identity.root_did
         assert persona.derived_key != mock_identity.root_private_key
 
+# TST-INT-033
     def test_root_identity_generates_health_persona(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -46,6 +48,7 @@ class TestPersonaCreation:
         assert persona.storage_partition == "partition_health"
         assert persona.did.startswith("did:key:z6Mk")
 
+# TST-INT-522
     def test_root_identity_generates_legal_persona(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -57,6 +60,7 @@ class TestPersonaCreation:
         assert persona.derived_key is not None
         assert len(persona.derived_key) == 64  # SHA-256 hex
 
+# TST-INT-159
     def test_seller_interaction_gets_own_persona(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -66,6 +70,7 @@ class TestPersonaCreation:
         assert persona.persona_type == PersonaType.FINANCIAL
         assert persona.did != mock_identity.root_did
 
+# TST-INT-161
     def test_each_persona_has_unique_key_derivation(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -85,6 +90,7 @@ class TestPersonaCreation:
         assert len(set(keys)) == len(types), "Derived keys must be unique"
         assert len(set(dids)) == len(types), "DIDs must be unique"
 
+# TST-INT-523
     def test_persona_derivation_is_deterministic(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -96,6 +102,7 @@ class TestPersonaCreation:
         assert first.did == second.did
         assert first.derived_key == second.derived_key
 
+# TST-INT-034
     def test_different_roots_produce_different_personas(self) -> None:
         """Two root identities produce completely different persona keys."""
         alice = MockIdentity(did="did:plc:Alice12345678901234567890abcd")
@@ -115,6 +122,7 @@ class TestPersonaCreation:
 class TestPersonaIsolation:
     """Personas are cryptographically isolated compartments."""
 
+# TST-INT-031
     def test_seller_cannot_see_health_data(
         self, mock_identity: MockIdentity, mock_vault: MockVault
     ) -> None:
@@ -141,6 +149,7 @@ class TestPersonaIsolation:
         assert result is not None
         assert result["systolic"] == 120
 
+# TST-INT-032
     def test_health_bot_cannot_see_purchases(
         self, mock_identity: MockIdentity, mock_vault: MockVault
     ) -> None:
@@ -161,6 +170,7 @@ class TestPersonaIsolation:
         consumer_view = mock_vault.per_persona_partition(PersonaType.CONSUMER)
         assert "purchase_chair" in consumer_view
 
+# TST-INT-164
     def test_cross_persona_requires_authorization(
         self, mock_identity: MockIdentity, mock_vault: MockVault
     ) -> None:
@@ -178,6 +188,7 @@ class TestPersonaIsolation:
         cross_decrypt = consumer.decrypt(encrypted)
         assert cross_decrypt is None
 
+# TST-INT-157
     def test_malicious_system_cannot_jailbreak_persona(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -200,6 +211,7 @@ class TestPersonaIsolation:
         encrypted_fin = financial.encrypt("bank account: secret")
         assert health.decrypt(encrypted_fin) is None
 
+# TST-INT-160
     def test_persona_keys_derived_from_root(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -219,6 +231,7 @@ class TestPersonaIsolation:
         consumer_clone = identity_clone.derive_persona(PersonaType.CONSUMER)
         assert consumer_clone.derived_key == consumer.derived_key
 
+# TST-INT-162
     def test_vault_partition_naming_matches_persona_type(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -236,6 +249,7 @@ class TestPersonaIsolation:
 class TestPersonaInInteraction:
     """Dina auto-selects the correct persona based on interaction context."""
 
+# TST-INT-524
     def test_buying_chair_uses_consumer_persona(
         self, mock_dina: MockDinaCore, mock_review_bot
     ) -> None:
@@ -273,6 +287,7 @@ class TestPersonaInInteraction:
         assert "allergies" not in consumer_data
         assert "allergies" in health_data
 
+# TST-INT-525
     def test_license_renewal_uses_legal_persona(
         self, mock_dina: MockDinaCore, mock_legal_bot
     ) -> None:
@@ -313,6 +328,7 @@ class TestPersonaInInteraction:
         # No consumer or health fields leaked
         assert "item" not in fill_record["identity_fields"]
 
+# TST-INT-158
     def test_doctor_visit_uses_health_persona(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -345,6 +361,7 @@ class TestPersonaInInteraction:
             "metformin", "aspirin"
         ]
 
+# TST-INT-526
     def test_auto_selection_by_context_product_query(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -370,6 +387,7 @@ class TestPersonaInInteraction:
         partition = mock_dina.vault.per_persona_partition(selected)
         assert isinstance(partition, dict)
 
+# TST-INT-527
     def test_auto_selection_by_context_medical_query(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -390,6 +408,7 @@ class TestPersonaInInteraction:
         from tests.integration.mocks import LLMTarget
         assert target == LLMTarget.LOCAL
 
+# TST-INT-528
     def test_financial_persona_also_routes_locally(
         self, mock_dina: MockDinaCore
     ) -> None:
@@ -400,6 +419,7 @@ class TestPersonaInInteraction:
         from tests.integration.mocks import LLMTarget
         assert target == LLMTarget.LOCAL
 
+# TST-INT-156
     def test_persona_data_survives_across_sessions(
         self, mock_identity: MockIdentity, mock_vault: MockVault
     ) -> None:

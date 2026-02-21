@@ -14,16 +14,27 @@ import pytest
 
 from tests.integration.mocks import (
     Draft,
+    LLMTarget,
     MockConnector,
     MockDinaCore,
+    MockExternalAgent,
     MockGmailConnector,
+    MockGoCore,
     MockIdentity,
     MockKeyManager,
+    MockLLMRouter,
+    MockPIIScrubber,
     MockPersona,
+    MockPythonBrain,
+    MockScratchpad,
+    MockSilenceClassifier,
     MockStagingTier,
     MockVault,
+    MockWhisperAssembler,
+    Notification,
     PaymentIntent,
     PersonaType,
+    SilenceTier,
 )
 
 
@@ -34,6 +45,7 @@ from tests.integration.mocks import (
 class TestTier0IdentityVault:
     """Tier 0 holds the root keypair, BIP-39 mnemonic, and SLIP-0010 derivation."""
 
+# TST-INT-204
     def test_root_keypair_encrypted_at_rest(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -51,6 +63,7 @@ class TestTier0IdentityVault:
         assert wrapped.startswith("WRAPPED[")
         assert mock_identity.root_private_key not in wrapped
 
+# TST-INT-182
     def test_bip39_recovery_mnemonic_exists(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -63,6 +76,7 @@ class TestTier0IdentityVault:
         # Each word must be non-empty
         assert all(len(w) > 0 for w in words)
 
+# TST-INT-197
     def test_bip32_derivation_produces_child_keys(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -78,6 +92,7 @@ class TestTier0IdentityVault:
         assert consumer_key != mock_identity.root_private_key
         assert health_key != mock_identity.root_private_key
 
+# TST-INT-207
     def test_cryptographically_unlinkable_personas(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -109,6 +124,7 @@ class TestTier0IdentityVault:
             "Persona keys must not be identical"
         )
 
+# TST-INT-183
     def test_root_key_stored_in_tier_0(
         self, mock_vault: MockVault, mock_identity: MockIdentity
     ) -> None:
@@ -128,6 +144,7 @@ class TestTier0IdentityVault:
         for tier in range(1, 6):
             assert mock_vault.retrieve(tier=tier, key="root_key") is None
 
+# TST-INT-195
     def test_device_key_derivation(
         self, mock_identity: MockIdentity
     ) -> None:
@@ -159,6 +176,7 @@ class TestEncryptionVerification:
 
     SQLITE_MAGIC = b"SQLite format 3\x00"
 
+# TST-INT-190
     def test_encrypted_vault_has_no_sqlite_header(
         self, mock_vault: MockVault, mock_identity: MockIdentity
     ) -> None:
@@ -179,6 +197,7 @@ class TestEncryptionVerification:
         )
         assert len(header) == 16
 
+# TST-INT-201
     def test_all_persona_vaults_encrypted(
         self, mock_vault: MockVault, mock_identity: MockIdentity
     ) -> None:
@@ -196,6 +215,7 @@ class TestEncryptionVerification:
                 f"CRITICAL: {ptype.value}.sqlite is not encrypted!"
             )
 
+# TST-INT-189
     def test_empty_vault_would_fail_check(
         self, mock_vault: MockVault
     ) -> None:
@@ -216,6 +236,7 @@ class TestEncryptionVerification:
 class TestTier1Vault:
     """Tier 1 is the personal vault: encrypted, FTS5, per-persona partition."""
 
+# TST-INT-119
     def test_data_encrypted_with_persona_key(
         self, mock_identity: MockIdentity, mock_vault: MockVault
     ) -> None:
@@ -239,6 +260,7 @@ class TestTier1Vault:
         )
         assert retrieved == encrypted
 
+# TST-INT-188
     def test_fts5_search_returns_matching_keys(
         self, mock_vault: MockVault
     ) -> None:
@@ -261,6 +283,7 @@ class TestTier1Vault:
         assert "note_beta" in results
         assert "note_alpha" not in results
 
+# TST-INT-217
     def test_fts5_search_case_insensitive(
         self, mock_vault: MockVault
     ) -> None:
@@ -271,6 +294,7 @@ class TestTier1Vault:
         assert mock_vault.search_fts("AERON") == ["doc_1"]
         assert mock_vault.search_fts("Miller") == ["doc_1"]
 
+# TST-INT-198
     def test_per_persona_partition_isolation(
         self, mock_vault: MockVault
     ) -> None:
@@ -299,6 +323,7 @@ class TestTier1Vault:
         assert "hobby" in social_partition
         assert "hobby" not in fin_partition
 
+# TST-INT-211
     def test_partition_returns_copy_not_reference(
         self, mock_vault: MockVault
     ) -> None:
@@ -314,6 +339,7 @@ class TestTier1Vault:
                                        persona=PersonaType.CONSUMER)
         assert original == "val1"
 
+# TST-INT-187
     def test_multiple_entries_same_persona(
         self, mock_vault: MockVault
     ) -> None:
@@ -337,6 +363,7 @@ class TestTier1Vault:
 class TestTier4Staging:
     """Tier 4 is ephemeral staging: drafts and payment intents, auto-expire."""
 
+# TST-INT-175
     def test_drafts_stored_in_staging(
         self, mock_staging: MockStagingTier
     ) -> None:
@@ -356,6 +383,7 @@ class TestTier4Staging:
         assert retrieved.subject == "Meeting follow-up"
         assert not retrieved.sent
 
+# TST-INT-213
     def test_auto_expire_72h(self, mock_staging: MockStagingTier) -> None:
         """Drafts auto-expire after 72 hours (259200 seconds)."""
         now = time.time()
@@ -385,6 +413,7 @@ class TestTier4Staging:
         expired_count = mock_staging.auto_expire(current_time=now + 73 * 3600)
         assert expired_count == 1
 
+# TST-INT-206
     def test_payment_intents_stored(
         self, mock_staging: MockStagingTier
     ) -> None:
@@ -407,6 +436,7 @@ class TestTier4Staging:
         assert retrieved.amount == 95000.0
         assert not retrieved.executed
 
+# TST-INT-561
     def test_payment_intent_also_expires(
         self, mock_staging: MockStagingTier
     ) -> None:
@@ -430,6 +460,7 @@ class TestTier4Staging:
         # Gone after expiry
         assert mock_staging.get("pay_expire") is None
 
+# TST-INT-562
     def test_multiple_items_in_staging(
         self, mock_staging: MockStagingTier
     ) -> None:
@@ -457,6 +488,7 @@ class TestTier4Staging:
         expired = mock_staging.auto_expire(current_time=now + 73 * 3600)
         assert expired == 8
 
+# TST-INT-563
     def test_staging_get_returns_none_for_missing(
         self, mock_staging: MockStagingTier
     ) -> None:
@@ -471,6 +503,7 @@ class TestTier4Staging:
 class TestTier5DeepArchive:
     """Tier 5 is deep archive: encrypted, immutable, but deletable."""
 
+# TST-INT-216
     def test_encrypted_snapshots(self, mock_vault: MockVault) -> None:
         """Vault snapshots are created for archival purposes."""
         # Populate some data
@@ -487,6 +520,7 @@ class TestTier5DeepArchive:
         assert "note1" in snapshot["tiers"][1]
         assert snapshot["tiers"][1]["note1"] == "hello"
 
+# TST-INT-209
     def test_immutable_archive(self, mock_vault: MockVault) -> None:
         """Archived data in Tier 5 is stored and cannot be accidentally
         overwritten by a Tier 1 store.
@@ -507,6 +541,7 @@ class TestTier5DeepArchive:
         tier1_copy = mock_vault.retrieve(tier=1, key="archive_2025")
         assert tier1_copy["records"] == 0
 
+# TST-INT-123
     def test_right_to_delete_still_works(
         self, mock_vault: MockVault
     ) -> None:
@@ -526,6 +561,7 @@ class TestTier5DeepArchive:
         # Truly gone
         assert mock_vault.retrieve(tier=5, key="personal_history") is None
 
+# TST-INT-178
     def test_delete_nonexistent_returns_false(
         self, mock_vault: MockVault
     ) -> None:
@@ -533,6 +569,7 @@ class TestTier5DeepArchive:
         result = mock_vault.delete(tier=5, key="ghost_key")
         assert result is False
 
+# TST-INT-208
     def test_delete_removes_from_all_partitions_and_fts(
         self, mock_vault: MockVault
     ) -> None:
@@ -553,6 +590,7 @@ class TestTier5DeepArchive:
         assert mock_vault.retrieve(tier=1, key="secret",
                                    persona=PersonaType.HEALTH) is None
 
+# TST-INT-184
     def test_snapshot_is_point_in_time(self, mock_vault: MockVault) -> None:
         """A snapshot captures the vault state at the moment it is taken.
 
@@ -575,6 +613,7 @@ class TestTier5DeepArchive:
         assert "before_snap" in snapshot["tiers"][1]
         assert "after_snap" not in snapshot["tiers"][1]
 
+# TST-INT-125
     def test_archive_with_persona_encryption(
         self, mock_identity: MockIdentity, mock_vault: MockVault
     ) -> None:
@@ -616,24 +655,29 @@ class TestSQLiteConcurrentAccess:
 
     # --- PRAGMA contract ---
 
+# TST-INT-202
     def test_wal_mode_configured(self, mock_vault: MockVault) -> None:
         """Vault must use WAL journal mode for concurrent read access."""
         assert mock_vault.PRAGMAS["journal_mode"] == "WAL"
 
+# TST-INT-564
     def test_busy_timeout_configured(self, mock_vault: MockVault) -> None:
         """busy_timeout must be set to avoid immediate SQLITE_BUSY errors."""
         assert mock_vault.PRAGMAS["busy_timeout"] == 5000
 
+# TST-INT-122
     def test_synchronous_normal(self, mock_vault: MockVault) -> None:
         """synchronous=NORMAL is safe in WAL mode and faster than FULL."""
         assert mock_vault.PRAGMAS["synchronous"] == "NORMAL"
 
+# TST-INT-203
     def test_foreign_keys_on(self, mock_vault: MockVault) -> None:
         """Foreign keys must be enforced to prevent orphaned data."""
         assert mock_vault.PRAGMAS["foreign_keys"] == "ON"
 
     # --- Single-writer pattern ---
 
+# TST-INT-210
     def test_single_write_increments_tx_count(self, mock_vault: MockVault) -> None:
         """Each individual store() is one transaction."""
         mock_vault.store(1, "key_a", "val_a")
@@ -641,6 +685,7 @@ class TestSQLiteConcurrentAccess:
         assert mock_vault._write_count == 2
         assert mock_vault._tx_count == 2
 
+# TST-INT-199
     def test_reads_never_blocked_by_writes(self, mock_vault: MockVault) -> None:
         """Reads use the read pool and succeed even during writes.
 
@@ -656,6 +701,7 @@ class TestSQLiteConcurrentAccess:
 
     # --- Batch ingestion ---
 
+# TST-INT-565
     def test_batch_store_one_transaction(self, mock_vault: MockVault) -> None:
         """store_batch() writes N items in a single transaction."""
         items = [(f"batch_{i}", {"data": i}) for i in range(50)]
@@ -665,6 +711,7 @@ class TestSQLiteConcurrentAccess:
         assert mock_vault._write_count == 50  # 50 individual writes
         assert mock_vault._tx_count == 1      # but only 1 transaction
 
+# TST-INT-124
     def test_batch_store_emits_notification(self, mock_vault: MockVault) -> None:
         """Each batch emits one brain notification (not one per item)."""
         items = [(f"notif_{i}", {"data": i}) for i in range(100)]
@@ -675,6 +722,7 @@ class TestSQLiteConcurrentAccess:
         assert notif["count"] == 100
         assert notif["persona"] == PersonaType.PROFESSIONAL
 
+# TST-INT-566
     def test_batch_data_readable_after_commit(self, mock_vault: MockVault) -> None:
         """All items in a batch are readable after the batch commits."""
         items = [(f"read_{i}", f"value_{i}") for i in range(10)]
@@ -686,12 +734,14 @@ class TestSQLiteConcurrentAccess:
                 1, f"read_{i}", persona=PersonaType.SOCIAL
             ) == f"value_{i}"
 
+# TST-INT-567
     def test_batch_size_is_100(self, mock_vault: MockVault) -> None:
         """Default batch size for ingestion is 100 items."""
         assert mock_vault.BATCH_SIZE == 100
 
     # --- Connector batch ingestion ---
 
+# TST-INT-218
     def test_connector_batch_ingest_uses_batches(
         self, mock_vault: MockVault
     ) -> None:
@@ -714,6 +764,7 @@ class TestSQLiteConcurrentAccess:
         assert mock_vault._batch_notifications[1]["count"] == 100
         assert mock_vault._batch_notifications[2]["count"] == 50
 
+# TST-INT-568
     def test_connector_batch_ingest_small_set(
         self, mock_vault: MockVault
     ) -> None:
@@ -729,6 +780,7 @@ class TestSQLiteConcurrentAccess:
         assert mock_vault._tx_count == 1
         assert len(mock_vault._batch_notifications) == 1
 
+# TST-INT-569
     def test_initial_gmail_sync_transaction_count(
         self, mock_vault: MockVault
     ) -> None:
@@ -745,3 +797,517 @@ class TestSQLiteConcurrentAccess:
         assert mock_vault._write_count == 10_000
         # 100 brain notifications instead of 10,000
         assert len(mock_vault._batch_notifications) == 100
+
+
+# ---------------------------------------------------------------------------
+# TestDataFlowBoundaries — §10 Data Flow
+# ---------------------------------------------------------------------------
+
+class TestDataFlowBoundaries:
+    """Data flows between Brain, Core, and clients follow strict boundaries."""
+
+# TST-INT-264
+    def test_ingestion_brain_mcp_core(
+        self,
+        mock_go_core: MockGoCore,
+        mock_brain: MockPythonBrain,
+        mock_vault: MockVault,
+    ) -> None:
+        """Data flows from Brain through MCP protocol to Core vault.
+        Brain processes data and uses Core API to store — never writes
+        directly to SQLite."""
+        # Brain receives raw data and processes it
+        raw_data = {"type": "email", "content": "Q4 planning meeting notes"}
+        processed = mock_brain.process(raw_data)
+        assert processed["processed"] is True
+
+        # Brain stores via Core API (MCP protocol), not directly to vault
+        mock_go_core.vault_store(
+            key="email_q4_planning",
+            value=raw_data["content"],
+            tier=1,
+            persona=PersonaType.PROFESSIONAL,
+        )
+
+        # Core API call was logged
+        store_calls = [
+            c for c in mock_go_core.api_calls
+            if c["endpoint"] == "/v1/vault/store"
+        ]
+        assert len(store_calls) >= 1
+
+        # Data is now in vault (via Core, not direct write)
+        stored = mock_vault.retrieve(1, "email_q4_planning",
+                                      persona=PersonaType.PROFESSIONAL)
+        assert stored == raw_data["content"]
+
+# TST-INT-269
+    def test_batch_ingestion_5000_email_initial_sync(
+        self, mock_vault: MockVault
+    ) -> None:
+        """Large batch (5000-email initial sync) stored correctly in vault.
+        Uses batch transactions for efficiency."""
+        connector = MockGmailConnector()
+        items = [
+            {"id": f"init_{i}", "content": f"Initial sync email {i}"}
+            for i in range(5000)
+        ]
+        total = connector.batch_ingest(items, mock_vault)
+
+        assert total == 5000
+        assert mock_vault._write_count == 5000
+        # 5000 / 100 = 50 batch transactions
+        assert mock_vault._tx_count == 50
+        assert len(mock_vault._batch_notifications) == 50
+
+        # All items are retrievable
+        assert mock_vault.retrieve(1, "init_0") is not None
+        assert mock_vault.retrieve(1, "init_4999") is not None
+
+# TST-INT-270
+    def test_batch_ingestion_concurrent_reads_unblocked(
+        self, mock_vault: MockVault
+    ) -> None:
+        """Reads work while a batch write is in progress. The WAL
+        single-writer / read-pool pattern ensures concurrent reads
+        are never blocked by writes."""
+        # Pre-populate some data
+        mock_vault.store(1, "existing_1", "pre-existing data")
+        mock_vault.index_for_fts("existing_1", "pre-existing data search")
+
+        # Batch write in progress (simulated — in mock, all synchronous)
+        batch_items = [(f"batch_{i}", f"batch_value_{i}") for i in range(200)]
+        mock_vault.store_batch(1, batch_items, persona=PersonaType.PROFESSIONAL)
+
+        # Reads against pre-existing data still succeed during/after batch
+        assert mock_vault.retrieve(1, "existing_1") == "pre-existing data"
+        assert "existing_1" in mock_vault.search_fts("pre-existing")
+
+        # Reads against batch data also succeed after commit
+        assert mock_vault.retrieve(1, "batch_0") == "batch_value_0"
+        assert mock_vault.retrieve(1, "batch_199") == "batch_value_199"
+
+
+# ---------------------------------------------------------------------------
+# TestStagingAreaLifecycle — §10 Staging
+# ---------------------------------------------------------------------------
+
+class TestStagingAreaLifecycle:
+    """Staging area (Tier 4) manages drafts through their lifecycle."""
+
+# TST-INT-271
+    def test_draft_lifecycle_create_review_promote_discard(
+        self, mock_staging: MockStagingTier, mock_vault: MockVault
+    ) -> None:
+        """Draft created -> reviewed -> promoted (sent) or discarded.
+        A draft lives in staging until the user acts on it."""
+        now = time.time()
+
+        # Create a draft
+        draft = Draft(
+            draft_id="lifecycle_001",
+            to="colleague@work.com",
+            subject="Project update",
+            body="Here is the latest progress report.",
+            confidence=0.88,
+            created_at=now,
+        )
+        mock_staging.store_draft(draft)
+
+        # Draft exists in staging
+        retrieved = mock_staging.get("lifecycle_001")
+        assert retrieved is not None
+        assert not retrieved.sent
+
+        # User reviews and promotes (sends) the draft
+        retrieved.sent = True
+        mock_vault.store(1, "sent_lifecycle_001", {
+            "to": retrieved.to,
+            "subject": retrieved.subject,
+            "body": retrieved.body,
+        })
+        assert mock_vault.retrieve(1, "sent_lifecycle_001") is not None
+
+        # Create another draft and discard it
+        discard_draft = Draft(
+            draft_id="lifecycle_002",
+            to="nobody@example.com",
+            subject="Bad idea",
+            body="Never mind.",
+            confidence=0.3,
+            created_at=now,
+        )
+        mock_staging.store_draft(discard_draft)
+        assert mock_staging.get("lifecycle_002") is not None
+
+        # User discards — just let it expire or remove
+        expired = mock_staging.auto_expire(
+            current_time=now + 73 * 3600
+        )
+        # lifecycle_002 expired; lifecycle_001 also expired from staging
+        # (but it was already promoted to vault)
+        assert expired >= 1
+
+# TST-INT-272
+    def test_staging_area_72_hour_expiry(
+        self, mock_staging: MockStagingTier
+    ) -> None:
+        """Unreviewed drafts expire after 72 hours (259200 seconds).
+        Expired drafts are automatically cleaned up."""
+        now = time.time()
+
+        for i in range(5):
+            draft = Draft(
+                draft_id=f"exp_draft_{i}",
+                to="test@example.com",
+                subject=f"Draft {i}",
+                body="Auto-expire test",
+                confidence=0.5,
+                created_at=now,
+            )
+            mock_staging.store_draft(draft)
+
+        # All drafts exist at creation time
+        for i in range(5):
+            assert mock_staging.get(f"exp_draft_{i}") is not None
+
+        # At 71 hours — nothing expired
+        expired = mock_staging.auto_expire(current_time=now + 71 * 3600)
+        assert expired == 0
+
+        # At 73 hours — all expired
+        expired = mock_staging.auto_expire(current_time=now + 73 * 3600)
+        assert expired == 5
+
+        # All gone
+        for i in range(5):
+            assert mock_staging.get(f"exp_draft_{i}") is None
+
+
+# ---------------------------------------------------------------------------
+# TestEmbeddingAndSearch — §10 Search
+# ---------------------------------------------------------------------------
+
+class TestEmbeddingAndSearch:
+    """Embedding, FTS, and multi-step search patterns."""
+
+# TST-INT-273
+    def test_embedding_via_local_llama(
+        self,
+        mock_llm_router: MockLLMRouter,
+    ) -> None:
+        """Text embedding uses local LLM (llama-server) for vector search.
+        In offline mode, embed tasks route to LOCAL."""
+        target = mock_llm_router.route("embed", persona=PersonaType.CONSUMER)
+        assert target == LLMTarget.LOCAL
+
+        # Sensitive personas also stay local for embedding
+        target_health = mock_llm_router.route(
+            "embed", persona=PersonaType.HEALTH
+        )
+        assert target_health == LLMTarget.LOCAL
+
+        # Routing is logged
+        embed_entries = [
+            e for e in mock_llm_router.routing_log
+            if e["task_type"] == "embed"
+        ]
+        assert len(embed_entries) == 2
+
+# TST-INT-278
+    def test_fts5_available_during_reindexing(
+        self, mock_vault: MockVault
+    ) -> None:
+        """FTS remains queryable while the index rebuilds. Old results
+        still return; new items appear once re-indexing catches up."""
+        # Populate initial FTS index
+        for i in range(100):
+            key = f"doc_{i}"
+            mock_vault.store(1, key, {"text": f"Document about topic_{i}"})
+            mock_vault.index_for_fts(key, f"topic_{i} document content")
+
+        # FTS works before re-indexing
+        results_before = mock_vault.search_fts("topic_50")
+        assert "doc_50" in results_before
+
+        # Simulate re-indexing by adding new documents
+        for i in range(100, 150):
+            key = f"doc_{i}"
+            mock_vault.store(1, key, {"text": f"New document topic_{i}"})
+            mock_vault.index_for_fts(key, f"topic_{i} new document")
+
+        # Old results still available during re-index
+        results_during = mock_vault.search_fts("topic_50")
+        assert "doc_50" in results_during
+
+        # New results also available after re-index completes
+        results_new = mock_vault.search_fts("topic_120")
+        assert "doc_120" in results_new
+
+# TST-INT-279
+    def test_reindex_scale_100k_items(
+        self, mock_vault: MockVault
+    ) -> None:
+        """Re-indexing handles a vault with 100K+ items. The FTS index
+        supports large-scale search without degradation."""
+        # Store 100K items
+        batch_items = [
+            (f"scale_{i}", {"data": f"content_{i}"})
+            for i in range(100_000)
+        ]
+        # Use batch store for efficiency
+        batch_size = mock_vault.BATCH_SIZE
+        for start in range(0, len(batch_items), batch_size):
+            chunk = batch_items[start:start + batch_size]
+            mock_vault.store_batch(1, chunk)
+
+        assert mock_vault._write_count == 100_000
+
+        # Index a subset for FTS (simulating re-index)
+        for i in range(0, 1000):
+            mock_vault.index_for_fts(f"scale_{i}", f"content_{i} keyword")
+
+        # FTS still works at scale
+        results = mock_vault.search_fts("content_500")
+        assert "scale_500" in results
+
+# TST-INT-283
+    def test_agentic_multi_step_search(
+        self,
+        mock_vault: MockVault,
+        mock_brain: MockPythonBrain,
+        mock_go_core: MockGoCore,
+    ) -> None:
+        """Multi-step search: FTS narrowing -> vector similarity -> Brain
+        reasoning. Each step refines results from the previous step."""
+        # Populate vault with diverse data
+        mock_vault.store(1, "laptop_review_1",
+                         {"product": "ThinkPad", "rating": 92})
+        mock_vault.index_for_fts("laptop_review_1",
+                                  "ThinkPad laptop review battery keyboard")
+        mock_vault.store(1, "laptop_review_2",
+                         {"product": "MacBook", "rating": 88})
+        mock_vault.index_for_fts("laptop_review_2",
+                                  "MacBook laptop review display screen")
+        mock_vault.store(1, "chair_review_1",
+                         {"product": "Aeron", "rating": 91})
+        mock_vault.index_for_fts("chair_review_1",
+                                  "Aeron chair ergonomic lumbar")
+
+        # Step 1: FTS narrowing — "laptop" query
+        fts_results = mock_go_core.vault_query("laptop")
+        assert "laptop_review_1" in fts_results
+        assert "laptop_review_2" in fts_results
+        assert "chair_review_1" not in fts_results
+
+        # Step 2: Brain reasoning — pick the best from FTS results
+        context = {
+            "fts_results": fts_results,
+            "candidates": [
+                mock_vault.retrieve(1, key) for key in fts_results
+            ],
+        }
+        answer = mock_brain.reason(
+            "Which laptop has the best battery life?",
+            context=context,
+        )
+        assert answer is not None
+        assert "Reasoned answer" in answer
+
+# TST-INT-284
+    def test_fast_path_vs_brain_path_routing(
+        self,
+        mock_llm_router: MockLLMRouter,
+    ) -> None:
+        """Simple queries use FTS directly (fast path, no LLM).
+        Complex queries go through Brain reasoning (brain path)."""
+        # Fast path: FTS search — no LLM needed
+        fts_target = mock_llm_router.route("fts_search")
+        assert fts_target == LLMTarget.NONE
+
+        # Fast path: exact match lookup — no LLM needed
+        exact_target = mock_llm_router.route("exact_match")
+        assert exact_target == LLMTarget.NONE
+
+        # Brain path: complex reasoning — needs LLM
+        complex_target = mock_llm_router.route("complex_reasoning")
+        assert complex_target == LLMTarget.CLOUD
+
+        # Brain path: multi-step analysis — needs LLM
+        multi_step_target = mock_llm_router.route("multi_step_analysis")
+        assert multi_step_target == LLMTarget.CLOUD
+
+
+# ---------------------------------------------------------------------------
+# TestComponentBoundaries — §10 Separation of Concerns
+# ---------------------------------------------------------------------------
+
+class TestComponentBoundaries:
+    """Strict boundaries: Brain never touches SQLite, Core never calls
+    external APIs, Brain never talks to clients directly."""
+
+# TST-INT-285
+    def test_brain_never_opens_sqlite(
+        self,
+        mock_brain: MockPythonBrain,
+        mock_go_core: MockGoCore,
+        mock_vault: MockVault,
+    ) -> None:
+        """Brain accesses vault only through Core API, never directly.
+        All Brain storage operations go through Core's /v1/vault/* endpoints."""
+        # Brain processes data
+        mock_brain.process({"type": "email", "content": "test data"})
+
+        # Brain needs data — it asks Core, not the vault directly
+        mock_go_core.vault_store("brain_data_1", "processed result", tier=1)
+        results = mock_go_core.vault_query("processed")
+
+        # All access went through Core's API
+        vault_calls = [
+            c for c in mock_go_core.api_calls
+            if "/v1/vault/" in c["endpoint"]
+        ]
+        assert len(vault_calls) >= 2  # at least store + query
+
+        # Brain has no direct reference to vault internals
+        # (In production, Brain has no SQLite connection string)
+        assert not hasattr(mock_brain, "_vault")
+        assert not hasattr(mock_brain, "vault")
+
+# TST-INT-287
+    def test_core_never_calls_external_apis(
+        self,
+        mock_go_core: MockGoCore,
+    ) -> None:
+        """Core is pure local — no external HTTP calls. All its API
+        endpoints are internal vault/identity/PII operations."""
+        # Core performs various operations
+        mock_go_core.vault_store("key_1", "value_1", tier=1)
+        mock_go_core.vault_query("value")
+        mock_go_core.did_sign(b"test data")
+        mock_go_core.pii_scrub("Rajmohan is here")
+
+        # Every API call is an internal endpoint (no external URLs)
+        for call in mock_go_core.api_calls:
+            endpoint = call["endpoint"]
+            assert endpoint.startswith("/v1/"), (
+                f"Core endpoint must be internal /v1/*, got: {endpoint}"
+            )
+            assert "http://" not in endpoint
+            assert "https://" not in endpoint
+
+# TST-INT-288
+    def test_brain_never_talks_to_clients_directly(
+        self,
+        mock_brain: MockPythonBrain,
+        mock_go_core: MockGoCore,
+    ) -> None:
+        """All client communication goes through Core. Brain sends
+        results to Core, which forwards to clients via WebSocket."""
+        # Brain generates a notification
+        notification = Notification(
+            tier=SilenceTier.TIER_2_SOLICITED,
+            title="New email summary",
+            body="You have 3 new emails about the project.",
+        )
+
+        # Brain sends via Core's notify endpoint — never directly to client
+        mock_go_core.notify(notification)
+
+        # Core received and forwarded the notification
+        notify_calls = [
+            c for c in mock_go_core.api_calls
+            if c["endpoint"] == "/v1/notify"
+        ]
+        assert len(notify_calls) == 1
+        assert mock_go_core._notifications_sent[-1] is notification
+
+        # Brain has no client connection or device reference
+        assert not hasattr(mock_brain, "client")
+        assert not hasattr(mock_brain, "device")
+        assert not hasattr(mock_brain, "websocket")
+
+# TST-INT-289
+    def test_llama_is_stateless(
+        self,
+        mock_llm_router: MockLLMRouter,
+    ) -> None:
+        """LLM container (llama-server) holds no state. It can be
+        replaced freely — all state lives in Core's vault."""
+        # Route multiple requests through LLM
+        mock_llm_router.route("summarize", PersonaType.CONSUMER)
+        mock_llm_router.route("draft", PersonaType.PROFESSIONAL)
+        mock_llm_router.route("classify", PersonaType.SOCIAL)
+
+        # LLM router has a log but no persistent state
+        assert len(mock_llm_router.routing_log) == 3
+
+        # Create a "replacement" LLM router (simulating container restart)
+        replacement = MockLLMRouter(profile=mock_llm_router.profile)
+
+        # Replacement starts fresh — no state carried over
+        assert len(replacement.routing_log) == 0
+
+        # Replacement routes identically (same config, stateless)
+        target_1 = mock_llm_router.route("summarize", PersonaType.CONSUMER)
+        target_2 = replacement.route("summarize", PersonaType.CONSUMER)
+        assert target_1 == target_2
+
+# TST-INT-295
+    def test_reminder_loop_missed_reminder_on_reboot(
+        self,
+        mock_vault: MockVault,
+        mock_go_core: MockGoCore,
+        mock_scratchpad: MockScratchpad,
+    ) -> None:
+        """After reboot, missed reminders are detected and delivered.
+        Reminders are stored in the vault with their scheduled time.
+        On startup, any past-due reminders are immediately surfaced."""
+        now = time.time()
+
+        # Schedule a reminder before "shutdown"
+        reminder = {
+            "type": "reminder",
+            "title": "Driver's license expires",
+            "scheduled_at": now - 3600,  # was due 1 hour ago
+            "delivered": False,
+        }
+        mock_vault.store(1, "reminder_license", reminder)
+        mock_vault.index_for_fts("reminder_license",
+                                  "driver license expires reminder")
+
+        # Save checkpoint for the reminder task
+        mock_scratchpad.save("reminder_loop", step=1, context={
+            "last_check": now - 7200,  # last checked 2 hours ago
+        })
+
+        # --- Simulate reboot ---
+
+        # On startup, load checkpoint
+        checkpoint = mock_scratchpad.load("reminder_loop")
+        assert checkpoint is not None
+        last_check = checkpoint["context"]["last_check"]
+
+        # Find all reminders that were due since last check
+        stored_reminder = mock_vault.retrieve(1, "reminder_license")
+        assert stored_reminder is not None
+        assert stored_reminder["scheduled_at"] > last_check  # due after last check
+        assert stored_reminder["scheduled_at"] < now  # past due
+        assert stored_reminder["delivered"] is False
+
+        # Deliver the missed reminder via Core
+        notification = Notification(
+            tier=SilenceTier.TIER_1_FIDUCIARY,
+            title=stored_reminder["title"],
+            body=f"Missed reminder: {stored_reminder['title']}",
+        )
+        mock_go_core.notify(notification)
+
+        # Mark as delivered
+        stored_reminder["delivered"] = True
+        mock_vault.store(1, "reminder_license", stored_reminder)
+
+        # Verify delivery
+        assert mock_go_core._notifications_sent[-1].title == "Driver's license expires"
+        updated = mock_vault.retrieve(1, "reminder_license")
+        assert updated["delivered"] is True

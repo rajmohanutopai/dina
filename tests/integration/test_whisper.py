@@ -31,6 +31,7 @@ from tests.integration.mocks import (
 class TestWhisperAssembly:
     """Verify that whispers assemble context from the vault."""
 
+# TST-INT-588
     def test_telegram_conversation_context(
         self, mock_vault: MockVault, mock_whisper: MockWhisperAssembler,
         sancho_identity,
@@ -56,6 +57,7 @@ class TestWhisperAssembly:
         assert len(mock_whisper.whisper_log) == 1
         assert mock_whisper.whisper_log[0]["contact"] == contact_did
 
+# TST-INT-589
     def test_meeting_preparation(
         self, mock_vault: MockVault, mock_whisper: MockWhisperAssembler,
     ) -> None:
@@ -76,6 +78,7 @@ class TestWhisperAssembly:
         assert "budget" in whisper
         assert "data-driven" in whisper
 
+# TST-INT-021
     def test_whisper_delivered_as_overlay(
         self, mock_vault: MockVault, mock_whisper: MockWhisperAssembler,
         mock_human: MockHuman, sancho_identity,
@@ -105,6 +108,7 @@ class TestWhisperAssembly:
         assert "book" in mock_human.notifications[0].body
         assert "Birthday" in mock_human.notifications[0].body
 
+# TST-INT-022
     def test_whisper_respects_silence_tier(
         self, mock_vault: MockVault, mock_whisper: MockWhisperAssembler,
         mock_classifier: MockSilenceClassifier, mock_human: MockHuman,
@@ -140,6 +144,7 @@ class TestWhisperAssembly:
 class TestDisconnectDetection:
     """Detect interrupted conversations and social cues."""
 
+# TST-INT-024
     def test_detects_interrupted_conversation(
         self, mock_vault: MockVault, mock_whisper: MockWhisperAssembler,
         sancho_identity,
@@ -163,6 +168,7 @@ class TestDisconnectDetection:
         # The whisper log records the situation
         assert mock_whisper.whisper_log[-1]["situation"] == "conversation_resume"
 
+# TST-INT-018
     def test_social_cue_awareness(
         self, mock_vault: MockVault, mock_whisper: MockWhisperAssembler,
     ) -> None:

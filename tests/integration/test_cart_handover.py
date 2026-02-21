@@ -34,6 +34,7 @@ from tests.integration.mocks import (
 class TestCartHandover:
     """Dina recommends; the human buys. Money never flows through Dina."""
 
+# TST-INT-293
     def test_recommends_but_user_buys(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_review_bot: MockReviewBot,
@@ -65,6 +66,7 @@ class TestCartHandover:
         assert retrieved.executed is False
         assert "ThinkPad" in retrieved.recommendation
 
+# TST-INT-296
     def test_never_holds_payment_info(
         self, mock_dina: MockDinaCore,
     ) -> None:
@@ -87,6 +89,7 @@ class TestCartHandover:
             assert "private_key" not in tier_str.lower()
             assert "cvv" not in tier_str.lower()
 
+# TST-INT-455
     def test_handover_with_link(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_review_bot: MockReviewBot,
@@ -120,6 +123,7 @@ class TestCartHandover:
         assert "checkout" in retrieved.intent_uri
         assert retrieved.executed is False
 
+# TST-INT-456
     def test_multiple_options_presented(
         self, mock_dina: MockDinaCore, mock_review_bot: MockReviewBot,
     ) -> None:
@@ -162,6 +166,7 @@ class TestCartHandover:
         scores = [r["score"] for r in recs]
         assert scores == sorted(scores, reverse=True)
 
+# TST-INT-457
     def test_impulse_purchase_protection(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
     ) -> None:
@@ -187,6 +192,7 @@ class TestCartHandover:
         assert approved is False
         assert intent.risk_level == ActionRisk.HIGH
 
+# TST-INT-458
     def test_deceptive_ad_detection(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
     ) -> None:

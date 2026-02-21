@@ -29,6 +29,7 @@ from tests.integration.mocks import (
 class TestPrivateRecall:
     """Dina remembers the user's life — promises, emotions, meaning."""
 
+# TST-INT-281
     def test_book_promise_recall(
         self, mock_dina: MockDinaCore, sample_memory: MockVault
     ):
@@ -44,6 +45,7 @@ class TestPrivateRecall:
         assert entry["date"] == "last Tuesday"
         assert entry["to"] == "daughter"
 
+# TST-INT-282
     def test_emotion_indexed_search(
         self, mock_dina: MockDinaCore, sample_memory: MockVault
     ):
@@ -56,6 +58,7 @@ class TestPrivateRecall:
         assert entry["emotion"] == "happy"
         assert "picnic" in entry["content"]
 
+# TST-INT-275
     def test_memory_survives_sessions(
         self, mock_identity, mock_vault: MockVault
     ):
@@ -71,6 +74,7 @@ class TestPrivateRecall:
         assert dina_session_2.vault.retrieve(1, "session_test") == {"note": "cross-session"}
         assert "session_test" in dina_session_2.vault.search_fts("session")
 
+# TST-INT-274
     def test_encrypted_at_rest(self, mock_dina: MockDinaCore):
         """Data stored via persona encryption cannot be read as plaintext
         by inspecting the vault directly."""
@@ -84,6 +88,7 @@ class TestPrivateRecall:
         decrypted = persona.decrypt(encrypted)
         assert decrypted is not None
 
+# TST-INT-280
     def test_searchable_by_meaning(
         self, mock_dina: MockDinaCore, sample_memory: MockVault
     ):
@@ -104,6 +109,7 @@ class TestPrivateRecall:
 class TestMemoryPrivacy:
     """Raw memory never leaves the user's control."""
 
+# TST-INT-510
     def test_raw_memory_never_sent_to_bots(
         self,
         mock_dina: MockDinaCore,
@@ -123,6 +129,7 @@ class TestMemoryPrivacy:
         assert "moment_happy_1" not in str(sent_query)
         assert "contact_sancho" not in str(sent_query)
 
+# TST-INT-511
     def test_deletion_is_permanent(self, mock_dina: MockDinaCore):
         """When the user deletes a memory, it is truly gone — not soft-deleted."""
         vault = mock_dina.vault
@@ -145,6 +152,7 @@ class TestMemoryPrivacy:
         for partition in vault._partitions.values():
             assert "delete_me" not in partition
 
+# TST-INT-512
     def test_not_accessible_by_other_personas(self, mock_dina: MockDinaCore):
         """Health persona data is invisible to consumer persona queries."""
         vault = mock_dina.vault
@@ -173,6 +181,7 @@ class TestMemoryPrivacy:
 class TestMemoryIngestion:
     """Connectors ingest external data into the vault correctly."""
 
+# TST-INT-513
     def test_email_read_only(self, mock_gmail_connector: MockGmailConnector):
         """Gmail connector operates in read-only mode — it polls but never
         writes back to the mail server."""
@@ -194,6 +203,7 @@ class TestMemoryIngestion:
         items_again = mock_gmail_connector.poll()
         assert len(items_again) == 0
 
+# TST-INT-276
     def test_calendar_indexed(
         self,
         mock_calendar_connector: MockCalendarConnector,
@@ -223,6 +233,7 @@ class TestMemoryIngestion:
             1, "license_renewal", persona=PersonaType.PROFESSIONAL
         ) is not None
 
+# TST-INT-277
     def test_chat_ingestion(
         self,
         mock_telegram_connector: MockTelegramConnector,

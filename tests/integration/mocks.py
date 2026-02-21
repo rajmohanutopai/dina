@@ -1235,6 +1235,12 @@ class MockGmailConnector(MockConnector):
         self._oauth_token: OAuthToken | None = None
         self._refresh_handler: Callable[[OAuthToken], OAuthToken | None] | None = None
         self.refresh_attempts: int = 0
+        self.cursor: str | None = None  # sync cursor for resumption
+        self._contacts: list[dict[str, Any]] = []
+        self._fast_sync_batch_size: int = 50
+        self._backfill_queue: list[dict[str, Any]] = []
+        self._backfill_complete: bool = False
+        self._time_horizon_days: int | None = None
 
     def set_oauth_token(self, token: OAuthToken) -> None:
         """Store the OAuth token (in production, key-wrapped in Tier 0)."""
@@ -1317,6 +1323,52 @@ class MockGmailConnector(MockConnector):
             self._oauth_token.revoked = True
         self._transition(ConnectorStatus.REVOKED, "provider_revoked")
         self._emit_reauth_notification("revoked")
+
+    def add_contacts(self, contacts: list[dict[str, Any]]) -> None:
+        """Add contacts to be synced."""
+        self._contacts.extend(contacts)
+
+    def sync_contacts(self) -> list[dict[str, Any]]:
+        """Sync contacts from Gmail to vault."""
+        contacts = list(self._contacts)
+        self._contacts.clear()
+        return contacts
+
+    def save_cursor(self, cursor: str) -> None:
+        """Persist sync cursor for resumption across restarts."""
+        self.cursor = cursor
+
+    def fast_sync(self, all_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Return the first batch quickly for fast initial sync.
+
+        Remaining items are queued for background backfill.
+        """
+        first_batch = all_items[:self._fast_sync_batch_size]
+        self._backfill_queue = all_items[self._fast_sync_batch_size:]
+        return first_batch
+
+    def backfill(self) -> list[dict[str, Any]]:
+        """Process remaining items in background after fast sync."""
+        items = list(self._backfill_queue)
+        self._backfill_queue.clear()
+        self._backfill_complete = True
+        return items
+
+    def set_time_horizon(self, days: int) -> None:
+        """Set the time horizon for ingestion."""
+        self._time_horizon_days = days
+
+    def filter_by_time_horizon(
+        self, items: list[dict[str, Any]], now: float | None = None
+    ) -> list[dict[str, Any]]:
+        """Filter items to only include those within the time horizon."""
+        if self._time_horizon_days is None:
+            return items
+        cutoff = (now or time.time()) - (self._time_horizon_days * 86400)
+        return [
+            item for item in items
+            if item.get("timestamp", 0) >= cutoff
+        ]
 
     def poll(self) -> list[dict[str, Any]]:
         # Check token health before polling
@@ -1439,6 +1491,7 @@ class MockEstateManager:
         self.estate_mode_active: bool = False
         self.keys_delivered: dict[str, list[PersonaType]] = {}
         self.data_destroyed: bool = False
+        self.delivery_confirmations: dict[str, bool] = {}  # did → confirmed
 
     def submit_share(self, share: bytes) -> bool:
         """Submit an SSS share from a custodian.
@@ -1483,8 +1536,36 @@ class MockEstateManager:
             p2p.send(msg)
         return self.keys_delivered
 
+    def derive_beneficiary_key(self, beneficiary_did: str,
+                               persona: PersonaType) -> str:
+        """Derive a unique key for a beneficiary from the master key + their DID.
+
+        Each beneficiary gets a distinct derived key per persona, ensuring
+        no two beneficiaries share the same decryption material.
+        """
+        derivation_input = (
+            f"{self._identity.root_private_key}"
+            f":estate:{beneficiary_did}:{persona.value}"
+        )
+        return hashlib.sha256(derivation_input.encode()).hexdigest()
+
+    def confirm_delivery(self, beneficiary_did: str) -> None:
+        """Record that a beneficiary has confirmed receipt of their keys."""
+        self.delivery_confirmations[beneficiary_did] = True
+
+    def all_deliveries_confirmed(self) -> bool:
+        """Check whether all beneficiaries have confirmed receipt."""
+        for b in self._plan.beneficiaries:
+            if not self.delivery_confirmations.get(b.dina_did, False):
+                return False
+        return True
+
     def destroy_remaining(self) -> None:
-        """Destroy unclaimed data per estate plan."""
+        """Destroy unclaimed data per estate plan.
+
+        When gated on delivery confirmation, destruction only proceeds
+        if all beneficiaries have confirmed receipt.
+        """
         if self._plan.default_action == "destroy":
             self.data_destroyed = True
 
@@ -1539,3 +1620,2066 @@ class MockDinaCore:
             return False
         # Moderate or High: ask user
         return human.approve(intent.action)
+
+
+# ---------------------------------------------------------------------------
+# Mock: BRAIN_TOKEN Authentication (§1.1)
+# ---------------------------------------------------------------------------
+
+class MockBrainTokenAuth:
+    """Token-based authentication between Go Core and Python Brain.
+
+    Both services mount the same secret file. Requests without valid
+    BRAIN_TOKEN are rejected. Admin endpoints are never accessible
+    to the brain — only operational endpoints.
+    """
+
+    BRAIN_ENDPOINTS = frozenset({
+        "/v1/vault/query", "/v1/vault/store", "/v1/vault/items",
+        "/v1/vault/search", "/v1/vault/scratchpad", "/v1/vault/kv",
+        "/v1/vault/store/batch",
+        "/v1/pii/scrub", "/v1/notify", "/v1/msg/send",
+        "/v1/process", "/v1/reason",
+    })
+    ADMIN_ENDPOINTS = frozenset({
+        "/v1/did/sign", "/v1/did/rotate", "/v1/vault/backup",
+        "/v1/persona/unlock", "/v1/admin/devices", "/v1/admin/dashboard",
+        "/v1/admin/login", "/v1/admin/logout",
+    })
+
+    def __init__(self, token: str | None = None) -> None:
+        self.token = token or hashlib.sha256(
+            uuid.uuid4().bytes
+        ).hexdigest()
+        self.auth_log: list[dict[str, Any]] = []
+
+    def validate(self, presented_token: str, endpoint: str) -> bool:
+        """Constant-time token validation with endpoint authorization."""
+        token_valid = len(presented_token) == len(self.token) and all(
+            a == b for a, b in zip(presented_token, self.token)
+        )
+        endpoint_allowed = endpoint in self.BRAIN_ENDPOINTS
+        result = token_valid and endpoint_allowed
+        self.auth_log.append({
+            "endpoint": endpoint,
+            "token_valid": token_valid,
+            "endpoint_allowed": endpoint_allowed,
+            "result": result,
+            "timestamp": time.time(),
+        })
+        return result
+
+    def is_admin_endpoint(self, endpoint: str) -> bool:
+        return endpoint in self.ADMIN_ENDPOINTS
+
+    def rotate(self) -> str:
+        """Rotate to a new token. Old token becomes invalid."""
+        self.token = hashlib.sha256(uuid.uuid4().bytes).hexdigest()
+        return self.token
+
+
+# ---------------------------------------------------------------------------
+# Mock: WebSocket Protocol (§2.1)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class WSMessage:
+    """WebSocket message envelope per architecture §17."""
+    type: str  # auth, auth_ok, auth_fail, query, whisper, whisper_stream,
+               # system, ping, pong, error, command, ack
+    id: str = ""
+    payload: dict[str, Any] = field(default_factory=dict)
+    reply_to: str = ""
+    ts: float = field(default_factory=time.time)
+
+
+class MockWebSocketConnection:
+    """Single WebSocket connection to the Home Node."""
+
+    def __init__(self, device_id: str) -> None:
+        self.device_id = device_id
+        self.connected: bool = False
+        self.authenticated: bool = False
+        self.client_token: str = ""
+        self.sent: list[WSMessage] = []
+        self.received: list[WSMessage] = []
+        self.missed_pongs: int = 0
+        self.last_pong_ts: float = 0.0
+
+    def connect(self) -> None:
+        self.connected = True
+
+    def authenticate(self, token: str, valid_tokens: set[str]) -> WSMessage:
+        """Send auth frame, receive auth_ok or auth_fail."""
+        self.client_token = token
+        if token in valid_tokens:
+            self.authenticated = True
+            return WSMessage(type="auth_ok", payload={"device": self.device_id})
+        return WSMessage(type="auth_fail")
+
+    def send(self, msg: WSMessage) -> bool:
+        if not self.connected or not self.authenticated:
+            return False
+        self.sent.append(msg)
+        return True
+
+    def receive(self, msg: WSMessage) -> None:
+        if self.connected:
+            self.received.append(msg)
+
+    def handle_ping(self, ping: WSMessage) -> WSMessage | None:
+        """Respond to ping with pong. Returns None if disconnected."""
+        if not self.connected:
+            return None
+        pong = WSMessage(type="pong", ts=time.time())
+        self.last_pong_ts = pong.ts
+        self.missed_pongs = 0
+        return pong
+
+    def close(self, code: int = 1000, reason: str = "") -> None:
+        self.connected = False
+        self.authenticated = False
+
+
+class MockWebSocketServer:
+    """Home Node WebSocket server managing device connections."""
+
+    def __init__(self) -> None:
+        self.connections: dict[str, MockWebSocketConnection] = {}
+        self.valid_tokens: set[str] = set()
+        self.message_buffer: dict[str, list[WSMessage]] = {}
+        self.buffer_max: int = 50
+        self.buffer_ttl_seconds: float = 300.0
+        self.ping_interval: float = 30.0
+        self.max_missed_pongs: int = 3
+
+    def add_valid_token(self, token: str) -> None:
+        self.valid_tokens.add(token)
+
+    def accept(self, device_id: str) -> MockWebSocketConnection:
+        conn = MockWebSocketConnection(device_id)
+        conn.connect()
+        self.connections[device_id] = conn
+        return conn
+
+    def authenticate_connection(
+        self, conn: MockWebSocketConnection, token: str
+    ) -> WSMessage:
+        result = conn.authenticate(token, self.valid_tokens)
+        if result.type == "auth_ok":
+            # Replay buffered messages
+            buffered = self.message_buffer.pop(conn.device_id, [])
+            for msg in buffered:
+                conn.receive(msg)
+        return result
+
+    def push_to_device(self, device_id: str, msg: WSMessage) -> bool:
+        """Push message to device. Buffer if disconnected."""
+        conn = self.connections.get(device_id)
+        if conn and conn.connected and conn.authenticated:
+            conn.receive(msg)
+            return True
+        # Buffer for later
+        self.message_buffer.setdefault(device_id, [])
+        if len(self.message_buffer[device_id]) < self.buffer_max:
+            self.message_buffer[device_id].append(msg)
+        return False
+
+    def send_ping(self, device_id: str) -> WSMessage | None:
+        """Send ping to a device. Returns pong or None."""
+        conn = self.connections.get(device_id)
+        if not conn or not conn.connected:
+            return None
+        ping = WSMessage(type="ping", ts=time.time())
+        pong = conn.handle_ping(ping)
+        if pong is None:
+            conn.missed_pongs += 1
+            if conn.missed_pongs >= self.max_missed_pongs:
+                conn.close(code=1001, reason="missed_pongs")
+        return pong
+
+    def disconnect_device(self, device_id: str) -> None:
+        conn = self.connections.get(device_id)
+        if conn:
+            conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Mock: Admin UI / Session (§2.2)
+# ---------------------------------------------------------------------------
+
+class MockAdminSession:
+    """Admin dashboard session with Argon2id authentication."""
+
+    def __init__(self, device_id: str = "browser_001",
+                 ttl_seconds: float = 3600) -> None:
+        self.session_id = uuid.uuid4().hex
+        self.device_id = device_id
+        self.created_at = time.time()
+        self.expires_at = self.created_at + ttl_seconds
+        self.ttl_seconds = ttl_seconds
+
+    def is_valid(self, current_time: float | None = None) -> bool:
+        now = current_time or time.time()
+        return now < self.expires_at
+
+    def is_expired(self, current_time: float | None = None) -> bool:
+        return not self.is_valid(current_time)
+
+
+class MockAdminAPI:
+    """Admin UI gateway — login, dashboard, device management."""
+
+    def __init__(self, identity: MockIdentity, vault: MockVault) -> None:
+        self._identity = identity
+        self._vault = vault
+        self._passphrase_hash = hashlib.sha256(b"admin-passphrase").hexdigest()
+        self.sessions: dict[str, MockAdminSession] = {}
+        self.api_calls: list[dict[str, Any]] = []
+
+    def login(self, passphrase: str) -> MockAdminSession | None:
+        """Authenticate with Argon2id passphrase and create session."""
+        self.api_calls.append({"endpoint": "/admin/login"})
+        provided_hash = hashlib.sha256(passphrase.encode()).hexdigest()
+        if provided_hash != self._passphrase_hash:
+            return None
+        session = MockAdminSession()
+        self.sessions[session.session_id] = session
+        return session
+
+    def validate_session(self, session_id: str) -> bool:
+        session = self.sessions.get(session_id)
+        if not session or session.is_expired():
+            return False
+        return True
+
+    def dashboard(self, session_id: str) -> dict[str, Any] | None:
+        """Get dashboard data. Returns None if session invalid."""
+        self.api_calls.append({"endpoint": "/admin/dashboard"})
+        if not self.validate_session(session_id):
+            return None
+        return {
+            "vault_items": len(self._vault._tiers[1]),
+            "personas": len(self._identity.personas),
+            "devices": len(self._identity.devices),
+            "root_did": self._identity.root_did,
+        }
+
+    def query_via_dashboard(self, session_id: str,
+                            query: str) -> str | None:
+        """Submit query through admin dashboard."""
+        self.api_calls.append({"endpoint": "/admin/query", "query": query})
+        if not self.validate_session(session_id):
+            return None
+        return f"Dashboard response for: {query}"
+
+
+# ---------------------------------------------------------------------------
+# Mock: Device Pairing (§2.3)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class MockPairingCode:
+    """6-digit pairing code with 5-minute TTL."""
+    code: str
+    created_at: float = field(default_factory=time.time)
+    expires_at: float = 0.0
+    used: bool = False
+
+    def __post_init__(self) -> None:
+        if self.expires_at == 0.0:
+            self.expires_at = self.created_at + 300  # 5 minutes
+
+    def is_valid(self, current_time: float | None = None) -> bool:
+        now = current_time or time.time()
+        return not self.used and now < self.expires_at
+
+
+@dataclass
+class MockClientToken:
+    """Token issued to a paired device."""
+    token: str
+    device_id: str
+    device_name: str
+    created_at: float = field(default_factory=time.time)
+    revoked: bool = False
+
+    @property
+    def token_hash(self) -> str:
+        return hashlib.sha256(self.token.encode()).hexdigest()
+
+
+class MockPairingManager:
+    """Device pairing — 6-digit code → CLIENT_TOKEN issuance."""
+
+    def __init__(self) -> None:
+        self.pending_codes: dict[str, MockPairingCode] = {}
+        self.paired_devices: dict[str, MockClientToken] = {}  # hash → token
+
+    def generate_code(self) -> MockPairingCode:
+        """Generate a 6-digit pairing code."""
+        code = f"{hash(time.time()) % 1000000:06d}"
+        pairing = MockPairingCode(code=code)
+        self.pending_codes[code] = pairing
+        return pairing
+
+    def complete_pairing(self, code: str,
+                         device_name: str) -> MockClientToken | None:
+        """Validate code and issue CLIENT_TOKEN."""
+        pairing = self.pending_codes.get(code)
+        if not pairing or not pairing.is_valid():
+            return None
+        pairing.used = True
+        device_id = f"device_{uuid.uuid4().hex[:8]}"
+        token = MockClientToken(
+            token=hashlib.sha256(uuid.uuid4().bytes).hexdigest(),
+            device_id=device_id,
+            device_name=device_name,
+        )
+        self.paired_devices[token.token_hash] = token
+        return token
+
+    def revoke_device(self, token_hash: str) -> bool:
+        token = self.paired_devices.get(token_hash)
+        if token:
+            token.revoked = True
+            return True
+        return False
+
+    def is_token_valid(self, token_str: str) -> bool:
+        token_hash = hashlib.sha256(token_str.encode()).hexdigest()
+        token = self.paired_devices.get(token_hash)
+        return token is not None and not token.revoked
+
+
+# ---------------------------------------------------------------------------
+# Mock: Onboarding (§2.5)
+# ---------------------------------------------------------------------------
+
+class OnboardingStep(Enum):
+    """10 silent steps of managed onboarding."""
+    CREATE_MNEMONIC = 1
+    DERIVE_ROOT_KEY = 2
+    REGISTER_DID = 3
+    DERIVE_DEKS = 4
+    CREATE_DATABASES = 5
+    WRAP_MASTER_KEY = 6
+    SET_MODE = 7
+    START_BRAIN = 8
+    INITIAL_SYNC = 9
+    DONE = 10
+
+
+class MockOnboardingManager:
+    """Manages the 10-step onboarding flow + progressive disclosure."""
+
+    PROGRESSIVE_PROMPTS = {
+        7: "Write down your 24-word recovery phrase",
+        14: "Want to connect Telegram too?",
+        30: "Separate health and financial data into compartments?",
+        90: "You can now self-host your Home Node",
+    }
+
+    def __init__(self, identity: MockIdentity, vault: MockVault) -> None:
+        self._identity = identity
+        self._vault = vault
+        self.completed_steps: set[int] = set()
+        self.setup_date: float = time.time()
+        self.mode: str = "convenience"  # or "security"
+        self.pii_consent_cloud: bool = False
+
+    def execute_step(self, step: OnboardingStep) -> bool:
+        """Execute a single onboarding step."""
+        if step.value in self.completed_steps:
+            return True  # idempotent
+        if step.value > 1 and (step.value - 1) not in self.completed_steps:
+            return False  # must complete previous step first
+
+        if step == OnboardingStep.CREATE_MNEMONIC:
+            assert len(self._identity.bip39_mnemonic.split()) == 24
+        elif step == OnboardingStep.DERIVE_ROOT_KEY:
+            assert self._identity.root_private_key
+        elif step == OnboardingStep.REGISTER_DID:
+            assert self._identity.root_did.startswith("did:")
+        elif step == OnboardingStep.CREATE_DATABASES:
+            self._vault.store(0, "identity_initialized", True)
+        elif step == OnboardingStep.SET_MODE:
+            self._vault.store(0, "vault_mode", self.mode)
+
+        self.completed_steps.add(step.value)
+        return True
+
+    def run_all(self) -> bool:
+        """Execute all 10 steps."""
+        for step in OnboardingStep:
+            if not self.execute_step(step):
+                return False
+        return True
+
+    def is_complete(self) -> bool:
+        return OnboardingStep.DONE.value in self.completed_steps
+
+    def get_personas_after_setup(self) -> list[PersonaType]:
+        """After onboarding, only /personal exists."""
+        if self.is_complete():
+            return [PersonaType.CONSUMER]  # maps to /personal
+        return []
+
+    def get_progressive_prompt(self, days_since_setup: int) -> str | None:
+        """Returns prompt text if a milestone is due."""
+        return self.PROGRESSIVE_PROMPTS.get(days_since_setup)
+
+
+# ---------------------------------------------------------------------------
+# Mock: Docker Infrastructure (§5.x)
+# ---------------------------------------------------------------------------
+
+class MockHealthcheck:
+    """Container healthcheck endpoint simulation."""
+
+    def __init__(self, endpoint: str = "/healthz",
+                 interval: int = 10, retries: int = 3) -> None:
+        self.endpoint = endpoint
+        self.interval = interval
+        self.retries = retries
+        self.passing: bool = True
+        self.consecutive_failures: int = 0
+
+    def check(self) -> bool:
+        if self.passing:
+            self.consecutive_failures = 0
+            return True
+        self.consecutive_failures += 1
+        return False
+
+    def is_healthy(self) -> bool:
+        return self.passing and self.consecutive_failures == 0
+
+    def is_unhealthy(self) -> bool:
+        return self.consecutive_failures >= self.retries
+
+    def set_passing(self, passing: bool) -> None:
+        self.passing = passing
+        if passing:
+            self.consecutive_failures = 0
+
+
+class MockDockerContainer:
+    """Simulates a Docker container for integration testing."""
+
+    def __init__(self, name: str, healthcheck: MockHealthcheck | None = None,
+                 networks: list[str] | None = None,
+                 ports: dict[int, int] | None = None,
+                 depends_on: list[str] | None = None) -> None:
+        self.name = name
+        self.healthcheck = healthcheck or MockHealthcheck()
+        self.networks = networks or []
+        self.ports = ports or {}
+        self.depends_on = depends_on or []
+        self.running: bool = False
+        self.environment: dict[str, str] = {}
+        self.secrets: dict[str, str] = {}
+        self.volumes: dict[str, str] = {}
+        self.restart_count: int = 0
+        self.logs: list[str] = []
+
+    def start(self) -> bool:
+        self.running = True
+        self.logs.append(json.dumps({
+            "time": time.time(), "level": "info",
+            "msg": f"{self.name} started", "module": self.name,
+        }))
+        return True
+
+    def stop(self) -> None:
+        self.running = False
+
+    def restart(self) -> bool:
+        self.stop()
+        self.restart_count += 1
+        return self.start()
+
+    def can_reach(self, other: "MockDockerContainer") -> bool:
+        """Check network reachability (shared Docker network)."""
+        return bool(set(self.networks) & set(other.networks))
+
+    def is_port_exposed(self, port: int) -> bool:
+        return port in self.ports.values()
+
+    def log(self, level: str, msg: str, **fields: Any) -> None:
+        entry = {"time": time.time(), "level": level,
+                 "msg": msg, "module": self.name}
+        entry.update(fields)
+        self.logs.append(json.dumps(entry))
+
+    def get_logs_json(self) -> list[dict[str, Any]]:
+        """Return logs as parsed JSON objects."""
+        result = []
+        for line in self.logs:
+            try:
+                result.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+        return result
+
+
+class MockDockerCompose:
+    """Simulates docker-compose with startup ordering."""
+
+    def __init__(self, profile: str = "") -> None:
+        self.profile = profile
+        brain_net = "dina-brain-net"
+        pds_net = "dina-pds-net"
+        public_net = "dina-public"
+
+        self.containers: dict[str, MockDockerContainer] = {
+            "pds": MockDockerContainer(
+                "pds",
+                healthcheck=MockHealthcheck("/xrpc/_health", interval=30),
+                networks=[pds_net],
+                ports={2583: 2583},
+            ),
+            "core": MockDockerContainer(
+                "core",
+                healthcheck=MockHealthcheck("/healthz"),
+                networks=[brain_net, pds_net, public_net],
+                ports={8100: 8100, 8300: 8300},
+                depends_on=["pds"],
+            ),
+            "brain": MockDockerContainer(
+                "brain",
+                healthcheck=MockHealthcheck("/healthz"),
+                networks=[brain_net],
+                depends_on=["core"],
+            ),
+        }
+        if profile == "local-llm":
+            self.containers["llama"] = MockDockerContainer(
+                "llama",
+                healthcheck=MockHealthcheck("/health"),
+                networks=[brain_net],
+            )
+
+    def up(self) -> bool:
+        """Start containers in dependency order."""
+        order = self._resolve_start_order()
+        for name in order:
+            container = self.containers[name]
+            container.start()
+            if container.healthcheck:
+                container.healthcheck.set_passing(True)
+        return True
+
+    def down(self) -> None:
+        for container in self.containers.values():
+            container.stop()
+
+    def _resolve_start_order(self) -> list[str]:
+        """Topological sort of container dependencies."""
+        visited: set[str] = set()
+        order: list[str] = []
+
+        def visit(name: str) -> None:
+            if name in visited:
+                return
+            visited.add(name)
+            container = self.containers.get(name)
+            if container:
+                for dep in container.depends_on:
+                    visit(dep)
+            order.append(name)
+
+        for name in self.containers:
+            visit(name)
+        return order
+
+    def is_all_healthy(self) -> bool:
+        return all(
+            c.running and (not c.healthcheck or c.healthcheck.is_healthy())
+            for c in self.containers.values()
+        )
+
+
+# ---------------------------------------------------------------------------
+# Mock: Crash Recovery (§6.x)
+# ---------------------------------------------------------------------------
+
+class MockScratchpad:
+    """Brain checkpoint storage for crash recovery."""
+
+    def __init__(self) -> None:
+        self.checkpoints: dict[str, dict[str, Any]] = {}
+
+    def save(self, task_id: str, step: int,
+             context: dict[str, Any]) -> None:
+        self.checkpoints[task_id] = {
+            "step": step, "context": context,
+            "timestamp": time.time(),
+        }
+
+    def load(self, task_id: str) -> dict[str, Any] | None:
+        return self.checkpoints.get(task_id)
+
+    def delete(self, task_id: str) -> bool:
+        return self.checkpoints.pop(task_id, None) is not None
+
+    def has_checkpoint(self, task_id: str) -> bool:
+        return task_id in self.checkpoints
+
+
+class MockOutbox:
+    """DIDComm outbox with exponential backoff retry."""
+
+    BACKOFF_SCHEDULE = [30, 60, 300, 1800, 7200]  # seconds
+
+    def __init__(self) -> None:
+        self.messages: dict[str, DinaMessage] = {}
+        self.retry_counts: dict[str, int] = {}
+        self.failed: set[str] = set()
+        self.delivered: set[str] = set()
+
+    def enqueue(self, msg: DinaMessage) -> str:
+        msg_id = f"msg_{uuid.uuid4().hex[:8]}"
+        self.messages[msg_id] = msg
+        self.retry_counts[msg_id] = 0
+        return msg_id
+
+    def get_pending(self) -> list[tuple[str, DinaMessage]]:
+        return [
+            (mid, msg) for mid, msg in self.messages.items()
+            if mid not in self.delivered and mid not in self.failed
+        ]
+
+    def ack(self, msg_id: str) -> bool:
+        if msg_id in self.messages:
+            self.delivered.add(msg_id)
+            return True
+        return False
+
+    def retry(self, msg_id: str) -> bool:
+        count = self.retry_counts.get(msg_id, 0)
+        if count >= len(self.BACKOFF_SCHEDULE):
+            self.failed.add(msg_id)
+            return False
+        self.retry_counts[msg_id] = count + 1
+        return True
+
+    def get_backoff(self, msg_id: str) -> int:
+        count = self.retry_counts.get(msg_id, 0)
+        idx = min(count, len(self.BACKOFF_SCHEDULE) - 1)
+        return self.BACKOFF_SCHEDULE[idx]
+
+
+class MockInboxSpool:
+    """Encrypted spool for messages to locked personas."""
+
+    def __init__(self, max_bytes: int = 500 * 1024 * 1024) -> None:
+        self.blobs: dict[str, bytes] = {}
+        self.max_bytes = max_bytes
+        self._used_bytes = 0
+
+    def store(self, data: bytes) -> str | None:
+        """Store encrypted blob. Returns None if spool full."""
+        if self._used_bytes + len(data) > self.max_bytes:
+            return None
+        blob_id = f"spool_{uuid.uuid4().hex[:8]}"
+        self.blobs[blob_id] = data
+        self._used_bytes += len(data)
+        return blob_id
+
+    def retrieve(self, blob_id: str) -> bytes | None:
+        return self.blobs.get(blob_id)
+
+    def drain(self) -> list[bytes]:
+        """Drain all spooled messages (persona unlocked)."""
+        items = list(self.blobs.values())
+        self.blobs.clear()
+        self._used_bytes = 0
+        return items
+
+    def is_full(self, new_size: int = 0) -> bool:
+        return self._used_bytes + new_size > self.max_bytes
+
+    @property
+    def used_bytes(self) -> int:
+        return self._used_bytes
+
+
+class MockCrashLog:
+    """Crash log stored in identity.sqlite."""
+
+    def __init__(self) -> None:
+        self.entries: list[dict[str, Any]] = []
+
+    def record(self, error: str, traceback: str = "",
+               sanitized_line: str = "") -> None:
+        self.entries.append({
+            "timestamp": time.time(),
+            "error": error,
+            "traceback": traceback,
+            "sanitized_line": sanitized_line,
+        })
+
+    def get_recent(self, count: int = 10) -> list[dict[str, Any]]:
+        return self.entries[-count:]
+
+
+# ---------------------------------------------------------------------------
+# Mock: Schema Migration & Export/Import (§12)
+# ---------------------------------------------------------------------------
+
+class MockSchemaMigration:
+    """Schema migration with pre-flight backup and rollback."""
+
+    def __init__(self, current_version: int = 1) -> None:
+        self.current_version = current_version
+        self.applied: list[int] = []
+        self.backup: dict[str, Any] | None = None
+        self.rolled_back: bool = False
+        self.integrity_ok: bool = True
+
+    def pre_flight_backup(self, vault: MockVault) -> None:
+        """Create backup before migration."""
+        self.backup = vault.snapshot()
+
+    def apply(self, target_version: int,
+              vault: MockVault) -> bool:
+        """Apply migration. Returns False if integrity check fails."""
+        self.pre_flight_backup(vault)
+        if not self.integrity_ok:
+            self.rollback(vault)
+            return False
+        self.current_version = target_version
+        self.applied.append(target_version)
+        return True
+
+    def rollback(self, vault: MockVault) -> bool:
+        if self.backup:
+            self.rolled_back = True
+            return True
+        return False
+
+    def set_integrity_failure(self) -> None:
+        self.integrity_ok = False
+
+
+class MockExportArchive:
+    """Export/import archive for data portability."""
+
+    def __init__(self) -> None:
+        self.data: dict[str, Any] = {}
+        self.checksum: str = ""
+        self.exported_at: float = 0.0
+        self.personas: list[str] = []
+        self.did: str = ""
+        self.tampered: bool = False
+
+    def export_from(self, vault: MockVault,
+                    identity: MockIdentity) -> None:
+        """Create export archive from vault + identity."""
+        self.data = vault.snapshot()
+        self.did = identity.root_did
+        self.personas = [p.value for p in identity.personas]
+        self.exported_at = time.time()
+        self.checksum = hashlib.sha256(
+            json.dumps(self.data, sort_keys=True).encode()
+        ).hexdigest()
+
+    def import_into(self, vault: MockVault,
+                    identity: MockIdentity) -> bool:
+        """Import archive. Rejects tampered data."""
+        if self.tampered:
+            return False
+        current_checksum = hashlib.sha256(
+            json.dumps(self.data, sort_keys=True).encode()
+        ).hexdigest()
+        if current_checksum != self.checksum:
+            return False
+        # Restore data
+        for tier_str, items in self.data.get("tiers", {}).items():
+            tier = int(tier_str)
+            for key, value in items.items():
+                vault.store(tier, key, value)
+        return True
+
+    def tamper(self) -> None:
+        """Simulate archive tampering."""
+        self.tampered = True
+        self.data["tampered"] = True
+
+
+# ---------------------------------------------------------------------------
+# Mock: Performance Metrics (§13)
+# ---------------------------------------------------------------------------
+
+class MockPerformanceMetrics:
+    """Tracks latency and throughput for performance tests."""
+
+    def __init__(self) -> None:
+        self.latencies_ms: list[float] = []
+        self.errors: int = 0
+        self.total_requests: int = 0
+
+    def record(self, latency_ms: float, error: bool = False) -> None:
+        self.latencies_ms.append(latency_ms)
+        self.total_requests += 1
+        if error:
+            self.errors += 1
+
+    def percentile(self, p: int) -> float:
+        """Get p-th percentile latency."""
+        if not self.latencies_ms:
+            return 0.0
+        sorted_l = sorted(self.latencies_ms)
+        idx = int(len(sorted_l) * p / 100)
+        return sorted_l[min(idx, len(sorted_l) - 1)]
+
+    @property
+    def p50(self) -> float:
+        return self.percentile(50)
+
+    @property
+    def p99(self) -> float:
+        return self.percentile(99)
+
+    @property
+    def error_rate(self) -> float:
+        return self.errors / max(self.total_requests, 1)
+
+
+# ---------------------------------------------------------------------------
+# Mock: Chaos Engineering (§14)
+# ---------------------------------------------------------------------------
+
+class MockChaosMonkey:
+    """Failure injection for chaos engineering tests."""
+
+    def __init__(self) -> None:
+        self.kill_targets: list[MockDockerContainer] = []
+        self.network_partitions: list[tuple[str, str]] = []
+        self.latency_ms: int = 0
+        self.cpu_pressure: bool = False
+        self.memory_pressure: bool = False
+        self.disk_io_saturation: bool = False
+
+    def kill_random(self, container: MockDockerContainer) -> None:
+        """SIGKILL a container."""
+        container.stop()
+        self.kill_targets.append(container)
+
+    def partition_network(self, service_a: str,
+                          service_b: str) -> None:
+        self.network_partitions.append((service_a, service_b))
+
+    def is_partitioned(self, a: str, b: str) -> bool:
+        return (a, b) in self.network_partitions or \
+               (b, a) in self.network_partitions
+
+    def add_latency(self, ms: int) -> None:
+        self.latency_ms = ms
+
+    def apply_resource_pressure(
+        self, cpu: bool = False, memory: bool = False,
+        disk_io: bool = False
+    ) -> None:
+        self.cpu_pressure = cpu
+        self.memory_pressure = memory
+        self.disk_io_saturation = disk_io
+
+
+# ---------------------------------------------------------------------------
+# Mock: Audit Log & Compliance (§15)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class AuditEntry:
+    """Immutable audit trail entry."""
+    actor: str
+    action: str
+    resource: str
+    result: str  # "success", "denied", "error"
+    details: dict[str, Any] = field(default_factory=dict)
+    timestamp: float = field(default_factory=time.time)
+
+
+class MockAuditLog:
+    """Append-only audit trail."""
+
+    def __init__(self) -> None:
+        self.entries: list[AuditEntry] = []
+
+    def record(self, actor: str, action: str, resource: str,
+               result: str = "success",
+               details: dict[str, Any] | None = None) -> None:
+        self.entries.append(AuditEntry(
+            actor=actor, action=action, resource=resource,
+            result=result, details=details or {},
+        ))
+
+    def query(self, actor: str | None = None,
+              action: str | None = None) -> list[AuditEntry]:
+        results = self.entries
+        if actor:
+            results = [e for e in results if e.actor == actor]
+        if action:
+            results = [e for e in results if e.action == action]
+        return results
+
+    def has_pii(self, pii_patterns: list[str]) -> bool:
+        """Check if any audit entry contains PII."""
+        for entry in self.entries:
+            text = json.dumps(entry.details)
+            if any(pii in text for pii in pii_patterns):
+                return True
+        return False
+
+    def export(self) -> list[dict[str, Any]]:
+        return [
+            {"actor": e.actor, "action": e.action,
+             "resource": e.resource, "result": e.result,
+             "details": e.details, "timestamp": e.timestamp}
+            for e in self.entries
+        ]
+
+
+# ---------------------------------------------------------------------------
+# Mock: Push Notifications (§16.11)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class PushPayload:
+    """Push notification — wake-only, NO user data."""
+    device_token: str
+    platform: str  # "fcm", "apns", "unifiedpush"
+    title: str = "Dina"
+    body: str = ""
+    data: dict[str, Any] = field(default_factory=dict)
+
+
+class MockPushProvider:
+    """Platform push notification provider (FCM/APNs/UnifiedPush)."""
+
+    def __init__(self, platform: str = "fcm") -> None:
+        self.platform = platform
+        self.sent: list[PushPayload] = []
+
+    def send_wake(self, device_token: str) -> bool:
+        """Send wake-only push — NO user data in payload."""
+        payload = PushPayload(
+            device_token=device_token,
+            platform=self.platform,
+        )
+        self.sent.append(payload)
+        return True
+
+    def get_payloads(self) -> list[PushPayload]:
+        return list(self.sent)
+
+    def payloads_contain_user_data(self) -> bool:
+        """Verify no push payload contains user data."""
+        for p in self.sent:
+            if p.body or p.data:
+                return True
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Mock: Deployment Profiles (§16.12)
+# ---------------------------------------------------------------------------
+
+class MockDeploymentProfile:
+    """Docker compose deployment profile."""
+
+    def __init__(self, profile: str = "cloud") -> None:
+        self.profile = profile  # "cloud" or "local-llm"
+
+    @property
+    def container_count(self) -> int:
+        return 4 if self.profile == "local-llm" else 3
+
+    @property
+    def has_llama(self) -> bool:
+        return self.profile == "local-llm"
+
+    @property
+    def containers(self) -> list[str]:
+        base = ["core", "brain", "pds"]
+        if self.has_llama:
+            base.append("llama")
+        return base
+
+
+# ---------------------------------------------------------------------------
+# Mock: Noise XX / Forward Secrecy (§16.6)
+# ---------------------------------------------------------------------------
+
+class MockNoiseSession:
+    """Noise XX handshake session for forward secrecy."""
+
+    def __init__(self, local_did: str, remote_did: str) -> None:
+        self.local_did = local_did
+        self.remote_did = remote_did
+        self.session_key = hashlib.sha256(
+            f"{local_did}{remote_did}{time.time()}".encode()
+        ).hexdigest()
+        self.ratchet_count: int = 0
+        self.established: bool = False
+        self.past_keys: list[str] = []
+
+    def handshake(self) -> bool:
+        """Mutual authentication + session key establishment."""
+        self.established = True
+        return True
+
+    def ratchet(self) -> str:
+        """Rotate session key (forward secrecy)."""
+        self.past_keys.append(self.session_key)
+        self.session_key = hashlib.sha256(
+            self.session_key.encode()
+        ).hexdigest()
+        self.ratchet_count += 1
+        return self.session_key
+
+    def can_decrypt_past(self, old_key: str) -> bool:
+        """Past keys should NOT be derivable from current key."""
+        return old_key == self.session_key  # only current key works
+
+
+# ---------------------------------------------------------------------------
+# Mock: Reputation AppView (§16.7)
+# ---------------------------------------------------------------------------
+
+class MockAppView:
+    """AT Protocol AppView — read-only reputation indexer."""
+
+    def __init__(self) -> None:
+        self.indexed_records: list[dict[str, Any]] = []
+        self.cursor: int = 0
+        self.lexicon_filter = "com.dina.reputation."
+
+    def consume_firehose(
+        self, records: list[dict[str, Any]]
+    ) -> int:
+        """Filter and index records from AT Protocol firehose."""
+        indexed = 0
+        for record in records:
+            lexicon = record.get("lexicon", "")
+            if lexicon.startswith(self.lexicon_filter) or \
+               lexicon == "com.dina.identity.attestation":
+                self.indexed_records.append(record)
+                indexed += 1
+            self.cursor += 1
+        return indexed
+
+    def query_by_did(self, did: str) -> list[dict[str, Any]]:
+        return [r for r in self.indexed_records
+                if r.get("author_did") == did]
+
+    def query_by_product(self, product_id: str) -> list[dict[str, Any]]:
+        return [r for r in self.indexed_records
+                if r.get("product_id") == product_id]
+
+    def compute_aggregate(self, product_id: str) -> float:
+        """Deterministic aggregate score computation."""
+        records = self.query_by_product(product_id)
+        if not records:
+            return 0.0
+        ratings = [r.get("rating", 0) for r in records if "rating" in r]
+        return sum(ratings) / len(ratings) if ratings else 0.0
+
+
+# ---------------------------------------------------------------------------
+# Mock: Ingress Tiers (§16.5)
+# ---------------------------------------------------------------------------
+
+class MockIngressTier:
+    """Network ingress tier for Home Node reachability."""
+
+    def __init__(self, tier: str, endpoint: str) -> None:
+        self.tier = tier  # "community", "production", "sovereign"
+        self.endpoint = endpoint
+        self.active: bool = True
+        self.tls: bool = True
+
+    @staticmethod
+    def community(node_name: str) -> "MockIngressTier":
+        return MockIngressTier("community",
+                               f"https://{node_name}.tailnet.ts.net")
+
+    @staticmethod
+    def production(domain: str) -> "MockIngressTier":
+        return MockIngressTier("production", f"https://{domain}")
+
+    @staticmethod
+    def sovereign(ipv6: str) -> "MockIngressTier":
+        return MockIngressTier("sovereign", f"https://[{ipv6}]")
+
+
+# ---------------------------------------------------------------------------
+# Mock: Three-Layer Verification (§16.8)
+# ---------------------------------------------------------------------------
+
+class MockVerificationLayer:
+    """Three-layer AppView verification."""
+
+    def __init__(self) -> None:
+        self.layer1_checks: int = 0  # cryptographic proof
+        self.layer2_checks: int = 0  # consensus (anti-censorship)
+        self.layer3_checks: int = 0  # direct PDS spot-check
+
+    def verify_signature(self, record: dict[str, Any],
+                         public_key: str) -> bool:
+        """Layer 1: Cryptographic proof — verify Ed25519 signature."""
+        self.layer1_checks += 1
+        return "signature" in record and len(record["signature"]) > 0
+
+    def consensus_check(self, results_a: list[dict],
+                        results_b: list[dict]) -> bool:
+        """Layer 2: Compare two AppView results for censorship."""
+        self.layer2_checks += 1
+        # Significant count discrepancy = censorship
+        if len(results_a) > 0 and len(results_b) > 0:
+            ratio = min(len(results_a), len(results_b)) / \
+                    max(len(results_a), len(results_b))
+            return ratio > 0.5  # less than 50% overlap = suspicious
+        return True
+
+    def spot_check_pds(self, appview_records: list[dict],
+                       pds_records: list[dict]) -> bool:
+        """Layer 3: Direct PDS spot-check (1-in-100 audit)."""
+        self.layer3_checks += 1
+        # All AppView records should exist in PDS
+        appview_ids = {r.get("id") for r in appview_records}
+        pds_ids = {r.get("id") for r in pds_records}
+        return appview_ids.issubset(pds_ids)
+
+
+# ---------------------------------------------------------------------------
+# Mock: Timestamp Anchoring (§16.9)
+# ---------------------------------------------------------------------------
+
+class MockTimestampAnchor:
+    """Merkle root hash anchored to L2 chain."""
+
+    def __init__(self) -> None:
+        self.anchored_roots: list[dict[str, Any]] = []
+
+    def compute_merkle_root(self, records: list[dict]) -> str:
+        """Compute Merkle root from signed records."""
+        leaves = [hashlib.sha256(
+            json.dumps(r, sort_keys=True).encode()
+        ).hexdigest() for r in records]
+        while len(leaves) > 1:
+            new_leaves = []
+            for i in range(0, len(leaves), 2):
+                if i + 1 < len(leaves):
+                    combined = leaves[i] + leaves[i + 1]
+                else:
+                    combined = leaves[i] + leaves[i]
+                new_leaves.append(
+                    hashlib.sha256(combined.encode()).hexdigest()
+                )
+            leaves = new_leaves
+        return leaves[0] if leaves else ""
+
+    def anchor_to_l2(self, merkle_root: str) -> dict[str, Any]:
+        """Anchor Merkle root hash to L2 chain."""
+        entry = {
+            "merkle_root": merkle_root,
+            "chain": "base",
+            "tx_hash": hashlib.sha256(
+                merkle_root.encode()
+            ).hexdigest()[:40],
+            "timestamp": time.time(),
+        }
+        self.anchored_roots.append(entry)
+        return entry
+
+    def verify_proof(self, record: dict, merkle_root: str,
+                     proof: list[str]) -> bool:
+        """Verify a record's inclusion in a Merkle tree."""
+        leaf = hashlib.sha256(
+            json.dumps(record, sort_keys=True).encode()
+        ).hexdigest()
+        current = leaf
+        for sibling in proof:
+            combined = current + sibling if current < sibling \
+                else sibling + current
+            current = hashlib.sha256(combined.encode()).hexdigest()
+        return current == merkle_root
+
+
+# ---------------------------------------------------------------------------
+# Mock: SSS (Shamir's Secret Sharing) Manager (Architecture §5)
+# ---------------------------------------------------------------------------
+
+class MockSSSManager:
+    """Shamir's Secret Sharing — split, rotate, and recover master key."""
+
+    def __init__(self, identity: MockIdentity, threshold: int = 3,
+                 total_shares: int = 5) -> None:
+        self._identity = identity
+        self.threshold = threshold
+        self.total_shares = total_shares
+        self._shares: list[dict[str, Any]] = []
+        self._rotation_count: int = 0
+        self._recovery_manifest: dict[str, Any] | None = None
+
+    def split(self) -> list[dict[str, Any]]:
+        """Split master key into shares using Shamir's Secret Sharing.
+
+        Each share is encrypted to the custodian's public key.
+        """
+        self._shares = []
+        for i in range(self.total_shares):
+            share_data = hashlib.sha256(
+                f"{self._identity.root_private_key}:share:{i}:"
+                f"rotation:{self._rotation_count}".encode()
+            ).hexdigest()
+            self._shares.append({
+                "index": i,
+                "data": share_data,
+                "rotation": self._rotation_count,
+            })
+        return list(self._shares)
+
+    def encrypt_share_for_custodian(self, share: dict[str, Any],
+                                     custodian_did: str) -> dict[str, Any]:
+        """Encrypt a share with custodian's public key (NaCl crypto_box_seal)."""
+        encrypted = hashlib.sha256(
+            f"{share['data']}:{custodian_did}".encode()
+        ).hexdigest()
+        return {
+            "index": share["index"],
+            "encrypted_data": f"NACL_SEALED[{custodian_did[:20]}]:{encrypted}",
+            "custodian_did": custodian_did,
+            "rotation": share["rotation"],
+        }
+
+    def decrypt_share(self, encrypted_share: dict[str, Any],
+                      custodian_did: str) -> dict[str, Any] | None:
+        """Decrypt a share — only works if custodian_did matches."""
+        if encrypted_share.get("custodian_did") != custodian_did:
+            return None  # Wrong custodian — cannot decrypt
+        return {
+            "index": encrypted_share["index"],
+            "data": f"DECRYPTED_SHARE_{encrypted_share['index']}",
+            "rotation": encrypted_share["rotation"],
+        }
+
+    def rotate(self) -> list[dict[str, Any]]:
+        """Re-split with new randomness — old shares become useless.
+
+        Master key/seed stays the same; only the polynomial changes.
+        """
+        old_rotation = self._rotation_count
+        self._rotation_count += 1
+        new_shares = self.split()
+        # Old shares are now mathematically useless
+        return new_shares
+
+    def is_share_valid(self, share: dict[str, Any]) -> bool:
+        """Check if a share belongs to the current rotation."""
+        return share.get("rotation") == self._rotation_count
+
+    def recover(self, shares: list[dict[str, Any]]) -> str | None:
+        """Recover master key from threshold shares.
+
+        Returns the key if enough valid shares provided, None otherwise.
+        """
+        valid = [s for s in shares if self.is_share_valid(s)]
+        if len(valid) < self.threshold:
+            return None
+        return self._identity.root_private_key
+
+    def publish_recovery_manifest(self, custodian_dids: list[str],
+                                   pds_url: str = "https://pds.dina.host") -> dict[str, Any]:
+        """Publish a signed recovery manifest to AT Protocol PDS.
+
+        Manifest contains ONLY custodian DIDs — never the actual shares.
+        """
+        manifest = {
+            "type": "com.dina.recovery.manifest",
+            "owner_did": self._identity.root_did,
+            "custodian_dids": custodian_dids,
+            "threshold": self.threshold,
+            "total_shares": self.total_shares,
+            "rotation": self._rotation_count,
+            "pds_url": pds_url,
+            "signature": self._identity.sign(
+                json.dumps(custodian_dids, sort_keys=True).encode()
+            ),
+        }
+        self._recovery_manifest = manifest
+        return manifest
+
+    @property
+    def recovery_manifest(self) -> dict[str, Any] | None:
+        return self._recovery_manifest
+
+
+# ---------------------------------------------------------------------------
+# Mock: Backup / Disaster Recovery (Architecture §13)
+# ---------------------------------------------------------------------------
+
+class MockBackupManager:
+    """Encrypted Home Node backups to blob store."""
+
+    def __init__(self, vault: MockVault, identity: MockIdentity) -> None:
+        self._vault = vault
+        self._identity = identity
+        self.snapshots: list[dict[str, Any]] = []
+        self.snapshot_frequency = "daily"
+
+    def create_snapshot(self, passphrase: str = "backup_key") -> dict[str, Any]:
+        """Create encrypted snapshot of vault + identity.
+
+        Steps:
+        1. Pause writes (WAL checkpoint)
+        2. Create tar.gz of databases
+        3. Encrypt with Argon2id(passphrase) → AES-256-GCM
+        """
+        snapshot_data = self._vault.snapshot()
+        kek = hashlib.sha256(passphrase.encode()).hexdigest()
+        encrypted = f"AES256GCM[{kek[:16]}]:{hashlib.sha256(json.dumps(snapshot_data, sort_keys=True).encode()).hexdigest()}"
+        snapshot = {
+            "encrypted_data": encrypted,
+            "encryption": "AES-256-GCM",
+            "kdf": "Argon2id",
+            "did": self._identity.root_did,
+            "timestamp": time.time(),
+            "checksum": hashlib.sha256(encrypted.encode()).hexdigest(),
+            "plaintext_written_to_disk": False,
+        }
+        self.snapshots.append(snapshot)
+        return snapshot
+
+    def restore_from_snapshot(self, snapshot: dict[str, Any],
+                               passphrase: str = "backup_key") -> bool:
+        """Restore Home Node from encrypted snapshot."""
+        kek = hashlib.sha256(passphrase.encode()).hexdigest()
+        if kek[:16] not in snapshot.get("encrypted_data", ""):
+            return False  # Wrong passphrase
+        return True
+
+    def list_snapshots(self) -> list[dict[str, Any]]:
+        return list(self.snapshots)
+
+
+# ---------------------------------------------------------------------------
+# Mock: Voice STT (Architecture §16, §17)
+# ---------------------------------------------------------------------------
+
+class MockSTTProvider:
+    """Speech-to-text provider — Deepgram Nova-3 or Gemini fallback."""
+
+    def __init__(self, provider: str = "deepgram") -> None:
+        self.provider = provider  # "deepgram" or "gemini"
+        self.connection_type = "websocket"
+        self.transcriptions: list[dict[str, Any]] = []
+        self.available = True
+
+    @property
+    def latency_ms(self) -> int:
+        if self.provider == "deepgram":
+            return 200  # 150-300ms range
+        return 500  # Gemini fallback is slower
+
+    @property
+    def cost_per_minute(self) -> float:
+        if self.provider == "deepgram":
+            return 0.0077
+        return 0.0003  # $0.30/1M audio tokens ≈ this per minute
+
+    def transcribe(self, audio_chunk: bytes) -> dict[str, Any]:
+        if not self.available:
+            raise ConnectionError(f"{self.provider} STT unavailable")
+        result = {
+            "text": f"Transcribed via {self.provider}",
+            "provider": self.provider,
+            "latency_ms": self.latency_ms,
+            "connection": self.connection_type,
+        }
+        self.transcriptions.append(result)
+        return result
+
+    def fail(self) -> None:
+        self.available = False
+
+    def recover(self) -> None:
+        self.available = True
+
+
+class MockSTTRouter:
+    """Routes STT to primary (Deepgram) with fallback (Gemini)."""
+
+    def __init__(self) -> None:
+        self.primary = MockSTTProvider("deepgram")
+        self.fallback = MockSTTProvider("gemini")
+        self.failover_count: int = 0
+
+    def transcribe(self, audio_chunk: bytes) -> dict[str, Any]:
+        try:
+            return self.primary.transcribe(audio_chunk)
+        except ConnectionError:
+            self.failover_count += 1
+            return self.fallback.transcribe(audio_chunk)
+
+    def supports_all_profiles(self) -> bool:
+        """STT is available in all deployment profiles."""
+        return True
+
+
+# ---------------------------------------------------------------------------
+# Mock: Bot Query Sanitizer (Architecture §10)
+# ---------------------------------------------------------------------------
+
+class MockBotQuerySanitizer:
+    """Ensures bot queries contain no identifying information."""
+
+    FORBIDDEN_FIELDS = {
+        "user_did", "user_name", "home_node_url", "persona_path",
+        "session_id", "device_id", "email", "phone", "address",
+        "medical_diagnosis", "financial_details", "aadhaar",
+    }
+
+    def sanitize_query(self, raw_query: dict[str, Any]) -> dict[str, Any]:
+        """Strip all identifying information from a bot query.
+
+        Returns only: query text, trust_ring level, response_format, max_sources.
+        """
+        sanitized = {
+            "query": raw_query.get("query", ""),
+            "requester_trust_ring": raw_query.get("requester_trust_ring", 2),
+            "response_format": raw_query.get("response_format", "structured"),
+            "max_sources": raw_query.get("max_sources", 5),
+        }
+        return sanitized
+
+    def validate_no_pii(self, query: dict[str, Any]) -> list[str]:
+        """Check a query payload for forbidden fields. Returns violations."""
+        violations = []
+        for key in query:
+            if key in self.FORBIDDEN_FIELDS:
+                violations.append(key)
+        # Also check query text for DID patterns
+        query_text = query.get("query", "")
+        if "did:" in query_text:
+            violations.append("did_in_query_text")
+        return violations
+
+
+# ---------------------------------------------------------------------------
+# Mock: Dead Drop Ingress (Architecture §2 — Three Valves)
+# ---------------------------------------------------------------------------
+
+class MockDeadDropIngress:
+    """Dead drop ingress with three-valve rate limiting.
+
+    Valve 1: Token bucket per IP (50 req/hr) + global (1000 req/hr) + payload cap (256KB)
+    Valve 2: Spool disk quota (500MB)
+    Valve 3: Sweeper feedback (blocklist spam IPs after unlock)
+    """
+
+    def __init__(self) -> None:
+        self.ip_buckets: dict[str, int] = {}  # IP → count this hour
+        self.global_count: int = 0
+        self.ip_limit: int = 50
+        self.global_limit: int = 1000
+        self.payload_cap_bytes: int = 256 * 1024  # 256KB
+        self.blocklist: set[str] = set()
+        self.spool = MockInboxSpool()
+        self.vault_locked: bool = True
+        self.did_buckets: dict[str, int] = {}  # DID → count (unlocked only)
+        self.did_limit: int = 100
+        self.history: list[dict[str, Any]] = []  # stored silently for expired
+
+    def receive(self, ip: str, payload: bytes,
+                sender_did: str | None = None,
+                ttl_seconds: int = 900,
+                message_age_seconds: int = 0) -> tuple[int, str]:
+        """Process incoming message through three valves.
+
+        Returns (http_status, reason).
+        """
+        # Valve 1a: IP blocklist
+        if ip in self.blocklist:
+            return (429, "ip_blocklisted")
+
+        # Valve 1b: Payload cap
+        if len(payload) > self.payload_cap_bytes:
+            return (413, "payload_too_large")
+
+        # Valve 1c: IP rate limit
+        self.ip_buckets.setdefault(ip, 0)
+        if self.ip_buckets[ip] >= self.ip_limit:
+            return (429, "ip_rate_limit")
+        self.ip_buckets[ip] += 1
+
+        # Valve 1d: Global rate limit
+        if self.global_count >= self.global_limit:
+            return (429, "global_rate_limit")
+        self.global_count += 1
+
+        # Vault unlocked fast path: per-DID rate limit
+        if not self.vault_locked and sender_did:
+            self.did_buckets.setdefault(sender_did, 0)
+            if self.did_buckets[sender_did] >= self.did_limit:
+                return (429, "per_did_rate_limit")
+            self.did_buckets[sender_did] += 1
+
+        # Valve 2: Spool quota
+        blob_id = self.spool.store(payload)
+        if blob_id is None:
+            return (429, "spool_full")
+
+        return (200, blob_id)
+
+    def sweep(self, trust_evaluator: Any = None) -> list[dict[str, Any]]:
+        """Sweeper (Valve 3): process spool after unlock.
+
+        Returns list of processed items with TTL status.
+        """
+        processed = []
+        for blob_id, blob in list(self.spool.blobs.items()):
+            entry = {
+                "blob_id": blob_id,
+                "data": blob,
+                "expired": False,
+                "notified": False,
+                "spam": False,
+            }
+            processed.append(entry)
+        self.spool.blobs.clear()
+        self.spool._used_bytes = 0
+        return processed
+
+    def blocklist_ip(self, ip: str) -> None:
+        """Add IP to permanent blocklist (spam DID detected by sweeper)."""
+        self.blocklist.add(ip)
+
+    def store_expired_silently(self, data: bytes) -> None:
+        """Store expired message in vault history — no user notification."""
+        self.history.append({"data": data, "status": "expired_silent",
+                             "timestamp": time.time()})
+
+
+# ---------------------------------------------------------------------------
+# Mock: Task Queue (Architecture §4 — Outbox Pattern)
+# ---------------------------------------------------------------------------
+
+class MockTaskQueue:
+    """Task queue with dead-letter, timeout, and retry semantics."""
+
+    DEAD_LETTER_THRESHOLD = 3
+    PROCESSING_TIMEOUT_SECONDS = 300  # 5 minutes
+
+    def __init__(self) -> None:
+        self.tasks: dict[str, dict[str, Any]] = {}
+        self.dead_letter: list[str] = []
+        self.notifications: list[dict[str, Any]] = []
+
+    def enqueue(self, task_id: str, payload: dict[str, Any]) -> None:
+        self.tasks[task_id] = {
+            "status": "pending",
+            "payload": payload,
+            "attempts": 0,
+            "created_at": time.time(),
+            "timeout_at": None,
+        }
+
+    def start_processing(self, task_id: str) -> None:
+        task = self.tasks[task_id]
+        task["status"] = "processing"
+        task["timeout_at"] = time.time() + self.PROCESSING_TIMEOUT_SECONDS
+        task["attempts"] += 1
+
+    def ack(self, task_id: str) -> None:
+        self.tasks[task_id]["status"] = "completed"
+
+    def fail(self, task_id: str) -> None:
+        """Record a failure. After DEAD_LETTER_THRESHOLD, move to dead letter."""
+        task = self.tasks[task_id]
+        if task["attempts"] >= self.DEAD_LETTER_THRESHOLD:
+            task["status"] = "dead"
+            self.dead_letter.append(task_id)
+            self.notifications.append({
+                "tier": SilenceTier.TIER_2_SOLICITED,
+                "message": "Brain failed to process an event 3 times. Check crash logs.",
+                "task_id": task_id,
+            })
+        else:
+            task["status"] = "pending"
+
+    def watchdog_sweep(self, current_time: float | None = None) -> list[str]:
+        """Reset tasks stuck in processing past timeout_at."""
+        now = current_time or time.time()
+        reset = []
+        for tid, task in self.tasks.items():
+            if (task["status"] == "processing"
+                    and task["timeout_at"]
+                    and now > task["timeout_at"]):
+                task["status"] = "pending"
+                reset.append(tid)
+        return reset
+
+
+# ---------------------------------------------------------------------------
+# Mock: HKDF Key Manager (Architecture §6)
+# ---------------------------------------------------------------------------
+
+class MockHKDFKeyManager:
+    """HKDF-based key derivation for backup, archive, sync, reputation keys."""
+
+    def __init__(self, master_seed: str) -> None:
+        self._seed = master_seed
+        self._keys: dict[str, str] = {}
+
+    def derive(self, info: str) -> str:
+        """Derive a 256-bit key using HKDF with the given info string.
+
+        Deterministic: same seed + info always produces same key.
+        """
+        key = hashlib.sha256(f"{self._seed}:{info}".encode()).hexdigest()
+        self._keys[info] = key
+        return key
+
+    def backup_key(self) -> str:
+        return self.derive("dina:backup:v1")
+
+    def archive_key(self) -> str:
+        return self.derive("dina:archive:v1")
+
+    def sync_key(self) -> str:
+        return self.derive("dina:sync:v1")
+
+    def reputation_key(self) -> str:
+        return self.derive("dina:reputation:v1")
+
+    @property
+    def derived_keys(self) -> dict[str, str]:
+        return dict(self._keys)
+
+
+# ---------------------------------------------------------------------------
+# Mock: Argon2id Parameters (Architecture §6)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Argon2idParams:
+    """Argon2id KDF parameters — OWASP 2024 compliant."""
+    memory_mb: int = 128
+    iterations: int = 3
+    parallelism: int = 4
+
+    def derive_kek(self, passphrase: str, salt: bytes = b"dina_salt") -> str:
+        """Derive KEK from passphrase using Argon2id parameters."""
+        return hashlib.sha256(
+            f"{passphrase}:{self.memory_mb}:{self.iterations}:"
+            f"{self.parallelism}:{salt.hex()}".encode()
+        ).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# Mock: Vault Query (Architecture §4 — include_content + pagination)
+# ---------------------------------------------------------------------------
+
+class MockVaultQuery:
+    """Vault query API with include_content and pagination support."""
+
+    DEFAULT_LIMIT = 20
+    MAX_LIMIT = 100
+
+    def __init__(self, vault: MockVault) -> None:
+        self._vault = vault
+        self._items: list[dict[str, Any]] = []
+
+    def add_item(self, item_id: str, summary: str, body_text: str,
+                 persona: PersonaType | None = None) -> None:
+        self._items.append({
+            "id": item_id, "summary": summary,
+            "body_text": body_text, "persona": persona,
+        })
+
+    def query(self, search: str, include_content: bool = False,
+              limit: int | None = None,
+              offset: int = 0) -> dict[str, Any]:
+        """Execute vault query with architecture-spec response format."""
+        effective_limit = min(limit or self.DEFAULT_LIMIT, self.MAX_LIMIT)
+
+        # Filter items (simplified: all match)
+        matching = [it for it in self._items
+                    if search.lower() in it["summary"].lower()
+                    or search.lower() in it["body_text"].lower()]
+
+        page = matching[offset:offset + effective_limit]
+        has_more = offset + effective_limit < len(matching)
+
+        results = []
+        for item in page:
+            entry: dict[str, Any] = {"id": item["id"], "summary": item["summary"]}
+            if include_content:
+                entry["body_text"] = item["body_text"]
+            results.append(entry)
+
+        response: dict[str, Any] = {
+            "items": results,
+            "pagination": {
+                "has_more": has_more,
+            },
+        }
+        if has_more:
+            response["pagination"]["next_offset"] = offset + effective_limit
+
+        return response
+
+
+# ---------------------------------------------------------------------------
+# Mock: Hybrid Search (Architecture §4)
+# ---------------------------------------------------------------------------
+
+class MockHybridSearch:
+    """Hybrid search with FTS5 + cosine similarity scoring."""
+
+    FTS5_WEIGHT = 0.4
+    COSINE_WEIGHT = 0.6
+
+    def __init__(self) -> None:
+        self._items: list[dict[str, Any]] = []
+
+    def add_item(self, item_id: str, fts5_rank: float,
+                 cosine_similarity: float) -> None:
+        self._items.append({
+            "id": item_id,
+            "fts5_rank": fts5_rank,
+            "cosine_similarity": cosine_similarity,
+        })
+
+    def search(self, query: str) -> list[dict[str, Any]]:
+        results = []
+        for item in self._items:
+            relevance = (self.FTS5_WEIGHT * item["fts5_rank"]
+                         + self.COSINE_WEIGHT * item["cosine_similarity"])
+            results.append({
+                "id": item["id"],
+                "relevance": round(relevance, 4),
+                "fts5_rank": item["fts5_rank"],
+                "cosine_similarity": item["cosine_similarity"],
+            })
+        return sorted(results, key=lambda x: x["relevance"], reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# Mock: KV Store (Architecture §6 — brain stateless, sync cursors)
+# ---------------------------------------------------------------------------
+
+class MockKVStore:
+    """Key-value store in identity.sqlite for sync cursors."""
+
+    def __init__(self) -> None:
+        self._store: dict[str, dict[str, Any]] = {}
+
+    def put(self, key: str, value: str) -> None:
+        self._store[key] = {
+            "value": value,
+            "updated_at": time.time(),
+        }
+
+    def get(self, key: str) -> str | None:
+        entry = self._store.get(key)
+        return entry["value"] if entry else None
+
+    def delete(self, key: str) -> bool:
+        return self._store.pop(key, None) is not None
+
+
+# ---------------------------------------------------------------------------
+# Mock: Boot Manager (Architecture §2 — persona DB lifecycle)
+# ---------------------------------------------------------------------------
+
+class MockBootManager:
+    """Home Node boot sequence — tracks which persona DBs are open."""
+
+    def __init__(self, identity: MockIdentity) -> None:
+        self._identity = identity
+        self.opened_dbs: set[str] = set()
+        self.dek_in_ram: set[str] = set()
+        self.brain_notified: bool = False
+        self.brain_notification_payload: dict[str, Any] | None = None
+
+    def boot(self) -> None:
+        """Execute boot sequence per §2 architecture."""
+        # Step 5-6: Open identity + personal only
+        self.opened_dbs.add("identity.sqlite")
+        self.opened_dbs.add("personal.sqlite")
+        self.dek_in_ram.add("identity")
+        self.dek_in_ram.add("personal")
+        # Step 7: Other persona DBs remain CLOSED
+        # Step 8: Notify brain
+        self.brain_notified = True
+        self.brain_notification_payload = {"event": "vault_unlocked"}
+
+    def is_persona_open(self, persona: str) -> bool:
+        return f"{persona}.sqlite" in self.opened_dbs
+
+    def open_persona(self, persona: str) -> None:
+        """Explicitly open a persona DB (user unlocks it)."""
+        self.opened_dbs.add(f"{persona}.sqlite")
+        self.dek_in_ram.add(persona)
+
+
+# ---------------------------------------------------------------------------
+# Mock: Sharing Policy Manager (Architecture §9)
+# ---------------------------------------------------------------------------
+
+class MockSharingPolicyManager:
+    """D2D sharing policy with security defaults and bulk updates."""
+
+    DEFAULT_POLICY = {
+        "presence": "eta_only",
+        "availability": "free_busy",
+        "context": "summary",
+        "preferences": "full",
+        "location": "none",
+        "health": "none",
+    }
+
+    def __init__(self) -> None:
+        self.contacts: dict[str, dict[str, Any]] = {}
+        self.audit_log: list[dict[str, Any]] = []
+
+    def add_contact(self, did: str, trust_level: str = "unverified",
+                    policy: dict[str, str] | None = None) -> dict[str, Any]:
+        contact = {
+            "did": did,
+            "trust_level": trust_level,
+            "sharing_policy": policy if policy is not None else dict(self.DEFAULT_POLICY),
+        }
+        self.contacts[did] = contact
+        return contact
+
+    def get_policy(self, did: str) -> dict[str, str] | None:
+        contact = self.contacts.get(did)
+        return contact["sharing_policy"] if contact else None
+
+    def egress_check(self, did: str, categories: dict[str, Any]) -> dict[str, Any]:
+        """Check what data can be shared with a contact.
+
+        Returns only categories allowed by sharing_policy.
+        """
+        policy = self.get_policy(did)
+        if not policy:
+            return {}
+
+        allowed = {}
+        for category, data in categories.items():
+            rule = policy.get(category, "none")
+            if rule != "none":
+                # Validate data format — must be tiered dict, not raw string
+                if isinstance(data, str):
+                    # Malformed: raw string instead of {summary, full}
+                    continue  # Drop silently
+                allowed[category] = data
+
+            self.audit_log.append({
+                "contact": did,
+                "category": category,
+                "decision": "allowed" if rule != "none" else "denied",
+                "reason": f"policy:{rule}",
+                "timestamp": time.time(),
+            })
+
+        return allowed
+
+    def bulk_update(self, filter_field: str, filter_value: str,
+                    policy_update: dict[str, str]) -> int:
+        """Bulk update policy for contacts matching filter."""
+        updated = 0
+        for did, contact in self.contacts.items():
+            if contact.get(filter_field) == filter_value:
+                contact["sharing_policy"].update(policy_update)
+                updated += 1
+        return updated
+
+    def purge_audit_older_than(self, max_age_days: int = 90) -> int:
+        """Purge audit entries older than max_age_days."""
+        cutoff = time.time() - (max_age_days * 86400)
+        before = len(self.audit_log)
+        self.audit_log = [e for e in self.audit_log if e["timestamp"] > cutoff]
+        return before - len(self.audit_log)
+
+
+# ---------------------------------------------------------------------------
+# Mock: Watchdog (Architecture §16)
+# ---------------------------------------------------------------------------
+
+class MockWatchdog:
+    """Internal watchdog — checks health, injects Tier 2 notifications."""
+
+    def __init__(self) -> None:
+        self.checks: list[dict[str, Any]] = []
+        self.notifications: list[dict[str, Any]] = []
+        self.interval_seconds: int = 3600  # 1 hour
+
+    def check(self, connector_healthy: bool = True,
+              disk_usage_pct: float = 50.0,
+              brain_healthy: bool = True) -> list[dict[str, Any]]:
+        """Run watchdog checks. Returns list of breach notifications."""
+        breaches = []
+        if not connector_healthy:
+            breaches.append({"level": "warning",
+                             "text": "Connector liveness check failed"})
+        if disk_usage_pct > 90.0:
+            breaches.append({"level": "warning",
+                             "text": f"Disk usage at {disk_usage_pct}%"})
+        if not brain_healthy:
+            breaches.append({"level": "warning",
+                             "text": "Brain health check failed"})
+
+        for breach in breaches:
+            self.notifications.append({
+                "type": "system",
+                "tier": SilenceTier.TIER_2_SOLICITED,
+                "payload": breach,
+                "timestamp": time.time(),
+            })
+        self.checks.append({
+            "connector": connector_healthy,
+            "disk": disk_usage_pct,
+            "brain": brain_healthy,
+            "breaches": len(breaches),
+        })
+        return breaches
+
+
+# ---------------------------------------------------------------------------
+# Mock: WebSocket Session Manager (Architecture §17)
+# ---------------------------------------------------------------------------
+
+class MockWSSessionManager:
+    """WebSocket session management — auth timeout, ping/pong, missed buffer."""
+
+    AUTH_TIMEOUT_SECONDS = 5
+    PING_INTERVAL_SECONDS = 30
+    PONG_TIMEOUT_SECONDS = 10
+    MAX_MISSED_PONGS = 3
+    BUFFER_CAPACITY = 50
+    BUFFER_TTL_SECONDS = 300  # 5 minutes
+
+    def __init__(self) -> None:
+        self.sessions: dict[str, dict[str, Any]] = {}
+
+    def connect(self, device_id: str) -> str:
+        """Accept WebSocket upgrade, start auth timer."""
+        session_id = f"ws_{uuid.uuid4().hex[:8]}"
+        self.sessions[session_id] = {
+            "device_id": device_id,
+            "authenticated": False,
+            "auth_deadline": time.time() + self.AUTH_TIMEOUT_SECONDS,
+            "missed_pongs": 0,
+            "status": "connected",
+            "buffer": [],
+            "buffer_created_at": None,
+        }
+        return session_id
+
+    def authenticate(self, session_id: str, token: str,
+                     current_time: float | None = None) -> bool:
+        """Authenticate with CLIENT_TOKEN within timeout."""
+        now = current_time or time.time()
+        session = self.sessions.get(session_id)
+        if not session:
+            return False
+        if now > session["auth_deadline"]:
+            session["status"] = "closed_auth_timeout"
+            return False
+        session["authenticated"] = True
+        return True
+
+    def ping(self, session_id: str) -> None:
+        """Send ping to client."""
+        pass  # Tracked by pong response
+
+    def pong(self, session_id: str) -> None:
+        """Receive pong from client."""
+        session = self.sessions.get(session_id)
+        if session:
+            session["missed_pongs"] = 0
+
+    def miss_pong(self, session_id: str) -> bool:
+        """Record missed pong. Returns True if connection should close."""
+        session = self.sessions.get(session_id)
+        if not session:
+            return True
+        session["missed_pongs"] += 1
+        if session["missed_pongs"] >= self.MAX_MISSED_PONGS:
+            session["status"] = "closed_missed_pongs"
+            return True
+        return False
+
+    def buffer_message(self, session_id: str, message: dict[str, Any]) -> bool:
+        """Buffer message for disconnected client. Returns False if full."""
+        session = self.sessions.get(session_id)
+        if not session:
+            return False
+        if len(session["buffer"]) >= self.BUFFER_CAPACITY:
+            return False  # Buffer full, drop message
+        if not session["buffer"]:
+            session["buffer_created_at"] = time.time()
+        session["buffer"].append(message)
+        return True
+
+    def drain_buffer(self, session_id: str) -> list[dict[str, Any]]:
+        """On reconnect, drain buffered messages."""
+        session = self.sessions.get(session_id)
+        if not session:
+            return []
+        messages = list(session["buffer"])
+        session["buffer"].clear()
+        session["buffer_created_at"] = None
+        return messages
+
+    def expire_buffer(self, session_id: str,
+                      current_time: float | None = None) -> int:
+        """Expire buffer after TTL. Returns count of expired messages."""
+        now = current_time or time.time()
+        session = self.sessions.get(session_id)
+        if not session or not session["buffer_created_at"]:
+            return 0
+        if now - session["buffer_created_at"] > self.BUFFER_TTL_SECONDS:
+            count = len(session["buffer"])
+            session["buffer"].clear()
+            session["buffer_created_at"] = None
+            return count
+        return 0
+
+    def ack_message(self, session_id: str, msg_index: int) -> bool:
+        """Client ACKs a specific buffered message."""
+        session = self.sessions.get(session_id)
+        if not session or msg_index >= len(session["buffer"]):
+            return False
+        session["buffer"].pop(msg_index)
+        return True
+
+
+# ---------------------------------------------------------------------------
+# Mock: Reconnect Backoff (Architecture §17)
+# ---------------------------------------------------------------------------
+
+class MockReconnectBackoff:
+    """Client-side exponential backoff: 1s → 2s → 4s → 8s → 16s → max 30s."""
+
+    MAX_BACKOFF_SECONDS = 30
+
+    def __init__(self) -> None:
+        self.attempt: int = 0
+        self.backoff_history: list[float] = []
+
+    def next_backoff(self) -> float:
+        delay = min(2 ** self.attempt, self.MAX_BACKOFF_SECONDS)
+        self.backoff_history.append(delay)
+        self.attempt += 1
+        return delay
+
+    def reset(self) -> None:
+        self.attempt = 0

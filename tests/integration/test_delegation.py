@@ -34,6 +34,7 @@ class TestLicenseRenewalFlow:
     """End-to-end delegation flow: detect expiring license, suggest
     delegation to LegalBot, user approves, agent executes, report back."""
 
+# TST-INT-240
     def test_detects_license_expiring(
         self, mock_dina: MockDinaCore, sample_events: list[dict],
     ) -> None:
@@ -52,6 +53,7 @@ class TestLicenseRenewalFlow:
         )
         assert tier == SilenceTier.TIER_2_SOLICITED
 
+# TST-INT-296
     def test_suggests_delegation(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_legal_bot: MockLegalBot,
@@ -71,6 +73,7 @@ class TestLicenseRenewalFlow:
         assert len(mock_human.notifications) == 1
         assert "delegate_to_legal_bot" in mock_human.notifications[0].actions
 
+# TST-INT-293
     def test_user_approves_delegation(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_legal_bot: MockLegalBot,
@@ -91,6 +94,7 @@ class TestLicenseRenewalFlow:
         assert approved is True
         assert intent.risk_level == ActionRisk.MODERATE
 
+# TST-INT-292
     def test_agent_executes_with_oversight(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_legal_bot: MockLegalBot,
@@ -126,6 +130,7 @@ class TestLicenseRenewalFlow:
         assert fill_log["task"] == "Driver license renewal"
         assert "name" in fill_log["identity_fields"]
 
+# TST-INT-465
     def test_completion_reported(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_legal_bot: MockLegalBot,
@@ -155,6 +160,7 @@ class TestLicenseRenewalFlow:
         assert len(mock_human.notifications) == 1
         assert "submitted" in mock_human.notifications[0].body
 
+# TST-INT-466
     def test_failure_handled(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
     ) -> None:
@@ -199,6 +205,7 @@ class TestLicenseRenewalFlow:
 class TestGenericDelegation:
     """Generic delegation rules — risk-based approval for any agent."""
 
+# TST-INT-467
     def test_read_only_auto_approved(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -215,6 +222,7 @@ class TestGenericDelegation:
             assert approved is True
             assert intent.risk_level == ActionRisk.SAFE
 
+# TST-INT-242
     def test_write_requires_approval(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -249,6 +257,7 @@ class TestGenericDelegation:
         assert mock_dina.approve_intent(intent_cal, mock_human) is False
         assert intent_cal.risk_level == ActionRisk.MODERATE
 
+# TST-INT-294
     def test_financial_always_flagged(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,
@@ -281,6 +290,7 @@ class TestGenericDelegation:
         assert approved2 is False
         assert intent2.risk_level == ActionRisk.HIGH
 
+# TST-INT-468
     def test_delegation_scope_limited(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
         mock_external_agent: MockExternalAgent,

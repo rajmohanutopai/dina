@@ -33,6 +33,7 @@ from tests.integration.mocks import (
 class TestRichClientSync:
     """Phone/Laptop with SQLite cache and on-device LLM."""
 
+# TST-INT-369
     def test_initial_sync_from_checkpoint(
         self,
         mock_rich_client: MockRichClient,
@@ -57,6 +58,7 @@ class TestRichClientSync:
         assert "item_a" in mock_rich_client.local_cache
         assert "item_b" in mock_rich_client.local_cache
 
+# TST-INT-380
     def test_realtime_push(
         self,
         mock_rich_client: MockRichClient,
@@ -77,6 +79,7 @@ class TestRichClientSync:
         assert "item_2" in mock_rich_client.local_cache
         assert mock_rich_client.local_cache["item_2"]["content"] == "second"
 
+# TST-INT-381
     def test_offline_queue_then_sync(
         self, mock_rich_client: MockRichClient
     ):
@@ -100,6 +103,7 @@ class TestRichClientSync:
         assert "offline_1" in flushed_ids
         assert "offline_2" in flushed_ids
 
+# TST-INT-368
     def test_local_cache_works_offline(
         self, mock_rich_client: MockRichClient
     ):
@@ -121,6 +125,7 @@ class TestRichClientSync:
         results_all = mock_rich_client.search_local("doc_")
         assert len(results_all) == 2
 
+# TST-INT-379
     def test_corrupted_cache_resync(
         self, mock_rich_client: MockRichClient, mock_dina: MockDinaCore
     ):
@@ -156,12 +161,14 @@ class TestRichClientSync:
 class TestThinClientSync:
     """Glasses/Watch/Browser — no local storage."""
 
+# TST-INT-370
     def test_no_local_storage(self, mock_thin_client: MockThinClient):
         """Thin clients have no local cache at all — everything streams
         from the home node."""
         # The thin client has no local_cache attribute (unlike rich client)
         assert not hasattr(mock_thin_client, "local_cache")
 
+# TST-INT-371
     def test_authenticated_only(
         self,
         mock_thin_client: MockThinClient,
@@ -184,6 +191,7 @@ class TestThinClientSync:
         mock_thin_client.receive_stream({"type": "notification", "body": "hello"})
         assert len(mock_thin_client.received_streams) == 1
 
+# TST-INT-374
     def test_unauthenticated_receives_nothing(
         self, mock_thin_client: MockThinClient
     ):
@@ -202,6 +210,7 @@ class TestThinClientSync:
 class TestDeviceOnboarding:
     """New device onboarding flow: QR code -> key exchange -> registration."""
 
+# TST-INT-030
     def test_qr_code_pairing(self, mock_dina: MockDinaCore):
         """QR code contains a one-time pairing token derived from the
         root identity. Scanning it initiates device registration."""
@@ -229,6 +238,7 @@ class TestDeviceOnboarding:
         updated = mock_dina.vault.retrieve(0, f"pairing_{pairing_token[:16]}")
         assert updated["used"] is True
 
+# TST-INT-367
     def test_key_stored_in_hardware(self, mock_dina: MockDinaCore):
         """The device key is derived from the root identity and is unique
         per device. In production this would be stored in the Secure Enclave
@@ -250,6 +260,7 @@ class TestDeviceOnboarding:
         assert len(key_phone) == 64
         assert len(key_laptop) == 64
 
+# TST-INT-378
     def test_device_registered(self, mock_dina: MockDinaCore):
         """After onboarding, the device appears in the identity's device list."""
         assert len(mock_dina.identity.devices) == 0
