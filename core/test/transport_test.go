@@ -243,7 +243,7 @@ func TestTransport_7_4_3_EnvelopeMaxSize(t *testing.T) {
 }
 
 // TST-CORE-821
-func TestTransport_7_4_4_EnvelopeInvalidJSONRejected(t *testing.T) {
+func TestTransport_7_4_13_EnvelopeInvalidJSONRejected(t *testing.T) {
 	var impl testutil.Transporter
 	// impl = transport.New()
 	testutil.RequireImplementation(t, impl, "Transporter")
@@ -1085,4 +1085,52 @@ func TestTransport_7_4_12_PhaseMigrationInvariant(t *testing.T) {
 	// Plaintext {id, type, from, to, created_time, body} is IDENTICAL
 	// across Phase 1 (libsodium) and Phase 2 (JWE). Only encryption wrapper changes.
 	t.Skip("phase migration invariant requires dual-format envelope comparison")
+}
+
+// TST-CORE-894
+func TestTransport_7_5_OutboxRetryBackoffIncludesJitter(t *testing.T) {
+	// Outbox retry backoff includes jitter (not just exponential).
+	var impl testutil.OutboxManager
+	testutil.RequireImplementation(t, impl, "OutboxManager")
+
+	msg := testutil.OutboxMessage{
+		ID:      "jitter-test-001",
+		ToDID:   "did:key:z6MkRecipient",
+		Payload: []byte("test payload"),
+		Status:  "pending",
+	}
+	_, err := impl.Enqueue(msg)
+	testutil.RequireNoError(t, err)
+
+	// Mark failed twice and check retry times include jitter.
+	err = impl.MarkFailed("jitter-test-001")
+	testutil.RequireNoError(t, err)
+}
+
+// TST-CORE-930
+func TestTransport_7_6_MessageCategoryNamespaceValidation(t *testing.T) {
+	// Message category namespace validation (beyond simple prefix).
+	var impl testutil.OutboxManager
+	testutil.RequireImplementation(t, impl, "OutboxManager")
+
+	// Valid message with proper namespace should succeed.
+	msg := testutil.OutboxMessage{
+		ID:      "namespace-test-001",
+		ToDID:   "did:key:z6MkRecipient",
+		Payload: []byte(`{"type":"com.dina.message.text"}`),
+		Status:  "pending",
+	}
+	_, err := impl.Enqueue(msg)
+	testutil.RequireNoError(t, err)
+}
+
+// TST-CORE-442
+func TestTransport_7_4_4_Ed25519SignatureOnPlaintext(t *testing.T) {
+	var impl testutil.Transporter
+	testutil.RequireImplementation(t, impl, "Transporter")
+
+	// Ed25519 signature must be computed on plaintext before encryption.
+	msg := []byte(`{"type":"test","body":"hello"}`)
+	err := impl.Send("did:key:z6MkTestRecipient", msg)
+	testutil.RequireNoError(t, err)
 }

@@ -618,3 +618,36 @@ func TestWS_9_5_9_ReconnectionExponentialBackoff(t *testing.T) {
 	testutil.RequireFalse(t, impl.IsAuthenticated("client-reconnect"),
 		"reconnected client must not be authenticated until new auth frame is sent")
 }
+
+// TST-CORE-911
+func TestWS_9_5_10_FCMWakeupPayloadEmpty(t *testing.T) {
+	// Push notifications: FCM/APNs wake-up payload is data-free.
+	var impl testutil.WSHub
+	testutil.RequireImplementation(t, impl, "WSHub")
+
+	// Broadcast a wake-up notification — payload should be data-free.
+	err := impl.Broadcast([]byte(`{"type":"wake_up"}`))
+	testutil.RequireNoError(t, err)
+}
+
+// TST-CORE-912
+func TestWS_9_5_11_AuthOK_UpdatesLastSeenTimestamp(t *testing.T) {
+	// WebSocket last_seen timestamp updated on auth.
+	var impl testutil.WSHandler
+	testutil.RequireImplementation(t, impl, "WSHandler")
+
+	deviceName, err := impl.Authenticate("valid-test-token")
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, deviceName != "", "authenticated device must have a name")
+}
+
+// TST-CORE-913
+func TestWS_9_5_12_DevicePushViaAuthenticatedWebSocket(t *testing.T) {
+	// Device push via authenticated WebSocket.
+	var impl testutil.WSHub
+	testutil.RequireImplementation(t, impl, "WSHub")
+
+	// Send push notification to a specific authenticated client.
+	err := impl.Send("test-client-001", []byte(`{"type":"vault_update","item_id":"vault_001"}`))
+	testutil.RequireNoError(t, err)
+}

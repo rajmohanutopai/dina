@@ -1238,3 +1238,127 @@ type CacheSyncer interface {
 	// ClearCache removes all cached data from a device.
 	ClearCache(deviceID string) error
 }
+
+// ---------- §25 Bot Interface ----------
+
+// BotQuery represents a sanitized query sent to an external bot.
+type BotQuery struct {
+	Query       string
+	RequesterID string // anonymized, never raw DID
+	Category    string
+	Timestamp   int64
+}
+
+// BotResponse represents a bot's response to a query.
+type BotResponse struct {
+	Answer      string
+	Attribution string // deep link to source
+	BotDID      string
+	Signature   []byte
+	Confidence  float64
+}
+
+// BotOutcome records the result of a bot interaction for scoring.
+type BotOutcome struct {
+	BotDID      string
+	QueryID     string
+	Helpful     bool
+	Attribution bool // was attribution preserved?
+	Timestamp   int64
+}
+
+// BotQueryHandler — contract for bot query sanitization and routing (arch §10).
+type BotQueryHandler interface {
+	// SanitizeQuery strips DID, medical, and financial data from outbound queries.
+	SanitizeQuery(query string, userDID string) (string, error)
+	// SendQuery sends a sanitized query to a bot and returns the response.
+	SendQuery(botDID string, query BotQuery) (*BotResponse, error)
+	// ScoreBot records an outcome and updates the bot's local reputation score.
+	ScoreBot(botDID string, outcome BotOutcome) error
+	// ValidateAttribution checks that the bot response includes valid attribution.
+	ValidateAttribution(resp BotResponse) (bool, error)
+}
+
+// ---------- §26 Client Sync Protocol ----------
+
+// ClientSyncManager — contract for checkpoint-based client sync (arch §13).
+type ClientSyncManager interface {
+	// Sync returns items changed since the given checkpoint and the new checkpoint.
+	Sync(deviceID string, checkpoint int64) ([]VaultItem, int64, error)
+	// PushUpdate pushes a new vault item to all connected sync clients.
+	PushUpdate(item VaultItem) error
+	// ResolveConflict resolves a conflict between local and remote versions using last-write-wins.
+	ResolveConflict(local, remote VaultItem) VaultItem
+	// FullSync returns all vault items for a new device (checkpoint=0).
+	FullSync(deviceID string) ([]VaultItem, int64, error)
+	// QueueOfflineChange queues a change made while the device was offline.
+	QueueOfflineChange(deviceID string, change []byte) error
+	// FlushOfflineQueue sends all queued offline changes and returns the count flushed.
+	FlushOfflineQueue(deviceID string) (int, error)
+}
+
+// ---------- §27 Digital Estate ----------
+
+// EstatePlan holds the digital estate configuration.
+type EstatePlan struct {
+	Trigger       string                 // "custodian_threshold" (only valid value — no timer)
+	Custodians    []string               // DIDs of custodian contacts
+	Threshold     int                    // k-of-n threshold for activation
+	Beneficiaries map[string][]string    // beneficiary DID → list of persona names
+	DefaultAction string                 // "destroy" or "archive"
+	Notifications []string               // DIDs to notify on activation
+	AccessTypes   map[string]string      // beneficiary DID → access type (e.g., "read_only_90_days", "full")
+	CreatedAt     int64
+	UpdatedAt     int64
+}
+
+// EstateManager — contract for digital estate planning (arch §14).
+type EstateManager interface {
+	// StorePlan persists the estate plan in Tier 0 (identity.sqlite).
+	StorePlan(plan EstatePlan) error
+	// GetPlan retrieves the current estate plan.
+	GetPlan() (*EstatePlan, error)
+	// Activate triggers estate recovery when custodian threshold is met.
+	Activate(trigger string, custodianShares [][]byte) error
+	// DeliverKeys sends per-beneficiary DEKs via Dina-to-Dina encrypted channel.
+	DeliverKeys(beneficiaryDID string) error
+	// NotifyContacts sends activation notifications to all contacts in the notification list.
+	NotifyContacts() error
+	// EnforceDefaultAction applies destroy/archive to non-assigned data.
+	EnforceDefaultAction(action string) error
+	// CheckExpiry checks if a time-limited access grant has expired.
+	CheckExpiry(accessType string, grantedAt int64) (bool, error)
+}
+
+// ---------- §20 System Watchdog ----------
+
+// WatchdogReport holds the results of a system health check tick.
+type WatchdogReport struct {
+	Timestamp          int64
+	ConnectorAlive     bool
+	DiskUsageBytes     int64
+	DiskUsagePercent   float64
+	BrainHealthy       bool
+	AuditEntriesPurged int64
+	CrashEntriesPurged int64
+}
+
+// SystemWatchdog — contract for 1-hour system health ticker (arch §16).
+type SystemWatchdog interface {
+	// RunTick executes a single watchdog sweep: checks liveness, disk, brain, purges old logs.
+	RunTick() (*WatchdogReport, error)
+	// CheckConnectorLiveness verifies external connectors are responsive.
+	CheckConnectorLiveness() (bool, error)
+	// CheckDiskUsage returns current disk usage in bytes.
+	CheckDiskUsage() (int64, error)
+	// CheckBrainHealth verifies brain sidecar is healthy.
+	CheckBrainHealth() (bool, error)
+}
+
+// ---------- §5 PII De-Sanitizer ----------
+
+// PIIDeSanitizer — contract for restoring PII tokens from replacement map (arch §11).
+type PIIDeSanitizer interface {
+	// DeSanitize restores original PII values from scrubbed text using the entity map.
+	DeSanitize(scrubbed string, entities []PIIEntity) (string, error)
+}

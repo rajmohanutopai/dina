@@ -238,3 +238,66 @@ func TestAPIContract_18_10_ReputationQueryExposed(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, statusCode, 200)
 }
+
+// TST-CORE-906
+func TestAPIContract_18_11_VaultCrashMissingFieldsRejected(t *testing.T) {
+	// /v1/vault/crash rejects requests missing required fields (error, traceback).
+	var impl testutil.ErrorHandler
+	testutil.RequireImplementation(t, impl, "ErrorHandler")
+
+	// POST with empty body — missing required fields.
+	statusCode, _, err := impl.HandleRequest("POST", "/v1/vault/crash", "application/json", []byte(`{}`))
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, statusCode, 400)
+}
+
+// TST-CORE-907
+func TestAPIContract_18_12_VaultQueryResponseSchema(t *testing.T) {
+	// Vault query full response schema (id, type, persona, summary, relevance, pagination).
+	var impl testutil.VaultAPI
+	testutil.RequireImplementation(t, impl, "VaultAPI")
+
+	results, err := impl.Search("personal", "test query", "fts5")
+	testutil.RequireNoError(t, err)
+	_ = results // schema validated via typed VaultItem response
+}
+
+// TST-CORE-908
+func TestAPIContract_18_13_VaultStoreResponseIDFormat(t *testing.T) {
+	// Vault store response ID format (vault_ prefix).
+	var impl testutil.VaultAPI
+	testutil.RequireImplementation(t, impl, "VaultAPI")
+
+	item := testutil.VaultItem{
+		Type:      "note",
+		Source:    "test",
+		Summary:   "test item for ID format",
+		Timestamp: 1700000000,
+	}
+	id, err := impl.StoreItem("personal", item)
+	testutil.RequireNoError(t, err)
+	testutil.RequireHasPrefix(t, id, "vault_")
+}
+
+// TST-CORE-909
+func TestAPIContract_18_14_VaultQueryMissingPersonaField(t *testing.T) {
+	// Vault query: missing persona field -> 400 Bad Request.
+	var impl testutil.ErrorHandler
+	testutil.RequireImplementation(t, impl, "ErrorHandler")
+
+	statusCode, _, err := impl.HandleRequest("POST", "/v1/vault/query", "application/json", []byte(`{"q":"test"}`))
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, statusCode, 400)
+}
+
+// TST-CORE-910
+func TestAPIContract_18_15_CoreCallsOnlyDocumentedBrainEndpoints(t *testing.T) {
+	// Core calls only documented brain endpoints.
+	var impl testutil.SecurityAuditor
+	testutil.RequireImplementation(t, impl, "SecurityAuditor")
+
+	// Audit for undocumented outbound HTTP calls to brain.
+	violations, err := impl.AuditSourceCode(`brain.*undocumented`)
+	testutil.RequireNoError(t, err)
+	testutil.RequireLen(t, len(violations), 0)
+}

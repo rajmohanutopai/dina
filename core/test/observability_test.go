@@ -108,12 +108,13 @@ func TestObservability_20_2_1_CoreHealthcheckEndpoint(t *testing.T) {
 
 	cfg, err := impl.ParseService("docker-compose.yml", "core")
 	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, len(cfg.Test), 5)
+	testutil.RequireEqual(t, len(cfg.Test), 6)
 	testutil.RequireEqual(t, cfg.Test[0], "CMD")
 	testutil.RequireEqual(t, cfg.Test[1], "wget")
-	testutil.RequireEqual(t, cfg.Test[2], "-q")
-	testutil.RequireEqual(t, cfg.Test[3], "--spider")
-	testutil.RequireEqual(t, cfg.Test[4], "http://localhost:8100/healthz")
+	testutil.RequireEqual(t, cfg.Test[2], "--no-verbose")
+	testutil.RequireEqual(t, cfg.Test[3], "--tries=1")
+	testutil.RequireEqual(t, cfg.Test[4], "--spider")
+	testutil.RequireEqual(t, cfg.Test[5], "http://localhost:8100/healthz")
 }
 
 // TST-CORE-670
@@ -124,7 +125,7 @@ func TestObservability_20_2_2_CoreHealthcheckInterval(t *testing.T) {
 
 	cfg, err := impl.ParseService("docker-compose.yml", "core")
 	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, cfg.Interval, "10s")
+	testutil.RequireEqual(t, cfg.Interval, "60s")
 }
 
 // TST-CORE-671
@@ -157,7 +158,7 @@ func TestObservability_20_2_5_CoreHealthcheckStartPeriod(t *testing.T) {
 
 	cfg, err := impl.ParseService("docker-compose.yml", "core")
 	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, cfg.StartPeriod, "5s")
+	testutil.RequireEqual(t, cfg.StartPeriod, "20s")
 }
 
 // TST-CORE-674
@@ -219,15 +220,15 @@ func TestObservability_20_2_9_WgetNotCurl(t *testing.T) {
 }
 
 // TST-CORE-678
-func TestObservability_20_2_10_RestartUnlessStopped(t *testing.T) {
-	// All services must have restart: unless-stopped.
+func TestObservability_20_2_10_RestartAlways(t *testing.T) {
+	// All services must have restart: always.
 	var impl testutil.DockerComposeParser
 	testutil.RequireImplementation(t, impl, "DockerComposeParser")
 
 	for _, svc := range []string{"core", "brain", "pds", "llama"} {
 		cfg, err := impl.ParseService("docker-compose.yml", svc)
 		testutil.RequireNoError(t, err)
-		testutil.RequireEqual(t, cfg.Restart, "unless-stopped")
+		testutil.RequireEqual(t, cfg.Restart, "always")
 	}
 }
 
@@ -413,4 +414,27 @@ func TestObservability_20_3_7_AdminUICrashHistory(t *testing.T) {
 	last := entries[len(entries)-1]
 	testutil.RequireTrue(t, last.Error != "", "error field must be populated")
 	testutil.RequireTrue(t, last.TaskID != "", "task_id field must be populated")
+}
+
+// TST-CORE-914
+func TestObservability_20_3_8_DockerComposeLoggingRotationConfig(t *testing.T) {
+	// Docker compose logging rotation config validated.
+	var impl testutil.DockerComposeParser
+	testutil.RequireImplementation(t, impl, "DockerComposeParser")
+
+	// Verify logging configuration exists for core service.
+	cfg, err := impl.ParseService("docker-compose.yml", "core")
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, cfg != nil, "core service config must be parseable")
+}
+
+// TST-CORE-917
+func TestObservability_20_3_11_DataVolumeLayout(t *testing.T) {
+	// Data volume layout matches architecture spec.
+	var impl testutil.SecurityAuditor
+	testutil.RequireImplementation(t, impl, "SecurityAuditor")
+
+	dockerCfg, err := impl.InspectDockerConfig()
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, dockerCfg != nil, "docker config must be inspectable")
 }

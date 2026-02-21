@@ -204,6 +204,9 @@
 | 3 | **[TST-CORE-127]** Unwrap with wrong passphrase | Wrapped blob + wrong passphrase | Decryption fails |
 | 4 | **[TST-CORE-128]** Tampered wrapped blob | Modified bytes | Authentication failure |
 | 5 | **[TST-CORE-129]** Nonce uniqueness | Wrap same key twice | Different wrapped outputs (random nonce) |
+| 6 | **[TST-CORE-880]** Key generation verified to use `crypto/rand` (not weak entropy) | Code audit of key generation functions | All key material sourced from `crypto/rand`, never `math/rand` |
+| 7 | **[TST-CORE-881]** Archive key survives backup key rotation (separate HKDF derivations) | Rotate backup key, verify archive key | Archive key unchanged — separate HKDF info string `dina:archive:v1` |
+| 8 | **[TST-CORE-882]** Client sync key used for sync encryption, reputation key for signing | Derive both keys, verify usage | Sync key (`dina:sync:v1`) encrypts cache; reputation key (`dina:reputation:v1`) signs data |
 
 ---
 
@@ -314,6 +317,9 @@
 | 3 | **[TST-CORE-193]** Reconstruct with fewer than threshold | 2 shares | Reconstruction fails |
 | 4 | **[TST-CORE-194]** Reconstruct with invalid share | 2 valid + 1 corrupted | Reconstruction fails or produces wrong seed (detected by checksum) |
 | 5 | **[TST-CORE-195]** Share format | Inspect share bytes | Includes share index, threshold metadata |
+| 6 | **[TST-CORE-926]** DID Document endpoint update on ingress tier change | Change ingress tier | DID Document service endpoint updated to reflect new ingress |
+| 7 | **[TST-CORE-927]** Trust ring level enum defined in code | Inspect trust level constants | Enum values: unverified=1, verified=2, skin_in_game=3 |
+| 8 | **[TST-CORE-928]** No MCP/OpenClaw credential can access vault endpoints | MCP/OpenClaw token on /v1/vault/* | 401/403 — only BRAIN_TOKEN and CLIENT_TOKEN accepted |
 
 ---
 
@@ -543,6 +549,14 @@
 | 22 | **[TST-CORE-341]** Convenience mode: keyfile path | Inspect file | Raw master seed at `/var/lib/dina/keyfile` with `chmod 600` |
 | 23 | **[TST-CORE-342]** Mode switch: security → convenience (security downgrade) | User requests switch from security to convenience mode | Core prompts for passphrase → Argon2id → KEK → unwrap master seed from `wrapped_seed.bin` → write plaintext seed to `/var/lib/dina/keyfile` (chmod 600) → update config.json `mode: "convenience"`. MUST require explicit user confirmation ("This writes your master seed to disk in plaintext. Continue?") because this is a deliberate security downgrade. Architecture §02 line 40: "Users can change this setting at any time" — bidirectional. §4.8 #12 covers convenience→security; this covers the reverse |
 
+### 4.9 Vault Extras
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-883]** FTS5 with Indic scripts (Hindi, Tamil, Kannada) | Insert vault items with Hindi/Tamil/Kannada text, search | FTS5 matches Indic script content via unicode61 tokenizer |
+| 2 | **[TST-CORE-884]** Verify sqlite-vec used (not deprecated sqlite-vss) | Code audit of vector search implementation | `sqlite-vec` extension loaded, not `sqlite-vss` |
+| 3 | **[TST-CORE-885]** FTS5 remains available during sqlite-vec re-indexing | Trigger re-index, attempt FTS5 search | FTS5 search succeeds while embedding re-index runs in background |
+
 ---
 
 ## 5. PII Scrubber (Tier 1 — Go Regex)
@@ -577,6 +591,9 @@
 | 22 | **[TST-CORE-780]** Consecutive same-type PII | "SSN 123-45-6789 and 987-65-4321" | Both scrubbed: [SSN_1] and [SSN_2] |
 | 23 | **[TST-CORE-781]** SQL injection in scrubber input | "'; DROP TABLE users; --" | Safely handled, no error or injection |
 | 24 | **[TST-CORE-782]** Unicode text with PII | "नमस्ते john@example.com" | Email detected in Unicode context |
+| 26 | **[TST-CORE-886]** PII de-sanitization endpoint — restores tokens from replacement map | Scrubbed text + entity map | Original PII values restored from token map |
+| 27 | **[TST-CORE-887]** PII scrubber makes zero outbound network calls (hard invariant) | Trigger scrub, monitor network | Zero network calls during PII scrubbing — regex-only, fully local |
+| 28 | **[TST-CORE-888]** Sensitive persona mandatory PII scrub before cloud LLM | Health/financial persona data sent to cloud LLM | PII scrubbing enforced before cloud routing — no opt-out for sensitive personas |
 
 
 ---
@@ -681,6 +698,11 @@
 | 4 | **[TST-CORE-802]** Cross-persona access denied | Consumer-only agent accesses financial | Denied (compartment isolation) |
 | 5 | **[TST-CORE-803]** Money action requires trusted ring | Verified agent attempts transfer_money | Denied — requires Verified+Actioned |
 | 6 | **[TST-CORE-804]** Data sharing action flagged | Trusted agent shares data externally | Audit entry (risky per Four Laws) |
+| 23 | **[TST-CORE-889]** Egress audit 90-day rolling retention policy | Audit entries older than 90 days | Auto-purged by watchdog sweep |
+| 24 | **[TST-CORE-890]** Contact `updated_at` refreshed on sharing policy mutation | Update sharing policy for contact | `updated_at` timestamp refreshed in contacts table |
+| 25 | **[TST-CORE-891]** Draft confidence score: low → flagged for review | Draft with low confidence score | Flagged for human review, not auto-approved |
+| 26 | **[TST-CORE-892]** Agent `draft_only: true` constraint enforced | Agent with draft_only=true attempts direct action | Blocked — agent can only create drafts, not execute |
+| 27 | **[TST-CORE-893]** Agent outcomes recorded in Tier 3 for reputation scoring | Agent completes action | Outcome recorded in Tier 3 vault for reputation scoring |
 
 ---
 
@@ -811,6 +833,8 @@
 | 5 | **[TST-CORE-825]** Direct delivery preferred | Recipient directly reachable | No relay used — direct transport |
 | 6 | **[TST-CORE-826]** Relay used when direct fails | Direct delivery timeout | Message routed through relay server |
 | 7 | **[TST-CORE-827]** Mock send error | `mock.SendErr` set | Error propagated to caller |
+| 8 | **[TST-CORE-894]** Outbox retry backoff includes jitter | Retry after failure | Backoff includes random jitter component, not pure exponential |
+| 9 | **[TST-CORE-930]** Message category namespace validation | Message with invalid category namespace | Rejected — category must match allowed namespace pattern |
 
 ---
 
@@ -882,6 +906,7 @@
 | 10 | **[TST-CORE-840]** Retry schedule exponential backoff | Outbox retry | 30s → 1m → 5m → 30m → 2h |
 | 11 | **[TST-CORE-841]** Max retries exceeded marks dead letter | 5+ retries exhausted | Task moved to dead-letter state |
 | 12 | **[TST-CORE-842]** Persistence across restart | Core restarts | All tasks recoverable from SQLite WAL |
+| 13 | **[TST-CORE-933]** Silence rules stored and retrievable from vault | Store silence rule, retrieve | Silence rules persisted in vault, retrievable for enforcement |
 
 ---
 
@@ -959,6 +984,9 @@
 | 7 | **[TST-CORE-517]** Buffer within TTL: all delivered | Client disconnected for 3 minutes | All buffered messages delivered on reconnect (within 5-min TTL) |
 | 8 | **[TST-CORE-518]** Why 5 min, not longer | Design review | If phone is offline for hours, brain generates fresh briefing — replaying stale notifications is worse than summarizing |
 | 9 | **[TST-CORE-519]** Reconnection: exponential backoff (client-side) | Client detects disconnect | Client reconnects with backoff: 1s → 2s → 4s → 8s → 16s → max 30s. On reconnect: re-send auth frame |
+| 10 | **[TST-CORE-911]** Push notifications: FCM/APNs wake-up payload is data-free | FCM push payload | Payload contains no user data — data-free wake-up only |
+| 11 | **[TST-CORE-912]** WebSocket `last_seen` timestamp updated on auth | Client authenticates via WS | `last_seen` field in device_tokens updated to current time |
+| 12 | **[TST-CORE-913]** Device push via authenticated WebSocket | Authenticated WS client | Push notifications delivered via WS channel |
 
 ---
 
@@ -986,6 +1014,8 @@
 | 2 | **[TST-CORE-528]** Revoke device (PATCH /v1/devices/{token_id}/revoke) | Admin request to revoke specific device | 200 — `revoked=true` in device_tokens. Next request from that device → 401 immediately. Core §9.1 #5 tests WS-level rejection; this tests the revocation API itself. Architecture §17: "Core sets revoked=true. Next request from iPad → 401. Immediate." |
 | 3 | **[TST-CORE-529]** Pair completion response includes node_did + ws_url | Successful pairing via POST /v1/pair/complete | Response body: `{client_token: "...", node_did: "did:plc:...", ws_url: "wss://..."}` — all three fields present. Client needs node_did for identity verification and ws_url for WebSocket connection. Architecture §17 pairing flow step 10 |
 | 4 | **[TST-CORE-530]** CLIENT_TOKEN format: 32 bytes, hex-encoded | Inspect token from pair completion | 64 hex chars (0-9a-f) — `crypto/rand` 32 bytes → hex. Architecture §17: "CLIENT_TOKEN is a 32-byte cryptographic random value (hex-encoded, 64 chars)" |
+| 5 | **[TST-CORE-895]** Device type (rich/thin) recorded during pairing | Pair new device with type=thin | Device type stored in device_tokens table |
+| 6 | **[TST-CORE-896]** mDNS auto-discovery broadcast on LAN | Core starts on LAN | mDNS broadcast enables automatic device discovery |
 
 ---
 
@@ -1027,6 +1057,7 @@
 | 2 | **[TST-CORE-542]** Auth required | Unauthenticated request to :8100 | Redirect to login page |
 | 3 | **[TST-CORE-543]** Static asset proxying | CSS/JS files | Correctly proxied with right Content-Type |
 | 4 | **[TST-CORE-544]** WebSocket upgrade through proxy | WS connection to :8100/ws | Proxied to brain:8200/ws |
+| 5 | **[TST-CORE-897]** CSRF token injected as `X-CSRF-Token` in proxied response | Admin proxy response | Response contains `X-CSRF-Token` header with valid CSRF token |
 
 ---
 
@@ -1060,6 +1091,9 @@
 | 11 | **[TST-CORE-855]** Load from config.json | `DINA_CONFIG_PATH` set | Config loaded from JSON file |
 | 12 | **[TST-CORE-856]** Env overrides config.json | Both config.json and env var set | Env var takes precedence |
 | 13 | **[TST-CORE-857]** Docker secret overrides env token | Both `DINA_BRAIN_TOKEN` and `_FILE` set | Secret file takes precedence |
+| 14 | **[TST-CORE-898]** Audit log retention configurable via config.json (`retention_days`) | config.json with retention_days=30 | Audit log purge uses configured retention period |
+| 15 | **[TST-CORE-899]** Cloud LLM consent flag stored and enforced | consent_cloud_llm=false in config | Cloud LLM routing blocked when consent not given |
+| 16 | **[TST-CORE-900]** `DINA_HISTORY_DAYS` config default 365 | No DINA_HISTORY_DAYS set | Default to 365 days of history retention |
 
 ---
 
@@ -1149,6 +1183,8 @@
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
 | 1 | **[TST-CORE-600]** Scrub text | POST `/v1/pii/scrub` + text body | 200 with scrubbed text |
+| 2 | **[TST-CORE-901]** `/metrics` Prometheus endpoint requires CLIENT_TOKEN | GET /metrics with BRAIN_TOKEN | 403 — metrics is admin-only; CLIENT_TOKEN required |
+| 3 | **[TST-CORE-902]** Sync status API endpoint for admin UI | GET /admin/sync-status | 200 with sync status for connected devices |
 
 ---
 
@@ -1201,6 +1237,9 @@
 | 26 | **[TST-CORE-636]** Docker network: `dina-pds-net` is internal | Inspect `docker network inspect dina-pds-net` | `internal: true` — PDS network has no outbound internet access |
 | 27 | **[TST-CORE-637]** Docker network: `dina-brain-net` is standard | Inspect `docker network inspect dina-brain-net` | Standard bridge (not internal) — brain needs outbound internet for Gemini/Claude API |
 | 28 | **[TST-CORE-638]** External ports: only 8100 + 2583 | Inspect docker-compose port mappings | Only `8100:8100` (core) and `2583:2583` (PDS) exposed to host — brain and llama internal only |
+| 29 | **[TST-CORE-903]** No Go `plugin.Open()` or dynamic library loading | Code audit for plugin/dlopen | Zero matches — kernel guarantee against dynamic code loading |
+| 30 | **[TST-CORE-904]** Core has no external OAuth token storage | Code audit | No OAuth tokens stored in vault or config — core doesn't do OAuth |
+| 31 | **[TST-CORE-905]** No vector clocks, no CRDTs (simplicity code audit) | Code audit for vector clock/CRDT imports | Zero matches — sync uses simple checkpoint, not distributed consensus |
 
 ---
 
@@ -1218,6 +1257,11 @@
 | 8 | **[TST-CORE-646]** No other endpoints exist beyond documented set | Enumerate all routes | Exact match with documented API surface — 8 brain-callable families (vault/query, vault/store, did/verify, pii/scrub, notify, msg/send, reputation/query, process+reason) plus admin-only endpoints (did/sign, did/rotate, vault/backup, persona/unlock, admin/*) |
 | 9 | **[TST-CORE-647]** Core exposes `/v1/msg/send` to brain | BRAIN_TOKEN + encrypted message payload (recipient DID, ciphertext) | 200 — message queued in outbox for Dina-to-Dina delivery. Architecture §03 line 135 lists `msg/send` in BRAIN_TOKEN scope. Brain triggers outbound messages (e.g., sharing a verdict with a contact); core handles encryption envelope and transport |
 | 10 | **[TST-CORE-648]** Core exposes `/v1/reputation/query` to brain | BRAIN_TOKEN + query (entity, category) | 200 with reputation score from local cache or PDS federation. Architecture §03 line 135 lists `reputation/query` in BRAIN_TOKEN scope. Brain needs reputation data for LLM routing decisions (e.g., which bot to delegate to) and trust ring evaluation |
+| 11 | **[TST-CORE-906]** `/v1/vault/crash` rejects requests missing required fields | POST /v1/vault/crash without error/traceback | 400 Bad Request — error and traceback fields required |
+| 12 | **[TST-CORE-907]** Vault query full response schema validated | POST /v1/vault/query | Response contains id, type, persona, summary, relevance, pagination |
+| 13 | **[TST-CORE-908]** Vault store response ID format (`vault_` prefix) | POST /v1/vault/store | Returned ID starts with `vault_` prefix |
+| 14 | **[TST-CORE-909]** Vault query: missing `persona` field → 400 | POST /v1/vault/query without persona | 400 Bad Request |
+| 15 | **[TST-CORE-910]** Core calls only documented brain endpoints | Code audit of outbound HTTP calls to brain | Only documented endpoints called — no undocumented brain API usage |
 
 ---
 
@@ -1238,6 +1282,7 @@
 | 11 | **[TST-CORE-659]** One default persona: `/personal` | After setup | Only `/personal` persona exists — no /health, /financial, /citizen |
 | 12 | **[TST-CORE-660]** Mnemonic backup deferred to Day 7 | Day 7 after setup | Prompt: "Write down these 24 words" — not shown during onboarding |
 | 13 | **[TST-CORE-661]** Sharing rules default to empty | After setup | No sharing policies — default-deny egress |
+| 14 | **[TST-CORE-932]** install.sh bootstrap: token gen, dirs, permissions | Run install.sh on fresh system | BRAIN_TOKEN generated, directories created with correct permissions |
 
 ---
 
@@ -1265,16 +1310,16 @@
 
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-CORE-669]** Core healthcheck endpoint: `/healthz` | Inspect docker-compose.yml | `test: ["CMD", "wget", "-q", "--spider", "http://localhost:8100/healthz"]` |
-| 2 | **[TST-CORE-670]** Core healthcheck: interval 10s | Inspect compose | `interval: 10s` — check every 10 seconds (brain+PDS+llama all use 30s) |
+| 1 | **[TST-CORE-669]** Core healthcheck endpoint: `/healthz` | Inspect docker-compose.yml | `test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8100/healthz"]` |
+| 2 | **[TST-CORE-670]** Core healthcheck: interval 60s | Inspect compose | `interval: 60s` — check every 60 seconds (brain+PDS+llama all use 30s) |
 | 3 | **[TST-CORE-671]** Core healthcheck: timeout 3s | Inspect compose | `timeout: 3s` — fail if response takes >3s |
 | 4 | **[TST-CORE-672]** Core healthcheck: retries 3 | Inspect compose | `retries: 3` — restart after 3 consecutive failures (30s of downtime at 10s interval) |
-| 5 | **[TST-CORE-673]** Core healthcheck: start_period 5s | Inspect compose | `start_period: 5s` — grace period for boot |
+| 5 | **[TST-CORE-673]** Core healthcheck: start_period 20s | Inspect compose | `start_period: 20s` — grace period for boot |
 | 6 | **[TST-CORE-674]** Brain healthcheck: `/healthz` | Inspect compose | `test: ["CMD", "wget", "-q", "--spider", "http://localhost:8200/healthz"]`, `interval: 30s`, `timeout: 5s`, `retries: 3`, `start_period: 15s` |
 | 7 | **[TST-CORE-675]** PDS healthcheck: `/xrpc/_health` | Inspect compose | `test: ["CMD", "wget", "-q", "--spider", "http://localhost:2583/xrpc/_health"]`, `interval: 30s`, `timeout: 5s`, `retries: 3`, `start_period: 10s` |
 | 8 | **[TST-CORE-676]** llama healthcheck: `/health` | Inspect compose | `test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]`, `interval: 30s`, `timeout: 5s`, `retries: 3`, `start_period: 30s` (model loading ~30-45s) |
 | 9 | **[TST-CORE-677]** Why `wget` not `curl` | Inspect container image | Minimal Alpine images include `wget` but not `curl` |
-| 10 | **[TST-CORE-678]** `restart: unless-stopped` on all containers | Inspect compose | All services have `restart: unless-stopped` (not `always` — allows `docker stop` without auto-restart) |
+| 10 | **[TST-CORE-678]** `restart: always` on all containers | Inspect compose | All services have `restart: always` — containers restart automatically after any failure or host reboot |
 | 11 | **[TST-CORE-679]** Brain `depends_on: core: service_healthy` | Inspect compose | Brain won't start until core healthcheck passes — ensures vault subsystem is ready |
 | 12 | **[TST-CORE-680]** Core `depends_on: pds: service_started` | Inspect compose | Core starts after PDS container has started (not necessarily healthy — PDS can take time to load repos) |
 | 13 | **[TST-CORE-681]** llama `profiles: ["local-llm"]` | `docker compose up` (no profile flag) | llama container NOT started — only started with `docker compose --profile local-llm up` |
@@ -1290,6 +1335,10 @@
 | 5 | **[TST-CORE-686]** Crash log queryable | Admin queries "crashes from last week" | `SELECT * FROM crash_log WHERE timestamp > datetime('now', '-7 days')` |
 | 6 | **[TST-CORE-687]** Crash log included in backup | `dina export` | crash_log table included in identity.sqlite backup |
 | 7 | **[TST-CORE-688]** Admin UI displays crash history | GET `/admin/crashes` | Table of recent crashes with error, timestamp, task_id |
+| 8 | **[TST-CORE-914]** Docker compose logging rotation config validated | Inspect docker-compose logging section | Max 10MB, 3 files configured for log rotation |
+| 9 | **[TST-CORE-915]** Single watchdog sweep cleans both audit AND crash logs | Trigger watchdog sweep | Both audit_log and crash_log entries older than retention purged in single sweep |
+| 10 | **[TST-CORE-916]** System watchdog 1-hour interval: connector liveness, disk, brain health | Watchdog tick fires | Checks connector liveness, disk usage, and brain health in single sweep |
+| 11 | **[TST-CORE-917]** Data volume layout matches architecture spec | Inspect /var/lib/dina/ | Directory structure matches architecture: identity.sqlite, vault/*.sqlite, spool/ |
 
 ---
 
@@ -1338,6 +1387,7 @@
 | 3 | **[TST-CORE-707]** Brain catch-all wraps main loop | Inspect `brain/src/main.py` | `try: await guardian_loop() except Exception as e:` — logs type + line to stdout, full trace to vault |
 | 4 | **[TST-CORE-708]** Crash handler sends task_id | Brain crashes during task | `current_task_id` included in crash report — correlates with `dina_tasks` for debugging |
 | 5 | **[TST-CORE-709]** Crash handler re-raises | After logging + vault write | `raise` called — lets Docker restart policy trigger |
+| 6 | **[TST-CORE-929]** Spool file naming uses ULID format | Inspect spool directory after message spool | Files named with ULID — sortable, unique, timestamp-embedded |
 
 ---
 
@@ -1369,6 +1419,13 @@
 | 2 | **[TST-CORE-721]** Non-author deletion rejected | External request to delete someone else's record | Signature doesn't match author → rejected |
 | 3 | **[TST-CORE-722]** Tombstone propagation | Tombstone published to PDS | Relay distributes tombstone to all federated AppViews |
 | 4 | **[TST-CORE-723]** Deleted record absent from queries | Record deleted via tombstone | AppView no longer returns record — aggregate scores recomputed without it |
+| 5 | **[TST-CORE-918]** `com.dina.reputation.bot` and `com.dina.trust.membership` Lexicons validated | Bot/membership Lexicon records | Schema validation passes for bot and membership Lexicon types |
+| 6 | **[TST-CORE-919]** Outcome data schema validation (reporter_trust_ring, outcome, satisfaction) | Outcome record payload | Required fields validated: reporter_trust_ring, outcome, satisfaction, issues |
+| 7 | **[TST-CORE-920]** Attestation optional fields URI format (sourceUrl, deepLink) | Attestation with sourceUrl and deepLink | URI format validated for optional URL fields |
+| 8 | **[TST-CORE-921]** Reputation query response includes signed payloads | Query reputation endpoint | Response payloads include Ed25519 signatures |
+| 9 | **[TST-CORE-922]** DID Document contains DIDComm service endpoint | Resolve DID Document | Service array includes DIDComm endpoint for D2D communication |
+| 10 | **[TST-CORE-923]** Outcome and Bot Lexicon signing and validation | Sign outcome/bot Lexicon record | Record signed with Reputation Signing Key, signature verifiable |
+| 11 | **[TST-CORE-924]** PDS Type A: fallback to external HTTPS push | PDS unreachable on internal network | Fallback to outbound HTTPS push to external PDS |
 
 ---
 
@@ -1415,6 +1472,7 @@
 | 2 | **[TST-CORE-748]** Raspberry Pi → Mac Mini | Export on Pi, import on Mac | Same archive, same command, any hardware |
 | 3 | **[TST-CORE-749]** Same Docker image across hosting levels | Build once, deploy to managed/VPS/sovereign | Identical startup behavior and API responses |
 | 4 | **[TST-CORE-750]** Migration preserves vault search | Export with 10K items → import → search | FTS5 + sqlite-vec results identical post-migration |
+| 5 | **[TST-CORE-925]** Import/restore invalidates all device tokens, forces re-pair | Import archive on new machine | All existing device tokens invalidated, devices must re-pair |
 
 ---
 
@@ -1472,6 +1530,59 @@
 | 2 | **[TST-CORE-773]** Laptop: configurable cache size | Set cache to "everything" | Full vault replica (or subset) |
 | 3 | **[TST-CORE-774]** Thin client: no local cache | Inspect thin client | Zero vault data stored locally — WS relay only |
 | 4 | **[TST-CORE-775]** Cache encrypted with Sync Key | Inspect cache on device | Encrypted with `HKDF("dina:sync:v1")` — not raw DEKs |
+| 5 | **[TST-CORE-931]** Tier 5 Deep Archive: encrypted snapshot to cold storage with compliance lock | Create Tier 5 archive with compliance lock | Archive encrypted, compliance lock prevents deletion during retention |
+
+---
+
+## 25. Bot Interface
+
+> Dina delegates specialist queries to external bots. Bot queries are sanitized,
+> scored, and attribution-validated before results are returned.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-858]** Bot query sanitization: no DID, no medical, no financial in outbound queries | Query containing user DID + medical terms | Sanitized query strips DID and sensitive categories before sending to bot |
+| 2 | **[TST-CORE-859]** Bot communication protocol: POST /query schema with bot_signature and attribution | Structured BotQuery payload | Response includes bot_signature and attribution fields per protocol spec |
+| 3 | **[TST-CORE-860]** Bot reputation scoring: local score tracking, threshold-based routing | Bot with low score | Score tracked locally, queries routed only to bots above threshold |
+| 4 | **[TST-CORE-861]** Deep Link attribution validation + penalty for stripping attribution | Bot response with stripped attribution | Attribution validated, penalty applied to bot score for stripping |
+
+---
+
+## 26. Client Sync Protocol
+
+> Checkpoint-based sync between Home Node and client devices.
+> Conflict resolution uses last-write-wins. Offline changes queued and replayed.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-862]** Client sends checkpoint, core returns changed items since checkpoint | Client checkpoint=100, server has items 101-105 | Returns items 101-105 with new checkpoint=105 |
+| 2 | **[TST-CORE-863]** Real-time vault item push to connected clients via WebSocket | New vault item stored | Push notification sent to all connected sync clients |
+| 3 | **[TST-CORE-864]** Conflict resolution: last-write-wins, earlier version logged as recoverable | Two devices update same item | Later write wins, earlier version logged for recovery |
+| 4 | **[TST-CORE-865]** Thin client: query via WebSocket, no local cache model | Thin client connects | Queries relayed via WebSocket, no local data stored |
+| 5 | **[TST-CORE-866]** Backup scheduling to blob store, configurable frequency | Config: backup_interval=24h, dest=s3 | Backup scheduled at configured frequency to configured destination |
+| 6 | **[TST-CORE-867]** New device full sync from zero checkpoint | New device with checkpoint=0 | Full vault contents returned with current checkpoint |
+| 7 | **[TST-CORE-868]** Connection drop: client queues changes, syncs on reconnect | Client goes offline, makes changes, reconnects | Offline changes queued and flushed on reconnect |
+
+---
+
+## 27. Digital Estate
+
+> Estate planning with SSS custodian recovery. No Dead Man's Switch — no timer-based
+> activation. Estate plan stored in Tier 0 (identity.sqlite).
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-869]** Estate plan stored in Tier 0 (identity.sqlite) | Store estate plan | Plan persisted in identity.sqlite, accessible without persona unlock |
+| 2 | **[TST-CORE-870]** Estate recovery: custodian threshold met, per-beneficiary DEK derivation | 3-of-5 custodian shares provided | Master seed reconstructed, per-beneficiary DEKs derived for selective access |
+| 3 | **[TST-CORE-871]** No Dead Man's Switch — no timer-based estate activation | Attempt timer-triggered activation | Rejected — estate activation requires explicit custodian action only |
+| 4 | **[TST-CORE-872]** Estate `read_only_90_days` access type expires after 90 days | Grant read_only_90_days access | Access expires after 90 days, verified by CheckExpiry |
+| 5 | **[TST-CORE-873]** Estate `default_action` enforcement (destroy vs archive) | Estate activated with default_action=destroy | Non-assigned data destroyed per default_action policy |
+| 6 | **[TST-CORE-874]** Estate SSS shares reused from identity recovery (same set, not separate) | Compare estate and identity recovery shares | Same SSS share set used for both — no separate estate shares |
+| 7 | **[TST-CORE-875]** Estate plan JSON structure validated (trigger, custodians, beneficiaries) | Malformed estate plan JSON | Validation rejects missing required fields |
+| 8 | **[TST-CORE-876]** Estate notification list informs contacts on activation | Estate activated | All contacts in notification list receive activation notice |
+| 9 | **[TST-CORE-877]** Estate recovery: keys delivered via Dina-to-Dina encrypted channel | Estate activated, keys delivered | Keys sent via D2D encrypted transport, not plaintext |
+| 10 | **[TST-CORE-878]** Estate recovery: non-assigned data destroyed per default_action | Estate activated with unassigned personas | Unassigned persona data destroyed or archived per policy |
+| 11 | **[TST-CORE-879]** Estate recovery: no timer trigger exists in codebase | Code audit for timer/cron-based activation | Zero timer-based activation code paths — manual custodian-only |
 
 ---
 

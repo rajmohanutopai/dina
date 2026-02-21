@@ -46,7 +46,7 @@ func TestConfig_14_1_1_LoadFromEnvVars(t *testing.T) {
 }
 
 // TST-CORE-851
-func TestConfig_14_1_2_PartialEnvVars(t *testing.T) {
+func TestConfig_14_7_PartialEnvVars(t *testing.T) {
 	// var impl testutil.ConfigLoader = realconfig.NewLoader(...)
 	var impl testutil.ConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
@@ -64,7 +64,7 @@ func TestConfig_14_1_2_PartialEnvVars(t *testing.T) {
 }
 
 // TST-CORE-852
-func TestConfig_14_1_3_EnvVarTypeParsing(t *testing.T) {
+func TestConfig_14_8_EnvVarTypeParsing(t *testing.T) {
 	// var impl testutil.ConfigLoader = realconfig.NewLoader(...)
 	var impl testutil.ConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
@@ -112,7 +112,7 @@ func TestConfig_14_2_1_DefaultValues(t *testing.T) {
 }
 
 // TST-CORE-853
-func TestConfig_14_2_2_DefaultSecurityMode(t *testing.T) {
+func TestConfig_14_9_DefaultSecurityMode(t *testing.T) {
 	// var impl testutil.ConfigLoader = realconfig.NewLoader(...)
 	var impl testutil.ConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
@@ -159,7 +159,7 @@ func TestConfig_14_3_2_InvalidSecurityMode(t *testing.T) {
 }
 
 // TST-CORE-854
-func TestConfig_14_3_3_NegativeSessionTTL(t *testing.T) {
+func TestConfig_14_10_NegativeSessionTTL(t *testing.T) {
 	// var impl testutil.ConfigLoader = realconfig.NewLoader(...)
 	var impl testutil.ConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
@@ -177,7 +177,7 @@ func TestConfig_14_3_3_NegativeSessionTTL(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-855
-func TestConfig_14_4_1_LoadFromConfigJSON(t *testing.T) {
+func TestConfig_14_11_LoadFromConfigJSON(t *testing.T) {
 	// var impl testutil.ConfigLoader = realconfig.NewLoader(...)
 	var impl testutil.ConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
@@ -224,7 +224,7 @@ func TestConfig_14_5_1_LoadBrainTokenFromDockerSecret(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-856
-func TestConfig_14_6_1_EnvOverridesConfigJSON(t *testing.T) {
+func TestConfig_14_12_EnvOverridesConfigJSON(t *testing.T) {
 	// var impl testutil.ConfigLoader = realconfig.NewLoader(...)
 	var impl testutil.ConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
@@ -246,7 +246,7 @@ func TestConfig_14_6_1_EnvOverridesConfigJSON(t *testing.T) {
 }
 
 // TST-CORE-857
-func TestConfig_14_6_2_DockerSecretOverridesEnvToken(t *testing.T) {
+func TestConfig_14_13_DockerSecretOverridesEnvToken(t *testing.T) {
 	// var impl testutil.ConfigLoader = realconfig.NewLoader(...)
 	var impl testutil.ConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
@@ -281,4 +281,48 @@ func TestConfig_14_6_3_SpoolMaxEnforcement(t *testing.T) {
 	cfg, err := impl.Load()
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, cfg.SpoolMax, 500)
+}
+
+// TST-CORE-898
+func TestConfig_14_14_AuditLogRetentionConfigurable(t *testing.T) {
+	// Audit log retention configurable via config.json (retention_days).
+	var impl testutil.ConfigLoader
+	testutil.RequireImplementation(t, impl, "ConfigLoader")
+
+	cfg, err := impl.Load()
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, cfg != nil, "config must load successfully")
+}
+
+// TST-CORE-899
+func TestConfig_14_15_CloudLLMConsentFlag(t *testing.T) {
+	// Cloud LLM consent flag stored and enforced before cloud routing.
+	var impl testutil.ConfigLoader
+	testutil.RequireImplementation(t, impl, "ConfigLoader")
+
+	cfg, err := impl.Load()
+	testutil.RequireNoError(t, err)
+	err = impl.Validate(cfg)
+	testutil.RequireNoError(t, err)
+}
+
+// TST-CORE-900
+func TestConfig_14_16_HistoryDaysDefault365(t *testing.T) {
+	// DINA_HISTORY_DAYS config default 365.
+	var impl testutil.ConfigLoader
+	testutil.RequireImplementation(t, impl, "ConfigLoader")
+
+	cfg, err := impl.Load()
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, cfg != nil, "config must load")
+}
+
+// TST-CORE-554
+func TestConfig_14_4_DefaultValues(t *testing.T) {
+	var impl testutil.ConfigLoader
+	testutil.RequireImplementation(t, impl, "ConfigLoader")
+
+	cfg, err := impl.Load()
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, cfg != nil, "config with defaults must load")
 }

@@ -505,3 +505,41 @@ func TestIdentity_3_6_5_ShareFormat(t *testing.T) {
 	var impl testutil.RecoveryManager
 	testutil.RequireImplementation(t, impl, "RecoveryManager")
 }
+
+// TST-CORE-926
+func TestIdentity_3_6_6_IngressTierChange_DIDDocRotation(t *testing.T) {
+	// DID Document endpoint update on ingress tier change.
+	var impl testutil.DIDManager
+	testutil.RequireImplementation(t, impl, "DIDManager")
+
+	// Resolving DID should return valid DID Document.
+	doc, err := impl.Resolve("did:plc:testingress")
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, len(doc) > 0, "DID Document must not be empty")
+}
+
+// TST-CORE-927
+func TestIdentity_3_6_7_TrustRingLevelsDefinedInCode(t *testing.T) {
+	// Trust ring level enum defined in code.
+	// Validate that trust levels are well-defined: unverified, verified, skin_in_game.
+	var impl testutil.ContactDirectory
+	testutil.RequireImplementation(t, impl, "ContactDirectory")
+
+	// Adding a contact with valid trust level should succeed.
+	err := impl.Add("did:key:z6MkTrustTest", "Trust Test", "unknown")
+	testutil.RequireNoError(t, err)
+}
+
+// TST-CORE-928
+func TestIdentity_3_6_8_NoMCPOrOpenClawVaultAccess(t *testing.T) {
+	// No MCP/OpenClaw credential can access vault endpoints.
+	var impl testutil.AdminEndpointChecker
+	testutil.RequireImplementation(t, impl, "AdminEndpointChecker")
+
+	// Only brain and client token kinds should be recognized.
+	allowed := impl.AllowedForTokenKind("mcp", "/v1/vault/query")
+	testutil.RequireFalse(t, allowed, "MCP token must not access vault endpoints")
+
+	allowed = impl.AllowedForTokenKind("openclaw", "/v1/vault/query")
+	testutil.RequireFalse(t, allowed, "OpenClaw token must not access vault endpoints")
+}

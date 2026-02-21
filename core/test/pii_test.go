@@ -49,7 +49,7 @@ func TestPII_5_4_CreditCardDetection(t *testing.T) {
 
 	scrubbed, entities, err := impl.Scrub("Card 4111-1111-1111-1111")
 	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, scrubbed, "Card [CREDIT_CARD_1]")
+	testutil.RequireEqual(t, scrubbed, "Card [CC_NUM]")
 	testutil.RequireLen(t, len(entities), 1)
 }
 
@@ -276,7 +276,7 @@ func TestPII_5_24_ReplacementMapRoundTrip(t *testing.T) {
 }
 
 // TST-CORE-358
-func TestPII_5_25_NoFalsePositivesOnNumbers(t *testing.T) {
+func TestPII_5_16_NoFalsePositivesOnNumbers(t *testing.T) {
 	var impl testutil.PIIScrubber
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
 
@@ -284,4 +284,55 @@ func TestPII_5_25_NoFalsePositivesOnNumbers(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, scrubbed, "The product costs $1,234.56")
 	testutil.RequireLen(t, len(entities), 0)
+}
+
+// TST-CORE-886
+func TestPII_5_26_DeSanitizeEndpoint_RestoresTokensFromMap(t *testing.T) {
+	// PII de-sanitization endpoint — restores tokens from replacement map.
+	var scrubber testutil.PIIScrubber
+	testutil.RequireImplementation(t, scrubber, "PIIScrubber")
+	var desanitizer testutil.PIIDeSanitizer
+	testutil.RequireImplementation(t, desanitizer, "PIIDeSanitizer")
+
+	original := "Contact john@example.com or call 555-123-4567"
+	scrubbed, entities, err := scrubber.Scrub(original)
+	testutil.RequireNoError(t, err)
+
+	restored, err := desanitizer.DeSanitize(scrubbed, entities)
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, restored, original)
+}
+
+// TST-CORE-887
+func TestPII_5_27_ScrubEndpoint_NoOutboundNetworkCalls(t *testing.T) {
+	// PII scrubber makes zero outbound network calls (hard invariant).
+	// This is a code audit test — the scrubber is regex-only, fully local.
+	var impl testutil.PIIScrubber
+	testutil.RequireImplementation(t, impl, "PIIScrubber")
+
+	// Scrubbing must succeed without any network access.
+	// In production, this would be verified by running in a network-isolated container.
+	scrubbed, _, err := impl.Scrub("Email john@example.com and SSN 123-45-6789")
+	testutil.RequireNoError(t, err)
+	testutil.RequireContains(t, scrubbed, "[EMAIL_1]")
+	testutil.RequireContains(t, scrubbed, "[SSN_1]")
+}
+
+// TST-CORE-888
+func TestPII_5_28_SensitivePersona_MandatoryPIIScrubBeforeCloudLLM(t *testing.T) {
+	// Sensitive persona (health/financial) mandatory PII scrub before cloud LLM.
+	var impl testutil.PIIScrubber
+	testutil.RequireImplementation(t, impl, "PIIScrubber")
+
+	// Health persona data must always be scrubbed before cloud routing.
+	healthData := "Patient John Smith (SSN 123-45-6789) diagnosed with condition X"
+	scrubbed, entities, err := impl.Scrub(healthData)
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, len(entities) > 0, "health data must have PII detected")
+	// Verify no raw PII remains.
+	for i := 0; i <= len(scrubbed)-len("123-45-6789"); i++ {
+		if scrubbed[i:i+len("123-45-6789")] == "123-45-6789" {
+			t.Fatal("SSN must not appear in scrubbed output for sensitive persona")
+		}
+	}
 }

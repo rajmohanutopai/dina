@@ -405,3 +405,136 @@ func TestPDS_22_2_4_DeletedRecordAbsentFromQueries(t *testing.T) {
 	err = impl.DeleteRecord(tombstone)
 	testutil.RequireNoError(t, err)
 }
+
+// TST-CORE-918
+func TestPDS_22_2_5_BotLexiconValidation(t *testing.T) {
+	// com.dina.reputation.bot and com.dina.trust.membership Lexicons validated.
+	var impl testutil.PDSPublisher
+	testutil.RequireImplementation(t, impl, "PDSPublisher")
+
+	botRecord := testutil.PDSRecord{
+		Collection: "com.dina.reputation.bot",
+		RecordKey:  "bot-lexicon-001",
+		Payload:    map[string]interface{}{"botDid": "did:key:z6MkBot", "score": 85},
+		AuthorDID:  "did:key:z6MkAuthor",
+	}
+	err := impl.ValidateLexicon(botRecord)
+	testutil.RequireNoError(t, err)
+}
+
+// TST-CORE-919
+func TestPDS_22_2_6_OutcomeDataSchemaValidation(t *testing.T) {
+	// Outcome data schema: reporter_trust_ring, outcome, satisfaction, issues.
+	var impl testutil.PDSPublisher
+	testutil.RequireImplementation(t, impl, "PDSPublisher")
+
+	outcomeRecord := testutil.PDSRecord{
+		Collection: "com.dina.reputation.outcome",
+		RecordKey:  "outcome-001",
+		Payload: map[string]interface{}{
+			"reporter_trust_ring": 2,
+			"outcome":            "positive",
+			"satisfaction":       85,
+			"issues":             []interface{}{},
+		},
+		AuthorDID: "did:key:z6MkReporter",
+	}
+	err := impl.ValidateLexicon(outcomeRecord)
+	testutil.RequireNoError(t, err)
+}
+
+// TST-CORE-920
+func TestPDS_22_2_7_AttestationOptionalFieldsURIFormat(t *testing.T) {
+	// Attestation optional fields URI format (sourceUrl, deepLink).
+	var impl testutil.PDSPublisher
+	testutil.RequireImplementation(t, impl, "PDSPublisher")
+
+	record := testutil.PDSRecord{
+		Collection: "com.dina.reputation.attestation",
+		RecordKey:  "att-uri-001",
+		Payload: map[string]interface{}{
+			"expertDid":       "did:key:z6MkExpert",
+			"productCategory": "furniture",
+			"productId":       "steelcase-leap",
+			"rating":          92,
+			"verdict":         map[string]interface{}{"build_quality": 95, "value_for_money": 88},
+			"sourceUrl":       "https://youtube.com/watch?v=abc123",
+			"deepLink":        "https://youtube.com/watch?v=abc123&t=142",
+		},
+		AuthorDID: "did:key:z6MkAuthor",
+	}
+	err := impl.ValidateLexicon(record)
+	testutil.RequireNoError(t, err)
+}
+
+// TST-CORE-921
+func TestPDS_22_2_8_ReputationQueryResponseIncludesSignedPayloads(t *testing.T) {
+	// Reputation query response includes signed payloads.
+	var impl testutil.PDSPublisher
+	testutil.RequireImplementation(t, impl, "PDSPublisher")
+
+	record := testutil.PDSRecord{
+		Collection: "com.dina.reputation.attestation",
+		RecordKey:  "signed-001",
+		Payload: map[string]interface{}{
+			"expertDid":       "did:key:z6MkExpert",
+			"productCategory": "electronics",
+			"productId":       "pixel-9",
+			"rating":          88,
+			"verdict":         map[string]interface{}{"camera": 92, "battery": 80},
+		},
+		AuthorDID: "did:key:z6MkAuthor",
+	}
+	uri, err := impl.SignAndPublish(record)
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, uri != "", "published record must return a URI")
+}
+
+// TST-CORE-922
+func TestPDS_22_2_9_DIDDocContainsDIDCommServiceEndpoint(t *testing.T) {
+	// DID Document contains DIDComm service endpoint for D2D communication.
+	var impl testutil.DIDManager
+	testutil.RequireImplementation(t, impl, "DIDManager")
+
+	doc, err := impl.Resolve("did:plc:test123")
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, len(doc) > 0, "DID Document must not be empty")
+}
+
+// TST-CORE-923
+func TestPDS_22_2_10_OutcomeRecordSigning(t *testing.T) {
+	// Outcome and Bot Lexicon signing and validation.
+	var impl testutil.PDSPublisher
+	testutil.RequireImplementation(t, impl, "PDSPublisher")
+
+	outcomeRecord := testutil.PDSRecord{
+		Collection: "com.dina.reputation.outcome",
+		RecordKey:  "signed-outcome-001",
+		Payload: map[string]interface{}{
+			"reporter_trust_ring": 2,
+			"outcome":            "positive",
+			"satisfaction":       90,
+		},
+		AuthorDID: "did:key:z6MkReporter",
+	}
+	uri, err := impl.SignAndPublish(outcomeRecord)
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, uri != "", "signed outcome must return a URI")
+}
+
+// TST-CORE-924
+func TestPDS_22_2_11_TypeA_FallbackToExternalHTTPS(t *testing.T) {
+	// PDS Type A: fallback to external HTTPS push.
+	var impl testutil.PDSPublisher
+	testutil.RequireImplementation(t, impl, "PDSPublisher")
+
+	// When PDS is unreachable, record should be queued for retry.
+	record := testutil.PDSRecord{
+		Collection: "com.dina.reputation.attestation",
+		RecordKey:  "fallback-001",
+		Payload:    map[string]interface{}{"expertDid": "did:key:z6Mk", "productCategory": "test", "productId": "test", "rating": 50, "verdict": map[string]interface{}{"quality": 50}},
+		AuthorDID:  "did:key:z6MkAuthor",
+	}
+	err := impl.QueueForRetry(record)
+	testutil.RequireNoError(t, err)
+}

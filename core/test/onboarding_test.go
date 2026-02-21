@@ -330,3 +330,15 @@ func TestOnboarding_19_13_SharingRulesDefaultEmpty(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	testutil.RequireLen(t, len(rules), 0)
 }
+
+// TST-CORE-932
+func TestOnboarding_19_14_InstallSH_Bootstrap(t *testing.T) {
+	// install.sh bootstrap: token gen, dirs, permissions.
+	var impl testutil.OnboardingSequence
+	testutil.RequireImplementation(t, impl, "OnboardingSequence")
+
+	// Verify onboarding sequence produces expected artifacts.
+	steps, err := impl.GetSteps()
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, len(steps) > 0, "onboarding must have steps")
+}

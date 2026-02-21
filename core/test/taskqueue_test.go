@@ -613,3 +613,28 @@ func TestTaskQueue_8_3_10_RetryBackoff(t *testing.T) {
 	// This test verifies attempts is incremented and task reset to pending.
 	t.Skip("retry backoff contract requires TaskQueuer implementation")
 }
+
+// TST-CORE-933
+func TestTaskQueue_8_4_13_SilenceRules_StoredAndRetrievable(t *testing.T) {
+	// Silence rules stored and retrievable from vault.
+	var impl testutil.VaultManager
+	testutil.RequireImplementation(t, impl, "VaultManager")
+
+	dek := testutil.TestDEK[:]
+	persona := "test-silence-rules"
+	err := impl.Open(persona, dek)
+	testutil.RequireNoError(t, err)
+	defer impl.Close(persona)
+
+	// Store a silence rule as a vault item.
+	item := testutil.VaultItem{
+		ID:         "silence-rule-001",
+		Type:       "note",
+		Source:     "silence_rules",
+		Summary:    "suppress marketing notifications 22:00-08:00",
+		Timestamp:  1700000000,
+		IngestedAt: 1700000000,
+	}
+	_, err = impl.Store(persona, item)
+	testutil.RequireNoError(t, err)
+}

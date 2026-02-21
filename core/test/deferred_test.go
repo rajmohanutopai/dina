@@ -465,3 +465,20 @@ func TestDeferred_24_5_4_CacheEncryptedWithSyncKey(t *testing.T) {
 	testutil.RequireTrue(t, status.Encrypted, "cache must be encrypted")
 	testutil.RequireTrue(t, status.SyncKeyUsed, "cache must use Sync Key, not raw DEKs")
 }
+
+// TST-CORE-931
+func TestDeferred_24_5_5_Tier5DeepArchive_EncryptedSnapshot(t *testing.T) {
+	// Tier 5 Deep Archive: encrypted snapshot to cold storage with compliance lock.
+	var impl testutil.ArchiveManager
+	testutil.RequireImplementation(t, impl, "ArchiveManager")
+
+	config := testutil.ArchiveConfig{
+		Frequency:     "weekly",
+		Destination:   "s3",
+		RetentionDays: 365,
+		EncryptionKey: testutil.TestDEK[:],
+	}
+	entry, err := impl.CreateArchive(config)
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, entry.ID != "", "archive must have an ID")
+}

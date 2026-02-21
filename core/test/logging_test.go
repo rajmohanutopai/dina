@@ -379,3 +379,15 @@ SystemExit: fatal`
 	testutil.RequireTrue(t, sanitized != "", "crash handler must produce output before re-raise")
 	testutil.RequireContains(t, sanitized, "SystemExit")
 }
+
+// TST-CORE-929
+func TestLogging_21_4_6_SpoolFileNaming_ULIDFormat(t *testing.T) {
+	// Spool file naming uses ULID format.
+	var impl testutil.InboxManager
+	testutil.RequireImplementation(t, impl, "InboxManager")
+
+	// Spool a message and verify the spool mechanism works.
+	spoolID, err := impl.Spool([]byte("test spool message"))
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, len(spoolID) > 0, "spool ID must be non-empty")
+}

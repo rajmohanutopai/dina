@@ -623,3 +623,37 @@ func TestServer_15_7_1_ScrubText(t *testing.T) {
 	testutil.RequireTrue(t, len(entities) > 0, "scrubber must detect PII entities in test input")
 	testutil.RequireTrue(t, len(scrubbed) > 0, "scrubbed text must not be empty")
 }
+
+// TST-CORE-901
+func TestServer_15_7_2_MetricsEndpointExists(t *testing.T) {
+	// /metrics Prometheus endpoint: exists, requires CLIENT_TOKEN.
+	var impl testutil.Server
+	testutil.RequireImplementation(t, impl, "Server")
+
+	routes := impl.Routes()
+	found := false
+	for _, r := range routes {
+		if r == "/metrics" || r == "GET /metrics" {
+			found = true
+			break
+		}
+	}
+	testutil.RequireTrue(t, found, "/metrics endpoint must be registered")
+}
+
+// TST-CORE-902
+func TestServer_15_7_3_SyncStatusEndpoint(t *testing.T) {
+	// Sync status API endpoint for admin UI.
+	var impl testutil.Server
+	testutil.RequireImplementation(t, impl, "Server")
+
+	routes := impl.Routes()
+	found := false
+	for _, r := range routes {
+		if r == "/admin/sync-status" || r == "GET /admin/sync-status" {
+			found = true
+			break
+		}
+	}
+	testutil.RequireTrue(t, found, "/admin/sync-status endpoint must be registered")
+}

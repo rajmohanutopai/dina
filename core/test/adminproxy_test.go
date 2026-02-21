@@ -126,3 +126,16 @@ func TestAdminProxy_12_4_WebSocketUpgradeProxy(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, upgraded, "WebSocket upgrade must be proxied to brain")
 }
+
+// TST-CORE-897
+func TestAdminProxy_12_5_CSRFTokenInjectedInResponse(t *testing.T) {
+	// CSRF token injected as X-CSRF-Token in proxied response to browser.
+	var impl testutil.AdminProxy
+	testutil.RequireImplementation(t, impl, "AdminProxy")
+
+	statusCode, _, respHeaders, err := impl.ProxyHTTP("GET", "/admin/dashboard", map[string]string{}, nil)
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, statusCode > 0, "proxy must return a status code")
+	_, hasCSRF := respHeaders["X-CSRF-Token"]
+	testutil.RequireTrue(t, hasCSRF, "proxied response must contain X-CSRF-Token header")
+}

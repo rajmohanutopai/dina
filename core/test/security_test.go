@@ -460,3 +460,36 @@ func TestSecurity_17_28_ExternalPortsOnly(t *testing.T) {
 			"unexpected exposed port: "+port+" — only 8100 and 2583 should be exposed")
 	}
 }
+
+// TST-CORE-903
+func TestSecurity_17_29_NoGoPluginImport(t *testing.T) {
+	// No Go plugin.Open() or dynamic library loading (kernel guarantee).
+	var impl testutil.SecurityAuditor
+	testutil.RequireImplementation(t, impl, "SecurityAuditor")
+
+	violations, err := impl.AuditSourceCode(`plugin\.Open`)
+	testutil.RequireNoError(t, err)
+	testutil.RequireLen(t, len(violations), 0)
+}
+
+// TST-CORE-904
+func TestSecurity_17_30_NoExternalOAuthTokenStorage(t *testing.T) {
+	// Core has no external OAuth token storage (code audit).
+	var impl testutil.SecurityAuditor
+	testutil.RequireImplementation(t, impl, "SecurityAuditor")
+
+	violations, err := impl.AuditSourceCode(`oauth.*token|access_token|refresh_token`)
+	testutil.RequireNoError(t, err)
+	testutil.RequireLen(t, len(violations), 0)
+}
+
+// TST-CORE-905
+func TestSecurity_17_31_NoVectorClocksNoCRDTs(t *testing.T) {
+	// No vector clocks, no CRDTs (simplicity code audit).
+	var impl testutil.SecurityAuditor
+	testutil.RequireImplementation(t, impl, "SecurityAuditor")
+
+	violations, err := impl.AuditSourceCode(`vector.?clock|crdt|VectorClock|CRDT`)
+	testutil.RequireNoError(t, err)
+	testutil.RequireLen(t, len(violations), 0)
+}

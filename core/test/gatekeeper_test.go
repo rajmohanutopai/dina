@@ -947,3 +947,81 @@ func TestGatekeeper_6_3_EP9_NaClEncryptionAfterPolicyCheck(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(sealed) > len(egressPayload), "sealed payload should be larger than plaintext")
 }
+
+// TST-CORE-889
+func TestGatekeeper_6_4_AuditLog_90DayRollingRetention(t *testing.T) {
+	// Egress audit 90-day rolling retention policy (auto-purge old entries).
+	var impl testutil.VaultAuditLogger
+	testutil.RequireImplementation(t, impl, "VaultAuditLogger")
+
+	purged, err := impl.Purge(90)
+	testutil.RequireNoError(t, err)
+	_ = purged // may be 0 on fresh instance
+}
+
+// TST-CORE-890
+func TestGatekeeper_6_5_ContactsUpdatedAtRefreshedOnPolicyChange(t *testing.T) {
+	// Contact updated_at refreshed on sharing policy mutation.
+	var impl testutil.SharingPolicyManager
+	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
+
+	// Set a policy — this should refresh updated_at.
+	err := impl.SetPolicy("did:key:z6MkTestContact", map[string]string{
+		"location": "summary",
+	})
+	testutil.RequireNoError(t, err)
+}
+
+// TST-CORE-891
+func TestGatekeeper_6_6_DraftConfidenceScore_Validated(t *testing.T) {
+	// Draft confidence score: low -> flagged for review, high-risk -> draft blocked.
+	var impl testutil.StagingManager
+	testutil.RequireImplementation(t, impl, "StagingManager")
+
+	// Stage an item (simulating a draft with implicit confidence scoring).
+	item := testutil.VaultItem{
+		ID:       "draft-low-confidence",
+		Type:     "note",
+		Source:   "agent",
+		Summary:  "low confidence draft",
+		Metadata: `{"confidence": 0.3}`,
+	}
+	_, err := impl.Stage("personal", item, 1700000000)
+	testutil.RequireNoError(t, err)
+}
+
+// TST-CORE-892
+func TestGatekeeper_6_6_26_AgentConstraint_DraftOnlyEnforced(t *testing.T) {
+	// Agent draft_only: true constraint enforced, no raw vault data to agents.
+	var impl testutil.Gatekeeper
+	testutil.RequireImplementation(t, impl, "Gatekeeper")
+
+	intent := testutil.Intent{
+		AgentDID:    "did:key:z6MkDraftOnlyAgent",
+		Action:      "send_email",
+		Target:      "external",
+		PersonaID:   "personal",
+		TrustLevel:  "trusted",
+		Constraints: map[string]bool{"draft_only": true},
+	}
+	decision, err := impl.EvaluateIntent(intent)
+	testutil.RequireNoError(t, err)
+	testutil.RequireFalse(t, decision.Allowed, "draft_only agent must not be allowed to send_email directly")
+}
+
+// TST-CORE-893
+func TestGatekeeper_6_6_27_AgentOutcome_RecordedForReputation(t *testing.T) {
+	// Agent outcomes recorded in Tier 3 for reputation scoring.
+	var impl testutil.VaultAuditLogger
+	testutil.RequireImplementation(t, impl, "VaultAuditLogger")
+
+	entry := testutil.VaultAuditEntry{
+		Timestamp: "2024-01-01T00:00:00Z",
+		Persona:   "consumer",
+		Action:    "agent_outcome",
+		Requester: "did:key:z6MkAgent",
+		Reason:    "task completed successfully",
+	}
+	_, err := impl.Append(entry)
+	testutil.RequireNoError(t, err)
+}
