@@ -769,11 +769,11 @@ async def test_guardian_2_6_1_nudge_on_conversation_open(
 ) -> None:
     """SS2.6.1: Nudge on conversation open — queries recent messages, relationship notes, pending tasks, calendar."""
     pytest.skip("Context injection not yet implemented")
-    # User opens WhatsApp conversation with "Sancho".
+    # User opens Telegram conversation with "Sancho".
     # event = make_event(
     #     type="conversation_open",
     #     body="Sancho",
-    #     source="whatsapp",
+    #     source="telegram",
     #     contact_did="did:plc:sancho123",
     # )
     # result = await mock_guardian.process_event(event)
@@ -790,8 +790,8 @@ async def test_guardian_2_6_2_nudge_context_assembly(
     # Recent msg 3 days ago (asked for PDF), mother ill last month, lunch Thursday.
     # Nudge should contain: "He asked for the PDF last week. Mom was ill. Lunch next Thursday."
     # mock_core_client.search_vault.return_value = [
-    #     make_vault_item(summary="Asked for PDF", source="whatsapp"),
-    #     make_vault_item(summary="Mother ill", source="whatsapp"),
+    #     make_vault_item(summary="Asked for PDF", source="telegram"),
+    #     make_vault_item(summary="Mother ill", source="telegram"),
     # ]
 
 

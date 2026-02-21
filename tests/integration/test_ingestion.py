@@ -1,6 +1,6 @@
 """Integration tests for data ingestion connectors.
 
-Tests Gmail, WhatsApp, and Calendar connectors against the Dina
+Tests Gmail, Telegram, and Calendar connectors against the Dina
 security and privacy contract: read-only scopes, immediate encryption,
 persona routing, deduplication, sandboxing.
 """
@@ -19,7 +19,7 @@ from tests.integration.mocks import (
     MockIdentity,
     MockKeyManager,
     MockVault,
-    MockWhatsAppConnector,
+    MockTelegramConnector,
     OAuthToken,
     PersonaType,
     SilenceTier,
@@ -134,26 +134,26 @@ class TestGmailConnector:
 
 
 # ---------------------------------------------------------------------------
-# WhatsApp Connector
+# Telegram Connector
 # ---------------------------------------------------------------------------
 
 
-class TestWhatsAppConnector:
-    """WhatsApp connector — phone-only, text-only, device-key auth push."""
+class TestTelegramConnector:
+    """Telegram connector — server-side Bot API, full message+media, polling."""
 
-    def test_runs_on_phone_only_push_model(
-        self, mock_whatsapp_connector: MockWhatsAppConnector
+    def test_uses_polling_model(
+        self, mock_telegram_connector: MockTelegramConnector
     ) -> None:
-        """WhatsApp uses push (poll_interval 0) — it runs on the phone, not polled."""
-        assert mock_whatsapp_connector.poll_interval_minutes == 0
+        """Telegram uses Bot API polling (poll_interval 5 min) — runs server-side on Home Node."""
+        assert mock_telegram_connector.poll_interval_minutes == 5
 
-    def test_text_only_no_media(
-        self, mock_whatsapp_connector: MockWhatsAppConnector
+    def test_supports_media(
+        self, mock_telegram_connector: MockTelegramConnector
     ) -> None:
-        """WhatsApp connector strips all media — text only."""
-        assert mock_whatsapp_connector.text_only is True
+        """Telegram connector supports full message+media ingestion."""
+        assert mock_telegram_connector.supports_media is True
 
-        mock_whatsapp_connector.set_device_key("device_key_abc")
+        mock_telegram_connector.set_bot_token("bot_token_abc")
         items = [
             {
                 "content": "Meet at 5pm",
@@ -161,39 +161,39 @@ class TestWhatsAppConnector:
                 "photo": "photo_url",
             }
         ]
-        result = mock_whatsapp_connector.push_to_home_node(items)
+        result = mock_telegram_connector.ingest_from_bot_api(items)
         assert result is True
-        # After push, media and photo fields must be stripped
-        for item in mock_whatsapp_connector._data:
-            assert "media" not in item
-            assert "photo" not in item
+        # After ingestion, media and photo fields are preserved (Telegram supports media)
+        for item in mock_telegram_connector._data:
+            assert "media" in item
+            assert "photo" in item
             assert "content" in item
 
-    def test_authenticated_push_requires_device_key(
-        self, mock_whatsapp_connector: MockWhatsAppConnector
+    def test_ingestion_requires_bot_token(
+        self, mock_telegram_connector: MockTelegramConnector
     ) -> None:
-        """Push to home node fails without a device key."""
+        """Ingestion from Bot API fails without a bot token."""
         items = [{"content": "hello"}]
-        result = mock_whatsapp_connector.push_to_home_node(items)
+        result = mock_telegram_connector.ingest_from_bot_api(items)
         assert result is False
         # No data should have been queued
-        assert len(mock_whatsapp_connector._data) == 0
+        assert len(mock_telegram_connector._data) == 0
 
-    def test_authenticated_push_succeeds_with_device_key(
-        self, mock_whatsapp_connector: MockWhatsAppConnector
+    def test_ingestion_succeeds_with_bot_token(
+        self, mock_telegram_connector: MockTelegramConnector
     ) -> None:
-        """Push succeeds once device key is set."""
-        mock_whatsapp_connector.set_device_key("valid_key_123")
+        """Ingestion succeeds once bot token is set."""
+        mock_telegram_connector.set_bot_token("valid_bot_token_123")
         items = [{"content": "Test message"}]
-        result = mock_whatsapp_connector.push_to_home_node(items)
+        result = mock_telegram_connector.ingest_from_bot_api(items)
         assert result is True
-        assert len(mock_whatsapp_connector._data) == 1
+        assert len(mock_telegram_connector._data) == 1
 
     def test_default_persona_is_social(
-        self, mock_whatsapp_connector: MockWhatsAppConnector
+        self, mock_telegram_connector: MockTelegramConnector
     ) -> None:
-        """WhatsApp connector defaults to SOCIAL persona."""
-        assert mock_whatsapp_connector.persona == PersonaType.SOCIAL
+        """Telegram connector defaults to SOCIAL persona."""
+        assert mock_telegram_connector.persona == PersonaType.SOCIAL
 
 
 # ---------------------------------------------------------------------------
@@ -232,7 +232,7 @@ class TestConnectorSecurityRules:
     def test_connectors_sandboxed_no_cross_persona_access(
         self,
         mock_gmail_connector: MockGmailConnector,
-        mock_whatsapp_connector: MockWhatsAppConnector,
+        mock_telegram_connector: MockTelegramConnector,
         mock_identity: MockIdentity,
         mock_vault: MockVault,
     ) -> None:
@@ -243,7 +243,7 @@ class TestConnectorSecurityRules:
         # Gmail stores to PROFESSIONAL partition
         mock_vault.store(1, "email_1", pro_persona.encrypt("work email"),
                          PersonaType.PROFESSIONAL)
-        # WhatsApp stores to SOCIAL partition
+        # Telegram stores to SOCIAL partition
         mock_vault.store(1, "chat_1", social_persona.encrypt("friend chat"),
                          PersonaType.SOCIAL)
 
@@ -259,13 +259,13 @@ class TestConnectorSecurityRules:
     def test_connector_status_visible(
         self,
         mock_gmail_connector: MockGmailConnector,
-        mock_whatsapp_connector: MockWhatsAppConnector,
+        mock_telegram_connector: MockTelegramConnector,
         mock_calendar_connector: MockCalendarConnector,
     ) -> None:
         """All connectors expose their current status."""
         connectors = [
             mock_gmail_connector,
-            mock_whatsapp_connector,
+            mock_telegram_connector,
             mock_calendar_connector,
         ]
         for conn in connectors:
@@ -282,11 +282,11 @@ class TestConnectorSecurityRules:
         assert mock_gmail_connector.status == ConnectorStatus.PAUSED
 
     def test_connector_can_be_disabled(
-        self, mock_whatsapp_connector: MockWhatsAppConnector
+        self, mock_telegram_connector: MockTelegramConnector
     ) -> None:
         """User can fully disable a connector."""
-        mock_whatsapp_connector.status = ConnectorStatus.DISABLED
-        assert mock_whatsapp_connector.status == ConnectorStatus.DISABLED
+        mock_telegram_connector.status = ConnectorStatus.DISABLED
+        assert mock_telegram_connector.status == ConnectorStatus.DISABLED
 
     def test_calendar_connector_defaults(
         self, mock_calendar_connector: MockCalendarConnector

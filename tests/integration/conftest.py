@@ -32,7 +32,7 @@ from tests.integration.mocks import (
     MockThinClient,
     MockTrustEvaluator,
     MockVault,
-    MockWhatsAppConnector,
+    MockTelegramConnector,
     MockWhisperAssembler,
     OAuthToken,
     OutcomeReport,
@@ -259,8 +259,8 @@ def mock_calendar_connector() -> MockCalendarConnector:
 
 
 @pytest.fixture
-def mock_whatsapp_connector() -> MockWhatsAppConnector:
-    return MockWhatsAppConnector()
+def mock_telegram_connector() -> MockTelegramConnector:
+    return MockTelegramConnector()
 
 
 # ---------------------------------------------------------------------------

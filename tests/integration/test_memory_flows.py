@@ -17,7 +17,7 @@ from tests.integration.mocks import (
     MockCalendarConnector,
     MockReviewBot,
     MockVault,
-    MockWhatsAppConnector,
+    MockTelegramConnector,
     PersonaType,
 )
 
@@ -225,35 +225,34 @@ class TestMemoryIngestion:
 
     def test_chat_ingestion(
         self,
-        mock_whatsapp_connector: MockWhatsAppConnector,
+        mock_telegram_connector: MockTelegramConnector,
         mock_dina: MockDinaCore,
     ):
-        """WhatsApp messages are text-only, pushed to home node only after
-        device authentication, and stored in the social partition."""
-        # Without device key, push fails
-        assert mock_whatsapp_connector.push_to_home_node([
+        """Telegram messages include full text+media, ingested via Bot API
+        after bot token configuration, and stored in the social partition."""
+        # Without bot token, ingestion fails
+        assert mock_telegram_connector.ingest_from_bot_api([
             {"content": "Hello!", "media": "photo.jpg"},
         ]) is False
 
-        # Authenticate device
-        device_key = mock_dina.identity.register_device("phone_001")
-        mock_whatsapp_connector.set_device_key(device_key)
+        # Configure bot token
+        mock_telegram_connector.set_bot_token("bot_token_123")
 
-        # Push succeeds, media stripped
-        assert mock_whatsapp_connector.push_to_home_node([
+        # Ingestion succeeds, media preserved (Telegram supports full media)
+        assert mock_telegram_connector.ingest_from_bot_api([
             {"content": "Hey, are we meeting?", "media": "voice_note.ogg"},
             {"content": "See you at 5", "photo": "selfie.jpg"},
         ]) is True
 
-        items = mock_whatsapp_connector.poll()
+        items = mock_telegram_connector.poll()
         assert len(items) == 2
-        for item in items:
-            assert "media" not in item
-            assert "photo" not in item
+        # Telegram preserves media fields
+        assert any("media" in item for item in items)
+        assert any("photo" in item for item in items)
 
         # Store in social partition
         for item in items:
-            normalized = mock_whatsapp_connector.normalize(item)
+            normalized = mock_telegram_connector.normalize(item)
             mock_dina.vault.store(
                 1, normalized["id"], normalized,
                 persona=PersonaType.SOCIAL,

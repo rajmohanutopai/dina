@@ -1351,25 +1351,22 @@ class MockCalendarConnector(MockConnector):
         super().__init__("calendar", persona, poll_interval_minutes=30)
 
 
-class MockWhatsAppConnector(MockConnector):
-    """WhatsApp connector — Android NotificationListener, text only."""
+class MockTelegramConnector(MockConnector):
+    """Telegram connector — server-side Bot API, full message+media support."""
 
     def __init__(self, persona: PersonaType = PersonaType.SOCIAL) -> None:
-        super().__init__("whatsapp", persona, poll_interval_minutes=0)
-        self.text_only = True
-        self.device_key: str | None = None
+        super().__init__("telegram", persona, poll_interval_minutes=5)
+        self.supports_media = True
+        self.bot_token: str | None = None
 
-    def set_device_key(self, key: str) -> None:
-        self.device_key = key
+    def set_bot_token(self, token: str) -> None:
+        self.bot_token = token
 
-    def push_to_home_node(self, items: list[dict[str, Any]]) -> bool:
-        """Push captured notifications to Home Node."""
-        if not self.device_key:
-            return False  # Must authenticate first
-        # Strip media — text only
-        for item in items:
-            item.pop("media", None)
-            item.pop("photo", None)
+    def ingest_from_bot_api(self, items: list[dict[str, Any]]) -> bool:
+        """Ingest messages from Telegram Bot API on Home Node."""
+        if not self.bot_token:
+            return False  # Must configure bot token first
+        # Telegram supports full media — no stripping needed
         self._data.extend(items)
         return True
 

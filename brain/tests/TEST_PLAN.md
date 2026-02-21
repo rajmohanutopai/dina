@@ -158,7 +158,7 @@
 
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-BRAIN-075]** Nudge on conversation open | User opens WhatsApp conversation with "Sancho" | Brain queries: recent messages, relationship notes, pending tasks, calendar events with Sancho |
+| 1 | **[TST-BRAIN-075]** Nudge on conversation open | User opens Telegram conversation with "Sancho" | Brain queries: recent messages, relationship notes, pending tasks, calendar events with Sancho |
 | 2 | **[TST-BRAIN-076]** Nudge context assembly | Recent msg 3 days ago (asked for PDF), mother ill last month, lunch Thursday | Nudge: "He asked for the PDF last week. Mom was ill. Lunch next Thursday." |
 | 3 | **[TST-BRAIN-077]** Nudge delivery | Context assembled | Core pushes via WS overlay/notification to client device |
 | 4 | **[TST-BRAIN-078]** Nudge with no relevant context | User opens conversation with new contact | No nudge — insufficient context, don't interrupt |
@@ -344,7 +344,7 @@
 | 22 | **[TST-BRAIN-177]** Thin record `skip_reason` differentiates filter stage | Inspect thin records for skipped emails | `skip_reason` values: `"category_filter"` (Pass 1), `"regex_sender"` / `"regex_subject"` (Pass 2a), `"llm_skip"` (Pass 2b) — enables debugging which filter caught each email |
 | 23 | **[TST-BRAIN-178]** Fiduciary override: account/domain expiration | "AWS: Your account will be suspended in 3 days" | Always INGEST — account/domain expiration patterns are fiduciary regardless of sender (even noreply@) |
 | 24 | **[TST-BRAIN-179]** LLM triage batch size: max 50 subjects per call | 80 PRIMARY emails survive regex | Brain splits into 2 LLM calls (50 + 30) — batch size capped at 50 per architecture spec |
-| 25 | **[TST-BRAIN-180]** Normalizer: all connectors produce standard schema | Gmail email + Calendar event + WhatsApp message | All normalized to common structure: `{source, source_id, type, timestamp, sender, summary, body_text, metadata}` before vault storage |
+| 25 | **[TST-BRAIN-180]** Normalizer: all connectors produce standard schema | Gmail email + Calendar event + Telegram message | All normalized to common structure: `{source, source_id, type, timestamp, sender, summary, body_text, metadata}` before vault storage |
 | 26 | **[TST-BRAIN-181]** Persona routing: configurable per-connector rules | Config: `"email_persona_routing": {"default": "/personal", "rules": [{"sender_domain": "company.com", "persona": "/professional"}]}` | Emails from company.com routed to `/professional`, others to `/personal` — brain routes based on config |
 
 ### 5.3 Deduplication
@@ -400,7 +400,7 @@
 | 2 | **[TST-BRAIN-203]** Attachment summary | PDF "Partnership_Agreement_v3.pdf" | Brain generates: "Key terms: 60/40 revenue split, 2-year lock-in, exit clause in Section 7" — stored in vault |
 | 3 | **[TST-BRAIN-204]** Deep link to source | User asks about attachment | Brain returns link to original email/Drive file — client app opens Gmail/Drive |
 | 4 | **[TST-BRAIN-205]** Dead reference accepted | User deleted source email from Gmail | Reference is dead — summary survives in vault. Dina is memory, not backup |
-| 5 | **[TST-BRAIN-206]** Voice memo exception | WhatsApp voice note (<1MB) | Transcript stored in vault, audio optionally in `media/` directory — NOT inside SQLite |
+| 5 | **[TST-BRAIN-206]** Voice memo exception | Telegram voice message (<1MB) | Transcript stored in vault, audio optionally in `media/` directory — NOT inside SQLite |
 | 6 | **[TST-BRAIN-207]** Media directory on disk | Voice note audio kept | Stored at `media/` alongside vault — files on disk, encrypted at rest, not in SQLite |
 | 7 | **[TST-BRAIN-208]** Vault size stays portable | After 1 year of ingestion | Vault ~30-80MB (text + metadata + references), not 50GB (with binary blobs) |
 | 8 | **[TST-BRAIN-209]** `media/` directory encrypted at rest | Voice note audio stored in `media/` | Files on disk encrypted at rest (filesystem-level or per-file encryption) — NOT stored inside SQLite, but still protected |

@@ -31,22 +31,22 @@ from tests.integration.mocks import (
 class TestWhisperAssembly:
     """Verify that whispers assemble context from the vault."""
 
-    def test_whatsapp_conversation_context(
+    def test_telegram_conversation_context(
         self, mock_vault: MockVault, mock_whisper: MockWhisperAssembler,
         sancho_identity,
     ) -> None:
-        """Whisper pulls relevant context before a WhatsApp chat."""
+        """Whisper pulls relevant context before a Telegram chat."""
         contact_did = sancho_identity.root_did
 
         # Seed the vault with conversation history
-        mock_vault.store(1, "whatsapp_sancho_last", {
+        mock_vault.store(1, "telegram_sancho_last", {
             "contact": contact_did,
             "last_message": "He asked for the project PDF last Friday",
             "context_flag": "His mother was in hospital last month",
             "preference": "Prefers voice notes over text",
         })
 
-        whisper = mock_whisper.assemble_context(contact_did, "whatsapp_chat")
+        whisper = mock_whisper.assemble_context(contact_did, "telegram_chat")
 
         assert whisper is not None
         assert "PDF" in whisper

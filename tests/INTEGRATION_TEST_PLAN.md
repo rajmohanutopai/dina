@@ -507,19 +507,19 @@
 | 10 | Calendar write operations E2E | User: "Book 2 PM Tuesday" | Brain→MCP→OpenClaw→Calendar API `events.insert` — write operation goes through MCP, not local vault. Local vault cache updated after write |
 | 11 | Calendar rolling window E2E | Calendar sync with vault query | Brain syncs -1 month to +1 year window. User asks "Am I free at 4 PM?" → brain queries local vault (zero network) → instant answer |
 
-### 9.2 WhatsApp Connector (Android → Core)
+### 9.2 Telegram Connector (Bot API → Core)
 
-> WhatsApp bypasses MCP — phone pushes directly to Core via DIDComm.
-> Uses CLIENT_TOKEN authentication, not BRAIN_TOKEN.
+> Telegram connector runs server-side on the Home Node via the official Bot API.
+> Goes through MCP like other connectors. Uses BRAIN_TOKEN authentication.
 
 | # | Flow | Steps | Expected |
 |---|------|-------|----------|
-| 1 | WhatsApp message push | Android NotificationListenerService captures message → encrypts → DIDComm push to core | Message stored in vault via core, brain notified |
-| 2 | WhatsApp uses CLIENT_TOKEN | Phone pushes to core | Authenticated with CLIENT_TOKEN (device token), not BRAIN_TOKEN |
-| 3 | WhatsApp text-only | Voice note notification | Text transcript of notification only — no media attached |
-| 4 | WhatsApp no history | Install Dina, connect WhatsApp | Only new messages from install date — no history before Dina |
-| 5 | WhatsApp notification format change (fragility) | WhatsApp updates notification format | Connector handles gracefully — logs parse error, continues capturing what it can. Tier 2 notification: "WhatsApp format changed, some messages may be missed" |
-| 6 | WhatsApp connector is text-only | WhatsApp notification with photo/video | Only text content captured — media attachments from notifications not supported. Metadata logged |
+| 1 | Telegram message ingestion | Bot API receives message on Home Node → forwards via MCP to core | Message stored in vault via core, brain notified |
+| 2 | Telegram uses BRAIN_TOKEN | Bot API connector communicates with core via MCP | Authenticated with BRAIN_TOKEN (server-side connector), not CLIENT_TOKEN |
+| 3 | Telegram full message+media | Voice note, photo, or document message | Full message content including media (text, photos, documents, voice notes) ingested |
+| 4 | Telegram no history | Add Dina bot to Telegram chat | Only new messages from when bot is added — no history before bot joins |
+| 5 | Telegram Bot API token revocation | Bot token revoked or invalidated | Connector handles gracefully — logs auth error, transitions to EXPIRED. Tier 2 notification: "Telegram bot token expired, please reconfigure" |
+| 6 | Telegram supports media attachments | Telegram message with photo/video/document | Full media content ingested alongside text. Media stored as metadata + summary in vault |
 
 ### 9.3 Ingestion Security Rules (E2E)
 
@@ -530,7 +530,7 @@
 | 3 | OpenClaw sandboxed | OpenClaw compromised (simulated) | Cannot read vault, keys, or personas — has no access to core APIs |
 | 4 | Brain scrubs before cloud LLM | Brain sends data to cloud LLM for triage | PII scrubbed (Tier 1 + Tier 2) before any cloud call |
 | 5 | OAuth tokens not in Dina | Inspect all vault tables + core config + brain config | Zero Gmail/Calendar OAuth tokens — all in OpenClaw |
-| 6 | Phone connectors use CLIENT_TOKEN | WhatsApp push from phone | Authenticated WebSocket with CLIENT_TOKEN — bypasses MCP |
+| 6 | Telegram connector uses BRAIN_TOKEN | Telegram Bot API on Home Node | Authenticated via MCP with BRAIN_TOKEN — server-side connector |
 | 7 | Attachment metadata only in vault | Email with PDF attachment ingested | Vault contains `{filename, size, mime_type, source_id}` + summary — no binary blob |
 | 8 | Sync status visible in admin UI | Navigate to admin dashboard | Last sync time, items ingested, OpenClaw state visible |
 
@@ -778,7 +778,7 @@
 | 7 | Thin client: inoperable without Home Node | Home Node down, thin client attempts query | Error displayed — no offline capability |
 | 8 | Multiple rich clients sync consistently | Two phones with local caches, both edit vault | Conflict resolution produces consistent state on both |
 | 9 | Sync protocol: checkpoint mechanism | Rich client sends "last sync checkpoint = timestamp X" | Home Node responds with all `vault_items` changed since X |
-| 10 | Sync protocol: client uploads local items | Phone captures WhatsApp messages while offline → reconnects | Client sends locally-created items to Home Node → Home Node applies and acknowledges |
+| 10 | Sync protocol: client uploads local items | Phone captures Telegram messages while offline → reconnects | Client sends locally-created items to Home Node → Home Node applies and acknowledges |
 | 11 | Conflict resolution: last-write-wins | Phone edits note offline, laptop edits same note offline, both reconnect | Home Node accepts later-timestamped write, earlier one logged as recoverable version |
 | 12 | Conflict resolution: user review | Two conflicting edits | User can view "sync conflicts" view and choose preferred version |
 | 13 | Most data is append-only | Ingested emails, calendar events | No conflict — ingestion is immutable append, conflicts only for user-editable data |
@@ -801,7 +801,7 @@
 |---|----------|-------|----------|
 | 1 | Day 1: email + calendar ingestion, basic nudges | Onboarding complete | Functional, no multi-persona, no sharing rules |
 | 2 | Day 7: mnemonic backup prompt | 7 days post-setup | User prompted to write down 24 words |
-| 3 | Day 14: WhatsApp connector prompt | 14 days post-setup | "Want to connect WhatsApp too?" |
+| 3 | Day 14: Telegram connector prompt | 14 days post-setup | "Want to connect Telegram too?" |
 | 4 | Day 30: persona compartments prompt | 30 days post-setup | "Separate health and financial data?" |
 | 5 | Month 3: power user discovery | 90 days post-setup | Personas, sharing rules, self-hosting visible in settings |
 

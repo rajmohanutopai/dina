@@ -542,7 +542,7 @@ prefixes.
 
 ### Suite 5: Ingestion Pipeline
 
-> External data flows into Don Alonso's vault: Gmail triage, WhatsApp push, calendar sync,
+> External data flows into Don Alonso's vault: Gmail triage, Telegram ingestion, calendar sync,
 > with cursor continuity and OAuth refresh handled by OpenClaw.
 
 #### E2E-5.1: Gmail Two-Pass Triage
@@ -566,19 +566,19 @@ prefixes.
 
 **Failure variant:** Fiduciary override — security alert email from bank is always ingested regardless of category filter.
 
-#### E2E-5.2: WhatsApp Push (Android → Core)
+#### E2E-5.2: Telegram Ingestion (Bot API → Core)
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
-| 1 | — | Sancho sends WhatsApp message to Don Alonso | External (WhatsApp) | Notification captured by Android NotificationListenerService |
-| 2 | — | Phone encrypts text and pushes to Core via DIDComm | Don Alonso's Phone → Don Alonso's Core | Authenticated with CLIENT_TOKEN (not BRAIN_TOKEN) |
+| 1 | — | Sancho sends Telegram message to Don Alonso | External (Telegram) | Message received by Telegram Bot API on Home Node |
+| 2 | — | Bot API connector forwards message to Core via MCP | Bot API → Don Alonso's Core | Authenticated server-side, message includes text and media |
 | 3 | — | Core stores in vault, notifies Brain | Don Alonso's Core → Don Alonso's Brain | Message stored in personal.sqlite, brain notified |
 | 4 | — | Brain classifies priority | Don Alonso's Brain | Standard message → Priority 3 (save for briefing) |
 
 **Verification:**
-- WhatsApp push uses CLIENT_TOKEN authentication (device token)
-- Text only — no media attachments from notifications
-- No WhatsApp history before Dina install (only new messages)
+- Telegram Bot API runs server-side on the Home Node (not phone-dependent)
+- Full message and media support (text, photos, documents, voice notes)
+- No Telegram history before bot is added to chat (only new messages from that point)
 
 #### E2E-5.3: Calendar Sync with Rolling Window
 
@@ -1099,7 +1099,7 @@ prefixes.
 | 2 | — | Home Node goes down | test harness | Node unreachable |
 | 3 | Don Alonso | Reads cached data on phone | Phone (local) | Data accessible from local cache |
 | 4 | Don Alonso | Searches locally | Phone (local FTS5) | Local FTS5 search returns cached results |
-| 5 | — | Phone captures WhatsApp messages while offline | Phone (local) | Messages stored locally |
+| 5 | — | Phone captures Telegram messages while offline | Phone (local) | Messages stored locally |
 | 6 | — | Home Node comes back online | test harness | Phone reconnects via WS |
 | 7 | — | Phone uploads locally-created items | Phone → Don Alonso's Core | `POST` locally-queued items to Home Node |
 | 8 | — | Home Node acknowledges | Don Alonso's Core → Phone | Sync complete |
@@ -1496,7 +1496,7 @@ jobs:
 | Dead man's switch trigger flow | Suite 9 | E2E-9.1 |
 | Reputation publish→relay→query | Suite 12 | E2E-12.1 |
 | Outbox retry with exponential backoff | Suite 10 | E2E-10.4 |
-| WhatsApp push (Android→Core) | Suite 5 | E2E-5.2 |
+| Telegram ingestion (Bot API→Core) | Suite 5 | E2E-5.2 |
 | Client sync (checkpoint + delta) | Suite 11 | E2E-11.2 |
 | Brain crash recovery (scratchpad) | Suite 10 | E2E-10.1 |
 | Sharing policy egress enforcement | Suite 2 | E2E-2.2 |

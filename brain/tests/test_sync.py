@@ -403,7 +403,7 @@ async def test_sync_5_2_24_llm_triage_batch_size_max_50(mock_sync_engine) -> Non
 async def test_sync_5_2_25_normalizer_standard_schema(mock_sync_engine) -> None:
     """SS5.2.25: Normalizer: all connectors produce standard schema — {source, source_id, type, ...}."""
     pytest.skip("Ingestion pipeline not yet implemented")
-    # Gmail email + Calendar event + WhatsApp message all normalized to common structure.
+    # Gmail email + Calendar event + Telegram message all normalized to common structure.
 
 
 # TST-BRAIN-181
@@ -666,7 +666,7 @@ async def test_sync_5_6_4_dead_reference_accepted(mock_sync_engine) -> None:
 # TST-BRAIN-206
 @pytest.mark.asyncio
 async def test_sync_5_6_5_voice_memo_exception(mock_sync_engine) -> None:
-    """SS5.6.5: Voice memo exception — WhatsApp voice note (<1MB) transcript stored, audio in media/."""
+    """SS5.6.5: Voice memo exception — Telegram voice message (<1MB) transcript stored, audio in media/."""
     pytest.skip("Attachment handling not yet implemented")
     # Transcript stored in vault, audio optionally in media/ directory — NOT inside SQLite.
 
