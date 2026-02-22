@@ -1,8 +1,10 @@
-# Stage 1: Build
-FROM golang:1.23-alpine AS builder
+# Stage 1: Build with CGO (SQLCipher only)
+FROM golang:1.23-bookworm AS builder
 
-# Install build dependencies (CGO needed for SQLCipher in the future).
-RUN apk add --no-cache git ca-certificates
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libsqlcipher-dev \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 
@@ -13,22 +15,25 @@ RUN go mod download
 # Copy source code.
 COPY . .
 
-# Build the binary.
-# CGO_ENABLED=0 for now (pure Go); will change when SQLCipher is added.
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+# Build with CGO enabled for SQLCipher.
+RUN CGO_ENABLED=1 go build \
     -ldflags="-s -w" \
     -o /dina-core \
     ./cmd/dina-core/
 
-# Stage 2: Runtime
-FROM alpine:3.21
+# Stage 2: Minimal runtime (no compiler, no headers)
+FROM debian:bookworm-slim
 
 # Security: run as non-root user.
-RUN addgroup -g 10001 dina && \
-    adduser -u 10001 -G dina -s /bin/sh -D dina
+RUN groupadd -g 10001 dina && \
+    useradd -u 10001 -g dina -s /bin/sh -M dina
 
-# Install runtime dependencies.
-RUN apk add --no-cache ca-certificates
+# Install only runtime shared libraries (no -dev packages).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libsqlcipher0 \
+    ca-certificates \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create data directories with correct ownership.
 RUN mkdir -p /data/vault /data/spool /data/config && \

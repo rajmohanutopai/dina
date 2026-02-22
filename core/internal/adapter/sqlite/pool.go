@@ -1,0 +1,169 @@
+//go:build cgo
+
+// Package sqlite provides SQLCipher-encrypted database access for dina-core.
+//
+// Each persona has its own SQLCipher database file, keyed with a per-persona
+// DEK derived from the master seed. The identity database uses its own DEK.
+//
+// Usage:
+//
+//	pool := sqlite.NewPool("/data/vault")
+//	err := pool.Open("personal", dek)  // opens personal.sqlite with DEK
+//	db := pool.DB("personal")          // returns *sql.DB
+//	pool.Close("personal")             // zeroes DEK, closes connection
+package sqlite
+
+import (
+	"context"
+	"database/sql"
+	_ "embed"
+	"encoding/hex"
+	"fmt"
+	"path/filepath"
+	"sync"
+
+	_ "github.com/mutecomm/go-sqlcipher/v4"
+)
+
+//go:embed schema/identity_001.sql
+var identitySchema string
+
+//go:embed schema/persona_001.sql
+var personaSchema string
+
+// Pool manages a set of SQLCipher database connections, one per persona.
+type Pool struct {
+	mu   sync.RWMutex
+	dir  string
+	dbs  map[string]*sql.DB
+	deks map[string][]byte // personaID -> DEK (zeroed on close)
+}
+
+// NewPool returns a new connection pool rooted at dir.
+func NewPool(dir string) *Pool {
+	return &Pool{
+		dir:  dir,
+		dbs:  make(map[string]*sql.DB),
+		deks: make(map[string][]byte),
+	}
+}
+
+// Open opens (or creates) a SQLCipher database for the given persona.
+// The DEK is used as the PRAGMA key. Schema is applied on first open.
+func (p *Pool) Open(persona string, dek []byte) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if _, ok := p.dbs[persona]; ok {
+		return nil // already open
+	}
+
+	dbPath := filepath.Join(p.dir, persona+".sqlite")
+	keyHex := hex.EncodeToString(dek)
+
+	// SQLCipher DSN: pragma_key via URI parameter.
+	dsn := fmt.Sprintf("file:%s?_pragma_key=x'%s'&_pragma_cipher_page_size=4096&_journal_mode=WAL&_busy_timeout=5000",
+		dbPath, keyHex)
+
+	db, err := sql.Open("sqlite3", dsn)
+	if err != nil {
+		return fmt.Errorf("sqlite: open %q: %w", persona, err)
+	}
+
+	// Verify we can actually query (catches wrong-key errors).
+	if err := db.PingContext(context.Background()); err != nil {
+		db.Close()
+		return fmt.Errorf("sqlite: ping %q: %w", persona, err)
+	}
+
+	// Apply schema. identity gets identity schema, everything else gets persona schema.
+	schema := personaSchema
+	if persona == "identity" {
+		schema = identitySchema
+	}
+	if _, err := db.ExecContext(context.Background(), schema); err != nil {
+		db.Close()
+		return fmt.Errorf("sqlite: schema %q: %w", persona, err)
+	}
+
+	// Store DEK copy for potential re-key operations.
+	dekCopy := make([]byte, len(dek))
+	copy(dekCopy, dek)
+
+	p.dbs[persona] = db
+	p.deks[persona] = dekCopy
+	return nil
+}
+
+// DB returns the *sql.DB for a persona. Returns nil if not open.
+func (p *Pool) DB(persona string) *sql.DB {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.dbs[persona]
+}
+
+// IsOpen reports whether a persona database is currently open.
+func (p *Pool) IsOpen(persona string) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	_, ok := p.dbs[persona]
+	return ok
+}
+
+// Close closes the database for a persona and zeroes the DEK from memory.
+func (p *Pool) Close(persona string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	db, ok := p.dbs[persona]
+	if !ok {
+		return nil
+	}
+
+	err := db.Close()
+
+	// Zero the DEK.
+	if dek, ok := p.deks[persona]; ok {
+		for i := range dek {
+			dek[i] = 0
+		}
+		delete(p.deks, persona)
+	}
+
+	delete(p.dbs, persona)
+	return err
+}
+
+// CloseAll closes all open databases and zeroes all DEKs.
+func (p *Pool) CloseAll() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	var firstErr error
+	for persona, db := range p.dbs {
+		if err := db.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		if dek, ok := p.deks[persona]; ok {
+			for i := range dek {
+				dek[i] = 0
+			}
+		}
+	}
+
+	p.dbs = make(map[string]*sql.DB)
+	p.deks = make(map[string][]byte)
+	return firstErr
+}
+
+// OpenPersonas returns the list of currently open persona names.
+func (p *Pool) OpenPersonas() []string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	names := make([]string, 0, len(p.dbs))
+	for name := range p.dbs {
+		names = append(names, name)
+	}
+	return names
+}
