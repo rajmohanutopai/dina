@@ -235,6 +235,12 @@ core/dina-core
 *.swo
 *~
 
+# macOS
+.DS_Store
+
+# Go test binaries
+*.test
+
 # Scratch / personal notes
 issues.txt
 marketing.txt
