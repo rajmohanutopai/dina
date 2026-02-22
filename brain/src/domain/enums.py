@@ -68,3 +68,18 @@ class TaskType(Enum):
 
     PROCESS = "process"
     REASON = "reason"
+
+
+class Sensitivity(str, Enum):
+    """Content sensitivity level controlling PII scrub intensity.
+
+    GENERAL    = Tier 1 only (regex patterns — emails, phones, IDs).
+    ELEVATED   = Tier 1 + Tier 2 (Presidio NER — names, orgs, locations).
+    SENSITIVE  = Full pipeline (all tiers, strictest scrubbing).
+    LOCAL_ONLY = Never leaves device — cloud send refused outright.
+    """
+
+    GENERAL = "general"
+    ELEVATED = "elevated"
+    SENSITIVE = "sensitive"
+    LOCAL_ONLY = "local_only"

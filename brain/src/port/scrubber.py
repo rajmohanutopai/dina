@@ -4,8 +4,8 @@ Matches Brain TEST_PLAN SS3 (PII Scrubber) and the contracts in
 ``brain/tests/contracts.py::PIIScrubber`` / ``EntityVault``.
 
 INVARIANT: PII scrubbing is ALWAYS local (Go regex Tier 1 + Python
-spaCy Tier 2).  It NEVER routes unscrubbed text to a cloud LLM.
-This is a hard security gate, not a preference (Architecture SS11).
+Presidio/spaCy Tier 2).  It NEVER routes unscrubbed text to a cloud
+LLM.  This is a hard security gate, not a preference (Architecture SS11).
 """
 
 from __future__ import annotations
@@ -15,15 +15,18 @@ from typing import Protocol, runtime_checkable
 
 @runtime_checkable
 class PIIScrubber(Protocol):
-    """Combined Tier 1 (regex) + Tier 2 (spaCy NER) PII scrubbing.
+    """Combined Tier 1 (regex) + Tier 2 (Presidio NER) PII scrubbing.
 
     Tier 1 runs first (via core's ``POST /v1/pii/scrub``), replacing
     emails, phones, SSNs, and credit-card numbers with deterministic
     tokens (``[EMAIL_1]``, ``[PHONE_1]``, ...).
 
-    Tier 2 then processes the already-tokenised text through spaCy
-    ``en_core_web_sm`` to catch named entities (PERSON, ORG, LOC, DATE,
-    MEDICAL) that regex cannot detect.
+    Tier 2 then processes the already-tokenised text through Presidio
+    (wrapping spaCy ``en_core_web_sm``) to catch named entities
+    (PERSON, ORG, LOC) that regex cannot detect.
+
+    SAFE entities (DATE, TIME, MONEY, PERCENT, NORP, etc.) are never
+    scrubbed — they are essential for LLM reasoning.
 
     Both tiers share a single replacement map so tokens are globally
     unique and sequentially numbered per type.
@@ -44,6 +47,14 @@ class PIIScrubber(Protocol):
 
         Returns:
             List of entity dicts with ``type`` and ``value`` keys.
+        """
+        ...
+
+    def rehydrate(self, text: str, entity_map: list[dict]) -> str:
+        """Replace tokens in *text* with original values from entity_map.
+
+        Returns:
+            Text with tokens replaced by originals.
         """
         ...
 

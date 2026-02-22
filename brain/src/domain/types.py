@@ -12,6 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from .enums import Sensitivity
+
 
 # ---------------------------------------------------------------------------
 # Vault & Search
@@ -123,6 +125,29 @@ class ScrubResult:
     scrubbed: str
     entities: list[dict[str, str]]
     replacement_map: dict[str, str]
+
+
+# ---------------------------------------------------------------------------
+# Domain Classification
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Classification:
+    """Result of domain sensitivity classification.
+
+    Attributes:
+        sensitivity: The determined sensitivity level.
+        domain:      Content domain — "health", "financial", "legal",
+                     "social", "general".
+        reason:      Human-readable reason for audit log.
+        confidence:  Classifier confidence 0.0–1.0.
+    """
+
+    sensitivity: Sensitivity
+    domain: str
+    reason: str
+    confidence: float
 
 
 # ---------------------------------------------------------------------------

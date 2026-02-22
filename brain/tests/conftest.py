@@ -101,12 +101,26 @@ def mock_pii_scrubber() -> MagicMock:
 
 @pytest.fixture
 def pii_scrubber(mock_pii_scrubber):
-    """Real SpacyScrubber if spacy is installed, else mock."""
+    """Real PresidioScrubber if presidio is installed, else SpacyScrubber, else mock."""
     try:
-        from src.adapter.scrubber_spacy import SpacyScrubber
-        return SpacyScrubber()
+        from src.adapter.scrubber_presidio import PresidioScrubber
+        return PresidioScrubber()
     except (ImportError, OSError):
-        return mock_pii_scrubber
+        try:
+            from src.adapter.scrubber_spacy import SpacyScrubber
+            return SpacyScrubber()
+        except (ImportError, OSError):
+            return mock_pii_scrubber
+
+
+@pytest.fixture
+def domain_classifier():
+    """DomainClassifier for sensitivity classification tests."""
+    try:
+        from src.service.domain_classifier import DomainClassifier
+        return DomainClassifier()
+    except ImportError:
+        pytest.skip("DomainClassifier not importable")
 
 
 # ---------- LLM Router ----------

@@ -1,10 +1,10 @@
 """Ephemeral PII scrubbing for cloud LLM calls — the Entity Vault pattern.
 
 The Entity Vault is an in-memory dict that maps anonymisation tokens
-(``[PERSON_1]``, ``[ORG_1]``, etc.) back to their original values.
+(``<PERSON_1>``, ``<ORG_1>``, etc.) back to their original values.
 It exists for exactly one request:
 
-    1. Build the vault from Tier 1 (Go regex) + Tier 2 (spaCy NER) results.
+    1. Build the vault from Tier 1 (Go regex) + Tier 2 (Presidio NER) results.
     2. Send the scrubbed text to the cloud LLM.
     3. Rehydrate the LLM's response by replacing tokens with originals.
     4. Discard the vault.
@@ -31,6 +31,7 @@ from typing import Any
 
 import structlog
 
+from ..domain.enums import Sensitivity
 from ..domain.errors import PIIScrubError
 from ..port.core_client import CoreClient
 from ..port.scrubber import PIIScrubber
@@ -44,19 +45,24 @@ class EntityVaultService:
     Parameters
     ----------
     scrubber:
-        Tier 2 (spaCy NER) PII scrubber — implements ``scrub(text)``
+        Tier 2 (Presidio NER) PII scrubber — implements ``scrub(text)``
         returning ``(scrubbed_text, entities)``.
     core_client:
         Used for Tier 1 (Go regex) scrubbing via ``POST /v1/pii/scrub``.
+    classifier:
+        Optional domain classifier controlling scrub intensity.
+        When not provided, defaults to full scrubbing (ELEVATED).
     """
 
     def __init__(
         self,
         scrubber: PIIScrubber,
         core_client: CoreClient,
+        classifier: Any = None,
     ) -> None:
         self._scrubber = scrubber
         self._core = core_client
+        self._classifier = classifier
 
     # ------------------------------------------------------------------
     # Public API
@@ -66,25 +72,48 @@ class EntityVaultService:
         self,
         llm: Any,  # LLMProvider protocol — kept as Any to avoid circular
         messages: list[dict],
+        persona: str | None = None,
+        vault_context: dict[str, Any] | None = None,
     ) -> str:
-        """Full Entity Vault flow: scrub -> call cloud LLM -> rehydrate.
+        """Full Entity Vault flow: classify -> scrub -> call cloud LLM -> rehydrate.
 
         Steps
         -----
-        1. **Tier 1** — regex scrub via core (``POST core/v1/pii/scrub``).
-        2. **Tier 2** — spaCy NER scrub (local, in-process).
-        3. Build ``entity_map`` from both tiers' detected entities.
-        4. Call cloud LLM with fully scrubbed messages.
-        5. Rehydrate LLM response: ``[PERSON_1]`` -> ``Dr. Sharma``.
-        6. Discard entity map (ephemeral — never persisted, never logged).
-        7. Return the rehydrated response text.
+        1. **Classify** — determine sensitivity via domain classifier.
+        2. **Tier 1** — regex scrub via core (``POST core/v1/pii/scrub``).
+        3. **Tier 2** — Presidio NER scrub (local, in-process).
+        4. Build ``entity_map`` from both tiers' detected entities.
+        5. Call cloud LLM with fully scrubbed messages.
+        6. Rehydrate LLM response: ``<PERSON_1>`` -> ``Dr. Sharma``.
+        7. Discard entity map (ephemeral — never persisted, never logged).
+        8. Return the rehydrated response text.
 
         Raises
         ------
         PIIScrubError
-            If either scrubbing tier fails.  The caller MUST NOT fall
-            through to a cloud send with unscrubbed data.
+            If either scrubbing tier fails or sensitivity is LOCAL_ONLY.
         """
+        # Determine sensitivity level.
+        sensitivity = Sensitivity.ELEVATED  # default
+        if self._classifier is not None:
+            first_text = ""
+            for msg in messages:
+                if msg.get("content"):
+                    first_text = msg["content"]
+                    break
+            classification = self._classifier.classify(
+                first_text,
+                persona=persona,
+                vault_context=vault_context,
+            )
+            sensitivity = classification.sensitivity
+
+        # LOCAL_ONLY: refuse cloud send.
+        if sensitivity == Sensitivity.LOCAL_ONLY:
+            raise PIIScrubError(
+                "Content classified as LOCAL_ONLY — cloud send refused"
+            )
+
         # Collect entities across both tiers for all messages.
         all_entities: list[dict] = []
         scrubbed_messages: list[dict] = []
@@ -96,7 +125,9 @@ class EntityVaultService:
                 continue
 
             try:
-                scrubbed_text, entities = await self._two_tier_scrub(text)
+                scrubbed_text, entities = await self._two_tier_scrub(
+                    text, sensitivity,
+                )
             except Exception as exc:
                 log.error(
                     "entity_vault.scrub_failed",
@@ -194,12 +225,20 @@ class EntityVaultService:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    async def _two_tier_scrub(self, text: str) -> tuple[str, list[dict]]:
-        """Run Tier 1 (core regex) then Tier 2 (spaCy NER) in sequence.
+    async def _two_tier_scrub(
+        self,
+        text: str,
+        sensitivity: Sensitivity = Sensitivity.ELEVATED,
+    ) -> tuple[str, list[dict]]:
+        """Run Tier 1 (core regex) then Tier 2 (Presidio NER) in sequence.
 
-        Tier 1 runs first so that spaCy sees tokens (``[EMAIL_1]``)
+        Tier 1 runs first so that Presidio sees tokens (``[EMAIL_1]``)
         rather than raw PII, avoiding duplicate detection and keeping
         the entity numbering consistent.
+
+        For GENERAL sensitivity, only pattern-based scrubbing is used
+        (``scrub_patterns_only``).  For ELEVATED/SENSITIVE, full NER
+        scrubbing is applied.
 
         Returns
         -------
@@ -214,9 +253,17 @@ class EntityVaultService:
         tier1_entities = tier1_result.get("entities", [])
         combined_entities.extend(tier1_entities)
 
-        # -- Tier 2: spaCy NER scrub (local, in-process) --
-        # Feed Tier 1 output to Tier 2 so spaCy sees tokens, not raw PII.
-        tier2_scrubbed, tier2_entities = self._scrubber.scrub(tier1_scrubbed)
+        # -- Tier 2: Presidio NER scrub (local, in-process) --
+        # Feed Tier 1 output to Tier 2 so Presidio sees tokens, not raw PII.
+        if sensitivity == Sensitivity.GENERAL:
+            # GENERAL: pattern-only (emails, phones, IDs — not names).
+            scrub_fn = getattr(
+                self._scrubber, "scrub_patterns_only", self._scrubber.scrub,
+            )
+            tier2_scrubbed, tier2_entities = scrub_fn(tier1_scrubbed)
+        else:
+            # ELEVATED / SENSITIVE: full NER scrubbing.
+            tier2_scrubbed, tier2_entities = self._scrubber.scrub(tier1_scrubbed)
         combined_entities.extend(tier2_entities)
 
         return tier2_scrubbed, combined_entities
