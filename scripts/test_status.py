@@ -272,9 +272,9 @@ SUITES = {
         "parser": "pytest",
         "test_dir": "tests/integration",
         "manifest": "tests/integration_manifest.json",
-        # All integration tests currently use mocks (tests/integration/mocks.py),
-        # not real implementations.  Treat PASS as SKIP until real services exist.
-        "mock_pass_is_skip": True,
+        # When DINA_INTEGRATION=docker, tests hit real services — PASS is real.
+        # Otherwise tests use mocks — treat PASS as SKIP.
+        "mock_pass_is_skip": os.environ.get("DINA_INTEGRATION") != "docker",
     },
 }
 

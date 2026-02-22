@@ -191,7 +191,7 @@ func main() {
 	taskH := &handler.TaskHandler{Task: taskSvc}
 	_ = deviceSvc // Device routes deferred to pairing phase.
 
-	personaH := &handler.PersonaHandler{Identity: identitySvc, Personas: personaMgr}
+	personaH := &handler.PersonaHandler{Identity: identitySvc, Personas: personaMgr, VaultManager: vaultMgr}
 	contactH := &handler.ContactHandler{Contacts: contactDir, Sharing: sharingMgr}
 	piiH := &handler.PIIHandler{Scrubber: scrubber}
 	notifyH := &handler.NotifyHandler{Notifier: notifier}

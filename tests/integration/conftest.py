@@ -1,8 +1,21 @@
-"""Shared pytest fixtures for Dina integration tests."""
+"""Shared pytest fixtures for Dina integration tests.
+
+Dual-mode: set DINA_INTEGRATION=docker to use real HTTP clients against
+Docker containers (docker-compose.test.yml). Without it, uses mocks.
+"""
 
 from __future__ import annotations
 
+import os
+
+import httpx
 import pytest
+
+# ---------------------------------------------------------------------------
+# Docker mode detection
+# ---------------------------------------------------------------------------
+
+DOCKER_MODE = os.environ.get("DINA_INTEGRATION") == "docker"
 
 from tests.integration.mocks import (
     DIDDocument,
@@ -81,6 +94,100 @@ from tests.integration.mocks import (
     TrustRing,
 )
 
+if DOCKER_MODE:
+    from tests.integration.docker_services import DockerServices
+    from tests.integration.real_clients import (
+        RealAdminAPI,
+        RealBrainTokenAuth,
+        RealDockerCompose,
+        RealGoCore,
+        RealPairingManager,
+        RealPythonBrain,
+        RealVault,
+        RealWebSocketClient,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Docker services (session-scoped)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def docker_services():
+    """Start Docker containers for integration testing.
+
+    Only active when DINA_INTEGRATION=docker. Session-scoped so containers
+    are started once and shared across all tests.
+    """
+    if not DOCKER_MODE:
+        yield None
+        return
+
+    svc = DockerServices()
+    svc.start()
+    yield svc
+    svc.stop()
+
+
+# ---------------------------------------------------------------------------
+# Docker persona initialization (session-scoped)
+# ---------------------------------------------------------------------------
+
+_ALL_PERSONAS = ["personal", "consumer", "professional", "social",
+                 "health", "financial", "citizen"]
+
+
+@pytest.fixture(scope="session", autouse=True)
+def docker_persona_setup(docker_services):
+    """Create and unlock personas on real Go Core once per session.
+
+    Also purges any stale integration_test items from prior runs.
+    """
+    if not DOCKER_MODE:
+        return
+    headers = {"Authorization": f"Bearer {docker_services.brain_token}"}
+    base = docker_services.core_url
+    for name in _ALL_PERSONAS:
+        httpx.post(
+            f"{base}/v1/personas",
+            json={"name": name, "tier": "open"},
+            headers=headers, timeout=10,
+        )
+        httpx.post(
+            f"{base}/v1/persona/unlock",
+            json={"persona": name, "passphrase": "test"},
+            headers=headers, timeout=10,
+        )
+
+
+
+# ---------------------------------------------------------------------------
+# Per-test vault cleanup
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def docker_vault_cleanup(docker_services):
+    """Track created vault items and delete them after each test.
+
+    Each entry is a (item_id, persona_name) tuple so items stored in
+    non-personal personas are cleaned up correctly.
+    """
+    if not DOCKER_MODE:
+        yield []
+        return
+    created_items: list[tuple[str, str]] = []
+    yield created_items
+    headers = {"Authorization": f"Bearer {docker_services.brain_token}"}
+    for item_id, persona_name in created_items:
+        try:
+            httpx.delete(
+                f"{docker_services.core_url}/v1/vault/item/{item_id}",
+                params={"persona": persona_name},
+                headers=headers, timeout=5,
+            )
+        except Exception:
+            pass
+
 
 # ---------------------------------------------------------------------------
 # Core actors
@@ -97,7 +204,12 @@ def mock_identity() -> MockIdentity:
 
 
 @pytest.fixture
-def mock_vault() -> MockVault:
+def mock_vault(docker_services, docker_vault_cleanup) -> MockVault:
+    if DOCKER_MODE:
+        return RealVault(
+            docker_services.core_url, docker_services.brain_token,
+            docker_vault_cleanup,
+        )
     return MockVault()
 
 
@@ -222,7 +334,11 @@ def mock_scrubber() -> MockPIIScrubber:
 
 @pytest.fixture
 def mock_go_core(mock_vault: MockVault, mock_identity: MockIdentity,
-                 mock_scrubber: MockPIIScrubber) -> MockGoCore:
+                 mock_scrubber: MockPIIScrubber, docker_services) -> MockGoCore:
+    if DOCKER_MODE:
+        return RealGoCore(
+            docker_services.core_url, docker_services.brain_token, mock_vault,
+        )
     return MockGoCore(mock_vault, mock_identity, mock_scrubber)
 
 
@@ -251,7 +367,13 @@ def mock_cloud_llm_router() -> MockLLMRouter:
 @pytest.fixture
 def mock_brain(mock_classifier: MockSilenceClassifier,
                mock_whisper: MockWhisperAssembler,
-               mock_llm_router: MockLLMRouter) -> MockPythonBrain:
+               mock_llm_router: MockLLMRouter,
+               docker_services) -> MockPythonBrain:
+    if DOCKER_MODE:
+        return RealPythonBrain(
+            docker_services.brain_url, docker_services.brain_token,
+            mock_classifier, mock_whisper, mock_llm_router,
+        )
     return MockPythonBrain(mock_classifier, mock_whisper, mock_llm_router)
 
 
@@ -482,24 +604,40 @@ def sample_sharing_rules(
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def mock_brain_token_auth() -> MockBrainTokenAuth:
+def mock_brain_token_auth(docker_services) -> MockBrainTokenAuth:
+    if DOCKER_MODE:
+        return RealBrainTokenAuth(
+            docker_services.core_url, docker_services.brain_token,
+        )
     return MockBrainTokenAuth()
 
 
 @pytest.fixture
-def mock_ws_server() -> MockWebSocketServer:
+def mock_ws_server(docker_services) -> MockWebSocketServer:
+    if DOCKER_MODE:
+        return RealWebSocketClient(
+            docker_services.core_url, docker_services.brain_token,
+        )
     return MockWebSocketServer()
 
 
 @pytest.fixture
 def mock_admin_api(
-    mock_identity: MockIdentity, mock_vault: MockVault
+    mock_identity: MockIdentity, mock_vault: MockVault, docker_services,
 ) -> MockAdminAPI:
+    if DOCKER_MODE:
+        return RealAdminAPI(
+            docker_services.brain_url, docker_services.brain_token,
+        )
     return MockAdminAPI(mock_identity, mock_vault)
 
 
 @pytest.fixture
-def mock_pairing_manager() -> MockPairingManager:
+def mock_pairing_manager(docker_services) -> MockPairingManager:
+    if DOCKER_MODE:
+        return RealPairingManager(
+            docker_services.core_url, docker_services.brain_token,
+        )
     return MockPairingManager()
 
 
@@ -515,7 +653,9 @@ def mock_onboarding(
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def mock_compose() -> MockDockerCompose:
+def mock_compose(docker_services) -> MockDockerCompose:
+    if DOCKER_MODE:
+        return RealDockerCompose(docker_services)
     return MockDockerCompose()
 
 

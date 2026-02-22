@@ -570,7 +570,11 @@ func (pm *PersonaManager) Unlock(_ context.Context, personaID, passphrase string
 
 	p, ok := pm.personas[personaID]
 	if !ok {
-		return ErrPersonaNotFound
+		// Create stores as "persona-{name}", but callers may pass just the name.
+		p, ok = pm.personas["persona-"+personaID]
+		if !ok {
+			return ErrPersonaNotFound
+		}
 	}
 
 	// Validate passphrase — for now, accept any non-empty passphrase.

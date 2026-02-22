@@ -1,0 +1,68 @@
+# Dina Home Node — Integration Test Compose
+# Isolated ports (18100/18200) to avoid conflicts with dev stack.
+#
+# Usage:
+#   ./install.sh
+#   docker compose -f docker-compose.test.yml up --build -d
+#   DINA_INTEGRATION=docker pytest tests/integration/ -v
+#   docker compose -f docker-compose.test.yml down -v
+
+services:
+  core:
+    build:
+      context: ./core
+      dockerfile: Dockerfile
+    ports:
+      - "18100:8100"
+    volumes:
+      - dina-test-data:/data
+    environment:
+      - DINA_VAULT_PATH=/data/vault
+      - DINA_BRAIN_URL=http://brain:8200
+      - DINA_BRAIN_TOKEN_FILE=/run/secrets/brain_token
+      - DINA_LISTEN_ADDR=:8100
+      - DINA_RATE_LIMIT=100000
+      - DINA_SPOOL_MAX=10485760
+      - DINA_LOG_LEVEL=debug
+    secrets:
+      - brain_token
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8100/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
+
+  brain:
+    build:
+      context: ./brain
+      dockerfile: Dockerfile
+    ports:
+      - "18200:8200"
+    volumes:
+      - dina-test-data:/data
+    environment:
+      - DINA_CORE_URL=http://core:8100
+      - DINA_BRAIN_TOKEN_FILE=/run/secrets/brain_token
+      - DINA_BRAIN_PORT=8200
+      - DINA_LLM_URL=http://localhost:9999
+      - DINA_LOG_LEVEL=DEBUG
+      - DINA_CLOUD_LLM=
+      - GOOGLE_API_KEY=
+      - ANTHROPIC_API_KEY=
+    secrets:
+      - brain_token
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; from urllib.request import urlopen; r = urlopen('http://localhost:8200/healthz', timeout=2); sys.exit(0 if r.status == 200 else 1)"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 5s
+
+volumes:
+  dina-test-data:
+    driver: local
+
+secrets:
+  brain_token:
+    file: ./secrets/brain_token

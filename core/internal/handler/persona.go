@@ -1,17 +1,20 @@
 package handler
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"net/http"
 
+	"github.com/anthropics/dina/core/internal/domain"
 	"github.com/anthropics/dina/core/internal/port"
 	"github.com/anthropics/dina/core/internal/service"
 )
 
 // PersonaHandler serves the /v1/personas endpoints.
 type PersonaHandler struct {
-	Identity *service.IdentityService
-	Personas port.PersonaManager
+	Identity     *service.IdentityService
+	Personas     port.PersonaManager
+	VaultManager port.VaultManager // opens vault when persona is unlocked
 }
 
 // createPersonaRequest is the JSON body for POST /v1/personas.
@@ -97,6 +100,17 @@ func (h *PersonaHandler) HandleUnlockPersona(w http.ResponseWriter, r *http.Requ
 	if err := h.Personas.Unlock(r.Context(), req.Persona, req.Passphrase, defaultTTL); err != nil {
 		http.Error(w, `{"error":"failed to unlock persona"}`, http.StatusInternalServerError)
 		return
+	}
+
+	// Open the corresponding vault so store/query operations work.
+	if h.VaultManager != nil {
+		persona, _ := domain.NewPersonaName(req.Persona)
+		// Derive a deterministic DEK from the passphrase.
+		dek := sha256.Sum256([]byte("dina-dek:" + req.Passphrase + ":" + req.Persona))
+		if err := h.VaultManager.Open(r.Context(), persona, dek[:]); err != nil {
+			http.Error(w, `{"error":"failed to open vault"}`, http.StatusInternalServerError)
+			return
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

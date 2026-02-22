@@ -1,6 +1,6 @@
 # Dina — build, test, run targets
 
-.PHONY: build test lint run docker-up docker-down clean check-tests
+.PHONY: build test lint run docker-up docker-down clean check-tests test-integration
 
 # --- Build ---
 build:
@@ -32,6 +32,15 @@ docker-down:
 
 docker-dev:
 	docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+
+# --- Integration Tests (Docker) ---
+test-integration:
+	./install.sh
+	docker compose -f docker-compose.test.yml up --build -d
+	DINA_INTEGRATION=docker python -m pytest tests/integration/ -v --tb=short; \
+	EXIT_CODE=$$?; \
+	docker compose -f docker-compose.test.yml down -v; \
+	exit $$EXIT_CODE
 
 # --- Test Traceability ---
 check-tests:
