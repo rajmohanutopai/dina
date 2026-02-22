@@ -9,6 +9,8 @@ SS3.4 India-specific recognizers (7 scenarios)
 SS3.5 Domain classifier (5 scenarios)
 SS3.6 Safe entity whitelist (4 scenarios)
 SS3.7 Entity Vault + classifier integration (3 scenarios)
+SS3.8 EU-specific recognizers (6 scenarios)
+SS3.9 Faker synthetic data replacement (6 scenarios)
 
 Presidio-dependent tests use ``pytest.importorskip("presidio_analyzer")`` so
 they are cleanly skipped if Presidio is not installed.  Entity Vault tests use
@@ -657,7 +659,8 @@ def test_pii_3_2_8_circular_dependency_invariant() -> None:
 
 
 @pytest.mark.asyncio
-async def test_entity_vault_scrub_and_call(entity_vault, mock_scrubber, mock_core) -> None:
+# TST-BRAIN-423
+async def test_pii_3_3_12_scrub_and_call_integration(entity_vault, mock_scrubber, mock_core) -> None:
     """Full scrub_and_call flow: Tier1 -> Tier2 -> cloud LLM -> rehydrate."""
     mock_scrubber.scrub.return_value = (
         "What did <PERSON_1> say about blood sugar at <ORG_1>?",
@@ -691,8 +694,8 @@ async def test_entity_vault_scrub_and_call(entity_vault, mock_scrubber, mock_cor
 # ---------------------------------------------------------------------------
 
 
-# TST-BRAIN-121
-def test_india_aadhaar_detection(presidio_scrubber) -> None:
+# TST-BRAIN-424
+def test_pii_3_4_1_india_aadhaar(presidio_scrubber) -> None:
     """SS3.4.1: Aadhaar number detected and replaced with <AADHAAR_NUMBER_1>."""
     text = "My aadhaar number is 2345 6789 0123"
 
@@ -703,8 +706,8 @@ def test_india_aadhaar_detection(presidio_scrubber) -> None:
     assert "2345 6789 0123" not in scrubbed
 
 
-# TST-BRAIN-122
-def test_india_pan_detection(presidio_scrubber) -> None:
+# TST-BRAIN-425
+def test_pii_3_4_2_india_pan(presidio_scrubber) -> None:
     """SS3.4.2: PAN number detected and replaced with <IN_PAN_1>."""
     text = "PAN: ABCDE1234F"
 
@@ -715,8 +718,8 @@ def test_india_pan_detection(presidio_scrubber) -> None:
     assert "ABCDE1234F" not in scrubbed
 
 
-# TST-BRAIN-123
-def test_india_ifsc_detection(presidio_scrubber) -> None:
+# TST-BRAIN-426
+def test_pii_3_4_3_india_ifsc(presidio_scrubber) -> None:
     """SS3.4.3: IFSC code detected and replaced."""
     text = "Bank IFSC code: SBIN0001234"
 
@@ -727,8 +730,8 @@ def test_india_ifsc_detection(presidio_scrubber) -> None:
     assert "SBIN0001234" not in scrubbed
 
 
-# TST-BRAIN-124
-def test_india_upi_detection(presidio_scrubber) -> None:
+# TST-BRAIN-427
+def test_pii_3_4_4_india_upi(presidio_scrubber) -> None:
     """SS3.4.4: UPI ID detected and replaced."""
     text = "Pay me at user@okicici"
 
@@ -739,8 +742,8 @@ def test_india_upi_detection(presidio_scrubber) -> None:
     assert "user@okicici" not in scrubbed
 
 
-# TST-BRAIN-125
-def test_india_phone_detection(presidio_scrubber) -> None:
+# TST-BRAIN-428
+def test_pii_3_4_5_india_phone(presidio_scrubber) -> None:
     """SS3.4.5: Indian phone number with +91 detected."""
     text = "Call me at +91 9876543210"
 
@@ -751,8 +754,8 @@ def test_india_phone_detection(presidio_scrubber) -> None:
     assert "9876543210" not in scrubbed
 
 
-# TST-BRAIN-126
-def test_india_passport_detection(presidio_scrubber) -> None:
+# TST-BRAIN-429
+def test_pii_3_4_6_india_passport(presidio_scrubber) -> None:
     """SS3.4.6: Indian passport detected with context words."""
     text = "My passport number is A1234567"
 
@@ -763,8 +766,8 @@ def test_india_passport_detection(presidio_scrubber) -> None:
     assert "A1234567" not in scrubbed
 
 
-# TST-BRAIN-127
-def test_india_bank_account_detection(presidio_scrubber) -> None:
+# TST-BRAIN-430
+def test_pii_3_4_7_india_bank_account(presidio_scrubber) -> None:
     """SS3.4.7: Indian bank account number detected with context."""
     text = "Account number: 123456789012345"
 
@@ -785,8 +788,8 @@ def test_india_bank_account_detection(presidio_scrubber) -> None:
 # ---------------------------------------------------------------------------
 
 
-# TST-BRAIN-128
-def test_classifier_persona_override() -> None:
+# TST-BRAIN-431
+def test_pii_3_5_1_classifier_persona() -> None:
     """SS3.5.1: /health persona forces SENSITIVE classification."""
     from src.service.domain_classifier import DomainClassifier
     from src.domain.enums import Sensitivity
@@ -798,8 +801,8 @@ def test_classifier_persona_override() -> None:
     assert result.confidence >= 0.9
 
 
-# TST-BRAIN-129
-def test_classifier_health_keywords() -> None:
+# TST-BRAIN-432
+def test_pii_3_5_2_classifier_health() -> None:
     """SS3.5.2: Health keywords trigger SENSITIVE classification."""
     from src.service.domain_classifier import DomainClassifier
     from src.domain.enums import Sensitivity
@@ -811,8 +814,8 @@ def test_classifier_health_keywords() -> None:
     assert result.domain == "health"
 
 
-# TST-BRAIN-130
-def test_classifier_financial_keywords() -> None:
+# TST-BRAIN-433
+def test_pii_3_5_3_classifier_financial() -> None:
     """SS3.5.3: Financial keywords trigger ELEVATED or SENSITIVE classification."""
     from src.service.domain_classifier import DomainClassifier
     from src.domain.enums import Sensitivity
@@ -824,8 +827,8 @@ def test_classifier_financial_keywords() -> None:
     assert result.domain == "financial"
 
 
-# TST-BRAIN-131
-def test_classifier_social_casual() -> None:
+# TST-BRAIN-434
+def test_pii_3_5_4_classifier_social() -> None:
     """SS3.5.4: Casual social text defaults to GENERAL."""
     from src.service.domain_classifier import DomainClassifier
     from src.domain.enums import Sensitivity
@@ -836,8 +839,8 @@ def test_classifier_social_casual() -> None:
     assert result.sensitivity == Sensitivity.GENERAL
 
 
-# TST-BRAIN-132
-def test_classifier_mixed_signals() -> None:
+# TST-BRAIN-435
+def test_pii_3_5_5_classifier_mixed() -> None:
     """SS3.5.5: Mixed health and financial signals — highest sensitivity wins."""
     from src.service.domain_classifier import DomainClassifier
     from src.domain.enums import Sensitivity
@@ -855,8 +858,8 @@ def test_classifier_mixed_signals() -> None:
 # ---------------------------------------------------------------------------
 
 
-# TST-BRAIN-133
-def test_safe_entities_date_passthrough(presidio_scrubber) -> None:
+# TST-BRAIN-436
+def test_pii_3_6_1_safe_date(presidio_scrubber) -> None:
     """SS3.6.1: Dates pass through unchanged — DATE is in SAFE whitelist."""
     text = "The meeting is on January 15, 2026"
 
@@ -867,8 +870,8 @@ def test_safe_entities_date_passthrough(presidio_scrubber) -> None:
     assert "January 15, 2026" in scrubbed
 
 
-# TST-BRAIN-134
-def test_safe_entities_money_passthrough(presidio_scrubber) -> None:
+# TST-BRAIN-437
+def test_pii_3_6_2_safe_money(presidio_scrubber) -> None:
     """SS3.6.2: Money amounts pass through unchanged."""
     text = "The total cost is $50,000"
 
@@ -879,8 +882,8 @@ def test_safe_entities_money_passthrough(presidio_scrubber) -> None:
     assert "$50,000" in scrubbed
 
 
-# TST-BRAIN-135
-def test_safe_entities_norp_passthrough(presidio_scrubber) -> None:
+# TST-BRAIN-438
+def test_pii_3_6_3_safe_norp(presidio_scrubber) -> None:
     """SS3.6.3: Nationalities/groups pass through unchanged."""
     text = "The American delegation arrived"
 
@@ -891,8 +894,8 @@ def test_safe_entities_norp_passthrough(presidio_scrubber) -> None:
     assert "American" in scrubbed
 
 
-# TST-BRAIN-136
-def test_safe_entities_time_passthrough(presidio_scrubber) -> None:
+# TST-BRAIN-439
+def test_pii_3_6_4_safe_time(presidio_scrubber) -> None:
     """SS3.6.4: Time values pass through unchanged."""
     text = "The event starts at 3:30 PM"
 
@@ -908,8 +911,8 @@ def test_safe_entities_time_passthrough(presidio_scrubber) -> None:
 # ---------------------------------------------------------------------------
 
 
-# TST-BRAIN-137
-def test_vault_general_patterns_only() -> None:
+# TST-BRAIN-440
+def test_pii_3_7_1_vault_general_patterns() -> None:
     """SS3.7.1: GENERAL sensitivity uses patterns-only scrubbing (names not scrubbed)."""
     from src.service.entity_vault import EntityVaultService
 
@@ -950,8 +953,8 @@ def test_vault_general_patterns_only() -> None:
     mock_scrubber.scrub.assert_not_called()
 
 
-# TST-BRAIN-138
-def test_vault_sensitive_full_scrub() -> None:
+# TST-BRAIN-441
+def test_pii_3_7_2_vault_sensitive_scrub() -> None:
     """SS3.7.2: SENSITIVE sensitivity uses full NER scrubbing."""
     from src.service.entity_vault import EntityVaultService
     from src.domain.enums import Sensitivity
@@ -990,8 +993,8 @@ def test_vault_sensitive_full_scrub() -> None:
     mock_scrubber.scrub_patterns_only.assert_not_called()
 
 
-# TST-BRAIN-139
-def test_vault_local_only_refuses_cloud() -> None:
+# TST-BRAIN-442
+def test_pii_3_7_3_vault_local_only() -> None:
     """SS3.7.3: LOCAL_ONLY sensitivity raises PIIScrubError — cloud send refused."""
     from src.service.entity_vault import EntityVaultService
     from src.domain.enums import Sensitivity
@@ -1026,8 +1029,8 @@ def test_vault_local_only_refuses_cloud() -> None:
     mock_llm.complete.assert_not_awaited()
 
 
-# TST-BRAIN-140
-def test_presidio_rehydrate_handles_hallucinated_tags(presidio_scrubber) -> None:
+# TST-BRAIN-443
+def test_pii_3_7_4_rehydrate_hallucinated(presidio_scrubber) -> None:
     """SS3.7.4: Rehydrate handles hallucinated tags — tokens not in map left as-is."""
     entity_map = [
         {"type": "PERSON", "value": "Dr. Sharma", "token": "<PERSON_1>"},
@@ -1046,8 +1049,8 @@ def test_presidio_rehydrate_handles_hallucinated_tags(presidio_scrubber) -> None
 # ---------------------------------------------------------------------------
 
 
-# TST-BRAIN-141
-def test_eu_german_steuer_id(presidio_scrubber) -> None:
+# TST-BRAIN-444
+def test_pii_3_8_1_eu_steuer_id(presidio_scrubber) -> None:
     """SS3.8.1: German Steuer-ID detected with context."""
     text = "Meine Steueridentifikationsnummer lautet 12345678901"
 
@@ -1063,8 +1066,8 @@ def test_eu_german_steuer_id(presidio_scrubber) -> None:
     assert "12345678901" not in scrubbed
 
 
-# TST-BRAIN-142
-def test_eu_german_personalausweis(presidio_scrubber) -> None:
+# TST-BRAIN-445
+def test_pii_3_8_2_eu_personalausweis(presidio_scrubber) -> None:
     """SS3.8.2: German Personalausweis number detected with context."""
     text = "My Personalausweis number is LM3456789X"
 
@@ -1075,8 +1078,8 @@ def test_eu_german_personalausweis(presidio_scrubber) -> None:
     assert "LM3456789X" not in scrubbed
 
 
-# TST-BRAIN-143
-def test_eu_french_nir(presidio_scrubber) -> None:
+# TST-BRAIN-446
+def test_pii_3_8_3_eu_french_nir(presidio_scrubber) -> None:
     """SS3.8.3: French NIR (social security) detected."""
     text = "Numero de securite sociale: 185076900100542"
 
@@ -1087,8 +1090,8 @@ def test_eu_french_nir(presidio_scrubber) -> None:
     assert "185076900100542" not in scrubbed
 
 
-# TST-BRAIN-144
-def test_eu_french_nif(presidio_scrubber) -> None:
+# TST-BRAIN-447
+def test_pii_3_8_4_eu_french_nif(presidio_scrubber) -> None:
     """SS3.8.4: French NIF (tax ID) detected with context."""
     text = "Mon numero fiscal est 0123456789012"
 
@@ -1099,8 +1102,8 @@ def test_eu_french_nif(presidio_scrubber) -> None:
     assert "0123456789012" not in scrubbed
 
 
-# TST-BRAIN-145
-def test_eu_dutch_bsn(presidio_scrubber) -> None:
+# TST-BRAIN-448
+def test_pii_3_8_5_eu_dutch_bsn(presidio_scrubber) -> None:
     """SS3.8.5: Dutch BSN detected with context."""
     text = "Mijn BSN is 123456789"
 
@@ -1111,8 +1114,8 @@ def test_eu_dutch_bsn(presidio_scrubber) -> None:
     assert "123456789" not in scrubbed
 
 
-# TST-BRAIN-146
-def test_eu_swift_bic(presidio_scrubber) -> None:
+# TST-BRAIN-449
+def test_pii_3_8_6_eu_swift_bic(presidio_scrubber) -> None:
     """SS3.8.6: SWIFT/BIC code detected with context."""
     text = "Wire transfer via SWIFT code DEUTDEFF500"
 
@@ -1128,8 +1131,8 @@ def test_eu_swift_bic(presidio_scrubber) -> None:
 # ---------------------------------------------------------------------------
 
 
-# TST-BRAIN-147
-def test_faker_person_is_natural_language(presidio_scrubber) -> None:
+# TST-BRAIN-450
+def test_pii_3_9_1_faker_natural_language(presidio_scrubber) -> None:
     """SS3.9.1: Person names replaced with realistic Faker names, not tags."""
     faker = pytest.importorskip("faker")
     text = "Dr. Sharma at Apollo Hospital"
@@ -1148,8 +1151,8 @@ def test_faker_person_is_natural_language(presidio_scrubber) -> None:
     assert len(fake_name) > 3, f"Fake name too short: {fake_name}"
 
 
-# TST-BRAIN-148
-def test_faker_consistency_within_request(presidio_scrubber) -> None:
+# TST-BRAIN-451
+def test_pii_3_9_2_faker_consistency(presidio_scrubber) -> None:
     """SS3.9.2: Same real value maps to same fake within one scrub() call."""
     faker = pytest.importorskip("faker")
     # Use sentence structure where both occurrences produce identical spans.
@@ -1164,8 +1167,8 @@ def test_faker_consistency_within_request(presidio_scrubber) -> None:
         assert same_value[0]["token"] == same_value[1]["token"]
 
 
-# TST-BRAIN-149
-def test_faker_different_entities_get_different_fakes(presidio_scrubber) -> None:
+# TST-BRAIN-452
+def test_pii_3_9_3_faker_different(presidio_scrubber) -> None:
     """SS3.9.3: Different real values get different fakes."""
     faker = pytest.importorskip("faker")
     text = "John Smith met Jane Doe at Google and Meta"
@@ -1177,8 +1180,8 @@ def test_faker_different_entities_get_different_fakes(presidio_scrubber) -> None
         assert person_entities[0]["token"] != person_entities[1]["token"]
 
 
-# TST-BRAIN-150
-def test_faker_rehydrate_round_trip(presidio_scrubber) -> None:
+# TST-BRAIN-453
+def test_pii_3_9_4_faker_rehydrate_roundtrip(presidio_scrubber) -> None:
     """SS3.9.4: Full round-trip: scrub with fakes -> rehydrate -> original."""
     faker = pytest.importorskip("faker")
     text = "Dr. Sharma at Apollo Hospital said your A1C is 11.2"
@@ -1197,8 +1200,8 @@ def test_faker_rehydrate_round_trip(presidio_scrubber) -> None:
         )
 
 
-# TST-BRAIN-151
-def test_faker_fallback_to_tags_when_unavailable() -> None:
+# TST-BRAIN-454
+def test_pii_3_9_5_faker_fallback_tags() -> None:
     """SS3.9.5: When Faker is disabled, falls back to <TYPE_N> tags."""
     pytest.importorskip("presidio_analyzer")
     from src.adapter.scrubber_presidio import PresidioScrubber
@@ -1219,8 +1222,8 @@ def test_faker_fallback_to_tags_when_unavailable() -> None:
         assert person_entities[0]["token"].endswith(">")
 
 
-# TST-BRAIN-152
-def test_faker_org_replacement(presidio_scrubber) -> None:
+# TST-BRAIN-455
+def test_pii_3_9_6_faker_org(presidio_scrubber) -> None:
     """SS3.9.6: Organizations replaced with Faker company names."""
     faker = pytest.importorskip("faker")
     text = "She works at Google Inc."

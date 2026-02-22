@@ -564,7 +564,8 @@ def test_llm_4_1_16_hybrid_search_dedup() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_available_models_returns_all(llm_router) -> None:
+# TST-BRAIN-462
+def test_llm_4_3_1_available_models(llm_router) -> None:
     """available_models() returns identifiers for all registered providers."""
     models = llm_router.available_models()
     assert "llama-local" in models
@@ -572,8 +573,9 @@ def test_available_models_returns_all(llm_router) -> None:
     assert len(models) == 2
 
 
+# TST-BRAIN-463
 @pytest.mark.asyncio
-async def test_no_providers_raises_llm_error() -> None:
+async def test_llm_4_3_2_no_providers_error() -> None:
     """LLMRouter with no providers raises LLMError on route."""
     from src.domain.errors import LLMError
     from src.service.llm_router import LLMRouter

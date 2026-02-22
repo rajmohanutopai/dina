@@ -351,7 +351,8 @@ def test_core_client_7_2_6_dead_letter_notification() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_core_client_constructor_rejects_empty_url() -> None:
+# TST-BRAIN-458
+def test_core_client_7_3_1_rejects_empty_url() -> None:
     """CoreHTTPClient rejects empty base_url at construction."""
     from src.adapter.core_http import CoreHTTPClient
     from src.domain.errors import ConfigError
@@ -360,7 +361,8 @@ def test_core_client_constructor_rejects_empty_url() -> None:
         CoreHTTPClient("", "token")
 
 
-def test_core_client_constructor_rejects_empty_token() -> None:
+# TST-BRAIN-459
+def test_core_client_7_3_2_rejects_empty_token() -> None:
     """CoreHTTPClient rejects empty brain_token at construction."""
     from src.adapter.core_http import CoreHTTPClient
     from src.domain.errors import ConfigError
@@ -369,8 +371,9 @@ def test_core_client_constructor_rejects_empty_token() -> None:
         CoreHTTPClient("http://core:8100", "")
 
 
+# TST-BRAIN-460
 @pytest.mark.asyncio
-async def test_core_client_context_manager(core_client) -> None:
+async def test_core_client_7_3_3_context_manager(core_client) -> None:
     """CoreHTTPClient supports async context manager for lifecycle."""
     async with core_client as client:
         # Client should be usable inside the context.
@@ -379,8 +382,9 @@ async def test_core_client_context_manager(core_client) -> None:
     assert core_client._client is None
 
 
+# TST-BRAIN-461
 @pytest.mark.asyncio
-async def test_core_client_pii_scrub(core_client) -> None:
+async def test_core_client_7_3_4_pii_scrub(core_client) -> None:
     """POST /v1/pii/scrub sends text and returns scrub result."""
     scrub_result = {
         "scrubbed": "[EMAIL_1] sent a message",

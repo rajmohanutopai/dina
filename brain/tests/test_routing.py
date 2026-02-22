@@ -220,8 +220,9 @@ async def test_routing_8_3_3_unknown_agent_default_reputation() -> None:
 # ---------------------------------------------------------------------------
 
 
+# TST-BRAIN-465
 @pytest.mark.asyncio
-async def test_routing_complex_task_prefers_cloud(llm_router, cloud_provider) -> None:
+async def test_routing_8_1_5_complex_prefers_cloud(llm_router, cloud_provider) -> None:
     """Complex reasoning tasks prefer cloud for capability."""
     result = await llm_router.route(
         task_type="complex_reasoning",
@@ -232,8 +233,9 @@ async def test_routing_complex_task_prefers_cloud(llm_router, cloud_provider) ->
     cloud_provider.complete.assert_awaited()
 
 
+# TST-BRAIN-466
 @pytest.mark.asyncio
-async def test_routing_fts_only_no_llm(llm_router) -> None:
+async def test_routing_8_1_6_fts_only_no_llm(llm_router) -> None:
     """FTS-only lookups bypass the LLM entirely."""
     result = await llm_router.route(
         task_type="fts_lookup",

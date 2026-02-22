@@ -214,7 +214,8 @@ def test_resilience_11_8_sharing_policy_invalid_did() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_error_hierarchy() -> None:
+# TST-BRAIN-464
+def test_resilience_11_9_error_hierarchy() -> None:
     """All brain errors inherit from DinaError."""
     errors = [
         PersonaLockedError("locked"),

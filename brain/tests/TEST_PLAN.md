@@ -260,6 +260,87 @@
 | 9 | **[TST-BRAIN-118]** Entity vault with local LLM | Using llama.cpp (on-device) | Entity vault skipped — PII stays local, no scrubbing needed for local LLM |
 | 10 | **[TST-BRAIN-119]** Scope: one request-response cycle | Two concurrent cloud LLM calls | Each has independent Entity Vault — no cross-contamination |
 | 11 | **[TST-BRAIN-120]** Cloud LLM sees topics, not identities | Health query via Entity Vault | Cloud sees: health topics (blood sugar, A1C) + `[PERSON_1]`, `[ORG_1]` — cannot identify who the patient is |
+| 12 | **[TST-BRAIN-423]** Full scrub_and_call integration | PII text → Tier1 → Tier2 → LLM → rehydrate | End-to-end: scrubbed text sent to LLM, response rehydrated with original PII |
+
+### 3.4 India-Specific PII Recognizers
+
+> Custom Presidio `PatternRecognizer` objects for Indian identity documents.
+> Aadhaar, PAN, IFSC, UPI, phone (+91), passport, bank account.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-424]** Aadhaar number detection | "My aadhaar number is 2345 6789 0123" | Aadhaar detected, number scrubbed |
+| 2 | **[TST-BRAIN-425]** PAN number detection | "PAN: ABCDE1234F" | IN_PAN detected, number scrubbed |
+| 3 | **[TST-BRAIN-426]** IFSC code detection | "Bank IFSC code: SBIN0001234" | IN_IFSC detected, code scrubbed |
+| 4 | **[TST-BRAIN-427]** UPI ID detection | "Pay me at user@okicici" | IN_UPI_ID detected, ID scrubbed |
+| 5 | **[TST-BRAIN-428]** Indian phone number detection | "Call me at +91 9876543210" | IN_PHONE detected, number scrubbed |
+| 6 | **[TST-BRAIN-429]** Indian passport detection | "My passport number is A1234567" | IN_PASSPORT detected with context |
+| 7 | **[TST-BRAIN-430]** Indian bank account detection | "Account number: 123456789012345" | IN_BANK_ACCOUNT or US_BANK_NUMBER detected |
+
+### 3.5 Domain Classifier
+
+> 4-layer sensitivity classifier: persona override → keyword signals → vault context → LLM fallback.
+> Controls scrubbing intensity: GENERAL (regex only), ELEVATED/SENSITIVE (full NER), LOCAL_ONLY (refuse cloud).
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-431]** Persona override: /health → SENSITIVE | "What time is my appointment?", persona="health" | sensitivity=SENSITIVE, confidence ≥ 0.9 |
+| 2 | **[TST-BRAIN-432]** Health keywords → SENSITIVE | "My blood sugar level was 180 after the lab result" | sensitivity=SENSITIVE, domain="health" |
+| 3 | **[TST-BRAIN-433]** Financial keywords → ELEVATED/SENSITIVE | "Send money to my bank account for the loan payment" | sensitivity=ELEVATED or SENSITIVE, domain="financial" |
+| 4 | **[TST-BRAIN-434]** Social casual → GENERAL | "What's the weather like today?" | sensitivity=GENERAL |
+| 5 | **[TST-BRAIN-435]** Mixed signals → highest wins | "My insurance premium went up after the diagnosis" | sensitivity=ELEVATED or SENSITIVE (highest wins) |
+
+### 3.6 Safe Entity Whitelist
+
+> DATE, TIME, MONEY, PERCENT, NORP, and other non-identifying entities are NEVER scrubbed.
+> These are essential for LLM reasoning and don't identify anyone.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-436]** Date passthrough | "The meeting is on January 15, 2026" | Date passes through unchanged — in SAFE whitelist |
+| 2 | **[TST-BRAIN-437]** Money passthrough | "The total cost is $50,000" | Money amount passes through unchanged |
+| 3 | **[TST-BRAIN-438]** NORP passthrough | "The American delegation arrived" | Nationality passes through unchanged |
+| 4 | **[TST-BRAIN-439]** Time passthrough | "The event starts at 3:30 PM" | Time value passes through unchanged |
+
+### 3.7 Entity Vault + Classifier Integration
+
+> Wires domain classifier into Entity Vault — sensitivity controls scrub intensity.
+> GENERAL: patterns-only (names not scrubbed). SENSITIVE: full NER. LOCAL_ONLY: cloud refused.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-440]** GENERAL → patterns-only scrub | classifier=GENERAL, "Hello John" | `scrub_patterns_only()` called, NOT full `scrub()` |
+| 2 | **[TST-BRAIN-441]** SENSITIVE → full NER scrub | classifier=SENSITIVE, "My diagnosis is severe" | Full `scrub()` called, NOT `scrub_patterns_only()` |
+| 3 | **[TST-BRAIN-442]** LOCAL_ONLY → cloud refused | classifier=LOCAL_ONLY, "Top secret data" | PIIScrubError raised, LLM never called |
+| 4 | **[TST-BRAIN-443]** Rehydrate handles hallucinated tags | Entity map has `<PERSON_1>`, LLM output has `<PERSON_2>` | `<PERSON_1>` replaced, `<PERSON_2>` left as-is |
+
+### 3.8 EU-Specific PII Recognizers
+
+> Custom Presidio recognizers for German, French, Dutch identity documents + SWIFT/BIC.
+> Pattern-based with context words for confidence boosting.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-444]** German Steuer-ID | "Steueridentifikationsnummer: 12345678901" | DE_STEUER_ID or PHONE detected, number scrubbed |
+| 2 | **[TST-BRAIN-445]** German Personalausweis | "Personalausweis number is LM3456789X" | DE_PERSONALAUSWEIS detected, number scrubbed |
+| 3 | **[TST-BRAIN-446]** French NIR (social security) | "Numero de securite sociale: 185076900100542" | FR_NIR detected, number scrubbed |
+| 4 | **[TST-BRAIN-447]** French NIF (tax ID) | "Mon numero fiscal est 0123456789012" | FR_NIF detected, number scrubbed |
+| 5 | **[TST-BRAIN-448]** Dutch BSN | "Mijn BSN is 123456789" | NL_BSN detected, number scrubbed |
+| 6 | **[TST-BRAIN-449]** SWIFT/BIC code | "Wire transfer via SWIFT code DEUTDEFF500" | SWIFT_BIC detected, code scrubbed |
+
+### 3.9 Faker Synthetic Data Replacement
+
+> PII replaced with realistic Faker-generated values instead of `<TYPE_N>` tags.
+> Better LLM reasoning with natural language. Per-call consistency via seen dict.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-450]** Person name → natural language | "Dr. Sharma at Apollo Hospital" | Real name gone, replaced with Faker name (not `<PERSON_1>` tag) |
+| 2 | **[TST-BRAIN-451]** Consistency within request | "John Smith went out. Later John Smith came back." | Both occurrences get same fake name |
+| 3 | **[TST-BRAIN-452]** Different entities → different fakes | "John Smith met Jane Doe at Google and Meta" | Each unique entity gets unique fake |
+| 4 | **[TST-BRAIN-453]** Faker rehydrate round-trip | "Dr. Sharma at Apollo Hospital said your A1C is 11.2" | scrub → rehydrate restores original values |
+| 5 | **[TST-BRAIN-454]** Faker unavailable → fallback to tags | `PresidioScrubber(use_faker=False)` | Falls back to `<TYPE_N>` tag format |
+| 6 | **[TST-BRAIN-455]** Organization replacement | "She works at Google Inc." | Real org gone, replaced with Faker company name |
 
 ---
 
@@ -301,6 +382,13 @@
 | 5 | **[TST-BRAIN-137]** Malformed LLM response | LLM returns invalid JSON | Parsed gracefully, retry or error |
 | 6 | **[TST-BRAIN-138]** Rate limiting | Too many requests to cloud provider | Backoff and retry |
 | 7 | **[TST-BRAIN-139]** Cost tracking | Cloud LLM call | Token count and estimated cost logged |
+
+### 4.3 LLM Router Utilities
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-462]** `available_models()` returns all | LLMRouter with registered providers | Returns identifiers for all registered providers |
+| 2 | **[TST-BRAIN-463]** No providers → LLMError | Empty LLMRouter, route request | Raises LLMError — no providers registered |
 
 ---
 
@@ -545,6 +633,15 @@
 | 5 | **[TST-BRAIN-269]** Invalid response JSON | Core returns malformed body | Parse error caught, logged |
 | 6 | **[TST-BRAIN-407]** Dead letter notification | Task fails 3x → `status = 'dead'` | Brain receives Tier 2 notification: "Brain failed to process an event 3 times. Check crash logs." — dead letter handling |
 
+### 7.3 Core Client Construction & Lifecycle
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-458]** Constructor rejects empty URL | `CoreHTTPClient(base_url="")` | ConfigError raised at construction |
+| 2 | **[TST-BRAIN-459]** Constructor rejects empty token | `CoreHTTPClient(token="")` | ConfigError raised at construction |
+| 3 | **[TST-BRAIN-460]** Async context manager | `async with client as c:` | Client usable inside context, closed after |
+| 4 | **[TST-BRAIN-461]** PII scrub endpoint | `POST /v1/pii/scrub` with text | Returns scrubbed text + entity list |
+
 ---
 
 ## 8. Admin UI
@@ -557,6 +654,8 @@
 | 2 | **[TST-BRAIN-271]** System status display | Core healthy, LLM available | Green indicators for all services |
 | 3 | **[TST-BRAIN-272]** Degraded status | LLM unreachable | Yellow indicator for LLM, others green |
 | 4 | **[TST-BRAIN-273]** Recent activity | Last 10 events | Displayed in reverse chronological order |
+| 5 | **[TST-BRAIN-465]** Complex task prefers cloud | Complex reasoning task type | Routes to cloud provider for capability |
+| 6 | **[TST-BRAIN-466]** FTS-only bypasses LLM | FTS lookup task type | No LLM call — direct FTS result |
 
 ### 8.2 Contact Management
 
@@ -592,6 +691,13 @@
 | 2 | **[TST-BRAIN-286]** CSRF on forms | Submit form without CSRF token | 403 |
 | 3 | **[TST-BRAIN-287]** SQL injection via search | Search field with `'; DROP TABLE--` | Safely parameterized, no injection |
 | 4 | **[TST-BRAIN-288]** Template injection | User input in Jinja2 template | Auto-escaped by Jinja2 |
+
+### 8.6 Admin Authentication Validation
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-456]** Wrong CLIENT_TOKEN rejected | Wrong token on `/admin/` | 403 Forbidden |
+| 2 | **[TST-BRAIN-457]** Missing Authorization rejected | No auth header on `/admin/` | 401 or 403 |
 
 ---
 
@@ -675,6 +781,7 @@
 | 6 | **[TST-BRAIN-307]** Concurrent request handling | 50 simultaneous requests | All handled by uvicorn worker pool |
 | 7 | **[TST-BRAIN-417]** Startup waits for core readiness | Brain starts before core is ready | Brain polls core `/readyz`, waits with backoff until core is healthy — Docker `depends_on: condition: service_healthy` |
 | 8 | **[TST-BRAIN-415]** Sharing policy: invalid contact DID | Brain applies PATCH to sharing policy for non-existent DID | Brain validates contact DID exists in contacts table before applying — returns clear error |
+| 9 | **[TST-BRAIN-464]** Error class hierarchy | Inspect all brain error classes | All brain errors inherit from DinaError |
 
 ---
 

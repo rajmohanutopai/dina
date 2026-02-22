@@ -355,13 +355,15 @@ async def test_admin_8_5_4_template_injection(client, auth_headers) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_admin_auth_wrong_token(client) -> None:
+# TST-BRAIN-456
+def test_admin_8_6_1_auth_wrong_token(client) -> None:
     """Admin rejects request with wrong CLIENT_TOKEN."""
     resp = client.get("/admin/", headers={"Authorization": "Bearer wrong-token"})
     assert resp.status_code == 403
 
 
-def test_admin_auth_no_token(client) -> None:
+# TST-BRAIN-457
+def test_admin_8_6_2_auth_no_token(client) -> None:
     """Admin rejects request without Authorization header."""
     resp = client.get("/admin/")
     assert resp.status_code in (401, 403)

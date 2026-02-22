@@ -2531,6 +2531,270 @@
       "row": 3,
       "scenario": "SSS custodian recovery coordination",
       "line": 790
+    },
+    "TST-BRAIN-423": {
+      "path": "3.3",
+      "row": 12,
+      "scenario": "Full scrub_and_call integration",
+      "line": 0
+    },
+    "TST-BRAIN-424": {
+      "path": "3.4",
+      "row": 1,
+      "scenario": "Aadhaar number detection",
+      "line": 0
+    },
+    "TST-BRAIN-425": {
+      "path": "3.4",
+      "row": 2,
+      "scenario": "PAN number detection",
+      "line": 0
+    },
+    "TST-BRAIN-426": {
+      "path": "3.4",
+      "row": 3,
+      "scenario": "IFSC code detection",
+      "line": 0
+    },
+    "TST-BRAIN-427": {
+      "path": "3.4",
+      "row": 4,
+      "scenario": "UPI ID detection",
+      "line": 0
+    },
+    "TST-BRAIN-428": {
+      "path": "3.4",
+      "row": 5,
+      "scenario": "Indian phone number detection",
+      "line": 0
+    },
+    "TST-BRAIN-429": {
+      "path": "3.4",
+      "row": 6,
+      "scenario": "Indian passport detection",
+      "line": 0
+    },
+    "TST-BRAIN-430": {
+      "path": "3.4",
+      "row": 7,
+      "scenario": "Indian bank account detection",
+      "line": 0
+    },
+    "TST-BRAIN-431": {
+      "path": "3.5",
+      "row": 1,
+      "scenario": "Persona override: /health → SENSITIVE",
+      "line": 0
+    },
+    "TST-BRAIN-432": {
+      "path": "3.5",
+      "row": 2,
+      "scenario": "Health keywords → SENSITIVE",
+      "line": 0
+    },
+    "TST-BRAIN-433": {
+      "path": "3.5",
+      "row": 3,
+      "scenario": "Financial keywords → ELEVATED/SENSITIVE",
+      "line": 0
+    },
+    "TST-BRAIN-434": {
+      "path": "3.5",
+      "row": 4,
+      "scenario": "Social casual → GENERAL",
+      "line": 0
+    },
+    "TST-BRAIN-435": {
+      "path": "3.5",
+      "row": 5,
+      "scenario": "Mixed signals → highest sensitivity wins",
+      "line": 0
+    },
+    "TST-BRAIN-436": {
+      "path": "3.6",
+      "row": 1,
+      "scenario": "Date passthrough (SAFE whitelist)",
+      "line": 0
+    },
+    "TST-BRAIN-437": {
+      "path": "3.6",
+      "row": 2,
+      "scenario": "Money passthrough (SAFE whitelist)",
+      "line": 0
+    },
+    "TST-BRAIN-438": {
+      "path": "3.6",
+      "row": 3,
+      "scenario": "NORP passthrough (SAFE whitelist)",
+      "line": 0
+    },
+    "TST-BRAIN-439": {
+      "path": "3.6",
+      "row": 4,
+      "scenario": "Time passthrough (SAFE whitelist)",
+      "line": 0
+    },
+    "TST-BRAIN-440": {
+      "path": "3.7",
+      "row": 1,
+      "scenario": "GENERAL → patterns-only scrub",
+      "line": 0
+    },
+    "TST-BRAIN-441": {
+      "path": "3.7",
+      "row": 2,
+      "scenario": "SENSITIVE → full NER scrub",
+      "line": 0
+    },
+    "TST-BRAIN-442": {
+      "path": "3.7",
+      "row": 3,
+      "scenario": "LOCAL_ONLY → cloud refused",
+      "line": 0
+    },
+    "TST-BRAIN-443": {
+      "path": "3.7",
+      "row": 4,
+      "scenario": "Rehydrate handles hallucinated tags",
+      "line": 0
+    },
+    "TST-BRAIN-444": {
+      "path": "3.8",
+      "row": 1,
+      "scenario": "German Steuer-ID detection",
+      "line": 0
+    },
+    "TST-BRAIN-445": {
+      "path": "3.8",
+      "row": 2,
+      "scenario": "German Personalausweis detection",
+      "line": 0
+    },
+    "TST-BRAIN-446": {
+      "path": "3.8",
+      "row": 3,
+      "scenario": "French NIR (social security) detection",
+      "line": 0
+    },
+    "TST-BRAIN-447": {
+      "path": "3.8",
+      "row": 4,
+      "scenario": "French NIF (tax ID) detection",
+      "line": 0
+    },
+    "TST-BRAIN-448": {
+      "path": "3.8",
+      "row": 5,
+      "scenario": "Dutch BSN detection",
+      "line": 0
+    },
+    "TST-BRAIN-449": {
+      "path": "3.8",
+      "row": 6,
+      "scenario": "SWIFT/BIC code detection",
+      "line": 0
+    },
+    "TST-BRAIN-450": {
+      "path": "3.9",
+      "row": 1,
+      "scenario": "Person name → natural language (Faker)",
+      "line": 0
+    },
+    "TST-BRAIN-451": {
+      "path": "3.9",
+      "row": 2,
+      "scenario": "Faker consistency within request",
+      "line": 0
+    },
+    "TST-BRAIN-452": {
+      "path": "3.9",
+      "row": 3,
+      "scenario": "Different entities → different fakes",
+      "line": 0
+    },
+    "TST-BRAIN-453": {
+      "path": "3.9",
+      "row": 4,
+      "scenario": "Faker rehydrate round-trip",
+      "line": 0
+    },
+    "TST-BRAIN-454": {
+      "path": "3.9",
+      "row": 5,
+      "scenario": "Faker fallback to tags when unavailable",
+      "line": 0
+    },
+    "TST-BRAIN-455": {
+      "path": "3.9",
+      "row": 6,
+      "scenario": "Organization replacement (Faker)",
+      "line": 0
+    },
+    "TST-BRAIN-456": {
+      "path": "8.6",
+      "row": 1,
+      "scenario": "Admin wrong CLIENT_TOKEN rejected",
+      "line": 0
+    },
+    "TST-BRAIN-457": {
+      "path": "8.6",
+      "row": 2,
+      "scenario": "Admin missing Authorization rejected",
+      "line": 0
+    },
+    "TST-BRAIN-458": {
+      "path": "7.3",
+      "row": 1,
+      "scenario": "Constructor rejects empty URL",
+      "line": 0
+    },
+    "TST-BRAIN-459": {
+      "path": "7.3",
+      "row": 2,
+      "scenario": "Constructor rejects empty token",
+      "line": 0
+    },
+    "TST-BRAIN-460": {
+      "path": "7.3",
+      "row": 3,
+      "scenario": "Async context manager lifecycle",
+      "line": 0
+    },
+    "TST-BRAIN-461": {
+      "path": "7.3",
+      "row": 4,
+      "scenario": "PII scrub endpoint",
+      "line": 0
+    },
+    "TST-BRAIN-462": {
+      "path": "4.3",
+      "row": 1,
+      "scenario": "available_models() returns all providers",
+      "line": 0
+    },
+    "TST-BRAIN-463": {
+      "path": "4.3",
+      "row": 2,
+      "scenario": "No providers → LLMError on route",
+      "line": 0
+    },
+    "TST-BRAIN-464": {
+      "path": "11",
+      "row": 9,
+      "scenario": "Error class hierarchy — all inherit DinaError",
+      "line": 0
+    },
+    "TST-BRAIN-465": {
+      "path": "8.1",
+      "row": 5,
+      "scenario": "Complex task prefers cloud provider",
+      "line": 0
+    },
+    "TST-BRAIN-466": {
+      "path": "8.1",
+      "row": 6,
+      "scenario": "FTS-only lookup bypasses LLM",
+      "line": 0
     }
   },
   "sections": {
