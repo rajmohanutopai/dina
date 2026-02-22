@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/anthropics/dina/core/test/testutil"
@@ -80,10 +81,10 @@ func TestSync_26_4_ThinClient_QueryViaWebSocket(t *testing.T) {
 func TestSync_26_5_BackupBlobStoreDestination(t *testing.T) {
 	// Backup scheduling to blob store, configurable frequency.
 	// This validates the sync manager's backup integration.
-	var impl testutil.BackupManager
+	impl := realBackupManager
 	testutil.RequireImplementation(t, impl, "BackupManager")
 
-	err := impl.Backup("personal", "/tmp/dina-backup-test")
+	err := impl.Backup(context.Background(), "personal", "/tmp/dina-backup-test")
 	testutil.RequireNoError(t, err)
 }
 

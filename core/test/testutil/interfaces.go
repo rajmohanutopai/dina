@@ -3,221 +3,29 @@
 // Tests use mock implementations initially; swap to real when code arrives.
 package testutil
 
-// ---------- §2 Key Derivation & Cryptography ----------
+import (
+	"context"
 
-// MnemonicGenerator — contract for BIP-39 mnemonic operations (§2.1).
-type MnemonicGenerator interface {
-	// Generate creates a new 24-word BIP-39 mnemonic and its derived seed.
-	Generate() (mnemonic string, seed []byte, err error)
-	// Validate checks a mnemonic for word count, wordlist membership, and checksum.
-	Validate(mnemonic string) error
-	// ToSeed converts a mnemonic + optional passphrase to a 512-bit seed (PBKDF2-HMAC-SHA512).
-	ToSeed(mnemonic string, passphrase string) ([]byte, error)
-}
-
-// KeyDeriver — contract for HKDF-SHA256 DEK derivation and Argon2id passphrase hashing (§2.3, §2.4).
-type KeyDeriver interface {
-	// DeriveVaultDEK derives a per-persona 256-bit DEK via HKDF-SHA256.
-	// info string format: "dina:vault:<persona>:v1", salt is user_salt.
-	DeriveVaultDEK(masterSeed []byte, personaID string, userSalt []byte) ([]byte, error)
-	// DerivePassphraseKEK hashes a passphrase via Argon2id (128MB/3iter/4parallel) to produce a KEK.
-	DerivePassphraseKEK(passphrase string, salt []byte) ([]byte, error)
-}
-
-// HDKeyDeriver — contract for SLIP-0010 Ed25519 hardened derivation (§2.2).
-type HDKeyDeriver interface {
-	// DerivePath derives an Ed25519 keypair from seed at the given SLIP-0010 path.
-	// Only hardened paths (e.g. m/9999'/0') are accepted.
-	DerivePath(seed []byte, path string) (pub, priv []byte, err error)
-}
-
-// Signer — contract for Ed25519 signing and verification (§2.5).
-type Signer interface {
-	// GenerateFromSeed creates an Ed25519 keypair from a 32-byte seed.
-	GenerateFromSeed(seed []byte) (pub, priv []byte, err error)
-	// Sign produces an Ed25519 signature.
-	Sign(privateKey, message []byte) ([]byte, error)
-	// Verify checks an Ed25519 signature.
-	Verify(publicKey, message, signature []byte) (bool, error)
-}
-
-// KeyConverter — contract for Ed25519→X25519 conversion (§2.6).
-type KeyConverter interface {
-	// Ed25519ToX25519Private converts an Ed25519 private key to X25519.
-	Ed25519ToX25519Private(ed25519Priv []byte) ([]byte, error)
-	// Ed25519ToX25519Public converts an Ed25519 public key to X25519.
-	Ed25519ToX25519Public(ed25519Pub []byte) ([]byte, error)
-}
-
-// BoxSealer — contract for NaCl crypto_box_seal (§2.7).
-type BoxSealer interface {
-	// Seal encrypts plaintext for the recipient's X25519 public key (anonymous sender).
-	Seal(plaintext, recipientPub []byte) ([]byte, error)
-	// Open decrypts a sealed message using the recipient's keypair.
-	Open(ciphertext, recipientPub, recipientPriv []byte) ([]byte, error)
-}
-
-// KeyWrapper — contract for AES-256-GCM key wrapping (§2.8).
-type KeyWrapper interface {
-	// Wrap encrypts a DEK with a KEK using AES-256-GCM.
-	Wrap(dek, kek []byte) ([]byte, error)
-	// Unwrap decrypts a wrapped DEK using the KEK.
-	Unwrap(wrapped, kek []byte) ([]byte, error)
-}
-
-// ---------- §3 Identity (DID) ----------
-
-// DIDManager — contract for DID document lifecycle (§3.1).
-type DIDManager interface {
-	// Create generates a new DID from an Ed25519 public key.
-	Create(publicKey []byte) (did string, err error)
-	// Resolve returns the DID Document as JSON.
-	Resolve(did string) ([]byte, error)
-	// Rotate updates the DID's signing key via a signed rotation operation.
-	Rotate(did string, oldPrivKey, newPubKey []byte) error
-}
-
-// PersonaManager — contract for persona CRUD and tier enforcement (§3.2, §3.3).
-type PersonaManager interface {
-	// Create creates a new persona with a name and tier (open/restricted/locked).
-	Create(name, tier string) (personaID string, err error)
-	// List returns all persona IDs.
-	List() ([]string, error)
-	// Unlock loads the persona's DEK into RAM for the given TTL (seconds).
-	Unlock(personaID, passphrase string, ttlSeconds int) error
-	// Lock zeroes the persona's DEK from RAM.
-	Lock(personaID string) error
-	// IsLocked reports whether the persona's DEK is currently in RAM.
-	IsLocked(personaID string) (bool, error)
-	// Delete securely wipes the persona's vault and keys.
-	Delete(personaID string) error
-}
-
-// ContactDirectory — contract for contact management (§3.4).
-type ContactDirectory interface {
-	// Add adds a contact with a DID, display name, and trust level.
-	Add(did, name, trustLevel string) error
-	// Resolve looks up a contact by display name and returns the DID.
-	Resolve(name string) (did string, err error)
-	// UpdateTrust changes a contact's trust level.
-	UpdateTrust(did, trustLevel string) error
-	// Delete removes a contact.
-	Delete(did string) error
-	// List returns all contacts.
-	List() ([]Contact, error)
-}
-
-// Contact holds contact directory data.
-type Contact struct {
-	DID           string
-	Name          string
-	Alias         string
-	TrustLevel    string // "blocked", "unknown", "trusted"
-	SharingPolicy string // JSON
-}
-
-// DeviceRegistry — contract for device management (§3.5).
-type DeviceRegistry interface {
-	// Register adds a device with its CLIENT_TOKEN hash.
-	Register(name string, tokenHash []byte) (deviceID string, err error)
-	// List returns all registered devices.
-	List() ([]Device, error)
-	// Revoke disables a device's CLIENT_TOKEN.
-	Revoke(deviceID string) error
-}
-
-// Device holds device registry data.
-type Device struct {
-	ID        string
-	Name      string
-	TokenHash []byte
-	Revoked   bool
-	LastSeen  int64
-}
-
-// RecoveryManager — contract for Shamir's Secret Sharing (§3.6).
-type RecoveryManager interface {
-	// Split divides a secret into N shares with threshold K.
-	Split(secret []byte, k, n int) ([][]byte, error)
-	// Combine reconstructs the secret from K shares.
-	Combine(shares [][]byte) ([]byte, error)
-}
+	"github.com/anthropics/dina/core/internal/domain"
+)
 
 // ---------- §4 Vault (SQLCipher) ----------
+//
+// VaultManager, ScratchpadManager, StagingManager, and VaultAuditLogger
+// are defined in port/ — use port.VaultManager, port.VaultReader, etc.
 
-// VaultManager — contract for per-persona SQLCipher vault (§4).
-type VaultManager interface {
-	// Open opens (or creates) a persona's vault with the given DEK.
-	Open(personaID string, dek []byte) error
-	// Close closes a persona's vault and zeroes the DEK.
-	Close(personaID string) error
-	// Store inserts or upserts an item. Returns the item ID.
-	Store(personaID string, item VaultItem) (string, error)
-	// StoreBatch atomically stores a batch of items.
-	StoreBatch(personaID string, items []VaultItem) error
-	// Retrieve fetches a single item by ID.
-	Retrieve(personaID, itemID string) (*VaultItem, error)
-	// Delete removes an item.
-	Delete(personaID, itemID string) error
-	// Search performs FTS5, semantic, or hybrid search.
-	Search(personaID string, query SearchQuery) ([]VaultItem, error)
-}
+// VaultItem is an alias for domain.VaultItem.
+type VaultItem = domain.VaultItem
 
-// VaultItem represents an item in the vault.
-type VaultItem struct {
-	ID         string
-	Type       string // email, message, event, note, photo
-	Source     string
-	SourceID   string
-	ContactDID string
-	Summary    string
-	BodyText   string
-	Timestamp  int64
-	IngestedAt int64
-	Metadata   string // JSON
-}
-
-// SearchQuery holds search parameters.
-type SearchQuery struct {
-	Mode           string // "fts5", "semantic", "hybrid"
-	Query          string
-	Embedding      []float32
-	Types          []string
-	After          int64
-	Before         int64
-	IncludeContent bool
-	Limit          int
-	Offset         int
-}
-
-// ScratchpadManager — contract for brain cognitive checkpointing (§4.4).
-type ScratchpadManager interface {
-	// Write stores a checkpoint for a task.
-	Write(taskID string, step int, context []byte) error
-	// Read retrieves the latest checkpoint for a task.
-	Read(taskID string) (step int, context []byte, err error)
-	// Delete removes a task's checkpoint.
-	Delete(taskID string) error
-}
-
-// StagingManager — contract for Tier 4 ephemeral staging (§4.5).
-type StagingManager interface {
-	// Stage stores an item for review with an expiry time.
-	Stage(personaID string, item VaultItem, expiresAt int64) (string, error)
-	// Approve promotes a staged item to the main vault.
-	Approve(personaID, stagingID string) error
-	// Reject deletes a staged item.
-	Reject(personaID, stagingID string) error
-	// Sweep deletes all expired staging items.
-	Sweep() (int, error)
-}
+// SearchQuery is an alias for domain.SearchQuery.
+type SearchQuery = domain.SearchQuery
 
 // BackupManager — contract for encrypted backup (§4.6).
 type BackupManager interface {
 	// Backup creates an encrypted backup of the persona's vault.
-	Backup(personaID, destPath string) error
+	Backup(ctx context.Context, personaID, destPath string) error
 	// Restore replaces the persona's vault with a backup.
-	Restore(personaID, srcPath string) error
+	Restore(ctx context.Context, personaID, srcPath string) error
 }
 
 // SchemaInspector — contract for inspecting vault schema details (§4.2.1, §4.2.2).
@@ -266,42 +74,14 @@ type MigrationSafety interface {
 	RollbackMigration(dbName, backupPath string) error
 }
 
-// VaultAuditLogger — contract for append-only audit log (§4.7).
-type VaultAuditLogger interface {
-	// Append adds an audit entry. Returns the entry ID.
-	Append(entry VaultAuditEntry) (int64, error)
-	// Query retrieves audit entries matching the given filter.
-	Query(filter VaultAuditFilter) ([]VaultAuditEntry, error)
-	// VerifyChain validates the hash chain integrity of the audit log.
-	VerifyChain() (bool, error)
-	// Purge deletes entries older than the configured retention period.
-	Purge(retentionDays int) (int64, error)
-	// PurgeCrashLog deletes crash_log entries older than the retention period.
-	PurgeCrashLog(retentionDays int) (int64, error)
-}
+// VaultAuditLogger is defined in port/ — use port.VaultAuditLogger.
+// PurgeCrashLog is an extra method on the concrete vault.AuditLogger type.
 
-// VaultAuditEntry represents a single audit log entry (§4.7).
-type VaultAuditEntry struct {
-	ID        int64
-	Timestamp string
-	Persona   string
-	Action    string
-	Requester string
-	QueryType string
-	Reason    string
-	Metadata  string // JSON
-	PrevHash  string // hash of previous entry for chain integrity
-}
+// VaultAuditEntry is an alias for domain.VaultAuditEntry.
+type VaultAuditEntry = domain.VaultAuditEntry
 
-// VaultAuditFilter holds query parameters for audit log searches.
-type VaultAuditFilter struct {
-	Action    string
-	Persona   string
-	After     string // ISO 8601 timestamp
-	Before    string // ISO 8601 timestamp
-	Requester string
-	Limit     int
-}
+// VaultAuditFilter is an alias for domain.VaultAuditFilter.
+type VaultAuditFilter = domain.VaultAuditFilter
 
 // BootSequencer — contract for boot sequence and vault unlock (§4.8).
 type BootSequencer interface {
@@ -321,106 +101,47 @@ type BootSequencer interface {
 	CurrentMode() string
 }
 
-// BootConfig holds configuration for the boot sequence.
-type BootConfig struct {
-	Mode            string // "security" or "convenience"
-	KeyfilePath     string
-	WrappedSeedPath string
-	VaultPath       string
-	Personas        []string // persona names to manage
-	Passphrase      string   // for security mode
-}
-
-// ---------- §5 PII Scrubber (Tier 1 — Go Regex) ----------
-
-// PIIEntity represents a detected PII occurrence.
-type PIIEntity struct {
-	Type  string // EMAIL, PHONE, SSN, CREDIT_CARD, ADDRESS
-	Value string
-	Start int
-	End   int
-}
-
-// PIIScrubber — contract for Tier 1 regex-based PII detection (§5).
-type PIIScrubber interface {
-	// Scrub replaces PII with numbered tokens and returns the scrubbed text + entities.
-	Scrub(text string) (scrubbed string, entities []PIIEntity, err error)
-	// AddPattern registers a custom PII pattern.
-	AddPattern(name, pattern string) error
-}
+// BootConfig is an alias for domain.BootConfig.
+type BootConfig = domain.BootConfig
 
 // ---------- §6 Gatekeeper ----------
 
-// Intent represents an agent's intended action.
-type Intent struct {
-	AgentDID    string
-	Action      string // e.g. "send_email", "read_vault", "transfer_money"
-	Target      string
-	PersonaID   string
-	TrustLevel  string
-	Constraints map[string]bool
-}
+// Intent is an alias for domain.Intent.
+type Intent = domain.Intent
 
-// Decision is the gatekeeper's response to an intent.
-type Decision struct {
-	Allowed bool
-	Reason  string
-	Audit   bool // whether an audit entry was created
-}
+// Decision is an alias for domain.Decision.
+type Decision = domain.Decision
 
-// Gatekeeper — contract for request authorization and egress control (§6).
-type Gatekeeper interface {
-	// EvaluateIntent decides whether an agent's action should proceed.
-	EvaluateIntent(intent Intent) (Decision, error)
-	// CheckEgress checks whether data may leave the Home Node to a destination.
-	CheckEgress(destination string, data []byte) (bool, error)
-}
+// Gatekeeper is defined in port/ — use port.Gatekeeper.
 
-// SharingPolicy holds per-category sharing tiers for a contact.
-type SharingPolicy struct {
-	ContactDID string
-	Categories map[string]string // category → tier: "none", "summary", "full" (or domain-specific like "eta_only", "free_busy", "exact_location")
-}
+// SharingTier is an alias for domain.SharingTier.
+type SharingTier = domain.SharingTier
 
-// TieredPayload holds the brain's tiered output for a single category.
-type TieredPayload struct {
-	Summary string
-	Full    string
-}
+// SharingPolicy is an alias for domain.SharingPolicy.
+type SharingPolicy = domain.SharingPolicy
 
-// EgressPayload is the brain's outbound data with tiered categories.
-type EgressPayload struct {
-	RecipientDID string
-	Categories   map[string]interface{} // category → TieredPayload or raw value
-}
+// TieredPayload is an alias for domain.TieredPayload.
+type TieredPayload = domain.TieredPayload
 
-// EgressResult is the filtered payload after policy enforcement.
-type EgressResult struct {
-	RecipientDID string
-	Filtered     map[string]string // category → selected tier value (or empty if denied)
-	Denied       []string          // categories that were denied
-	AuditEntries []AuditEntry
-}
+// EgressPayload is an alias for domain.EgressPayload.
+type EgressPayload = domain.EgressPayload
 
-// AuditEntry records an egress decision.
-type AuditEntry struct {
-	Action     string // "egress_check"
-	ContactDID string
-	Category   string
-	Decision   string // "allowed", "denied"
-	Reason     string // "tier_none", "tier_summary", "tier_full", "malformed"
-}
+// EgressResult is an alias for domain.EgressResult.
+type EgressResult = domain.EgressResult
+
+// AuditEntry is an alias for domain.AuditEntry.
+type AuditEntry = domain.AuditEntry
 
 // SharingPolicyManager — contract for sharing policy CRUD and egress filtering (§6.1, §6.2, §6.3).
 type SharingPolicyManager interface {
 	// GetPolicy returns the sharing policy for a contact DID.
-	GetPolicy(contactDID string) (*SharingPolicy, error)
+	GetPolicy(ctx context.Context, contactDID string) (*SharingPolicy, error)
 	// SetPolicy sets one or more category tiers for a contact.
-	SetPolicy(contactDID string, categories map[string]string) error
+	SetPolicy(ctx context.Context, contactDID string, categories map[string]SharingTier) error
 	// SetBulkPolicy applies a policy to contacts matching a filter.
-	SetBulkPolicy(filter map[string]string, categories map[string]string) (int, error)
+	SetBulkPolicy(ctx context.Context, filter map[string]string, categories map[string]SharingTier) (int, error)
 	// FilterEgress applies sharing policy to an outbound payload.
-	FilterEgress(payload EgressPayload) (*EgressResult, error)
+	FilterEgress(ctx context.Context, payload EgressPayload) (*EgressResult, error)
 }
 
 // ---------- §7 Transport ----------
@@ -435,30 +156,21 @@ type Transporter interface {
 	ResolveEndpoint(did string) (string, error)
 }
 
-// OutboxMessage represents a message in the outbox table (§7.1).
-type OutboxMessage struct {
-	ID        string
-	ToDID     string
-	Payload   []byte
-	CreatedAt int64
-	NextRetry int64
-	Retries   int
-	Status    string // "pending", "sending", "delivered", "failed"
-	Priority  int    // higher = more important (fiduciary > normal)
-}
+// OutboxMessage is an alias for domain.OutboxMessage.
+type OutboxMessage = domain.OutboxMessage
 
 // OutboxManager — contract for reliable outbox delivery (§7.1).
 type OutboxManager interface {
 	// Enqueue adds a message to the outbox. Returns the message ID (ULID).
-	Enqueue(msg OutboxMessage) (string, error)
+	Enqueue(ctx context.Context, msg OutboxMessage) (string, error)
 	// MarkDelivered marks a message as delivered.
-	MarkDelivered(msgID string) error
+	MarkDelivered(ctx context.Context, msgID string) error
 	// MarkFailed marks a message as failed and schedules retry with backoff.
-	MarkFailed(msgID string) error
+	MarkFailed(ctx context.Context, msgID string) error
 	// Requeue re-enqueues a failed message with fresh retry count.
-	Requeue(msgID string) error
+	Requeue(ctx context.Context, msgID string) error
 	// PendingCount returns the number of pending messages.
-	PendingCount() (int, error)
+	PendingCount(ctx context.Context) (int, error)
 	// GetByID retrieves a message by ID.
 	GetByID(msgID string) (*OutboxMessage, error)
 	// DeleteExpired removes messages older than TTL.
@@ -474,11 +186,11 @@ type InboxManager interface {
 	// CheckPayloadSize returns true if the payload is within 256KB cap (Valve 1).
 	CheckPayloadSize(payload []byte) bool
 	// Spool stores a message to disk when persona is locked (Valve 2).
-	Spool(payload []byte) (string, error)
+	Spool(ctx context.Context, payload []byte) (string, error)
 	// SpoolSize returns the current spool size in bytes (Valve 2).
 	SpoolSize() (int64, error)
 	// ProcessSpool processes all spooled messages FIFO by ULID (Valve 3).
-	ProcessSpool() (int, error)
+	ProcessSpool(ctx context.Context) (int, error)
 	// CheckDIDRate checks per-DID rate limit — only when unlocked (fast path).
 	CheckDIDRate(did string) bool
 }
@@ -512,56 +224,42 @@ type D2DEnvelope struct {
 
 // ---------- §8 Task Queue ----------
 
-// Task represents an async task.
-type Task struct {
-	ID        string
-	Type      string
-	Priority  int
-	Payload   []byte
-	Status    string // pending, running, completed, failed, dead, cancelled
-	Retries   int
-	Error     string
-	TimeoutAt int64
-}
+// Task is an alias for domain.Task.
+type Task = domain.Task
 
 // TaskQueuer — contract for persistent task queue (§8).
 type TaskQueuer interface {
 	// Enqueue adds a task. Returns the task ID.
-	Enqueue(task Task) (string, error)
+	Enqueue(ctx context.Context, task Task) (string, error)
 	// Dequeue returns the highest-priority pending task and marks it running.
-	Dequeue() (*Task, error)
+	Dequeue(ctx context.Context) (*Task, error)
 	// Complete marks a task as completed.
-	Complete(taskID string) error
+	Complete(ctx context.Context, taskID string) error
 	// Fail marks a task as failed with a reason.
-	Fail(taskID, reason string) error
+	Fail(ctx context.Context, taskID, reason string) error
 	// Retry re-enqueues a failed task with exponential backoff.
-	Retry(taskID string) error
+	Retry(ctx context.Context, taskID string) error
 }
 
 // WatchdogRunner — contract for task queue watchdog (§8.2).
 type WatchdogRunner interface {
 	// ScanTimedOut finds tasks with status="processing" and expired timeout_at.
-	ScanTimedOut() ([]Task, error)
+	ScanTimedOut(ctx context.Context) ([]Task, error)
 	// ResetTask moves a timed-out task back to pending and increments attempts.
-	ResetTask(taskID string) error
+	ResetTask(ctx context.Context, taskID string) error
 }
 
-// Reminder represents a scheduled reminder (§8.4).
-type Reminder struct {
-	ID        string
-	Message   string
-	TriggerAt int64
-	Fired     bool
-}
+// Reminder is an alias for domain.Reminder.
+type Reminder = domain.Reminder
 
 // ReminderScheduler — contract for the reminder loop (§8.4).
 type ReminderScheduler interface {
 	// StoreReminder saves a reminder with a trigger time.
-	StoreReminder(r Reminder) (string, error)
+	StoreReminder(ctx context.Context, r Reminder) (string, error)
 	// NextPending returns the next unfired reminder ordered by trigger_at.
-	NextPending() (*Reminder, error)
+	NextPending(ctx context.Context) (*Reminder, error)
 	// MarkFired marks a reminder as fired so it is not re-triggered.
-	MarkFired(reminderID string) error
+	MarkFired(ctx context.Context, reminderID string) error
 }
 
 // ---------- §9 WebSocket ----------
@@ -583,10 +281,10 @@ type WSHub interface {
 // WSHandler — contract for WebSocket message handling and auth (§9.1, §9.2, §9.3).
 type WSHandler interface {
 	// Authenticate validates a client's auth frame and returns the device name.
-	Authenticate(token string) (deviceName string, err error)
+	Authenticate(ctx context.Context, token string) (deviceName string, err error)
 	// HandleMessage parses and routes an incoming JSON message envelope.
 	// Returns the response envelope (JSON) or an error.
-	HandleMessage(clientID string, message []byte) (response []byte, err error)
+	HandleMessage(ctx context.Context, clientID string, message []byte) (response []byte, err error)
 	// IsAuthenticated reports whether the given client has completed auth.
 	IsAuthenticated(clientID string) bool
 	// AuthTimeout returns the auth timeout duration in seconds.
@@ -634,32 +332,22 @@ type MessageBuffer interface {
 // PairingManager — contract for device pairing (§10).
 type PairingManager interface {
 	// GenerateCode creates a new pairing code (QR or numeric).
-	GenerateCode() (code string, secret []byte, err error)
+	GenerateCode(ctx context.Context) (code string, secret []byte, err error)
 	// CompletePairing verifies the code and registers the device.
-	CompletePairing(code string, deviceName string) (clientToken string, err error)
+	CompletePairing(ctx context.Context, code string, deviceName string) (clientToken string, err error)
 	// CompletePairingFull verifies the code and returns full pair response.
-	CompletePairingFull(code string, deviceName string) (*PairResponse, error)
+	CompletePairingFull(ctx context.Context, code string, deviceName string) (*PairResponse, error)
 	// ListDevices returns all paired devices.
-	ListDevices() ([]PairedDevice, error)
+	ListDevices(ctx context.Context) ([]PairedDevice, error)
 	// RevokeDevice disables a device by token ID.
-	RevokeDevice(tokenID string) error
+	RevokeDevice(ctx context.Context, tokenID string) error
 }
 
-// PairResponse is the full response from a successful pairing.
-type PairResponse struct {
-	ClientToken string
-	NodeDID     string
-	WsURL       string
-}
+// PairResponse is an alias for domain.PairResponse.
+type PairResponse = domain.PairResponse
 
-// PairedDevice holds metadata for a paired device.
-type PairedDevice struct {
-	TokenID   string
-	Name      string
-	LastSeen  int64
-	CreatedAt int64
-	Revoked   bool
-}
+// PairedDevice is an alias for domain.PairedDevice.
+type PairedDevice = domain.PairedDevice
 
 // ---------- §11 Brain Client ----------
 
@@ -750,13 +438,13 @@ type IdentityAPI interface {
 	// ListPersonas performs GET /v1/personas.
 	ListPersonas() ([]string, error)
 	// GetContacts performs GET /v1/contacts.
-	GetContacts() ([]Contact, error)
+	GetContacts() ([]domain.Contact, error)
 	// AddContact performs POST /v1/contacts.
 	AddContact(did, name, trustLevel string) error
 	// RegisterDevice performs POST /v1/devices.
 	RegisterDevice(name string, tokenHash []byte) (string, error)
 	// ListDevices performs GET /v1/devices.
-	ListDevices() ([]Device, error)
+	ListDevices() ([]domain.Device, error)
 }
 
 // MessagingAPI — contract for messaging HTTP endpoints (§15.4).
@@ -790,38 +478,6 @@ type ATProtoDiscovery interface {
 
 // ---------- Auth helpers ----------
 
-// TokenValidator — contract for BRAIN_TOKEN and CLIENT_TOKEN auth (§1).
-type TokenValidator interface {
-	// ValidateBrainToken checks a BRAIN_TOKEN (constant-time comparison).
-	ValidateBrainToken(token string) bool
-	// ValidateClientToken checks a CLIENT_TOKEN (SHA-256 hash lookup).
-	ValidateClientToken(token string) (deviceID string, ok bool)
-	// IdentifyToken classifies a token as brain or client.
-	IdentifyToken(token string) (kind string, identity string, err error)
-}
-
-// SessionManager — contract for browser session management (§1.3).
-type SessionManager interface {
-	// Create creates a new session after successful passphrase auth.
-	Create(deviceID string) (sessionID, csrfToken string, err error)
-	// Validate checks a session ID and returns the associated device.
-	Validate(sessionID string) (deviceID string, err error)
-	// ValidateCSRF checks a CSRF token against the session.
-	ValidateCSRF(sessionID, csrfToken string) (bool, error)
-	// Destroy invalidates a session.
-	Destroy(sessionID string) error
-	// ActiveSessions returns the number of active sessions.
-	ActiveSessions() int
-	// GetCSRFToken returns the CSRF token associated with a session.
-	GetCSRFToken(sessionID string) (string, error)
-}
-
-// PassphraseVerifier — contract for Argon2id passphrase verification (§1.3).
-type PassphraseVerifier interface {
-	// Verify checks a passphrase against a stored Argon2id hash.
-	Verify(passphrase string) (bool, error)
-}
-
 // AuthGateway — contract for browser session auth gateway HTTP behaviour (§1.3).
 type AuthGateway interface {
 	// Login handles POST /login — verifies passphrase, sets session cookie, returns redirect.
@@ -836,14 +492,6 @@ type AuthGateway interface {
 	// HandleAdminRequest routes an admin request: if Bearer present, pass through;
 	// if session cookie present, translate; if neither, serve login page.
 	HandleAdminRequest(bearerToken, sessionCookie string) (statusCode int, err error)
-}
-
-// RateLimiter — contract for per-IP request rate limiting (§1.3).
-type RateLimiter interface {
-	// Allow checks whether a request from the given IP is allowed.
-	Allow(ip string) bool
-	// Reset clears rate limit state for an IP (for testing).
-	Reset(ip string)
 }
 
 // AdminEndpointChecker — contract for classifying admin vs. non-admin endpoints (§1.4).
@@ -915,22 +563,11 @@ type SecurityAuditor interface {
 	InspectDockerConfig() (*DockerConfig, error)
 }
 
-// DockerConfig holds Docker deployment configuration for security auditing.
-type DockerConfig struct {
-	ExposedPorts     []string          // host ports mapped
-	Networks         map[string]bool   // network name -> internal flag
-	SecretsMountPath string            // e.g., "/run/secrets/"
-	EnvVars          []string          // environment variable names
-	ImageDigests     map[string]string // image name -> digest
-}
+// DockerConfig is an alias for domain.DockerConfig.
+type DockerConfig = domain.DockerConfig
 
-// APIContractEndpoint describes a single API endpoint for contract testing.
-type APIContractEndpoint struct {
-	Method     string
-	Path       string
-	TokenType  string // "brain", "client", "admin"
-	StatusCode int
-}
+// APIContractEndpoint is an alias for domain.APIContractEndpoint.
+type APIContractEndpoint = domain.APIContractEndpoint
 
 // APIContract — contract for verifying core-brain API surface (§18).
 type APIContract interface {
@@ -945,18 +582,14 @@ type APIContract interface {
 	IsAdminOnly(path string) bool
 }
 
-// OnboardingStep represents a single step in the onboarding sequence.
-type OnboardingStep struct {
-	Name      string
-	Completed bool
-	Data      map[string]interface{}
-}
+// OnboardingStep is an alias for domain.OnboardingStep.
+type OnboardingStep = domain.OnboardingStep
 
 // OnboardingSequence — contract for managed onboarding flow (§19).
 type OnboardingSequence interface {
 	// StartOnboarding initiates the managed onboarding with email and passphrase.
 	// Returns the generated mnemonic (for backup) and any error.
-	StartOnboarding(email, passphrase string) (mnemonic string, err error)
+	StartOnboarding(ctx context.Context, email, passphrase string) (mnemonic string, err error)
 	// GetMnemonic returns the BIP-39 mnemonic generated during onboarding.
 	GetMnemonic() (string, error)
 	// GetRootDID returns the root DID created during onboarding.
@@ -975,18 +608,8 @@ type OnboardingSequence interface {
 
 // ---------- §20-24 Interfaces ----------
 
-// DockerHealthConfig holds parsed docker healthcheck settings for a service.
-type DockerHealthConfig struct {
-	ServiceName string
-	Test        []string
-	Interval    string
-	Timeout     string
-	Retries     int
-	StartPeriod string
-	Restart     string
-	DependsOn   map[string]string // service -> condition
-	Profiles    []string
-}
+// DockerHealthConfig is an alias for domain.DockerHealthConfig.
+type DockerHealthConfig = domain.DockerHealthConfig
 
 // DockerComposeParser — contract for reading docker-compose healthcheck config (§20.2).
 type DockerComposeParser interface {
@@ -994,33 +617,21 @@ type DockerComposeParser interface {
 	ParseService(composePath, serviceName string) (*DockerHealthConfig, error)
 }
 
-// CrashEntry holds a crash log row.
-type CrashEntry struct {
-	ID        int64
-	Timestamp string
-	Error     string
-	Traceback string
-	TaskID    string
-}
+// CrashEntry is an alias for domain.CrashEntry.
+type CrashEntry = domain.CrashEntry
 
 // CrashLogger — contract for crash log storage and retrieval (§20.3).
 type CrashLogger interface {
 	// Store inserts a crash entry into the crash_log table.
-	Store(entry CrashEntry) error
+	Store(ctx context.Context, entry CrashEntry) error
 	// Query returns crash entries within the given time range.
-	Query(since string) ([]CrashEntry, error)
+	Query(ctx context.Context, since string) ([]CrashEntry, error)
 	// Purge deletes entries older than the given retention period in days.
-	Purge(retentionDays int) (int, error)
+	Purge(ctx context.Context, retentionDays int) (int64, error)
 }
 
-// LogEntry holds a structured log line.
-type LogEntry struct {
-	Time   string
-	Level  string
-	Msg    string
-	Module string
-	Fields map[string]string
-}
+// LogEntry is an alias for domain.LogEntry.
+type LogEntry = domain.LogEntry
 
 // LogAuditor — contract for log auditing and PII exclusion enforcement (§21).
 type LogAuditor interface {
@@ -1034,76 +645,50 @@ type LogAuditor interface {
 	SanitizeCrash(traceback string) string
 }
 
-// PDSRecord holds a signed AT Protocol record.
-type PDSRecord struct {
-	Collection string
-	RecordKey  string
-	Payload    map[string]interface{}
-	Signature  []byte
-	AuthorDID  string
-}
+// PDSRecord is an alias for domain.PDSRecord.
+type PDSRecord = domain.PDSRecord
 
-// Tombstone represents a signed deletion marker.
-type Tombstone struct {
-	Target    string
-	AuthorDID string
-	Signature []byte
-}
+// Tombstone is an alias for domain.Tombstone.
+type Tombstone = domain.Tombstone
 
 // PDSPublisher — contract for AT Protocol record signing and publishing (§22).
 type PDSPublisher interface {
 	// SignAndPublish signs a record with the persona key and writes to PDS.
-	SignAndPublish(record PDSRecord) (string, error)
+	SignAndPublish(ctx context.Context, record PDSRecord) (string, error)
 	// ValidateLexicon checks a record against its Lexicon schema.
 	ValidateLexicon(record PDSRecord) error
 	// DeleteRecord publishes a signed tombstone for a record.
-	DeleteRecord(tombstone Tombstone) error
+	DeleteRecord(ctx context.Context, tombstone Tombstone) error
 	// QueueForRetry queues a record in the outbox when PDS is unreachable.
-	QueueForRetry(record PDSRecord) error
+	QueueForRetry(ctx context.Context, record PDSRecord) error
 }
 
-// ExportManifest holds metadata for an exported archive.
-type ExportManifest struct {
-	Version   string
-	Timestamp string
-	Checksums map[string]string // filename -> SHA-256 hex
-}
+// ExportManifest is an alias for domain.ExportManifest.
+type ExportManifest = domain.ExportManifest
 
-// ExportOptions configures the export process.
-type ExportOptions struct {
-	Passphrase string
-	DestPath   string
-}
+// ExportOptions is an alias for domain.ExportOptions.
+type ExportOptions = domain.ExportOptions
 
 // ExportManager — contract for dina export (§23.1).
 type ExportManager interface {
 	// Export creates an encrypted archive of the Home Node.
-	Export(opts ExportOptions) (archivePath string, err error)
+	Export(ctx context.Context, opts ExportOptions) (archivePath string, err error)
 	// ListArchiveContents returns the file list inside an archive.
 	ListArchiveContents(archivePath string) ([]string, error)
 	// ReadManifest extracts the manifest from an archive.
 	ReadManifest(archivePath string, passphrase string) (*ExportManifest, error)
 }
 
-// ImportOptions configures the import process.
-type ImportOptions struct {
-	ArchivePath string
-	Passphrase  string
-	Force       bool // overwrite existing data
-}
+// ImportOptions is an alias for domain.ImportOptions.
+type ImportOptions = domain.ImportOptions
 
-// ImportResult holds the outcome of an import.
-type ImportResult struct {
-	FilesRestored  int
-	DID            string
-	PersonaCount   int
-	RequiresRepair bool
-}
+// ImportResult is an alias for domain.ImportResult.
+type ImportResult = domain.ImportResult
 
 // ImportManager — contract for dina import (§23.2, §23.3).
 type ImportManager interface {
 	// Import decrypts and restores an archive to the Home Node.
-	Import(opts ImportOptions) (*ImportResult, error)
+	Import(ctx context.Context, opts ImportOptions) (*ImportResult, error)
 	// VerifyArchive checks archive integrity without restoring.
 	VerifyArchive(archivePath, passphrase string) error
 	// CheckCompatibility verifies the archive version is compatible.
@@ -1299,18 +884,8 @@ type ClientSyncManager interface {
 
 // ---------- §27 Digital Estate ----------
 
-// EstatePlan holds the digital estate configuration.
-type EstatePlan struct {
-	Trigger       string                 // "custodian_threshold" (only valid value — no timer)
-	Custodians    []string               // DIDs of custodian contacts
-	Threshold     int                    // k-of-n threshold for activation
-	Beneficiaries map[string][]string    // beneficiary DID → list of persona names
-	DefaultAction string                 // "destroy" or "archive"
-	Notifications []string               // DIDs to notify on activation
-	AccessTypes   map[string]string      // beneficiary DID → access type (e.g., "read_only_90_days", "full")
-	CreatedAt     int64
-	UpdatedAt     int64
-}
+// EstatePlan is an alias for domain.EstatePlan.
+type EstatePlan = domain.EstatePlan
 
 // EstateManager — contract for digital estate planning (arch §14).
 type EstateManager interface {
@@ -1332,33 +907,18 @@ type EstateManager interface {
 
 // ---------- §20 System Watchdog ----------
 
-// WatchdogReport holds the results of a system health check tick.
-type WatchdogReport struct {
-	Timestamp          int64
-	ConnectorAlive     bool
-	DiskUsageBytes     int64
-	DiskUsagePercent   float64
-	BrainHealthy       bool
-	AuditEntriesPurged int64
-	CrashEntriesPurged int64
-}
+// WatchdogReport is an alias for domain.WatchdogReport.
+type WatchdogReport = domain.WatchdogReport
 
 // SystemWatchdog — contract for 1-hour system health ticker (arch §16).
 type SystemWatchdog interface {
 	// RunTick executes a single watchdog sweep: checks liveness, disk, brain, purges old logs.
-	RunTick() (*WatchdogReport, error)
+	RunTick(ctx context.Context) (*WatchdogReport, error)
 	// CheckConnectorLiveness verifies external connectors are responsive.
 	CheckConnectorLiveness() (bool, error)
 	// CheckDiskUsage returns current disk usage in bytes.
 	CheckDiskUsage() (int64, error)
 	// CheckBrainHealth verifies brain sidecar is healthy.
-	CheckBrainHealth() (bool, error)
+	CheckBrainHealth(ctx context.Context) (bool, error)
 }
 
-// ---------- §5 PII De-Sanitizer ----------
-
-// PIIDeSanitizer — contract for restoring PII tokens from replacement map (arch §11).
-type PIIDeSanitizer interface {
-	// DeSanitize restores original PII values from scrubbed text using the entity map.
-	DeSanitize(scrubbed string, entities []PIIEntity) (string, error)
-}

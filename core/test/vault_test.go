@@ -1,11 +1,15 @@
 package test
 
 import (
+	"context"
 	"sync"
 	"testing"
 
+	"github.com/anthropics/dina/core/internal/domain"
 	"github.com/anthropics/dina/core/test/testutil"
 )
+
+var vaultCtx = context.Background()
 
 // ==========================================================================
 // TEST_PLAN §4 — Vault (SQLCipher)
@@ -19,38 +23,38 @@ import (
 
 // TST-CORE-196
 func TestVault_4_1_1_CreateNewVault(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	// impl = vault.NewManager(dir)
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
 	// Creating a vault for a new persona must succeed and persist a
 	// SQLCipher .sqlite file encrypted with the per-persona DEK.
 	dek := testutil.TestDEK[:]
-	err := impl.Open("test-persona-create", dek)
+	err := impl.Open(vaultCtx, domain.PersonaName("test-persona-create"), dek)
 	testutil.RequireNoError(t, err)
 
 	// Close should not error.
-	err = impl.Close("test-persona-create")
+	err = impl.Close(domain.PersonaName("test-persona-create"))
 	testutil.RequireNoError(t, err)
 }
 
 // TST-CORE-197
 func TestVault_4_1_2_OpenExistingVault(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	// impl = vault.NewManager(dir)
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
 	dek := testutil.TestDEK[:]
-	persona := "test-persona-open"
+	persona := domain.PersonaName("test-persona-open")
 
 	// Create the vault first.
-	err := impl.Open(persona, dek)
+	err := impl.Open(vaultCtx, persona, dek)
 	testutil.RequireNoError(t, err)
 	err = impl.Close(persona)
 	testutil.RequireNoError(t, err)
 
 	// Re-open the existing vault with the same DEK — schema validated.
-	err = impl.Open(persona, dek)
+	err = impl.Open(vaultCtx, persona, dek)
 	testutil.RequireNoError(t, err)
 	err = impl.Close(persona)
 	testutil.RequireNoError(t, err)
@@ -58,28 +62,28 @@ func TestVault_4_1_2_OpenExistingVault(t *testing.T) {
 
 // TST-CORE-198
 func TestVault_4_1_3_OpenWithWrongDEK(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	// impl = vault.NewManager(dir)
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
-	persona := "test-persona-wrongdek"
+	persona := domain.PersonaName("test-persona-wrongdek")
 	dek := testutil.TestDEK[:]
 
 	// Create with correct DEK.
-	err := impl.Open(persona, dek)
+	err := impl.Open(vaultCtx, persona, dek)
 	testutil.RequireNoError(t, err)
 	err = impl.Close(persona)
 	testutil.RequireNoError(t, err)
 
 	// Attempt open with wrong DEK — SQLITE_NOTADB expected.
 	wrongDEK := testutil.TestKEK[:] // use KEK as wrong DEK
-	err = impl.Open(persona, wrongDEK)
+	err = impl.Open(vaultCtx, persona, wrongDEK)
 	testutil.RequireError(t, err)
 }
 
 // TST-CORE-199
 func TestVault_4_1_4_SchemaMigration(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	// impl = vault.NewManager(dir)
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
@@ -88,9 +92,9 @@ func TestVault_4_1_4_SchemaMigration(t *testing.T) {
 	// When real implementation exists, create a vault with schema v2,
 	// then open with code expecting v3 — migration should auto-apply.
 	dek := testutil.TestDEK[:]
-	err := impl.Open("test-persona-migrate", dek)
+	err := impl.Open(vaultCtx, domain.PersonaName("test-persona-migrate"), dek)
 	testutil.RequireNoError(t, err)
-	err = impl.Close("test-persona-migrate")
+	err = impl.Close(domain.PersonaName("test-persona-migrate"))
 	testutil.RequireNoError(t, err)
 }
 
@@ -145,7 +149,7 @@ func TestVault_4_1_5_ConcurrentAccess(t *testing.T) {
 
 // TST-CORE-201
 func TestVault_4_1_6_PRAGMAsEnforced(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	// impl = vault.NewManager(dir)
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
@@ -160,15 +164,15 @@ func TestVault_4_1_6_PRAGMAsEnforced(t *testing.T) {
 	}
 
 	dek := testutil.TestDEK[:]
-	err := impl.Open("test-pragmas", dek)
+	err := impl.Open(vaultCtx, domain.PersonaName("test-pragmas"), dek)
 	testutil.RequireNoError(t, err)
-	err = impl.Close("test-pragmas")
+	err = impl.Close(domain.PersonaName("test-pragmas"))
 	testutil.RequireNoError(t, err)
 }
 
 // TST-CORE-202
 func TestVault_4_1_7_WALCrashRecovery(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	// impl = vault.NewManager(dir)
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
@@ -176,25 +180,25 @@ func TestVault_4_1_7_WALCrashRecovery(t *testing.T) {
 	// WAL file is rolled back automatically on next open. The .sqlite
 	// main file remains untouched.
 	dek := testutil.TestDEK[:]
-	persona := "test-wal-recovery"
+	persona := domain.PersonaName("test-wal-recovery")
 
-	err := impl.Open(persona, dek)
+	err := impl.Open(vaultCtx, persona, dek)
 	testutil.RequireNoError(t, err)
 
 	// Store an item to exercise the WAL write path.
 	item := testutil.TestVaultItem()
-	_, err = impl.Store(persona, item)
+	_, err = impl.Store(vaultCtx, persona, item)
 	testutil.RequireNoError(t, err)
 
 	err = impl.Close(persona)
 	testutil.RequireNoError(t, err)
 
 	// Re-open must succeed — simulates recovery after crash.
-	err = impl.Open(persona, dek)
+	err = impl.Open(vaultCtx, persona, dek)
 	testutil.RequireNoError(t, err)
 
 	// Previously committed item must still be present.
-	retrieved, err := impl.Retrieve(persona, item.ID)
+	retrieved, err := impl.GetItem(vaultCtx, persona, item.ID)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, retrieved.ID, item.ID)
 
@@ -204,7 +208,7 @@ func TestVault_4_1_7_WALCrashRecovery(t *testing.T) {
 
 // TST-CORE-203
 func TestVault_4_1_8_SynchronousNormalInWAL(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	// impl = vault.NewManager(dir)
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
@@ -216,7 +220,7 @@ func TestVault_4_1_8_SynchronousNormalInWAL(t *testing.T) {
 
 // TST-CORE-204
 func TestVault_4_1_9_ForeignKeysEnforced(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	// impl = vault.NewManager(dir)
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
@@ -229,7 +233,7 @@ func TestVault_4_1_9_ForeignKeysEnforced(t *testing.T) {
 
 // TST-CORE-205
 func TestVault_4_1_10_BusyTimeout5000(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	// impl = vault.NewManager(dir)
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
@@ -245,7 +249,7 @@ func TestVault_4_1_10_BusyTimeout5000(t *testing.T) {
 
 // TST-CORE-206
 func TestVault_4_1_1_1_VaultManagerStructure(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	// impl = vault.NewManager(dir)
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
@@ -253,19 +257,19 @@ func TestVault_4_1_1_1_VaultManagerStructure(t *testing.T) {
 	// personas map keyed by name (protected by sync.RWMutex).
 	// Structural assertion — verified by code audit when implementation exists.
 	dek := testutil.TestDEK[:]
-	err := impl.Open("identity", dek)
+	err := impl.Open(vaultCtx, domain.PersonaName("identity"), dek)
 	testutil.RequireNoError(t, err)
-	err = impl.Open("personal", dek)
+	err = impl.Open(vaultCtx, domain.PersonaName("personal"), dek)
 	testutil.RequireNoError(t, err)
-	err = impl.Close("personal")
+	err = impl.Close(domain.PersonaName("personal"))
 	testutil.RequireNoError(t, err)
-	err = impl.Close("identity")
+	err = impl.Close(domain.PersonaName("identity"))
 	testutil.RequireNoError(t, err)
 }
 
 // TST-CORE-207
 func TestVault_4_1_1_2_SingleWriterSerialization(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	// impl = vault.NewManager(dir)
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
@@ -273,8 +277,8 @@ func TestVault_4_1_1_2_SingleWriterSerialization(t *testing.T) {
 	// MaxOpenConns=1 on the write connection. The second write waits
 	// (up to busy_timeout).
 	dek := testutil.TestDEK[:]
-	persona := "test-single-writer"
-	err := impl.Open(persona, dek)
+	persona := domain.PersonaName("test-single-writer")
+	err := impl.Open(vaultCtx, persona, dek)
 	testutil.RequireNoError(t, err)
 
 	items := testutil.TestVaultItems(2)
@@ -283,7 +287,7 @@ func TestVault_4_1_1_2_SingleWriterSerialization(t *testing.T) {
 		wg.Add(1)
 		go func(it testutil.VaultItem) {
 			defer wg.Done()
-			_, storeErr := impl.Store(persona, it)
+			_, storeErr := impl.Store(vaultCtx, persona, it)
 			if storeErr != nil {
 				t.Errorf("store failed: %v", storeErr)
 			}
@@ -325,7 +329,7 @@ func TestVault_4_1_1_3_ReadPoolMultipleReaders(t *testing.T) {
 
 // TST-CORE-209
 func TestVault_4_1_1_4_ReadConnectionQueryOnly(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	// impl = vault.NewManager(dir)
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
@@ -333,28 +337,28 @@ func TestVault_4_1_1_4_ReadConnectionQueryOnly(t *testing.T) {
 	// When real implementation exists, attempt a write on a read-only
 	// connection and verify an error is returned.
 	dek := testutil.TestDEK[:]
-	err := impl.Open("test-query-only", dek)
+	err := impl.Open(vaultCtx, domain.PersonaName("test-query-only"), dek)
 	testutil.RequireNoError(t, err)
-	err = impl.Close("test-query-only")
+	err = impl.Close(domain.PersonaName("test-query-only"))
 	testutil.RequireNoError(t, err)
 }
 
 // TST-CORE-210
 func TestVault_4_1_1_5_WriteAutocheckpoint(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	// impl = vault.NewManager(dir)
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
 	// wal_autocheckpoint=1000 ensures the WAL is checkpointed every
 	// ~4MB, preventing unbounded WAL growth during heavy writes.
 	dek := testutil.TestDEK[:]
-	persona := "test-autocheckpoint"
-	err := impl.Open(persona, dek)
+	persona := domain.PersonaName("test-autocheckpoint")
+	err := impl.Open(vaultCtx, persona, dek)
 	testutil.RequireNoError(t, err)
 
 	// Heavy write: store many items.
 	items := testutil.TestVaultItems(50)
-	err = impl.StoreBatch(persona, items)
+	_, err = impl.StoreBatch(vaultCtx, persona, items)
 	testutil.RequireNoError(t, err)
 
 	err = impl.Close(persona)
@@ -573,14 +577,14 @@ func TestVault_4_2_7_Pagination(t *testing.T) {
 
 // TST-CORE-220
 func TestVault_4_2_8_ItemSizeLimit(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	// impl = vault.NewManager(dir)
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
 	// Payload exceeding max (e.g. 10 MiB) must be rejected with an error.
 	dek := testutil.TestDEK[:]
-	persona := "test-size-limit"
-	err := impl.Open(persona, dek)
+	persona := domain.PersonaName("test-size-limit")
+	err := impl.Open(vaultCtx, persona, dek)
 	testutil.RequireNoError(t, err)
 
 	largeItem := testutil.TestVaultItem()
@@ -591,7 +595,7 @@ func TestVault_4_2_8_ItemSizeLimit(t *testing.T) {
 	}
 	largeItem.BodyText = string(largeBody)
 
-	_, err = impl.Store(persona, largeItem)
+	_, err = impl.Store(vaultCtx, persona, largeItem)
 	testutil.RequireError(t, err)
 }
 
@@ -601,19 +605,19 @@ func TestVault_4_2_8_ItemSizeLimit(t *testing.T) {
 
 // TST-CORE-248
 func TestVault_4_3_1_FTS5KeywordSearch(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	// impl = vault.NewManager(dir)
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
 	dek := testutil.TestDEK[:]
-	persona := "test-search"
-	err := impl.Open(persona, dek)
+	persona := domain.PersonaName("test-search")
+	err := impl.Open(vaultCtx, persona, dek)
 	testutil.RequireNoError(t, err)
 
 	item := testutil.TestVaultItem()
-	_, _ = impl.Store(persona, item)
+	_, _ = impl.Store(vaultCtx, persona, item)
 
-	results, err := impl.Search(persona, testutil.SearchQuery{
+	results, err := impl.Query(vaultCtx, persona, testutil.SearchQuery{
 		Mode:  "fts5",
 		Query: "battery life",
 	})
@@ -623,13 +627,13 @@ func TestVault_4_3_1_FTS5KeywordSearch(t *testing.T) {
 
 // TST-CORE-249
 func TestVault_4_3_2_SemanticVectorSearch(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	// impl = vault.NewManager(dir)
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
 	dek := testutil.TestDEK[:]
-	persona := "test-search"
-	err := impl.Open(persona, dek)
+	persona := domain.PersonaName("test-search")
+	err := impl.Open(vaultCtx, persona, dek)
 	testutil.RequireNoError(t, err)
 
 	// Brain-provided embedding for cosine similarity search.
@@ -638,7 +642,7 @@ func TestVault_4_3_2_SemanticVectorSearch(t *testing.T) {
 		embedding[i] = float32(i) / 384.0
 	}
 
-	results, err := impl.Search(persona, testutil.SearchQuery{
+	results, err := impl.Query(vaultCtx, persona, testutil.SearchQuery{
 		Mode:      "semantic",
 		Embedding: embedding,
 	})
@@ -648,17 +652,17 @@ func TestVault_4_3_2_SemanticVectorSearch(t *testing.T) {
 
 // TST-CORE-250
 func TestVault_4_3_3_HybridSearch(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	// impl = vault.NewManager(dir)
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
 	dek := testutil.TestDEK[:]
-	persona := "test-search"
-	err := impl.Open(persona, dek)
+	persona := domain.PersonaName("test-search")
+	err := impl.Open(vaultCtx, persona, dek)
 	testutil.RequireNoError(t, err)
 
 	embedding := make([]float32, 384)
-	results, err := impl.Search(persona, testutil.SearchQuery{
+	results, err := impl.Query(vaultCtx, persona, testutil.SearchQuery{
 		Mode:      "hybrid",
 		Query:     "meeting reminder",
 		Embedding: embedding,
@@ -669,7 +673,7 @@ func TestVault_4_3_3_HybridSearch(t *testing.T) {
 
 // TST-CORE-251
 func TestVault_4_3_HybridSearchFormulaVerified(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	// impl = vault.NewManager(dir)
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
@@ -713,17 +717,17 @@ func TestVault_4_3_5_CrossPersonaBoundary(t *testing.T) {
 
 // TST-CORE-254
 func TestVault_4_3_6_FTS5Injection(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	// impl = vault.NewManager(dir)
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
 	dek := testutil.TestDEK[:]
-	persona := "test-search-injection"
-	err := impl.Open(persona, dek)
+	persona := domain.PersonaName("test-search-injection")
+	err := impl.Open(vaultCtx, persona, dek)
 	testutil.RequireNoError(t, err)
 
 	// Malicious FTS5 query must be safely handled — no SQL injection.
-	_, err = impl.Search(persona, testutil.SearchQuery{
+	_, err = impl.Query(vaultCtx, persona, testutil.SearchQuery{
 		Mode:  "fts5",
 		Query: `"*" OR 1=1 --`,
 	})
@@ -733,20 +737,20 @@ func TestVault_4_3_6_FTS5Injection(t *testing.T) {
 
 // TST-CORE-255
 func TestVault_4_3_7_IncludeContentFalseDefault(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	// impl = vault.NewManager(dir)
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
 	dek := testutil.TestDEK[:]
-	persona := "test-search-content"
-	err := impl.Open(persona, dek)
+	persona := domain.PersonaName("test-search-content")
+	err := impl.Open(vaultCtx, persona, dek)
 	testutil.RequireNoError(t, err)
 
 	item := testutil.TestVaultItem()
-	_, _ = impl.Store(persona, item)
+	_, _ = impl.Store(vaultCtx, persona, item)
 
 	// Default: include_content=false — response has summary only, no body_text.
-	results, err := impl.Search(persona, testutil.SearchQuery{
+	results, err := impl.Query(vaultCtx, persona, testutil.SearchQuery{
 		Mode:           "fts5",
 		Query:          "meeting",
 		IncludeContent: false,
@@ -760,20 +764,20 @@ func TestVault_4_3_7_IncludeContentFalseDefault(t *testing.T) {
 
 // TST-CORE-256
 func TestVault_4_3_8_IncludeContentTrue(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	// impl = vault.NewManager(dir)
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
 	dek := testutil.TestDEK[:]
-	persona := "test-search-content"
-	err := impl.Open(persona, dek)
+	persona := domain.PersonaName("test-search-content")
+	err := impl.Open(vaultCtx, persona, dek)
 	testutil.RequireNoError(t, err)
 
 	item := testutil.TestVaultItem()
-	_, _ = impl.Store(persona, item)
+	_, _ = impl.Store(vaultCtx, persona, item)
 
 	// include_content=true — response includes raw body_text.
-	results, err := impl.Search(persona, testutil.SearchQuery{
+	results, err := impl.Query(vaultCtx, persona, testutil.SearchQuery{
 		Mode:           "fts5",
 		Query:          "meeting",
 		IncludeContent: true,
@@ -791,26 +795,26 @@ func TestVault_4_3_8_IncludeContentTrue(t *testing.T) {
 
 // TST-CORE-271
 func TestVault_4_4_1_WriteScratchpad(t *testing.T) {
-	var impl testutil.ScratchpadManager
+	impl := realScratchpadManager
 	// impl = scratchpad.New(db)
 	testutil.RequireImplementation(t, impl, "ScratchpadManager")
 
-	ctx := []byte(`{"step":1,"context":{"relationship":"friend","messages":["hi"]}}`)
-	err := impl.Write("task-001", 1, ctx)
+	ctxData := []byte(`{"step":1,"context":{"relationship":"friend","messages":["hi"]}}`)
+	err := impl.Write(vaultCtx, "task-001", 1, ctxData)
 	testutil.RequireNoError(t, err)
 }
 
 // TST-CORE-272
 func TestVault_4_4_2_ReadScratchpad(t *testing.T) {
-	var impl testutil.ScratchpadManager
+	impl := realScratchpadManager
 	// impl = scratchpad.New(db)
 	testutil.RequireImplementation(t, impl, "ScratchpadManager")
 
-	ctx := []byte(`{"step":2,"context":{"accumulated":"data through step 2"}}`)
-	err := impl.Write("task-002", 2, ctx)
+	ctxData := []byte(`{"step":2,"context":{"accumulated":"data through step 2"}}`)
+	err := impl.Write(vaultCtx, "task-002", 2, ctxData)
 	testutil.RequireNoError(t, err)
 
-	step, data, err := impl.Read("task-002")
+	step, data, err := impl.Read(vaultCtx, "task-002")
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, step, 2)
 	testutil.RequireTrue(t, len(data) > 0, "scratchpad data should not be empty")
@@ -818,21 +822,21 @@ func TestVault_4_4_2_ReadScratchpad(t *testing.T) {
 
 // TST-CORE-273
 func TestVault_4_4_3_Accumulation(t *testing.T) {
-	var impl testutil.ScratchpadManager
+	impl := realScratchpadManager
 	// impl = scratchpad.New(db)
 	testutil.RequireImplementation(t, impl, "ScratchpadManager")
 
 	// Step 1 checkpoint.
 	ctx1 := []byte(`{"step":1,"context":{"relationship":"friend"}}`)
-	err := impl.Write("task-003", 1, ctx1)
+	err := impl.Write(vaultCtx, "task-003", 1, ctx1)
 	testutil.RequireNoError(t, err)
 
 	// Step 2 overwrites with accumulated context (step 1 + step 2 results).
 	ctx2 := []byte(`{"step":2,"context":{"relationship":"friend","messages":["hi","hello"]}}`)
-	err = impl.Write("task-003", 2, ctx2)
+	err = impl.Write(vaultCtx, "task-003", 2, ctx2)
 	testutil.RequireNoError(t, err)
 
-	step, data, err := impl.Read("task-003")
+	step, data, err := impl.Read(vaultCtx, "task-003")
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, step, 2)
 	testutil.RequireTrue(t, len(data) > 0, "accumulated context should be returned")
@@ -840,17 +844,17 @@ func TestVault_4_4_3_Accumulation(t *testing.T) {
 
 // TST-CORE-274
 func TestVault_4_4_4_ResumeFromExactStep(t *testing.T) {
-	var impl testutil.ScratchpadManager
+	impl := realScratchpadManager
 	// impl = scratchpad.New(db)
 	testutil.RequireImplementation(t, impl, "ScratchpadManager")
 
 	// Simulate: brain completed steps 1 and 2, then crashed.
-	ctx := []byte(`{"step":2,"context":{"accumulated":"data through step 2"}}`)
-	err := impl.Write("task-004", 2, ctx)
+	ctxData := []byte(`{"step":2,"context":{"accumulated":"data through step 2"}}`)
+	err := impl.Write(vaultCtx, "task-004", 2, ctxData)
 	testutil.RequireNoError(t, err)
 
 	// On restart: brain reads scratchpad, sees step=2, resumes from step 3.
-	step, _, err := impl.Read("task-004")
+	step, _, err := impl.Read(vaultCtx, "task-004")
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, step, 2)
 	// Brain logic: nextStep = step + 1 = 3. Steps 1 & 2 are skipped.
@@ -858,12 +862,12 @@ func TestVault_4_4_4_ResumeFromExactStep(t *testing.T) {
 
 // TST-CORE-275
 func TestVault_4_4_5_NoScratchpadStartFresh(t *testing.T) {
-	var impl testutil.ScratchpadManager
+	impl := realScratchpadManager
 	// impl = scratchpad.New(db)
 	testutil.RequireImplementation(t, impl, "ScratchpadManager")
 
 	// New task with no scratchpad entry — brain starts from step 1.
-	step, data, err := impl.Read("nonexistent-task")
+	step, data, err := impl.Read(vaultCtx, "nonexistent-task")
 	// Either returns (0, nil, nil) or (0, nil, ErrNotFound) — both acceptable.
 	if err == nil {
 		testutil.RequireEqual(t, step, 0)
@@ -873,15 +877,15 @@ func TestVault_4_4_5_NoScratchpadStartFresh(t *testing.T) {
 
 // TST-CORE-276
 func TestVault_4_4_6_TTLAutoExpire(t *testing.T) {
-	var impl testutil.ScratchpadManager
+	impl := realScratchpadManager
 	// impl = scratchpad.New(db)
 	testutil.RequireImplementation(t, impl, "ScratchpadManager")
 
 	// Scratchpad entries auto-expire after 24 hours.
 	// When real implementation exists, create an entry with timestamp
 	// older than 24h, then verify the sweeper purges it.
-	ctx := []byte(`{"step":1,"context":"stale"}`)
-	err := impl.Write("task-stale", 1, ctx)
+	ctxData := []byte(`{"step":1,"context":"stale"}`)
+	err := impl.Write(vaultCtx, "task-stale", 1, ctxData)
 	testutil.RequireNoError(t, err)
 
 	// After 24h sweeper runs, entry should be gone.
@@ -890,20 +894,20 @@ func TestVault_4_4_6_TTLAutoExpire(t *testing.T) {
 
 // TST-CORE-277
 func TestVault_4_4_7_DeleteOnCompletion(t *testing.T) {
-	var impl testutil.ScratchpadManager
+	impl := realScratchpadManager
 	// impl = scratchpad.New(db)
 	testutil.RequireImplementation(t, impl, "ScratchpadManager")
 
-	ctx := []byte(`{"step":5,"context":"final"}`)
-	err := impl.Write("task-complete", 5, ctx)
+	ctxData := []byte(`{"step":5,"context":"final"}`)
+	err := impl.Write(vaultCtx, "task-complete", 5, ctxData)
 	testutil.RequireNoError(t, err)
 
 	// Task completes — brain deletes the scratchpad entry.
-	err = impl.Delete("task-complete")
+	err = impl.Delete(vaultCtx, "task-complete")
 	testutil.RequireNoError(t, err)
 
 	// Verify it is gone.
-	_, _, err = impl.Read("task-complete")
+	_, _, err = impl.Read(vaultCtx, "task-complete")
 	// Should return error or empty result.
 	if err == nil {
 		// If no error, step should be 0 (no checkpoint found).
@@ -912,7 +916,7 @@ func TestVault_4_4_7_DeleteOnCompletion(t *testing.T) {
 
 // TST-CORE-278
 func TestVault_4_4_8_SizeLimit(t *testing.T) {
-	var impl testutil.ScratchpadManager
+	impl := realScratchpadManager
 	// impl = scratchpad.New(db)
 	testutil.RequireImplementation(t, impl, "ScratchpadManager")
 
@@ -922,27 +926,27 @@ func TestVault_4_4_8_SizeLimit(t *testing.T) {
 		largeCtx[i] = byte('x')
 	}
 
-	err := impl.Write("task-oversized", 1, largeCtx)
+	err := impl.Write(vaultCtx, "task-oversized", 1, largeCtx)
 	testutil.RequireError(t, err)
 }
 
 // TST-CORE-279
 func TestVault_4_4_9_StoredInIdentitySQLite(t *testing.T) {
-	var impl testutil.ScratchpadManager
+	impl := realScratchpadManager
 	// impl = scratchpad.New(db)
 	testutil.RequireImplementation(t, impl, "ScratchpadManager")
 
 	// Scratchpad is operational state, not user data — lives in
 	// identity.sqlite, not in persona vaults.
 	// Structural assertion: verified by code audit when implementation exists.
-	ctx := []byte(`{"step":1,"context":"identity-db-check"}`)
-	err := impl.Write("task-identity", 1, ctx)
+	ctxData := []byte(`{"step":1,"context":"identity-db-check"}`)
+	err := impl.Write(vaultCtx, "task-identity", 1, ctxData)
 	testutil.RequireNoError(t, err)
 }
 
 // TST-CORE-280
 func TestVault_4_4_10_MultipleConcurrentScratchpads(t *testing.T) {
-	var impl testutil.ScratchpadManager
+	impl := realScratchpadManager
 	// impl = scratchpad.New(db)
 	testutil.RequireImplementation(t, impl, "ScratchpadManager")
 
@@ -950,37 +954,37 @@ func TestVault_4_4_10_MultipleConcurrentScratchpads(t *testing.T) {
 	ctx1 := []byte(`{"step":1,"task":"email-summarize"}`)
 	ctx2 := []byte(`{"step":3,"task":"calendar-sync"}`)
 
-	err := impl.Write("task-A", 1, ctx1)
+	err := impl.Write(vaultCtx, "task-A", 1, ctx1)
 	testutil.RequireNoError(t, err)
 
-	err = impl.Write("task-B", 3, ctx2)
+	err = impl.Write(vaultCtx, "task-B", 3, ctx2)
 	testutil.RequireNoError(t, err)
 
-	stepA, _, err := impl.Read("task-A")
+	stepA, _, err := impl.Read(vaultCtx, "task-A")
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, stepA, 1)
 
-	stepB, _, err := impl.Read("task-B")
+	stepB, _, err := impl.Read(vaultCtx, "task-B")
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, stepB, 3)
 }
 
 // TST-CORE-281
 func TestVault_4_4_11_OverwriteSameTaskLaterStep(t *testing.T) {
-	var impl testutil.ScratchpadManager
+	impl := realScratchpadManager
 	// impl = scratchpad.New(db)
 	testutil.RequireImplementation(t, impl, "ScratchpadManager")
 
 	// Step 2 checkpoint overwrites step 1 — only latest retained (upsert).
 	ctx1 := []byte(`{"step":1}`)
-	err := impl.Write("task-upsert", 1, ctx1)
+	err := impl.Write(vaultCtx, "task-upsert", 1, ctx1)
 	testutil.RequireNoError(t, err)
 
 	ctx2 := []byte(`{"step":2,"context":"updated"}`)
-	err = impl.Write("task-upsert", 2, ctx2)
+	err = impl.Write(vaultCtx, "task-upsert", 2, ctx2)
 	testutil.RequireNoError(t, err)
 
-	step, _, err := impl.Read("task-upsert")
+	step, _, err := impl.Read(vaultCtx, "task-upsert")
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, step, 2)
 }
@@ -991,7 +995,7 @@ func TestVault_4_4_11_OverwriteSameTaskLaterStep(t *testing.T) {
 
 // TST-CORE-282
 func TestVault_4_5_1_StageItemForReview(t *testing.T) {
-	var impl testutil.StagingManager
+	impl := realStagingManager
 	// impl = staging.New(db)
 	testutil.RequireImplementation(t, impl, "StagingManager")
 
@@ -999,48 +1003,48 @@ func TestVault_4_5_1_StageItemForReview(t *testing.T) {
 	item.Type = "email_draft"
 	expiresAt := int64(1700000000 + 72*3600) // 72h from now
 
-	stagingID, err := impl.Stage("personal", item, expiresAt)
+	stagingID, err := impl.Stage(vaultCtx, domain.PersonaName("personal"), item, expiresAt)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(stagingID) > 0, "staging ID must not be empty")
 }
 
 // TST-CORE-283
 func TestVault_4_5_2_ApprovePromotesToVault(t *testing.T) {
-	var impl testutil.StagingManager
+	impl := realStagingManager
 	// impl = staging.New(db)
 	testutil.RequireImplementation(t, impl, "StagingManager")
 
 	item := testutil.TestVaultItem()
 	expiresAt := int64(1700000000 + 72*3600)
 
-	stagingID, err := impl.Stage("personal", item, expiresAt)
+	stagingID, err := impl.Stage(vaultCtx, domain.PersonaName("personal"), item, expiresAt)
 	testutil.RequireNoError(t, err)
 
 	// Approve: moves to main vault via INSERT + DELETE in single transaction.
-	err = impl.Approve("personal", stagingID)
+	err = impl.Approve(vaultCtx, domain.PersonaName("personal"), stagingID)
 	testutil.RequireNoError(t, err)
 }
 
 // TST-CORE-284
 func TestVault_4_5_3_RejectDeletesItem(t *testing.T) {
-	var impl testutil.StagingManager
+	impl := realStagingManager
 	// impl = staging.New(db)
 	testutil.RequireImplementation(t, impl, "StagingManager")
 
 	item := testutil.TestVaultItem()
 	expiresAt := int64(1700000000 + 72*3600)
 
-	stagingID, err := impl.Stage("personal", item, expiresAt)
+	stagingID, err := impl.Stage(vaultCtx, domain.PersonaName("personal"), item, expiresAt)
 	testutil.RequireNoError(t, err)
 
 	// Reject: deleted from staging entirely.
-	err = impl.Reject("personal", stagingID)
+	err = impl.Reject(vaultCtx, domain.PersonaName("personal"), stagingID)
 	testutil.RequireNoError(t, err)
 }
 
 // TST-CORE-285
 func TestVault_4_5_4_AutoApproveLowRisk(t *testing.T) {
-	var impl testutil.StagingManager
+	impl := realStagingManager
 	// impl = staging.New(db)
 	testutil.RequireImplementation(t, impl, "StagingManager")
 
@@ -1050,18 +1054,18 @@ func TestVault_4_5_4_AutoApproveLowRisk(t *testing.T) {
 	item.Metadata = `{"risk_level": "low"}`
 	expiresAt := int64(1700000000 + 72*3600)
 
-	stagingID, err := impl.Stage("personal", item, expiresAt)
+	stagingID, err := impl.Stage(vaultCtx, domain.PersonaName("personal"), item, expiresAt)
 	testutil.RequireNoError(t, err)
 
 	// With real impl, auto-approve logic runs immediately.
 	// For now, verify manual approve still works.
-	err = impl.Approve("personal", stagingID)
+	err = impl.Approve(vaultCtx, domain.PersonaName("personal"), stagingID)
 	testutil.RequireNoError(t, err)
 }
 
 // TST-CORE-286
 func TestVault_4_5_5_PerItemExpiryAndSweep(t *testing.T) {
-	var impl testutil.StagingManager
+	impl := realStagingManager
 	// impl = staging.New(db)
 	testutil.RequireImplementation(t, impl, "StagingManager")
 
@@ -1076,34 +1080,34 @@ func TestVault_4_5_5_PerItemExpiryAndSweep(t *testing.T) {
 
 	// Both staged at same time, but with different expires_at.
 	now := int64(1700000000)
-	_, err := impl.Stage("personal", item1, now+72*3600) // 72h
+	_, err := impl.Stage(vaultCtx, domain.PersonaName("personal"), item1, now+72*3600) // 72h
 	testutil.RequireNoError(t, err)
 
-	_, err = impl.Stage("personal", item2, now+12*3600) // 12h
+	_, err = impl.Stage(vaultCtx, domain.PersonaName("personal"), item2, now+12*3600) // 12h
 	testutil.RequireNoError(t, err)
 
 	// Sweeper at T+13h: cart handover expired, draft still present.
-	swept, err := impl.Sweep()
+	swept, err := impl.Sweep(vaultCtx)
 	testutil.RequireNoError(t, err)
 	_ = swept // In real impl, verify cart deleted, draft retained.
 }
 
 // TST-CORE-287
 func TestVault_4_5_6_StagingEncryptedAtRest(t *testing.T) {
-	var impl testutil.StagingManager
+	impl := realStagingManager
 	// impl = staging.New(db)
 	testutil.RequireImplementation(t, impl, "StagingManager")
 
 	// Staging table lives inside per-persona SQLCipher database —
 	// encrypted at rest like all other data. Structural assertion.
 	item := testutil.TestVaultItem()
-	_, err := impl.Stage("personal", item, int64(1700000000+72*3600))
+	_, err := impl.Stage(vaultCtx, domain.PersonaName("personal"), item, int64(1700000000+72*3600))
 	testutil.RequireNoError(t, err)
 }
 
 // TST-CORE-288
 func TestVault_4_5_7_StagingNotBackedUp(t *testing.T) {
-	var impl testutil.StagingManager
+	impl := realStagingManager
 	// impl = staging.New(db)
 	testutil.RequireImplementation(t, impl, "StagingManager")
 
@@ -1112,13 +1116,13 @@ func TestVault_4_5_7_StagingNotBackedUp(t *testing.T) {
 	// Verified when real backup implementation exists.
 	item := testutil.TestVaultItem()
 	item.Type = "email_draft"
-	_, err := impl.Stage("personal", item, int64(1700000000+72*3600))
+	_, err := impl.Stage(vaultCtx, domain.PersonaName("personal"), item, int64(1700000000+72*3600))
 	testutil.RequireNoError(t, err)
 }
 
 // TST-CORE-289
 func TestVault_4_5_8_DraftDontSendInStaging(t *testing.T) {
-	var impl testutil.StagingManager
+	impl := realStagingManager
 	// impl = staging.New(db)
 	testutil.RequireImplementation(t, impl, "StagingManager")
 
@@ -1128,14 +1132,14 @@ func TestVault_4_5_8_DraftDontSendInStaging(t *testing.T) {
 	item.Type = "email_draft"
 	item.Metadata = `{"gmail_draft_id":"draft-abc","dina_confidence":0.85}`
 
-	stagingID, err := impl.Stage("personal", item, int64(1700000000+72*3600))
+	stagingID, err := impl.Stage(vaultCtx, domain.PersonaName("personal"), item, int64(1700000000+72*3600))
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(stagingID) > 0, "draft staging ID must not be empty")
 }
 
 // TST-CORE-290
 func TestVault_4_5_9_CartHandoverInStaging(t *testing.T) {
-	var impl testutil.StagingManager
+	impl := realStagingManager
 	// impl = staging.New(db)
 	testutil.RequireImplementation(t, impl, "StagingManager")
 
@@ -1145,14 +1149,14 @@ func TestVault_4_5_9_CartHandoverInStaging(t *testing.T) {
 	item.Type = "cart_handover"
 	item.Metadata = `{"intent":"upi://pay?pa=merchant@okicici&am=12000","ttl_hours":12}`
 
-	stagingID, err := impl.Stage("personal", item, int64(1700000000+12*3600))
+	stagingID, err := impl.Stage(vaultCtx, domain.PersonaName("personal"), item, int64(1700000000+12*3600))
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(stagingID) > 0, "cart staging ID must not be empty")
 }
 
 // TST-CORE-291
 func TestVault_4_5_10_StagingItemsPerPersona(t *testing.T) {
-	var impl testutil.StagingManager
+	impl := realStagingManager
 	// impl = staging.New(db)
 	testutil.RequireImplementation(t, impl, "StagingManager")
 
@@ -1160,7 +1164,7 @@ func TestVault_4_5_10_StagingItemsPerPersona(t *testing.T) {
 	// not visible to /personal.
 	item := testutil.TestVaultItem()
 	item.Type = "email_draft"
-	_, err := impl.Stage("work", item, int64(1700000000+72*3600))
+	_, err := impl.Stage(vaultCtx, domain.PersonaName("work"), item, int64(1700000000+72*3600))
 	testutil.RequireNoError(t, err)
 
 	// Cross-persona isolation verified at the database file level.
@@ -1168,20 +1172,20 @@ func TestVault_4_5_10_StagingItemsPerPersona(t *testing.T) {
 
 // TST-CORE-292
 func TestVault_4_5_11_SweeperSchedule(t *testing.T) {
-	var impl testutil.StagingManager
+	impl := realStagingManager
 	// impl = staging.New(db)
 	testutil.RequireImplementation(t, impl, "StagingManager")
 
 	// Core watchdog runs expiry cleanup sweep daily — same schedule
 	// as audit log cleanup. Verify Sweep() works without error.
-	swept, err := impl.Sweep()
+	swept, err := impl.Sweep(vaultCtx)
 	testutil.RequireNoError(t, err)
 	_ = swept
 }
 
 // TST-CORE-293
 func TestVault_4_5_12_PerTypeTTL(t *testing.T) {
-	var impl testutil.StagingManager
+	impl := realStagingManager
 	// impl = staging.New(db)
 	testutil.RequireImplementation(t, impl, "StagingManager")
 
@@ -1192,13 +1196,13 @@ func TestVault_4_5_12_PerTypeTTL(t *testing.T) {
 	draftItem := testutil.TestVaultItem()
 	draftItem.ID = "draft-ttl"
 	draftItem.Type = "email_draft"
-	_, err := impl.Stage("personal", draftItem, now+72*3600)
+	_, err := impl.Stage(vaultCtx, domain.PersonaName("personal"), draftItem, now+72*3600)
 	testutil.RequireNoError(t, err)
 
 	cartItem := testutil.TestVaultItem()
 	cartItem.ID = "cart-ttl"
 	cartItem.Type = "cart_handover"
-	_, err = impl.Stage("personal", cartItem, now+12*3600)
+	_, err = impl.Stage(vaultCtx, domain.PersonaName("personal"), cartItem, now+12*3600)
 	testutil.RequireNoError(t, err)
 
 	// At T+13h: sweeper deletes cart (past expires_at), draft remains (59h left).
@@ -1210,7 +1214,7 @@ func TestVault_4_5_12_PerTypeTTL(t *testing.T) {
 
 // TST-CORE-294
 func TestVault_4_6_1_OnlineBackup(t *testing.T) {
-	var impl testutil.BackupManager
+	impl := realBackupManager
 	// impl = backup.New(db)
 	testutil.RequireImplementation(t, impl, "BackupManager")
 
@@ -1220,13 +1224,13 @@ func TestVault_4_6_1_OnlineBackup(t *testing.T) {
 	dir := testutil.TempDir(t)
 	destPath := dir + "/backup.sqlite"
 
-	err := impl.Backup("personal", destPath)
+	err := impl.Backup(context.Background(), "personal", destPath)
 	testutil.RequireNoError(t, err)
 }
 
 // TST-CORE-295
 func TestVault_4_6_2_BackupEncrypted(t *testing.T) {
-	var impl testutil.BackupManager
+	impl := realBackupManager
 	// impl = backup.New(db)
 	testutil.RequireImplementation(t, impl, "BackupManager")
 
@@ -1234,7 +1238,7 @@ func TestVault_4_6_2_BackupEncrypted(t *testing.T) {
 	dir := testutil.TempDir(t)
 	destPath := dir + "/backup_enc.sqlite"
 
-	err := impl.Backup("personal", destPath)
+	err := impl.Backup(context.Background(), "personal", destPath)
 	testutil.RequireNoError(t, err)
 
 	// Verify the backup cannot be opened as plain SQLite3.
@@ -1246,7 +1250,7 @@ func TestVault_4_6_3_VACUUMINTOForbidden(t *testing.T) {
 	// Code audit test: VACUUM INTO must NEVER be called in the codebase.
 	// VACUUM INTO produces PLAINTEXT in SQLCipher — CVE-level vulnerability.
 	// This test is a structural assertion verified by grep/code review.
-	var impl testutil.BackupManager
+	impl := realBackupManager
 	// impl = backup.New(db)
 	testutil.RequireImplementation(t, impl, "BackupManager")
 
@@ -1254,13 +1258,13 @@ func TestVault_4_6_3_VACUUMINTOForbidden(t *testing.T) {
 	// sqlcipher_export(), not VACUUM INTO.
 	dir := testutil.TempDir(t)
 	destPath := dir + "/backup_novacuum.sqlite"
-	err := impl.Backup("personal", destPath)
+	err := impl.Backup(context.Background(), "personal", destPath)
 	testutil.RequireNoError(t, err)
 }
 
 // TST-CORE-297
 func TestVault_4_6_4_BackupToDifferentLocation(t *testing.T) {
-	var impl testutil.BackupManager
+	impl := realBackupManager
 	// impl = backup.New(db)
 	testutil.RequireImplementation(t, impl, "BackupManager")
 
@@ -1270,13 +1274,13 @@ func TestVault_4_6_4_BackupToDifferentLocation(t *testing.T) {
 	// Create the subdirectory.
 	testutil.TempFile(t, dir, "custom_location/.gitkeep", "")
 
-	err := impl.Backup("personal", destPath)
+	err := impl.Backup(context.Background(), "personal", destPath)
 	testutil.RequireNoError(t, err)
 }
 
 // TST-CORE-298
 func TestVault_4_6_5_RestoreFromBackup(t *testing.T) {
-	var impl testutil.BackupManager
+	impl := realBackupManager
 	// impl = backup.New(db)
 	testutil.RequireImplementation(t, impl, "BackupManager")
 
@@ -1284,16 +1288,16 @@ func TestVault_4_6_5_RestoreFromBackup(t *testing.T) {
 	dir := testutil.TempDir(t)
 	backupPath := dir + "/restore_test.sqlite"
 
-	err := impl.Backup("personal", backupPath)
+	err := impl.Backup(context.Background(), "personal", backupPath)
 	testutil.RequireNoError(t, err)
 
-	err = impl.Restore("personal", backupPath)
+	err = impl.Restore(context.Background(), "personal", backupPath)
 	testutil.RequireNoError(t, err)
 }
 
 // TST-CORE-299
 func TestVault_4_6_6_CIPlaintextCheck(t *testing.T) {
-	var impl testutil.BackupManager
+	impl := realBackupManager
 	// impl = backup.New(db)
 	testutil.RequireImplementation(t, impl, "BackupManager")
 
@@ -1303,7 +1307,7 @@ func TestVault_4_6_6_CIPlaintextCheck(t *testing.T) {
 	dir := testutil.TempDir(t)
 	destPath := dir + "/ci_plaintext_check.sqlite"
 
-	err := impl.Backup("personal", destPath)
+	err := impl.Backup(context.Background(), "personal", destPath)
 	testutil.RequireNoError(t, err)
 
 	// In real implementation:
@@ -1314,7 +1318,7 @@ func TestVault_4_6_6_CIPlaintextCheck(t *testing.T) {
 
 // TST-CORE-300
 func TestVault_4_6_7_BackupScopeTier0Tier1Only(t *testing.T) {
-	var impl testutil.BackupManager
+	impl := realBackupManager
 	// impl = backup.New(db)
 	testutil.RequireImplementation(t, impl, "BackupManager")
 
@@ -1324,17 +1328,17 @@ func TestVault_4_6_7_BackupScopeTier0Tier1Only(t *testing.T) {
 	dir := testutil.TempDir(t)
 
 	// Backup identity (Tier 0).
-	err := impl.Backup("identity", dir+"/identity_backup.sqlite")
+	err := impl.Backup(context.Background(), "identity", dir+"/identity_backup.sqlite")
 	testutil.RequireNoError(t, err)
 
 	// Backup personal (Tier 1).
-	err = impl.Backup("personal", dir+"/personal_backup.sqlite")
+	err = impl.Backup(context.Background(), "personal", dir+"/personal_backup.sqlite")
 	testutil.RequireNoError(t, err)
 }
 
 // TST-CORE-301
 func TestVault_4_6_8_AutomatedBackupScheduling(t *testing.T) {
-	var impl testutil.BackupManager
+	impl := realBackupManager
 	// impl = backup.New(db)
 	testutil.RequireImplementation(t, impl, "BackupManager")
 
@@ -1342,7 +1346,7 @@ func TestVault_4_6_8_AutomatedBackupScheduling(t *testing.T) {
 	// Configurable via config.json: "backup": {"interval_hours": 24}.
 	// Backup timestamp logged in kv_store as last_backup_timestamp.
 	dir := testutil.TempDir(t)
-	err := impl.Backup("personal", dir+"/scheduled_backup.sqlite")
+	err := impl.Backup(context.Background(), "personal", dir+"/scheduled_backup.sqlite")
 	testutil.RequireNoError(t, err)
 
 	// In real implementation: verify kv_store updated with backup timestamp.
@@ -1354,7 +1358,7 @@ func TestVault_4_6_8_AutomatedBackupScheduling(t *testing.T) {
 
 // TST-CORE-221
 func TestVault_4_2_1_1_ContactsTableNoPersonaField(t *testing.T) {
-	var impl testutil.SchemaInspector
+	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// contacts table must be global (no persona column) — contacts are cross-cutting.
@@ -1371,7 +1375,7 @@ func TestVault_4_2_1_1_ContactsTableNoPersonaField(t *testing.T) {
 
 // TST-CORE-222
 func TestVault_4_2_1_2_ContactsTrustLevelEnum(t *testing.T) {
-	var impl testutil.SchemaInspector
+	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// Inserting an invalid trust_level must be rejected.
@@ -1384,7 +1388,7 @@ func TestVault_4_2_1_2_ContactsTrustLevelEnum(t *testing.T) {
 
 // TST-CORE-223
 func TestVault_4_2_1_3_ContactsSharingPolicyJSON(t *testing.T) {
-	var impl testutil.SchemaInspector
+	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// sharing_policy column must accept and return valid JSON blobs.
@@ -1403,7 +1407,7 @@ func TestVault_4_2_1_3_ContactsSharingPolicyJSON(t *testing.T) {
 
 // TST-CORE-224
 func TestVault_4_2_1_4_IdxContactsTrustExists(t *testing.T) {
-	var impl testutil.SchemaInspector
+	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// Index idx_contacts_trust must exist on contacts(trust_level).
@@ -1418,7 +1422,7 @@ func TestVault_4_2_1_4_IdxContactsTrustExists(t *testing.T) {
 
 // TST-CORE-225
 func TestVault_4_2_1_5_AuditLogTableSchema(t *testing.T) {
-	var impl testutil.SchemaInspector
+	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// audit_log must have: id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp,
@@ -1438,7 +1442,7 @@ func TestVault_4_2_1_5_AuditLogTableSchema(t *testing.T) {
 
 // TST-CORE-226
 func TestVault_4_2_1_6_KVStoreForSyncCursors(t *testing.T) {
-	var impl testutil.SchemaInspector
+	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// kv_store(key TEXT PRIMARY KEY, value TEXT, updated_at) — brain is stateless,
@@ -1467,7 +1471,7 @@ func TestVault_4_2_1_6_KVStoreForSyncCursors(t *testing.T) {
 
 // TST-CORE-227
 func TestVault_4_2_1_7_DeviceTokensSHA256Hash(t *testing.T) {
-	var impl testutil.SchemaInspector
+	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// device_tokens.token_hash must be SHA-256 hex-encoded (not Argon2id).
@@ -1484,7 +1488,7 @@ func TestVault_4_2_1_7_DeviceTokensSHA256Hash(t *testing.T) {
 
 // TST-CORE-228
 func TestVault_4_2_1_8_DeviceTokensPartialIndex(t *testing.T) {
-	var impl testutil.SchemaInspector
+	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// Partial index: only active (non-revoked) tokens are indexed.
@@ -1500,7 +1504,7 @@ func TestVault_4_2_1_8_DeviceTokensPartialIndex(t *testing.T) {
 
 // TST-CORE-229
 func TestVault_4_2_1_9_CrashLogTableSchema(t *testing.T) {
-	var impl testutil.SchemaInspector
+	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// crash_log(id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -1524,7 +1528,7 @@ func TestVault_4_2_1_9_CrashLogTableSchema(t *testing.T) {
 
 // TST-CORE-230
 func TestVault_4_2_2_1_VaultItemsRequiredColumns(t *testing.T) {
-	var impl testutil.SchemaInspector
+	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// vault_items required columns.
@@ -1544,7 +1548,7 @@ func TestVault_4_2_2_1_VaultItemsRequiredColumns(t *testing.T) {
 
 // TST-CORE-231
 func TestVault_4_2_2_2_VaultItemsFTS5Table(t *testing.T) {
-	var impl testutil.SchemaInspector
+	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// vault_items_fts must be a FTS5 virtual table.
@@ -1557,7 +1561,7 @@ func TestVault_4_2_2_2_VaultItemsFTS5Table(t *testing.T) {
 
 // TST-CORE-232
 func TestVault_4_2_2_3_FTS5TokenizerUnicode61(t *testing.T) {
-	var impl testutil.SchemaInspector
+	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// FTS5 tokenizer must be unicode61 with remove_diacritics for multilingual support.
@@ -1569,7 +1573,7 @@ func TestVault_4_2_2_3_FTS5TokenizerUnicode61(t *testing.T) {
 
 // TST-CORE-233
 func TestVault_4_2_2_4_PorterStemmerForbidden(t *testing.T) {
-	var impl testutil.SchemaInspector
+	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// Porter stemmer is English-only and mangles non-Latin scripts — FORBIDDEN.
@@ -1586,7 +1590,7 @@ func TestVault_4_2_2_4_PorterStemmerForbidden(t *testing.T) {
 
 // TST-CORE-234
 func TestVault_4_2_2_5_FTS5EncryptedBySQLCipher(t *testing.T) {
-	var impl testutil.SchemaInspector
+	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// FTS5 shadow tables must be encrypted at rest by SQLCipher.
@@ -1600,7 +1604,7 @@ func TestVault_4_2_2_5_FTS5EncryptedBySQLCipher(t *testing.T) {
 
 // TST-CORE-235
 func TestVault_4_2_2_6_RelationshipsTable(t *testing.T) {
-	var impl testutil.SchemaInspector
+	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// relationships(id TEXT PRIMARY KEY, entity_name, entity_type, last_interaction INTEGER,
@@ -1621,7 +1625,7 @@ func TestVault_4_2_2_6_RelationshipsTable(t *testing.T) {
 
 // TST-CORE-236
 func TestVault_4_2_2_7_VaultItemsTypeEnforced(t *testing.T) {
-	var impl testutil.SchemaInspector
+	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// vault_items.type must only accept: email, message, event, note, photo.
@@ -1633,7 +1637,7 @@ func TestVault_4_2_2_7_VaultItemsTypeEnforced(t *testing.T) {
 
 // TST-CORE-237
 func TestVault_4_2_2_8_RelationshipsEntityTypeEnforced(t *testing.T) {
-	var impl testutil.SchemaInspector
+	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// relationships.entity_type must only accept: person, org, bot.
@@ -1645,7 +1649,7 @@ func TestVault_4_2_2_8_RelationshipsEntityTypeEnforced(t *testing.T) {
 
 // TST-CORE-238
 func TestVault_4_2_2_9_FTS5ContentSyncInsert(t *testing.T) {
-	var impl testutil.SchemaInspector
+	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// INSERT into vault_items must propagate to FTS5 index.
@@ -1662,7 +1666,7 @@ func TestVault_4_2_2_9_FTS5ContentSyncInsert(t *testing.T) {
 
 // TST-CORE-239
 func TestVault_4_2_2_10_FTS5ContentSyncUpdate(t *testing.T) {
-	var impl testutil.SchemaInspector
+	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// UPDATE vault_items must propagate to FTS5 — old text no longer matches.
@@ -1685,7 +1689,7 @@ func TestVault_4_2_2_10_FTS5ContentSyncUpdate(t *testing.T) {
 
 // TST-CORE-240
 func TestVault_4_2_2_11_FTS5ContentSyncDelete(t *testing.T) {
-	var impl testutil.SchemaInspector
+	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// DELETE from vault_items must remove item from FTS5 index.
@@ -1705,7 +1709,7 @@ func TestVault_4_2_2_11_FTS5ContentSyncDelete(t *testing.T) {
 
 // TST-CORE-241
 func TestVault_4_2_2_12_SchemaVersionIdentity(t *testing.T) {
-	var impl testutil.SchemaInspector
+	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// identity.sqlite schema version must be "v1".
@@ -1716,7 +1720,7 @@ func TestVault_4_2_2_12_SchemaVersionIdentity(t *testing.T) {
 
 // TST-CORE-242
 func TestVault_4_2_2_13_SchemaVersionPersonaVault(t *testing.T) {
-	var impl testutil.SchemaInspector
+	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// Persona vault schema version must be "v3".
@@ -1752,13 +1756,13 @@ func TestVault_4_2_3_1_BatchStore100Items(t *testing.T) {
 
 // TST-CORE-244
 func TestVault_4_2_3_2_BatchPerformance(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
 	// 10K items via 100 batches of 100 — ~100 transactions instead of 10K.
 	dek := testutil.TestDEK[:]
-	persona := "test-batch-perf"
-	err := impl.Open(persona, dek)
+	persona := domain.PersonaName("test-batch-perf")
+	err := impl.Open(vaultCtx, persona, dek)
 	testutil.RequireNoError(t, err)
 
 	for batch := 0; batch < 100; batch++ {
@@ -1767,7 +1771,7 @@ func TestVault_4_2_3_2_BatchPerformance(t *testing.T) {
 		for i := range items {
 			items[i].ID = "batch-" + testutil.TestVaultItems(batch*100+i+1)[0].ID
 		}
-		err := impl.StoreBatch(persona, items)
+		_, err := impl.StoreBatch(vaultCtx, persona, items)
 		testutil.RequireNoError(t, err)
 	}
 
@@ -1777,24 +1781,24 @@ func TestVault_4_2_3_2_BatchPerformance(t *testing.T) {
 
 // TST-CORE-245
 func TestVault_4_2_3_3_BatchFailureRollback(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
 	// 100 items, item #50 violates constraint — entire batch rolled back.
 	dek := testutil.TestDEK[:]
-	persona := "test-batch-rollback"
-	err := impl.Open(persona, dek)
+	persona := domain.PersonaName("test-batch-rollback")
+	err := impl.Open(vaultCtx, persona, dek)
 	testutil.RequireNoError(t, err)
 
 	items := testutil.TestVaultItems(100)
 	// Corrupt item #50 with invalid type to trigger constraint violation.
 	items[49].Type = "invalid_type_for_constraint_violation"
 
-	err = impl.StoreBatch(persona, items)
+	_, err = impl.StoreBatch(vaultCtx, persona, items)
 	testutil.RequireError(t, err)
 
 	// Verify no partial insert — item #1 should also not be present.
-	_, err = impl.Retrieve(persona, items[0].ID)
+	_, err = impl.GetItem(vaultCtx, persona, items[0].ID)
 	testutil.RequireError(t, err)
 
 	err = impl.Close(persona)
@@ -1842,21 +1846,21 @@ func TestVault_4_2_3_4_BatchDuringConcurrentReads(t *testing.T) {
 
 // TST-CORE-247
 func TestVault_4_2_3_5_BatchIngestionPlusEmbedding(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
 	// Items available for FTS5 immediately; embeddings arrive later for semantic search.
 	dek := testutil.TestDEK[:]
-	persona := "test-batch-embed"
-	err := impl.Open(persona, dek)
+	persona := domain.PersonaName("test-batch-embed")
+	err := impl.Open(vaultCtx, persona, dek)
 	testutil.RequireNoError(t, err)
 
 	items := testutil.TestVaultItems(10)
-	err = impl.StoreBatch(persona, items)
+	_, err = impl.StoreBatch(vaultCtx, persona, items)
 	testutil.RequireNoError(t, err)
 
 	// FTS5 search should work immediately after batch store.
-	results, err := impl.Search(persona, testutil.SearchQuery{
+	results, err := impl.Query(vaultCtx, persona, testutil.SearchQuery{
 		Mode:  "fts5",
 		Query: "Test item",
 	})
@@ -1873,25 +1877,25 @@ func TestVault_4_2_3_5_BatchIngestionPlusEmbedding(t *testing.T) {
 
 // TST-CORE-251
 func TestVault_4_3_4_HybridSearchFormulaVerified(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
 	// Hybrid relevance = 0.4 * fts5_rank + 0.6 * cosine_similarity.
 	// With known items and known scores, verify the formula.
 	dek := testutil.TestDEK[:]
-	persona := "test-hybrid-formula"
-	err := impl.Open(persona, dek)
+	persona := domain.PersonaName("test-hybrid-formula")
+	err := impl.Open(vaultCtx, persona, dek)
 	testutil.RequireNoError(t, err)
 
 	item := testutil.TestVaultItem()
-	_, _ = impl.Store(persona, item)
+	_, _ = impl.Store(vaultCtx, persona, item)
 
 	embedding := make([]float32, 384)
 	for i := range embedding {
 		embedding[i] = float32(i) / 384.0
 	}
 
-	results, err := impl.Search(persona, testutil.SearchQuery{
+	results, err := impl.Query(vaultCtx, persona, testutil.SearchQuery{
 		Mode:      "hybrid",
 		Query:     "meeting reminder",
 		Embedding: embedding,
@@ -1977,16 +1981,16 @@ func TestVault_4_3_12_LimitDefault20(t *testing.T) {
 
 // TST-CORE-260
 func TestVault_4_3_13_LimitMax100(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
 	dek := testutil.TestDEK[:]
-	persona := "test-search-limit-max"
-	err := impl.Open(persona, dek)
+	persona := domain.PersonaName("test-search-limit-max")
+	err := impl.Open(vaultCtx, persona, dek)
 	testutil.RequireNoError(t, err)
 
 	// Request limit: 200 — must be capped at 100 or return 400 error.
-	results, err := impl.Search(persona, testutil.SearchQuery{
+	results, err := impl.Query(vaultCtx, persona, testutil.SearchQuery{
 		Query: "test",
 		Limit: 200,
 	})
@@ -2041,20 +2045,20 @@ func TestVault_4_3_15_LockedPersonaStructured403(t *testing.T) {
 
 // TST-CORE-263
 func TestVault_4_3_16_SimpleSearchFastPath(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
 	// Simple FTS5 search handled by core alone — no brain involved, sub-10ms.
 	dek := testutil.TestDEK[:]
-	persona := "test-fast-path"
-	err := impl.Open(persona, dek)
+	persona := domain.PersonaName("test-fast-path")
+	err := impl.Open(vaultCtx, persona, dek)
 	testutil.RequireNoError(t, err)
 
 	item := testutil.TestVaultItem()
-	_, _ = impl.Store(persona, item)
+	_, _ = impl.Store(vaultCtx, persona, item)
 
 	// Core handles FTS5 directly.
-	results, err := impl.Search(persona, testutil.SearchQuery{
+	results, err := impl.Query(vaultCtx, persona, testutil.SearchQuery{
 		Mode:  "fts5",
 		Query: "meeting",
 	})
@@ -2067,14 +2071,14 @@ func TestVault_4_3_16_SimpleSearchFastPath(t *testing.T) {
 
 // TST-CORE-264
 func TestVault_4_3_17_SemanticSearchBrainOrchestrates(t *testing.T) {
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
 	// Complex query needing reasoning: core routes to brain, brain generates
 	// embedding, brain calls /v1/vault/query, brain merges + reasons.
 	dek := testutil.TestDEK[:]
-	persona := "test-semantic-brain"
-	err := impl.Open(persona, dek)
+	persona := domain.PersonaName("test-semantic-brain")
+	err := impl.Open(vaultCtx, persona, dek)
 	testutil.RequireNoError(t, err)
 
 	embedding := make([]float32, 384)
@@ -2082,7 +2086,7 @@ func TestVault_4_3_17_SemanticSearchBrainOrchestrates(t *testing.T) {
 		embedding[i] = 0.5
 	}
 
-	results, err := impl.Search(persona, testutil.SearchQuery{
+	results, err := impl.Query(vaultCtx, persona, testutil.SearchQuery{
 		Mode:      "semantic",
 		Query:     "what did Sancho say about the restaurant last week",
 		Embedding: embedding,
@@ -2100,7 +2104,7 @@ func TestVault_4_3_17_SemanticSearchBrainOrchestrates(t *testing.T) {
 
 // TST-CORE-265
 func TestVault_4_3_1_1_EmbeddingModelTrackedInMetadata(t *testing.T) {
-	var impl testutil.EmbeddingMigrator
+	impl := realEmbeddingMigrator
 	testutil.RequireImplementation(t, impl, "EmbeddingMigrator")
 
 	// embedding_model column stores model name + version.
@@ -2111,7 +2115,7 @@ func TestVault_4_3_1_1_EmbeddingModelTrackedInMetadata(t *testing.T) {
 
 // TST-CORE-266
 func TestVault_4_3_1_2_ModelChangeDetected(t *testing.T) {
-	var impl testutil.EmbeddingMigrator
+	impl := realEmbeddingMigrator
 	testutil.RequireImplementation(t, impl, "EmbeddingMigrator")
 
 	// Core detects mismatch between stored model and configured model.
@@ -2122,7 +2126,7 @@ func TestVault_4_3_1_2_ModelChangeDetected(t *testing.T) {
 
 // TST-CORE-267
 func TestVault_4_3_1_3_ReindexTriggered(t *testing.T) {
-	var impl testutil.EmbeddingMigrator
+	impl := realEmbeddingMigrator
 	testutil.RequireImplementation(t, impl, "EmbeddingMigrator")
 
 	// Core drops sqlite-vec index and triggers background re-embed via brain.
@@ -2135,7 +2139,7 @@ func TestVault_4_3_1_3_ReindexTriggered(t *testing.T) {
 
 // TST-CORE-268
 func TestVault_4_3_1_4_FTS5AvailableDuringReindexing(t *testing.T) {
-	var impl testutil.EmbeddingMigrator
+	impl := realEmbeddingMigrator
 	testutil.RequireImplementation(t, impl, "EmbeddingMigrator")
 
 	// FTS5 keyword search works normally during re-embedding.
@@ -2152,7 +2156,7 @@ func TestVault_4_3_1_4_FTS5AvailableDuringReindexing(t *testing.T) {
 
 // TST-CORE-269
 func TestVault_4_3_1_5_ReembedCompletes(t *testing.T) {
-	var impl testutil.EmbeddingMigrator
+	impl := realEmbeddingMigrator
 	testutil.RequireImplementation(t, impl, "EmbeddingMigrator")
 
 	// After re-embed completes, semantic search is restored.
@@ -2164,7 +2168,7 @@ func TestVault_4_3_1_5_ReembedCompletes(t *testing.T) {
 
 // TST-CORE-270
 func TestVault_4_3_1_6_NoDualIndex(t *testing.T) {
-	var impl testutil.EmbeddingMigrator
+	impl := realEmbeddingMigrator
 	testutil.RequireImplementation(t, impl, "EmbeddingMigrator")
 
 	// During migration: old index dropped first, new index built.
@@ -2184,7 +2188,7 @@ func TestVault_4_3_1_6_NoDualIndex(t *testing.T) {
 
 // TST-CORE-302
 func TestVault_4_6_1_1_EncryptedBackupBeforeMigration(t *testing.T) {
-	var impl testutil.MigrationSafety
+	impl := realMigrationSafety
 	testutil.RequireImplementation(t, impl, "MigrationSafety")
 
 	// sqlcipher_export() backup created BEFORE any DDL changes.
@@ -2195,7 +2199,7 @@ func TestVault_4_6_1_1_EncryptedBackupBeforeMigration(t *testing.T) {
 
 // TST-CORE-303
 func TestVault_4_6_1_2_IntegrityCheckAfterMigration(t *testing.T) {
-	var impl testutil.MigrationSafety
+	impl := realMigrationSafety
 	testutil.RequireImplementation(t, impl, "MigrationSafety")
 
 	// PRAGMA integrity_check must return "ok" after DDL changes.
@@ -2206,7 +2210,7 @@ func TestVault_4_6_1_2_IntegrityCheckAfterMigration(t *testing.T) {
 
 // TST-CORE-304
 func TestVault_4_6_1_3_IntegrityOkCommit(t *testing.T) {
-	var impl testutil.MigrationSafety
+	impl := realMigrationSafety
 	testutil.RequireImplementation(t, impl, "MigrationSafety")
 
 	// integrity_check = "ok" -> migration committed, backup retained for 24h.
@@ -2223,7 +2227,7 @@ func TestVault_4_6_1_3_IntegrityOkCommit(t *testing.T) {
 
 // TST-CORE-305
 func TestVault_4_6_1_4_IntegrityFailRollbackRestore(t *testing.T) {
-	var impl testutil.MigrationSafety
+	impl := realMigrationSafety
 	testutil.RequireImplementation(t, impl, "MigrationSafety")
 
 	// integrity_check != "ok" -> rollback + restore from backup, user alerted.
@@ -2237,7 +2241,7 @@ func TestVault_4_6_1_4_IntegrityFailRollbackRestore(t *testing.T) {
 
 // TST-CORE-306
 func TestVault_4_6_1_5_PreFlightBackupPath(t *testing.T) {
-	var impl testutil.MigrationSafety
+	impl := realMigrationSafety
 	testutil.RequireImplementation(t, impl, "MigrationSafety")
 
 	// Backup path: vault.v{old_version}.bak — versioned for identification.
@@ -2251,7 +2255,7 @@ func TestVault_4_6_1_5_PreFlightBackupPath(t *testing.T) {
 
 // TST-CORE-307
 func TestVault_4_6_1_6_AutomaticOnCoreUpdate(t *testing.T) {
-	var impl testutil.MigrationSafety
+	impl := realMigrationSafety
 	testutil.RequireImplementation(t, impl, "MigrationSafety")
 
 	// Migration safety protocol runs automatically on core binary update.
@@ -2274,7 +2278,7 @@ func TestVault_4_6_1_6_AutomaticOnCoreUpdate(t *testing.T) {
 
 // TST-CORE-308
 func TestVault_4_7_1_AppendAuditEntry(t *testing.T) {
-	var impl testutil.VaultAuditLogger
+	impl := realVaultAuditLogger
 	testutil.RequireImplementation(t, impl, "VaultAuditLogger")
 
 	entry := testutil.VaultAuditEntry{
@@ -2285,14 +2289,14 @@ func TestVault_4_7_1_AppendAuditEntry(t *testing.T) {
 		QueryType: "fts",
 		Reason:    "nudge_assembly",
 	}
-	id, err := impl.Append(entry)
+	id, err := impl.Append(vaultCtx, entry)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, id > 0, "audit entry ID must be positive")
 }
 
 // TST-CORE-309
 func TestVault_4_7_2_AppendOnlyEnforcement(t *testing.T) {
-	var impl testutil.VaultAuditLogger
+	impl := realVaultAuditLogger
 	testutil.RequireImplementation(t, impl, "VaultAuditLogger")
 
 	// Attempt UPDATE or DELETE on audit table must be rejected by trigger or constraint.
@@ -2302,7 +2306,7 @@ func TestVault_4_7_2_AppendOnlyEnforcement(t *testing.T) {
 		Action:    "store",
 		Requester: "brain",
 	}
-	_, err := impl.Append(entry)
+	_, err := impl.Append(vaultCtx, entry)
 	testutil.RequireNoError(t, err)
 
 	// Verified structurally: audit_log has triggers preventing UPDATE/DELETE.
@@ -2311,7 +2315,7 @@ func TestVault_4_7_2_AppendOnlyEnforcement(t *testing.T) {
 
 // TST-CORE-310
 func TestVault_4_7_3_AuditLogRotation(t *testing.T) {
-	var impl testutil.VaultAuditLogger
+	impl := realVaultAuditLogger
 	testutil.RequireImplementation(t, impl, "VaultAuditLogger")
 
 	// Entries older than 90 days archived/purged per policy.
@@ -2322,7 +2326,7 @@ func TestVault_4_7_3_AuditLogRotation(t *testing.T) {
 
 // TST-CORE-311
 func TestVault_4_7_4_QueryAuditLog(t *testing.T) {
-	var impl testutil.VaultAuditLogger
+	impl := realVaultAuditLogger
 	testutil.RequireImplementation(t, impl, "VaultAuditLogger")
 
 	// Filter by action type, date range.
@@ -2334,10 +2338,10 @@ func TestVault_4_7_4_QueryAuditLog(t *testing.T) {
 		QueryType: "semantic",
 		Reason:    "user_request",
 	}
-	_, err := impl.Append(entry)
+	_, err := impl.Append(vaultCtx, entry)
 	testutil.RequireNoError(t, err)
 
-	results, err := impl.Query(testutil.VaultAuditFilter{
+	results, err := impl.Query(vaultCtx, testutil.VaultAuditFilter{
 		Action: "query",
 		After:  "2026-02-18T00:00:00Z",
 		Before: "2026-02-19T00:00:00Z",
@@ -2348,7 +2352,7 @@ func TestVault_4_7_4_QueryAuditLog(t *testing.T) {
 
 // TST-CORE-312
 func TestVault_4_7_5_AuditLogIntegrityHashChain(t *testing.T) {
-	var impl testutil.VaultAuditLogger
+	impl := realVaultAuditLogger
 	testutil.RequireImplementation(t, impl, "VaultAuditLogger")
 
 	// Each entry's hash includes previous entry hash — tamper-evident chain.
@@ -2359,7 +2363,7 @@ func TestVault_4_7_5_AuditLogIntegrityHashChain(t *testing.T) {
 
 // TST-CORE-313
 func TestVault_4_7_6_AuditLogJSONFormat(t *testing.T) {
-	var impl testutil.VaultAuditLogger
+	impl := realVaultAuditLogger
 	testutil.RequireImplementation(t, impl, "VaultAuditLogger")
 
 	// Stored entry must have JSON format with required fields.
@@ -2372,10 +2376,10 @@ func TestVault_4_7_6_AuditLogJSONFormat(t *testing.T) {
 		Reason:    "nudge_assembly",
 		Metadata:  `{"detail":"test"}`,
 	}
-	id, err := impl.Append(entry)
+	id, err := impl.Append(vaultCtx, entry)
 	testutil.RequireNoError(t, err)
 
-	results, err := impl.Query(testutil.VaultAuditFilter{Limit: 1})
+	results, err := impl.Query(vaultCtx, testutil.VaultAuditFilter{Limit: 1})
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(results) > 0, "should retrieve the appended entry")
 	_ = id
@@ -2383,7 +2387,7 @@ func TestVault_4_7_6_AuditLogJSONFormat(t *testing.T) {
 
 // TST-CORE-314
 func TestVault_4_7_7_RetentionConfigurable(t *testing.T) {
-	var impl testutil.VaultAuditLogger
+	impl := realVaultAuditLogger
 	testutil.RequireImplementation(t, impl, "VaultAuditLogger")
 
 	// config.json: "audit": {"retention_days": 30} — entries older than 30 days purged.
@@ -2394,7 +2398,7 @@ func TestVault_4_7_7_RetentionConfigurable(t *testing.T) {
 
 // TST-CORE-315
 func TestVault_4_7_8_WatchdogDailyCleanup(t *testing.T) {
-	var impl testutil.VaultAuditLogger
+	impl := realVaultAuditLogger
 	testutil.RequireImplementation(t, impl, "VaultAuditLogger")
 
 	// Core watchdog runs DELETE FROM audit_log WHERE timestamp < datetime('now', '-90 days').
@@ -2406,7 +2410,7 @@ func TestVault_4_7_8_WatchdogDailyCleanup(t *testing.T) {
 
 // TST-CORE-316
 func TestVault_4_7_9_RawEntriesForForensics(t *testing.T) {
-	var impl testutil.VaultAuditLogger
+	impl := realVaultAuditLogger
 	testutil.RequireImplementation(t, impl, "VaultAuditLogger")
 
 	// Individual timestamped entries preserved — not summarized.
@@ -2420,11 +2424,11 @@ func TestVault_4_7_9_RawEntriesForForensics(t *testing.T) {
 			QueryType: "fts",
 			Reason:    "user_request",
 		}
-		_, err := impl.Append(entry)
+		_, err := impl.Append(vaultCtx, entry)
 		testutil.RequireNoError(t, err)
 	}
 
-	results, err := impl.Query(testutil.VaultAuditFilter{
+	results, err := impl.Query(vaultCtx, testutil.VaultAuditFilter{
 		Persona: "/financial",
 		Action:  "query",
 	})
@@ -2434,7 +2438,7 @@ func TestVault_4_7_9_RawEntriesForForensics(t *testing.T) {
 
 // TST-CORE-317
 func TestVault_4_7_10_AuditLogStoredInIdentitySQLite(t *testing.T) {
-	var impl testutil.VaultAuditLogger
+	impl := realVaultAuditLogger
 	testutil.RequireImplementation(t, impl, "VaultAuditLogger")
 
 	// audit_log table in identity.sqlite (Tier 0) — not in persona vaults.
@@ -2444,14 +2448,14 @@ func TestVault_4_7_10_AuditLogStoredInIdentitySQLite(t *testing.T) {
 		Action:    "store",
 		Requester: "brain",
 	}
-	id, err := impl.Append(entry)
+	id, err := impl.Append(vaultCtx, entry)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, id > 0, "audit entry stored in identity.sqlite")
 }
 
 // TST-CORE-318
 func TestVault_4_7_11_StorageGrowthBounded(t *testing.T) {
-	var impl testutil.VaultAuditLogger
+	impl := realVaultAuditLogger
 	testutil.RequireImplementation(t, impl, "VaultAuditLogger")
 
 	// ~100 entries/day * 200 bytes * 90 days = ~1.8MB — trivial,
@@ -2464,7 +2468,7 @@ func TestVault_4_7_11_StorageGrowthBounded(t *testing.T) {
 
 // TST-CORE-319
 func TestVault_4_7_12_CrashLog90DayRetention(t *testing.T) {
-	var impl testutil.VaultAuditLogger
+	impl := realVaultAuditLogger
 	testutil.RequireImplementation(t, impl, "VaultAuditLogger")
 
 	// crash_log entries older than 90 days purged by watchdog daily sweep.
@@ -2480,7 +2484,7 @@ func TestVault_4_7_12_CrashLog90DayRetention(t *testing.T) {
 
 // TST-CORE-320
 func TestVault_4_8_1_SecurityModeBootFullSequence(t *testing.T) {
-	var impl testutil.BootSequencer
+	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
 
 	// Security mode: passphrase -> Argon2id -> KEK -> AES-256-GCM unwrap master seed
@@ -2498,7 +2502,7 @@ func TestVault_4_8_1_SecurityModeBootFullSequence(t *testing.T) {
 
 // TST-CORE-321
 func TestVault_4_8_2_ConvenienceModeBootFullSequence(t *testing.T) {
-	var impl testutil.BootSequencer
+	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
 
 	// Convenience mode: read raw master seed from keyfile -> HKDF DEKs -> open vaults.
@@ -2514,7 +2518,7 @@ func TestVault_4_8_2_ConvenienceModeBootFullSequence(t *testing.T) {
 
 // TST-CORE-322
 func TestVault_4_8_3_BootOpensIdentityFirst(t *testing.T) {
-	var impl testutil.BootSequencer
+	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
 
 	// identity.sqlite opened before any persona vault (gatekeeper needs contacts).
@@ -2534,7 +2538,7 @@ func TestVault_4_8_3_BootOpensIdentityFirst(t *testing.T) {
 
 // TST-CORE-323
 func TestVault_4_8_4_BootOpensPersonalSecond(t *testing.T) {
-	var impl testutil.BootSequencer
+	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
 
 	// personal.sqlite opened immediately after identity (default persona, always unlocked).
@@ -2554,7 +2558,7 @@ func TestVault_4_8_4_BootOpensPersonalSecond(t *testing.T) {
 
 // TST-CORE-324
 func TestVault_4_8_5_OtherPersonasRemainClosedAtBoot(t *testing.T) {
-	var impl testutil.BootSequencer
+	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
 
 	// 3 persona vaults configured — only identity + personal opened.
@@ -2578,7 +2582,7 @@ func TestVault_4_8_5_OtherPersonasRemainClosedAtBoot(t *testing.T) {
 
 // TST-CORE-325
 func TestVault_4_8_6_DEKsNotDerivedForClosedPersonas(t *testing.T) {
-	var impl testutil.BootSequencer
+	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
 
 	// HKDF not called for locked personas — key material never enters RAM until explicit unlock.
@@ -2599,7 +2603,7 @@ func TestVault_4_8_6_DEKsNotDerivedForClosedPersonas(t *testing.T) {
 
 // TST-CORE-326
 func TestVault_4_8_7_BrainNotifiedOnVaultUnlock(t *testing.T) {
-	var impl testutil.BootSequencer
+	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
 
 	// Core sends POST brain:8200/v1/process {event: "vault_unlocked"}.
@@ -2618,7 +2622,7 @@ func TestVault_4_8_7_BrainNotifiedOnVaultUnlock(t *testing.T) {
 
 // TST-CORE-327
 func TestVault_4_8_8_HKDFInfoStringsCorrectIdentity(t *testing.T) {
-	var impl testutil.BootSequencer
+	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
 
 	// Info string: "dina:vault:identity:v1" produces consistent DEK.
@@ -2629,7 +2633,7 @@ func TestVault_4_8_8_HKDFInfoStringsCorrectIdentity(t *testing.T) {
 
 // TST-CORE-328
 func TestVault_4_8_9_HKDFInfoStringsPerPersona(t *testing.T) {
-	var impl testutil.BootSequencer
+	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
 
 	// Each persona name appears in the HKDF info string.
@@ -2643,7 +2647,7 @@ func TestVault_4_8_9_HKDFInfoStringsPerPersona(t *testing.T) {
 
 // TST-CORE-329
 func TestVault_4_8_10_SQLCipherPRAGMAsEnforced(t *testing.T) {
-	var impl testutil.BootSequencer
+	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
 
 	// PRAGMA cipher_page_size = 4096, journal_mode = WAL.
@@ -2656,7 +2660,7 @@ func TestVault_4_8_10_SQLCipherPRAGMAsEnforced(t *testing.T) {
 
 // TST-CORE-330
 func TestVault_4_8_11_ModeStoredInConfig(t *testing.T) {
-	var impl testutil.BootSequencer
+	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
 
 	// config.json stores "security" or "convenience".
@@ -2675,7 +2679,7 @@ func TestVault_4_8_11_ModeStoredInConfig(t *testing.T) {
 
 // TST-CORE-331
 func TestVault_4_8_12_ModeChangeableAtRuntime(t *testing.T) {
-	var impl testutil.BootSequencer
+	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
 
 	// Switch from convenience -> security.
@@ -2688,7 +2692,7 @@ func TestVault_4_8_12_ModeChangeableAtRuntime(t *testing.T) {
 
 // TST-CORE-332
 func TestVault_4_8_13_DefaultModeManagedConvenience(t *testing.T) {
-	var impl testutil.BootSequencer
+	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
 
 	// Fresh setup on managed hosting: default mode is "convenience".
@@ -2707,7 +2711,7 @@ func TestVault_4_8_13_DefaultModeManagedConvenience(t *testing.T) {
 
 // TST-CORE-333
 func TestVault_4_8_14_DefaultModeSelfHostedSecurity(t *testing.T) {
-	var impl testutil.BootSequencer
+	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
 
 	// Fresh setup on self-hosted/sovereign: default mode is "security".
@@ -2727,7 +2731,7 @@ func TestVault_4_8_14_DefaultModeSelfHostedSecurity(t *testing.T) {
 
 // TST-CORE-334
 func TestVault_4_8_15_SecurityModeWrongPassphraseVaultStaysLocked(t *testing.T) {
-	var impl testutil.BootSequencer
+	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
 
 	// Incorrect passphrase: AES-256-GCM unwrap fails, vault remains locked,
@@ -2745,7 +2749,7 @@ func TestVault_4_8_15_SecurityModeWrongPassphraseVaultStaysLocked(t *testing.T) 
 
 // TST-CORE-335
 func TestVault_4_8_16_ConvenienceModeKeyfileMissingError(t *testing.T) {
-	var impl testutil.BootSequencer
+	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
 
 	// Keyfile absent: core refuses to start with clear error.
@@ -2761,7 +2765,7 @@ func TestVault_4_8_16_ConvenienceModeKeyfileMissingError(t *testing.T) {
 
 // TST-CORE-336
 func TestVault_4_8_17_ConvenienceModeKeyfileWrongPermissions(t *testing.T) {
-	var impl testutil.BootSequencer
+	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
 
 	// chmod 644 (world-readable): warning logged, boot continues or fails per policy.
@@ -2779,7 +2783,7 @@ func TestVault_4_8_17_ConvenienceModeKeyfileWrongPermissions(t *testing.T) {
 
 // TST-CORE-337
 func TestVault_4_8_18_ConfigMissingGracefulDefault(t *testing.T) {
-	var impl testutil.BootSequencer
+	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
 
 	// config.json absent: core starts with sensible defaults (security mode, single persona).
@@ -2795,7 +2799,7 @@ func TestVault_4_8_18_ConfigMissingGracefulDefault(t *testing.T) {
 
 // TST-CORE-338
 func TestVault_4_8_19_ConfigInvalidModeValue(t *testing.T) {
-	var impl testutil.BootSequencer
+	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
 
 	// mode: "hybrid" -> startup fails with validation error.
@@ -2810,7 +2814,7 @@ func TestVault_4_8_19_ConfigInvalidModeValue(t *testing.T) {
 
 // TST-CORE-339
 func TestVault_4_8_20_SecurityModeWrappedSeedPath(t *testing.T) {
-	var impl testutil.BootSequencer
+	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
 
 	// Encrypted master seed at /var/lib/dina/wrapped_seed.bin
@@ -2829,7 +2833,7 @@ func TestVault_4_8_20_SecurityModeWrappedSeedPath(t *testing.T) {
 
 // TST-CORE-340
 func TestVault_4_8_21_MasterSeedNeverPlaintextInSecurityMode(t *testing.T) {
-	var impl testutil.BootSequencer
+	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
 
 	// No plaintext seed on disk in security mode — only wrapped_seed.bin (encrypted blob).
@@ -2847,7 +2851,7 @@ func TestVault_4_8_21_MasterSeedNeverPlaintextInSecurityMode(t *testing.T) {
 
 // TST-CORE-341
 func TestVault_4_8_22_ConvenienceModeKeyfilePath(t *testing.T) {
-	var impl testutil.BootSequencer
+	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
 
 	// Raw master seed at /var/lib/dina/keyfile with chmod 600.
@@ -2864,7 +2868,7 @@ func TestVault_4_8_22_ConvenienceModeKeyfilePath(t *testing.T) {
 
 // TST-CORE-342
 func TestVault_4_8_23_ModeSwitchSecurityToConvenience(t *testing.T) {
-	var impl testutil.BootSequencer
+	impl := realBootSequencer
 	testutil.RequireImplementation(t, impl, "BootSequencer")
 
 	// Security downgrade: passphrase -> Argon2id -> KEK -> unwrap master seed
@@ -2888,12 +2892,12 @@ func padMinute(i int) string {
 // TST-CORE-883
 func TestVault_4_9_FTS5WithIndicScripts(t *testing.T) {
 	// FTS5 with Indic scripts (Hindi, Tamil, Kannada) — multilingual claim.
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
 	dek := testutil.TestDEK[:]
-	persona := "test-indic-fts5"
-	err := impl.Open(persona, dek)
+	persona := domain.PersonaName("test-indic-fts5")
+	err := impl.Open(vaultCtx, persona, dek)
 	testutil.RequireNoError(t, err)
 	defer impl.Close(persona)
 
@@ -2907,11 +2911,11 @@ func TestVault_4_9_FTS5WithIndicScripts(t *testing.T) {
 		Timestamp: 1700000000,
 		IngestedAt: 1700000000,
 	}
-	_, err = impl.Store(persona, item)
+	_, err = impl.Store(vaultCtx, persona, item)
 	testutil.RequireNoError(t, err)
 
 	// Search for Hindi text via FTS5.
-	results, err := impl.Search(persona, testutil.SearchQuery{
+	results, err := impl.Query(vaultCtx, persona, testutil.SearchQuery{
 		Mode:  "fts5",
 		Query: "परीक्षण",
 		Limit: 10,
@@ -2924,7 +2928,7 @@ func TestVault_4_9_FTS5WithIndicScripts(t *testing.T) {
 func TestVault_4_9_2_UsesSqliteVecNotVSS(t *testing.T) {
 	// Verify sqlite-vec used (not deprecated sqlite-vss).
 	// This is a code audit test — inspect vector search extension.
-	var impl testutil.SchemaInspector
+	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// sqlite-vec tables should exist, sqlite-vss tables should not.
@@ -2938,7 +2942,7 @@ func TestVault_4_9_2_UsesSqliteVecNotVSS(t *testing.T) {
 // TST-CORE-885
 func TestVault_4_9_3_FTS5AvailableDuringReindex(t *testing.T) {
 	// FTS5 remains available during sqlite-vec re-indexing.
-	var impl testutil.EmbeddingMigrator
+	impl := realEmbeddingMigrator
 	testutil.RequireImplementation(t, impl, "EmbeddingMigrator")
 
 	// Check if re-indexing is in progress.
