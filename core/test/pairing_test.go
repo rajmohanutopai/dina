@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/anthropics/dina/core/test/testutil"
@@ -23,11 +24,11 @@ import (
 // TST-CORE-520
 func TestPairing_10_1_1_GenerateCode(t *testing.T) {
 	// var impl testutil.PairingManager = realpairing.NewManager(...)
-	var impl testutil.PairingManager
+	impl := realPairingManager
 	testutil.RequireImplementation(t, impl, "PairingManager")
 
 	// GenerateCode should produce a non-empty code and a non-empty secret.
-	code, secret, err := impl.GenerateCode()
+	code, secret, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, code != "", "pairing code must not be empty")
 	testutil.RequireTrue(t, len(secret) > 0, "pairing secret must not be empty")
@@ -36,13 +37,13 @@ func TestPairing_10_1_1_GenerateCode(t *testing.T) {
 // TST-CORE-520
 func TestPairing_10_1_2_GenerateCodeUniqueness(t *testing.T) {
 	// var impl testutil.PairingManager = realpairing.NewManager(...)
-	var impl testutil.PairingManager
+	impl := realPairingManager
 	testutil.RequireImplementation(t, impl, "PairingManager")
 
 	// Two consecutive code generations must produce different codes.
-	code1, _, err := impl.GenerateCode()
+	code1, _, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
-	code2, _, err := impl.GenerateCode()
+	code2, _, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
 
 	if code1 == code2 {
@@ -53,11 +54,11 @@ func TestPairing_10_1_2_GenerateCodeUniqueness(t *testing.T) {
 // TST-CORE-520
 func TestPairing_10_1_3_GenerateCodeEntropy(t *testing.T) {
 	// var impl testutil.PairingManager = realpairing.NewManager(...)
-	var impl testutil.PairingManager
+	impl := realPairingManager
 	testutil.RequireImplementation(t, impl, "PairingManager")
 
 	// The pairing secret must have sufficient entropy (at least 16 bytes).
-	_, secret, err := impl.GenerateCode()
+	_, secret, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(secret) >= 16, "pairing secret must be at least 16 bytes for sufficient entropy")
 }
@@ -69,14 +70,14 @@ func TestPairing_10_1_3_GenerateCodeEntropy(t *testing.T) {
 // TST-CORE-521
 func TestPairing_10_2_1_CompletePairingSuccess(t *testing.T) {
 	// var impl testutil.PairingManager = realpairing.NewManager(...)
-	var impl testutil.PairingManager
+	impl := realPairingManager
 	testutil.RequireImplementation(t, impl, "PairingManager")
 
 	// Generate a code, then complete pairing with that code.
-	code, _, err := impl.GenerateCode()
+	code, _, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
 
-	clientToken, err := impl.CompletePairing(code, "My Phone")
+	clientToken, err := impl.CompletePairing(context.Background(), code, "My Phone")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, clientToken != "", "CLIENT_TOKEN must be returned on successful pairing")
 }
@@ -84,27 +85,27 @@ func TestPairing_10_2_1_CompletePairingSuccess(t *testing.T) {
 // TST-CORE-523
 func TestPairing_10_2_2_CompletePairingInvalidCode(t *testing.T) {
 	// var impl testutil.PairingManager = realpairing.NewManager(...)
-	var impl testutil.PairingManager
+	impl := realPairingManager
 	testutil.RequireImplementation(t, impl, "PairingManager")
 
 	// Completing pairing with an invalid/unused code should fail.
-	_, err := impl.CompletePairing("invalid-code-999", "My Phone")
+	_, err := impl.CompletePairing(context.Background(), "invalid-code-999", "My Phone")
 	testutil.RequireError(t, err)
 }
 
 // TST-CORE-521
 func TestPairing_10_2_3_DeviceNameRecorded(t *testing.T) {
 	// var impl testutil.PairingManager = realpairing.NewManager(...)
-	var impl testutil.PairingManager
+	impl := realPairingManager
 	testutil.RequireImplementation(t, impl, "PairingManager")
 
 	// The device name provided during pairing should be persisted in the
 	// device registry. This is verified via DeviceRegistry.List() in
 	// integration tests. At unit level, confirm pairing completes.
-	code, _, err := impl.GenerateCode()
+	code, _, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
 
-	clientToken, err := impl.CompletePairing(code, "Living Room Tablet")
+	clientToken, err := impl.CompletePairing(context.Background(), code, "Living Room Tablet")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, clientToken != "", "CLIENT_TOKEN must be returned")
 }
@@ -116,15 +117,15 @@ func TestPairing_10_2_3_DeviceNameRecorded(t *testing.T) {
 // TST-CORE-530
 func TestPairing_10_1_4_TokenLengthAndEntropy(t *testing.T) {
 	// var impl testutil.PairingManager = realpairing.NewManager(...)
-	var impl testutil.PairingManager
+	impl := realPairingManager
 	testutil.RequireImplementation(t, impl, "PairingManager")
 
 	// The CLIENT_TOKEN issued during pairing must be at least 32 bytes
 	// (64 hex chars) from crypto/rand.
-	code, _, err := impl.GenerateCode()
+	code, _, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
 
-	clientToken, err := impl.CompletePairing(code, "Test Device")
+	clientToken, err := impl.CompletePairing(context.Background(), code, "Test Device")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(clientToken) >= 64, "CLIENT_TOKEN must be at least 64 hex chars (32 bytes)")
 }
@@ -132,18 +133,18 @@ func TestPairing_10_1_4_TokenLengthAndEntropy(t *testing.T) {
 // TST-CORE-530
 func TestPairing_10_3_2_TokenUniquePerDevice(t *testing.T) {
 	// var impl testutil.PairingManager = realpairing.NewManager(...)
-	var impl testutil.PairingManager
+	impl := realPairingManager
 	testutil.RequireImplementation(t, impl, "PairingManager")
 
 	// Two different pairings must produce different CLIENT_TOKENs.
-	code1, _, err := impl.GenerateCode()
+	code1, _, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
-	token1, err := impl.CompletePairing(code1, "Device A")
+	token1, err := impl.CompletePairing(context.Background(), code1, "Device A")
 	testutil.RequireNoError(t, err)
 
-	code2, _, err := impl.GenerateCode()
+	code2, _, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
-	token2, err := impl.CompletePairing(code2, "Device B")
+	token2, err := impl.CompletePairing(context.Background(), code2, "Device B")
 	testutil.RequireNoError(t, err)
 
 	if token1 == token2 {
@@ -177,18 +178,18 @@ func TestPairing_10_4_2_NumericCodeBruteForceResistance(t *testing.T) {
 // TST-CORE-522
 func TestPairing_10_5_1_CodeExpiresAfterTTL(t *testing.T) {
 	// var impl testutil.PairingManager = realpairing.NewManager(...)
-	var impl testutil.PairingManager
+	impl := realPairingManager
 	testutil.RequireImplementation(t, impl, "PairingManager")
 
 	// A pairing code should expire after its TTL. After expiry,
 	// CompletePairing should fail.
-	code, _, err := impl.GenerateCode()
+	code, _, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
 
 	// NOTE: Real implementation should use a short TTL (e.g., 5 minutes).
 	// Integration test: generate code, wait past TTL, attempt pairing → error.
 	// At unit level, verify the code is initially valid.
-	clientToken, err := impl.CompletePairing(code, "Test Device")
+	clientToken, err := impl.CompletePairing(context.Background(), code, "Test Device")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, clientToken != "", "code should be valid before expiry")
 }
@@ -196,18 +197,18 @@ func TestPairing_10_5_1_CodeExpiresAfterTTL(t *testing.T) {
 // TST-CORE-525
 func TestPairing_10_6_CodeSingleUse(t *testing.T) {
 	// var impl testutil.PairingManager = realpairing.NewManager(...)
-	var impl testutil.PairingManager
+	impl := realPairingManager
 	testutil.RequireImplementation(t, impl, "PairingManager")
 
 	// A pairing code must be single-use. Reusing it should fail.
-	code, _, err := impl.GenerateCode()
+	code, _, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
 
-	_, err = impl.CompletePairing(code, "First Device")
+	_, err = impl.CompletePairing(context.Background(), code, "First Device")
 	testutil.RequireNoError(t, err)
 
 	// Second attempt with the same code should fail.
-	_, err = impl.CompletePairing(code, "Second Device")
+	_, err = impl.CompletePairing(context.Background(), code, "Second Device")
 	testutil.RequireError(t, err)
 }
 
@@ -218,24 +219,24 @@ func TestPairing_10_6_CodeSingleUse(t *testing.T) {
 // TST-CORE-526
 func TestPairing_10_7_ConcurrentPairingCodes(t *testing.T) {
 	// var impl testutil.PairingManager = realpairing.NewManager(...)
-	var impl testutil.PairingManager
+	impl := realPairingManager
 	testutil.RequireImplementation(t, impl, "PairingManager")
 
 	// Two pairing codes generated concurrently must both be valid
 	// and work independently.
-	code1, _, err := impl.GenerateCode()
+	code1, _, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
-	code2, _, err := impl.GenerateCode()
+	code2, _, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
 
 	testutil.RequireTrue(t, code1 != code2, "concurrent codes must be distinct")
 
 	// Both codes should complete pairing independently.
-	token1, err := impl.CompletePairing(code1, "Phone")
+	token1, err := impl.CompletePairing(context.Background(), code1, "Phone")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, token1 != "", "first concurrent code must yield a token")
 
-	token2, err := impl.CompletePairing(code2, "Tablet")
+	token2, err := impl.CompletePairing(context.Background(), code2, "Tablet")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, token2 != "", "second concurrent code must yield a token")
 
@@ -249,19 +250,19 @@ func TestPairing_10_7_ConcurrentPairingCodes(t *testing.T) {
 // TST-CORE-527
 func TestPairing_10_1_ListPairedDevices(t *testing.T) {
 	// var impl testutil.PairingManager = realpairing.NewManager(...)
-	var impl testutil.PairingManager
+	impl := realPairingManager
 	testutil.RequireImplementation(t, impl, "PairingManager")
 
 	// Pair three devices, then list — should return all three with
 	// token_id, device_name, last_seen, created_at, revoked fields.
 	for _, name := range []string{"Phone", "Tablet", "Laptop"} {
-		code, _, err := impl.GenerateCode()
+		code, _, err := impl.GenerateCode(context.Background())
 		testutil.RequireNoError(t, err)
-		_, err = impl.CompletePairing(code, name)
+		_, err = impl.CompletePairing(context.Background(), code, name)
 		testutil.RequireNoError(t, err)
 	}
 
-	devices, err := impl.ListDevices()
+	devices, err := impl.ListDevices(context.Background())
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(devices) >= 3, "must list at least 3 paired devices")
 
@@ -275,26 +276,26 @@ func TestPairing_10_1_ListPairedDevices(t *testing.T) {
 // TST-CORE-528
 func TestPairing_10_1_RevokeDevice(t *testing.T) {
 	// var impl testutil.PairingManager = realpairing.NewManager(...)
-	var impl testutil.PairingManager
+	impl := realPairingManager
 	testutil.RequireImplementation(t, impl, "PairingManager")
 
 	// Pair a device, revoke it, verify revoked status.
-	code, _, err := impl.GenerateCode()
+	code, _, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
-	_, err = impl.CompletePairing(code, "iPad")
+	_, err = impl.CompletePairing(context.Background(), code, "iPad")
 	testutil.RequireNoError(t, err)
 
-	devices, err := impl.ListDevices()
+	devices, err := impl.ListDevices(context.Background())
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(devices) > 0, "must have at least one device")
 
 	// Revoke the first device.
 	targetID := devices[0].TokenID
-	err = impl.RevokeDevice(targetID)
+	err = impl.RevokeDevice(context.Background(), targetID)
 	testutil.RequireNoError(t, err)
 
 	// Verify revocation.
-	devices, err = impl.ListDevices()
+	devices, err = impl.ListDevices(context.Background())
 	testutil.RequireNoError(t, err)
 	for _, d := range devices {
 		if d.TokenID == targetID {
@@ -306,14 +307,14 @@ func TestPairing_10_1_RevokeDevice(t *testing.T) {
 // TST-CORE-529
 func TestPairing_10_1_PairCompletionResponseFields(t *testing.T) {
 	// var impl testutil.PairingManager = realpairing.NewManager(...)
-	var impl testutil.PairingManager
+	impl := realPairingManager
 	testutil.RequireImplementation(t, impl, "PairingManager")
 
 	// Pair completion response must include client_token, node_did, and ws_url.
-	code, _, err := impl.GenerateCode()
+	code, _, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
 
-	resp, err := impl.CompletePairingFull(code, "Phone")
+	resp, err := impl.CompletePairingFull(context.Background(), code, "Phone")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, resp.ClientToken != "", "response must include client_token")
 	testutil.RequireTrue(t, resp.NodeDID != "", "response must include node_did (did:plc:...)")
@@ -323,10 +324,10 @@ func TestPairing_10_1_PairCompletionResponseFields(t *testing.T) {
 // TST-CORE-895
 func TestPairing_10_1_5_DeviceTypeRecorded(t *testing.T) {
 	// Device type (rich/thin) recorded during pairing.
-	var impl testutil.PairingManager
+	impl := realPairingManager
 	testutil.RequireImplementation(t, impl, "PairingManager")
 
-	code, _, err := impl.GenerateCode()
+	code, _, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(code) > 0, "pairing code must be generated")
 }
@@ -334,11 +335,11 @@ func TestPairing_10_1_5_DeviceTypeRecorded(t *testing.T) {
 // TST-CORE-896
 func TestPairing_10_1_6_mDNS_AutoDiscoveryBroadcast(t *testing.T) {
 	// mDNS auto-discovery broadcast on LAN.
-	var impl testutil.PairingManager
+	impl := realPairingManager
 	testutil.RequireImplementation(t, impl, "PairingManager")
 
 	// mDNS broadcast is tested by verifying the pairing manager is initialized.
-	devices, err := impl.ListDevices()
+	devices, err := impl.ListDevices(context.Background())
 	testutil.RequireNoError(t, err)
 	_ = devices
 }

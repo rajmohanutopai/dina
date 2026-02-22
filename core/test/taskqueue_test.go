@@ -1,8 +1,10 @@
 package test
 
 import (
+	"context"
 	"testing"
 
+	"github.com/anthropics/dina/core/internal/domain"
 	"github.com/anthropics/dina/core/test/testutil"
 )
 
@@ -18,58 +20,58 @@ import (
 
 // TST-CORE-456
 func TestTaskQueue_8_1_1_EnqueueReturnsID(t *testing.T) {
-	var impl testutil.TaskQueuer
+	impl := realTaskQueuer
 	// impl = taskqueue.New()
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
 
 	task := testutil.TestTask()
-	id, err := impl.Enqueue(task)
+	id, err := impl.Enqueue(context.Background(), task)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(id) > 0, "enqueue must return a non-empty task ID")
 }
 
 // TST-CORE-828
 func TestTaskQueue_8_1_2_DequeueReturnsPending(t *testing.T) {
-	var impl testutil.TaskQueuer
+	impl := realTaskQueuer
 	// impl = taskqueue.New()
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
 
 	task := testutil.TestTask()
-	_, err := impl.Enqueue(task)
+	_, err := impl.Enqueue(context.Background(), task)
 	testutil.RequireNoError(t, err)
 
-	dequeued, err := impl.Dequeue()
+	dequeued, err := impl.Dequeue(context.Background())
 	testutil.RequireNoError(t, err)
 	testutil.RequireNotNil(t, dequeued)
-	testutil.RequireEqual(t, dequeued.Status, "running")
+	testutil.RequireEqual(t, dequeued.Status, domain.TaskRunning)
 }
 
 // TST-CORE-829
 func TestTaskQueue_8_1_3_DequeueEmptyReturnsNil(t *testing.T) {
-	var impl testutil.TaskQueuer
+	impl := realTaskQueuer
 	// impl = taskqueue.New()
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
 
-	dequeued, err := impl.Dequeue()
+	dequeued, err := impl.Dequeue(context.Background())
 	testutil.RequireNoError(t, err)
 	testutil.RequireNil(t, dequeued)
 }
 
 // TST-CORE-830
 func TestTaskQueue_8_1_4_CompleteTask(t *testing.T) {
-	var impl testutil.TaskQueuer
+	impl := realTaskQueuer
 	// impl = taskqueue.New()
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
 
 	task := testutil.TestTask()
-	id, err := impl.Enqueue(task)
+	id, err := impl.Enqueue(context.Background(), task)
 	testutil.RequireNoError(t, err)
 
-	dequeued, err := impl.Dequeue()
+	dequeued, err := impl.Dequeue(context.Background())
 	testutil.RequireNoError(t, err)
 	testutil.RequireNotNil(t, dequeued)
 
-	err = impl.Complete(id)
+	err = impl.Complete(context.Background(), id)
 	testutil.RequireNoError(t, err)
 }
 
@@ -78,14 +80,14 @@ func TestTaskQueue_8_1_5_MockEnqueueDequeue(t *testing.T) {
 	mock := &testutil.MockTaskQueuer{}
 
 	task := testutil.TestTask()
-	id, err := mock.Enqueue(task)
+	id, err := mock.Enqueue(context.Background(), task)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(id) > 0, "mock enqueue should return task ID")
 
-	dequeued, err := mock.Dequeue()
+	dequeued, err := mock.Dequeue(context.Background())
 	testutil.RequireNoError(t, err)
 	testutil.RequireNotNil(t, dequeued)
-	testutil.RequireEqual(t, dequeued.Status, "running")
+	testutil.RequireEqual(t, dequeued.Status, domain.TaskRunning)
 	testutil.RequireEqual(t, dequeued.Type, "sync_gmail")
 }
 
@@ -95,7 +97,7 @@ func TestTaskQueue_8_1_5_MockEnqueueDequeue(t *testing.T) {
 
 // TST-CORE-832
 func TestTaskQueue_8_2_1_HighPriorityFirst(t *testing.T) {
-	var impl testutil.TaskQueuer
+	impl := realTaskQueuer
 	// impl = taskqueue.New()
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
 
@@ -107,13 +109,13 @@ func TestTaskQueue_8_2_1_HighPriorityFirst(t *testing.T) {
 	highPriority.Priority = 10
 	highPriority.Type = "urgent_sync"
 
-	_, err := impl.Enqueue(lowPriority)
+	_, err := impl.Enqueue(context.Background(), lowPriority)
 	testutil.RequireNoError(t, err)
-	_, err = impl.Enqueue(highPriority)
+	_, err = impl.Enqueue(context.Background(), highPriority)
 	testutil.RequireNoError(t, err)
 
 	// Dequeue should return high-priority task first.
-	dequeued, err := impl.Dequeue()
+	dequeued, err := impl.Dequeue(context.Background())
 	testutil.RequireNoError(t, err)
 	testutil.RequireNotNil(t, dequeued)
 	testutil.RequireEqual(t, dequeued.Type, "urgent_sync")
@@ -121,7 +123,7 @@ func TestTaskQueue_8_2_1_HighPriorityFirst(t *testing.T) {
 
 // TST-CORE-833
 func TestTaskQueue_8_2_2_SamePriorityFIFO(t *testing.T) {
-	var impl testutil.TaskQueuer
+	impl := realTaskQueuer
 	// impl = taskqueue.New()
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
 
@@ -132,12 +134,12 @@ func TestTaskQueue_8_2_2_SamePriorityFIFO(t *testing.T) {
 	task2 := testutil.TestTask()
 	task2.Type = "second"
 
-	_, err := impl.Enqueue(task1)
+	_, err := impl.Enqueue(context.Background(), task1)
 	testutil.RequireNoError(t, err)
-	_, err = impl.Enqueue(task2)
+	_, err = impl.Enqueue(context.Background(), task2)
 	testutil.RequireNoError(t, err)
 
-	dequeued, err := impl.Dequeue()
+	dequeued, err := impl.Dequeue(context.Background())
 	testutil.RequireNoError(t, err)
 	testutil.RequireNotNil(t, dequeued)
 	testutil.RequireEqual(t, dequeued.Type, "first")
@@ -157,13 +159,13 @@ func TestTaskQueue_8_2_3_MockPriorityNotEnforced(t *testing.T) {
 	high.Priority = 10
 	high.Type = "high"
 
-	_, err := mock.Enqueue(low)
+	_, err := mock.Enqueue(context.Background(), low)
 	testutil.RequireNoError(t, err)
-	_, err = mock.Enqueue(high)
+	_, err = mock.Enqueue(context.Background(), high)
 	testutil.RequireNoError(t, err)
 
 	// Mock returns FIFO, not priority-ordered.
-	dequeued, err := mock.Dequeue()
+	dequeued, err := mock.Dequeue(context.Background())
 	testutil.RequireNoError(t, err)
 	testutil.RequireNotNil(t, dequeued)
 	testutil.RequireEqual(t, dequeued.Type, "low")
@@ -175,18 +177,18 @@ func TestTaskQueue_8_2_3_MockPriorityNotEnforced(t *testing.T) {
 
 // TST-CORE-835
 func TestTaskQueue_8_3_1_FailTask(t *testing.T) {
-	var impl testutil.TaskQueuer
+	impl := realTaskQueuer
 	// impl = taskqueue.New()
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
 
 	task := testutil.TestTask()
-	id, err := impl.Enqueue(task)
+	id, err := impl.Enqueue(context.Background(), task)
 	testutil.RequireNoError(t, err)
 
-	_, err = impl.Dequeue()
+	_, err = impl.Dequeue(context.Background())
 	testutil.RequireNoError(t, err)
 
-	err = impl.Fail(id, "network timeout")
+	err = impl.Fail(context.Background(), id, "network timeout")
 	testutil.RequireNoError(t, err)
 }
 
@@ -195,21 +197,21 @@ func TestTaskQueue_8_3_2_RetryIncrementsCounter(t *testing.T) {
 	mock := &testutil.MockTaskQueuer{}
 
 	task := testutil.TestTask()
-	id, err := mock.Enqueue(task)
+	id, err := mock.Enqueue(context.Background(), task)
 	testutil.RequireNoError(t, err)
 
-	dequeued, err := mock.Dequeue()
+	dequeued, err := mock.Dequeue(context.Background())
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, dequeued.Retries, 0)
 
-	err = mock.Fail(id, "timeout")
+	err = mock.Fail(context.Background(), id, "timeout")
 	testutil.RequireNoError(t, err)
 
-	err = mock.Retry(id)
+	err = mock.Retry(context.Background(), id)
 	testutil.RequireNoError(t, err)
 
 	// After retry, task should be pending again with incremented retry count.
-	retried, err := mock.Dequeue()
+	retried, err := mock.Dequeue(context.Background())
 	testutil.RequireNoError(t, err)
 	testutil.RequireNotNil(t, retried)
 	testutil.RequireEqual(t, retried.Retries, 1)
@@ -220,11 +222,11 @@ func TestTaskQueue_8_3_3_RetryNonFailedTaskFails(t *testing.T) {
 	mock := &testutil.MockTaskQueuer{}
 
 	task := testutil.TestTask()
-	id, err := mock.Enqueue(task)
+	id, err := mock.Enqueue(context.Background(), task)
 	testutil.RequireNoError(t, err)
 
 	// Task is pending (not failed) — retry should fail.
-	err = mock.Retry(id)
+	err = mock.Retry(context.Background(), id)
 	testutil.RequireError(t, err)
 }
 
@@ -232,7 +234,7 @@ func TestTaskQueue_8_3_3_RetryNonFailedTaskFails(t *testing.T) {
 func TestTaskQueue_8_3_4_FailNonExistentTaskFails(t *testing.T) {
 	mock := &testutil.MockTaskQueuer{}
 
-	err := mock.Fail("nonexistent-id", "some reason")
+	err := mock.Fail(context.Background(), "nonexistent-id", "some reason")
 	testutil.RequireError(t, err)
 }
 
@@ -242,7 +244,7 @@ func TestTaskQueue_8_3_4_FailNonExistentTaskFails(t *testing.T) {
 
 // TST-CORE-839
 func TestTaskQueue_8_4_1_CrashRecoveryReEnqueuesRunningTasks(t *testing.T) {
-	var impl testutil.TaskQueuer
+	impl := realTaskQueuer
 	// impl = taskqueue.New()
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
 
@@ -253,7 +255,7 @@ func TestTaskQueue_8_4_1_CrashRecoveryReEnqueuesRunningTasks(t *testing.T) {
 
 // TST-CORE-840
 func TestTaskQueue_8_4_2_RetryScheduleExponentialBackoff(t *testing.T) {
-	var impl testutil.TaskQueuer
+	impl := realTaskQueuer
 	// impl = taskqueue.New()
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
 
@@ -273,7 +275,7 @@ func TestTaskQueue_8_4_2_RetryScheduleExponentialBackoff(t *testing.T) {
 
 // TST-CORE-841
 func TestTaskQueue_8_4_3_MaxRetriesExceededMarksDeadLetter(t *testing.T) {
-	var impl testutil.TaskQueuer
+	impl := realTaskQueuer
 	// impl = taskqueue.New()
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
 
@@ -284,7 +286,7 @@ func TestTaskQueue_8_4_3_MaxRetriesExceededMarksDeadLetter(t *testing.T) {
 
 // TST-CORE-842
 func TestTaskQueue_8_4_4_PersistenceAcrossRestart(t *testing.T) {
-	var impl testutil.TaskQueuer
+	impl := realTaskQueuer
 	// impl = taskqueue.New()
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
 
@@ -299,12 +301,12 @@ func TestTaskQueue_8_4_4_PersistenceAcrossRestart(t *testing.T) {
 
 // TST-CORE-457
 func TestTaskQueue_8_1_6_TaskIDIsULID(t *testing.T) {
-	var impl testutil.TaskQueuer
+	impl := realTaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
 
 	// Task ID must be a valid ULID (lexicographically sortable, timestamp-embedded).
 	task := testutil.TestTask()
-	id, err := impl.Enqueue(task)
+	id, err := impl.Enqueue(context.Background(), task)
 	testutil.RequireNoError(t, err)
 	// ULIDs are 26 characters, alphanumeric.
 	testutil.RequireTrue(t, len(id) > 0, "task ID should be non-empty ULID")
@@ -312,18 +314,18 @@ func TestTaskQueue_8_1_6_TaskIDIsULID(t *testing.T) {
 
 // TST-CORE-458
 func TestTaskQueue_8_1_7_SendToBrainSetsProcessing(t *testing.T) {
-	var impl testutil.TaskQueuer
+	impl := realTaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
 
 	// Core sends POST brain:8200/api/v1/process, sets status="processing", timeout_at=now()+5min.
 	task := testutil.TestTask()
-	_, err := impl.Enqueue(task)
+	_, err := impl.Enqueue(context.Background(), task)
 	testutil.RequireNoError(t, err)
 
-	dequeued, err := impl.Dequeue()
+	dequeued, err := impl.Dequeue(context.Background())
 	testutil.RequireNoError(t, err)
 	testutil.RequireNotNil(t, dequeued)
-	testutil.RequireEqual(t, dequeued.Status, "running")
+	testutil.RequireEqual(t, dequeued.Status, domain.TaskRunning)
 }
 
 // TST-CORE-459
@@ -331,25 +333,25 @@ func TestTaskQueue_8_1_8_BrainACKDeletesTask(t *testing.T) {
 	mock := &testutil.MockTaskQueuer{}
 
 	task := testutil.TestTask()
-	id, err := mock.Enqueue(task)
+	id, err := mock.Enqueue(context.Background(), task)
 	testutil.RequireNoError(t, err)
 
-	_, err = mock.Dequeue()
+	_, err = mock.Dequeue(context.Background())
 	testutil.RequireNoError(t, err)
 
 	// Brain sends POST core:8100/v1/task/ack — core deletes task.
-	err = mock.Complete(id)
+	err = mock.Complete(context.Background(), id)
 	testutil.RequireNoError(t, err)
 
 	// After completion, dequeue should return nil (no more pending tasks).
-	next, err := mock.Dequeue()
+	next, err := mock.Dequeue(context.Background())
 	testutil.RequireNoError(t, err)
 	testutil.RequireNil(t, next)
 }
 
 // TST-CORE-461
 func TestTaskQueue_8_1_9_TaskTypes(t *testing.T) {
-	var impl testutil.TaskQueuer
+	impl := realTaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
 
 	// Valid types: process, reason, embed — unknown type rejected.
@@ -357,14 +359,14 @@ func TestTaskQueue_8_1_9_TaskTypes(t *testing.T) {
 	for _, typ := range validTypes {
 		task := testutil.TestTask()
 		task.Type = typ
-		_, err := impl.Enqueue(task)
+		_, err := impl.Enqueue(context.Background(), task)
 		testutil.RequireNoError(t, err)
 	}
 }
 
 // TST-CORE-463
 func TestTaskQueue_8_1_10_ConcurrentWorkers(t *testing.T) {
-	var impl testutil.TaskQueuer
+	impl := realTaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
 
 	// Multiple goroutines dequeuing — no duplicate processing (SQLite row-level locking).
@@ -377,11 +379,11 @@ func TestTaskQueue_8_1_10_ConcurrentWorkers(t *testing.T) {
 
 // TST-CORE-464
 func TestTaskQueue_8_2_4_WatchdogDetectsTimedOutTask(t *testing.T) {
-	var impl testutil.WatchdogRunner
+	impl := realWatchdogRunner
 	testutil.RequireImplementation(t, impl, "WatchdogRunner")
 
 	// Task with status="processing" and timeout_at < now() should be detected.
-	timedOut, err := impl.ScanTimedOut()
+	timedOut, err := impl.ScanTimedOut(context.Background())
 	testutil.RequireNoError(t, err)
 	// No tasks should be timed out in a fresh system.
 	_ = timedOut
@@ -389,7 +391,7 @@ func TestTaskQueue_8_2_4_WatchdogDetectsTimedOutTask(t *testing.T) {
 
 // TST-CORE-465
 func TestTaskQueue_8_2_5_WatchdogRunsPeriodically(t *testing.T) {
-	var impl testutil.WatchdogRunner
+	impl := realWatchdogRunner
 	testutil.RequireImplementation(t, impl, "WatchdogRunner")
 
 	// Background goroutine scans dina_tasks every 30s.
@@ -398,7 +400,7 @@ func TestTaskQueue_8_2_5_WatchdogRunsPeriodically(t *testing.T) {
 
 // TST-CORE-466
 func TestTaskQueue_8_2_6_WatchdogDoesNotTouchHealthyTasks(t *testing.T) {
-	var impl testutil.WatchdogRunner
+	impl := realWatchdogRunner
 	testutil.RequireImplementation(t, impl, "WatchdogRunner")
 
 	// Task processing with timeout not expired should be left alone.
@@ -407,7 +409,7 @@ func TestTaskQueue_8_2_6_WatchdogDoesNotTouchHealthyTasks(t *testing.T) {
 
 // TST-CORE-467
 func TestTaskQueue_8_2_7_ResetTaskReDispatched(t *testing.T) {
-	var impl testutil.WatchdogRunner
+	impl := realWatchdogRunner
 	testutil.RequireImplementation(t, impl, "WatchdogRunner")
 
 	// Watchdog resets task to pending — next dispatch cycle picks it up.
@@ -423,18 +425,18 @@ func TestTaskQueue_8_3_5_DeadLetterAfter3Failures(t *testing.T) {
 	mock := &testutil.MockTaskQueuer{}
 
 	task := testutil.TestTask()
-	id, err := mock.Enqueue(task)
+	id, err := mock.Enqueue(context.Background(), task)
 	testutil.RequireNoError(t, err)
 
 	// Simulate 3 failure cycles.
 	for i := 0; i < 3; i++ {
-		_, _ = mock.Dequeue()
-		_ = mock.Fail(id, "brain crash")
-		_ = mock.Retry(id)
+		_, _ = mock.Dequeue(context.Background())
+		_ = mock.Fail(context.Background(), id, "brain crash")
+		_ = mock.Retry(context.Background(), id)
 	}
 
 	// After 3 retries, the task should have retries=3.
-	dequeued, _ := mock.Dequeue()
+	dequeued, _ := mock.Dequeue(context.Background())
 	testutil.RequireNotNil(t, dequeued)
 	testutil.RequireEqual(t, dequeued.Retries, 3)
 	// In real implementation, this would trigger dead letter status + Tier 2 notification.
@@ -442,7 +444,7 @@ func TestTaskQueue_8_3_5_DeadLetterAfter3Failures(t *testing.T) {
 
 // TST-CORE-471
 func TestTaskQueue_8_3_6_TaskCancellation(t *testing.T) {
-	var impl testutil.TaskQueuer
+	impl := realTaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
 
 	// Cancel pending task by ID — status becomes "cancelled".
@@ -457,7 +459,7 @@ func TestTaskQueue_8_3_7_IndexOnStatusTimeout(t *testing.T) {
 
 // TST-CORE-473
 func TestTaskQueue_8_3_8_NoSilentDataLoss(t *testing.T) {
-	var impl testutil.TaskQueuer
+	impl := realTaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
 
 	// Task hits dead letter — user notification via Tier 2, not silently dropped.
@@ -473,7 +475,7 @@ func TestTaskQueue_8_4_5_StoreReminder(t *testing.T) {
 	mock := testutil.NewMockReminderScheduler()
 
 	reminder := testutil.TestReminder(1740200000)
-	id, err := mock.StoreReminder(reminder)
+	id, err := mock.StoreReminder(context.Background(), reminder)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(id) > 0, "store reminder must return an ID")
 }
@@ -486,13 +488,13 @@ func TestTaskQueue_8_4_6_NextPendingReminder(t *testing.T) {
 	r1 := testutil.TestReminder(1740200000) // Earlier
 	r2 := testutil.TestReminder(1740300000) // Later
 
-	_, err := mock.StoreReminder(r1)
+	_, err := mock.StoreReminder(context.Background(), r1)
 	testutil.RequireNoError(t, err)
-	_, err = mock.StoreReminder(r2)
+	_, err = mock.StoreReminder(context.Background(), r2)
 	testutil.RequireNoError(t, err)
 
 	// NextPending returns the earlier reminder (ORDER BY trigger_at LIMIT 1).
-	next, err := mock.NextPending()
+	next, err := mock.NextPending(context.Background())
 	testutil.RequireNoError(t, err)
 	testutil.RequireNotNil(t, next)
 	testutil.RequireEqual(t, next.TriggerAt, int64(1740200000))
@@ -500,7 +502,7 @@ func TestTaskQueue_8_4_6_NextPendingReminder(t *testing.T) {
 
 // TST-CORE-476
 func TestTaskQueue_8_4_7_SleepUntilTriggerTime(t *testing.T) {
-	var impl testutil.ReminderScheduler
+	impl := realReminderScheduler
 	testutil.RequireImplementation(t, impl, "ReminderScheduler")
 
 	// Reminder due in 30 minutes — loop sleeps for 30 minutes, then fires.
@@ -509,7 +511,7 @@ func TestTaskQueue_8_4_7_SleepUntilTriggerTime(t *testing.T) {
 
 // TST-CORE-477
 func TestTaskQueue_8_4_8_MissedReminderOnStartup(t *testing.T) {
-	var impl testutil.ReminderScheduler
+	impl := realReminderScheduler
 	testutil.RequireImplementation(t, impl, "ReminderScheduler")
 
 	// Reminder was due 2 hours ago (server was down).
@@ -522,15 +524,15 @@ func TestTaskQueue_8_4_9_FireAndMarkDone(t *testing.T) {
 	mock := testutil.NewMockReminderScheduler()
 
 	reminder := testutil.TestReminder(1740200000)
-	id, err := mock.StoreReminder(reminder)
+	id, err := mock.StoreReminder(context.Background(), reminder)
 	testutil.RequireNoError(t, err)
 
 	// Fire: notify(next) -> vault.MarkFired(next.ID) -> not re-triggered.
-	err = mock.MarkFired(id)
+	err = mock.MarkFired(context.Background(), id)
 	testutil.RequireNoError(t, err)
 
 	// After marking fired, NextPending should not return this reminder.
-	next, err := mock.NextPending()
+	next, err := mock.NextPending(context.Background())
 	testutil.RequireNoError(t, err)
 	testutil.RequireNil(t, next)
 }
@@ -540,7 +542,7 @@ func TestTaskQueue_8_4_10_NoPendingSleepOneMinute(t *testing.T) {
 	mock := testutil.NewMockReminderScheduler()
 
 	// No reminders in vault — NextPending returns nil, loop should sleep 1 minute.
-	next, err := mock.NextPending()
+	next, err := mock.NextPending(context.Background())
 	testutil.RequireNoError(t, err)
 	testutil.RequireNil(t, next)
 }
@@ -565,7 +567,7 @@ func TestTaskQueue_8_4_12_ComplexSchedulingDelegated(t *testing.T) {
 
 // TST-CORE-460
 func TestTaskQueue_8_1_11_BrainNoACKCrash(t *testing.T) {
-	var impl testutil.TaskQueuer
+	impl := realTaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
 
 	// Brain crashes, no ACK within 5 min → timeout_at expires,
@@ -575,7 +577,7 @@ func TestTaskQueue_8_1_11_BrainNoACKCrash(t *testing.T) {
 
 // TST-CORE-462
 func TestTaskQueue_8_1_12_TaskPersistenceAcrossRestart(t *testing.T) {
-	var impl testutil.TaskQueuer
+	impl := realTaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
 
 	// All pending/processing tasks still in dina_tasks after restart,
@@ -588,15 +590,15 @@ func TestTaskQueue_8_3_9_DeadLetterNot5(t *testing.T) {
 	mock := &testutil.MockTaskQueuer{}
 
 	task := testutil.TestTask()
-	id, err := mock.Enqueue(task)
+	id, err := mock.Enqueue(context.Background(), task)
 	testutil.RequireNoError(t, err)
 
 	// Dead letter triggers at 3 failures, not 5. Attempts=4 should never happen.
 	for i := 0; i < 3; i++ {
-		_, _ = mock.Dequeue()
-		_ = mock.Fail(id, "brain crash")
+		_, _ = mock.Dequeue(context.Background())
+		_ = mock.Fail(context.Background(), id, "brain crash")
 		if i < 2 {
-			_ = mock.Retry(id)
+			_ = mock.Retry(context.Background(), id)
 		}
 	}
 	// After 3 failures, task should be at retries=2 in failed state
@@ -605,7 +607,7 @@ func TestTaskQueue_8_3_9_DeadLetterNot5(t *testing.T) {
 
 // TST-CORE-470
 func TestTaskQueue_8_3_10_RetryBackoff(t *testing.T) {
-	var impl testutil.TaskQueuer
+	impl := realTaskQueuer
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
 
 	// Task queue uses simple retry + dead letter (no exponential backoff).
@@ -617,14 +619,15 @@ func TestTaskQueue_8_3_10_RetryBackoff(t *testing.T) {
 // TST-CORE-933
 func TestTaskQueue_8_4_13_SilenceRules_StoredAndRetrievable(t *testing.T) {
 	// Silence rules stored and retrievable from vault.
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
+	vaultCtx := context.Background()
 	dek := testutil.TestDEK[:]
 	persona := "test-silence-rules"
-	err := impl.Open(persona, dek)
+	err := impl.Open(vaultCtx, domain.PersonaName(persona), dek)
 	testutil.RequireNoError(t, err)
-	defer impl.Close(persona)
+	defer impl.Close(domain.PersonaName(persona))
 
 	// Store a silence rule as a vault item.
 	item := testutil.VaultItem{
@@ -635,6 +638,6 @@ func TestTaskQueue_8_4_13_SilenceRules_StoredAndRetrievable(t *testing.T) {
 		Timestamp:  1700000000,
 		IngestedAt: 1700000000,
 	}
-	_, err = impl.Store(persona, item)
+	_, err = impl.Store(vaultCtx, domain.PersonaName(persona), item)
 	testutil.RequireNoError(t, err)
 }

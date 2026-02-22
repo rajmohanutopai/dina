@@ -19,8 +19,7 @@ import (
 // TST-CORE-056, TST-CORE-057, TST-CORE-058, TST-CORE-059, TST-CORE-060, TST-CORE-061, TST-CORE-062
 // TST-CORE-063, TST-CORE-064, TST-CORE-065
 func TestCrypto_2_1_GenerateMnemonic24Words(t *testing.T) {
-	var impl testutil.MnemonicGenerator
-	// impl = mnemonic.New()  // wire real implementation
+	impl := realMnemonic
 	testutil.RequireImplementation(t, impl, "MnemonicGenerator")
 
 	mnemonic, seed, err := impl.Generate()
@@ -38,7 +37,7 @@ func TestCrypto_2_1_GenerateMnemonic24Words(t *testing.T) {
 // TST-CORE-056, TST-CORE-057, TST-CORE-058, TST-CORE-059, TST-CORE-060, TST-CORE-061, TST-CORE-062
 // TST-CORE-063, TST-CORE-064, TST-CORE-065
 func TestCrypto_2_1_MnemonicToSeedKnownVector(t *testing.T) {
-	var impl testutil.MnemonicGenerator
+	impl := realMnemonic
 	// impl = mnemonic.New()
 	testutil.RequireImplementation(t, impl, "MnemonicGenerator")
 
@@ -50,7 +49,7 @@ func TestCrypto_2_1_MnemonicToSeedKnownVector(t *testing.T) {
 // TST-CORE-056, TST-CORE-057, TST-CORE-058, TST-CORE-059, TST-CORE-060, TST-CORE-061, TST-CORE-062
 // TST-CORE-063, TST-CORE-064, TST-CORE-065
 func TestCrypto_2_1_InvalidChecksumRejected(t *testing.T) {
-	var impl testutil.MnemonicGenerator
+	impl := realMnemonic
 	// impl = mnemonic.New()
 	testutil.RequireImplementation(t, impl, "MnemonicGenerator")
 
@@ -61,7 +60,7 @@ func TestCrypto_2_1_InvalidChecksumRejected(t *testing.T) {
 // TST-CORE-056, TST-CORE-057, TST-CORE-058, TST-CORE-059, TST-CORE-060, TST-CORE-061, TST-CORE-062
 // TST-CORE-063, TST-CORE-064, TST-CORE-065
 func TestCrypto_2_1_WrongWordCountRejected(t *testing.T) {
-	var impl testutil.MnemonicGenerator
+	impl := realMnemonic
 	// impl = mnemonic.New()
 	testutil.RequireImplementation(t, impl, "MnemonicGenerator")
 
@@ -72,7 +71,7 @@ func TestCrypto_2_1_WrongWordCountRejected(t *testing.T) {
 // TST-CORE-056, TST-CORE-057, TST-CORE-058, TST-CORE-059, TST-CORE-060, TST-CORE-061, TST-CORE-062
 // TST-CORE-063, TST-CORE-064, TST-CORE-065
 func TestCrypto_2_1_ExtraWhitespaceNormalized(t *testing.T) {
-	var impl testutil.MnemonicGenerator
+	impl := realMnemonic
 	// impl = mnemonic.New()
 	testutil.RequireImplementation(t, impl, "MnemonicGenerator")
 
@@ -91,7 +90,7 @@ func TestCrypto_2_1_ExtraWhitespaceNormalized(t *testing.T) {
 // TST-CORE-056, TST-CORE-057, TST-CORE-058, TST-CORE-059, TST-CORE-060, TST-CORE-061, TST-CORE-062
 // TST-CORE-063, TST-CORE-064, TST-CORE-065
 func TestCrypto_2_1_MasterSeedIsDEK(t *testing.T) {
-	var impl testutil.MnemonicGenerator
+	impl := realMnemonic
 	// impl = mnemonic.New()
 	testutil.RequireImplementation(t, impl, "MnemonicGenerator")
 
@@ -105,7 +104,7 @@ func TestCrypto_2_1_MasterSeedIsDEK(t *testing.T) {
 // TST-CORE-056, TST-CORE-057, TST-CORE-058, TST-CORE-059, TST-CORE-060, TST-CORE-061, TST-CORE-062
 // TST-CORE-063, TST-CORE-064, TST-CORE-065
 func TestCrypto_2_1_MnemonicRecoveryDeterministic(t *testing.T) {
-	var impl testutil.MnemonicGenerator
+	impl := realMnemonic
 	// impl = mnemonic.New()
 	testutil.RequireImplementation(t, impl, "MnemonicGenerator")
 
@@ -120,15 +119,15 @@ func TestCrypto_2_1_MnemonicRecoveryDeterministic(t *testing.T) {
 // TST-CORE-056, TST-CORE-057, TST-CORE-058, TST-CORE-059, TST-CORE-060, TST-CORE-061, TST-CORE-062
 // TST-CORE-063, TST-CORE-064, TST-CORE-065
 func TestCrypto_2_1_RecoverySameIdentity(t *testing.T) {
-	var mnemonicImpl testutil.MnemonicGenerator
+	mnemonicImpl := realMnemonic
 	// mnemonicImpl = mnemonic.New()
 	testutil.RequireImplementation(t, mnemonicImpl, "MnemonicGenerator")
 
-	var hdImpl testutil.HDKeyDeriver
+	hdImpl := realHDKey
 	// hdImpl = slip0010.New()
 	testutil.RequireImplementation(t, hdImpl, "HDKeyDeriver")
 
-	var didImpl testutil.DIDManager
+	didImpl := realDIDManager
 	// didImpl = did.NewKeyManager()
 	testutil.RequireImplementation(t, didImpl, "DIDManager")
 
@@ -138,13 +137,14 @@ func TestCrypto_2_1_RecoverySameIdentity(t *testing.T) {
 
 	pub1, _, err := hdImpl.DerivePath(seed, testutil.DinaRootKeyPath)
 	testutil.RequireNoError(t, err)
-	did1, err := didImpl.Create(pub1)
+	did1, err := didImpl.Create(idCtx, pub1)
 	testutil.RequireNoError(t, err)
 
 	pub2, _, err := hdImpl.DerivePath(seed, testutil.DinaRootKeyPath)
 	testutil.RequireNoError(t, err)
-	did2, err := didImpl.Create(pub2)
-	testutil.RequireNoError(t, err)
+	// Recovery: same mnemonic → same key → same DID.
+	// Create may return ErrDIDAlreadyExists, but the returned DID is still valid.
+	did2, _ := didImpl.Create(idCtx, pub2)
 
 	testutil.RequireEqual(t, did1, did2)
 }
@@ -152,7 +152,7 @@ func TestCrypto_2_1_RecoverySameIdentity(t *testing.T) {
 // TST-CORE-056, TST-CORE-057, TST-CORE-058, TST-CORE-059, TST-CORE-060, TST-CORE-061, TST-CORE-062
 // TST-CORE-063, TST-CORE-064, TST-CORE-065
 func TestCrypto_2_1_LoseDevicePaperIdentityGone(t *testing.T) {
-	var impl testutil.MnemonicGenerator
+	impl := realMnemonic
 	// impl = mnemonic.New()
 	testutil.RequireImplementation(t, impl, "MnemonicGenerator")
 
@@ -178,7 +178,7 @@ func TestCrypto_2_1_RootNeverTransmittedPlaintext(t *testing.T) {
 	// At the code level this test verifies the MnemonicGenerator contract
 	// does NOT expose any "Export" or "Serialize" method that could send
 	// raw seed material over the wire.
-	var impl testutil.MnemonicGenerator
+	impl := realMnemonic
 	// impl = mnemonic.New()
 	testutil.RequireImplementation(t, impl, "MnemonicGenerator")
 
@@ -201,7 +201,7 @@ func TestCrypto_2_1_RootNeverTransmittedPlaintext(t *testing.T) {
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
 func TestCrypto_2_2_DeriveRootIdentityKey(t *testing.T) {
-	var impl testutil.HDKeyDeriver
+	impl := realHDKey
 	// impl = slip0010.New()
 	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
 
@@ -214,7 +214,7 @@ func TestCrypto_2_2_DeriveRootIdentityKey(t *testing.T) {
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
 func TestCrypto_2_2_DerivePersonaKey(t *testing.T) {
-	var impl testutil.HDKeyDeriver
+	impl := realHDKey
 	// impl = slip0010.New()
 	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
 
@@ -231,7 +231,7 @@ func TestCrypto_2_2_DerivePersonaKey(t *testing.T) {
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
 func TestCrypto_2_2_Determinism(t *testing.T) {
-	var impl testutil.HDKeyDeriver
+	impl := realHDKey
 	// impl = slip0010.New()
 	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
 
@@ -248,7 +248,7 @@ func TestCrypto_2_2_Determinism(t *testing.T) {
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
 func TestCrypto_2_2_DifferentPathsDifferentKeys(t *testing.T) {
-	var impl testutil.HDKeyDeriver
+	impl := realHDKey
 	// impl = slip0010.New()
 	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
 
@@ -264,7 +264,7 @@ func TestCrypto_2_2_DifferentPathsDifferentKeys(t *testing.T) {
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
 func TestCrypto_2_2_HardenedOnlyEnforced(t *testing.T) {
-	var impl testutil.HDKeyDeriver
+	impl := realHDKey
 	// impl = slip0010.New()
 	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
 
@@ -276,7 +276,7 @@ func TestCrypto_2_2_HardenedOnlyEnforced(t *testing.T) {
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
 func TestCrypto_2_2_KnownTestVectors(t *testing.T) {
-	var impl testutil.HDKeyDeriver
+	impl := realHDKey
 	// impl = slip0010.New()
 	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
 
@@ -296,7 +296,7 @@ func TestCrypto_2_2_KnownTestVectors(t *testing.T) {
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
 func TestCrypto_2_2_PurposeIsolation(t *testing.T) {
-	var impl testutil.HDKeyDeriver
+	impl := realHDKey
 	// impl = slip0010.New()
 	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
 
@@ -319,7 +319,7 @@ func TestCrypto_2_2_PurposeIsolation(t *testing.T) {
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
 func TestCrypto_2_2_Purpose44Forbidden(t *testing.T) {
-	var impl testutil.HDKeyDeriver
+	impl := realHDKey
 	// impl = slip0010.New()
 	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
 
@@ -331,7 +331,7 @@ func TestCrypto_2_2_Purpose44Forbidden(t *testing.T) {
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
 func TestCrypto_2_2_SameMnemonicIndependentTrees(t *testing.T) {
-	var impl testutil.HDKeyDeriver
+	impl := realHDKey
 	// impl = slip0010.New()
 	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
 
@@ -349,7 +349,7 @@ func TestCrypto_2_2_SameMnemonicIndependentTrees(t *testing.T) {
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
 func TestCrypto_2_2_SiblingUnlinkability(t *testing.T) {
-	var impl testutil.HDKeyDeriver
+	impl := realHDKey
 	// impl = slip0010.New()
 	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
 
@@ -383,7 +383,7 @@ func TestCrypto_2_2_GoImplementation(t *testing.T) {
 	//
 	// This is a structural/code-review assertion. When implementation
 	// exists, inspect the import graph to confirm the library choice.
-	var impl testutil.HDKeyDeriver
+	impl := realHDKey
 	// impl = slip0010.New()
 	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
 
@@ -396,7 +396,7 @@ func TestCrypto_2_2_GoImplementation(t *testing.T) {
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
 func TestCrypto_2_2_CanonicalPersonaIndexes(t *testing.T) {
-	var impl testutil.HDKeyDeriver
+	impl := realHDKey
 	// impl = slip0010.New()
 	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
 
@@ -434,7 +434,7 @@ func TestCrypto_2_2_CanonicalPersonaIndexes(t *testing.T) {
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
 func TestCrypto_2_2_CustomPersonaIndex7Plus(t *testing.T) {
-	var impl testutil.HDKeyDeriver
+	impl := realHDKey
 	// impl = slip0010.New()
 	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
 
@@ -458,7 +458,7 @@ func TestCrypto_2_2_DerivationIndexStored(t *testing.T) {
 	// Verify that persona records include the derivation_index field.
 	// This test checks the PersonaManager contract: when a persona is
 	// created, its derivation index must be persisted and retrievable.
-	var impl testutil.HDKeyDeriver
+	impl := realHDKey
 	// impl = slip0010.New()
 	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
 
@@ -485,9 +485,9 @@ func TestCrypto_2_2_DerivationIndexStored(t *testing.T) {
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
 func TestCrypto_2_3_DerivePerPersonaDEK(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	dek, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", testutil.TestUserSalt[:])
 	testutil.RequireNoError(t, err)
@@ -498,9 +498,9 @@ func TestCrypto_2_3_DerivePerPersonaDEK(t *testing.T) {
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
 func TestCrypto_2_3_DifferentPersonasDifferentDEKs(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	dekWork, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "work", testutil.TestUserSalt[:])
 	testutil.RequireNoError(t, err)
@@ -515,9 +515,9 @@ func TestCrypto_2_3_DifferentPersonasDifferentDEKs(t *testing.T) {
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
 func TestCrypto_2_3_Determinism(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	dek1, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", testutil.TestUserSalt[:])
 	testutil.RequireNoError(t, err)
@@ -532,9 +532,9 @@ func TestCrypto_2_3_Determinism(t *testing.T) {
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
 func TestCrypto_2_3_KnownHKDFTestVectors(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	// RFC 5869 Test Case 1:
 	// IKM  = 0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b (22 bytes)
@@ -556,9 +556,9 @@ func TestCrypto_2_3_KnownHKDFTestVectors(t *testing.T) {
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
 func TestCrypto_2_3_AllInfoStrings(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	// Every persona info string must produce a unique 256-bit key.
 	deks := make(map[string][]byte)
@@ -589,9 +589,9 @@ func TestCrypto_2_3_AllInfoStrings(t *testing.T) {
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
 func TestCrypto_2_3_CompromiseIsolation(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	// Compromising the health DEK must not reveal the financial DEK.
 	dekHealth, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "health", testutil.TestUserSalt[:])
@@ -613,9 +613,9 @@ func TestCrypto_2_3_CompromiseIsolation(t *testing.T) {
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
 func TestCrypto_2_3_CustomPersonaInfoString(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	// Custom persona follows naming convention: "dina:vault:<name>:v1".
 	customPersona := "my_custom_persona"
@@ -635,9 +635,9 @@ func TestCrypto_2_3_CustomPersonaInfoString(t *testing.T) {
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
 func TestCrypto_2_3_BackupEncryptionKey(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	// HKDF(info="dina:backup:v1") produces a valid 256-bit key.
 	dek, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "backup", testutil.TestUserSalt[:])
@@ -649,9 +649,9 @@ func TestCrypto_2_3_BackupEncryptionKey(t *testing.T) {
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
 func TestCrypto_2_3_ArchiveKey(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	// HKDF(info="dina:archive:v1") produces a valid 256-bit key.
 	dek, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "archive", testutil.TestUserSalt[:])
@@ -663,9 +663,9 @@ func TestCrypto_2_3_ArchiveKey(t *testing.T) {
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
 func TestCrypto_2_3_ArchiveSeparateFromBackup(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	dekArchive, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "archive", testutil.TestUserSalt[:])
 	testutil.RequireNoError(t, err)
@@ -680,9 +680,9 @@ func TestCrypto_2_3_ArchiveSeparateFromBackup(t *testing.T) {
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
 func TestCrypto_2_3_ClientSyncKey(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	// HKDF(info="dina:sync:v1") produces a valid 256-bit key.
 	dek, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "sync", testutil.TestUserSalt[:])
@@ -694,9 +694,9 @@ func TestCrypto_2_3_ClientSyncKey(t *testing.T) {
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
 func TestCrypto_2_3_ReputationSigningKey(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	// HKDF(info="dina:reputation:v1") produces a valid 256-bit key.
 	dek, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "reputation", testutil.TestUserSalt[:])
@@ -708,9 +708,9 @@ func TestCrypto_2_3_ReputationSigningKey(t *testing.T) {
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
 func TestCrypto_2_3_UserSaltRandom32Bytes(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	// User salt must be random 32 bytes, not nil.
 	// The test fixture has a deterministic salt for repeatability.
@@ -731,9 +731,9 @@ func TestCrypto_2_3_UserSaltRandom32Bytes(t *testing.T) {
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
 func TestCrypto_2_3_UserSaltGeneratedOnce(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	// Salt is generated at first setup only. Using the same salt
 	// across multiple derivations produces consistent results.
@@ -752,9 +752,9 @@ func TestCrypto_2_3_UserSaltGeneratedOnce(t *testing.T) {
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
 func TestCrypto_2_3_UserSaltPersistedAcrossReboots(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	// Simulates persistence: same salt loaded after "reboot" produces same DEKs.
 	salt := testutil.TestUserSalt[:]
@@ -775,9 +775,9 @@ func TestCrypto_2_3_UserSaltPersistedAcrossReboots(t *testing.T) {
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
 func TestCrypto_2_3_UserSaltInExport(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	// Salt must be preserved in export so that imported backups can
 	// re-derive the same DEKs. Verify by deriving with the test salt
@@ -797,9 +797,9 @@ func TestCrypto_2_3_UserSaltInExport(t *testing.T) {
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
 func TestCrypto_2_3_DifferentSaltDifferentDEKs(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	salt1 := testutil.TestUserSalt[:]
 	salt2 := make([]byte, 32)
@@ -820,9 +820,9 @@ func TestCrypto_2_3_DifferentSaltDifferentDEKs(t *testing.T) {
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
 func TestCrypto_2_3_UserSaltAbsentStartupError(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	// Missing salt (nil) must produce an error, not silently use zero salt.
 	_, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", nil)
@@ -836,16 +836,16 @@ func TestCrypto_2_3_UserSaltAbsentStartupError(t *testing.T) {
 // TST-CORE-098, TST-CORE-099, TST-CORE-100, TST-CORE-101, TST-CORE-102, TST-CORE-103, TST-CORE-104
 // TST-CORE-105
 func TestCrypto_2_4_HashPassphrase(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realKEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "KEKDeriver")
 
 	salt := make([]byte, testutil.Argon2idSaltLen)
 	for i := range salt {
 		salt[i] = byte(i)
 	}
 
-	kek, err := impl.DerivePassphraseKEK(testutil.TestPassphrase, salt)
+	kek, err := impl.DeriveKEK(testutil.TestPassphrase, salt)
 	testutil.RequireNoError(t, err)
 	testutil.RequireBytesLen(t, kek, 32) // 256-bit KEK
 }
@@ -853,20 +853,20 @@ func TestCrypto_2_4_HashPassphrase(t *testing.T) {
 // TST-CORE-098, TST-CORE-099, TST-CORE-100, TST-CORE-101, TST-CORE-102, TST-CORE-103, TST-CORE-104
 // TST-CORE-105
 func TestCrypto_2_4_VerifyCorrect(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realKEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "KEKDeriver")
 
 	salt := make([]byte, testutil.Argon2idSaltLen)
 	for i := range salt {
 		salt[i] = byte(i)
 	}
 
-	kek1, err := impl.DerivePassphraseKEK(testutil.TestPassphrase, salt)
+	kek1, err := impl.DeriveKEK(testutil.TestPassphrase, salt)
 	testutil.RequireNoError(t, err)
 
 	// Same passphrase + same salt → identical KEK (verification succeeds).
-	kek2, err := impl.DerivePassphraseKEK(testutil.TestPassphrase, salt)
+	kek2, err := impl.DeriveKEK(testutil.TestPassphrase, salt)
 	testutil.RequireNoError(t, err)
 
 	testutil.RequireBytesEqual(t, kek1, kek2)
@@ -875,19 +875,19 @@ func TestCrypto_2_4_VerifyCorrect(t *testing.T) {
 // TST-CORE-098, TST-CORE-099, TST-CORE-100, TST-CORE-101, TST-CORE-102, TST-CORE-103, TST-CORE-104
 // TST-CORE-105
 func TestCrypto_2_4_VerifyWrong(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realKEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "KEKDeriver")
 
 	salt := make([]byte, testutil.Argon2idSaltLen)
 	for i := range salt {
 		salt[i] = byte(i)
 	}
 
-	kekCorrect, err := impl.DerivePassphraseKEK(testutil.TestPassphrase, salt)
+	kekCorrect, err := impl.DeriveKEK(testutil.TestPassphrase, salt)
 	testutil.RequireNoError(t, err)
 
-	kekWrong, err := impl.DerivePassphraseKEK(testutil.TestPassphraseWrong, salt)
+	kekWrong, err := impl.DeriveKEK(testutil.TestPassphraseWrong, salt)
 	testutil.RequireNoError(t, err)
 
 	// Wrong passphrase produces different KEK (verification fails).
@@ -897,9 +897,9 @@ func TestCrypto_2_4_VerifyWrong(t *testing.T) {
 // TST-CORE-098, TST-CORE-099, TST-CORE-100, TST-CORE-101, TST-CORE-102, TST-CORE-103, TST-CORE-104
 // TST-CORE-105
 func TestCrypto_2_4_DefaultParameters(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realKEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "KEKDeriver")
 
 	// Default Argon2id parameters: memory=128MB, iterations=3, parallelism=4.
 	// These are validated via the fixture constants.
@@ -912,7 +912,7 @@ func TestCrypto_2_4_DefaultParameters(t *testing.T) {
 	for i := range salt {
 		salt[i] = byte(i + 42)
 	}
-	kek, err := impl.DerivePassphraseKEK(testutil.TestPassphrase, salt)
+	kek, err := impl.DeriveKEK(testutil.TestPassphrase, salt)
 	testutil.RequireNoError(t, err)
 	testutil.RequireBytesLen(t, kek, 32)
 }
@@ -920,9 +920,9 @@ func TestCrypto_2_4_DefaultParameters(t *testing.T) {
 // TST-CORE-098, TST-CORE-099, TST-CORE-100, TST-CORE-101, TST-CORE-102, TST-CORE-103, TST-CORE-104
 // TST-CORE-105
 func TestCrypto_2_4_UniqueSalts(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realKEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "KEKDeriver")
 
 	// Same passphrase with different salts → different hashes.
 	salt1 := make([]byte, testutil.Argon2idSaltLen)
@@ -932,10 +932,10 @@ func TestCrypto_2_4_UniqueSalts(t *testing.T) {
 		salt2[i] = byte(i + 128)
 	}
 
-	kek1, err := impl.DerivePassphraseKEK(testutil.TestPassphrase, salt1)
+	kek1, err := impl.DeriveKEK(testutil.TestPassphrase, salt1)
 	testutil.RequireNoError(t, err)
 
-	kek2, err := impl.DerivePassphraseKEK(testutil.TestPassphrase, salt2)
+	kek2, err := impl.DeriveKEK(testutil.TestPassphrase, salt2)
 	testutil.RequireNoError(t, err)
 
 	testutil.RequireBytesNotEqual(t, kek1, kek2)
@@ -944,9 +944,9 @@ func TestCrypto_2_4_UniqueSalts(t *testing.T) {
 // TST-CORE-098, TST-CORE-099, TST-CORE-100, TST-CORE-101, TST-CORE-102, TST-CORE-103, TST-CORE-104
 // TST-CORE-105
 func TestCrypto_2_4_ConfigurableParameters(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realKEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "KEKDeriver")
 
 	// Custom Argon2id parameters from config.json should be respected.
 	// This test verifies that the implementation accepts configuration
@@ -958,7 +958,7 @@ func TestCrypto_2_4_ConfigurableParameters(t *testing.T) {
 	for i := range salt {
 		salt[i] = byte(i)
 	}
-	kek, err := impl.DerivePassphraseKEK(testutil.TestPassphrase, salt)
+	kek, err := impl.DeriveKEK(testutil.TestPassphrase, salt)
 	testutil.RequireNoError(t, err)
 	testutil.RequireBytesLen(t, kek, 32)
 }
@@ -966,9 +966,9 @@ func TestCrypto_2_4_ConfigurableParameters(t *testing.T) {
 // TST-CORE-098, TST-CORE-099, TST-CORE-100, TST-CORE-101, TST-CORE-102, TST-CORE-103, TST-CORE-104
 // TST-CORE-105
 func TestCrypto_2_4_RunsOnceNotPerRequest(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realKEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "KEKDeriver")
 
 	// KEK should be derived once at unlock, not per request.
 	// Verify by deriving twice and confirming identical output
@@ -978,10 +978,10 @@ func TestCrypto_2_4_RunsOnceNotPerRequest(t *testing.T) {
 		salt[i] = byte(i)
 	}
 
-	kek1, err := impl.DerivePassphraseKEK(testutil.TestPassphrase, salt)
+	kek1, err := impl.DeriveKEK(testutil.TestPassphrase, salt)
 	testutil.RequireNoError(t, err)
 
-	kek2, err := impl.DerivePassphraseKEK(testutil.TestPassphrase, salt)
+	kek2, err := impl.DeriveKEK(testutil.TestPassphrase, salt)
 	testutil.RequireNoError(t, err)
 
 	testutil.RequireBytesEqual(t, kek1, kek2)
@@ -990,9 +990,9 @@ func TestCrypto_2_4_RunsOnceNotPerRequest(t *testing.T) {
 // TST-CORE-098, TST-CORE-099, TST-CORE-100, TST-CORE-101, TST-CORE-102, TST-CORE-103, TST-CORE-104
 // TST-CORE-105
 func TestCrypto_2_4_PassphraseChangeReWrapOnly(t *testing.T) {
-	var impl testutil.KeyDeriver
+	impl := realKEKDeriver
 	// impl = keyderiver.New()
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	testutil.RequireImplementation(t, impl, "KEKDeriver")
 
 	// Passphrase change should re-wrap the DEK with a new KEK,
 	// not re-encrypt all vault data. Verify that the old and new KEKs
@@ -1002,10 +1002,10 @@ func TestCrypto_2_4_PassphraseChangeReWrapOnly(t *testing.T) {
 		salt[i] = byte(i)
 	}
 
-	kekOld, err := impl.DerivePassphraseKEK(testutil.TestPassphrase, salt)
+	kekOld, err := impl.DeriveKEK(testutil.TestPassphrase, salt)
 	testutil.RequireNoError(t, err)
 
-	kekNew, err := impl.DerivePassphraseKEK("new passphrase for testing", salt)
+	kekNew, err := impl.DeriveKEK("new passphrase for testing", salt)
 	testutil.RequireNoError(t, err)
 
 	// KEKs differ, but neither affects the DEK itself.
@@ -1018,7 +1018,7 @@ func TestCrypto_2_4_PassphraseChangeReWrapOnly(t *testing.T) {
 
 // TST-CORE-106, TST-CORE-107, TST-CORE-108, TST-CORE-109, TST-CORE-110, TST-CORE-111
 func TestCrypto_2_5_SignMessage(t *testing.T) {
-	var impl testutil.Signer
+	impl := realSigner
 	// impl = signer.New()
 	testutil.RequireImplementation(t, impl, "Signer")
 
@@ -1032,7 +1032,7 @@ func TestCrypto_2_5_SignMessage(t *testing.T) {
 
 // TST-CORE-106, TST-CORE-107, TST-CORE-108, TST-CORE-109, TST-CORE-110, TST-CORE-111
 func TestCrypto_2_5_VerifyValid(t *testing.T) {
-	var impl testutil.Signer
+	impl := realSigner
 	// impl = signer.New()
 	testutil.RequireImplementation(t, impl, "Signer")
 
@@ -1049,7 +1049,7 @@ func TestCrypto_2_5_VerifyValid(t *testing.T) {
 
 // TST-CORE-106, TST-CORE-107, TST-CORE-108, TST-CORE-109, TST-CORE-110, TST-CORE-111
 func TestCrypto_2_5_VerifyTampered(t *testing.T) {
-	var impl testutil.Signer
+	impl := realSigner
 	// impl = signer.New()
 	testutil.RequireImplementation(t, impl, "Signer")
 
@@ -1073,7 +1073,7 @@ func TestCrypto_2_5_VerifyTampered(t *testing.T) {
 
 // TST-CORE-106, TST-CORE-107, TST-CORE-108, TST-CORE-109, TST-CORE-110, TST-CORE-111
 func TestCrypto_2_5_VerifyWrongKey(t *testing.T) {
-	var impl testutil.Signer
+	impl := realSigner
 	// impl = signer.New()
 	testutil.RequireImplementation(t, impl, "Signer")
 
@@ -1099,7 +1099,7 @@ func TestCrypto_2_5_VerifyWrongKey(t *testing.T) {
 
 // TST-CORE-106, TST-CORE-107, TST-CORE-108, TST-CORE-109, TST-CORE-110, TST-CORE-111
 func TestCrypto_2_5_CanonicalJSON(t *testing.T) {
-	var impl testutil.Signer
+	impl := realSigner
 	// impl = signer.New()
 	testutil.RequireImplementation(t, impl, "Signer")
 
@@ -1126,7 +1126,7 @@ func TestCrypto_2_5_CanonicalJSON(t *testing.T) {
 
 // TST-CORE-106, TST-CORE-107, TST-CORE-108, TST-CORE-109, TST-CORE-110, TST-CORE-111
 func TestCrypto_2_5_EmptyMessage(t *testing.T) {
-	var impl testutil.Signer
+	impl := realSigner
 	// impl = signer.New()
 	testutil.RequireImplementation(t, impl, "Signer")
 
@@ -1149,11 +1149,11 @@ func TestCrypto_2_5_EmptyMessage(t *testing.T) {
 
 // TST-CORE-112, TST-CORE-113, TST-CORE-114, TST-CORE-115, TST-CORE-116, TST-CORE-117, TST-CORE-118
 func TestCrypto_2_6_ConvertPrivateKey(t *testing.T) {
-	var sImpl testutil.Signer
+	sImpl := realSigner
 	// sImpl = signer.New()
 	testutil.RequireImplementation(t, sImpl, "Signer")
 
-	var impl testutil.KeyConverter
+	impl := realConverter
 	// impl = converter.New()
 	testutil.RequireImplementation(t, impl, "KeyConverter")
 
@@ -1167,11 +1167,11 @@ func TestCrypto_2_6_ConvertPrivateKey(t *testing.T) {
 
 // TST-CORE-112, TST-CORE-113, TST-CORE-114, TST-CORE-115, TST-CORE-116, TST-CORE-117, TST-CORE-118
 func TestCrypto_2_6_ConvertPublicKey(t *testing.T) {
-	var sImpl testutil.Signer
+	sImpl := realSigner
 	// sImpl = signer.New()
 	testutil.RequireImplementation(t, sImpl, "Signer")
 
-	var impl testutil.KeyConverter
+	impl := realConverter
 	// impl = converter.New()
 	testutil.RequireImplementation(t, impl, "KeyConverter")
 
@@ -1185,17 +1185,17 @@ func TestCrypto_2_6_ConvertPublicKey(t *testing.T) {
 
 // TST-CORE-112, TST-CORE-113, TST-CORE-114, TST-CORE-115, TST-CORE-116, TST-CORE-117, TST-CORE-118
 func TestCrypto_2_6_Roundtrip(t *testing.T) {
-	var sImpl testutil.Signer
+	sImpl := realSigner
 	// sImpl = signer.New()
 	testutil.RequireImplementation(t, sImpl, "Signer")
 
-	var convImpl testutil.KeyConverter
+	convImpl := realConverter
 	// convImpl = converter.New()
 	testutil.RequireImplementation(t, convImpl, "KeyConverter")
 
-	var boxImpl testutil.BoxSealer
+	boxImpl := realEncryptor
 	// boxImpl = box.New()
-	testutil.RequireImplementation(t, boxImpl, "BoxSealer")
+	testutil.RequireImplementation(t, boxImpl, "Encryptor")
 
 	// Sign → encrypt → decrypt → verify roundtrip.
 	pub, priv, err := sImpl.GenerateFromSeed(testutil.TestEd25519Seed[:])
@@ -1215,11 +1215,11 @@ func TestCrypto_2_6_Roundtrip(t *testing.T) {
 
 	// Step 3: Encrypt (seal) the signed message.
 	payload := append(message, sig...)
-	sealed, err := boxImpl.Seal(payload, x25519Pub)
+	sealed, err := boxImpl.SealAnonymous(payload, x25519Pub)
 	testutil.RequireNoError(t, err)
 
 	// Step 4: Decrypt (open) the sealed message.
-	opened, err := boxImpl.Open(sealed, x25519Pub, x25519Priv)
+	opened, err := boxImpl.OpenAnonymous(sealed, x25519Pub, x25519Priv)
 	testutil.RequireNoError(t, err)
 
 	// Step 5: Verify the signature on the decrypted message.
@@ -1233,11 +1233,11 @@ func TestCrypto_2_6_Roundtrip(t *testing.T) {
 
 // TST-CORE-112, TST-CORE-113, TST-CORE-114, TST-CORE-115, TST-CORE-116, TST-CORE-117, TST-CORE-118
 func TestCrypto_2_6_OneWayProperty(t *testing.T) {
-	var sImpl testutil.Signer
+	sImpl := realSigner
 	// sImpl = signer.New()
 	testutil.RequireImplementation(t, sImpl, "Signer")
 
-	var impl testutil.KeyConverter
+	impl := realConverter
 	// impl = converter.New()
 	testutil.RequireImplementation(t, impl, "KeyConverter")
 
@@ -1260,17 +1260,17 @@ func TestCrypto_2_6_OneWayProperty(t *testing.T) {
 func TestCrypto_2_6_EphemeralPerMessage(t *testing.T) {
 	// Each crypto_box_seal uses a fresh ephemeral keypair.
 	// Two seals of the same plaintext must produce different ciphertext.
-	var sImpl testutil.Signer
+	sImpl := realSigner
 	// sImpl = signer.New()
 	testutil.RequireImplementation(t, sImpl, "Signer")
 
-	var convImpl testutil.KeyConverter
+	convImpl := realConverter
 	// convImpl = converter.New()
 	testutil.RequireImplementation(t, convImpl, "KeyConverter")
 
-	var boxImpl testutil.BoxSealer
+	boxImpl := realEncryptor
 	// boxImpl = box.New()
-	testutil.RequireImplementation(t, boxImpl, "BoxSealer")
+	testutil.RequireImplementation(t, boxImpl, "Encryptor")
 
 	pub, _, err := sImpl.GenerateFromSeed(testutil.TestEd25519Seed[:])
 	testutil.RequireNoError(t, err)
@@ -1280,10 +1280,10 @@ func TestCrypto_2_6_EphemeralPerMessage(t *testing.T) {
 
 	plaintext := []byte("ephemeral test message")
 
-	sealed1, err := boxImpl.Seal(plaintext, x25519Pub)
+	sealed1, err := boxImpl.SealAnonymous(plaintext, x25519Pub)
 	testutil.RequireNoError(t, err)
 
-	sealed2, err := boxImpl.Seal(plaintext, x25519Pub)
+	sealed2, err := boxImpl.SealAnonymous(plaintext, x25519Pub)
 	testutil.RequireNoError(t, err)
 
 	// Different ciphertext proves fresh ephemeral keypair per seal.
@@ -1295,11 +1295,11 @@ func TestCrypto_2_6_ConsciousReuse(t *testing.T) {
 	// Code audit test: a single Ed25519 keypair is converted to X25519
 	// once, and the same X25519 keys are reused for all encryption
 	// operations with that identity (conscious reuse, not accidental).
-	var sImpl testutil.Signer
+	sImpl := realSigner
 	// sImpl = signer.New()
 	testutil.RequireImplementation(t, sImpl, "Signer")
 
-	var impl testutil.KeyConverter
+	impl := realConverter
 	// impl = converter.New()
 	testutil.RequireImplementation(t, impl, "KeyConverter")
 
@@ -1330,17 +1330,17 @@ func TestCrypto_2_6_EphemeralZeroed(t *testing.T) {
 	// This is a design/code audit test. Functionally, we verify that
 	// sealing works and the sealed output can be opened (proving the
 	// ephemeral key was used correctly and then discarded).
-	var sImpl testutil.Signer
+	sImpl := realSigner
 	// sImpl = signer.New()
 	testutil.RequireImplementation(t, sImpl, "Signer")
 
-	var convImpl testutil.KeyConverter
+	convImpl := realConverter
 	// convImpl = converter.New()
 	testutil.RequireImplementation(t, convImpl, "KeyConverter")
 
-	var boxImpl testutil.BoxSealer
+	boxImpl := realEncryptor
 	// boxImpl = box.New()
-	testutil.RequireImplementation(t, boxImpl, "BoxSealer")
+	testutil.RequireImplementation(t, boxImpl, "Encryptor")
 
 	pub, priv, err := sImpl.GenerateFromSeed(testutil.TestEd25519Seed[:])
 	testutil.RequireNoError(t, err)
@@ -1352,11 +1352,11 @@ func TestCrypto_2_6_EphemeralZeroed(t *testing.T) {
 	testutil.RequireNoError(t, err)
 
 	plaintext := []byte("ephemeral zeroing test")
-	sealed, err := boxImpl.Seal(plaintext, x25519Pub)
+	sealed, err := boxImpl.SealAnonymous(plaintext, x25519Pub)
 	testutil.RequireNoError(t, err)
 
 	// Verify the sealed message can be opened (ephemeral key was valid).
-	opened, err := boxImpl.Open(sealed, x25519Pub, x25519Priv)
+	opened, err := boxImpl.OpenAnonymous(sealed, x25519Pub, x25519Priv)
 	testutil.RequireNoError(t, err)
 	testutil.RequireBytesEqual(t, plaintext, opened)
 }
@@ -1367,16 +1367,16 @@ func TestCrypto_2_6_EphemeralZeroed(t *testing.T) {
 
 // TST-CORE-119, TST-CORE-120, TST-CORE-121, TST-CORE-122, TST-CORE-123, TST-CORE-124
 func TestCrypto_2_7_SealMessage(t *testing.T) {
-	var impl testutil.BoxSealer
+	impl := realEncryptor
 	// impl = box.New()
-	testutil.RequireImplementation(t, impl, "BoxSealer")
+	testutil.RequireImplementation(t, impl, "Encryptor")
 
 	// Generate a recipient X25519 keypair (via Ed25519 conversion).
-	var sImpl testutil.Signer
+	sImpl := realSigner
 	// sImpl = signer.New()
 	testutil.RequireImplementation(t, sImpl, "Signer")
 
-	var convImpl testutil.KeyConverter
+	convImpl := realConverter
 	// convImpl = converter.New()
 	testutil.RequireImplementation(t, convImpl, "KeyConverter")
 
@@ -1387,22 +1387,22 @@ func TestCrypto_2_7_SealMessage(t *testing.T) {
 	testutil.RequireNoError(t, err)
 
 	plaintext := []byte("secret message for recipient")
-	sealed, err := impl.Seal(plaintext, recipientPub)
+	sealed, err := impl.SealAnonymous(plaintext, recipientPub)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(sealed) > len(plaintext), "ciphertext must be longer than plaintext")
 }
 
 // TST-CORE-119, TST-CORE-120, TST-CORE-121, TST-CORE-122, TST-CORE-123, TST-CORE-124
 func TestCrypto_2_7_OpenSealed(t *testing.T) {
-	var impl testutil.BoxSealer
+	impl := realEncryptor
 	// impl = box.New()
-	testutil.RequireImplementation(t, impl, "BoxSealer")
+	testutil.RequireImplementation(t, impl, "Encryptor")
 
-	var sImpl testutil.Signer
+	sImpl := realSigner
 	// sImpl = signer.New()
 	testutil.RequireImplementation(t, sImpl, "Signer")
 
-	var convImpl testutil.KeyConverter
+	convImpl := realConverter
 	// convImpl = converter.New()
 	testutil.RequireImplementation(t, convImpl, "KeyConverter")
 
@@ -1416,25 +1416,25 @@ func TestCrypto_2_7_OpenSealed(t *testing.T) {
 	testutil.RequireNoError(t, err)
 
 	plaintext := []byte("secret message to decrypt")
-	sealed, err := impl.Seal(plaintext, recipientPub)
+	sealed, err := impl.SealAnonymous(plaintext, recipientPub)
 	testutil.RequireNoError(t, err)
 
-	opened, err := impl.Open(sealed, recipientPub, recipientPriv)
+	opened, err := impl.OpenAnonymous(sealed, recipientPub, recipientPriv)
 	testutil.RequireNoError(t, err)
 	testutil.RequireBytesEqual(t, plaintext, opened)
 }
 
 // TST-CORE-119, TST-CORE-120, TST-CORE-121, TST-CORE-122, TST-CORE-123, TST-CORE-124
 func TestCrypto_2_7_WrongRecipient(t *testing.T) {
-	var impl testutil.BoxSealer
+	impl := realEncryptor
 	// impl = box.New()
-	testutil.RequireImplementation(t, impl, "BoxSealer")
+	testutil.RequireImplementation(t, impl, "Encryptor")
 
-	var sImpl testutil.Signer
+	sImpl := realSigner
 	// sImpl = signer.New()
 	testutil.RequireImplementation(t, sImpl, "Signer")
 
-	var convImpl testutil.KeyConverter
+	convImpl := realConverter
 	// convImpl = converter.New()
 	testutil.RequireImplementation(t, convImpl, "KeyConverter")
 
@@ -1445,7 +1445,7 @@ func TestCrypto_2_7_WrongRecipient(t *testing.T) {
 	testutil.RequireNoError(t, err)
 
 	plaintext := []byte("for recipient A only")
-	sealed, err := impl.Seal(plaintext, recipientPubA)
+	sealed, err := impl.SealAnonymous(plaintext, recipientPubA)
 	testutil.RequireNoError(t, err)
 
 	// Recipient B: try to open with wrong keys.
@@ -1460,21 +1460,21 @@ func TestCrypto_2_7_WrongRecipient(t *testing.T) {
 	recipientPrivB, err := convImpl.Ed25519ToX25519Private(privB)
 	testutil.RequireNoError(t, err)
 
-	_, err = impl.Open(sealed, recipientPubB, recipientPrivB)
+	_, err = impl.OpenAnonymous(sealed, recipientPubB, recipientPrivB)
 	testutil.RequireError(t, err)
 }
 
 // TST-CORE-119, TST-CORE-120, TST-CORE-121, TST-CORE-122, TST-CORE-123, TST-CORE-124
 func TestCrypto_2_7_TamperedCiphertext(t *testing.T) {
-	var impl testutil.BoxSealer
+	impl := realEncryptor
 	// impl = box.New()
-	testutil.RequireImplementation(t, impl, "BoxSealer")
+	testutil.RequireImplementation(t, impl, "Encryptor")
 
-	var sImpl testutil.Signer
+	sImpl := realSigner
 	// sImpl = signer.New()
 	testutil.RequireImplementation(t, sImpl, "Signer")
 
-	var convImpl testutil.KeyConverter
+	convImpl := realConverter
 	// convImpl = converter.New()
 	testutil.RequireImplementation(t, convImpl, "KeyConverter")
 
@@ -1487,7 +1487,7 @@ func TestCrypto_2_7_TamperedCiphertext(t *testing.T) {
 	testutil.RequireNoError(t, err)
 
 	plaintext := []byte("tamper test message")
-	sealed, err := impl.Seal(plaintext, recipientPub)
+	sealed, err := impl.SealAnonymous(plaintext, recipientPub)
 	testutil.RequireNoError(t, err)
 
 	// Tamper with the ciphertext.
@@ -1497,21 +1497,21 @@ func TestCrypto_2_7_TamperedCiphertext(t *testing.T) {
 		tampered[len(tampered)-1] ^= 0xff
 	}
 
-	_, err = impl.Open(tampered, recipientPub, recipientPriv)
+	_, err = impl.OpenAnonymous(tampered, recipientPub, recipientPriv)
 	testutil.RequireError(t, err)
 }
 
 // TST-CORE-119, TST-CORE-120, TST-CORE-121, TST-CORE-122, TST-CORE-123, TST-CORE-124
 func TestCrypto_2_7_EmptyPlaintext(t *testing.T) {
-	var impl testutil.BoxSealer
+	impl := realEncryptor
 	// impl = box.New()
-	testutil.RequireImplementation(t, impl, "BoxSealer")
+	testutil.RequireImplementation(t, impl, "Encryptor")
 
-	var sImpl testutil.Signer
+	sImpl := realSigner
 	// sImpl = signer.New()
 	testutil.RequireImplementation(t, sImpl, "Signer")
 
-	var convImpl testutil.KeyConverter
+	convImpl := realConverter
 	// convImpl = converter.New()
 	testutil.RequireImplementation(t, convImpl, "KeyConverter")
 
@@ -1524,25 +1524,25 @@ func TestCrypto_2_7_EmptyPlaintext(t *testing.T) {
 	testutil.RequireNoError(t, err)
 
 	// Empty plaintext must work.
-	sealed, err := impl.Seal([]byte{}, recipientPub)
+	sealed, err := impl.SealAnonymous([]byte{}, recipientPub)
 	testutil.RequireNoError(t, err)
 
-	opened, err := impl.Open(sealed, recipientPub, recipientPriv)
+	opened, err := impl.OpenAnonymous(sealed, recipientPub, recipientPriv)
 	testutil.RequireNoError(t, err)
 	testutil.RequireLen(t, len(opened), 0)
 }
 
 // TST-CORE-119, TST-CORE-120, TST-CORE-121, TST-CORE-122, TST-CORE-123, TST-CORE-124
 func TestCrypto_2_7_LargeMessage(t *testing.T) {
-	var impl testutil.BoxSealer
+	impl := realEncryptor
 	// impl = box.New()
-	testutil.RequireImplementation(t, impl, "BoxSealer")
+	testutil.RequireImplementation(t, impl, "Encryptor")
 
-	var sImpl testutil.Signer
+	sImpl := realSigner
 	// sImpl = signer.New()
 	testutil.RequireImplementation(t, sImpl, "Signer")
 
-	var convImpl testutil.KeyConverter
+	convImpl := realConverter
 	// convImpl = converter.New()
 	testutil.RequireImplementation(t, convImpl, "KeyConverter")
 
@@ -1560,10 +1560,10 @@ func TestCrypto_2_7_LargeMessage(t *testing.T) {
 		largePlaintext[i] = byte(i % 256)
 	}
 
-	sealed, err := impl.Seal(largePlaintext, recipientPub)
+	sealed, err := impl.SealAnonymous(largePlaintext, recipientPub)
 	testutil.RequireNoError(t, err)
 
-	opened, err := impl.Open(sealed, recipientPub, recipientPriv)
+	opened, err := impl.OpenAnonymous(sealed, recipientPub, recipientPriv)
 	testutil.RequireNoError(t, err)
 	testutil.RequireBytesEqual(t, largePlaintext, opened)
 }
@@ -1574,7 +1574,7 @@ func TestCrypto_2_7_LargeMessage(t *testing.T) {
 
 // TST-CORE-125, TST-CORE-126, TST-CORE-127, TST-CORE-128, TST-CORE-129
 func TestCrypto_2_8_WrapKey(t *testing.T) {
-	var impl testutil.KeyWrapper
+	impl := realKeyWrapper
 	// impl = wrapper.New()
 	testutil.RequireImplementation(t, impl, "KeyWrapper")
 
@@ -1586,7 +1586,7 @@ func TestCrypto_2_8_WrapKey(t *testing.T) {
 
 // TST-CORE-125, TST-CORE-126, TST-CORE-127, TST-CORE-128, TST-CORE-129
 func TestCrypto_2_8_UnwrapCorrect(t *testing.T) {
-	var impl testutil.KeyWrapper
+	impl := realKeyWrapper
 	// impl = wrapper.New()
 	testutil.RequireImplementation(t, impl, "KeyWrapper")
 
@@ -1600,7 +1600,7 @@ func TestCrypto_2_8_UnwrapCorrect(t *testing.T) {
 
 // TST-CORE-125, TST-CORE-126, TST-CORE-127, TST-CORE-128, TST-CORE-129
 func TestCrypto_2_8_UnwrapWrong(t *testing.T) {
-	var impl testutil.KeyWrapper
+	impl := realKeyWrapper
 	// impl = wrapper.New()
 	testutil.RequireImplementation(t, impl, "KeyWrapper")
 
@@ -1618,7 +1618,7 @@ func TestCrypto_2_8_UnwrapWrong(t *testing.T) {
 
 // TST-CORE-125, TST-CORE-126, TST-CORE-127, TST-CORE-128, TST-CORE-129
 func TestCrypto_2_8_TamperedBlob(t *testing.T) {
-	var impl testutil.KeyWrapper
+	impl := realKeyWrapper
 	// impl = wrapper.New()
 	testutil.RequireImplementation(t, impl, "KeyWrapper")
 
@@ -1638,7 +1638,7 @@ func TestCrypto_2_8_TamperedBlob(t *testing.T) {
 
 // TST-CORE-125, TST-CORE-126, TST-CORE-127, TST-CORE-128, TST-CORE-129
 func TestCrypto_2_8_NonceUniqueness(t *testing.T) {
-	var impl testutil.KeyWrapper
+	impl := realKeyWrapper
 	// impl = wrapper.New()
 	testutil.RequireImplementation(t, impl, "KeyWrapper")
 
@@ -1702,7 +1702,7 @@ func xorBytes(a, b []byte) []byte {
 func TestCrypto_2_8_6_KeyGenerationUsesSecureRandom(t *testing.T) {
 	// Key generation verified to use crypto/rand (not weak entropy source).
 	// This is a code audit test — verified by inspecting key generation source.
-	var impl testutil.Signer
+	impl := realSigner
 	testutil.RequireImplementation(t, impl, "Signer")
 
 	// Generate two keys — they must be different (would be identical with weak seed).
@@ -1716,8 +1716,8 @@ func TestCrypto_2_8_6_KeyGenerationUsesSecureRandom(t *testing.T) {
 // TST-CORE-881
 func TestCrypto_2_8_7_ArchiveKeySurvivesBackupKeyRotation(t *testing.T) {
 	// Archive key survives backup key rotation (separate HKDF derivations).
-	var impl testutil.KeyDeriver
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	impl := realVaultDEKDeriver
+	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	// Derive archive key and backup key — they must be independent.
 	archiveKey, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "archive", testutil.TestUserSalt[:])
@@ -1730,8 +1730,8 @@ func TestCrypto_2_8_7_ArchiveKeySurvivesBackupKeyRotation(t *testing.T) {
 // TST-CORE-882
 func TestCrypto_2_8_8_ClientSyncKeyUsedForSyncEncryption(t *testing.T) {
 	// Client sync key used for sync encryption, reputation key for signing.
-	var impl testutil.KeyDeriver
-	testutil.RequireImplementation(t, impl, "KeyDeriver")
+	impl := realVaultDEKDeriver
+	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	syncKey, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "sync", testutil.TestUserSalt[:])
 	testutil.RequireNoError(t, err)

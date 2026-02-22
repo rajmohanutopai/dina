@@ -22,7 +22,7 @@ import (
 // TST-CORE-545
 func TestRateLimit_13_1_BelowLimit(t *testing.T) {
 	// var impl testutil.RateLimitChecker = reallimit.New(...)
-	var impl testutil.RateLimitChecker
+	impl := realRateLimitChecker
 	testutil.RequireImplementation(t, impl, "RateLimitChecker")
 
 	ip := "192.168.1.10"
@@ -41,7 +41,7 @@ func TestRateLimit_13_1_BelowLimit(t *testing.T) {
 // TST-CORE-546
 func TestRateLimit_13_2_AtLimit(t *testing.T) {
 	// var impl testutil.RateLimitChecker = reallimit.New(...)
-	var impl testutil.RateLimitChecker
+	impl := realRateLimitChecker
 	testutil.RequireImplementation(t, impl, "RateLimitChecker")
 
 	ip := "192.168.1.20"
@@ -70,7 +70,7 @@ func TestRateLimit_13_2_AtLimit(t *testing.T) {
 // TST-CORE-547
 func TestRateLimit_13_3_AboveLimit(t *testing.T) {
 	// var impl testutil.RateLimitChecker = reallimit.New(...)
-	var impl testutil.RateLimitChecker
+	impl := realRateLimitChecker
 	testutil.RequireImplementation(t, impl, "RateLimitChecker")
 
 	ip := "192.168.1.30"
@@ -100,7 +100,7 @@ func TestRateLimit_13_3_AboveLimit(t *testing.T) {
 // TST-CORE-548
 func TestRateLimit_13_4_Reset(t *testing.T) {
 	// var impl testutil.RateLimitChecker = reallimit.New(...)
-	var impl testutil.RateLimitChecker
+	impl := realRateLimitChecker
 	testutil.RequireImplementation(t, impl, "RateLimitChecker")
 
 	ip := "192.168.1.40"
@@ -129,7 +129,7 @@ func TestRateLimit_13_4_Reset(t *testing.T) {
 // TST-CORE-549
 func TestRateLimit_13_5_PerIPIsolation(t *testing.T) {
 	// var impl testutil.RateLimitChecker = reallimit.New(...)
-	var impl testutil.RateLimitChecker
+	impl := realRateLimitChecker
 	testutil.RequireImplementation(t, impl, "RateLimitChecker")
 
 	ipA := "10.0.0.1"
@@ -163,7 +163,7 @@ func TestRateLimit_13_5_PerIPIsolation(t *testing.T) {
 // TST-CORE-550
 func TestRateLimit_13_6_RateLimitHeaders(t *testing.T) {
 	// var impl testutil.RateLimitChecker = reallimit.New(...)
-	var impl testutil.RateLimitChecker
+	impl := realRateLimitChecker
 	testutil.RequireImplementation(t, impl, "RateLimitChecker")
 
 	ip := "10.0.0.10"

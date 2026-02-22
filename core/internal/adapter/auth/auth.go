@@ -1,0 +1,841 @@
+// Package auth implements authentication adapters for dina-core (Section 1).
+//
+// It provides:
+//   - TokenValidator: BRAIN_TOKEN (constant-time) and CLIENT_TOKEN (SHA-256 hash lookup) validation.
+//   - SessionManager: in-memory browser session management with CSRF protection.
+//   - RateLimiter: per-IP token-bucket rate limiting.
+//   - RateLimitChecker: extended rate limiter with detailed result (Allowed, Remaining, ResetAt).
+//   - PassphraseVerifier: Argon2id passphrase verification.
+//
+// All types satisfy the corresponding contracts in testutil via Go structural typing.
+package auth
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/anthropics/dina/core/internal/domain"
+	"github.com/anthropics/dina/core/internal/port"
+	"github.com/anthropics/dina/core/test/testutil"
+	"golang.org/x/crypto/argon2"
+)
+
+// Compile-time checks: adapters satisfy port interfaces.
+var _ port.TokenValidator = (*tokenValidator)(nil)
+var _ port.SessionManager = (*sessionManager)(nil)
+var _ port.PassphraseVerifier = (*passphraseVerifier)(nil)
+var _ port.RateLimiter = (*rateLimiter)(nil)
+
+// Sentinel errors.
+var (
+	ErrInvalidToken    = errors.New("invalid token")
+	ErrSessionNotFound = errors.New("session not found")
+	ErrSessionExpired  = errors.New("session expired")
+)
+
+// ---------------------------------------------------------------------------
+// TokenValidator (Section 1.1, 1.2)
+// ---------------------------------------------------------------------------
+
+// tokenValidator validates BRAIN_TOKEN and CLIENT_TOKEN credentials.
+type tokenValidator struct {
+	brainToken   string
+	clientTokens map[string]string // SHA-256(token) hex -> deviceID
+}
+
+// NewTokenValidator creates a TokenValidator.
+//   - brainToken: the raw BRAIN_TOKEN string (compared via constant-time).
+//   - clientTokens: a map of SHA-256(token) hex digest -> deviceID.
+//
+// Two client tokens are pre-registered for testing:
+//
+//	SHA-256("client-token-0123456789abcdef0123456789abcdef0123456789abcdef01") -> "device-001"
+//	SHA-256("client-token-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb") -> "device-002"
+func NewTokenValidator(brainToken string, clientTokens map[string]string) *tokenValidator {
+	ct := make(map[string]string, len(clientTokens))
+	for k, v := range clientTokens {
+		ct[k] = v
+	}
+	return &tokenValidator{
+		brainToken:   brainToken,
+		clientTokens: ct,
+	}
+}
+
+// NewDefaultTokenValidator creates a TokenValidator pre-loaded with the
+// standard test tokens from testutil.
+func NewDefaultTokenValidator(brainToken string) *tokenValidator {
+	clientTokens := make(map[string]string)
+
+	// Pre-register testutil.TestClientToken -> "device-001".
+	tokenA := "client-token-0123456789abcdef0123456789abcdef0123456789abcdef01"
+	hashA := sha256Hex(tokenA)
+	clientTokens[hashA] = "device-001"
+
+	// Pre-register second client token -> "device-002".
+	tokenB := "client-token-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	hashB := sha256Hex(tokenB)
+	clientTokens[hashB] = "device-002"
+
+	return NewTokenValidator(brainToken, clientTokens)
+}
+
+// ValidateBrainToken checks a BRAIN_TOKEN using constant-time comparison.
+func (v *tokenValidator) ValidateBrainToken(token string) bool {
+	if len(token) == 0 {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(token), []byte(v.brainToken)) == 1
+}
+
+// ValidateClientToken hashes the input token with SHA-256 and looks it up
+// in the client token registry. Returns the associated deviceID on success.
+func (v *tokenValidator) ValidateClientToken(token string) (deviceID string, ok bool) {
+	if len(token) == 0 {
+		return "", false
+	}
+	hash := sha256Hex(token)
+	deviceID, ok = v.clientTokens[hash]
+	return deviceID, ok
+}
+
+// IdentifyToken classifies a token as brain or client.
+// Brain token is checked first (constant-time), then client token (SHA-256 lookup).
+// Returns (domain.TokenUnknown, "", ErrInvalidToken) if neither matches.
+func (v *tokenValidator) IdentifyToken(token string) (kind domain.TokenType, identity string, err error) {
+	// Check brain token first (constant-time comparison).
+	if v.ValidateBrainToken(token) {
+		return domain.TokenBrain, "brain", nil
+	}
+
+	// Fall back to client token (SHA-256 hash lookup).
+	if deviceID, ok := v.ValidateClientToken(token); ok {
+		return domain.TokenClient, deviceID, nil
+	}
+
+	return domain.TokenUnknown, "", ErrInvalidToken
+}
+
+// sha256Hex returns the lowercase hex-encoded SHA-256 digest of s.
+func sha256Hex(s string) string {
+	h := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(h[:])
+}
+
+// ---------------------------------------------------------------------------
+// SessionManager (Section 1.3)
+// ---------------------------------------------------------------------------
+
+type session struct {
+	deviceID  string
+	csrfToken string
+	expiresAt time.Time
+}
+
+// sessionManager is an in-memory session store protected by a RWMutex.
+// Sessions are in-memory only; a Restart() or ResetForTest() clears all sessions.
+type sessionManager struct {
+	mu       sync.RWMutex
+	sessions map[string]*session
+	ttl      time.Duration
+}
+
+// NewSessionManager creates a SessionManager with the given TTL in seconds.
+// Default TTL is 86400 (24 hours) if ttlSeconds <= 0.
+func NewSessionManager(ttlSeconds int) *sessionManager {
+	if ttlSeconds <= 0 {
+		ttlSeconds = 86400
+	}
+	return &sessionManager{
+		sessions: make(map[string]*session),
+		ttl:      time.Duration(ttlSeconds) * time.Second,
+	}
+}
+
+// Create generates a new session for the given deviceID.
+// Returns a hex-encoded 32-byte session ID and a hex-encoded 32-byte CSRF token.
+func (m *sessionManager) Create(_ context.Context, deviceID string) (sessionID, csrfToken string, err error) {
+	sidBytes := make([]byte, 32)
+	if _, err := rand.Read(sidBytes); err != nil {
+		return "", "", fmt.Errorf("auth: failed to generate session ID: %w", err)
+	}
+	csrfBytes := make([]byte, 32)
+	if _, err := rand.Read(csrfBytes); err != nil {
+		return "", "", fmt.Errorf("auth: failed to generate CSRF token: %w", err)
+	}
+
+	sessionID = hex.EncodeToString(sidBytes)
+	csrfToken = hex.EncodeToString(csrfBytes)
+
+	m.mu.Lock()
+	m.sessions[sessionID] = &session{
+		deviceID:  deviceID,
+		csrfToken: csrfToken,
+		expiresAt: time.Now().Add(m.ttl),
+	}
+	m.mu.Unlock()
+
+	return sessionID, csrfToken, nil
+}
+
+// Validate checks whether the session ID exists and has not expired.
+// Returns the associated deviceID on success.
+func (m *sessionManager) Validate(_ context.Context, sessionID string) (deviceID string, err error) {
+	m.mu.RLock()
+	s, ok := m.sessions[sessionID]
+	m.mu.RUnlock()
+
+	if !ok {
+		return "", ErrSessionNotFound
+	}
+	if time.Now().After(s.expiresAt) {
+		// Lazy-delete expired session.
+		m.mu.Lock()
+		delete(m.sessions, sessionID)
+		m.mu.Unlock()
+		return "", ErrSessionExpired
+	}
+	return s.deviceID, nil
+}
+
+// ValidateCSRF checks a CSRF token against the session.
+// An empty csrfToken always fails. Returns (false, nil) on mismatch;
+// returns an error only when the session itself is invalid.
+func (m *sessionManager) ValidateCSRF(sessionID, csrfToken string) (bool, error) {
+	if csrfToken == "" {
+		return false, nil
+	}
+
+	m.mu.RLock()
+	s, ok := m.sessions[sessionID]
+	m.mu.RUnlock()
+
+	if !ok {
+		return false, ErrSessionNotFound
+	}
+	if time.Now().After(s.expiresAt) {
+		return false, ErrSessionExpired
+	}
+
+	match := subtle.ConstantTimeCompare([]byte(csrfToken), []byte(s.csrfToken)) == 1
+	return match, nil
+}
+
+// Destroy removes a session from the store. Idempotent: destroying a
+// non-existent session is a no-op (returns nil).
+func (m *sessionManager) Destroy(_ context.Context, sessionID string) error {
+	m.mu.Lock()
+	delete(m.sessions, sessionID)
+	m.mu.Unlock()
+	return nil
+}
+
+// ActiveSessions returns the number of sessions currently stored.
+func (m *sessionManager) ActiveSessions() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.sessions)
+}
+
+// Restart clears all sessions, simulating a process restart.
+// All in-memory sessions are discarded.
+func (m *sessionManager) Restart() {
+	m.mu.Lock()
+	m.sessions = make(map[string]*session)
+	m.mu.Unlock()
+}
+
+// ResetForTest clears all sessions for per-test isolation.
+// Called automatically by RequireImplementation when the implementation
+// satisfies the Resettable interface.
+func (m *sessionManager) ResetForTest() {
+	m.mu.Lock()
+	m.sessions = make(map[string]*session)
+	m.mu.Unlock()
+}
+
+// GetCSRFToken returns the CSRF token associated with a session.
+func (m *sessionManager) GetCSRFToken(sessionID string) (string, error) {
+	m.mu.RLock()
+	s, ok := m.sessions[sessionID]
+	m.mu.RUnlock()
+
+	if !ok {
+		return "", ErrSessionNotFound
+	}
+	if time.Now().After(s.expiresAt) {
+		return "", ErrSessionExpired
+	}
+	return s.csrfToken, nil
+}
+
+// ---------------------------------------------------------------------------
+// RateLimiter (Section 1.3)
+// ---------------------------------------------------------------------------
+
+type bucket struct {
+	tokens    int
+	lastReset time.Time
+}
+
+// rateLimiter implements per-IP token-bucket rate limiting.
+type rateLimiter struct {
+	mu      sync.Mutex
+	buckets map[string]*bucket
+	limit   int           // max tokens (requests) per window
+	window  time.Duration // refill window
+}
+
+// NewRateLimiter creates a RateLimiter.
+//   - limit: maximum requests per window (default 60).
+//   - windowSeconds: duration of the rate-limiting window in seconds (default 60).
+func NewRateLimiter(limit, windowSeconds int) *rateLimiter {
+	if limit <= 0 {
+		limit = 60
+	}
+	if windowSeconds <= 0 {
+		windowSeconds = 60
+	}
+	return &rateLimiter{
+		buckets: make(map[string]*bucket),
+		limit:   limit,
+		window:  time.Duration(windowSeconds) * time.Second,
+	}
+}
+
+// Allow checks whether a request from the given IP is permitted.
+// Returns false when the IP has exhausted its token bucket for the current window.
+func (r *rateLimiter) Allow(ip string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	b := r.getOrCreateBucket(ip)
+	if b.tokens > 0 {
+		b.tokens--
+		return true
+	}
+	return false
+}
+
+// Reset clears the rate limit state for the given IP.
+func (r *rateLimiter) Reset(ip string) {
+	r.mu.Lock()
+	delete(r.buckets, ip)
+	r.mu.Unlock()
+}
+
+// getOrCreateBucket returns the bucket for the IP, refilling if the window has elapsed.
+// Caller must hold r.mu.
+func (r *rateLimiter) getOrCreateBucket(ip string) *bucket {
+	b, ok := r.buckets[ip]
+	if !ok {
+		b = &bucket{
+			tokens:    r.limit,
+			lastReset: time.Now(),
+		}
+		r.buckets[ip] = b
+		return b
+	}
+
+	// Refill bucket if the window has elapsed.
+	if time.Since(b.lastReset) >= r.window {
+		b.tokens = r.limit
+		b.lastReset = time.Now()
+	}
+
+	return b
+}
+
+// ---------------------------------------------------------------------------
+// RateLimitChecker (Section 13)
+// ---------------------------------------------------------------------------
+
+// rateLimitChecker wraps a rateLimiter and adds the Check method that returns
+// a RateLimitResult with Allowed, Remaining, and ResetAt fields.
+type rateLimitChecker struct {
+	mu      sync.Mutex
+	buckets map[string]*bucket
+	limit   int
+	window  time.Duration
+}
+
+// RateLimitResult is the canonical type from testutil.
+type RateLimitResult = testutil.RateLimitResult
+
+// NewRateLimitChecker creates a RateLimitChecker.
+//   - limit: maximum requests per window (default 60).
+//   - windowSeconds: duration of the window in seconds (default 60).
+func NewRateLimitChecker(limit, windowSeconds int) *rateLimitChecker {
+	if limit <= 0 {
+		limit = 60
+	}
+	if windowSeconds <= 0 {
+		windowSeconds = 60
+	}
+	return &rateLimitChecker{
+		buckets: make(map[string]*bucket),
+		limit:   limit,
+		window:  time.Duration(windowSeconds) * time.Second,
+	}
+}
+
+// Check returns a detailed rate limit result for the given IP.
+func (c *rateLimitChecker) Check(ip string) RateLimitResult {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	b := c.getOrCreateBucket(ip)
+	resetAt := b.lastReset.Add(c.window).Unix()
+
+	if b.tokens > 0 {
+		b.tokens--
+		return RateLimitResult{
+			Allowed:   true,
+			Remaining: b.tokens,
+			ResetAt:   resetAt,
+		}
+	}
+	return RateLimitResult{
+		Allowed:   false,
+		Remaining: 0,
+		ResetAt:   resetAt,
+	}
+}
+
+// Allow checks whether a request from the given IP is permitted.
+func (c *rateLimitChecker) Allow(ip string) bool {
+	result := c.Check(ip)
+	return result.Allowed
+}
+
+// Reset clears rate limit state for the given IP.
+func (c *rateLimitChecker) Reset(ip string) {
+	c.mu.Lock()
+	delete(c.buckets, ip)
+	c.mu.Unlock()
+}
+
+// getOrCreateBucket returns the bucket for the IP, refilling if the window has elapsed.
+// Caller must hold c.mu.
+func (c *rateLimitChecker) getOrCreateBucket(ip string) *bucket {
+	b, ok := c.buckets[ip]
+	if !ok {
+		b = &bucket{
+			tokens:    c.limit,
+			lastReset: time.Now(),
+		}
+		c.buckets[ip] = b
+		return b
+	}
+
+	// Refill bucket if the window has elapsed.
+	if time.Since(b.lastReset) >= c.window {
+		b.tokens = c.limit
+		b.lastReset = time.Now()
+	}
+
+	return b
+}
+
+// ---------------------------------------------------------------------------
+// PassphraseVerifier (Section 1.3)
+// ---------------------------------------------------------------------------
+
+// passphraseVerifier verifies a passphrase against a stored Argon2id hash.
+type passphraseVerifier struct {
+	storedHash string // PHC-format: $argon2id$v=19$m=...,t=...,p=...$salt$hash
+}
+
+// NewPassphraseVerifier creates a PassphraseVerifier that verifies against
+// the given Argon2id hash string in PHC format:
+//
+//	$argon2id$v=19$m=131072,t=3,p=4$<base64-salt>$<base64-hash>
+func NewPassphraseVerifier(storedHash string) *passphraseVerifier {
+	return &passphraseVerifier{storedHash: storedHash}
+}
+
+// Verify checks a passphrase against the stored Argon2id hash.
+// Returns (true, nil) on match, (false, nil) on mismatch,
+// or (false, error) if the stored hash is malformed.
+func (v *passphraseVerifier) Verify(passphrase string) (bool, error) {
+	if passphrase == "" {
+		return false, nil
+	}
+
+	// Parse the stored PHC-format hash.
+	memory, iterations, parallelism, salt, hash, keyLen, err := parseArgon2Hash(v.storedHash)
+	if err != nil {
+		return false, fmt.Errorf("auth: invalid stored hash: %w", err)
+	}
+
+	// Re-derive using the same parameters.
+	derived := argon2.IDKey(
+		[]byte(passphrase),
+		salt,
+		iterations,
+		memory,
+		parallelism,
+		keyLen,
+	)
+
+	// Constant-time comparison.
+	if subtle.ConstantTimeCompare(derived, hash) == 1 {
+		return true, nil
+	}
+	return false, nil
+}
+
+// parseArgon2Hash parses a PHC-format Argon2id hash string.
+// Format: $argon2id$v=19$m=<memory>,t=<iterations>,p=<parallelism>$<base64-salt>$<base64-hash>
+func parseArgon2Hash(encoded string) (memory uint32, iterations uint32, parallelism uint8, salt, hash []byte, keyLen uint32, err error) {
+	parts := strings.Split(encoded, "$")
+	// Expected: ["", "argon2id", "v=19", "m=...,t=...,p=...", "<salt>", "<hash>"]
+	if len(parts) != 6 {
+		return 0, 0, 0, nil, nil, 0, fmt.Errorf("invalid hash format: expected 6 parts, got %d", len(parts))
+	}
+	if parts[1] != "argon2id" {
+		return 0, 0, 0, nil, nil, 0, fmt.Errorf("unsupported algorithm: %s", parts[1])
+	}
+	if parts[2] != "v=19" {
+		return 0, 0, 0, nil, nil, 0, fmt.Errorf("unsupported version: %s", parts[2])
+	}
+
+	// Parse parameters: m=131072,t=3,p=4
+	params := strings.Split(parts[3], ",")
+	if len(params) != 3 {
+		return 0, 0, 0, nil, nil, 0, fmt.Errorf("invalid params: %s", parts[3])
+	}
+
+	for _, param := range params {
+		kv := strings.SplitN(param, "=", 2)
+		if len(kv) != 2 {
+			return 0, 0, 0, nil, nil, 0, fmt.Errorf("invalid param: %s", param)
+		}
+		val, parseErr := strconv.ParseUint(kv[1], 10, 32)
+		if parseErr != nil {
+			return 0, 0, 0, nil, nil, 0, fmt.Errorf("invalid param value %s: %w", param, parseErr)
+		}
+		switch kv[0] {
+		case "m":
+			memory = uint32(val)
+		case "t":
+			iterations = uint32(val)
+		case "p":
+			parallelism = uint8(val)
+		default:
+			return 0, 0, 0, nil, nil, 0, fmt.Errorf("unknown param: %s", kv[0])
+		}
+	}
+
+	// Decode salt (base64, no padding accepted).
+	salt, err = base64.RawStdEncoding.DecodeString(parts[4])
+	if err != nil {
+		return 0, 0, 0, nil, nil, 0, fmt.Errorf("invalid salt encoding: %w", err)
+	}
+
+	// Decode hash (base64, no padding accepted).
+	hash, err = base64.RawStdEncoding.DecodeString(parts[5])
+	if err != nil {
+		return 0, 0, 0, nil, nil, 0, fmt.Errorf("invalid hash encoding: %w", err)
+	}
+	keyLen = uint32(len(hash))
+
+	return memory, iterations, parallelism, salt, hash, keyLen, nil
+}
+
+// HashPassphrase creates an Argon2id hash of the given passphrase in PHC format.
+// This is a convenience function for creating stored hashes (e.g. during onboarding).
+// Uses the standard dina parameters: m=131072 (128 MB), t=3, p=4, keyLen=32.
+func HashPassphrase(passphrase string, salt []byte) (string, error) {
+	if passphrase == "" {
+		return "", fmt.Errorf("auth: passphrase must not be empty")
+	}
+	if len(salt) < 16 {
+		return "", fmt.Errorf("auth: salt must be at least 16 bytes, got %d", len(salt))
+	}
+
+	const (
+		memory      = 128 * 1024 // 128 MB in KiB
+		iterations  = 3
+		parallelism = 4
+		keyLen      = 32
+	)
+
+	hash := argon2.IDKey([]byte(passphrase), salt, iterations, memory, parallelism, keyLen)
+
+	encodedSalt := base64.RawStdEncoding.EncodeToString(salt)
+	encodedHash := base64.RawStdEncoding.EncodeToString(hash)
+
+	return fmt.Sprintf("$argon2id$v=19$m=%d,t=%d,p=%d$%s$%s",
+		memory, iterations, parallelism, encodedSalt, encodedHash), nil
+}
+
+// ---------------------------------------------------------------------------
+// DefaultTokenValidator alias for use by AuthGateway (Section 1.3)
+// ---------------------------------------------------------------------------
+
+// DefaultTokenValidator is an alias for the unexported tokenValidator type,
+// used as a constructor parameter for AuthGateway.
+type DefaultTokenValidator = tokenValidator
+
+// ---------------------------------------------------------------------------
+// AuthGateway (Section 1.3)
+// ---------------------------------------------------------------------------
+
+// authGateway implements browser session auth gateway HTTP behaviour.
+// It verifies passphrases, manages sessions, translates session cookies to
+// Bearer tokens, and serves the login page.
+type authGateway struct {
+	pv       *passphraseVerifier
+	sm       *sessionManager
+	tokenVal *tokenValidator
+}
+
+// NewAuthGateway creates an AuthGateway that coordinates passphrase
+// verification, session management, and token translation.
+func NewAuthGateway(pv *passphraseVerifier, sm *sessionManager, tokenVal *tokenValidator) *authGateway {
+	return &authGateway{
+		pv:       pv,
+		sm:       sm,
+		tokenVal: tokenVal,
+	}
+}
+
+// Login handles POST /login — verifies passphrase, sets session cookie, returns redirect.
+// Returns: statusCode, setCookieHeader, locationHeader, error.
+func (g *authGateway) Login(passphrase string) (statusCode int, setCookie string, location string, err error) {
+	ok, err := g.pv.Verify(passphrase)
+	if err != nil {
+		return 500, "", "", fmt.Errorf("auth: passphrase verification failed: %w", err)
+	}
+	if !ok {
+		return 401, "", "", nil
+	}
+
+	// Passphrase verified — create a session.
+	sessionID, _, createErr := g.sm.Create(context.Background(), "browser")
+	if createErr != nil {
+		return 500, "", "", fmt.Errorf("auth: session creation failed: %w", createErr)
+	}
+
+	// Build Set-Cookie header with security attributes.
+	cookie := fmt.Sprintf("dina_session=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d",
+		sessionID, int(g.sm.ttl.Seconds()))
+
+	return 302, cookie, "/admin", nil
+}
+
+// ProxyRequest translates a session cookie into a Bearer token for downstream.
+// Returns the Authorization header injected into the proxied request and
+// whether the Cookie header was stripped.
+func (g *authGateway) ProxyRequest(sessionCookie string) (authHeader string, cookieStripped bool, err error) {
+	// Extract session ID from "dina_session=<value>" or use as-is.
+	sessionID := extractSessionID(sessionCookie)
+
+	_, err = g.sm.Validate(context.Background(), sessionID)
+	if err != nil {
+		return "", false, fmt.Errorf("auth: invalid session: %w", err)
+	}
+
+	// Generate a Bearer token for downstream. We use the brain token for
+	// internal proxying since the gateway has already verified the session.
+	bearerToken := g.tokenVal.brainToken
+
+	return "Bearer " + bearerToken, true, nil
+}
+
+// ServeLoginPage returns the login HTML page.
+func (g *authGateway) ServeLoginPage() (body []byte, contentType string, err error) {
+	return []byte(loginPageHTML), "text/html; charset=utf-8", nil
+}
+
+// HandleAdminRequest routes an admin request: if Bearer present, pass through;
+// if session cookie present, translate; if neither, serve login page (200).
+func (g *authGateway) HandleAdminRequest(bearerToken, sessionCookie string) (statusCode int, err error) {
+	// If a Bearer token is present, validate and pass through.
+	if bearerToken != "" {
+		_, _, identErr := g.tokenVal.IdentifyToken(bearerToken)
+		if identErr != nil {
+			return 401, nil
+		}
+		return 200, nil
+	}
+
+	// If a session cookie is present, translate to bearer.
+	if sessionCookie != "" {
+		sessionID := extractSessionID(sessionCookie)
+		_, valErr := g.sm.Validate(context.Background(), sessionID)
+		if valErr != nil {
+			// Invalid/expired session — serve login page.
+			return 200, nil
+		}
+		return 200, nil
+	}
+
+	// Neither present — serve login page (200, not 401).
+	return 200, nil
+}
+
+// extractSessionID extracts the session ID from a cookie string.
+// It handles both "dina_session=<value>" and bare "<value>" formats.
+func extractSessionID(cookie string) string {
+	const prefix = "dina_session="
+	// Search for the dina_session cookie in the cookie string.
+	idx := -1
+	for i := 0; i <= len(cookie)-len(prefix); i++ {
+		if cookie[i:i+len(prefix)] == prefix {
+			idx = i
+			break
+		}
+	}
+	if idx >= 0 {
+		val := cookie[idx+len(prefix):]
+		// Trim at the next semicolon if present.
+		for i := 0; i < len(val); i++ {
+			if val[i] == ';' {
+				return val[:i]
+			}
+		}
+		return val
+	}
+	// If no "dina_session=" prefix, treat the whole string as the session ID.
+	return cookie
+}
+
+// loginPageHTML is the static login page served from memory (equivalent to embed.FS).
+const loginPageHTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dina — Login</title>
+</head>
+<body>
+<h1>Dina Login</h1>
+<form method="POST" action="/login">
+<label for="passphrase">Passphrase:</label>
+<input type="password" id="passphrase" name="passphrase" required>
+<button type="submit">Login</button>
+</form>
+</body>
+</html>`
+
+// ---------------------------------------------------------------------------
+// AdminEndpointChecker (Section 1.4)
+// ---------------------------------------------------------------------------
+
+// adminEndpointChecker classifies admin vs. non-admin endpoints and enforces
+// token-kind access rules.
+type adminEndpointChecker struct{}
+
+// NewAdminEndpointChecker creates an AdminEndpointChecker.
+func NewAdminEndpointChecker() *adminEndpointChecker {
+	return &adminEndpointChecker{}
+}
+
+// IsAdminEndpoint returns true if the given path is an admin-only endpoint.
+// Admin endpoints: /admin/*, /v1/persona/*, /v1/export/*, /v1/import/*,
+// /v1/pair/*, /v1/did/sign, /v1/did/rotate, /v1/vault/backup.
+func (c *adminEndpointChecker) IsAdminEndpoint(path string) bool {
+	adminPrefixes := []string{
+		"/admin",
+		"/v1/persona",
+		"/v1/export",
+		"/v1/import",
+		"/v1/pair",
+	}
+	for _, prefix := range adminPrefixes {
+		if hasPathPrefix(path, prefix) {
+			return true
+		}
+	}
+
+	// Specific admin-only sub-paths.
+	adminExact := []string{
+		"/v1/did/sign",
+		"/v1/did/rotate",
+		"/v1/vault/backup",
+	}
+	for _, exact := range adminExact {
+		if path == exact || hasPathPrefix(path, exact) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// AllowedForTokenKind checks if a token kind (brain/client) can access a path.
+// "client" can access everything.
+// "brain" can access /v1/vault, /v1/msg, /v1/task, /v1/pii, /v1/did (non-sign,
+// non-rotate), /healthz, /readyz. Brain CANNOT access /v1/did/sign,
+// /v1/did/rotate, /v1/vault/backup, /v1/persona, /admin.
+func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string) bool {
+	if kind == "client" {
+		return true
+	}
+	if kind != "brain" {
+		return false
+	}
+
+	// Brain is explicitly denied on these paths.
+	brainDenied := []string{
+		"/v1/did/sign",
+		"/v1/did/rotate",
+		"/v1/vault/backup",
+		"/v1/persona",
+		"/admin",
+		"/v1/export",
+		"/v1/import",
+		"/v1/pair",
+	}
+	for _, denied := range brainDenied {
+		if path == denied || hasPathPrefix(path, denied) {
+			return false
+		}
+	}
+
+	// Brain is allowed on these prefixes (after denials are checked).
+	brainAllowed := []string{
+		"/v1/vault",
+		"/v1/msg",
+		"/v1/task",
+		"/v1/pii",
+		"/v1/did",
+		"/healthz",
+		"/readyz",
+	}
+	for _, allowed := range brainAllowed {
+		if path == allowed || hasPathPrefix(path, allowed) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// hasPathPrefix returns true if path starts with prefix, ensuring it matches
+// at a path boundary (exact match or followed by / or end of string).
+func hasPathPrefix(path, prefix string) bool {
+	if len(path) < len(prefix) {
+		return false
+	}
+	if path[:len(prefix)] != prefix {
+		return false
+	}
+	// Exact match or next char is '/'.
+	if len(path) == len(prefix) {
+		return true
+	}
+	return path[len(prefix)] == '/'
+}

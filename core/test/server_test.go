@@ -26,7 +26,7 @@ import (
 
 // TST-CORE-557
 func TestServer_15_1_1_LivenessProbe(t *testing.T) {
-	var impl testutil.HealthChecker
+	impl := realHealthChecker
 	testutil.RequireImplementation(t, impl, "HealthChecker")
 
 	// §15.1 #1: GET /healthz → 200 OK. HTTP server responding, near-zero cost.
@@ -36,7 +36,7 @@ func TestServer_15_1_1_LivenessProbe(t *testing.T) {
 
 // TST-CORE-558
 func TestServer_15_1_2_ReadinessProbeVaultHealthy(t *testing.T) {
-	var impl testutil.HealthChecker
+	impl := realHealthChecker
 	testutil.RequireImplementation(t, impl, "HealthChecker")
 
 	// §15.1 #2: GET /readyz → 200 OK when db.PingContext() succeeds on identity.sqlite.
@@ -46,7 +46,7 @@ func TestServer_15_1_2_ReadinessProbeVaultHealthy(t *testing.T) {
 
 // TST-CORE-559
 func TestServer_15_1_3_ReadinessProbeVaultLocked(t *testing.T) {
-	var impl testutil.HealthChecker
+	impl := realHealthChecker
 	testutil.RequireImplementation(t, impl, "HealthChecker")
 
 	// §15.1 #3: GET /readyz when vault locked (security mode, no passphrase) → 503.
@@ -59,7 +59,7 @@ func TestServer_15_1_3_ReadinessProbeVaultLocked(t *testing.T) {
 
 // TST-CORE-560
 func TestServer_15_1_4_ReadinessProbeSQLiteLocked(t *testing.T) {
-	var impl testutil.HealthChecker
+	impl := realHealthChecker
 	testutil.RequireImplementation(t, impl, "HealthChecker")
 
 	// §15.1 #4: GET /readyz when db.PingContext() times out → 503.
@@ -70,7 +70,7 @@ func TestServer_15_1_4_ReadinessProbeSQLiteLocked(t *testing.T) {
 
 // TST-CORE-561
 func TestServer_15_1_5_LivenessNotEqualReadiness(t *testing.T) {
-	var impl testutil.HealthChecker
+	impl := realHealthChecker
 	testutil.RequireImplementation(t, impl, "HealthChecker")
 
 	// §15.1 #5: Zombie state — /healthz returns 200 but /readyz returns 503.
@@ -86,7 +86,7 @@ func TestServer_15_1_5_LivenessNotEqualReadiness(t *testing.T) {
 
 // TST-CORE-562
 func TestServer_15_1_6_DockerHealthcheckUsesHealthz(t *testing.T) {
-	var impl testutil.Server
+	impl := realServer
 	testutil.RequireImplementation(t, impl, "Server")
 
 	// §15.1 #6: Docker healthcheck uses GET /healthz — verify route exists.
@@ -119,7 +119,7 @@ func TestServer_15_1_8_BrainStartsAfterCoreHealthy(t *testing.T) {
 
 // TST-CORE-565
 func TestServer_15_2_1_SearchVault(t *testing.T) {
-	var impl testutil.VaultAPI
+	impl := realVaultAPI
 	testutil.RequireImplementation(t, impl, "VaultAPI")
 
 	// §15.2 #1: POST /v1/vault/query with persona, q, mode, filters → 200 with items array.
@@ -131,7 +131,7 @@ func TestServer_15_2_1_SearchVault(t *testing.T) {
 
 // TST-CORE-566
 func TestServer_15_2_2_StoreItem(t *testing.T) {
-	var impl testutil.VaultAPI
+	impl := realVaultAPI
 	testutil.RequireImplementation(t, impl, "VaultAPI")
 
 	// §15.2 #2: POST /v1/vault/store → 201 Created with {status: "ok", id: "vault_..."}.
@@ -147,7 +147,7 @@ func TestServer_15_2_2_StoreItem(t *testing.T) {
 
 // TST-CORE-567
 func TestServer_15_2_3_GetItemByID(t *testing.T) {
-	var impl testutil.VaultAPI
+	impl := realVaultAPI
 	testutil.RequireImplementation(t, impl, "VaultAPI")
 
 	// §15.2 #3: GET /v1/vault/item/:id → 200 with full item JSON.
@@ -167,7 +167,7 @@ func TestServer_15_2_3_GetItemByID(t *testing.T) {
 
 // TST-CORE-568
 func TestServer_15_2_4_DeleteItem(t *testing.T) {
-	var impl testutil.VaultAPI
+	impl := realVaultAPI
 	testutil.RequireImplementation(t, impl, "VaultAPI")
 
 	// §15.2 #4: DELETE /v1/vault/item/:id → 200. Item permanently removed (right to forget).
@@ -190,7 +190,7 @@ func TestServer_15_2_4_DeleteItem(t *testing.T) {
 
 // TST-CORE-569
 func TestServer_15_2_5_StoreCrashTraceback(t *testing.T) {
-	var impl testutil.VaultAPI
+	impl := realVaultAPI
 	testutil.RequireImplementation(t, impl, "VaultAPI")
 
 	// §15.2 #5: POST /v1/vault/crash with {error, traceback, task_id} → 200.
@@ -201,7 +201,7 @@ func TestServer_15_2_5_StoreCrashTraceback(t *testing.T) {
 
 // TST-CORE-570
 func TestServer_15_2_6_ACKTask(t *testing.T) {
-	var impl testutil.VaultAPI
+	impl := realVaultAPI
 	testutil.RequireImplementation(t, impl, "VaultAPI")
 
 	// §15.2 #6: POST /v1/task/ack {task_id} → 200. Task deleted from dina_tasks.
@@ -211,7 +211,7 @@ func TestServer_15_2_6_ACKTask(t *testing.T) {
 
 // TST-CORE-571
 func TestServer_15_2_7_VaultKVStore(t *testing.T) {
-	var impl testutil.VaultAPI
+	impl := realVaultAPI
 	testutil.RequireImplementation(t, impl, "VaultAPI")
 
 	// §15.2 #7: PUT /v1/vault/kv/gmail_cursor → 200. Key-value pair stored.
@@ -221,7 +221,7 @@ func TestServer_15_2_7_VaultKVStore(t *testing.T) {
 
 // TST-CORE-572
 func TestServer_15_2_8_VaultKVRead(t *testing.T) {
-	var impl testutil.VaultAPI
+	impl := realVaultAPI
 	testutil.RequireImplementation(t, impl, "VaultAPI")
 
 	// §15.2 #8: GET /v1/vault/kv/gmail_cursor → 200 with value.
@@ -235,7 +235,7 @@ func TestServer_15_2_8_VaultKVRead(t *testing.T) {
 
 // TST-CORE-573
 func TestServer_15_2_9_VaultKVUpsert(t *testing.T) {
-	var impl testutil.VaultAPI
+	impl := realVaultAPI
 	testutil.RequireImplementation(t, impl, "VaultAPI")
 
 	// §15.2 #9: PUT /v1/vault/kv/gmail_cursor with new value → 200.
@@ -253,7 +253,7 @@ func TestServer_15_2_9_VaultKVUpsert(t *testing.T) {
 
 // TST-CORE-574
 func TestServer_15_2_10_VaultKVNotFound(t *testing.T) {
-	var impl testutil.VaultAPI
+	impl := realVaultAPI
 	testutil.RequireImplementation(t, impl, "VaultAPI")
 
 	// §15.2 #10: GET /v1/vault/kv/nonexistent_key → 404.
@@ -263,7 +263,7 @@ func TestServer_15_2_10_VaultKVNotFound(t *testing.T) {
 
 // TST-CORE-575
 func TestServer_15_2_11_VaultBatchStore(t *testing.T) {
-	var impl testutil.VaultAPI
+	impl := realVaultAPI
 	testutil.RequireImplementation(t, impl, "VaultAPI")
 
 	// §15.2 #11: POST /v1/vault/store/batch with 100 items → 201. All stored in single transaction.
@@ -281,7 +281,7 @@ func TestServer_15_2_11_VaultBatchStore(t *testing.T) {
 
 // TST-CORE-576
 func TestServer_15_2_12_VaultBatchStoreExceedsCap(t *testing.T) {
-	var impl testutil.VaultAPI
+	impl := realVaultAPI
 	testutil.RequireImplementation(t, impl, "VaultAPI")
 
 	// §15.2 #12: POST /v1/vault/store/batch with 200 items → 400. Max 100 items per batch.
@@ -303,7 +303,7 @@ func TestServer_15_2_12_VaultBatchStoreExceedsCap(t *testing.T) {
 
 // TST-CORE-577
 func TestServer_15_3_1_GetOwnDID(t *testing.T) {
-	var impl testutil.IdentityAPI
+	impl := realIdentityAPI
 	testutil.RequireImplementation(t, impl, "IdentityAPI")
 
 	// §15.3 #1: GET /v1/did → 200 with DID Document.
@@ -314,7 +314,7 @@ func TestServer_15_3_1_GetOwnDID(t *testing.T) {
 
 // TST-CORE-578
 func TestServer_15_3_2_CreatePersona(t *testing.T) {
-	var impl testutil.IdentityAPI
+	impl := realIdentityAPI
 	testutil.RequireImplementation(t, impl, "IdentityAPI")
 
 	// §15.3 #2: POST /v1/personas → 201 with new persona DID.
@@ -325,7 +325,7 @@ func TestServer_15_3_2_CreatePersona(t *testing.T) {
 
 // TST-CORE-579
 func TestServer_15_3_3_ListPersonas(t *testing.T) {
-	var impl testutil.IdentityAPI
+	impl := realIdentityAPI
 	testutil.RequireImplementation(t, impl, "IdentityAPI")
 
 	// §15.3 #3: GET /v1/personas → 200 with array.
@@ -337,7 +337,7 @@ func TestServer_15_3_3_ListPersonas(t *testing.T) {
 
 // TST-CORE-580
 func TestServer_15_3_4_GetContacts(t *testing.T) {
-	var impl testutil.IdentityAPI
+	impl := realIdentityAPI
 	testutil.RequireImplementation(t, impl, "IdentityAPI")
 
 	// §15.3 #4: GET /v1/contacts → 200 with contact list.
@@ -349,7 +349,7 @@ func TestServer_15_3_4_GetContacts(t *testing.T) {
 
 // TST-CORE-581
 func TestServer_15_3_5_AddContact(t *testing.T) {
-	var impl testutil.IdentityAPI
+	impl := realIdentityAPI
 	testutil.RequireImplementation(t, impl, "IdentityAPI")
 
 	// §15.3 #5: POST /v1/contacts → 201.
@@ -359,7 +359,7 @@ func TestServer_15_3_5_AddContact(t *testing.T) {
 
 // TST-CORE-582
 func TestServer_15_3_6_RegisterDevice(t *testing.T) {
-	var impl testutil.IdentityAPI
+	impl := realIdentityAPI
 	testutil.RequireImplementation(t, impl, "IdentityAPI")
 
 	// §15.3 #6: POST /v1/devices → 201.
@@ -371,7 +371,7 @@ func TestServer_15_3_6_RegisterDevice(t *testing.T) {
 
 // TST-CORE-583
 func TestServer_15_3_7_ListDevices(t *testing.T) {
-	var impl testutil.IdentityAPI
+	impl := realIdentityAPI
 	testutil.RequireImplementation(t, impl, "IdentityAPI")
 
 	// §15.3 #7: GET /v1/devices → 200 with device array.
@@ -386,7 +386,7 @@ func TestServer_15_3_7_ListDevices(t *testing.T) {
 
 // TST-CORE-584
 func TestServer_15_4_1_SendMessage(t *testing.T) {
-	var impl testutil.MessagingAPI
+	impl := realMessagingAPI
 	testutil.RequireImplementation(t, impl, "MessagingAPI")
 
 	// §15.4 #1: POST /v1/msg/send + recipient DID + payload → 202 Accepted (queued in outbox).
@@ -396,7 +396,7 @@ func TestServer_15_4_1_SendMessage(t *testing.T) {
 
 // TST-CORE-585
 func TestServer_15_4_2_ReceiveMessages(t *testing.T) {
-	var impl testutil.MessagingAPI
+	impl := realMessagingAPI
 	testutil.RequireImplementation(t, impl, "MessagingAPI")
 
 	// §15.4 #2: GET /v1/msg/inbox → 200 with message array.
@@ -408,7 +408,7 @@ func TestServer_15_4_2_ReceiveMessages(t *testing.T) {
 
 // TST-CORE-586
 func TestServer_15_4_3_AcknowledgeMessage(t *testing.T) {
-	var impl testutil.MessagingAPI
+	impl := realMessagingAPI
 	testutil.RequireImplementation(t, impl, "MessagingAPI")
 
 	// §15.4 #3: POST /v1/msg/{id}/ack → 200.
@@ -422,7 +422,7 @@ func TestServer_15_4_3_AcknowledgeMessage(t *testing.T) {
 
 // TST-CORE-587
 func TestServer_15_5_1_InitiatePairing(t *testing.T) {
-	var impl testutil.PairingAPI
+	impl := realPairingAPI
 	testutil.RequireImplementation(t, impl, "PairingAPI")
 
 	// §15.5 #1: POST /v1/pair/initiate → 200 with 6-digit code, expires_in 300.
@@ -434,7 +434,7 @@ func TestServer_15_5_1_InitiatePairing(t *testing.T) {
 
 // TST-CORE-588
 func TestServer_15_5_2_InitiateStoresPendingPairing(t *testing.T) {
-	var impl testutil.PairingAPI
+	impl := realPairingAPI
 	testutil.RequireImplementation(t, impl, "PairingAPI")
 
 	// §15.5 #2: After initiate, core stores pending_pairings[code] = {expires, used: false}.
@@ -445,7 +445,7 @@ func TestServer_15_5_2_InitiateStoresPendingPairing(t *testing.T) {
 
 // TST-CORE-589
 func TestServer_15_5_3_CompletePairing(t *testing.T) {
-	var impl testutil.PairingAPI
+	impl := realPairingAPI
 	testutil.RequireImplementation(t, impl, "PairingAPI")
 
 	// §15.5 #3: POST /v1/pair/complete with code and device_name → 200 with
@@ -462,7 +462,7 @@ func TestServer_15_5_3_CompletePairing(t *testing.T) {
 
 // TST-CORE-590
 func TestServer_15_5_4_ClientTokenIs32BytesHex(t *testing.T) {
-	var impl testutil.PairingAPI
+	impl := realPairingAPI
 	testutil.RequireImplementation(t, impl, "PairingAPI")
 
 	// §15.5 #4: CLIENT_TOKEN is 32 bytes hex-encoded = 64 hex chars.
@@ -482,7 +482,7 @@ func TestServer_15_5_4_ClientTokenIs32BytesHex(t *testing.T) {
 
 // TST-CORE-591
 func TestServer_15_5_5_SHA256HashStoredNotToken(t *testing.T) {
-	var impl testutil.PairingAPI
+	impl := realPairingAPI
 	testutil.RequireImplementation(t, impl, "PairingAPI")
 
 	// §15.5 #5: device_tokens table stores SHA-256(CLIENT_TOKEN), not the plaintext token.
@@ -498,7 +498,7 @@ func TestServer_15_5_5_SHA256HashStoredNotToken(t *testing.T) {
 
 // TST-CORE-592
 func TestServer_15_5_6_PendingPairingDeletedAfterComplete(t *testing.T) {
-	var impl testutil.PairingAPI
+	impl := realPairingAPI
 	testutil.RequireImplementation(t, impl, "PairingAPI")
 
 	// §15.5 #6: After successful complete, pending_pairings[code] removed — code cannot be reused.
@@ -518,7 +518,7 @@ func TestServer_15_5_6_PendingPairingDeletedAfterComplete(t *testing.T) {
 
 // TST-CORE-593
 func TestServer_15_5_7_DeviceNameStored(t *testing.T) {
-	var impl testutil.PairingAPI
+	impl := realPairingAPI
 	testutil.RequireImplementation(t, impl, "PairingAPI")
 
 	// §15.5 #7: device_name stored alongside token hash in device_tokens table.
@@ -543,7 +543,7 @@ func TestServer_15_5_8_ManagedHostingNoTerminal(t *testing.T) {
 
 // TST-CORE-595
 func TestServer_15_6_1_ATProtoDiscoveryEndpoint(t *testing.T) {
-	var impl testutil.ATProtoDiscovery
+	impl := realATProtoDiscovery
 	testutil.RequireImplementation(t, impl, "ATProtoDiscovery")
 
 	// §15.6 #1: GET /.well-known/atproto-did → 200 with DID as plain text.
@@ -554,7 +554,7 @@ func TestServer_15_6_1_ATProtoDiscoveryEndpoint(t *testing.T) {
 
 // TST-CORE-596
 func TestServer_15_6_2_DiscoveryReturnsRootDID(t *testing.T) {
-	var impl testutil.ATProtoDiscovery
+	impl := realATProtoDiscovery
 	testutil.RequireImplementation(t, impl, "ATProtoDiscovery")
 
 	// §15.6 #2: Response body is the root DID from vault.GetRootDID() — not a persona DID.
@@ -565,7 +565,7 @@ func TestServer_15_6_2_DiscoveryReturnsRootDID(t *testing.T) {
 
 // TST-CORE-597
 func TestServer_15_6_3_DiscoveryUnauthenticated(t *testing.T) {
-	var impl testutil.ATProtoDiscovery
+	impl := realATProtoDiscovery
 	testutil.RequireImplementation(t, impl, "ATProtoDiscovery")
 
 	// §15.6 #3: No auth header required — public endpoint per AT Protocol spec.
@@ -577,7 +577,7 @@ func TestServer_15_6_3_DiscoveryUnauthenticated(t *testing.T) {
 
 // TST-CORE-598
 func TestServer_15_6_4_DiscoveryAvailableInDevMode(t *testing.T) {
-	var impl testutil.Server
+	impl := realServer
 	testutil.RequireImplementation(t, impl, "Server")
 
 	// §15.6 #4: GET localhost:8100/.well-known/atproto-did returns DID on dev port.
@@ -595,7 +595,7 @@ func TestServer_15_6_4_DiscoveryAvailableInDevMode(t *testing.T) {
 
 // TST-CORE-599
 func TestServer_15_6_5_MissingDIDNoIdentityYet(t *testing.T) {
-	var impl testutil.ATProtoDiscovery
+	impl := realATProtoDiscovery
 	testutil.RequireImplementation(t, impl, "ATProtoDiscovery")
 
 	// §15.6 #5: Fresh install, DID not yet generated → 404 or 503, not empty 200.
@@ -613,21 +613,21 @@ func TestServer_15_6_5_MissingDIDNoIdentityYet(t *testing.T) {
 
 // TST-CORE-600
 func TestServer_15_7_1_ScrubText(t *testing.T) {
-	var impl testutil.PIIScrubber
+	impl := realPIIScrubber
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
 
 	// §15.7 #1: POST /v1/pii/scrub + text body → 200 with scrubbed text.
 	// PII entities (email, phone, SSN) replaced with numbered tokens.
-	scrubbed, entities, err := impl.Scrub("Call me at 555-123-4567 or email john@example.com")
+	result, err := impl.Scrub(piiCtx, "Call me at 555-123-4567 or email john@example.com")
 	testutil.RequireNoError(t, err)
-	testutil.RequireTrue(t, len(entities) > 0, "scrubber must detect PII entities in test input")
-	testutil.RequireTrue(t, len(scrubbed) > 0, "scrubbed text must not be empty")
+	testutil.RequireTrue(t, len(result.Entities) > 0, "scrubber must detect PII entities in test input")
+	testutil.RequireTrue(t, len(result.Scrubbed) > 0, "scrubbed text must not be empty")
 }
 
 // TST-CORE-901
 func TestServer_15_7_2_MetricsEndpointExists(t *testing.T) {
 	// /metrics Prometheus endpoint: exists, requires CLIENT_TOKEN.
-	var impl testutil.Server
+	impl := realServer
 	testutil.RequireImplementation(t, impl, "Server")
 
 	routes := impl.Routes()
@@ -644,7 +644,7 @@ func TestServer_15_7_2_MetricsEndpointExists(t *testing.T) {
 // TST-CORE-902
 func TestServer_15_7_3_SyncStatusEndpoint(t *testing.T) {
 	// Sync status API endpoint for admin UI.
-	var impl testutil.Server
+	impl := realServer
 	testutil.RequireImplementation(t, impl, "Server")
 
 	routes := impl.Routes()

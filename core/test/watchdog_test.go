@@ -1,10 +1,14 @@
 package test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/anthropics/dina/core/test/testutil"
 )
+
+// ctx is a background context used for all watchdog test calls.
+var wdCtx = context.Background()
 
 // ==========================================================================
 // TEST_PLAN §20 — System Watchdog (1-hour ticker)
@@ -16,10 +20,10 @@ import (
 // TST-CORE-916
 func TestWatchdog_20_3_10_SystemTicker_1HourInterval(t *testing.T) {
 	// System watchdog (1h interval): connector liveness, disk usage, brain health.
-	var impl testutil.SystemWatchdog
+	impl := realSystemWatchdog
 	testutil.RequireImplementation(t, impl, "SystemWatchdog")
 
-	report, err := impl.RunTick()
+	report, err := impl.RunTick(wdCtx)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, report.Timestamp > 0, "watchdog report must have timestamp")
 }
@@ -27,10 +31,10 @@ func TestWatchdog_20_3_10_SystemTicker_1HourInterval(t *testing.T) {
 // TST-CORE-915
 func TestWatchdog_20_3_9_SingleSweepCleansAuditAndCrashLogs(t *testing.T) {
 	// Single watchdog sweep cleans both audit AND crash logs together.
-	var impl testutil.SystemWatchdog
+	impl := realSystemWatchdog
 	testutil.RequireImplementation(t, impl, "SystemWatchdog")
 
-	report, err := impl.RunTick()
+	report, err := impl.RunTick(wdCtx)
 	testutil.RequireNoError(t, err)
 	// Both purge counts should be non-negative (may be 0 on fresh instance).
 	testutil.RequireTrue(t, report.AuditEntriesPurged >= 0, "audit purge count must be non-negative")
@@ -40,7 +44,7 @@ func TestWatchdog_20_3_9_SingleSweepCleansAuditAndCrashLogs(t *testing.T) {
 // TST-CORE-914 (subsection for this in observability but test is here)
 func TestWatchdog_20_3_8_ConnectorLiveness(t *testing.T) {
 	// Check connector liveness.
-	var impl testutil.SystemWatchdog
+	impl := realSystemWatchdog
 	testutil.RequireImplementation(t, impl, "SystemWatchdog")
 
 	alive, err := impl.CheckConnectorLiveness()
@@ -51,7 +55,7 @@ func TestWatchdog_20_3_8_ConnectorLiveness(t *testing.T) {
 // TST-CORE-917 (data volume layout)
 func TestWatchdog_20_3_11_DiskUsageCheck(t *testing.T) {
 	// Check disk usage.
-	var impl testutil.SystemWatchdog
+	impl := realSystemWatchdog
 	testutil.RequireImplementation(t, impl, "SystemWatchdog")
 
 	usage, err := impl.CheckDiskUsage()

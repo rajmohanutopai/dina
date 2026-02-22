@@ -23,8 +23,8 @@ import (
 
 // TST-CORE-551
 func TestConfig_14_1_1_LoadFromEnvVars(t *testing.T) {
-	// var impl testutil.ConfigLoader = realconfig.NewLoader(...)
-	var impl testutil.ConfigLoader
+	// impl := realConfigLoader = realconfig.NewLoader(...)
+	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
 	// Set all required env vars and verify they are read correctly.
@@ -47,8 +47,8 @@ func TestConfig_14_1_1_LoadFromEnvVars(t *testing.T) {
 
 // TST-CORE-851
 func TestConfig_14_7_PartialEnvVars(t *testing.T) {
-	// var impl testutil.ConfigLoader = realconfig.NewLoader(...)
-	var impl testutil.ConfigLoader
+	// impl := realConfigLoader = realconfig.NewLoader(...)
+	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
 	// When only some env vars are set, the rest should use defaults.
@@ -65,8 +65,8 @@ func TestConfig_14_7_PartialEnvVars(t *testing.T) {
 
 // TST-CORE-852
 func TestConfig_14_8_EnvVarTypeParsing(t *testing.T) {
-	// var impl testutil.ConfigLoader = realconfig.NewLoader(...)
-	var impl testutil.ConfigLoader
+	// impl := realConfigLoader = realconfig.NewLoader(...)
+	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
 	// Numeric env vars should be correctly parsed to int fields.
@@ -90,8 +90,8 @@ func TestConfig_14_8_EnvVarTypeParsing(t *testing.T) {
 
 // TST-CORE-554
 func TestConfig_14_2_1_DefaultValues(t *testing.T) {
-	// var impl testutil.ConfigLoader = realconfig.NewLoader(...)
-	var impl testutil.ConfigLoader
+	// impl := realConfigLoader = realconfig.NewLoader(...)
+	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
 	// With minimal env (only required token), defaults should populate.
@@ -113,8 +113,8 @@ func TestConfig_14_2_1_DefaultValues(t *testing.T) {
 
 // TST-CORE-853
 func TestConfig_14_9_DefaultSecurityMode(t *testing.T) {
-	// var impl testutil.ConfigLoader = realconfig.NewLoader(...)
-	var impl testutil.ConfigLoader
+	// impl := realConfigLoader = realconfig.NewLoader(...)
+	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
 	// Default SecurityMode must be "security" (not "convenience").
@@ -131,8 +131,8 @@ func TestConfig_14_9_DefaultSecurityMode(t *testing.T) {
 
 // TST-CORE-553
 func TestConfig_14_3_1_MissingBrainToken(t *testing.T) {
-	// var impl testutil.ConfigLoader = realconfig.NewLoader(...)
-	var impl testutil.ConfigLoader
+	// impl := realConfigLoader = realconfig.NewLoader(...)
+	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
 	// Config with missing BRAIN_TOKEN must fail validation.
@@ -146,8 +146,8 @@ func TestConfig_14_3_1_MissingBrainToken(t *testing.T) {
 
 // TST-CORE-555
 func TestConfig_14_3_2_InvalidSecurityMode(t *testing.T) {
-	// var impl testutil.ConfigLoader = realconfig.NewLoader(...)
-	var impl testutil.ConfigLoader
+	// impl := realConfigLoader = realconfig.NewLoader(...)
+	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
 	// SecurityMode must be "security" or "convenience" — anything else fails.
@@ -160,8 +160,8 @@ func TestConfig_14_3_2_InvalidSecurityMode(t *testing.T) {
 
 // TST-CORE-854
 func TestConfig_14_10_NegativeSessionTTL(t *testing.T) {
-	// var impl testutil.ConfigLoader = realconfig.NewLoader(...)
-	var impl testutil.ConfigLoader
+	// impl := realConfigLoader = realconfig.NewLoader(...)
+	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
 	// Negative SessionTTL must fail validation.
@@ -178,8 +178,8 @@ func TestConfig_14_10_NegativeSessionTTL(t *testing.T) {
 
 // TST-CORE-855
 func TestConfig_14_11_LoadFromConfigJSON(t *testing.T) {
-	// var impl testutil.ConfigLoader = realconfig.NewLoader(...)
-	var impl testutil.ConfigLoader
+	// impl := realConfigLoader = realconfig.NewLoader(...)
+	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
 	// Create a config.json in a temp dir and verify it is loaded.
@@ -205,8 +205,8 @@ func TestConfig_14_11_LoadFromConfigJSON(t *testing.T) {
 
 // TST-CORE-552
 func TestConfig_14_5_1_LoadBrainTokenFromDockerSecret(t *testing.T) {
-	// var impl testutil.ConfigLoader = realconfig.NewLoader(...)
-	var impl testutil.ConfigLoader
+	// impl := realConfigLoader = realconfig.NewLoader(...)
+	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
 	// BRAIN_TOKEN can be loaded from a Docker secret file at a known path.
@@ -225,8 +225,8 @@ func TestConfig_14_5_1_LoadBrainTokenFromDockerSecret(t *testing.T) {
 
 // TST-CORE-856
 func TestConfig_14_12_EnvOverridesConfigJSON(t *testing.T) {
-	// var impl testutil.ConfigLoader = realconfig.NewLoader(...)
-	var impl testutil.ConfigLoader
+	// impl := realConfigLoader = realconfig.NewLoader(...)
+	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
 	// Env vars take precedence over config.json.
@@ -247,8 +247,8 @@ func TestConfig_14_12_EnvOverridesConfigJSON(t *testing.T) {
 
 // TST-CORE-857
 func TestConfig_14_13_DockerSecretOverridesEnvToken(t *testing.T) {
-	// var impl testutil.ConfigLoader = realconfig.NewLoader(...)
-	var impl testutil.ConfigLoader
+	// impl := realConfigLoader = realconfig.NewLoader(...)
+	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
 	// Docker secret file takes precedence over DINA_BRAIN_TOKEN env var.
@@ -269,7 +269,7 @@ func TestConfig_14_13_DockerSecretOverridesEnvToken(t *testing.T) {
 
 // TST-CORE-556
 func TestConfig_14_6_3_SpoolMaxEnforcement(t *testing.T) {
-	var impl testutil.ConfigLoader
+	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
 	// DINA_SPOOL_MAX configures the spool directory size limit.
@@ -286,7 +286,7 @@ func TestConfig_14_6_3_SpoolMaxEnforcement(t *testing.T) {
 // TST-CORE-898
 func TestConfig_14_14_AuditLogRetentionConfigurable(t *testing.T) {
 	// Audit log retention configurable via config.json (retention_days).
-	var impl testutil.ConfigLoader
+	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
 	cfg, err := impl.Load()
@@ -297,9 +297,10 @@ func TestConfig_14_14_AuditLogRetentionConfigurable(t *testing.T) {
 // TST-CORE-899
 func TestConfig_14_15_CloudLLMConsentFlag(t *testing.T) {
 	// Cloud LLM consent flag stored and enforced before cloud routing.
-	var impl testutil.ConfigLoader
+	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
+	t.Setenv("DINA_BRAIN_TOKEN", testutil.TestBrainToken)
 	cfg, err := impl.Load()
 	testutil.RequireNoError(t, err)
 	err = impl.Validate(cfg)
@@ -309,7 +310,7 @@ func TestConfig_14_15_CloudLLMConsentFlag(t *testing.T) {
 // TST-CORE-900
 func TestConfig_14_16_HistoryDaysDefault365(t *testing.T) {
 	// DINA_HISTORY_DAYS config default 365.
-	var impl testutil.ConfigLoader
+	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
 	cfg, err := impl.Load()
@@ -319,7 +320,7 @@ func TestConfig_14_16_HistoryDaysDefault365(t *testing.T) {
 
 // TST-CORE-554
 func TestConfig_14_4_DefaultValues(t *testing.T) {
-	var impl testutil.ConfigLoader
+	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
 	cfg, err := impl.Load()

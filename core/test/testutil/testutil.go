@@ -8,14 +8,26 @@ import (
 	"time"
 )
 
+// Resettable is an optional interface for implementations that need
+// per-test state isolation. When a type implements Resettable,
+// RequireImplementation calls ResetForTest before each test to ensure
+// clean state without losing persistent data (e.g., created DIDs).
+type Resettable interface {
+	ResetForTest()
+}
+
 // RequireImplementation skips the test if impl is nil, indicating
 // the real implementation is not yet available.
 // This is the contract-first TDD skip pattern: tests define the contract,
 // implementations satisfy it. Until impl is wired in, the test is skipped.
+// If impl implements Resettable, ResetForTest is called for per-test isolation.
 func RequireImplementation(t *testing.T, impl interface{}, name string) {
 	t.Helper()
 	if impl == nil {
 		t.Skipf("implementation not yet available: %s — wire in the real implementation to activate this test", name)
+	}
+	if r, ok := impl.(Resettable); ok {
+		r.ResetForTest()
 	}
 }
 
@@ -35,6 +47,12 @@ func TempDir(t *testing.T) string {
 func TempFile(t *testing.T, dir, name, content string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)
+	// Ensure parent directories exist (e.g., "subdir/file.txt").
+	if parent := filepath.Dir(path); parent != dir {
+		if err := os.MkdirAll(parent, 0700); err != nil {
+			t.Fatalf("failed to create parent directory %s: %v", parent, err)
+		}
+	}
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		t.Fatalf("failed to create temp file %s: %v", path, err)
 	}

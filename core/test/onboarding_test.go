@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/anthropics/dina/core/test/testutil"
@@ -24,12 +25,12 @@ import (
 // TST-CORE-649
 func TestOnboarding_19_1_ManagedOnboarding(t *testing.T) {
 	// var impl testutil.OnboardingSequence = realonboarding.New(...)
-	var impl testutil.OnboardingSequence
+	impl := realOnboardingSequence
 	testutil.RequireImplementation(t, impl, "OnboardingSequence")
 
 	// User enters email + passphrase. Full silent setup completes,
 	// Dina starts ingesting.
-	mnemonic, err := impl.StartOnboarding("user@example.com", testutil.TestPassphrase)
+	mnemonic, err := impl.StartOnboarding(context.Background(), "user@example.com", testutil.TestPassphrase)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(mnemonic) > 0, "mnemonic must be generated")
 }
@@ -41,10 +42,10 @@ func TestOnboarding_19_1_ManagedOnboarding(t *testing.T) {
 // TST-CORE-650
 func TestOnboarding_19_2_MnemonicGenerated(t *testing.T) {
 	// var impl testutil.OnboardingSequence = realonboarding.New(...)
-	var impl testutil.OnboardingSequence
+	impl := realOnboardingSequence
 	testutil.RequireImplementation(t, impl, "OnboardingSequence")
 
-	_, err := impl.StartOnboarding("user@example.com", testutil.TestPassphrase)
+	_, err := impl.StartOnboarding(context.Background(), "user@example.com", testutil.TestPassphrase)
 	testutil.RequireNoError(t, err)
 
 	// 24-word mnemonic, 512-bit master seed.
@@ -68,10 +69,10 @@ func TestOnboarding_19_2_MnemonicGenerated(t *testing.T) {
 // TST-CORE-651
 func TestOnboarding_19_3_RootKeypairDerived(t *testing.T) {
 	// var impl testutil.OnboardingSequence = realonboarding.New(...)
-	var impl testutil.OnboardingSequence
+	impl := realOnboardingSequence
 	testutil.RequireImplementation(t, impl, "OnboardingSequence")
 
-	_, err := impl.StartOnboarding("user@example.com", testutil.TestPassphrase)
+	_, err := impl.StartOnboarding(context.Background(), "user@example.com", testutil.TestPassphrase)
 	testutil.RequireNoError(t, err)
 
 	// SLIP-0010 m/9999'/0' -> root keypair. The DID should be derivable.
@@ -95,10 +96,10 @@ func TestOnboarding_19_3_RootKeypairDerived(t *testing.T) {
 // TST-CORE-652
 func TestOnboarding_19_4_DIDRegistered(t *testing.T) {
 	// var impl testutil.OnboardingSequence = realonboarding.New(...)
-	var impl testutil.OnboardingSequence
+	impl := realOnboardingSequence
 	testutil.RequireImplementation(t, impl, "OnboardingSequence")
 
-	_, err := impl.StartOnboarding("user@example.com", testutil.TestPassphrase)
+	_, err := impl.StartOnboarding(context.Background(), "user@example.com", testutil.TestPassphrase)
 	testutil.RequireNoError(t, err)
 
 	// Root DID must be registered with plc.directory.
@@ -116,10 +117,10 @@ func TestOnboarding_19_4_DIDRegistered(t *testing.T) {
 // TST-CORE-653
 func TestOnboarding_19_5_DEKsDerived(t *testing.T) {
 	// var impl testutil.OnboardingSequence = realonboarding.New(...)
-	var impl testutil.OnboardingSequence
+	impl := realOnboardingSequence
 	testutil.RequireImplementation(t, impl, "OnboardingSequence")
 
-	_, err := impl.StartOnboarding("user@example.com", testutil.TestPassphrase)
+	_, err := impl.StartOnboarding(context.Background(), "user@example.com", testutil.TestPassphrase)
 	testutil.RequireNoError(t, err)
 
 	// HKDF with persona-specific info strings must produce per-database DEKs.
@@ -143,10 +144,10 @@ func TestOnboarding_19_5_DEKsDerived(t *testing.T) {
 // TST-CORE-654
 func TestOnboarding_19_6_PasswordWrapsMasterSeed(t *testing.T) {
 	// var impl testutil.OnboardingSequence = realonboarding.New(...)
-	var impl testutil.OnboardingSequence
+	impl := realOnboardingSequence
 	testutil.RequireImplementation(t, impl, "OnboardingSequence")
 
-	_, err := impl.StartOnboarding("user@example.com", testutil.TestPassphrase)
+	_, err := impl.StartOnboarding(context.Background(), "user@example.com", testutil.TestPassphrase)
 	testutil.RequireNoError(t, err)
 
 	// Argon2id -> KEK -> AES-256-GCM wrap (key wrapping, not derivation).
@@ -170,10 +171,10 @@ func TestOnboarding_19_6_PasswordWrapsMasterSeed(t *testing.T) {
 // TST-CORE-655
 func TestOnboarding_19_7_DatabasesCreated(t *testing.T) {
 	// var impl testutil.OnboardingSequence = realonboarding.New(...)
-	var impl testutil.OnboardingSequence
+	impl := realOnboardingSequence
 	testutil.RequireImplementation(t, impl, "OnboardingSequence")
 
-	_, err := impl.StartOnboarding("user@example.com", testutil.TestPassphrase)
+	_, err := impl.StartOnboarding(context.Background(), "user@example.com", testutil.TestPassphrase)
 	testutil.RequireNoError(t, err)
 
 	// identity.sqlite + personal.sqlite must be created.
@@ -197,10 +198,10 @@ func TestOnboarding_19_7_DatabasesCreated(t *testing.T) {
 // TST-CORE-656
 func TestOnboarding_19_8_ConvenienceModeSet(t *testing.T) {
 	// var impl testutil.OnboardingSequence = realonboarding.New(...)
-	var impl testutil.OnboardingSequence
+	impl := realOnboardingSequence
 	testutil.RequireImplementation(t, impl, "OnboardingSequence")
 
-	_, err := impl.StartOnboarding("user@example.com", testutil.TestPassphrase)
+	_, err := impl.StartOnboarding(context.Background(), "user@example.com", testutil.TestPassphrase)
 	testutil.RequireNoError(t, err)
 
 	// Managed hosting: master seed written to keyfile, chmod 600.
@@ -216,10 +217,10 @@ func TestOnboarding_19_8_ConvenienceModeSet(t *testing.T) {
 // TST-CORE-657
 func TestOnboarding_19_9_BrainStartsGuardianLoop(t *testing.T) {
 	// var impl testutil.OnboardingSequence = realonboarding.New(...)
-	var impl testutil.OnboardingSequence
+	impl := realOnboardingSequence
 	testutil.RequireImplementation(t, impl, "OnboardingSequence")
 
-	_, err := impl.StartOnboarding("user@example.com", testutil.TestPassphrase)
+	_, err := impl.StartOnboarding(context.Background(), "user@example.com", testutil.TestPassphrase)
 	testutil.RequireNoError(t, err)
 
 	// Brain must receive vault_unlocked event and begin operation.
@@ -243,10 +244,10 @@ func TestOnboarding_19_9_BrainStartsGuardianLoop(t *testing.T) {
 // TST-CORE-658
 func TestOnboarding_19_10_InitialSyncTriggered(t *testing.T) {
 	// var impl testutil.OnboardingSequence = realonboarding.New(...)
-	var impl testutil.OnboardingSequence
+	impl := realOnboardingSequence
 	testutil.RequireImplementation(t, impl, "OnboardingSequence")
 
-	_, err := impl.StartOnboarding("user@example.com", testutil.TestPassphrase)
+	_, err := impl.StartOnboarding(context.Background(), "user@example.com", testutil.TestPassphrase)
 	testutil.RequireNoError(t, err)
 
 	// MCP -> OpenClaw fetches Gmail/Calendar on initial sync.
@@ -270,10 +271,10 @@ func TestOnboarding_19_10_InitialSyncTriggered(t *testing.T) {
 // TST-CORE-659
 func TestOnboarding_19_11_OneDefaultPersona(t *testing.T) {
 	// var impl testutil.OnboardingSequence = realonboarding.New(...)
-	var impl testutil.OnboardingSequence
+	impl := realOnboardingSequence
 	testutil.RequireImplementation(t, impl, "OnboardingSequence")
 
-	_, err := impl.StartOnboarding("user@example.com", testutil.TestPassphrase)
+	_, err := impl.StartOnboarding(context.Background(), "user@example.com", testutil.TestPassphrase)
 	testutil.RequireNoError(t, err)
 
 	// After setup, only /personal persona should exist.
@@ -299,10 +300,10 @@ func TestOnboarding_19_11_OneDefaultPersona(t *testing.T) {
 // TST-CORE-660
 func TestOnboarding_19_12_MnemonicBackupDeferred(t *testing.T) {
 	// var impl testutil.OnboardingSequence = realonboarding.New(...)
-	var impl testutil.OnboardingSequence
+	impl := realOnboardingSequence
 	testutil.RequireImplementation(t, impl, "OnboardingSequence")
 
-	_, err := impl.StartOnboarding("user@example.com", testutil.TestPassphrase)
+	_, err := impl.StartOnboarding(context.Background(), "user@example.com", testutil.TestPassphrase)
 	testutil.RequireNoError(t, err)
 
 	// Mnemonic backup must be deferred to Day 7 after setup.
@@ -319,10 +320,10 @@ func TestOnboarding_19_12_MnemonicBackupDeferred(t *testing.T) {
 // TST-CORE-661
 func TestOnboarding_19_13_SharingRulesDefaultEmpty(t *testing.T) {
 	// var impl testutil.OnboardingSequence = realonboarding.New(...)
-	var impl testutil.OnboardingSequence
+	impl := realOnboardingSequence
 	testutil.RequireImplementation(t, impl, "OnboardingSequence")
 
-	_, err := impl.StartOnboarding("user@example.com", testutil.TestPassphrase)
+	_, err := impl.StartOnboarding(context.Background(), "user@example.com", testutil.TestPassphrase)
 	testutil.RequireNoError(t, err)
 
 	// After setup, no sharing policies should exist — default-deny egress.
@@ -334,7 +335,7 @@ func TestOnboarding_19_13_SharingRulesDefaultEmpty(t *testing.T) {
 // TST-CORE-932
 func TestOnboarding_19_14_InstallSH_Bootstrap(t *testing.T) {
 	// install.sh bootstrap: token gen, dirs, permissions.
-	var impl testutil.OnboardingSequence
+	impl := realOnboardingSequence
 	testutil.RequireImplementation(t, impl, "OnboardingSequence")
 
 	// Verify onboarding sequence produces expected artifacts.

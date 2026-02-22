@@ -1,11 +1,15 @@
 package test
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"github.com/anthropics/dina/core/internal/domain"
 	"github.com/anthropics/dina/core/test/testutil"
 )
+
+var authCtx = context.Background()
 
 // ==========================================================================
 // TEST_PLAN §1 — Authentication & Authorization
@@ -26,7 +30,7 @@ import (
 // TST-CORE-008, TST-CORE-009
 func TestAuth_1_1_BrainToken(t *testing.T) {
 	// var impl testutil.TokenValidator = realauth.NewTokenValidator(...)
-	var impl testutil.TokenValidator
+	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
 
 	tests := []struct {
@@ -94,7 +98,7 @@ func TestAuth_1_1_BrainToken(t *testing.T) {
 // TST-CORE-007
 func TestAuth_1_1_7_TokenFileMissing(t *testing.T) {
 	// var impl testutil.ConfigLoader = realconfig.NewLoader(...)
-	var impl testutil.ConfigLoader
+	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
 	// When the BRAIN_TOKEN file is absent, startup should fail.
@@ -113,7 +117,7 @@ func TestAuth_1_1_7_TokenFileMissing(t *testing.T) {
 // TST-CORE-008
 func TestAuth_1_1_8_TokenFileEmpty(t *testing.T) {
 	// var impl testutil.ConfigLoader = realconfig.NewLoader(...)
-	var impl testutil.ConfigLoader
+	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
 	// When the BRAIN_TOKEN file exists but is 0 bytes, startup should fail.
@@ -131,7 +135,7 @@ func TestAuth_1_1_8_TokenFileEmpty(t *testing.T) {
 // TST-CORE-009
 func TestAuth_1_1_9_TimingAttackResistance(t *testing.T) {
 	// var impl testutil.TokenValidator = realauth.NewTokenValidator(...)
-	var impl testutil.TokenValidator
+	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
 
 	// Validate that comparing the correct token and a wrong token of the same
@@ -153,7 +157,7 @@ func TestAuth_1_1_9_TimingAttackResistance(t *testing.T) {
 // TST-CORE-010, TST-CORE-011, TST-CORE-012, TST-CORE-013, TST-CORE-014, TST-CORE-015, TST-CORE-016
 func TestAuth_1_2_ClientToken(t *testing.T) {
 	// var impl testutil.TokenValidator = realauth.NewTokenValidator(...)
-	var impl testutil.TokenValidator
+	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
 
 	tests := []struct {
@@ -207,19 +211,19 @@ func TestAuth_1_2_ClientToken(t *testing.T) {
 // TST-CORE-013
 func TestAuth_1_2_4_ClientTokenOnBrainEndpoint(t *testing.T) {
 	// var impl testutil.TokenValidator = realauth.NewTokenValidator(...)
-	var impl testutil.TokenValidator
+	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
 
 	// CLIENT_TOKEN must not be accepted on /v1/brain/* endpoints.
 	// The token itself is valid, but the routing layer should return 403.
 	kind, _, err := impl.IdentifyToken(testutil.TestClientToken)
 	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, kind, "client")
+	testutil.RequireEqual(t, kind, domain.TokenClient)
 
 	// In integration: POST /v1/brain/process with CLIENT_TOKEN → 403.
 	// At unit level, verify the token type is "client" and assert the
 	// middleware would reject it for brain-only paths.
-	if kind != "client" {
+	if kind != domain.TokenClient {
 		t.Fatalf("expected token kind 'client', got %q", kind)
 	}
 	// Middleware rule: "client" tokens on /v1/brain/* → 403 Forbidden.
@@ -228,18 +232,18 @@ func TestAuth_1_2_4_ClientTokenOnBrainEndpoint(t *testing.T) {
 // TST-CORE-014
 func TestAuth_1_2_5_BrainTokenOnAdminEndpoint(t *testing.T) {
 	// var impl testutil.TokenValidator = realauth.NewTokenValidator(...)
-	var impl testutil.TokenValidator
+	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
 
 	// BRAIN_TOKEN must not be accepted on /v1/admin/* endpoints.
 	kind, _, err := impl.IdentifyToken(testutil.TestBrainToken)
 	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, kind, "brain")
+	testutil.RequireEqual(t, kind, domain.TokenBrain)
 
 	// In integration: GET /v1/admin/devices with BRAIN_TOKEN → 403.
 	// At unit level, verify the token type is "brain" and assert the
 	// middleware would reject it for admin-only paths.
-	if kind != "brain" {
+	if kind != domain.TokenBrain {
 		t.Fatalf("expected token kind 'brain', got %q", kind)
 	}
 	// Middleware rule: "brain" tokens on /v1/admin/* → 403 Forbidden.
@@ -248,7 +252,7 @@ func TestAuth_1_2_5_BrainTokenOnAdminEndpoint(t *testing.T) {
 // TST-CORE-015
 func TestAuth_1_2_6_ConcurrentDeviceSessions(t *testing.T) {
 	// var impl testutil.TokenValidator = realauth.NewTokenValidator(...)
-	var impl testutil.TokenValidator
+	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
 
 	// Two different CLIENT_TOKENs for two devices should both validate
@@ -273,7 +277,7 @@ func TestAuth_1_2_6_ConcurrentDeviceSessions(t *testing.T) {
 // TST-CORE-016
 func TestAuth_1_2_7_ClientTokenConstantTime(t *testing.T) {
 	// var impl testutil.TokenValidator = realauth.NewTokenValidator(...)
-	var impl testutil.TokenValidator
+	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
 
 	// Validate constant-time behaviour for CLIENT_TOKEN hash lookups.
@@ -296,14 +300,14 @@ func TestAuth_1_2_7_ClientTokenConstantTime(t *testing.T) {
 // TST-CORE-031, TST-CORE-032, TST-CORE-033, TST-CORE-034, TST-CORE-035, TST-CORE-036, TST-CORE-037
 func TestAuth_1_3_BrowserSession(t *testing.T) {
 	// var impl testutil.SessionManager = realsession.NewManager(...)
-	var impl testutil.SessionManager
+	impl := realSessionManager
 	testutil.RequireImplementation(t, impl, "SessionManager")
 
 	t.Run("1_LoginCorrectPassphrase", func(t *testing.T) {  // TST-CORE-017
 		// Correct Argon2id passphrase match → Set-Cookie + redirect.
 		// In integration: POST /login with correct passphrase → 302 + Set-Cookie.
 		// At unit level: SessionManager.Create returns a valid session.
-		sessionID, csrfToken, err := impl.Create("device-001")
+		sessionID, csrfToken, err := impl.Create(authCtx, "device-001")
 		testutil.RequireNoError(t, err)
 		if sessionID == "" {
 			t.Fatal("expected non-empty session ID")
@@ -324,9 +328,9 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 
 	t.Run("3_SessionCookieBearerTranslation", func(t *testing.T) {  // TST-CORE-019
 		// Session cookie → gateway injects Bearer token for downstream handlers.
-		sessionID, _, err := impl.Create("device-001")
+		sessionID, _, err := impl.Create(authCtx, "device-001")
 		testutil.RequireNoError(t, err)
-		deviceID, err := impl.Validate(sessionID)
+		deviceID, err := impl.Validate(authCtx, sessionID)
 		testutil.RequireNoError(t, err)
 		testutil.RequireEqual(t, deviceID, "device-001")
 	})
@@ -336,19 +340,19 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 		// Implementation must honour TTL. This test verifies Validate
 		// rejects expired sessions. Real impl: create session, advance
 		// time past TTL, then validate.
-		sessionID, _, err := impl.Create("device-001")
+		sessionID, _, err := impl.Create(authCtx, "device-001")
 		testutil.RequireNoError(t, err)
 
 		// NOTE: In real implementation, simulate time advancement past TTL.
 		// For now, verify the session is valid immediately after creation.
-		_, err = impl.Validate(sessionID)
+		_, err = impl.Validate(authCtx, sessionID)
 		testutil.RequireNoError(t, err)
 		// Integration test should use a short TTL and sleep/mock-clock.
 	})
 
 	t.Run("5_CSRFMissingHeader", func(t *testing.T) {  // TST-CORE-021
 		// POST without X-CSRF-Token header → 403.
-		sessionID, _, err := impl.Create("device-001")
+		sessionID, _, err := impl.Create(authCtx, "device-001")
 		testutil.RequireNoError(t, err)
 		ok, err := impl.ValidateCSRF(sessionID, "")
 		testutil.RequireNoError(t, err)
@@ -357,7 +361,7 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 
 	t.Run("6_CSRFMismatch", func(t *testing.T) {  // TST-CORE-022
 		// Wrong CSRF token → 403.
-		sessionID, _, err := impl.Create("device-001")
+		sessionID, _, err := impl.Create(authCtx, "device-001")
 		testutil.RequireNoError(t, err)
 		ok, err := impl.ValidateCSRF(sessionID, "wrong-csrf-token")
 		testutil.RequireNoError(t, err)
@@ -366,9 +370,9 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 
 	t.Run("7_SessionFixationResistance", func(t *testing.T) {  // TST-CORE-023
 		// New session ID must be issued on each login — never reuse.
-		s1, _, err := impl.Create("device-001")
+		s1, _, err := impl.Create(authCtx, "device-001")
 		testutil.RequireNoError(t, err)
-		s2, _, err := impl.Create("device-001")
+		s2, _, err := impl.Create(authCtx, "device-001")
 		testutil.RequireNoError(t, err)
 		if s1 == s2 {
 			t.Fatal("session fixation: same session ID issued twice for the same device")
@@ -377,29 +381,29 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 
 	t.Run("8_ConcurrentBrowserSessions", func(t *testing.T) {  // TST-CORE-024
 		// Two browser sessions for the same device should both be valid.
-		s1, _, err := impl.Create("device-001")
+		s1, _, err := impl.Create(authCtx, "device-001")
 		testutil.RequireNoError(t, err)
-		s2, _, err := impl.Create("device-001")
+		s2, _, err := impl.Create(authCtx, "device-001")
 		testutil.RequireNoError(t, err)
 
-		d1, err := impl.Validate(s1)
+		d1, err := impl.Validate(authCtx, s1)
 		testutil.RequireNoError(t, err)
 		testutil.RequireEqual(t, d1, "device-001")
 
-		d2, err := impl.Validate(s2)
+		d2, err := impl.Validate(authCtx, s2)
 		testutil.RequireNoError(t, err)
 		testutil.RequireEqual(t, d2, "device-001")
 	})
 
 	t.Run("9_Logout", func(t *testing.T) {  // TST-CORE-025
 		// Destroy session → cookie cleared, session invalidated.
-		sessionID, _, err := impl.Create("device-001")
+		sessionID, _, err := impl.Create(authCtx, "device-001")
 		testutil.RequireNoError(t, err)
 
-		err = impl.Destroy(sessionID)
+		err = impl.Destroy(authCtx, sessionID)
 		testutil.RequireNoError(t, err)
 
-		_, err = impl.Validate(sessionID)
+		_, err = impl.Validate(authCtx, sessionID)
 		testutil.RequireError(t, err)
 	})
 
@@ -408,7 +412,7 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 		// This is an integration-level check: the HTTP response must set
 		// Set-Cookie with correct attributes. At unit level, confirm the
 		// session is created (attributes are set by the HTTP handler).
-		sessionID, _, err := impl.Create("device-001")
+		sessionID, _, err := impl.Create(authCtx, "device-001")
 		testutil.RequireNoError(t, err)
 		if sessionID == "" {
 			t.Fatal("session creation failed — cannot verify cookie attributes")
@@ -428,12 +432,12 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 		// Sessions are stored in memory only. A restart invalidates all sessions.
 		// At unit level: create a session, "restart" (new manager instance),
 		// validate → error.
-		sessionID, _, err := impl.Create("device-001")
+		sessionID, _, err := impl.Create(authCtx, "device-001")
 		testutil.RequireNoError(t, err)
 
 		// Simulating restart: the real test would create a new SessionManager
 		// instance and verify the old session ID is not recognized.
-		_, err = impl.Validate(sessionID)
+		_, err = impl.Validate(authCtx, sessionID)
 		testutil.RequireNoError(t, err) // still valid before restart
 		// After restart (new instance): impl2.Validate(sessionID) → error.
 	})
@@ -446,7 +450,7 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 
 	t.Run("14_SessionIDGeneration", func(t *testing.T) {  // TST-CORE-030
 		// Session ID must be 32 bytes from crypto/rand (64 hex chars).
-		sessionID, _, err := impl.Create("device-001")
+		sessionID, _, err := impl.Create(authCtx, "device-001")
 		testutil.RequireNoError(t, err)
 		// 32 bytes = 64 hex characters.
 		if len(sessionID) < 64 {
@@ -463,7 +467,7 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 	t.Run("16_SuccessfulLogin302", func(t *testing.T) {  // TST-CORE-032
 		// Successful login returns HTTP 302 redirect to /admin.
 		// Integration: POST /login → 302, Location: /admin.
-		sessionID, _, err := impl.Create("device-001")
+		sessionID, _, err := impl.Create(authCtx, "device-001")
 		testutil.RequireNoError(t, err)
 		if sessionID == "" {
 			t.Fatal("login should create session for 302 redirect")
@@ -512,7 +516,7 @@ func TestAuth_1_3_BrowserSession(t *testing.T) {
 // TST-CORE-045, TST-CORE-046
 func TestAuth_1_4_AuthSurface(t *testing.T) {
 	// var tokenImpl testutil.TokenValidator = realauth.NewTokenValidator(...)
-	var tokenImpl testutil.TokenValidator
+	tokenImpl := realTokenValidator
 	testutil.RequireImplementation(t, tokenImpl, "TokenValidator")
 
 	t.Run("1_NoThirdAuthMechanism", func(t *testing.T) {  // TST-CORE-038
@@ -541,7 +545,7 @@ func TestAuth_1_4_AuthSurface(t *testing.T) {
 	t.Run("4_NoPluginEndpoints", func(t *testing.T) {  // TST-CORE-041
 		// No /v1/plugins or other undocumented endpoints exist.
 		// var serverImpl testutil.Server = realserver.New(...)
-		var serverImpl testutil.Server
+		serverImpl := realServer
 		testutil.RequireImplementation(t, serverImpl, "Server")
 
 		routes := serverImpl.Routes()
@@ -556,7 +560,7 @@ func TestAuth_1_4_AuthSurface(t *testing.T) {
 		// BRAIN_TOKEN is checked first before CLIENT_TOKEN.
 		kind, identity, err := tokenImpl.IdentifyToken(testutil.TestBrainToken)
 		testutil.RequireNoError(t, err)
-		testutil.RequireEqual(t, kind, "brain")
+		testutil.RequireEqual(t, kind, domain.TokenBrain)
 		testutil.RequireEqual(t, identity, "brain")
 	})
 
@@ -564,7 +568,7 @@ func TestAuth_1_4_AuthSurface(t *testing.T) {
 		// If the token is not a BRAIN_TOKEN, fall back to CLIENT_TOKEN via SHA-256.
 		kind, _, err := tokenImpl.IdentifyToken(testutil.TestClientToken)
 		testutil.RequireNoError(t, err)
-		testutil.RequireEqual(t, kind, "client")
+		testutil.RequireEqual(t, kind, domain.TokenClient)
 	})
 
 	t.Run("7_BrainTokenOnAdminPathsForbidden", func(t *testing.T) {  // TST-CORE-044
@@ -572,7 +576,7 @@ func TestAuth_1_4_AuthSurface(t *testing.T) {
 		// At unit level: verify token is classified as "brain".
 		kind, _, err := tokenImpl.IdentifyToken(testutil.TestBrainToken)
 		testutil.RequireNoError(t, err)
-		testutil.RequireEqual(t, kind, "brain")
+		testutil.RequireEqual(t, kind, domain.TokenBrain)
 		// Middleware enforces: brain tokens cannot access admin paths → 403.
 	})
 
@@ -580,7 +584,7 @@ func TestAuth_1_4_AuthSurface(t *testing.T) {
 		// CLIENT_TOKEN grants access to all non-brain endpoints (vault, admin, etc.).
 		kind, deviceID, err := tokenImpl.IdentifyToken(testutil.TestClientToken)
 		testutil.RequireNoError(t, err)
-		testutil.RequireEqual(t, kind, "client")
+		testutil.RequireEqual(t, kind, domain.TokenClient)
 		if deviceID == "" {
 			t.Fatal("CLIENT_TOKEN should resolve to a device ID")
 		}
@@ -614,18 +618,18 @@ func TestAuth_1_5_CompromisedBrain(t *testing.T) {
 	// operation is forbidden for brain-identified tokens.
 
 	// var tokenImpl testutil.TokenValidator = realauth.NewTokenValidator(...)
-	var tokenImpl testutil.TokenValidator
+	tokenImpl := realTokenValidator
 	testutil.RequireImplementation(t, tokenImpl, "TokenValidator")
 
 	// Confirm the brain token is classified correctly.
 	kind, _, err := tokenImpl.IdentifyToken(testutil.TestBrainToken)
 	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, kind, "brain")
+	testutil.RequireEqual(t, kind, domain.TokenBrain)
 
 	t.Run("1_BrainAccessesOpenPersona", func(t *testing.T) {  // TST-CORE-047
 		// BRAIN_TOKEN + open persona → 200 (allowed).
 		// var gk testutil.Gatekeeper = realgk.New(...)
-		var gk testutil.Gatekeeper
+		gk := realGatekeeper
 		testutil.RequireImplementation(t, gk, "Gatekeeper")
 
 		intent := testutil.Intent{
@@ -634,14 +638,14 @@ func TestAuth_1_5_CompromisedBrain(t *testing.T) {
 			PersonaID:  "persona-consumer",
 			TrustLevel: "open",
 		}
-		decision, err := gk.EvaluateIntent(intent)
+		decision, err := gk.EvaluateIntent(context.Background(), intent)
 		testutil.RequireNoError(t, err)
 		testutil.RequireTrue(t, decision.Allowed, "brain should access open persona")
 	})
 
 	t.Run("2_BrainCannotAccessLocked", func(t *testing.T) {  // TST-CORE-048
 		// BRAIN_TOKEN on a locked persona → 403.
-		var gk testutil.Gatekeeper
+		gk := realGatekeeper
 		testutil.RequireImplementation(t, gk, "Gatekeeper")
 
 		intent := testutil.Intent{
@@ -650,14 +654,14 @@ func TestAuth_1_5_CompromisedBrain(t *testing.T) {
 			PersonaID:  "persona-financial",
 			TrustLevel: "locked",
 		}
-		decision, err := gk.EvaluateIntent(intent)
+		decision, err := gk.EvaluateIntent(context.Background(), intent)
 		testutil.RequireNoError(t, err)
 		testutil.RequireFalse(t, decision.Allowed, "brain must not access locked persona")
 	})
 
 	t.Run("3_RestrictedCreatesAuditTrail", func(t *testing.T) {  // TST-CORE-049
 		// Accessing a restricted persona creates an audit entry + notification.
-		var gk testutil.Gatekeeper
+		gk := realGatekeeper
 		testutil.RequireImplementation(t, gk, "Gatekeeper")
 
 		intent := testutil.Intent{
@@ -666,7 +670,7 @@ func TestAuth_1_5_CompromisedBrain(t *testing.T) {
 			PersonaID:  "persona-health",
 			TrustLevel: "restricted",
 		}
-		decision, err := gk.EvaluateIntent(intent)
+		decision, err := gk.EvaluateIntent(context.Background(), intent)
 		testutil.RequireNoError(t, err)
 		// Regardless of allowed/denied, audit trail must be created.
 		testutil.RequireTrue(t, decision.Audit, "restricted access must create audit entry")
@@ -674,49 +678,49 @@ func TestAuth_1_5_CompromisedBrain(t *testing.T) {
 
 	t.Run("4_BrainCannotCallDIDSign", func(t *testing.T) {  // TST-CORE-050
 		// Brain must not be able to invoke DID signing operations.
-		var gk testutil.Gatekeeper
+		gk := realGatekeeper
 		testutil.RequireImplementation(t, gk, "Gatekeeper")
 
 		intent := testutil.Intent{
 			AgentDID: "brain",
 			Action:   "did_sign",
 		}
-		decision, err := gk.EvaluateIntent(intent)
+		decision, err := gk.EvaluateIntent(context.Background(), intent)
 		testutil.RequireNoError(t, err)
 		testutil.RequireFalse(t, decision.Allowed, "brain must not call DID sign")
 	})
 
 	t.Run("5_BrainCannotCallDIDRotate", func(t *testing.T) {  // TST-CORE-051
 		// Brain must not be able to rotate DID keys.
-		var gk testutil.Gatekeeper
+		gk := realGatekeeper
 		testutil.RequireImplementation(t, gk, "Gatekeeper")
 
 		intent := testutil.Intent{
 			AgentDID: "brain",
 			Action:   "did_rotate",
 		}
-		decision, err := gk.EvaluateIntent(intent)
+		decision, err := gk.EvaluateIntent(context.Background(), intent)
 		testutil.RequireNoError(t, err)
 		testutil.RequireFalse(t, decision.Allowed, "brain must not call DID rotate")
 	})
 
 	t.Run("6_BrainCannotCallVaultBackup", func(t *testing.T) {  // TST-CORE-052
 		// Brain must not be able to trigger vault backups.
-		var gk testutil.Gatekeeper
+		gk := realGatekeeper
 		testutil.RequireImplementation(t, gk, "Gatekeeper")
 
 		intent := testutil.Intent{
 			AgentDID: "brain",
 			Action:   "vault_backup",
 		}
-		decision, err := gk.EvaluateIntent(intent)
+		decision, err := gk.EvaluateIntent(context.Background(), intent)
 		testutil.RequireNoError(t, err)
 		testutil.RequireFalse(t, decision.Allowed, "brain must not call vault backup")
 	})
 
 	t.Run("7_BrainCannotCallPersonaUnlock", func(t *testing.T) {  // TST-CORE-053
 		// Brain must not be able to unlock personas.
-		var gk testutil.Gatekeeper
+		gk := realGatekeeper
 		testutil.RequireImplementation(t, gk, "Gatekeeper")
 
 		intent := testutil.Intent{
@@ -724,7 +728,7 @@ func TestAuth_1_5_CompromisedBrain(t *testing.T) {
 			Action:    "persona_unlock",
 			PersonaID: "persona-financial",
 		}
-		decision, err := gk.EvaluateIntent(intent)
+		decision, err := gk.EvaluateIntent(context.Background(), intent)
 		testutil.RequireNoError(t, err)
 		testutil.RequireFalse(t, decision.Allowed, "brain must not unlock personas")
 	})
@@ -733,11 +737,11 @@ func TestAuth_1_5_CompromisedBrain(t *testing.T) {
 		// PII scrubbing runs in the core pipeline, not in brain.
 		// Brain cannot bypass it because it never sees raw data.
 		// This is a design invariant: the egress path always includes PII scrubbing.
-		var gk testutil.Gatekeeper
+		gk := realGatekeeper
 		testutil.RequireImplementation(t, gk, "Gatekeeper")
 
 		// Verify egress control blocks raw data from leaving.
-		allowed, err := gk.CheckEgress("brain", []byte("SSN: 123-45-6789"))
+		allowed, err := gk.CheckEgress(context.Background(), "brain", []byte("SSN: 123-45-6789"))
 		testutil.RequireNoError(t, err)
 		testutil.RequireFalse(t, allowed, "PII must not pass through egress to brain")
 	})
@@ -751,7 +755,7 @@ func TestAuth_1_5_CompromisedBrain(t *testing.T) {
 		// No /v1/vault/raw or filesystem access is possible through the API.
 		brainKind, _, err := tokenImpl.IdentifyToken(testutil.TestBrainToken)
 		testutil.RequireNoError(t, err)
-		testutil.RequireEqual(t, brainKind, "brain")
+		testutil.RequireEqual(t, brainKind, domain.TokenBrain)
 		// Middleware enforces: brain tokens → only /v1/brain/* paths.
 		// No raw vault file access is exposed via any API endpoint.
 	})
@@ -771,10 +775,10 @@ func TestAuth_1_5_CompromisedBrain(t *testing.T) {
 
 // TST-CORE-017
 func TestAuth_1_3_1_LoginCorrectPassphrase(t *testing.T) {
-	var impl testutil.SessionManager
+	impl := realSessionManager
 	testutil.RequireImplementation(t, impl, "SessionManager")
 
-	var pv testutil.PassphraseVerifier
+	pv := realPassphraseVerifier
 	testutil.RequireImplementation(t, pv, "PassphraseVerifier")
 
 	// Verify passphrase matches stored Argon2id hash.
@@ -783,7 +787,7 @@ func TestAuth_1_3_1_LoginCorrectPassphrase(t *testing.T) {
 	testutil.RequireTrue(t, ok, "correct passphrase must be accepted")
 
 	// After passphrase verification succeeds, a session is created.
-	sessionID, csrfToken, err := impl.Create("device-001")
+	sessionID, csrfToken, err := impl.Create(authCtx, "device-001")
 	testutil.RequireNoError(t, err)
 	if sessionID == "" {
 		t.Fatal("expected non-empty session ID after successful login")
@@ -793,14 +797,14 @@ func TestAuth_1_3_1_LoginCorrectPassphrase(t *testing.T) {
 	}
 
 	// Session must be immediately valid.
-	deviceID, err := impl.Validate(sessionID)
+	deviceID, err := impl.Validate(authCtx, sessionID)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, deviceID, "device-001")
 }
 
 // TST-CORE-018
 func TestAuth_1_3_2_LoginWrongPassphrase(t *testing.T) {
-	var pv testutil.PassphraseVerifier
+	pv := realPassphraseVerifier
 	testutil.RequireImplementation(t, pv, "PassphraseVerifier")
 
 	ok, err := pv.Verify(testutil.TestPassphraseWrong)
@@ -810,7 +814,7 @@ func TestAuth_1_3_2_LoginWrongPassphrase(t *testing.T) {
 
 // TST-CORE-019
 func TestAuth_1_3_3_SessionCookieToBearerTranslation(t *testing.T) {
-	var gw testutil.AuthGateway
+	gw := realAuthGateway
 	testutil.RequireImplementation(t, gw, "AuthGateway")
 
 	// Login to get a session cookie value.
@@ -832,14 +836,14 @@ func TestAuth_1_3_3_SessionCookieToBearerTranslation(t *testing.T) {
 
 // TST-CORE-020
 func TestAuth_1_3_4_ExpiredSessionCookie(t *testing.T) {
-	var impl testutil.SessionManager
+	impl := realSessionManager
 	testutil.RequireImplementation(t, impl, "SessionManager")
 
 	// Create a session and verify it works.
-	sessionID, _, err := impl.Create("device-001")
+	sessionID, _, err := impl.Create(authCtx, "device-001")
 	testutil.RequireNoError(t, err)
 
-	_, err = impl.Validate(sessionID)
+	_, err = impl.Validate(authCtx, sessionID)
 	testutil.RequireNoError(t, err)
 
 	// NOTE: Real implementation should accept a configurable clock or short TTL.
@@ -850,10 +854,10 @@ func TestAuth_1_3_4_ExpiredSessionCookie(t *testing.T) {
 
 // TST-CORE-021
 func TestAuth_1_3_5_CSRFMissingHeader(t *testing.T) {
-	var impl testutil.SessionManager
+	impl := realSessionManager
 	testutil.RequireImplementation(t, impl, "SessionManager")
 
-	sessionID, _, err := impl.Create("device-001")
+	sessionID, _, err := impl.Create(authCtx, "device-001")
 	testutil.RequireNoError(t, err)
 
 	// Empty CSRF token must be rejected.
@@ -864,10 +868,10 @@ func TestAuth_1_3_5_CSRFMissingHeader(t *testing.T) {
 
 // TST-CORE-022
 func TestAuth_1_3_6_CSRFMismatch(t *testing.T) {
-	var impl testutil.SessionManager
+	impl := realSessionManager
 	testutil.RequireImplementation(t, impl, "SessionManager")
 
-	sessionID, csrfToken, err := impl.Create("device-001")
+	sessionID, csrfToken, err := impl.Create(authCtx, "device-001")
 	testutil.RequireNoError(t, err)
 
 	// Wrong CSRF token must be rejected.
@@ -883,13 +887,13 @@ func TestAuth_1_3_6_CSRFMismatch(t *testing.T) {
 
 // TST-CORE-023
 func TestAuth_1_3_7_SessionFixationResistance(t *testing.T) {
-	var impl testutil.SessionManager
+	impl := realSessionManager
 	testutil.RequireImplementation(t, impl, "SessionManager")
 
 	// Creating two sessions for the same device must produce different IDs.
 	ids := make(map[string]bool)
 	for i := 0; i < 10; i++ {
-		sessionID, _, err := impl.Create("device-001")
+		sessionID, _, err := impl.Create(authCtx, "device-001")
 		testutil.RequireNoError(t, err)
 		if ids[sessionID] {
 			t.Fatalf("session fixation: duplicate session ID %q on iteration %d", sessionID, i)
@@ -900,66 +904,66 @@ func TestAuth_1_3_7_SessionFixationResistance(t *testing.T) {
 
 // TST-CORE-024
 func TestAuth_1_3_8_ConcurrentBrowserSessions(t *testing.T) {
-	var impl testutil.SessionManager
+	impl := realSessionManager
 	testutil.RequireImplementation(t, impl, "SessionManager")
 
 	// Two browser sessions for the same device must both be independently valid.
-	s1, _, err := impl.Create("device-001")
+	s1, _, err := impl.Create(authCtx, "device-001")
 	testutil.RequireNoError(t, err)
-	s2, _, err := impl.Create("device-001")
+	s2, _, err := impl.Create(authCtx, "device-001")
 	testutil.RequireNoError(t, err)
 
 	if s1 == s2 {
 		t.Fatal("concurrent sessions must have different IDs")
 	}
 
-	d1, err := impl.Validate(s1)
+	d1, err := impl.Validate(authCtx, s1)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, d1, "device-001")
 
-	d2, err := impl.Validate(s2)
+	d2, err := impl.Validate(authCtx, s2)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, d2, "device-001")
 
 	// Destroying one session must not affect the other.
-	err = impl.Destroy(s1)
+	err = impl.Destroy(authCtx, s1)
 	testutil.RequireNoError(t, err)
 
-	_, err = impl.Validate(s1)
+	_, err = impl.Validate(authCtx, s1)
 	testutil.RequireError(t, err)
 
-	d2Again, err := impl.Validate(s2)
+	d2Again, err := impl.Validate(authCtx, s2)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, d2Again, "device-001")
 }
 
 // TST-CORE-025
 func TestAuth_1_3_9_Logout(t *testing.T) {
-	var impl testutil.SessionManager
+	impl := realSessionManager
 	testutil.RequireImplementation(t, impl, "SessionManager")
 
-	sessionID, _, err := impl.Create("device-001")
+	sessionID, _, err := impl.Create(authCtx, "device-001")
 	testutil.RequireNoError(t, err)
 
 	// Validate before logout.
-	_, err = impl.Validate(sessionID)
+	_, err = impl.Validate(authCtx, sessionID)
 	testutil.RequireNoError(t, err)
 
 	// Destroy the session (POST /logout).
-	err = impl.Destroy(sessionID)
+	err = impl.Destroy(authCtx, sessionID)
 	testutil.RequireNoError(t, err)
 
 	// Session must be invalid after logout.
-	_, err = impl.Validate(sessionID)
+	_, err = impl.Validate(authCtx, sessionID)
 	testutil.RequireError(t, err)
 
 	// Destroying again should not panic (idempotent or error — both acceptable).
-	_ = impl.Destroy(sessionID)
+	_ = impl.Destroy(authCtx, sessionID)
 }
 
 // TST-CORE-026
 func TestAuth_1_3_10_CookieAttributes(t *testing.T) {
-	var gw testutil.AuthGateway
+	gw := realAuthGateway
 	testutil.RequireImplementation(t, gw, "AuthGateway")
 
 	// Login and inspect the Set-Cookie header for required attributes.
@@ -976,7 +980,7 @@ func TestAuth_1_3_10_CookieAttributes(t *testing.T) {
 
 // TST-CORE-027
 func TestAuth_1_3_11_LoginRateLimit(t *testing.T) {
-	var rl testutil.RateLimiter
+	rl := realRateLimiter
 	testutil.RequireImplementation(t, rl, "RateLimiter")
 
 	ip := "192.168.1.100"
@@ -1002,15 +1006,15 @@ func TestAuth_1_3_11_LoginRateLimit(t *testing.T) {
 
 // TST-CORE-028
 func TestAuth_1_3_12_SessionStorageLostOnRestart(t *testing.T) {
-	var impl testutil.SessionManager
+	impl := realSessionManager
 	testutil.RequireImplementation(t, impl, "SessionManager")
 
 	// Create a session.
-	sessionID, _, err := impl.Create("device-001")
+	sessionID, _, err := impl.Create(authCtx, "device-001")
 	testutil.RequireNoError(t, err)
 
 	// Session is valid before "restart".
-	_, err = impl.Validate(sessionID)
+	_, err = impl.Validate(authCtx, sessionID)
 	testutil.RequireNoError(t, err)
 
 	// Simulate restart: a new SessionManager instance should not retain
@@ -1020,14 +1024,14 @@ func TestAuth_1_3_12_SessionStorageLostOnRestart(t *testing.T) {
 	//
 	// At unit level, the key assertion is that sessions live in memory only
 	// (no persistence to disk). The count after Destroy verifies memory-backed.
-	err = impl.Destroy(sessionID)
+	err = impl.Destroy(authCtx, sessionID)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, impl.ActiveSessions(), 0)
 }
 
 // TST-CORE-029
 func TestAuth_1_3_13_SessionTTLConfigurable(t *testing.T) {
-	var impl testutil.SessionManager
+	impl := realSessionManager
 	testutil.RequireImplementation(t, impl, "SessionManager")
 
 	// This test documents the contract: DINA_SESSION_TTL environment variable
@@ -1036,19 +1040,19 @@ func TestAuth_1_3_13_SessionTTLConfigurable(t *testing.T) {
 	// and verifies Validate returns an error.
 	//
 	// At unit level, verify that the session manager respects its TTL config.
-	sessionID, _, err := impl.Create("device-001")
+	sessionID, _, err := impl.Create(authCtx, "device-001")
 	testutil.RequireNoError(t, err)
-	_, err = impl.Validate(sessionID)
+	_, err = impl.Validate(authCtx, sessionID)
 	testutil.RequireNoError(t, err)
 }
 
 // TST-CORE-030
 func TestAuth_1_3_14_SessionIDGeneration(t *testing.T) {
-	var impl testutil.SessionManager
+	impl := realSessionManager
 	testutil.RequireImplementation(t, impl, "SessionManager")
 
 	// Session ID must be 32 bytes from crypto/rand (64 hex characters).
-	sessionID, _, err := impl.Create("device-001")
+	sessionID, _, err := impl.Create(authCtx, "device-001")
 	testutil.RequireNoError(t, err)
 
 	if len(sessionID) < 64 {
@@ -1067,7 +1071,7 @@ func TestAuth_1_3_14_SessionIDGeneration(t *testing.T) {
 
 // TST-CORE-031
 func TestAuth_1_3_15_CookieMaxAgeMatchesTTL(t *testing.T) {
-	var gw testutil.AuthGateway
+	gw := realAuthGateway
 	testutil.RequireImplementation(t, gw, "AuthGateway")
 
 	// Login and verify the Set-Cookie header contains Max-Age matching the TTL.
@@ -1081,7 +1085,7 @@ func TestAuth_1_3_15_CookieMaxAgeMatchesTTL(t *testing.T) {
 
 // TST-CORE-032
 func TestAuth_1_3_16_SuccessfulLogin302Redirect(t *testing.T) {
-	var gw testutil.AuthGateway
+	gw := realAuthGateway
 	testutil.RequireImplementation(t, gw, "AuthGateway")
 
 	statusCode, setCookie, location, err := gw.Login(testutil.TestPassphrase)
@@ -1095,7 +1099,7 @@ func TestAuth_1_3_16_SuccessfulLogin302Redirect(t *testing.T) {
 
 // TST-CORE-033
 func TestAuth_1_3_17_LoginPageGoEmbed(t *testing.T) {
-	var gw testutil.AuthGateway
+	gw := realAuthGateway
 	testutil.RequireImplementation(t, gw, "AuthGateway")
 
 	body, contentType, err := gw.ServeLoginPage()
@@ -1114,7 +1118,7 @@ func TestAuth_1_3_17_LoginPageGoEmbed(t *testing.T) {
 
 // TST-CORE-034
 func TestAuth_1_3_18_DeviceBearerPassthrough(t *testing.T) {
-	var gw testutil.AuthGateway
+	gw := realAuthGateway
 	testutil.RequireImplementation(t, gw, "AuthGateway")
 
 	// A device app sends a Bearer token directly — no cookie needed.
@@ -1126,7 +1130,7 @@ func TestAuth_1_3_18_DeviceBearerPassthrough(t *testing.T) {
 
 // TST-CORE-035
 func TestAuth_1_3_19_NoCookieShowsLoginPage(t *testing.T) {
-	var gw testutil.AuthGateway
+	gw := realAuthGateway
 	testutil.RequireImplementation(t, gw, "AuthGateway")
 
 	// GET /admin without session cookie or Bearer → serve login page (200), not 401.
@@ -1137,10 +1141,10 @@ func TestAuth_1_3_19_NoCookieShowsLoginPage(t *testing.T) {
 
 // TST-CORE-036
 func TestAuth_1_3_20_ConvenienceModeAdminPassphrase(t *testing.T) {
-	var impl testutil.SessionManager
+	impl := realSessionManager
 	testutil.RequireImplementation(t, impl, "SessionManager")
 
-	var pv testutil.PassphraseVerifier
+	pv := realPassphraseVerifier
 	testutil.RequireImplementation(t, pv, "PassphraseVerifier")
 
 	// Even when DINA_MODE=convenience (vault auto-unlocked), the admin
@@ -1158,7 +1162,7 @@ func TestAuth_1_3_20_ConvenienceModeAdminPassphrase(t *testing.T) {
 
 // TST-CORE-037
 func TestAuth_1_3_21_BrainNeverSeesCookies(t *testing.T) {
-	var gw testutil.AuthGateway
+	gw := realAuthGateway
 	testutil.RequireImplementation(t, gw, "AuthGateway")
 
 	// Login to get a session cookie.
@@ -1182,7 +1186,7 @@ func TestAuth_1_3_21_BrainNeverSeesCookies(t *testing.T) {
 
 // TST-CORE-038
 func TestAuth_1_4_1_NoThirdAuthMechanism(t *testing.T) {
-	var impl testutil.TokenValidator
+	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
 
 	// Only BRAIN_TOKEN and CLIENT_TOKEN are recognized. Any other token
@@ -1201,7 +1205,7 @@ func TestAuth_1_4_1_NoThirdAuthMechanism(t *testing.T) {
 
 // TST-CORE-039
 func TestAuth_1_4_2_UnknownSchemeIgnored(t *testing.T) {
-	var impl testutil.TokenValidator
+	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
 
 	// "ApiKey abc123" in Authorization header → 401.
@@ -1213,7 +1217,7 @@ func TestAuth_1_4_2_UnknownSchemeIgnored(t *testing.T) {
 
 // TST-CORE-040
 func TestAuth_1_4_3_ExternalJWTRejected(t *testing.T) {
-	var impl testutil.TokenValidator
+	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
 
 	// A well-formed JWT from an external identity provider must be rejected.
@@ -1225,7 +1229,7 @@ func TestAuth_1_4_3_ExternalJWTRejected(t *testing.T) {
 
 // TST-CORE-041
 func TestAuth_1_4_4_NoPluginEndpoints(t *testing.T) {
-	var impl testutil.Server
+	impl := realServer
 	testutil.RequireImplementation(t, impl, "Server")
 
 	routes := impl.Routes()
@@ -1247,27 +1251,27 @@ func TestAuth_1_4_4_NoPluginEndpoints(t *testing.T) {
 
 // TST-CORE-042
 func TestAuth_1_4_5_IdentifyTokenPriority(t *testing.T) {
-	var impl testutil.TokenValidator
+	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
 
 	// BRAIN_TOKEN must be checked first (constant-time) before CLIENT_TOKEN
 	// (SHA-256 hash lookup). This prevents timing leaks.
 	kind, identity, err := impl.IdentifyToken(testutil.TestBrainToken)
 	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, kind, "brain")
+	testutil.RequireEqual(t, kind, domain.TokenBrain)
 	testutil.RequireEqual(t, identity, "brain")
 }
 
 // TST-CORE-043
 func TestAuth_1_4_6_IdentifyTokenFallback(t *testing.T) {
-	var impl testutil.TokenValidator
+	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
 
 	// When the token is not the BRAIN_TOKEN, fall back to CLIENT_TOKEN via
 	// SHA-256(token) lookup in device_tokens WHERE revoked = 0.
 	kind, deviceID, err := impl.IdentifyToken(testutil.TestClientToken)
 	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, kind, "client")
+	testutil.RequireEqual(t, kind, domain.TokenClient)
 	if deviceID == "" {
 		t.Fatal("CLIENT_TOKEN fallback must resolve a device ID")
 	}
@@ -1275,7 +1279,7 @@ func TestAuth_1_4_6_IdentifyTokenFallback(t *testing.T) {
 
 // TST-CORE-044
 func TestAuth_1_4_7_IsAdminEndpointAllowlist(t *testing.T) {
-	var checker testutil.AdminEndpointChecker
+	checker := realAdminEndpointChecker
 	testutil.RequireImplementation(t, checker, "AdminEndpointChecker")
 
 	// BRAIN_TOKEN must be rejected on all admin endpoints.
@@ -1297,7 +1301,7 @@ func TestAuth_1_4_7_IsAdminEndpointAllowlist(t *testing.T) {
 
 // TST-CORE-045
 func TestAuth_1_4_8_ClientTokenFullAccess(t *testing.T) {
-	var checker testutil.AdminEndpointChecker
+	checker := realAdminEndpointChecker
 	testutil.RequireImplementation(t, checker, "AdminEndpointChecker")
 
 	// CLIENT_TOKEN grants full access to all endpoints (admin + non-admin).
@@ -1318,7 +1322,7 @@ func TestAuth_1_4_8_ClientTokenFullAccess(t *testing.T) {
 
 // TST-CORE-046
 func TestAuth_1_4_9_CoreNeverCallsExternalAPIs(t *testing.T) {
-	var impl testutil.TokenValidator
+	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
 
 	// dina-core must never make outbound HTTP calls during auth.
@@ -1333,11 +1337,11 @@ func TestAuth_1_4_9_CoreNeverCallsExternalAPIs(t *testing.T) {
 	// We verify the auth flow completes purely locally.
 	kind, _, err := impl.IdentifyToken(testutil.TestBrainToken)
 	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, kind, "brain")
+	testutil.RequireEqual(t, kind, domain.TokenBrain)
 
 	kind, _, err = impl.IdentifyToken(testutil.TestClientToken)
 	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, kind, "client")
+	testutil.RequireEqual(t, kind, domain.TokenClient)
 }
 
 // --------------------------------------------------------------------------
@@ -1346,7 +1350,7 @@ func TestAuth_1_4_9_CoreNeverCallsExternalAPIs(t *testing.T) {
 
 // TST-CORE-047
 func TestAuth_1_5_1_BrainAccessesOpenPersona(t *testing.T) {
-	var gk testutil.Gatekeeper
+	gk := realGatekeeper
 	testutil.RequireImplementation(t, gk, "Gatekeeper")
 
 	// A compromised brain (holding only BRAIN_TOKEN) can access open personas.
@@ -1357,14 +1361,14 @@ func TestAuth_1_5_1_BrainAccessesOpenPersona(t *testing.T) {
 		PersonaID:  "persona-consumer",
 		TrustLevel: "open",
 	}
-	decision, err := gk.EvaluateIntent(intent)
+	decision, err := gk.EvaluateIntent(context.Background(), intent)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, decision.Allowed, "brain should access open persona — this is the expected damage radius")
 }
 
 // TST-CORE-048
 func TestAuth_1_5_2_BrainCannotAccessLocked(t *testing.T) {
-	var gk testutil.Gatekeeper
+	gk := realGatekeeper
 	testutil.RequireImplementation(t, gk, "Gatekeeper")
 
 	// A compromised brain cannot access locked personas because the DEK
@@ -1377,7 +1381,7 @@ func TestAuth_1_5_2_BrainCannotAccessLocked(t *testing.T) {
 			PersonaID:  persona,
 			TrustLevel: "locked",
 		}
-		decision, err := gk.EvaluateIntent(intent)
+		decision, err := gk.EvaluateIntent(context.Background(), intent)
 		testutil.RequireNoError(t, err)
 		testutil.RequireFalse(t, decision.Allowed, "brain must not access locked persona "+persona)
 	}
@@ -1385,7 +1389,7 @@ func TestAuth_1_5_2_BrainCannotAccessLocked(t *testing.T) {
 
 // TST-CORE-049
 func TestAuth_1_5_3_RestrictedCreatesDetectionTrail(t *testing.T) {
-	var gk testutil.Gatekeeper
+	gk := realGatekeeper
 	testutil.RequireImplementation(t, gk, "Gatekeeper")
 
 	// Accessing a restricted persona is allowed but creates an audit entry
@@ -1396,7 +1400,7 @@ func TestAuth_1_5_3_RestrictedCreatesDetectionTrail(t *testing.T) {
 		PersonaID:  "persona-health",
 		TrustLevel: "restricted",
 	}
-	decision, err := gk.EvaluateIntent(intent)
+	decision, err := gk.EvaluateIntent(context.Background(), intent)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, decision.Audit, "restricted access must create an audit trail entry")
 	// The decision.Reason should indicate the access was logged.
@@ -1407,49 +1411,49 @@ func TestAuth_1_5_3_RestrictedCreatesDetectionTrail(t *testing.T) {
 
 // TST-CORE-050
 func TestAuth_1_5_4_BrainCannotCallDIDSign(t *testing.T) {
-	var gk testutil.Gatekeeper
+	gk := realGatekeeper
 	testutil.RequireImplementation(t, gk, "Gatekeeper")
 
 	intent := testutil.Intent{
 		AgentDID: "brain",
 		Action:   "did_sign",
 	}
-	decision, err := gk.EvaluateIntent(intent)
+	decision, err := gk.EvaluateIntent(context.Background(), intent)
 	testutil.RequireNoError(t, err)
 	testutil.RequireFalse(t, decision.Allowed, "brain must not invoke POST /v1/did/sign — admin endpoint")
 }
 
 // TST-CORE-051
 func TestAuth_1_5_5_BrainCannotCallDIDRotate(t *testing.T) {
-	var gk testutil.Gatekeeper
+	gk := realGatekeeper
 	testutil.RequireImplementation(t, gk, "Gatekeeper")
 
 	intent := testutil.Intent{
 		AgentDID: "brain",
 		Action:   "did_rotate",
 	}
-	decision, err := gk.EvaluateIntent(intent)
+	decision, err := gk.EvaluateIntent(context.Background(), intent)
 	testutil.RequireNoError(t, err)
 	testutil.RequireFalse(t, decision.Allowed, "brain must not invoke POST /v1/did/rotate — admin endpoint")
 }
 
 // TST-CORE-052
 func TestAuth_1_5_6_BrainCannotCallVaultBackup(t *testing.T) {
-	var gk testutil.Gatekeeper
+	gk := realGatekeeper
 	testutil.RequireImplementation(t, gk, "Gatekeeper")
 
 	intent := testutil.Intent{
 		AgentDID: "brain",
 		Action:   "vault_backup",
 	}
-	decision, err := gk.EvaluateIntent(intent)
+	decision, err := gk.EvaluateIntent(context.Background(), intent)
 	testutil.RequireNoError(t, err)
 	testutil.RequireFalse(t, decision.Allowed, "brain must not invoke POST /v1/vault/backup — admin endpoint")
 }
 
 // TST-CORE-053
 func TestAuth_1_5_7_BrainCannotCallPersonaUnlock(t *testing.T) {
-	var gk testutil.Gatekeeper
+	gk := realGatekeeper
 	testutil.RequireImplementation(t, gk, "Gatekeeper")
 
 	intent := testutil.Intent{
@@ -1457,14 +1461,14 @@ func TestAuth_1_5_7_BrainCannotCallPersonaUnlock(t *testing.T) {
 		Action:    "persona_unlock",
 		PersonaID: "persona-financial",
 	}
-	decision, err := gk.EvaluateIntent(intent)
+	decision, err := gk.EvaluateIntent(context.Background(), intent)
 	testutil.RequireNoError(t, err)
 	testutil.RequireFalse(t, decision.Allowed, "brain must not invoke POST /v1/persona/unlock — admin endpoint")
 }
 
 // TST-CORE-054
 func TestAuth_1_5_8_BrainCannotBypassPIIScrubber(t *testing.T) {
-	var gk testutil.Gatekeeper
+	gk := realGatekeeper
 	testutil.RequireImplementation(t, gk, "Gatekeeper")
 
 	// The PII scrubber runs in the core pipeline. Brain cannot bypass it
@@ -1477,7 +1481,7 @@ func TestAuth_1_5_8_BrainCannotBypassPIIScrubber(t *testing.T) {
 		"Phone: 555-123-4567",
 	}
 	for _, payload := range piiPayloads {
-		allowed, err := gk.CheckEgress("brain", []byte(payload))
+		allowed, err := gk.CheckEgress(context.Background(), "brain", []byte(payload))
 		testutil.RequireNoError(t, err)
 		testutil.RequireFalse(t, allowed, "PII must not pass through egress to brain: "+payload)
 	}
@@ -1485,16 +1489,16 @@ func TestAuth_1_5_8_BrainCannotBypassPIIScrubber(t *testing.T) {
 
 // TST-CORE-055
 func TestAuth_1_5_9_BrainCannotAccessRawVaultFiles(t *testing.T) {
-	var impl testutil.TokenValidator
+	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
 
-	var serverImpl testutil.Server
+	serverImpl := realServer
 	testutil.RequireImplementation(t, serverImpl, "Server")
 
 	// Verify the brain token is classified correctly.
 	kind, _, err := impl.IdentifyToken(testutil.TestBrainToken)
 	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, kind, "brain")
+	testutil.RequireEqual(t, kind, domain.TokenBrain)
 
 	// Verify no raw vault file endpoints exist.
 	routes := serverImpl.Routes()

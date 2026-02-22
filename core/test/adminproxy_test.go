@@ -22,7 +22,7 @@ import (
 // TST-CORE-541
 func TestAdminProxy_12_1_ProxyToBrainAdminUI(t *testing.T) {
 	// var impl testutil.AdminProxy = realproxy.New(...)
-	var impl testutil.AdminProxy
+	impl := realAdminProxy
 	testutil.RequireImplementation(t, impl, "AdminProxy")
 
 	// GET localhost:8100/admin/ must be reverse-proxied to brain:8200/admin/.
@@ -48,7 +48,7 @@ func TestAdminProxy_12_1_ProxyToBrainAdminUI(t *testing.T) {
 // TST-CORE-542
 func TestAdminProxy_12_2_AuthRequired(t *testing.T) {
 	// var impl testutil.AdminProxy = realproxy.New(...)
-	var impl testutil.AdminProxy
+	impl := realAdminProxy
 	testutil.RequireImplementation(t, impl, "AdminProxy")
 
 	// Unauthenticated request to :8100 must be redirected to the login page.
@@ -75,7 +75,7 @@ func TestAdminProxy_12_2_AuthRequired(t *testing.T) {
 // TST-CORE-543
 func TestAdminProxy_12_3_StaticAssetProxying(t *testing.T) {
 	// var impl testutil.AdminProxy = realproxy.New(...)
-	var impl testutil.AdminProxy
+	impl := realAdminProxy
 	testutil.RequireImplementation(t, impl, "AdminProxy")
 
 	// CSS/JS files must be correctly proxied with the right Content-Type.
@@ -111,7 +111,7 @@ func TestAdminProxy_12_3_StaticAssetProxying(t *testing.T) {
 // TST-CORE-544
 func TestAdminProxy_12_4_WebSocketUpgradeProxy(t *testing.T) {
 	// var impl testutil.AdminProxy = realproxy.New(...)
-	var impl testutil.AdminProxy
+	impl := realAdminProxy
 	testutil.RequireImplementation(t, impl, "AdminProxy")
 
 	// WS connection to :8100/ws must be proxied to brain:8200/ws.
@@ -130,7 +130,7 @@ func TestAdminProxy_12_4_WebSocketUpgradeProxy(t *testing.T) {
 // TST-CORE-897
 func TestAdminProxy_12_5_CSRFTokenInjectedInResponse(t *testing.T) {
 	// CSRF token injected as X-CSRF-Token in proxied response to browser.
-	var impl testutil.AdminProxy
+	impl := realAdminProxy
 	testutil.RequireImplementation(t, impl, "AdminProxy")
 
 	statusCode, _, respHeaders, err := impl.ProxyHTTP("GET", "/admin/dashboard", map[string]string{}, nil)

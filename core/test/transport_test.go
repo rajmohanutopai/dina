@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/anthropics/dina/core/test/testutil"
@@ -18,7 +19,7 @@ import (
 
 // TST-CORE-394
 func TestTransport_7_1_1_SendToKnownRecipient(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	// impl = transport.New()
 	testutil.RequireImplementation(t, impl, "Transporter")
 
@@ -29,7 +30,7 @@ func TestTransport_7_1_1_SendToKnownRecipient(t *testing.T) {
 
 // TST-CORE-805
 func TestTransport_7_1_2_SendToUnresolvableDIDFails(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	// impl = transport.New()
 	testutil.RequireImplementation(t, impl, "Transporter")
 
@@ -40,7 +41,7 @@ func TestTransport_7_1_2_SendToUnresolvableDIDFails(t *testing.T) {
 
 // TST-CORE-806
 func TestTransport_7_1_3_SendEmptyEnvelopeRejected(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	// impl = transport.New()
 	testutil.RequireImplementation(t, impl, "Transporter")
 
@@ -50,7 +51,7 @@ func TestTransport_7_1_3_SendEmptyEnvelopeRejected(t *testing.T) {
 
 // TST-CORE-807
 func TestTransport_7_1_4_SendNilEnvelopeRejected(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	// impl = transport.New()
 	testutil.RequireImplementation(t, impl, "Transporter")
 
@@ -78,7 +79,7 @@ func TestTransport_7_1_5_MockSendRecordsMessages(t *testing.T) {
 
 // TST-CORE-395
 func TestTransport_7_1_OutboxSchema(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	testutil.RequireImplementation(t, impl, "Transporter")
 
 	// Outbox table schema: id TEXT PK, to_did TEXT, payload BLOB,
@@ -92,7 +93,7 @@ func TestTransport_7_1_OutboxSchema(t *testing.T) {
 
 // TST-CORE-810
 func TestTransport_7_2_1_ReceiveFromInbox(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	// impl = transport.New()
 	testutil.RequireImplementation(t, impl, "Transporter")
 
@@ -137,7 +138,7 @@ func TestTransport_7_2_3_InboxFIFOOrder(t *testing.T) {
 
 // TST-CORE-813
 func TestTransport_7_2_4_InboxSpoolWhenLocked(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	// impl = transport.New()
 	testutil.RequireImplementation(t, impl, "Transporter")
 
@@ -148,7 +149,7 @@ func TestTransport_7_2_4_InboxSpoolWhenLocked(t *testing.T) {
 
 // TST-CORE-814
 func TestTransport_7_2_5_InboxRejectWhenSpoolFull(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	// impl = transport.New()
 	testutil.RequireImplementation(t, impl, "Transporter")
 
@@ -162,7 +163,7 @@ func TestTransport_7_2_5_InboxRejectWhenSpoolFull(t *testing.T) {
 
 // TST-CORE-434
 func TestTransport_7_3_1_ResolveKnownDID(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	// impl = transport.New()
 	testutil.RequireImplementation(t, impl, "Transporter")
 
@@ -173,7 +174,7 @@ func TestTransport_7_3_1_ResolveKnownDID(t *testing.T) {
 
 // TST-CORE-437
 func TestTransport_7_3_2_ResolveUnknownDIDFails(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	// impl = transport.New()
 	testutil.RequireImplementation(t, impl, "Transporter")
 
@@ -205,7 +206,7 @@ func TestTransport_7_3_4_MockResolveUnknownFails(t *testing.T) {
 
 // TST-CORE-818
 func TestTransport_7_4_1_EnvelopeContainsRequiredFields(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	// impl = transport.New()
 	testutil.RequireImplementation(t, impl, "Transporter")
 
@@ -219,7 +220,7 @@ func TestTransport_7_4_1_EnvelopeContainsRequiredFields(t *testing.T) {
 
 // TST-CORE-819
 func TestTransport_7_4_2_EnvelopeFromFieldIsDID(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	// impl = transport.New()
 	testutil.RequireImplementation(t, impl, "Transporter")
 
@@ -229,7 +230,7 @@ func TestTransport_7_4_2_EnvelopeFromFieldIsDID(t *testing.T) {
 
 // TST-CORE-820
 func TestTransport_7_4_3_EnvelopeMaxSize(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	// impl = transport.New()
 	testutil.RequireImplementation(t, impl, "Transporter")
 
@@ -244,7 +245,7 @@ func TestTransport_7_4_3_EnvelopeMaxSize(t *testing.T) {
 
 // TST-CORE-821
 func TestTransport_7_4_13_EnvelopeInvalidJSONRejected(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	// impl = transport.New()
 	testutil.RequireImplementation(t, impl, "Transporter")
 
@@ -259,7 +260,7 @@ func TestTransport_7_4_13_EnvelopeInvalidJSONRejected(t *testing.T) {
 
 // TST-CORE-822
 func TestTransport_7_5_1_EnvelopeEncryptedInTransit(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	// impl = transport.New()
 	testutil.RequireImplementation(t, impl, "Transporter")
 
@@ -274,19 +275,19 @@ func TestTransport_7_5_1_EnvelopeEncryptedInTransit(t *testing.T) {
 func TestTransport_7_5_2_EncryptDecryptRoundtrip(t *testing.T) {
 	// End-to-end: seal envelope → transmit → open at recipient.
 	// Requires both BoxSealer and KeyConverter implementations.
-	var impl testutil.Transporter
+	impl := realTransporter
 	// impl = transport.New()
 	testutil.RequireImplementation(t, impl, "Transporter")
 
-	var boxImpl testutil.BoxSealer
+	boxImpl := realEncryptor
 	// boxImpl = box.New()
-	testutil.RequireImplementation(t, boxImpl, "BoxSealer")
+	testutil.RequireImplementation(t, boxImpl, "Encryptor")
 
-	var sImpl testutil.Signer
+	sImpl := realSigner
 	// sImpl = signer.New()
 	testutil.RequireImplementation(t, sImpl, "Signer")
 
-	var convImpl testutil.KeyConverter
+	convImpl := realConverter
 	// convImpl = converter.New()
 	testutil.RequireImplementation(t, convImpl, "KeyConverter")
 
@@ -301,26 +302,26 @@ func TestTransport_7_5_2_EncryptDecryptRoundtrip(t *testing.T) {
 
 	// Seal the envelope.
 	plaintext := testutil.TestEnvelope()
-	sealed, err := boxImpl.Seal(plaintext, recipientPub)
+	sealed, err := boxImpl.SealAnonymous(plaintext, recipientPub)
 	testutil.RequireNoError(t, err)
 
 	// Open at recipient.
-	opened, err := boxImpl.Open(sealed, recipientPub, recipientPriv)
+	opened, err := boxImpl.OpenAnonymous(sealed, recipientPub, recipientPriv)
 	testutil.RequireNoError(t, err)
 	testutil.RequireBytesEqual(t, plaintext, opened)
 }
 
 // TST-CORE-824
 func TestTransport_7_5_3_WrongRecipientCannotDecrypt(t *testing.T) {
-	var boxImpl testutil.BoxSealer
+	boxImpl := realEncryptor
 	// boxImpl = box.New()
-	testutil.RequireImplementation(t, boxImpl, "BoxSealer")
+	testutil.RequireImplementation(t, boxImpl, "Encryptor")
 
-	var sImpl testutil.Signer
+	sImpl := realSigner
 	// sImpl = signer.New()
 	testutil.RequireImplementation(t, sImpl, "Signer")
 
-	var convImpl testutil.KeyConverter
+	convImpl := realConverter
 	// convImpl = converter.New()
 	testutil.RequireImplementation(t, convImpl, "KeyConverter")
 
@@ -332,7 +333,7 @@ func TestTransport_7_5_3_WrongRecipientCannotDecrypt(t *testing.T) {
 
 	// Seal for recipient A.
 	plaintext := testutil.TestEnvelope()
-	sealed, err := boxImpl.Seal(plaintext, recipientPubA)
+	sealed, err := boxImpl.SealAnonymous(plaintext, recipientPubA)
 	testutil.RequireNoError(t, err)
 
 	// Recipient B keys.
@@ -348,7 +349,7 @@ func TestTransport_7_5_3_WrongRecipientCannotDecrypt(t *testing.T) {
 	testutil.RequireNoError(t, err)
 
 	// Recipient B cannot open message sealed for A.
-	_, err = boxImpl.Open(sealed, recipientPubB, recipientPrivB)
+	_, err = boxImpl.OpenAnonymous(sealed, recipientPubB, recipientPrivB)
 	testutil.RequireError(t, err)
 }
 
@@ -358,7 +359,7 @@ func TestTransport_7_5_3_WrongRecipientCannotDecrypt(t *testing.T) {
 
 // TST-CORE-825
 func TestTransport_7_6_1_DirectDeliveryPreferred(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	// impl = transport.New()
 	testutil.RequireImplementation(t, impl, "Transporter")
 
@@ -370,7 +371,7 @@ func TestTransport_7_6_1_DirectDeliveryPreferred(t *testing.T) {
 
 // TST-CORE-826
 func TestTransport_7_6_2_RelayUsedWhenDirectFails(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	// impl = transport.New()
 	testutil.RequireImplementation(t, impl, "Transporter")
 
@@ -398,7 +399,7 @@ func TestTransport_7_1_6_OutboxEnqueuePersistsMessage(t *testing.T) {
 	mock := testutil.NewMockOutboxManager()
 
 	msg := testutil.TestOutboxMessage()
-	id, err := mock.Enqueue(msg)
+	id, err := mock.Enqueue(context.Background(), msg)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(id) > 0, "enqueue must return a non-empty message ID")
 
@@ -414,11 +415,11 @@ func TestTransport_7_1_7_SuccessfulDeliveryMarked(t *testing.T) {
 	mock := testutil.NewMockOutboxManager()
 
 	msg := testutil.TestOutboxMessage()
-	id, err := mock.Enqueue(msg)
+	id, err := mock.Enqueue(context.Background(), msg)
 	testutil.RequireNoError(t, err)
 
 	// Recipient responds 200 — mark delivered.
-	err = mock.MarkDelivered(id)
+	err = mock.MarkDelivered(context.Background(), id)
 	testutil.RequireNoError(t, err)
 
 	retrieved, err := mock.GetByID(id)
@@ -431,11 +432,11 @@ func TestTransport_7_1_8_DeliveryFailureRetry(t *testing.T) {
 	mock := testutil.NewMockOutboxManager()
 
 	msg := testutil.TestOutboxMessage()
-	id, err := mock.Enqueue(msg)
+	id, err := mock.Enqueue(context.Background(), msg)
 	testutil.RequireNoError(t, err)
 
 	// Recipient returns 500 — mark failed, retry count increments.
-	err = mock.MarkFailed(id)
+	err = mock.MarkFailed(context.Background(), id)
 	testutil.RequireNoError(t, err)
 
 	retrieved, err := mock.GetByID(id)
@@ -446,7 +447,7 @@ func TestTransport_7_1_8_DeliveryFailureRetry(t *testing.T) {
 
 // TST-CORE-398
 func TestTransport_7_1_9_MaxRetriesExhaustedNudge(t *testing.T) {
-	var impl testutil.OutboxManager
+	impl := realOutboxManager
 	testutil.RequireImplementation(t, impl, "OutboxManager")
 
 	// After 5 consecutive failures (~3 hours), status should be "failed" and
@@ -459,14 +460,14 @@ func TestTransport_7_1_10_UserRequeueAfterFailure(t *testing.T) {
 	mock := testutil.NewMockOutboxManager()
 
 	msg := testutil.TestOutboxMessage()
-	id, err := mock.Enqueue(msg)
+	id, err := mock.Enqueue(context.Background(), msg)
 	testutil.RequireNoError(t, err)
 
 	// Simulate failure.
-	_ = mock.MarkFailed(id)
+	_ = mock.MarkFailed(context.Background(), id)
 
 	// User approves requeue — fresh retry count.
-	err = mock.Requeue(id)
+	err = mock.Requeue(context.Background(), id)
 	testutil.RequireNoError(t, err)
 
 	retrieved, err := mock.GetByID(id)
@@ -477,7 +478,7 @@ func TestTransport_7_1_10_UserRequeueAfterFailure(t *testing.T) {
 
 // TST-CORE-400
 func TestTransport_7_1_11_TTL24Hours(t *testing.T) {
-	var impl testutil.OutboxManager
+	impl := realOutboxManager
 	testutil.RequireImplementation(t, impl, "OutboxManager")
 
 	// Message pending for >24h without delivery should be expired.
@@ -492,19 +493,19 @@ func TestTransport_7_1_12_QueueSizeLimit100(t *testing.T) {
 	// Fill the queue to capacity.
 	for i := 0; i < 100; i++ {
 		msg := testutil.TestOutboxMessage()
-		_, err := mock.Enqueue(msg)
+		_, err := mock.Enqueue(context.Background(), msg)
 		testutil.RequireNoError(t, err)
 	}
 
 	// 101st message should be rejected.
 	msg := testutil.TestOutboxMessage()
-	_, err := mock.Enqueue(msg)
+	_, err := mock.Enqueue(context.Background(), msg)
 	testutil.RequireError(t, err)
 }
 
 // TST-CORE-402
 func TestTransport_7_1_13_OutboxSurvivesRestart(t *testing.T) {
-	var impl testutil.OutboxManager
+	impl := realOutboxManager
 	testutil.RequireImplementation(t, impl, "OutboxManager")
 
 	// Pending tasks reloaded from SQLite after restart.
@@ -513,7 +514,7 @@ func TestTransport_7_1_13_OutboxSurvivesRestart(t *testing.T) {
 
 // TST-CORE-404
 func TestTransport_7_1_14_IdempotentDelivery(t *testing.T) {
-	var impl testutil.OutboxManager
+	impl := realOutboxManager
 	testutil.RequireImplementation(t, impl, "OutboxManager")
 
 	// Same message delivered twice — recipient deduplicates by message ID.
@@ -527,16 +528,16 @@ func TestTransport_7_1_15_PriorityOrdering(t *testing.T) {
 	// Enqueue low-priority message first, then fiduciary.
 	lowMsg := testutil.TestOutboxMessage()
 	lowMsg.Priority = 1
-	_, err := mock.Enqueue(lowMsg)
+	_, err := mock.Enqueue(context.Background(), lowMsg)
 	testutil.RequireNoError(t, err)
 
 	highMsg := testutil.TestOutboxMessage()
 	highMsg.Priority = 10 // fiduciary
-	_, err = mock.Enqueue(highMsg)
+	_, err = mock.Enqueue(context.Background(), highMsg)
 	testutil.RequireNoError(t, err)
 
 	// Verify both are pending (priority enforcement is in real implementation).
-	count, err := mock.PendingCount()
+	count, err := mock.PendingCount(context.Background())
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, count, 2)
 }
@@ -547,7 +548,7 @@ func TestTransport_7_1_16_PayloadIsPreEncrypted(t *testing.T) {
 
 	msg := testutil.TestOutboxMessage()
 	msg.Payload = []byte("encrypted-nacl-blob")
-	id, err := mock.Enqueue(msg)
+	id, err := mock.Enqueue(context.Background(), msg)
 	testutil.RequireNoError(t, err)
 
 	// Payload in outbox should be the encrypted blob — ready to send.
@@ -558,7 +559,7 @@ func TestTransport_7_1_16_PayloadIsPreEncrypted(t *testing.T) {
 
 // TST-CORE-409
 func TestTransport_7_1_17_SendingStatusDuringDelivery(t *testing.T) {
-	var impl testutil.OutboxManager
+	impl := realOutboxManager
 	testutil.RequireImplementation(t, impl, "OutboxManager")
 
 	// Status transitions: pending -> sending (while HTTP in flight) -> delivered or back to pending.
@@ -567,7 +568,7 @@ func TestTransport_7_1_17_SendingStatusDuringDelivery(t *testing.T) {
 
 // TST-CORE-410
 func TestTransport_7_1_18_UserIgnoresNudgeExpires(t *testing.T) {
-	var impl testutil.OutboxManager
+	impl := realOutboxManager
 	testutil.RequireImplementation(t, impl, "OutboxManager")
 
 	// Retries exhausted -> user notified -> user does nothing -> 24h TTL expires -> cleanup.
@@ -636,7 +637,7 @@ func TestTransport_7_2_11_Valve2SpoolWhenLocked(t *testing.T) {
 	mock := testutil.NewMockInboxManager()
 
 	// Spool message when persona is locked.
-	id, err := mock.Spool([]byte("encrypted-message-blob"))
+	id, err := mock.Spool(context.Background(), []byte("encrypted-message-blob"))
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(id) > 0, "spool should return an ID")
 
@@ -651,11 +652,11 @@ func TestTransport_7_2_12_Valve2SpoolCapExceeded(t *testing.T) {
 	mock.SpoolMaxBytes = 100 // Very small cap for testing.
 
 	// Fill spool to capacity.
-	_, err := mock.Spool(make([]byte, 100))
+	_, err := mock.Spool(context.Background(), make([]byte, 100))
 	testutil.RequireNoError(t, err)
 
 	// Next spool should fail — reject-new, not drop-oldest.
-	_, err = mock.Spool([]byte("one more"))
+	_, err = mock.Spool(context.Background(), []byte("one more"))
 	testutil.RequireError(t, err)
 }
 
@@ -665,14 +666,14 @@ func TestTransport_7_2_13_Valve2RejectNewPreservesExisting(t *testing.T) {
 	mock.SpoolMaxBytes = 100
 
 	// Fill spool.
-	_, err := mock.Spool(make([]byte, 100))
+	_, err := mock.Spool(context.Background(), make([]byte, 100))
 	testutil.RequireNoError(t, err)
 
 	size, _ := mock.SpoolSize()
 	testutil.RequireEqual(t, size, int64(100))
 
 	// New message rejected, but existing preserved.
-	_, err = mock.Spool([]byte("extra"))
+	_, err = mock.Spool(context.Background(), []byte("extra"))
 	testutil.RequireError(t, err)
 
 	sizeAfter, _ := mock.SpoolSize()
@@ -684,12 +685,12 @@ func TestTransport_7_2_14_Valve3SweeperOnUnlock(t *testing.T) {
 	mock := testutil.NewMockInboxManager()
 
 	// Spool some messages.
-	_, _ = mock.Spool([]byte("msg1"))
-	_, _ = mock.Spool([]byte("msg2"))
-	_, _ = mock.Spool([]byte("msg3"))
+	_, _ = mock.Spool(context.Background(), []byte("msg1"))
+	_, _ = mock.Spool(context.Background(), []byte("msg2"))
+	_, _ = mock.Spool(context.Background(), []byte("msg3"))
 
 	// Process spool (sweeper runs on unlock).
-	count, err := mock.ProcessSpool()
+	count, err := mock.ProcessSpool(context.Background())
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, count, 3)
 
@@ -700,7 +701,7 @@ func TestTransport_7_2_14_Valve3SweeperOnUnlock(t *testing.T) {
 
 // TST-CORE-422
 func TestTransport_7_2_15_Valve3TTLEnforcement(t *testing.T) {
-	var impl testutil.InboxManager
+	impl := realInboxManager
 	testutil.RequireImplementation(t, impl, "InboxManager")
 
 	// Message with TTL=15min, vault locked for 3 hours — stored silently, no notification.
@@ -709,7 +710,7 @@ func TestTransport_7_2_15_Valve3TTLEnforcement(t *testing.T) {
 
 // TST-CORE-423
 func TestTransport_7_2_16_Valve3MessageWithinTTL(t *testing.T) {
-	var impl testutil.InboxManager
+	impl := realInboxManager
 	testutil.RequireImplementation(t, impl, "InboxManager")
 
 	// Message with TTL=30min, vault locked for 10 min — processed normally after unlock.
@@ -718,7 +719,7 @@ func TestTransport_7_2_16_Valve3MessageWithinTTL(t *testing.T) {
 
 // TST-CORE-425
 func TestTransport_7_2_17_FastPathVaultUnlocked(t *testing.T) {
-	var impl testutil.InboxManager
+	impl := realInboxManager
 	testutil.RequireImplementation(t, impl, "InboxManager")
 
 	// When vault is unlocked: decrypt in-memory, check DID, per-DID rate limit, process immediately.
@@ -748,7 +749,7 @@ func TestTransport_7_2_19_DeadDropPerDIDImpossibleWhenLocked(t *testing.T) {
 
 // TST-CORE-428
 func TestTransport_7_2_20_DIDVerificationOnInbound(t *testing.T) {
-	var impl testutil.InboxManager
+	impl := realInboxManager
 	testutil.RequireImplementation(t, impl, "InboxManager")
 
 	// Message with valid sender DID signature should be accepted.
@@ -757,7 +758,7 @@ func TestTransport_7_2_20_DIDVerificationOnInbound(t *testing.T) {
 
 // TST-CORE-429
 func TestTransport_7_2_21_DIDVerificationFailure(t *testing.T) {
-	var impl testutil.InboxManager
+	impl := realInboxManager
 	testutil.RequireImplementation(t, impl, "InboxManager")
 
 	// Message with invalid/missing signature should be rejected with 401.
@@ -766,7 +767,7 @@ func TestTransport_7_2_21_DIDVerificationFailure(t *testing.T) {
 
 // TST-CORE-430
 func TestTransport_7_2_22_UnknownSenderDID(t *testing.T) {
-	var impl testutil.InboxManager
+	impl := realInboxManager
 	testutil.RequireImplementation(t, impl, "InboxManager")
 
 	// Message from unresolvable DID — queued for manual review or rejected per policy.
@@ -792,14 +793,14 @@ func TestTransport_7_2_24_DoSWhileLocked(t *testing.T) {
 		mock.CheckIPRate("1.2.3.4")
 	}
 	// After rate limit, spool fills to cap.
-	_, _ = mock.Spool(make([]byte, 500))
-	_, err := mock.Spool(make([]byte, 10))
+	_, _ = mock.Spool(context.Background(), make([]byte, 500))
+	_, err := mock.Spool(context.Background(), make([]byte, 10))
 	testutil.RequireError(t, err)
 }
 
 // TST-CORE-433
 func TestTransport_7_2_25_DoSWhileUnlocked(t *testing.T) {
-	var impl testutil.InboxManager
+	impl := realInboxManager
 	testutil.RequireImplementation(t, impl, "InboxManager")
 
 	// Valve 1 rejects most. Survivors decrypted — unknown DID dropped. No disk I/O.
@@ -812,7 +813,7 @@ func TestTransport_7_2_25_DoSWhileUnlocked(t *testing.T) {
 
 // TST-CORE-438
 func TestTransport_7_3_5_MalformedDIDValidationError(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	testutil.RequireImplementation(t, impl, "Transporter")
 
 	// Malformed DID should return a validation error.
@@ -822,7 +823,7 @@ func TestTransport_7_3_5_MalformedDIDValidationError(t *testing.T) {
 
 // TST-CORE-435
 func TestTransport_7_3_6_DIDCacheHit(t *testing.T) {
-	var impl testutil.DIDResolver
+	impl := realDIDResolver
 	testutil.RequireImplementation(t, impl, "DIDResolver")
 
 	// Second resolution of same DID within TTL should come from cache.
@@ -831,7 +832,7 @@ func TestTransport_7_3_6_DIDCacheHit(t *testing.T) {
 
 // TST-CORE-436
 func TestTransport_7_3_7_DIDCacheExpiry(t *testing.T) {
-	var impl testutil.DIDResolver
+	impl := realDIDResolver
 	testutil.RequireImplementation(t, impl, "DIDResolver")
 
 	// Resolution after cache TTL should trigger fresh network call.
@@ -840,7 +841,7 @@ func TestTransport_7_3_7_DIDCacheExpiry(t *testing.T) {
 
 // TST-CORE-817
 func TestTransport_7_3_8_UnresolvableDIDNotCached(t *testing.T) {
-	var impl testutil.DIDResolver
+	impl := realDIDResolver
 	testutil.RequireImplementation(t, impl, "DIDResolver")
 
 	// Error result should not be cached.
@@ -917,7 +918,7 @@ func TestTransport_7_4_9_EnvelopeFormat(t *testing.T) {
 
 // TST-CORE-448
 func TestTransport_7_5_4_FullConnectionFlow(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	testutil.RequireImplementation(t, impl, "Transporter")
 
 	// Step 1: Resolve DID via PLC Directory.
@@ -930,7 +931,7 @@ func TestTransport_7_5_4_FullConnectionFlow(t *testing.T) {
 
 // TST-CORE-449
 func TestTransport_7_5_5_MutualAuthentication(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	testutil.RequireImplementation(t, impl, "Transporter")
 
 	// Both Dinas present DIDs, both verify Ed25519 signatures.
@@ -939,7 +940,7 @@ func TestTransport_7_5_5_MutualAuthentication(t *testing.T) {
 
 // TST-CORE-450
 func TestTransport_7_5_6_ContactAllowlistCheck(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	testutil.RequireImplementation(t, impl, "Transporter")
 
 	// Message to non-contact DID should be rejected — both sides must have each other in contacts.
@@ -963,7 +964,7 @@ func TestTransport_7_5_7_EndpointFromDIDDocument(t *testing.T) {
 
 // TST-CORE-452
 func TestTransport_7_6_4_RelayForwardEnvelope(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	testutil.RequireImplementation(t, impl, "Transporter")
 
 	// Message to relay-fronted recipient: {type: "dina/forward", to: "did:plc:...", payload: "<encrypted blob>"}.
@@ -990,7 +991,7 @@ func TestTransport_7_6_6_DIDDocumentPointsToRelay(t *testing.T) {
 
 // TST-CORE-455
 func TestTransport_7_6_7_UserCanSwitchRelays(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	testutil.RequireImplementation(t, impl, "Transporter")
 
 	// Update DID Document to change relay endpoint via did:plc rotation.
@@ -1003,7 +1004,7 @@ func TestTransport_7_6_7_UserCanSwitchRelays(t *testing.T) {
 
 // TST-CORE-403
 func TestTransport_7_1_19_SchedulerInterval30s(t *testing.T) {
-	var impl testutil.OutboxManager
+	impl := realOutboxManager
 	testutil.RequireImplementation(t, impl, "OutboxManager")
 
 	// Outbox scheduler runs every 30 seconds:
@@ -1013,7 +1014,7 @@ func TestTransport_7_1_19_SchedulerInterval30s(t *testing.T) {
 
 // TST-CORE-405
 func TestTransport_7_1_20_DeliveredMessagesCleanup(t *testing.T) {
-	var impl testutil.OutboxManager
+	impl := realOutboxManager
 	testutil.RequireImplementation(t, impl, "OutboxManager")
 
 	// Delivered messages deleted from outbox after 1 hour.
@@ -1022,7 +1023,7 @@ func TestTransport_7_1_20_DeliveredMessagesCleanup(t *testing.T) {
 
 // TST-CORE-406
 func TestTransport_7_1_21_FailedMessagesCleanup(t *testing.T) {
-	var impl testutil.OutboxManager
+	impl := realOutboxManager
 	testutil.RequireImplementation(t, impl, "OutboxManager")
 
 	// Failed messages (after 5 retries) deleted from outbox after 24 hours.
@@ -1031,7 +1032,7 @@ func TestTransport_7_1_21_FailedMessagesCleanup(t *testing.T) {
 
 // TST-CORE-420
 func TestTransport_7_2_26_SweeperDecryptsChecksDID(t *testing.T) {
-	var impl testutil.InboxManager
+	impl := realInboxManager
 	testutil.RequireImplementation(t, impl, "InboxManager")
 
 	// After unlock, sweeper decrypts each blob, identifies sender DID,
@@ -1041,7 +1042,7 @@ func TestTransport_7_2_26_SweeperDecryptsChecksDID(t *testing.T) {
 
 // TST-CORE-421
 func TestTransport_7_2_27_SweeperBlocklistFeedback(t *testing.T) {
-	var impl testutil.InboxManager
+	impl := realInboxManager
 	testutil.RequireImplementation(t, impl, "InboxManager")
 
 	// Spam DID detected in spool → source IP added to Valve 1 permanent blocklist.
@@ -1050,7 +1051,7 @@ func TestTransport_7_2_27_SweeperBlocklistFeedback(t *testing.T) {
 
 // TST-CORE-424
 func TestTransport_7_2_28_Valve3BlobCleanup(t *testing.T) {
-	var impl testutil.InboxManager
+	impl := realInboxManager
 	testutil.RequireImplementation(t, impl, "InboxManager")
 
 	// Spool blob processed successfully → blob file deleted from ./data/inbox/.
@@ -1059,7 +1060,7 @@ func TestTransport_7_2_28_Valve3BlobCleanup(t *testing.T) {
 
 // TST-CORE-442
 func TestTransport_7_4_10_Ed25519SignatureOnPlaintext(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	testutil.RequireImplementation(t, impl, "Transporter")
 
 	// sig field is Ed25519 signature over canonical plaintext.
@@ -1069,7 +1070,7 @@ func TestTransport_7_4_10_Ed25519SignatureOnPlaintext(t *testing.T) {
 
 // TST-CORE-445
 func TestTransport_7_4_11_EphemeralKeyPerMessage(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	testutil.RequireImplementation(t, impl, "Transporter")
 
 	// Each message uses a fresh ephemeral X25519 keypair for crypto_box_seal.
@@ -1079,7 +1080,7 @@ func TestTransport_7_4_11_EphemeralKeyPerMessage(t *testing.T) {
 
 // TST-CORE-447
 func TestTransport_7_4_12_PhaseMigrationInvariant(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	testutil.RequireImplementation(t, impl, "Transporter")
 
 	// Plaintext {id, type, from, to, created_time, body} is IDENTICAL
@@ -1090,7 +1091,7 @@ func TestTransport_7_4_12_PhaseMigrationInvariant(t *testing.T) {
 // TST-CORE-894
 func TestTransport_7_5_OutboxRetryBackoffIncludesJitter(t *testing.T) {
 	// Outbox retry backoff includes jitter (not just exponential).
-	var impl testutil.OutboxManager
+	impl := realOutboxManager
 	testutil.RequireImplementation(t, impl, "OutboxManager")
 
 	msg := testutil.OutboxMessage{
@@ -1099,18 +1100,18 @@ func TestTransport_7_5_OutboxRetryBackoffIncludesJitter(t *testing.T) {
 		Payload: []byte("test payload"),
 		Status:  "pending",
 	}
-	_, err := impl.Enqueue(msg)
+	_, err := impl.Enqueue(context.Background(), msg)
 	testutil.RequireNoError(t, err)
 
 	// Mark failed twice and check retry times include jitter.
-	err = impl.MarkFailed("jitter-test-001")
+	err = impl.MarkFailed(context.Background(), "jitter-test-001")
 	testutil.RequireNoError(t, err)
 }
 
 // TST-CORE-930
 func TestTransport_7_6_MessageCategoryNamespaceValidation(t *testing.T) {
 	// Message category namespace validation (beyond simple prefix).
-	var impl testutil.OutboxManager
+	impl := realOutboxManager
 	testutil.RequireImplementation(t, impl, "OutboxManager")
 
 	// Valid message with proper namespace should succeed.
@@ -1120,13 +1121,13 @@ func TestTransport_7_6_MessageCategoryNamespaceValidation(t *testing.T) {
 		Payload: []byte(`{"type":"com.dina.message.text"}`),
 		Status:  "pending",
 	}
-	_, err := impl.Enqueue(msg)
+	_, err := impl.Enqueue(context.Background(), msg)
 	testutil.RequireNoError(t, err)
 }
 
 // TST-CORE-442
 func TestTransport_7_4_4_Ed25519SignatureOnPlaintext(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	testutil.RequireImplementation(t, impl, "Transporter")
 
 	// Ed25519 signature must be computed on plaintext before encryption.

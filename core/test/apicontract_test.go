@@ -24,7 +24,7 @@ import (
 // TST-CORE-639
 func TestAPIContract_18_1_VaultQueryExposed(t *testing.T) {
 	// var impl testutil.APIContract = realcontract.New(...)
-	var impl testutil.APIContract
+	impl := realAPIContract
 	testutil.RequireImplementation(t, impl, "APIContract")
 
 	// BRAIN_TOKEN + query request must return 200 with results.
@@ -44,7 +44,7 @@ func TestAPIContract_18_1_VaultQueryExposed(t *testing.T) {
 // TST-CORE-640
 func TestAPIContract_18_2_VaultStoreExposed(t *testing.T) {
 	// var impl testutil.APIContract = realcontract.New(...)
-	var impl testutil.APIContract
+	impl := realAPIContract
 	testutil.RequireImplementation(t, impl, "APIContract")
 
 	// BRAIN_TOKEN + store request must return 201 Created.
@@ -64,7 +64,7 @@ func TestAPIContract_18_2_VaultStoreExposed(t *testing.T) {
 // TST-CORE-641
 func TestAPIContract_18_3_DIDSignAdminOnly(t *testing.T) {
 	// var impl testutil.APIContract = realcontract.New(...)
-	var impl testutil.APIContract
+	impl := realAPIContract
 	testutil.RequireImplementation(t, impl, "APIContract")
 
 	// /v1/did/sign is admin-only; BRAIN_TOKEN must be rejected with 403.
@@ -86,7 +86,7 @@ func TestAPIContract_18_3_DIDSignAdminOnly(t *testing.T) {
 // TST-CORE-642
 func TestAPIContract_18_4_DIDVerifyExposed(t *testing.T) {
 	// var impl testutil.APIContract = realcontract.New(...)
-	var impl testutil.APIContract
+	impl := realAPIContract
 	testutil.RequireImplementation(t, impl, "APIContract")
 
 	// BRAIN_TOKEN + verify request must return 200.
@@ -106,7 +106,7 @@ func TestAPIContract_18_4_DIDVerifyExposed(t *testing.T) {
 // TST-CORE-643
 func TestAPIContract_18_5_PIIScrubExposed(t *testing.T) {
 	// var impl testutil.APIContract = realcontract.New(...)
-	var impl testutil.APIContract
+	impl := realAPIContract
 	testutil.RequireImplementation(t, impl, "APIContract")
 
 	// BRAIN_TOKEN + text must return 200 with scrubbed text.
@@ -126,7 +126,7 @@ func TestAPIContract_18_5_PIIScrubExposed(t *testing.T) {
 // TST-CORE-644
 func TestAPIContract_18_6_NotifyExposed(t *testing.T) {
 	// var impl testutil.APIContract = realcontract.New(...)
-	var impl testutil.APIContract
+	impl := realAPIContract
 	testutil.RequireImplementation(t, impl, "APIContract")
 
 	// BRAIN_TOKEN + push notification must return 200.
@@ -146,7 +146,7 @@ func TestAPIContract_18_6_NotifyExposed(t *testing.T) {
 // TST-CORE-645
 func TestAPIContract_18_7_AllBrainEndpointsAcceptToken(t *testing.T) {
 	// var impl testutil.APIContract = realcontract.New(...)
-	var impl testutil.APIContract
+	impl := realAPIContract
 	testutil.RequireImplementation(t, impl, "APIContract")
 
 	// Iterate all non-admin endpoints with BRAIN_TOKEN — all must return 200 (not 403).
@@ -173,7 +173,7 @@ func TestAPIContract_18_7_AllBrainEndpointsAcceptToken(t *testing.T) {
 // TST-CORE-646
 func TestAPIContract_18_8_ExactAPIServiceMatch(t *testing.T) {
 	// var impl testutil.APIContract = realcontract.New(...)
-	var impl testutil.APIContract
+	impl := realAPIContract
 	testutil.RequireImplementation(t, impl, "APIContract")
 
 	// Enumerate all routes — they must exactly match the documented API surface.
@@ -206,7 +206,7 @@ func TestAPIContract_18_8_ExactAPIServiceMatch(t *testing.T) {
 // TST-CORE-647
 func TestAPIContract_18_9_MsgSendExposed(t *testing.T) {
 	// var impl testutil.APIContract = realcontract.New(...)
-	var impl testutil.APIContract
+	impl := realAPIContract
 	testutil.RequireImplementation(t, impl, "APIContract")
 
 	// BRAIN_TOKEN + encrypted message payload must return 200 — queued in outbox.
@@ -226,7 +226,7 @@ func TestAPIContract_18_9_MsgSendExposed(t *testing.T) {
 // TST-CORE-648
 func TestAPIContract_18_10_ReputationQueryExposed(t *testing.T) {
 	// var impl testutil.APIContract = realcontract.New(...)
-	var impl testutil.APIContract
+	impl := realAPIContract
 	testutil.RequireImplementation(t, impl, "APIContract")
 
 	// BRAIN_TOKEN + query (entity, category) must return 200 with reputation score.
@@ -242,7 +242,7 @@ func TestAPIContract_18_10_ReputationQueryExposed(t *testing.T) {
 // TST-CORE-906
 func TestAPIContract_18_11_VaultCrashMissingFieldsRejected(t *testing.T) {
 	// /v1/vault/crash rejects requests missing required fields (error, traceback).
-	var impl testutil.ErrorHandler
+	impl := realErrorHandler
 	testutil.RequireImplementation(t, impl, "ErrorHandler")
 
 	// POST with empty body — missing required fields.
@@ -254,7 +254,7 @@ func TestAPIContract_18_11_VaultCrashMissingFieldsRejected(t *testing.T) {
 // TST-CORE-907
 func TestAPIContract_18_12_VaultQueryResponseSchema(t *testing.T) {
 	// Vault query full response schema (id, type, persona, summary, relevance, pagination).
-	var impl testutil.VaultAPI
+	impl := realVaultAPI
 	testutil.RequireImplementation(t, impl, "VaultAPI")
 
 	results, err := impl.Search("personal", "test query", "fts5")
@@ -265,7 +265,7 @@ func TestAPIContract_18_12_VaultQueryResponseSchema(t *testing.T) {
 // TST-CORE-908
 func TestAPIContract_18_13_VaultStoreResponseIDFormat(t *testing.T) {
 	// Vault store response ID format (vault_ prefix).
-	var impl testutil.VaultAPI
+	impl := realVaultAPI
 	testutil.RequireImplementation(t, impl, "VaultAPI")
 
 	item := testutil.VaultItem{
@@ -282,7 +282,7 @@ func TestAPIContract_18_13_VaultStoreResponseIDFormat(t *testing.T) {
 // TST-CORE-909
 func TestAPIContract_18_14_VaultQueryMissingPersonaField(t *testing.T) {
 	// Vault query: missing persona field -> 400 Bad Request.
-	var impl testutil.ErrorHandler
+	impl := realErrorHandler
 	testutil.RequireImplementation(t, impl, "ErrorHandler")
 
 	statusCode, _, err := impl.HandleRequest("POST", "/v1/vault/query", "application/json", []byte(`{"q":"test"}`))
@@ -293,7 +293,7 @@ func TestAPIContract_18_14_VaultQueryMissingPersonaField(t *testing.T) {
 // TST-CORE-910
 func TestAPIContract_18_15_CoreCallsOnlyDocumentedBrainEndpoints(t *testing.T) {
 	// Core calls only documented brain endpoints.
-	var impl testutil.SecurityAuditor
+	impl := realSecurityAuditor
 	testutil.RequireImplementation(t, impl, "SecurityAuditor")
 
 	// Audit for undocumented outbound HTTP calls to brain.

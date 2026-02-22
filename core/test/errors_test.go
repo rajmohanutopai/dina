@@ -1,8 +1,10 @@
 package test
 
 import (
+	"context"
 	"testing"
 
+	"github.com/anthropics/dina/core/internal/domain"
 	"github.com/anthropics/dina/core/test/testutil"
 )
 
@@ -24,7 +26,7 @@ import (
 // TST-CORE-601
 func TestErrors_16_1_MalformedJSON(t *testing.T) {
 	// var impl testutil.ErrorHandler = realhandler.New(...)
-	var impl testutil.ErrorHandler
+	impl := realErrorHandler
 	testutil.RequireImplementation(t, impl, "ErrorHandler")
 
 	// Send an invalid JSON body. Expect 400 Bad Request with parse error.
@@ -42,7 +44,7 @@ func TestErrors_16_1_MalformedJSON(t *testing.T) {
 // TST-CORE-602
 func TestErrors_16_2_RequestBodyTooLarge(t *testing.T) {
 	// var impl testutil.ErrorHandler = realhandler.New(...)
-	var impl testutil.ErrorHandler
+	impl := realErrorHandler
 	testutil.RequireImplementation(t, impl, "ErrorHandler")
 
 	// Body exceeding 10 MiB must be rejected with 413 Payload Too Large.
@@ -67,7 +69,7 @@ func TestErrors_16_2_RequestBodyTooLarge(t *testing.T) {
 // TST-CORE-603
 func TestErrors_16_3_UnknownEndpoint(t *testing.T) {
 	// var impl testutil.ErrorHandler = realhandler.New(...)
-	var impl testutil.ErrorHandler
+	impl := realErrorHandler
 	testutil.RequireImplementation(t, impl, "ErrorHandler")
 
 	// GET /v1/nonexistent must return 404 Not Found.
@@ -83,7 +85,7 @@ func TestErrors_16_3_UnknownEndpoint(t *testing.T) {
 // TST-CORE-604
 func TestErrors_16_4_MethodNotAllowed(t *testing.T) {
 	// var impl testutil.ErrorHandler = realhandler.New(...)
-	var impl testutil.ErrorHandler
+	impl := realErrorHandler
 	testutil.RequireImplementation(t, impl, "ErrorHandler")
 
 	// DELETE on a GET-only endpoint must return 405 Method Not Allowed.
@@ -99,7 +101,7 @@ func TestErrors_16_4_MethodNotAllowed(t *testing.T) {
 // TST-CORE-605
 func TestErrors_16_5_ContentTypeEnforcement(t *testing.T) {
 	// var impl testutil.ErrorHandler = realhandler.New(...)
-	var impl testutil.ErrorHandler
+	impl := realErrorHandler
 	testutil.RequireImplementation(t, impl, "ErrorHandler")
 
 	// POST without Content-Type: application/json must return 415.
@@ -116,17 +118,18 @@ func TestErrors_16_5_ContentTypeEnforcement(t *testing.T) {
 // TST-CORE-606
 func TestErrors_16_6_ConcurrentVaultWrites(t *testing.T) {
 	// var impl testutil.VaultManager = realvault.New(...)
-	var impl testutil.VaultManager
+	impl := realVaultManager
 	testutil.RequireImplementation(t, impl, "VaultManager")
 
 	// Two simultaneous writes to the same persona vault must both succeed
 	// (WAL mode) or one retries gracefully — no corruption.
+	vaultCtx := context.Background()
 	personaID := "persona-concurrent-test"
 	dek := testutil.TestDEK[:]
-	err := impl.Open(personaID, dek)
+	err := impl.Open(vaultCtx, domain.PersonaName(personaID), dek)
 	testutil.RequireNoError(t, err)
 	defer func() {
-		_ = impl.Close(personaID)
+		_ = impl.Close(domain.PersonaName(personaID))
 	}()
 
 	item1 := testutil.TestVaultItem()
@@ -136,11 +139,11 @@ func TestErrors_16_6_ConcurrentVaultWrites(t *testing.T) {
 
 	errCh := make(chan error, 2)
 	go func() {
-		_, err := impl.Store(personaID, item1)
+		_, err := impl.Store(vaultCtx, domain.PersonaName(personaID), item1)
 		errCh <- err
 	}()
 	go func() {
-		_, err := impl.Store(personaID, item2)
+		_, err := impl.Store(vaultCtx, domain.PersonaName(personaID), item2)
 		errCh <- err
 	}()
 
@@ -180,7 +183,7 @@ func TestErrors_16_8_VaultFileCorruption(t *testing.T) {
 // TST-CORE-609
 func TestErrors_16_9_GracefulShutdown(t *testing.T) {
 	// var impl testutil.Server = realserver.New(...)
-	var impl testutil.Server
+	impl := realServer
 	testutil.RequireImplementation(t, impl, "Server")
 
 	// SIGTERM received: in-flight requests must complete, outbox flushed,
@@ -196,7 +199,7 @@ func TestErrors_16_9_GracefulShutdown(t *testing.T) {
 // TST-CORE-610
 func TestErrors_16_10_PanicRecovery(t *testing.T) {
 	// var impl testutil.ErrorHandler = realhandler.New(...)
-	var impl testutil.ErrorHandler
+	impl := realErrorHandler
 	testutil.RequireImplementation(t, impl, "ErrorHandler")
 
 	// If a goroutine panics, the middleware must recover and return 500,

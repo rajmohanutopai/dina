@@ -1,8 +1,10 @@
 package test
 
 import (
+	"context"
 	"testing"
 
+	"github.com/anthropics/dina/core/internal/domain"
 	"github.com/anthropics/dina/core/test/testutil"
 )
 
@@ -18,7 +20,7 @@ import (
 
 // TST-CORE-783
 func TestGatekeeper_6_1_1_SafeIntentAllowed(t *testing.T) {
-	var impl testutil.Gatekeeper
+	impl := realGatekeeper
 	// impl = gatekeeper.New()
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
 
@@ -29,14 +31,14 @@ func TestGatekeeper_6_1_1_SafeIntentAllowed(t *testing.T) {
 		PersonaID:  "consumer",
 		TrustLevel: "trusted",
 	}
-	decision, err := impl.EvaluateIntent(intent)
+	decision, err := impl.EvaluateIntent(context.Background(), intent)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, decision.Allowed, "safe intent should be allowed")
 }
 
 // TST-CORE-784
 func TestGatekeeper_6_1_2_RiskyIntentFlagged(t *testing.T) {
-	var impl testutil.Gatekeeper
+	impl := realGatekeeper
 	// impl = gatekeeper.New()
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
 
@@ -47,7 +49,7 @@ func TestGatekeeper_6_1_2_RiskyIntentFlagged(t *testing.T) {
 		PersonaID:  "professional",
 		TrustLevel: "trusted",
 	}
-	decision, err := impl.EvaluateIntent(intent)
+	decision, err := impl.EvaluateIntent(context.Background(), intent)
 	testutil.RequireNoError(t, err)
 	// Risky intents should be flagged — either blocked or audited for user review.
 	testutil.RequireTrue(t, decision.Audit, "risky intent should generate an audit entry")
@@ -55,7 +57,7 @@ func TestGatekeeper_6_1_2_RiskyIntentFlagged(t *testing.T) {
 
 // TST-CORE-785
 func TestGatekeeper_6_1_3_BlockedIntentDenied(t *testing.T) {
-	var impl testutil.Gatekeeper
+	impl := realGatekeeper
 	// impl = gatekeeper.New()
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
 
@@ -66,14 +68,14 @@ func TestGatekeeper_6_1_3_BlockedIntentDenied(t *testing.T) {
 		PersonaID:  "financial",
 		TrustLevel: "untrusted",
 	}
-	decision, err := impl.EvaluateIntent(intent)
+	decision, err := impl.EvaluateIntent(context.Background(), intent)
 	testutil.RequireNoError(t, err)
 	testutil.RequireFalse(t, decision.Allowed, "blocked intent from untrusted agent must be denied")
 }
 
 // TST-CORE-786
 func TestGatekeeper_6_1_4_ReadVaultByUntrustedDenied(t *testing.T) {
-	var impl testutil.Gatekeeper
+	impl := realGatekeeper
 	// impl = gatekeeper.New()
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
 
@@ -84,14 +86,14 @@ func TestGatekeeper_6_1_4_ReadVaultByUntrustedDenied(t *testing.T) {
 		PersonaID:  "financial",
 		TrustLevel: "untrusted",
 	}
-	decision, err := impl.EvaluateIntent(intent)
+	decision, err := impl.EvaluateIntent(context.Background(), intent)
 	testutil.RequireNoError(t, err)
 	testutil.RequireFalse(t, decision.Allowed, "untrusted agent must not read vault")
 }
 
 // TST-CORE-787
 func TestGatekeeper_6_1_5_EmptyActionRejected(t *testing.T) {
-	var impl testutil.Gatekeeper
+	impl := realGatekeeper
 	// impl = gatekeeper.New()
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
 
@@ -102,13 +104,13 @@ func TestGatekeeper_6_1_5_EmptyActionRejected(t *testing.T) {
 		PersonaID:  "consumer",
 		TrustLevel: "trusted",
 	}
-	_, err := impl.EvaluateIntent(intent)
+	_, err := impl.EvaluateIntent(context.Background(), intent)
 	testutil.RequireError(t, err)
 }
 
 // TST-CORE-788
 func TestGatekeeper_6_1_6_EmptyAgentDIDRejected(t *testing.T) {
-	var impl testutil.Gatekeeper
+	impl := realGatekeeper
 	// impl = gatekeeper.New()
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
 
@@ -119,13 +121,13 @@ func TestGatekeeper_6_1_6_EmptyAgentDIDRejected(t *testing.T) {
 		PersonaID:  "consumer",
 		TrustLevel: "trusted",
 	}
-	_, err := impl.EvaluateIntent(intent)
+	_, err := impl.EvaluateIntent(context.Background(), intent)
 	testutil.RequireError(t, err)
 }
 
 // TST-CORE-789
 func TestGatekeeper_6_1_7_DecisionContainsReason(t *testing.T) {
-	var impl testutil.Gatekeeper
+	impl := realGatekeeper
 	// impl = gatekeeper.New()
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
 
@@ -136,14 +138,14 @@ func TestGatekeeper_6_1_7_DecisionContainsReason(t *testing.T) {
 		PersonaID:  "financial",
 		TrustLevel: "untrusted",
 	}
-	decision, err := impl.EvaluateIntent(intent)
+	decision, err := impl.EvaluateIntent(context.Background(), intent)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(decision.Reason) > 0, "decision must include a reason string")
 }
 
 // TST-CORE-790
 func TestGatekeeper_6_1_8_SafeIntentNoAudit(t *testing.T) {
-	var impl testutil.Gatekeeper
+	impl := realGatekeeper
 	// impl = gatekeeper.New()
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
 
@@ -154,7 +156,7 @@ func TestGatekeeper_6_1_8_SafeIntentNoAudit(t *testing.T) {
 		PersonaID:  "consumer",
 		TrustLevel: "trusted",
 	}
-	decision, err := impl.EvaluateIntent(intent)
+	decision, err := impl.EvaluateIntent(context.Background(), intent)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, decision.Allowed, "safe intent should pass")
 	// Safe intents pass silently — no audit entry needed.
@@ -179,7 +181,7 @@ func TestGatekeeper_6_1_9_MockAllowAll(t *testing.T) {
 		PersonaID:  "consumer",
 		TrustLevel: "trusted",
 	}
-	decision, err := mock.EvaluateIntent(intent)
+	decision, err := mock.EvaluateIntent(context.Background(), intent)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, decision.Allowed, "mock should allow all intents")
 	testutil.RequireEqual(t, decision.Reason, "mock: allow all")
@@ -199,7 +201,7 @@ func TestGatekeeper_6_1_10_MockDenyAll(t *testing.T) {
 		PersonaID:  "consumer",
 		TrustLevel: "trusted",
 	}
-	decision, err := mock.EvaluateIntent(intent)
+	decision, err := mock.EvaluateIntent(context.Background(), intent)
 	testutil.RequireNoError(t, err)
 	testutil.RequireFalse(t, decision.Allowed, "mock should deny all intents")
 	testutil.RequireTrue(t, decision.Audit, "denied intents should create audit entries")
@@ -211,57 +213,57 @@ func TestGatekeeper_6_1_10_MockDenyAll(t *testing.T) {
 
 // TST-CORE-793
 func TestGatekeeper_6_2_1_EgressToTrustedDestination(t *testing.T) {
-	var impl testutil.Gatekeeper
+	impl := realGatekeeper
 	// impl = gatekeeper.New()
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
 
-	allowed, err := impl.CheckEgress("https://trusted-api.example.com", []byte(`{"summary":"weather data"}`))
+	allowed, err := impl.CheckEgress(context.Background(), "https://trusted-api.example.com", []byte(`{"summary":"weather data"}`))
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, allowed, "egress to trusted destination should be allowed")
 }
 
 // TST-CORE-794
 func TestGatekeeper_6_2_2_EgressToBlockedDestination(t *testing.T) {
-	var impl testutil.Gatekeeper
+	impl := realGatekeeper
 	// impl = gatekeeper.New()
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
 
-	allowed, err := impl.CheckEgress("https://blocked-tracker.example.com", []byte(`{"data":"sensitive"}`))
+	allowed, err := impl.CheckEgress(context.Background(), "https://blocked-tracker.example.com", []byte(`{"data":"sensitive"}`))
 	testutil.RequireNoError(t, err)
 	testutil.RequireFalse(t, allowed, "egress to blocked destination must be denied")
 }
 
 // TST-CORE-795
 func TestGatekeeper_6_2_3_EgressWithPIIBlocked(t *testing.T) {
-	var impl testutil.Gatekeeper
+	impl := realGatekeeper
 	// impl = gatekeeper.New()
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
 
 	// Data containing PII should be blocked from egress (raw data never leaves the Home Node).
 	piiData := []byte(`{"email":"john@example.com","ssn":"123-45-6789"}`)
-	allowed, err := impl.CheckEgress("https://api.example.com", piiData)
+	allowed, err := impl.CheckEgress(context.Background(), "https://api.example.com", piiData)
 	testutil.RequireNoError(t, err)
 	testutil.RequireFalse(t, allowed, "egress with PII data must be blocked")
 }
 
 // TST-CORE-796
 func TestGatekeeper_6_2_4_EgressEmptyDestinationRejected(t *testing.T) {
-	var impl testutil.Gatekeeper
+	impl := realGatekeeper
 	// impl = gatekeeper.New()
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
 
-	_, err := impl.CheckEgress("", []byte(`{"data":"test"}`))
+	_, err := impl.CheckEgress(context.Background(), "", []byte(`{"data":"test"}`))
 	testutil.RequireError(t, err)
 }
 
 // TST-CORE-797
 func TestGatekeeper_6_2_5_EgressNilDataAllowed(t *testing.T) {
-	var impl testutil.Gatekeeper
+	impl := realGatekeeper
 	// impl = gatekeeper.New()
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
 
 	// Egress check with nil data (e.g. a health check ping) should be allowed.
-	allowed, err := impl.CheckEgress("https://trusted-api.example.com", nil)
+	allowed, err := impl.CheckEgress(context.Background(), "https://trusted-api.example.com", nil)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, allowed, "egress with nil data to trusted destination should pass")
 }
@@ -273,7 +275,7 @@ func TestGatekeeper_6_2_6_MockEgressDeny(t *testing.T) {
 		EgressErr:     nil,
 	}
 
-	allowed, err := mock.CheckEgress("https://any-destination.com", []byte("data"))
+	allowed, err := mock.CheckEgress(context.Background(), "https://any-destination.com", []byte("data"))
 	testutil.RequireNoError(t, err)
 	testutil.RequireFalse(t, allowed, "mock should deny egress")
 }
@@ -284,7 +286,7 @@ func TestGatekeeper_6_2_6_MockEgressDeny(t *testing.T) {
 
 // TST-CORE-799
 func TestGatekeeper_6_3_1_TrustedAgentAccessesOpenPersona(t *testing.T) {
-	var impl testutil.Gatekeeper
+	impl := realGatekeeper
 	// impl = gatekeeper.New()
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
 
@@ -295,14 +297,14 @@ func TestGatekeeper_6_3_1_TrustedAgentAccessesOpenPersona(t *testing.T) {
 		PersonaID:  "consumer",
 		TrustLevel: "trusted",
 	}
-	decision, err := impl.EvaluateIntent(intent)
+	decision, err := impl.EvaluateIntent(context.Background(), intent)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, decision.Allowed, "trusted agent should access open persona")
 }
 
 // TST-CORE-800
 func TestGatekeeper_6_3_2_UntrustedAgentDeniedLockedPersona(t *testing.T) {
-	var impl testutil.Gatekeeper
+	impl := realGatekeeper
 	// impl = gatekeeper.New()
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
 
@@ -313,14 +315,14 @@ func TestGatekeeper_6_3_2_UntrustedAgentDeniedLockedPersona(t *testing.T) {
 		PersonaID:  "health",
 		TrustLevel: "untrusted",
 	}
-	decision, err := impl.EvaluateIntent(intent)
+	decision, err := impl.EvaluateIntent(context.Background(), intent)
 	testutil.RequireNoError(t, err)
 	testutil.RequireFalse(t, decision.Allowed, "untrusted agent must not access locked persona")
 }
 
 // TST-CORE-801
 func TestGatekeeper_6_3_3_VerifiedAgentRestrictedPersona(t *testing.T) {
-	var impl testutil.Gatekeeper
+	impl := realGatekeeper
 	// impl = gatekeeper.New()
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
 
@@ -333,14 +335,14 @@ func TestGatekeeper_6_3_3_VerifiedAgentRestrictedPersona(t *testing.T) {
 		PersonaID:  "professional",
 		TrustLevel: "verified",
 	}
-	decision, err := impl.EvaluateIntent(intent)
+	decision, err := impl.EvaluateIntent(context.Background(), intent)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, decision.Audit, "verified agent on restricted persona should trigger audit")
 }
 
 // TST-CORE-802
 func TestGatekeeper_6_3_4_CrossPersonaAccessDenied(t *testing.T) {
-	var impl testutil.Gatekeeper
+	impl := realGatekeeper
 	// impl = gatekeeper.New()
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
 
@@ -354,14 +356,14 @@ func TestGatekeeper_6_3_4_CrossPersonaAccessDenied(t *testing.T) {
 		TrustLevel:  "trusted",
 		Constraints: map[string]bool{"persona_consumer_only": true},
 	}
-	decision, err := impl.EvaluateIntent(intent)
+	decision, err := impl.EvaluateIntent(context.Background(), intent)
 	testutil.RequireNoError(t, err)
 	testutil.RequireFalse(t, decision.Allowed, "cross-persona access must be denied")
 }
 
 // TST-CORE-803
 func TestGatekeeper_6_3_5_MoneyActionRequiresTrustedRing(t *testing.T) {
-	var impl testutil.Gatekeeper
+	impl := realGatekeeper
 	// impl = gatekeeper.New()
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
 
@@ -373,7 +375,7 @@ func TestGatekeeper_6_3_5_MoneyActionRequiresTrustedRing(t *testing.T) {
 		PersonaID:  "financial",
 		TrustLevel: "verified",
 	}
-	decision, err := impl.EvaluateIntent(intent)
+	decision, err := impl.EvaluateIntent(context.Background(), intent)
 	testutil.RequireNoError(t, err)
 	// Verified but not Verified+Actioned — should be denied or flagged.
 	testutil.RequireFalse(t, decision.Allowed, "money actions require highest trust ring")
@@ -381,7 +383,7 @@ func TestGatekeeper_6_3_5_MoneyActionRequiresTrustedRing(t *testing.T) {
 
 // TST-CORE-804
 func TestGatekeeper_6_3_6_DataSharingActionFlagged(t *testing.T) {
-	var impl testutil.Gatekeeper
+	impl := realGatekeeper
 	// impl = gatekeeper.New()
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
 
@@ -393,7 +395,7 @@ func TestGatekeeper_6_3_6_DataSharingActionFlagged(t *testing.T) {
 		PersonaID:  "social",
 		TrustLevel: "trusted",
 	}
-	decision, err := impl.EvaluateIntent(intent)
+	decision, err := impl.EvaluateIntent(context.Background(), intent)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, decision.Audit, "data sharing actions must be flagged for review")
 }
@@ -414,7 +416,7 @@ func TestGatekeeper_6_1_SP1_DefaultDenyNoPolicyExists(t *testing.T) {
 			"location": testutil.TieredPayload{Summary: "Nearby", Full: "123 Main St"},
 		},
 	}
-	result, err := mock.FilterEgress(payload)
+	result, err := mock.FilterEgress(context.Background(), payload)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(result.Denied) > 0, "default deny: all categories should be denied when no policy exists")
 	testutil.RequireEqual(t, len(result.Filtered), 0)
@@ -424,7 +426,7 @@ func TestGatekeeper_6_1_SP1_DefaultDenyNoPolicyExists(t *testing.T) {
 func TestGatekeeper_6_1_SP2_DefaultDenyMissingCategoryKey(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	// Contact has a policy but no "location" key.
-	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"health": "summary"})
+	_ = mock.SetPolicy(context.Background(), "did:plc:sancho", map[string]testutil.SharingTier{"health": "summary"})
 
 	payload := testutil.EgressPayload{
 		RecipientDID: "did:plc:sancho",
@@ -432,7 +434,7 @@ func TestGatekeeper_6_1_SP2_DefaultDenyMissingCategoryKey(t *testing.T) {
 			"location": testutil.TieredPayload{Summary: "Nearby", Full: "123 Main St"},
 		},
 	}
-	result, err := mock.FilterEgress(payload)
+	result, err := mock.FilterEgress(context.Background(), payload)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(result.Denied) > 0, "missing category key should be treated as none — blocked")
 }
@@ -440,7 +442,7 @@ func TestGatekeeper_6_1_SP2_DefaultDenyMissingCategoryKey(t *testing.T) {
 // TST-CORE-362
 func TestGatekeeper_6_1_SP3_PolicyNoneExplicit(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
-	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"health": "none"})
+	_ = mock.SetPolicy(context.Background(), "did:plc:sancho", map[string]testutil.SharingTier{"health": "none"})
 
 	payload := testutil.EgressPayload{
 		RecipientDID: "did:plc:sancho",
@@ -448,7 +450,7 @@ func TestGatekeeper_6_1_SP3_PolicyNoneExplicit(t *testing.T) {
 			"health": testutil.TieredPayload{Summary: "Fine", Full: "Blood pressure 120/80, on medication X"},
 		},
 	}
-	result, err := mock.FilterEgress(payload)
+	result, err := mock.FilterEgress(context.Background(), payload)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(result.Denied) == 1, "explicit none should deny health category")
 	testutil.RequireEqual(t, result.Denied[0], "health")
@@ -457,7 +459,7 @@ func TestGatekeeper_6_1_SP3_PolicyNoneExplicit(t *testing.T) {
 // TST-CORE-363
 func TestGatekeeper_6_1_SP4_PolicySummaryTier(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
-	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"availability": "summary"})
+	_ = mock.SetPolicy(context.Background(), "did:plc:sancho", map[string]testutil.SharingTier{"availability": "summary"})
 
 	payload := testutil.EgressPayload{
 		RecipientDID: "did:plc:sancho",
@@ -465,7 +467,7 @@ func TestGatekeeper_6_1_SP4_PolicySummaryTier(t *testing.T) {
 			"availability": testutil.TieredPayload{Summary: "Busy 2-3pm", Full: "Meeting with Dr. Patel at clinic"},
 		},
 	}
-	result, err := mock.FilterEgress(payload)
+	result, err := mock.FilterEgress(context.Background(), payload)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, result.Filtered["availability"], "Busy 2-3pm")
 }
@@ -473,7 +475,7 @@ func TestGatekeeper_6_1_SP4_PolicySummaryTier(t *testing.T) {
 // TST-CORE-364
 func TestGatekeeper_6_1_SP5_PolicyFullTier(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
-	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"preferences": "full"})
+	_ = mock.SetPolicy(context.Background(), "did:plc:sancho", map[string]testutil.SharingTier{"preferences": "full"})
 
 	payload := testutil.EgressPayload{
 		RecipientDID: "did:plc:sancho",
@@ -481,7 +483,7 @@ func TestGatekeeper_6_1_SP5_PolicyFullTier(t *testing.T) {
 			"preferences": testutil.TieredPayload{Summary: "Likes chai", Full: "Chai, no sugar, served warm. Allergic to dairy."},
 		},
 	}
-	result, err := mock.FilterEgress(payload)
+	result, err := mock.FilterEgress(context.Background(), payload)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, result.Filtered["preferences"], "Chai, no sugar, served warm. Allergic to dairy.")
 }
@@ -489,7 +491,7 @@ func TestGatekeeper_6_1_SP5_PolicyFullTier(t *testing.T) {
 // TST-CORE-365
 func TestGatekeeper_6_1_SP6_PerContactPerCategoryGranularity(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
-	_ = mock.SetPolicy("did:plc:sancho", map[string]string{
+	_ = mock.SetPolicy(context.Background(), "did:plc:sancho", map[string]testutil.SharingTier{
 		"presence": "eta_only",
 		"health":   "none",
 	})
@@ -501,7 +503,7 @@ func TestGatekeeper_6_1_SP6_PerContactPerCategoryGranularity(t *testing.T) {
 			"health":   testutil.TieredPayload{Summary: "Fine", Full: "Detailed health report"},
 		},
 	}
-	result, err := mock.FilterEgress(payload)
+	result, err := mock.FilterEgress(context.Background(), payload)
 	testutil.RequireNoError(t, err)
 	// Presence should be shared (summary tier), health should be blocked.
 	testutil.RequireEqual(t, result.Filtered["presence"], "Arriving in 15 min")
@@ -517,7 +519,7 @@ func TestGatekeeper_6_1_SP6_PerContactPerCategoryGranularity(t *testing.T) {
 // TST-CORE-366
 func TestGatekeeper_6_1_SP7_DomainSpecificETAOnly(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
-	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"presence": "eta_only"})
+	_ = mock.SetPolicy(context.Background(), "did:plc:sancho", map[string]testutil.SharingTier{"presence": "eta_only"})
 
 	payload := testutil.EgressPayload{
 		RecipientDID: "did:plc:sancho",
@@ -525,7 +527,7 @@ func TestGatekeeper_6_1_SP7_DomainSpecificETAOnly(t *testing.T) {
 			"presence": testutil.TieredPayload{Summary: "Arriving in about 15 minutes", Full: "GPS: 37.7749,-122.4194, ETA: 2:45pm"},
 		},
 	}
-	result, err := mock.FilterEgress(payload)
+	result, err := mock.FilterEgress(context.Background(), payload)
 	testutil.RequireNoError(t, err)
 	// eta_only maps to summary tier.
 	testutil.RequireEqual(t, result.Filtered["presence"], "Arriving in about 15 minutes")
@@ -534,7 +536,7 @@ func TestGatekeeper_6_1_SP7_DomainSpecificETAOnly(t *testing.T) {
 // TST-CORE-367
 func TestGatekeeper_6_1_SP8_DomainSpecificFreeBusy(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
-	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"availability": "free_busy"})
+	_ = mock.SetPolicy(context.Background(), "did:plc:sancho", map[string]testutil.SharingTier{"availability": "free_busy"})
 
 	payload := testutil.EgressPayload{
 		RecipientDID: "did:plc:sancho",
@@ -542,7 +544,7 @@ func TestGatekeeper_6_1_SP8_DomainSpecificFreeBusy(t *testing.T) {
 			"availability": testutil.TieredPayload{Summary: "Busy 2-3pm", Full: "Meeting with Dr. Patel at downtown clinic"},
 		},
 	}
-	result, err := mock.FilterEgress(payload)
+	result, err := mock.FilterEgress(context.Background(), payload)
 	testutil.RequireNoError(t, err)
 	// free_busy maps to summary tier.
 	testutil.RequireEqual(t, result.Filtered["availability"], "Busy 2-3pm")
@@ -551,7 +553,7 @@ func TestGatekeeper_6_1_SP8_DomainSpecificFreeBusy(t *testing.T) {
 // TST-CORE-368
 func TestGatekeeper_6_1_SP9_DomainSpecificExactLocation(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
-	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"presence": "exact_location"})
+	_ = mock.SetPolicy(context.Background(), "did:plc:sancho", map[string]testutil.SharingTier{"presence": "exact_location"})
 
 	payload := testutil.EgressPayload{
 		RecipientDID: "did:plc:sancho",
@@ -559,7 +561,7 @@ func TestGatekeeper_6_1_SP9_DomainSpecificExactLocation(t *testing.T) {
 			"presence": testutil.TieredPayload{Summary: "Arriving soon", Full: "GPS: 37.7749,-122.4194, heading south on Market St"},
 		},
 	}
-	result, err := mock.FilterEgress(payload)
+	result, err := mock.FilterEgress(context.Background(), payload)
 	testutil.RequireNoError(t, err)
 	// exact_location maps to full tier.
 	testutil.RequireEqual(t, result.Filtered["presence"], "GPS: 37.7749,-122.4194, heading south on Market St")
@@ -576,7 +578,7 @@ func TestGatekeeper_6_1_SP12_TrustLevelNotEqualSharing(t *testing.T) {
 			"location": testutil.TieredPayload{Summary: "Nearby", Full: "123 Main St"},
 		},
 	}
-	result, err := mock.FilterEgress(payload)
+	result, err := mock.FilterEgress(context.Background(), payload)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(result.Denied) > 0, "trusted contact with no policy should still have all categories denied")
 }
@@ -598,18 +600,18 @@ func TestGatekeeper_6_1_SP13_RecognizedCategories(t *testing.T) {
 func TestGatekeeper_6_1_SP16_ExtensibleCategoryAccepted(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 	// Custom category "hobbies" should be storable.
-	err := mock.SetPolicy("did:plc:sancho", map[string]string{"hobbies": "full"})
+	err := mock.SetPolicy(context.Background(), "did:plc:sancho", map[string]testutil.SharingTier{"hobbies": "full"})
 	testutil.RequireNoError(t, err)
 
-	policy, err := mock.GetPolicy("did:plc:sancho")
+	policy, err := mock.GetPolicy(context.Background(), "did:plc:sancho")
 	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, policy.Categories["hobbies"], "full")
+	testutil.RequireEqual(t, policy.Categories["hobbies"], testutil.SharingTier("full"))
 }
 
 // TST-CORE-376
 func TestGatekeeper_6_1_SP17_ExtensibleCategoryEnforcedAtEgress(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
-	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"hobbies": "summary"})
+	_ = mock.SetPolicy(context.Background(), "did:plc:sancho", map[string]testutil.SharingTier{"hobbies": "summary"})
 
 	payload := testutil.EgressPayload{
 		RecipientDID: "did:plc:sancho",
@@ -617,7 +619,7 @@ func TestGatekeeper_6_1_SP17_ExtensibleCategoryEnforcedAtEgress(t *testing.T) {
 			"hobbies": testutil.TieredPayload{Summary: "Likes cycling", Full: "Rides 50km every weekend, owns a Trek Domane"},
 		},
 	}
-	result, err := mock.FilterEgress(payload)
+	result, err := mock.FilterEgress(context.Background(), payload)
 	testutil.RequireNoError(t, err)
 	// Custom category goes through the same egress pipeline — summary tier only.
 	testutil.RequireEqual(t, result.Filtered["hobbies"], "Likes cycling")
@@ -631,26 +633,26 @@ func TestGatekeeper_6_1_SP17_ExtensibleCategoryEnforcedAtEgress(t *testing.T) {
 // TST-CORE-369
 func TestGatekeeper_6_1_SP10_PolicyUpdateViaPatch(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
-	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"health": "none"})
+	_ = mock.SetPolicy(context.Background(), "did:plc:sancho", map[string]testutil.SharingTier{"health": "none"})
 
 	// PATCH: update health from "none" to "summary"
-	err := mock.SetPolicy("did:plc:sancho", map[string]string{"health": "summary"})
+	err := mock.SetPolicy(context.Background(), "did:plc:sancho", map[string]testutil.SharingTier{"health": "summary"})
 	testutil.RequireNoError(t, err)
 
-	policy, err := mock.GetPolicy("did:plc:sancho")
+	policy, err := mock.GetPolicy(context.Background(), "did:plc:sancho")
 	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, policy.Categories["health"], "summary")
+	testutil.RequireEqual(t, policy.Categories["health"], testutil.SharingTier("summary"))
 }
 
 // TST-CORE-370
 func TestGatekeeper_6_1_SP11_BulkPolicyUpdate(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
-	_ = mock.SetPolicy("did:plc:alice", map[string]string{"location": "full"})
-	_ = mock.SetPolicy("did:plc:bob", map[string]string{"location": "full"})
+	_ = mock.SetPolicy(context.Background(), "did:plc:alice", map[string]testutil.SharingTier{"location": "full"})
+	_ = mock.SetPolicy(context.Background(), "did:plc:bob", map[string]testutil.SharingTier{"location": "full"})
 
-	count, err := mock.SetBulkPolicy(
+	count, err := mock.SetBulkPolicy(context.Background(),
 		map[string]string{"trust_level": "trusted"},
-		map[string]string{"location": "none"},
+		map[string]testutil.SharingTier{"location": "none"},
 	)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, count, 2)
@@ -658,7 +660,7 @@ func TestGatekeeper_6_1_SP11_BulkPolicyUpdate(t *testing.T) {
 
 // TST-CORE-373
 func TestGatekeeper_6_1_SP14_SharingDefaultsForNewContacts(t *testing.T) {
-	var impl testutil.SharingPolicyManager
+	impl := realSharingPolicyManager
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
 
 	// New contact added — defaults from config.json sharing_defaults apply.
@@ -667,7 +669,7 @@ func TestGatekeeper_6_1_SP14_SharingDefaultsForNewContacts(t *testing.T) {
 
 // TST-CORE-374
 func TestGatekeeper_6_1_SP15_OutboundPIIScrub(t *testing.T) {
-	var impl testutil.Gatekeeper
+	impl := realGatekeeper
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
 
 	// Even "full" tier data gets PII-scrubbed before transmission.
@@ -680,11 +682,11 @@ func TestGatekeeper_6_1_SP15_OutboundPIIScrub(t *testing.T) {
 
 // TST-CORE-377
 func TestGatekeeper_6_2_SP1_GetPolicy(t *testing.T) {
-	var impl testutil.SharingPolicyManager
+	impl := realSharingPolicyManager
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
 
 	// GET /v1/contacts/:did/policy returns sharing policy for a known contact.
-	policy, err := impl.GetPolicy("did:plc:sancho")
+	policy, err := impl.GetPolicy(context.Background(), "did:plc:sancho")
 	testutil.RequireNoError(t, err)
 	testutil.RequireNotNil(t, policy)
 }
@@ -692,72 +694,72 @@ func TestGatekeeper_6_2_SP1_GetPolicy(t *testing.T) {
 // TST-CORE-378
 func TestGatekeeper_6_2_SP2_PatchSingleCategory(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
-	_ = mock.SetPolicy("did:plc:sancho", map[string]string{
+	_ = mock.SetPolicy(context.Background(), "did:plc:sancho", map[string]testutil.SharingTier{
 		"location": "none", "health": "none", "preferences": "full",
 	})
 
 	// PATCH single category — only location changed, rest preserved.
-	err := mock.SetPolicy("did:plc:sancho", map[string]string{"location": "exact_location"})
+	err := mock.SetPolicy(context.Background(), "did:plc:sancho", map[string]testutil.SharingTier{"location": "exact_location"})
 	testutil.RequireNoError(t, err)
 
-	policy, err := mock.GetPolicy("did:plc:sancho")
+	policy, err := mock.GetPolicy(context.Background(), "did:plc:sancho")
 	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, policy.Categories["location"], "exact_location")
-	testutil.RequireEqual(t, policy.Categories["health"], "none")
-	testutil.RequireEqual(t, policy.Categories["preferences"], "full")
+	testutil.RequireEqual(t, policy.Categories["location"], testutil.SharingTier("exact_location"))
+	testutil.RequireEqual(t, policy.Categories["health"], testutil.SharingTier("none"))
+	testutil.RequireEqual(t, policy.Categories["preferences"], testutil.SharingTier("full"))
 }
 
 // TST-CORE-379
 func TestGatekeeper_6_2_SP3_PatchMultipleCategories(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
-	_ = mock.SetPolicy("did:plc:sancho", map[string]string{
+	_ = mock.SetPolicy(context.Background(), "did:plc:sancho", map[string]testutil.SharingTier{
 		"health": "none", "location": "none", "preferences": "full",
 	})
 
 	// PATCH two categories at once.
-	err := mock.SetPolicy("did:plc:sancho", map[string]string{
+	err := mock.SetPolicy(context.Background(), "did:plc:sancho", map[string]testutil.SharingTier{
 		"health": "summary", "location": "none",
 	})
 	testutil.RequireNoError(t, err)
 
-	policy, err := mock.GetPolicy("did:plc:sancho")
+	policy, err := mock.GetPolicy(context.Background(), "did:plc:sancho")
 	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, policy.Categories["health"], "summary")
-	testutil.RequireEqual(t, policy.Categories["location"], "none")
-	testutil.RequireEqual(t, policy.Categories["preferences"], "full")
+	testutil.RequireEqual(t, policy.Categories["health"], testutil.SharingTier("summary"))
+	testutil.RequireEqual(t, policy.Categories["location"], testutil.SharingTier("none"))
+	testutil.RequireEqual(t, policy.Categories["preferences"], testutil.SharingTier("full"))
 }
 
 // TST-CORE-380
 func TestGatekeeper_6_2_SP4_PatchBulkByTrustLevel(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
-	_ = mock.SetPolicy("did:plc:alice", map[string]string{"location": "full"})
-	_ = mock.SetPolicy("did:plc:bob", map[string]string{"location": "full"})
+	_ = mock.SetPolicy(context.Background(), "did:plc:alice", map[string]testutil.SharingTier{"location": "full"})
+	_ = mock.SetPolicy(context.Background(), "did:plc:bob", map[string]testutil.SharingTier{"location": "full"})
 
 	// Bulk update — turn off location for all matching contacts.
-	count, err := mock.SetBulkPolicy(
+	count, err := mock.SetBulkPolicy(context.Background(),
 		map[string]string{"trust_level": "trusted"},
-		map[string]string{"location": "none"},
+		map[string]testutil.SharingTier{"location": "none"},
 	)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, count, 2)
 
-	policyA, _ := mock.GetPolicy("did:plc:alice")
-	testutil.RequireEqual(t, policyA.Categories["location"], "none")
-	policyB, _ := mock.GetPolicy("did:plc:bob")
-	testutil.RequireEqual(t, policyB.Categories["location"], "none")
+	policyA, _ := mock.GetPolicy(context.Background(), "did:plc:alice")
+	testutil.RequireEqual(t, policyA.Categories["location"], testutil.SharingTier("none"))
+	policyB, _ := mock.GetPolicy(context.Background(), "did:plc:bob")
+	testutil.RequireEqual(t, policyB.Categories["location"], testutil.SharingTier("none"))
 }
 
 // TST-CORE-381
 func TestGatekeeper_6_2_SP5_PatchBulkAllContacts(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
-	_ = mock.SetPolicy("did:plc:alice", map[string]string{"location": "full"})
-	_ = mock.SetPolicy("did:plc:bob", map[string]string{"location": "full"})
-	_ = mock.SetPolicy("did:plc:charlie", map[string]string{"location": "full"})
+	_ = mock.SetPolicy(context.Background(), "did:plc:alice", map[string]testutil.SharingTier{"location": "full"})
+	_ = mock.SetPolicy(context.Background(), "did:plc:bob", map[string]testutil.SharingTier{"location": "full"})
+	_ = mock.SetPolicy(context.Background(), "did:plc:charlie", map[string]testutil.SharingTier{"location": "full"})
 
 	// Bulk update with empty filter — all contacts updated.
-	count, err := mock.SetBulkPolicy(
+	count, err := mock.SetBulkPolicy(context.Background(),
 		map[string]string{},
-		map[string]string{"location": "none"},
+		map[string]testutil.SharingTier{"location": "none"},
 	)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, count, 3)
@@ -768,23 +770,23 @@ func TestGatekeeper_6_2_SP6_GetPolicyUnknownDID(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
 
 	// GET policy for unknown DID should return error (404).
-	_, err := mock.GetPolicy("did:plc:unknown")
+	_, err := mock.GetPolicy(context.Background(), "did:plc:unknown")
 	testutil.RequireError(t, err)
 }
 
 // TST-CORE-383
 func TestGatekeeper_6_2_SP7_PatchInvalidTierValue(t *testing.T) {
-	var impl testutil.SharingPolicyManager
+	impl := realSharingPolicyManager
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
 
 	// PATCH with unrecognized tier value should fail (400).
-	err := impl.SetPolicy("did:plc:sancho", map[string]string{"health": "maximum"})
+	err := impl.SetPolicy(context.Background(), "did:plc:sancho", map[string]testutil.SharingTier{"health": "maximum"})
 	testutil.RequireError(t, err)
 }
 
 // TST-CORE-384
 func TestGatekeeper_6_2_SP8_PolicyStoredInContactsTable(t *testing.T) {
-	var impl testutil.SharingPolicyManager
+	impl := realSharingPolicyManager
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
 
 	// sharing_policy column is JSON blob in contacts table — verify via schema inspection.
@@ -799,7 +801,7 @@ func TestGatekeeper_6_2_SP8_PolicyStoredInContactsTable(t *testing.T) {
 // TST-CORE-385
 func TestGatekeeper_6_3_EP1_BrainSendsTieredPayload(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
-	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"availability": "summary"})
+	_ = mock.SetPolicy(context.Background(), "did:plc:sancho", map[string]testutil.SharingTier{"availability": "summary"})
 
 	// Brain sends POST /v1/dina/send with tiered payload.
 	payload := testutil.EgressPayload{
@@ -808,7 +810,7 @@ func TestGatekeeper_6_3_EP1_BrainSendsTieredPayload(t *testing.T) {
 			"availability": testutil.TieredPayload{Summary: "Busy 2-3pm", Full: "Meeting with Dr. Patel at clinic"},
 		},
 	}
-	result, err := mock.FilterEgress(payload)
+	result, err := mock.FilterEgress(context.Background(), payload)
 	testutil.RequireNoError(t, err)
 	// Core picks correct tier per sharing_policy.
 	testutil.RequireEqual(t, result.Filtered["availability"], "Busy 2-3pm")
@@ -817,7 +819,7 @@ func TestGatekeeper_6_3_EP1_BrainSendsTieredPayload(t *testing.T) {
 // TST-CORE-386
 func TestGatekeeper_6_3_EP2_CoreStripsDeniedCategories(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
-	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"location": "none", "availability": "summary"})
+	_ = mock.SetPolicy(context.Background(), "did:plc:sancho", map[string]testutil.SharingTier{"location": "none", "availability": "summary"})
 
 	payload := testutil.EgressPayload{
 		RecipientDID: "did:plc:sancho",
@@ -826,7 +828,7 @@ func TestGatekeeper_6_3_EP2_CoreStripsDeniedCategories(t *testing.T) {
 			"availability": testutil.TieredPayload{Summary: "Busy", Full: "Meeting details"},
 		},
 	}
-	result, err := mock.FilterEgress(payload)
+	result, err := mock.FilterEgress(context.Background(), payload)
 	testutil.RequireNoError(t, err)
 	// Location entirely removed, availability kept.
 	_, hasLocation := result.Filtered["location"]
@@ -837,7 +839,7 @@ func TestGatekeeper_6_3_EP2_CoreStripsDeniedCategories(t *testing.T) {
 // TST-CORE-387
 func TestGatekeeper_6_3_EP3_MalformedPayloadCategoryDropped(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
-	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"availability": "summary"})
+	_ = mock.SetPolicy(context.Background(), "did:plc:sancho", map[string]testutil.SharingTier{"availability": "summary"})
 
 	// Brain sends raw string instead of {summary, full} for a category.
 	payload := testutil.EgressPayload{
@@ -846,7 +848,7 @@ func TestGatekeeper_6_3_EP3_MalformedPayloadCategoryDropped(t *testing.T) {
 			"availability": "raw string, not a TieredPayload",
 		},
 	}
-	result, err := mock.FilterEgress(payload)
+	result, err := mock.FilterEgress(context.Background(), payload)
 	testutil.RequireNoError(t, err)
 	// Malformed = denied — category stripped.
 	found := false
@@ -874,7 +876,7 @@ func TestGatekeeper_6_3_EP5_EgressNotIngress(t *testing.T) {
 
 // TST-CORE-390
 func TestGatekeeper_6_3_EP6_RecipientDIDResolution(t *testing.T) {
-	var impl testutil.Transporter
+	impl := realTransporter
 	testutil.RequireImplementation(t, impl, "Transporter")
 
 	// Resolve recipient's service endpoint from DID Document.
@@ -886,7 +888,7 @@ func TestGatekeeper_6_3_EP6_RecipientDIDResolution(t *testing.T) {
 // TST-CORE-391
 func TestGatekeeper_6_3_EP7_EgressAuditLogging(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
-	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"availability": "summary"})
+	_ = mock.SetPolicy(context.Background(), "did:plc:sancho", map[string]testutil.SharingTier{"availability": "summary"})
 
 	payload := testutil.EgressPayload{
 		RecipientDID: "did:plc:sancho",
@@ -894,7 +896,7 @@ func TestGatekeeper_6_3_EP7_EgressAuditLogging(t *testing.T) {
 			"availability": testutil.TieredPayload{Summary: "Busy", Full: "Meeting details"},
 		},
 	}
-	result, err := mock.FilterEgress(payload)
+	result, err := mock.FilterEgress(context.Background(), payload)
 	testutil.RequireNoError(t, err)
 	// Every decision should be logged in audit entries.
 	testutil.RequireTrue(t, len(result.AuditEntries) > 0, "egress decisions must generate audit entries")
@@ -905,7 +907,7 @@ func TestGatekeeper_6_3_EP7_EgressAuditLogging(t *testing.T) {
 // TST-CORE-392
 func TestGatekeeper_6_3_EP8_AuditIncludesDeniedCategories(t *testing.T) {
 	mock := testutil.NewMockSharingPolicyManager()
-	_ = mock.SetPolicy("did:plc:sancho", map[string]string{"health": "none"})
+	_ = mock.SetPolicy(context.Background(), "did:plc:sancho", map[string]testutil.SharingTier{"health": "none"})
 
 	payload := testutil.EgressPayload{
 		RecipientDID: "did:plc:sancho",
@@ -913,7 +915,7 @@ func TestGatekeeper_6_3_EP8_AuditIncludesDeniedCategories(t *testing.T) {
 			"health": testutil.TieredPayload{Summary: "Fine", Full: "Detailed report"},
 		},
 	}
-	result, err := mock.FilterEgress(payload)
+	result, err := mock.FilterEgress(context.Background(), payload)
 	testutil.RequireNoError(t, err)
 	// Denied categories must also be in the audit log.
 	testutil.RequireTrue(t, len(result.AuditEntries) > 0, "denied decisions must generate audit entries")
@@ -925,13 +927,13 @@ func TestGatekeeper_6_3_EP8_AuditIncludesDeniedCategories(t *testing.T) {
 func TestGatekeeper_6_3_EP9_NaClEncryptionAfterPolicyCheck(t *testing.T) {
 	// After payload passes egress check, it should be encrypted with crypto_box_seal.
 	// This is a design integration test requiring BoxSealer.
-	var boxImpl testutil.BoxSealer
-	testutil.RequireImplementation(t, boxImpl, "BoxSealer")
+	boxImpl := realEncryptor
+	testutil.RequireImplementation(t, boxImpl, "Encryptor")
 
-	var sImpl testutil.Signer
+	sImpl := realSigner
 	testutil.RequireImplementation(t, sImpl, "Signer")
 
-	var convImpl testutil.KeyConverter
+	convImpl := realConverter
 	testutil.RequireImplementation(t, convImpl, "KeyConverter")
 
 	// Generate recipient keys.
@@ -943,7 +945,7 @@ func TestGatekeeper_6_3_EP9_NaClEncryptionAfterPolicyCheck(t *testing.T) {
 
 	// Payload that passed egress check should be sealable.
 	egressPayload := []byte(`{"availability":"Busy 2-3pm"}`)
-	sealed, err := boxImpl.Seal(egressPayload, recipientPub)
+	sealed, err := boxImpl.SealAnonymous(egressPayload, recipientPub)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(sealed) > len(egressPayload), "sealed payload should be larger than plaintext")
 }
@@ -951,7 +953,7 @@ func TestGatekeeper_6_3_EP9_NaClEncryptionAfterPolicyCheck(t *testing.T) {
 // TST-CORE-889
 func TestGatekeeper_6_4_AuditLog_90DayRollingRetention(t *testing.T) {
 	// Egress audit 90-day rolling retention policy (auto-purge old entries).
-	var impl testutil.VaultAuditLogger
+	impl := realVaultAuditLogger
 	testutil.RequireImplementation(t, impl, "VaultAuditLogger")
 
 	purged, err := impl.Purge(90)
@@ -962,11 +964,11 @@ func TestGatekeeper_6_4_AuditLog_90DayRollingRetention(t *testing.T) {
 // TST-CORE-890
 func TestGatekeeper_6_5_ContactsUpdatedAtRefreshedOnPolicyChange(t *testing.T) {
 	// Contact updated_at refreshed on sharing policy mutation.
-	var impl testutil.SharingPolicyManager
+	impl := realSharingPolicyManager
 	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
 
 	// Set a policy — this should refresh updated_at.
-	err := impl.SetPolicy("did:key:z6MkTestContact", map[string]string{
+	err := impl.SetPolicy(context.Background(), "did:key:z6MkTestContact", map[string]testutil.SharingTier{
 		"location": "summary",
 	})
 	testutil.RequireNoError(t, err)
@@ -975,10 +977,11 @@ func TestGatekeeper_6_5_ContactsUpdatedAtRefreshedOnPolicyChange(t *testing.T) {
 // TST-CORE-891
 func TestGatekeeper_6_6_DraftConfidenceScore_Validated(t *testing.T) {
 	// Draft confidence score: low -> flagged for review, high-risk -> draft blocked.
-	var impl testutil.StagingManager
+	impl := realStagingManager
 	testutil.RequireImplementation(t, impl, "StagingManager")
 
 	// Stage an item (simulating a draft with implicit confidence scoring).
+	vaultCtx := context.Background()
 	item := testutil.VaultItem{
 		ID:       "draft-low-confidence",
 		Type:     "note",
@@ -986,14 +989,14 @@ func TestGatekeeper_6_6_DraftConfidenceScore_Validated(t *testing.T) {
 		Summary:  "low confidence draft",
 		Metadata: `{"confidence": 0.3}`,
 	}
-	_, err := impl.Stage("personal", item, 1700000000)
+	_, err := impl.Stage(vaultCtx, domain.PersonaName("personal"), item, 1700000000)
 	testutil.RequireNoError(t, err)
 }
 
 // TST-CORE-892
 func TestGatekeeper_6_6_26_AgentConstraint_DraftOnlyEnforced(t *testing.T) {
 	// Agent draft_only: true constraint enforced, no raw vault data to agents.
-	var impl testutil.Gatekeeper
+	impl := realGatekeeper
 	testutil.RequireImplementation(t, impl, "Gatekeeper")
 
 	intent := testutil.Intent{
@@ -1004,7 +1007,7 @@ func TestGatekeeper_6_6_26_AgentConstraint_DraftOnlyEnforced(t *testing.T) {
 		TrustLevel:  "trusted",
 		Constraints: map[string]bool{"draft_only": true},
 	}
-	decision, err := impl.EvaluateIntent(intent)
+	decision, err := impl.EvaluateIntent(context.Background(), intent)
 	testutil.RequireNoError(t, err)
 	testutil.RequireFalse(t, decision.Allowed, "draft_only agent must not be allowed to send_email directly")
 }
@@ -1012,9 +1015,10 @@ func TestGatekeeper_6_6_26_AgentConstraint_DraftOnlyEnforced(t *testing.T) {
 // TST-CORE-893
 func TestGatekeeper_6_6_27_AgentOutcome_RecordedForReputation(t *testing.T) {
 	// Agent outcomes recorded in Tier 3 for reputation scoring.
-	var impl testutil.VaultAuditLogger
+	impl := realVaultAuditLogger
 	testutil.RequireImplementation(t, impl, "VaultAuditLogger")
 
+	vaultCtx := context.Background()
 	entry := testutil.VaultAuditEntry{
 		Timestamp: "2024-01-01T00:00:00Z",
 		Persona:   "consumer",
@@ -1022,6 +1026,6 @@ func TestGatekeeper_6_6_27_AgentOutcome_RecordedForReputation(t *testing.T) {
 		Requester: "did:key:z6MkAgent",
 		Reason:    "task completed successfully",
 	}
-	_, err := impl.Append(entry)
+	_, err := impl.Append(vaultCtx, entry)
 	testutil.RequireNoError(t, err)
 }

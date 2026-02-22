@@ -1,8 +1,11 @@
 package testutil
 
 import (
+	"context"
 	"errors"
 	"sync"
+
+	"github.com/anthropics/dina/core/internal/domain"
 )
 
 // Sentinel errors for mock implementations.
@@ -89,7 +92,7 @@ func (m *MockSigner) Verify(publicKey, message, signature []byte) (bool, error) 
 
 // MockDIDManager tracks DID operations.
 type MockDIDManager struct {
-	CreateDID    string
+	CreateDID    domain.DID
 	CreateErr    error
 	ResolveDoc   []byte
 	ResolveErr   error
@@ -97,16 +100,16 @@ type MockDIDManager struct {
 	Created      [][]byte // public keys used in Create calls
 }
 
-func (m *MockDIDManager) Create(publicKey []byte) (string, error) {
+func (m *MockDIDManager) Create(_ context.Context, publicKey []byte) (domain.DID, error) {
 	m.Created = append(m.Created, publicKey)
 	return m.CreateDID, m.CreateErr
 }
 
-func (m *MockDIDManager) Resolve(did string) ([]byte, error) {
+func (m *MockDIDManager) Resolve(_ context.Context, did domain.DID) ([]byte, error) {
 	return m.ResolveDoc, m.ResolveErr
 }
 
-func (m *MockDIDManager) Rotate(did string, oldPrivKey, newPubKey []byte) error {
+func (m *MockDIDManager) Rotate(_ context.Context, did domain.DID, oldPrivKey, newPubKey []byte) error {
 	return m.RotateErr
 }
 
@@ -124,7 +127,7 @@ func NewMockPersonaManager() *MockPersonaManager {
 	return &MockPersonaManager{Personas: make(map[string]bool)}
 }
 
-func (m *MockPersonaManager) Create(name, tier string) (string, error) {
+func (m *MockPersonaManager) Create(_ context.Context, name, tier string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.CreateErr != nil {
@@ -136,7 +139,7 @@ func (m *MockPersonaManager) Create(name, tier string) (string, error) {
 	return id, nil
 }
 
-func (m *MockPersonaManager) List() ([]string, error) {
+func (m *MockPersonaManager) List(_ context.Context) ([]string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	var ids []string
@@ -146,7 +149,7 @@ func (m *MockPersonaManager) List() ([]string, error) {
 	return ids, nil
 }
 
-func (m *MockPersonaManager) Unlock(personaID, passphrase string, ttlSeconds int) error {
+func (m *MockPersonaManager) Unlock(_ context.Context, personaID, passphrase string, ttlSeconds int) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.Personas[personaID]; !ok {
@@ -156,7 +159,7 @@ func (m *MockPersonaManager) Unlock(personaID, passphrase string, ttlSeconds int
 	return nil
 }
 
-func (m *MockPersonaManager) Lock(personaID string) error {
+func (m *MockPersonaManager) Lock(_ context.Context, personaID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.Personas[personaID]; !ok {
@@ -176,7 +179,7 @@ func (m *MockPersonaManager) IsLocked(personaID string) (bool, error) {
 	return locked, nil
 }
 
-func (m *MockPersonaManager) Delete(personaID string) error {
+func (m *MockPersonaManager) Delete(_ context.Context, personaID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.Personas, personaID)
@@ -285,19 +288,20 @@ func (m *MockVaultManager) Search(personaID string, query SearchQuery) ([]VaultI
 
 // ---------- Mock PII Scrubber ----------
 
-// MockPIIScrubber returns predetermined results.
+// MockPIIScrubber returns predetermined results (satisfies port.PIIScrubber).
 type MockPIIScrubber struct {
-	ScrubResult   string
-	ScrubEntities []PIIEntity
-	ScrubErr      error
+	ScrubResultObj *domain.ScrubResult
+	ScrubErr       error
 }
 
-func (m *MockPIIScrubber) Scrub(text string) (string, []PIIEntity, error) {
-	return m.ScrubResult, m.ScrubEntities, m.ScrubErr
-}
-
-func (m *MockPIIScrubber) AddPattern(name, pattern string) error {
-	return nil
+func (m *MockPIIScrubber) Scrub(_ context.Context, text string) (*domain.ScrubResult, error) {
+	if m.ScrubErr != nil {
+		return nil, m.ScrubErr
+	}
+	if m.ScrubResultObj != nil {
+		return m.ScrubResultObj, nil
+	}
+	return &domain.ScrubResult{Scrubbed: text}, nil
 }
 
 // ---------- Mock Gatekeeper ----------
@@ -310,11 +314,11 @@ type MockGatekeeper struct {
 	EgressErr      error
 }
 
-func (m *MockGatekeeper) EvaluateIntent(intent Intent) (Decision, error) {
+func (m *MockGatekeeper) EvaluateIntent(_ context.Context, intent Intent) (Decision, error) {
 	return m.EvaluateResult, m.EvaluateErr
 }
 
-func (m *MockGatekeeper) CheckEgress(destination string, data []byte) (bool, error) {
+func (m *MockGatekeeper) CheckEgress(_ context.Context, destination string, data []byte) (bool, error) {
 	return m.EgressAllowed, m.EgressErr
 }
 
@@ -342,14 +346,14 @@ func (m *MockTokenValidator) ValidateClientToken(token string) (string, bool) {
 	return deviceID, ok
 }
 
-func (m *MockTokenValidator) IdentifyToken(token string) (string, string, error) {
+func (m *MockTokenValidator) IdentifyToken(token string) (domain.TokenType, string, error) {
 	if token == m.BrainToken {
-		return "brain", "brain", nil
+		return domain.TokenBrain, "brain", nil
 	}
 	if deviceID, ok := m.ClientTokens[token]; ok {
-		return "client", deviceID, nil
+		return domain.TokenClient, deviceID, nil
 	}
-	return "", "", ErrInvalidToken
+	return domain.TokenUnknown, "", ErrInvalidToken
 }
 
 // ---------- Mock Task Queuer ----------
@@ -361,7 +365,7 @@ type MockTaskQueuer struct {
 	nextID int
 }
 
-func (m *MockTaskQueuer) Enqueue(task Task) (string, error) {
+func (m *MockTaskQueuer) Enqueue(_ context.Context, task Task) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.nextID++
@@ -371,7 +375,7 @@ func (m *MockTaskQueuer) Enqueue(task Task) (string, error) {
 	return task.ID, nil
 }
 
-func (m *MockTaskQueuer) Dequeue() (*Task, error) {
+func (m *MockTaskQueuer) Dequeue(_ context.Context) (*Task, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := range m.tasks {
@@ -384,7 +388,7 @@ func (m *MockTaskQueuer) Dequeue() (*Task, error) {
 	return nil, nil
 }
 
-func (m *MockTaskQueuer) Complete(taskID string) error {
+func (m *MockTaskQueuer) Complete(_ context.Context, taskID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := range m.tasks {
@@ -396,7 +400,7 @@ func (m *MockTaskQueuer) Complete(taskID string) error {
 	return ErrNotFound
 }
 
-func (m *MockTaskQueuer) Fail(taskID, reason string) error {
+func (m *MockTaskQueuer) Fail(_ context.Context, taskID, reason string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := range m.tasks {
@@ -409,7 +413,7 @@ func (m *MockTaskQueuer) Fail(taskID, reason string) error {
 	return ErrNotFound
 }
 
-func (m *MockTaskQueuer) Retry(taskID string) error {
+func (m *MockTaskQueuer) Retry(_ context.Context, taskID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := range m.tasks {
@@ -551,7 +555,7 @@ func NewMockSharingPolicyManager() *MockSharingPolicyManager {
 	return &MockSharingPolicyManager{Policies: make(map[string]*SharingPolicy)}
 }
 
-func (m *MockSharingPolicyManager) GetPolicy(contactDID string) (*SharingPolicy, error) {
+func (m *MockSharingPolicyManager) GetPolicy(_ context.Context, contactDID string) (*SharingPolicy, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	p, ok := m.Policies[contactDID]
@@ -561,12 +565,12 @@ func (m *MockSharingPolicyManager) GetPolicy(contactDID string) (*SharingPolicy,
 	return p, nil
 }
 
-func (m *MockSharingPolicyManager) SetPolicy(contactDID string, categories map[string]string) error {
+func (m *MockSharingPolicyManager) SetPolicy(_ context.Context, contactDID string, categories map[string]SharingTier) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	p, ok := m.Policies[contactDID]
 	if !ok {
-		p = &SharingPolicy{ContactDID: contactDID, Categories: make(map[string]string)}
+		p = &SharingPolicy{ContactDID: contactDID, Categories: make(map[string]SharingTier)}
 		m.Policies[contactDID] = p
 	}
 	for k, v := range categories {
@@ -575,7 +579,7 @@ func (m *MockSharingPolicyManager) SetPolicy(contactDID string, categories map[s
 	return nil
 }
 
-func (m *MockSharingPolicyManager) SetBulkPolicy(filter map[string]string, categories map[string]string) (int, error) {
+func (m *MockSharingPolicyManager) SetBulkPolicy(_ context.Context, filter map[string]string, categories map[string]SharingTier) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	count := 0
@@ -589,7 +593,7 @@ func (m *MockSharingPolicyManager) SetBulkPolicy(filter map[string]string, categ
 	return count, nil
 }
 
-func (m *MockSharingPolicyManager) FilterEgress(payload EgressPayload) (*EgressResult, error) {
+func (m *MockSharingPolicyManager) FilterEgress(_ context.Context, payload EgressPayload) (*EgressResult, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	p, ok := m.Policies[payload.RecipientDID]
@@ -641,7 +645,7 @@ func (m *MockSharingPolicyManager) FilterEgress(payload EgressPayload) (*EgressR
 		result.Filtered[cat] = selected
 		result.AuditEntries = append(result.AuditEntries, AuditEntry{
 			Action: "egress_check", ContactDID: payload.RecipientDID,
-			Category: cat, Decision: "allowed", Reason: "tier_" + tier,
+			Category: cat, Decision: "allowed", Reason: "tier_" + string(tier),
 		})
 	}
 	return result, nil
@@ -661,7 +665,7 @@ func NewMockOutboxManager() *MockOutboxManager {
 	return &MockOutboxManager{MaxQueue: 100}
 }
 
-func (m *MockOutboxManager) Enqueue(msg OutboxMessage) (string, error) {
+func (m *MockOutboxManager) Enqueue(_ context.Context, msg OutboxMessage) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if len(m.messages) >= m.MaxQueue {
@@ -674,7 +678,7 @@ func (m *MockOutboxManager) Enqueue(msg OutboxMessage) (string, error) {
 	return msg.ID, nil
 }
 
-func (m *MockOutboxManager) MarkDelivered(msgID string) error {
+func (m *MockOutboxManager) MarkDelivered(_ context.Context, msgID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := range m.messages {
@@ -686,7 +690,7 @@ func (m *MockOutboxManager) MarkDelivered(msgID string) error {
 	return ErrNotFound
 }
 
-func (m *MockOutboxManager) MarkFailed(msgID string) error {
+func (m *MockOutboxManager) MarkFailed(_ context.Context, msgID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := range m.messages {
@@ -699,7 +703,7 @@ func (m *MockOutboxManager) MarkFailed(msgID string) error {
 	return ErrNotFound
 }
 
-func (m *MockOutboxManager) Requeue(msgID string) error {
+func (m *MockOutboxManager) Requeue(_ context.Context, msgID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := range m.messages {
@@ -712,7 +716,7 @@ func (m *MockOutboxManager) Requeue(msgID string) error {
 	return ErrNotFound
 }
 
-func (m *MockOutboxManager) PendingCount() (int, error) {
+func (m *MockOutboxManager) PendingCount(_ context.Context) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	count := 0
@@ -796,7 +800,7 @@ func (m *MockInboxManager) CheckPayloadSize(payload []byte) bool {
 	return len(payload) <= 256*1024
 }
 
-func (m *MockInboxManager) Spool(payload []byte) (string, error) {
+func (m *MockInboxManager) Spool(_ context.Context, payload []byte) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	newSize := m.SpoolBytes + int64(len(payload))
@@ -815,7 +819,7 @@ func (m *MockInboxManager) SpoolSize() (int64, error) {
 	return m.SpoolBytes, nil
 }
 
-func (m *MockInboxManager) ProcessSpool() (int, error) {
+func (m *MockInboxManager) ProcessSpool(_ context.Context) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	count := len(m.SpoolData)
@@ -844,7 +848,7 @@ func NewMockReminderScheduler() *MockReminderScheduler {
 	return &MockReminderScheduler{}
 }
 
-func (m *MockReminderScheduler) StoreReminder(r Reminder) (string, error) {
+func (m *MockReminderScheduler) StoreReminder(_ context.Context, r Reminder) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.nextID++
@@ -854,7 +858,7 @@ func (m *MockReminderScheduler) StoreReminder(r Reminder) (string, error) {
 	return r.ID, nil
 }
 
-func (m *MockReminderScheduler) NextPending() (*Reminder, error) {
+func (m *MockReminderScheduler) NextPending(_ context.Context) (*Reminder, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var best *Reminder
@@ -869,7 +873,7 @@ func (m *MockReminderScheduler) NextPending() (*Reminder, error) {
 	return best, nil
 }
 
-func (m *MockReminderScheduler) MarkFired(reminderID string) error {
+func (m *MockReminderScheduler) MarkFired(_ context.Context, reminderID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := range m.reminders {
@@ -879,4 +883,39 @@ func (m *MockReminderScheduler) MarkFired(reminderID string) error {
 		}
 	}
 	return ErrNotFound
+}
+
+// ---------- Mock Crash Logger ----------
+
+// MockCrashLogger stores crash entries in memory (satisfies testutil.CrashLogger / port.CrashLogger).
+type MockCrashLogger struct {
+	mu      sync.Mutex
+	entries []domain.CrashEntry
+}
+
+func (m *MockCrashLogger) Store(_ context.Context, entry domain.CrashEntry) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.entries = append(m.entries, entry)
+	return nil
+}
+
+func (m *MockCrashLogger) Query(_ context.Context, since string) ([]domain.CrashEntry, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var results []domain.CrashEntry
+	for _, e := range m.entries {
+		if e.Timestamp >= since || since == "" {
+			results = append(results, e)
+		}
+	}
+	return results, nil
+}
+
+func (m *MockCrashLogger) Purge(_ context.Context, retentionDays int) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// In a mock, just return 0 deleted.
+	var deleted int64
+	return deleted, nil
 }

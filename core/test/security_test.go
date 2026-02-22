@@ -25,7 +25,7 @@ import (
 // TST-CORE-611
 func TestSecurity_17_1_NoVacuumInto(t *testing.T) {
 	// var impl testutil.SecurityAuditor = realaudit.New(...)
-	var impl testutil.SecurityAuditor
+	impl := realSecurityAuditor
 	testutil.RequireImplementation(t, impl, "SecurityAuditor")
 
 	// Code audit: VACUUM INTO must never be used (plaintext backup CVE).
@@ -41,7 +41,7 @@ func TestSecurity_17_1_NoVacuumInto(t *testing.T) {
 // TST-CORE-612
 func TestSecurity_17_2_SQLInjectionResistance(t *testing.T) {
 	// var impl testutil.SecurityAuditor = realaudit.New(...)
-	var impl testutil.SecurityAuditor
+	impl := realSecurityAuditor
 	testutil.RequireImplementation(t, impl, "SecurityAuditor")
 
 	// All SQL queries must use parameterized statements.
@@ -58,7 +58,7 @@ func TestSecurity_17_2_SQLInjectionResistance(t *testing.T) {
 // TST-CORE-613
 func TestSecurity_17_3_PathTraversal(t *testing.T) {
 	// var impl testutil.SecurityAuditor = realaudit.New(...)
-	var impl testutil.SecurityAuditor
+	impl := realSecurityAuditor
 	testutil.RequireImplementation(t, impl, "SecurityAuditor")
 
 	// Malicious paths like ../../etc/passwd must be rejected.
@@ -84,7 +84,7 @@ func TestSecurity_17_3_PathTraversal(t *testing.T) {
 // TST-CORE-614
 func TestSecurity_17_4_HeaderInjection(t *testing.T) {
 	// var impl testutil.SecurityAuditor = realaudit.New(...)
-	var impl testutil.SecurityAuditor
+	impl := realSecurityAuditor
 	testutil.RequireImplementation(t, impl, "SecurityAuditor")
 
 	// Newlines in header values must be stripped or rejected.
@@ -129,7 +129,7 @@ func TestSecurity_17_6_TLSEnforcement(t *testing.T) {
 // TST-CORE-617
 func TestSecurity_17_7_DockerNetworkIsolation(t *testing.T) {
 	// var impl testutil.SecurityAuditor = realaudit.New(...)
-	var impl testutil.SecurityAuditor
+	impl := realSecurityAuditor
 	testutil.RequireImplementation(t, impl, "SecurityAuditor")
 
 	// Brain must not reach PDS directly — different Docker networks (bowtie topology).
@@ -149,7 +149,7 @@ func TestSecurity_17_7_DockerNetworkIsolation(t *testing.T) {
 // TST-CORE-618
 func TestSecurity_17_8_SecretsNotInEnvironment(t *testing.T) {
 	// var impl testutil.SecurityAuditor = realaudit.New(...)
-	var impl testutil.SecurityAuditor
+	impl := realSecurityAuditor
 	testutil.RequireImplementation(t, impl, "SecurityAuditor")
 
 	// Secrets must be mounted as files, not env vars.
@@ -183,7 +183,7 @@ func TestSecurity_17_9_NoPlaintextKeysOnDisk(t *testing.T) {
 // TST-CORE-620
 func TestSecurity_17_10_ConstantTimeComparisons(t *testing.T) {
 	// var impl testutil.SecurityAuditor = realaudit.New(...)
-	var impl testutil.SecurityAuditor
+	impl := realSecurityAuditor
 	testutil.RequireImplementation(t, impl, "SecurityAuditor")
 
 	// All token/hash comparisons must use crypto/subtle.ConstantTimeCompare.
@@ -198,7 +198,7 @@ func TestSecurity_17_10_ConstantTimeComparisons(t *testing.T) {
 // TST-CORE-621
 func TestSecurity_17_11_NoPluginLoading(t *testing.T) {
 	// var impl testutil.SecurityAuditor = realaudit.New(...)
-	var impl testutil.SecurityAuditor
+	impl := realSecurityAuditor
 	testutil.RequireImplementation(t, impl, "SecurityAuditor")
 
 	// No plugin.Open, dynamic loading, or dlopen usage.
@@ -217,7 +217,7 @@ func TestSecurity_17_11_NoPluginLoading(t *testing.T) {
 // TST-CORE-622
 func TestSecurity_17_12_NoPluginAPIEndpoint(t *testing.T) {
 	// var impl testutil.Server = realserver.New(...)
-	var impl testutil.Server
+	impl := realServer
 	testutil.RequireImplementation(t, impl, "Server")
 
 	// No plugin/extension registration endpoints should exist.
@@ -280,7 +280,7 @@ func TestSecurity_17_16_KeysInRAMOnlyWhileNeeded(t *testing.T) {
 // TST-CORE-627
 func TestSecurity_17_17_SQLCipherLibrary(t *testing.T) {
 	// var impl testutil.SecurityAuditor = realaudit.New(...)
-	var impl testutil.SecurityAuditor
+	impl := realSecurityAuditor
 	testutil.RequireImplementation(t, impl, "SecurityAuditor")
 
 	// go.mod must use mutecomm/go-sqlcipher, NOT mattn/go-sqlite3.
@@ -307,7 +307,7 @@ func TestSecurity_17_18_RawSQLiteNotValid(t *testing.T) {
 // TST-CORE-629
 func TestSecurity_17_19_JSONSerialization(t *testing.T) {
 	// var impl testutil.SecurityAuditor = realaudit.New(...)
-	var impl testutil.SecurityAuditor
+	impl := realSecurityAuditor
 	testutil.RequireImplementation(t, impl, "SecurityAuditor")
 
 	// No MessagePack/Protobuf in inter-container API calls.
@@ -328,7 +328,7 @@ func TestSecurity_17_19_JSONSerialization(t *testing.T) {
 // TST-CORE-630
 func TestSecurity_17_20_DigestPinning(t *testing.T) {
 	// var impl testutil.SecurityAuditor = realaudit.New(...)
-	var impl testutil.SecurityAuditor
+	impl := realSecurityAuditor
 	testutil.RequireImplementation(t, impl, "SecurityAuditor")
 
 	// All FROM statements must use @sha256: digest — never :latest tag.
@@ -369,7 +369,7 @@ func TestSecurity_17_22_SBOMGenerated(t *testing.T) {
 // TST-CORE-633
 func TestSecurity_17_23_SecretsNeverInEnvVars(t *testing.T) {
 	// var impl testutil.SecurityAuditor = realaudit.New(...)
-	var impl testutil.SecurityAuditor
+	impl := realSecurityAuditor
 	testutil.RequireImplementation(t, impl, "SecurityAuditor")
 
 	// docker inspect dina-core: no BRAIN_TOKEN, DINA_PASSPHRASE in Env section.
@@ -407,7 +407,7 @@ func TestSecurity_17_25_GoogleAPIKeyException(t *testing.T) {
 // TST-CORE-636
 func TestSecurity_17_26_PdsNetInternal(t *testing.T) {
 	// var impl testutil.SecurityAuditor = realaudit.New(...)
-	var impl testutil.SecurityAuditor
+	impl := realSecurityAuditor
 	testutil.RequireImplementation(t, impl, "SecurityAuditor")
 
 	dockerCfg, err := impl.InspectDockerConfig()
@@ -425,7 +425,7 @@ func TestSecurity_17_26_PdsNetInternal(t *testing.T) {
 // TST-CORE-637
 func TestSecurity_17_27_BrainNetStandard(t *testing.T) {
 	// var impl testutil.SecurityAuditor = realaudit.New(...)
-	var impl testutil.SecurityAuditor
+	impl := realSecurityAuditor
 	testutil.RequireImplementation(t, impl, "SecurityAuditor")
 
 	dockerCfg, err := impl.InspectDockerConfig()
@@ -443,7 +443,7 @@ func TestSecurity_17_27_BrainNetStandard(t *testing.T) {
 // TST-CORE-638
 func TestSecurity_17_28_ExternalPortsOnly(t *testing.T) {
 	// var impl testutil.SecurityAuditor = realaudit.New(...)
-	var impl testutil.SecurityAuditor
+	impl := realSecurityAuditor
 	testutil.RequireImplementation(t, impl, "SecurityAuditor")
 
 	dockerCfg, err := impl.InspectDockerConfig()
@@ -464,7 +464,7 @@ func TestSecurity_17_28_ExternalPortsOnly(t *testing.T) {
 // TST-CORE-903
 func TestSecurity_17_29_NoGoPluginImport(t *testing.T) {
 	// No Go plugin.Open() or dynamic library loading (kernel guarantee).
-	var impl testutil.SecurityAuditor
+	impl := realSecurityAuditor
 	testutil.RequireImplementation(t, impl, "SecurityAuditor")
 
 	violations, err := impl.AuditSourceCode(`plugin\.Open`)
@@ -475,7 +475,7 @@ func TestSecurity_17_29_NoGoPluginImport(t *testing.T) {
 // TST-CORE-904
 func TestSecurity_17_30_NoExternalOAuthTokenStorage(t *testing.T) {
 	// Core has no external OAuth token storage (code audit).
-	var impl testutil.SecurityAuditor
+	impl := realSecurityAuditor
 	testutil.RequireImplementation(t, impl, "SecurityAuditor")
 
 	violations, err := impl.AuditSourceCode(`oauth.*token|access_token|refresh_token`)
@@ -486,7 +486,7 @@ func TestSecurity_17_30_NoExternalOAuthTokenStorage(t *testing.T) {
 // TST-CORE-905
 func TestSecurity_17_31_NoVectorClocksNoCRDTs(t *testing.T) {
 	// No vector clocks, no CRDTs (simplicity code audit).
-	var impl testutil.SecurityAuditor
+	impl := realSecurityAuditor
 	testutil.RequireImplementation(t, impl, "SecurityAuditor")
 
 	violations, err := impl.AuditSourceCode(`vector.?clock|crdt|VectorClock|CRDT`)

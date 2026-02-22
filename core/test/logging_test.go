@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/anthropics/dina/core/test/testutil"
@@ -23,7 +24,7 @@ import (
 // TST-CORE-689
 func TestLogging_21_1_1_GoCoreSlogJSON(t *testing.T) {
 	// Go core must emit structured JSON log lines with time, level, msg, module fields.
-	var impl testutil.LogAuditor
+	impl := realLogAuditor
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
 	line := `{"time":"2026-02-20T10:00:00Z","level":"INFO","msg":"vault opened","module":"vault"}`
@@ -38,7 +39,7 @@ func TestLogging_21_1_1_GoCoreSlogJSON(t *testing.T) {
 // TST-CORE-690
 func TestLogging_21_1_2_PythonBrainStructlogJSON(t *testing.T) {
 	// Python brain must emit structured JSON log lines to stdout.
-	var impl testutil.LogAuditor
+	impl := realLogAuditor
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
 	line := `{"event":"guardian_loop_tick","level":"info","timestamp":"2026-02-20T10:00:00Z"}`
@@ -51,7 +52,7 @@ func TestLogging_21_1_2_PythonBrainStructlogJSON(t *testing.T) {
 func TestLogging_21_1_3_NoFileLogs(t *testing.T) {
 	// No log files written anywhere — stdout only. Containers should have no log files
 	// on their filesystem after 24h of operation.
-	var impl testutil.LogAuditor
+	impl := realLogAuditor
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
 	// This test verifies the logging policy: stdout only, no file logs.
@@ -65,7 +66,7 @@ func TestLogging_21_1_3_NoFileLogs(t *testing.T) {
 // TST-CORE-692
 func TestLogging_21_1_4_DockerLogRotation(t *testing.T) {
 	// Docker log rotation must be configured: max 10MB, 3 files.
-	var impl testutil.LogAuditor
+	impl := realLogAuditor
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
 	// Verify rotation config via a well-known configuration line.
@@ -84,7 +85,7 @@ func TestLogging_21_1_4_DockerLogRotation(t *testing.T) {
 func TestLogging_21_2_1_VaultContentNeverLogged(t *testing.T) {
 	// Vault read/write logs must contain item IDs, counts, latency —
 	// never email bodies, calendar events, or contact details.
-	var impl testutil.LogAuditor
+	impl := realLogAuditor
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
 	// Safe log line (IDs and counts only).
@@ -103,7 +104,7 @@ func TestLogging_21_2_1_VaultContentNeverLogged(t *testing.T) {
 // TST-CORE-694
 func TestLogging_21_2_2_UserQueriesNeverLogged(t *testing.T) {
 	// Client queries must not appear in logs — only persona, type, result count.
-	var impl testutil.LogAuditor
+	impl := realLogAuditor
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
 	safeLine := `{"time":"2026-02-20T10:00:00Z","level":"INFO","msg":"search","persona":"/personal","type":"fts5","results":3}`
@@ -120,7 +121,7 @@ func TestLogging_21_2_2_UserQueriesNeverLogged(t *testing.T) {
 // TST-CORE-695
 func TestLogging_21_2_3_BrainReasoningNeverLogged(t *testing.T) {
 	// Brain reasoning output must not appear in logs — only task_id, step, duration.
-	var impl testutil.LogAuditor
+	impl := realLogAuditor
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
 	safeLine := `{"time":"2026-02-20T10:00:00Z","level":"INFO","msg":"brain step","task_id":"abc","step":3,"duration_ms":150}`
@@ -132,7 +133,7 @@ func TestLogging_21_2_3_BrainReasoningNeverLogged(t *testing.T) {
 // TST-CORE-696
 func TestLogging_21_2_4_NaClPlaintextNeverLogged(t *testing.T) {
 	// Decrypted DIDComm message content must never appear in logs.
-	var impl testutil.LogAuditor
+	impl := realLogAuditor
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
 	safeLine := `{"time":"2026-02-20T10:00:00Z","level":"INFO","msg":"d2d received","sender_did":"did:key:z6MkTest","persona":"/social"}`
@@ -149,7 +150,7 @@ func TestLogging_21_2_4_NaClPlaintextNeverLogged(t *testing.T) {
 // TST-CORE-697
 func TestLogging_21_2_5_PassphraseNeverLogged(t *testing.T) {
 	// Login attempt logs must show event, ip, success — never the passphrase.
-	var impl testutil.LogAuditor
+	impl := realLogAuditor
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
 	safeLine := `{"time":"2026-02-20T10:00:00Z","level":"INFO","msg":"login","event":"login","ip":"192.168.1.1","success":true}`
@@ -166,7 +167,7 @@ func TestLogging_21_2_5_PassphraseNeverLogged(t *testing.T) {
 // TST-CORE-698
 func TestLogging_21_2_6_APITokensNeverLogged(t *testing.T) {
 	// BRAIN_TOKEN and CLIENT_TOKEN values must never appear in logs.
-	var impl testutil.LogAuditor
+	impl := realLogAuditor
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
 	safeLine := `{"time":"2026-02-20T10:00:00Z","level":"INFO","msg":"auth","auth":"brain"}`
@@ -187,7 +188,7 @@ func TestLogging_21_2_6_APITokensNeverLogged(t *testing.T) {
 // TST-CORE-699
 func TestLogging_21_3_1_CIBannedLogQuery(t *testing.T) {
 	// CI must catch log.*query= pattern in code.
-	var impl testutil.LogAuditor
+	impl := realLogAuditor
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
 	codeLine := `slog.Info("search", "query", userQuery)`
@@ -199,7 +200,7 @@ func TestLogging_21_3_1_CIBannedLogQuery(t *testing.T) {
 // TST-CORE-700
 func TestLogging_21_3_2_CIBannedLogContent(t *testing.T) {
 	// CI must catch log.*content= pattern in code.
-	var impl testutil.LogAuditor
+	impl := realLogAuditor
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
 	codeLine := `slog.Info("vault read", "content", item.Body)`
@@ -211,7 +212,7 @@ func TestLogging_21_3_2_CIBannedLogContent(t *testing.T) {
 // TST-CORE-701
 func TestLogging_21_3_3_CIBannedLogBody(t *testing.T) {
 	// CI must catch log.*body= pattern in code.
-	var impl testutil.LogAuditor
+	impl := realLogAuditor
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
 	codeLine := `slog.Info("request", "body", reqBody)`
@@ -223,7 +224,7 @@ func TestLogging_21_3_3_CIBannedLogBody(t *testing.T) {
 // TST-CORE-702
 func TestLogging_21_3_4_CIBannedLogPlaintext(t *testing.T) {
 	// CI must catch log.*plaintext= pattern in code.
-	var impl testutil.LogAuditor
+	impl := realLogAuditor
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
 	codeLine := `slog.Info("decrypt", "plaintext", decrypted)`
@@ -235,7 +236,7 @@ func TestLogging_21_3_4_CIBannedLogPlaintext(t *testing.T) {
 // TST-CORE-703
 func TestLogging_21_3_5_CIBannedFStringUserData(t *testing.T) {
 	// CI must catch f-string with user data in Python log calls.
-	var impl testutil.LogAuditor
+	impl := realLogAuditor
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
 	codeLine := `log.info(f"User query: {user_query}")`
@@ -248,7 +249,7 @@ func TestLogging_21_3_5_CIBannedFStringUserData(t *testing.T) {
 func TestLogging_21_3_6_NoSpaCyNEROnLogLines(t *testing.T) {
 	// PII scrubbing is for data path to cloud LLMs, not log output.
 	// No spaCy NER should run on log lines — wrong layer, expensive, unreliable.
-	var impl testutil.LogAuditor
+	impl := realLogAuditor
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
 	// Verify that a safe log line passes without NER overhead.
@@ -265,7 +266,7 @@ func TestLogging_21_3_6_NoSpaCyNEROnLogLines(t *testing.T) {
 // TST-CORE-705
 func TestLogging_21_4_1_CrashStdoutSanitizedOneLiner(t *testing.T) {
 	// Brain crash stdout must show only a sanitized one-liner, no traceback, no variable values.
-	var impl testutil.LogAuditor
+	impl := realLogAuditor
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
 	fullTraceback := `Traceback (most recent call last):
@@ -289,7 +290,7 @@ RuntimeError: test error`
 // TST-CORE-706
 func TestLogging_21_4_2_CrashFullTracebackToVault(t *testing.T) {
 	// Full traceback.format_exc() must be sent to POST core:8100/api/v1/vault/crash — encrypted at rest.
-	var impl testutil.CrashLogger
+	impl := realCrashLogger
 	testutil.RequireImplementation(t, impl, "CrashLogger")
 
 	fullTraceback := `Traceback (most recent call last):
@@ -302,10 +303,10 @@ RuntimeError: test error`
 		Traceback: fullTraceback,
 		TaskID:    "task-crash-full-001",
 	}
-	err := impl.Store(entry)
+	err := impl.Store(context.Background(), entry)
 	testutil.RequireNoError(t, err)
 
-	entries, err := impl.Query("2020-01-01T00:00:00Z")
+	entries, err := impl.Query(context.Background(), "2020-01-01T00:00:00Z")
 	testutil.RequireNoError(t, err)
 	found := false
 	for _, e := range entries {
@@ -322,7 +323,7 @@ RuntimeError: test error`
 func TestLogging_21_4_3_CatchAllWrapsMainLoop(t *testing.T) {
 	// Brain main.py must have try/except wrapping guardian_loop.
 	// Logs type + line to stdout, full trace to vault.
-	var impl testutil.LogAuditor
+	impl := realLogAuditor
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
 	// Simulate the catch-all output: sanitized one-liner.
@@ -339,7 +340,7 @@ ValueError: bad input`
 // TST-CORE-708
 func TestLogging_21_4_4_CrashHandlerSendsTaskID(t *testing.T) {
 	// Crash handler must include current_task_id for correlation with dina_tasks.
-	var impl testutil.CrashLogger
+	impl := realCrashLogger
 	testutil.RequireImplementation(t, impl, "CrashLogger")
 
 	entry := testutil.CrashEntry{
@@ -347,10 +348,10 @@ func TestLogging_21_4_4_CrashHandlerSendsTaskID(t *testing.T) {
 		Traceback: "traceback...",
 		TaskID:    "task-correlation-001",
 	}
-	err := impl.Store(entry)
+	err := impl.Store(context.Background(), entry)
 	testutil.RequireNoError(t, err)
 
-	entries, err := impl.Query("2020-01-01T00:00:00Z")
+	entries, err := impl.Query(context.Background(), "2020-01-01T00:00:00Z")
 	testutil.RequireNoError(t, err)
 	found := false
 	for _, e := range entries {
@@ -365,7 +366,7 @@ func TestLogging_21_4_4_CrashHandlerSendsTaskID(t *testing.T) {
 // TST-CORE-709
 func TestLogging_21_4_5_CrashHandlerReRaises(t *testing.T) {
 	// After logging + vault write, crash handler must re-raise to let Docker restart policy trigger.
-	var impl testutil.LogAuditor
+	impl := realLogAuditor
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
 	// This test verifies the contract: after sanitize + store, the error is re-raised.
@@ -383,11 +384,11 @@ SystemExit: fatal`
 // TST-CORE-929
 func TestLogging_21_4_6_SpoolFileNaming_ULIDFormat(t *testing.T) {
 	// Spool file naming uses ULID format.
-	var impl testutil.InboxManager
+	impl := realInboxManager
 	testutil.RequireImplementation(t, impl, "InboxManager")
 
 	// Spool a message and verify the spool mechanism works.
-	spoolID, err := impl.Spool([]byte("test spool message"))
+	spoolID, err := impl.Spool(context.Background(), []byte("test spool message"))
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(spoolID) > 0, "spool ID must be non-empty")
 }

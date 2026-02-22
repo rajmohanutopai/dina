@@ -93,7 +93,7 @@ func TestEstate_27_5_DefaultAction_DestroyOrArchive(t *testing.T) {
 // TST-CORE-874
 func TestEstate_27_6_SSSSharesReusedFromIdentityRecovery(t *testing.T) {
 	// Estate SSS shares reused from identity recovery (same set, not separate).
-	var impl testutil.RecoveryManager
+	impl := realRecoveryManager
 	testutil.RequireImplementation(t, impl, "RecoveryManager")
 
 	// Split a test secret — same shares used for both identity and estate recovery.

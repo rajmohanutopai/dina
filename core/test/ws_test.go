@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -25,7 +26,7 @@ import (
 
 // TST-CORE-482
 func TestWS_9_1_1_WSUpgradeAccepted(t *testing.T) {
-	var impl testutil.WSHub
+	impl := realWSHub
 	testutil.RequireImplementation(t, impl, "WSHub")
 
 	// §9.1 #1: Client connects via wss://dina.local:8100/ws — HTTP 101 upgrade,
@@ -37,19 +38,19 @@ func TestWS_9_1_1_WSUpgradeAccepted(t *testing.T) {
 
 // TST-CORE-483
 func TestWS_9_1_2_AuthFrameWithin5s(t *testing.T) {
-	var impl testutil.WSHandler
+	impl := realWSHandler
 	testutil.RequireImplementation(t, impl, "WSHandler")
 
 	// §9.1 #2: Client sends auth frame with valid CLIENT_TOKEN within 5s.
 	// Core validates SHA-256(token) and responds with auth_ok + device name.
-	deviceName, err := impl.Authenticate("valid_client_token_hex")
+	deviceName, err := impl.Authenticate(context.Background(), "valid_client_token_hex")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(deviceName) > 0, "auth_ok must include device name")
 }
 
 // TST-CORE-484
 func TestWS_9_1_3_AuthFrameTimeout(t *testing.T) {
-	var impl testutil.WSHandler
+	impl := realWSHandler
 	testutil.RequireImplementation(t, impl, "WSHandler")
 
 	// §9.1 #3: No auth frame within 5s — core closes connection, no response sent.
@@ -59,39 +60,39 @@ func TestWS_9_1_3_AuthFrameTimeout(t *testing.T) {
 
 // TST-CORE-485
 func TestWS_9_1_4_InvalidAuthFrame(t *testing.T) {
-	var impl testutil.WSHandler
+	impl := realWSHandler
 	testutil.RequireImplementation(t, impl, "WSHandler")
 
 	// §9.1 #4: Wrong CLIENT_TOKEN in auth frame → auth_fail, connection closed.
-	_, err := impl.Authenticate("wrong_token_value")
+	_, err := impl.Authenticate(context.Background(), "wrong_token_value")
 	testutil.RequireError(t, err)
 }
 
 // TST-CORE-486
 func TestWS_9_1_5_RevokedTokenInAuthFrame(t *testing.T) {
-	var impl testutil.WSHandler
+	impl := realWSHandler
 	testutil.RequireImplementation(t, impl, "WSHandler")
 
 	// §9.1 #5: Previously revoked CLIENT_TOKEN → auth_fail, connection closed.
-	_, err := impl.Authenticate("revoked_client_token_hex")
+	_, err := impl.Authenticate(context.Background(), "revoked_client_token_hex")
 	testutil.RequireError(t, err)
 }
 
 // TST-CORE-487
 func TestWS_9_1_6_AuthOKIncludesDeviceName(t *testing.T) {
-	var impl testutil.WSHandler
+	impl := realWSHandler
 	testutil.RequireImplementation(t, impl, "WSHandler")
 
 	// §9.1 #6: Valid auth from "Raj's iPhone" → auth_ok includes device name
 	// from pairing record (e.g., "rajs_iphone").
-	deviceName, err := impl.Authenticate("valid_client_token_hex")
+	deviceName, err := impl.Authenticate(context.Background(), "valid_client_token_hex")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(deviceName) > 0, "auth_ok response must include device name from pairing")
 }
 
 // TST-CORE-488
 func TestWS_9_1_7_GracefulDisconnect(t *testing.T) {
-	var impl testutil.WSHub
+	impl := realWSHub
 	testutil.RequireImplementation(t, impl, "WSHub")
 
 	// §9.1 #7: Client sends close frame → server acknowledges, resources cleaned,
@@ -107,7 +108,7 @@ func TestWS_9_1_7_GracefulDisconnect(t *testing.T) {
 
 // TST-CORE-489
 func TestWS_9_1_8_AbnormalDisconnect(t *testing.T) {
-	var impl testutil.HeartbeatManager
+	impl := realHeartbeatManager
 	testutil.RequireImplementation(t, impl, "HeartbeatManager")
 
 	// §9.1 #8: TCP connection drops → server detects via ping timeout
@@ -121,12 +122,12 @@ func TestWS_9_1_8_AbnormalDisconnect(t *testing.T) {
 
 // TST-CORE-490
 func TestWS_9_2_1_QueryMessage(t *testing.T) {
-	var impl testutil.WSHandler
+	impl := realWSHandler
 	testutil.RequireImplementation(t, impl, "WSHandler")
 
 	// §9.2 #1: Query message routed to brain, response returned with reply_to matching id.
 	msg := `{"type":"query","id":"req_001","payload":{"text":"Am I free at 3pm?","persona":"/personal"}}`
-	resp, err := impl.HandleMessage("client-001", []byte(msg))
+	resp, err := impl.HandleMessage(context.Background(), "client-001", []byte(msg))
 	testutil.RequireNoError(t, err)
 
 	var envelope map[string]interface{}
@@ -136,13 +137,13 @@ func TestWS_9_2_1_QueryMessage(t *testing.T) {
 
 // TST-CORE-491
 func TestWS_9_2_2_QueryWithPersonaField(t *testing.T) {
-	var impl testutil.WSHandler
+	impl := realWSHandler
 	testutil.RequireImplementation(t, impl, "WSHandler")
 
 	// §9.2 #2: Query with persona field — core checks persona access tier
 	// (open/restricted/locked) before routing to brain.
 	msg := `{"type":"query","id":"req_002","payload":{"text":"What's my balance?","persona":"/financial"}}`
-	resp, err := impl.HandleMessage("client-001", []byte(msg))
+	resp, err := impl.HandleMessage(context.Background(), "client-001", []byte(msg))
 	// If persona is locked, expect an error response; if open, expect success.
 	// Either way, we verify the response links back to the original request.
 	if err == nil {
@@ -157,12 +158,12 @@ func TestWS_9_2_2_QueryWithPersonaField(t *testing.T) {
 
 // TST-CORE-492
 func TestWS_9_2_3_CommandMessage(t *testing.T) {
-	var impl testutil.WSHandler
+	impl := realWSHandler
 	testutil.RequireImplementation(t, impl, "WSHandler")
 
 	// §9.2 #3: Command message executed by core, result returned with reply_to.
 	msg := `{"type":"command","id":"req_003","payload":{"action":"unlock_persona","persona":"/financial"}}`
-	resp, err := impl.HandleMessage("client-001", []byte(msg))
+	resp, err := impl.HandleMessage(context.Background(), "client-001", []byte(msg))
 	testutil.RequireNoError(t, err)
 
 	var envelope map[string]interface{}
@@ -172,35 +173,35 @@ func TestWS_9_2_3_CommandMessage(t *testing.T) {
 
 // TST-CORE-493
 func TestWS_9_2_4_ACKMessage(t *testing.T) {
-	var impl testutil.WSHandler
+	impl := realWSHandler
 	testutil.RequireImplementation(t, impl, "WSHandler")
 
 	// §9.2 #4: ACK message — core removes evt_003 from missed message buffer.
 	msg := `{"type":"ack","id":"evt_003"}`
-	_, err := impl.HandleMessage("client-001", []byte(msg))
+	_, err := impl.HandleMessage(context.Background(), "client-001", []byte(msg))
 	// ACK is fire-and-forget — no response expected, no error.
 	testutil.RequireNoError(t, err)
 }
 
 // TST-CORE-494
 func TestWS_9_2_5_PongMessage(t *testing.T) {
-	var impl testutil.WSHandler
+	impl := realWSHandler
 	testutil.RequireImplementation(t, impl, "WSHandler")
 
 	// §9.2 #5: Pong message — core records pong, resets missed-pong counter.
 	msg := `{"type":"pong","ts":1708300000}`
-	_, err := impl.HandleMessage("client-001", []byte(msg))
+	_, err := impl.HandleMessage(context.Background(), "client-001", []byte(msg))
 	testutil.RequireNoError(t, err)
 }
 
 // TST-CORE-495
 func TestWS_9_2_6_MissingIDField(t *testing.T) {
-	var impl testutil.WSHandler
+	impl := realWSHandler
 	testutil.RequireImplementation(t, impl, "WSHandler")
 
 	// §9.2 #6: Missing id field → error response with code 400.
 	msg := `{"type":"query","payload":{"text":"hello"}}`
-	resp, err := impl.HandleMessage("client-001", []byte(msg))
+	resp, err := impl.HandleMessage(context.Background(), "client-001", []byte(msg))
 	// Expect an error response envelope, not a Go-level error.
 	if err == nil {
 		var envelope map[string]interface{}
@@ -214,13 +215,13 @@ func TestWS_9_2_6_MissingIDField(t *testing.T) {
 
 // TST-CORE-496
 func TestWS_9_2_7_UnknownMessageType(t *testing.T) {
-	var impl testutil.WSHandler
+	impl := realWSHandler
 	testutil.RequireImplementation(t, impl, "WSHandler")
 
 	// §9.2 #7: Unknown message type → error response with reply_to,
 	// connection NOT dropped (extensible protocol).
 	msg := `{"type":"foo","id":"req_004"}`
-	resp, err := impl.HandleMessage("client-001", []byte(msg))
+	resp, err := impl.HandleMessage(context.Background(), "client-001", []byte(msg))
 	// Should return error envelope, not disconnect.
 	if err == nil {
 		var envelope map[string]interface{}
@@ -236,13 +237,13 @@ func TestWS_9_2_7_UnknownMessageType(t *testing.T) {
 
 // TST-CORE-497
 func TestWS_9_3_1_WhisperStreamChunked(t *testing.T) {
-	var impl testutil.WSHandler
+	impl := realWSHandler
 	testutil.RequireImplementation(t, impl, "WSHandler")
 
 	// §9.3 #1: Brain streams response to query — core sends whisper_stream chunks
 	// with reply_to linking to the original request.
 	msg := `{"type":"query","id":"req_001","payload":{"text":"Am I free at 3pm?","persona":"/personal"}}`
-	resp, err := impl.HandleMessage("client-001", []byte(msg))
+	resp, err := impl.HandleMessage(context.Background(), "client-001", []byte(msg))
 	testutil.RequireNoError(t, err)
 
 	var envelope map[string]interface{}
@@ -256,13 +257,13 @@ func TestWS_9_3_1_WhisperStreamChunked(t *testing.T) {
 
 // TST-CORE-498
 func TestWS_9_3_2_WhisperFinalResponse(t *testing.T) {
-	var impl testutil.WSHandler
+	impl := realWSHandler
 	testutil.RequireImplementation(t, impl, "WSHandler")
 
 	// §9.3 #2: Brain completes response → final whisper with reply_to,
 	// payload includes text and optional sources array.
 	msg := `{"type":"query","id":"req_005","payload":{"text":"What time is sunset?","persona":"/personal"}}`
-	resp, err := impl.HandleMessage("client-001", []byte(msg))
+	resp, err := impl.HandleMessage(context.Background(), "client-001", []byte(msg))
 	testutil.RequireNoError(t, err)
 
 	var envelope map[string]interface{}
@@ -272,7 +273,7 @@ func TestWS_9_3_2_WhisperFinalResponse(t *testing.T) {
 
 // TST-CORE-499
 func TestWS_9_3_3_ProactiveWhisper(t *testing.T) {
-	var impl testutil.WSHub
+	impl := realWSHub
 	testutil.RequireImplementation(t, impl, "WSHub")
 
 	// §9.3 #3: Brain-initiated proactive whisper — has its own id, no reply_to.
@@ -298,7 +299,7 @@ func TestWS_9_3_3_ProactiveWhisper(t *testing.T) {
 
 // TST-CORE-500
 func TestWS_9_3_4_SystemNotification(t *testing.T) {
-	var impl testutil.WSHub
+	impl := realWSHub
 	testutil.RequireImplementation(t, impl, "WSHub")
 
 	// §9.3 #4: Watchdog detects connector issue → system notification with level and text.
@@ -323,12 +324,12 @@ func TestWS_9_3_4_SystemNotification(t *testing.T) {
 
 // TST-CORE-501
 func TestWS_9_3_5_ErrorResponse(t *testing.T) {
-	var impl testutil.WSHandler
+	impl := realWSHandler
 	testutil.RequireImplementation(t, impl, "WSHandler")
 
 	// §9.3 #5: Command fails → error response with reply_to, code, and message.
 	msg := `{"type":"command","id":"req_006","payload":{"action":"unlock_persona","persona":"/financial"}}`
-	resp, err := impl.HandleMessage("client-001", []byte(msg))
+	resp, err := impl.HandleMessage(context.Background(), "client-001", []byte(msg))
 	// Whether it succeeds or fails, verify the envelope links back.
 	if err == nil && resp != nil {
 		var envelope map[string]interface{}
@@ -339,12 +340,12 @@ func TestWS_9_3_5_ErrorResponse(t *testing.T) {
 
 // TST-CORE-502
 func TestWS_9_3_6_ReplyToMeansResponse(t *testing.T) {
-	var impl testutil.WSHandler
+	impl := realWSHandler
 	testutil.RequireImplementation(t, impl, "WSHandler")
 
 	// §9.3 #6: Routing logic — message with reply_to is a response to a pending request.
 	msg := `{"type":"query","id":"req_007","payload":{"text":"hello","persona":"/personal"}}`
-	resp, err := impl.HandleMessage("client-001", []byte(msg))
+	resp, err := impl.HandleMessage(context.Background(), "client-001", []byte(msg))
 	testutil.RequireNoError(t, err)
 
 	var envelope map[string]interface{}
@@ -355,7 +356,7 @@ func TestWS_9_3_6_ReplyToMeansResponse(t *testing.T) {
 
 // TST-CORE-503
 func TestWS_9_3_7_NoReplyToMeansProactive(t *testing.T) {
-	var impl testutil.WSHub
+	impl := realWSHub
 	testutil.RequireImplementation(t, impl, "WSHub")
 
 	// §9.3 #7: Routing logic — message with id but no reply_to is a proactive event
@@ -380,14 +381,14 @@ func TestWS_9_3_7_NoReplyToMeansProactive(t *testing.T) {
 
 // TST-CORE-504
 func TestWS_9_3_8_WhisperStreamTerminatedByFinalWhisper(t *testing.T) {
-	var impl testutil.WSHandler
+	impl := realWSHandler
 	testutil.RequireImplementation(t, impl, "WSHandler")
 
 	// §9.3 #8: Brain finishes streaming — last whisper_stream chunk followed by
 	// a whisper message with same reply_to. Client knows stream is complete
 	// when it receives the final whisper (not whisper_stream).
 	msg := `{"type":"query","id":"req_008","payload":{"text":"Tell me about X","persona":"/personal"}}`
-	resp, err := impl.HandleMessage("client-001", []byte(msg))
+	resp, err := impl.HandleMessage(context.Background(), "client-001", []byte(msg))
 	testutil.RequireNoError(t, err)
 
 	// The final response should be a "whisper" (not "whisper_stream").
@@ -407,7 +408,7 @@ func TestWS_9_3_8_WhisperStreamTerminatedByFinalWhisper(t *testing.T) {
 
 // TST-CORE-505
 func TestWS_9_4_1_CoreSendsPingEvery30s(t *testing.T) {
-	var impl testutil.HeartbeatManager
+	impl := realHeartbeatManager
 	testutil.RequireImplementation(t, impl, "HeartbeatManager")
 
 	// §9.4 #1: Authenticated WS connection idle for 30s → core sends ping.
@@ -417,7 +418,7 @@ func TestWS_9_4_1_CoreSendsPingEvery30s(t *testing.T) {
 
 // TST-CORE-506
 func TestWS_9_4_2_ClientRespondsWithPong(t *testing.T) {
-	var impl testutil.HeartbeatManager
+	impl := realHeartbeatManager
 	testutil.RequireImplementation(t, impl, "HeartbeatManager")
 
 	// §9.4 #2: Core sends ping → client sends pong within 10 seconds.
@@ -428,7 +429,7 @@ func TestWS_9_4_2_ClientRespondsWithPong(t *testing.T) {
 
 // TST-CORE-507
 func TestWS_9_4_3_PongTimeout10Seconds(t *testing.T) {
-	var impl testutil.HeartbeatManager
+	impl := realHeartbeatManager
 	testutil.RequireImplementation(t, impl, "HeartbeatManager")
 
 	// §9.4 #3: Core sends ping, no pong within 10s → missed pong counter incremented.
@@ -438,7 +439,7 @@ func TestWS_9_4_3_PongTimeout10Seconds(t *testing.T) {
 
 // TST-CORE-508
 func TestWS_9_4_4_ThreeMissedPongsDisconnect(t *testing.T) {
-	var impl testutil.HeartbeatManager
+	impl := realHeartbeatManager
 	testutil.RequireImplementation(t, impl, "HeartbeatManager")
 
 	// §9.4 #4: 3 consecutive pings without pong → core closes connection,
@@ -448,7 +449,7 @@ func TestWS_9_4_4_ThreeMissedPongsDisconnect(t *testing.T) {
 
 // TST-CORE-509
 func TestWS_9_4_5_PongResetsCounter(t *testing.T) {
-	var impl testutil.HeartbeatManager
+	impl := realHeartbeatManager
 	testutil.RequireImplementation(t, impl, "HeartbeatManager")
 
 	// §9.4 #5: 2 missed pongs, then pong received → counter reset to 0.
@@ -464,7 +465,7 @@ func TestWS_9_4_5_PongResetsCounter(t *testing.T) {
 
 // TST-CORE-510
 func TestWS_9_4_6_PingIncludesTimestamp(t *testing.T) {
-	var impl testutil.HeartbeatManager
+	impl := realHeartbeatManager
 	testutil.RequireImplementation(t, impl, "HeartbeatManager")
 
 	// §9.4 #6: Ping message includes ts field (Unix timestamp) so client
@@ -480,7 +481,7 @@ func TestWS_9_4_6_PingIncludesTimestamp(t *testing.T) {
 
 // TST-CORE-511
 func TestWS_9_5_1_ClientTemporarilyDisconnected(t *testing.T) {
-	var impl testutil.MessageBuffer
+	impl := realMessageBuffer
 	testutil.RequireImplementation(t, impl, "MessageBuffer")
 
 	// §9.5 #1: 10 messages arrive during disconnect → client reconnects,
@@ -498,7 +499,7 @@ func TestWS_9_5_1_ClientTemporarilyDisconnected(t *testing.T) {
 
 // TST-CORE-512
 func TestWS_9_5_2_BufferCapMax50(t *testing.T) {
-	var impl testutil.MessageBuffer
+	impl := realMessageBuffer
 	testutil.RequireImplementation(t, impl, "MessageBuffer")
 
 	// §9.5 #2: >50 messages during disconnect → oldest dropped, newest 50 retained.
@@ -514,7 +515,7 @@ func TestWS_9_5_2_BufferCapMax50(t *testing.T) {
 
 // TST-CORE-513
 func TestWS_9_5_3_BufferOrderingPreserved(t *testing.T) {
-	var impl testutil.MessageBuffer
+	impl := realMessageBuffer
 	testutil.RequireImplementation(t, impl, "MessageBuffer")
 
 	// §9.5 #3: Messages buffered in order → delivered in FIFO order on reconnect.
@@ -536,7 +537,7 @@ func TestWS_9_5_3_BufferOrderingPreserved(t *testing.T) {
 
 // TST-CORE-514
 func TestWS_9_5_4_BufferTTL5Minutes(t *testing.T) {
-	var impl testutil.MessageBuffer
+	impl := realMessageBuffer
 	testutil.RequireImplementation(t, impl, "MessageBuffer")
 
 	// §9.5 #4: Buffer TTL is 5 minutes. Client disconnected for 10 minutes →
@@ -546,7 +547,7 @@ func TestWS_9_5_4_BufferTTL5Minutes(t *testing.T) {
 
 // TST-CORE-515
 func TestWS_9_5_5_ClientACKsBufferedMessages(t *testing.T) {
-	var impl testutil.MessageBuffer
+	impl := realMessageBuffer
 	testutil.RequireImplementation(t, impl, "MessageBuffer")
 
 	// §9.5 #5: Client receives buffered messages and sends ACK for each →
@@ -562,7 +563,7 @@ func TestWS_9_5_5_ClientACKsBufferedMessages(t *testing.T) {
 
 // TST-CORE-516
 func TestWS_9_5_6_BufferPerDevice(t *testing.T) {
-	var impl testutil.MessageBuffer
+	impl := realMessageBuffer
 	testutil.RequireImplementation(t, impl, "MessageBuffer")
 
 	// §9.5 #6: Device A disconnected, Device B connected → only Device A's buffer
@@ -576,7 +577,7 @@ func TestWS_9_5_6_BufferPerDevice(t *testing.T) {
 
 // TST-CORE-517
 func TestWS_9_5_7_BufferWithinTTLAllDelivered(t *testing.T) {
-	var impl testutil.MessageBuffer
+	impl := realMessageBuffer
 	testutil.RequireImplementation(t, impl, "MessageBuffer")
 
 	// §9.5 #7: Client disconnected for 3 minutes → all buffered messages
@@ -596,7 +597,7 @@ func TestWS_9_5_7_BufferWithinTTLAllDelivered(t *testing.T) {
 
 // TST-CORE-518
 func TestWS_9_5_8_WhyFiveMinNotLonger(t *testing.T) {
-	var impl testutil.MessageBuffer
+	impl := realMessageBuffer
 	testutil.RequireImplementation(t, impl, "MessageBuffer")
 
 	// §9.5 #8: Design review — if phone is offline for hours, brain generates
@@ -611,7 +612,7 @@ func TestWS_9_5_9_ReconnectionExponentialBackoff(t *testing.T) {
 	// §9.5 #9: Client-side reconnection with exponential backoff:
 	// 1s → 2s → 4s → 8s → 16s → max 30s. On reconnect: re-send auth frame.
 	// This is client-side behaviour — verified as a protocol design test.
-	var impl testutil.WSHandler
+	impl := realWSHandler
 	testutil.RequireImplementation(t, impl, "WSHandler")
 
 	// After reconnect, client must re-authenticate.
@@ -622,7 +623,7 @@ func TestWS_9_5_9_ReconnectionExponentialBackoff(t *testing.T) {
 // TST-CORE-911
 func TestWS_9_5_10_FCMWakeupPayloadEmpty(t *testing.T) {
 	// Push notifications: FCM/APNs wake-up payload is data-free.
-	var impl testutil.WSHub
+	impl := realWSHub
 	testutil.RequireImplementation(t, impl, "WSHub")
 
 	// Broadcast a wake-up notification — payload should be data-free.
@@ -633,10 +634,10 @@ func TestWS_9_5_10_FCMWakeupPayloadEmpty(t *testing.T) {
 // TST-CORE-912
 func TestWS_9_5_11_AuthOK_UpdatesLastSeenTimestamp(t *testing.T) {
 	// WebSocket last_seen timestamp updated on auth.
-	var impl testutil.WSHandler
+	impl := realWSHandler
 	testutil.RequireImplementation(t, impl, "WSHandler")
 
-	deviceName, err := impl.Authenticate("valid-test-token")
+	deviceName, err := impl.Authenticate(context.Background(), "valid-test-token")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, deviceName != "", "authenticated device must have a name")
 }
@@ -644,7 +645,7 @@ func TestWS_9_5_11_AuthOK_UpdatesLastSeenTimestamp(t *testing.T) {
 // TST-CORE-913
 func TestWS_9_5_12_DevicePushViaAuthenticatedWebSocket(t *testing.T) {
 	// Device push via authenticated WebSocket.
-	var impl testutil.WSHub
+	impl := realWSHub
 	testutil.RequireImplementation(t, impl, "WSHub")
 
 	// Send push notification to a specific authenticated client.

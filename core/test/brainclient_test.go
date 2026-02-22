@@ -19,7 +19,7 @@ import (
 
 // TST-CORE-531
 func TestBrainClient_11_1_1_HealthyBrain(t *testing.T) {
-	var impl testutil.BrainClient
+	impl := realBrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
 	testutil.RequireImplementation(t, impl, "BrainClient")
 
@@ -31,7 +31,7 @@ func TestBrainClient_11_1_1_HealthyBrain(t *testing.T) {
 
 // TST-CORE-532
 func TestBrainClient_11_1_2_BrainTimeout(t *testing.T) {
-	var impl testutil.BrainClient
+	impl := realBrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
 	testutil.RequireImplementation(t, impl, "BrainClient")
 
@@ -44,7 +44,7 @@ func TestBrainClient_11_1_2_BrainTimeout(t *testing.T) {
 
 // TST-CORE-533
 func TestBrainClient_11_1_3_CircuitBreakerOpens(t *testing.T) {
-	var impl testutil.BrainClient
+	impl := realBrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
 	testutil.RequireImplementation(t, impl, "BrainClient")
 
@@ -61,7 +61,7 @@ func TestBrainClient_11_1_3_CircuitBreakerOpens(t *testing.T) {
 
 // TST-CORE-534
 func TestBrainClient_11_1_4_CircuitBreakerHalfOpen(t *testing.T) {
-	var impl testutil.BrainClient
+	impl := realBrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
 	testutil.RequireImplementation(t, impl, "BrainClient")
 
@@ -73,7 +73,7 @@ func TestBrainClient_11_1_4_CircuitBreakerHalfOpen(t *testing.T) {
 
 // TST-CORE-535
 func TestBrainClient_11_1_5_CircuitBreakerCloses(t *testing.T) {
-	var impl testutil.BrainClient
+	impl := realBrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
 	testutil.RequireImplementation(t, impl, "BrainClient")
 
@@ -84,7 +84,7 @@ func TestBrainClient_11_1_5_CircuitBreakerCloses(t *testing.T) {
 
 // TST-CORE-536
 func TestBrainClient_11_1_6_BrainCrashRecovery(t *testing.T) {
-	var impl testutil.BrainClient
+	impl := realBrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
 	testutil.RequireImplementation(t, impl, "BrainClient")
 
@@ -99,7 +99,7 @@ func TestBrainClient_11_1_6_BrainCrashRecovery(t *testing.T) {
 
 // TST-CORE-537
 func TestBrainClient_11_2_1_BrainHealthy(t *testing.T) {
-	var impl testutil.BrainClient
+	impl := realBrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
 	testutil.RequireImplementation(t, impl, "BrainClient")
 
@@ -110,7 +110,7 @@ func TestBrainClient_11_2_1_BrainHealthy(t *testing.T) {
 
 // TST-CORE-538
 func TestBrainClient_11_2_2_BrainUnhealthy(t *testing.T) {
-	var impl testutil.BrainClient
+	impl := realBrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
 	testutil.RequireImplementation(t, impl, "BrainClient")
 
@@ -123,7 +123,7 @@ func TestBrainClient_11_2_2_BrainUnhealthy(t *testing.T) {
 
 // TST-CORE-539
 func TestBrainClient_11_2_3_BrainRecovery(t *testing.T) {
-	var impl testutil.BrainClient
+	impl := realBrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
 	testutil.RequireImplementation(t, impl, "BrainClient")
 
@@ -134,7 +134,7 @@ func TestBrainClient_11_2_3_BrainRecovery(t *testing.T) {
 
 // TST-CORE-540
 func TestBrainClient_11_2_4_WatchdogInterval(t *testing.T) {
-	var impl testutil.BrainClient
+	impl := realBrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
 	testutil.RequireImplementation(t, impl, "BrainClient")
 
@@ -177,7 +177,7 @@ func TestBrainClient_11_3_2_BrainReturnsError(t *testing.T) {
 
 // TST-CORE-845
 func TestBrainClient_11_1_7_BrainReturnsMalformedJSON(t *testing.T) {
-	var impl testutil.BrainClient
+	impl := realBrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
 	testutil.RequireImplementation(t, impl, "BrainClient")
 
@@ -219,7 +219,7 @@ func TestBrainClient_11_1_8_ConcurrentRequests(t *testing.T) {
 
 // TST-CORE-847
 func TestBrainClient_11_1_9_EmptyURLReturnsError(t *testing.T) {
-	var impl testutil.BrainClient
+	impl := realBrainClient
 	// impl = brainclient.New("", testutil.TestBrainToken)
 	testutil.RequireImplementation(t, impl, "BrainClient")
 
@@ -232,7 +232,7 @@ func TestBrainClient_11_1_9_EmptyURLReturnsError(t *testing.T) {
 
 // TST-CORE-848
 func TestBrainClient_11_1_10_ConnectionPooling(t *testing.T) {
-	var impl testutil.BrainClient
+	impl := realBrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
 	testutil.RequireImplementation(t, impl, "BrainClient")
 
@@ -280,7 +280,7 @@ func TestBrainClient_11_1_12_MockHealthFailure(t *testing.T) {
 
 // TST-CORE-531, TST-CORE-532, TST-CORE-533, TST-CORE-534, TST-CORE-535, TST-CORE-536
 func TestBrainClient_11_Overview(t *testing.T) {
-	var impl testutil.BrainClient
+	impl := realBrainClient
 	testutil.RequireImplementation(t, impl, "BrainClient")
 
 	// Table-driven coverage for brain client health states:
