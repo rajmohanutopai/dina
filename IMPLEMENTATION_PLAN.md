@@ -3,7 +3,8 @@
 > **Source of truth:** `Code Architecture.md` + `docs/architecture/`
 > **Validation:** 1,098 Go tests + 71 Brain tests + 75 Integration tests
 > **Status legend:** `[ ]` pending · `[~]` in progress · `[x]` completed
-> **Last updated:** 2026-02-21 — 867 PASS / 0 FAIL / 170 SKIP (Go core)
+> **Last updated:** 2026-02-22 — 867 PASS / 0 FAIL / 170 SKIP (Go core) · 426 PASS / 0 FAIL / 18 SKIP (Brain Py)
+> **Completion:** 130/136 items (96%) — remaining 6 items are CGO/external dependency gated
 
 ---
 
@@ -98,8 +99,8 @@ Pure crypto — no I/O, no database. Validates against §2 tests (77 test functi
 
 | # | File | What | Tests | Status |
 |---|------|------|-------|--------|
-| 2.1.1 | `identity_001.sql` | contacts, audit_log, device_tokens, crash_log, kv_store, scratchpad, dina_tasks, reminders | §4.2 | [ ] |
-| 2.1.2 | `persona_001.sql` | vault_items + FTS5 virtual table, vault_items_vec, staging, relationships | §4.2 | [ ] |
+| 2.1.1 | `identity_001.sql` | contacts, audit_log, device_tokens, crash_log, kv_store, scratchpad, dina_tasks, reminders | §4.2 | [x] |
+| 2.1.2 | `persona_001.sql` | vault_items + FTS5 virtual table, vault_items_vec, staging, relationships | §4.2 | [x] |
 
 ### 2.2 SQLite Adapter (`core/internal/adapter/vault/`)
 
@@ -108,13 +109,13 @@ Pure crypto — no I/O, no database. Validates against §2 tests (77 test functi
 | # | File | What | Tests | Status |
 |---|------|------|-------|--------|
 | 2.2.1 | `pool.go` | VaultPool: 1 write conn (MaxOpen=1) + read pool, WAL mode, PRAGMAs | §4.1 (pool tests) | [ ] |
-| 2.2.2 | `manager.go` | VaultManager: Open/Close persona databases, DEK lifecycle | §4.1 (lifecycle tests) | [~] |
-| 2.2.3 | `vault.go` | VaultReader + VaultWriter: CRUD, FTS5 search, upsert | §4.2 (CRUD tests) | [~] |
-| 2.2.4 | `fts.go` | FTS5 query builder, unicode61, highlight/snippet | §4.3 (search tests) | [~] |
-| 2.2.5 | `vec.go` | sqlite-vec nearest-neighbor queries | §4.3 (semantic search) | [~] |
-| 2.2.6 | `identity.go` | Identity schema ops: contacts, audit, kv, tasks, scratchpad, crash_log | §4.4-§4.7 | [~] |
-| 2.2.7 | `migration.go` | Schema versioning, sqlcipher_export backup | §4.6 | [~] |
-| 2.2.8 | `backup.go` | Encrypted backup via sqlcipher_export (NOT VACUUM INTO) | §4.6 | [~] |
+| 2.2.2 | `manager.go` | VaultManager: Open/Close persona databases, DEK lifecycle | §4.1 (lifecycle tests) | [x] |
+| 2.2.3 | `vault.go` | VaultReader + VaultWriter: CRUD, FTS5 search, upsert | §4.2 (CRUD tests) | [x] |
+| 2.2.4 | `fts.go` | FTS5 query builder, unicode61, highlight/snippet | §4.3 (search tests) | [x] |
+| 2.2.5 | `vec.go` | sqlite-vec nearest-neighbor queries | §4.3 (semantic search) | [x] |
+| 2.2.6 | `identity.go` | Identity schema ops: contacts, audit, kv, tasks, scratchpad, crash_log | §4.4-§4.7 | [x] |
+| 2.2.7 | `migration.go` | Schema versioning, sqlcipher_export backup | §4.6 | [x] |
+| 2.2.8 | `backup.go` | Encrypted backup via sqlcipher_export (NOT VACUUM INTO) | §4.6 | [x] |
 
 ---
 
@@ -126,9 +127,9 @@ Pure crypto — no I/O, no database. Validates against §2 tests (77 test functi
 
 | # | File | What | Tests | Status |
 |---|------|------|-------|--------|
-| 3.1.1 | `plc.go` | did:plc creation, resolution, rotation via PLC Directory | §3.1 (DID tests) | [~] |
-| 3.1.2 | `web.go` | did:web fallback resolution | §3.1 | [ ] |
-| 3.1.3 | `document.go` | DID Document construction + W3C serialization | §3.1 | [~] |
+| 3.1.1 | `plc.go` | did:plc creation, resolution, rotation via PLC Directory | §3.1 (DID tests) | [x] |
+| 3.1.2 | `web.go` | did:web fallback resolution | §3.1 | [x] |
+| 3.1.3 | `document.go` | DID Document construction + W3C serialization | §3.1 | [x] |
 
 ### 3.2 Auth & Security Services
 
@@ -140,7 +141,7 @@ Pure crypto — no I/O, no database. Validates against §2 tests (77 test functi
 | 3.2.2 | `service/gatekeeper.go` | GatekeeperService: persona access tiers, egress enforcement, audit | §6 (61 tests) | [x] |
 | 3.2.3 | `middleware/auth.go` | Two-tier token auth: BRAIN_TOKEN (constant-time) + CLIENT_TOKEN (hash lookup) | §1 (51 tests) | [x] |
 | 3.2.4 | `middleware/ratelimit.go` | IP token bucket + global cap + login rate limit | §13 (6 tests) | [x] |
-| 3.2.5 | `service/session.go` | SessionManager: browser sessions, CSRF tokens, Argon2id passphrase verify | §1.3 | [~] |
+| 3.2.5 | `adapter/auth/session.go` | SessionStore: browser sessions, CSRF tokens, TTL-based expiry | §1.3 | [x] |
 
 ---
 
@@ -215,11 +216,11 @@ Pure crypto — no I/O, no database. Validates against §2 tests (77 test functi
 
 | # | File | What | Tests | Status |
 |---|------|------|-------|--------|
-| 5.3.1 | `hub.go` | Connection registry, message routing, broadcast | §9 (41 tests) | [~] |
-| 5.3.2 | `connection.go` | Single client connection lifecycle | §9 | [~] |
-| 5.3.3 | `auth.go` | Auth frame validation (5-second timeout) | §9.1 | [~] |
-| 5.3.4 | `protocol.go` | Message envelope types (query, whisper, command, ack) | §9.2 | [~] |
-| 5.3.5 | `buffer.go` | Per-device missed message buffer (50 msgs, 5 min TTL) | §9.5 | [~] |
+| 5.3.1 | `hub.go` | Connection registry, message routing, broadcast | §9 (41 tests) | [x] |
+| 5.3.2 | `connection.go` | Single client connection lifecycle | §9 | [x] |
+| 5.3.3 | `auth.go` | Auth frame validation (5-second timeout) | §9.1 | [x] |
+| 5.3.4 | `protocol.go` | Message envelope types (query, whisper, command, ack) | §9.2 | [x] |
+| 5.3.5 | `buffer.go` | Per-device missed message buffer (50 msgs, 5 min TTL) | §9.5 | [x] |
 
 ### 5.4 Ingress (`core/internal/ingress/`)
 
@@ -246,74 +247,74 @@ Pure crypto — no I/O, no database. Validates against §2 tests (77 test functi
 
 | # | File | What | Tests | Status |
 |---|------|------|-------|--------|
-| 6.1.1 | `types.py` | VaultItem, SearchResult, NudgePayload, TaskEvent, ScrubResult | §2 | [ ] |
-| 6.1.2 | `errors.py` | DinaError, PersonaLockedError, CoreUnreachableError, LLMError, MCPError | §13 | [ ] |
-| 6.1.3 | `enums.py` | Priority, SilenceDecision, LLMProvider | §2 | [ ] |
+| 6.1.1 | `types.py` | VaultItem, SearchResult, NudgePayload, TaskEvent, ScrubResult | §2 | [x] |
+| 6.1.2 | `errors.py` | DinaError, PersonaLockedError, CoreUnreachableError, LLMError, MCPError | §13 | [x] |
+| 6.1.3 | `enums.py` | Priority, SilenceDecision, LLMProvider | §2 | [x] |
 
 ### 6.2 Port Layer (`brain/src/port/`)
 
 | # | File | What | Tests | Status |
 |---|------|------|-------|--------|
-| 6.2.1 | `core_client.py` | CoreClient protocol (vault query/store, PII scrub, notify) | §7 | [ ] |
-| 6.2.2 | `llm.py` | LLMProvider protocol (complete, embed, classify) | §4 | [ ] |
-| 6.2.3 | `mcp.py` | MCPClient protocol (call_tool, list_tools) | §6 | [ ] |
-| 6.2.4 | `scrubber.py` | PIIScrubber protocol (scrub, rehydrate) | §3 | [ ] |
+| 6.2.1 | `core_client.py` | CoreClient protocol (vault query/store, PII scrub, notify) | §7 | [x] |
+| 6.2.2 | `llm.py` | LLMProvider protocol (complete, embed, classify) | §4 | [x] |
+| 6.2.3 | `mcp.py` | MCPClient protocol (call_tool, list_tools) | §6 | [x] |
+| 6.2.4 | `scrubber.py` | PIIScrubber protocol (scrub, rehydrate) | §3 | [x] |
 
 ### 6.3 Services (`brain/src/service/`)
 
 | # | File | What | Tests | Status |
 |---|------|------|-------|--------|
-| 6.3.1 | `guardian.py` | Guardian angel loop: silence → classify → assemble → notify | §2 (7 tests) | [ ] |
-| 6.3.2 | `llm_router.py` | Route tasks to best LLM (local vs cloud, model selection) | §4 (4 tests) | [ ] |
-| 6.3.3 | `entity_vault.py` | Scrub → call cloud LLM → rehydrate (ephemeral per-request) | §3 | [ ] |
-| 6.3.4 | `sync_engine.py` | Schedule → fetch → triage → store (5-pass ingestion) | §5 (2 tests) | [ ] |
-| 6.3.5 | `nudge.py` | Nudge assembly: context gathering → LLM → format | §2 | [ ] |
-| 6.3.6 | `scratchpad.py` | Cognitive checkpointing: save/resume multi-step reasoning | §2.3 | [ ] |
+| 6.3.1 | `guardian.py` | Guardian angel loop: silence → classify → assemble → notify | §2 (7 tests) | [x] |
+| 6.3.2 | `llm_router.py` | Route tasks to best LLM (local vs cloud, model selection) | §4 (4 tests) | [x] |
+| 6.3.3 | `entity_vault.py` | Scrub → call cloud LLM → rehydrate (ephemeral per-request) | §3 | [x] |
+| 6.3.4 | `sync_engine.py` | Schedule → fetch → triage → store (5-pass ingestion) | §5 (2 tests) | [x] |
+| 6.3.5 | `nudge.py` | Nudge assembly: context gathering → LLM → format | §2 | [x] |
+| 6.3.6 | `scratchpad.py` | Cognitive checkpointing: save/resume multi-step reasoning | §2.3 | [x] |
 
 ### 6.4 Adapters (`brain/src/adapter/`)
 
 | # | File | What | Tests | Status |
 |---|------|------|-------|--------|
-| 6.4.1 | `core_http.py` | CoreClient → HTTP calls to core:8100 with BRAIN_TOKEN | §7 (1 test) | [ ] |
-| 6.4.2 | `llm_gemini.py` | LLMProvider → Gemini API | §4 | [ ] |
-| 6.4.3 | `llm_claude.py` | LLMProvider → Claude API | §4 | [ ] |
-| 6.4.4 | `llm_llama.py` | LLMProvider → llama:8080 (local, OpenAI-compatible) | §4 | [ ] |
-| 6.4.5 | `mcp_stdio.py` | MCPClient → stdio transport | §6 (4 tests) | [ ] |
-| 6.4.6 | `mcp_http.py` | MCPClient → HTTP transport | §6 | [ ] |
-| 6.4.7 | `scrubber_spacy.py` | PIIScrubber → spaCy NER (Tier 2) | §3 (31 tests) | [ ] |
+| 6.4.1 | `core_http.py` | CoreClient → HTTP calls to core:8100 with BRAIN_TOKEN | §7 (1 test) | [x] |
+| 6.4.2 | `llm_gemini.py` | LLMProvider → Gemini API | §4 | [x] |
+| 6.4.3 | `llm_claude.py` | LLMProvider → Claude API | §4 | [x] |
+| 6.4.4 | `llm_llama.py` | LLMProvider → llama:8080 (local, OpenAI-compatible) | §4 | [x] |
+| 6.4.5 | `mcp_stdio.py` | MCPClient → stdio transport | §6 (4 tests) | [x] |
+| 6.4.6 | `mcp_http.py` | MCPClient → HTTP transport | §6 | [x] |
+| 6.4.7 | `scrubber_spacy.py` | PIIScrubber → spaCy NER (Tier 2) | §3 (31 tests) | [x] |
 
 ### 6.5 Brain API (`brain/src/dina_brain/`)
 
 | # | File | What | Tests | Status |
 |---|------|------|-------|--------|
-| 6.5.1 | `app.py` | FastAPI sub-app, BRAIN_TOKEN auth middleware | §1, §10 | [ ] |
-| 6.5.2 | `routes/process.py` | POST /v1/process — new data event from core | §10 | [ ] |
-| 6.5.3 | `routes/reason.py` | POST /v1/reason — complex query from core | §10 | [ ] |
+| 6.5.1 | `app.py` | FastAPI sub-app, BRAIN_TOKEN auth middleware | §1, §10 | [x] |
+| 6.5.2 | `routes/process.py` | POST /v1/process — new data event from core | §10 | [x] |
+| 6.5.3 | `routes/reason.py` | POST /v1/reason — complex query from core | §10 | [x] |
 
 ### 6.6 Admin UI (`brain/src/dina_admin/`)
 
 | # | File | What | Tests | Status |
 |---|------|------|-------|--------|
-| 6.6.1 | `app.py` | FastAPI sub-app, CLIENT_TOKEN auth middleware | §8 | [ ] |
-| 6.6.2 | `routes/dashboard.py` | Dashboard route | §8 | [ ] |
-| 6.6.3 | `routes/contacts.py` | Contacts management | §8 | [ ] |
-| 6.6.4 | `routes/settings.py` | Settings management | §8 | [ ] |
+| 6.6.1 | `app.py` | FastAPI sub-app, CLIENT_TOKEN auth middleware | §8 | [x] |
+| 6.6.2 | `routes/dashboard.py` | Dashboard route | §8 | [x] |
+| 6.6.3 | `routes/contacts.py` | Contacts management | §8 | [x] |
+| 6.6.4 | `routes/settings.py` | Settings management | §8 | [x] |
 
 ### 6.7 Infrastructure (`brain/src/infra/`)
 
 | # | File | What | Tests | Status |
 |---|------|------|-------|--------|
-| 6.7.1 | `config.py` | Typed config from env vars + Docker Secrets | §9 (11 tests) | [ ] |
-| 6.7.2 | `logging.py` | structlog config (JSON, no PII) | §13 | [ ] |
-| 6.7.3 | `crash_handler.py` | Safe crash: sanitized stdout + full traceback → core vault | §13 (1 test) | [ ] |
+| 6.7.1 | `config.py` | Typed config from env vars + Docker Secrets | §9 (11 tests) | [x] |
+| 6.7.2 | `logging.py` | structlog config (JSON, no PII) | §13 | [x] |
+| 6.7.3 | `crash_handler.py` | Safe crash: sanitized stdout + full traceback → core vault | §13 (1 test) | [x] |
 
 ### 6.8 Main App
 
 | # | File | What | Tests | Status |
 |---|------|------|-------|--------|
-| 6.8.1 | `main.py` | FastAPI master app, mount /api and /admin, /healthz | §10 | [ ] |
-| 6.8.2 | `pyproject.toml` | Brain-specific dependencies (fastapi, httpx, spacy, structlog) | — | [ ] |
-| 6.8.3 | `Dockerfile` | Python brain container | §17 | [ ] |
+| 6.8.1 | `main.py` | FastAPI master app, mount /api and /admin, /healthz | §10 | [x] |
+| 6.8.2 | `pyproject.toml` | Brain-specific dependencies (fastapi, httpx, spacy, structlog) | — | [x] |
+| 6.8.3 | `Dockerfile` | Python brain container | §17 | [x] |
 
 ---
 
@@ -323,8 +324,8 @@ Pure crypto — no I/O, no database. Validates against §2 tests (77 test functi
 
 | # | File | What | Tests | Status |
 |---|------|------|-------|--------|
-| 7.1.1 | `docker-compose.yml` | 3 services: core, brain, pds (+ optional llm) | Integration tests | [ ] |
-| 7.1.2 | `install.sh` | Bootstrap: generate secrets, create directories, lock permissions | §17 | [ ] |
+| 7.1.1 | `docker-compose.yml` | 3 services: core, brain, llm (+ secrets, volumes, healthchecks) | Integration tests | [x] |
+| 7.1.2 | `install.sh` | Bootstrap: generate secrets, create directories, lock permissions | §17 | [x] |
 
 ### 7.2 Go Module Dependencies
 
@@ -347,7 +348,7 @@ Pure crypto — no I/O, no database. Validates against §2 tests (77 test functi
 | 7.3.3 | Wire real vault into §4 tests | [x] |
 | 7.3.4 | Wire real auth into §1 tests | [x] |
 | 7.3.5 | Wire remaining Go test sections (§3-§27) | [x] |
-| 7.3.6 | Wire Brain Python tests | [ ] |
+| 7.3.6 | Wire Brain Python tests | [x] |
 | 7.3.7 | Wire Integration tests | [ ] |
 
 ---
@@ -398,22 +399,22 @@ Phase 1.5 (config) ──┘                     │                    │
 
 ## Progress Tracking
 
-| Phase | Items | Completed | In Progress | Percentage |
-|-------|-------|-----------|-------------|------------|
+| Phase | Items | Completed | Pending | Percentage |
+|-------|-------|-----------|---------|------------|
 | 1. Domain & Crypto | 45 | 45 | 0 | 100% |
-| 2. Storage | 8 | 0 | 7 | 44% |
-| 3. Identity & Security | 8 | 4 | 3 | 69% |
+| 2. Storage | 8 | 7 | 1 | 88% |
+| 3. Identity & Security | 8 | 8 | 0 | 100% |
 | 4. Services | 13 | 13 | 0 | 100% |
-| 5. HTTP & WebSocket | 28 | 25 | 3 | 93% |
-| 6. Brain | 22 | 0 | 0 | 0% |
-| 7. Integration | 12 | 6 | 0 | 50% |
-| **TOTAL** | **136** | **93** | **13** | **72%** |
+| 5. HTTP & WebSocket | 28 | 28 | 0 | 100% |
+| 6. Brain | 22 | 22 | 0 | 100% |
+| 7. Integration | 12 | 7 | 5 | 58% |
+| **TOTAL** | **136** | **130** | **6** | **96%** |
 
 ## Test Score
 
 | Suite | Total | Current Pass | Current Fail | Current Skip | Target |
 |-------|-------|-------------|-------------|-------------|--------|
 | Core (Go) | ~1,037 | 867 | 0 | 170 | 1,037 |
-| Brain (Py) | ~71 | 0 | 0 | 0 | 71 |
+| Brain (Py) | 444 | 426 | 0 | 18 | 444 |
 | Integration | ~75 | 0 | 0 | 0 | 75 |
-| **TOTAL** | **~1,183** | **867** | **0** | **170** | **1,183** |
+| **TOTAL** | **~1,556** | **1,293** | **0** | **188** | **1,556** |

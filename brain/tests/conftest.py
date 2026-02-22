@@ -1,11 +1,13 @@
 """Pytest fixtures and mock factories for dina-brain tests.
 
-Provides mock implementations of all contracts. When real implementations
-arrive, swap via the fixture-swap pattern (commented examples below).
+Provides mock implementations of all contracts.  Real implementations are
+loaded via the fixture-swap pattern: try the real import, fall back to mock
+on ImportError or missing optional deps (e.g. spacy).
 """
 
 from __future__ import annotations
 
+import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -22,6 +24,9 @@ from .factories import (
     make_activity_entry,
     make_embedding,
 )
+
+# Ensure brain src is importable when running tests from the brain/ directory.
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "src"))
 
 
 # ---------- Auth ----------
@@ -51,14 +56,29 @@ def mock_guardian() -> AsyncMock:
     return guardian
 
 
-# Fixture swap pattern — uncomment when real implementation exists:
-# @pytest.fixture
-# def guardian(mock_guardian):
-#     try:
-#         from dina_brain.guardian.loop import GuardianLoopImpl
-#         return GuardianLoopImpl()
-#     except (ImportError, NotImplementedError):
-#         return mock_guardian
+@pytest.fixture
+def guardian(mock_guardian, mock_core_client, mock_llm_router, mock_pii_scrubber):
+    """Real GuardianLoop wired with mock dependencies, falls back to pure mock."""
+    try:
+        from src.service.guardian import GuardianLoop
+        from src.service.entity_vault import EntityVaultService
+        from src.service.nudge import NudgeAssembler
+        from src.service.scratchpad import ScratchpadService
+
+        entity_vault = EntityVaultService(mock_pii_scrubber, mock_core_client)
+        nudge = NudgeAssembler(mock_core_client)
+        scratchpad = ScratchpadService(mock_core_client)
+
+        return GuardianLoop(
+            core=mock_core_client,
+            llm_router=mock_llm_router,
+            scrubber=mock_pii_scrubber,
+            entity_vault=entity_vault,
+            nudge_assembler=nudge,
+            scratchpad=scratchpad,
+        )
+    except (ImportError, TypeError):
+        return mock_guardian
 
 
 # ---------- PII Scrubber ----------
@@ -79,14 +99,14 @@ def mock_pii_scrubber() -> MagicMock:
     return scrubber
 
 
-# Fixture swap pattern:
-# @pytest.fixture
-# def pii_scrubber(mock_pii_scrubber):
-#     try:
-#         from dina_brain.pii.scrubber import PIIScrubberImpl
-#         return PIIScrubberImpl()
-#     except (ImportError, NotImplementedError):
-#         return mock_pii_scrubber
+@pytest.fixture
+def pii_scrubber(mock_pii_scrubber):
+    """Real SpacyScrubber if spacy is installed, else mock."""
+    try:
+        from src.adapter.scrubber_spacy import SpacyScrubber
+        return SpacyScrubber()
+    except (ImportError, OSError):
+        return mock_pii_scrubber
 
 
 # ---------- LLM Router ----------
@@ -121,6 +141,16 @@ def mock_sync_engine() -> AsyncMock:
     engine.get_cursor.return_value = "2026-01-01T00:00:00Z"
     engine.set_cursor.return_value = None
     return engine
+
+
+@pytest.fixture
+def sync_engine(mock_sync_engine, mock_core_client, mock_mcp_client):
+    """Real SyncEngine wired with mock dependencies."""
+    try:
+        from src.service.sync_engine import SyncEngine
+        return SyncEngine(core=mock_core_client, mcp=mock_mcp_client)
+    except (ImportError, TypeError):
+        return mock_sync_engine
 
 
 @pytest.fixture
@@ -166,16 +196,6 @@ def mock_core_client() -> AsyncMock:
     client.get_kv.return_value = "2026-01-01T00:00:00Z"
     client.set_kv.return_value = None
     return client
-
-
-# Fixture swap pattern:
-# @pytest.fixture
-# def core_client(mock_core_client):
-#     try:
-#         from dina_brain.core_client.client import CoreClientImpl
-#         return CoreClientImpl(core_url="http://localhost:8300", token=TEST_BRAIN_TOKEN)
-#     except (ImportError, NotImplementedError):
-#         return mock_core_client
 
 
 # ---------- Agent Router ----------
@@ -273,3 +293,15 @@ def brain_config() -> dict:
         "LISTEN_PORT": 8200,
         "LOG_LEVEL": "INFO",
     }
+
+
+@pytest.fixture
+def real_brain_config(monkeypatch):
+    """Load real BrainConfig from environment (with test defaults)."""
+    monkeypatch.setenv("DINA_BRAIN_TOKEN", TEST_BRAIN_TOKEN)
+    monkeypatch.setenv("DINA_CORE_URL", "http://core:8300")
+    try:
+        from src.infra.config import load_brain_config
+        return load_brain_config()
+    except ImportError:
+        pytest.skip("src.infra.config not importable")

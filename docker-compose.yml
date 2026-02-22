@@ -1,43 +1,88 @@
-# Dina Home Node — 3+1 container stack
-# core:  Go — identity, vault, crypto, transport (port 8300)
-# brain: Python — LLM reasoning, guardian loop, admin UI (port 8200)
-# llm:   llama.cpp server — local LLM inference (port 8080)
-# Optional: Ceramic node for decentralized vault (port 7007)
+# Dina Home Node — Docker Compose
+# 3 services: core (Go), brain (Python), llm (optional local model)
+#
+# Usage:
+#   ./install.sh              # first-time setup
+#   docker compose up -d      # start all services
+#   docker compose logs -f    # tail logs
 
 services:
   core:
-    build: ./core
+    build:
+      context: ./core
+      dockerfile: Dockerfile
     ports:
-      - "8300:8300"
+      - "${DINA_CORE_PORT:-8100}:8100"
     volumes:
-      - ./data:/data
+      - dina-data:/data
+    environment:
+      - DINA_VAULT_PATH=/data/vault
+      - DINA_BRAIN_URL=http://brain:8200
+      - DINA_BRAIN_TOKEN_FILE=/run/secrets/brain_token
+      - DINA_LISTEN_ADDR=:8100
+      - DINA_RATE_LIMIT=${DINA_RATE_LIMIT:-100}
+      - DINA_SPOOL_MAX=${DINA_SPOOL_MAX:-10485760}
     secrets:
       - brain_token
-    environment:
-      - BRAIN_URL=http://brain:8200
-      - DINA_DATA_DIR=/data
-      - DINA_SPOOL_MAX=524288000  # 500MB
     depends_on:
       brain:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8100/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
 
   brain:
-    build: ./brain
-    expose:
-      - "8200"
+    build:
+      context: ./brain
+      dockerfile: Dockerfile
+    ports:
+      - "${DINA_BRAIN_PORT:-8200}:8200"
+    volumes:
+      - dina-data:/data
+    environment:
+      - DINA_CORE_URL=http://core:8100
+      - DINA_BRAIN_TOKEN_FILE=/run/secrets/brain_token
+      - DINA_BRAIN_PORT=8200
+      - DINA_LLM_URL=${DINA_LLM_URL:-http://llm:8080}
+      - DINA_LOG_LEVEL=${DINA_LOG_LEVEL:-INFO}
+      - DINA_CLOUD_LLM=${DINA_CLOUD_LLM:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     secrets:
       - brain_token
-    environment:
-      - CORE_URL=http://core:8300
-      - LLM_URL=http://llm:8080
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8200/healthz').raise_for_status()"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
 
   llm:
     image: ghcr.io/ggerganov/llama.cpp:server
-    expose:
-      - "8080"
+    ports:
+      - "${DINA_LLM_PORT:-8080}:8080"
     volumes:
-      - ./data/models:/models
-    command: ["--model", "/models/gemma-3n.gguf", "--port", "8080", "--host", "0.0.0.0"]
+      - dina-models:/models
+    command: >
+      --host 0.0.0.0
+      --port 8080
+      --model /models/${DINA_LLM_MODEL:-gemma-2b-it-q4_k_m.gguf}
+      --ctx-size 4096
+      --n-gpu-layers 999
+    profiles:
+      - local-llm
+    restart: unless-stopped
+
+volumes:
+  dina-data:
+    driver: local
+  dina-models:
+    driver: local
 
 secrets:
   brain_token:
