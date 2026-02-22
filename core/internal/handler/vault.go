@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -209,6 +210,50 @@ func (h *VaultHandler) HandleDeleteItem(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// VaultClearer clears all items from a persona's vault. Exposed as a separate
+// interface so the handler can accept it without coupling to VaultService.
+type VaultClearer interface {
+	ClearAll(ctx context.Context, persona domain.PersonaName) (int, error)
+}
+
+// HandleClearVault handles POST /v1/vault/clear. It removes ALL items from a
+// persona's vault. Only registered when DINA_TEST_MODE=true to prevent
+// accidental use in production.
+func HandleClearVault(clearer VaultClearer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req struct {
+			Persona string `json:"persona"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+			return
+		}
+		if req.Persona == "" {
+			req.Persona = "personal"
+		}
+
+		persona, err := domain.NewPersonaName(req.Persona)
+		if err != nil {
+			http.Error(w, `{"error":"invalid persona name"}`, http.StatusBadRequest)
+			return
+		}
+
+		count, err := clearer.ClearAll(r.Context(), persona)
+		if err != nil {
+			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"cleared": count})
+	}
 }
 
 // HandlePutKV handles PUT /v1/vault/kv/{key}. It reads the raw body as the

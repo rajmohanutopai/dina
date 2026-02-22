@@ -159,6 +159,17 @@ def docker_persona_setup(docker_services):
             headers=headers, timeout=10,
         )
 
+    # Clear all vaults at session start for a clean slate
+    for name in _ALL_PERSONAS:
+        try:
+            httpx.post(
+                f"{base}/v1/vault/clear",
+                json={"persona": name},
+                headers=headers, timeout=10,
+            )
+        except Exception:
+            pass
+
 
 
 # ---------------------------------------------------------------------------
@@ -166,27 +177,14 @@ def docker_persona_setup(docker_services):
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(autouse=True)
-def docker_vault_cleanup(docker_services):
-    """Track created vault items and delete them after each test.
+def docker_vault_cleanup():
+    """No-op: per-test cleanup is not needed.
 
-    Each entry is a (item_id, persona_name) tuple so items stored in
-    non-personal personas are cleaned up correctly.
+    RealVault filters search/retrieve results to only items tracked in the
+    current test's _item_map, so stale items from prior tests are invisible.
+    The vault is cleared once at session start via POST /v1/vault/clear.
     """
-    if not DOCKER_MODE:
-        yield []
-        return
-    created_items: list[tuple[str, str]] = []
-    yield created_items
-    headers = {"Authorization": f"Bearer {docker_services.brain_token}"}
-    for item_id, persona_name in created_items:
-        try:
-            httpx.delete(
-                f"{docker_services.core_url}/v1/vault/item/{item_id}",
-                params={"persona": persona_name},
-                headers=headers, timeout=5,
-            )
-        except Exception:
-            pass
+    yield []
 
 
 # ---------------------------------------------------------------------------

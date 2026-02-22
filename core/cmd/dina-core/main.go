@@ -253,6 +253,12 @@ func main() {
 	mux.HandleFunc("/v1/export", exportH.HandleExport)
 	mux.HandleFunc("/v1/import", exportH.HandleImport)
 
+	// Test-only: vault clear endpoint (guarded by DINA_TEST_MODE)
+	if os.Getenv("DINA_TEST_MODE") == "true" {
+		slog.Warn("DINA_TEST_MODE enabled — /v1/vault/clear endpoint is active")
+		mux.HandleFunc("/v1/vault/clear", handler.HandleClearVault(vaultMgr))
+	}
+
 	// ---------- Apply middleware chain ----------
 
 	authMW := &middleware.Auth{Tokens: tokenValidator}

@@ -219,10 +219,8 @@ class RealVault(MockVault):
         return results
 
     def index_for_fts(self, key: str, text: str) -> None:
-        # Real Core auto-indexes Summary + BodyText. When additional FTS
-        # keywords are provided, store/re-store the item with the keywords
-        # in Summary so FTS search finds it. BodyText is kept clean for
-        # retrieve to return the original value.
+        # Store or re-store the item with FTS keywords in Summary so search
+        # finds them. BodyText is kept clean for retrieve.
         # Find the tier for this key (search all tiers, default to 1)
         tier = 1
         for (t, k) in self._item_map:
@@ -265,7 +263,6 @@ class RealVault(MockVault):
             if new_id:
                 self._item_map[(tier, key)] = new_id
                 self._item_persona[(tier, key)] = persona_name
-                self._cleanup_ids.append((new_id, persona_name))
         self._indexed_keys.add(key)
         # Update mock state
         super().index_for_fts(key, text)

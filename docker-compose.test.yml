@@ -24,6 +24,7 @@ services:
       - DINA_RATE_LIMIT=100000
       - DINA_SPOOL_MAX=10485760
       - DINA_LOG_LEVEL=debug
+      - DINA_TEST_MODE=true
     secrets:
       - brain_token
     healthcheck:

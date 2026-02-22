@@ -237,6 +237,23 @@ func (m *Manager) Delete(_ context.Context, persona domain.PersonaName, id strin
 	return nil
 }
 
+// ClearAll removes all items from a persona's vault. This is a destructive
+// operation intended only for test teardown. Production code must never call it.
+func (m *Manager) ClearAll(_ context.Context, persona domain.PersonaName) (int, error) {
+	personaID := string(persona)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	v, ok := m.vaults[personaID]
+	if !ok {
+		return 0, fmt.Errorf("vault: persona %q not open", personaID)
+	}
+
+	count := len(v.items)
+	v.items = make(map[string]domain.VaultItem)
+	return count, nil
+}
+
 func (m *Manager) Query(_ context.Context, persona domain.PersonaName, q domain.SearchQuery) ([]domain.VaultItem, error) {
 	personaID := string(persona)
 	m.mu.RLock()
