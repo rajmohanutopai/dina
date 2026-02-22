@@ -16,7 +16,7 @@ import (
 // TST-CORE-858
 func TestBotInterface_25_1_QuerySanitizationNoDIDNoMedical(t *testing.T) {
 	// Bot query sanitization: no DID, no medical, no financial in outbound queries.
-	var impl testutil.BotQueryHandler
+	impl := realBotQueryHandler
 	testutil.RequireImplementation(t, impl, "BotQueryHandler")
 
 	sanitized, err := impl.SanitizeQuery("did:plc:abc123 has diabetes and wants a chair review", "did:plc:abc123")
@@ -32,7 +32,7 @@ func TestBotInterface_25_1_QuerySanitizationNoDIDNoMedical(t *testing.T) {
 // TST-CORE-859
 func TestBotInterface_25_2_QueryProtocolSchema(t *testing.T) {
 	// Bot communication protocol: POST /query schema with bot_signature and attribution.
-	var impl testutil.BotQueryHandler
+	impl := realBotQueryHandler
 	testutil.RequireImplementation(t, impl, "BotQueryHandler")
 
 	query := testutil.BotQuery{
@@ -50,7 +50,7 @@ func TestBotInterface_25_2_QueryProtocolSchema(t *testing.T) {
 // TST-CORE-860
 func TestBotInterface_25_3_LocalBotScoreTracking(t *testing.T) {
 	// Bot reputation scoring: local score tracking, threshold-based routing.
-	var impl testutil.BotQueryHandler
+	impl := realBotQueryHandler
 	testutil.RequireImplementation(t, impl, "BotQueryHandler")
 
 	outcome := testutil.BotOutcome{
@@ -67,7 +67,7 @@ func TestBotInterface_25_3_LocalBotScoreTracking(t *testing.T) {
 // TST-CORE-861
 func TestBotInterface_25_4_DeepLinkAttributionValidation(t *testing.T) {
 	// Deep Link attribution validation + penalty for stripping attribution.
-	var impl testutil.BotQueryHandler
+	impl := realBotQueryHandler
 	testutil.RequireImplementation(t, impl, "BotQueryHandler")
 
 	// Response with valid attribution.

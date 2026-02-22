@@ -5,6 +5,7 @@ package testutil
 
 import (
 	"context"
+	"time"
 
 	"github.com/anthropics/dina/core/internal/domain"
 )
@@ -154,6 +155,14 @@ type Transporter interface {
 	Receive() ([]byte, error)
 	// ResolveEndpoint resolves a DID to its service endpoint URL.
 	ResolveEndpoint(did string) (string, error)
+	// SetRelayURL configures the relay fallback URL.
+	SetRelayURL(url string)
+	// GetRelayURL returns the current relay URL.
+	GetRelayURL() string
+	// AddEndpoint registers a known DID -> endpoint mapping.
+	AddEndpoint(did, endpoint string)
+	// SentCount returns the number of sent messages (for testing).
+	SentCount() int
 }
 
 // OutboxMessage is an alias for domain.OutboxMessage.
@@ -175,6 +184,8 @@ type OutboxManager interface {
 	GetByID(msgID string) (*OutboxMessage, error)
 	// DeleteExpired removes messages older than TTL.
 	DeleteExpired(ttlSeconds int64) (int, error)
+	// GetRetryCount returns the retry count for a message.
+	GetRetryCount(msgID string) int
 }
 
 // InboxManager — contract for inbox 3-valve ingress (§7.2).
@@ -193,6 +204,14 @@ type InboxManager interface {
 	ProcessSpool(ctx context.Context) (int, error)
 	// CheckDIDRate checks per-DID rate limit — only when unlocked (fast path).
 	CheckDIDRate(did string) bool
+	// SetSpoolMax sets the maximum spool size in bytes.
+	SetSpoolMax(n int64)
+	// SetTTL sets the message TTL for expiry enforcement.
+	SetTTL(d time.Duration)
+	// FlushSpool clears all spooled messages.
+	FlushSpool()
+	// ResetRateLimits resets all rate limit counters.
+	ResetRateLimits()
 }
 
 // DIDResolver — contract for DID resolution and caching (§7.3).
@@ -201,6 +220,16 @@ type DIDResolver interface {
 	Resolve(did string) ([]byte, error)
 	// InvalidateCache removes a DID from cache.
 	InvalidateCache(did string)
+	// CacheStats returns cache hit and miss counters.
+	CacheStats() (hits, misses int)
+	// CacheSize returns the number of cached entries.
+	CacheSize() int
+	// SetTTL sets the cache TTL duration.
+	SetTTL(d time.Duration)
+	// AddDocument adds a DID document to the cache.
+	AddDocument(did string, doc []byte)
+	// SetFetcher sets the remote DID Document fetch function.
+	SetFetcher(fn func(did string) ([]byte, error))
 }
 
 // D2DMessage represents a DIDComm-compatible plaintext message (§7.4).
@@ -239,6 +268,14 @@ type TaskQueuer interface {
 	Fail(ctx context.Context, taskID, reason string) error
 	// Retry re-enqueues a failed task with exponential backoff.
 	Retry(ctx context.Context, taskID string) error
+	// Cancel moves a task to "cancelled" status.
+	Cancel(ctx context.Context, taskID string) error
+	// RecoverRunning bulk-resets all running tasks back to pending (crash recovery).
+	RecoverRunning(ctx context.Context) (int, error)
+	// GetByID looks up a task by ID across all states.
+	GetByID(ctx context.Context, taskID string) (*Task, error)
+	// SetMaxRetries configures the maximum number of retries before dead letter.
+	SetMaxRetries(n int)
 }
 
 // WatchdogRunner — contract for task queue watchdog (§8.2).
@@ -359,6 +396,14 @@ type BrainClient interface {
 	Health() error
 	// IsAvailable returns true if the circuit breaker is closed.
 	IsAvailable() bool
+	// SetCooldown sets the circuit breaker cooldown duration (for testing).
+	SetCooldown(d time.Duration)
+	// SetMaxFailures sets the circuit breaker failure threshold (for testing).
+	SetMaxFailures(n int)
+	// CircuitState returns the current circuit breaker state.
+	CircuitState() string
+	// ResetForTest resets the circuit breaker for per-test isolation.
+	ResetForTest()
 }
 
 // ---------- §14 Config ----------

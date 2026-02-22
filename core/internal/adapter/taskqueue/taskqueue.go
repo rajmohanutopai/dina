@@ -56,16 +56,21 @@ type Reminder = domain.Reminder
 // calls never return it again. Complete, Fail, and Retry operate on the
 // inFlight map; Retry moves the task back to the pending queue.
 type TaskQueue struct {
-	mu       sync.Mutex
-	tasks    []Task
-	inFlight map[string]*Task // taskID -> running/failed task
-	nextID   int
+	mu         sync.Mutex
+	tasks      []Task
+	inFlight   map[string]*Task // taskID -> running/failed task
+	cancelled  map[string]*Task // taskID -> cancelled task
+	deadLetter map[string]*Task // taskID -> dead-lettered task
+	nextID     int
+	maxRetries int // 0 means use default (5)
 }
 
 // NewTaskQueue returns a new TaskQueue.
 func NewTaskQueue() *TaskQueue {
 	return &TaskQueue{
-		inFlight: make(map[string]*Task),
+		inFlight:   make(map[string]*Task),
+		cancelled:  make(map[string]*Task),
+		deadLetter: make(map[string]*Task),
 	}
 }
 
@@ -177,36 +182,171 @@ func (q *TaskQueue) Fail(_ context.Context, taskID, reason string) error {
 	return ErrNotFound
 }
 
-// Retry re-enqueues a failed task with an incremented retry counter.
+// Retry re-enqueues a failed task with exponential backoff.
+// If retries exceed maxRetries (default 5), the task moves to dead letter.
 // If the task is in-flight, it is moved back to the pending queue.
 func (q *TaskQueue) Retry(_ context.Context, taskID string) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
+	var task *Task
+	inFlightTask := false
+
 	if t, ok := q.inFlight[taskID]; ok {
 		if t.Status != "failed" {
 			return fmt.Errorf("%w: task %s has status %q", ErrNotFailed, taskID, t.Status)
 		}
-		t.Status = "pending"
-		t.Retries++
-		t.Error = ""
-		// Move back to the pending queue.
-		q.tasks = append(q.tasks, *t)
-		delete(q.inFlight, taskID)
+		task = t
+		inFlightTask = true
+	} else {
+		for i := range q.tasks {
+			if q.tasks[i].ID == taskID {
+				if q.tasks[i].Status != "failed" {
+					return fmt.Errorf("%w: task %s has status %q", ErrNotFailed, taskID, q.tasks[i].Status)
+				}
+				task = &q.tasks[i]
+				break
+			}
+		}
+	}
+	if task == nil {
+		return ErrNotFound
+	}
+
+	task.Retries++
+
+	// Check max retries (default 5).
+	maxRetries := 5
+	if q.maxRetries > 0 {
+		maxRetries = q.maxRetries
+	}
+	if task.Retries > maxRetries {
+		task.Status = "dead_letter"
+		t := *task
+		q.deadLetter[taskID] = &t
+		if inFlightTask {
+			delete(q.inFlight, taskID)
+		} else {
+			q.removeFromTasks(taskID)
+		}
 		return nil
 	}
+
+	// Exponential backoff: 1s, 2s, 4s, 8s, 16s...
+	backoff := time.Duration(1<<uint(task.Retries-1)) * time.Second
+	task.NextRetry = time.Now().Add(backoff).Unix()
+	task.Status = "pending"
+	task.Error = ""
+
+	if inFlightTask {
+		// Move from inFlight back to pending.
+		q.tasks = append(q.tasks, *task)
+		delete(q.inFlight, taskID)
+	}
+	return nil
+}
+
+// removeFromTasks removes a task from the tasks slice by ID.
+func (q *TaskQueue) removeFromTasks(taskID string) {
 	for i := range q.tasks {
 		if q.tasks[i].ID == taskID {
-			if q.tasks[i].Status != "failed" {
-				return fmt.Errorf("%w: task %s has status %q", ErrNotFailed, taskID, q.tasks[i].Status)
-			}
-			q.tasks[i].Status = "pending"
-			q.tasks[i].Retries++
-			q.tasks[i].Error = ""
+			q.tasks = append(q.tasks[:i], q.tasks[i+1:]...)
+			return
+		}
+	}
+}
+
+// Cancel moves a task to "cancelled" status.
+func (q *TaskQueue) Cancel(_ context.Context, taskID string) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	// Check in-flight tasks.
+	if task, ok := q.inFlight[taskID]; ok {
+		task.Status = "cancelled"
+		t := *task
+		delete(q.inFlight, taskID)
+		q.cancelled[taskID] = &t
+		return nil
+	}
+
+	// Check pending queue.
+	for i, task := range q.tasks {
+		if task.ID == taskID {
+			q.tasks[i].Status = "cancelled"
+			t := q.tasks[i]
+			q.tasks = append(q.tasks[:i], q.tasks[i+1:]...)
+			q.cancelled[taskID] = &t
 			return nil
 		}
 	}
-	return ErrNotFound
+
+	return fmt.Errorf("%w: task %s", ErrNotFound, taskID)
+}
+
+// RecoverRunning bulk-resets all "running" (in-flight) tasks back to "pending" (crash recovery).
+func (q *TaskQueue) RecoverRunning(_ context.Context) (int, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	count := 0
+	for id, task := range q.inFlight {
+		task.Status = "pending"
+		task.Retries++
+		q.tasks = append(q.tasks, *task)
+		delete(q.inFlight, id)
+		count++
+	}
+	return count, nil
+}
+
+// GetByID looks up a task by ID across all states.
+func (q *TaskQueue) GetByID(_ context.Context, taskID string) (*Task, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	// Check in-flight.
+	if task, ok := q.inFlight[taskID]; ok {
+		return task, nil
+	}
+
+	// Check pending.
+	for i := range q.tasks {
+		if q.tasks[i].ID == taskID {
+			t := q.tasks[i]
+			return &t, nil
+		}
+	}
+
+	// Check cancelled.
+	if task, ok := q.cancelled[taskID]; ok {
+		return task, nil
+	}
+
+	// Check dead letter.
+	if task, ok := q.deadLetter[taskID]; ok {
+		return task, nil
+	}
+
+	return nil, fmt.Errorf("%w: task %s", ErrNotFound, taskID)
+}
+
+// SetMaxRetries configures the maximum number of retries before dead letter.
+func (q *TaskQueue) SetMaxRetries(n int) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.maxRetries = n
+}
+
+// ResetForTest clears all task queue state for test isolation.
+func (q *TaskQueue) ResetForTest() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.tasks = nil
+	q.inFlight = make(map[string]*Task)
+	q.cancelled = make(map[string]*Task)
+	q.deadLetter = make(map[string]*Task)
+	q.maxRetries = 0
 }
 
 // ---------- WatchdogRunner ----------
@@ -323,6 +463,13 @@ func (s *ReminderScheduler) MarkFired(_ context.Context, reminderID string) erro
 		}
 	}
 	return ErrNotFound
+}
+
+// ResetForTest clears all reminder state for test isolation.
+func (s *ReminderScheduler) ResetForTest() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reminders = nil
 }
 
 // ulid generates a simple sortable ID from a sequence number.

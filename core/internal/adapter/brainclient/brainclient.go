@@ -290,3 +290,30 @@ func (c *BrainClient) ResetForTest() {
 	c.cbState = stateClosed
 	c.lastFailure = time.Time{}
 }
+
+// SetCooldown sets the circuit breaker cooldown duration (for testing).
+func (c *BrainClient) SetCooldown(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cooldown = d
+}
+
+// SetMaxFailures sets the circuit breaker failure threshold (for testing).
+func (c *BrainClient) SetMaxFailures(n int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.maxFailures = n
+}
+
+// CircuitState returns the current circuit breaker state: "closed", "open", or "half-open".
+func (c *BrainClient) CircuitState() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.cbState == stateOpen {
+		if time.Since(c.lastFailure) > c.cooldown {
+			return stateHalfOpen
+		}
+		return stateOpen
+	}
+	return c.cbState
+}

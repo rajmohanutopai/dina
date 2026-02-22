@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/anthropics/dina/core/internal/domain"
 )
@@ -426,6 +427,48 @@ func (m *MockTaskQueuer) Retry(_ context.Context, taskID string) error {
 	return ErrNotFound
 }
 
+func (m *MockTaskQueuer) Cancel(_ context.Context, taskID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.tasks {
+		if m.tasks[i].ID == taskID {
+			m.tasks[i].Status = "cancelled"
+			return nil
+		}
+	}
+	return ErrNotFound
+}
+
+func (m *MockTaskQueuer) RecoverRunning(_ context.Context) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	count := 0
+	for i := range m.tasks {
+		if m.tasks[i].Status == "running" {
+			m.tasks[i].Status = "pending"
+			m.tasks[i].Retries++
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (m *MockTaskQueuer) GetByID(_ context.Context, taskID string) (*Task, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.tasks {
+		if m.tasks[i].ID == taskID {
+			t := m.tasks[i]
+			return &t, nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
+func (m *MockTaskQueuer) SetMaxRetries(_ int) {
+	// Mock does not enforce max retries.
+}
+
 // ---------- Mock Brain Client ----------
 
 // MockBrainClient simulates brain communication.
@@ -446,6 +489,23 @@ func (m *MockBrainClient) Health() error {
 
 func (m *MockBrainClient) IsAvailable() bool {
 	return m.Available
+}
+
+func (m *MockBrainClient) SetCooldown(d time.Duration) {}
+
+func (m *MockBrainClient) SetMaxFailures(n int) {}
+
+func (m *MockBrainClient) CircuitState() string {
+	if m.Available {
+		return "closed"
+	}
+	return "open"
+}
+
+func (m *MockBrainClient) ResetForTest() {
+	m.Available = true
+	m.HealthErr = nil
+	m.ProcessErr = nil
 }
 
 // ---------- Mock Transporter ----------

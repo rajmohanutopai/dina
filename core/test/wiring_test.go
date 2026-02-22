@@ -28,6 +28,9 @@ import (
 	"github.com/anthropics/dina/core/internal/adapter/pairing"
 	"github.com/anthropics/dina/core/internal/adapter/pds"
 	piipkg "github.com/anthropics/dina/core/internal/adapter/pii"
+	"github.com/anthropics/dina/core/internal/adapter/bot"
+	"github.com/anthropics/dina/core/internal/adapter/estate"
+	dinasync "github.com/anthropics/dina/core/internal/adapter/sync"
 	"github.com/anthropics/dina/core/internal/adapter/portability"
 	"github.com/anthropics/dina/core/internal/adapter/security"
 	"github.com/anthropics/dina/core/internal/adapter/server"
@@ -179,7 +182,7 @@ var didResolver = transport.NewDIDResolver()
 
 var (
 	realTransporter   testutil.Transporter   = transport.NewTransporter(didResolver)
-	realOutboxManager port.OutboxManager    = transport.NewOutboxManager(100)
+	realOutboxManager testutil.OutboxManager = transport.NewOutboxManager(100)
 	realInboxManager  testutil.InboxManager = transport.NewInboxManager(transport.DefaultInboxConfig()) // testutil superset (has CheckDIDRate)
 	realDIDResolver   testutil.DIDResolver   = didResolver
 )
@@ -322,6 +325,18 @@ var (
 	realExportManager testutil.ExportManager = portability.NewExportManager()  // testutil superset (matches port + extras)
 	realImportManager testutil.ImportManager = portability.NewImportManager(false) // testutil superset (matches port + extras)
 )
+
+// ---------- Bot Interface implementations (§25) ----------
+
+var realBotQueryHandler testutil.BotQueryHandler = bot.NewQueryHandler()
+
+// ---------- Client Sync implementations (§26) ----------
+
+var realClientSyncManager testutil.ClientSyncManager = dinasync.NewClientSyncManager()
+
+// ---------- Digital Estate implementations (§27) ----------
+
+var realEstateManager testutil.EstateManager = estate.NewEstateManager()
 
 // ---------- API Contract implementations (§18) ----------
 

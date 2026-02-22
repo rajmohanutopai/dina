@@ -13,6 +13,10 @@ type TaskQueue interface {
 	Complete(ctx context.Context, taskID string) error
 	Fail(ctx context.Context, taskID, reason string) error
 	Retry(ctx context.Context, taskID string) error
+	Cancel(ctx context.Context, taskID string) error
+	RecoverRunning(ctx context.Context) (int, error)
+	GetByID(ctx context.Context, taskID string) (*domain.Task, error)
+	SetMaxRetries(n int)
 }
 
 // TaskWorker processes tasks from the queue.

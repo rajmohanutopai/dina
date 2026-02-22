@@ -20,8 +20,10 @@ type Task struct {
 	Payload   []byte
 	Status    TaskStatus
 	Retries   int
-	Error     string
-	TimeoutAt int64
+	Error      string
+	TimeoutAt  int64
+	NextRetry  int64 // Unix timestamp for next retry (exponential backoff)
+	MaxRetries int   // Maximum retries before dead letter (default 5)
 }
 
 // Reminder represents a scheduled reminder stored in the task queue.

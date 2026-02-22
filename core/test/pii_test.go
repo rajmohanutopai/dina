@@ -3,6 +3,7 @@ package test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/anthropics/dina/core/test/testutil"
 )
@@ -119,7 +120,30 @@ func TestPII_5_9_TableDriven(t *testing.T) {
 func TestPII_5_10_LatencyUnder1ms(t *testing.T) {
 	impl := realPIIScrubber
 	testutil.RequireImplementation(t, impl, "PIIScrubber")
-	t.Skip("requires benchmark — <1ms for PII scrubbing")
+
+	// Benchmark: scrub simple text and assert latency < 1ms.
+	input := "Contact john@example.com or call 555-123-4567"
+
+	// Warm up the scrubber (regex compilation happens on first call or at init).
+	_, _ = impl.Scrub(piiCtx, input)
+
+	// Measure latency over multiple iterations for reliability.
+	iterations := 100
+	start := time.Now()
+	for i := 0; i < iterations; i++ {
+		_, err := impl.Scrub(piiCtx, input)
+		if err != nil {
+			t.Fatalf("scrub failed on iteration %d: %v", i, err)
+		}
+	}
+	elapsed := time.Since(start)
+	avgLatency := elapsed / time.Duration(iterations)
+
+	// Assert average latency is under 1ms.
+	testutil.RequireTrue(t, avgLatency < time.Millisecond,
+		"PII scrub average latency must be under 1ms, got "+avgLatency.String())
+
+	t.Logf("PII scrub avg latency: %v (over %d iterations)", avgLatency, iterations)
 }
 
 // TST-CORE-353

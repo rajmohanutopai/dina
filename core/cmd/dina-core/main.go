@@ -132,7 +132,7 @@ func main() {
 	importMgr := portability.NewImportManager(false)
 
 	// 15. Estate
-	estateMgr := estate.NewEstateManager()
+	estateMgr := estate.NewPortEstateManager()
 
 	// ---------- Construct services ----------
 

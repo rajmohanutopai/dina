@@ -16,7 +16,7 @@ import (
 // TST-CORE-869
 func TestEstate_27_1_PlanStoredInTier0(t *testing.T) {
 	// Estate plan stored in Tier 0 (identity.sqlite).
-	var impl testutil.EstateManager
+	impl := realEstateManager
 	testutil.RequireImplementation(t, impl, "EstateManager")
 
 	plan := testutil.EstatePlan{
@@ -41,7 +41,7 @@ func TestEstate_27_1_PlanStoredInTier0(t *testing.T) {
 // TST-CORE-870
 func TestEstate_27_2_Recovery_CustodianThresholdMet(t *testing.T) {
 	// Estate recovery: custodian threshold met, per-beneficiary DEK derivation.
-	var impl testutil.EstateManager
+	impl := realEstateManager
 	testutil.RequireImplementation(t, impl, "EstateManager")
 
 	// Provide threshold number of custodian shares.
@@ -56,7 +56,7 @@ func TestEstate_27_2_Recovery_CustodianThresholdMet(t *testing.T) {
 // TST-CORE-871
 func TestEstate_27_3_NoDeadMansSwitch_NoTimerTrigger(t *testing.T) {
 	// No Dead Man's Switch — no timer-based estate activation.
-	var impl testutil.EstateManager
+	impl := realEstateManager
 	testutil.RequireImplementation(t, impl, "EstateManager")
 
 	// Attempt timer-triggered activation — must be rejected.
@@ -67,7 +67,7 @@ func TestEstate_27_3_NoDeadMansSwitch_NoTimerTrigger(t *testing.T) {
 // TST-CORE-872
 func TestEstate_27_4_ReadOnly90Days_Expires(t *testing.T) {
 	// Estate `read_only_90_days` access type expires after 90 days.
-	var impl testutil.EstateManager
+	impl := realEstateManager
 	testutil.RequireImplementation(t, impl, "EstateManager")
 
 	// Granted 91 days ago — should be expired.
@@ -80,7 +80,7 @@ func TestEstate_27_4_ReadOnly90Days_Expires(t *testing.T) {
 // TST-CORE-873
 func TestEstate_27_5_DefaultAction_DestroyOrArchive(t *testing.T) {
 	// Estate `default_action` enforcement (destroy vs archive).
-	var impl testutil.EstateManager
+	impl := realEstateManager
 	testutil.RequireImplementation(t, impl, "EstateManager")
 
 	err := impl.EnforceDefaultAction("destroy")
@@ -111,7 +111,7 @@ func TestEstate_27_6_SSSSharesReusedFromIdentityRecovery(t *testing.T) {
 // TST-CORE-875
 func TestEstate_27_7_PlanJSONStructure_Validated(t *testing.T) {
 	// Estate plan JSON structure validated (trigger, custodians, beneficiaries).
-	var impl testutil.EstateManager
+	impl := realEstateManager
 	testutil.RequireImplementation(t, impl, "EstateManager")
 
 	// Plan missing required fields should fail validation.
@@ -125,7 +125,7 @@ func TestEstate_27_7_PlanJSONStructure_Validated(t *testing.T) {
 // TST-CORE-876
 func TestEstate_27_8_NotificationList_InformsOnActivation(t *testing.T) {
 	// Estate notification list informs contacts on activation.
-	var impl testutil.EstateManager
+	impl := realEstateManager
 	testutil.RequireImplementation(t, impl, "EstateManager")
 
 	err := impl.NotifyContacts()
@@ -135,7 +135,7 @@ func TestEstate_27_8_NotificationList_InformsOnActivation(t *testing.T) {
 // TST-CORE-877
 func TestEstate_27_9_Recovery_KeysDeliveredViaD2D(t *testing.T) {
 	// Estate recovery: keys delivered via Dina-to-Dina encrypted channel.
-	var impl testutil.EstateManager
+	impl := realEstateManager
 	testutil.RequireImplementation(t, impl, "EstateManager")
 
 	err := impl.DeliverKeys("did:key:z6MkBeneficiary1")
@@ -145,7 +145,7 @@ func TestEstate_27_9_Recovery_KeysDeliveredViaD2D(t *testing.T) {
 // TST-CORE-878
 func TestEstate_27_10_Recovery_NonAssignedDataDestroyed(t *testing.T) {
 	// Estate recovery: non-assigned data destroyed per default_action.
-	var impl testutil.EstateManager
+	impl := realEstateManager
 	testutil.RequireImplementation(t, impl, "EstateManager")
 
 	err := impl.EnforceDefaultAction("destroy")
@@ -155,7 +155,7 @@ func TestEstate_27_10_Recovery_NonAssignedDataDestroyed(t *testing.T) {
 // TST-CORE-879
 func TestEstate_27_11_NoTimerTriggerInCodebase(t *testing.T) {
 	// Estate recovery: no timer trigger exists in codebase — code audit.
-	var impl testutil.EstateManager
+	impl := realEstateManager
 	testutil.RequireImplementation(t, impl, "EstateManager")
 
 	// Verify that only "custodian_threshold" trigger is accepted.

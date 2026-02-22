@@ -49,6 +49,8 @@ func NewScrubber() *Scrubber {
 		{"PHONE", regexp.MustCompile(`\+\d{1,3}[\s.-]\d[\d\s.-]{6,12}\d`)},
 		// US/domestic phone: optional +1, then 10 digits in 3-3-4 groups.
 		{"PHONE", regexp.MustCompile(`\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b`)},
+		// Street address: number + street name + street type suffix.
+		{"ADDRESS", regexp.MustCompile(`\d+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln|Way|Place|Pl|Court|Ct)`)},
 		{"AADHAAR", regexp.MustCompile(`\b\d{4}[\s-]?\d{4}[\s-]?\d{4}\b`)},
 	}
 	return s

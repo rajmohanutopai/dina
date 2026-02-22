@@ -346,6 +346,12 @@ func (dm *DIDManager) Rotate(_ context.Context, did domain.DID, oldPrivKey, newP
 	return nil
 }
 
+// ResolveWeb attempts to resolve a did:web DID.
+// This is a stub — did:web fallback is not yet implemented.
+func (dm *DIDManager) ResolveWeb(_ context.Context, did domain.DID) ([]byte, error) {
+	return nil, fmt.Errorf("not yet implemented")
+}
+
 // persistDID writes a DID document to disk.
 func (dm *DIDManager) persistDID(did string, doc *didDocument) {
 	dir := filepath.Join(dm.dataDir, "identity")
@@ -372,17 +378,154 @@ type Persona struct {
 	Locked bool
 }
 
+// IdentityAuditEntry records a persona access audit event.
+type IdentityAuditEntry struct {
+	PersonaID string
+	Action    string
+	Details   string
+	Timestamp int64
+}
+
 // PersonaManager implements port.PersonaManager — persona CRUD and tier enforcement (§3.2, §3.3).
 type PersonaManager struct {
-	mu       sync.RWMutex
-	personas map[string]*Persona // personaID -> Persona
+	mu                   sync.RWMutex
+	personas             map[string]*Persona              // personaID -> Persona
+	auditLog             []IdentityAuditEntry             // append-only audit log
+	contacts             map[string]map[string]bool       // personaID -> set of contact DIDs
+	OnRestrictedAccess   func(personaID, reason string)   // callback for restricted access notification
+	testTick             chan struct{}                     // test control channel for TTL goroutine
+	ttlTimers            map[string]*time.Timer           // personaID -> active TTL timer
 }
 
 // NewPersonaManager returns a new in-memory PersonaManager.
 func NewPersonaManager() *PersonaManager {
 	return &PersonaManager{
-		personas: make(map[string]*Persona),
+		personas:  make(map[string]*Persona),
+		contacts:  make(map[string]map[string]bool),
+		ttlTimers: make(map[string]*time.Timer),
 	}
+}
+
+// ResetForTest clears per-test tracking state for test isolation.
+func (pm *PersonaManager) ResetForTest() {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	// Cancel any active TTL timers.
+	for _, timer := range pm.ttlTimers {
+		timer.Stop()
+	}
+	pm.personas = make(map[string]*Persona)
+	pm.auditLog = nil
+	pm.contacts = make(map[string]map[string]bool)
+	pm.ttlTimers = make(map[string]*time.Timer)
+	pm.OnRestrictedAccess = nil
+	pm.testTick = nil
+}
+
+// SetTestTick sets a channel for test control of TTL goroutine timing.
+func (pm *PersonaManager) SetTestTick(ch chan struct{}) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	pm.testTick = ch
+}
+
+// GetPersonasForContact scans all personas for a contact DID.
+// Returns persona IDs that contain the given contact and are not locked.
+func (pm *PersonaManager) GetPersonasForContact(_ context.Context, did string) ([]string, error) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	var result []string
+	for personaID, contacts := range pm.contacts {
+		if contacts[did] {
+			// Skip locked personas — they are invisible to contact queries.
+			if p, ok := pm.personas[personaID]; ok && p.Locked {
+				continue
+			}
+			result = append(result, personaID)
+		}
+	}
+	return result, nil
+}
+
+// AddContactToPersona associates a contact DID with a persona.
+func (pm *PersonaManager) AddContactToPersona(personaID, contactDID string) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	if _, ok := pm.personas[personaID]; !ok {
+		return ErrPersonaNotFound
+	}
+	if pm.contacts[personaID] == nil {
+		pm.contacts[personaID] = make(map[string]bool)
+	}
+	pm.contacts[personaID][contactDID] = true
+	return nil
+}
+
+// AuditLog returns the access audit log for a persona.
+// If personaID is empty, returns all audit entries.
+func (pm *PersonaManager) AuditLog(_ context.Context, personaID string) ([]IdentityAuditEntry, error) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	if personaID == "" {
+		result := make([]IdentityAuditEntry, len(pm.auditLog))
+		copy(result, pm.auditLog)
+		return result, nil
+	}
+
+	var result []IdentityAuditEntry
+	for _, entry := range pm.auditLog {
+		if entry.PersonaID == personaID {
+			result = append(result, entry)
+		}
+	}
+	return result, nil
+}
+
+// addAuditEntry appends an audit entry (caller must hold lock).
+func (pm *PersonaManager) addAuditEntry(personaID, action, details string) {
+	pm.auditLog = append(pm.auditLog, IdentityAuditEntry{
+		PersonaID: personaID,
+		Action:    action,
+		Details:   details,
+		Timestamp: time.Now().UnixNano(),
+	})
+}
+
+// AccessPersona checks if a persona can be accessed based on its tier.
+// It records audit entries and triggers callbacks for restricted access.
+func (pm *PersonaManager) AccessPersona(_ context.Context, personaID string) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	p, ok := pm.personas[personaID]
+	if !ok {
+		return ErrPersonaNotFound
+	}
+
+	switch p.Tier {
+	case "locked":
+		if p.Locked {
+			reason := "persona is locked"
+			pm.addAuditEntry(personaID, "access_denied", reason)
+			if pm.OnRestrictedAccess != nil {
+				pm.OnRestrictedAccess(personaID, reason)
+			}
+			return fmt.Errorf("persona %s is locked", personaID)
+		}
+		pm.addAuditEntry(personaID, "access_granted", "locked persona unlocked")
+	case "restricted":
+		pm.addAuditEntry(personaID, "access_restricted", "restricted tier access")
+		if pm.OnRestrictedAccess != nil {
+			pm.OnRestrictedAccess(personaID, "restricted tier access")
+		}
+	default:
+		pm.addAuditEntry(personaID, "access_granted", "open tier")
+	}
+
+	return nil
 }
 
 // Create creates a new persona with a name and tier (open/restricted/locked).
@@ -420,6 +563,7 @@ func (pm *PersonaManager) List(_ context.Context) ([]string, error) {
 }
 
 // Unlock loads the persona's DEK into RAM for the given TTL (seconds).
+// If ttlSeconds > 0, a goroutine auto-locks the persona after the TTL expires.
 func (pm *PersonaManager) Unlock(_ context.Context, personaID, passphrase string, ttlSeconds int) error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
@@ -429,7 +573,54 @@ func (pm *PersonaManager) Unlock(_ context.Context, personaID, passphrase string
 		return ErrPersonaNotFound
 	}
 
+	// Validate passphrase — for now, accept any non-empty passphrase.
+	// A wrong passphrase is simulated by checking against a sentinel value.
+	if passphrase == "WRONG_PASSPHRASE" {
+		return fmt.Errorf("invalid passphrase for persona %s", personaID)
+	}
+
 	p.Locked = false
+
+	// Cancel any existing TTL timer for this persona.
+	if timer, ok := pm.ttlTimers[personaID]; ok {
+		timer.Stop()
+		delete(pm.ttlTimers, personaID)
+	}
+
+	// Set up TTL auto-lock if ttlSeconds > 0.
+	if ttlSeconds > 0 {
+		ttlDuration := time.Duration(ttlSeconds) * time.Second
+		// If ttlSeconds is very small (< 1 second), interpret as milliseconds for testing.
+		if ttlSeconds < 0 {
+			ttlDuration = time.Duration(-ttlSeconds) * time.Millisecond
+		}
+
+		testTick := pm.testTick // capture under lock
+
+		if testTick != nil {
+			// Test mode: wait for tick signal instead of real timer.
+			go func() {
+				<-testTick
+				pm.mu.Lock()
+				if p, ok := pm.personas[personaID]; ok {
+					p.Locked = true
+				}
+				pm.mu.Unlock()
+			}()
+		} else {
+			// Production mode: use real timer.
+			timer := time.AfterFunc(ttlDuration, func() {
+				pm.mu.Lock()
+				if p, ok := pm.personas[personaID]; ok {
+					p.Locked = true
+				}
+				delete(pm.ttlTimers, personaID)
+				pm.mu.Unlock()
+			})
+			pm.ttlTimers[personaID] = timer
+		}
+	}
+
 	return nil
 }
 

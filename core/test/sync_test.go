@@ -17,7 +17,7 @@ import (
 // TST-CORE-862
 func TestSync_26_1_ClientSendsCheckpoint_CoreReturnsChangedItems(t *testing.T) {
 	// Client sends checkpoint, core returns changed items since checkpoint.
-	var impl testutil.ClientSyncManager
+	impl := realClientSyncManager
 	testutil.RequireImplementation(t, impl, "ClientSyncManager")
 
 	items, newCheckpoint, err := impl.Sync("device-001", 100)
@@ -29,7 +29,7 @@ func TestSync_26_1_ClientSendsCheckpoint_CoreReturnsChangedItems(t *testing.T) {
 // TST-CORE-863
 func TestSync_26_2_NewVaultItem_PushedToConnectedClients(t *testing.T) {
 	// Real-time vault item push to connected clients via WebSocket.
-	var impl testutil.ClientSyncManager
+	impl := realClientSyncManager
 	testutil.RequireImplementation(t, impl, "ClientSyncManager")
 
 	item := testutil.VaultItem{
@@ -46,7 +46,7 @@ func TestSync_26_2_NewVaultItem_PushedToConnectedClients(t *testing.T) {
 // TST-CORE-864
 func TestSync_26_3_ConflictResolution_LastWriteWins(t *testing.T) {
 	// Conflict resolution: last-write-wins, earlier version logged as recoverable.
-	var impl testutil.ClientSyncManager
+	impl := realClientSyncManager
 	testutil.RequireImplementation(t, impl, "ClientSyncManager")
 
 	local := testutil.VaultItem{
@@ -68,7 +68,7 @@ func TestSync_26_3_ConflictResolution_LastWriteWins(t *testing.T) {
 // TST-CORE-865
 func TestSync_26_4_ThinClient_QueryViaWebSocket(t *testing.T) {
 	// Thin client: query via WebSocket, no local cache model.
-	var impl testutil.ClientSyncManager
+	impl := realClientSyncManager
 	testutil.RequireImplementation(t, impl, "ClientSyncManager")
 
 	// Thin client sends checkpoint=0 but expects query relay, not full sync.
@@ -91,7 +91,7 @@ func TestSync_26_5_BackupBlobStoreDestination(t *testing.T) {
 // TST-CORE-867
 func TestSync_26_6_NewDeviceFullSync(t *testing.T) {
 	// New device full sync from zero checkpoint.
-	var impl testutil.ClientSyncManager
+	impl := realClientSyncManager
 	testutil.RequireImplementation(t, impl, "ClientSyncManager")
 
 	items, checkpoint, err := impl.FullSync("new-device-001")
@@ -103,7 +103,7 @@ func TestSync_26_6_NewDeviceFullSync(t *testing.T) {
 // TST-CORE-868
 func TestSync_26_7_OfflineQueueSyncsOnReconnect(t *testing.T) {
 	// Connection drop: client queues changes, syncs on reconnect.
-	var impl testutil.ClientSyncManager
+	impl := realClientSyncManager
 	testutil.RequireImplementation(t, impl, "ClientSyncManager")
 
 	// Queue an offline change.
