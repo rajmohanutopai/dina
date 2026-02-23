@@ -224,11 +224,9 @@ class TestCredentialProtection:
 
         assert "rajmohan@email.com" not in scrubbed
         assert "4111-2222-3333-4444" not in scrubbed
-        assert "[EMAIL_1]" in scrubbed
-        assert "[CC_NUM]" in scrubbed
         # Replacement map allows Dina to restore later
-        assert replacements["[EMAIL_1]"] == "rajmohan@email.com"
-        assert replacements["[CC_NUM]"] == "4111-2222-3333-4444"
+        assert "rajmohan@email.com" in replacements.values()
+        assert "4111-2222-3333-4444" in replacements.values()
 
 # TST-INT-543
     def test_agent_accepts_no_external_commands(

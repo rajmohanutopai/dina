@@ -4,8 +4,10 @@ package service
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/anthropics/dina/core/internal/domain"
 	"github.com/anthropics/dina/core/internal/port"
@@ -22,6 +24,12 @@ type TransportService struct {
 	outbox    port.OutboxManager
 	inbox     port.InboxManager
 	clock     port.Clock
+	deliverer port.Deliverer // optional: immediate delivery to remote endpoint
+
+	recipientPub  []byte
+	recipientPriv []byte
+	mu            sync.Mutex
+	inboundMsgs   []domain.DinaMessage
 }
 
 // NewTransportService constructs a TransportService with all required dependencies.
@@ -43,6 +51,13 @@ func NewTransportService(
 		inbox:     inbox,
 		clock:     clock,
 	}
+}
+
+// SetDeliverer sets an optional Deliverer for immediate message delivery.
+// When set, SendMessage will attempt to deliver the encrypted payload
+// to the recipient's service endpoint after outbox enqueue.
+func (s *TransportService) SetDeliverer(d port.Deliverer) {
+	s.deliverer = d
 }
 
 // SendMessage signs and encrypts a message for the recipient, then attempts
@@ -71,8 +86,18 @@ func (s *TransportService) SendMessage(ctx context.Context, to domain.DID, msg d
 		return fmt.Errorf("transport: sign message: %w", err)
 	}
 
+	// Decode the recipient's multibase-encoded Ed25519 public key.
+	// Format: single-char prefix (e.g. "z") + hex-encoded 32-byte key.
+	multibaseKey := doc.VerificationMethod[0].PublicKeyMultibase
+	if len(multibaseKey) < 2 {
+		return fmt.Errorf("transport: invalid public key multibase encoding")
+	}
+	recipientEd25519Pub, err := hex.DecodeString(multibaseKey[1:]) // strip prefix
+	if err != nil {
+		return fmt.Errorf("transport: decode recipient public key: %w", err)
+	}
+
 	// Convert the recipient's Ed25519 public key to X25519 for encryption.
-	recipientEd25519Pub := []byte(doc.VerificationMethod[0].PublicKeyMultibase)
 	recipientX25519Pub, err := s.converter.Ed25519ToX25519Public(recipientEd25519Pub)
 	if err != nil {
 		return fmt.Errorf("transport: convert recipient key: %w", err)
@@ -97,13 +122,25 @@ func (s *TransportService) SendMessage(ctx context.Context, to domain.DID, msg d
 	}
 
 	// Queue the message. The outbox handles retry scheduling.
-	_, err = s.outbox.Enqueue(ctx, outboxMsg)
+	msgID, err := s.outbox.Enqueue(ctx, outboxMsg)
 	if err != nil {
 		return fmt.Errorf("transport: enqueue message: %w", err)
 	}
 
 	// Store the signature alongside the message for verification by the recipient.
 	_ = sig
+
+	// Attempt immediate delivery if a Deliverer is configured.
+	// On failure, the message stays in the outbox for retry via ProcessOutbox.
+	if s.deliverer != nil && len(doc.Service) > 0 {
+		endpoint := doc.Service[0].ServiceEndpoint
+		if endpoint != "" {
+			if deliverErr := s.deliverer.Deliver(ctx, endpoint, ciphertext); deliverErr == nil {
+				_ = s.outbox.MarkDelivered(ctx, msgID)
+			}
+			// Delivery failure is not an error — outbox will retry.
+		}
+	}
 
 	return nil
 }
@@ -174,4 +211,57 @@ func (s *TransportService) ProcessOutbox(ctx context.Context) (processed int, er
 	}
 
 	return processed, nil
+}
+
+// SetRecipientKeys configures the node's own Ed25519 keypair for inbound decryption.
+func (s *TransportService) SetRecipientKeys(pub, priv []byte) {
+	s.recipientPub = pub
+	s.recipientPriv = priv
+}
+
+// ProcessInbound decrypts a raw NaCl sealed box using the node's own X25519 keys.
+func (s *TransportService) ProcessInbound(ctx context.Context, sealed []byte) (*domain.DinaMessage, error) {
+	if s.recipientPub == nil || s.recipientPriv == nil {
+		return nil, fmt.Errorf("transport: recipient keys not configured")
+	}
+	x25519Priv, err := s.converter.Ed25519ToX25519Private(s.recipientPriv)
+	if err != nil {
+		return nil, fmt.Errorf("transport: convert private key: %w", err)
+	}
+	x25519Pub, err := s.converter.Ed25519ToX25519Public(s.recipientPub)
+	if err != nil {
+		return nil, fmt.Errorf("transport: convert public key: %w", err)
+	}
+	plaintext, err := s.encryptor.OpenAnonymous(sealed, x25519Pub, x25519Priv)
+	if err != nil {
+		return nil, fmt.Errorf("transport: decrypt inbound: %w", err)
+	}
+	var msg domain.DinaMessage
+	if err := json.Unmarshal(plaintext, &msg); err != nil {
+		return nil, fmt.Errorf("transport: unmarshal inbound: %w", err)
+	}
+	return &msg, nil
+}
+
+// StoreInbound adds a decrypted message to the in-memory inbox.
+func (s *TransportService) StoreInbound(msg *domain.DinaMessage) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.inboundMsgs = append(s.inboundMsgs, *msg)
+}
+
+// GetInbound returns all received messages.
+func (s *TransportService) GetInbound() []domain.DinaMessage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result := make([]domain.DinaMessage, len(s.inboundMsgs))
+	copy(result, s.inboundMsgs)
+	return result
+}
+
+// ClearInbound removes all received messages (for test reset).
+func (s *TransportService) ClearInbound() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.inboundMsgs = nil
 }

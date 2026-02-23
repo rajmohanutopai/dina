@@ -1,0 +1,186 @@
+"""Docker Compose lifecycle for multi-node E2E tests.
+
+Manages 4 Core+Brain pairs (Alonso, Sancho, ChairMaker, Albert),
+each running in its own Docker container with a separate vault volume.
+Shared Docker network enables real inter-node D2D messaging.
+
+Usage as a pytest fixture (session-scoped):
+
+    @pytest.fixture(scope="session")
+    def docker_services():
+        svc = MultiNodeDockerServices()
+        svc.start()
+        yield svc
+        svc.stop()
+"""
+
+from __future__ import annotations
+
+import subprocess
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import httpx
+
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+COMPOSE_FILE = PROJECT_ROOT / "docker-compose-e2e.yml"
+
+HEALTH_TIMEOUT = 180  # seconds (4 services take longer)
+HEALTH_INTERVAL = 3   # seconds between polls
+
+# Actor → port mapping
+ACTOR_PORTS: dict[str, dict[str, int]] = {
+    "alonso":     {"core": 18100, "brain": 18200},
+    "sancho":     {"core": 18101, "brain": 18201},
+    "chairmaker": {"core": 18102, "brain": 18202},
+    "albert":     {"core": 18103, "brain": 18203},
+}
+
+
+# ---------------------------------------------------------------------------
+# MultiNodeDockerServices
+# ---------------------------------------------------------------------------
+
+class MultiNodeDockerServices:
+    """Manages the 4-node Docker Compose E2E stack."""
+
+    def __init__(
+        self,
+        compose_file: Path = COMPOSE_FILE,
+    ) -> None:
+        self._compose_file = compose_file
+        self._started = False
+        self._externally_managed = False
+        self.brain_token: str = ""
+
+    # -- per-actor URLs ------------------------------------------------------
+
+    def core_url(self, actor: str) -> str:
+        """External URL for an actor's Go Core (localhost:port)."""
+        return f"http://localhost:{ACTOR_PORTS[actor]['core']}"
+
+    def brain_url(self, actor: str) -> str:
+        """External URL for an actor's Python Brain (localhost:port)."""
+        return f"http://localhost:{ACTOR_PORTS[actor]['brain']}"
+
+    def internal_core_url(self, actor: str) -> str:
+        """Docker-internal URL for inter-container communication."""
+        return f"http://core-{actor}:8100"
+
+    # -- lifecycle -----------------------------------------------------------
+
+    def start(self) -> None:
+        """Build and start all containers, wait for health endpoints."""
+        if self._started:
+            return
+
+        self._load_brain_token()
+
+        if self._all_healthy():
+            self._externally_managed = True
+            self._started = True
+            return
+
+        self._externally_managed = False
+        self._compose("up", "--build", "-d")
+        self._wait_for_health()
+        self._started = True
+
+    def stop(self) -> None:
+        """Stop and remove containers + volumes."""
+        if not self._started:
+            return
+        if not self._externally_managed:
+            self._compose("down", "-v")
+        self._started = False
+
+    # -- health wait ---------------------------------------------------------
+
+    def _wait_for_health(self) -> None:
+        """Poll /healthz on all services until they respond 200."""
+        deadline = time.monotonic() + HEALTH_TIMEOUT
+        healthy: dict[str, bool] = {}
+
+        for actor in ACTOR_PORTS:
+            healthy[f"core-{actor}"] = False
+            healthy[f"brain-{actor}"] = False
+
+        while time.monotonic() < deadline:
+            for actor in ACTOR_PORTS:
+                core_key = f"core-{actor}"
+                brain_key = f"brain-{actor}"
+                if not healthy[core_key]:
+                    healthy[core_key] = self._probe(
+                        f"{self.core_url(actor)}/healthz"
+                    )
+                if not healthy[brain_key]:
+                    healthy[brain_key] = self._probe(
+                        f"{self.brain_url(actor)}/healthz"
+                    )
+
+            if all(healthy.values()):
+                return
+
+            time.sleep(HEALTH_INTERVAL)
+
+        # Dump logs for debugging
+        self._compose("logs", "--tail=30")
+
+        unhealthy = [k for k, v in healthy.items() if not v]
+        raise TimeoutError(
+            f"E2E services not healthy after {HEALTH_TIMEOUT}s: "
+            + ", ".join(unhealthy)
+        )
+
+    def _all_healthy(self) -> bool:
+        """Check if all services respond to health checks right now."""
+        for actor in ACTOR_PORTS:
+            if not self._probe(f"{self.core_url(actor)}/healthz"):
+                return False
+            if not self._probe(f"{self.brain_url(actor)}/healthz"):
+                return False
+        return True
+
+    @staticmethod
+    def _probe(url: str) -> bool:
+        """Return True if URL responds with 2xx."""
+        try:
+            resp = httpx.get(url, timeout=3)
+            return resp.is_success
+        except (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout):
+            return False
+
+    # -- helpers -------------------------------------------------------------
+
+    def _compose(self, *args: str) -> subprocess.CompletedProcess:
+        """Run docker compose with the E2E compose file."""
+        cmd = [
+            "docker", "compose",
+            "-f", str(self._compose_file),
+            *args,
+        ]
+        return subprocess.run(
+            cmd,
+            cwd=str(PROJECT_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+
+    def _load_brain_token(self) -> None:
+        """Read the shared brain token from secrets/brain_token."""
+        token_path = PROJECT_ROOT / "secrets" / "brain_token"
+        if token_path.exists():
+            self.brain_token = token_path.read_text().strip()
+        else:
+            self.brain_token = ""
+
+    def is_running(self) -> bool:
+        """Check if all services respond to health checks."""
+        return self._all_healthy()

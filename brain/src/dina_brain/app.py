@@ -18,6 +18,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from .routes import pii as pii_route
 from .routes import process as process_route
 from .routes import reason as reason_route
 
@@ -28,6 +29,7 @@ def create_brain_app(
     guardian: Any,
     sync_engine: Any,
     brain_token: str,
+    scrubber: Any = None,
 ) -> FastAPI:
     """Create the brain API sub-app with BRAIN_TOKEN auth middleware.
 
@@ -40,6 +42,9 @@ def create_brain_app(
     brain_token:
         The shared secret for authenticating requests from core.
         Compared with ``hmac.compare_digest`` (constant-time).
+    scrubber:
+        PII scrubber instance (Tier 2 NER).  Optional — if None,
+        the ``/v1/pii/scrub`` endpoint returns text unchanged.
 
     Returns
     -------
@@ -81,6 +86,7 @@ def create_brain_app(
 
     process_route.set_guardian(guardian)
     reason_route.set_dependencies(guardian, sync_engine)
+    pii_route.set_scrubber(scrubber)
 
     # ------------------------------------------------------------------
     # Include routers — all routes require BRAIN_TOKEN
@@ -92,6 +98,10 @@ def create_brain_app(
     )
     app.include_router(
         reason_route.router,
+        dependencies=[Depends(verify_brain_token)],
+    )
+    app.include_router(
+        pii_route.router,
         dependencies=[Depends(verify_brain_token)],
     )
 

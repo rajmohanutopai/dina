@@ -16,6 +16,12 @@ type MessageReceiver interface {
 	OnMessage(handler func(ctx context.Context, msg domain.DinaMessage) error)
 }
 
+// Deliverer delivers encrypted payloads to remote Dina node endpoints.
+// Used by TransportService for immediate delivery after outbox enqueue.
+type Deliverer interface {
+	Deliver(ctx context.Context, endpoint string, payload []byte) error
+}
+
 // OutboxManager provides reliable message delivery with retry.
 type OutboxManager interface {
 	Enqueue(ctx context.Context, msg domain.OutboxMessage) (string, error)

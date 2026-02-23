@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 
 	"github.com/anthropics/dina/core/internal/domain"
@@ -57,27 +58,20 @@ func (h *MessageHandler) HandleSend(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "accepted"})
 }
 
-// HandleInbox handles GET /v1/msg/inbox. It returns pending inbound messages.
-// In the current architecture, inbox processing is handled by the
-// TransportService's outbox/inbox managers. This endpoint returns the number
-// of messages processed by the outbox processor.
+// HandleInbox handles GET /v1/msg/inbox. It returns all received inbound
+// messages that have been decrypted and stored by HandleIngestNaCl.
 func (h *MessageHandler) HandleInbox(w http.ResponseWriter, r *http.Request) {
-	processed, err := h.Transport.ProcessOutbox(r.Context())
-	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
-		return
-	}
-
+	msgs := h.Transport.GetInbound()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"messages":  []interface{}{},
-		"processed": processed,
+		"messages": msgs,
+		"count":    len(msgs),
 	})
 }
 
-// HandleIngestNaCl handles POST /msg. It accepts a raw NaCl-encrypted envelope
-// at the ingress endpoint and returns 202 Accepted. The envelope is queued for
-// asynchronous decryption and processing.
+// HandleIngestNaCl handles POST /msg. It accepts a raw NaCl-encrypted envelope,
+// attempts to decrypt it using the node's own keys, stores the decrypted message,
+// and returns 202 Accepted.
 func (h *MessageHandler) HandleIngestNaCl(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -90,9 +84,14 @@ func (h *MessageHandler) HandleIngestNaCl(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// The raw NaCl envelope is accepted for asynchronous processing.
-	// In production, this would be spooled via the InboxManager.
-	_ = body
+	// Try to decrypt the NaCl sealed box with this node's keys.
+	msg, err := h.Transport.ProcessInbound(r.Context(), body)
+	if err != nil {
+		slog.Warn("D2D ingest: could not decrypt", "error", err)
+	} else {
+		slog.Info("D2D message received and decrypted", "type", msg.Type, "to", msg.To)
+		h.Transport.StoreInbound(msg)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)

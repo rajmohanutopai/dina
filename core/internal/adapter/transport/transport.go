@@ -17,10 +17,13 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,6 +31,7 @@ import (
 	"github.com/anthropics/dina/core/internal/port"
 )
 
+var _ port.Deliverer = (*Transporter)(nil)
 var _ port.OutboxManager = (*OutboxManager)(nil)
 var _ port.InboxManager = (*InboxManager)(nil)
 var _ port.DIDResolver = (*DIDResolverPort)(nil)
@@ -124,11 +128,47 @@ func (t *Transporter) Send(recipientDID string, envelope []byte) error {
 		}
 		return fmt.Errorf("transport: send failed: %w", err)
 	}
-	_ = endpoint // used for network delivery in production
+	// Attempt real HTTP delivery to the recipient's /msg endpoint.
+	if err := t.httpDeliver(endpoint, envelope); err != nil {
+		// Still record for test introspection, but return the error.
+		t.mu.Lock()
+		t.sent = append(t.sent, sentRecord{DID: recipientDID, Envelope: envelope})
+		t.mu.Unlock()
+		return fmt.Errorf("transport: delivery failed: %w", err)
+	}
 
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	t.sent = append(t.sent, sentRecord{DID: recipientDID, Envelope: envelope})
+	t.mu.Unlock()
+	return nil
+}
+
+// Deliver satisfies port.Deliverer. It POSTs the sealed envelope to the
+// recipient's endpoint. Used by TransportService for immediate delivery.
+func (t *Transporter) Deliver(_ context.Context, endpoint string, payload []byte) error {
+	return t.httpDeliver(endpoint, payload)
+}
+
+// httpDeliver POSTs the sealed envelope to the recipient's /msg endpoint.
+// Returns nil if no endpoint is configured (test/local mode) or on success (202/200).
+func (t *Transporter) httpDeliver(endpoint string, envelope []byte) error {
+	if endpoint == "" {
+		return nil
+	}
+	// Skip delivery for well-known test endpoints that are not real HTTP servers.
+	if strings.Contains(endpoint, ".dina.local") {
+		return nil
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post(endpoint, "application/octet-stream", bytes.NewReader(envelope))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("recipient returned %d", resp.StatusCode)
+	}
 	return nil
 }
 

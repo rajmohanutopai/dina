@@ -280,7 +280,94 @@ class RealVault(MockVault):
 
 
 # ---------------------------------------------------------------------------
-# RealGoCore — real Go Core API for vault/DID/notify, mock for PII
+# RealPIIScrubber — two-tier PII scrubbing via real APIs
+# ---------------------------------------------------------------------------
+
+class RealPIIScrubber:
+    """Two-tier PII scrubber using real Go Core + Brain APIs.
+
+    Tier 1: Go Core regex (POST /v1/pii/scrub) — emails, phones, SSNs, etc.
+    Tier 2: Brain NER (POST /api/v1/pii/scrub) — person names, orgs, locations.
+
+    Returns the same (scrubbed_text, {token: original}) format as MockPIIScrubber
+    for test compatibility.
+    """
+
+    def __init__(self, core_url: str, brain_url: str, brain_token: str) -> None:
+        self._core_url = core_url.rstrip("/")
+        self._brain_url = brain_url.rstrip("/")
+        self._token = brain_token
+        self._known_pii: set[str] = set()
+        self.scrub_log: list[dict[str, Any]] = []
+
+    def _headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self._token}"}
+
+    def scrub(self, text: str) -> tuple[str, dict[str, str]]:
+        """Two-tier scrub: Go Core regex then Brain NER.
+
+        Returns (scrubbed_text, {token: original_value}).
+        """
+        replacement_map: dict[str, str] = {}
+        scrubbed = text
+
+        # Tier 1: Go Core regex
+        resp1 = _try_request(
+            "post", f"{self._core_url}/v1/pii/scrub",
+            json={"text": scrubbed}, headers=self._headers(),
+        )
+        if resp1 is not None:
+            data = resp1.json()
+            scrubbed = data.get("scrubbed", scrubbed)
+            # Reconstruct tokens from entity list.
+            # Go Core returns entities in order with Type/Value.
+            # Tokens are [TYPE_N] numbered per-type.
+            type_counts: dict[str, int] = {}
+            for ent in data.get("entities") or []:
+                etype = ent.get("Type", "")
+                value = ent.get("Value", "")
+                if etype and value:
+                    type_counts[etype] = type_counts.get(etype, 0) + 1
+                    token = f"[{etype}_{type_counts[etype]}]"
+                    replacement_map[token] = value
+                    self._known_pii.add(value)
+
+        # Tier 2: Brain NER (processes Tier 1 output)
+        resp2 = _try_request(
+            "post", f"{self._brain_url}/api/v1/pii/scrub",
+            json={"text": scrubbed}, headers=self._headers(),
+        )
+        if resp2 is not None:
+            data = resp2.json()
+            scrubbed = data.get("scrubbed", scrubbed)
+            for ent in data.get("entities") or []:
+                token = ent.get("token", "")
+                value = ent.get("value", "")
+                if token and value:
+                    replacement_map[token] = value
+                    self._known_pii.add(value)
+
+        self.scrub_log.append({
+            "original_length": len(text),
+            "scrubbed_length": len(scrubbed),
+            "replacements": len(replacement_map),
+        })
+        return scrubbed, replacement_map
+
+    def desanitize(self, text: str, replacement_map: dict[str, str]) -> str:
+        """Restore PII from scrubbed text using the replacement map."""
+        result = text
+        for token, original in replacement_map.items():
+            result = result.replace(token, original)
+        return result
+
+    def validate_clean(self, text: str) -> bool:
+        """Check that no known PII remains in text."""
+        return not any(pii in text for pii in self._known_pii)
+
+
+# ---------------------------------------------------------------------------
+# RealGoCore — real Go Core API for vault/DID/PII/notify
 # ---------------------------------------------------------------------------
 
 class RealGoCore(MockGoCore):
@@ -288,15 +375,16 @@ class RealGoCore(MockGoCore):
 
     Inherits MockGoCore for full interface compatibility.
     Makes real API calls AND updates mock state.
-    PII scrubbing always uses mock (real Presidio differs from test expectations).
+    PII scrubbing uses the provided scrubber (RealPIIScrubber in Docker mode).
     """
 
     def __init__(self, base_url: str, brain_token: str,
-                 vault: MockVault | None = None) -> None:
+                 vault: MockVault | None = None,
+                 scrubber: Any = None) -> None:
         from tests.integration.mocks import MockIdentity, MockPIIScrubber
         mock_vault = vault or MockVault()
         mock_identity = MockIdentity(did="did:plc:DockerTestUser")
-        mock_scrubber = MockPIIScrubber()
+        mock_scrubber = scrubber or MockPIIScrubber()
         super().__init__(mock_vault, mock_identity, mock_scrubber)
         self._base_url = base_url.rstrip("/")
         self._token = brain_token
@@ -362,8 +450,6 @@ class RealGoCore(MockGoCore):
 
     def pii_scrub(self, text: str) -> tuple[str, dict[str, str]]:
         self.api_calls.append({"endpoint": "/v1/pii/scrub"})
-        # Always use mock scrubber — real Presidio has different recognition
-        # patterns (e.g. may not catch all names) which breaks test assertions.
         return self._scrubber.scrub(text)
 
     def notify(self, notification: Notification) -> None:

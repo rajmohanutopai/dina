@@ -1,0 +1,169 @@
+# Dina Home Node — Multi-Node E2E Test Compose
+# Four Core+Brain pairs for real inter-node D2D messaging.
+# Each actor gets its own vault, identity seed, and known peers.
+#
+# Usage:
+#   ./install.sh
+#   docker compose -f docker-compose-e2e.yml up --build -d
+#   DINA_E2E=docker python -m pytest tests/e2e/ -v
+#   docker compose -f docker-compose-e2e.yml down -v
+
+x-core-base: &core-base
+  build:
+    context: ./core
+    dockerfile: Dockerfile
+  environment: &core-env
+    DINA_BRAIN_TOKEN_FILE: /run/secrets/brain_token
+    DINA_LISTEN_ADDR: ":8100"
+    DINA_RATE_LIMIT: "100000"
+    DINA_SPOOL_MAX: "10485760"
+    DINA_LOG_LEVEL: debug
+    DINA_TEST_MODE: "true"
+  secrets:
+    - brain_token
+  healthcheck:
+    test: ["CMD", "wget", "--spider", "-q", "http://localhost:8100/healthz"]
+    interval: 5s
+    timeout: 5s
+    retries: 15
+    start_period: 10s
+  networks:
+    - dina-e2e
+
+x-brain-base: &brain-base
+  build:
+    context: ./brain
+    dockerfile: Dockerfile
+  environment: &brain-env
+    DINA_BRAIN_TOKEN_FILE: /run/secrets/brain_token
+    DINA_BRAIN_PORT: "8200"
+    DINA_LLM_URL: "http://localhost:9999"
+    DINA_LOG_LEVEL: DEBUG
+    DINA_CLOUD_LLM: ""
+    GOOGLE_API_KEY: ""
+    ANTHROPIC_API_KEY: ""
+  secrets:
+    - brain_token
+  healthcheck:
+    test: ["CMD", "python", "-c", "import sys; from urllib.request import urlopen; r = urlopen('http://localhost:8200/healthz', timeout=2); sys.exit(0 if r.status == 200 else 1)"]
+    interval: 10s
+    timeout: 10s
+    retries: 15
+    start_period: 5s
+  networks:
+    - dina-e2e
+
+services:
+  # ---- Actor 1: Don Alonso (primary user) ----
+  core-alonso:
+    <<: *core-base
+    ports:
+      - "18100:8100"
+    volumes:
+      - alonso-data:/data
+    environment:
+      <<: *core-env
+      DINA_VAULT_PATH: /data/vault
+      DINA_BRAIN_URL: http://brain-alonso:8200
+      DINA_IDENTITY_SEED: "0000000000000000000000000000000000000000000000000000000000000001"
+      DINA_KNOWN_PEERS: "did:plc:sancho=http://core-sancho:8100/msg=0000000000000000000000000000000000000000000000000000000000000002,did:plc:chairmaker=http://core-chairmaker:8100/msg=0000000000000000000000000000000000000000000000000000000000000003,did:plc:albert=http://core-albert:8100/msg=0000000000000000000000000000000000000000000000000000000000000004"
+
+  brain-alonso:
+    <<: *brain-base
+    ports:
+      - "18200:8200"
+    volumes:
+      - alonso-data:/data
+    environment:
+      <<: *brain-env
+      DINA_CORE_URL: http://core-alonso:8100
+
+  # ---- Actor 2: Sancho (close friend) ----
+  core-sancho:
+    <<: *core-base
+    ports:
+      - "18101:8100"
+    volumes:
+      - sancho-data:/data
+    environment:
+      <<: *core-env
+      DINA_VAULT_PATH: /data/vault
+      DINA_BRAIN_URL: http://brain-sancho:8200
+      DINA_IDENTITY_SEED: "0000000000000000000000000000000000000000000000000000000000000002"
+      DINA_KNOWN_PEERS: "did:plc:alonso=http://core-alonso:8100/msg=0000000000000000000000000000000000000000000000000000000000000001,did:plc:chairmaker=http://core-chairmaker:8100/msg=0000000000000000000000000000000000000000000000000000000000000003,did:plc:albert=http://core-albert:8100/msg=0000000000000000000000000000000000000000000000000000000000000004"
+
+  brain-sancho:
+    <<: *brain-base
+    ports:
+      - "18201:8200"
+    volumes:
+      - sancho-data:/data
+    environment:
+      <<: *brain-env
+      DINA_CORE_URL: http://core-sancho:8100
+
+  # ---- Actor 3: ChairMaker (seller) ----
+  core-chairmaker:
+    <<: *core-base
+    ports:
+      - "18102:8100"
+    volumes:
+      - chairmaker-data:/data
+    environment:
+      <<: *core-env
+      DINA_VAULT_PATH: /data/vault
+      DINA_BRAIN_URL: http://brain-chairmaker:8200
+      DINA_IDENTITY_SEED: "0000000000000000000000000000000000000000000000000000000000000003"
+      DINA_KNOWN_PEERS: "did:plc:alonso=http://core-alonso:8100/msg=0000000000000000000000000000000000000000000000000000000000000001,did:plc:sancho=http://core-sancho:8100/msg=0000000000000000000000000000000000000000000000000000000000000002,did:plc:albert=http://core-albert:8100/msg=0000000000000000000000000000000000000000000000000000000000000004"
+
+  brain-chairmaker:
+    <<: *brain-base
+    ports:
+      - "18202:8200"
+    volumes:
+      - chairmaker-data:/data
+    environment:
+      <<: *brain-env
+      DINA_CORE_URL: http://core-chairmaker:8100
+
+  # ---- Actor 4: Albert (estate beneficiary) ----
+  core-albert:
+    <<: *core-base
+    ports:
+      - "18103:8100"
+    volumes:
+      - albert-data:/data
+    environment:
+      <<: *core-env
+      DINA_VAULT_PATH: /data/vault
+      DINA_BRAIN_URL: http://brain-albert:8200
+      DINA_IDENTITY_SEED: "0000000000000000000000000000000000000000000000000000000000000004"
+      DINA_KNOWN_PEERS: "did:plc:alonso=http://core-alonso:8100/msg=0000000000000000000000000000000000000000000000000000000000000001,did:plc:sancho=http://core-sancho:8100/msg=0000000000000000000000000000000000000000000000000000000000000002,did:plc:chairmaker=http://core-chairmaker:8100/msg=0000000000000000000000000000000000000000000000000000000000000003"
+
+  brain-albert:
+    <<: *brain-base
+    ports:
+      - "18203:8200"
+    volumes:
+      - albert-data:/data
+    environment:
+      <<: *brain-env
+      DINA_CORE_URL: http://core-albert:8100
+
+volumes:
+  alonso-data:
+    driver: local
+  sancho-data:
+    driver: local
+  chairmaker-data:
+    driver: local
+  albert-data:
+    driver: local
+
+networks:
+  dina-e2e:
+    driver: bridge
+
+secrets:
+  brain_token:
+    file: ./secrets/brain_token

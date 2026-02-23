@@ -152,12 +152,20 @@ class _GuardianLoop:
         return "engagement"
 
 
-class _SpacyScrubber:
-    """Stub for SpacyScrubber — Tier 2 PII scrubbing via spaCy NER.
+_SAFE_ENTITIES: frozenset[str] = frozenset({
+    "DATE", "TIME", "MONEY", "PERCENT", "QUANTITY",
+    "ORDINAL", "CARDINAL", "NORP", "EVENT",
+    "WORK_OF_ART", "LAW", "PRODUCT", "LANGUAGE",
+})
 
-    Will be implemented in ``adapter/scrubber_spacy.py``.
-    Graceful degradation: if spaCy or en_core_web_sm is not installed,
-    the scrubber is set to None and cloud LLM calls will use Tier 1 only.
+
+class _SpacyScrubber:
+    """Tier 2 PII scrubbing via spaCy NER.
+
+    Only scrubs PII-relevant entity types (PERSON, ORG, GPE, LOC, FAC).
+    SAFE_ENTITIES (DATE, TIME, MONEY, PRODUCT, CARDINAL, etc.) pass
+    through unchanged — they are essential for LLM reasoning and do
+    not identify anyone.
     """
 
     def __init__(self) -> None:
@@ -174,6 +182,10 @@ class _SpacyScrubber:
 
         for ent in doc.ents:
             ent_type = ent.label_
+            if ent_type in _SAFE_ENTITIES:
+                continue
+            if len(ent.text.strip()) <= 2:
+                continue
             count = counters.get(ent_type, 0) + 1
             counters[ent_type] = count
             token = f"[{ent_type}_{count}]"
@@ -192,6 +204,7 @@ class _SpacyScrubber:
         return [
             {"type": ent.label_, "value": ent.text}
             for ent in doc.ents
+            if ent.label_ not in _SAFE_ENTITIES and len(ent.text.strip()) > 2
         ]
 
 
@@ -309,7 +322,7 @@ def create_app() -> FastAPI:
         version="0.4.0",
     )
 
-    brain_api = create_brain_app(guardian, sync_engine, cfg.brain_token)
+    brain_api = create_brain_app(guardian, sync_engine, cfg.brain_token, scrubber=scrubber)
     admin_ui = create_admin_app(core_client, cfg)
 
     master.mount("/api", brain_api)

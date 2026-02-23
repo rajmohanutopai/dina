@@ -2,7 +2,8 @@
 FROM python:3.12-slim AS builder
 WORKDIR /app
 COPY pyproject.toml .
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir ".[pii]" \
+    && python -m spacy download en_core_web_sm
 
 # ---------- Stage 2: runtime ----------
 FROM python:3.12-slim

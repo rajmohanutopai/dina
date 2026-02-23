@@ -102,6 +102,7 @@ if DOCKER_MODE:
         RealDockerCompose,
         RealGoCore,
         RealPairingManager,
+        RealPIIScrubber,
         RealPythonBrain,
         RealVault,
         RealWebSocketClient,
@@ -212,8 +213,17 @@ def mock_vault(docker_services, docker_vault_cleanup) -> MockVault:
 
 
 @pytest.fixture
-def mock_dina(mock_identity: MockIdentity, mock_vault: MockVault) -> MockDinaCore:
-    return MockDinaCore(identity=mock_identity, vault=mock_vault)
+def mock_dina(mock_identity: MockIdentity, mock_vault: MockVault,
+              docker_services) -> MockDinaCore:
+    dina = MockDinaCore(identity=mock_identity, vault=mock_vault)
+    if DOCKER_MODE:
+        real_scrubber = RealPIIScrubber(
+            docker_services.core_url, docker_services.brain_url,
+            docker_services.brain_token,
+        )
+        dina.scrubber = real_scrubber
+        dina.go_core._scrubber = real_scrubber
+    return dina
 
 
 @pytest.fixture
@@ -326,7 +336,12 @@ def mock_reputation_graph() -> MockReputationGraph:
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def mock_scrubber() -> MockPIIScrubber:
+def mock_scrubber(docker_services) -> MockPIIScrubber:
+    if DOCKER_MODE:
+        return RealPIIScrubber(
+            docker_services.core_url, docker_services.brain_url,
+            docker_services.brain_token,
+        )
     return MockPIIScrubber()
 
 
@@ -336,6 +351,7 @@ def mock_go_core(mock_vault: MockVault, mock_identity: MockIdentity,
     if DOCKER_MODE:
         return RealGoCore(
             docker_services.core_url, docker_services.brain_token, mock_vault,
+            scrubber=mock_scrubber,
         )
     return MockGoCore(mock_vault, mock_identity, mock_scrubber)
 

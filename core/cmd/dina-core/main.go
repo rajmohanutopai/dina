@@ -6,10 +6,14 @@ package main
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -68,6 +72,11 @@ func main() {
 	// In production, this would come from the unlocked vault's master seed.
 	// For now, derive from SLIP-0010 path m/9999'/0' with a zero seed.
 	bootstrapSeed := make([]byte, 32)
+	if seedHex := os.Getenv("DINA_IDENTITY_SEED"); seedHex != "" {
+		if decoded, err := hex.DecodeString(seedHex); err == nil && len(decoded) == 32 {
+			copy(bootstrapSeed, decoded)
+		}
+	}
 	_, signingKeyBytes, _ := slip0010.DerivePath(bootstrapSeed, "m/9999'/0'")
 	var signingPrivKey ed25519.PrivateKey
 	if len(signingKeyBytes) == ed25519.SeedSize {
@@ -102,9 +111,55 @@ func main() {
 
 	// 8. Transport
 	didResolver := transport.NewDIDResolver()
+	// KNOWN_PEERS are configured at startup and should not expire during process lifetime.
+	didResolver.SetTTL(365 * 24 * time.Hour)
+
+	// Pre-populate DID resolver with known peer endpoints for D2D.
+	// Each peer gets a full DID document with a verificationMethod so that
+	// TransportService.SendMessage can resolve the key for encryption.
+	// Format: did=endpoint=seedhex (3 parts) or did=endpoint (2 parts, legacy).
+	if peers := os.Getenv("DINA_KNOWN_PEERS"); peers != "" {
+		for _, entry := range strings.Split(peers, ",") {
+			parts := strings.SplitN(entry, "=", 3)
+			if len(parts) < 2 {
+				continue
+			}
+			did := strings.TrimSpace(parts[0])
+			endpoint := strings.TrimSpace(parts[1])
+
+			var pubKeyHex string
+			if len(parts) == 3 {
+				// Real key exchange: derive peer's Ed25519 public key from their seed.
+				peerSeedHex := strings.TrimSpace(parts[2])
+				peerSeedBytes, _ := hex.DecodeString(peerSeedHex)
+				_, peerKeyBytes, _ := slip0010.DerivePath(peerSeedBytes, "m/9999'/0'")
+				var peerPrivKey ed25519.PrivateKey
+				if len(peerKeyBytes) == ed25519.SeedSize {
+					peerPrivKey = ed25519.NewKeyFromSeed(peerKeyBytes)
+				} else {
+					peerPrivKey = ed25519.PrivateKey(peerKeyBytes)
+				}
+				peerPubKey := peerPrivKey.Public().(ed25519.PublicKey)
+				pubKeyHex = hex.EncodeToString(peerPubKey)
+			} else {
+				// Legacy: deterministic placeholder pubkey from the DID.
+				peerSeed := sha256.Sum256([]byte(did))
+				pubKeyHex = hex.EncodeToString(peerSeed[:])
+			}
+
+			doc := fmt.Sprintf(`{`+
+				`"id":"%s",`+
+				`"verificationMethod":[{"id":"%s#key-1","type":"Ed25519VerificationKey2020","controller":"%s","publicKeyMultibase":"z%s"}],`+
+				`"service":[{"id":"%s#msg","type":"DinaMessaging","serviceEndpoint":"%s"}]`+
+				`}`, did, did, did, pubKeyHex, did, endpoint)
+			didResolver.AddDocument(did, []byte(doc))
+		}
+	}
+
 	didResolverPort := transport.NewDIDResolverPort(didResolver)
 	outboxMgr := transport.NewOutboxManager(100)
 	inboxMgr := transport.NewInboxManager(transport.DefaultInboxConfig())
+	transporter := transport.NewTransporter(didResolver)
 
 	// 9. Task Queue
 	taskQueue := taskqueue.NewTaskQueue()
@@ -149,6 +204,11 @@ func main() {
 		nacl, identitySigner, converter, didResolverPort,
 		outboxMgr, inboxMgr, clk,
 	)
+	transportSvc.SetDeliverer(transporter)
+	transportSvc.SetRecipientKeys(
+		signingPrivKey.Public().(ed25519.PublicKey),
+		[]byte(signingPrivKey),
+	)
 
 	taskSvc := service.NewTaskService(taskQueue, watchdog, brain, clk)
 
@@ -189,7 +249,7 @@ func main() {
 	identityH := &handler.IdentityHandler{Identity: identitySvc, DID: didMgr, Signer: identitySigner}
 	messageH := &handler.MessageHandler{Transport: transportSvc}
 	taskH := &handler.TaskHandler{Task: taskSvc}
-	_ = deviceSvc // Device routes deferred to pairing phase.
+	deviceH := &handler.DeviceHandler{Device: deviceSvc}
 
 	personaH := &handler.PersonaHandler{Identity: identitySvc, Personas: personaMgr, VaultManager: vaultMgr}
 	contactH := &handler.ContactHandler{Contacts: contactDir, Sharing: sharingMgr}
@@ -241,6 +301,13 @@ func main() {
 
 	// Contact API
 	mux.HandleFunc("/v1/contacts", routeByMethod(contactH.HandleListContacts, contactH.HandleAddContact))
+	mux.HandleFunc("/v1/contacts/", routeByMethod(contactH.HandleGetPolicy, contactH.HandleSetPolicy))
+
+	// Device Pairing API
+	mux.HandleFunc("/v1/pair/initiate", deviceH.HandleInitiatePairing)
+	mux.HandleFunc("/v1/pair/complete", deviceH.HandleCompletePairing)
+	mux.HandleFunc("/v1/devices", deviceH.HandleListDevices)
+	mux.HandleFunc("/v1/devices/", deviceH.HandleRevokeDevice)
 
 	// Notification API
 	mux.HandleFunc("/v1/notify", notifyH.HandleNotify)
