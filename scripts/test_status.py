@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
 """Unified test status reporting: per-section pass/skip/fail breakdown.
 
-Runs each test suite (Core Go, Brain Python, Integration Python) and reports
-per-section status showing which areas are implemented vs pending.
+Runs each test suite (Core Go, Brain Python, Integration Python, E2E Docker)
+and reports per-section status showing which areas are implemented vs pending.
 
-By default, builds & runs Go Core + Python Brain as local subprocesses,
-runs all tests against real APIs, and tears down on exit.
+By default runs in **quick mode** — skips slow tests (100K scale, real LLM
+agentic calls) for a fast feedback loop.  Use ``--all`` to run everything.
 
 Usage:
-    python scripts/test_status.py                    # All 3 suites (local services)
-    python scripts/test_status.py --suite integration # Integration only (local services)
+    python scripts/test_status.py                    # Quick mode (default) — skip slow tests
+    python scripts/test_status.py --all              # Full run — include 100K scale + real LLM
+    python scripts/test_status.py --suite e2e        # E2E only (starts 4-actor Docker stack)
+    python scripts/test_status.py --suite integration # Integration only
+    python scripts/test_status.py --restart          # Force Docker rebuild (tear down + rebuild)
     python scripts/test_status.py --docker           # Use Docker containers instead of local
     python scripts/test_status.py --mock             # Fast mock-only (no real services)
     python scripts/test_status.py --json             # Machine-readable JSON
+    python scripts/test_status.py -v                  # Verbose — show individual tests per section
     python scripts/test_status.py --no-color         # Disable ANSI colors
 """
 
@@ -30,8 +34,8 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# Global reference for signal-handler teardown
-_cleanup_fn: object | None = None
+# Global references for signal-handler teardown (supports multiple cleanups)
+_cleanup_fns: list = []
 
 
 # ---------------------------------------------------------------------------
@@ -55,13 +59,15 @@ def _ensure_brain_token() -> str:
 
 
 def _run_cleanup() -> None:
-    """Run the registered cleanup function. Safe to call multiple times."""
-    global _cleanup_fn
-    if _cleanup_fn is None:
-        return
-    fn = _cleanup_fn
-    _cleanup_fn = None  # prevent double teardown
-    fn()  # type: ignore[operator]
+    """Run all registered cleanup functions (LIFO). Safe to call multiple times."""
+    global _cleanup_fns
+    fns = _cleanup_fns
+    _cleanup_fns = []  # prevent double teardown
+    for fn in reversed(fns):
+        try:
+            fn()  # type: ignore[operator]
+        except Exception as exc:
+            print(f"  Warning: cleanup error: {exc}", file=sys.stderr)
 
 
 def _sigint_handler(signum: int, frame: object) -> None:
@@ -71,12 +77,16 @@ def _sigint_handler(signum: int, frame: object) -> None:
 
 
 def _register_cleanup(fn: object) -> None:
-    """Register a cleanup function for SIGINT/SIGTERM/atexit."""
-    global _cleanup_fn
-    _cleanup_fn = fn
-    signal.signal(signal.SIGINT, _sigint_handler)
-    signal.signal(signal.SIGTERM, _sigint_handler)
-    atexit.register(_run_cleanup)
+    """Register a cleanup function for SIGINT/SIGTERM/atexit.
+
+    Multiple cleanups are supported — they run in LIFO order.
+    """
+    if not _cleanup_fns:
+        # First registration: wire up signal handlers + atexit
+        signal.signal(signal.SIGINT, _sigint_handler)
+        signal.signal(signal.SIGTERM, _sigint_handler)
+        atexit.register(_run_cleanup)
+    _cleanup_fns.append(fn)
 
 
 def _wait_for_health(url: str, label: str, timeout: int = 120) -> None:
@@ -90,8 +100,8 @@ def _wait_for_health(url: str, label: str, timeout: int = 120) -> None:
             resp = httpx.get(url, timeout=3)
             if resp.is_success:
                 return
-        except (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout):
-            pass
+        except Exception:
+            pass  # Retry on any connection/transport error
         _time.sleep(2)
     raise TimeoutError(f"{label} not healthy after {timeout}s: {url}")
 
@@ -509,43 +519,235 @@ SUITES = {
         # Otherwise tests use mocks — treat PASS as SKIP.
         "mock_pass_is_skip": os.environ.get("DINA_INTEGRATION") != "docker",
     },
+    "e2e": {
+        "name": "E2E (Docker)",
+        "cmd": ["python", "-m", "pytest", "-v", "--tb=no", "--durations=0", "-vv",
+                "tests/e2e/"],
+        "cwd": None,
+        "parser": "pytest",
+        "test_dir": "tests/e2e",
+        # Section map embedded — no TEST_PLAN.md needed (filenames encode suite#)
+        "e2e_sections": True,
+    },
 }
 
 
-def run_suite(key: str) -> tuple[list[TestResult], dict[int, str], float]:
+# ---------------------------------------------------------------------------
+# E2E section map (from test_suite_NN_name.py filenames)
+# ---------------------------------------------------------------------------
+
+_E2E_SECTION_MAP: dict[int, str] = {
+    1: "Onboarding & First Run",
+    2: "Sancho Moment (Arrival Flow)",
+    3: "Product Research & Purchase",
+    4: "Memory & Recall",
+    5: "Ingestion Pipeline",
+    6: "Agent Safety & Delegation",
+    7: "Privacy & PII",
+    8: "Sensitive Personas",
+    9: "Digital Estate",
+    10: "Resilience & Recovery",
+    11: "Multi-Device Sync",
+    12: "Reputation Graph",
+    13: "Security & Adversarial",
+    14: "Agentic LLM Behavior",
+}
+
+_E2E_FILE_SECTION_RE = re.compile(r"test_suite_(\d+)_")
+
+
+def prescan_e2e_sections(test_dir: Path) -> dict[str, int]:
+    """Map E2E test function names to section numbers from filenames.
+
+    E2E test files encode suite number: test_suite_01_onboarding.py → section 1.
+    All test functions in that file are assigned the same section number.
+    """
+    mapping: dict[str, int] = {}
+    for filepath in sorted(test_dir.glob("test_suite_*.py")):
+        fm = _E2E_FILE_SECTION_RE.search(filepath.name)
+        if not fm:
+            continue
+        section = int(fm.group(1))
+        for line in filepath.read_text().splitlines():
+            func_m = _FUNC_DEF_RE.match(line)
+            if func_m:
+                mapping[func_m.group(1)] = section
+    return mapping
+
+
+# ---------------------------------------------------------------------------
+# E2E Docker lifecycle (docker-compose-e2e.yml — 4 Core+Brain pairs)
+# ---------------------------------------------------------------------------
+
+
+def _load_dotenv() -> dict[str, str]:
+    """Load .env file and return as dict. Does NOT modify os.environ."""
+    env_file = PROJECT_ROOT / ".env"
+    extra: dict[str, str] = {}
+    if not env_file.exists():
+        return extra
+    for line in env_file.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" in line:
+            key, _, val = line.partition("=")
+            extra[key.strip()] = val.strip()
+    return extra
+
+
+def _start_e2e_docker(*, restart: bool = False) -> float:
+    """Start 4-node E2E Docker stack. Returns startup time in seconds.
+
+    If all 4 Brain containers are already healthy, skips rebuild to avoid
+    disrupting a running stack.  Pass ``restart=True`` to force teardown
+    and rebuild.
+    """
+    import time as _time
+
+    import httpx
+
+    _ensure_brain_token()
+    t0 = _time.monotonic()
+
+    # Load .env for API keys (GOOGLE_API_KEY, OPENROUTER_API_KEY, etc.)
+    dotenv = _load_dotenv()
+    for key in ("GOOGLE_API_KEY", "OPENROUTER_API_KEY", "OPENROUTER_MODEL",
+                "ANTHROPIC_API_KEY", "DINA_CLOUD_LLM"):
+        if key in dotenv and key not in os.environ:
+            os.environ[key] = dotenv[key]
+
+    compose_file = str(PROJECT_ROOT / "docker-compose-e2e.yml")
+
+    actors = {
+        "alonso": 18200, "sancho": 18201,
+        "chairmaker": 18202, "albert": 18203,
+    }
+
+    # Tear down first if --restart requested
+    if restart:
+        print("  Tearing down existing E2E stack (--restart)...", file=sys.stderr,
+              flush=True)
+        subprocess.run(
+            ["docker", "compose", "-f", compose_file, "down", "-v"],
+            capture_output=True,
+            timeout=60,
+        )
+
+    # Check if all containers are already healthy
+    all_healthy = not restart  # skip check when restarting
+    if all_healthy:
+        for actor, port in actors.items():
+            try:
+                resp = httpx.get(f"http://localhost:{port}/healthz", timeout=3)
+                if not resp.is_success:
+                    all_healthy = False
+                    break
+            except Exception:
+                all_healthy = False
+                break
+
+    we_started = False
+    if all_healthy:
+        print("  E2E Docker stack already healthy — reusing.", file=sys.stderr,
+              flush=True)
+    else:
+        we_started = True
+        print("  Starting E2E Docker stack (4 actors)...", file=sys.stderr,
+              flush=True)
+        subprocess.run(
+            ["docker", "compose", "-f", compose_file, "up", "--build", "-d"],
+            capture_output=True,
+            timeout=300,
+            check=True,
+        )
+
+        # Wait for all 8 containers to become healthy
+        for actor, port in actors.items():
+            url = f"http://localhost:{port}/healthz"
+            _wait_for_health(url, f"brain-{actor}", timeout=180)
+
+    elapsed = _time.monotonic() - t0
+    print(
+        f"  E2E stack healthy: 4 actors × (Core+Brain)"
+        f"  ({_fmt_startup_time(elapsed)})",
+        file=sys.stderr,
+    )
+
+    # Set env so E2E tests detect Docker mode
+    os.environ["DINA_E2E"] = "docker"
+
+    # Only tear down if we started the stack (don't kill pre-existing containers)
+    if we_started:
+        def _stop() -> None:
+            print("\n  Stopping E2E Docker stack...", file=sys.stderr, flush=True)
+            subprocess.run(
+                ["docker", "compose", "-f", compose_file, "down", "-v"],
+                capture_output=True,
+                timeout=60,
+            )
+            print("  E2E Docker stack stopped.", file=sys.stderr)
+
+        _register_cleanup(_stop)
+
+    return elapsed
+
+
+def run_suite(
+    key: str, *, quick: bool = True,
+) -> tuple[list[TestResult], dict[int, str], float]:
     """Run a test suite via subprocess and return parsed results, section map,
-    and wall-clock elapsed time in seconds."""
+    and wall-clock elapsed time in seconds.
+
+    When *quick* is True (default), pytest suites add ``-m 'not slow'``
+    to skip heavy tests (100K scale, real LLM calls), and Go suites
+    add ``-short`` to skip tests guarded by ``testing.Short()``.
+    """
     import time as _time
 
     cfg = SUITES[key]
-    plan_path = PROJECT_ROOT / cfg["plan"]
-    section_map = parse_section_headers(plan_path)
 
+    # E2E suites: section map from filenames, not TEST_PLAN.md
     section_override: dict[str, int] | None = None
-    if "test_dir" in cfg:
-        manifest_path = (
-            PROJECT_ROOT / cfg["manifest"] if "manifest" in cfg else None
-        )
-        section_override = prescan_integration_sections(
-            PROJECT_ROOT / cfg["test_dir"],
-            plan_path,
-            manifest_path,
-        )
+    if cfg.get("e2e_sections"):
+        section_map = dict(_E2E_SECTION_MAP)
+        section_override = prescan_e2e_sections(PROJECT_ROOT / cfg["test_dir"])
+    else:
+        plan_path = PROJECT_ROOT / cfg["plan"]
+        section_map = parse_section_headers(plan_path)
+        if "test_dir" in cfg:
+            manifest_path = (
+                PROJECT_ROOT / cfg["manifest"] if "manifest" in cfg else None
+            )
+            section_override = prescan_integration_sections(
+                PROJECT_ROOT / cfg["test_dir"],
+                plan_path,
+                manifest_path,
+            )
 
     cwd = (PROJECT_ROOT / cfg["cwd"]) if cfg["cwd"] else PROJECT_ROOT
+
+    # Build command — skip slow tests in quick mode
+    cmd = list(cfg["cmd"])
+    if quick and cfg["parser"] == "pytest":
+        cmd.extend(["-m", "not slow"])
+    elif quick and cfg["parser"] == "go":
+        cmd.append("-short")
+
+    timeout = 600 if cfg.get("e2e_sections") else 300
 
     t0 = _time.monotonic()
     try:
         result = subprocess.run(
-            cfg["cmd"],
+            cmd,
             capture_output=True,
             text=True,
             cwd=str(cwd),
-            timeout=300,
+            timeout=timeout,
         )
         output = result.stdout + "\n" + result.stderr
     except subprocess.TimeoutExpired:
-        print(f"WARNING: {cfg['name']} timed out after 300s", file=sys.stderr)
+        print(f"WARNING: {cfg['name']} timed out after {timeout}s", file=sys.stderr)
         return [], section_map, _time.monotonic() - t0
     except FileNotFoundError as exc:
         print(f"WARNING: {cfg['name']}: {exc}", file=sys.stderr)
@@ -680,13 +882,27 @@ def _fmt_duration(seconds: float) -> str:
     return f"{minutes:>2}m{secs:04.1f}s"
 
 
+def _group_tests_by_section(tests: list[TestResult]) -> dict[int, list[TestResult]]:
+    """Group tests by section number for verbose display."""
+    groups: dict[int, list[TestResult]] = {}
+    for t in tests:
+        groups.setdefault(t.section, []).append(t)
+    return groups
+
+
 def render_suite(
     name: str,
     sections: list[SectionStats],
     c: Colors,
     wall_time: float = 0.0,
+    tests: list[TestResult] | None = None,
+    verbose: bool = False,
 ) -> None:
-    """Print one suite's per-section table."""
+    """Print one suite's per-section table.
+
+    When *verbose* is True and *tests* is provided, individual test names
+    are printed under each section row.
+    """
     header = f"=== {name} ==="
     if wall_time > 0:
         header += f"  ({_fmt_duration(wall_time).strip()})"
@@ -703,6 +919,8 @@ def render_suite(
     )
     print(rule)
 
+    by_section = _group_tests_by_section(tests) if verbose and tests else {}
+
     tot = pas = ski = fai = 0
     tot_dur = 0.0
     for s in sections:
@@ -718,6 +936,17 @@ def render_suite(
             f" | {s.passed:>4} | {s.skipped:>4} | {s.failed:>4}"
             f" | {_fmt_duration(s.duration)} | {c.status(s.status_label)}"
         )
+
+        # Verbose: print individual tests under this section
+        if verbose and s.number in by_section:
+            for t in sorted(by_section[s.number], key=lambda x: x.name):
+                status_str = {
+                    "PASS": c.green("PASS"),
+                    "SKIP": c.dim("SKIP"),
+                    "FAIL": c.red("FAIL"),
+                }.get(t.status, t.status)
+                dur_str = _fmt_duration(t.duration) if t.duration > 0 else ""
+                print(f"     |   {status_str} {t.name[:70]:<70} {dur_str}")
 
     print(rule)
     print(
@@ -785,42 +1014,63 @@ def output_json(data: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
-def parse_args(argv: list[str]) -> tuple[str | None, bool, bool, str]:
-    """Return (suite_filter, json_mode, no_color, service_mode).
+def parse_args(argv: list[str]) -> dict:
+    """Parse CLI flags into a dict.
 
-    service_mode is "local" (default), "docker", or "mock".
+    Keys: suite, json, no_color, service_mode, all_mode, restart, verbose.
     """
-    suite: str | None = None
-    json_mode = no_color = False
-    service_mode: str = "local"  # default: build & run locally
+    opts: dict = {
+        "suite": None,
+        "json": False,
+        "no_color": False,
+        "service_mode": "local",
+        "all_mode": False,
+        "restart": False,
+        "verbose": False,
+    }
     i = 1
     while i < len(argv):
         a = argv[i]
         if a == "--json":
-            json_mode = True
+            opts["json"] = True
         elif a == "--no-color":
-            no_color = True
+            opts["no_color"] = True
         elif a == "--docker":
-            service_mode = "docker"
+            opts["service_mode"] = "docker"
         elif a == "--local":
-            service_mode = "local"
+            opts["service_mode"] = "local"
         elif a == "--mock":
-            service_mode = "mock"
+            opts["service_mode"] = "mock"
+        elif a == "--all":
+            opts["all_mode"] = True
+        elif a == "--restart":
+            opts["restart"] = True
+        elif a in ("-v", "--verbose"):
+            opts["verbose"] = True
         elif a == "--suite" and i + 1 < len(argv):
             i += 1
-            suite = argv[i].lower()
+            opts["suite"] = argv[i].lower()
         elif a in ("--help", "-h"):
             print(__doc__)
             sys.exit(0)
         i += 1
-    return suite, json_mode, no_color, service_mode
+    return opts
 
 
 def main() -> None:
     import time as _time
 
     script_t0 = _time.monotonic()
-    suite_filter, json_mode, no_color, service_mode = parse_args(sys.argv)
+    opts = parse_args(sys.argv)
+    suite_filter = opts["suite"]
+    json_mode = opts["json"]
+    no_color = opts["no_color"]
+    service_mode = opts["service_mode"]
+    all_mode = opts["all_mode"]
+    restart = opts["restart"]
+    verbose = opts["verbose"]
+    quick = not all_mode  # default is quick; --all disables it
+
     c = Colors(enabled=_use_color(no_color))
 
     keys = list(SUITES)
@@ -834,29 +1084,52 @@ def main() -> None:
             sys.exit(2)
         keys = [suite_filter]
 
+    if not json_mode:
+        mode_tag = "quick" if quick else "all (including slow tests)"
+        print(f"Mode: {mode_tag}", file=sys.stderr, flush=True)
+
     # -- Service lifecycle management ----------------------------------------
+    has_e2e = "e2e" in keys
+    has_non_e2e = bool(set(keys) - {"e2e"})
     startup_time = 0.0
-    if service_mode == "mock":
+
+    if service_mode == "mock" and not has_e2e:
         if not json_mode:
             print("Mock mode (no real services).", file=sys.stderr, flush=True)
     else:
-        mode_label = "Docker" if service_mode == "docker" else "Local"
-        if not json_mode:
-            print(f"{mode_label} mode.", file=sys.stderr, flush=True)
-        os.environ["DINA_INTEGRATION"] = "docker"  # Real* clients for both modes
-        # Refresh mock_pass_is_skip now that env var is set
-        SUITES["integration"]["mock_pass_is_skip"] = False
-        try:
-            if service_mode == "docker":
-                startup_time = _start_docker()
-            else:
-                startup_time = _start_local()
-        except Exception as exc:
-            print(
-                f"ERROR: Failed to start {mode_label}: {exc}",
-                file=sys.stderr,
-            )
-            sys.exit(3)
+        # Start integration services (Core+Brain) for non-E2E suites
+        if has_non_e2e and service_mode != "mock":
+            mode_label = "Docker" if service_mode == "docker" else "Local"
+            if not json_mode:
+                print(f"{mode_label} mode.", file=sys.stderr, flush=True)
+            os.environ["DINA_INTEGRATION"] = "docker"  # Real clients for both modes
+            # Refresh mock_pass_is_skip now that env var is set
+            SUITES["integration"]["mock_pass_is_skip"] = False
+            try:
+                if service_mode == "docker":
+                    startup_time = _start_docker()
+                else:
+                    startup_time = _start_local()
+            except Exception as exc:
+                print(
+                    f"ERROR: Failed to start {mode_label}: {exc}",
+                    file=sys.stderr,
+                )
+                sys.exit(3)
+
+        # Start E2E Docker stack (4 actors × Core+Brain) — always Docker
+        if has_e2e:
+            if not json_mode:
+                print("E2E Docker mode.", file=sys.stderr, flush=True)
+            try:
+                e2e_startup = _start_e2e_docker(restart=restart)
+                startup_time = max(startup_time, e2e_startup)
+            except Exception as exc:
+                print(
+                    f"ERROR: Failed to start E2E Docker: {exc}",
+                    file=sys.stderr,
+                )
+                sys.exit(3)
 
     try:
         all_json: dict = {}
@@ -868,7 +1141,7 @@ def main() -> None:
             if not json_mode:
                 print(f"Running {name}...", file=sys.stderr, flush=True)
 
-            tests, section_map, wall_time = run_suite(key)
+            tests, section_map, wall_time = run_suite(key, quick=quick)
             sections = aggregate(tests, section_map)
 
             tot = sum(s.total for s in sections)
@@ -903,7 +1176,8 @@ def main() -> None:
                     },
                 }
             else:
-                render_suite(name, sections, c, wall_time)
+                render_suite(name, sections, c, wall_time,
+                             tests=tests, verbose=verbose)
 
             summary_rows.append((name, tot, pas, ski, fai, wall_time))
 

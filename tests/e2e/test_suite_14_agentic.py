@@ -1,19 +1,26 @@
-"""E2E Suite 14: Agentic Behavior with Real LLM.
+"""E2E Suite 14: Agentic Behavior — Deterministic Gates + Real LLM.
 
-Tests system invariants when a real LLM (Gemini 2.5 Flash) is in the loop.
+Two categories of tests:
+
+1. **Deterministic gate tests** (quick-safe, no LLM needed):
+   Bank fraud → fiduciary, YouTube → never interrupt, transfer_money → HIGH,
+   search → SAFE, PII scrubbing.  These run in every mode — they verify
+   that hard-coded safety boundaries hold regardless of LLM availability.
+
+2. **Real LLM tests** (marked ``@pytest.mark.slow``):
+   Healthz LLM check, unknown-action classification, /reason end-to-end.
+   These hit Gemini / OpenRouter and are skipped in quick mode.
+
 Principle: "Don't test what the LLM says, test what the system does."
 
-Every test exercises the real LLM via Brain's HTTP API and verifies that
-deterministic boundaries hold regardless of LLM output.
-
 Requirements:
-- GOOGLE_API_KEY must be set in the host environment.
 - Docker containers must be running (DINA_E2E=docker).
-- If no API key, all tests skip gracefully (CI-friendly).
+- GOOGLE_API_KEY needed only for real-LLM tests (slow).
+- If no API key, real-LLM tests skip gracefully (CI-friendly).
 
 Actors: Don Alonso's Brain (brain-alonso at localhost:18200)
 
-TST-E2E-075 through TST-E2E-082.
+TST-E2E-075 through TST-E2E-083.
 """
 
 from __future__ import annotations
@@ -31,17 +38,13 @@ _HAS_API_KEY = bool(os.environ.get("GOOGLE_API_KEY", "").strip())
 _HAS_OPENROUTER_KEY = bool(os.environ.get("OPENROUTER_API_KEY", "").strip())
 _DOCKER_MODE = os.environ.get("DINA_E2E") == "docker"
 
+# All tests need Docker; only real-LLM tests need API keys (marked per-test).
 pytestmark = [
-    pytest.mark.skipif(
-        not _HAS_API_KEY,
-        reason="GOOGLE_API_KEY not set — skipping agentic LLM tests",
-    ),
     pytest.mark.skipif(
         not _DOCKER_MODE,
         reason="Requires Docker containers (DINA_E2E=docker)",
     ),
 ]
-
 
 # ---------------------------------------------------------------------------
 # Helper functions — call Brain HTTP APIs directly
@@ -108,6 +111,8 @@ class TestAgenticBehavior:
 
     # -- TST-E2E-075 ----------------------------------------------------------
 
+    @pytest.mark.slow
+    @pytest.mark.skipif(not _HAS_API_KEY, reason="GOOGLE_API_KEY not set")
     def test_llm_available_in_docker(self, docker_services) -> None:
         """E2E-14.1 Verify Gemini provider is available in Docker Brain.
 
@@ -152,6 +157,8 @@ class TestAgenticBehavior:
 
     # -- TST-E2E-077 ----------------------------------------------------------
 
+    @pytest.mark.slow
+    @pytest.mark.skipif(not _HAS_API_KEY, reason="GOOGLE_API_KEY not set")
     def test_youtube_recommendation_never_interrupts(
         self, docker_services,
     ) -> None:
@@ -160,6 +167,8 @@ class TestAgenticBehavior:
         Invariant: even if the LLM thinks a video is important, a YouTube
         recommendation is engagement-tier at most. The user is never
         interrupted for content they did not ask for (Silence First).
+        Uses real LLM — engagement classification cannot be hardcoded
+        because the same source can produce different priority events.
         """
         result = _brain_process(
             docker_services.brain_url("alonso"),
@@ -262,6 +271,8 @@ class TestAgenticBehavior:
 
     # -- TST-E2E-081 ----------------------------------------------------------
 
+    @pytest.mark.slow
+    @pytest.mark.skipif(not _HAS_API_KEY, reason="GOOGLE_API_KEY not set")
     def test_unknown_action_gets_valid_risk(self, docker_services) -> None:
         """E2E-14.7 Unknown actions get LLM classification with valid risk.
 
@@ -293,6 +304,8 @@ class TestAgenticBehavior:
 
     # -- TST-E2E-082 ----------------------------------------------------------
 
+    @pytest.mark.slow
+    @pytest.mark.skipif(not _HAS_API_KEY, reason="GOOGLE_API_KEY not set")
     def test_llm_reason_returns_metadata(self, docker_services) -> None:
         """E2E-14.8 LLM reason returns model name and token counts.
 
@@ -318,6 +331,8 @@ class TestAgenticBehavior:
 
     # -- TST-E2E-083 ----------------------------------------------------------
 
+    @pytest.mark.slow
+    @pytest.mark.skipif(not _HAS_API_KEY, reason="GOOGLE_API_KEY not set")
     @pytest.mark.skipif(
         not _HAS_OPENROUTER_KEY,
         reason="OPENROUTER_API_KEY not set — skipping OpenRouter test",

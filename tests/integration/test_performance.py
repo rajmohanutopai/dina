@@ -38,6 +38,8 @@ from tests.integration.mocks import (
     WSMessage,
 )
 
+pytestmark = pytest.mark.slow
+
 
 # -----------------------------------------------------------------------
 # TestThroughput  (S13.1)

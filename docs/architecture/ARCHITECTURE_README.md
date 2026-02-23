@@ -31,7 +31,7 @@
 | 11 | [Layer 6: Intelligence](11-layer6-intelligence.md) | 284 | PII scrubber, entity vault pattern, LLM routing, context injection, silence protocol |
 | 12 | [Layer 7: Action Layer](12-layer7-action-layer.md) | 165 | Draft-don't-send, cart handover, agent delegation (MCP), scheduling |
 
-### Cross-Cutting Concerns (sections 13–18)
+### Cross-Cutting Concerns (sections 13–19)
 
 | # | File | Lines | Topics |
 |---|------|------:|--------|
@@ -41,6 +41,7 @@
 | 16 | [Technology Stack](16-technology-stack.md) | 74 | Full stack summary table |
 | 17 | [Infrastructure](17-infrastructure.md) | 733 | Docker deployment, LLM inference, client auth, WebSocket protocol, push notifications, HSM |
 | 18 | [Roadmap](18-roadmap.md) | 61 | Honest challenges, current state → target, Phase 1 scope & timeline |
+| 19 | [Prompt Injection Defense](19-prompt-injection-defense.md) | ~400 | 7-layer blast radius containment, split brain, tool isolation, egress gatekeeper |
 
 ## Keeping in Sync
 

@@ -781,6 +781,7 @@ class TestSQLiteConcurrentAccess:
         assert len(mock_vault._batch_notifications) == 1
 
 # TST-INT-569
+    @pytest.mark.slow
     def test_initial_gmail_sync_transaction_count(
         self, mock_vault: MockVault
     ) -> None:
@@ -842,6 +843,7 @@ class TestDataFlowBoundaries:
         assert stored == raw_data["content"]
 
 # TST-INT-269
+    @pytest.mark.slow
     def test_batch_ingestion_5000_email_initial_sync(
         self, mock_vault: MockVault
     ) -> None:
@@ -1045,6 +1047,7 @@ class TestEmbeddingAndSearch:
         assert "doc_120" in results_new
 
 # TST-INT-279
+    @pytest.mark.slow
     def test_reindex_scale_100k_items(
         self, mock_vault: MockVault
     ) -> None:

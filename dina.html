@@ -595,7 +595,9 @@ const TOOLTIPS = {
   "nacl": { title: "libsodium NaCl", summary: "Wire encryption (Phase 1)", detail: "crypto_box_seal = X25519 ECDH + XSalsa20-Poly1305. Ephemeral sender keypair per message provides sender-side forward secrecy. ISC license, available in every language (Go, Python, Rust, JS, C, Java). Trivial API: crypto_box_seal(plaintext, pubkey). No DIDComm v2 library exists in Go (Hyperledger Aries Go archived March 2024).", alt: "Phase 2: JWE (ECDH-1PU+A256KW). Phase 3: Noise XX (full forward secrecy)" },
   "yggdrasil": { title: "Yggdrasil", summary: "Sovereign mesh networking", detail: "Ed25519 public key derives a stable IPv6 address — philosophically aligned with DIDs. Double encryption: Yggdrasil layer (Curve25519 session key) + NaCl layer (per-message). No DNS, no CA, no corporate infrastructure. Even if a mesh peer is compromised, NaCl encryption keeps messages private. Censorship resistant.", alt: "Rejected: Tor (3-second round trip kills nudges, redundant encryption layer with DIDComm)" },
   "google-adk": { title: "Google ADK", summary: "Agent Development Kit", detail: "Model-agnostic LLM routing. Apache 2.0 license. Native multi-agent orchestration (Sequential, Parallel, Loop patterns). MCP support built-in. Used in dina-brain for guardian angel reasoning loop, silence classification, nudge assembly, and agent orchestration.", alt: "Rejected: LangChain (vendor lock-in concerns), custom framework (reinventing the wheel)" },
-  "gemini-flash-lite": { title: "Gemini 2.5 Flash Lite", summary: "Default cloud LLM — cheapest tier", detail: "$0.10 input / $0.40 output per 1M tokens — cheapest Gemini tier. 305+ tokens/sec. 1M context window. JSON mode for structured output. Used for chat, classification, triage, nudge assembly. No training on user data.", alt: "Rejected: GPT-4 (expensive), Claude (same tier but less mature for this use case)" },
+  "gemini-flash-lite": { title: "Gemini 2.5 Flash Lite", summary: "Default cloud LLM — cheapest tier", detail: "$0.10 input / $0.40 output per 1M tokens — cheapest Gemini tier. 305+ tokens/sec. 1M context window. JSON mode for structured output. Used for chat, classification, triage, nudge assembly. No training on user data.", alt: "Rejected: GPT-4 (expensive). Alternatives: Claude (Anthropic) and OpenRouter also supported as cloud providers." },
+  "claude-provider": { title: "Claude (Anthropic)", summary: "Cloud LLM via Anthropic API", detail: "Anthropic Claude models via ANTHROPIC_API_KEY. OpenAI-compatible chat completions interface. Used as an alternative cloud provider alongside Gemini. Supports classification, reasoning, and chat. PII scrubbing applied before any data reaches the API.", alt: "One of 4 LLM providers: Gemini (default cloud), Claude (alternative cloud), OpenRouter (multi-model gateway), Llama (local)." },
+  "openrouter": { title: "OpenRouter", summary: "Multi-provider unified API gateway", detail: "Single API key routes to hundreds of models (Gemini, Claude, Llama, Mistral, etc.) via OpenAI-compatible endpoint. OPENROUTER_API_KEY + OPENROUTER_MODEL env vars. Cloud provider — PII scrubbing required. Useful for model experimentation without managing multiple API keys.", alt: "One of 4 LLM providers. OpenRouter is a gateway, not a model — it routes to other providers. Default model: google/gemini-2.5-flash." },
   "deepgram": { title: "Deepgram Nova-3", summary: "Voice speech-to-text", detail: "150ms WebSocket streaming latency — fastest available. Purpose-built real-time ASR (not a repurposed LLM). $0.0077/min. Used in all profiles (cloud STT even with local LLM). Phase 2+ may add whisper.cpp for fully offline voice.", alt: "Rejected: Gemini Live API (780ms p95 latency, 13% WER), whisper.cpp (deferred, best WER ~4.4% but not yet in llama.cpp)" },
   "spacy": { title: "spaCy en_core_web_sm", summary: "NER for PII Scrubber Tier 2", detail: "~15MB model, always available in dina-brain. Millisecond latency. Statistical NER catches person names (PERSON), organizations (ORG), locations (GPE/LOC), addresses. Tier 2 of the 3-tier PII scrubber pipeline. Runs after regex (Tier 1), before optional LLM NER (Tier 3).", alt: "Rejected: large transformer NER (200MB+, overkill for Tier 2 when LLM NER handles edge cases)" },
   "sqlite-vec": { title: "sqlite-vec", summary: "Vector search in SQLite", detail: "Pure C, zero external dependencies. Runs on WASM and phones. Mozilla Builders project. MIT license. Successor to sqlite-vss. Sufficient for Phase 1 (<1M vectors). Phase 2 may upgrade to HNSW index for scale.", alt: "Rejected: Pinecone/Weaviate (cloud = sovereignty violation), pgvector (requires PostgreSQL server)" },
@@ -681,8 +683,8 @@ const TOOLTIPS = {
   "reputation-privacy-risk": { title: "Reputation Privacy Risk", summary: "DID linkability in reputation records", detail: "Reputation records are published to the user's PDS, which is tied to their did:plc. Even though content is anonymized (no name, no exact price), the DID itself is public — anyone who resolves a DID can see all that identity's reputation contributions and correlate purchases over time. Two candidate fixes: (1) SD-JWT (Selective Disclosure JWT): reputation record contains a blinded credential proving Ring 2 membership without revealing the DID. Verifier sees 'a unique verified human submitted this outcome' but cannot link it to other submissions. (2) ZKP with Nullifiers (Semaphore-style): user generates a ZK proof of group membership (Ring 2) plus a deterministic nullifier per product — prevents double-voting without revealing identity. Both approaches preserve Sybil resistance while breaking the DID-to-reputation link.", alt: "Current state: PDS records are pseudonymous (DID, not name) but linkable. Future state: unlinkable contributions with Sybil resistance. SD-JWT is simpler (IETF draft, JSON-based). ZKP with nullifiers is stronger (cryptographic unlinkability) but harder to implement." },
   "cold-start": { title: "Cold Start Strategy", summary: "Tool first, network second", detail: "Phase 1: Dina is useful as a personal tool (email triage, memory, drafts) with zero Reputation Graph data. Phase 2: As users join, outcome data accumulates naturally. No chicken-and-egg problem because the tool has standalone value.", alt: "Contrast with social networks that need critical mass. Dina is useful from Day 1 for a single user." },
   // --- Intelligence & LLM ---
-  "guardian-angel": { title: "Guardian Angel Loop", summary: "Brain's core reasoning cycle", detail: "Continuous background process in dina-brain (Google ADK): monitors incoming messages, classifies silence tier, detects disconnect/loneliness patterns, assembles nudges, orchestrates agent delegation. The 'always thinking' layer that makes Dina proactive.", alt: "Named 'guardian angel' because it watches over you silently and only speaks when something matters." },
-  "llm-routing": { title: "LLM Router", summary: "Per-query model selection", detail: "Brain classifies each query and routes to optimal model: simple lookup → FTS5 (no LLM). Basic draft → llama (local). Complex reasoning → cloud LLM (PII-scrubbed). Sensitive persona → llama only. Interactive chat → on-device LLM. Minimizes cost and maximizes privacy.", alt: "MatFormer: Gemma 3n E4B contains E2B — brain can dynamically switch model size based on task complexity." },
+  "guardian-angel": { title: "Guardian Angel Loop", summary: "Brain's core reasoning cycle", detail: "Continuous background process in dina-brain (Google ADK): monitors incoming messages, classifies silence tier (fiduciary keyword gates are deterministic; engagement requires LLM because the same source can produce different priorities), detects disconnect/loneliness patterns, assembles nudges, orchestrates agent delegation. The 'always thinking' layer that makes Dina proactive.", alt: "Named 'guardian angel' because it watches over you silently and only speaks when something matters. Only fiduciary gates are hardcoded — engagement classification needs LLM reasoning." },
+  "llm-routing": { title: "LLM Router", summary: "4-provider model selection", detail: "4 LLM providers: Gemini (default cloud), Claude (Anthropic), OpenRouter (multi-model gateway), Llama (local). Routes per-query: simple lookup → FTS5 (no LLM). Basic draft → llama (local). Complex reasoning → cloud LLM (PII-scrubbed). Sensitive persona → llama only. Silence classification: fiduciary keywords are deterministic gates; everything else uses LLM (engagement can't be hardcoded — same source can produce different priorities).", alt: "MatFormer: Gemma 3n E4B contains E2B — brain can dynamically switch model size based on task complexity." },
   "hybrid-search": { title: "Hybrid Search", summary: "0.4×FTS + 0.6×cosine", detail: "Combines keyword search (FTS5 BM25 scoring) with semantic search (cosine similarity on embeddings). Weight: 40% keyword, 60% semantic. FTS5 catches exact matches; embeddings catch semantic similarity. Fast path: pure FTS5 for simple keyword queries.", alt: "Reciprocal Rank Fusion (RRF) is alternative weighting. Current linear combination works well for Dina's use case." },
   "matformer": { title: "MatFormer", summary: "Gemma 3n architecture", detail: "Mixture-of-Experts architecture: E4B (8B total, 4B active) contains E2B (5B total, 2B active) as a subset. Brain can dynamically switch between E2B (faster, less RAM) and E4B (more capable) based on task complexity without loading a separate model.", alt: "Unique to Gemma 3n — most MoE models don't allow clean sub-model extraction." },
   "litert-lm": { title: "LiteRT-LM", summary: "On-device LLM for rich clients", detail: "Google's lightweight inference runtime for mobile/edge devices. Runs quantized Gemma models directly on phone GPU. Used for latency-sensitive interactive chat (user actively typing). Falls back to Home Node for complex queries.", alt: "Phase 2. Phase 1: all inference on Home Node. On-device LLM reduces latency for simple interactions." },
@@ -737,13 +739,13 @@ const PRINCIPLES = [
 
 const CONTAINERS = [
   { id: "core", name: "dina-core", lang: "Go + net/http", color: "var(--c-core)", ports: "443 (ext), 8100 (int)", items: ["SQLite vault + encryption", "DID / key operations", "NaCl messaging (Dina-to-Dina)", "WebSocket server (clients)", "PII scrubber (regex)", "Gatekeeper RBAC", "Reverse proxy: /admin -> brain"] },
-  { id: "brain", name: "dina-brain", lang: "Python + Google ADK", color: "var(--c-brain)", ports: "8200 (int)", items: ["Guardian angel loop", "Silence classification", "Nudge assembly", "Ingestion orchestration", "LLM routing", "Admin UI (FastAPI)", "spaCy NER (PII Tier 2)"] },
+  { id: "brain", name: "dina-brain", lang: "Python + Google ADK", color: "var(--c-brain)", ports: "8200 (int)", items: ["Guardian angel loop", "Silence classification (fiduciary gates + LLM)", "Nudge assembly", "Ingestion orchestration", "LLM routing (Gemini, Claude, OpenRouter, Llama)", "Admin UI (FastAPI)", "spaCy NER (PII Tier 2)"] },
   { id: "pds", name: "dina-pds", lang: "AT Protocol PDS", color: "var(--c-pds)", ports: "2583 (ext)", items: ["Signed Merkle repos", "Reputation records only", "Relay crawling", "Firehose publication", "com.dina.reputation.* Lexicons"] },
   { id: "llama", name: "llama", lang: "llama.cpp", color: "var(--c-llama)", ports: "8080 (int)", items: ["Gemma 3n E4B (GGUF)", "OpenAI-compatible API", "~3GB RAM", "Optional: --profile local-llm", "Text + embeddings + NER"] }
 ];
 
 const PROFILES = [
-  { title: "Cloud LLM (default)", color: "var(--c-core)", containers: "3 (core, brain, pds)", desc: "Brain calls Gemini Flash Lite + Deepgram APIs. PII scrubbed (regex + spaCy). ~$5-15/month. 2GB RAM." },
+  { title: "Cloud LLM (default)", color: "var(--c-core)", containers: "3 (core, brain, pds)", desc: "Brain calls Gemini / Claude / OpenRouter + Deepgram APIs. PII scrubbed (regex + spaCy). ~$5-15/month. 2GB RAM." },
   { title: "Local LLM", color: "var(--c-llama)", containers: "4 (core, brain, pds, llama)", desc: "All text inference on llama. Zero cloud dependency for text. 8GB+ RAM. Best privacy for sensitive personas." },
   { title: "Hybrid", color: "var(--c-brain)", containers: "4 (core, brain, pds, llama)", desc: "Health/financial -> llama (local). General -> cloud. Best of both worlds. Brain's LLM router decides per-query." }
 ];
@@ -800,6 +802,8 @@ const TECH_GROUPS = [
   ]},
   { name: "LLM & Intelligence", items: [
     { name: "Gemini Flash Lite", tip: "gemini-flash-lite", brief: "$0.10/$0.40 per 1M tokens" },
+    { name: "Claude (Anthropic)", tip: "claude-provider", brief: "Cloud LLM via Anthropic API" },
+    { name: "OpenRouter", tip: "openrouter", brief: "Multi-provider unified gateway" },
     { name: "Gemma 3n", tip: "gemma-3n", brief: "Local LLM (1300+ LMArena)" },
     { name: "Google ADK", tip: "google-adk", brief: "Agent orchestration framework" },
     { name: "Deepgram Nova-3", tip: "deepgram", brief: "150ms streaming STT" },
@@ -920,8 +924,8 @@ function renderContainerDiagram() {
     <!-- Cloud APIs -->
     <rect x="30" y="136" width="840" height="52" rx="10" fill="#FFFFFF" stroke="#f39c12" stroke-width="1.5"/>
     <text x="50" y="167" fill="#f39c12" font-size="13" font-weight="700">Cloud APIs</text>
-    <text x="240" y="167" fill="#1C1917" font-size="11">Gemini Flash Lite (LLM)</text>
-    <text x="445" y="167" fill="#1C1917" font-size="11">Deepgram Nova-3 (STT)</text>
+    <text x="240" y="167" fill="#1C1917" font-size="11">Gemini / Claude / OpenRouter</text>
+    <text x="480" y="167" fill="#1C1917" font-size="11">Deepgram Nova-3 (STT)</text>
     <text x="770" y="167" fill="#78716C" font-size="10" text-anchor="end">PII-scrubbed queries only</text>
 
     <!-- Arrows from external to Docker network -->
@@ -957,7 +961,7 @@ function renderContainerDiagram() {
     <text x="485" y="368" fill="#1C1917" font-size="10.5">Silence classification</text>
     <text x="485" y="384" fill="#1C1917" font-size="10.5">Nudge assembly</text>
     <text x="485" y="400" fill="#1C1917" font-size="10.5">Ingestion orchestration</text>
-    <text x="485" y="416" fill="#1C1917" font-size="10.5">LLM routing</text>
+    <text x="485" y="416" fill="#1C1917" font-size="10.5">LLM routing (4 providers)</text>
     <text x="485" y="432" fill="#1C1917" font-size="10.5">Admin UI (FastAPI)</text>
     <text x="485" y="448" fill="#1C1917" font-size="10.5">spaCy NER (PII Tier 2)</text>
 
@@ -1102,7 +1106,7 @@ function getLayerSVG(id) {
       <text x="380" y="372" text-anchor="middle" class="s">SQLCipher: per-page AES-256-CBC encryption · WAL mode: concurrent reads, crash-safe · One file per persona</text>
     </svg>`,
 
-    2: `<svg viewBox="0 0 760 340" xmlns="http://www.w3.org/2000/svg">
+    2: `<svg viewBox="0 0 760 385" xmlns="http://www.w3.org/2000/svg">
       <style>text{font-family:'Figtree',sans-serif;fill:#1C1917} .m{font-family:'JetBrains Mono',monospace;font-size:10px;fill:#6D28D9} .h{font-size:12px;font-weight:700} .s{font-size:10px;fill:#78716C}</style>
       <defs><marker id="ia" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#2ecc71"/></marker></defs>
       <text x="380" y="20" text-anchor="middle" style="font-size:14px;font-weight:700;fill:#2ecc71">MCP Ingestion Pipeline</text>
@@ -1131,25 +1135,26 @@ function getLayerSVG(id) {
       <text x="670" y="82" text-anchor="middle" class="s">WebSocket direct</text>
       <!-- Triage funnel -->
       <text x="280" y="130" text-anchor="middle" style="font-size:11px;font-weight:600;fill:#f39c12">Two-Pass Triage Funnel</text>
-      <polygon points="180,140 380,140 340,220 220,220" fill="#f39c1211" stroke="#f39c12" stroke-width="1.5"/>
-      <text x="280" y="160" text-anchor="middle" class="s">Pass 1: Gmail Categories (instant)</text>
-      <text x="280" y="175" text-anchor="middle" class="m">PROMOTIONS, SOCIAL, UPDATES, FORUMS → Skip</text>
-      <text x="280" y="192" text-anchor="middle" class="s" style="fill:#e74c3c">~60-70% killed</text>
-      <text x="280" y="208" text-anchor="middle" class="s">Pass 2: Subject+Sender LLM classify</text>
+      <polygon points="100,142 460,142 380,236 180,236" fill="#f39c1211" stroke="#f39c12" stroke-width="1.5"/>
+      <line x1="142" y1="190" x2="418" y2="190" stroke="#f39c12" stroke-width="0.5" stroke-dasharray="4 3"/>
+      <text x="280" y="162" text-anchor="middle" class="s">Pass 1: Gmail Categories (instant)</text>
+      <text x="280" y="178" text-anchor="middle" class="m">PROMOTIONS, SOCIAL, UPDATES, FORUMS → Skip</text>
+      <text x="280" y="205" text-anchor="middle" class="s" style="fill:#e74c3c">~60-70% killed</text>
+      <text x="280" y="222" text-anchor="middle" class="s">Pass 2: Subject+Sender LLM classify</text>
       <!-- Arrow down from funnel -->
-      <line x1="280" y1="222" x2="280" y2="250" stroke="#2ecc71" stroke-width="2" marker-end="url(#ia)"/>
-      <text x="300" y="240" class="s" style="fill:#2ecc71">INGEST only</text>
+      <line x1="280" y1="238" x2="280" y2="266" stroke="#2ecc71" stroke-width="2" marker-end="url(#ia)"/>
+      <text x="300" y="256" class="s" style="fill:#2ecc71">INGEST only</text>
       <!-- Core storage -->
-      <rect x="200" y="254" width="160" height="50" rx="10" fill="#FFFFFF" stroke="#3498db" stroke-width="2"/>
-      <text x="280" y="275" text-anchor="middle" class="h" style="fill:#3498db">dina-core</text>
-      <text x="280" y="292" text-anchor="middle" class="m">POST /v1/vault/store</text>
+      <rect x="200" y="270" width="160" height="50" rx="10" fill="#FFFFFF" stroke="#3498db" stroke-width="2"/>
+      <text x="280" y="291" text-anchor="middle" class="h" style="fill:#3498db">dina-core</text>
+      <text x="280" y="308" text-anchor="middle" class="m">POST /v1/vault/store</text>
       <!-- SQLCipher -->
-      <line x1="280" y1="304" x2="280" y2="324" stroke="#3498db" stroke-width="1.5" marker-end="url(#ia)"/>
-      <rect x="210" y="326" width="140" height="28" rx="6" fill="#f39c1222" stroke="#f39c12"/>
-      <text x="280" y="345" text-anchor="middle" class="m">SQLCipher vault</text>
+      <line x1="280" y1="320" x2="280" y2="340" stroke="#3498db" stroke-width="1.5" marker-end="url(#ia)"/>
+      <rect x="210" y="342" width="140" height="28" rx="6" fill="#f39c1222" stroke="#f39c12"/>
+      <text x="280" y="361" text-anchor="middle" class="m">SQLCipher vault</text>
     </svg>`,
 
-    3: `<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg">
+    3: `<svg viewBox="0 0 760 325" xmlns="http://www.w3.org/2000/svg">
       <style>text{font-family:'Figtree',sans-serif;fill:#1C1917} .m{font-family:'JetBrains Mono',monospace;font-size:10px;fill:#6D28D9} .h{font-size:12px;font-weight:700} .s{font-size:10px;fill:#78716C}</style>
       <defs><marker id="ra" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#9b59b6"/></marker></defs>
       <text x="380" y="20" text-anchor="middle" style="font-size:14px;font-weight:700;fill:#9b59b6">AT Protocol — Split Sovereignty</text>
@@ -1188,7 +1193,7 @@ function getLayerSVG(id) {
         <text x="160" y="${216+i*28}" class="m">${t}</text>`).join('')}
     </svg>`,
 
-    4: `<svg viewBox="0 0 760 340" xmlns="http://www.w3.org/2000/svg">
+    4: `<svg viewBox="0 0 760 370" xmlns="http://www.w3.org/2000/svg">
       <style>text{font-family:'Figtree',sans-serif;fill:#1C1917} .m{font-family:'JetBrains Mono',monospace;font-size:10px;fill:#6D28D9} .h{font-size:12px;font-weight:700} .s{font-size:10px;fill:#78716C}</style>
       <defs><marker id="da" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#3498db"/></marker></defs>
       <text x="380" y="20" text-anchor="middle" style="font-size:14px;font-weight:700;fill:#3498db">Dead Drop 3-Valve Ingress</text>
@@ -1319,7 +1324,7 @@ function getLayerSVG(id) {
       <text x="380" y="336" text-anchor="middle" class="s">Hybrid search: 0.4 × FTS5 + 0.6 × cosine similarity · FTS5 fast path for simple keyword queries</text>
     </svg>`,
 
-    7: `<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg">
+    7: `<svg viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg">
       <style>text{font-family:'Figtree',sans-serif;fill:#1C1917} .m{font-family:'JetBrains Mono',monospace;font-size:10px;fill:#6D28D9} .h{font-size:12px;font-weight:700} .s{font-size:10px;fill:#78716C}</style>
       <defs><marker id="aa" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#a29bfe"/></marker></defs>
       <text x="380" y="20" text-anchor="middle" style="font-size:14px;font-weight:700;fill:#a29bfe">Action Layer — Human Always Decides</text>
@@ -1388,7 +1393,7 @@ function highlightTips(text) {
     'FTS5': 'fts5-unicode61', 'sqlite-vec': 'sqlite-vec', 'WAL': 'wal-mode',
     'AT Protocol': 'at-protocol', 'NaCl': 'nacl', 'MCP': 'mcp', 'Noise XX': 'noise-xx',
     'libsodium': 'nacl', 'spaCy': 'spacy', 'OpenClaw': 'mcp', 'Gemini': 'gemini-flash-lite',
-    'Gemma 3n': 'gemma-3n', 'llama': 'llama-container', 'Dead Drop': 'dead-drop',
+    'Gemma 3n': 'gemma-3n', 'llama': 'llama-container', 'Claude': 'claude-provider', 'OpenRouter': 'openrouter', 'Dead Drop': 'dead-drop',
     'Draft-Don-t-Send': 'draft-dont-send', 'Cart Handover': 'cart-handover',
     'Entity Vault': 'entity-vault', 'Trust Rings': 'trust-rings', 'Deep Archive': 'digital-estate',
     'PII': 'pii-scrubber', 'Reputation Graph': 'reputation-appview', 'Yggdrasil': 'yggdrasil'

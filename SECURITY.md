@@ -188,3 +188,13 @@ dina-cli verify (or install script)
 | **Reproducible builds** | Non-deterministic build output | Extreme | Not planned |
 
 For a sovereign agent that people rely on for their identity, finances, and personal data, the first three are functional requirements — not nice-to-haves.
+
+---
+
+## LLM Security: Prompt Injection Defense
+
+Supply chain security (above) protects the code running on your Home Node. **Prompt injection defense** protects against malicious content that tries to hijack the LLM reasoning pipeline — poisoned emails, crafted calendar invites, adversarial messages.
+
+Core principle: you cannot prevent prompt injection, so you contain the blast radius. Seven layers of defense ensure that a tricked LLM cannot exfiltrate data or bypass sharing policies. Key mechanisms include Split Brain architecture (process-level isolation between reading and sending), per-stage tool isolation, a deterministic Egress Gatekeeper (spaCy NER, not an LLM), and vault query limits enforced server-side in Core.
+
+Full architecture: [`docs/architecture/19-prompt-injection-defense.md`](docs/architecture/19-prompt-injection-defense.md) and the corresponding section in [`ARCHITECTURE.md`](ARCHITECTURE.md).

@@ -101,8 +101,6 @@ _FIDUCIARY_KEYWORDS: frozenset[str] = frozenset({
 _SOLICITED_KEYWORDS: frozenset[str] = frozenset({
     "user_requested", "reply", "callback",
 })
-
-
 class _GuardianLoop:
     """Guardian Loop — the brain's main event processing loop.
 

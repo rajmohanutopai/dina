@@ -23,3 +23,8 @@ ceramic = ["ceramicsdk>=0.1"]
 [project.scripts]
 dina = "run_dina:main"
 dina-chat = "dina.chat:repl"
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (100k scale, real LLM calls) — deselect with -m 'not slow'",
+]

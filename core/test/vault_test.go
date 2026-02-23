@@ -1758,6 +1758,9 @@ func TestVault_4_2_3_1_BatchStore100Items(t *testing.T) {
 
 // TST-CORE-244
 func TestVault_4_2_3_2_BatchPerformance(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping 10K batch performance test in short mode")
+	}
 	impl := realVaultManager
 	testutil.RequireImplementation(t, impl, "VaultManager")
 

@@ -54,6 +54,12 @@ def _make_response(
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _no_backoff_sleep(monkeypatch):
+    """Eliminate real asyncio.sleep in retry backoff — tests run instantly."""
+    monkeypatch.setattr("src.adapter.core_http.asyncio.sleep", AsyncMock())
+
+
 @pytest.fixture
 def core_client():
     """Real CoreHTTPClient configured against a test URL."""
