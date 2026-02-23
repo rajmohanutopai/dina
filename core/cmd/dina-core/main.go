@@ -246,7 +246,7 @@ func main() {
 	healthH := &handler.HealthHandler{Health: healthChecker}
 	adminH := &handler.AdminHandler{ProxyURL: cfg.BrainURL, Token: cfg.BrainToken}
 	vaultH := &handler.VaultHandler{Vault: vaultSvc, PII: scrubber}
-	identityH := &handler.IdentityHandler{Identity: identitySvc, DID: didMgr, Signer: identitySigner}
+	identityH := &handler.IdentityHandler{Identity: identitySvc, DID: didMgr, Signer: identitySigner, Mnemonic: bip39, IdentitySeed: bootstrapSeed}
 	messageH := &handler.MessageHandler{Transport: transportSvc}
 	taskH := &handler.TaskHandler{Task: taskSvc}
 	deviceH := &handler.DeviceHandler{Device: deviceSvc}
@@ -284,6 +284,7 @@ func main() {
 	mux.HandleFunc("/v1/did/sign", identityH.HandleSign)
 	mux.HandleFunc("/v1/did/verify", identityH.HandleVerify)
 	mux.HandleFunc("/v1/did/document", identityH.HandleGetDocument)
+	mux.HandleFunc("/v1/identity/mnemonic", identityH.HandleGetMnemonic)
 
 	// Messaging API
 	mux.HandleFunc("/v1/msg/send", messageH.HandleSend)

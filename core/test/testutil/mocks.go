@@ -23,12 +23,14 @@ var (
 
 // MockMnemonicGenerator returns deterministic test data.
 type MockMnemonicGenerator struct {
-	GenerateMnemonic string
-	GenerateSeed     []byte
-	GenerateErr      error
-	ValidateErr      error
-	ToSeedResult     []byte
-	ToSeedErr        error
+	GenerateMnemonic        string
+	GenerateSeed            []byte
+	GenerateErr             error
+	ValidateErr             error
+	ToSeedResult            []byte
+	ToSeedErr               error
+	EntropyToMnemonicResult string
+	EntropyToMnemonicErr    error
 }
 
 func (m *MockMnemonicGenerator) Generate() (string, []byte, error) {
@@ -41,6 +43,10 @@ func (m *MockMnemonicGenerator) Validate(mnemonic string) error {
 
 func (m *MockMnemonicGenerator) ToSeed(mnemonic, passphrase string) ([]byte, error) {
 	return m.ToSeedResult, m.ToSeedErr
+}
+
+func (m *MockMnemonicGenerator) EntropyToMnemonic(entropy []byte) (string, error) {
+	return m.EntropyToMnemonicResult, m.EntropyToMnemonicErr
 }
 
 // ---------- Mock Key Deriver ----------

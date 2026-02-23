@@ -96,6 +96,11 @@ func (g *BIP39Generator) Validate(mnemonic string) error {
 	return nil
 }
 
+// EntropyToMnemonic converts 32 bytes of entropy to a 24-word BIP-39 mnemonic.
+func (g *BIP39Generator) EntropyToMnemonic(entropy []byte) (string, error) {
+	return entropyToMnemonic(entropy, g.wordIndex)
+}
+
 // ToSeed converts a mnemonic + optional passphrase to a 512-bit seed.
 // Uses PBKDF2-HMAC-SHA512 with 2048 iterations, salt = "mnemonic" + passphrase.
 func (g *BIP39Generator) ToSeed(mnemonic string, passphrase string) ([]byte, error) {

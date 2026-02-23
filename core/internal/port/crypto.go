@@ -5,6 +5,7 @@ type MnemonicGenerator interface {
 	Generate() (mnemonic string, seed []byte, err error)
 	Validate(mnemonic string) error
 	ToSeed(mnemonic, passphrase string) ([]byte, error)
+	EntropyToMnemonic(entropy []byte) (string, error)
 }
 
 // HDKeyDeriver derives hierarchical deterministic keys per SLIP-0010.
