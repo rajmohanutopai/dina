@@ -88,6 +88,7 @@ class LLMRouter:
         prompt: str,
         persona_tier: str = "open",
         context: dict | None = None,
+        provider: str | None = None,
     ) -> dict:
         """Route a task to the optimal LLM path.
 
@@ -149,10 +150,14 @@ class LLMRouter:
             }
 
         # ---- 2-6. Select provider ----
-        provider = self._select_provider(task_type, persona_tier)
+        if provider and provider in self._providers:
+            selected = self._providers[provider]
+        else:
+            selected = self._select_provider(task_type, persona_tier)
+        provider_obj = selected  # rename for clarity below
 
         # ---- Cloud consent gate for sensitive personas ----
-        if is_sensitive and not provider.is_local:
+        if is_sensitive and not provider_obj.is_local:
             consent = ctx.get(
                 "cloud_llm_consent",
                 self._config.get("cloud_llm_consent", False),
@@ -165,26 +170,26 @@ class LLMRouter:
                 )
 
         # ---- Execute ----
-        route_label = "local" if provider.is_local else "cloud"
+        route_label = "local" if provider_obj.is_local else "cloud"
         log.info(
             "llm_router.route",
             task_type=task_type,
             persona_tier=persona_tier,
             route=route_label,
-            model=provider.model_name,
+            model=provider_obj.model_name,
         )
 
         try:
-            response = await provider.complete(
+            response = await provider_obj.complete(
                 messages=[{"role": "user", "content": prompt}],
             )
         except Exception as exc:
             # Attempt fallback before giving up.
-            fallback = self._fallback_provider(provider)
+            fallback = self._fallback_provider(provider_obj)
             if fallback is not None:
                 log.warning(
                     "llm_router.fallback",
-                    failed_model=provider.model_name,
+                    failed_model=provider_obj.model_name,
                     fallback_model=fallback.model_name,
                     error=str(exc),
                 )

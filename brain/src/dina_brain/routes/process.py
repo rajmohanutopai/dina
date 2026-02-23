@@ -49,6 +49,8 @@ class ProcessEventRequest(BaseModel):
     action: str | None = None
     target: str | None = None
     risk_level: str | None = None
+    # Structured payload (alternative to flat fields above)
+    payload: dict | None = None
 
 
 class ProcessEventResponse(BaseModel):
@@ -63,6 +65,10 @@ class ProcessEventResponse(BaseModel):
     classification: str | None = None
     decision: str | None = None
     response: dict | None = None
+    # Agent intent fields (populated for agent_intent events)
+    risk: str | None = None
+    approved: bool | None = None
+    requires_approval: bool | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -130,4 +136,7 @@ async def process_event(event: ProcessEventRequest) -> ProcessEventResponse:
         classification=result.get("classification"),
         decision=result.get("decision"),
         response=result.get("response"),
+        risk=result.get("risk"),
+        approved=result.get("approved"),
+        requires_approval=result.get("requires_approval"),
     )

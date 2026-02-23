@@ -39,9 +39,11 @@ x-brain-base: &brain-base
     DINA_BRAIN_PORT: "8200"
     DINA_LLM_URL: "http://localhost:9999"
     DINA_LOG_LEVEL: DEBUG
-    DINA_CLOUD_LLM: ""
-    GOOGLE_API_KEY: ""
-    ANTHROPIC_API_KEY: ""
+    DINA_CLOUD_LLM: "${DINA_CLOUD_LLM:-}"
+    GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
+    ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+    OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+    OPENROUTER_MODEL: "${OPENROUTER_MODEL:-}"
   secrets:
     - brain_token
   healthcheck:

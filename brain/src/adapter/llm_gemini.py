@@ -1,9 +1,9 @@
 """Google Gemini LLM adapter — implements LLMProvider protocol.
 
-Wraps the ``google-generativeai`` library for chat completion,
+Wraps the ``google-genai`` library for chat completion,
 embedding, and zero-shot classification via structured output.
 
-Third-party imports:  google.generativeai, structlog.
+Third-party imports:  google.genai, structlog.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ _EMBED_MODEL = "models/text-embedding-004"
 
 
 class GeminiProvider:
-    """Implements LLMProvider via Google Gemini API.
+    """Implements LLMProvider via Google Gemini API (google.genai SDK).
 
     Properties:
         model_name: The Gemini model identifier (e.g. ``gemini-2.5-flash``).
@@ -43,23 +43,25 @@ class GeminiProvider:
         self._api_key = api_key
         self._model = model
         self._embed_model = embed_model
-        self._genai: Any = None  # lazy import
+        self._client: Any = None  # lazy import
+        self._types: Any = None   # lazy import
 
     # -- Lazy library import -------------------------------------------------
 
-    def _ensure_genai(self) -> Any:
-        """Import and configure google.generativeai on first use."""
-        if self._genai is None:
+    def _ensure_client(self) -> tuple[Any, Any]:
+        """Import google.genai and create client on first use."""
+        if self._client is None:
             try:
-                import google.generativeai as genai  # type: ignore[import-untyped]
+                from google import genai  # type: ignore[import-untyped]
+                from google.genai import types  # type: ignore[import-untyped]
             except ImportError as exc:
                 raise ConfigError(
-                    "google-generativeai package not installed. "
-                    "Run: pip install google-generativeai"
+                    "google-genai package not installed. "
+                    "Run: pip install google-genai"
                 ) from exc
-            genai.configure(api_key=self._api_key)
-            self._genai = genai
-        return self._genai
+            self._client = genai.Client(api_key=self._api_key)
+            self._types = types
+        return self._client, self._types
 
     # -- Properties ----------------------------------------------------------
 
@@ -82,7 +84,7 @@ class GeminiProvider:
             messages: List of ``{"role": ..., "content": ...}`` dicts.
                       Roles are mapped: ``"user"`` -> ``"user"``,
                       ``"assistant"`` -> ``"model"``, ``"system"`` ->
-                      prepended to first user message.
+                      ``system_instruction`` in config.
             **kwargs: Forwarded as generation config (``temperature``,
                       ``max_output_tokens``, etc.).
 
@@ -93,11 +95,11 @@ class GeminiProvider:
         Raises:
             LLMError: On API error, rate-limit, or timeout.
         """
-        genai = self._ensure_genai()
+        client, types = self._ensure_client()
 
-        # Build Gemini-native message history
+        # Separate system messages from conversation
         system_parts: list[str] = []
-        history: list[dict[str, Any]] = []
+        contents: list[Any] = []
 
         for msg in messages:
             role = msg.get("role", "user")
@@ -105,37 +107,35 @@ class GeminiProvider:
             if role == "system":
                 system_parts.append(content)
             elif role == "assistant":
-                history.append({"role": "model", "parts": [content]})
+                contents.append(types.Content(
+                    role="model",
+                    parts=[types.Part(text=content)],
+                ))
             else:
-                # Prepend accumulated system prompt to first user message
-                if system_parts:
-                    content = "\n".join(system_parts) + "\n\n" + content
-                    system_parts.clear()
-                history.append({"role": "user", "parts": [content]})
+                contents.append(types.Content(
+                    role="user",
+                    parts=[types.Part(text=content)],
+                ))
 
-        if not history:
+        if not contents:
             raise LLMError("At least one user message is required")
 
-        # Generation config from kwargs
-        gen_config = {}
+        # Build generation config
+        config_kwargs: dict[str, Any] = {}
         for key in ("temperature", "max_output_tokens", "top_p", "top_k"):
             if key in kwargs:
-                gen_config[key] = kwargs[key]
+                config_kwargs[key] = kwargs[key]
+        if system_parts:
+            config_kwargs["system_instruction"] = "\n".join(system_parts)
+
+        config = types.GenerateContentConfig(**config_kwargs)
 
         try:
-            model = genai.GenerativeModel(self._model)
-
-            # Extract the last user message and use remaining as history
-            last_msg = history[-1]
-            chat_history = history[:-1] if len(history) > 1 else []
-
-            chat = model.start_chat(history=chat_history)
-
             response = await asyncio.wait_for(
-                asyncio.to_thread(
-                    chat.send_message,
-                    last_msg["parts"][0],
-                    generation_config=gen_config if gen_config else None,
+                client.aio.models.generate_content(
+                    model=self._model,
+                    contents=contents,
+                    config=config,
                 ),
                 timeout=_TIMEOUT_S,
             )
@@ -143,10 +143,10 @@ class GeminiProvider:
             # Extract token counts
             tokens_in = 0
             tokens_out = 0
-            if hasattr(response, "usage_metadata"):
+            if hasattr(response, "usage_metadata") and response.usage_metadata:
                 usage = response.usage_metadata
-                tokens_in = getattr(usage, "prompt_token_count", 0)
-                tokens_out = getattr(usage, "candidates_token_count", 0)
+                tokens_in = getattr(usage, "prompt_token_count", 0) or 0
+                tokens_out = getattr(usage, "candidates_token_count", 0) or 0
 
             # Extract finish reason
             finish_reason = "stop"
@@ -184,19 +184,17 @@ class GeminiProvider:
         Raises:
             LLMError: On API error or timeout.
         """
-        genai = self._ensure_genai()
+        client, types = self._ensure_client()
 
         try:
             result = await asyncio.wait_for(
-                asyncio.to_thread(
-                    genai.embed_content,
+                client.aio.models.embed_content(
                     model=self._embed_model,
-                    content=text,
-                    task_type="retrieval_document",
+                    contents=text,
                 ),
                 timeout=_TIMEOUT_S,
             )
-            return result["embedding"]
+            return list(result.embeddings[0].values)
         except asyncio.TimeoutError:
             raise LLMError(
                 f"Gemini embed request timed out after {_TIMEOUT_S}s"

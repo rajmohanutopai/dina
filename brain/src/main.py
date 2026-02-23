@@ -32,6 +32,7 @@ from .adapter.core_http import CoreHTTPClient
 from .adapter.llm_llama import LlamaProvider
 from .adapter.llm_gemini import GeminiProvider
 from .adapter.llm_claude import ClaudeProvider
+from .adapter.llm_openrouter import OpenRouterProvider
 from .adapter.mcp_stdio import MCPStdioClient
 
 # -- Services --
@@ -78,16 +79,43 @@ class _SyncEngine:
         self._llm = llm
 
 
-class _GuardianLoop:
-    """Stub for GuardianLoop — the brain's main event processing loop.
+# ---------------------------------------------------------------------------
+# Deterministic action gates — LLM can never override these boundaries
+# ---------------------------------------------------------------------------
 
-    Will be implemented in ``service/guardian.py``.
+_SAFE_ACTIONS: frozenset[str] = frozenset({
+    "search", "lookup", "read", "query",
+})
+_HIGH_ACTIONS: frozenset[str] = frozenset({
+    "transfer_money", "share_data", "delete_data", "sign_contract",
+})
+_MODERATE_ACTIONS: frozenset[str] = frozenset({
+    "send_email", "draft_create", "install_extension",
+    "form_fill", "calendar_create",
+})
+
+_FIDUCIARY_KEYWORDS: frozenset[str] = frozenset({
+    "fraud", "bank_alert", "security_alert", "medication_due",
+    "emergency", "license_expire", "payment_overdue",
+})
+_SOLICITED_KEYWORDS: frozenset[str] = frozenset({
+    "user_requested", "reply", "callback",
+})
+
+
+class _GuardianLoop:
+    """Guardian Loop — the brain's main event processing loop.
 
     The guardian accepts events from core and:
     1. Classifies silence priority (fiduciary/solicited/engagement).
     2. Routes agent intents through the safety layer.
     3. Delegates reasoning tasks to the LLM router.
     4. Orchestrates crash recovery via the scratchpad.
+
+    Key principle: **LLM reasons, boundaries are deterministic.**
+    The LLM can enhance classification for ambiguous cases, but it
+    can never downgrade a fiduciary event or auto-approve a high-risk
+    action.  Hard gates are checked BEFORE the LLM is consulted.
     """
 
     def __init__(
@@ -109,33 +137,22 @@ class _GuardianLoop:
     async def process_event(self, event: dict) -> dict:
         """Process an incoming event.
 
-        Stub implementation delegates to LLM router for reason-type
-        events and returns a default action for everything else.
+        Routes by event type:
+        - ``reason``:          Full LLM reasoning via router.
+        - ``agent_intent``:    Deterministic risk gates + LLM for unknowns.
+        - ``classify_silence``: Deterministic tier gates + LLM for ambiguous.
+        - Everything else:     Default engagement classification.
         """
         event_type = event.get("type", "")
 
         if event_type == "reason":
-            prompt = event.get("prompt", "")
-            persona_tier = event.get("persona_tier", "open")
-            try:
-                result = await self._llm_router.route(
-                    task_type="reason",
-                    prompt=prompt,
-                    persona_tier=persona_tier,
-                )
-                return {
-                    "status": "ok",
-                    "content": result.get("content", ""),
-                    "model": result.get("model"),
-                    "tokens_in": result.get("tokens_in"),
-                    "tokens_out": result.get("tokens_out"),
-                }
-            except Exception as exc:
-                return {
-                    "status": "error",
-                    "action": "llm_unavailable",
-                    "response": {"error": str(exc)},
-                }
+            return await self._handle_reason(event)
+
+        if event_type == "agent_intent":
+            return await self._handle_agent_intent(event)
+
+        if event_type == "classify_silence":
+            return await self._handle_classify_silence(event)
 
         # Default: classify and return action
         return {
@@ -147,9 +164,181 @@ class _GuardianLoop:
     async def classify_silence(self, event: dict) -> str:
         """Classify an event's silence priority.
 
-        Stub implementation defaults to engagement (Silence First).
+        Delegates to ``_handle_classify_silence`` and returns the tier.
         """
-        return "engagement"
+        result = await self._handle_classify_silence(
+            {"type": "classify_silence", **event},
+        )
+        return result.get("classification", "engagement")
+
+    # -- reason ---------------------------------------------------------------
+
+    async def _handle_reason(self, event: dict) -> dict:
+        """Handle ``reason`` events via LLM router."""
+        prompt = event.get("prompt", "")
+        persona_tier = event.get("persona_tier", "open")
+        provider = event.get("provider")
+        try:
+            result = await self._llm_router.route(
+                task_type="reason",
+                prompt=prompt,
+                persona_tier=persona_tier,
+                provider=provider,
+            )
+            return {
+                "status": "ok",
+                "content": result.get("content", ""),
+                "model": result.get("model"),
+                "tokens_in": result.get("tokens_in"),
+                "tokens_out": result.get("tokens_out"),
+            }
+        except Exception as exc:
+            return {
+                "status": "error",
+                "action": "llm_unavailable",
+                "response": {"error": str(exc)},
+            }
+
+    # -- agent intent ---------------------------------------------------------
+
+    async def _handle_agent_intent(self, event: dict) -> dict:
+        """Classify agent intent risk.  LLM reasons, boundaries are deterministic.
+
+        1. Extract action from event payload.
+        2. Check deterministic hard gates first (known actions).
+        3. If action is unknown and LLM available, ask it to classify.
+        4. Apply deterministic gating on the final risk level.
+        """
+        # Support both nested {"payload": {"action": ...}} and flat {"action": ...}
+        payload = event.get("payload", {})
+        action = payload.get("action") or event.get("action", "")
+        target = payload.get("target") or event.get("target", "")
+        agent_did = payload.get("agent_did") or event.get("agent_did", "")
+
+        # --- Deterministic hard gates (LLM cannot override) ---
+        if action in _SAFE_ACTIONS:
+            risk = "SAFE"
+        elif action in _HIGH_ACTIONS:
+            risk = "HIGH"
+        elif action in _MODERATE_ACTIONS:
+            risk = "MODERATE"
+        else:
+            # Unknown action — ask LLM if available, default MODERATE
+            risk = await self._llm_classify_risk(action, target, agent_did)
+
+        # --- Deterministic gating ---
+        approved = risk == "SAFE"
+        requires_approval = risk in ("MODERATE", "HIGH")
+
+        return {
+            "status": "ok",
+            "action": action,
+            "risk": risk,
+            "approved": approved,
+            "requires_approval": requires_approval,
+            "classification": risk.lower(),
+        }
+
+    async def _llm_classify_risk(
+        self, action: str, target: str, agent_did: str,
+    ) -> str:
+        """Use LLM to classify risk of an unknown action.
+
+        Falls back to MODERATE if LLM is unavailable.
+        """
+        try:
+            result = await self._llm_router.route(
+                task_type="reason",
+                prompt=(
+                    f"Classify the risk level of this autonomous agent action.\n"
+                    f"Action: {action}\n"
+                    f"Target: {target}\n"
+                    f"Agent: {agent_did}\n\n"
+                    f"Respond with exactly one word: SAFE, MODERATE, or HIGH"
+                ),
+                persona_tier="open",
+            )
+            content = result.get("content", "").strip().upper()
+            # Accept only valid risk categories
+            for valid in ("SAFE", "MODERATE", "HIGH"):
+                if valid in content:
+                    return valid
+        except Exception:
+            pass
+        return "MODERATE"  # Default: when in doubt, require approval
+
+    # -- silence classification -----------------------------------------------
+
+    async def _handle_classify_silence(self, event: dict) -> dict:
+        """Classify silence tier.  LLM reasons, routing is deterministic.
+
+        1. Check deterministic hard gates (fiduciary keywords always Tier 1).
+        2. If ambiguous and LLM available, ask it to classify.
+        3. Apply deterministic routing based on tier.
+        """
+        payload = event.get("payload", event)
+        body = str(payload.get("body", ""))
+        source = str(payload.get("source", ""))
+        priority = str(payload.get("priority", ""))
+
+        # Build searchable text from body + source + type
+        search_text = (body + " " + source + " " + priority).lower()
+
+        # --- Fiduciary: ALWAYS interrupts (LLM cannot demote) ---
+        if priority == "fiduciary" or any(
+            kw in search_text for kw in _FIDUCIARY_KEYWORDS
+        ):
+            return {
+                "status": "ok",
+                "action": "interrupt",
+                "classification": "fiduciary",
+            }
+
+        # --- Solicited: user asked, notify ---
+        if priority == "solicited" or any(
+            kw in search_text for kw in _SOLICITED_KEYWORDS
+        ):
+            return {
+                "status": "ok",
+                "action": "notify",
+                "classification": "solicited",
+            }
+
+        # --- Ambiguous: ask LLM, default to engagement (Silence First) ---
+        tier = await self._llm_classify_silence(body)
+        action_map = {
+            "fiduciary": "interrupt",
+            "solicited": "notify",
+            "engagement": "save_for_briefing",
+        }
+        return {
+            "status": "ok",
+            "action": action_map.get(tier, "save_for_briefing"),
+            "classification": tier,
+        }
+
+    async def _llm_classify_silence(self, body: str) -> str:
+        """Use LLM to classify silence tier.  Falls back to engagement."""
+        try:
+            result = await self._llm_router.route(
+                task_type="reason",
+                prompt=(
+                    f"Classify this notification's urgency tier.\n\n"
+                    f"Content: {body}\n\n"
+                    f"Respond with exactly one word:\n"
+                    f"- fiduciary (silence would cause real harm)\n"
+                    f"- solicited (user explicitly asked for this)\n"
+                    f"- engagement (nice to know, can wait)"
+                ),
+                persona_tier="open",
+            )
+            content = result.get("content", "").strip().lower()
+            for valid in ("fiduciary", "solicited", "engagement"):
+                if valid in content:
+                    return valid
+        except Exception:
+            pass
+        return "engagement"  # Default: Silence First
 
 
 _SAFE_ENTITIES: frozenset[str] = frozenset({
@@ -280,6 +469,25 @@ def create_app() -> FastAPI:
         except Exception as exc:
             log.warning(
                 "brain.provider.claude.failed",
+                extra={"error": str(exc)},
+            )
+
+    openrouter_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    if openrouter_key:
+        try:
+            openrouter_model = os.environ.get(
+                "OPENROUTER_MODEL", "google/gemini-2.5-flash",
+            ).strip()
+            providers["openrouter"] = OpenRouterProvider(
+                openrouter_key, model=openrouter_model,
+            )
+            log.info(
+                "brain.provider.openrouter",
+                extra={"model": openrouter_model},
+            )
+        except Exception as exc:
+            log.warning(
+                "brain.provider.openrouter.failed",
                 extra={"error": str(exc)},
             )
 

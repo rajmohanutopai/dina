@@ -37,6 +37,7 @@ class ReasonRequest(BaseModel):
     prompt: str
     persona_id: str | None = None
     persona_tier: str | None = "open"
+    provider: str | None = None
 
 
 class ReasonResponse(BaseModel):
@@ -103,6 +104,7 @@ async def reason_query(request: ReasonRequest) -> ReasonResponse:
         "prompt": request.prompt,
         "persona_id": request.persona_id,
         "persona_tier": request.persona_tier,
+        "provider": request.provider,
     }
 
     try:
