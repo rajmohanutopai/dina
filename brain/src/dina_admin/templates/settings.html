@@ -54,32 +54,88 @@
         margin-top: 8px;
     }
 
-    /* ── LLM Provider form ── */
-    .llm-row {
+    /* ── Role Cards ── */
+    .role-card {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        padding: 20px 24px;
+        margin-bottom: 16px;
+    }
+
+    .role-card.disabled {
+        opacity: 0.5;
+    }
+
+    .role-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 4px;
+    }
+
+    .role-title {
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--color-text);
+    }
+
+    .role-badge {
+        font-size: 11px;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 10px;
+        background: #F5F5F4;
+        color: var(--color-muted);
+    }
+
+    .role-badge.coming-soon {
+        background: #FEF3C7;
+        color: #92400E;
+    }
+
+    .role-desc {
+        font-size: 13px;
+        color: var(--color-muted);
+        margin-bottom: 16px;
+    }
+
+    .role-field {
         display: flex;
         align-items: center;
         gap: 12px;
-        margin-bottom: 14px;
+        margin-bottom: 12px;
         flex-wrap: wrap;
     }
 
-    .llm-row label {
-        font-size: 14px;
+    .role-field label {
+        font-size: 13px;
         font-weight: 500;
-        color: var(--color-text);
-        min-width: 150px;
+        color: var(--color-label);
+        min-width: 80px;
     }
 
-    .llm-input-wrap {
-        position: relative;
+    .role-select {
+        padding: 8px 12px;
+        font-size: 13px;
+        font-family: system-ui, -apple-system, sans-serif;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        background: var(--color-body-bg);
+        color: var(--color-text);
+        outline: none;
+        min-width: 200px;
+    }
+
+    .role-select:focus {
+        border-color: var(--color-primary);
+    }
+
+    .role-key-input {
         flex: 1;
         min-width: 200px;
-        max-width: 400px;
-    }
-
-    .llm-input-wrap input {
-        width: 100%;
-        padding: 8px 36px 8px 10px;
+        max-width: 340px;
+        padding: 8px 12px;
         font-size: 13px;
         font-family: 'SF Mono', SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
         border: 1px solid var(--color-border);
@@ -87,98 +143,71 @@
         background: var(--color-body-bg);
         color: var(--color-text);
         outline: none;
-        transition: border-color 0.15s;
         box-sizing: border-box;
     }
 
-    .llm-input-wrap input:focus {
+    .role-key-input:focus {
         border-color: var(--color-primary);
     }
 
-    .llm-input-wrap .toggle-vis {
-        position: absolute;
-        right: 8px;
-        top: 50%;
-        transform: translateY(-50%);
-        background: none;
-        border: none;
-        cursor: pointer;
-        font-size: 14px;
-        color: var(--color-muted);
-        padding: 2px;
-        line-height: 1;
-    }
-
-    .llm-input-wrap .toggle-vis:hover {
+    .role-model-input {
+        flex: 1;
+        min-width: 200px;
+        max-width: 340px;
+        padding: 8px 12px;
+        font-size: 13px;
+        font-family: system-ui, -apple-system, sans-serif;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        background: var(--color-body-bg);
         color: var(--color-text);
+        outline: none;
+        box-sizing: border-box;
     }
 
-    .llm-status {
+    .role-model-input:focus {
+        border-color: var(--color-primary);
+    }
+
+    .key-status {
         font-size: 12px;
         font-weight: 600;
-        padding: 2px 8px;
+        padding: 2px 10px;
         border-radius: 10px;
         white-space: nowrap;
     }
 
-    .llm-status.configured {
+    .key-status.configured {
         background: #D1FAE5;
         color: #065F46;
     }
 
-    .llm-status.not-configured {
+    .key-status.not-configured {
         background: #F5F5F4;
         color: #A8A29E;
     }
 
-    .llm-model-input {
-        width: 100%;
-        padding: 8px 10px;
-        font-size: 13px;
-        font-family: system-ui, -apple-system, sans-serif;
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-sm);
-        background: var(--color-body-bg);
-        color: var(--color-text);
-        outline: none;
-        transition: border-color 0.15s;
-        box-sizing: border-box;
-    }
-
-    .llm-model-input:focus {
-        border-color: var(--color-primary);
-    }
-
-    .llm-select {
-        padding: 8px 10px;
-        font-size: 13px;
-        font-family: system-ui, -apple-system, sans-serif;
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-sm);
-        background: var(--color-body-bg);
-        color: var(--color-text);
-        outline: none;
-        min-width: 200px;
-    }
-
-    .llm-sub-row {
+    .local-status {
         display: flex;
         align-items: center;
-        gap: 12px;
-        margin-bottom: 10px;
-        margin-left: 162px;
-        flex-wrap: wrap;
-    }
-
-    .llm-sub-row label {
+        gap: 8px;
         font-size: 13px;
-        font-weight: 400;
-        color: var(--color-label);
-        min-width: 100px;
+        color: var(--color-text);
     }
 
-    .llm-sub-row .llm-input-wrap {
-        max-width: 300px;
+    .local-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--color-green);
+    }
+
+    .key-hint {
+        font-size: 11px;
+        color: var(--color-muted);
+        margin-top: -4px;
+        margin-bottom: 8px;
+        margin-left: 92px;
     }
 
     /* ── Preferences form ── */
@@ -331,77 +360,100 @@
 
 <hr class="section-divider">
 
-<!-- Section 2: LLM Providers -->
+<!-- Section 2: AI Models -->
 <div class="card settings-section">
-    <h3>LLM Providers</h3>
-    <p class="section-desc">Configure cloud LLM API keys. Keys are stored encrypted and never exposed in full.</p>
+    <h3>AI Models</h3>
+    <p class="section-desc">Configure which AI models power Dina's capabilities.</p>
 
-    <!-- Gemini -->
-    <div class="llm-row">
-        <label for="llm-gemini-key">Gemini API Key</label>
-        <div class="llm-input-wrap">
-            <input type="password" id="llm-gemini-key" placeholder="not configured" autocomplete="off">
-            <button type="button" class="toggle-vis" onclick="toggleVis('llm-gemini-key', this)" title="Show/hide">&#x1f441;</button>
+    <!-- Reasoning Model -->
+    <div class="role-card" id="analysis-card">
+        <div class="role-header">
+            <span class="role-title">Reasoning Model</span>
         </div>
-        <span class="llm-status not-configured" id="llm-gemini-status">not configured</span>
-    </div>
+        <p class="role-desc">Deep analysis, video understanding, and complex multi-step tasks.</p>
 
-    <!-- Anthropic -->
-    <div class="llm-row">
-        <label for="llm-anthropic-key">Anthropic API Key</label>
-        <div class="llm-input-wrap">
-            <input type="password" id="llm-anthropic-key" placeholder="not configured" autocomplete="off">
-            <button type="button" class="toggle-vis" onclick="toggleVis('llm-anthropic-key', this)" title="Show/hide">&#x1f441;</button>
+        <div class="role-field">
+            <label for="analysis-provider">Provider</label>
+            <select id="analysis-provider" class="role-select" onchange="onProviderChange('analysis')">
+                <option value="">None</option>
+                <option value="gemini">Gemini (Google)</option>
+                <option value="claude">Claude (Anthropic)</option>
+                <option value="openai">OpenAI</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="local">Local (Ollama)</option>
+            </select>
         </div>
-        <span class="llm-status not-configured" id="llm-anthropic-status">not configured</span>
-    </div>
 
-    <!-- OpenAI -->
-    <div class="llm-row">
-        <label for="llm-openai-key">OpenAI API Key</label>
-        <div class="llm-input-wrap">
-            <input type="password" id="llm-openai-key" placeholder="not configured" autocomplete="off">
-            <button type="button" class="toggle-vis" onclick="toggleVis('llm-openai-key', this)" title="Show/hide">&#x1f441;</button>
+        <div class="role-field" id="analysis-key-row" style="display:none;">
+            <label>API Key</label>
+            <input type="password" id="analysis-key" class="role-key-input" placeholder="Enter API key" autocomplete="off">
+            <span class="key-status not-configured" id="analysis-key-status">Not configured</span>
         </div>
-        <span class="llm-status not-configured" id="llm-openai-status">not configured</span>
-    </div>
-    <div class="llm-sub-row">
-        <label for="llm-openai-model">Model</label>
-        <div class="llm-input-wrap">
-            <input type="text" id="llm-openai-model" class="llm-model-input" placeholder="gpt-5.2">
-        </div>
-    </div>
+        <p class="key-hint" id="analysis-key-hint" style="display:none;">Leave blank to keep existing key. Enter a new key to replace it.</p>
 
-    <!-- OpenRouter -->
-    <div class="llm-row">
-        <label for="llm-openrouter-key">OpenRouter API Key</label>
-        <div class="llm-input-wrap">
-            <input type="password" id="llm-openrouter-key" placeholder="not configured" autocomplete="off">
-            <button type="button" class="toggle-vis" onclick="toggleVis('llm-openrouter-key', this)" title="Show/hide">&#x1f441;</button>
+        <div class="role-field" id="analysis-model-row" style="display:none;">
+            <label>Model</label>
+            <input type="text" id="analysis-model" class="role-model-input" placeholder="default">
         </div>
-        <span class="llm-status not-configured" id="llm-openrouter-status">not configured</span>
-    </div>
-    <div class="llm-sub-row">
-        <label for="llm-openrouter-model">Model</label>
-        <div class="llm-input-wrap">
-            <input type="text" id="llm-openrouter-model" class="llm-model-input" placeholder="google/gemini-2.5-flash">
+
+        <div id="analysis-local-row" style="display:none;">
+            <div class="local-status">
+                <span class="local-dot"></span>
+                <span>Running locally &mdash; no API key needed</span>
+            </div>
         </div>
     </div>
 
-    <!-- Preferred Cloud -->
-    <div class="llm-row" style="margin-top: 8px;">
-        <label for="llm-preferred">Preferred Cloud</label>
-        <select id="llm-preferred" class="llm-select">
-            <option value="">Auto (first available)</option>
-            <option value="gemini">Gemini</option>
-            <option value="claude">Claude (Anthropic)</option>
-            <option value="openai">OpenAI</option>
-            <option value="openrouter">OpenRouter</option>
-        </select>
+    <!-- Conversation Model -->
+    <div class="role-card" id="chat-card">
+        <div class="role-header">
+            <span class="role-title">Conversation Model</span>
+        </div>
+        <p class="role-desc">Quick responses, daily chat, and search queries.</p>
+
+        <div class="role-field">
+            <label for="chat-provider">Provider</label>
+            <select id="chat-provider" class="role-select" onchange="onProviderChange('chat')">
+                <option value="">None</option>
+                <option value="gemini">Gemini (Google)</option>
+                <option value="claude">Claude (Anthropic)</option>
+                <option value="openai">OpenAI</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="local">Local (Ollama)</option>
+            </select>
+        </div>
+
+        <div class="role-field" id="chat-key-row" style="display:none;">
+            <label>API Key</label>
+            <input type="password" id="chat-key" class="role-key-input" placeholder="Enter API key" autocomplete="off">
+            <span class="key-status not-configured" id="chat-key-status">Not configured</span>
+        </div>
+        <p class="key-hint" id="chat-key-hint" style="display:none;">Leave blank to keep existing key. Enter a new key to replace it.</p>
+
+        <div class="role-field" id="chat-model-row" style="display:none;">
+            <label>Model</label>
+            <input type="text" id="chat-model" class="role-model-input" placeholder="default">
+        </div>
+
+        <div id="chat-local-row" style="display:none;">
+            <div class="local-status">
+                <span class="local-dot"></span>
+                <span>Running locally &mdash; no API key needed</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Voice Model (Coming Soon) -->
+    <div class="role-card disabled">
+        <div class="role-header">
+            <span class="role-title">Voice Model</span>
+            <span class="role-badge coming-soon">Coming Soon</span>
+        </div>
+        <p class="role-desc">Speech synthesis and transcription.</p>
     </div>
 
     <div style="margin-top: 16px;">
-        <button class="btn btn-primary" id="llm-save-btn" onclick="saveLLMSettings()">Save &amp; Reload Providers</button>
+        <button class="btn btn-primary" id="models-save-btn" onclick="saveModels()">Save &amp; Reload Models</button>
     </div>
 </div>
 
@@ -478,127 +530,161 @@
 
 {% block scripts %}
 <script>
-// Track redacted placeholders so we don't send them back as real keys
-var _redactedKeys = {};
+// Map provider key to the API key field name in the backend
+var _providerKeyMap = {
+    'gemini': 'gemini_api_key',
+    'claude': 'anthropic_api_key',
+    'openai': 'openai_api_key',
+    'openrouter': 'openrouter_api_key'
+};
 
-function toggleVis(inputId, btn) {
-    var input = document.getElementById(inputId);
-    if (input.type === 'password') {
-        input.type = 'text';
-    } else {
-        input.type = 'password';
-    }
-}
+// Map provider to the _configured flag name
+var _providerConfiguredMap = {
+    'gemini': 'gemini_key_configured',
+    'claude': 'anthropic_key_configured',
+    'openai': 'openai_key_configured',
+    'openrouter': 'openrouter_key_configured'
+};
 
-function setKeyStatus(provider, redactedValue) {
-    var statusEl = document.getElementById('llm-' + provider + '-status');
-    if (redactedValue && redactedValue !== '***') {
-        statusEl.textContent = redactedValue;
-        statusEl.className = 'llm-status configured';
-    } else {
-        statusEl.textContent = 'not configured';
-        statusEl.className = 'llm-status not-configured';
+// Default model placeholders per provider
+var _defaultModels = {
+    'gemini': 'gemini-2.5-flash',
+    'claude': 'claude-sonnet-4-20250514',
+    'openai': 'gpt-5.2',
+    'openrouter': 'google/gemini-2.5-flash'
+};
+
+// Stored settings from last GET
+var _currentSettings = {};
+
+function onProviderChange(role) {
+    var provider = document.getElementById(role + '-provider').value;
+    var keyRow = document.getElementById(role + '-key-row');
+    var keyHint = document.getElementById(role + '-key-hint');
+    var modelRow = document.getElementById(role + '-model-row');
+    var localRow = document.getElementById(role + '-local-row');
+
+    var isCloud = provider && provider !== 'local';
+    var isLocal = provider === 'local';
+    var hasModel = ['openai', 'openrouter'].indexOf(provider) !== -1;
+
+    keyRow.style.display = isCloud ? 'flex' : 'none';
+    keyHint.style.display = isCloud ? 'block' : 'none';
+    modelRow.style.display = hasModel ? 'flex' : 'none';
+    localRow.style.display = isLocal ? 'block' : 'none';
+
+    // Update key status badge
+    if (isCloud) {
+        var configKey = _providerConfiguredMap[provider];
+        var isConfigured = _currentSettings[configKey] || false;
+        var statusEl = document.getElementById(role + '-key-status');
+        statusEl.textContent = isConfigured ? 'Configured' : 'Not configured';
+        statusEl.className = 'key-status ' + (isConfigured ? 'configured' : 'not-configured');
     }
+
+    // Set model placeholder
+    if (hasModel) {
+        var modelInput = document.getElementById(role + '-model');
+        modelInput.placeholder = _defaultModels[provider] || 'default';
+        // Pre-fill with stored model if available
+        if (provider === 'openai' && _currentSettings.openai_model) {
+            modelInput.value = _currentSettings.openai_model;
+        } else if (provider === 'openrouter' && _currentSettings.openrouter_model) {
+            modelInput.value = _currentSettings.openrouter_model;
+        } else {
+            modelInput.value = '';
+        }
+    }
+
+    // Clear key input (always write-only)
+    document.getElementById(role + '-key').value = '';
 }
 
 async function loadSettings() {
     var resp = await apiFetch('/admin/settings/');
     if (!resp) return;
-    var settings = await resp.json();
+    _currentSettings = await resp.json();
+    var s = _currentSettings;
 
-    // Populate preference fields
-    if (settings.briefing_enabled !== undefined) {
-        document.getElementById('briefing-enabled').checked = settings.briefing_enabled;
+    // Preferences
+    if (s.briefing_enabled !== undefined) {
+        document.getElementById('briefing-enabled').checked = s.briefing_enabled;
     }
-    if (settings.briefing_time) {
-        document.getElementById('briefing-time').value = settings.briefing_time;
+    if (s.briefing_time) {
+        document.getElementById('briefing-time').value = s.briefing_time;
     }
-    if (settings.dnd_enabled !== undefined) {
-        document.getElementById('dnd-enabled').checked = settings.dnd_enabled;
+    if (s.dnd_enabled !== undefined) {
+        document.getElementById('dnd-enabled').checked = s.dnd_enabled;
     }
-    if (settings.dnd_start) {
-        document.getElementById('dnd-start').value = settings.dnd_start;
+    if (s.dnd_start) {
+        document.getElementById('dnd-start').value = s.dnd_start;
     }
-    if (settings.dnd_end) {
-        document.getElementById('dnd-end').value = settings.dnd_end;
+    if (s.dnd_end) {
+        document.getElementById('dnd-end').value = s.dnd_end;
     }
-    if (settings.default_persona) {
-        document.getElementById('default-persona').value = settings.default_persona;
+    if (s.default_persona) {
+        document.getElementById('default-persona').value = s.default_persona;
     }
-    document.getElementById('core-url').textContent = settings.core_url || '\u2014';
+    document.getElementById('core-url').textContent = s.core_url || '\u2014';
 
     // Identity
-    if (settings.did) {
-        document.getElementById('identity-did').textContent = settings.did;
+    if (s.did) {
+        document.getElementById('identity-did').textContent = s.did;
     }
-    if (settings.did_created) {
-        document.getElementById('identity-created').textContent = settings.did_created;
-    }
-
-    // LLM provider keys — show redacted values as placeholders
-    var keyMap = {
-        'gemini': 'gemini_api_key',
-        'anthropic': 'anthropic_api_key',
-        'openai': 'openai_api_key',
-        'openrouter': 'openrouter_api_key'
-    };
-    for (var provider in keyMap) {
-        var settingsKey = keyMap[provider];
-        var redacted = settings[settingsKey] || '';
-        _redactedKeys[settingsKey] = redacted;
-        var inputEl = document.getElementById('llm-' + provider + '-key');
-        if (redacted && redacted !== '***') {
-            inputEl.placeholder = redacted;
-        } else {
-            inputEl.placeholder = 'not configured';
-        }
-        inputEl.value = '';
-        setKeyStatus(provider, redacted);
+    if (s.did_created) {
+        document.getElementById('identity-created').textContent = s.did_created;
     }
 
-    // Model names
-    if (settings.openai_model) {
-        document.getElementById('llm-openai-model').value = settings.openai_model;
+    // AI Models — set provider dropdowns and trigger field visibility
+    if (s.analysis_provider) {
+        document.getElementById('analysis-provider').value = s.analysis_provider;
     }
-    if (settings.openrouter_model) {
-        document.getElementById('llm-openrouter-model').value = settings.openrouter_model;
-    }
+    onProviderChange('analysis');
 
-    // Preferred cloud
-    if (settings.preferred_cloud) {
-        document.getElementById('llm-preferred').value = settings.preferred_cloud;
+    if (s.chat_provider) {
+        document.getElementById('chat-provider').value = s.chat_provider;
     }
+    onProviderChange('chat');
 }
 
-async function saveLLMSettings() {
-    var btn = document.getElementById('llm-save-btn');
+async function saveModels() {
+    var btn = document.getElementById('models-save-btn');
     btn.disabled = true;
     btn.textContent = 'Saving...';
 
     var data = {};
 
-    // Only send API keys that were actually typed (not empty = unchanged)
-    var keyFields = {
-        'gemini_api_key': 'llm-gemini-key',
-        'anthropic_api_key': 'llm-anthropic-key',
-        'openai_api_key': 'llm-openai-key',
-        'openrouter_api_key': 'llm-openrouter-key'
-    };
-    for (var key in keyFields) {
-        var val = document.getElementById(keyFields[key]).value.trim();
-        if (val) {
-            data[key] = val;
-        }
+    // Role mappings
+    var analysisProvider = document.getElementById('analysis-provider').value;
+    var chatProvider = document.getElementById('chat-provider').value;
+    data.analysis_provider = analysisProvider;
+    data.chat_provider = chatProvider;
+
+    // Set preferred_cloud to the analysis provider (drives LLMRouter routing)
+    if (analysisProvider && analysisProvider !== 'local') {
+        data.preferred_cloud = analysisProvider;
     }
 
-    // Always send model names and preferred cloud
-    var openaiModel = document.getElementById('llm-openai-model').value.trim();
-    if (openaiModel) data.openai_model = openaiModel;
+    // API keys — only send if user typed something
+    var analysisKey = document.getElementById('analysis-key').value.trim();
+    if (analysisKey && _providerKeyMap[analysisProvider]) {
+        data[_providerKeyMap[analysisProvider]] = analysisKey;
+    }
 
-    var openrouterModel = document.getElementById('llm-openrouter-model').value.trim();
-    if (openrouterModel) data.openrouter_model = openrouterModel;
+    var chatKey = document.getElementById('chat-key').value.trim();
+    if (chatKey && _providerKeyMap[chatProvider]) {
+        data[_providerKeyMap[chatProvider]] = chatKey;
+    }
 
-    data.preferred_cloud = document.getElementById('llm-preferred').value;
+    // Model names
+    if (['openai', 'openrouter'].indexOf(analysisProvider) !== -1) {
+        var am = document.getElementById('analysis-model').value.trim();
+        if (am) data[analysisProvider === 'openai' ? 'openai_model' : 'openrouter_model'] = am;
+    }
+    if (['openai', 'openrouter'].indexOf(chatProvider) !== -1) {
+        var cm = document.getElementById('chat-model').value.trim();
+        if (cm) data[chatProvider === 'openai' ? 'openai_model' : 'openrouter_model'] = cm;
+    }
 
     try {
         var resp = await apiFetch('/admin/settings/', {
@@ -607,18 +693,17 @@ async function saveLLMSettings() {
             body: JSON.stringify(data)
         });
         if (resp && resp.ok) {
-            showToast('LLM providers saved & reloaded');
-            // Reload to show updated status
+            showToast('Models saved & reloaded');
             await loadSettings();
         } else {
-            showToast('Failed to save LLM settings', true);
+            showToast('Failed to save models', true);
         }
     } catch (e) {
-        showToast('Error saving settings', true);
+        showToast('Error saving models', true);
     }
 
     btn.disabled = false;
-    btn.textContent = 'Save & Reload Providers';
+    btn.textContent = 'Save & Reload Models';
 }
 
 async function saveSettings() {

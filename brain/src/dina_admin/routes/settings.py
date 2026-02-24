@@ -29,7 +29,7 @@ _core_client: Any = None
 _config: Any = None
 _llm_reload_callback: Callable[[], Awaitable[None]] | None = None
 
-# Keys that contain API secrets — must be redacted in GET responses.
+# Keys that contain API secrets — never exposed in GET responses.
 _SECRET_KEYS = frozenset({
     "gemini_api_key",
     "anthropic_api_key",
@@ -56,11 +56,18 @@ def set_llm_reload_callback(callback: Callable[[], Awaitable[None]]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _redact_key(key: str) -> str:
-    """Redact an API key to show only the last 4 characters."""
-    if not key or len(key) <= 4:
-        return "***"
-    return f"***...{key[-4:]}"
+def _strip_secrets(settings: dict[str, Any]) -> dict[str, Any]:
+    """Remove secret keys and replace with *_configured booleans.
+
+    Never exposes API key values — not even redacted.
+    """
+    result = dict(settings)
+    for secret_key in _SECRET_KEYS:
+        val = result.pop(secret_key, None)
+        # "gemini_api_key" -> "gemini_key_configured"
+        bool_key = secret_key.replace("_api_key", "_key_configured")
+        result[bool_key] = bool(val)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +80,8 @@ async def get_settings() -> dict:
     """Get current settings.
 
     Returns a dict of the current brain and system settings.
-    Sensitive values (tokens, keys) are redacted in the response.
+    API keys are never exposed — only boolean flags indicating
+    whether each provider's key is configured.
     """
     if _core_client is None:
         raise HTTPException(status_code=503, detail="Core client not configured")
@@ -109,12 +117,8 @@ async def get_settings() -> dict:
     except Exception:
         pass  # Non-fatal — identity may not be set up
 
-    # Redact API keys — only expose last 4 chars
-    for secret_key in _SECRET_KEYS:
-        if secret_key in settings and settings[secret_key]:
-            settings[secret_key] = _redact_key(settings[secret_key])
-
-    return settings
+    # Strip API keys, replace with boolean flags
+    return _strip_secrets(settings)
 
 
 @router.put("/")
@@ -122,7 +126,7 @@ async def update_settings(settings: dict) -> dict:
     """Update settings.
 
     Persists user-modifiable settings to core's KV store.
-    Returns the updated settings dict.
+    Returns the updated settings dict (with secrets stripped).
 
     Only a known set of keys are accepted; unknown keys are ignored
     to prevent injection of arbitrary config.
@@ -148,6 +152,9 @@ async def update_settings(settings: dict) -> dict:
         "openai_model",
         "openrouter_model",
         "preferred_cloud",
+        # Role → provider mapping
+        "analysis_provider",
+        "chat_provider",
     }
 
     # Filter to allowed keys only
@@ -162,6 +169,7 @@ async def update_settings(settings: dict) -> dict:
     # Check if any LLM keys are being changed
     llm_keys_changed = bool(filtered.keys() & (_SECRET_KEYS | {
         "openai_model", "openrouter_model", "preferred_cloud",
+        "analysis_provider", "chat_provider",
     }))
 
     try:
@@ -183,12 +191,8 @@ async def update_settings(settings: dict) -> dict:
                     extra={"error": type(exc).__name__},
                 )
 
-        # Redact secrets before returning
-        result = dict(existing)
-        for secret_key in _SECRET_KEYS:
-            if secret_key in result and result[secret_key]:
-                result[secret_key] = _redact_key(result[secret_key])
-        return result
+        # Strip secrets before returning
+        return _strip_secrets(existing)
     except Exception as exc:
         log.error(
             "settings.update_error",
