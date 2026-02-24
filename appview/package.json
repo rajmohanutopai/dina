@@ -1,0 +1,33 @@
+{
+  "name": "@dina/appview",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:unit": "vitest run tests/unit/",
+    "test:integration": "vitest run tests/integration/",
+    "build": "tsc",
+    "migrate": "drizzle-kit migrate",
+    "generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.38.0",
+    "pg": "^8.13.0",
+    "zod": "^3.24.0",
+    "pino": "^9.6.0",
+    "lru-cache": "^11.0.0",
+    "ws": "^8.18.0",
+    "node-cron": "^3.0.0",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.0",
+    "typescript": "^5.7.0",
+    "drizzle-kit": "^0.30.0",
+    "@types/pg": "^8.11.0",
+    "@types/ws": "^8.5.0",
+    "@types/node": "^22.0.0",
+    "@types/node-cron": "^3.0.0"
+  }
+}

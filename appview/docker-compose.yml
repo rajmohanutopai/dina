@@ -1,0 +1,93 @@
+services:
+  # ── Database ──
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: dina_reputation
+      POSTGRES_USER: dina
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dina -d dina_reputation"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Jetstream (Go binary) ──
+  jetstream:
+    image: ghcr.io/bluesky-social/jetstream:latest
+    environment:
+      JETSTREAM_RELAY_URL: ${RELAY_URL:-wss://bgs.bsky.network}
+      JETSTREAM_WANTED_COLLECTIONS: >-
+        com.dina.reputation.attestation,
+        com.dina.reputation.vouch,
+        com.dina.reputation.endorsement,
+        com.dina.reputation.flag,
+        com.dina.reputation.reply,
+        com.dina.reputation.reaction,
+        com.dina.reputation.reportRecord,
+        com.dina.reputation.revocation,
+        com.dina.reputation.delegation,
+        com.dina.reputation.collection,
+        com.dina.reputation.media,
+        com.dina.reputation.subject,
+        com.dina.reputation.amendment,
+        com.dina.reputation.verification,
+        com.dina.reputation.reviewRequest,
+        com.dina.reputation.comparison,
+        com.dina.reputation.subjectClaim,
+        com.dina.reputation.trustPolicy,
+        com.dina.reputation.notificationPrefs
+      JETSTREAM_PORT: 6008
+    ports:
+      - "6008:6008"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:6008/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ── TypeScript AppView processes ──
+
+  ingester:
+    build: .
+    command: ["node", "dist/ingester/main.js"]
+    environment:
+      DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_reputation
+      DATABASE_POOL_MAX: 20
+      JETSTREAM_URL: ws://jetstream:6008
+      LOG_LEVEL: info
+    depends_on:
+      postgres: { condition: service_healthy }
+      jetstream: { condition: service_healthy }
+    restart: unless-stopped
+
+  scorer:
+    build: .
+    command: ["node", "dist/scorer/main.js"]
+    environment:
+      DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_reputation
+      LOG_LEVEL: info
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: unless-stopped
+
+  web:
+    build: .
+    command: ["node", "dist/web/server.js"]
+    environment:
+      DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_reputation
+      NEXT_PUBLIC_BASE_URL: https://reputation.dina.foundation
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: unless-stopped
+
+volumes:
+  pgdata:

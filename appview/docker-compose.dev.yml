@@ -1,0 +1,27 @@
+services:
+  # Local Dina Core PDS for testing
+  dina-core-dev:
+    build: ../dina-core
+    environment:
+      PDS_HOSTNAME: localhost:3001
+      RELAY_URL: http://relay-dev:2470
+    ports:
+      - "3001:3001"
+
+  # Local relay (Bluesky's open-source indigo BGS)
+  relay-dev:
+    image: ghcr.io/bluesky-social/indigo:latest
+    environment:
+      BGS_ADMIN_KEY: dev-only-key
+    ports:
+      - "2470:2470"
+    volumes:
+      - relay-dev-data:/data
+
+  # Override Jetstream to point at local relay
+  jetstream:
+    environment:
+      JETSTREAM_RELAY_URL: ws://relay-dev:2470
+
+volumes:
+  relay-dev-data:

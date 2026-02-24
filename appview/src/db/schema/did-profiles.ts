@@ -1,0 +1,35 @@
+import { sql } from 'drizzle-orm'
+import { pgTable, text, timestamp, boolean, jsonb, real, integer, index } from 'drizzle-orm/pg-core'
+
+export const didProfiles = pgTable('did_profiles', {
+  did: text('did').primaryKey(),
+  needsRecalc: boolean('needs_recalc').default(true).notNull(),
+  totalAttestationsAbout: integer('total_attestations_about').default(0),
+  positiveAbout: integer('positive_about').default(0),
+  neutralAbout: integer('neutral_about').default(0),
+  negativeAbout: integer('negative_about').default(0),
+  vouchCount: integer('vouch_count').default(0),
+  vouchStrength: text('vouch_strength').default('unvouched'),
+  highConfidenceVouches: integer('high_confidence_vouches').default(0),
+  endorsementCount: integer('endorsement_count').default(0),
+  topSkillsJson: jsonb('top_skills_json'),
+  activeFlagCount: integer('active_flag_count').default(0),
+  totalAttestationsBy: integer('total_attestations_by').default(0),
+  revocationCount: integer('revocation_count').default(0),
+  deletionCount: integer('deletion_count').default(0),
+  disputedThenDeletedCount: integer('disputed_then_deleted_count').default(0),
+  revocationRate: real('revocation_rate').default(0),
+  deletionRate: real('deletion_rate').default(0),
+  corroborationRate: real('corroboration_rate').default(0),
+  evidenceRate: real('evidence_rate').default(0),
+  averageHelpfulRatio: real('average_helpful_ratio').default(0),
+  activeDomains: text('active_domains').array(),
+  isAgent: boolean('is_agent').default(false),
+  accountFirstSeen: timestamp('account_first_seen'),
+  lastActive: timestamp('last_active'),
+  coordinationFlagCount: integer('coordination_flag_count').default(0),
+  overallTrustScore: real('overall_trust_score'),
+  computedAt: timestamp('computed_at').notNull(),
+}, (table) => [
+  index('did_profiles_needs_recalc_idx').on(table.needsRecalc).where(sql`${table.needsRecalc} = true`),
+])
