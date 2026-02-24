@@ -175,25 +175,16 @@ if [ ! -f "${ENV_FILE}" ]; then
 # Identity seed (DO NOT SHARE — your recovery phrase derives from this)
 DINA_IDENTITY_SEED=${IDENTITY_SEED}
 
+# LLM provider (set at least one)
+# GEMINI_API_KEY=
+# ANTHROPIC_API_KEY=
+# OPENAI_API_KEY=
+# OPENROUTER_API_KEY=
+# OPENROUTER_MODEL=google/gemini-2.5-flash
+
 # Ports (defaults)
 # DINA_CORE_PORT=8100
 # DINA_BRAIN_PORT=8200
-# DINA_LLM_PORT=8080
-
-# Rate limiting
-# DINA_RATE_LIMIT=100
-
-# Dead drop spool limit (bytes, default 10MB)
-# DINA_SPOOL_MAX=10485760
-
-# LLM configuration
-# DINA_LLM_URL=http://llm:8080
-# DINA_LLM_MODEL=gemma-2b-it-q4_k_m.gguf
-
-# Cloud LLM (optional — leave empty for local-only)
-# DINA_CLOUD_LLM=gemini
-# GOOGLE_API_KEY=your-key-here
-# ANTHROPIC_API_KEY=your-key-here
 
 # Logging
 # DINA_LOG_LEVEL=INFO

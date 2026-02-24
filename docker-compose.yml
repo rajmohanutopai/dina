@@ -51,8 +51,11 @@ services:
       - DINA_LLM_URL=${DINA_LLM_URL:-http://llm:8080}
       - DINA_LOG_LEVEL=${DINA_LOG_LEVEL:-INFO}
       - DINA_CLOUD_LLM=${DINA_CLOUD_LLM:-}
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-}
     secrets:
       - brain_token
     healthcheck:

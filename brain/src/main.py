@@ -32,6 +32,7 @@ from .adapter.core_http import CoreHTTPClient
 from .adapter.llm_llama import LlamaProvider
 from .adapter.llm_gemini import GeminiProvider
 from .adapter.llm_claude import ClaudeProvider
+from .adapter.llm_openai import OpenAIProvider
 from .adapter.llm_openrouter import OpenRouterProvider
 from .adapter.mcp_stdio import MCPStdioClient
 
@@ -448,7 +449,7 @@ def create_app() -> FastAPI:
                 extra={"error": str(exc)},
             )
 
-    google_key = os.environ.get("GOOGLE_API_KEY", "").strip()
+    google_key = (os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", "")).strip()
     if google_key:
         try:
             providers["gemini"] = GeminiProvider(google_key)
@@ -467,6 +468,18 @@ def create_app() -> FastAPI:
         except Exception as exc:
             log.warning(
                 "brain.provider.claude.failed",
+                extra={"error": str(exc)},
+            )
+
+    openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if openai_key:
+        try:
+            openai_model = os.environ.get("OPENAI_MODEL", "gpt-5.2").strip()
+            providers["openai"] = OpenAIProvider(openai_key, model=openai_model)
+            log.info("brain.provider.openai", extra={"model": openai_model})
+        except Exception as exc:
+            log.warning(
+                "brain.provider.openai.failed",
                 extra={"error": str(exc)},
             )
 

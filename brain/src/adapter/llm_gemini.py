@@ -38,7 +38,7 @@ class GeminiProvider:
     ) -> None:
         if not api_key:
             raise ConfigError(
-                "GOOGLE_API_KEY is required for GeminiProvider"
+                "GEMINI_API_KEY is required for GeminiProvider"
             )
         self._api_key = api_key
         self._model = model

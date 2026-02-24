@@ -1,0 +1,180 @@
+"""OpenAI LLM adapter — implements LLMProvider protocol.
+
+Wraps the ``openai`` library's async Chat Completions API.
+Embedding and classification are **not supported** directly and
+raise ``NotImplementedError``.
+
+Third-party imports:  openai, structlog.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from functools import cached_property
+from typing import Any
+
+import structlog
+
+from ..domain.errors import ConfigError, LLMError
+
+logger = structlog.get_logger(__name__)
+
+_TIMEOUT_S = 60.0
+_DEFAULT_MAX_TOKENS = 4096
+
+
+class OpenAIProvider:
+    """Implements LLMProvider via OpenAI Chat Completions API.
+
+    Properties:
+        model_name: The OpenAI model identifier (e.g. ``gpt-5.2``).
+        is_local:   Always ``False`` — OpenAI is a cloud provider.
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gpt-5.2",
+    ) -> None:
+        if not api_key:
+            raise ConfigError(
+                "OPENAI_API_KEY is required for OpenAIProvider"
+            )
+        self._api_key = api_key
+        self._model = model
+        self._client: Any = None  # lazy import
+
+    # -- Lazy library import -------------------------------------------------
+
+    def _ensure_client(self) -> Any:
+        """Import openai and create an AsyncOpenAI client on first use."""
+        if self._client is None:
+            try:
+                import openai  # type: ignore[import-untyped]
+            except ImportError as exc:
+                raise ConfigError(
+                    "openai package not installed. "
+                    "Run: pip install openai"
+                ) from exc
+            self._client = openai.AsyncOpenAI(
+                api_key=self._api_key,
+                timeout=_TIMEOUT_S,
+            )
+        return self._client
+
+    # -- Properties ----------------------------------------------------------
+
+    @cached_property
+    def model_name(self) -> str:
+        """Human-readable model identifier."""
+        return self._model
+
+    @cached_property
+    def is_local(self) -> bool:
+        """OpenAI is a cloud provider — always False."""
+        return False
+
+    # -- LLMProvider protocol ------------------------------------------------
+
+    async def complete(self, messages: list[dict], **kwargs: Any) -> dict:
+        """Send a chat-completion request to OpenAI Chat Completions API.
+
+        Parameters:
+            messages: List of ``{"role": ..., "content": ...}`` dicts.
+                      Roles ``"system"``, ``"user"``, ``"assistant"`` are
+                      passed through directly.
+            **kwargs: Forwarded to the API call.  Supports
+                      ``temperature``, ``max_tokens``, ``top_p``.
+
+        Returns:
+            Dict with ``content``, ``model``, ``tokens_in``,
+            ``tokens_out``, ``finish_reason``.
+
+        Raises:
+            LLMError: On API error, rate-limit, or timeout.
+        """
+        client = self._ensure_client()
+
+        # Build request kwargs
+        max_tokens = kwargs.pop("max_tokens", _DEFAULT_MAX_TOKENS)
+        req_kwargs: dict[str, Any] = {
+            "model": self._model,
+            "messages": [
+                {"role": m.get("role", "user"), "content": m.get("content", "")}
+                for m in messages
+            ],
+            "max_completion_tokens": max_tokens,
+        }
+
+        for key in ("temperature", "top_p"):
+            if key in kwargs:
+                req_kwargs[key] = kwargs[key]
+
+        try:
+            response = await asyncio.wait_for(
+                client.chat.completions.create(**req_kwargs),
+                timeout=_TIMEOUT_S,
+            )
+
+            # Extract content
+            content_text = ""
+            if response.choices:
+                content_text = response.choices[0].message.content or ""
+
+            # Token usage
+            tokens_in = 0
+            tokens_out = 0
+            if response.usage:
+                tokens_in = response.usage.prompt_tokens or 0
+                tokens_out = response.usage.completion_tokens or 0
+
+            # Finish reason
+            finish_reason = "stop"
+            if response.choices:
+                finish_reason = response.choices[0].finish_reason or "stop"
+
+            return {
+                "content": content_text,
+                "model": self._model,
+                "tokens_in": tokens_in,
+                "tokens_out": tokens_out,
+                "finish_reason": finish_reason,
+            }
+
+        except asyncio.TimeoutError:
+            raise LLMError(
+                f"OpenAI request timed out after {_TIMEOUT_S}s"
+            )
+        except Exception as exc:
+            exc_str = str(exc).lower()
+            if "429" in exc_str or "rate_limit" in exc_str:
+                raise LLMError(
+                    f"OpenAI rate limited (429): {exc}",
+                ) from exc
+            if "401" in exc_str or "authentication" in exc_str:
+                raise ConfigError(
+                    f"OpenAI authentication failed — check OPENAI_API_KEY: {exc}"
+                ) from exc
+            raise LLMError(f"OpenAI API error: {exc}") from exc
+
+    async def embed(self, text: str) -> list[float]:
+        """Not supported — use GeminiProvider or LlamaProvider for embeddings.
+
+        Raises:
+            NotImplementedError: Always.
+        """
+        raise NotImplementedError(
+            "OpenAI embeddings not implemented. "
+            "Use GeminiProvider or LlamaProvider for embedding generation."
+        )
+
+    async def classify(self, text: str, categories: list[str]) -> str:
+        """Not supported — use complete() with a classification prompt.
+
+        Raises:
+            NotImplementedError: Always.
+        """
+        raise NotImplementedError(
+            "OpenAI native classification not supported. "
+            "Call complete() with a classification prompt instead."
+        )
