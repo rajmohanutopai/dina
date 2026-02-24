@@ -7,11 +7,23 @@ import (
 )
 
 // TokenValidator authenticates incoming requests.
-// Two-tier: BRAIN_TOKEN (constant-time comparison) + CLIENT_TOKEN (hash lookup).
+// Three-tier: Ed25519 signature (did:key lookup) + BRAIN_TOKEN (constant-time)
+// + CLIENT_TOKEN (hash lookup).
 type TokenValidator interface {
 	ValidateBrainToken(token string) bool
 	ValidateClientToken(token string) (deviceID string, ok bool)
 	IdentifyToken(token string) (kind domain.TokenType, identity string, err error)
+	// VerifySignature validates an Ed25519 request signature.
+	// It looks up the DID in the device registry, checks replay protection
+	// (timestamp window), and verifies the cryptographic signature.
+	VerifySignature(did, method, path, timestamp string, body []byte, signatureHex string) (kind domain.TokenType, identity string, err error)
+}
+
+// DeviceKeyRegistrar allows the pairing/device layer to register and revoke
+// Ed25519 device keys in the auth validator at runtime.
+type DeviceKeyRegistrar interface {
+	RegisterDeviceKey(did string, pubKey []byte, deviceID string)
+	RevokeDeviceKey(did string)
 }
 
 // SessionManager handles browser sessions for the admin UI.

@@ -65,3 +65,11 @@ async def settings_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "settings.html", {
         "page": "settings",
     })
+
+
+@router.get("/devices-page", response_class=HTMLResponse)
+async def devices_page(request: Request) -> HTMLResponse:
+    """Render the devices page."""
+    return templates.TemplateResponse(request, "devices.html", {
+        "page": "devices",
+    })

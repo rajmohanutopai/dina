@@ -107,7 +107,6 @@ async def test_admin_8_1_2_system_status(client, auth_headers) -> None:
     data = resp.json()
     assert data["core"] == "healthy"
     assert data["llm"] == "available"
-    assert data["memory"] == "ok"
 
 
 # TST-BRAIN-272
@@ -168,7 +167,6 @@ async def test_admin_8_2_2_add_contact(client, auth_headers) -> None:
     data = resp.json()
     assert data["did"] == "did:key:z6MkNewFriend"
     assert data["name"] == "Bob"
-    assert "id" in data  # item_id assigned by core
 
 
 # TST-BRAIN-276

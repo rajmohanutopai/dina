@@ -505,6 +505,16 @@ def malicious_bot() -> MockMaliciousBot:
 # Per-test reset fixtures
 # ---------------------------------------------------------------------------
 
+@pytest.fixture(scope="session")
+def cli_identity(tmp_path_factory):
+    """Generate a CLIIdentity keypair for E2E signing tests."""
+    from dina_cli.signing import CLIIdentity
+    identity_dir = tmp_path_factory.mktemp("cli_identity")
+    identity = CLIIdentity(identity_dir=identity_dir)
+    identity.generate()
+    return identity
+
+
 @pytest.fixture(autouse=True)
 def reset_node_state(don_alonso, sancho, chairmaker, albert):
     """Reset per-test mutable state while preserving session setup."""

@@ -152,6 +152,21 @@ services:
       <<: *brain-env
       DINA_CORE_URL: http://core-albert:8100
 
+  # ---- CLI container (for E2E signing tests) ----
+  cli-alonso:
+    build:
+      context: ./cli
+      dockerfile: Dockerfile
+    environment:
+      DINA_CORE_URL: http://core-alonso:8100
+    secrets:
+      - brain_token
+    depends_on:
+      core-alonso:
+        condition: service_healthy
+    networks:
+      - dina-e2e
+
 volumes:
   alonso-data:
     driver: local

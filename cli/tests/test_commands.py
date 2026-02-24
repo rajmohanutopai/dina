@@ -244,3 +244,67 @@ def test_missing_token():
     runner = CliRunner()
     result = runner.invoke(cli, ["--json", "recall", "test"], env={})
     assert result.exit_code != 0
+
+
+# ── configure ─────────────────────────────────────────────────────────────
+
+
+def test_configure_signature_mode(tmp_path):
+    """Configure in Ed25519 signing mode generates keypair and attempts pairing."""
+    runner = CliRunner()
+    identity_dir = tmp_path / "identity"
+
+    with patch("dina_cli.main._configure_signature") as mock_sig, \
+         patch("dina_cli.main.save_config") as mock_save:
+        mock_save.return_value = tmp_path / "config.json"
+        # Input: core_url (default), auth=1 (signature), device_name, brain_url, brain_token, persona, test=no
+        user_input = "\n".join([
+            "",           # core_url (default)
+            "1",          # Ed25519 signing
+            "my-laptop",  # device name
+            "",           # brain_url (default)
+            "",           # brain_token (skip)
+            "",           # persona (default)
+            "n",          # don't test connection
+        ])
+        result = runner.invoke(cli, ["configure"], input=user_input, env={})
+
+    assert result.exit_code == 0
+    assert "Ed25519 signing" in result.output
+    mock_sig.assert_called_once()
+    # Verify save_config was called with auth_mode="signature"
+    saved = mock_save.call_args[0][0]
+    assert saved["auth_mode"] == "signature"
+    assert saved["device_name"] == "my-laptop"
+
+
+def test_configure_token_mode(tmp_path):
+    """Configure in legacy Bearer token mode saves client_token."""
+    runner = CliRunner()
+
+    with patch("dina_cli.main.save_config") as mock_save:
+        mock_save.return_value = tmp_path / "config.json"
+        user_input = "\n".join([
+            "",               # core_url (default)
+            "2",              # Bearer token
+            "my-secret-tok",  # client token
+            "",               # brain_url (default)
+            "",               # brain_token (skip)
+            "",               # persona (default)
+            "n",              # don't test connection
+        ])
+        result = runner.invoke(cli, ["configure"], input=user_input, env={})
+
+    assert result.exit_code == 0
+    assert "Bearer token" in result.output
+    saved = mock_save.call_args[0][0]
+    assert saved["auth_mode"] == "token"
+    assert saved["client_token"] == "my-secret-tok"
+
+
+def test_configure_help():
+    """Configure --help shows without requiring a token."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["configure", "--help"], env={})
+    assert result.exit_code == 0
+    assert "Set up connection" in result.output

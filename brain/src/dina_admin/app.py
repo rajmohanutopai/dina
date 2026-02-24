@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .routes import contacts as contacts_route
 from .routes import dashboard as dashboard_route
+from .routes import devices as devices_route
 from .routes import settings as settings_route
 from .routes import login as login_route
 from .routes import pages as pages_route
@@ -113,6 +114,7 @@ def create_admin_app(
     # Existing JSON routes
     dashboard_route.set_dependencies(core_client, config)
     contacts_route.set_core_client(core_client)
+    devices_route.set_core_client(core_client)
     settings_route.set_dependencies(core_client, config)
     if llm_reload_callback is not None:
         settings_route.set_llm_reload_callback(llm_reload_callback)
@@ -133,6 +135,10 @@ def create_admin_app(
     )
     app.include_router(
         contacts_route.router,
+        dependencies=[Depends(verify_cookie_or_bearer)],
+    )
+    app.include_router(
+        devices_route.router,
         dependencies=[Depends(verify_cookie_or_bearer)],
     )
     app.include_router(

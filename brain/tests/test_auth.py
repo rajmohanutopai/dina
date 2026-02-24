@@ -243,13 +243,12 @@ def test_auth_1_2_3_admin_requires_client_token(client: TestClient) -> None:
 
 # TST-BRAIN-010
 def test_auth_1_2_4_admin_rejects_brain_token(client: TestClient) -> None:
-    """S1.2.4: /admin/* rejects BRAIN_TOKEN -- 403 Forbidden."""
+    """S1.2.4: /admin/* rejects BRAIN_TOKEN -- 401 Unauthorized."""
     resp = client.get(
         "/admin/",
         headers={"Authorization": f"Bearer {TEST_BRAIN_TOKEN}"},
     )
-    assert resp.status_code == 403
-    assert "CLIENT_TOKEN" in resp.json()["detail"]
+    assert resp.status_code == 401
 
 
 # TST-BRAIN-011
@@ -354,12 +353,12 @@ def test_auth_1_2_9_admin_uses_client_token_to_core() -> None:
     )
     assert resp.status_code == 200
 
-    # BRAIN_TOKEN is rejected (403, not 401 -- it is the wrong *kind* of token)
+    # BRAIN_TOKEN is rejected -- admin only accepts CLIENT_TOKEN
     resp = admin_client.get(
         "/",
         headers={"Authorization": f"Bearer {TEST_BRAIN_TOKEN}"},
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 401
 
 
 # TST-BRAIN-016

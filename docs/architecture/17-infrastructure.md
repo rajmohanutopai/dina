@@ -488,10 +488,22 @@ QR CODE:
   Deferred. Nice-to-have for non-developers. Pairing code is sufficient.
   6 digits + mDNS solves the real friction (finding the IP).
 
-DEVICE KEYPAIR:
-  Phase 1: No device keypair. CLIENT_TOKEN alone is sufficient for auth.
-  Phase 2 (if needed): Phone generates Ed25519 device keypair, sends public
-  key during pairing. Enables signed requests, mutual TLS, device attestation.
+DEVICE KEYPAIR (Ed25519):
+  CLI generates Ed25519 keypair → derives did:key:z6Mk... (multicodec 0xed01
+  + base58btc). During pairing, sends public_key_multibase in POST /v1/pair/complete.
+  Core stores the public key in device_tokens alongside the CLIENT_TOKEN hash.
+
+  Every HTTP request carries three headers:
+    X-DID:       did:key:z6MkhaXg...   (device identity)
+    X-Timestamp: 2025-01-15T10:30:00Z  (ISO 8601 UTC)
+    X-Signature: <hex(Ed25519(canonical_payload))>
+
+  Canonical signing payload:
+    {METHOD}\n{PATH}\n{TIMESTAMP}\n{SHA256_HEX(body)}
+
+  Core middleware verifies: DID is paired, timestamp within 5-min window,
+  signature matches. Reject → 401. Bearer CLIENT_TOKEN still works as
+  fallback for clients that don't support signing.
 ```
 
 **Pairing API endpoints:**
@@ -503,17 +515,21 @@ POST /v1/pair/initiate
   → Returns: {code: "847291", expires_in: 300}
 
 POST /v1/pair/complete
-  Body: {code: "847291", device_name: "Raj's iPhone"}
+  Body: {code: "847291", device_name: "Raj's iPhone",
+         public_key_multibase: "z6MkhaXg..."}   ← optional, enables signed requests
   → Core validates code (exists, not expired, not used)
   → Core generates CLIENT_TOKEN (crypto/rand 32 bytes → hex)
   → Core stores SHA-256(CLIENT_TOKEN) in device_tokens
+  → If public_key_multibase provided: store Ed25519 public key, derive device DID
   → Core deletes pending pairing
   → Returns: {
       client_token: "a3f8b2c1d4e5...",   ← plaintext, sent ONCE
       node_did: "did:plc:5qtzkvd...",
+      device_did: "did:key:z6MkhaXg...",  ← if public_key_multibase was provided
       ws_url: "wss://192.168.1.42:8100/ws"
     }
   → Phone stores client_token in Keychain/Keystore
+  → CLI stores keypair at ~/.dina/identity/ and uses Ed25519 signing
 ```
 
 **Device management:**
@@ -542,6 +558,115 @@ Send:       plaintext returned to device ONCE during pairing (over TLS)
 Validate:   device sends token → core hashes → compares to stored hash
 Revoke:     user says "revoke device" → core sets revoked=true
 Re-pair:    after import/restore, all tokens invalidated → re-pair required
+```
+
+**Phase 2: Secure Enclave Key Storage**
+
+```
+SECURE ENCLAVE KEY STORAGE:
+  Phase 1 stores Ed25519 private keys as PEM files on disk (chmod 0600).
+  Phase 2 moves key generation and signing into hardware security modules.
+  The private key never leaves the HSM, never enters user-space RAM.
+
+  ARCHITECTURE:
+    CLIIdentity interface stays the same (backend is swappable):
+      .sign_request(method, path, body) → (did, timestamp, signature)
+      .did() → "did:key:z6Mk..."
+      .public_key_multibase() → "z6Mk..."
+
+    Backend selection (in priority order):
+      1. HSM (default if available):
+         Key generated inside Secure Enclave / StrongBox / TPM.
+         Signing: CLI → sign_request() → HSM.sign(canonical_payload) → signature
+         Private key never in Python process memory.
+      2. Encrypted PEM (explicit fallback):
+         PKCS#8 PEM encrypted with Argon2id-derived passphrase.
+         For headless servers, VMs, CI environments.
+      3. Plaintext PEM (Phase 1 compat):
+         Current behavior. Deprecation warning on startup.
+
+    Platform HSM APIs:
+      iOS:     Secure Enclave — SecKeyCreateRandomKey + kSecAttrTokenIDSecureEnclave
+      Android: StrongBox Keystore — setIsStrongBoxBacked(true)
+      macOS:   Secure Enclave — Security.framework / CryptoKit (T2/Apple Silicon)
+      Linux:   TPM 2.0 — tpm2-tss / PKCS#11
+      Windows: CNG / NCrypt — NCryptCreatePersistedKey (TPM-backed or software KSP)
+
+  CLI COMMANDS:
+    dina configure --hsm         # Auto-detect available HSM, generate key inside it
+    dina configure --software    # Force encrypted PEM fallback
+    dina configure --promote-to-hsm  # Migrate existing PEM key to HSM:
+      → Generates NEW keypair inside HSM
+      → Re-pairs with Home Node (auto: initiate + complete with new public key)
+      → Old PEM-based device key revoked
+      → Old PEM files deleted after confirmation
+
+  KEY LIFECYCLE (HSM):
+    Generate:  HSM creates Ed25519 keypair internally
+    Export:    Only PUBLIC key exported → derive did:key:z6Mk...
+    Register:  Public key sent to Home Node during pairing (public_key_multibase)
+    Sign:      HSM signs canonical payload → returns signature bytes
+    Rotate:    Generate new key in HSM → re-pair → old key revoked
+    Destroy:   HSM deletes key material (or device wipe)
+```
+
+**Phase 2: Tailscale Zero-Config Authentication (Server-Initiated)**
+
+```
+TAILSCALE AUTH (SERVER-INITIATED):
+  Home Node initiates encrypted connections to client CLIs via Tailscale mesh.
+  No tokens, no signatures, no pairing ceremony. Tailnet membership = trust.
+
+  TOPOLOGY:
+    Home Node (100.x.y.z) ←→ Tailscale WireGuard mesh ←→ Client CLI (100.a.b.c)
+    Both run tailscaled. WireGuard handles mutual authentication.
+
+  SERVER-TO-CLIENT FLOW:
+    Home Node resolves client via MagicDNS: macbook.tailnet-name.ts.net
+    Home Node connects to client's Tailscale IP on CLI listener port (8300)
+    Both sides verify peer identity via Tailscale local API whois
+    Connection established — fully encrypted, mutually authenticated
+
+  CLIENT CLI LISTENER:
+    Lightweight HTTP server bound to Tailscale interface only (100.a.b.c:8300)
+    NOT bound to 0.0.0.0 — only reachable via tailnet
+    Serves: /healthz, /notify, /sync (receives pushes from Home Node)
+
+  AUTO-REGISTRATION:
+    First connection from Home Node to new tailnet device:
+    → Home Node calls Tailscale local API /localapi/v0/status to discover nodes
+    → For each new node, calls /localapi/v0/whois?addr=<tailscale-ip> to get identity
+    → Creates device entry: auth_type=tailscale, name=<tailscale hostname>
+    → No manual pairing needed — joining the tailnet IS the pairing
+
+  DOCKER COMPOSE (Home Node):
+    tailscale:
+      image: tailscale/tailscale:latest
+      hostname: dina-homenode
+      environment:
+        - TS_AUTHKEY=${TAILSCALE_AUTHKEY}
+        - TS_STATE_DIR=/var/lib/tailscale
+      volumes:
+        - tailscale-state:/var/lib/tailscale
+      cap_add: [NET_ADMIN, NET_RAW]
+    core:
+      network_mode: "service:tailscale"  # shares tailscale's network namespace
+
+  REVOCATION:
+    Remove device from tailnet via Tailscale admin console → immediate disconnect.
+    Or revoke in Dina admin UI → device entry marked revoked.
+
+  COMPARISON WITH OTHER AUTH METHODS:
+    | Method          | Setup             | Direction        | Auth proof              | NAT traversal          |
+    |-----------------|-------------------|------------------|-------------------------|------------------------|
+    | CLIENT_TOKEN    | Pairing ceremony  | Client → Server  | Bearer token            | Manual port-forward    |
+    | ED25519_SIGNED  | CLI keygen + pair | Client → Server  | Signature headers       | Manual port-forward    |
+    | TAILSCALE       | Join tailnet      | Server → Client  | WireGuard mutual auth   | Built-in (DERP relays) |
+
+  COEXISTENCE:
+    All four auth methods (BRAIN_TOKEN, CLIENT_TOKEN, ED25519_SIGNED, TAILSCALE)
+    coexist. Tailscale is for home users with personal devices. CLIENT_TOKEN and
+    Ed25519 remain for web browsers, mobile apps without Tailscale, and CI/CD.
 ```
 
 ### Client ↔ Home Node WebSocket Protocol

@@ -529,6 +529,13 @@ SUITES = {
         # Section map embedded — no TEST_PLAN.md needed (filenames encode suite#)
         "e2e_sections": True,
     },
+    "cli": {
+        "name": "CLI (Py)",
+        "cmd": ["python", "-m", "pytest", "-v", "--tb=no", "--durations=0", "-vv",
+                "cli/tests/"],
+        "cwd": None,
+        "parser": "pytest",
+    },
 }
 
 
@@ -551,6 +558,7 @@ _E2E_SECTION_MAP: dict[int, str] = {
     12: "Reputation Graph",
     13: "Security & Adversarial",
     14: "Agentic LLM Behavior",
+    15: "CLI Ed25519 Request Signing",
 }
 
 _E2E_FILE_SECTION_RE = re.compile(r"test_suite_(\d+)_")
@@ -695,9 +703,9 @@ def _start_e2e_docker(*, restart: bool = False) -> float:
 
 def run_suite(
     key: str, *, quick: bool = True,
-) -> tuple[list[TestResult], dict[int, str], float]:
+) -> tuple[list[TestResult], dict[int, str], float, str]:
     """Run a test suite via subprocess and return parsed results, section map,
-    and wall-clock elapsed time in seconds.
+    wall-clock elapsed time in seconds, and raw output string.
 
     When *quick* is True (default), pytest suites add ``-m 'not slow'``
     to skip heavy tests (100K scale, real LLM calls), and Go suites
@@ -712,7 +720,7 @@ def run_suite(
     if cfg.get("e2e_sections"):
         section_map = dict(_E2E_SECTION_MAP)
         section_override = prescan_e2e_sections(PROJECT_ROOT / cfg["test_dir"])
-    else:
+    elif "plan" in cfg:
         plan_path = PROJECT_ROOT / cfg["plan"]
         section_map = parse_section_headers(plan_path)
         if "test_dir" in cfg:
@@ -724,6 +732,10 @@ def run_suite(
                 plan_path,
                 manifest_path,
             )
+    else:
+        # Flat suite (e.g. CLI) — no section plan, all tests grouped as one
+        section_map = {1: cfg["name"]}
+        section_override = None
 
     cwd = (PROJECT_ROOT / cfg["cwd"]) if cfg["cwd"] else PROJECT_ROOT
 
@@ -748,10 +760,10 @@ def run_suite(
         output = result.stdout + "\n" + result.stderr
     except subprocess.TimeoutExpired:
         print(f"WARNING: {cfg['name']} timed out after {timeout}s", file=sys.stderr)
-        return [], section_map, _time.monotonic() - t0
+        return [], section_map, _time.monotonic() - t0, ""
     except FileNotFoundError as exc:
         print(f"WARNING: {cfg['name']}: {exc}", file=sys.stderr)
-        return [], section_map, _time.monotonic() - t0
+        return [], section_map, _time.monotonic() - t0, ""
     elapsed = _time.monotonic() - t0
 
     if cfg["parser"] == "go":
@@ -759,13 +771,19 @@ def run_suite(
     else:
         tests = parse_pytest_output(output, section_override)
 
+    # Flat suites (no plan, no e2e_sections): all tests → section 1
+    if "plan" not in cfg and not cfg.get("e2e_sections"):
+        for t in tests:
+            if t.section == 0:
+                t.section = 1
+
     # Mock-based suites: PASS doesn't mean implemented — remap to SKIP
     if cfg.get("mock_pass_is_skip"):
         for t in tests:
             if t.status == "PASS":
                 t.status = "SKIP"
 
-    return tests, section_map, elapsed
+    return tests, section_map, elapsed, output
 
 
 # ---------------------------------------------------------------------------
@@ -1058,9 +1076,14 @@ def parse_args(argv: list[str]) -> dict:
 
 
 def main() -> None:
+    import tempfile
     import time as _time
+    from datetime import datetime as _datetime
 
     script_t0 = _time.monotonic()
+    log_dir = Path(tempfile.gettempdir()) / f"dina-tests-{_datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    log_dir.mkdir(parents=True, exist_ok=True)
+
     opts = parse_args(sys.argv)
     suite_filter = opts["suite"]
     json_mode = opts["json"]
@@ -1141,7 +1164,9 @@ def main() -> None:
             if not json_mode:
                 print(f"Running {name}...", file=sys.stderr, flush=True)
 
-            tests, section_map, wall_time = run_suite(key, quick=quick)
+            tests, section_map, wall_time, raw_output = run_suite(key, quick=quick)
+            if raw_output:
+                (log_dir / f"{key}.log").write_text(raw_output)
             sections = aggregate(tests, section_map)
 
             tot = sum(s.total for s in sections)
@@ -1188,7 +1213,9 @@ def main() -> None:
                 "startup_s": round(startup_time, 3),
                 "total_s": round(total_time, 3),
             }
+            all_json["_log_dir"] = str(log_dir)
             output_json(all_json)
+            print(f"\nDetailed logs: {log_dir}/", file=sys.stderr)
         else:
             if len(summary_rows) > 1:
                 render_grand_summary(summary_rows, c)
@@ -1198,6 +1225,7 @@ def main() -> None:
                 parts.append(f"startup: {_fmt_startup_time(startup_time)}")
             parts.append(f"total: {_fmt_startup_time(total_time)}")
             print(f"\n  [{' | '.join(parts)}]")
+            print(f"  Detailed logs: {log_dir}/")
 
     finally:
         _run_cleanup()

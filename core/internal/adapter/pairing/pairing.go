@@ -9,6 +9,7 @@ package pairing
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -16,6 +17,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/mr-tron/base58"
 
 	"github.com/anthropics/dina/core/internal/domain"
 	"github.com/anthropics/dina/core/internal/port"
@@ -58,7 +61,9 @@ type pairingCode struct {
 type deviceRecord struct {
 	tokenID   string
 	name      string
-	tokenHash []byte
+	tokenHash []byte             // nil for signature-auth devices
+	publicKey ed25519.PublicKey   // nil for legacy token devices
+	did       string             // did:key:z6Mk... (empty for legacy)
 	createdAt int64
 	lastSeen  int64
 	revoked   bool
@@ -215,6 +220,61 @@ func (pm *PairingManager) CompletePairingFull(ctx context.Context, code string, 
 	}, nil
 }
 
+// CompletePairingWithKey verifies the code and registers a device using an
+// Ed25519 public key (signature-based auth). No CLIENT_TOKEN is generated.
+// Returns (deviceID, nodeDID, error).
+func (pm *PairingManager) CompletePairingWithKey(
+	_ context.Context, code, deviceName, publicKeyMultibase string,
+) (string, string, error) {
+	// Decode the multibase public key: strip "z" prefix, base58btc decode,
+	// strip 2-byte multicodec prefix (0xed01).
+	if len(publicKeyMultibase) < 2 || publicKeyMultibase[0] != 'z' {
+		return "", "", errors.New("pairing: invalid multibase encoding (expected z-prefix)")
+	}
+	raw, err := base58.Decode(publicKeyMultibase[1:])
+	if err != nil {
+		return "", "", fmt.Errorf("pairing: invalid base58btc encoding: %w", err)
+	}
+	if len(raw) != 34 || raw[0] != 0xed || raw[1] != 0x01 {
+		return "", "", errors.New("pairing: invalid Ed25519 multicodec prefix (expected 0xed01 + 32 bytes)")
+	}
+	pubKeyBytes := raw[2:]
+	pubKey := ed25519.PublicKey(pubKeyBytes)
+
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	pc, ok := pm.codes[code]
+	if !ok {
+		return "", "", ErrInvalidCode
+	}
+	if pc.used {
+		return "", "", ErrCodeUsed
+	}
+	if time.Since(pc.createdAt) > pm.codeTTL {
+		delete(pm.codes, code)
+		return "", "", ErrInvalidCode
+	}
+	pc.used = true
+
+	pm.nextID++
+	tokenID := fmt.Sprintf("tok-%d", pm.nextID)
+	did := "did:key:" + publicKeyMultibase
+
+	now := time.Now().Unix()
+	pm.devices = append(pm.devices, deviceRecord{
+		tokenID:   tokenID,
+		name:      deviceName,
+		publicKey: pubKey,
+		did:       did,
+		createdAt: now,
+		lastSeen:  now,
+		revoked:   false,
+	})
+
+	return tokenID, pm.nodeDID, nil
+}
+
 // ListDevices returns all paired devices.
 func (pm *PairingManager) ListDevices(_ context.Context) ([]PairedDevice, error) {
 	pm.mu.Lock()
@@ -222,9 +282,15 @@ func (pm *PairingManager) ListDevices(_ context.Context) ([]PairedDevice, error)
 
 	result := make([]PairedDevice, len(pm.devices))
 	for i, d := range pm.devices {
+		authType := "token"
+		if d.publicKey != nil {
+			authType = "ed25519"
+		}
 		result[i] = PairedDevice{
 			TokenID:   d.tokenID,
 			Name:      d.name,
+			DID:       d.did,
+			AuthType:  authType,
 			LastSeen:  d.lastSeen,
 			CreatedAt: d.createdAt,
 			Revoked:   d.revoked,

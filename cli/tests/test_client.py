@@ -127,3 +127,93 @@ def test_context_manager(config):
         with DinaClient(config) as client:
             result = client.did_get()
             assert result["status"] == "ok"
+
+
+# ── Signature mode tests ─────────────────────────────────────────────────
+
+
+def test_signature_mode_sets_headers(sig_config, tmp_path):
+    """In signature mode, requests carry X-DID, X-Timestamp, X-Signature."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"items": []}
+    mock_resp.raise_for_status = MagicMock()
+
+    with patch.object(httpx.Client, "request", return_value=mock_resp) as mock_req, \
+         patch("dina_cli.client.CLIIdentity") as MockIdentity:
+        mock_id = MagicMock()
+        mock_id.sign_request.return_value = ("did:key:z6MkTest", "2026-01-01T00:00:00Z", "abcd" * 32)
+        MockIdentity.return_value = mock_id
+        client = DinaClient(sig_config)
+        client.vault_query("personal", "test")
+
+        # Check the request was called with signing headers.
+        call_kwargs = mock_req.call_args
+        headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers", {})
+        assert headers.get("X-DID") == "did:key:z6MkTest"
+        assert headers.get("X-Timestamp") == "2026-01-01T00:00:00Z"
+        assert headers.get("X-Signature") == "abcd" * 32
+        # No Bearer token.
+        assert "Authorization" not in (client._core.headers or {})
+        client.close()
+
+
+def test_signature_mode_no_bearer(sig_config):
+    """Signature mode Core client should NOT have an Authorization header."""
+    with patch("dina_cli.client.CLIIdentity") as MockIdentity:
+        mock_id = MagicMock()
+        MockIdentity.return_value = mock_id
+        client = DinaClient(sig_config)
+        assert "authorization" not in {k.lower() for k in client._core.headers}
+        client.close()
+
+
+def test_signature_mode_brain_still_bearer(sig_config):
+    """Brain client always uses Bearer, even when Core uses signatures."""
+    with patch("dina_cli.client.CLIIdentity") as MockIdentity:
+        MockIdentity.return_value = MagicMock()
+        client = DinaClient(sig_config)
+        assert client._brain is not None
+        auth = client._brain.headers.get("authorization", "")
+        assert auth.startswith("Bearer ")
+        client.close()
+
+
+def test_token_mode_no_signing_headers(config):
+    """In token mode, requests should NOT carry X-DID headers."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"items": []}
+    mock_resp.raise_for_status = MagicMock()
+
+    with patch.object(httpx.Client, "request", return_value=mock_resp) as mock_req:
+        client = DinaClient(config)
+        client.vault_query("personal", "test")
+
+        call_kwargs = mock_req.call_args
+        headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers", {})
+        assert "X-DID" not in headers
+        assert "X-Signature" not in headers
+        client.close()
+
+
+def test_extract_body_json():
+    """_extract_body serializes json= kwarg with compact separators."""
+    kwargs = {"json": {"key": "value", "num": 42}}
+    body = DinaClient._extract_body(kwargs)
+    assert body == b'{"key":"value","num":42}'
+    assert "json" not in kwargs
+    assert kwargs["content"] == body
+    assert kwargs["headers"]["Content-Type"] == "application/json"
+
+
+def test_extract_body_content_string():
+    kwargs = {"content": "hello"}
+    body = DinaClient._extract_body(kwargs)
+    assert body == b"hello"
+
+
+def test_extract_body_empty():
+    kwargs = {}
+    body = DinaClient._extract_body(kwargs)
+    assert body == b""

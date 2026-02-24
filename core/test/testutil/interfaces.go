@@ -374,6 +374,9 @@ type PairingManager interface {
 	CompletePairing(ctx context.Context, code string, deviceName string) (clientToken string, err error)
 	// CompletePairingFull verifies the code and returns full pair response.
 	CompletePairingFull(ctx context.Context, code string, deviceName string) (*PairResponse, error)
+	// CompletePairingWithKey verifies the code and registers a device using
+	// an Ed25519 public key (signature-based auth). No CLIENT_TOKEN generated.
+	CompletePairingWithKey(ctx context.Context, code, deviceName, publicKeyMultibase string) (deviceID string, nodeDID string, err error)
 	// ListDevices returns all paired devices.
 	ListDevices(ctx context.Context) ([]PairedDevice, error)
 	// RevokeDevice disables a device by token ID.

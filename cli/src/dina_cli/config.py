@@ -11,6 +11,7 @@ import click
 
 CONFIG_DIR = Path.home() / ".dina" / "cli"
 CONFIG_FILE = CONFIG_DIR / "config.json"
+IDENTITY_DIR = CONFIG_DIR / "identity"
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,8 @@ class Config:
     brain_token: str
     persona: str
     timeout: float
+    auth_mode: str = "token"   # "token" or "signature"
+    device_name: str = ""
 
 
 def _load_saved() -> dict:
@@ -44,12 +47,19 @@ def save_config(values: dict) -> Path:
     return CONFIG_FILE
 
 
+def _has_keypair() -> bool:
+    """Check whether an Ed25519 keypair exists on disk."""
+    return (IDENTITY_DIR / "ed25519_private.pem").exists()
+
+
 def load_config() -> Config:
     """Build Config from saved file + env overrides.
 
     Priority: env vars override saved file values.
-    Raises ``click.UsageError`` if no client_token is available from
-    either source.
+
+    When ``auth_mode`` is ``"signature"`` (Ed25519 signing), a client_token
+    is not required.  When ``auth_mode`` is ``"token"`` (legacy Bearer),
+    a client_token must be present or ``click.UsageError`` is raised.
     """
     saved = _load_saved()
 
@@ -59,8 +69,15 @@ def load_config() -> Config:
     brain_token = os.environ.get("DINA_BRAIN_TOKEN") or saved.get("brain_token") or ""
     persona = os.environ.get("DINA_PERSONA") or saved.get("persona") or "personal"
     timeout = float(os.environ.get("DINA_TIMEOUT") or saved.get("timeout") or 30.0)
+    device_name = saved.get("device_name") or ""
 
-    if not client_token:
+    # Determine auth mode: saved config > auto-detect from keypair > "token".
+    auth_mode = saved.get("auth_mode") or ""
+    if not auth_mode:
+        auth_mode = "signature" if _has_keypair() else "token"
+
+    # In token mode a client_token is mandatory.
+    if auth_mode == "token" and not client_token:
         hint = "Run 'dina configure' to set up, or set DINA_CLIENT_TOKEN"
         raise click.UsageError(f"No client token configured. {hint}")
 
@@ -71,4 +88,6 @@ def load_config() -> Config:
         brain_token=brain_token,
         persona=persona,
         timeout=timeout,
+        auth_mode=auth_mode,
+        device_name=device_name,
     )

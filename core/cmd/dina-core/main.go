@@ -213,6 +213,7 @@ func main() {
 	taskSvc := service.NewTaskService(taskQueue, watchdog, brain, clk)
 
 	deviceSvc := service.NewDeviceService(pairer, deviceRegistry, clk)
+	deviceSvc.SetKeyRegistrar(tokenValidator)
 
 	_ = service.NewGatekeeperService(
 		vaultMgr, vaultMgr, gk, auditLogger, notifier, clk,

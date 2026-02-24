@@ -12,6 +12,7 @@ package auth
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -32,6 +33,7 @@ import (
 
 // Compile-time checks: adapters satisfy port interfaces.
 var _ port.TokenValidator = (*tokenValidator)(nil)
+var _ port.DeviceKeyRegistrar = (*tokenValidator)(nil)
 var _ port.SessionManager = (*sessionManager)(nil)
 var _ port.PassphraseVerifier = (*passphraseVerifier)(nil)
 var _ port.RateLimiter = (*rateLimiter)(nil)
@@ -47,10 +49,20 @@ var (
 // TokenValidator (Section 1.1, 1.2)
 // ---------------------------------------------------------------------------
 
-// tokenValidator validates BRAIN_TOKEN and CLIENT_TOKEN credentials.
+// devicePubKey holds an Ed25519 public key for signature-based authentication.
+type devicePubKey struct {
+	publicKey ed25519.PublicKey
+	deviceID  string
+	revoked   bool
+}
+
+// tokenValidator validates BRAIN_TOKEN, CLIENT_TOKEN, and Ed25519 signature credentials.
 type tokenValidator struct {
 	brainToken   string
-	clientTokens map[string]string // SHA-256(token) hex -> deviceID
+	clientTokens map[string]string           // SHA-256(token) hex -> deviceID
+	deviceKeys   map[string]*devicePubKey    // did:key:z... -> public key entry
+	clock        port.Clock
+	maxClockSkew time.Duration
 }
 
 // NewTokenValidator creates a TokenValidator.
@@ -69,6 +81,29 @@ func NewTokenValidator(brainToken string, clientTokens map[string]string) *token
 	return &tokenValidator{
 		brainToken:   brainToken,
 		clientTokens: ct,
+		deviceKeys:   make(map[string]*devicePubKey),
+		maxClockSkew: 5 * time.Minute,
+	}
+}
+
+// SetClock injects a Clock for testable timestamp verification.
+func (v *tokenValidator) SetClock(c port.Clock) {
+	v.clock = c
+}
+
+// RegisterDeviceKey adds an Ed25519 public key for a device DID.
+// Accepts []byte to satisfy port.DeviceKeyRegistrar (ed25519.PublicKey is []byte).
+func (v *tokenValidator) RegisterDeviceKey(did string, pubKey []byte, deviceID string) {
+	v.deviceKeys[did] = &devicePubKey{
+		publicKey: ed25519.PublicKey(pubKey),
+		deviceID:  deviceID,
+	}
+}
+
+// RevokeDeviceKey marks a device DID's key as revoked.
+func (v *tokenValidator) RevokeDeviceKey(did string) {
+	if dpk, ok := v.deviceKeys[did]; ok {
+		dpk.revoked = true
 	}
 }
 
@@ -124,6 +159,59 @@ func (v *tokenValidator) IdentifyToken(token string) (kind domain.TokenType, ide
 	}
 
 	return domain.TokenUnknown, "", ErrInvalidToken
+}
+
+// VerifySignature validates an Ed25519 request signature against the device
+// key registry. It enforces a clock-skew window to prevent replay attacks.
+//
+// The canonical signing payload is: "{method}\n{path}\n{timestamp}\n{sha256hex(body)}"
+func (v *tokenValidator) VerifySignature(
+	did, method, path, timestamp string, body []byte, signatureHex string,
+) (domain.TokenType, string, error) {
+	// 1. Look up the DID in the device key registry.
+	dpk, ok := v.deviceKeys[did]
+	if !ok {
+		return domain.TokenUnknown, "", ErrInvalidToken
+	}
+	if dpk.revoked {
+		return domain.TokenUnknown, "", errors.New("device revoked")
+	}
+
+	// 2. Verify timestamp is within acceptable window.
+	ts, err := time.Parse("2006-01-02T15:04:05Z", timestamp)
+	if err != nil {
+		return domain.TokenUnknown, "", errors.New("invalid timestamp format")
+	}
+	now := time.Now()
+	if v.clock != nil {
+		now = v.clock.Now()
+	}
+	skew := now.Sub(ts)
+	if skew < 0 {
+		skew = -skew
+	}
+	if skew > v.maxClockSkew {
+		return domain.TokenUnknown, "", errors.New("timestamp outside acceptable window")
+	}
+
+	// 3. Compute body hash.
+	bodyHash := sha256Hex(string(body))
+
+	// 4. Reconstruct the canonical signing payload.
+	payload := fmt.Sprintf("%s\n%s\n%s\n%s", method, path, timestamp, bodyHash)
+
+	// 5. Decode signature from hex.
+	sig, err := hex.DecodeString(signatureHex)
+	if err != nil {
+		return domain.TokenUnknown, "", errors.New("invalid signature encoding")
+	}
+
+	// 6. Verify Ed25519 signature.
+	if !ed25519.Verify(dpk.publicKey, []byte(payload), sig) {
+		return domain.TokenUnknown, "", ErrInvalidToken
+	}
+
+	return domain.TokenClient, dpk.deviceID, nil
 }
 
 // sha256Hex returns the lowercase hex-encoded SHA-256 digest of s.

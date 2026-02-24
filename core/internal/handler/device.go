@@ -31,13 +31,15 @@ func (h *DeviceHandler) HandleInitiatePairing(w http.ResponseWriter, r *http.Req
 
 // completePairingRequest is the JSON body for POST /v1/pair/complete.
 type completePairingRequest struct {
-	Code       string `json:"code"`
-	DeviceName string `json:"device_name"`
+	Code               string `json:"code"`
+	DeviceName         string `json:"device_name"`
+	PublicKeyMultibase string `json:"public_key_multibase,omitempty"`
 }
 
 // HandleCompletePairing handles POST /v1/pair/complete. It validates the
-// pairing code and registers the device. On success, returns the client token,
-// node DID, and WebSocket URL.
+// pairing code and registers the device. When public_key_multibase is provided,
+// the device uses Ed25519 signature auth (no client token generated).
+// Otherwise falls back to legacy token auth.
 func (h *DeviceHandler) HandleCompletePairing(w http.ResponseWriter, r *http.Request) {
 	var req completePairingRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -45,6 +47,24 @@ func (h *DeviceHandler) HandleCompletePairing(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Ed25519 signature-based pairing (new path).
+	if req.PublicKeyMultibase != "" {
+		deviceID, nodeDID, err := h.Device.CompletePairingWithKey(
+			r.Context(), req.Code, req.DeviceName, req.PublicKeyMultibase,
+		)
+		if err != nil {
+			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"device_id": deviceID,
+			"node_did":  nodeDID,
+		})
+		return
+	}
+
+	// Legacy token-based pairing.
 	resp, err := h.Device.CompletePairing(r.Context(), req.Code, req.DeviceName)
 	if err != nil {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)

@@ -11,8 +11,10 @@ import sys
 import uuid
 import webbrowser
 from datetime import datetime, timezone
+from typing import Any
 
 import click
+import httpx
 
 from .client import DinaClient, DinaClientError
 from .config import CONFIG_FILE, load_config, save_config
@@ -390,13 +392,36 @@ def configure(ctx: click.Context) -> None:
         "Core URL",
         default=existing.get("core_url", "http://localhost:8100"),
     )
-    client_token = click.prompt(
-        "Client token",
-        default=existing.get("client_token", ""),
-        hide_input=True,
-        show_default=False,
-        prompt_suffix=" (hidden): " if not existing.get("client_token") else " (press Enter to keep): ",
-    )
+
+    # Auth mode selection
+    click.echo()
+    click.echo("Authentication method:")
+    click.echo("  1) Ed25519 signing (recommended) — keypair stays on this machine")
+    click.echo("  2) Bearer token (legacy) — shared secret")
+    auth_choice = click.prompt("Choose", type=click.IntRange(1, 2), default=1)
+
+    client_token = ""
+    auth_mode = "token"
+    device_name = ""
+
+    if auth_choice == 1:
+        auth_mode = "signature"
+        device_name = click.prompt(
+            "Device name",
+            default=existing.get("device_name") or _default_device_name(),
+        )
+        click.echo()
+        _configure_signature(core_url, device_name)
+    else:
+        auth_mode = "token"
+        client_token = click.prompt(
+            "Client token",
+            default=existing.get("client_token", ""),
+            hide_input=True,
+            show_default=False,
+            prompt_suffix=" (hidden): " if not existing.get("client_token") else " (press Enter to keep): ",
+        )
+
     brain_url = click.prompt(
         "Brain URL",
         default=existing.get("brain_url", core_url.replace(":8100", ":8200")),
@@ -413,12 +438,15 @@ def configure(ctx: click.Context) -> None:
         default=existing.get("persona", "personal"),
     )
 
-    values = {
+    values: dict[str, Any] = {
         "core_url": core_url,
         "brain_url": brain_url,
         "client_token": client_token,
+        "auth_mode": auth_mode,
         "persona": persona,
     }
+    if device_name:
+        values["device_name"] = device_name
     if brain_token:
         values["brain_token"] = brain_token
 
@@ -430,7 +458,6 @@ def configure(ctx: click.Context) -> None:
     click.echo()
     if click.confirm("Test connection now?", default=True):
         from .config import Config
-        from .client import DinaClient, DinaClientError
         cfg = Config(
             core_url=core_url,
             brain_url=brain_url,
@@ -438,11 +465,17 @@ def configure(ctx: click.Context) -> None:
             brain_token=brain_token,
             persona=persona,
             timeout=10.0,
+            auth_mode=auth_mode,
+            device_name=device_name,
         )
         try:
             with DinaClient(cfg) as client:
-                health = client._request(client._core, "GET", "/healthz")
+                client._request(client._core, "GET", "/healthz")
                 click.echo(f"  Core ({core_url}): Connected")
+                if auth_mode == "signature":
+                    click.echo(f"  Auth: Ed25519 signing (DID: {client._identity.did()})")
+                else:
+                    click.echo("  Auth: Bearer token")
                 try:
                     did_doc = client.did_get()
                     did = did_doc.get("id", did_doc.get("did", ""))
@@ -454,6 +487,64 @@ def configure(ctx: click.Context) -> None:
             click.echo(f"  Core ({core_url}): {exc}", err=True)
         click.echo()
         click.echo("Ready. Try: dina recall \"hello\"")
+
+
+def _default_device_name() -> str:
+    """Generate a default device name from hostname."""
+    import platform
+    return f"{platform.node()}-cli"
+
+
+def _configure_signature(core_url: str, device_name: str) -> None:
+    """Generate keypair and pair with Core using Ed25519 public key."""
+    from .signing import CLIIdentity
+
+    identity = CLIIdentity()
+
+    if identity.exists:
+        click.echo(f"  Keypair exists: {identity.did()}")
+        if not click.confirm("  Generate a new keypair?", default=False):
+            # Re-pair with existing key
+            _pair_with_key(core_url, identity, device_name)
+            return
+
+    click.echo("  Generating Ed25519 keypair...")
+    identity.generate()
+    click.echo(f"  DID: {identity.did()}")
+    click.echo(f"  Keypair saved to {identity._dir}")
+    click.echo()
+
+    _pair_with_key(core_url, identity, device_name)
+
+
+def _pair_with_key(core_url: str, identity: Any, device_name: str) -> None:
+    """Register the public key with Core using a pairing code."""
+    click.echo("  Enter the pairing code from your Home Node admin UI.")
+    click.echo("  (Generate one at POST /v1/pair/initiate or from the dashboard)")
+    pairing_code = click.prompt("  Pairing code")
+
+    click.echo("  Registering device...")
+    try:
+        resp = httpx.post(
+            f"{core_url}/v1/pair/complete",
+            json={
+                "code": pairing_code,
+                "device_name": device_name,
+                "public_key_multibase": identity.public_key_multibase(),
+            },
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        click.echo(f"  Paired! Device ID: {data.get('device_id', 'ok')}")
+        node_did = data.get("node_did", "")
+        if node_did:
+            click.echo(f"  Home Node DID: {node_did}")
+    except httpx.ConnectError:
+        click.echo(f"  Warning: Cannot reach Core at {core_url}. Keypair saved; pair later.", err=True)
+    except httpx.HTTPStatusError as exc:
+        click.echo(f"  Pairing failed: {exc.response.text}", err=True)
+        click.echo("  Keypair saved. You can re-pair by running 'dina configure' again.")
 
 
 # ── web ───────────────────────────────────────────────────────────────────

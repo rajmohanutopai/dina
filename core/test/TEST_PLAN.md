@@ -1586,6 +1586,39 @@
 
 ---
 
+## 28. CLI Request Signing (Ed25519)
+
+> Stateless asymmetric auth: CLI signs every HTTP request with Ed25519.
+> Canonical payload: `{METHOD}\n{PATH}\n{TIMESTAMP}\n{SHA256_HEX_OF_BODY}`.
+> Headers: `X-DID`, `X-Timestamp`, `X-Signature`.
+> 5-minute timestamp window prevents replay. Pairing registers a device's
+> public key via multibase encoding. Bearer token remains as fallback.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-880]** Valid Ed25519 signature accepted (POST with body) | Signed POST /v1/vault/store with correct key | TokenClient + device identity returned |
+| 2 | **[TST-CORE-881]** Valid signature with empty body (GET) | Signed GET /v1/devices with empty body | Accepted — SHA-256 of empty bytes used |
+| 3 | **[TST-CORE-882]** Invalid signature rejected (garbage bytes) | 64 zero bytes as signature | Rejected — ed25519.Verify fails |
+| 4 | **[TST-CORE-883]** Wrong signing key rejected | Request signed with different Ed25519 key | Rejected — key mismatch |
+| 5 | **[TST-CORE-884]** Tampered body rejected | Body changed after signing | Rejected — body hash mismatch |
+| 6 | **[TST-CORE-885]** Tampered path rejected | Path changed from /v1/vault/store to /v1/vault/delete | Rejected — canonical payload differs |
+| 7 | **[TST-CORE-886]** Tampered method rejected | Method changed from POST to PUT | Rejected — canonical payload differs |
+| 8 | **[TST-CORE-887]** Expired timestamp (>5 min) rejected | Timestamp 6 minutes in the past | Rejected — outside 5-min window |
+| 9 | **[TST-CORE-888]** Future timestamp (>5 min) rejected | Timestamp 6 minutes in the future | Rejected — outside 5-min window |
+| 10 | **[TST-CORE-889]** Timestamp within 5-min window accepted | Timestamp 4 minutes ago | Accepted — within tolerance |
+| 11 | **[TST-CORE-890]** Invalid timestamp format rejected | "2026-02-24 10:18:22" (space, no Z) | Rejected — parse error |
+| 12 | **[TST-CORE-891]** Unknown DID rejected | did:key:zUnknownDeviceDID... | Rejected — no registered key |
+| 13 | **[TST-CORE-892]** Revoked device DID rejected | Previously registered then revoked DID | Rejected — "revoked" error |
+| 14 | **[TST-CORE-893]** Malformed signature hex rejected | "not-valid-hex!!!" | Rejected — hex decode error |
+| 15 | **[TST-CORE-894]** Pairing with Ed25519 key succeeds | GenerateCode → CompletePairingWithKey | Non-empty device ID and node DID |
+| 16 | **[TST-CORE-895]** Pairing with invalid code rejected | CompletePairingWithKey with "invalid-code" | Error returned |
+| 17 | **[TST-CORE-896]** Pairing with invalid multibase rejected | Missing z prefix in public_key_multibase | Error returned |
+| 18 | **[TST-CORE-897]** Pairing code single-use enforced | Use same code twice with different keys | Second attempt rejected |
+| 19 | **[TST-CORE-898]** Paired device appears in device list | CompletePairingWithKey → ListDevices | Device found with correct name, not revoked |
+| 20 | **[TST-CORE-899]** Bearer fallback when no X-DID headers | Bearer token auth (no signature headers) | Accepted via existing token auth |
+
+---
+
 ## Appendix A: Test Data & Fixtures
 
 - **Test mnemonic**: Use a fixed BIP-39 test mnemonic for deterministic key derivation tests

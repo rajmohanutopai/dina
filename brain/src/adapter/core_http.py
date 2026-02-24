@@ -369,6 +369,24 @@ class CoreHTTPClient:
         data = resp.json()
         return data.get("devices", []) if isinstance(data, dict) else data
 
+    async def initiate_pairing(self) -> dict:
+        """POST /v1/pair/initiate — generate pairing code."""
+        resp = await self._request("POST", "/v1/pair/initiate")
+        return resp.json()
+
+    async def complete_pairing(self, code: str, device_name: str,
+                               public_key_multibase: str | None = None) -> dict:
+        """POST /v1/pair/complete — register device."""
+        body: dict = {"code": code, "device_name": device_name}
+        if public_key_multibase:
+            body["public_key_multibase"] = public_key_multibase
+        resp = await self._request("POST", "/v1/pair/complete", json=body)
+        return resp.json()
+
+    async def revoke_device(self, token_id: str) -> None:
+        """DELETE /v1/devices/{id} — revoke device."""
+        await self._request("DELETE", f"/v1/devices/{token_id}")
+
     # -- Identity ------------------------------------------------------------
 
     async def get_did(self) -> dict:

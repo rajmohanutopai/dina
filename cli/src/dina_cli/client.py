@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json as _json
 from typing import Any
 
 import httpx
 
 from .config import Config
+from .signing import CLIIdentity
 
 
 class DinaClientError(Exception):
@@ -14,14 +16,32 @@ class DinaClientError(Exception):
 
 
 class DinaClient:
-    """Synchronous HTTP client for Dina Core and Brain services."""
+    """Synchronous HTTP client for Dina Core and Brain services.
+
+    Supports two auth modes:
+    - ``"signature"``: Ed25519 request signing (X-DID/X-Timestamp/X-Signature)
+    - ``"token"``: Legacy Bearer token (Authorization header)
+    """
 
     def __init__(self, config: Config) -> None:
-        self._core = httpx.Client(
-            base_url=config.core_url,
-            headers={"Authorization": f"Bearer {config.client_token}"},
-            timeout=config.timeout,
-        )
+        self._auth_mode = config.auth_mode
+
+        if self._auth_mode == "signature":
+            self._identity = CLIIdentity()
+            self._identity.ensure_loaded()
+            self._core = httpx.Client(
+                base_url=config.core_url,
+                timeout=config.timeout,
+            )
+        else:
+            self._identity = None  # type: ignore[assignment]
+            self._core = httpx.Client(
+                base_url=config.core_url,
+                headers={"Authorization": f"Bearer {config.client_token}"},
+                timeout=config.timeout,
+            )
+
+        # Brain always uses Bearer token (separate trust relationship).
         self._brain: httpx.Client | None = (
             httpx.Client(
                 base_url=config.brain_url,
@@ -53,6 +73,28 @@ class DinaClient:
 
     # -- Private helpers ---------------------------------------------------
 
+    @staticmethod
+    def _extract_body(kwargs: dict) -> bytes:
+        """Extract/serialize the request body from kwargs.
+
+        When ``json=`` is present, serialize it ourselves with compact
+        separators so the hash matches what httpx transmits.  The ``json``
+        key is replaced with ``content`` + ``Content-Type`` header.
+        """
+        if "json" in kwargs:
+            body_bytes = _json.dumps(
+                kwargs.pop("json"), separators=(",", ":"),
+            ).encode("utf-8")
+            kwargs["content"] = body_bytes
+            headers = kwargs.get("headers") or {}
+            headers["Content-Type"] = "application/json"
+            kwargs["headers"] = headers
+            return body_bytes
+        raw = kwargs.get("content")
+        if isinstance(raw, str):
+            return raw.encode("utf-8")
+        return raw or b""
+
     def _request(
         self,
         client: httpx.Client,
@@ -61,6 +103,16 @@ class DinaClient:
         **kwargs: Any,
     ) -> httpx.Response:
         """Send a request and translate transport / HTTP errors."""
+        # Sign Core requests in signature mode.
+        if client is self._core and self._identity is not None:
+            body_bytes = self._extract_body(kwargs)
+            did, ts, sig = self._identity.sign_request(method, path, body_bytes)
+            headers = kwargs.get("headers") or {}
+            headers["X-DID"] = did
+            headers["X-Timestamp"] = ts
+            headers["X-Signature"] = sig
+            kwargs["headers"] = headers
+
         try:
             response = client.request(method, path, **kwargs)
             response.raise_for_status()

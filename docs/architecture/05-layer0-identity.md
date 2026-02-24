@@ -236,7 +236,19 @@ Trust Score = f(
 
 ### Open Questions — Identity
 - **Key rotation:** If root key is compromised, how does the user rotate while preserving reputation? Possible: pre-signed rotation certificate stored in recovery.
-- **Multi-device root:** ~~Does each device get a copy of the root key, or do devices get delegated sub-keys?~~ **Resolved:** Devices never hold the root key. Each device gets a CLIENT_TOKEN (32-byte random Bearer token) during the pairing ceremony. Root key stays on the Home Node. Compromised device = revoke one token, not lose root identity. Phase 2 may add Ed25519 device keypairs for signed requests/mutual TLS.
+- **Multi-device root:** ~~Does each device get a copy of the root key, or do devices get delegated sub-keys?~~ **Resolved:** Devices never hold the root key. Each device gets a CLIENT_TOKEN (32-byte random Bearer token) during the pairing ceremony. Root key stays on the Home Node. Compromised device = revoke one token, not lose root identity. ~~Phase 2 may add Ed25519 device keypairs~~ **Implemented:** CLI generates Ed25519 device keypair (`did:key:z6Mk...`). Public key registered during pairing via `public_key_multibase`. Every HTTP request signed with `X-DID`, `X-Timestamp`, `X-Signature` headers. Canonical payload: `{METHOD}\n{PATH}\n{TIMESTAMP}\n{SHA256(body)}`. 5-minute replay window. Bearer CLIENT_TOKEN remains as fallback for non-CLI clients.
+- **Phase 2: Hardware-Backed Device Keys (Secure Enclave).** Phase 1 stores Ed25519 private keys as PEM files on disk (`~/.dina/cli/identity/`, `chmod 0600`). Phase 2 moves key generation and signing into hardware security modules — the private key never leaves the HSM, never enters user-space RAM.
+
+  | Platform | HSM | API | Key Properties |
+  |----------|-----|-----|----------------|
+  | iOS | Secure Enclave | `SecKeyCreateRandomKey` + `kSecAttrTokenIDSecureEnclave` | Ed25519 key generated inside SE, never exported |
+  | Android | StrongBox Keystore | `KeyGenParameterSpec.Builder.setIsStrongBoxBacked(true)` | Hardware-backed, biometric unlock optional |
+  | macOS | Secure Enclave | `Security.framework` / `CryptoKit` | T2/Apple Silicon, same API as iOS |
+  | Linux | TPM 2.0 | `tpm2-tss` / PKCS#11 | Fallback: encrypted PEM if no TPM |
+  | Windows | CNG / NCrypt | `NCryptCreatePersistedKey` | TPM-backed or software KSP |
+
+  Key lifecycle: HSM generates key → public key exported → `did:key:z6Mk...` derived → public key sent during pairing → all signing delegated to HSM (`sign(payload) → signature`). The `CLIIdentity` interface stays the same — backend is swappable. CLI: `dina configure --hsm` auto-detects available HSM; `dina configure --software` forces PEM fallback (for headless servers, VMs, CI — encrypted via PKCS#8 + Argon2id passphrase). Migration from PEM to HSM: `dina configure --promote-to-hsm` generates new keypair inside HSM, re-pairs with Home Node, old PEM key revoked automatically.
+
 - **Seed recovery:** ~~Single point of failure — BIP-39 mnemonic on paper is the only backup. Non-technical users will lose it.~~ **Resolved (Phase 2):** Shamir's Secret Sharing (3-of-5) splits the seed across trusted contacts and physical backups. Day 1 still uses paper mnemonic; SSS activates once the user has a sufficient trust graph.
 - **Death detection:** ~~How does the Digital Estate know the user has died? Timer-based dead man's switch?~~ **Resolved:** Human-initiated via SSS custodian coordination. Same Shamir shares used for identity recovery. No timer — avoids false activations. Aligns with real-world probate.
 
