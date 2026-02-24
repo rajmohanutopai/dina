@@ -304,28 +304,18 @@ echo ""
 
 echo -e "${BOLD}Step 10: Retrieving your identity${RESET}"
 
-# Get DID
-DID_RESPONSE=$(curl -s --connect-timeout 5 \
-    -H "Authorization: Bearer ${BRAIN_TOKEN}" \
-    "http://localhost:${CORE_PORT}/v1/did" 2>/dev/null || true)
-
-DID=$(echo "${DID_RESPONSE}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
-
-if [ -z "${DID}" ]; then
-    warn "Could not retrieve DID"
-else
-    ok "DID retrieved"
-fi
-
-# Get mnemonic (recovery phrase)
-MNEMONIC_RESPONSE=$(curl -s --connect-timeout 5 \
+# Single call to /v1/identity/mnemonic returns both DID and recovery phrase
+IDENTITY_RESPONSE=$(curl -s --connect-timeout 5 \
     -H "Authorization: Bearer ${BRAIN_TOKEN}" \
     "http://localhost:${CORE_PORT}/v1/identity/mnemonic" 2>/dev/null || true)
 
-MNEMONIC=$(echo "${MNEMONIC_RESPONSE}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('mnemonic',''))" 2>/dev/null || true)
+DID=$(echo "${IDENTITY_RESPONSE}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('did',''))" 2>/dev/null || true)
+MNEMONIC=$(echo "${IDENTITY_RESPONSE}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('mnemonic',''))" 2>/dev/null || true)
 
-if [ -z "${MNEMONIC}" ]; then
-    warn "Could not retrieve recovery phrase"
+if [ -n "${DID}" ] && [ -n "${MNEMONIC}" ]; then
+    ok "Identity retrieved"
+else
+    warn "Could not retrieve identity (check logs: ${COMPOSE} logs core)"
 fi
 
 echo ""
