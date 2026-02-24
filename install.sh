@@ -146,7 +146,7 @@ echo -e "${BOLD}Step 4: Setting up identity${RESET}"
 # Check if .env already has DINA_IDENTITY_SEED
 EXISTING_SEED=""
 if [ -f "${ENV_FILE}" ]; then
-    EXISTING_SEED=$(grep -oP 'DINA_IDENTITY_SEED=\K[a-f0-9]+' "${ENV_FILE}" 2>/dev/null || true)
+    EXISTING_SEED=$(sed -n 's/^DINA_IDENTITY_SEED=\([a-f0-9]*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
 fi
 
 if [ -n "${EXISTING_SEED}" ]; then
