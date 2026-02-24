@@ -136,6 +136,39 @@ else
     skip "brain_token already exists"
 fi
 
+# PDS secrets (JWT secret, admin password, K256 rotation key)
+PDS_JWT_SECRET=""
+PDS_ADMIN_PASSWORD=""
+PDS_ROTATION_KEY=""
+
+if [ -f "${ENV_FILE}" ]; then
+    PDS_JWT_SECRET=$(sed -n 's/^DINA_PDS_JWT_SECRET=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
+    PDS_ADMIN_PASSWORD=$(sed -n 's/^DINA_PDS_ADMIN_PASSWORD=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
+    PDS_ROTATION_KEY=$(sed -n 's/^DINA_PDS_ROTATION_KEY_HEX=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
+fi
+
+PDS_GENERATED=false
+if [ -z "${PDS_JWT_SECRET}" ]; then
+    PDS_JWT_SECRET=$(openssl rand -hex 32)
+    PDS_GENERATED=true
+fi
+
+if [ -z "${PDS_ADMIN_PASSWORD}" ]; then
+    PDS_ADMIN_PASSWORD=$(openssl rand -hex 16)
+    PDS_GENERATED=true
+fi
+
+if [ -z "${PDS_ROTATION_KEY}" ]; then
+    PDS_ROTATION_KEY=$(openssl rand -hex 32)
+    PDS_GENERATED=true
+fi
+
+if [ "${PDS_GENERATED}" = true ]; then
+    ok "Generated PDS secrets"
+else
+    skip "PDS secrets already set"
+fi
+
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -245,6 +278,11 @@ if [ ! -f "${ENV_FILE}" ]; then
 
 # Identity seed (DO NOT SHARE — your recovery phrase derives from this)
 DINA_IDENTITY_SEED=${IDENTITY_SEED}
+
+# AT Protocol PDS secrets (auto-generated, do not edit)
+DINA_PDS_JWT_SECRET=${PDS_JWT_SECRET}
+DINA_PDS_ADMIN_PASSWORD=${PDS_ADMIN_PASSWORD}
+DINA_PDS_ROTATION_KEY_HEX=${PDS_ROTATION_KEY}
 ENVEOF
 
     # Add the selected provider key
@@ -268,7 +306,8 @@ ENVEOF
 # OLLAMA_BASE_URL=http://localhost:11434
 ENVEOF
 
-    ok "Created .env"
+    chmod 600 "${ENV_FILE}"
+    ok "Created .env (mode 600)"
     if [ -n "${LLM_KEY_NAME}" ] && [ -n "${LLM_KEY_VALUE}" ]; then
         ok "Configured ${LLM_KEY_NAME}"
     fi
@@ -280,8 +319,22 @@ else
         echo "DINA_IDENTITY_SEED=${IDENTITY_SEED}" >> "${ENV_FILE}"
         ok "Added identity seed to existing .env"
     else
-        skip ".env already configured"
+        skip "Identity seed already set"
     fi
+
+    # Ensure PDS secrets are in existing .env
+    if ! grep -q "^DINA_PDS_JWT_SECRET=" "${ENV_FILE}" 2>/dev/null; then
+        echo "" >> "${ENV_FILE}"
+        echo "# AT Protocol PDS secrets (added by install.sh)" >> "${ENV_FILE}"
+        echo "DINA_PDS_JWT_SECRET=${PDS_JWT_SECRET}" >> "${ENV_FILE}"
+        echo "DINA_PDS_ADMIN_PASSWORD=${PDS_ADMIN_PASSWORD}" >> "${ENV_FILE}"
+        echo "DINA_PDS_ROTATION_KEY_HEX=${PDS_ROTATION_KEY}" >> "${ENV_FILE}"
+        ok "Added PDS secrets to existing .env"
+    else
+        skip "PDS secrets already set"
+    fi
+
+    chmod 600 "${ENV_FILE}"
 fi
 
 echo ""
@@ -294,9 +347,17 @@ echo -e "${BOLD}Step 6: Locking permissions${RESET}"
 
 chmod 700 "${SECRETS_DIR}"
 chmod 600 "${SECRETS_DIR}"/*
-chmod 600 "${ENV_FILE}"
 
-ok "Permissions locked (secrets: 600, .env: 600)"
+# Ensure .env and secrets/ are in .gitignore (safety net)
+GITIGNORE="${DINA_DIR}/.gitignore"
+if [ -f "${GITIGNORE}" ]; then
+    grep -qxF '.env' "${GITIGNORE}" 2>/dev/null || echo '.env' >> "${GITIGNORE}"
+    grep -qxF 'secrets/' "${GITIGNORE}" 2>/dev/null || echo 'secrets/' >> "${GITIGNORE}"
+else
+    printf '.env\nsecrets/\n' > "${GITIGNORE}"
+fi
+
+ok "Permissions locked (.env: 600, secrets/: 700)"
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -431,6 +492,7 @@ fi
 
 echo -e "  ${BOLD}Services:${RESET}"
 echo -e "    Core:   ${CYAN}http://localhost:${CORE_PORT}${RESET}"
+echo -e "    PDS:    ${CYAN}http://localhost:${DINA_PDS_PORT:-2583}${RESET}"
 echo -e "    Health: ${CYAN}http://localhost:${CORE_PORT}/healthz${RESET}"
 echo ""
 echo -e "  ${BOLD}Commands:${RESET}"

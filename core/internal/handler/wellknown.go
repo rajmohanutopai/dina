@@ -8,7 +8,8 @@ import (
 
 // WellKnownHandler serves the /.well-known/* endpoints.
 type WellKnownHandler struct {
-	DID port.DIDManager
+	DID    port.DIDManager
+	Signer port.IdentitySigner
 }
 
 // HandleATProtoDID handles GET /.well-known/atproto-did.
@@ -19,13 +20,14 @@ func (h *WellKnownHandler) HandleATProtoDID(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Resolve the root DID (empty DID resolves the node's own identity).
-	didBytes, err := h.DID.Resolve(r.Context(), "")
+	// Derive the root DID from the node's signing key.
+	pubKey := h.Signer.PublicKey()
+	did, err := h.DID.Create(r.Context(), pubKey)
 	if err != nil {
 		http.Error(w, "DID not available", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Write(didBytes)
+	w.Write([]byte(string(did)))
 }

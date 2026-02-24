@@ -1385,6 +1385,315 @@ prefixes.
 - Hosting provider (managed or VPS) cannot read user data
 - Docker image layers contain no baked-in secrets
 
+### Suite 14: Agentic LLM Behavior
+
+> Deterministic safety gates and real LLM integration tests against Don Alonso's Brain.
+> Two categories: hard-coded gate tests (no LLM needed) and real LLM tests (marked `@slow`).
+> Principle: "Don't test what the LLM says, test what the system does."
+
+#### E2E-14.1: **[TST-E2E-075]** LLM Available in Docker
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | — | GET /healthz on Brain container | Test → Brain | Health response returned |
+| 2 | — | Check `llm_router` field | Brain | `"available"` when GOOGLE_API_KEY set |
+| 3 | — | Check `llm_models` field | Brain | Contains "gemini" |
+
+**Verification:**
+- Brain healthz confirms LLM router is available
+- Gemini model appears in available models list
+
+#### E2E-14.2: **[TST-E2E-076]** Bank Fraud Always Interrupts
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | — | POST classify_silence with bank fraud alert | Test → Brain | Event classified |
+| 2 | — | Check classification | Brain | `"fiduciary"` — deterministic gate, not LLM |
+| 3 | — | Check action | Brain | `"interrupt"` — Silence First: fiduciary always interrupts |
+
+**Verification:**
+- Bank fraud detected by keyword gate BEFORE LLM
+- Classification: fiduciary. Action: interrupt. Non-negotiable.
+
+#### E2E-14.3: **[TST-E2E-077]** YouTube Recommendation Never Interrupts
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | — | POST classify_silence with YouTube recommendation | Test → Brain (LLM) | Classification via LLM |
+| 2 | — | Check classification | Brain | NOT fiduciary — engagement tier at most |
+| 3 | — | Check action | Brain | NOT interrupt — Silence First: never push content |
+
+**Verification:**
+- YouTube recommendation never classified as fiduciary
+- Engagement-tier content saved for briefing, never interrupts
+
+#### E2E-14.4: **[TST-E2E-078]** Transfer Money Always HIGH Risk
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | — | POST agent_intent with action=transfer_money | Test → Brain | Intent classified |
+| 2 | — | Check risk level | Brain | `"HIGH"` — deterministic gate |
+| 3 | — | Check approved flag | Brain | `false` — HIGH risk never auto-approved |
+
+**Verification:**
+- transfer_money classified as HIGH risk by deterministic gate
+- Never auto-approved regardless of LLM opinion
+
+#### E2E-14.5: **[TST-E2E-079]** Search Always SAFE
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | — | POST agent_intent with action=search | Test → Brain | Intent classified |
+| 2 | — | Check risk level | Brain | `"SAFE"` — deterministic gate |
+| 3 | — | Check approved flag | Brain | `true` — SAFE actions auto-approved |
+
+**Verification:**
+- search classified as SAFE by deterministic gate
+- Auto-approved without LLM consultation
+
+#### E2E-14.6: **[TST-E2E-080]** PII Detected by Scrubber
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | — | POST /api/v1/pii/scrub with text containing names + orgs | Test → Brain | PII entities detected |
+| 2 | — | Check entities list | Brain | >= 1 entity found (person name or org) |
+| 3 | — | Check scrubbed text | Brain | Contains replacement tokens like `[PERSON_1]` |
+
+**Verification:**
+- Brain's Tier 2 NER scrubber (spaCy) detects person names and organizations
+- PII replaced with anonymous tokens before reaching cloud LLM
+
+#### E2E-14.7: **[TST-E2E-081]** Unknown Action Gets Valid Risk
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | — | POST agent_intent with action=modify_dns_records | Test → Brain (LLM) | LLM classifies unknown action |
+| 2 | — | Check risk level | Brain | One of: SAFE, MODERATE, HIGH |
+| 3 | — | Check gating consistency | Brain | SAFE → approved; else → requires_approval |
+
+**Verification:**
+- Unknown actions (not in hardcoded lists) are classified by the LLM
+- System always returns a valid risk category
+- Gating decision is consistent with risk level
+
+#### E2E-14.8: **[TST-E2E-082]** LLM Reason Returns Metadata
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | — | POST /api/v1/reason with simple prompt | Test → Brain (LLM) | LLM response returned |
+| 2 | — | Check response fields | Brain | `content` non-empty, `model` contains "gemini" |
+| 3 | — | Check observability metadata | Brain | `tokens_in` > 0, `tokens_out` > 0 |
+
+**Verification:**
+- Full LLM pipeline: prompt in, response out
+- Observability metadata (model name, token counts) present
+
+#### E2E-14.9: **[TST-E2E-083]** OpenRouter Reason Returns Metadata
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | — | POST /api/v1/reason with provider=openrouter | Test → Brain (OpenRouter) | LLM response returned |
+| 2 | — | Check response fields | Brain | `content` non-empty, `model` non-empty |
+| 3 | — | Check observability metadata | Brain | `tokens_in` > 0, `tokens_out` > 0 |
+
+**Verification:**
+- OpenRouter provider works end-to-end (prompt → response → metadata)
+- Skipped if OPENROUTER_API_KEY not set
+
+### Suite 15: CLI Ed25519 Request Signing
+
+> CLI keypair generation, device pairing via `public_key_multibase`, signed HTTP requests
+> to Core, tamper detection, replay protection, unpaired DID rejection, and Bearer token
+> backward compatibility. Dual-mode: mock + Docker.
+
+#### E2E-15.1: **[TST-E2E-084]** CLI Generates Keypair and DID Format
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | CLI | Generate Ed25519 keypair | CLIIdentity | Keypair generated |
+| 2 | — | Check DID format | CLIIdentity | `did:key:z6Mk...` (Ed25519 multicodec 0xed01) |
+| 3 | — | Check multibase matches DID | CLIIdentity | `did == "did:key:" + public_key_multibase()` |
+
+**Verification:**
+- DID starts with `did:key:z6Mk` (Ed25519 multicodec prefix)
+- `public_key_multibase()` and `did()` are consistent
+
+#### E2E-15.2: **[TST-E2E-085]** CLI Pairs with Core via Multibase
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | CLI | POST /v1/pair/initiate | CLI → Core | Pairing code returned |
+| 2 | CLI | POST /v1/pair/complete with `public_key_multibase` | CLI → Core | Device registered |
+| 3 | — | Check response | Core | `device_id` or `node_did` present |
+
+**Verification:**
+- Pairing flow completes with Ed25519 multibase public key
+- Core registers device and returns device ID
+
+#### E2E-15.3: **[TST-E2E-086]** Signed Vault Query Returns 200
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | CLI | Build signed headers (X-DID, X-Timestamp, X-Signature) | CLIIdentity | Canonical payload signed |
+| 2 | CLI | POST /v1/vault/query with signed headers | CLI → Core | 200 OK |
+
+**Verification:**
+- Ed25519-signed request accepted by Core
+- Vault query returns results (may be empty)
+
+#### E2E-15.4: **[TST-E2E-087]** Signed Vault Store Returns 200
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | CLI | Build signed headers for store payload | CLIIdentity | Canonical payload includes body hash |
+| 2 | CLI | POST /v1/vault/store with signed headers | CLI → Core | 200 or 201 |
+
+**Verification:**
+- Signed store request accepted
+- Body hash included in canonical payload for integrity
+
+#### E2E-15.5: **[TST-E2E-088]** Tampered Signature Returns 401
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | CLI | Build valid signed headers | CLIIdentity | Valid signature |
+| 2 | Attacker | Zero out the X-Signature field | — | Tampered signature |
+| 3 | — | POST /v1/vault/query with tampered headers | CLI → Core | 401 Unauthorized |
+
+**Verification:**
+- Tampered signature rejected immediately
+- Core verifies Ed25519 signature before processing request
+
+#### E2E-15.6: **[TST-E2E-089]** Expired Timestamp Returns 401
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | CLI | Build valid signed headers | CLIIdentity | Valid timestamp |
+| 2 | Attacker | Set X-Timestamp to 10 minutes ago | — | Expired timestamp |
+| 3 | — | POST /v1/vault/query with expired headers | CLI → Core | 401 Unauthorized |
+
+**Verification:**
+- Timestamp outside 5-minute window rejected
+- Prevents replay attacks with captured but stale requests
+
+#### E2E-15.7: **[TST-E2E-090]** Unpaired DID Returns 401
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | — | Generate fresh keypair (NOT paired with Core) | CLIIdentity | Rogue identity created |
+| 2 | Rogue | POST /v1/vault/query with valid signature from rogue key | Rogue → Core | 401 Unauthorized |
+
+**Verification:**
+- Valid Ed25519 signature but from unregistered device
+- Core rejects requests from unknown DIDs
+
+#### E2E-15.8: **[TST-E2E-091]** Bearer Token Fallback Still Works
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | CLI | POST /v1/vault/query with Bearer token (no Ed25519 signing) | CLI → Core | 200 OK |
+
+**Verification:**
+- Legacy Bearer token auth still works alongside Ed25519 signing
+- Backward compatibility maintained
+
+### Suite 16: AT Protocol PDS Integration
+
+> Real AT Protocol PDS (Personal Data Server) integration: PDS health, DID registration
+> via `com.atproto.server.createAccount`, handle resolution, `.well-known/atproto-did`
+> endpoint, and idempotent DID creation. Tests verify the complete identity lifecycle
+> from keypair generation through PLC directory registration.
+
+#### E2E-16.1: **[TST-E2E-092]** PDS Container Health
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | — | GET /xrpc/_health on PDS container | Test → PDS | Health response returned |
+| 2 | — | Check version field | PDS | `version` is non-empty string (e.g., "0.4.208") |
+
+**Verification:**
+- PDS container starts with `docker compose up -d` (default stack, no profile)
+- PDS XRPC health endpoint reachable
+- PDS reports valid version
+
+#### E2E-16.2: **[TST-E2E-093]** PDS Server Description
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | — | GET /xrpc/com.atproto.server.describeServer | Test → PDS | Server description returned |
+| 2 | — | Check DID field | PDS | `did` starts with `did:web:` |
+| 3 | — | Check available domains | PDS | `availableUserDomains` is non-empty |
+| 4 | — | Check invite not required | PDS | `inviteCodeRequired` is false |
+
+**Verification:**
+- PDS serves AT Protocol discovery metadata
+- PDS identity is `did:web:` (server-level DID)
+- PDS allows account creation without invites
+
+#### E2E-16.3: **[TST-E2E-094]** DID Registration via Core Identity Init
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | Don Alonso | GET /v1/did on Core | Test → Core → PDS → PLC | DID document returned |
+| 2 | — | Check DID format | Core | `did:plc:` prefix (real PLC-registered DID) |
+| 3 | — | Check verification method | Core | Multikey with `z6Mk` prefix (Ed25519) |
+| 4 | — | Check authentication | Core | DID fragment in authentication array |
+
+**Verification:**
+- Core calls PDS `com.atproto.server.createAccount` XRPC
+- PDS constructs genesis op, signs with k256 rotation key, submits to PLC
+- Real `did:plc:` returned (not local hash-derived)
+- DID document contains Ed25519 signing key
+
+#### E2E-16.4: **[TST-E2E-095]** Well-Known AT Protocol DID Endpoint
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | — | GET /.well-known/atproto-did on Core | Test → Core | Plain text DID returned |
+| 2 | — | Check format | Core | Starts with `did:plc:` |
+| 3 | — | Compare with /v1/did | Core | Same DID as identity document |
+
+**Verification:**
+- AT Protocol discovery endpoint returns root DID as plain text
+- Consistent with DID document from /v1/did
+- Enables AT Protocol handle resolution for this node
+
+#### E2E-16.5: **[TST-E2E-096]** PDS Handle Resolution
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | — | GET /xrpc/com.atproto.identity.resolveHandle on PDS | Test → PDS | Handle resolved to DID |
+| 2 | — | Check DID | PDS | Matches DID from Core's /v1/did |
+
+**Verification:**
+- PDS resolves handle (e.g., `dina.test`) to the registered `did:plc:`
+- PDS and Core agree on the node's DID
+
+#### E2E-16.6: **[TST-E2E-097]** Idempotent DID Creation
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | — | GET /v1/did (first call) | Test → Core | DID created and registered |
+| 2 | — | GET /v1/did (second call) | Test → Core | Same DID returned (no re-registration) |
+| 3 | — | GET /.well-known/atproto-did (third call) | Test → Core | Same DID returned |
+
+**Verification:**
+- Multiple calls to Create() return the same DID
+- No duplicate account creation on PDS
+- Public key → DID mapping is cached in DIDManager
+
+#### E2E-16.7: **[TST-E2E-098]** Core Logs PDS Configuration
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | — | Check Core startup logs | Docker logs | `"AT Protocol PDS configured"` present |
+| 2 | — | Check PDS URL in logs | Docker logs | `pds_url` field matches configured URL |
+| 3 | — | After DID creation: check registration log | Docker logs | `"DID registered on PLC directory"` with DID and handle |
+
+**Verification:**
+- Core logs PDS configuration at startup (observability)
+- DID registration logged with structured fields (DID, handle)
+
 ---
 
 ## 5. Test Execution Strategy
@@ -1405,6 +1714,9 @@ Suite 10 (Resilience) ──→ Requires Suite 1 (any populated state)
 Suite 11 (Multi-Device) ──→ Requires Suite 1 (multiple devices paired)
 Suite 12 (Reputation Graph) ──→ Requires Suite 1 + PDS + Relay + AppView
 Suite 13 (Security) ──→ Requires Suite 1 + Attacker tools
+Suite 14 (Agentic LLM) ──→ Requires Docker containers + GOOGLE_API_KEY (for @slow tests)
+Suite 15 (CLI Signing) ──→ Requires Suite 1 + CLI identity
+Suite 16 (AT Protocol PDS) ──→ Requires Docker containers + PDS service running
 ```
 
 ### Parallelization
@@ -1418,8 +1730,10 @@ After Suite 1 completes, the following groups can run in parallel:
 | C | 7, 8 | Don Alonso + cloud LLM mock |
 | D | 9 | Don Alonso + Albert nodes |
 | E | 10, 11 | Don Alonso node (isolated crash tests) |
-| F | 12 | Don Alonso + PDS + Relay + AppView |
+| F | 12, 16 | Don Alonso + PDS + Relay + AppView |
 | G | 13 | Don Alonso node + attacker tools |
+| H | 14 | Don Alonso's Brain + LLM API keys |
+| I | 15 | Don Alonso's Core + CLI identity |
 
 Groups E and G require exclusive access to Don Alonso's node (crash/attack scenarios)
 and should run sequentially after other groups complete.
@@ -1482,6 +1796,10 @@ jobs:
 | Personas (buyer/patient/professional) | Suite 8 | E2E-8.2, E2E-8.3 |
 | Digital estate / beneficiary | Suite 9 | E2E-9.1 through E2E-9.4 |
 | Agent safety (exposed agents) | Suite 6 | E2E-6.3, E2E-6.4 |
+| Silence First (never push content) | Suite 14 | E2E-14.2, E2E-14.3 |
+| Agent intent gating (deterministic) | Suite 14 | E2E-14.4, E2E-14.5, E2E-14.7 |
+| Ed25519 device signing (CLI) | Suite 15 | E2E-15.1 through E2E-15.8 |
+| AT Protocol DID registration | Suite 16 | E2E-16.3, E2E-16.4, E2E-16.5 |
 
 ### Coverage Matrix: Architecture Data Flows → E2E Suites
 
@@ -1502,3 +1820,11 @@ jobs:
 | Client sync (checkpoint + delta) | Suite 11 | E2E-11.2 |
 | Brain crash recovery (scratchpad) | Suite 10 | E2E-10.1 |
 | Sharing policy egress enforcement | Suite 2 | E2E-2.2 |
+| Deterministic safety gates (Silence First) | Suite 14 | E2E-14.2, E2E-14.3 |
+| Agent intent risk classification | Suite 14 | E2E-14.4, E2E-14.5, E2E-14.7 |
+| PII Tier 2 NER scrubbing (spaCy) | Suite 14 | E2E-14.6 |
+| Ed25519 canonical request signing | Suite 15 | E2E-15.3, E2E-15.4 |
+| Ed25519 tamper + replay detection | Suite 15 | E2E-15.5, E2E-15.6 |
+| AT Protocol PDS XRPC (createAccount) | Suite 16 | E2E-16.3 |
+| AT Protocol handle resolution | Suite 16 | E2E-16.5 |
+| AT Protocol .well-known/atproto-did | Suite 16 | E2E-16.4 |

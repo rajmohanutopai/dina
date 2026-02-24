@@ -421,8 +421,12 @@ type Config struct {
 	SecurityMode  string // "security" or "convenience"
 	SessionTTL    int    // seconds
 	RateLimit     int    // requests per minute per IP
-	SpoolMax      int    // max buffered messages when locked
-	BackupInterval int   // hours
+	SpoolMax       int    // max buffered messages when locked
+	BackupInterval int    // hours
+	PDSURL         string // PDS XRPC endpoint
+	PLCURL         string // PLC directory URL
+	PDSAdminPassword string // PDS admin password
+	PDSHandle      string // AT Protocol handle
 }
 
 // ConfigLoader — contract for loading configuration (§14).

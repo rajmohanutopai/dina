@@ -12,16 +12,20 @@ import (
 // Config holds all typed configuration for dina-core.
 // Field names and types match testutil.Config exactly for structural typing.
 type Config struct {
-	ListenAddr     string `json:"listen_addr"`
-	AdminAddr      string `json:"admin_addr"`
-	VaultPath      string `json:"vault_path"`
-	BrainURL       string `json:"brain_url"`
-	BrainToken     string `json:"brain_token"`
-	SecurityMode   string `json:"security_mode"`
-	SessionTTL     int    `json:"session_ttl"`
-	RateLimit      int    `json:"rate_limit"`
-	SpoolMax       int    `json:"spool_max"`
-	BackupInterval int    `json:"backup_interval"`
+	ListenAddr       string `json:"listen_addr"`
+	AdminAddr        string `json:"admin_addr"`
+	VaultPath        string `json:"vault_path"`
+	BrainURL         string `json:"brain_url"`
+	BrainToken       string `json:"brain_token"`
+	SecurityMode     string `json:"security_mode"`
+	SessionTTL       int    `json:"session_ttl"`
+	RateLimit        int    `json:"rate_limit"`
+	SpoolMax         int    `json:"spool_max"`
+	BackupInterval   int    `json:"backup_interval"`
+	PDSURL           string `json:"pds_url"`
+	PLCURL           string `json:"plc_url"`
+	PDSAdminPassword string `json:"pds_admin_password"`
+	PDSHandle        string `json:"pds_handle"`
 }
 
 // Loader implements testutil.ConfigLoader.
@@ -167,5 +171,17 @@ func loadEnv(cfg *Config) {
 		if n, err := strconv.Atoi(v); err == nil {
 			cfg.BackupInterval = n
 		}
+	}
+	if v := os.Getenv("DINA_PDS_URL"); v != "" {
+		cfg.PDSURL = v
+	}
+	if v := os.Getenv("DINA_PLC_URL"); v != "" {
+		cfg.PLCURL = v
+	}
+	if v := os.Getenv("DINA_PDS_ADMIN_PASSWORD"); v != "" {
+		cfg.PDSAdminPassword = v
+	}
+	if v := os.Getenv("DINA_PDS_HANDLE"); v != "" {
+		cfg.PDSHandle = v
 	}
 }

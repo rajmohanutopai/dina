@@ -13,12 +13,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/anthropics/dina/core/internal/adapter/crypto"
+	"github.com/anthropics/dina/core/internal/adapter/pds"
 	"github.com/anthropics/dina/core/internal/domain"
 	"github.com/anthropics/dina/core/internal/port"
 )
@@ -166,6 +169,8 @@ type DIDManager struct {
 	pubKeys       map[string][]byte       // did string -> current public key
 	rotations     []rotationRecord
 	createdInTest map[string]bool // tracks keys created in the current test epoch
+	plcClient     *pds.PLCClient         // nil = local-only mode
+	k256Mgr       *crypto.K256KeyManager // nil = no rotation key
 }
 
 // NewDIDManager returns a new DIDManager that persists data at dataDir.
@@ -187,13 +192,23 @@ func (dm *DIDManager) ResetForTest() {
 	dm.mu.Unlock()
 }
 
+// SetPLCClient enables real PLC directory registration via a PDS.
+// When set, Create() will register the DID on the PLC directory instead of
+// generating a local-only identifier.
+func (dm *DIDManager) SetPLCClient(plc *pds.PLCClient, k256 *crypto.K256KeyManager) {
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+	dm.plcClient = plc
+	dm.k256Mgr = k256
+}
+
 // Create generates a new DID from an Ed25519 public key.
 // Format: did:plc:<hash> where hash is derived from the public key.
 // The DID Document uses Multikey format with z6Mk prefix for Ed25519.
 // If the DID already exists from a prior call, returns the existing DID.
 // Returns ErrDIDAlreadyExists only when the same key is used twice within
 // the same test epoch (to enforce the "second root generation rejected" invariant).
-func (dm *DIDManager) Create(_ context.Context, publicKey []byte) (domain.DID, error) {
+func (dm *DIDManager) Create(ctx context.Context, publicKey []byte) (domain.DID, error) {
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
 
@@ -201,7 +216,27 @@ func (dm *DIDManager) Create(_ context.Context, publicKey []byte) (domain.DID, e
 		return "", ErrInvalidPublicKey
 	}
 
-	// Generate the did:plc identifier from the public key hash.
+	// If PLC client is configured, register on the real PLC directory via PDS.
+	if dm.plcClient != nil {
+		// Check if we already have a DID for this public key (idempotency).
+		for did, key := range dm.pubKeys {
+			if len(key) == len(publicKey) {
+				match := true
+				for i := range key {
+					if key[i] != publicKey[i] {
+						match = false
+						break
+					}
+				}
+				if match {
+					return domain.DID(did), nil
+				}
+			}
+		}
+		return dm.createWithPLC(ctx, publicKey)
+	}
+
+	// Local-only mode: derive did:plc from public key hash.
 	hash := sha256.Sum256(publicKey)
 	// Use first 16 bytes of hash for the PLC identifier, encoded as base58btc.
 	plcID := base58btcEncode(hash[:16])
@@ -267,6 +302,83 @@ func (dm *DIDManager) Create(_ context.Context, publicKey []byte) (domain.DID, e
 	dm.createdInTest[keyFingerprint] = true
 
 	// Persist to data directory if set.
+	if dm.dataDir != "" {
+		dm.persistDID(did, doc)
+	}
+
+	return domain.DID(did), nil
+}
+
+// createWithPLC registers a DID on the PLC directory via the bundled PDS.
+// Must be called with dm.mu held.
+func (dm *DIDManager) createWithPLC(ctx context.Context, publicKey []byte) (domain.DID, error) {
+	// Get or generate the k256 rotation key for PLC operations.
+	var recoveryKey string
+	if dm.k256Mgr != nil {
+		if _, err := dm.k256Mgr.GenerateOrLoad(); err != nil {
+			return "", fmt.Errorf("identity: k256 rotation key: %w", err)
+		}
+		didKey, err := dm.k256Mgr.PublicDIDKey()
+		if err != nil {
+			return "", fmt.Errorf("identity: k256 did:key: %w", err)
+		}
+		recoveryKey = didKey
+	}
+
+	// Create account on PDS — PDS handles genesis op, DAG-CBOR, PLC submission.
+	result, err := dm.plcClient.CreateAccountAndDID(ctx, pds.CreateDIDOptions{
+		Handle:      "dina.test",
+		Password:    "dina-internal-account",
+		Email:       "dina@example.com",
+		RecoveryKey: recoveryKey,
+	})
+	if err != nil {
+		return "", fmt.Errorf("identity: PLC registration failed: %w", err)
+	}
+
+	did := result.DID
+	slog.Info("DID registered on PLC directory", "did", did, "handle", result.Handle)
+
+	// Build the multikey value for the Ed25519 signing key.
+	multicodecBytes := append(ed25519MulticodecPrefix, publicKey...)
+	multikey := "z" + base58btcEncode(multicodecBytes)
+
+	hostname, _ := os.Hostname()
+	if hostname == "" {
+		hostname = "unknown"
+	}
+
+	doc := &didDocument{
+		Context: []string{
+			"https://www.w3.org/ns/did/v1",
+			"https://w3id.org/security/multikey/v1",
+		},
+		ID: did,
+		VerificationMethod: []verificationMethod{
+			{
+				ID:                 did + "#key-1",
+				Type:               "Multikey",
+				Controller:         did,
+				PublicKeyMultibase: multikey,
+			},
+		},
+		Authentication: []string{did + "#key-1"},
+		Service: []serviceEndpoint{
+			{
+				ID:              did + "#dina-messaging",
+				Type:            "DinaMessaging",
+				ServiceEndpoint: "https://localhost:8300",
+			},
+		},
+		CreatedAt:    time.Now().UTC().Format(time.RFC3339),
+		DeviceOrigin: hostname,
+	}
+
+	dm.dids[did] = doc
+	keyCopy := make([]byte, len(publicKey))
+	copy(keyCopy, publicKey)
+	dm.pubKeys[did] = keyCopy
+
 	if dm.dataDir != "" {
 		dm.persistDID(did, doc)
 	}

@@ -1,10 +1,14 @@
 # Dina Home Node — Docker Compose
-# 3 services: core (Go), brain (Python), llm (optional local model)
+# 4 services: core (Go), brain (Python), pds (AT Protocol), llm (optional)
+# + plc (fake PLC directory, test-only profile)
 #
 # Usage:
 #   ./install.sh              # first-time setup
-#   docker compose up -d      # start all services
+#   docker compose up -d      # start all services (real plc.directory)
 #   docker compose logs -f    # tail logs
+#
+# Testing with local fake PLC (no internet, no pollution):
+#   DINA_PLC_URL=http://plc:2582 docker compose --profile test-plc up -d
 
 services:
   core:
@@ -23,10 +27,16 @@ services:
       - DINA_IDENTITY_SEED=${DINA_IDENTITY_SEED:-}
       - DINA_RATE_LIMIT=${DINA_RATE_LIMIT:-100}
       - DINA_SPOOL_MAX=${DINA_SPOOL_MAX:-10485760}
+      - DINA_PDS_URL=http://pds:3000
+      - DINA_PLC_URL=${DINA_PLC_URL:-https://plc.directory}
+      - DINA_PDS_ADMIN_PASSWORD=${DINA_PDS_ADMIN_PASSWORD:-}
+      - DINA_PDS_HANDLE=${DINA_PDS_HANDLE:-dina.localhost}
     secrets:
       - brain_token
     depends_on:
       brain:
+        condition: service_healthy
+      pds:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8100/healthz"]
@@ -68,6 +78,47 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  plc:
+    build:
+      context: ./plc
+      dockerfile: Dockerfile
+    ports:
+      - "${DINA_PLC_PORT:-2582}:2582"
+    profiles:
+      - test-plc
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2582/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+  pds:
+    image: ghcr.io/bluesky-social/pds:0.4
+    ports:
+      - "${DINA_PDS_PORT:-2583}:3000"
+    volumes:
+      - pds-data:/pds
+    environment:
+      - PDS_HOSTNAME=${DINA_PDS_HOSTNAME:-localhost}
+      - PDS_PORT=3000
+      - PDS_DATA_DIRECTORY=/pds
+      - PDS_BLOBSTORE_DISK_LOCATION=/pds/blocks
+      - PDS_DID_PLC_URL=${DINA_PLC_URL:-https://plc.directory}
+      - PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX=${DINA_PDS_ROTATION_KEY_HEX:-}
+      - PDS_JWT_SECRET=${DINA_PDS_JWT_SECRET:-}
+      - PDS_ADMIN_PASSWORD=${DINA_PDS_ADMIN_PASSWORD:-}
+      - PDS_DEV_MODE=true
+      - PDS_INVITE_REQUIRED=false
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/xrpc/_health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
   llm:
     image: ghcr.io/ggerganov/llama.cpp:server
     ports:
@@ -86,6 +137,8 @@ services:
 
 volumes:
   dina-data:
+    driver: local
+  pds-data:
     driver: local
   dina-models:
     driver: local

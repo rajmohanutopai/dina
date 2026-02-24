@@ -26,6 +26,7 @@ import (
 	"github.com/anthropics/dina/core/internal/adapter/identity"
 	"github.com/anthropics/dina/core/internal/adapter/observability"
 	"github.com/anthropics/dina/core/internal/adapter/pairing"
+	"github.com/anthropics/dina/core/internal/adapter/pds"
 	"github.com/anthropics/dina/core/internal/adapter/pii"
 	"github.com/anthropics/dina/core/internal/adapter/portability"
 	"github.com/anthropics/dina/core/internal/adapter/server"
@@ -36,6 +37,7 @@ import (
 	"github.com/anthropics/dina/core/internal/config"
 	"github.com/anthropics/dina/core/internal/handler"
 	"github.com/anthropics/dina/core/internal/middleware"
+	"github.com/anthropics/dina/core/internal/port"
 	"github.com/anthropics/dina/core/internal/service"
 )
 
@@ -100,6 +102,27 @@ func main() {
 	contactDir := identity.NewContactDirectory()
 	deviceRegistry := identity.NewDeviceRegistry()
 	recoveryMgr := identity.NewRecoveryManager()
+
+	// 5b. K256 rotation key + PLC/PDS (optional — enabled when DINA_PDS_URL is set)
+	k256Mgr := crypto.NewK256KeyManager(cfg.VaultPath)
+	var plcClient *pds.PLCClient
+	var pdsPublisher port.PDSPublisher
+	if cfg.PDSURL != "" {
+		plcURL := cfg.PLCURL
+		if plcURL == "" {
+			plcURL = "https://plc.directory"
+		}
+		plcClient = pds.NewPLCClient(cfg.PDSURL, plcURL)
+		if cfg.PDSAdminPassword != "" {
+			plcClient.SetAdminToken(cfg.PDSAdminPassword)
+		}
+		didMgr.SetPLCClient(plcClient, k256Mgr)
+		slog.Info("AT Protocol PDS configured", "pds_url", cfg.PDSURL, "plc_url", plcURL)
+	} else {
+		pdsPublisher = pds.NewPDSPublisher("")
+		slog.Info("AT Protocol PDS not configured — using local-only identity")
+	}
+	_, _ = plcClient, pdsPublisher
 
 	// 6. Auth
 	tokenValidator := auth.NewDefaultTokenValidator(cfg.BrainToken)
@@ -257,7 +280,7 @@ func main() {
 	piiH := &handler.PIIHandler{Scrubber: scrubber}
 	notifyH := &handler.NotifyHandler{Notifier: notifier}
 	exportH := &handler.ExportHandler{Migration: migrationSvc}
-	wellknownH := &handler.WellKnownHandler{DID: didMgr}
+	wellknownH := &handler.WellKnownHandler{DID: didMgr, Signer: identitySigner}
 
 	// ---------- Build router ----------
 

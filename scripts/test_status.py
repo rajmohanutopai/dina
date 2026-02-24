@@ -106,6 +106,105 @@ def _wait_for_health(url: str, label: str, timeout: int = 120) -> None:
     raise TimeoutError(f"{label} not healthy after {timeout}s: {url}")
 
 
+LOCAL_PLC_PORT = 2582
+MAIN_PDS_PORT = 2583
+MAIN_CORE_PORT = 8100
+
+
+def _start_main_stack() -> float:
+    """Start the main docker-compose stack with fake PLC for testing.
+
+    Brings up plc (fake PLC directory), pds, core, and brain from the
+    main ``docker-compose.yml`` with ``DINA_PLC_URL`` pointed at the local
+    fake PLC.  This allows E2E Suite 16 (AT Protocol PDS Integration)
+    tests to run against real PDS + PLC containers.
+
+    Returns startup time in seconds.
+    """
+    import time as _time
+
+    import httpx
+
+    t0 = _time.monotonic()
+    _ensure_brain_token()
+
+    plc_url = f"http://localhost:{LOCAL_PLC_PORT}"
+    pds_url = f"http://localhost:{MAIN_PDS_PORT}"
+    core_url = f"http://localhost:{MAIN_CORE_PORT}"
+
+    # Check if the main stack is already healthy
+    all_healthy = True
+    for url, label in [
+        (f"{plc_url}/healthz", "PLC"),
+        (f"{pds_url}/xrpc/_health", "PDS"),
+        (f"{core_url}/healthz", "Core"),
+    ]:
+        try:
+            resp = httpx.get(url, timeout=2)
+            if not resp.is_success:
+                all_healthy = False
+                break
+        except Exception:
+            all_healthy = False
+            break
+
+    if all_healthy:
+        elapsed = _time.monotonic() - t0
+        print(f"  Main stack already healthy (PLC+PDS+Core+Brain)",
+              file=sys.stderr, flush=True)
+        return elapsed
+
+    print("  Starting main stack (fake PLC + PDS + Core + Brain)...",
+          file=sys.stderr, flush=True)
+
+    compose_env = {**os.environ, "DINA_PLC_URL": "http://plc:2582"}
+    compose_cmd = ["docker", "compose", "--profile", "test-plc"]
+
+    # Clean up stale containers, networks, AND volumes.
+    # The fake PLC is in-memory so old PDS volumes would contain stale
+    # accounts referencing DIDs the fresh PLC doesn't know about.
+    subprocess.run(
+        [*compose_cmd, "down", "-v"],
+        capture_output=True, timeout=60, cwd=str(PROJECT_ROOT),
+        env=compose_env,
+    )
+
+    subprocess.run(
+        [*compose_cmd, "up", "--build", "-d"],
+        capture_output=True,
+        timeout=300,
+        check=True,
+        cwd=str(PROJECT_ROOT),
+        env=compose_env,
+    )
+
+    # Wait for all services to become healthy
+    _wait_for_health(f"{plc_url}/healthz", "Fake PLC", timeout=30)
+    _wait_for_health(f"{pds_url}/xrpc/_health", "PDS", timeout=60)
+    _wait_for_health(f"{core_url}/healthz", "Core", timeout=60)
+
+    elapsed = _time.monotonic() - t0
+    print(
+        f"  Main stack ready: PLC:{LOCAL_PLC_PORT} PDS:{MAIN_PDS_PORT}"
+        f" Core:{MAIN_CORE_PORT} ({_fmt_startup_time(elapsed)})",
+        file=sys.stderr,
+    )
+
+    def _stop() -> None:
+        print("\n  Stopping main stack...", file=sys.stderr, flush=True)
+        subprocess.run(
+            [*compose_cmd, "down", "-v"],
+            capture_output=True,
+            timeout=60,
+            cwd=str(PROJECT_ROOT),
+            env=compose_env,
+        )
+        print("  Main stack stopped.", file=sys.stderr)
+
+    _register_cleanup(_stop)
+    return elapsed
+
+
 def _start_docker() -> float:
     """Start Docker test containers. Returns startup time in seconds."""
     import time as _time
@@ -159,6 +258,7 @@ def _start_local() -> float:
         "DINA_TEST_MODE": "true",
         "DINA_RATE_LIMIT": "100000",
         "DINA_LOG_LEVEL": "debug",
+        "DINA_PLC_URL": f"http://localhost:{LOCAL_PLC_PORT}",
     }
 
     brain_env = {
@@ -559,6 +659,7 @@ _E2E_SECTION_MAP: dict[int, str] = {
     13: "Security & Adversarial",
     14: "Agentic LLM Behavior",
     15: "CLI Ed25519 Request Signing",
+    16: "AT Protocol PDS Integration",
 }
 
 _E2E_FILE_SECTION_RE = re.compile(r"test_suite_(\d+)_")
@@ -1115,6 +1216,17 @@ def main() -> None:
     has_e2e = "e2e" in keys
     has_non_e2e = bool(set(keys) - {"e2e"})
     startup_time = 0.0
+
+    # Start main docker-compose stack (fake PLC + PDS + Core + Brain)
+    # so E2E Suite 16 can test real AT Protocol PDS integration.
+    if service_mode != "mock" or has_e2e:
+        try:
+            main_stack_startup = _start_main_stack()
+            startup_time += main_stack_startup
+        except Exception as exc:
+            if not json_mode:
+                print(f"  Warning: Main stack failed to start: {exc}",
+                      file=sys.stderr)
 
     if service_mode == "mock" and not has_e2e:
         if not json_mode:
