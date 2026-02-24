@@ -7,11 +7,15 @@
 #
 # What it does:
 #   1. Checks prerequisites (docker, docker compose, curl)
-#   2. Generates secrets (brain_token, identity seed)
-#   3. Creates .env configuration
-#   4. Builds and starts Docker containers
-#   5. Waits for health checks to pass
-#   6. Displays your DID and recovery phrase
+#   2. Checks port availability
+#   3. Generates secrets (brain_token, identity seed)
+#   4. Creates .env configuration
+#   5. Builds and starts Docker containers
+#   6. Waits for health checks to pass
+#   7. Displays your DID and recovery phrase
+#
+# Host filesystem: only secrets/ and .env are created.
+# All runtime data lives in Docker named volumes (dina-data, dina-models).
 #
 # Idempotent: safe to re-run. Existing secrets and seeds are preserved.
 
@@ -23,7 +27,6 @@ set -euo pipefail
 
 DINA_DIR="${DINA_DIR:-$(pwd)}"
 SECRETS_DIR="${DINA_DIR}/secrets"
-DATA_DIR="${DINA_DIR}/data"
 ENV_FILE="${DINA_DIR}/.env"
 CORE_PORT="${DINA_CORE_PORT:-8100}"
 HEALTH_TIMEOUT=90     # seconds to wait for health check
@@ -115,24 +118,12 @@ ok "Port ${CORE_PORT} ready"
 echo ""
 
 # ---------------------------------------------------------------------------
-# Step 3: Create directories
+# Step 3: Generate secrets
 # ---------------------------------------------------------------------------
 
-echo -e "${BOLD}Step 3: Creating directories${RESET}"
+echo -e "${BOLD}Step 3: Generating secrets${RESET}"
 
 mkdir -p "${SECRETS_DIR}"
-mkdir -p "${DATA_DIR}/vault"
-mkdir -p "${DATA_DIR}/identity"
-mkdir -p "${DATA_DIR}/backups"
-
-ok "Directories created"
-echo ""
-
-# ---------------------------------------------------------------------------
-# Step 4: Generate secrets
-# ---------------------------------------------------------------------------
-
-echo -e "${BOLD}Step 4: Generating secrets${RESET}"
 
 # Brain token (shared secret between Core and Brain)
 if [ ! -f "${SECRETS_DIR}/brain_token" ]; then
@@ -147,10 +138,10 @@ fi
 echo ""
 
 # ---------------------------------------------------------------------------
-# Step 5: Generate identity seed
+# Step 4: Generate identity seed
 # ---------------------------------------------------------------------------
 
-echo -e "${BOLD}Step 5: Setting up identity${RESET}"
+echo -e "${BOLD}Step 4: Setting up identity${RESET}"
 
 # Check if .env already has DINA_IDENTITY_SEED
 EXISTING_SEED=""
@@ -171,10 +162,10 @@ fi
 echo ""
 
 # ---------------------------------------------------------------------------
-# Step 6: Create .env
+# Step 5: Create .env
 # ---------------------------------------------------------------------------
 
-echo -e "${BOLD}Step 6: Writing configuration${RESET}"
+echo -e "${BOLD}Step 5: Writing configuration${RESET}"
 
 if [ ! -f "${ENV_FILE}" ]; then
     cat > "${ENV_FILE}" << ENVEOF
@@ -223,26 +214,23 @@ fi
 echo ""
 
 # ---------------------------------------------------------------------------
-# Step 7: Lock permissions
+# Step 6: Lock permissions
 # ---------------------------------------------------------------------------
 
-echo -e "${BOLD}Step 7: Locking permissions${RESET}"
+echo -e "${BOLD}Step 6: Locking permissions${RESET}"
 
 chmod 700 "${SECRETS_DIR}"
 chmod 600 "${SECRETS_DIR}"/*
-chmod 700 "${DATA_DIR}"
-chmod 700 "${DATA_DIR}/vault"
-chmod 700 "${DATA_DIR}/identity"
 chmod 600 "${ENV_FILE}"
 
-ok "Permissions locked (secrets: 600, dirs: 700)"
+ok "Permissions locked (secrets: 600, .env: 600)"
 echo ""
 
 # ---------------------------------------------------------------------------
 # Step 8: Build Docker images
 # ---------------------------------------------------------------------------
 
-echo -e "${BOLD}Step 8: Building Docker images${RESET}"
+echo -e "${BOLD}Step 7: Building Docker images${RESET}"
 
 if [ "${SKIP_BUILD}" = true ]; then
     skip "Build skipped (--skip-build)"
@@ -266,7 +254,7 @@ echo ""
 # Step 9: Start containers
 # ---------------------------------------------------------------------------
 
-echo -e "${BOLD}Step 9: Starting containers${RESET}"
+echo -e "${BOLD}Step 8: Starting containers${RESET}"
 
 $COMPOSE up -d 2>&1 | while IFS= read -r line; do
     echo -e "  ${DIM}${line}${RESET}"
@@ -279,7 +267,7 @@ echo ""
 # Step 10: Wait for health
 # ---------------------------------------------------------------------------
 
-echo -e "${BOLD}Step 10: Waiting for health check${RESET}"
+echo -e "${BOLD}Step 9: Waiting for health check${RESET}"
 
 BRAIN_TOKEN=$(cat "${SECRETS_DIR}/brain_token")
 ELAPSED=0
@@ -314,7 +302,7 @@ echo ""
 # Step 11: Retrieve identity
 # ---------------------------------------------------------------------------
 
-echo -e "${BOLD}Step 11: Retrieving your identity${RESET}"
+echo -e "${BOLD}Step 10: Retrieving your identity${RESET}"
 
 # Get DID
 DID_RESPONSE=$(curl -s --connect-timeout 5 \
