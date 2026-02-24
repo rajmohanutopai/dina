@@ -113,7 +113,7 @@ class DinaClient:
                 "limit": limit,
             },
         )
-        return resp.json().get("items", [])
+        return resp.json().get("items") or []
 
     # -- Key/Value ---------------------------------------------------------
 

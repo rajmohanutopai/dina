@@ -25,10 +25,22 @@ _SAFE_ACTIONS = frozenset({
 })
 
 
+def _load_cfg(ctx: click.Context):
+    """Lazy-load config on first access."""
+    if "config" not in ctx.obj:
+        try:
+            ctx.obj["config"] = load_config()
+        except click.UsageError:
+            if ctx.obj.get("json"):
+                click.echo(json.dumps({"error": "Not configured. Run: dina configure"}), err=True)
+            raise
+    return ctx.obj["config"]
+
+
 def _make_client(ctx: click.Context) -> DinaClient:
     """Get or create the DinaClient from Click context."""
     if "client" not in ctx.obj:
-        ctx.obj["client"] = DinaClient(ctx.obj["config"])
+        ctx.obj["client"] = DinaClient(_load_cfg(ctx))
     return ctx.obj["client"]
 
 
@@ -40,15 +52,6 @@ def cli(ctx: click.Context, json_mode: bool) -> None:
     ctx.ensure_object(dict)
     ctx.obj["json"] = json_mode
     ctx.obj["sessions"] = SessionStore()
-    # Skip config loading for 'configure' — it runs before config exists.
-    if ctx.invoked_subcommand == "configure":
-        return
-    try:
-        ctx.obj["config"] = load_config()
-    except click.UsageError:
-        if json_mode:
-            click.echo(json.dumps({"error": "Not configured. Run: dina configure"}), err=True)
-        raise
 
 
 # ── remember ──────────────────────────────────────────────────────────────
@@ -178,6 +181,12 @@ def validate(ctx: click.Context, action: str, description: str, count: int, reve
                 status = "approved"
             else:
                 status = "pending_approval"
+            # Store fallback decision in KV so validate-status can poll it
+            decision = {"status": status, "action": action, "description": description}
+            try:
+                client.kv_set(f"approval:{val_id}", json.dumps(decision))
+            except DinaClientError:
+                pass  # Core KV also unavailable — still return the decision
             output = {"status": status, "id": val_id}
             if status == "pending_approval":
                 output["dashboard_url"] = f"{config.core_url}/approvals/{val_id}"
@@ -454,7 +463,7 @@ def configure(ctx: click.Context) -> None:
 @click.pass_context
 def web(ctx: click.Context) -> None:
     """Open the Dina admin dashboard in your browser."""
-    config = ctx.obj["config"]
+    config = _load_cfg(ctx)
     # Admin UI is served by Brain on the same port
     url = config.brain_url.rstrip("/") + "/admin/dashboard"
     click.echo(f"Opening {url}")
