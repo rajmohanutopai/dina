@@ -354,7 +354,7 @@
     <p class="section-desc">Your decentralized identifier and cryptographic keys.</p>
     <div class="identity-did" id="identity-did">Loading...</div>
     <p class="identity-meta">Created: <span id="identity-created">&mdash;</span></p>
-    <p class="identity-meta">Core URL: <span id="core-url">&mdash;</span></p>
+    <p class="identity-meta">Status: <span id="core-status">Connected</span></p>
     <p class="identity-warning">Your recovery phrase is stored offline. Never share it.</p>
 </div>
 
@@ -513,11 +513,7 @@
     <p class="section-desc">Vault storage usage and export options.</p>
     <div class="data-stats">
         <div class="data-stat">
-            <div class="stat-label">Vault Size</div>
-            <div class="stat-value" id="vault-size">&mdash;</div>
-        </div>
-        <div class="data-stat">
-            <div class="stat-label">Items</div>
+            <div class="stat-label">Items Stored</div>
             <div class="stat-value" id="vault-items">&mdash;</div>
         </div>
     </div>
@@ -625,7 +621,7 @@ async function loadSettings() {
     if (s.default_persona) {
         document.getElementById('default-persona').value = s.default_persona;
     }
-    document.getElementById('core-url').textContent = s.core_url || '\u2014';
+    document.getElementById('core-status').textContent = s.core_url ? 'Connected' : 'Not connected';
 
     // Identity
     if (s.did) {
@@ -645,6 +641,17 @@ async function loadSettings() {
         document.getElementById('chat-provider').value = s.chat_provider;
     }
     onProviderChange('chat');
+
+    // Load data stats from status endpoint
+    try {
+        var statusResp = await apiFetch('/admin/status');
+        if (statusResp) {
+            var status = await statusResp.json();
+            if (status.items != null) {
+                document.getElementById('vault-items').textContent = status.items;
+            }
+        }
+    } catch (e) { /* non-fatal */ }
 }
 
 async function saveModels() {

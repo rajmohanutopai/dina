@@ -90,7 +90,6 @@
         font-size: 13px;
         color: var(--color-muted);
         margin-left: auto;
-        text-transform: capitalize;
     }
 
     /* ── Activity Table ── */
@@ -258,17 +257,17 @@
         <div class="health-item">
             <span class="health-dot" id="health-core"></span>
             <span class="health-label">Core</span>
-            <span class="health-status" id="health-core-text">unknown</span>
+            <span class="health-status" id="health-core-text">Checking...</span>
         </div>
         <div class="health-item">
             <span class="health-dot" id="health-llm"></span>
             <span class="health-label">Brain / LLM</span>
-            <span class="health-status" id="health-llm-text">unknown</span>
+            <span class="health-status" id="health-llm-text">Checking...</span>
         </div>
         <div class="health-item">
             <span class="health-dot" id="health-pds"></span>
-            <span class="health-label">PDS</span>
-            <span class="health-status" id="health-pds-text">unknown</span>
+            <span class="health-label">Network Storage</span>
+            <span class="health-status" id="health-pds-text">Checking...</span>
         </div>
     </div>
 </div>
@@ -280,8 +279,8 @@
         <thead>
             <tr>
                 <th>Time</th>
-                <th>Action</th>
-                <th>Persona</th>
+                <th>Type</th>
+                <th>Summary</th>
                 <th>Source</th>
             </tr>
         </thead>
@@ -341,9 +340,19 @@
             not_configured: '#A8A29E',
             unknown: '#A8A29E'
         };
+        var labels = {
+            healthy: 'Healthy',
+            available: 'Available',
+            ok: 'Healthy',
+            degraded: 'Degraded',
+            unreachable: 'Offline',
+            error: 'Error',
+            not_configured: 'Not set up',
+            unknown: 'Unknown'
+        };
         dot.style.backgroundColor = colors[status] || '#A8A29E';
         if (textEl) {
-            textEl.textContent = status || 'unknown';
+            textEl.textContent = labels[status] || status || 'Unknown';
         }
     }
 
@@ -359,12 +368,29 @@
                 tbody.innerHTML = '<tr><td colspan="4" class="activity-empty">No recent activity</td></tr>';
                 return;
             }
+            var typeLabels = {
+                email: 'Email', message: 'Message', event: 'Event',
+                note: 'Note', photo: 'Photo', email_draft: 'Draft',
+                cart_handover: 'Cart Handover'
+            };
+            var sourceLabels = {
+                admin_ui: 'Admin', brain: 'Dina', gmail: 'Gmail',
+                youtube: 'YouTube', shopping_agent: 'Shopping Agent',
+                calendar: 'Calendar', sms: 'SMS', whatsapp: 'WhatsApp'
+            };
+            function friendlySource(raw) {
+                if (!raw) return '\u2014';
+                if (sourceLabels[raw]) return sourceLabels[raw];
+                return raw.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+            }
             tbody.innerHTML = items.slice(0, 10).map(function(item) {
+                var rawType = item.action || item.type || '';
+                var typeLabel = typeLabels[rawType] || rawType || '\u2014';
                 return '<tr>' +
                     '<td>' + formatActivityTime(item.timestamp) + '</td>' +
-                    '<td>' + (item.action || item.type || '\u2014') + '</td>' +
-                    '<td>' + (item.persona || '\u2014') + '</td>' +
-                    '<td>' + (item.source || '\u2014') + '</td>' +
+                    '<td>' + typeLabel + '</td>' +
+                    '<td>' + (item.summary || '\u2014') + '</td>' +
+                    '<td>' + friendlySource(item.source) + '</td>' +
                 '</tr>';
             }).join('');
         } catch (e) {

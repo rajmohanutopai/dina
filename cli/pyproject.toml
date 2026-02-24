@@ -1,0 +1,23 @@
+[project]
+name = "dina-cli"
+version = "0.1.0"
+description = "CLI client for Dina Home Node — encrypted memory, PII scrubbing, action gating"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = [
+    "click>=8.1",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+dina = "dina_cli.main:cli"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

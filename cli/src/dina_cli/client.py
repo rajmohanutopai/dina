@@ -1,0 +1,183 @@
+"""Synchronous HTTP client wrapping Dina Core and Brain."""
+
+from __future__ import annotations
+
+from typing import Any
+
+import httpx
+
+from .config import Config
+
+
+class DinaClientError(Exception):
+    """Raised when a Dina API call fails."""
+
+
+class DinaClient:
+    """Synchronous HTTP client for Dina Core and Brain services."""
+
+    def __init__(self, config: Config) -> None:
+        self._core = httpx.Client(
+            base_url=config.core_url,
+            headers={"Authorization": f"Bearer {config.client_token}"},
+            timeout=config.timeout,
+        )
+        self._brain: httpx.Client | None = (
+            httpx.Client(
+                base_url=config.brain_url,
+                headers={"Authorization": f"Bearer {config.brain_token}"},
+                timeout=config.timeout,
+            )
+            if config.brain_token
+            else None
+        )
+
+    # -- Context manager support ------------------------------------------
+
+    def __enter__(self) -> DinaClient:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: Any,
+    ) -> None:
+        self.close()
+
+    def close(self) -> None:
+        """Close the underlying HTTP clients."""
+        self._core.close()
+        if self._brain is not None:
+            self._brain.close()
+
+    # -- Private helpers ---------------------------------------------------
+
+    def _request(
+        self,
+        client: httpx.Client,
+        method: str,
+        path: str,
+        **kwargs: Any,
+    ) -> httpx.Response:
+        """Send a request and translate transport / HTTP errors."""
+        try:
+            response = client.request(method, path, **kwargs)
+            response.raise_for_status()
+            return response
+        except httpx.ConnectError:
+            raise DinaClientError(
+                f"Cannot reach Dina at {client.base_url}. Is it running?"
+            )
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            if status == 401:
+                raise DinaClientError("Invalid token") from exc
+            if status == 403:
+                raise DinaClientError("Access denied") from exc
+            if status >= 500:
+                raise DinaClientError(f"Server error ({status})") from exc
+            raise DinaClientError(
+                f"HTTP {status}: {exc.response.text}"
+            ) from exc
+
+    # -- Vault -------------------------------------------------------------
+
+    def vault_store(self, persona: str, item: dict) -> dict:
+        """Store an item in the vault."""
+        resp = self._request(
+            self._core,
+            "POST",
+            "/v1/vault/store",
+            json={"persona": persona, "item": item},
+        )
+        return resp.json()
+
+    def vault_query(
+        self,
+        persona: str,
+        query: str,
+        types: list[str] | None = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """Query the vault and return matching items."""
+        resp = self._request(
+            self._core,
+            "POST",
+            "/v1/vault/query",
+            json={
+                "persona": persona,
+                "query": query,
+                "mode": "hybrid",
+                "types": types or [],
+                "limit": limit,
+            },
+        )
+        return resp.json().get("items", [])
+
+    # -- Key/Value ---------------------------------------------------------
+
+    def kv_get(self, key: str) -> str | None:
+        """Get a KV value by key. Returns None if the key does not exist."""
+        try:
+            resp = self._request(self._core, "GET", f"/v1/vault/kv/{key}")
+            return resp.text
+        except DinaClientError as exc:
+            if "HTTP 404" in str(exc):
+                return None
+            raise
+
+    def kv_set(self, key: str, value: str) -> None:
+        """Set a KV value."""
+        self._request(
+            self._core,
+            "PUT",
+            f"/v1/vault/kv/{key}",
+            content=value,
+            headers={"Content-Type": "text/plain"},
+        )
+
+    # -- PII ---------------------------------------------------------------
+
+    def pii_scrub(self, text: str) -> dict:
+        """Scrub PII from text."""
+        resp = self._request(
+            self._core,
+            "POST",
+            "/v1/pii/scrub",
+            json={"text": text},
+        )
+        return resp.json()
+
+    # -- DID ---------------------------------------------------------------
+
+    def did_get(self) -> dict:
+        """Retrieve the DID document."""
+        resp = self._request(self._core, "GET", "/v1/did")
+        return resp.json()
+
+    def did_sign(self, data_hex: str) -> dict:
+        """Sign data with the DID private key."""
+        resp = self._request(
+            self._core,
+            "POST",
+            "/v1/did/sign",
+            json={"data": data_hex},
+        )
+        return resp.json()
+
+    # -- Brain -------------------------------------------------------------
+
+    def process_event(self, event: dict) -> dict:
+        """Send an event to the Brain for processing."""
+        if self._brain is None:
+            raise DinaClientError(
+                "Brain not configured. Set DINA_BRAIN_TOKEN."
+            )
+        resp = self._request(
+            self._brain,
+            "POST",
+            "/api/v1/process",
+            json=event,
+        )
+        return resp.json()

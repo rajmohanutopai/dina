@@ -124,7 +124,7 @@ async def system_status() -> dict:
 
     # LLM availability
     components["llm"] = "available"
-    components["pds"] = "ok"
+    components["pds"] = "not_configured"
 
     # Stats: vault items
     try:

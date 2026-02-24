@@ -123,7 +123,7 @@
 
 <!-- Search Bar -->
 <div class="search-bar">
-    <input type="text" id="search-input" placeholder="Search vault items..." autocomplete="off">
+    <input type="text" id="search-input" placeholder="Search activity history..." autocomplete="off">
 </div>
 
 <!-- Table -->
@@ -131,16 +131,15 @@
     <table class="history-table">
         <thead>
             <tr>
-                <th>ID</th>
                 <th>Type</th>
                 <th>Source</th>
                 <th>Summary</th>
-                <th>Timestamp</th>
+                <th>Time</th>
             </tr>
         </thead>
         <tbody id="history-body">
             <tr>
-                <td colspan="5" class="empty-cell">Loading...</td>
+                <td colspan="4" class="empty-cell">Loading...</td>
             </tr>
         </tbody>
     </table>
@@ -160,26 +159,47 @@
 
     async function loadHistory(page) {
         currentPage = page;
-        var resp = await apiFetch('/admin/api/history/?page=' + page + '&limit=20');
+        var query = (document.getElementById('search-input').value || '').trim();
+        var url = '/admin/api/history/?page=' + page + '&limit=20';
+        if (query) url += '&q=' + encodeURIComponent(query);
+        var resp = await apiFetch(url);
         if (!resp) return;
         var data = await resp.json();
         renderTable(data.items);
         updatePagination(data.page, data.total, data.limit);
     }
 
+    var _typeLabels = {
+        email: 'Email', message: 'Message', event: 'Event',
+        note: 'Note', photo: 'Photo', email_draft: 'Draft',
+        cart_handover: 'Cart Handover'
+    };
+
+    var _sourceLabels = {
+        admin_ui: 'Admin', brain: 'Dina', gmail: 'Gmail',
+        youtube: 'YouTube', shopping_agent: 'Shopping Agent',
+        calendar: 'Calendar', sms: 'SMS', whatsapp: 'WhatsApp'
+    };
+
+    function friendlySource(raw) {
+        if (!raw) return '\u2014';
+        if (_sourceLabels[raw]) return _sourceLabels[raw];
+        // Convert snake_case to Title Case as fallback
+        return raw.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+    }
+
     function renderTable(items) {
         var tbody = document.getElementById('history-body');
         if (!items || items.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="empty-cell">No items found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="4" class="empty-cell">No items found</td></tr>';
             return;
         }
         tbody.innerHTML = items.map(function(item) {
-            var truncId = (item.id || '').substring(0, 8) + '...';
-            var fullId = item.id || '';
+            var rawType = item.type || '';
+            var typeLabel = _typeLabels[rawType] || rawType || '\u2014';
             return '<tr>' +
-                '<td title="' + escapeHtml(fullId) + '">' + escapeHtml(truncId) + '</td>' +
-                '<td><span class="badge">' + escapeHtml(item.type || '\u2014') + '</span></td>' +
-                '<td>' + escapeHtml(item.source || '\u2014') + '</td>' +
+                '<td><span class="badge">' + escapeHtml(typeLabel) + '</span></td>' +
+                '<td>' + escapeHtml(friendlySource(item.source)) + '</td>' +
                 '<td>' + escapeHtml(item.summary || '\u2014') + '</td>' +
                 '<td>' + formatTime(item.timestamp) + '</td>' +
             '</tr>';

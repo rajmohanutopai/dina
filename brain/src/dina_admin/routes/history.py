@@ -30,10 +30,13 @@ async def list_history(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     persona_id: str = Query("default"),
+    q: str = Query(""),
 ) -> dict:
-    """List vault items with pagination.
+    """List vault items with pagination and optional search.
 
     Uses ``POST /v1/vault/query`` on core with all non-KV item types.
+    The ``q`` parameter filters results by matching against type, source,
+    or summary fields (case-insensitive substring match).
     """
     if _core_client is None:
         return {"items": [], "page": page, "limit": limit, "total": 0}
@@ -46,9 +49,6 @@ async def list_history(
                    "email_draft", "cart_handover"],
             limit=200,
         )
-        total = len(items)
-        start = (page - 1) * limit
-        end = start + limit
         # Normalise keys to snake_case for the frontend.
         normalised = [
             {
@@ -60,6 +60,18 @@ async def list_history(
             }
             for it in items
         ]
+        # Client-side search filter
+        if q:
+            q_lower = q.lower()
+            normalised = [
+                item for item in normalised
+                if q_lower in (item["type"] or "").lower()
+                or q_lower in (item["source"] or "").lower()
+                or q_lower in (item["summary"] or "").lower()
+            ]
+        total = len(normalised)
+        start = (page - 1) * limit
+        end = start + limit
         return {
             "items": normalised[start:end],
             "page": page,
