@@ -1,19 +1,30 @@
 # Quick Start
 
-Get Dina running in under 5 minutes. Three commands.
+Get Dina running in under 5 minutes.
 
 ## Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) & Docker Compose
-- [Tailscale](https://tailscale.com/download) (free account)
+- [Tailscale](https://tailscale.com/download) (free account, for networking)
 
-## 1. Start Dina
+## 1. Install Dina (Home Node)
 
 ```bash
 git clone https://github.com/rajmohanutopai/dina.git
 cd dina
-docker compose up -d
+./install.sh
 ```
+
+`install.sh` handles everything:
+1. Checks prerequisites (Docker, Docker Compose, curl)
+2. Generates secrets (brain token, identity seed, PDS JWT/rotation keys)
+3. Asks which LLM provider to use (Gemini, OpenAI, Claude, OpenRouter, Ollama)
+4. Creates `.env` with your API key and secrets
+5. Builds and starts Docker containers
+6. Waits for health checks
+7. Displays your DID and 24-word recovery phrase
+
+> **Idempotent** — safe to re-run. Existing secrets and seeds are preserved. Use `--skip-build` to skip Docker image builds on re-runs.
 
 This starts Dina in the **Cloud LLM profile** (the default) — 3 containers:
 - **dina-core** (Go) — your encrypted vault, keys, and messaging endpoint (port 443 external, port 8100 internal)
@@ -22,13 +33,9 @@ This starts Dina in the **Cloud LLM profile** (the default) — 3 containers:
 
 Want a local LLM too? `docker compose --profile local-llm up -d` adds a 4th container (llama with Gemma 3n). See [Advanced Setup](ADVANCED-SETUP.md).
 
-## 2. Initialize your identity
+## 2. Save your recovery phrase
 
-```bash
-curl -X POST http://localhost:8100/v1/identity/init
-```
-
-This generates your root DID and encryption keys. You'll get a 24-word recovery phrase — **write it down and store it safely**. This is the only way to recover your identity if you lose access.
+The install script displays a 24-word recovery phrase. **Write it down on paper and store it safely.** This is the only way to recover your identity if you lose access.
 
 ## 3. Go online
 
@@ -67,7 +74,31 @@ dina remember "I like tea"  # store a fact in encrypted vault
 dina recall "tea"           # should return the fact you just stored
 ```
 
-## 5. Use as an OpenClaw Skill
+## 5. Install the Reputation AppView (optional)
+
+The AppView is the public Reputation Graph indexer — it consumes AT Protocol records from the Jetstream firehose, scores them, and serves XRPC query endpoints.
+
+```bash
+cd appview
+./install_appview.sh
+```
+
+`install_appview.sh` handles:
+1. Installs Node.js dependencies
+2. Starts PostgreSQL 17 + Jetstream via Docker Compose
+3. Pushes the 27-table schema (97 indexes) via Drizzle
+4. Starts the ingester, scorer, and web containers
+
+This adds 5 containers:
+- **postgres** — PostgreSQL 17 for reputation data (port 5432)
+- **jetstream** — AT Protocol firehose filtered to `com.dina.reputation.*` (port 6008)
+- **ingester** — 19 record handlers with Zod validation, trust edges, dirty flags
+- **scorer** — 9 cron jobs (trust-score, reviewer-quality, sentiment, anomaly, coordination, sybil, tombstones, decay, cleanup)
+- **web** — XRPC API endpoints: resolve, search, get-profile, get-attestations, get-graph (port 3000)
+
+> The Home Node and AppView are independent. The Home Node is your private sovereign agent. The AppView is the public reputation indexer anyone can run.
+
+## 6. Use as an OpenClaw Skill
 
 Dina works as an [OpenClaw](https://openclaw.org) skill — any AI agent (Claude, GPT, Gemini, OpenClaw) can use your Dina for encrypted memory, PII scrubbing, and action gating.
 
@@ -116,7 +147,9 @@ Your Dina is running, has a cryptographic identity, is reachable by other Dinas,
 - **Run with Local LLM** — See [Advanced Setup](ADVANCED-SETUP.md) for local LLM (Gemma 3n, no cloud APIs for inference)
 - **Set up production networking** — See [Advanced Setup](ADVANCED-SETUP.md) for Cloudflare Tunnel (custom domain, DDoS protection) or Yggdrasil (censorship resistance)
 
-## System Requirements (Cloud LLM Profile)
+## System Requirements
+
+**Home Node (Cloud LLM Profile)**
 
 | Resource | Minimum |
 |----------|---------|
@@ -125,5 +158,13 @@ Your Dina is running, has a cryptographic identity, is reachable by other Dinas,
 | Storage | 10 GB (grows with your data) |
 | Network | Always-on internet connection |
 | GPU | Not required |
+
+**AppView (additional, optional)**
+
+| Resource | Minimum |
+|----------|---------|
+| RAM | 1 GB (PostgreSQL) |
+| CPU | 2 cores |
+| Storage | 5 GB (grows with reputation data) |
 
 > Want to run everything locally with no cloud APIs? See [Advanced Setup — Local LLM Profile](ADVANCED-SETUP.md) (requires 8GB+ RAM).

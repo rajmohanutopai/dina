@@ -21,21 +21,16 @@
 
 ---
 
-You can run the full Sovereign Triad (Core + Brain + Local LLM) with one command. See [`QUICKSTART.md`](./QUICKSTART.md) for the full guide including networking setup.
+See [`QUICKSTART.md`](./QUICKSTART.md) for the full guide including networking setup.
 
 **Prerequisites:** Docker & Docker Compose.
 
 ```bash
-# 1. Clone and start
 git clone https://github.com/rajmohanutopai/dina.git && cd dina
-docker compose up -d
-
-# 2. Initialize your identity (generates Root DID + encryption keys)
-curl -X POST http://localhost:8100/v1/identity/init
-
-# 3. Go online (Tailscale Funnel — zero-config public endpoint)
-sudo tailscale up && sudo tailscale funnel 443
+./install.sh
 ```
+
+`install.sh` generates secrets, picks your LLM provider, builds containers, and displays your DID + recovery phrase. One script, fully interactive, idempotent.
 
 ---
 
@@ -56,8 +51,8 @@ Now imagine the same thing, everywhere in your life:
 
 - You're buying a laptop. Your Dina talks to the review bots, checks the Reputation Graph, and tells you: *"The battery on this one dies in three months. Here's a better option."*
 - You promised your daughter you'd read her a book. You forgot which one. *"It was 'The Little Prince'. Last Tuesday."*
-- Your license needs renewal. You didn't even know it was due. Dina did. She flags it, and if you approve, she delegates the paperwork to a task agent (like OpenClaw, Siri, or Google) to handle the forms.
-- Dead internet theory becomes real. You lose every bit of fun because you don't know what is true and what is not. You can ask Dina then to filter out and show you only verifiably true items. Your Dina interacts with verified builders Dina, and only those items are shown to you.
+- Your license needs renewal. You didn't even know it was due. Dina did. She flags it, and if you approve, she informs another agent (like OpenClaw, Siri, or Google) about the requirement.
+- Dead internet theory becomes real. You lose every bit of fun because you don't know what is made by AI and what is real. You can ask Dina then to filter out and show you only verifiably true items. Your Dina interacts with verified builders Dina, and only those items are shown to you.
 
 Dina is the agent that does what you *need*. She is there for you, and only for you. She's quiet most of the time. And there when it matters.
 
