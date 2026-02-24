@@ -5,6 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dina — Login</title>
     <style>
+        :root {
+            --color-primary: #44403C;
+            --color-primary-hover: #57534E;
+            --color-primary-text: #FAFAF9;
+            --color-body-bg: #FAF8F5;
+            --color-surface: #FFFFFF;
+            --color-text: #1E293B;
+            --color-muted: #A8A29E;
+            --color-red: #DC2626;
+            --radius: 8px;
+        }
+
         *, *::before, *::after {
             box-sizing: border-box;
             margin: 0;
@@ -13,8 +25,8 @@
 
         body {
             font-family: system-ui, -apple-system, sans-serif;
-            background: #FAF8F5;
-            color: #1C1917;
+            background: var(--color-body-bg);
+            color: var(--color-text);
             min-height: 100vh;
             display: flex;
             flex-direction: column;
@@ -24,8 +36,8 @@
         }
 
         .login-card {
-            background: #FFFFFF;
-            border-radius: 8px;
+            background: var(--color-surface);
+            border-radius: var(--radius);
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
             border: 1px solid rgba(0, 0, 0, 0.08);
             padding: 40px;
@@ -36,14 +48,14 @@
         .login-brand {
             font-size: 28px;
             font-weight: 700;
-            color: #1C1917;
+            color: var(--color-primary);
             text-align: center;
             margin-bottom: 8px;
         }
 
         .login-subtitle {
             font-size: 14px;
-            color: #A8A29E;
+            color: var(--color-muted);
             text-align: center;
             margin-bottom: 32px;
         }
@@ -58,19 +70,19 @@
             font-size: 14px;
             font-family: system-ui, -apple-system, sans-serif;
             border: 1px solid rgba(0, 0, 0, 0.08);
-            border-radius: 8px;
-            background: #FAF8F5;
-            color: #1C1917;
+            border-radius: var(--radius);
+            background: var(--color-body-bg);
+            color: var(--color-text);
             outline: none;
             transition: border-color 0.15s;
         }
 
         .form-group input::placeholder {
-            color: #A8A29E;
+            color: var(--color-muted);
         }
 
         .form-group input:focus {
-            border-color: #1C1917;
+            border-color: var(--color-primary);
         }
 
         .login-btn {
@@ -79,22 +91,22 @@
             font-size: 14px;
             font-weight: 600;
             font-family: system-ui, -apple-system, sans-serif;
-            background: #1C1917;
-            color: #FAF8F5;
+            background: var(--color-primary);
+            color: var(--color-primary-text);
             border: none;
-            border-radius: 8px;
+            border-radius: var(--radius);
             cursor: pointer;
             transition: background 0.15s;
         }
 
         .login-btn:hover {
-            background: #292524;
+            background: var(--color-primary-hover);
         }
 
         .error-msg {
             display: none;
             background: #FEF2F2;
-            color: #DC2626;
+            color: var(--color-red);
             font-size: 13px;
             padding: 10px 14px;
             border-radius: 6px;
@@ -104,7 +116,7 @@
 
         .token-hint {
             font-size: 12px;
-            color: #A8A29E;
+            color: var(--color-muted);
             text-align: center;
             margin-top: 24px;
         }
@@ -119,7 +131,7 @@
         .footer {
             margin-top: 40px;
             font-size: 12px;
-            color: #A8A29E;
+            color: var(--color-muted);
             text-align: center;
         }
     </style>
@@ -155,18 +167,26 @@
     <script>
         document.getElementById('login-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const token = document.getElementById('token-input').value;
-            const resp = await fetch('/admin/login', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({token})
-            });
-            if (resp.ok) {
-                const data = await resp.json();
-                window.location.href = data.redirect || '/admin/dashboard';
-            } else {
-                document.getElementById('error-msg').style.display = 'block';
-                document.getElementById('error-msg').textContent = 'Invalid token';
+            const token = document.getElementById('token-input').value.trim();
+            const errEl = document.getElementById('error-msg');
+            errEl.style.display = 'none';
+            try {
+                const resp = await fetch('/admin/login', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({token})
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    window.location.href = data.redirect || '/admin/dashboard';
+                } else {
+                    errEl.style.display = 'block';
+                    errEl.textContent = resp.status === 403 ? 'Invalid token' : 'Login failed (' + resp.status + ')';
+                }
+            } catch (err) {
+                errEl.style.display = 'block';
+                errEl.textContent = 'Connection error — is the server running?';
             }
         });
     </script>

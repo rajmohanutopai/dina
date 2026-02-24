@@ -49,6 +49,8 @@ var validVaultItemTypes = map[string]bool{
 	"photo":          true,
 	"email_draft":    true,
 	"cart_handover":  true,
+	"kv":             true,
+	"contact":        true,
 }
 
 // ---- VaultManager + VaultReader + VaultWriter ----
@@ -358,7 +360,8 @@ func matchesQuery(item domain.VaultItem, q domain.SearchQuery) bool {
 	// Text search (FTS5 simulation).
 	if q.Query != "" {
 		lower := strings.ToLower(q.Query)
-		if !strings.Contains(strings.ToLower(item.Summary), lower) &&
+		if !strings.Contains(strings.ToLower(item.ID), lower) &&
+			!strings.Contains(strings.ToLower(item.Summary), lower) &&
 			!strings.Contains(strings.ToLower(item.BodyText), lower) {
 			return false
 		}
@@ -719,7 +722,7 @@ func (s *SchemaInspect) ExecSQL(dbName, sql string, args ...interface{}) (int64,
 		if len(args) >= 2 {
 			itemType, ok := args[1].(string)
 			if ok && !validVaultItemTypes[itemType] {
-				return 0, fmt.Errorf("CHECK constraint failed: vault_items.type must be one of email, message, event, note, photo")
+				return 0, fmt.Errorf("CHECK constraint failed: vault_items.type must be one of email, message, event, note, photo, kv, contact")
 			}
 		}
 		// Store the row with its fields.

@@ -42,19 +42,19 @@ def set_dependencies(core_client: Any, config: Any) -> None:
 
 @router.get("/")
 async def dashboard() -> dict:
-    """Dashboard showing system status, recent activity, uptime.
+    """Dashboard showing system status, recent activity, stats.
 
     Returns a JSON summary suitable for rendering by a frontend.
-    Fetches live status from core when reachable; falls back to
-    degraded indicators otherwise.
+    Fetches live status and counts from core.
     """
-    status = {"page": "dashboard", "status": "ok"}
+    status: dict[str, Any] = {"page": "dashboard", "status": "ok"}
 
     if _core_client is None:
         status["status"] = "degraded"
         status["core"] = "not_configured"
         return status
 
+    # Core health
     try:
         health = await _core_client.health()
         status["core"] = health.get("status", "healthy")
@@ -62,17 +62,55 @@ async def dashboard() -> dict:
         status["core"] = "unreachable"
         status["status"] = "degraded"
 
+    # Stats: personas
+    try:
+        personas = await _core_client.list_personas()
+        status["personas"] = len(personas)
+    except Exception:
+        status["personas"] = 0
+
+    # Stats: devices
+    try:
+        devices = await _core_client.list_devices()
+        status["devices"] = len(devices)
+    except Exception:
+        status["devices"] = 0
+
+    # Stats: vault items + recent activity
+    try:
+        items = await _core_client.query_vault(
+            "default", "",
+            types=["email", "message", "event", "note", "photo",
+                   "email_draft", "cart_handover"],
+            limit=200,
+        )
+        status["items"] = len(items)
+        # Recent 5 items for activity table
+        recent = [
+            {
+                "type": it.get("Type", it.get("type", "")),
+                "source": it.get("Source", it.get("source", "")),
+                "summary": it.get("Summary", it.get("summary", "")),
+                "timestamp": it.get("IngestedAt", it.get("Timestamp", it.get("timestamp", 0))),
+            }
+            for it in items[:5]
+        ]
+        status["recent_activity"] = recent
+    except Exception:
+        status["items"] = 0
+        status["recent_activity"] = []
+
     return status
 
 
 @router.get("/status")
 async def system_status() -> dict:
-    """System status: core health, LLM availability, memory usage.
+    """System status: core health, LLM availability, item counts.
 
-    Returns component-level health indicators.  Each component is
-    one of: ``healthy``, ``degraded``, ``unreachable``, ``not_configured``.
+    Returns component-level health indicators and statistics for the
+    dashboard stat cards.
     """
-    components: dict[str, str] = {}
+    components: dict[str, Any] = {}
 
     # Core health
     if _core_client is not None:
@@ -84,10 +122,41 @@ async def system_status() -> dict:
     else:
         components["core"] = "not_configured"
 
-    # LLM availability is checked via core's proxy
+    # LLM availability
     components["llm"] = "available"
+    components["pds"] = "ok"
 
-    # Memory is always OK in the brain (stateless — memory is in core)
-    components["memory"] = "ok"
+    # Stats: vault items
+    try:
+        items = await _core_client.query_vault(
+            "default", "",
+            types=["email", "message", "event", "note", "photo",
+                   "email_draft", "cart_handover"],
+            limit=200,
+        )
+        components["items"] = len(items)
+    except Exception:
+        components["items"] = 0
+
+    # Stats: personas
+    try:
+        personas = await _core_client.list_personas()
+        components["personas"] = len(personas)
+    except Exception:
+        components["personas"] = 0
+
+    # Stats: contacts
+    try:
+        contacts = await _core_client.list_contacts()
+        components["contacts"] = len(contacts)
+    except Exception:
+        components["contacts"] = 0
+
+    # Stats: devices
+    try:
+        devices = await _core_client.list_devices()
+        components["devices"] = len(devices)
+    except Exception:
+        components["devices"] = 0
 
     return components

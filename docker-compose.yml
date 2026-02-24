@@ -44,6 +44,8 @@ services:
       - "${DINA_BRAIN_PORT:-8200}:8200"
     volumes:
       - dina-data:/data
+      - ./dina.html:/app/dina.html:ro
+      - ./images:/app/images:ro
     environment:
       - DINA_CORE_URL=http://core:8100
       - DINA_BRAIN_TOKEN_FILE=/run/secrets/brain_token

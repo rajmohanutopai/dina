@@ -50,20 +50,22 @@ async def chat(request: ChatRequest) -> dict:
                 json={"prompt": request.prompt},
                 headers={"Authorization": f"Bearer {brain_token}"},
             )
-            resp.raise_for_status()
+            if resp.status_code != 200:
+                detail = resp.text[:500]
+                log.error("chat.brain_error", extra={
+                    "status": resp.status_code,
+                    "detail": detail,
+                })
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Brain API returned {resp.status_code}: {detail}",
+                )
             return resp.json()
-        except httpx.HTTPStatusError as exc:
-            log.error("chat.brain_error", extra={
-                "status": exc.response.status_code,
-                "detail": exc.response.text[:200],
-            })
-            raise HTTPException(
-                status_code=502,
-                detail="Brain API error",
-            ) from exc
+        except HTTPException:
+            raise
         except Exception as exc:
-            log.error("chat.error", extra={"error": type(exc).__name__})
+            log.error("chat.error", extra={"error": str(exc)})
             raise HTTPException(
                 status_code=502,
-                detail=f"Failed to reach brain API: {type(exc).__name__}",
+                detail=f"Failed to reach brain API: {type(exc).__name__}: {exc}",
             ) from exc

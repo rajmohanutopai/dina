@@ -5,6 +5,35 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Dina Admin{% endblock %}</title>
     <style>
+        /* ── Design Tokens (change theme here) ── */
+        :root {
+            /* Buttons, accents, toast */
+            --color-primary: #44403C;        /* stone-700 — buttons, brand */
+            --color-primary-hover: #57534E;  /* stone-600 — button hover */
+            --color-primary-text: #FAFAF9;   /* text on primary buttons */
+
+            /* Sidebar (light) */
+            --color-sidebar-bg: #F5F0EB;     /* warm linen */
+            --color-sidebar-hover: #EBE5DE;  /* active / hover link bg */
+            --color-sidebar-text: #57534E;   /* nav text (stone-600) */
+            --color-sidebar-muted: #78716C;  /* logout text (stone-500) */
+
+            /* Page */
+            --color-body-bg: #FAF8F5;        /* page background */
+            --color-surface: #FFFFFF;         /* cards, panels */
+            --color-surface-alt: #F5F3EF;    /* alternate surface (chat bg) */
+            --color-text: #1E293B;           /* body text */
+            --color-muted: #A8A29E;          /* secondary text */
+            --color-label: #78716C;          /* form labels */
+            --color-border: rgba(0,0,0,0.08);/* borders */
+            --color-border-strong: rgba(0,0,0,0.15); /* input borders */
+            --color-green: #059669;
+            --color-yellow: #D97706;
+            --color-red: #DC2626;
+            --radius: 8px;
+            --radius-sm: 6px;
+        }
+
         *, *::before, *::after {
             box-sizing: border-box;
             margin: 0;
@@ -13,8 +42,8 @@
 
         body {
             font-family: system-ui, -apple-system, sans-serif;
-            background: #FAF8F5;
-            color: #1C1917;
+            background: var(--color-body-bg);
+            color: var(--color-text);
             display: flex;
             min-height: 100vh;
         }
@@ -23,8 +52,9 @@
         .sidebar {
             width: 260px;
             min-height: 100vh;
-            background: #1C1917;
-            color: #D6D3D1;
+            background: var(--color-sidebar-bg);
+            color: var(--color-sidebar-text);
+            border-right: 1px solid var(--color-border);
             display: flex;
             flex-direction: column;
             padding: 24px 0;
@@ -36,7 +66,7 @@
         .sidebar-brand {
             font-size: 20px;
             font-weight: 700;
-            color: #FAF8F5;
+            color: var(--color-primary);
             padding: 0 24px 24px;
             letter-spacing: 0.02em;
         }
@@ -52,7 +82,7 @@
             align-items: center;
             gap: 12px;
             padding: 10px 24px;
-            color: #D6D3D1;
+            color: var(--color-sidebar-text);
             text-decoration: none;
             font-size: 14px;
             font-weight: 500;
@@ -61,13 +91,14 @@
         }
 
         .sidebar nav a:hover {
-            background: #292524;
-            color: #FAF8F5;
+            background: var(--color-sidebar-hover);
+            color: var(--color-primary);
         }
 
         .sidebar nav a.active {
-            background: #292524;
-            color: #FAF8F5;
+            background: var(--color-sidebar-hover);
+            color: var(--color-primary);
+            font-weight: 600;
         }
 
         .sidebar nav a .nav-icon {
@@ -81,15 +112,15 @@
         }
 
         .sidebar nav a.logout-link {
-            color: #A8A29E;
-            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            color: var(--color-sidebar-muted);
+            border-top: 1px solid var(--color-border);
             margin-top: 8px;
             padding-top: 16px;
         }
 
         .sidebar nav a.logout-link:hover {
-            color: #FAF8F5;
-            background: #292524;
+            color: var(--color-primary);
+            background: var(--color-sidebar-hover);
         }
 
         /* ── Main area ── */
@@ -104,8 +135,8 @@
         /* ── Top bar ── */
         .topbar {
             height: 56px;
-            background: #FFFFFF;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+            background: var(--color-surface);
+            border-bottom: 1px solid var(--color-border);
             display: flex;
             align-items: center;
             padding: 0 24px;
@@ -116,7 +147,7 @@
         .topbar-title {
             font-size: 16px;
             font-weight: 600;
-            color: #1C1917;
+            color: var(--color-text);
         }
 
         .hamburger-btn {
@@ -125,7 +156,7 @@
             border: none;
             font-size: 22px;
             cursor: pointer;
-            color: #1C1917;
+            color: var(--color-text);
             padding: 4px 8px;
             border-radius: 6px;
             line-height: 1;
@@ -146,24 +177,24 @@
             padding: 16px 24px;
             text-align: center;
             font-size: 12px;
-            color: #A8A29E;
+            color: var(--color-muted);
             flex-shrink: 0;
         }
 
         /* ── Cards (utility) ── */
         .card {
-            background: #FFFFFF;
-            border-radius: 8px;
+            background: var(--color-surface);
+            border-radius: var(--radius);
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-            border: 1px solid rgba(0, 0, 0, 0.08);
+            border: 1px solid var(--color-border);
             padding: 20px;
         }
 
         /* ── Color utilities ── */
-        .text-muted { color: #A8A29E; }
-        .text-green { color: #059669; }
-        .text-yellow { color: #D97706; }
-        .text-red { color: #DC2626; }
+        .text-muted { color: var(--color-muted); }
+        .text-green { color: var(--color-green); }
+        .text-yellow { color: var(--color-yellow); }
+        .text-red { color: var(--color-red); }
 
         /* ── Mobile overlay backdrop ── */
         .sidebar-overlay {

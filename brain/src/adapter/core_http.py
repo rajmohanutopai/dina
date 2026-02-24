@@ -311,6 +311,71 @@ class CoreHTTPClient:
         sig_b64 = resp.json().get("signature", "")
         return base64.b64decode(sig_b64)
 
+    # -- Contacts (core directory) -------------------------------------------
+
+    async def list_contacts(self) -> list[dict]:
+        """GET /v1/contacts — list all contacts from core directory."""
+        resp = await self._request("GET", "/v1/contacts")
+        data = resp.json()
+        return data if isinstance(data, list) else []
+
+    async def add_contact(self, did: str, name: str, trust_level: str = "unknown") -> dict:
+        """POST /v1/contacts — add contact to core directory."""
+        resp = await self._request(
+            "POST",
+            "/v1/contacts",
+            json={"did": did, "name": name, "trust_level": trust_level},
+        )
+        return resp.json()
+
+    # -- Vault query (correct endpoint) --------------------------------------
+
+    async def query_vault(
+        self,
+        persona: str,
+        query: str = "",
+        *,
+        mode: str = "fts5",
+        types: list[str] | None = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """POST /v1/vault/query — search vault items."""
+        body: dict[str, Any] = {
+            "persona": persona,
+            "query": query,
+            "mode": mode,
+            "limit": limit,
+        }
+        if types:
+            body["types"] = types
+        resp = await self._request("POST", "/v1/vault/query", json=body)
+        data = resp.json()
+        items = data.get("items", []) if isinstance(data, dict) else data
+        return items if items else []
+
+    # -- Personas ------------------------------------------------------------
+
+    async def list_personas(self) -> list[str]:
+        """GET /v1/personas — list persona IDs."""
+        resp = await self._request("GET", "/v1/personas")
+        data = resp.json()
+        return data if isinstance(data, list) else []
+
+    # -- Devices -------------------------------------------------------------
+
+    async def list_devices(self) -> list[dict]:
+        """GET /v1/devices — list registered devices."""
+        resp = await self._request("GET", "/v1/devices")
+        data = resp.json()
+        return data.get("devices", []) if isinstance(data, dict) else data
+
+    # -- Identity ------------------------------------------------------------
+
+    async def get_did(self) -> dict:
+        """GET /v1/did — get identity DID document."""
+        resp = await self._request("GET", "/v1/did")
+        return resp.json()
+
     # -- Dina-to-Dina messaging ----------------------------------------------
 
     async def send_d2d(self, to_did: str, payload: dict) -> None:

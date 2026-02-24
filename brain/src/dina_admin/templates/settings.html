@@ -13,19 +13,19 @@
     .settings-section h3 {
         font-size: 16px;
         font-weight: 700;
-        color: #1C1917;
+        color: var(--color-text);
         margin-bottom: 4px;
     }
 
     .settings-section .section-desc {
         font-size: 13px;
-        color: #A8A29E;
+        color: var(--color-muted);
         margin-bottom: 16px;
     }
 
     .section-divider {
         border: none;
-        border-top: 1px solid rgba(0, 0, 0, 0.08);
+        border-top: 1px solid var(--color-border);
         margin: 24px 0;
     }
 
@@ -33,10 +33,10 @@
     .identity-did {
         font-family: 'SF Mono', SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
         font-size: 13px;
-        color: #1C1917;
-        background: #FAF8F5;
+        color: var(--color-text);
+        background: var(--color-body-bg);
         padding: 8px 12px;
-        border-radius: 6px;
+        border-radius: var(--radius-sm);
         border: 1px solid rgba(0, 0, 0, 0.06);
         word-break: break-all;
         margin-bottom: 8px;
@@ -44,55 +44,141 @@
 
     .identity-meta {
         font-size: 13px;
-        color: #78716C;
+        color: var(--color-label);
         margin-bottom: 4px;
     }
 
     .identity-warning {
         font-size: 12px;
-        color: #D97706;
+        color: var(--color-yellow);
         margin-top: 8px;
     }
 
-    /* ── Provider list ── */
-    .provider-list {
-        list-style: none;
-        padding: 0;
-    }
-
-    .provider-list li {
+    /* ── LLM Provider form ── */
+    .llm-row {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        padding: 8px 0;
-        border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+        gap: 12px;
+        margin-bottom: 14px;
+        flex-wrap: wrap;
+    }
+
+    .llm-row label {
         font-size: 14px;
-    }
-
-    .provider-list li:last-child {
-        border-bottom: none;
-    }
-
-    .provider-name {
         font-weight: 500;
-        color: #1C1917;
+        color: var(--color-text);
+        min-width: 150px;
     }
 
-    .provider-status {
+    .llm-input-wrap {
+        position: relative;
+        flex: 1;
+        min-width: 200px;
+        max-width: 400px;
+    }
+
+    .llm-input-wrap input {
+        width: 100%;
+        padding: 8px 36px 8px 10px;
+        font-size: 13px;
+        font-family: 'SF Mono', SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        background: var(--color-body-bg);
+        color: var(--color-text);
+        outline: none;
+        transition: border-color 0.15s;
+        box-sizing: border-box;
+    }
+
+    .llm-input-wrap input:focus {
+        border-color: var(--color-primary);
+    }
+
+    .llm-input-wrap .toggle-vis {
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 14px;
+        color: var(--color-muted);
+        padding: 2px;
+        line-height: 1;
+    }
+
+    .llm-input-wrap .toggle-vis:hover {
+        color: var(--color-text);
+    }
+
+    .llm-status {
         font-size: 12px;
         font-weight: 600;
         padding: 2px 8px;
         border-radius: 10px;
+        white-space: nowrap;
     }
 
-    .provider-status.configured {
+    .llm-status.configured {
         background: #D1FAE5;
         color: #065F46;
     }
 
-    .provider-status.not-configured {
+    .llm-status.not-configured {
         background: #F5F5F4;
         color: #A8A29E;
+    }
+
+    .llm-model-input {
+        width: 100%;
+        padding: 8px 10px;
+        font-size: 13px;
+        font-family: system-ui, -apple-system, sans-serif;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        background: var(--color-body-bg);
+        color: var(--color-text);
+        outline: none;
+        transition: border-color 0.15s;
+        box-sizing: border-box;
+    }
+
+    .llm-model-input:focus {
+        border-color: var(--color-primary);
+    }
+
+    .llm-select {
+        padding: 8px 10px;
+        font-size: 13px;
+        font-family: system-ui, -apple-system, sans-serif;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        background: var(--color-body-bg);
+        color: var(--color-text);
+        outline: none;
+        min-width: 200px;
+    }
+
+    .llm-sub-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 10px;
+        margin-left: 162px;
+        flex-wrap: wrap;
+    }
+
+    .llm-sub-row label {
+        font-size: 13px;
+        font-weight: 400;
+        color: var(--color-label);
+        min-width: 100px;
+    }
+
+    .llm-sub-row .llm-input-wrap {
+        max-width: 300px;
     }
 
     /* ── Preferences form ── */
@@ -107,7 +193,7 @@
     .pref-row label {
         font-size: 14px;
         font-weight: 500;
-        color: #1C1917;
+        color: var(--color-text);
         min-width: 140px;
     }
 
@@ -116,23 +202,23 @@
         padding: 6px 10px;
         font-size: 14px;
         font-family: system-ui, -apple-system, sans-serif;
-        border: 1px solid rgba(0, 0, 0, 0.08);
-        border-radius: 6px;
-        background: #FAF8F5;
-        color: #1C1917;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        background: var(--color-body-bg);
+        color: var(--color-text);
         outline: none;
         transition: border-color 0.15s;
     }
 
     .pref-row input[type="text"]:focus,
     .pref-row input[type="time"]:focus {
-        border-color: #1C1917;
+        border-color: var(--color-primary);
     }
 
     .pref-row input[type="checkbox"] {
         width: 16px;
         height: 16px;
-        accent-color: #1C1917;
+        accent-color: var(--color-primary);
     }
 
     .pref-group {
@@ -143,7 +229,7 @@
 
     .pref-sublabel {
         font-size: 12px;
-        color: #78716C;
+        color: var(--color-label);
     }
 
     .btn {
@@ -152,10 +238,10 @@
         font-size: 13px;
         font-weight: 600;
         font-family: system-ui, -apple-system, sans-serif;
-        border: 1px solid rgba(0, 0, 0, 0.08);
-        border-radius: 6px;
-        background: #FFFFFF;
-        color: #1C1917;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        background: var(--color-surface);
+        color: var(--color-text);
         cursor: pointer;
         transition: background 0.15s;
     }
@@ -165,13 +251,13 @@
     }
 
     .btn-primary {
-        background: #1C1917;
-        color: #FAF8F5;
-        border-color: #1C1917;
+        background: var(--color-primary);
+        color: var(--color-primary-text);
+        border-color: var(--color-primary);
     }
 
     .btn-primary:hover {
-        background: #292524;
+        background: var(--color-primary-hover);
     }
 
     .btn:disabled {
@@ -182,7 +268,7 @@
     /* ── Devices ── */
     .devices-empty {
         font-size: 14px;
-        color: #A8A29E;
+        color: var(--color-muted);
         margin-bottom: 12px;
     }
 
@@ -196,12 +282,12 @@
 
     .data-stat {
         font-size: 14px;
-        color: #1C1917;
+        color: var(--color-text);
     }
 
     .data-stat .stat-label {
         font-size: 12px;
-        color: #A8A29E;
+        color: var(--color-muted);
         text-transform: uppercase;
         letter-spacing: 0.04em;
     }
@@ -209,7 +295,7 @@
     .data-stat .stat-value {
         font-size: 18px;
         font-weight: 700;
-        color: #1C1917;
+        color: var(--color-text);
     }
 
     /* ── Toast ── */
@@ -218,14 +304,18 @@
         position: fixed;
         bottom: 24px;
         right: 24px;
-        background: #1C1917;
-        color: #FAF8F5;
+        background: var(--color-primary);
+        color: var(--color-primary-text);
         padding: 10px 20px;
-        border-radius: 6px;
+        border-radius: var(--radius-sm);
         font-size: 13px;
         font-weight: 500;
         z-index: 200;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .toast.toast-error {
+        background: var(--color-red);
     }
 </style>
 
@@ -234,8 +324,8 @@
     <h3>Identity</h3>
     <p class="section-desc">Your decentralized identifier and cryptographic keys.</p>
     <div class="identity-did" id="identity-did">Loading...</div>
-    <p class="identity-meta">Created: <span id="identity-created">—</span></p>
-    <p class="identity-meta">Core URL: <span id="core-url">—</span></p>
+    <p class="identity-meta">Created: <span id="identity-created">&mdash;</span></p>
+    <p class="identity-meta">Core URL: <span id="core-url">&mdash;</span></p>
     <p class="identity-warning">Your recovery phrase is stored offline. Never share it.</p>
 </div>
 
@@ -244,17 +334,75 @@
 <!-- Section 2: LLM Providers -->
 <div class="card settings-section">
     <h3>LLM Providers</h3>
-    <p class="section-desc">Configured language models for chat and analysis.</p>
-    <ul class="provider-list" id="provider-list">
-        <li>
-            <span class="provider-name">Cloud LLM</span>
-            <span class="provider-status not-configured" id="provider-cloud">checking...</span>
-        </li>
-        <li>
-            <span class="provider-name">Log Level</span>
-            <span class="provider-status not-configured" id="provider-log-level">—</span>
-        </li>
-    </ul>
+    <p class="section-desc">Configure cloud LLM API keys. Keys are stored encrypted and never exposed in full.</p>
+
+    <!-- Gemini -->
+    <div class="llm-row">
+        <label for="llm-gemini-key">Gemini API Key</label>
+        <div class="llm-input-wrap">
+            <input type="password" id="llm-gemini-key" placeholder="not configured" autocomplete="off">
+            <button type="button" class="toggle-vis" onclick="toggleVis('llm-gemini-key', this)" title="Show/hide">&#x1f441;</button>
+        </div>
+        <span class="llm-status not-configured" id="llm-gemini-status">not configured</span>
+    </div>
+
+    <!-- Anthropic -->
+    <div class="llm-row">
+        <label for="llm-anthropic-key">Anthropic API Key</label>
+        <div class="llm-input-wrap">
+            <input type="password" id="llm-anthropic-key" placeholder="not configured" autocomplete="off">
+            <button type="button" class="toggle-vis" onclick="toggleVis('llm-anthropic-key', this)" title="Show/hide">&#x1f441;</button>
+        </div>
+        <span class="llm-status not-configured" id="llm-anthropic-status">not configured</span>
+    </div>
+
+    <!-- OpenAI -->
+    <div class="llm-row">
+        <label for="llm-openai-key">OpenAI API Key</label>
+        <div class="llm-input-wrap">
+            <input type="password" id="llm-openai-key" placeholder="not configured" autocomplete="off">
+            <button type="button" class="toggle-vis" onclick="toggleVis('llm-openai-key', this)" title="Show/hide">&#x1f441;</button>
+        </div>
+        <span class="llm-status not-configured" id="llm-openai-status">not configured</span>
+    </div>
+    <div class="llm-sub-row">
+        <label for="llm-openai-model">Model</label>
+        <div class="llm-input-wrap">
+            <input type="text" id="llm-openai-model" class="llm-model-input" placeholder="gpt-5.2">
+        </div>
+    </div>
+
+    <!-- OpenRouter -->
+    <div class="llm-row">
+        <label for="llm-openrouter-key">OpenRouter API Key</label>
+        <div class="llm-input-wrap">
+            <input type="password" id="llm-openrouter-key" placeholder="not configured" autocomplete="off">
+            <button type="button" class="toggle-vis" onclick="toggleVis('llm-openrouter-key', this)" title="Show/hide">&#x1f441;</button>
+        </div>
+        <span class="llm-status not-configured" id="llm-openrouter-status">not configured</span>
+    </div>
+    <div class="llm-sub-row">
+        <label for="llm-openrouter-model">Model</label>
+        <div class="llm-input-wrap">
+            <input type="text" id="llm-openrouter-model" class="llm-model-input" placeholder="google/gemini-2.5-flash">
+        </div>
+    </div>
+
+    <!-- Preferred Cloud -->
+    <div class="llm-row" style="margin-top: 8px;">
+        <label for="llm-preferred">Preferred Cloud</label>
+        <select id="llm-preferred" class="llm-select">
+            <option value="">Auto (first available)</option>
+            <option value="gemini">Gemini</option>
+            <option value="claude">Claude (Anthropic)</option>
+            <option value="openai">OpenAI</option>
+            <option value="openrouter">OpenRouter</option>
+        </select>
+    </div>
+
+    <div style="margin-top: 16px;">
+        <button class="btn btn-primary" id="llm-save-btn" onclick="saveLLMSettings()">Save &amp; Reload Providers</button>
+    </div>
 </div>
 
 <hr class="section-divider">
@@ -314,11 +462,11 @@
     <div class="data-stats">
         <div class="data-stat">
             <div class="stat-label">Vault Size</div>
-            <div class="stat-value" id="vault-size">—</div>
+            <div class="stat-value" id="vault-size">&mdash;</div>
         </div>
         <div class="data-stat">
             <div class="stat-label">Items</div>
-            <div class="stat-value" id="vault-items">—</div>
+            <div class="stat-value" id="vault-items">&mdash;</div>
         </div>
     </div>
     <button class="btn" disabled>Export Data</button>
@@ -330,11 +478,35 @@
 
 {% block scripts %}
 <script>
+// Track redacted placeholders so we don't send them back as real keys
+var _redactedKeys = {};
+
+function toggleVis(inputId, btn) {
+    var input = document.getElementById(inputId);
+    if (input.type === 'password') {
+        input.type = 'text';
+    } else {
+        input.type = 'password';
+    }
+}
+
+function setKeyStatus(provider, redactedValue) {
+    var statusEl = document.getElementById('llm-' + provider + '-status');
+    if (redactedValue && redactedValue !== '***') {
+        statusEl.textContent = redactedValue;
+        statusEl.className = 'llm-status configured';
+    } else {
+        statusEl.textContent = 'not configured';
+        statusEl.className = 'llm-status not-configured';
+    }
+}
+
 async function loadSettings() {
-    const resp = await apiFetch('/admin/settings/');
+    var resp = await apiFetch('/admin/settings/');
     if (!resp) return;
-    const settings = await resp.json();
-    // Populate form fields
+    var settings = await resp.json();
+
+    // Populate preference fields
     if (settings.briefing_enabled !== undefined) {
         document.getElementById('briefing-enabled').checked = settings.briefing_enabled;
     }
@@ -353,30 +525,104 @@ async function loadSettings() {
     if (settings.default_persona) {
         document.getElementById('default-persona').value = settings.default_persona;
     }
-    document.getElementById('core-url').textContent = settings.core_url || '—';
+    document.getElementById('core-url').textContent = settings.core_url || '\u2014';
 
-    // LLM providers
-    var cloudEl = document.getElementById('provider-cloud');
-    if (settings.cloud_llm) {
-        cloudEl.textContent = settings.cloud_llm;
-        cloudEl.className = 'provider-status configured';
-    } else {
-        cloudEl.textContent = 'not configured';
-        cloudEl.className = 'provider-status not-configured';
+    // Identity
+    if (settings.did) {
+        document.getElementById('identity-did').textContent = settings.did;
+    }
+    if (settings.did_created) {
+        document.getElementById('identity-created').textContent = settings.did_created;
     }
 
-    var logEl = document.getElementById('provider-log-level');
-    if (settings.log_level) {
-        logEl.textContent = settings.log_level;
-        logEl.className = 'provider-status configured';
-    } else {
-        logEl.textContent = '—';
-        logEl.className = 'provider-status not-configured';
+    // LLM provider keys — show redacted values as placeholders
+    var keyMap = {
+        'gemini': 'gemini_api_key',
+        'anthropic': 'anthropic_api_key',
+        'openai': 'openai_api_key',
+        'openrouter': 'openrouter_api_key'
+    };
+    for (var provider in keyMap) {
+        var settingsKey = keyMap[provider];
+        var redacted = settings[settingsKey] || '';
+        _redactedKeys[settingsKey] = redacted;
+        var inputEl = document.getElementById('llm-' + provider + '-key');
+        if (redacted && redacted !== '***') {
+            inputEl.placeholder = redacted;
+        } else {
+            inputEl.placeholder = 'not configured';
+        }
+        inputEl.value = '';
+        setKeyStatus(provider, redacted);
+    }
+
+    // Model names
+    if (settings.openai_model) {
+        document.getElementById('llm-openai-model').value = settings.openai_model;
+    }
+    if (settings.openrouter_model) {
+        document.getElementById('llm-openrouter-model').value = settings.openrouter_model;
+    }
+
+    // Preferred cloud
+    if (settings.preferred_cloud) {
+        document.getElementById('llm-preferred').value = settings.preferred_cloud;
     }
 }
 
+async function saveLLMSettings() {
+    var btn = document.getElementById('llm-save-btn');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    var data = {};
+
+    // Only send API keys that were actually typed (not empty = unchanged)
+    var keyFields = {
+        'gemini_api_key': 'llm-gemini-key',
+        'anthropic_api_key': 'llm-anthropic-key',
+        'openai_api_key': 'llm-openai-key',
+        'openrouter_api_key': 'llm-openrouter-key'
+    };
+    for (var key in keyFields) {
+        var val = document.getElementById(keyFields[key]).value.trim();
+        if (val) {
+            data[key] = val;
+        }
+    }
+
+    // Always send model names and preferred cloud
+    var openaiModel = document.getElementById('llm-openai-model').value.trim();
+    if (openaiModel) data.openai_model = openaiModel;
+
+    var openrouterModel = document.getElementById('llm-openrouter-model').value.trim();
+    if (openrouterModel) data.openrouter_model = openrouterModel;
+
+    data.preferred_cloud = document.getElementById('llm-preferred').value;
+
+    try {
+        var resp = await apiFetch('/admin/settings/', {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        if (resp && resp.ok) {
+            showToast('LLM providers saved & reloaded');
+            // Reload to show updated status
+            await loadSettings();
+        } else {
+            showToast('Failed to save LLM settings', true);
+        }
+    } catch (e) {
+        showToast('Error saving settings', true);
+    }
+
+    btn.disabled = false;
+    btn.textContent = 'Save & Reload Providers';
+}
+
 async function saveSettings() {
-    const data = {
+    var data = {
         briefing_enabled: document.getElementById('briefing-enabled').checked,
         briefing_time: document.getElementById('briefing-time').value,
         dnd_enabled: document.getElementById('dnd-enabled').checked,
@@ -384,7 +630,7 @@ async function saveSettings() {
         dnd_end: document.getElementById('dnd-end').value,
         default_persona: document.getElementById('default-persona').value,
     };
-    const resp = await apiFetch('/admin/settings/', {
+    var resp = await apiFetch('/admin/settings/', {
         method: 'PUT',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(data)
@@ -394,11 +640,12 @@ async function saveSettings() {
     }
 }
 
-function showToast(msg) {
-    const toast = document.getElementById('toast');
+function showToast(msg, isError) {
+    var toast = document.getElementById('toast');
     toast.textContent = msg;
+    toast.className = 'toast' + (isError ? ' toast-error' : '');
     toast.style.display = 'block';
-    setTimeout(() => { toast.style.display = 'none'; }, 3000);
+    setTimeout(function() { toast.style.display = 'none'; }, 3000);
 }
 
 loadSettings();

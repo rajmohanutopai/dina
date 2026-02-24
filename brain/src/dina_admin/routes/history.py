@@ -31,20 +31,40 @@ async def list_history(
     limit: int = Query(20, ge=1, le=100),
     persona_id: str = Query("default"),
 ) -> dict:
-    """List vault items with pagination."""
+    """List vault items with pagination.
+
+    Uses ``POST /v1/vault/query`` on core with all non-KV item types.
+    """
     if _core_client is None:
         return {"items": [], "page": page, "limit": limit, "total": 0}
 
     try:
-        results = await _core_client.search_vault(persona_id, "*")
-        items = results if isinstance(results, list) else []
+        items = await _core_client.query_vault(
+            persona_id,
+            "",
+            types=["email", "message", "event", "note", "photo",
+                   "email_draft", "cart_handover"],
+            limit=200,
+        )
+        total = len(items)
         start = (page - 1) * limit
         end = start + limit
+        # Normalise keys to snake_case for the frontend.
+        normalised = [
+            {
+                "id": it.get("ID", it.get("id", "")),
+                "type": it.get("Type", it.get("type", "")),
+                "source": it.get("Source", it.get("source", "")),
+                "summary": it.get("Summary", it.get("summary", "")),
+                "timestamp": it.get("IngestedAt", it.get("Timestamp", it.get("timestamp", 0))),
+            }
+            for it in items
+        ]
         return {
-            "items": items[start:end],
+            "items": normalised[start:end],
             "page": page,
             "limit": limit,
-            "total": len(items),
+            "total": total,
         }
     except Exception as exc:
         log.error("history.list_error", extra={"error": type(exc).__name__})

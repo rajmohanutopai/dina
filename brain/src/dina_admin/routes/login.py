@@ -51,7 +51,7 @@ async def login(request: LoginRequest) -> JSONResponse:
     if not _client_token:
         raise HTTPException(status_code=503, detail="CLIENT_TOKEN not configured")
 
-    if not hmac.compare_digest(request.token, _client_token):
+    if not hmac.compare_digest(request.token.strip(), _client_token):
         log.warning("admin.login_failed")
         raise HTTPException(status_code=403, detail="Invalid token")
 

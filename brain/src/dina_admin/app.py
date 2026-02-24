@@ -1,7 +1,6 @@
 """FastAPI sub-app for the admin UI (/admin/*).
 
-JSON API routes require CLIENT_TOKEN in ``Authorization: Bearer`` header.
-HTML page routes accept CLIENT_TOKEN via cookie OR Bearer header.
+All authenticated routes accept CLIENT_TOKEN via cookie OR Bearer header.
 Login routes require no authentication.
 
 Uses ``hmac.compare_digest`` for constant-time token comparison to
@@ -21,7 +20,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.staticfiles import StaticFiles
 
 from .routes import contacts as contacts_route
 from .routes import dashboard as dashboard_route
@@ -39,6 +38,8 @@ def create_admin_app(
     config: Any,
     *,
     dina_html_path: str | None = None,
+    images_dir: str | None = None,
+    llm_reload_callback: Any | None = None,
 ) -> FastAPI:
     """Create the admin UI sub-app with CLIENT_TOKEN auth middleware.
 
@@ -51,6 +52,11 @@ def create_admin_app(
         BrainConfig instance containing CLIENT_TOKEN and other settings.
     dina_html_path:
         Optional path to dina.html for the architecture visualization page.
+    images_dir:
+        Optional path to the images directory for architecture illustrations.
+    llm_reload_callback:
+        Optional async callback that rebuilds LLM providers from stored
+        keys.  Wired into the settings route for hot-reload on save.
 
     Returns
     -------
@@ -62,49 +68,18 @@ def create_admin_app(
         description="Admin UI for managing contacts, devices, personas, and settings.",
         version="0.5.0",
     )
-    security = HTTPBearer()
 
     client_token = getattr(config, "client_token", None) or ""
 
     # ------------------------------------------------------------------
-    # Auth dependency: Bearer-only (for JSON API routes — unchanged)
-    # ------------------------------------------------------------------
-
-    async def verify_client_token(
-        credentials: HTTPAuthorizationCredentials = Depends(security),
-    ) -> HTTPAuthorizationCredentials:
-        """Verify that the request carries a valid CLIENT_TOKEN.
-
-        Uses ``hmac.compare_digest`` for constant-time comparison.
-
-        Raises
-        ------
-        HTTPException 401
-            If the token is missing or malformed.
-        HTTPException 403
-            If the token does not match CLIENT_TOKEN (e.g. BRAIN_TOKEN
-            was sent instead).
-        """
-        if not client_token:
-            raise HTTPException(
-                status_code=503,
-                detail="CLIENT_TOKEN not configured",
-            )
-
-        if not hmac.compare_digest(credentials.credentials, client_token):
-            log.warning("admin_api.auth_failed")
-            raise HTTPException(status_code=403, detail="Invalid CLIENT_TOKEN")
-        return credentials
-
-    # ------------------------------------------------------------------
-    # Auth dependency: Cookie-or-Bearer (for HTML page routes)
+    # Auth dependency: Cookie-or-Bearer (all authenticated routes)
     # ------------------------------------------------------------------
 
     async def verify_cookie_or_bearer(request: Request) -> str:
         """Check Bearer header first, then cookie.
 
-        Used by HTML page routes so that browser requests (with cookie)
-        and API requests (with Bearer token) both work.
+        Accepts both ``Authorization: Bearer <token>`` and the
+        ``dina_client_token`` HttpOnly cookie set at login.
 
         Raises
         ------
@@ -139,6 +114,8 @@ def create_admin_app(
     dashboard_route.set_dependencies(core_client, config)
     contacts_route.set_core_client(core_client)
     settings_route.set_dependencies(core_client, config)
+    if llm_reload_callback is not None:
+        settings_route.set_llm_reload_callback(llm_reload_callback)
 
     # New routes
     login_route.set_client_token(client_token)
@@ -147,20 +124,20 @@ def create_admin_app(
     history_route.set_core_client(core_client)
 
     # ------------------------------------------------------------------
-    # Include routers — existing JSON API (Bearer-only auth)
+    # Include routers — JSON API (cookie-or-bearer auth)
     # ------------------------------------------------------------------
 
     app.include_router(
         dashboard_route.router,
-        dependencies=[Depends(verify_client_token)],
+        dependencies=[Depends(verify_cookie_or_bearer)],
     )
     app.include_router(
         contacts_route.router,
-        dependencies=[Depends(verify_client_token)],
+        dependencies=[Depends(verify_cookie_or_bearer)],
     )
     app.include_router(
         settings_route.router,
-        dependencies=[Depends(verify_client_token)],
+        dependencies=[Depends(verify_cookie_or_bearer)],
     )
 
     # ------------------------------------------------------------------
@@ -200,6 +177,18 @@ def create_admin_app(
         if _dina_html and _dina_html.is_file():
             return FileResponse(str(_dina_html), media_type="text/html")
         raise HTTPException(status_code=404, detail="dina.html not found")
+
+    # ------------------------------------------------------------------
+    # Static files: images for architecture page
+    # ------------------------------------------------------------------
+
+    _images_dir = Path(images_dir) if images_dir else None
+    if _images_dir and _images_dir.is_dir():
+        app.mount(
+            "/images",
+            StaticFiles(directory=str(_images_dir)),
+            name="images",
+        )
 
     # ------------------------------------------------------------------
     # Exception handlers for consistent error format

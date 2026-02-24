@@ -214,6 +214,29 @@ class LLMRouter:
             response["route"] = route_label
         return response
 
+    def reconfigure(
+        self,
+        providers: dict[str, LLMProvider],
+        config: dict[str, Any] | None = None,
+    ) -> None:
+        """Hot-reload providers and config without restarting.
+
+        Replaces the provider map, re-partitions into local/cloud,
+        and optionally updates the config dict.  Called by the admin
+        settings route after API keys are changed.
+        """
+        self._providers = providers
+        if config is not None:
+            self._config = config
+        self._local = {k: p for k, p in providers.items() if p.is_local}
+        self._cloud = {k: p for k, p in providers.items() if not p.is_local}
+        log.info(
+            "llm_router.reconfigured",
+            providers=list(providers.keys()),
+            local=list(self._local.keys()),
+            cloud=list(self._cloud.keys()),
+        )
+
     def available_models(self) -> list[str]:
         """Return list of available model identifiers."""
         return [p.model_name for p in self._providers.values()]

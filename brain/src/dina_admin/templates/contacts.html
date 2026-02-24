@@ -16,7 +16,7 @@
     .page-header h2 {
         font-size: 20px;
         font-weight: 700;
-        color: #1C1917;
+        color: var(--color-text);
     }
 
     .btn {
@@ -25,10 +25,10 @@
         font-size: 13px;
         font-weight: 600;
         font-family: system-ui, -apple-system, sans-serif;
-        border: 1px solid rgba(0, 0, 0, 0.08);
-        border-radius: 6px;
-        background: #FFFFFF;
-        color: #1C1917;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        background: var(--color-surface);
+        color: var(--color-text);
         cursor: pointer;
         transition: background 0.15s;
     }
@@ -38,13 +38,13 @@
     }
 
     .btn-primary {
-        background: #1C1917;
-        color: #FAF8F5;
-        border-color: #1C1917;
+        background: var(--color-primary);
+        color: var(--color-body-bg);
+        border-color: var(--color-primary);
     }
 
     .btn-primary:hover {
-        background: #292524;
+        background: var(--color-primary-hover);
     }
 
     .btn-sm {
@@ -73,16 +73,16 @@
         padding: 10px 12px;
         font-size: 12px;
         font-weight: 600;
-        color: #A8A29E;
+        color: var(--color-muted);
         text-transform: uppercase;
         letter-spacing: 0.04em;
-        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+        border-bottom: 1px solid var(--color-border);
     }
 
     .contacts-table td {
         padding: 10px 12px;
         border-bottom: 1px solid rgba(0, 0, 0, 0.04);
-        color: #1C1917;
+        color: var(--color-text);
     }
 
     .contacts-table tr:hover td {
@@ -138,7 +138,7 @@
     .add-form-card h3 {
         font-size: 16px;
         font-weight: 600;
-        color: #1C1917;
+        color: var(--color-text);
         margin-bottom: 16px;
     }
 
@@ -158,7 +158,7 @@
         display: block;
         font-size: 12px;
         font-weight: 600;
-        color: #78716C;
+        color: var(--color-label);
         margin-bottom: 4px;
         text-transform: uppercase;
         letter-spacing: 0.04em;
@@ -170,17 +170,17 @@
         padding: 8px 12px;
         font-size: 14px;
         font-family: system-ui, -apple-system, sans-serif;
-        border: 1px solid rgba(0, 0, 0, 0.08);
-        border-radius: 6px;
-        background: #FAF8F5;
-        color: #1C1917;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        background: var(--color-body-bg);
+        color: var(--color-text);
         outline: none;
         transition: border-color 0.15s;
     }
 
     .form-group input:focus,
     .form-group select:focus {
-        border-color: #1C1917;
+        border-color: var(--color-text);
     }
 
     .form-actions {
@@ -192,7 +192,6 @@
 
 <!-- Header row -->
 <div class="page-header">
-    <h2>Contacts</h2>
     <button class="btn btn-primary" onclick="toggleAddForm(true)">Add Contact</button>
 </div>
 
@@ -247,7 +246,7 @@
         </thead>
         <tbody id="contacts-body">
             <tr>
-                <td colspan="5" style="text-align:center;color:#A8A29E;">Loading...</td>
+                <td colspan="5" style="text-align:center;color:var(--color-muted);">Loading...</td>
             </tr>
         </tbody>
     </table>
@@ -266,7 +265,7 @@ async function loadContacts() {
 function renderContacts(contacts) {
     const tbody = document.getElementById('contacts-body');
     if (!contacts || contacts.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#A8A29E;">No contacts yet</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--color-muted);">No contacts yet</td></tr>';
         return;
     }
     tbody.innerHTML = contacts.map(c => `

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, Callable, Awaitable
 
 from fastapi import APIRouter, HTTPException
 
@@ -27,6 +27,15 @@ router = APIRouter(prefix="/settings")
 
 _core_client: Any = None
 _config: Any = None
+_llm_reload_callback: Callable[[], Awaitable[None]] | None = None
+
+# Keys that contain API secrets — must be redacted in GET responses.
+_SECRET_KEYS = frozenset({
+    "gemini_api_key",
+    "anthropic_api_key",
+    "openai_api_key",
+    "openrouter_api_key",
+})
 
 
 def set_dependencies(core_client: Any, config: Any) -> None:
@@ -34,6 +43,24 @@ def set_dependencies(core_client: Any, config: Any) -> None:
     global _core_client, _config
     _core_client = core_client
     _config = config
+
+
+def set_llm_reload_callback(callback: Callable[[], Awaitable[None]]) -> None:
+    """Set the callback that rebuilds LLM providers from stored keys."""
+    global _llm_reload_callback
+    _llm_reload_callback = callback
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _redact_key(key: str) -> str:
+    """Redact an API key to show only the last 4 characters."""
+    if not key or len(key) <= 4:
+        return "***"
+    return f"***...{key[-4:]}"
 
 
 # ---------------------------------------------------------------------------
@@ -74,6 +101,19 @@ async def get_settings() -> dict:
         # Never expose tokens
         settings["brain_token"] = "***REDACTED***"
 
+    # Identity info from core
+    try:
+        did_doc = await _core_client.get_did()
+        settings["did"] = did_doc.get("id", "")
+        settings["did_created"] = did_doc.get("created_at", "")
+    except Exception:
+        pass  # Non-fatal — identity may not be set up
+
+    # Redact API keys — only expose last 4 chars
+    for secret_key in _SECRET_KEYS:
+        if secret_key in settings and settings[secret_key]:
+            settings[secret_key] = _redact_key(settings[secret_key])
+
     return settings
 
 
@@ -100,6 +140,14 @@ async def update_settings(settings: dict) -> dict:
         "cloud_consent",
         "default_persona",
         "notification_preferences",
+        # LLM provider configuration
+        "gemini_api_key",
+        "anthropic_api_key",
+        "openai_api_key",
+        "openrouter_api_key",
+        "openai_model",
+        "openrouter_model",
+        "preferred_cloud",
     }
 
     # Filter to allowed keys only
@@ -111,6 +159,11 @@ async def update_settings(settings: dict) -> dict:
             extra={"keys": list(ignored)},
         )
 
+    # Check if any LLM keys are being changed
+    llm_keys_changed = bool(filtered.keys() & (_SECRET_KEYS | {
+        "openai_model", "openrouter_model", "preferred_cloud",
+    }))
+
     try:
         # Merge with existing settings
         raw = await _core_client.get_kv("user_settings")
@@ -118,7 +171,24 @@ async def update_settings(settings: dict) -> dict:
         existing.update(filtered)
         await _core_client.set_kv("user_settings", json.dumps(existing))
         log.info("settings.updated", extra={"keys": list(filtered.keys())})
-        return existing
+
+        # Hot-reload LLM providers if any LLM-related keys changed
+        if llm_keys_changed and _llm_reload_callback is not None:
+            try:
+                await _llm_reload_callback()
+                log.info("settings.llm_reloaded")
+            except Exception as exc:
+                log.warning(
+                    "settings.llm_reload_failed",
+                    extra={"error": type(exc).__name__},
+                )
+
+        # Redact secrets before returning
+        result = dict(existing)
+        for secret_key in _SECRET_KEYS:
+            if secret_key in result and result[secret_key]:
+                result[secret_key] = _redact_key(result[secret_key])
+        return result
     except Exception as exc:
         log.error(
             "settings.update_error",

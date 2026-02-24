@@ -49,6 +49,13 @@ class ContactCreate(BaseModel):
 _core_client: Any = None
 
 
+def _parse_sharing_tier(raw: str) -> str:
+    """Convert core's SharingPolicy JSON to a display label."""
+    if not raw or raw == "{}" or raw == "{}":
+        return "open"
+    return raw
+
+
 def set_core_client(core_client: Any) -> None:
     """Set the core client.  Called once during app creation."""
     global _core_client
@@ -64,20 +71,26 @@ def set_core_client(core_client: Any) -> None:
 async def list_contacts() -> list[dict]:
     """List all contacts.
 
-    Proxies to core's contacts API.  Returns a list of contact dicts
-    with DID, name, trust level, and sharing tier.
+    Proxies to core's ``/v1/contacts`` API.  Returns a list of contact
+    dicts with DID, name, trust level, and sharing tier.
     """
     if _core_client is None:
         raise HTTPException(status_code=503, detail="Core client not configured")
 
     try:
-        result = await _core_client.get_kv("contacts_list")
-        if result is None:
-            return []
-        # Core returns contacts as a JSON string in KV; parse if needed.
-        # For now, return an empty list until core implements a dedicated
-        # contacts endpoint.
-        return []
+        contacts = await _core_client.list_contacts()
+        # Normalise core's PascalCase keys to snake_case for the frontend.
+        return [
+            {
+                "did": c.get("DID", c.get("did", "")),
+                "name": c.get("Name", c.get("name", "")),
+                "trust_level": c.get("TrustLevel", c.get("trust_level", "unknown")),
+                "sharing_tier": _parse_sharing_tier(
+                    c.get("SharingPolicy", c.get("sharing_tier", "open")),
+                ),
+            }
+            for c in contacts
+        ]
     except Exception as exc:
         log.error(
             "contacts.list_error",
@@ -93,28 +106,26 @@ async def list_contacts() -> list[dict]:
 async def add_contact(contact: ContactCreate) -> dict:
     """Add a new contact.
 
-    Creates the contact in core's contact store via the vault API.
+    Creates the contact in core's contact directory via ``/v1/contacts``.
     Returns the created contact dict.
     """
     if _core_client is None:
         raise HTTPException(status_code=503, detail="Core client not configured")
 
-    contact_dict = contact.model_dump()
+    # Map admin UI trust levels to core's values (blocked/unknown/trusted)
+    trust_map = {
+        "unverified": "unknown",
+        "verified": "trusted",
+        "verified_actioned": "trusted",
+    }
+    core_trust = trust_map.get(contact.trust_level, contact.trust_level)
+
     try:
-        item_id = await _core_client.store_vault_item(
-            "contacts",
-            {
-                "type": "contact",
-                "source": "admin_ui",
-                "source_id": contact.did,
-                "summary": f"Contact: {contact.name}",
-                "body_text": "",
-                **contact_dict,
-            },
+        await _core_client.add_contact(
+            contact.did, contact.name, core_trust,
         )
-        contact_dict["id"] = item_id
         log.info("contacts.added", extra={"did": contact.did})
-        return contact_dict
+        return contact.model_dump()
     except Exception as exc:
         log.error(
             "contacts.add_error",

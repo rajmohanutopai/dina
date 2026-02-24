@@ -19,6 +19,7 @@ SS11 (Error Handling & Resilience), SS13 (Crash Traceback Safety).
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 
@@ -521,6 +522,66 @@ def create_app() -> FastAPI:
         providers=providers,
         config={"cloud_llm": cfg.cloud_llm},
     )
+
+    # LLM hot-reload callback — rebuilds providers from KV-stored keys.
+    # Called by the admin settings route when API keys are changed.
+    async def reload_llm_providers() -> None:
+        """Rebuild LLM providers from KV-stored keys + env var fallback."""
+        try:
+            raw = await core_client.get_kv("user_settings")
+            kv = json.loads(raw) if raw else {}
+        except Exception:
+            kv = {}
+
+        new_providers: dict[str, object] = {}
+
+        # Keep local provider unchanged (no API key needed)
+        if "llama" in providers:
+            new_providers["llama"] = providers["llama"]
+
+        # Gemini: KV takes priority over env var
+        gkey = (kv.get("gemini_api_key") or "").strip() or (
+            os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", "")
+        ).strip()
+        if gkey:
+            try:
+                new_providers["gemini"] = GeminiProvider(gkey)
+            except Exception as exc:
+                log.warning("reload.gemini.failed", extra={"error": str(exc)})
+
+        # Claude
+        akey = (kv.get("anthropic_api_key") or "").strip() or os.environ.get("ANTHROPIC_API_KEY", "").strip()
+        if akey:
+            try:
+                new_providers["claude"] = ClaudeProvider(akey)
+            except Exception as exc:
+                log.warning("reload.claude.failed", extra={"error": str(exc)})
+
+        # OpenAI
+        okey = (kv.get("openai_api_key") or "").strip() or os.environ.get("OPENAI_API_KEY", "").strip()
+        if okey:
+            try:
+                omodel = (kv.get("openai_model") or "").strip() or os.environ.get("OPENAI_MODEL", "gpt-5.2").strip()
+                new_providers["openai"] = OpenAIProvider(okey, model=omodel)
+            except Exception as exc:
+                log.warning("reload.openai.failed", extra={"error": str(exc)})
+
+        # OpenRouter
+        rkey = (kv.get("openrouter_api_key") or "").strip() or os.environ.get("OPENROUTER_API_KEY", "").strip()
+        if rkey:
+            try:
+                rmodel = (kv.get("openrouter_model") or "").strip() or os.environ.get(
+                    "OPENROUTER_MODEL", "google/gemini-2.5-flash",
+                ).strip()
+                new_providers["openrouter"] = OpenRouterProvider(rkey, model=rmodel)
+            except Exception as exc:
+                log.warning("reload.openrouter.failed", extra={"error": str(exc)})
+
+        preferred = (kv.get("preferred_cloud") or "").strip() or cfg.cloud_llm
+        llm_router.reconfigure(new_providers, {"cloud_llm": preferred})
+        # Update the local providers dict so healthz sees the new state
+        providers.clear()
+        providers.update(new_providers)
     entity_vault = EntityVaultService(scrubber=scrubber, core_client=core_client)
     nudge = _NudgeAssembler(core=core_client, llm=llm_router, entity_vault=entity_vault)
     scratchpad = ScratchpadService(core=core_client)
@@ -543,8 +604,25 @@ def create_app() -> FastAPI:
 
     brain_api = create_brain_app(guardian, sync_engine, cfg.brain_token, scrubber=scrubber)
     # Resolve dina.html path (architecture visualization)
-    _dina_html = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "dina.html")
-    admin_ui = create_admin_app(core_client, cfg, dina_html_path=_dina_html)
+    # Local dev: project_root/dina.html (3 dirs up from src/main.py)
+    # Docker:    /app/dina.html (mounted volume, 2 dirs up)
+    _dina_html = None
+    _images_dir = None
+    for _candidate in [
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "dina.html"),
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "dina.html"),
+    ]:
+        if os.path.isfile(_candidate):
+            _dina_html = _candidate
+            # Images directory is sibling to dina.html
+            _img_candidate = os.path.join(os.path.dirname(_candidate), "images")
+            if os.path.isdir(_img_candidate):
+                _images_dir = _img_candidate
+            break
+    admin_ui = create_admin_app(
+        core_client, cfg, dina_html_path=_dina_html, images_dir=_images_dir,
+        llm_reload_callback=reload_llm_providers,
+    )
 
     master.mount("/api", brain_api)
     master.mount("/admin", admin_ui)

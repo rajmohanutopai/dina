@@ -15,24 +15,24 @@
         max-width: 480px;
         padding: 10px 14px;
         font-size: 14px;
-        border: 1px solid rgba(0, 0, 0, 0.15);
-        border-radius: 8px;
+        border: 1px solid var(--color-border-strong);
+        border-radius: var(--radius);
         outline: none;
         font-family: inherit;
-        color: #1C1917;
-        background: #FFFFFF;
+        color: var(--color-text);
+        background: var(--color-surface);
     }
 
     .search-bar input:focus {
-        border-color: #1C1917;
+        border-color: var(--color-text);
     }
 
     /* ── History Table ── */
     .history-table-wrap {
-        background: #FFFFFF;
-        border-radius: 8px;
+        background: var(--color-surface);
+        border-radius: var(--radius);
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-        border: 1px solid rgba(0, 0, 0, 0.08);
+        border: 1px solid var(--color-border);
         overflow: hidden;
     }
 
@@ -46,18 +46,18 @@
         padding: 12px 16px;
         font-size: 12px;
         font-weight: 600;
-        color: #A8A29E;
+        color: var(--color-muted);
         text-transform: uppercase;
         letter-spacing: 0.04em;
-        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-        background: #FAF8F5;
+        border-bottom: 1px solid var(--color-border);
+        background: var(--color-body-bg);
     }
 
     .history-table td {
         padding: 12px 16px;
         font-size: 14px;
         border-bottom: 1px solid rgba(0, 0, 0, 0.04);
-        color: #1C1917;
+        color: var(--color-text);
     }
 
     .history-table tr:last-child td {
@@ -70,9 +70,9 @@
         font-size: 12px;
         font-weight: 600;
         border-radius: 12px;
-        background: #F5F3EF;
-        color: #1C1917;
-        border: 1px solid rgba(0, 0, 0, 0.08);
+        background: var(--color-surface-alt);
+        color: var(--color-text);
+        border: 1px solid var(--color-border);
         text-transform: capitalize;
     }
 
@@ -89,40 +89,37 @@
         padding: 8px 18px;
         font-size: 14px;
         font-weight: 500;
-        background: #FFFFFF;
-        color: #1C1917;
-        border: 1px solid rgba(0, 0, 0, 0.15);
-        border-radius: 8px;
+        background: var(--color-surface);
+        color: var(--color-text);
+        border: 1px solid var(--color-border-strong);
+        border-radius: var(--radius);
         cursor: pointer;
         font-family: inherit;
         transition: background 0.15s;
     }
 
     .pagination button:hover:not(:disabled) {
-        background: #F5F3EF;
+        background: var(--color-surface-alt);
     }
 
     .pagination button:disabled {
-        color: #A8A29E;
+        color: var(--color-muted);
         cursor: not-allowed;
-        border-color: rgba(0, 0, 0, 0.08);
+        border-color: var(--color-border);
     }
 
     .pagination .page-info {
         font-size: 14px;
-        color: #A8A29E;
+        color: var(--color-muted);
         font-weight: 500;
     }
 
     .empty-cell {
         text-align: center;
-        color: #A8A29E;
+        color: var(--color-muted);
         padding: 32px 16px;
     }
 </style>
-
-<!-- Header -->
-<h2 style="font-size: 20px; font-weight: 700; color: #1C1917; margin-bottom: 20px;">Activity History</h2>
 
 <!-- Search Bar -->
 <div class="search-bar">
