@@ -17,12 +17,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dht = ["dina-dht>=0.3.0"]
 ceramic = ["ceramicsdk>=0.1"]
-
-[project.scripts]
-dina = "run_dina:main"
-dina-chat = "dina.chat:repl"
 
 [tool.pytest.ini_options]
 markers = [

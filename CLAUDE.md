@@ -101,43 +101,16 @@ ollama serve   # if not already running
 # DINA_LIGHT=ollama/gemma3        # chat uses local model
 # DINA_HEAVY=gemini/gemini-2.5-flash  # video analysis uses Gemini + native VideoUrl
 
-# v0.1 one-shot mode — analyse a single YouTube URL
-python run_dina.py "https://www.youtube.com/watch?v=VIDEO_ID"
-
-# v0.2 interactive REPL
-python -m dina
-# or
-dina-chat
 ```
 
 ## Architecture
 
-### v0.1: Eyes → Brain → Verdict (one-shot)
+### Current: Home Node (v0.4)
 
 ```
-run_dina.py          CLI entry point — parses URL arg, orchestrates the pipeline
-```
-
-### v0.2–v0.4: Voice + Memory + Identity + Vault (interactive REPL)
-
-```
-dina/
-  providers.py       "Registry" — multi-provider config, model routing, embedding factory
-  models.py          "Truth Schema" — ProductVerdict Pydantic model (the atomic unit of truth)
-  tools.py           "Eyes" — YouTube transcript fetching + smart truncation + URL detection
-  agent.py           "Brain" — verdict_agent (structured) + chat_agent (conversational RAG), no default model
-  memory.py          "Memory" — ChromaDB vector store, embedding from providers
-  chat.py            "Voice" — Terminal REPL with smart routing (VideoUrl for Gemini, transcript fallback)
-  __main__.py        Enables `python -m dina`
-  did_models.py      DID Document Pydantic models (W3C-compliant)
-  identity.py        Ed25519 keypair generation / persistence at ~/.dina/identity/
-  did_key.py         did:key method — derive DID from Ed25519 public key
-  signing.py         Verdict signing and verification (Ed25519 over canonical JSON)
-  vault.py           "Vault" — CeramicVault: decentralized verdict storage via Ceramic Network
-```
-
-```
-(dina-dht/ — removed. did:dht replaced by did:plc. Go implementation via bluesky-social/indigo.)
+core/               Go Home Node — identity, vault, crypto, API, device pairing
+brain/              Python sidecar — LLM reasoning, admin UI, PII scrubber
+cli/                Python CLI — Ed25519 signed requests, pairing, OpenClaw skill
 ```
 
 **Data flow (URL analysis — Gemini heavy):** URL → `VideoUrl` → `verdict_agent.run_sync(model=providers.verdict_model)` → `ProductVerdict` → `sign_verdict()` → `memory.store()` → `vault.publish()` → `memory.update_stream_id()`
