@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dina — Login</title>
+    <style>
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #FAF8F5;
+            color: #1C1917;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        .login-card {
+            background: #FFFFFF;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .login-brand {
+            font-size: 28px;
+            font-weight: 700;
+            color: #1C1917;
+            text-align: center;
+            margin-bottom: 8px;
+        }
+
+        .login-subtitle {
+            font-size: 14px;
+            color: #A8A29E;
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px 16px;
+            font-size: 14px;
+            font-family: system-ui, -apple-system, sans-serif;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            border-radius: 8px;
+            background: #FAF8F5;
+            color: #1C1917;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+
+        .form-group input::placeholder {
+            color: #A8A29E;
+        }
+
+        .form-group input:focus {
+            border-color: #1C1917;
+        }
+
+        .login-btn {
+            width: 100%;
+            padding: 12px 16px;
+            font-size: 14px;
+            font-weight: 600;
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #1C1917;
+            color: #FAF8F5;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .login-btn:hover {
+            background: #292524;
+        }
+
+        .error-msg {
+            display: none;
+            background: #FEF2F2;
+            color: #DC2626;
+            font-size: 13px;
+            padding: 10px 14px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .token-hint {
+            font-size: 12px;
+            color: #A8A29E;
+            text-align: center;
+            margin-top: 24px;
+        }
+
+        .token-hint code {
+            background: rgba(0, 0, 0, 0.04);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .footer {
+            margin-top: 40px;
+            font-size: 12px;
+            color: #A8A29E;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="login-card">
+        <h1 class="login-brand">Dina</h1>
+        <p class="login-subtitle">Enter your admin token to continue</p>
+
+        <div class="error-msg" id="error-msg"></div>
+
+        <form id="login-form" autocomplete="off">
+            <div class="form-group">
+                <input
+                    type="password"
+                    id="token-input"
+                    placeholder="Client token"
+                    autocomplete="current-password"
+                    required
+                />
+            </div>
+            <button type="submit" class="login-btn">Sign in</button>
+        </form>
+
+        <p class="token-hint">Find your token in: <code>secrets/brain_token</code></p>
+    </div>
+
+    <footer class="footer">
+        Dina v0.5 &mdash; MIT Licensed
+    </footer>
+
+    <script>
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const token = document.getElementById('token-input').value;
+            const resp = await fetch('/admin/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({token})
+            });
+            if (resp.ok) {
+                const data = await resp.json();
+                window.location.href = data.redirect || '/admin/dashboard';
+            } else {
+                document.getElementById('error-msg').style.display = 'block';
+                document.getElementById('error-msg').textContent = 'Invalid token';
+            }
+        });
+    </script>
+</body>
+</html>

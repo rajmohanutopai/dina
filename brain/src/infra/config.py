@@ -50,6 +50,7 @@ class BrainConfig:
 
     core_url: str
     brain_token: str
+    client_token: str
     listen_port: int
     log_level: str
     llm_url: str | None
@@ -128,12 +129,16 @@ def load_brain_config() -> BrainConfig:
     # -- CLOUD_LLM (optional) --
     cloud_llm = os.environ.get("DINA_CLOUD_LLM", "").strip() or None
 
+    # -- CLIENT_TOKEN (optional — defaults to BRAIN_TOKEN) --
+    client_token = os.environ.get("DINA_CLIENT_TOKEN", "").strip() or brain_token
+
     # LLM routing is enabled only when a backend URL is configured
     llm_routing_enabled = llm_url is not None
 
     return BrainConfig(
         core_url=core_url,
         brain_token=brain_token,
+        client_token=client_token,
         listen_port=listen_port,
         log_level=log_level,
         llm_url=llm_url,

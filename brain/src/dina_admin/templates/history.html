@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+
+{% block title %}Activity History — Dina Admin{% endblock %}
+{% block page_title %}Activity History{% endblock %}
+
+{% block content %}
+<style>
+    /* ── Search Bar ── */
+    .search-bar {
+        margin-bottom: 20px;
+    }
+
+    .search-bar input {
+        width: 100%;
+        max-width: 480px;
+        padding: 10px 14px;
+        font-size: 14px;
+        border: 1px solid rgba(0, 0, 0, 0.15);
+        border-radius: 8px;
+        outline: none;
+        font-family: inherit;
+        color: #1C1917;
+        background: #FFFFFF;
+    }
+
+    .search-bar input:focus {
+        border-color: #1C1917;
+    }
+
+    /* ── History Table ── */
+    .history-table-wrap {
+        background: #FFFFFF;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        overflow: hidden;
+    }
+
+    .history-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .history-table th {
+        text-align: left;
+        padding: 12px 16px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #A8A29E;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+        background: #FAF8F5;
+    }
+
+    .history-table td {
+        padding: 12px 16px;
+        font-size: 14px;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+        color: #1C1917;
+    }
+
+    .history-table tr:last-child td {
+        border-bottom: none;
+    }
+
+    .badge {
+        display: inline-block;
+        padding: 2px 10px;
+        font-size: 12px;
+        font-weight: 600;
+        border-radius: 12px;
+        background: #F5F3EF;
+        color: #1C1917;
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        text-transform: capitalize;
+    }
+
+    /* ── Pagination ── */
+    .pagination {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        margin-top: 20px;
+    }
+
+    .pagination button {
+        padding: 8px 18px;
+        font-size: 14px;
+        font-weight: 500;
+        background: #FFFFFF;
+        color: #1C1917;
+        border: 1px solid rgba(0, 0, 0, 0.15);
+        border-radius: 8px;
+        cursor: pointer;
+        font-family: inherit;
+        transition: background 0.15s;
+    }
+
+    .pagination button:hover:not(:disabled) {
+        background: #F5F3EF;
+    }
+
+    .pagination button:disabled {
+        color: #A8A29E;
+        cursor: not-allowed;
+        border-color: rgba(0, 0, 0, 0.08);
+    }
+
+    .pagination .page-info {
+        font-size: 14px;
+        color: #A8A29E;
+        font-weight: 500;
+    }
+
+    .empty-cell {
+        text-align: center;
+        color: #A8A29E;
+        padding: 32px 16px;
+    }
+</style>
+
+<!-- Header -->
+<h2 style="font-size: 20px; font-weight: 700; color: #1C1917; margin-bottom: 20px;">Activity History</h2>
+
+<!-- Search Bar -->
+<div class="search-bar">
+    <input type="text" id="search-input" placeholder="Search vault items..." autocomplete="off">
+</div>
+
+<!-- Table -->
+<div class="history-table-wrap">
+    <table class="history-table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Type</th>
+                <th>Source</th>
+                <th>Summary</th>
+                <th>Timestamp</th>
+            </tr>
+        </thead>
+        <tbody id="history-body">
+            <tr>
+                <td colspan="5" class="empty-cell">Loading...</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- Pagination -->
+<div class="pagination">
+    <button id="prev-btn" onclick="loadHistory(currentPage - 1)" disabled>Previous</button>
+    <span class="page-info" id="page-info">Page 1 of 1</span>
+    <button id="next-btn" onclick="loadHistory(currentPage + 1)" disabled>Next</button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    var currentPage = 1;
+
+    async function loadHistory(page) {
+        currentPage = page;
+        var resp = await apiFetch('/admin/api/history/?page=' + page + '&limit=20');
+        if (!resp) return;
+        var data = await resp.json();
+        renderTable(data.items);
+        updatePagination(data.page, data.total, data.limit);
+    }
+
+    function renderTable(items) {
+        var tbody = document.getElementById('history-body');
+        if (!items || items.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="empty-cell">No items found</td></tr>';
+            return;
+        }
+        tbody.innerHTML = items.map(function(item) {
+            var truncId = (item.id || '').substring(0, 8) + '...';
+            var fullId = item.id || '';
+            return '<tr>' +
+                '<td title="' + escapeHtml(fullId) + '">' + escapeHtml(truncId) + '</td>' +
+                '<td><span class="badge">' + escapeHtml(item.type || '\u2014') + '</span></td>' +
+                '<td>' + escapeHtml(item.source || '\u2014') + '</td>' +
+                '<td>' + escapeHtml(item.summary || '\u2014') + '</td>' +
+                '<td>' + formatTime(item.timestamp) + '</td>' +
+            '</tr>';
+        }).join('');
+    }
+
+    function escapeHtml(text) {
+        var div = document.createElement('div');
+        div.appendChild(document.createTextNode(text));
+        return div.innerHTML;
+    }
+
+    function formatTime(ts) {
+        if (!ts) return '\u2014';
+        try { return new Date(ts * 1000).toLocaleString(); } catch (e) { return ts; }
+    }
+
+    function updatePagination(page, total, limit) {
+        var totalPages = Math.ceil(total / limit) || 1;
+        document.getElementById('page-info').textContent = 'Page ' + page + ' of ' + totalPages;
+        document.getElementById('prev-btn').disabled = page <= 1;
+        document.getElementById('next-btn').disabled = page >= totalPages;
+    }
+
+    // Search with debounce
+    var searchTimeout = null;
+    document.getElementById('search-input').addEventListener('input', function() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(function() {
+            loadHistory(1);
+        }, 300);
+    });
+
+    // Initial load
+    loadHistory(1);
+</script>
+{% endblock %}

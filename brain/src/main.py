@@ -542,7 +542,9 @@ def create_app() -> FastAPI:
     )
 
     brain_api = create_brain_app(guardian, sync_engine, cfg.brain_token, scrubber=scrubber)
-    admin_ui = create_admin_app(core_client, cfg)
+    # Resolve dina.html path (architecture visualization)
+    _dina_html = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "dina.html")
+    admin_ui = create_admin_app(core_client, cfg, dina_html_path=_dina_html)
 
     master.mount("/api", brain_api)
     master.mount("/admin", admin_ui)

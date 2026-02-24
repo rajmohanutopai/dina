@@ -1,0 +1,430 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard — Dina Admin{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<style>
+    /* ── Stat Cards ── */
+    .stat-row {
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-bottom: 32px;
+    }
+
+    .stat-card {
+        background: #FFFFFF;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        padding: 20px 24px;
+        flex: 1 1 180px;
+        min-width: 160px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .stat-number {
+        font-size: 32px;
+        font-weight: 700;
+        color: #1C1917;
+        line-height: 1.2;
+    }
+
+    .stat-label {
+        font-size: 13px;
+        color: #A8A29E;
+        margin-top: 4px;
+        font-weight: 500;
+    }
+
+    /* ── Section ── */
+    .section {
+        margin-bottom: 32px;
+    }
+
+    .section-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: #1C1917;
+        margin-bottom: 16px;
+    }
+
+    /* ── Health Items ── */
+    .health-row {
+        display: flex;
+        gap: 24px;
+        flex-wrap: wrap;
+    }
+
+    .health-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: #FFFFFF;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        padding: 14px 20px;
+        flex: 1 1 180px;
+        min-width: 160px;
+    }
+
+    .health-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #A8A29E;
+        flex-shrink: 0;
+    }
+
+    .health-label {
+        font-size: 14px;
+        font-weight: 600;
+        color: #1C1917;
+    }
+
+    .health-status {
+        font-size: 13px;
+        color: #A8A29E;
+        margin-left: auto;
+        text-transform: capitalize;
+    }
+
+    /* ── Activity Table ── */
+    .activity-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: #FFFFFF;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        overflow: hidden;
+    }
+
+    .activity-table th {
+        text-align: left;
+        padding: 12px 16px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #A8A29E;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+        background: #FAF8F5;
+    }
+
+    .activity-table td {
+        padding: 12px 16px;
+        font-size: 14px;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+        color: #1C1917;
+    }
+
+    .activity-empty {
+        text-align: center;
+        color: #A8A29E;
+        padding: 32px 16px;
+    }
+
+    /* ── Chat Panel ── */
+    .chat-panel {
+        background: #FFFFFF;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        overflow: hidden;
+    }
+
+    .chat-header {
+        padding: 14px 20px;
+        font-size: 15px;
+        font-weight: 600;
+        color: #1C1917;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    }
+
+    .chat-messages {
+        min-height: 200px;
+        max-height: 400px;
+        overflow-y: auto;
+        padding: 16px 20px;
+        background: #F5F3EF;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .chat-msg {
+        max-width: 75%;
+        padding: 10px 14px;
+        font-size: 14px;
+        line-height: 1.5;
+        word-wrap: break-word;
+    }
+
+    .chat-user {
+        align-self: flex-end;
+        background: #1C1917;
+        color: #FFFFFF;
+        border-radius: 12px 12px 2px 12px;
+    }
+
+    .chat-dina {
+        align-self: flex-start;
+        background: #FFFFFF;
+        color: #1C1917;
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        border-radius: 12px 12px 12px 2px;
+    }
+
+    .typing-indicator {
+        display: none;
+        align-self: flex-start;
+        font-size: 13px;
+        color: #A8A29E;
+        font-style: italic;
+        padding: 6px 0;
+    }
+
+    .chat-input-row {
+        display: flex;
+        gap: 8px;
+        padding: 12px 20px;
+        border-top: 1px solid rgba(0, 0, 0, 0.08);
+        background: #FFFFFF;
+    }
+
+    .chat-input-row input {
+        flex: 1;
+        padding: 10px 14px;
+        font-size: 14px;
+        border: 1px solid rgba(0, 0, 0, 0.15);
+        border-radius: 8px;
+        outline: none;
+        font-family: inherit;
+        color: #1C1917;
+        background: #FAF8F5;
+    }
+
+    .chat-input-row input:focus {
+        border-color: #1C1917;
+    }
+
+    .chat-input-row button {
+        padding: 10px 20px;
+        font-size: 14px;
+        font-weight: 600;
+        background: #1C1917;
+        color: #FFFFFF;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-family: inherit;
+        transition: background 0.15s;
+    }
+
+    .chat-input-row button:hover {
+        background: #292524;
+    }
+</style>
+
+<!-- Stat Cards -->
+<div class="stat-row">
+    <div class="stat-card">
+        <span class="stat-number" id="stat-items">&mdash;</span>
+        <span class="stat-label">Items</span>
+    </div>
+    <div class="stat-card">
+        <span class="stat-number" id="stat-personas">&mdash;</span>
+        <span class="stat-label">Personas</span>
+    </div>
+    <div class="stat-card">
+        <span class="stat-number" id="stat-vault-size">&mdash;</span>
+        <span class="stat-label">Vault Size</span>
+    </div>
+    <div class="stat-card">
+        <span class="stat-number" id="stat-devices">&mdash;</span>
+        <span class="stat-label">Devices</span>
+    </div>
+</div>
+
+<!-- System Health -->
+<div class="section">
+    <div class="section-title">System Health</div>
+    <div class="health-row">
+        <div class="health-item">
+            <span class="health-dot" id="health-core"></span>
+            <span class="health-label">Core</span>
+            <span class="health-status" id="health-core-text">unknown</span>
+        </div>
+        <div class="health-item">
+            <span class="health-dot" id="health-llm"></span>
+            <span class="health-label">Brain / LLM</span>
+            <span class="health-status" id="health-llm-text">unknown</span>
+        </div>
+        <div class="health-item">
+            <span class="health-dot" id="health-pds"></span>
+            <span class="health-label">PDS</span>
+            <span class="health-status" id="health-pds-text">unknown</span>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Activity -->
+<div class="section">
+    <div class="section-title">Recent Activity</div>
+    <table class="activity-table">
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Action</th>
+                <th>Persona</th>
+                <th>Source</th>
+            </tr>
+        </thead>
+        <tbody id="activity-body">
+            <tr>
+                <td colspan="4" class="activity-empty">No recent activity</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- Chat Panel -->
+<div class="section">
+    <div class="chat-panel">
+        <div class="chat-header">Chat with Dina</div>
+        <div class="chat-messages" id="chat-messages">
+            <div class="typing-indicator" id="typing-indicator">Dina is thinking...</div>
+        </div>
+        <div class="chat-input-row">
+            <input type="text" id="chat-input" placeholder="Ask Dina something..." autocomplete="off">
+            <button onclick="sendChat()">Send</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // ── Load dashboard data ──
+    async function loadDashboard() {
+        const resp = await apiFetch('/admin/status');
+        if (!resp) return;
+        const data = await resp.json();
+
+        // Stat cards
+        document.getElementById('stat-items').textContent = data.items != null ? data.items : '\u2014';
+        document.getElementById('stat-personas').textContent = data.personas != null ? data.personas : '\u2014';
+        document.getElementById('stat-vault-size').textContent = data.vault_size != null ? formatBytes(data.vault_size) : '\u2014';
+        document.getElementById('stat-devices').textContent = data.devices != null ? data.devices : '\u2014';
+
+        // Health dots
+        setHealthDot('health-core', data.core);
+        setHealthDot('health-llm', data.llm);
+        setHealthDot('health-pds', data.pds);
+    }
+
+    function formatBytes(bytes) {
+        if (bytes === 0) return '0 B';
+        var units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        var i = Math.floor(Math.log(bytes) / Math.log(1024));
+        if (i >= units.length) i = units.length - 1;
+        return parseFloat((bytes / Math.pow(1024, i)).toFixed(1)) + ' ' + units[i];
+    }
+
+    function setHealthDot(id, status) {
+        var dot = document.getElementById(id);
+        var textEl = document.getElementById(id + '-text');
+        var colors = {
+            healthy: '#059669',
+            available: '#059669',
+            ok: '#059669',
+            degraded: '#D97706',
+            unreachable: '#DC2626',
+            error: '#DC2626',
+            not_configured: '#A8A29E',
+            unknown: '#A8A29E'
+        };
+        dot.style.backgroundColor = colors[status] || '#A8A29E';
+        if (textEl) {
+            textEl.textContent = status || 'unknown';
+        }
+    }
+
+    // ── Recent Activity ──
+    async function loadActivity() {
+        try {
+            var resp = await apiFetch('/admin/api/history/');
+            if (!resp) return;
+            var data = await resp.json();
+            var items = data.items || [];
+            var tbody = document.getElementById('activity-body');
+            if (items.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="activity-empty">No recent activity</td></tr>';
+                return;
+            }
+            tbody.innerHTML = items.slice(0, 10).map(function(item) {
+                return '<tr>' +
+                    '<td>' + formatActivityTime(item.timestamp) + '</td>' +
+                    '<td>' + (item.action || item.type || '\u2014') + '</td>' +
+                    '<td>' + (item.persona || '\u2014') + '</td>' +
+                    '<td>' + (item.source || '\u2014') + '</td>' +
+                '</tr>';
+            }).join('');
+        } catch (e) {
+            // Activity endpoint may not exist yet
+        }
+    }
+
+    function formatActivityTime(ts) {
+        if (!ts) return '\u2014';
+        try { return new Date(ts * 1000).toLocaleString(); } catch (e) { return ts; }
+    }
+
+    // ── Chat ──
+    async function sendChat() {
+        var input = document.getElementById('chat-input');
+        var text = input.value.trim();
+        if (!text) return;
+        appendMessage('user', text);
+        input.value = '';
+        showTyping(true);
+
+        var resp = await apiFetch('/admin/api/chat', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({prompt: text})
+        });
+        showTyping(false);
+        if (resp) {
+            var data = await resp.json();
+            appendMessage('dina', data.content || 'No response');
+        }
+    }
+
+    function appendMessage(role, text) {
+        var area = document.getElementById('chat-messages');
+        var div = document.createElement('div');
+        div.className = 'chat-msg chat-' + role;
+        div.textContent = text;
+        area.appendChild(div);
+        area.scrollTop = area.scrollHeight;
+    }
+
+    function showTyping(show) {
+        document.getElementById('typing-indicator').style.display = show ? 'block' : 'none';
+    }
+
+    document.getElementById('chat-input').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+    });
+
+    // ── Initialize ──
+    loadDashboard();
+    loadActivity();
+</script>
+{% endblock %}

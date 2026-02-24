@@ -1,0 +1,322 @@
+{% extends "base.html" %}
+{% set page = "contacts" %}
+
+{% block title %}Dina Admin — Contacts{% endblock %}
+{% block page_title %}Contacts{% endblock %}
+
+{% block content %}
+<style>
+    .page-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 20px;
+    }
+
+    .page-header h2 {
+        font-size: 20px;
+        font-weight: 700;
+        color: #1C1917;
+    }
+
+    .btn {
+        display: inline-block;
+        padding: 8px 16px;
+        font-size: 13px;
+        font-weight: 600;
+        font-family: system-ui, -apple-system, sans-serif;
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        border-radius: 6px;
+        background: #FFFFFF;
+        color: #1C1917;
+        cursor: pointer;
+        transition: background 0.15s;
+    }
+
+    .btn:hover {
+        background: #F5F5F4;
+    }
+
+    .btn-primary {
+        background: #1C1917;
+        color: #FAF8F5;
+        border-color: #1C1917;
+    }
+
+    .btn-primary:hover {
+        background: #292524;
+    }
+
+    .btn-sm {
+        padding: 4px 10px;
+        font-size: 12px;
+    }
+
+    .btn-danger {
+        color: #DC2626;
+        border-color: rgba(220, 38, 38, 0.2);
+    }
+
+    .btn-danger:hover {
+        background: #FEF2F2;
+    }
+
+    /* ── Table ── */
+    .contacts-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+    }
+
+    .contacts-table th {
+        text-align: left;
+        padding: 10px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #A8A29E;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    }
+
+    .contacts-table td {
+        padding: 10px 12px;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+        color: #1C1917;
+    }
+
+    .contacts-table tr:hover td {
+        background: rgba(0, 0, 0, 0.02);
+    }
+
+    /* ── Badges ── */
+    .badge {
+        display: inline-block;
+        padding: 2px 8px;
+        font-size: 11px;
+        font-weight: 600;
+        border-radius: 10px;
+        text-transform: lowercase;
+    }
+
+    .badge-unverified {
+        background: #FEF3C7;
+        color: #92400E;
+    }
+
+    .badge-verified {
+        background: #D1FAE5;
+        color: #065F46;
+    }
+
+    .badge-verified_actioned {
+        background: #DBEAFE;
+        color: #1E40AF;
+    }
+
+    .badge-open {
+        background: #D1FAE5;
+        color: #065F46;
+    }
+
+    .badge-restricted {
+        background: #FEF3C7;
+        color: #92400E;
+    }
+
+    .badge-locked {
+        background: #FEE2E2;
+        color: #991B1B;
+    }
+
+    /* ── Add Contact Form ── */
+    .add-form-card {
+        display: none;
+        margin-bottom: 20px;
+    }
+
+    .add-form-card h3 {
+        font-size: 16px;
+        font-weight: 600;
+        color: #1C1917;
+        margin-bottom: 16px;
+    }
+
+    .form-row {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 12px;
+        flex-wrap: wrap;
+    }
+
+    .form-group {
+        flex: 1;
+        min-width: 180px;
+    }
+
+    .form-group label {
+        display: block;
+        font-size: 12px;
+        font-weight: 600;
+        color: #78716C;
+        margin-bottom: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .form-group input,
+    .form-group select {
+        width: 100%;
+        padding: 8px 12px;
+        font-size: 14px;
+        font-family: system-ui, -apple-system, sans-serif;
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        border-radius: 6px;
+        background: #FAF8F5;
+        color: #1C1917;
+        outline: none;
+        transition: border-color 0.15s;
+    }
+
+    .form-group input:focus,
+    .form-group select:focus {
+        border-color: #1C1917;
+    }
+
+    .form-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 16px;
+    }
+</style>
+
+<!-- Header row -->
+<div class="page-header">
+    <h2>Contacts</h2>
+    <button class="btn btn-primary" onclick="toggleAddForm(true)">Add Contact</button>
+</div>
+
+<!-- Add Contact Form (hidden by default) -->
+<div class="card add-form-card" id="add-form">
+    <h3>New Contact</h3>
+    <div class="form-row">
+        <div class="form-group">
+            <label for="add-did">DID</label>
+            <input type="text" id="add-did" placeholder="did:key:z6Mk...">
+        </div>
+        <div class="form-group">
+            <label for="add-name">Name</label>
+            <input type="text" id="add-name" placeholder="Contact name">
+        </div>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label for="add-trust">Trust Level</label>
+            <select id="add-trust">
+                <option value="unverified">unverified</option>
+                <option value="verified">verified</option>
+                <option value="verified_actioned">verified_actioned</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="add-sharing">Sharing Tier</label>
+            <select id="add-sharing">
+                <option value="open">open</option>
+                <option value="restricted">restricted</option>
+                <option value="locked">locked</option>
+            </select>
+        </div>
+    </div>
+    <div class="form-actions">
+        <button class="btn btn-primary" onclick="addContact()">Save</button>
+        <button class="btn" onclick="toggleAddForm(false)">Cancel</button>
+    </div>
+</div>
+
+<!-- Contacts Table -->
+<div class="card">
+    <table class="contacts-table">
+        <thead>
+            <tr>
+                <th>DID</th>
+                <th>Name</th>
+                <th>Trust Level</th>
+                <th>Sharing Tier</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody id="contacts-body">
+            <tr>
+                <td colspan="5" style="text-align:center;color:#A8A29E;">Loading...</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadContacts() {
+    const resp = await apiFetch('/admin/contacts/');
+    if (!resp) return;
+    const contacts = await resp.json();
+    renderContacts(contacts);
+}
+
+function renderContacts(contacts) {
+    const tbody = document.getElementById('contacts-body');
+    if (!contacts || contacts.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#A8A29E;">No contacts yet</td></tr>';
+        return;
+    }
+    tbody.innerHTML = contacts.map(c => `
+        <tr>
+            <td title="${c.did}">${c.did.substring(0,20)}...</td>
+            <td>${escapeHtml(c.name)}</td>
+            <td><span class="badge badge-${c.trust_level}">${c.trust_level}</span></td>
+            <td><span class="badge badge-${c.sharing_tier}">${c.sharing_tier}</span></td>
+            <td>
+                <button class="btn btn-sm" onclick="editContact('${c.did}')">Edit</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteContact('${c.did}')">Delete</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+async function addContact() {
+    const data = {
+        did: document.getElementById('add-did').value,
+        name: document.getElementById('add-name').value,
+        trust_level: document.getElementById('add-trust').value,
+        sharing_tier: document.getElementById('add-sharing').value,
+    };
+    const resp = await apiFetch('/admin/contacts/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    });
+    if (resp && resp.ok) {
+        toggleAddForm(false);
+        loadContacts();
+    }
+}
+
+async function deleteContact(did) {
+    if (!confirm('Remove this contact?')) return;
+    await apiFetch(`/admin/contacts/${encodeURIComponent(did)}`, {method: 'DELETE'});
+    loadContacts();
+}
+
+function toggleAddForm(show) {
+    document.getElementById('add-form').style.display = show ? 'block' : 'none';
+}
+
+loadContacts();
+</script>
+{% endblock %}

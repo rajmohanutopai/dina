@@ -1,0 +1,406 @@
+{% extends "base.html" %}
+{% set page = "settings" %}
+
+{% block title %}Dina Admin — Settings{% endblock %}
+{% block page_title %}Settings{% endblock %}
+
+{% block content %}
+<style>
+    .settings-section {
+        margin-bottom: 24px;
+    }
+
+    .settings-section h3 {
+        font-size: 16px;
+        font-weight: 700;
+        color: #1C1917;
+        margin-bottom: 4px;
+    }
+
+    .settings-section .section-desc {
+        font-size: 13px;
+        color: #A8A29E;
+        margin-bottom: 16px;
+    }
+
+    .section-divider {
+        border: none;
+        border-top: 1px solid rgba(0, 0, 0, 0.08);
+        margin: 24px 0;
+    }
+
+    /* ── Identity ── */
+    .identity-did {
+        font-family: 'SF Mono', SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+        font-size: 13px;
+        color: #1C1917;
+        background: #FAF8F5;
+        padding: 8px 12px;
+        border-radius: 6px;
+        border: 1px solid rgba(0, 0, 0, 0.06);
+        word-break: break-all;
+        margin-bottom: 8px;
+    }
+
+    .identity-meta {
+        font-size: 13px;
+        color: #78716C;
+        margin-bottom: 4px;
+    }
+
+    .identity-warning {
+        font-size: 12px;
+        color: #D97706;
+        margin-top: 8px;
+    }
+
+    /* ── Provider list ── */
+    .provider-list {
+        list-style: none;
+        padding: 0;
+    }
+
+    .provider-list li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+        font-size: 14px;
+    }
+
+    .provider-list li:last-child {
+        border-bottom: none;
+    }
+
+    .provider-name {
+        font-weight: 500;
+        color: #1C1917;
+    }
+
+    .provider-status {
+        font-size: 12px;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 10px;
+    }
+
+    .provider-status.configured {
+        background: #D1FAE5;
+        color: #065F46;
+    }
+
+    .provider-status.not-configured {
+        background: #F5F5F4;
+        color: #A8A29E;
+    }
+
+    /* ── Preferences form ── */
+    .pref-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 14px;
+        flex-wrap: wrap;
+    }
+
+    .pref-row label {
+        font-size: 14px;
+        font-weight: 500;
+        color: #1C1917;
+        min-width: 140px;
+    }
+
+    .pref-row input[type="text"],
+    .pref-row input[type="time"] {
+        padding: 6px 10px;
+        font-size: 14px;
+        font-family: system-ui, -apple-system, sans-serif;
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        border-radius: 6px;
+        background: #FAF8F5;
+        color: #1C1917;
+        outline: none;
+        transition: border-color 0.15s;
+    }
+
+    .pref-row input[type="text"]:focus,
+    .pref-row input[type="time"]:focus {
+        border-color: #1C1917;
+    }
+
+    .pref-row input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        accent-color: #1C1917;
+    }
+
+    .pref-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .pref-sublabel {
+        font-size: 12px;
+        color: #78716C;
+    }
+
+    .btn {
+        display: inline-block;
+        padding: 8px 16px;
+        font-size: 13px;
+        font-weight: 600;
+        font-family: system-ui, -apple-system, sans-serif;
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        border-radius: 6px;
+        background: #FFFFFF;
+        color: #1C1917;
+        cursor: pointer;
+        transition: background 0.15s;
+    }
+
+    .btn:hover {
+        background: #F5F5F4;
+    }
+
+    .btn-primary {
+        background: #1C1917;
+        color: #FAF8F5;
+        border-color: #1C1917;
+    }
+
+    .btn-primary:hover {
+        background: #292524;
+    }
+
+    .btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+
+    /* ── Devices ── */
+    .devices-empty {
+        font-size: 14px;
+        color: #A8A29E;
+        margin-bottom: 12px;
+    }
+
+    /* ── Data stats ── */
+    .data-stats {
+        display: flex;
+        gap: 24px;
+        margin-bottom: 12px;
+        flex-wrap: wrap;
+    }
+
+    .data-stat {
+        font-size: 14px;
+        color: #1C1917;
+    }
+
+    .data-stat .stat-label {
+        font-size: 12px;
+        color: #A8A29E;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .data-stat .stat-value {
+        font-size: 18px;
+        font-weight: 700;
+        color: #1C1917;
+    }
+
+    /* ── Toast ── */
+    .toast {
+        display: none;
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        background: #1C1917;
+        color: #FAF8F5;
+        padding: 10px 20px;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 500;
+        z-index: 200;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+</style>
+
+<!-- Section 1: Identity -->
+<div class="card settings-section">
+    <h3>Identity</h3>
+    <p class="section-desc">Your decentralized identifier and cryptographic keys.</p>
+    <div class="identity-did" id="identity-did">Loading...</div>
+    <p class="identity-meta">Created: <span id="identity-created">—</span></p>
+    <p class="identity-meta">Core URL: <span id="core-url">—</span></p>
+    <p class="identity-warning">Your recovery phrase is stored offline. Never share it.</p>
+</div>
+
+<hr class="section-divider">
+
+<!-- Section 2: LLM Providers -->
+<div class="card settings-section">
+    <h3>LLM Providers</h3>
+    <p class="section-desc">Configured language models for chat and analysis.</p>
+    <ul class="provider-list" id="provider-list">
+        <li>
+            <span class="provider-name">Cloud LLM</span>
+            <span class="provider-status not-configured" id="provider-cloud">checking...</span>
+        </li>
+        <li>
+            <span class="provider-name">Log Level</span>
+            <span class="provider-status not-configured" id="provider-log-level">—</span>
+        </li>
+    </ul>
+</div>
+
+<hr class="section-divider">
+
+<!-- Section 3: Preferences -->
+<div class="card settings-section">
+    <h3>Preferences</h3>
+    <p class="section-desc">Customize your Dina experience.</p>
+
+    <div class="pref-row">
+        <label for="briefing-enabled">Briefing enabled</label>
+        <input type="checkbox" id="briefing-enabled">
+    </div>
+
+    <div class="pref-row">
+        <label for="briefing-time">Briefing time</label>
+        <input type="time" id="briefing-time" value="08:00">
+    </div>
+
+    <div class="pref-row">
+        <label for="dnd-enabled">Do Not Disturb</label>
+        <div class="pref-group">
+            <input type="checkbox" id="dnd-enabled">
+            <span class="pref-sublabel">from</span>
+            <input type="time" id="dnd-start" value="22:00">
+            <span class="pref-sublabel">to</span>
+            <input type="time" id="dnd-end" value="07:00">
+        </div>
+    </div>
+
+    <div class="pref-row">
+        <label for="default-persona">Default persona</label>
+        <input type="text" id="default-persona" placeholder="default">
+    </div>
+
+    <div style="margin-top: 16px;">
+        <button class="btn btn-primary" onclick="saveSettings()">Save Preferences</button>
+    </div>
+</div>
+
+<hr class="section-divider">
+
+<!-- Section 4: Devices -->
+<div class="card settings-section">
+    <h3>Devices</h3>
+    <p class="section-desc">Paired devices linked to this Dina instance.</p>
+    <p class="devices-empty" id="devices-list">No paired devices</p>
+    <button class="btn" disabled>Pair New Device</button>
+</div>
+
+<hr class="section-divider">
+
+<!-- Section 5: Data -->
+<div class="card settings-section">
+    <h3>Data</h3>
+    <p class="section-desc">Vault storage usage and export options.</p>
+    <div class="data-stats">
+        <div class="data-stat">
+            <div class="stat-label">Vault Size</div>
+            <div class="stat-value" id="vault-size">—</div>
+        </div>
+        <div class="data-stat">
+            <div class="stat-label">Items</div>
+            <div class="stat-value" id="vault-items">—</div>
+        </div>
+    </div>
+    <button class="btn" disabled>Export Data</button>
+</div>
+
+<!-- Toast notification -->
+<div class="toast" id="toast"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadSettings() {
+    const resp = await apiFetch('/admin/settings/');
+    if (!resp) return;
+    const settings = await resp.json();
+    // Populate form fields
+    if (settings.briefing_enabled !== undefined) {
+        document.getElementById('briefing-enabled').checked = settings.briefing_enabled;
+    }
+    if (settings.briefing_time) {
+        document.getElementById('briefing-time').value = settings.briefing_time;
+    }
+    if (settings.dnd_enabled !== undefined) {
+        document.getElementById('dnd-enabled').checked = settings.dnd_enabled;
+    }
+    if (settings.dnd_start) {
+        document.getElementById('dnd-start').value = settings.dnd_start;
+    }
+    if (settings.dnd_end) {
+        document.getElementById('dnd-end').value = settings.dnd_end;
+    }
+    if (settings.default_persona) {
+        document.getElementById('default-persona').value = settings.default_persona;
+    }
+    document.getElementById('core-url').textContent = settings.core_url || '—';
+
+    // LLM providers
+    var cloudEl = document.getElementById('provider-cloud');
+    if (settings.cloud_llm) {
+        cloudEl.textContent = settings.cloud_llm;
+        cloudEl.className = 'provider-status configured';
+    } else {
+        cloudEl.textContent = 'not configured';
+        cloudEl.className = 'provider-status not-configured';
+    }
+
+    var logEl = document.getElementById('provider-log-level');
+    if (settings.log_level) {
+        logEl.textContent = settings.log_level;
+        logEl.className = 'provider-status configured';
+    } else {
+        logEl.textContent = '—';
+        logEl.className = 'provider-status not-configured';
+    }
+}
+
+async function saveSettings() {
+    const data = {
+        briefing_enabled: document.getElementById('briefing-enabled').checked,
+        briefing_time: document.getElementById('briefing-time').value,
+        dnd_enabled: document.getElementById('dnd-enabled').checked,
+        dnd_start: document.getElementById('dnd-start').value,
+        dnd_end: document.getElementById('dnd-end').value,
+        default_persona: document.getElementById('default-persona').value,
+    };
+    const resp = await apiFetch('/admin/settings/', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    });
+    if (resp && resp.ok) {
+        showToast('Settings saved');
+    }
+}
+
+function showToast(msg) {
+    const toast = document.getElementById('toast');
+    toast.textContent = msg;
+    toast.style.display = 'block';
+    setTimeout(() => { toast.style.display = 'none'; }, 3000);
+}
+
+loadSettings();
+</script>
+{% endblock %}
