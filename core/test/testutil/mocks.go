@@ -799,6 +799,18 @@ func (m *MockOutboxManager) PendingCount(_ context.Context) (int, error) {
 	return count, nil
 }
 
+func (m *MockOutboxManager) ListPending(_ context.Context) ([]OutboxMessage, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var pending []OutboxMessage
+	for _, msg := range m.messages {
+		if msg.Status == "pending" {
+			pending = append(pending, msg)
+		}
+	}
+	return pending, nil
+}
+
 func (m *MockOutboxManager) GetByID(msgID string) (*OutboxMessage, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

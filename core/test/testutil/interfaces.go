@@ -180,6 +180,8 @@ type OutboxManager interface {
 	Requeue(ctx context.Context, msgID string) error
 	// PendingCount returns the number of pending messages.
 	PendingCount(ctx context.Context) (int, error)
+	// ListPending returns all pending messages whose retry time has elapsed.
+	ListPending(ctx context.Context) ([]OutboxMessage, error)
 	// GetByID retrieves a message by ID.
 	GetByID(msgID string) (*OutboxMessage, error)
 	// DeleteExpired removes messages older than TTL.

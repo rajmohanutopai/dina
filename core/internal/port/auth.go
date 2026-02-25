@@ -26,6 +26,13 @@ type DeviceKeyRegistrar interface {
 	RevokeDeviceKey(did string)
 }
 
+// ClientTokenRegistrar allows the pairing/device layer to register
+// CLIENT_TOKENs in the auth validator at runtime so that newly paired
+// legacy-token devices can authenticate.
+type ClientTokenRegistrar interface {
+	RegisterClientToken(token string, deviceID string)
+}
+
 // SessionManager handles browser sessions for the admin UI.
 type SessionManager interface {
 	Create(ctx context.Context, deviceID string) (sessionID, csrfToken string, err error)

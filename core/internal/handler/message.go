@@ -5,14 +5,17 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/anthropics/dina/core/internal/domain"
+	"github.com/anthropics/dina/core/internal/ingress"
 	"github.com/anthropics/dina/core/internal/service"
 )
 
 // MessageHandler exposes message sending, inbox listing, and NaCl ingress endpoints.
 type MessageHandler struct {
-	Transport *service.TransportService
+	Transport     *service.TransportService
+	IngressRouter *ingress.Router // nil = direct path (backward compat)
 }
 
 // sendRequest is the JSON body for POST /v1/msg/send.
@@ -70,8 +73,8 @@ func (h *MessageHandler) HandleInbox(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleIngestNaCl handles POST /msg. It accepts a raw NaCl-encrypted envelope,
-// attempts to decrypt it using the node's own keys, stores the decrypted message,
-// and returns 202 Accepted.
+// routes through the ingress pipeline (rate limit → dead-drop/fast-path), and
+// returns 202 Accepted.
 func (h *MessageHandler) HandleIngestNaCl(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -84,7 +87,43 @@ func (h *MessageHandler) HandleIngestNaCl(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Try to decrypt the NaCl sealed box with this node's keys.
+	// Use ingress Router if wired (rate limit + dead-drop when locked).
+	if h.IngressRouter != nil {
+		ip := r.RemoteAddr
+		if colonIdx := strings.LastIndex(ip, ":"); colonIdx != -1 {
+			ip = ip[:colonIdx]
+		}
+		if err := h.IngressRouter.Ingest(r.Context(), ip, body); err != nil {
+			slog.Warn("D2D ingress rejected", "error", err)
+			if strings.Contains(err.Error(), "rate") {
+				http.Error(w, `{"error":"rate limited"}`, http.StatusTooManyRequests)
+				return
+			}
+			if strings.Contains(err.Error(), "spool") {
+				http.Error(w, `{"error":"spool full"}`, http.StatusServiceUnavailable)
+				return
+			}
+			http.Error(w, `{"error":"ingress failed"}`, http.StatusInternalServerError)
+			return
+		}
+
+		// Router.Ingest handles both paths:
+		// - Locked → dead-drop (stored as opaque blob for later sweep)
+		// - Unlocked → inbox spool (immediate processing)
+		// In both cases we also attempt direct decryption for immediate inbox.
+		msg, decErr := h.Transport.ProcessInbound(r.Context(), body)
+		if decErr == nil {
+			slog.Info("D2D message received and decrypted", "type", msg.Type, "to", msg.To)
+			h.Transport.StoreInbound(msg)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(map[string]string{"status": "accepted"})
+		return
+	}
+
+	// Fallback: direct path (no ingress Router wired).
 	msg, err := h.Transport.ProcessInbound(r.Context(), body)
 	if err != nil {
 		slog.Warn("D2D ingest: could not decrypt", "error", err)

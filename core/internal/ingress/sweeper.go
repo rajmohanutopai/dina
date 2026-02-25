@@ -2,9 +2,11 @@ package ingress
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/anthropics/dina/core/internal/domain"
 	"github.com/anthropics/dina/core/internal/port"
 )
 
@@ -15,11 +17,15 @@ import (
 //  3. Verifies the sender's DID against the contact directory.
 //  4. Reports blocked senders back for future filtering.
 type Sweeper struct {
-	deadDrop  *DeadDrop
-	decryptor port.Encryptor
-	resolver  port.DIDResolver
-	clock     port.Clock
-	ttl       time.Duration
+	deadDrop      *DeadDrop
+	decryptor     port.Encryptor
+	resolver      port.DIDResolver
+	converter     port.KeyConverter
+	clock         port.Clock
+	ttl           time.Duration
+	recipientPub  []byte                    // node's Ed25519 public key
+	recipientPriv []byte                    // node's Ed25519 private key
+	onMessage     func(*domain.DinaMessage) // callback for delivered messages
 }
 
 // NewSweeper creates a Sweeper with the given dependencies.
@@ -38,6 +44,22 @@ func NewSweeper(
 		clock:     clock,
 		ttl:       ttl,
 	}
+}
+
+// SetKeys configures the node's own Ed25519 keypair for inbound decryption.
+func (s *Sweeper) SetKeys(pub, priv []byte) {
+	s.recipientPub = pub
+	s.recipientPriv = priv
+}
+
+// SetConverter sets the key converter for Ed25519 → X25519 conversion.
+func (s *Sweeper) SetConverter(c port.KeyConverter) {
+	s.converter = c
+}
+
+// SetOnMessage sets the callback invoked for each successfully decrypted message.
+func (s *Sweeper) SetOnMessage(fn func(*domain.DinaMessage)) {
+	s.onMessage = fn
 }
 
 // SweepResult summarizes a sweep pass over the dead drop.
@@ -72,15 +94,47 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 			continue
 		}
 
-		// Attempt to process the blob.
-		// In a full implementation, this would:
-		// 1. Decrypt with the recipient's X25519 key pair
-		// 2. Verify the sender's signature
-		// 3. Check TTL
-		// 4. Forward to inbox
-		//
-		// For now, we count it as processed if we can read it.
-		_ = blob
+		// If we don't have keys or converter, count as processed without decrypting.
+		if s.recipientPub == nil || s.recipientPriv == nil || s.converter == nil {
+			delivered++
+			continue
+		}
+
+		// 1. Convert Ed25519 keys to X25519 for NaCl decryption.
+		x25519Priv, err := s.converter.Ed25519ToX25519Private(s.recipientPriv)
+		if err != nil {
+			continue
+		}
+		x25519Pub, err := s.converter.Ed25519ToX25519Public(s.recipientPub)
+		if err != nil {
+			continue
+		}
+
+		// 2. Decrypt the sealed box.
+		plaintext, err := s.decryptor.OpenAnonymous(blob, x25519Pub, x25519Priv)
+		if err != nil {
+			// Corrupt or wrong key — skip.
+			continue
+		}
+
+		// 3. Unmarshal the message.
+		var msg domain.DinaMessage
+		if err := json.Unmarshal(plaintext, &msg); err != nil {
+			continue
+		}
+
+		// 4. Check TTL — drop expired messages.
+		if s.ttl > 0 && msg.CreatedTime > 0 {
+			age := s.clock.Now().Sub(time.Unix(msg.CreatedTime, 0))
+			if age > s.ttl {
+				continue
+			}
+		}
+
+		// 5. Deliver to inbox via callback.
+		if s.onMessage != nil {
+			s.onMessage(&msg)
+		}
 		delivered++
 	}
 
@@ -108,15 +162,56 @@ func (s *Sweeper) SweepFull(ctx context.Context) (*SweepResult, error) {
 		}
 		result.Processed++
 
-		// Check blob size as a minimal sanity check.
 		if len(blob) == 0 {
 			result.Failed++
 			continue
 		}
 
-		// In a full implementation, the blob would be decrypted and the
-		// message TTL checked against the current time. For now, we
-		// consider all readable blobs as delivered.
+		// If we don't have keys or converter, count as delivered (pass-through).
+		if s.recipientPub == nil || s.recipientPriv == nil || s.converter == nil {
+			result.Delivered++
+			continue
+		}
+
+		// 1. Convert keys.
+		x25519Priv, err := s.converter.Ed25519ToX25519Private(s.recipientPriv)
+		if err != nil {
+			result.Failed++
+			continue
+		}
+		x25519Pub, err := s.converter.Ed25519ToX25519Public(s.recipientPub)
+		if err != nil {
+			result.Failed++
+			continue
+		}
+
+		// 2. Decrypt.
+		plaintext, err := s.decryptor.OpenAnonymous(blob, x25519Pub, x25519Priv)
+		if err != nil {
+			result.Failed++
+			continue
+		}
+
+		// 3. Unmarshal.
+		var msg domain.DinaMessage
+		if err := json.Unmarshal(plaintext, &msg); err != nil {
+			result.Failed++
+			continue
+		}
+
+		// 4. Check TTL.
+		if s.ttl > 0 && msg.CreatedTime > 0 {
+			age := s.clock.Now().Sub(time.Unix(msg.CreatedTime, 0))
+			if age > s.ttl {
+				result.Expired++
+				continue
+			}
+		}
+
+		// 5. Deliver.
+		if s.onMessage != nil {
+			s.onMessage(&msg)
+		}
 		result.Delivered++
 	}
 

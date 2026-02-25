@@ -169,14 +169,20 @@ def _start_main_stack() -> float:
         env=compose_env,
     )
 
-    subprocess.run(
+    result = subprocess.run(
         [*compose_cmd, "up", "--build", "-d"],
         capture_output=True,
         timeout=300,
-        check=True,
+        text=True,
         cwd=str(PROJECT_ROOT),
         env=compose_env,
     )
+    if result.returncode != 0:
+        stderr_tail = (result.stderr or "").strip().split("\n")[-20:]
+        raise RuntimeError(
+            f"Main stack 'up --build' failed (exit {result.returncode}):\n"
+            + "\n".join(stderr_tail)
+        )
 
     # Wait for all services to become healthy
     _wait_for_health(f"{plc_url}/healthz", "Fake PLC", timeout=30)
@@ -276,7 +282,7 @@ def _start_local() -> float:
     print("  Building Go Core...", file=sys.stderr, flush=True)
     build_t0 = _time.monotonic()
     subprocess.run(
-        ["go", "build", "-o", "dina-core", "./cmd/dina-core"],
+        ["go", "build", "-tags", "fts5", "-o", "dina-core", "./cmd/dina-core"],
         cwd=str(PROJECT_ROOT / "core"),
         capture_output=True,
         timeout=120,
@@ -729,8 +735,8 @@ def _start_e2e_docker(*, restart: bool = False) -> float:
     compose_file = str(PROJECT_ROOT / "docker-compose-e2e.yml")
 
     actors = {
-        "alonso": 18200, "sancho": 18201,
-        "chairmaker": 18202, "albert": 18203,
+        "alonso": 19200, "sancho": 19201,
+        "chairmaker": 19202, "albert": 19203,
     }
 
     # Tear down first if --restart requested
@@ -764,12 +770,19 @@ def _start_e2e_docker(*, restart: bool = False) -> float:
         we_started = True
         print("  Starting E2E Docker stack (4 actors)...", file=sys.stderr,
               flush=True)
-        subprocess.run(
+        result = subprocess.run(
             ["docker", "compose", "-f", compose_file, "up", "--build", "-d"],
             capture_output=True,
             timeout=300,
-            check=True,
+            text=True,
         )
+        if result.returncode != 0:
+            # Print the actual Docker error for diagnosis
+            stderr_tail = (result.stderr or "").strip().split("\n")[-20:]
+            raise RuntimeError(
+                f"docker compose up failed (exit {result.returncode}):\n"
+                + "\n".join(stderr_tail)
+            )
 
         # Wait for all 8 containers to become healthy
         for actor, port in actors.items():
@@ -1232,7 +1245,9 @@ def main() -> None:
         if not json_mode:
             print("Mock mode (no real services).", file=sys.stderr, flush=True)
     else:
-        # Start integration services (Core+Brain) for non-E2E suites
+        # Integration services (Core:18100, Brain:18200) and E2E Docker
+        # (19100-19103 / 19200-19203) use separate port ranges, so both
+        # can run simultaneously without conflict.
         if has_non_e2e and service_mode != "mock":
             mode_label = "Docker" if service_mode == "docker" else "Local"
             if not json_mode:

@@ -14,14 +14,14 @@ CREATE TABLE IF NOT EXISTS contacts (
     sharing_tier  TEXT NOT NULL DEFAULT 'none'
         CHECK (sharing_tier IN ('none','summary','full','locked')),
     notes         TEXT NOT NULL DEFAULT '',
-    created_at    INTEGER NOT NULL DEFAULT (unixepoch()),
-    updated_at    INTEGER NOT NULL DEFAULT (unixepoch())
+    created_at    INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
+    updated_at    INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER))
 ) WITHOUT ROWID;
 
 -- Audit log: append-only, hash-chained
 CREATE TABLE IF NOT EXISTS audit_log (
     seq           INTEGER PRIMARY KEY AUTOINCREMENT,
-    ts            INTEGER NOT NULL DEFAULT (unixepoch()),
+    ts            INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
     actor         TEXT NOT NULL,
     action        TEXT NOT NULL,
     resource      TEXT NOT NULL DEFAULT '',
@@ -38,15 +38,15 @@ CREATE TABLE IF NOT EXISTS device_tokens (
     device_id     TEXT PRIMARY KEY,
     token_hash    TEXT NOT NULL,
     device_name   TEXT NOT NULL DEFAULT '',
-    last_seen     INTEGER NOT NULL DEFAULT (unixepoch()),
-    created_at    INTEGER NOT NULL DEFAULT (unixepoch()),
+    last_seen     INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
+    created_at    INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
     revoked       INTEGER NOT NULL DEFAULT 0
 ) WITHOUT ROWID;
 
 -- Crash log: sanitized crash entries
 CREATE TABLE IF NOT EXISTS crash_log (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    ts            INTEGER NOT NULL DEFAULT (unixepoch()),
+    ts            INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
     component     TEXT NOT NULL,
     message       TEXT NOT NULL,
     stack_hash    TEXT NOT NULL DEFAULT '',
@@ -59,7 +59,7 @@ CREATE INDEX IF NOT EXISTS idx_crash_log_ts ON crash_log(ts);
 CREATE TABLE IF NOT EXISTS kv_store (
     key           TEXT PRIMARY KEY,
     value         TEXT NOT NULL,
-    updated_at    INTEGER NOT NULL DEFAULT (unixepoch())
+    updated_at    INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER))
 ) WITHOUT ROWID;
 
 -- Scratchpad: cognitive checkpointing for multi-step reasoning
@@ -67,8 +67,8 @@ CREATE TABLE IF NOT EXISTS scratchpad (
     task_id       TEXT PRIMARY KEY,
     step          INTEGER NOT NULL DEFAULT 0,
     context       TEXT NOT NULL DEFAULT '{}',
-    created_at    INTEGER NOT NULL DEFAULT (unixepoch()),
-    updated_at    INTEGER NOT NULL DEFAULT (unixepoch())
+    created_at    INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
+    updated_at    INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER))
 ) WITHOUT ROWID;
 
 -- Task queue: outbox pattern for async tasks
@@ -80,11 +80,11 @@ CREATE TABLE IF NOT EXISTS dina_tasks (
         CHECK (status IN ('pending','running','completed','failed','dead_letter')),
     attempts      INTEGER NOT NULL DEFAULT 0,
     max_attempts  INTEGER NOT NULL DEFAULT 3,
-    scheduled_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+    scheduled_at  INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
     started_at    INTEGER,
     completed_at  INTEGER,
     error         TEXT NOT NULL DEFAULT '',
-    created_at    INTEGER NOT NULL DEFAULT (unixepoch())
+    created_at    INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER))
 ) WITHOUT ROWID;
 
 CREATE INDEX IF NOT EXISTS idx_dina_tasks_status ON dina_tasks(status, scheduled_at);
@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS reminders (
     recurring     TEXT NOT NULL DEFAULT ''
         CHECK (recurring IN ('','daily','weekly','monthly')),
     completed     INTEGER NOT NULL DEFAULT 0,
-    created_at    INTEGER NOT NULL DEFAULT (unixepoch())
+    created_at    INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER))
 ) WITHOUT ROWID;
 
 CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(due_at) WHERE completed = 0;

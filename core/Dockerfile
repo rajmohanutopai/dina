@@ -17,6 +17,7 @@ COPY . .
 
 # Build with CGO enabled for SQLCipher.
 RUN CGO_ENABLED=1 go build \
+    -tags fts5 \
     -ldflags="-s -w" \
     -o /dina-core \
     ./cmd/dina-core/

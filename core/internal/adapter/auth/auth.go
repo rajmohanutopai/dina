@@ -34,6 +34,7 @@ import (
 // Compile-time checks: adapters satisfy port interfaces.
 var _ port.TokenValidator = (*tokenValidator)(nil)
 var _ port.DeviceKeyRegistrar = (*tokenValidator)(nil)
+var _ port.ClientTokenRegistrar = (*tokenValidator)(nil)
 var _ port.SessionManager = (*sessionManager)(nil)
 var _ port.PassphraseVerifier = (*passphraseVerifier)(nil)
 var _ port.RateLimiter = (*rateLimiter)(nil)
@@ -105,6 +106,14 @@ func (v *tokenValidator) RevokeDeviceKey(did string) {
 	if dpk, ok := v.deviceKeys[did]; ok {
 		dpk.revoked = true
 	}
+}
+
+// RegisterClientToken registers a raw CLIENT_TOKEN so that future
+// ValidateClientToken calls will accept it. The token is stored as its
+// SHA-256 hex digest, matching the lookup path in ValidateClientToken.
+func (v *tokenValidator) RegisterClientToken(token string, deviceID string) {
+	hash := sha256Hex(token)
+	v.clientTokens[hash] = deviceID
 }
 
 // NewDefaultTokenValidator creates a TokenValidator pre-loaded with the

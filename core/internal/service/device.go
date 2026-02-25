@@ -13,10 +13,11 @@ import (
 // DeviceService manages the device pairing lifecycle. It coordinates the
 // 6-digit pairing ceremony, device registration, listing, and revocation.
 type DeviceService struct {
-	pairer       port.DevicePairer
-	registry     port.DeviceRegistry
-	keyRegistrar port.DeviceKeyRegistrar
-	clock        port.Clock
+	pairer          port.DevicePairer
+	registry        port.DeviceRegistry
+	keyRegistrar    port.DeviceKeyRegistrar
+	tokenRegistrar  port.ClientTokenRegistrar
+	clock           port.Clock
 }
 
 // NewDeviceService constructs a DeviceService with all required dependencies.
@@ -36,6 +37,12 @@ func NewDeviceService(
 // Ed25519 device keys for signature-based authentication.
 func (s *DeviceService) SetKeyRegistrar(kr port.DeviceKeyRegistrar) {
 	s.keyRegistrar = kr
+}
+
+// SetTokenRegistrar wires the auth token registrar so that legacy token
+// pairing can register CLIENT_TOKENs for bearer-based authentication.
+func (s *DeviceService) SetTokenRegistrar(tr port.ClientTokenRegistrar) {
+	s.tokenRegistrar = tr
 }
 
 // InitiatePairing generates a new 6-digit pairing code for a device to use.
@@ -64,6 +71,12 @@ func (s *DeviceService) CompletePairing(ctx context.Context, code, deviceName st
 	resp, err := s.pairer.CompletePairingFull(ctx, code, deviceName)
 	if err != nil {
 		return nil, fmt.Errorf("device: complete pairing: %w", err)
+	}
+
+	// Register the CLIENT_TOKEN in the auth validator so future
+	// bearer-based requests from this device are accepted.
+	if s.tokenRegistrar != nil && resp.ClientToken != "" {
+		s.tokenRegistrar.RegisterClientToken(resp.ClientToken, deviceName)
 	}
 
 	return resp, nil

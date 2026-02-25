@@ -312,6 +312,15 @@ class TestAgenticBehavior:
         Verifies the full LLM pipeline end-to-end: prompt in, response
         out, with observability metadata (model name, token counts).
         """
+        # Runtime check: verify the Docker Brain actually has an LLM available.
+        # GOOGLE_API_KEY may be set on the test runner but not inside Docker.
+        health = _brain_healthz(docker_services.brain_url("alonso"))
+        if health.get("llm_router") != "available":
+            pytest.skip(
+                "Brain LLM router not available in Docker — "
+                "no LLM configured inside container"
+            )
+
         result = _brain_reason(
             docker_services.brain_url("alonso"),
             docker_services.brain_token,

@@ -19,11 +19,11 @@ CREATE TABLE IF NOT EXISTS vault_items (
     body          TEXT NOT NULL DEFAULT '',
     metadata      TEXT NOT NULL DEFAULT '{}',
     tags          TEXT NOT NULL DEFAULT '[]',
-    timestamp     INTEGER NOT NULL DEFAULT (unixepoch()),
-    created_at    INTEGER NOT NULL DEFAULT (unixepoch()),
-    updated_at    INTEGER NOT NULL DEFAULT (unixepoch()),
+    timestamp     INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
+    created_at    INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
+    updated_at    INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
     deleted       INTEGER NOT NULL DEFAULT 0
-) WITHOUT ROWID;
+);
 
 CREATE INDEX IF NOT EXISTS idx_vault_items_type ON vault_items(type);
 CREATE INDEX IF NOT EXISTS idx_vault_items_source ON vault_items(source, source_id);
@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS staging (
     body          TEXT NOT NULL DEFAULT '',
     metadata      TEXT NOT NULL DEFAULT '{}',
     expires_at    INTEGER NOT NULL,
-    created_at    INTEGER NOT NULL DEFAULT (unixepoch())
+    created_at    INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER))
 ) WITHOUT ROWID;
 
 CREATE INDEX IF NOT EXISTS idx_staging_expires ON staging(expires_at);
@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS relationships (
     to_id         TEXT NOT NULL REFERENCES vault_items(id) ON DELETE CASCADE,
     rel_type      TEXT NOT NULL DEFAULT 'related'
         CHECK (rel_type IN ('related','reply_to','attachment','duplicate','thread')),
-    created_at    INTEGER NOT NULL DEFAULT (unixepoch()),
+    created_at    INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
     UNIQUE(from_id, to_id, rel_type)
 );
 
@@ -98,13 +98,13 @@ CREATE TABLE IF NOT EXISTS embedding_meta (
     model_name    TEXT NOT NULL,
     model_version TEXT NOT NULL DEFAULT '',
     dimensions    INTEGER NOT NULL DEFAULT 384,
-    embedded_at   INTEGER NOT NULL DEFAULT (unixepoch())
+    embedded_at   INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER))
 ) WITHOUT ROWID;
 
 -- Schema version tracking
 CREATE TABLE IF NOT EXISTS schema_version (
     version       INTEGER PRIMARY KEY,
-    applied_at    INTEGER NOT NULL DEFAULT (unixepoch()),
+    applied_at    INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
     description   TEXT NOT NULL DEFAULT ''
 );
 

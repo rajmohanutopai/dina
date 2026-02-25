@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -35,7 +36,9 @@ import (
 	"github.com/anthropics/dina/core/internal/adapter/vault"
 	"github.com/anthropics/dina/core/internal/adapter/ws"
 	"github.com/anthropics/dina/core/internal/config"
+	"github.com/anthropics/dina/core/internal/domain"
 	"github.com/anthropics/dina/core/internal/handler"
+	"github.com/anthropics/dina/core/internal/ingress"
 	"github.com/anthropics/dina/core/internal/middleware"
 	"github.com/anthropics/dina/core/internal/port"
 	"github.com/anthropics/dina/core/internal/service"
@@ -88,9 +91,9 @@ func main() {
 	}
 	identitySigner := crypto.NewIdentitySigner(signingPrivKey)
 
-	// 3. Vault
-	vaultMgr := vault.NewManager(cfg.VaultPath)
-	backupMgr := vault.NewBackupManager(vaultMgr)
+	// 3. Vault — build-tag factory selects SQLCipher (CGO) or in-memory (no CGO)
+	vaultMgr := newVaultBackend(cfg.VaultPath)
+	backupMgr := newBackupMgr(vaultMgr)
 	auditLogger := vault.NewAuditLogger()
 
 	// 4. PII
@@ -228,15 +231,32 @@ func main() {
 		outboxMgr, inboxMgr, clk,
 	)
 	transportSvc.SetDeliverer(transporter)
+	transportSvc.SetVerifier(signer)
 	transportSvc.SetRecipientKeys(
 		signingPrivKey.Public().(ed25519.PublicKey),
 		[]byte(signingPrivKey),
 	)
 
+	// Ingress: dead-drop + rate limiter + sweeper + router (§7 3-valve pipeline)
+	deadDropDir := filepath.Join(cfg.VaultPath, "deaddrop")
+	deadDrop := ingress.NewDeadDrop(deadDropDir, 10000, 500*1024*1024)
+	ingressLimiter := ingress.NewRateLimiter(50, time.Minute, 10000, 500*1024*1024, deadDrop)
+	ingressSweeper := ingress.NewSweeper(deadDrop, nacl, didResolverPort, clk, 24*time.Hour)
+	ingressSweeper.SetKeys(
+		signingPrivKey.Public().(ed25519.PublicKey),
+		[]byte(signingPrivKey),
+	)
+	ingressSweeper.SetConverter(converter)
+	ingressSweeper.SetOnMessage(func(msg *domain.DinaMessage) {
+		transportSvc.StoreInbound(msg)
+	})
+	ingressRouter := ingress.NewRouter(vaultMgr, inboxMgr, deadDrop, ingressSweeper, ingressLimiter)
+
 	taskSvc := service.NewTaskService(taskQueue, watchdog, brain, clk)
 
 	deviceSvc := service.NewDeviceService(pairer, deviceRegistry, clk)
 	deviceSvc.SetKeyRegistrar(tokenValidator)
+	deviceSvc.SetTokenRegistrar(tokenValidator)
 
 	_ = service.NewGatekeeperService(
 		vaultMgr, vaultMgr, gk, auditLogger, notifier, clk,
@@ -263,7 +283,6 @@ func main() {
 	// Suppress unused warnings for adapters/services wired but not yet routed.
 	_ = estateSvc
 	_ = hkdfDeriver
-	_ = signer
 
 	// ---------- Construct handlers ----------
 
@@ -271,7 +290,7 @@ func main() {
 	adminH := &handler.AdminHandler{ProxyURL: cfg.BrainURL, Token: cfg.BrainToken}
 	vaultH := &handler.VaultHandler{Vault: vaultSvc, PII: scrubber}
 	identityH := &handler.IdentityHandler{Identity: identitySvc, DID: didMgr, Signer: identitySigner, Mnemonic: bip39, IdentitySeed: bootstrapSeed}
-	messageH := &handler.MessageHandler{Transport: transportSvc}
+	messageH := &handler.MessageHandler{Transport: transportSvc, IngressRouter: ingressRouter}
 	taskH := &handler.TaskHandler{Task: taskSvc}
 	deviceH := &handler.DeviceHandler{Device: deviceSvc}
 

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/anthropics/dina/core/internal/domain"
+	"github.com/anthropics/dina/core/internal/middleware"
 	"github.com/anthropics/dina/core/internal/port"
 	"github.com/anthropics/dina/core/internal/service"
 )
@@ -21,7 +22,7 @@ type VaultHandler struct {
 // agentDID extracts the agent DID from the request context (set by auth
 // middleware). Falls back to "brain" when no value is present.
 func agentDID(r *http.Request) string {
-	if v, ok := r.Context().Value("agent_did").(string); ok && v != "" {
+	if v, ok := r.Context().Value(middleware.AgentDIDKey).(string); ok && v != "" {
 		return v
 	}
 	return "brain"

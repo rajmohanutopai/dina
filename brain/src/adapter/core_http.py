@@ -1,8 +1,23 @@
 """HTTP adapter for dina-core — implements CoreClient protocol.
 
-All vault, scratchpad, KV, PII, notification, task-ACK, identity,
-and D2D messaging operations are mapped to core's REST endpoints
-at ``{base_url}`` (default ``http://core:8100``).
+All vault, KV, PII, notification, task-ACK, identity, and D2D
+messaging operations are mapped to core's REST endpoints at
+``{base_url}`` (default ``http://core:8100``).
+
+Endpoint mapping (must match core/cmd/dina-core/main.go routes):
+    /v1/vault/query          POST   search vault items
+    /v1/vault/store          POST   store single item
+    /v1/vault/store/batch    POST   store batch of items
+    /v1/vault/item/{id}      GET    get item by ID
+    /v1/vault/kv/{key}       GET/PUT  key-value store
+    /v1/did/sign             POST   Ed25519 signing
+    /v1/msg/send             POST   D2D outbound message
+    /v1/notify               POST   push notification
+    /v1/task/ack             POST   task queue ACK
+    /v1/pii/scrub            POST   Tier 1 PII regex
+    /healthz                 GET    liveness probe
+
+Scratchpad is implemented over the KV store (scratchpad:{task_id}).
 
 Third-party imports:  httpx, structlog.
 """
@@ -11,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 from typing import Any
 
 import httpx
@@ -174,19 +190,19 @@ class CoreHTTPClient:
     # -- Vault CRUD ----------------------------------------------------------
 
     async def get_vault_item(self, persona_id: str, item_id: str) -> dict:
-        """GET /v1/vault/{persona_id}/items/{item_id}."""
+        """GET /v1/vault/item/{item_id}?persona={persona_id}."""
         resp = await self._request(
             "GET",
-            f"/v1/vault/{persona_id}/items/{item_id}",
+            f"/v1/vault/item/{item_id}?persona={persona_id}",
         )
         return resp.json()
 
     async def store_vault_item(self, persona_id: str, item: dict) -> str:
-        """POST /v1/vault/{persona_id}/items — returns assigned item_id."""
+        """POST /v1/vault/store — returns assigned item_id."""
         resp = await self._request(
             "POST",
-            f"/v1/vault/{persona_id}/items",
-            json=item,
+            "/v1/vault/store",
+            json={"persona": persona_id, "item": item},
         )
         data = resp.json()
         return data.get("id", data.get("item_id", ""))
@@ -194,47 +210,46 @@ class CoreHTTPClient:
     async def store_vault_batch(
         self, persona_id: str, items: list[dict]
     ) -> None:
-        """POST /v1/vault/{persona_id}/items/batch — atomic batch store."""
+        """POST /v1/vault/store/batch — atomic batch store."""
         await self._request(
             "POST",
-            f"/v1/vault/{persona_id}/items/batch",
-            json={"items": items},
+            "/v1/vault/store/batch",
+            json={"persona": persona_id, "items": items},
         )
 
     async def search_vault(
         self, persona_id: str, query: str, mode: str = "hybrid"
     ) -> list[dict]:
-        """POST /v1/vault/{persona_id}/search — hybrid FTS5 + cosine."""
+        """POST /v1/vault/query — hybrid FTS5 + cosine."""
         resp = await self._request(
             "POST",
-            f"/v1/vault/{persona_id}/search",
-            json={"query": query, "mode": mode},
+            "/v1/vault/query",
+            json={"persona": persona_id, "query": query, "mode": mode, "limit": 50},
         )
         data = resp.json()
-        return data.get("results", data) if isinstance(data, dict) else data
+        items = data.get("items", []) if isinstance(data, dict) else data
+        return items if items else []
 
-    # -- Scratchpad ----------------------------------------------------------
+    # -- Scratchpad (stored via KV) ------------------------------------------
 
     async def write_scratchpad(
         self, task_id: str, step: int, context: dict
     ) -> None:
-        """PUT /v1/scratchpad/{task_id} — write checkpoint."""
-        await self._request(
-            "PUT",
-            f"/v1/scratchpad/{task_id}",
-            json={"step": step, "context": context},
+        """Write checkpoint via KV at ``scratchpad:{task_id}``."""
+        await self.set_kv(
+            f"scratchpad:{task_id}",
+            json.dumps({"step": step, "context": context}),
         )
 
     async def read_scratchpad(self, task_id: str) -> dict | None:
-        """GET /v1/scratchpad/{task_id} — latest checkpoint or None."""
+        """Read checkpoint from KV at ``scratchpad:{task_id}``."""
+        raw = await self.get_kv(f"scratchpad:{task_id}")
+        if raw is None:
+            return None
         try:
-            resp = await self._request("GET", f"/v1/scratchpad/{task_id}")
-            data = resp.json()
-            return data if data else None
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == 404:
-                return None
-            raise
+            return json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
 
     # -- Key-Value store -----------------------------------------------------
 
@@ -278,11 +293,11 @@ class CoreHTTPClient:
     # -- Notifications -------------------------------------------------------
 
     async def notify(self, device_id: str, payload: dict) -> None:
-        """POST /v1/notify/{device_id} — push notification to device."""
+        """POST /v1/notify — broadcast notification to connected devices."""
         await self._request(
             "POST",
-            f"/v1/notify/{device_id}",
-            json=payload,
+            "/v1/notify",
+            json={"message": json.dumps(payload)},
         )
 
     # -- Task queue ACK ------------------------------------------------------
@@ -298,18 +313,18 @@ class CoreHTTPClient:
     # -- Identity / signing --------------------------------------------------
 
     async def did_sign(self, data: bytes) -> bytes:
-        """POST /v1/identity/sign — Ed25519 sign via core's keypair.
+        """POST /v1/did/sign — Ed25519 sign via core's keypair.
 
-        Sends raw bytes as base64-encoded JSON payload.  Returns the
-        signature bytes decoded from the base64 response.
+        Sends raw bytes as hex-encoded JSON payload.  Returns the
+        signature bytes decoded from the hex response.
         """
         resp = await self._request(
             "POST",
-            "/v1/identity/sign",
-            json={"data": base64.b64encode(data).decode()},
+            "/v1/did/sign",
+            json={"data": data.hex()},
         )
-        sig_b64 = resp.json().get("signature", "")
-        return base64.b64decode(sig_b64)
+        sig_hex = resp.json().get("signature", "")
+        return bytes.fromhex(sig_hex)
 
     # -- Contacts (core directory) -------------------------------------------
 
@@ -397,9 +412,9 @@ class CoreHTTPClient:
     # -- Dina-to-Dina messaging ----------------------------------------------
 
     async def send_d2d(self, to_did: str, payload: dict) -> None:
-        """POST /v1/dina/send — outbound DIDComm message through core."""
+        """POST /v1/msg/send — outbound DIDComm message through core."""
         await self._request(
             "POST",
-            "/v1/dina/send",
-            json={"to": to_did, "payload": payload},
+            "/v1/msg/send",
+            json={"to": to_did, "body": json.dumps(payload).encode(), "type": "dina/d2d"},
         )

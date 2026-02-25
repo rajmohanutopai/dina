@@ -60,7 +60,7 @@ services:
   core-alonso:
     <<: *core-base
     ports:
-      - "18100:8100"
+      - "19100:8100"
     volumes:
       - alonso-data:/data
     environment:
@@ -73,7 +73,7 @@ services:
   brain-alonso:
     <<: *brain-base
     ports:
-      - "18200:8200"
+      - "19200:8200"
     volumes:
       - alonso-data:/data
     environment:
@@ -84,7 +84,7 @@ services:
   core-sancho:
     <<: *core-base
     ports:
-      - "18101:8100"
+      - "19101:8100"
     volumes:
       - sancho-data:/data
     environment:
@@ -97,7 +97,7 @@ services:
   brain-sancho:
     <<: *brain-base
     ports:
-      - "18201:8200"
+      - "19201:8200"
     volumes:
       - sancho-data:/data
     environment:
@@ -108,7 +108,7 @@ services:
   core-chairmaker:
     <<: *core-base
     ports:
-      - "18102:8100"
+      - "19102:8100"
     volumes:
       - chairmaker-data:/data
     environment:
@@ -121,7 +121,7 @@ services:
   brain-chairmaker:
     <<: *brain-base
     ports:
-      - "18202:8200"
+      - "19202:8200"
     volumes:
       - chairmaker-data:/data
     environment:
@@ -132,7 +132,7 @@ services:
   core-albert:
     <<: *core-base
     ports:
-      - "18103:8100"
+      - "19103:8100"
     volumes:
       - albert-data:/data
     environment:
@@ -145,7 +145,7 @@ services:
   brain-albert:
     <<: *brain-base
     ports:
-      - "18203:8200"
+      - "19203:8200"
     volumes:
       - albert-data:/data
     environment:

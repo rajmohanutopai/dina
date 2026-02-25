@@ -49,14 +49,16 @@ class LLMProvider(Enum):
 class IntentRisk(Enum):
     """Risk classification for agent intents (Agent Safety Layer).
 
-    SAFE    = auto-approve, no user review (e.g. fetch_weather).
-    RISKY   = flag for user review before execution (e.g. send_email).
-    BLOCKED = deny outright, no user prompt needed (e.g. untrusted bot reading vault).
+    SAFE     = auto-approve, no user review (e.g. fetch_weather, search).
+    MODERATE = flag for user review before execution (e.g. send_email, draft_email).
+    HIGH     = flag for user review, high-risk action (e.g. transfer_money, share_data).
+    BLOCKED  = deny outright, no user prompt needed (e.g. untrusted bot reading vault).
     """
 
-    SAFE = "safe"
-    RISKY = "risky"
-    BLOCKED = "blocked"
+    SAFE = "SAFE"
+    MODERATE = "MODERATE"
+    HIGH = "HIGH"
+    BLOCKED = "BLOCKED"
 
 
 class TaskType(Enum):

@@ -83,19 +83,32 @@ _ENGAGEMENT_SOURCES = frozenset({
 _BLOCKED_ACTIONS = frozenset({
     "read_vault",
     "export_data",
-    "delete_data",
     "access_keys",
 })
 
-# Actions that require user review (risky but not blocked).
-_RISKY_ACTIONS = frozenset({
+# HIGH risk actions — require user review, high severity.
+# Financial transactions, data sharing, destructive operations.
+_HIGH_ACTIONS = frozenset({
+    "transfer_money",
+    "share_data",
+    "delete_data",
+    "sign_contract",
+})
+
+# MODERATE risk actions — require user review, moderate severity.
+# Communication, payments via established channels, location sharing.
+_MODERATE_ACTIONS = frozenset({
     "send_email",
     "draft_email",
+    "draft_create",
     "pay_upi",
     "pay_crypto",
     "web_checkout",
     "share_location",
     "send_message",
+    "install_extension",
+    "form_fill",
+    "calendar_create",
 })
 
 # DIDComm message type prefixes and their handlers.
@@ -260,6 +273,10 @@ class GuardianLoop:
             if event_type == "agent_intent":
                 return await self.review_intent(event)
 
+            # ---- LLM reasoning (SS10.3) ----
+            if event_type == "reason":
+                return await self._handle_reason(event)
+
             # ---- DIDComm message routing (SS2.8) ----
             if event_type and event_type.startswith("dina/"):
                 return await self._handle_didcomm(event)
@@ -271,14 +288,14 @@ class GuardianLoop:
                 log.info("guardian.silent", event_type=event_type)
                 if task_id:
                     await self._ack_task(task_id)
-                return {"action": "silent_log"}
+                return {"action": "silent_log", "classification": "silent"}
 
             if priority == "engagement":
                 self._briefing_items.append(event)
                 log.info("guardian.engagement_saved", event_type=event_type)
                 if task_id:
                     await self._ack_task(task_id)
-                return {"action": "save_for_briefing"}
+                return {"action": "save_for_briefing", "classification": "engagement"}
 
             # Fiduciary or solicited — needs active processing.
             # Checkpoint step 1.
@@ -319,6 +336,7 @@ class GuardianLoop:
             return {
                 "action": action,
                 "priority": priority,
+                "classification": priority,
                 "nudge": nudge,
             }
 
@@ -349,16 +367,21 @@ class GuardianLoop:
 
         Classification
         --------------
-        - ``safe`` -> ``auto_approve`` (e.g. ``fetch_weather``).
-        - ``risky`` -> ``flag_for_review`` (e.g. ``send_email``).
-        - ``blocked`` -> ``deny`` (e.g. untrusted bot reading vault).
+        - ``SAFE``     -> ``auto_approve`` (e.g. ``fetch_weather``, ``search``).
+        - ``MODERATE`` -> ``flag_for_review`` (e.g. ``send_email``, ``draft_email``).
+        - ``HIGH``     -> ``flag_for_review`` (e.g. ``transfer_money``, ``share_data``).
+        - ``BLOCKED``  -> ``deny`` (e.g. untrusted bot reading vault).
 
         Returns
         -------
         dict
-            Decision dict with ``action``, ``risk``, and ``reason`` keys.
+            Decision dict with ``action``, ``risk``, ``reason``,
+            ``approved``, and ``requires_approval`` keys.
         """
+        # Support both flat and nested (payload) action fields.
         action = intent.get("action", "")
+        if not action and isinstance(intent.get("payload"), dict):
+            action = intent["payload"].get("action", "")
         trust_level = intent.get("trust_level", "unknown")
         risk_hint = intent.get("risk_level", "")
         agent_did = intent.get("agent_did", "")
@@ -372,18 +395,36 @@ class GuardianLoop:
                 "action": "deny",
                 "risk": decision.value,
                 "reason": reason,
+                "approved": False,
+                "requires_approval": False,
             }
 
-        # ---- Risky: requires user review ----
-        if action in _RISKY_ACTIONS or risk_hint == "risky":
-            decision = IntentRisk.RISKY
-            reason = f"Risky action: {action} requires user approval"
+        # ---- HIGH risk: requires user review (high severity) ----
+        if action in _HIGH_ACTIONS or risk_hint == "high":
+            decision = IntentRisk.HIGH
+            reason = f"High-risk action: {action} requires user approval"
             await self._audit_intent(intent, decision, reason)
             return {
                 "action": "flag_for_review",
                 "risk": decision.value,
                 "reason": reason,
                 "intent": intent,
+                "approved": False,
+                "requires_approval": True,
+            }
+
+        # ---- MODERATE risk: requires user review ----
+        if action in _MODERATE_ACTIONS or risk_hint == "risky":
+            decision = IntentRisk.MODERATE
+            reason = f"Moderate-risk action: {action} requires user approval"
+            await self._audit_intent(intent, decision, reason)
+            return {
+                "action": "flag_for_review",
+                "risk": decision.value,
+                "reason": reason,
+                "intent": intent,
+                "approved": False,
+                "requires_approval": True,
             }
 
         # ---- Safe: auto-approve ----
@@ -393,6 +434,8 @@ class GuardianLoop:
             "action": "auto_approve",
             "risk": decision.value,
             "reason": reason,
+            "approved": True,
+            "requires_approval": False,
         }
 
     # ------------------------------------------------------------------
@@ -474,6 +517,33 @@ class GuardianLoop:
     # ------------------------------------------------------------------
     # Vault Lifecycle Handlers (SS2.2)
     # ------------------------------------------------------------------
+
+    async def _handle_reason(self, event: dict) -> dict:
+        """Handle reason events — delegate to LLM router for completion.
+
+        The LLM router returns ``content``, ``model``, ``tokens_in``,
+        ``tokens_out`` which the reason route translates into its response.
+        """
+        prompt = event.get("prompt", "")
+        persona_tier = event.get("persona_tier", "open")
+        provider = event.get("provider")
+
+        try:
+            result = await self._llm.route(
+                task_type="complex_reasoning",
+                prompt=prompt,
+                persona_tier=persona_tier,
+                provider=provider,
+            )
+            return {
+                "content": result.get("content", ""),
+                "model": result.get("model"),
+                "tokens_in": result.get("tokens_in"),
+                "tokens_out": result.get("tokens_out"),
+            }
+        except Exception as exc:
+            log.error("guardian.reason_failed", error=str(exc))
+            return {"content": "", "model": None, "tokens_in": None, "tokens_out": None}
 
     async def _handle_vault_unlocked(self, event: dict) -> dict:
         """Handle vault_unlocked event — initialise with decrypted data.

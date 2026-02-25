@@ -30,20 +30,20 @@ git clone https://github.com/rajmohanutopai/dina.git && cd dina
 ./install.sh
 ```
 
-`install.sh` generates secrets, picks your LLM provider, builds containers, and displays your DID + recovery phrase. One script, fully interactive, idempotent.
+`install.sh` generates secrets, picks your LLM provider, builds containers, and displays your DID + recovery phrase. 
 
 ---
 
 # Part I: The Vision
 
-> *In 2017, I wrote a novel called UTOPAI - about AI Utopia. The novel is open source and is available [HERE](https://github.com/rajmohanutopai/utopai/blob/main/UTOPAI_2017_full.pdf). The novel envisaged a world where every person had a personal AI named Dina. She wasn't a search engine or a chatbot. She was your personal AI — she knew your friends, remembered your promises, whispered helpful things when you needed them, and talked to other Dinas so life just... worked better. This repository is an attempt to build her.*
+> *In 2017, I wrote a novel called UTOPAI - about AI Utopia. The novel is open source and is available [HERE](https://github.com/rajmohanutopai/utopai/blob/main/UTOPAI_2017_full.pdf). The novel envisaged a world where every person had a personal AI named Dina. She wasn't a search engine or a chatbot. She was your personal AI — she knew your friends, remembered your promises, whispered helpful things when you needed them, knew which is the best solution for you, and talked to other Dinas so life just... worked better. This repository is an attempt to build her.*
 ---
 
 ## What is Dina?
 
-Imagine this. Your friend Sancho is coming over for tea. As he leaves his house, his Dina quietly lets your Dina know. Your Dina remembers that Sancho's mother was unwell last time you met. She reminds you to put the kettle on — he likes his tea strong. And suggests clearing your calendar for the next two hours.
+Imagine this. Your friend Sancho is coming over. As he leaves his house, his Dina quietly lets your Dina know. Your Dina remembers that Sancho's mother was unwell last time you met. She reminds you to put the kettle on - he likes cardamom tea, and he like his tea strong. And suggests clearing your calendar for the next two hours.
 
-You open the door. You ask about his mother. Sancho smiles. "She is fine, thank you for asking".
+You open the door. You hand him hot, strong cardamom tea. You ask about his mother. Sancho smiles. "She is fine, thank you for asking".
 
 That's Dina. Not an app or a chatbot or a multi-purpose agent. Dina is a personal agent that makes you more thoughtful, more present, and more human.
 
@@ -51,8 +51,8 @@ Now imagine the same thing, everywhere in your life:
 
 - You're buying a laptop. Your Dina talks to the review bots, checks the Reputation Graph, and tells you: *"The battery on this one dies in three months. Here's a better option."*
 - You promised your daughter you'd read her a book. You forgot which one. *"It was 'The Little Prince'. Last Tuesday."*
-- Your license needs renewal. You didn't even know it was due. Dina did. She flags it, and if you approve, she informs another agent (like OpenClaw, Siri, or Google) about the requirement.
-- Dead internet theory becomes real. You lose every bit of fun because you don't know what is made by AI and what is real. You can ask Dina then to filter out and show you only verifiably true items. Your Dina interacts with verified builders Dina, and only those items are shown to you.
+- Your license needs renewal. You didn't even know it was due. Dina did. She flags it, and if you approve, she informs another bot about the requirement to complete the process.
+- Dead internet theory becomes real. You cant differentiate between what made by AI and what is real. You can ask Dina then to filter out and show you only verifiably true items. Your Dina interacts with verified builders Dina, and only those items are shown to you.
 
 Dina is the agent that does what you *need*. She is there for you, and only for you. She's quiet most of the time. And there when it matters.
 
@@ -64,40 +64,38 @@ Dina is the agent that does what you *need*. She is there for you, and only for 
 
 Today, you don't own your digital self. Your Google account, Apple ID, and LinkedIn profile are not really yours. They are accounts that companies let you use. If Google bans you tomorrow, or a company goes belly up, that account disappears. You are a tenant everywhere. Landlord nowhere.
 
-Dina changes this. Your Dina is your *sovereign digital self*. You hold the encryption keys and the data. You own it completely. You control who sees what. Everything mentioned above — the memory, the preferences, the Dina-to-Dina communication, the purchases, the reputation — is possible because of this foundational principle: *you own you*.
+Dina changes this. Your Dina is your *sovereign digital self*. Implemented using Web3 Cryptographic Tech, **you get your own digital identity**, separate from any of the external company accounts. You hold the encryption keys and the data. You own it completely. You control who sees what. Everything mentioned above — the memory, the preferences, the Dina-to-Dina communication, the purchases, the reputation - is possible because of this foundational principle: *you own you*.
 
 If you delete your data, it's truly gone. Not archived. Gone. Because you control the data, and no one else ever had the keys.
 
 ### One You, Many Faces
 
-In real life, you wear many hats. At work, you are a consummate professional. At home, a funny, jolly parent. At the store, a friendly but cynical buyer. With a doctor, an open and serious patient. These aren't fake identities — they're different facets of the same person, shared in different contexts.
+In real life, you wear many hats. At work, you are a consummate professional. At home, a funny, jolly parent. At the store, a friendly but cynical buyer. With a doctor, an open and serious patient. These aren't fake identities - they're different facets of the same person, shared in different contexts.
 
-Dina mirrors this. One root identity — you, the human, the keys. But multiple *personas* that reveal only what each situation needs.
+Dina mirrors this. One root identity for you, the human. But multiple *personas* that reveal only what each situation needs.
 
-* When your Dina talks to a seller's Dina, the seller sees: *verified real person, valid payment, wants to buy a chair.* No other information is provided.
-* When you handle your license renewal, Dina presents your full legal identity to the government agent.
+* When your Dina talks to a chair seller's Dina, the seller sees: *verified real person, valid payment, wants to buy a chair.* Seller can never see your health records, or financial data. 
 
 This is not just a preference setting. If it were just a setting, a malicious system could jailbreak it. To avoid this, each persona is a separate cryptographic compartment. No external system can ever see anything about you unless Dina explicitly shares it for that specific interaction. Even Dina herself cannot move data between compartments without authorization.
 
 ---
 
-## The Missing Piece: Loyalty
+## The Important Piece: Loyalty
 
 For a Utopia driven by AI, it is important to have the deeply personal, deeply friendly AI, at our fingertips.
 
 Personal AI agents have already arrived. OpenClaw is a brilliant invention. Apple, Google, OpenAI, and Meta are all building agents that live on your devices, hear what you say, and see what you see. This is wonderful and inevitable.
 
-But there's a missing piece. These agents are smart and capable, but they don't have a **loyalty framework**. 
+These agents are smart and capable, but it will be brilliant for agents to use a **well defined loyalty framework**. 
 
-When the agent from these big players recommends a product, is it because the product is genuinely good - or is it because someone paid for the placement? When it reads our messages, it is not fully for us, right? Maybe the end idea is to show an idea based on your current interests. OpenClaw, being open source, has no such issue, but it is a "Task Agent" — it executes commands, but it lacks the framework to be your fiduciary guardian. 
+We always doubt, right? When the agent from big companies recommends a product, is it because the product is genuinely good - or is it because someone paid for the placement? When it reads our messages, it is not fully for us, right? Maybe the end idea is to show an idea based on your current interests. OpenClaw, being open source, has no such issue. But still, if there is a single user identity and protocol every agent can plugin to, allowing all agents to act purely on ones behalf, it will be lovely. 
 
-The idea behind Dina is to become that missing piece. She's an open protocol — a set of rules that any agent can adopt to become genuinely, verifiably *ours*. Looking from that perspective, Dina doesn't compete with OpenClaw or Google or Apple. She makes all agents *loyal*.
+The idea behind Dina is to become that missing piece. She's an open protocol — a set of rules that any agent can adopt to become genuinely, verifiably *ours*. She makes all agents *loyal*.
 
-Dina is open source, trustworthy, and incorruptible. There is no conflict of interest, and the data is mathematically safe.
 
 **Dina is also Anti-Her.**
 
-Dina also has to be anti-HER (HER - 2013 movie). She cannot become our emotional crutch. I see the world racing towards building AI that loves us (or acts as such), and the risk of that is that it will end up replacing our human relationships. In the novel *UTOPAI*, the realisation the protagonist comes up with is that meaning of anything is in its relationships (proved via socratic discourse in the novel, and now borne out by the growth of LLMs), and thus, the meaning of our life is in our relationships with others. Thus, Dina actively avoids becoming our emotional companions. If she feels that we are yearning for companionship, she should connect us to friends, relatives, others of similar interests.
+Dina also has to be anti-HER (HER - 2013 movie). She cannot become our emotional crutch. The world is racing towards building AI that loves us (or acts as such), and the risk of that is that it will end up replacing our human relationships. In the novel *UTOPAI*, the realisation the protagonist comes up with is that meaning of anything is in its relationships (proved via socratic discourse in the novel, and now borne out by the growth of LLMs), and thus, the meaning of our life is in our relationships with others. Thus, Dina actively avoids becoming our emotional companions. If she feels that we are yearning for companionship, she should connect us to friends, relatives, others of similar interests.
 
 ---
 
@@ -129,13 +127,20 @@ Because every person's Dina is a sovereign identity, Dinas can talk to each othe
 
 ### Dina is Thin on Purpose
 
-Dina is a thin service. She outsources intelligence to specialists like review bots, legal bots, recipe bots, or general purpose bots like OpenClaw.
+Dina is a thin service. She outsources intelligence to specialists like review bots, legal bots, recipe bots, or general purpose bots.
 
-**Dina has no plugins.** No third-party code runs inside Dina's process — ever. Child agents (OpenClaw, review bots, legal bots) are external services that communicate with Dina via MCP (Model Context Protocol). If a child agent gets compromised, it cannot touch your vault, your keys, or your data — it's an external process that Dina can disconnect. This is the "kernel, not platform" design: Dina is the brain, child agents are the hands.
+**Dina has no plugins.** Child agents (OpenClaw, review bots, legal bots) are external services that communicate with Dina. If a child agent gets compromised, it cannot touch your vault or data. It is an external process that should not affect Dina. Dina is a kernel, not a platform "kernel.
 
-She prioritizes access. Dina connects to email, calendar, chats, contacts. She's privacy-first, and thus is the only entity you give that authority to. Because privacy matters, Dina cannot hand that access to anyone else. All other systems get just the requirement, never the raw data.
+Dina can also act as a safety layer for autonomous agents. Malicious actors will actively try to hack and attack agents, now that agents are becoming mainstream. The idea is that - hving Dina as a central control might be able to fix this at a protocol level. 
 
-Dina is the safety layer for autonomous agents. Just this year, security researchers found hundreds of thousands of AI agent instances exposed to the internet — leaking credentials, accepting commands from anyone, with no oversight. Dina fixes this at the protocol level. When you interact with an autonomous agent or when an autonomous agent wants to act on your behalf, Dina watches. She doesn't interfere with safe tasks. But when an action agent wants to send an email, move money, or share your data, Dina checks: does this violate your privacy rules? Is this vendor trusted? Are you in the right state to make this decision? If everything is fine, it goes through - otherwise, it is flagged for review. To implement this, an agent supporting the Dina protocol will submit the intent to Dina. Dina checks:  If everything checks out, Dina approves. If not, she flags it for your review. The agent never holds your keys, never sees your full history, and never acts without oversight. Regardless of the autonomous agent doing the work, the safety layer stays the same. 
+If the autonomous agent integrates with Dina properly, Dina will be able to watch when the autonomous agent acts on your behalf. She will not interfere with safe tasks. But when the agent wants to send an email, move money, or share your data, it can send the request to Dina. Dina checks: does this violate your privacy rules? Is this vendor trusted? Are you in the right state to make this decision? If everything is fine, it goes through - otherwise, it is flagged for review. By separating out the actual agent who does the work with the safety checker who holds the keys to the house, it provides one extra level of safety. 
+
+## Security
+
+Can Dina herself be hacked? Through prompt-injection or otherwise? 
+Since Dina is a thin layer with minimal plugin support, the attack surface is small. I built a 9-layer security model specifically because she holds your most sensitive data. Web3 Cryptographic security at every layer, each persona a separate cryptographic vault, split brain architecture to safeguard against prompt injection attacks and PII cleansing at every layer. More details on the secruity is at the end of this document. The full security architecture is in [SECURITY.MD](./SECURITY.MD)
+
+
 
 Dina runs on a **Home Node** — a small, always-on server that is yours. For the privacy minded, it might be a cheap VPS or a Raspberry Pi. For others, it could be a managed service you sign up for (like ProtonMail or Signal). The vault is a single encrypted file which can be moved between any of these options anytime.
 
@@ -324,6 +329,20 @@ There cannot be any walled garden, no single owner, corporation, or nation-state
 Dina is for everyone. If you believe your digital companion should work for you, and you alone, come, join us, in building this future.
 
 ---
+
+## Security Details
+
+To store identity - Root key is Ed25519, generated from a BIP-39 24-word mnemonic. Persona keys derived via SLIP-0010 hardened paths under purpose code 9999'. Vault DEKs derived via HKDF-SHA256 with per-persona info strings. The master seed is key-wrapped on disk with an Argon2id-derived KEK. 
+
+Persona isolation is cryptographic, not application-level — each persona is a separate encrypted .sqlite file with its own DEK. Locked personas have no DEK in RAM; they're mathematically inaccessible. The gatekeeper enforces three tiers: open (brain queries freely), restricted (logged + user notified), and locked (403, requires human unlock with TTL).
+
+Security model is complex: two-tier static token auth (BRAIN_TOKEN for agent ops, CLIENT_TOKEN for admin), the brain can never touch admin endpoints, the Split Brain architecture for prompt injection defense (components that read possibly compromised content cannot send outbound messages), multiple secutity layers for any data which passes through, a 3-valve Dead Drop ingress system for when the vault is locked, egress enforcement in compiled code with no LLM reasoning involved, and the "Draft-Don't-Send" principle (no agent ever presses Send).
+
+The PII scrubbing pipeline is three-tiered: regex in Go (structured PII — SSN, credit cards, phones), spaCy NER in Python (contextual — names, orgs, locations), and LLM NER via llama/smaller flash models (edge cases). The Entity Vault pattern allows cloud LLM usage for sensitive personas by scrubbing all identifying entities and rehydrating locally (using presidio with fakes).
+
+Dina-to-Dina communication uses NaCl crypto_box_seal (ephemeral sender keys, forward secrecy - future plan with Noise XXX) over HTTPS, with DID Documents pointing to Home Node endpoints. The sharing policy system is category-based (presence, availability, context, preferences, location, health) with three tiers (none/summary/full) per contact, enforced at egress by core.
+The Reputation Graph is built on AT Protocol federation — public, signed Merkle repos for expert attestations, anonymized outcome data, and bot scores. It has a cold-start strategy (Phase 1 uses web search via OpenClaw; reputation data activates gradually). Signed tombstones handle deletion. L2 Merkle root anchoring is deferred to Phase 3.
+
 
 # Part III: Technical Architecture
 

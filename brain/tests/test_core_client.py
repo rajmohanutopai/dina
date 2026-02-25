@@ -91,7 +91,7 @@ async def test_core_client_7_1_1_read_vault_item(core_client) -> None:
     assert result["type"] == "email"
     assert "summary" in result
     assert "body_text" in result
-    mock_req.assert_awaited_once_with("GET", "/v1/vault/personal/items/item-042")
+    mock_req.assert_awaited_once_with("GET", "/v1/vault/item/item-042?persona=personal")
 
 
 # TST-BRAIN-260
@@ -110,7 +110,7 @@ async def test_core_client_7_1_2_write_vault_item(core_client) -> None:
 
     assert result == "item-new"
     mock_req.assert_awaited_once_with(
-        "POST", "/v1/vault/personal/items", json=item
+        "POST", "/v1/vault/store", json={"persona": "personal", "item": item}
     )
 
 
@@ -127,7 +127,7 @@ async def test_core_client_7_1_3_search_vault(core_client) -> None:
         core_client, "_request", new_callable=AsyncMock
     ) as mock_req:
         mock_resp = _make_response(
-            200, json_data={"results": expected_results}
+            200, json_data={"items": expected_results}
         )
         mock_req.return_value = mock_resp
 
@@ -137,52 +137,47 @@ async def test_core_client_7_1_3_search_vault(core_client) -> None:
     assert all("id" in r for r in results)
     mock_req.assert_awaited_once_with(
         "POST",
-        "/v1/vault/personal/search",
-        json={"query": "meeting", "mode": "hybrid"},
+        "/v1/vault/query",
+        json={"persona": "personal", "query": "meeting", "mode": "hybrid", "limit": 50},
     )
 
 
 # TST-BRAIN-262
 @pytest.mark.asyncio
 async def test_core_client_7_1_4_write_scratchpad(core_client) -> None:
-    """SS7.1.4: Write a scratchpad checkpoint for crash recovery."""
+    """SS7.1.4: Write a scratchpad checkpoint via KV store."""
     checkpoint = make_scratchpad_checkpoint(task_id="task-abc", step=3)
 
     with patch.object(
-        core_client, "_request", new_callable=AsyncMock
-    ) as mock_req:
-        mock_resp = _make_response(200, json_data={})
-        mock_req.return_value = mock_resp
-
+        core_client, "set_kv", new_callable=AsyncMock
+    ) as mock_set_kv:
         await core_client.write_scratchpad(
             "task-abc", 3, checkpoint["context"]
         )
 
-    mock_req.assert_awaited_once_with(
-        "PUT",
-        "/v1/scratchpad/task-abc",
-        json={"step": 3, "context": checkpoint["context"]},
+    mock_set_kv.assert_awaited_once_with(
+        "scratchpad:task-abc",
+        json.dumps({"step": 3, "context": checkpoint["context"]}),
     )
 
 
 # TST-BRAIN-263
 @pytest.mark.asyncio
 async def test_core_client_7_1_5_read_scratchpad(core_client) -> None:
-    """SS7.1.5: Read the latest scratchpad checkpoint for a task."""
+    """SS7.1.5: Read the latest scratchpad checkpoint from KV store."""
     checkpoint = make_scratchpad_checkpoint(task_id="task-abc", step=3)
+    stored = json.dumps({"step": 3, "context": checkpoint["context"],
+                         "task_id": "task-abc"})
 
     with patch.object(
-        core_client, "_request", new_callable=AsyncMock
-    ) as mock_req:
-        mock_resp = _make_response(200, json_data=checkpoint)
-        mock_req.return_value = mock_resp
-
+        core_client, "get_kv", new_callable=AsyncMock
+    ) as mock_get_kv:
+        mock_get_kv.return_value = stored
         result = await core_client.read_scratchpad("task-abc")
 
     assert result is not None
-    assert result["task_id"] == "task-abc"
     assert result["step"] == 3
-    mock_req.assert_awaited_once_with("GET", "/v1/scratchpad/task-abc")
+    mock_get_kv.assert_awaited_once_with("scratchpad:task-abc")
 
 
 # TST-BRAIN-264
@@ -204,8 +199,8 @@ async def test_core_client_7_1_6_send_message(core_client) -> None:
 
     mock_req.assert_awaited_once_with(
         "POST",
-        "/v1/dina/send",
-        json={"to": "did:key:z6MkFriendNode", "payload": payload},
+        "/v1/msg/send",
+        json={"to": "did:key:z6MkFriendNode", "body": json.dumps(payload).encode(), "type": "dina/d2d"},
     )
 
 

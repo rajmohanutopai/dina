@@ -29,6 +29,7 @@ type OutboxManager interface {
 	MarkFailed(ctx context.Context, msgID string) error
 	Requeue(ctx context.Context, msgID string) error
 	PendingCount(ctx context.Context) (int, error)
+	ListPending(ctx context.Context) ([]domain.OutboxMessage, error)
 }
 
 // InboxManager provides inbound message processing with rate limiting.

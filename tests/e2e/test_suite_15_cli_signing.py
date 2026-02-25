@@ -173,9 +173,13 @@ class TestCLIEd25519Signing:
             base = docker_services.core_url("alonso")
             body = json.dumps({
                 "persona": "personal",
-                "item_type": "note",
-                "summary": "E2E signing test",
-                "metadata": "{}",
+                "item": {
+                    "Type": "note",
+                    "Source": "e2e_test",
+                    "Summary": "E2E signing test",
+                    "BodyText": "Signed vault store test",
+                    "Metadata": "{}",
+                },
             }).encode()
             headers = _signed_headers(cli_identity, "POST", "/v1/vault/store", body)
             headers["Content-Type"] = "application/json"

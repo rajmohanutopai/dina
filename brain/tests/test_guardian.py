@@ -417,7 +417,7 @@ async def test_guardian_2_3_3_agent_intent_review_safe(guardian) -> None:
     intent = make_safe_intent()
     result = await guardian.review_intent(intent)
     assert result["action"] == "auto_approve"
-    assert result["risk"] == "safe"
+    assert result["risk"] == "SAFE"
 
 
 # TST-BRAIN-039
@@ -427,7 +427,7 @@ async def test_guardian_2_3_4_agent_intent_review_risky(guardian) -> None:
     intent = make_risky_intent()
     result = await guardian.review_intent(intent)
     assert result["action"] == "flag_for_review"
-    assert result["risk"] == "risky"
+    assert result["risk"] == "MODERATE"
     assert "intent" in result
 
 
@@ -438,7 +438,7 @@ async def test_guardian_2_3_5_agent_intent_review_blocked(guardian) -> None:
     intent = make_blocked_intent()
     result = await guardian.review_intent(intent)
     assert result["action"] == "deny"
-    assert result["risk"] == "blocked"
+    assert result["risk"] == "BLOCKED"
 
 
 # TST-BRAIN-364
@@ -557,7 +557,7 @@ async def test_guardian_2_3_1_1_never_calls_messages_send(guardian) -> None:
     intent = make_risky_intent(action="send_email", target="boss@company.com")
     result = await guardian.review_intent(intent)
     assert result["action"] == "flag_for_review"
-    assert result["risk"] == "risky"
+    assert result["risk"] == "MODERATE"
 
 
 # TST-BRAIN-046
@@ -570,7 +570,7 @@ async def test_guardian_2_3_1_2_draft_via_gmail_api(guardian) -> None:
     intent = make_risky_intent(action="draft_email", target="colleague@company.com")
     result = await guardian.review_intent(intent)
     assert result["action"] == "flag_for_review"
-    assert result["risk"] == "risky"
+    assert result["risk"] == "MODERATE"
 
 
 # TST-BRAIN-047
@@ -608,7 +608,7 @@ async def test_guardian_2_3_1_10_high_risk_legal(guardian) -> None:
     )
     result = await guardian.review_intent(intent)
     assert result["action"] == "flag_for_review"
-    assert result["risk"] == "risky"
+    assert result["risk"] == "MODERATE"
 
 
 # TST-BRAIN-050
@@ -621,7 +621,7 @@ async def test_guardian_2_3_1_11_high_risk_financial(guardian) -> None:
     )
     result = await guardian.review_intent(intent)
     assert result["action"] == "flag_for_review"
-    assert result["risk"] == "risky"
+    assert result["risk"] == "MODERATE"
 
 
 # TST-BRAIN-051
@@ -634,7 +634,7 @@ async def test_guardian_2_3_1_12_high_risk_emotional(guardian) -> None:
     )
     result = await guardian.review_intent(intent)
     assert result["action"] == "flag_for_review"
-    assert result["risk"] == "risky"
+    assert result["risk"] == "MODERATE"
 
 
 # TST-BRAIN-366
@@ -648,7 +648,7 @@ async def test_guardian_2_3_1_4_high_risk_classified_correctly(guardian) -> None
     )
     result = await guardian.review_intent(intent)
     assert result["action"] == "flag_for_review"
-    assert result["risk"] == "risky"
+    assert result["risk"] == "MODERATE"
 
 
 # TST-BRAIN-367
@@ -669,7 +669,7 @@ async def test_guardian_2_3_1_6_no_send_even_if_agent_requests(guardian) -> None
     result = await guardian.review_intent(intent)
     # send_email is in _RISKY_ACTIONS — always flagged regardless of force_send.
     assert result["action"] == "flag_for_review"
-    assert result["risk"] == "risky"
+    assert result["risk"] == "MODERATE"
 
 
 # TST-BRAIN-052
@@ -717,7 +717,7 @@ async def test_guardian_2_3_2_1_upi_payment_intent_handover(guardian) -> None:
     )
     result = await guardian.review_intent(intent)
     assert result["action"] == "flag_for_review"
-    assert result["risk"] == "risky"
+    assert result["risk"] == "MODERATE"
 
 
 # TST-BRAIN-054
@@ -732,7 +732,7 @@ async def test_guardian_2_3_2_2_crypto_payment_intent_handover(guardian) -> None
     )
     result = await guardian.review_intent(intent)
     assert result["action"] == "flag_for_review"
-    assert result["risk"] == "risky"
+    assert result["risk"] == "MODERATE"
 
 
 # TST-BRAIN-055
@@ -745,7 +745,7 @@ async def test_guardian_2_3_2_3_web_payment_intent_handover(guardian) -> None:
     )
     result = await guardian.review_intent(intent)
     assert result["action"] == "flag_for_review"
-    assert result["risk"] == "risky"
+    assert result["risk"] == "MODERATE"
 
 
 # TST-BRAIN-056

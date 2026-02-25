@@ -22,34 +22,23 @@
 
 ---
 
-## Current State (v0.4) → Target Architecture
+## Current State (Implemented Sidecar Architecture)
 
-> **Version note:** The README uses phase-based versioning (v0.1 Eyes, v0.2 Voice, v0.3 Identity, v0.4 Memory). This section refers to the entire current monolith as "v0.4" — the state at the end of the Memory phase, before the rewrite into the three-container sidecar architecture.
+The architecture described above is now the active implementation in this repository.
 
-### What Works Today
+### Implementation Snapshot
 
-| Capability | Implementation | Target Layer |
-|-----------|---------------|-------------|
-| YouTube product review analysis | Gemini video analysis + transcript extraction → structured verdict (BUY/WAIT/AVOID) | Layer 5 (Bot Interface) |
-| Semantic memory | Local vector database at `~/.dina/memory/`, persists across sessions | Layer 1 (Storage) — Tier 2 Index |
-| RAG-powered Q&A | Natural language → search memory → contextual answer | Layer 6 (Intelligence) |
-| Cryptographic signing | Ed25519 signature on every verdict, `/verify` command | Layer 0 (Identity) |
-| Self-sovereign identity | did:key (pure Python) + did:plc (target) | Layer 0 (Identity) |
-| Decentralized vault | Dual-write to Ceramic Network (when configured) | Layer 1 (Storage) — will migrate to federated Reputation Graph |
-| Multi-provider LLM | Ollama (local) + Gemini (cloud), configurable routing | Layer 6 (Intelligence) |
-| REPL interface | `/history`, `/search`, `/identity`, `/verify`, `/vault`, `/quit` | Human Interface |
+| Component | Path | Role |
+|-----------|------|------|
+| dina-core | `core/` | Go sovereign kernel: vault, keys, auth, gatekeeper, transport |
+| dina-brain | `brain/` | Python intelligence/orchestration: reasoning, sync, admin API/UI |
+| dina-pds | `docker-compose*.yml`, `data/pds/` | AT Protocol PDS for reputation graph records |
+| appview | `appview/` | Reputation AppView implementation |
+| cli | `cli/` | Client interface for interacting with running services |
 
-### Migration Path
+### Legacy Note (v0.4)
 
-v0.4 is a monolithic Python application. The target is the three-container sidecar architecture. The migration is incremental:
-
-1. **Phase 1a (now → 6 weeks):** Extract the agent reasoning logic from v0.4 into dina-brain running on Google ADK. The YouTube analysis, memory search, and RAG become ADK tools. The REPL becomes a thin client that talks to the brain.
-
-2. **Phase 1b (parallel):** Build dina-core in Go. Start with the SQLite vault skeleton, DID key management (porting the Ed25519/did:key logic from Python to Go), and the internal API (`/v1/vault/query`, `/v1/vault/store`, `/v1/did/sign`). Go's standard library `crypto/ed25519` and `crypto/aes` handle the cryptography natively.
-
-3. **Phase 1c (integration):** Wire dina-brain to call dina-core's API instead of managing its own storage. Add PDS container. `docker compose up` runs all three (core, brain, pds). llama available via `--profile local-llm` for local inference.
-
-4. **v0.4 retirement:** Once the sidecar architecture handles everything v0.4 does, the monolithic REPL is deprecated. Its code lives on as reference.
+The earlier v0.4 monolithic Python REPL was the pre-sidecar prototype and is no longer the active architecture. Any remaining v0.4 references should be treated as historical context only.
 
 ---
 
@@ -60,4 +49,3 @@ v0.4 is a monolithic Python application. The target is the three-container sidec
 > The roadmap includes 18 items that were described in this architecture but had no explicit roadmap entries (digital estate, rate limiting, brain→core auth, relay, container signing, monitoring, and more). See "Items Added During Architecture Review" in ROADMAP.md for the full list.
 
 ---
-

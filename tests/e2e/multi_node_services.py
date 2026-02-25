@@ -36,10 +36,10 @@ HEALTH_INTERVAL = 3   # seconds between polls
 
 # Actor → port mapping
 ACTOR_PORTS: dict[str, dict[str, int]] = {
-    "alonso":     {"core": 18100, "brain": 18200},
-    "sancho":     {"core": 18101, "brain": 18201},
-    "chairmaker": {"core": 18102, "brain": 18202},
-    "albert":     {"core": 18103, "brain": 18203},
+    "alonso":     {"core": 19100, "brain": 19200},
+    "sancho":     {"core": 19101, "brain": 19201},
+    "chairmaker": {"core": 19102, "brain": 19202},
+    "albert":     {"core": 19103, "brain": 19203},
 }
 
 

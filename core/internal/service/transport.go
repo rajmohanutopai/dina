@@ -19,6 +19,7 @@ import (
 type TransportService struct {
 	encryptor port.Encryptor
 	signer    port.IdentitySigner
+	verifier  port.Signer // for signature verification on receive
 	converter port.KeyConverter
 	resolver  port.DIDResolver
 	outbox    port.OutboxManager
@@ -58,6 +59,11 @@ func NewTransportService(
 // to the recipient's service endpoint after outbox enqueue.
 func (s *TransportService) SetDeliverer(d port.Deliverer) {
 	s.deliverer = d
+}
+
+// SetVerifier sets the Ed25519 signer used to verify inbound message signatures.
+func (s *TransportService) SetVerifier(v port.Signer) {
+	s.verifier = v
 }
 
 // SendMessage signs and encrypts a message for the recipient, then attempts
@@ -115,6 +121,7 @@ func (s *TransportService) SendMessage(ctx context.Context, to domain.DID, msg d
 		ID:        msg.ID,
 		ToDID:     string(to),
 		Payload:   ciphertext,
+		Sig:       sig,
 		CreatedAt: now,
 		NextRetry: now,
 		Retries:   0,
@@ -126,9 +133,6 @@ func (s *TransportService) SendMessage(ctx context.Context, to domain.DID, msg d
 	if err != nil {
 		return fmt.Errorf("transport: enqueue message: %w", err)
 	}
-
-	// Store the signature alongside the message for verification by the recipient.
-	_ = sig
 
 	// Attempt immediate delivery if a Deliverer is configured.
 	// On failure, the message stays in the outbox for retry via ProcessOutbox.
@@ -185,28 +189,75 @@ func (s *TransportService) ReceiveMessage(ctx context.Context, envelope domain.D
 		return nil, fmt.Errorf("transport: %w: sender has no verification methods", domain.ErrInvalidSignature)
 	}
 
+	// Verify the sender's Ed25519 signature over the plaintext.
+	if s.verifier != nil && envelope.Sig != "" {
+		senderMultibase := senderDoc.VerificationMethod[0].PublicKeyMultibase
+		if len(senderMultibase) >= 2 {
+			senderPubKey, decErr := hex.DecodeString(senderMultibase[1:])
+			if decErr == nil {
+				sigBytes, sigErr := hex.DecodeString(envelope.Sig)
+				if sigErr == nil {
+					valid, verErr := s.verifier.Verify(senderPubKey, plaintext, sigBytes)
+					if verErr != nil || !valid {
+						return nil, fmt.Errorf("transport: %w", domain.ErrInvalidSignature)
+					}
+				}
+			}
+		}
+	}
+
 	return &msg, nil
 }
 
-// ProcessOutbox retries all pending messages in the outbox. It dequeues each
-// pending message and attempts redelivery. Messages that fail are requeued
-// with incremented retry counts.
+// ProcessOutbox retries all pending messages in the outbox. For each pending
+// message whose retry time has elapsed, it resolves the recipient's endpoint
+// and attempts redelivery. Messages that fail are marked failed with
+// exponential backoff; successful deliveries are marked delivered.
 func (s *TransportService) ProcessOutbox(ctx context.Context) (processed int, err error) {
-	count, err := s.outbox.PendingCount(ctx)
+	pending, err := s.outbox.ListPending(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("transport: check pending count: %w", err)
+		return 0, fmt.Errorf("transport: list pending: %w", err)
 	}
 
-	for i := 0; i < count; i++ {
+	for _, msg := range pending {
 		select {
 		case <-ctx.Done():
 			return processed, ctx.Err()
 		default:
 		}
 
-		// For each pending message, attempt to mark it as delivered.
-		// In a full implementation this would re-attempt network delivery.
-		// Here we increment the processed counter for successfully handled messages.
+		// Resolve recipient endpoint.
+		recipientDID, didErr := domain.NewDID(msg.ToDID)
+		if didErr != nil {
+			_ = s.outbox.MarkFailed(ctx, msg.ID)
+			processed++
+			continue
+		}
+
+		doc, resolveErr := s.resolver.Resolve(ctx, recipientDID)
+		if resolveErr != nil || len(doc.Service) == 0 {
+			_ = s.outbox.MarkFailed(ctx, msg.ID)
+			processed++
+			continue
+		}
+
+		endpoint := doc.Service[0].ServiceEndpoint
+		if endpoint == "" {
+			_ = s.outbox.MarkFailed(ctx, msg.ID)
+			processed++
+			continue
+		}
+
+		// Attempt delivery.
+		if s.deliverer != nil {
+			if deliverErr := s.deliverer.Deliver(ctx, endpoint, msg.Payload); deliverErr != nil {
+				_ = s.outbox.MarkFailed(ctx, msg.ID)
+			} else {
+				_ = s.outbox.MarkDelivered(ctx, msg.ID)
+			}
+		} else {
+			_ = s.outbox.MarkFailed(ctx, msg.ID)
+		}
 		processed++
 	}
 

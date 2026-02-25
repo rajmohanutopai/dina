@@ -28,33 +28,33 @@ class CoreClient(Protocol):
     # -- Vault CRUD --
 
     async def get_vault_item(self, persona_id: str, item_id: str) -> dict:
-        """GET /v1/vault/{persona_id}/items/{item_id}."""
+        """GET /v1/vault/item/{item_id}?persona={persona_id}."""
         ...
 
     async def store_vault_item(self, persona_id: str, item: dict) -> str:
-        """POST /v1/vault/{persona_id}/items — returns assigned item_id."""
+        """POST /v1/vault/store — returns assigned item_id."""
         ...
 
     async def store_vault_batch(self, persona_id: str, items: list[dict]) -> None:
-        """POST /v1/vault/{persona_id}/items/batch — atomic batch store."""
+        """POST /v1/vault/store/batch — atomic batch store."""
         ...
 
     async def search_vault(
         self, persona_id: str, query: str, mode: str = "hybrid"
     ) -> list[dict]:
-        """POST /v1/vault/{persona_id}/search — hybrid FTS5 + cosine."""
+        """POST /v1/vault/query — hybrid FTS5 + cosine."""
         ...
 
-    # -- Scratchpad (crash-recovery checkpoints) --
+    # -- Scratchpad (crash-recovery checkpoints via KV) --
 
     async def write_scratchpad(
         self, task_id: str, step: int, context: dict
     ) -> None:
-        """PUT /v1/scratchpad/{task_id} — write checkpoint."""
+        """Write checkpoint via KV at ``scratchpad:{task_id}``."""
         ...
 
     async def read_scratchpad(self, task_id: str) -> dict | None:
-        """GET /v1/scratchpad/{task_id} — latest checkpoint or None."""
+        """Read checkpoint from KV at ``scratchpad:{task_id}``."""
         ...
 
     # -- Key-Value store --
@@ -82,7 +82,7 @@ class CoreClient(Protocol):
     # -- Notifications --
 
     async def notify(self, device_id: str, payload: dict) -> None:
-        """POST /v1/notify/{device_id} — push notification to device."""
+        """POST /v1/notify — broadcast notification to connected devices."""
         ...
 
     # -- Task queue ACK --
@@ -94,11 +94,11 @@ class CoreClient(Protocol):
     # -- Identity / signing --
 
     async def did_sign(self, data: bytes) -> bytes:
-        """POST /v1/identity/sign — Ed25519 sign via core's keypair."""
+        """POST /v1/did/sign — Ed25519 sign via core's keypair (hex encoding)."""
         ...
 
     # -- Dina-to-Dina messaging --
 
     async def send_d2d(self, to_did: str, payload: dict) -> None:
-        """POST /v1/dina/send — outbound DIDComm message through core."""
+        """POST /v1/msg/send — outbound DIDComm message through core."""
         ...

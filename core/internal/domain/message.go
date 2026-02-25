@@ -37,6 +37,7 @@ type OutboxMessage struct {
 	ID        string
 	ToDID     string
 	Payload   []byte
+	Sig       []byte // Ed25519 signature over plaintext (before encryption)
 	CreatedAt int64
 	NextRetry int64
 	Retries   int

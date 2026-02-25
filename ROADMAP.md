@@ -6,19 +6,20 @@ Extracted from [ARCHITECTURE.md](ARCHITECTURE.md). Every item is sequenced by de
 
 ---
 
-## Current State (v0.4) → Target Architecture
+## Current State (Implemented Sidecar Architecture)
 
-v0.4 is a monolithic Python application. The target is the 3+1 container sidecar architecture (core, brain, pds always-on; llama optional via `--profile local-llm`). The migration is incremental:
+This repository is already on the 3+1 container architecture:
 
-1. **Phase 1a:** Extract agent reasoning from v0.4 into dina-brain (Google ADK). YouTube analysis, memory search, RAG become ADK tools.
-2. **Phase 1b (parallel):** Build dina-core in Go. SQLite vault, DID key management, internal API.
-3. **Phase 1c:** Wire together. Safety gates, backup, bot protocol.
-4. **Phase 1.5:** Android client, managed hosting, Telegram ingestion.
-5. **v0.4 retirement:** Once sidecar handles everything, monolith deprecated.
+1. `dina-core` (Go) for vault/identity/security/kernel concerns.
+2. `dina-brain` (Python) for orchestration/reasoning/admin UI.
+3. `dina-pds` for AT Protocol reputation storage/federation.
+4. Optional `llama` container via `--profile local-llm`.
+
+The v0.4 monolithic Python app is legacy context, not the active runtime model.
 
 ---
 
-## Done (v0.4)
+## Legacy Foundation (v0.4, Historical)
 
 | # | Item | Layer | What It Is | Status |
 |---|------|-------|-----------|--------|

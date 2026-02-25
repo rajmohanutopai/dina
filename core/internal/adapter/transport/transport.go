@@ -430,6 +430,20 @@ func (o *OutboxManager) PendingCount(_ context.Context) (int, error) {
 	return count, nil
 }
 
+// ListPending returns all pending messages whose retry time has elapsed.
+func (o *OutboxManager) ListPending(_ context.Context) ([]domain.OutboxMessage, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	now := time.Now().Unix()
+	var pending []domain.OutboxMessage
+	for _, msg := range o.messages {
+		if msg.Status == "pending" && msg.NextRetry <= now {
+			pending = append(pending, msg)
+		}
+	}
+	return pending, nil
+}
+
 // GetByID retrieves a message by ID.
 func (o *OutboxManager) GetByID(msgID string) (*domain.OutboxMessage, error) {
 	o.mu.Lock()
