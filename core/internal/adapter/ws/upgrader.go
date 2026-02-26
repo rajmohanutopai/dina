@@ -102,11 +102,12 @@ func WithOriginPatterns(patterns ...string) UpgraderOption {
 }
 
 // NewUpgrader creates an Upgrader with sensible defaults.
-// By default, origin checking is skipped (suitable for development).
+// By default, origin checking is enabled (secure by default).
+// Use WithInsecureSkipVerify() to skip origin verification in development.
 func NewUpgrader(opts ...UpgraderOption) *Upgrader {
 	u := &Upgrader{
 		opts: &websocket.AcceptOptions{
-			InsecureSkipVerify: true, // override in production via WithOriginPatterns
+			InsecureSkipVerify: false, // secure by default; use WithInsecureSkipVerify() for dev
 		},
 	}
 	for _, o := range opts {

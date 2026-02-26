@@ -179,7 +179,7 @@ var (
 
 // ---------- Transport implementations (§7) ----------
 
-var didResolver = transport.NewDIDResolver()
+var didResolver = transport.NewTestDIDResolver()
 
 var (
 	realTransporter   testutil.Transporter   = transport.NewTransporter(didResolver)

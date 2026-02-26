@@ -33,7 +33,7 @@ func (m *mockDIDManager) Resolve(_ context.Context, _ domain.DID) ([]byte, error
 	return m.doc, nil
 }
 
-func (m *mockDIDManager) Rotate(_ context.Context, _ domain.DID, _, _ []byte) error {
+func (m *mockDIDManager) Rotate(_ context.Context, _ domain.DID, _, _, _ []byte) error {
 	return nil
 }
 

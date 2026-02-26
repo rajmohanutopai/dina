@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/rajmohanutopai/dina/core/internal/adapter/auth"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
@@ -130,7 +131,13 @@ func (h *PersonaHandler) HandleUnlockPersona(w http.ResponseWriter, r *http.Requ
 
 	// Open the corresponding vault so store/query operations work.
 	if h.VaultManager != nil && h.KeyDeriver != nil {
-		persona, _ := domain.NewPersonaName(req.Persona)
+		// Strip "persona-" prefix before validation — NewPersonaName only allows [a-z0-9_].
+		rawName := strings.TrimPrefix(req.Persona, "persona-")
+		persona, err := domain.NewPersonaName(rawName)
+		if err != nil {
+			http.Error(w, `{"error":"invalid persona name"}`, http.StatusBadRequest)
+			return
+		}
 		// Derive a deterministic DEK from the master seed using HKDF.
 		dek, err := h.KeyDeriver.DerivePersonaDEK(h.Seed, persona)
 		if err != nil {

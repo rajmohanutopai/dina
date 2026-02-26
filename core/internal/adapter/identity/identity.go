@@ -17,6 +17,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -431,7 +432,10 @@ func (dm *DIDManager) Resolve(_ context.Context, did domain.DID) ([]byte, error)
 }
 
 // Rotate updates the DID's signing key via a signed rotation operation.
-func (dm *DIDManager) Rotate(_ context.Context, did domain.DID, oldPrivKey, newPubKey []byte) error {
+// The caller must prove possession of the current signing key by providing
+// a rotationPayload signed with the current private key. The signature is
+// verified against the stored public key before the rotation is accepted.
+func (dm *DIDManager) Rotate(_ context.Context, did domain.DID, rotationPayload, signature, newPubKey []byte) error {
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
 
@@ -445,8 +449,17 @@ func (dm *DIDManager) Rotate(_ context.Context, did domain.DID, oldPrivKey, newP
 		return ErrInvalidPublicKey
 	}
 
-	// Record the rotation.
-	oldKeyHash := sha256.Sum256(dm.pubKeys[didStr])
+	// Verify that the caller possesses the current signing key.
+	currentPubKey := dm.pubKeys[didStr]
+	if currentPubKey == nil {
+		return fmt.Errorf("identity: no public key stored for %s", didStr)
+	}
+	if !ed25519.Verify(ed25519.PublicKey(currentPubKey), rotationPayload, signature) {
+		return fmt.Errorf("identity: rotation denied — signature verification failed")
+	}
+
+	// Record the rotation with proof metadata.
+	oldKeyHash := sha256.Sum256(currentPubKey)
 	dm.rotations = append(dm.rotations, rotationRecord{
 		DID:        didStr,
 		OldKeyHash: fmt.Sprintf("%x", oldKeyHash[:8]),
@@ -528,6 +541,7 @@ type PersonaManager struct {
 	testTick             chan struct{}                     // test control channel for TTL goroutine
 	ttlTimers            map[string]*time.Timer           // personaID -> active TTL timer
 	VerifyPassphrase     func(storedHash, passphrase string) (bool, error)
+	OnLock               func(personaID string) // callback invoked after persona is locked (vault close, etc.)
 }
 
 // NewPersonaManager returns a new in-memory PersonaManager.
@@ -537,6 +551,15 @@ func NewPersonaManager() *PersonaManager {
 		contacts:  make(map[string]map[string]bool),
 		ttlTimers: make(map[string]*time.Timer),
 	}
+}
+
+// canonicalPersonaID normalizes a persona identifier to the stored form "persona-<name>".
+// Accepts both "medical" and "persona-medical", returns "persona-medical" in both cases.
+func canonicalPersonaID(id string) string {
+	if strings.HasPrefix(id, "persona-") {
+		return id
+	}
+	return "persona-" + id
 }
 
 // SetPersonaPassphraseHash sets the passphrase hash on a persona (for testing/migration).
@@ -561,6 +584,7 @@ func (pm *PersonaManager) ResetForTest() {
 	pm.contacts = make(map[string]map[string]bool)
 	pm.ttlTimers = make(map[string]*time.Timer)
 	pm.OnRestrictedAccess = nil
+	pm.OnLock = nil
 	pm.testTick = nil
 }
 
@@ -642,7 +666,8 @@ func (pm *PersonaManager) AccessPersona(_ context.Context, personaID string) err
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
-	p, ok := pm.personas[personaID]
+	cid := canonicalPersonaID(personaID)
+	p, ok := pm.personas[cid]
 	if !ok {
 		return ErrPersonaNotFound
 	}
@@ -651,20 +676,20 @@ func (pm *PersonaManager) AccessPersona(_ context.Context, personaID string) err
 	case "locked":
 		if p.Locked {
 			reason := "persona is locked"
-			pm.addAuditEntry(personaID, "access_denied", reason)
+			pm.addAuditEntry(cid, "access_denied", reason)
 			if pm.OnRestrictedAccess != nil {
-				pm.OnRestrictedAccess(personaID, reason)
+				pm.OnRestrictedAccess(cid, reason)
 			}
-			return fmt.Errorf("persona %s is locked", personaID)
+			return fmt.Errorf("persona %s is locked", cid)
 		}
-		pm.addAuditEntry(personaID, "access_granted", "locked persona unlocked")
+		pm.addAuditEntry(cid, "access_granted", "locked persona unlocked")
 	case "restricted":
-		pm.addAuditEntry(personaID, "access_restricted", "restricted tier access")
+		pm.addAuditEntry(cid, "access_restricted", "restricted tier access")
 		if pm.OnRestrictedAccess != nil {
-			pm.OnRestrictedAccess(personaID, "restricted tier access")
+			pm.OnRestrictedAccess(cid, "restricted tier access")
 		}
 	default:
-		pm.addAuditEntry(personaID, "access_granted", "open tier")
+		pm.addAuditEntry(cid, "access_granted", "open tier")
 	}
 
 	return nil
@@ -716,13 +741,10 @@ func (pm *PersonaManager) Unlock(_ context.Context, personaID, passphrase string
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
+	personaID = canonicalPersonaID(personaID)
 	p, ok := pm.personas[personaID]
 	if !ok {
-		// Create stores as "persona-{name}", but callers may pass just the name.
-		p, ok = pm.personas["persona-"+personaID]
-		if !ok {
-			return ErrPersonaNotFound
-		}
+		return ErrPersonaNotFound
 	}
 
 	// Validate passphrase against stored hash.
@@ -767,7 +789,12 @@ func (pm *PersonaManager) Unlock(_ context.Context, personaID, passphrase string
 				if p, ok := pm.personas[personaID]; ok {
 					p.Locked = true
 				}
+				cb := pm.OnLock // capture under lock
 				pm.mu.Unlock()
+				// Invoke callback outside mutex to prevent deadlocks.
+				if cb != nil {
+					cb(personaID)
+				}
 			}()
 		} else {
 			// Production mode: use real timer.
@@ -777,7 +804,12 @@ func (pm *PersonaManager) Unlock(_ context.Context, personaID, passphrase string
 					p.Locked = true
 				}
 				delete(pm.ttlTimers, personaID)
+				cb := pm.OnLock // capture under lock
 				pm.mu.Unlock()
+				// Invoke callback outside mutex to prevent deadlocks.
+				if cb != nil {
+					cb(personaID)
+				}
 			})
 			pm.ttlTimers[personaID] = timer
 		}
@@ -789,14 +821,21 @@ func (pm *PersonaManager) Unlock(_ context.Context, personaID, passphrase string
 // Lock zeroes the persona's DEK from RAM.
 func (pm *PersonaManager) Lock(_ context.Context, personaID string) error {
 	pm.mu.Lock()
-	defer pm.mu.Unlock()
 
-	p, ok := pm.personas[personaID]
+	cid := canonicalPersonaID(personaID)
+	p, ok := pm.personas[cid]
 	if !ok {
+		pm.mu.Unlock()
 		return ErrPersonaNotFound
 	}
 
 	p.Locked = true
+	cb := pm.OnLock
+	pm.mu.Unlock()
+	// Invoke callback outside mutex to prevent deadlocks.
+	if cb != nil {
+		cb(personaID)
+	}
 	return nil
 }
 
@@ -805,7 +844,8 @@ func (pm *PersonaManager) IsLocked(personaID string) (bool, error) {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
-	p, ok := pm.personas[personaID]
+	cid := canonicalPersonaID(personaID)
+	p, ok := pm.personas[cid]
 	if !ok {
 		return false, ErrPersonaNotFound
 	}
@@ -818,11 +858,12 @@ func (pm *PersonaManager) Delete(_ context.Context, personaID string) error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
-	if _, ok := pm.personas[personaID]; !ok {
+	cid := canonicalPersonaID(personaID)
+	if _, ok := pm.personas[cid]; !ok {
 		return ErrPersonaNotFound
 	}
 
-	delete(pm.personas, personaID)
+	delete(pm.personas, cid)
 	return nil
 }
 

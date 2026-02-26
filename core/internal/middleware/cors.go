@@ -25,6 +25,21 @@ func (c *CORS) Handler(next http.Handler) http.Handler {
 			return
 		}
 
+		// Wildcard: allow any origin (no credentials support).
+		if c.AllowOrigin == "*" {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		// Check if origin is in the allowed list
 		allowed := false
 		for _, o := range strings.Split(c.AllowOrigin, ",") {

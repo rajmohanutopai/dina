@@ -3,6 +3,7 @@ package testutil
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -190,6 +191,19 @@ func (m *MockPersonaManager) Delete(_ context.Context, personaID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.Personas, personaID)
+	return nil
+}
+
+func (m *MockPersonaManager) AccessPersona(_ context.Context, personaID string) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	locked, ok := m.Personas[personaID]
+	if !ok {
+		return ErrNotFound
+	}
+	if locked {
+		return fmt.Errorf("persona %s is locked", personaID)
+	}
 	return nil
 }
 

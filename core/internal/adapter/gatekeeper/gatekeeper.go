@@ -55,7 +55,9 @@ var moneyActions = map[string]bool{
 
 // vaultActions are actions that access persona vaults.
 var vaultActions = map[string]bool{
-	"read_vault": true,
+	domain.ActionVaultRead:   true,
+	domain.ActionVaultWrite:  true,
+	domain.ActionVaultDelete: true,
 }
 
 // brainDeniedActions are actions the brain agent must never perform.

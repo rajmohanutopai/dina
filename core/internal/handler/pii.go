@@ -21,6 +21,11 @@ type scrubRequest struct {
 // using the configured PIIScrubber and returns the scrubbed text along with
 // detected entities.
 func (h *PIIHandler) HandleScrub(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
 	var req scrubRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -34,7 +39,7 @@ func (h *PIIHandler) HandleScrub(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.Scrubber.Scrub(r.Context(), req.Text)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		clientError(w, "scrub failed", http.StatusInternalServerError, err)
 		return
 	}
 

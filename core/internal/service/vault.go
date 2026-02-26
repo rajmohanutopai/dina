@@ -19,6 +19,12 @@ type VaultService struct {
 	writer     port.VaultWriter
 	gatekeeper port.Gatekeeper
 	clock      port.Clock
+	personaMgr port.PersonaManager // optional — tier enforcement
+}
+
+// SetPersonaManager enables persona tier enforcement on vault operations.
+func (s *VaultService) SetPersonaManager(pm port.PersonaManager) {
+	s.personaMgr = pm
 }
 
 // NewVaultService constructs a VaultService with the given port dependencies.
@@ -46,9 +52,15 @@ func (s *VaultService) Query(ctx context.Context, agentDID string, persona domai
 		return nil, fmt.Errorf("vault query: %w", domain.ErrPersonaLocked)
 	}
 
+	if s.personaMgr != nil {
+		if err := s.personaMgr.AccessPersona(ctx, string(persona)); err != nil {
+			return nil, fmt.Errorf("vault query: %w", err)
+		}
+	}
+
 	intent := domain.Intent{
 		AgentDID:  agentDID,
-		Action:    "vault_read",
+		Action:    domain.ActionVaultRead,
 		Target:    string(persona),
 		PersonaID: string(persona),
 	}
@@ -74,9 +86,15 @@ func (s *VaultService) GetItem(ctx context.Context, agentDID string, persona dom
 		return nil, fmt.Errorf("vault get item: %w", domain.ErrPersonaLocked)
 	}
 
+	if s.personaMgr != nil {
+		if err := s.personaMgr.AccessPersona(ctx, string(persona)); err != nil {
+			return nil, fmt.Errorf("vault get item: %w", err)
+		}
+	}
+
 	intent := domain.Intent{
 		AgentDID:  agentDID,
-		Action:    "vault_read",
+		Action:    domain.ActionVaultRead,
 		Target:    id,
 		PersonaID: string(persona),
 	}
@@ -104,6 +122,12 @@ func (s *VaultService) Store(ctx context.Context, persona domain.PersonaName, it
 		return "", fmt.Errorf("vault store: %w", domain.ErrPersonaLocked)
 	}
 
+	if s.personaMgr != nil {
+		if err := s.personaMgr.AccessPersona(ctx, string(persona)); err != nil {
+			return "", fmt.Errorf("vault store: %w", err)
+		}
+	}
+
 	now := s.clock.Now().Unix()
 	if item.IngestedAt == 0 {
 		item.IngestedAt = now
@@ -121,6 +145,12 @@ func (s *VaultService) Store(ctx context.Context, persona domain.PersonaName, it
 func (s *VaultService) StoreBatch(ctx context.Context, persona domain.PersonaName, items []domain.VaultItem) ([]string, error) {
 	if !s.manager.IsOpen(persona) {
 		return nil, fmt.Errorf("vault store batch: %w", domain.ErrPersonaLocked)
+	}
+
+	if s.personaMgr != nil {
+		if err := s.personaMgr.AccessPersona(ctx, string(persona)); err != nil {
+			return nil, fmt.Errorf("vault store batch: %w", err)
+		}
 	}
 
 	now := s.clock.Now().Unix()
@@ -141,6 +171,12 @@ func (s *VaultService) StoreBatch(ctx context.Context, persona domain.PersonaNam
 func (s *VaultService) Delete(ctx context.Context, persona domain.PersonaName, id string) error {
 	if !s.manager.IsOpen(persona) {
 		return fmt.Errorf("vault delete: %w", domain.ErrPersonaLocked)
+	}
+
+	if s.personaMgr != nil {
+		if err := s.personaMgr.AccessPersona(ctx, string(persona)); err != nil {
+			return fmt.Errorf("vault delete: %w", err)
+		}
 	}
 
 	if err := s.writer.Delete(ctx, persona, id); err != nil {

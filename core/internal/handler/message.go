@@ -29,6 +29,11 @@ type sendRequest struct {
 // HandleSend handles POST /v1/msg/send. It parses the recipient DID and
 // message body, calls TransportService.SendMessage, and returns 202 Accepted.
 func (h *MessageHandler) HandleSend(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
 	var req sendRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -53,7 +58,7 @@ func (h *MessageHandler) HandleSend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Transport.SendMessage(r.Context(), to, msg); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		clientError(w, "send failed", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -65,6 +70,11 @@ func (h *MessageHandler) HandleSend(w http.ResponseWriter, r *http.Request) {
 // HandleInbox handles GET /v1/msg/inbox. It returns all received inbound
 // messages that have been decrypted and stored by HandleIngestNaCl.
 func (h *MessageHandler) HandleInbox(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
 	msgs := h.Transport.GetInbound()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

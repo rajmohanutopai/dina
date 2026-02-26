@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	"crypto/ed25519"
 	"os"
 	"strings"
 	"sync"
@@ -95,9 +96,9 @@ func TestIdentity_3_1_6_PLCDirectorySignedOpsOnly(t *testing.T) {
 		t.Fatalf("cannot read identity source: %v", err)
 	}
 	content := string(src)
-	// DIDManager.Rotate requires old private key for signing — design enforced.
-	if !strings.Contains(content, "oldPrivKey") {
-		t.Fatal("PLC Directory operations must require signing key (oldPrivKey parameter)")
+	// DIDManager.Rotate requires signature verification before accepting rotation.
+	if !strings.Contains(content, "ed25519.Verify") {
+		t.Fatal("PLC Directory operations must verify Ed25519 signature on rotation payload")
 	}
 }
 
@@ -149,10 +150,18 @@ func TestIdentity_3_1_1_1_RotateSigningKey(t *testing.T) {
 	impl := realDIDManager
 	testutil.RequireImplementation(t, impl, "DIDManager")
 
-	did, _ := impl.Create(idCtx, testutil.TestEd25519Seed[:])
+	// Generate a real Ed25519 keypair from the test seed.
+	oldPriv := ed25519.NewKeyFromSeed(testutil.TestEd25519Seed[:])
+	oldPub := oldPriv.Public().(ed25519.PublicKey)
+
+	did, _ := impl.Create(idCtx, []byte(oldPub))
 	newKey := make([]byte, 32)
 	newKey[0] = 0xff
-	err := impl.Rotate(idCtx, did, testutil.TestEd25519Seed[:], newKey)
+
+	// Sign the rotation payload with the old key to prove possession.
+	payload := []byte("rotate:" + string(did))
+	sig := ed25519.Sign(oldPriv, payload)
+	err := impl.Rotate(idCtx, did, payload, sig, newKey)
 	testutil.RequireNoError(t, err)
 }
 
@@ -161,10 +170,20 @@ func TestIdentity_3_1_1_2_RotationPreservesDID(t *testing.T) {
 	impl := realDIDManager
 	testutil.RequireImplementation(t, impl, "DIDManager")
 
-	did, _ := impl.Create(idCtx, testutil.TestEd25519Seed[:])
+	// Use a unique seed to avoid shared-state conflicts with other rotation tests.
+	seed141 := [32]byte{}
+	seed141[0] = 0xd1
+	oldPriv := ed25519.NewKeyFromSeed(seed141[:])
+	oldPub := oldPriv.Public().(ed25519.PublicKey)
+
+	did, _ := impl.Create(idCtx, []byte(oldPub))
 	newKey := make([]byte, 32)
 	newKey[0] = 0xff
-	_ = impl.Rotate(idCtx, did, testutil.TestEd25519Seed[:], newKey)
+
+	// Sign the rotation payload with the old key to prove possession.
+	payload := []byte("rotate:" + string(did))
+	sig := ed25519.Sign(oldPriv, payload)
+	_ = impl.Rotate(idCtx, did, payload, sig, newKey)
 	doc, err := impl.Resolve(idCtx, did)
 	testutil.RequireNoError(t, err)
 	testutil.RequireNotNil(t, doc)
@@ -175,14 +194,24 @@ func TestIdentity_3_1_1_3_OldKeyInvalidAfterRotation(t *testing.T) {
 	impl := realDIDManager
 	testutil.RequireImplementation(t, impl, "DIDManager")
 
-	// Create a DID with the test seed.
-	did, err := impl.Create(idCtx, testutil.TestEd25519Seed[:])
+	// Use a unique seed to avoid shared-state conflicts with other rotation tests.
+	seed142 := [32]byte{}
+	seed142[0] = 0xd2
+	oldPriv := ed25519.NewKeyFromSeed(seed142[:])
+	oldPub := oldPriv.Public().(ed25519.PublicKey)
+
+	// Create a DID with the real public key.
+	did, err := impl.Create(idCtx, []byte(oldPub))
 	testutil.RequireNoError(t, err)
 
 	// Rotate to a new key.
 	newKey := make([]byte, 32)
 	newKey[0] = 0xfe
-	err = impl.Rotate(idCtx, did, testutil.TestEd25519Seed[:], newKey)
+
+	// Sign the rotation payload with the old key to prove possession.
+	payload := []byte("rotate:" + string(did))
+	sig := ed25519.Sign(oldPriv, payload)
+	err = impl.Rotate(idCtx, did, payload, sig, newKey)
 	testutil.RequireNoError(t, err)
 
 	// Resolve the DID — the document should contain the NEW key, not the old one.
@@ -190,10 +219,7 @@ func TestIdentity_3_1_1_3_OldKeyInvalidAfterRotation(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	docStr := string(doc)
 
-	// The old key's multibase encoding should NOT appear in the document.
-	// Build expected old multibase for comparison.
 	// After rotation, the document should have the new key's multibase.
-	// Verify the new key is present by checking that the doc changed.
 	testutil.RequireNotNil(t, doc)
 	if len(docStr) == 0 {
 		t.Fatal("resolved document should not be empty after rotation")
@@ -207,30 +233,48 @@ func TestIdentity_3_1_1_4_RotationOpSignedByOldKey(t *testing.T) {
 	impl := realDIDManager
 	testutil.RequireImplementation(t, impl, "DIDManager")
 
-	// Create a DID.
+	// Generate a real Ed25519 keypair.
 	seed := make([]byte, 32)
 	seed[0] = 0xa1
-	did, err := impl.Create(idCtx, seed)
+	oldPriv := ed25519.NewKeyFromSeed(seed)
+	oldPub := oldPriv.Public().(ed25519.PublicKey)
+
+	// Create a DID with the real public key.
+	did, err := impl.Create(idCtx, []byte(oldPub))
 	testutil.RequireNoError(t, err)
 
-	// Rotate requires the old private key parameter. Passing a wrong key
-	// should still work at the adapter level (rotation is recorded), but
-	// the design enforces that the Rotate signature requires oldPrivKey.
-	// Verify the function signature enforces this by checking the source.
+	// Rotate requires a valid signature from the current key. Verify the
+	// implementation enforces Ed25519 signature verification.
 	src, err2 := os.ReadFile("../internal/adapter/identity/identity.go")
 	if err2 != nil {
 		t.Fatalf("cannot read identity source: %v", err2)
 	}
 	srcStr := string(src)
-	if !strings.Contains(srcStr, "oldPrivKey") {
-		t.Fatal("Rotate must accept oldPrivKey parameter for signed rotation operations")
+	if !strings.Contains(srcStr, "ed25519.Verify") {
+		t.Fatal("Rotate must verify Ed25519 signature for signed rotation operations")
 	}
 
-	// Verify rotation succeeds with the correct old key.
+	// Verify rotation succeeds with a valid signature from the old key.
 	newKey := make([]byte, 32)
 	newKey[0] = 0xb2
-	err = impl.Rotate(idCtx, did, seed, newKey)
+	payload := []byte("rotate:" + string(did))
+	sig := ed25519.Sign(oldPriv, payload)
+	err = impl.Rotate(idCtx, did, payload, sig, newKey)
 	testutil.RequireNoError(t, err)
+
+	// Verify rotation is DENIED with an invalid signature.
+	badSig := make([]byte, len(sig))
+	copy(badSig, sig)
+	badSig[0] ^= 0xff // corrupt the signature
+	newerKey := make([]byte, 32)
+	newerKey[0] = 0xc3
+	err = impl.Rotate(idCtx, did, payload, badSig, newerKey)
+	if err == nil {
+		t.Fatal("Rotate must reject rotation with invalid signature")
+	}
+	if !strings.Contains(err.Error(), "signature verification failed") {
+		t.Fatalf("expected signature verification failure, got: %v", err)
+	}
 }
 
 // TST-CORE-144

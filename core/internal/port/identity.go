@@ -35,7 +35,7 @@ type DIDResolver interface {
 type DIDManager interface {
 	Create(ctx context.Context, publicKey []byte) (domain.DID, error)
 	Resolve(ctx context.Context, did domain.DID) ([]byte, error)
-	Rotate(ctx context.Context, did domain.DID, oldPrivKey, newPubKey []byte) error
+	Rotate(ctx context.Context, did domain.DID, rotationPayload, signature, newPubKey []byte) error
 }
 
 // PersonaManager handles persona lifecycle operations.
@@ -46,6 +46,10 @@ type PersonaManager interface {
 	Lock(ctx context.Context, personaID string) error
 	IsLocked(personaID string) (bool, error)
 	Delete(ctx context.Context, personaID string) error
+	// AccessPersona enforces tier-based access control with audit logging.
+	// Returns nil if access is allowed, or an error if the persona's tier
+	// restricts access (e.g. locked persona that hasn't been unlocked).
+	AccessPersona(ctx context.Context, personaID string) error
 }
 
 // ContactDirectory manages the contact registry in identity.sqlite.

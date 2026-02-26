@@ -31,8 +31,9 @@ func NewAPIContract(brainToken string) *APIContract {
 		{Method: "POST", Path: "/v1/msg/send", TokenType: "brain", StatusCode: 200},
 		{Method: "POST", Path: "/v1/reputation/query", TokenType: "brain", StatusCode: 200},
 		{Method: "POST", Path: "/v1/did/sign", TokenType: "admin", StatusCode: 200},
-		{Method: "POST", Path: "/v1/did/rotate", TokenType: "admin", StatusCode: 200},
-		{Method: "POST", Path: "/v1/vault/backup", TokenType: "admin", StatusCode: 200},
+		// Planned endpoints — not yet routed in main.go:
+		{Method: "POST", Path: "/v1/did/rotate", TokenType: "admin", StatusCode: 200},   // planned: requires signature-based rotation (CORE-HIGH-14)
+		{Method: "POST", Path: "/v1/vault/backup", TokenType: "admin", StatusCode: 200}, // planned: requires MigrationService handler wiring
 		{Method: "POST", Path: "/v1/persona/unlock", TokenType: "admin", StatusCode: 200},
 		{Method: "GET", Path: "/healthz", TokenType: "brain", StatusCode: 200},
 		{Method: "GET", Path: "/readyz", TokenType: "brain", StatusCode: 200},

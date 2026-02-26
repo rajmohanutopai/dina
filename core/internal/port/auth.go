@@ -30,8 +30,11 @@ type DeviceKeyRegistrar interface {
 // ClientTokenRegistrar allows the pairing/device layer to register
 // CLIENT_TOKENs in the auth validator at runtime so that newly paired
 // legacy-token devices can authenticate.
+// The optional scope parameter controls the token's privilege level:
+//   - "admin": full access (bootstrap token)
+//   - "device": restricted access (paired devices, default)
 type ClientTokenRegistrar interface {
-	RegisterClientToken(token string, deviceID string)
+	RegisterClientToken(token string, deviceID string, scope ...string)
 }
 
 // TokenRevoker revokes client tokens by device identity.

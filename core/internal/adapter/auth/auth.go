@@ -63,6 +63,7 @@ type tokenValidator struct {
 	mu           sync.RWMutex
 	brainToken   string
 	clientTokens map[string]string           // SHA-256(token) hex -> deviceID
+	tokenScopes  map[string]string           // SHA-256(token) hex -> scope ("admin" or "device")
 	deviceKeys   map[string]*devicePubKey    // did:key:z... -> public key entry
 	nonceCache   map[string]time.Time        // signatureHex -> first-seen time (replay protection)
 	clock        port.Clock
@@ -85,6 +86,7 @@ func NewTokenValidator(brainToken string, clientTokens map[string]string) *token
 	return &tokenValidator{
 		brainToken:   brainToken,
 		clientTokens: ct,
+		tokenScopes:  make(map[string]string),
 		deviceKeys:   make(map[string]*devicePubKey),
 		nonceCache:   make(map[string]time.Time),
 		maxClockSkew: 5 * time.Minute,
@@ -119,11 +121,22 @@ func (v *tokenValidator) RevokeDeviceKey(did string) {
 // RegisterClientToken registers a raw CLIENT_TOKEN so that future
 // ValidateClientToken calls will accept it. The token is stored as its
 // SHA-256 hex digest, matching the lookup path in ValidateClientToken.
-func (v *tokenValidator) RegisterClientToken(token string, deviceID string) {
+// An optional scope parameter controls the token's privilege level:
+//   - "admin": full access to all endpoints (bootstrap token)
+//   - "device": restricted access — cannot reach /v1/did/sign, /v1/did/rotate,
+//     /v1/identity/mnemonic, /v1/vault/backup, or /admin/* (paired devices)
+//
+// If no scope is provided, defaults to "device" (least-privilege).
+func (v *tokenValidator) RegisterClientToken(token string, deviceID string, scope ...string) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	hash := sha256Hex(token)
 	v.clientTokens[hash] = deviceID
+	tokenScope := "device" // default scope for paired devices
+	if len(scope) > 0 && scope[0] != "" {
+		tokenScope = scope[0]
+	}
+	v.tokenScopes[hash] = tokenScope
 }
 
 // RevokeClientTokenByDevice removes all client tokens associated with a device identity.
@@ -133,12 +146,15 @@ func (v *tokenValidator) RevokeClientTokenByDevice(deviceIdentity string) {
 	for hash, devID := range v.clientTokens {
 		if devID == deviceIdentity {
 			delete(v.clientTokens, hash)
+			delete(v.tokenScopes, hash)
 		}
 	}
 }
 
 // NewDefaultTokenValidator creates a validator with hardcoded test tokens.
 // WARNING: For testing only. Production should use NewTokenValidator with empty client tokens.
+// Pre-registered test tokens get "admin" scope so existing tests that expect
+// full CLIENT_TOKEN access continue to pass.
 func NewDefaultTokenValidator(brainToken string) *tokenValidator {
 	clientTokens := make(map[string]string)
 
@@ -152,7 +168,13 @@ func NewDefaultTokenValidator(brainToken string) *tokenValidator {
 	hashB := sha256Hex(tokenB)
 	clientTokens[hashB] = "device-002"
 
-	return NewTokenValidator(brainToken, clientTokens)
+	tv := NewTokenValidator(brainToken, clientTokens)
+
+	// Set admin scope for pre-registered test tokens so they retain full access.
+	tv.tokenScopes[hashA] = "admin"
+	tv.tokenScopes[hashB] = "admin"
+
+	return tv
 }
 
 // ValidateBrainToken checks a BRAIN_TOKEN using constant-time comparison.
@@ -174,6 +196,18 @@ func (v *tokenValidator) ValidateClientToken(token string) (deviceID string, ok 
 	deviceID, ok = v.clientTokens[hash]
 	v.mu.RUnlock()
 	return deviceID, ok
+}
+
+// GetTokenScope returns the scope for a client token ("admin" or "device").
+// Returns "device" if the token is not found or has no explicit scope.
+func (v *tokenValidator) GetTokenScope(token string) string {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	hash := sha256Hex(token)
+	if scope, ok := v.tokenScopes[hash]; ok {
+		return scope
+	}
+	return "device"
 }
 
 // IdentifyToken classifies a token as brain or client.
@@ -1023,12 +1057,40 @@ func (c *adminEndpointChecker) IsAdminEndpoint(path string) bool {
 }
 
 // AllowedForTokenKind checks if a token kind (brain/client) can access a path.
-// "client" can access everything.
+// An optional scope parameter differentiates client token privileges:
+//   - "admin": full access to all endpoints (bootstrap token)
+//   - "device": restricted — cannot reach sensitive endpoints (paired devices)
+//
+// If no scope is provided, defaults to "admin" for backward compatibility
+// (existing tests call AllowedForTokenKind("client", path) without scope).
+//
 // "brain" can access /v1/vault, /v1/msg, /v1/task, /v1/pii, /v1/did (non-sign,
 // non-rotate), /healthz, /readyz. Brain CANNOT access /v1/did/sign,
 // /v1/did/rotate, /v1/vault/backup, /v1/persona, /admin.
-func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string) bool {
+func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string, scope ...string) bool {
 	if kind == "client" {
+		// Determine scope: admin (full access) or device (restricted).
+		tokenScope := "admin" // default for backward-compat when called without scope
+		if len(scope) > 0 && scope[0] != "" {
+			tokenScope = scope[0]
+		}
+		if tokenScope == "admin" {
+			return true
+		}
+		// Device-scoped clients: restricted set.
+		// Cannot access signing, rotation, mnemonic, backup, or admin UI.
+		deviceDenied := []string{
+			"/v1/did/sign",
+			"/v1/did/rotate",
+			"/v1/identity/mnemonic",
+			"/v1/vault/backup",
+			"/admin",
+		}
+		for _, denied := range deviceDenied {
+			if path == denied || hasPathPrefix(path, denied) {
+				return false
+			}
+		}
 		return true
 	}
 	if kind != "brain" {
@@ -1038,8 +1100,8 @@ func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string) bool {
 	// Brain is explicitly denied on these paths.
 	brainDenied := []string{
 		"/v1/did/sign",
-		"/v1/did/rotate",
-		"/v1/vault/backup",
+		"/v1/did/rotate",    // Planned — not yet routed in main.go; requires signature-based rotation (CORE-HIGH-14)
+		"/v1/vault/backup",  // Planned — not yet routed in main.go; requires MigrationService handler wiring
 		"/v1/persona",
 		"/admin",
 		"/v1/export",

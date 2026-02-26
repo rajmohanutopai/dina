@@ -156,6 +156,7 @@ func (q *TaskQueue) Complete(_ context.Context, taskID string) error {
 
 	if t, ok := q.inFlight[taskID]; ok {
 		t.Status = "completed"
+		delete(q.inFlight, taskID)
 		return nil
 	}
 	for i := range q.tasks {

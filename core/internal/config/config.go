@@ -29,6 +29,7 @@ type Config struct {
 	PDSEmail         string `json:"pds_email"`
 	ClientToken      string `json:"client_token"`
 	OwnDID           string `json:"own_did"`
+	AllowedOrigins   string `json:"allowed_origins"`
 }
 
 // Loader implements testutil.ConfigLoader.
@@ -200,5 +201,8 @@ func loadEnv(cfg *Config) {
 	}
 	if v := os.Getenv("DINA_OWN_DID"); v != "" {
 		cfg.OwnDID = v
+	}
+	if v := os.Getenv("DINA_ALLOWED_ORIGINS"); v != "" {
+		cfg.AllowedOrigins = v
 	}
 }

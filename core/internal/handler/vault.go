@@ -40,6 +40,11 @@ type queryRequest struct {
 // HandleQuery handles POST /v1/vault/query. It parses the search parameters,
 // calls VaultService.Query, and returns the matching items as JSON.
 func (h *VaultHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
 	var req queryRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -74,7 +79,7 @@ func (h *VaultHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.Vault.Query(r.Context(), agentDID(r), persona, q)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		clientError(w, "query failed", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -97,6 +102,11 @@ type storeRequest struct {
 // HandleStore handles POST /v1/vault/store. It persists a single item into the
 // named persona's vault and returns the generated ID.
 func (h *VaultHandler) HandleStore(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
 	var req storeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -111,7 +121,7 @@ func (h *VaultHandler) HandleStore(w http.ResponseWriter, r *http.Request) {
 
 	id, err := h.Vault.Store(r.Context(), persona, req.Item)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		clientError(w, "store failed", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -129,6 +139,11 @@ type storeBatchRequest struct {
 // HandleStoreBatch handles POST /v1/vault/store/batch. It persists multiple
 // items in a single operation and returns their IDs.
 func (h *VaultHandler) HandleStoreBatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
 	var req storeBatchRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -143,7 +158,7 @@ func (h *VaultHandler) HandleStoreBatch(w http.ResponseWriter, r *http.Request) 
 
 	ids, err := h.Vault.StoreBatch(r.Context(), persona, req.Items)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		clientError(w, "store batch failed", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -181,7 +196,7 @@ func (h *VaultHandler) HandleGetItem(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"item not found"}`, http.StatusNotFound)
 			return
 		}
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		clientError(w, "get item failed", http.StatusInternalServerError, err)
 		return
 	}
 	if item == nil {
@@ -214,7 +229,7 @@ func (h *VaultHandler) HandleDeleteItem(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := h.Vault.Delete(r.Context(), persona, id); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		clientError(w, "delete failed", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -256,7 +271,7 @@ func HandleClearVault(clearer VaultClearer) http.HandlerFunc {
 
 		count, err := clearer.ClearAll(r.Context(), persona)
 		if err != nil {
-			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+			clientError(w, "clear failed", http.StatusInternalServerError, err)
 			return
 		}
 
@@ -310,7 +325,7 @@ func (h *VaultHandler) HandlePutKV(w http.ResponseWriter, r *http.Request) {
 		BodyText: value,
 	}
 	if _, err := h.Vault.Store(r.Context(), persona, item); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		clientError(w, "store failed", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -340,7 +355,7 @@ func (h *VaultHandler) HandleGetKV(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"key not found"}`, http.StatusNotFound)
 			return
 		}
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		clientError(w, "get failed", http.StatusInternalServerError, err)
 		return
 	}
 	if item == nil {

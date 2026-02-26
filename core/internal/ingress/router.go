@@ -17,7 +17,7 @@ type Router struct {
 	deadDrop   *DeadDrop
 	sweeper    *Sweeper
 	limiter    *RateLimiter
-	onEnvelope func(context.Context, []byte) // decrypt+deliver callback for fast-path envelopes
+	onEnvelope func(context.Context, []byte) error // decrypt+deliver callback; error → dead-drop fallback
 }
 
 // NewRouter constructs an ingress Router.
@@ -46,11 +46,6 @@ func (r *Router) Ingest(ctx context.Context, ip string, envelope []byte) error {
 		return fmt.Errorf("ingress: %w", domain.ErrRateLimited)
 	}
 
-	// Valve 2: Global spool capacity check.
-	if !r.limiter.AllowGlobal() {
-		return fmt.Errorf("ingress: %w: spool full", domain.ErrSpoolFull)
-	}
-
 	// Check payload size.
 	if !r.inbox.CheckPayloadSize(envelope) {
 		return fmt.Errorf("ingress: payload exceeds maximum size")
@@ -61,13 +56,20 @@ func (r *Router) Ingest(ctx context.Context, ip string, envelope []byte) error {
 	// When unlocked, decrypt and process immediately.
 	defaultPersona, _ := domain.NewPersonaName("personal")
 	if !r.vault.IsOpen(defaultPersona) {
+		// Valve 2: Global spool capacity check (dead-drop path only).
+		if !r.limiter.AllowGlobal() {
+			return fmt.Errorf("ingress: %w: spool full", domain.ErrSpoolFull)
+		}
 		// Dead drop path: store the encrypted blob for later processing.
 		return r.deadDrop.Store(ctx, envelope)
 	}
 
 	// Fast path: vault is unlocked — decrypt and deliver immediately.
 	if r.onEnvelope != nil {
-		r.onEnvelope(ctx, envelope)
+		if err := r.onEnvelope(ctx, envelope); err != nil {
+			// Fast-path decryption failed — fall back to dead drop for retry after next unlock.
+			return r.deadDrop.Store(ctx, envelope)
+		}
 		return nil
 	}
 
@@ -83,7 +85,7 @@ func (r *Router) Ingest(ctx context.Context, ip string, envelope []byte) error {
 // SetOnEnvelope registers the callback invoked for each fast-path spool
 // envelope during ProcessPending. The callback should decrypt and store
 // the envelope (e.g. TransportService.ProcessInbound + StoreInbound).
-func (r *Router) SetOnEnvelope(fn func(context.Context, []byte)) {
+func (r *Router) SetOnEnvelope(fn func(context.Context, []byte) error) {
 	r.onEnvelope = fn
 }
 
@@ -106,7 +108,11 @@ func (r *Router) ProcessPending(ctx context.Context) (int, error) {
 	inboxCount := 0
 	for _, envelope := range payloads {
 		if r.onEnvelope != nil {
-			r.onEnvelope(ctx, envelope)
+			if err := r.onEnvelope(ctx, envelope); err != nil {
+				// Re-spool to dead drop on failure.
+				_ = r.deadDrop.Store(ctx, envelope)
+				continue
+			}
 		}
 		inboxCount++
 	}

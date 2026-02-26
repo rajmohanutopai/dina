@@ -37,21 +37,8 @@ var _ port.VaultAuditLogger = (*AuditLogger)(nil)
 
 type BootConfig = testutil.BootConfig
 
-// maxItemSize is the maximum allowed size for a vault item body (10 MiB).
-const maxItemSize = 10 * 1024 * 1024
-
-// validVaultItemTypes lists the accepted vault_items.type values.
-var validVaultItemTypes = map[string]bool{
-	"email":          true,
-	"message":        true,
-	"event":          true,
-	"note":           true,
-	"photo":          true,
-	"email_draft":    true,
-	"cart_handover":  true,
-	"kv":             true,
-	"contact":        true,
-}
+// maxItemSize aliases the domain constant for local readability.
+const maxItemSize = domain.MaxVaultItemSize
 
 // ---- VaultManager + VaultReader + VaultWriter ----
 
@@ -160,7 +147,7 @@ func (m *Manager) Store(_ context.Context, persona domain.PersonaName, item doma
 	}
 
 	// Enforce type constraint.
-	if item.Type != "" && !validVaultItemTypes[item.Type] {
+	if item.Type != "" && !domain.ValidVaultItemTypes[item.Type] {
 		return "", fmt.Errorf("vault: invalid item type %q", item.Type)
 	}
 
@@ -186,7 +173,7 @@ func (m *Manager) StoreBatch(_ context.Context, persona domain.PersonaName, item
 
 	// Validate all items first (simulate transaction rollback on failure).
 	for _, item := range items {
-		if item.Type != "" && !validVaultItemTypes[item.Type] {
+		if item.Type != "" && !domain.ValidVaultItemTypes[item.Type] {
 			return nil, fmt.Errorf("vault: batch rejected — invalid item type %q", item.Type)
 		}
 		if len(item.BodyText) > maxItemSize {
@@ -721,7 +708,7 @@ func (s *SchemaInspect) ExecSQL(dbName, sql string, args ...interface{}) (int64,
 		// Find the type arg. Vault_items INSERT: (id, type, source, ...) -> type is arg[1].
 		if len(args) >= 2 {
 			itemType, ok := args[1].(string)
-			if ok && !validVaultItemTypes[itemType] {
+			if ok && !domain.ValidVaultItemTypes[itemType] {
 				return 0, fmt.Errorf("CHECK constraint failed: vault_items.type must be one of email, message, event, note, photo, kv, contact")
 			}
 		}

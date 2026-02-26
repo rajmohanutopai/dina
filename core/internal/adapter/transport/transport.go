@@ -479,6 +479,7 @@ func (o *OutboxManager) DeleteExpired(ttlSeconds int64) (int, error) {
 	deleted := 0
 	for _, msg := range o.messages {
 		if msg.CreatedAt > 0 && msg.CreatedAt < cutoff {
+			delete(o.sentIDs, msg.ID)
 			deleted++
 		} else {
 			kept = append(kept, msg)
@@ -721,10 +722,19 @@ type cachedDoc struct {
 	fetchedAt time.Time
 }
 
-// NewDIDResolver returns a DIDResolver with a default 5-minute cache TTL.
+// NewDIDResolver returns a clean DIDResolver with no pre-registered entries.
+// Use for production. Test DIDs are NOT loaded.
+func NewDIDResolver() *DIDResolver {
+	return &DIDResolver{
+		cache: make(map[string]cachedDoc),
+		ttl:   5 * time.Minute,
+	}
+}
+
+// NewTestDIDResolver returns a DIDResolver with a default 5-minute cache TTL.
 // Well-known test DIDs are pre-registered so tests can resolve them without
 // a live network fetcher.
-func NewDIDResolver() *DIDResolver {
+func NewTestDIDResolver() *DIDResolver {
 	r := &DIDResolver{
 		cache: make(map[string]cachedDoc),
 		ttl:   5 * time.Minute,

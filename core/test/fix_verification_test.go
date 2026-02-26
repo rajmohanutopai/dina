@@ -815,7 +815,7 @@ func TestFixVerify_31_6_3_KnownPeersParsed(t *testing.T) {
 	}
 
 	// Verify the parsed peers can be registered with the DID resolver.
-	resolver := transport.NewDIDResolver()
+	resolver := transport.NewTestDIDResolver()
 	for did, endpoint := range peers {
 		doc := []byte(`{"id":"` + did + `","service":[{"id":"#didcomm","type":"DIDCommMessaging","serviceEndpoint":"` + endpoint + `"}]}`)
 		resolver.AddDocument(did, doc)

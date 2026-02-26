@@ -174,3 +174,13 @@ func (s *GatekeeperService) notifyEgressDenial(ctx context.Context, destination 
 	// Best-effort notification; do not propagate errors.
 	_ = s.notifier.Broadcast(ctx, payload)
 }
+
+// EvaluateIntent implements port.Gatekeeper by delegating to CheckAccess.
+func (s *GatekeeperService) EvaluateIntent(ctx context.Context, intent domain.Intent) (domain.Decision, error) {
+	return s.CheckAccess(ctx, intent)
+}
+
+// CheckEgress implements port.Gatekeeper by delegating to EnforceEgress.
+func (s *GatekeeperService) CheckEgress(ctx context.Context, destination string, data []byte) (bool, error) {
+	return s.EnforceEgress(ctx, destination, data)
+}

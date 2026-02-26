@@ -83,7 +83,7 @@ func TestGatekeeper_6_1_4_ReadVaultByUntrustedDenied(t *testing.T) {
 
 	intent := testutil.Intent{
 		AgentDID:   "did:key:z6MkUntrustedBot",
-		Action:     "read_vault",
+		Action:     "vault_read",
 		Target:     "financial",
 		PersonaID:  "financial",
 		TrustLevel: "untrusted",
@@ -294,7 +294,7 @@ func TestGatekeeper_6_3_1_TrustedAgentAccessesOpenPersona(t *testing.T) {
 
 	intent := testutil.Intent{
 		AgentDID:   "did:key:z6MkTrustedBot",
-		Action:     "read_vault",
+		Action:     "vault_read",
 		Target:     "consumer",
 		PersonaID:  "consumer",
 		TrustLevel: "trusted",
@@ -312,7 +312,7 @@ func TestGatekeeper_6_3_2_UntrustedAgentDeniedLockedPersona(t *testing.T) {
 
 	intent := testutil.Intent{
 		AgentDID:   "did:key:z6MkUntrustedBot",
-		Action:     "read_vault",
+		Action:     "vault_read",
 		Target:     "health",
 		PersonaID:  "health",
 		TrustLevel: "untrusted",
@@ -332,7 +332,7 @@ func TestGatekeeper_6_3_3_VerifiedAgentRestrictedPersona(t *testing.T) {
 	// should produce an audit entry and require review.
 	intent := testutil.Intent{
 		AgentDID:   "did:key:z6MkVerifiedBot",
-		Action:     "read_vault",
+		Action:     "vault_read",
 		Target:     "professional",
 		PersonaID:  "professional",
 		TrustLevel: "verified",
@@ -352,7 +352,7 @@ func TestGatekeeper_6_3_4_CrossPersonaAccessDenied(t *testing.T) {
 	// This enforces cryptographic compartment isolation.
 	intent := testutil.Intent{
 		AgentDID:    "did:key:z6MkConsumerBot",
-		Action:      "read_vault",
+		Action:      "vault_read",
 		Target:      "financial",
 		PersonaID:   "financial",
 		TrustLevel:  "trusted",

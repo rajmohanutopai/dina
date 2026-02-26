@@ -121,6 +121,34 @@ func (d *DeadDrop) Read(name string) ([]byte, error) {
 	return data, nil
 }
 
+// Peek returns the contents of a specific blob WITHOUT removing it.
+// Use Ack to remove the blob after successful processing.
+func (d *DeadDrop) Peek(name string) ([]byte, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	path := filepath.Join(d.dir, name)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("dead drop: peek %s: %w", name, err)
+	}
+
+	return data, nil
+}
+
+// Ack removes a blob from the spool after successful processing.
+func (d *DeadDrop) Ack(name string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	path := filepath.Join(d.dir, name)
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("dead drop: ack %s: %w", name, err)
+	}
+
+	return nil
+}
+
 // Count returns the number of blobs in the spool.
 func (d *DeadDrop) Count() (int, error) {
 	d.mu.Lock()

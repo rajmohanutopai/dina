@@ -59,6 +59,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := cfgLoader.Validate(cfg); err != nil {
+		slog.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
+
 	// ---------- Security guards ----------
 
 	// HIGH-02: DINA_ALLOW_UNSIGNED_D2D must only be enabled in non-production environments.
@@ -96,9 +101,19 @@ func main() {
 	keyDeriver := crypto.NewKeyDeriver(slip0010)
 
 	// Bootstrap identity signing key from a deterministic seed.
-	// Priority: 1) DINA_IDENTITY_SEED env var, 2) persisted seed file, 3) generate new random seed.
+	// Priority: 1) DINA_IDENTITY_SEED env var, 2) wrapped seed file (.wrapped), 3) plaintext seed file (.hex), 4) generate new.
 	bootstrapSeed := make([]byte, 32)
 	seedPath := filepath.Join(cfg.VaultPath, "identity_seed.hex")
+	wrappedSeedPath := filepath.Join(cfg.VaultPath, "identity_seed.wrapped")
+	seedPassword := os.Getenv("DINA_SEED_PASSWORD")
+
+	// Derive KEK from seed password if configured.
+	var seedKEK []byte
+	if seedPassword != "" {
+		kekHash := sha256.Sum256([]byte(seedPassword))
+		seedKEK = kekHash[:]
+	}
+
 	if seedHex := os.Getenv("DINA_IDENTITY_SEED"); seedHex != "" {
 		decoded, err := hex.DecodeString(seedHex)
 		if err != nil {
@@ -110,6 +125,58 @@ func main() {
 			os.Exit(1)
 		}
 		copy(bootstrapSeed, decoded)
+	} else if seedKEK != nil {
+		// Try wrapped seed first.
+		if data, err := os.ReadFile(wrappedSeedPath); err == nil {
+			unwrapped, err := keyWrapper.Unwrap(data, seedKEK)
+			if err != nil {
+				slog.Error("Failed to unwrap identity seed — wrong DINA_SEED_PASSWORD?", "error", err)
+				os.Exit(1)
+			}
+			if len(unwrapped) != 32 {
+				slog.Error("Unwrapped seed has wrong length", "got_bytes", len(unwrapped))
+				os.Exit(1)
+			}
+			copy(bootstrapSeed, unwrapped)
+			slog.Info("Loaded wrapped identity seed", "path", wrappedSeedPath)
+		} else if data, err := os.ReadFile(seedPath); err == nil {
+			// Auto-migrate from plaintext .hex to .wrapped
+			decoded, err := hex.DecodeString(strings.TrimSpace(string(data)))
+			if err != nil || len(decoded) != 32 {
+				slog.Error("Corrupt identity seed file — refusing to start", "path", seedPath, "error", err)
+				os.Exit(1)
+			}
+			copy(bootstrapSeed, decoded)
+			// Wrap and persist
+			wrapped, err := keyWrapper.Wrap(bootstrapSeed, seedKEK)
+			if err != nil {
+				slog.Error("Failed to wrap identity seed during migration", "error", err)
+				os.Exit(1)
+			}
+			os.MkdirAll(filepath.Dir(wrappedSeedPath), 0700)
+			if err := os.WriteFile(wrappedSeedPath, wrapped, 0600); err != nil {
+				slog.Warn("Could not persist wrapped identity seed", "error", err)
+			} else {
+				slog.Info("Migrated identity seed from plaintext to AES-GCM wrapped", "path", wrappedSeedPath)
+			}
+		} else {
+			// Generate new seed and wrap it
+			if _, err := crypto_rand.Read(bootstrapSeed); err != nil {
+				slog.Error("Failed to generate random seed", "error", err)
+				os.Exit(1)
+			}
+			wrapped, err := keyWrapper.Wrap(bootstrapSeed, seedKEK)
+			if err != nil {
+				slog.Error("Failed to wrap new identity seed", "error", err)
+				os.Exit(1)
+			}
+			os.MkdirAll(filepath.Dir(wrappedSeedPath), 0700)
+			if err := os.WriteFile(wrappedSeedPath, wrapped, 0600); err != nil {
+				slog.Warn("Could not persist wrapped identity seed", "error", err)
+			} else {
+				slog.Info("Generated and wrapped new identity seed", "path", wrappedSeedPath)
+			}
+		}
 	} else if data, err := os.ReadFile(seedPath); err == nil {
 		decoded, err := hex.DecodeString(strings.TrimSpace(string(data)))
 		if err != nil || len(decoded) != 32 {
@@ -117,7 +184,7 @@ func main() {
 			os.Exit(1)
 		}
 		copy(bootstrapSeed, decoded)
-		slog.Info("Loaded identity seed from file", "path", seedPath)
+		slog.Warn("Identity seed loaded from PLAINTEXT file — set DINA_SEED_PASSWORD for AES-GCM wrapping", "path", seedPath)
 	} else {
 		if _, err := crypto_rand.Read(bootstrapSeed); err != nil {
 			slog.Error("Failed to generate random seed", "error", err)
@@ -127,7 +194,7 @@ func main() {
 		if err := os.WriteFile(seedPath, []byte(hex.EncodeToString(bootstrapSeed)), 0600); err != nil {
 			slog.Warn("Could not persist identity seed", "error", err)
 		} else {
-			slog.Warn("Generated new identity seed — set DINA_IDENTITY_SEED for explicit control", "path", seedPath)
+			slog.Warn("Generated new identity seed in PLAINTEXT — set DINA_SEED_PASSWORD for AES-GCM wrapping", "path", seedPath)
 		}
 	}
 	// Verify seed is not all zeros.
@@ -165,6 +232,20 @@ func main() {
 	personaMgr.VerifyPassphrase = func(storedHash, passphrase string) (bool, error) {
 		return auth.NewPassphraseVerifier(storedHash).Verify(passphrase)
 	}
+	personaMgr.OnLock = func(personaID string) {
+		// Strip "persona-" prefix to get the bare name for VaultManager.
+		name := strings.TrimPrefix(personaID, "persona-")
+		pn, err := domain.NewPersonaName(name)
+		if err != nil {
+			slog.Warn("OnLock: invalid persona name", "personaID", personaID, "error", err)
+			return
+		}
+		if err := vaultMgr.Close(pn); err != nil {
+			slog.Warn("OnLock: vault close failed", "persona", name, "error", err)
+			return
+		}
+		slog.Info("Vault closed on persona lock", "persona", name)
+	}
 	contactDir := identity.NewContactDirectory()
 	deviceRegistry := identity.NewDeviceRegistry()
 	recoveryMgr := identity.NewRecoveryManager()
@@ -194,8 +275,8 @@ func main() {
 	// 6. Auth
 	tokenValidator := auth.NewTokenValidator(cfg.BrainToken, map[string]string{})
 	if cfg.ClientToken != "" {
-		tokenValidator.RegisterClientToken(cfg.ClientToken, "bootstrap")
-		slog.Info("Pre-registered client token from DINA_CLIENT_TOKEN")
+		tokenValidator.RegisterClientToken(cfg.ClientToken, "bootstrap", "admin")
+		slog.Info("Pre-registered client token from DINA_CLIENT_TOKEN", "scope", "admin")
 	}
 	rateLimiter := auth.NewRateLimiter(cfg.RateLimit, 60)
 
@@ -239,6 +320,7 @@ func main() {
 				// Legacy: deterministic placeholder pubkey from the DID.
 				peerSeed := sha256.Sum256([]byte(did))
 				pubKeyHex = hex.EncodeToString(peerSeed[:])
+				slog.Warn("KNOWN_PEERS: using SHA-256 placeholder key — provide seed for real key exchange", "did", did)
 			}
 
 			doc := fmt.Sprintf(`{`+
@@ -272,7 +354,19 @@ func main() {
 
 	// 13. Observability
 	healthChecker := server.NewDynamicHealthChecker(func() bool {
-		return vaultMgr.IsOpen("identity")
+		// Check 1: config must have a valid client/brain token
+		if cfg.BrainToken == "" {
+			return false
+		}
+		// Check 2: vault path must exist
+		if _, err := os.Stat(cfg.VaultPath); err != nil {
+			return false
+		}
+		// Check 3: brain sidecar must be reachable
+		if !brain.IsHealthy(context.Background()) {
+			return false
+		}
+		return true
 	})
 	crashLogger := observability.NewCrashLogger()
 
@@ -290,9 +384,14 @@ func main() {
 		keyWrapper, argon2Deriver, vaultMgr, clk,
 	)
 
-	vaultSvc := service.NewVaultService(
-		vaultMgr, vaultMgr, vaultMgr, gk, clk,
+	gkSvc := service.NewGatekeeperService(
+		vaultMgr, vaultMgr, gk, auditLogger, notifier, clk,
 	)
+
+	vaultSvc := service.NewVaultService(
+		vaultMgr, vaultMgr, vaultMgr, gkSvc, clk,
+	)
+	vaultSvc.SetPersonaManager(personaMgr)
 
 	transportSvc := service.NewTransportService(
 		nacl, identitySigner, converter, didResolverPort,
@@ -311,8 +410,8 @@ func main() {
 
 	// Ingress: dead-drop + rate limiter + sweeper + router (§7 3-valve pipeline)
 	deadDropDir := filepath.Join(cfg.VaultPath, "deaddrop")
-	deadDrop := ingress.NewDeadDrop(deadDropDir, 10000, 500*1024*1024)
-	ingressLimiter := ingress.NewRateLimiter(50, time.Minute, 10000, 500*1024*1024, deadDrop)
+	deadDrop := ingress.NewDeadDrop(deadDropDir, 10000, int64(cfg.SpoolMax))
+	ingressLimiter := ingress.NewRateLimiter(50, time.Minute, 10000, int64(cfg.SpoolMax), deadDrop)
 	ingressSweeper := ingress.NewSweeper(deadDrop, nacl, didResolverPort, clk, 24*time.Hour)
 	ingressSweeper.SetKeys(
 		signingPrivKey.Public().(ed25519.PublicKey),
@@ -322,15 +421,17 @@ func main() {
 	ingressSweeper.SetOnMessage(func(msg *domain.DinaMessage) {
 		transportSvc.StoreInbound(msg)
 	})
+	ingressSweeper.SetTransport(transportSvc)
 	ingressRouter := ingress.NewRouter(vaultMgr, inboxMgr, deadDrop, ingressSweeper, ingressLimiter)
-	ingressRouter.SetOnEnvelope(func(ctx context.Context, envelope []byte) {
+	ingressRouter.SetOnEnvelope(func(ctx context.Context, envelope []byte) error {
 		msg, err := transportSvc.ProcessInbound(ctx, envelope)
 		if err != nil {
 			slog.Warn("ingress: fast-path decrypt failed", "error", err)
-			return
+			return err
 		}
 		transportSvc.StoreInbound(msg)
 		slog.Info("ingress: fast-path message decrypted and stored", "type", msg.Type)
+		return nil
 	})
 
 	// Background sweep: periodically drain dead-drop and spool after vault unlock.
@@ -346,15 +447,26 @@ func main() {
 		}
 	}()
 
+	// Background outbox retry: periodically attempt delivery of pending outbox messages.
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			if n, err := transportSvc.ProcessOutbox(context.Background()); err != nil {
+				slog.Warn("outbox ProcessOutbox error", "error", err)
+			} else if n > 0 {
+				slog.Info("outbox ProcessOutbox delivered messages", "count", n)
+			}
+		}
+	}()
+
 	taskSvc := service.NewTaskService(taskQueue, watchdog, brain, clk)
 
 	deviceSvc := service.NewDeviceService(pairer, deviceRegistry, clk)
 	deviceSvc.SetKeyRegistrar(tokenValidator)
 	deviceSvc.SetTokenRegistrar(tokenValidator)
+	deviceSvc.SetTokenRevoker(tokenValidator)
 
-	_ = service.NewGatekeeperService(
-		vaultMgr, vaultMgr, gk, auditLogger, notifier, clk,
-	)
 
 	estateSvc := service.NewEstateService(
 		estateMgr, vaultMgr, recoveryMgr, notifier, clk,
@@ -481,6 +593,38 @@ func main() {
 	mux.HandleFunc("/v1/export", exportH.HandleExport)
 	mux.HandleFunc("/v1/import", exportH.HandleImport)
 
+	// WebSocket endpoint (CORE-MED-07)
+	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		wsUpgrader := ws.NewUpgrader(ws.WithInsecureSkipVerify())
+		wsTokenValidator := func(token string) (string, error) {
+			deviceID, ok := tokenValidator.ValidateClientToken(token)
+			if !ok {
+				return "", fmt.Errorf("invalid client token")
+			}
+			return deviceID, nil
+		}
+		wsBrainRouter := func(clientID string, msgType string, payload map[string]interface{}) ([]byte, error) {
+			query, _ := payload["query"].(string)
+			if query == "" {
+				query = msgType
+			}
+			result, err := brain.Reason(r.Context(), query)
+			if err != nil {
+				return nil, err
+			}
+			return []byte(result.Content), nil
+		}
+		wsHandlerWS := ws.NewWSHandler(wsTokenValidator, wsBrainRouter)
+		wsHandlerWS.SetHub(wsHub)
+		hb := ws.NewHeartbeatManager(func(clientID string, data []byte) error {
+			return wsHub.Send(clientID, data)
+		})
+		wsHandlerWS.SetHeartbeat(hb)
+		buf := ws.NewMessageBuffer()
+		wsHandlerWS.SetBuffer(buf)
+		ws.ServeWS(wsUpgrader, wsHub, wsHandlerWS, hb, buf, w, r)
+	})
+
 	// Test-only: vault clear endpoint (guarded by DINA_TEST_MODE)
 	if os.Getenv("DINA_TEST_MODE") == "true" {
 		slog.Warn("DINA_TEST_MODE enabled — /v1/vault/clear endpoint is active")
@@ -489,7 +633,7 @@ func main() {
 
 	// ---------- Apply middleware chain ----------
 
-	authMW := &middleware.Auth{Tokens: tokenValidator}
+	authMW := &middleware.Auth{Tokens: tokenValidator, ScopeResolver: tokenValidator}
 	authzMW := middleware.NewAuthzMiddleware(auth.NewAdminEndpointChecker())
 	rateLimitMW := &middleware.RateLimit{Limiter: rateLimiter}
 	recovery := &middleware.Recovery{}

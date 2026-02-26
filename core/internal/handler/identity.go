@@ -51,6 +51,11 @@ type signRequest struct {
 // HandleSign handles POST /v1/did/sign. It signs the provided data with the
 // node's Ed25519 private key and returns the hex-encoded signature.
 func (h *IdentityHandler) HandleSign(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
 	var req signRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -85,6 +90,11 @@ type verifyRequest struct {
 // HandleVerify handles POST /v1/did/verify. It resolves the signer's DID to
 // obtain their public key, then verifies the Ed25519 signature.
 func (h *IdentityHandler) HandleVerify(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
 	var req verifyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)

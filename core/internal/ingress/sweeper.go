@@ -101,7 +101,7 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 		default:
 		}
 
-		blob, err := s.deadDrop.Read(name)
+		blob, err := s.deadDrop.Peek(name)
 		if err != nil {
 			// Blob may have been consumed by another process.
 			continue
@@ -123,12 +123,14 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 			if s.onMessage != nil {
 				s.onMessage(msg)
 			}
+			_ = s.deadDrop.Ack(name)
 			delivered++
 			continue
 		}
 
 		// If we don't have keys or converter, count as processed without decrypting.
 		if s.recipientPub == nil || s.recipientPriv == nil || s.converter == nil {
+			_ = s.deadDrop.Ack(name)
 			delivered++
 			continue
 		}
@@ -168,6 +170,7 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 		if s.onMessage != nil {
 			s.onMessage(&msg)
 		}
+		_ = s.deadDrop.Ack(name)
 		delivered++
 	}
 
@@ -189,7 +192,7 @@ func (s *Sweeper) SweepFull(ctx context.Context) (*SweepResult, error) {
 		default:
 		}
 
-		blob, err := s.deadDrop.Read(name)
+		blob, err := s.deadDrop.Peek(name)
 		if err != nil {
 			continue
 		}
@@ -218,12 +221,14 @@ func (s *Sweeper) SweepFull(ctx context.Context) (*SweepResult, error) {
 			if s.onMessage != nil {
 				s.onMessage(msg)
 			}
+			_ = s.deadDrop.Ack(name)
 			result.Delivered++
 			continue
 		}
 
 		// If we don't have keys or converter, count as delivered (pass-through).
 		if s.recipientPub == nil || s.recipientPriv == nil || s.converter == nil {
+			_ = s.deadDrop.Ack(name)
 			result.Delivered++
 			continue
 		}
@@ -267,6 +272,7 @@ func (s *Sweeper) SweepFull(ctx context.Context) (*SweepResult, error) {
 		if s.onMessage != nil {
 			s.onMessage(&msg)
 		}
+		_ = s.deadDrop.Ack(name)
 		result.Delivered++
 	}
 

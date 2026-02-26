@@ -77,6 +77,14 @@ func (a *VaultAdapter) Store(ctx context.Context, persona domain.PersonaName, it
 		return "", fmt.Errorf("sqlite: persona %q not open", persona)
 	}
 
+	// Defense-in-depth: validate item constraints.
+	if len(item.BodyText) > domain.MaxVaultItemSize {
+		return "", fmt.Errorf("sqlite: item body exceeds maximum size of %d bytes", domain.MaxVaultItemSize)
+	}
+	if item.Type != "" && !domain.ValidVaultItemTypes[item.Type] {
+		return "", fmt.Errorf("sqlite: invalid item type %q", item.Type)
+	}
+
 	if item.ID == "" {
 		id, err := randomID()
 		if err != nil {
@@ -128,6 +136,16 @@ func (a *VaultAdapter) StoreBatch(ctx context.Context, persona domain.PersonaNam
 	db := a.pool.DB(persona.String())
 	if db == nil {
 		return nil, fmt.Errorf("sqlite: persona %q not open", persona)
+	}
+
+	// Defense-in-depth: validate all items before starting the transaction.
+	for _, item := range items {
+		if len(item.BodyText) > domain.MaxVaultItemSize {
+			return nil, fmt.Errorf("sqlite: batch rejected — item body exceeds maximum size")
+		}
+		if item.Type != "" && !domain.ValidVaultItemTypes[item.Type] {
+			return nil, fmt.Errorf("sqlite: batch rejected — invalid item type %q", item.Type)
+		}
 	}
 
 	tx, err := db.BeginTx(ctx, nil)

@@ -20,6 +20,11 @@ type ackRequest struct {
 // HandleAck handles POST /v1/task/ack. It acknowledges the completion of a
 // task by processing the next item in the queue. Returns 200 OK on success.
 func (h *TaskHandler) HandleAck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
 	var req ackRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -35,7 +40,7 @@ func (h *TaskHandler) HandleAck(w http.ResponseWriter, r *http.Request) {
 	// it from the in-flight set.
 	task, err := h.Task.Acknowledge(r.Context(), req.TaskID)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusNotFound)
+		clientError(w, "task not found", http.StatusNotFound, err)
 		return
 	}
 

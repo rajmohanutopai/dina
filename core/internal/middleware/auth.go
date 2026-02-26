@@ -15,19 +15,29 @@ import (
 type contextKey string
 
 const (
-	TokenKindKey contextKey = "token_kind"
-	AgentDIDKey  contextKey = "agent_did"
+	TokenKindKey  contextKey = "token_kind"
+	AgentDIDKey   contextKey = "agent_did"
+	TokenScopeKey contextKey = "token_scope"
 )
 
 // AuthzChecker is the interface for endpoint-level authorization checks.
 // It determines whether a given token kind (e.g. "brain", "client") is
-// allowed to access a specific URL path.
+// allowed to access a specific URL path. The optional scope parameter
+// differentiates privilege levels within a kind (e.g. "admin" vs "device"
+// for client tokens).
 type AuthzChecker interface {
-	AllowedForTokenKind(kind, path string) bool
+	AllowedForTokenKind(kind, path string, scope ...string) bool
+}
+
+// TokenScopeResolver resolves the scope of a client token.
+// Implemented by tokenValidator; optional for the Auth middleware.
+type TokenScopeResolver interface {
+	GetTokenScope(token string) string
 }
 
 type Auth struct {
-	Tokens port.TokenValidator
+	Tokens        port.TokenValidator
+	ScopeResolver TokenScopeResolver // optional — set to enable scope-aware authz
 }
 
 // publicPaths bypass authentication.
@@ -101,6 +111,10 @@ func (a *Auth) Handler(next http.Handler) http.Handler {
 
 			ctx := context.WithValue(r.Context(), TokenKindKey, string(kind))
 			ctx = context.WithValue(ctx, AgentDIDKey, identity)
+			// Signature-authenticated devices always get "device" scope.
+			if string(kind) == "client" {
+				ctx = context.WithValue(ctx, TokenScopeKey, "device")
+			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
@@ -123,14 +137,20 @@ func (a *Auth) Handler(next http.Handler) http.Handler {
 		// Set context values for downstream handlers.
 		ctx := context.WithValue(r.Context(), TokenKindKey, string(kind))
 		ctx = context.WithValue(ctx, AgentDIDKey, identity)
+		// Resolve and propagate token scope for client tokens.
+		if string(kind) == "client" && a.ScopeResolver != nil {
+			tokenScope := a.ScopeResolver.GetTokenScope(token)
+			ctx = context.WithValue(ctx, TokenScopeKey, tokenScope)
+		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
 // NewAuthzMiddleware creates middleware that enforces endpoint-level authorization
-// based on the caller's token kind. It reads token_kind from the request context
-// (set by the auth middleware) and checks with the AuthzChecker whether
-// that token kind is allowed to access the requested path.
+// based on the caller's token kind and scope. It reads token_kind and
+// token_scope from the request context (set by the auth middleware) and checks
+// with the AuthzChecker whether that token kind/scope is allowed to access
+// the requested path.
 func NewAuthzMiddleware(checker AuthzChecker) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -141,7 +161,9 @@ func NewAuthzMiddleware(checker AuthzChecker) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			if !checker.AllowedForTokenKind(kind, r.URL.Path) {
+			// Read token_scope from context (set by Auth.Handler for client tokens).
+			scope, _ := r.Context().Value(TokenScopeKey).(string)
+			if !checker.AllowedForTokenKind(kind, r.URL.Path, scope) {
 				http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 				return
 			}

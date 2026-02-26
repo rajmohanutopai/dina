@@ -555,7 +555,8 @@ type AdminEndpointChecker interface {
 	// IsAdminEndpoint returns true if the given path is an admin-only endpoint.
 	IsAdminEndpoint(path string) bool
 	// AllowedForTokenKind checks if a token kind (brain/client) can access a path.
-	AllowedForTokenKind(kind, path string) bool
+	// Optional scope differentiates privilege levels (e.g. "admin" vs "device").
+	AllowedForTokenKind(kind, path string, scope ...string) bool
 }
 
 // ---------- §12-19 Interfaces ----------
