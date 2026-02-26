@@ -126,9 +126,9 @@ def test_sign_request_verifiable(tmp_path):
     body = b'{"action":"test"}'
     did, ts, sig_hex = identity.sign_request("GET", "/v1/did", body)
 
-    # Reconstruct the canonical payload.
+    # Reconstruct the canonical payload (5-part: method, path, query, timestamp, body_hash).
     body_hash = hashlib.sha256(body).hexdigest()
-    payload = f"GET\n/v1/did\n{ts}\n{body_hash}"
+    payload = f"GET\n/v1/did\n\n{ts}\n{body_hash}"
 
     # Verify with the public key.
     pubkey = identity._private_key.public_key()
@@ -143,7 +143,7 @@ def test_sign_request_empty_body(tmp_path):
     did, ts, sig_hex = identity.sign_request("GET", "/healthz")
 
     empty_hash = hashlib.sha256(b"").hexdigest()
-    payload = f"GET\n/healthz\n{ts}\n{empty_hash}"
+    payload = f"GET\n/healthz\n\n{ts}\n{empty_hash}"
 
     pubkey = identity._private_key.public_key()
     pubkey.verify(bytes.fromhex(sig_hex), payload.encode("utf-8"))

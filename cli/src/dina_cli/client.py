@@ -106,7 +106,12 @@ class DinaClient:
         # Sign Core requests in signature mode.
         if client is self._core and self._identity is not None:
             body_bytes = self._extract_body(kwargs)
-            did, ts, sig = self._identity.sign_request(method, path, body_bytes)
+            # Extract query string from params if present
+            query = ""
+            if "params" in kwargs and kwargs["params"]:
+                from urllib.parse import urlencode
+                query = urlencode(kwargs["params"], doseq=True)
+            did, ts, sig = self._identity.sign_request(method, path, body_bytes, query=query)
             headers = kwargs.get("headers") or {}
             headers["X-DID"] = did
             headers["X-Timestamp"] = ts

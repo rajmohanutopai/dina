@@ -191,9 +191,9 @@ class TestCLIEd25519Signing:
             # Mock mode: verify canonical payload construction
             body = b'{"persona":"personal","item_type":"note","summary":"test"}'
             did, ts, sig = cli_identity.sign_request("POST", "/v1/vault/store", body)
-            # Reconstruct canonical payload
+            # Reconstruct canonical payload (5-part: method, path, query, timestamp, body_hash)
             body_hash = hashlib.sha256(body).hexdigest()
-            payload = f"POST\n/v1/vault/store\n{ts}\n{body_hash}"
+            payload = f"POST\n/v1/vault/store\n\n{ts}\n{body_hash}"
             assert len(payload) > 0
             assert sig  # non-empty signature
 

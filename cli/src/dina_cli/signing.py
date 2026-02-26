@@ -112,6 +112,7 @@ class CLIIdentity:
         method: str,
         path: str,
         body: bytes | None = None,
+        query: str = "",
     ) -> tuple[str, str, str]:
         """Sign an HTTP request.
 
@@ -119,13 +120,13 @@ class CLIIdentity:
 
         The canonical signing payload is::
 
-            {METHOD}\\n{PATH}\\n{TIMESTAMP}\\n{SHA256_HEX_OF_BODY}
+            {METHOD}\\n{PATH}\\n{QUERY}\\n{TIMESTAMP}\\n{SHA256_HEX_OF_BODY}
         """
         self.ensure_loaded()
         assert self._private_key is not None
 
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         body_hash = hashlib.sha256(body).hexdigest() if body else _EMPTY_BODY_HASH
-        payload = f"{method}\n{path}\n{timestamp}\n{body_hash}"
+        payload = f"{method}\n{path}\n{query}\n{timestamp}\n{body_hash}"
         signature = self._private_key.sign(payload.encode("utf-8"))
         return self.did(), timestamp, signature.hex()
