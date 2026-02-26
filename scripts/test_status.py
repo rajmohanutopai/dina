@@ -58,6 +58,18 @@ def _ensure_brain_token() -> str:
     return token_file.read_text().strip()
 
 
+def _ensure_client_token() -> str:
+    """Create secrets/client_token if it doesn't exist yet. Return the token."""
+    secrets_dir = PROJECT_ROOT / "secrets"
+    token_file = secrets_dir / "client_token"
+    if not token_file.exists():
+        secrets_dir.mkdir(parents=True, exist_ok=True)
+        token_file.write_text(_secrets.token_urlsafe(32))
+        token_file.chmod(0o600)
+        print("  Generated secrets/client_token", file=sys.stderr)
+    return token_file.read_text().strip()
+
+
 def _run_cleanup() -> None:
     """Run all registered cleanup functions (LIFO). Safe to call multiple times."""
     global _cleanup_fns
@@ -250,6 +262,7 @@ def _start_local() -> float:
 
     t0 = _time.monotonic()
     token = _ensure_brain_token()
+    client_token = _ensure_client_token()
     vault_dir = tempfile.mkdtemp(prefix="dina-test-vault-")
 
     core_url = f"http://localhost:{LOCAL_CORE_PORT}"
@@ -261,6 +274,7 @@ def _start_local() -> float:
         "DINA_VAULT_PATH": vault_dir,
         "DINA_BRAIN_URL": brain_url,
         "DINA_BRAIN_TOKEN": token,
+        "DINA_CLIENT_TOKEN": client_token,
         "DINA_TEST_MODE": "true",
         "DINA_RATE_LIMIT": "100000",
         "DINA_LOG_LEVEL": "debug",
@@ -501,12 +515,12 @@ _GO_SECTION_RE = re.compile(r"^Test\w+?_(\d+)_")
 # also handles classes: "tests/...py::TestClass::test_func PASSED"
 # also handles parametrize: "...::test_func[param-A desc] PASSED"
 _PY_LINE_RE = re.compile(
-    r"^([^\s:]+)::((?:\w+::)*test_\w+(?:\[.*?\])?)\s+(PASSED|SKIPPED|FAILED)"
+    r"^([^\s:]+)::((?:\w+::)*test_\w+(?:\[.*?\])?)\s+(PASSED|SKIPPED|FAILED|ERROR)"
 )
 # First number group after subject: test_auth_1_... → 1
 _PY_SECTION_RE = re.compile(r"^test_\w+?_(\d+)_")
 
-_STATUS_MAP = {"PASSED": "PASS", "SKIPPED": "SKIP", "FAILED": "FAIL"}
+_STATUS_MAP = {"PASSED": "PASS", "SKIPPED": "SKIP", "FAILED": "FAIL", "ERROR": "FAIL"}
 _GO_JSON_ACTION_MAP = {"pass": "PASS", "skip": "SKIP", "fail": "FAIL"}
 
 

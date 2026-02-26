@@ -291,12 +291,14 @@ class RealHomeNode(HomeNode):
         core_url: str,
         brain_url: str,
         brain_token: str,
+        client_token: str = "",
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         self._core_url = core_url.rstrip("/")
         self._brain_url = brain_url.rstrip("/")
         self._token = brain_token
+        self._client_token = client_token or brain_token
         # Maps (persona_name, mock_item_id) -> real_item_id from Go Core
         self._vault_id_map: dict[str, str] = {}
         # Maps real_item_id -> mock_item_id for reverse lookups
@@ -310,26 +312,34 @@ class RealHomeNode(HomeNode):
         )
 
     def _headers(self) -> dict[str, str]:
+        """Brain token headers — for data operations (vault, KV, PII, messaging)."""
         return {"Authorization": f"Bearer {self._token}"}
+
+    def _admin_headers(self) -> dict[str, str]:
+        """Client token headers — for admin operations (persona, pairing, DID sign)."""
+        return {"Authorization": f"Bearer {self._client_token}"}
 
     # -- Persona Operations ------------------------------------------------
 
     def create_persona(
         self, name: str, ptype: PersonaType, tier: str = "open",
     ) -> Persona:
-        """Create persona on real Go Core + mock state."""
+        """Create persona on real Go Core + mock state.
+
+        Uses CLIENT_TOKEN — persona endpoints are admin-only.
+        """
         # Real API call (idempotent — ignore "already exists")
         _api_request(
             "post",
             f"{self._core_url}/v1/personas",
             json={"name": name, "tier": tier},
-            headers=self._headers(),
+            headers=self._admin_headers(),
         )
         _api_request(
             "post",
             f"{self._core_url}/v1/persona/unlock",
             json={"persona": name, "passphrase": "test"},
-            headers=self._headers(),
+            headers=self._admin_headers(),
         )
         # Mock state
         return super().create_persona(name, ptype, tier)
@@ -337,12 +347,15 @@ class RealHomeNode(HomeNode):
     def unlock_persona(
         self, name: str, passphrase: str, ttl_seconds: float = 0,
     ) -> bool:
-        """Unlock persona on real Go Core + mock state."""
+        """Unlock persona on real Go Core + mock state.
+
+        Uses CLIENT_TOKEN — persona endpoints are admin-only.
+        """
         _api_request(
             "post",
             f"{self._core_url}/v1/persona/unlock",
             json={"persona": name, "passphrase": passphrase},
-            headers=self._headers(),
+            headers=self._admin_headers(),
         )
         return super().unlock_persona(name, passphrase, ttl_seconds)
 
@@ -640,6 +653,7 @@ class RealHomeNode(HomeNode):
     def did_sign(self, data: str) -> str:
         """Sign data via real Go Core POST /v1/did/sign.
 
+        Uses CLIENT_TOKEN — /v1/did/sign is admin-only.
         The data is sent as a hex-encoded string.
         Falls back to mock HMAC-SHA256 signing on API failure.
         """
@@ -648,7 +662,7 @@ class RealHomeNode(HomeNode):
             "post",
             f"{self._core_url}/v1/did/sign",
             json={"data": hex_data},
-            headers=self._headers(),
+            headers=self._admin_headers(),
         )
         if resp is not None:
             sig = resp.json().get("signature", "")
@@ -686,6 +700,7 @@ class RealHomeNode(HomeNode):
     def generate_pairing_code(self) -> str:
         """Generate pairing code via real Go Core POST /v1/pair/initiate.
 
+        Uses CLIENT_TOKEN — pairing endpoints are admin-only.
         Also updates mock state so tests can use self._pairing_codes.
         Falls back to mock on API failure.
         """
@@ -693,7 +708,7 @@ class RealHomeNode(HomeNode):
             "post",
             f"{self._core_url}/v1/pair/initiate",
             json={},
-            headers=self._headers(),
+            headers=self._admin_headers(),
         )
         if resp is not None:
             real_code = resp.json().get("code", "")
@@ -716,6 +731,7 @@ class RealHomeNode(HomeNode):
     def pair_device(self, code: str, device_type: DeviceType) -> "Device | None":
         """Pair device via real Go Core POST /v1/pair/complete.
 
+        Uses CLIENT_TOKEN — pairing endpoints are admin-only.
         Always updates mock state via super() call.
         Falls back to mock on API failure.
         """
@@ -729,7 +745,7 @@ class RealHomeNode(HomeNode):
             "post",
             f"{self._core_url}/v1/pair/complete",
             json={"code": code, "device_name": device_name},
-            headers=self._headers(),
+            headers=self._admin_headers(),
         )
         if resp is not None:
             api_data = resp.json()

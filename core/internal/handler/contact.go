@@ -128,6 +128,71 @@ func (h *ContactHandler) HandleSetPolicy(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
 }
 
+// updateContactRequest is the JSON body for PUT /v1/contacts/{did}.
+type updateContactRequest struct {
+	Name       string `json:"name"`
+	TrustLevel string `json:"trust_level"`
+}
+
+// HandleUpdateContact handles PUT /v1/contacts/{did}.
+func (h *ContactHandler) HandleUpdateContact(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	did := strings.TrimPrefix(r.URL.Path, "/v1/contacts/")
+	if did == "" || did == r.URL.Path {
+		http.Error(w, `{"error":"missing DID in path"}`, http.StatusBadRequest)
+		return
+	}
+
+	var req updateContactRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	if req.Name != "" {
+		if err := h.Contacts.UpdateName(r.Context(), did, req.Name); err != nil {
+			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if req.TrustLevel != "" {
+		if err := h.Contacts.UpdateTrust(r.Context(), did, req.TrustLevel); err != nil {
+			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+}
+
+// HandleDeleteContact handles DELETE /v1/contacts/{did}.
+func (h *ContactHandler) HandleDeleteContact(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	did := strings.TrimPrefix(r.URL.Path, "/v1/contacts/")
+	if did == "" || did == r.URL.Path {
+		http.Error(w, `{"error":"missing DID in path"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.Contacts.Delete(r.Context(), did); err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+}
+
 // extractDIDFromPath extracts a DID segment from a URL path between a prefix and suffix.
 // For example, extractDIDFromPath("/v1/contacts/did:key:abc/policy", "/v1/contacts/", "/policy")
 // returns "did:key:abc".

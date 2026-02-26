@@ -689,8 +689,10 @@ func (pm *PersonaManager) Unlock(_ context.Context, personaID, passphrase string
 		}
 	}
 
+	// TODO: replace stub — production must use Argon2id verification (see auth.PassphraseVerifier)
 	// Validate passphrase — for now, accept any non-empty passphrase.
 	// A wrong passphrase is simulated by checking against a sentinel value.
+	slog.Warn("STUB: passphrase validation not implemented — accepting any passphrase", "persona", personaID)
 	if passphrase == "WRONG_PASSPHRASE" {
 		return fmt.Errorf("invalid passphrase for persona %s", personaID)
 	}
@@ -856,6 +858,23 @@ func (cd *ContactDirectory) UpdateTrust(_ context.Context, did, trustLevel strin
 	}
 
 	c.TrustLevel = trustLevel
+	return nil
+}
+
+// UpdateName changes a contact's display name.
+func (cd *ContactDirectory) UpdateName(_ context.Context, did, name string) error {
+	cd.mu.Lock()
+	defer cd.mu.Unlock()
+
+	c, ok := cd.contacts[did]
+	if !ok {
+		return ErrContactNotFound
+	}
+
+	// Update the byName reverse index.
+	delete(cd.byName, c.Name)
+	c.Name = name
+	cd.byName[name] = did
 	return nil
 }
 

@@ -91,6 +91,11 @@ func (h *DeviceHandler) HandleListDevices(w http.ResponseWriter, r *http.Request
 // HandleRevokeDevice handles DELETE /v1/devices/{id}. It revokes a paired
 // device's access token and returns 204 No Content.
 func (h *DeviceHandler) HandleRevokeDevice(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
 	path := r.URL.Path
 	id := path[strings.LastIndex(path, "/")+1:]
 	if id == "" {

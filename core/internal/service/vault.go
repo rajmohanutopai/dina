@@ -67,6 +67,36 @@ func (s *VaultService) Query(ctx context.Context, agentDID string, persona domai
 	return items, nil
 }
 
+// GetItem retrieves a single vault item by its primary key.
+// It performs the same gatekeeper authorization checks as Query.
+func (s *VaultService) GetItem(ctx context.Context, agentDID string, persona domain.PersonaName, id string) (*domain.VaultItem, error) {
+	if !s.manager.IsOpen(persona) {
+		return nil, fmt.Errorf("vault get item: %w", domain.ErrPersonaLocked)
+	}
+
+	intent := domain.Intent{
+		AgentDID:  agentDID,
+		Action:    "vault_read",
+		Target:    id,
+		PersonaID: string(persona),
+	}
+	decision, err := s.gatekeeper.EvaluateIntent(ctx, intent)
+	if err != nil {
+		return nil, fmt.Errorf("vault get item: gatekeeper evaluation failed: %w", err)
+	}
+	if !decision.Allowed {
+		return nil, fmt.Errorf("vault get item: %w: %s", domain.ErrForbidden, decision.Reason)
+	}
+
+	return s.reader.GetItem(ctx, persona, id)
+}
+
+// GetKV retrieves a single key-value item by key. It is a convenience wrapper
+// around GetItem that prefixes the key with "kv:" to match the storage convention.
+func (s *VaultService) GetKV(ctx context.Context, agentDID string, persona domain.PersonaName, key string) (*domain.VaultItem, error) {
+	return s.GetItem(ctx, agentDID, persona, "kv:"+key)
+}
+
 // Store persists a single item into a persona's vault.
 // Returns the ID of the stored item.
 func (s *VaultService) Store(ctx context.Context, persona domain.PersonaName, item domain.VaultItem) (string, error) {

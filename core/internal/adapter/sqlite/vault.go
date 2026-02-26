@@ -261,8 +261,9 @@ func (a *VaultAdapter) Query(ctx context.Context, persona domain.PersonaName, q 
 	}
 
 	// Semantic and hybrid modes require sqlite-vec which is not yet available.
+	// Fall back to FTS5 so brain queries still return results.
 	if q.Mode == domain.SearchSemantic || q.Mode == domain.SearchHybrid {
-		return nil, nil
+		q.Mode = domain.SearchFTS5
 	}
 
 	// Build the query.

@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS vault_items (
     type          TEXT NOT NULL
         CHECK (type IN ('email','message','event','note','photo',
                         'email_draft','cart_handover','contact_card',
-                        'document','bookmark','voice_memo')),
+                        'document','bookmark','voice_memo','kv')),
     source        TEXT NOT NULL DEFAULT '',
     source_id     TEXT NOT NULL DEFAULT '',
     summary       TEXT NOT NULL DEFAULT '',

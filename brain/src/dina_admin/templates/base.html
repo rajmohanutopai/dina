@@ -257,9 +257,11 @@
                 <span class="nav-icon">&#128736;</span> Architecture
             </a>
             <div class="nav-spacer"></div>
-            <a href="/admin/login" class="logout-link">
-                <span class="nav-icon">&#8594;</span> Logout
-            </a>
+            <form method="post" action="/admin/logout" style="display:inline; width:100%">
+                <button type="submit" class="logout-link" style="background:none; border:none; cursor:pointer; color:inherit; font:inherit; padding:0; width:100%; text-align:left">
+                    <span class="nav-icon">&#8594;</span> Logout
+                </button>
+            </form>
         </nav>
     </aside>
 

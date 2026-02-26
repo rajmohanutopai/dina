@@ -11,6 +11,7 @@
 
 ### ⚡ Developer Cockpit
 
+* **The Vision** - This README is the Vision Document. This will help you understand the idea behind Dina
 * **Start Here:** [**Open dina.html**](./dina.html) — Interactive visual guide to everything Dina.
 * **Quick Start:** [3 commands to get Dina running](./QUICKSTART.md)
 * **The Stack:** Go Core + Python Brain (Sidecar Pattern) + SQLite/SQLCipher.
@@ -45,11 +46,11 @@ Imagine this. Your friend Sancho is coming over. As he leaves his house, his Din
 
 You open the door. You hand him hot, strong cardamom tea. You ask about his mother. Sancho smiles. "She is fine, thank you for asking".
 
-That's Dina. Not an app or a chatbot or a multi-purpose agent. Dina is a personal agent that makes you more thoughtful, more present, and more human.
+That's Dina. A personal agent that makes you more thoughtful, more present, and more human.
 
 Now imagine the same thing, everywhere in your life:
 
-- You're buying a laptop. Your Dina talks to the review bots, checks the Reputation Graph, and tells you: *"The battery on this one dies in three months. Here's a better option."*
+- You're buying a laptop. Ads try to point you to some direction. But your Dina talks to the review bots, checks the Reputation Graph, and tells you: *"The battery on this one dies in three months. Here's a better option."*
 - You promised your daughter you'd read her a book. You forgot which one. *"It was 'The Little Prince'. Last Tuesday."*
 - Your license needs renewal. You didn't even know it was due. Dina did. She flags it, and if you approve, she informs another bot about the requirement to complete the process.
 - Dead internet theory becomes real. You cant differentiate between what made by AI and what is real. You can ask Dina then to filter out and show you only verifiably true items. Your Dina interacts with verified builders Dina, and only those items are shown to you.
@@ -64,7 +65,7 @@ Dina is the agent that does what you *need*. She is there for you, and only for 
 
 Today, you don't own your digital self. Your Google account, Apple ID, and LinkedIn profile are not really yours. They are accounts that companies let you use. If Google bans you tomorrow, or a company goes belly up, that account disappears. You are a tenant everywhere. Landlord nowhere.
 
-Dina changes this. Your Dina is your *sovereign digital self*. Implemented using Web3 Cryptographic Tech, **you get your own digital identity**, separate from any of the external company accounts. You hold the encryption keys and the data. You own it completely. You control who sees what. Everything mentioned above — the memory, the preferences, the Dina-to-Dina communication, the purchases, the reputation - is possible because of this foundational principle: *you own you*.
+Dina changes this. Your Dina is your **sovereign digital self**. Implemented using Web3 Cryptographic Tech, **you get your own digital identity**, separate from any of the external company accounts. You hold the encryption keys and the data. You own it completely. You control who sees what. Everything mentioned above — the memory, the preferences, the Dina-to-Dina communication, the purchases, the reputation - is possible because of this foundational principle: **you own you**.
 
 If you delete your data, it's truly gone. Not archived. Gone. Because you control the data, and no one else ever had the keys.
 
@@ -131,15 +132,9 @@ Dina is a thin service. She outsources intelligence to specialists like review b
 
 **Dina has no plugins.** Child agents (OpenClaw, review bots, legal bots) are external services that communicate with Dina. If a child agent gets compromised, it cannot touch your vault or data. It is an external process that should not affect Dina. Dina is a kernel, not a platform "kernel.
 
-Dina can also act as a safety layer for autonomous agents. Malicious actors will actively try to hack and attack agents, now that agents are becoming mainstream. The idea is that - hving Dina as a central control might be able to fix this at a protocol level. 
+Dina can also act as a safety layer for autonomous agents. Malicious actors will actively try to hack and attack agents, now that agents are becoming mainstream. The idea is that - having Dina as a central control might be able to fix this at a protocol level. 
 
 If the autonomous agent integrates with Dina properly, Dina will be able to watch when the autonomous agent acts on your behalf. She will not interfere with safe tasks. But when the agent wants to send an email, move money, or share your data, it can send the request to Dina. Dina checks: does this violate your privacy rules? Is this vendor trusted? Are you in the right state to make this decision? If everything is fine, it goes through - otherwise, it is flagged for review. By separating out the actual agent who does the work with the safety checker who holds the keys to the house, it provides one extra level of safety. 
-
-## Security
-
-Can Dina herself be hacked? Through prompt-injection or otherwise? 
-Since Dina is a thin layer with minimal plugin support, the attack surface is small. I built a 9-layer security model specifically because she holds your most sensitive data. Web3 Cryptographic security at every layer, each persona a separate cryptographic vault, split brain architecture to safeguard against prompt injection attacks and PII cleansing at every layer. More details on the secruity is at the end of this document. The full security architecture is in [SECURITY.MD](./SECURITY.MD)
-
 
 
 Dina runs on a **Home Node** — a small, always-on server that is yours. For the privacy minded, it might be a cheap VPS or a Raspberry Pi. For others, it could be a managed service you sign up for (like ProtonMail or Signal). The vault is a single encrypted file which can be moved between any of these options anytime.
@@ -180,16 +175,20 @@ Dina runs on a **Home Node** — a small, always-on server that is yours. For th
 
 When one asks opinion about a laptop, Dina doesn't scrape YouTube herself. She asks a trusted review bot with a high reputation score and delivers the answer. If that bot's quality drops over time, Dina routes to someone better automatically.
 
+### Security
+
+Can Dina herself be hacked? Through prompt-injection or otherwise? 
+Since Dina is a thin layer with minimal plugin support, the attack surface is small. I built a 9-layer security model specifically because she holds your most sensitive data. Web3 Cryptographic security at every layer, each persona a separate cryptographic vault, split brain architecture to safeguard against prompt injection attacks and PII cleansing at every layer. More details on the secruity is at the end of this document. The full security architecture is in [SECURITY.MD](./SECURITY.MD)
 
 ### Some principles
 
-**Ingestion:** Mail, Calendar, etc., are read via read-only APIs. Dina creates a local vector store to build a searchable copy of your life.
+**Ingestion:** Mail, Calendar, etc., are read via other agents. Dina creates a local vector store to build a searchable copy of your life.
 
 **The PII Scrubber:** All external requests go through a PII Scrubber. Your raw data never leaves the Home Node.
 
 **Dina Never Touches Money:** Dina helps find the best laptop. She checks the Reputation Graph. When you're ready, she hands back control to you — the "Cart Handover." She is an advisor, not the decision maker.
 
-**Any Agent, Any Hardware** Any agent (OpenAI pin, Meta Glasses) can interact with Dina. Preferably, agents should - because Dina enforces loyalty. Dina makes sure the work serves *you*.
+**Any Agent, Any Hardware** Any agent (OpenAI pin, Meta Glasses) can interact with Dina. Preferably, agents should - because Dina enforces loyalty and identity. Dina makes sure the work serves **you**.
 
 ---
 
@@ -230,7 +229,7 @@ Dina inverts this. The Reputation Graph is a system where trust is earned, not b
 
 **Outcome data from every Dina.**  Today's review systems is not perfect. Less than 5% of buyers leave a review, and that tiny sample is heavily skewed - either they are furious or they are evangelical. The vast majority who had a perfectly okay or mediocre experience never say anything. Product ratings we see online are built on a small, emotionally biased sample.
 
-Dina changes this at the root. Because Dina *is* the one buying, she already knows every purchase. She knows whether you're still using the laptop six months later or whether it's gathering dust. She knows you returned the shoes after a week. She can gently ask — *"How's that chair working out? Your back pain has reduced?"*, and you'll answer honestly, because it's *your* Dina asking privately, not Amazon asking you to perform a public review.
+Dina changes this at the root. Because Dina *is* the one buying, or at least, she knows most things that we are buying, she already knows the purchase. She knows whether you're still using the laptop six months later or whether it's gathering dust. She knows you returned the shoes after a week. She can gently ask — *"How's that chair working out? Your back pain has reduced?"*, and you'll answer honestly, because it's *your* Dina asking privately, not Amazon asking you to perform a public review.
 
 So instead of 2-5% biased opinions, the Reputation Graph gets a high percentage of *passive, honest outcome data*. These are not opinions, since they are actual outcomes. For example: Did the fabric tear? Did it lose colour? etc. There is no real need for a review - since millions of Dinas quietly feed anonymized outcome data to the Reputation Graph. This gives real truth in the system a higher chance to come out.
 
@@ -332,6 +331,8 @@ Dina is for everyone. If you believe your digital companion should work for you,
 
 ## Security Details
 
+I am adding this here because Security is fundamental for Dina. Dina stores your important data, so, it has to be doubly secure. These are the steps taken to secure Dina. 
+
 To store identity - Root key is Ed25519, generated from a BIP-39 24-word mnemonic. Persona keys derived via SLIP-0010 hardened paths under purpose code 9999'. Vault DEKs derived via HKDF-SHA256 with per-persona info strings. The master seed is key-wrapped on disk with an Argon2id-derived KEK. 
 
 Persona isolation is cryptographic, not application-level — each persona is a separate encrypted .sqlite file with its own DEK. Locked personas have no DEK in RAM; they're mathematically inaccessible. The gatekeeper enforces three tiers: open (brain queries freely), restricted (logged + user notified), and locked (403, requires human unlock with TTL).
@@ -342,6 +343,8 @@ The PII scrubbing pipeline is three-tiered: regex in Go (structured PII — SSN,
 
 Dina-to-Dina communication uses NaCl crypto_box_seal (ephemeral sender keys, forward secrecy - future plan with Noise XXX) over HTTPS, with DID Documents pointing to Home Node endpoints. The sharing policy system is category-based (presence, availability, context, preferences, location, health) with three tiers (none/summary/full) per contact, enforced at egress by core.
 The Reputation Graph is built on AT Protocol federation — public, signed Merkle repos for expert attestations, anonymized outcome data, and bot scores. It has a cold-start strategy (Phase 1 uses web search via OpenClaw; reputation data activates gradually). Signed tombstones handle deletion. L2 Merkle root anchoring is deferred to Phase 3.
+
+If you want more details, please check [SECURITY.MD](./SECURITY.MD).
 
 
 # Part III: Technical Architecture

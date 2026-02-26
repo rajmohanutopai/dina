@@ -380,7 +380,8 @@ class RealGoCore(MockGoCore):
 
     def __init__(self, base_url: str, brain_token: str,
                  vault: MockVault | None = None,
-                 scrubber: Any = None) -> None:
+                 scrubber: Any = None,
+                 client_token: str = "") -> None:
         from tests.integration.mocks import MockIdentity, MockPIIScrubber
         mock_vault = vault or MockVault()
         mock_identity = MockIdentity(did="did:plc:DockerTestUser")
@@ -388,9 +389,14 @@ class RealGoCore(MockGoCore):
         super().__init__(mock_vault, mock_identity, mock_scrubber)
         self._base_url = base_url.rstrip("/")
         self._token = brain_token
+        self._client_token = client_token or brain_token
 
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self._token}"}
+
+    def _admin_headers(self) -> dict[str, str]:
+        """Headers for admin-only endpoints (did/sign, did/rotate, etc.)."""
+        return {"Authorization": f"Bearer {self._client_token}"}
 
     def vault_query(self, query: str,
                     persona: PersonaType | None = None) -> list[Any]:
@@ -427,7 +433,7 @@ class RealGoCore(MockGoCore):
         resp = _try_request(
             "post", f"{self._base_url}/v1/did/sign",
             json={"data": data.hex()},
-            headers=self._headers(),
+            headers=self._admin_headers(),
         )
         if resp is not None:
             return resp.json().get("signature", "")
@@ -435,18 +441,43 @@ class RealGoCore(MockGoCore):
 
     def did_verify(self, data: bytes, signature: str) -> bool:
         self.api_calls.append({"endpoint": "/v1/did/verify"})
+        # Use the node's own DID (from /v1/did document) for self-verification,
+        # since did_sign uses the node's identity key.
+        did_to_verify = self._identity.root_did
+        did_resp = _try_request(
+            "get", f"{self._base_url}/v1/did",
+            headers=self._headers(),
+        )
+        if did_resp is not None:
+            doc = did_resp.json()
+            # /v1/did returns the DID document directly; "id" is the DID string
+            did_to_verify = doc.get("id", doc.get("did", did_to_verify))
+        verify_payload = {
+            "data": data.hex(),
+            "signature": signature,
+            "did": did_to_verify,
+        }
         resp = _try_request(
             "post", f"{self._base_url}/v1/did/verify",
-            json={
-                "data": data.hex(),
-                "signature": signature,
-                "did": self._identity.root_did,
-            },
-            headers=self._headers(),
+            json=verify_payload,
+            headers=self._admin_headers(),
         )
         if resp is not None:
             return resp.json().get("valid", False)
-        raise RuntimeError("DID verify API call failed — Go Core unreachable")
+        # Retry with raw request to get the actual error
+        try:
+            raw_resp = httpx.post(
+                f"{self._base_url}/v1/did/verify",
+                json=verify_payload,
+                headers=self._admin_headers(),
+                timeout=10,
+            )
+            raise RuntimeError(
+                f"DID verify failed — status {raw_resp.status_code}: "
+                f"{raw_resp.text[:300]} [did={did_to_verify}]"
+            )
+        except httpx.ConnectError:
+            raise RuntimeError("DID verify API call failed — Go Core unreachable")
 
     def pii_scrub(self, text: str) -> tuple[str, dict[str, str]]:
         self.api_calls.append({"endpoint": "/v1/pii/scrub"})

@@ -204,6 +204,8 @@ type InboxManager interface {
 	SpoolSize() (int64, error)
 	// ProcessSpool processes all spooled messages FIFO by ULID (Valve 3).
 	ProcessSpool(ctx context.Context) (int, error)
+	// DrainSpool atomically removes all non-expired spooled payloads for processing.
+	DrainSpool(ctx context.Context) ([][]byte, error)
 	// CheckDIDRate checks per-DID rate limit — only when unlocked (fast path).
 	CheckDIDRate(did string) bool
 	// SetSpoolMax sets the maximum spool size in bytes.

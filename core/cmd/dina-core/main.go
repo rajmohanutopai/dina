@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"crypto/ed25519"
+	crypto_rand "crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -74,12 +75,32 @@ func main() {
 	keyDeriver := crypto.NewKeyDeriver(slip0010)
 
 	// Bootstrap identity signing key from a deterministic seed.
-	// In production, this would come from the unlocked vault's master seed.
-	// For now, derive from SLIP-0010 path m/9999'/0' with a zero seed.
+	// Priority: 1) DINA_IDENTITY_SEED env var, 2) persisted seed file, 3) generate new random seed.
 	bootstrapSeed := make([]byte, 32)
+	seedPath := filepath.Join(cfg.VaultPath, "identity_seed.hex")
 	if seedHex := os.Getenv("DINA_IDENTITY_SEED"); seedHex != "" {
-		if decoded, err := hex.DecodeString(seedHex); err == nil && len(decoded) == 32 {
+		decoded, err := hex.DecodeString(seedHex)
+		if err != nil {
+			slog.Error("Invalid DINA_IDENTITY_SEED hex", "error", err)
+			os.Exit(1)
+		}
+		copy(bootstrapSeed, decoded)
+	} else if data, err := os.ReadFile(seedPath); err == nil {
+		decoded, err := hex.DecodeString(strings.TrimSpace(string(data)))
+		if err == nil && len(decoded) >= 32 {
 			copy(bootstrapSeed, decoded)
+			slog.Info("Loaded identity seed from file", "path", seedPath)
+		}
+	} else {
+		if _, err := crypto_rand.Read(bootstrapSeed); err != nil {
+			slog.Error("Failed to generate random seed", "error", err)
+			os.Exit(1)
+		}
+		os.MkdirAll(filepath.Dir(seedPath), 0700)
+		if err := os.WriteFile(seedPath, []byte(hex.EncodeToString(bootstrapSeed)), 0600); err != nil {
+			slog.Warn("Could not persist identity seed", "error", err)
+		} else {
+			slog.Warn("Generated new identity seed — set DINA_IDENTITY_SEED for explicit control", "path", seedPath)
 		}
 	}
 	_, signingKeyBytes, _ := slip0010.DerivePath(bootstrapSeed, "m/9999'/0'")
@@ -128,7 +149,11 @@ func main() {
 	_, _ = plcClient, pdsPublisher
 
 	// 6. Auth
-	tokenValidator := auth.NewDefaultTokenValidator(cfg.BrainToken)
+	tokenValidator := auth.NewTokenValidator(cfg.BrainToken, map[string]string{})
+	if cfg.ClientToken != "" {
+		tokenValidator.RegisterClientToken(cfg.ClientToken, "bootstrap")
+		slog.Info("Pre-registered client token from DINA_CLIENT_TOKEN")
+	}
 	rateLimiter := auth.NewRateLimiter(cfg.RateLimit, 60)
 
 	// 7. Gatekeeper
@@ -236,6 +261,10 @@ func main() {
 		signingPrivKey.Public().(ed25519.PublicKey),
 		[]byte(signingPrivKey),
 	)
+	if cfg.OwnDID != "" {
+		transportSvc.SetSenderDID(cfg.OwnDID)
+		slog.Info("D2D sender DID configured", "did", cfg.OwnDID)
+	}
 
 	// Ingress: dead-drop + rate limiter + sweeper + router (§7 3-valve pipeline)
 	deadDropDir := filepath.Join(cfg.VaultPath, "deaddrop")
@@ -251,6 +280,28 @@ func main() {
 		transportSvc.StoreInbound(msg)
 	})
 	ingressRouter := ingress.NewRouter(vaultMgr, inboxMgr, deadDrop, ingressSweeper, ingressLimiter)
+	ingressRouter.SetOnEnvelope(func(ctx context.Context, envelope []byte) {
+		msg, err := transportSvc.ProcessInbound(ctx, envelope)
+		if err != nil {
+			slog.Warn("ingress: fast-path decrypt failed", "error", err)
+			return
+		}
+		transportSvc.StoreInbound(msg)
+		slog.Info("ingress: fast-path message decrypted and stored", "type", msg.Type)
+	})
+
+	// Background sweep: periodically drain dead-drop and spool after vault unlock.
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			if n, err := ingressRouter.ProcessPending(context.Background()); err != nil {
+				slog.Warn("ingress ProcessPending error", "error", err)
+			} else if n > 0 {
+				slog.Info("ingress ProcessPending processed messages", "count", n)
+			}
+		}
+	}()
 
 	taskSvc := service.NewTaskService(taskQueue, watchdog, brain, clk)
 
@@ -345,7 +396,22 @@ func main() {
 
 	// Contact API
 	mux.HandleFunc("/v1/contacts", routeByMethod(contactH.HandleListContacts, contactH.HandleAddContact))
-	mux.HandleFunc("/v1/contacts/", routeByMethod(contactH.HandleGetPolicy, contactH.HandleSetPolicy))
+	mux.HandleFunc("/v1/contacts/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/policy") {
+			// /v1/contacts/{did}/policy → policy handlers
+			routeByMethod(contactH.HandleGetPolicy, contactH.HandleSetPolicy)(w, r)
+		} else {
+			// /v1/contacts/{did} → update/delete handlers
+			switch r.Method {
+			case http.MethodPut:
+				contactH.HandleUpdateContact(w, r)
+			case http.MethodDelete:
+				contactH.HandleDeleteContact(w, r)
+			default:
+				http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			}
+		}
+	})
 
 	// Device Pairing API
 	mux.HandleFunc("/v1/pair/initiate", deviceH.HandleInitiatePairing)
@@ -373,15 +439,17 @@ func main() {
 	// ---------- Apply middleware chain ----------
 
 	authMW := &middleware.Auth{Tokens: tokenValidator}
+	authzMW := middleware.NewAuthzMiddleware(auth.NewAdminEndpointChecker())
 	rateLimitMW := &middleware.RateLimit{Limiter: rateLimiter}
 	recovery := &middleware.Recovery{}
 	logging := &middleware.Logging{}
 	timeout := &middleware.Timeout{Duration: 30 * time.Second}
 	cors := &middleware.CORS{AllowOrigin: "*"}
 
-	// Chain: CORS → Recovery → Logging → RateLimit → Auth → Timeout → Router
+	// Chain: CORS → Recovery → Logging → RateLimit → Auth → Authz → Timeout → Router
 	var chain http.Handler = mux
 	chain = timeout.Handler(chain)
+	chain = authzMW(chain)
 	chain = authMW.Handler(chain)
 	chain = rateLimitMW.Handler(chain)
 	chain = logging.Handler(chain)

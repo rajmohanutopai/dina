@@ -17,6 +17,13 @@ const (
 	AgentDIDKey  contextKey = "agent_did"
 )
 
+// AuthzChecker is the interface for endpoint-level authorization checks.
+// It determines whether a given token kind (e.g. "brain", "client") is
+// allowed to access a specific URL path.
+type AuthzChecker interface {
+	AllowedForTokenKind(kind, path string) bool
+}
+
 type Auth struct {
 	Tokens port.TokenValidator
 }
@@ -89,4 +96,27 @@ func (a *Auth) Handler(next http.Handler) http.Handler {
 		ctx = context.WithValue(ctx, AgentDIDKey, identity)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// NewAuthzMiddleware creates middleware that enforces endpoint-level authorization
+// based on the caller's token kind. It reads token_kind from the request context
+// (set by the auth middleware) and checks with the AuthzChecker whether
+// that token kind is allowed to access the requested path.
+func NewAuthzMiddleware(checker AuthzChecker) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Read token_kind from context (set by Auth.Handler).
+			kind, _ := r.Context().Value(TokenKindKey).(string)
+			if kind == "" {
+				// No token kind in context = unauthenticated (public path or pre-auth).
+				next.ServeHTTP(w, r)
+				return
+			}
+			if !checker.AllowedForTokenKind(kind, r.URL.Path) {
+				http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }

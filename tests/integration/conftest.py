@@ -146,7 +146,10 @@ def docker_persona_setup(docker_services):
     """
     if not DOCKER_MODE:
         return
-    headers = {"Authorization": f"Bearer {docker_services.brain_token}"}
+    # Persona management requires a client token (brain token is denied
+    # on /v1/persona/* by the authz middleware).
+    token = docker_services.client_token or docker_services.brain_token
+    headers = {"Authorization": f"Bearer {token}"}
     base = docker_services.core_url
     for name in _ALL_PERSONAS:
         httpx.post(
@@ -161,12 +164,14 @@ def docker_persona_setup(docker_services):
         )
 
     # Clear all vaults at session start for a clean slate
+    # Vault clear uses brain token (allowed on /v1/vault/*)
+    brain_headers = {"Authorization": f"Bearer {docker_services.brain_token}"}
     for name in _ALL_PERSONAS:
         try:
             httpx.post(
                 f"{base}/v1/vault/clear",
                 json={"persona": name},
-                headers=headers, timeout=10,
+                headers=brain_headers, timeout=10,
             )
         except Exception:
             pass
@@ -352,6 +357,7 @@ def mock_go_core(mock_vault: MockVault, mock_identity: MockIdentity,
         return RealGoCore(
             docker_services.core_url, docker_services.brain_token, mock_vault,
             scrubber=mock_scrubber,
+            client_token=docker_services.client_token,
         )
     return MockGoCore(mock_vault, mock_identity, mock_scrubber)
 

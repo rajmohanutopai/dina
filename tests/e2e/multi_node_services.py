@@ -58,6 +58,7 @@ class MultiNodeDockerServices:
         self._started = False
         self._externally_managed = False
         self.brain_token: str = ""
+        self.client_token: str = ""
 
     # -- per-actor URLs ------------------------------------------------------
 
@@ -174,12 +175,18 @@ class MultiNodeDockerServices:
         )
 
     def _load_brain_token(self) -> None:
-        """Read the shared brain token from secrets/brain_token."""
+        """Read the shared brain and client tokens from secrets/."""
         token_path = PROJECT_ROOT / "secrets" / "brain_token"
         if token_path.exists():
             self.brain_token = token_path.read_text().strip()
         else:
             self.brain_token = ""
+
+        client_path = PROJECT_ROOT / "secrets" / "client_token"
+        if client_path.exists():
+            self.client_token = client_path.read_text().strip()
+        else:
+            self.client_token = ""
 
     def is_running(self) -> bool:
         """Check if all services respond to health checks."""

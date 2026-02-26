@@ -39,6 +39,7 @@ class ProcessEventRequest(BaseModel):
     """
 
     type: str
+    task_id: str | None = None
     timestamp: str | None = None
     persona_id: str | None = None
     source: str | None = None
@@ -129,6 +130,12 @@ async def process_event(event: ProcessEventRequest) -> ProcessEventResponse:
             status_code=500,
             detail=f"Internal processing error: {type(exc).__name__}",
         ) from exc
+
+    if result.get("action") == "error":
+        raise HTTPException(
+            status_code=500,
+            detail=result.get("error", "internal error"),
+        )
 
     return ProcessEventResponse(
         status=result.get("status", "ok"),

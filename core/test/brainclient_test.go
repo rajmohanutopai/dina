@@ -152,7 +152,7 @@ func TestBrainClient_11_2_1_BrainHealthy(t *testing.T) {
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
 	testutil.RequireImplementation(t, impl, "BrainClient")
 
-	// /v1/health returns 200 → Health() returns nil, no action needed.
+	// /healthz returns 200 → Health() returns nil, no action needed.
 	err := impl.Health()
 	testutil.RequireNoError(t, err)
 }
@@ -163,7 +163,7 @@ func TestBrainClient_11_2_2_BrainUnhealthy(t *testing.T) {
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
 	testutil.RequireImplementation(t, impl, "BrainClient")
 
-	// /v1/health fails 3 consecutive times → alert dispatched, circuit
+	// /healthz fails 3 consecutive times → alert dispatched, circuit
 	// breaker opened. Health() should return an error.
 	err := impl.Health()
 	// When brain is unhealthy, Health() returns an error.

@@ -26,6 +26,8 @@ type Config struct {
 	PLCURL           string `json:"plc_url"`
 	PDSAdminPassword string `json:"pds_admin_password"`
 	PDSHandle        string `json:"pds_handle"`
+	ClientToken      string `json:"client_token"`
+	OwnDID           string `json:"own_did"`
 }
 
 // Loader implements testutil.ConfigLoader.
@@ -56,6 +58,11 @@ func (l *Loader) Load() (*Config, error) {
 		if err := loadSecretFileStrict(path, &cfg.BrainToken); err != nil {
 			return nil, err
 		}
+	}
+
+	// 4. Load ClientToken from Docker Secret file (optional — for pre-registered admin access).
+	if path := os.Getenv("DINA_CLIENT_TOKEN_FILE"); path != "" {
+		loadSecretFile(path, &cfg.ClientToken)
 	}
 
 	return cfg, nil
@@ -183,5 +190,11 @@ func loadEnv(cfg *Config) {
 	}
 	if v := os.Getenv("DINA_PDS_HANDLE"); v != "" {
 		cfg.PDSHandle = v
+	}
+	if v := os.Getenv("DINA_CLIENT_TOKEN"); v != "" {
+		cfg.ClientToken = v
+	}
+	if v := os.Getenv("DINA_OWN_DID"); v != "" {
+		cfg.OwnDID = v
 	}
 }

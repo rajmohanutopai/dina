@@ -53,6 +53,7 @@ type ContactDirectory interface {
 	Add(ctx context.Context, did, name, trustLevel string) error
 	Resolve(ctx context.Context, name string) (string, error)
 	UpdateTrust(ctx context.Context, did, trustLevel string) error
+	UpdateName(ctx context.Context, did, name string) error
 	Delete(ctx context.Context, did string) error
 	List(ctx context.Context) ([]domain.Contact, error)
 }

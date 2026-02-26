@@ -19,9 +19,11 @@ SS11 (Error Handling & Resilience), SS13 (Crash Traceback Safety).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
@@ -214,24 +216,39 @@ def create_app() -> FastAPI:
                 extra={"error": str(exc)},
             )
 
-    mcp_client = MCPStdioClient()
+    mcp_commands: dict[str, list[str]] = {}
+    mcp_config_raw = os.environ.get("DINA_MCP_SERVERS", "")
+    if mcp_config_raw:
+        try:
+            mcp_commands = json.loads(mcp_config_raw)
+        except json.JSONDecodeError:
+            for entry in mcp_config_raw.split(","):
+                name, _, cmd = entry.partition("=")
+                if name.strip() and cmd.strip():
+                    mcp_commands[name.strip()] = cmd.strip().split()
+    mcp_client = MCPStdioClient(server_commands=mcp_commands)
 
-    # spaCy scrubber (optional — graceful degradation if model not installed)
+    # PII scrubber — prefer PresidioScrubber, fall back to spaCy, then None.
     scrubber: object | None = None
     try:
-        scrubber = _SpacyScrubber()
-        log.info("brain.scrubber.spacy.loaded")
-    except Exception as exc:
-        log.warning(
-            "brain.scrubber.spacy.unavailable",
-            extra={"error": type(exc).__name__},
-        )
-        scrubber = None
+        from adapter.scrubber_presidio import PresidioScrubber
+        scrubber = PresidioScrubber()
+        log.info("brain.scrubber.presidio.loaded")
+    except Exception:
+        try:
+            scrubber = _SpacyScrubber()
+            log.info("brain.scrubber.spacy.fallback")
+        except Exception as exc:
+            log.warning(
+                "brain.scrubber.unavailable",
+                extra={"error": type(exc).__name__},
+            )
+            scrubber = None
 
     # 3. Construct services
     llm_router = LLMRouter(
         providers=providers,
-        config={"cloud_llm": cfg.cloud_llm},
+        config={"preferred_cloud": cfg.cloud_llm, "cloud_llm_consent": False},
     )
 
     # LLM hot-reload callback — rebuilds providers from KV-stored keys.
@@ -289,7 +306,10 @@ def create_app() -> FastAPI:
                 log.warning("reload.openrouter.failed", extra={"error": str(exc)})
 
         preferred = (kv.get("preferred_cloud") or "").strip() or cfg.cloud_llm
-        llm_router.reconfigure(new_providers, {"cloud_llm": preferred})
+        llm_router.reconfigure(new_providers, {
+            "preferred_cloud": preferred,
+            "cloud_llm_consent": kv.get("cloud_consent", False),
+        })
         # Update the local providers dict so healthz sees the new state
         providers.clear()
         providers.update(new_providers)
@@ -307,10 +327,31 @@ def create_app() -> FastAPI:
     )
 
     # 4. Build sub-apps
+    async def _sync_loop(engine: SyncEngine) -> None:
+        """Background loop — runs sync cycles every 5 minutes."""
+        while True:
+            for source in getattr(engine, "sources", []):
+                try:
+                    await engine.run_sync_cycle(source)
+                except Exception as exc:
+                    log.warning("sync.cycle_failed", extra={"error": str(exc)})
+            await asyncio.sleep(300)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
+        task = asyncio.create_task(_sync_loop(sync_engine))
+        yield
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
     master = FastAPI(
         title="Dina Brain",
         description="Sovereign personal AI — the safety layer for autonomous agents.",
         version="0.4.0",
+        lifespan=lifespan,
     )
 
     brain_api = create_brain_app(guardian, sync_engine, cfg.brain_token, scrubber=scrubber)

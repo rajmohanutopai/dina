@@ -1619,6 +1619,110 @@
 
 ---
 
+## 29. Adversarial & Security (Behavioral)
+
+> These tests exercise failure paths, rejection conditions, and security boundaries
+> using real crypto implementations (Ed25519, NaCl, X25519, HKDF, SLIP-0010).
+> They verify that the system rejects malformed, spoofed, or adversarial inputs.
+
+### 29.1 Transport Signature Verification
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-934]** SendMessage stores Ed25519 signature in outbox | Send message → check outbox entry | Sig field non-empty, status delivered |
+| 2 | **[TST-CORE-935]** Valid signature accepted on receive | Signed+encrypted envelope from known sender | Decrypted message returned, no error |
+| 3 | **[TST-CORE-936]** Wrong signature rejected (wrong signer key) | Envelope signed with recipient's key, not sender's | ErrInvalidSignature |
+| 4 | **[TST-CORE-937]** Tampered ciphertext rejected (bit flip) | Flip byte in ciphertext after signing | Decryption failure |
+| 5 | **[TST-CORE-938]** Empty signature passes (backward compatibility) | Envelope with Sig="" | Message accepted (legacy compat) |
+
+### 29.2 Outbox Retry & Queue Limits
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-939]** ProcessOutbox delivers pending messages | Pending message + working deliverer | Status becomes delivered |
+| 2 | **[TST-CORE-940]** Delivery failure marks message failed | Deliverer returns error | Status becomes failed |
+| 3 | **[TST-CORE-941]** Retry after transient failure succeeds | Fail → Requeue → Fix deliverer → ProcessOutbox | Message delivered on 2nd attempt |
+| 4 | **[TST-CORE-942]** Unresolvable DID marked failed | Unknown DID in outbox message | MarkFailed called, no pending |
+| 5 | **[TST-CORE-943]** No deliverer marks all failed | ProcessOutbox with nil deliverer | All messages marked failed |
+| 6 | **[TST-CORE-944]** Context cancellation stops ProcessOutbox | Cancel ctx immediately | Returns context.Canceled |
+| 7 | **[TST-CORE-945]** Queue limit enforced (reject when full) | Fill outbox to MaxQueue, send one more | Error containing "full" |
+| 8 | **[TST-CORE-946]** Retry count increments across attempts | Fail 3 times with requeue between each | ≥4 delivery attempts total |
+
+### 29.3 Ingress 3-Valve Defense
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-947]** IP rate limit rejects excess requests | 5 req/min limit, send 6th | 6th request rejected |
+| 2 | **[TST-CORE-948]** Router.Ingest rejects flood via ErrRateLimited | 3 req/min limit, send 4th | ErrRateLimited returned |
+| 3 | **[TST-CORE-949]** Dead drop stores when vault locked | Ingest while vault locked | Dead drop count=1, inbox empty |
+| 4 | **[TST-CORE-950]** Inbox spools when vault unlocked | Ingest while vault unlocked | Inbox has 1 item, dead drop empty |
+| 5 | **[TST-CORE-951]** Spool full rejects new messages (Valve 2) | Fill to 2-blob cap, send 3rd | ErrSpoolFull |
+| 6 | **[TST-CORE-952]** Sweeper processes dead drop blobs | Store 2 blobs, run Sweep | 2 swept |
+| 7 | **[TST-CORE-953]** ProcessPending sweeps + drains inbox | Ingest 2 while locked, ProcessPending | ≥2 processed |
+| 8 | **[TST-CORE-954]** Oversized payload rejected (>256KB) | Payload of 256KB+1 byte | Error returned |
+| 9 | **[TST-CORE-955]** SweepFull returns detailed results | 1 valid + 1 empty blob | Processed=2, Delivered≥1 |
+
+### 29.4 Replay & DID Spoofing
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-956]** Replayed message (same ID) detected | Send same envelope twice, check inbox | Duplicate msg_id in inbox (app-layer dedup needed) |
+| 2 | **[TST-CORE-957]** DID spoofing rejected (FromKID mismatch) | Envelope claiming sender A, signed by B | ErrInvalidSignature |
+
+### 29.5 Prompt Injection Safety
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-958]** SQL injection in message body safely deserialized | `'; DROP TABLE users; --` in Body | Body preserved byte-for-byte |
+| 2 | **[TST-CORE-959]** JSON escape injection safely deserialized | Escaped quotes attempting field injection | Body preserved byte-for-byte |
+| 3 | **[TST-CORE-960]** Oversized field in body safely deserialized | 10KB repeated "A" in Body | Body preserved byte-for-byte |
+| 4 | **[TST-CORE-961]** Null bytes in body safely deserialized | Embedded \x00 in Body | Body preserved byte-for-byte |
+| 5 | **[TST-CORE-962]** Nested JSON in body safely deserialized | Deeply nested JSON string in Body | Body preserved byte-for-byte |
+| 6 | **[TST-CORE-963]** HTML/XSS in body safely deserialized | `<script>` tag in Body | Body preserved byte-for-byte |
+
+### 29.6 HKDF & Key Derivation Isolation
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-964]** Cross-persona DEK isolation (5 personas) | Same seed, 5 persona names | All 10 pairs produce different DEKs |
+| 2 | **[TST-CORE-965]** User salt uniqueness | Same seed+persona, different salts | Different DEKs |
+| 3 | **[TST-CORE-966]** HKDF determinism | Same inputs twice | Identical DEKs |
+| 4 | **[TST-CORE-967]** KeyDeriver persona DEK isolation | DerivePersonaDEK for 3 personas | All DEKs distinct |
+| 5 | **[TST-CORE-968]** Signing key index independence | DeriveSigningKey at index 0, 1, 2 | Different keys, cross-verification fails |
+
+### 29.7 SLIP-0010 Path Enforcement
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-969]** Non-hardened path rejected | `m/9999/0` (no apostrophe) | Error: only hardened allowed |
+| 2 | **[TST-CORE-970]** BIP-44 purpose 44' forbidden | `m/44'/0'` | Error: forbidden in Dina |
+| 3 | **[TST-CORE-971]** Sibling hardened path unlinkability | `m/9999'/1'` vs `m/9999'/2'` | Different keys, cross-sig verification fails |
+
+### 29.8 BIP-39 Recovery Safety
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-972]** Invalid checksum rejected | Corrupt last word of valid mnemonic | Validation error |
+| 2 | **[TST-CORE-973]** Wrong word count rejected (12 vs 24) | 12-word mnemonic | Error: expected 24 words |
+| 3 | **[TST-CORE-974]** Deterministic seed derivation | Same mnemonic → ToSeed twice | Identical 64-byte seeds |
+
+### 29.9 Persona Gatekeeper & Vault Access
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-975]** Locked persona denied despite gatekeeper allow | CheckAccess for locked persona | Decision.Allowed=false |
+| 2 | **[TST-CORE-976]** Locked persona denial audited | CheckAccess for locked persona | Audit entry with persona+requester |
+| 3 | **[TST-CORE-977]** Egress denied and audited | EnforceEgress to untrusted DID | allowed=false, audit entry, notification |
+
+### 29.10 Sharing Policy Egress Enforcement
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-978]** Missing policy category denied (default deny) | Payload with "health" but policy only has "location" | health in Denied list |
+| 2 | **[TST-CORE-979]** Tier "none" blocks category | Policy health=none | health in Denied list |
+| 3 | **[TST-CORE-980]** No policy for contact → all categories denied | Unknown contact DID | All categories denied |
+| 4 | **[TST-CORE-981]** Malformed payload (non-TieredPayload) denied | Raw string instead of TieredPayload | Category denied |
+
 ## Appendix A: Test Data & Fixtures
 
 - **Test mnemonic**: Use a fixed BIP-39 test mnemonic for deterministic key derivation tests

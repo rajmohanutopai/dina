@@ -69,10 +69,19 @@ func (h *VaultHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
 		Limit: req.Limit,
 	}
 
+	// Track whether we requested a mode that falls back to FTS5.
+	requestedMode := mode
+
 	items, err := h.Vault.Query(r.Context(), agentDID(r), persona, q)
 	if err != nil {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
+	}
+
+	// Signal degradation when semantic/hybrid was requested but FTS5 was used.
+	if requestedMode == domain.SearchSemantic || requestedMode == domain.SearchHybrid {
+		w.Header().Set("X-Search-Mode", "fts5")
+		w.Header().Set("X-Search-Degraded-From", string(requestedMode))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -154,8 +163,7 @@ func (h *VaultHandler) HandleGetItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Use a minimal query to retrieve by ID. The persona is passed as a query
-	// parameter since the URL does not contain it.
+	// The persona is passed as a query parameter since the URL does not contain it.
 	personaStr := r.URL.Query().Get("persona")
 	if personaStr == "" {
 		personaStr = "personal"
@@ -166,23 +174,23 @@ func (h *VaultHandler) HandleGetItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	q := domain.SearchQuery{
-		Mode:  domain.SearchFTS5,
-		Query: id,
-		Limit: 1,
-	}
-	items, err := h.Vault.Query(r.Context(), agentDID(r), persona, q)
+	item, err := h.Vault.GetItem(r.Context(), agentDID(r), persona, id)
 	if err != nil {
+		// Distinguish "not found" from other errors.
+		if strings.Contains(err.Error(), "not found") {
+			http.Error(w, `{"error":"item not found"}`, http.StatusNotFound)
+			return
+		}
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
-	if len(items) == 0 {
+	if item == nil {
 		http.Error(w, `{"error":"item not found"}`, http.StatusNotFound)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(items[0])
+	json.NewEncoder(w).Encode(item)
 }
 
 // HandleDeleteItem handles DELETE /v1/vault/item/{id}. It removes the item
@@ -257,8 +265,8 @@ func HandleClearVault(clearer VaultClearer) http.HandlerFunc {
 	}
 }
 
-// HandlePutKV handles PUT /v1/vault/kv/{key}. It reads the raw body as the
-// value and stores it under the given key. Returns 204 No Content.
+// HandlePutKV handles PUT /v1/vault/kv/{key}. It accepts a JSON body with a
+// "value" field and stores the value under the given key. Returns 204 No Content.
 func (h *VaultHandler) HandlePutKV(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	key := path[strings.LastIndex(path, "/")+1:]
@@ -273,6 +281,23 @@ func (h *VaultHandler) HandlePutKV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Extract "value" from JSON envelope if present; otherwise store raw body.
+	value := string(body)
+	var envelope map[string]interface{}
+	if json.Unmarshal(body, &envelope) == nil {
+		if v, ok := envelope["value"]; ok {
+			switch tv := v.(type) {
+			case string:
+				value = tv
+			default:
+				// Re-encode non-string values as JSON.
+				if b, err := json.Marshal(tv); err == nil {
+					value = string(b)
+				}
+			}
+		}
+	}
+
 	persona, pErr := domain.NewPersonaName("personal")
 	if pErr != nil {
 		http.Error(w, `{"error":"invalid persona"}`, http.StatusInternalServerError)
@@ -282,7 +307,7 @@ func (h *VaultHandler) HandlePutKV(w http.ResponseWriter, r *http.Request) {
 	item := domain.VaultItem{
 		ID:       "kv:" + key,
 		Type:     "kv",
-		BodyText: string(body),
+		BodyText: value,
 	}
 	if _, err := h.Vault.Store(r.Context(), persona, item); err != nil {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
@@ -293,7 +318,7 @@ func (h *VaultHandler) HandlePutKV(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleGetKV handles GET /v1/vault/kv/{key}. It retrieves the value stored
-// under the given key and returns it as the response body.
+// under the given key and returns it as JSON {"value": "..."}.
 func (h *VaultHandler) HandleGetKV(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	key := path[strings.LastIndex(path, "/")+1:]
@@ -308,21 +333,21 @@ func (h *VaultHandler) HandleGetKV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	q := domain.SearchQuery{
-		Mode:  domain.SearchFTS5,
-		Query: "kv:" + key,
-		Limit: 1,
-	}
-	items, err := h.Vault.Query(r.Context(), agentDID(r), persona, q)
+	item, err := h.Vault.GetKV(r.Context(), agentDID(r), persona, key)
 	if err != nil {
+		// Distinguish "not found" from other errors.
+		if strings.Contains(err.Error(), "not found") {
+			http.Error(w, `{"error":"key not found"}`, http.StatusNotFound)
+			return
+		}
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
-	if len(items) == 0 {
+	if item == nil {
 		http.Error(w, `{"error":"key not found"}`, http.StatusNotFound)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Write([]byte(items[0].BodyText))
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"value": item.BodyText})
 }

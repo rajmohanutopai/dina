@@ -998,3 +998,80 @@ func TestTaskQueue_8_4_13_SilenceRules_StoredAndRetrievable(t *testing.T) {
 	_, err = impl.Store(vaultCtx, domain.PersonaName(persona), item)
 	testutil.RequireNoError(t, err)
 }
+
+// ==========================================================================
+// TEST_PLAN §8.5 — ACK Semantics (Fix 5)
+// ==========================================================================
+
+// TST-CORE-882
+func TestTaskQueue_8_5_1_DequeueClaimsOnlyOneTask(t *testing.T) {
+	impl := realTaskQueuer
+	testutil.RequireImplementation(t, impl, "TaskQueuer")
+
+	ctx := context.Background()
+
+	// Enqueue 3 tasks with the same priority.
+	var ids []string
+	for i := 0; i < 3; i++ {
+		task := testutil.TestTask()
+		id, err := impl.Enqueue(ctx, task)
+		testutil.RequireNoError(t, err)
+		ids = append(ids, id)
+	}
+
+	// Dequeue should claim exactly 1 task.
+	dequeued, err := impl.Dequeue(ctx)
+	testutil.RequireNoError(t, err)
+	testutil.RequireNotNil(t, dequeued)
+	testutil.RequireEqual(t, dequeued.Status, domain.TaskRunning)
+
+	// The other 2 tasks should still be pending.
+	pendingCount := 0
+	for _, id := range ids {
+		found, err := impl.GetByID(ctx, id)
+		testutil.RequireNoError(t, err)
+		testutil.RequireNotNil(t, found)
+		if found.Status == domain.TaskPending {
+			pendingCount++
+		}
+	}
+	testutil.RequireEqual(t, pendingCount, 2)
+}
+
+// TST-CORE-883
+func TestTaskQueue_8_5_2_AcknowledgeWithCorrectID(t *testing.T) {
+	impl := realTaskQueuer
+	testutil.RequireImplementation(t, impl, "TaskQueuer")
+
+	ctx := context.Background()
+
+	// Enqueue and dequeue a task.
+	task := testutil.TestTask()
+	taskID, err := impl.Enqueue(ctx, task)
+	testutil.RequireNoError(t, err)
+
+	dequeued, err := impl.Dequeue(ctx)
+	testutil.RequireNoError(t, err)
+	testutil.RequireNotNil(t, dequeued)
+	testutil.RequireEqual(t, dequeued.ID, taskID)
+
+	// Acknowledge with the correct task ID should succeed.
+	acked, err := impl.Acknowledge(ctx, taskID)
+	testutil.RequireNoError(t, err)
+	testutil.RequireNotNil(t, acked)
+	testutil.RequireEqual(t, acked.ID, taskID)
+	testutil.RequireEqual(t, acked.Status, domain.TaskCompleted)
+}
+
+// TST-CORE-884
+func TestTaskQueue_8_5_3_AcknowledgeWithWrongID(t *testing.T) {
+	impl := realTaskQueuer
+	testutil.RequireImplementation(t, impl, "TaskQueuer")
+
+	ctx := context.Background()
+
+	// Acknowledge with a nonexistent task ID should return an error.
+	acked, err := impl.Acknowledge(ctx, "nonexistent-task-id")
+	testutil.RequireError(t, err)
+	testutil.RequireNil(t, acked)
+}

@@ -10,6 +10,7 @@ import (
 type TaskQueue interface {
 	Enqueue(ctx context.Context, task domain.Task) (string, error)
 	Dequeue(ctx context.Context) (*domain.Task, error)
+	Acknowledge(ctx context.Context, taskID string) (*domain.Task, error)
 	Complete(ctx context.Context, taskID string) error
 	Fail(ctx context.Context, taskID, reason string) error
 	Retry(ctx context.Context, taskID string) error

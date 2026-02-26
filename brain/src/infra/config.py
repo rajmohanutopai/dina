@@ -20,7 +20,7 @@ from pathlib import Path
 # Defaults
 # ---------------------------------------------------------------------------
 
-_DEFAULT_CORE_URL = "http://core:8300"
+_DEFAULT_CORE_URL = "http://core:8100"
 _DEFAULT_LISTEN_PORT = 8200
 _DEFAULT_LOG_LEVEL = "INFO"
 
@@ -38,7 +38,7 @@ class BrainConfig:
     """Immutable brain configuration loaded from environment variables.
 
     Attributes:
-        core_url:            URL for dina-core (default ``http://core:8300``).
+        core_url:            URL for dina-core (default ``http://core:8100``).
         brain_token:         BRAIN_TOKEN for authenticating with core.
         listen_port:         Port brain listens on (default ``8200``).
         log_level:           Logging level (default ``"INFO"``).
@@ -82,7 +82,7 @@ def load_brain_config() -> BrainConfig:
     """Load and validate brain configuration from environment variables.
 
     Environment variables:
-        DINA_CORE_URL          — Core endpoint URL (default ``http://core:8300``).
+        DINA_CORE_URL          — Core endpoint URL (default ``http://core:8100``).
         DINA_BRAIN_TOKEN       — Shared secret for core ↔ brain auth.
         DINA_BRAIN_TOKEN_FILE  — Path to a file containing the token
                                  (Docker Secrets pattern).

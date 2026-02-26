@@ -110,12 +110,8 @@ func (h *MessageHandler) HandleIngestNaCl(w http.ResponseWriter, r *http.Request
 		// Router.Ingest handles both paths:
 		// - Locked → dead-drop (stored as opaque blob for later sweep)
 		// - Unlocked → inbox spool (immediate processing)
-		// In both cases we also attempt direct decryption for immediate inbox.
-		msg, decErr := h.Transport.ProcessInbound(r.Context(), body)
-		if decErr == nil {
-			slog.Info("D2D message received and decrypted", "type", msg.Type, "to", msg.To)
-			h.Transport.StoreInbound(msg)
-		}
+		// No direct ProcessInbound here — the Router owns the full pipeline.
+		// ProcessPending (background ticker) handles decryption after vault unlock.
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)

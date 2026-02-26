@@ -139,30 +139,18 @@ async def add_contact(contact: ContactCreate) -> dict:
 
 @router.put("/{did}")
 async def update_contact(did: str, contact: ContactCreate) -> dict:
-    """Update contact details.
-
-    Updates the contact in core's contact store.  The ``did`` path
-    parameter identifies the contact; the body carries the new values.
-    """
+    """Update contact details via core's contact directory API."""
     if _core_client is None:
         raise HTTPException(status_code=503, detail="Core client not configured")
 
-    contact_dict = contact.model_dump()
-    contact_dict["did"] = did
     try:
-        await _core_client.store_vault_item(
-            "contacts",
-            {
-                "type": "contact",
-                "source": "admin_ui",
-                "source_id": did,
-                "summary": f"Contact: {contact.name}",
-                "body_text": "",
-                **contact_dict,
-            },
+        result = await _core_client.update_contact(
+            did,
+            name=contact.name,
+            trust_level=contact.trust_level,
         )
         log.info("contacts.updated", extra={"did": did})
-        return contact_dict
+        return result
     except Exception as exc:
         log.error(
             "contacts.update_error",
@@ -176,19 +164,14 @@ async def update_contact(did: str, contact: ContactCreate) -> dict:
 
 @router.delete("/{did}")
 async def remove_contact(did: str) -> dict:
-    """Remove a contact.
-
-    Deletes the contact from core's contact store.
-    Returns a confirmation dict.
-    """
+    """Remove a contact via core's contact directory API."""
     if _core_client is None:
         raise HTTPException(status_code=503, detail="Core client not configured")
 
     try:
-        # Mark contact as deleted via KV tombstone
-        await _core_client.set_kv(f"contact_deleted:{did}", "true")
+        result = await _core_client.delete_contact(did)
         log.info("contacts.removed", extra={"did": did})
-        return {"did": did, "status": "removed"}
+        return result
     except Exception as exc:
         log.error(
             "contacts.remove_error",

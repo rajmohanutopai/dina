@@ -96,6 +96,18 @@ func (s *TaskService) ProcessNext(ctx context.Context) (*domain.Task, error) {
 	return task, nil
 }
 
+// Acknowledge marks a specific in-flight task as completed. This is called
+// when the brain sidecar sends an ACK for a particular task ID. Unlike
+// ProcessNext (which dequeues the next task), Acknowledge targets the exact
+// task that was completed.
+func (s *TaskService) Acknowledge(ctx context.Context, taskID string) (*domain.Task, error) {
+	task, err := s.queue.Acknowledge(ctx, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("task: acknowledge: %w", err)
+	}
+	return task, nil
+}
+
 // RunWatchdog scans for timed-out tasks and resets them for retry. Tasks that
 // have exceeded their timeout are returned to pending status so they can be
 // reprocessed. Returns the number of tasks that were reset.

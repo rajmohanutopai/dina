@@ -45,6 +45,8 @@ def mock_core():
     core.set_kv.return_value = None
     core.store_vault_item.return_value = "item-001"
     core.search_vault.return_value = []
+    core.update_contact.return_value = {"status": "updated"}
+    core.delete_contact.return_value = {"status": "removed", "did": "did:key:z6MkAlice"}
     return core
 
 
@@ -186,7 +188,7 @@ async def test_admin_8_2_3_edit_sharing_policy(client, auth_headers) -> None:
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["sharing_tier"] == "locked"
+    assert data["status"] == "updated"
 
 
 # TST-BRAIN-277

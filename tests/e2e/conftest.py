@@ -6,10 +6,9 @@ Sets up the multi-node environment with named actors:
 - Mock services: PLC Directory, D2D network, OpenClaw, ReviewBot,
   MaliciousBot, AppView, Relay, FCM, Payment Gateway
 
-Dual-mode: set DINA_E2E=docker to use real HTTP clients against
-Docker containers (docker-compose-e2e.yml) for ALL 4 actors.
-Each actor gets its own Core+Brain container pair.
-In mock mode, all actors use pure in-memory HomeNode instances.
+Docker-only: requires DINA_E2E=docker and running Docker containers
+(docker-compose-e2e.yml) for ALL 4 actors.  Each actor gets its own
+Core+Brain container pair.  test_status.py manages the Docker lifecycle.
 """
 
 from __future__ import annotations
@@ -42,15 +41,14 @@ from tests.e2e.mocks import (
 )
 
 # ---------------------------------------------------------------------------
-# Docker mode detection
+# Docker mode — always active for E2E
 # ---------------------------------------------------------------------------
 
 DOCKER_MODE = os.environ.get("DINA_E2E") == "docker"
 
-if DOCKER_MODE:
-    from tests.e2e.multi_node_services import MultiNodeDockerServices
-    from tests.e2e.real_nodes import RealHomeNode
-    from tests.e2e.real_d2d import RealD2DNetwork
+from tests.e2e.multi_node_services import MultiNodeDockerServices
+from tests.e2e.real_nodes import RealHomeNode
+from tests.e2e.real_d2d import RealD2DNetwork
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +90,9 @@ def e2e_persona_setup(docker_services):
     Iterates over all 4 actors (alonso, sancho, chairmaker, albert) and
     creates/unlocks every persona on each node.  Also clears vault data
     from prior runs via POST /v1/vault/clear.
+
+    Uses CLIENT_TOKEN for persona endpoints (admin-only) and BRAIN_TOKEN
+    for vault operations, respecting the authz model.
     Only active in Docker mode.
     """
     if not DOCKER_MODE or docker_services is None:
@@ -99,20 +100,24 @@ def e2e_persona_setup(docker_services):
 
     import httpx
 
+    # Persona create/unlock are admin-only → require CLIENT_TOKEN.
+    # Vault clear is a data operation → uses BRAIN_TOKEN.
+    admin_headers = {"Authorization": f"Bearer {docker_services.client_token}"}
+    data_headers = {"Authorization": f"Bearer {docker_services.brain_token}"}
+
     for actor in ["alonso", "sancho", "chairmaker", "albert"]:
-        headers = {"Authorization": f"Bearer {docker_services.brain_token}"}
         base = docker_services.core_url(actor)
 
         for name in _ALL_PERSONAS:
             httpx.post(
                 f"{base}/v1/personas",
                 json={"name": name, "tier": "open"},
-                headers=headers, timeout=10,
+                headers=admin_headers, timeout=10,
             )
             httpx.post(
                 f"{base}/v1/persona/unlock",
                 json={"persona": name, "passphrase": "test"},
-                headers=headers, timeout=10,
+                headers=admin_headers, timeout=10,
             )
 
         # Clear all vaults at session start for a clean slate
@@ -121,7 +126,7 @@ def e2e_persona_setup(docker_services):
                 httpx.post(
                     f"{base}/v1/vault/clear",
                     json={"persona": name},
-                    headers=headers, timeout=10,
+                    headers=data_headers, timeout=10,
                 )
             except Exception:
                 pass
@@ -199,6 +204,7 @@ def don_alonso(plc_directory, d2d_network, docker_services) -> HomeNode:
             core_url=docker_services.core_url("alonso"),
             brain_url=docker_services.brain_url("alonso"),
             brain_token=docker_services.brain_token,
+            client_token=docker_services.client_token,
             did="did:plc:alonso",
             display_name="Don Alonso",
             trust_ring=TrustRing.RING_3_SKIN_IN_GAME,
@@ -296,6 +302,7 @@ def sancho(plc_directory, d2d_network, docker_services) -> HomeNode:
             core_url=docker_services.core_url("sancho"),
             brain_url=docker_services.brain_url("sancho"),
             brain_token=docker_services.brain_token,
+            client_token=docker_services.client_token,
             did="did:plc:sancho",
             display_name="Sancho",
             trust_ring=TrustRing.RING_2_VERIFIED,
@@ -350,6 +357,7 @@ def chairmaker(plc_directory, d2d_network, docker_services) -> HomeNode:
             core_url=docker_services.core_url("chairmaker"),
             brain_url=docker_services.brain_url("chairmaker"),
             brain_token=docker_services.brain_token,
+            client_token=docker_services.client_token,
             did="did:plc:chairmaker",
             display_name="ChairMaker",
             trust_ring=TrustRing.RING_3_SKIN_IN_GAME,
@@ -389,6 +397,7 @@ def albert(plc_directory, d2d_network, docker_services) -> HomeNode:
             core_url=docker_services.core_url("albert"),
             brain_url=docker_services.brain_url("albert"),
             brain_token=docker_services.brain_token,
+            client_token=docker_services.client_token,
             did="did:plc:albert",
             display_name="Albert",
             trust_ring=TrustRing.RING_2_VERIFIED,

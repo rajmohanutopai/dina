@@ -430,14 +430,15 @@ func (o *OutboxManager) PendingCount(_ context.Context) (int, error) {
 	return count, nil
 }
 
-// ListPending returns all pending messages whose retry time has elapsed.
+// ListPending returns all pending and retryable-failed messages whose retry time has elapsed.
+// Failed messages become eligible for retry after their exponential backoff period elapses.
 func (o *OutboxManager) ListPending(_ context.Context) ([]domain.OutboxMessage, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	now := time.Now().Unix()
 	var pending []domain.OutboxMessage
 	for _, msg := range o.messages {
-		if msg.Status == "pending" && msg.NextRetry <= now {
+		if (msg.Status == "pending" || msg.Status == "failed") && msg.NextRetry <= now {
 			pending = append(pending, msg)
 		}
 	}
@@ -627,6 +628,27 @@ func (im *InboxManager) ProcessSpool(_ context.Context) (int, error) {
 		im.spoolBytes = 0
 	}
 	return count, nil
+}
+
+// DrainSpool atomically removes all non-expired spooled payloads and returns
+// them for processing. Expired messages (per msgTTL) are silently discarded.
+// The caller is responsible for decrypting and delivering each payload.
+func (im *InboxManager) DrainSpool(_ context.Context) ([][]byte, error) {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+	if len(im.spoolData) == 0 {
+		return nil, nil
+	}
+	var payloads [][]byte
+	for _, entry := range im.spoolData {
+		if im.msgTTL > 0 && time.Since(entry.spooledAt) >= im.msgTTL {
+			continue // expired — discard silently
+		}
+		payloads = append(payloads, entry.payload)
+	}
+	im.spoolData = nil
+	im.spoolBytes = 0
+	return payloads, nil
 }
 
 // CheckDIDRate checks per-DID rate limit (fast path when vault is unlocked).

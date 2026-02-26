@@ -55,7 +55,7 @@ def test_config_9_1_2_core_url_default(monkeypatch) -> None:
 
     cfg = load_brain_config()
 
-    assert cfg.core_url == "http://core:8300"
+    assert cfg.core_url == "http://core:8100"
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +164,7 @@ def test_config_9_missing_core_url_uses_default(monkeypatch) -> None:
 
     cfg = load_brain_config()
 
-    assert cfg.core_url == "http://core:8300"
+    assert cfg.core_url == "http://core:8100"
 
 
 # TST-BRAIN-292

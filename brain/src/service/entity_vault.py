@@ -153,11 +153,7 @@ class EntityVaultService:
 
         # Call cloud LLM with scrubbed messages.
         try:
-            response = await llm.complete(
-                prompt=scrubbed_messages[-1]["content"]
-                if scrubbed_messages
-                else "",
-            )
+            response = await llm.complete(scrubbed_messages)
             llm_text = response.get("content", "") if isinstance(response, dict) else str(response)
         except Exception:
             # Vault must be discarded even on LLM failure.
@@ -171,6 +167,27 @@ class EntityVaultService:
         vault.clear()
 
         return result
+
+    async def scrub(self, text: str) -> tuple[str, dict]:
+        """Scrub PII from text and return (scrubbed_text, vault).
+
+        The vault maps anonymisation tokens to original values, e.g.
+        ``{"[PERSON_1]": "Dr. Sharma"}``.  Pass it to ``rehydrate()``
+        to restore the original text after LLM processing.
+
+        Raises
+        ------
+        PIIScrubError
+            If scrubbing fails.
+        """
+        try:
+            scrubbed_text, entities = await self._two_tier_scrub(text)
+        except Exception as exc:
+            raise PIIScrubError(
+                f"PII scrubbing failed: {type(exc).__name__}"
+            ) from exc
+        vault = self.create_vault(entities)
+        return scrubbed_text, vault
 
     def create_vault(self, entities: list[dict]) -> dict:
         """Create an in-memory replacement map from detected entities.

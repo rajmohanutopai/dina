@@ -133,14 +133,14 @@ func (c *BrainClient) ProcessEvent(event []byte) ([]byte, error) {
 	return body, nil
 }
 
-// Health checks brain's health endpoint (GET /v1/health).
+// Health checks brain's health endpoint (GET /healthz).
 func (c *BrainClient) Health() error {
 	if c.baseURL == "" {
 		c.recordFailure()
 		return ErrEmptyURL
 	}
 
-	url := c.baseURL + "/v1/health"
+	url := c.baseURL + "/healthz"
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("brainclient: health request creation failed: %w", err)
@@ -233,7 +233,7 @@ func (c *BrainClient) Reason(ctx context.Context, query string) (*domain.ReasonR
 		return nil, ErrEmptyURL
 	}
 
-	body, err := json.Marshal(map[string]string{"query": query})
+	body, err := json.Marshal(map[string]string{"prompt": query})
 	if err != nil {
 		return nil, fmt.Errorf("brainclient: marshal query: %w", err)
 	}

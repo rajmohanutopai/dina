@@ -293,15 +293,19 @@ function renderContacts(contacts) {
         var sharingLabel = _sharingLabels[c.sharing_tier] || c.sharing_tier;
         return `
         <tr>
-            <td title="${c.did}">${c.did.substring(0,20)}...</td>
+            <td title="${escapeHtml(c.did)}">${escapeHtml(c.did.substring(0,20))}...</td>
             <td>${escapeHtml(c.name)}</td>
-            <td><span class="badge badge-${c.trust_level}">${trustLabel}</span></td>
-            <td><span class="badge badge-${c.sharing_tier}">${sharingLabel}</span></td>
+            <td><span class="badge badge-${escapeHtml(c.trust_level)}">${escapeHtml(trustLabel)}</span></td>
+            <td><span class="badge badge-${escapeHtml(c.sharing_tier)}">${escapeHtml(sharingLabel)}</span></td>
             <td>
-                <button class="btn btn-sm btn-danger" onclick="deleteContact('${c.did}')">Remove</button>
+                <button class="btn btn-sm btn-danger" data-did="${escapeHtml(c.did)}">Remove</button>
             </td>
         </tr>`;
     }).join('');
+    // Attach delete handlers via data attributes (avoids inline JS injection).
+    tbody.querySelectorAll('[data-did]').forEach(btn => {
+        btn.addEventListener('click', () => deleteContact(btn.dataset.did));
+    });
 }
 
 function escapeHtml(text) {

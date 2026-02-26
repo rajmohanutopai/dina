@@ -59,6 +59,7 @@ type devicePubKey struct {
 
 // tokenValidator validates BRAIN_TOKEN, CLIENT_TOKEN, and Ed25519 signature credentials.
 type tokenValidator struct {
+	mu           sync.RWMutex
 	brainToken   string
 	clientTokens map[string]string           // SHA-256(token) hex -> deviceID
 	deviceKeys   map[string]*devicePubKey    // did:key:z... -> public key entry
@@ -95,6 +96,8 @@ func (v *tokenValidator) SetClock(c port.Clock) {
 // RegisterDeviceKey adds an Ed25519 public key for a device DID.
 // Accepts []byte to satisfy port.DeviceKeyRegistrar (ed25519.PublicKey is []byte).
 func (v *tokenValidator) RegisterDeviceKey(did string, pubKey []byte, deviceID string) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
 	v.deviceKeys[did] = &devicePubKey{
 		publicKey: ed25519.PublicKey(pubKey),
 		deviceID:  deviceID,
@@ -103,6 +106,8 @@ func (v *tokenValidator) RegisterDeviceKey(did string, pubKey []byte, deviceID s
 
 // RevokeDeviceKey marks a device DID's key as revoked.
 func (v *tokenValidator) RevokeDeviceKey(did string) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
 	if dpk, ok := v.deviceKeys[did]; ok {
 		dpk.revoked = true
 	}
@@ -112,12 +117,14 @@ func (v *tokenValidator) RevokeDeviceKey(did string) {
 // ValidateClientToken calls will accept it. The token is stored as its
 // SHA-256 hex digest, matching the lookup path in ValidateClientToken.
 func (v *tokenValidator) RegisterClientToken(token string, deviceID string) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
 	hash := sha256Hex(token)
 	v.clientTokens[hash] = deviceID
 }
 
-// NewDefaultTokenValidator creates a TokenValidator pre-loaded with the
-// standard test tokens from testutil.
+// NewDefaultTokenValidator creates a validator with hardcoded test tokens.
+// WARNING: For testing only. Production should use NewTokenValidator with empty client tokens.
 func NewDefaultTokenValidator(brainToken string) *tokenValidator {
 	clientTokens := make(map[string]string)
 
@@ -149,7 +156,9 @@ func (v *tokenValidator) ValidateClientToken(token string) (deviceID string, ok 
 		return "", false
 	}
 	hash := sha256Hex(token)
+	v.mu.RLock()
 	deviceID, ok = v.clientTokens[hash]
+	v.mu.RUnlock()
 	return deviceID, ok
 }
 
@@ -178,7 +187,9 @@ func (v *tokenValidator) VerifySignature(
 	did, method, path, timestamp string, body []byte, signatureHex string,
 ) (domain.TokenType, string, error) {
 	// 1. Look up the DID in the device key registry.
+	v.mu.RLock()
 	dpk, ok := v.deviceKeys[did]
+	v.mu.RUnlock()
 	if !ok {
 		return domain.TokenUnknown, "", ErrInvalidToken
 	}

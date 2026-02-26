@@ -215,6 +215,14 @@ class PresidioScrubber:
         use_faker: bool = True,
         faker_locale: str | None = None,
     ) -> None:
+        # Ensure tldextract (used by Presidio's URL recognizer) has a writable
+        # cache directory — prevents OSError in Docker / read-only $HOME.
+        if "TLDEXTRACT_CACHE" not in os.environ:
+            import tempfile
+            os.environ["TLDEXTRACT_CACHE"] = os.path.join(
+                tempfile.gettempdir(), "tldextract"
+            )
+
         self._model_name = model or os.environ.get(
             "DINA_SPACY_MODEL", "en_core_web_sm"
         )

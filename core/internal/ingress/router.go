@@ -12,11 +12,12 @@ import (
 // (when the vault is locked) or the fast path (when unlocked). This ensures
 // messages are never lost even when the user hasn't unlocked their Home Node.
 type Router struct {
-	vault    port.VaultManager
-	inbox    port.InboxManager
-	deadDrop *DeadDrop
-	sweeper  *Sweeper
-	limiter  *RateLimiter
+	vault      port.VaultManager
+	inbox      port.InboxManager
+	deadDrop   *DeadDrop
+	sweeper    *Sweeper
+	limiter    *RateLimiter
+	onEnvelope func(context.Context, []byte) // decrypt+deliver callback for fast-path envelopes
 }
 
 // NewRouter constructs an ingress Router.
@@ -64,7 +65,13 @@ func (r *Router) Ingest(ctx context.Context, ip string, envelope []byte) error {
 		return r.deadDrop.Store(ctx, envelope)
 	}
 
-	// Fast path: spool for immediate processing.
+	// Fast path: vault is unlocked — decrypt and deliver immediately.
+	if r.onEnvelope != nil {
+		r.onEnvelope(ctx, envelope)
+		return nil
+	}
+
+	// Fallback: spool for later processing (no callback configured).
 	_, err := r.inbox.Spool(ctx, envelope)
 	if err != nil {
 		return fmt.Errorf("ingress: fast path spool: %w", err)
@@ -73,8 +80,16 @@ func (r *Router) Ingest(ctx context.Context, ip string, envelope []byte) error {
 	return nil
 }
 
+// SetOnEnvelope registers the callback invoked for each fast-path spool
+// envelope during ProcessPending. The callback should decrypt and store
+// the envelope (e.g. TransportService.ProcessInbound + StoreInbound).
+func (r *Router) SetOnEnvelope(fn func(context.Context, []byte)) {
+	r.onEnvelope = fn
+}
+
 // ProcessPending drains all spooled messages through the inbox pipeline.
-// Called after vault unlock to process any accumulated dead drop blobs.
+// Called after vault unlock to process any accumulated dead drop blobs,
+// then drains the fast-path spool and decrypts each envelope via onEnvelope.
 func (r *Router) ProcessPending(ctx context.Context) (int, error) {
 	// First sweep the dead drop (decrypt, verify, deliver).
 	sweptCount, err := r.sweeper.Sweep(ctx)
@@ -82,10 +97,18 @@ func (r *Router) ProcessPending(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("ingress: sweep dead drop: %w", err)
 	}
 
-	// Then process the inbox spool.
-	inboxCount, err := r.inbox.ProcessSpool(ctx)
+	// Then drain and process the fast-path inbox spool.
+	payloads, err := r.inbox.DrainSpool(ctx)
 	if err != nil {
-		return sweptCount, fmt.Errorf("ingress: process spool: %w", err)
+		return sweptCount, fmt.Errorf("ingress: drain spool: %w", err)
+	}
+
+	inboxCount := 0
+	for _, envelope := range payloads {
+		if r.onEnvelope != nil {
+			r.onEnvelope(ctx, envelope)
+		}
+		inboxCount++
 	}
 
 	return sweptCount + inboxCount, nil

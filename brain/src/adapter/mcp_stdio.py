@@ -37,6 +37,7 @@ class _StdioSession:
     process: asyncio.subprocess.Process
     command: str
     args: list[str] = field(default_factory=list)
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 class MCPStdioClient:
@@ -135,38 +136,41 @@ class MCPStdioClient:
         if params is not None:
             request["params"] = params
 
-        # Write request
-        payload = json.dumps(request) + "\n"
-        session.process.stdin.write(payload.encode())
-        await session.process.stdin.drain()
+        # Serialize write+read under a per-session lock to prevent
+        # concurrent coroutines from interleaving requests/responses.
+        async with session.lock:
+            # Write request
+            payload = json.dumps(request) + "\n"
+            session.process.stdin.write(payload.encode())
+            await session.process.stdin.drain()
 
-        # Read response with timeout
-        try:
-            raw_line = await asyncio.wait_for(
-                session.process.stdout.readline(),
-                timeout=_TIMEOUT_S,
-            )
-        except asyncio.TimeoutError:
-            raise MCPError(
-                f"MCP server '{server}' timed out after {_TIMEOUT_S}s "
-                f"(method={method})"
-            )
+            # Read response with timeout
+            try:
+                raw_line = await asyncio.wait_for(
+                    session.process.stdout.readline(),
+                    timeout=_TIMEOUT_S,
+                )
+            except asyncio.TimeoutError:
+                raise MCPError(
+                    f"MCP server '{server}' timed out after {_TIMEOUT_S}s "
+                    f"(method={method})"
+                )
 
-        if not raw_line:
-            # Process may have exited
-            stderr_data = b""
-            if session.process.stderr:
-                try:
-                    stderr_data = await asyncio.wait_for(
-                        session.process.stderr.read(4096),
-                        timeout=2.0,
-                    )
-                except asyncio.TimeoutError:
-                    pass
-            raise MCPError(
-                f"MCP server '{server}' closed stdout unexpectedly. "
-                f"stderr: {stderr_data.decode(errors='replace').strip()}"
-            )
+            if not raw_line:
+                # Process may have exited
+                stderr_data = b""
+                if session.process.stderr:
+                    try:
+                        stderr_data = await asyncio.wait_for(
+                            session.process.stderr.read(4096),
+                            timeout=2.0,
+                        )
+                    except asyncio.TimeoutError:
+                        pass
+                raise MCPError(
+                    f"MCP server '{server}' closed stdout unexpectedly. "
+                    f"stderr: {stderr_data.decode(errors='replace').strip()}"
+                )
 
         try:
             response = json.loads(raw_line)
@@ -175,6 +179,14 @@ class MCPStdioClient:
                 f"MCP server '{server}' returned invalid JSON: "
                 f"{raw_line[:200]!r}"
             ) from exc
+
+        # Verify response ID matches request ID.
+        resp_id = response.get("id")
+        if resp_id != req_id:
+            raise MCPError(
+                f"MCP server '{server}' response id mismatch: "
+                f"expected {req_id}, got {resp_id}"
+            )
 
         # Check for JSON-RPC error
         if "error" in response:

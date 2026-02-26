@@ -40,4 +40,5 @@ type InboxManager interface {
 	Spool(ctx context.Context, payload []byte) (string, error)
 	SpoolSize() (int64, error)
 	ProcessSpool(ctx context.Context) (int, error)
+	DrainSpool(ctx context.Context) ([][]byte, error)
 }

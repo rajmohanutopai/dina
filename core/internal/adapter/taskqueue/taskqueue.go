@@ -91,12 +91,10 @@ func (q *TaskQueue) Enqueue(_ context.Context, task Task) (string, error) {
 // For tasks with the same priority, FIFO ordering is preserved.
 // Returns nil if no pending tasks exist.
 //
-// All pending tasks are consumed (moved to the in-flight map) during a
-// dequeue operation: the best task is returned as "running" and the
-// remaining pending tasks are marked "running" as well. This ensures
-// the pending queue is drained atomically, consistent with the SQLite-backed
-// production design where SELECT ... FOR UPDATE claims all pending rows
-// in a single scheduling pass.
+// Only the single best (highest priority, FIFO for ties) pending task is
+// claimed: it is moved to the in-flight map with status "running" and a
+// timeout. All other pending tasks remain in the queue for subsequent
+// Dequeue calls.
 func (q *TaskQueue) Dequeue(_ context.Context) (*Task, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -121,27 +119,34 @@ func (q *TaskQueue) Dequeue(_ context.Context) (*Task, error) {
 
 	now := time.Now().Unix()
 
-	// Save the best task's ID before modifying the slice.
-	bestID := q.tasks[bestIdx].ID
+	// Move only the best task to in-flight.
+	q.tasks[bestIdx].Status = "running"
+	q.tasks[bestIdx].TimeoutAt = now + 300
+	t := q.tasks[bestIdx]
+	q.inFlight[t.ID] = &t
 
-	// Move ALL pending tasks to the in-flight map. The scheduler claims
-	// the entire batch in one pass; only the best task is returned to
-	// the caller.
-	var kept []Task
-	for i := range q.tasks {
-		if q.tasks[i].Status == "pending" {
-			q.tasks[i].Status = "running"
-			q.tasks[i].TimeoutAt = now + 300
-			t := q.tasks[i]
-			q.inFlight[t.ID] = &t
-		} else {
-			kept = append(kept, q.tasks[i])
-		}
+	// Remove the best task from the pending slice.
+	q.tasks = append(q.tasks[:bestIdx], q.tasks[bestIdx+1:]...)
+
+	return q.inFlight[t.ID], nil
+}
+
+// Acknowledge marks an in-flight task as completed by its task ID and
+// removes it from the in-flight map. Returns the completed task, or an
+// error if the task ID is not found among in-flight tasks.
+func (q *TaskQueue) Acknowledge(_ context.Context, taskID string) (*Task, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	t, ok := q.inFlight[taskID]
+	if !ok {
+		return nil, fmt.Errorf("%w: task %s not in flight", ErrNotFound, taskID)
 	}
-	q.tasks = kept
 
-	best := q.inFlight[bestID]
-	return best, nil
+	t.Status = "completed"
+	result := *t
+	delete(q.inFlight, taskID)
+	return &result, nil
 }
 
 // Complete marks a task as completed.

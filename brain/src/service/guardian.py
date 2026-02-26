@@ -325,6 +325,8 @@ class GuardianLoop:
                         "nudge": nudge,
                     })
                 except Exception:
+                    if priority == "fiduciary":
+                        raise  # must not lose fiduciary notifications
                     log.warning("guardian.nudge_delivery_failed")
 
             # ACK task.
@@ -356,7 +358,7 @@ class GuardianLoop:
             # Crash handler (SS13): sanitised one-liner to stdout,
             # full traceback to encrypted vault.
             await self._handle_crash(event, exc, task_id)
-            return {"action": "error", "error": type(exc).__name__}
+            return {"action": "error", "status": "error", "error": type(exc).__name__}
 
     # ------------------------------------------------------------------
     # Agent Intent Review (SS2.3.3 – SS2.3.7)
@@ -523,27 +525,44 @@ class GuardianLoop:
 
         The LLM router returns ``content``, ``model``, ``tokens_in``,
         ``tokens_out`` which the reason route translates into its response.
+
+        For sensitive personas (restricted/locked), PII is scrubbed before
+        the prompt reaches the cloud LLM, and rehydrated in the response.
         """
         prompt = event.get("prompt", "")
         persona_tier = event.get("persona_tier", "open")
         provider = event.get("provider")
 
         try:
+            vault = None
+            llm_prompt = prompt
+
+            # Scrub PII for sensitive personas before cloud LLM routing.
+            if persona_tier in ("restricted", "locked") and self._entity_vault:
+                llm_prompt, vault = await self._entity_vault.scrub(prompt)
+
             result = await self._llm.route(
                 task_type="complex_reasoning",
-                prompt=prompt,
+                prompt=llm_prompt,
                 persona_tier=persona_tier,
                 provider=provider,
             )
+
+            # Rehydrate PII tokens in the response.
+            content = result.get("content", "")
+            if vault and self._entity_vault:
+                content = self._entity_vault.rehydrate(content, vault)
+                vault.clear()
+
             return {
-                "content": result.get("content", ""),
+                "content": content,
                 "model": result.get("model"),
                 "tokens_in": result.get("tokens_in"),
                 "tokens_out": result.get("tokens_out"),
             }
         except Exception as exc:
             log.error("guardian.reason_failed", error=str(exc))
-            return {"content": "", "model": None, "tokens_in": None, "tokens_out": None}
+            raise
 
     async def _handle_vault_unlocked(self, event: dict) -> dict:
         """Handle vault_unlocked event — initialise with decrypted data.

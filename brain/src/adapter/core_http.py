@@ -343,6 +343,23 @@ class CoreHTTPClient:
         )
         return resp.json()
 
+    async def update_contact(
+        self, did: str, *, name: str = "", trust_level: str = ""
+    ) -> dict:
+        """PUT /v1/contacts/{did} — update contact name/trust."""
+        body: dict[str, str] = {}
+        if name:
+            body["name"] = name
+        if trust_level:
+            body["trust_level"] = trust_level
+        resp = await self._request("PUT", f"/v1/contacts/{did}", json=body)
+        return resp.json()
+
+    async def delete_contact(self, did: str) -> dict:
+        """DELETE /v1/contacts/{did} — remove contact from directory."""
+        resp = await self._request("DELETE", f"/v1/contacts/{did}")
+        return resp.json()
+
     # -- Vault query (correct endpoint) --------------------------------------
 
     async def query_vault(
@@ -413,8 +430,11 @@ class CoreHTTPClient:
 
     async def send_d2d(self, to_did: str, payload: dict) -> None:
         """POST /v1/msg/send — outbound DIDComm message through core."""
+        import base64
+
+        body_b64 = base64.b64encode(json.dumps(payload).encode()).decode()
         await self._request(
             "POST",
             "/v1/msg/send",
-            json={"to": to_did, "body": json.dumps(payload).encode(), "type": "dina/d2d"},
+            json={"to": to_did, "body": body_b64, "type": "dina/d2d"},
         )

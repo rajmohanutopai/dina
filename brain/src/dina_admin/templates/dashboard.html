@@ -383,14 +383,19 @@
                 if (sourceLabels[raw]) return sourceLabels[raw];
                 return raw.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
             }
+            function escapeHtml(text) {
+                var div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
             tbody.innerHTML = items.slice(0, 10).map(function(item) {
                 var rawType = item.action || item.type || '';
                 var typeLabel = typeLabels[rawType] || rawType || '\u2014';
                 return '<tr>' +
                     '<td>' + formatActivityTime(item.timestamp) + '</td>' +
-                    '<td>' + typeLabel + '</td>' +
-                    '<td>' + (item.summary || '\u2014') + '</td>' +
-                    '<td>' + friendlySource(item.source) + '</td>' +
+                    '<td>' + escapeHtml(typeLabel) + '</td>' +
+                    '<td>' + escapeHtml(item.summary || '\u2014') + '</td>' +
+                    '<td>' + escapeHtml(friendlySource(item.source)) + '</td>' +
                 '</tr>';
             }).join('');
         } catch (e) {

@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,14 @@ import (
 	"github.com/anthropics/dina/core/internal/domain"
 	"github.com/anthropics/dina/core/internal/port"
 )
+
+// d2dPayload is the JSON wrapper sent over the wire containing both
+// the NaCl-encrypted ciphertext and the Ed25519 signature over the plaintext.
+// This allows the receiver to verify the sender's signature after decryption.
+type d2dPayload struct {
+	Ciphertext string `json:"c"` // base64-encoded NaCl sealed box
+	Sig        string `json:"s"` // hex-encoded Ed25519 signature over plaintext
+}
 
 // TransportService orchestrates secure Dina-to-Dina message exchange.
 // It signs and encrypts outbound messages, decrypts and verifies inbound
@@ -29,6 +38,7 @@ type TransportService struct {
 
 	recipientPub  []byte
 	recipientPriv []byte
+	senderDID     string // this node's own DID for the From field
 	mu            sync.Mutex
 	inboundMsgs   []domain.DinaMessage
 }
@@ -78,6 +88,11 @@ func (s *TransportService) SendMessage(ctx context.Context, to domain.DID, msg d
 
 	if len(doc.VerificationMethod) == 0 {
 		return fmt.Errorf("transport: %w: no verification methods in DID document", domain.ErrDIDNotFound)
+	}
+
+	// Set the sender's DID on the message so the recipient can verify the signature.
+	if s.senderDID != "" && msg.From == "" {
+		msg.From = s.senderDID
 	}
 
 	// Serialize the plaintext message for signing.
@@ -134,12 +149,20 @@ func (s *TransportService) SendMessage(ctx context.Context, to domain.DID, msg d
 		return fmt.Errorf("transport: enqueue message: %w", err)
 	}
 
+	// Build the JSON delivery payload containing both ciphertext and signature.
+	// This ensures the signature is transmitted alongside the encrypted message,
+	// allowing the receiver to verify the sender's identity after decryption.
+	deliveryPayload, err := marshalD2DPayload(ciphertext, sig)
+	if err != nil {
+		return fmt.Errorf("transport: marshal delivery payload: %w", err)
+	}
+
 	// Attempt immediate delivery if a Deliverer is configured.
 	// On failure, the message stays in the outbox for retry via ProcessOutbox.
 	if s.deliverer != nil && len(doc.Service) > 0 {
 		endpoint := doc.Service[0].ServiceEndpoint
 		if endpoint != "" {
-			if deliverErr := s.deliverer.Deliver(ctx, endpoint, ciphertext); deliverErr == nil {
+			if deliverErr := s.deliverer.Deliver(ctx, endpoint, deliveryPayload); deliverErr == nil {
 				_ = s.outbox.MarkDelivered(ctx, msgID)
 			}
 			// Delivery failure is not an error — outbox will retry.
@@ -147,6 +170,16 @@ func (s *TransportService) SendMessage(ctx context.Context, to domain.DID, msg d
 	}
 
 	return nil
+}
+
+// marshalD2DPayload creates a JSON delivery payload with base64-encoded ciphertext
+// and hex-encoded signature.
+func marshalD2DPayload(ciphertext, sig []byte) ([]byte, error) {
+	wrapper := d2dPayload{
+		Ciphertext: base64.StdEncoding.EncodeToString(ciphertext),
+		Sig:        hex.EncodeToString(sig),
+	}
+	return json.Marshal(wrapper)
 }
 
 // ReceiveMessage decrypts an inbound envelope and verifies the sender's signature.
@@ -213,7 +246,10 @@ func (s *TransportService) ReceiveMessage(ctx context.Context, envelope domain.D
 // message whose retry time has elapsed, it resolves the recipient's endpoint
 // and attempts redelivery. Messages that fail are marked failed with
 // exponential backoff; successful deliveries are marked delivered.
+// Messages with Retries >= maxRetries are skipped (dead-letter).
 func (s *TransportService) ProcessOutbox(ctx context.Context) (processed int, err error) {
+	const maxRetries = 5
+
 	pending, err := s.outbox.ListPending(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("transport: list pending: %w", err)
@@ -224,6 +260,14 @@ func (s *TransportService) ProcessOutbox(ctx context.Context) (processed int, er
 		case <-ctx.Done():
 			return processed, ctx.Err()
 		default:
+		}
+
+		// Skip permanently failed messages (dead-letter).
+		// Don't introduce a new status — use Retries count as dead-letter signal.
+		// The message will eventually expire or be cleaned up by DeleteExpired.
+		if msg.Retries >= maxRetries {
+			processed++
+			continue
 		}
 
 		// Resolve recipient endpoint.
@@ -248,9 +292,17 @@ func (s *TransportService) ProcessOutbox(ctx context.Context) (processed int, er
 			continue
 		}
 
+		// Build the JSON delivery payload with ciphertext + signature.
+		deliveryPayload, marshalErr := marshalD2DPayload(msg.Payload, msg.Sig)
+		if marshalErr != nil {
+			_ = s.outbox.MarkFailed(ctx, msg.ID)
+			processed++
+			continue
+		}
+
 		// Attempt delivery.
 		if s.deliverer != nil {
-			if deliverErr := s.deliverer.Deliver(ctx, endpoint, msg.Payload); deliverErr != nil {
+			if deliverErr := s.deliverer.Deliver(ctx, endpoint, deliveryPayload); deliverErr != nil {
 				_ = s.outbox.MarkFailed(ctx, msg.ID)
 			} else {
 				_ = s.outbox.MarkDelivered(ctx, msg.ID)
@@ -270,11 +322,42 @@ func (s *TransportService) SetRecipientKeys(pub, priv []byte) {
 	s.recipientPriv = priv
 }
 
-// ProcessInbound decrypts a raw NaCl sealed box using the node's own X25519 keys.
+// SetSenderDID configures this node's own DID for outbound messages.
+// The DID is set as the From field on all sent messages so recipients
+// can resolve the sender's public key for signature verification.
+func (s *TransportService) SetSenderDID(did string) {
+	s.senderDID = did
+}
+
+// ProcessInbound decrypts an inbound message using the node's own X25519 keys.
+// It accepts two formats:
+//   - JSON wrapper: {"c": "<base64 ciphertext>", "s": "<hex sig>"} — new format with signature
+//   - Raw bytes: NaCl sealed box ciphertext — legacy format (no signature verification)
+//
+// When a signature is present, it is verified against the sender's public key
+// resolved from their DID document.
 func (s *TransportService) ProcessInbound(ctx context.Context, sealed []byte) (*domain.DinaMessage, error) {
 	if s.recipientPub == nil || s.recipientPriv == nil {
 		return nil, fmt.Errorf("transport: recipient keys not configured")
 	}
+
+	// Try to parse as JSON wrapper (new format with signature).
+	var ciphertext []byte
+	var sigHex string
+	var payload d2dPayload
+	if json.Unmarshal(sealed, &payload) == nil && payload.Ciphertext != "" {
+		// New JSON wrapper format — decode base64 ciphertext and extract sig.
+		decoded, decErr := base64.StdEncoding.DecodeString(payload.Ciphertext)
+		if decErr != nil {
+			return nil, fmt.Errorf("transport: decode ciphertext base64: %w", decErr)
+		}
+		ciphertext = decoded
+		sigHex = payload.Sig
+	} else {
+		// Legacy format — raw NaCl sealed box bytes (no signature).
+		ciphertext = sealed
+	}
+
 	x25519Priv, err := s.converter.Ed25519ToX25519Private(s.recipientPriv)
 	if err != nil {
 		return nil, fmt.Errorf("transport: convert private key: %w", err)
@@ -283,7 +366,7 @@ func (s *TransportService) ProcessInbound(ctx context.Context, sealed []byte) (*
 	if err != nil {
 		return nil, fmt.Errorf("transport: convert public key: %w", err)
 	}
-	plaintext, err := s.encryptor.OpenAnonymous(sealed, x25519Pub, x25519Priv)
+	plaintext, err := s.encryptor.OpenAnonymous(ciphertext, x25519Pub, x25519Priv)
 	if err != nil {
 		return nil, fmt.Errorf("transport: decrypt inbound: %w", err)
 	}
@@ -291,6 +374,45 @@ func (s *TransportService) ProcessInbound(ctx context.Context, sealed []byte) (*
 	if err := json.Unmarshal(plaintext, &msg); err != nil {
 		return nil, fmt.Errorf("transport: unmarshal inbound: %w", err)
 	}
+
+	// Verify the sender's signature if present (new format only).
+	if sigHex != "" && s.verifier != nil {
+		sigBytes, sigErr := hex.DecodeString(sigHex)
+		if sigErr != nil {
+			return nil, fmt.Errorf("transport: decode signature hex: %w", sigErr)
+		}
+
+		// Resolve the sender's DID document to get their public key.
+		senderDID, didErr := domain.NewDID(msg.From)
+		if didErr != nil {
+			return nil, fmt.Errorf("transport: invalid sender DID: %w", didErr)
+		}
+
+		senderDoc, resolveErr := s.resolver.Resolve(ctx, senderDID)
+		if resolveErr != nil {
+			return nil, fmt.Errorf("transport: resolve sender DID for sig verification: %w", resolveErr)
+		}
+
+		if len(senderDoc.VerificationMethod) == 0 {
+			return nil, fmt.Errorf("transport: %w: sender has no verification methods", domain.ErrInvalidSignature)
+		}
+
+		// Decode the sender's public key from the DID document.
+		senderMultibase := senderDoc.VerificationMethod[0].PublicKeyMultibase
+		if len(senderMultibase) < 2 {
+			return nil, fmt.Errorf("transport: %w: invalid sender public key multibase", domain.ErrInvalidSignature)
+		}
+		senderPubKey, decErr := hex.DecodeString(senderMultibase[1:]) // strip "z" prefix
+		if decErr != nil {
+			return nil, fmt.Errorf("transport: decode sender public key: %w", decErr)
+		}
+
+		valid, verErr := s.verifier.Verify(senderPubKey, plaintext, sigBytes)
+		if verErr != nil || !valid {
+			return nil, fmt.Errorf("transport: %w", domain.ErrInvalidSignature)
+		}
+	}
+
 	return &msg, nil
 }
 

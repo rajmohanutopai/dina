@@ -5597,6 +5597,294 @@
       "row": 11,
       "scenario": "Estate recovery: no timer trigger exists in codebase",
       "line": 1585
+    },
+    "TST-CORE-934": {
+      "path": "29.1",
+      "row": 1,
+      "scenario": "SendMessage stores Ed25519 signature in outbox",
+      "line": 1632
+    },
+    "TST-CORE-935": {
+      "path": "29.1",
+      "row": 2,
+      "scenario": "Valid signature accepted on receive",
+      "line": 1633
+    },
+    "TST-CORE-936": {
+      "path": "29.1",
+      "row": 3,
+      "scenario": "Wrong signature rejected (wrong signer key)",
+      "line": 1634
+    },
+    "TST-CORE-937": {
+      "path": "29.1",
+      "row": 4,
+      "scenario": "Tampered ciphertext rejected (bit flip)",
+      "line": 1635
+    },
+    "TST-CORE-938": {
+      "path": "29.1",
+      "row": 5,
+      "scenario": "Empty signature passes (backward compatibility)",
+      "line": 1636
+    },
+    "TST-CORE-939": {
+      "path": "29.2",
+      "row": 1,
+      "scenario": "ProcessOutbox delivers pending messages",
+      "line": 1642
+    },
+    "TST-CORE-940": {
+      "path": "29.2",
+      "row": 2,
+      "scenario": "Delivery failure marks message failed",
+      "line": 1643
+    },
+    "TST-CORE-941": {
+      "path": "29.2",
+      "row": 3,
+      "scenario": "Retry after transient failure succeeds",
+      "line": 1644
+    },
+    "TST-CORE-942": {
+      "path": "29.2",
+      "row": 4,
+      "scenario": "Unresolvable DID marked failed",
+      "line": 1645
+    },
+    "TST-CORE-943": {
+      "path": "29.2",
+      "row": 5,
+      "scenario": "No deliverer marks all failed",
+      "line": 1646
+    },
+    "TST-CORE-944": {
+      "path": "29.2",
+      "row": 6,
+      "scenario": "Context cancellation stops ProcessOutbox",
+      "line": 1647
+    },
+    "TST-CORE-945": {
+      "path": "29.2",
+      "row": 7,
+      "scenario": "Queue limit enforced (reject when full)",
+      "line": 1648
+    },
+    "TST-CORE-946": {
+      "path": "29.2",
+      "row": 8,
+      "scenario": "Retry count increments across attempts",
+      "line": 1649
+    },
+    "TST-CORE-947": {
+      "path": "29.3",
+      "row": 1,
+      "scenario": "IP rate limit rejects excess requests",
+      "line": 1655
+    },
+    "TST-CORE-948": {
+      "path": "29.3",
+      "row": 2,
+      "scenario": "Router.Ingest rejects flood via ErrRateLimited",
+      "line": 1656
+    },
+    "TST-CORE-949": {
+      "path": "29.3",
+      "row": 3,
+      "scenario": "Dead drop stores when vault locked",
+      "line": 1657
+    },
+    "TST-CORE-950": {
+      "path": "29.3",
+      "row": 4,
+      "scenario": "Inbox spools when vault unlocked",
+      "line": 1658
+    },
+    "TST-CORE-951": {
+      "path": "29.3",
+      "row": 5,
+      "scenario": "Spool full rejects new messages (Valve 2)",
+      "line": 1659
+    },
+    "TST-CORE-952": {
+      "path": "29.3",
+      "row": 6,
+      "scenario": "Sweeper processes dead drop blobs",
+      "line": 1660
+    },
+    "TST-CORE-953": {
+      "path": "29.3",
+      "row": 7,
+      "scenario": "ProcessPending sweeps + drains inbox",
+      "line": 1661
+    },
+    "TST-CORE-954": {
+      "path": "29.3",
+      "row": 8,
+      "scenario": "Oversized payload rejected (>256KB)",
+      "line": 1662
+    },
+    "TST-CORE-955": {
+      "path": "29.3",
+      "row": 9,
+      "scenario": "SweepFull returns detailed results",
+      "line": 1663
+    },
+    "TST-CORE-956": {
+      "path": "29.4",
+      "row": 1,
+      "scenario": "Replayed message (same ID) detected",
+      "line": 1669
+    },
+    "TST-CORE-957": {
+      "path": "29.4",
+      "row": 2,
+      "scenario": "DID spoofing rejected (FromKID mismatch)",
+      "line": 1670
+    },
+    "TST-CORE-958": {
+      "path": "29.5",
+      "row": 1,
+      "scenario": "SQL injection in message body safely deserialized",
+      "line": 1676
+    },
+    "TST-CORE-959": {
+      "path": "29.5",
+      "row": 2,
+      "scenario": "JSON escape injection safely deserialized",
+      "line": 1677
+    },
+    "TST-CORE-960": {
+      "path": "29.5",
+      "row": 3,
+      "scenario": "Oversized field in body safely deserialized",
+      "line": 1678
+    },
+    "TST-CORE-961": {
+      "path": "29.5",
+      "row": 4,
+      "scenario": "Null bytes in body safely deserialized",
+      "line": 1679
+    },
+    "TST-CORE-962": {
+      "path": "29.5",
+      "row": 5,
+      "scenario": "Nested JSON in body safely deserialized",
+      "line": 1680
+    },
+    "TST-CORE-963": {
+      "path": "29.5",
+      "row": 6,
+      "scenario": "HTML/XSS in body safely deserialized",
+      "line": 1681
+    },
+    "TST-CORE-964": {
+      "path": "29.6",
+      "row": 1,
+      "scenario": "Cross-persona DEK isolation (5 personas)",
+      "line": 1687
+    },
+    "TST-CORE-965": {
+      "path": "29.6",
+      "row": 2,
+      "scenario": "User salt uniqueness",
+      "line": 1688
+    },
+    "TST-CORE-966": {
+      "path": "29.6",
+      "row": 3,
+      "scenario": "HKDF determinism",
+      "line": 1689
+    },
+    "TST-CORE-967": {
+      "path": "29.6",
+      "row": 4,
+      "scenario": "KeyDeriver persona DEK isolation",
+      "line": 1690
+    },
+    "TST-CORE-968": {
+      "path": "29.6",
+      "row": 5,
+      "scenario": "Signing key index independence",
+      "line": 1691
+    },
+    "TST-CORE-969": {
+      "path": "29.7",
+      "row": 1,
+      "scenario": "Non-hardened path rejected",
+      "line": 1697
+    },
+    "TST-CORE-970": {
+      "path": "29.7",
+      "row": 2,
+      "scenario": "BIP-44 purpose 44' forbidden",
+      "line": 1698
+    },
+    "TST-CORE-971": {
+      "path": "29.7",
+      "row": 3,
+      "scenario": "Sibling hardened path unlinkability",
+      "line": 1699
+    },
+    "TST-CORE-972": {
+      "path": "29.8",
+      "row": 1,
+      "scenario": "Invalid checksum rejected",
+      "line": 1705
+    },
+    "TST-CORE-973": {
+      "path": "29.8",
+      "row": 2,
+      "scenario": "Wrong word count rejected (12 vs 24)",
+      "line": 1706
+    },
+    "TST-CORE-974": {
+      "path": "29.8",
+      "row": 3,
+      "scenario": "Deterministic seed derivation",
+      "line": 1707
+    },
+    "TST-CORE-975": {
+      "path": "29.9",
+      "row": 1,
+      "scenario": "Locked persona denied despite gatekeeper allow",
+      "line": 1713
+    },
+    "TST-CORE-976": {
+      "path": "29.9",
+      "row": 2,
+      "scenario": "Locked persona denial audited",
+      "line": 1714
+    },
+    "TST-CORE-977": {
+      "path": "29.9",
+      "row": 3,
+      "scenario": "Egress denied and audited",
+      "line": 1715
+    },
+    "TST-CORE-978": {
+      "path": "29.10",
+      "row": 1,
+      "scenario": "Missing policy category denied (default deny)",
+      "line": 1721
+    },
+    "TST-CORE-979": {
+      "path": "29.10",
+      "row": 2,
+      "scenario": "Tier none blocks category",
+      "line": 1722
+    },
+    "TST-CORE-980": {
+      "path": "29.10",
+      "row": 3,
+      "scenario": "No policy for contact - all categories denied",
+      "line": 1723
+    },
+    "TST-CORE-981": {
+      "path": "29.10",
+      "row": 4,
+      "scenario": "Malformed payload (non-TieredPayload) denied",
+      "line": 1724
     }
   },
   "sections": {
@@ -6724,6 +7012,74 @@
       "TST-CORE-877",
       "TST-CORE-878",
       "TST-CORE-879"
+    ],
+    "29.1": [
+      "TST-CORE-934",
+      "TST-CORE-935",
+      "TST-CORE-936",
+      "TST-CORE-937",
+      "TST-CORE-938"
+    ],
+    "29.2": [
+      "TST-CORE-939",
+      "TST-CORE-940",
+      "TST-CORE-941",
+      "TST-CORE-942",
+      "TST-CORE-943",
+      "TST-CORE-944",
+      "TST-CORE-945",
+      "TST-CORE-946"
+    ],
+    "29.3": [
+      "TST-CORE-947",
+      "TST-CORE-948",
+      "TST-CORE-949",
+      "TST-CORE-950",
+      "TST-CORE-951",
+      "TST-CORE-952",
+      "TST-CORE-953",
+      "TST-CORE-954",
+      "TST-CORE-955"
+    ],
+    "29.4": [
+      "TST-CORE-956",
+      "TST-CORE-957"
+    ],
+    "29.5": [
+      "TST-CORE-958",
+      "TST-CORE-959",
+      "TST-CORE-960",
+      "TST-CORE-961",
+      "TST-CORE-962",
+      "TST-CORE-963"
+    ],
+    "29.6": [
+      "TST-CORE-964",
+      "TST-CORE-965",
+      "TST-CORE-966",
+      "TST-CORE-967",
+      "TST-CORE-968"
+    ],
+    "29.7": [
+      "TST-CORE-969",
+      "TST-CORE-970",
+      "TST-CORE-971"
+    ],
+    "29.8": [
+      "TST-CORE-972",
+      "TST-CORE-973",
+      "TST-CORE-974"
+    ],
+    "29.9": [
+      "TST-CORE-975",
+      "TST-CORE-976",
+      "TST-CORE-977"
+    ],
+    "29.10": [
+      "TST-CORE-978",
+      "TST-CORE-979",
+      "TST-CORE-980",
+      "TST-CORE-981"
     ]
   },
   "total": 0

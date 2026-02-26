@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+
+	"github.com/mr-tron/base58"
 
 	"github.com/anthropics/dina/core/internal/domain"
 	"github.com/anthropics/dina/core/internal/port"
@@ -25,7 +28,7 @@ func (h *IdentityHandler) HandleGetDID(w http.ResponseWriter, r *http.Request) {
 	// Derive the DID from the signer's public key.
 	pubKey := h.Signer.PublicKey()
 	did, err := h.DID.Create(r.Context(), pubKey)
-	if err != nil {
+	if err != nil && did == "" {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
@@ -112,16 +115,41 @@ func (h *IdentityHandler) HandleVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The resolved document is the raw public key or DID document bytes.
-	// For verification we check that the signature is valid for the data.
-	// A full implementation would parse the DID document and extract the
-	// verification method. Here we use a simplified check.
-	_ = doc
-	_ = sig
-	_ = data
+	// Parse the DID document to extract the public key.
+	var didDoc domain.DIDDocument
+	if err := json.Unmarshal(doc, &didDoc); err != nil {
+		http.Error(w, `{"error":"invalid DID document"}`, http.StatusBadRequest)
+		return
+	}
 
-	// Use the signer's public key as a fallback for self-verification.
-	valid := len(sig) == 64 && len(data) > 0
+	// Extract the first verification method.
+	if len(didDoc.VerificationMethod) == 0 {
+		http.Error(w, `{"error":"no verification method in DID document"}`, http.StatusBadRequest)
+		return
+	}
+
+	multibaseKey := didDoc.VerificationMethod[0].PublicKeyMultibase
+	if len(multibaseKey) < 2 || multibaseKey[0] != 'z' {
+		http.Error(w, `{"error":"unsupported multibase encoding"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Decode base58btc (strip 'z' prefix).
+	decoded, err := base58.Decode(multibaseKey[1:])
+	if err != nil {
+		http.Error(w, `{"error":"invalid base58 encoding"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Strip the 2-byte Ed25519 multicodec prefix (0xed, 0x01).
+	if len(decoded) < 34 || decoded[0] != 0xed || decoded[1] != 0x01 {
+		http.Error(w, `{"error":"invalid Ed25519 multicodec prefix"}`, http.StatusBadRequest)
+		return
+	}
+	pubKey := ed25519.PublicKey(decoded[2:])
+
+	// Verify the Ed25519 signature.
+	valid := ed25519.Verify(pubKey, data, sig)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"valid": valid})
@@ -132,7 +160,7 @@ func (h *IdentityHandler) HandleVerify(w http.ResponseWriter, r *http.Request) {
 func (h *IdentityHandler) HandleGetDocument(w http.ResponseWriter, r *http.Request) {
 	pubKey := h.Signer.PublicKey()
 	did, err := h.DID.Create(r.Context(), pubKey)
-	if err != nil {
+	if err != nil && did == "" {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}

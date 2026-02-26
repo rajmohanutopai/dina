@@ -96,7 +96,8 @@ class TestCLIEd25519Signing:
         global _docker_ed25519_paired
         if DOCKER_MODE and docker_services is not None:
             base = docker_services.core_url("alonso")
-            headers = {"Authorization": f"Bearer {docker_services.brain_token}"}
+            # Pairing endpoints are admin-only → use CLIENT_TOKEN
+            headers = {"Authorization": f"Bearer {docker_services.client_token}"}
 
             # Initiate pairing to get code
             resp = httpx.post(

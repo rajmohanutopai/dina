@@ -400,6 +400,19 @@ func (m *MockTaskQueuer) Dequeue(_ context.Context) (*Task, error) {
 	return nil, nil
 }
 
+func (m *MockTaskQueuer) Acknowledge(_ context.Context, taskID string) (*Task, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.tasks {
+		if m.tasks[i].ID == taskID && m.tasks[i].Status == "running" {
+			m.tasks[i].Status = "completed"
+			t := m.tasks[i]
+			return &t, nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
 func (m *MockTaskQueuer) Complete(_ context.Context, taskID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -909,6 +922,16 @@ func (m *MockInboxManager) ProcessSpool(_ context.Context) (int, error) {
 	m.SpoolData = nil
 	m.SpoolBytes = 0
 	return count, nil
+}
+
+func (m *MockInboxManager) DrainSpool(_ context.Context) ([][]byte, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	payloads := make([][]byte, len(m.SpoolData))
+	copy(payloads, m.SpoolData)
+	m.SpoolData = nil
+	m.SpoolBytes = 0
+	return payloads, nil
 }
 
 func (m *MockInboxManager) CheckDIDRate(did string) bool {

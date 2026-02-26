@@ -31,18 +31,14 @@ func (h *TaskHandler) HandleAck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Process the next queued task. The task_id is used for correlation
-	// and audit logging in the task service.
-	task, err := h.Task.ProcessNext(r.Context())
+	// Acknowledge the specific task by ID — marks it completed and removes
+	// it from the in-flight set.
+	task, err := h.Task.Acknowledge(r.Context(), req.TaskID)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusNotFound)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if task == nil {
-		json.NewEncoder(w).Encode(map[string]string{"status": "no pending tasks"})
-		return
-	}
 	json.NewEncoder(w).Encode(map[string]string{"status": "acknowledged", "task_id": task.ID})
 }

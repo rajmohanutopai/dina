@@ -2,9 +2,12 @@ package test
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/anthropics/dina/core/internal/adapter/auth"
 	"github.com/anthropics/dina/core/internal/domain"
 	"github.com/anthropics/dina/core/test/testutil"
 )
@@ -1513,4 +1516,87 @@ func TestAuth_1_5_9_BrainCannotAccessRawVaultFiles(t *testing.T) {
 
 	// Brain can only access /v1/brain/* paths. The middleware enforces this.
 	// The deployment invariant: brain container has no volume mount to vault files.
+}
+
+// --------------------------------------------------------------------------
+// §1.6 Concurrent Token Access (race condition safety)
+// --------------------------------------------------------------------------
+
+// TestConcurrentTokenValidation verifies that concurrent RegisterClientToken
+// and ValidateClientToken calls do not trigger a data race on the internal
+// clientTokens map. Run with `go test -race` to detect races.
+func TestConcurrentTokenValidation(t *testing.T) {
+	// Use a fresh tokenValidator to avoid interference with other tests.
+	tv := auth.NewDefaultTokenValidator(testutil.TestBrainToken)
+
+	const goroutines = 50
+	const iterations = 100
+
+	var wg sync.WaitGroup
+
+	// Spawn writer goroutines that register new client tokens concurrently.
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < iterations; j++ {
+				token := fmt.Sprintf("concurrent-token-%d-%d", id, j)
+				deviceID := fmt.Sprintf("device-%d-%d", id, j)
+				tv.RegisterClientToken(token, deviceID)
+			}
+		}(i)
+	}
+
+	// Spawn reader goroutines that validate client tokens concurrently.
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < iterations; j++ {
+				// Validate a pre-registered token (from NewDefaultTokenValidator).
+				tv.ValidateClientToken(testutil.TestClientToken)
+				// Validate a token that may or may not have been registered yet.
+				token := fmt.Sprintf("concurrent-token-%d-%d", id, j)
+				tv.ValidateClientToken(token)
+			}
+		}(i)
+	}
+
+	// Spawn goroutines that call IdentifyToken concurrently (exercises both
+	// ValidateBrainToken and ValidateClientToken code paths).
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < iterations; j++ {
+				tv.IdentifyToken(testutil.TestBrainToken)
+				tv.IdentifyToken(testutil.TestClientToken)
+				tv.IdentifyToken("unknown-token")
+			}
+		}()
+	}
+
+	// Wait for all goroutines to complete. If there is a data race, the
+	// -race detector will flag it. If there is a deadlock, this will hang
+	// and the test will timeout.
+	wg.Wait()
+
+	// Verify the pre-registered token is still valid after all the concurrent
+	// writes (sanity check that the map is not corrupted).
+	deviceID, ok := tv.ValidateClientToken(testutil.TestClientToken)
+	if !ok {
+		t.Fatal("pre-registered TestClientToken should still be valid after concurrent access")
+	}
+	if deviceID != "device-001" {
+		t.Fatalf("expected device-001, got %q", deviceID)
+	}
+
+	// Verify one of the concurrently registered tokens is accessible.
+	deviceID, ok = tv.ValidateClientToken("concurrent-token-0-0")
+	if !ok {
+		t.Fatal("concurrently registered token should be valid")
+	}
+	if deviceID != "device-0-0" {
+		t.Fatalf("expected device-0-0, got %q", deviceID)
+	}
 }

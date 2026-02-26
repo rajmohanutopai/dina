@@ -58,7 +58,7 @@ async def login(request: LoginRequest) -> JSONResponse:
     response = JSONResponse(content={"status": "ok", "redirect": "/admin/dashboard"})
     response.set_cookie(
         key="dina_client_token",
-        value=request.token,
+        value=request.token.strip(),
         httponly=True,
         samesite="strict",
         secure=False,
@@ -66,4 +66,13 @@ async def login(request: LoginRequest) -> JSONResponse:
         path="/admin",
     )
     log.info("admin.login_success")
+    return response
+
+
+@router.post("/logout")
+async def logout() -> JSONResponse:
+    """Clear the auth cookie and redirect to login page."""
+    response = JSONResponse(content={"status": "ok", "redirect": "/admin/login"})
+    response.delete_cookie("dina_client_token", path="/admin")
+    log.info("admin.logout")
     return response
