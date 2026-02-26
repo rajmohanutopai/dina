@@ -87,6 +87,7 @@ def test_login_page_renders(client) -> None:
     assert "token" in resp.text.lower()
 
 
+# TST-BRAIN-482 Login cookie stores stripped token
 def test_login_valid_token_sets_cookie(client) -> None:
     """POST /admin/login with valid token sets HttpOnly cookie."""
     resp = client.post(

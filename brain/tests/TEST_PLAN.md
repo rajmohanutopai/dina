@@ -951,6 +951,168 @@
 
 ---
 
+## 19. Code Review Fix Verification
+
+> Traceability section mapping brain-side code review fixes to their
+> verification tests. Each fix references the original issue number
+> and the test IDs that verify it.
+
+### 19.1 D2D Serialization Fix (CR-1)
+
+> **CR-1**: `send_d2d` bytes serialization → base64-encoded JSON.
+
+| # | Scenario | Input | Expected | Fix |
+|---|----------|-------|----------|-----|
+| 1 | **[TST-BRAIN-467]** `send_d2d` produces base64-encoded JSON body | Call `send_d2d(to_did, payload)` | Request body is valid JSON with base64 `body` field (not raw `.encode()` bytes) | CR-1 |
+| 2 | **[TST-BRAIN-468]** `send_d2d` request is valid at wire level | Capture outbound HTTP request | `Content-Type: application/json`, body parseable by `json.loads()` | CR-1 |
+
+### 19.2 Entity Vault Integration (CR-3, CR-4)
+
+> **CR-3**: Wire entity vault scrub/rehydrate into reasoning path.
+> **CR-4**: Fix `LLMProvider.complete()` call signature — pass full messages list.
+
+| # | Scenario | Input | Expected | Fix |
+|---|----------|-------|----------|-----|
+| 1 | **[TST-BRAIN-469]** `scrub_and_call` passes full messages list to LLM | Mock LLM, call `scrub_and_call` | LLM receives `list[dict]` (not string from last message) | CR-4 |
+| 2 | **[TST-BRAIN-470]** Sensitive persona prompt scrubbed before cloud LLM | Restricted persona + cloud LLM route | Prompt sent to LLM contains no PII tokens; rehydrated in response | CR-3 |
+| 3 | **[TST-BRAIN-471]** Open persona prompt bypasses scrubbing | Open persona + LLM route | Prompt sent as-is (no scrub/rehydrate overhead) | CR-3 |
+
+### 19.3 LLM Router Config (CR-5)
+
+> **CR-5**: Fix LLM router config key mismatch — `preferred_cloud` and
+> `cloud_llm_consent` instead of `cloud_llm`.
+
+| # | Scenario | Input | Expected | Fix |
+|---|----------|-------|----------|-----|
+| 1 | **[TST-BRAIN-472]** LLMRouter receives `{preferred_cloud, cloud_llm_consent}` keys | Construct LLMRouter with config | Config keys are `preferred_cloud` and `cloud_llm_consent` | CR-5 |
+| 2 | **[TST-BRAIN-473]** Reconfigure callback passes correct keys | Trigger reconfigure with new cloud preference | `preferred_cloud` and `cloud_llm_consent` updated (not `cloud_llm`) | CR-5 |
+
+### 19.4 Contact Routes End-to-End (CR-6)
+
+> **CR-6**: Admin UI uses core API for contact CRUD (not vault-item hacks).
+
+| # | Scenario | Input | Expected | Fix |
+|---|----------|-------|----------|-----|
+| 1 | **[TST-BRAIN-474]** Admin update contact calls `PUT /v1/contacts/{did}` | Admin UI update contact form | `CoreHTTPClient.update_contact(did, name, trust)` called | CR-6 |
+| 2 | **[TST-BRAIN-475]** Admin delete contact calls `DELETE /v1/contacts/{did}` | Admin UI delete contact | `CoreHTTPClient.delete_contact(did)` called | CR-6 |
+
+### 19.5 Fiduciary Task ACK Safety (CR-7)
+
+> **CR-7**: Fiduciary priority notify failure must NOT ACK the task.
+
+| # | Scenario | Input | Expected | Fix |
+|---|----------|-------|----------|-----|
+| 1 | **[TST-BRAIN-476]** Fiduciary notify failure → task NOT ACKed | Fiduciary task + notify raises exception | Task remains in queue (re-queued by core watchdog) | CR-7 |
+| 2 | **[TST-BRAIN-477]** Solicited notify failure → task still ACKed | Solicited task + notify raises exception | Task ACKed (best-effort notification) | CR-7 |
+| 3 | **[TST-BRAIN-478]** Engagement notify failure → task still ACKed | Engagement task + notify raises exception | Task ACKed (best-effort, saved for briefing) | CR-7 |
+
+### 19.6 MCP Concurrency Safety (CR-8)
+
+> **CR-8**: MCP stdio sessions need asyncio.Lock to prevent cross-wiring.
+
+| # | Scenario | Input | Expected | Fix |
+|---|----------|-------|----------|-----|
+| 1 | **[TST-BRAIN-479]** Concurrent MCP requests don't cross-wire | 3 concurrent `_send_request` calls | Each response matches its request ID | CR-8 |
+| 2 | **[TST-BRAIN-480]** MCP response ID mismatch raises MCPError | Response with wrong `id` field | `MCPError` raised (not silent mismatch) | CR-8 |
+| 3 | **[TST-BRAIN-481]** MCP session has `asyncio.Lock` | Inspect `_StdioSession` | `lock` field of type `asyncio.Lock` present | CR-8 |
+
+### 19.7 Admin Login & Logout (CR-9, CR-20)
+
+> **CR-9**: Fix admin login cookie — strip whitespace, secure flag.
+> **CR-20**: Add proper POST `/admin/logout` route.
+
+| # | Scenario | Input | Expected | Fix |
+|---|----------|-------|----------|-----|
+| 1 | **[TST-BRAIN-482]** Login cookie stores stripped token | Login with whitespace-padded token | Cookie value has no leading/trailing whitespace | CR-9 |
+| 2 | **[TST-BRAIN-483]** Secure flag set based on scheme | Login via HTTPS | Cookie has `secure=True` | CR-9 |
+| 3 | **[TST-BRAIN-484]** Secure flag unset on HTTP | Login via HTTP (dev) | Cookie has `secure=False` | CR-9 |
+| 4 | **[TST-BRAIN-485]** POST `/admin/logout` clears cookie | POST to `/admin/logout` | `Set-Cookie: dina_client_token=; Path=/admin; Max-Age=0` | CR-20 |
+| 5 | **[TST-BRAIN-486]** Logout form uses POST (not GET link) | Inspect base template | `<form method="post" action="/admin/logout">` | CR-20 |
+
+### 19.8 Config & Startup Fixes (CR-10, CR-11, CR-19, CR-21)
+
+> **CR-10**: Default core URL corrected to port 8100.
+> **CR-11**: Presidio tldextract cache in restricted FS.
+> **CR-19**: MCP server commands from config.
+> **CR-21**: PresidioScrubber as primary runtime scrubber.
+
+| # | Scenario | Input | Expected | Fix |
+|---|----------|-------|----------|-----|
+| 1 | **[TST-BRAIN-487]** Default core URL is `http://core:8100` | No `DINA_CORE_URL` env | Default port 8100 (not 8300) | CR-10 |
+| 2 | **[TST-BRAIN-488]** `TLDEXTRACT_CACHE` set before Presidio init | Restricted filesystem (no home dir) | `TLDEXTRACT_CACHE` points to `tempfile.gettempdir()` | CR-11 |
+| 3 | **[TST-BRAIN-489]** MCP commands loaded from `DINA_MCP_SERVERS` | `DINA_MCP_SERVERS=name=cmd,...` | MCPStdioClient created with configured commands | CR-19 |
+| 4 | **[TST-BRAIN-490]** Empty MCP config is inert | No `DINA_MCP_SERVERS` env | MCPStdioClient created with no sessions (no error) | CR-19 |
+| 5 | **[TST-BRAIN-491]** PresidioScrubber used as primary when available | Presidio + spaCy installed | `PresidioScrubber` instantiated (not `_SpacyScrubber`) | CR-21 |
+| 6 | **[TST-BRAIN-492]** Fallback to SpacyScrubber when Presidio unavailable | Presidio not installed | `_SpacyScrubber` used as fallback | CR-21 |
+| 7 | **[TST-BRAIN-493]** Fallback to None when no scrubber available | Neither installed | `scrubber=None`, warning logged | CR-21 |
+
+### 19.9 Error Handling & Masking (CR-17)
+
+> **CR-17**: Fix error masking — exceptions must surface as 500, not empty results.
+
+| # | Scenario | Input | Expected | Fix |
+|---|----------|-------|----------|-----|
+| 1 | **[TST-BRAIN-494]** `_handle_reason` exception surfaces as HTTP 500 | LLM raises during reasoning | `HTTPException(500)` returned to core (not empty result) | CR-17 |
+| 2 | **[TST-BRAIN-495]** Process crash returns `status: "error"` | Exception in guardian crash handler | Response includes `{"status": "error"}` | CR-17 |
+| 3 | **[TST-BRAIN-496]** Reason empty result on exception prevented | LLM timeout exception | Exception re-raised (not swallowed into empty content) | CR-17 |
+
+### 19.10 XSS Prevention (CR-16)
+
+> **CR-16**: Fix XSS in admin templates — escape dynamic content.
+
+| # | Scenario | Input | Expected | Fix |
+|---|----------|-------|----------|-----|
+| 1 | **[TST-BRAIN-497]** Dashboard escapes `item.summary` in innerHTML | XSS payload `<script>alert(1)</script>` in summary | Rendered as escaped text (not executed) | CR-16 |
+| 2 | **[TST-BRAIN-498]** Contacts escapes DID in title attribute | DID containing `"onmouseover=alert(1)"` | Attribute value escaped | CR-16 |
+| 3 | **[TST-BRAIN-499]** No inline `onclick` handlers in templates | Inspect contacts template | `data-did` + `addEventListener` pattern (not inline handler) | CR-16 |
+
+### 19.11 Sync Engine Scheduler (CR-18)
+
+> **CR-18**: Wire sync engine with ASGI lifespan background task.
+
+| # | Scenario | Input | Expected | Fix |
+|---|----------|-------|----------|-----|
+| 1 | **[TST-BRAIN-500]** ASGI lifespan starts sync background task | App startup | Sync engine task running in background | CR-18 |
+| 2 | **[TST-BRAIN-501]** Sync cycle failure doesn't crash the loop | Exception in `run_sync_cycle()` | Error logged, loop continues after sleep | CR-18 |
+| 3 | **[TST-BRAIN-502]** Lifespan shutdown cancels sync task | App shutdown (SIGTERM) | Sync task cancelled cleanly (no orphan) | CR-18 |
+
+### 19.12 Traceability: Fix → Test Mapping
+
+> Cross-reference of all 21 code review fixes to their verification test IDs.
+
+| CR# | Fix Description | Core TST IDs | Brain TST IDs | Status |
+|-----|----------------|-------------|---------------|--------|
+| 1 | send_d2d bytes serialization | TST-CORE-1002 | TST-BRAIN-467,468 | FIXED |
+| 2 | Core KV protocol (JSON) | TST-CORE-1046,1047,1048 | — | FIXED |
+| 3 | Entity vault scrub/rehydrate | — | TST-BRAIN-470,471 | FIXED |
+| 4 | LLM call signature | — | TST-BRAIN-469 | FIXED |
+| 5 | LLM router config keys | — | TST-BRAIN-472,473 | FIXED |
+| 6 | Contact directory routes | TST-CORE-1052,1053,1054 | TST-BRAIN-474,475 | FIXED |
+| 7 | Fiduciary task ACK safety | — | TST-BRAIN-476,477,478 | FIXED |
+| 8 | MCP stdio concurrency | — | TST-BRAIN-479,480,481 | FIXED |
+| 9 | Admin login cookie | — | TST-BRAIN-482,483,484 | FIXED |
+| 10 | Default core URL port | TST-CORE-1055 | TST-BRAIN-487 | FIXED |
+| 11 | Presidio tldextract cache | — | TST-BRAIN-488 | FIXED |
+| 12 | Process contract (snake_case) | TST-CORE-1040,1041 | — | FIXED |
+| 13 | Reason contract (prompt) | TST-CORE-1042,1043 | — | FIXED |
+| 14 | Health endpoint (/healthz) | TST-CORE-1044,1045 | — | FIXED |
+| 15 | Hybrid search fallback | TST-CORE-1049,1050,1051 | — | FIXED |
+| 16 | XSS in admin templates | — | TST-BRAIN-497,498,499 | FIXED |
+| 17 | Error masking | — | TST-BRAIN-494,495,496 | FIXED |
+| 18 | Sync engine scheduler | — | TST-BRAIN-500,501,502 | FIXED |
+| 19 | MCP server config | — | TST-BRAIN-489,490 | FIXED |
+| 20 | Logout route | — | TST-BRAIN-485,486 | FIXED |
+| 21 | Presidio primary scrubber | — | TST-BRAIN-491,492,493 | FIXED |
+
+| E2E# | Fix Description | Core TST IDs | Status |
+|------|----------------|-------------|--------|
+| A | DrainSpool + onEnvelope | TST-CORE-1031,1032,1033,1036 | FIXED |
+| B | Sender DID (msg.From) | TST-CORE-1034 | FIXED |
+| C | DINA_OWN_DID config | TST-CORE-1035,1056 | FIXED |
+| D | Immediate decrypt | TST-CORE-1036 | FIXED |
+
+---
+
 ## Appendix A: Test Fixtures
 
 - **Sample emails**: 100 emails across categories (promotions, social, primary, updates) for ingestion testing

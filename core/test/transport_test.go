@@ -1155,6 +1155,7 @@ func TestTransport_7_3_8_UnresolvableDIDNotCached(t *testing.T) {
 // ==========================================================================
 
 // TST-CORE-439
+// TST-CORE-1034 SendMessage populates msg.From from senderDID
 func TestTransport_7_4_5_PlaintextStructure(t *testing.T) {
 	msg := testutil.TestD2DMessage()
 

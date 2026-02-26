@@ -805,6 +805,7 @@ func TestIdentity_3_4_3_UpdateContactTrustLevel(t *testing.T) {
 }
 
 // TST-CORE-181
+// TST-CORE-1053 DELETE /v1/contacts/{did} removes contact
 func TestIdentity_3_4_4_DeleteContact(t *testing.T) {
 	impl := realContactDirectory
 	testutil.RequireImplementation(t, impl, "ContactDirectory")

@@ -660,6 +660,7 @@ def test_pii_3_2_8_circular_dependency_invariant() -> None:
 
 @pytest.mark.asyncio
 # TST-BRAIN-423
+# TST-BRAIN-469 scrub_and_call passes full messages list to LLM
 async def test_pii_3_3_12_scrub_and_call_integration(entity_vault, mock_scrubber, mock_core) -> None:
     """Full scrub_and_call flow: Tier1 -> Tier2 -> cloud LLM -> rehydrate."""
     mock_scrubber.scrub.return_value = (

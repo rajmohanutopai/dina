@@ -1394,6 +1394,7 @@ async def test_guardian_2_8_4_brain_calls_post_dina_send(guardian) -> None:
 
 
 # TST-BRAIN-392
+# TST-BRAIN-476 (partial) Fiduciary ACK behavior
 @pytest.mark.asyncio
 async def test_guardian_2_3_13_task_ack_after_success(guardian) -> None:
     """SS2.3.13: Brain ACKs task after successful processing.

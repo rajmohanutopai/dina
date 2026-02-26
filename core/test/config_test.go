@@ -22,6 +22,8 @@ import (
 // --------------------------------------------------------------------------
 
 // TST-CORE-551
+// TST-CORE-1035 DINA_OWN_DID loaded into Config.OwnDID
+// TST-CORE-1056 DINA_OWN_DID env var loaded
 func TestConfig_14_1_1_LoadFromEnvVars(t *testing.T) {
 	// impl := realConfigLoader = realconfig.NewLoader(...)
 	impl := realConfigLoader

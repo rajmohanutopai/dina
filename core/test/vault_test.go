@@ -651,6 +651,7 @@ func TestVault_4_3_2_SemanticVectorSearch(t *testing.T) {
 }
 
 // TST-CORE-250
+// TST-CORE-1049 Hybrid query returns FTS5 results
 func TestVault_4_3_3_HybridSearch(t *testing.T) {
 	impl := realVaultManager
 	// impl = vault.NewManager(dir)

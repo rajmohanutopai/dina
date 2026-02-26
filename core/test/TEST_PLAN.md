@@ -1723,6 +1723,230 @@
 | 3 | **[TST-CORE-980]** No policy for contact → all categories denied | Unknown contact DID | All categories denied |
 | 4 | **[TST-CORE-981]** Malformed payload (non-TieredPayload) denied | Raw string instead of TieredPayload | Category denied |
 
+## 30. Test System Quality & Infrastructure
+
+> Covers meta-quality of the test system itself: strict-real enforcement,
+> contract fidelity, authz bootstrapping, known-bad elimination, traceability,
+> CI gates, and data isolation. Based on test_issues.txt code review (2026-02-25).
+
+### 30.1 Strict-Real Mode Enforcement (test_issues #1)
+
+> Status: STRUCTURAL FIX REQUIRED. Real integration/E2E suites silently
+> fall back to mocks when real APIs fail, masking regressions.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-982]** `DINA_STRICT_REAL=1` fails on any real API fallback | Set env, run real suite with broken API | Test fails immediately (no mock fallback) |
+| 2 | **[TST-CORE-983]** `real_clients.py _try_request()` raises on non-2xx in strict mode | Strict mode + 500 response from core | Exception raised (not `None` return) |
+| 3 | **[TST-CORE-984]** `real_nodes.py _api_request()` raises on failure in strict mode | Strict mode + connection timeout | Exception raised (not `None` return) |
+| 4 | **[TST-CORE-985]** Mock side-effects disabled in strict-real suites | Strict mode + real API success | No mock state updated alongside real call |
+| 5 | **[TST-CORE-986]** All 45 fallback locations (22+22+1) verified strict | Audit `real_clients.py`, `real_nodes.py`, `real_d2d.py` | Zero silent fallback paths in strict mode |
+
+### 30.2 Authz Boundary Correctness (test_issues #2 — FIXED)
+
+> Status: FIXED. `conftest.py` now uses `CLIENT_TOKEN` for admin endpoints
+> and `BRAIN_TOKEN` for brain-internal endpoints. No fallback.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-987]** E2E conftest uses CLIENT_TOKEN for persona create/unlock | Inspect `conftest.py:103-116` | `client_token` used (not `brain_token`) |
+| 2 | **[TST-CORE-988]** Integration conftest uses CLIENT_TOKEN for admin setup | Inspect `conftest.py:151` | No `client_token or brain_token` fallback |
+| 3 | **[TST-CORE-989]** Docker mode fails fast if CLIENT_TOKEN missing | E2E setup without `client_token` secret | Setup fails with clear error (not silent fallback to brain_token) |
+| 4 | **[TST-CORE-990]** Matrix test: every admin endpoint rejects BRAIN_TOKEN | BRAIN_TOKEN on `/v1/persona/*`, `/v1/did/sign`, `/v1/pair/*` | 403 on every admin endpoint |
+
+### 30.3 Core↔Brain Contract Verification (test_issues #3, #4 — FIXED)
+
+> Status: FIXED. Health endpoint corrected to `/healthz`, reason request
+> changed to `{"prompt":...}`, TaskEvent uses snake_case JSON tags.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-991]** Contract test runs against real core HTTP router | Real core server + real middleware | Actual HTTP responses (not simulated adapter) |
+| 2 | **[TST-CORE-992]** Contract test runs against real brain FastAPI app | Real brain app from `create_app()` | Actual brain responses (not mock server) |
+| 3 | **[TST-CORE-993]** Core→Brain: `/healthz` returns 200 with status | Core brainclient health probe | 200 with `{"status":"ok"}` (not `/v1/health`) |
+| 4 | **[TST-CORE-994]** Core→Brain: `/api/v1/process` accepts `{task_id, type, payload}` | Core sends process event | Brain accepts snake_case fields |
+| 5 | **[TST-CORE-995]** Core→Brain: `/api/v1/reason` accepts `{"prompt":...}` | Core sends reason request | Brain accepts `prompt` (not `query`) |
+| 6 | **[TST-CORE-996]** Brain→Core: `/v1/vault/query` with persona+q | Brain queries vault | Core returns items array + pagination |
+| 7 | **[TST-CORE-997]** Brain→Core: `/v1/pii/scrub` with text body | Brain scrubs text | Core returns scrubbed text + replacement map |
+| 8 | **[TST-CORE-998]** JSON schema frozen: golden request/response examples | Compare against golden fixtures | Exact field names, types, status codes match |
+
+### 30.4 Brain Composition Testing (test_issues #5)
+
+> Status: OPEN. Brain API tests bypass `create_app()` composition.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-999]** `create_app()` boot smoke under minimal env | Minimal env (no optional providers) | App starts without crash |
+| 2 | **[TST-CORE-1000]** Degraded startup: missing spaCy model | spaCy `en_core_web_sm` absent | App starts with scrubber=None, warning logged |
+| 3 | **[TST-CORE-1001]** `/healthz` component status correctness | Health probe after degraded startup | Reports actual component availability |
+
+### 30.5 Known-Bad Behavior Elimination (test_issues #6, #11 — FIXED)
+
+> Status: FIXED. `send_d2d` uses base64-encoded JSON, health endpoint uses
+> `/healthz`, authz tokens separated, wiring tests aligned.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-1002]** `send_d2d` produces valid JSON (no bytes-in-JSON) | Call `send_d2d` with payload | Request body is valid JSON (base64-encoded, not `.encode()` bytes) |
+| 2 | **[TST-CORE-1003]** `wiring_test.go` mock brain serves `/healthz` | Inspect test server routes | `/healthz` (not `/v1/health`) |
+| 3 | **[TST-CORE-1004]** `brainclient_test.go` health tests use `/healthz` | Inspect health watchdog tests | Endpoint is `/healthz` |
+| 4 | **[TST-CORE-1005]** No `client_token or brain_token` fallback in any conftest | Grep all conftest files | Zero instances of token fallback logic |
+| 5 | **[TST-CORE-1006]** Negative assertions for old contracts | `/v1/health` on brain → 404, `query` key in reason → 422 | Old/invalid contracts explicitly rejected |
+
+### 30.6 Data Isolation & Cleanup (test_issues #7)
+
+> Status: OPEN. Stale data leakage masked by mock `_item_map` filtering.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-1007]** Hard cleanup per test class in real suites | Real suite with 3 test classes | Each class starts with clean vault state |
+| 2 | **[TST-CORE-1008]** Dirty state detector fails on prior-run artifacts | Run tests twice without cleanup | Second run detects and fails on stale data |
+| 3 | **[TST-CORE-1009]** Real delete APIs used (not visibility filtering) | Delete via real API in cleanup | Items physically removed (not hidden in mock map) |
+
+### 30.7 Traceability Pipeline (test_issues #8)
+
+> Status: OPEN. `verify_tests.py` measures ID presence, not runtime execution.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-1010]** Manifest `total` counts match actual test counts | Parse manifests | `total` field > 0 and matches collected test count |
+| 2 | **[TST-CORE-1011]** `pytest --collect-only` maps to plan IDs | Collect integration tests | Every collected test maps to a TST-* ID |
+| 3 | **[TST-CORE-1012]** `go test -list` maps to plan IDs | List core tests | Every listed test maps to a TST-CORE-* ID |
+| 4 | **[TST-CORE-1013]** CI validates manifest totals are non-zero | CI pipeline | Build fails if any manifest `total` is 0 |
+
+### 30.8 CI Pipeline Gates (test_issues #9)
+
+> Status: OPEN. Default `make test` only runs unit tests; no integration/E2E.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-1014]** CI stage: `unit-core` | `go test ./...` | All Go unit tests pass |
+| 2 | **[TST-CORE-1015]** CI stage: `unit-brain` | `pytest brain/tests/` | All Python unit tests pass |
+| 3 | **[TST-CORE-1016]** CI stage: `contract-core-brain` | Strict real contract tests | Core↔Brain API contracts verified |
+| 4 | **[TST-CORE-1017]** CI stage: `integration-real` | Docker-based strict real | Integration tests pass with no mock fallback |
+| 5 | **[TST-CORE-1018]** CI stage: `e2e-smoke-real` | Critical path E2E | D2D messaging, vault CRUD, PII scrub verified |
+
+### 30.9 Legacy Test Separation (test_issues #10)
+
+> Status: OPEN. Top-level `tests/test_*.py` target legacy `dina.*` modules.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-1019]** Legacy tests in explicit profile | `pytest -m legacy` | Only legacy tests run |
+| 2 | **[TST-CORE-1020]** Default pipeline excludes legacy tests | `make test` | Legacy tests not executed in v0.4 quality gates |
+| 3 | **[TST-CORE-1021]** Compatibility tests labeled explicitly | Inspect test markers | Required compat tests have `@pytest.mark.compat` |
+
+### 30.10 Security Boundary Real Tests (test_issues #12)
+
+> Status: ENHANCED by E2E suite. D2D messaging, authz matrix, and persona
+> isolation verified in Docker multi-node tests.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-1022]** BRAIN_TOKEN denied on all admin endpoints (real HTTP) | Real core HTTP server | 403 on every admin endpoint with BRAIN_TOKEN |
+| 2 | **[TST-CORE-1023]** CLIENT_TOKEN denied on brain-internal endpoints (real HTTP) | Real brain FastAPI | 403 on `/api/v1/process` with CLIENT_TOKEN |
+| 3 | **[TST-CORE-1024]** Locked persona: dead-drop ingress, no reads (real) | Real vault in locked state | Messages spooled, reads return 403 |
+| 4 | **[TST-CORE-1025]** Draft-don't-send: no direct send path from brain | Code audit + real test | Brain creates drafts only (no `messages.send`) |
+| 5 | **[TST-CORE-1026]** Egress policy enforcement for all categories (real) | Real core with sharing policies | Each category enforced per policy tier |
+
+### 30.11 Crypto/Identity Cross-Process Tests (test_issues #13)
+
+> Status: ENHANCED by D2D E2E fixes. Cross-node NaCl sign/verify/decrypt
+> now works end-to-end in Docker multi-node setup.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-1027]** Real cross-node D2D: sign → encrypt → POST → decrypt → verify | Alonso sends to Sancho (4-node Docker) | Message decrypted and signature verified by recipient |
+| 2 | **[TST-CORE-1028]** DID resolution + endpoint verification (networked) | Resolve `did:plc:sancho` in Docker network | Service endpoint resolves to correct container |
+| 3 | **[TST-CORE-1029]** Key rotation tested with real persistence + restart | Rotate key, restart core, verify | New key active, old key rejected |
+| 4 | **[TST-CORE-1030]** Ed25519 → X25519 conversion verified across nodes | Two nodes exchange NaCl sealed messages | Conversion consistent — decrypt succeeds cross-node |
+
+---
+
+## 31. Code Review Fix Verification
+
+> Traceability section mapping each of the 21 code review fixes + 4 E2E D2D
+> pipeline fixes to their verification tests. Each fix references the original
+> issue number and the test IDs that verify it.
+
+### 31.1 D2D Pipeline Fixes (CR-1, E2E-A through E2E-D)
+
+> **CR-1**: `send_d2d` bytes serialization → base64-encoded JSON.
+> **E2E-A**: `DrainSpool` + `onEnvelope` immediate decrypt callback.
+> **E2E-B**: `SendMessage` sets `msg.From = senderDID`.
+> **E2E-C**: `DINA_OWN_DID` env var added to config.
+> **E2E-D**: Immediate decrypt on fast path (no 10s background delay).
+
+| # | Scenario | Input | Expected | Fix |
+|---|----------|-------|----------|-----|
+| 1 | **[TST-CORE-1031]** DrainSpool returns all non-expired payloads | Spool 3 messages, drain | 3 payloads returned, spool empty | E2E-A |
+| 2 | **[TST-CORE-1032]** DrainSpool skips expired messages | Spool 1 expired + 1 fresh | Only fresh payload returned | E2E-A |
+| 3 | **[TST-CORE-1033]** onEnvelope callback fires on fast-path ingest | Ingest envelope with vault unlocked | Callback invoked with envelope bytes | E2E-A |
+| 4 | **[TST-CORE-1034]** SendMessage populates msg.From from senderDID | Set senderDID, send message | `msg.From == "did:plc:alonso"` | E2E-B |
+| 5 | **[TST-CORE-1035]** DINA_OWN_DID loaded into Config.OwnDID | `DINA_OWN_DID=did:plc:test` | `cfg.OwnDID == "did:plc:test"` | E2E-C |
+| 6 | **[TST-CORE-1036]** Immediate decrypt: no 10s delay for D2D | Send D2D, check inbox immediately | Message in inbox within request cycle | E2E-D |
+| 7 | **[TST-CORE-1037]** Cross-node D2D: Alonso → Sancho roundtrip | 4-node Docker E2E | Sancho's inbox contains Alonso's message | CR-1,E2E-* |
+| 8 | **[TST-CORE-1038]** Cross-node D2D: Sancho → Alonso roundtrip | 4-node Docker E2E | Alonso's inbox contains Sancho's message | CR-1,E2E-* |
+| 9 | **[TST-CORE-1039]** Cross-node D2D: multicast (Alonso → all 3) | 4-node Docker E2E | All 3 recipients have message in inbox | CR-1,E2E-* |
+
+### 31.2 Core↔Brain Contract Alignment (CR-12, CR-13, CR-14)
+
+> **CR-12**: TaskEvent JSON tags (snake_case: `task_id`, `type`, `payload`).
+> **CR-13**: Reason request uses `prompt` (not `query`); ReasonResult aligned.
+> **CR-14**: Health endpoint changed from `/v1/health` to `/healthz`.
+
+| # | Scenario | Input | Expected | Fix |
+|---|----------|-------|----------|-----|
+| 1 | **[TST-CORE-1040]** TaskEvent marshals to `{"task_id":"...","type":"...","payload":{}}` | `json.Marshal(TaskEvent{})` | Snake_case keys in JSON output | CR-12 |
+| 2 | **[TST-CORE-1041]** ProcessEventRequest accepts `task_id` field | Brain receives `{task_id: "abc"}` | Parsed successfully (not rejected) | CR-12 |
+| 3 | **[TST-CORE-1042]** BrainClient.Reason sends `{"prompt":"..."}` | Capture outbound request | Key is `prompt` (not `query`) | CR-13 |
+| 4 | **[TST-CORE-1043]** ReasonResult: `{content, model, tokens_in, tokens_out}` | Unmarshal brain response | All 4 fields populated | CR-13 |
+| 5 | **[TST-CORE-1044]** BrainClient health check hits `/healthz` | Capture outbound URL | Path is `/healthz` (not `/v1/health`) | CR-14 |
+| 6 | **[TST-CORE-1045]** Circuit breaker tracks `/healthz` failures | 5 `/healthz` failures | Circuit opens (fail-fast mode) | CR-14 |
+
+### 31.3 Vault KV Protocol Fix (CR-2)
+
+> **CR-2**: Core KV endpoint speaks JSON — `{"value":"..."}` in both directions.
+
+| # | Scenario | Input | Expected | Fix |
+|---|----------|-------|----------|-----|
+| 1 | **[TST-CORE-1046]** PUT KV with JSON body `{"value":"hello"}` | `PUT /v1/vault/kv/mykey` | Stored, GET returns `{"value":"hello"}` | CR-2 |
+| 2 | **[TST-CORE-1047]** GET KV returns JSON `{"value":"..."}` | `GET /v1/vault/kv/mykey` | Content-Type: application/json | CR-2 |
+| 3 | **[TST-CORE-1048]** PUT KV with raw body (backward compat) | `PUT /v1/vault/kv/mykey` with raw text | Still works (fallback to raw body) | CR-2 |
+
+### 31.4 Search Fallback Fix (CR-15)
+
+> **CR-15**: Hybrid/semantic search falls back to FTS5 with degradation signal.
+
+| # | Scenario | Input | Expected | Fix |
+|---|----------|-------|----------|-----|
+| 1 | **[TST-CORE-1049]** Hybrid query returns FTS5 results (not empty) | `POST /v1/vault/query {mode:"hybrid"}` | Results returned via FTS5 fallback | CR-15 |
+| 2 | **[TST-CORE-1050]** Degradation signal in response | Hybrid query without sqlite-vec | `degraded_from: "hybrid"` or `X-Search-Mode: fts5` header | CR-15 |
+| 3 | **[TST-CORE-1051]** Semantic query returns FTS5 with degradation flag | `POST /v1/vault/query {mode:"semantic"}` | FTS5 results + degradation indicator | CR-15 |
+
+### 31.5 Contact Routes End-to-End (CR-6)
+
+> **CR-6**: Wire contact directory PUT/DELETE through core → admin UI.
+
+| # | Scenario | Input | Expected | Fix |
+|---|----------|-------|----------|-----|
+| 1 | **[TST-CORE-1052]** PUT /v1/contacts/{did} updates contact name | `PUT /v1/contacts/did:plc:sancho {name:"Sancho Panza"}` | Contact name updated in identity.sqlite | CR-6 |
+| 2 | **[TST-CORE-1053]** DELETE /v1/contacts/{did} removes contact | `DELETE /v1/contacts/did:plc:sancho` | Contact removed from identity.sqlite | CR-6 |
+| 3 | **[TST-CORE-1054]** Admin UI update calls core API (not vault hack) | Admin updates contact | `PUT /v1/contacts/{did}` called (not KV write) | CR-6 |
+
+### 31.6 Config & Startup Fixes (CR-10, CR-14)
+
+> **CR-10**: Default core URL port corrected to 8100.
+> Config additions: `DINA_OWN_DID`, `DINA_KNOWN_PEERS`.
+
+| # | Scenario | Input | Expected | Fix |
+|---|----------|-------|----------|-----|
+| 1 | **[TST-CORE-1055]** Default brain config core URL is `http://core:8100` | No `DINA_CORE_URL` env | Default port 8100 (not 8300) | CR-10 |
+| 2 | **[TST-CORE-1056]** DINA_OWN_DID env var loaded | `DINA_OWN_DID=did:plc:test` | `Config.OwnDID == "did:plc:test"` | E2E-C |
+| 3 | **[TST-CORE-1057]** DINA_KNOWN_PEERS parsed into peer registry | `DINA_KNOWN_PEERS=did=url=seed,...` | Peers resolvable in DID resolver | E2E-B |
+
+---
+
 ## Appendix A: Test Data & Fixtures
 
 - **Test mnemonic**: Use a fixed BIP-39 test mnemonic for deterministic key derivation tests

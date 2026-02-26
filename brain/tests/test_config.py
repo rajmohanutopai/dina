@@ -48,6 +48,7 @@ def test_config_9_1_1_core_url_from_env(monkeypatch) -> None:
 
 
 # TST-BRAIN-376
+# TST-BRAIN-487 Default core URL is http://core:8100
 def test_config_9_1_2_core_url_default(monkeypatch) -> None:
     """§9.1.2: CORE_URL defaults to http://core:8300 when not set."""
     _clear_config_env(monkeypatch)

@@ -5885,6 +5885,386 @@
       "row": 4,
       "scenario": "Malformed payload (non-TieredPayload) denied",
       "line": 1724
+    },
+    "TST-CORE-982": {
+      "path": "30.1",
+      "row": 1,
+      "scenario": "DINA_STRICT_REAL=1 fails on any real API fallback"
+    },
+    "TST-CORE-983": {
+      "path": "30.1",
+      "row": 2,
+      "scenario": "real_clients.py _try_request() raises on non-2xx in strict mode"
+    },
+    "TST-CORE-984": {
+      "path": "30.1",
+      "row": 3,
+      "scenario": "real_nodes.py _api_request() raises on failure in strict mode"
+    },
+    "TST-CORE-985": {
+      "path": "30.1",
+      "row": 4,
+      "scenario": "Mock side-effects disabled in strict-real suites"
+    },
+    "TST-CORE-986": {
+      "path": "30.1",
+      "row": 5,
+      "scenario": "All 45 fallback locations verified strict"
+    },
+    "TST-CORE-987": {
+      "path": "30.2",
+      "row": 1,
+      "scenario": "E2E conftest uses CLIENT_TOKEN for persona create/unlock"
+    },
+    "TST-CORE-988": {
+      "path": "30.2",
+      "row": 2,
+      "scenario": "Integration conftest uses CLIENT_TOKEN for admin setup"
+    },
+    "TST-CORE-989": {
+      "path": "30.2",
+      "row": 3,
+      "scenario": "Docker mode fails fast if CLIENT_TOKEN missing"
+    },
+    "TST-CORE-990": {
+      "path": "30.2",
+      "row": 4,
+      "scenario": "Matrix test: every admin endpoint rejects BRAIN_TOKEN"
+    },
+    "TST-CORE-991": {
+      "path": "30.3",
+      "row": 1,
+      "scenario": "Contract test runs against real core HTTP router"
+    },
+    "TST-CORE-992": {
+      "path": "30.3",
+      "row": 2,
+      "scenario": "Contract test runs against real brain FastAPI app"
+    },
+    "TST-CORE-993": {
+      "path": "30.3",
+      "row": 3,
+      "scenario": "Core\u2192Brain: /healthz returns 200 with status"
+    },
+    "TST-CORE-994": {
+      "path": "30.3",
+      "row": 4,
+      "scenario": "Core\u2192Brain: /api/v1/process accepts {task_id, type, payload}"
+    },
+    "TST-CORE-995": {
+      "path": "30.3",
+      "row": 5,
+      "scenario": "Core\u2192Brain: /api/v1/reason accepts {prompt:...}"
+    },
+    "TST-CORE-996": {
+      "path": "30.3",
+      "row": 6,
+      "scenario": "Brain\u2192Core: /v1/vault/query with persona+q"
+    },
+    "TST-CORE-997": {
+      "path": "30.3",
+      "row": 7,
+      "scenario": "Brain\u2192Core: /v1/pii/scrub with text body"
+    },
+    "TST-CORE-998": {
+      "path": "30.3",
+      "row": 8,
+      "scenario": "JSON schema frozen: golden request/response examples"
+    },
+    "TST-CORE-999": {
+      "path": "30.4",
+      "row": 1,
+      "scenario": "create_app() boot smoke under minimal env"
+    },
+    "TST-CORE-1000": {
+      "path": "30.4",
+      "row": 2,
+      "scenario": "Degraded startup: missing spaCy model"
+    },
+    "TST-CORE-1001": {
+      "path": "30.4",
+      "row": 3,
+      "scenario": "/healthz component status correctness"
+    },
+    "TST-CORE-1002": {
+      "path": "30.5",
+      "row": 1,
+      "scenario": "send_d2d produces valid JSON (no bytes-in-JSON)"
+    },
+    "TST-CORE-1003": {
+      "path": "30.5",
+      "row": 2,
+      "scenario": "wiring_test.go mock brain serves /healthz"
+    },
+    "TST-CORE-1004": {
+      "path": "30.5",
+      "row": 3,
+      "scenario": "brainclient_test.go health tests use /healthz"
+    },
+    "TST-CORE-1005": {
+      "path": "30.5",
+      "row": 4,
+      "scenario": "No client_token or brain_token fallback in conftest"
+    },
+    "TST-CORE-1006": {
+      "path": "30.5",
+      "row": 5,
+      "scenario": "Negative assertions for old contracts"
+    },
+    "TST-CORE-1007": {
+      "path": "30.6",
+      "row": 1,
+      "scenario": "Hard cleanup per test class in real suites"
+    },
+    "TST-CORE-1008": {
+      "path": "30.6",
+      "row": 2,
+      "scenario": "Dirty state detector fails on prior-run artifacts"
+    },
+    "TST-CORE-1009": {
+      "path": "30.6",
+      "row": 3,
+      "scenario": "Real delete APIs used (not visibility filtering)"
+    },
+    "TST-CORE-1010": {
+      "path": "30.7",
+      "row": 1,
+      "scenario": "Manifest total counts match actual test counts"
+    },
+    "TST-CORE-1011": {
+      "path": "30.7",
+      "row": 2,
+      "scenario": "pytest --collect-only maps to plan IDs"
+    },
+    "TST-CORE-1012": {
+      "path": "30.7",
+      "row": 3,
+      "scenario": "go test -list maps to plan IDs"
+    },
+    "TST-CORE-1013": {
+      "path": "30.7",
+      "row": 4,
+      "scenario": "CI validates manifest totals are non-zero"
+    },
+    "TST-CORE-1014": {
+      "path": "30.8",
+      "row": 1,
+      "scenario": "CI stage: unit-core"
+    },
+    "TST-CORE-1015": {
+      "path": "30.8",
+      "row": 2,
+      "scenario": "CI stage: unit-brain"
+    },
+    "TST-CORE-1016": {
+      "path": "30.8",
+      "row": 3,
+      "scenario": "CI stage: contract-core-brain"
+    },
+    "TST-CORE-1017": {
+      "path": "30.8",
+      "row": 4,
+      "scenario": "CI stage: integration-real"
+    },
+    "TST-CORE-1018": {
+      "path": "30.8",
+      "row": 5,
+      "scenario": "CI stage: e2e-smoke-real"
+    },
+    "TST-CORE-1019": {
+      "path": "30.9",
+      "row": 1,
+      "scenario": "Legacy tests in explicit profile"
+    },
+    "TST-CORE-1020": {
+      "path": "30.9",
+      "row": 2,
+      "scenario": "Default pipeline excludes legacy tests"
+    },
+    "TST-CORE-1021": {
+      "path": "30.9",
+      "row": 3,
+      "scenario": "Compatibility tests labeled explicitly"
+    },
+    "TST-CORE-1022": {
+      "path": "30.10",
+      "row": 1,
+      "scenario": "BRAIN_TOKEN denied on all admin endpoints (real HTTP)"
+    },
+    "TST-CORE-1023": {
+      "path": "30.10",
+      "row": 2,
+      "scenario": "CLIENT_TOKEN denied on brain-internal endpoints (real HTTP)"
+    },
+    "TST-CORE-1024": {
+      "path": "30.10",
+      "row": 3,
+      "scenario": "Locked persona: dead-drop ingress, no reads (real)"
+    },
+    "TST-CORE-1025": {
+      "path": "30.10",
+      "row": 4,
+      "scenario": "Draft-don't-send: no direct send path from brain"
+    },
+    "TST-CORE-1026": {
+      "path": "30.10",
+      "row": 5,
+      "scenario": "Egress policy enforcement for all categories (real)"
+    },
+    "TST-CORE-1027": {
+      "path": "30.11",
+      "row": 1,
+      "scenario": "Real cross-node D2D: sign \u2192 encrypt \u2192 POST \u2192 decrypt \u2192 verify"
+    },
+    "TST-CORE-1028": {
+      "path": "30.11",
+      "row": 2,
+      "scenario": "DID resolution + endpoint verification (networked)"
+    },
+    "TST-CORE-1029": {
+      "path": "30.11",
+      "row": 3,
+      "scenario": "Key rotation tested with real persistence + restart"
+    },
+    "TST-CORE-1030": {
+      "path": "30.11",
+      "row": 4,
+      "scenario": "Ed25519 \u2192 X25519 conversion verified across nodes"
+    },
+    "TST-CORE-1031": {
+      "path": "31.1",
+      "row": 1,
+      "scenario": "DrainSpool returns all non-expired payloads"
+    },
+    "TST-CORE-1032": {
+      "path": "31.1",
+      "row": 2,
+      "scenario": "DrainSpool skips expired messages"
+    },
+    "TST-CORE-1033": {
+      "path": "31.1",
+      "row": 3,
+      "scenario": "onEnvelope callback fires on fast-path ingest"
+    },
+    "TST-CORE-1034": {
+      "path": "31.1",
+      "row": 4,
+      "scenario": "SendMessage populates msg.From from senderDID"
+    },
+    "TST-CORE-1035": {
+      "path": "31.1",
+      "row": 5,
+      "scenario": "DINA_OWN_DID loaded into Config.OwnDID"
+    },
+    "TST-CORE-1036": {
+      "path": "31.1",
+      "row": 6,
+      "scenario": "Immediate decrypt: no 10s delay for D2D"
+    },
+    "TST-CORE-1037": {
+      "path": "31.1",
+      "row": 7,
+      "scenario": "Cross-node D2D: Alonso \u2192 Sancho roundtrip"
+    },
+    "TST-CORE-1038": {
+      "path": "31.1",
+      "row": 8,
+      "scenario": "Cross-node D2D: Sancho \u2192 Alonso roundtrip"
+    },
+    "TST-CORE-1039": {
+      "path": "31.1",
+      "row": 9,
+      "scenario": "Cross-node D2D: multicast (Alonso \u2192 all 3)"
+    },
+    "TST-CORE-1040": {
+      "path": "31.2",
+      "row": 1,
+      "scenario": "TaskEvent marshals to snake_case JSON"
+    },
+    "TST-CORE-1041": {
+      "path": "31.2",
+      "row": 2,
+      "scenario": "ProcessEventRequest accepts task_id field"
+    },
+    "TST-CORE-1042": {
+      "path": "31.2",
+      "row": 3,
+      "scenario": "BrainClient.Reason sends prompt (not query)"
+    },
+    "TST-CORE-1043": {
+      "path": "31.2",
+      "row": 4,
+      "scenario": "ReasonResult: content,model,tokens_in,tokens_out"
+    },
+    "TST-CORE-1044": {
+      "path": "31.2",
+      "row": 5,
+      "scenario": "BrainClient health check hits /healthz"
+    },
+    "TST-CORE-1045": {
+      "path": "31.2",
+      "row": 6,
+      "scenario": "Circuit breaker tracks /healthz failures"
+    },
+    "TST-CORE-1046": {
+      "path": "31.3",
+      "row": 1,
+      "scenario": "PUT KV with JSON body {value:hello}"
+    },
+    "TST-CORE-1047": {
+      "path": "31.3",
+      "row": 2,
+      "scenario": "GET KV returns JSON {value:...}"
+    },
+    "TST-CORE-1048": {
+      "path": "31.3",
+      "row": 3,
+      "scenario": "PUT KV with raw body (backward compat)"
+    },
+    "TST-CORE-1049": {
+      "path": "31.4",
+      "row": 1,
+      "scenario": "Hybrid query returns FTS5 results (not empty)"
+    },
+    "TST-CORE-1050": {
+      "path": "31.4",
+      "row": 2,
+      "scenario": "Degradation signal in response"
+    },
+    "TST-CORE-1051": {
+      "path": "31.4",
+      "row": 3,
+      "scenario": "Semantic query returns FTS5 with degradation flag"
+    },
+    "TST-CORE-1052": {
+      "path": "31.5",
+      "row": 1,
+      "scenario": "PUT /v1/contacts/{did} updates contact name"
+    },
+    "TST-CORE-1053": {
+      "path": "31.5",
+      "row": 2,
+      "scenario": "DELETE /v1/contacts/{did} removes contact"
+    },
+    "TST-CORE-1054": {
+      "path": "31.5",
+      "row": 3,
+      "scenario": "Admin UI update calls core API (not vault hack)"
+    },
+    "TST-CORE-1055": {
+      "path": "31.6",
+      "row": 1,
+      "scenario": "Default brain config core URL is http://core:8100"
+    },
+    "TST-CORE-1056": {
+      "path": "31.6",
+      "row": 2,
+      "scenario": "DINA_OWN_DID env var loaded"
+    },
+    "TST-CORE-1057": {
+      "path": "31.6",
+      "row": 3,
+      "scenario": "DINA_KNOWN_PEERS parsed into peer registry"
     }
   },
   "sections": {
@@ -7080,7 +7460,117 @@
       "TST-CORE-979",
       "TST-CORE-980",
       "TST-CORE-981"
+    ],
+    "30.1": [
+      "TST-CORE-982",
+      "TST-CORE-983",
+      "TST-CORE-984",
+      "TST-CORE-985",
+      "TST-CORE-986"
+    ],
+    "30.2": [
+      "TST-CORE-987",
+      "TST-CORE-988",
+      "TST-CORE-989",
+      "TST-CORE-990"
+    ],
+    "30.3": [
+      "TST-CORE-991",
+      "TST-CORE-992",
+      "TST-CORE-993",
+      "TST-CORE-994",
+      "TST-CORE-995",
+      "TST-CORE-996",
+      "TST-CORE-997",
+      "TST-CORE-998"
+    ],
+    "30.4": [
+      "TST-CORE-999",
+      "TST-CORE-1000",
+      "TST-CORE-1001"
+    ],
+    "30.5": [
+      "TST-CORE-1002",
+      "TST-CORE-1003",
+      "TST-CORE-1004",
+      "TST-CORE-1005",
+      "TST-CORE-1006"
+    ],
+    "30.6": [
+      "TST-CORE-1007",
+      "TST-CORE-1008",
+      "TST-CORE-1009"
+    ],
+    "30.7": [
+      "TST-CORE-1010",
+      "TST-CORE-1011",
+      "TST-CORE-1012",
+      "TST-CORE-1013"
+    ],
+    "30.8": [
+      "TST-CORE-1014",
+      "TST-CORE-1015",
+      "TST-CORE-1016",
+      "TST-CORE-1017",
+      "TST-CORE-1018"
+    ],
+    "30.9": [
+      "TST-CORE-1019",
+      "TST-CORE-1020",
+      "TST-CORE-1021"
+    ],
+    "30.10": [
+      "TST-CORE-1022",
+      "TST-CORE-1023",
+      "TST-CORE-1024",
+      "TST-CORE-1025",
+      "TST-CORE-1026"
+    ],
+    "30.11": [
+      "TST-CORE-1027",
+      "TST-CORE-1028",
+      "TST-CORE-1029",
+      "TST-CORE-1030"
+    ],
+    "31.1": [
+      "TST-CORE-1031",
+      "TST-CORE-1032",
+      "TST-CORE-1033",
+      "TST-CORE-1034",
+      "TST-CORE-1035",
+      "TST-CORE-1036",
+      "TST-CORE-1037",
+      "TST-CORE-1038",
+      "TST-CORE-1039"
+    ],
+    "31.2": [
+      "TST-CORE-1040",
+      "TST-CORE-1041",
+      "TST-CORE-1042",
+      "TST-CORE-1043",
+      "TST-CORE-1044",
+      "TST-CORE-1045"
+    ],
+    "31.3": [
+      "TST-CORE-1046",
+      "TST-CORE-1047",
+      "TST-CORE-1048"
+    ],
+    "31.4": [
+      "TST-CORE-1049",
+      "TST-CORE-1050",
+      "TST-CORE-1051"
+    ],
+    "31.5": [
+      "TST-CORE-1052",
+      "TST-CORE-1053",
+      "TST-CORE-1054"
+    ],
+    "31.6": [
+      "TST-CORE-1055",
+      "TST-CORE-1056",
+      "TST-CORE-1057"
     ]
   },
-  "total": 0
+  "total": 1057
 }

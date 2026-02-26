@@ -2583,31 +2583,31 @@
     "TST-BRAIN-431": {
       "path": "3.5",
       "row": 1,
-      "scenario": "Persona override: /health → SENSITIVE",
+      "scenario": "Persona override: /health \u2192 SENSITIVE",
       "line": 0
     },
     "TST-BRAIN-432": {
       "path": "3.5",
       "row": 2,
-      "scenario": "Health keywords → SENSITIVE",
+      "scenario": "Health keywords \u2192 SENSITIVE",
       "line": 0
     },
     "TST-BRAIN-433": {
       "path": "3.5",
       "row": 3,
-      "scenario": "Financial keywords → ELEVATED/SENSITIVE",
+      "scenario": "Financial keywords \u2192 ELEVATED/SENSITIVE",
       "line": 0
     },
     "TST-BRAIN-434": {
       "path": "3.5",
       "row": 4,
-      "scenario": "Social casual → GENERAL",
+      "scenario": "Social casual \u2192 GENERAL",
       "line": 0
     },
     "TST-BRAIN-435": {
       "path": "3.5",
       "row": 5,
-      "scenario": "Mixed signals → highest sensitivity wins",
+      "scenario": "Mixed signals \u2192 highest sensitivity wins",
       "line": 0
     },
     "TST-BRAIN-436": {
@@ -2637,19 +2637,19 @@
     "TST-BRAIN-440": {
       "path": "3.7",
       "row": 1,
-      "scenario": "GENERAL → patterns-only scrub",
+      "scenario": "GENERAL \u2192 patterns-only scrub",
       "line": 0
     },
     "TST-BRAIN-441": {
       "path": "3.7",
       "row": 2,
-      "scenario": "SENSITIVE → full NER scrub",
+      "scenario": "SENSITIVE \u2192 full NER scrub",
       "line": 0
     },
     "TST-BRAIN-442": {
       "path": "3.7",
       "row": 3,
-      "scenario": "LOCAL_ONLY → cloud refused",
+      "scenario": "LOCAL_ONLY \u2192 cloud refused",
       "line": 0
     },
     "TST-BRAIN-443": {
@@ -2697,7 +2697,7 @@
     "TST-BRAIN-450": {
       "path": "3.9",
       "row": 1,
-      "scenario": "Person name → natural language (Faker)",
+      "scenario": "Person name \u2192 natural language (Faker)",
       "line": 0
     },
     "TST-BRAIN-451": {
@@ -2709,7 +2709,7 @@
     "TST-BRAIN-452": {
       "path": "3.9",
       "row": 3,
-      "scenario": "Different entities → different fakes",
+      "scenario": "Different entities \u2192 different fakes",
       "line": 0
     },
     "TST-BRAIN-453": {
@@ -2775,13 +2775,13 @@
     "TST-BRAIN-463": {
       "path": "4.3",
       "row": 2,
-      "scenario": "No providers → LLMError on route",
+      "scenario": "No providers \u2192 LLMError on route",
       "line": 0
     },
     "TST-BRAIN-464": {
       "path": "11",
       "row": 9,
-      "scenario": "Error class hierarchy — all inherit DinaError",
+      "scenario": "Error class hierarchy \u2014 all inherit DinaError",
       "line": 0
     },
     "TST-BRAIN-465": {
@@ -2795,6 +2795,186 @@
       "row": 6,
       "scenario": "FTS-only lookup bypasses LLM",
       "line": 0
+    },
+    "TST-BRAIN-467": {
+      "path": "19.1",
+      "row": 1,
+      "scenario": "send_d2d produces base64-encoded JSON body"
+    },
+    "TST-BRAIN-468": {
+      "path": "19.1",
+      "row": 2,
+      "scenario": "send_d2d request is valid at wire level"
+    },
+    "TST-BRAIN-469": {
+      "path": "19.2",
+      "row": 1,
+      "scenario": "scrub_and_call passes full messages list to LLM"
+    },
+    "TST-BRAIN-470": {
+      "path": "19.2",
+      "row": 2,
+      "scenario": "Sensitive persona prompt scrubbed before cloud LLM"
+    },
+    "TST-BRAIN-471": {
+      "path": "19.2",
+      "row": 3,
+      "scenario": "Open persona prompt bypasses scrubbing"
+    },
+    "TST-BRAIN-472": {
+      "path": "19.3",
+      "row": 1,
+      "scenario": "LLMRouter receives preferred_cloud and cloud_llm_consent keys"
+    },
+    "TST-BRAIN-473": {
+      "path": "19.3",
+      "row": 2,
+      "scenario": "Reconfigure callback passes correct keys"
+    },
+    "TST-BRAIN-474": {
+      "path": "19.4",
+      "row": 1,
+      "scenario": "Admin update contact calls PUT /v1/contacts/{did}"
+    },
+    "TST-BRAIN-475": {
+      "path": "19.4",
+      "row": 2,
+      "scenario": "Admin delete contact calls DELETE /v1/contacts/{did}"
+    },
+    "TST-BRAIN-476": {
+      "path": "19.5",
+      "row": 1,
+      "scenario": "Fiduciary notify failure \u2192 task NOT ACKed"
+    },
+    "TST-BRAIN-477": {
+      "path": "19.5",
+      "row": 2,
+      "scenario": "Solicited notify failure \u2192 task still ACKed"
+    },
+    "TST-BRAIN-478": {
+      "path": "19.5",
+      "row": 3,
+      "scenario": "Engagement notify failure \u2192 task still ACKed"
+    },
+    "TST-BRAIN-479": {
+      "path": "19.6",
+      "row": 1,
+      "scenario": "Concurrent MCP requests don't cross-wire"
+    },
+    "TST-BRAIN-480": {
+      "path": "19.6",
+      "row": 2,
+      "scenario": "MCP response ID mismatch raises MCPError"
+    },
+    "TST-BRAIN-481": {
+      "path": "19.6",
+      "row": 3,
+      "scenario": "MCP session has asyncio.Lock"
+    },
+    "TST-BRAIN-482": {
+      "path": "19.7",
+      "row": 1,
+      "scenario": "Login cookie stores stripped token"
+    },
+    "TST-BRAIN-483": {
+      "path": "19.7",
+      "row": 2,
+      "scenario": "Secure flag set based on scheme"
+    },
+    "TST-BRAIN-484": {
+      "path": "19.7",
+      "row": 3,
+      "scenario": "Secure flag unset on HTTP"
+    },
+    "TST-BRAIN-485": {
+      "path": "19.7",
+      "row": 4,
+      "scenario": "POST /admin/logout clears cookie"
+    },
+    "TST-BRAIN-486": {
+      "path": "19.7",
+      "row": 5,
+      "scenario": "Logout form uses POST (not GET link)"
+    },
+    "TST-BRAIN-487": {
+      "path": "19.8",
+      "row": 1,
+      "scenario": "Default core URL is http://core:8100"
+    },
+    "TST-BRAIN-488": {
+      "path": "19.8",
+      "row": 2,
+      "scenario": "TLDEXTRACT_CACHE set before Presidio init"
+    },
+    "TST-BRAIN-489": {
+      "path": "19.8",
+      "row": 3,
+      "scenario": "MCP commands loaded from DINA_MCP_SERVERS"
+    },
+    "TST-BRAIN-490": {
+      "path": "19.8",
+      "row": 4,
+      "scenario": "Empty MCP config is inert"
+    },
+    "TST-BRAIN-491": {
+      "path": "19.8",
+      "row": 5,
+      "scenario": "PresidioScrubber used as primary when available"
+    },
+    "TST-BRAIN-492": {
+      "path": "19.8",
+      "row": 6,
+      "scenario": "Fallback to SpacyScrubber when Presidio unavailable"
+    },
+    "TST-BRAIN-493": {
+      "path": "19.8",
+      "row": 7,
+      "scenario": "Fallback to None when no scrubber available"
+    },
+    "TST-BRAIN-494": {
+      "path": "19.9",
+      "row": 1,
+      "scenario": "_handle_reason exception surfaces as HTTP 500"
+    },
+    "TST-BRAIN-495": {
+      "path": "19.9",
+      "row": 2,
+      "scenario": "Process crash returns status: error"
+    },
+    "TST-BRAIN-496": {
+      "path": "19.9",
+      "row": 3,
+      "scenario": "Reason empty result on exception prevented"
+    },
+    "TST-BRAIN-497": {
+      "path": "19.10",
+      "row": 1,
+      "scenario": "Dashboard escapes item.summary in innerHTML"
+    },
+    "TST-BRAIN-498": {
+      "path": "19.10",
+      "row": 2,
+      "scenario": "Contacts escapes DID in title attribute"
+    },
+    "TST-BRAIN-499": {
+      "path": "19.10",
+      "row": 3,
+      "scenario": "No inline onclick handlers in templates"
+    },
+    "TST-BRAIN-500": {
+      "path": "19.11",
+      "row": 1,
+      "scenario": "ASGI lifespan starts sync background task"
+    },
+    "TST-BRAIN-501": {
+      "path": "19.11",
+      "row": 2,
+      "scenario": "Sync cycle failure doesn't crash the loop"
+    },
+    "TST-BRAIN-502": {
+      "path": "19.11",
+      "row": 3,
+      "scenario": "Lifespan shutdown cancels sync task"
     }
   },
   "sections": {
@@ -3292,7 +3472,65 @@
       "TST-BRAIN-358",
       "TST-BRAIN-359",
       "TST-BRAIN-360"
+    ],
+    "19.1": [
+      "TST-BRAIN-467",
+      "TST-BRAIN-468"
+    ],
+    "19.2": [
+      "TST-BRAIN-469",
+      "TST-BRAIN-470",
+      "TST-BRAIN-471"
+    ],
+    "19.3": [
+      "TST-BRAIN-472",
+      "TST-BRAIN-473"
+    ],
+    "19.4": [
+      "TST-BRAIN-474",
+      "TST-BRAIN-475"
+    ],
+    "19.5": [
+      "TST-BRAIN-476",
+      "TST-BRAIN-477",
+      "TST-BRAIN-478"
+    ],
+    "19.6": [
+      "TST-BRAIN-479",
+      "TST-BRAIN-480",
+      "TST-BRAIN-481"
+    ],
+    "19.7": [
+      "TST-BRAIN-482",
+      "TST-BRAIN-483",
+      "TST-BRAIN-484",
+      "TST-BRAIN-485",
+      "TST-BRAIN-486"
+    ],
+    "19.8": [
+      "TST-BRAIN-487",
+      "TST-BRAIN-488",
+      "TST-BRAIN-489",
+      "TST-BRAIN-490",
+      "TST-BRAIN-491",
+      "TST-BRAIN-492",
+      "TST-BRAIN-493"
+    ],
+    "19.9": [
+      "TST-BRAIN-494",
+      "TST-BRAIN-495",
+      "TST-BRAIN-496"
+    ],
+    "19.10": [
+      "TST-BRAIN-497",
+      "TST-BRAIN-498",
+      "TST-BRAIN-499"
+    ],
+    "19.11": [
+      "TST-BRAIN-500",
+      "TST-BRAIN-501",
+      "TST-BRAIN-502"
     ]
   },
-  "total": 0
+  "total": 502
 }

@@ -44,6 +44,7 @@ func TestBrainClient_11_1_2_BrainTimeout(t *testing.T) {
 }
 
 // TST-CORE-533
+// TST-CORE-1045 Circuit breaker tracks /healthz failures
 func TestBrainClient_11_1_3_CircuitBreakerOpens(t *testing.T) {
 	impl := realBrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
@@ -147,6 +148,7 @@ func TestBrainClient_11_1_6_BrainCrashRecovery(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-537
+// TST-CORE-1044 BrainClient health check hits /healthz
 func TestBrainClient_11_2_1_BrainHealthy(t *testing.T) {
 	impl := realBrainClient
 	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)

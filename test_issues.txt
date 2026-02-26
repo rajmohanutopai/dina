@@ -1,0 +1,250 @@
+Test System Review (code + architecture alignment)
+Date: 2026-02-25
+
+Summary
+- The repository has high test volume, but the highest risk gaps are fidelity gaps: many "integration/e2e" paths are mock-dominant or silently fallback to mocks, so real cross-service regressions can pass undetected.
+- The most important fixes are structural (strict real-mode, true contract tests, CI gates), not just adding more test cases.
+
+Rewrite clarification
+- This repo state is a full rewrite, not a migration. That makes the fallback/misalignment findings more critical: compatibility leftovers and synthetic test shims should not be part of the default confidence model for v0.4.
+
+P0 Issues (major risk)
+
+1) "Real" integration/e2e are not strict; they silently downgrade to mocks
+Evidence
+- `tests/integration/real_clients.py:40-58` `_try_request()` returns `None` on non-2xx and callers fallback.
+- `tests/integration/real_clients.py:546-570` `process()` only uses real API for non-LLM events; `reason()` is always mock.
+- `tests/e2e/real_nodes.py:433-502` `vault_query()` falls back to mock and uses mock-only semantic/hybrid paths.
+- `tests/e2e/real_nodes.py:577-593` `kv_get()` falls back to mock.
+- `tests/e2e/real_nodes.py:755-808` brain processing always runs mock side effects; real path is optional.
+Risk
+- Test runs can pass with broken core/brain APIs because mocks "heal" failures.
+Proposed changes
+- Add strict mode (`DINA_STRICT_REAL=1`): any fallback in `real_clients.py` / `real_nodes.py` must fail the test immediately.
+- Split suites explicitly:
+  - `integration_mock` / `e2e_mock` for logic simulation.
+  - `integration_real` / `e2e_real` for no-fallback system verification.
+- In strict real suites, ban mock side-effects after real calls except for deterministic local bookkeeping (not behavioral logic).
+
+2) Authz boundary is not correctly represented by test bootstrap
+Evidence
+- `tests/e2e/conftest.py:103-116` persona create/unlock uses `brain_token` on admin endpoints.
+- `tests/integration/conftest.py:151` uses `client_token or brain_token` fallback for admin persona setup.
+- `tests/integration/conftest.py:149-150` comment states brain token is denied on `/v1/persona/*`.
+Risk
+- Large cascades of false failures (or false passes) whenever authz gets tightened.
+Proposed changes
+- Test harness must provision `CLIENT_TOKEN` deterministically for docker mode and fail fast if missing.
+- Remove `client_token or brain_token` fallback; enforce correct token type per endpoint.
+- Add matrix tests for every admin endpoint to assert:
+  - `CLIENT_TOKEN` accepted.
+  - `BRAIN_TOKEN` rejected with 403.
+  - wrong/empty token rejected.
+
+3) Core-Brain contract tests are synthetic, not real protocol tests
+Evidence
+- `core/test/wiring_test.go:264` wires `realAPIContract` to `apicontract.NewAPIContract(...)`.
+- `core/internal/adapter/apicontract/apicontract.go:20-107` is in-memory endpoint map + simulated status codes.
+- `core/test/apicontract_test.go:25-79` verifies against this simulated adapter.
+Risk
+- Real wire contract drift is missed (payload keys, status codes, route paths, auth behavior).
+Proposed changes
+- Replace/add contract tests that run against real HTTP servers:
+  - Core router + real middleware.
+  - Brain FastAPI app from production composition.
+- Add bidirectional consumer-driven contracts:
+  - Core as consumer of brain (`/api/v1/process`, `/api/v1/reason`, `/healthz`).
+  - Brain as consumer of core (`/v1/vault/*`, `/v1/pii/scrub`, `/v1/msg/send`, admin endpoints denied).
+- Validate JSON schema, required fields, and exact error status classes.
+
+4) There is an active Core↔Brain schema/path mismatch not protected by tests
+Evidence
+- Core client health uses `/v1/health`: `core/internal/adapter/brainclient/brainclient.go:136-144`.
+- Brain exposes `/healthz`: `brain/src/main.py:343-345`.
+- Core sends `{"query": ...}` to `/api/v1/reason`: `core/internal/adapter/brainclient/brainclient.go:236`.
+- Brain requires `prompt`: `brain/src/dina_brain/routes/reason.py:37`.
+- Test harness normalizes this mismatch with fake server route `/v1/health`: `core/test/wiring_test.go:252`.
+Risk
+- Production call failures in health/reasoning despite passing tests.
+Proposed changes
+- Add a strict Core->Brain compatibility test that runs real core brainclient against real brain app.
+- Freeze contract with schema tests (golden request/response examples).
+- Add route parity checks derived from OpenAPI in CI.
+
+P1 Issues (important)
+
+5) Brain API tests bypass production `create_app()` composition
+Evidence
+- `brain/tests/test_api.py:82-109` builds custom app via `_build_app` with async mocks.
+- Production composition with config/providers/scrubber wiring is in `brain/src/main.py:116-360`.
+- No test imports production `create_app()` directly (`rg` shows none).
+Risk
+- Startup/config wiring bugs, provider loading bugs, and health component wiring regress without detection.
+Proposed changes
+- Add dedicated tests for production composition:
+  - `create_app()` boot smoke under minimal env.
+  - degraded startup paths (missing optional providers, missing spaCy model).
+  - `/healthz` component status correctness.
+
+6) Tests currently encode at least one known-bad payload shape
+Evidence
+- `brain/tests/test_core_client.py:200-204` expects `json.dumps(payload).encode()` in JSON body for `send_d2d`.
+Risk
+- If this is a serialization bug, tests protect the bug instead of catching it.
+Proposed changes
+- Replace unit assertion with end-to-end schema assertion against real core endpoint contract.
+- For transport payloads, assert canonical JSON types at boundary (no bytes-in-JSON surprises).
+
+7) Stale data leakage can be masked by test harness behavior
+Evidence
+- `tests/integration/conftest.py:185-190` cleanup is effectively no-op; relies on visibility filtering.
+- `tests/integration/conftest.py:189-190` comments confirm stale items are hidden via `_item_map`, not removed.
+Risk
+- Data isolation bugs and cross-test contamination can be hidden rather than detected.
+Proposed changes
+- In real suites, enforce hard cleanup per test (or per class) using real delete/clear APIs.
+- Add "dirty state detector" fixture that fails if prior-run artifacts exist.
+
+8) Traceability tooling measures ID presence, not runtime behavior
+Evidence
+- `scripts/verify_tests.py:118-141` scans test files for `TST-*` tags and nearby function names.
+- `core/test/test_manifest.json:7085` has `"total": 0`.
+- `brain/tests/test_manifest.json:3297` has `"total": 0`.
+Risk
+- "Coverage complete" can be reported while runtime assertions are weak or miswired.
+Proposed changes
+- Redefine coverage signal:
+  - parse collected tests (`pytest --collect-only`, `go test -list`) and map to plan IDs.
+  - include execution evidence from CI (test IDs actually executed).
+- Fix manifest generation so `total` is correct and validated in CI.
+
+9) Default test workflow under-runs real-system suites
+Evidence
+- `Makefile:11-13` `make test` runs only `core go test` + `brain pytest`.
+- Integration docker test is separate target (`Makefile:37-43`), no e2e target.
+- No `.github/workflows` directory found in repo root.
+Risk
+- Major regressions in integration/e2e can merge undetected.
+Proposed changes
+- Add required CI stages:
+  - `unit-core`, `unit-brain`
+  - `contract-core-brain` (strict real)
+  - `integration-real` (strict real, docker)
+  - `e2e-smoke-real` (critical paths)
+  - nightly/full e2e matrix
+- Keep mock suites as fast PR feedback, but do not treat them as system verification.
+
+10) Legacy test suites are mixed with current architecture and can dilute signal
+Evidence
+- Top-level `tests/test_*.py` target `dina.*` modules (legacy monolith path), e.g. `tests/test_identity.py`, `tests/test_vault.py`.
+Risk
+- Green test status may include unrelated/legacy coverage while current core/brain boundaries remain under-tested.
+Proposed changes
+- Separate legacy tests into explicit profile (`legacy`), exclude from default quality gates for v0.4 architecture.
+- Keep only explicitly required compatibility tests in main pipeline with clear labels.
+
+11) Known-bad behavior is currently encoded in test/harness expectations
+Evidence
+- `brain/tests/test_core_client.py:200-204` asserts bytes-in-JSON payload shape (`json.dumps(payload).encode()`) for `/v1/msg/send`.
+- `core/test/wiring_test.go:252` mock brain server accepts `/v1/health` (while brain app exposes `/healthz`).
+- `core/test/brainclient_test.go:155` and `core/test/brainclient_test.go:166` still describe `/v1/health` watchdog semantics.
+- `tests/integration/conftest.py:151` allows admin setup token fallback (`client_token or brain_token`) even though authz separates scopes.
+- `tests/e2e/conftest.py:103-116` uses `brain_token` for admin persona create/unlock calls.
+- `tests/integration/real_clients.py:170` includes a known workaround comment (`HandleGetItem is broken`) and tests through a different route instead of failing.
+Risk
+- Regressions become invisible because tests normalize incorrect behavior instead of rejecting it.
+Proposed changes
+- Remove or rewrite these tests/harness paths so they enforce current contracts only.
+- Add strict negative assertions for old/invalid contracts (`/v1/health`, wrong JSON field names, wrong token class).
+
+Architecture-focused gaps to add (priority scenarios)
+
+12) Security boundary invariants need strict real tests (not mock-only)
+Must-have additions
+- BRAIN_TOKEN can never call admin endpoints (`/v1/persona/*`, `/v1/did/sign`, `/v1/pair/*`).
+- CLIENT_TOKEN cannot call brain-internal endpoints.
+- Locked persona behavior with dead-drop ingress and no unauthorized reads.
+- Draft-Don't-Send: no route path should trigger direct send from brain without human action.
+- Egress policy enforcement in core for all sharing categories and tiers.
+
+13) Crypto/identity runtime boundary tests should include cross-process verification
+Must-have additions
+- Real cross-node D2D message envelope verification (sign/verify/decrypt) without mock cryptographic shortcuts in strict mode.
+- DID resolution + endpoint verification in strict networked tests.
+- Rotation/recovery workflows tested with real persistence and restart boundaries.
+
+Recommended implementation plan
+
+Phase 0 (immediate hardening)
+- Remove all real-suite fallback paths listed in "Exhaustive fallback inventory" below.
+- Fail tests immediately on any real API call failure in strict real mode.
+- Delete known-bad behavior expectations listed above.
+
+Phase 1 (immediate)
+- Implement strict real mode and remove token fallback in setup.
+- Add Core↔Brain compatibility tests for `/healthz` and `/api/v1/reason` payload schema.
+- Add CI job for strict contract + integration smoke.
+
+Phase 2
+- Split mock vs strict-real suites and reporting.
+- Add production `create_app()` brain startup tests.
+- Fix manifest totals and traceability pipeline.
+
+Phase 3
+- Expand strict-real e2e security scenarios (dead-drop, egress, authz matrix, crypto path).
+- Add nightly full matrix with failure triage dashboard.
+
+Success criteria for the test system
+- A broken real Core↔Brain contract fails CI even if all mocks still pass.
+- Authz regressions fail in setup immediately (no cascade of unrelated failures).
+- "Coverage" metrics reflect executed tests and real behavior, not just ID tags.
+- Mock suites stay fast, but release confidence is driven by strict real suites.
+
+Exhaustive fallback inventory in real suites (remove all for strict-real)
+
+A) `tests/integration/real_clients.py`
+- `43-63` `_try_request()` swallows transport/http failures and returns `None`.
+- `96-129` `RealVault.store()` continues via mock state even when real store fails.
+- `131-156` `RealVault.store_batch()` always returns `super().store_batch(...)` even when real batch store fails.
+- `192-219` `RealVault.search_fts()` silently drops personas/results on real API failure and returns partial/mock-driven output.
+- `221-268` `RealVault.index_for_fts()` ignores delete/store failures and still updates mock index state.
+- `270-279` `RealVault.delete()` ignores real delete failure and returns mock delete result.
+- `306-355` `RealPIIScrubber.scrub()` treats tier1/tier2 real calls as optional; returns scrubbed output without requiring real success.
+- `381-393` `RealGoCore.__init__()` auth fallback: `_client_token = client_token or brain_token`.
+- `401-423` `RealGoCore.vault_query()` returns `[]` on real API failure (silent).
+- `486-495` `RealGoCore.notify()` ignores real notify failure but records notification as sent.
+- `546-565` `RealPythonBrain.process()` falls back to mock processing.
+- `567-570` `RealPythonBrain.reason()` is always mock.
+- `593-610` `RealAdminAPI.login()` falls back to `MockAdminSession`.
+- `620-635` `RealAdminAPI.dashboard()` falls back to synthetic dashboard payload.
+- `637-641` `RealAdminAPI.query_via_dashboard()` is synthetic (no real API).
+- `693-734` `RealPairingManager` is mock-only pairing in "real" suite.
+- `777-792` `RealDockerCompose` falls back to mock container state (`up/down/is_all_healthy`).
+
+B) `tests/e2e/real_nodes.py`
+- `58-94` `_api_request()` returns `None` on persistent failure unless `raise_on_fail=True`.
+- `126-164` `RealPIIScrubber.scrub_tier1()` always applies mock regex safety-net after real call.
+- `193-231` `RealPIIScrubber.scrub_tier2()` always applies mock NER safety-net after real call.
+- `254-266` `RealPIIScrubber.scrub_full()` explicitly relies on tier-level fallback behavior.
+- `317-335` `RealHomeNode.create_persona()` ignores real failures; always updates mock persona state.
+- `337-347` `RealHomeNode.unlock_persona()` ignores real failures; always updates mock unlock state.
+- `359-372` `RealHomeNode.add_contact()` ignores real failures; always updates mock contact state.
+- `433-466` `RealHomeNode.vault_query()` semantic/hybrid modes are mock-only in "real" suite.
+- `468-502` `RealHomeNode.vault_query()` falls back to mock FTS on real API failure.
+- `504-545` `RealHomeNode.vault_store_batch()` always updates mock batch state regardless of real result.
+- `547-563` `RealHomeNode.vault_delete()` always returns mock delete result even if real delete fails.
+- `567-575` `RealHomeNode.kv_put()` always updates mock KV even if real put fails.
+- `577-593` `RealHomeNode.kv_get()` falls back to mock KV on real failure.
+- `597-620` `RealHomeNode.healthz()` merges in mock brain status as authoritative for crash simulation.
+- `624-636` `RealHomeNode.well_known_atproto_did()` falls back to mock DID.
+- `640-659` `RealHomeNode.did_sign()` falls back to `_mock_sign`.
+- `661-682` `RealHomeNode.did_verify()` falls back to `_mock_verify`.
+- `686-714` `RealHomeNode.generate_pairing_code()` falls back to mock pairing code.
+- `716-746` `RealHomeNode.pair_device()` always updates mock paired-device state (real optional).
+- `755-808` `RealHomeNode._brain_process()` falls back to mock flow and always runs mock side-effects.
+- `887-906` `RealHomeNode.set_sharing_policy()` always updates mock policy regardless of real outcome.
+- `910-970` `RealHomeNode.verify_agent_intent()` falls back to mock risk classification.
+
+C) `tests/e2e/real_d2d.py`
+- No core fallback path in delivery pipeline (this file is mostly strict).
+- `165-171` `traffic_contains_plaintext()` delegates to `super()` for helper behavior only (not delivery correctness).

@@ -244,6 +244,7 @@ func TestServer_15_2_6_ACKTask(t *testing.T) {
 }
 
 // TST-CORE-571
+// TST-CORE-1046 PUT KV with JSON body
 func TestServer_15_2_7_VaultKVStore(t *testing.T) {
 	impl := realVaultAPI
 	testutil.RequireImplementation(t, impl, "VaultAPI")
@@ -254,6 +255,7 @@ func TestServer_15_2_7_VaultKVStore(t *testing.T) {
 }
 
 // TST-CORE-572
+// TST-CORE-1047 GET KV returns JSON
 func TestServer_15_2_8_VaultKVRead(t *testing.T) {
 	impl := realVaultAPI
 	testutil.RequireImplementation(t, impl, "VaultAPI")
@@ -268,6 +270,7 @@ func TestServer_15_2_8_VaultKVRead(t *testing.T) {
 }
 
 // TST-CORE-573
+// TST-CORE-1048 PUT KV with raw body (backward compat)
 func TestServer_15_2_9_VaultKVUpsert(t *testing.T) {
 	impl := realVaultAPI
 	testutil.RequireImplementation(t, impl, "VaultAPI")

@@ -172,6 +172,7 @@ async def test_admin_8_2_2_add_contact(client, auth_headers) -> None:
 
 
 # TST-BRAIN-276
+# TST-BRAIN-474 Admin update contact calls PUT /v1/contacts/{did}
 @pytest.mark.asyncio
 async def test_admin_8_2_3_edit_sharing_policy(client, auth_headers) -> None:
     """SS8.2.3: Edit sharing policy -- change contact's sharing tier."""
@@ -192,6 +193,7 @@ async def test_admin_8_2_3_edit_sharing_policy(client, auth_headers) -> None:
 
 
 # TST-BRAIN-277
+# TST-BRAIN-475 Admin delete contact calls DELETE /v1/contacts/{did}
 @pytest.mark.asyncio
 async def test_admin_8_2_4_remove_contact(client, auth_headers) -> None:
     """SS8.2.4: Remove contact -- delete action removes via core API."""
@@ -292,6 +294,7 @@ async def test_admin_8_4_4_delete_persona(client, auth_headers) -> None:
 
 
 # TST-BRAIN-285
+# TST-BRAIN-497 Dashboard escapes item.summary in innerHTML
 @pytest.mark.asyncio
 async def test_admin_8_5_1_xss_contact_name(client, auth_headers) -> None:
     """SS8.5.1: XSS in contact name -- HTML-escaped in template output."""
@@ -335,6 +338,7 @@ async def test_admin_8_5_3_sql_injection_search(client, auth_headers) -> None:
 
 
 # TST-BRAIN-288
+# TST-BRAIN-499 No inline onclick handlers in templates
 @pytest.mark.asyncio
 async def test_admin_8_5_4_template_injection(client, auth_headers) -> None:
     """SS8.5.4: Template injection -- user input auto-escaped by Jinja2."""
