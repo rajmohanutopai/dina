@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/anthropics/dina/core/internal/port"
+	"github.com/rajmohanutopai/dina/core/internal/port"
 )
 
 // p is the prime for Curve25519: 2^255 - 19.

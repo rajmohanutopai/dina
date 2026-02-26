@@ -3,7 +3,7 @@ package port
 import (
 	"context"
 
-	"github.com/anthropics/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
 )
 
 // TokenValidator authenticates incoming requests.
@@ -15,8 +15,9 @@ type TokenValidator interface {
 	IdentifyToken(token string) (kind domain.TokenType, identity string, err error)
 	// VerifySignature validates an Ed25519 request signature.
 	// It looks up the DID in the device registry, checks replay protection
-	// (timestamp window), and verifies the cryptographic signature.
-	VerifySignature(did, method, path, timestamp string, body []byte, signatureHex string) (kind domain.TokenType, identity string, err error)
+	// (timestamp window + nonce cache), and verifies the cryptographic signature.
+	// The query parameter binds the URL query string into the signed payload.
+	VerifySignature(did, method, path, query, timestamp string, body []byte, signatureHex string) (kind domain.TokenType, identity string, err error)
 }
 
 // DeviceKeyRegistrar allows the pairing/device layer to register and revoke
@@ -31,6 +32,11 @@ type DeviceKeyRegistrar interface {
 // legacy-token devices can authenticate.
 type ClientTokenRegistrar interface {
 	RegisterClientToken(token string, deviceID string)
+}
+
+// TokenRevoker revokes client tokens by device identity.
+type TokenRevoker interface {
+	RevokeClientTokenByDevice(deviceIdentity string)
 }
 
 // SessionManager handles browser sessions for the admin UI.

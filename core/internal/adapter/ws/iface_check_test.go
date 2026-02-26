@@ -1,8 +1,8 @@
 package ws_test
 
 import (
-	"github.com/anthropics/dina/core/internal/adapter/ws"
-	"github.com/anthropics/dina/core/test/testutil"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/ws"
+	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
 
 // Compile-time interface compliance checks.

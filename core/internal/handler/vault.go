@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/anthropics/dina/core/internal/domain"
-	"github.com/anthropics/dina/core/internal/middleware"
-	"github.com/anthropics/dina/core/internal/port"
-	"github.com/anthropics/dina/core/internal/service"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/middleware"
+	"github.com/rajmohanutopai/dina/core/internal/port"
+	"github.com/rajmohanutopai/dina/core/internal/service"
 )
 
 // VaultHandler exposes vault CRUD and KV endpoints.

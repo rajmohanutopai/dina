@@ -3,8 +3,8 @@
 package main
 
 import (
-	"github.com/anthropics/dina/core/internal/adapter/sqlite"
-	"github.com/anthropics/dina/core/internal/port"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/sqlite"
+	"github.com/rajmohanutopai/dina/core/internal/port"
 )
 
 // newVaultBackend returns a SQLCipher-backed vault adapter when CGO is available.

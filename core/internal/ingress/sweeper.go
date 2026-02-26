@@ -6,9 +6,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/anthropics/dina/core/internal/domain"
-	"github.com/anthropics/dina/core/internal/port"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/port"
 )
+
+// TransportProcessor processes inbound D2D envelopes.
+type TransportProcessor interface {
+	ProcessInbound(ctx context.Context, sealed []byte) (*domain.DinaMessage, error)
+}
 
 // Sweeper processes dead drop blobs after the vault is unlocked.
 // For each blob it:
@@ -23,6 +28,7 @@ type Sweeper struct {
 	converter     port.KeyConverter
 	clock         port.Clock
 	ttl           time.Duration
+	transport     TransportProcessor
 	recipientPub  []byte                    // node's Ed25519 public key
 	recipientPriv []byte                    // node's Ed25519 private key
 	onMessage     func(*domain.DinaMessage) // callback for delivered messages
@@ -62,6 +68,13 @@ func (s *Sweeper) SetOnMessage(fn func(*domain.DinaMessage)) {
 	s.onMessage = fn
 }
 
+// SetTransport sets the transport processor for inbound D2D envelope handling.
+// When set, Sweep and SweepFull delegate decryption and signature verification
+// to the transport service instead of performing raw decryption directly.
+func (s *Sweeper) SetTransport(t TransportProcessor) {
+	s.transport = t
+}
+
 // SweepResult summarizes a sweep pass over the dead drop.
 type SweepResult struct {
 	Processed   int      // total blobs examined
@@ -91,6 +104,26 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 		blob, err := s.deadDrop.Read(name)
 		if err != nil {
 			// Blob may have been consumed by another process.
+			continue
+		}
+
+		// Delegate to transport processor if configured (handles decryption + signature verification).
+		if s.transport != nil {
+			msg, tErr := s.transport.ProcessInbound(ctx, blob)
+			if tErr != nil {
+				continue
+			}
+			// Check TTL — drop expired messages.
+			if s.ttl > 0 && msg.CreatedTime > 0 {
+				age := s.clock.Now().Sub(time.Unix(msg.CreatedTime, 0))
+				if age > s.ttl {
+					continue
+				}
+			}
+			if s.onMessage != nil {
+				s.onMessage(msg)
+			}
+			delivered++
 			continue
 		}
 
@@ -164,6 +197,28 @@ func (s *Sweeper) SweepFull(ctx context.Context) (*SweepResult, error) {
 
 		if len(blob) == 0 {
 			result.Failed++
+			continue
+		}
+
+		// Delegate to transport processor if configured (handles decryption + signature verification).
+		if s.transport != nil {
+			msg, tErr := s.transport.ProcessInbound(ctx, blob)
+			if tErr != nil {
+				result.Failed++
+				continue
+			}
+			// Check TTL.
+			if s.ttl > 0 && msg.CreatedTime > 0 {
+				age := s.clock.Now().Sub(time.Unix(msg.CreatedTime, 0))
+				if age > s.ttl {
+					result.Expired++
+					continue
+				}
+			}
+			if s.onMessage != nil {
+				s.onMessage(msg)
+			}
+			result.Delivered++
 			continue
 		}
 

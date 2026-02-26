@@ -5,7 +5,7 @@ import (
 	"crypto/ed25519"
 	"fmt"
 
-	"github.com/anthropics/dina/core/internal/port"
+	"github.com/rajmohanutopai/dina/core/internal/port"
 )
 
 // Compile-time check: Ed25519Signer satisfies port.Signer.

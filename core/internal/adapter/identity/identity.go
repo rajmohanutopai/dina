@@ -20,10 +20,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/anthropics/dina/core/internal/adapter/crypto"
-	"github.com/anthropics/dina/core/internal/adapter/pds"
-	"github.com/anthropics/dina/core/internal/domain"
-	"github.com/anthropics/dina/core/internal/port"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/crypto"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/pds"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/port"
 )
 
 // Compile-time checks: adapters satisfy port interfaces.
@@ -171,6 +171,9 @@ type DIDManager struct {
 	createdInTest map[string]bool // tracks keys created in the current test epoch
 	plcClient     *pds.PLCClient         // nil = local-only mode
 	k256Mgr       *crypto.K256KeyManager // nil = no rotation key
+	pdsHandle     string
+	pdsPassword   string
+	pdsEmail      string
 }
 
 // NewDIDManager returns a new DIDManager that persists data at dataDir.
@@ -200,6 +203,15 @@ func (dm *DIDManager) SetPLCClient(plc *pds.PLCClient, k256 *crypto.K256KeyManag
 	defer dm.mu.Unlock()
 	dm.plcClient = plc
 	dm.k256Mgr = k256
+}
+
+// SetPDSCredentials configures PDS account creation credentials.
+func (dm *DIDManager) SetPDSCredentials(handle, password, email string) {
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+	dm.pdsHandle = handle
+	dm.pdsPassword = password
+	dm.pdsEmail = email
 }
 
 // Create generates a new DID from an Ed25519 public key.
@@ -325,11 +337,16 @@ func (dm *DIDManager) createWithPLC(ctx context.Context, publicKey []byte) (doma
 		recoveryKey = didKey
 	}
 
+	// Validate PDS credentials are configured before attempting account creation.
+	if dm.pdsHandle == "" || dm.pdsPassword == "" || dm.pdsEmail == "" {
+		return "", fmt.Errorf("identity: PDS credentials not configured (set DINA_PDS_HANDLE, DINA_PDS_ADMIN_PASSWORD, DINA_PDS_EMAIL)")
+	}
+
 	// Create account on PDS — PDS handles genesis op, DAG-CBOR, PLC submission.
 	result, err := dm.plcClient.CreateAccountAndDID(ctx, pds.CreateDIDOptions{
-		Handle:      "dina.test",
-		Password:    "dina-internal-account",
-		Email:       "dina@example.com",
+		Handle:      dm.pdsHandle,
+		Password:    dm.pdsPassword,
+		Email:       dm.pdsEmail,
 		RecoveryKey: recoveryKey,
 	})
 	if err != nil {
@@ -484,10 +501,13 @@ func (dm *DIDManager) persistDID(did string, doc *didDocument) {
 
 // Persona holds persona state.
 type Persona struct {
-	ID     string
-	Name   string
-	Tier   string // "open", "restricted", "locked"
-	Locked bool
+	ID             string
+	Name           string
+	Tier           string // "open", "restricted", "locked"
+	Locked         bool
+	PassphraseHash string
+	Salt           []byte
+	DEKVersion     int // 1=SHA-256(legacy), 2=Argon2id
 }
 
 // IdentityAuditEntry records a persona access audit event.
@@ -507,6 +527,7 @@ type PersonaManager struct {
 	OnRestrictedAccess   func(personaID, reason string)   // callback for restricted access notification
 	testTick             chan struct{}                     // test control channel for TTL goroutine
 	ttlTimers            map[string]*time.Timer           // personaID -> active TTL timer
+	VerifyPassphrase     func(storedHash, passphrase string) (bool, error)
 }
 
 // NewPersonaManager returns a new in-memory PersonaManager.
@@ -515,6 +536,15 @@ func NewPersonaManager() *PersonaManager {
 		personas:  make(map[string]*Persona),
 		contacts:  make(map[string]map[string]bool),
 		ttlTimers: make(map[string]*time.Timer),
+	}
+}
+
+// SetPersonaPassphraseHash sets the passphrase hash on a persona (for testing/migration).
+func (pm *PersonaManager) SetPersonaPassphraseHash(personaID, hash string) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	if p, ok := pm.personas[personaID]; ok {
+		p.PassphraseHash = hash
 	}
 }
 
@@ -689,12 +719,20 @@ func (pm *PersonaManager) Unlock(_ context.Context, personaID, passphrase string
 		}
 	}
 
-	// TODO: replace stub — production must use Argon2id verification (see auth.PassphraseVerifier)
-	// Validate passphrase — for now, accept any non-empty passphrase.
-	// A wrong passphrase is simulated by checking against a sentinel value.
-	slog.Warn("STUB: passphrase validation not implemented — accepting any passphrase", "persona", personaID)
-	if passphrase == "WRONG_PASSPHRASE" {
-		return fmt.Errorf("invalid passphrase for persona %s", personaID)
+	// Validate passphrase against stored hash.
+	if p.PassphraseHash != "" {
+		if pm.VerifyPassphrase == nil {
+			return fmt.Errorf("persona: passphrase verifier not configured")
+		}
+		ok, err := pm.VerifyPassphrase(p.PassphraseHash, passphrase)
+		if err != nil {
+			return fmt.Errorf("persona: verify passphrase: %w", err)
+		}
+		if !ok {
+			return domain.ErrInvalidPassphrase
+		}
+	} else {
+		slog.Warn("persona: no passphrase hash stored — allowing unlock for legacy persona migration", "persona", string(personaID))
 	}
 
 	p.Locked = false

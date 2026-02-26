@@ -3,7 +3,7 @@ package handler
 import (
 	"net/http"
 
-	"github.com/anthropics/dina/core/internal/port"
+	"github.com/rajmohanutopai/dina/core/internal/port"
 )
 
 // WellKnownHandler serves the /.well-known/* endpoints.

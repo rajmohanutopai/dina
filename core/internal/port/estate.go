@@ -3,7 +3,7 @@ package port
 import (
 	"context"
 
-	"github.com/anthropics/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
 )
 
 // EstateManager handles digital estate planning (Shamir-based key delivery).

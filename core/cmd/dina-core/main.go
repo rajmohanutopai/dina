@@ -19,30 +19,30 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/anthropics/dina/core/internal/adapter/auth"
-	"github.com/anthropics/dina/core/internal/adapter/brainclient"
-	"github.com/anthropics/dina/core/internal/adapter/clock"
-	"github.com/anthropics/dina/core/internal/adapter/crypto"
-	"github.com/anthropics/dina/core/internal/adapter/estate"
-	"github.com/anthropics/dina/core/internal/adapter/gatekeeper"
-	"github.com/anthropics/dina/core/internal/adapter/identity"
-	"github.com/anthropics/dina/core/internal/adapter/observability"
-	"github.com/anthropics/dina/core/internal/adapter/pairing"
-	"github.com/anthropics/dina/core/internal/adapter/pds"
-	"github.com/anthropics/dina/core/internal/adapter/pii"
-	"github.com/anthropics/dina/core/internal/adapter/portability"
-	"github.com/anthropics/dina/core/internal/adapter/server"
-	"github.com/anthropics/dina/core/internal/adapter/taskqueue"
-	"github.com/anthropics/dina/core/internal/adapter/transport"
-	"github.com/anthropics/dina/core/internal/adapter/vault"
-	"github.com/anthropics/dina/core/internal/adapter/ws"
-	"github.com/anthropics/dina/core/internal/config"
-	"github.com/anthropics/dina/core/internal/domain"
-	"github.com/anthropics/dina/core/internal/handler"
-	"github.com/anthropics/dina/core/internal/ingress"
-	"github.com/anthropics/dina/core/internal/middleware"
-	"github.com/anthropics/dina/core/internal/port"
-	"github.com/anthropics/dina/core/internal/service"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/auth"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/brainclient"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/clock"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/crypto"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/estate"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/gatekeeper"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/identity"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/observability"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/pairing"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/pds"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/pii"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/portability"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/server"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/taskqueue"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/transport"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/vault"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/ws"
+	"github.com/rajmohanutopai/dina/core/internal/config"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/handler"
+	"github.com/rajmohanutopai/dina/core/internal/ingress"
+	"github.com/rajmohanutopai/dina/core/internal/middleware"
+	"github.com/rajmohanutopai/dina/core/internal/port"
+	"github.com/rajmohanutopai/dina/core/internal/service"
 )
 
 func main() {
@@ -84,13 +84,19 @@ func main() {
 			slog.Error("Invalid DINA_IDENTITY_SEED hex", "error", err)
 			os.Exit(1)
 		}
+		if len(decoded) != 32 {
+			slog.Error("DINA_IDENTITY_SEED must be exactly 32 bytes (64 hex chars)", "got_bytes", len(decoded))
+			os.Exit(1)
+		}
 		copy(bootstrapSeed, decoded)
 	} else if data, err := os.ReadFile(seedPath); err == nil {
 		decoded, err := hex.DecodeString(strings.TrimSpace(string(data)))
-		if err == nil && len(decoded) >= 32 {
-			copy(bootstrapSeed, decoded)
-			slog.Info("Loaded identity seed from file", "path", seedPath)
+		if err != nil || len(decoded) != 32 {
+			slog.Error("Corrupt identity seed file — refusing to start", "path", seedPath, "error", err)
+			os.Exit(1)
 		}
+		copy(bootstrapSeed, decoded)
+		slog.Info("Loaded identity seed from file", "path", seedPath)
 	} else {
 		if _, err := crypto_rand.Read(bootstrapSeed); err != nil {
 			slog.Error("Failed to generate random seed", "error", err)
@@ -102,6 +108,18 @@ func main() {
 		} else {
 			slog.Warn("Generated new identity seed — set DINA_IDENTITY_SEED for explicit control", "path", seedPath)
 		}
+	}
+	// Verify seed is not all zeros.
+	allZero := true
+	for _, b := range bootstrapSeed {
+		if b != 0 {
+			allZero = false
+			break
+		}
+	}
+	if allZero {
+		slog.Error("Identity seed is all zeros — refusing to start")
+		os.Exit(1)
 	}
 	_, signingKeyBytes, _ := slip0010.DerivePath(bootstrapSeed, "m/9999'/0'")
 	var signingPrivKey ed25519.PrivateKey
@@ -141,6 +159,7 @@ func main() {
 			plcClient.SetAdminToken(cfg.PDSAdminPassword)
 		}
 		didMgr.SetPLCClient(plcClient, k256Mgr)
+		didMgr.SetPDSCredentials(cfg.PDSHandle, cfg.PDSAdminPassword, cfg.PDSEmail)
 		slog.Info("AT Protocol PDS configured", "pds_url", cfg.PDSURL, "plc_url", plcURL)
 	} else {
 		pdsPublisher = pds.NewPDSPublisher("")
@@ -338,7 +357,7 @@ func main() {
 	// ---------- Construct handlers ----------
 
 	healthH := &handler.HealthHandler{Health: healthChecker}
-	adminH := &handler.AdminHandler{ProxyURL: cfg.BrainURL, Token: cfg.BrainToken}
+	adminH := &handler.AdminHandler{ProxyURL: cfg.BrainURL, Token: cfg.ClientToken}
 	vaultH := &handler.VaultHandler{Vault: vaultSvc, PII: scrubber}
 	identityH := &handler.IdentityHandler{Identity: identitySvc, DID: didMgr, Signer: identitySigner, Mnemonic: bip39, IdentitySeed: bootstrapSeed}
 	messageH := &handler.MessageHandler{Transport: transportSvc, IngressRouter: ingressRouter}
@@ -464,11 +483,12 @@ func main() {
 	}
 
 	srv := &http.Server{
-		Addr:         addr,
-		Handler:      chain,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 35 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr:           addr,
+		Handler:        chain,
+		ReadTimeout:    10 * time.Second,
+		WriteTimeout:   35 * time.Second,
+		IdleTimeout:    60 * time.Second,
+		MaxHeaderBytes: 1 << 20,
 	}
 
 	// Graceful shutdown on SIGINT/SIGTERM.

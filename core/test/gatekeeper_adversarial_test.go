@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anthropics/dina/core/internal/domain"
-	"github.com/anthropics/dina/core/internal/service"
-	"github.com/anthropics/dina/core/test/testutil"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/service"
+	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
 
 // ==========================================================================

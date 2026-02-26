@@ -5,8 +5,8 @@ import (
 	"crypto/ed25519"
 	"testing"
 
-	dinacrypto "github.com/anthropics/dina/core/internal/adapter/crypto"
-	"github.com/anthropics/dina/core/internal/domain"
+	dinacrypto "github.com/rajmohanutopai/dina/core/internal/adapter/crypto"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
 )
 
 // ==========================================================================

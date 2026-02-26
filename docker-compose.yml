@@ -50,8 +50,7 @@ services:
     build:
       context: ./brain
       dockerfile: Dockerfile
-    ports:
-      - "${DINA_BRAIN_PORT:-8200}:8200"
+    # No host port exposure — brain is internal-only, reachable via Docker network
     volumes:
       - dina-data:/data
       - ./dina.html:/app/dina.html:ro
@@ -109,8 +108,8 @@ services:
       - PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX=${DINA_PDS_ROTATION_KEY_HEX:-}
       - PDS_JWT_SECRET=${DINA_PDS_JWT_SECRET:-}
       - PDS_ADMIN_PASSWORD=${DINA_PDS_ADMIN_PASSWORD:-}
-      - PDS_DEV_MODE=true
-      - PDS_INVITE_REQUIRED=false
+      - PDS_DEV_MODE=${DINA_PDS_DEV_MODE:-false}
+      - PDS_INVITE_REQUIRED=${DINA_PDS_INVITE_REQUIRED:-true}
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/xrpc/_health"]
       interval: 10s

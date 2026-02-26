@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/anthropics/dina/core/internal/domain"
-	"github.com/anthropics/dina/core/internal/port"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/port"
 )
 
 // defaultWatchdogInterval is the default interval between health check ticks.

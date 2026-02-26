@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anthropics/dina/core/internal/adapter/identity"
-	"github.com/anthropics/dina/core/internal/domain"
-	"github.com/anthropics/dina/core/test/testutil"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/identity"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
 
 // idCtx is a background context used for all identity port calls.
@@ -641,8 +641,17 @@ func TestIdentity_3_3_9_LockedPersonaUnlockFlow(t *testing.T) {
 func TestIdentity_3_3_10_LockedPersonaUnlockDenied(t *testing.T) {
 	// Try unlock with wrong passphrase, verify still locked.
 	pm := identity.NewPersonaManager()
+
+	// CRITICAL-01: Set up a passphrase verifier that rejects wrong passphrases.
+	pm.VerifyPassphrase = func(storedHash, passphrase string) (bool, error) {
+		return passphrase == testutil.TestPassphrase, nil
+	}
+
 	_, err := pm.Create(idCtx, "denied", "locked")
 	testutil.RequireNoError(t, err)
+
+	// Set a passphrase hash on the persona so verification is triggered.
+	pm.SetPersonaPassphraseHash("persona-denied", "argon2id$hash$placeholder")
 
 	// Verify initially locked.
 	locked, _ := pm.IsLocked("persona-denied")

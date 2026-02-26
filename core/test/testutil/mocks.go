@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/anthropics/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
 )
 
 // Sentinel errors for mock implementations.
@@ -363,7 +363,7 @@ func (m *MockTokenValidator) IdentifyToken(token string) (domain.TokenType, stri
 	return domain.TokenUnknown, "", ErrInvalidToken
 }
 
-func (m *MockTokenValidator) VerifySignature(did, method, path, timestamp string, body []byte, signatureHex string) (domain.TokenType, string, error) {
+func (m *MockTokenValidator) VerifySignature(did, method, path, query, timestamp string, body []byte, signatureHex string) (domain.TokenType, string, error) {
 	// Mock always rejects — use the real tokenValidator for signature tests.
 	return domain.TokenUnknown, "", ErrInvalidToken
 }

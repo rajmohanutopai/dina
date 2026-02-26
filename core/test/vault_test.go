@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/anthropics/dina/core/internal/domain"
-	"github.com/anthropics/dina/core/test/testutil"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
 
 var vaultCtx = context.Background()

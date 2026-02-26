@@ -18,5 +18,6 @@ var (
 	ErrNotFound         = errors.New("not found")
 	ErrInvalidInput     = errors.New("invalid input")
 	ErrInvalidPath      = errors.New("invalid derivation path")
-	ErrInvalidMnemonic  = errors.New("invalid mnemonic")
+	ErrInvalidMnemonic    = errors.New("invalid mnemonic")
+	ErrInvalidPassphrase = errors.New("invalid passphrase")
 )

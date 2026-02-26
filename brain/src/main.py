@@ -148,7 +148,12 @@ def create_app() -> FastAPI:
     )
 
     # 2. Construct adapters
-    core_client = CoreHTTPClient(cfg.core_url, cfg.brain_token)
+    brain_core_client = CoreHTTPClient(cfg.core_url, cfg.brain_token)
+    admin_core_client: CoreHTTPClient | None = (
+        CoreHTTPClient(cfg.core_url, cfg.client_token)
+        if cfg.client_token
+        else None
+    )
 
     # LLM providers (optional — graceful degradation)
     providers: dict[str, object] = {}
@@ -256,7 +261,7 @@ def create_app() -> FastAPI:
     async def reload_llm_providers() -> None:
         """Rebuild LLM providers from KV-stored keys + env var fallback."""
         try:
-            raw = await core_client.get_kv("user_settings")
+            raw = await brain_core_client.get_kv("user_settings")
             kv = json.loads(raw) if raw else {}
         except Exception:
             kv = {}
@@ -313,12 +318,12 @@ def create_app() -> FastAPI:
         # Update the local providers dict so healthz sees the new state
         providers.clear()
         providers.update(new_providers)
-    entity_vault = EntityVaultService(scrubber=scrubber, core_client=core_client)
-    nudge = NudgeAssembler(core=core_client, llm=llm_router, entity_vault=entity_vault)
-    scratchpad = ScratchpadService(core=core_client)
-    sync_engine = SyncEngine(core=core_client, mcp=mcp_client, llm=llm_router)
+    entity_vault = EntityVaultService(scrubber=scrubber, core_client=brain_core_client)
+    nudge = NudgeAssembler(core=brain_core_client, llm=llm_router, entity_vault=entity_vault)
+    scratchpad = ScratchpadService(core=brain_core_client)
+    sync_engine = SyncEngine(core=brain_core_client, mcp=mcp_client, llm=llm_router)
     guardian = GuardianLoop(
-        core=core_client,
+        core=brain_core_client,
         llm_router=llm_router,
         scrubber=scrubber,
         entity_vault=entity_vault,
@@ -371,13 +376,16 @@ def create_app() -> FastAPI:
             if os.path.isdir(_img_candidate):
                 _images_dir = _img_candidate
             break
-    admin_ui = create_admin_app(
-        core_client, cfg, dina_html_path=_dina_html, images_dir=_images_dir,
-        llm_reload_callback=reload_llm_providers,
-    )
-
     master.mount("/api", brain_api)
-    master.mount("/admin", admin_ui)
+
+    if cfg.client_token and admin_core_client:
+        admin_ui = create_admin_app(
+            admin_core_client, cfg, dina_html_path=_dina_html, images_dir=_images_dir,
+            llm_reload_callback=reload_llm_providers,
+        )
+        master.mount("/admin", admin_ui)
+    else:
+        log.info("Admin UI disabled — set DINA_CLIENT_TOKEN to enable")
 
     # 5. Register unauthenticated endpoints on the master app
 
@@ -392,7 +400,7 @@ def create_app() -> FastAPI:
 
         # Check core
         try:
-            await core_client.health()
+            await brain_core_client.health()
             components["core_client"] = "healthy"
         except Exception:
             components["core_client"] = "unreachable"
@@ -415,7 +423,9 @@ def create_app() -> FastAPI:
     @master.on_event("shutdown")
     async def shutdown_event() -> None:
         """Clean up resources on shutdown."""
-        await core_client.close()
+        await brain_core_client.close()
+        if admin_core_client:
+            await admin_core_client.close()
         await mcp_client.disconnect_all()
         log.info("brain.shutdown")
 

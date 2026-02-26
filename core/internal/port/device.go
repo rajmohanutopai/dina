@@ -3,7 +3,7 @@ package port
 import (
 	"context"
 
-	"github.com/anthropics/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
 )
 
 // DevicePairer handles the 6-digit pairing ceremony.

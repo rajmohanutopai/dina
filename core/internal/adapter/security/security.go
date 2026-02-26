@@ -4,7 +4,7 @@ package security
 import (
 	"strings"
 
-	"github.com/anthropics/dina/core/test/testutil"
+	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
 
 // DockerConfig is an alias to testutil.DockerConfig for security auditing.

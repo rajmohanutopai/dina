@@ -8,10 +8,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"os"
 	"sync"
 
-	"github.com/anthropics/dina/core/internal/domain"
-	"github.com/anthropics/dina/core/internal/port"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/port"
 )
 
 // d2dPayload is the JSON wrapper sent over the wire containing both
@@ -353,8 +355,20 @@ func (s *TransportService) ProcessInbound(ctx context.Context, sealed []byte) (*
 		}
 		ciphertext = decoded
 		sigHex = payload.Sig
+
+		// Reject unsigned JSON-wrapped messages unless migration mode is enabled.
+		if payload.Sig == "" {
+			if os.Getenv("DINA_ALLOW_UNSIGNED_D2D") != "1" {
+				return nil, fmt.Errorf("transport: %w: unsigned inbound messages rejected", domain.ErrInvalidSignature)
+			}
+			slog.Warn("transport: accepting unsigned D2D message (migration mode)")
+		}
 	} else {
 		// Legacy format — raw NaCl sealed box bytes (no signature).
+		if os.Getenv("DINA_ALLOW_UNSIGNED_D2D") != "1" {
+			return nil, fmt.Errorf("transport: %w: unsigned legacy payload rejected", domain.ErrInvalidSignature)
+		}
+		slog.Warn("transport: accepting unsigned legacy D2D (migration mode)")
 		ciphertext = sealed
 	}
 

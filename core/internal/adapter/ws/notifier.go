@@ -3,7 +3,7 @@ package ws
 import (
 	"context"
 
-	"github.com/anthropics/dina/core/internal/port"
+	"github.com/rajmohanutopai/dina/core/internal/port"
 )
 
 var _ port.ClientNotifier = (*Notifier)(nil)

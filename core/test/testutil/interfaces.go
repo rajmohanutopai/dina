@@ -7,7 +7,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/anthropics/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
 )
 
 // ---------- §4 Vault (SQLCipher) ----------

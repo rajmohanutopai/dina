@@ -25,9 +25,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/anthropics/dina/core/internal/domain"
-	"github.com/anthropics/dina/core/internal/port"
-	"github.com/anthropics/dina/core/test/testutil"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/port"
+	"github.com/rajmohanutopai/dina/core/test/testutil"
 	"golang.org/x/crypto/argon2"
 )
 
@@ -35,6 +35,7 @@ import (
 var _ port.TokenValidator = (*tokenValidator)(nil)
 var _ port.DeviceKeyRegistrar = (*tokenValidator)(nil)
 var _ port.ClientTokenRegistrar = (*tokenValidator)(nil)
+var _ port.TokenRevoker = (*tokenValidator)(nil)
 var _ port.SessionManager = (*sessionManager)(nil)
 var _ port.PassphraseVerifier = (*passphraseVerifier)(nil)
 var _ port.RateLimiter = (*rateLimiter)(nil)
@@ -63,6 +64,7 @@ type tokenValidator struct {
 	brainToken   string
 	clientTokens map[string]string           // SHA-256(token) hex -> deviceID
 	deviceKeys   map[string]*devicePubKey    // did:key:z... -> public key entry
+	nonceCache   map[string]time.Time        // signatureHex -> first-seen time (replay protection)
 	clock        port.Clock
 	maxClockSkew time.Duration
 }
@@ -84,6 +86,7 @@ func NewTokenValidator(brainToken string, clientTokens map[string]string) *token
 		brainToken:   brainToken,
 		clientTokens: ct,
 		deviceKeys:   make(map[string]*devicePubKey),
+		nonceCache:   make(map[string]time.Time),
 		maxClockSkew: 5 * time.Minute,
 	}
 }
@@ -121,6 +124,17 @@ func (v *tokenValidator) RegisterClientToken(token string, deviceID string) {
 	defer v.mu.Unlock()
 	hash := sha256Hex(token)
 	v.clientTokens[hash] = deviceID
+}
+
+// RevokeClientTokenByDevice removes all client tokens associated with a device identity.
+func (v *tokenValidator) RevokeClientTokenByDevice(deviceIdentity string) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	for hash, devID := range v.clientTokens {
+		if devID == deviceIdentity {
+			delete(v.clientTokens, hash)
+		}
+	}
 }
 
 // NewDefaultTokenValidator creates a validator with hardcoded test tokens.
@@ -180,11 +194,13 @@ func (v *tokenValidator) IdentifyToken(token string) (kind domain.TokenType, ide
 }
 
 // VerifySignature validates an Ed25519 request signature against the device
-// key registry. It enforces a clock-skew window to prevent replay attacks.
+// key registry. It enforces a clock-skew window and nonce cache to prevent
+// replay attacks. The query parameter binds the URL query string into the
+// signed payload.
 //
-// The canonical signing payload is: "{method}\n{path}\n{timestamp}\n{sha256hex(body)}"
+// The canonical signing payload is: "{method}\n{path}\n{query}\n{timestamp}\n{sha256hex(body)}"
 func (v *tokenValidator) VerifySignature(
-	did, method, path, timestamp string, body []byte, signatureHex string,
+	did, method, path, query, timestamp string, body []byte, signatureHex string,
 ) (domain.TokenType, string, error) {
 	// 1. Look up the DID in the device key registry.
 	v.mu.RLock()
@@ -217,8 +233,8 @@ func (v *tokenValidator) VerifySignature(
 	// 3. Compute body hash.
 	bodyHash := sha256Hex(string(body))
 
-	// 4. Reconstruct the canonical signing payload.
-	payload := fmt.Sprintf("%s\n%s\n%s\n%s", method, path, timestamp, bodyHash)
+	// 4. Reconstruct the canonical signing payload (now includes query).
+	payload := fmt.Sprintf("%s\n%s\n%s\n%s\n%s", method, path, query, timestamp, bodyHash)
 
 	// 5. Decode signature from hex.
 	sig, err := hex.DecodeString(signatureHex)
@@ -230,6 +246,22 @@ func (v *tokenValidator) VerifySignature(
 	if !ed25519.Verify(dpk.publicKey, []byte(payload), sig) {
 		return domain.TokenUnknown, "", ErrInvalidToken
 	}
+
+	// 7. Replay check: reject duplicate signatures within the clock skew window.
+	v.mu.Lock()
+	if _, seen := v.nonceCache[signatureHex]; seen {
+		v.mu.Unlock()
+		return domain.TokenUnknown, "", errors.New("replayed signature")
+	}
+	v.nonceCache[signatureHex] = now
+	// Evict old entries outside the clock skew window.
+	cutoff := now.Add(-v.maxClockSkew)
+	for cachedSig, cachedTS := range v.nonceCache {
+		if cachedTS.Before(cutoff) {
+			delete(v.nonceCache, cachedSig)
+		}
+	}
+	v.mu.Unlock()
 
 	return domain.TokenClient, dpk.deviceID, nil
 }

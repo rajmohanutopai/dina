@@ -40,10 +40,15 @@ def _load_saved() -> dict:
 
 def save_config(values: dict) -> Path:
     """Write config values to ~/.dina/cli/config.json. Returns the path."""
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
     tmp = CONFIG_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(values, indent=2))
-    os.replace(tmp, CONFIG_FILE)
+    old_umask = os.umask(0o077)
+    try:
+        tmp.write_text(json.dumps(values, indent=2))
+        os.replace(tmp, CONFIG_FILE)
+    finally:
+        os.umask(old_umask)
+    CONFIG_FILE.chmod(0o600)
     return CONFIG_FILE
 
 

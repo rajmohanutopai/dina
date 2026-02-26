@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/anthropics/dina/core/internal/service"
+	"github.com/rajmohanutopai/dina/core/internal/service"
 )
 
 // TaskHandler exposes task acknowledgement endpoints.

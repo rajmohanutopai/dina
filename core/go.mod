@@ -1,4 +1,4 @@
-module github.com/anthropics/dina/core
+module github.com/rajmohanutopai/dina/core
 
 go 1.25
 

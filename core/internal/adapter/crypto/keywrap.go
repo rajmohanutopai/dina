@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/anthropics/dina/core/internal/port"
+	"github.com/rajmohanutopai/dina/core/internal/port"
 )
 
 // Compile-time check: AESGCMKeyWrapper satisfies port.KeyWrapper.

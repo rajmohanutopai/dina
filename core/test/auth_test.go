@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anthropics/dina/core/internal/adapter/auth"
-	"github.com/anthropics/dina/core/internal/domain"
-	"github.com/anthropics/dina/core/test/testutil"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/auth"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
 
 var authCtx = context.Background()

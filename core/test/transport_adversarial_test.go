@@ -13,12 +13,12 @@ import (
 	"testing"
 	"time"
 
-	dinacrypto "github.com/anthropics/dina/core/internal/adapter/crypto"
-	"github.com/anthropics/dina/core/internal/domain"
-	"github.com/anthropics/dina/core/internal/ingress"
-	"github.com/anthropics/dina/core/internal/port"
-	"github.com/anthropics/dina/core/internal/service"
-	"github.com/anthropics/dina/core/test/testutil"
+	dinacrypto "github.com/rajmohanutopai/dina/core/internal/adapter/crypto"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/ingress"
+	"github.com/rajmohanutopai/dina/core/internal/port"
+	"github.com/rajmohanutopai/dina/core/internal/service"
+	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
 
 // ==========================================================================

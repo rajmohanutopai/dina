@@ -26,6 +26,7 @@ type Config struct {
 	PLCURL           string `json:"plc_url"`
 	PDSAdminPassword string `json:"pds_admin_password"`
 	PDSHandle        string `json:"pds_handle"`
+	PDSEmail         string `json:"pds_email"`
 	ClientToken      string `json:"client_token"`
 	OwnDID           string `json:"own_did"`
 }
@@ -190,6 +191,9 @@ func loadEnv(cfg *Config) {
 	}
 	if v := os.Getenv("DINA_PDS_HANDLE"); v != "" {
 		cfg.PDSHandle = v
+	}
+	if v := os.Getenv("DINA_PDS_EMAIL"); v != "" {
+		cfg.PDSEmail = v
 	}
 	if v := os.Getenv("DINA_CLIENT_TOKEN"); v != "" {
 		cfg.ClientToken = v

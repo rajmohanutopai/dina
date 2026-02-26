@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/anthropics/dina/core/internal/service"
+	"github.com/rajmohanutopai/dina/core/internal/service"
 )
 
 // DeviceHandler exposes device pairing and management endpoints.
@@ -16,6 +16,11 @@ type DeviceHandler struct {
 // HandleInitiatePairing handles POST /v1/pair/initiate. It generates a new
 // 6-digit pairing code and returns it with an expiry duration.
 func (h *DeviceHandler) HandleInitiatePairing(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
 	code, _, err := h.Device.InitiatePairing(r.Context())
 	if err != nil {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
@@ -41,6 +46,11 @@ type completePairingRequest struct {
 // the device uses Ed25519 signature auth (no client token generated).
 // Otherwise falls back to legacy token auth.
 func (h *DeviceHandler) HandleCompletePairing(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
 	var req completePairingRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -78,6 +88,11 @@ func (h *DeviceHandler) HandleCompletePairing(w http.ResponseWriter, r *http.Req
 // HandleListDevices handles GET /v1/devices. It returns all paired devices,
 // including revoked ones.
 func (h *DeviceHandler) HandleListDevices(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
 	devices, err := h.Device.ListDevices(r.Context())
 	if err != nil {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)

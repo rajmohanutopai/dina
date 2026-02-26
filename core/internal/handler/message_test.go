@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anthropics/dina/core/internal/domain"
-	"github.com/anthropics/dina/core/internal/ingress"
-	"github.com/anthropics/dina/core/internal/port"
-	"github.com/anthropics/dina/core/internal/service"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/ingress"
+	"github.com/rajmohanutopai/dina/core/internal/port"
+	"github.com/rajmohanutopai/dina/core/internal/service"
 )
 
 // ---------------------------------------------------------------------------
@@ -203,6 +203,10 @@ func TestHandleIngestNaCl_IngressRouter_NoDuplicate(t *testing.T) {
 // TestHandleIngestNaCl_NoIngressRouter_DirectPath verifies that without an
 // IngressRouter, the fallback direct path still works (ProcessInbound is called).
 func TestHandleIngestNaCl_NoIngressRouter_DirectPath(t *testing.T) {
+	// CRITICAL-04: unsigned messages are now rejected by default.
+	// Set migration flag so the direct-path test can exercise the fallback.
+	t.Setenv("DINA_ALLOW_UNSIGNED_D2D", "1")
+
 	inbox := &stubInboxManager{}
 	ts := newTestTransportService(inbox)
 

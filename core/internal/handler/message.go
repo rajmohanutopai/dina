@@ -2,14 +2,15 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 
-	"github.com/anthropics/dina/core/internal/domain"
-	"github.com/anthropics/dina/core/internal/ingress"
-	"github.com/anthropics/dina/core/internal/service"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/ingress"
+	"github.com/rajmohanutopai/dina/core/internal/service"
 )
 
 // MessageHandler exposes message sending, inbox listing, and NaCl ingress endpoints.
@@ -76,8 +77,15 @@ func (h *MessageHandler) HandleInbox(w http.ResponseWriter, r *http.Request) {
 // routes through the ingress pipeline (rate limit → dead-drop/fast-path), and
 // returns 202 Accepted.
 func (h *MessageHandler) HandleIngestNaCl(w http.ResponseWriter, r *http.Request) {
+	const maxEnvelopeSize = 256 * 1024 // 256 KB
+	r.Body = http.MaxBytesReader(w, r.Body, maxEnvelopeSize)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			http.Error(w, `{"error":"payload too large"}`, http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, `{"error":"failed to read body"}`, http.StatusBadRequest)
 		return
 	}

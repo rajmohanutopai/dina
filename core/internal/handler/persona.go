@@ -1,13 +1,14 @@
 package handler
 
 import (
-	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"net/http"
 
-	"github.com/anthropics/dina/core/internal/domain"
-	"github.com/anthropics/dina/core/internal/port"
-	"github.com/anthropics/dina/core/internal/service"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/port"
+	"github.com/rajmohanutopai/dina/core/internal/service"
+	"golang.org/x/crypto/argon2"
 )
 
 // PersonaHandler serves the /v1/personas endpoints.
@@ -98,6 +99,10 @@ func (h *PersonaHandler) HandleUnlockPersona(w http.ResponseWriter, r *http.Requ
 	// Default TTL of 3600 seconds (1 hour).
 	const defaultTTL = 3600
 	if err := h.Personas.Unlock(r.Context(), req.Persona, req.Passphrase, defaultTTL); err != nil {
+		if errors.Is(err, domain.ErrInvalidPassphrase) {
+			http.Error(w, `{"error":"invalid passphrase"}`, http.StatusForbidden)
+			return
+		}
 		http.Error(w, `{"error":"failed to unlock persona"}`, http.StatusInternalServerError)
 		return
 	}
@@ -105,9 +110,12 @@ func (h *PersonaHandler) HandleUnlockPersona(w http.ResponseWriter, r *http.Requ
 	// Open the corresponding vault so store/query operations work.
 	if h.VaultManager != nil {
 		persona, _ := domain.NewPersonaName(req.Persona)
-		// Derive a deterministic DEK from the passphrase.
-		dek := sha256.Sum256([]byte("dina-dek:" + req.Passphrase + ":" + req.Persona))
-		if err := h.VaultManager.Open(r.Context(), persona, dek[:]); err != nil {
+		// Derive a deterministic DEK from the passphrase using Argon2id.
+		dekSalt := []byte(req.Persona + ":vault")
+		dek := argon2.IDKey([]byte(req.Passphrase), dekSalt, 3, 128*1024, 4, 32)
+		var dekArr [32]byte
+		copy(dekArr[:], dek)
+		if err := h.VaultManager.Open(r.Context(), persona, dekArr[:]); err != nil {
 			http.Error(w, `{"error":"failed to open vault"}`, http.StatusInternalServerError)
 			return
 		}

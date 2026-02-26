@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/anthropics/dina/core/internal/port"
+	"github.com/rajmohanutopai/dina/core/internal/port"
 )
 
 // Loop is a channel-woken sleep loop that fires reminders on schedule.

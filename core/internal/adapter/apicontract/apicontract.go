@@ -4,7 +4,7 @@ package apicontract
 import (
 	"sync"
 
-	"github.com/anthropics/dina/core/test/testutil"
+	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
 
 // APIContractEndpoint is a type alias to testutil.APIContractEndpoint.

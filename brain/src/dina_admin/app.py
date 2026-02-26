@@ -27,6 +27,7 @@ from .routes import dashboard as dashboard_route
 from .routes import devices as devices_route
 from .routes import settings as settings_route
 from .routes import login as login_route
+from .routes.login import validate_session
 from .routes import pages as pages_route
 from .routes import chat as chat_route
 from .routes import history as history_route
@@ -100,10 +101,10 @@ def create_admin_app(
             if hmac.compare_digest(token, client_token):
                 return token
 
-        # Try cookie
-        cookie_token = request.cookies.get("dina_client_token", "")
-        if cookie_token and hmac.compare_digest(cookie_token, client_token):
-            return cookie_token
+        # Try cookie (session-based validation)
+        cookie_val = request.cookies.get("dina_client_token", "")
+        if cookie_val and validate_session(cookie_val):
+            return cookie_val
 
         raise HTTPException(status_code=401, detail="Authentication required")
 

@@ -6,9 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/anthropics/dina/core/internal/adapter/auth"
-	"github.com/anthropics/dina/core/internal/middleware"
-	"github.com/anthropics/dina/core/test/testutil"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/auth"
+	"github.com/rajmohanutopai/dina/core/internal/middleware"
+	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
 
 // ==========================================================================

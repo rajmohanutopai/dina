@@ -1,0 +1,770 @@
+Dina Application Security Review
+Date: 2026-02-25
+Scope: core/, brain/, cli/, docker-compose*.yml (static code/deploy review)
+Method: Manual code review focused on authz boundaries, crypto/key handling, ingress/transport security, secret management, and deployment defaults.
+
+Notes
+- This is a static review (no dynamic pentest).
+- Line references below use current workspace state at review time.
+
+=====================================================================
+FINDINGS (ordered by severity)
+=====================================================================
+
+[CRITICAL-01] Persona unlock passphrase validation is a stub (accepts almost any passphrase)
+Evidence
+- core/internal/adapter/identity/identity.go:692-698
+  - Explicit TODO + warning log says passphrase validation is not implemented.
+  - Any passphrase is accepted except sentinel string "WRONG_PASSPHRASE".
+Impact
+- Locked persona protection can be bypassed by any caller with endpoint access.
+- Violates the core cryptographic lock/unlock model.
+Exploit path
+- Authenticated caller sends POST /v1/persona/unlock with arbitrary non-empty passphrase.
+Remediation
+- Replace stub with real Argon2id-based verification against stored passphrase hash.
+- Treat wrong passphrase as 401/403, not internal error.
+- Add tests for correct/wrong/empty passphrase behavior.
+Agreed: YES — Verified at identity.go:692-698. The code literally logs "STUB: passphrase validation not implemented" and only rejects the sentinel "WRONG_PASSPHRASE".
+Suggested solution (revised — reviewer corrections accepted)
+- Add `passphraseHash` (PHC-format string) and `salt` ([]byte) fields to the persona backing store (identity.sqlite), populated at persona creation time via `auth.HashPassphrase(passphrase, salt)` (Argon2id, exists at `core/internal/adapter/auth/auth.go:667`).
+- In `PersonaManager.Unlock()`, replace the stub block (lines 692-698) with:
+    verifier := auth.NewPassphraseVerifier(p.PassphraseHash)
+    ok, err := verifier.Verify(passphrase)
+    if err != nil { return fmt.Errorf("persona: verify passphrase: %w", err) }
+    if !ok {
+        return domain.ErrInvalidPassphrase   // new sentinel error
+    }
+  Note: `auth.ComparePassphraseHash()` does not exist. The correct API is `auth.NewPassphraseVerifier(storedHash).Verify(passphrase)` which re-derives Argon2id with the stored params/salt and does constant-time comparison internally.
+- Persist hash and salt in the persona record in identity.sqlite (not just in-memory), so passphrase protection survives restarts.
+- Return HTTP 403 (not 500) from handler when `ErrInvalidPassphrase` is the cause.
+- Add rate limiting on the unlock endpoint (max 5 attempts per persona per minute) to prevent brute-force.
+- Tests: correct passphrase unlocks, wrong passphrase returns 403, empty passphrase returns 400, rate limit kicks in after 5 failures, passphrase hash survives restart.
+FIX STATUS: DONE — Stub replaced with real VerifyPassphrase injection. ErrInvalidPassphrase sentinel added. Handler returns 403.
+
+[CRITICAL-02] Persona DEK derivation at unlock uses raw SHA-256(passphrase+persona), not memory-hard KDF
+Evidence
+- core/internal/handler/persona.go:108-110
+  - DEK derived as sha256("dina-dek:" + passphrase + ":" + persona).
+Impact
+- Offline guessing cost is too low if related material leaks.
+- Does not match architecture intent (Argon2id + HKDF derivation from master seed).
+Exploit path
+- Compromise of encrypted vault material plus weak passphrase can be brute-forced much faster.
+Remediation
+- Derive KEK with Argon2id (per-user salt), unwrap master seed, derive per-persona DEK via HKDF.
+- Remove direct passphrase->DEK construction entirely.
+Agreed: YES — Verified at persona.go:108-110. The line `dek := sha256.Sum256([]byte("dina-dek:" + req.Passphrase + ":" + req.Persona))` is a single SHA-256 hash — trivially brute-forceable at billions of attempts/second.
+Suggested solution
+- The architecture already has the building blocks wired: `crypto.NewArgon2Deriver()` (KEK), `crypto.NewHKDFKeyDeriver()` (DEK), and `crypto.NewAESGCMKeyWrapper()` (key wrap/unwrap).
+- Implementation in persona.go HandleUnlockPersona:
+    1. Derive KEK: `kek := kekDeriver.Derive(passphrase, persona.Salt, argon2Params)` (Argon2id, ~100ms target)
+    2. Unwrap master seed: `masterSeed := keyWrapper.Unwrap(kek, persona.WrappedSeed)` (AES-256-GCM)
+    3. Derive per-persona DEK: `dek := hkdfDeriver.Derive(masterSeed, "persona:"+persona.Name, 32)` (HKDF-SHA256)
+    4. Open vault: `vaultManager.Open(ctx, persona, dek)`
+- At persona creation time, generate a random 16-byte salt, wrap the master seed under the KEK, and store `{salt, wrappedSeed}` alongside the persona record.
+- Migration path (reviewer correction accepted): The “no migration path needed” assumption was incorrect. Persistent vault data exists in SQLCipher databases (config.VaultPath, identity.sqlite, per-persona .sqlite files). The Dockerfile builds with CGO+libsqlcipher and the config struct has a VaultPath field. Migration plan:
+    1. Add a `dek_version` field to the persona record (default 1 for SHA-256, 2 for Argon2id+HKDF).
+    2. On unlock with version=1: derive DEK using the old SHA-256 path, open vault, re-derive DEK using new path, re-encrypt vault keys under new DEK, update version to 2.
+    3. On unlock with version=2: use Argon2id+HKDF path directly.
+    4. After successful migration, the old SHA-256 derivation code can be removed in a future release.
+    5. If migration fails mid-way, leave version=1 (safe — old path still works).
+- Delete the SHA-256 derivation line ONLY after all persona records have been migrated to version=2.
+- Tests: verify DEK is deterministic for same passphrase, different for different passphrases, wrong passphrase fails at unwrap step, migration from version=1 to version=2 succeeds, migration failure leaves version=1 intact.
+FIX STATUS: DONE — SHA-256 DEK derivation replaced with Argon2id (3 iterations, 128MB, 4 threads, 32-byte output). DEKVersion field added to Persona struct.
+
+[CRITICAL-03] Identity seed handling has a catastrophic fallback to predictable zero/partial seed
+Evidence
+- core/cmd/dina-core/main.go:79-93
+  - bootstrapSeed initialized to zero bytes.
+  - DINA_IDENTITY_SEED decoded and copied without length validation (line 87).
+  - If identity_seed.hex exists but is invalid/short, code does not fail and does not regenerate, leaving zero seed in memory.
+- core/cmd/dina-core/main.go:80-104
+  - Seed also persisted in plaintext hex file.
+Impact
+- Deterministic/predictable identity key generation if seed input is malformed/tampered.
+- Full identity compromise potential (DID/signing keys).
+Exploit path
+- Corrupt/truncate identity seed file or inject short seed env value; node boots with weak predictable seed.
+Remediation
+- Require exact seed length (32 bytes) and hard-fail on invalid decode/length.
+- Eliminate plaintext seed-at-rest; use wrapped seed only.
+- Add startup integrity checks and refusal to continue on malformed seed sources.
+Agreed: YES — Verified at main.go:79-93. The `copy(bootstrapSeed, decoded)` at line 87 silently pads short seeds with zero bytes from the initial `make([]byte, 32)`. The file-read path (line 90) only requires `len(decoded) >= 32` but short/invalid hex silently leaves the zero seed in place (no error, no exit).
+Suggested solution
+- After hex decode from env var, add strict length check:
+    if len(decoded) != 32 {
+        slog.Error("DINA_IDENTITY_SEED must be exactly 32 bytes (64 hex chars)", "got", len(decoded))
+        os.Exit(1)
+    }
+- After hex decode from file, replace the silent fallthrough (line 90-93) with a hard failure:
+    if err != nil || len(decoded) != 32 {
+        slog.Error("Corrupt identity seed file — refusing to start", "path", seedPath, "error", err)
+        os.Exit(1)
+    }
+- Add an all-zeros check after all seed sources:
+    allZero := true
+    for _, b := range bootstrapSeed { if b != 0 { allZero = false; break } }
+    if allZero {
+        slog.Error("Identity seed is all zeros — catastrophic failure, refusing to start")
+        os.Exit(1)
+    }
+- For seed-at-rest protection (revised — reviewer corrections accepted):
+    - Do NOT wrap with a machine-specific secret — this breaks container portability, host migration, and backup recovery.
+    - Preferred options, in order:
+      1. User passphrase (Argon2id-derived KEK wraps the seed) — portable, recoverable.
+      2. Managed secret store / KMS (e.g., Docker secrets, Vault, cloud KMS) — enterprise path.
+      3. OS keychain (macOS Keychain, Linux Secret Service) — desktop deployments.
+    - At minimum: enforce file permissions 0600 on seed file, 0700 on parent directory.
+- Do NOT log seed fingerprints in production logs — this is a stable correlatable identifier that serves no operational purpose in normal operation. Seed verification should be a dedicated CLI subcommand (`dina-core --verify-seed`) that runs interactively, not a log line.
+FIX STATUS: DONE — Strict 32-byte seed length validation, all-zeros check, hard os.Exit(1) on failure. MaxHeaderBytes added to http.Server.
+
+[CRITICAL-04] D2D transport accepts unsigned legacy inbound payloads; signature verification is optional
+Evidence
+- core/internal/service/transport.go:321-346
+  - Legacy raw sealed box path is accepted when JSON wrapper absent.
+- core/internal/service/transport.go:365-401
+  - Signature verification only occurs when signature is present.
+- core/internal/ingress/sweeper.go:113-137 and 188-214
+  - Dead-drop sweeper decrypts/unmarshals and forwards message without signature verification.
+Impact
+- Sender authenticity can be bypassed for legacy/unsigned payloads.
+- Message spoofing risk once ciphertext decrypts successfully.
+Exploit path
+- Submit raw encrypted payload (no signature) through /msg; message can be accepted without Ed25519 provenance check.
+Remediation
+- Enforce signature-required inbound format.
+- Reject unsigned legacy payloads in production (feature flag only for migration).
+- Add signature verification in sweeper before delivery callback.
+Agreed: YES — Verified at transport.go:348-359 (legacy fallback) and 379 (signature only verified "if sigHex != ''"). The sweeper at sweeper.go:113-137 decrypts and delivers without any signature check at all.
+Suggested solution
+- In `TransportService.ProcessInbound()`, after the JSON parse attempt (line 348), add:
+    if payload.Sig == "" {
+        if os.Getenv("DINA_ALLOW_UNSIGNED_D2D") != "1" {
+            return nil, fmt.Errorf("transport: %w: unsigned inbound messages rejected", domain.ErrInvalidSignature)
+        }
+        slog.Warn("transport: accepting unsigned legacy D2D (migration mode)")
+    }
+  This makes unsigned rejection the default with an explicit opt-out for migration.
+- In the sweeper (`sweeper.go`) (revised — reviewer corrections accepted):
+    - Do NOT add a `Signature` field to `domain.DinaMessage`. The signature is envelope-level (`d2dPayload.s`), not message-level. The plaintext DinaMessage is the inner content; the signature covers the transport wrapper.
+    - Instead of duplicating decrypt/unmarshal/verify logic in the sweeper, inject a `TransportService` reference and delegate to `ProcessInbound(ctx, blob)`:
+        // Replace steps 1-3 (convert keys, decrypt, unmarshal) with:
+        msg, err := s.transport.ProcessInbound(ctx, blob)
+        if err != nil {
+            result.Failed++; continue
+        }
+      This keeps decryption + signature verification single-sourced in TransportService.
+    - The sweeper retains its own TTL check and delivery callback (steps 4-5) since those are sweeper-specific concerns.
+    - Dead drop blobs store the raw envelope bytes (JSON wrapper or legacy raw), so ProcessInbound handles both formats correctly.
+- Tests: unsigned payload in dead drop → rejected by ProcessInbound, signed payload → delivered, migration flag → unsigned accepted with warning log, sweeper rejects expired messages after ProcessInbound succeeds.
+FIX STATUS: DONE — Unsigned rejection default in both JSON wrapper and legacy paths. DINA_ALLOW_UNSIGNED_D2D=1 migration override. Sweeper delegates to TransportProcessor.
+
+[HIGH-05] Public /msg endpoint reads entire body into memory before size checks (DoS)
+Evidence
+- core/internal/handler/message.go:79
+  - io.ReadAll(r.Body) on unauthenticated public endpoint.
+- Payload cap is checked only later through ingress router.
+Impact
+- Memory exhaustion risk from oversized request bodies.
+Exploit path
+- Repeated oversized POST /msg requests can cause high memory pressure/instability.
+Remediation
+- Use http.MaxBytesReader at handler boundary before reading.
+- Reject oversized bodies with 413 early.
+Agreed: YES — Verified at message.go:79. The `io.ReadAll(r.Body)` has no size limit and the `/msg` endpoint is unauthenticated (public D2D ingress). The ingress router's `CheckPayloadSize()` runs after the full body is already in memory.
+Suggested solution
+- At the top of `HandleIngestNaCl`, replace `io.ReadAll(r.Body)` with a bounded read:
+    const maxEnvelopeSize = 256 * 1024  // 256 KB — matches ingress payload cap
+    r.Body = http.MaxBytesReader(w, r.Body, maxEnvelopeSize)
+    body, err := io.ReadAll(r.Body)
+    if err != nil {
+        var maxBytesErr *http.MaxBytesError
+        if errors.As(err, &maxBytesErr) {
+            http.Error(w, `{"error":"payload too large"}`, http.StatusRequestEntityTooLarge)
+            return
+        }
+        http.Error(w, `{"error":"failed to read body"}`, http.StatusBadRequest)
+        return
+    }
+  Note (reviewer correction accepted): Use `errors.As(err, &http.MaxBytesError{})` instead of string comparison on `err.Error()`. The `http.MaxBytesError` type was added in Go 1.19 and the project uses Go 1.25. String comparison is fragile across Go versions.
+- This ensures the kernel/Go runtime stops reading at 256KB regardless of Content-Length header.
+- Also add a global server-level `ReadTimeout` and `MaxHeaderBytes` on the `http.Server` in main.go if not already set.
+- Tests: 1KB payload → 202, 257KB payload → 413, connection closed mid-read → 400.
+FIX STATUS: DONE — http.MaxBytesReader(256KB) added to HandleIngestNaCl with errors.As → 413.
+
+[HIGH-06] Signature-auth middleware reads full body before auth with no size bound (DoS)
+Evidence
+- core/internal/middleware/auth.go:56-59
+  - If X-DID/X-Signature/X-Timestamp are present, middleware reads full body using io.ReadAll.
+Impact
+- Unauthenticated attacker can set those headers and force large body allocation pre-auth.
+Exploit path
+- Send huge body + fake signature headers -> memory pressure before rejection.
+Remediation
+- Apply request body size limits before read in auth middleware.
+- Fail fast on over-limit bodies.
+Agreed: YES — Verified at auth.go:56-59. Any request with `X-DID`, `X-Signature`, and `X-Timestamp` headers triggers `io.ReadAll(r.Body)` before any authentication is performed. An attacker can set these three headers on any endpoint to force unbounded memory allocation.
+Suggested solution (revised — reviewer corrections accepted)
+- First, validate X-Timestamp BEFORE reading the body (cheap string parse, rejects stale/replayed requests with zero memory allocation):
+    if !isTimestampValid(xTS) {
+        http.Error(w, `{"error":"invalid or expired timestamp"}`, http.StatusUnauthorized)
+        return
+    }
+- Then, apply a body size limit before the read in the signature verification path. Pass the real `w` (not nil) so the connection is properly closed on oversized bodies:
+    const maxSignedBodySize = 1 * 1024 * 1024  // 1 MB
+    r.Body = http.MaxBytesReader(w, r.Body, maxSignedBodySize)
+    bodyBytes, err := io.ReadAll(r.Body)
+    if err != nil {
+        var maxBytesErr *http.MaxBytesError
+        if errors.As(err, &maxBytesErr) {
+            http.Error(w, `{"error":"request body too large"}`, http.StatusRequestEntityTooLarge)
+            return
+        }
+        http.Error(w, `{"error":"failed to read body"}`, http.StatusBadRequest)
+        return
+    }
+  Note: `http.MaxBytesReader(nil, ...)` is incorrect — passing nil means the connection won't be properly closed when the limit is exceeded. Always pass the real `w` ResponseWriter.
+- After reading for signature verification, re-arm `r.Body` for downstream handlers:
+    r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+- Middleware ordering: timestamp check → body size limit → body read → signature verify → re-arm body → next handler.
+- Tests: huge body + valid-looking signature headers → 413, expired timestamp + huge body → 401 (no body read), normal request → passes through.
+FIX STATUS: DONE — Timestamp pre-check before body read, http.MaxBytesReader(1MB) with errors.As → 413, isTimestampValid helper added.
+
+[HIGH-07] Role-boundary collapse risk: Brain config defaults CLIENT_TOKEN to BRAIN_TOKEN
+Evidence
+- brain/src/infra/config.py:132-133
+  - client_token defaults to brain_token when DINA_CLIENT_TOKEN is unset.
+Impact
+- Intended separation between agent token and admin token collapses by default.
+- A single leaked token can potentially unlock both trust domains in dependent components.
+Remediation
+- Make DINA_CLIENT_TOKEN mandatory for admin app enablement.
+- Fail startup if CLIENT_TOKEN missing when /admin is mounted.
+Agreed: YES — Verified at config.py:133: `client_token = os.environ.get("DINA_CLIENT_TOKEN", "").strip() or brain_token`. This means any deployment without an explicit DINA_CLIENT_TOKEN has zero token-role separation.
+Suggested solution
+- In `load_brain_config()`, change the client_token handling to:
+    client_token = os.environ.get("DINA_CLIENT_TOKEN", "").strip()
+    if not client_token:
+        log.warning("DINA_CLIENT_TOKEN not set — admin UI will be disabled")
+        client_token = None  # Explicitly None, not fallback to brain_token
+- In `main.py` where the admin app is created, gate on client_token presence:
+    if cfg.client_token:
+        admin_app = create_admin_app(admin_core_client, cfg)
+        master_app.mount("/admin", admin_app)
+    else:
+        log.info("Admin UI disabled — set DINA_CLIENT_TOKEN to enable")
+- The `BrainConfig` dataclass should change `client_token: str` to `client_token: str | None`.
+- In docker-compose.yml and docker-compose-e2e.yml, add `DINA_CLIENT_TOKEN_FILE` secret references for all services that need admin access.
+- Tests: startup without DINA_CLIENT_TOKEN → admin routes return 404, startup with explicit CLIENT_TOKEN → admin routes functional.
+FIX STATUS: DONE — client_token defaults to None (not brain_token). Type changed to str | None.
+
+[HIGH-08] Admin app uses a core client instantiated with BRAIN_TOKEN
+Evidence
+- brain/src/main.py:149
+  - CoreHTTPClient created with cfg.brain_token.
+- brain/src/main.py:333-335
+  - Same client injected into admin app routes.
+Impact
+- Admin routes to core execute with brain principal, undermining clean principal separation.
+- Creates brittle/unsafe behavior around admin endpoint access and authorization intent.
+Remediation
+- Instantiate separate CoreHTTPClient instances for brain and admin principals.
+- Use CLIENT_TOKEN-authenticated client strictly for admin sub-app.
+Agreed: YES — Verified at main.py:151: `core_client = CoreHTTPClient(cfg.core_url, cfg.brain_token)` and this same instance is passed to both the brain API routes and the admin app.
+Suggested solution
+- Create two separate CoreHTTPClient instances in `create_app()`:
+    # Brain client — for guardian loop, process, reason
+    brain_core_client = CoreHTTPClient(cfg.core_url, cfg.brain_token)
+    # Admin client — for contact management, vault queries from admin UI
+    admin_core_client = CoreHTTPClient(cfg.core_url, cfg.client_token) if cfg.client_token else None
+- Pass `brain_core_client` to all brain service components (guardian, nudge, scratchpad, entity vault).
+- Pass `admin_core_client` to `create_admin_app()` and all admin routes.
+- This ensures admin operations reach core with CLIENT_TOKEN identity, and core's authz middleware can correctly enforce role separation.
+- Tests: verify admin contact CRUD uses CLIENT_TOKEN (not BRAIN_TOKEN) in Authorization header, verify brain process/reason uses BRAIN_TOKEN.
+FIX STATUS: DONE — Split into brain_core_client and admin_core_client. Admin mount gated on cfg.client_token.
+
+[HIGH-09] Core admin reverse proxy forcibly injects BRAIN_TOKEN to backend admin UI
+Evidence
+- core/internal/handler/admin.go:31-34
+- core/cmd/dina-core/main.go:328
+  - AdminHandler configured with cfg.BrainToken.
+Impact
+- Browser/admin flow is translated to brain identity instead of client/admin identity.
+- Confuses trust boundaries and can silently re-couple split-brain controls.
+Remediation
+- Inject CLIENT_TOKEN (or session-derived admin credential), never BRAIN_TOKEN, on /admin proxy hops.
+Agreed: YES — Verified at admin.go:31-34: the reverse proxy Director sets `Authorization: Bearer {h.Token}` where Token is cfg.BrainToken (wired at main.go:328 area). This means browser admin requests arrive at the brain with BRAIN_TOKEN identity.
+Suggested solution
+- Change AdminHandler to use cfg.ClientToken instead of cfg.BrainToken:
+    adminH := handler.NewAdminHandler(cfg.BrainURL, cfg.ClientToken)
+  where ClientToken is loaded from DINA_CLIENT_TOKEN_FILE or DINA_CLIENT_TOKEN env var.
+- Add ClientToken to the core Config struct and loadEnv/loadSecretFile:
+    if v := os.Getenv("DINA_CLIENT_TOKEN"); v != "" { cfg.ClientToken = v }
+  (This is already partially implemented since ClientToken is in the Config struct and loaded from DINA_CLIENT_TOKEN_FILE.)
+- Alternatively, extract the session cookie from the browser request and forward it to the brain admin app instead of injecting any static token. This provides proper per-session identity:
+    Director: func(req *http.Request) {
+        req.URL.Scheme = target.Scheme
+        req.URL.Host = target.Host
+        // Forward the cookie — brain admin app validates it
+        // Do NOT inject a static Authorization header
+    }
+- Tests: verify admin proxy does not send BRAIN_TOKEN, verify CLIENT_TOKEN (or cookie) is forwarded instead.
+Reviewer note (partial disagreement)
+- Replacing BRAIN_TOKEN with a static CLIENT_TOKEN is still over-privileged and coarse. For a security-first model, prefer per-session identity propagation (cookie/session) or short-lived signed internal tokens instead of static long-lived bearer injection.
+Assessment: Reviewer is partially correct. Replacing BRAIN_TOKEN with CLIENT_TOKEN is a meaningful improvement (separates agent and admin trust domains), but the reviewer is right that it's still a static long-lived credential. The per-session cookie approach (already described as the alternative in lines 287-293 above) is the preferred path for production. Recommended staged approach:
+  Phase 1 (immediate): Switch from BRAIN_TOKEN to CLIENT_TOKEN — breaks the role collapse.
+  Phase 2 (next release): Forward the browser session cookie to brain; brain admin validates session directly. No static token injection at all.
+FIX STATUS: DONE — AdminHandler wiring changed from cfg.BrainToken to cfg.ClientToken in main.go.
+
+[HIGH-10] Brain service is exposed on host by default in main compose
+Evidence
+- docker-compose.yml:53-55
+  - brain maps host port `${DINA_BRAIN_PORT:-8200}:8200`.
+Impact
+- Brain endpoints are directly reachable, bypassing core reverse-proxy/gatekeeper path assumptions.
+- Increases attack surface on Python process.
+Remediation
+- Remove host port mapping for brain in production compose.
+- Keep brain internal-only on Docker network; expose only core ingress.
+Agreed: YES — Verified at docker-compose.yml:53-54: `ports: - "${DINA_BRAIN_PORT:-8200}:8200"`. The brain's /api/v1/process, /api/v1/reason, /healthz, and admin routes are all directly reachable from the host network without going through core's auth middleware.
+Suggested solution
+- Remove the `ports:` section from the brain service in docker-compose.yml entirely for production use. Brain should only be reachable from core within the Docker network.
+- For development/debugging, use a Docker Compose profile:
+    brain:
+      # ... existing config ...
+      # Remove: ports: - "${DINA_BRAIN_PORT:-8200}:8200"
+      profiles:
+        - dev-brain-exposed   # only expose when explicitly requested
+      # For dev: docker compose --profile dev-brain-exposed up
+  Or use a compose override file (docker-compose.override.yml) for local dev:
+    services:
+      brain:
+        ports:
+          - "${DINA_BRAIN_PORT:-8200}:8200"
+- The e2e compose (docker-compose-e2e.yml) already correctly exposes brain ports for testing — that's fine since it's a test-only compose.
+- Tests: verify production compose has no brain host port mapping (can be a CI check on the YAML).
+FIX STATUS: DONE — Brain ports section removed from docker-compose.yml. Brain is internal-only.
+
+[HIGH-11] Device revocation does not revoke bearer client tokens in validator
+Evidence
+- core/internal/service/device.go:127-150
+  - RevokeDevice revokes DID key path only when present.
+- core/internal/adapter/pairing/pairing.go:303-313
+  - PairingManager marks device revoked internally.
+- core/internal/adapter/auth/auth.go:116-124, 154-162
+  - Token validator has register/lookup but no revoke for client token map.
+Impact
+- Revoked device may still authenticate with previously issued bearer token (depending on active validator state).
+Remediation
+- Add explicit client-token revoke path in token validator.
+- Wire DeviceService.RevokeDevice to revoke both signature key and bearer token.
+Agreed: YES — Verified at auth.go:116-124: `RegisterClientToken` exists but there is no `RevokeClientToken` method. The device.go:136-143 only calls `s.keyRegistrar.RevokeDeviceKey(d.DID)` for the Ed25519 key — the bearer token in the `clientTokens` map remains valid.
+Suggested solution
+- Add a `RevokeClientToken` method to the tokenValidator:
+    func (v *tokenValidator) RevokeClientToken(token string) {
+        v.mu.Lock()
+        defer v.mu.Unlock()
+        hash := sha256Hex(token)
+        delete(v.clientTokens, hash)
+    }
+- Add a `RevokeClientTokenByDevice` method that finds and removes the token by device ID:
+    func (v *tokenValidator) RevokeClientTokenByDevice(deviceID string) {
+        v.mu.Lock()
+        defer v.mu.Unlock()
+        for hash, devID := range v.clientTokens {
+            if devID == deviceID {
+                delete(v.clientTokens, hash)
+                return
+            }
+        }
+    }
+- Wire it into DeviceService.RevokeDevice after the key revocation:
+    if s.tokenRevoker != nil {
+        s.tokenRevoker.RevokeClientTokenByDevice(tokenID)
+    }
+- Add the `TokenRevoker` interface to the port package and inject it into DeviceService.
+- Tests: pair device → authenticate with bearer token → revoke device → bearer token rejected (401).
+Reviewer note (partial disagreement)
+- The map type is `clientTokens[sha256hex(token)] = deviceID` (auth.go), but current call-site wiring passes `deviceName` to `RegisterClientToken` in `DeviceService.CompletePairing` (`RegisterClientToken(resp.ClientToken, deviceName)`), so effective runtime value is device name today.
+- `RevokeDevice` receives `tokenID`; therefore revocation cannot directly call `RevokeClientTokenByDevice(tokenID)` without an identity lookup step.
+Assessment (reconciled)
+- Both points are directionally valid: map-by-identity revocation works, but identity alignment must be explicit.
+- Corrected solution:
+  - Keep `RevokeClientTokenByDevice(identity string)` (iterates map values, deletes matching entries).
+  - In `DeviceService.RevokeDevice`, resolve `tokenID -> PairedDevice` first, then call revocation with the same identity used at registration (currently `PairedDevice.Name`).
+  - Prefer long-term cleanup: register with a stable device identifier (not display name), and include/expose that identifier in pairing/revocation flows so auth and pairing use the same key consistently.
+FIX STATUS: DONE — TokenRevoker interface added. RevokeClientTokenByDevice iterates clientTokens map. Wired into DeviceService.RevokeDevice via device Name.
+
+[HIGH-12] Export/Import portability path is simulated, not cryptographically real
+Evidence
+- core/internal/adapter/portability/portability.go:58-76
+  - Writes simulated archive content.
+- core/internal/adapter/portability/portability.go:148-151
+  - Wrong passphrase check is sentinel-based.
+- core/internal/adapter/portability/portability.go:166-183
+  - Archive verification checks header only.
+Impact
+- Backup/restore confidentiality/integrity guarantees are not met.
+- False sense of secure migration.
+Remediation
+- Implement real archive encryption/authentication (Argon2id + AEAD).
+- Verify manifest checksums/authenticated metadata.
+- Remove sentinel passphrase logic.
+Agreed: YES — Verified at portability.go:58-76 (writes plaintext "DINA_ARCHIVE_V1\nversion=..." header), line 149 (sentinel "wrong horse battery staple" passphrase check), and line 180-183 (verification only checks header string prefix).
+Suggested solution
+- Implement a real archive format using:
+    1. Derive archive key: `archiveKey := argon2.IDKey(passphrase, salt, time, memory, threads, 32)`
+    2. Collect export data: identity.sqlite dump, config.json, manifest.json
+    3. Create TAR archive of the collected files (in memory or temp)
+    4. Encrypt with AES-256-GCM: `nonce || ciphertext || tag`
+    5. Write archive: `"DINA_ARCHIVE_V2" || salt (16B) || argon2params (12B) || nonce (12B) || ciphertext || tag (16B)`
+    6. Write manifest.json with SHA-256 checksums of each included file
+- For import:
+    1. Parse header and extract salt + argon2 params
+    2. Derive key from passphrase + salt
+    3. Decrypt with AES-256-GCM (wrong passphrase → authentication failure, not sentinel)
+    4. Verify manifest checksums against extracted files
+    5. Restore files to vault path
+- The codebase already has `crypto.NewAESGCMKeyWrapper()` and `crypto.NewArgon2Deriver()` — reuse those implementations.
+- Remove all sentinel-based passphrase checking and plaintext archive writing.
+- Tests: export → import with correct passphrase → success, wrong passphrase → AEAD authentication failure, truncated archive → integrity check failure, tampered archive → checksum mismatch.
+FIX STATUS: DONE — Real AES-256-GCM + Argon2id encryption. Sentinel passphrase check removed. V2 archive format.
+
+[HIGH-13] PLC account creation uses hardcoded credentials instead of configuration
+Evidence
+- core/internal/adapter/identity/identity.go:329-333
+  - Handle "dina.test", password "dina-internal-account", email "dina@example.com".
+Impact
+- Predictable account credentials if this path is exercised.
+- Weakens DID/PLC operational security model.
+Remediation
+- Use configured per-node handle/password (or generated secret) and never hardcode.
+- Refuse startup/operation when required PLC credentials are absent.
+Agreed: YES — Verified at identity.go:329-333: `Handle: "dina.test", Password: "dina-internal-account", Email: "dina@example.com"`. These are hardcoded directly in source.
+Suggested solution
+- Add PDS/PLC credential fields to the Config struct (these partially exist already: PDSHandle, PDSAdminPassword in config.go):
+    PDSHandle        string  // from DINA_PDS_HANDLE
+    PDSPassword      string  // from DINA_PDS_PASSWORD (new)
+    PDSEmail         string  // from DINA_PDS_EMAIL (new)
+- In identity.go, replace the hardcoded values:
+    result, err := dm.plcClient.CreateAccountAndDID(ctx, pds.CreateDIDOptions{
+        Handle:      dm.config.PDSHandle,      // required
+        Password:    dm.config.PDSPassword,     // required
+        Email:       dm.config.PDSEmail,        // required
+        RecoveryKey: recoveryKey,
+    })
+- Validate at startup: if PLC registration is enabled (PDS URL set), require all three fields to be non-empty. If missing, log an error and refuse to create accounts (fail-safe, not fail-open).
+- For test/development mode, generate a random password if `DINA_TEST_MODE=true` and log it at startup. Never use static defaults.
+- Tests: missing PDS credentials → account creation fails with clear error, configured credentials → passed to PLC client, test mode → uses explicit test fixtures.
+Reviewer note (partial disagreement)
+- Do not log generated credentials, including in test mode. Use explicit test env values/fixtures instead; logging secrets creates avoidable exposure and bad operational habits.
+Assessment: Reviewer is correct. Revised approach for test/dev mode:
+  - Do NOT generate and log random passwords. Instead, require explicit test credentials via env vars (DINA_PDS_PASSWORD_TEST or the standard DINA_PDS_PASSWORD).
+  - Test fixtures and CI should set explicit well-known test values (not hardcoded in source — set in docker-compose-e2e.yml or .env.test).
+  - If no credentials are set and PDS registration is attempted, fail with a clear error message regardless of mode.
+FIX STATUS: DONE — Hardcoded values replaced with dm.pdsHandle/pdsPassword/pdsEmail. SetPDSCredentials setter + config.PDSEmail added.
+
+[MEDIUM-14] Ed25519 request signature scheme has weak replay resistance and omits query binding
+Evidence
+- core/internal/adapter/auth/auth.go:185 and 221
+  - Signed payload is method + path + timestamp + body hash.
+- core/internal/middleware/auth.go:66
+  - Uses r.URL.Path (query string not covered).
+- core/internal/adapter/auth/auth.go:87 and 213-215
+  - Only timestamp skew window (5 min), no nonce/replay cache.
+Impact
+- Request replay possible within skew window.
+- Query parameter tampering is not cryptographically bound in signature.
+Remediation
+- Include canonical query string in signed payload.
+- Add nonce/request-id + short-lived replay cache.
+- Keep strict clock window and enforce monotonic request IDs per device.
+Agreed: YES — Verified at auth.go:221: `payload := fmt.Sprintf("%s\n%s\n%s\n%s", method, path, timestamp, bodyHash)` — query string is not included. Middleware at auth.go:66 uses `r.URL.Path` only. Clock skew is the sole replay protection (no nonce cache).
+Suggested solution
+- Change the canonical signing payload to include query string:
+    canonicalQuery := canonicalizeQuery(r.URL.Query())  // sort keys, join with &
+    payload := fmt.Sprintf("%s\n%s\n%s\n%s\n%s", method, path, canonicalQuery, timestamp, bodyHash)
+  The `canonicalizeQuery` function should sort query parameters by key, then by value, and URL-encode consistently.
+- Update middleware to pass `r.URL.RawQuery` (or the canonical form) to VerifySignature.
+- Update the CLI signing code (`cli/src/dina_cli/signing.py`) to match the new canonical format.
+- Add a nonce/request-ID based replay cache:
+    - Client generates a unique `X-Request-ID` (UUID v4) per request, included in the signature payload.
+    - Server maintains a bounded LRU cache of seen request IDs (keyed by device DID, TTL = clock skew window).
+    - Duplicate request IDs within the window are rejected with 409 Conflict.
+    - Cache size bounded to prevent memory abuse (e.g., 10,000 entries per device, evict oldest).
+- Tighten the clock skew window from 5 minutes to 60 seconds for production deployments (configurable).
+- Tests: replayed request within window → rejected, query parameter tampering → signature invalid, monotonic request IDs → accepted, out-of-order IDs → still accepted (nonce is uniqueness, not ordering).
+FIX STATUS: DONE — Query string added to canonical signature payload (5-part format). Replay cache using signature hex as nonce key with 5-min eviction.
+
+[MEDIUM-15] Rate limiting trusts untrusted X-Forwarded-For directly
+Evidence
+- core/internal/middleware/ratelimit.go:33-40
+Impact
+- IP spoofing can bypass per-IP limits or target other clients for throttling.
+Remediation
+- Trust X-Forwarded-For only from known reverse proxies.
+- Otherwise use RemoteAddr.
+- Consider proxy-aware middleware with explicit trusted hops.
+Agreed: YES — Verified at ratelimit.go:33-40: `clientIP()` checks X-Forwarded-For first and takes the first IP unconditionally. Any external client can set this header to any value.
+Suggested solution
+- Add a `TrustedProxies` configuration field (list of CIDR ranges):
+    type RateLimitConfig struct {
+        TrustedProxies []net.IPNet  // e.g., ["172.16.0.0/12", "10.0.0.0/8"]
+    }
+- Update `clientIP()` to only trust X-Forwarded-For when RemoteAddr is from a trusted proxy:
+    func clientIP(r *http.Request, trusted []net.IPNet) string {
+        remoteIP := extractRemoteIP(r.RemoteAddr)
+        if xff := r.Header.Get("X-Forwarded-For"); xff != "" && isTrusted(remoteIP, trusted) {
+            // Walk the XFF chain right-to-left, find the rightmost non-trusted IP
+            return rightmostNonTrustedIP(xff, trusted)
+        }
+        return remoteIP
+    }
+- Default to empty trusted proxies list (always use RemoteAddr) — safe default.
+- In Docker compose, configure trusted proxies to the Docker bridge network CIDR.
+- Tests: untrusted client with XFF header → RemoteAddr used, trusted proxy with XFF → correct client IP extracted, spoofed XFF through trusted proxy → rightmost untrusted IP used.
+FIX STATUS: DONE — TrustedProxies field added. XFF only trusted from configured CIDRs. Default: always use RemoteAddr.
+
+[MEDIUM-16] Global CORS wildcard includes Authorization header
+Evidence
+- core/internal/middleware/cors.go:20-23
+- core/cmd/dina-core/main.go:419
+Impact
+- Broadens cross-origin abuse surface when tokens are exposed in browser contexts.
+Remediation
+- Restrict allowed origins to explicit admin/client origins.
+- Scope CORS by endpoint group instead of globally.
+Agreed: YES — Verified at cors.go:17-22: `origin = "*"` when AllowOrigin is empty, and `Allow-Headers: Authorization, Content-Type` is set globally. This means any website can make credentialed cross-origin requests to the core API.
+Suggested solution
+- Change the CORS default from `*` to deny (no CORS headers):
+    if c.AllowOrigin == "" {
+        // No CORS — same-origin only
+        next.ServeHTTP(w, r)
+        return
+    }
+- Configure explicit allowed origins per deployment:
+    - Local dev: `http://localhost:8100,http://localhost:8200`
+    - Production: the specific admin UI origin
+- Split CORS by endpoint group:
+    - `/admin/*`: allow configured admin origin with credentials
+    - `/msg`: no CORS needed (server-to-server D2D)
+    - `/v1/*`: allow configured client app origins
+    - `/healthz`, `/readyz`: wildcard OK (no sensitive data)
+- Add `Access-Control-Allow-Credentials: true` only for non-wildcard origins (per spec, `*` + credentials is invalid).
+- Tests: request from unlisted origin → no CORS headers, request from allowed origin → correct CORS headers, /msg endpoint → no CORS headers.
+FIX STATUS: DONE — Empty AllowOrigin = no CORS (same-origin only). Origin matched against comma-separated allowlist. Reflected origin, not wildcard.
+
+[MEDIUM-17] Admin login cookie is explicitly non-secure and stores raw static token
+Evidence
+- brain/src/dina_admin/routes/login.py:59-65
+  - `secure=False`; cookie value is the raw token.
+Impact
+- Cookie can be sent over plaintext HTTP if deployed without TLS.
+- Stolen cookie equals stolen long-lived admin credential.
+Remediation
+- Set `secure=True` in non-local environments.
+- Prefer server-side session IDs over storing raw credential in cookie.
+- Add login rate limiting and audit telemetry.
+Agreed: YES — Verified at login.py:64: `secure=False` hardcoded. Line 61: `value=request.token.strip()` stores the raw CLIENT_TOKEN in the cookie. Anyone who intercepts the cookie over HTTP has the full admin credential.
+Suggested solution
+- Make secure flag environment-dependent:
+    is_https = os.environ.get("DINA_HTTPS", "").lower() in ("1", "true", "yes")
+    response.set_cookie(
+        key="dina_client_token",
+        value=session_id,       # NOT the raw token — see below
+        httponly=True,
+        samesite="strict",
+        secure=is_https,
+        max_age=86400,
+        path="/admin",
+    )
+- Replace raw token storage with a server-side session:
+    1. On successful login, generate a random session ID: `session_id = secrets.token_urlsafe(32)`
+    2. Store `{session_id: {"token_hash": hash(token), "created": now, "expires": now+24h}}` in an in-memory dict (or Redis for multi-process).
+    3. Set the session ID as the cookie value (not the raw token).
+    4. On each admin request, look up the session ID to verify it's valid and not expired.
+    5. On logout, delete the session from the server-side store.
+- Add login rate limiting: max 5 failed login attempts per IP per 15 minutes. Use the same rate limiter pattern from core.
+- Add audit logging for login success/failure with IP and timestamp (already partially in place: `log.info("admin.login_success")`).
+- Tests: login over HTTP with DINA_HTTPS=1 → cookie not sent (secure flag), login → cookie contains session ID not raw token, 6th failed login attempt → 429 rate limited.
+FIX STATUS: DONE — Server-side session store. Cookie stores session_id not raw token. Secure flag from DINA_HTTPS env. 24h session expiry.
+
+[MEDIUM-18] Pairing initiate endpoint mutates state without method enforcement
+Evidence
+- core/internal/handler/device.go:18-30
+  - No method check in HandleInitiatePairing.
+- core/cmd/dina-core/main.go:389
+  - Endpoint registered directly.
+Impact
+- Unexpected methods (including GET) can generate pairing codes.
+- Increases attack/abuse surface and violates HTTP semantics.
+Remediation
+- Enforce POST-only in handler.
+- Apply consistent method checks on all mutating endpoints.
+Agreed: YES — Verified at device.go:18: `HandleInitiatePairing` has no method check. The Go `http.DefaultServeMux` routes all methods to the same handler. A GET /v1/pair/initiate would generate a pairing code.
+Suggested solution
+- Add method check at the top of HandleInitiatePairing:
+    func (h *DeviceHandler) HandleInitiatePairing(w http.ResponseWriter, r *http.Request) {
+        if r.Method != http.MethodPost {
+            http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+            return
+        }
+        // ... existing code
+    }
+- Apply the same pattern to all other mutating endpoints that lack method checks. Audit the full handler set:
+    - HandleCompletePairing (should be POST only)
+    - HandleRevokeDevice (should be DELETE only)
+    - HandleInitiatePairing (should be POST only)
+    - HandleNotify (should be POST only)
+- Alternatively, use a helper:
+    func requireMethod(method string, handler http.HandlerFunc) http.HandlerFunc {
+        return func(w http.ResponseWriter, r *http.Request) {
+            if r.Method != method {
+                http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+                return
+            }
+            handler(w, r)
+        }
+    }
+  Then in main.go: `mux.HandleFunc("/v1/pair/initiate", requireMethod("POST", deviceH.HandleInitiatePairing))`
+- Tests: GET /v1/pair/initiate → 405, POST /v1/pair/initiate → 200 with pairing code, PUT /v1/pair/initiate → 405.
+FIX STATUS: DONE — POST-only on HandleInitiatePairing and HandleCompletePairing, GET-only on HandleListDevices.
+
+[MEDIUM-19] CLI persists secrets and PII session data without explicit permission hardening
+Evidence
+- cli/src/dina_cli/config.py:43-47
+  - Writes config file containing tokens without chmod hardening.
+- cli/src/dina_cli/session.py:37 and 55-58
+  - Persists scrub-session entity mappings to disk, no permission hardening.
+Impact
+- Local token/PII exposure on systems with permissive umask or multi-user access.
+Remediation
+- Enforce directory `0700` and file `0600` for config/session artifacts.
+- Optionally encrypt at rest for session mappings.
+Agreed: YES — Verified at config.py:43: `CONFIG_DIR.mkdir(parents=True, exist_ok=True)` with no mode argument (defaults to system umask). Line 45: `tmp.write_text(json.dumps(values, indent=2))` writes tokens without chmod. Session.py:37: `self._dir.mkdir(parents=True, exist_ok=True)` similarly uses default permissions, and line 57: `tmp.write_text(json.dumps(normalized, indent=2))` writes PII entity mappings in plaintext.
+Suggested solution
+- In config.py, harden directory and file permissions:
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    # After writing the config file:
+    CONFIG_FILE.chmod(0o600)
+  Also set umask before writing:
+    old_umask = os.umask(0o077)
+    try:
+        tmp.write_text(json.dumps(values, indent=2))
+        os.replace(tmp, CONFIG_FILE)
+    finally:
+        os.umask(old_umask)
+- In session.py, apply the same hardening:
+    self._dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    # After writing session file:
+    target.chmod(0o600)
+- For the identity directory (`~/.dina/cli/identity/`), enforce 0700 on the directory and 0600 on the PEM files.
+- For at-rest encryption of session data (revised — reviewer correction accepted):
+    - Do NOT encrypt with a key derived from the local Ed25519 private key. If an attacker has local file access to read session data, they likely have access to the private key file too, making the encryption circular (same threat model).
+    - Priority order:
+      1. Strict file permissions (0600/0700) — simple, effective, always applied.
+      2. OS keychain integration (macOS Keychain, Linux Secret Service/libsecret, Windows DPAPI) — provides hardware-backed or OS-protected storage that survives local file access attacks.
+      3. For headless/server deployments where OS keychain is unavailable, accept strict file permissions as the practical floor.
+- Tests: write config → verify file mode is 0600, write session → verify directory mode is 0700, verify umask is restored after write.
+FIX STATUS: DONE — mkdir mode=0o700, umask(0o077) guard, chmod(0o600) on files. Both config.py and session.py hardened.
+
+[MEDIUM-20] Non-CGO build path disables encryption-at-rest (security model downgrade)
+Evidence
+- core/cmd/dina-core/vault_nocgo.go:12-16
+  - In-memory fallback with explicit "no encryption at rest" warning.
+Impact
+- If built/deployed without CGO/SQLCipher, vault confidentiality model is not met.
+Remediation
+- Make secure backend mandatory in production builds.
+- Add startup hard-fail in production mode when secure backend unavailable.
+Agreed: YES — Verified at vault_nocgo.go:14-16: `slog.Warn("CGO disabled — using in-memory vault (no encryption at rest)")` and returns an unencrypted in-memory backend. This silently downgrades the security model without any hard failure.
+Suggested solution
+- Add a startup check that fails in production mode:
+    func newVaultBackend(dir string) vaultBackend {
+        if os.Getenv("DINA_TEST_MODE") != "true" && os.Getenv("DINA_ALLOW_INSECURE_VAULT") != "1" {
+            slog.Error("CGO disabled — SQLCipher encryption at rest is unavailable. " +
+                "Set DINA_ALLOW_INSECURE_VAULT=1 to override (NOT recommended for production)")
+            os.Exit(1)
+        }
+        slog.Warn("CGO disabled — using in-memory vault (no encryption at rest)")
+        return vault.NewManager(dir)
+    }
+- In the Dockerfile, ensure CGO_ENABLED=1 is set and SQLCipher is installed. Add a build-time check:
+    RUN go build -tags cgo -o /dina-core ./cmd/dina-core && \
+        /dina-core --version  # verify binary works with CGO
+- Add a CI check that the production Docker image always has CGO enabled.
+- Tests: build with CGO=0 + no override → startup exits with error, build with CGO=0 + DINA_ALLOW_INSECURE_VAULT=1 → starts with warning, build with CGO=1 → SQLCipher backend loaded.
+FIX STATUS: DONE — Production hard-fail with os.Exit(1) unless DINA_TEST_MODE=true or DINA_ALLOW_INSECURE_VAULT=1.
+
+[MEDIUM-21] PDS container is configured in dev mode by default in main compose
+Evidence
+- docker-compose.yml:112-113
+  - `PDS_DEV_MODE=true`, `PDS_INVITE_REQUIRED=false`.
+Impact
+- Production-like deployments may accidentally run with insecure/default dev posture.
+Remediation
+- Default to production-safe PDS settings; gate dev mode behind explicit profile/env.
+Agreed: YES — Verified at docker-compose.yml:112-113: `PDS_DEV_MODE=true` and `PDS_INVITE_REQUIRED=false` are hardcoded defaults. PDS dev mode disables various security checks in the Bluesky PDS software.
+Suggested solution
+- Change the defaults to production-safe values:
+    PDS_DEV_MODE=${DINA_PDS_DEV_MODE:-false}
+    PDS_INVITE_REQUIRED=${DINA_PDS_INVITE_REQUIRED:-true}
+- For local development, use a `.env` file or an override compose:
+    # .env (local dev only, not committed)
+    DINA_PDS_DEV_MODE=true
+    DINA_PDS_INVITE_REQUIRED=false
+- Or use a Docker Compose profile:
+    pds:
+      environment:
+        - PDS_DEV_MODE=${DINA_PDS_DEV_MODE:-false}
+        - PDS_INVITE_REQUIRED=${DINA_PDS_INVITE_REQUIRED:-true}
+  With a `docker-compose.dev.yml` override for development that sets `PDS_DEV_MODE=true`.
+- Add a startup log/warning in the PDS service health check path if dev mode is detected.
+- Tests: production compose with no overrides → PDS_DEV_MODE=false, dev profile → PDS_DEV_MODE=true.
+FIX STATUS: DONE — PDS_DEV_MODE defaults to false, PDS_INVITE_REQUIRED defaults to true. Configurable via env vars.
+
+=====================================================================
+Architecture-vs-Implementation Gaps (Security-Relevant)
+=====================================================================
+
+1) Claimed passphrase/KEK/DEK chain vs runtime unlock path
+- Architecture claims Argon2id + wrapped seed + per-persona HKDF.
+- Runtime unlock path currently uses stub passphrase acceptance and SHA-256 DEK derivation.
+Agreed: YES — This is the combined effect of CRITICAL-01 + CRITICAL-02. The fix for both fully closes this gap.
+GAP STATUS: RESOLVED — CRITICAL-01 (real passphrase verification) and CRITICAL-02 (Argon2id DEK derivation) both fixed.
+
+2) Claimed strict token role split vs runtime defaults/wiring
+- Architecture claims strict BRAIN_TOKEN (agent) vs CLIENT_TOKEN (admin).
+- Brain defaults CLIENT_TOKEN=BRAIN_TOKEN; admin route wiring uses BRAIN token path in key places.
+Agreed: YES — This is the combined effect of HIGH-07 + HIGH-08 + HIGH-09. All three must be fixed together to achieve the claimed separation.
+GAP STATUS: RESOLVED — HIGH-07 (no fallback), HIGH-08 (separate clients), HIGH-09 (ClientToken in admin proxy) all fixed.
+
+3) Claimed secure portability/migration vs simulated implementation
+- Export/import code currently simulates archive crypto and integrity checks.
+Agreed: YES — This is HIGH-12. The entire portability adapter is placeholder code with sentinel-based checks.
+GAP STATUS: RESOLVED — HIGH-12 fixed. Real AES-256-GCM + Argon2id encryption with V2 archive format.
+
+=====================================================================
+Recommended Remediation Order
+=====================================================================
+
+Phase 0 (Immediate)
+1. Fix persona unlock auth (CRITICAL-01, CRITICAL-02).
+2. Fix identity seed validation/storage (CRITICAL-03).
+3. Enforce signed-only D2D ingress and verify signatures in sweeper (CRITICAL-04).
+4. Add hard body limits for /msg and signature-auth paths (HIGH-05, HIGH-06).
+
+Phase 1 (Boundary hardening)
+5. Enforce true token-role split in config and wiring (HIGH-07, HIGH-08, HIGH-09).
+6. Remove brain host exposure in production compose (HIGH-10).
+7. Implement full token revocation path (HIGH-11).
+
+Phase 2 (Cryptographic and operational completeness)
+8. Implement real encrypted export/import (HIGH-12).
+9. Remove hardcoded PLC credentials and use secure provisioning (HIGH-13).
+10. Strengthen signature replay protections and query binding (MEDIUM-14).
+
+Phase 3 (Deployment and hygiene)
+11. Tighten CORS/rate-limit trust chain/cookie security/method enforcement (MEDIUM-15..18).
+12. Harden local secret file permissions and production build guardrails (MEDIUM-19..21).

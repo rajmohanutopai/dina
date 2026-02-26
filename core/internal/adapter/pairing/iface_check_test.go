@@ -1,8 +1,8 @@
 package pairing_test
 
 import (
-	"github.com/anthropics/dina/core/internal/adapter/pairing"
-	"github.com/anthropics/dina/core/test/testutil"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/pairing"
+	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
 
 // Compile-time interface compliance checks.

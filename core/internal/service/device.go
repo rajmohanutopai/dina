@@ -6,8 +6,8 @@ import (
 
 	"github.com/mr-tron/base58"
 
-	"github.com/anthropics/dina/core/internal/domain"
-	"github.com/anthropics/dina/core/internal/port"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/port"
 )
 
 // DeviceService manages the device pairing lifecycle. It coordinates the
@@ -17,6 +17,7 @@ type DeviceService struct {
 	registry        port.DeviceRegistry
 	keyRegistrar    port.DeviceKeyRegistrar
 	tokenRegistrar  port.ClientTokenRegistrar
+	tokenRevoker    port.TokenRevoker
 	clock           port.Clock
 }
 
@@ -43,6 +44,11 @@ func (s *DeviceService) SetKeyRegistrar(kr port.DeviceKeyRegistrar) {
 // pairing can register CLIENT_TOKENs for bearer-based authentication.
 func (s *DeviceService) SetTokenRegistrar(tr port.ClientTokenRegistrar) {
 	s.tokenRegistrar = tr
+}
+
+// SetTokenRevoker sets the token revoker for device revocation.
+func (s *DeviceService) SetTokenRevoker(r port.TokenRevoker) {
+	s.tokenRevoker = r
 }
 
 // InitiatePairing generates a new 6-digit pairing code for a device to use.
@@ -131,13 +137,19 @@ func (s *DeviceService) RevokeDevice(ctx context.Context, tokenID string) error 
 		return fmt.Errorf("device: %w: token ID is required", domain.ErrInvalidInput)
 	}
 
-	// If we have a key registrar, look up the device's DID before revoking
-	// so we can also revoke the Ed25519 key in the auth validator.
-	if s.keyRegistrar != nil {
+	// Look up the device before revoking so we can revoke the Ed25519 key
+	// and any bearer client tokens in the auth validator.
+	if s.keyRegistrar != nil || s.tokenRevoker != nil {
 		devices, _ := s.pairer.ListDevices(ctx)
 		for _, d := range devices {
-			if d.TokenID == tokenID && d.DID != "" {
-				s.keyRegistrar.RevokeDeviceKey(d.DID)
+			if d.TokenID == tokenID {
+				if s.keyRegistrar != nil && d.DID != "" {
+					s.keyRegistrar.RevokeDeviceKey(d.DID)
+				}
+				// Revoke any bearer tokens associated with this device
+				if s.tokenRevoker != nil && d.Name != "" {
+					s.tokenRevoker.RevokeClientTokenByDevice(d.Name)
+				}
 				break
 			}
 		}

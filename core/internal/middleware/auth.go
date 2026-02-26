@@ -3,11 +3,13 @@ package middleware
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
-	"github.com/anthropics/dina/core/internal/port"
+	"github.com/rajmohanutopai/dina/core/internal/port"
 )
 
 type contextKey string
@@ -35,6 +37,20 @@ var publicPaths = map[string]bool{
 	"/.well-known/atproto-did": true,
 }
 
+// isTimestampValid checks whether a timestamp string is within
+// 5 minutes of the current time.
+func isTimestampValid(ts string) bool {
+	t, err := time.Parse("2006-01-02T15:04:05Z", ts)
+	if err != nil {
+		return false
+	}
+	skew := time.Since(t)
+	if skew < 0 {
+		skew = -skew
+	}
+	return skew <= 5*time.Minute
+}
+
 func (a *Auth) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Public endpoints bypass auth.
@@ -54,16 +70,29 @@ func (a *Auth) Handler(next http.Handler) http.Handler {
 		xTS := r.Header.Get("X-Timestamp")
 
 		if xDID != "" && xSig != "" && xTS != "" {
-			// Read and re-arm the request body for downstream handlers.
+			// Fast-fail: reject expired timestamps before reading body.
+			if !isTimestampValid(xTS) {
+				http.Error(w, `{"error":"invalid or expired timestamp"}`, http.StatusUnauthorized)
+				return
+			}
+
+			// Bound body read to prevent memory exhaustion.
+			const maxSignedBodySize = 1 << 20 // 1 MB
+			r.Body = http.MaxBytesReader(w, r.Body, maxSignedBodySize)
 			bodyBytes, err := io.ReadAll(r.Body)
 			if err != nil {
+				var maxBytesErr *http.MaxBytesError
+				if errors.As(err, &maxBytesErr) {
+					http.Error(w, `{"error":"request body too large"}`, http.StatusRequestEntityTooLarge)
+					return
+				}
 				http.Error(w, `{"error":"failed to read request body"}`, http.StatusBadRequest)
 				return
 			}
 			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
 			kind, identity, err := a.Tokens.VerifySignature(
-				xDID, r.Method, r.URL.Path, xTS, bodyBytes, xSig,
+				xDID, r.Method, r.URL.Path, r.URL.RawQuery, xTS, bodyBytes, xSig,
 			)
 			if err != nil {
 				http.Error(w, `{"error":"invalid signature"}`, http.StatusUnauthorized)

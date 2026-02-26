@@ -34,7 +34,7 @@ class SessionStore:
         Both Go-style (Type/Value) and Python-style (type/value) keys are
         accepted.
         """
-        self._dir.mkdir(parents=True, exist_ok=True)
+        self._dir.mkdir(parents=True, exist_ok=True, mode=0o700)
 
         # Normalize and build token mapping.
         # Group by entity type to assign occurrence indices.
@@ -54,8 +54,13 @@ class SessionStore:
         # Atomic write: write to a temp file then replace.
         target = self._dir / f"{session_id}.json"
         tmp = target.with_suffix(".tmp")
-        tmp.write_text(json.dumps(normalized, indent=2))
-        os.replace(tmp, target)
+        old_umask = os.umask(0o077)
+        try:
+            tmp.write_text(json.dumps(normalized, indent=2))
+            os.replace(tmp, target)
+        finally:
+            os.umask(old_umask)
+        target.chmod(0o600)
 
     def load(self, session_id: str) -> list[dict]:
         """Load a previously saved session.
