@@ -48,7 +48,7 @@ const relatedAttestationSchema = z.object({
   relation: z.string(),
 })
 
-const isoDateString = z.string().min(1)
+const isoDateString = z.string().datetime({ offset: true })
 
 // ── Record schemas ──────────────────────────────────────────────────
 

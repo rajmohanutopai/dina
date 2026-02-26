@@ -24,8 +24,9 @@ export const notificationPrefsHandler: RecordHandler = {
       enableFlags: record.enableFlags,
       recordCreatedAt: new Date(record.createdAt),
     }).onConflictDoUpdate({
-      target: notificationPrefs.uri,
+      target: notificationPrefs.authorDid,
       set: {
+        uri: op.uri,
         cid: op.cid!,
         enableMentions: record.enableMentions,
         enableReactions: record.enableReactions,

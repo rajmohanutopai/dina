@@ -403,24 +403,13 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
       },
     })
 
-    // The attestation handler adds a trust edge only for DID subjects
-    // regardless of sentiment (the handler checks type === 'did' && subject.did).
-    // However, looking at the code, it always creates a 'positive-attestation' edge.
-    // For negative attestations, the trust edge is still added by the handler
-    // (the handler does not check sentiment before calling addTrustEdge).
-    //
-    // Actually re-reading the code: the handler always calls addTrustEdge
-    // for DID subjects regardless of sentiment. This test validates the
-    // current behavior.
+    // HIGH-07 fix: negative sentiment → no trust edge (HIGH-07 fix)
+    // The attestation handler only creates trust edges for positive sentiment
+    // attestations of DID subjects (record.sentiment === 'positive').
+    // Negative attestations should NOT produce a trust edge.
     const edges = await db.select().from(schema.trustEdges).where(eq(schema.trustEdges.sourceUri, uri))
 
-    // The handler code creates positive-attestation edges for ALL DID subjects
-    // regardless of sentiment. This is the actual behavior.
-    // If the behavior should be "no edge for negative", the code would need to be
-    // updated. For now, we test actual behavior.
-    // The edge IS created because the handler doesn't check sentiment.
-    expect(edges).toHaveLength(1)
-    expect(edges[0].edgeType).toBe('positive-attestation')
+    expect(edges).toHaveLength(0)
   })
 
   it('IT-TE-012: delete record with no trust edge → no-op', async () => {

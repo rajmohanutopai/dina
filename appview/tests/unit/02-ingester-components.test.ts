@@ -1028,6 +1028,56 @@ describe('§2.3 Bounded Queue', () => {
     // Expected: gauge/incr called with correct metric names
     // SKIPPED: metrics module is a stub no-op; spying on it requires module mock setup
   })
+
+  it('UT-BQ-013: HIGH-04: failed item timestamp pinned in getSafeCursor', async () => {
+    // Input: An item that fails processing
+    // Expected: Its timestamp stays in failedTimestamps, getSafeCursor includes it
+    const processFn = vi.fn(async (item: QueueItem) => {
+      if (item.timestampUs === 1000) throw new Error('Intentional failure')
+    })
+
+    const queue = new BoundedIngestionQueue(processFn, { maxSize: 100, maxConcurrency: 5 })
+
+    queue.push({ timestampUs: 1000, data: null })
+    queue.push({ timestampUs: 2000, data: null })
+
+    // Wait for both to process
+    await vi.waitFor(() => {
+      expect(processFn).toHaveBeenCalledTimes(2)
+    })
+    await new Promise((r) => setTimeout(r, 50))
+
+    // Failed item's timestamp should pin the cursor at 1000
+    expect(queue.getSafeCursor()).toBe(1000)
+  })
+
+  it('UT-BQ-014: MEDIUM-06: getSafeCursor scans all queued items for minimum', async () => {
+    // Input: Items queued in non-sequential order
+    // Expected: getSafeCursor finds minimum across all queued items (not just head)
+    const resolvers: Array<() => void> = []
+    const processFn = vi.fn(async () => {
+      await new Promise<void>((resolve) => resolvers.push(resolve))
+    })
+
+    const queue = new BoundedIngestionQueue(processFn, { maxSize: 100, maxConcurrency: 1 })
+
+    // First item blocks processing (maxConcurrency=1)
+    queue.push({ timestampUs: 5000, data: null })
+    await vi.waitFor(() => expect(resolvers.length).toBe(1))
+
+    // These remain queued (worker is busy)
+    queue.push({ timestampUs: 3000, data: null })
+    queue.push({ timestampUs: 1000, data: null })
+    queue.push({ timestampUs: 4000, data: null })
+
+    // getSafeCursor must scan ALL items: in-flight (5000) + queued (3000, 1000, 4000)
+    // Minimum is 1000, not 3000 (head of queue)
+    expect(queue.getSafeCursor()).toBe(1000)
+
+    // Clean up
+    resolvers.forEach((r) => r())
+    await new Promise((r) => setTimeout(r, 50))
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -1389,11 +1439,9 @@ describe('§2.6 Trust Edge Sync', () => {
     expect(addTrustEdgeCalls[0].toDid).toBe('did:plc:target')
   })
 
-  it('UT-TE-009: negative attestation DID subject -> trust edge still created', async () => {
+  it('UT-TE-009: negative attestation DID subject -> no trust edge (HIGH-07)', async () => {
     // Input: DID-type subject, negative sentiment
-    // Note: The current handler does NOT filter by sentiment — it creates a
-    // 'positive-attestation' edge for ALL DID subjects regardless of sentiment.
-    // This test documents the current behavior.
+    // Expected: No trust edge created — HIGH-07 added positive-only guard
     const ctx = mockHandlerCtx()
     await attestationHandler.handleCreate(ctx, {
       uri: 'at://did:plc:author/com.dina.reputation.attestation/tid9',
@@ -1408,11 +1456,8 @@ describe('§2.6 Trust Edge Sync', () => {
         createdAt: now,
       },
     })
-    // Current behavior: trust edge IS created even for negative sentiment
-    // The edge type is still 'positive-attestation' (hardcoded in handler)
-    expect(addTrustEdgeCalls).toHaveLength(1)
-    expect(addTrustEdgeCalls[0].weight).toBe(0.3)
-    expect(addTrustEdgeCalls[0].edgeType).toBe('positive-attestation')
+    // HIGH-07: Only positive sentiment creates trust edges
+    expect(addTrustEdgeCalls).toHaveLength(0)
   })
 
   it('UT-TE-010: non-DID subject attestation -> no trust edge', async () => {

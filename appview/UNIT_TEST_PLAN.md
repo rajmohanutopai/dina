@@ -206,6 +206,8 @@ Traces to: Architecture §"Bounded Ingestion Queue", Fix 5, Fix 7
 | UT-BQ-010 | depth/active/inFlight accessors | Various queue states | Correct counts returned |
 | UT-BQ-011 | pump resumes after worker completes | MAX_CONCURRENCY workers busy, one completes | Next queued event immediately dequeued |
 | UT-BQ-012 | metrics emitted correctly | Push events, process events | gauge/incr called with correct metric names |
+| UT-BQ-013 | **HIGH-04: failed item timestamp pinned in getSafeCursor** | Item fails processing | Its timestamp stays in failedTimestamps, getSafeCursor includes it |
+| UT-BQ-014 | **MEDIUM-06: getSafeCursor scans all queued items** | Items queued in non-sequential order | getSafeCursor finds minimum across all queued items (not just head) |
 
 ### §2.4 Handler Router (`handlers/index.test.ts`)
 
@@ -248,7 +250,7 @@ Traces to: Architecture §"Trust Edge Sync"
 | UT-TE-006 | delegation → weight 0.9 | Delegation record | weight = 0.9 |
 | UT-TE-007 | cosigned attestation → weight 0.7 | Attestation with coSignature | weight = 0.7 |
 | UT-TE-008 | positive attestation DID subject → weight 0.3 | DID-type subject, positive sentiment | weight = 0.3 |
-| UT-TE-009 | negative attestation DID subject → no trust edge | DID-type subject, negative sentiment | No trust edge created (only positive creates edges) |
+| UT-TE-009 | **HIGH-07: negative attestation DID subject → no trust edge** | DID-type subject, negative sentiment | No trust edge created (HIGH-07: only positive creates edges) |
 | UT-TE-010 | non-DID subject attestation → no trust edge | Product-type subject, positive sentiment | No trust edge created (only DID subjects) |
 
 ---
@@ -345,6 +347,8 @@ Traces to: Architecture §"Environment & Configuration"
 | UT-ENV-011 | defaults applied — DATABASE_POOL_MIN | DATABASE_POOL_MIN unset | env.DATABASE_POOL_MIN = 2 |
 | UT-ENV-012 | defaults applied — RATE_LIMIT_RPM | RATE_LIMIT_RPM unset | env.RATE_LIMIT_RPM = 60 |
 | UT-ENV-013 | defaults applied — NEXT_PUBLIC_BASE_URL | NEXT_PUBLIC_BASE_URL unset | env.NEXT_PUBLIC_BASE_URL = "http://localhost:3000" |
+| UT-ENV-014 | **MEDIUM-11: NODE_ENV defaults to development** | NODE_ENV unset | env.NODE_ENV = "development" |
+| UT-ENV-015 | **MEDIUM-11: production mode accepts stricter config** | NODE_ENV = "production", DATABASE_URL + JETSTREAM_URL provided | Parses successfully in production mode |
 
 ### §4.2 Constants (`config/constants.test.ts`)
 
@@ -402,16 +406,16 @@ Traces to: Architecture §"Consumer Implementation"
 | ID | Test Name | Description | Expected Result |
 |----|-----------|-------------|-----------------|
 | UT-JC-001 | kind = "commit", operation = "create" → handleCreateOrUpdate | Valid create event | handleCreateOrUpdate called |
-| UT-JC-002 | kind = "commit", operation = "update" → handleCreateOrUpdate | Valid update event | handleCreateOrUpdate called (delete + create) |
+| UT-JC-002 | **HIGH-02/03: update → pure upsert (no delete)** | Valid update event | handleCreateOrUpdate called (create only — no delete) |
 | UT-JC-003 | kind = "commit", operation = "delete" → handleDelete | Valid delete event | handleDelete called |
 | UT-JC-004 | kind = "identity" → handleIdentityEvent | Identity event | handleIdentityEvent called |
 | UT-JC-005 | kind = "account" → handleAccountEvent | Account event | handleAccountEvent called |
 | UT-JC-006 | non-reputation collection → skipped | collection = "app.bsky.feed.post" | No handler called |
 | UT-JC-007 | **Fix 11: rate-limited DID → event dropped** | DID exceeding 50/hr | No handler called, metrics incremented |
-| UT-JC-008 | rate limiting only on "create" operations | Rate-limited DID, operation = "delete" | Delete still processed (only creates throttled) |
+| UT-JC-008 | **HIGH-06: rate limiting applies to all operations** | Rate-limited DID, operation = "delete" | Delete also blocked (HIGH-06: rate limiting before operation branch) |
 | UT-JC-009 | validation failure → event skipped | Invalid record structure | Handler not called, metrics incremented |
 | UT-JC-010 | unknown handler → event skipped | Valid record, unknown collection | No error thrown, logged as warning |
-| UT-JC-011 | update = delete + create sequence | operation = "update" | handler.handleDelete called before handler.handleCreate |
+| UT-JC-011 | **HIGH-02/03: update = pure upsert (no delete)** | operation = "update" | Only handler.handleCreate called (no handleDelete — upsert handles it) |
 | UT-JC-012 | cursor save interval — every 100 events | Process 100 events | saveCursor called once |
 | UT-JC-013 | cursor save interval — 99 events → no save | Process 99 events | saveCursor not called |
 | UT-JC-014 | **Fix 7: cursor value = queue.getSafeCursor** | Events being processed | Saved cursor = low watermark from queue |
@@ -424,6 +428,8 @@ Traces to: Architecture §"Consumer Implementation"
 | UT-JC-021 | **JSON parse error → logged, not crashed** | WebSocket message = invalid JSON ("not json") | logger.error called with parse error, metrics.incr('ingester.errors.parse'), no crash |
 | UT-JC-022 | account deleted event → logged | account.status = "deleted" | Logger called with status info |
 | UT-JC-023 | account suspended event → logged | account.status = "suspended" | Logger called with status info |
+| UT-JC-024 | **HIGH-05: queue push failure logged with metric** | Queue full, push returns false | Warning logged, metric incremented |
+| UT-JC-025 | **HIGH-06: rate limiting blocks updates too** | Rate-limited DID, operation = "update" | Update blocked (rate limiting before operation branch) |
 
 ---
 
@@ -484,6 +490,7 @@ Traces to: Architecture §"Consumer Implementation"
 | UT-SP-008 | invalid sentiment enum | sentiment = "very-positive" | Zod error |
 | UT-SP-009 | invalid subjectType enum | subjectType = "place" | Zod error |
 | UT-SP-010 | tags — comma-separated parsing | tags = "food,quality,service" | Parses to array of 3 |
+| UT-SP-011 | **MEDIUM-03: minConfidence filter accepted** | minConfidence = "high" | Parses successfully |
 
 ---
 
@@ -498,7 +505,7 @@ Traces to: Architecture §"Consumer Implementation"
 | §1 Scorer Algorithms | §1.5 Recommendation | 12 |
 | §2 Ingester Components | §2.1 Record Validator | 36 |
 | §2 Ingester Components | §2.2 Rate Limiter | 10 |
-| §2 Ingester Components | §2.3 Bounded Queue | 12 |
+| §2 Ingester Components | §2.3 Bounded Queue | 14 |
 | §2 Ingester Components | §2.4 Handler Router | 7 |
 | §2 Ingester Components | §2.5 Deletion Handler | 6 |
 | §2 Ingester Components | §2.6 Trust Edge Sync | 10 |
@@ -507,16 +514,16 @@ Traces to: Architecture §"Consumer Implementation"
 | §3 Shared Utilities | §3.3 Retry Utility | 5 |
 | §3 Shared Utilities | §3.4 Batch Insert | 4 |
 | §3 Shared Utilities | §3.5 Error Types | 4 |
-| §4 Configuration | §4.1 Environment | 13 |
+| §4 Configuration | §4.1 Environment | 15 |
 | §4 Configuration | §4.2 Constants | 5 |
 | §4 Configuration | §4.3 Lexicons | 5 |
 | §5 API Cache | §5.1 SWR Cache | 14 |
-| §6 Jetstream Consumer | §6.1 Event Processing | 23 |
+| §6 Jetstream Consumer | §6.1 Event Processing | 25 |
 | §7 Scorer Jobs | §7.1 Scheduler | 13 |
 | §7 Scorer Jobs | §7.2 Decay Scores | 4 |
 | §8 XRPC Params | §8.1 Resolve Params | 5 |
-| §8 XRPC Params | §8.2 Search Params | 10 |
-| **TOTAL** | | **288** |
+| §8 XRPC Params | §8.2 Search Params | 11 |
+| **TOTAL** | | **295** |
 
 ---
 
@@ -524,16 +531,46 @@ Traces to: Architecture §"Consumer Implementation"
 
 | Fix | Description | Unit Tests |
 |-----|-------------|------------|
-| Fix 1 | Idempotent upserts (crash-replay) | UT-JC-011 (update = delete+create), integration coverage |
+| Fix 1 | Idempotent upserts (crash-replay) | UT-JC-011 (update = upsert), integration coverage |
 | Fix 2 | Atomic subject resolution | UT-DI-001 through UT-DI-017 (deterministic IDs) |
 | Fix 3 | Super-node fan-out caps | Integration tests (needs DB) |
 | Fix 4 | Transaction-scoped timeouts | Integration tests (needs DB) |
-| Fix 5 | WebSocket backpressure | UT-BQ-003, UT-BQ-004, UT-BQ-005 |
+| Fix 5 | WebSocket backpressure | UT-BQ-003, UT-BQ-004, UT-BQ-005, UT-JC-024 |
 | Fix 6 | SWR cache + promise coalescing | UT-SWR-001 through UT-SWR-014 |
 | Fix 7 | Low watermark cursor | UT-BQ-006, UT-BQ-007, UT-BQ-008, UT-JC-014 |
 | Fix 8 | O(1) LRU cache | UT-SWR-008 |
 | Fix 9 | Incremental dirty-flag scoring | Integration tests (needs DB) |
 | Fix 10 | 3-tier subject identity | UT-DI-001 through UT-DI-017 |
-| Fix 11 | Ingester-side rate limiting | UT-RL-001 through UT-RL-010, UT-JC-007, UT-JC-008 |
+| Fix 11 | Ingester-side rate limiting | UT-RL-001 through UT-RL-010, UT-JC-007, UT-JC-008, UT-JC-025 |
 | Fix 12 | Zero-trust + vouch-gating + damping | UT-TS-020, UT-TS-021, UT-TS-028 through UT-TS-031 |
 | Fix 13 | Parameterized deletion handler | UT-DH-001 through UT-DH-006 |
+
+---
+
+## AppView Issue Traceability Matrix
+
+| Issue | Description | Unit Tests |
+|-------|-------------|------------|
+| HIGH-01 | Graph API contract mismatch | Integration tests (IT-GR-*) |
+| HIGH-02 | Non-transactional update (delete+create) | UT-JC-002, UT-JC-011 (updated: pure upsert) |
+| HIGH-03 | False tombstones from update pattern | UT-JC-002, UT-JC-011 (updated: pure upsert) |
+| HIGH-04 | Failed events advance cursor | UT-BQ-013 (failed timestamp pinned) |
+| HIGH-05 | Queue drop detection missing | UT-JC-024 (push failure logged) |
+| HIGH-06 | Rate limiting bypass for deletes | UT-JC-008, UT-JC-025 (updated: all ops rate-limited) |
+| HIGH-07 | Negative sentiment creates trust edges | UT-TE-009 (updated: positive-only guard) |
+| HIGH-08 | search_vector missing | Integration tests (IT-DCK-008) |
+| HIGH-09 | Web server entrypoint missing | Integration tests (IT-WEB-001–005) |
+| HIGH-10 | isVerified always false | Integration tests (IT-SC-044) |
+| HIGH-11 | No migration service in Docker | Integration tests (IT-DCK-007) |
+| MEDIUM-01 | Subject length unbounded | Integration tests (IT-API-043) |
+| MEDIUM-02 | createdAt not validated as datetime | Covered by UT-RV-003 (validation tests) |
+| MEDIUM-03 | subjectType/minConfidence filters missing | UT-SP-011 (minConfidence accepted) |
+| MEDIUM-04 | Composite cursor pagination | Integration tests (IT-API-045, IT-API-046) |
+| MEDIUM-05 | Inactive flags returned | Integration tests (IT-API-044) |
+| MEDIUM-06 | getSafeCursor only checks head | UT-BQ-014 (scans all queued items) |
+| MEDIUM-07 | Sybil detection uses broken DID check | Integration tests (IT-SC-043) |
+| MEDIUM-08 | Tombstone count increment not idempotent | Integration tests (IT-SC-042) |
+| MEDIUM-09 | Metrics are no-ops | Covered by existing UT-BQ-012, UT-SCH-012 |
+| MEDIUM-10 | Rate limiter in-memory limitation | Documentation only (no test needed) |
+| MEDIUM-11 | Production env validation | UT-ENV-014, UT-ENV-015 |
+| MEDIUM-12 | Trust policy conflict target | Integration tests (IT-HND-009, IT-HND-010) |

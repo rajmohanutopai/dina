@@ -1,8 +1,12 @@
 /**
- * Metrics stub — provides the metrics interface used throughout the codebase.
- * In production, this would be backed by Prometheus client.
- * For now, it's a no-op implementation that satisfies the type contracts.
+ * Metrics implementation backed by structured logging.
+ *
+ * In production, this should be replaced with a real metrics backend
+ * (e.g. prom-client for Prometheus). For now, metrics are emitted as
+ * structured log lines so they appear in log aggregators (ELK, CloudWatch, etc.).
  */
+
+import { logger } from './logger.js'
 
 export interface Metrics {
   incr(name: string, tags?: Record<string, string>): void
@@ -11,11 +15,19 @@ export interface Metrics {
   counter(name: string, value: number, tags?: Record<string, string>): void
 }
 
-class StubMetrics implements Metrics {
-  incr(_name: string, _tags?: Record<string, string>): void {}
-  gauge(_name: string, _value: number | string, _tags?: Record<string, string>): void {}
-  histogram(_name: string, _value: number, _tags?: Record<string, string>): void {}
-  counter(_name: string, _value: number, _tags?: Record<string, string>): void {}
+class LoggingMetrics implements Metrics {
+  incr(name: string, tags?: Record<string, string>): void {
+    logger.debug({ metric: name, type: 'incr', ...tags }, `metric:${name}`)
+  }
+  gauge(name: string, value: number | string, tags?: Record<string, string>): void {
+    logger.debug({ metric: name, type: 'gauge', value, ...tags }, `metric:${name}`)
+  }
+  histogram(name: string, value: number, tags?: Record<string, string>): void {
+    logger.debug({ metric: name, type: 'histogram', value, ...tags }, `metric:${name}`)
+  }
+  counter(name: string, value: number, tags?: Record<string, string>): void {
+    logger.debug({ metric: name, type: 'counter', value, ...tags }, `metric:${name}`)
+  }
 }
 
-export const metrics: Metrics = new StubMetrics()
+export const metrics: Metrics = new LoggingMetrics()

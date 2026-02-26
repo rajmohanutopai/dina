@@ -25,8 +25,9 @@ export const trustPolicyHandler: RecordHandler = {
       requireVouch: record.requireVouch ?? false,
       recordCreatedAt: new Date(record.createdAt),
     }).onConflictDoUpdate({
-      target: trustPolicies.uri,
+      target: trustPolicies.authorDid,
       set: {
+        uri: op.uri,
         cid: op.cid!,
         maxGraphDepth: record.maxGraphDepth ?? null,
         trustedDomainsJson: record.trustedDomains ?? null,

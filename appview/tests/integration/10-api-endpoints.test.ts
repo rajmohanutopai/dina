@@ -1,7 +1,7 @@
 /**
  * Section 10 -- API Endpoints
- * Total tests: 44
- * Plan traceability: IT-API-001 .. IT-API-042 (including IT-API-010a, IT-API-010b)
+ * Total tests: 48
+ * Plan traceability: IT-API-001 .. IT-API-046 (including IT-API-010a, IT-API-010b)
  *
  * Subsections:
  *   10.1 Resolve Endpoint          (12 tests: IT-API-001..010b)
@@ -241,10 +241,10 @@ describe('10.1 Resolve Endpoint', () => {
   })
 
   it('IT-API-003: resolve -- invalid params', async () => {
-    // Malformed JSON in subject should throw
-    await expect(
-      resolve(db, { subject: 'not-json' })
-    ).rejects.toThrow()
+    // MEDIUM-01 fix: malformed JSON in subject returns error response, not throw
+    const result = await resolve(db, { subject: 'not-json' })
+    expect(result.recommendation).toBe('error')
+    expect(result.reasoning).toContain('Invalid subject JSON')
   })
 
   it('IT-API-004: resolve -- DID profile included', async () => {
@@ -392,9 +392,10 @@ describe('10.1 Resolve Endpoint', () => {
   })
 
   it('IT-API-010a: resolve -- malformed subject JSON -> error', async () => {
-    await expect(
-      resolve(db, { subject: 'not-valid-json{' })
-    ).rejects.toThrow()
+    // MEDIUM-01 fix: malformed JSON returns error response, not throw
+    const result = await resolve(db, { subject: 'not-valid-json{' })
+    expect(result.recommendation).toBe('error')
+    expect(result.reasoning).toContain('Invalid subject JSON')
   })
 
   it('IT-API-010b: resolve -- domain-specific score used when available', async () => {
@@ -669,10 +670,12 @@ describe('10.3 Search Endpoint', () => {
     expect(page2.results.length).toBeGreaterThanOrEqual(1)
 
     // Verify continuation works: page 2 should contain results that are
-    // chronologically at or before the cursor
+    // chronologically at or before the cursor.
+    // MEDIUM-04: cursor is now composite format `timestamp::uri`, extract timestamp part
+    const cursorTs = page1.cursor!.split('::')[0]
     for (const r of page2.results) {
       const ts = new Date((r as any).recordCreatedAt).getTime()
-      expect(ts).toBeLessThanOrEqual(new Date(page1.cursor!).getTime())
+      expect(ts).toBeLessThanOrEqual(new Date(cursorTs).getTime())
     }
   })
 
@@ -875,12 +878,15 @@ describe('10.6 Get Graph Endpoint', () => {
     await insertEdge('did:plc:center', 'did:plc:neighbor2')
     await insertEdge('did:plc:incoming', 'did:plc:center')
 
-    const result = await getGraph(db, { did: 'did:plc:center', maxDepth: 2 })
+    // Use maxDepth: 1 to get exactly the direct edges
+    const result = await getGraph(db, { did: 'did:plc:center', maxDepth: 1 })
     expect(result).toBeDefined()
-    expect(result.outgoing).toBeDefined()
-    expect(result.incoming).toBeDefined()
-    expect(result.outgoing.length).toBe(2)
-    expect(result.incoming.length).toBe(1)
+    expect(result.nodes).toBeDefined()
+    expect(result.edges).toBeDefined()
+    // Center DID has 3 edges: 2 outgoing + 1 incoming
+    expect(result.edges.length).toBe(3)
+    // Center DID + 3 neighbors = 4 nodes
+    expect(result.nodes.length).toBe(4)
   })
 
   it('IT-API-040: get graph -- depth limit', async () => {
@@ -888,9 +894,11 @@ describe('10.6 Get Graph Endpoint', () => {
     await insertEdge('did:plc:dl', 'did:plc:hop1')
 
     const result = await getGraph(db, { did: 'did:plc:dl', maxDepth: 1 })
-    // getGraphAroundDid returns 1-hop neighbors
-    expect(result.outgoing.length).toBe(1)
-    expect(result.outgoing[0].toDid).toBe('did:plc:hop1')
+    // HIGH-01: getGraph returns { nodes, edges } format
+    expect(result.edges.length).toBe(1)
+    const edge = result.edges[0]
+    expect(edge.from).toBe('did:plc:dl')
+    expect(edge.to).toBe('did:plc:hop1')
   })
 
   it('IT-API-041: get graph -- domain filter', async () => {
@@ -899,19 +907,103 @@ describe('10.6 Get Graph Endpoint', () => {
     await insertEdge('did:plc:gdom', 'did:plc:tech1', { domain: 'tech' })
     await insertEdge('did:plc:gdom', 'did:plc:gen1', { domain: null })
 
-    // getGraph returns all edges from getGraphAroundDid (no domain filter in the function)
-    const result = await getGraph(db, { did: 'did:plc:gdom', maxDepth: 2, domain: 'food' })
-    expect(result.outgoing.length).toBeGreaterThanOrEqual(1)
-    // Verify food edges are present
-    const foodEdges = result.outgoing.filter((e: any) => e.domain === 'food')
-    expect(foodEdges.length).toBe(1)
+    // HIGH-01: getGraph returns { nodes, edges }; domain filter returns only food edges
+    const result = await getGraph(db, { did: 'did:plc:gdom', maxDepth: 1, domain: 'food' })
+    expect(result.edges.length).toBe(1)
+    expect(result.edges[0].to).toBe('did:plc:food1')
   })
 
   it('IT-API-042: get graph -- empty graph', async () => {
     await insertProfile('did:plc:lonely', { overallTrustScore: 0.3 })
 
     const result = await getGraph(db, { did: 'did:plc:lonely', maxDepth: 2 })
-    expect(result.outgoing.length).toBe(0)
-    expect(result.incoming.length).toBe(0)
+    expect(result.edges.length).toBe(0)
+    expect(result.nodes.length).toBe(1) // Just the root node
+  })
+})
+
+// ---------------------------------------------------------------------------
+// §10+ API Endpoint Fixes (AppView Issues)
+// ---------------------------------------------------------------------------
+describe('§10+ API Endpoint Fixes (AppView Issues)', () => {
+  it('IT-API-043: MEDIUM-01: resolve rejects overlong subject', async () => {
+    // MEDIUM-01: subject now has .max(4096) validation
+    const oversizedSubject = 'x'.repeat(5000)
+    const result = ResolveParams.safeParse({ subject: oversizedSubject })
+    expect(result.success).toBe(false)
+  })
+
+  it('IT-API-044: MEDIUM-05: resolve only returns active flags', async () => {
+    // Set up a subject with both active and inactive flags
+    // Use the deterministic subject ID that resolve() will compute via resolveSubject()
+    const flagSubjectId = makeSubjectId('did:plc:flagsubj')
+    await insertSubject(flagSubjectId, { did: 'did:plc:flagsubj' })
+    await insertFlag('at://did:plc:flagger/flag/active1', flagSubjectId, {
+      flagType: 'spam',
+      severity: 'warning',
+      isActive: true,
+    })
+    await insertFlag('at://did:plc:flagger/flag/inactive1', flagSubjectId, {
+      flagType: 'spam',
+      severity: 'warning',
+      isActive: false,
+    })
+
+    // Create subject score so resolve succeeds
+    await insertSubjectScore(flagSubjectId)
+
+    const result = await resolve(db, { subject: JSON.stringify({ type: 'did', did: 'did:plc:flagsubj' }) })
+    // MEDIUM-05: Only active flags should be returned
+    // Should have 1 active flag, not 2
+    expect(result.flags.length).toBe(1)
+  })
+
+  it('IT-API-045: MEDIUM-04/HIGH-08: search uses composite cursor for stable pagination', async () => {
+    // Insert multiple attestations with the same timestamp
+    await insertSubject('sub-cursor', { name: 'Cursor Test' })
+    const baseDate = new Date('2026-01-15T12:00:00Z')
+    for (let i = 0; i < 5; i++) {
+      await insertAttestation(
+        `at://did:plc:auth/com.dina.reputation.attestation/cursor${i}`,
+        'did:plc:auth',
+        { subjectId: 'sub-cursor', recordCreatedAt: baseDate },
+      )
+    }
+
+    // First page
+    const page1 = await search(db, { q: undefined, limit: 2, sort: 'recent' } as any)
+    expect(page1.results.length).toBe(2)
+    expect(page1.cursor).toBeDefined()
+    // MEDIUM-04: Cursor should be composite format (timestamp::uri)
+    if (page1.cursor) {
+      expect(page1.cursor).toContain('::')
+    }
+  })
+
+  it('IT-API-046: MEDIUM-04: get-attestations cursor actually filters results', async () => {
+    // Insert attestations
+    await insertSubject('sub-ga', { name: 'GA Test' })
+    for (let i = 0; i < 5; i++) {
+      await insertAttestation(
+        `at://did:plc:auth/com.dina.reputation.attestation/ga${i}`,
+        'did:plc:auth',
+        { subjectId: 'sub-ga', recordCreatedAt: new Date(Date.now() - i * 60000) },
+      )
+    }
+
+    // First page
+    const page1 = await getAttestations(db, { subjectId: 'sub-ga', limit: 2 })
+    expect(page1.attestations.length).toBe(2)
+
+    if (page1.cursor) {
+      // Second page using cursor — should return different results
+      const page2 = await getAttestations(db, { subjectId: 'sub-ga', limit: 2, cursor: page1.cursor })
+      expect(page2.attestations.length).toBeGreaterThan(0)
+      // No overlap between pages
+      const page1Uris = new Set(page1.attestations.map((a: any) => a.uri))
+      for (const att of page2.attestations) {
+        expect(page1Uris.has((att as any).uri)).toBe(false)
+      }
+    }
   })
 })

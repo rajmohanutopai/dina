@@ -70,7 +70,11 @@ export class JetstreamConsumer {
         if (event.time_us > this.highestSeenTimeUs) {
           this.highestSeenTimeUs = event.time_us
         }
-        this.queue!.push({ data: event, timestampUs: event.time_us })
+        const accepted = this.queue!.push({ data: event, timestampUs: event.time_us })
+        if (!accepted) {
+          logger.warn({ time_us: event.time_us }, 'Queue full, event dropped')
+          metrics.incr('ingester.queue.dropped')
+        }
       } catch (err) {
         logger.error({ err }, 'Failed to parse Jetstream message')
         metrics.incr('ingester.errors.parse')
@@ -107,7 +111,7 @@ export class JetstreamConsumer {
 
     if (!REPUTATION_COLLECTIONS.includes(collection as any)) return
 
-    if (commit.operation === 'create' && isRateLimited(did)) {
+    if (isRateLimited(did)) {
       metrics.incr('ingester.rate_limited_drops', { collection })
       return
     }
@@ -148,10 +152,10 @@ export class JetstreamConsumer {
 
     const ctx = { db: this.db, logger, metrics }
 
-    if (commit.operation === 'update') {
-      await handler.handleDelete(ctx, { uri, did, collection, rkey })
-    }
-
+    // handleCreate already does ON CONFLICT DO UPDATE (upsert),
+    // so no need to handleDelete first for updates. Removing the
+    // delete-then-create pattern prevents false tombstones (HIGH-02)
+    // and non-transactional data loss risk (HIGH-03).
     await handler.handleCreate(ctx, {
       uri, did, collection, rkey, cid,
       record: validation.data as Record<string, unknown>,

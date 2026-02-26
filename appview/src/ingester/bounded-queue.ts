@@ -32,6 +32,7 @@ export class BoundedIngestionQueue {
   private processing = false
   private activeCount = 0
   private inFlightTimestamps = new Set<number>()
+  private failedTimestamps = new Set<number>()
   private processFn: ProcessFn
 
   private readonly maxSize: number
@@ -96,10 +97,14 @@ export class BoundedIngestionQueue {
       if (min === null || ts < min) min = ts
     }
 
-    // Check queued items
-    if (this.queue.length > 0) {
-      const queueMin = this.queue[0].timestampUs
-      if (min === null || queueMin < min) min = queueMin
+    // Check all queued items (not just head — queue may be unordered)
+    for (const item of this.queue) {
+      if (min === null || item.timestampUs < min) min = item.timestampUs
+    }
+
+    // Include failed timestamps to prevent cursor advancement past failures
+    for (const ts of this.failedTimestamps) {
+      if (min === null || ts < min) min = ts
     }
 
     return min
@@ -168,6 +173,8 @@ export class BoundedIngestionQueue {
     try {
       await this.processFn(item)
     } catch (err) {
+      // Track failed timestamp so cursor never advances past it (HIGH-04)
+      this.failedTimestamps.add(item.timestampUs)
       logger.error({ err, timestampUs: item.timestampUs }, '[Queue] Failed to process item')
       metrics.incr('ingester.queue.process_error')
     }

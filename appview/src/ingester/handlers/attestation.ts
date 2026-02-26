@@ -104,8 +104,8 @@ export const attestationHandler: RecordHandler = {
       }).onConflictDoNothing()
     }
 
-    // Add trust edge if subject is a DID
-    if (record.subject.type === 'did' && record.subject.did) {
+    // Add trust edge only for positive attestations of DID subjects (HIGH-07)
+    if (record.sentiment === 'positive' && record.subject.type === 'did' && record.subject.did) {
       await addTrustEdge(ctx, {
         fromDid: op.did,
         toDid: record.subject.did,

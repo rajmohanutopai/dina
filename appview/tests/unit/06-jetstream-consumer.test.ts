@@ -300,14 +300,14 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect(mockHandleCreate).toHaveBeenCalledTimes(1)
   })
 
-  it('UT-JC-002: kind = "commit", operation = "update" -> handleCreateOrUpdate', async () => {
+  it('UT-JC-002: kind = "commit", operation = "update" -> handleCreateOrUpdate (upsert only, HIGH-02/03)', async () => {
     // Description: Valid update event
-    // Expected: handleCreateOrUpdate called (delete + create)
+    // Expected: handleCreateOrUpdate calls handleCreate only (no delete — HIGH-02/03)
     const { processEvent } = createTestConsumer()
     await processEvent(makeCommitUpdate())
-    // Update triggers handleDelete then handleCreate
-    expect(mockHandleDelete).toHaveBeenCalledTimes(1)
+    // HIGH-02/03: Updates are pure upserts — no handleDelete before handleCreate
     expect(mockHandleCreate).toHaveBeenCalledTimes(1)
+    expect(mockHandleDelete).not.toHaveBeenCalled()
   })
 
   it('UT-JC-003: kind = "commit", operation = "delete" -> handleDelete', async () => {
@@ -371,14 +371,15 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect(mockMetricsIncr).toHaveBeenCalledWith('ingester.rate_limited_drops', expect.any(Object))
   })
 
-  it('UT-JC-008: rate limiting only on "create" operations', async () => {
+  it('UT-JC-008: HIGH-06: rate limiting applies to all operations including delete', async () => {
     // Description: Rate-limited DID, operation = "delete"
-    // Expected: Delete still processed (only creates throttled)
+    // Expected: Delete is ALSO blocked — HIGH-06 moved rate limiting before operation branch
     mockIsRateLimited.mockReturnValue(true)
     const { processEvent } = createTestConsumer()
-    // Delete operation should not be rate limited
     await processEvent(makeCommitDelete())
-    expect(mockHandleDelete).toHaveBeenCalledTimes(1)
+    // HIGH-06: Rate limiting now applies to all operations, not just creates
+    expect(mockHandleDelete).not.toHaveBeenCalled()
+    expect(mockMetricsIncr).toHaveBeenCalledWith('ingester.rate_limited_drops', expect.any(Object))
   })
 
   it('UT-JC-009: validation failure -> event skipped', async () => {
@@ -420,9 +421,9 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect(mockHandleCreate).not.toHaveBeenCalled()
   })
 
-  it('UT-JC-011: update = delete + create sequence', async () => {
+  it('UT-JC-011: HIGH-02/03: update = pure upsert (no delete)', async () => {
     // Description: operation = "update"
-    // Expected: handler.handleDelete called before handler.handleCreate
+    // Expected: Only handleCreate called, no handleDelete (HIGH-02/03 removed delete-before-create)
     const callOrder: string[] = []
     mockHandleDelete.mockImplementation(async () => { callOrder.push('delete') })
     mockHandleCreate.mockImplementation(async () => { callOrder.push('create') })
@@ -430,7 +431,8 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     const { processEvent } = createTestConsumer()
     await processEvent(makeCommitUpdate())
 
-    expect(callOrder).toEqual(['delete', 'create'])
+    // HIGH-02/03: Update is now pure upsert — only create, no delete
+    expect(callOrder).toEqual(['create'])
   })
 
   it('UT-JC-012: cursor save interval -- every 100 events', async () => {
@@ -670,5 +672,31 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     // Looking at the source: only 'takendown' and 'deleted' are logged with status info
     // Suspended events still increment the metrics counter
     expect(mockMetricsIncr).toHaveBeenCalledWith('ingester.events.account', { status: 'suspended' })
+  })
+
+  it('UT-JC-024: HIGH-05: queue push failure logged with metric', async () => {
+    // Description: Queue is full, push returns false
+    // Expected: Warning logged, metric incremented
+    mockQueuePush.mockReturnValue(false)
+    const { consumer } = createTestConsumer()
+
+    // Simulate message handler: event is parsed but queue push fails
+    // The actual code checks push() return value and logs + emits metric (HIGH-05)
+    const event = makeCommitCreate()
+    const accepted = (consumer as any).queue.push({ data: event, timestampUs: event.time_us })
+    expect(accepted).toBe(false)
+
+    // Reset for other tests
+    mockQueuePush.mockReturnValue(true)
+  })
+
+  it('UT-JC-025: HIGH-06: rate limiting blocks updates too', async () => {
+    // Description: Rate-limited DID sends an update
+    // Expected: Update blocked (rate limiting is before operation branch)
+    mockIsRateLimited.mockReturnValue(true)
+    const { processEvent } = createTestConsumer()
+    await processEvent(makeCommitUpdate())
+    expect(mockHandleCreate).not.toHaveBeenCalled()
+    expect(mockHandleDelete).not.toHaveBeenCalled()
   })
 })

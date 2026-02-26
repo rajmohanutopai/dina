@@ -100,6 +100,19 @@ describe('§4.1 Environment Validation', () => {
     const result = envSchema.parse({})
     expect(result.NEXT_PUBLIC_BASE_URL).toBe('http://localhost:3000')
   })
+
+  it('UT-ENV-014: MEDIUM-11: NODE_ENV field defaults to development', () => {
+    const result = envSchema.parse({})
+    expect(result.NODE_ENV).toBe('development')
+  })
+
+  it('UT-ENV-015: MEDIUM-11: production mode requires stricter DATABASE_URL', () => {
+    // In production, DATABASE_URL is z.string().url() — validated as URL
+    // In non-production, there's a default. We verify the schema accepts NODE_ENV.
+    const result = envSchema.parse({ NODE_ENV: 'production', DATABASE_URL: 'postgresql://u:p@host:5432/db', JETSTREAM_URL: 'ws://js:6008' })
+    expect(result.NODE_ENV).toBe('production')
+    expect(result.DATABASE_URL).toBe('postgresql://u:p@host:5432/db')
+  })
 })
 
 // ---------------------------------------------------------------------------

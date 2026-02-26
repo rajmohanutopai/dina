@@ -12,6 +12,7 @@ import {
   tombstones,
   delegations,
   subjects,
+  verifications,
 } from '@/db/schema/index.js'
 import { computeTrustScore, type TrustScoreInput } from '../algorithms/trust-score.js'
 import { CONSTANTS } from '@/config/constants.js'
@@ -87,6 +88,7 @@ async function gatherTrustScoreInputs(db: DrizzleDB, did: string): Promise<Trust
   if (subjectIds.length > 0) {
     const rawAtts = await db
       .select({
+        uri: attestations.uri,
         sentiment: attestations.sentiment,
         recordCreatedAt: attestations.recordCreatedAt,
         evidenceJson: attestations.evidenceJson,
@@ -127,17 +129,30 @@ async function gatherTrustScoreInputs(db: DrizzleDB, did: string): Promise<Trust
       : []
     const authorVouchMap = new Map(authorVouchCounts.map(v => [v.subjectDid, v.count]))
 
-    // Check which attestations are verified
-    const attUris = rawAtts.map(() => '').length > 0 ? [] : [] // placeholder
-    // We consider an attestation verified if its author has a verification record
-    // For simplicity, we mark all as unverified unless verified separately
+    // Check which attestations have been verified (confirmed by verifiers)
+    const attUris = rawAtts.map(a => a.uri)
+    const verifiedUriSet = new Set<string>()
+    if (attUris.length > 0) {
+      const verifiedRows = await db
+        .select({ targetUri: verifications.targetUri })
+        .from(verifications)
+        .where(
+          and(
+            inArray(verifications.targetUri, attUris),
+            eq(verifications.result, 'confirmed'),
+          )
+        )
+      for (const row of verifiedRows) {
+        verifiedUriSet.add(row.targetUri)
+      }
+    }
 
     attestationsAbout = rawAtts.map(a => ({
       sentiment: a.sentiment,
       recordCreatedAt: a.recordCreatedAt,
       evidenceJson: a.evidenceJson as unknown[] | null,
       hasCosignature: a.hasCosignature ?? false,
-      isVerified: false, // verification is checked separately if needed
+      isVerified: verifiedUriSet.has(a.uri),
       authorTrustScore: authorScoreMap.get(a.authorDid) ?? null,
       authorHasInboundVouch: (authorVouchMap.get(a.authorDid) ?? 0) > 0,
     }))

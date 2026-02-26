@@ -110,7 +110,8 @@ describe('§8.1 One-Hop Queries', () => {
 
     const result = await getGraphAroundDid(db, 'did:plc:a')
     // Outgoing edges should be capped at MAX_EDGES_PER_HOP
-    expect(result.outgoing.length).toBeLessThanOrEqual(CONSTANTS.MAX_EDGES_PER_HOP)
+    const outgoing = result.edges.filter(e => e.from === 'did:plc:a')
+    expect(outgoing.length).toBeLessThanOrEqual(CONSTANTS.MAX_EDGES_PER_HOP)
   })
 
   it('IT-GR-005: trusted attestors — only non-revoked edges counted', async () => {
@@ -123,7 +124,7 @@ describe('§8.1 One-Hop Queries', () => {
     await insertProfile('did:plc:c', 0.3)
 
     const result = await getGraphAroundDid(db, 'did:plc:a')
-    const toDids = result.outgoing.map(e => e.toDid)
+    const toDids = result.edges.filter(e => e.from === 'did:plc:a').map(e => e.to)
     expect(toDids).toContain('did:plc:b')
     expect(toDids).not.toContain('did:plc:c')
   })
@@ -212,11 +213,11 @@ describe('§8.3 Mutual Connections', () => {
 
     // Get A's outgoing neighbors
     const graphA = await getGraphAroundDid(db, 'did:plc:a')
-    const aOutgoing = new Set(graphA.outgoing.map(e => e.toDid))
+    const aOutgoing = new Set(graphA.edges.filter(e => e.from === 'did:plc:a').map(e => e.to))
 
     // Get B's outgoing neighbors
     const graphB = await getGraphAroundDid(db, 'did:plc:b')
-    const bOutgoing = new Set(graphB.outgoing.map(e => e.toDid))
+    const bOutgoing = new Set(graphB.edges.filter(e => e.from === 'did:plc:b').map(e => e.to))
 
     // Mutual connections: nodes both A and B point to
     const mutual = [...aOutgoing].filter(d => bOutgoing.has(d))
@@ -234,10 +235,10 @@ describe('§8.3 Mutual Connections', () => {
     await insertEdge('did:plc:b', 'did:plc:d')
 
     const graphA = await getGraphAroundDid(db, 'did:plc:a')
-    const aOutgoing = new Set(graphA.outgoing.map(e => e.toDid))
+    const aOutgoing = new Set(graphA.edges.filter(e => e.from === 'did:plc:a').map(e => e.to))
 
     const graphB = await getGraphAroundDid(db, 'did:plc:b')
-    const bOutgoing = new Set(graphB.outgoing.map(e => e.toDid))
+    const bOutgoing = new Set(graphB.edges.filter(e => e.from === 'did:plc:b').map(e => e.to))
 
     const mutual = [...aOutgoing].filter(d => bOutgoing.has(d))
     expect(mutual.length).toBe(0)
@@ -257,10 +258,10 @@ describe('§8.3 Mutual Connections', () => {
     await insertEdge('did:plc:b', 'did:plc:d')
 
     const graphA = await getGraphAroundDid(db, 'did:plc:a')
-    const aOutgoing = new Set(graphA.outgoing.map(e => e.toDid))
+    const aOutgoing = new Set(graphA.edges.filter(e => e.from === 'did:plc:a').map(e => e.to))
 
     const graphB = await getGraphAroundDid(db, 'did:plc:b')
-    const bOutgoing = new Set(graphB.outgoing.map(e => e.toDid))
+    const bOutgoing = new Set(graphB.edges.filter(e => e.from === 'did:plc:b').map(e => e.to))
 
     const mutual = [...aOutgoing].filter(d => bOutgoing.has(d))
     expect(mutual.length).toBe(2)
@@ -295,7 +296,8 @@ describe('§8.4 Super-Node Protection (Fix 3 + Fix 4)', () => {
     const elapsed = Date.now() - start
 
     // Outgoing edges should be capped at MAX_EDGES_PER_HOP
-    expect(result.outgoing.length).toBeLessThanOrEqual(CONSTANTS.MAX_EDGES_PER_HOP)
+    const outgoing = result.edges.filter(e => e.from === 'did:plc:supernode')
+    expect(outgoing.length).toBeLessThanOrEqual(CONSTANTS.MAX_EDGES_PER_HOP)
     // Should complete in reasonable time (well under 5 seconds)
     expect(elapsed).toBeLessThan(5000)
   })
@@ -331,8 +333,8 @@ describe('§8.4 Super-Node Protection (Fix 3 + Fix 4)', () => {
     await insertProfile('did:plc:test', 0.5)
     const result = await getGraphAroundDid(db, 'did:plc:test')
     expect(result).toBeDefined()
-    expect(result.outgoing).toEqual([])
-    expect(result.incoming).toEqual([])
+    expect(result.edges).toEqual([])
+    expect(result.nodes.length).toBe(1) // just the root
   })
 
   it('IT-GR-016: Fix 4: timeout doesn\'t poison connection pool', async () => {
@@ -384,16 +386,18 @@ describe('§8.4 Super-Node Protection (Fix 3 + Fix 4)', () => {
     }
 
     const result = await getGraphAroundDid(db, 'did:plc:center')
-    expect(result.outgoing.length).toBe(5)
-    expect(result.incoming.length).toBe(3)
+    const outgoing = result.edges.filter(e => e.from === 'did:plc:center')
+    const incoming = result.edges.filter(e => e.to === 'did:plc:center')
+    expect(outgoing.length).toBe(5)
+    expect(incoming.length).toBe(3)
 
     // All outgoing edges are from center
-    for (const edge of result.outgoing) {
-      expect(edge.fromDid).toBe('did:plc:center')
+    for (const edge of outgoing) {
+      expect(edge.from).toBe('did:plc:center')
     }
     // All incoming edges are to center
-    for (const edge of result.incoming) {
-      expect(edge.toDid).toBe('did:plc:center')
+    for (const edge of incoming) {
+      expect(edge.to).toBe('did:plc:center')
     }
   })
 
@@ -405,15 +409,19 @@ describe('§8.4 Super-Node Protection (Fix 3 + Fix 4)', () => {
     await insertEdge('did:plc:center', 'did:plc:tech1', { domain: 'tech' })
     await insertEdge('did:plc:center', 'did:plc:general', { domain: null })
 
-    const result = await getGraphAroundDid(db, 'did:plc:center')
-    // getGraphAroundDid returns all edges (no domain filter in the current implementation)
-    expect(result.outgoing.length).toBe(4)
+    // Without domain filter — all 4 edges returned
+    const allResult = await getGraphAroundDid(db, 'did:plc:center')
+    const allOutgoing = allResult.edges.filter(e => e.from === 'did:plc:center')
+    expect(allOutgoing.length).toBe(4)
 
-    // We can filter client-side: food edges
-    const foodEdges = result.outgoing.filter(e => e.domain === 'food' || e.domain === null)
-    expect(foodEdges.length).toBe(3)
+    // With domain='food' filter — only food domain edges
+    const foodResult = await getGraphAroundDid(db, 'did:plc:center', 1, 'food')
+    const foodEdges = foodResult.edges.filter(e => e.from === 'did:plc:center')
+    expect(foodEdges.length).toBe(2)
 
-    const techEdges = result.outgoing.filter(e => e.domain === 'tech')
+    // With domain='tech' filter — only tech domain edge
+    const techResult = await getGraphAroundDid(db, 'did:plc:center', 1, 'tech')
+    const techEdges = techResult.edges.filter(e => e.from === 'did:plc:center')
     expect(techEdges.length).toBe(1)
   })
 

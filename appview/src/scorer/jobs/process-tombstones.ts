@@ -47,21 +47,16 @@ export async function processTombstones(db: DrizzleDB): Promise<void> {
       profilesUpdated++
 
       // If the author has >= threshold disputed deletions, flag for coordination
+      // MEDIUM-08: Use idempotent set (actual disputed count) instead of increment
       if (Number(stat.disputedCount) >= COORDINATION_TOMBSTONE_THRESHOLD) {
         await db
           .update(didProfiles)
           .set({
-            coordinationFlagCount: sql`${didProfiles.coordinationFlagCount} + 1`,
+            coordinationFlagCount: Number(stat.disputedCount),
             needsRecalc: true,
             computedAt: new Date(),
           })
-          .where(
-            and(
-              eq(didProfiles.did, stat.authorDid),
-              // Only increment if not already flagged above threshold
-              sql`${didProfiles.coordinationFlagCount} < ${COORDINATION_TOMBSTONE_THRESHOLD}`,
-            )
-          )
+          .where(eq(didProfiles.did, stat.authorDid))
 
         flagged++
       }

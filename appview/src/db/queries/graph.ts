@@ -3,6 +3,7 @@ import type { DrizzleDB } from '@/db/connection.js'
 import { trustEdges, didProfiles } from '@/db/schema/index.js'
 import { CONSTANTS } from '@/config/constants.js'
 import { logger } from '@/shared/utils/logger.js'
+import type { GetGraphResponse, GraphNode as ApiGraphNode, GraphEdge as ApiGraphEdge } from '@/shared/types/api-types.js'
 
 /**
  * Graph queries with timeout protection (Fix 3, Fix 4).
@@ -186,42 +187,35 @@ export async function computeGraphContext(
 }
 
 /**
- * Get the immediate trust graph around a DID (1-hop neighbors).
- * Lighter weight than full computeGraphContext for API responses.
+ * Get the trust graph around a DID, transformed to the API response format.
+ * Delegates to computeGraphContext for BFS traversal, then maps internal
+ * types (fromDid/toDid/edgeType) to API types (from/to/type).
  */
 export async function getGraphAroundDid(
   db: DrizzleDB,
   did: string,
-): Promise<{ outgoing: GraphEdge[]; incoming: GraphEdge[] }> {
-  return withGraphTimeout(
-    db,
-    async (tx) => {
-      const outgoing = await tx
-        .select({
-          fromDid: trustEdges.fromDid,
-          toDid: trustEdges.toDid,
-          edgeType: trustEdges.edgeType,
-          domain: trustEdges.domain,
-          weight: trustEdges.weight,
-        })
-        .from(trustEdges)
-        .where(eq(trustEdges.fromDid, did))
-        .limit(CONSTANTS.MAX_EDGES_PER_HOP)
+  maxDepth: number = 1,
+  domain?: string,
+): Promise<GetGraphResponse> {
+  const context = await computeGraphContext(db, did, maxDepth)
 
-      const incoming = await tx
-        .select({
-          fromDid: trustEdges.fromDid,
-          toDid: trustEdges.toDid,
-          edgeType: trustEdges.edgeType,
-          domain: trustEdges.domain,
-          weight: trustEdges.weight,
-        })
-        .from(trustEdges)
-        .where(eq(trustEdges.toDid, did))
-        .limit(CONSTANTS.MAX_EDGES_PER_HOP)
+  // Filter edges by domain if provided
+  const filteredEdges = domain
+    ? context.edges.filter(e => e.domain === domain)
+    : context.edges
 
-      return { outgoing, incoming }
-    },
-    { outgoing: [], incoming: [] },
-  )
+  // Transform internal types to API types
+  const nodes: ApiGraphNode[] = context.nodes.map(n => ({
+    did: n.did,
+    depth: n.depth,
+  }))
+
+  const edges: ApiGraphEdge[] = filteredEdges.map(e => ({
+    from: e.fromDid,
+    to: e.toDid,
+    type: e.edgeType,
+    weight: e.weight,
+  }))
+
+  return { nodes, edges }
 }

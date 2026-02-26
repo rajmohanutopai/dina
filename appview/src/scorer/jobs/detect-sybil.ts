@@ -5,6 +5,7 @@ import {
   trustEdges,
   anomalyEvents,
   flags,
+  subjects,
 } from '@/db/schema/index.js'
 import {
   detectSybilClusters,
@@ -21,9 +22,11 @@ export async function detectSybilJob(db: DrizzleDB): Promise<void> {
     .from(didProfiles)
     .where(gt(didProfiles.coordinationFlagCount, 0))
 
-  const criticallyFlaggedSubjects = await db
-    .select({ subjectId: flags.subjectId })
+  // MEDIUM-07: Join flags→subjects to resolve DIDs (subject IDs are hashed sub_... strings)
+  const criticallyFlaggedDids = await db
+    .select({ did: subjects.did })
     .from(flags)
+    .innerJoin(subjects, eq(flags.subjectId, subjects.id))
     .where(
       and(
         eq(flags.isActive, true),
@@ -31,11 +34,10 @@ export async function detectSybilJob(db: DrizzleDB): Promise<void> {
       )
     )
 
-  // Flags reference subjects, but we need DIDs; extract unique subject IDs that look like DIDs
   const quarantinedSet = new Set<string>(flaggedDids.map(d => d.did))
-  for (const row of criticallyFlaggedSubjects) {
-    if (row.subjectId && row.subjectId.startsWith('did:')) {
-      quarantinedSet.add(row.subjectId)
+  for (const row of criticallyFlaggedDids) {
+    if (row.did) {
+      quarantinedSet.add(row.did)
     }
   }
 

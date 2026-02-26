@@ -245,6 +245,10 @@ core/dina-core
 # Go test binaries
 *.test
 
+# AppView — Vitest output + temp files
+appview/test-results*.json
+appview/dist/
+
 # Scratch / personal notes
 issues.txt
 marketing.txt

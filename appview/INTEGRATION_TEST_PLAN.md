@@ -399,6 +399,9 @@ Traces to: Fix 12 (Circular Dependency)
 |----|-----------|-------------|-----------------|
 | IT-SC-029 | tombstone patterns aggregated per DID | DID with 5 tombstones | Profile updated with disputedThenDeletedCount = 5 |
 | IT-SC-030 | tombstone threshold → trust penalty | DID ≥ COORDINATION_TOMBSTONE_THRESHOLD | overallTrustScore reduced by 60% |
+| IT-SC-042 | **MEDIUM-08: process-tombstones idempotent coordinationFlagCount** | Run processTombstones twice with same data | coordinationFlagCount same after both runs (idempotent set, not increment) |
+| IT-SC-043 | **MEDIUM-07: detect-sybil resolves DIDs via subjects join** | Flag targeting a subject (not DID directly) | Job completes using flags→subjects join (no startsWith check) |
+| IT-SC-044 | **HIGH-10: refresh-profiles uses verifications table** | Profile with verified attestation | isVerified populated from verifications table lookup |
 
 ### §9.7 Decay Scores (`decay-scores.test.ts`)
 
@@ -507,6 +510,10 @@ Traces to: Architecture §"Search Endpoint"
 | IT-API-036 | get attestations — by author | authorDid | All attestations by that author |
 | IT-API-037 | get attestations — pagination | limit + cursor | Pagination works correctly |
 | IT-API-038 | get attestations — includes thread replies | Attestation with replies | Replies included or separately fetchable |
+| IT-API-043 | **MEDIUM-01: resolve rejects overlong subject** | subject = 5000 chars (max 4096) | Zod validation error |
+| IT-API-044 | **MEDIUM-05: resolve only returns active flags** | Subject with 1 active + 1 inactive flag | Only 1 active flag in response |
+| IT-API-045 | **MEDIUM-04/HIGH-08: search composite cursor pagination** | 5 attestations with same timestamp | Cursor contains `::` separator (composite format) |
+| IT-API-046 | **MEDIUM-04: get-attestations cursor filters results** | 5 attestations, paginate by 2 | No overlap between pages |
 
 ### §10.6 Get Graph Endpoint (`get-graph.test.ts`)
 
@@ -590,6 +597,7 @@ Traces to: Architecture §"Incremental Dirty-Flag Scoring", Fix 9
 | IT-CUR-003 | saveCursor — upsert on conflict | Save twice for same service | 1 row, second value |
 | IT-CUR-004 | cursor per service URL | Save for ws://jetstream:6008 and ws://other:6008 | 2 distinct rows |
 | IT-CUR-005 | **Fix 7: low watermark cursor value** | Save via getSafeCursor with in-flight | Saved value = min(in-flight) - 1 |
+| IT-CUR-006 | **HIGH-04: cursor includes failed event timestamps** | Item fails processing | getSafeCursor includes failed timestamp, cursor pinned |
 
 ---
 
@@ -639,6 +647,23 @@ Traces to: Architecture §"Bootstrap & Backfill Strategy"
 | IT-DCK-004 | scorer connects to postgres | Scorer container up | Scorer logs "Scorer job registered" for all 9 jobs |
 | IT-DCK-005 | web container serves health endpoint | Web container up | GET /healthz returns 200 |
 | IT-DCK-006 | migrations run on startup | Fresh postgres, start ingester | Tables created successfully |
+| IT-DCK-007 | **HIGH-11: migrate service configuration exists** | Check migration tables exist | Tables present (migration ran) |
+| IT-DCK-008 | **HIGH-08: search_vector migration creates tsvector column** | Check attestations.search_vector | Column exists with tsvector type |
+| IT-DCK-009 | **HIGH-09: web server health endpoint responds** | GET /health | Returns { status: 'ok' } (skipped: no container in test env) |
+
+---
+
+## §18 — Web Server (`tests/integration/18-web-server.test.ts`)
+
+Traces to: AppView Issue HIGH-09 (Create web server entrypoint)
+
+| ID | Test Name | Description | Expected Result |
+|----|-----------|-------------|-----------------|
+| IT-WEB-001 | **HIGH-09: /health endpoint contract** | Health response shape | Returns { status: 'ok' } |
+| IT-WEB-002 | **HIGH-09: resolve route validates params** | ResolveParams schema | Valid params accepted, missing subject rejected |
+| IT-WEB-003 | **HIGH-09: search route validates params** | SearchParams schema | Valid query accepted, invalid sort rejected |
+| IT-WEB-004 | **HIGH-09: all 5 XRPC routes have valid param schemas** | All route schemas | All schemas exist with safeParse method |
+| IT-WEB-005 | **HIGH-09: unknown XRPC method returns error shape** | Unknown method ID | Error response { error: 'InvalidRequest' } |
 
 ---
 
@@ -684,16 +709,17 @@ Traces to: Architecture §"Bootstrap & Backfill Strategy"
 | §6 Backpressure + Low Watermark | §6.1–§6.2 Fix 5 + Fix 7 | 10 |
 | §7 Rate Limiter + DB | Fix 11 | 5 |
 | §8 Graph Queries | §8.1–§8.4 1-hop/2-hop/mutual/super-node | 20 |
-| §9 Scorer Jobs | §9.1–§9.10 All 9 jobs + convergence + domain | 41 |
-| §10 API Endpoints | §10.1–§10.6 Resolve/Search/Profile/Graph | 44 |
+| §9 Scorer Jobs | §9.1–§9.10 All 9 jobs + convergence + domain | 44 |
+| §10 API Endpoints | §10.1–§10.6 Resolve/Search/Profile/Graph | 48 |
 | §11 Database Schema | §11.1–§11.3 Schema/Indexes/Performance | 25 |
 | §12 Dirty Flags | Full cycle | 9 |
-| §13 Cursor Management | Load/Save/Low Watermark | 5 |
+| §13 Cursor Management | Load/Save/Low Watermark | 6 |
 | §14 Backfill Script | PDS backfill scenarios | 10 |
 | §15 Label Service | Detectors | 6 |
-| §16 Docker Integration | Smoke tests | 6 |
+| §16 Docker Integration | Smoke tests | 9 |
 | §17 End-to-End Flows | §17.1–§17.3 Full stack | 11 |
-| **TOTAL** | | **307** |
+| §18 Web Server | §18.1 HTTP routing (HIGH-09) | 5 |
+| **TOTAL** | | **323** |
 
 ---
 
@@ -707,7 +733,7 @@ Traces to: Architecture §"Bootstrap & Backfill Strategy"
 | Fix 4 | Transaction-scoped timeouts | IT-GR-016, IT-GR-017 |
 | Fix 5 | WebSocket backpressure | IT-BP-001 to IT-BP-005 |
 | Fix 6 | SWR cache + promise coalescing | IT-API-011 to IT-API-014 |
-| Fix 7 | Low watermark cursor | IT-LW-001 to IT-LW-005, IT-CUR-005 |
+| Fix 7 | Low watermark cursor | IT-LW-001 to IT-LW-005, IT-CUR-005, IT-CUR-006 |
 | Fix 8 | O(1) LRU cache | Covered in unit tests (UT-SWR-008) |
 | Fix 9 | Incremental dirty-flag scoring | IT-SC-001 to IT-SC-012, IT-DF-001 to IT-DF-009, IT-DB-012/013 |
 | Fix 10 | 3-tier subject identity | IT-ATT-003 to IT-ATT-009, IT-SUB-001 to IT-SUB-015 |
@@ -717,14 +743,44 @@ Traces to: Architecture §"Bootstrap & Backfill Strategy"
 
 ---
 
+## AppView Issue Traceability Matrix
+
+| Issue | Description | Integration Tests |
+|-------|-------------|-------------------|
+| HIGH-01 | Graph API contract mismatch | IT-GR-018, IT-GR-019, IT-GR-020 (updated response type) |
+| HIGH-02 | Non-transactional update pattern | Covered by unit tests (UT-JC-002, UT-JC-011) |
+| HIGH-03 | False tombstones from updates | Covered by unit tests (UT-JC-002, UT-JC-011) |
+| HIGH-04 | Failed events advance cursor | IT-CUR-006 (failed timestamp pins cursor) |
+| HIGH-05 | Queue drop detection missing | Covered by unit tests (UT-JC-024) |
+| HIGH-06 | Rate limiting bypass for deletes | Covered by unit tests (UT-JC-008, UT-JC-025) |
+| HIGH-07 | Negative sentiment creates trust edges | IT-TE-011 (negative DID → no edge) |
+| HIGH-08 | search_vector missing | IT-DCK-008 (tsvector column), IT-API-045 (composite cursor) |
+| HIGH-09 | Web server entrypoint missing | IT-WEB-001 through IT-WEB-005, IT-DCK-009 |
+| HIGH-10 | isVerified always false | IT-SC-044 (verifications table lookup) |
+| HIGH-11 | No migration service in Docker | IT-DCK-007 (migrate service config) |
+| MEDIUM-01 | Subject length unbounded | IT-API-043 (overlong subject rejected) |
+| MEDIUM-02 | createdAt not validated as datetime | Covered by unit tests (UT-RV-003) |
+| MEDIUM-03 | subjectType/minConfidence filters missing | IT-API-029, IT-API-030 (existing), UT-SP-011 |
+| MEDIUM-04 | Composite cursor pagination | IT-API-045, IT-API-046 (cursor filtering) |
+| MEDIUM-05 | Inactive flags returned | IT-API-044 (active flag filtering) |
+| MEDIUM-06 | getSafeCursor only checks head | Covered by unit tests (UT-BQ-014) |
+| MEDIUM-07 | Sybil detection uses broken DID check | IT-SC-043 (subjects join) |
+| MEDIUM-08 | Tombstone count increment not idempotent | IT-SC-042 (idempotent set) |
+| MEDIUM-09 | Metrics are no-ops | Covered by existing tests |
+| MEDIUM-10 | Rate limiter in-memory limitation | Documentation only (no test needed) |
+| MEDIUM-11 | Production env validation | Covered by unit tests (UT-ENV-014, UT-ENV-015) |
+| MEDIUM-12 | Trust policy conflict target | IT-HND-009, IT-HND-010 (existing) |
+
+---
+
 ## Cross-Reference: Architecture Section → Tests
 
 | Architecture Section | Unit Tests | Integration Tests |
 |---------------------|-----------|-------------------|
-| Jetstream Consumer | UT-JC-001–023 | IT-BP-001–005, IT-LW-001–005 |
+| Jetstream Consumer | UT-JC-001–025 | IT-BP-001–005, IT-LW-001–005 |
 | Record Validator | UT-RV-001–036 | — (pure function) |
 | Rate Limiter | UT-RL-001–010 | IT-RL-001–005 |
-| Bounded Queue | UT-BQ-001–012 | IT-BP-001–005, IT-LW-001–005 |
+| Bounded Queue | UT-BQ-001–014 | IT-BP-001–005, IT-LW-001–005, IT-CUR-006 |
 | Handler Pattern | UT-HR-001–007 | IT-ATT through IT-HND (all handlers) |
 | Attestation Handler | — | IT-ATT-001–023 |
 | Deletion Handler | UT-DH-001–006 | IT-DEL-001–020 |
@@ -737,14 +793,15 @@ Traces to: Architecture §"Bootstrap & Backfill Strategy"
 | SWR Cache | UT-SWR-001–014 | IT-API-011–014 |
 | Graph Queries | — | IT-GR-001–020 |
 | Resolve Endpoint | UT-RP-001–005 | IT-API-001–014, IT-API-010a/010b |
-| Search Endpoint | UT-SP-001–010 | IT-API-015–030 |
+| Search Endpoint | UT-SP-001–011 | IT-API-015–030, IT-API-045 |
 | Database Schema | — | IT-DB-001–025 |
 | Scorer Scheduler | UT-SCH-001–013 | — |
-| Scorer Jobs | UT-DS-001–004 | IT-SC-001–041 |
+| Scorer Jobs | UT-DS-001–004 | IT-SC-001–044 |
 | Backfill | — | IT-BF-001–010 |
 | Label Service | — | IT-LBL-001–006 |
-| Docker | — | IT-DCK-001–006 |
-| Environment Config | UT-ENV-001–013 | — |
+| Docker | — | IT-DCK-001–009 |
+| Web Server | — | IT-WEB-001–005 |
+| Environment Config | UT-ENV-001–015 | — |
 | Constants | UT-CON-001–005 | — |
 | Lexicons | UT-LEX-001–005 | — |
 | AT URI Parser | UT-URI-001–008 | — |
@@ -756,6 +813,6 @@ Traces to: Architecture §"Bootstrap & Backfill Strategy"
 
 | Plan | Tests |
 |------|-------|
-| Unit Test Plan | **288** |
-| Integration Test Plan | **307** |
-| **Grand Total** | **595** |
+| Unit Test Plan | **295** |
+| Integration Test Plan | **323** |
+| **Grand Total** | **618** |

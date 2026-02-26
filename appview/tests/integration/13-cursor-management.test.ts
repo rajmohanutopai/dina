@@ -1,7 +1,7 @@
 /**
  * Section 13 -- Cursor Management
- * Total tests: 5
- * Plan traceability: IT-CUR-001 .. IT-CUR-005
+ * Total tests: 6
+ * Plan traceability: IT-CUR-001 .. IT-CUR-006
  *
  * Source: INTEGRATION_TEST_PLAN.md, Fix 7 (Low Watermark Cursor)
  */
@@ -133,5 +133,34 @@ describe('13 Cursor Management', () => {
 
     // Wait for all processing to complete
     await new Promise(resolve => setTimeout(resolve, 500))
+  })
+
+  it('IT-CUR-006: HIGH-04: cursor includes failed event timestamps', async () => {
+    // Description: A failed event should pin the cursor
+    // Expected: getSafeCursor includes failed timestamps in minimum calculation
+    const queue = new BoundedIngestionQueue(
+      async (item) => {
+        if (item.timestampUs === 2000) throw new Error('Simulated failure')
+        // Other items complete successfully
+      },
+      { maxSize: 100, maxConcurrency: 5 },
+    )
+
+    queue.push({ timestampUs: 2000, data: 'will-fail' })
+    queue.push({ timestampUs: 5000, data: 'will-succeed' })
+    queue.push({ timestampUs: 8000, data: 'will-succeed' })
+
+    // Wait for processing
+    await new Promise(resolve => setTimeout(resolve, 300))
+
+    // HIGH-04: Failed item's timestamp (2000) should pin the cursor
+    const safeCursor = queue.getSafeCursor()
+    expect(safeCursor).toBe(2000)
+
+    // Save this pinned cursor
+    const service = 'cur006-failed'
+    await saveCursor(db, service, safeCursor!)
+    const loaded = await loadCursor(db, service)
+    expect(loaded).toBe(2000)
   })
 })

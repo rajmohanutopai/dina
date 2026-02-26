@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { eq } from 'drizzle-orm'
+import { eq, and } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
 import { subjectScores, didProfiles, flags } from '@/db/schema/index.js'
 import { computeGraphContext } from '@/db/queries/graph.js'
@@ -9,7 +9,7 @@ import { withSWR, resolveKey, CACHE_TTLS } from '../middleware/swr-cache.js'
 import type { ResolveResponse, GraphContext } from '@/shared/types/api-types.js'
 
 export const ResolveParams = z.object({
-  subject: z.string(),
+  subject: z.string().max(4096),
   requesterDid: z.string().optional(),
   domain: z.string().optional(),
   context: z.enum([
@@ -40,7 +40,22 @@ async function computeResolveResponse(
   domain?: string,
   context?: string,
 ): Promise<ResolveResponse> {
-  const subjectRef = JSON.parse(subjectJson)
+  let subjectRef: any
+  try {
+    subjectRef = JSON.parse(subjectJson)
+  } catch {
+    return {
+      subjectType: 'unknown',
+      trustLevel: 'none',
+      confidence: 0,
+      attestationSummary: null,
+      flags: [],
+      authenticity: null,
+      graphContext: null,
+      recommendation: 'error',
+      reasoning: 'Invalid subject JSON',
+    }
+  }
 
   const subjectId = await resolveSubject(db, subjectRef)
 
@@ -59,7 +74,7 @@ async function computeResolveResponse(
 
   const activeFlags = subjectId
     ? await db.select().from(flags)
-        .where(eq(flags.subjectId, subjectId))
+        .where(and(eq(flags.subjectId, subjectId), eq(flags.isActive, true)))
         .limit(10)
     : []
 

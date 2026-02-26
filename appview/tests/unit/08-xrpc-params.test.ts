@@ -232,4 +232,14 @@ describe('SS8.2 Search Params', () => {
       expect(tagList).toHaveLength(3)
     }
   })
+
+  it('UT-SP-011: MEDIUM-03: minConfidence filter accepted', () => {
+    // Description: minConfidence = "high"
+    // Expected: Parses successfully (MEDIUM-03 added minConfidence param)
+    const result = SearchParams.safeParse({ q: 'test', minConfidence: 'high' })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.minConfidence).toBe('high')
+    }
+  })
 })

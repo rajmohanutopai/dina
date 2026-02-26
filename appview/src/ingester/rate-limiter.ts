@@ -11,7 +11,23 @@ import { logger } from '@/shared/utils/logger.js'
  *
  * The LRU evicts the least-recently-seen DIDs when MAX_TRACKED_DIDS is reached,
  * so memory usage stays bounded even with millions of unique authors.
+ *
+ * LIMITATION: This rate limiter is in-memory only. In multi-instance deployments,
+ * each instance maintains its own independent rate limit state. A DID could
+ * effectively get N × MAX_RECORDS_PER_HOUR writes through if N instances are
+ * running. For shared rate limiting, use Redis-backed counters
+ * (e.g. sliding-window via REDIS INCR + EXPIRE).
+ * Rate limit state is also lost on process restart.
  */
+
+// Warn if running multiple instances with in-memory rate limiting
+const instanceCount = Number(process.env.INSTANCE_COUNT ?? 1)
+if (instanceCount > 1) {
+  logger.warn(
+    { instanceCount },
+    '[RateLimiter] Running in-memory rate limiter with multiple instances — rate limits are NOT shared across instances',
+  )
+}
 
 interface RateLimitEntry {
   /** Timestamps of writes within the current window */
