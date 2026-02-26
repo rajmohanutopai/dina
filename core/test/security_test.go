@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rajmohanutopai/dina/core/internal/adapter/identity"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
 
@@ -375,18 +376,21 @@ func TestSecurity_17_15_PlaintextDiscardedAfterProcessing(t *testing.T) {
 func TestSecurity_17_16_KeysInRAMOnlyWhileNeeded(t *testing.T) {
 	// Use PersonaManager to create, unlock, then lock a persona.
 	// After locking, verify the persona reports locked (DEK cleared).
-	pm := realPersonaManager
+	pm := identity.NewPersonaManager()
+	pm.VerifyPassphrase = func(storedHash, passphrase string) (bool, error) {
+		return passphrase == testutil.TestPassphrase, nil
+	}
 	testutil.RequireImplementation(t, pm, "PersonaManager")
 
 	ctx := context.Background()
 
-	// Create a persona with "restricted" tier.
-	personaID, err := pm.Create(ctx, "keysram-test", "restricted")
+	// Create a persona with "restricted" tier and a passphrase hash.
+	personaID, err := pm.Create(ctx, "keysram_test", "restricted", testutil.TestPassphraseHash)
 	testutil.RequireNoError(t, err)
 	defer func() { _ = pm.Delete(ctx, personaID) }()
 
 	// Unlock the persona (loads DEK into RAM).
-	err = pm.Unlock(ctx, personaID, "test-passphrase", 300)
+	err = pm.Unlock(ctx, personaID, testutil.TestPassphrase, 300)
 	testutil.RequireNoError(t, err)
 
 	locked, err := pm.IsLocked(personaID)

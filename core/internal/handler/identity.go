@@ -29,13 +29,13 @@ func (h *IdentityHandler) HandleGetDID(w http.ResponseWriter, r *http.Request) {
 	pubKey := h.Signer.PublicKey()
 	did, err := h.DID.Create(r.Context(), pubKey)
 	if err != nil && did == "" {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		clientError(w, "failed to create DID", http.StatusInternalServerError, err)
 		return
 	}
 
 	doc, err := h.DID.Resolve(r.Context(), did)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		clientError(w, "failed to resolve DID", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -65,7 +65,7 @@ func (h *IdentityHandler) HandleSign(w http.ResponseWriter, r *http.Request) {
 
 	sig, err := h.Signer.Sign(r.Context(), data)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		clientError(w, "signing failed", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -111,7 +111,7 @@ func (h *IdentityHandler) HandleVerify(w http.ResponseWriter, r *http.Request) {
 	// Resolve the DID to get the public key document.
 	doc, err := h.DID.Resolve(r.Context(), did)
 	if err != nil {
-		http.Error(w, `{"error":"DID resolution failed: `+err.Error()+`"}`, http.StatusInternalServerError)
+		clientError(w, "DID resolution failed", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -161,13 +161,13 @@ func (h *IdentityHandler) HandleGetDocument(w http.ResponseWriter, r *http.Reque
 	pubKey := h.Signer.PublicKey()
 	did, err := h.DID.Create(r.Context(), pubKey)
 	if err != nil && did == "" {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		clientError(w, "failed to create DID", http.StatusInternalServerError, err)
 		return
 	}
 
 	doc, err := h.DID.Resolve(r.Context(), did)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		clientError(w, "failed to resolve DID", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -185,7 +185,7 @@ func (h *IdentityHandler) HandleGetMnemonic(w http.ResponseWriter, r *http.Reque
 
 	mnemonic, err := h.Mnemonic.EntropyToMnemonic(h.IdentitySeed)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		clientError(w, "mnemonic generation failed", http.StatusInternalServerError, err)
 		return
 	}
 

@@ -44,7 +44,9 @@ class CLIIdentity:
 
     def generate(self) -> None:
         """Generate and persist a new Ed25519 keypair."""
-        self._dir.mkdir(parents=True, exist_ok=True)
+        self._dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        # Enforce permissions even if directory already existed with wrong perms
+        os.chmod(self._dir, 0o700)
         self._private_key = Ed25519PrivateKey.generate()
 
         # Write private key (owner read/write only).

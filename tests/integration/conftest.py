@@ -154,7 +154,7 @@ def docker_persona_setup(docker_services):
     for name in _ALL_PERSONAS:
         httpx.post(
             f"{base}/v1/personas",
-            json={"name": name, "tier": "open"},
+            json={"name": name, "tier": "open", "passphrase": "test"},
             headers=headers, timeout=10,
         )
         httpx.post(

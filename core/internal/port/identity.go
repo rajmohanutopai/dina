@@ -40,7 +40,7 @@ type DIDManager interface {
 
 // PersonaManager handles persona lifecycle operations.
 type PersonaManager interface {
-	Create(ctx context.Context, name, tier string) (string, error)
+	Create(ctx context.Context, name, tier string, passphraseHash ...string) (string, error)
 	List(ctx context.Context) ([]string, error)
 	Unlock(ctx context.Context, personaID, passphrase string, ttlSeconds int) error
 	Lock(ctx context.Context, personaID string) error

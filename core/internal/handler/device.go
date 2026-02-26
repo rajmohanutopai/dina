@@ -23,7 +23,7 @@ func (h *DeviceHandler) HandleInitiatePairing(w http.ResponseWriter, r *http.Req
 
 	code, _, err := h.Device.InitiatePairing(r.Context())
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		clientError(w, "failed to initiate pairing", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -63,7 +63,7 @@ func (h *DeviceHandler) HandleCompletePairing(w http.ResponseWriter, r *http.Req
 			r.Context(), req.Code, req.DeviceName, req.PublicKeyMultibase,
 		)
 		if err != nil {
-			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+			clientError(w, "pairing failed", http.StatusInternalServerError, err)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -77,7 +77,7 @@ func (h *DeviceHandler) HandleCompletePairing(w http.ResponseWriter, r *http.Req
 	// Legacy token-based pairing.
 	resp, err := h.Device.CompletePairing(r.Context(), req.Code, req.DeviceName)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		clientError(w, "pairing failed", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -95,7 +95,7 @@ func (h *DeviceHandler) HandleListDevices(w http.ResponseWriter, r *http.Request
 
 	devices, err := h.Device.ListDevices(r.Context())
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		clientError(w, "failed to list devices", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -119,7 +119,7 @@ func (h *DeviceHandler) HandleRevokeDevice(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := h.Device.RevokeDevice(r.Context(), id); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		clientError(w, "failed to revoke device", http.StatusInternalServerError, err)
 		return
 	}
 

@@ -12,6 +12,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -211,10 +212,16 @@ func (pm *PairingManager) CompletePairingFull(ctx context.Context, code string, 
 	pm.mu.Lock()
 	nodeDID := pm.nodeDID
 	wsURL := pm.wsURL
+	// Retrieve the token ID of the device just registered by CompletePairing.
+	var tokenID string
+	if n := len(pm.devices); n > 0 {
+		tokenID = pm.devices[n-1].tokenID
+	}
 	pm.mu.Unlock()
 
 	return &PairResponse{
 		ClientToken: clientToken,
+		TokenID:     tokenID,
 		NodeDID:     nodeDID,
 		WsURL:       wsURL,
 	}, nil
@@ -362,17 +369,8 @@ func (pm *PairingManager) ValidateToken(token string) (string, string, error) {
 		if d.revoked {
 			continue
 		}
-		if len(d.tokenHash) == len(tokenHash) {
-			match := true
-			for j := range d.tokenHash {
-				if d.tokenHash[j] != tokenHash[j] {
-					match = false
-					break
-				}
-			}
-			if match {
-				return d.tokenID, d.name, nil
-			}
+		if len(d.tokenHash) == len(tokenHash) && subtle.ConstantTimeCompare(d.tokenHash, tokenHash[:]) == 1 {
+			return d.tokenID, d.name, nil
 		}
 	}
 	return "", "", errors.New("pairing: token not found or revoked")

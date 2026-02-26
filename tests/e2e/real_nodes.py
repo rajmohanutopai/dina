@@ -332,7 +332,7 @@ class RealHomeNode(HomeNode):
         _api_request(
             "post",
             f"{self._core_url}/v1/personas",
-            json={"name": name, "tier": tier},
+            json={"name": name, "tier": tier, "passphrase": "test"},
             headers=self._admin_headers(),
         )
         _api_request(

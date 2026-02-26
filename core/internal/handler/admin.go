@@ -10,8 +10,9 @@ import (
 // AdminHandler serves the /admin/* endpoints by reverse-proxying
 // to the Python brain's admin UI.
 type AdminHandler struct {
-	ProxyURL string
-	Token    string
+	ProxyURL      string
+	Token         string // user-facing admin token (fallback)
+	InternalToken string // separate internal token for brain communication
 }
 
 // HandleAdmin reverse-proxies requests to the brain admin UI.
@@ -28,9 +29,14 @@ func (h *AdminHandler) HandleAdmin(w http.ResponseWriter, r *http.Request) {
 			req.URL.Host = target.Host
 			req.Host = target.Host
 
-			// Forward the brain token for backend authentication.
-			if h.Token != "" {
-				req.Header.Set("Authorization", "Bearer "+h.Token)
+			// Forward the internal token for backend authentication,
+			// falling back to the client-facing token if not set.
+			token := h.InternalToken
+			if token == "" {
+				token = h.Token
+			}
+			if token != "" {
+				req.Header.Set("Authorization", "Bearer "+token)
 			}
 		},
 	}

@@ -423,17 +423,23 @@ func (m *sessionManager) GetCSRFToken(sessionID string) (string, error) {
 // RateLimiter (Section 1.3)
 // ---------------------------------------------------------------------------
 
+// maxRateLimitEntries is the hard cap on the number of rate limit buckets.
+// Prevents unbounded memory growth from many unique IPs.
+const maxRateLimitEntries = 10000
+
 type bucket struct {
-	tokens    int
-	lastReset time.Time
+	tokens     int
+	lastReset  time.Time
+	lastAccess time.Time
 }
 
 // rateLimiter implements per-IP token-bucket rate limiting.
 type rateLimiter struct {
-	mu      sync.Mutex
-	buckets map[string]*bucket
-	limit   int           // max tokens (requests) per window
-	window  time.Duration // refill window
+	mu        sync.Mutex
+	buckets   map[string]*bucket
+	limit     int           // max tokens (requests) per window
+	window    time.Duration // refill window
+	lastPurge time.Time     // last time expired entries were purged
 }
 
 // NewRateLimiter creates a RateLimiter.
@@ -447,9 +453,10 @@ func NewRateLimiter(limit, windowSeconds int) *rateLimiter {
 		windowSeconds = 60
 	}
 	return &rateLimiter{
-		buckets: make(map[string]*bucket),
-		limit:   limit,
-		window:  time.Duration(windowSeconds) * time.Second,
+		buckets:   make(map[string]*bucket),
+		limit:     limit,
+		window:    time.Duration(windowSeconds) * time.Second,
+		lastPurge: time.Now(),
 	}
 }
 
@@ -477,23 +484,72 @@ func (r *rateLimiter) Reset(ip string) {
 // getOrCreateBucket returns the bucket for the IP, refilling if the window has elapsed.
 // Caller must hold r.mu.
 func (r *rateLimiter) getOrCreateBucket(ip string) *bucket {
+	now := time.Now()
+
+	// Periodic purge: clean expired entries every 5 minutes.
+	if now.Sub(r.lastPurge) > 5*time.Minute {
+		r.purgeExpired()
+		r.lastPurge = now
+	}
+	// Hard cap: if still over limit after purge, evict oldest entries.
+	if len(r.buckets) >= maxRateLimitEntries {
+		r.evictOldest(maxRateLimitEntries / 10)
+	}
+
 	b, ok := r.buckets[ip]
 	if !ok {
 		b = &bucket{
-			tokens:    r.limit,
-			lastReset: time.Now(),
+			tokens:     r.limit,
+			lastReset:  now,
+			lastAccess: now,
 		}
 		r.buckets[ip] = b
 		return b
 	}
 
+	b.lastAccess = now
+
 	// Refill bucket if the window has elapsed.
-	if time.Since(b.lastReset) >= r.window {
+	if now.Sub(b.lastReset) >= r.window {
 		b.tokens = r.limit
-		b.lastReset = time.Now()
+		b.lastReset = now
 	}
 
 	return b
+}
+
+// purgeExpired removes buckets whose tokens have fully replenished and
+// haven't been accessed within two window durations.
+// Caller must hold r.mu.
+func (r *rateLimiter) purgeExpired() {
+	now := time.Now()
+	cutoff := now.Add(-2 * r.window)
+	for ip, b := range r.buckets {
+		if b.tokens >= r.limit && b.lastAccess.Before(cutoff) {
+			delete(r.buckets, ip)
+		}
+	}
+}
+
+// evictOldest removes the n least-recently-accessed buckets.
+// Caller must hold r.mu.
+func (r *rateLimiter) evictOldest(n int) {
+	if n <= 0 || len(r.buckets) == 0 {
+		return
+	}
+	for i := 0; i < n && len(r.buckets) > 0; i++ {
+		oldestIP := ""
+		oldestTime := time.Now()
+		for ip, b := range r.buckets {
+			if oldestIP == "" || b.lastAccess.Before(oldestTime) {
+				oldestIP = ip
+				oldestTime = b.lastAccess
+			}
+		}
+		if oldestIP != "" {
+			delete(r.buckets, oldestIP)
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -503,10 +559,11 @@ func (r *rateLimiter) getOrCreateBucket(ip string) *bucket {
 // rateLimitChecker wraps a rateLimiter and adds the Check method that returns
 // a RateLimitResult with Allowed, Remaining, and ResetAt fields.
 type rateLimitChecker struct {
-	mu      sync.Mutex
-	buckets map[string]*bucket
-	limit   int
-	window  time.Duration
+	mu        sync.Mutex
+	buckets   map[string]*bucket
+	limit     int
+	window    time.Duration
+	lastPurge time.Time // last time expired entries were purged
 }
 
 // RateLimitResult is the canonical type from testutil.
@@ -523,9 +580,10 @@ func NewRateLimitChecker(limit, windowSeconds int) *rateLimitChecker {
 		windowSeconds = 60
 	}
 	return &rateLimitChecker{
-		buckets: make(map[string]*bucket),
-		limit:   limit,
-		window:  time.Duration(windowSeconds) * time.Second,
+		buckets:   make(map[string]*bucket),
+		limit:     limit,
+		window:    time.Duration(windowSeconds) * time.Second,
+		lastPurge: time.Now(),
 	}
 }
 
@@ -568,23 +626,72 @@ func (c *rateLimitChecker) Reset(ip string) {
 // getOrCreateBucket returns the bucket for the IP, refilling if the window has elapsed.
 // Caller must hold c.mu.
 func (c *rateLimitChecker) getOrCreateBucket(ip string) *bucket {
+	now := time.Now()
+
+	// Periodic purge: clean expired entries every 5 minutes.
+	if now.Sub(c.lastPurge) > 5*time.Minute {
+		c.purgeExpired()
+		c.lastPurge = now
+	}
+	// Hard cap: if still over limit after purge, evict oldest entries.
+	if len(c.buckets) >= maxRateLimitEntries {
+		c.evictOldest(maxRateLimitEntries / 10)
+	}
+
 	b, ok := c.buckets[ip]
 	if !ok {
 		b = &bucket{
-			tokens:    c.limit,
-			lastReset: time.Now(),
+			tokens:     c.limit,
+			lastReset:  now,
+			lastAccess: now,
 		}
 		c.buckets[ip] = b
 		return b
 	}
 
+	b.lastAccess = now
+
 	// Refill bucket if the window has elapsed.
-	if time.Since(b.lastReset) >= c.window {
+	if now.Sub(b.lastReset) >= c.window {
 		b.tokens = c.limit
-		b.lastReset = time.Now()
+		b.lastReset = now
 	}
 
 	return b
+}
+
+// purgeExpired removes buckets whose tokens have fully replenished and
+// haven't been accessed within two window durations.
+// Caller must hold c.mu.
+func (c *rateLimitChecker) purgeExpired() {
+	now := time.Now()
+	cutoff := now.Add(-2 * c.window)
+	for ip, b := range c.buckets {
+		if b.tokens >= c.limit && b.lastAccess.Before(cutoff) {
+			delete(c.buckets, ip)
+		}
+	}
+}
+
+// evictOldest removes the n least-recently-accessed buckets.
+// Caller must hold c.mu.
+func (c *rateLimitChecker) evictOldest(n int) {
+	if n <= 0 || len(c.buckets) == 0 {
+		return
+	}
+	for i := 0; i < n && len(c.buckets) > 0; i++ {
+		oldestIP := ""
+		oldestTime := time.Now()
+		for ip, b := range c.buckets {
+			if oldestIP == "" || b.lastAccess.Before(oldestTime) {
+				oldestIP = ip
+				oldestTime = b.lastAccess
+			}
+		}
+		if oldestIP != "" {
+			delete(c.buckets, oldestIP)
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {% if csrf_token %}<meta name="csrf-token" content="{{ csrf_token }}">{% endif %}
     <title>{% block title %}Dina Admin{% endblock %}</title>
     <style>
         /* ── Design Tokens (change theme here) ── */
@@ -314,7 +315,12 @@
 
         /* ── API fetch helper ── */
         async function apiFetch(url, opts = {}) {
-            const resp = await fetch(url, { ...opts, credentials: 'same-origin' });
+            const headers = opts.headers ? { ...opts.headers } : {};
+            const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+            if (csrfMeta) {
+                headers['X-CSRF-Token'] = csrfMeta.content;
+            }
+            const resp = await fetch(url, { ...opts, headers, credentials: 'same-origin' });
             if (resp.status === 401) { window.location.href = '/admin/login'; return null; }
             return resp;
         }

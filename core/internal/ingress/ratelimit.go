@@ -1,9 +1,14 @@
 package ingress
 
 import (
+	"context"
 	"sync"
 	"time"
 )
+
+// maxRateLimitEntries is the hard cap on the number of rate limit buckets.
+// Prevents unbounded memory growth from many unique IPs.
+const maxRateLimitEntries = 10000
 
 // RateLimiter implements the two-valve ingress rate limiting:
 //   - Valve 1: Per-IP rate limit (token bucket) — prevents a single
@@ -17,6 +22,7 @@ type RateLimiter struct {
 	ipBuckets map[string]*bucket
 	ipRate    int           // tokens per window
 	ipWindow  time.Duration // bucket window
+	lastPurge time.Time     // last time expired entries were purged
 
 	// Valve 2: Global capacity.
 	spoolMaxBytes int64
@@ -26,8 +32,9 @@ type RateLimiter struct {
 
 // bucket is a simple token bucket for rate limiting.
 type bucket struct {
-	tokens    int
-	lastReset time.Time
+	tokens     int
+	lastReset  time.Time
+	lastAccess time.Time
 }
 
 // NewRateLimiter creates an ingress rate limiter.
@@ -38,6 +45,7 @@ func NewRateLimiter(ipRate int, ipWindow time.Duration, spoolMaxBlobs int, spool
 		ipBuckets:     make(map[string]*bucket),
 		ipRate:        ipRate,
 		ipWindow:      ipWindow,
+		lastPurge:     time.Now(),
 		spoolMaxBlobs: spoolMaxBlobs,
 		spoolMaxBytes: spoolMaxBytes,
 		deadDrop:      deadDrop,
@@ -51,11 +59,24 @@ func (r *RateLimiter) AllowIP(ip string) bool {
 	defer r.mu.Unlock()
 
 	now := time.Now()
+
+	// Periodic purge: clean expired entries every 5 minutes.
+	if now.Sub(r.lastPurge) > 5*time.Minute {
+		r.purgeExpiredLocked()
+		r.lastPurge = now
+	}
+	// Hard cap: if still over limit after purge, evict oldest entries.
+	if len(r.ipBuckets) >= maxRateLimitEntries {
+		r.evictOldestLocked(maxRateLimitEntries / 10)
+	}
+
 	b, ok := r.ipBuckets[ip]
 	if !ok {
-		r.ipBuckets[ip] = &bucket{tokens: r.ipRate - 1, lastReset: now}
+		r.ipBuckets[ip] = &bucket{tokens: r.ipRate - 1, lastReset: now, lastAccess: now}
 		return true
 	}
+
+	b.lastAccess = now
 
 	// Reset bucket if the window has elapsed.
 	if now.Sub(b.lastReset) >= r.ipWindow {
@@ -100,7 +121,12 @@ func (r *RateLimiter) ResetIP(ip string) {
 func (r *RateLimiter) PurgeExpired() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.purgeExpiredLocked()
+}
 
+// purgeExpiredLocked removes buckets older than twice the window duration.
+// Caller must hold r.mu.
+func (r *RateLimiter) purgeExpiredLocked() int {
 	now := time.Now()
 	purged := 0
 	for ip, b := range r.ipBuckets {
@@ -110,4 +136,42 @@ func (r *RateLimiter) PurgeExpired() int {
 		}
 	}
 	return purged
+}
+
+// evictOldestLocked removes the n least-recently-accessed buckets.
+// Caller must hold r.mu.
+func (r *RateLimiter) evictOldestLocked(n int) {
+	if n <= 0 || len(r.ipBuckets) == 0 {
+		return
+	}
+	for i := 0; i < n && len(r.ipBuckets) > 0; i++ {
+		oldestIP := ""
+		oldestTime := time.Now()
+		for ip, b := range r.ipBuckets {
+			if oldestIP == "" || b.lastAccess.Before(oldestTime) {
+				oldestIP = ip
+				oldestTime = b.lastAccess
+			}
+		}
+		if oldestIP != "" {
+			delete(r.ipBuckets, oldestIP)
+		}
+	}
+}
+
+// StartPurgeLoop runs PurgeExpired every 5 minutes in a background goroutine.
+// The goroutine exits when the provided context is cancelled.
+func (r *RateLimiter) StartPurgeLoop(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				r.PurgeExpired()
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 }

@@ -361,14 +361,20 @@ func (s *TransportService) ProcessInbound(ctx context.Context, sealed []byte) (*
 			if os.Getenv("DINA_ALLOW_UNSIGNED_D2D") != "1" {
 				return nil, fmt.Errorf("transport: %w: unsigned inbound messages rejected", domain.ErrInvalidSignature)
 			}
-			slog.Warn("transport: accepting unsigned D2D message (migration mode)")
+			slog.Warn("SECURITY: accepting unsigned D2D message",
+				"mode", "migration",
+				"format", "json-wrapped",
+			)
 		}
 	} else {
 		// Legacy format — raw NaCl sealed box bytes (no signature).
 		if os.Getenv("DINA_ALLOW_UNSIGNED_D2D") != "1" {
 			return nil, fmt.Errorf("transport: %w: unsigned legacy payload rejected", domain.ErrInvalidSignature)
 		}
-		slog.Warn("transport: accepting unsigned legacy D2D (migration mode)")
+		slog.Warn("SECURITY: accepting unsigned D2D message",
+			"mode", "migration",
+			"format", "legacy",
+		)
 		ciphertext = sealed
 	}
 

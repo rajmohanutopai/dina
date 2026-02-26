@@ -30,8 +30,16 @@ templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 
 _client_token: str = ""
 
-# Server-side session store: session_id -> {"created": float}
+# Server-side session store: session_id -> {"created": float, "csrf_token": str}
 _sessions: dict[str, dict] = {}
+
+# Brute-force throttling (MED-06)
+_MAX_ATTEMPTS = 5
+_LOCKOUT_SECONDS = 900  # 15 minutes
+_login_attempts: dict[str, list[float]] = {}
+
+# Session store bounds (LOW-01)
+_MAX_SESSIONS = 100
 
 
 def set_client_token(token: str) -> None:
@@ -51,6 +59,12 @@ def validate_session(session_id: str) -> bool:
     return True
 
 
+def get_csrf_token(session_id: str) -> str:
+    """Get CSRF token for a session."""
+    session = _sessions.get(session_id)
+    return session.get("csrf_token", "") if session else ""
+
+
 class LoginRequest(BaseModel):
     """Login payload."""
     token: str
@@ -63,19 +77,45 @@ async def login_page(request: Request) -> HTMLResponse:
 
 
 @router.post("/login")
-async def login(request: LoginRequest) -> JSONResponse:
+async def login(raw_request: Request, body: LoginRequest) -> JSONResponse:
     """Validate CLIENT_TOKEN and set HttpOnly cookie."""
     if not _client_token:
         raise HTTPException(status_code=503, detail="CLIENT_TOKEN not configured")
 
-    if not hmac.compare_digest(request.token.strip(), _client_token):
-        log.warning("admin.login_failed")
+    client_ip = raw_request.client.host if raw_request.client else "unknown"
+
+    # --- MED-06: Brute-force throttling ---
+    now = time.time()
+    attempts = _login_attempts.get(client_ip, [])
+    recent = [t for t in attempts if now - t < _LOCKOUT_SECONDS]
+    _login_attempts[client_ip] = recent
+    if len(recent) >= _MAX_ATTEMPTS:
+        log.warning("admin.login_throttled", extra={"ip": client_ip, "attempts": len(recent)})
+        raise HTTPException(status_code=429, detail="Too many attempts. Try again later.")
+
+    if not hmac.compare_digest(body.token.strip(), _client_token):
+        _login_attempts.setdefault(client_ip, []).append(now)
+        log.warning("admin.login_failed", extra={"ip": client_ip})
         raise HTTPException(status_code=403, detail="Invalid token")
 
-    session_id = secrets.token_urlsafe(32)
-    _sessions[session_id] = {"created": time.time()}
+    # Successful login — clear throttle attempts
+    _login_attempts.pop(client_ip, None)
 
-    is_https = os.environ.get("DINA_HTTPS", "").lower() in ("1", "true", "yes")
+    # --- LOW-01: Evict expired sessions and enforce hard cap ---
+    expired = [sid for sid, s in _sessions.items() if now - s["created"] > 86400]
+    for sid in expired:
+        del _sessions[sid]
+    if len(_sessions) >= _MAX_SESSIONS:
+        oldest_sid = min(_sessions, key=lambda s: _sessions[s]["created"])
+        del _sessions[oldest_sid]
+
+    # --- MED-05: CSRF token in session ---
+    session_id = secrets.token_urlsafe(32)
+    csrf_token = secrets.token_hex(32)
+    _sessions[session_id] = {"created": now, "csrf_token": csrf_token}
+
+    # --- LOW-02: Default secure=True (opt out with DINA_HTTPS=0) ---
+    is_https = os.environ.get("DINA_HTTPS", "1").lower() not in ("0", "false", "no")
 
     response = JSONResponse(content={"status": "ok", "redirect": "/admin/dashboard"})
     response.set_cookie(

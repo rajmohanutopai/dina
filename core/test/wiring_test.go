@@ -116,6 +116,7 @@ var realAdminEndpointChecker testutil.AdminEndpointChecker = auth.NewAdminEndpoi
 
 func init() {
 	hash, _ := auth.HashPassphrase(testutil.TestPassphrase, testutil.TestUserSalt[:16])
+	testutil.TestPassphraseHash = hash
 	pv := auth.NewPassphraseVerifier(hash)
 	realPassphraseVerifier = pv
 	sm := auth.NewSessionManager(86400)

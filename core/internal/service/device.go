@@ -81,8 +81,10 @@ func (s *DeviceService) CompletePairing(ctx context.Context, code, deviceName st
 
 	// Register the CLIENT_TOKEN in the auth validator so future
 	// bearer-based requests from this device are accepted.
+	// Use the immutable token ID (not the mutable device name) as the
+	// device identity so that revocation remains reliable if the name changes.
 	if s.tokenRegistrar != nil && resp.ClientToken != "" {
-		s.tokenRegistrar.RegisterClientToken(resp.ClientToken, deviceName)
+		s.tokenRegistrar.RegisterClientToken(resp.ClientToken, resp.TokenID)
 	}
 
 	return resp, nil
@@ -146,9 +148,11 @@ func (s *DeviceService) RevokeDevice(ctx context.Context, tokenID string) error 
 				if s.keyRegistrar != nil && d.DID != "" {
 					s.keyRegistrar.RevokeDeviceKey(d.DID)
 				}
-				// Revoke any bearer tokens associated with this device
-				if s.tokenRevoker != nil && d.Name != "" {
-					s.tokenRevoker.RevokeClientTokenByDevice(d.Name)
+				// Revoke any bearer tokens associated with this device.
+				// Use the immutable token ID to match the identity used
+				// during RegisterClientToken (see CompletePairing).
+				if s.tokenRevoker != nil && d.TokenID != "" {
+					s.tokenRevoker.RevokeClientTokenByDevice(d.TokenID)
 				}
 				break
 			}

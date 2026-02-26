@@ -671,7 +671,8 @@ func (pm *PersonaManager) AccessPersona(_ context.Context, personaID string) err
 }
 
 // Create creates a new persona with a name and tier (open/restricted/locked).
-func (pm *PersonaManager) Create(_ context.Context, name, tier string) (string, error) {
+// An optional passphraseHash may be provided to store the Argon2id hash for unlock verification.
+func (pm *PersonaManager) Create(_ context.Context, name, tier string, passphraseHash ...string) (string, error) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
@@ -682,12 +683,17 @@ func (pm *PersonaManager) Create(_ context.Context, name, tier string) (string, 
 	id := "persona-" + name
 	locked := tier == "locked"
 
-	pm.personas[id] = &Persona{
+	p := &Persona{
 		ID:     id,
 		Name:   name,
 		Tier:   tier,
 		Locked: locked,
 	}
+	if len(passphraseHash) > 0 && passphraseHash[0] != "" {
+		p.PassphraseHash = passphraseHash[0]
+	}
+
+	pm.personas[id] = p
 
 	return id, nil
 }
@@ -732,7 +738,7 @@ func (pm *PersonaManager) Unlock(_ context.Context, personaID, passphrase string
 			return domain.ErrInvalidPassphrase
 		}
 	} else {
-		slog.Warn("persona: no passphrase hash stored — allowing unlock for legacy persona migration", "persona", string(personaID))
+		return fmt.Errorf("persona: %w: passphrase not configured — run migration", domain.ErrInvalidPassphrase)
 	}
 
 	p.Locked = false

@@ -1,4 +1,6 @@
 import WebSocket from 'ws'
+import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { eq } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
 import type {
@@ -17,6 +19,8 @@ import { REPUTATION_COLLECTIONS } from '@/config/lexicons.js'
 import { ingesterCursor } from '@/db/schema/index.js'
 import { logger } from '@/shared/utils/logger.js'
 import { metrics } from '@/shared/utils/metrics.js'
+
+const SPOOL_DIR = process.env.SPOOL_DIR || './data/overflow-spool'
 
 export class JetstreamConsumer {
   private ws: WebSocket | null = null
@@ -70,10 +74,16 @@ export class JetstreamConsumer {
         if (event.time_us > this.highestSeenTimeUs) {
           this.highestSeenTimeUs = event.time_us
         }
-        const accepted = this.queue!.push({ data: event, timestampUs: event.time_us })
-        if (!accepted) {
-          logger.warn({ time_us: event.time_us }, 'Queue full, event dropped')
+        if (!this.queue!.push({ data: event, timestampUs: event.time_us })) {
           metrics.incr('ingester.queue.dropped')
+          logger.warn({ event: event.kind }, 'queue full — spooling dropped event')
+          try {
+            if (!existsSync(SPOOL_DIR)) mkdirSync(SPOOL_DIR, { recursive: true })
+            const spoolFile = join(SPOOL_DIR, `spool-${Date.now()}.jsonl`)
+            appendFileSync(spoolFile, JSON.stringify(event) + '\n')
+          } catch (spoolErr) {
+            logger.error({ err: spoolErr }, 'failed to spool dropped event')
+          }
         }
       } catch (err) {
         logger.error({ err }, 'Failed to parse Jetstream message')

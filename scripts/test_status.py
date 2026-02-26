@@ -276,6 +276,7 @@ def _start_local() -> float:
         "DINA_BRAIN_TOKEN": token,
         "DINA_CLIENT_TOKEN": client_token,
         "DINA_TEST_MODE": "true",
+        "DINA_ENV": "test",
         "DINA_RATE_LIMIT": "100000",
         "DINA_LOG_LEVEL": "debug",
         "DINA_PLC_URL": f"http://localhost:{LOCAL_PLC_PORT}",

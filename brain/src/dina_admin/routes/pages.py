@@ -19,6 +19,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from .login import get_csrf_token
+
 log = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -35,11 +37,18 @@ def set_config(config: Any) -> None:
     _config = config
 
 
+def _csrf_ctx(request: Request) -> dict:
+    """Extract CSRF token from session cookie for template context."""
+    session_id = request.cookies.get("dina_client_token", "")
+    return {"csrf_token": get_csrf_token(session_id)}
+
+
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard_page(request: Request) -> HTMLResponse:
     """Render the dashboard page."""
     return templates.TemplateResponse(request, "dashboard.html", {
         "page": "dashboard",
+        **_csrf_ctx(request),
     })
 
 
@@ -48,6 +57,7 @@ async def history_page(request: Request) -> HTMLResponse:
     """Render the history page."""
     return templates.TemplateResponse(request, "history.html", {
         "page": "history",
+        **_csrf_ctx(request),
     })
 
 
@@ -56,6 +66,7 @@ async def contacts_page(request: Request) -> HTMLResponse:
     """Render the contacts page."""
     return templates.TemplateResponse(request, "contacts.html", {
         "page": "contacts",
+        **_csrf_ctx(request),
     })
 
 
@@ -64,6 +75,7 @@ async def settings_page(request: Request) -> HTMLResponse:
     """Render the settings page."""
     return templates.TemplateResponse(request, "settings.html", {
         "page": "settings",
+        **_csrf_ctx(request),
     })
 
 
@@ -72,4 +84,5 @@ async def devices_page(request: Request) -> HTMLResponse:
     """Render the devices page."""
     return templates.TemplateResponse(request, "devices.html", {
         "page": "devices",
+        **_csrf_ctx(request),
     })

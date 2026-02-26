@@ -1,14 +1,15 @@
 package handler
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"net/http"
 
+	"github.com/rajmohanutopai/dina/core/internal/adapter/auth"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/port"
 	"github.com/rajmohanutopai/dina/core/internal/service"
-	"golang.org/x/crypto/argon2"
 )
 
 // PersonaHandler serves the /v1/personas endpoints.
@@ -16,12 +17,15 @@ type PersonaHandler struct {
 	Identity     *service.IdentityService
 	Personas     port.PersonaManager
 	VaultManager port.VaultManager // opens vault when persona is unlocked
+	KeyDeriver   port.KeyDeriver   // derives DEK from master seed
+	Seed         []byte            // master seed for DEK derivation
 }
 
 // createPersonaRequest is the JSON body for POST /v1/personas.
 type createPersonaRequest struct {
-	Name string `json:"name"`
-	Tier string `json:"tier"`
+	Name       string `json:"name"`
+	Tier       string `json:"tier"`
+	Passphrase string `json:"passphrase"`
 }
 
 // unlockPersonaRequest is the JSON body for POST /v1/persona/unlock.
@@ -67,7 +71,24 @@ func (h *PersonaHandler) HandleCreatePersona(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	personaID, err := h.Personas.Create(r.Context(), req.Name, req.Tier)
+	if req.Passphrase == "" {
+		http.Error(w, `{"error":"passphrase is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Generate a random 16-byte salt and hash the passphrase with Argon2id.
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		http.Error(w, `{"error":"failed to generate salt"}`, http.StatusInternalServerError)
+		return
+	}
+	passphraseHash, err := auth.HashPassphrase(req.Passphrase, salt)
+	if err != nil {
+		http.Error(w, `{"error":"failed to hash passphrase"}`, http.StatusInternalServerError)
+		return
+	}
+
+	personaID, err := h.Personas.Create(r.Context(), req.Name, req.Tier, passphraseHash)
 	if err != nil {
 		http.Error(w, `{"error":"failed to create persona"}`, http.StatusInternalServerError)
 		return
@@ -108,14 +129,15 @@ func (h *PersonaHandler) HandleUnlockPersona(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Open the corresponding vault so store/query operations work.
-	if h.VaultManager != nil {
+	if h.VaultManager != nil && h.KeyDeriver != nil {
 		persona, _ := domain.NewPersonaName(req.Persona)
-		// Derive a deterministic DEK from the passphrase using Argon2id.
-		dekSalt := []byte(req.Persona + ":vault")
-		dek := argon2.IDKey([]byte(req.Passphrase), dekSalt, 3, 128*1024, 4, 32)
-		var dekArr [32]byte
-		copy(dekArr[:], dek)
-		if err := h.VaultManager.Open(r.Context(), persona, dekArr[:]); err != nil {
+		// Derive a deterministic DEK from the master seed using HKDF.
+		dek, err := h.KeyDeriver.DerivePersonaDEK(h.Seed, persona)
+		if err != nil {
+			http.Error(w, `{"error":"failed to derive vault DEK"}`, http.StatusInternalServerError)
+			return
+		}
+		if err := h.VaultManager.Open(r.Context(), persona, dek); err != nil {
 			http.Error(w, `{"error":"failed to open vault"}`, http.StatusInternalServerError)
 			return
 		}

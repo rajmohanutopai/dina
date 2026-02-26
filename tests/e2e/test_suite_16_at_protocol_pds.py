@@ -103,19 +103,19 @@ class TestATProtocolPDS:
             assert len(data["availableUserDomains"]) > 0, (
                 "PDS must have at least one available user domain"
             )
-            assert data.get("inviteCodeRequired") is False, (
-                "PDS must not require invites for Dina"
+            assert data.get("inviteCodeRequired") is True, (
+                "PDS must require invite codes in production"
             )
         else:
             # Mock mode: verify expected contract shape
             mock_desc = {
                 "did": "did:web:localhost",
                 "availableUserDomains": [".test"],
-                "inviteCodeRequired": False,
+                "inviteCodeRequired": True,
             }
             assert mock_desc["did"].startswith("did:web:")
             assert len(mock_desc["availableUserDomains"]) > 0
-            assert mock_desc["inviteCodeRequired"] is False
+            assert mock_desc["inviteCodeRequired"] is True
 
     # TST-E2E-094
     def test_16_did_registration_via_core(

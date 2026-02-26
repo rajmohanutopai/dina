@@ -52,8 +52,10 @@ def admin_config():
 
 
 @pytest.fixture
-def admin_app(mock_core, admin_config):
+def admin_app(mock_core, admin_config, monkeypatch):
     """Create admin sub-app mounted on a parent FastAPI app."""
+    # TestClient uses HTTP; secure cookies won't be sent back over HTTP.
+    monkeypatch.setenv("DINA_HTTPS", "0")
     sub_app = create_admin_app(mock_core, admin_config)
     parent = FastAPI()
     parent.mount("/admin", sub_app)

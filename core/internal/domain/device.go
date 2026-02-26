@@ -31,6 +31,7 @@ type PairedDevice struct {
 // PairResponse is the full response from a successful pairing.
 type PairResponse struct {
 	ClientToken string
+	TokenID     string
 	NodeDID     string
 	WsURL       string
 }

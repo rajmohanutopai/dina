@@ -20,6 +20,7 @@ x-core-base: &core-base
     DINA_SPOOL_MAX: "10485760"
     DINA_LOG_LEVEL: debug
     DINA_TEST_MODE: "true"
+    DINA_ENV: test
   secrets:
     - brain_token
     - client_token

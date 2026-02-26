@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -56,6 +57,26 @@ func main() {
 	if err != nil {
 		slog.Error("failed to load config", "error", err)
 		os.Exit(1)
+	}
+
+	// ---------- Security guards ----------
+
+	// HIGH-02: DINA_ALLOW_UNSIGNED_D2D must only be enabled in non-production environments.
+	if os.Getenv("DINA_ALLOW_UNSIGNED_D2D") == "1" {
+		env := os.Getenv("DINA_ENV")
+		if env != "test" && env != "migration" && env != "development" {
+			log.Fatal("SECURITY: DINA_ALLOW_UNSIGNED_D2D=1 is only allowed when DINA_ENV is test, migration, or development")
+		}
+		slog.Warn("SECURITY: unsigned D2D message acceptance is enabled", "env", env)
+	}
+
+	// HIGH-03: DINA_TEST_MODE must not be enabled in production.
+	if os.Getenv("DINA_TEST_MODE") == "true" {
+		env := os.Getenv("DINA_ENV")
+		if env == "" || env == "production" {
+			log.Fatal("SECURITY: DINA_TEST_MODE=true is not allowed in production (set DINA_ENV=test)")
+		}
+		slog.Warn("SECURITY: test mode enabled — destructive endpoints active", "env", env)
 	}
 
 	// ---------- Construct adapters (bottom-up) ----------
@@ -141,6 +162,9 @@ func main() {
 	// 5. Identity
 	didMgr := identity.NewDIDManager(cfg.VaultPath)
 	personaMgr := identity.NewPersonaManager()
+	personaMgr.VerifyPassphrase = func(storedHash, passphrase string) (bool, error) {
+		return auth.NewPassphraseVerifier(storedHash).Verify(passphrase)
+	}
 	contactDir := identity.NewContactDirectory()
 	deviceRegistry := identity.NewDeviceRegistry()
 	recoveryMgr := identity.NewRecoveryManager()
@@ -336,7 +360,9 @@ func main() {
 		estateMgr, vaultMgr, recoveryMgr, notifier, clk,
 	)
 
-	migrationSvc := service.NewMigrationService(
+	// CRIT-02: MigrationService kept for future use but not wired to handler
+	// until export/import is fully implemented with path validation.
+	_ = service.NewMigrationService(
 		exportMgr, importMgr, backupMgr, vaultMgr, clk,
 	)
 
@@ -356,19 +382,25 @@ func main() {
 
 	// ---------- Construct handlers ----------
 
+	// MED-09: Use a separate internal token for brain proxy communication.
+	internalToken := os.Getenv("DINA_INTERNAL_TOKEN")
+	if internalToken == "" {
+		slog.Warn("SECURITY: DINA_INTERNAL_TOKEN not set — falling back to client token for brain proxy")
+	}
+
 	healthH := &handler.HealthHandler{Health: healthChecker}
-	adminH := &handler.AdminHandler{ProxyURL: cfg.BrainURL, Token: cfg.ClientToken}
+	adminH := &handler.AdminHandler{ProxyURL: cfg.BrainURL, Token: cfg.ClientToken, InternalToken: internalToken}
 	vaultH := &handler.VaultHandler{Vault: vaultSvc, PII: scrubber}
 	identityH := &handler.IdentityHandler{Identity: identitySvc, DID: didMgr, Signer: identitySigner, Mnemonic: bip39, IdentitySeed: bootstrapSeed}
 	messageH := &handler.MessageHandler{Transport: transportSvc, IngressRouter: ingressRouter}
 	taskH := &handler.TaskHandler{Task: taskSvc}
 	deviceH := &handler.DeviceHandler{Device: deviceSvc}
 
-	personaH := &handler.PersonaHandler{Identity: identitySvc, Personas: personaMgr, VaultManager: vaultMgr}
+	personaH := &handler.PersonaHandler{Identity: identitySvc, Personas: personaMgr, VaultManager: vaultMgr, KeyDeriver: keyDeriver, Seed: bootstrapSeed}
 	contactH := &handler.ContactHandler{Contacts: contactDir, Sharing: sharingMgr}
 	piiH := &handler.PIIHandler{Scrubber: scrubber}
 	notifyH := &handler.NotifyHandler{Notifier: notifier}
-	exportH := &handler.ExportHandler{Migration: migrationSvc}
+	exportH := &handler.ExportHandler{}
 	wellknownH := &handler.WellKnownHandler{DID: didMgr, Signer: identitySigner}
 
 	// ---------- Build router ----------

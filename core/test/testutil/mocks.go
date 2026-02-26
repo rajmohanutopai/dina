@@ -134,7 +134,7 @@ func NewMockPersonaManager() *MockPersonaManager {
 	return &MockPersonaManager{Personas: make(map[string]bool)}
 }
 
-func (m *MockPersonaManager) Create(_ context.Context, name, tier string) (string, error) {
+func (m *MockPersonaManager) Create(_ context.Context, name, tier string, passphraseHash ...string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.CreateErr != nil {

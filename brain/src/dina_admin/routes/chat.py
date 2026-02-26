@@ -58,7 +58,7 @@ async def chat(request: ChatRequest) -> dict:
                 })
                 raise HTTPException(
                     status_code=502,
-                    detail=f"Brain API returned {resp.status_code}: {detail}",
+                    detail="Brain API error",
                 )
             return resp.json()
         except HTTPException:
@@ -67,5 +67,5 @@ async def chat(request: ChatRequest) -> dict:
             log.error("chat.error", extra={"error": str(exc)})
             raise HTTPException(
                 status_code=502,
-                detail=f"Failed to reach brain API: {type(exc).__name__}: {exc}",
+                detail="Failed to reach brain API",
             ) from exc

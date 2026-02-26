@@ -541,7 +541,10 @@ func TestIdentity_3_3_4_UnlockLockedPersona(t *testing.T) {
 func TestIdentity_3_3_5_LockedPersonaTTLExpiry(t *testing.T) {
 	// Unlock with short TTL, wait, verify auto-locked.
 	pm := identity.NewPersonaManager()
-	_, err := pm.Create(idCtx, "ttltest", "locked")
+	pm.VerifyPassphrase = func(storedHash, passphrase string) (bool, error) {
+		return passphrase == testutil.TestPassphrase, nil
+	}
+	_, err := pm.Create(idCtx, "ttltest", "locked", testutil.TestPassphraseHash)
 	testutil.RequireNoError(t, err)
 
 	tick := make(chan struct{}, 1)
@@ -622,7 +625,10 @@ func TestIdentity_3_3_8_NotificationOnRestrictedAccess(t *testing.T) {
 func TestIdentity_3_3_9_LockedPersonaUnlockFlow(t *testing.T) {
 	// Create a locked persona, unlock with correct passphrase, verify IsLocked=false.
 	pm := identity.NewPersonaManager()
-	_, err := pm.Create(idCtx, "lockflow", "locked")
+	pm.VerifyPassphrase = func(storedHash, passphrase string) (bool, error) {
+		return passphrase == testutil.TestPassphrase, nil
+	}
+	_, err := pm.Create(idCtx, "lockflow", "locked", testutil.TestPassphraseHash)
 	testutil.RequireNoError(t, err)
 
 	// Verify initially locked.
@@ -670,7 +676,10 @@ func TestIdentity_3_3_10_LockedPersonaUnlockDenied(t *testing.T) {
 func TestIdentity_3_3_11_LockedPersonaUnlockTTLExpires(t *testing.T) {
 	// Same as 3_3_5 — unlock with short TTL, verify expiry.
 	pm := identity.NewPersonaManager()
-	_, err := pm.Create(idCtx, "ttl2", "locked")
+	pm.VerifyPassphrase = func(storedHash, passphrase string) (bool, error) {
+		return passphrase == testutil.TestPassphrase, nil
+	}
+	_, err := pm.Create(idCtx, "ttl2", "locked", testutil.TestPassphraseHash)
 	testutil.RequireNoError(t, err)
 
 	tick := make(chan struct{}, 1)

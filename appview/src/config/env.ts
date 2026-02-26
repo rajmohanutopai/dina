@@ -28,3 +28,18 @@ export const envSchema = z.object({
 export type Env = z.infer<typeof envSchema>
 
 export const env: Env = envSchema.parse(process.env)
+
+// Runtime validation for production safety
+if (process.env.NODE_ENV === 'production') {
+  if (!process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL is required in production')
+  }
+  if (!process.env.JETSTREAM_URL) {
+    throw new Error('JETSTREAM_URL is required in production')
+  }
+}
+
+// Warn when dev defaults are in use
+if (!process.env.DATABASE_URL) {
+  console.warn('WARNING: Using default DATABASE_URL — not suitable for production')
+}

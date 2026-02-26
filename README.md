@@ -85,7 +85,7 @@ This is not just a preference setting. If it were just a setting, a malicious sy
 
 For a Utopia driven by AI, it is important to have the deeply personal, deeply friendly AI, at our fingertips.
 
-Personal AI agents have already arrived. OpenClaw is a brilliant invention. Apple, Google, OpenAI, and Meta are all building agents that live on your devices, hear what you say, and see what you see. This is wonderful and inevitable.
+Personal AI agents have already arrived. OpenClaw is a brilliant invention. Claude Cowork is on the way to become one. Apple, Google, OpenAI, and Meta are all building agents that live on your devices, hear what you say, and see what you see. This is wonderful and inevitable.
 
 These agents are smart and capable, but it will be brilliant for agents to use a **well defined loyalty framework**. 
 
@@ -130,7 +130,7 @@ Because every person's Dina is a sovereign identity, Dinas can talk to each othe
 
 Dina is a thin service. She outsources intelligence to specialists like review bots, legal bots, recipe bots, or general purpose bots.
 
-**Dina has no plugins.** Child agents (OpenClaw, review bots, legal bots) are external services that communicate with Dina. If a child agent gets compromised, it cannot touch your vault or data. It is an external process that should not affect Dina. Dina is a kernel, not a platform "kernel.
+**Dina has no plugins.** Child agents (OpenClaw, Claude Cowork, review bots, legal bots) are external services that communicate with Dina. If a child agent gets compromised, it cannot touch your vault or data. It is an external process that should not affect Dina. Dina is a kernel, not a platform "kernel.
 
 Dina can also act as a safety layer for autonomous agents. Malicious actors will actively try to hack and attack agents, now that agents are becoming mainstream. The idea is that - having Dina as a central control might be able to fix this at a protocol level. 
 

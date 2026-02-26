@@ -50,6 +50,8 @@ func NewPLCClient(pdsURL, plcURL string) *PLCClient {
 
 // CreateAccountAndDID creates a PDS account which registers the did:plc
 // on the PLC directory. Returns the DID and auth tokens.
+// When the PDS requires invite codes and an admin token is configured,
+// an invite code is created automatically before account creation.
 func (c *PLCClient) CreateAccountAndDID(ctx context.Context, opts CreateDIDOptions) (*CreateDIDResult, error) {
 	if opts.Handle == "" {
 		return nil, fmt.Errorf("plc client: handle is required")
@@ -68,6 +70,18 @@ func (c *PLCClient) CreateAccountAndDID(ctx context.Context, opts CreateDIDOptio
 	}
 	if opts.RecoveryKey != "" {
 		input.RecoveryKey = &opts.RecoveryKey
+	}
+
+	// If admin token is configured, create an invite code for account creation.
+	// This handles PDS instances with PDS_INVITE_REQUIRED=true.
+	if c.client.AdminToken != nil && *c.client.AdminToken != "" {
+		inviteOut, err := atproto.ServerCreateInviteCode(ctx, c.client, &atproto.ServerCreateInviteCode_Input{
+			UseCount: 1,
+		})
+		if err == nil {
+			input.InviteCode = &inviteOut.Code
+		}
+		// Non-fatal: if PDS doesn't require invites, the code is simply unused.
 	}
 
 	out, err := atproto.ServerCreateAccount(ctx, c.client, input)

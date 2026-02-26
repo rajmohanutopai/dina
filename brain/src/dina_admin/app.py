@@ -27,7 +27,7 @@ from .routes import dashboard as dashboard_route
 from .routes import devices as devices_route
 from .routes import settings as settings_route
 from .routes import login as login_route
-from .routes.login import validate_session
+from .routes.login import get_csrf_token, validate_session
 from .routes import pages as pages_route
 from .routes import chat as chat_route
 from .routes import history as history_route
@@ -104,6 +104,12 @@ def create_admin_app(
         # Try cookie (session-based validation)
         cookie_val = request.cookies.get("dina_client_token", "")
         if cookie_val and validate_session(cookie_val):
+            # MED-05: CSRF validation for state-changing methods with cookie auth
+            if request.method in ("POST", "PUT", "DELETE"):
+                csrf_header = request.headers.get("x-csrf-token", "")
+                expected = get_csrf_token(cookie_val)
+                if expected and not hmac.compare_digest(csrf_header, expected):
+                    raise HTTPException(status_code=403, detail="CSRF token mismatch")
             return cookie_val
 
         raise HTTPException(status_code=401, detail="Authentication required")

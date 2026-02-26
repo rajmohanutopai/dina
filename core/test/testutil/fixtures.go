@@ -96,6 +96,12 @@ const (
 const TestPassphrase = "correct horse battery staple"
 const TestPassphraseWrong = "wrong horse battery staple"
 
+// TestPassphraseHash is an Argon2id hash of TestPassphrase in PHC format.
+// Computed from auth.HashPassphrase(TestPassphrase, TestUserSalt[:16]).
+// This is set at init time by the test wiring layer; use SetupPersonaWithPassphrase
+// to configure a PersonaManager for unlock tests.
+var TestPassphraseHash string
+
 // ---------- Ed25519 Test Keypair (§2.5) ----------
 
 // TestEd25519Seed is a deterministic 32-byte seed for Ed25519 key generation.

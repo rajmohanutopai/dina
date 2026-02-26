@@ -34,6 +34,7 @@ export class BoundedIngestionQueue {
   private inFlightTimestamps = new Set<number>()
   private failedTimestamps = new Set<number>()
   private processFn: ProcessFn
+  private dropCount = 0
 
   private readonly maxSize: number
   private readonly maxConcurrency: number
@@ -68,6 +69,7 @@ export class BoundedIngestionQueue {
         logger.warn({ depth: this.queue.length }, '[Queue] Backpressure: WebSocket paused')
         metrics.incr('ingester.queue.backpressure')
       }
+      this.dropCount++
       return false
     }
 
@@ -128,6 +130,16 @@ export class BoundedIngestionQueue {
   /** Whether the WebSocket is currently paused */
   get isPaused(): boolean {
     return this.paused
+  }
+
+  /** Number of items dropped since last reset */
+  getDropCount(): number {
+    return this.dropCount
+  }
+
+  /** Reset the drop counter (for periodic health checks) */
+  resetDropCount(): void {
+    this.dropCount = 0
   }
 
   /**
