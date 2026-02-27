@@ -1,0 +1,181 @@
+Brain Code Review (Fresh Deep Pass)
+Date: 2026-02-27
+Scope: brain/src (full static review + targeted runtime validation)
+Test baseline: `python -m pytest brain/tests -q` -> 520 passed
+
+=====================================================================
+FINDINGS (ordered by severity)
+=====================================================================
+
+[HIGH-01] Cloud consent gate can be bypassed via type confusion
+Evidence
+- `brain/src/dina_admin/routes/settings.py:125-165` accepts untyped `dict` payload, no value-type validation.
+- `brain/src/main.py:338` forwards `kv.get("cloud_consent", False)` into router config without coercion.
+- `brain/src/service/llm_router.py:161-166` checks consent with truthiness (`if not consent`), not strict bool.
+Why this matters
+- A string like `"false"` is truthy in Python, so sensitive persona queries can route to cloud even when consent should be treated as false.
+Reproduction
+- Configure `cloud_llm_consent` as `"false"` (string) and run restricted query: route is allowed.
+Recommended fix
+- Validate settings with a strict schema (Pydantic model), require `cloud_consent: bool`.
+- At router boundary, enforce `consent is True` (strict boolean check), not truthiness.
+
+[HIGH-02] Rate limiting middleware is effectively disabled on mounted routes
+Evidence
+- Brain API limiter checks exact paths `"/v1/reason"` and `"/v1/pii/scrub"` (`brain/src/dina_brain/app.py:95`).
+- Admin API limiter checks exact path `"/api/chat"` (`brain/src/dina_admin/app.py:118`).
+- Apps are mounted at `/api` and `/admin`, so incoming paths are prefixed (`/api/v1/reason`, `/admin/api/chat`).
+Why this matters
+- Expensive endpoints are not rate-limited as intended, increasing DoS risk.
+Reproduction
+- Sent 7 rapid requests to `/api/v1/reason` and `/admin/api/chat`; all returned 200 (no 429 after burst).
+Recommended fix
+- Match on app-relative scope path or suffix (e.g., `request.scope["path"]` or `endswith(...)`).
+- Add explicit tests that exceed burst and assert `429`.
+
+[HIGH-03] Background sync loop has no effective source list (auto-sync never runs)
+Evidence
+- Sync loop iterates `getattr(engine, "sources", [])` (`brain/src/main.py:360`).
+- `SyncEngine` defines no `sources` attribute (`brain/src/service/sync_engine.py:110-121`).
+- No assignment to `engine.sources` found in `brain/src`.
+Why this matters
+- In production, scheduled ingestion can silently do nothing unless manually triggered elsewhere.
+Recommended fix
+- Add explicit source configuration in `SyncEngine` (or pass source list into loop), derived from configured MCP servers.
+- Add startup warning/error if source list is empty.
+
+[MEDIUM-04] Logout flow is broken for real session-cookies (CSRF mismatch)
+Evidence
+- Sidebar logout uses plain form POST to `/admin/logout` (`brain/src/dina_admin/templates/base.html:261-264`), no CSRF header.
+- Logout endpoint requires `X-CSRF-Token` for active sessions (`brain/src/dina_admin/routes/login.py:168-172`).
+Why this matters
+- Users with valid sessions can hit 403 on normal sidebar logout.
+Runtime validation
+- With a valid session cookie, POST `/admin/logout` without CSRF returned 403.
+Recommended fix
+- Submit logout via JS `apiFetch` (with CSRF header), or explicitly exempt logout from header CSRF check while keeping SameSite/HttpOnly protections.
+
+[MEDIUM-05] Trusted proxy mode trusts spoofable X-Forwarded-For directly
+Evidence
+- `DINA_TRUSTED_PROXY` is a global boolean switch (`brain/src/dina_admin/routes/login.py:29`).
+- When enabled, `_get_client_ip` trusts the leftmost XFF IP without trusted-hop/CIDR validation (`brain/src/dina_admin/routes/login.py:34-37`).
+Why this matters
+- Login throttling and audit IP attribution can be bypassed/spoofed if direct access remains possible.
+Recommended fix
+- Replace boolean with trusted proxy CIDR list.
+- Parse XFF from right-to-left and pick first non-trusted hop.
+
+[MEDIUM-06] `/v1/pii/scrub` fails open when scrubber is unavailable
+Evidence
+- If `_scrubber is None`, endpoint returns original text unchanged (`brain/src/dina_brain/routes/pii.py:75-77`).
+Why this matters
+- Callers may assume scrubbing occurred; this can propagate unsanitized text through downstream flows.
+Recommended fix
+- Fail closed (`503`) when scrubber is unavailable, or return an explicit `scrubbed=false` contract that downstream logic must enforce.
+
+[MEDIUM-07] Multiple admin endpoints allow unbounded field lengths; no global body cap
+Evidence
+- `LoginRequest.token` has no max length (`brain/src/dina_admin/routes/login.py:85-87`).
+- `ContactCreate.did/name` have no max length (`brain/src/dina_admin/routes/contacts.py:39-43`).
+- `PairCompleteRequest.code/device_name/public_key_multibase` have no max length (`brain/src/dina_admin/routes/devices.py:38-40`).
+- Brain container starts uvicorn with no request-body cap flags (`brain/Dockerfile:15`).
+Why this matters
+- Oversized request bodies/fields can amplify memory and CPU pressure.
+Recommended fix
+- Add `max_length` constraints for user-controlled strings.
+- Enforce body-size limits at app middleware and/or ingress proxy.
+
+[MEDIUM-08] Vault query strings are composed by interpolation without escaping
+Evidence
+- Dedup query interpolates `source_id` directly (`brain/src/service/sync_engine.py:180`).
+- Nudge queries interpolate `contact_did` directly (`brain/src/service/nudge.py:254`, `273`, `287`).
+Why this matters
+- Special characters in IDs can alter query semantics (false dedup misses/hits, broader-than-intended context retrieval).
+Recommended fix
+- Escape/quote query operands before composing query text, or add exact-match fields in core query API.
+
+[MEDIUM-09] Contact update path is semantically inconsistent with create path
+Evidence
+- Create maps UI trust labels to core trust labels (`brain/src/dina_admin/routes/contacts.py:115-122`).
+- Update sends trust_level raw without mapping (`brain/src/dina_admin/routes/contacts.py:147-151`).
+- `sharing_tier` is accepted in model but not sent to core on create/update (`brain/src/dina_admin/routes/contacts.py:42`, `124-126`, `147-151`).
+Why this matters
+- UI state can diverge from stored policy/trust semantics.
+Recommended fix
+- Use a shared normalization function for create/update.
+- Either wire `sharing_tier` to core policy APIs or remove it from payload until supported.
+
+[LOW-10] Dashboard reports LLM as available unconditionally
+Evidence
+- `components["llm"] = "available"` is hardcoded (`brain/src/dina_admin/routes/dashboard.py:126`).
+Why this matters
+- Operational status can be misleading during incidents or degraded startup.
+Recommended fix
+- Derive LLM status from active provider set / health check signal.
+
+=====================================================================
+ADDITIONAL FINDINGS (second deep pass, non-duplicate)
+=====================================================================
+
+[HIGH-11] Entity rehydration can leak/corrupt content due non-delimited fake tokens
+Evidence
+- Presidio scrubber uses realistic Faker values as replacement "tokens" (e.g., names, companies), not delimiter-guarded placeholders (`brain/src/adapter/scrubber_presidio.py:283-291`, `459-467`).
+- Rehydration performs global regex substitution on raw token strings (`brain/src/service/entity_vault.py:252-255`).
+Why this matters
+- If a fake value naturally appears in model output, it will be replaced with real PII.
+- Substring collisions can corrupt unrelated output (e.g., replacing inside larger words/phrases).
+Recommended fix
+- Use collision-resistant structured placeholders for transport/rehydration (e.g., `[PII_xxx]`) and keep human-friendly fakes separate from rehydration keys.
+- Rehydrate only explicit placeholders, never natural-language tokens.
+
+[MEDIUM-12] Intent audit trail overwrites prior entries (forensics loss)
+Evidence
+- Audit key is fixed to `audit:intent:{agent_did}:{action}` (`brain/src/service/guardian.py:701-706`), so repeated events replace prior data.
+Why this matters
+- Risk decisions are not append-only; historical evidence is lost, weakening incident investigation and policy tuning.
+Recommended fix
+- Use immutable audit keys with timestamp/UUID suffix and retention policy.
+- Keep a separate index for recent lookups if needed.
+
+[MEDIUM-13] Path redaction is incomplete; sensitive IDs can leak into error logs
+Evidence
+- `_normalize_path()` only redacts `vault|contacts|personas` paths (`brain/src/adapter/core_http.py:46-48`).
+- Error paths are embedded in raised/logged messages (`brain/src/adapter/core_http.py:142-166`, `180-190`).
+Why this matters
+- Device token IDs and other identifiers in non-redacted endpoints (e.g., `/v1/devices/{id}`) can appear in logs during failures.
+Recommended fix
+- Extend normalization to all ID-bearing routes (`devices`, `msg`, `pair`, etc.) and strip/query-redact dynamic path/query values before logging.
+
+[MEDIUM-14] MCP stderr is embedded in exception text and can leak sensitive data to logs
+Evidence
+- On stdio close, client reads stderr and injects decoded stderr directly into error text (`brain/src/adapter/mcp_stdio.py:168-181`).
+- Sync loop logs exception text (`brain/src/main.py:363-364`).
+Why this matters
+- If connectors print credentials/user content to stderr, that content can be persisted in application logs.
+Recommended fix
+- Avoid embedding raw stderr in exception messages; log bounded/redacted diagnostics behind debug guard.
+- Keep user/data-bearing stderr out of normal logs.
+
+[LOW-15] Unknown provider values fail open to auto-selection
+Evidence
+- Provider override is accepted only when key exists; unknown provider silently falls back to automatic routing (`brain/src/service/llm_router.py:153-156`).
+Why this matters
+- Caller intent is not enforced; typos/misconfig can route to a different provider (including cloud) unexpectedly.
+Recommended fix
+- If `provider` is supplied but unknown, return explicit error instead of fallback.
+
+[LOW-16] Admin CSP allows inline scripts/styles, reducing XSS blast protection
+Evidence
+- CSP includes `script-src 'self' 'unsafe-inline'` and `style-src 'self' 'unsafe-inline'` (`brain/src/dina_admin/app.py:97-99`).
+Why this matters
+- CSP no longer blocks injected inline script payloads if a template/DOM sink regression appears.
+Recommended fix
+- Move inline JS/CSS to static assets and enforce nonce/hash-based CSP without `unsafe-inline`.
+
+=====================================================================
+Open Questions
+=====================================================================
+
+1. Is sync scheduling intended to be fully external (outside brain), or should brain own it?
+2. Should `/v1/pii/scrub` be a strict security endpoint (fail-closed) or a best-effort utility endpoint?
+3. Is admin logout intended to enforce CSRF for form POST, or should logout be exempt as a low-risk action?

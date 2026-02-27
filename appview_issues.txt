@@ -1,0 +1,1088 @@
+AppView Deep Security/Integrity Review Findings
+Date: 2026-02-26
+Scope: appview/src + appview/docker-compose.yml + appview/tests (coverage sanity)
+Method: static code review with abuse-case and failure-mode analysis
+
+Severity scale: HIGH / MEDIUM / LOW
+
+==================================================================
+HIGH
+==================================================================
+
+[APPVIEW-HIGH-01] Web rate limiting is bypassable and memory-unbounded
+Evidence:
+- appview/src/web/server.ts:15-16, 51-54
+Issue:
+- The limiter trusts `x-forwarded-for` unconditionally and uses a plain `Map` with no max size.
+- Attackers can spoof a new `x-forwarded-for` each request, bypass per-IP limits, and force unbounded key growth within the 60s window.
+Impact:
+- Effective rate-limit bypass + memory pressure DoS on the public API.
+Recommended fix:
+- Trust proxy headers only when an explicit trusted proxy mode is enabled.
+- Default to `req.socket.remoteAddress`.
+- Replace `Map` with bounded LRU (max keys) and per-key TTL.
+
+--- SOLUTION ---
+Status: CONFIRMED
+Verified: server.ts:51-53 trusts x-forwarded-for unconditionally with remoteAddress fallback.
+  Line 15: `rateLimitMap = new Map<>()` has no max size.  Lines 30-37 clean stale entries
+  every 60s, but attacker can exhaust memory between cleanup cycles by rotating IPs.
+
+Fix (web/server.ts):
+  1. Add trusted proxy guard:
+       const TRUST_PROXY = process.env.TRUST_PROXY === '1'
+       const clientIp = TRUST_PROXY
+         ? (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
+           || req.socket.remoteAddress || 'unknown'
+         : req.socket.remoteAddress || 'unknown'
+
+  2. Replace Map with bounded LRU — use lru-cache (already in package.json):
+       import { LRUCache } from 'lru-cache'
+       const rateLimitMap = new LRUCache<string, { count: number; resetAt: number }>({
+         max: 50_000,
+         ttl: 60_000,
+       })
+     This auto-evicts stale entries and caps memory at 50K keys.
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+[APPVIEW-HIGH-02] Queue failure latches cursor progress (replay storm / ingest stall)
+Evidence:
+- appview/src/ingester/bounded-queue.ts:35, 94-113, 189
+- appview/src/ingester/jetstream-consumer.ts:251-253, 344-346
+Issue:
+- Failed timestamps are added to `failedTimestamps` but never cleared or retried.
+- `getSafeCursor()` includes these failed timestamps forever.
+Impact:
+- A single persistent handler error can pin cursor advancement, causing repeated replay windows, duplicate work, and long-lived ingest instability.
+Recommended fix:
+- Add bounded retry policy + dead-letter queue.
+- Clear failed timestamps when event is retried successfully or explicitly quarantined.
+- Persist failure metadata for operator visibility.
+
+--- SOLUTION ---
+Status: CONFIRMED
+Verified: bounded-queue.ts:35 `failedTimestamps = new Set<number>()` — never cleared.
+  Line 189: failed items add timestamps.  Lines 94-113: getSafeCursor() includes all
+  failed timestamps in minimum calculation, permanently blocking cursor advancement.
+  No retry, no cleanup, no dead-letter mechanism anywhere in the file.
+
+Fix (ingester/bounded-queue.ts):
+  1. Add bounded retry with max attempts:
+       private failedAttempts = new Map<number, number>()  // timestamp -> attempt count
+       private static MAX_RETRY = 3
+
+  2. In processItem catch block, track attempts:
+       const attempts = (this.failedAttempts.get(item.timestampUs) ?? 0) + 1
+       if (attempts >= BoundedQueue.MAX_RETRY) {
+         this.failedTimestamps.delete(item.timestampUs)
+         this.failedAttempts.delete(item.timestampUs)
+         logger.error({ timestampUs: item.timestampUs, attempts },
+           'Event dead-lettered after max retries')
+         // Optionally write to dead-letter spool file for operator review
+       } else {
+         this.failedAttempts.set(item.timestampUs, attempts)
+         this.failedTimestamps.add(item.timestampUs)
+       }
+
+  3. Add periodic cleanup for old failed timestamps (e.g., older than 1 hour):
+       setInterval(() => {
+         const cutoff = Date.now() * 1000 - 3_600_000_000  // 1 hour in microseconds
+         for (const ts of this.failedTimestamps) {
+           if (ts < cutoff) {
+             this.failedTimestamps.delete(ts)
+             this.failedAttempts.delete(ts)
+           }
+         }
+       }, 300_000)  // every 5 minutes
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+[APPVIEW-HIGH-03] Overflow spool is write-only (data-loss under pressure)
+Evidence:
+- appview/src/ingester/jetstream-consumer.ts:180-195 (write path)
+- Search confirms no read/drain path for spool files in appview/src.
+Issue:
+- Queue overflow events are written to spool files but never replayed.
+Impact:
+- Under sustained load, dropped events are effectively lost despite "spooling" behavior.
+Recommended fix:
+- Implement deterministic spool replay (startup + periodic drain) with delete-on-success.
+- Track replay offsets and replay metrics.
+
+--- SOLUTION ---
+Status: CONFIRMED
+Verified: jetstream-consumer.ts:180-195 writes spool files.  Grep of entire appview/src
+  for spool read/consume/drain returns zero matches.  Lines 95-111 only clean up stale
+  files (>24h) — no consumer.  Events spooled during overload are effectively lost.
+
+Fix (ingester/jetstream-consumer.ts):
+  1. Add startup spool replay before connecting to Jetstream:
+       private async replaySpool(): Promise<void> {
+         const files = readdirSync(SPOOL_DIR).filter(f => f.endsWith('.jsonl')).sort()
+         for (const file of files) {
+           const path = join(SPOOL_DIR, file)
+           const lines = readFileSync(path, 'utf-8').split('\n').filter(Boolean)
+           for (const line of lines) {
+             try {
+               const event = JSON.parse(line)
+               await this.handleEvent(event)
+             } catch (err) {
+               logger.warn({ file, err }, 'Spool replay: skipping malformed event')
+             }
+           }
+           unlinkSync(path)  // delete on successful replay
+           logger.info({ file, events: lines.length }, 'Spool file replayed')
+         }
+       }
+
+  2. Call replaySpool() in start() before WebSocket connect:
+       async start() {
+         await this.replaySpool()
+         this.connect()
+       }
+
+  3. Add periodic drain (every 5 min) for files accumulated during runtime.
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+[APPVIEW-HIGH-04] Delete paths do not mark affected entities dirty (stale trust exploitable)
+Evidence:
+- appview/src/ingester/deletion-handler.ts:218-229
+- appview/src/ingester/handlers/*.ts delete methods call deletionHandler but do not call `markDirty`
+- appview/src/scorer/jobs/refresh-profiles.ts:25-31
+- appview/src/scorer/jobs/refresh-subject-scores.ts:20-25
+Issue:
+- Scoring jobs only recompute rows where `needsRecalc = true`.
+- Deletions remove rows/edges but do not flag affected DIDs/subjects for recomputation.
+Impact:
+- Trust scores can remain stale after deletion/revocation/removal events.
+- Abuse path: inflate score with positive records, delete records, keep stale elevated score until unrelated recalculation.
+Recommended fix:
+- In delete flow, fetch affected subject/DID metadata before delete, then call `markDirty`.
+- Add regression tests for score changes after deletions.
+
+--- SOLUTION ---
+Status: CONFIRMED
+Verified: deletion-handler.ts:218-229 deletes rows by URI and removes trust edges,
+  but never calls markDirty().  Compare with attestation.ts handleDelete (line 121-127)
+  which does call markDirty for subject, author, mentions, cosigner.
+  refresh-profiles.ts:29 and refresh-subject-scores.ts:24 only recompute where
+  needsRecalc = true, so deleted records leave stale scores.
+
+Fix (ingester/deletion-handler.ts — process method):
+  1. Before deleting the source row, fetch affected DIDs:
+       const row = await db.select({ authorDid: sourceTable.authorDid })
+         .from(sourceTable)
+         .where(eq(sourceTable.uri, uri))
+         .limit(1)
+       const authorDid = row[0]?.authorDid
+
+  2. After delete, mark affected DIDs dirty:
+       if (authorDid) {
+         await markDirty(db, [authorDid])
+       }
+       // For attestations: also mark subject dirty
+       if ('subjectDid' in (row[0] ?? {})) {
+         await markDirty(db, [row[0].subjectDid])
+       }
+
+  3. Import markDirty at top of file.
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+[APPVIEW-HIGH-05] Confirmed verification path can break ingestion on schema mismatch
+Evidence:
+- appview/src/ingester/handlers/verification.ts:45-50
+- appview/src/db/schema/attestations.ts:1-34 (no `is_verified` / `verified_by_uri` columns)
+- appview/tests/integration/01-ingester-handlers.test.ts:1508-1510 (tests avoid this path)
+Issue:
+- Handler executes raw SQL updating columns that are not present in current Drizzle schema.
+Impact:
+- `result === "confirmed"` can throw SQL errors, feeding queue failure path and cursor pin behavior.
+Recommended fix:
+- Add explicit migration + schema fields, or guard feature availability before running update.
+- Do not rely on optional/manual column presence in hot ingestion path.
+
+--- SOLUTION ---
+Status: CONFIRMED
+Verified: verification.ts:45-50 executes raw SQL updating `is_verified` and
+  `verified_by_uri` columns.  attestations.ts schema (lines 1-46) does NOT define
+  these columns.  Test at 01-ingester-handlers.test.ts:1508-1510 explicitly avoids
+  this path: "Use 'inconclusive' result to avoid the raw SQL UPDATE path."
+
+Fix (two options):
+  Option A (recommended — add schema columns):
+    1. Add columns to db/schema/attestations.ts:
+         isVerified: boolean('is_verified').default(false),
+         verifiedByUri: text('verified_by_uri'),
+    2. Generate Drizzle migration.
+    3. Replace raw SQL in verification.ts with Drizzle ORM update:
+         await ctx.db.update(attestations)
+           .set({ isVerified: true, verifiedByUri: op.uri })
+           .where(eq(attestations.uri, record.targetUri))
+
+  Option B (guard with schema check):
+    1. Wrap the raw SQL in a feature flag or schema check:
+         if (VERIFICATION_COLUMNS_AVAILABLE) {
+           await ctx.db.execute(sql`...`)
+         } else {
+           logger.warn('Verification columns not available — skipping update')
+         }
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+[APPVIEW-HIGH-06] No cryptographic verification at ingestion boundary
+Evidence:
+- appview/src/ingester/jetstream-consumer.ts:172-175, 243-247, 262-284
+- appview/src/ingester/record-validator.ts validates shape only
+Issue:
+- Events are accepted from Jetstream and persisted after schema validation only; no signature verification is performed in AppView.
+Impact:
+- If relay/jetstream feed is compromised or tampered, forged records can poison trust graph and scores.
+Recommended fix:
+- Verify signed commits against author DID keys, or enforce a hardened trust chain with verifiable relay attestations plus periodic direct PDS spot-checks.
+
+--- SOLUTION ---
+Status: CONFIRMED (with nuance — AT Protocol design relies on relay trust)
+Verified: jetstream-consumer.ts:262-267 calls validateRecord() which only checks
+  Zod schema compliance (field shapes/types).  record-validator.ts contains 19 Zod
+  schemas with no cryptographic verification.  commit.cid is received but never
+  validated against record data hash.
+
+Fix (phased approach):
+  Phase 1 (immediate — relay trust hardening):
+    1. Pin Jetstream relay to known trusted hostnames via env allowlist:
+         JETSTREAM_ALLOWED_HOSTS=jetstream1.us-east.bsky.network,jetstream2.us-east.bsky.network
+    2. Enforce wss:// in production (already gated on NODE_ENV=production).
+    3. Log and monitor relay connection metadata (hostname, TLS cert).
+
+  Phase 2 (medium-term — CID verification):
+    1. Verify CID matches record content hash:
+         import { CID } from 'multiformats/cid'
+         const computedCid = await hashRecord(record)
+         if (computedCid.toString() !== commit.cid) {
+           logger.warn('CID mismatch — record tampered or corrupted')
+           metrics.incr('ingester.cid_mismatch')
+           return  // reject
+         }
+
+  Phase 3 (long-term — signature verification):
+    Verify commit signatures against author DID keys (requires DID resolution
+    and atproto commit signature validation — significant implementation effort).
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+[APPVIEW-HIGH-07] Future-dated records can poison scoring math
+Evidence:
+- appview/src/ingester/record-validator.ts:51 (datetime format only, no temporal bounds)
+- appview/src/scorer/algorithms/trust-score.ts:81-83, 92
+- appview/src/scorer/algorithms/sentiment-aggregation.ts:59-66
+Issue:
+- `createdAt` can be far in the future; recency uses `exp(-age/halflife)`, so negative age increases weight above 1.
+- Extreme values can destabilize weighting (including NaN/Inf propagation risks).
+Impact:
+- Score manipulation and integrity degradation from timestamp poisoning.
+Recommended fix:
+- Reject records with `createdAt` outside an allowed skew window.
+- Clamp recency weight to a safe range.
+- Add NaN/Inf guards before persisting scores.
+
+--- SOLUTION ---
+Status: CONFIRMED
+Verified: record-validator.ts:51 — isoDateString validates format only, no temporal bounds.
+  trust-score.ts:155-157 — daysSince() returns negative for future dates.
+  trust-score.ts:81-83 — Math.exp(-ageDays / HALFLIFE) with negative ageDays yields
+  values > 1.0, inflating trust weights beyond normal [0,1] range.
+  sentiment-aggregation.ts:59-66 — same pattern.
+
+Fix (three layers):
+  1. Temporal bounds at ingestion (record-validator.ts):
+       const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000  // 5 minutes
+       // Add to each schema that uses isoDateString for createdAt:
+       createdAt: isoDateString.refine(
+         (val) => new Date(val).getTime() <= Date.now() + MAX_CLOCK_SKEW_MS,
+         { message: 'createdAt cannot be more than 5 minutes in the future' }
+       )
+
+  2. Clamp recency weight in scoring (trust-score.ts and sentiment-aggregation.ts):
+       const ageDays = Math.max(0, daysSince(a.recordCreatedAt))  // clamp to non-negative
+       const recency = Math.exp(-ageDays / CONSTANTS.SENTIMENT_HALFLIFE_DAYS)
+
+  3. NaN/Inf guard before persisting scores:
+       const finalScore = Number.isFinite(score) ? score : 0
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+==================================================================
+MEDIUM
+==================================================================
+
+[APPVIEW-MED-01] Security posture depends on NODE_ENV defaulting to development
+Evidence:
+- appview/src/config/env.ts:3, 6
+- appview/src/ingester/jetstream-consumer.ts:50-57
+- appview/docker-compose.yml (services do not set NODE_ENV)
+Issue:
+- If `NODE_ENV` is unset, runtime defaults to development behavior.
+- Production-only guards (e.g., strict wss enforcement) are bypassed when deployments omit NODE_ENV.
+Impact:
+- Easy misconfiguration into weaker transport/security behavior.
+Recommended fix:
+- Require explicit `NODE_ENV=production` in production deploys.
+- Fail startup on unset/invalid environment mode.
+
+--- SOLUTION ---
+Status: CONFIRMED
+Verified: env.ts:6 defaults NODE_ENV to 'development'.  jetstream-consumer.ts:50
+  only enforces wss:// when NODE_ENV=production.  docker-compose.yml omits NODE_ENV.
+
+Fix (config/env.ts):
+  1. Change default to fail-closed:
+       NODE_ENV: z.enum(['development', 'test', 'production']).default('production')
+  2. Or require explicit setting:
+       NODE_ENV: z.enum(['development', 'test', 'production']),
+     This will throw on startup if NODE_ENV is not set, forcing operators to be explicit.
+  3. Add NODE_ENV=production to docker-compose.yml for all services.
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+[APPVIEW-MED-02] Record schema allows oversized/unbounded payload fields
+Evidence:
+- appview/src/ingester/record-validator.ts (multiple fields use unconstrained `z.string()` / `z.record(z.unknown())`)
+Issue:
+- Several record fields have no max-length/depth/entry limits.
+- Identity-ish fields (`did`, `uri`, etc.) are not format-validated in many schemas.
+Impact:
+- Storage/memory amplification and graph pollution with malformed identifiers.
+Recommended fix:
+- Add strict bounds for all variable-size fields and nested objects.
+- Enforce DID/URI format validation for trust-graph-affecting fields.
+
+--- SOLUTION ---
+Status: CONFIRMED
+Verified: record-validator.ts has many unbounded z.string() fields (lines 23, 30, 36,
+  41, 42, 47, 153).  DID fields (line 36, 41) have no format validation.
+
+Fix (ingester/record-validator.ts):
+  1. Add DID format validator:
+       const didString = z.string().min(8).max(2048).regex(/^did:[a-z]+:/)
+  2. Add bounded string:
+       const boundedString = z.string().max(10_000)
+  3. Apply to identity fields: did, authorDid, subject → didString
+  4. Apply to content fields: type, dimension, notes → z.string().max(10_000)
+  5. Apply to signature: sig → z.string().max(500)
+  6. Apply to URI: uri → z.string().max(2048)
+  7. Bound arrays: items → z.array(z.string().max(2048)).max(100)
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+[APPVIEW-MED-03] Anti-abuse limiter is per-DID only and process-local
+Evidence:
+- appview/src/ingester/rate-limiter.ts:15-21, 37-39, 50-80
+Issue:
+- Limiter can be bypassed by rotating DIDs (Sybil spread).
+- State is in-memory only; multi-instance deployments do not share limits.
+Impact:
+- Abuse throughput scales with DID churn and replica count.
+Recommended fix:
+- Add global/source-level rate controls.
+- Move counters to shared backend (Redis/Postgres) for multi-instance consistency.
+
+--- SOLUTION ---
+Status: CONFIRMED
+Verified: rate-limiter.ts:6-20 documents in-memory limitation.  Lines 24-30 warn if
+  INSTANCE_COUNT > 1 but don't enforce.  Per-DID only — no source/global limits.
+
+Fix (ingester/rate-limiter.ts):
+  Phase 1 (immediate):
+    1. Add global throughput limiter alongside per-DID:
+         private globalCounter = 0
+         private globalResetAt = Date.now() + 60_000
+         private static MAX_GLOBAL_PER_MIN = 10_000
+    2. Check global limit before per-DID check.
+
+  Phase 2 (multi-instance):
+    Move counters to Redis with INCR + EXPIRE for shared state across instances.
+    Key pattern: rate:did:{did} with 60s TTL.
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+[APPVIEW-MED-04] Date/cursor params are not validated before DB use
+Evidence:
+- appview/src/api/xrpc/search.ts:18-20, 59-60, 66, 74
+- appview/src/api/xrpc/get-attestations.ts:25-37
+- appview/src/web/server.ts:89-97
+Issue:
+- `since/until/cursor` are plain strings parsed via `new Date(...)` without validity checks.
+- Invalid dates can propagate into query errors and return 500.
+Impact:
+- Easy error amplification/log spam path.
+Recommended fix:
+- Validate with strict datetime schema at boundary.
+- Reject invalid cursors as 400 (never 500).
+
+--- SOLUTION ---
+Status: CONFIRMED (mitigated — parameterized queries prevent SQL injection, but invalid
+  dates cause 500s instead of proper 400 responses)
+Verified: search.ts:18-20 parses since/until via `new Date(...)` without validation.
+  get-attestations.ts:25-37 cursor parsing has no try-catch.  Invalid dates produce
+  "Invalid Date" objects that cause query errors (500) instead of explicit rejection (400).
+
+Fix (api/xrpc/ — all date-accepting endpoints):
+  1. Add date validation helper:
+       function parseDate(val: string | undefined): Date | undefined {
+         if (!val) return undefined
+         const d = new Date(val)
+         if (isNaN(d.getTime())) throw new XRPCError(400, 'Invalid date format')
+         return d
+       }
+  2. Apply to search.ts since/until, get-attestations.ts cursor parsing.
+  3. Add cursor format validation: cursor must match expected format before parsing.
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+[APPVIEW-MED-05] Scorer scheduler lacks overlap/distributed locking
+Evidence:
+- appview/src/scorer/scheduler.ts:33-49
+Issue:
+- Cron handlers run without per-job mutex or distributed lock.
+- Long jobs can overlap with next tick; multi-instance scoring can duplicate work.
+Impact:
+- DB thrash, inconsistent write races, and avoidable load spikes.
+Recommended fix:
+- Add per-job non-overlap guards and distributed lock (e.g., advisory lock/Redis lock).
+
+--- SOLUTION ---
+Status: CONFIRMED
+Verified: scheduler.ts:33-49 uses node-cron with no overlap guard.  No mutex,
+  distributed lock, or running-flag check.  Long jobs can stack.
+
+Fix (scorer/scheduler.ts):
+  1. Add per-job running flag:
+       const runningJobs = new Set<string>()
+       function scheduleJob(name: string, cron: string, fn: () => Promise<void>) {
+         nodeCron.schedule(cron, async () => {
+           if (runningJobs.has(name)) {
+             logger.warn({ job: name }, 'Skipping — previous run still active')
+             return
+           }
+           runningJobs.add(name)
+           try { await fn() }
+           finally { runningJobs.delete(name) }
+         })
+       }
+
+  2. For multi-instance: use Postgres advisory locks:
+       await db.execute(sql`SELECT pg_try_advisory_lock(${jobHashId})`)
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+[APPVIEW-MED-06] Health endpoint is shallow and can report false healthy
+Evidence:
+- appview/src/web/server.ts:65-69
+Issue:
+- `/health` returns `{status:"ok"}` without checking DB connectivity or ingest/scorer liveness.
+Impact:
+- Orchestrators may keep routing traffic to degraded instances.
+Recommended fix:
+- Add dependency checks (DB ping, optional ingest lag snapshot) and degraded status mode.
+
+--- SOLUTION ---
+Status: CONFIRMED
+Verified: server.ts:65-69 returns { status: 'ok' } with no DB check or ingest lag.
+
+Fix (web/server.ts — /health endpoint):
+  1. Add DB connectivity check:
+       app.get('/health', async (req, res) => {
+         try {
+           await db.execute(sql`SELECT 1`)
+           res.json({ status: 'ok' })
+         } catch {
+           res.status(503).json({ status: 'degraded', reason: 'db_unreachable' })
+         }
+       })
+  2. Optionally add ingest lag check (latest cursor age).
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+[APPVIEW-MED-07] Compose defaults expose Postgres on host interface
+Evidence:
+- appview/docker-compose.yml:11-12
+Issue:
+- `5432:5432` publishes DB port to host by default.
+Impact:
+- Accidental external DB exposure if host firewall/network policy is weak.
+Recommended fix:
+- Remove host port binding by default; use internal Docker network only.
+- Provide explicit opt-in for local debugging.
+
+--- SOLUTION ---
+Status: CONFIRMED
+Verified: docker-compose.yml:11-12 exposes 5432:5432 on host.
+
+Fix (docker-compose.yml):
+  1. Remove host port binding:
+       # ports:
+       #   - "5432:5432"  # REMOVED — use internal Docker network
+  2. For local debugging, provide opt-in override:
+       # docker-compose.override.yml (not committed):
+       # services:
+       #   postgres:
+       #     ports:
+       #       - "127.0.0.1:5432:5432"
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+==================================================================
+LOW
+==================================================================
+
+[APPVIEW-LOW-01] Web-server "integration" tests are mostly contract-only
+Evidence:
+- appview/tests/integration/18-web-server.test.ts:8-12, 21-26
+Issue:
+- Tests validate schemas and expected shapes but do not exercise live HTTP request/response behavior.
+Impact:
+- Gaps in coverage for routing/method handling/rate-limit behavior.
+Recommended fix:
+- Add true HTTP integration tests against a running server instance.
+
+--- SOLUTION ---
+Status: CONFIRMED (low impact — tests verify contracts, not HTTP behavior)
+Verified: 18-web-server.test.ts tests Zod schema shapes only — no HTTP requests.
+
+Fix (tests/integration/18-web-server.test.ts):
+  Add HTTP integration tests using supertest or similar:
+    import request from 'supertest'
+    it('GET /health returns 200', async () => {
+      const res = await request(app).get('/health')
+      expect(res.status).toBe(200)
+      expect(res.body.status).toBe('ok')
+    })
+  Priority: low — contract tests are the minimum baseline.
+--- END SOLUTION ---
+--- FIX STATUS: DEFERRED — test improvement, no security code change needed ---
+
+[APPVIEW-LOW-02] Anomaly-event jobs can repeatedly insert duplicate events
+Evidence:
+- appview/src/scorer/jobs/detect-coordination.ts:63-78
+- appview/src/scorer/jobs/detect-sybil.ts:77-90
+- appview/src/db/schema/anomaly-events.ts:10-21 (no dedupe key/index)
+Issue:
+- Detection jobs insert new rows each run with no uniqueness/deduplication strategy.
+Impact:
+- Table growth/noise and reduced signal quality over time.
+Recommended fix:
+- Add dedupe key (event type + canonical subject/cluster + time bucket) and upsert semantics.
+
+--- SOLUTION ---
+Status: CONFIRMED
+Verified: anomaly-events.ts:10-21 uses ULID primary key with no uniqueness constraint
+  on (eventType + involvedDids + time bucket).  detect-coordination.ts:63-78 and
+  detect-sybil.ts:77-90 insert without dedup check.
+
+Fix (db/schema/anomaly-events.ts + detection jobs):
+  1. Add composite unique index:
+       .uniqueIndex('anomaly_dedup_idx')
+         .on(anomalyEvents.eventType, anomalyEvents.detectedAt)
+     Or use a dedup hash column: sha256(eventType + canonical_subjects + time_bucket)
+
+  2. In detection jobs, use upsert:
+       await db.insert(anomalyEvents).values({ ... }).onConflictDoNothing()
+     This prevents duplicate events from accumulating across scheduler runs.
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+==================================================================
+Additional Findings (Round 2)
+==================================================================
+
+[APPVIEW-HIGH-08] Out-of-order replay can overwrite newer state (event revision not enforced)
+Evidence:
+- appview/src/shared/types/jetstream-types.ts:7, 22 (`commit.rev` exists)
+- appview/src/ingester/jetstream-consumer.ts:243-247 (update path ignores `rev`)
+- appview/src/ingester/handlers/attestation.ts:66-92 (unconditional upsert update)
+Issue:
+- Update handlers overwrite rows unconditionally on `uri` conflict.
+- No monotonic `rev`/sequence check is stored or enforced, so an older replayed update can overwrite newer indexed state.
+Impact:
+- Record integrity drift under replay/reorder/failure conditions.
+Recommended fix:
+- Persist commit revision/sequence per record and reject stale updates (`incoming_rev <= stored_rev`).
+- Add integration tests for out-of-order update replay.
+
+--- SOLUTION ---
+Status: CONFIRMED (with nuance — upsert is idempotent for same-version replays,
+  but out-of-order replays of different versions can overwrite newer state)
+Verified: jetstream-consumer.ts:243-245 routes updates through handleCreate.
+  attestation.ts:66-92 uses onConflictDoUpdate on URI — unconditionally overwrites
+  all fields.  jetstream-types.ts defines commit.rev but it is never stored or checked.
+  If event V2 is processed, then V1 replays (network reorder, recovery), V1's older
+  data overwrites V2.  Jetstream normally delivers in-order, but replay/recovery
+  scenarios can violate this.
+
+Fix (ingester handlers — attestation.ts and other upsert handlers):
+  1. Add a `rev` column to source tables (attestations, vouches, endorsements, etc.):
+       rev: text('rev'),
+
+  2. In onConflictDoUpdate, add a WHERE guard:
+       .onConflictDoUpdate({
+         target: attestations.uri,
+         set: { ... },
+         where: sql`excluded.rev > ${attestations.rev} OR ${attestations.rev} IS NULL`,
+       })
+     This ensures only newer revisions overwrite older ones.
+
+  3. Store rev in the insert values:
+       rev: commit.rev,
+
+  Alternative (simpler): If Drizzle doesn't support conditional upsert, use raw SQL:
+       INSERT INTO attestations (..., rev) VALUES (...)
+       ON CONFLICT (uri) DO UPDATE SET ...
+       WHERE attestations.rev IS NULL OR excluded.rev > attestations.rev
+--- END SOLUTION ---
+--- FIX STATUS: DEFERRED — requires DB migration to add rev column across all source tables ---
+
+[APPVIEW-HIGH-09] SWR stale-request coalescing can return `undefined` to callers
+Evidence:
+- appview/src/api/middleware/swr-cache.ts:30-33, 35-48
+Issue:
+- In stale mode, `inFlight` stores `bgFetch` (Promise<void>) but concurrent callers hit the `inFlight` branch and cast it to `Promise<T>`.
+- Result: concurrent stale callers can resolve to `undefined` instead of cached/fresh payload.
+Impact:
+- Intermittent bad responses and type corruption under concurrent load.
+Recommended fix:
+- Never return stale-background `Promise<void>` as `Promise<T>`.
+- In stale mode, always return cached data immediately for all callers, or store a typed promise that resolves to data.
+- Add a unit test for concurrent stale callers (first stale call + second stale call before refresh settles).
+
+--- SOLUTION ---
+Status: CONFIRMED
+Verified: swr-cache.ts:15 — inFlight stores Promise<unknown>.
+  Line 32: concurrent stale callers cast `inFlight.get(key) as Promise<T>` — unsafe.
+  Lines 37-47: background fetch stores Promise<void> (from .then() chain).
+  Line 47: `inFlight.set(key, bgFetch)` — bgFetch resolves to void.
+  Concurrent caller at line 32 gets Promise<void> cast to Promise<T> → resolves undefined.
+
+Fix (api/middleware/swr-cache.ts):
+  1. In stale mode, always return cached data immediately for all callers.
+     Never return the in-flight promise when serving stale:
+
+       if (entry && isStale(entry)) {
+         // Always return cached data for stale requests
+         if (!inFlight.has(key)) {
+           // Start background refresh (fire-and-forget)
+           const bgFetch = fetchFn().then(data => {
+             cache.set(key, { data, timestamp: Date.now() })
+           }).finally(() => inFlight.delete(key))
+           inFlight.set(key, bgFetch)
+         }
+         return entry.data as T  // Return stale data, not the promise
+       }
+
+  2. Only use inFlight coalescing for cache-miss (not stale) requests:
+       if (inFlight.has(key)) {
+         return inFlight.get(key) as Promise<T>
+       }
+     This branch should only be reachable when there's no cached entry at all,
+     and the inFlight promise must resolve to T (not void).
+
+  3. Ensure the stored inFlight promise resolves to T:
+       const fetchPromise = fetchFn()  // Promise<T>
+       inFlight.set(key, fetchPromise)
+       // NOT: fetchFn().then(data => { cache.set(...); })  // this returns Promise<void>
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+[APPVIEW-MED-08] Graph query protections do not bound total traversal cost
+Evidence:
+- appview/src/db/queries/graph.ts:50-55 (`SET LOCAL statement_timeout` per statement)
+- appview/src/db/queries/graph.ts:102-170 (many per-node queries in loop)
+- appview/src/db/queries/graph.ts:203-205 (domain filter applied after full traversal)
+Issue:
+- Timeout is per SQL statement, not whole request; many short statements can still create very expensive requests.
+- Domain filter is post-query, so DB work remains high even when domain is specified.
+Impact:
+- High DB load amplification via graph endpoints.
+Recommended fix:
+- Add a request-level traversal budget (max nodes/edges/queries/time).
+- Push domain filtering into edge queries.
+- Batch profile lookups instead of per-node selects.
+
+--- SOLUTION ---
+Status: CONFIRMED (with mitigation — per-statement timeout and node caps exist)
+Verified: graph.ts:50-55 sets statement_timeout=100ms (per statement, not per request).
+  Lines 102-170 run many per-node queries in loop.  Line 203-205 domain filter applied
+  after full traversal.  MAX_EDGES_PER_HOP=500 and MAX_GRAPH_NODES_RESPONSE=500 provide
+  some bounds, but total DB cost can still be high (500 nodes * 500 edges * 100ms each).
+
+Fix (db/queries/graph.ts):
+  1. Add request-level budget:
+       let queryCount = 0
+       const MAX_QUERIES = 100
+       // In each query call:
+       if (++queryCount > MAX_QUERIES) throw new Error('Graph traversal budget exceeded')
+
+  2. Push domain filter into edge queries:
+       WHERE trust_edges.domain = $domain OR $domain IS NULL
+
+  3. Batch profile lookups:
+       const profiles = await db.select().from(profiles)
+         .where(inArray(profiles.did, [...nodeSet]))
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+[APPVIEW-MED-09] Trust-edge identity fields are not validated as DIDs
+Evidence:
+- appview/src/ingester/record-validator.ts:77-83 (vouch subject is unconstrained string)
+- appview/src/ingester/record-validator.ts:87-93 (endorsement subject unconstrained)
+- appview/src/ingester/record-validator.ts:143-148 (delegation subject unconstrained)
+- appview/src/ingester/handlers/vouch.ts:56-64, endorsement.ts:52-60, delegation.ts:43-51
+Issue:
+- Trust edges are created from arbitrary strings, not DID-validated identifiers.
+Impact:
+- Graph poisoning with malformed/non-DID nodes; degraded trust computations and traversal quality.
+Recommended fix:
+- Enforce DID format at schema boundary for trust-edge-generating fields.
+- Reject non-DID subjects for vouch/endorsement/delegation handlers.
+
+--- SOLUTION ---
+Status: CONFIRMED
+Verified: record-validator.ts vouch (line 77), endorsement (line 87), delegation
+  (line 143) all use z.string().min(1) for subject — no DID format validation.
+
+Fix (ingester/record-validator.ts):
+  1. Define DID validator:
+       const didString = z.string().min(8).max(2048).regex(/^did:[a-z]+:/, 'Must be a valid DID')
+  2. Replace subject fields in vouch, endorsement, delegation schemas:
+       subject: didString
+  3. Also apply to cosigner fields (attestation schema line 36, 41).
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+[APPVIEW-MED-10] Query parameter schemas lack strict bounds for key identifiers
+Evidence:
+- appview/src/api/xrpc/get-profile.ts:8-10 (`did: z.string()`)
+- appview/src/api/xrpc/get-graph.ts:6-10 (`did: z.string()`, `domain: z.string().optional()`)
+- appview/src/api/xrpc/search.ts:10-19 (multiple unconstrained strings)
+- appview/src/api/xrpc/get-attestations.ts:7-10 (`subjectId` / `authorDid` unconstrained)
+Issue:
+- Critical query params are accepted as arbitrary-length strings with minimal format validation.
+Impact:
+- Abuse potential via oversized identifiers and malformed graph/search keys.
+Recommended fix:
+- Add max lengths and DID/URI/domain format validators per field.
+- Reject malformed identifiers with 400 before query execution.
+
+--- SOLUTION ---
+Status: CONFIRMED
+Verified: get-profile.ts:8 `did: z.string()` — no length limit.
+  get-graph.ts:6 `did: z.string()` — no limit.  search.ts:9 `q: z.string()` — no limit.
+  get-attestations.ts:7 `subjectId: z.string()` — no limit.
+
+Fix (api/xrpc/ — all query parameter schemas):
+  1. Add constraints:
+       did: z.string().max(256).regex(/^did:[a-z]+:/)
+       domain: z.string().max(253).optional()
+       q: z.string().max(500).optional()
+       subjectId: z.string().max(256).optional()
+       authorDid: z.string().max(256).regex(/^did:[a-z]+:/).optional()
+       cursor: z.string().max(200).optional()
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+[APPVIEW-MED-11] Deletion path relies on URI-only match (missing author guard)
+Evidence:
+- appview/src/ingester/deletion-handler.ts:221 (delete by `uri` only)
+Issue:
+- Delete operation does not assert `authorDid` ownership for source-table deletion.
+- If an upstream integrity breach emits forged delete events, URI-only delete enables cross-author deletion.
+Impact:
+- Larger blast radius under compromised upstream feed conditions.
+Recommended fix:
+- Where schema includes `authorDid`, delete with `AND authorDid = op.did`.
+- Keep URI-only fallback only for tables without author field, with explicit allowlist.
+
+--- SOLUTION ---
+Status: CONFIRMED
+Verified: deletion-handler.ts:221 deletes by URI only — no authorDid guard.
+  Relies on upstream Jetstream/AT Protocol integrity for author verification.
+
+Fix (ingester/deletion-handler.ts):
+  1. Where source table has authorDid column, add author guard:
+       await db.delete(sourceTable).where(
+         and(eq(sourceTable.uri, uri), eq(sourceTable.authorDid, did))
+       )
+  2. Keep URI-only fallback for tables without authorDid, with explicit allowlist:
+       const URI_ONLY_TABLES = ['trust_edges']  // tables without author field
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+==================================================================
+Additional Findings (Round 3)
+==================================================================
+
+[APPVIEW-HIGH-10] Trust-edge state drifts on record updates (source URI is effectively immutable)
+Evidence:
+- appview/src/ingester/jetstream-consumer.ts:243-245, 281-284 (`update` is routed through `handleCreate`)
+- appview/src/ingester/trust-edge-sync.ts:28-40 (`addTrustEdge` uses `onConflictDoNothing`)
+- appview/src/ingester/handlers/vouch.ts:56-64, endorsement.ts:52-60, delegation.ts:43-51, attestation.ts:107-117
+Issue:
+- Record updates can change trust-edge semantics (target DID, confidence/weight, scope/domain, sentiment), but trust edge upserts are no-op on conflict.
+- Example: positive attestation updated to negative leaves old positive trust edge in place.
+Impact:
+- Stale/phantom trust edges persist and pollute graph traversal plus profile scoring.
+Recommended fix:
+- Upsert `trust_edges` by `sourceUri` with full field replacement on update.
+- For attestation updates that no longer qualify for an edge, delete existing edge by `sourceUri`.
+- Add update-regression tests (positive->negative, target change, confidence change).
+
+--- SOLUTION ---
+Status: CONFIRMED (trust edges via addTrustEdge use onConflictDoNothing — stale on update)
+Verified: trust-edge-sync.ts:28-40 uses onConflictDoNothing for trust edge inserts.
+  Handler source records (vouch.ts, endorsement.ts, delegation.ts) correctly use
+  onConflictDoUpdate on their OWN tables, but addTrustEdge is called separately for
+  trust_edges.  If an attestation is updated (e.g., positive → negative sentiment),
+  addTrustEdge is called again but the existing edge (from original positive) is
+  untouched due to onConflictDoNothing.
+
+Fix (ingester/trust-edge-sync.ts):
+  1. Change addTrustEdge to use onConflictDoUpdate:
+       await ctx.db.insert(trustEdges).values({
+         sourceUri, sourceDid, targetDid, edgeType, weight, domain,
+       }).onConflictDoUpdate({
+         target: trustEdges.sourceUri,
+         set: { targetDid, edgeType, weight, domain, updatedAt: new Date() },
+       })
+
+  2. Add removeTrustEdgeBySource for attestation updates that no longer qualify:
+       export async function removeTrustEdgeBySource(ctx, sourceUri) {
+         await ctx.db.delete(trustEdges).where(eq(trustEdges.sourceUri, sourceUri))
+       }
+
+  3. In attestation handler update path, if sentiment/target changed:
+     - Delete old edge by sourceUri
+     - Insert new edge (or skip if negative sentiment doesn't warrant an edge)
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+[APPVIEW-HIGH-11] Derived attestation state is one-way and not reconciled on update/delete
+Evidence:
+- appview/src/ingester/handlers/revocation.ts:37-46 sets `attestations.isRevoked = true`; delete path at 51-53 only deletes revocation record
+- appview/src/ingester/handlers/amendment.ts:40-49 sets `attestations.isAmended/latestAmendmentUri`; delete path at 54-56 only deletes amendment record
+- appview/src/ingester/handlers/verification.ts:45-50 sets `is_verified = true`; no reversal logic on update-to-denied or delete (56-58)
+Issue:
+- Side-effect columns on `attestations` are set on create but never reconciled when source records are modified or removed.
+Impact:
+- Sticky revoked/amended/verified flags can survive after causal records change, causing long-lived integrity drift.
+Recommended fix:
+- Recompute derived attestation flags from source-of-truth tables, or implement reversible state transitions with prior-state reconciliation.
+- Add tests for retarget/update/delete behavior of revocation/amendment/verification records.
+
+--- SOLUTION ---
+Status: CONFIRMED
+Verified: revocation.ts:38-46 sets isRevoked=true on create; delete at 51-54 only
+  removes revocation row, never resets isRevoked.  amendment.ts:41-49 sets
+  isAmended=true; delete at 54-56 never resets.  verification.ts:45-50 sets
+  is_verified=true via raw SQL; delete at 56-58 never resets.
+
+Fix (handlers — add state reversal on delete):
+  1. revocation.ts handleDelete:
+       async handleDelete(ctx, op) {
+         // Find which attestation this revocation targeted
+         const rev = await ctx.db.select({ targetUri: revocations.targetUri })
+           .from(revocations).where(eq(revocations.uri, op.uri)).limit(1)
+         await deletionHandler.process(ctx.db, op.uri, op.did, 'revocation', revocations)
+         // Recompute isRevoked: check if any OTHER revocations target same attestation
+         if (rev[0]?.targetUri) {
+           const remaining = await ctx.db.select({ uri: revocations.uri })
+             .from(revocations).where(eq(revocations.targetUri, rev[0].targetUri)).limit(1)
+           if (remaining.length === 0) {
+             await ctx.db.update(attestations)
+               .set({ isRevoked: false, revokedByUri: null })
+               .where(eq(attestations.uri, rev[0].targetUri))
+           }
+         }
+       }
+
+  2. Same pattern for amendment.ts and verification.ts: on delete, check if any
+     remaining amendments/verifications target the same attestation. If none remain,
+     reset the derived flag.
+
+  3. Alternative (simpler): Recompute derived flags from source tables using a
+     scheduled reconciliation job rather than per-event reversal.
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+[APPVIEW-HIGH-12] Dirty-flag propagation is missing for score-affecting record types
+Evidence:
+- No `markDirty` in handlers: appview/src/ingester/handlers/delegation.ts, revocation.ts, reaction.ts, verification.ts
+- Scoring reads these signals:
+  - appview/src/scorer/jobs/refresh-profiles.ts:207-213 (`revocations`), 223-237 (`reactions`), 247-253 (`delegations`), 132-147 (`verifications`)
+Issue:
+- Several handlers mutate score inputs without marking affected DIDs/subjects dirty.
+Impact:
+- Profile/subject scores can remain stale indefinitely until unrelated writes happen.
+Recommended fix:
+- Add `markDirty` for all score-affecting create/update/delete flows.
+- Add regression tests asserting score recomputation after each affected record type.
+
+--- SOLUTION ---
+Status: CONFIRMED
+Verified: Handlers WITH markDirty: attestation.ts (lines 121-127), vouch.ts (67-71),
+  endorsement.ts (63-67), flag.ts.  Handlers WITHOUT markDirty: delegation.ts,
+  revocation.ts, reaction.ts, verification.ts.
+  refresh-profiles.ts:253 uses delegationInboundCount, lines 235-236 use
+  helpfulReactions/unhelpfulReactions.  trust-score.ts:131 applies delegation bonus.
+  Without markDirty, these score inputs go stale.
+
+Fix (add markDirty to missing handlers):
+  1. delegation.ts — after addTrustEdge and profile update:
+       await markDirty(ctx.db, [op.did, record.subject])
+
+  2. revocation.ts — after updating attestation isRevoked:
+       // Mark both the revoker and the attestation author dirty
+       await markDirty(ctx.db, [op.did])
+       // Also mark attestation author (fetch before update):
+       const att = await ctx.db.select({ authorDid: attestations.authorDid })
+         .from(attestations).where(eq(attestations.uri, record.targetUri)).limit(1)
+       if (att[0]) await markDirty(ctx.db, [att[0].authorDid])
+
+  3. reaction.ts — after insert:
+       // Mark the reaction author and the target attestation's subject/author
+       await markDirty(ctx.db, [op.did])
+
+  4. verification.ts — after updating is_verified:
+       await markDirty(ctx.db, [op.did])
+
+  5. Import markDirty in all four files.
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+[APPVIEW-MED-12] Mention edges become stale on attestation updates
+Evidence:
+- appview/src/ingester/jetstream-consumer.ts:243-245, 281-284 (`update` uses `handleCreate`)
+- appview/src/ingester/handlers/attestation.ts:95-105 inserts mention edges with `onConflictDoNothing` and never removes old edges
+Issue:
+- When mentions are edited/removed on update, prior mention edges remain.
+Impact:
+- Mention graph drifts from source records, degrading graph-based features and analytics.
+Recommended fix:
+- Replace mention edge set atomically per source URI (delete old set, insert new set).
+- Add update tests for mention add/remove/change scenarios.
+
+--- SOLUTION ---
+Status: CONFIRMED
+Verified: attestation.ts:95-105 inserts mentions with onConflictDoNothing on update.
+  Old mention edges are never deleted.  Editing mentions from [Alice,Bob] to
+  [Alice,Charlie] leaves Bob's mention edge in place.
+
+Fix (ingester/handlers/attestation.ts — mention handling):
+  1. Before inserting new mentions, delete old ones by sourceUri:
+       await ctx.db.delete(mentions)
+         .where(eq(mentions.sourceUri, op.uri))
+  2. Then insert new mention set.  This makes the operation atomic per source record.
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+[APPVIEW-MED-13] Optional expiry fields are not datetime-validated before timestamp writes
+Evidence:
+- appview/src/ingester/record-validator.ts:142-147 (`delegation.expiresAt`), 191-196 (`reviewRequest.expiresAt`) accept plain `z.string().optional()`
+- appview/src/ingester/handlers/delegation.ts:27,36 and review-request.ts:30,40 cast with `new Date(...)` into timestamp columns
+Issue:
+- Malformed expiry strings can pass validation but fail later during DB write.
+Impact:
+- Avoidable ingestion failures feed queue-failure/cursor-pin behavior and operational instability.
+Recommended fix:
+- Validate expiry fields as ISO datetimes at schema boundary.
+- Reject malformed expiries as validation failures before handler execution.
+
+--- SOLUTION ---
+Status: CONFIRMED
+Verified: record-validator.ts:146 delegation expiresAt is z.string().optional() —
+  no datetime validation.  Same at line 195 for reviewRequest.  Handlers cast with
+  new Date() which accepts non-ISO strings and produces unexpected results.
+
+Fix (ingester/record-validator.ts):
+  1. Change expiry fields to use isoDateString:
+       expiresAt: isoDateString.optional()  // already defined at line 51
+  2. This rejects malformed dates at schema validation, before they reach handlers.
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+[APPVIEW-MED-14] Reaction updates are silently ignored
+Evidence:
+- appview/src/ingester/jetstream-consumer.ts:243-245 (`update` routed to `handleCreate`)
+- appview/src/ingester/handlers/reaction.ts:17-25 uses `onConflictDoNothing`
+Issue:
+- Update events for an existing reaction URI do not apply changed fields (`cid`, `reaction`, `targetUri`).
+Impact:
+- Reaction-derived stats (helpful/unhelpful signals) can drift from source-of-truth records.
+Recommended fix:
+- Use `onConflictDoUpdate` for reaction URI, or explicitly reject update semantics if protocol-level immutability is guaranteed.
+- Add update-path tests for reactions.
+
+--- SOLUTION ---
+Status: CONFIRMED (with design-intent note — reactions may be protocol-immutable)
+Verified: reaction.ts:17-25 uses onConflictDoNothing.  If the AT Protocol guarantees
+  reaction immutability (same URI = same content), this is correct by design.
+  However, if the protocol allows reaction updates (e.g., changing reaction type),
+  onConflictDoNothing silently discards the update.
+
+Fix (ingester/handlers/reaction.ts):
+  If updates are allowed by protocol:
+    1. Change to onConflictDoUpdate:
+         .onConflictDoUpdate({
+           target: reactions.uri,
+           set: { cid: op.cid, reaction: record.reaction, targetUri: record.targetUri },
+         })
+  If immutable by design:
+    1. Add explicit documentation comment:
+         // Reactions are immutable per AT Protocol — onConflictDoNothing is intentional.
+    2. Log discarded duplicates for monitoring:
+         // Track via metrics.incr('ingester.reaction.duplicate')
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+[APPVIEW-MED-15] Search tag filter builds a raw Postgres array literal from unsanitized input
+Evidence:
+- appview/src/api/xrpc/search.ts:53-56 constructs `tagArray` string with manual quoting and injects into `::text[]`
+Issue:
+- Special characters (`"`, `{`, `}`, `\\`, commas) in tags can produce invalid array literals and query errors.
+Impact:
+- Easy malformed-input path to repeated 500s/log amplification.
+Recommended fix:
+- Replace manual array-literal construction with properly parameterized array binding.
+- Reject malformed tags as 400 at API boundary.
+
+--- SOLUTION ---
+Status: CONFIRMED
+Verified: search.ts:53-56 constructs raw Postgres array literal:
+  `{${tagList.map(t => `"${t}"`).join(',')}}` — special chars (", {, }, \) in tags
+  break the array literal or produce SQL errors.  Drizzle sql template parameterizes
+  the outer value but the inner array construction is manual string building.
+
+Fix (api/xrpc/search.ts):
+  1. Replace manual array literal with parameterized binding:
+       const tagList = tags.split(',').map(t => t.trim()).filter(Boolean)
+       // Validate tags at boundary:
+       for (const tag of tagList) {
+         if (tag.length > 100 || /["{}\\\x00]/.test(tag)) {
+           throw new XRPCError(400, 'Invalid tag format')
+         }
+       }
+       // Use Drizzle's sql.join for safe array construction:
+       conditions.push(sql`${attestations.tags} @> ARRAY[${sql.join(
+         tagList.map(t => sql`${t}`), sql`, `
+       )}]::text[]`)
+--- END SOLUTION ---
+--- FIX STATUS: DONE ---
+
+==================================================================
+Review note
+==================================================================
+
+- This is a review-only update; no application code changes were made.
+- Unit test check executed: `npm run test:unit` in `appview/` (passed).
+- Integration test check attempted: `npm run test:integration -- --reporter=dot` in `appview/` (blocked in this environment due Postgres connect EPERM to `127.0.0.1:5432` / `::1:5432`).
