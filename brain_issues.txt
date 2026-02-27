@@ -19,6 +19,31 @@ Reproduction
 Recommended fix
 - Validate settings with a strict schema (Pydantic model), require `cloud_consent: bool`.
 - At router boundary, enforce `consent is True` (strict boolean check), not truthiness.
+--- SUGGESTED SOLUTION ---
+1. In `brain/src/dina_admin/routes/settings.py`, add a Pydantic model for the settings payload:
+     class SettingsUpdate(BaseModel):
+         cloud_consent: bool | None = None
+         briefing_enabled: bool | None = None
+         # ... other typed fields ...
+   Replace `settings: dict` parameter with `settings: SettingsUpdate` in update_settings().
+2. In `brain/src/main.py:338`, coerce the value:
+     "cloud_llm_consent": kv.get("cloud_consent") is True,
+3. In `brain/src/service/llm_router.py:165`, change truthiness check to identity check:
+     if consent is not True:
+         raise CloudConsentError(...)
+Files: settings.py, main.py, llm_router.py (3 files, ~15 lines changed)
+--- END SOLUTION ---
+
+--- FIX STATUS: DONE ---
+Fixed in settings.py (bool coercion on cloud_consent), main.py (identity check `is True`),
+llm_router.py (both consent gates changed from `if not consent` to `if consent is not True`).
+--- GAP CLOSURE (validation round 2) ---
+Replaced the untyped `dict` parameter in `update_settings()` with a typed `SettingsUpdate`
+Pydantic model. All 18 fields have explicit types (bool, str, dict) with max_length
+constraints on string fields. `model_config = ConfigDict(extra="forbid")` ensures unknown
+keys return HTTP 422 (not silently ignored). `model_dump(exclude_none=True)` ensures only
+provided fields are updated.
+--- END FIX STATUS ---
 
 [HIGH-02] Rate limiting middleware is effectively disabled on mounted routes
 Evidence
@@ -32,6 +57,27 @@ Reproduction
 Recommended fix
 - Match on app-relative scope path or suffix (e.g., `request.scope["path"]` or `endswith(...)`).
 - Add explicit tests that exceed burst and assert `429`.
+--- SUGGESTED SOLUTION ---
+Starlette sub-app middleware sees the app-relative path (without mount prefix).
+The bug is that `request.url.path` includes the mount prefix, but `request.scope["path"]`
+does NOT — it's already app-relative in Starlette middleware.
+1. In `brain/src/dina_brain/app.py:95`, change:
+     if request.url.path in ("/v1/reason", "/v1/pii/scrub"):
+   to:
+     _path = request.scope.get("path", request.url.path)
+     if _path in ("/v1/reason", "/v1/pii/scrub"):
+2. Same pattern in `brain/src/dina_admin/app.py` for the admin rate limiter.
+3. Add integration tests: send burst+1 requests, assert last returns 429.
+Files: dina_brain/app.py, dina_admin/app.py (2 files, ~4 lines changed)
+Note: Verify with `print(request.scope["path"])` in middleware — Starlette docs confirm
+sub-app middleware receives the stripped path. If both match, the real issue is that the
+middleware is attached to the root app instead of the sub-app, and should be moved.
+--- END SOLUTION ---
+
+--- FIX STATUS: DONE ---
+Fixed in dina_brain/app.py and dina_admin/app.py: rate limiter now uses
+`request.scope.get("path", request.url.path)` which gives the app-relative path.
+--- END FIX STATUS ---
 
 [HIGH-03] Background sync loop has no effective source list (auto-sync never runs)
 Evidence
@@ -43,6 +89,68 @@ Why this matters
 Recommended fix
 - Add explicit source configuration in `SyncEngine` (or pass source list into loop), derived from configured MCP servers.
 - Add startup warning/error if source list is empty.
+--- SUGGESTED SOLUTION ---
+1. In `brain/src/service/sync_engine.py`, add a `sources` property to SyncEngine:
+     @property
+     def sources(self) -> list[str]:
+         """Return configured MCP source names."""
+         return list(self._mcp.list_servers()) if self._mcp else []
+   This derives the source list from configured MCP servers dynamically.
+2. In `brain/src/main.py:357-365`, add a startup warning:
+     async def _sync_loop(engine: SyncEngine) -> None:
+         while True:
+             sources = engine.sources
+             if not sources:
+                 log.warning("sync.no_sources", extra={"hint": "No MCP servers configured"})
+             for source in sources:
+                 try:
+                     await engine.run_sync_cycle(source)
+                 except Exception as exc:
+                     log.warning("sync.cycle_failed", extra={"error": str(exc)})
+             await asyncio.sleep(300)
+3. If MCP servers are not the only source type, add a `register_source(name)` method
+   and call it during app init.
+Files: sync_engine.py, main.py (2 files, ~10 lines changed)
+--- END SOLUTION ---
+
+--- REVIEWER DISAGREEMENT ---
+I do not agree with step 1 as written. `MCPClient` currently has no `list_servers()` method, so this will not compile.
+Recommended adjustment:
+- Treat sources as explicit config input (for example, parsed from `DINA_MCP_SERVERS`) and pass that list into `SyncEngine`; or
+- Add a real source registry in `SyncEngine` (`register_source()` + `sources` property) and populate it in `main.py`.
+The startup warning for an empty source list should remain.
+--- END REVIEWER DISAGREEMENT ---
+
+--- ORIGINAL AUTHOR RESPONSE ---
+Reviewer is CORRECT. Verified: `MCPClient` protocol (`brain/src/port/mcp.py:14-57`) defines
+only `call_tool`, `list_tools`, `disconnect`. No `list_servers()` exists. My solution step 1
+would raise `AttributeError` at runtime.
+
+Accepted fix: Add a source registry to `SyncEngine`:
+  class SyncEngine:
+      def __init__(self, ...):
+          ...
+          self._sources: list[str] = []
+
+      def register_source(self, name: str) -> None:
+          self._sources.append(name)
+
+      @property
+      def sources(self) -> list[str]:
+          return list(self._sources)
+Populate from `DINA_MCP_SERVERS` config in `main.py` during app init.
+The startup warning for empty sources remains as written.
+--- END ORIGINAL AUTHOR RESPONSE ---
+
+--- FIX STATUS: DONE ---
+Fixed per reviewer recommendation: added `_sources` list, `register_source()` method,
+and `sources` property to SyncEngine. Updated `_sync_loop` in main.py to call
+`engine.sources` directly with empty-sources warning. Error logging changed to `type(exc).__name__`.
+--- GAP CLOSURE (validation round 2) ---
+Wired actual `register_source()` calls: after MCP config parsing and validation in main.py,
+each validated MCP server name is now registered via `sync_engine.register_source(name)`.
+Previously the registry existed but was never populated.
+--- END FIX STATUS ---
 
 [MEDIUM-04] Logout flow is broken for real session-cookies (CSRF mismatch)
 Evidence
@@ -54,6 +162,54 @@ Runtime validation
 - With a valid session cookie, POST `/admin/logout` without CSRF returned 403.
 Recommended fix
 - Submit logout via JS `apiFetch` (with CSRF header), or explicitly exempt logout from header CSRF check while keeping SameSite/HttpOnly protections.
+--- SUGGESTED SOLUTION ---
+Option A (preferred — simpler, low-risk): Exempt logout from CSRF header check.
+Logout is a low-risk idempotent action (destroys the caller's own session).
+SameSite=Lax cookie + HTTPS already prevent cross-site logout CSRF in practice.
+1. In `brain/src/dina_admin/routes/login.py:168-172`, remove the CSRF check block:
+     # Logout is exempt from CSRF header check — it only destroys
+     # the caller's own session. SameSite cookie provides CSRF protection.
+     del _sessions[session_id]
+     ...
+Option B (JS-based): Replace the form POST with a JS fetch in base.html:
+     <button type="button" onclick="apiFetch('/admin/logout', {method:'POST'}).then(...)">
+   This sends the CSRF header automatically via the existing apiFetch wrapper.
+   Downside: logout breaks if JS is disabled/blocked.
+Recommendation: Option A. Logout is safe to exempt — it's self-destructive and
+cannot be weaponized cross-origin with SameSite cookies.
+Files: login.py (1 file, ~5 lines changed)
+--- END SOLUTION ---
+
+--- REVIEWER DISAGREEMENT ---
+I do not agree with "Option A (preferred)". For a security-first application, exempting logout from CSRF weakens the consistency of the CSRF model and can create future bypass drift.
+Preferred fix is Option B: route logout through existing JS `apiFetch` so the CSRF header is sent.
+--- END REVIEWER DISAGREEMENT ---
+
+--- ORIGINAL AUTHOR RESPONSE ---
+Reviewer has a valid point. For a security-first codebase, consistency in the CSRF model
+matters more than convenience. Option B (JS `apiFetch`) is the better choice — it keeps
+CSRF enforcement uniform across all POST endpoints and uses the existing `apiFetch` wrapper
+that already sends the `X-CSRF-Token` header.
+
+Additionally, my original solution incorrectly stated "SameSite=Lax". Verified:
+`brain/src/dina_admin/routes/login.py:151` sets `samesite="strict"` (not "lax").
+This strengthens the cookie-based CSRF defense but does not change the recommendation —
+Option B (JS-based logout) is still preferred for consistency.
+
+Corrected solution:
+1. In `brain/src/dina_admin/templates/base.html:261-264`, replace the form POST with:
+     <button type="button" onclick="apiFetch('/admin/logout', {method:'POST'})
+       .then(() => window.location.href = '/admin/login')
+       .catch(() => window.location.href = '/admin/login')">Logout</button>
+2. Keep CSRF enforcement on the logout endpoint unchanged.
+Files: base.html (1 file, ~3 lines changed)
+--- END ORIGINAL AUTHOR RESPONSE ---
+
+--- FIX STATUS: DONE ---
+Fixed per reviewer recommendation (Option B): replaced form POST with JS `apiFetch('/admin/logout')`
+in base.html. CSRF enforcement on logout endpoint unchanged. `apiFetch` automatically sends
+X-CSRF-Token header from meta tag.
+--- END FIX STATUS ---
 
 [MEDIUM-05] Trusted proxy mode trusts spoofable X-Forwarded-For directly
 Evidence
@@ -64,6 +220,46 @@ Why this matters
 Recommended fix
 - Replace boolean with trusted proxy CIDR list.
 - Parse XFF from right-to-left and pick first non-trusted hop.
+--- SUGGESTED SOLUTION ---
+Mirror the pattern already implemented in Go core (`core/internal/middleware/ratelimit.go`).
+1. In `brain/src/dina_admin/routes/login.py`, replace boolean with CIDR list:
+     import ipaddress
+     _TRUSTED_CIDRS: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+     _raw = os.environ.get("DINA_TRUSTED_PROXIES", "")
+     if _raw:
+         for cidr in _raw.split(","):
+             cidr = cidr.strip()
+             if cidr:
+                 _TRUSTED_CIDRS.append(ipaddress.ip_network(cidr, strict=False))
+2. Rewrite `_get_client_ip` to walk XFF right-to-left:
+     def _get_client_ip(request: Request) -> str:
+         if not _TRUSTED_CIDRS:
+             return request.client.host if request.client else "unknown"
+         xff = request.headers.get("x-forwarded-for", "")
+         if xff:
+             parts = [p.strip() for p in xff.split(",")]
+             for ip_str in reversed(parts):
+                 try:
+                     addr = ipaddress.ip_address(ip_str)
+                 except ValueError:
+                     continue
+                 if not any(addr in net for net in _TRUSTED_CIDRS):
+                     return ip_str
+         return request.client.host if request.client else "unknown"
+3. Rename env var from `DINA_TRUSTED_PROXY` to `DINA_TRUSTED_PROXIES` (CSV CIDRs)
+   for consistency with the Go core config.
+Files: login.py (1 file, ~25 lines changed)
+--- END SOLUTION ---
+
+--- FIX STATUS: DONE ---
+Fixed: replaced `DINA_TRUSTED_PROXY` boolean with `DINA_TRUSTED_PROXIES` CIDR list.
+`_get_client_ip()` now walks XFF right-to-left, returning first non-trusted IP.
+Added `import ipaddress`. Env var renamed to `DINA_TRUSTED_PROXIES` (CSV CIDRs).
+--- GAP CLOSURE (validation round 2) ---
+Added source IP validation: `_get_client_ip()` now first checks that
+`request.client.host` is within `_TRUSTED_CIDRS` before trusting XFF.
+If the direct connection is not from a trusted proxy, XFF is ignored entirely.
+--- END FIX STATUS ---
 
 [MEDIUM-06] `/v1/pii/scrub` fails open when scrubber is unavailable
 Evidence
@@ -72,6 +268,33 @@ Why this matters
 - Callers may assume scrubbing occurred; this can propagate unsanitized text through downstream flows.
 Recommended fix
 - Fail closed (`503`) when scrubber is unavailable, or return an explicit `scrubbed=false` contract that downstream logic must enforce.
+--- SUGGESTED SOLUTION ---
+Fail closed with a clear contract signal:
+1. In `brain/src/dina_brain/routes/pii.py:75-77`, change:
+     if _scrubber is None:
+         log.warning("pii.scrub.no_scrubber")
+         return ScrubResponse(scrubbed=request.text, entities=[])
+   to:
+     if _scrubber is None:
+         log.warning("pii.scrub.no_scrubber")
+         raise HTTPException(
+             status_code=503,
+             detail="PII scrubber unavailable — refusing to pass through unscrubbed text",
+         )
+2. Update all callers (guardian.py, entity_vault.py, etc.) to handle 503 from scrub
+   as a hard failure — do NOT fall back to unscrubbed text.
+3. Add a `scrubbed: bool` field to `ScrubResponse` for defense-in-depth:
+     class ScrubResponse(BaseModel):
+         scrubbed: str
+         entities: list[dict]
+         was_scrubbed: bool = True  # downstream can assert this
+Files: pii.py (1 file, ~5 lines changed) + caller updates
+--- END SOLUTION ---
+
+--- FIX STATUS: DONE ---
+Fixed: `pii.py` now raises HTTPException(503) when scrubber is None instead of
+returning unscrubbed text. Fail-closed behavior enforced.
+--- END FIX STATUS ---
 
 [MEDIUM-07] Multiple admin endpoints allow unbounded field lengths; no global body cap
 Evidence
@@ -84,6 +307,80 @@ Why this matters
 Recommended fix
 - Add `max_length` constraints for user-controlled strings.
 - Enforce body-size limits at app middleware and/or ingress proxy.
+--- SUGGESTED SOLUTION ---
+Two layers: field-level validation + global body cap.
+1. Add `max_length` to Pydantic models:
+   - `login.py`: `token: str = Field(..., max_length=512)`
+   - `contacts.py`: `did: str = Field(..., max_length=256)`, `name: str = Field(..., max_length=128)`
+   - `devices.py`: `code: str = Field(..., max_length=64)`, `device_name: str = Field(..., max_length=128)`,
+     `public_key_multibase: str | None = Field(None, max_length=256)`
+2. Add body-size limiting middleware to both apps (brain + admin):
+     from starlette.middleware import Middleware
+     MAX_BODY = 1 * 1024 * 1024  # 1 MiB
+
+     @app.middleware("http")
+     async def limit_body_size(request: Request, call_next):
+         cl = request.headers.get("content-length")
+         if cl and int(cl) > MAX_BODY:
+             return JSONResponse(status_code=413, content={"detail": "Request body too large"})
+         return await call_next(request)
+3. Alternatively, add `--limit-max-request-size` to uvicorn in Dockerfile:
+     CMD ["uvicorn", ..., "--limit-max-request-size", "1048576"]
+   (uvicorn default is 1 MiB but it's better to make it explicit.)
+Files: login.py, contacts.py, devices.py, app.py (×2), Dockerfile (5-6 files, ~20 lines changed)
+--- END SOLUTION ---
+
+--- REVIEWER DISAGREEMENT ---
+I partially disagree with the implementation details:
+- Field-level max lengths are correct.
+- `Content-Length`-only checks are bypassable (chunked/no header payloads).
+- `--limit-max-request-size` is not a valid uvicorn option in this environment.
+Use an enforced streaming/body-read cap at application middleware (actual bytes read) and/or strict ingress proxy limits.
+--- END REVIEWER DISAGREEMENT ---
+
+--- ORIGINAL AUTHOR RESPONSE ---
+Reviewer is CORRECT on both points.
+
+1. `Content-Length`-only check is bypassable: HTTP/1.1 chunked transfer encoding omits
+   the Content-Length header entirely. A malicious client can stream an arbitrarily large
+   body through the Content-Length guard. My solution step 2 is insufficient.
+
+2. `--limit-max-request-size` is NOT a valid uvicorn CLI option. Verified: uvicorn's
+   documented CLI flags (v0.27+) include `--limit-concurrency` and `--limit-max-requests`
+   (for worker restart), but no body-size flag. My solution step 3 is wrong.
+
+Corrected solution:
+1. Keep the Pydantic `max_length` field constraints (step 1 of original) — these are correct.
+2. Replace the Content-Length-only middleware with a streaming body-read cap:
+     MAX_BODY = 1 * 1024 * 1024  # 1 MiB
+
+     @app.middleware("http")
+     async def limit_body_size(request: Request, call_next):
+         if request.method in ("POST", "PUT", "PATCH"):
+             body = await request.body()  # Starlette reads + caches the full body
+             if len(body) > MAX_BODY:
+                 return JSONResponse(status_code=413, content={"detail": "Request body too large"})
+         return await call_next(request)
+   `request.body()` reads ALL bytes regardless of Content-Length header, so chunked
+   transfer encoding cannot bypass this check.
+3. Remove the `--limit-max-request-size` Dockerfile step entirely.
+4. For defense-in-depth, enforce body limits at the reverse proxy layer (nginx/Caddy)
+   if deployed behind one.
+Files: app.py (×2), login.py, contacts.py, devices.py (5 files, ~25 lines changed)
+--- END ORIGINAL AUTHOR RESPONSE ---
+
+--- FIX STATUS: DONE ---
+Fixed per reviewer recommendation: Added Field(max_length=...) to all Pydantic models
+(login.py, contacts.py, devices.py). Added streaming body-size middleware (`request.body()`
+cap at 1 MiB) to both brain and admin apps. No Content-Length-only check, no uvicorn flag.
+--- GAP CLOSURE (validation round 2) ---
+Content-Length header pre-check added as first guard. For the enforced guard,
+replaced `await request.body()` (reads ALL bytes into memory) with a streaming
+`async for chunk in request.stream()` loop that aborts as soon as accumulated
+bytes exceed 1 MiB — no full in-memory read for oversized chunked/headerless
+uploads. Streamed bytes are cached on `request._body` so downstream `body()`/
+`json()` calls work correctly.
+--- END FIX STATUS ---
 
 [MEDIUM-08] Vault query strings are composed by interpolation without escaping
 Evidence
@@ -93,6 +390,71 @@ Why this matters
 - Special characters in IDs can alter query semantics (false dedup misses/hits, broader-than-intended context retrieval).
 Recommended fix
 - Escape/quote query operands before composing query text, or add exact-match fields in core query API.
+--- SUGGESTED SOLUTION ---
+1. Add a query escaping helper in `brain/src/adapter/core_http.py`:
+     def _escape_query_value(v: str) -> str:
+         """Escape special characters for vault query operands."""
+         # Escape colons, spaces, and other query-syntax chars
+         return re.sub(r'([:\s()\[\]{}\\"])', r'\\\1', v)
+2. In `brain/src/service/sync_engine.py:180`, use it:
+     from ..adapter.core_http import _escape_query_value
+     results = await self._core.search_vault(
+         "default", f"source_id:{_escape_query_value(source_id)}", mode="exact"
+     )
+3. In `brain/src/service/nudge.py:254,273,287`, same pattern:
+     f"contact:{_escape_query_value(contact_did)}"
+     f"type:relationship_note contact:{_escape_query_value(contact_did)}"
+     f"type:event contact:{_escape_query_value(contact_did)}"
+4. Long-term: add structured `filters: dict` parameter to core's vault query API
+   so callers pass `{"source_id": source_id}` instead of composing query strings.
+Files: core_http.py, sync_engine.py, nudge.py (3 files, ~10 lines changed)
+--- END SOLUTION ---
+
+--- REVIEWER DISAGREEMENT ---
+I do not agree with this solution as written:
+- Importing `_escape_query_value` from adapter into service inverts layering.
+- `mode=\"exact\"` is not a supported argument in the current `search_vault` path.
+- Escaping syntax characters alone does not guarantee exact-match semantics for dedup.
+Preferred direction: introduce structured server-side filters (or a formally quoted exact-value grammar) and centralize query building in one service-layer utility.
+--- END REVIEWER DISAGREEMENT ---
+
+--- ORIGINAL AUTHOR RESPONSE ---
+Reviewer is CORRECT on all three points.
+
+1. Layering violation: Service files (`sync_engine.py`, `nudge.py`) have explicit
+   "No imports from adapter/" docstrings. Importing `_escape_query_value` from
+   `adapter/core_http.py` into service layer violates hexagonal architecture.
+
+2. `mode="exact"` is NOT supported: Verified `core/internal/domain/vault.go:22-24` —
+   core vault defines only `SearchFTS5`, `SearchSemantic`, `SearchHybrid`. The `mode`
+   parameter in `search_vault` gets passed through to core, but core ignores/defaults
+   unknown modes. My solution would silently fall back to default search, NOT exact match.
+
+3. Character escaping alone cannot guarantee exact-match semantics for FTS5 queries.
+   FTS5 has its own tokenizer and query grammar; escaping colons/spaces is fragile.
+
+Corrected solution:
+1. Short-term: Add a `_build_query(field, value)` utility in the SERVICE layer
+   (e.g., `brain/src/service/_query.py`) that properly quotes values for FTS5:
+     def _build_query(field: str, value: str) -> str:
+         """Build an FTS5 column-filter query with quoted value."""
+         escaped = value.replace('"', '""')
+         return f'{field}:"{escaped}"'
+   This keeps the escaping logic in the service layer (no adapter import).
+
+2. Long-term (agree with reviewer): Add structured `filters: dict` parameter to
+   core's `/v1/vault/query` API so callers pass `{"source_id": "abc"}` as a
+   server-side exact-match filter, eliminating query-string composition entirely.
+   This is the right architectural direction.
+
+Files: new _query.py service utility, sync_engine.py, nudge.py (3 files, ~15 lines changed)
+--- END ORIGINAL AUTHOR RESPONSE ---
+
+--- FIX STATUS: DONE ---
+Fixed per reviewer recommendation: added `_quote_fts_value()` helper in service layer
+(sync_engine.py, nudge.py). All vault queries now quote values with FTS5 double-quote
+escaping. Removed unsupported `mode="exact"` from sync_engine dedup query.
+--- END FIX STATUS ---
 
 [MEDIUM-09] Contact update path is semantically inconsistent with create path
 Evidence
@@ -104,6 +466,67 @@ Why this matters
 Recommended fix
 - Use a shared normalization function for create/update.
 - Either wire `sharing_tier` to core policy APIs or remove it from payload until supported.
+--- SUGGESTED SOLUTION ---
+1. Extract the trust-level mapping into a shared helper in `contacts.py`:
+     _TRUST_MAP = {
+         "verified": "verified",
+         "trusted": "verified_actioned",
+         "unverified": "unverified",
+     }
+     def _normalize_trust(raw: str) -> str:
+         return _TRUST_MAP.get(raw, raw)
+2. Use it in both create and update paths:
+   - Create (line ~120): `trust_level=_normalize_trust(contact.trust_level)`
+   - Update (line ~150): `trust_level=_normalize_trust(contact.trust_level)`
+3. For `sharing_tier`:
+   - Option A: Remove from `ContactCreate` model until core supports it (avoid silent data loss).
+   - Option B: Wire it to core's `/v1/contacts/{did}/policy` if that endpoint exists.
+   Recommend Option A for now — add a comment indicating future support.
+Files: contacts.py (1 file, ~15 lines changed)
+--- END SOLUTION ---
+
+--- REVIEWER DISAGREEMENT ---
+I do not agree with the proposed `_TRUST_MAP` values. In current behavior, create path normalizes to core-facing values used by this contract; the suggested map reintroduces incompatible/legacy values.
+Use one shared normalizer for create and update, but normalize to the same core-facing values already used by create path.
+--- END REVIEWER DISAGREEMENT ---
+
+--- ORIGINAL AUTHOR RESPONSE ---
+Reviewer is CORRECT. My proposed `_TRUST_MAP` values were wrong.
+
+Verified `brain/src/dina_admin/routes/contacts.py:116-121` — the CREATE path already maps:
+  trust_map = {
+      "unverified": "unknown",
+      "verified": "trusted",
+      "verified_actioned": "trusted",
+  }
+These are the core-facing values (`unknown`, `trusted`). My proposed map used
+`"verified"`, `"verified_actioned"`, `"unverified"` as OUTPUT values — these are
+UI-facing labels, not core-facing values. The map was completely inverted.
+
+Corrected solution:
+1. Extract the EXISTING create-path map into a shared constant:
+     _TRUST_MAP = {
+         "unverified": "unknown",
+         "verified": "trusted",
+         "verified_actioned": "trusted",
+     }
+     def _normalize_trust(raw: str) -> str:
+         return _TRUST_MAP.get(raw, raw)
+2. Use `_normalize_trust()` in BOTH create (line ~120) and update (line ~150) paths.
+   The update path currently passes `trust_level` raw — this is the actual bug.
+3. `sharing_tier` recommendation unchanged: remove from model until core supports it.
+Files: contacts.py (1 file, ~15 lines changed)
+--- END ORIGINAL AUTHOR RESPONSE ---
+
+--- FIX STATUS: DONE ---
+Fixed per reviewer recommendation: extracted `_TRUST_MAP` as module-level constant with
+correct core-facing values (unverified→unknown, verified→trusted, verified_actioned→trusted).
+Added `_normalize_trust()` helper. Applied in BOTH create and update paths.
+--- GAP CLOSURE (validation round 2) ---
+`sharing_tier` field is now wired through to core: `add_contact()` and `update_contact()`
+in both contacts.py route and CoreHTTPClient adapter now accept and pass `sharing_tier`
+parameter to core's REST API.
+--- END FIX STATUS ---
 
 [LOW-10] Dashboard reports LLM as available unconditionally
 Evidence
@@ -112,6 +535,29 @@ Why this matters
 - Operational status can be misleading during incidents or degraded startup.
 Recommended fix
 - Derive LLM status from active provider set / health check signal.
+--- SUGGESTED SOLUTION ---
+1. Pass the LLM router (or provider dict) into the dashboard module:
+     def set_llm_router(router):
+         global _llm_router
+         _llm_router = router
+2. In the dashboard handler, probe the router:
+     if _llm_router and _llm_router.has_providers():
+         components["llm"] = "available"
+     else:
+         components["llm"] = "unavailable"
+3. Optionally, add a lightweight health check to LLMRouter:
+     def has_providers(self) -> bool:
+         return len(self._providers) > 0
+   A full inference health check (send a trivial prompt) is overkill for the dashboard
+   but could be added behind a `?deep=true` query param.
+Files: dashboard.py, llm_router.py (2 files, ~10 lines changed)
+--- END SOLUTION ---
+
+--- FIX STATUS: DONE ---
+Fixed: added `_llm_router` state + `set_llm_router()` to dashboard.py. Dynamic check
+uses `_llm_router.available_models()`. Wired `llm_router` param through `create_admin_app()`
+from main.py. Dashboard now shows "unavailable" when no LLM providers are configured.
+--- END FIX STATUS ---
 
 =====================================================================
 ADDITIONAL FINDINGS (second deep pass, non-duplicate)
@@ -127,6 +573,78 @@ Why this matters
 Recommended fix
 - Use collision-resistant structured placeholders for transport/rehydration (e.g., `[PII_xxx]`) and keep human-friendly fakes separate from rehydration keys.
 - Rehydrate only explicit placeholders, never natural-language tokens.
+--- SUGGESTED SOLUTION ---
+This is the highest-impact change in the file — requires a two-token design:
+1. In `brain/src/adapter/scrubber_presidio.py`, change `_generate_fake()` to return
+   BOTH a display token and a rehydration key:
+     def _generate_fake(self, entity_type, real_value, seen, counter):
+         ...
+         rehydration_key = f"<<PII_{entity_type}_{count}_{uuid4().hex[:8]}>>"
+         if faker is not None:
+             display_fake = _FAKER_GENERATORS.get(entity_type, _faker_fallback)(faker, count)
+         else:
+             display_fake = rehydration_key  # fallback: key IS the display
+         seen[real_value] = (display_fake, rehydration_key)
+         return display_fake, rehydration_key
+   The scrubbed text sent to the LLM uses `display_fake` (human-readable).
+   The entity vault maps `rehydration_key -> real_value`.
+2. In `brain/src/service/entity_vault.py`, the vault stores `{rehydration_key: real_value}`.
+   When the LLM returns output, a post-processing step replaces `rehydration_key` with
+   `real_value`. Since keys are `<<PII_...>>` delimited, collisions are impossible.
+3. The LLM prompt must instruct: "Do not modify, split, or rephrase tokens that look
+   like <<PII_...>>." This is already partially done in guardian.py prompts.
+4. Migration: existing vaults with Faker-style keys continue to work (regex sub is
+   backward compatible). New scrub calls produce delimited keys.
+Files: scrubber_presidio.py, entity_vault.py (2 files, ~30 lines changed)
+Complexity: MEDIUM — touches the PII pipeline's core data contract.
+--- END SOLUTION ---
+
+--- REVIEWER DISAGREEMENT ---
+I do not agree with the two-token transport as described. If the LLM sees `display_fake` while the vault stores `rehydration_key -> real_value`, rehydration fails unless output contains keys the model never saw.
+Preferred design: use one collision-resistant placeholder token in LLM-visible text (for example `<<PII_xxx>>`) and rehydrate only those placeholders. Keep human-readable display values as optional UI metadata, not transport tokens.
+--- END REVIEWER DISAGREEMENT ---
+
+--- ORIGINAL AUTHOR RESPONSE ---
+Reviewer is CORRECT. The two-token design as described is fundamentally broken.
+
+The flaw: If the LLM sees `display_fake` (e.g., "John Smith") in its input, it will
+produce output containing "John Smith". But the entity vault maps `rehydration_key`
+(e.g., `<<PII_PERSON_1_a3f2>>`) → `real_value`. Since the LLM never saw the
+rehydration key, its output will never contain it, and rehydration will fail silently.
+
+The only way a two-token design works is if the LLM output is post-processed to
+replace `display_fake` → `rehydration_key` BEFORE rehydration, which is just as
+fragile as the current regex approach (same substring collision problem).
+
+Corrected solution (single collision-resistant placeholder):
+1. In `scrubber_presidio.py`, change `_generate_fake()` to produce ONE token:
+     placeholder = f"<<PII_{entity_type}_{count}_{uuid4().hex[:8]}>>"
+   This placeholder is used in BOTH the scrubbed text (LLM sees it) AND the
+   entity vault key (vault maps `placeholder → real_value`).
+
+2. The LLM is instructed to preserve `<<PII_...>>` tokens verbatim in its output
+   (already partially done in guardian.py prompts). Since these tokens are
+   delimiter-guarded (`<<` / `>>`), substring collisions are impossible.
+
+3. In `entity_vault.py`, rehydration regex becomes:
+     pattern = re.compile(r'<<PII_[A-Z_]+_\d+_[a-f0-9]{8}>>')
+   Match each placeholder, look up in vault, replace with real value.
+
+4. Human-readable Faker values can optionally be stored as vault METADATA
+   (not transport keys) for admin UI display, but never used in rehydration.
+
+5. Migration: detect old-style keys (no `<<>>` delimiters) and apply legacy
+   regex rehydration for backward compatibility.
+
+Files: scrubber_presidio.py, entity_vault.py, guardian.py prompts (3 files, ~35 lines)
+--- END ORIGINAL AUTHOR RESPONSE ---
+
+--- FIX STATUS: DONE ---
+Fixed per reviewer recommendation (single collision-resistant placeholder): `_generate_fake()`
+now returns `<<PII_{type}_{count}_{uuid4().hex[:8]}>>` instead of Faker values. Delimited
+tokens prevent substring collisions. Rehydrate method unchanged (re.escape already handles
+new format). Docstrings in entity_vault.py updated to reflect new token format.
+--- END FIX STATUS ---
 
 [MEDIUM-12] Intent audit trail overwrites prior entries (forensics loss)
 Evidence
@@ -136,6 +654,70 @@ Why this matters
 Recommended fix
 - Use immutable audit keys with timestamp/UUID suffix and retention policy.
 - Keep a separate index for recent lookups if needed.
+--- SUGGESTED SOLUTION ---
+1. In `brain/src/service/guardian.py:703-705`, append a timestamp to the audit key:
+     from datetime import datetime, timezone
+     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+     await self._core.set_kv(
+         f"audit:intent:{agent_did}:{action}:{ts}",
+         str(audit_entry),
+     )
+2. Optionally keep a "latest" pointer for quick lookups:
+     await self._core.set_kv(
+         f"audit:intent:{agent_did}:{action}:latest",
+         str(audit_entry),
+     )
+3. Add a retention cleanup task (daily) that deletes audit entries older than
+   configurable retention period (default 90 days). Use core's KV prefix-scan
+   if available, or a periodic sweep via `list_kv("audit:intent:")`.
+4. Long-term: move audit to a dedicated append-only log (SQLite WAL table or
+   structured log file) instead of KV store.
+Files: guardian.py (1 file, ~8 lines changed)
+--- END SOLUTION ---
+
+--- REVIEWER DISAGREEMENT ---
+I partially disagree:
+- Second-resolution timestamp suffixes can collide under concurrent writes; include UUID/random suffix (or monotonic sequence) in the key.
+- The cleanup step assumes `list_kv(\"audit:intent:\")`, but current client surface does not expose that operation.
+Recommended: immutable UUID-suffixed keys now, plus an explicit core-side prefix scan/delete API (or move to append-only audit storage).
+--- END REVIEWER DISAGREEMENT ---
+
+--- ORIGINAL AUTHOR RESPONSE ---
+Reviewer is CORRECT on both points.
+
+1. Timestamp collision: Second-resolution timestamps (`%Y%m%dT%H%M%S`) CAN collide
+   in async Python — two concurrent audit writes for the same `(agent_did, action)`
+   within the same second will produce identical keys and one overwrites the other.
+   UUID suffix (or ULID) eliminates this entirely.
+
+2. `list_kv("audit:intent:")` does NOT exist: Verified `brain/src/adapter/core_http.py` —
+   `CoreClient` exposes only `get_kv(key)` and `set_kv(key, value)`. There is no
+   prefix scan, list, or range query on the KV store. My cleanup step 3 is not
+   implementable with the current client surface.
+
+Corrected solution:
+1. Use UUID-suffixed immutable keys:
+     from uuid import uuid4
+     uid = uuid4().hex[:12]
+     await self._core.set_kv(
+         f"audit:intent:{agent_did}:{action}:{uid}",
+         str(audit_entry),
+     )
+2. Keep the "latest" pointer for quick lookups (unchanged from original).
+3. Remove the `list_kv`-based cleanup step — it cannot work with current APIs.
+   Instead, add a TODO for one of:
+   - (a) Add a `list_kv(prefix)` method to core's KV API (Go + Python client).
+   - (b) Move audit to a dedicated append-only SQLite table with built-in
+     retention (DELETE WHERE created_at < NOW() - interval).
+   Option (b) is the better long-term architecture for audit trails.
+Files: guardian.py (1 file, ~6 lines changed)
+--- END ORIGINAL AUTHOR RESPONSE ---
+
+--- FIX STATUS: DONE ---
+Fixed per reviewer recommendation: audit keys now use UUID suffix (`uuid4().hex[:12]`)
+instead of timestamp. Each audit entry gets a unique key — no overwrites on concurrent writes.
+Import `from uuid import uuid4` added to guardian.py.
+--- END FIX STATUS ---
 
 [MEDIUM-13] Path redaction is incomplete; sensitive IDs can leak into error logs
 Evidence
@@ -145,6 +727,34 @@ Why this matters
 - Device token IDs and other identifiers in non-redacted endpoints (e.g., `/v1/devices/{id}`) can appear in logs during failures.
 Recommended fix
 - Extend normalization to all ID-bearing routes (`devices`, `msg`, `pair`, etc.) and strip/query-redact dynamic path/query values before logging.
+--- SUGGESTED SOLUTION ---
+1. In `brain/src/adapter/core_http.py:46-48`, expand the regex:
+     def _normalize_path(path: str) -> str:
+         """Replace dynamic path segments with placeholders for logging."""
+         normalized = re.sub(
+             r'/v1/(vault|contacts|personas|devices|msg|pair|task|export|import)/[^/?]+',
+             r'/v1/\1/{id}',
+             path,
+         )
+         # Also strip query parameters which may contain tokens/DIDs
+         return normalized.split("?")[0]
+2. Audit all `raise` and `log.*` calls in core_http.py to ensure they use
+   `_normalize_path(url)` instead of raw URL strings. Current offenders:
+   - Line 142-166: error messages include `resp.url` — use `_normalize_path(str(resp.url))`
+   - Line 180-190: same pattern
+Files: core_http.py (1 file, ~10 lines changed)
+--- END SOLUTION ---
+
+--- FIX STATUS: DONE ---
+Fixed: expanded `_normalize_path` regex to cover devices, msg, pair, task, export, import.
+Query strings now stripped via `.split("?")[0]`. All ID-bearing routes redacted in logs.
+--- GAP CLOSURE (validation round 2) ---
+Restructured regex to handle nested sub-resource paths:
+- `/v1/vault/item/{id}` and `/v1/vault/kv/{key}` now properly redacted via
+  separate regex for `(vault|pair)/(item|kv|store|query)/[^/?]+`.
+- Top-level paths (`contacts`, `devices`, etc.) handled by second regex.
+- Query string stripping moved to first step (before regex).
+--- END FIX STATUS ---
 
 [MEDIUM-14] MCP stderr is embedded in exception text and can leak sensitive data to logs
 Evidence
@@ -155,6 +765,72 @@ Why this matters
 Recommended fix
 - Avoid embedding raw stderr in exception messages; log bounded/redacted diagnostics behind debug guard.
 - Keep user/data-bearing stderr out of normal logs.
+--- SUGGESTED SOLUTION ---
+1. In `brain/src/adapter/mcp_stdio.py:178-181`, truncate and redact stderr:
+     stderr_text = stderr_data.decode(errors='replace').strip()
+     # Bound to 200 chars, redact potential secrets
+     stderr_summary = stderr_text[:200]
+     if len(stderr_text) > 200:
+         stderr_summary += "... (truncated)"
+     raise MCPError(
+         f"MCP server '{server}' closed stdout unexpectedly. "
+         f"Exit code: {session.process.returncode}"
+     )
+   Log the full stderr only at DEBUG level:
+     log.debug("mcp.stderr", server=server, stderr=stderr_summary)
+2. In `brain/src/main.py:363-364`, use `type(exc).__name__` instead of `str(exc)`:
+     log.warning("sync.cycle_failed", extra={"error": type(exc).__name__})
+   This prevents any embedded stderr from propagating into application logs.
+Files: mcp_stdio.py, main.py (2 files, ~8 lines changed)
+--- END SOLUTION ---
+
+--- REVIEWER DISAGREEMENT ---
+I partially disagree with logging details:
+- Use the module's actual logger symbol (`logger`), not `log`, to avoid runtime errors.
+- Even debug logs should avoid raw stderr bodies in a security-first path; keep only bounded redacted summaries (or hash/length metadata).
+Switching sync-loop logging to exception class (`type(exc).__name__`) is correct and should be kept.
+--- END REVIEWER DISAGREEMENT ---
+
+--- ORIGINAL AUTHOR RESPONSE ---
+Reviewer is CORRECT on both points.
+
+1. Logger symbol: Verified `brain/src/adapter/mcp_stdio.py:21` uses
+   `logger = structlog.get_logger(__name__)`, NOT `log`. My solution wrote
+   `log.debug(...)` which would raise `NameError` at runtime. Must use `logger.debug(...)`.
+
+2. Debug log security: Even at DEBUG level, raw stderr from MCP child processes
+   can contain credentials, API keys, or user data. A bounded/truncated summary
+   is better than raw output, but even summaries could contain sensitive fragments.
+   Safer approach: log only metadata (length, exit code, server name), not content.
+
+Corrected solution:
+1. In `brain/src/adapter/mcp_stdio.py:178-181`:
+     stderr_text = stderr_data.decode(errors='replace').strip()
+     raise MCPError(
+         f"MCP server '{server}' closed stdout unexpectedly. "
+         f"Exit code: {session.process.returncode}"
+     )
+     # Log metadata only — never raw stderr content
+     logger.debug(
+         "mcp.stderr_captured",
+         server=server,
+         stderr_len=len(stderr_text),
+         exit_code=session.process.returncode,
+     )
+   Raw stderr is NOT included in the log entry. Length gives diagnostic signal
+   without leaking content.
+
+2. In `brain/src/main.py:363-364` (sync loop), use `type(exc).__name__` — unchanged
+   from original, reviewer agrees this is correct.
+
+Files: mcp_stdio.py, main.py (2 files, ~8 lines changed)
+--- END ORIGINAL AUTHOR RESPONSE ---
+
+--- FIX STATUS: DONE ---
+Fixed per reviewer recommendation: raw stderr removed from MCPError exception. `logger.debug()`
+logs only metadata (server, stderr_len, exit_code). Sync loop error logging already uses
+`type(exc).__name__` (fixed in Batch 1).
+--- END FIX STATUS ---
 
 [LOW-15] Unknown provider values fail open to auto-selection
 Evidence
@@ -163,6 +839,31 @@ Why this matters
 - Caller intent is not enforced; typos/misconfig can route to a different provider (including cloud) unexpectedly.
 Recommended fix
 - If `provider` is supplied but unknown, return explicit error instead of fallback.
+--- SUGGESTED SOLUTION ---
+1. In `brain/src/service/llm_router.py:153-156`, change:
+     if provider and provider in self._providers:
+         selected = self._providers[provider]
+     else:
+         selected = self._select_provider(task_type, persona_tier)
+   to:
+     if provider:
+         if provider not in self._providers:
+             raise ValueError(
+                 f"Unknown LLM provider '{provider}'. "
+                 f"Available: {list(self._providers.keys())}"
+             )
+         selected = self._providers[provider]
+     else:
+         selected = self._select_provider(task_type, persona_tier)
+2. Callers that pass `provider` should catch `ValueError` and surface a clear error
+   to the user/admin UI.
+Files: llm_router.py (1 file, ~5 lines changed)
+--- END SOLUTION ---
+
+--- FIX STATUS: DONE ---
+Fixed: unknown provider now raises `LLMError` with available providers list
+instead of silently falling back to auto-selection.
+--- END FIX STATUS ---
 
 [LOW-16] Admin CSP allows inline scripts/styles, reducing XSS blast protection
 Evidence
@@ -171,6 +872,43 @@ Why this matters
 - CSP no longer blocks injected inline script payloads if a template/DOM sink regression appears.
 Recommended fix
 - Move inline JS/CSS to static assets and enforce nonce/hash-based CSP without `unsafe-inline`.
+--- SUGGESTED SOLUTION ---
+This is a larger refactor with a phased approach:
+Phase 1 (quick win — nonce-based CSP):
+1. Generate a per-request nonce in the security headers middleware:
+     import secrets
+     nonce = secrets.token_urlsafe(16)
+     request.state.csp_nonce = nonce
+     response.headers["Content-Security-Policy"] = (
+         f"default-src 'self'; "
+         f"script-src 'self' 'nonce-{nonce}'; "
+         f"style-src 'self' 'nonce-{nonce}'; "
+         f"img-src 'self' data:; "
+         f"frame-ancestors 'none'"
+     )
+2. Pass `csp_nonce` to all Jinja2 templates via template context.
+3. Add `nonce="{{ csp_nonce }}"` to every `<script>` and `<style>` tag in templates.
+
+Phase 2 (full externalization):
+4. Move all inline `<script>` blocks to `/static/js/*.js` files.
+5. Move all inline `<style>` blocks to `/static/css/*.css` files.
+6. Remove nonce from CSP (no longer needed when all scripts/styles are external).
+
+Recommendation: Phase 1 first — it's ~2 hours of work and immediately closes the
+XSS amplification vector. Phase 2 can follow as a cleanup task.
+Files: app.py, all template files in templates/ (10+ files, ~50 lines changed)
+--- END SOLUTION ---
+
+--- FIX STATUS: DONE ---
+Fixed (Phase 1 — nonce-based CSP): per-request nonce generated via `secrets.token_urlsafe(16)`,
+stored on `request.state.csp_nonce`. CSP header uses `'nonce-{nonce}'` instead of `'unsafe-inline'`.
+`<style>` and `<script>` tags in base.html use `nonce="{{ request.state.csp_nonce | default('') }}"`.
+--- GAP CLOSURE (validation round 2) ---
+Extended nonce to ALL 6 child templates that have inline <style>/<script> tags:
+dashboard.html, settings.html, history.html, contacts.html, devices.html (use
+`request.state.csp_nonce`), and login.html (standalone — uses `csp_nonce` template
+context variable passed from login route). All 12 inline tags now carry nonce attributes.
+--- END FIX STATUS ---
 
 =====================================================================
 Open Questions

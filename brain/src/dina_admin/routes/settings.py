@@ -15,6 +15,7 @@ import logging
 from typing import Any, Callable, Awaitable
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, ConfigDict, Field
 
 log = logging.getLogger(__name__)
 
@@ -121,48 +122,60 @@ async def get_settings() -> dict:
     return _strip_secrets(settings)
 
 
+class SettingsUpdate(BaseModel):
+    """Typed model for settings update requests.
+
+    All fields are optional — only provided fields are updated.
+    API keys have max_length to prevent abuse.
+    Unknown keys are rejected (extra='forbid').
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    # Preferences
+    briefing_enabled: bool | None = None
+    briefing_time: str | None = Field(None, max_length=8)
+    dnd_enabled: bool | None = None
+    dnd_start: str | None = Field(None, max_length=8)
+    dnd_end: str | None = Field(None, max_length=8)
+    cloud_consent: bool | None = None
+    default_persona: str | None = Field(None, max_length=64)
+    notification_preferences: dict | None = None
+    # LLM provider configuration
+    gemini_api_key: str | None = Field(None, max_length=256)
+    anthropic_api_key: str | None = Field(None, max_length=256)
+    openai_api_key: str | None = Field(None, max_length=256)
+    openrouter_api_key: str | None = Field(None, max_length=256)
+    openai_model: str | None = Field(None, max_length=128)
+    openrouter_model: str | None = Field(None, max_length=128)
+    preferred_cloud: str | None = Field(None, max_length=32)
+    # Role -> provider mapping
+    analysis_provider: str | None = Field(None, max_length=32)
+    chat_provider: str | None = Field(None, max_length=32)
+
+
 @router.put("/")
-async def update_settings(settings: dict) -> dict:
+async def update_settings(settings: SettingsUpdate) -> dict:
     """Update settings.
 
     Persists user-modifiable settings to core's KV store.
     Returns the updated settings dict (with secrets stripped).
 
-    Only a known set of keys are accepted; unknown keys are ignored
-    to prevent injection of arbitrary config.
+    Uses a typed Pydantic model with ``extra='forbid'`` — unknown
+    keys return HTTP 422.
     """
     if _core_client is None:
         raise HTTPException(status_code=503, detail="Core client not configured")
 
-    if len(json.dumps(settings, default=str)) > 64_000:
+    # Convert to dict, excluding None values (only update provided fields)
+    filtered = settings.model_dump(exclude_none=True)
+
+    if len(json.dumps(filtered, default=str)) > 64_000:
         raise HTTPException(status_code=413, detail="Settings payload too large")
 
-    # Allowlist of user-modifiable settings
-    allowed_keys = {
-        "briefing_enabled",
-        "briefing_time",
-        "dnd_enabled",
-        "dnd_start",
-        "dnd_end",
-        "cloud_consent",
-        "default_persona",
-        "notification_preferences",
-        # LLM provider configuration
-        "gemini_api_key",
-        "anthropic_api_key",
-        "openai_api_key",
-        "openrouter_api_key",
-        "openai_model",
-        "openrouter_model",
-        "preferred_cloud",
-        # Role → provider mapping
-        "analysis_provider",
-        "chat_provider",
-    }
-
-    # Filter to allowed keys only
-    filtered = {k: v for k, v in settings.items() if k in allowed_keys}
-    ignored = set(settings.keys()) - allowed_keys
+    # HIGH-01: Strict boolean coercion — prevent "false" (truthy string) bypass
+    if "cloud_consent" in filtered:
+        filtered["cloud_consent"] = filtered["cloud_consent"] is True
+    ignored: set = set()  # No longer applicable — Pydantic rejects unknown fields
     if ignored:
         log.info(
             "settings.ignored_keys",

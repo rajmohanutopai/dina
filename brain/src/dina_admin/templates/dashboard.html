@@ -4,7 +4,7 @@
 {% block page_title %}Dashboard{% endblock %}
 
 {% block content %}
-<style>
+<style nonce="{{ request.state.csp_nonce | default('') }}">
     /* ── Stat Cards ── */
     .stat-row {
         display: flex;
@@ -308,7 +308,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ request.state.csp_nonce | default('') }}">
     // ── Load dashboard data ──
     async function loadDashboard() {
         const resp = await apiFetch('/admin/status');

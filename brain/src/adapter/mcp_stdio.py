@@ -175,9 +175,17 @@ class MCPStdioClient:
                         )
                     except asyncio.TimeoutError:
                         pass
+                # MEDIUM-14: Log metadata only — never raw stderr content
+                stderr_text = stderr_data.decode(errors='replace').strip()
+                logger.debug(
+                    "mcp.stderr_captured",
+                    server=server,
+                    stderr_len=len(stderr_text),
+                    exit_code=session.process.returncode,
+                )
                 raise MCPError(
                     f"MCP server '{server}' closed stdout unexpectedly. "
-                    f"stderr: {stderr_data.decode(errors='replace').strip()}"
+                    f"Exit code: {session.process.returncode}"
                 )
 
         try:

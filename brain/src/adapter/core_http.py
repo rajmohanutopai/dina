@@ -44,8 +44,29 @@ logger = structlog.get_logger(__name__)
 
 
 def _normalize_path(path: str) -> str:
-    """Replace dynamic path segments with placeholders for logging."""
-    return re.sub(r'/v1/(vault|contacts|personas)/[^/?]+', r'/v1/\1/{id}', path)
+    """Replace dynamic path segments with placeholders for logging.
+
+    Handles nested sub-resource paths like:
+        /v1/vault/item/{id}  -> /v1/vault/item/{id}
+        /v1/vault/kv/{key}   -> /v1/vault/kv/{id}
+        /v1/contacts/{did}   -> /v1/contacts/{id}
+        /v1/devices/{id}     -> /v1/devices/{id}
+    """
+    # First strip query string
+    normalized = path.split("?")[0]
+    # Handle nested sub-resource paths: /v1/vault/item/{id}, /v1/vault/kv/{key}
+    normalized = re.sub(
+        r'/v1/(vault|pair)/(item|kv|store|query)/[^/?]+',
+        r'/v1/\1/\2/{id}',
+        normalized,
+    )
+    # Handle top-level resource paths: /v1/contacts/{did}, /v1/devices/{id}
+    normalized = re.sub(
+        r'/v1/(contacts|personas|devices|msg|task|export|import)/[^/?]+',
+        r'/v1/\1/{id}',
+        normalized,
+    )
+    return normalized
 
 
 # ---------------------------------------------------------------------------
@@ -353,24 +374,27 @@ class CoreHTTPClient:
         data = resp.json()
         return data if isinstance(data, list) else []
 
-    async def add_contact(self, did: str, name: str, trust_level: str = "unknown") -> dict:
+    async def add_contact(
+        self, did: str, name: str, trust_level: str = "unknown", sharing_tier: str = ""
+    ) -> dict:
         """POST /v1/contacts — add contact to core directory."""
-        resp = await self._request(
-            "POST",
-            "/v1/contacts",
-            json={"did": did, "name": name, "trust_level": trust_level},
-        )
+        body: dict[str, str] = {"did": did, "name": name, "trust_level": trust_level}
+        if sharing_tier:
+            body["sharing_tier"] = sharing_tier
+        resp = await self._request("POST", "/v1/contacts", json=body)
         return resp.json()
 
     async def update_contact(
-        self, did: str, *, name: str = "", trust_level: str = ""
+        self, did: str, *, name: str = "", trust_level: str = "", sharing_tier: str = ""
     ) -> dict:
-        """PUT /v1/contacts/{did} — update contact name/trust."""
+        """PUT /v1/contacts/{did} — update contact name/trust/sharing."""
         body: dict[str, str] = {}
         if name:
             body["name"] = name
         if trust_level:
             body["trust_level"] = trust_level
+        if sharing_tier:
+            body["sharing_tier"] = sharing_tier
         resp = await self._request("PUT", f"/v1/contacts/{did}", json=body)
         return resp.json()
 

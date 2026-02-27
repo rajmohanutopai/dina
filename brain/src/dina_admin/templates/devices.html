@@ -5,7 +5,7 @@
 {% block page_title %}Devices{% endblock %}
 
 {% block content %}
-<style>
+<style nonce="{{ request.state.csp_nonce | default('') }}">
     .page-header {
         display: flex;
         align-items: center;
@@ -349,7 +349,7 @@ python -m dina_cli identity show
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ request.state.csp_nonce | default('') }}">
 var _pairingCode = null;
 
 async function loadDevices() {

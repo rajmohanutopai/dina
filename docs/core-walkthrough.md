@@ -2,13 +2,13 @@
 
 ## Act I: Waking Up — The Composition Root
 
-Everything begins in a single file that contains zero business logic but orchestrates every actor in the system.
+Core orchestrates every actor in the system.
 
 <details>
 <summary><strong>Design Decision — Why Go for the Core?</strong></summary>
 <br>
 
-Dina's core is a long-running, always-on process that manages cryptographic keys, encrypted storage, and real-time WebSocket connections. Go was chosen over Rust (steeper learning curve, slower iteration), Node.js (single-threaded, GC pauses under crypto load, weaker type safety), and Python (too slow for the hot path — crypto and HTTP). Go gives us: a single static binary (no runtime dependencies), goroutines for cheap concurrency (ingress pipeline, outbox retry, sweeper — all run in parallel), a strong standard library (`net/http`, `crypto/ed25519`, `encoding/json`), and fast compilation for tight development loops. The Python brain sidecar handles LLM reasoning where Go would have no advantage.
+Dina's core is a long-running, always-on process that manages cryptographic keys, encrypted storage, and real-time WebSocket connections. Written in Go (due to its support of Crypto). The other two components are the brain and appview. The brain sidecar handles LLM reasoning (Python is the defacto language in AI). AppView (Reputation Graph, built on AT Proto) is written in TypeScript.
 
 </details>
 

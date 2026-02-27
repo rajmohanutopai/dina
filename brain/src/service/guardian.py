@@ -31,6 +31,7 @@ import json
 import re
 import traceback
 from typing import Any
+from uuid import uuid4
 
 import structlog
 
@@ -700,8 +701,9 @@ class GuardianLoop:
         try:
             agent_did = (intent.get("agent_did") or "unknown")[:100]
             action = re.sub(r'[^a-zA-Z0-9_.-]', '_', (intent.get("action") or "unknown"))[:50]
+            uid = uuid4().hex[:12]
             await self._core.set_kv(
-                f"audit:intent:{agent_did}:{action}",
+                f"audit:intent:{agent_did}:{action}:{uid}",
                 str(audit_entry),
             )
         except Exception:

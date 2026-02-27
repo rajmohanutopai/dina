@@ -11,6 +11,7 @@ from __future__ import annotations
 import collections
 import hmac
 import logging
+import ipaddress
 import os
 import secrets
 import time
@@ -20,25 +21,51 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 log = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_TRUSTED_PROXY = os.environ.get("DINA_TRUSTED_PROXY", "").lower() in ("1", "true", "yes")
+# MEDIUM-05: CIDR-based trusted proxy list (replaces boolean flag)
+_TRUSTED_CIDRS: list = []
+_raw_cidrs = os.environ.get("DINA_TRUSTED_PROXIES", "")
+if _raw_cidrs:
+    for _cidr in _raw_cidrs.split(","):
+        _cidr = _cidr.strip()
+        if _cidr:
+            _TRUSTED_CIDRS.append(ipaddress.ip_network(_cidr, strict=False))
 
 
 def _get_client_ip(request: Request) -> str:
-    """Extract client IP, respecting X-Forwarded-For when proxy is trusted."""
-    if _TRUSTED_PROXY:
-        xff = request.headers.get("x-forwarded-for", "")
-        if xff:
-            return xff.split(",")[0].strip()
-        real_ip = request.headers.get("x-real-ip", "")
-        if real_ip:
-            return real_ip.strip()
-    return request.client.host if request.client else "unknown"
+    """Extract client IP, respecting X-Forwarded-For when proxy is trusted.
+
+    Only trusts XFF if the direct connection (request.client.host) is from
+    a trusted proxy CIDR.  Walks XFF right-to-left and returns the first
+    non-trusted hop.
+    """
+    direct_ip = request.client.host if request.client else "unknown"
+    if not _TRUSTED_CIDRS:
+        return direct_ip
+    # MEDIUM-05: Verify the direct connection is from a trusted proxy
+    try:
+        direct_addr = ipaddress.ip_address(direct_ip)
+    except ValueError:
+        return direct_ip
+    if not any(direct_addr in net for net in _TRUSTED_CIDRS):
+        # Direct connection is not from a trusted proxy — ignore XFF
+        return direct_ip
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        parts = [p.strip() for p in xff.split(",")]
+        for ip_str in reversed(parts):
+            try:
+                addr = ipaddress.ip_address(ip_str)
+            except ValueError:
+                continue
+            if not any(addr in net for net in _TRUSTED_CIDRS):
+                return ip_str
+    return direct_ip
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
@@ -84,13 +111,15 @@ def get_csrf_token(session_id: str) -> str:
 
 class LoginRequest(BaseModel):
     """Login payload."""
-    token: str
+    token: str = Field(..., max_length=512)
 
 
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request) -> HTMLResponse:
     """Render the login page — no auth required."""
-    return templates.TemplateResponse(request, "login.html")
+    # Pass CSP nonce for standalone template (login.html doesn't extend base.html)
+    nonce = getattr(request.state, "csp_nonce", "")
+    return templates.TemplateResponse(request, "login.html", {"csp_nonce": nonce})
 
 
 @router.post("/login")

@@ -81,6 +81,45 @@ def create_brain_app(
         return response
 
     # ------------------------------------------------------------------
+    # MED-07: Body size limit (1 MiB)
+    # ------------------------------------------------------------------
+
+    _MAX_BODY_BYTES = 1 * 1024 * 1024
+
+    @app.middleware("http")
+    async def limit_body_size(request: Request, call_next):
+        if request.method in ("POST", "PUT", "PATCH"):
+            # MEDIUM-07: Pre-check Content-Length to reject before any read
+            cl = request.headers.get("content-length")
+            if cl is not None:
+                try:
+                    if int(cl) > _MAX_BODY_BYTES:
+                        from fastapi.responses import JSONResponse
+                        return JSONResponse(
+                            status_code=413,
+                            content={"detail": "Request body too large"},
+                        )
+                except ValueError:
+                    pass
+            # Streaming read with early cutoff — protects against chunked
+            # or missing Content-Length uploads that bypass the header check.
+            # We cache the result on request._body so downstream handlers
+            # (request.body(), request.json()) still work correctly.
+            chunks: list[bytes] = []
+            total = 0
+            async for chunk in request.stream():
+                total += len(chunk)
+                if total > _MAX_BODY_BYTES:
+                    from fastapi.responses import JSONResponse
+                    return JSONResponse(
+                        status_code=413,
+                        content={"detail": "Request body too large"},
+                    )
+                chunks.append(chunk)
+            request._body = b"".join(chunks)
+        return await call_next(request)
+
+    # ------------------------------------------------------------------
     # MED-14: Rate limiting on expensive endpoints
     # ------------------------------------------------------------------
 
@@ -92,7 +131,8 @@ def create_brain_app(
 
     @app.middleware("http")
     async def rate_limit_reasoning(request: Request, call_next):
-        if request.url.path in ("/v1/reason", "/v1/pii/scrub"):
+        _path = request.scope.get("path", request.url.path)
+        if _path in ("/v1/reason", "/v1/pii/scrub"):
             key = request.headers.get("authorization", request.client.host if request.client else "unknown")
             if not _reason_limiter.allow(key):
                 from fastapi.responses import JSONResponse

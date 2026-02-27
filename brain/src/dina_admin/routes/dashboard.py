@@ -26,6 +26,7 @@ router = APIRouter()
 
 _core_client: Any = None
 _config: Any = None
+_llm_router: Any = None
 
 
 def set_dependencies(core_client: Any, config: Any) -> None:
@@ -33,6 +34,12 @@ def set_dependencies(core_client: Any, config: Any) -> None:
     global _core_client, _config
     _core_client = core_client
     _config = config
+
+
+def set_llm_router(llm_router: Any) -> None:
+    """Set the LLM router for dynamic availability checks (LOW-10)."""
+    global _llm_router
+    _llm_router = llm_router
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +130,10 @@ async def system_status() -> dict:
         components["core"] = "not_configured"
 
     # LLM availability
-    components["llm"] = "available"
+    if _llm_router and _llm_router.available_models():
+        components["llm"] = "available"
+    else:
+        components["llm"] = "unavailable"
     components["pds"] = "not_configured"
 
     # Stats: vault items

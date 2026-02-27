@@ -74,7 +74,10 @@ async def scrub_pii(request: ScrubRequest) -> ScrubResponse:
     """
     if _scrubber is None:
         log.warning("pii.scrub.no_scrubber")
-        return ScrubResponse(scrubbed=request.text, entities=[])
+        raise HTTPException(
+            status_code=503,
+            detail="PII scrubber unavailable",
+        )
 
     try:
         scrubbed, entities = await asyncio.to_thread(_scrubber.scrub, request.text)

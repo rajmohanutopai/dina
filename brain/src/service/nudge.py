@@ -29,6 +29,11 @@ import structlog
 
 from ..port.core_client import CoreClient
 
+
+def _quote_fts_value(value: str) -> str:
+    """Quote a value for FTS5 column-filter queries (MEDIUM-08)."""
+    return '"' + value.replace('"', '""') + '"'
+
 log = structlog.get_logger(__name__)
 
 # Patterns that indicate a pending promise in message text.
@@ -251,7 +256,7 @@ class NudgeAssembler:
         try:
             results = await self._core.search_vault(
                 persona_id,
-                f"contact:{contact_did}",
+                f"contact:{_quote_fts_value(contact_did)}",
                 mode="hybrid",
             )
             return results or []
@@ -270,7 +275,7 @@ class NudgeAssembler:
         try:
             results = await self._core.search_vault(
                 persona_id,
-                f"type:relationship_note contact:{contact_did}",
+                f'type:relationship_note contact:{_quote_fts_value(contact_did)}',
                 mode="hybrid",
             )
             return results or []
@@ -284,7 +289,7 @@ class NudgeAssembler:
         try:
             results = await self._core.search_vault(
                 persona_id,
-                f"type:event contact:{contact_did}",
+                f'type:event contact:{_quote_fts_value(contact_did)}',
                 mode="hybrid",
             )
             return results or []

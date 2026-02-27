@@ -14,7 +14,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 log = logging.getLogger(__name__)
 
@@ -35,9 +35,9 @@ class PairCompleteRequest(BaseModel):
     multibase format (e.g. z6MkhaXg...) for key-based auth.
     """
 
-    code: str
-    device_name: str
-    public_key_multibase: str | None = None
+    code: str = Field(..., max_length=64)
+    device_name: str = Field(..., max_length=128)
+    public_key_multibase: str | None = Field(None, max_length=256)
 
 
 # ---------------------------------------------------------------------------

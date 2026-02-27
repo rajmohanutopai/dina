@@ -5,7 +5,7 @@
 {% block page_title %}Settings{% endblock %}
 
 {% block content %}
-<style>
+<style nonce="{{ request.state.csp_nonce | default('') }}">
     .settings-section {
         margin-bottom: 24px;
     }
@@ -525,7 +525,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ request.state.csp_nonce | default('') }}">
 // Map provider key to the API key field name in the backend
 var _providerKeyMap = {
     'gemini': 'gemini_api_key',

@@ -212,16 +212,16 @@ class EntityVaultService:
             Example::
 
                 [
-                    {"type": "PERSON", "value": "Dr. Sharma", "token": "[PERSON_1]"},
-                    {"type": "ORG", "value": "Apollo Hospital", "token": "[ORG_1]"},
+                    {"type": "PERSON", "value": "Dr. Sharma", "token": "<<PII_PERSON_1_a3f2e1b0>>"},
+                    {"type": "ORG", "value": "Apollo Hospital", "token": "<<PII_ORG_1_b4c5d6e7>>"},
                 ]
 
         Returns
         -------
         dict
-            Mapping from token string to original value::
+            Mapping from placeholder token to original value::
 
-                {"[PERSON_1]": "Dr. Sharma", "[ORG_1]": "Apollo Hospital"}
+                {"<<PII_PERSON_1_a3f2e1b0>>": "Dr. Sharma", "<<PII_ORG_1_b4c5d6e7>>": "Apollo Hospital"}
         """
         vault: dict[str, str] = {}
         for entity in entities:
@@ -237,14 +237,14 @@ class EntityVaultService:
         Parameters
         ----------
         text:
-            The LLM response containing tokens like ``[PERSON_1]``.
+            The LLM response containing tokens like ``<<PII_PERSON_1_a3f2e1b0>>``.
         vault:
             The ephemeral mapping produced by ``create_vault``.
 
         Returns
         -------
         str
-            Text with all tokens replaced by the original PII values.
+            Text with all placeholders replaced by the original PII values.
         """
         if not vault:
             return text

@@ -14,7 +14,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 log = logging.getLogger(__name__)
 
@@ -36,15 +36,28 @@ class ContactCreate(BaseModel):
         open | restricted | locked.
     """
 
-    did: str
-    name: str
-    trust_level: str = "unverified"
-    sharing_tier: str = "open"
+    did: str = Field(..., max_length=256)
+    name: str = Field(..., max_length=128)
+    trust_level: str = Field("unverified", max_length=32)
+    sharing_tier: str = Field("open", max_length=32)
 
 
 # ---------------------------------------------------------------------------
 # State holder — injected by create_admin_app
 # ---------------------------------------------------------------------------
+
+# MEDIUM-09: Shared trust-level normalizer for create and update paths.
+_TRUST_MAP = {
+    "unverified": "unknown",
+    "verified": "trusted",
+    "verified_actioned": "trusted",
+}
+
+
+def _normalize_trust(raw: str) -> str:
+    """Map UI trust labels to core-facing values."""
+    return _TRUST_MAP.get(raw, raw)
+
 
 _core_client: Any = None
 
@@ -112,17 +125,12 @@ async def add_contact(contact: ContactCreate) -> dict:
     if _core_client is None:
         raise HTTPException(status_code=503, detail="Core client not configured")
 
-    # Map admin UI trust levels to core's values (blocked/unknown/trusted)
-    trust_map = {
-        "unverified": "unknown",
-        "verified": "trusted",
-        "verified_actioned": "trusted",
-    }
-    core_trust = trust_map.get(contact.trust_level, contact.trust_level)
+    core_trust = _normalize_trust(contact.trust_level)
 
     try:
         await _core_client.add_contact(
             contact.did, contact.name, core_trust,
+            sharing_tier=contact.sharing_tier,
         )
         log.info("contacts.added", extra={"did": contact.did})
         return contact.model_dump()
@@ -147,7 +155,8 @@ async def update_contact(did: str, contact: ContactCreate) -> dict:
         result = await _core_client.update_contact(
             did,
             name=contact.name,
-            trust_level=contact.trust_level,
+            trust_level=_normalize_trust(contact.trust_level),
+            sharing_tier=contact.sharing_tier,
         )
         log.info("contacts.updated", extra={"did": did})
         return result

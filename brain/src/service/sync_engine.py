@@ -94,6 +94,12 @@ def _validate_mcp_items(raw: object) -> list[dict]:
     return validated
 
 
+
+def _quote_fts_value(value: str) -> str:
+    """Quote a value for FTS5 column-filter queries (MEDIUM-08)."""
+    return '"' + value.replace('"', '""') + '"'
+
+
 class SyncEngine:
     """Orchestrates periodic data ingestion from external sources.
 
@@ -118,6 +124,18 @@ class SyncEngine:
         self._llm = llm
         # In-memory dedup set for the current session (bounded, MED-08).
         self._seen_ids: dict[str, OrderedDict[str, None]] = {}
+        # Source registry for background sync loop (HIGH-03).
+        self._sources: list[str] = []
+
+    def register_source(self, name: str) -> None:
+        """Register a data source for periodic sync."""
+        if name not in self._sources:
+            self._sources.append(name)
+
+    @property
+    def sources(self) -> list[str]:
+        """Return the list of registered sync sources."""
+        return list(self._sources)
 
     # ------------------------------------------------------------------
     # Public API
@@ -177,7 +195,7 @@ class SyncEngine:
         # Slow: ask core.
         try:
             results = await self._core.search_vault(
-                "default", f"source_id:{source_id}", mode="exact"
+                "default", f"source_id:{_quote_fts_value(source_id)}"
             )
             if results:
                 seen = self._seen_ids.setdefault(source, OrderedDict())

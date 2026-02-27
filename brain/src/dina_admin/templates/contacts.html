@@ -5,7 +5,7 @@
 {% block page_title %}Contacts{% endblock %}
 
 {% block content %}
-<style>
+<style nonce="{{ request.state.csp_nonce | default('') }}">
     .page-header {
         display: flex;
         align-items: center;
@@ -265,7 +265,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ request.state.csp_nonce | default('') }}">
 async function loadContacts() {
     const resp = await apiFetch('/admin/contacts/');
     if (!resp) return;

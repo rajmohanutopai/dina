@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     {% if csrf_token %}<meta name="csrf-token" content="{{ csrf_token }}">{% endif %}
     <title>{% block title %}Dina Admin{% endblock %}</title>
-    <style>
+    <style nonce="{{ request.state.csp_nonce | default('') }}">
         /* ── Design Tokens (change theme here) ── */
         :root {
             /* Buttons, accents, toast */
@@ -258,11 +258,9 @@
                 <span class="nav-icon">&#128736;</span> Architecture
             </a>
             <div class="nav-spacer"></div>
-            <form method="post" action="/admin/logout" style="display:inline; width:100%">
-                <button type="submit" class="logout-link" style="background:none; border:none; cursor:pointer; color:inherit; font:inherit; padding:0; width:100%; text-align:left">
-                    <span class="nav-icon">&#8594;</span> Logout
-                </button>
-            </form>
+            <a href="#" class="logout-link" onclick="apiFetch('/admin/logout',{method:'POST'}).finally(()=>{window.location.href='/admin/login'}); return false;">
+                <span class="nav-icon">&#8594;</span> Logout
+            </a>
         </nav>
     </aside>
 
@@ -285,7 +283,7 @@
         </footer>
     </div>
 
-    <script>
+    <script nonce="{{ request.state.csp_nonce | default('') }}">
         /* ── Sidebar toggle for mobile ── */
         (function() {
             var sidebar = document.getElementById('sidebar');

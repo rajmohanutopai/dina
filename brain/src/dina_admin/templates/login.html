@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dina — Login</title>
-    <style>
+    <style nonce="{{ csp_nonce | default('') }}">
         :root {
             --color-primary: #44403C;
             --color-primary-hover: #57534E;
@@ -164,7 +164,7 @@
         Dina v0.5 &mdash; MIT Licensed
     </footer>
 
-    <script>
+    <script nonce="{{ csp_nonce | default('') }}">
         document.getElementById('login-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const token = document.getElementById('token-input').value.trim();

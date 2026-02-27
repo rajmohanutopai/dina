@@ -247,6 +247,9 @@ def create_app() -> FastAPI:
             del mcp_commands[name]
     mcp_client = MCPStdioClient(server_commands=mcp_commands)
 
+    # HIGH-03: Track validated MCP server names for sync_engine.register_source()
+    _mcp_source_names = list(mcp_commands.keys())
+
     # PII scrubber — prefer PresidioScrubber, fall back to spaCy, then None.
     scrubber: object | None = None
     scrubber_tier = "none"
@@ -335,7 +338,7 @@ def create_app() -> FastAPI:
         preferred = (kv.get("preferred_cloud") or "").strip() or cfg.cloud_llm
         llm_router.reconfigure(new_providers, {
             "preferred_cloud": preferred,
-            "cloud_llm_consent": kv.get("cloud_consent", False),
+            "cloud_llm_consent": kv.get("cloud_consent") is True,
         })
         # Update the local providers dict so healthz sees the new state
         providers.clear()
@@ -344,6 +347,11 @@ def create_app() -> FastAPI:
     nudge = NudgeAssembler(core=brain_core_client, llm=llm_router, entity_vault=entity_vault)
     scratchpad = ScratchpadService(core=brain_core_client)
     sync_engine = SyncEngine(core=brain_core_client, mcp=mcp_client, llm=llm_router)
+    # HIGH-03: Register each validated MCP server as a sync source
+    for _src_name in _mcp_source_names:
+        sync_engine.register_source(_src_name)
+    if _mcp_source_names:
+        log.info("sync.sources_registered", extra={"sources": _mcp_source_names})
     guardian = GuardianLoop(
         core=brain_core_client,
         llm_router=llm_router,
@@ -357,11 +365,14 @@ def create_app() -> FastAPI:
     async def _sync_loop(engine: SyncEngine) -> None:
         """Background loop — runs sync cycles every 5 minutes."""
         while True:
-            for source in getattr(engine, "sources", []):
+            sources = engine.sources
+            if not sources:
+                log.warning("sync.no_sources", extra={"hint": "No MCP servers configured"})
+            for source in sources:
                 try:
                     await engine.run_sync_cycle(source)
                 except Exception as exc:
-                    log.warning("sync.cycle_failed", extra={"error": str(exc)})
+                    log.warning("sync.cycle_failed", extra={"error": type(exc).__name__})
             await asyncio.sleep(300)
 
     @asynccontextmanager
@@ -407,6 +418,7 @@ def create_app() -> FastAPI:
         admin_ui = create_admin_app(
             admin_core_client, cfg, dina_html_path=_dina_html, images_dir=_images_dir,
             llm_reload_callback=reload_llm_providers,
+            llm_router=llm_router,
         )
         master.mount("/admin", admin_ui)
     else:

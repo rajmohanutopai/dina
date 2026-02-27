@@ -49,6 +49,7 @@ def create_admin_app(
     dina_html_path: str | None = None,
     images_dir: str | None = None,
     llm_reload_callback: Any | None = None,
+    llm_router: Any | None = None,
 ) -> FastAPI:
     """Create the admin UI sub-app with CLIENT_TOKEN auth middleware.
 
@@ -66,6 +67,9 @@ def create_admin_app(
     llm_reload_callback:
         Optional async callback that rebuilds LLM providers from stored
         keys.  Wired into the settings route for hot-reload on save.
+    llm_router:
+        Optional LLM router instance for dynamic availability checks
+        on the dashboard.
 
     Returns
     -------
@@ -87,21 +91,64 @@ def create_admin_app(
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
+        # LOW-16: Generate per-request nonce for CSP
+        import secrets
+        nonce = secrets.token_urlsafe(16)
+        request.state.csp_nonce = nonce
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data:; "
-            "frame-ancestors 'none'"
+            f"default-src 'self'; "
+            f"script-src 'self' 'nonce-{nonce}'; "
+            f"style-src 'self' 'nonce-{nonce}'; "
+            f"img-src 'self' data:; "
+            f"frame-ancestors 'none'"
         )
         if _env == "production":
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
+
+    # ------------------------------------------------------------------
+    # MED-07: Body size limit (1 MiB)
+    # ------------------------------------------------------------------
+
+    _MAX_BODY_BYTES = 1 * 1024 * 1024
+
+    @app.middleware("http")
+    async def limit_body_size(request: Request, call_next):
+        if request.method in ("POST", "PUT", "PATCH"):
+            # MEDIUM-07: Pre-check Content-Length to reject before any read
+            cl = request.headers.get("content-length")
+            if cl is not None:
+                try:
+                    if int(cl) > _MAX_BODY_BYTES:
+                        from fastapi.responses import JSONResponse
+                        return JSONResponse(
+                            status_code=413,
+                            content={"detail": "Request body too large"},
+                        )
+                except ValueError:
+                    pass
+            # Streaming read with early cutoff — protects against chunked
+            # or missing Content-Length uploads that bypass the header check.
+            # We cache the result on request._body so downstream handlers
+            # (request.body(), request.json()) still work correctly.
+            chunks: list[bytes] = []
+            total = 0
+            async for chunk in request.stream():
+                total += len(chunk)
+                if total > _MAX_BODY_BYTES:
+                    from fastapi.responses import JSONResponse
+                    return JSONResponse(
+                        status_code=413,
+                        content={"detail": "Request body too large"},
+                    )
+                chunks.append(chunk)
+            request._body = b"".join(chunks)
+        return await call_next(request)
 
     # ------------------------------------------------------------------
     # MED-14: Rate limiting on expensive endpoints
@@ -115,7 +162,8 @@ def create_admin_app(
 
     @app.middleware("http")
     async def rate_limit_chat(request: Request, call_next):
-        if request.url.path == "/api/chat":
+        _path = request.scope.get("path", request.url.path)
+        if _path == "/api/chat":
             key = request.cookies.get("dina_client_token", request.client.host if request.client else "unknown")
             if not _chat_limiter.allow(key):
                 from fastapi.responses import JSONResponse
@@ -171,6 +219,8 @@ def create_admin_app(
 
     # Existing JSON routes
     dashboard_route.set_dependencies(core_client, config)
+    if llm_router is not None:
+        dashboard_route.set_llm_router(llm_router)
     contacts_route.set_core_client(core_client)
     devices_route.set_core_client(core_client)
     settings_route.set_dependencies(core_client, config)

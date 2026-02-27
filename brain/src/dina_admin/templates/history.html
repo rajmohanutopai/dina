@@ -4,7 +4,7 @@
 {% block page_title %}Activity History{% endblock %}
 
 {% block content %}
-<style>
+<style nonce="{{ request.state.csp_nonce | default('') }}">
     /* ── Search Bar ── */
     .search-bar {
         margin-bottom: 20px;
@@ -154,7 +154,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ request.state.csp_nonce | default('') }}">
     var currentPage = 1;
 
     async function loadHistory(page) {

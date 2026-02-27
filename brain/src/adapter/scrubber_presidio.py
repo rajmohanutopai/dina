@@ -31,6 +31,7 @@ from __future__ import annotations
 import os
 import re
 from typing import Any
+from uuid import uuid4
 
 import structlog
 
@@ -258,19 +259,21 @@ class PresidioScrubber:
         seen: dict[str, str],
         counter: dict[str, int],
     ) -> str:
-        """Generate a fake replacement for *real_value*.
+        """Generate a collision-resistant placeholder for *real_value*.
 
-        Uses Faker when available, falls back to ``<TYPE_N>`` tags.
+        Produces delimited tokens like ``<<PII_PERSON_1_a3f2e1b0>>`` that
+        are safe for rehydration — the ``<<>>`` delimiters prevent
+        substring collisions with natural text.
 
         Parameters:
             entity_type: Mapped entity type (PERSON, ORG, LOC, etc.).
             real_value:  The original PII string.
-            seen:        Per-call cache mapping real_value -> fake_value
-                         so the same real entity always gets the same fake.
-            counter:     Per-type counter for tag fallback numbering.
+            seen:        Per-call cache mapping real_value -> placeholder
+                         so the same real entity always gets the same token.
+            counter:     Per-type counter for unique numbering.
 
         Returns:
-            The fake replacement string.
+            The collision-resistant placeholder string.
         """
         # Consistent within a single scrub() call.
         if real_value in seen:
@@ -279,16 +282,12 @@ class PresidioScrubber:
         count = counter.get(entity_type, 0) + 1
         counter[entity_type] = count
 
-        faker = self._ensure_faker()
-        if faker is not None:
-            fake = _FAKER_GENERATORS.get(entity_type, _faker_fallback)(
-                faker, count,
-            )
-        else:
-            fake = f"<{entity_type}_{count}>"
+        # HIGH-11: Use delimited placeholders instead of Faker values.
+        # The <<>> delimiters make substring collisions impossible.
+        placeholder = f"<<PII_{entity_type}_{count}_{uuid4().hex[:8]}>>"
 
-        seen[real_value] = fake
-        return fake
+        seen[real_value] = placeholder
+        return placeholder
 
     # -- Lazy loading -------------------------------------------------------
 

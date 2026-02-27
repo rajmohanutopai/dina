@@ -150,7 +150,12 @@ class LLMRouter:
             }
 
         # ---- 2-6. Select provider ----
-        if provider and provider in self._providers:
+        if provider:
+            if provider not in self._providers:
+                raise LLMError(
+                    f"Unknown LLM provider '{provider}'. "
+                    f"Available: {list(self._providers.keys())}"
+                )
             selected = self._providers[provider]
         else:
             selected = self._select_provider(task_type, persona_tier)
@@ -162,7 +167,7 @@ class LLMRouter:
                 "cloud_llm_consent",
                 self._config.get("cloud_llm_consent", False),
             )
-            if not consent:
+            if consent is not True:
                 raise CloudConsentError(
                     "Cloud LLM consent required for sensitive persona queries. "
                     "Set cloud_llm_consent=True in brain config after explicit "
@@ -198,7 +203,7 @@ class LLMRouter:
                         "cloud_llm_consent",
                         self._config.get("cloud_llm_consent", False),
                     )
-                    if not consent:
+                    if consent is not True:
                         raise CloudConsentError(
                             f"Fallback to cloud provider '{fallback.model_name}' "
                             f"blocked: sensitive persona requires cloud_llm_consent=true"
