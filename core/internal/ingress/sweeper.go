@@ -5,11 +5,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/port"
 )
+
+// blobFailure tracks consecutive failures for a single dead-drop blob.
+type blobFailure struct {
+	count     int
+	firstSeen time.Time
+}
 
 // TransportProcessor processes inbound D2D envelopes.
 type TransportProcessor interface {
@@ -33,6 +42,12 @@ type Sweeper struct {
 	recipientPub  []byte                    // node's Ed25519 public key
 	recipientPriv []byte                    // node's Ed25519 private key
 	onMessage     func(*domain.DinaMessage) // callback for delivered messages
+
+	// HIGH-04: Failure tracking to evict poison-pill blobs.
+	failMu     sync.Mutex
+	failures   map[string]*blobFailure
+	maxRetries int           // consecutive failures before eviction (default 5)
+	maxAge     time.Duration // max blob age before mtime-based GC (default 24h)
 }
 
 // NewSweeper creates a Sweeper with the given dependencies.
@@ -45,11 +60,14 @@ func NewSweeper(
 	ttl time.Duration,
 ) *Sweeper {
 	return &Sweeper{
-		deadDrop:  deadDrop,
-		decryptor: decryptor,
-		resolver:  resolver,
-		clock:     clock,
-		ttl:       ttl,
+		deadDrop:   deadDrop,
+		decryptor:  decryptor,
+		resolver:   resolver,
+		clock:      clock,
+		ttl:        ttl,
+		failures:   make(map[string]*blobFailure),
+		maxRetries: 5,
+		maxAge:     24 * time.Hour,
 	}
 }
 
@@ -76,6 +94,63 @@ func (s *Sweeper) SetTransport(t TransportProcessor) {
 	s.transport = t
 }
 
+// recordFailure increments the failure counter for a blob and evicts it if
+// the threshold is exceeded. Returns true if the blob was evicted.
+func (s *Sweeper) recordFailure(name string) bool {
+	s.failMu.Lock()
+	defer s.failMu.Unlock()
+
+	f, ok := s.failures[name]
+	if !ok {
+		f = &blobFailure{firstSeen: s.clock.Now()}
+		s.failures[name] = f
+	}
+	f.count++
+
+	if f.count >= s.maxRetries {
+		slog.Warn("evicting poison-pill blob after max retries", "name", name, "retries", f.count)
+		_ = s.deadDrop.Ack(name)
+		delete(s.failures, name)
+		return true
+	}
+	return false
+}
+
+// clearFailure removes the failure record for a successfully processed blob.
+func (s *Sweeper) clearFailure(name string) {
+	s.failMu.Lock()
+	delete(s.failures, name)
+	s.failMu.Unlock()
+}
+
+// GCStaleBlobs removes blobs older than maxAge based on file mtime.
+// This provides restart resilience since in-memory failure tracking is lost.
+func (s *Sweeper) GCStaleBlobs() int {
+	dir := s.deadDrop.Dir()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+
+	evicted := 0
+	now := s.clock.Now()
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".blob" {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if now.Sub(info.ModTime()) > s.maxAge {
+			slog.Warn("evicting stale blob by mtime", "name", e.Name(), "age", now.Sub(info.ModTime()))
+			_ = s.deadDrop.Ack(e.Name())
+			evicted++
+		}
+	}
+	return evicted
+}
+
 // SweepResult summarizes a sweep pass over the dead drop.
 type SweepResult struct {
 	Processed   int      // total blobs examined
@@ -89,6 +164,9 @@ type SweepResult struct {
 // Sweep processes all pending dead drop blobs.
 // Returns the number of successfully processed blobs.
 func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
+	// HIGH-04: GC stale blobs on each sweep for restart resilience.
+	s.GCStaleBlobs()
+
 	blobs, err := s.deadDrop.List()
 	if err != nil {
 		return 0, fmt.Errorf("sweeper: list blobs: %w", err)
@@ -112,18 +190,22 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 		if s.transport != nil {
 			msg, tErr := s.transport.ProcessInbound(ctx, blob)
 			if tErr != nil {
+				// HIGH-04: Track failure; evict after maxRetries.
+				s.recordFailure(name)
 				continue
 			}
 			// Check TTL — drop expired messages.
 			if s.ttl > 0 && msg.CreatedTime > 0 {
 				age := s.clock.Now().Sub(time.Unix(msg.CreatedTime, 0))
 				if age > s.ttl {
+					_ = s.deadDrop.Ack(name)
 					continue
 				}
 			}
 			if s.onMessage != nil {
 				s.onMessage(msg)
 			}
+			s.clearFailure(name)
 			_ = s.deadDrop.Ack(name)
 			delivered++
 			continue
@@ -138,23 +220,27 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 		// 1. Convert Ed25519 keys to X25519 for NaCl decryption.
 		x25519Priv, err := s.converter.Ed25519ToX25519Private(s.recipientPriv)
 		if err != nil {
+			s.recordFailure(name)
 			continue
 		}
 		x25519Pub, err := s.converter.Ed25519ToX25519Public(s.recipientPub)
 		if err != nil {
+			s.recordFailure(name)
 			continue
 		}
 
 		// 2. Decrypt the sealed box.
 		plaintext, err := s.decryptor.OpenAnonymous(blob, x25519Pub, x25519Priv)
 		if err != nil {
-			// Corrupt or wrong key — skip.
+			// HIGH-04: Track failure; evict after maxRetries.
+			s.recordFailure(name)
 			continue
 		}
 
 		// 3. Unmarshal the message.
 		var msg domain.DinaMessage
 		if err := json.Unmarshal(plaintext, &msg); err != nil {
+			s.recordFailure(name)
 			continue
 		}
 
@@ -162,6 +248,7 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 		if s.ttl > 0 && msg.CreatedTime > 0 {
 			age := s.clock.Now().Sub(time.Unix(msg.CreatedTime, 0))
 			if age > s.ttl {
+				_ = s.deadDrop.Ack(name)
 				continue
 			}
 		}
@@ -170,6 +257,7 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 		if s.onMessage != nil {
 			s.onMessage(&msg)
 		}
+		s.clearFailure(name)
 		_ = s.deadDrop.Ack(name)
 		delivered++
 	}
@@ -179,6 +267,9 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 
 // SweepFull processes all dead drop blobs with detailed results.
 func (s *Sweeper) SweepFull(ctx context.Context) (*SweepResult, error) {
+	// HIGH-04: GC stale blobs on each sweep for restart resilience.
+	s.GCStaleBlobs()
+
 	blobs, err := s.deadDrop.List()
 	if err != nil {
 		return nil, fmt.Errorf("sweeper: list blobs: %w", err)
@@ -199,6 +290,8 @@ func (s *Sweeper) SweepFull(ctx context.Context) (*SweepResult, error) {
 		result.Processed++
 
 		if len(blob) == 0 {
+			// HIGH-04: Track empty blobs as failures.
+			s.recordFailure(name)
 			result.Failed++
 			continue
 		}
@@ -207,6 +300,7 @@ func (s *Sweeper) SweepFull(ctx context.Context) (*SweepResult, error) {
 		if s.transport != nil {
 			msg, tErr := s.transport.ProcessInbound(ctx, blob)
 			if tErr != nil {
+				s.recordFailure(name)
 				result.Failed++
 				continue
 			}
@@ -214,6 +308,7 @@ func (s *Sweeper) SweepFull(ctx context.Context) (*SweepResult, error) {
 			if s.ttl > 0 && msg.CreatedTime > 0 {
 				age := s.clock.Now().Sub(time.Unix(msg.CreatedTime, 0))
 				if age > s.ttl {
+					_ = s.deadDrop.Ack(name)
 					result.Expired++
 					continue
 				}
@@ -221,6 +316,7 @@ func (s *Sweeper) SweepFull(ctx context.Context) (*SweepResult, error) {
 			if s.onMessage != nil {
 				s.onMessage(msg)
 			}
+			s.clearFailure(name)
 			_ = s.deadDrop.Ack(name)
 			result.Delivered++
 			continue
@@ -236,11 +332,13 @@ func (s *Sweeper) SweepFull(ctx context.Context) (*SweepResult, error) {
 		// 1. Convert keys.
 		x25519Priv, err := s.converter.Ed25519ToX25519Private(s.recipientPriv)
 		if err != nil {
+			s.recordFailure(name)
 			result.Failed++
 			continue
 		}
 		x25519Pub, err := s.converter.Ed25519ToX25519Public(s.recipientPub)
 		if err != nil {
+			s.recordFailure(name)
 			result.Failed++
 			continue
 		}
@@ -248,6 +346,7 @@ func (s *Sweeper) SweepFull(ctx context.Context) (*SweepResult, error) {
 		// 2. Decrypt.
 		plaintext, err := s.decryptor.OpenAnonymous(blob, x25519Pub, x25519Priv)
 		if err != nil {
+			s.recordFailure(name)
 			result.Failed++
 			continue
 		}
@@ -255,6 +354,7 @@ func (s *Sweeper) SweepFull(ctx context.Context) (*SweepResult, error) {
 		// 3. Unmarshal.
 		var msg domain.DinaMessage
 		if err := json.Unmarshal(plaintext, &msg); err != nil {
+			s.recordFailure(name)
 			result.Failed++
 			continue
 		}
@@ -263,6 +363,7 @@ func (s *Sweeper) SweepFull(ctx context.Context) (*SweepResult, error) {
 		if s.ttl > 0 && msg.CreatedTime > 0 {
 			age := s.clock.Now().Sub(time.Unix(msg.CreatedTime, 0))
 			if age > s.ttl {
+				_ = s.deadDrop.Ack(name)
 				result.Expired++
 				continue
 			}
@@ -272,6 +373,7 @@ func (s *Sweeper) SweepFull(ctx context.Context) (*SweepResult, error) {
 		if s.onMessage != nil {
 			s.onMessage(&msg)
 		}
+		s.clearFailure(name)
 		_ = s.deadDrop.Ack(name)
 		result.Delivered++
 	}

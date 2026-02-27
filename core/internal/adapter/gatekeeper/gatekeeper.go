@@ -300,7 +300,19 @@ func (m *SharingPolicyManager) SetPolicy(_ context.Context, contactDID string, c
 
 // SetBulkPolicy applies a policy to all contacts matching a filter.
 // An empty filter matches all contacts.
+// MEDIUM-13: Reject non-empty filter (not yet supported) and validate tiers.
 func (m *SharingPolicyManager) SetBulkPolicy(_ context.Context, filter map[string]string, categories map[string]domain.SharingTier) (int, error) {
+	if len(filter) > 0 {
+		return 0, fmt.Errorf("filtered bulk policy not yet supported")
+	}
+
+	// Validate all tiers before applying.
+	for cat, tier := range categories {
+		if !domain.ValidSharingTiers[tier] {
+			return 0, fmt.Errorf("invalid sharing tier %q for category %q", tier, cat)
+		}
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	count := 0

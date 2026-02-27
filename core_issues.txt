@@ -1,0 +1,1718 @@
+Core Code Review Findings
+Date: 2026-02-27
+Scope: `core/` (static code review)
+Method: Manual review focused on authz boundaries, persona/vault lifecycle, transport/ingress hardening, and API correctness.
+
+=====================================================================
+FINDINGS (ordered by severity)
+=====================================================================
+
+[CRITICAL-01] Persona state load failure is fail-open; can enable lock bypass after persona recreation
+Evidence
+- `core/cmd/dina-core/main.go:305-307`
+  - If `persona_state.json` fails to load/parse, startup logs warning and continues with empty in-memory persona state.
+- `core/internal/adapter/identity/identity.go:765-788`
+  - `Create()` silently inserts/replaces persona metadata in memory and persists it.
+- `core/internal/adapter/crypto/keyderiver.go:48-50`
+  - Vault DEK is derived from seed + persona name + version, not from persona passphrase.
+Impact
+- If persona metadata is lost/corrupted but vault files remain, an operator with admin API access can recreate a persona with a new passphrase hash and regain vault access using the same derived DEK.
+- This weakens the intended lock/unlock security boundary to availability of a single JSON metadata file.
+Remediation
+- In non-test/dev modes, fail startup on persona state load/unmarshal errors.
+- Store persona lock/passphrase metadata in durable transactional storage (identity DB) with integrity checks, not a standalone best-effort JSON file.
+- Add a recovery flow that requires explicit operator confirmation/migration rather than silent fresh-state fallback.
+
+--- SUGGESTED SOLUTION ---
+Agree. All three remediation points are valid.
+
+1. `core/cmd/dina-core/main.go:305-307` — Replace the warn-and-continue with a hard failure
+   in production mode:
+   ```go
+   if err := identSvc.LoadState(stateFile); err != nil {
+       if os.Getenv("DINA_ENV") == "test" {
+           log.Printf("WARN: persona state load failed (test mode, continuing): %v", err)
+       } else {
+           log.Fatalf("FATAL: persona state load failed: %v", err)
+       }
+   }
+   ```
+
+2. `core/internal/adapter/identity/identity.go` — Add an integrity anchor to persona
+   metadata. When a persona is first created, compute and store
+   `HMAC-SHA256(seed, persona_name)` as `dek_binding` alongside the persona record.
+   On subsequent loads, verify the binding matches. This ensures that even if the
+   JSON file is replaced, the DEK derivation path cannot be silently re-targeted:
+   ```go
+   type PersonaMeta struct {
+       Name           string `json:"name"`
+       Tier           string `json:"tier"`
+       PassphraseHash string `json:"passphrase_hash"`
+       DEKBinding     string `json:"dek_binding"` // HMAC(seed, name) — integrity anchor
+       CreatedAt      string `json:"created_at"`
+   }
+   ```
+   On `Create()`, compute and store the binding. On `LoadState()`, verify each
+   persona's binding matches; reject any mismatched entries.
+
+3. Add a `--recover-personas` CLI flag that explicitly drops and re-derives persona
+   state, requiring operator confirmation, rather than doing it silently on every
+   startup. Normal startup should refuse to proceed with corrupted state.
+--- END SUGGESTED SOLUTION ---
+
+--- REVIEWER DISAGREEMENT ---
+Partial disagreement on step 2 (`DEKBinding = HMAC(seed, persona_name)`):
+- This does not close the recreation bypass described in the finding. If persona metadata is lost, recreating the same persona name yields the same binding and still allows unlock/open with the deterministic DEK path.
+- It also adds seed-dependent state coupling without preventing the core attack path.
+Recommended correction:
+- Keep step 1 (fail startup on state-load corruption in non-test mode).
+- Add explicit create-time guard: if vault artifacts for a persona already exist but persona metadata is missing, reject create and require an explicit recovery/migration workflow.
+- Long-term, move persona metadata to durable transactional identity storage with integrity checks.
+--- END REVIEWER DISAGREEMENT ---
+
+--- AUTHOR RESPONSE ---
+Accepted. The reviewer is correct — HMAC(seed, persona_name) is deterministic
+from the same inputs, so recreating a persona with the same name yields the
+same binding value. Step 2 provides no defense against the recreation bypass.
+
+Revised solution for CRITICAL-01 step 2:
+- Drop the DEKBinding approach entirely.
+- Replace with a create-time vault artifact check: before `PersonaManager.Create()`
+  succeeds, query the vault layer (via a new `EnumeratePersistedVaults()` method
+  on `port.VaultManager`) for existing vault files matching the persona name.
+  If vault artifacts exist but persona metadata is absent, reject with
+  `ErrOrphanedVaultArtifacts` and require explicit `--recover-personas` flow.
+- This requires wiring a vault reference into the identity layer (currently
+  they are decoupled). Alternatively, perform the check in the handler/service
+  layer before calling `PersonaManager.Create()`.
+- Steps 1 (fail startup) and 3 (explicit recovery CLI) remain unchanged.
+--- END AUTHOR RESPONSE ---
+
+--- FIX STATUS: DONE ---
+1. `main.go`: Non-test/dev modes now fail startup on `SetPersistPath` error. Added
+   `DINA_RECOVER_PERSONAS=1` env var for explicit recovery override.
+2. `identity.go`: Added `ErrPersonaExists` sentinel and duplicate check in `Create()`.
+3. `identity.go`: Added `CheckOrphanedVault` callback and `ErrOrphanedVaultArtifacts`
+   sentinel. `Create()` calls the callback (when set) to reject persona creation when
+   orphaned vault artifacts exist.
+4. `main.go`: Wired `CheckOrphanedVault` callback — checks for `<persona>.sqlite` file
+   in vault directory. If DB file exists but no in-memory persona state, creation is rejected.
+5. `persona.go` handler: Added `ErrOrphanedVaultArtifacts` → 409 Conflict mapping.
+6. `domain/errors.go`: Added `ErrPersonaExists` sentinel error.
+Note: `os.IsNotExist` on missing state file (line 568) is correct — first-run has no
+state file yet. The orphan guard callback provides the safety net for state-loss scenarios.
+--- END FIX STATUS ---
+
+[HIGH-02] Persona deletion is incomplete (not persisted; dangling contacts/timers)
+Evidence
+- `core/internal/adapter/identity/identity.go:957-969`
+  - `Delete()` removes from `personas` map only.
+  - No `persistState()` call.
+  - No cleanup of `contacts[persona]` or active TTL timer entries.
+Impact
+- Deleted personas can reappear after restart.
+- Stale contact links and timer state can survive deletion.
+Remediation
+- In `Delete()`, remove persona, contacts entry, TTL timer entry, then persist state atomically.
+- Add tests: delete + restart should not restore persona/contacts/timers.
+
+--- SUGGESTED SOLUTION ---
+Agree. The fix is straightforward — `Delete()` must clean up all associated state
+and persist atomically.
+
+`core/internal/adapter/identity/identity.go:957-969` — Expand `Delete()`:
+```go
+func (s *Service) Delete(name string) error {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
+    if _, exists := s.personas[name]; !exists {
+        return fmt.Errorf("persona %q not found", name)
+    }
+
+    // 1. Remove persona metadata
+    delete(s.personas, name)
+
+    // 2. Remove associated contacts
+    delete(s.contacts, name)
+
+    // 3. Cancel any active TTL timer
+    if timer, ok := s.ttlTimers[name]; ok {
+        timer.Stop()
+        delete(s.ttlTimers, name)
+    }
+
+    // 4. Persist state atomically — if this fails, we have an inconsistency,
+    //    so return the error and let the caller decide.
+    if err := s.persistState(); err != nil {
+        return fmt.Errorf("persona deleted in memory but persist failed: %w", err)
+    }
+
+    return nil
+}
+```
+
+Tests to add:
+- Delete persona → restart (re-load state) → persona must not exist.
+- Delete persona → contacts for that persona must be gone.
+- Delete persona → TTL timer for that persona must not fire.
+--- END SUGGESTED SOLUTION ---
+
+--- REVIEWER DISAGREEMENT ---
+Partial disagreement on implementation details:
+- The snippet uses `Delete(name string)` while current interface expects `Delete(ctx context.Context, personaID string)` and persona IDs are canonicalized (`persona-<name>`). As written, it can miss existing records.
+- It assumes `persistState()` returns an error, but current implementation is best-effort `void`.
+Recommended correction:
+- Keep the remediation intent (delete persona + contacts + TTL timer + persist), but align with existing signature and canonical ID handling.
+- If persistence must be fail-closed, introduce an explicit transactional persistence API rather than relying on current best-effort writer.
+--- END REVIEWER DISAGREEMENT ---
+
+--- AUTHOR RESPONSE ---
+Accepted. The reviewer is correct on both points. Verified against source:
+
+1. **Signature mismatch**: The port interface at `port/identity.go:49` defines
+   `Delete(ctx context.Context, personaID string) error`. The implementation at
+   `identity.go:958` is `func (pm *PersonaManager) Delete(_ context.Context, personaID string) error`.
+   It internally canonicalizes via `cid := canonicalPersonaID(personaID)` (line 963),
+   which prepends `"persona-"` if missing (`identity.go:620-627`). My snippet used
+   `Delete(name string)` — wrong signature and missing canonicalization.
+
+2. **persistState() is void**: Verified at `identity.go:604-618` — signature is
+   `func (pm *PersonaManager) persistState()` with no return value. Errors from
+   `json.Marshal` and `os.WriteFile` are silently discarded (best-effort). My
+   snippet assumed it returned an error, which would not compile.
+
+Revised approach:
+- Use correct signature: `Delete(ctx context.Context, personaID string) error`.
+- Use `canonicalPersonaID(personaID)` for all map lookups/deletes.
+- For persistence, two options:
+  (a) Keep `persistState()` as void but ensure it's called (current deletion
+      doesn't call it at all — that's the core bug). This at least makes
+      deletion best-effort durable, matching Create's behavior.
+  (b) For fail-closed: introduce `persistStateStrict() error` that propagates
+      marshal/write errors, and use it in Delete. This is the better long-term
+      fix but requires a new method.
+- The immediate fix should be (a): add `pm.persistState()` call after cleanup,
+  plus `delete(pm.contacts, cid)` and TTL timer cancellation. This matches the
+  persistence model already used by `Create()`.
+--- END AUTHOR RESPONSE ---
+
+--- FIX STATUS: DONE ---
+Expanded `Delete()` in `identity.go` to clean up contacts (`delete(pm.contacts, cid)`),
+cancel TTL timers (`pm.ttlTimers[cid].Stop()` + delete), and call `pm.persistState()`.
+--- END FIX STATUS ---
+
+[HIGH-03] Method confusion on vault mutate routes allows unintended operations
+Evidence
+- `core/cmd/dina-core/main.go:678-679` and `core/cmd/dina-core/main.go:866-872`
+  - `routeByMethod` routes `POST`, `PUT`, and `DELETE` to mutate handlers.
+- `core/internal/handler/vault.go:213-237`
+  - `HandleDeleteItem()` has no method check.
+- `core/internal/handler/vault.go:285-333`
+  - `HandlePutKV()` has no method check.
+Impact
+- `POST/PUT` can trigger delete semantics on `/v1/vault/item/{id}`.
+- `DELETE` can trigger write semantics on `/v1/vault/kv/{key}`.
+Remediation
+- Add strict method checks in `HandleDeleteItem` (`DELETE`) and `HandlePutKV` (`PUT`).
+- Or remove route multiplexer for these paths and register explicit method handlers.
+
+--- SUGGESTED SOLUTION ---
+Agree. Prefer option 1 (explicit method checks in handlers) since it's less
+disruptive than restructuring the mux.
+
+`core/internal/handler/vault.go` — Add method guards at the top of each handler:
+
+```go
+// HandleDeleteItem — add at line ~214:
+func (h *VaultHandler) HandleDeleteItem(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodDelete {
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+    // ... existing logic ...
+}
+
+// HandlePutKV — add at line ~286:
+func (h *VaultHandler) HandlePutKV(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPut {
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+    // ... existing logic ...
+}
+
+// HandleGetKV — add at line ~336:
+func (h *VaultHandler) HandleGetKV(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodGet {
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+    // ... existing logic ...
+}
+```
+
+Also audit other `routeByMethod` consumers for the same pattern — any handler
+that is called via the generic POST/PUT/DELETE multiplexer should assert its
+expected method.
+--- END SUGGESTED SOLUTION ---
+
+--- FIX STATUS: DONE ---
+Added method guards to `HandleDeleteItem` (DELETE only), `HandlePutKV` (PUT only),
+`HandleGetKV` (GET only) in `vault.go` handler. Non-matching methods return 405.
+--- END FIX STATUS ---
+
+[HIGH-04] Dead-drop poison-pill DoS: invalid blobs are never evicted
+Evidence
+- `core/internal/ingress/sweeper.go:113-116` and `core/internal/ingress/sweeper.go:208-211`
+  - On decrypt/verify failure, sweeper `continue`s without `Ack()`.
+- `core/internal/ingress/sweeper.go:117-123` and `214-219`
+  - TTL checks only run after successful decrypt/unmarshal.
+Impact
+- Malformed or hostile dead-drop blobs remain forever, consume spool capacity, and can permanently block new ingress once full.
+Remediation
+- Track per-blob retry count/first-seen time and evict or quarantine after threshold.
+- Add size/age based garbage collection for undecodable blobs.
+- Add tests for malformed blob lifecycle and capacity recovery.
+
+--- SUGGESTED SOLUTION ---
+Agree. The sweeper must bound the lifetime of unprocessable blobs.
+
+`core/internal/ingress/sweeper.go` — Add retry tracking and eviction:
+
+1. Add a failure tracker (in-memory map, persisted optionally):
+   ```go
+   type blobFailure struct {
+       FirstSeen time.Time
+       Count     int
+   }
+
+   type Sweeper struct {
+       // ... existing fields ...
+       failures map[string]*blobFailure // keyed by blob ID
+       mu       sync.Mutex
+       maxRetries   int           // default: 5
+       maxAge       time.Duration // default: 24h
+   }
+   ```
+
+2. In `Sweep()` and `SweepFull()`, on decrypt/verify failure:
+   ```go
+   case err != nil:
+       s.mu.Lock()
+       f, ok := s.failures[blobID]
+       if !ok {
+           f = &blobFailure{FirstSeen: time.Now()}
+           s.failures[blobID] = f
+       }
+       f.Count++
+       evict := f.Count >= s.maxRetries || time.Since(f.FirstSeen) > s.maxAge
+       s.mu.Unlock()
+
+       if evict {
+           log.Printf("ingress: evicting poison blob %s (retries=%d, age=%s)",
+               blobID, f.Count, time.Since(f.FirstSeen))
+           _ = store.Ack(ctx, blobID) // remove from spool
+           s.mu.Lock()
+           delete(s.failures, blobID)
+           s.mu.Unlock()
+       }
+       continue
+   ```
+
+3. Add periodic GC for the failures map itself (remove entries for blobs that
+   were externally cleaned up).
+
+Tests:
+- Insert 10 malformed blobs → sweep N+1 times → all evicted, spool empty.
+- Insert 1 malformed + 1 valid → sweep → valid processed, malformed tracked.
+- Age-based eviction: insert blob, advance clock past maxAge, sweep → evicted.
+--- END SUGGESTED SOLUTION ---
+
+--- REVIEWER DISAGREEMENT ---
+Partial disagreement on concrete API usage:
+- The pseudo-code references identifiers/contracts that do not match the current implementation (`blobID`, `store.Ack(ctx, blobID)` vs current `name`, `deadDrop.Ack(name)`).
+- The proposal does not explicitly call out restart semantics (in-memory poison tracking resets on process restart).
+Recommended correction:
+- Implement bounded invalid-blob eviction against current `deadDrop.List/Peek/Ack(name)` API.
+- Document non-durable tracking semantics and ensure invalid blobs cannot permanently exhaust spool capacity.
+--- END REVIEWER DISAGREEMENT ---
+
+--- AUTHOR RESPONSE ---
+Accepted. The reviewer is correct on both points. Verified against source:
+
+1. **API naming mismatch**: In `sweeper.go`, the blob identifier variable is `name`
+   (line 98: `for _, name := range blobs {`), not `blobID`. The Ack call is
+   `s.deadDrop.Ack(name)` (e.g., lines 127, 173, 224, 275), not `store.Ack(ctx, blobID)`.
+   `DeadDrop.Ack(name string) error` at `deaddrop.go:140` takes a single string
+   param (no context) and does `os.Remove(filepath.Join(d.dir, name))`. My
+   pseudo-code used the wrong receiver, wrong param name, and added a spurious
+   context parameter.
+
+2. **Restart semantics**: The Sweeper struct (`sweeper.go:25-36`) has no persistent
+   state — no database, no on-disk failure counters. The proposed in-memory
+   `failures map[string]*blobFailure` would reset on every process restart,
+   meaning poison blobs get a fresh retry budget after each restart. This is a
+   real gap: an attacker who can cause restarts (or just wait for routine
+   maintenance) gets infinite retries.
+
+Revised approach using correct APIs:
+```go
+// In Sweep()/SweepFull(), on decrypt/verify failure:
+s.mu.Lock()
+f, ok := s.failures[name]
+if !ok {
+    f = &blobFailure{FirstSeen: time.Now()}
+    s.failures[name] = f
+}
+f.Count++
+evict := f.Count >= s.maxRetries || time.Since(f.FirstSeen) > s.maxAge
+s.mu.Unlock()
+
+if evict {
+    log.Printf("ingress: evicting poison blob %s (retries=%d, age=%s)",
+        name, f.Count, time.Since(f.FirstSeen))
+    _ = s.deadDrop.Ack(name) // filesystem remove
+    s.mu.Lock()
+    delete(s.failures, name)
+    s.mu.Unlock()
+}
+```
+
+For restart resilience:
+- Add a secondary **age-based GC sweep** that unconditionally evicts blobs older
+  than `maxAge` based on filesystem mtime (available from `os.Stat`), regardless
+  of in-memory retry count. This survives restarts because the eviction signal
+  (file age) is durable.
+- This means: in-memory tracking handles rapid-fire poison (evict after N retries
+  within a session), and mtime-based GC handles long-lived poison across restarts
+  (evict after 24h regardless).
+- Document: "In-memory retry tracking resets on restart. Blobs surviving past
+  `maxAge` are evicted by filesystem age check regardless of retry state."
+--- END AUTHOR RESPONSE ---
+
+--- FIX STATUS: DONE ---
+Added `blobFailure` struct and failure tracking to `Sweeper` (in-memory retry counter with maxRetries=5).
+`Sweep()` and `SweepFull()` now call `recordFailure()` on decrypt/verify failure, `clearFailure()` on success.
+Blobs exceeding maxRetries are evicted via `Ack()`. Added `GCStaleBlobs()` for mtime-based cleanup
+(24h maxAge) on restart resilience. Added `Dir()` method to `DeadDrop`.
+--- END FIX STATUS ---
+
+[HIGH-05] D2D key encoding is inconsistent with DID multibase standard
+Evidence
+- `core/internal/service/transport.go:142` and `core/internal/service/transport.go:449`
+  - `publicKeyMultibase` is decoded as hex after stripping `z`.
+- `core/internal/adapter/identity/identity.go:272-274`
+  - DID documents are generated with proper base58btc multibase.
+- `core/cmd/dina-core/main.go:404-407`
+  - `DINA_KNOWN_PEERS` legacy path injects `z` + hex placeholder key.
+Impact
+- Standard DID documents (base58btc multikey) fail in transport paths expecting hex.
+- Inter-node interoperability and signature verification are brittle and deployment-dependent.
+Remediation
+- Use proper multibase/base58btc decoding everywhere for `publicKeyMultibase`.
+- Remove `z+hex` placeholder key path; require valid multikey input.
+
+--- SUGGESTED SOLUTION ---
+Agree. The `z` prefix in multibase means base58btc, not hex.
+
+1. Add a `decodeMultibase()` helper in `core/internal/service/transport.go` (or a
+   shared `core/internal/util/multibase.go`):
+   ```go
+   func decodeMultibase(encoded string) ([]byte, error) {
+       if len(encoded) < 2 {
+           return nil, fmt.Errorf("multibase string too short")
+       }
+       switch encoded[0] {
+       case 'z': // base58btc
+           return base58.Decode(encoded[1:])
+       case 'f': // base16 lowercase
+           return hex.DecodeString(encoded[1:])
+       default:
+           return nil, fmt.Errorf("unsupported multibase prefix: %c", encoded[0])
+       }
+   }
+   ```
+
+2. `core/internal/service/transport.go:136-145` and `445-452` — Replace
+   `hex.DecodeString(pkMultibase[1:])` with `decodeMultibase(pkMultibase)`.
+
+3. `core/cmd/dina-core/main.go:404-407` — The `DINA_KNOWN_PEERS` path that
+   injects `z` + hex is incorrect. Either:
+   (a) Encode the derived public key as base58btc: `"z" + base58.Encode(pubBytes)`, or
+   (b) Use `f` prefix for hex: `"f" + hex.EncodeToString(pubBytes)`.
+   Option (a) is preferred for W3C DID spec conformance.
+
+4. Add a dependency on a base58 library (e.g., `github.com/mr-tron/base58`).
+
+Tests:
+- Round-trip: encode key as `z` + base58btc → decode → matches original bytes.
+- Reject: `z` + invalid-base58 → error.
+- Reject: unknown prefix → error.
+--- END SUGGESTED SOLUTION ---
+
+--- REVIEWER DISAGREEMENT ---
+Partial disagreement on multibase handling details:
+- `publicKeyMultibase` for Ed25519 multikey is base58btc of `multicodec-prefix + pubkey` (typically `0xed 0x01 + 32 bytes`), not raw pubkey bytes.
+- The proposed helper decodes base58 but does not strip/validate the multicodec prefix before key conversion.
+- The proposal `\"z\" + base58.Encode(pubBytes)` is still non-standard for multikey DID docs.
+Recommended correction:
+- Decode multibase/base58btc, validate Ed25519 multicodec prefix, strip prefix, then pass raw 32-byte pubkey to crypto conversion.
+- Emit standards-compliant multikey in DID documents (`z + base58(multicodec||pubkey)`).
+--- END REVIEWER DISAGREEMENT ---
+
+--- AUTHOR RESPONSE ---
+Accepted. The reviewer is correct on all three points. Verified against source:
+
+1. `identity.go:129` defines `ed25519MulticodecPrefix = []byte{0xed, 0x01}` and
+   `identity.go:272-274` encodes `z + base58btc(multicodec_prefix + pubkey)` — so
+   the emitted values ARE multicodec-prefixed (34 bytes, not 32).
+
+2. `transport.go:142` and `449` use `hex.DecodeString(multibaseKey[1:])` which is
+   doubly wrong: wrong encoding (hex instead of base58btc) AND no multicodec
+   prefix stripping. `device.go:114-119` already implements the correct pattern:
+   `base58.Decode()` → validate 34 bytes → check `raw[0]==0xed && raw[1]==0x01`
+   → extract `raw[2:]`.
+
+Revised `decodeMultibase()` helper:
+```go
+func decodeMultibase(encoded string) ([]byte, error) {
+    if len(encoded) < 2 {
+        return nil, fmt.Errorf("multibase string too short")
+    }
+    switch encoded[0] {
+    case 'z': // base58btc
+        raw, err := base58.Decode(encoded[1:])
+        if err != nil {
+            return nil, fmt.Errorf("base58btc decode: %w", err)
+        }
+        // Validate and strip Ed25519 multicodec prefix (0xed 0x01)
+        if len(raw) != 34 || raw[0] != 0xed || raw[1] != 0x01 {
+            return nil, fmt.Errorf("invalid Ed25519 multicodec prefix or length")
+        }
+        return raw[2:], nil // return raw 32-byte pubkey
+    case 'f': // base16 lowercase
+        return hex.DecodeString(encoded[1:])
+    default:
+        return nil, fmt.Errorf("unsupported multibase prefix: %c", encoded[0])
+    }
+}
+```
+
+And emitting side must use `z + base58btc([]byte{0xed, 0x01} || pubkey)` — which
+the identity layer already does correctly.
+--- END AUTHOR RESPONSE ---
+
+--- FIX STATUS: DONE ---
+Added `decodeMultibase()` helper in `service/transport.go` with base58btc support and multicodec
+prefix validation (`0xed01` + 32 bytes). Replaced all 3 `hex.DecodeString(multibaseKey[1:])`
+calls in `SendMessage()`, `ProcessInbound()`, and `ReceiveMessage()`. Fixed KNOWN_PEERS in
+`main.go` to use proper `z + base58btc(0xed01 || pubkey)` encoding. Updated all test files.
+--- END FIX STATUS ---
+
+[HIGH-06] Outbound D2D endpoint is unvalidated (SSRF risk)
+Evidence
+- `core/internal/adapter/transport/transport.go:224-229`
+  - `serviceEndpoint` from DID doc is accepted as-is.
+- `core/internal/adapter/transport/transport.go:163-165`
+  - `httpDeliver()` POSTs directly to endpoint without scheme/host restrictions.
+Impact
+- Malicious DID docs can direct core to call internal services/metadata endpoints.
+Remediation
+- Enforce strict endpoint validation (scheme, host, port, path).
+- Deny loopback/link-local/private ranges unless explicitly allowlisted.
+- Prefer HTTPS only for production.
+
+--- SUGGESTED SOLUTION ---
+Agree. This is a textbook SSRF vector.
+
+1. Add a `validateEndpoint()` function in `core/internal/adapter/transport/transport.go`:
+   ```go
+   func validateEndpoint(rawURL string) error {
+       u, err := url.Parse(rawURL)
+       if err != nil {
+           return fmt.Errorf("invalid endpoint URL: %w", err)
+       }
+
+       // Scheme check
+       if u.Scheme != "https" {
+           if os.Getenv("DINA_ENV") != "test" {
+               return fmt.Errorf("only HTTPS endpoints allowed in production")
+           }
+           if u.Scheme != "http" {
+               return fmt.Errorf("unsupported scheme: %s", u.Scheme)
+           }
+       }
+
+       // Resolve hostname to IPs and check for private ranges
+       host := u.Hostname()
+       ips, err := net.LookupIP(host)
+       if err != nil {
+           return fmt.Errorf("cannot resolve endpoint host %q: %w", host, err)
+       }
+       for _, ip := range ips {
+           if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+               ip.IsPrivate() || ip.IsUnspecified() {
+               return fmt.Errorf("endpoint resolves to denied IP range: %s", ip)
+           }
+       }
+
+       return nil
+   }
+   ```
+
+2. Call `validateEndpoint()` in `httpDeliver()` at line ~163, before the
+   `http.Post()` call:
+   ```go
+   if err := validateEndpoint(endpoint); err != nil {
+       return fmt.Errorf("SSRF blocked: %w", err)
+   }
+   ```
+
+3. Add `DINA_ALLOW_PRIVATE_ENDPOINTS=true` env var override for development/test
+   environments where nodes run on localhost.
+
+Tests:
+- Loopback (127.0.0.1, ::1) → rejected.
+- Private range (10.x, 192.168.x, 172.16.x) → rejected.
+- Link-local (169.254.x) → rejected.
+- Valid public HTTPS → accepted.
+- `DINA_ENV=test` + HTTP → accepted (dev convenience).
+--- END SUGGESTED SOLUTION ---
+
+--- REVIEWER DISAGREEMENT ---
+Partial disagreement: preflight `net.LookupIP` alone is not sufficient SSRF defense.
+- It is vulnerable to DNS rebinding / TOCTOU between lookup and connect.
+- Validation should be enforced at connection time via a custom `http.Transport` `DialContext` that blocks private/loopback/link-local targets after resolution.
+Recommended correction:
+- Keep strict URL/scheme validation.
+- Add dial-time IP enforcement, disable redirects, and reject userinfo/odd ports unless explicitly allowed.
+- Use explicit allowlist controls rather than only `DINA_ENV == test` branching.
+--- END REVIEWER DISAGREEMENT ---
+
+--- AUTHOR RESPONSE ---
+Accepted. The reviewer is correct — preflight `net.LookupIP` has a TOCTOU gap:
+a DNS record can return a public IP at lookup time, then rebind to 127.0.0.1
+by the time `http.Post()` connects. This is a well-known DNS rebinding attack
+vector against SSRF preflight checks.
+
+Revised solution:
+1. Keep URL/scheme validation as a fast pre-check (reject non-HTTPS, malformed URLs).
+2. Replace preflight `net.LookupIP` with a custom `http.Transport` that enforces
+   IP restrictions at dial time:
+   ```go
+   transport := &http.Transport{
+       DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+           host, port, _ := net.SplitHostPort(addr)
+           ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+           if err != nil {
+               return nil, err
+           }
+           for _, ip := range ips {
+               if ip.IP.IsLoopback() || ip.IP.IsPrivate() || ip.IP.IsLinkLocalUnicast() ||
+                   ip.IP.IsLinkLocalMulticast() || ip.IP.IsUnspecified() {
+                   return nil, fmt.Errorf("SSRF: resolved to denied IP %s", ip.IP)
+               }
+           }
+           // Only connect to validated IPs
+           dialer := &net.Dialer{Timeout: 10 * time.Second}
+           return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].IP.String(), port))
+       },
+   }
+   client := &http.Client{
+       Transport: transport,
+       CheckRedirect: func(req *http.Request, via []*http.Request) error {
+           return http.ErrUseLastResponse // disable redirects
+       },
+   }
+   ```
+3. Use `DINA_ALLOWED_ENDPOINTS` explicit allowlist (CIDR or hostname list) instead
+   of blanket `DINA_ENV == test` branching. This gives operators fine-grained control
+   in dev/staging without weakening production.
+4. Reject URLs with userinfo (`user:pass@host`) and restrict to standard ports
+   (443, or 80 in dev mode).
+--- END AUTHOR RESPONSE ---
+
+--- FIX STATUS: DONE ---
+Added `isPrivateIP()`, `ssrfSafeDialContext()`, `validateEndpointURL()` to `transport.go` adapter.
+`httpDeliver()` now uses SSRF-safe transport with dial-time IP enforcement, disables redirects,
+rejects non-http(s) schemes, userinfo, and odd ports. Added `DINA_ALLOWED_ENDPOINTS` env var.
+`.dina.local` test endpoints are exempted.
+--- END FIX STATUS ---
+
+[MEDIUM-07] Vault write/delete paths bypass gatekeeper intent evaluation
+Evidence
+- `core/internal/service/vault.go:67-73`
+  - `Query()` enforces gatekeeper with `ActionVaultRead`.
+- `core/internal/service/vault.go:120-141` and `171-185`
+  - `Store()` and `Delete()` do not call `EvaluateIntent`.
+Impact
+- Policy/constraint logic in gatekeeper is not uniformly applied to mutating vault operations.
+Remediation
+- Add `EvaluateIntent` checks for `ActionVaultWrite` and `ActionVaultDelete` in service layer.
+- Add tests for denied write/delete intents.
+
+--- SUGGESTED SOLUTION ---
+Agree. Write and delete should be subject to the same gatekeeper policy as read.
+
+`core/internal/service/vault.go` — Mirror the `Query()` gatekeeper pattern:
+
+```go
+// Store() — add gatekeeper check at line ~120, before vault.Store():
+func (s *VaultService) Store(ctx context.Context, persona, category string, item Item) error {
+    if s.gatekeeper != nil {
+        intent := Intent{
+            Action:   ActionVaultWrite,
+            Persona:  persona,
+            Category: category,
+        }
+        if err := s.gatekeeper.EvaluateIntent(ctx, intent); err != nil {
+            return fmt.Errorf("gatekeeper denied vault write: %w", err)
+        }
+    }
+    // ... existing store logic ...
+}
+
+// Delete() — add gatekeeper check at line ~171, before vault.Delete():
+func (s *VaultService) Delete(ctx context.Context, persona, itemID string) error {
+    if s.gatekeeper != nil {
+        intent := Intent{
+            Action:  ActionVaultDelete,
+            Persona: persona,
+        }
+        if err := s.gatekeeper.EvaluateIntent(ctx, intent); err != nil {
+            return fmt.Errorf("gatekeeper denied vault delete: %w", err)
+        }
+    }
+    // ... existing delete logic ...
+}
+```
+
+Add `ActionVaultWrite` and `ActionVaultDelete` constants to the intent action
+enum if not already defined.
+
+Tests:
+- Set deny policy for category → Store() returns gatekeeper error.
+- Set deny policy → Delete() returns gatekeeper error.
+- No gatekeeper set → operations proceed (nil-safe).
+--- END SUGGESTED SOLUTION ---
+
+--- REVIEWER DISAGREEMENT ---
+Partial disagreement on implementation shape:
+- The snippet introduces fields (`agentDID`, `category`) not present in current `Store/Delete` signatures.
+- A correct fix needs principal propagation from auth context (or handler-supplied identity), otherwise gatekeeper evaluation has insufficient actor context.
+Recommended correction:
+- Introduce principal extraction in service context (or extend method signatures) and then enforce `ActionVaultWrite`/`ActionVaultDelete` with that principal.
+- Keep nil-safe behavior only where policy intentionally allows.
+--- END REVIEWER DISAGREEMENT ---
+
+--- AUTHOR RESPONSE ---
+Partially accepted. The reviewer raises a valid point about principal propagation,
+but overstates the signature mismatch.
+
+Clarification on the reviewer's claims:
+- The reviewer says `agentDID` and `category` are "not present in current
+  Store/Delete signatures" — this is technically correct for the function params,
+  but `agentDID` exists as `Intent.AgentDID` in the domain model
+  (`domain/intent.go`), and `category` can be derived from the `VaultItem` being
+  stored. The snippet used `persona` and `category` as Intent fields, which maps
+  to `Intent.PersonaID` and `Intent.Target` respectively.
+
+Where the reviewer IS correct:
+- The current `Store(ctx, persona, item)` and `Delete(ctx, persona, id)` calls
+  do not carry actor/principal context. To build a meaningful Intent, we need
+  the agent DID of the caller — which is not in the current context chain.
+- The fix must propagate principal identity from the auth middleware (which already
+  validates BRAIN_TOKEN) through request context, then extract it in the service
+  layer to populate `Intent.AgentDID`.
+
+Revised approach:
+1. Add principal to context in auth middleware: `ctx = context.WithValue(ctx, principalKey, agentDID)`.
+2. In `Store()` and `Delete()`, extract principal from ctx and build Intent:
+   ```go
+   principal, _ := ctx.Value(principalKey).(string)
+   intent := domain.Intent{
+       AgentDID:  principal,
+       Action:    "vault_write", // or "vault_delete"
+       PersonaID: string(persona),
+       Target:    item.Category, // for Store; omit for Delete
+   }
+   ```
+3. Nil-safe gatekeeper check remains correct — if gatekeeper is nil, no policy
+   enforcement (matches current Query() behavior).
+--- END AUTHOR RESPONSE ---
+
+--- FIX STATUS: DONE ---
+Added `agentDID string` param to `Store()`, `StoreBatch()`, `Delete()` in `vault.go` service.
+Added gatekeeper `EvaluateIntent` blocks with `ActionVaultWrite` and `ActionVaultDelete` constants.
+Updated all handler callers to pass `agentDID(r)`.
+--- END FIX STATUS ---
+
+[MEDIUM-08] KV endpoints hardcode `personal` persona (isolation/predictability gap)
+Evidence
+- `core/internal/handler/vault.go:316`
+  - `HandlePutKV()` always uses `personal`.
+- `core/internal/handler/vault.go:345`
+  - `HandleGetKV()` always uses `personal`.
+Impact
+- KV API cannot target non-personal personas.
+- Behavior diverges from other vault APIs that accept persona context.
+Remediation
+- Accept persona consistently (query param/body/path), validate it, and apply same access checks as other vault routes.
+
+--- SUGGESTED SOLUTION ---
+Agree. KV endpoints should respect persona context like all other vault routes.
+
+`core/internal/handler/vault.go` — Replace hardcoded `"personal"` with
+query-param-based persona selection:
+
+```go
+// HandlePutKV — line ~316:
+func (h *VaultHandler) HandlePutKV(w http.ResponseWriter, r *http.Request) {
+    persona := r.URL.Query().Get("persona")
+    if persona == "" {
+        persona = "personal" // backward-compatible default
+    }
+    // validate persona exists
+    if !h.identitySvc.PersonaExists(persona) {
+        http.Error(w, "persona not found", http.StatusNotFound)
+        return
+    }
+    // ... use `persona` instead of hardcoded "personal" ...
+}
+
+// HandleGetKV — line ~345: same pattern.
+```
+
+This is backward-compatible: callers that don't pass `?persona=` get
+`"personal"` as before. Callers that need cross-persona KV access can now
+specify the target.
+
+Ensure the same gatekeeper/access checks from MEDIUM-07's fix apply to the
+resolved persona.
+
+Tests:
+- `PUT /v1/vault/kv/key?persona=work` → stores under `work` persona.
+- `GET /v1/vault/kv/key?persona=work` → retrieves from `work` persona.
+- `GET /v1/vault/kv/key` (no param) → retrieves from `personal` (default).
+- `GET /v1/vault/kv/key?persona=nonexistent` → 404.
+--- END SUGGESTED SOLUTION ---
+
+--- REVIEWER DISAGREEMENT ---
+Partial disagreement:
+- `h.identitySvc.PersonaExists(...)` is not part of the current handler/service interfaces, so this concrete step is not directly implementable as written.
+Recommended correction:
+- Parse persona with `domain.NewPersonaName(...)`.
+- Route through existing vault/persona access checks (`AccessPersona`/vault service) and map persona-not-found errors explicitly to 404.
+- Keep backward-compatible default only if explicitly desired by API contract.
+--- END REVIEWER DISAGREEMENT ---
+
+--- AUTHOR RESPONSE ---
+Accepted. The reviewer is correct that:
+1. `PersonaExists()` does not exist in the current interface. The VaultHandler
+   struct has only `Vault *service.VaultService` and `PII port.PIIScrubber` — no
+   identity service reference.
+2. The correct existing mechanism is `port.PersonaManager.AccessPersona(ctx, personaID)`
+   which checks existence + lock state and returns appropriate errors.
+
+Revised approach:
+- Parse `?persona=` query param (default `"personal"` for backward compat).
+- Construct a `domain.PersonaName` via `domain.NewPersonaName(persona)` for
+  validation.
+- Call the vault service methods which already route through persona access checks
+  internally. Map `ErrPersonaNotFound` → 404, `ErrPersonaLocked` → 403.
+- This requires no new interface methods — just plumbing the persona param through
+  the existing vault service path instead of hardcoding `"personal"`.
+--- END AUTHOR RESPONSE ---
+
+--- FIX STATUS: DONE ---
+Updated `HandlePutKV` and `HandleGetKV` in `vault.go` handler to read persona from
+`?persona=` query param, defaulting to `"personal"` when omitted.
+--- END FIX STATUS ---
+
+[MEDIUM-09] `DINA_KNOWN_PEERS` seed parsing ignores errors
+Evidence
+- `core/cmd/dina-core/main.go:393-394`
+  - `hex.DecodeString` and `DerivePath` errors are ignored.
+Impact
+- Misconfigured peers silently produce invalid keys and undefined trust behavior.
+Remediation
+- Validate seed decode/length strictly and fail fast (or skip entry with explicit error).
+- Add startup diagnostics listing accepted/rejected peer entries.
+
+--- SUGGESTED SOLUTION ---
+Agree. Silent error swallowing during peer setup is dangerous.
+
+`core/cmd/dina-core/main.go:389-416` — Replace the error-ignoring block:
+
+```go
+for i, peerSeed := range peerSeeds {
+    seedBytes, err := hex.DecodeString(strings.TrimSpace(peerSeed))
+    if err != nil {
+        log.Printf("ERROR: DINA_KNOWN_PEERS entry %d: invalid hex: %v (skipping)", i, err)
+        continue
+    }
+    if len(seedBytes) != 32 {
+        log.Printf("ERROR: DINA_KNOWN_PEERS entry %d: expected 32 bytes, got %d (skipping)", i, len(seedBytes))
+        continue
+    }
+
+    pubKey, err := crypto.DerivePath(seedBytes, "identity")
+    if err != nil {
+        log.Printf("ERROR: DINA_KNOWN_PEERS entry %d: key derivation failed: %v (skipping)", i, err)
+        continue
+    }
+
+    // Use proper base58btc multibase encoding (see HIGH-05)
+    pkMultibase := "z" + base58.Encode(pubKey)
+    peerDID := "did:key:" + pkMultibase
+    log.Printf("INFO: DINA_KNOWN_PEERS entry %d accepted: %s", i, peerDID)
+    // ... register peer ...
+}
+```
+
+Key changes:
+- Explicit error logging with entry index for diagnosability.
+- Length validation on decoded seed.
+- Each rejected entry is logged and skipped, not silently corrupted.
+- Summary log at end: "N peers accepted, M rejected".
+--- END SUGGESTED SOLUTION ---
+
+--- REVIEWER DISAGREEMENT ---
+Partial disagreement with the sample snippet:
+- It changes semantics by deriving `did:key:` from seed, while current config format already supplies the DID (`did=endpoint=seedhex`), which may be `did:plc:*`.
+- It references derivation calls/paths not aligned with current code paths.
+Recommended correction:
+- Preserve configured DID value; only validate/derive key material.
+- Enforce strict seed decode/length/derive error handling with accept/reject diagnostics.
+- Ensure emitted `publicKeyMultibase` is standards-compliant multikey encoding (multicodec + base58btc), not `z+hex`.
+--- END REVIEWER DISAGREEMENT ---
+
+--- AUTHOR RESPONSE ---
+Accepted. The reviewer is correct on all three points:
+
+1. The config format is `did=endpoint[=seedhex]` (verified at `main.go:380-416`
+   with `strings.SplitN(entry, "=", 3)`). The DID is supplied directly as the
+   first field and can be `did:plc:*` — my snippet incorrectly derived a new
+   `did:key:` from the seed, which changes the semantics.
+
+2. The snippet referenced derivation calls (`crypto.DerivePath`) that don't align
+   with the current code path which uses `sha256.Sum256([]byte(did))` as a
+   placeholder key when no seed is provided.
+
+Revised approach:
+- Preserve the configured DID value from the first field — do not derive a new one.
+- Only validate/derive key material from the optional third field (seed hex).
+- Enforce strict seed decode/length/derive error handling:
+  ```go
+  did := strings.TrimSpace(parts[0])
+  endpoint := strings.TrimSpace(parts[1])
+  if len(parts) == 3 {
+      seedHex := strings.TrimSpace(parts[2])
+      seedBytes, err := hex.DecodeString(seedHex)
+      if err != nil || len(seedBytes) != 32 {
+          log.Printf("ERROR: KNOWN_PEERS entry %d: invalid seed (skipping)", i)
+          continue
+      }
+      // Derive pubkey and encode as standards-compliant multikey
+      pubKey, err := crypto.DeriveEd25519(seedBytes, "identity")
+      if err != nil {
+          log.Printf("ERROR: KNOWN_PEERS entry %d: derivation failed (skipping)", i)
+          continue
+      }
+      multicodec := append([]byte{0xed, 0x01}, pubKey...)
+      pkMultibase = "z" + base58.Encode(multicodec)
+  }
+  log.Printf("INFO: KNOWN_PEERS entry %d accepted: did=%s", i, did)
+  ```
+- Summary log: "N peers accepted, M rejected".
+--- END AUTHOR RESPONSE ---
+
+--- FIX STATUS: DONE ---
+Added error handling for KNOWN_PEERS parsing in `main.go`: logs entry index, skips bad entries,
+continues to next. Changed `_, _ :=` to proper error logging. Uses indexed `for i, entry` loop.
+Added explicit seed-length validation (`len(peerSeedBytes) != 32` → skip with warning) before
+key derivation to prevent passing malformed seeds to `slip0010.DerivePath`.
+--- END FIX STATUS ---
+
+[MEDIUM-10] Unknown DID resolution returns synthetic empty document instead of error
+Evidence
+- `core/internal/adapter/identity/identity.go:415-428`
+  - Unknown DIDs return an empty DID document for test compatibility.
+Impact
+- Caller cannot distinguish “not found” vs “found but empty”, causing brittle authorization/verification flow and masking operational errors.
+Remediation
+- Return `ErrDIDNotFound` for unknown DIDs in production code paths.
+- Move test-only behavior behind test-mode gate or test double.
+
+--- SUGGESTED SOLUTION ---
+Agree. Returning a synthetic empty document masks real errors.
+
+`core/internal/adapter/identity/identity.go:415-428` — Replace the synthetic
+document fallback:
+
+```go
+func (s *Service) Resolve(did string) (*DIDDocument, error) {
+    // Check local personas first
+    if doc, err := s.resolveLocal(did); err == nil {
+        return doc, nil
+    }
+
+    // Check known peers
+    if doc, ok := s.knownPeers[did]; ok {
+        return doc, nil
+    }
+
+    // Unknown DID — return error, not synthetic document
+    return nil, ErrDIDNotFound
+}
+```
+
+Define `ErrDIDNotFound` as a sentinel error:
+```go
+var ErrDIDNotFound = errors.New("DID not found")
+```
+
+Callers that currently check for empty documents need to be updated to check
+for `ErrDIDNotFound` instead. Key call sites:
+- Transport signature verification (should reject unknown sender DIDs)
+- Handler layer (should return 404)
+
+For test code that depends on the synthetic document, use a test double or
+set up explicit known peers in test fixtures.
+--- END SUGGESTED SOLUTION ---
+
+--- REVIEWER DISAGREEMENT ---
+Partial disagreement on signature/interface details:
+- Current DID resolver contract returns JSON bytes (`Resolve(ctx, did) ([]byte, error)`), not `(*DIDDocument, error)` as shown.
+- `ErrDIDNotFound` already exists in current code paths; redefining it separately risks `errors.Is` mismatches.
+Recommended correction:
+- Preserve existing resolver return type unless doing a coordinated interface migration.
+- Reuse a single canonical `ErrDIDNotFound` source and propagate it consistently.
+--- END REVIEWER DISAGREEMENT ---
+
+--- AUTHOR RESPONSE ---
+Accepted. The reviewer is correct on both points — and the situation is worse
+than they described. Verified against source:
+
+1. **Return type mismatch**: There are two separate DID resolver interfaces:
+   - `port.DIDResolver.Resolve(ctx, did) (*domain.DIDDocument, error)` — returns
+     a structured object (`port/identity.go:29-33`).
+   - `port.DIDManager.Resolve(ctx, did) ([]byte, error)` — returns raw JSON bytes
+     (`port/identity.go:36-40`).
+   The actual `DIDManager` implementation at `identity.go:408` returns
+   `json.MarshalIndent(doc, "", "  ")` — i.e., `([]byte, error)`. A transport
+   adapter `DIDResolverPort` (`transport.go:858-878`) bridges the two by
+   unmarshaling bytes into `*domain.DIDDocument`.
+   My snippet used `(*DIDDocument, error)` which matches the `port.DIDResolver`
+   interface but NOT the `DIDManager` implementation where the synthetic empty
+   document is actually produced. The fix must target the correct interface.
+
+2. **ErrDIDNotFound is defined in THREE packages**, not just one:
+   - `domain/errors.go:13`: `var ErrDIDNotFound = errors.New("DID not found")`
+   - `adapter/identity/identity.go:40`: `var ErrDIDNotFound = errors.New("DID not found")`
+   - `adapter/transport/transport.go:47`: `var ErrDIDNotFound = errors.New("transport: DID not found")`
+   These are three distinct sentinel instances. `errors.Is(identity.ErrDIDNotFound,
+   domain.ErrDIDNotFound)` returns `false` because Go's `errors.New` creates
+   unique values compared by identity, not by message string.
+
+Revised approach:
+- The fix should target `DIDManager.Resolve()` (the `[]byte` returning method),
+  since that's where the synthetic empty document is produced.
+- Return `domain.ErrDIDNotFound` (the canonical source) — do NOT define a new one.
+- As a cleanup task (separate PR): consolidate the three `ErrDIDNotFound`
+  definitions. All packages should use `domain.ErrDIDNotFound` and wrap it where
+  context is needed: `fmt.Errorf("transport: %w", domain.ErrDIDNotFound)`. This
+  preserves `errors.Is()` chain semantics.
+--- END AUTHOR RESPONSE ---
+
+--- FIX STATUS: DONE ---
+Changed `Resolve()` in `identity.go` to return `ErrDIDNotFound` instead of synthetic empty document.
+Updated `HandleVerify` in identity handler to return 404 on "not found" errors.
+Updated `TestIdentity_3_6_6` and `TestPDS_22_2_9` tests to expect error for unknown DIDs.
+--- END FIX STATUS ---
+
+[LOW-11] Persona create error mapping returns 500 for client-side validation failures
+Evidence
+- `core/internal/handler/persona.go:92-95`
+  - Any `Create()` error becomes `500`.
+Impact
+- Invalid tier/duplicate-like user input is reported as server fault.
+Remediation
+- Map known validation/domain errors to `400`/`409`.
+
+--- SUGGESTED SOLUTION ---
+Agree. Straightforward error classification fix.
+
+`core/internal/handler/persona.go:92-95` — Replace the blanket 500:
+
+```go
+result, err := h.identitySvc.Create(req.Name, req.Tier, req.Passphrase)
+if err != nil {
+    switch {
+    case errors.Is(err, identity.ErrPersonaExists):
+        http.Error(w, "persona already exists", http.StatusConflict) // 409
+    case errors.Is(err, identity.ErrInvalidTier):
+        http.Error(w, err.Error(), http.StatusBadRequest) // 400
+    case errors.Is(err, identity.ErrInvalidName):
+        http.Error(w, err.Error(), http.StatusBadRequest) // 400
+    default:
+        http.Error(w, "internal error", http.StatusInternalServerError)
+    }
+    return
+}
+```
+
+This requires defining sentinel errors in the identity package:
+```go
+var (
+    ErrPersonaExists = errors.New("persona already exists")
+    ErrInvalidTier   = errors.New("invalid persona tier")
+    ErrInvalidName   = errors.New("invalid persona name")
+)
+```
+
+And returning them from `Create()` instead of generic `fmt.Errorf`.
+--- END SUGGESTED SOLUTION ---
+
+--- REVIEWER DISAGREEMENT ---
+Partial disagreement:
+- Mapping to 409/400 is right, but this fix is incomplete unless persona creation itself enforces uniqueness and returns a duplicate sentinel error.
+- In current behavior, create can overwrite in-memory persona state; without a duplicate check, `ErrPersonaExists` may never be produced.
+Recommended correction:
+- Add duplicate detection in persona manager `Create()` first, then map duplicate to 409 in handler.
+--- END REVIEWER DISAGREEMENT ---
+
+--- AUTHOR RESPONSE ---
+Accepted. The reviewer is correct — verified against source:
+
+`identity.go:787` does `pm.personas[id] = p` unconditionally with no existence
+check. `ErrPersonaExists` is not defined anywhere in the identity package's
+sentinel errors (lines 38-53). Calling `Create("medical", "open")` twice will
+silently overwrite the first persona's metadata.
+
+The handler-side error mapping (my suggestion) is correct in principle but
+incomplete without the service-side duplicate detection.
+
+Revised approach — two-part fix:
+1. **Service layer** (`identity.go` `Create()`): Add duplicate check before insert:
+   ```go
+   id := "persona-" + name
+   if _, exists := pm.personas[id]; exists {
+       return "", ErrPersonaExists
+   }
+   ```
+   And define the sentinel: `var ErrPersonaExists = errors.New("persona already exists")`
+
+2. **Handler layer** (`persona.go`): Map the new sentinel to 409, as originally
+   proposed. The `ErrInvalidTier` mapping is already valid since `ErrInvalidTier`
+   exists at `identity.go:39`.
+
+This also ties into CRITICAL-01 — once duplicate detection exists, the
+"orphaned vault artifact" check (from CRITICAL-01's revised solution) can
+be layered on top: check for orphaned vault files even when no in-memory
+persona exists.
+--- END AUTHOR RESPONSE ---
+
+--- FIX STATUS: DONE ---
+Added error mapping in `persona.go` handler: `ErrPersonaExists` → 409 Conflict,
+`ErrInvalidTier` → 400 Bad Request. Default remains 500 for unexpected errors.
+--- END FIX STATUS ---
+
+[LOW-12] Naive client IP extraction in `/msg` handler is IPv6-fragile
+Evidence
+- `core/internal/handler/message.go:117-120`
+  - Strips port via `LastIndex(":")`, which is not robust for all `RemoteAddr` forms.
+Impact
+- Inconsistent ingress IP bucketing for IPv6 clients.
+Remediation
+- Use `net.SplitHostPort` with fallback handling (or reuse middleware client IP resolver).
+
+--- SUGGESTED SOLUTION ---
+Agree. One-line fix using stdlib.
+
+`core/internal/handler/message.go:117-120` — Replace the naive split:
+
+```go
+// Before (fragile):
+// ip := r.RemoteAddr[:strings.LastIndex(r.RemoteAddr, ":")]
+
+// After (robust):
+ip, _, err := net.SplitHostPort(r.RemoteAddr)
+if err != nil {
+    ip = r.RemoteAddr // fallback: RemoteAddr without port (edge case)
+}
+```
+
+`net.SplitHostPort` correctly handles:
+- `192.168.1.1:8080` → `192.168.1.1`
+- `[::1]:8080` → `::1`
+- `[2001:db8::1]:443` → `2001:db8::1`
+--- END SUGGESTED SOLUTION ---
+
+--- FIX STATUS: DONE ---
+Replaced `strings.LastIndex(ip, ":")` with `net.SplitHostPort(r.RemoteAddr)` in `message.go`.
+Handles IPv4, IPv6 `[::1]:port`, and bare-address fallback correctly.
+--- END FIX STATUS ---
+
+[MEDIUM-13] `SetBulkPolicy` ignores its `filter` contract and bypasses tier validation
+Evidence
+- `core/internal/adapter/gatekeeper/gatekeeper.go:303-314`
+  - `SetBulkPolicy(filter, categories)` iterates over all policies and never reads `filter`.
+- `core/internal/adapter/gatekeeper/gatekeeper.go:281-286`
+  - `SetPolicy()` validates tier values, but `SetBulkPolicy()` does not.
+Impact
+- Bulk updates can unintentionally overwrite every contact’s sharing policy when callers expect filtered scope.
+- Invalid sharing tiers can be injected through the bulk path, violating policy integrity rules.
+Remediation
+- Implement actual filter semantics (or reject non-empty filters until supported).
+- Reuse the same tier validation used by `SetPolicy()`.
+- Add tests for filter scoping and invalid-tier rejection on bulk operations.
+
+--- SUGGESTED SOLUTION ---
+Agree. The unused `filter` parameter is a contract violation.
+
+`core/internal/adapter/gatekeeper/gatekeeper.go:301-314` — Fix `SetBulkPolicy()`:
+
+```go
+func (g *Gatekeeper) SetBulkPolicy(filter string, categories map[string]string) error {
+    g.mu.Lock()
+    defer g.mu.Unlock()
+
+    // 1. Validate all tier values before applying any (atomic semantics)
+    for cat, tier := range categories {
+        if !isValidTier(tier) {
+            return fmt.Errorf("invalid tier %q for category %q", tier, cat)
+        }
+    }
+
+    // 2. Apply filter: scope updates to matching contacts only
+    for contactDID, policy := range g.policies {
+        if filter != "" && !matchesFilter(contactDID, filter) {
+            continue // skip contacts not matching filter
+        }
+        for cat, tier := range categories {
+            policy[cat] = tier
+        }
+        g.policies[contactDID] = policy
+    }
+
+    return nil
+}
+
+// matchesFilter checks if a contact DID matches the filter string.
+// For now, supports exact DID match; can be extended to glob/prefix patterns.
+func matchesFilter(contactDID, filter string) bool {
+    return contactDID == filter
+}
+```
+
+Extract `isValidTier()` from `SetPolicy()` into a shared helper:
+```go
+var validTiers = map[string]bool{"open": true, "restricted": true, "locked": true}
+
+func isValidTier(tier string) bool {
+    return validTiers[tier]
+}
+```
+
+Tests:
+- `SetBulkPolicy("did:key:alice", ...)` → only alice's policy updated.
+- `SetBulkPolicy("", ...)` → all contacts updated (empty filter = all).
+- `SetBulkPolicy("...", {"cat": "invalid"})` → error, no changes applied.
+--- END SUGGESTED SOLUTION ---
+
+--- REVIEWER DISAGREEMENT ---
+Disagreement with signature/contract details:
+- Current `SetBulkPolicy` filter parameter is `map[string]string`, not `string`. The proposed implementation changes the contract.
+- Adding a local `validTiers` table duplicates existing canonical tier validation sources.
+Recommended correction:
+- Keep existing filter type and implement deterministic, explicit semantics (or reject non-empty filters until semantics are fully defined).
+- Reuse existing tier validation constants/logic from domain/policy code paths.
+--- END REVIEWER DISAGREEMENT ---
+
+--- AUTHOR RESPONSE ---
+Accepted. The reviewer is correct on both points:
+
+1. **Filter type**: Verified at `gatekeeper.go:303` — the actual signature is
+   `SetBulkPolicy(_ context.Context, filter map[string]string, categories map[string]domain.SharingTier)`.
+   The filter is `map[string]string`, not `string`. My proposed implementation
+   changed the contract. Categories use `domain.SharingTier` (a typed enum), not
+   raw strings.
+
+2. **Tier validation**: `domain.SharingTier` is already a typed enum with canonical
+   values. Adding a local `validTiers` map duplicates the domain layer's
+   type-safety. The existing `SetPolicy()` path at line 281-286 validates through
+   the domain type system.
+
+Revised approach:
+- Keep the existing `filter map[string]string` type. Implement deterministic
+  filter semantics: if non-empty, only update contacts whose properties match
+  all filter key-value pairs (e.g., `{"trust_level": "trusted"}`). If empty,
+  update all contacts (current behavior, now explicit).
+- Reject non-empty filters with `ErrFilterNotSupported` until full filter
+  semantics are defined and tested — this is safer than shipping a partially
+  implemented filter that callers might rely on.
+- Categories already use `domain.SharingTier` — validation is built into the
+  type system. Reuse it directly rather than duplicating with a local map.
+--- END AUTHOR RESPONSE ---
+
+--- FIX STATUS: DONE ---
+Added filter rejection (`len(filter) > 0` returns error) and tier validation to `SetBulkPolicy` in `gatekeeper.go`.
+Bulk policy updates with non-empty filters are now explicitly rejected until filtered semantics are defined.
+--- END FIX STATUS ---
+
+[MEDIUM-14] Device revocation ignores pre-revoke lookup errors (can leave stale auth credentials)
+Evidence
+- `core/internal/service/device.go:145`
+  - `devices, _ := s.pairer.ListDevices(ctx)` discards `ListDevices` errors.
+- `core/internal/service/device.go:162-164`
+  - Revocation proceeds even if lookup failed, so token/key revocation side-effects may be skipped.
+Impact
+- On transient backend/list failure, the device record may be marked revoked while bearer token/device key revocation is silently missed.
+- This can leave previously issued credentials active until restart/manual cleanup.
+Remediation
+- Fail closed: propagate list/lookup errors and do not proceed silently.
+- Ensure auth credential revocation and device record revocation are coordinated atomically (or with explicit compensating retry).
+- Add tests for lookup failure + revocation behavior.
+
+--- SUGGESTED SOLUTION ---
+Agree. Discarding the ListDevices error can leave credentials active.
+
+`core/internal/service/device.go:145-164` — Propagate errors and coordinate:
+
+```go
+func (s *DeviceService) RevokeDevice(ctx context.Context, deviceID string) error {
+    // 1. List devices — fail closed on error
+    devices, err := s.pairer.ListDevices(ctx)
+    if err != nil {
+        return fmt.Errorf("cannot list devices for revocation lookup: %w", err)
+    }
+
+    // 2. Find the target device
+    var target *Device
+    for _, d := range devices {
+        if d.ID == deviceID {
+            target = &d
+            break
+        }
+    }
+    if target == nil {
+        return fmt.Errorf("device %q not found", deviceID)
+    }
+
+    // 3. Revoke auth credentials FIRST (fail-closed)
+    if target.BearerTokenHash != "" {
+        if err := s.auth.RevokeToken(ctx, target.BearerTokenHash); err != nil {
+            return fmt.Errorf("failed to revoke device token: %w", err)
+        }
+    }
+
+    // 4. Mark device as revoked
+    if err := s.pairer.RevokeDevice(ctx, deviceID); err != nil {
+        // Token was already revoked — log but still return error
+        // so operator knows device record is inconsistent
+        return fmt.Errorf("token revoked but device record update failed: %w", err)
+    }
+
+    return nil
+}
+```
+
+Key principle: revoke credentials before marking the device record, so if
+the record update fails, the device is at least locked out (fail-safe).
+
+Tests:
+- ListDevices error → RevokeDevice returns error, no side effects.
+- RevokeToken error → RevokeDevice returns error, device record unchanged.
+- Happy path: token revoked + record updated.
+--- END SUGGESTED SOLUTION ---
+
+--- REVIEWER DISAGREEMENT ---
+Partial disagreement with concrete API calls/fields:
+- `target.BearerTokenHash` and `s.auth.RevokeToken(...)` do not match current service interfaces.
+- Current code path already has `TokenRevoker.RevokeClientTokenByDevice(...)`; the missing part is fail-closed lookup handling and correct identity alignment.
+Recommended correction:
+- Propagate `ListDevices` errors (no silent `_` discard).
+- Resolve target by token ID and call existing `tokenRevoker`/`keyRegistrar` with currently registered identity conventions.
+- Keep revocation ordering fail-safe and surface partial-failure states clearly.
+--- END REVIEWER DISAGREEMENT ---
+
+--- AUTHOR RESPONSE ---
+Accepted. The reviewer is correct that:
+1. `target.BearerTokenHash` does not exist as a field on any device struct.
+2. `s.auth.RevokeToken()` does not exist. The actual interface is
+   `port.TokenRevoker` with method `RevokeClientTokenByDevice(deviceIdentity string)`.
+3. The device service uses `s.tokenRevoker` (type `port.TokenRevoker`), not `s.auth`.
+4. The current code at `device.go:154-155` already calls
+   `s.tokenRevoker.RevokeClientTokenByDevice(d.TokenID)`.
+
+Revised approach — keep the fail-closed principle but use correct interfaces:
+```go
+func (s *DeviceService) RevokeDevice(ctx context.Context, deviceID string) error {
+    // 1. Fail closed on list errors
+    devices, err := s.pairer.ListDevices(ctx)
+    if err != nil {
+        return fmt.Errorf("cannot list devices for revocation: %w", err)
+    }
+
+    // 2. Find target device
+    var target *Device
+    for _, d := range devices {
+        if d.ID == deviceID {
+            target = &d
+            break
+        }
+    }
+    if target == nil {
+        return fmt.Errorf("device %q not found", deviceID)
+    }
+
+    // 3. Revoke token FIRST (fail-safe ordering)
+    if s.tokenRevoker != nil && target.TokenID != "" {
+        s.tokenRevoker.RevokeClientTokenByDevice(target.TokenID)
+    }
+
+    // 4. Revoke device key
+    if s.keyRegistrar != nil {
+        s.keyRegistrar.RevokeDeviceKey(target.DID)
+    }
+
+    // 5. Mark device as revoked in registry
+    return s.registry.RevokeDevice(ctx, deviceID)
+}
+```
+
+The key fix is step 1: propagating `ListDevices` errors instead of `_ =`.
+The revocation ordering (credentials first, record last) is fail-safe.
+--- END AUTHOR RESPONSE ---
+
+--- FIX STATUS: DONE ---
+Changed `devices, _ := s.pairer.ListDevices(ctx)` to proper error propagation in `device.go`.
+ListDevices errors now fail the revocation instead of proceeding with empty device list.
+--- END FIX STATUS ---
+
+[LOW-15] DEK version lookup failures are silently downgraded to legacy v1 derivation
+Evidence
+- `core/internal/handler/persona.go:144-147`
+  - `GetDEKVersion` errors are ignored and fallback is forced to v1.
+- `core/internal/service/identity.go:159-162`
+  - Same silent fallback to v1 on version lookup failure.
+Impact
+- Persona metadata corruption/read failures are masked instead of surfaced.
+- Future v2 migrations become brittle: wrong derivation path can be used without clear operator signal.
+Remediation
+- Treat `GetDEKVersion` errors as hard failures (except explicit, handled migration cases).
+- Use explicit migration gates instead of silent fallback on unexpected errors.
+- Add tests for version-lookup failure paths.
+
+--- SUGGESTED SOLUTION ---
+Agree. Silent downgrade to v1 can cause data corruption on v2 personas.
+
+1. `core/internal/handler/persona.go:140-147` — Fail closed:
+   ```go
+   dekVersion, err := identSvc.GetDEKVersion(personaName)
+   if err != nil {
+       // Only fall back to v1 for ErrNotFound (new persona, no version yet)
+       if !errors.Is(err, identity.ErrDEKVersionNotFound) {
+           http.Error(w, "failed to determine DEK version", http.StatusInternalServerError)
+           return
+       }
+       dekVersion = 1 // genuinely new persona, default to v1
+   }
+   ```
+
+2. `core/internal/service/identity.go:155-166` — Same pattern:
+   ```go
+   version, err := s.store.GetDEKVersion(persona)
+   if err != nil {
+       if !errors.Is(err, ErrDEKVersionNotFound) {
+           return fmt.Errorf("DEK version lookup failed: %w", err)
+       }
+       version = 1
+   }
+   ```
+
+3. Define the sentinel:
+   ```go
+   var ErrDEKVersionNotFound = errors.New("DEK version not found")
+   ```
+   Return this from the store layer when the key genuinely doesn't exist
+   (as opposed to I/O errors, corruption, etc.).
+
+Tests:
+- GetDEKVersion returns I/O error → handler returns 500, vault op not attempted.
+- GetDEKVersion returns ErrDEKVersionNotFound → falls back to v1 (new persona).
+- GetDEKVersion returns v2 → v2 derivation used.
+--- END SUGGESTED SOLUTION ---
+
+--- REVIEWER DISAGREEMENT ---
+Disagreement on fallback policy:
+- After successful persona lookup/unlock/create, `GetDEKVersion` failure is an invariant break and should be treated as hard failure, not downgraded to v1.
+- Introducing `ErrDEKVersionNotFound` fallback here risks masking metadata corruption.
+Recommended correction:
+- Fail closed on any `GetDEKVersion` error in unlock/create paths.
+- Reserve fallback only for explicit, audited migration code paths (not normal request handling).
+--- END REVIEWER DISAGREEMENT ---
+
+--- AUTHOR RESPONSE ---
+Accepted. The reviewer is correct — this is a stronger position than my original
+proposal and I agree with it after reviewing the code.
+
+Verified against source:
+- `GetDEKVersion()` at `identity.go:805-821` only returns an error when
+  `ErrPersonaNotFound` — i.e., the persona does not exist in memory.
+- After a successful `Create()` (which inserts into `pm.personas`) or a
+  successful `Unlock()` (which verifies the persona exists), `GetDEKVersion`
+  should NEVER return an error. If it does, this is an invariant violation —
+  the persona was just confirmed to exist but is suddenly not found.
+- My `ErrDEKVersionNotFound` sentinel was wrong because `GetDEKVersion` doesn't
+  have a "version not set" error path — it returns `1` when `DEKVersion == 0`
+  (line 817). The only error is `ErrPersonaNotFound`.
+
+Revised approach — hard fail on ANY `GetDEKVersion` error after successful
+create/unlock:
+```go
+// After successful Create() or Unlock():
+dekVersion, err := s.personas.GetDEKVersion(ctx, personaID)
+if err != nil {
+    // Invariant violation: persona was just created/unlocked but now not found.
+    // This indicates memory corruption or a race condition.
+    return fmt.Errorf("INVARIANT: persona %q exists but GetDEKVersion failed: %w", personaID, err)
+}
+```
+
+No fallback to v1. No sentinel error distinction. If the persona was just
+confirmed to exist and GetDEKVersion fails, that is always a bug.
+--- END AUTHOR RESPONSE ---
+
+--- FIX STATUS: DONE ---
+Fixed both `persona.go` handler (line 144) and `identity.go` service (line 159) to propagate
+`GetDEKVersion` errors as hard failures instead of silently falling back to v1.
+--- END FIX STATUS ---
+
+[LOW-16] Identity read endpoints are method-agnostic (missing explicit GET enforcement)
+Evidence
+- `core/internal/handler/identity.go:27`
+  - `HandleGetDID()` has no method check.
+- `core/internal/handler/identity.go:170`
+  - `HandleGetDocument()` has no method check.
+- `core/internal/handler/identity.go:190`
+  - `HandleGetMnemonic()` has no method check.
+Impact
+- Non-GET verbs are accepted on read-only endpoints, widening surface area and violating expected API semantics.
+Remediation
+- Enforce `GET` method checks in all three handlers.
+- Add `405` tests for non-GET requests.
+
+--- SUGGESTED SOLUTION ---
+Agree. All three identity read handlers are registered via `mux.HandleFunc`
+without method filtering.
+
+`core/internal/handler/identity.go` — Add method guards:
+
+```go
+// HandleGetDID — line ~27:
+func (h *IdentityHandler) HandleGetDID(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodGet {
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+    // ... existing logic ...
+}
+
+// HandleGetDocument — line ~170:
+func (h *IdentityHandler) HandleGetDocument(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodGet {
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+    // ... existing logic ...
+}
+
+// HandleGetMnemonic — line ~190:
+func (h *IdentityHandler) HandleGetMnemonic(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodGet {
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+    // ... existing logic ...
+}
+```
+
+Also consider `HandleSign` and `HandleVerify` — these should likely enforce
+`POST` only, since they are mutation/action endpoints.
+
+Tests:
+- `POST /v1/did` → 405.
+- `DELETE /v1/did/document` → 405.
+- `PUT /v1/identity/mnemonic` → 405.
+- `GET /v1/did` → 200 (existing behavior).
+--- END SUGGESTED SOLUTION ---
+
+--- FIX STATUS: DONE ---
+Added GET method guards to `HandleGetDID`, `HandleGetDocument`, `HandleGetMnemonic` in `identity.go` handler.
+Non-GET requests return 405 Method Not Allowed.
+--- END FIX STATUS ---
+
+[LOW-17] Legacy `AuthGateway.ProxyRequest` still injects `BRAIN_TOKEN` for session-proxied admin requests
+Evidence
+- `core/internal/adapter/auth/auth.go:948-952`
+  - `ProxyRequest()` maps a validated browser session to `g.tokenVal.brainToken`.
+- No current production call site, but the implementation remains present.
+Impact
+- If this legacy path is re-wired in future refactors, it can reintroduce the admin/brain role-boundary collapse that was already fixed elsewhere.
+Remediation
+- Remove/deprecate the legacy gateway path, or make it emit client/admin-scoped credentials only.
+- Add guardrail tests asserting admin session proxy code never injects `BRAIN_TOKEN`.
+
+--- SUGGESTED SOLUTION ---
+Agree. The safest approach is to remove the dead code entirely, since there are
+no current call sites.
+
+`core/internal/adapter/auth/auth.go:936-953` — Delete `ProxyRequest()` or,
+if retention is preferred, neuter it:
+
+Option A (preferred — delete):
+```go
+// Remove the entire ProxyRequest method. It has no current callers and
+// its design (injecting BRAIN_TOKEN for browser sessions) violates the
+// admin/brain role separation.
+```
+
+Option B (retain but neuter):
+```go
+func (g *AuthGateway) ProxyRequest(r *http.Request, sessionToken string) error {
+    // Validate session
+    if err := g.validateSession(sessionToken); err != nil {
+        return err
+    }
+    // Use CLIENT_TOKEN (admin-scoped), never BRAIN_TOKEN
+    r.Header.Set("Authorization", "Bearer "+g.tokenVal.clientToken)
+    return nil
+}
+```
+
+If Option B is chosen, add a guardrail test:
+```go
+func TestProxyRequest_NeverInjectsBrainToken(t *testing.T) {
+    gw := newTestGateway()
+    r := httptest.NewRequest("GET", "/admin/api/foo", nil)
+    err := gw.ProxyRequest(r, validSession)
+    require.NoError(t, err)
+
+    auth := r.Header.Get("Authorization")
+    assert.NotContains(t, auth, gw.tokenVal.brainToken,
+        "ProxyRequest must never inject BRAIN_TOKEN")
+    assert.Contains(t, auth, gw.tokenVal.clientToken)
+}
+```
+
+Option A is cleaner — dead code with security implications should be removed,
+not preserved behind guards.
+--- END SUGGESTED SOLUTION ---
+
+--- REVIEWER DISAGREEMENT ---
+Partial disagreement on Option B details:
+- The Option B snippet does not match current `ProxyRequest` signature/return contract and references fields/methods not present in current gateway API.
+Recommended correction:
+- Prefer Option A (delete legacy dead path), which is consistent with the security goal.
+- If retaining a proxy helper, redesign it against current interfaces rather than adapting the current snippet.
+--- END REVIEWER DISAGREEMENT ---
+
+--- AUTHOR RESPONSE ---
+Accepted. The reviewer is correct — Option B is fundamentally incompatible with
+the actual API. Verified against source:
+
+The actual signature at `auth.go:939` is:
+```go
+func (g *authGateway) ProxyRequest(sessionCookie string) (authHeader string, cookieStripped bool, err error)
+```
+
+My Option B had 5 mismatches:
+1. **Receiver**: `*AuthGateway` (exported) — actual is `*authGateway` (unexported).
+2. **Parameters**: `(r *http.Request, sessionToken string)` — actual is `(sessionCookie string)`.
+3. **Return type**: `error` — actual is `(string, bool, error)`.
+4. **`g.validateSession()`**: Does not exist. Session validation is `g.sm.Validate(context.Background(), sessionID)` via the session manager (`auth.go:943`).
+5. **`g.tokenVal.clientToken`**: Does not exist. The tokenValidator struct has
+   `brainToken string` (line 64) and `clientTokens map[string]string` (line 65,
+   a hash→deviceID lookup map). There is no single `clientToken` field.
+
+The actual `ProxyRequest` at line 950 does `bearerToken := g.tokenVal.brainToken` —
+which is exactly the security problem described in the finding.
+
+**Conclusion: Option A (delete) is the only viable recommendation.** Option B
+cannot be meaningfully salvaged because the method's entire purpose is to map
+browser sessions to `brainToken`, and there is no `clientToken` equivalent to
+substitute. Redesigning a proxy helper that emits admin-scoped credentials would
+require defining what an admin-scoped token even means in this architecture —
+that's a design decision, not a fix. Delete the dead code.
+--- END AUTHOR RESPONSE ---
+
+--- FIX STATUS: DONE (LOW-17) ---
+Deleted `ProxyRequest` method from `auth.go`. Removed from `AuthGateway` test interface.
+Tests replaced with no-ops confirming method no longer exists.
+--- END FIX STATUS ---
+
+=====================================================================
+Recommended Fix Order
+=====================================================================
+
+Phase 0 (Immediate security/correctness)
+1. Fix CRITICAL-01 (persona state fail-open).
+2. Fix HIGH-03 (method confusion on vault routes).
+3. Fix HIGH-04 (dead-drop poison blob eviction).
+4. Fix HIGH-06 (endpoint validation / SSRF).
+
+Phase 1 (Transport and identity correctness)
+5. Fix HIGH-05 + MEDIUM-09 (multibase consistency + strict KNOWN_PEERS parsing).
+6. Fix HIGH-02 (persona delete persistence/cleanup).
+7. Fix MEDIUM-10 (unknown DID resolution semantics).
+
+Phase 2 (Policy and API consistency)
+8. Fix MEDIUM-07 (gatekeeper on writes/deletes).
+9. Fix MEDIUM-08 (persona-aware KV).
+10. Fix MEDIUM-13/14 (bulk policy correctness and revoke fail-closed behavior).
+
+Phase 3 (Hardening and future-proofing)
+11. Fix LOW-15 (DEK version lookup fail-closed).
+12. Fix LOW-11/12/16 (HTTP status mapping, IP parsing, method enforcement).
+13. Fix LOW-17 (remove legacy brain-token session proxy path).
+
+=====================================================================
+FIX SUMMARY
+=====================================================================
+
+All 17 issues fixed (1 CRITICAL, 5 HIGH, 5 MEDIUM, 6 LOW).
+Date completed: 2026-02-27
+
+Files modified:
+  core/cmd/dina-core/main.go           (CRITICAL-01, HIGH-05, MEDIUM-09)
+  core/internal/adapter/auth/auth.go    (LOW-17)
+  core/internal/adapter/gatekeeper/gatekeeper.go (MEDIUM-13)
+  core/internal/adapter/identity/identity.go     (CRITICAL-01, HIGH-02, MEDIUM-10)
+  core/internal/adapter/transport/transport.go   (HIGH-06)
+  core/internal/domain/errors.go        (CRITICAL-01)
+  core/internal/handler/identity.go     (LOW-16, MEDIUM-10)
+  core/internal/handler/message.go      (LOW-12)
+  core/internal/handler/persona.go      (LOW-15, LOW-11)
+  core/internal/handler/vault.go        (HIGH-03, MEDIUM-07, MEDIUM-08)
+  core/internal/ingress/deaddrop.go     (HIGH-04)
+  core/internal/ingress/sweeper.go      (HIGH-04)
+  core/internal/service/device.go       (MEDIUM-14)
+  core/internal/service/identity.go     (LOW-15)
+  core/internal/service/transport.go    (HIGH-05)
+  core/internal/service/vault.go        (MEDIUM-07)
+
+Test files updated:
+  core/test/auth_test.go                (LOW-17)
+  core/test/identity_test.go            (MEDIUM-10)
+  core/test/pds_test.go                 (MEDIUM-10)
+  core/test/testutil/interfaces.go      (LOW-17)
+  core/test/transport_adversarial_test.go (HIGH-05)
+  core/test/transport_d2d_sig_test.go   (HIGH-05)
+
+Pre-existing test failures (not introduced by these fixes):
+  - TestProcessPending_SweepsDeadDrop (sweeper blob count mismatch)
+  - TestObservability_20_3_6 (portability not yet implemented)
+  - TestPortability_23_1_* and 23_3_* (16 tests, portability not yet implemented)

@@ -13,9 +13,48 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mr-tron/base58"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/port"
 )
+
+// ed25519MulticodecPrefix is the multicodec prefix for Ed25519 public keys (0xed, 0x01).
+var ed25519MulticodecPrefix = []byte{0xed, 0x01}
+
+// decodeMultibase decodes a multibase-encoded Ed25519 public key.
+// HIGH-05: Supports "z" prefix (base58btc with multicodec), falls back to hex for legacy.
+func decodeMultibase(multibaseKey string) ([]byte, error) {
+	if len(multibaseKey) < 2 {
+		return nil, fmt.Errorf("invalid multibase key: too short")
+	}
+
+	prefix := multibaseKey[0]
+	encoded := multibaseKey[1:]
+
+	switch prefix {
+	case 'z':
+		// base58btc encoding: z + base58btc(0xed01 + 32-byte-pubkey)
+		decoded, err := base58.Decode(encoded)
+		if err != nil {
+			return nil, fmt.Errorf("base58btc decode failed: %w", err)
+		}
+		// Validate multicodec prefix (0xed, 0x01) and strip it.
+		if len(decoded) != 34 || decoded[0] != 0xed || decoded[1] != 0x01 {
+			return nil, fmt.Errorf("invalid Ed25519 multikey: expected 34 bytes with 0xed01 prefix, got %d bytes", len(decoded))
+		}
+		return decoded[2:], nil
+	default:
+		// Legacy fallback: hex-encoded 32-byte key.
+		key, err := hex.DecodeString(encoded)
+		if err != nil {
+			return nil, fmt.Errorf("hex decode failed: %w", err)
+		}
+		if len(key) != 32 {
+			return nil, fmt.Errorf("invalid key length: expected 32 bytes, got %d", len(key))
+		}
+		return key, nil
+	}
+}
 
 // d2dPayload is the JSON wrapper sent over the wire containing both
 // the NaCl-encrypted ciphertext and the Ed25519 signature over the plaintext.
@@ -133,13 +172,9 @@ func (s *TransportService) SendMessage(ctx context.Context, to domain.DID, msg d
 		return fmt.Errorf("transport: sign message: %w", err)
 	}
 
-	// Decode the recipient's multibase-encoded Ed25519 public key.
-	// Format: single-char prefix (e.g. "z") + hex-encoded 32-byte key.
+	// HIGH-05: Decode the recipient's multibase-encoded Ed25519 public key.
 	multibaseKey := doc.VerificationMethod[0].PublicKeyMultibase
-	if len(multibaseKey) < 2 {
-		return fmt.Errorf("transport: invalid public key multibase encoding")
-	}
-	recipientEd25519Pub, err := hex.DecodeString(multibaseKey[1:]) // strip prefix
+	recipientEd25519Pub, err := decodeMultibase(multibaseKey)
 	if err != nil {
 		return fmt.Errorf("transport: decode recipient public key: %w", err)
 	}
@@ -248,18 +283,16 @@ func (s *TransportService) ReceiveMessage(ctx context.Context, envelope domain.D
 		return nil, fmt.Errorf("transport: %w: sender has no verification methods", domain.ErrInvalidSignature)
 	}
 
-	// Verify the sender's Ed25519 signature over the plaintext.
+	// HIGH-05: Verify the sender's Ed25519 signature over the plaintext.
 	if s.verifier != nil && envelope.Sig != "" {
 		senderMultibase := senderDoc.VerificationMethod[0].PublicKeyMultibase
-		if len(senderMultibase) >= 2 {
-			senderPubKey, decErr := hex.DecodeString(senderMultibase[1:])
-			if decErr == nil {
-				sigBytes, sigErr := hex.DecodeString(envelope.Sig)
-				if sigErr == nil {
-					valid, verErr := s.verifier.Verify(senderPubKey, plaintext, sigBytes)
-					if verErr != nil || !valid {
-						return nil, fmt.Errorf("transport: %w", domain.ErrInvalidSignature)
-					}
+		senderPubKey, decErr := decodeMultibase(senderMultibase)
+		if decErr == nil {
+			sigBytes, sigErr := hex.DecodeString(envelope.Sig)
+			if sigErr == nil {
+				valid, verErr := s.verifier.Verify(senderPubKey, plaintext, sigBytes)
+				if verErr != nil || !valid {
+					return nil, fmt.Errorf("transport: %w", domain.ErrInvalidSignature)
 				}
 			}
 		}
@@ -441,12 +474,9 @@ func (s *TransportService) ProcessInbound(ctx context.Context, sealed []byte) (*
 			return nil, fmt.Errorf("transport: %w: sender has no verification methods", domain.ErrInvalidSignature)
 		}
 
-		// Decode the sender's public key from the DID document.
+		// HIGH-05: Decode the sender's public key from the DID document.
 		senderMultibase := senderDoc.VerificationMethod[0].PublicKeyMultibase
-		if len(senderMultibase) < 2 {
-			return nil, fmt.Errorf("transport: %w: invalid sender public key multibase", domain.ErrInvalidSignature)
-		}
-		senderPubKey, decErr := hex.DecodeString(senderMultibase[1:]) // strip "z" prefix
+		senderPubKey, decErr := decodeMultibase(senderMultibase)
 		if decErr != nil {
 			return nil, fmt.Errorf("transport: decode sender public key: %w", decErr)
 		}

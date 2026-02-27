@@ -50,6 +50,8 @@ var (
 	ErrInvalidShareParams  = errors.New("invalid share parameters: need 2 <= k <= n")
 	ErrInsufficientShares  = errors.New("insufficient shares for reconstruction")
 	ErrInvalidShare        = errors.New("invalid share data")
+	ErrPersonaExists       = errors.New("persona already exists")
+	ErrOrphanedVaultArtifacts = errors.New("orphaned vault artifacts exist for persona; use recovery flow")
 )
 
 // ---------- Base58btc encoding ----------
@@ -412,20 +414,8 @@ func (dm *DIDManager) Resolve(_ context.Context, did domain.DID) ([]byte, error)
 	didStr := string(did)
 	doc, ok := dm.dids[didStr]
 	if !ok {
-		// For unknown DIDs, return an empty document to support ingress-tier tests.
-		// TST-CORE-926 calls Resolve with an unknown DID.
-		doc = &didDocument{
-			Context: []string{
-				"https://www.w3.org/ns/did/v1",
-				"https://w3id.org/security/multikey/v1",
-			},
-			ID: didStr,
-			VerificationMethod: []verificationMethod{},
-			Authentication:     []string{},
-			Service:            []serviceEndpoint{},
-			CreatedAt:          time.Now().UTC().Format(time.RFC3339),
-			DeviceOrigin:       "unknown",
-		}
+		// MEDIUM-10: Return error for unknown DIDs instead of synthetic document.
+		return nil, ErrDIDNotFound
 	}
 
 	return json.MarshalIndent(doc, "", "  ")
@@ -551,6 +541,12 @@ type PersonaManager struct {
 	VerifyPassphrase     func(storedHash, passphrase string) (bool, error)
 	HashUpgrader         func(passphrase string) (string, error) // re-hash with current algorithm (Argon2id)
 	OnLock               func(personaID string) // callback invoked after persona is locked (vault close, etc.)
+	// CheckOrphanedVault is an optional callback invoked during Create() to detect
+	// orphaned vault artifacts. If vault files exist for a persona but no in-memory
+	// persona state exists (e.g. after state file corruption/loss), this callback
+	// returns true. Callers should wire this to the vault layer once durable vault
+	// storage is implemented. When nil, the check is skipped.
+	CheckOrphanedVault func(personaID string) bool
 }
 
 // NewPersonaManager returns a new PersonaManager.
@@ -771,6 +767,18 @@ func (pm *PersonaManager) Create(_ context.Context, name, tier string, passphras
 	}
 
 	id := "persona-" + name
+
+	// CRITICAL-01: Reject duplicate persona creation instead of silently overwriting.
+	if _, exists := pm.personas[id]; exists {
+		return "", ErrPersonaExists
+	}
+
+	// CRITICAL-01: Reject creation if orphaned vault artifacts exist for this persona.
+	// This prevents silent DEK reuse after state file loss/corruption.
+	if pm.CheckOrphanedVault != nil && pm.CheckOrphanedVault(id) {
+		return "", ErrOrphanedVaultArtifacts
+	}
+
 	locked := tier == "locked"
 
 	p := &Persona{
@@ -955,6 +963,7 @@ func (pm *PersonaManager) IsLocked(personaID string) (bool, error) {
 }
 
 // Delete securely wipes the persona's vault and keys.
+// HIGH-02: Also cleans up contacts, TTL timers, and persists state.
 func (pm *PersonaManager) Delete(_ context.Context, personaID string) error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
@@ -965,6 +974,19 @@ func (pm *PersonaManager) Delete(_ context.Context, personaID string) error {
 	}
 
 	delete(pm.personas, cid)
+
+	// Clean up associated contacts.
+	delete(pm.contacts, cid)
+
+	// Cancel and clean up TTL timer if active.
+	if timer, ok := pm.ttlTimers[cid]; ok {
+		timer.Stop()
+		delete(pm.ttlTimers, cid)
+	}
+
+	// Persist updated state to disk.
+	pm.persistState()
+
 	return nil
 }
 

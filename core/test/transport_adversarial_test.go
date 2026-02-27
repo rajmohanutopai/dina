@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mr-tron/base58"
 	dinacrypto "github.com/rajmohanutopai/dina/core/internal/adapter/crypto"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/ingress"
@@ -203,7 +204,7 @@ func newTransportTestEnv(t *testing.T) *transportTestEnv {
 	senderDID := domain.DID("did:key:z6MkSenderTest")
 	rcptDID := domain.DID("did:key:z6MkRecipientTest")
 
-	// Build DID Documents with the real public keys (multibase: "z" + hex).
+	// Build DID Documents with the real public keys (multibase: "z" + base58btc(0xed01 + pubkey)).
 	resolver := &mockDIDResolver{docs: map[string]*domain.DIDDocument{
 		string(senderDID): {
 			ID: string(senderDID),
@@ -211,7 +212,7 @@ func newTransportTestEnv(t *testing.T) *transportTestEnv {
 				ID:                 string(senderDID) + "#key-1",
 				Type:               "Ed25519VerificationKey2020",
 				Controller:         string(senderDID),
-				PublicKeyMultibase: "z" + hex.EncodeToString(senderPub),
+				PublicKeyMultibase: "z" + base58.Encode(append([]byte{0xed, 0x01}, senderPub...)),
 			}},
 			Service: []domain.ServiceEndpoint{{
 				ID:              "#didcomm",
@@ -225,7 +226,7 @@ func newTransportTestEnv(t *testing.T) *transportTestEnv {
 				ID:                 string(rcptDID) + "#key-1",
 				Type:               "Ed25519VerificationKey2020",
 				Controller:         string(rcptDID),
-				PublicKeyMultibase: "z" + hex.EncodeToString(rcptPub),
+				PublicKeyMultibase: "z" + base58.Encode(append([]byte{0xed, 0x01}, rcptPub...)),
 			}},
 			Service: []domain.ServiceEndpoint{{
 				ID:              "#didcomm",
@@ -638,7 +639,7 @@ func TestAdv_29_2_OutboxNoDeliverer(t *testing.T) {
 			VerificationMethod: []domain.VerificationMethod{{
 				ID:                 "did:key:z6MkRecipientTest#key-1",
 				Type:               "Ed25519VerificationKey2020",
-				PublicKeyMultibase: "z" + hex.EncodeToString(rcptPub),
+				PublicKeyMultibase: "z" + base58.Encode(append([]byte{0xed, 0x01}, rcptPub...)),
 			}},
 			Service: []domain.ServiceEndpoint{{
 				ID:              "#didcomm",

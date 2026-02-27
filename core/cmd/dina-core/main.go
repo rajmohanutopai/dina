@@ -38,6 +38,7 @@ import (
 	"github.com/rajmohanutopai/dina/core/internal/adapter/transport"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/vault"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/ws"
+	"github.com/mr-tron/base58"
 	"github.com/rajmohanutopai/dina/core/internal/config"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/handler"
@@ -304,7 +305,14 @@ func main() {
 	// CRITICAL-01/02: Enable file-based persona persistence.
 	personaStatePath := filepath.Join(cfg.VaultPath, "persona_state.json")
 	if err := personaMgr.SetPersistPath(personaStatePath); err != nil {
-		slog.Warn("Could not load persona state from disk — starting fresh", "error", err)
+		// CRITICAL-01: Fail startup in production when persona state cannot be loaded.
+		// In dev/test/migration or when DINA_RECOVER_PERSONAS=1, allow degraded start.
+		if isDevOrTest || os.Getenv("DINA_RECOVER_PERSONAS") == "1" {
+			slog.Warn("persona state load failed — continuing (dev/test/recover)", "error", err)
+		} else {
+			slog.Error("persona state load failed — refusing to start", "error", err)
+			os.Exit(1)
+		}
 	}
 	personaMgr.VerifyPassphrase = func(storedHash, passphrase string) (bool, error) {
 		return auth.NewPassphraseVerifier(storedHash).Verify(passphrase)
@@ -329,6 +337,14 @@ func main() {
 			return
 		}
 		slog.Info("Vault closed on persona lock", "persona", name)
+	}
+	// CRITICAL-01: Wire orphan-guard callback. If vault DB files exist on disk for
+	// a persona that has no in-memory state, reject creation to prevent DEK reuse.
+	personaMgr.CheckOrphanedVault = func(personaID string) bool {
+		name := strings.TrimPrefix(personaID, "persona-")
+		dbFile := filepath.Join(cfg.VaultPath, name+".sqlite")
+		_, err := os.Stat(dbFile)
+		return err == nil // file exists → orphaned vault artifact
 	}
 	contactDir := identity.NewContactDirectory()
 	deviceRegistry := identity.NewDeviceRegistry()
@@ -378,20 +394,34 @@ func main() {
 	// TransportService.SendMessage can resolve the key for encryption.
 	// Format: did=endpoint=seedhex (3 parts) or did=endpoint (2 parts, legacy).
 	if peers := os.Getenv("DINA_KNOWN_PEERS"); peers != "" {
-		for _, entry := range strings.Split(peers, ",") {
+		for i, entry := range strings.Split(peers, ",") {
 			parts := strings.SplitN(entry, "=", 3)
 			if len(parts) < 2 {
+				// MEDIUM-09: Log bad entries instead of silently skipping.
+				slog.Warn("KNOWN_PEERS: skipping malformed entry", "index", i, "entry", entry)
 				continue
 			}
 			did := strings.TrimSpace(parts[0])
 			endpoint := strings.TrimSpace(parts[1])
 
-			var pubKeyHex string
+			var pubKeyMultibase string
 			if len(parts) == 3 {
 				// Real key exchange: derive peer's Ed25519 public key from their seed.
 				peerSeedHex := strings.TrimSpace(parts[2])
-				peerSeedBytes, _ := hex.DecodeString(peerSeedHex)
-				_, peerKeyBytes, _ := slip0010.DerivePath(peerSeedBytes, "m/9999'/0'")
+				peerSeedBytes, seedErr := hex.DecodeString(peerSeedHex)
+				if seedErr != nil {
+					slog.Warn("KNOWN_PEERS: skipping entry with invalid seed hex", "index", i, "did", did, "error", seedErr)
+					continue
+				}
+				if len(peerSeedBytes) != 32 {
+					slog.Warn("KNOWN_PEERS: skipping entry with invalid seed length", "index", i, "did", did, "got", len(peerSeedBytes), "expected", 32)
+					continue
+				}
+				_, peerKeyBytes, deriveErr := slip0010.DerivePath(peerSeedBytes, "m/9999'/0'")
+				if deriveErr != nil {
+					slog.Warn("KNOWN_PEERS: skipping entry with key derivation failure", "index", i, "did", did, "error", deriveErr)
+					continue
+				}
 				var peerPrivKey ed25519.PrivateKey
 				if len(peerKeyBytes) == ed25519.SeedSize {
 					peerPrivKey = ed25519.NewKeyFromSeed(peerKeyBytes)
@@ -399,19 +429,22 @@ func main() {
 					peerPrivKey = ed25519.PrivateKey(peerKeyBytes)
 				}
 				peerPubKey := peerPrivKey.Public().(ed25519.PublicKey)
-				pubKeyHex = hex.EncodeToString(peerPubKey)
+				// HIGH-05: Encode as proper multibase (z + base58btc(0xed01 + pubkey)).
+				multicodecKey := append([]byte{0xed, 0x01}, peerPubKey...)
+				pubKeyMultibase = "z" + base58.Encode(multicodecKey)
 			} else {
 				// Legacy: deterministic placeholder pubkey from the DID.
 				peerSeed := sha256.Sum256([]byte(did))
-				pubKeyHex = hex.EncodeToString(peerSeed[:])
+				multicodecKey := append([]byte{0xed, 0x01}, peerSeed[:]...)
+				pubKeyMultibase = "z" + base58.Encode(multicodecKey)
 				slog.Warn("KNOWN_PEERS: using SHA-256 placeholder key — provide seed for real key exchange", "did", did)
 			}
 
 			doc := fmt.Sprintf(`{`+
 				`"id":"%s",`+
-				`"verificationMethod":[{"id":"%s#key-1","type":"Ed25519VerificationKey2020","controller":"%s","publicKeyMultibase":"z%s"}],`+
+				`"verificationMethod":[{"id":"%s#key-1","type":"Ed25519VerificationKey2020","controller":"%s","publicKeyMultibase":"%s"}],`+
 				`"service":[{"id":"%s#msg","type":"DinaMessaging","serviceEndpoint":"%s"}]`+
-				`}`, did, did, did, pubKeyHex, did, endpoint)
+				`}`, did, did, did, pubKeyMultibase, did, endpoint)
 			didResolver.AddDocument(did, []byte(doc))
 		}
 	}

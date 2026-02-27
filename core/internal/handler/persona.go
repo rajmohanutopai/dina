@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/rajmohanutopai/dina/core/internal/adapter/auth"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/identity"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/port"
 	"github.com/rajmohanutopai/dina/core/internal/service"
@@ -91,7 +92,17 @@ func (h *PersonaHandler) HandleCreatePersona(w http.ResponseWriter, r *http.Requ
 
 	personaID, err := h.Personas.Create(r.Context(), req.Name, req.Tier, passphraseHash)
 	if err != nil {
-		http.Error(w, `{"error":"failed to create persona"}`, http.StatusInternalServerError)
+		// LOW-11: Map validation errors to appropriate HTTP status codes.
+		switch {
+		case errors.Is(err, identity.ErrPersonaExists):
+			http.Error(w, `{"error":"persona already exists"}`, http.StatusConflict)
+		case errors.Is(err, identity.ErrOrphanedVaultArtifacts):
+			http.Error(w, `{"error":"orphaned vault artifacts exist; use recovery flow (DINA_RECOVER_PERSONAS=1)"}`, http.StatusConflict)
+		case errors.Is(err, identity.ErrInvalidTier):
+			http.Error(w, `{"error":"invalid tier: must be open, restricted, or locked"}`, http.StatusBadRequest)
+		default:
+			http.Error(w, `{"error":"failed to create persona"}`, http.StatusInternalServerError)
+		}
 		return
 	}
 
@@ -141,7 +152,12 @@ func (h *PersonaHandler) HandleUnlockPersona(w http.ResponseWriter, r *http.Requ
 		// CRITICAL-02: Use versioned DEK derivation so v1 and v2 personas get
 		// different keys. This ensures upgraded personas derive a new DEK,
 		// enabling future vault re-encryption during migration.
-		dekVersion, _ := h.Personas.GetDEKVersion(r.Context(), req.Persona)
+		// LOW-15: Propagate GetDEKVersion error — post-unlock failure is an invariant violation.
+		dekVersion, dekErr := h.Personas.GetDEKVersion(r.Context(), req.Persona)
+		if dekErr != nil {
+			http.Error(w, `{"error":"failed to get DEK version"}`, http.StatusInternalServerError)
+			return
+		}
 		if dekVersion == 0 {
 			dekVersion = 1 // fallback for legacy personas
 		}

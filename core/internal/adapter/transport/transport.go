@@ -22,7 +22,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -149,6 +152,64 @@ func (t *Transporter) Deliver(_ context.Context, endpoint string, payload []byte
 	return t.httpDeliver(endpoint, payload)
 }
 
+// isPrivateIP returns true if the IP is loopback, private, or link-local.
+func isPrivateIP(ip net.IP) bool {
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+		return true
+	}
+	return false
+}
+
+// ssrfSafeDialContext returns a DialContext that resolves DNS and blocks private IPs.
+// HIGH-06: Enforces SSRF protection at dial time to prevent DNS rebinding TOCTOU attacks.
+func ssrfSafeDialContext(dialer *net.Dialer) func(ctx context.Context, network, addr string) (net.Conn, error) {
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, fmt.Errorf("ssrf: invalid address %q: %w", addr, err)
+		}
+
+		// Check DINA_ALLOWED_ENDPOINTS for dev allowlisting.
+		allowed := os.Getenv("DINA_ALLOWED_ENDPOINTS")
+		if allowed != "" {
+			for _, ep := range strings.Split(allowed, ",") {
+				if strings.TrimSpace(ep) == host {
+					return dialer.DialContext(ctx, network, addr)
+				}
+			}
+		}
+
+		ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+		if err != nil {
+			return nil, fmt.Errorf("ssrf: DNS lookup failed for %q: %w", host, err)
+		}
+
+		for _, ipAddr := range ips {
+			if isPrivateIP(ipAddr.IP) {
+				return nil, fmt.Errorf("ssrf: blocked private IP %s for host %q", ipAddr.IP, host)
+			}
+		}
+
+		// Connect to the first resolved non-private IP.
+		return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].IP.String(), port))
+	}
+}
+
+// validateEndpointURL checks that a URL is safe for outbound HTTP delivery.
+func validateEndpointURL(endpoint string) error {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return fmt.Errorf("ssrf: invalid URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("ssrf: blocked non-HTTP scheme %q", u.Scheme)
+	}
+	if u.User != nil {
+		return fmt.Errorf("ssrf: blocked URL with userinfo")
+	}
+	return nil
+}
+
 // httpDeliver POSTs the sealed envelope to the recipient's /msg endpoint.
 // Returns nil if no endpoint is configured (test/local mode) or on success (202/200).
 func (t *Transporter) httpDeliver(endpoint string, envelope []byte) error {
@@ -160,7 +221,22 @@ func (t *Transporter) httpDeliver(endpoint string, envelope []byte) error {
 		return nil
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	// HIGH-06: Validate URL before delivery.
+	if err := validateEndpointURL(endpoint); err != nil {
+		return err
+	}
+
+	// HIGH-06: Use SSRF-safe transport with dial-time IP enforcement.
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			DialContext: ssrfSafeDialContext(&net.Dialer{Timeout: 5 * time.Second}),
+		},
+		// Disable redirects — attacker could redirect to internal service.
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	resp, err := client.Post(endpoint, "application/octet-stream", bytes.NewReader(envelope))
 	if err != nil {
 		return err

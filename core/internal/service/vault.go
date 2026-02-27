@@ -117,7 +117,8 @@ func (s *VaultService) GetKV(ctx context.Context, agentDID string, persona domai
 
 // Store persists a single item into a persona's vault.
 // Returns the ID of the stored item.
-func (s *VaultService) Store(ctx context.Context, persona domain.PersonaName, item domain.VaultItem) (string, error) {
+// MEDIUM-07: Added agentDID param and gatekeeper check to match Query/GetItem pattern.
+func (s *VaultService) Store(ctx context.Context, agentDID string, persona domain.PersonaName, item domain.VaultItem) (string, error) {
 	if !s.manager.IsOpen(persona) {
 		return "", fmt.Errorf("vault store: %w", domain.ErrPersonaLocked)
 	}
@@ -126,6 +127,20 @@ func (s *VaultService) Store(ctx context.Context, persona domain.PersonaName, it
 		if err := s.personaMgr.AccessPersona(ctx, string(persona)); err != nil {
 			return "", fmt.Errorf("vault store: %w", err)
 		}
+	}
+
+	intent := domain.Intent{
+		AgentDID:  agentDID,
+		Action:    domain.ActionVaultWrite,
+		Target:    string(persona),
+		PersonaID: string(persona),
+	}
+	decision, err := s.gatekeeper.EvaluateIntent(ctx, intent)
+	if err != nil {
+		return "", fmt.Errorf("vault store: gatekeeper evaluation failed: %w", err)
+	}
+	if !decision.Allowed {
+		return "", fmt.Errorf("vault store: %w: %s", domain.ErrForbidden, decision.Reason)
 	}
 
 	now := s.clock.Now().Unix()
@@ -142,7 +157,7 @@ func (s *VaultService) Store(ctx context.Context, persona domain.PersonaName, it
 
 // StoreBatch persists multiple items into a persona's vault in a single operation.
 // Returns the IDs of all stored items.
-func (s *VaultService) StoreBatch(ctx context.Context, persona domain.PersonaName, items []domain.VaultItem) ([]string, error) {
+func (s *VaultService) StoreBatch(ctx context.Context, agentDID string, persona domain.PersonaName, items []domain.VaultItem) ([]string, error) {
 	if !s.manager.IsOpen(persona) {
 		return nil, fmt.Errorf("vault store batch: %w", domain.ErrPersonaLocked)
 	}
@@ -151,6 +166,20 @@ func (s *VaultService) StoreBatch(ctx context.Context, persona domain.PersonaNam
 		if err := s.personaMgr.AccessPersona(ctx, string(persona)); err != nil {
 			return nil, fmt.Errorf("vault store batch: %w", err)
 		}
+	}
+
+	intent := domain.Intent{
+		AgentDID:  agentDID,
+		Action:    domain.ActionVaultWrite,
+		Target:    string(persona),
+		PersonaID: string(persona),
+	}
+	decision, err := s.gatekeeper.EvaluateIntent(ctx, intent)
+	if err != nil {
+		return nil, fmt.Errorf("vault store batch: gatekeeper evaluation failed: %w", err)
+	}
+	if !decision.Allowed {
+		return nil, fmt.Errorf("vault store batch: %w: %s", domain.ErrForbidden, decision.Reason)
 	}
 
 	now := s.clock.Now().Unix()
@@ -168,7 +197,8 @@ func (s *VaultService) StoreBatch(ctx context.Context, persona domain.PersonaNam
 }
 
 // Delete removes an item from a persona's vault by ID.
-func (s *VaultService) Delete(ctx context.Context, persona domain.PersonaName, id string) error {
+// MEDIUM-07: Added agentDID param and gatekeeper check.
+func (s *VaultService) Delete(ctx context.Context, agentDID string, persona domain.PersonaName, id string) error {
 	if !s.manager.IsOpen(persona) {
 		return fmt.Errorf("vault delete: %w", domain.ErrPersonaLocked)
 	}
@@ -177,6 +207,20 @@ func (s *VaultService) Delete(ctx context.Context, persona domain.PersonaName, i
 		if err := s.personaMgr.AccessPersona(ctx, string(persona)); err != nil {
 			return fmt.Errorf("vault delete: %w", err)
 		}
+	}
+
+	intent := domain.Intent{
+		AgentDID:  agentDID,
+		Action:    domain.ActionVaultDelete,
+		Target:    id,
+		PersonaID: string(persona),
+	}
+	decision, err := s.gatekeeper.EvaluateIntent(ctx, intent)
+	if err != nil {
+		return fmt.Errorf("vault delete: gatekeeper evaluation failed: %w", err)
+	}
+	if !decision.Allowed {
+		return fmt.Errorf("vault delete: %w: %s", domain.ErrForbidden, decision.Reason)
 	}
 
 	if err := s.writer.Delete(ctx, persona, id); err != nil {

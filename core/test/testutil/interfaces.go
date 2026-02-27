@@ -539,10 +539,7 @@ type AuthGateway interface {
 	// Login handles POST /login — verifies passphrase, sets session cookie, returns redirect.
 	// Returns: statusCode, setCookieHeader, locationHeader, error.
 	Login(passphrase string) (statusCode int, setCookie string, location string, err error)
-	// ProxyRequest translates a session cookie into a Bearer token for downstream.
-	// Returns the Authorization header injected into the proxied request and
-	// whether the Cookie header was stripped.
-	ProxyRequest(sessionCookie string) (authHeader string, cookieStripped bool, err error)
+	// LOW-17: ProxyRequest removed — leaked BRAIN_TOKEN.
 	// ServeLoginPage returns the login HTML page from embed.FS.
 	ServeLoginPage() (body []byte, contentType string, err error)
 	// HandleAdminRequest routes an admin request: if Bearer present, pass through;

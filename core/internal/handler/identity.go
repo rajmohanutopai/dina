@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/mr-tron/base58"
 
@@ -25,6 +26,12 @@ type IdentityHandler struct {
 // HandleGetDID handles GET /v1/did. It resolves the node's own DID and returns
 // the DID document as JSON.
 func (h *IdentityHandler) HandleGetDID(w http.ResponseWriter, r *http.Request) {
+	// LOW-16: Enforce GET method.
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
 	// Derive the DID from the signer's public key.
 	pubKey := h.Signer.PublicKey()
 	did, err := h.DID.Create(r.Context(), pubKey)
@@ -121,6 +128,11 @@ func (h *IdentityHandler) HandleVerify(w http.ResponseWriter, r *http.Request) {
 	// Resolve the DID to get the public key document.
 	doc, err := h.DID.Resolve(r.Context(), did)
 	if err != nil {
+		// MEDIUM-10: Return 404 for unknown DIDs instead of 500.
+		if strings.Contains(err.Error(), "not found") {
+			http.Error(w, `{"error":"DID not found"}`, http.StatusNotFound)
+			return
+		}
 		clientError(w, "DID resolution failed", http.StatusInternalServerError, err)
 		return
 	}
@@ -168,6 +180,12 @@ func (h *IdentityHandler) HandleVerify(w http.ResponseWriter, r *http.Request) {
 // HandleGetDocument handles GET /v1/did/document. It resolves the node's own
 // DID and returns the full DID document.
 func (h *IdentityHandler) HandleGetDocument(w http.ResponseWriter, r *http.Request) {
+	// LOW-16: Enforce GET method.
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
 	pubKey := h.Signer.PublicKey()
 	did, err := h.DID.Create(r.Context(), pubKey)
 	if err != nil && did == "" {
@@ -188,6 +206,12 @@ func (h *IdentityHandler) HandleGetDocument(w http.ResponseWriter, r *http.Reque
 // HandleGetMnemonic handles GET /v1/identity/mnemonic. It converts the node's
 // identity seed to a 24-word BIP-39 mnemonic for backup/recovery.
 func (h *IdentityHandler) HandleGetMnemonic(w http.ResponseWriter, r *http.Request) {
+	// LOW-16: Enforce GET method.
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
 	if h.Mnemonic == nil || len(h.IdentitySeed) == 0 {
 		http.Error(w, `{"error":"mnemonic not available"}`, http.StatusServiceUnavailable)
 		return

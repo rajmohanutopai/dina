@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -114,9 +115,10 @@ func (h *MessageHandler) HandleIngestNaCl(w http.ResponseWriter, r *http.Request
 
 	// Use ingress Router if wired (rate limit + dead-drop when locked).
 	if h.IngressRouter != nil {
-		ip := r.RemoteAddr
-		if colonIdx := strings.LastIndex(ip, ":"); colonIdx != -1 {
-			ip = ip[:colonIdx]
+		// LOW-12: Use net.SplitHostPort for IPv6-safe IP extraction.
+		ip, _, splitErr := net.SplitHostPort(r.RemoteAddr)
+		if splitErr != nil {
+			ip = r.RemoteAddr // fallback for addresses without port
 		}
 		if err := h.IngressRouter.Ingest(r.Context(), ip, body); err != nil {
 			slog.Warn("D2D ingress rejected", "error", err)

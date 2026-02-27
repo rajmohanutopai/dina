@@ -182,5 +182,10 @@ func (d *DeadDrop) stats() (int, int64, error) {
 	return count, totalSize, nil
 }
 
+// Dir returns the spool directory path (used by Sweeper for GC).
+func (d *DeadDrop) Dir() string {
+	return d.dir
+}
+
 // Sentinel errors for the dead drop spool.
 var ErrSpoolFull = fmt.Errorf("spool full")

@@ -498,9 +498,13 @@ func TestPDS_22_2_9_DIDDocContainsDIDCommServiceEndpoint(t *testing.T) {
 	impl := realDIDManager
 	testutil.RequireImplementation(t, impl, "DIDManager")
 
-	doc, err := impl.Resolve(idCtx, domain.DID("did:plc:test123"))
-	testutil.RequireNoError(t, err)
-	testutil.RequireTrue(t, len(doc) > 0, "DID Document must not be empty")
+	// MEDIUM-10: Unknown DIDs must return an error, not a synthetic document.
+	// A real DIDComm service endpoint test would need a DID that exists locally.
+	_, err := impl.Resolve(idCtx, domain.DID("did:plc:test123"))
+	if err == nil {
+		t.Fatal("expected error for unknown DID, got nil")
+	}
+	testutil.RequireContains(t, err.Error(), "not found")
 }
 
 // TST-CORE-923

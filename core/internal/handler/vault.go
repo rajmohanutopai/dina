@@ -119,7 +119,7 @@ func (h *VaultHandler) HandleStore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := h.Vault.Store(r.Context(), persona, req.Item)
+	id, err := h.Vault.Store(r.Context(), agentDID(r), persona, req.Item)
 	if err != nil {
 		clientError(w, "store failed", http.StatusInternalServerError, err)
 		return
@@ -156,7 +156,7 @@ func (h *VaultHandler) HandleStoreBatch(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	ids, err := h.Vault.StoreBatch(r.Context(), persona, req.Items)
+	ids, err := h.Vault.StoreBatch(r.Context(), agentDID(r), persona, req.Items)
 	if err != nil {
 		clientError(w, "store batch failed", http.StatusInternalServerError, err)
 		return
@@ -211,6 +211,12 @@ func (h *VaultHandler) HandleGetItem(w http.ResponseWriter, r *http.Request) {
 // HandleDeleteItem handles DELETE /v1/vault/item/{id}. It removes the item
 // from the persona's vault and returns 204 No Content.
 func (h *VaultHandler) HandleDeleteItem(w http.ResponseWriter, r *http.Request) {
+	// HIGH-03: Enforce DELETE method to prevent method confusion.
+	if r.Method != http.MethodDelete {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
 	path := r.URL.Path
 	id := path[strings.LastIndex(path, "/")+1:]
 	if id == "" {
@@ -228,7 +234,7 @@ func (h *VaultHandler) HandleDeleteItem(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.Vault.Delete(r.Context(), persona, id); err != nil {
+	if err := h.Vault.Delete(r.Context(), agentDID(r), persona, id); err != nil {
 		clientError(w, "delete failed", http.StatusInternalServerError, err)
 		return
 	}
@@ -283,6 +289,12 @@ func HandleClearVault(clearer VaultClearer) http.HandlerFunc {
 // HandlePutKV handles PUT /v1/vault/kv/{key}. It accepts a JSON body with a
 // "value" field and stores the value under the given key. Returns 204 No Content.
 func (h *VaultHandler) HandlePutKV(w http.ResponseWriter, r *http.Request) {
+	// HIGH-03: Enforce PUT method to prevent method confusion.
+	if r.Method != http.MethodPut {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
 	path := r.URL.Path
 	key := path[strings.LastIndex(path, "/")+1:]
 	if key == "" {
@@ -313,9 +325,14 @@ func (h *VaultHandler) HandlePutKV(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	persona, pErr := domain.NewPersonaName("personal")
+	// MEDIUM-08: Accept persona from query param instead of hardcoding "personal".
+	personaStr := r.URL.Query().Get("persona")
+	if personaStr == "" {
+		personaStr = "personal"
+	}
+	persona, pErr := domain.NewPersonaName(personaStr)
 	if pErr != nil {
-		http.Error(w, `{"error":"invalid persona"}`, http.StatusInternalServerError)
+		http.Error(w, `{"error":"invalid persona name"}`, http.StatusBadRequest)
 		return
 	}
 
@@ -324,7 +341,7 @@ func (h *VaultHandler) HandlePutKV(w http.ResponseWriter, r *http.Request) {
 		Type:     "kv",
 		BodyText: value,
 	}
-	if _, err := h.Vault.Store(r.Context(), persona, item); err != nil {
+	if _, err := h.Vault.Store(r.Context(), agentDID(r), persona, item); err != nil {
 		clientError(w, "store failed", http.StatusInternalServerError, err)
 		return
 	}
@@ -335,6 +352,12 @@ func (h *VaultHandler) HandlePutKV(w http.ResponseWriter, r *http.Request) {
 // HandleGetKV handles GET /v1/vault/kv/{key}. It retrieves the value stored
 // under the given key and returns it as JSON {"value": "..."}.
 func (h *VaultHandler) HandleGetKV(w http.ResponseWriter, r *http.Request) {
+	// HIGH-03: Enforce GET method to prevent method confusion.
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
 	path := r.URL.Path
 	key := path[strings.LastIndex(path, "/")+1:]
 	if key == "" {
@@ -342,9 +365,14 @@ func (h *VaultHandler) HandleGetKV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	persona, pErr := domain.NewPersonaName("personal")
+	// MEDIUM-08: Accept persona from query param instead of hardcoding "personal".
+	personaStr := r.URL.Query().Get("persona")
+	if personaStr == "" {
+		personaStr = "personal"
+	}
+	persona, pErr := domain.NewPersonaName(personaStr)
 	if pErr != nil {
-		http.Error(w, `{"error":"invalid persona"}`, http.StatusInternalServerError)
+		http.Error(w, `{"error":"invalid persona name"}`, http.StatusBadRequest)
 		return
 	}
 

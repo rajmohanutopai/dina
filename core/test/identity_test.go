@@ -995,14 +995,16 @@ func TestIdentity_3_6_5_ShareFormat(t *testing.T) {
 
 // TST-CORE-926
 func TestIdentity_3_6_6_IngressTierChange_DIDDocRotation(t *testing.T) {
-	// DID Document endpoint update on ingress tier change.
+	// MEDIUM-10: Unknown DIDs must return an error, not a synthetic document.
 	impl := realDIDManager
 	testutil.RequireImplementation(t, impl, "DIDManager")
 
-	// Resolving DID should return valid DID Document.
-	doc, err := impl.Resolve(idCtx, domain.DID("did:plc:testingress"))
-	testutil.RequireNoError(t, err)
-	testutil.RequireTrue(t, len(doc) > 0, "DID Document must not be empty")
+	// Resolving an unknown DID should return an error (not a synthetic doc).
+	_, err := impl.Resolve(idCtx, domain.DID("did:plc:testingress"))
+	if err == nil {
+		t.Fatal("expected error for unknown DID, got nil")
+	}
+	testutil.RequireContains(t, err.Error(), "not found")
 }
 
 // TST-CORE-927

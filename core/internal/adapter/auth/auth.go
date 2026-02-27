@@ -933,24 +933,7 @@ func (g *authGateway) Login(passphrase string) (statusCode int, setCookie string
 	return 302, cookie, "/admin", nil
 }
 
-// ProxyRequest translates a session cookie into a Bearer token for downstream.
-// Returns the Authorization header injected into the proxied request and
-// whether the Cookie header was stripped.
-func (g *authGateway) ProxyRequest(sessionCookie string) (authHeader string, cookieStripped bool, err error) {
-	// Extract session ID from "dina_session=<value>" or use as-is.
-	sessionID := extractSessionID(sessionCookie)
-
-	_, err = g.sm.Validate(context.Background(), sessionID)
-	if err != nil {
-		return "", false, fmt.Errorf("auth: invalid session: %w", err)
-	}
-
-	// Generate a Bearer token for downstream. We use the brain token for
-	// internal proxying since the gateway has already verified the session.
-	bearerToken := g.tokenVal.brainToken
-
-	return "Bearer " + bearerToken, true, nil
-}
+// LOW-17: ProxyRequest deleted — it injected BRAIN_TOKEN into responses, leaking credentials.
 
 // ServeLoginPage returns the login HTML page.
 func (g *authGateway) ServeLoginPage() (body []byte, contentType string, err error) {

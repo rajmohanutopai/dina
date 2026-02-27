@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mr-tron/base58"
 	dinacrypto "github.com/rajmohanutopai/dina/core/internal/adapter/crypto"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/service"
@@ -79,7 +80,7 @@ func newD2DSigTestEnv(t *testing.T) *d2dSigTestEnv {
 				ID:                 string(senderDID) + "#key-1",
 				Type:               "Ed25519VerificationKey2020",
 				Controller:         string(senderDID),
-				PublicKeyMultibase: "z" + hex.EncodeToString(senderPub),
+				PublicKeyMultibase: "z" + base58.Encode(append([]byte{0xed, 0x01}, senderPub...)),
 			}},
 			Service: []domain.ServiceEndpoint{{
 				ID:              "#didcomm",
@@ -93,7 +94,7 @@ func newD2DSigTestEnv(t *testing.T) *d2dSigTestEnv {
 				ID:                 string(rcptDID) + "#key-1",
 				Type:               "Ed25519VerificationKey2020",
 				Controller:         string(rcptDID),
-				PublicKeyMultibase: "z" + hex.EncodeToString(rcptPub),
+				PublicKeyMultibase: "z" + base58.Encode(append([]byte{0xed, 0x01}, rcptPub...)),
 			}},
 			Service: []domain.ServiceEndpoint{{
 				ID:              "#didcomm",

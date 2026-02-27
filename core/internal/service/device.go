@@ -142,7 +142,11 @@ func (s *DeviceService) RevokeDevice(ctx context.Context, tokenID string) error 
 	// Look up the device before revoking so we can revoke the Ed25519 key
 	// and any bearer client tokens in the auth validator.
 	if s.keyRegistrar != nil || s.tokenRevoker != nil {
-		devices, _ := s.pairer.ListDevices(ctx)
+		// MEDIUM-14: Propagate ListDevices error instead of ignoring.
+		devices, listErr := s.pairer.ListDevices(ctx)
+		if listErr != nil {
+			return fmt.Errorf("device: revoke: list devices: %w", listErr)
+		}
 		for _, d := range devices {
 			if d.TokenID == tokenID {
 				if s.keyRegistrar != nil && d.DID != "" {

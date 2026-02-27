@@ -155,8 +155,12 @@ func (s *IdentityService) CreatePersona(ctx context.Context, seed []byte, name, 
 		return "", fmt.Errorf("create persona: %w", err)
 	}
 
-	// Derive DEK using the persona's recorded version (consistent with unlock path).
-	dekVersion, _ := s.personas.GetDEKVersion(ctx, personaID)
+	// LOW-15: Derive DEK using the persona's recorded version.
+	// Post-create, GetDEKVersion must succeed — hard fail on error.
+	dekVersion, dekErr := s.personas.GetDEKVersion(ctx, personaID)
+	if dekErr != nil {
+		return "", fmt.Errorf("create persona: get DEK version: %w", dekErr)
+	}
 	if dekVersion == 0 {
 		dekVersion = 1
 	}
