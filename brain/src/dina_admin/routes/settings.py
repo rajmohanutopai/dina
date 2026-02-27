@@ -134,6 +134,9 @@ async def update_settings(settings: dict) -> dict:
     if _core_client is None:
         raise HTTPException(status_code=503, detail="Core client not configured")
 
+    if len(json.dumps(settings, default=str)) > 64_000:
+        raise HTTPException(status_code=413, detail="Settings payload too large")
+
     # Allowlist of user-modifiable settings
     allowed_keys = {
         "briefing_enabled",

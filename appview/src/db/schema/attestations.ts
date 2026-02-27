@@ -31,6 +31,8 @@ export const attestations = pgTable('attestations', {
   revokedByUri: text('revoked_by_uri'),
   isAmended: boolean('is_amended').default(false),
   latestAmendmentUri: text('latest_amendment_uri'),
+  isVerified: boolean('is_verified').default(false),
+  verifiedByUri: text('verified_by_uri'),
 }, (table) => [
   index('attestations_author_idx').on(table.authorDid),
   index('attestations_subject_idx').on(table.subjectId),

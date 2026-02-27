@@ -43,12 +43,27 @@ const quarantinedDids = new Set<string>()
 
 const WINDOW_MS = 60 * 60 * 1000 // 1 hour
 
+// MED-03: Global throughput limiter (across all DIDs)
+const MAX_GLOBAL_PER_MIN = parseInt(process.env.MAX_GLOBAL_RPM ?? '10000', 10)
+let globalCounter = 0
+let globalResetAt = Date.now() + 60_000
+
 /**
  * Check if a DID is rate-limited. If not, record the write.
  * Returns true if the DID should be rejected.
  */
 export function isRateLimited(did: string): boolean {
   const now = Date.now()
+
+  // MED-03: Check global throughput limit first
+  if (now > globalResetAt) {
+    globalCounter = 0
+    globalResetAt = now + 60_000
+  }
+  if (globalCounter >= MAX_GLOBAL_PER_MIN) {
+    return true
+  }
+  globalCounter++
 
   let entry = rateLimitCache.get(did)
   if (!entry) {

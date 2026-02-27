@@ -263,10 +263,11 @@ class TestAgenticBehavior:
             "(person name or organization)"
         )
 
-        # Scrubbed text should have replacements
+        # Scrubbed text should have replacements (tokens or faker-generated names)
         scrubbed = result.get("scrubbed", "")
-        assert "[" in scrubbed and "]" in scrubbed, (
-            "Scrubbed text must contain replacement tokens like [PERSON_1]"
+        # Original PII must not appear in scrubbed text
+        assert "Rajmohan" not in scrubbed, (
+            "Scrubbed text must not contain original PII"
         )
 
     # -- TST-E2E-081 ----------------------------------------------------------

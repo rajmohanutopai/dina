@@ -8,6 +8,7 @@ No imports from dina_brain — module boundary enforced.
 
 from __future__ import annotations
 
+import collections
 import hmac
 import logging
 import os
@@ -25,6 +26,20 @@ log = logging.getLogger(__name__)
 
 router = APIRouter()
 
+_TRUSTED_PROXY = os.environ.get("DINA_TRUSTED_PROXY", "").lower() in ("1", "true", "yes")
+
+
+def _get_client_ip(request: Request) -> str:
+    """Extract client IP, respecting X-Forwarded-For when proxy is trusted."""
+    if _TRUSTED_PROXY:
+        xff = request.headers.get("x-forwarded-for", "")
+        if xff:
+            return xff.split(",")[0].strip()
+        real_ip = request.headers.get("x-real-ip", "")
+        if real_ip:
+            return real_ip.strip()
+    return request.client.host if request.client else "unknown"
+
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 
@@ -36,7 +51,9 @@ _sessions: dict[str, dict] = {}
 # Brute-force throttling (MED-06)
 _MAX_ATTEMPTS = 5
 _LOCKOUT_SECONDS = 900  # 15 minutes
-_login_attempts: dict[str, list[float]] = {}
+_MAX_TRACKED_IPS = 10_000
+_EVICT_COUNT = 1_000  # evict oldest 10% when full
+_login_attempts: collections.OrderedDict[str, list[float]] = collections.OrderedDict()
 
 # Session store bounds (LOW-01)
 _MAX_SESSIONS = 100
@@ -82,13 +99,19 @@ async def login(raw_request: Request, body: LoginRequest) -> JSONResponse:
     if not _client_token:
         raise HTTPException(status_code=503, detail="CLIENT_TOKEN not configured")
 
-    client_ip = raw_request.client.host if raw_request.client else "unknown"
+    client_ip = _get_client_ip(raw_request)
 
     # --- MED-06: Brute-force throttling ---
     now = time.time()
     attempts = _login_attempts.get(client_ip, [])
     recent = [t for t in attempts if now - t < _LOCKOUT_SECONDS]
+    # MED-04: Move to end (most recent) and enforce size bound
+    _login_attempts.pop(client_ip, None)
     _login_attempts[client_ip] = recent
+    if len(_login_attempts) > _MAX_TRACKED_IPS:
+        for _ in range(_EVICT_COUNT):
+            if _login_attempts:
+                _login_attempts.popitem(last=False)
     if len(recent) >= _MAX_ATTEMPTS:
         log.warning("admin.login_throttled", extra={"ip": client_ip, "attempts": len(recent)})
         raise HTTPException(status_code=429, detail="Too many attempts. Try again later.")
@@ -114,8 +137,11 @@ async def login(raw_request: Request, body: LoginRequest) -> JSONResponse:
     csrf_token = secrets.token_hex(32)
     _sessions[session_id] = {"created": now, "csrf_token": csrf_token}
 
-    # --- LOW-02: Default secure=True (opt out with DINA_HTTPS=0) ---
-    is_https = os.environ.get("DINA_HTTPS", "1").lower() not in ("0", "false", "no")
+    # --- LOW-02: Production guard — force secure=True in production ---
+    _is_dev = os.environ.get("DINA_ENV", "production").lower() in ("development", "test")
+    is_https = not _is_dev or os.environ.get("DINA_HTTPS", "1").lower() not in ("0", "false", "no")
+    if not is_https:
+        log.warning("admin.cookies.insecure", extra={"detail": "Secure cookie flag disabled — dev mode only"})
 
     response = JSONResponse(content={"status": "ok", "redirect": "/admin/dashboard"})
     response.set_cookie(
@@ -135,8 +161,16 @@ async def login(raw_request: Request, body: LoginRequest) -> JSONResponse:
 async def logout(request: Request) -> JSONResponse:
     """Clear the auth cookie, invalidate session, and redirect to login page."""
     session_id = request.cookies.get("dina_client_token")
-    if session_id and session_id in _sessions:
-        del _sessions[session_id]
+    if not session_id or session_id not in _sessions:
+        response = JSONResponse(content={"status": "ok", "redirect": "/admin/login"})
+        response.delete_cookie("dina_client_token", path="/admin")
+        return response
+    # Verify CSRF for state-changing operation
+    csrf_header = request.headers.get("x-csrf-token", "")
+    expected = get_csrf_token(session_id)
+    if expected and not hmac.compare_digest(csrf_header, expected):
+        raise HTTPException(status_code=403, detail="CSRF token mismatch")
+    del _sessions[session_id]
     response = JSONResponse(content={"status": "ok", "redirect": "/admin/login"})
     response.delete_cookie("dina_client_token", path="/admin")
     log.info("admin.logout")

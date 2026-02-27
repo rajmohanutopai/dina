@@ -14,7 +14,7 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +31,8 @@ def set_config(config: Any) -> None:
 
 class ChatRequest(BaseModel):
     """Chat message from the admin UI."""
-    prompt: str
+    prompt: str = Field(..., max_length=32_000)
+    persona_tier: str = Field(default="open", max_length=20)
 
 
 @router.post("/chat")
@@ -47,7 +48,7 @@ async def chat(request: ChatRequest) -> dict:
         try:
             resp = await client.post(
                 f"{brain_url}/api/v1/reason",
-                json={"prompt": request.prompt},
+                json={"prompt": request.prompt, "persona_tier": request.persona_tier},
                 headers={"Authorization": f"Bearer {brain_token}"},
             )
             if resp.status_code != 200:

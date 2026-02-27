@@ -22,13 +22,13 @@ export interface TrustEdgeParams {
 
 /**
  * Add a trust edge to the graph.
- * Uses ON CONFLICT DO NOTHING since the source_uri is unique —
- * re-processing the same record is idempotent.
+ * Uses ON CONFLICT DO UPDATE so record updates propagate to trust edges.
  */
 export async function addTrustEdge(
   ctx: HandlerContext,
   params: TrustEdgeParams,
 ): Promise<void> {
+  // HIGH-10: Use onConflictDoUpdate so record updates propagate to trust edges
   await ctx.db.insert(trustEdges).values({
     fromDid: params.fromDid,
     toDid: params.toDid,
@@ -37,7 +37,15 @@ export async function addTrustEdge(
     weight: params.weight,
     sourceUri: params.sourceUri,
     createdAt: params.createdAt,
-  }).onConflictDoNothing()
+  }).onConflictDoUpdate({
+    target: trustEdges.sourceUri,
+    set: {
+      toDid: params.toDid,
+      edgeType: params.edgeType,
+      domain: params.domain,
+      weight: params.weight,
+    },
+  })
 }
 
 /**

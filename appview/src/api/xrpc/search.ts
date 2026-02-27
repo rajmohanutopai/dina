@@ -7,19 +7,19 @@ import type { SearchResponse } from '@/shared/types/api-types.js'
 const CONFIDENCE_ORDER = ['speculative', 'moderate', 'high', 'certain'] as const
 
 export const SearchParams = z.object({
-  q: z.string().optional(),
-  category: z.string().optional(),
-  domain: z.string().optional(),
+  q: z.string().max(500).optional(),
+  category: z.string().max(200).optional(),
+  domain: z.string().max(253).optional(),
   subjectType: z.enum(['did', 'content', 'product', 'dataset', 'organization', 'claim']).optional(),
   sentiment: z.enum(['positive', 'neutral', 'negative']).optional(),
-  tags: z.string().optional(),
-  authorDid: z.string().optional(),
+  tags: z.string().max(1000).optional(),
+  authorDid: z.string().max(2048).regex(/^did:[a-z]+:/).optional(),
   minConfidence: z.enum(['speculative', 'moderate', 'high', 'certain']).optional(),
   since: z.string().optional(),
   until: z.string().optional(),
   sort: z.enum(['recent', 'relevant']).default('relevant'),
   limit: z.coerce.number().min(1).max(100).default(25),
-  cursor: z.string().optional(),
+  cursor: z.string().max(500).optional(),
 })
 
 export type SearchParamsType = z.infer<typeof SearchParams>
@@ -50,14 +50,26 @@ export async function search(
     conditions.push(inArray(attestations.confidence, validLevels))
   }
 
+  // MED-15: Use parameterized array construction instead of raw string building
   if (tags) {
-    const tagList = tags.split(',').map(t => t.trim())
-    const tagArray = `{${tagList.map(t => `"${t}"`).join(',')}}`
-    conditions.push(sql`${attestations.tags} @> ${tagArray}::text[]`)
+    const tagList = tags.split(',').map(t => t.trim()).filter(Boolean)
+    if (tagList.some(t => t.length > 100)) {
+      throw Object.assign(new Error('Tag exceeds maximum length'), { name: 'ZodError', message: 'Tag exceeds maximum length (100)' })
+    }
+    conditions.push(sql`${attestations.tags} @> ARRAY[${sql.join(tagList.map(t => sql`${t}`), sql`, `)}]::text[]`)
   }
 
-  if (since) conditions.push(gte(attestations.recordCreatedAt, new Date(since)))
-  if (until) conditions.push(lte(attestations.recordCreatedAt, new Date(until)))
+  // MED-04: Validate dates — reject invalid formats as 400 instead of 500
+  if (since) {
+    const d = new Date(since)
+    if (isNaN(d.getTime())) throw Object.assign(new Error('Invalid "since" date format'), { name: 'ZodError', message: 'Invalid "since" date format' })
+    conditions.push(gte(attestations.recordCreatedAt, d))
+  }
+  if (until) {
+    const d = new Date(until)
+    if (isNaN(d.getTime())) throw Object.assign(new Error('Invalid "until" date format'), { name: 'ZodError', message: 'Invalid "until" date format' })
+    conditions.push(lte(attestations.recordCreatedAt, d))
+  }
 
   // MEDIUM-04: Composite cursor (timestamp::uri) for stable pagination
   if (cursor) {
@@ -70,8 +82,12 @@ export async function search(
         and(eq(attestations.recordCreatedAt, cursorTs), lt(attestations.uri, cursorUri)),
       ))
     } else {
-      // Legacy cursor: timestamp-only
-      conditions.push(lte(attestations.recordCreatedAt, new Date(cursor)))
+      // Legacy cursor: timestamp-only — validate before use (MED-04 fix)
+      const legacyDate = new Date(cursor)
+      if (isNaN(legacyDate.getTime())) {
+        throw Object.assign(new Error('Invalid cursor format'), { name: 'ZodError', message: 'Invalid cursor format' })
+      }
+      conditions.push(lte(attestations.recordCreatedAt, legacyDate))
     }
   }
 

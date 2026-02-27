@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -21,6 +22,11 @@ logger = structlog.get_logger(__name__)
 
 _TIMEOUT_S = 30.0
 _REQUEST_ID_COUNTER = 0
+
+_SAFE_ENV_KEYS = frozenset({
+    "PATH", "HOME", "LANG", "LC_ALL", "TERM", "USER",
+    "SHELL", "TMPDIR", "XDG_RUNTIME_DIR",
+})
 
 
 def _next_id() -> int:
@@ -87,11 +93,13 @@ class MCPStdioClient:
             )
 
         try:
+            safe_env = {k: v for k, v in os.environ.items() if k in _SAFE_ENV_KEYS}
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=safe_env,
             )
         except FileNotFoundError as exc:
             raise MCPError(

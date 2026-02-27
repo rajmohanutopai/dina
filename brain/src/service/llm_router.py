@@ -193,6 +193,16 @@ class LLMRouter:
                     fallback_model=fallback.model_name,
                     error=str(exc),
                 )
+                if is_sensitive and not fallback.is_local:
+                    consent = ctx.get(
+                        "cloud_llm_consent",
+                        self._config.get("cloud_llm_consent", False),
+                    )
+                    if not consent:
+                        raise CloudConsentError(
+                            f"Fallback to cloud provider '{fallback.model_name}' "
+                            f"blocked: sensitive persona requires cloud_llm_consent=true"
+                        )
                 try:
                     response = await fallback.complete(
                         messages=[{"role": "user", "content": prompt}],

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hmac
 import logging
+import os
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -23,6 +24,12 @@ from .routes import process as process_route
 from .routes import reason as reason_route
 
 log = logging.getLogger(__name__)
+
+# SEC-LOW-01: Disable docs/openapi in production
+_env = os.environ.get("DINA_ENV", "production").lower()
+_is_dev = _env in ("development", "test")
+if not _is_dev and os.environ.get("DINA_TEST_MODE", "").lower() == "true":
+    _is_dev = True
 
 
 def create_brain_app(
@@ -55,7 +62,43 @@ def create_brain_app(
         title="Dina Brain API",
         description="Internal API for dina-core to delegate processing and reasoning.",
         version="0.4.0",
+        docs_url="/docs" if _is_dev else None,
+        redoc_url="/redoc" if _is_dev else None,
+        openapi_url="/openapi.json" if _is_dev else None,
     )
+
+    # ------------------------------------------------------------------
+    # MED-02: Security headers middleware
+    # ------------------------------------------------------------------
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        return response
+
+    # ------------------------------------------------------------------
+    # MED-14: Rate limiting on expensive endpoints
+    # ------------------------------------------------------------------
+
+    try:
+        from ..infra.rate_limit import TokenBucketLimiter
+    except ImportError:
+        from infra.rate_limit import TokenBucketLimiter
+    _reason_limiter = TokenBucketLimiter(rate=10/60, burst=5)
+
+    @app.middleware("http")
+    async def rate_limit_reasoning(request: Request, call_next):
+        if request.url.path in ("/v1/reason", "/v1/pii/scrub"):
+            key = request.headers.get("authorization", request.client.host if request.client else "unknown")
+            if not _reason_limiter.allow(key):
+                from fastapi.responses import JSONResponse
+                return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
+        return await call_next(request)
+
     security = HTTPBearer()
 
     # ------------------------------------------------------------------
@@ -127,7 +170,7 @@ def create_brain_app(
         )
         return JSONResponse(
             status_code=500,
-            content={"detail": f"Internal server error: {type(exc).__name__}"},
+            content={"detail": "Internal server error"},
         )
 
     return app

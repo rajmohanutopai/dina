@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hmac
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,12 @@ from .routes import chat as chat_route
 from .routes import history as history_route
 
 log = logging.getLogger(__name__)
+
+# SEC-LOW-01: Disable docs/openapi in production
+_env = os.environ.get("DINA_ENV", "production").lower()
+_is_dev = _env in ("development", "test")
+if not _is_dev and os.environ.get("DINA_TEST_MODE", "").lower() == "true":
+    _is_dev = True
 
 
 def create_admin_app(
@@ -69,7 +76,51 @@ def create_admin_app(
         title="Dina Admin",
         description="Admin UI for managing contacts, devices, personas, and settings.",
         version="0.5.0",
+        docs_url="/docs" if _is_dev else None,
+        redoc_url="/redoc" if _is_dev else None,
+        openapi_url="/openapi.json" if _is_dev else None,
     )
+
+    # ------------------------------------------------------------------
+    # MED-02: Security headers middleware
+    # ------------------------------------------------------------------
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; "
+            "frame-ancestors 'none'"
+        )
+        if _env == "production":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+    # ------------------------------------------------------------------
+    # MED-14: Rate limiting on expensive endpoints
+    # ------------------------------------------------------------------
+
+    try:
+        from ..infra.rate_limit import TokenBucketLimiter
+    except ImportError:
+        from infra.rate_limit import TokenBucketLimiter
+    _chat_limiter = TokenBucketLimiter(rate=10/60, burst=5)
+
+    @app.middleware("http")
+    async def rate_limit_chat(request: Request, call_next):
+        if request.url.path == "/api/chat":
+            key = request.cookies.get("dina_client_token", request.client.host if request.client else "unknown")
+            if not _chat_limiter.allow(key):
+                from fastapi.responses import JSONResponse
+                return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
+        return await call_next(request)
 
     client_token = getattr(config, "client_token", None) or ""
 
@@ -158,6 +209,8 @@ def create_admin_app(
     # ------------------------------------------------------------------
 
     app.include_router(login_route.router)
+    # LOW-03: Logout CSRF is accepted risk — logout is a nuisance, not a breach.
+    # Session validation is done inside the logout handler itself.
 
     # ------------------------------------------------------------------
     # Include routers — HTML pages + new API (cookie-or-bearer auth)
@@ -194,6 +247,8 @@ def create_admin_app(
     # ------------------------------------------------------------------
     # Static files: images for architecture page
     # ------------------------------------------------------------------
+    # LOW-04: Architecture images are intentionally public — they contain no
+    # secrets or user data. Protecting them adds complexity without security value.
 
     _images_dir = Path(images_dir) if images_dir else None
     if _images_dir and _images_dir.is_dir():
@@ -224,7 +279,7 @@ def create_admin_app(
         )
         return JSONResponse(
             status_code=500,
-            content={"detail": f"Internal server error: {type(exc).__name__}"},
+            content={"detail": "Internal server error"},
         )
 
     return app

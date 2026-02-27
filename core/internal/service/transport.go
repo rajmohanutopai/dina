@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/port"
@@ -36,13 +37,18 @@ type TransportService struct {
 	outbox    port.OutboxManager
 	inbox     port.InboxManager
 	clock     port.Clock
-	deliverer port.Deliverer // optional: immediate delivery to remote endpoint
+	deliverer port.Deliverer    // optional: immediate delivery to remote endpoint
+	egress    port.Gatekeeper   // SEC-HIGH-04: egress policy enforcement
 
 	recipientPub  []byte
 	recipientPriv []byte
 	senderDID     string // this node's own DID for the From field
 	mu            sync.Mutex
 	inboundMsgs   []domain.DinaMessage
+
+	// SEC-HIGH-08: replay cache for inbound message dedup.
+	replayMu    sync.Mutex
+	replayCache map[string]int64 // key: "senderDID|msgID" -> Unix timestamp
 }
 
 // NewTransportService constructs a TransportService with all required dependencies.
@@ -56,13 +62,14 @@ func NewTransportService(
 	clock port.Clock,
 ) *TransportService {
 	return &TransportService{
-		encryptor: encryptor,
-		signer:    signer,
-		converter: converter,
-		resolver:  resolver,
-		outbox:    outbox,
-		inbox:     inbox,
-		clock:     clock,
+		encryptor:   encryptor,
+		signer:      signer,
+		converter:   converter,
+		resolver:    resolver,
+		outbox:      outbox,
+		inbox:       inbox,
+		clock:       clock,
+		replayCache: make(map[string]int64),
 	}
 }
 
@@ -78,10 +85,27 @@ func (s *TransportService) SetVerifier(v port.Signer) {
 	s.verifier = v
 }
 
+// SetEgress sets the gatekeeper used for egress policy enforcement on outbound messages.
+func (s *TransportService) SetEgress(gk port.Gatekeeper) {
+	s.egress = gk
+}
+
 // SendMessage signs and encrypts a message for the recipient, then attempts
 // immediate delivery. If delivery fails, the message is queued in the outbox
 // for later retry via ProcessOutbox.
 func (s *TransportService) SendMessage(ctx context.Context, to domain.DID, msg domain.DinaMessage) error {
+	// SEC-HIGH-04: Enforce egress policy before sending.
+	if s.egress != nil {
+		plaintext, _ := json.Marshal(msg)
+		allowed, err := s.egress.CheckEgress(ctx, string(to), plaintext)
+		if err != nil {
+			return fmt.Errorf("transport: egress check failed: %w", err)
+		}
+		if !allowed {
+			return fmt.Errorf("transport: %w: egress to %s blocked by policy", domain.ErrEgressBlocked, to)
+		}
+	}
+
 	// Resolve the recipient's DID document to obtain their public key.
 	doc, err := s.resolver.Resolve(ctx, to)
 	if err != nil {
@@ -433,13 +457,52 @@ func (s *TransportService) ProcessInbound(ctx context.Context, sealed []byte) (*
 		}
 	}
 
+	// SEC-HIGH-08: Replay detection using bounded (sender, msgID) cache.
+	if msg.ID != "" && msg.From != "" {
+		replayKey := msg.From + "|" + msg.ID
+		s.replayMu.Lock()
+		if _, seen := s.replayCache[replayKey]; seen {
+			s.replayMu.Unlock()
+			return nil, fmt.Errorf("transport: %w: duplicate (sender=%s, id=%s)", domain.ErrReplayDetected, msg.From, msg.ID)
+		}
+		now := s.clock.Now().Unix()
+		s.replayCache[replayKey] = now
+		s.replayMu.Unlock()
+	}
+
 	return &msg, nil
 }
 
+// PurgeReplayCache removes entries older than maxAge from the replay cache.
+// Called periodically from the background ticker in main.go.
+func (s *TransportService) PurgeReplayCache(maxAge time.Duration) int {
+	s.replayMu.Lock()
+	defer s.replayMu.Unlock()
+
+	cutoff := s.clock.Now().Add(-maxAge).Unix()
+	purged := 0
+	for key, ts := range s.replayCache {
+		if ts < cutoff {
+			delete(s.replayCache, key)
+			purged++
+		}
+	}
+	return purged
+}
+
+// maxInboundMessages is the hard cap on in-memory inbound messages (SEC-MED-09).
+const maxInboundMessages = 10000
+
 // StoreInbound adds a decrypted message to the in-memory inbox.
+// SEC-MED-09: Enforces a hard cap to prevent unbounded memory growth.
 func (s *TransportService) StoreInbound(msg *domain.DinaMessage) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if len(s.inboundMsgs) >= maxInboundMessages {
+		slog.Warn("inbound message cap reached, dropping oldest", "cap", maxInboundMessages)
+		// Drop the oldest message to make room.
+		s.inboundMsgs = s.inboundMsgs[1:]
+	}
 	s.inboundMsgs = append(s.inboundMsgs, *msg)
 }
 

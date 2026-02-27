@@ -56,7 +56,7 @@ export function aggregateSubjectSentiment(attestations: AttestationForAggregatio
     if (a.isVerified) verifiedCount++
 
     // Weighted score
-    const ageDays = daysSince(a.recordCreatedAt)
+    const ageDays = Math.max(0, daysSince(a.recordCreatedAt))
     const recency = Math.exp(-ageDays / CONSTANTS.SENTIMENT_HALFLIFE_DAYS)
     const evidence = a.evidenceJson?.length ? CONSTANTS.EVIDENCE_MULTIPLIER : 1.0
     let authorWeight = a.authorTrustScore ?? 0.0

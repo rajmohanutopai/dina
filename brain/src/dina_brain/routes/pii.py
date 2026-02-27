@@ -11,11 +11,12 @@ No imports from dina_admin — module boundary enforced.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ router = APIRouter()
 class ScrubRequest(BaseModel):
     """Input text for PII scrubbing."""
 
-    text: str
+    text: str = Field(..., max_length=100_000)
 
 
 class ScrubResponse(BaseModel):
@@ -76,7 +77,7 @@ async def scrub_pii(request: ScrubRequest) -> ScrubResponse:
         return ScrubResponse(scrubbed=request.text, entities=[])
 
     try:
-        scrubbed, entities = _scrubber.scrub(request.text)
+        scrubbed, entities = await asyncio.to_thread(_scrubber.scrub, request.text)
     except Exception as exc:
         log.error(
             "pii.scrub.error",
@@ -84,7 +85,7 @@ async def scrub_pii(request: ScrubRequest) -> ScrubResponse:
         )
         raise HTTPException(
             status_code=500,
-            detail=f"PII scrub failed: {type(exc).__name__}",
+            detail="PII scrubbing failed",
         ) from exc
 
     return ScrubResponse(scrubbed=scrubbed, entities=entities)

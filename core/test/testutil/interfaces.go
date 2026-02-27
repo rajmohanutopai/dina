@@ -375,7 +375,7 @@ type PairingManager interface {
 	// GenerateCode creates a new pairing code (QR or numeric).
 	GenerateCode(ctx context.Context) (code string, secret []byte, err error)
 	// CompletePairing verifies the code and registers the device.
-	CompletePairing(ctx context.Context, code string, deviceName string) (clientToken string, err error)
+	CompletePairing(ctx context.Context, code string, deviceName string) (clientToken string, tokenID string, err error)
 	// CompletePairingFull verifies the code and returns full pair response.
 	CompletePairingFull(ctx context.Context, code string, deviceName string) (*PairResponse, error)
 	// CompletePairingWithKey verifies the code and registers a device using

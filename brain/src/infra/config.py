@@ -10,10 +10,13 @@ Supports Docker Secrets for ``BRAIN_TOKEN`` via
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -131,9 +134,21 @@ def load_brain_config() -> BrainConfig:
 
     # -- CLIENT_TOKEN (optional) --
     client_token = os.environ.get("DINA_CLIENT_TOKEN", "").strip() or None
+    client_token_file = os.environ.get("DINA_CLIENT_TOKEN_FILE", "").strip()
+    if not client_token and client_token_file:
+        client_token = _read_token_from_file(client_token_file)
 
     # LLM routing is enabled only when a backend URL is configured
     llm_routing_enabled = llm_url is not None
+
+    _env_mode = os.environ.get("DINA_ENV", "production").lower()
+    if _env_mode == "production" and core_url.startswith("http://"):
+        _is_docker = os.path.exists("/.dockerenv")
+        if not _is_docker:
+            log.warning(
+                "config.core_url.insecure",
+                extra={"detail": "Core URL uses plaintext HTTP in production outside Docker"},
+            )
 
     return BrainConfig(
         core_url=core_url,

@@ -1,0 +1,930 @@
+Security Review Findings (2026-02-26)
+Scope: core/, brain/, appview/, cli/ (static code review, no code changes in this pass).
+Method: deep read-through of auth/authz, key/seed handling, ingress/egress, transport, admin surfaces, and public API exposure paths.
+
+[SEC-HIGH-01] Device-scoped CLIENT_TOKEN can access admin endpoints
+Severity: HIGH
+Evidence:
+- core/internal/adapter/auth/auth.go:1080-1094
+  Device scope denies only:
+  /v1/did/sign, /v1/did/rotate, /v1/identity/mnemonic, /v1/vault/backup, /admin
+  then returns true for everything else.
+- Admin endpoints are routed at:
+  core/cmd/dina-core/main.go:557-558 (/v1/personas, /v1/persona/unlock)
+  core/cmd/dina-core/main.go:580-581 (/v1/pair/*)
+  core/cmd/dina-core/main.go:593-594 (/v1/export, /v1/import)
+Impact:
+- Paired device tokens (scope=device) can perform persona/pair/export/import operations that should be admin-only.
+Fix direction:
+- Move to explicit allowlist per scope (not denylist).
+- For device scope, deny /v1/persona*, /v1/personas, /v1/pair/*, /v1/export*, /v1/import*.
+- Add authz tests for every routed endpoint.
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED
+1. Replace the denylist in AllowedForTokenKind (auth.go:1080-1094) with an explicit allowlist.
+   Device-scope tokens should only be permitted on:
+     /v1/msg/send, /v1/msg/inbox, /v1/vault/query, /v1/vault/store,
+     /v1/vault/kv, /v1/contacts, /healthz, /readyz
+   Everything not listed is denied by default.
+2. Add a table-driven test in auth_test.go that iterates every route registered in main.go
+   and asserts the expected 200/403 for each (scope=admin, scope=device, scope=brain).
+3. Wire the allowlist via a map[string][]string keyed by scope, loaded at startup from
+   a declarative config struct (not scattered string literals).
+Files: core/internal/adapter/auth/auth.go, core/internal/adapter/auth/auth_test.go,
+       core/cmd/dina-core/main.go (route registration already exists — no new routes).
+
+[SEC-HIGH-02] Pairing race can return mismatched TokenID
+Severity: HIGH
+Evidence:
+- core/internal/adapter/pairing/pairing.go:205-220
+  CompletePairingFull() calls CompletePairing(), then re-locks and reads pm.devices[n-1].tokenID.
+Impact:
+- Concurrent pairings can cause TokenID mismatch between returned ClientToken and returned TokenID.
+- Revocation/accountability can target wrong device.
+Fix direction:
+- Return TokenID atomically from CompletePairing() (same critical section as token generation).
+- Do not infer TokenID by reading "last device".
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED
+1. Change CompletePairing() signature to return (clientToken string, tokenID string, err error).
+   Inside the existing critical section (pairing.go:155-200) where the device is appended and
+   the token is generated, capture tokenID from the newly created device before releasing the lock.
+2. Remove CompletePairingFull() entirely — it exists only to work around the missing return value.
+   Callers (handler) use the returned tokenID directly.
+3. Add a concurrent pairing test: launch N goroutines calling CompletePairing simultaneously
+   and assert every returned (clientToken, tokenID) pair is self-consistent.
+Files: core/internal/adapter/pairing/pairing.go, core/internal/handler/device.go (caller).
+
+[SEC-HIGH-03] Admin proxy falls back to CLIENT_TOKEN for internal Core->Brain call
+Severity: HIGH
+Evidence:
+- core/cmd/dina-core/main.go:497-504
+- core/internal/handler/admin.go:34-37
+Impact:
+- If DINA_INTERNAL_TOKEN is unset, client/admin token is forwarded to brain proxy target.
+- Breaks intended token separation and increases blast radius.
+Fix direction:
+- Make DINA_INTERNAL_TOKEN mandatory for /admin proxy path.
+- Fail startup if missing (in non-test env).
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED
+1. In main.go startup (around line 497-504), fail with os.Exit(1) if DINA_INTERNAL_TOKEN is
+   empty and DINA_TEST_MODE != "true". Log a clear error message explaining the requirement.
+2. Remove the fallback path in admin.go:35-36 that substitutes h.Token when InternalToken is
+   empty. If InternalToken is empty at handler construction time, return 503 on proxy requests
+   instead of forwarding the admin token.
+3. Add a startup validation test that asserts the process exits when DINA_INTERNAL_TOKEN is
+   missing in non-test mode.
+Files: core/cmd/dina-core/main.go, core/internal/handler/admin.go.
+
+[SEC-HIGH-04] Egress policy is not enforced on outbound transport path
+Severity: HIGH
+Evidence:
+- Gatekeeper egress check exists:
+  core/internal/service/gatekeeper.go:90-122 (EnforceEgress/CheckEgress)
+- Outbound transport path does not call gatekeeper:
+  core/internal/service/transport.go:84-174 (SendMessage)
+  core/internal/adapter/transport/transport.go:148-173 (Deliver/httpDeliver)
+Impact:
+- Real outbound D2D sends can bypass centralized egress policy enforcement.
+Fix direction:
+- Inject and enforce gatekeeper.CheckEgress before delivery (service layer, not handler-only).
+- Add regression tests that blocked destinations never receive outbound posts.
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED
+1. Add a port.EgressChecker interface with CheckEgress(ctx, recipientDID, payload) error.
+   GatekeeperService already implements this logic (gatekeeper.go:90-122).
+2. Inject EgressChecker into TransportService. In SendMessage (transport.go:84-174),
+   call CheckEgress before Deliver. If denied, return a typed ErrEgressBlocked error
+   (do not silently drop).
+3. Wire in main.go: pass gkSvc as the EgressChecker when constructing TransportService.
+4. Add test: configure gatekeeper to block a destination DID, call SendMessage, assert
+   ErrEgressBlocked is returned and no HTTP request is made to the blocked endpoint.
+Files: core/internal/port/interfaces.go (new interface method),
+       core/internal/service/transport.go, core/cmd/dina-core/main.go.
+
+[SEC-HIGH-05] WebSocket origin verification is explicitly disabled in runtime wiring
+Severity: HIGH
+Evidence:
+- core/cmd/dina-core/main.go:597-599 uses ws.NewUpgrader(ws.WithInsecureSkipVerify()).
+- Secure default exists but is bypassed:
+  core/internal/adapter/ws/upgrader.go:94-97,107-111
+Impact:
+- Cross-origin WS handshake checks are off in production path.
+Fix direction:
+- Use allowed-origin patterns from config (no insecure skip in production).
+- Fail closed when no explicit allowed origins are configured for /ws.
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED
+1. Remove WithInsecureSkipVerify() from main.go:598. Replace with
+   ws.NewUpgrader(ws.WithAllowedOrigins(cfg.AllowedOrigins)) where AllowedOrigins
+   comes from the existing config field (config.go:32).
+2. In upgrader.go, change the default: if AllowedOrigins is empty and InsecureSkipVerify
+   is false, reject all cross-origin upgrades (fail closed). Add WithAllowedOrigins()
+   option that parses comma-separated origins into a set for O(1) lookup.
+3. Guard the insecure option: only allow WithInsecureSkipVerify() when DINA_TEST_MODE=true.
+   Log a warning if called outside test mode.
+4. Add test: attempt WS upgrade with mismatched Origin header, assert 403 rejection.
+Files: core/cmd/dina-core/main.go, core/internal/adapter/ws/upgrader.go,
+       core/internal/config/config.go.
+
+[SEC-HIGH-06] Identity seed can still be persisted/loaded in plaintext
+Severity: HIGH
+Evidence:
+- core/cmd/dina-core/main.go:180-198
+  If DINA_SEED_PASSWORD is absent, seed is read/written via identity_seed.hex plaintext.
+Impact:
+- At-rest compromise of filesystem yields raw root seed directly.
+Fix direction:
+- Require wrapped seed in non-test environments.
+- Disallow plaintext fallback unless explicit migration flag is set.
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED
+1. In main.go:180-198, change the plaintext path:
+   - If identity_seed.hex exists AND DINA_SEED_PASSWORD is now set, auto-migrate:
+     read plaintext -> wrap with KEK -> write identity_seed.wrapped -> delete .hex file.
+   - If identity_seed.hex exists AND no password is set AND DINA_TEST_MODE != "true",
+     fail startup with error "plaintext seed requires DINA_SEED_PASSWORD for migration".
+   - New seed generation (line 188-199) should always require DINA_SEED_PASSWORD in
+     non-test mode. Never write identity_seed.hex in production.
+2. Add DINA_ALLOW_PLAINTEXT_SEED=1 escape hatch for migration-only scenarios, guarded
+   by a startup warning log.
+3. Add test: assert startup fails when .hex exists without password in non-test mode.
+Files: core/cmd/dina-core/main.go.
+
+[SEC-MED-01] CORS is hardcoded to wildcard, ignoring configured AllowedOrigins
+Severity: MEDIUM
+Evidence:
+- core/cmd/dina-core/main.go:642 sets AllowOrigin: "*"
+- config field exists but is unused in middleware wiring:
+  core/internal/config/config.go:32,205-206
+Impact:
+- Cross-origin API access is broadly permitted by default.
+Fix direction:
+- Wire cfg.AllowedOrigins into middleware.
+- Default to deny (empty) and require explicit allowlist.
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED
+1. In main.go:642, replace hardcoded "*" with cfg.AllowedOrigins:
+     cors := &middleware.CORS{AllowOrigin: cfg.AllowedOrigins}
+   If cfg.AllowedOrigins is empty, CORS middleware should set no Access-Control-Allow-Origin
+   header (deny by default).
+2. The CORS middleware (middleware/cors.go) already supports comma-separated origin matching.
+   No middleware changes needed — just the wiring fix.
+3. Document DINA_ALLOWED_ORIGINS in .env.example with a comment that "*" is insecure and
+   should only be used in development.
+Files: core/cmd/dina-core/main.go (one-line change).
+
+[SEC-MED-02] Most JSON endpoints have no request body size limits
+Severity: MEDIUM
+Evidence (examples):
+- core/internal/handler/vault.go:49,111,148,258,293
+- core/internal/handler/contact.go:57,116,151
+- core/internal/handler/device.go:55
+- core/internal/handler/identity.go:60,99
+- core/internal/handler/persona.go:65,111
+Impact:
+- Authenticated callers can send oversized bodies and force high memory usage.
+Fix direction:
+- Apply http.MaxBytesReader per endpoint (or centralized request-body limiter middleware).
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED
+1. Add a BodyLimit middleware in core/internal/middleware/bodylimit.go:
+     func BodyLimit(maxBytes int64) func(http.Handler) http.Handler
+   that wraps r.Body with http.MaxBytesReader before calling next.ServeHTTP.
+   Return 413 on MaxBytesError.
+2. Apply in main.go middleware chain (after auth, before handlers) with a default of
+   1 MB (matching the existing limit in the signature auth path at auth.go:90).
+3. For HandlePutKV (vault.go:293) which uses io.ReadAll, the middleware handles it
+   transparently since MaxBytesReader is on r.Body.
+4. Optionally allow per-route override via handler-level MaxBytesReader for endpoints
+   that need larger bodies (e.g. vault batch import).
+Files: core/internal/middleware/bodylimit.go (new), core/cmd/dina-core/main.go.
+
+[SEC-MED-03] Internal error text is returned to clients on some endpoints
+Severity: MEDIUM
+Evidence:
+- core/internal/handler/contact.go:158,165,188
+- core/internal/handler/health.go:30
+- brain/src/dina_admin/app.py:227
+- brain/src/dina_brain/app.py:130
+Impact:
+- Leaks internal implementation details useful for reconnaissance.
+Fix direction:
+- Return stable public error codes/messages only.
+- Keep full error details in server logs.
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED (Go leaks full err.Error(); Python leaks exception type name only)
+1. Go: In contact.go:158,165,188 replace http.Error(w, `{"error":"`+err.Error()+`"}`, ...)
+   with clientError(w, "operation failed", status, err) — the helper already exists in
+   handler/errors.go and logs the real error server-side.
+2. Go: In health.go:30 replace err.Error() in the readiness response with a generic
+   "not ready" message. Log the actual error via slog.Warn.
+3. Python: In dina_brain/app.py:130 and dina_admin/app.py:227, replace
+   f"Internal server error: {type(exc).__name__}" with a static "Internal server error"
+   string. The exception type is already logged by the structured logger.
+Files: core/internal/handler/contact.go, core/internal/handler/health.go,
+       brain/src/dina_brain/app.py, brain/src/dina_admin/app.py.
+
+[SEC-MED-04] Brain admin brute-force tracking map is unbounded
+Severity: MEDIUM
+Evidence:
+- brain/src/dina_admin/routes/login.py:39,89-92
+  _login_attempts is keyed by IP and grows without global cap/eviction.
+Impact:
+- Memory DoS via many unique source IPs.
+Fix direction:
+- Use bounded LRU/TTL cache for attempt tracking.
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED
+1. Replace _login_attempts dict with a bounded OrderedDict or LRU cache (max 10,000 entries).
+   When inserting a new IP and the cache is full, evict the oldest entry.
+2. Add a background cleanup: on each login attempt (login.py:89), after filtering recent
+   attempts for the current IP, also check dict length and trim entries older than
+   _LOCKOUT_SECONDS globally (amortized O(1) via tracking oldest insertion time).
+3. Alternative: use cachetools.TTLCache(maxsize=10000, ttl=_LOCKOUT_SECONDS) which handles
+   both size bounding and TTL eviction automatically. This is a stdlib-compatible drop-in.
+Files: brain/src/dina_admin/routes/login.py.
+
+--- REVIEW NOTE (DISAGREE) ---
+I do not fully agree with point 1 wording:
+`if DINA_ENV == "production" (or DINA_TEST_MODE is not "true")`.
+Correction:
+1. Base this on `DINA_ENV` as primary source of truth.
+2. Avoid `or DINA_TEST_MODE != "true"` in security conditions because it can accidentally force production-like behavior in valid development runs.
+Reason:
+- The sample code in point 2 is correct (`is_prod` from `DINA_ENV`), but point 1 text is broader and can be misapplied.
+--- RESOLUTION (AGREE WITH REVIEWER) ---
+Codex is correct. Point 1 prose says "(or DINA_TEST_MODE is not 'true')" but the code example
+in point 2 correctly checks only DINA_ENV. The parenthetical widens the condition beyond the
+intended logic: a developer running with DINA_ENV=development (and no DINA_TEST_MODE set)
+would be forced into secure-cookie mode, blocking local HTTP development.
+Revised point 1 wording:
+  "Add a production guard: if DINA_ENV == 'production' (the default when unset),
+   force secure=True regardless of DINA_HTTPS value."
+No mention of DINA_TEST_MODE in the condition. The code example in point 2 is already correct
+and needs no change:
+  is_prod = os.environ.get("DINA_ENV", "production").lower() == "production"
+  is_https = is_prod or os.environ.get("DINA_HTTPS", "1").lower() not in ("0", "false", "no")
+
+--- REVIEW NOTE (DISAGREE) ---
+I do not agree with point 3 as written: `cachetools.TTLCache` is not stdlib.
+Use either:
+1. Pure-stdlib bounded structure (`OrderedDict` + explicit TTL eviction), or
+2. Add `cachetools` as an explicit dependency with lock protection and document it in requirements.
+Reason:
+- Calling it "stdlib-compatible drop-in" is factually incorrect and can hide dependency/risk decisions.
+--- RESOLUTION (AGREE WITH REVIEWER) ---
+Codex is correct. `cachetools` is a third-party PyPI package, not Python stdlib. It is also
+not in brain/pyproject.toml dependencies. The phrase "stdlib-compatible drop-in" was misleading.
+Revised recommendation:
+- Preferred: use stdlib `collections.OrderedDict` with manual TTL eviction (no new dependency).
+  On each login attempt, pop entries older than _LOCKOUT_SECONDS from the front of the OrderedDict
+  (O(1) amortized since OrderedDict preserves insertion order). Cap at 10,000 entries by evicting
+  oldest on insert.
+- Alternative: add `cachetools` explicitly to pyproject.toml [dependencies] with a comment
+  explaining why. Use `cachetools.TTLCache(maxsize=10000, ttl=900)` with threading.Lock wrapper
+  (TTLCache is not thread-safe by default).
+
+[SEC-MED-05] Brain does not support DINA_CLIENT_TOKEN_FILE secret loading
+Severity: MEDIUM
+Evidence:
+- brain token supports _FILE:
+  brain/src/infra/config.py:98-103
+- client token only from env:
+  brain/src/infra/config.py:133
+Impact:
+- Inconsistent secret-handling path, easier accidental secret exposure via env.
+Fix direction:
+- Add DINA_CLIENT_TOKEN_FILE support with strict file reading semantics.
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED (DINA_BRAIN_TOKEN_FILE exists; DINA_CLIENT_TOKEN_FILE does not)
+1. In config.py:133, add the same pattern used for brain_token (lines 98-103):
+     client_token = os.environ.get("DINA_CLIENT_TOKEN", "").strip()
+     client_token_file = os.environ.get("DINA_CLIENT_TOKEN_FILE", "").strip()
+     if not client_token and client_token_file:
+         client_token = _read_token_from_file(client_token_file)
+2. The _read_token_from_file helper already exists and handles permission checks,
+   newline stripping, and error reporting. No new helpers needed.
+3. Document DINA_CLIENT_TOKEN_FILE in .env.example alongside the existing
+   DINA_BRAIN_TOKEN_FILE documentation.
+Files: brain/src/infra/config.py (3 lines added).
+
+[SEC-MED-06] AppView XRPC surface has no auth and no server-side request rate limiting
+Severity: MEDIUM
+Evidence:
+- appview/src/web/server.ts:22-64
+- RATE_LIMIT_RPM is defined but unused for web API:
+  appview/src/config/env.ts:25
+Impact:
+- Public abuse path for expensive query endpoints (availability risk).
+Fix direction:
+- Add API rate limiter and optional auth/signature verification for restricted methods.
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED
+1. Add an Express-style rate limiter middleware in appview/src/api/middleware/rate-limit.ts:
+   - Use a sliding-window counter keyed by IP (or X-Forwarded-For behind proxy).
+   - Read RATE_LIMIT_RPM from env.ts (already defined but unused).
+   - Return 429 Too Many Requests with Retry-After header when exceeded.
+2. Wire the middleware in web/server.ts before XRPC route handlers.
+3. For expensive endpoints (resolve, graph queries), consider a lower per-IP limit
+   than the global RATE_LIMIT_RPM.
+4. Optional (phase 2): add AT Proto DID-based auth for write-adjacent XRPC methods
+   using the existing record-validator infrastructure for signature verification.
+Files: appview/src/api/middleware/rate-limit.ts (new),
+       appview/src/web/server.ts, appview/src/config/env.ts.
+
+--- REVIEW NOTE (DISAGREE) ---
+I do not agree with the "Express-style middleware" direction for this codebase.
+Correction:
+1. `appview/src/web/server.ts` uses Node `http.createServer`, not Express/Koa middleware.
+2. Implement a lightweight in-process limiter in the existing request handler path (or migrate intentionally to a framework as a separate refactor).
+Reason:
+- Security fixes should fit current runtime architecture; introducing framework-style abstractions here is unnecessary and increases change risk.
+--- RESOLUTION (AGREE WITH REVIEWER) ---
+Codex is correct. The appview web server (server.ts:22-64) uses raw `http.createServer`, and
+package.json has no Express/Koa/Fastify dependency. "Express-style middleware" was a misnomer.
+Revised recommendation:
+- Add a `checkRateLimit(req: http.IncomingMessage): boolean` function in a new
+  appview/src/api/middleware/rate-limit.ts module. Use the existing `lru-cache` package
+  (already in package.json) to maintain per-IP sliding-window counters.
+- Call it at the top of the server.ts request handler (before XRPC method dispatch):
+    if (!checkRateLimit(req)) { res.writeHead(429); res.end(...); return; }
+- Read RATE_LIMIT_RPM from env.ts (already defined, currently unused).
+- No framework migration needed. This fits the existing raw-handler architecture.
+
+[SEC-MED-07] AppView overflow spool writes are unbounded on disk
+Severity: MEDIUM
+Evidence:
+- appview/src/ingester/jetstream-consumer.ts:23,79-84
+  Drops create spool-*.jsonl files with no retention/size cap.
+Impact:
+- Sustained overload can fill disk.
+Fix direction:
+- Add hard spool quota, rotation, and cleanup policy.
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED
+1. Add SPOOL_MAX_SIZE_MB env var (default 500). Before each appendFileSync, check total
+   spool directory size. If exceeded, skip the write and increment a dropped counter
+   (log at warn level).
+2. Add spool rotation: create a new spool-*.jsonl file every 10 minutes (not per-event).
+   Append within the current file. This reduces filesystem overhead.
+3. Add a cleanup timer (e.g. every hour) that deletes spool files older than 24 hours.
+   Wire this into the ingester daemon lifecycle.
+4. Emit a metric/log when spool usage exceeds 80% of quota as an early warning.
+Files: appview/src/ingester/jetstream-consumer.ts, appview/src/config/env.ts.
+
+[SEC-MED-08] AppView ingest path trusts incoming Jetstream events without cryptographic provenance verification
+Severity: MEDIUM
+Evidence:
+- appview/src/ingester/jetstream-consumer.ts:73,119-135,146-171
+  Pipeline processes did/commit payload directly after schema validation.
+Impact:
+- If upstream relay/feed is compromised, forged records can be ingested.
+Fix direction:
+- Add signature/provenance verification against AT Proto commit/auth chain before persistence.
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED
+1. Phase 1 (TLS trust): Validate that the Jetstream WebSocket connection uses TLS and
+   pin to known Bluesky relay hostnames (JETSTREAM_ALLOWED_HOSTS env var). Reject
+   connections to unexpected hosts.
+2. Phase 2 (commit verification): For each incoming event, verify the AT Proto commit
+   signature using the DID's signing key (resolved via DID document). The @atproto/crypto
+   package provides verifySignature() for this. Reject events with invalid signatures.
+3. Phase 3 (optional, defense-in-depth): Maintain a local cache of recently-seen commit
+   CIDs to detect duplicate or out-of-order events from a compromised relay.
+4. Note: Full commit chain verification requires resolving the DID document for each
+   event author, which adds latency. Consider async verification with a grace period
+   (ingest immediately, verify in background, tombstone on failure).
+Files: appview/src/ingester/jetstream-consumer.ts,
+       appview/src/ingester/commit-verifier.ts (new).
+
+[SEC-LOW-01] FastAPI docs/openapi endpoints are enabled by default
+Severity: LOW
+Evidence:
+- brain/src/main.py:355
+- brain/src/dina_brain/app.py:54
+- brain/src/dina_admin/app.py:68
+Impact:
+- API surface discoverability is higher than necessary in production.
+Fix direction:
+- Disable docs/openapi in production (docs_url=None, redoc_url=None, openapi_url=None).
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED
+1. Read DINA_ENV (or DINA_TEST_MODE) at app construction time. When not in dev/test mode,
+   pass docs_url=None, redoc_url=None, openapi_url=None to all three FastAPI() calls:
+   - brain/src/main.py:355 (master app)
+   - brain/src/dina_brain/app.py:54 (brain sub-app)
+   - brain/src/dina_admin/app.py:68 (admin sub-app)
+2. Example:
+     is_dev = os.environ.get("DINA_TEST_MODE", "").lower() == "true"
+     app = FastAPI(..., docs_url="/docs" if is_dev else None,
+                   redoc_url="/redoc" if is_dev else None,
+                   openapi_url="/openapi.json" if is_dev else None)
+3. No new dependencies required. This is a 3-line change per FastAPI instance.
+Files: brain/src/main.py, brain/src/dina_brain/app.py, brain/src/dina_admin/app.py.
+
+--- REVIEW NOTE (DISAGREE) ---
+I do not agree with the example environment gate in point 2.
+Correction:
+1. Do not key production docs behavior only off `DINA_TEST_MODE`.
+2. Use `DINA_ENV` (`development`/`test`/`production`) as primary control, with test mode only as secondary compatibility input.
+Reason:
+- `DINA_TEST_MODE` is not a reliable production/development discriminator for documentation exposure.
+--- RESOLUTION (AGREE WITH REVIEWER) ---
+Codex is correct. The Go core already uses DINA_ENV as the primary environment discriminator
+(main.go:69-76 accepts "test", "migration", "development"; main.go:78-85 blocks DINA_TEST_MODE
+in production). DINA_TEST_MODE is a boolean test flag, not a tier classifier — a developer may
+want docs enabled in development but not in production, and DINA_TEST_MODE doesn't distinguish
+those cases.
+Revised recommendation:
+- Use DINA_ENV as primary control, consistent with core:
+    env = os.environ.get("DINA_ENV", "production").lower()
+    is_dev = env in ("development", "test")
+    app = FastAPI(..., docs_url="/docs" if is_dev else None,
+                  redoc_url="/redoc" if is_dev else None,
+                  openapi_url="/openapi.json" if is_dev else None)
+- Fall back to DINA_TEST_MODE only for backward compatibility:
+    if not is_dev and os.environ.get("DINA_TEST_MODE", "").lower() == "true":
+        is_dev = True
+
+[SEC-LOW-02] Admin cookie can be forced insecure via env with no production guard
+Severity: LOW
+Evidence:
+- brain/src/dina_admin/routes/login.py:117-126
+  DINA_HTTPS=0 disables secure cookie flag.
+Impact:
+- Operator misconfiguration can expose session cookie over plaintext HTTP.
+Fix direction:
+- Enforce secure=True in production regardless of env override.
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED
+1. Add a production guard: if DINA_ENV == "production" (or DINA_TEST_MODE is not "true"),
+   force secure=True regardless of DINA_HTTPS value. Log a warning if DINA_HTTPS=0 is
+   set in production (operator misconfiguration).
+2. Example (login.py:117-126):
+     is_prod = os.environ.get("DINA_ENV", "production").lower() == "production"
+     is_https = is_prod or os.environ.get("DINA_HTTPS", "1").lower() not in ("0", "false", "no")
+3. This preserves the dev/test flexibility (HTTP for local development) while preventing
+   accidental insecure cookies in production.
+Files: brain/src/dina_admin/routes/login.py.
+
+[SEC-LOW-03] Sweeper has fail-open path that acks blobs when keys/converter are missing
+Severity: LOW
+Evidence:
+- core/internal/ingress/sweeper.go:131-135 and 229-233
+  If keys/converter not configured, blob is Ack()'d and counted delivered.
+Impact:
+- Misconfiguration can silently discard encrypted messages without decryption.
+Fix direction:
+- Fail closed: keep blob pending and alert when decrypt prerequisites are missing.
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED
+1. In sweeper.go:131-136 and 229-234, replace the Ack+continue with a skip+warn:
+   - Do NOT call deadDrop.Ack(name). Leave the blob pending for the next sweep cycle.
+   - Log at slog.Warn level: "skipping blob %s: decrypt prerequisites missing"
+   - Increment a skipped counter (not delivered counter).
+2. Add a startup check: if the sweeper is constructed without keys/converter, log a
+   one-time warning at startup that dead-drop messages cannot be processed until keys
+   are loaded (after vault unlock).
+3. This ensures no silent message loss during node startup or key rotation windows.
+Files: core/internal/ingress/sweeper.go.
+
+[SEC-LOW-04] CLI private key is stored unencrypted on disk
+Severity: LOW
+Evidence:
+- cli/src/dina_cli/signing.py:53-55 uses NoEncryption()
+Impact:
+- Local disk compromise yields immediate signing-key compromise.
+Fix direction:
+- Add optional passphrase/OS-keychain protection for private key at rest.
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED
+1. Replace NoEncryption() with BestAvailableEncryption(passphrase) when a passphrase is
+   provided via DINA_CLI_KEY_PASSPHRASE env var or interactive prompt.
+2. On load (signing.py key loading path), detect whether the PEM file is encrypted
+   (try load without password first; if DecryptionError, prompt for passphrase).
+3. Add DINA_CLI_USE_KEYCHAIN=1 option (phase 2) that stores the key in the OS keychain
+   (macOS Keychain / Linux Secret Service via keyring library) instead of a PEM file.
+4. Auto-migration: on first run with passphrase enabled, read existing unencrypted PEM,
+   re-encrypt, and overwrite the file.
+Files: cli/src/dina_cli/signing.py.
+
+[SEC-HIGH-07] Identity seed wrapping derives KEK via unsalted single SHA-256 (no memory-hard KDF)
+Severity: HIGH
+Evidence:
+- core/cmd/dina-core/main.go:110-114
+  `seedKEK` is derived as `sha256(seedPassword)` directly.
+- core/cmd/dina-core/main.go:131,151,168
+  The SHA-256-derived key is used for unwrap/wrap of `identity_seed.wrapped`.
+Impact:
+- Enables fast offline password guessing if `identity_seed.wrapped` is exfiltrated.
+- Compromise yields root identity seed, cascading to full identity/key compromise.
+Fix direction:
+- Derive KEK with Argon2id (per-node random salt + stored parameters).
+- Persist salt/params alongside wrapped seed metadata.
+- Add migration path to re-wrap existing seeds after successful unlock.
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED
+1. Replace sha256.Sum256([]byte(seedPassword)) at main.go:112-113 with Argon2id:
+     salt := loadOrGenerateSalt(seedSaltPath)  // 16 random bytes, persisted once
+     seedKEK = argon2.IDKey([]byte(seedPassword), salt, 3, 64*1024, 4, 32)
+   The argon2Deriver (already instantiated at main.go:96) can be reused for this.
+2. Persist salt alongside the wrapped seed. File format:
+     identity_seed.wrapped  -> [16 bytes salt][12 bytes nonce][ciphertext][16 bytes tag]
+   Or store salt in a separate identity_seed.salt file.
+3. Migration: if an existing .wrapped file was created with SHA-256 KEK, detect by trying
+   SHA-256 unwrap first. If successful, re-wrap with Argon2id-derived KEK and overwrite.
+   Log "seed KEK upgraded to Argon2id".
+4. Add Argon2 parameters to a constants block: time=3, memory=64MB, threads=4.
+   These are OWASP-recommended minimums for Argon2id.
+Files: core/cmd/dina-core/main.go.
+
+[SEC-HIGH-08] D2D anti-replay is missing end-to-end; sender path omits message ID and timestamp
+Severity: HIGH
+Evidence:
+- core/internal/handler/message.go:54-58
+  `/v1/msg/send` constructs `DinaMessage` without `ID` or `CreatedTime`.
+- core/internal/service/transport.go:341-437
+  `ProcessInbound` verifies signature/decrypts but has no replay cache or `(sender,msg_id)` dedup check.
+- core/internal/service/transport.go:439-444
+  `StoreInbound` appends inbound messages unconditionally.
+Impact:
+- Captured valid envelopes can be replayed, causing duplicate inbound processing/actions.
+- Missing stable IDs makes deterministic replay rejection impossible in current flow.
+Fix direction:
+- Require ULID `msg.ID` and valid `CreatedTime` on outbound creation.
+- Enforce freshness window on inbound messages.
+- Keep bounded replay cache keyed by `(sender DID, msg.ID)` (preferably persisted for window durability).
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED
+1. Outbound (message.go:54-58): Generate a ULID for msg.ID and set msg.CreatedTime to
+   time.Now().UTC() before calling SendMessage. ULIDs are sortable and contain embedded
+   timestamps, making freshness validation trivial.
+2. Inbound (transport.go ProcessInbound):
+   a. Reject messages where CreatedTime is outside a 5-minute freshness window.
+   b. Maintain a bounded replay cache: map[(senderDID, msgID)] -> struct{}, max 100,000
+      entries with TTL matching the freshness window.
+   c. Reject messages whose (senderDID, msgID) is already in the cache.
+   d. Add to cache after successful processing.
+3. StoreInbound (transport.go:439-444): No change needed — replay is blocked upstream.
+4. Add dependency: github.com/oklog/ulid/v2 (or use crypto/rand + time-based prefix).
+5. Add tests: send same envelope twice, assert second is rejected with ErrReplay.
+Files: core/internal/handler/message.go, core/internal/service/transport.go,
+       core/internal/domain/message.go (if ULID generation helper needed).
+
+--- REVIEW NOTE (DISAGREE) ---
+I do not agree with a hard 5-minute freshness window in point 2a.
+Correction:
+1. Freshness must align with the dead-drop/sweeper model (currently up to ~24h backlog when locked).
+2. Keep replay protection keyed by `(sender_did, msg_id)` with bounded TTL/cache, but do not reject legitimate delayed delivery caused by lock state.
+Reason:
+- A 5-minute cutoff would incorrectly drop valid messages delivered after persona unlock, creating reliability/security-policy conflict.
+--- RESOLUTION (AGREE WITH REVIEWER) ---
+Codex is correct. The sweeper is configured with a 24-hour TTL (main.go:415:
+`ingress.NewSweeper(deadDrop, nacl, didResolverPort, clk, 24*time.Hour)`). When the persona
+is locked, encrypted blobs sit in the dead-drop for up to 24 hours until unlock triggers
+ProcessPending(). A 5-minute freshness check on msg.CreatedTime at processing time would
+reject all legitimately queued messages older than 5 minutes — breaking the core resilience
+model.
+Revised recommendation for point 2a:
+- Do NOT impose a freshness window on msg.CreatedTime at processing time.
+- Instead, split the concern:
+  a. At ingress (router.go, when envelope first arrives): check envelope-level timestamp
+     freshness (e.g., 5-minute window on the outer transport timestamp, not msg.CreatedTime).
+     This prevents accepting ancient replayed envelopes at the network edge.
+  b. At processing (sweeper/fast-path): rely on the (sender_did, msg_id) replay cache for
+     dedup. The replay cache TTL should match the dead-drop TTL (24 hours), not 5 minutes.
+  c. The sweeper's existing 24h TTL (sweeper.go:117-121) provides the ultimate age bound.
+- This preserves: edge freshness (transport-level) + dedup (message-level) + dead-drop
+  resilience (24h queue tolerance).
+
+[SEC-MED-09] Transport in-memory retention is unbounded for delivered/outbound history and inbound inbox
+Severity: MEDIUM
+Evidence:
+- core/internal/adapter/transport/transport.go:320-326,370-372
+  Outbox retains all messages in `messages[]` and `sentIDs` map.
+- core/cmd/dina-core/main.go:450-461
+  Runtime schedules `ProcessOutbox` only; no periodic `DeleteExpired`.
+- core/internal/service/transport.go:439-444
+  Inbound inbox is append-only with no max count/TTL.
+Impact:
+- Long-running nodes can accumulate unbounded memory usage.
+- Authenticated high-volume traffic can produce availability degradation/DoS.
+Fix direction:
+- Schedule periodic outbox retention cleanup in runtime.
+- Add hard caps + TTL retention for inbound/outbound in-memory state.
+- Emit metrics/alerts when retention thresholds are hit.
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED
+1. Add a periodic DeleteExpired goroutine in main.go (alongside the existing outbox
+   processor at line 450-461). Run every 5 minutes:
+     go func() {
+         ticker := time.NewTicker(5 * time.Minute)
+         for range ticker.C {
+             transportSvc.DeleteExpired()
+         }
+     }()
+2. Add hard caps to in-memory stores:
+   - Outbox: maxOutboxMessages = 10,000. Reject new sends with ErrOutboxFull when exceeded.
+   - Inbound: maxInboundMessages = 10,000. Drop oldest on overflow (ring buffer pattern).
+   - sentIDs: already pruned in DeleteExpired — ensure it runs.
+3. Add InboundCleanup(maxAge time.Duration) to TransportService that removes inbound
+   messages older than maxAge (default 24h). Call from the same periodic goroutine.
+4. Log a warning when any store reaches 80% of its cap.
+Files: core/cmd/dina-core/main.go, core/internal/service/transport.go,
+       core/internal/adapter/transport/transport.go.
+
+[SEC-MED-10] AppView overflow spool stores raw events with default filesystem permissions
+Severity: MEDIUM
+Evidence:
+- appview/src/ingester/jetstream-consumer.ts:23
+  Overflow spool path defaults to local filesystem (`./data/overflow-spool`).
+- appview/src/ingester/jetstream-consumer.ts:81-83
+  Directory/file creation uses defaults (`mkdirSync` / `appendFileSync`) with no explicit restrictive mode.
+Impact:
+- Spilled Jetstream records (potentially sensitive) may be readable by other local users/processes depending host umask/mount configuration.
+Fix direction:
+- Force secure permissions (`0700` dir, `0600` files).
+- Consider at-rest encryption for spill files.
+- Add startup permission check and fail/warn on weak spool directory permissions.
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED
+1. In jetstream-consumer.ts:81, pass explicit mode to mkdirSync:
+     mkdirSync(SPOOL_DIR, { recursive: true, mode: 0o700 })
+2. In jetstream-consumer.ts:83, pass explicit mode to writeFileSync/appendFileSync:
+     writeFileSync(spoolFile, JSON.stringify(event) + '\n', { mode: 0o600 })
+   Note: appendFileSync does not support mode on append — use writeFileSync for initial
+   creation, then appendFileSync for subsequent writes (or open with fs.openSync with
+   O_APPEND | O_CREAT and explicit mode 0o600).
+3. Add a startup permission check: on ingester init, stat SPOOL_DIR and warn if
+   permissions are wider than 0o700.
+Files: appview/src/ingester/jetstream-consumer.ts.
+
+[SEC-MED-11] Signature replay cache is unbounded and uses O(n) eviction per authenticated request
+Severity: MEDIUM
+Evidence:
+- core/internal/adapter/auth/auth.go:285-297
+  `nonceCache` inserts every seen signature and scans entire map on each request for TTL eviction.
+Impact:
+- Authenticated high-rate traffic can drive CPU and memory amplification.
+- Creates avoidable DoS pressure under sustained request load.
+Fix direction:
+- Replace with bounded TTL cache/LRU and max-entry guard.
+- Use incremental/background eviction instead of full-map scan per request.
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED
+1. Replace the map[string]time.Time nonceCache with a bounded structure:
+   a. Add maxNonceCacheEntries = 50,000 constant.
+   b. On insert: if len(nonceCache) >= max, reject the request with 429 (or run a
+      one-time eviction pass, then insert).
+   c. Switch from per-request full-map scan to background eviction: run a goroutine
+      every 30s that sweeps expired entries.
+2. Alternative (simpler): use two maps with generation rotation (double-buffer pattern):
+   - Keep "current" and "previous" maps. Every maxClockSkew interval, discard "previous"
+     and promote "current" to "previous". New entries go to "current".
+   - Lookup checks both maps. This is O(1) per request with O(1) amortized eviction.
+3. Add a test that verifies cache size stays bounded under high request volume.
+Files: core/internal/adapter/auth/auth.go.
+
+--- REVIEW NOTE (DISAGREE) ---
+I do not agree with rejecting requests when nonce cache reaches max (point 1b).
+Correction:
+1. Prefer bounded eviction/rotation (LRU or generation-rotation) and continue authentication checks.
+2. Avoid introducing an easy 429-based DoS vector against valid signed traffic.
+Reason:
+- A hard reject-on-full policy allows adversaries to force denial of service by saturating replay-cache capacity.
+--- RESOLUTION (AGREE WITH REVIEWER) ---
+Codex is correct. If the nonce cache has a hard size cap that triggers 429 rejection, an
+attacker can fill it with unique signed requests (each with a different signature within the
+clock-skew window) and cause legitimate subsequent requests to be rejected — turning the
+replay-protection mechanism into a DoS amplifier.
+Revised recommendation — remove point 1b entirely. Use only the double-buffer (generation
+rotation) approach from original point 2:
+1. Maintain two maps: "current" and "previous". Every maxClockSkew interval (5 min),
+   discard "previous", promote "current" to "previous", create empty "current".
+2. On signature check: look up in both maps. If found → replay. If not → insert into
+   "current" and proceed.
+3. This gives O(1) lookup, O(1) amortized eviction, and the cache is naturally bounded
+   to at most 2 * (requests per maxClockSkew interval). No hard cap, no rejection, no
+   per-request full-map scan.
+4. Add maxNonceCacheEntries = 100,000 as a safety valve on each individual map. If
+   exceeded, trigger an immediate generation rotation (discard previous, promote current)
+   instead of rejecting. This degrades replay protection slightly (shorter effective
+   window) but never denies service.
+
+[SEC-HIGH-09] `!cgo` insecure vault mode can be enabled in production via env override
+Severity: HIGH
+Evidence:
+- core/cmd/dina-core/vault_nocgo.go:13-23
+  When built without CGO, setting `DINA_ALLOW_INSECURE_VAULT=1` permits startup with in-memory/plaintext vault fallback.
+- core/internal/adapter/vault/vault.go:97-99 and 121-123
+  Fallback manager persists persona items as plaintext JSON files.
+Impact:
+- At-rest encryption guarantees are dropped if a non-CGO build is deployed with this flag enabled.
+- Full vault data exposure risk from host/filesystem compromise.
+Fix direction:
+- Add production guard for `DINA_ALLOW_INSECURE_VAULT` (similar to `DINA_ALLOW_UNSIGNED_D2D`).
+- Fail closed in production regardless of override.
+- Prefer build-time enforcement for release artifacts requiring CGO/SQLCipher.
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED
+1. In vault_nocgo.go:13-23, add a production guard matching the pattern used for
+   DINA_ALLOW_UNSIGNED_D2D (main.go:69-76):
+     if os.Getenv("DINA_ENV") == "production" || os.Getenv("DINA_TEST_MODE") != "true" {
+         slog.Error("DINA_ALLOW_INSECURE_VAULT is not permitted in production")
+         os.Exit(1)
+     }
+   This ensures the flag only works in test/development environments.
+2. Add a Dockerfile/CI check: release builds must use CGO_ENABLED=1. The CI pipeline
+   should fail if a release artifact is built without CGO.
+3. Add a build tag `//go:build release` that imports the CGO vault unconditionally,
+   providing compile-time enforcement for tagged release builds.
+Files: core/cmd/dina-core/vault_nocgo.go, Dockerfile (CI check).
+
+--- REVIEW NOTE (DISAGREE) ---
+I do not agree with the guard condition in point 1 as written:
+`if DINA_ENV == "production" || DINA_TEST_MODE != "true"` is too broad and effectively blocks non-test development usage.
+Correction:
+1. Match the existing explicit allow-environment pattern used elsewhere (`test`, `development`, `migration`), and deny otherwise.
+2. Keep production fail-closed behavior mandatory.
+Reason:
+- Security guard should be strict but logically consistent with existing environment model.
+--- RESOLUTION (AGREE WITH REVIEWER) ---
+Codex is correct. The condition `DINA_ENV == "production" || DINA_TEST_MODE != "true"` would
+block a developer running with DINA_ENV=development and no DINA_TEST_MODE set, which is a
+legitimate local development scenario.
+The existing pattern in main.go:69-76 (DINA_ALLOW_UNSIGNED_D2D guard) is the right model:
+  env := os.Getenv("DINA_ENV")
+  if env != "test" && env != "migration" && env != "development" {
+      log.Fatal("... only allowed when DINA_ENV is test, migration, or development")
+  }
+Revised recommendation for vault_nocgo.go point 1:
+  func newVaultBackend(dir string) vaultBackend {
+      if os.Getenv("DINA_ALLOW_INSECURE_VAULT") != "1" {
+          // existing behavior: require explicit opt-in
+          slog.Error("CGO disabled — set DINA_ALLOW_INSECURE_VAULT=1 to override")
+          os.Exit(1)
+      }
+      // New: block in production even with the flag
+      env := os.Getenv("DINA_ENV")
+      if env != "test" && env != "migration" && env != "development" {
+          slog.Error("DINA_ALLOW_INSECURE_VAULT is not permitted outside test/development/migration")
+          os.Exit(1)
+      }
+      slog.Warn("CGO disabled — using in-memory vault (no encryption at rest)")
+      return vault.NewManager(dir)
+  }
+This allows: test + flag, development + flag, migration + flag. Blocks: production + flag,
+empty-env + flag. Consistent with the DINA_ALLOW_UNSIGNED_D2D pattern.
+
+[SEC-MED-12] Per-DID D2D ingress throttling exists in code but is not enforced in runtime message path
+Severity: MEDIUM
+Evidence:
+- core/internal/adapter/transport/transport.go:656-661
+  `InboxManager.CheckDIDRate` is implemented.
+- core/internal/ingress/router.go:67-74
+  Fast path directly invokes `onEnvelope` when vault is unlocked.
+- core/cmd/dina-core/main.go:426-434
+  `onEnvelope` is wired to `ProcessInbound + StoreInbound` with no DID rate check.
+- core/internal/service/transport.go:341-444
+  Inbound processing/storing path has no per-sender throttle enforcement.
+Impact:
+- Sender-level flood control is bypassed in live unlocked-ingress path.
+- Distributed senders/IPs can increase message amplification and memory pressure.
+Fix direction:
+- Enforce DID-level quota after decryption (before `StoreInbound`) in runtime path.
+- Keep IP/global limits as outer valves, but restore sender-level valve in fast path.
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED
+1. In the onEnvelope callback (main.go:426-434), after ProcessInbound successfully
+   decrypts and extracts the sender DID, call inboxMgr.CheckDIDRate(senderDID).
+   If rate exceeded, log a warning and skip StoreInbound (drop the message).
+2. ProcessInbound should return the sender DID alongside the decrypted message so the
+   caller can perform the rate check. Adjust the return signature:
+     func (s *TransportService) ProcessInbound(ctx, data) (*DinaMessage, domain.DID, error)
+3. Wire the DID rate limit reset into the existing background ticker (main.go:437-461)
+   alongside the IP/global rate reset. Add inboxMgr.ResetDIDCounters() to the periodic
+   cleanup loop.
+4. Add test: send N+1 messages from same DID in quick succession, assert message N+1
+   is dropped.
+Files: core/cmd/dina-core/main.go, core/internal/service/transport.go.
+
+[SEC-MED-13] Pairing code store can grow without bound (no runtime purge/cap loop)
+Severity: MEDIUM
+Evidence:
+- core/internal/adapter/pairing/pairing.go:147
+  `GenerateCode` appends entries to `pm.codes`.
+- core/internal/adapter/pairing/pairing.go:175 and 265
+  Codes are marked `used` but not removed on successful completion.
+- core/internal/adapter/pairing/pairing.go:327-338
+  Purge function exists, but
+- core/cmd/dina-core/main.go:437-461
+  Runtime background loops schedule ingress/outbox work only; no pairing-code purge loop.
+Impact:
+- Long-running nodes can accumulate stale/used pairing codes in memory.
+- Admin-surface abuse can trigger avoidable memory growth/DoS.
+Fix direction:
+- Run periodic `PurgeExpiredCodes` in runtime.
+- Remove consumed codes immediately after successful pairing.
+- Add hard cap + rejection telemetry when pending code count exceeds threshold.
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED
+1. Add a pairing code purge goroutine in main.go (alongside ingress/outbox tickers):
+     go func() {
+         ticker := time.NewTicker(1 * time.Minute)
+         for range ticker.C {
+             n := pairingMgr.PurgeExpiredCodes()
+             if n > 0 { slog.Info("purged expired pairing codes", "count", n) }
+         }
+     }()
+2. In CompletePairing (pairing.go:175), delete the consumed code from pm.codes
+   immediately after marking it used (not just marking used=true).
+3. Add a hard cap: maxPendingCodes = 100. In GenerateCode, if len(pm.codes) >= max,
+   return ErrTooManyPendingCodes. This prevents admin-surface abuse.
+4. Add test: generate maxPendingCodes+1 codes, assert the last returns an error.
+Files: core/cmd/dina-core/main.go, core/internal/adapter/pairing/pairing.go.
+
+[SEC-MED-14] Public ATProto discovery endpoint can fail closed in local-only identity mode after first DID creation
+Severity: MEDIUM
+Evidence:
+- core/internal/adapter/identity/identity.go:264-267 and 315
+  Local `Create()` can return `(did, ErrDIDAlreadyExists)` after initial creation in same process.
+- core/internal/handler/wellknown.go:25-28
+  `/.well-known/atproto-did` treats any error from `Create()` as 500.
+Impact:
+- Public DID discovery endpoint can become unavailable (DoS to federation/discovery path) in local-only mode.
+Fix direction:
+- Treat `ErrDIDAlreadyExists` as non-fatal when DID is returned.
+- Prefer read-only DID retrieval path for discovery endpoint instead of mutating create call.
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED (primarily affects test mode; production Create() returns existing DID silently)
+1. In wellknown.go:25-28, handle ErrDIDAlreadyExists as success:
+     did, err := h.DID.Create(r.Context(), pubKey)
+     if err != nil && !errors.Is(err, identity.ErrDIDAlreadyExists) {
+         http.Error(w, "DID not available", http.StatusInternalServerError)
+         return
+     }
+   The DID value is still returned alongside the error, so use it.
+2. Better approach: add a Resolve or Get method to the DID manager port that returns
+   the existing DID without attempting creation. Use Create only on first startup,
+   and Get for the discovery endpoint. This separates read from write concerns.
+3. Add test: call /.well-known/atproto-did twice in succession, assert both return 200
+   with the same DID.
+Files: core/internal/handler/wellknown.go,
+       core/internal/port/interfaces.go (optional: add Get method).
+
+--- REVIEW NOTE (DISAGREE) ---
+I do not agree with the status line:
+`primarily affects test mode; production Create() returns existing DID silently`.
+Correction:
+1. In local-only mode (`plcClient == nil`), `DIDManager.Create()` returns `ErrDIDAlreadyExists` on repeated calls within the same process unless `ResetForTest()` is called.
+2. `/.well-known/atproto-did` currently treats any error as 500, so this can affect non-test local deployments too.
+Reason:
+- Code path evidence:
+  - `core/internal/adapter/identity/identity.go:264-267,315` sets and reuses `createdInTest`.
+  - `core/internal/handler/wellknown.go:25-28` fails closed on any `Create()` error.
+--- RESOLUTION (AGREE WITH REVIEWER) ---
+Codex is correct — my status line was wrong. Traced the code path:
+  1st Create(pubKey): DID not in dm.dids → created → createdInTest[fp]=true (line 315) → (did, nil)
+  2nd Create(pubKey): DID in dm.dids (line 264) → createdInTest[fp] is true → (did, ErrDIDAlreadyExists)
+The field `createdInTest` is set unconditionally for ALL creates (line 315), not just test
+creates — the name is misleading. ResetForTest() (line 193-195) is the only way to clear it,
+and it is never called in production. So in any local-only deployment (no PLC client), the
+second GET to /.well-known/atproto-did returns 500 because wellknown.go:26 treats any error
+as fatal.
+Revised status line:
+  Status: CONFIRMED (affects ALL local-only deployments — not just test mode)
+The suggested fix (point 1: handle ErrDIDAlreadyExists as success, point 2: add a read-only
+Get method) remains correct and is now more clearly justified as a production-impacting issue.
+
+[SEC-HIGH-10] Device-scoped CLIENT_TOKEN can list and revoke paired devices (`/v1/devices*`)
+Severity: HIGH
+Evidence:
+- core/cmd/dina-core/main.go:582-583
+  Device management routes are exposed at `/v1/devices` and `/v1/devices/{id}`.
+- core/internal/adapter/auth/auth.go:1082-1088
+  Device-scope denylist does not include `/v1/devices` (or `/v1/devices/`).
+- core/internal/handler/device.go:106-127
+  Revoke handler accepts any device ID in path and performs revocation with no ownership or step-up check.
+Impact:
+- Any compromised paired device token can enumerate devices and revoke other devices, causing control-plane DoS/lockout.
+- Violates intended least-privilege separation between paired devices and admin-level device management.
+Fix direction:
+- Classify `/v1/devices` and `/v1/devices/*` as admin-only in authz policy.
+- Move from denylist to explicit allowlist for `device` scope.
+- If non-admin device self-management is required, expose a separate self-scoped endpoint (`/v1/devices/self`) instead of global revoke/list.
+--- SUGGESTED SOLUTION ---
+Status: CONFIRMED (same root cause as SEC-HIGH-01 — denylist approach)
+1. This is fixed together with SEC-HIGH-01 by switching to an explicit allowlist.
+   /v1/devices and /v1/devices/* should NOT appear in the device-scope allowlist.
+2. Add /v1/devices and /v1/devices/ to the deviceDenied list as an immediate hotfix
+   (auth.go:1082-1088) pending the full allowlist migration from SEC-HIGH-01.
+3. If device self-revocation is a product requirement, add /v1/devices/self (GET returns
+   own device info, DELETE revokes own token only). The handler reads the caller's
+   token ID from the request context (set by auth middleware) and only operates on
+   that specific device — no path parameter needed.
+4. Add test: device-scoped token calls /v1/devices, assert 403. Device-scoped token
+   calls /v1/devices/self, assert 200 with only own device info.
+Files: core/internal/adapter/auth/auth.go, core/internal/handler/device.go (optional
+       new self-endpoint), core/cmd/dina-core/main.go (optional new route).

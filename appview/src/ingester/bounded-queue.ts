@@ -25,6 +25,13 @@ export interface QueueItem {
 
 type ProcessFn = (item: QueueItem) => Promise<void>
 
+/**
+ * Called when a failed item cannot be requeued because the queue is full.
+ * The consumer should spool the item to disk so it can be recovered via
+ * replaySpool() on the next startup.
+ */
+type OnRetryDroppedFn = (item: QueueItem) => void
+
 export class BoundedIngestionQueue {
   private queue: QueueItem[] = []
   private ws: WebSocket | null = null
@@ -33,7 +40,10 @@ export class BoundedIngestionQueue {
   private activeCount = 0
   private inFlightTimestamps = new Set<number>()
   private failedTimestamps = new Set<number>()
+  private failedAttempts = new Map<number, number>()
+  private static readonly MAX_RETRY = 3
   private processFn: ProcessFn
+  private onRetryDropped: OnRetryDroppedFn | null = null
   private dropCount = 0
 
   private readonly maxSize: number
@@ -43,12 +53,25 @@ export class BoundedIngestionQueue {
   constructor(processFn: ProcessFn, options?: {
     maxSize?: number
     maxConcurrency?: number
+    onRetryDropped?: OnRetryDroppedFn
   }) {
     this.processFn = processFn
+    this.onRetryDropped = options?.onRetryDropped ?? null
     this.maxSize = options?.maxSize ?? CONSTANTS.MAX_QUEUE_SIZE
     this.maxConcurrency = options?.maxConcurrency ?? CONSTANTS.MAX_CONCURRENCY
     // Resume when queue drops below 50% capacity
     this.lowWatermark = Math.floor(this.maxSize * 0.5)
+
+    // HIGH-02: Periodic cleanup of old failed timestamps (older than 1 hour)
+    setInterval(() => {
+      const cutoff = Date.now() * 1000 - 3_600_000_000 // 1 hour in microseconds
+      for (const ts of this.failedTimestamps) {
+        if (ts < cutoff) {
+          this.failedTimestamps.delete(ts)
+          this.failedAttempts.delete(ts)
+        }
+      }
+    }, 300_000) // every 5 minutes
   }
 
   /** Attach a WebSocket for backpressure signaling */
@@ -184,11 +207,60 @@ export class BoundedIngestionQueue {
   private async processItem(item: QueueItem): Promise<void> {
     try {
       await this.processFn(item)
+      // On success: clear any prior failure tracking so cursor is unpinned
+      if (this.failedTimestamps.has(item.timestampUs)) {
+        this.failedTimestamps.delete(item.timestampUs)
+        this.failedAttempts.delete(item.timestampUs)
+      }
     } catch (err) {
-      // Track failed timestamp so cursor never advances past it (HIGH-04)
-      this.failedTimestamps.add(item.timestampUs)
-      logger.error({ err, timestampUs: item.timestampUs }, '[Queue] Failed to process item')
-      metrics.incr('ingester.queue.process_error')
+      // HIGH-02: Bounded retry with dead-lettering and actual requeue
+      const attempts = (this.failedAttempts.get(item.timestampUs) ?? 0) + 1
+      if (attempts >= BoundedIngestionQueue.MAX_RETRY) {
+        // Dead-letter: stop blocking cursor advancement
+        this.failedTimestamps.delete(item.timestampUs)
+        this.failedAttempts.delete(item.timestampUs)
+        logger.error(
+          { err, timestampUs: item.timestampUs, attempts },
+          '[Queue] Event dead-lettered after max retries',
+        )
+        metrics.incr('ingester.queue.dead_lettered')
+      } else {
+        this.failedAttempts.set(item.timestampUs, attempts)
+        this.failedTimestamps.add(item.timestampUs)
+        // Re-push for retry. If queue is full, spool the item to disk
+        // via the onRetryDropped callback so it can be recovered on restart.
+        if (this.queue.length < this.maxSize) {
+          this.queue.push(item)
+          if (!this.processing) this.drain()
+          logger.warn(
+            { err, timestampUs: item.timestampUs, attempt: attempts },
+            '[Queue] Failed to process item — requeued for retry',
+          )
+        } else if (this.onRetryDropped) {
+          // Queue full — hand off to spool so the item is not lost.
+          // Clear failure tracking since the item is now on disk and will
+          // be retried via replaySpool() on next startup.
+          this.failedTimestamps.delete(item.timestampUs)
+          this.failedAttempts.delete(item.timestampUs)
+          this.onRetryDropped(item)
+          logger.warn(
+            { err, timestampUs: item.timestampUs, attempt: attempts },
+            '[Queue] Failed to process item — queue full, spooled to disk',
+          )
+          metrics.incr('ingester.queue.retry_spooled')
+        } else {
+          // No spool callback — dead-letter immediately to avoid
+          // pinning cursor indefinitely with no recovery path
+          this.failedTimestamps.delete(item.timestampUs)
+          this.failedAttempts.delete(item.timestampUs)
+          logger.error(
+            { err, timestampUs: item.timestampUs, attempt: attempts },
+            '[Queue] Failed to process item — queue full, no spool, dead-lettered',
+          )
+          metrics.incr('ingester.queue.dead_lettered')
+        }
+        metrics.incr('ingester.queue.process_error')
+      }
     }
   }
 }

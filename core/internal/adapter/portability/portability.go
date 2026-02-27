@@ -15,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"golang.org/x/crypto/argon2"
 
@@ -291,49 +290,43 @@ func decryptArchive(archive []byte, passphrase string) ([]byte, error) {
 	return plaintext, nil
 }
 
+// ErrNotImplemented indicates a feature stub that is not yet wired to real vault data.
+var ErrNotImplemented = errors.New("portability: not yet implemented — requires vault integration")
+
 // collectExportData gathers the vault data and serialises it as JSON.
+//
+// HIGH-12: This is a placeholder that currently returns an error. Full
+// implementation requires reading real vault files (identity SQLite, persona
+// configs, encrypted stores) and checksumming them. The encryption envelope
+// (Argon2id + AES-256-GCM) is already functional; only the data collection
+// needs to be wired to the actual vault path.
 func collectExportData() ([]byte, error) {
-	files := map[string][]byte{
-		"identity.sqlite": []byte("identity-data"),
-		"config.json":     []byte("config-data"),
-		"manifest.json":   []byte("manifest-data"),
-	}
-
-	manifest := ExportManifest{
-		Version:   "1.0.0",
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		Checksums: make(map[string]string, len(files)),
-	}
-	for name, content := range files {
-		manifest.Checksums[name] = hexHash(content)
-	}
-
-	payload := archivePayload{
-		Manifest: manifest,
-		Files:    files,
-	}
-
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("marshal export data: %w", err)
-	}
-
-	return data, nil
+	return nil, ErrNotImplemented
 }
 
 // restoreData deserialises the decrypted JSON payload and returns an ImportResult.
+//
+// HIGH-12: Placeholder — validates the archive structure but does not restore
+// files to the vault. Full implementation requires writing decrypted files to
+// the vault path, re-deriving persona DEKs, and verifying identity continuity.
 func restoreData(plaintext []byte) (*ImportResult, error) {
 	var payload archivePayload
 	if err := json.Unmarshal(plaintext, &payload); err != nil {
 		return nil, fmt.Errorf("unmarshal import data: %w", err)
 	}
 
-	return &ImportResult{
-		FilesRestored:  len(payload.Files),
-		DID:            "did:plc:imported-root",
-		PersonaCount:   1,
-		RequiresRepair: true,
-	}, nil
+	// Validate checksums before (future) restoration.
+	for name, content := range payload.Files {
+		expected, ok := payload.Manifest.Checksums[name]
+		if !ok {
+			return nil, fmt.Errorf("missing checksum for file: %s", name)
+		}
+		if hexHash(content) != expected {
+			return nil, fmt.Errorf("checksum mismatch for file: %s", name)
+		}
+	}
+
+	return nil, ErrNotImplemented
 }
 
 func hexHash(data []byte) string {

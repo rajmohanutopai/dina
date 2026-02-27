@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/rajmohanutopai/dina/core/internal/domain"
@@ -128,10 +129,9 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 			continue
 		}
 
-		// If we don't have keys or converter, count as processed without decrypting.
+		// If we don't have keys or converter, skip — leave blob pending for next sweep cycle.
 		if s.recipientPub == nil || s.recipientPriv == nil || s.converter == nil {
-			_ = s.deadDrop.Ack(name)
-			delivered++
+			slog.Warn("skipping blob — decrypt prerequisites missing", "name", name)
 			continue
 		}
 
@@ -226,10 +226,10 @@ func (s *Sweeper) SweepFull(ctx context.Context) (*SweepResult, error) {
 			continue
 		}
 
-		// If we don't have keys or converter, count as delivered (pass-through).
+		// If we don't have keys or converter, skip — leave blob pending for next sweep cycle.
 		if s.recipientPub == nil || s.recipientPriv == nil || s.converter == nil {
-			_ = s.deadDrop.Ack(name)
-			result.Delivered++
+			slog.Warn("skipping blob — decrypt prerequisites missing", "name", name)
+			result.Failed++
 			continue
 		}
 

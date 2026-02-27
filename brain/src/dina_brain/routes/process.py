@@ -128,7 +128,7 @@ async def process_event(event: ProcessEventRequest) -> ProcessEventResponse:
         )
         raise HTTPException(
             status_code=500,
-            detail=f"Internal processing error: {type(exc).__name__}",
+            detail="Processing request failed",
         ) from exc
 
     if result.get("action") == "error":

@@ -3,6 +3,7 @@ import type { Delegation } from '@/shared/types/lexicon-types.js'
 import { delegations } from '@/db/schema/index.js'
 import { deletionHandler } from '../deletion-handler.js'
 import { addTrustEdge } from '../trust-edge-sync.js'
+import { markDirty } from '@/db/queries/dirty-flags.js'
 
 /**
  * Handler for com.dina.reputation.delegation records.
@@ -50,11 +51,17 @@ export const delegationHandler: RecordHandler = {
       createdAt: new Date(record.createdAt),
     })
 
+    // HIGH-12: Mark both delegator and delegate dirty for score recalculation
+    await markDirty(ctx.db, { subjectId: null, authorDid: op.did })
+    await markDirty(ctx.db, { subjectId: null, authorDid: record.subject })
+
     ctx.metrics.incr('ingester.delegation.created')
   },
 
   async handleDelete(ctx: HandlerContext, op: RecordOp) {
     await deletionHandler.process(ctx.db, op.uri, op.did, 'delegation', delegations)
+    // HIGH-12: Mark dirty for score recalculation
+    await markDirty(ctx.db, { subjectId: null, authorDid: op.did })
     ctx.metrics.incr('ingester.delegation.deleted')
   },
 }

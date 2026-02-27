@@ -1,6 +1,8 @@
 import http from 'node:http'
+import { LRUCache } from 'lru-cache'
 import { URL } from 'node:url'
 import { createDb } from '@/db/connection.js'
+import { sql } from 'drizzle-orm'
 import { resolve, ResolveParams } from '@/api/xrpc/resolve.js'
 import { search, SearchParams } from '@/api/xrpc/search.js'
 import { getGraph, GetGraphParams } from '@/api/xrpc/get-graph.js'
@@ -10,6 +12,25 @@ import { logger } from '@/shared/utils/logger.js'
 
 const db = createDb()
 const port = Number(process.env.PORT ?? 3000)
+
+// --- Per-IP rate limiting (HIGH-01: bounded LRU, proxy guard) ---
+const TRUST_PROXY = process.env.TRUST_PROXY === '1'
+const RATE_LIMIT_RPM = parseInt(process.env.RATE_LIMIT_RPM || '60', 10)
+const rateLimitMap = new LRUCache<string, { count: number; resetAt: number }>({
+  max: 50_000,
+  ttl: 60_000,
+})
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now()
+  const entry = rateLimitMap.get(ip)
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + 60_000 })
+    return true
+  }
+  entry.count++
+  return entry.count <= RATE_LIMIT_RPM
+}
 
 const ROUTES: Record<string, { params: any; handler: (db: any, params: any) => Promise<any> }> = {
   'com.dina.reputation.resolve': { params: ResolveParams, handler: resolve },
@@ -22,10 +43,33 @@ const ROUTES: Record<string, { params: any; handler: (db: any, params: any) => P
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://localhost:${port}`)
 
-  // Health check
+  // Per-IP rate limiting (SEC-MED-06) — checked before any routing
+  // HIGH-01: Only trust proxy headers when explicitly configured
+  const clientIp = TRUST_PROXY
+    ? (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
+      || req.socket.remoteAddress || 'unknown'
+    : req.socket.remoteAddress || 'unknown'
+  if (!checkRateLimit(clientIp)) {
+    const entry = rateLimitMap.get(clientIp)
+    const retryAfter = entry ? Math.ceil((entry.resetAt - Date.now()) / 1000) : 60
+    res.writeHead(429, {
+      'Content-Type': 'application/json',
+      'Retry-After': String(Math.max(retryAfter, 1)),
+    })
+    res.end(JSON.stringify({ error: 'TooManyRequests', message: 'Rate limit exceeded' }))
+    return
+  }
+
+  // MED-06: Health check with DB connectivity verification
   if (url.pathname === '/health') {
-    res.writeHead(200, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({ status: 'ok' }))
+    try {
+      await db.execute(sql`SELECT 1`)
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ status: 'ok' }))
+    } catch {
+      res.writeHead(503, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ status: 'degraded', reason: 'db_unreachable' }))
+    }
     return
   }
 

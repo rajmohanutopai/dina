@@ -20,4 +20,6 @@ var (
 	ErrInvalidPath      = errors.New("invalid derivation path")
 	ErrInvalidMnemonic    = errors.New("invalid mnemonic")
 	ErrInvalidPassphrase = errors.New("invalid passphrase")
+	ErrEgressBlocked     = errors.New("egress blocked by policy")
+	ErrReplayDetected    = errors.New("replay detected")
 )

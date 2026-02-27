@@ -79,7 +79,7 @@ func TestPairing_10_2_1_CompletePairingSuccess(t *testing.T) {
 	code, _, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
 
-	clientToken, err := impl.CompletePairing(context.Background(), code, "My Phone")
+	clientToken, _, err := impl.CompletePairing(context.Background(), code, "My Phone")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, clientToken != "", "CLIENT_TOKEN must be returned on successful pairing")
 }
@@ -91,7 +91,7 @@ func TestPairing_10_2_2_CompletePairingInvalidCode(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "PairingManager")
 
 	// Completing pairing with an invalid/unused code should fail.
-	_, err := impl.CompletePairing(context.Background(), "invalid-code-999", "My Phone")
+	_, _, err := impl.CompletePairing(context.Background(), "invalid-code-999", "My Phone")
 	testutil.RequireError(t, err)
 }
 
@@ -107,7 +107,7 @@ func TestPairing_10_2_3_DeviceNameRecorded(t *testing.T) {
 	code, _, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
 
-	clientToken, err := impl.CompletePairing(context.Background(), code, "Living Room Tablet")
+	clientToken, _, err := impl.CompletePairing(context.Background(), code, "Living Room Tablet")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, clientToken != "", "CLIENT_TOKEN must be returned")
 }
@@ -127,7 +127,7 @@ func TestPairing_10_1_4_TokenLengthAndEntropy(t *testing.T) {
 	code, _, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
 
-	clientToken, err := impl.CompletePairing(context.Background(), code, "Test Device")
+	clientToken, _, err := impl.CompletePairing(context.Background(), code, "Test Device")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(clientToken) >= 64, "CLIENT_TOKEN must be at least 64 hex chars (32 bytes)")
 }
@@ -141,12 +141,12 @@ func TestPairing_10_3_2_TokenUniquePerDevice(t *testing.T) {
 	// Two different pairings must produce different CLIENT_TOKENs.
 	code1, _, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
-	token1, err := impl.CompletePairing(context.Background(), code1, "Device A")
+	token1, _, err := impl.CompletePairing(context.Background(), code1, "Device A")
 	testutil.RequireNoError(t, err)
 
 	code2, _, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
-	token2, err := impl.CompletePairing(context.Background(), code2, "Device B")
+	token2, _, err := impl.CompletePairing(context.Background(), code2, "Device B")
 	testutil.RequireNoError(t, err)
 
 	if token1 == token2 {
@@ -222,7 +222,7 @@ func TestPairing_10_5_1_CodeExpiresAfterTTL(t *testing.T) {
 	// NOTE: Real implementation should use a short TTL (e.g., 5 minutes).
 	// Integration test: generate code, wait past TTL, attempt pairing → error.
 	// At unit level, verify the code is initially valid.
-	clientToken, err := impl.CompletePairing(context.Background(), code, "Test Device")
+	clientToken, _, err := impl.CompletePairing(context.Background(), code, "Test Device")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, clientToken != "", "code should be valid before expiry")
 }
@@ -237,11 +237,11 @@ func TestPairing_10_6_CodeSingleUse(t *testing.T) {
 	code, _, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
 
-	_, err = impl.CompletePairing(context.Background(), code, "First Device")
+	_, _, err = impl.CompletePairing(context.Background(), code, "First Device")
 	testutil.RequireNoError(t, err)
 
 	// Second attempt with the same code should fail.
-	_, err = impl.CompletePairing(context.Background(), code, "Second Device")
+	_, _, err = impl.CompletePairing(context.Background(), code, "Second Device")
 	testutil.RequireError(t, err)
 }
 
@@ -265,11 +265,11 @@ func TestPairing_10_7_ConcurrentPairingCodes(t *testing.T) {
 	testutil.RequireTrue(t, code1 != code2, "concurrent codes must be distinct")
 
 	// Both codes should complete pairing independently.
-	token1, err := impl.CompletePairing(context.Background(), code1, "Phone")
+	token1, _, err := impl.CompletePairing(context.Background(), code1, "Phone")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, token1 != "", "first concurrent code must yield a token")
 
-	token2, err := impl.CompletePairing(context.Background(), code2, "Tablet")
+	token2, _, err := impl.CompletePairing(context.Background(), code2, "Tablet")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, token2 != "", "second concurrent code must yield a token")
 
@@ -291,7 +291,7 @@ func TestPairing_10_1_ListPairedDevices(t *testing.T) {
 	for _, name := range []string{"Phone", "Tablet", "Laptop"} {
 		code, _, err := impl.GenerateCode(context.Background())
 		testutil.RequireNoError(t, err)
-		_, err = impl.CompletePairing(context.Background(), code, name)
+		_, _, err = impl.CompletePairing(context.Background(), code, name)
 		testutil.RequireNoError(t, err)
 	}
 
@@ -315,7 +315,7 @@ func TestPairing_10_1_RevokeDevice(t *testing.T) {
 	// Pair a device, revoke it, verify revoked status.
 	code, _, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
-	_, err = impl.CompletePairing(context.Background(), code, "iPad")
+	_, _, err = impl.CompletePairing(context.Background(), code, "iPad")
 	testutil.RequireNoError(t, err)
 
 	devices, err := impl.ListDevices(context.Background())

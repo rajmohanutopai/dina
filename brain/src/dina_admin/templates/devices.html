@@ -391,7 +391,7 @@ function renderDevices(devices) {
         var tokenId = d.token_id || d.TokenID || d.id || d.ID || '';
         var actions = revoked
             ? ''
-            : '<button class="btn btn-sm btn-danger" onclick="revokeDevice(\'' + escapeHtml(tokenId) + '\')">Revoke</button>';
+            : '<button class="btn btn-sm btn-danger" data-revoke-id="' + escapeHtml(tokenId) + '">Revoke</button>';
 
         return '<tr>' +
             '<td>' + name + '</td>' +
@@ -523,6 +523,13 @@ function escapeHtml(text) {
     div.textContent = text;
     return div.innerHTML;
 }
+
+document.getElementById('devices-body').addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-revoke-id]');
+    if (btn) {
+        revokeDevice(btn.getAttribute('data-revoke-id'));
+    }
+});
 
 loadDevices();
 </script>

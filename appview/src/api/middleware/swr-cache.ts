@@ -27,25 +27,29 @@ export async function withSWR<T>(
     return cached.data
   }
 
+  // HIGH-09: For stale entries, always return cached data immediately.
+  // Background refresh runs fire-and-forget — never return the bgFetch promise.
+  if (cached) {
+    metrics.incr('api.cache.stale')
+    if (!inFlight.has(key)) {
+      const bgFetch = fetchData()
+        .then((data) => {
+          cache.set(key, { data, expiresAt: Date.now() + ttlMs })
+        })
+        .catch((err) => {
+          logger.error({ err, key }, 'SWR background refresh failed')
+          metrics.incr('api.cache.bg_refresh_failed')
+        })
+        .finally(() => inFlight.delete(key))
+      inFlight.set(key, bgFetch)
+    }
+    return cached.data
+  }
+
+  // Cache miss: coalesce concurrent requests for same key
   if (inFlight.has(key)) {
     metrics.incr('api.cache.coalesced')
     return inFlight.get(key) as Promise<T>
-  }
-
-  if (cached) {
-    metrics.incr('api.cache.stale')
-    const bgFetch = fetchData()
-      .then((data) => {
-        cache.set(key, { data, expiresAt: Date.now() + ttlMs })
-        inFlight.delete(key)
-      })
-      .catch((err) => {
-        inFlight.delete(key)
-        logger.error({ err, key }, 'SWR background refresh failed')
-        metrics.incr('api.cache.bg_refresh_failed')
-      })
-    inFlight.set(key, bgFetch)
-    return cached.data
   }
 
   metrics.incr('api.cache.miss')

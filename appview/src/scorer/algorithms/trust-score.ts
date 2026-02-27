@@ -63,8 +63,10 @@ export function computeTrustScore(input: TrustScoreInput): TrustScoreOutput {
 
   const confidence = computeConfidence(input)
 
+  const safeOverall = Number.isFinite(overall) ? overall : CONSTANTS.BASE_SCORE
+
   return {
-    overallScore: clamp(overall, 0, 1),
+    overallScore: clamp(safeOverall, 0, 1),
     components: { sentiment, vouch, reviewer, network },
     confidence,
   }
@@ -78,7 +80,7 @@ export function computeSentiment(input: TrustScoreInput): number {
   let weightedTotal = 0
 
   for (const a of atts) {
-    const ageDays = daysSince(a.recordCreatedAt)
+    const ageDays = Math.max(0, daysSince(a.recordCreatedAt))
     const recency = Math.exp(-ageDays / CONSTANTS.SENTIMENT_HALFLIFE_DAYS)
     const evidence = a.evidenceJson?.length ? CONSTANTS.EVIDENCE_MULTIPLIER : 1.0
     const verified = a.isVerified ? CONSTANTS.VERIFIED_MULTIPLIER : 1.0

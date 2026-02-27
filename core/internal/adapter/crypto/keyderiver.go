@@ -25,12 +25,27 @@ func NewKeyDeriver(hd *SLIP0010Deriver) *KeyDeriver {
 }
 
 // DerivePersonaDEK derives a 32-byte Data Encryption Key for a persona
-// using HKDF-SHA256 with persona-specific info.
+// using HKDF-SHA256 with persona-specific info. Uses v1 derivation path
+// for backward compatibility. New code should use DerivePersonaDEKVersioned.
 func (d *KeyDeriver) DerivePersonaDEK(seed []byte, persona domain.PersonaName) ([]byte, error) {
+	return d.DerivePersonaDEKVersioned(seed, persona, 1)
+}
+
+// DerivePersonaDEKVersioned derives a 32-byte Data Encryption Key for a persona
+// using HKDF-SHA256, parameterized by DEK version.
+//   - Version 1 (legacy): info="dina:persona:<name>:dek:v1", deterministic salt
+//   - Version 2 (Argon2id): info="dina:persona:<name>:dek:v2", longer salt context
+//
+// The version tag in the HKDF info string ensures v1 and v2 produce different DEKs,
+// which is required for vault re-encryption during migration.
+func (d *KeyDeriver) DerivePersonaDEKVersioned(seed []byte, persona domain.PersonaName, dekVersion int) ([]byte, error) {
 	if len(seed) == 0 {
 		return nil, fmt.Errorf("keyderiver: seed must not be empty")
 	}
-	info := []byte("dina:persona:" + string(persona) + ":dek:v1")
+	if dekVersion < 1 {
+		dekVersion = 1
+	}
+	info := []byte(fmt.Sprintf("dina:persona:%s:dek:v%d", string(persona), dekVersion))
 	salt := sha256.Sum256([]byte("dina:salt:" + string(persona)))
 	reader := hkdf.New(sha256.New, seed, salt[:], info)
 	dek := make([]byte, 32)

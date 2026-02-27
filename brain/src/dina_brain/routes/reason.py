@@ -11,10 +11,10 @@ No imports from dina_admin — module boundary enforced.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 log = logging.getLogger(__name__)
 
@@ -34,10 +34,10 @@ class ReasonRequest(BaseModel):
     """
 
     type: str | None = "reason"
-    prompt: str
-    persona_id: str | None = None
-    persona_tier: str | None = "open"
-    provider: str | None = None
+    prompt: str = Field(..., max_length=32_000)
+    persona_id: str | None = Field(None, max_length=100)
+    persona_tier: Literal["open", "restricted", "locked"] | None = Field(default="open")
+    provider: str | None = Field(None, max_length=50)
 
 
 class ReasonResponse(BaseModel):
@@ -116,7 +116,7 @@ async def reason_query(request: ReasonRequest) -> ReasonResponse:
         )
         raise HTTPException(
             status_code=500,
-            detail=f"Reasoning error: {type(exc).__name__}",
+            detail="Reasoning request failed",
         ) from exc
 
     return ReasonResponse(

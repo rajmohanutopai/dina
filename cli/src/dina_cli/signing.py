@@ -10,6 +10,7 @@ from pathlib import Path
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import (
+    BestAvailableEncryption,
     Encoding,
     NoEncryption,
     PrivateFormat,
@@ -43,15 +44,28 @@ class CLIIdentity:
         return self._priv_path.exists()
 
     def generate(self) -> None:
-        """Generate and persist a new Ed25519 keypair."""
+        """Generate and persist a new Ed25519 keypair.
+
+        If the ``DINA_CLI_KEY_PASSPHRASE`` environment variable is set, the
+        private key is encrypted at rest using ``BestAvailableEncryption``.
+        Otherwise ``NoEncryption`` is used (backward compatible).
+        """
         self._dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         # Enforce permissions even if directory already existed with wrong perms
         os.chmod(self._dir, 0o700)
         self._private_key = Ed25519PrivateKey.generate()
 
+        # Determine encryption scheme based on env var.
+        passphrase = os.environ.get("DINA_CLI_KEY_PASSPHRASE", "").strip()
+        encryption = (
+            BestAvailableEncryption(passphrase.encode())
+            if passphrase
+            else NoEncryption()
+        )
+
         # Write private key (owner read/write only).
         pem_priv = self._private_key.private_bytes(
-            Encoding.PEM, PrivateFormat.PKCS8, NoEncryption(),
+            Encoding.PEM, PrivateFormat.PKCS8, encryption,
         )
         self._priv_path.write_bytes(pem_priv)
         os.chmod(self._priv_path, stat.S_IRUSR | stat.S_IWUSR)
@@ -63,9 +77,21 @@ class CLIIdentity:
         self._pub_path.write_bytes(pem_pub)
 
     def load(self) -> None:
-        """Load an existing keypair from disk."""
+        """Load an existing keypair from disk.
+
+        Tries loading without a password first.  If that fails with a
+        decryption-related error, retries using the passphrase from the
+        ``DINA_CLI_KEY_PASSPHRASE`` environment variable (if set).
+        """
         pem = self._priv_path.read_bytes()
-        key = load_pem_private_key(pem, password=None)
+        try:
+            key = load_pem_private_key(pem, password=None)
+        except (TypeError, ValueError):
+            # PEM is encrypted — try env-var passphrase.
+            passphrase = os.environ.get("DINA_CLI_KEY_PASSPHRASE", "").strip()
+            if not passphrase:
+                raise
+            key = load_pem_private_key(pem, password=passphrase.encode())
         if not isinstance(key, Ed25519PrivateKey):
             raise TypeError("Expected Ed25519 private key")
         self._private_key = key

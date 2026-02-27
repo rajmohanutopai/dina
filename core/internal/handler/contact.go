@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -155,14 +156,16 @@ func (h *ContactHandler) HandleUpdateContact(w http.ResponseWriter, r *http.Requ
 
 	if req.Name != "" {
 		if err := h.Contacts.UpdateName(r.Context(), did, req.Name); err != nil {
-			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+			slog.Warn("failed to update contact name", "did", did, "error", err)
+			http.Error(w, `{"error":"failed to update contact"}`, http.StatusInternalServerError)
 			return
 		}
 	}
 
 	if req.TrustLevel != "" {
 		if err := h.Contacts.UpdateTrust(r.Context(), did, req.TrustLevel); err != nil {
-			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+			slog.Warn("failed to update contact trust level", "did", did, "error", err)
+			http.Error(w, `{"error":"failed to update contact"}`, http.StatusInternalServerError)
 			return
 		}
 	}
@@ -185,7 +188,8 @@ func (h *ContactHandler) HandleDeleteContact(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := h.Contacts.Delete(r.Context(), did); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		slog.Warn("failed to delete contact", "did", did, "error", err)
+		http.Error(w, `{"error":"failed to delete contact"}`, http.StatusInternalServerError)
 		return
 	}
 

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { eq, and, gt } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
 import {
@@ -60,6 +61,12 @@ export async function detectCoordinationJob(db: DrizzleDB): Promise<void> {
     if (!result.isCoordinated) continue
 
     try {
+      // LOW-02 fix: Generate dedupHash so the unique index prevents duplicate anomaly events
+      const dedupHash = createHash('sha256')
+        .update(`coordination:${result.subjectId}:${result.involvedDids.sort().join(',')}`)
+        .digest('hex')
+        .slice(0, 64)
+
       await db
         .insert(anomalyEvents)
         .values({
@@ -74,7 +81,9 @@ export async function detectCoordinationJob(db: DrizzleDB): Promise<void> {
             windowEnd: result.windowEnd.toISOString(),
           },
           resolved: false,
+          dedupHash,
         })
+        .onConflictDoNothing()
 
       inserted++
     } catch (err) {

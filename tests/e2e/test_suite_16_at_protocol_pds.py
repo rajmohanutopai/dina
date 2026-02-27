@@ -42,6 +42,15 @@ def _pds_available() -> bool:
         return False
 
 
+def _core_available() -> bool:
+    """Check if the main-stack Core is reachable."""
+    try:
+        resp = httpx.get(f"{_MAIN_CORE_URL}/healthz", timeout=3)
+        return resp.status_code == 200
+    except (httpx.ConnectError, httpx.TimeoutException):
+        return False
+
+
 def _main_brain_token() -> str:
     """Read the brain token from the secrets file."""
     token_path = os.path.join(
@@ -125,8 +134,8 @@ class TestATProtocolPDS:
     ) -> None:
         """E2E-16.3 GET /v1/did registers did:plc on PDS via XRPC."""
         if DOCKER_MODE and docker_services is not None:
-            if not _pds_available():
-                pytest.skip("PDS not running — start main stack with: docker compose up -d")
+            if not _pds_available() or not _core_available():
+                pytest.skip("Main stack (PDS+Core) not running — start with: docker compose up -d")
             token = _main_brain_token()
             if not token:
                 pytest.skip("Brain token not found in secrets/brain_token")
@@ -170,8 +179,8 @@ class TestATProtocolPDS:
     ) -> None:
         """E2E-16.4 GET /.well-known/atproto-did returns plain text DID."""
         if DOCKER_MODE and docker_services is not None:
-            if not _pds_available():
-                pytest.skip("PDS not running — start main stack with: docker compose up -d")
+            if not _pds_available() or not _core_available():
+                pytest.skip("Main stack (PDS+Core) not running — start with: docker compose up -d")
             token = _main_brain_token()
             if not token:
                 pytest.skip("Brain token not found")
@@ -213,8 +222,8 @@ class TestATProtocolPDS:
     ) -> None:
         """E2E-16.5 PDS resolves handle to DID matching Core's identity."""
         if DOCKER_MODE and docker_services is not None:
-            if not _pds_available():
-                pytest.skip("PDS not running — start main stack with: docker compose up -d")
+            if not _pds_available() or not _core_available():
+                pytest.skip("Main stack (PDS+Core) not running — start with: docker compose up -d")
             token = _main_brain_token()
             if not token:
                 pytest.skip("Brain token not found")
@@ -254,8 +263,8 @@ class TestATProtocolPDS:
     ) -> None:
         """E2E-16.6 Multiple calls to /v1/did return the same DID."""
         if DOCKER_MODE and docker_services is not None:
-            if not _pds_available():
-                pytest.skip("PDS not running — start main stack with: docker compose up -d")
+            if not _pds_available() or not _core_available():
+                pytest.skip("Main stack (PDS+Core) not running — start with: docker compose up -d")
             token = _main_brain_token()
             if not token:
                 pytest.skip("Brain token not found")
@@ -302,8 +311,8 @@ class TestATProtocolPDS:
     ) -> None:
         """E2E-16.7 Core startup logs confirm PDS configuration."""
         if DOCKER_MODE and docker_services is not None:
-            if not _pds_available():
-                pytest.skip("PDS not running — start main stack with: docker compose up -d")
+            if not _pds_available() or not _core_available():
+                pytest.skip("Main stack (PDS+Core) not running — start with: docker compose up -d")
             import subprocess
 
             # Use main stack logs (not E2E stack)

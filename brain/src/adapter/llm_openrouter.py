@@ -164,14 +164,14 @@ class OpenRouterProvider:
             body_text = exc.response.text
             if status == 429:
                 raise LLMError(
-                    f"OpenRouter rate limited (429): {body_text}"
+                    "OpenRouter rate limited (429)"
                 ) from exc
             if status == 401:
                 raise ConfigError(
                     "OpenRouter authentication failed — check OPENROUTER_API_KEY"
                 ) from exc
             raise LLMError(
-                f"OpenRouter returned HTTP {status}: {body_text}"
+                f"OpenRouter returned HTTP {status}"
             ) from exc
         except LLMError:
             raise

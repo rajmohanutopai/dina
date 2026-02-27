@@ -27,6 +27,7 @@ sibling services.
 
 from __future__ import annotations
 
+import json
 import re
 import traceback
 from typing import Any
@@ -78,6 +79,17 @@ _ENGAGEMENT_SOURCES = frozenset({
     "podcast",
     "vendor",
 })
+
+# Maximum briefing items before eviction (MED-08).
+_MAX_BRIEFING_ITEMS = 500
+
+# Lightweight PII detection for open-tier auto-scrub (HIGH-03).
+_PII_QUICK_RE = re.compile(
+    r'(\b\d{3}-\d{2}-\d{4}\b'
+    r'|\b\d{4}[-\s]\d{4}[-\s]\d{4}[-\s]\d{4}\b'
+    r'|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+    r'|\+\d{1,3}[\s.-]\d[\d\s.-]{6,12}\d)'
+)
 
 # Actions that are categorically blocked — Agent Safety Layer.
 _BLOCKED_ACTIONS = frozenset({
@@ -186,6 +198,10 @@ class GuardianLoop:
         """
         event_type = event.get("type", "")
         body = event.get("body", "")
+        if isinstance(body, dict):
+            body = json.dumps(body, default=str)
+        elif not isinstance(body, str):
+            body = str(body) if body is not None else ""
         source = event.get("source", "")
         priority_hint = event.get("priority", "")
 
@@ -291,6 +307,9 @@ class GuardianLoop:
                 return {"action": "silent_log", "classification": "silent"}
 
             if priority == "engagement":
+                if len(self._briefing_items) >= _MAX_BRIEFING_ITEMS:
+                    self._briefing_items = self._briefing_items[-_MAX_BRIEFING_ITEMS // 2:]
+                    log.warning("guardian.briefing.cap_reached")
                 self._briefing_items.append(event)
                 log.info("guardian.engagement_saved", event_type=event_type)
                 if task_id:
@@ -531,6 +550,10 @@ class GuardianLoop:
         """
         prompt = event.get("prompt", "")
         persona_tier = event.get("persona_tier", "open")
+        persona_tier = (persona_tier or "open").strip().lower()
+        if persona_tier not in ("open", "restricted", "locked"):
+            log.warning("guardian.invalid_persona_tier", extra={"tier": persona_tier})
+            persona_tier = "restricted"
         provider = event.get("provider")
 
         try:
@@ -540,6 +563,10 @@ class GuardianLoop:
             # Scrub PII for sensitive personas before cloud LLM routing.
             if persona_tier in ("restricted", "locked") and self._entity_vault:
                 llm_prompt, vault = await self._entity_vault.scrub(prompt)
+            elif persona_tier == "open" and self._entity_vault:
+                if _PII_QUICK_RE.search(prompt):
+                    llm_prompt, vault = await self._entity_vault.scrub(prompt)
+                    log.info("guardian.open_tier.auto_scrub")
 
             result = await self._llm.route(
                 task_type="complex_reasoning",
@@ -671,8 +698,10 @@ class GuardianLoop:
             "reason": reason,
         }
         try:
+            agent_did = (intent.get("agent_did") or "unknown")[:100]
+            action = re.sub(r'[^a-zA-Z0-9_.-]', '_', (intent.get("action") or "unknown"))[:50]
             await self._core.set_kv(
-                f"audit:intent:{intent.get('agent_did', '')}:{intent.get('action', '')}",
+                f"audit:intent:{agent_did}:{action}",
                 str(audit_entry),
             )
         except Exception:

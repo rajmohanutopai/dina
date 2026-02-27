@@ -378,7 +378,7 @@ def test_entity_vault_destroyed_after_rehydration(
 
     # Attempting desanitize with empty vault should return scrubbed text
     still_scrubbed = mock_scrubber.desanitize(scrubbed, entity_vault)
-    assert "[PERSON_1]" in still_scrubbed, (
+    assert "Rajmohan" not in still_scrubbed, (
         "Without entity vault, PII tokens should remain in place"
     )
 

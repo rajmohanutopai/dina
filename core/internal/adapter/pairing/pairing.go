@@ -30,11 +30,15 @@ import (
 // ---------------------------------------------------------------------------
 
 var (
-	ErrInvalidCode    = errors.New("pairing: invalid or expired pairing code")
-	ErrCodeUsed       = errors.New("pairing: pairing code already used")
-	ErrDeviceNotFound = errors.New("pairing: device not found")
-	ErrDeviceRevoked  = errors.New("pairing: device already revoked")
+	ErrInvalidCode         = errors.New("pairing: invalid or expired pairing code")
+	ErrCodeUsed            = errors.New("pairing: pairing code already used")
+	ErrDeviceNotFound      = errors.New("pairing: device not found")
+	ErrDeviceRevoked       = errors.New("pairing: device already revoked")
+	ErrTooManyPendingCodes = errors.New("pairing: too many pending codes")
 )
+
+// maxPendingCodes is the hard cap on pending pairing codes (SEC-MED-13).
+const maxPendingCodes = 100
 
 // Protocol constants.
 const (
@@ -127,6 +131,11 @@ func (pm *PairingManager) GenerateCode(_ context.Context) (string, []byte, error
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
+	// SEC-MED-13: Hard cap on pending pairing codes.
+	if len(pm.codes) >= maxPendingCodes {
+		return "", nil, ErrTooManyPendingCodes
+	}
+
 	// Generate a cryptographically random secret (32 bytes = 256-bit entropy).
 	secret := make([]byte, SecretLength)
 	if _, err := rand.Read(secret); err != nil {
@@ -150,41 +159,43 @@ func (pm *PairingManager) GenerateCode(_ context.Context) (string, []byte, error
 }
 
 // CompletePairing verifies the code and registers the device.
-// Returns the CLIENT_TOKEN hex string.
-func (pm *PairingManager) CompletePairing(_ context.Context, code string, deviceName string) (string, error) {
+// Returns the CLIENT_TOKEN hex string and the token ID atomically.
+func (pm *PairingManager) CompletePairing(_ context.Context, code string, deviceName string) (string, string, error) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
 	pc, ok := pm.codes[code]
 	if !ok {
-		return "", ErrInvalidCode
+		return "", "", ErrInvalidCode
 	}
 
 	// Check if already used (single-use codes).
 	if pc.used {
-		return "", ErrCodeUsed
+		return "", "", ErrCodeUsed
 	}
 
 	// Check TTL expiry.
 	if time.Since(pc.createdAt) > pm.codeTTL {
 		delete(pm.codes, code)
-		return "", ErrInvalidCode
+		return "", "", ErrInvalidCode
 	}
 
-	// Mark as used.
+	// Mark as used and delete immediately (SEC-MED-13).
 	pc.used = true
+	delete(pm.codes, code)
 
 	// Generate CLIENT_TOKEN (32 bytes = 64 hex chars).
 	tokenBytes := make([]byte, TokenLength)
 	if _, err := rand.Read(tokenBytes); err != nil {
-		return "", fmt.Errorf("pairing: failed to generate CLIENT_TOKEN: %w", err)
+		return "", "", fmt.Errorf("pairing: failed to generate CLIENT_TOKEN: %w", err)
 	}
 	clientToken := hex.EncodeToString(tokenBytes)
 
 	// Compute token hash for storage.
 	tokenHash := sha256.Sum256(tokenBytes)
 
-	// Generate token ID.
+	// SEC-HIGH-02: Generate token ID atomically within the same critical section
+	// to prevent TOCTOU race between CompletePairing and CompletePairingFull.
 	pm.nextID++
 	tokenID := fmt.Sprintf("tok-%d", pm.nextID)
 
@@ -199,12 +210,14 @@ func (pm *PairingManager) CompletePairing(_ context.Context, code string, device
 		revoked:   false,
 	})
 
-	return clientToken, nil
+	return clientToken, tokenID, nil
 }
 
 // CompletePairingFull verifies the code and returns full pair response.
 func (pm *PairingManager) CompletePairingFull(ctx context.Context, code string, deviceName string) (*PairResponse, error) {
-	clientToken, err := pm.CompletePairing(ctx, code, deviceName)
+	// SEC-HIGH-02: tokenID is now returned atomically from CompletePairing,
+	// eliminating the TOCTOU race of re-reading pm.devices[n-1].
+	clientToken, tokenID, err := pm.CompletePairing(ctx, code, deviceName)
 	if err != nil {
 		return nil, err
 	}
@@ -212,11 +225,6 @@ func (pm *PairingManager) CompletePairingFull(ctx context.Context, code string, 
 	pm.mu.Lock()
 	nodeDID := pm.nodeDID
 	wsURL := pm.wsURL
-	// Retrieve the token ID of the device just registered by CompletePairing.
-	var tokenID string
-	if n := len(pm.devices); n > 0 {
-		tokenID = pm.devices[n-1].tokenID
-	}
 	pm.mu.Unlock()
 
 	return &PairResponse{
@@ -263,6 +271,7 @@ func (pm *PairingManager) CompletePairingWithKey(
 		return "", "", ErrInvalidCode
 	}
 	pc.used = true
+	delete(pm.codes, code) // SEC-MED-13: immediate cleanup
 
 	pm.nextID++
 	tokenID := fmt.Sprintf("tok-%d", pm.nextID)

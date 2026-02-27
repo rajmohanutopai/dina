@@ -147,8 +147,7 @@ class LlamaProvider:
             ) from exc
         except httpx.HTTPStatusError as exc:
             raise LLMError(
-                f"Llama server returned HTTP {exc.response.status_code}: "
-                f"{exc.response.text}"
+                f"Llama server returned HTTP {exc.response.status_code}"
             ) from exc
         except LLMError:
             raise

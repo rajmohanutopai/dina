@@ -17,6 +17,12 @@ type AdminHandler struct {
 
 // HandleAdmin reverse-proxies requests to the brain admin UI.
 func (h *AdminHandler) HandleAdmin(w http.ResponseWriter, r *http.Request) {
+	// SEC-HIGH-03: Refuse to proxy if no internal token is configured.
+	if h.InternalToken == "" {
+		http.Error(w, `{"error":"admin proxy unavailable — DINA_INTERNAL_TOKEN not configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+
 	target, err := url.Parse(h.ProxyURL)
 	if err != nil {
 		http.Error(w, `{"error":"invalid proxy target"}`, http.StatusInternalServerError)
@@ -29,14 +35,9 @@ func (h *AdminHandler) HandleAdmin(w http.ResponseWriter, r *http.Request) {
 			req.URL.Host = target.Host
 			req.Host = target.Host
 
-			// Forward the internal token for backend authentication,
-			// falling back to the client-facing token if not set.
-			token := h.InternalToken
-			if token == "" {
-				token = h.Token
-			}
-			if token != "" {
-				req.Header.Set("Authorization", "Bearer "+token)
+			// SEC-HIGH-03: Use internal token only — never fall back to client token.
+			if h.InternalToken != "" {
+				req.Header.Set("Authorization", "Bearer "+h.InternalToken)
 			}
 		},
 	}

@@ -1,9 +1,17 @@
 import { z } from 'zod'
 
-const isProduction = process.env.NODE_ENV === 'production'
+// MED-01 fix: Resolve NODE_ENV through Zod first so the default 'production'
+// is applied before we use it for conditional validation. This prevents the
+// race where process.env.NODE_ENV is unset (isProduction=false) but Zod
+// defaults it to 'production'.
+const resolvedNodeEnv = z.enum(['development', 'test', 'production'])
+  .default('production')
+  .parse(process.env.NODE_ENV)
+
+const isProduction = resolvedNodeEnv === 'production'
 
 export const envSchema = z.object({
-  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('production'),
 
   // In production, DATABASE_URL is required (no default with weak creds)
   DATABASE_URL: isProduction
@@ -30,7 +38,7 @@ export type Env = z.infer<typeof envSchema>
 export const env: Env = envSchema.parse(process.env)
 
 // Runtime validation for production safety
-if (process.env.NODE_ENV === 'production') {
+if (isProduction) {
   if (!process.env.DATABASE_URL) {
     throw new Error('DATABASE_URL is required in production')
   }

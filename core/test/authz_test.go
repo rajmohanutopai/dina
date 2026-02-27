@@ -52,7 +52,7 @@ func doRequest(handler http.Handler, method, path, bearerToken string) *httptest
 // Test: brain token request to /v1/did/sign → 403 Forbidden
 // --------------------------------------------------------------------------
 
-func TestAuthzMiddleware_BrainTokenOnDIDSign_Forbidden(t *testing.T) {
+func TestAuthz_1_6_1_BrainTokenOnDIDSign_Forbidden(t *testing.T) {
 	handler := buildTestHandler()
 
 	rr := doRequest(handler, http.MethodPost, "/v1/did/sign", testutil.TestBrainToken)
@@ -66,7 +66,7 @@ func TestAuthzMiddleware_BrainTokenOnDIDSign_Forbidden(t *testing.T) {
 // Test: client token request to /v1/did/sign → allowed (200)
 // --------------------------------------------------------------------------
 
-func TestAuthzMiddleware_ClientTokenOnDIDSign_Allowed(t *testing.T) {
+func TestAuthz_1_6_2_ClientTokenOnDIDSign_Allowed(t *testing.T) {
 	handler := buildTestHandler()
 
 	rr := doRequest(handler, http.MethodPost, "/v1/did/sign", testutil.TestClientToken)
@@ -80,7 +80,7 @@ func TestAuthzMiddleware_ClientTokenOnDIDSign_Allowed(t *testing.T) {
 // Test: brain token request to /v1/vault/query → allowed (200)
 // --------------------------------------------------------------------------
 
-func TestAuthzMiddleware_BrainTokenOnVaultQuery_Allowed(t *testing.T) {
+func TestAuthz_1_6_3_BrainTokenOnVaultQuery_Allowed(t *testing.T) {
 	handler := buildTestHandler()
 
 	rr := doRequest(handler, http.MethodPost, "/v1/vault/query", testutil.TestBrainToken)
@@ -94,7 +94,7 @@ func TestAuthzMiddleware_BrainTokenOnVaultQuery_Allowed(t *testing.T) {
 // Test: brain token on various admin endpoints → 403 Forbidden
 // --------------------------------------------------------------------------
 
-func TestAuthzMiddleware_BrainTokenOnAdminEndpoints_Forbidden(t *testing.T) {
+func TestAuthz_1_6_4_BrainTokenOnAdminEndpoints_Forbidden(t *testing.T) {
 	handler := buildTestHandler()
 
 	adminPaths := []string{
@@ -122,7 +122,7 @@ func TestAuthzMiddleware_BrainTokenOnAdminEndpoints_Forbidden(t *testing.T) {
 // Test: client token on all endpoints → allowed (200)
 // --------------------------------------------------------------------------
 
-func TestAuthzMiddleware_ClientTokenOnAllEndpoints_Allowed(t *testing.T) {
+func TestAuthz_1_6_5_ClientTokenOnAllEndpoints_Allowed(t *testing.T) {
 	handler := buildTestHandler()
 
 	allPaths := []string{
@@ -152,7 +152,7 @@ func TestAuthzMiddleware_ClientTokenOnAllEndpoints_Allowed(t *testing.T) {
 // Test: brain token on allowed non-admin paths → 200
 // --------------------------------------------------------------------------
 
-func TestAuthzMiddleware_BrainTokenOnAllowedPaths_OK(t *testing.T) {
+func TestAuthz_1_6_6_BrainTokenOnAllowedPaths_OK(t *testing.T) {
 	handler := buildTestHandler()
 
 	allowedPaths := []string{
@@ -179,7 +179,7 @@ func TestAuthzMiddleware_BrainTokenOnAllowedPaths_OK(t *testing.T) {
 // Test: unauthenticated requests on public paths pass through authz
 // --------------------------------------------------------------------------
 
-func TestAuthzMiddleware_UnauthenticatedPublicPaths_PassThrough(t *testing.T) {
+func TestAuthz_1_6_7_UnauthenticatedPublicPaths_PassThrough(t *testing.T) {
 	// Build a chain with only the authz middleware (no auth middleware)
 	// to verify that requests without token_kind in context pass through.
 	checker := auth.NewAdminEndpointChecker()
@@ -206,7 +206,7 @@ func TestAuthzMiddleware_UnauthenticatedPublicPaths_PassThrough(t *testing.T) {
 // Test: authz middleware with explicit context token_kind
 // --------------------------------------------------------------------------
 
-func TestAuthzMiddleware_ExplicitContextTokenKind(t *testing.T) {
+func TestAuthz_1_6_8_ExplicitContextTokenKind(t *testing.T) {
 	checker := auth.NewAdminEndpointChecker()
 	authzMW := middleware.NewAuthzMiddleware(checker)
 

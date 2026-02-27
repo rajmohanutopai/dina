@@ -37,10 +37,10 @@ import (
 // CORE-HIGH-03: onEnvelope error → dead-drop fallback
 // ===========================================================================
 
-// TestFix_HIGH03_OnEnvelopeError_FallsBackToDeadDrop verifies that when the
+// TestFixVerify_31_7_1_OnEnvelopeError_FallsBackToDeadDrop verifies that when the
 // onEnvelope callback returns an error on the fast path, the Router falls back
 // to storing the envelope in the dead drop instead of losing it.
-func TestFix_HIGH03_OnEnvelopeError_FallsBackToDeadDrop(t *testing.T) {
+func TestFixVerify_31_7_1_OnEnvelopeError_FallsBackToDeadDrop(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create a vault manager that reports "open" (unlocked).
@@ -86,9 +86,9 @@ func TestFix_HIGH03_OnEnvelopeError_FallsBackToDeadDrop(t *testing.T) {
 	}
 }
 
-// TestFix_HIGH03_ProcessPending_ReSpoolsOnError verifies that ProcessPending
+// TestFixVerify_31_7_2_ProcessPending_ReSpoolsOnError verifies that ProcessPending
 // re-spools envelopes to the dead drop when the onEnvelope callback fails.
-func TestFix_HIGH03_ProcessPending_ReSpoolsOnError(t *testing.T) {
+func TestFixVerify_31_7_2_ProcessPending_ReSpoolsOnError(t *testing.T) {
 	tmpDir := t.TempDir()
 	vaultMgr := vault.NewManager(tmpDir)
 	personal, _ := domain.NewPersonaName("personal")
@@ -127,9 +127,9 @@ func TestFix_HIGH03_ProcessPending_ReSpoolsOnError(t *testing.T) {
 // CORE-HIGH-06: Complete removes inFlight map entry
 // ===========================================================================
 
-// TestFix_HIGH06_Complete_RemovesInFlight verifies that after Dequeue puts a
+// TestFixVerify_31_7_3_Complete_RemovesInFlight verifies that after Dequeue puts a
 // task into inFlight, Complete removes it — preventing the in-flight leak.
-func TestFix_HIGH06_Complete_RemovesInFlight(t *testing.T) {
+func TestFixVerify_31_7_3_Complete_RemovesInFlight(t *testing.T) {
 	q := tq.NewTaskQueue()
 	ctx := context.Background()
 
@@ -170,9 +170,9 @@ func TestFix_HIGH06_Complete_RemovesInFlight(t *testing.T) {
 // CORE-HIGH-13: Sweeper SetTransport wiring
 // ===========================================================================
 
-// TestFix_HIGH13_Sweeper_HasSetTransport verifies that the Sweeper has a
+// TestFixVerify_31_7_4_Sweeper_HasSetTransport verifies that the Sweeper has a
 // SetTransport method that can be called to wire the transport processor.
-func TestFix_HIGH13_Sweeper_HasSetTransport(t *testing.T) {
+func TestFixVerify_31_7_4_Sweeper_HasSetTransport(t *testing.T) {
 	tmpDir := t.TempDir()
 	dd := ingress.NewDeadDrop(tmpDir, 100, 10*1024*1024)
 	sweeper := ingress.NewSweeper(dd, nil, nil, nil, 24*time.Hour)
@@ -186,9 +186,9 @@ func TestFix_HIGH13_Sweeper_HasSetTransport(t *testing.T) {
 // CORE-MED-02: Error sanitization — no internal details to client
 // ===========================================================================
 
-// TestFix_MED02_ErrorSanitization_NoInternalDetails verifies that handler
+// TestFixVerify_31_7_5_ErrorSanitization_NoInternalDetails verifies that handler
 // error responses use generic messages and don't leak internal error details.
-func TestFix_MED02_ErrorSanitization_NoInternalDetails(t *testing.T) {
+func TestFixVerify_31_7_5_ErrorSanitization_NoInternalDetails(t *testing.T) {
 	// Test the clientError pattern from handler/errors.go.
 	// We simulate what the handler does: write a generic error to the client.
 	w := httptest.NewRecorder()
@@ -221,9 +221,9 @@ func TestFix_MED02_ErrorSanitization_NoInternalDetails(t *testing.T) {
 // CORE-MED-07: /ws route wired
 // ===========================================================================
 
-// TestFix_MED07_WS_Components_Constructable verifies that all ws components
+// TestFixVerify_31_7_6_WS_Components_Constructable verifies that all ws components
 // required for the /ws route can be constructed and wired together.
-func TestFix_MED07_WS_Components_Constructable(t *testing.T) {
+func TestFixVerify_31_7_6_WS_Components_Constructable(t *testing.T) {
 	// Verify all required ws components can be constructed.
 	upgrader := ws.NewUpgrader()
 	if upgrader == nil {
@@ -252,10 +252,10 @@ func TestFix_MED07_WS_Components_Constructable(t *testing.T) {
 // CORE-MED-08: sentIDs pruned on DeleteExpired
 // ===========================================================================
 
-// TestFix_MED08_DeleteExpired_PrunesSentIDs verifies that DeleteExpired
+// TestFixVerify_31_7_7_DeleteExpired_PrunesSentIDs verifies that DeleteExpired
 // removes expired message IDs from the sentIDs dedup index, so that
 // re-enqueue of the same ID after expiry creates a new message entry.
-func TestFix_MED08_DeleteExpired_PrunesSentIDs(t *testing.T) {
+func TestFixVerify_31_7_7_DeleteExpired_PrunesSentIDs(t *testing.T) {
 	outbox := transport.NewOutboxManager(100)
 	ctx := context.Background()
 
@@ -302,9 +302,9 @@ func TestFix_MED08_DeleteExpired_PrunesSentIDs(t *testing.T) {
 // CORE-MED-10: Vault item validation (size + type)
 // ===========================================================================
 
-// TestFix_MED10_VaultStore_RejectsOversizedItem verifies the Store method
+// TestFixVerify_31_7_8_VaultStore_RejectsOversizedItem verifies the Store method
 // rejects items whose body exceeds MaxVaultItemSize.
-func TestFix_MED10_VaultStore_RejectsOversizedItem(t *testing.T) {
+func TestFixVerify_31_7_8_VaultStore_RejectsOversizedItem(t *testing.T) {
 	tmpDir := t.TempDir()
 	mgr := vault.NewManager(tmpDir)
 	persona, _ := domain.NewPersonaName("personal")
@@ -324,9 +324,9 @@ func TestFix_MED10_VaultStore_RejectsOversizedItem(t *testing.T) {
 	}
 }
 
-// TestFix_MED10_VaultStore_RejectsInvalidType verifies the Store method
+// TestFixVerify_31_7_9_VaultStore_RejectsInvalidType verifies the Store method
 // rejects items with unrecognized types.
-func TestFix_MED10_VaultStore_RejectsInvalidType(t *testing.T) {
+func TestFixVerify_31_7_9_VaultStore_RejectsInvalidType(t *testing.T) {
 	tmpDir := t.TempDir()
 	mgr := vault.NewManager(tmpDir)
 	persona, _ := domain.NewPersonaName("personal")
@@ -344,9 +344,9 @@ func TestFix_MED10_VaultStore_RejectsInvalidType(t *testing.T) {
 	}
 }
 
-// TestFix_MED10_VaultStoreBatch_RejectsInvalidItem verifies StoreBatch
+// TestFixVerify_31_7_10_VaultStoreBatch_RejectsInvalidItem verifies StoreBatch
 // rejects the entire batch if any item is invalid (transactional behavior).
-func TestFix_MED10_VaultStoreBatch_RejectsInvalidItem(t *testing.T) {
+func TestFixVerify_31_7_10_VaultStoreBatch_RejectsInvalidItem(t *testing.T) {
 	tmpDir := t.TempDir()
 	mgr := vault.NewManager(tmpDir)
 	persona, _ := domain.NewPersonaName("personal")
@@ -365,8 +365,8 @@ func TestFix_MED10_VaultStoreBatch_RejectsInvalidItem(t *testing.T) {
 	}
 }
 
-// TestFix_MED10_VaultStore_AcceptsValidTypes verifies valid types are accepted.
-func TestFix_MED10_VaultStore_AcceptsValidTypes(t *testing.T) {
+// TestFixVerify_31_7_11_VaultStore_AcceptsValidTypes verifies valid types are accepted.
+func TestFixVerify_31_7_11_VaultStore_AcceptsValidTypes(t *testing.T) {
 	tmpDir := t.TempDir()
 	mgr := vault.NewManager(tmpDir)
 	persona, _ := domain.NewPersonaName("personal")
@@ -388,10 +388,10 @@ func TestFix_MED10_VaultStore_AcceptsValidTypes(t *testing.T) {
 // CORE-LOW-01: CORS wildcard handling
 // ===========================================================================
 
-// TestFix_LOW01_CORS_Wildcard_SetsStarNoCredentials verifies that when
+// TestFixVerify_31_7_12_CORS_Wildcard_SetsStarNoCredentials verifies that when
 // AllowOrigin is "*", the response has Access-Control-Allow-Origin: * and
 // does NOT include Access-Control-Allow-Credentials (per CORS spec).
-func TestFix_LOW01_CORS_Wildcard_SetsStarNoCredentials(t *testing.T) {
+func TestFixVerify_31_7_12_CORS_Wildcard_SetsStarNoCredentials(t *testing.T) {
 	cors := &middleware.CORS{AllowOrigin: "*"}
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -414,9 +414,9 @@ func TestFix_LOW01_CORS_Wildcard_SetsStarNoCredentials(t *testing.T) {
 	}
 }
 
-// TestFix_LOW01_CORS_Whitelist_SetsCredentials verifies that when a specific
+// TestFixVerify_31_7_13_CORS_Whitelist_SetsCredentials verifies that when a specific
 // origin matches, credentials are allowed (unlike wildcard).
-func TestFix_LOW01_CORS_Whitelist_SetsCredentials(t *testing.T) {
+func TestFixVerify_31_7_13_CORS_Whitelist_SetsCredentials(t *testing.T) {
 	cors := &middleware.CORS{AllowOrigin: "https://dina.local,https://admin.dina.local"}
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -436,9 +436,9 @@ func TestFix_LOW01_CORS_Whitelist_SetsCredentials(t *testing.T) {
 	}
 }
 
-// TestFix_LOW01_CORS_Wildcard_PreflightReturns204 verifies OPTIONS preflight
+// TestFixVerify_31_7_14_CORS_Wildcard_PreflightReturns204 verifies OPTIONS preflight
 // with wildcard CORS returns 204.
-func TestFix_LOW01_CORS_Wildcard_PreflightReturns204(t *testing.T) {
+func TestFixVerify_31_7_14_CORS_Wildcard_PreflightReturns204(t *testing.T) {
 	cors := &middleware.CORS{AllowOrigin: "*"}
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("inner handler should not be called for OPTIONS preflight")
@@ -459,9 +459,9 @@ func TestFix_LOW01_CORS_Wildcard_PreflightReturns204(t *testing.T) {
 // CORE-LOW-02: WS upgrader secure-by-default
 // ===========================================================================
 
-// TestFix_LOW02_WS_DefaultUpgrader_SecureByDefault verifies that NewUpgrader()
+// TestFixVerify_31_7_15_WS_DefaultUpgrader_SecureByDefault verifies that NewUpgrader()
 // with no options has InsecureSkipVerify=false (origin checking enabled).
-func TestFix_LOW02_WS_DefaultUpgrader_SecureByDefault(t *testing.T) {
+func TestFixVerify_31_7_15_WS_DefaultUpgrader_SecureByDefault(t *testing.T) {
 	upgrader := ws.NewUpgrader()
 
 	// Try to upgrade a request with a mismatched origin.
@@ -483,9 +483,9 @@ func TestFix_LOW02_WS_DefaultUpgrader_SecureByDefault(t *testing.T) {
 	}
 }
 
-// TestFix_LOW02_WS_InsecureSkipVerify_Enabled verifies that
+// TestFixVerify_31_7_16_WS_InsecureSkipVerify_Enabled verifies that
 // WithInsecureSkipVerify() disables origin checking (for dev mode).
-func TestFix_LOW02_WS_InsecureSkipVerify_Enabled(t *testing.T) {
+func TestFixVerify_31_7_16_WS_InsecureSkipVerify_Enabled(t *testing.T) {
 	// Verify the option is callable and produces a non-nil upgrader.
 	upgrader := ws.NewUpgrader(ws.WithInsecureSkipVerify())
 	if upgrader == nil {
@@ -493,9 +493,9 @@ func TestFix_LOW02_WS_InsecureSkipVerify_Enabled(t *testing.T) {
 	}
 }
 
-// TestFix_LOW02_WS_WithOriginPatterns_Configurable verifies that
+// TestFixVerify_31_7_17_WS_WithOriginPatterns_Configurable verifies that
 // WithOriginPatterns() can be used to configure allowed origins.
-func TestFix_LOW02_WS_WithOriginPatterns_Configurable(t *testing.T) {
+func TestFixVerify_31_7_17_WS_WithOriginPatterns_Configurable(t *testing.T) {
 	upgrader := ws.NewUpgrader(ws.WithOriginPatterns("*.dina.local"))
 	if upgrader == nil {
 		t.Fatal("NewUpgrader with origin patterns returned nil")

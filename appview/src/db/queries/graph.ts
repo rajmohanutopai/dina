@@ -71,12 +71,15 @@ export async function computeGraphContext(
   db: DrizzleDB,
   rootDid: string,
   maxDepth: number = CONSTANTS.MAX_GRAPH_DEPTH,
+  domain?: string,
 ): Promise<GraphContext> {
   return withGraphTimeout(
     db,
     async (tx) => {
       const nodes: GraphNode[] = []
       const edges: GraphEdge[] = []
+      let queryCount = 0
+      const MAX_QUERIES = 100
       const visited = new Set<string>()
       let frontier = [rootDid]
 
@@ -100,7 +103,12 @@ export async function computeGraphContext(
         const nextFrontier: string[] = []
 
         for (const did of frontier) {
+          // MED-08: Request-level query budget
+          if (queryCount > MAX_QUERIES) break
+
           // Outgoing edges with fan-out limit (Fix 3)
+          // MED-08 fix: Pre-filter by domain in the SQL query to avoid
+          // wasting query budget on irrelevant edges
           const outgoing = await tx
             .select({
               fromDid: trustEdges.fromDid,
@@ -110,8 +118,11 @@ export async function computeGraphContext(
               weight: trustEdges.weight,
             })
             .from(trustEdges)
-            .where(eq(trustEdges.fromDid, did))
+            .where(domain
+              ? and(eq(trustEdges.fromDid, did), eq(trustEdges.domain, domain))
+              : eq(trustEdges.fromDid, did))
             .limit(CONSTANTS.MAX_EDGES_PER_HOP)
+          queryCount++
 
           for (const edge of outgoing) {
             edges.push(edge)
@@ -126,6 +137,7 @@ export async function computeGraphContext(
                 .from(didProfiles)
                 .where(eq(didProfiles.did, edge.toDid))
                 .limit(1)
+              queryCount++
 
               nodes.push({
                 did: edge.toDid,
@@ -136,6 +148,7 @@ export async function computeGraphContext(
           }
 
           // Incoming edges with fan-out limit
+          // MED-08 fix: Pre-filter by domain in the SQL query
           const incoming = await tx
             .select({
               fromDid: trustEdges.fromDid,
@@ -145,8 +158,11 @@ export async function computeGraphContext(
               weight: trustEdges.weight,
             })
             .from(trustEdges)
-            .where(eq(trustEdges.toDid, did))
+            .where(domain
+              ? and(eq(trustEdges.toDid, did), eq(trustEdges.domain, domain))
+              : eq(trustEdges.toDid, did))
             .limit(CONSTANTS.MAX_EDGES_PER_HOP)
+          queryCount++
 
           for (const edge of incoming) {
             edges.push(edge)
@@ -160,6 +176,7 @@ export async function computeGraphContext(
                 .from(didProfiles)
                 .where(eq(didProfiles.did, edge.fromDid))
                 .limit(1)
+              queryCount++
 
               nodes.push({
                 did: edge.fromDid,
@@ -171,6 +188,7 @@ export async function computeGraphContext(
         }
 
         frontier = nextFrontier
+        if (queryCount > MAX_QUERIES) break
 
         // Safety cap: stop if we've accumulated too many nodes
         if (nodes.length >= CONSTANTS.MAX_GRAPH_NODES_RESPONSE) {
@@ -197,12 +215,11 @@ export async function getGraphAroundDid(
   maxDepth: number = 1,
   domain?: string,
 ): Promise<GetGraphResponse> {
-  const context = await computeGraphContext(db, did, maxDepth)
+  // MED-08 fix: Pass domain to BFS for pre-filtering in SQL
+  const context = await computeGraphContext(db, did, maxDepth, domain)
 
-  // Filter edges by domain if provided
-  const filteredEdges = domain
-    ? context.edges.filter(e => e.domain === domain)
-    : context.edges
+  // Domain is now pre-filtered in the BFS query; no post-filter needed
+  const filteredEdges = context.edges
 
   // Transform internal types to API types
   const nodes: ApiGraphNode[] = context.nodes.map(n => ({

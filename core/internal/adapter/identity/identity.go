@@ -531,26 +531,90 @@ type IdentityAuditEntry struct {
 	Timestamp int64
 }
 
+// personaFileState is the JSON-serializable state for persona persistence.
+type personaFileState struct {
+	Personas map[string]*Persona        `json:"personas"`
+	Contacts map[string]map[string]bool `json:"contacts"`
+}
+
 // PersonaManager implements port.PersonaManager — persona CRUD and tier enforcement (§3.2, §3.3).
+// CRITICAL-01/02: Supports optional file-based persistence via SetPersistPath.
 type PersonaManager struct {
 	mu                   sync.RWMutex
 	personas             map[string]*Persona              // personaID -> Persona
 	auditLog             []IdentityAuditEntry             // append-only audit log
 	contacts             map[string]map[string]bool       // personaID -> set of contact DIDs
+	persistPath          string                           // path to persona state file (empty = in-memory only)
 	OnRestrictedAccess   func(personaID, reason string)   // callback for restricted access notification
 	testTick             chan struct{}                     // test control channel for TTL goroutine
 	ttlTimers            map[string]*time.Timer           // personaID -> active TTL timer
 	VerifyPassphrase     func(storedHash, passphrase string) (bool, error)
+	HashUpgrader         func(passphrase string) (string, error) // re-hash with current algorithm (Argon2id)
 	OnLock               func(personaID string) // callback invoked after persona is locked (vault close, etc.)
 }
 
-// NewPersonaManager returns a new in-memory PersonaManager.
+// NewPersonaManager returns a new PersonaManager.
+// Call SetPersistPath to enable file-based persistence.
 func NewPersonaManager() *PersonaManager {
 	return &PersonaManager{
 		personas:  make(map[string]*Persona),
 		contacts:  make(map[string]map[string]bool),
 		ttlTimers: make(map[string]*time.Timer),
 	}
+}
+
+// SetPersistPath sets the file path for persona state persistence.
+// If path is non-empty, persona state is loaded from disk (if the file exists)
+// and written back after every mutation.
+func (pm *PersonaManager) SetPersistPath(path string) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	pm.persistPath = path
+	if path == "" {
+		return nil
+	}
+	// Try to load existing state.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // no state file yet — will be created on first mutation
+		}
+		return fmt.Errorf("persona: load state: %w", err)
+	}
+	var state personaFileState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return fmt.Errorf("persona: unmarshal state: %w", err)
+	}
+	if state.Personas != nil {
+		pm.personas = state.Personas
+		// Ensure all loaded personas start locked for safety — unlock requires passphrase.
+		for _, p := range pm.personas {
+			if p.Tier == "locked" || p.Tier == "restricted" {
+				p.Locked = true
+			}
+		}
+	}
+	if state.Contacts != nil {
+		pm.contacts = state.Contacts
+	}
+	return nil
+}
+
+// persistState writes the current persona state to disk (caller must hold lock).
+func (pm *PersonaManager) persistState() {
+	if pm.persistPath == "" {
+		return
+	}
+	state := personaFileState{
+		Personas: pm.personas,
+		Contacts: pm.contacts,
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		return // best-effort
+	}
+	os.MkdirAll(filepath.Dir(pm.persistPath), 0700)
+	_ = os.WriteFile(pm.persistPath, data, 0600)
 }
 
 // canonicalPersonaID normalizes a persona identifier to the stored form "persona-<name>".
@@ -626,6 +690,7 @@ func (pm *PersonaManager) AddContactToPersona(personaID, contactDID string) erro
 		pm.contacts[personaID] = make(map[string]bool)
 	}
 	pm.contacts[personaID][contactDID] = true
+	pm.persistState()
 	return nil
 }
 
@@ -709,16 +774,18 @@ func (pm *PersonaManager) Create(_ context.Context, name, tier string, passphras
 	locked := tier == "locked"
 
 	p := &Persona{
-		ID:     id,
-		Name:   name,
-		Tier:   tier,
-		Locked: locked,
+		ID:         id,
+		Name:       name,
+		Tier:       tier,
+		Locked:     locked,
+		DEKVersion: 1, // CRITICAL-02: Starts at v1; bumped to v2 only after vault re-encryption migration
 	}
 	if len(passphraseHash) > 0 && passphraseHash[0] != "" {
 		p.PassphraseHash = passphraseHash[0]
 	}
 
 	pm.personas[id] = p
+	pm.persistState()
 
 	return id, nil
 }
@@ -733,6 +800,24 @@ func (pm *PersonaManager) List(_ context.Context) ([]string, error) {
 		ids = append(ids, id)
 	}
 	return ids, nil
+}
+
+// GetDEKVersion returns the DEK derivation version for a persona.
+// Returns 1 for legacy personas, 2 for Argon2id-upgraded personas.
+// Returns 0 and ErrPersonaNotFound if the persona does not exist.
+func (pm *PersonaManager) GetDEKVersion(_ context.Context, personaID string) (int, error) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+	cid := canonicalPersonaID(personaID)
+	p, ok := pm.personas[cid]
+	if !ok {
+		return 0, ErrPersonaNotFound
+	}
+	v := p.DEKVersion
+	if v == 0 {
+		v = 1 // unset means legacy v1
+	}
+	return v, nil
 }
 
 // Unlock loads the persona's DEK into RAM for the given TTL (seconds).
@@ -763,7 +848,20 @@ func (pm *PersonaManager) Unlock(_ context.Context, personaID, passphrase string
 		return fmt.Errorf("persona: %w: passphrase not configured — run migration", domain.ErrInvalidPassphrase)
 	}
 
+	// CRITICAL-02: Upgrade passphrase hash to Argon2id on successful unlock.
+	// Only the authentication hash is upgraded here — DEKVersion is NOT bumped
+	// because that controls vault key derivation, and bumping it without
+	// re-encrypting the vault with the new DEK would lock out the persona.
+	// DEKVersion upgrade requires an explicit vault re-encryption migration step.
+	if pm.HashUpgrader != nil && p.PassphraseHash != "" {
+		if newHash, err := pm.HashUpgrader(passphrase); err == nil && newHash != "" {
+			p.PassphraseHash = newHash
+			slog.Info("persona passphrase hash upgraded to Argon2id", "persona", personaID)
+		}
+	}
+
 	p.Locked = false
+	pm.persistState()
 
 	// Cancel any existing TTL timer for this persona.
 	if timer, ok := pm.ttlTimers[personaID]; ok {
@@ -789,6 +887,7 @@ func (pm *PersonaManager) Unlock(_ context.Context, personaID, passphrase string
 				if p, ok := pm.personas[personaID]; ok {
 					p.Locked = true
 				}
+				pm.persistState()
 				cb := pm.OnLock // capture under lock
 				pm.mu.Unlock()
 				// Invoke callback outside mutex to prevent deadlocks.
@@ -804,6 +903,7 @@ func (pm *PersonaManager) Unlock(_ context.Context, personaID, passphrase string
 					p.Locked = true
 				}
 				delete(pm.ttlTimers, personaID)
+				pm.persistState()
 				cb := pm.OnLock // capture under lock
 				pm.mu.Unlock()
 				// Invoke callback outside mutex to prevent deadlocks.
@@ -830,6 +930,7 @@ func (pm *PersonaManager) Lock(_ context.Context, personaID string) error {
 	}
 
 	p.Locked = true
+	pm.persistState()
 	cb := pm.OnLock
 	pm.mu.Unlock()
 	// Invoke callback outside mutex to prevent deadlocks.

@@ -24,6 +24,7 @@ import {
 } from '@/db/schema/index.js'
 import { logger } from '@/shared/utils/logger.js'
 import { metrics } from '@/shared/utils/metrics.js'
+import { markDirty } from '@/db/queries/dirty-flags.js'
 import type { ReputationCollection } from '@/config/lexicons.js'
 
 /**
@@ -203,6 +204,10 @@ export const deletionHandler = {
     recordType: string,
     sourceTable: any,
   ): Promise<void> {
+    // Step 0: Capture attestation metadata BEFORE deletion so dirty marking
+    // can reference the subject. After delete, the row is gone.
+    const attMeta = await getAttestationMeta(db, uri)
+
     // Step 1: Check dispute signals
     const disputes = await getDisputeSignals(db, uri)
     const isDisputed =
@@ -218,7 +223,14 @@ export const deletionHandler = {
     // Step 3: Delete from the source table
     // All record tables use 'uri' as their primary key
     try {
-      await db.delete(sourceTable).where(eq(sourceTable.uri, uri))
+      // MED-11: Guard deletion with author DID to prevent cross-author deletion
+      if (sourceTable.authorDid) {
+        await db.delete(sourceTable).where(
+          and(eq(sourceTable.uri, uri), eq(sourceTable.authorDid, authorDid))
+        )
+      } else {
+        await db.delete(sourceTable).where(eq(sourceTable.uri, uri))
+      }
       metrics.incr('ingester.deletion.record_deleted', { collection: recordType })
     } catch (err) {
       logger.error({ err, uri, recordType }, '[Deletion] Failed to delete record')
@@ -227,6 +239,12 @@ export const deletionHandler = {
 
     // Step 4: Clean up trust edges
     await db.delete(trustEdges).where(eq(trustEdges.sourceUri, uri))
+
+    // Step 5: Mark affected entities dirty using pre-deletion metadata
+    await markDirty(db, {
+      subjectId: attMeta?.subjectId ?? null,
+      authorDid,
+    })
 
     logger.debug(
       { uri, authorDid, recordType, isDisputed },

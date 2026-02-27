@@ -18,7 +18,7 @@ import (
 )
 
 // ==========================================================================
-// Fix 11 — D2D Sender Signature in Delivery Payload
+// §31.8 — D2D Sender Signature in Delivery Payload
 // Tests verify that:
 //   1. SendMessage delivers a JSON wrapper with "c" (ciphertext) and "s" (sig)
 //   2. ProcessInbound with JSON wrapper + valid sig succeeds
@@ -141,7 +141,7 @@ type d2dPayloadWire struct {
 // Test 1: SendMessage delivery payload is JSON with "c" and "s" fields
 // --------------------------------------------------------------------------
 
-func TestFix11_SendMessage_DeliveryPayloadIsJSONWrapper(t *testing.T) {
+func TestFixVerify_31_8_1_SendMessage_DeliveryPayloadIsJSONWrapper(t *testing.T) {
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
 
@@ -201,7 +201,7 @@ func TestFix11_SendMessage_DeliveryPayloadIsJSONWrapper(t *testing.T) {
 // Test 2: ProcessInbound with JSON wrapper + valid sig succeeds
 // --------------------------------------------------------------------------
 
-func TestFix11_ProcessInbound_JSONWrapperValidSig_Success(t *testing.T) {
+func TestFixVerify_31_8_2_ProcessInbound_JSONWrapperValidSig_Success(t *testing.T) {
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
 
@@ -250,7 +250,7 @@ func TestFix11_ProcessInbound_JSONWrapperValidSig_Success(t *testing.T) {
 // Test 3: ProcessInbound with JSON wrapper + tampered sig returns error
 // --------------------------------------------------------------------------
 
-func TestFix11_ProcessInbound_JSONWrapperTamperedSig_Error(t *testing.T) {
+func TestFixVerify_31_8_3_ProcessInbound_JSONWrapperTamperedSig_Error(t *testing.T) {
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
 
@@ -295,7 +295,7 @@ func TestFix11_ProcessInbound_JSONWrapperTamperedSig_Error(t *testing.T) {
 // Test 4: ProcessInbound with raw bytes (legacy) still works
 // --------------------------------------------------------------------------
 
-func TestFix11_ProcessInbound_RawBytesLegacy_Rejected(t *testing.T) {
+func TestFixVerify_31_8_6_ProcessInbound_RawBytesLegacy_Rejected(t *testing.T) {
 	// CRITICAL-04: unsigned legacy payloads are now rejected by default.
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
@@ -324,7 +324,7 @@ func TestFix11_ProcessInbound_RawBytesLegacy_Rejected(t *testing.T) {
 	}
 }
 
-func TestFix11_ProcessInbound_RawBytesLegacy_MigrationMode(t *testing.T) {
+func TestFixVerify_31_8_5_ProcessInbound_RawBytesLegacy_MigrationMode(t *testing.T) {
 	// CRITICAL-04: with migration flag, unsigned legacy payloads are accepted.
 	t.Setenv("DINA_ALLOW_UNSIGNED_D2D", "1")
 
@@ -357,7 +357,7 @@ func TestFix11_ProcessInbound_RawBytesLegacy_MigrationMode(t *testing.T) {
 // Test 5: ProcessOutbox retry uses JSON wrapper format
 // --------------------------------------------------------------------------
 
-func TestFix11_ProcessOutbox_UsesJSONWrapper(t *testing.T) {
+func TestFixVerify_31_8_8_ProcessOutbox_UsesJSONWrapper(t *testing.T) {
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
 
@@ -433,7 +433,7 @@ func TestFix11_ProcessOutbox_UsesJSONWrapper(t *testing.T) {
 // Test 6: Full round-trip: SendMessage -> delivery -> ProcessInbound
 // --------------------------------------------------------------------------
 
-func TestFix11_FullRoundTrip_SendAndReceiveWithSig(t *testing.T) {
+func TestFixVerify_31_8_9_FullRoundTrip_SendAndReceiveWithSig(t *testing.T) {
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
 
@@ -480,7 +480,7 @@ func TestFix11_FullRoundTrip_SendAndReceiveWithSig(t *testing.T) {
 // Test 7: ProcessInbound with JSON wrapper but empty sig (no verification)
 // --------------------------------------------------------------------------
 
-func TestFix11_ProcessInbound_JSONWrapperEmptySig_Rejected(t *testing.T) {
+func TestFixVerify_31_8_4_ProcessInbound_JSONWrapperEmptySig_Rejected(t *testing.T) {
 	// CRITICAL-04: unsigned messages (empty sig) are now rejected by default.
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
@@ -520,7 +520,7 @@ func TestFix11_ProcessInbound_JSONWrapperEmptySig_Rejected(t *testing.T) {
 // Test 8: ProcessInbound with JSON wrapper + sig from wrong sender DID
 // --------------------------------------------------------------------------
 
-func TestFix11_ProcessInbound_JSONWrapper_DIDSpoofing_Rejected(t *testing.T) {
+func TestFixVerify_31_8_7_ProcessInbound_JSONWrapper_DIDSpoofing_Rejected(t *testing.T) {
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
 

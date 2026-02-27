@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { eq, and, gt, inArray } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
 import {
@@ -74,6 +75,12 @@ export async function detectSybilJob(db: DrizzleDB): Promise<void> {
 
   for (const cluster of clusters) {
     try {
+      // LOW-02 fix: Generate dedupHash so the unique index prevents duplicate anomaly events
+      const dedupHash = createHash('sha256')
+        .update(`sybil-cluster:${cluster.clusterDids.sort().join(',')}`)
+        .digest('hex')
+        .slice(0, 64)
+
       await db
         .insert(anomalyEvents)
         .values({
@@ -87,7 +94,9 @@ export async function detectSybilJob(db: DrizzleDB): Promise<void> {
             reason: cluster.reason,
           },
           resolved: false,
+          dedupHash,
         })
+        .onConflictDoNothing()
 
       inserted++
     } catch (err) {

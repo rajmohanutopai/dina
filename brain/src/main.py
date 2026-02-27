@@ -53,6 +53,12 @@ from .dina_admin.app import create_admin_app
 
 log = logging.getLogger(__name__)
 
+# SEC-LOW-01: Disable docs/openapi in production
+_env = os.environ.get("DINA_ENV", "production").lower()
+_is_dev = _env in ("development", "test")
+if not _is_dev and os.environ.get("DINA_TEST_MODE", "").lower() == "true":
+    _is_dev = True
+
 
 _SAFE_ENTITIES: frozenset[str] = frozenset({
     "DATE", "TIME", "MONEY", "PERCENT", "QUANTITY",
@@ -231,17 +237,28 @@ def create_app() -> FastAPI:
                 name, _, cmd = entry.partition("=")
                 if name.strip() and cmd.strip():
                     mcp_commands[name.strip()] = cmd.strip().split()
+    _MCP_ALLOWED_COMMANDS = {"npx", "uvx", "node", "python3", "deno", "python"}
+    for name, cmd_parts in list(mcp_commands.items()):
+        if cmd_parts and os.path.basename(cmd_parts[0]) not in _MCP_ALLOWED_COMMANDS:
+            log.warning(
+                "brain.mcp.blocked_command",
+                extra={"server": name, "command": cmd_parts[0]},
+            )
+            del mcp_commands[name]
     mcp_client = MCPStdioClient(server_commands=mcp_commands)
 
     # PII scrubber — prefer PresidioScrubber, fall back to spaCy, then None.
     scrubber: object | None = None
+    scrubber_tier = "none"
     try:
-        from adapter.scrubber_presidio import PresidioScrubber
+        from .adapter.scrubber_presidio import PresidioScrubber
         scrubber = PresidioScrubber()
+        scrubber_tier = "presidio"
         log.info("brain.scrubber.presidio.loaded")
     except Exception:
         try:
             scrubber = _SpacyScrubber()
+            scrubber_tier = "spacy"
             log.info("brain.scrubber.spacy.fallback")
         except Exception as exc:
             log.warning(
@@ -249,11 +266,16 @@ def create_app() -> FastAPI:
                 extra={"error": type(exc).__name__},
             )
             scrubber = None
+    if scrubber_tier != "presidio":
+        log.warning(
+            "brain.scrubber.degraded",
+            extra={"tier": scrubber_tier},
+        )
 
     # 3. Construct services
     llm_router = LLMRouter(
         providers=providers,
-        config={"preferred_cloud": cfg.cloud_llm, "cloud_llm_consent": False},
+        config={"preferred_cloud": cfg.cloud_llm, "cloud_llm_consent": False, "scrubber_tier": scrubber_tier},
     )
 
     # LLM hot-reload callback — rebuilds providers from KV-stored keys.
@@ -357,6 +379,9 @@ def create_app() -> FastAPI:
         description="Sovereign personal AI — the safety layer for autonomous agents.",
         version="0.4.0",
         lifespan=lifespan,
+        docs_url="/docs" if _is_dev else None,
+        redoc_url="/redoc" if _is_dev else None,
+        openapi_url="/openapi.json" if _is_dev else None,
     )
 
     brain_api = create_brain_app(guardian, sync_engine, cfg.brain_token, scrubber=scrubber)
@@ -391,34 +416,15 @@ def create_app() -> FastAPI:
 
     @master.get("/healthz")
     async def healthz() -> dict:
-        """Health check -- no auth required.
-
-        Returns component-level status.  The master app is always
-        ``"ok"`` (it started); individual components may be degraded.
-        """
-        components: dict[str, str] = {"status": "ok"}
-
-        # Check core
+        """Health check -- no auth required."""
+        status = "ok"
         try:
             await brain_core_client.health()
-            components["core_client"] = "healthy"
         except Exception:
-            components["core_client"] = "unreachable"
-            components["status"] = "degraded"
-
-        # Check LLM availability
-        if providers:
-            components["llm_router"] = "available"
-            models = llm_router.available_models()
-            components["llm_models"] = ", ".join(models) if models else "none"
-        else:
-            components["llm_router"] = "no_providers"
-            components["status"] = "degraded"
-
-        # Scrubber status
-        components["pii_scrubber"] = "loaded" if scrubber else "unavailable"
-
-        return components
+            status = "degraded"
+        if not providers:
+            status = "degraded"
+        return {"status": status}
 
     @master.on_event("shutdown")
     async def shutdown_event() -> None:
@@ -435,6 +441,11 @@ def create_app() -> FastAPI:
             "providers": list(providers.keys()),
             "scrubber": "spacy" if scrubber else "none",
         },
+    )
+
+    log.info(
+        "brain.startup.session_constraint",
+        extra={"detail": "Admin sessions are process-local — deploy with --workers 1 or use sticky sessions"},
     )
 
     return master

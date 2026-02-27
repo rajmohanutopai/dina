@@ -27,18 +27,26 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import re
 from typing import Any
 
 import httpx
 import structlog
 
 from ..domain.errors import (
+    AuthorizationError,
     ConfigError,
     CoreUnreachableError,
     PersonaLockedError,
 )
 
 logger = structlog.get_logger(__name__)
+
+
+def _normalize_path(path: str) -> str:
+    """Replace dynamic path segments with placeholders for logging."""
+    return re.sub(r'/v1/(vault|contacts|personas)/[^/?]+', r'/v1/\1/{id}', path)
+
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -58,7 +66,8 @@ class CoreHTTPClient:
     - Retry with exponential backoff (1 s, 2 s, 4 s) for 5xx and
       connection errors.
     - No retry for HTTP 401 (fatal config error).
-    - Raises ``PersonaLockedError`` for HTTP 403.
+    - Raises ``PersonaLockedError`` for HTTP 403 with persona-locked body.
+    - Raises ``AuthorizationError`` for other HTTP 403 responses.
     - Raises ``CoreUnreachableError`` for connection failures after retries.
     - Lazy ``httpx.AsyncClient`` creation.
     - Async context-manager support (``__aenter__`` / ``__aexit__``).
@@ -132,18 +141,28 @@ class CoreHTTPClient:
                 if resp.status_code == 401:
                     raise ConfigError(
                         f"Core returned HTTP 401 — BRAIN_TOKEN is invalid "
-                        f"(path={path})"
+                        f"(path={_normalize_path(path)})"
                     )
                 if resp.status_code == 403:
-                    raise PersonaLockedError(
-                        f"Core returned HTTP 403 — persona locked (path={path})"
+                    body = {}
+                    try:
+                        body = resp.json()
+                    except Exception:
+                        pass
+                    error_code = body.get("error", "")
+                    if error_code == "persona_locked" or "locked" in str(body).lower():
+                        raise PersonaLockedError(
+                            f"Persona locked (path={_normalize_path(path)})"
+                        )
+                    raise AuthorizationError(
+                        f"Core denied access (path={_normalize_path(path)}, error={error_code or 'forbidden'})"
                     )
 
                 # --- Retryable server errors ---
                 if resp.status_code >= 500:
                     msg = (
                         f"Core returned HTTP {resp.status_code} "
-                        f"(path={path}, attempt={attempt + 1}/{_MAX_RETRIES})"
+                        f"(path={_normalize_path(path)}, attempt={attempt + 1}/{_MAX_RETRIES})"
                     )
                     logger.warning("core_server_error", msg=msg)
                     last_exc = CoreUnreachableError(msg)
@@ -158,7 +177,7 @@ class CoreHTTPClient:
 
             except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
                 msg = (
-                    f"Core unreachable (path={path}, "
+                    f"Core unreachable (path={_normalize_path(path)}, "
                     f"attempt={attempt + 1}/{_MAX_RETRIES}): {exc}"
                 )
                 logger.warning("core_connect_error", msg=msg)
@@ -167,13 +186,13 @@ class CoreHTTPClient:
                     await asyncio.sleep(_BACKOFF_BASE_S * (2**attempt))
                     continue
                 raise CoreUnreachableError(
-                    f"Core unreachable after {_MAX_RETRIES} retries (path={path})"
+                    f"Core unreachable after {_MAX_RETRIES} retries (path={_normalize_path(path)})"
                 ) from exc
 
             except httpx.TimeoutException as exc:
                 msg = (
                     f"Core request timed out after {_TIMEOUT_S}s "
-                    f"(path={path}, attempt={attempt + 1}/{_MAX_RETRIES})"
+                    f"(path={_normalize_path(path)}, attempt={attempt + 1}/{_MAX_RETRIES})"
                 )
                 logger.warning("core_timeout", msg=msg)
                 last_exc = exc
@@ -184,7 +203,7 @@ class CoreHTTPClient:
 
         # Should never reach here, but satisfy the type checker.
         raise CoreUnreachableError(  # pragma: no cover
-            f"Core unreachable after {_MAX_RETRIES} retries (path={path})"
+            f"Core unreachable after {_MAX_RETRIES} retries (path={_normalize_path(path)})"
         )
 
     # -- Vault CRUD ----------------------------------------------------------

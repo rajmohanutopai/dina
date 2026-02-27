@@ -1,12 +1,15 @@
 package handler
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/ingress"
@@ -51,10 +54,14 @@ func (h *MessageHandler) HandleSend(w http.ResponseWriter, r *http.Request) {
 		msgType = domain.MessageTypeQuery
 	}
 
+	// SEC-HIGH-08: Generate stable message ID and timestamp for replay protection.
+	msgID := generateMsgID()
 	msg := domain.DinaMessage{
-		Type: msgType,
-		To:   []string{string(to)},
-		Body: req.Body,
+		ID:          msgID,
+		Type:        msgType,
+		To:          []string{string(to)},
+		Body:        req.Body,
+		CreatedTime: time.Now().UTC().Unix(),
 	}
 
 	if err := h.Transport.SendMessage(r.Context(), to, msg); err != nil {
@@ -149,4 +156,11 @@ func (h *MessageHandler) HandleIngestNaCl(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(map[string]string{"status": "accepted"})
+}
+
+// generateMsgID creates a random 16-byte hex-encoded message ID.
+func generateMsgID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }

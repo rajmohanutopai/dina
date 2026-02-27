@@ -10,6 +10,7 @@ import (
 // KeyDeriver derives per-persona Data Encryption Keys from the master seed.
 type KeyDeriver interface {
 	DerivePersonaDEK(seed []byte, persona domain.PersonaName) ([]byte, error)
+	DerivePersonaDEKVersioned(seed []byte, persona domain.PersonaName, dekVersion int) ([]byte, error)
 	DeriveSigningKey(seed []byte, index uint32) (ed25519.PrivateKey, error)
 	DeriveBackupKey(seed []byte) ([]byte, error)
 }
@@ -50,6 +51,8 @@ type PersonaManager interface {
 	// Returns nil if access is allowed, or an error if the persona's tier
 	// restricts access (e.g. locked persona that hasn't been unlocked).
 	AccessPersona(ctx context.Context, personaID string) error
+	// GetDEKVersion returns the DEK derivation version for a persona (1=legacy, 2=Argon2id).
+	GetDEKVersion(ctx context.Context, personaID string) (int, error)
 }
 
 // ContactDirectory manages the contact registry in identity.sqlite.

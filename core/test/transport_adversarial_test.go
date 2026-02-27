@@ -877,7 +877,8 @@ func TestAdv_29_3_IngressSpoolFull(t *testing.T) {
 	}
 }
 
-// TST-ADV-017: Sweeper processes dead drop blobs after vault unlock.
+// TST-ADV-017: Sweeper skips dead drop blobs when keys not configured (fail-closed).
+// SEC-LOW-03: Without decrypt prerequisites, blobs are skipped (not delivered).
 func TestAdv_29_3_IngressSweeperSweep(t *testing.T) {
 	tmpDir := t.TempDir()
 	deadDropDir := filepath.Join(tmpDir, "dd")
@@ -885,7 +886,7 @@ func TestAdv_29_3_IngressSweeperSweep(t *testing.T) {
 
 	clk := &transportTestClock{now: time.Now()}
 	sweeper := ingress.NewSweeper(deadDrop, nil, nil, clk, 24*time.Hour)
-	// No keys/converter set — sweeper counts blobs as delivered (pass-through).
+	// No keys/converter set — sweeper skips blobs (fail-closed per SEC-LOW-03).
 
 	ctx := context.Background()
 
@@ -898,8 +899,9 @@ func TestAdv_29_3_IngressSweeperSweep(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sweep: %v", err)
 	}
-	if count != 2 {
-		t.Fatalf("expected 2 swept, got %d", count)
+	// Without decrypt keys, blobs are skipped (fail-closed), not delivered.
+	if count != 0 {
+		t.Fatalf("expected 0 swept (no keys configured), got %d", count)
 	}
 }
 
@@ -928,13 +930,15 @@ func TestAdv_29_3_IngressProcessPending(t *testing.T) {
 		t.Fatalf("expected 2 dead drop blobs, got %d", count)
 	}
 
-	// Simulate vault unlock → process pending.
+	// ProcessPending attempts to sweep dead drop — but without keys configured,
+	// blobs are skipped (fail-closed per SEC-LOW-03). Blobs remain in dead drop.
 	total, err := router.ProcessPending(ctx)
 	if err != nil {
 		t.Fatalf("ProcessPending: %v", err)
 	}
-	if total < 2 {
-		t.Fatalf("expected at least 2 processed, got %d", total)
+	// Without decrypt keys, no blobs are delivered — they stay in dead drop.
+	if total != 0 {
+		t.Fatalf("expected 0 processed (no keys configured), got %d", total)
 	}
 }
 
@@ -983,9 +987,12 @@ func TestAdv_29_3_IngressSweepFull(t *testing.T) {
 	if result.Processed != 2 {
 		t.Fatalf("expected 2 processed, got %d", result.Processed)
 	}
-	// Without keys: non-empty blobs are "delivered" (pass-through), empty are "failed".
-	if result.Delivered < 1 {
-		t.Fatalf("expected at least 1 delivered, got %d", result.Delivered)
+	// SEC-LOW-03: Without keys, blobs are skipped (fail-closed) — counted as Failed.
+	if result.Failed != 2 {
+		t.Fatalf("expected 2 failed (no keys, fail-closed), got %d", result.Failed)
+	}
+	if result.Delivered != 0 {
+		t.Fatalf("expected 0 delivered (no keys), got %d", result.Delivered)
 	}
 }
 

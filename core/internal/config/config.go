@@ -30,6 +30,7 @@ type Config struct {
 	ClientToken      string `json:"client_token"`
 	OwnDID           string `json:"own_did"`
 	AllowedOrigins   string `json:"allowed_origins"`
+	TrustedProxies   string `json:"trusted_proxies"` // comma-separated CIDRs for XFF trust
 }
 
 // Loader implements testutil.ConfigLoader.
@@ -204,5 +205,8 @@ func loadEnv(cfg *Config) {
 	}
 	if v := os.Getenv("DINA_ALLOWED_ORIGINS"); v != "" {
 		cfg.AllowedOrigins = v
+	}
+	if v := os.Getenv("DINA_TRUSTED_PROXIES"); v != "" {
+		cfg.TrustedProxies = v
 	}
 }

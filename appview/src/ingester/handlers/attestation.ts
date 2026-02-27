@@ -1,6 +1,7 @@
+import { eq } from 'drizzle-orm'
 import type { RecordHandler, HandlerContext, RecordOp } from './index.js'
 import type { Attestation } from '@/shared/types/lexicon-types.js'
-import { attestations, mentionEdges } from '@/db/schema/index.js'
+import { attestations, mentionEdges, trustEdges } from '@/db/schema/index.js'
 import { deletionHandler } from '../deletion-handler.js'
 import { addTrustEdge } from '../trust-edge-sync.js'
 import { resolveOrCreateSubject } from '@/db/queries/subjects.js'
@@ -92,7 +93,8 @@ export const attestationHandler: RecordHandler = {
       },
     })
 
-    // Upsert mention edges (idempotent via unique constraint)
+    // MED-12: Delete old mention edges before inserting new set (atomic per source URI)
+    await ctx.db.delete(mentionEdges).where(eq(mentionEdges.sourceUri, op.uri))
     for (const mention of mentions) {
       await ctx.db.insert(mentionEdges).values({
         sourceUri: op.uri,
@@ -103,6 +105,11 @@ export const attestationHandler: RecordHandler = {
         createdAt: new Date(record.createdAt),
       }).onConflictDoNothing()
     }
+
+    // HIGH-10 fix: Always remove old trust edge for this URI first, then
+    // conditionally re-add. Prevents stale edges when sentiment changes
+    // from positive to non-positive on update.
+    await ctx.db.delete(trustEdges).where(eq(trustEdges.sourceUri, op.uri))
 
     // Add trust edge only for positive attestations of DID subjects (HIGH-07)
     if (record.sentiment === 'positive' && record.subject.type === 'did' && record.subject.did) {

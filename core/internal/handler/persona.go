@@ -138,8 +138,14 @@ func (h *PersonaHandler) HandleUnlockPersona(w http.ResponseWriter, r *http.Requ
 			http.Error(w, `{"error":"invalid persona name"}`, http.StatusBadRequest)
 			return
 		}
-		// Derive a deterministic DEK from the master seed using HKDF.
-		dek, err := h.KeyDeriver.DerivePersonaDEK(h.Seed, persona)
+		// CRITICAL-02: Use versioned DEK derivation so v1 and v2 personas get
+		// different keys. This ensures upgraded personas derive a new DEK,
+		// enabling future vault re-encryption during migration.
+		dekVersion, _ := h.Personas.GetDEKVersion(r.Context(), req.Persona)
+		if dekVersion == 0 {
+			dekVersion = 1 // fallback for legacy personas
+		}
+		dek, err := h.KeyDeriver.DerivePersonaDEKVersioned(h.Seed, persona, dekVersion)
 		if err != nil {
 			http.Error(w, `{"error":"failed to derive vault DEK"}`, http.StatusInternalServerError)
 			return

@@ -6,7 +6,7 @@ import { withSWR, CACHE_TTLS } from '../middleware/swr-cache.js'
 import type { GetProfileResponse } from '@/shared/types/api-types.js'
 
 export const GetProfileParams = z.object({
-  did: z.string(),
+  did: z.string().min(8).max(2048).regex(/^did:[a-z]+:/),
 })
 
 export type GetProfileParamsType = z.infer<typeof GetProfileParams>

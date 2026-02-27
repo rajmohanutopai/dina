@@ -19,7 +19,9 @@ No imports from adapter/ — only port protocols and domain types.
 
 from __future__ import annotations
 
+import json
 import re
+from collections import OrderedDict
 from typing import Any
 
 import structlog
@@ -32,6 +34,13 @@ log = structlog.get_logger(__name__)
 
 # Maximum number of items per batch store call to core.
 _BATCH_SIZE = 100
+
+# Maximum dedup IDs tracked per source before eviction (MED-08).
+_MAX_SEEN_PER_SOURCE = 10_000
+
+# MCP payload validation limits (MED-17).
+_MAX_ITEM_SIZE = 256 * 1024  # 256 KB per item
+_MAX_ITEMS_PER_BATCH = 1000
 
 # Sender patterns that indicate automated / no-reply email — Pass 2a.
 _NOREPLY_SENDER_RE = re.compile(
@@ -60,6 +69,31 @@ _FIDUCIARY_KEYWORDS = re.compile(
 )
 
 
+def _validate_mcp_items(raw: object) -> list[dict]:
+    """Validate and sanitize MCP fetch result items (MED-17)."""
+    if not isinstance(raw, dict):
+        log.warning("sync.mcp.invalid_response_type", extra={"type": type(raw).__name__})
+        return []
+    items = raw.get("items", [])
+    if not isinstance(items, list):
+        log.warning("sync.mcp.invalid_items_type", extra={"type": type(items).__name__})
+        return []
+    validated: list[dict] = []
+    for i, item in enumerate(items[:_MAX_ITEMS_PER_BATCH]):
+        if not isinstance(item, dict):
+            log.warning("sync.mcp.invalid_item", extra={"index": i})
+            continue
+        try:
+            if len(json.dumps(item, default=str)) > _MAX_ITEM_SIZE:
+                log.warning("sync.mcp.oversized_item", extra={"index": i})
+                continue
+        except (TypeError, ValueError):
+            log.warning("sync.mcp.unserializable_item", extra={"index": i})
+            continue
+        validated.append(item)
+    return validated
+
+
 class SyncEngine:
     """Orchestrates periodic data ingestion from external sources.
 
@@ -82,8 +116,8 @@ class SyncEngine:
         self._core = core
         self._mcp = mcp
         self._llm = llm
-        # In-memory dedup set for the current session.
-        self._seen_ids: dict[str, set[str]] = {}
+        # In-memory dedup set for the current session (bounded, MED-08).
+        self._seen_ids: dict[str, OrderedDict[str, None]] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -111,8 +145,14 @@ class SyncEngine:
         persona_id = data.get("persona_id", "default")
         item_id = await self._core.store_vault_item(persona_id, data)
 
-        # Track seen ID.
-        self._seen_ids.setdefault(source, set()).add(source_id)
+        # Track seen ID (with bounded eviction — MED-08).
+        seen = self._seen_ids.setdefault(source, OrderedDict())
+        if source_id not in seen:
+            if len(seen) >= _MAX_SEEN_PER_SOURCE:
+                for _ in range(_MAX_SEEN_PER_SOURCE // 10):
+                    if seen:
+                        seen.popitem(last=False)
+            seen[source_id] = None
 
         log.info(
             "sync.ingest.stored",
@@ -131,7 +171,7 @@ class SyncEngine:
         Returns ``True`` if the item has already been ingested.
         """
         # Fast: in-memory check.
-        if source_id in self._seen_ids.get(source, set()):
+        if source_id in self._seen_ids.get(source, OrderedDict()):
             return True
 
         # Slow: ask core.
@@ -140,7 +180,13 @@ class SyncEngine:
                 "default", f"source_id:{source_id}", mode="exact"
             )
             if results:
-                self._seen_ids.setdefault(source, set()).add(source_id)
+                seen = self._seen_ids.setdefault(source, OrderedDict())
+                if source_id not in seen:
+                    if len(seen) >= _MAX_SEEN_PER_SOURCE:
+                        for _ in range(_MAX_SEEN_PER_SOURCE // 10):
+                            if seen:
+                                seen.popitem(last=False)
+                    seen[source_id] = None
                 return True
         except Exception:
             # If search fails, assume not a duplicate (safe default).
@@ -205,10 +251,7 @@ class SyncEngine:
                 f"Failed to fetch from {source}: {type(exc).__name__}"
             ) from exc
 
-        items = fetch_result.get("items", [])
-        if isinstance(fetch_result, dict) and "result" in fetch_result:
-            # Handle mock/simple results that return a plain result.
-            items = fetch_result.get("items", [])
+        items = _validate_mcp_items(fetch_result)
 
         fetched = len(items)
         stored = 0
@@ -218,7 +261,11 @@ class SyncEngine:
         # Step 3-5: Triage and store in batches.
         batch: list[dict] = []
         for item in items:
-            classification = self._triage(item)
+            try:
+                classification = self._triage(item)
+            except Exception as exc:
+                log.warning("sync.triage.error", extra={"error": type(exc).__name__})
+                continue
 
             if classification == "SKIP":
                 skipped += 1
@@ -312,9 +359,15 @@ class SyncEngine:
             # Single retry for transient failures.
             await self._core.store_vault_batch(persona_id, items)
 
-        # Track seen IDs.
+        # Track seen IDs (with bounded eviction — MED-08).
         for item in items:
             source = item.get("source", "unknown")
             source_id = item.get("source_id", "")
             if source_id:
-                self._seen_ids.setdefault(source, set()).add(source_id)
+                seen = self._seen_ids.setdefault(source, OrderedDict())
+                if source_id not in seen:
+                    if len(seen) >= _MAX_SEEN_PER_SOURCE:
+                        for _ in range(_MAX_SEEN_PER_SOURCE // 10):
+                            if seen:
+                                seen.popitem(last=False)
+                    seen[source_id] = None

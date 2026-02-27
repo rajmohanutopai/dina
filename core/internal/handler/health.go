@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"github.com/rajmohanutopai/dina/core/internal/port"
@@ -27,7 +28,8 @@ func (h *HealthHandler) HandleLiveness(w http.ResponseWriter, r *http.Request) {
 // 503 with a reason if the system is not ready to serve traffic.
 func (h *HealthHandler) HandleReadiness(w http.ResponseWriter, r *http.Request) {
 	if err := h.Health.Readiness(); err != nil {
-		http.Error(w, `{"status":"not ready","reason":"`+err.Error()+`"}`, http.StatusServiceUnavailable)
+		slog.Warn("readiness check failed", "error", err)
+		http.Error(w, `{"status":"not ready"}`, http.StatusServiceUnavailable)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

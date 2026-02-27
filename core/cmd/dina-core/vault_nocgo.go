@@ -13,12 +13,19 @@ import (
 // newVaultBackend returns an in-memory vault when CGO is unavailable.
 // This is a development/testing fallback — no encryption at rest.
 func newVaultBackend(dir string) vaultBackend {
-	if os.Getenv("DINA_TEST_MODE") != "true" && os.Getenv("DINA_ALLOW_INSECURE_VAULT") != "1" {
+	if os.Getenv("DINA_ALLOW_INSECURE_VAULT") != "1" {
 		slog.Error("CGO disabled — SQLCipher encryption at rest is unavailable. " +
 			"Set DINA_ALLOW_INSECURE_VAULT=1 to override (NOT recommended for production)")
 		os.Exit(1)
 	}
-	slog.Warn("CGO disabled — using in-memory vault (no encryption at rest)")
+	// SEC-HIGH-09: Block insecure vault in production even with the flag.
+	env := os.Getenv("DINA_ENV")
+	if env != "test" && env != "migration" && env != "development" {
+		slog.Error("DINA_ALLOW_INSECURE_VAULT is not permitted outside test/development/migration",
+			"DINA_ENV", env)
+		os.Exit(1)
+	}
+	slog.Warn("CGO disabled — using in-memory vault (no encryption at rest)", "env", env)
 	return vault.NewManager(dir)
 }
 

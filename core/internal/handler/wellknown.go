@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
+	"github.com/rajmohanutopai/dina/core/internal/adapter/identity"
 	"github.com/rajmohanutopai/dina/core/internal/port"
 )
 
@@ -22,8 +24,9 @@ func (h *WellKnownHandler) HandleATProtoDID(w http.ResponseWriter, r *http.Reque
 
 	// Derive the root DID from the node's signing key.
 	pubKey := h.Signer.PublicKey()
+	// SEC-MED-14: ErrDIDAlreadyExists is expected after first creation; DID is still valid.
 	did, err := h.DID.Create(r.Context(), pubKey)
-	if err != nil {
+	if err != nil && !errors.Is(err, identity.ErrDIDAlreadyExists) {
 		http.Error(w, "DID not available", http.StatusInternalServerError)
 		return
 	}

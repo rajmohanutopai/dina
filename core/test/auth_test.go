@@ -1522,10 +1522,10 @@ func TestAuth_1_5_9_BrainCannotAccessRawVaultFiles(t *testing.T) {
 // §1.6 Concurrent Token Access (race condition safety)
 // --------------------------------------------------------------------------
 
-// TestConcurrentTokenValidation verifies that concurrent RegisterClientToken
+// TestAuth_1_6_9_ConcurrentTokenValidation verifies that concurrent RegisterClientToken
 // and ValidateClientToken calls do not trigger a data race on the internal
 // clientTokens map. Run with `go test -race` to detect races.
-func TestConcurrentTokenValidation(t *testing.T) {
+func TestAuth_1_6_9_ConcurrentTokenValidation(t *testing.T) {
 	// Use a fresh tokenValidator to avoid interference with other tests.
 	tv := auth.NewDefaultTokenValidator(testutil.TestBrainToken)
 

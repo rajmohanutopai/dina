@@ -32,6 +32,10 @@ func (rl *RateLimit) Handler(next http.Handler) http.Handler {
 // It only trusts X-Forwarded-For when the direct connection (RemoteAddr) comes
 // from a known trusted proxy. If TrustedProxies is empty, RemoteAddr is always
 // used — a safe default that prevents IP spoofing via forged XFF headers.
+//
+// SEC-MED-15: Uses rightmost-trusted approach — walks XFF right-to-left,
+// skipping trusted proxies, and returns the first non-trusted IP. This is
+// resistant to attacker-injected leftmost values in XFF.
 func clientIP(r *http.Request, trusted []*net.IPNet) string {
 	remoteIP := r.RemoteAddr
 	// Strip port from RemoteAddr.
@@ -40,12 +44,20 @@ func clientIP(r *http.Request, trusted []*net.IPNet) string {
 	}
 
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" && isTrusted(remoteIP, trusted) {
-		// Use the first (leftmost) IP from XFF when from trusted proxy.
-		parts := strings.SplitN(xff, ",", 2)
-		ip := strings.TrimSpace(parts[0])
-		if ip != "" {
-			return ip
+		// Rightmost-trusted: walk right-to-left through XFF chain.
+		// Each trusted proxy appends the connecting IP to XFF. The rightmost
+		// non-trusted IP is the real client (or the last hop we can verify).
+		parts := strings.Split(xff, ",")
+		for i := len(parts) - 1; i >= 0; i-- {
+			ip := strings.TrimSpace(parts[i])
+			if ip == "" {
+				continue
+			}
+			if !isTrusted(ip, trusted) {
+				return ip
+			}
 		}
+		// All XFF entries are trusted proxies — fall through to remoteIP.
 	}
 	return remoteIP
 }

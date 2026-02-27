@@ -612,10 +612,18 @@ class PresidioScrubber:
         Returns:
             Text with tokens replaced by originals.
         """
-        result = text
+        if not entity_map:
+            return text
+        import re
+        token_map = {}
         for entity in entity_map:
             token = entity.get("token", "")
             value = entity.get("value", "")
             if token and value:
-                result = result.replace(token, value)
-        return result
+                token_map[token] = value
+        if not token_map:
+            return text
+        pattern = re.compile(
+            "|".join(re.escape(t) for t in sorted(token_map, key=len, reverse=True))
+        )
+        return pattern.sub(lambda m: token_map[m.group()], text)

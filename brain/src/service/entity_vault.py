@@ -27,6 +27,7 @@ No imports from adapter/ — only port protocols and domain types.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import structlog
@@ -118,7 +119,7 @@ class EntityVaultService:
         all_entities: list[dict] = []
         scrubbed_messages: list[dict] = []
 
-        for msg in messages:
+        for msg_idx, msg in enumerate(messages):
             text = msg.get("content", "")
             if not text:
                 scrubbed_messages.append(msg)
@@ -132,11 +133,23 @@ class EntityVaultService:
                 log.error(
                     "entity_vault.scrub_failed",
                     error=type(exc).__name__,
-                    # NEVER log the original text — it contains PII
                 )
                 raise PIIScrubError(
                     f"PII scrubbing failed: {type(exc).__name__}"
                 ) from exc
+
+            # Prefix tokens with message index to prevent cross-message collisions.
+            if len(messages) > 1:
+                prefixed_entities = []
+                for ent in entities:
+                    old_token = ent.get("token", "")
+                    if old_token:
+                        new_token = old_token.replace("[", f"[m{msg_idx}_", 1)
+                        scrubbed_text = scrubbed_text.replace(old_token, new_token)
+                        prefixed_entities.append({**ent, "token": new_token})
+                    else:
+                        prefixed_entities.append(ent)
+                entities = prefixed_entities
 
             all_entities.extend(entities)
             scrubbed_messages.append({**msg, "content": scrubbed_text})
@@ -233,10 +246,13 @@ class EntityVaultService:
         str
             Text with all tokens replaced by the original PII values.
         """
-        result = text
-        for token, original in vault.items():
-            result = result.replace(token, original)
-        return result
+        if not vault:
+            return text
+        import re
+        pattern = re.compile(
+            "|".join(re.escape(t) for t in sorted(vault, key=len, reverse=True))
+        )
+        return pattern.sub(lambda m: vault[m.group()], text)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -277,10 +293,10 @@ class EntityVaultService:
             scrub_fn = getattr(
                 self._scrubber, "scrub_patterns_only", self._scrubber.scrub,
             )
-            tier2_scrubbed, tier2_entities = scrub_fn(tier1_scrubbed)
+            tier2_scrubbed, tier2_entities = await asyncio.to_thread(scrub_fn, tier1_scrubbed)
         else:
             # ELEVATED / SENSITIVE: full NER scrubbing.
-            tier2_scrubbed, tier2_entities = self._scrubber.scrub(tier1_scrubbed)
+            tier2_scrubbed, tier2_entities = await asyncio.to_thread(self._scrubber.scrub, tier1_scrubbed)
         combined_entities.extend(tier2_entities)
 
         return tier2_scrubbed, combined_entities

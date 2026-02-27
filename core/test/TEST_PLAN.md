@@ -87,6 +87,20 @@
 | 8 | **[TST-CORE-054]** Compromised brain: cannot bypass PII scrubber | BRAIN_TOKEN + request that should be scrubbed | PII scrubber runs in core pipeline — brain cannot skip it |
 | 9 | **[TST-CORE-055]** Compromised brain: cannot access raw vault files | Brain container filesystem | No SQLite files mounted — brain accesses vault only via core API |
 
+### 1.6 Authorization Middleware (Allowlist Enforcement)
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-1097]** Brain token on /v1/did/sign → forbidden | BRAIN_TOKEN + `POST /v1/did/sign` | 403 Forbidden |
+| 2 | **[TST-CORE-1098]** Client token on /v1/did/sign → allowed | CLIENT_TOKEN + `POST /v1/did/sign` | 200 OK |
+| 3 | **[TST-CORE-1099]** Brain token on /v1/vault/query → allowed | BRAIN_TOKEN + `POST /v1/vault/query` | 200 OK |
+| 4 | **[TST-CORE-1100]** Brain token on admin endpoints → forbidden | BRAIN_TOKEN + admin paths (sign, rotate, backup, unlock, export, import, pair) | 403 Forbidden for all |
+| 5 | **[TST-CORE-1101]** Client token on all endpoints → allowed | CLIENT_TOKEN + all paths (admin + brain-allowed) | 200 OK for all |
+| 6 | **[TST-CORE-1102]** Brain token on allowed non-admin paths → OK | BRAIN_TOKEN + allowed paths (vault, msg, task, pii, did) | 200 OK for all |
+| 7 | **[TST-CORE-1103]** Unauthenticated requests on public paths pass through | No token + `/healthz` | 200 OK (authz middleware passes through) |
+| 8 | **[TST-CORE-1104]** Explicit context token_kind enforcement | Context with brain/client kinds on admin path | Brain → 403, Client → 200 |
+| 9 | **[TST-CORE-1105]** Concurrent token validation thread-safe | 100 goroutines validating concurrently | No data races, all succeed |
+
 ---
 
 ## 2. Key Derivation & Cryptography
@@ -1944,6 +1958,104 @@
 | 1 | **[TST-CORE-1055]** Default brain config core URL is `http://core:8100` | No `DINA_CORE_URL` env | Default port 8100 (not 8300) | CR-10 |
 | 2 | **[TST-CORE-1056]** DINA_OWN_DID env var loaded | `DINA_OWN_DID=did:plc:test` | `Config.OwnDID == "did:plc:test"` | E2E-C |
 | 3 | **[TST-CORE-1057]** DINA_KNOWN_PEERS parsed into peer registry | `DINA_KNOWN_PEERS=did=url=seed,...` | Peers resolvable in DID resolver | E2E-B |
+
+---
+
+### 31.7 Batch 8 Security Fix Verification
+
+> Ingress pipeline resilience, error sanitization, vault validation, CORS, WebSocket upgrader.
+
+| # | Scenario | Input | Expected | Fix |
+|---|----------|-------|----------|-----|
+| 1 | **[TST-CORE-1071]** OnEnvelope error falls back to dead-drop | Envelope with decrypt failure | Spooled to dead-drop, not lost | HIGH-03 |
+| 2 | **[TST-CORE-1072]** ProcessPending re-spools on error | Pending message, decrypt fails | Message re-spooled for retry | HIGH-03 |
+| 3 | **[TST-CORE-1073]** Complete removes in-flight task | Complete task | Task removed from in-flight set | HIGH-06 |
+| 4 | **[TST-CORE-1074]** Sweeper has SetTransport | Sweeper instance | SetTransport method callable | HIGH-13 |
+| 5 | **[TST-CORE-1075]** Error sanitization hides internal details | Handler error with stack trace | Response has generic message, no internals | MED-02 |
+| 6 | **[TST-CORE-1076]** WS components constructable | Instantiate WS hub/handler | No panics, all components created | MED-07 |
+| 7 | **[TST-CORE-1077]** DeleteExpired prunes sentIDs | Outbox with expired messages | sentIDs map cleaned up | MED-08 |
+| 8 | **[TST-CORE-1078]** VaultStore rejects oversized item | Item exceeding max size | Error returned | MED-10 |
+| 9 | **[TST-CORE-1079]** VaultStore rejects invalid type | Item with unknown type | Error returned | MED-10 |
+| 10 | **[TST-CORE-1080]** VaultStoreBatch rejects invalid item | Batch with one invalid item | Error returned | MED-10 |
+| 11 | **[TST-CORE-1081]** VaultStore accepts valid types | Items with all valid types | All stored successfully | MED-10 |
+| 12 | **[TST-CORE-1082]** CORS wildcard sets * no credentials | `AllowOrigin: "*"` | `Access-Control-Allow-Origin: *`, no credentials | LOW-01 |
+| 13 | **[TST-CORE-1083]** CORS whitelist sets credentials | `AllowOrigin: "https://app"` | Origin reflected, credentials allowed | LOW-01 |
+| 14 | **[TST-CORE-1084]** CORS wildcard preflight returns 204 | OPTIONS request | 204 No Content | LOW-01 |
+| 15 | **[TST-CORE-1085]** WS default upgrader secure by default | Default upgrader | Cross-origin rejected | LOW-02 |
+| 16 | **[TST-CORE-1086]** WS InsecureSkipVerify enabled | WithInsecureSkipVerify() | All origins accepted | LOW-02 |
+| 17 | **[TST-CORE-1087]** WS WithOriginPatterns configurable | WithOriginPatterns("*.test") | Matching origins accepted | LOW-02 |
+
+### 31.8 D2D Sender Signature Delivery (Fix 11)
+
+> JSON wrapper format {"c": ciphertext, "s": signature} for D2D transport.
+
+| # | Scenario | Input | Expected | Fix |
+|---|----------|-------|----------|-----|
+| 1 | **[TST-CORE-1088]** SendMessage delivery is JSON wrapper | Send D2D message | Delivered payload is `{"c":"...","s":"..."}` | Fix-11 |
+| 2 | **[TST-CORE-1089]** ProcessInbound JSON wrapper valid sig | Valid wrapper + sig | Message decrypted, sig verified | Fix-11 |
+| 3 | **[TST-CORE-1090]** ProcessInbound JSON wrapper tampered sig | Wrapper with bad sig | ErrInvalidSignature | Fix-11 |
+| 4 | **[TST-CORE-1091]** ProcessInbound JSON wrapper empty sig | Wrapper with empty "s" | Rejected | Fix-11 |
+| 5 | **[TST-CORE-1092]** ProcessInbound raw bytes legacy migration | Raw NaCl + DINA_ALLOW_UNSIGNED_D2D | Accepted with warning | Fix-11 |
+| 6 | **[TST-CORE-1093]** ProcessInbound raw bytes legacy rejected | Raw NaCl, no override | Rejected | Fix-11 |
+| 7 | **[TST-CORE-1094]** ProcessInbound DID spoofing rejected | Valid wrapper, wrong sender DID | Signature verification fails | Fix-11 |
+| 8 | **[TST-CORE-1095]** ProcessOutbox uses JSON wrapper | Outbox retry delivery | Retried payload is JSON wrapper | Fix-11 |
+| 9 | **[TST-CORE-1096]** Full roundtrip send and receive with sig | Encrypt+sign→deliver→decrypt+verify | Message intact, sig verified | Fix-11 |
+
+---
+
+## 32. Security Fix Verification (Batch 5)
+
+> Verification tests for the 5 remaining security fixes from the security audit
+> (Batch 5): nonce cache, transport retention, per-DID rate, pairing cap, well-known.
+
+### 32.1 Nonce Cache Double-Buffer (SEC-MED-11)
+
+> Replaced O(n) per-request nonce eviction with double-buffer generation rotation.
+> Two maps (current/previous), rotated every maxClockSkew interval. Safety valve at 100K entries.
+
+| # | Scenario | Input | Expected | Fix |
+|---|----------|-------|----------|-----|
+| 1 | **[TST-CORE-1058]** Replay signature rejected | Same signature submitted twice | Second call returns "replayed signature" error | SEC-MED-11 |
+| 2 | **[TST-CORE-1059]** Different signatures accepted | Two requests with different bodies | Both accepted (unique signatures) | SEC-MED-11 |
+| 3 | **[TST-CORE-1060]** Double-buffer rotation | Advance clock past maxClockSkew, replay old sig | Rejected (timestamp or nonce — defense in depth) | SEC-MED-11 |
+| 4 | **[TST-CORE-1061]** Safety valve under load | 1000+ unique signatures in rapid succession | All accepted, no panics, system functional | SEC-MED-11 |
+
+### 32.2 Inbound Message Hard Cap (SEC-MED-09)
+
+> Added maxInboundMessages = 10,000 cap in StoreInbound with FIFO eviction.
+
+| # | Scenario | Input | Expected | Fix |
+|---|----------|-------|----------|-----|
+| 1 | **[TST-CORE-1062]** Inbound cap enforced | Store 100 messages | All stored in order, GetInbound returns 100 | SEC-MED-09 |
+| 2 | **[TST-CORE-1063]** Clear inbound works | Store 10 messages, clear | GetInbound returns empty list | SEC-MED-09 |
+
+### 32.3 Per-DID Rate Enforcement (SEC-MED-12)
+
+> Wired CheckDIDRate in onEnvelope callback between ProcessInbound and StoreInbound.
+
+| # | Scenario | Input | Expected | Fix |
+|---|----------|-------|----------|-----|
+| 1 | **[TST-CORE-1064]** Per-DID rate isolation | 5 requests each from DID-A and DID-B | Both pass independently (separate counters) | SEC-MED-12 |
+| 2 | **[TST-CORE-1065]** Rate limit reset after window | Exhaust DID rate, reset counters | DID passes again after reset | SEC-MED-12 |
+
+### 32.4 Pairing Code Hard Cap (SEC-MED-13)
+
+> Added maxPendingCodes=100, immediate delete on use, background purge goroutine.
+
+| # | Scenario | Input | Expected | Fix |
+|---|----------|-------|----------|-----|
+| 1 | **[TST-CORE-1066]** Hard cap enforced | Generate 100 codes, attempt 101st | ErrTooManyPendingCodes on 101st | SEC-MED-13 |
+| 2 | **[TST-CORE-1067]** CompletePairing frees slot | Fill to cap, complete one pairing | Can generate one more code | SEC-MED-13 |
+| 3 | **[TST-CORE-1068]** Purge frees expired slots | Generate 50 codes with 1ms TTL, wait, purge | 50 purged, new codes can be generated | SEC-MED-13 |
+| 4 | **[TST-CORE-1069]** Immediate cleanup on use | Complete pairing, re-attempt same code | "invalid" error (code gone, not "already used") | SEC-MED-13 |
+
+### 32.5 WellKnown Idempotency (SEC-MED-14)
+
+> Handle ErrDIDAlreadyExists as success in /.well-known/atproto-did handler.
+
+| # | Scenario | Input | Expected | Fix |
+|---|----------|-------|----------|-----|
+| 1 | **[TST-CORE-1070]** WellKnown idempotent | Two consecutive GetATProtoDID calls | Both return same DID, no error | SEC-MED-14 |
 
 ---
 

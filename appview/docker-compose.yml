@@ -8,8 +8,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+    # MED-07: DB port not exposed to host by default — use internal Docker network.
+    # For local debugging: docker compose exec postgres psql -U dina -d dina_reputation
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dina -d dina_reputation"]
       interval: 5s
@@ -71,6 +71,7 @@ services:
       DATABASE_POOL_MAX: 20
       JETSTREAM_URL: ws://jetstream:6008
       LOG_LEVEL: info
+      NODE_ENV: production
     depends_on:
       postgres: { condition: service_healthy }
       jetstream: { condition: service_healthy }
@@ -83,6 +84,7 @@ services:
     environment:
       DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_reputation
       LOG_LEVEL: info
+      NODE_ENV: production
     depends_on:
       postgres: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
@@ -95,6 +97,7 @@ services:
       DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_reputation
       NEXT_PUBLIC_BASE_URL: https://reputation.dina.foundation
       PORT: 3000
+      NODE_ENV: production
     ports:
       - "3000:3000"
     depends_on:

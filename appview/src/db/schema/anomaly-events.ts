@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, jsonb, index } from 'drizzle-orm/pg-core'
+import { pgTable, text, timestamp, boolean, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core'
 import { randomBytes } from 'crypto'
 
 function ulid() {
@@ -15,7 +15,9 @@ export const anomalyEvents = pgTable('anomaly_events', {
   details: jsonb('details'),
   severity: text('severity').notNull(),
   resolved: boolean('resolved').default(false),
+  dedupHash: text('dedup_hash'),
 }, (table) => [
   index('anomaly_events_type_idx').on(table.eventType),
   index('anomaly_events_detected_idx').on(table.detectedAt),
+  uniqueIndex('anomaly_dedup_idx').on(table.dedupHash),
 ])

@@ -1549,19 +1549,24 @@ class TestPIIScrubberPipeline:
         scrubbed_query, replacement_map = mock_scrubber.scrub(user_query)
         assert "Rajmohan" not in scrubbed_query
         assert "rajmohan@email.com" not in scrubbed_query
-        assert "[PERSON_1]" in scrubbed_query
-        assert "[EMAIL_1]" in scrubbed_query
 
-        # Step 2: LLM receives the scrubbed query and generates a response
-        # (simulated -- LLM sees tokens, not real PII)
+        # Replacement map captures original PII values (format-agnostic)
+        pii_values = set(replacement_map.values())
+        assert "Rajmohan" in pii_values
+        assert "rajmohan@email.com" in pii_values
+
+        # Step 2: Simulate LLM response using actual tokens from replacement map
+        # (tokens may be [PERSON_1] or faker-generated names — use real tokens)
+        person_token = next(k for k, v in replacement_map.items() if v == "Rajmohan")
+        email_token = next(k for k, v in replacement_map.items() if v == "rajmohan@email.com")
         llm_response = (
-            "I've drafted an email to [PERSON_1] at [EMAIL_1] "
+            f"I've drafted an email to {person_token} at {email_token} "
             "regarding the meeting. Would you like to review it?"
         )
 
         # Verify the LLM response contains tokens, not real PII
-        assert "[PERSON_1]" in llm_response
-        assert "[EMAIL_1]" in llm_response
+        assert person_token in llm_response
+        assert email_token in llm_response
         assert "Rajmohan" not in llm_response
 
         # Step 3: Desanitize the LLM response to restore PII for user display
@@ -1570,8 +1575,8 @@ class TestPIIScrubberPipeline:
         # The user sees natural text with real names
         assert "Rajmohan" in rehydrated
         assert "rajmohan@email.com" in rehydrated
-        assert "[PERSON_1]" not in rehydrated
-        assert "[EMAIL_1]" not in rehydrated
+        assert person_token not in rehydrated
+        assert email_token not in rehydrated
 
         # Round-trip integrity: the rehydrated text reads naturally
         assert "I've drafted an email to Rajmohan" in rehydrated

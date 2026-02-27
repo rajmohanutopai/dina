@@ -65,9 +65,17 @@ type tokenValidator struct {
 	clientTokens map[string]string           // SHA-256(token) hex -> deviceID
 	tokenScopes  map[string]string           // SHA-256(token) hex -> scope ("admin" or "device")
 	deviceKeys   map[string]*devicePubKey    // did:key:z... -> public key entry
-	nonceCache   map[string]time.Time        // signatureHex -> first-seen time (replay protection)
-	clock        port.Clock
-	maxClockSkew time.Duration
+	// SEC-MED-11: Double-buffer nonce cache for O(1) eviction.
+	// Instead of scanning all entries on every request, we maintain two generations:
+	// - nonceCurrent: active generation, all new nonces go here
+	// - noncePrevious: previous generation, checked for duplicates but not modified
+	// Every maxClockSkew interval, previous is discarded, current becomes previous,
+	// and a new empty current is created.
+	nonceCurrent   map[string]struct{}
+	noncePrevious  map[string]struct{}
+	nonceRotatedAt time.Time // when the last rotation happened
+	clock          port.Clock
+	maxClockSkew   time.Duration
 }
 
 // NewTokenValidator creates a TokenValidator.
@@ -84,12 +92,14 @@ func NewTokenValidator(brainToken string, clientTokens map[string]string) *token
 		ct[k] = v
 	}
 	return &tokenValidator{
-		brainToken:   brainToken,
-		clientTokens: ct,
-		tokenScopes:  make(map[string]string),
-		deviceKeys:   make(map[string]*devicePubKey),
-		nonceCache:   make(map[string]time.Time),
-		maxClockSkew: 5 * time.Minute,
+		brainToken:    brainToken,
+		clientTokens:  ct,
+		tokenScopes:   make(map[string]string),
+		deviceKeys:    make(map[string]*devicePubKey),
+		nonceCurrent:  make(map[string]struct{}),
+		noncePrevious: make(map[string]struct{}),
+		nonceRotatedAt: time.Now(),
+		maxClockSkew:  5 * time.Minute,
 	}
 }
 
@@ -281,19 +291,26 @@ func (v *tokenValidator) VerifySignature(
 		return domain.TokenUnknown, "", ErrInvalidToken
 	}
 
-	// 7. Replay check: reject duplicate signatures within the clock skew window.
+	// 7. SEC-MED-11: Replay check using double-buffer generation rotation.
+	// Check both current and previous generations for duplicates (O(1) per request).
+	// Rotate generations every maxClockSkew interval instead of scanning all entries.
 	v.mu.Lock()
-	if _, seen := v.nonceCache[signatureHex]; seen {
+	if _, seen := v.nonceCurrent[signatureHex]; seen {
 		v.mu.Unlock()
 		return domain.TokenUnknown, "", errors.New("replayed signature")
 	}
-	v.nonceCache[signatureHex] = now
-	// Evict old entries outside the clock skew window.
-	cutoff := now.Add(-v.maxClockSkew)
-	for cachedSig, cachedTS := range v.nonceCache {
-		if cachedTS.Before(cutoff) {
-			delete(v.nonceCache, cachedSig)
-		}
+	if _, seen := v.noncePrevious[signatureHex]; seen {
+		v.mu.Unlock()
+		return domain.TokenUnknown, "", errors.New("replayed signature")
+	}
+	v.nonceCurrent[signatureHex] = struct{}{}
+
+	// Rotate generations if the interval has elapsed, or if current exceeds safety valve.
+	const maxNonceEntries = 100_000
+	if now.Sub(v.nonceRotatedAt) > v.maxClockSkew || len(v.nonceCurrent) > maxNonceEntries {
+		v.noncePrevious = v.nonceCurrent
+		v.nonceCurrent = make(map[string]struct{})
+		v.nonceRotatedAt = now
 	}
 	v.mu.Unlock()
 
@@ -1059,7 +1076,7 @@ func (c *adminEndpointChecker) IsAdminEndpoint(path string) bool {
 // AllowedForTokenKind checks if a token kind (brain/client) can access a path.
 // An optional scope parameter differentiates client token privileges:
 //   - "admin": full access to all endpoints (bootstrap token)
-//   - "device": restricted — cannot reach sensitive endpoints (paired devices)
+//   - "device": restricted — allowlist-only access to safe endpoints (paired devices)
 //
 // If no scope is provided, defaults to "admin" for backward compatibility
 // (existing tests call AllowedForTokenKind("client", path) without scope).
@@ -1077,21 +1094,40 @@ func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string, scope ...s
 		if tokenScope == "admin" {
 			return true
 		}
-		// Device-scoped clients: restricted set.
-		// Cannot access signing, rotation, mnemonic, backup, or admin UI.
-		deviceDenied := []string{
-			"/v1/did/sign",
-			"/v1/did/rotate",
-			"/v1/identity/mnemonic",
-			"/v1/vault/backup",
-			"/admin",
+		// Device-scoped clients: explicit allowlist only.
+		// SEC-HIGH-01/10: Paths that need prefix matching (e.g. /v1/vault/item/{id}).
+		deviceAllowedPrefix := []string{
+			"/v1/vault/query",
+			"/v1/vault/store",
+			"/v1/vault/store/batch",
+			"/v1/vault/item",
+			"/v1/vault/kv",
+			"/v1/msg/send",
+			"/v1/msg/inbox",
+			"/v1/did/document",
+			"/v1/did/verify",
+			"/v1/pii/scrub",
+			"/v1/task/ack",
+			"/v1/contacts",
+			"/v1/notify",
+			"/healthz",
+			"/readyz",
+			"/ws",
 		}
-		for _, denied := range deviceDenied {
-			if path == denied || hasPathPrefix(path, denied) {
-				return false
+		for _, allowed := range deviceAllowedPrefix {
+			if path == allowed || hasPathPrefix(path, allowed) {
+				return true
 			}
 		}
-		return true
+		// SEC-HIGH-01/10: Exact-only matches — /v1/did must NOT prefix-match
+		// /v1/did/sign or /v1/did/rotate (admin-only signing endpoints).
+		deviceAllowedExact := []string{"/v1/did"}
+		for _, exact := range deviceAllowedExact {
+			if path == exact {
+				return true
+			}
+		}
+		return false // deny by default
 	}
 	if kind != "brain" {
 		return false

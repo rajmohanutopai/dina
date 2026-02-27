@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -105,13 +106,73 @@ func main() {
 	bootstrapSeed := make([]byte, 32)
 	seedPath := filepath.Join(cfg.VaultPath, "identity_seed.hex")
 	wrappedSeedPath := filepath.Join(cfg.VaultPath, "identity_seed.wrapped")
+	saltPath := filepath.Join(cfg.VaultPath, "identity_seed.salt")
 	seedPassword := os.Getenv("DINA_SEED_PASSWORD")
 
+	// SEC-CRITICAL-03: Early production guard — refuse plaintext seed paths before any file I/O.
+	// DINA_IDENTITY_SEED env var is acceptable (no file written), but no-password paths are not.
+	dinaEnv := os.Getenv("DINA_ENV")
+	isDevOrTest := dinaEnv == "test" || dinaEnv == "development" || dinaEnv == "migration"
+	if seedPassword == "" && os.Getenv("DINA_IDENTITY_SEED") == "" && !isDevOrTest {
+		log.Fatal("SECURITY: DINA_SEED_PASSWORD or DINA_IDENTITY_SEED is required when DINA_ENV is not test/development/migration")
+	}
+
 	// Derive KEK from seed password if configured.
+	// SEC-HIGH-07: Use Argon2id with random persisted salt (not deterministic from path).
 	var seedKEK []byte
+	var legacySHA256KEK []byte // migration path for existing SHA-256 wrapped seeds
+	var saltMigrationNeeded bool
 	if seedPassword != "" {
-		kekHash := sha256.Sum256([]byte(seedPassword))
-		seedKEK = kekHash[:]
+		// Load persisted random salt, or fall back to deterministic salt for migration.
+		var argon2Salt []byte
+		if data, err := os.ReadFile(saltPath); err == nil && len(data) == 16 {
+			argon2Salt = data
+		} else {
+			// No salt file yet. If a wrapped seed exists, it was created with the
+			// old deterministic salt. Use that to unwrap, then migrate to random salt.
+			saltMigrationNeeded = true
+			legacySaltHash := sha256.Sum256([]byte(filepath.Dir(wrappedSeedPath)))
+			argon2Salt = legacySaltHash[:16]
+		}
+		var kekErr error
+		seedKEK, kekErr = argon2Deriver.DeriveKEK(seedPassword, argon2Salt)
+		if kekErr != nil {
+			slog.Error("Failed to derive Argon2id KEK from seed password", "error", kekErr)
+			os.Exit(1)
+		}
+		// Keep SHA-256 KEK for migration from legacy wrapped seeds.
+		legacyHash := sha256.Sum256([]byte(seedPassword))
+		legacySHA256KEK = legacyHash[:]
+	}
+
+	// migrateSalt generates a random salt, re-derives KEK, re-wraps the seed, and persists both.
+	migrateSalt := func(seed, currentKEK []byte) {
+		newSalt := make([]byte, 16)
+		if _, err := crypto_rand.Read(newSalt); err != nil {
+			slog.Error("Failed to generate random Argon2id salt", "error", err)
+			os.Exit(1)
+		}
+		newKEK, err := argon2Deriver.DeriveKEK(seedPassword, newSalt)
+		if err != nil {
+			slog.Error("Failed to derive Argon2id KEK with new salt", "error", err)
+			os.Exit(1)
+		}
+		rewrapped, err := keyWrapper.Wrap(seed, newKEK)
+		if err != nil {
+			slog.Error("Failed to re-wrap seed with new salt KEK", "error", err)
+			os.Exit(1)
+		}
+		os.MkdirAll(filepath.Dir(wrappedSeedPath), 0700)
+		if err := os.WriteFile(wrappedSeedPath, rewrapped, 0600); err != nil {
+			slog.Warn("Could not persist re-wrapped identity seed", "error", err)
+		}
+		if err := os.WriteFile(saltPath, newSalt, 0600); err != nil {
+			slog.Warn("Could not persist Argon2id salt", "error", err)
+		} else {
+			slog.Info("Argon2id salt migrated to random persisted value", "path", saltPath)
+		}
+		// Update seedKEK to the new one for remainder of bootstrap.
+		copy(currentKEK, newKEK)
 	}
 
 	if seedHex := os.Getenv("DINA_IDENTITY_SEED"); seedHex != "" {
@@ -128,17 +189,36 @@ func main() {
 	} else if seedKEK != nil {
 		// Try wrapped seed first.
 		if data, err := os.ReadFile(wrappedSeedPath); err == nil {
+			// SEC-HIGH-07: Try Argon2id KEK first, then fall back to legacy SHA-256 KEK.
 			unwrapped, err := keyWrapper.Unwrap(data, seedKEK)
 			if err != nil {
-				slog.Error("Failed to unwrap identity seed — wrong DINA_SEED_PASSWORD?", "error", err)
-				os.Exit(1)
+				// Migration path: try legacy SHA-256 KEK.
+				unwrapped, err = keyWrapper.Unwrap(data, legacySHA256KEK)
+				if err != nil {
+					slog.Error("Failed to unwrap identity seed — wrong DINA_SEED_PASSWORD?", "error", err)
+					os.Exit(1)
+				}
+				if len(unwrapped) != 32 {
+					slog.Error("Unwrapped seed has wrong length", "got_bytes", len(unwrapped))
+					os.Exit(1)
+				}
+				copy(bootstrapSeed, unwrapped)
+				// Re-wrap with Argon2id KEK + random salt.
+				migrateSalt(bootstrapSeed, seedKEK)
+				slog.Info("seed KEK upgraded from SHA-256 to Argon2id with random salt", "path", wrappedSeedPath)
+			} else {
+				if len(unwrapped) != 32 {
+					slog.Error("Unwrapped seed has wrong length", "got_bytes", len(unwrapped))
+					os.Exit(1)
+				}
+				copy(bootstrapSeed, unwrapped)
+				// SEC-HIGH-07: If unwrapped with deterministic salt, migrate to random salt.
+				if saltMigrationNeeded {
+					migrateSalt(bootstrapSeed, seedKEK)
+				} else {
+					slog.Info("Loaded wrapped identity seed", "path", wrappedSeedPath)
+				}
 			}
-			if len(unwrapped) != 32 {
-				slog.Error("Unwrapped seed has wrong length", "got_bytes", len(unwrapped))
-				os.Exit(1)
-			}
-			copy(bootstrapSeed, unwrapped)
-			slog.Info("Loaded wrapped identity seed", "path", wrappedSeedPath)
 		} else if data, err := os.ReadFile(seedPath); err == nil {
 			// Auto-migrate from plaintext .hex to .wrapped
 			decoded, err := hex.DecodeString(strings.TrimSpace(string(data)))
@@ -147,56 +227,48 @@ func main() {
 				os.Exit(1)
 			}
 			copy(bootstrapSeed, decoded)
-			// Wrap and persist
-			wrapped, err := keyWrapper.Wrap(bootstrapSeed, seedKEK)
-			if err != nil {
-				slog.Error("Failed to wrap identity seed during migration", "error", err)
-				os.Exit(1)
-			}
-			os.MkdirAll(filepath.Dir(wrappedSeedPath), 0700)
-			if err := os.WriteFile(wrappedSeedPath, wrapped, 0600); err != nil {
-				slog.Warn("Could not persist wrapped identity seed", "error", err)
+			// Wrap with random salt (new installation path, skip deterministic salt entirely).
+			migrateSalt(bootstrapSeed, seedKEK)
+			// SEC-HIGH-06: Delete plaintext .hex file after successful migration.
+			if err := os.Remove(seedPath); err != nil {
+				slog.Warn("Could not delete plaintext seed file after migration", "path", seedPath, "error", err)
 			} else {
-				slog.Info("Migrated identity seed from plaintext to AES-GCM wrapped", "path", wrappedSeedPath)
+				slog.Info("Deleted plaintext seed file after migration to wrapped", "path", seedPath)
 			}
 		} else {
-			// Generate new seed and wrap it
+			// Generate new seed and wrap it with random salt.
 			if _, err := crypto_rand.Read(bootstrapSeed); err != nil {
 				slog.Error("Failed to generate random seed", "error", err)
 				os.Exit(1)
 			}
-			wrapped, err := keyWrapper.Wrap(bootstrapSeed, seedKEK)
-			if err != nil {
-				slog.Error("Failed to wrap new identity seed", "error", err)
+			migrateSalt(bootstrapSeed, seedKEK)
+			slog.Info("Generated and wrapped new identity seed with random salt", "path", wrappedSeedPath)
+		}
+	} else if isDevOrTest {
+		// SEC-CRITICAL-03: Plaintext seed paths only allowed in dev/test/migration.
+		// The early production guard above already prevents reaching here in production.
+		if data, err := os.ReadFile(seedPath); err == nil {
+			decoded, err := hex.DecodeString(strings.TrimSpace(string(data)))
+			if err != nil || len(decoded) != 32 {
+				slog.Error("Corrupt identity seed file — refusing to start", "path", seedPath, "error", err)
 				os.Exit(1)
 			}
-			os.MkdirAll(filepath.Dir(wrappedSeedPath), 0700)
-			if err := os.WriteFile(wrappedSeedPath, wrapped, 0600); err != nil {
-				slog.Warn("Could not persist wrapped identity seed", "error", err)
+			copy(bootstrapSeed, decoded)
+			slog.Warn("Identity seed loaded from PLAINTEXT file (dev/test only)", "path", seedPath)
+		} else {
+			if _, err := crypto_rand.Read(bootstrapSeed); err != nil {
+				slog.Error("Failed to generate random seed", "error", err)
+				os.Exit(1)
+			}
+			os.MkdirAll(filepath.Dir(seedPath), 0700)
+			if err := os.WriteFile(seedPath, []byte(hex.EncodeToString(bootstrapSeed)), 0600); err != nil {
+				slog.Warn("Could not persist identity seed", "error", err)
 			} else {
-				slog.Info("Generated and wrapped new identity seed", "path", wrappedSeedPath)
+				slog.Warn("Generated new identity seed in PLAINTEXT (dev/test only)", "path", seedPath)
 			}
 		}
-	} else if data, err := os.ReadFile(seedPath); err == nil {
-		decoded, err := hex.DecodeString(strings.TrimSpace(string(data)))
-		if err != nil || len(decoded) != 32 {
-			slog.Error("Corrupt identity seed file — refusing to start", "path", seedPath, "error", err)
-			os.Exit(1)
-		}
-		copy(bootstrapSeed, decoded)
-		slog.Warn("Identity seed loaded from PLAINTEXT file — set DINA_SEED_PASSWORD for AES-GCM wrapping", "path", seedPath)
-	} else {
-		if _, err := crypto_rand.Read(bootstrapSeed); err != nil {
-			slog.Error("Failed to generate random seed", "error", err)
-			os.Exit(1)
-		}
-		os.MkdirAll(filepath.Dir(seedPath), 0700)
-		if err := os.WriteFile(seedPath, []byte(hex.EncodeToString(bootstrapSeed)), 0600); err != nil {
-			slog.Warn("Could not persist identity seed", "error", err)
-		} else {
-			slog.Warn("Generated new identity seed in PLAINTEXT — set DINA_SEED_PASSWORD for AES-GCM wrapping", "path", seedPath)
-		}
 	}
+
 	// Verify seed is not all zeros.
 	allZero := true
 	for _, b := range bootstrapSeed {
@@ -229,8 +301,20 @@ func main() {
 	// 5. Identity
 	didMgr := identity.NewDIDManager(cfg.VaultPath)
 	personaMgr := identity.NewPersonaManager()
+	// CRITICAL-01/02: Enable file-based persona persistence.
+	personaStatePath := filepath.Join(cfg.VaultPath, "persona_state.json")
+	if err := personaMgr.SetPersistPath(personaStatePath); err != nil {
+		slog.Warn("Could not load persona state from disk — starting fresh", "error", err)
+	}
 	personaMgr.VerifyPassphrase = func(storedHash, passphrase string) (bool, error) {
 		return auth.NewPassphraseVerifier(storedHash).Verify(passphrase)
+	}
+	personaMgr.HashUpgrader = func(passphrase string) (string, error) {
+		salt := make([]byte, 16)
+		if _, err := crypto_rand.Read(salt); err != nil {
+			return "", err
+		}
+		return auth.HashPassphrase(passphrase, salt)
 	}
 	personaMgr.OnLock = func(personaID string) {
 		// Strip "persona-" prefix to get the bare name for VaultManager.
@@ -399,6 +483,7 @@ func main() {
 	)
 	transportSvc.SetDeliverer(transporter)
 	transportSvc.SetVerifier(signer)
+	transportSvc.SetEgress(gkSvc) // SEC-HIGH-04: enforce egress policy on outbound D2D
 	transportSvc.SetRecipientKeys(
 		signingPrivKey.Public().(ed25519.PublicKey),
 		[]byte(signingPrivKey),
@@ -419,6 +504,11 @@ func main() {
 	)
 	ingressSweeper.SetConverter(converter)
 	ingressSweeper.SetOnMessage(func(msg *domain.DinaMessage) {
+		// SEC-MED-12: Enforce per-DID rate limit on sweeper path (same as fast path).
+		if msg.From != "" && !inboxMgr.CheckDIDRate(msg.From) {
+			slog.Warn("sweeper: per-DID rate limit exceeded", "did", msg.From)
+			return
+		}
 		transportSvc.StoreInbound(msg)
 	})
 	ingressSweeper.SetTransport(transportSvc)
@@ -428,6 +518,11 @@ func main() {
 		if err != nil {
 			slog.Warn("ingress: fast-path decrypt failed", "error", err)
 			return err
+		}
+		// SEC-MED-12: Per-DID rate enforcement before storing.
+		if msg.From != "" && !inboxMgr.CheckDIDRate(msg.From) {
+			slog.Warn("ingress: per-DID rate limit exceeded", "did", msg.From)
+			return fmt.Errorf("per-DID rate limit exceeded for %s", msg.From)
 		}
 		transportSvc.StoreInbound(msg)
 		slog.Info("ingress: fast-path message decrypted and stored", "type", msg.Type)
@@ -457,6 +552,49 @@ func main() {
 			} else if n > 0 {
 				slog.Info("outbox ProcessOutbox delivered messages", "count", n)
 			}
+		}
+	}()
+
+	// SEC-HIGH-08: Purge replay cache periodically (24h TTL matches dead-drop/sweeper model).
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			n := transportSvc.PurgeReplayCache(24 * time.Hour)
+			if n > 0 {
+				slog.Debug("replay cache purged", "count", n)
+			}
+		}
+	}()
+
+	// SEC-MED-09: Periodic outbox/transport retention cleanup.
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			if n, err := outboxMgr.DeleteExpired(86400); err == nil && n > 0 {
+				slog.Info("outbox retention cleanup", "deleted", n)
+			}
+		}
+	}()
+
+	// SEC-MED-13: Purge expired pairing codes periodically.
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			if n := pairer.PurgeExpiredCodes(); n > 0 {
+				slog.Info("purged expired pairing codes", "count", n)
+			}
+		}
+	}()
+
+	// SEC-MED-12: Reset per-DID rate limit counters every minute (sliding window).
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			inboxMgr.ResetRateLimits()
 		}
 	}()
 
@@ -494,10 +632,14 @@ func main() {
 
 	// ---------- Construct handlers ----------
 
-	// MED-09: Use a separate internal token for brain proxy communication.
+	// SEC-HIGH-03: Use a separate internal token for brain proxy communication.
 	internalToken := os.Getenv("DINA_INTERNAL_TOKEN")
 	if internalToken == "" {
-		slog.Warn("SECURITY: DINA_INTERNAL_TOKEN not set — falling back to client token for brain proxy")
+		env := os.Getenv("DINA_ENV")
+		if env != "test" && env != "development" {
+			log.Fatal("SECURITY: DINA_INTERNAL_TOKEN must be set in production (required for brain proxy)")
+		}
+		slog.Warn("SECURITY: DINA_INTERNAL_TOKEN not set — admin proxy will return 503")
 	}
 
 	healthH := &handler.HealthHandler{Health: healthChecker}
@@ -595,7 +737,12 @@ func main() {
 
 	// WebSocket endpoint (CORE-MED-07)
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		wsUpgrader := ws.NewUpgrader(ws.WithInsecureSkipVerify())
+		// SEC-HIGH-05: Use origin patterns from config instead of insecure skip.
+		var wsOpts []ws.UpgraderOption
+		if cfg.AllowedOrigins != "" {
+			wsOpts = append(wsOpts, ws.WithOriginPatterns(strings.Split(cfg.AllowedOrigins, ",")...))
+		}
+		wsUpgrader := ws.NewUpgrader(wsOpts...)
 		wsTokenValidator := func(token string) (string, error) {
 			deviceID, ok := tokenValidator.ValidateClientToken(token)
 			if !ok {
@@ -635,13 +782,13 @@ func main() {
 
 	authMW := &middleware.Auth{Tokens: tokenValidator, ScopeResolver: tokenValidator}
 	authzMW := middleware.NewAuthzMiddleware(auth.NewAdminEndpointChecker())
-	rateLimitMW := &middleware.RateLimit{Limiter: rateLimiter}
+	rateLimitMW := &middleware.RateLimit{Limiter: rateLimiter, TrustedProxies: parseCIDRs(cfg.TrustedProxies)}
 	recovery := &middleware.Recovery{}
 	logging := &middleware.Logging{}
 	timeout := &middleware.Timeout{Duration: 30 * time.Second}
-	cors := &middleware.CORS{AllowOrigin: "*"}
+	cors := &middleware.CORS{AllowOrigin: cfg.AllowedOrigins}
 
-	// Chain: CORS → Recovery → Logging → RateLimit → Auth → Authz → Timeout → Router
+	// Chain: CORS → BodyLimit → Recovery → Logging → RateLimit → Auth → Authz → Timeout → Router
 	var chain http.Handler = mux
 	chain = timeout.Handler(chain)
 	chain = authzMW(chain)
@@ -649,6 +796,7 @@ func main() {
 	chain = rateLimitMW.Handler(chain)
 	chain = logging.Handler(chain)
 	chain = recovery.Handler(chain)
+	chain = middleware.BodyLimit(1 << 20)(chain) // 1 MB default body limit
 	chain = cors.Handler(chain)
 
 	// ---------- Start server ----------
@@ -693,6 +841,28 @@ func main() {
 }
 
 // routeByMethod dispatches GET to getHandler, POST/PUT/DELETE to mutateHandler.
+// parseCIDRs parses a comma-separated list of CIDR strings into net.IPNet slices.
+// Invalid CIDRs are logged and skipped.
+func parseCIDRs(csv string) []*net.IPNet {
+	if csv == "" {
+		return nil
+	}
+	var nets []*net.IPNet
+	for _, s := range strings.Split(csv, ",") {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		_, cidr, err := net.ParseCIDR(s)
+		if err != nil {
+			slog.Warn("ignoring invalid trusted proxy CIDR", "cidr", s, "error", err)
+			continue
+		}
+		nets = append(nets, cidr)
+	}
+	return nets
+}
+
 func routeByMethod(getHandler, mutateHandler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {

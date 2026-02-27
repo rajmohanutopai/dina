@@ -25,6 +25,10 @@ class PersonaLockedError(DinaError):
     """
 
 
+class AuthorizationError(DinaError):
+    """Core returned HTTP 403 for authorization/policy reasons (not persona lock)."""
+
+
 class CoreUnreachableError(DinaError):
     """Core HTTP endpoint is not responding.
 
