@@ -524,7 +524,7 @@ docker-compose.yml (4 containers — llama optional via --profile local-llm):
 │  ┌──────────────────────────────────────────────────┐    │
 │  │  dina-pds (AT Protocol PDS)                       │    │
 │  │  Port 2583 (external) — Relay crawling             │    │
-│  │  Reputation Graph records only                     │    │
+│  │  Trust Network records only                     │    │
 │  │  Core pushes signed records here                   │    │
 │  └──────────────────────────────────────────────────┘    │
 │                                                           │
@@ -1344,7 +1344,7 @@ No spaCy NER on log lines — wrong layer, expensive, unreliable. PII scrubbing 
 
 ### Eight Layers
 
-The layers are numbered 0-7 but the diagram reads **top-down** (7 → 0), like the OSI model — Layer 7 is closest to the user, Layer 0 is the cryptographic foundation. Layer 3 (Reputation Graph) sits to the side because it's a shared data layer that multiple upper layers query, not a step in the linear flow.
+The layers are numbered 0-7 but the diagram reads **top-down** (7 → 0), like the OSI model — Layer 7 is closest to the user, Layer 0 is the cryptographic foundation. Layer 3 (Trust Network) sits to the side because it's a shared data layer that multiple upper layers query, not a step in the linear flow.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -1493,7 +1493,7 @@ BIP-39 Mnemonic (24 words = 256-bit entropy)
         └── m/9999'/N'  → /persona/custom/*      (user-defined compartments)
 ```
 
-Each persona's Ed25519 keypair is used for **signing** — the persona's private key signs DIDComm messages and Reputation Graph entries.
+Each persona's Ed25519 keypair is used for **signing** — the persona's private key signs DIDComm messages and Trust Network entries.
 
 **Vault encryption** uses per-persona DEKs — each persona file has its own 256-bit SQLCipher key:
 
@@ -1628,7 +1628,7 @@ Trust Score = f(
     ring_level,           // 1, 2, or 3
     time_alive,           // age of this Dina in days
     transaction_anchors,  // verified money moved (count, volume, span)
-    outcome_data,         // purchase outcomes fed to Reputation Graph
+    outcome_data,         // purchase outcomes fed to Trust Network
     peer_attestations,    // other verified Dinas who vouch
     credential_count      // Ring 3 credentials linked
 )
@@ -1817,7 +1817,7 @@ Anonymized outcome record created:
     dina_age_days: 730
 }
         ↓
-Signed with persona key, submitted to Reputation Graph
+Signed with persona key, submitted to Trust Network
 (No user identity. No product name. Just category + outcome.)
 ```
 
@@ -2834,7 +2834,7 @@ What Dina does NOT send:
 
 ### Bot Communication Protocol
 
-Bots register with the Reputation Graph and expose a standard API:
+Bots register with the Trust Network and expose a standard API:
 
 ```
 POST /query
@@ -2868,7 +2868,7 @@ Response:
         }
     ],
     "bot_signature": "...",           // cryptographic signature for verification
-    "bot_did": "did:plc:..."           // bot's identity in Reputation Graph
+    "bot_did": "did:plc:..."           // bot's identity in Trust Network
 }
 ```
 
@@ -2900,7 +2900,7 @@ Dina tracks bot scores locally. If a bot's accuracy drops below a threshold, Din
 How does Dina find bots in the first place?
 
 - **Phase 1:** No bot registry needed. Brain delegates research to OpenClaw (web search). Users can configure preferred specialist bots manually.
-- **Phase 2:** Decentralized bot registry on the Reputation Graph. Bots self-register, and their reputation determines visibility.
+- **Phase 2:** Decentralized bot registry on the Trust Network. Bots self-register, and their reputation determines visibility.
 - **Phase 3:** Bot-to-bot recommendations. "This query is outside my domain. Try the Medical Bot at did:plc:..."
 
 ---
@@ -3318,13 +3318,13 @@ After 5 retries (~3 hours): nudge to user: *"I couldn't reach Sancho's Dina. His
 
 ---
 
-## Layer 3: Reputation Graph
+## Layer 3: Trust Network
 
 Distributed system for verified product reviews, expert attestations, and outcome data. **Built on AT Protocol** — reputation data is inherently public and benefits from federation, Merkle tree integrity, and ecosystem discoverability.
 
 ### Architecture
 
-The Reputation Graph is NOT a single database. It's a distributed system built on AT Protocol's federated infrastructure:
+The Trust Network is NOT a single database. It's a distributed system built on AT Protocol's federated infrastructure:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -3372,7 +3372,7 @@ The Reputation Graph is NOT a single database. It's a distributed system built o
 | **Custom schemas** | Lexicons let us define `com.dina.reputation.attestation`, `com.dina.reputation.outcome`, etc. |
 | **Identity** | `did:plc` is native to AT Protocol — zero integration work |
 | **Deletion** | Users can delete records from their repo. Signed tombstones prevent unauthorized deletion. |
-| **Ecosystem** | Any AT Protocol AppView can index Dina's Reputation Graph. Handles (`alice.dina.host`) provide human-readable discovery. |
+| **Ecosystem** | Any AT Protocol AppView can index Dina's Trust Network. Handles (`alice.dina.host`) provide human-readable discovery. |
 | **Implementations** | Go (`bluesky-social/indigo`), Python (`MarshalX/atproto`), Rust (`atrium-rs`), TypeScript (official reference) |
 
 ### Custom Lexicons
@@ -3757,7 +3757,7 @@ The hash reveals nothing about the content. Privacy is preserved. When you delet
 
 ### Cold Start Strategy: Tool First, Network Second
 
-The Reputation Graph needs scale to be useful. With 10 users, there's no statistically meaningful outcome data. **Phase 1 value must not depend on the Reputation Graph.**
+The Trust Network needs scale to be useful. With 10 users, there's no statistically meaningful outcome data. **Phase 1 value must not depend on the Trust Network.**
 
 | Phase | How Dina answers "What's the best office chair?" |
 |-------|--------------------------------------------------|
@@ -3766,7 +3766,7 @@ The Reputation Graph needs scale to be useful. With 10 users, there's no statist
 
 The transition is gradual and invisible to the user. One day the nudge includes network data alongside web results. No flag day, no "activate reputation" moment.
 
-**There is no "Review Bot" to build.** No scraping infrastructure, no crawlers, no YouTube/Reddit/RTINGS ingestion pipeline. In Phase 1, Dina researches the public web for you using her Brain + OpenClaw — the same way a human would Google things, but with your personal context applied. The Reputation Graph activates when it activates.
+**There is no "Review Bot" to build.** No scraping infrastructure, no crawlers, no YouTube/Reddit/RTINGS ingestion pipeline. In Phase 1, Dina researches the public web for you using her Brain + OpenClaw — the same way a human would Google things, but with your personal context applied. The Trust Network activates when it activates.
 
 ---
 
@@ -3848,7 +3848,7 @@ User enters PIN / biometric
         ↓
 Payment app sends confirmation (SMS or callback)
         ↓
-Dina records outcome in Tier 3 for future Reputation Graph contribution
+Dina records outcome in Tier 3 for future Trust Network contribution
 ```
 
 **Dina never sees:** Bank balance, UPI PIN, card numbers, payment credentials. She generates the link. The OS handles the rest.
@@ -3927,11 +3927,11 @@ On reboot, the loop starts, finds the next reminder, sleeps until it's due. If t
 
 **Emotional state awareness (Phase 2+).** Before approving large purchases or high-stakes communications, a lightweight classifier assesses user state (time of day, communication tone, spending pattern deviation). Flags "user may be impulsive" and adds cooling-off suggestion.
 
-**Content verification (Phase 2+).** C2PA/Content Credentials for media provenance. Cross-reference claims against Reputation Graph. Requires significant ML infrastructure.
+**Content verification (Phase 2+).** C2PA/Content Credentials for media provenance. Cross-reference claims against Trust Network. Requires significant ML infrastructure.
 
 **Anti-Her safeguard (Phase 2+).** If interaction patterns suggest user is treating Dina as emotional replacement for human relationships, Dina redirects: "You haven't talked to Sancho in a while." Heuristic-based, tracks frequency/content/time-of-day. Architectural enforcement of the Four Laws.
 
-**Open Economy (Phase 3+).** Dina-to-Dina negotiation via ONDC, UPI/crypto payments. Cart Handover extends to discovery and direct commerce. Requires mature Reputation Graph and commerce protocol.
+**Open Economy (Phase 3+).** Dina-to-Dina negotiation via ONDC, UPI/crypto payments. Cart Handover extends to discovery and direct commerce. Requires mature Trust Network and commerce protocol.
 
 ---
 
@@ -4395,7 +4395,7 @@ Blockchain has exactly one role: **timestamp anchoring.** Federated servers repo
 
 ## Architectural Decision: AT Protocol — Where It Fits and Where It Doesn't
 
-**Decision: AT Protocol for the Reputation Graph (public layer). Independent protocol for messaging and vault (private layer).**
+**Decision: AT Protocol for the Trust Network (public layer). Independent protocol for messaging and vault (private layer).**
 
 Dina uses `did:plc` (Bluesky's DID method) for identity. The question was whether to adopt the full AT Protocol stack (PDS, Relay, AppView, Lexicons) for more than just identity.
 
@@ -4403,16 +4403,16 @@ Dina uses `did:plc` (Bluesky's DID method) for identity. The question was whethe
 
 AT Protocol is a federated protocol for public, signed, replicated data. Each user's data lives in a Personal Data Server (PDS) as a signed Merkle tree of records. Relays aggregate data from many PDSes into a unified firehose. AppViews consume the firehose and build application-specific indexes.
 
-### Where it fits: Reputation Graph
+### Where it fits: Trust Network
 
-The Reputation Graph is inherently public data — expert attestations, anonymized outcome reports, bot scores. AT Protocol is a natural fit:
+The Trust Network is inherently public data — expert attestations, anonymized outcome reports, bot scores. AT Protocol is a natural fit:
 
 - **Public data → public protocol.** Reputation records should be visible, discoverable, and verifiable. AT Protocol repos are all of these.
 - **Signed Merkle repos.** Every record is part of a cryptographically signed tree. Operators can censor but not forge. Replication defeats censorship.
 - **Federation for free.** Relays replicate data across the network. No need to build custom federation, sync, or discovery.
 - **`did:plc` native.** Dina's identity method is AT Protocol's identity method. Zero integration work.
 - **Custom Lexicons.** Schema-enforced records: `com.dina.reputation.attestation`, `com.dina.reputation.outcome`, `com.dina.reputation.bot`.
-- **Ecosystem.** Any AT Protocol AppView can index Dina's Reputation Graph. Handles (`alice.dina.host`) provide human-readable discovery.
+- **Ecosystem.** Any AT Protocol AppView can index Dina's Trust Network. Handles (`alice.dina.host`) provide human-readable discovery.
 
 ### Where it doesn't fit: Messaging and Vault
 
@@ -4436,7 +4436,7 @@ Home Node (default — 3 containers, PDS always bundled):
 │                          Port 443 (external), Port 8100 (internal)
 ├── dina-brain (Python)  ← Private layer: reasoning, admin UI, agent orchestration
 │                          Port 8200 (unified: /api/* brain, /admin/* admin UI)
-└── dina-pds             ← Public layer: AT Protocol PDS for Reputation Graph only
+└── dina-pds             ← Public layer: AT Protocol PDS for Trust Network only
                             Port 2583 (external, relay crawling)
 
 Home Node (with local LLM — 4 containers):
@@ -4507,9 +4507,9 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 | DID resolution | PLC Directory (`did:plc`), `did:web` escape hatch | `did:plc`: proven at 30M+ scale, key rotation, Go implementation (`bluesky-social/indigo`). `did:web`: sovereignty escape if PLC Directory becomes adversarial — rotation op transitions transparently. |
 | Push to clients | FCM/APNs (Phase 1), UnifiedPush (Phase 2) | Wake clients when Home Node has updates |
 | Backup | Any blob storage (S3, Backblaze, NAS) | Encrypted snapshots of Home Node vault |
-| Reputation Graph (PDS) | AT Protocol PDS (bundled by default — Split Sovereignty). Custom Lexicons (`com.dina.reputation.*`). Signed tombstones for deletion. | PDS always in docker-compose (port 2583). Type A variation: home users behind CGNAT push to external PDS (`pds.dina.host`). See Layer 3 "PDS Hosting: Split Sovereignty". |
-| Reputation Graph (AppView) | Go + PostgreSQL 16 (`pg_trgm`). `indigo` firehose consumer. Phase 1: single monolith (0–1M users). Phase 3: sharded cluster (ScyllaDB + Kafka + K8s). | Read-only indexer. Signature verification on every record. Three-layer trust-but-verify: cryptographic proof, consensus check, direct PDS spot-check. AppView is a commodity — anyone can run one. See Layer 3 "Reputation AppView". |
-| Reputation Graph (timestamps) | L2 Merkle root anchoring (Phase 3). Base or Polygon. | Provable "this existed before this date" for dispute resolution. Not needed until real money flows through the system. |
+| Trust Network (PDS) | AT Protocol PDS (bundled by default — Split Sovereignty). Custom Lexicons (`com.dina.reputation.*`). Signed tombstones for deletion. | PDS always in docker-compose (port 2583). Type A variation: home users behind CGNAT push to external PDS (`pds.dina.host`). See Layer 3 "PDS Hosting: Split Sovereignty". |
+| Trust Network (AppView) | Go + PostgreSQL 16 (`pg_trgm`). `indigo` firehose consumer. Phase 1: single monolith (0–1M users). Phase 3: sharded cluster (ScyllaDB + Kafka + K8s). | Read-only indexer. Signature verification on every record. Three-layer trust-but-verify: cryptographic proof, consensus check, direct PDS spot-check. AppView is a commodity — anyone can run one. See Layer 3 "Reputation AppView". |
+| Trust Network (timestamps) | L2 Merkle root anchoring (Phase 3). Base or Polygon. | Provable "this existed before this date" for dispute resolution. Not needed until real money flows through the system. |
 | ZKP | Semaphore V4 (PSE/Ethereum Foundation) | Production-proven (World ID), off-chain proof generation |
 | Serialization | JSON (Phase 1), MessagePack or Protobuf (Phase 2) | JSON is debuggable and sufficient for core↔brain traffic volume. Binary serialization deferred until profiling shows it matters. |
 | Containerization | Docker + docker-compose | Single-command Home Node deployment: `docker compose up -d` |
@@ -4537,12 +4537,12 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 
 ### Home Node Deployment
 
-The Home Node runs three containers by default, orchestrated by docker-compose: dina-core (Go/net/http — vault, keys, NaCl messaging, admin proxy), dina-brain (Python/Google ADK — agent reasoning + admin UI), and dina-pds (AT Protocol PDS — public Reputation Graph). An optional fourth container (llama — llama.cpp, local LLM) is available via `--profile local-llm`. No separate database server, no Kubernetes.
+The Home Node runs three containers by default, orchestrated by docker-compose: dina-core (Go/net/http — vault, keys, NaCl messaging, admin proxy), dina-brain (Python/Google ADK — agent reasoning + admin UI), and dina-pds (AT Protocol PDS — public Trust Network). An optional fourth container (llama — llama.cpp, local LLM) is available via `--profile local-llm`. No separate database server, no Kubernetes.
 
 **The docker-compose stack:**
 - **dina-core**: Go binary + SQLCipher vaults (`identity.sqlite` + per-persona `.sqlite` files) — **private layer**. Ports: 443 (external), 8100 (internal). Reverse-proxies `/admin` to brain:8200/admin. Browser authentication gateway (session cookie → Bearer token translation).
 - **dina-brain**: Python + Google ADK agent loop + Admin UI — **private layer**. Port: 8200 (unified — `/api/*` brain API, `/admin/*` admin UI, `/healthz` health).
-- **dina-pds**: AT Protocol PDS for Reputation Graph — **public layer** (reputation data only). Port: 2583 (external).
+- **dina-pds**: AT Protocol PDS for Trust Network — **public layer** (reputation data only). Port: 2583 (external).
 - **llama** (optional): llama.cpp + Gemma 3n E4B GGUF — **private layer**. Port: 8080 (internal). Enabled via `--profile local-llm`.
 - Output: NaCl messaging endpoint + WebSocket API for clients + Admin UI + AT Protocol firehose
 - Deployment: `docker compose up -d` (3 containers) or `docker compose --profile local-llm up -d` (4 containers)
@@ -5259,7 +5259,7 @@ When the Home Node has new data (ingested email, incoming Dina-to-Dina message, 
 | **Kubernetes** | Container orchestration for distributed services. Dina's Home Node is 3-4 containers on one machine. `docker compose up` is the entire deployment. |
 | **GraphQL** | API layer for complex multi-consumer APIs. Dina has one consumer: you. Direct SQLite queries from the agent loop. |
 | **Elasticsearch** | Distributed search cluster. SQLite FTS5 + sqlite-vec handles search for a single user's data. |
-| **Blockchain (L1)** | Gas costs, latency, complexity. Immutability violates sovereignty (right to delete). Federated servers + signed tombstones handle the Reputation Graph. Only use case is L2 Merkle root hash anchoring for timestamp proofs (Phase 3). |
+| **Blockchain (L1)** | Gas costs, latency, complexity. Immutability violates sovereignty (right to delete). Federated servers + signed tombstones handle the Trust Network. Only use case is L2 Merkle root hash anchoring for timestamp proofs (Phase 3). |
 | **CRDTs / Automerge** | Designed for peer-to-peer conflict resolution. With a Home Node as source of truth, client-server sync is simpler and sufficient. May reconsider for Phase 3 if we add collaborative features. |
 
 Guiding principle: **one user, a handful of containers, one machine, per-persona encrypted vaults, one always-on endpoint.**
@@ -5276,7 +5276,7 @@ Guiding principle: **one user, a handful of containers, one machine, per-persona
 
 **4. ZKP for government ID.** No government currently offers ZKP-native verification. The first implementation will be a compromise (local verification, attestation stored).
 
-**5. Reputation Graph cold start.** Phase 1 doesn't depend on it — Brain uses web search via OpenClaw. Outcome data needs scale. The Graph activates gradually as the network grows. This is a years-long build.
+**5. Trust Network cold start.** Phase 1 doesn't depend on it — Brain uses web search via OpenClaw. Outcome data needs scale. The Graph activates gradually as the network grows. This is a years-long build.
 
 **6. iOS restrictions.** iOS client will always be more limited for device-local ingestion (no background services equivalent). But with Home Node running server-side API connectors (Gmail, Calendar, Contacts, Telegram), iOS users get full functionality for all API-based data sources.
 
@@ -5298,7 +5298,7 @@ The architecture described above is now the active implementation in this reposi
 |-----------|------|------|
 | dina-core | `core/` | Go sovereign kernel: vault, keys, auth, gatekeeper, transport |
 | dina-brain | `brain/` | Python intelligence/orchestration: reasoning, sync, admin API/UI |
-| dina-pds | `docker-compose*.yml`, `data/pds/` | AT Protocol PDS for reputation graph records |
+| dina-pds | `docker-compose*.yml`, `data/pds/` | AT Protocol PDS for trust network records |
 | appview | `appview/` | Reputation AppView implementation |
 | cli | `cli/` | Client interface for interacting with running services |
 

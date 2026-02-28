@@ -29,7 +29,7 @@ What Dina does NOT send:
 
 ### Bot Communication Protocol
 
-Bots register with the Reputation Graph and expose a standard API:
+Bots register with the Trust Network and expose a standard API:
 
 ```
 POST /query
@@ -63,7 +63,7 @@ Response:
         }
     ],
     "bot_signature": "...",           // cryptographic signature for verification
-    "bot_did": "did:plc:..."           // bot's identity in Reputation Graph
+    "bot_did": "did:plc:..."           // bot's identity in Trust Network
 }
 ```
 
@@ -95,7 +95,7 @@ Dina tracks bot scores locally. If a bot's accuracy drops below a threshold, Din
 How does Dina find bots in the first place?
 
 - **Phase 1:** No bot registry needed. Brain delegates research to OpenClaw (web search). Users can configure preferred specialist bots manually.
-- **Phase 2:** Decentralized bot registry on the Reputation Graph. Bots self-register, and their reputation determines visibility.
+- **Phase 2:** Decentralized bot registry on the Trust Network. Bots self-register, and their reputation determines visibility.
 - **Phase 3:** Bot-to-bot recommendations. "This query is outside my domain. Try the Medical Bot at did:plc:..."
 
 ---

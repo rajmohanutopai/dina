@@ -1881,7 +1881,7 @@ async function resolveCanonicalChain(
 
 ### Why Dina Agents Must Populate Tier 1
 
-The 3-tier strategy is correct, but the *default experience* should be Tier 1 — not Tier 2. If most attestations arrive as name-only, the reputation graph becomes a forest of disconnected author-scoped islands. That's safe but useless.
+The 3-tier strategy is correct, but the *default experience* should be Tier 1 — not Tier 2. If most attestations arrive as name-only, the trust network becomes a forest of disconnected author-scoped islands. That's safe but useless.
 
 The fix isn't to weaken Tier 2 isolation — it's to make Tier 1 the overwhelmingly common path. **Dina agents should be doing the resolution work:**
 

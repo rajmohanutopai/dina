@@ -27,7 +27,7 @@ Blockchain has exactly one role: **timestamp anchoring.** Federated servers repo
 
 ## Architectural Decision: AT Protocol — Where It Fits and Where It Doesn't
 
-**Decision: AT Protocol for the Reputation Graph (public layer). Independent protocol for messaging and vault (private layer).**
+**Decision: AT Protocol for the Trust Network (public layer). Independent protocol for messaging and vault (private layer).**
 
 Dina uses `did:plc` (Bluesky's DID method) for identity. The question was whether to adopt the full AT Protocol stack (PDS, Relay, AppView, Lexicons) for more than just identity.
 
@@ -35,16 +35,16 @@ Dina uses `did:plc` (Bluesky's DID method) for identity. The question was whethe
 
 AT Protocol is a federated protocol for public, signed, replicated data. Each user's data lives in a Personal Data Server (PDS) as a signed Merkle tree of records. Relays aggregate data from many PDSes into a unified firehose. AppViews consume the firehose and build application-specific indexes.
 
-### Where it fits: Reputation Graph
+### Where it fits: Trust Network
 
-The Reputation Graph is inherently public data — expert attestations, anonymized outcome reports, bot scores. AT Protocol is a natural fit:
+The Trust Network is inherently public data — expert attestations, anonymized outcome reports, bot scores. AT Protocol is a natural fit:
 
 - **Public data → public protocol.** Reputation records should be visible, discoverable, and verifiable. AT Protocol repos are all of these.
 - **Signed Merkle repos.** Every record is part of a cryptographically signed tree. Operators can censor but not forge. Replication defeats censorship.
 - **Federation for free.** Relays replicate data across the network. No need to build custom federation, sync, or discovery.
 - **`did:plc` native.** Dina's identity method is AT Protocol's identity method. Zero integration work.
 - **Custom Lexicons.** Schema-enforced records: `com.dina.reputation.attestation`, `com.dina.reputation.outcome`, `com.dina.reputation.bot`.
-- **Ecosystem.** Any AT Protocol AppView can index Dina's Reputation Graph. Handles (`alice.dina.host`) provide human-readable discovery.
+- **Ecosystem.** Any AT Protocol AppView can index Dina's Trust Network. Handles (`alice.dina.host`) provide human-readable discovery.
 
 ### Where it doesn't fit: Messaging and Vault
 
@@ -68,7 +68,7 @@ Home Node (default — 3 containers, PDS always bundled):
 │                          Port 443 (external), Port 8100 (internal)
 ├── dina-brain (Python)  ← Private layer: reasoning, admin UI, agent orchestration
 │                          Port 8200 (unified: /api/* brain, /admin/* admin UI)
-└── dina-pds             ← Public layer: AT Protocol PDS for Reputation Graph only
+└── dina-pds             ← Public layer: AT Protocol PDS for Trust Network only
                             Port 2583 (external, relay crawling)
 
 Home Node (with local LLM — 4 containers):

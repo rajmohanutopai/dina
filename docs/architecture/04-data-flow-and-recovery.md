@@ -501,7 +501,7 @@ No spaCy NER on log lines — wrong layer, expensive, unreliable. PII scrubbing 
 
 ### Eight Layers
 
-The layers are numbered 0-7 but the diagram reads **top-down** (7 → 0), like the OSI model — Layer 7 is closest to the user, Layer 0 is the cryptographic foundation. Layer 3 (Reputation Graph) sits to the side because it's a shared data layer that multiple upper layers query, not a step in the linear flow.
+The layers are numbered 0-7 but the diagram reads **top-down** (7 → 0), like the OSI model — Layer 7 is closest to the user, Layer 0 is the cryptographic foundation. Layer 3 (Trust Network) sits to the side because it's a shared data layer that multiple upper layers query, not a step in the linear flow.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐

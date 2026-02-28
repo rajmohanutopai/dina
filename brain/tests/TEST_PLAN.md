@@ -122,7 +122,7 @@
 | 2 | **[TST-BRAIN-054]** Crypto payment intent | Brain recommends purchase, crypto option | Intent: `ethereum:0x1234...?value=0.05&data=0x...` — stored in Tier 4 |
 | 3 | **[TST-BRAIN-055]** Web checkout intent | Brain recommends purchase, web cart | Intent: `https://chairmaker.com/checkout?cart=DINA-CART-12345` — stored in Tier 4 |
 | 4 | **[TST-BRAIN-056]** Dina never sees credentials | Inspect all data flows during cart handover | Brain never receives or stores: bank balance, UPI PIN, card numbers, payment credentials |
-| 5 | **[TST-BRAIN-057]** Outcome recording | User completes purchase → confirmation SMS/callback | Brain records outcome in Tier 3 vault for future Reputation Graph contribution |
+| 5 | **[TST-BRAIN-057]** Outcome recording | User completes purchase → confirmation SMS/callback | Brain records outcome in Tier 3 vault for future Trust Network contribution |
 | 6 | **[TST-BRAIN-058]** Cart handover expires | Payment intent not acted on within 12 hours | Staging item auto-expires (shorter TTL than drafts) |
 | 7 | **[TST-BRAIN-059]** Outcome follow-up question timing | 4 weeks after cart handover purchase | Brain asks: "How's that chair?" — follow-up timing configurable, triggers outcome data collection flow |
 | 8 | **[TST-BRAIN-060]** Outcome inference without explicit response | User continues using product, no explicit feedback | Brain infers outcome from usage signals (e.g. no return, product still mentioned) → outcome: `"still_using_6_months"` — doesn't require explicit user confirmation |
@@ -552,7 +552,7 @@
 |---|----------|-------|----------|
 | 1 | **[TST-BRAIN-226]** Route to specialist agent | "Review this contract" | Routed to legal review MCP agent |
 | 2 | **[TST-BRAIN-227]** Route by capability | Task requires image analysis | Routed to vision-capable agent |
-| 3 | **[TST-BRAIN-228]** Route by reputation | Multiple agents available | Highest Reputation Graph score selected |
+| 3 | **[TST-BRAIN-228]** Route by reputation | Multiple agents available | Highest Trust Network score selected |
 | 4 | **[TST-BRAIN-229]** No suitable agent | Task requiring unavailable capability | Fallback to local LLM or inform user |
 | 5 | **[TST-BRAIN-230]** Agent timeout | MCP agent doesn't respond in 30s | Timeout, try next agent or fail gracefully |
 | 6 | **[TST-BRAIN-408]** Reputation AppView query | Brain needs product recommendation | Brain queries `GET /v1/reputation?did=...` from Reputation AppView API — returns product scores, expert attestations |

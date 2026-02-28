@@ -599,7 +599,7 @@ class MockRelay:
 
 
 class MockAppView:
-    """Reputation Graph query service."""
+    """Trust Network query service."""
 
     def __init__(self) -> None:
         self.product_scores: dict[str, dict] = {}

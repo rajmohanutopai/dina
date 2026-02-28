@@ -17,14 +17,14 @@ Dina also solves a critical safety gap: autonomous agents today operate without 
 Every design decision must honour these:
 
 1. **Silence First** — Never push content. Only speak when the human asked, or when silence would cause harm. Three priority levels: Fiduciary (interrupt — silence causes harm), Solicited (notify — user asked), Engagement (save for briefing — silence merely misses an opportunity).
-2. **Verified Truth** — Rank by reputation, not by ad spend. The Reputation Graph replaces marketing.
+2. **Verified Truth** — Rank by reputation, not by ad spend. The Trust Network replaces marketing.
 3. **Absolute Loyalty** — The human holds the encryption keys. The agent cannot access the data without them. Loyalty is enforced by math, not by a privacy policy.
 4. **Never Replace a Human** — Dina never simulates emotional intimacy. When the human needs connection, Dina connects them to other humans — never to herself.
 
 ### Core Principles
 
 - **Anti-Her:** Dina must never become an emotional crutch. She connects you to humans, never replaces them. If she senses loneliness, she nudges toward friends, not deeper engagement.
-- **Thin Agent:** Dina is an orchestrator, not an omniscient brain. She delegates to specialist bots (review, legal, recipe) and routes based on Reputation Graph scores. Raw data never leaves the Home Node — external bots get questions only.
+- **Thin Agent:** Dina is an orchestrator, not an omniscient brain. She delegates to specialist bots (review, legal, recipe) and routes based on Trust Network scores. Raw data never leaves the Home Node — external bots get questions only.
 - **Sovereign Identity:** One root identity (user holds the keys), multiple **personas** as separate cryptographic compartments. A seller sees "verified buyer, wants a chair." The government sees full legal identity. No external system can cross compartments.
 - **Trust Rings:** Unverified → Verified (ZKP, no real name needed) → Verified + Actioned (transactions, time, peer attestation). Trust is a composite function: `f(identity anchors, transaction history, outcome data, peer attestations, time)`.
 - **Deep Link Default:** Dina credits sources — "MKBHD says the battery is bad, here's the timestamp" — not just extracts. Creators get traffic, users get truth. Configurable, but the default is fair.
@@ -39,7 +39,7 @@ The long-term architecture is a **Home Node** (always-on, encrypted, sovereign):
 - **Python Brain** (sidecar, Google ADK) — LLM reasoning, agent logic
 - **SQLite + SQLCipher** — encrypted local structured storage (one file per persona)
 - **Dina-to-Dina protocol** — P2P communication between sovereign agents
-- **Reputation Graph** — expert knowledge + passive outcome data from millions of Dinas
+- **Trust Network** — expert knowledge + passive outcome data from millions of Dinas
 - **PII Scrubber** — raw data never leaves the Home Node
 
 ### The Full Vision (Phases)

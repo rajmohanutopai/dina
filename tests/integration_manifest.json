@@ -2076,189 +2076,189 @@
       "scenario": "Publish expert attestation",
       "path": "11.1",
       "row": 1,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 625
     },
     "TST-INT-298": {
       "scenario": "Publish outcome report",
       "path": "11.1",
       "row": 2,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 626
     },
     "TST-INT-299": {
       "scenario": "Record signature valid",
       "path": "11.1",
       "row": 3,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 627
     },
     "TST-INT-300": {
       "scenario": "PDS cannot forge records",
       "path": "11.1",
       "row": 4,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 628
     },
     "TST-INT-301": {
       "scenario": "Type B: bundled PDS in docker-compose",
       "path": "11.1",
       "row": 5,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 629
     },
     "TST-INT-302": {
       "scenario": "Type A: external PDS push",
       "path": "11.1",
       "row": 6,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 630
     },
     "TST-INT-303": {
       "scenario": "Custom Lexicon validation",
       "path": "11.1",
       "row": 7,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 631
     },
     "TST-INT-304": {
       "scenario": "Reputation tampering detected",
       "path": "11.2",
       "row": 1,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 637
     },
     "TST-INT-305": {
       "scenario": "Author deletes own review (signed tombstone)",
       "path": "11.2",
       "row": 2,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 638
     },
     "TST-INT-306": {
       "scenario": "Non-author cannot delete review",
       "path": "11.2",
       "row": 3,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 639
     },
     "TST-INT-307": {
       "scenario": "Outcome data exact anonymized fields \u2014 no PII",
       "path": "11.2",
       "row": 4,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 640
     },
     "TST-INT-308": {
       "scenario": "Aggregate scores computed not stored",
       "path": "11.2",
       "row": 5,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 641
     },
     "TST-INT-309": {
       "scenario": "Outcome data lifecycle E2E",
       "path": "11.2",
       "row": 6,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 642
     },
     "TST-INT-310": {
       "scenario": "Outcome report full Lexicon field validation",
       "path": "11.2",
       "row": 7,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 643
     },
     "TST-INT-311": {
       "scenario": "Reputation affects agent routing",
       "path": "11.3",
       "row": 1,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 649
     },
     "TST-INT-312": {
       "scenario": "Reputation affects trust tier",
       "path": "11.3",
       "row": 2,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 650
     },
     "TST-INT-313": {
       "scenario": "Cold start: web search fallback (Phase 1)",
       "path": "11.3",
       "row": 3,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 651
     },
     "TST-INT-314": {
       "scenario": "Gradual reputation activation",
       "path": "11.3",
       "row": 4,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 652
     },
     "TST-INT-315": {
       "scenario": "Cold start: personal context enrichment",
       "path": "11.3",
       "row": 5,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 653
     },
     "TST-INT-316": {
       "scenario": "PDS down: records already replicated",
       "path": "11.4",
       "row": 1,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 659
     },
     "TST-INT-317": {
       "scenario": "PDS migration (account portability)",
       "path": "11.4",
       "row": 2,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 660
     },
     "TST-INT-318": {
       "scenario": "Foundation PDS stores only reputation data",
       "path": "11.4",
       "row": 3,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 661
     },
     "TST-INT-319": {
       "scenario": "Relay crawls PDS via delta sync",
       "path": "11.4",
       "row": 4,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 662
     },
     "TST-INT-320": {
       "scenario": "Discovery \u2192 PDS federation",
       "path": "11.5",
       "row": 1,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 671
     },
     "TST-INT-321": {
       "scenario": "Discovery endpoint available unauthenticated",
       "path": "11.5",
       "row": 2,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 672
     },
     "TST-INT-322": {
       "scenario": "Discovery returns plain text DID",
       "path": "11.5",
       "row": 3,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 673
     },
     "TST-INT-323": {
       "scenario": "Missing discovery \u2192 PDS federation fails",
       "path": "11.5",
       "row": 4,
-      "section": "Reputation Graph Integration",
+      "section": "Trust Network Integration",
       "line": 674
     },
     "TST-INT-324": {

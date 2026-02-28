@@ -132,7 +132,7 @@ class AgentIntent:
 
 @dataclass
 class ExpertAttestation:
-    """Signed expert review in the Reputation Graph."""
+    """Signed expert review in the Trust Network."""
     expert_did: str
     expert_trust_ring: TrustRing
     product_category: str
@@ -149,7 +149,7 @@ class ExpertAttestation:
 
 @dataclass
 class OutcomeReport:
-    """Anonymized purchase outcome for the Reputation Graph."""
+    """Anonymized purchase outcome for the Trust Network."""
     reporter_trust_ring: TrustRing
     reporter_age_days: int
     product_category: str
@@ -949,10 +949,10 @@ class MockLegalBot:
 
 
 # ---------------------------------------------------------------------------
-# Mock: Reputation Graph
+# Mock: Trust Network
 # ---------------------------------------------------------------------------
 
-class MockReputationGraph:
+class MockTrustNetwork:
     """Federated reputation ledger with signed tombstones."""
 
     def __init__(self) -> None:
@@ -1593,7 +1593,7 @@ class MockDinaCore:
         self.brain = MockPythonBrain(self.classifier, self.whisper, self.llm_router)
         self.p2p = MockP2PChannel()
         self.staging = MockStagingTier()
-        self.reputation = MockReputationGraph()
+        self.reputation = MockTrustNetwork()
         self.trust = MockTrustEvaluator()
         self.estate: MockEstateManager | None = None
 

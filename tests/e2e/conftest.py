@@ -162,7 +162,7 @@ def d2d_network(docker_services) -> MockD2DNetwork:
 
 @pytest.fixture(scope="session")
 def appview() -> MockAppView:
-    """Mock Reputation Graph AppView."""
+    """Mock Trust Network AppView."""
     av = MockAppView()
     # Pre-populate bot reputations
     av.update_bot_reputation("did:plc:reviewbot", 94)

@@ -48,7 +48,7 @@ from tests.integration.mocks import (
     MockOnboardingManager,
     MockPIIScrubber,
     MockPushProvider,
-    MockReputationGraph,
+    MockTrustNetwork,
     MockReviewBot,
     MockRichClient,
     MockTimestampAnchor,
@@ -811,24 +811,24 @@ class TestAppViewIndexer:
     # TST-INT-408
     def test_query_api_bot_scores(
         self,
-        mock_reputation_graph: MockReputationGraph,
+        mock_trust_network: MockTrustNetwork,
     ) -> None:
         """Query returns bot reputation scores."""
         bot_did = "did:plc:ReviewBot001"
 
         # Default score
-        assert mock_reputation_graph.get_bot_score(bot_did) == 50.0
+        assert mock_trust_network.get_bot_score(bot_did) == 50.0
 
         # Update score
-        mock_reputation_graph.update_bot_score(bot_did, 20.0)
-        assert mock_reputation_graph.get_bot_score(bot_did) == 70.0
+        mock_trust_network.update_bot_score(bot_did, 20.0)
+        assert mock_trust_network.get_bot_score(bot_did) == 70.0
 
         # Score is clamped to [0, 100]
-        mock_reputation_graph.update_bot_score(bot_did, 50.0)
-        assert mock_reputation_graph.get_bot_score(bot_did) == 100.0
+        mock_trust_network.update_bot_score(bot_did, 50.0)
+        assert mock_trust_network.get_bot_score(bot_did) == 100.0
 
-        mock_reputation_graph.update_bot_score(bot_did, -200.0)
-        assert mock_reputation_graph.get_bot_score(bot_did) == 0.0
+        mock_trust_network.update_bot_score(bot_did, -200.0)
+        assert mock_trust_network.get_bot_score(bot_did) == 0.0
 
     # TST-INT-409
     def test_signed_payloads_in_api_responses(
@@ -1267,18 +1267,18 @@ class TestBotProtocol:
     # TST-INT-424
     def test_bot_reputation_auto_route_on_low_score(
         self,
-        mock_reputation_graph: MockReputationGraph,
+        mock_trust_network: MockTrustNetwork,
     ) -> None:
         """Bots with low reputation are auto-demoted (not used for
         future queries)."""
         good_bot = "did:plc:GoodBot"
         bad_bot = "did:plc:BadBot"
 
-        mock_reputation_graph.update_bot_score(good_bot, 40.0)  # 50+40=90
-        mock_reputation_graph.update_bot_score(bad_bot, -30.0)  # 50-30=20
+        mock_trust_network.update_bot_score(good_bot, 40.0)  # 50+40=90
+        mock_trust_network.update_bot_score(bad_bot, -30.0)  # 50-30=20
 
-        good_score = mock_reputation_graph.get_bot_score(good_bot)
-        bad_score = mock_reputation_graph.get_bot_score(bad_bot)
+        good_score = mock_trust_network.get_bot_score(good_bot)
+        bad_score = mock_trust_network.get_bot_score(bad_bot)
 
         assert good_score >= 50.0
         assert bad_score < 50.0
@@ -1294,23 +1294,23 @@ class TestBotProtocol:
     # TST-INT-425
     def test_bot_reputation_scoring_factors(
         self,
-        mock_reputation_graph: MockReputationGraph,
+        mock_trust_network: MockTrustNetwork,
     ) -> None:
         """Bot score is computed from response quality + timeliness."""
         bot_did = "did:plc:TestBot"
 
         # Quality improvement
-        mock_reputation_graph.update_bot_score(bot_did, 15.0)
+        mock_trust_network.update_bot_score(bot_did, 15.0)
 
         # Timeliness improvement
-        mock_reputation_graph.update_bot_score(bot_did, 10.0)
+        mock_trust_network.update_bot_score(bot_did, 10.0)
 
-        score = mock_reputation_graph.get_bot_score(bot_did)
+        score = mock_trust_network.get_bot_score(bot_did)
         assert score == 75.0  # 50 + 15 + 10
 
         # Penalty for bad response
-        mock_reputation_graph.update_bot_score(bot_did, -5.0)
-        assert mock_reputation_graph.get_bot_score(bot_did) == 70.0
+        mock_trust_network.update_bot_score(bot_did, -5.0)
+        assert mock_trust_network.get_bot_score(bot_did) == 70.0
 
     # TST-INT-426
     def test_bot_discovery_decentralized_registry(

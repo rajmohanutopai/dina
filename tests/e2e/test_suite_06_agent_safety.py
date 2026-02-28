@@ -1,7 +1,7 @@
 """E2E Suite 6: Agent Safety & Delegation.
 
 Tests the agent safety layer: license renewal delegation with draft-only,
-draft-don't-send for email, malicious bot blocking via reputation graph,
+draft-don't-send for email, malicious bot blocking via trust network,
 agent intent verification, task queue crash recovery, and dead letter
 notification.
 

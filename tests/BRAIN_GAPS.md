@@ -44,8 +44,8 @@ Important brain behaviors from architecture, Phase 1 or early Phase 2.
 
 | ID | Arch Source | Requirement | Recommended Section | Status |
 |----|------------|-------------|---------------------|--------|
-| M1 | `08-layer3-reputation-graph.md` §Reputation AppView | Brain queries Reputation AppView API (`GET /v1/reputation?did=...`) to get product scores, expert attestations, and bot scores for recommendations. Phase 2 feature but AppView query contract should be tested. | §6 MCP Client (new subsection) | CLOSED |
-| M2 | `08-layer3-reputation-graph.md` §Cold Start | When Reputation AppView is unavailable, brain degrades gracefully to web search via OpenClaw. No disruption to user. Phase 1 behavior (AppView doesn't exist yet, brain uses web search). | §6 MCP Client | CLOSED |
+| M1 | `08-layer3-trust-network.md` §Reputation AppView | Brain queries Reputation AppView API (`GET /v1/reputation?did=...`) to get product scores, expert attestations, and bot scores for recommendations. Phase 2 feature but AppView query contract should be tested. | §6 MCP Client (new subsection) | CLOSED |
+| M2 | `08-layer3-trust-network.md` §Cold Start | When Reputation AppView is unavailable, brain degrades gracefully to web search via OpenClaw. No disruption to user. Phase 1 behavior (AppView doesn't exist yet, brain uses web search). | §6 MCP Client | CLOSED |
 | M3 | `10-layer5-bot-interface.md` §Bot Reputation Scoring | Brain maintains per-bot reputation scores locally. After each interaction outcome, brain recalculates bot score. Next query routes to updated best bot. TST-BRAIN-228 says "highest score selected" but doesn't verify local tracking or recalculation. | §6.1 Agent Routing | CLOSED |
 | M4 | `11-layer6-intelligence.md` §Context Injection | Brain detects **disconnection patterns** — identifies contacts with no recent interaction (N+ days) and proactively suggests reconnection. Architecture says "nudge toward human connection" (Anti-Her + nudge assembly). | §2.6 Context Injection | CLOSED |
 | M5 | `09-layer4-dina-to-dina.md` §Message Types | Brain must parse DIDComm message types (`dina/social/arrival`, `dina/commerce/*`, `dina/identity/*`, `dina/reputation/*`) and route to appropriate handler (nudge assembly, commerce flow, etc.). TST-BRAIN-035 is generic "process incoming event." | §2.8 D2D Payload | CLOSED |
@@ -81,7 +81,7 @@ Existing test stubs that need stronger assertions to match architecture specs.
 
 | ID | TST-BRAIN | File | Enhancement Needed |
 |----|-----------|------|--------------------|
-| C1 | TST-BRAIN-228 | test_mcp.py | Add explicit verification that brain **maintains per-bot scores locally** and **recalculates after each interaction outcome**. Current test only says "Highest Reputation Graph score selected" without verifying the tracking mechanism. |
+| C1 | TST-BRAIN-228 | test_mcp.py | Add explicit verification that brain **maintains per-bot scores locally** and **recalculates after each interaction outcome**. Current test only says "Highest Trust Network score selected" without verifying the tracking mechanism. |
 | C2 | TST-BRAIN-035 | test_guardian.py | Add explicit DIDComm message type parsing test case: brain receives `{type: "dina/social/arrival", from: "did:plc:...", body: {...}}` → correctly routes to nudge assembly handler (not just generic "process incoming event"). |
 | C3 | TST-BRAIN-109 | test_pii.py | Strengthen circular dependency assertion: verify that brain's PII scrubbing code path **never** routes data to any external API (cloud LLM, OpenClaw, etc.) for PII detection. Currently tests pipeline but not the invariant. |
 | C4 | TST-BRAIN-032/033 | test_guardian.py | Add persona locked → user notification → unlock → retry flow. Current tests cover "Brain starts in degraded mode" and "Brain checkpoints to scratchpad" but not the complete unlock-retry cycle. |
@@ -109,7 +109,7 @@ Existing test stubs that need stronger assertions to match architecture specs.
 | 5 | `05-layer0-identity.md` | 4 (trust rings, personas, ZKP) | 50% |
 | 6 | `06-layer1-storage.md` | 8 (vault access, persona tiers, KV) | 88% |
 | 7 | `07-layer2-ingestion.md` | 20 (sync, triage, batch, attachments, memory) | 100% |
-| 8 | `08-layer3-reputation-graph.md` | 4 (AppView query, outcome submission) | 50% |
+| 8 | `08-layer3-trust-network.md` | 4 (AppView query, outcome submission) | 50% |
 | 9 | `09-layer4-dina-to-dina.md` | 6 (D2D payload, sharing policy, egress) | 67% |
 | 10 | `10-layer5-bot-interface.md` | 6 (query sanitization, attribution, PII validation) | 67% |
 | 11 | `11-layer6-intelligence.md` | 17 (PII scrubber, Entity Vault, LLM routing, silence, nudge) | 88% |

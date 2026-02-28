@@ -676,7 +676,7 @@ _E2E_SECTION_MAP: dict[int, str] = {
     9: "Digital Estate",
     10: "Resilience & Recovery",
     11: "Multi-Device Sync",
-    12: "Reputation Graph",
+    12: "Trust Network",
     13: "Security & Adversarial",
     14: "Agentic LLM Behavior",
     15: "CLI Ed25519 Request Signing",

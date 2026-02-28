@@ -42,7 +42,7 @@ PREFIX = "TST-INT"
 #   8. Digital Estate (SSS Custodian Recovery) (8)
 #   9. Ingestion-to-Vault Pipeline (9.1-9.4)
 #  10. Data Flow Patterns (10.1-10.5)
-#  11. Reputation Graph Integration (11.1-11.5)
+#  11. Trust Network Integration (11.1-11.5)
 #  12. Upgrade & Migration (12)
 #  13. Performance & Load Tests (13.1-13.3)
 #  14. Chaos Engineering (14)
@@ -66,7 +66,7 @@ FILE_TO_SECTIONS = {
     "test_draft_dont_send.py": ["10.5"],
     "test_cart_handover.py": ["10.5"],
     "test_deep_links.py": ["10.5"],
-    "test_reputation_graph.py": ["11.1", "11.2", "11.3"],
+    "test_trust_network.py": ["11.1", "11.2", "11.3"],
     "test_trust_rings.py": ["7.4", "11.3"],
     "test_digital_estate.py": ["8"],
     "test_anti_her.py": ["10.1"],

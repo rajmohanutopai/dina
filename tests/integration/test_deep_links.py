@@ -14,7 +14,7 @@ import pytest
 from tests.integration.mocks import (
     ExpertAttestation,
     MockDinaCore,
-    MockReputationGraph,
+    MockTrustNetwork,
     MockReviewBot,
     TrustRing,
 )
@@ -146,7 +146,7 @@ class TestDeepLinkOverride:
         self,
         mock_dina: MockDinaCore,
         mock_review_bot: MockReviewBot,
-        mock_reputation_graph: MockReputationGraph,
+        mock_trust_network: MockTrustNetwork,
     ):
         """User prefers video sources over text. Deep links from video
         experts are listed first."""

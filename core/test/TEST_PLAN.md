@@ -276,7 +276,7 @@
 | 9 | **[TST-CORE-158]** Locked persona: file is opaque bytes | Inspect vault file when persona locked | DEK not in RAM — no application bug, no brain compromise, no code path can read it |
 | 10 | **[TST-CORE-159]** Selective unlock with TTL | Unlock `/financial` for 15 min | Core derives DEK → opens file → serves queries → closes after TTL → zeroes DEK from RAM |
 | 11 | **[TST-CORE-160]** Persona Ed25519 key signs DIDComm (NOT root key) | Persona `/social` sends DIDComm message | Signature verifies against `/social` persona pubkey (`m/9999'/3'`), NOT root pubkey (`m/9999'/0'`) — verify both: signature valid with persona key, signature INVALID with root key |
-| 12 | **[TST-CORE-161]** Persona Ed25519 key signs Reputation Graph entries (NOT root key) | Persona publishes attestation | Signed by persona key (e.g., `/consumer` at `m/9999'/1'`), verifiable against persona's DID Document — root key cannot sign on behalf of persona |
+| 12 | **[TST-CORE-161]** Persona Ed25519 key signs Trust Network entries (NOT root key) | Persona publishes attestation | Signed by persona key (e.g., `/consumer` at `m/9999'/1'`), verifiable against persona's DID Document — root key cannot sign on behalf of persona |
 | 13 | **[TST-CORE-162]** Even Dina's code cannot cross compartments | Code audit | No code path reads persona B data using persona A's context without root key + logged operation |
 
 ### 3.3 Persona Gatekeeper (Tier Enforcement)

@@ -518,8 +518,8 @@ func TestIdentity_3_2_11_PersonaKeySignsDIDComm(t *testing.T) {
 }
 
 // TST-CORE-161
-func TestIdentity_3_2_12_PersonaKeySignsReputationGraph(t *testing.T) {
-	// Architecture test: verify persona key is used for reputation graph entries.
+func TestIdentity_3_2_12_PersonaKeySignsTrustNetwork(t *testing.T) {
+	// Architecture test: verify persona key is used for trust network entries.
 	src, err := os.ReadFile("../internal/adapter/identity/identity.go")
 	if err != nil {
 		t.Fatalf("cannot read identity source: %v", err)
@@ -527,7 +527,7 @@ func TestIdentity_3_2_12_PersonaKeySignsReputationGraph(t *testing.T) {
 	content := string(src)
 	// Ed25519 keypairs are used for all signing operations.
 	if !strings.Contains(content, "ed25519") {
-		t.Fatal("identity adapter must use ed25519 for reputation graph signing")
+		t.Fatal("identity adapter must use ed25519 for trust network signing")
 	}
 	// Persona isolation ensures each persona signs with its own key.
 	if !strings.Contains(content, "Persona") {

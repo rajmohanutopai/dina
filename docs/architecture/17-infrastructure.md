@@ -4,12 +4,12 @@
 
 ### Home Node Deployment
 
-The Home Node runs three containers by default, orchestrated by docker-compose: dina-core (Go/net/http — vault, keys, NaCl messaging, admin proxy), dina-brain (Python/Google ADK — agent reasoning + admin UI), and dina-pds (AT Protocol PDS — public Reputation Graph). An optional fourth container (llama — llama.cpp, local LLM) is available via `--profile local-llm`. No separate database server, no Kubernetes.
+The Home Node runs three containers by default, orchestrated by docker-compose: dina-core (Go/net/http — vault, keys, NaCl messaging, admin proxy), dina-brain (Python/Google ADK — agent reasoning + admin UI), and dina-pds (AT Protocol PDS — public Trust Network). An optional fourth container (llama — llama.cpp, local LLM) is available via `--profile local-llm`. No separate database server, no Kubernetes.
 
 **The docker-compose stack:**
 - **dina-core**: Go binary + SQLCipher vaults (`identity.sqlite` + per-persona `.sqlite` files) — **private layer**. Ports: 443 (external), 8100 (internal). Reverse-proxies `/admin` to brain:8200/admin. Browser authentication gateway (session cookie → Bearer token translation).
 - **dina-brain**: Python + Google ADK agent loop + Admin UI — **private layer**. Port: 8200 (unified — `/api/*` brain API, `/admin/*` admin UI, `/healthz` health).
-- **dina-pds**: AT Protocol PDS for Reputation Graph — **public layer** (reputation data only). Port: 2583 (external).
+- **dina-pds**: AT Protocol PDS for Trust Network — **public layer** (reputation data only). Port: 2583 (external).
 - **llama** (optional): llama.cpp + Gemma 3n E4B GGUF — **private layer**. Port: 8080 (internal). Enabled via `--profile local-llm`.
 - Output: NaCl messaging endpoint + WebSocket API for clients + Admin UI + AT Protocol firehose
 - Deployment: `docker compose up -d` (3 containers) or `docker compose --profile local-llm up -d` (4 containers)
@@ -851,7 +851,7 @@ When the Home Node has new data (ingested email, incoming Dina-to-Dina message, 
 | **Kubernetes** | Container orchestration for distributed services. Dina's Home Node is 3-4 containers on one machine. `docker compose up` is the entire deployment. |
 | **GraphQL** | API layer for complex multi-consumer APIs. Dina has one consumer: you. Direct SQLite queries from the agent loop. |
 | **Elasticsearch** | Distributed search cluster. SQLite FTS5 + sqlite-vec handles search for a single user's data. |
-| **Blockchain (L1)** | Gas costs, latency, complexity. Immutability violates sovereignty (right to delete). Federated servers + signed tombstones handle the Reputation Graph. Only use case is L2 Merkle root hash anchoring for timestamp proofs (Phase 3). |
+| **Blockchain (L1)** | Gas costs, latency, complexity. Immutability violates sovereignty (right to delete). Federated servers + signed tombstones handle the Trust Network. Only use case is L2 Merkle root hash anchoring for timestamp proofs (Phase 3). |
 | **CRDTs / Automerge** | Designed for peer-to-peer conflict resolution. With a Home Node as source of truth, client-server sync is simpler and sufficient. May reconsider for Phase 3 if we add collaborative features. |
 
 Guiding principle: **one user, a handful of containers, one machine, per-persona encrypted vaults, one always-on endpoint.**

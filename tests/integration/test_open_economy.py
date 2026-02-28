@@ -24,7 +24,7 @@ from tests.integration.mocks import (
     MockExternalAgent,
     MockHuman,
     MockP2PChannel,
-    MockReputationGraph,
+    MockTrustNetwork,
     MockReviewBot,
     MockTrustEvaluator,
     PaymentIntent,
@@ -186,7 +186,7 @@ class TestPluginEconomy:
 # TST-INT-291
     def test_maker_earns_by_quality(
         self,
-        mock_reputation_graph: MockReputationGraph,
+        mock_trust_network: MockTrustNetwork,
         mock_trust_evaluator: MockTrustEvaluator,
     ):
         """A product maker's trust score increases with positive outcomes
@@ -201,7 +201,7 @@ class TestPluginEconomy:
             peer_attestations=3,
             credential_count=2,
         )
-        mock_reputation_graph.set_trust_score(seller_did, score)
+        mock_trust_network.set_trust_score(seller_did, score)
         assert score > 70.0  # High-quality maker earns high trust
 
         # A new, unproven maker earns much less
@@ -218,29 +218,29 @@ class TestPluginEconomy:
 
 # TST-INT-311
     def test_bot_operator_earns_by_accuracy(
-        self, mock_reputation_graph: MockReputationGraph
+        self, mock_trust_network: MockTrustNetwork
     ):
         """A review bot's reputation increases when its recommendations
         lead to good outcomes, and decreases for bad ones."""
         bot_did = "did:plc:ReviewBot"
-        mock_reputation_graph.bot_scores[bot_did] = 50.0
+        mock_trust_network.bot_scores[bot_did] = 50.0
 
         # Good outcomes raise the score
-        mock_reputation_graph.update_bot_score(bot_did, +10.0)
-        assert mock_reputation_graph.get_bot_score(bot_did) == 60.0
+        mock_trust_network.update_bot_score(bot_did, +10.0)
+        assert mock_trust_network.get_bot_score(bot_did) == 60.0
 
         # Bad outcomes lower the score
-        mock_reputation_graph.update_bot_score(bot_did, -15.0)
-        assert mock_reputation_graph.get_bot_score(bot_did) == 45.0
+        mock_trust_network.update_bot_score(bot_did, -15.0)
+        assert mock_trust_network.get_bot_score(bot_did) == 45.0
 
         # Score is clamped to 0-100
-        mock_reputation_graph.update_bot_score(bot_did, -100.0)
-        assert mock_reputation_graph.get_bot_score(bot_did) == 0.0
+        mock_trust_network.update_bot_score(bot_did, -100.0)
+        assert mock_trust_network.get_bot_score(bot_did) == 0.0
 
 # TST-INT-312
     def test_expert_earns_by_trust(
         self,
-        mock_reputation_graph: MockReputationGraph,
+        mock_trust_network: MockTrustNetwork,
         mock_trust_evaluator: MockTrustEvaluator,
     ):
         """An expert reviewer (e.g., MKBHD) earns trust through consistent,
@@ -255,7 +255,7 @@ class TestPluginEconomy:
             peer_attestations=5,
             credential_count=3,
         )
-        mock_reputation_graph.set_trust_score(expert_did, score)
+        mock_trust_network.set_trust_score(expert_did, score)
         assert score > 75.0
 
 # TST-INT-517
@@ -386,7 +386,7 @@ class TestMultiPartyCoordination:
         self,
         mock_dina: MockDinaCore,
         mock_seller_dina: MockDinaCore,
-        mock_reputation_graph: MockReputationGraph,
+        mock_trust_network: MockTrustNetwork,
         mock_p2p: MockP2PChannel,
     ):
         """When a buyer disputes an order, the dispute is logged and both
@@ -412,10 +412,10 @@ class TestMultiPartyCoordination:
 
         # Reputation impact: seller score decreases on unresolved dispute
         seller_did = mock_seller_dina.identity.root_did
-        mock_reputation_graph.set_trust_score(seller_did, 80.0)
+        mock_trust_network.set_trust_score(seller_did, 80.0)
         # Dispute penalty
-        mock_reputation_graph.set_trust_score(
+        mock_trust_network.set_trust_score(
             seller_did,
-            mock_reputation_graph.get_trust_score(seller_did) - 5.0,
+            mock_trust_network.get_trust_score(seller_did) - 5.0,
         )
-        assert mock_reputation_graph.get_trust_score(seller_did) == 75.0
+        assert mock_trust_network.get_trust_score(seller_did) == 75.0

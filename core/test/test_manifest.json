@@ -981,7 +981,7 @@
     "TST-CORE-161": {
       "path": "3.2",
       "row": 12,
-      "scenario": "Persona Ed25519 key signs Reputation Graph entries (NOT root key)",
+      "scenario": "Persona Ed25519 key signs Trust Network entries (NOT root key)",
       "line": 265
     },
     "TST-CORE-162": {

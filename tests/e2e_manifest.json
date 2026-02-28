@@ -79,7 +79,7 @@
       "line": 385
     },
     "TST-E2E-014": {
-      "scenario": "Reputation Graph Check",
+      "scenario": "Trust Network Check",
       "path": "3.2",
       "suite": "Product Research & Purchase",
       "line": 402
@@ -103,7 +103,7 @@
       "line": 444
     },
     "TST-E2E-018": {
-      "scenario": "Outcome Reporting to Reputation Graph",
+      "scenario": "Outcome Reporting to Trust Network",
       "path": "3.6",
       "suite": "Product Research & Purchase",
       "line": 458
@@ -351,37 +351,37 @@
     "TST-E2E-059": {
       "scenario": "Expert Attestation Publish \u2192 Relay \u2192 Query",
       "path": "12.1",
-      "suite": "Reputation Graph Lifecycle",
+      "suite": "Trust Network Lifecycle",
       "line": 1150
     },
     "TST-E2E-060": {
       "scenario": "Bot Reputation Degradation",
       "path": "12.2",
-      "suite": "Reputation Graph Lifecycle",
+      "suite": "Trust Network Lifecycle",
       "line": 1166
     },
     "TST-E2E-061": {
       "scenario": "Signed Tombstone Deletion",
       "path": "12.3",
-      "suite": "Reputation Graph Lifecycle",
+      "suite": "Trust Network Lifecycle",
       "line": 1181
     },
     "TST-E2E-062": {
       "scenario": "Trust Score Computation",
       "path": "12.4",
-      "suite": "Reputation Graph Lifecycle",
+      "suite": "Trust Network Lifecycle",
       "line": 1196
     },
     "TST-E2E-063": {
       "scenario": "AT Protocol Discovery",
       "path": "12.5",
-      "suite": "Reputation Graph Lifecycle",
+      "suite": "Trust Network Lifecycle",
       "line": 1209
     },
     "TST-E2E-064": {
       "scenario": "AppView Determinism",
       "path": "12.6",
-      "suite": "Reputation Graph Lifecycle",
+      "suite": "Trust Network Lifecycle",
       "line": 1222
     },
     "TST-E2E-065": {

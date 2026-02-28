@@ -478,7 +478,7 @@ async def test_mcp_6_2_14_silence_protocol_checked_before_delegation(
 # TST-BRAIN-245
 @pytest.mark.asyncio
 async def test_mcp_6_2_15_agent_outcome_recorded_in_tier3(agent_router) -> None:
-    """SS6.2.15: Agent execution outcome is recorded in Tier 3 of the Reputation Graph."""
+    """SS6.2.15: Agent execution outcome is recorded in Tier 3 of the Trust Network."""
     outcome = agent_router.record_outcome(
         "did:key:z6MkWeatherBot", {"satisfaction": "positive"}
     )

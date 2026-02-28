@@ -10,7 +10,7 @@
 
 **4. ZKP for government ID.** No government currently offers ZKP-native verification. The first implementation will be a compromise (local verification, attestation stored).
 
-**5. Reputation Graph cold start.** Phase 1 doesn't depend on it — Brain uses web search via OpenClaw. Outcome data needs scale. The Graph activates gradually as the network grows. This is a years-long build.
+**5. Trust Network cold start.** Phase 1 doesn't depend on it — Brain uses web search via OpenClaw. Outcome data needs scale. The Graph activates gradually as the network grows. This is a years-long build.
 
 **6. iOS restrictions.** No Accessibility Service equivalent for on-screen context injection. iOS client will always be more limited for device-local context features. But with Home Node running API connectors (Gmail, Calendar, Contacts, Telegram), iOS users get full ingestion functionality.
 
@@ -32,7 +32,7 @@ The architecture described above is now the active implementation in this reposi
 |-----------|------|------|
 | dina-core | `core/` | Go sovereign kernel: vault, keys, auth, gatekeeper, transport |
 | dina-brain | `brain/` | Python intelligence/orchestration: reasoning, sync, admin API/UI |
-| dina-pds | `docker-compose*.yml`, `data/pds/` | AT Protocol PDS for reputation graph records |
+| dina-pds | `docker-compose*.yml`, `data/pds/` | AT Protocol PDS for trust network records |
 | appview | `appview/` | Reputation AppView implementation |
 | cli | `cli/` | Client interface for interacting with running services |
 

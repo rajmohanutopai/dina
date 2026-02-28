@@ -100,7 +100,7 @@ Tracks pending work only. See [ROADMAP.md](ROADMAP.md) for full specs and depend
 
 - [ ] **2.8 Emotional state awareness** — classifier for upset/impulsive states, cooling-off
 - [-] **2.9 Anti-Her safeguard** — redirect toward human connection when needed
-- [ ] **2.10 Bot discovery** — decentralized via Reputation Graph
+- [ ] **2.10 Bot discovery** — decentralized via Trust Network
 
 ### Infrastructure
 
@@ -149,7 +149,7 @@ NaCl encryption works E2E (Docker tests assert real decryption at `real_d2d.py:1
 
 ## AT Protocol Routing
 
-**AppView + Relay are for the Reputation Graph (Layer 3) only.** D2D messaging (Layer 4) is direct P2P — no relay, no AppView, no firehose. See [`docs/architecture/09-layer4-dina-to-dina.md`](docs/architecture/09-layer4-dina-to-dina.md).
+**AppView + Relay are for the Trust Network (Layer 3) only.** D2D messaging (Layer 4) is direct P2P — no relay, no AppView, no firehose. See [`docs/architecture/09-layer4-dina-to-dina.md`](docs/architecture/09-layer4-dina-to-dina.md).
 
 - [ ] **PLC Directory integration** — resolve DIDs dynamically instead of hardcoded `DINA_KNOWN_PEERS`
 - [ ] **Reputation AppView** — Go + PostgreSQL, `indigo` firehose consumer for attestations/bot scores (depends on: PDS)

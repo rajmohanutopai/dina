@@ -26,7 +26,7 @@ from tests.integration.mocks import (
     MockIdentity,
     MockP2PChannel,
     MockRelay,
-    MockReputationGraph,
+    MockTrustNetwork,
     MockVault,
     MockWhisperAssembler,
     Notification,
@@ -401,7 +401,7 @@ class TestSellerNegotiation:
         assert consumer_persona.did.startswith("did:key:")
 
 # TST-INT-484
-    def test_reputation_graph_consulted(
+    def test_trust_network_consulted(
         self,
         mock_dina: MockDinaCore,
         seller_identity: MockIdentity,

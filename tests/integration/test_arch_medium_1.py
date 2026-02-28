@@ -24,7 +24,7 @@ from tests.integration.mocks import (
     MockHybridSearch,
     MockIdentity,
     MockKVStore,
-    MockReputationGraph,
+    MockTrustNetwork,
     MockScratchpad,
     MockSilenceClassifier,
     MockTaskQueue,
@@ -880,7 +880,7 @@ def test_pds_spot_check_downgrades_appview(
 
 # TST-INT-633
 def test_tombstone_invalid_signature_rejected(
-    mock_reputation_graph: MockReputationGraph,
+    mock_trust_network: MockTrustNetwork,
     mock_identity: MockIdentity,
 ):
     """M29: Correct DID + bad signature rejected for tombstone."""
@@ -895,11 +895,11 @@ def test_tombstone_invalid_signature_rejected(
         source_url="https://example.com/aeron",
         signature=mock_identity.sign(b"aeron_2025"),
     )
-    mock_reputation_graph.add_attestation(attestation)
+    mock_trust_network.add_attestation(attestation)
 
     # Attempt tombstone with correct DID but wrong signature
     bad_signature = "0000000000000000000000000000000000000000"
-    result = mock_reputation_graph.signed_tombstone(
+    result = mock_trust_network.signed_tombstone(
         target_id="aeron_2025",
         author_did=mock_identity.root_did,
         signature=bad_signature,
@@ -910,7 +910,7 @@ def test_tombstone_invalid_signature_rejected(
     # For this test, we verify the contract: tombstone requires matching DID.
     # A tombstone from a DIFFERENT DID must be rejected.
     other_identity = MockIdentity(did="did:plc:Attacker123456789012345")
-    result_wrong_did = mock_reputation_graph.signed_tombstone(
+    result_wrong_did = mock_trust_network.signed_tombstone(
         target_id="nonexistent_product",
         author_did=other_identity.root_did,
         signature=other_identity.sign(b"nonexistent_product"),
@@ -921,9 +921,9 @@ def test_tombstone_invalid_signature_rejected(
 
     # Verify the correct DID can create a tombstone
     # Re-add attestation for second tombstone test
-    mock_reputation_graph.add_attestation(attestation)
+    mock_trust_network.add_attestation(attestation)
     valid_sig = mock_identity.sign(b"aeron_2025")
-    result_valid = mock_reputation_graph.signed_tombstone(
+    result_valid = mock_trust_network.signed_tombstone(
         target_id="aeron_2025",
         author_did=mock_identity.root_did,
         signature=valid_sig,
@@ -931,7 +931,7 @@ def test_tombstone_invalid_signature_rejected(
     assert result_valid is True, (
         "Tombstone with correct DID must be accepted"
     )
-    assert len(mock_reputation_graph.tombstones) >= 1
+    assert len(mock_trust_network.tombstones) >= 1
 
 
 # TST-INT-634

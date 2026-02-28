@@ -8,7 +8,7 @@ Core orchestrates every actor in the system.
 <summary><strong>Design Decision — Why Go for the Core?</strong></summary>
 <br>
 
-Dina's core is a long-running, always-on process that manages cryptographic keys, encrypted storage, and real-time WebSocket connections. Written in Go (due to its support of Crypto). The other two components are the brain and appview. The brain sidecar handles LLM reasoning (Python is the defacto language in AI). AppView (Reputation Graph, built on AT Proto) is written in TypeScript.
+Dina's core is a long-running, always-on process that manages cryptographic keys, encrypted storage, and real-time WebSocket connections. Written in Go (due to its support of Crypto). The other two components are the brain and appview. The brain sidecar handles LLM reasoning (Python is the defacto language in AI). AppView (Trust Network, built on AT Proto) is written in TypeScript.
 
 </details>
 

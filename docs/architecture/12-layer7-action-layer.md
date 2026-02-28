@@ -78,7 +78,7 @@ User enters PIN / biometric
         ↓
 Payment app sends confirmation (SMS or callback)
         ↓
-Dina records outcome in Tier 3 for future Reputation Graph contribution
+Dina records outcome in Tier 3 for future Trust Network contribution
 ```
 
 **Dina never sees:** Bank balance, UPI PIN, card numbers, payment credentials. She generates the link. The OS handles the rest.
@@ -157,11 +157,11 @@ On reboot, the loop starts, finds the next reminder, sleeps until it's due. If t
 
 **Emotional state awareness (Phase 2+).** Before approving large purchases or high-stakes communications, a lightweight classifier assesses user state (time of day, communication tone, spending pattern deviation). Flags "user may be impulsive" and adds cooling-off suggestion.
 
-**Content verification (Phase 2+).** C2PA/Content Credentials for media provenance. Cross-reference claims against Reputation Graph. Requires significant ML infrastructure.
+**Content verification (Phase 2+).** C2PA/Content Credentials for media provenance. Cross-reference claims against Trust Network. Requires significant ML infrastructure.
 
 **Anti-Her safeguard (Phase 2+).** If interaction patterns suggest user is treating Dina as emotional replacement for human relationships, Dina redirects: "You haven't talked to Sancho in a while." Heuristic-based, tracks frequency/content/time-of-day. Architectural enforcement of the Four Laws.
 
-**Open Economy (Phase 3+).** Dina-to-Dina negotiation via ONDC, UPI/crypto payments. Cart Handover extends to discovery and direct commerce. Requires mature Reputation Graph and commerce protocol.
+**Open Economy (Phase 3+).** Dina-to-Dina negotiation via ONDC, UPI/crypto payments. Cart Handover extends to discovery and direct commerce. Requires mature Trust Network and commerce protocol.
 
 ---
 

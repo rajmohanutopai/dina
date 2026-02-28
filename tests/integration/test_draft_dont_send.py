@@ -299,7 +299,7 @@ class TestPaymentIntentProtocol:
         self, mock_dina: MockDinaCore,
     ) -> None:
         """After a purchase is completed (by the user, not Dina), the
-        outcome is recorded in the reputation graph."""
+        outcome is recorded in the trust network."""
         reputation = mock_dina.reputation
 
         # User completes purchase and reports outcome

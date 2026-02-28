@@ -258,7 +258,7 @@ class TestManipulationDetection:
 
 # TST-INT-267
     def test_dead_internet_filter(self, mock_dina: MockDinaCore):
-        """Dina filters out bot-generated reviews from the reputation graph,
+        """Dina filters out bot-generated reviews from the trust network,
         keeping only verified human sources."""
         sources = [
             {

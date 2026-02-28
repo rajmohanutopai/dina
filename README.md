@@ -50,7 +50,7 @@ That's Dina. A personal agent that makes you more thoughtful, more present, and 
 
 Now imagine the same thing, everywhere in your life:
 
-- You're buying a laptop. Ads try to point you to some direction. But your Dina talks to the review bots, checks the Reputation Graph, and tells you: *"The battery on this one dies in three months. Here's a better option."*
+- You're buying a laptop. Ads try to point you to some direction. But your Dina talks to the review bots, checks the Trust Network, and tells you: *"The battery on this one dies in three months. Here's a better option."*
 - You promised your daughter you'd read her a book. You forgot which one. *"It was 'The Little Prince'. Last Tuesday."*
 - Your license needs renewal. You didn't even know it was due. Dina did. She flags it, and if you approve, she informs another bot about the requirement to complete the process.
 - Dead internet theory becomes real. You cant differentiate between what made by AI and what is real. You can ask Dina then to filter out and show you only verifiably true items. Your Dina interacts with verified builders Dina, and only those items are shown to you.
@@ -120,7 +120,7 @@ The rule: **if staying silent causes harm, speak. If staying silent merely cause
 Because every person's Dina is a sovereign identity, Dinas can talk to each other directly without a platform in the middle. Similar to Signal.
 
 - **Friend comes over.** His Dina tells your Dina. You prepare his favorite tea. Neither of you had to text or coordinate.
-- **Buying a chair.** Your Dina talks to the seller's Dina. The Reputation Graph confirms the quality. The transaction happens directly, no marketplace in the middle.
+- **Buying a chair.** Your Dina talks to the seller's Dina. The Trust Network confirms the quality. The transaction happens directly, no marketplace in the middle.
 
 ---
 
@@ -186,7 +186,7 @@ Since Dina is a thin layer with minimal plugin support, the attack surface is sm
 
 **The PII Scrubber:** All external requests go through a PII Scrubber. Your raw data never leaves the Home Node.
 
-**Dina Never Touches Money:** Dina helps find the best laptop. She checks the Reputation Graph. When you're ready, she hands back control to you — the "Cart Handover." She is an advisor, not the decision maker.
+**Dina Never Touches Money:** Dina helps find the best laptop. She checks the Trust Network. When you're ready, she hands back control to you — the "Cart Handover." She is an advisor, not the decision maker.
 
 **Any Agent, Any Hardware** Any agent (OpenAI pin, Meta Glasses) can interact with Dina. Preferably, agents should - because Dina enforces loyalty and identity. Dina makes sure the work serves **you**.
 
@@ -217,11 +217,11 @@ Dina notices what you'd otherwise miss. *"Your license expires next week. Can I 
 Dina is warm, loyal, and devoted, but she is not your friend or your lover. She will never pretend to be. When you need connection, she nudges you toward humans — *"You haven't talked to Sancho in a while."* She reminds you of the relationships that matter. She never replaces them.
 ---
 
-## The Reputation Graph
+## The Trust Network
 
 Today, when you search for a product, the results are ranked partly by who paid the most. A brilliant but non-descript chair-maker with 500 happy customers loses to a mediocre brand with a bigger marketing budget.
 
-Dina inverts this. The Reputation Graph is a system where trust is earned, not bought.
+Dina inverts this. The Trust Network is a system where trust is earned, not bought.
 
 **Two layers of truth feed into it:**
 
@@ -231,20 +231,20 @@ Dina inverts this. The Reputation Graph is a system where trust is earned, not b
 
 Dina changes this at the root. Because Dina *is* the one buying, or at least, she knows most things that we are buying, she already knows the purchase. She knows whether you're still using the laptop six months later or whether it's gathering dust. She knows you returned the shoes after a week. She can gently ask — *"How's that chair working out? Your back pain has reduced?"*, and you'll answer honestly, because it's *your* Dina asking privately, not Amazon asking you to perform a public review.
 
-So instead of 2-5% biased opinions, the Reputation Graph gets a high percentage of *passive, honest outcome data*. These are not opinions, since they are actual outcomes. For example: Did the fabric tear? Did it lose colour? etc. There is no real need for a review - since millions of Dinas quietly feed anonymized outcome data to the Reputation Graph. This gives real truth in the system a higher chance to come out.
+So instead of 2-5% biased opinions, the Trust Network gets a high percentage of *passive, honest outcome data*. These are not opinions, since they are actual outcomes. For example: Did the fabric tear? Did it lose colour? etc. There is no real need for a review - since millions of Dinas quietly feed anonymized outcome data to the Trust Network. This gives real truth in the system a higher chance to come out.
 
 ```
-Expert reviews product → Signed attestation in Reputation Graph
+Expert reviews product → Signed attestation in Trust Network
                                             +
 Millions of Dinas → Anonymized outcome data (still using it?
-                     returned it? battery died?) → Reputation Graph
+                     returned it? battery died?) → Trust Network
                                             ↓
           You ask Dina → Dina asks a trusted bot → Bot checks the Graph
                                             ↓
                                     Honest answer
 ```
 
-The reputation graph extends to the bots, other Dinas, everywhere. If a review bot starts giving compromised recommendations, its reputation drops and Dina routes elsewhere. The same trust system that helps you find good products helps you find good bots.
+The trust network extends to the bots, other Dinas, everywhere. If a review bot starts giving compromised recommendations, its reputation drops and Dina routes elsewhere. The same trust system that helps you find good products helps you find good bots.
 
 ---
 
@@ -256,9 +256,9 @@ One possible solution that we will implement is identity based trust layers. Din
 
 **Ring 1 — Unverified Dina.** Anyone can create one - without any need for an ID. But other Dinas treat you cautiously. Only small transactions, limited trust. Like normal humans while meeting a stranger, Dina will be polite, but very cautious.
 
-**Ring 2 — Verified Dina.** Dina knows you are a unique person, without you revealing *who* you are. Governments have started implementing ZKP (zero-knowledge proof), which we could use. For countries without ZKP, we can also use an external system to prove the identity without explicitly knowing about the person. Since you can't spin up multiple identities, your Dina's position in Reputation Graph rises significantly.
+**Ring 2 — Verified Dina.** Dina knows you are a unique person, without you revealing *who* you are. Governments have started implementing ZKP (zero-knowledge proof), which we could use. For countries without ZKP, we can also use an external system to prove the identity without explicitly knowing about the person. Since you can't spin up multiple identities, your Dina's position in Trust Network rises significantly.
 
-**Ring 3 and beyond — Verified and Actioned.** If we add multiple credentials, like LinkedIn, GitHub, business registration number etc, each anchor increases trust weight. A seller who links their business registration is more trustworthy than an unverified or just verified Dina. This is because he/she is putting her business at risk if he/she does not complete a transaction. Same way, if you do multiple actions (buying items etc), again, your actions are considered in the reputation graph. *"This Dina has spent $20K  across 200 transactions over 2 years"* is a fundamentally different signal than *"this Dina has 5 stars."*. The probability of such a person doing a rug pull is lower. Thus, **transaction**, **time** and **peer approval/attestaion** all increases the trust on your Dina.
+**Ring 3 and beyond — Verified and Actioned.** If we add multiple credentials, like LinkedIn, GitHub, business registration number etc, each anchor increases trust weight. A seller who links their business registration is more trustworthy than an unverified or just verified Dina. This is because he/she is putting her business at risk if he/she does not complete a transaction. Same way, if you do multiple actions (buying items etc), again, your actions are considered in the trust network. *"This Dina has spent $20K  across 200 transactions over 2 years"* is a fundamentally different signal than *"this Dina has 5 stars."*. The probability of such a person doing a rug pull is lower. Thus, **transaction**, **time** and **peer approval/attestaion** all increases the trust on your Dina.
 
 The principle: **if you don't want to verify, don't. But unverified trust is worth less than verified trust.** This is not a big brother rule - this is a societal behaviour which we will try to implement in Dina.
 
@@ -279,11 +279,11 @@ Trust = f(
 
 ## The Merit Economy
 
-Because Dina uses Reputation Graph, a new kind of economy can possibly emerge — one where people make money by being *good at what they do*, not solely dependent on marketing.
+Because Dina uses Trust Network, a new kind of economy can possibly emerge — one where people make money by being *good at what they do*, not solely dependent on marketing.
 
 - **Makers and sellers** earn by being good. The smaller players competes on merit.
 - **Bot operators** earn by being accurate. The best review bots, the best legal bots, etc gets paid more.
-- **Experts** earn by being trustworthy. our verified knowledge enters the Reputation Graph and drives real decisions for real people.
+- **Experts** earn by being trustworthy. our verified knowledge enters the Trust Network and drives real decisions for real people.
 - **The protocol itself earns nothing.** Completely P2P and anyone should be able to run this. 
 
 
@@ -342,7 +342,7 @@ Security model is complex: two-tier static token auth (BRAIN_TOKEN for agent ops
 The PII scrubbing pipeline is three-tiered: regex in Go (structured PII — SSN, credit cards, phones), spaCy NER in Python (contextual — names, orgs, locations), and LLM NER via llama/smaller flash models (edge cases). The Entity Vault pattern allows cloud LLM usage for sensitive personas by scrubbing all identifying entities and rehydrating locally (using presidio with fakes).
 
 Dina-to-Dina communication uses NaCl crypto_box_seal (ephemeral sender keys, forward secrecy - future plan with Noise XXX) over HTTPS, with DID Documents pointing to Home Node endpoints. The sharing policy system is category-based (presence, availability, context, preferences, location, health) with three tiers (none/summary/full) per contact, enforced at egress by core.
-The Reputation Graph is built on AT Protocol federation — public, signed Merkle repos for expert attestations, anonymized outcome data, and bot scores. It has a cold-start strategy (Phase 1 uses web search via OpenClaw; reputation data activates gradually). Signed tombstones handle deletion. L2 Merkle root anchoring is deferred to Phase 3.
+The Trust Network is built on AT Protocol federation — public, signed Merkle repos for expert attestations, anonymized outcome data, and bot scores. It has a cold-start strategy (Phase 1 uses web search via OpenClaw; reputation data activates gradually). Signed tombstones handle deletion. L2 Merkle root anchoring is deferred to Phase 3.
 
 If you want more details, please check [SECURITY.MD](./SECURITY.MD).
 

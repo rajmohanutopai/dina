@@ -52,7 +52,7 @@ from tests.integration.mocks import (
     MockPushProvider,
     MockPythonBrain,
     MockRelay,
-    MockReputationGraph,
+    MockTrustNetwork,
     MockReviewBot,
     MockRichClient,
     MockSchemaMigration,
@@ -332,8 +332,8 @@ def mock_legal_bot() -> MockLegalBot:
 
 
 @pytest.fixture
-def mock_reputation_graph() -> MockReputationGraph:
-    return MockReputationGraph()
+def mock_trust_network() -> MockTrustNetwork:
+    return MockTrustNetwork()
 
 
 # ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@ import { trustEdges } from '@/db/schema/index.js'
 /**
  * Trust edge maintenance.
  *
- * Trust edges form the backbone of the reputation graph. They are created
+ * Trust edges form the backbone of the trust network. They are created
  * when vouches, endorsements, delegations, co-signatures, or positive
  * attestations are indexed, and removed when the source record is deleted.
  */

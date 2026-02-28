@@ -93,7 +93,7 @@ BIP-39 Mnemonic (24 words = 256-bit entropy)
         └── m/9999'/N'  → /persona/custom/*      (user-defined compartments)
 ```
 
-Each persona's Ed25519 keypair is used for **signing** — the persona's private key signs DIDComm messages and Reputation Graph entries.
+Each persona's Ed25519 keypair is used for **signing** — the persona's private key signs DIDComm messages and Trust Network entries.
 
 **Vault encryption** uses per-persona DEKs — each persona file has its own 256-bit SQLCipher key:
 
@@ -228,7 +228,7 @@ Trust Score = f(
     ring_level,           // 1, 2, or 3
     time_alive,           // age of this Dina in days
     transaction_anchors,  // verified money moved (count, volume, span)
-    outcome_data,         // purchase outcomes fed to Reputation Graph
+    outcome_data,         // purchase outcomes fed to Trust Network
     peer_attestations,    // other verified Dinas who vouch
     credential_count      // Ring 3 credentials linked
 )

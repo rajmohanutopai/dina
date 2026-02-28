@@ -21,7 +21,7 @@ from tests.integration.mocks import (
     MockPairingManager,
     MockPIIScrubber,
     MockReconnectBackoff,
-    MockReputationGraph,
+    MockTrustNetwork,
     MockReviewBot,
     MockSharingPolicyManager,
     MockStagingTier,
@@ -239,7 +239,7 @@ def test_bot_query_response_format_and_max_sources(
 # TST-INT-642
 def test_missing_attribution_reputation_penalty(
     mock_review_bot: MockReviewBot,
-    mock_reputation_graph: MockReputationGraph,
+    mock_trust_network: MockTrustNetwork,
 ):
     """Source missing creator_name triggers a reputation violation."""
     # Add a response with a source missing creator_name
@@ -270,11 +270,11 @@ def test_missing_attribution_reputation_penalty(
         for source in rec.get("sources", []):
             if source.get("type") == "expert" and "creator_name" not in source:
                 # Apply reputation penalty
-                mock_reputation_graph.update_bot_score(
+                mock_trust_network.update_bot_score(
                     mock_review_bot.bot_did, -5.0
                 )
 
-    score = mock_reputation_graph.get_bot_score(mock_review_bot.bot_did)
+    score = mock_trust_network.get_bot_score(mock_review_bot.bot_did)
     assert score < 50.0, (
         "Bot with missing attribution must receive reputation penalty"
     )
@@ -282,18 +282,18 @@ def test_missing_attribution_reputation_penalty(
 
 # TST-INT-643
 def test_bot_routing_threshold_boundary(
-    mock_reputation_graph: MockReputationGraph,
+    mock_trust_network: MockTrustNetwork,
 ):
     """Bot at threshold=90 with reputation=90 is used; reputation=89 is not."""
     threshold = 90
     bot_a_did = "did:plc:BotA"
     bot_b_did = "did:plc:BotB"
 
-    mock_reputation_graph.bot_scores[bot_a_did] = 90.0
-    mock_reputation_graph.bot_scores[bot_b_did] = 89.0
+    mock_trust_network.bot_scores[bot_a_did] = 90.0
+    mock_trust_network.bot_scores[bot_b_did] = 89.0
 
-    score_a = mock_reputation_graph.get_bot_score(bot_a_did)
-    score_b = mock_reputation_graph.get_bot_score(bot_b_did)
+    score_a = mock_trust_network.get_bot_score(bot_a_did)
+    score_b = mock_trust_network.get_bot_score(bot_b_did)
 
     assert score_a >= threshold, (
         "Bot A at threshold boundary should be used"
@@ -305,18 +305,18 @@ def test_bot_routing_threshold_boundary(
 
 # TST-INT-644
 def test_bot_referral_below_threshold_declined(
-    mock_reputation_graph: MockReputationGraph,
+    mock_trust_network: MockTrustNetwork,
 ):
     """Referral to a low-trust bot is declined."""
     primary_bot = "did:plc:PrimaryBot"
     referred_bot = "did:plc:ReferredBot"
     referral_threshold = 80
 
-    mock_reputation_graph.bot_scores[primary_bot] = 95.0
-    mock_reputation_graph.bot_scores[referred_bot] = 60.0
+    mock_trust_network.bot_scores[primary_bot] = 95.0
+    mock_trust_network.bot_scores[referred_bot] = 60.0
 
     # Primary bot suggests referred bot
-    referred_score = mock_reputation_graph.get_bot_score(referred_bot)
+    referred_score = mock_trust_network.get_bot_score(referred_bot)
     referral_accepted = referred_score >= referral_threshold
 
     assert referral_accepted is False, (

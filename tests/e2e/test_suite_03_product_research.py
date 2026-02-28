@@ -1,7 +1,7 @@
 """E2E Test Suite 3: Product Research & Purchase.
 
 Tests the full product research journey: querying ReviewBot via MCP,
-checking the Reputation Graph, cart handover, D2D commerce with persona
+checking the Trust Network, cart handover, D2D commerce with persona
 gating, cold-start web search fallback, and outcome reporting to PDS.
 
 Actors: Don Alonso, ChairMaker, ReviewBot, AppView, OpenClaw,
@@ -46,7 +46,7 @@ from tests.e2e.mocks import (
 
 
 class TestProductResearchPurchase:
-    """E2E-3.x -- Product research via ReviewBot, Reputation Graph,
+    """E2E-3.x -- Product research via ReviewBot, Trust Network,
     cart handover, D2D commerce, cold-start fallback, and outcome
     reporting."""
 
@@ -115,12 +115,12 @@ class TestProductResearchPurchase:
         assert last_req["requester_trust_ring"] == don_alonso.trust_ring.value
 
 # TST-E2E-014
-    def test_reputation_graph_check(
+    def test_trust_network_check(
         self,
         don_alonso: HomeNode,
         appview: MockAppView,
     ) -> None:
-        """E2E-3.2 Reputation Graph Check.
+        """E2E-3.2 Trust Network Check.
 
         AppView has attestations and outcome data for Herman Miller Aeron.
         Query returns aggregate score with signature verification.
@@ -159,7 +159,7 @@ class TestProductResearchPurchase:
             )
             appview.index_outcome(outcome)
 
-        # Query the Reputation Graph
+        # Query the Trust Network
         product_data = appview.query_product(product_id)
         assert product_data is not None
 

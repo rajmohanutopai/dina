@@ -613,7 +613,7 @@
 
 ---
 
-## 11. Reputation Graph Integration
+## 11. Trust Network Integration
 
 ### 11.1 PDS Record Publishing
 
@@ -639,7 +639,7 @@
 | 3 | **[TST-INT-306]** Non-author cannot delete review | Chair Company sends deletion for user's review | Signature doesn't match author → rejection — only keyholder can delete |
 | 4 | **[TST-INT-307]** Outcome data exact anonymized fields — no PII | Inspect published outcome record | Exact fields per Section 08 `com.dina.reputation.outcome` Lexicon: `{type: "outcome_report", reporter_trust_ring, reporter_age_days, product_category, product_id, purchase_verified, purchase_amount_range, time_since_purchase_days, outcome, satisfaction, issues, timestamp, signature}` — 13 fields total. Zero user identity (no DID, no name). Zero seller identity (only trust ring). reporter_trust_ring/age_days are the submitting Dina's ring level and age. purchase_amount_range uses bucketed format (e.g. "50000-100000_INR"). satisfaction is categorical (positive/negative/neutral). issues is an array (empty if none) |
 | 5 | **[TST-INT-308]** Aggregate scores computed not stored | Query product reputation | Score computed from individual signed records — any AppView computes same score deterministically |
-| 6 | **[TST-INT-309]** Outcome data lifecycle E2E | Cart handover → weeks → follow-up → anonymized record → PDS | Full flow: (1) purchase via cart handover — Brain records `{product_category, seller_dina_id, price, timestamp}`, (2) weeks/months later Brain asks "How's that chair?", (3) user responds or Brain infers (still using? returned?), (4) anonymized outcome record created with Section 08 Lexicon fields (13 fields: type, reporter_trust_ring, reporter_age_days, product_category, product_id, purchase_verified, purchase_amount_range, time_since_purchase_days, outcome, satisfaction, issues, timestamp, signature), (5) signed with Reputation Signing Key (HKDF "dina:reputation:v1"), (6) submitted to Reputation Graph via PDS |
+| 6 | **[TST-INT-309]** Outcome data lifecycle E2E | Cart handover → weeks → follow-up → anonymized record → PDS | Full flow: (1) purchase via cart handover — Brain records `{product_category, seller_dina_id, price, timestamp}`, (2) weeks/months later Brain asks "How's that chair?", (3) user responds or Brain infers (still using? returned?), (4) anonymized outcome record created with Section 08 Lexicon fields (13 fields: type, reporter_trust_ring, reporter_age_days, product_category, product_id, purchase_verified, purchase_amount_range, time_since_purchase_days, outcome, satisfaction, issues, timestamp, signature), (5) signed with Reputation Signing Key (HKDF "dina:reputation:v1"), (6) submitted to Trust Network via PDS |
 | 7 | **[TST-INT-310]** Outcome report full Lexicon field validation | Inspect each field of published outcome record | Validate every field matches `com.dina.reputation.outcome` Lexicon constraints: `type` = "outcome_report" (string literal), `reporter_trust_ring` = integer (1-3), `reporter_age_days` = integer (≥0), `product_category` = string, `product_id` = string, `purchase_verified` = boolean, `purchase_amount_range` = string (bucketed format e.g. "50000-100000_INR"), `time_since_purchase_days` = integer (≥0), `outcome` = string enum (still_using/returned/broken/gifted), `satisfaction` = string enum (positive/negative/neutral), `issues` = array of strings (may be empty), `timestamp` = datetime ISO-8601, `signature` = Ed25519 hex string |
 
 ### 11.3 Reputation in Agent Decisions
@@ -871,7 +871,7 @@
 
 ### 16.10 Bot Interface Protocol (Phase 2+)
 
-> Specialist bots register with the Reputation Graph and expose a standard query API.
+> Specialist bots register with the Trust Network and expose a standard query API.
 > Phase 1 uses OpenClaw as the sole external intelligence source.
 
 | # | Scenario | Setup | Expected |
@@ -882,7 +882,7 @@
 | 4 | **[TST-INT-423]** Deep Link pattern default | Bot response with `deep_link` + `deep_link_context` | Brain presents source links to user — drives traffic to original creator, not extraction |
 | 5 | **[TST-INT-424]** Bot reputation: auto-route on low score | Bot accuracy drops below threshold | Brain automatically routes next query to next-best bot — no manual intervention |
 | 6 | **[TST-INT-425]** Bot reputation scoring factors | Inspect bot score computation | `f(response_accuracy, response_time, uptime, user_ratings, consistency, age, peer_endorsements)` — all factors weighted |
-| 7 | **[TST-INT-426]** Bot discovery: decentralized registry | Brain needs specialist bot | Queries Reputation Graph for bots in relevant domain, selects highest-reputation |
+| 7 | **[TST-INT-426]** Bot discovery: decentralized registry | Brain needs specialist bot | Queries Trust Network for bots in relevant domain, selects highest-reputation |
 | 8 | **[TST-INT-427]** Bot-to-bot recommendation | Bot says "This is outside my domain" | Redirects to specialist bot DID — Brain follows chain if trust is sufficient |
 | 9 | **[TST-INT-428]** Requester anonymity: trust ring only, no identity | Inspect `POST bot/query` request payload | Request contains `requester_trust_ring: 2` (integer) but NO user DID, no name, no Home Node URL, no persona path, no session ID — zero identifying information. Architecture §10: "anonymous — just the ring level." The bot knows the requester is trust ring 2 but cannot determine WHO is asking. If the request accidentally includes the DID alongside the trust ring, the bot can cross-reference queries and build a profile — breaking the anonymity guarantee |
 
@@ -1053,7 +1053,7 @@
 | 6 | **[TST-INT-628]** OpenClaw recovery resumes exact cursor position | Outage + recovery | Cursor values identical before and after outage |
 | 7 | **[TST-INT-629]** Phone connector requires CLIENT_TOKEN auth | Phone pushes data | CLIENT_TOKEN accepted; BRAIN_TOKEN rejected for phone connector |
 
-### 18.10 Reputation Graph (§8)
+### 18.10 Trust Network (§8)
 
 | # | Scenario | Setup | Expected |
 |---|----------|-------|----------|
@@ -1190,5 +1190,5 @@ secrets:
 | P1 (High) | WebSocket protocol, device pairing, DID verification | User-facing: failure means broken user experience |
 | P2 (Medium) | Admin UI, briefing generation, ingestion pipeline | Functional: failure degrades capability but doesn't expose data |
 | P2 (Medium) | Docker networking, rate limiting, configuration | Operational: failure affects deployment but not core logic |
-| P3 (Low) | Performance benchmarks, chaos engineering, reputation graph | Quality: failure affects non-functional requirements |
+| P3 (Low) | Performance benchmarks, chaos engineering, trust network | Quality: failure affects non-functional requirements |
 | P3 (Low) | Digital estate, upgrade/migration | Edge case: important but infrequent scenarios |

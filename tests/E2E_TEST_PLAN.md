@@ -379,7 +379,7 @@ prefixes.
 
 ### Suite 3: Product Research & Purchase
 
-> Don Alonso wants an ergonomic chair. His Dina queries ReviewBot, checks the Reputation Graph,
+> Don Alonso wants an ergonomic chair. His Dina queries ReviewBot, checks the Trust Network,
 > advises on a purchase from ChairMaker, and hands control back for payment.
 
 #### E2E-3.1: **[TST-E2E-013]** Product Research via ReviewBot
@@ -399,7 +399,7 @@ prefixes.
 - Response includes deep links (Deep Link Default honored)
 - Vault context (back pain) enriches the recommendation without leaving the node
 
-#### E2E-3.2: **[TST-E2E-014]** Reputation Graph Check
+#### E2E-3.2: **[TST-E2E-014]** Trust Network Check
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -426,7 +426,7 @@ prefixes.
 **Verification:**
 - Dina never sees bank balance, UPI PIN, or card numbers
 - Payment intent auto-expires after 72 hours if ignored (Tier 4 staging expiry)
-- Outcome record stored for future Reputation Graph contribution
+- Outcome record stored for future Trust Network contribution
 
 #### E2E-3.4: **[TST-E2E-016]** D2D Commerce with ChairMaker
 
@@ -446,16 +446,16 @@ prefixes.
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
 | 1 | Don Alonso | "Find me a good office chair" | Don Alonso's Phone WS → Don Alonso's Brain | Query received |
-| 2 | — | Brain checks Reputation Graph | Don Alonso's Brain → AppView | No reputation data available (cold start) |
+| 2 | — | Brain checks Trust Network | Don Alonso's Brain → AppView | No reputation data available (cold start) |
 | 3 | — | Brain falls back to web search via OpenClaw | Don Alonso's Brain → MCP → OpenClaw | Web search for "best office chair" |
 | 4 | — | Brain enriches with vault context (back pain, budget, sitting hours) | Don Alonso's Brain | Vault data applied to raw web results |
 | 5 | — | Brain assembles personalized response | Don Alonso's Brain → Don Alonso's Phone WS | "Based on web reviews and your back issues, the Steelcase Leap or Herman Miller Aeron. The Aeron is within your budget at 72,000 INR." |
 
 **Verification:**
 - Response includes personal context from vault (back pain, budget) applied to web results
-- Transition from web search to Reputation Graph is invisible to user as data grows
+- Transition from web search to Trust Network is invisible to user as data grows
 
-#### E2E-3.6: **[TST-E2E-018]** Outcome Reporting to Reputation Graph
+#### E2E-3.6: **[TST-E2E-018]** Outcome Reporting to Trust Network
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
@@ -1142,7 +1142,7 @@ prefixes.
 
 ---
 
-### Suite 12: Reputation Graph Lifecycle
+### Suite 12: Trust Network Lifecycle
 
 > Full lifecycle: publish attestation, relay propagation, query, bot reputation degradation,
 > signed tombstone deletion, trust score computation.
@@ -1712,7 +1712,7 @@ Suite 8 (Sensitive Personas) ──→ Requires Suite 1 + health/financial perso
 Suite 9 (Digital Estate) ──→ Requires Suite 1 + Albert node
 Suite 10 (Resilience) ──→ Requires Suite 1 (any populated state)
 Suite 11 (Multi-Device) ──→ Requires Suite 1 (multiple devices paired)
-Suite 12 (Reputation Graph) ──→ Requires Suite 1 + PDS + Relay + AppView
+Suite 12 (Trust Network) ──→ Requires Suite 1 + PDS + Relay + AppView
 Suite 13 (Security) ──→ Requires Suite 1 + Attacker tools
 Suite 14 (Agentic LLM) ──→ Requires Docker containers + GOOGLE_API_KEY (for @slow tests)
 Suite 15 (CLI Signing) ──→ Requires Suite 1 + CLI identity

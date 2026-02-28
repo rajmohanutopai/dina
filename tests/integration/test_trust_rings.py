@@ -17,7 +17,7 @@ from tests.integration.mocks import (
     MockDinaCore,
     MockHuman,
     MockIdentity,
-    MockReputationGraph,
+    MockTrustNetwork,
     MockTrustEvaluator,
     OutcomeReport,
     TrustRing,
@@ -121,7 +121,7 @@ class TestRing1Unverified:
 
 # TST-INT-573
     def test_unverified_attestation_has_low_impact(
-        self, mock_reputation_graph: MockReputationGraph
+        self, mock_trust_network: MockTrustNetwork
     ) -> None:
         """Reviews from unverified entities carry minimal weight."""
         attestation = ExpertAttestation(
@@ -133,10 +133,10 @@ class TestRing1Unverified:
             verdict={"summary": "Best laptop ever!"},
             source_url="https://example.com/review",
         )
-        mock_reputation_graph.add_attestation(attestation)
+        mock_trust_network.add_attestation(attestation)
 
         # The attestation is recorded but the expert's trust score is 0
-        assert mock_reputation_graph.get_trust_score(
+        assert mock_trust_network.get_trust_score(
             attestation.expert_did
         ) == 0.0
 
@@ -526,21 +526,21 @@ class TestTrustComposite:
 
 # TST-INT-314
     def test_trust_degrades_with_bad_behavior(
-        self, mock_reputation_graph: MockReputationGraph
+        self, mock_trust_network: MockTrustNetwork
     ) -> None:
         """Bad outcomes reduce a bot's reputation score over time."""
         bot_did = "did:plc:BadBot12345678901234567890ab"
 
         # Start with a decent score
-        mock_reputation_graph.update_bot_score(bot_did, 40.0)
-        initial = mock_reputation_graph.get_bot_score(bot_did)
+        mock_trust_network.update_bot_score(bot_did, 40.0)
+        initial = mock_trust_network.get_bot_score(bot_did)
         assert initial == 90.0  # default 50 + 40
 
         # Series of bad outcomes tank the score
         for _ in range(5):
-            mock_reputation_graph.update_bot_score(bot_did, -15.0)
+            mock_trust_network.update_bot_score(bot_did, -15.0)
 
-        degraded = mock_reputation_graph.get_bot_score(bot_did)
+        degraded = mock_trust_network.get_bot_score(bot_did)
         assert degraded < initial
         assert degraded == 15.0  # 90 - 75
 
@@ -562,21 +562,21 @@ class TestTrustComposite:
 
 # TST-INT-311
     def test_trust_score_floor_at_zero(
-        self, mock_reputation_graph: MockReputationGraph
+        self, mock_trust_network: MockTrustNetwork
     ) -> None:
         """Bot reputation cannot go below 0.0."""
         bot_did = "did:plc:Floor1234567890123456789012ab"
 
         # Massive negative adjustments
         for _ in range(20):
-            mock_reputation_graph.update_bot_score(bot_did, -50.0)
+            mock_trust_network.update_bot_score(bot_did, -50.0)
 
-        score = mock_reputation_graph.get_bot_score(bot_did)
+        score = mock_trust_network.get_bot_score(bot_did)
         assert score == 0.0
 
 # TST-INT-586
     def test_outcome_reports_from_different_rings(
-        self, mock_reputation_graph: MockReputationGraph
+        self, mock_trust_network: MockTrustNetwork
     ) -> None:
         """Outcome reports are recorded regardless of reporter ring,
         but the ring is preserved for downstream weighting.
@@ -592,11 +592,11 @@ class TestTrustComposite:
                 outcome="still_using",
                 satisfaction="positive",
             )
-            mock_reputation_graph.add_outcome(outcome)
+            mock_trust_network.add_outcome(outcome)
 
-        assert len(mock_reputation_graph.outcomes) == 3
+        assert len(mock_trust_network.outcomes) == 3
         rings_recorded = {o.reporter_trust_ring for o in
-                          mock_reputation_graph.outcomes}
+                          mock_trust_network.outcomes}
         assert rings_recorded == {
             TrustRing.RING_1_UNVERIFIED,
             TrustRing.RING_2_VERIFIED,
@@ -605,7 +605,7 @@ class TestTrustComposite:
 
 # TST-INT-587
     def test_signed_tombstone_only_by_author(
-        self, mock_reputation_graph: MockReputationGraph,
+        self, mock_trust_network: MockTrustNetwork,
         mock_identity: MockIdentity,
     ) -> None:
         """Only the original author can delete their attestation via
@@ -623,22 +623,22 @@ class TestTrustComposite:
             verdict={"summary": "Excellent lumbar support"},
             source_url="https://example.com/review",
         )
-        mock_reputation_graph.add_attestation(attestation)
-        assert len(mock_reputation_graph.attestations) == 1
+        mock_trust_network.add_attestation(attestation)
+        assert len(mock_trust_network.attestations) == 1
 
         # Non-author cannot delete
         sig = mock_identity.sign(b"aeron_2025")
-        result = mock_reputation_graph.signed_tombstone(
+        result = mock_trust_network.signed_tombstone(
             target_id="aeron_2025", author_did=other_did, signature=sig,
         )
         assert result is False
-        assert len(mock_reputation_graph.attestations) == 1
+        assert len(mock_trust_network.attestations) == 1
 
         # Author CAN delete
-        result = mock_reputation_graph.signed_tombstone(
+        result = mock_trust_network.signed_tombstone(
             target_id="aeron_2025", author_did=author_did, signature=sig,
         )
         assert result is True
-        assert len(mock_reputation_graph.attestations) == 0
-        assert len(mock_reputation_graph.tombstones) == 1
-        assert mock_reputation_graph.tombstones[0]["author"] == author_did
+        assert len(mock_trust_network.attestations) == 0
+        assert len(mock_trust_network.tombstones) == 1
+        assert mock_trust_network.tombstones[0]["author"] == author_did

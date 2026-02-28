@@ -76,7 +76,7 @@ dina recall "tea"           # should return the fact you just stored
 
 ## 5. Install the Reputation AppView (optional)
 
-The AppView is the public Reputation Graph indexer — it consumes AT Protocol records from the Jetstream firehose, scores them, and serves XRPC query endpoints.
+The AppView is the public Trust Network indexer — it consumes AT Protocol records from the Jetstream firehose, scores them, and serves XRPC query endpoints.
 
 ```bash
 cd appview

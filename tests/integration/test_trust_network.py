@@ -1,4 +1,4 @@
-"""Integration tests for the Reputation Graph.
+"""Integration tests for the Trust Network.
 
 Tests expert attestations (signed reviews from verified creators),
 outcome data (anonymized purchase outcomes), and bot reputation
@@ -23,7 +23,7 @@ from tests.integration.mocks import (
     MockIdentity,
     MockPLCResolver,
     MockRelay,
-    MockReputationGraph,
+    MockTrustNetwork,
     MockReviewBot,
     MockTrustEvaluator,
     MockVerificationLayer,
@@ -44,11 +44,11 @@ class TestExpertAttestations:
 # TST-INT-297
     def test_review_becomes_attestation(
         self,
-        mock_reputation_graph: MockReputationGraph,
+        mock_trust_network: MockTrustNetwork,
         mock_identity: MockIdentity,
     ) -> None:
         """A YouTube product review is transformed into a signed attestation
-        in the reputation graph."""
+        in the trust network."""
         attestation = ExpertAttestation(
             expert_did="did:plc:MKBHD12345678901234567890123456",
             expert_trust_ring=TrustRing.RING_3_SKIN_IN_GAME,
@@ -65,10 +65,10 @@ class TestExpertAttestations:
             deep_link_context="Battery stress test at 4:20",
             creator_name="MKBHD",
         )
-        mock_reputation_graph.add_attestation(attestation)
+        mock_trust_network.add_attestation(attestation)
 
-        assert len(mock_reputation_graph.attestations) == 1
-        stored = mock_reputation_graph.attestations[0]
+        assert len(mock_trust_network.attestations) == 1
+        stored = mock_trust_network.attestations[0]
         assert stored.product_id == "thinkpad_x1_2025"
         assert stored.rating == 92
         assert stored.source_url == "https://youtube.com/watch?v=abc123"
@@ -78,7 +78,7 @@ class TestExpertAttestations:
 # TST-INT-299
     def test_attestation_is_signed(
         self,
-        mock_reputation_graph: MockReputationGraph,
+        mock_trust_network: MockTrustNetwork,
         mock_identity: MockIdentity,
     ) -> None:
         """Every attestation carries a cryptographic signature from the expert's DID."""
@@ -103,9 +103,9 @@ class TestExpertAttestations:
             source_url="https://youtube.com/watch?v=expert_review",
             signature=signature,
         )
-        mock_reputation_graph.add_attestation(attestation)
+        mock_trust_network.add_attestation(attestation)
 
-        stored = mock_reputation_graph.attestations[0]
+        stored = mock_trust_network.attestations[0]
         assert stored.signature != ""
         assert len(stored.signature) == 64  # SHA-256 hex digest
         # Verify signature matches expected
@@ -113,7 +113,7 @@ class TestExpertAttestations:
 
 # TST-INT-535
     def test_multiple_experts_same_product(
-        self, mock_reputation_graph: MockReputationGraph
+        self, mock_trust_network: MockTrustNetwork
     ) -> None:
         """Multiple experts can attest to the same product. All attestations
         are preserved for aggregation."""
@@ -133,13 +133,13 @@ class TestExpertAttestations:
                 source_url=f"https://youtube.com/watch?v={name.lower()}_review",
                 creator_name=name,
             )
-            mock_reputation_graph.add_attestation(att)
+            mock_trust_network.add_attestation(att)
 
-        assert len(mock_reputation_graph.attestations) == 3
+        assert len(mock_trust_network.attestations) == 3
 
         # All three are for the same product
         product_attestations = [
-            a for a in mock_reputation_graph.attestations
+            a for a in mock_trust_network.attestations
             if a.product_id == "thinkpad_x1_2025"
         ]
         assert len(product_attestations) == 3
@@ -163,7 +163,7 @@ class TestOutcomeData:
 
 # TST-INT-298
     def test_purchase_outcome_tracked(
-        self, mock_reputation_graph: MockReputationGraph
+        self, mock_trust_network: MockTrustNetwork
     ) -> None:
         """After a purchase, the user can record an outcome (still_using, returned, etc.)."""
         outcome = OutcomeReport(
@@ -177,17 +177,17 @@ class TestOutcomeData:
             satisfaction="positive",
             issues=[],
         )
-        mock_reputation_graph.add_outcome(outcome)
+        mock_trust_network.add_outcome(outcome)
 
-        assert len(mock_reputation_graph.outcomes) == 1
-        stored = mock_reputation_graph.outcomes[0]
+        assert len(mock_trust_network.outcomes) == 1
+        stored = mock_trust_network.outcomes[0]
         assert stored.outcome == "still_using"
         assert stored.satisfaction == "positive"
         assert stored.purchase_verified is True
 
 # TST-INT-307
     def test_outcome_anonymized(
-        self, mock_reputation_graph: MockReputationGraph
+        self, mock_trust_network: MockTrustNetwork
     ) -> None:
         """Outcome reports do not contain PII — only trust ring and age bucket."""
         outcome = OutcomeReport(
@@ -200,9 +200,9 @@ class TestOutcomeData:
             outcome="still_using",
             satisfaction="positive",
         )
-        mock_reputation_graph.add_outcome(outcome)
+        mock_trust_network.add_outcome(outcome)
 
-        stored = mock_reputation_graph.outcomes[0]
+        stored = mock_trust_network.outcomes[0]
         # OutcomeReport has no name, email, DID, or address fields
         assert not hasattr(stored, "reporter_name")
         assert not hasattr(stored, "reporter_email")
@@ -229,12 +229,12 @@ class TestOutcomeData:
 
 # TST-INT-309
     def test_high_participation_rate_from_verified_users(
-        self, mock_reputation_graph: MockReputationGraph
+        self, mock_trust_network: MockTrustNetwork
     ) -> None:
         """Verified users (Ring 2+) contribute more outcomes, making the data reliable."""
         # Simulate 20 outcomes from verified users, 5 from unverified
         for i in range(20):
-            mock_reputation_graph.add_outcome(OutcomeReport(
+            mock_trust_network.add_outcome(OutcomeReport(
                 reporter_trust_ring=TrustRing.RING_2_VERIFIED,
                 reporter_age_days=200 + i * 10,
                 product_category="laptops",
@@ -245,7 +245,7 @@ class TestOutcomeData:
                 satisfaction="positive",
             ))
         for i in range(5):
-            mock_reputation_graph.add_outcome(OutcomeReport(
+            mock_trust_network.add_outcome(OutcomeReport(
                 reporter_trust_ring=TrustRing.RING_1_UNVERIFIED,
                 reporter_age_days=10 + i,
                 product_category="laptops",
@@ -256,9 +256,9 @@ class TestOutcomeData:
                 satisfaction="negative",
             ))
 
-        total = len(mock_reputation_graph.outcomes)
+        total = len(mock_trust_network.outcomes)
         verified = [
-            o for o in mock_reputation_graph.outcomes
+            o for o in mock_trust_network.outcomes
             if o.reporter_trust_ring != TrustRing.RING_1_UNVERIFIED
         ]
         assert total == 25
@@ -268,7 +268,7 @@ class TestOutcomeData:
 
 # TST-INT-310
     def test_factual_not_opinion(
-        self, mock_reputation_graph: MockReputationGraph
+        self, mock_trust_network: MockTrustNetwork
     ) -> None:
         """Outcome data records facts (still_using, returned, broken) not opinions.
         The satisfaction field is the only subjective element."""
@@ -283,9 +283,9 @@ class TestOutcomeData:
             satisfaction="positive",
             issues=["armrest_wobble"],
         )
-        mock_reputation_graph.add_outcome(outcome)
+        mock_trust_network.add_outcome(outcome)
 
-        stored = mock_reputation_graph.outcomes[0]
+        stored = mock_trust_network.outcomes[0]
         # Factual fields
         assert stored.outcome in ("still_using", "returned", "broken",
                                   "gifted", "replaced")
@@ -306,47 +306,47 @@ class TestBotReputation:
 # TST-INT-314
     def test_reputation_tracked(
         self,
-        mock_reputation_graph: MockReputationGraph,
+        mock_trust_network: MockTrustNetwork,
         mock_review_bot: MockReviewBot,
     ) -> None:
         """Every bot has a reputation score tracked in the graph."""
-        mock_reputation_graph.update_bot_score(mock_review_bot.bot_did, 0)
-        score = mock_reputation_graph.get_bot_score(mock_review_bot.bot_did)
+        mock_trust_network.update_bot_score(mock_review_bot.bot_did, 0)
+        score = mock_trust_network.get_bot_score(mock_review_bot.bot_did)
         # Default is 50.0, delta 0 keeps it at 50.0
         assert score == 50.0
 
         # Record good performance
-        mock_reputation_graph.update_bot_score(mock_review_bot.bot_did, 10)
-        score = mock_reputation_graph.get_bot_score(mock_review_bot.bot_did)
+        mock_trust_network.update_bot_score(mock_review_bot.bot_did, 10)
+        score = mock_trust_network.get_bot_score(mock_review_bot.bot_did)
         assert score == 60.0
 
 # TST-INT-536
     def test_compromised_bot_drops_score(
         self,
-        mock_reputation_graph: MockReputationGraph,
+        mock_trust_network: MockTrustNetwork,
     ) -> None:
         """If a bot is found compromised or gives bad recommendations,
         its reputation score drops sharply."""
         bot_did = "did:plc:CompromisedBot000000000000000000"
-        mock_reputation_graph.update_bot_score(bot_did, 30)  # Start at 80
-        initial = mock_reputation_graph.get_bot_score(bot_did)
+        mock_trust_network.update_bot_score(bot_did, 30)  # Start at 80
+        initial = mock_trust_network.get_bot_score(bot_did)
         assert initial == 80.0
 
         # Compromise detected — heavy penalty
-        mock_reputation_graph.update_bot_score(bot_did, -50)
-        after_penalty = mock_reputation_graph.get_bot_score(bot_did)
+        mock_trust_network.update_bot_score(bot_did, -50)
+        after_penalty = mock_trust_network.get_bot_score(bot_did)
         assert after_penalty == 30.0
         assert after_penalty < initial
 
         # Further penalties cannot go below 0
-        mock_reputation_graph.update_bot_score(bot_did, -100)
-        floor = mock_reputation_graph.get_bot_score(bot_did)
+        mock_trust_network.update_bot_score(bot_did, -100)
+        floor = mock_trust_network.get_bot_score(bot_did)
         assert floor == 0.0
 
 # TST-INT-537
     def test_auto_routes_to_better_bot(
         self,
-        mock_reputation_graph: MockReputationGraph,
+        mock_trust_network: MockTrustNetwork,
     ) -> None:
         """Dina auto-routes queries to the highest-reputation bot for a category."""
         bots = {
@@ -357,50 +357,50 @@ class TestBotReputation:
         for bot_did, (_name, delta) in bots.items():
             # Start from 0: update_bot_score starts from default 50, so
             # we set score = 50 + delta_from_50
-            mock_reputation_graph.bot_scores[bot_did] = delta
+            mock_trust_network.bot_scores[bot_did] = delta
 
         # Find the best bot
         best_bot_did = max(
-            mock_reputation_graph.bot_scores,
-            key=lambda did: mock_reputation_graph.get_bot_score(did),
+            mock_trust_network.bot_scores,
+            key=lambda did: mock_trust_network.get_bot_score(did),
         )
         assert best_bot_did == "did:plc:BotB"
-        assert mock_reputation_graph.get_bot_score(best_bot_did) == 88.0
+        assert mock_trust_network.get_bot_score(best_bot_did) == 88.0
 
         # If BotB's reputation drops below BotC, routing switches
-        mock_reputation_graph.update_bot_score("did:plc:BotB", -20)
+        mock_trust_network.update_bot_score("did:plc:BotB", -20)
         new_best = max(
-            mock_reputation_graph.bot_scores,
-            key=lambda did: mock_reputation_graph.get_bot_score(did),
+            mock_trust_network.bot_scores,
+            key=lambda did: mock_trust_network.get_bot_score(did),
         )
         assert new_best == "did:plc:BotC"
 
 # TST-INT-311
     def test_reputation_visible_to_user(
         self,
-        mock_reputation_graph: MockReputationGraph,
+        mock_trust_network: MockTrustNetwork,
         mock_review_bot: MockReviewBot,
     ) -> None:
         """Bot reputation scores are visible to the user — full transparency."""
-        mock_reputation_graph.bot_scores[mock_review_bot.bot_did] = 94.0
+        mock_trust_network.bot_scores[mock_review_bot.bot_did] = 94.0
 
-        score = mock_reputation_graph.get_bot_score(mock_review_bot.bot_did)
+        score = mock_trust_network.get_bot_score(mock_review_bot.bot_did)
         assert score == 94.0
 
         # User can see all bot scores
-        assert mock_review_bot.bot_did in mock_reputation_graph.bot_scores
+        assert mock_review_bot.bot_did in mock_trust_network.bot_scores
         # Score is a simple float, easy to display
         assert isinstance(score, float)
         assert 0.0 <= score <= 100.0
 
 # TST-INT-304
     def test_reputation_score_capped_at_100(
-        self, mock_reputation_graph: MockReputationGraph
+        self, mock_trust_network: MockTrustNetwork
     ) -> None:
         """Reputation score cannot exceed 100.0."""
         bot_did = "did:plc:PerfectBot0000000000000000000000"
-        mock_reputation_graph.update_bot_score(bot_did, 60)  # 50 + 60 = 110 -> capped at 100
-        score = mock_reputation_graph.get_bot_score(bot_did)
+        mock_trust_network.update_bot_score(bot_did, 60)  # 50 + 60 = 110 -> capped at 100
+        score = mock_trust_network.get_bot_score(bot_did)
         assert score == 100.0
 
 
@@ -416,7 +416,7 @@ class TestATProtocolPDS:
 # TST-INT-300
     def test_pds_cannot_forge_records(
         self,
-        mock_reputation_graph: MockReputationGraph,
+        mock_trust_network: MockTrustNetwork,
         mock_identity: MockIdentity,
     ) -> None:
         """Records are signed by the author's DID key. A PDS operator
@@ -440,9 +440,9 @@ class TestATProtocolPDS:
             source_url="https://youtube.com/watch?v=pds_forge_test",
             signature=signature,
         )
-        mock_reputation_graph.add_attestation(attestation)
+        mock_trust_network.add_attestation(attestation)
 
-        stored = mock_reputation_graph.attestations[0]
+        stored = mock_trust_network.attestations[0]
         # Original signature verifies
         assert mock_identity.verify(canonical, stored.signature)
 
@@ -536,7 +536,7 @@ class TestATProtocolPDS:
 # TST-INT-305
     def test_author_deletes_own_review_signed_tombstone(
         self,
-        mock_reputation_graph: MockReputationGraph,
+        mock_trust_network: MockTrustNetwork,
         mock_identity: MockIdentity,
     ) -> None:
         """An author can delete their own review by publishing a signed
@@ -551,23 +551,23 @@ class TestATProtocolPDS:
             verdict={"summary": "Great laptop"},
             source_url="https://youtube.com/watch?v=tombstone_test",
         )
-        mock_reputation_graph.add_attestation(attestation)
-        assert len(mock_reputation_graph.attestations) == 1
+        mock_trust_network.add_attestation(attestation)
+        assert len(mock_trust_network.attestations) == 1
 
         # Author signs and publishes tombstone
         tombstone_sig = mock_identity.sign(b"tombstone:thinkpad_x1_2025")
-        deleted = mock_reputation_graph.signed_tombstone(
+        deleted = mock_trust_network.signed_tombstone(
             "thinkpad_x1_2025", author_did, tombstone_sig
         )
         assert deleted is True
-        assert len(mock_reputation_graph.attestations) == 0
-        assert len(mock_reputation_graph.tombstones) == 1
-        assert mock_reputation_graph.tombstones[0]["author"] == author_did
+        assert len(mock_trust_network.attestations) == 0
+        assert len(mock_trust_network.tombstones) == 1
+        assert mock_trust_network.tombstones[0]["author"] == author_did
 
 # TST-INT-306
     def test_non_author_cannot_delete_review(
         self,
-        mock_reputation_graph: MockReputationGraph,
+        mock_trust_network: MockTrustNetwork,
         mock_identity: MockIdentity,
     ) -> None:
         """Only the original author can tombstone a review. A different
@@ -582,19 +582,19 @@ class TestATProtocolPDS:
             verdict={"summary": "Great laptop"},
             source_url="https://youtube.com/watch?v=non_author_test",
         )
-        mock_reputation_graph.add_attestation(attestation)
+        mock_trust_network.add_attestation(attestation)
 
         # A different user tries to delete the review
         impostor_did = mock_identity.root_did
         assert impostor_did != original_author
 
         fake_sig = mock_identity.sign(b"tombstone:thinkpad_x1_2025")
-        deleted = mock_reputation_graph.signed_tombstone(
+        deleted = mock_trust_network.signed_tombstone(
             "thinkpad_x1_2025", impostor_did, fake_sig
         )
         assert deleted is False
         # Record is still present
-        assert len(mock_reputation_graph.attestations) == 1
+        assert len(mock_trust_network.attestations) == 1
 
 # TST-INT-308
     def test_aggregate_scores_computed_not_stored(

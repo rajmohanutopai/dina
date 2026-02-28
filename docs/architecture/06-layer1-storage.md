@@ -175,7 +175,7 @@ Anonymized outcome record created:
     dina_age_days: 730
 }
         ↓
-Signed with persona key, submitted to Reputation Graph
+Signed with persona key, submitted to Trust Network
 (No user identity. No product name. Just category + outcome.)
 ```
 

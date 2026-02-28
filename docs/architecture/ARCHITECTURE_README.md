@@ -25,7 +25,7 @@
 | 05 | [Layer 0: Identity](05-layer0-identity.md) | 238 | Root identity, personas, key derivation, ZK credentials |
 | 06 | [Layer 1: Storage](06-layer1-storage.md) | 468 | Vault tiers (0–5), encryption architecture, key wrapping, backup |
 | 07 | [Layer 2: Ingestion](07-layer2-ingestion.md) | 415 | Connectors, MCP delegation, memory strategy, ingestion security |
-| 08 | [Layer 3: Reputation Graph](08-layer3-reputation-graph.md) | 452 | AT Protocol PDS, custom lexicons, attestations, outcome data, cold start |
+| 08 | [Layer 3: Trust Network](08-layer3-trust-network.md) | 452 | AT Protocol PDS, custom lexicons, attestations, outcome data, cold start |
 | 09 | [Layer 4: Dina-to-Dina](09-layer4-dina-to-dina.md) | 413 | Encryption protocol, connection establishment, message types, sharing policy, transport |
 | 10 | [Layer 5: Bot Interface](10-layer5-bot-interface.md) | 100 | Query sanitization, bot communication protocol, reputation scoring, discovery |
 | 11 | [Layer 6: Intelligence](11-layer6-intelligence.md) | 284 | PII scrubber, entity vault pattern, LLM routing, context injection, silence protocol |

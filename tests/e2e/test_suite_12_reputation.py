@@ -1,6 +1,6 @@
-"""E2E Test Suite 12: Reputation Graph Lifecycle.
+"""E2E Test Suite 12: Trust Network Lifecycle.
 
-Tests the full reputation graph lifecycle: expert attestation publishing via
+Tests the full trust network lifecycle: expert attestation publishing via
 AT Protocol (PDS -> Relay -> AppView), bot reputation degradation with
 auto-routing, signed tombstone deletion, composite trust score computation,
 AT Protocol discovery, and AppView determinism / censorship detection.
@@ -32,12 +32,12 @@ from tests.e2e.mocks import (
 
 
 # ---------------------------------------------------------------------------
-# Suite 12: Reputation Graph Lifecycle
+# Suite 12: Trust Network Lifecycle
 # ---------------------------------------------------------------------------
 
 
-class TestReputationGraphLifecycle:
-    """E2E-12.x -- Reputation Graph: attestations, bot reputation,
+class TestTrustNetworkLifecycle:
+    """E2E-12.x -- Trust Network: attestations, bot reputation,
     tombstone deletion, trust scores, AT Protocol discovery, and
     AppView determinism."""
 

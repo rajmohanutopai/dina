@@ -1,12 +1,12 @@
 > **Source of truth:** [`ARCHITECTURE.md`](../../ARCHITECTURE.md) — keep this file in sync with the primary document.
 
-## Layer 3: Reputation Graph
+## Layer 3: Trust Network
 
 Distributed system for verified product reviews, expert attestations, and outcome data. **Built on AT Protocol** — reputation data is inherently public and benefits from federation, Merkle tree integrity, and ecosystem discoverability.
 
 ### Architecture
 
-The Reputation Graph is NOT a single database. It's a distributed system built on AT Protocol's federated infrastructure:
+The Trust Network is NOT a single database. It's a distributed system built on AT Protocol's federated infrastructure:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -54,7 +54,7 @@ The Reputation Graph is NOT a single database. It's a distributed system built o
 | **Custom schemas** | Lexicons let us define `com.dina.reputation.attestation`, `com.dina.reputation.outcome`, etc. |
 | **Identity** | `did:plc` is native to AT Protocol — zero integration work |
 | **Deletion** | Users can delete records from their repo. Signed tombstones prevent unauthorized deletion. |
-| **Ecosystem** | Any AT Protocol AppView can index Dina's Reputation Graph. Handles (`alice.dina.host`) provide human-readable discovery. |
+| **Ecosystem** | Any AT Protocol AppView can index Dina's Trust Network. Handles (`alice.dina.host`) provide human-readable discovery. |
 | **Implementations** | Go (`bluesky-social/indigo`), Python (`MarshalX/atproto`), Rust (`atrium-rs`), TypeScript (official reference) |
 
 ### Custom Lexicons
@@ -439,7 +439,7 @@ The hash reveals nothing about the content. Privacy is preserved. When you delet
 
 ### Cold Start Strategy: Tool First, Network Second
 
-The Reputation Graph needs scale to be useful. With 10 users, there's no statistically meaningful outcome data. **Phase 1 value must not depend on the Reputation Graph.**
+The Trust Network needs scale to be useful. With 10 users, there's no statistically meaningful outcome data. **Phase 1 value must not depend on the Trust Network.**
 
 | Phase | How Dina answers "What's the best office chair?" |
 |-------|--------------------------------------------------|
@@ -448,7 +448,7 @@ The Reputation Graph needs scale to be useful. With 10 users, there's no statist
 
 The transition is gradual and invisible to the user. One day the nudge includes network data alongside web results. No flag day, no "activate reputation" moment.
 
-**There is no "Review Bot" to build.** No scraping infrastructure, no crawlers, no YouTube/Reddit/RTINGS ingestion pipeline. In Phase 1, Dina researches the public web for you using her Brain + OpenClaw — the same way a human would Google things, but with your personal context applied. The Reputation Graph activates when it activates.
+**There is no "Review Bot" to build.** No scraping infrastructure, no crawlers, no YouTube/Reddit/RTINGS ingestion pipeline. In Phase 1, Dina researches the public web for you using her Brain + OpenClaw — the same way a human would Google things, but with your personal context applied. The Trust Network activates when it activates.
 
 ---
 

@@ -78,7 +78,7 @@ docker-compose.yml (4 containers — llama optional via --profile local-llm):
 │  ┌──────────────────────────────────────────────────┐    │
 │  │  dina-pds (AT Protocol PDS)                       │    │
 │  │  Port 2583 (external) — Relay crawling             │    │
-│  │  Reputation Graph records only                     │    │
+│  │  Trust Network records only                     │    │
 │  │  Core pushes signed records here                   │    │
 │  └──────────────────────────────────────────────────┘    │
 │                                                           │

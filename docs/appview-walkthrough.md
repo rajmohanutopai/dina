@@ -1,8 +1,8 @@
-# The Dina AppView: A Walk Through the Reputation Graph
+# The Dina AppView: A Walk Through the Trust Network
 
 ## Act I: What This Is — The Missing Layer of the Internet
 
-Every time you buy something online, you're trusting a stranger. The only signal you have is a star rating that can be bought, a review that can be faked, and a platform that profits from both. Dina's AppView is the antidote: a **decentralized reputation graph** where trust is earned through cryptographic attestations, not purchased through ad spend.
+Every time you buy something online, you're trusting a stranger. The only signal you have is a star rating that can be bought, a review that can be faked, and a platform that profits from both. Dina's AppView is the antidote: a **decentralized trust network** where trust is earned through cryptographic attestations, not purchased through ad spend.
 
 <details>
 <summary><strong>Design Decision — Why build reputation on the AT Protocol instead of a custom network?</strong></summary>
@@ -56,7 +56,7 @@ Every environment variable is validated through a Zod schema at startup (line 5-
 
 ### Lexicons (config/lexicons.ts)
 
-19 reputation record collection NSIDs — the vocabulary of the reputation graph. Each maps to a `com.dina.reputation.*` collection in the AT Protocol namespace. These are the 19 record types that the ingester subscribes to on the Jetstream firehose.
+19 reputation record collection NSIDs — the vocabulary of the trust network. Each maps to a `com.dina.reputation.*` collection in the AT Protocol namespace. These are the 19 record types that the ingester subscribes to on the Jetstream firehose.
 
 ---
 
@@ -461,7 +461,7 @@ The ingester, scorer, and web server have fundamentally different scaling charac
 
 ---
 
-## Epilogue: The Reputation Graph in Context
+## Epilogue: The Trust Network in Context
 
 The AppView is the third pillar of Dina's architecture:
 
@@ -469,12 +469,12 @@ The AppView is the third pillar of Dina's architecture:
 |-----------|------|------------|
 | **Core** | Sovereign identity + encrypted storage | Go |
 | **Brain** | LLM reasoning + PII protection | Python |
-| **AppView** | Decentralized reputation graph | TypeScript |
+| **AppView** | Decentralized trust network | TypeScript |
 
 Core gives Dina her identity. Brain gives her judgment. AppView gives her memory of who to trust.
 
 When Dina advises you before a purchase ("This seller has a trust score of 0.72 from 47 attestations, 3 of which are from people in your trust graph"), the data comes from the AppView. When an autonomous agent submits an intent to buy something, the Brain checks the seller's reputation via the AppView before approving the transaction. When Core receives a D2D message from an unknown Dina, it queries the AppView to determine whether to accept or quarantine it.
 
-The reputation graph replaces ad-funded ranking with trust-funded ranking. A product with 10 genuine reviews from trusted reviewers outranks a product with 1000 fake reviews from anonymous accounts. An expert's attestation (high reviewer quality, evidence included, co-signed) carries more weight than a drive-by rating. And because the data lives on the AT Protocol, no single company can suppress, manipulate, or delete it.
+The trust network replaces ad-funded ranking with trust-funded ranking. A product with 10 genuine reviews from trusted reviewers outranks a product with 1000 fake reviews from anonymous accounts. An expert's attestation (high reviewer quality, evidence included, co-signed) carries more weight than a drive-by rating. And because the data lives on the AT Protocol, no single company can suppress, manipulate, or delete it.
 
 This is Verified Truth — the second of Dina's Four Laws — implemented as arithmetic.
