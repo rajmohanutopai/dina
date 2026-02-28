@@ -70,7 +70,7 @@ function registerCleanup(fn: () => void): void {
 // Docker Compose lifecycle (PostgreSQL for integration tests)
 // ---------------------------------------------------------------------------
 
-const POSTGRES_PORT = 5432
+const POSTGRES_PORT = 5433  // matches docker-compose.yml host port (avoids 5432 collisions)
 
 function waitForPostgres(host = 'localhost', port = POSTGRES_PORT, timeoutMs = 60_000): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -139,7 +139,7 @@ async function startDocker(restart: boolean): Promise<number> {
 
   // Sync schema to DB using drizzle-kit push (reads TypeScript schema directly,
   // no migration journal needed). Then apply any extra SQL migrations.
-  const dbUrl = 'postgresql://dina:dina@localhost:5432/dina_trust'
+  const dbUrl = 'postgresql://dina:dina@localhost:5433/dina_trust'
   const pushEnv = { ...composeEnv, DATABASE_URL: dbUrl }
 
   process.stderr.write('  Syncing database schema (drizzle-kit push)...\n')
@@ -242,6 +242,7 @@ interface TestResult {
   section: number
   duration: number // seconds
   file: string
+  output: string  // failure messages / stack traces
 }
 
 interface SectionStats {
@@ -275,6 +276,7 @@ interface VitestJsonResult {
       status?: string
       duration?: number | null
       ancestorTitles?: string[]
+      failureMessages?: string[]
     }>
   }>
   numTotalTests?: number
@@ -324,12 +326,15 @@ function parseVitestJson(jsonPath: string): TestResult[] {
       }
       if (section === 0) section = fileSection
 
+      const output = (assertion.failureMessages ?? []).join('\n')
+
       results.push({
         name: fullName,
         status,
         section,
         duration: durationMs / 1000,
         file: filename,
+        output,
       })
     }
   }
@@ -378,7 +383,7 @@ function runSuite(key: string): SuiteResult {
 
   const env = {
     ...process.env,
-    DATABASE_URL: process.env.DATABASE_URL ?? 'postgresql://dina:dina@localhost:5432/dina_trust',
+    DATABASE_URL: process.env.DATABASE_URL ?? 'postgresql://dina:dina@localhost:5433/dina_trust',
   }
 
   const t0 = performance.now()
@@ -507,6 +512,101 @@ function groupBySection(tests: TestResult[]): Map<number, TestResult[]> {
     groups.get(t.section)!.push(t)
   }
   return groups
+}
+
+// ---------------------------------------------------------------------------
+// Structured log file (failures grouped at top, then per-section detail)
+// ---------------------------------------------------------------------------
+
+function writeStructuredLog(
+  logPath: string,
+  suiteName: string,
+  tests: TestResult[],
+  sections: SectionStats[],
+): void {
+  const lines: string[] = []
+  const BAR = '='.repeat(80)
+  const DASH = '\u2500'.repeat(80)
+
+  lines.push(BAR)
+  lines.push(`  ${suiteName} \u2014 Structured Test Log`)
+  lines.push(BAR)
+  lines.push('')
+
+  // Summary counts
+  const total = sections.reduce((a, s) => a + s.total, 0)
+  const passed = sections.reduce((a, s) => a + s.passed, 0)
+  const failed = sections.reduce((a, s) => a + s.failed, 0)
+  const skipped = sections.reduce((a, s) => a + s.skipped, 0)
+  lines.push(`  Total: ${total}  |  Passed: ${passed}  |  Failed: ${failed}  |  Skipped: ${skipped}`)
+  lines.push('')
+
+  // Failures index at top for quick reference
+  const failedTests = tests.filter(t => t.status === 'FAIL')
+    .sort((a, b) => a.section - b.section || a.name.localeCompare(b.name))
+
+  if (failedTests.length > 0) {
+    lines.push(`  FAILURES (${failedTests.length}):`)
+    for (const t of failedTests) {
+      const secName = sections.find(s => s.number === t.section)?.name ?? `\u00a7${t.section}`
+      lines.push(`    - [${secName}] ${t.name}`)
+    }
+    lines.push('')
+
+    // Full failure output grouped together
+    lines.push(DASH)
+    lines.push('  FAILURE DETAILS')
+    lines.push(DASH)
+    for (const t of failedTests) {
+      const secName = sections.find(s => s.number === t.section)?.name ?? `\u00a7${t.section}`
+      lines.push('')
+      lines.push(`  [FAIL] ${t.name}`)
+      lines.push(`         Section: ${secName}  |  File: ${t.file}  |  Duration: ${t.duration.toFixed(3)}s`)
+      if (t.output) {
+        for (const ol of t.output.split('\n')) {
+          lines.push(`         ${ol}`)
+        }
+      }
+    }
+    lines.push('')
+  }
+
+  lines.push(BAR)
+  lines.push('')
+
+  // Per-section, per-test details
+  const bySection = groupBySection(tests)
+  for (const s of [...sections].sort((a, b) => a.number - b.number)) {
+    const secTests = bySection.get(s.number)
+    if (!secTests || secTests.length === 0) continue
+
+    lines.push(DASH)
+    lines.push(`  \u00a7 ${s.number}  ${s.name}`)
+    lines.push(`  Tests: ${s.total}  |  Pass: ${s.passed}  |  Fail: ${s.failed}  |  Skip: ${s.skipped}`)
+    lines.push(DASH)
+
+    for (const t of secTests.sort((a, b) => a.name.localeCompare(b.name))) {
+      const tag = `[${t.status}]`.padEnd(6)
+      const dur = t.duration > 0 ? `  (${t.duration.toFixed(3)}s)` : ''
+      lines.push(`  ${tag} ${t.name}${dur}`)
+
+      if (t.output) {
+        for (const ol of t.output.split('\n')) {
+          lines.push(`         ${ol}`)
+        }
+        lines.push('')
+      }
+    }
+
+    lines.push('')
+  }
+
+  lines.push(BAR)
+  lines.push(`  End of ${suiteName} structured log`)
+  lines.push(BAR)
+  lines.push('')
+
+  writeFileSync(logPath, lines.join('\n'))
 }
 
 function renderSuite(
@@ -758,6 +858,11 @@ async function main(): Promise<void> {
         writeFileSync(join(logDir, `${key}.log`), rawOutput)
       }
       const sections = aggregate(tests, sectionMap)
+
+      // Write structured per-test log with failures grouped at top
+      if (tests.length > 0) {
+        writeStructuredLog(join(logDir, `${key}_details.log`), cfg.name, tests, sections)
+      }
 
       const tot = sections.reduce((a, s) => a + s.total, 0)
       const pas = sections.reduce((a, s) => a + s.passed, 0)

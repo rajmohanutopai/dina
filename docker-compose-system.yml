@@ -1,0 +1,294 @@
+# Dina System Tests — All three service tiers + full AT Protocol pipeline, zero mocks.
+# 2 Core+Brain pairs (Alonso, Sancho) + PLC + PDS + Jetstream + AppView (full stack).
+# Port range 19300+ avoids collisions with E2E (19100+) and dev (8100).
+#
+# Usage:
+#   docker compose -f docker-compose-system.yml up --build -d
+#   python -m pytest tests/system/ -v --tb=short
+#   docker compose -f docker-compose-system.yml down -v
+
+x-core-base: &core-base
+  build:
+    context: ./core
+    dockerfile: Dockerfile
+  environment: &core-env
+    DINA_BRAIN_TOKEN_FILE: /run/secrets/brain_token
+    DINA_CLIENT_TOKEN_FILE: /run/secrets/client_token
+    DINA_LISTEN_ADDR: ":8100"
+    DINA_RATE_LIMIT: "100000"
+    DINA_SPOOL_MAX: "10485760"
+    DINA_LOG_LEVEL: debug
+    DINA_TEST_MODE: "true"
+    DINA_ENV: test
+    DINA_ALLOWED_ENDPOINTS: "core-alonso,core-sancho"
+  secrets:
+    - brain_token
+    - client_token
+  healthcheck:
+    test: ["CMD", "wget", "--spider", "-q", "http://localhost:8100/healthz"]
+    interval: 5s
+    timeout: 5s
+    retries: 15
+    start_period: 10s
+  networks:
+    - dina-system
+
+x-brain-base: &brain-base
+  build:
+    context: ./brain
+    dockerfile: Dockerfile
+  environment: &brain-env
+    DINA_BRAIN_TOKEN_FILE: /run/secrets/brain_token
+    DINA_CLIENT_TOKEN_FILE: /run/secrets/client_token
+    DINA_BRAIN_PORT: "8200"
+    DINA_LLM_URL: "http://localhost:9999"
+    DINA_LOG_LEVEL: DEBUG
+    DINA_CLOUD_LLM: "${DINA_CLOUD_LLM:-}"
+    GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
+    ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+    OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+    OPENROUTER_MODEL: "${OPENROUTER_MODEL:-}"
+  secrets:
+    - brain_token
+    - client_token
+  healthcheck:
+    test: ["CMD", "python", "-c", "import sys; from urllib.request import urlopen; r = urlopen('http://localhost:8200/healthz', timeout=2); sys.exit(0 if r.status == 200 else 1)"]
+    interval: 10s
+    timeout: 10s
+    retries: 15
+    start_period: 5s
+  networks:
+    - dina-system
+
+services:
+  # ---- Core+Brain: Alonso ----
+  core-alonso:
+    <<: *core-base
+    ports:
+      - "19300:8100"
+    volumes:
+      - alonso-data:/data
+    environment:
+      <<: *core-env
+      DINA_VAULT_PATH: /data/vault
+      DINA_BRAIN_URL: http://brain-alonso:8200
+      DINA_IDENTITY_SEED: "0000000000000000000000000000000000000000000000000000000000000001"
+      DINA_OWN_DID: "did:plc:alonso"
+      DINA_KNOWN_PEERS: "did:plc:sancho=http://core-sancho:8100/msg=0000000000000000000000000000000000000000000000000000000000000002"
+
+  brain-alonso:
+    <<: *brain-base
+    ports:
+      - "19400:8200"
+    volumes:
+      - alonso-data:/data
+    environment:
+      <<: *brain-env
+      DINA_CORE_URL: http://core-alonso:8100
+    depends_on:
+      core-alonso:
+        condition: service_healthy
+
+  # ---- Core+Brain: Sancho ----
+  core-sancho:
+    <<: *core-base
+    ports:
+      - "19301:8100"
+    volumes:
+      - sancho-data:/data
+    environment:
+      <<: *core-env
+      DINA_VAULT_PATH: /data/vault
+      DINA_BRAIN_URL: http://brain-sancho:8200
+      DINA_IDENTITY_SEED: "0000000000000000000000000000000000000000000000000000000000000002"
+      DINA_OWN_DID: "did:plc:sancho"
+      DINA_KNOWN_PEERS: "did:plc:alonso=http://core-alonso:8100/msg=0000000000000000000000000000000000000000000000000000000000000001"
+
+  brain-sancho:
+    <<: *brain-base
+    ports:
+      - "19401:8200"
+    volumes:
+      - sancho-data:/data
+    environment:
+      <<: *brain-env
+      DINA_CORE_URL: http://core-sancho:8100
+    depends_on:
+      core-sancho:
+        condition: service_healthy
+
+  # ---- AT Protocol tier ----
+  plc:
+    build:
+      context: ./plc
+      dockerfile: Dockerfile
+    ports:
+      - "19600:2582"
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:2582/healthz', timeout=2)"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      - dina-system
+
+  pds:
+    image: ghcr.io/bluesky-social/pds:0.4
+    ports:
+      - "19601:3000"
+    volumes:
+      - pds-data:/pds
+    environment:
+      PDS_HOSTNAME: localhost
+      PDS_PORT: "3000"
+      PDS_DATA_DIRECTORY: /pds
+      PDS_BLOBSTORE_DISK_LOCATION: /pds/blocks
+      PDS_DID_PLC_URL: http://plc:2582
+      PDS_JWT_SECRET: test-jwt-secret-system-e2e
+      PDS_ADMIN_PASSWORD: test-admin-pw
+      PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX: "24cfb0e961883c268cda68dc69bbca0c6df510bff656decec5d9b4c0c0bd928a"
+      PDS_DEV_MODE: "true"
+      PDS_INVITE_REQUIRED: "false"
+    depends_on:
+      plc:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/xrpc/_health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - dina-system
+
+  jetstream:
+    image: ghcr.io/bluesky-social/jetstream:sha-e027425
+    platform: linux/amd64
+    ports:
+      - "19602:6008"
+    environment:
+      JETSTREAM_WS_URL: ws://pds:3000/xrpc/com.atproto.sync.subscribeRepos
+      JETSTREAM_LISTEN_ADDR: ":6008"
+      JETSTREAM_LIVENESS_TTL: "120s"
+    depends_on:
+      pds:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6008'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - dina-system
+
+  # ---- AppView tier ----
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: dina_trust
+      POSTGRES_USER: dina
+      POSTGRES_PASSWORD: dina
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "19432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dina -d dina_trust"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - dina-system
+
+  appview-migrate:
+    build:
+      context: ./appview
+      target: migrator
+    command: ["npx", "drizzle-kit", "push", "--force"]
+    environment:
+      DATABASE_URL: postgresql://dina:dina@postgres:5432/dina_trust
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dina-system
+
+  appview-web:
+    build:
+      context: ./appview
+    command: ["node", "dist/src/web/server.js"]
+    environment:
+      DATABASE_URL: postgresql://dina:dina@postgres:5432/dina_trust
+      PORT: "3000"
+      NODE_ENV: production
+      RATE_LIMIT_RPM: "100000"
+    ports:
+      - "19500:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      appview-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - dina-system
+
+  appview-ingester:
+    build:
+      context: ./appview
+    command: ["node", "dist/src/ingester/main.js"]
+    environment:
+      DATABASE_URL: postgresql://dina:dina@postgres:5432/dina_trust
+      DATABASE_POOL_MAX: "20"
+      JETSTREAM_URL: ws://jetstream:6008
+      NODE_ENV: test
+      LOG_LEVEL: info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      jetstream:
+        condition: service_healthy
+      appview-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    networks:
+      - dina-system
+
+  appview-scorer:
+    build:
+      context: ./appview
+    command: ["node", "dist/src/scorer/main.js"]
+    environment:
+      DATABASE_URL: postgresql://dina:dina@postgres:5432/dina_trust
+      NODE_ENV: test
+      LOG_LEVEL: info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      appview-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    networks:
+      - dina-system
+
+volumes:
+  alonso-data:
+  sancho-data:
+  pgdata:
+  pds-data:
+
+networks:
+  dina-system:
+    driver: bridge
+
+secrets:
+  brain_token:
+    file: ./secrets/brain_token
+  client_token:
+    file: ./secrets/client_token

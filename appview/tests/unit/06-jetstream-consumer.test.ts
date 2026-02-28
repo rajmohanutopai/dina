@@ -182,7 +182,7 @@ function makeCommitCreate(overrides: Partial<JetstreamCommitCreate> = {}): Jetst
       collection: 'com.dina.trust.attestation',
       rkey: 'tid1',
       record: { subject: { type: 'did', did: 'did:plc:abc' }, category: 'quality', sentiment: 'positive', createdAt: now },
-      cid: 'cid1',
+      cid: 'bafyreib2rxk3rybhqbqkrhkpm3ic6e3p4dkkbjxhvcsg3kbygpjlmmzb6aaa',
     },
     ...overrides,
   }
@@ -199,7 +199,7 @@ function makeCommitUpdate(): JetstreamCommitCreate {
       collection: 'com.dina.trust.attestation',
       rkey: 'tid1',
       record: { subject: { type: 'did', did: 'did:plc:abc' }, category: 'quality', sentiment: 'positive', createdAt: now },
-      cid: 'cid2',
+      cid: 'bafyreib2rxk3rybhqbqkrhkpm3ic6e3p4dkkbjxhvcsg3kbygpjlmmzb6bbb',
     },
   }
 }

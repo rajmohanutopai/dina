@@ -947,13 +947,14 @@ describe('§2.3 Bounded Queue', () => {
     queue.push({ timestampUs: 2000, data: null })
     queue.push({ timestampUs: 3000, data: null })
 
-    // Wait for all to be processed
+    // Wait for all to be processed (item 1000 retries up to MAX_RETRY=3 then dead-lettered)
+    // Total calls: items 2000+3000 once each + item 1000 three times = 5
     await vi.waitFor(() => {
-      expect(callCount).toBe(3)
+      expect(callCount).toBe(5)
     })
 
-    // All 3 items were processed despite the error on the first
-    expect(processFn).toHaveBeenCalledTimes(3)
+    // All 3 items were processed despite the error on the first (+ 2 retries)
+    expect(processFn).toHaveBeenCalledTimes(5)
   })
 
   it('UT-BQ-010: depth/active/inFlight accessors', async () => {
@@ -1032,8 +1033,20 @@ describe('§2.3 Bounded Queue', () => {
   it('UT-BQ-013: HIGH-04: failed item timestamp pinned in getSafeCursor', async () => {
     // Input: An item that fails processing
     // Expected: Its timestamp stays in failedTimestamps, getSafeCursor includes it
+    // Note: The queue retries failed items up to MAX_RETRY (3) times before
+    // dead-lettering. We block retry attempts so the failed timestamp stays
+    // pinned and observable.
+    let failAttempts = 0
+    const retryResolvers: Array<() => void> = []
     const processFn = vi.fn(async (item: QueueItem) => {
-      if (item.timestampUs === 1000) throw new Error('Intentional failure')
+      if (item.timestampUs === 1000) {
+        failAttempts++
+        if (failAttempts > 1) {
+          // Block retry attempts so the failed timestamp stays pinned
+          await new Promise<void>((resolve) => retryResolvers.push(resolve))
+        }
+        throw new Error('Intentional failure')
+      }
     })
 
     const queue = new BoundedIngestionQueue(processFn, { maxSize: 100, maxConcurrency: 5 })
@@ -1041,7 +1054,7 @@ describe('§2.3 Bounded Queue', () => {
     queue.push({ timestampUs: 1000, data: null })
     queue.push({ timestampUs: 2000, data: null })
 
-    // Wait for both to process
+    // Wait for initial processing of both items
     await vi.waitFor(() => {
       expect(processFn).toHaveBeenCalledTimes(2)
     })
@@ -1049,6 +1062,10 @@ describe('§2.3 Bounded Queue', () => {
 
     // Failed item's timestamp should pin the cursor at 1000
     expect(queue.getSafeCursor()).toBe(1000)
+
+    // Clean up: unblock retries so the queue can drain
+    retryResolvers.forEach((r) => r())
+    await new Promise((r) => setTimeout(r, 50))
   })
 
   it('UT-BQ-014: MEDIUM-06: getSafeCursor scans all queued items for minimum', async () => {

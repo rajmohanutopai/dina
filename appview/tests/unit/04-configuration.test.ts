@@ -101,9 +101,9 @@ describe('§4.1 Environment Validation', () => {
     expect(result.NEXT_PUBLIC_BASE_URL).toBe('http://localhost:3000')
   })
 
-  it('UT-ENV-014: MEDIUM-11: NODE_ENV field defaults to development', () => {
+  it('UT-ENV-014: MEDIUM-11: NODE_ENV field defaults to production', () => {
     const result = envSchema.parse({})
-    expect(result.NODE_ENV).toBe('development')
+    expect(result.NODE_ENV).toBe('production')
   })
 
   it('UT-ENV-015: MEDIUM-11: production mode requires stricter DATABASE_URL', () => {

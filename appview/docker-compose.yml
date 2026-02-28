@@ -8,8 +8,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
-    # MED-07: DB port not exposed to host by default — use internal Docker network.
-    # For local debugging: docker compose exec postgres psql -U dina -d dina_trust
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    # MED-07: Production deployments should omit ports (internal Docker network only).
+    # Host port 5433 avoids collisions with local or other-suite Postgres on 5432.
+    # Override with POSTGRES_HOST_PORT if needed.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dina -d dina_trust"]
       interval: 5s

@@ -7,7 +7,8 @@ RUN npm ci --ignore-scripts
 COPY tsconfig.json ./
 COPY src/ src/
 
-RUN npx tsc --outDir dist
+RUN npx tsc --outDir dist \
+ && npx -y tsc-alias -p tsconfig.json --outDir dist -f
 
 # Migration stage: keeps devDependencies (drizzle-kit) for schema migrations
 FROM node:22-alpine AS migrator
@@ -16,8 +17,9 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 
-COPY drizzle.config.ts ./
+COPY drizzle.config.ts tsconfig.json ./
 COPY drizzle/ drizzle/
+COPY src/ src/
 COPY --from=builder /app/dist dist/
 
 CMD ["npx", "drizzle-kit", "migrate"]

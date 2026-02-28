@@ -140,7 +140,13 @@ describe('13 Cursor Management', () => {
     // Expected: getSafeCursor includes failed timestamps in minimum calculation
     const queue = new BoundedIngestionQueue(
       async (item) => {
-        if (item.timestampUs === 2000) throw new Error('Simulated failure')
+        if (item.timestampUs === 2000) {
+          // Delay before throwing so the item is still in-flight when we check
+          // getSafeCursor(). Without this, all 3 retry attempts complete instantly
+          // and the item gets dead-lettered before the assertion.
+          await new Promise(resolve => setTimeout(resolve, 500))
+          throw new Error('Simulated failure')
+        }
         // Other items complete successfully
       },
       { maxSize: 100, maxConcurrency: 5 },

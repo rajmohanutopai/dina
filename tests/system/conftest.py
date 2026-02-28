@@ -1,0 +1,447 @@
+"""System test fixtures — all services real, zero mocks.
+
+Brings up 2 Core+Brain pairs + PLC + PDS + Jetstream + AppView (full stack)
+via Docker Compose. Seeds AppView Postgres with test data for trust queries.
+"""
+
+from __future__ import annotations
+
+import os
+import socket
+import subprocess
+import time
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+
+import httpx
+import pytest
+
+# ---------------------------------------------------------------------------
+# Paths & ports
+# ---------------------------------------------------------------------------
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+COMPOSE_FILE = PROJECT_ROOT / "docker-compose-system.yml"
+SECRETS_DIR = PROJECT_ROOT / "secrets"
+
+PORTS = {
+    "core_alonso": 19300,
+    "core_sancho": 19301,
+    "brain_alonso": 19400,
+    "brain_sancho": 19401,
+    "postgres": 19432,
+    "appview_web": 19500,
+    "plc": 19600,
+    "pds": 19601,
+    "jetstream": 19602,
+}
+
+HEALTH_TIMEOUT = 240  # seconds
+HEALTH_INTERVAL = 3   # seconds
+
+
+# ---------------------------------------------------------------------------
+# Docker lifecycle
+# ---------------------------------------------------------------------------
+
+class SystemServices:
+    """Manages the Docker Compose stack for system tests."""
+
+    def __init__(self) -> None:
+        self._started = False
+        self.brain_token = ""
+        self.client_token = ""
+
+    # -- URL accessors --
+
+    def core_url(self, actor: str) -> str:
+        return f"http://localhost:{PORTS[f'core_{actor}']}"
+
+    def brain_url(self, actor: str) -> str:
+        return f"http://localhost:{PORTS[f'brain_{actor}']}"
+
+    @property
+    def appview_url(self) -> str:
+        return f"http://localhost:{PORTS['appview_web']}"
+
+    @property
+    def pds_url(self) -> str:
+        return f"http://localhost:{PORTS['pds']}"
+
+    @property
+    def plc_url(self) -> str:
+        return f"http://localhost:{PORTS['plc']}"
+
+    @property
+    def jetstream_url(self) -> str:
+        return f"http://localhost:{PORTS['jetstream']}"
+
+    @property
+    def postgres_dsn(self) -> str:
+        return f"postgresql://dina:dina@localhost:{PORTS['postgres']}/dina_trust"
+
+    # -- Lifecycle --
+
+    def start(self, restart: bool = False) -> None:
+        self._load_tokens()
+
+        if restart:
+            print("\n  [system] Tearing down existing stack (restart)...")
+            self._compose("down", "-v")
+
+        # Always rebuild so tests run against the latest code.
+        # Docker layer caching makes this fast when nothing changed.
+        print("  [system] Building and starting system stack (docker compose up --build -d)...")
+        result = self._compose("up", "--build", "-d")
+        if result.returncode != 0:
+            stderr = result.stderr or ""
+            raise RuntimeError(
+                f"docker compose up failed (exit {result.returncode}):\n{stderr[-1000:]}"
+            )
+
+        self._wait_for_health()
+        self._started = True
+        print("  [system] All services healthy.")
+
+    def stop(self) -> None:
+        if self._started:
+            print("\n  [system] Stopping system stack...")
+            self._compose("down", "-v")
+            print("  [system] Stack stopped.")
+
+    def _load_tokens(self) -> None:
+        brain_path = SECRETS_DIR / "brain_token"
+        client_path = SECRETS_DIR / "client_token"
+        if brain_path.exists():
+            self.brain_token = brain_path.read_text().strip()
+        if client_path.exists():
+            self.client_token = client_path.read_text().strip()
+
+    def _compose(self, *args: str) -> subprocess.CompletedProcess:
+        cmd = ["docker", "compose", "-f", str(COMPOSE_FILE)] + list(args)
+        return subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(PROJECT_ROOT),
+        )
+
+    def _all_healthy(self) -> bool:
+        """Quick probe of all service endpoints."""
+        checks = [
+            (self.core_url("alonso") + "/healthz", "core-alonso"),
+            (self.core_url("sancho") + "/healthz", "core-sancho"),
+            (self.brain_url("alonso") + "/healthz", "brain-alonso"),
+            (self.brain_url("sancho") + "/healthz", "brain-sancho"),
+            (self.appview_url + "/health", "appview-web"),
+            (self.plc_url + "/healthz", "plc"),
+            (self.pds_url + "/xrpc/_health", "pds"),
+        ]
+        for url, label in checks:
+            try:
+                r = httpx.get(url, timeout=3)
+                if r.status_code != 200:
+                    return False
+            except Exception:
+                return False
+
+        # TCP probe for postgres
+        if not self._tcp_probe("localhost", PORTS["postgres"]):
+            return False
+
+        # TCP probe for jetstream (WebSocket server, no HTTP health endpoint)
+        if not self._tcp_probe("localhost", PORTS["jetstream"]):
+            return False
+
+        return True
+
+    def _tcp_probe(self, host: str, port: int) -> bool:
+        try:
+            sock = socket.create_connection((host, port), timeout=3)
+            sock.close()
+            return True
+        except (OSError, ConnectionRefusedError):
+            return False
+
+    def _wait_for_health(self) -> None:
+        deadline = time.time() + HEALTH_TIMEOUT
+        while time.time() < deadline:
+            if self._all_healthy():
+                return
+            remaining = int(deadline - time.time())
+            print(f"  [system] Waiting for services... ({remaining}s remaining)")
+            time.sleep(HEALTH_INTERVAL)
+        raise TimeoutError(
+            f"System services not healthy after {HEALTH_TIMEOUT}s"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Session fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def system_services():
+    """Start the full Docker stack for the test session."""
+    svc = SystemServices()
+    # Default: always restart to ensure tests run against latest code.
+    # Set SYSTEM_RESTART=0 to skip tear-down and reuse running containers.
+    restart = os.environ.get("SYSTEM_RESTART", "1") != "0"
+    svc.start(restart=restart)
+    yield svc
+    svc.stop()
+
+
+@pytest.fixture(scope="session")
+def brain_headers(system_services):
+    return {"Authorization": f"Bearer {system_services.brain_token}"}
+
+
+@pytest.fixture(scope="session")
+def admin_headers(system_services):
+    return {"Authorization": f"Bearer {system_services.client_token}"}
+
+
+# ---------------------------------------------------------------------------
+# Persona setup (session-scoped, runs once)
+# ---------------------------------------------------------------------------
+
+PERSONAS = ["personal", "consumer"]
+
+
+@pytest.fixture(scope="session", autouse=True)
+def setup_personas(system_services, admin_headers, brain_headers):
+    """Create and unlock personas on both Core nodes, clear vaults."""
+    for actor in ("alonso", "sancho"):
+        base = system_services.core_url(actor)
+        for name in PERSONAS:
+            # Create (idempotent — ignores "already exists")
+            try:
+                httpx.post(
+                    f"{base}/v1/personas",
+                    json={"name": name, "tier": "open", "passphrase": "test"},
+                    headers=admin_headers,
+                    timeout=10,
+                )
+            except Exception:
+                pass
+            # Unlock
+            try:
+                httpx.post(
+                    f"{base}/v1/persona/unlock",
+                    json={"persona": name, "passphrase": "test"},
+                    headers=admin_headers,
+                    timeout=10,
+                )
+            except Exception:
+                pass
+        # Clear vaults for clean test state
+        for name in PERSONAS:
+            try:
+                httpx.post(
+                    f"{base}/v1/vault/clear",
+                    json={"persona": name},
+                    headers=brain_headers,
+                    timeout=10,
+                )
+            except Exception:
+                pass
+
+
+# ---------------------------------------------------------------------------
+# AppView data seeding
+# ---------------------------------------------------------------------------
+
+def _seed_appview(dsn: str) -> dict:
+    """Insert test data directly into AppView Postgres.
+
+    Returns dict of created IDs for test assertions.
+    """
+    try:
+        import psycopg2
+    except ImportError:
+        pytest.skip("psycopg2 not installed — skipping AppView seed")
+
+    now = datetime.now(timezone.utc)
+    ids: dict = {}
+
+    conn = psycopg2.connect(dsn)
+    conn.autocommit = True
+    cur = conn.cursor()
+
+    # Subjects
+    subj_alonso = f"subj_{uuid.uuid4().hex[:12]}"
+    subj_sancho = f"subj_{uuid.uuid4().hex[:12]}"
+    ids["subject_alonso"] = subj_alonso
+    ids["subject_sancho"] = subj_sancho
+
+    for sid, name, did in [
+        (subj_alonso, "Don Alonso", "did:plc:alonso"),
+        (subj_sancho, "Sancho Panza", "did:plc:sancho"),
+    ]:
+        cur.execute(
+            """INSERT INTO subjects (id, name, subject_type, did, identifiers_json, needs_recalc, created_at, updated_at)
+               VALUES (%s, %s, 'did', %s, '[]'::jsonb, true, %s, %s)
+               ON CONFLICT (id) DO NOTHING""",
+            (sid, name, did, now, now),
+        )
+
+    # DID profiles
+    for did, score in [("did:plc:alonso", 0.85), ("did:plc:sancho", 0.72)]:
+        cur.execute(
+            """INSERT INTO did_profiles (did, needs_recalc, total_attestations_about, positive_about, overall_trust_score, computed_at)
+               VALUES (%s, false, 5, 4, %s, %s)
+               ON CONFLICT (did) DO NOTHING""",
+            (did, score, now),
+        )
+
+    # Attestations
+    att1_uri = f"at://did:plc:alonso/com.dina.trust.attestation/{uuid.uuid4().hex[:12]}"
+    att2_uri = f"at://did:plc:sancho/com.dina.trust.attestation/{uuid.uuid4().hex[:12]}"
+    ids["attestation_1"] = att1_uri
+    ids["attestation_2"] = att2_uri
+
+    for uri, author, subj_id, sentiment in [
+        (att1_uri, "did:plc:alonso", subj_sancho, "positive"),
+        (att2_uri, "did:plc:sancho", subj_alonso, "positive"),
+    ]:
+        cur.execute(
+            """INSERT INTO attestations (uri, author_did, cid, subject_id, subject_ref_raw, category, sentiment, record_created_at, indexed_at, search_content)
+               VALUES (%s, %s, %s, %s, %s::jsonb, 'quality', %s, %s, %s, %s)
+               ON CONFLICT (uri) DO NOTHING""",
+            (
+                uri, author,
+                f"bafyrei{uuid.uuid4().hex[:40]}",
+                subj_id,
+                '{"type": "did", "did": "' + author + '"}',
+                sentiment, now, now,
+                f"Test attestation from {author}",
+            ),
+        )
+
+    # Trust edges (schema: id, from_did, to_did, edge_type, weight, source_uri, created_at)
+    for src, tgt, kind, uri in [
+        ("did:plc:alonso", "did:plc:sancho", "vouch", att1_uri),
+        ("did:plc:sancho", "did:plc:alonso", "attestation", att2_uri),
+    ]:
+        edge_id = f"edge_{uuid.uuid4().hex[:12]}"
+        cur.execute(
+            """INSERT INTO trust_edges (id, from_did, to_did, edge_type, weight, source_uri, created_at)
+               VALUES (%s, %s, %s, %s, 1.0, %s, %s)
+               ON CONFLICT DO NOTHING""",
+            (edge_id, src, tgt, kind, uri, now),
+        )
+
+    cur.close()
+    conn.close()
+    return ids
+
+
+def _clear_appview(dsn: str) -> None:
+    """Truncate seeded tables for clean state."""
+    try:
+        import psycopg2
+    except ImportError:
+        return
+    try:
+        conn = psycopg2.connect(dsn)
+        conn.autocommit = True
+        cur = conn.cursor()
+        for table in ("trust_edges", "attestations", "did_profiles", "subjects"):
+            cur.execute(f"DELETE FROM {table}")
+        cur.close()
+        conn.close()
+    except Exception:
+        pass
+
+
+@pytest.fixture(scope="session", autouse=True)
+def seed_appview(system_services):
+    """Seed AppView Postgres with test trust data."""
+    dsn = system_services.postgres_dsn
+    _clear_appview(dsn)
+    ids = _seed_appview(dsn)
+    yield ids
+    _clear_appview(dsn)
+
+
+# ---------------------------------------------------------------------------
+# URL shortcuts
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def alonso_core(system_services):
+    return system_services.core_url("alonso")
+
+
+@pytest.fixture(scope="session")
+def sancho_core(system_services):
+    return system_services.core_url("sancho")
+
+
+@pytest.fixture(scope="session")
+def alonso_brain(system_services):
+    return system_services.brain_url("alonso")
+
+
+@pytest.fixture(scope="session")
+def sancho_brain(system_services):
+    return system_services.brain_url("sancho")
+
+
+@pytest.fixture(scope="session")
+def appview(system_services):
+    return system_services.appview_url
+
+
+@pytest.fixture(scope="session")
+def pds_url(system_services):
+    return system_services.pds_url
+
+
+# ---------------------------------------------------------------------------
+# PDS account (session-scoped — one test account for the full pipeline)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def pds_account(system_services):
+    """Create a test account on the local PDS. Returns (did, access_jwt)."""
+    url = system_services.pds_url
+    r = httpx.post(
+        f"{url}/xrpc/com.atproto.server.createAccount",
+        json={
+            "email": "tester@dina.test",
+            "password": "test-pw-system",
+            "handle": "tester.test",
+        },
+        timeout=15,
+    )
+    if r.status_code == 200:
+        data = r.json()
+        return data["did"], data["accessJwt"]
+    # Account may already exist from a previous run — try login
+    login_r = httpx.post(
+        f"{url}/xrpc/com.atproto.server.createSession",
+        json={
+            "identifier": "tester@dina.test",
+            "password": "test-pw-system",
+        },
+        timeout=15,
+    )
+    if login_r.status_code == 200:
+        data = login_r.json()
+        return data["did"], data["accessJwt"]
+    raise RuntimeError(
+        f"Failed to create/login PDS account: "
+        f"create={r.status_code} {r.text[:200]}, "
+        f"login={login_r.status_code} {login_r.text[:200]}"
+    )
+
+
+@pytest.fixture(scope="session")
+def pds_auth_headers(pds_account):
+    """Authorization headers for the PDS test account."""
+    _, jwt = pds_account
+    return {"Authorization": f"Bearer {jwt}"}
