@@ -32,7 +32,7 @@ var knownEndpoints = map[string]string{
 	"POST /v1/pair/complete":     "json",
 	"POST /v1/pii/scrub":        "json",
 	"POST /v1/notify":            "json",
-	"POST /v1/reputation/query":  "json",
+	"POST /v1/trust/query":  "json",
 	"POST /v1/did/sign":          "json",
 	"POST /v1/did/verify":        "json",
 }

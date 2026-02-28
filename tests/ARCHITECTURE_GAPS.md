@@ -52,13 +52,13 @@ All closed in `tests/integration/test_arch_medium_1.py` (TST-INT-605 through TST
 | M11 | TST-INT-616 | §4 | Watchdog resets processing task after 5-minute timeout | CLOSED |
 | M12 | TST-INT-617 | §4 | Scratchpad auto-expires after 24 hours | CLOSED |
 | M13 | TST-INT-618 | §6 | Backup key and Archive key are independent HKDF derivations | CLOSED |
-| M14 | TST-INT-619 | §6 | Client Sync key + Reputation Signing key HKDF derivations | CLOSED |
+| M14 | TST-INT-619 | §6 | Client Sync key + Trust Signing key HKDF derivations | CLOSED |
 | M15 | TST-INT-620 | §6 | Argon2id defaults: 128MB memory, 3 iterations, 4 parallelism | CLOSED |
 | M16 | TST-INT-613 | §4 | Vault query pagination: has_more + next_offset wire format | CLOSED |
 | M17 | TST-INT-621 | §6 | kv_store sync cursor survives brain restart | CLOSED |
 | M18 | TST-INT-622 | §5 | Restricted persona audit entry exact schema + daily briefing count | CLOSED |
 
-### §7-10: Ingestion, Reputation, D2D, Bot Interface (22 gaps)
+### §7-10: Ingestion, Trust, D2D, Bot Interface (22 gaps)
 
 | # | ID | Section | Gap | Status |
 |---|-----|---------|-----|--------|
@@ -81,7 +81,7 @@ All closed in `tests/integration/test_arch_medium_1.py` (TST-INT-605 through TST
 | M35 | TST-INT-639 | §9 | Bulk sharing policy update: applies only to filter-matching contacts | CLOSED |
 | M36 | TST-INT-640 | §9 | New contact without policy gets 6-field security defaults | CLOSED |
 | M37 | TST-INT-641 | §10 | Bot query includes response_format + max_sources with types | CLOSED |
-| M38 | TST-INT-642 | §10 | Bot response missing attribution results in reputation penalty | CLOSED |
+| M38 | TST-INT-642 | §10 | Bot response missing attribution results in trust penalty | CLOSED |
 | M39 | TST-INT-643 | §10 | Bot auto-routing threshold boundary (at/below) | CLOSED |
 | M40 | TST-INT-644 | §10 | Bot-to-bot referral declined when referred bot below threshold | CLOSED |
 

@@ -151,7 +151,7 @@ Traces to: Architecture §"Record Validator"
 | UT-RV-015 | invalid report type enum | reportType = "illegal" (not in enum) | success = false |
 | UT-RV-016 | report text exceeds max | text = 1500 chars (max 1000) | success = false |
 | UT-RV-017 | report evidence max count | 6 evidence items (max 5) | success = false |
-| UT-RV-018 | unknown collection → error | collection = "com.dina.reputation.unknown" | success = false, error says "Unknown collection" |
+| UT-RV-018 | unknown collection → error | collection = "com.dina.trust.unknown" | success = false, error says "Unknown collection" |
 | UT-RV-019 | valid attestation with optional fields | All optional fields populated (dimensions, evidence, mentions, cosignature, etc.) | success = true, all fields parsed |
 | UT-RV-020 | subject ref — all type variants | type = "did", "content", "product", "dataset", "organization", "claim" | All pass validation |
 | UT-RV-021 | subject ref — invalid type | type = "place" (not in enum) | success = false |
@@ -215,10 +215,10 @@ Traces to: Architecture §"Handler Pattern"
 
 | ID | Test Name | Description | Expected Result |
 |----|-----------|-------------|-----------------|
-| UT-HR-001 | routeHandler — attestation | collection = "com.dina.reputation.attestation" | Returns attestationHandler |
-| UT-HR-002 | routeHandler — vouch | collection = "com.dina.reputation.vouch" | Returns vouchHandler |
-| UT-HR-003 | routeHandler — all 19 collections registered | Iterate REPUTATION_COLLECTIONS | All return non-null handler |
-| UT-HR-004 | routeHandler — unknown collection | collection = "com.dina.reputation.foo" | Returns null |
+| UT-HR-001 | routeHandler — attestation | collection = "com.dina.trust.attestation" | Returns attestationHandler |
+| UT-HR-002 | routeHandler — vouch | collection = "com.dina.trust.vouch" | Returns vouchHandler |
+| UT-HR-003 | routeHandler — all 19 collections registered | Iterate TRUST_COLLECTIONS | All return non-null handler |
+| UT-HR-004 | routeHandler — unknown collection | collection = "com.dina.trust.foo" | Returns null |
 | UT-HR-005 | routeHandler — non-dina collection | collection = "app.bsky.feed.post" | Returns null |
 | UT-HR-006 | handler interface — handleCreate exists | Each handler in registry | Has handleCreate method |
 | UT-HR-007 | handler interface — handleDelete exists | Each handler in registry | Has handleDelete method |
@@ -229,12 +229,12 @@ Traces to: Architecture §"Deletion Handler", Fix 13
 
 | ID | Test Name | Description | Expected Result |
 |----|-----------|-------------|-----------------|
-| UT-DH-001 | getSourceTable — attestation → attestations table | "com.dina.reputation.attestation" | Returns attestations Drizzle table |
-| UT-DH-002 | getSourceTable — vouch → vouches table | "com.dina.reputation.vouch" | Returns vouches Drizzle table |
+| UT-DH-001 | getSourceTable — attestation → attestations table | "com.dina.trust.attestation" | Returns attestations Drizzle table |
+| UT-DH-002 | getSourceTable — vouch → vouches table | "com.dina.trust.vouch" | Returns vouches Drizzle table |
 | UT-DH-003 | **Fix 13: all 17 record types mapped** | Iterate all entries in COLLECTION_TABLE_MAP | All 17 collections map to correct tables |
-| UT-DH-004 | getSourceTable — unknown collection → undefined | "com.dina.reputation.unknown" | Returns undefined |
-| UT-DH-005 | getSourceTable — media (no dedicated table) | "com.dina.reputation.media" — if inline | Returns expected table or undefined |
-| UT-DH-006 | COLLECTION_TABLE_MAP completeness | Compare keys to REPUTATION_COLLECTIONS | All non-inline collections have entries |
+| UT-DH-004 | getSourceTable — unknown collection → undefined | "com.dina.trust.unknown" | Returns undefined |
+| UT-DH-005 | getSourceTable — media (no dedicated table) | "com.dina.trust.media" — if inline | Returns expected table or undefined |
+| UT-DH-006 | COLLECTION_TABLE_MAP completeness | Compare keys to TRUST_COLLECTIONS | All non-inline collections have entries |
 
 ### §2.6 Trust Edge Sync — Weight Heuristics (`trust-edge-sync.test.ts`)
 
@@ -263,7 +263,7 @@ Traces to: Architecture §"Directory Structure — shared/atproto/uri.ts"
 
 | ID | Test Name | Description | Expected Result |
 |----|-----------|-------------|-----------------|
-| UT-URI-001 | parse valid AT URI | "at://did:plc:abc/com.dina.reputation.attestation/tid123" | did = "did:plc:abc", collection = "com.dina.reputation.attestation", rkey = "tid123" |
+| UT-URI-001 | parse valid AT URI | "at://did:plc:abc/com.dina.trust.attestation/tid123" | did = "did:plc:abc", collection = "com.dina.trust.attestation", rkey = "tid123" |
 | UT-URI-002 | parse AT URI — did:web | "at://did:web:example.com/collection/rkey" | Parsed correctly |
 | UT-URI-003 | construct AT URI | did + collection + rkey | Produces correct AT URI string |
 | UT-URI-004 | invalid URI — missing protocol | "did:plc:abc/collection/rkey" | Throws or returns error |
@@ -364,11 +364,11 @@ Traces to: Architecture §"Environment & Configuration"
 
 | ID | Test Name | Description | Expected Result |
 |----|-----------|-------------|-----------------|
-| UT-LEX-001 | REPUTATION_COLLECTIONS has 19 entries | Array length check | length = 19 |
-| UT-LEX-002 | all entries prefixed with "com.dina.reputation." | Iterate and check prefix | All match |
+| UT-LEX-001 | TRUST_COLLECTIONS has 19 entries | Array length check | length = 19 |
+| UT-LEX-002 | all entries prefixed with "com.dina.trust." | Iterate and check prefix | All match |
 | UT-LEX-003 | no duplicate entries | Set comparison | Set size = array length |
 | UT-LEX-004 | expected collections present | Check for attestation, vouch, endorsement, flag, reply, reaction, etc. | All 19 present |
-| UT-LEX-005 | type safety — ReputationCollection type | TypeScript compile-time check | Type derived from const array |
+| UT-LEX-005 | type safety — TrustCollection type | TypeScript compile-time check | Type derived from const array |
 
 ---
 
@@ -410,7 +410,7 @@ Traces to: Architecture §"Consumer Implementation"
 | UT-JC-003 | kind = "commit", operation = "delete" → handleDelete | Valid delete event | handleDelete called |
 | UT-JC-004 | kind = "identity" → handleIdentityEvent | Identity event | handleIdentityEvent called |
 | UT-JC-005 | kind = "account" → handleAccountEvent | Account event | handleAccountEvent called |
-| UT-JC-006 | non-reputation collection → skipped | collection = "app.bsky.feed.post" | No handler called |
+| UT-JC-006 | non-trust collection → skipped | collection = "app.bsky.feed.post" | No handler called |
 | UT-JC-007 | **Fix 11: rate-limited DID → event dropped** | DID exceeding 50/hr | No handler called, metrics incremented |
 | UT-JC-008 | **HIGH-06: rate limiting applies to all operations** | Rate-limited DID, operation = "delete" | Delete also blocked (HIGH-06: rate limiting before operation branch) |
 | UT-JC-009 | validation failure → event skipped | Invalid record structure | Handler not called, metrics incremented |

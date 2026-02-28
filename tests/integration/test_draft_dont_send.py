@@ -295,12 +295,12 @@ class TestPaymentIntentProtocol:
                 f"Sensitive pattern '{pattern}' found in payment intent"
 
 # TST-INT-494
-    def test_outcome_recorded_for_reputation(
+    def test_outcome_recorded_for_trust(
         self, mock_dina: MockDinaCore,
     ) -> None:
         """After a purchase is completed (by the user, not Dina), the
         outcome is recorded in the trust network."""
-        reputation = mock_dina.reputation
+        trust_network = mock_dina.trust_network
 
         # User completes purchase and reports outcome
         outcome = OutcomeReport(
@@ -314,10 +314,10 @@ class TestPaymentIntentProtocol:
             satisfaction="positive",
             issues=[],
         )
-        reputation.add_outcome(outcome)
+        trust_network.add_outcome(outcome)
 
-        assert len(reputation.outcomes) == 1
-        recorded = reputation.outcomes[0]
+        assert len(trust_network.outcomes) == 1
+        recorded = trust_network.outcomes[0]
         assert recorded.product_id == "aeron_2025"
         assert recorded.outcome == "still_using"
         assert recorded.satisfaction == "positive"

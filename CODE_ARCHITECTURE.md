@@ -94,7 +94,7 @@ dina/
 │   │   │   │
 │   │   │   └── pds/               # AT Protocol PDS client
 │   │   │       ├── client.go      # Push signed records to PDS
-│   │   │       └── lexicon.go     # com.dina.reputation.* record types
+│   │   │       └── lexicon.go     # com.dina.trust.* record types
 │   │   │
 │   │   ├── service/               # Business logic orchestration
 │   │   │   ├── vault.go           # VaultService: query routing, hybrid search, batch store

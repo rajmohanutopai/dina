@@ -26,7 +26,7 @@ import {
   routeHandler,
   getRegisteredCollections,
 } from '@/ingester/handlers/index.js'
-import { REPUTATION_COLLECTIONS } from '@/config/lexicons.js'
+import { TRUST_COLLECTIONS } from '@/config/lexicons.js'
 import { getSourceTable, COLLECTION_TABLE_MAP } from '@/ingester/deletion-handler.js'
 import * as schema from '@/db/schema/index.js'
 import { CONSTANTS } from '@/config/constants.js'
@@ -60,7 +60,7 @@ function validVouch(overrides: Record<string, unknown> = {}) {
 /** Minimal valid reaction record */
 function validReaction(overrides: Record<string, unknown> = {}) {
   return {
-    targetUri: 'at://did:plc:abc/com.dina.reputation.attestation/tid1',
+    targetUri: 'at://did:plc:abc/com.dina.trust.attestation/tid1',
     reaction: 'helpful',
     createdAt: now,
     ...overrides,
@@ -70,7 +70,7 @@ function validReaction(overrides: Record<string, unknown> = {}) {
 /** Minimal valid report record */
 function validReport(overrides: Record<string, unknown> = {}) {
   return {
-    targetUri: 'at://did:plc:abc/com.dina.reputation.attestation/tid1',
+    targetUri: 'at://did:plc:abc/com.dina.trust.attestation/tid1',
     reportType: 'spam',
     createdAt: now,
     ...overrides,
@@ -80,74 +80,74 @@ function validReport(overrides: Record<string, unknown> = {}) {
 /** Map of minimal valid records for every collection */
 function minimalRecordForCollection(collection: string): Record<string, unknown> {
   const map: Record<string, Record<string, unknown>> = {
-    'com.dina.reputation.attestation': validAttestation(),
-    'com.dina.reputation.vouch': validVouch(),
-    'com.dina.reputation.endorsement': {
+    'com.dina.trust.attestation': validAttestation(),
+    'com.dina.trust.vouch': validVouch(),
+    'com.dina.trust.endorsement': {
       subject: 'did:plc:abc',
       skill: 'typescript',
       endorsementType: 'worked-together',
       createdAt: now,
     },
-    'com.dina.reputation.flag': {
+    'com.dina.trust.flag': {
       subject: { type: 'did', did: 'did:plc:abc' },
       flagType: 'suspicious-activity',
       severity: 'warning',
       createdAt: now,
     },
-    'com.dina.reputation.reply': {
-      rootUri: 'at://did:plc:abc/com.dina.reputation.attestation/tid1',
-      parentUri: 'at://did:plc:abc/com.dina.reputation.attestation/tid1',
+    'com.dina.trust.reply': {
+      rootUri: 'at://did:plc:abc/com.dina.trust.attestation/tid1',
+      parentUri: 'at://did:plc:abc/com.dina.trust.attestation/tid1',
       intent: 'agree',
       text: 'I agree with this assessment.',
       createdAt: now,
     },
-    'com.dina.reputation.reaction': validReaction(),
-    'com.dina.reputation.reportRecord': validReport(),
-    'com.dina.reputation.revocation': {
-      targetUri: 'at://did:plc:abc/com.dina.reputation.attestation/tid1',
+    'com.dina.trust.reaction': validReaction(),
+    'com.dina.trust.reportRecord': validReport(),
+    'com.dina.trust.revocation': {
+      targetUri: 'at://did:plc:abc/com.dina.trust.attestation/tid1',
       reason: 'Changed my mind',
       createdAt: now,
     },
-    'com.dina.reputation.delegation': {
+    'com.dina.trust.delegation': {
       subject: 'did:plc:delegate',
-      scope: 'com.dina.reputation.attestation',
+      scope: 'com.dina.trust.attestation',
       permissions: ['create'],
       createdAt: now,
     },
-    'com.dina.reputation.collection': {
+    'com.dina.trust.collection': {
       name: 'My favorites',
-      items: ['at://did:plc:abc/com.dina.reputation.attestation/tid1'],
+      items: ['at://did:plc:abc/com.dina.trust.attestation/tid1'],
       isPublic: true,
       createdAt: now,
     },
-    'com.dina.reputation.media': {
-      parentUri: 'at://did:plc:abc/com.dina.reputation.attestation/tid1',
+    'com.dina.trust.media': {
+      parentUri: 'at://did:plc:abc/com.dina.trust.attestation/tid1',
       mediaType: 'image/png',
       url: 'https://example.com/img.png',
       createdAt: now,
     },
-    'com.dina.reputation.subject': {
+    'com.dina.trust.subject': {
       name: 'ACME Corp',
       subjectType: 'organization',
       createdAt: now,
     },
-    'com.dina.reputation.amendment': {
-      targetUri: 'at://did:plc:abc/com.dina.reputation.attestation/tid1',
+    'com.dina.trust.amendment': {
+      targetUri: 'at://did:plc:abc/com.dina.trust.attestation/tid1',
       amendmentType: 'correction',
       createdAt: now,
     },
-    'com.dina.reputation.verification': {
-      targetUri: 'at://did:plc:abc/com.dina.reputation.attestation/tid1',
+    'com.dina.trust.verification': {
+      targetUri: 'at://did:plc:abc/com.dina.trust.attestation/tid1',
       verificationType: 'manual',
       result: 'confirmed',
       createdAt: now,
     },
-    'com.dina.reputation.reviewRequest': {
+    'com.dina.trust.reviewRequest': {
       subject: { type: 'product', name: 'Widget X' },
       requestType: 'review',
       createdAt: now,
     },
-    'com.dina.reputation.comparison': {
+    'com.dina.trust.comparison': {
       subjects: [
         { type: 'product', name: 'Widget A' },
         { type: 'product', name: 'Widget B' },
@@ -155,16 +155,16 @@ function minimalRecordForCollection(collection: string): Record<string, unknown>
       category: 'quality',
       createdAt: now,
     },
-    'com.dina.reputation.subjectClaim': {
+    'com.dina.trust.subjectClaim': {
       sourceSubjectId: 'subject-1',
       targetSubjectId: 'subject-2',
       claimType: 'same-entity',
       createdAt: now,
     },
-    'com.dina.reputation.trustPolicy': {
+    'com.dina.trust.trustPolicy': {
       createdAt: now,
     },
-    'com.dina.reputation.notificationPrefs': {
+    'com.dina.trust.notificationPrefs': {
       enableMentions: true,
       enableReactions: true,
       enableReplies: false,
@@ -183,7 +183,7 @@ describe('§2.1 Record Validator', () => {
   it('UT-RV-001: valid attestation record', () => {
     // Input: All required fields, valid sentiment enum
     // Expected: success = true, data populated
-    const result = validateRecord('com.dina.reputation.attestation', validAttestation())
+    const result = validateRecord('com.dina.trust.attestation', validAttestation())
     expect(result.success).toBe(true)
     expect(result.data).toBeDefined()
     expect((result.data as Record<string, unknown>).sentiment).toBe('positive')
@@ -193,7 +193,7 @@ describe('§2.1 Record Validator', () => {
     // Input: Attestation without subject
     // Expected: success = false, errors point to "subject"
     const { subject: _, ...noSubject } = validAttestation()
-    const result = validateRecord('com.dina.reputation.attestation', noSubject)
+    const result = validateRecord('com.dina.trust.attestation', noSubject)
     expect(result.success).toBe(false)
     expect(result.errors).toBeDefined()
   })
@@ -202,7 +202,7 @@ describe('§2.1 Record Validator', () => {
     // Input: Attestation without createdAt
     // Expected: success = false
     const { createdAt: _, ...noCreatedAt } = validAttestation()
-    const result = validateRecord('com.dina.reputation.attestation', noCreatedAt)
+    const result = validateRecord('com.dina.trust.attestation', noCreatedAt)
     expect(result.success).toBe(false)
     expect(result.errors).toBeDefined()
   })
@@ -211,7 +211,7 @@ describe('§2.1 Record Validator', () => {
     // Input: sentiment = "excellent" (not in enum)
     // Expected: success = false, errors mention enum values
     const result = validateRecord(
-      'com.dina.reputation.attestation',
+      'com.dina.trust.attestation',
       validAttestation({ sentiment: 'excellent' }),
     )
     expect(result.success).toBe(false)
@@ -220,7 +220,7 @@ describe('§2.1 Record Validator', () => {
 
   it('UT-RV-005: text exceeds max length', () => {
     const result = validateRecord(
-      'com.dina.reputation.attestation',
+      'com.dina.trust.attestation',
       validAttestation({ text: 'x'.repeat(3000) }),
     )
     expect(result.success).toBe(false)
@@ -229,7 +229,7 @@ describe('§2.1 Record Validator', () => {
 
   it('UT-RV-006: tags exceeds max count', () => {
     const result = validateRecord(
-      'com.dina.reputation.attestation',
+      'com.dina.trust.attestation',
       validAttestation({ tags: Array.from({ length: 15 }, (_, i) => `tag${i}`) }),
     )
     expect(result.success).toBe(false)
@@ -238,7 +238,7 @@ describe('§2.1 Record Validator', () => {
 
   it('UT-RV-007: tag exceeds max length', () => {
     const result = validateRecord(
-      'com.dina.reputation.attestation',
+      'com.dina.trust.attestation',
       validAttestation({ tags: ['x'.repeat(60)] }),
     )
     expect(result.success).toBe(false)
@@ -248,7 +248,7 @@ describe('§2.1 Record Validator', () => {
   it('UT-RV-008: dimensions exceeds max count', () => {
     const dims = Array.from({ length: 15 }, (_, i) => ({ dimension: `dim${i}`, value: 'met' }))
     const result = validateRecord(
-      'com.dina.reputation.attestation',
+      'com.dina.trust.attestation',
       validAttestation({ dimensions: dims }),
     )
     expect(result.success).toBe(false)
@@ -258,7 +258,7 @@ describe('§2.1 Record Validator', () => {
   it('UT-RV-009: evidence exceeds max count', () => {
     const items = Array.from({ length: 15 }, (_, i) => ({ type: `type${i}` }))
     const result = validateRecord(
-      'com.dina.reputation.attestation',
+      'com.dina.trust.attestation',
       validAttestation({ evidence: items }),
     )
     expect(result.success).toBe(false)
@@ -268,7 +268,7 @@ describe('§2.1 Record Validator', () => {
   it('UT-RV-010: valid vouch record', () => {
     // Input: All required fields
     // Expected: success = true
-    const result = validateRecord('com.dina.reputation.vouch', validVouch())
+    const result = validateRecord('com.dina.trust.vouch', validVouch())
     expect(result.success).toBe(true)
     expect(result.data).toBeDefined()
   })
@@ -277,7 +277,7 @@ describe('§2.1 Record Validator', () => {
     // Input: confidence = "extremely-high"
     // Expected: success = false
     const result = validateRecord(
-      'com.dina.reputation.vouch',
+      'com.dina.trust.vouch',
       validVouch({ confidence: 'extremely-high' }),
     )
     expect(result.success).toBe(false)
@@ -287,7 +287,7 @@ describe('§2.1 Record Validator', () => {
   it('UT-RV-012: valid reaction record', () => {
     // Input: Valid targetUri and reaction enum value
     // Expected: success = true
-    const result = validateRecord('com.dina.reputation.reaction', validReaction())
+    const result = validateRecord('com.dina.trust.reaction', validReaction())
     expect(result.success).toBe(true)
     expect(result.data).toBeDefined()
   })
@@ -296,7 +296,7 @@ describe('§2.1 Record Validator', () => {
     // Input: reaction = "love" (not in enum)
     // Expected: success = false
     const result = validateRecord(
-      'com.dina.reputation.reaction',
+      'com.dina.trust.reaction',
       validReaction({ reaction: 'love' }),
     )
     expect(result.success).toBe(false)
@@ -307,7 +307,7 @@ describe('§2.1 Record Validator', () => {
     // Input: Valid targetUri, reportType, optional text
     // Expected: success = true
     const result = validateRecord(
-      'com.dina.reputation.reportRecord',
+      'com.dina.trust.reportRecord',
       validReport({ text: 'This is spam' }),
     )
     expect(result.success).toBe(true)
@@ -318,7 +318,7 @@ describe('§2.1 Record Validator', () => {
     // Input: reportType = "illegal" (not in enum)
     // Expected: success = false
     const result = validateRecord(
-      'com.dina.reputation.reportRecord',
+      'com.dina.trust.reportRecord',
       validReport({ reportType: 'illegal' }),
     )
     expect(result.success).toBe(false)
@@ -327,7 +327,7 @@ describe('§2.1 Record Validator', () => {
 
   it('UT-RV-016: report text exceeds max', () => {
     const result = validateRecord(
-      'com.dina.reputation.reportRecord',
+      'com.dina.trust.reportRecord',
       validReport({ text: 'x'.repeat(1500) }),
     )
     expect(result.success).toBe(false)
@@ -337,7 +337,7 @@ describe('§2.1 Record Validator', () => {
   it('UT-RV-017: report evidence max count', () => {
     const items = Array.from({ length: 6 }, (_, i) => ({ type: `type${i}` }))
     const result = validateRecord(
-      'com.dina.reputation.reportRecord',
+      'com.dina.trust.reportRecord',
       validReport({ evidence: items }),
     )
     expect(result.success).toBe(false)
@@ -345,9 +345,9 @@ describe('§2.1 Record Validator', () => {
   })
 
   it('UT-RV-018: unknown collection -> error', () => {
-    // Input: collection = "com.dina.reputation.unknown"
+    // Input: collection = "com.dina.trust.unknown"
     // Expected: success = false, error says "Unknown collection"
-    const result = validateRecord('com.dina.reputation.unknown', { foo: 'bar' })
+    const result = validateRecord('com.dina.trust.unknown', { foo: 'bar' })
     expect(result.success).toBe(false)
     // No schema found means no errors object — just success = false
     expect(result.data).toBeUndefined()
@@ -371,13 +371,13 @@ describe('§2.1 Record Validator', () => {
       isAgentGenerated: false,
       coSignature: { did: 'did:plc:cosigner', sig: 'abcdef1234', sigCreatedAt: now },
       mentions: [{ did: 'did:plc:mentioned', role: 'manufacturer' }],
-      relatedAttestations: [{ uri: 'at://did:plc:other/com.dina.reputation.attestation/tid2', relation: 'agrees' }],
+      relatedAttestations: [{ uri: 'at://did:plc:other/com.dina.trust.attestation/tid2', relation: 'agrees' }],
       interactionContext: { purchaseDate: '2024-01-15' },
       contentContext: { platform: 'youtube' },
       productContext: { brand: 'ACME' },
       bilateralReview: { bothParties: true },
     })
-    const result = validateRecord('com.dina.reputation.attestation', full)
+    const result = validateRecord('com.dina.trust.attestation', full)
     expect(result.success).toBe(true)
     expect(result.data).toBeDefined()
     const data = result.data as Record<string, unknown>
@@ -392,7 +392,7 @@ describe('§2.1 Record Validator', () => {
     const types = ['did', 'content', 'product', 'dataset', 'organization', 'claim'] as const
     for (const type of types) {
       const result = validateRecord(
-        'com.dina.reputation.attestation',
+        'com.dina.trust.attestation',
         validAttestation({ subject: { type, did: 'did:plc:test' } }),
       )
       expect(result.success).toBe(true)
@@ -403,7 +403,7 @@ describe('§2.1 Record Validator', () => {
     // Input: type = "place" (not in enum)
     // Expected: success = false
     const result = validateRecord(
-      'com.dina.reputation.attestation',
+      'com.dina.trust.attestation',
       validAttestation({ subject: { type: 'place', did: 'did:plc:test' } }),
     )
     expect(result.success).toBe(false)
@@ -412,7 +412,7 @@ describe('§2.1 Record Validator', () => {
 
   it('UT-RV-022: subject name max length', () => {
     const result = validateRecord(
-      'com.dina.reputation.attestation',
+      'com.dina.trust.attestation',
       validAttestation({ subject: { type: 'product', name: 'x'.repeat(250) } }),
     )
     expect(result.success).toBe(false)
@@ -425,7 +425,7 @@ describe('§2.1 Record Validator', () => {
     const values = ['exceeded', 'met', 'below', 'failed'] as const
     for (const value of values) {
       const result = validateRecord(
-        'com.dina.reputation.attestation',
+        'com.dina.trust.attestation',
         validAttestation({
           dimensions: [{ dimension: 'quality', value }],
         }),
@@ -438,7 +438,7 @@ describe('§2.1 Record Validator', () => {
     // Input: value = "good"
     // Expected: success = false
     const result = validateRecord(
-      'com.dina.reputation.attestation',
+      'com.dina.trust.attestation',
       validAttestation({
         dimensions: [{ dimension: 'quality', value: 'good' }],
       }),
@@ -451,7 +451,7 @@ describe('§2.1 Record Validator', () => {
     // Input: type + optional uri/hash/description
     // Expected: success = true
     const result = validateRecord(
-      'com.dina.reputation.attestation',
+      'com.dina.trust.attestation',
       validAttestation({
         evidence: [
           { type: 'receipt', uri: 'https://example.com/receipt', hash: 'sha256:abc', description: 'Proof' },
@@ -464,7 +464,7 @@ describe('§2.1 Record Validator', () => {
 
   it('UT-RV-026: evidence description max length', () => {
     const result = validateRecord(
-      'com.dina.reputation.attestation',
+      'com.dina.trust.attestation',
       validAttestation({ evidence: [{ type: 'receipt', description: 'x'.repeat(400) }] }),
     )
     expect(result.success).toBe(false)
@@ -475,7 +475,7 @@ describe('§2.1 Record Validator', () => {
     // Input: did (required) + optional role
     // Expected: success = true
     const result = validateRecord(
-      'com.dina.reputation.attestation',
+      'com.dina.trust.attestation',
       validAttestation({
         mentions: [
           { did: 'did:plc:mentioned1', role: 'manufacturer' },
@@ -489,7 +489,7 @@ describe('§2.1 Record Validator', () => {
   it('UT-RV-028: mentions exceeds max count', () => {
     const mentions = Array.from({ length: 15 }, (_, i) => ({ did: `did:plc:mention${i}` }))
     const result = validateRecord(
-      'com.dina.reputation.attestation',
+      'com.dina.trust.attestation',
       validAttestation({ mentions }),
     )
     expect(result.success).toBe(false)
@@ -497,9 +497,9 @@ describe('§2.1 Record Validator', () => {
   })
 
   it('UT-RV-029: relatedAttestations max count', () => {
-    const related = Array.from({ length: 6 }, (_, i) => ({ uri: `at://did:plc:x/com.dina.reputation.attestation/tid${i}`, relation: 'agrees' }))
+    const related = Array.from({ length: 6 }, (_, i) => ({ uri: `at://did:plc:x/com.dina.trust.attestation/tid${i}`, relation: 'agrees' }))
     const result = validateRecord(
-      'com.dina.reputation.attestation',
+      'com.dina.trust.attestation',
       validAttestation({ relatedAttestations: related }),
     )
     expect(result.success).toBe(false)
@@ -510,7 +510,7 @@ describe('§2.1 Record Validator', () => {
     // Input: did + sig + sigCreatedAt all present
     // Expected: success = true
     const result = validateRecord(
-      'com.dina.reputation.attestation',
+      'com.dina.trust.attestation',
       validAttestation({
         coSignature: { did: 'did:plc:cosigner', sig: 'deadbeef', sigCreatedAt: now },
       }),
@@ -526,7 +526,7 @@ describe('§2.1 Record Validator', () => {
     // Input: Cosignature without sig
     // Expected: success = false
     const result = validateRecord(
-      'com.dina.reputation.attestation',
+      'com.dina.trust.attestation',
       validAttestation({
         coSignature: { did: 'did:plc:cosigner', sigCreatedAt: now },
       }),
@@ -541,7 +541,7 @@ describe('§2.1 Record Validator', () => {
     const values = ['certain', 'high', 'moderate', 'speculative'] as const
     for (const confidence of values) {
       const result = validateRecord(
-        'com.dina.reputation.attestation',
+        'com.dina.trust.attestation',
         validAttestation({ confidence }),
       )
       expect(result.success).toBe(true)
@@ -552,7 +552,7 @@ describe('§2.1 Record Validator', () => {
     // Input: confidence = "low"
     // Expected: success = false
     const result = validateRecord(
-      'com.dina.reputation.attestation',
+      'com.dina.trust.attestation',
       validAttestation({ confidence: 'low' }),
     )
     expect(result.success).toBe(false)
@@ -562,7 +562,7 @@ describe('§2.1 Record Validator', () => {
   it('UT-RV-034: all 19 collection types — valid minimal records', () => {
     // Input: Minimal valid record for each of the 19 collections
     // Expected: All return success = true
-    for (const collection of REPUTATION_COLLECTIONS) {
+    for (const collection of TRUST_COLLECTIONS) {
       const record = minimalRecordForCollection(collection)
       const result = validateRecord(collection, record)
       expect(result.success, `${collection} should validate`).toBe(true)
@@ -574,7 +574,7 @@ describe('§2.1 Record Validator', () => {
     // Input: Record with extra fields not in schema
     // Expected: success = true (zod strips extras by default)
     const result = validateRecord(
-      'com.dina.reputation.attestation',
+      'com.dina.trust.attestation',
       validAttestation({ extraField: 'should be ignored', anotherExtra: 42 }),
     )
     expect(result.success).toBe(true)
@@ -585,9 +585,9 @@ describe('§2.1 Record Validator', () => {
   })
 
   it('UT-RV-036: relatedRecords max on report', () => {
-    const records = Array.from({ length: 11 }, (_, i) => `at://did:plc:x/com.dina.reputation.attestation/tid${i}`)
+    const records = Array.from({ length: 11 }, (_, i) => `at://did:plc:x/com.dina.trust.attestation/tid${i}`)
     const result = validateRecord(
-      'com.dina.reputation.reportRecord',
+      'com.dina.trust.reportRecord',
       validReport({ relatedRecords: records }),
     )
     expect(result.success).toBe(false)
@@ -1086,35 +1086,35 @@ describe('§2.3 Bounded Queue', () => {
 // ---------------------------------------------------------------------------
 describe('§2.4 Handler Router', () => {
   it('UT-HR-001: routeHandler — attestation', () => {
-    // Input: collection = "com.dina.reputation.attestation"
+    // Input: collection = "com.dina.trust.attestation"
     // Expected: Returns a handler (not null)
-    const handler = routeHandler('com.dina.reputation.attestation')
+    const handler = routeHandler('com.dina.trust.attestation')
     expect(handler).not.toBeNull()
   })
 
   it('UT-HR-002: routeHandler — vouch', () => {
-    // Input: collection = "com.dina.reputation.vouch"
+    // Input: collection = "com.dina.trust.vouch"
     // Expected: Returns a handler (not null)
-    const handler = routeHandler('com.dina.reputation.vouch')
+    const handler = routeHandler('com.dina.trust.vouch')
     expect(handler).not.toBeNull()
   })
 
   it('UT-HR-003: routeHandler — all 19 collections registered', () => {
-    // Input: Iterate REPUTATION_COLLECTIONS
+    // Input: Iterate TRUST_COLLECTIONS
     // Expected: All return non-null handler
     const registered = getRegisteredCollections()
     expect(registered).toHaveLength(19)
 
-    for (const collection of REPUTATION_COLLECTIONS) {
+    for (const collection of TRUST_COLLECTIONS) {
       const handler = routeHandler(collection)
       expect(handler, `${collection} should have a handler`).not.toBeNull()
     }
   })
 
   it('UT-HR-004: routeHandler — unknown collection', () => {
-    // Input: collection = "com.dina.reputation.foo"
+    // Input: collection = "com.dina.trust.foo"
     // Expected: Returns null
-    const handler = routeHandler('com.dina.reputation.foo')
+    const handler = routeHandler('com.dina.trust.foo')
     expect(handler).toBeNull()
   })
 
@@ -1128,7 +1128,7 @@ describe('§2.4 Handler Router', () => {
   it('UT-HR-006: handler interface — handleCreate exists', () => {
     // Input: Each handler in registry
     // Expected: Has handleCreate method
-    for (const collection of REPUTATION_COLLECTIONS) {
+    for (const collection of TRUST_COLLECTIONS) {
       const handler = routeHandler(collection)
       expect(handler).not.toBeNull()
       expect(typeof handler!.handleCreate).toBe('function')
@@ -1138,7 +1138,7 @@ describe('§2.4 Handler Router', () => {
   it('UT-HR-007: handler interface — handleDelete exists', () => {
     // Input: Each handler in registry
     // Expected: Has handleDelete method
-    for (const collection of REPUTATION_COLLECTIONS) {
+    for (const collection of TRUST_COLLECTIONS) {
       const handler = routeHandler(collection)
       expect(handler).not.toBeNull()
       expect(typeof handler!.handleDelete).toBe('function')
@@ -1152,16 +1152,16 @@ describe('§2.4 Handler Router', () => {
 // ---------------------------------------------------------------------------
 describe('§2.5 Deletion Handler', () => {
   it('UT-DH-001: getSourceTable — attestation -> attestations table', () => {
-    // Input: "com.dina.reputation.attestation"
+    // Input: "com.dina.trust.attestation"
     // Expected: Returns attestations Drizzle table
-    const table = getSourceTable('com.dina.reputation.attestation')
+    const table = getSourceTable('com.dina.trust.attestation')
     expect(table).toBe(schema.attestations)
   })
 
   it('UT-DH-002: getSourceTable — vouch -> vouches table', () => {
-    // Input: "com.dina.reputation.vouch"
+    // Input: "com.dina.trust.vouch"
     // Expected: Returns vouches Drizzle table
-    const table = getSourceTable('com.dina.reputation.vouch')
+    const table = getSourceTable('com.dina.trust.vouch')
     expect(table).toBe(schema.vouches)
   })
 
@@ -1169,24 +1169,24 @@ describe('§2.5 Deletion Handler', () => {
     // Input: Iterate all entries in COLLECTION_TABLE_MAP
     // Expected: All 18 collections (excluding 'subject') map to correct tables
     const expectedMappings: Record<string, any> = {
-      'com.dina.reputation.attestation': schema.attestations,
-      'com.dina.reputation.vouch': schema.vouches,
-      'com.dina.reputation.endorsement': schema.endorsements,
-      'com.dina.reputation.flag': schema.flags,
-      'com.dina.reputation.reply': schema.replies,
-      'com.dina.reputation.reaction': schema.reactions,
-      'com.dina.reputation.reportRecord': schema.reportRecords,
-      'com.dina.reputation.revocation': schema.revocations,
-      'com.dina.reputation.delegation': schema.delegations,
-      'com.dina.reputation.collection': schema.collections,
-      'com.dina.reputation.media': schema.media,
-      'com.dina.reputation.amendment': schema.amendments,
-      'com.dina.reputation.verification': schema.verifications,
-      'com.dina.reputation.reviewRequest': schema.reviewRequests,
-      'com.dina.reputation.comparison': schema.comparisons,
-      'com.dina.reputation.subjectClaim': schema.subjectClaims,
-      'com.dina.reputation.trustPolicy': schema.trustPolicies,
-      'com.dina.reputation.notificationPrefs': schema.notificationPrefs,
+      'com.dina.trust.attestation': schema.attestations,
+      'com.dina.trust.vouch': schema.vouches,
+      'com.dina.trust.endorsement': schema.endorsements,
+      'com.dina.trust.flag': schema.flags,
+      'com.dina.trust.reply': schema.replies,
+      'com.dina.trust.reaction': schema.reactions,
+      'com.dina.trust.reportRecord': schema.reportRecords,
+      'com.dina.trust.revocation': schema.revocations,
+      'com.dina.trust.delegation': schema.delegations,
+      'com.dina.trust.collection': schema.collections,
+      'com.dina.trust.media': schema.media,
+      'com.dina.trust.amendment': schema.amendments,
+      'com.dina.trust.verification': schema.verifications,
+      'com.dina.trust.reviewRequest': schema.reviewRequests,
+      'com.dina.trust.comparison': schema.comparisons,
+      'com.dina.trust.subjectClaim': schema.subjectClaims,
+      'com.dina.trust.trustPolicy': schema.trustPolicies,
+      'com.dina.trust.notificationPrefs': schema.notificationPrefs,
     }
 
     for (const [collection, expectedTable] of Object.entries(expectedMappings)) {
@@ -1196,35 +1196,35 @@ describe('§2.5 Deletion Handler', () => {
   })
 
   it('UT-DH-004: getSourceTable — unknown collection -> null', () => {
-    // Input: "com.dina.reputation.unknown"
+    // Input: "com.dina.trust.unknown"
     // Expected: Returns null
-    const table = getSourceTable('com.dina.reputation.unknown')
+    const table = getSourceTable('com.dina.trust.unknown')
     expect(table).toBeNull()
   })
 
   it('UT-DH-005: getSourceTable — media -> media table', () => {
-    // Input: "com.dina.reputation.media"
+    // Input: "com.dina.trust.media"
     // Expected: Returns the media Drizzle table (media has a dedicated table)
-    const table = getSourceTable('com.dina.reputation.media')
+    const table = getSourceTable('com.dina.trust.media')
     expect(table).toBe(schema.media)
   })
 
   it('UT-DH-006: COLLECTION_TABLE_MAP completeness', () => {
     // Input: Compare keys count to expected (18 collections have table mappings)
-    // Expected: 18 entries (all REPUTATION_COLLECTIONS except 'subject')
+    // Expected: 18 entries (all TRUST_COLLECTIONS except 'subject')
     const mapKeys = Object.keys(COLLECTION_TABLE_MAP)
     expect(mapKeys).toHaveLength(18)
 
-    // Every key in the map should be a valid REPUTATION_COLLECTION
+    // Every key in the map should be a valid TRUST_COLLECTION
     for (const key of mapKeys) {
       expect(
-        REPUTATION_COLLECTIONS.includes(key as any),
-        `${key} should be a valid reputation collection`,
+        TRUST_COLLECTIONS.includes(key as any),
+        `${key} should be a valid trust collection`,
       ).toBe(true)
     }
 
     // The 'subject' collection is NOT in the map (handled separately)
-    expect(COLLECTION_TABLE_MAP['com.dina.reputation.subject']).toBeUndefined()
+    expect(COLLECTION_TABLE_MAP['com.dina.trust.subject']).toBeUndefined()
   })
 })
 
@@ -1293,9 +1293,9 @@ describe('§2.6 Trust Edge Sync', () => {
     // Expected: weight = 1.0
     const ctx = mockHandlerCtx()
     await vouchHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:author/com.dina.reputation.vouch/tid1',
+      uri: 'at://did:plc:author/com.dina.trust.vouch/tid1',
       did: 'did:plc:author',
-      collection: 'com.dina.reputation.vouch',
+      collection: 'com.dina.trust.vouch',
       rkey: 'tid1',
       cid: 'cid1',
       record: { subject: 'did:plc:target', vouchType: 'personal', confidence: 'high', createdAt: now },
@@ -1310,9 +1310,9 @@ describe('§2.6 Trust Edge Sync', () => {
     // Expected: weight = 0.6
     const ctx = mockHandlerCtx()
     await vouchHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:author/com.dina.reputation.vouch/tid2',
+      uri: 'at://did:plc:author/com.dina.trust.vouch/tid2',
       did: 'did:plc:author',
-      collection: 'com.dina.reputation.vouch',
+      collection: 'com.dina.trust.vouch',
       rkey: 'tid2',
       cid: 'cid2',
       record: { subject: 'did:plc:target', vouchType: 'personal', confidence: 'moderate', createdAt: now },
@@ -1326,9 +1326,9 @@ describe('§2.6 Trust Edge Sync', () => {
     // Expected: weight = 0.3
     const ctx = mockHandlerCtx()
     await vouchHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:author/com.dina.reputation.vouch/tid3',
+      uri: 'at://did:plc:author/com.dina.trust.vouch/tid3',
       did: 'did:plc:author',
-      collection: 'com.dina.reputation.vouch',
+      collection: 'com.dina.trust.vouch',
       rkey: 'tid3',
       cid: 'cid3',
       record: { subject: 'did:plc:target', vouchType: 'personal', confidence: 'low', createdAt: now },
@@ -1342,9 +1342,9 @@ describe('§2.6 Trust Edge Sync', () => {
     // Expected: weight = 0.8
     const ctx = mockHandlerCtx()
     await endorsementHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:author/com.dina.reputation.endorsement/tid4',
+      uri: 'at://did:plc:author/com.dina.trust.endorsement/tid4',
       did: 'did:plc:author',
-      collection: 'com.dina.reputation.endorsement',
+      collection: 'com.dina.trust.endorsement',
       rkey: 'tid4',
       cid: 'cid4',
       record: { subject: 'did:plc:target', skill: 'cooking', endorsementType: 'worked-together', createdAt: now },
@@ -1359,9 +1359,9 @@ describe('§2.6 Trust Edge Sync', () => {
     // Expected: weight = 0.4
     const ctx = mockHandlerCtx()
     await endorsementHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:author/com.dina.reputation.endorsement/tid5',
+      uri: 'at://did:plc:author/com.dina.trust.endorsement/tid5',
       did: 'did:plc:author',
-      collection: 'com.dina.reputation.endorsement',
+      collection: 'com.dina.trust.endorsement',
       rkey: 'tid5',
       cid: 'cid5',
       record: { subject: 'did:plc:target', skill: 'design', endorsementType: 'observed-output', createdAt: now },
@@ -1375,9 +1375,9 @@ describe('§2.6 Trust Edge Sync', () => {
     // Expected: weight = 0.9
     const ctx = mockHandlerCtx()
     await delegationHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:author/com.dina.reputation.delegation/tid6',
+      uri: 'at://did:plc:author/com.dina.trust.delegation/tid6',
       did: 'did:plc:author',
-      collection: 'com.dina.reputation.delegation',
+      collection: 'com.dina.trust.delegation',
       rkey: 'tid6',
       cid: 'cid6',
       record: { subject: 'did:plc:target', scope: 'reviews', permissions: ['read'], createdAt: now },
@@ -1394,9 +1394,9 @@ describe('§2.6 Trust Edge Sync', () => {
     // wired into the handler. This test verifies the current behavior.
     const ctx = mockHandlerCtx()
     await attestationHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:author/com.dina.reputation.attestation/tid7',
+      uri: 'at://did:plc:author/com.dina.trust.attestation/tid7',
       did: 'did:plc:author',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: 'tid7',
       cid: 'cid7',
       record: {
@@ -1420,9 +1420,9 @@ describe('§2.6 Trust Edge Sync', () => {
     // Expected: weight = 0.3
     const ctx = mockHandlerCtx()
     await attestationHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:author/com.dina.reputation.attestation/tid8',
+      uri: 'at://did:plc:author/com.dina.trust.attestation/tid8',
       did: 'did:plc:author',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: 'tid8',
       cid: 'cid8',
       record: {
@@ -1444,9 +1444,9 @@ describe('§2.6 Trust Edge Sync', () => {
     // Expected: No trust edge created — HIGH-07 added positive-only guard
     const ctx = mockHandlerCtx()
     await attestationHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:author/com.dina.reputation.attestation/tid9',
+      uri: 'at://did:plc:author/com.dina.trust.attestation/tid9',
       did: 'did:plc:author',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: 'tid9',
       cid: 'cid9',
       record: {
@@ -1465,9 +1465,9 @@ describe('§2.6 Trust Edge Sync', () => {
     // Expected: No trust edge created (only DID subjects create edges)
     const ctx = mockHandlerCtx()
     await attestationHandler.handleCreate(ctx, {
-      uri: 'at://did:plc:author/com.dina.reputation.attestation/tid10',
+      uri: 'at://did:plc:author/com.dina.trust.attestation/tid10',
       did: 'did:plc:author',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: 'tid10',
       cid: 'cid10',
       record: {

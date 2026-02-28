@@ -463,17 +463,17 @@ def test_hkdf_backup_and_archive_key_independent(
 
 
 # TST-INT-619
-def test_hkdf_sync_and_reputation_keys(
+def test_hkdf_sync_and_trust_keys(
     mock_hkdf: MockHKDFKeyManager,
 ):
-    """M14: Sync and reputation keys — all 4 keys are distinct."""
+    """M14: Sync and trust keys — all 4 keys are distinct."""
     bk = mock_hkdf.backup_key()
     ak = mock_hkdf.archive_key()
     sk = mock_hkdf.sync_key()
-    rk = mock_hkdf.reputation_key()
+    rk = mock_hkdf.trust_key()
 
-    # sync != reputation
-    assert sk != rk, "sync_key and reputation_key must be distinct"
+    # sync != trust
+    assert sk != rk, "sync_key and trust_key must be distinct"
 
     # All 4 keys are mutually distinct
     all_keys = [bk, ak, sk, rk]
@@ -751,7 +751,7 @@ def test_phone_connector_client_token_auth(
 
 
 # ---------------------------------------------------------------------------
-# S8 Reputation (M26-M30)
+# S8 Trust (M26-M30)
 # ---------------------------------------------------------------------------
 
 # TST-INT-630
@@ -817,7 +817,7 @@ def test_appview_censorship_detection():
 
     # AppView A indexes 50 records
     records = [
-        {"lexicon": "com.dina.reputation.attestation",
+        {"lexicon": "com.dina.trust.attestation",
          "author_did": "did:plc:Author1",
          "product_id": f"product_{i}",
          "rating": 80 + (i % 20)}

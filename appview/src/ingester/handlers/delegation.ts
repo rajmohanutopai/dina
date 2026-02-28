@@ -6,7 +6,7 @@ import { addTrustEdge } from '../trust-edge-sync.js'
 import { markDirty } from '@/db/queries/dirty-flags.js'
 
 /**
- * Handler for com.dina.reputation.delegation records.
+ * Handler for com.dina.trust.delegation records.
  *
  * A delegation grants scoped permissions from one DID to another —
  * "I allow this agent to act on my behalf within this scope."

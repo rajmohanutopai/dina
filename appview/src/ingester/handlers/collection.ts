@@ -4,7 +4,7 @@ import { collections as collectionsTable } from '@/db/schema/index.js'
 import { deletionHandler } from '../deletion-handler.js'
 
 /**
- * Handler for com.dina.reputation.collection records.
+ * Handler for com.dina.trust.collection records.
  *
  * Collections are user-curated lists of AT Protocol URIs (attestations,
  * subjects, etc.). They can be public or private. The table import is

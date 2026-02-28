@@ -29,7 +29,7 @@ cd dina
 This starts Dina in the **Cloud LLM profile** (the default) — 3 containers:
 - **dina-core** (Go) — your encrypted vault, keys, and messaging endpoint (port 443 external, port 8100 internal)
 - **dina-brain** (Python) — the guardian angel reasoning loop (uses Gemini Flash Lite + Deepgram)
-- **dina-pds** — AT Protocol Personal Data Server for your reputation data (port 2583)
+- **dina-pds** — AT Protocol Personal Data Server for your trust data (port 2583)
 
 Want a local LLM too? `docker compose --profile local-llm up -d` adds a 4th container (llama with Gemma 3n). See [Advanced Setup](ADVANCED-SETUP.md).
 
@@ -74,7 +74,7 @@ dina remember "I like tea"  # store a fact in encrypted vault
 dina recall "tea"           # should return the fact you just stored
 ```
 
-## 5. Install the Reputation AppView (optional)
+## 5. Install the Trust AppView (optional)
 
 The AppView is the public Trust Network indexer — it consumes AT Protocol records from the Jetstream firehose, scores them, and serves XRPC query endpoints.
 
@@ -90,13 +90,13 @@ cd appview
 4. Starts the ingester, scorer, and web containers
 
 This adds 5 containers:
-- **postgres** — PostgreSQL 17 for reputation data (port 5432)
-- **jetstream** — AT Protocol firehose filtered to `com.dina.reputation.*` (port 6008)
+- **postgres** — PostgreSQL 17 for trust data (port 5432)
+- **jetstream** — AT Protocol firehose filtered to `com.dina.trust.*` (port 6008)
 - **ingester** — 19 record handlers with Zod validation, trust edges, dirty flags
 - **scorer** — 9 cron jobs (trust-score, reviewer-quality, sentiment, anomaly, coordination, sybil, tombstones, decay, cleanup)
 - **web** — XRPC API endpoints: resolve, search, get-profile, get-attestations, get-graph (port 3000)
 
-> The Home Node and AppView are independent. The Home Node is your private sovereign agent. The AppView is the public reputation indexer anyone can run.
+> The Home Node and AppView are independent. The Home Node is your private sovereign agent. The AppView is the public trust indexer anyone can run.
 
 ## 6. Use as an OpenClaw Skill
 
@@ -165,6 +165,6 @@ Your Dina is running, has a cryptographic identity, is reachable by other Dinas,
 |----------|---------|
 | RAM | 1 GB (PostgreSQL) |
 | CPU | 2 cores |
-| Storage | 5 GB (grows with reputation data) |
+| Storage | 5 GB (grows with trust data) |
 
 > Want to run everything locally with no cloud APIs? See [Advanced Setup — Local LLM Profile](ADVANCED-SETUP.md) (requires 8GB+ RAM).

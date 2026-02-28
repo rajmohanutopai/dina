@@ -8,9 +8,9 @@ import { resolveOrCreateSubject } from '@/db/queries/subjects.js'
 import { markDirty } from '@/db/queries/dirty-flags.js'
 
 /**
- * Handler for com.dina.reputation.attestation records.
+ * Handler for com.dina.trust.attestation records.
  *
- * Attestations are the core reputation primitive — a structured review
+ * Attestations are the core trust primitive — a structured review
  * of a subject (person, product, content, etc.). This is the most complex
  * handler because it touches subjects, mention edges, trust edges,
  * and dirty flags.

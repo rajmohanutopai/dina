@@ -157,7 +157,7 @@ func TestAPIContract_18_7_AllBrainEndpointsAcceptToken(t *testing.T) {
 		"/v1/pii/scrub",
 		"/v1/notify",
 		"/v1/msg/send",
-		"/v1/reputation/query",
+		"/v1/trust/query",
 	}
 
 	for _, ep := range brainEndpoints {
@@ -178,7 +178,7 @@ func TestAPIContract_18_8_ExactAPIServiceMatch(t *testing.T) {
 
 	// Enumerate all routes — they must exactly match the documented API surface.
 	// Brain-callable families: vault/query, vault/store, did/verify, pii/scrub,
-	// notify, msg/send, reputation/query, process+reason.
+	// notify, msg/send, trust/query, process+reason.
 	// Admin-only: did/sign, did/rotate, vault/backup, persona/unlock, admin/*.
 	endpoints := impl.ListEndpoints()
 	testutil.RequireTrue(t, len(endpoints) > 0,
@@ -220,20 +220,20 @@ func TestAPIContract_18_9_MsgSendExposed(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
-// §18.10 Core exposes /v1/reputation/query to brain
+// §18.10 Core exposes /v1/trust/query to brain
 // --------------------------------------------------------------------------
 
 // TST-CORE-648
-func TestAPIContract_18_10_ReputationQueryExposed(t *testing.T) {
+func TestAPIContract_18_10_TrustQueryExposed(t *testing.T) {
 	// var impl testutil.APIContract = realcontract.New(...)
 	impl := realAPIContract
 	testutil.RequireImplementation(t, impl, "APIContract")
 
-	// BRAIN_TOKEN + query (entity, category) must return 200 with reputation score.
-	testutil.RequireTrue(t, impl.IsBrainCallable("/v1/reputation/query"),
-		"/v1/reputation/query must accept BRAIN_TOKEN")
+	// BRAIN_TOKEN + query (entity, category) must return 200 with trust score.
+	testutil.RequireTrue(t, impl.IsBrainCallable("/v1/trust/query"),
+		"/v1/trust/query must accept BRAIN_TOKEN")
 
-	statusCode, _, err := impl.CallEndpoint("POST", "/v1/reputation/query", testutil.TestBrainToken,
+	statusCode, _, err := impl.CallEndpoint("POST", "/v1/trust/query", testutil.TestBrainToken,
 		[]byte(`{"entity":"did:plc:vendor123","category":"electronics"}`))
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, statusCode, 200)

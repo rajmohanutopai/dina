@@ -6,7 +6,7 @@ import { addTrustEdge } from '../trust-edge-sync.js'
 import { markDirty } from '@/db/queries/dirty-flags.js'
 
 /**
- * Handler for com.dina.reputation.endorsement records.
+ * Handler for com.dina.trust.endorsement records.
  *
  * An endorsement is a skill-specific trust signal — "This person is good at X."
  * The trust edge weight is higher for first-hand experience (worked-together).

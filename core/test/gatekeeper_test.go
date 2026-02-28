@@ -1076,8 +1076,8 @@ func TestGatekeeper_6_6_26_AgentConstraint_DraftOnlyEnforced(t *testing.T) {
 }
 
 // TST-CORE-893
-func TestGatekeeper_6_6_27_AgentOutcome_RecordedForReputation(t *testing.T) {
-	// Agent outcomes recorded in Tier 3 for reputation scoring.
+func TestGatekeeper_6_6_27_AgentOutcome_RecordedForTrust(t *testing.T) {
+	// Agent outcomes recorded in Tier 3 for trust scoring.
 	impl := realVaultAuditLogger
 	testutil.RequireImplementation(t, impl, "VaultAuditLogger")
 

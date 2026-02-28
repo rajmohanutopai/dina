@@ -887,11 +887,11 @@ class MockExternalAgent:
 # ---------------------------------------------------------------------------
 
 class MockReviewBot:
-    """Specialist review bot with reputation score and source attribution."""
+    """Specialist review bot with trust score and source attribution."""
 
-    def __init__(self, bot_did: str = "", reputation: int = 90) -> None:
+    def __init__(self, bot_did: str = "", trust_score: int = 90) -> None:
         self.bot_did = bot_did or f"did:plc:Bot{uuid.uuid4().hex[:34]}"
-        self.reputation_score = reputation
+        self.trust_score = trust_score
         self.queries: list[dict[str, Any]] = []
         self._responses: dict[str, dict[str, Any]] = {}
 
@@ -925,9 +925,9 @@ class MockReviewBot:
 class MockLegalBot:
     """Specialist legal bot — form filling, draft-only mode."""
 
-    def __init__(self, bot_did: str = "", reputation: int = 91) -> None:
+    def __init__(self, bot_did: str = "", trust_score: int = 91) -> None:
         self.bot_did = bot_did or f"did:plc:Legal{uuid.uuid4().hex[:32]}"
-        self.reputation_score = reputation
+        self.trust_score = trust_score
         self.form_fills: list[dict[str, Any]] = []
 
     def form_fill(self, task: str, identity_data: dict[str, Any],
@@ -953,7 +953,7 @@ class MockLegalBot:
 # ---------------------------------------------------------------------------
 
 class MockTrustNetwork:
-    """Federated reputation ledger with signed tombstones."""
+    """Federated trust ledger with signed tombstones."""
 
     def __init__(self) -> None:
         self.attestations: list[ExpertAttestation] = []
@@ -1593,7 +1593,7 @@ class MockDinaCore:
         self.brain = MockPythonBrain(self.classifier, self.whisper, self.llm_router)
         self.p2p = MockP2PChannel()
         self.staging = MockStagingTier()
-        self.reputation = MockTrustNetwork()
+        self.trust_network = MockTrustNetwork()
         self.trust = MockTrustEvaluator()
         self.estate: MockEstateManager | None = None
 
@@ -2646,16 +2646,16 @@ class MockNoiseSession:
 
 
 # ---------------------------------------------------------------------------
-# Mock: Reputation AppView (§16.7)
+# Mock: Trust AppView (§16.7)
 # ---------------------------------------------------------------------------
 
 class MockAppView:
-    """AT Protocol AppView — read-only reputation indexer."""
+    """AT Protocol AppView — read-only trust indexer."""
 
     def __init__(self) -> None:
         self.indexed_records: list[dict[str, Any]] = []
         self.cursor: int = 0
-        self.lexicon_filter = "com.dina.reputation."
+        self.lexicon_filter = "com.dina.trust."
 
     def consume_firehose(
         self, records: list[dict[str, Any]]
@@ -3229,7 +3229,7 @@ class MockTaskQueue:
 # ---------------------------------------------------------------------------
 
 class MockHKDFKeyManager:
-    """HKDF-based key derivation for backup, archive, sync, reputation keys."""
+    """HKDF-based key derivation for backup, archive, sync, trust keys."""
 
     def __init__(self, master_seed: str) -> None:
         self._seed = master_seed
@@ -3253,8 +3253,8 @@ class MockHKDFKeyManager:
     def sync_key(self) -> str:
         return self.derive("dina:sync:v1")
 
-    def reputation_key(self) -> str:
-        return self.derive("dina:reputation:v1")
+    def trust_key(self) -> str:
+        return self.derive("dina:trust:v1")
 
     @property
     def derived_keys(self) -> dict[str, str]:

@@ -45,7 +45,7 @@ beforeEach(async () => {
 describe('§2.1 Deletion — Undisputed Clean Delete', () => {
   it('IT-DEL-001: clean delete — no disputes, no tombstone', async () => {
     // Create an attestation
-    const collection = 'com.dina.reputation.attestation'
+    const collection = 'com.dina.trust.attestation'
     const rkey = 'del001'
     const uri = makeUri(collection, rkey)
 
@@ -86,7 +86,7 @@ describe('§2.1 Deletion — Undisputed Clean Delete', () => {
 
   it('IT-DEL-002: clean delete — trust edge removed', async () => {
     // Create a vouch (which creates a trust edge)
-    const collection = 'com.dina.reputation.vouch'
+    const collection = 'com.dina.trust.vouch'
     const rkey = 'del002'
     const uri = makeUri(collection, rkey)
 
@@ -119,7 +119,7 @@ describe('§2.1 Deletion — Undisputed Clean Delete', () => {
 
   it('IT-DEL-003: clean delete metrics', async () => {
     // Create an attestation and delete it (undisputed)
-    const collection = 'com.dina.reputation.attestation'
+    const collection = 'com.dina.trust.attestation'
     const rkey = 'del003'
     const uri = makeUri(collection, rkey)
 
@@ -160,7 +160,7 @@ describe('§2.1 Deletion — Undisputed Clean Delete', () => {
 // ---------------------------------------------------------------------------
 describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
   it('IT-DEL-004: disputed — has report → tombstone', async () => {
-    const collection = 'com.dina.reputation.attestation'
+    const collection = 'com.dina.trust.attestation'
     const rkey = 'del004'
     const uri = makeUri(collection, rkey)
 
@@ -181,11 +181,11 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     })
 
     // Insert a report targeting this attestation URI
-    const reportHandler = routeHandler('com.dina.reputation.reportRecord')!
+    const reportHandler = routeHandler('com.dina.trust.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.reputation.reportRecord', 'report004'),
+      uri: makeUri('com.dina.trust.reportRecord', 'report004'),
       did: REPORTER_DID,
-      collection: 'com.dina.reputation.reportRecord',
+      collection: 'com.dina.trust.reportRecord',
       rkey: 'report004',
       cid: 'cid-report004',
       record: {
@@ -206,7 +206,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
   })
 
   it('IT-DEL-005: disputed — has dispute reply → tombstone', async () => {
-    const collection = 'com.dina.reputation.attestation'
+    const collection = 'com.dina.trust.attestation'
     const rkey = 'del005'
     const uri = makeUri(collection, rkey)
 
@@ -227,11 +227,11 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     })
 
     // Insert a reply with intent = 'dispute' targeting this attestation
-    const replyHandler = routeHandler('com.dina.reputation.reply')!
+    const replyHandler = routeHandler('com.dina.trust.reply')!
     await replyHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.reputation.reply', 'reply005'),
+      uri: makeUri('com.dina.trust.reply', 'reply005'),
       did: REPORTER_DID,
-      collection: 'com.dina.reputation.reply',
+      collection: 'com.dina.trust.reply',
       rkey: 'reply005',
       cid: 'cid-reply005',
       record: {
@@ -253,7 +253,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
   })
 
   it('IT-DEL-006: disputed — has suspicious reaction → tombstone', async () => {
-    const collection = 'com.dina.reputation.attestation'
+    const collection = 'com.dina.trust.attestation'
     const rkey = 'del006'
     const uri = makeUri(collection, rkey)
 
@@ -274,11 +274,11 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     })
 
     // Insert a suspicious reaction
-    const reactionHandler = routeHandler('com.dina.reputation.reaction')!
+    const reactionHandler = routeHandler('com.dina.trust.reaction')!
     await reactionHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.reputation.reaction', 'rxn006'),
+      uri: makeUri('com.dina.trust.reaction', 'rxn006'),
       did: REPORTER_DID,
-      collection: 'com.dina.reputation.reaction',
+      collection: 'com.dina.trust.reaction',
       rkey: 'rxn006',
       cid: 'cid-rxn006',
       record: {
@@ -298,7 +298,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
   })
 
   it('IT-DEL-007: tombstone preserves metadata', async () => {
-    const collection = 'com.dina.reputation.attestation'
+    const collection = 'com.dina.trust.attestation'
     const rkey = 'del007'
     const uri = makeUri(collection, rkey)
 
@@ -320,11 +320,11 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     })
 
     // Insert a report to make it disputed
-    const reportHandler = routeHandler('com.dina.reputation.reportRecord')!
+    const reportHandler = routeHandler('com.dina.trust.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.reputation.reportRecord', 'report007'),
+      uri: makeUri('com.dina.trust.reportRecord', 'report007'),
       did: REPORTER_DID,
-      collection: 'com.dina.reputation.reportRecord',
+      collection: 'com.dina.trust.reportRecord',
       rkey: 'report007',
       cid: 'cid-report007',
       record: {
@@ -349,7 +349,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
   })
 
   it('IT-DEL-008: tombstone — durationDays calculated', async () => {
-    const collection = 'com.dina.reputation.attestation'
+    const collection = 'com.dina.trust.attestation'
     const rkey = 'del008'
     const uri = makeUri(collection, rkey)
 
@@ -372,11 +372,11 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     })
 
     // Add report to make it disputed
-    const reportHandler = routeHandler('com.dina.reputation.reportRecord')!
+    const reportHandler = routeHandler('com.dina.trust.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.reputation.reportRecord', 'report008'),
+      uri: makeUri('com.dina.trust.reportRecord', 'report008'),
       did: REPORTER_DID,
-      collection: 'com.dina.reputation.reportRecord',
+      collection: 'com.dina.trust.reportRecord',
       rkey: 'report008',
       cid: 'cid-report008',
       record: {
@@ -397,7 +397,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
   })
 
   it('IT-DEL-009: tombstone — hadEvidence flag', async () => {
-    const collection = 'com.dina.reputation.attestation'
+    const collection = 'com.dina.trust.attestation'
     const rkey = 'del009'
     const uri = makeUri(collection, rkey)
 
@@ -419,11 +419,11 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     })
 
     // Add report to make it disputed
-    const reportHandler = routeHandler('com.dina.reputation.reportRecord')!
+    const reportHandler = routeHandler('com.dina.trust.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.reputation.reportRecord', 'report009'),
+      uri: makeUri('com.dina.trust.reportRecord', 'report009'),
       did: REPORTER_DID,
-      collection: 'com.dina.reputation.reportRecord',
+      collection: 'com.dina.trust.reportRecord',
       rkey: 'report009',
       cid: 'cid-report009',
       record: {
@@ -443,7 +443,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
   })
 
   it('IT-DEL-010: tombstone — hadCosignature flag', async () => {
-    const collection = 'com.dina.reputation.attestation'
+    const collection = 'com.dina.trust.attestation'
     const rkey = 'del010'
     const uri = makeUri(collection, rkey)
 
@@ -465,11 +465,11 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     })
 
     // Add report to make it disputed
-    const reportHandler = routeHandler('com.dina.reputation.reportRecord')!
+    const reportHandler = routeHandler('com.dina.trust.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.reputation.reportRecord', 'report010'),
+      uri: makeUri('com.dina.trust.reportRecord', 'report010'),
       did: REPORTER_DID,
-      collection: 'com.dina.reputation.reportRecord',
+      collection: 'com.dina.trust.reportRecord',
       rkey: 'report010',
       cid: 'cid-report010',
       record: {
@@ -489,7 +489,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
   })
 
   it('IT-DEL-011: tombstone — record still deleted', async () => {
-    const collection = 'com.dina.reputation.attestation'
+    const collection = 'com.dina.trust.attestation'
     const rkey = 'del011'
     const uri = makeUri(collection, rkey)
 
@@ -510,11 +510,11 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     })
 
     // Add report to make it disputed
-    const reportHandler = routeHandler('com.dina.reputation.reportRecord')!
+    const reportHandler = routeHandler('com.dina.trust.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.reputation.reportRecord', 'report011'),
+      uri: makeUri('com.dina.trust.reportRecord', 'report011'),
       did: REPORTER_DID,
-      collection: 'com.dina.reputation.reportRecord',
+      collection: 'com.dina.trust.reportRecord',
       rkey: 'report011',
       cid: 'cid-report011',
       record: {
@@ -537,7 +537,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
   })
 
   it('IT-DEL-012: tombstone metrics', async () => {
-    const collection = 'com.dina.reputation.attestation'
+    const collection = 'com.dina.trust.attestation'
     const rkey = 'del012'
     const uri = makeUri(collection, rkey)
 
@@ -567,11 +567,11 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
     })
 
     // Add report to make it disputed — use real ctx so metric tracking doesn't interfere
-    const reportHandler = routeHandler('com.dina.reputation.reportRecord')!
+    const reportHandler = routeHandler('com.dina.trust.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.reputation.reportRecord', 'report012'),
+      uri: makeUri('com.dina.trust.reportRecord', 'report012'),
       did: REPORTER_DID,
-      collection: 'com.dina.reputation.reportRecord',
+      collection: 'com.dina.trust.reportRecord',
       rkey: 'report012',
       cid: 'cid-report012',
       record: {
@@ -598,7 +598,7 @@ describe('§2.2 Deletion — Disputed Delete (Tombstone Created)', () => {
 // ---------------------------------------------------------------------------
 describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
   it('IT-DEL-013: Fix 13: delete vouch → queries vouches table', async () => {
-    const collection = 'com.dina.reputation.vouch'
+    const collection = 'com.dina.trust.vouch'
     const rkey = 'del013'
     const uri = makeUri(collection, rkey)
 
@@ -619,11 +619,11 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     })
 
     // Add report targeting the vouch URI to make it disputed
-    const reportHandler = routeHandler('com.dina.reputation.reportRecord')!
+    const reportHandler = routeHandler('com.dina.trust.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.reputation.reportRecord', 'report013'),
+      uri: makeUri('com.dina.trust.reportRecord', 'report013'),
       did: REPORTER_DID,
-      collection: 'com.dina.reputation.reportRecord',
+      collection: 'com.dina.trust.reportRecord',
       rkey: 'report013',
       cid: 'cid-report013',
       record: {
@@ -647,7 +647,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
   })
 
   it('IT-DEL-014: Fix 13: delete flag → queries flags table', async () => {
-    const collection = 'com.dina.reputation.flag'
+    const collection = 'com.dina.trust.flag'
     const rkey = 'del014'
     const uri = makeUri(collection, rkey)
 
@@ -668,11 +668,11 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     })
 
     // Add report to make it disputed
-    const reportHandler = routeHandler('com.dina.reputation.reportRecord')!
+    const reportHandler = routeHandler('com.dina.trust.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.reputation.reportRecord', 'report014'),
+      uri: makeUri('com.dina.trust.reportRecord', 'report014'),
       did: REPORTER_DID,
-      collection: 'com.dina.reputation.reportRecord',
+      collection: 'com.dina.trust.reportRecord',
       rkey: 'report014',
       cid: 'cid-report014',
       record: {
@@ -696,7 +696,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
   })
 
   it('IT-DEL-015: Fix 13: delete endorsement → queries endorsements table', async () => {
-    const collection = 'com.dina.reputation.endorsement'
+    const collection = 'com.dina.trust.endorsement'
     const rkey = 'del015'
     const uri = makeUri(collection, rkey)
 
@@ -717,11 +717,11 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     })
 
     // Add report to make it disputed
-    const reportHandler = routeHandler('com.dina.reputation.reportRecord')!
+    const reportHandler = routeHandler('com.dina.trust.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.reputation.reportRecord', 'report015'),
+      uri: makeUri('com.dina.trust.reportRecord', 'report015'),
       did: REPORTER_DID,
-      collection: 'com.dina.reputation.reportRecord',
+      collection: 'com.dina.trust.reportRecord',
       rkey: 'report015',
       cid: 'cid-report015',
       record: {
@@ -745,7 +745,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
   })
 
   it('IT-DEL-016: Fix 13: delete reply → queries replies table', async () => {
-    const collection = 'com.dina.reputation.reply'
+    const collection = 'com.dina.trust.reply'
     const rkey = 'del016'
     const uri = makeUri(collection, rkey)
 
@@ -758,8 +758,8 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
       rkey,
       cid: 'cid-del016',
       record: {
-        rootUri: 'at://did:plc:root/com.dina.reputation.attestation/root001',
-        parentUri: 'at://did:plc:root/com.dina.reputation.attestation/root001',
+        rootUri: 'at://did:plc:root/com.dina.trust.attestation/root001',
+        parentUri: 'at://did:plc:root/com.dina.trust.attestation/root001',
         intent: 'agree',
         text: 'I agree with this',
         createdAt: now,
@@ -767,11 +767,11 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     })
 
     // Add report to make it disputed
-    const reportHandler = routeHandler('com.dina.reputation.reportRecord')!
+    const reportHandler = routeHandler('com.dina.trust.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.reputation.reportRecord', 'report016'),
+      uri: makeUri('com.dina.trust.reportRecord', 'report016'),
       did: REPORTER_DID,
-      collection: 'com.dina.reputation.reportRecord',
+      collection: 'com.dina.trust.reportRecord',
       rkey: 'report016',
       cid: 'cid-report016',
       record: {
@@ -795,7 +795,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
   })
 
   it('IT-DEL-017: Fix 13: delete delegation → queries delegations table', async () => {
-    const collection = 'com.dina.reputation.delegation'
+    const collection = 'com.dina.trust.delegation'
     const rkey = 'del017'
     const uri = makeUri(collection, rkey)
 
@@ -820,11 +820,11 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     expect(edgesBefore).toHaveLength(1)
 
     // Add report to make it disputed
-    const reportHandler = routeHandler('com.dina.reputation.reportRecord')!
+    const reportHandler = routeHandler('com.dina.trust.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.reputation.reportRecord', 'report017'),
+      uri: makeUri('com.dina.trust.reportRecord', 'report017'),
       did: REPORTER_DID,
-      collection: 'com.dina.reputation.reportRecord',
+      collection: 'com.dina.trust.reportRecord',
       rkey: 'report017',
       cid: 'cid-report017',
       record: {
@@ -852,7 +852,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
   })
 
   it('IT-DEL-018: Fix 13: delete report → queries report_records table', async () => {
-    const collection = 'com.dina.reputation.reportRecord'
+    const collection = 'com.dina.trust.reportRecord'
     const rkey = 'del018'
     const uri = makeUri(collection, rkey)
 
@@ -865,7 +865,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
       rkey,
       cid: 'cid-del018',
       record: {
-        targetUri: 'at://did:plc:someone/com.dina.reputation.attestation/some-att',
+        targetUri: 'at://did:plc:someone/com.dina.trust.attestation/some-att',
         reportType: 'spam',
         text: 'This is spam',
         createdAt: now,
@@ -873,11 +873,11 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     })
 
     // Add another report targeting this report to make it disputed
-    const reportHandler2 = routeHandler('com.dina.reputation.reportRecord')!
+    const reportHandler2 = routeHandler('com.dina.trust.reportRecord')!
     await reportHandler2.handleCreate(ctx, {
-      uri: makeUri('com.dina.reputation.reportRecord', 'report018-meta'),
+      uri: makeUri('com.dina.trust.reportRecord', 'report018-meta'),
       did: REPORTER_DID,
-      collection: 'com.dina.reputation.reportRecord',
+      collection: 'com.dina.trust.reportRecord',
       rkey: 'report018-meta',
       cid: 'cid-report018-meta',
       record: {
@@ -904,7 +904,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     // Create one record of each type and delete it
     const recordTypes = [
       {
-        collection: 'com.dina.reputation.attestation',
+        collection: 'com.dina.trust.attestation',
         rkey: 'del019-att',
         record: {
           subject: { type: 'did', did: SUBJECT_DID, name: 'Test' },
@@ -915,7 +915,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
         table: schema.attestations,
       },
       {
-        collection: 'com.dina.reputation.vouch',
+        collection: 'com.dina.trust.vouch',
         rkey: 'del019-vouch',
         record: {
           subject: SUBJECT_DID,
@@ -926,7 +926,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
         table: schema.vouches,
       },
       {
-        collection: 'com.dina.reputation.endorsement',
+        collection: 'com.dina.trust.endorsement',
         rkey: 'del019-end',
         record: {
           subject: SUBJECT_DID,
@@ -937,11 +937,11 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
         table: schema.endorsements,
       },
       {
-        collection: 'com.dina.reputation.reply',
+        collection: 'com.dina.trust.reply',
         rkey: 'del019-reply',
         record: {
-          rootUri: 'at://did:plc:root/com.dina.reputation.attestation/root001',
-          parentUri: 'at://did:plc:root/com.dina.reputation.attestation/root001',
+          rootUri: 'at://did:plc:root/com.dina.trust.attestation/root001',
+          parentUri: 'at://did:plc:root/com.dina.trust.attestation/root001',
           intent: 'agree',
           text: 'I agree',
           createdAt: now,
@@ -988,7 +988,7 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     // which specifically queries attestations. For vouches, the tombstone won't have
     // attestation-specific metadata, but it should still be created when disputed.
 
-    const vouchCollection = 'com.dina.reputation.vouch'
+    const vouchCollection = 'com.dina.trust.vouch'
     const rkey = 'del020'
     const uri = makeUri(vouchCollection, rkey)
 
@@ -1009,11 +1009,11 @@ describe('§2.3 Deletion — Multi-Table Correctness (Fix 13)', () => {
     })
 
     // Add report to make it disputed
-    const reportHandler = routeHandler('com.dina.reputation.reportRecord')!
+    const reportHandler = routeHandler('com.dina.trust.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: makeUri('com.dina.reputation.reportRecord', 'report020'),
+      uri: makeUri('com.dina.trust.reportRecord', 'report020'),
       did: REPORTER_DID,
-      collection: 'com.dina.reputation.reportRecord',
+      collection: 'com.dina.trust.reportRecord',
       rkey: 'report020',
       cid: 'cid-report020',
       record: {

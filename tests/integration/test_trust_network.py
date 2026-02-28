@@ -1,7 +1,7 @@
 """Integration tests for the Trust Network.
 
 Tests expert attestations (signed reviews from verified creators),
-outcome data (anonymized purchase outcomes), and bot reputation
+outcome data (anonymized purchase outcomes), and bot trust
 (tracking, degradation, auto-routing).
 """
 
@@ -296,20 +296,20 @@ class TestOutcomeData:
 
 
 # ---------------------------------------------------------------------------
-# Bot Reputation
+# Bot Trust
 # ---------------------------------------------------------------------------
 
 
-class TestBotReputation:
-    """Review bots and task agents have tracked, visible reputation scores."""
+class TestBotTrust:
+    """Review bots and task agents have tracked, visible trust scores."""
 
 # TST-INT-314
-    def test_reputation_tracked(
+    def test_trust_tracked(
         self,
         mock_trust_network: MockTrustNetwork,
         mock_review_bot: MockReviewBot,
     ) -> None:
-        """Every bot has a reputation score tracked in the graph."""
+        """Every bot has a trust score tracked in the graph."""
         mock_trust_network.update_bot_score(mock_review_bot.bot_did, 0)
         score = mock_trust_network.get_bot_score(mock_review_bot.bot_did)
         # Default is 50.0, delta 0 keeps it at 50.0
@@ -326,7 +326,7 @@ class TestBotReputation:
         mock_trust_network: MockTrustNetwork,
     ) -> None:
         """If a bot is found compromised or gives bad recommendations,
-        its reputation score drops sharply."""
+        its trust score drops sharply."""
         bot_did = "did:plc:CompromisedBot000000000000000000"
         mock_trust_network.update_bot_score(bot_did, 30)  # Start at 80
         initial = mock_trust_network.get_bot_score(bot_did)
@@ -348,7 +348,7 @@ class TestBotReputation:
         self,
         mock_trust_network: MockTrustNetwork,
     ) -> None:
-        """Dina auto-routes queries to the highest-reputation bot for a category."""
+        """Dina auto-routes queries to the highest-trust bot for a category."""
         bots = {
             "did:plc:BotA": ("BotA", 45.0),
             "did:plc:BotB": ("BotB", 88.0),
@@ -367,7 +367,7 @@ class TestBotReputation:
         assert best_bot_did == "did:plc:BotB"
         assert mock_trust_network.get_bot_score(best_bot_did) == 88.0
 
-        # If BotB's reputation drops below BotC, routing switches
+        # If BotB's trust drops below BotC, routing switches
         mock_trust_network.update_bot_score("did:plc:BotB", -20)
         new_best = max(
             mock_trust_network.bot_scores,
@@ -376,12 +376,12 @@ class TestBotReputation:
         assert new_best == "did:plc:BotC"
 
 # TST-INT-311
-    def test_reputation_visible_to_user(
+    def test_trust_visible_to_user(
         self,
         mock_trust_network: MockTrustNetwork,
         mock_review_bot: MockReviewBot,
     ) -> None:
-        """Bot reputation scores are visible to the user — full transparency."""
+        """Bot trust scores are visible to the user — full transparency."""
         mock_trust_network.bot_scores[mock_review_bot.bot_did] = 94.0
 
         score = mock_trust_network.get_bot_score(mock_review_bot.bot_did)
@@ -394,10 +394,10 @@ class TestBotReputation:
         assert 0.0 <= score <= 100.0
 
 # TST-INT-304
-    def test_reputation_score_capped_at_100(
+    def test_trust_score_capped_at_100(
         self, mock_trust_network: MockTrustNetwork
     ) -> None:
-        """Reputation score cannot exceed 100.0."""
+        """Trust score cannot exceed 100.0."""
         bot_did = "did:plc:PerfectBot0000000000000000000000"
         mock_trust_network.update_bot_score(bot_did, 60)  # 50 + 60 = 110 -> capped at 100
         score = mock_trust_network.get_bot_score(bot_did)
@@ -478,7 +478,7 @@ class TestATProtocolPDS:
         mock_identity: MockIdentity,
         mock_plc_resolver: MockPLCResolver,
     ) -> None:
-        """Type A: user pushes reputation records to an external PDS.
+        """Type A: user pushes trust records to an external PDS.
         The PLC document advertises the external PDS endpoint."""
         external_pds_endpoint = "https://pds.external-provider.example"
         doc = DIDDocument(
@@ -499,12 +499,12 @@ class TestATProtocolPDS:
         self,
         mock_app_view: MockAppView,
     ) -> None:
-        """Reputation records use custom com.dina.reputation.* lexicons.
+        """Trust records use custom com.dina.trust.* lexicons.
         The AppView indexes only matching lexicons."""
         records = [
             {
                 "id": "rec_1",
-                "lexicon": "com.dina.reputation.review",
+                "lexicon": "com.dina.trust.review",
                 "author_did": "did:plc:Author1",
                 "product_id": "laptop_1",
                 "rating": 90,
@@ -512,7 +512,7 @@ class TestATProtocolPDS:
             },
             {
                 "id": "rec_2",
-                "lexicon": "com.dina.reputation.outcome",
+                "lexicon": "com.dina.trust.outcome",
                 "author_did": "did:plc:Author2",
                 "product_id": "laptop_1",
                 "rating": 85,
@@ -527,11 +527,11 @@ class TestATProtocolPDS:
         ]
         indexed = mock_app_view.consume_firehose(records)
 
-        # Only the two com.dina.reputation.* records are indexed
+        # Only the two com.dina.trust.* records are indexed
         assert indexed == 2
         assert len(mock_app_view.indexed_records) == 2
         lexicons = {r["lexicon"] for r in mock_app_view.indexed_records}
-        assert all(lex.startswith("com.dina.reputation.") for lex in lexicons)
+        assert all(lex.startswith("com.dina.trust.") for lex in lexicons)
 
 # TST-INT-305
     def test_author_deletes_own_review_signed_tombstone(
@@ -601,12 +601,12 @@ class TestATProtocolPDS:
         self,
         mock_app_view: MockAppView,
     ) -> None:
-        """Aggregate reputation scores are computed on-the-fly by the
+        """Aggregate trust scores are computed on-the-fly by the
         AppView, never persisted as a separate record."""
         records = [
             {
                 "id": f"rec_{i}",
-                "lexicon": "com.dina.reputation.review",
+                "lexicon": "com.dina.trust.review",
                 "author_did": f"did:plc:Expert{i}",
                 "product_id": "laptop_agg",
                 "rating": rating,
@@ -622,7 +622,7 @@ class TestATProtocolPDS:
 
         # No separate aggregate record exists in the index
         assert all(
-            r.get("lexicon") != "com.dina.reputation.aggregate"
+            r.get("lexicon") != "com.dina.trust.aggregate"
             for r in mock_app_view.indexed_records
         )
         # Only the 3 individual review records
@@ -640,7 +640,7 @@ class TestATProtocolPDS:
         records = [
             {
                 "id": "rec_replicated_1",
-                "lexicon": "com.dina.reputation.review",
+                "lexicon": "com.dina.trust.review",
                 "author_did": "did:plc:Author1",
                 "product_id": "laptop_offline",
                 "rating": 88,
@@ -697,16 +697,16 @@ class TestATProtocolPDS:
         assert resolved.did == mock_identity.root_did
 
 # TST-INT-318
-    def test_foundation_pds_stores_only_reputation_data(
+    def test_foundation_pds_stores_only_trust_data(
         self,
         mock_app_view: MockAppView,
     ) -> None:
-        """The Foundation PDS stores only reputation records (reviews,
+        """The Foundation PDS stores only trust records (reviews,
         outcomes). No personal data (messages, contacts, health) is stored."""
         records = [
             {
                 "id": "rep_1",
-                "lexicon": "com.dina.reputation.review",
+                "lexicon": "com.dina.trust.review",
                 "author_did": "did:plc:Author1",
                 "product_id": "chair_1",
                 "rating": 91,
@@ -727,10 +727,10 @@ class TestATProtocolPDS:
         ]
         indexed = mock_app_view.consume_firehose(records)
 
-        # Only the reputation record is indexed
+        # Only the trust record is indexed
         assert indexed == 1
         assert len(mock_app_view.indexed_records) == 1
-        assert mock_app_view.indexed_records[0]["lexicon"] == "com.dina.reputation.review"
+        assert mock_app_view.indexed_records[0]["lexicon"] == "com.dina.trust.review"
 
 # TST-INT-319
     def test_relay_crawls_pds_via_delta_sync(
@@ -742,7 +742,7 @@ class TestATProtocolPDS:
         batch_1 = [
             {
                 "id": "rec_1",
-                "lexicon": "com.dina.reputation.review",
+                "lexicon": "com.dina.trust.review",
                 "author_did": "did:plc:Author1",
                 "product_id": "phone_1",
                 "rating": 85,
@@ -757,7 +757,7 @@ class TestATProtocolPDS:
         batch_2 = [
             {
                 "id": "rec_2",
-                "lexicon": "com.dina.reputation.review",
+                "lexicon": "com.dina.trust.review",
                 "author_did": "did:plc:Author2",
                 "product_id": "phone_2",
                 "rating": 78,
@@ -765,7 +765,7 @@ class TestATProtocolPDS:
             },
             {
                 "id": "rec_3",
-                "lexicon": "com.dina.reputation.outcome",
+                "lexicon": "com.dina.trust.outcome",
                 "author_did": "did:plc:Author3",
                 "product_id": "phone_1",
                 "rating": 82,
@@ -788,7 +788,7 @@ class TestATProtocolPDS:
     ) -> None:
         """DID resolution discovers the PDS endpoint, enabling federation.
         Given a DID, the resolver returns the service endpoint where
-        reputation records are stored."""
+        trust records are stored."""
         pds_endpoint = "https://pds.dina.example.com"
         doc = DIDDocument(
             did=mock_identity.root_did,

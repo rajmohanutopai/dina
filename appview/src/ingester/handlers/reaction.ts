@@ -6,7 +6,7 @@ import { deletionHandler } from '../deletion-handler.js'
 import { markDirty } from '@/db/queries/dirty-flags.js'
 
 /**
- * Handler for com.dina.reputation.reaction records.
+ * Handler for com.dina.trust.reaction records.
  *
  * Reactions are lightweight signals on attestations (helpful, suspicious, etc.).
  * Uses onConflictDoNothing for idempotent replay — if the same reaction URI

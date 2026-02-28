@@ -68,7 +68,7 @@ describe('11.1 Schema Correctness', () => {
   it('IT-DB-003: attestations -- primary key on uri', async () => {
     // Description: Duplicate uri insert
     // Expected: Constraint violation (without onConflict)
-    const testUri = `at://did:plc:test11/app.dina.reputation.attestation/db003-${Date.now()}`
+    const testUri = `at://did:plc:test11/app.dina.trust.attestation/db003-${Date.now()}`
 
     await db.execute(sql.raw(`
       INSERT INTO attestations (uri, author_did, cid, subject_ref_raw, category, sentiment, record_created_at, indexed_at)

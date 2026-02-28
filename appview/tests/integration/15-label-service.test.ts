@@ -43,7 +43,7 @@ async function insertAttestation(opts: {
   isAgentGenerated?: boolean
   createdAt?: string
 }) {
-  const handler = routeHandler('com.dina.reputation.attestation')!
+  const handler = routeHandler('com.dina.trust.attestation')!
   const subjectRef: Record<string, unknown> = {
     type: opts.subjectType ?? 'product',
     name: opts.subjectName,
@@ -56,7 +56,7 @@ async function insertAttestation(opts: {
   await handler.handleCreate(ctx, {
     uri: opts.uri,
     did: opts.did,
-    collection: 'com.dina.reputation.attestation',
+    collection: 'com.dina.trust.attestation',
     rkey: opts.uri.split('/').pop()!,
     cid: `cid-${opts.uri.replace(/[^a-z0-9]/gi, '')}`,
     record: {
@@ -76,11 +76,11 @@ async function insertDelegation(opts: {
   authorDid: string
   subjectDid: string
 }) {
-  const handler = routeHandler('com.dina.reputation.delegation')!
+  const handler = routeHandler('com.dina.trust.delegation')!
   await handler.handleCreate(ctx, {
     uri: opts.uri,
     did: opts.authorDid,
-    collection: 'com.dina.reputation.delegation',
+    collection: 'com.dina.trust.delegation',
     rkey: opts.uri.split('/').pop()!,
     cid: `cid-${opts.uri.replace(/[^a-z0-9]/gi, '')}`,
     record: {
@@ -102,7 +102,7 @@ describe('15.1 Label Detectors', () => {
     for (let i = 0; i < 10; i++) {
       const createdAt = new Date(baseTime.getTime() + i * 30_000) // 30 seconds apart
       await insertAttestation({
-        uri: `at://did:plc:reviewer${i}/com.dina.reputation.attestation/lbl001-${i}`,
+        uri: `at://did:plc:reviewer${i}/com.dina.trust.attestation/lbl001-${i}`,
         did: `did:plc:reviewer${i}`,
         subjectName: 'Suspicious Restaurant',
         subjectDid,
@@ -136,7 +136,7 @@ describe('15.1 Label Detectors', () => {
     // Insert attestations with isAgentGenerated=true
     for (let i = 0; i < 5; i++) {
       await insertAttestation({
-        uri: `at://did:plc:aigenDid/com.dina.reputation.attestation/lbl002-${i}`,
+        uri: `at://did:plc:aigenDid/com.dina.trust.attestation/lbl002-${i}`,
         did: 'did:plc:aigenDid',
         subjectName: `Product ${i}`,
         isAgentGenerated: true,
@@ -168,7 +168,7 @@ describe('15.1 Label Detectors', () => {
     // Author reviewing their own DID
     const selfDid = 'did:plc:selfPromoter'
     await insertAttestation({
-      uri: `at://${selfDid}/com.dina.reputation.attestation/lbl003`,
+      uri: `at://${selfDid}/com.dina.trust.attestation/lbl003`,
       did: selfDid,
       subjectName: selfDid,
       subjectDid: selfDid,
@@ -203,7 +203,7 @@ describe('15.1 Label Detectors', () => {
 
     for (let i = 0; i < coordinatedDids.length; i++) {
       await insertAttestation({
-        uri: `at://${coordinatedDids[i]}/com.dina.reputation.attestation/lbl004-${i}`,
+        uri: `at://${coordinatedDids[i]}/com.dina.trust.attestation/lbl004-${i}`,
         did: coordinatedDids[i],
         subjectName: 'Coordinated Target Product',
         subjectDid: targetSubjectDid,
@@ -236,14 +236,14 @@ describe('15.1 Label Detectors', () => {
 
     // Create delegation: subjectDid grants delegation to authorDid
     await insertDelegation({
-      uri: `at://${subjectDid}/com.dina.reputation.delegation/lbl005`,
+      uri: `at://${subjectDid}/com.dina.trust.delegation/lbl005`,
       authorDid: subjectDid,
       subjectDid: authorDid,
     })
 
     // Author reviews the subject DID
     await insertAttestation({
-      uri: `at://${authorDid}/com.dina.reputation.attestation/lbl005`,
+      uri: `at://${authorDid}/com.dina.trust.attestation/lbl005`,
       did: authorDid,
       subjectName: subjectDid,
       subjectDid: subjectDid,
@@ -283,7 +283,7 @@ describe('15.1 Label Detectors', () => {
     for (let i = 0; i < 5; i++) {
       const createdAt = new Date(Date.now() - i * 86400_000) // 1 day apart
       await insertAttestation({
-        uri: `at://${diverseDids[i]}/com.dina.reputation.attestation/lbl006-${i}`,
+        uri: `at://${diverseDids[i]}/com.dina.trust.attestation/lbl006-${i}`,
         did: diverseDids[i],
         subjectName: diverseSubjects[i], // Different subjects
         sentiment: i % 2 === 0 ? 'positive' : 'neutral', // Mixed sentiment

@@ -44,11 +44,11 @@ Important brain behaviors from architecture, Phase 1 or early Phase 2.
 
 | ID | Arch Source | Requirement | Recommended Section | Status |
 |----|------------|-------------|---------------------|--------|
-| M1 | `08-layer3-trust-network.md` §Reputation AppView | Brain queries Reputation AppView API (`GET /v1/reputation?did=...`) to get product scores, expert attestations, and bot scores for recommendations. Phase 2 feature but AppView query contract should be tested. | §6 MCP Client (new subsection) | CLOSED |
-| M2 | `08-layer3-trust-network.md` §Cold Start | When Reputation AppView is unavailable, brain degrades gracefully to web search via OpenClaw. No disruption to user. Phase 1 behavior (AppView doesn't exist yet, brain uses web search). | §6 MCP Client | CLOSED |
-| M3 | `10-layer5-bot-interface.md` §Bot Reputation Scoring | Brain maintains per-bot reputation scores locally. After each interaction outcome, brain recalculates bot score. Next query routes to updated best bot. TST-BRAIN-228 says "highest score selected" but doesn't verify local tracking or recalculation. | §6.1 Agent Routing | CLOSED |
+| M1 | `08-layer3-trust-network.md` §Trust AppView | Brain queries Trust AppView API (`GET /v1/trust?did=...`) to get product scores, expert attestations, and bot scores for recommendations. Phase 2 feature but AppView query contract should be tested. | §6 MCP Client (new subsection) | CLOSED |
+| M2 | `08-layer3-trust-network.md` §Cold Start | When Trust AppView is unavailable, brain degrades gracefully to web search via OpenClaw. No disruption to user. Phase 1 behavior (AppView doesn't exist yet, brain uses web search). | §6 MCP Client | CLOSED |
+| M3 | `10-layer5-bot-interface.md` §Bot Trust Scoring | Brain maintains per-bot trust scores locally. After each interaction outcome, brain recalculates bot score. Next query routes to updated best bot. TST-BRAIN-228 says "highest score selected" but doesn't verify local tracking or recalculation. | §6.1 Agent Routing | CLOSED |
 | M4 | `11-layer6-intelligence.md` §Context Injection | Brain detects **disconnection patterns** — identifies contacts with no recent interaction (N+ days) and proactively suggests reconnection. Architecture says "nudge toward human connection" (Anti-Her + nudge assembly). | §2.6 Context Injection | CLOSED |
-| M5 | `09-layer4-dina-to-dina.md` §Message Types | Brain must parse DIDComm message types (`dina/social/arrival`, `dina/commerce/*`, `dina/identity/*`, `dina/reputation/*`) and route to appropriate handler (nudge assembly, commerce flow, etc.). TST-BRAIN-035 is generic "process incoming event." | §2.8 D2D Payload | CLOSED |
+| M5 | `09-layer4-dina-to-dina.md` §Message Types | Brain must parse DIDComm message types (`dina/social/arrival`, `dina/commerce/*`, `dina/identity/*`, `dina/trust/*`) and route to appropriate handler (nudge assembly, commerce flow, etc.). TST-BRAIN-035 is generic "process incoming event." | §2.8 D2D Payload | CLOSED |
 | M6 | `16-technology-stack.md`, `17-infrastructure.md` §Voice STT | Brain integrates with Deepgram Nova-3 via WebSocket streaming for real-time voice-to-text. Fallback: Gemini Flash Lite Live API. ~150-300ms latency target. No brain test exists for voice input pipeline. | §4 LLM Router (new subsection) | CLOSED |
 | M7 | `04-data-flow-and-recovery.md` §API Contract | When brain uses `include_content: true` in vault query, it takes on PII scrubbing responsibility for raw `body_text`. Architecture says this flag is "a signal to the developer that they're opting into a higher-trust path." No test verifies brain scrubs after setting this flag. | §3.2 Combined Pipeline | CLOSED |
 | M8 | `04-data-flow-and-recovery.md` §Reading, Semantic search | Brain merges FTS5 + sqlite-vec cosine results using formula `0.4 × fts5_rank + 0.6 × cosine_similarity` (hybrid search). Dedup applied to merged results. No test for merging formula or dedup logic. | §4 LLM Router or §7 Core Client | CLOSED |
@@ -70,7 +70,7 @@ Nice-to-have tests, code audits, very deferred features.
 | L4 | `04-data-flow-and-recovery.md` §Logging policy | **Logging audit:** Brain log output MUST NOT contain vault content, user queries, PII, brain reasoning output, NaCl plaintext, passphrase/keys, or API tokens. Only metadata: timestamps, endpoint, persona, query type, error codes, item counts, latency. | §13 Crash Traceback Safety | CLOSED |
 | L5 | `03-sidecar-architecture.md` §Why the sidecar pattern | Brain language-agnosticism: internal API contract (`/v1/process`, `/v1/reason`) is documented, versioned, language-agnostic. Brain can be rewritten in Go or other language. | §10 API Endpoints | CLOSED |
 | L6 | `14-digital-estate.md` | Brain behavior during active recovery procedures: brain queues/rejects non-critical tasks while estate recovery is in-flight. Phase 2+ feature. | §17 Deferred | CLOSED |
-| L7 | `05-layer0-identity.md` §Trust Rings, ZKP | Brain verifies Ring 2+ ZKP credentials when evaluating agent intent reputation. Phase 3 feature (ZK-SNARKs on L2). | §17 Deferred | CLOSED |
+| L7 | `05-layer0-identity.md` §Trust Rings, ZKP | Brain verifies Ring 2+ ZKP credentials when evaluating agent intent trust. Phase 3 feature (ZK-SNARKs on L2). | §17 Deferred | CLOSED |
 | L8 | `14-digital-estate.md` §SSS Recovery | Brain's role in Shamir Secret Sharing custodian recovery coordination via DIDComm. Phase 2+ feature. Core handles crypto; brain may coordinate human approval flow. | §17 Deferred | CLOSED |
 
 ---
@@ -272,7 +272,7 @@ notification that results from 3 failures.
 | TST-BRAIN-407 | 1 | M10: Dead Letter |
 | TST-BRAIN-408 | 1 | M1: AppView Query |
 | TST-BRAIN-409 | 1 | M2: AppView Fallback |
-| TST-BRAIN-410 | 1 | M3: Bot Reputation Tracking |
+| TST-BRAIN-410 | 1 | M3: Bot Trust Tracking |
 | TST-BRAIN-411 | 1 | M4: Disconnection Detection |
 | TST-BRAIN-412 | 1 | M5: D2D Message Type Parsing |
 | TST-BRAIN-413 | 1 | M7: include_content PII |

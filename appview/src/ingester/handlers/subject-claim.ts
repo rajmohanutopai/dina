@@ -4,7 +4,7 @@ import { subjectClaims } from '@/db/schema/index.js'
 import { deletionHandler } from '../deletion-handler.js'
 
 /**
- * Handler for com.dina.reputation.subjectClaim records.
+ * Handler for com.dina.trust.subjectClaim records.
  *
  * Subject claims assert relationships between subject entities:
  * - same-entity: two subject IDs refer to the same real-world entity

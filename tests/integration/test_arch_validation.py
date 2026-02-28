@@ -484,18 +484,18 @@ def test_appview_phase1_single_go_binary_postgresql():
     assert hasattr(app_view, "query_by_product"), \
         "AppView must support query by product"
 
-    # Lexicon filter — only reputation records
-    assert app_view.lexicon_filter == "com.dina.reputation."
+    # Lexicon filter — only trust records
+    assert app_view.lexicon_filter == "com.dina.trust."
 
     # Firehose consumption works
     records = [
-        {"lexicon": "com.dina.reputation.review", "author_did": "did:plc:a",
+        {"lexicon": "com.dina.trust.review", "author_did": "did:plc:a",
          "product_id": "aeron_2025", "rating": 90},
         {"lexicon": "app.bsky.feed.post", "content": "hello"},  # Ignored
         {"lexicon": "com.dina.identity.attestation", "did": "did:plc:b"},
     ]
     indexed = app_view.consume_firehose(records)
-    assert indexed == 2, "Only reputation + attestation records indexed"
+    assert indexed == 2, "Only trust + attestation records indexed"
 
     # Deterministic aggregate computation
     score = app_view.compute_aggregate("aeron_2025")

@@ -480,6 +480,7 @@ class TestResult:
     status: str  # PASS, SKIP, FAIL
     section: int  # major section number; 0 = unmapped
     duration: float = 0.0  # seconds
+    output: str = ""  # captured logs/errors for this test
 
 
 @dataclass
@@ -541,8 +542,13 @@ def _extract_py_section(
 
 
 def parse_go_json(output: str) -> list[TestResult]:
-    """Parse ``go test -json`` output — one JSON object per line."""
+    """Parse ``go test -json`` output — one JSON object per line.
+
+    Accumulates per-test ``output`` events so that failure context
+    (t.Log, t.Errorf, etc.) is available on each TestResult.
+    """
     results: list[TestResult] = []
+    test_output: dict[str, list[str]] = {}
     for line in output.splitlines():
         line = line.strip()
         if not line:
@@ -553,6 +559,10 @@ def parse_go_json(output: str) -> list[TestResult]:
             continue
         action = event.get("Action")
         name = event.get("Test")
+        # Accumulate output events per test
+        if action == "output" and name:
+            test_output.setdefault(name, []).append(event.get("Output", ""))
+            continue
         if not name or action not in _GO_JSON_ACTION_MAP:
             continue
         results.append(
@@ -561,6 +571,7 @@ def parse_go_json(output: str) -> list[TestResult]:
                 status=_GO_JSON_ACTION_MAP[action],
                 section=_extract_go_section(name),
                 duration=float(event.get("Elapsed", 0)),
+                output="".join(test_output.get(name, [])).rstrip(),
             )
         )
     return results
@@ -576,7 +587,12 @@ def parse_pytest_output(
     output: str,
     section_override: dict[str, int] | None = None,
 ) -> list[TestResult]:
-    """Parse ``pytest -v`` output, including --durations timing."""
+    """Parse ``pytest -v`` output, including --durations timing.
+
+    With ``--tb=short``, failure tracebacks appear between the result
+    line (``FAILED``) and the next test result line.  We capture these
+    and attach them to the corresponding ``TestResult.output``.
+    """
     results: list[TestResult] = []
     # First pass: collect durations from --durations=0 section
     durations: dict[str, float] = {}
@@ -604,6 +620,64 @@ def parse_pytest_output(
                 duration=durations.get(func_name, 0.0),
             )
         )
+
+    # Third pass: capture per-test failure output from the FAILURES section.
+    # With --tb=short, pytest prints all result lines first, then a separate
+    # "= FAILURES =" section at the bottom with tracebacks delimited by
+    # "_____ test_name _____" headers.
+    result_by_name: dict[str, TestResult] = {r.name: r for r in results}
+    lines = output.splitlines()
+
+    # Regex for the underscored header: _____ test_name _____
+    _FAILURE_HDR = re.compile(r"^_{3,}\s+(.+?)\s+_{3,}$")
+    # Section boundaries that end a failure block
+    _SECTION_END = re.compile(
+        r"^=+\s*(short test summary|warnings summary|PASSES|slowest|\d+ (failed|passed))"
+    )
+
+    in_failures = False
+    current_test: str | None = None
+    capture_lines: list[str] = []
+
+    for line in lines:
+        # Detect start of FAILURES section
+        if re.match(r"^=+\s+FAILURES\s+=+$", line):
+            in_failures = True
+            continue
+
+        if not in_failures:
+            continue
+
+        # End of FAILURES section
+        if _SECTION_END.match(line):
+            # Flush last test
+            if current_test and current_test in result_by_name:
+                result_by_name[current_test].output = "\n".join(capture_lines).rstrip()
+            break
+
+        # New failure header: _____ test_name _____
+        hdr = _FAILURE_HDR.match(line)
+        if hdr:
+            # Flush previous test
+            if current_test and current_test in result_by_name:
+                result_by_name[current_test].output = "\n".join(capture_lines).rstrip()
+            # Extract test name (may be qualified: Class.test or file::class::test)
+            raw_name = hdr.group(1).strip()
+            # Split on :: first (file::class::test), then on . (Class.test)
+            func_name = raw_name.split("::")[-1]
+            func_name = func_name.split(".")[-1]
+            current_test = func_name
+            capture_lines = []
+            continue
+
+        # Accumulate lines for the current failure
+        if current_test:
+            capture_lines.append(line)
+
+    # Flush if we never hit a section boundary
+    if current_test and current_test in result_by_name:
+        result_by_name[current_test].output = "\n".join(capture_lines).rstrip()
+
     return results
 
 
@@ -621,7 +695,7 @@ SUITES = {
     },
     "brain": {
         "name": "Brain (Py)",
-        "cmd": ["python", "-m", "pytest", "-v", "--tb=no", "--durations=0", "-vv",
+        "cmd": ["python", "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
                 "brain/tests/"],
         "cwd": None,
         "plan": "brain/tests/TEST_PLAN.md",
@@ -629,7 +703,7 @@ SUITES = {
     },
     "integration": {
         "name": "Integration",
-        "cmd": ["python", "-m", "pytest", "-v", "--tb=no", "--durations=0", "-vv",
+        "cmd": ["python", "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
                 "tests/integration/"],
         "cwd": None,
         "plan": "tests/INTEGRATION_TEST_PLAN.md",
@@ -642,7 +716,7 @@ SUITES = {
     },
     "e2e": {
         "name": "E2E (Docker)",
-        "cmd": ["python", "-m", "pytest", "-v", "--tb=no", "--durations=0", "-vv",
+        "cmd": ["python", "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
                 "tests/e2e/"],
         "cwd": None,
         "parser": "pytest",
@@ -652,7 +726,7 @@ SUITES = {
     },
     "cli": {
         "name": "CLI (Py)",
-        "cmd": ["python", "-m", "pytest", "-v", "--tb=no", "--durations=0", "-vv",
+        "cmd": ["python", "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
                 "cli/tests/"],
         "cwd": None,
         "parser": "pytest",
@@ -1037,6 +1111,81 @@ def _group_tests_by_section(tests: list[TestResult]) -> dict[int, list[TestResul
     return groups
 
 
+def _write_structured_log(
+    log_path: Path,
+    suite_name: str,
+    tests: list[TestResult],
+    sections: list[SectionStats],
+) -> None:
+    """Write a structured log file with tests grouped by section.
+
+    Each test shows its status, duration, and all captured output
+    (logs, errors, stack traces) grouped directly underneath.
+    """
+    lines: list[str] = []
+    lines.append(f"{'=' * 80}")
+    lines.append(f"  {suite_name} — Structured Test Log")
+    lines.append(f"{'=' * 80}")
+    lines.append("")
+
+    by_section = _group_tests_by_section(tests) if tests else {}
+
+    # Summary counts
+    total = sum(s.total for s in sections)
+    passed = sum(s.passed for s in sections)
+    failed = sum(s.failed for s in sections)
+    skipped = sum(s.skipped for s in sections)
+    lines.append(f"  Total: {total}  |  Passed: {passed}  |  Failed: {failed}  |  Skipped: {skipped}")
+    lines.append("")
+
+    # List failures upfront for quick reference
+    failed_tests = [t for t in tests if t.status == "FAIL"] if tests else []
+    if failed_tests:
+        lines.append(f"  FAILURES ({len(failed_tests)}):")
+        for t in sorted(failed_tests, key=lambda x: (x.section, x.name)):
+            sec_name = ""
+            for s in sections:
+                if s.number == t.section:
+                    sec_name = s.name
+                    break
+            lines.append(f"    - [{sec_name or f'§{t.section}'}] {t.name}")
+        lines.append("")
+
+    lines.append(f"{'=' * 80}")
+    lines.append("")
+
+    # Per-section, per-test details
+    for s in sorted(sections, key=lambda x: x.number):
+        sec_tests = by_section.get(s.number, [])
+        if not sec_tests:
+            continue
+
+        lines.append(f"{'─' * 80}")
+        lines.append(f"  § {s.number}  {s.name}")
+        lines.append(f"  Tests: {s.total}  |  Pass: {s.passed}  |  Fail: {s.failed}  |  Skip: {s.skipped}")
+        lines.append(f"{'─' * 80}")
+
+        for t in sorted(sec_tests, key=lambda x: x.name):
+            status_tag = f"[{t.status}]"
+            dur = f"  ({t.duration:.3f}s)" if t.duration > 0 else ""
+            lines.append(f"  {status_tag:<6} {t.name}{dur}")
+
+            if t.output:
+                # Indent all captured output under the test name
+                for out_line in t.output.splitlines():
+                    lines.append(f"         {out_line}")
+                lines.append("")  # blank line after output block
+
+        lines.append("")
+
+    lines.append(f"{'=' * 80}")
+    lines.append(f"  End of {suite_name} structured log")
+    lines.append(f"{'=' * 80}")
+    lines.append("")
+
+    log_path.write_text("\n".join(lines))
+
+
 def render_suite(
     name: str,
     sections: list[SectionStats],
@@ -1311,6 +1460,15 @@ def main() -> None:
                 (log_dir / f"{key}.log").write_text(raw_output)
             sections = aggregate(tests, section_map)
 
+            # Write structured per-test log with grouped output
+            if tests:
+                _write_structured_log(
+                    log_dir / f"{key}_details.log",
+                    name,
+                    tests,
+                    sections,
+                )
+
             tot = sum(s.total for s in sections)
             pas = sum(s.passed for s in sections)
             ski = sum(s.skipped for s in sections)
@@ -1332,6 +1490,16 @@ def main() -> None:
                         }
                         for s in sections
                         if s.total > 0
+                    ],
+                    "tests": [
+                        {
+                            "name": t.name,
+                            "status": t.status,
+                            "section": t.section,
+                            "duration_s": round(t.duration, 3),
+                            **({"output": t.output} if t.output else {}),
+                        }
+                        for t in tests
                     ],
                     "summary": {
                         "total": tot,

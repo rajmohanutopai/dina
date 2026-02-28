@@ -355,7 +355,7 @@
       "line": 1150
     },
     "TST-E2E-060": {
-      "scenario": "Bot Reputation Degradation",
+      "scenario": "Bot Trust Degradation",
       "path": "12.2",
       "suite": "Trust Network Lifecycle",
       "line": 1166

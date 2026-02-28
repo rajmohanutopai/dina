@@ -223,7 +223,7 @@ func TestDeferred_24_3_1_ArchiveEncryptedWithArchiveKey(t *testing.T) {
 
 // TST-CORE-763
 func TestDeferred_24_3_2_ArchiveContainsCorrectTiers(t *testing.T) {
-	// Archive must contain Tier 0 (identity) + Tier 1 (persona vaults) + Tier 3 (reputation/preferences).
+	// Archive must contain Tier 0 (identity) + Tier 1 (persona vaults) + Tier 3 (trust/preferences).
 	// Must NOT contain Tier 2 (index/embeddings — regenerable) or Tier 4 (staging — ephemeral).
 	var impl testutil.ArchiveManager
 	testutil.RequireImplementation(t, impl, "ArchiveManager")
@@ -247,7 +247,7 @@ func TestDeferred_24_3_2_ArchiveContainsCorrectTiers(t *testing.T) {
 	}
 	testutil.RequireTrue(t, tierSet[0], "Tier 0 (identity) must be in archive")
 	testutil.RequireTrue(t, tierSet[1], "Tier 1 (persona vaults) must be in archive")
-	testutil.RequireTrue(t, tierSet[3], "Tier 3 (reputation/preferences) must be in archive")
+	testutil.RequireTrue(t, tierSet[3], "Tier 3 (trust/preferences) must be in archive")
 	testutil.RequireFalse(t, tierSet[2], "Tier 2 (index/embeddings) must NOT be in archive")
 	testutil.RequireFalse(t, tierSet[4], "Tier 4 (staging) must NOT be in archive")
 }

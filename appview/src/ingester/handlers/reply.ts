@@ -4,7 +4,7 @@ import { replies } from '@/db/schema/index.js'
 import { deletionHandler } from '../deletion-handler.js'
 
 /**
- * Handler for com.dina.reputation.reply records.
+ * Handler for com.dina.trust.reply records.
  *
  * Replies are threaded responses to attestations or other replies.
  * They carry an intent (agree, disagree, dispute, etc.) which

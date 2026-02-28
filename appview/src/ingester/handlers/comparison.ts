@@ -4,7 +4,7 @@ import { comparisons } from '@/db/schema/index.js'
 import { deletionHandler } from '../deletion-handler.js'
 
 /**
- * Handler for com.dina.reputation.comparison records.
+ * Handler for com.dina.trust.comparison records.
  *
  * Comparisons are side-by-side evaluations of multiple subjects across
  * shared dimensions (e.g., comparing two laptops on battery, performance).

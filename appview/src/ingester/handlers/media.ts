@@ -4,7 +4,7 @@ import { media } from '@/db/schema/index.js'
 import { deletionHandler } from '../deletion-handler.js'
 
 /**
- * Handler for com.dina.reputation.media records.
+ * Handler for com.dina.trust.media records.
  *
  * Media records attach images, videos, or other files to parent records
  * (attestations, replies, etc.). Simple upsert with no trust edges or

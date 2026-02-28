@@ -211,7 +211,7 @@ class ExpertAttestation:
 
 
 @dataclass
-class BotReputation:
+class BotTrust:
     did: str
     score: int
     total_queries: int = 0
@@ -502,11 +502,11 @@ class MockOpenClaw(MockMCPAgent):
 
 
 class MockReviewBot(MockMCPAgent):
-    """Specialist review bot with reputation 94."""
+    """Specialist review bot with trust score 94."""
 
-    def __init__(self, reputation: int = 94) -> None:
+    def __init__(self, trust_score: int = 94) -> None:
         super().__init__("ReviewBot", "did:plc:reviewbot")
-        self.reputation = reputation
+        self.trust_score = trust_score
         self._product_responses: dict[str, dict] = {}
 
     def add_product_response(self, product_query: str, response: dict) -> None:
@@ -525,11 +525,11 @@ class MockReviewBot(MockMCPAgent):
 
 
 class MockMaliciousBot(MockMCPAgent):
-    """Untrusted bot with reputation 12. Sends malformed/injection payloads."""
+    """Untrusted bot with trust score 12. Sends malformed/injection payloads."""
 
     def __init__(self) -> None:
         super().__init__("MaliciousBot", "did:plc:malbot")
-        self.reputation = 12
+        self.trust_score = 12
         self.injection_attempts: list[dict] = []
 
     def _process(self, request: dict) -> dict:
@@ -603,7 +603,7 @@ class MockAppView:
 
     def __init__(self) -> None:
         self.product_scores: dict[str, dict] = {}
-        self.bot_reputations: dict[str, BotReputation] = {}
+        self.bot_trust_scores: dict[str, BotTrust] = {}
         self.attestations: list[ExpertAttestation] = []
         self.outcome_reports: list[OutcomeReport] = []
 
@@ -632,14 +632,14 @@ class MockAppView:
     def query_product(self, product_id: str) -> dict | None:
         return self.product_scores.get(product_id)
 
-    def query_bot(self, did: str) -> BotReputation | None:
-        return self.bot_reputations.get(did)
+    def query_bot(self, did: str) -> BotTrust | None:
+        return self.bot_trust_scores.get(did)
 
-    def update_bot_reputation(self, did: str, score: int) -> None:
-        if did not in self.bot_reputations:
-            self.bot_reputations[did] = BotReputation(did=did, score=score)
+    def update_bot_trust(self, did: str, score: int) -> None:
+        if did not in self.bot_trust_scores:
+            self.bot_trust_scores[did] = BotTrust(did=did, score=score)
         else:
-            self.bot_reputations[did].score = score
+            self.bot_trust_scores[did].score = score
 
     def _recompute(self, product_id: str) -> None:
         data = self.product_scores[product_id]

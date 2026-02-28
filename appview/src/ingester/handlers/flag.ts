@@ -6,7 +6,7 @@ import { resolveOrCreateSubject } from '@/db/queries/subjects.js'
 import { markDirty } from '@/db/queries/dirty-flags.js'
 
 /**
- * Handler for com.dina.reputation.flag records.
+ * Handler for com.dina.trust.flag records.
  *
  * A flag is a negative signal against a subject — "something is wrong here."
  * Flags do NOT create trust edges (they are not a trust relationship).

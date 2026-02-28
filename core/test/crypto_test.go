@@ -693,13 +693,13 @@ func TestCrypto_2_3_ClientSyncKey(t *testing.T) {
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
 // TST-CORE-087, TST-CORE-088, TST-CORE-089, TST-CORE-090, TST-CORE-091, TST-CORE-092, TST-CORE-093
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
-func TestCrypto_2_3_ReputationSigningKey(t *testing.T) {
+func TestCrypto_2_3_TrustSigningKey(t *testing.T) {
 	impl := realVaultDEKDeriver
 	// impl = keyderiver.New()
 	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
-	// HKDF(info="dina:reputation:v1") produces a valid 256-bit key.
-	dek, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "reputation", testutil.TestUserSalt[:])
+	// HKDF(info="dina:trust:v1") produces a valid 256-bit key.
+	dek, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "trust", testutil.TestUserSalt[:])
 	testutil.RequireNoError(t, err)
 	testutil.RequireBytesLen(t, dek, 32)
 }
@@ -1729,14 +1729,14 @@ func TestCrypto_2_8_7_ArchiveKeySurvivesBackupKeyRotation(t *testing.T) {
 
 // TST-CORE-882
 func TestCrypto_2_8_8_ClientSyncKeyUsedForSyncEncryption(t *testing.T) {
-	// Client sync key used for sync encryption, reputation key for signing.
+	// Client sync key used for sync encryption, trust key for signing.
 	impl := realVaultDEKDeriver
 	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	syncKey, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "sync", testutil.TestUserSalt[:])
 	testutil.RequireNoError(t, err)
-	reputationKey, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "reputation", testutil.TestUserSalt[:])
+	trustKey, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "trust", testutil.TestUserSalt[:])
 	testutil.RequireNoError(t, err)
 	// Keys must be different — different HKDF info strings.
-	testutil.RequireBytesNotEqual(t, syncKey, reputationKey)
+	testutil.RequireBytesNotEqual(t, syncKey, trustKey)
 }

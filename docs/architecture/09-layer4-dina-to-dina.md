@@ -90,7 +90,7 @@ In Phase 2, the envelope becomes standard JWE (`application/didcomm-encrypted+js
 - `dina/social/*` — arrival, departure, mood flags, context sharing
 - `dina/commerce/*` — price negotiation, product inquiry, cart handover coordination
 - `dina/identity/*` — trust ring verification, peer attestation requests
-- `dina/reputation/*` — outcome data exchange, bot recommendations
+- `dina/trust/*` — outcome data exchange, bot recommendations
 
 ### What Gets Shared (And What Doesn't)
 

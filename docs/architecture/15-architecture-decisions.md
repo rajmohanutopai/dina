@@ -7,7 +7,7 @@
 | Data Type | Requirements | Tech |
 |-----------|-------------|------|
 | Emails, chats, contacts, health, financials | Private, fast, deletable | SQLite (Home Node) |
-| Product reviews, outcome data, bot scores | Public, deletable by author, censorship-resistant | AT Protocol PDS + Reputation AppView |
+| Product reviews, outcome data, bot scores | Public, deletable by author, censorship-resistant | AT Protocol PDS + Trust AppView |
 
 ### Why Not IPFS/Ceramic
 
@@ -39,11 +39,11 @@ AT Protocol is a federated protocol for public, signed, replicated data. Each us
 
 The Trust Network is inherently public data — expert attestations, anonymized outcome reports, bot scores. AT Protocol is a natural fit:
 
-- **Public data → public protocol.** Reputation records should be visible, discoverable, and verifiable. AT Protocol repos are all of these.
+- **Public data → public protocol.** Trust records should be visible, discoverable, and verifiable. AT Protocol repos are all of these.
 - **Signed Merkle repos.** Every record is part of a cryptographically signed tree. Operators can censor but not forge. Replication defeats censorship.
 - **Federation for free.** Relays replicate data across the network. No need to build custom federation, sync, or discovery.
 - **`did:plc` native.** Dina's identity method is AT Protocol's identity method. Zero integration work.
-- **Custom Lexicons.** Schema-enforced records: `com.dina.reputation.attestation`, `com.dina.reputation.outcome`, `com.dina.reputation.bot`.
+- **Custom Lexicons.** Schema-enforced records: `com.dina.trust.attestation`, `com.dina.trust.outcome`, `com.dina.trust.bot`.
 - **Ecosystem.** Any AT Protocol AppView can index Dina's Trust Network. Handles (`alice.dina.host`) provide human-readable discovery.
 
 ### Where it doesn't fit: Messaging and Vault
@@ -80,10 +80,10 @@ Home Node (with local LLM — 4 containers):
 
 Type A variation (home hardware behind CGNAT):
 ├── dina-core, dina-brain ← same private layer
-└── (no PDS container — reputation records pushed to external PDS via outbound HTTPS)
+└── (no PDS container — trust records pushed to external PDS via outbound HTTPS)
 ```
 
-The PDS container runs alongside the private stack, hosting only reputation data (`com.dina.reputation.*` Lexicons). For Type A users behind CGNAT, the Home Node signs records locally and pushes them to an external PDS (e.g., `pds.dina.host`). In all cases, private data (messages, personal vault, persona compartments) never touches the AT Protocol stack. See Layer 3 "PDS Hosting: Split Sovereignty" for the full design.
+The PDS container runs alongside the private stack, hosting only trust data (`com.dina.trust.*` Lexicons). For Type A users behind CGNAT, the Home Node signs records locally and pushes them to an external PDS (e.g., `pds.dina.host`). In all cases, private data (messages, personal vault, persona compartments) never touches the AT Protocol stack. See Layer 3 "PDS Hosting: Split Sovereignty" for the full design.
 
 ### Precedent
 

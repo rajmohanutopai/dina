@@ -23,7 +23,7 @@ from .factories import (
     make_event,
     make_engagement_event,
     make_bot_response,
-    make_reputation_score,
+    make_trust_scores_score,
     make_pii_text,
 )
 
@@ -114,11 +114,11 @@ class IntentClassifier:
 
 
 class AgentRouter:
-    """Routes tasks to agents based on capability and reputation."""
+    """Routes tasks to agents based on capability and trust."""
 
-    def __init__(self, mcp_client, reputation_scores=None):
+    def __init__(self, mcp_client, trust_scores=None):
         self._mcp = mcp_client
-        self._reputation: dict[str, float] = reputation_scores or {}
+        self._trust_scores: dict[str, float] = trust_scores or {}
 
     async def route_task(self, task: dict) -> dict:
         """Route a task to the best handler."""
@@ -138,18 +138,18 @@ class AgentRouter:
         # Fallback to local LLM
         return {"handler": "local_llm", "result": "handled locally"}
 
-    def check_reputation(self, agent_did: str) -> float:
-        return self._reputation.get(agent_did, 0.0)
+    def check_trust(self, agent_did: str) -> float:
+        return self._trust_scores.get(agent_did, 0.0)
 
     def record_outcome(self, agent_did: str, outcome: dict) -> dict:
         """Record an interaction outcome in tier 3."""
         satisfaction = outcome.get("satisfaction", "neutral")
-        current = self._reputation.get(agent_did, 0.5)
+        current = self._trust_scores.get(agent_did, 0.5)
         if satisfaction == "positive":
-            self._reputation[agent_did] = min(1.0, current + 0.05)
+            self._trust_scores[agent_did] = min(1.0, current + 0.05)
         elif satisfaction == "negative":
-            self._reputation[agent_did] = max(0.0, current - 0.1)
-        return {"tier": 3, "recorded": True, "new_score": self._reputation[agent_did]}
+            self._trust_scores[agent_did] = max(0.0, current - 0.1)
+        return {"tier": 3, "recorded": True, "new_score": self._trust_scores[agent_did]}
 
 
 class QuerySanitizer:
@@ -217,7 +217,7 @@ def agent_router():
     ]
     mcp.call_tool.return_value = {"result": "success"}
     mcp.disconnect.return_value = None
-    return AgentRouter(mcp, reputation_scores={
+    return AgentRouter(mcp, trust_scores={
         "did:key:z6MkAgentA": 0.9,
         "did:key:z6MkAgentB": 0.6,
     })
@@ -267,10 +267,10 @@ async def test_mcp_6_1_2_route_by_capability(agent_router) -> None:
 
 # TST-BRAIN-228
 @pytest.mark.asyncio
-async def test_mcp_6_1_3_route_by_reputation(agent_router) -> None:
-    """SS6.1.3: When multiple agents can handle a task, highest reputation score wins."""
-    score_a = agent_router.check_reputation("did:key:z6MkAgentA")
-    score_b = agent_router.check_reputation("did:key:z6MkAgentB")
+async def test_mcp_6_1_3_route_by_trust_scores(agent_router) -> None:
+    """SS6.1.3: When multiple agents can handle a task, highest trust score wins."""
+    score_a = agent_router.check_trust("did:key:z6MkAgentA")
+    score_b = agent_router.check_trust("did:key:z6MkAgentB")
     assert score_a > score_b
     assert score_a == 0.9
     assert score_b == 0.6
@@ -279,7 +279,7 @@ async def test_mcp_6_1_3_route_by_reputation(agent_router) -> None:
     outcome = agent_router.record_outcome("did:key:z6MkAgentB", {"satisfaction": "positive"})
     assert outcome["tier"] == 3
     assert outcome["recorded"] is True
-    assert agent_router.check_reputation("did:key:z6MkAgentB") > 0.6
+    assert agent_router.check_trust("did:key:z6MkAgentB") > 0.6
 
 
 # TST-BRAIN-229
@@ -484,7 +484,7 @@ async def test_mcp_6_2_15_agent_outcome_recorded_in_tier3(agent_router) -> None:
     )
     assert outcome["tier"] == 3
     assert outcome["recorded"] is True
-    assert agent_router.check_reputation("did:key:z6MkWeatherBot") > 0.5
+    assert agent_router.check_trust("did:key:z6MkWeatherBot") > 0.5
 
 
 # TST-BRAIN-246
@@ -659,14 +659,14 @@ async def test_mcp_6_4_8_bot_response_without_attribution(query_sanitizer) -> No
 
 
 # ---------------------------------------------------------------------------
-# SS6.1 Reputation AppView (3 scenarios) -- arch SS08
+# SS6.1 Trust AppView (3 scenarios) -- arch SS08
 # ---------------------------------------------------------------------------
 
 
 # TST-BRAIN-408
-def test_mcp_6_1_6_reputation_appview_query() -> None:
-    """SS6.1.6: Brain queries Reputation AppView API for product scores."""
-    score = make_reputation_score("did:plc:chair_expert")
+def test_mcp_6_1_6_trust_scores_appview_query() -> None:
+    """SS6.1.6: Brain queries Trust AppView API for product scores."""
+    score = make_trust_scores_score("did:plc:chair_expert")
     assert "overall_score" in score
     assert "attestation_count" in score
     assert score["overall_score"] == 0.85
@@ -674,8 +674,8 @@ def test_mcp_6_1_6_reputation_appview_query() -> None:
 
 
 # TST-BRAIN-409
-def test_mcp_6_1_7_reputation_appview_fallback() -> None:
-    """SS6.1.7: Reputation AppView unavailable -> web search fallback."""
+def test_mcp_6_1_7_trust_scores_appview_fallback() -> None:
+    """SS6.1.7: Trust AppView unavailable -> web search fallback."""
     # When AppView is unavailable, result source should indicate fallback
     mcp = AsyncMock()
     mcp.call_tool.side_effect = ConnectionError("AppView down")
@@ -691,17 +691,17 @@ def test_mcp_6_1_7_reputation_appview_fallback() -> None:
 
 
 # TST-BRAIN-410
-def test_mcp_6_1_8_bot_reputation_tracking() -> None:
-    """SS6.1.8: Brain recalculates per-bot reputation after each interaction."""
+def test_mcp_6_1_8_bot_trust_scores_tracking() -> None:
+    """SS6.1.8: Brain recalculates per-bot trust after each interaction."""
     mcp = AsyncMock()
     mcp.list_tools.return_value = []
-    router = AgentRouter(mcp, reputation_scores={"did:key:z6MkChairBot": 0.7})
+    router = AgentRouter(mcp, trust_scores={"did:key:z6MkChairBot": 0.7})
 
-    previous_score = router.check_reputation("did:key:z6MkChairBot")
+    previous_score = router.check_trust("did:key:z6MkChairBot")
     assert previous_score == 0.7
 
     outcome = router.record_outcome("did:key:z6MkChairBot", {"satisfaction": "positive"})
-    new_score = router.check_reputation("did:key:z6MkChairBot")
+    new_score = router.check_trust("did:key:z6MkChairBot")
     assert new_score > previous_score
 
 

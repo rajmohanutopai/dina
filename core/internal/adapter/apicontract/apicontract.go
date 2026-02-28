@@ -29,7 +29,7 @@ func NewAPIContract(brainToken string) *APIContract {
 		{Method: "POST", Path: "/v1/pii/scrub", TokenType: "brain", StatusCode: 200},
 		{Method: "POST", Path: "/v1/notify", TokenType: "brain", StatusCode: 200},
 		{Method: "POST", Path: "/v1/msg/send", TokenType: "brain", StatusCode: 200},
-		{Method: "POST", Path: "/v1/reputation/query", TokenType: "brain", StatusCode: 200},
+		{Method: "POST", Path: "/v1/trust/query", TokenType: "brain", StatusCode: 200},
 		{Method: "POST", Path: "/v1/did/sign", TokenType: "admin", StatusCode: 200},
 		// Planned endpoints — not yet routed in main.go:
 		{Method: "POST", Path: "/v1/did/rotate", TokenType: "admin", StatusCode: 200},   // planned: requires signature-based rotation (CORE-HIGH-14)
@@ -89,7 +89,7 @@ func (c *APIContract) IsBrainCallable(path string) bool {
 		"/v1/pii/scrub":        true,
 		"/v1/notify":           true,
 		"/v1/msg/send":         true,
-		"/v1/reputation/query": true,
+		"/v1/trust/query": true,
 		"/healthz":             true,
 		"/readyz":              true,
 	}

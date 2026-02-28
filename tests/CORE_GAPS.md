@@ -26,11 +26,11 @@
 | H3 | §6 | Archive key survives backup key rotation (separate HKDF derivations) | `TestCrypto_ArchiveKeySurvivesBackupKeyRotation` | CLOSED |
 | H4 | §6 | Tier 5 Deep Archive: encrypted snapshot to cold storage with compliance lock | `TestVault_Tier5DeepArchive_EncryptedSnapshot` | CLOSED |
 
-### §7-10: Ingestion, Reputation, D2D, Bot Interface
+### §7-10: Ingestion, Trust, D2D, Bot Interface
 
 | # | Section | Gap | Suggested Test | Status |
 |---|---------|-----|----------------|--------|
-| H5 | §8 | `com.dina.reputation.bot` and `com.dina.trust.membership` Lexicons untested | `TestPDS_BotLexiconValidation` | CLOSED |
+| H5 | §8 | `com.dina.trust.bot` and `com.dina.trust.membership` Lexicons untested | `TestPDS_BotLexiconValidation` | CLOSED |
 | H6 | §9 | Egress audit 90-day rolling retention policy (auto-purge old entries) | `TestAuditLog_90DayRollingRetention` | CLOSED |
 | H7 | §9 | Contact `updated_at` refreshed on sharing policy mutation | `TestContacts_UpdatedAtRefreshedOnPolicyChange` | CLOSED |
 | H8 | §10 | Bot query sanitization: no DID, no medical, no financial in outbound queries | `TestBotInterface_QuerySanitizationNoDIDNoMedical` | CLOSED |
@@ -82,18 +82,18 @@
 | M9 | §6 | FTS5 with Indic scripts (Hindi, Tamil, Kannada) — multilingual claim | `TestVaultSearch_FTS5WithIndicScripts` | CLOSED |
 | M10 | §6 | Verify sqlite-vec used (not deprecated sqlite-vss) | `TestVaultSearch_UsesSqliteVecNotVSS` | CLOSED |
 | M11 | §6 | FTS5 remains available during sqlite-vec re-indexing | `TestVault_EmbeddingMigration_FTS5AvailableDuringReindex` | CLOSED |
-| M12 | §6 | Client sync key used for sync encryption, reputation key for signing | `TestCrypto_ClientSyncKeyUsedForSyncEncryption` | CLOSED |
+| M12 | §6 | Client sync key used for sync encryption, trust key for signing | `TestCrypto_ClientSyncKeyUsedForSyncEncryption` | CLOSED |
 
-### §7-10: Ingestion, Reputation, D2D, Bot Interface
+### §7-10: Ingestion, Trust, D2D, Bot Interface
 
 | # | Section | Gap | Suggested Test | Status |
 |---|---------|-----|----------------|--------|
 | M13 | §7 | Binary blob storage rejected — vault enforces reference-only for attachments | `TestIngestion_NoBinaryBlobsInVault` | CLOSED |
 | M14 | §8 | Outcome data schema (reporter_trust_ring, outcome, satisfaction, issues) | `TestPDS_OutcomeDataSchemaValidation` | CLOSED |
 | M15 | §8 | Attestation optional fields URI format (sourceUrl, deepLink) | `TestPDS_AttestationOptionalFieldsURIFormat` | CLOSED |
-| M16 | §8 | Reputation query response includes signed payloads | `TestReputation_QueryResponseIncludesSignedPayloads` | CLOSED |
+| M16 | §8 | Trust query response includes signed payloads | `TestTrust_QueryResponseIncludesSignedPayloads` | CLOSED |
 | M17 | §9 | Outbox retry backoff includes jitter (not just exponential) | `TestTransport_OutboxRetryBackoffIncludesJitter` | CLOSED |
-| M18 | §10 | Bot reputation scoring: local score tracking, threshold-based routing | `TestBotInterface_LocalBotScoreTracking` | CLOSED |
+| M18 | §10 | Bot trust scoring: local score tracking, threshold-based routing | `TestBotInterface_LocalBotScoreTracking` | CLOSED |
 | M19 | §10 | Deep Link attribution validation + penalty for stripping attribution | `TestBotInterface_DeepLinkAttributionValidation` | CLOSED |
 | M20 | §8 | DID Document contains DIDComm service endpoint for D2D communication | `TestIdentity_DIDDocContainsDIDCommServiceEndpoint` | CLOSED |
 
@@ -125,7 +125,7 @@
 | M37 | §14 | Estate recovery: non-assigned data destroyed per default_action | `TestEstate_Recovery_NonAssignedDataDestroyed` | CLOSED |
 | M38 | §12 | Cart handover: structured fields (method, intent_uri, merchant, amount) | `TestStaging_CartHandover_StructuredFields` | CLOSED |
 | M39 | §12 | Cart handover: no payment credentials stored in staging | `TestStaging_CartHandover_NoPaymentCredentials` | CLOSED |
-| M40 | §12 | Agent outcomes recorded in Tier 3 for reputation scoring | `TestGatekeeper_AgentOutcome_RecordedForReputation` | CLOSED |
+| M40 | §12 | Agent outcomes recorded in Tier 3 for trust scoring | `TestGatekeeper_AgentOutcome_RecordedForTrust` | CLOSED |
 
 ---
 

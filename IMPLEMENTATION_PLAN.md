@@ -175,7 +175,7 @@ Pure crypto — no I/O, no database. Validates against §2 tests (77 test functi
 | # | File | What | Tests | Status |
 |---|------|------|-------|--------|
 | 4.3.1 | `client.go` | Push signed records to PDS | §22 (21 tests) | [x] |
-| 4.3.2 | `lexicon.go` | com.dina.reputation.attestation, .outcome, .bot record types | §22 | [x] |
+| 4.3.2 | `lexicon.go` | com.dina.trust.attestation, .outcome, .bot record types | §22 | [x] |
 
 ---
 

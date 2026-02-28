@@ -220,7 +220,7 @@ class TestPluginEconomy:
     def test_bot_operator_earns_by_accuracy(
         self, mock_trust_network: MockTrustNetwork
     ):
-        """A review bot's reputation increases when its recommendations
+        """A review bot's trust score increases when its recommendations
         lead to good outcomes, and decreases for bad ones."""
         bot_did = "did:plc:ReviewBot"
         mock_trust_network.bot_scores[bot_did] = 50.0
@@ -390,7 +390,7 @@ class TestMultiPartyCoordination:
         mock_p2p: MockP2PChannel,
     ):
         """When a buyer disputes an order, the dispute is logged and both
-        parties' reputations are evaluated."""
+        parties' trust scores are evaluated."""
         setup_p2p_pair(mock_dina, mock_seller_dina, mock_p2p)
 
         # Buyer raises dispute
@@ -410,7 +410,7 @@ class TestMultiPartyCoordination:
         assert received.type == "dina/commerce/dispute"
         assert received.payload["reason"] == "item_not_as_described"
 
-        # Reputation impact: seller score decreases on unresolved dispute
+        # Trust impact: seller score decreases on unresolved dispute
         seller_did = mock_seller_dina.identity.root_did
         mock_trust_network.set_trust_score(seller_did, 80.0)
         # Dispute penalty

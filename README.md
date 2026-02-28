@@ -1,17 +1,17 @@
-# Dina — Your Personal AI
+# Dina — Your Personal AI, With an Identity
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Status: Phase 1](https://img.shields.io/badge/Status-Alpha-orange)]()
+[![Tests: 2,445 passing](https://img.shields.io/badge/Tests-3%2C073%20passing-brightgreen)]()
 [![Stack: Go + Python](https://img.shields.io/badge/Stack-Go%20%7C%20Python-blue)]()
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-purple)](https://discord.gg/gDRcrEwy)
 
-> **Dina is a sovereign personal AI that watches your world, breaks silence only when it matters, and never works for anyone but you.**
+> **Dina is a sovereign personal AI that knows your world, with a cryptographic identity, a built-in trust network, and a simple rule: she works for you and nobody else.**
 
 ---
 
 ### ⚡ Developer Cockpit
 
-* **The Vision** - This README is the Vision Document. This will help you understand the idea behind Dina
+* **The Vision** - This README is the Vision Document. For you to understand Dina.
 * **Start Here:** [**Open dina.html**](./dina.html) — Interactive visual guide to everything Dina.
 * **Quick Start:** [3 commands to get Dina running](./QUICKSTART.md)
 * **The Stack:** Go Core + Python Brain (Sidecar Pattern) + SQLite/SQLCipher.
@@ -42,7 +42,7 @@ git clone https://github.com/rajmohanutopai/dina.git && cd dina
 
 ## What is Dina?
 
-Imagine this. Your friend Sancho is coming over. As he leaves his house, his Dina quietly lets your Dina know. Your Dina remembers that Sancho's mother was unwell last time you met. She reminds you to put the kettle on - he likes cardamom tea, and he like his tea strong. And suggests clearing your calendar for the next two hours.
+Imagine this. Your friend Sancho is coming over. As he leaves his house, his Dina quietly lets your Dina know. Your Dina remembers that Sancho's mother was unwell last time you met. She reminds you to put the kettle on - he likes cardamom tea, and he likes his tea strong. And suggests clearing your calendar for the next two hours.
 
 You open the door. You hand him hot, strong cardamom tea. You ask about his mother. Sancho smiles. "She is fine, thank you for asking".
 
@@ -50,12 +50,28 @@ That's Dina. A personal agent that makes you more thoughtful, more present, and 
 
 Now imagine the same thing, everywhere in your life:
 
-- You're buying a laptop. Ads try to point you to some direction. But your Dina talks to the review bots, checks the Trust Network, and tells you: *"The battery on this one dies in three months. Here's a better option."*
+- You're buying a laptop. Ads try to point you to some direction. But your Dina checks the Trust Network which gives you verified outcomes from real buyers (not anonymous reviews), and tells you: *"The battery on this one dies in three months. Here's a better option - 847 users with similar needs to yours are still using it after a year"*
+- Dead internet theory becomes real. You can't differentiate between what is made by AI and what is real. You can ask Dina then to filter out and show you only verifiably true items. Your Dina checks against the Trust Network, and only items with verified provenance are shown to you.
 - You promised your daughter you'd read her a book. You forgot which one. *"It was 'The Little Prince'. Last Tuesday."*
 - Your license needs renewal. You didn't even know it was due. Dina did. She flags it, and if you approve, she informs another bot about the requirement to complete the process.
-- Dead internet theory becomes real. You cant differentiate between what made by AI and what is real. You can ask Dina then to filter out and show you only verifiably true items. Your Dina interacts with verified builders Dina, and only those items are shown to you.
 
 Dina is the agent that does what you *need*. She is there for you, and only for you. She's quiet most of the time. And there when it matters.
+
+---
+
+## How is Dina different from other agents?
+
+Dina isn't just another agent. She's your personal AI, and she's fundamentally different.
+
+- There are brilliant AI agents which can do things, complex things. But their job is not to verify things. Dina's job is.
+- Your Dina is **Your Dina**. She has a cryptographic identity, which makes her yours and only yours. She is not an account a company lets you use.
+- Dinas talk directly to each other in encrypted, peer-to-peer network. No company or system in the middle verifies/validates anything.
+- Together, Dinas build a Trust Network. This provides you verified outcomes from real people, not anonymous reviews / AI generated data. 
+- Together, Dinas also support a buy/sell marketplace with verified trust system.
+
+### Agents can buy and sell even now, right?
+
+AI systems can talk to each other even now. But without identity or trust, it is a minefield for prompt injection attacks, sock puppet armies, crypto scams, and other unsavoury practices. When every AI has a cryptographic identity, every public interaction is signed and goes to Trust Network, where trust has to be earned and not assumed, then we get a sane system. Agent-to-agent communication without trust is chaos. Agent-to-agent communication with trust is an economy, which is what Dina is trying to achieve.
 
 ---
 
@@ -65,7 +81,7 @@ Dina is the agent that does what you *need*. She is there for you, and only for 
 
 Today, you don't own your digital self. Your Google account, Apple ID, and LinkedIn profile are not really yours. They are accounts that companies let you use. If Google bans you tomorrow, or a company goes belly up, that account disappears. You are a tenant everywhere. Landlord nowhere.
 
-Dina changes this. Your Dina is your **sovereign digital self**. Implemented using Web3 Cryptographic Tech, **you get your own digital identity**, separate from any of the external company accounts. You hold the encryption keys and the data. You own it completely. You control who sees what. Everything mentioned above — the memory, the preferences, the Dina-to-Dina communication, the purchases, the reputation - is possible because of this foundational principle: **you own you**.
+Dina changes this. Your Dina is your **sovereign digital self**. Implemented using Web3 Cryptographic Tech, **you get your own digital identity**, separate from any of the external company accounts. You hold the encryption keys and the data. You own it completely. You control who sees what. Everything mentioned above — the memory, the preferences, the Dina-to-Dina communication, the purchases, the trust - is possible because of this foundational principle: **you own you**.
 
 If you delete your data, it's truly gone. Not archived. Gone. Because you control the data, and no one else ever had the keys.
 
@@ -130,7 +146,7 @@ Because every person's Dina is a sovereign identity, Dinas can talk to each othe
 
 Dina is a thin service. She outsources intelligence to specialists like review bots, legal bots, recipe bots, or general purpose bots.
 
-**Dina has no plugins.** Child agents (OpenClaw, Claude Cowork, review bots, legal bots) are external services that communicate with Dina. If a child agent gets compromised, it cannot touch your vault or data. It is an external process that should not affect Dina. Dina is a kernel, not a platform "kernel.
+**Dina has no plugins.** Child agents (OpenClaw, Claude Cowork, review bots, legal bots) are external services that communicate with Dina. If a child agent gets compromised, it cannot touch your vault or data. It is an external process that should not affect Dina. Dina is a kernel, not a platform.
 
 Dina can also act as a safety layer for autonomous agents. Malicious actors will actively try to hack and attack agents, now that agents are becoming mainstream. The idea is that - having Dina as a central control might be able to fix this at a protocol level. 
 
@@ -152,16 +168,16 @@ Dina runs on a **Home Node** — a small, always-on server that is yours. For th
 │  ┌────────────────────────────────┐  │
 │  │   Data (email, calendar,       │  │
 │  │  chats, contacts, photos)      │  │
-│  │  Encrypted. our keys only.     │  │
+│  │  Encrypted. your keys only.     │  │
 │  └────────────────────────────────┘  │
 │  ┌────────────────────────────────┐  │
-│  │  Bot Reputation Registry       │  │
+│  │  Trust Network  Registry       │  │
 │  │  (Who do I trust to help?)     │  │
 │  └────────────────────────────────┘  │
 └──────────────────┬───────────────────┘
                    │
                    │ Questions only.
-                   │ Never our data.
+                   │ Never your data.
                    │
      ┌─────────────┼─────────────────┐
      ▼             ▼                 ▼
@@ -173,12 +189,12 @@ Dina runs on a **Home Node** — a small, always-on server that is yours. For th
 ```
 
 
-When one asks opinion about a laptop, Dina doesn't scrape YouTube herself. She asks a trusted review bot with a high reputation score and delivers the answer. If that bot's quality drops over time, Dina routes to someone better automatically.
+When one asks opinion about a laptop, Dina doesn't scrape YouTube herself. She asks a trusted review bot with a high trust score and delivers the answer. If that bot's quality drops over time, Dina routes to someone better automatically.
 
 ### Security
 
 Can Dina herself be hacked? Through prompt-injection or otherwise? 
-Since Dina is a thin layer with minimal plugin support, the attack surface is small. I built a 9-layer security model specifically because she holds your most sensitive data. Web3 Cryptographic security at every layer, each persona a separate cryptographic vault, split brain architecture to safeguard against prompt injection attacks and PII cleansing at every layer. More details on the secruity is at the end of this document. The full security architecture is in [SECURITY.MD](./SECURITY.MD)
+Since Dina is a thin layer with minimal plugin support, the attack surface is small. I built a 9-layer security model specifically because she holds your most sensitive data. Web3 Cryptographic security at every layer, each persona a separate cryptographic vault, split brain architecture to safeguard against prompt injection attacks and PII cleansing at every layer. More details on the security is at the end of this document. The full security architecture is in [SECURITY.MD](./SECURITY.MD)
 
 ### Some principles
 
@@ -239,26 +255,26 @@ Expert reviews product → Signed attestation in Trust Network
 Millions of Dinas → Anonymized outcome data (still using it?
                      returned it? battery died?) → Trust Network
                                             ↓
-          You ask Dina → Dina asks a trusted bot → Bot checks the Graph
+          You ask Dina → Dina asks a trusted bot → Bot checks the Trust Network
                                             ↓
                                     Honest answer
 ```
 
-The trust network extends to the bots, other Dinas, everywhere. If a review bot starts giving compromised recommendations, its reputation drops and Dina routes elsewhere. The same trust system that helps you find good products helps you find good bots.
+The trust network extends to the bots, other Dinas, everywhere. If a review bot starts giving compromised recommendations, its trust score drops and Dina routes elsewhere. The same trust system that helps you find good products helps you find good bots.
 
 ---
 
 ## Trust Has Layers
 
-If anyone can create a Dina, what stops someone from spinning up a thousand fake ones, building perfect reputations, and then rug pulling?
+If anyone can create a Dina, what stops someone from spinning up a thousand fake ones, building perfect trust scores, and then rug pulling?
 
-One possible solution that we will implement is identity based trust layers. Dina will not *demand* your real identity. But she decides on the reputation based on what she knows and doesn't know. Consider it as multiple rings of trust:
+One possible solution that we will implement is identity based trust layers. Dina will not *demand* your real identity. But she decides on the trust based on what she knows and doesn't know. Consider it as multiple rings of trust:
 
 **Ring 1 — Unverified Dina.** Anyone can create one - without any need for an ID. But other Dinas treat you cautiously. Only small transactions, limited trust. Like normal humans while meeting a stranger, Dina will be polite, but very cautious.
 
 **Ring 2 — Verified Dina.** Dina knows you are a unique person, without you revealing *who* you are. Governments have started implementing ZKP (zero-knowledge proof), which we could use. For countries without ZKP, we can also use an external system to prove the identity without explicitly knowing about the person. Since you can't spin up multiple identities, your Dina's position in Trust Network rises significantly.
 
-**Ring 3 and beyond — Verified and Actioned.** If we add multiple credentials, like LinkedIn, GitHub, business registration number etc, each anchor increases trust weight. A seller who links their business registration is more trustworthy than an unverified or just verified Dina. This is because he/she is putting her business at risk if he/she does not complete a transaction. Same way, if you do multiple actions (buying items etc), again, your actions are considered in the trust network. *"This Dina has spent $20K  across 200 transactions over 2 years"* is a fundamentally different signal than *"this Dina has 5 stars."*. The probability of such a person doing a rug pull is lower. Thus, **transaction**, **time** and **peer approval/attestaion** all increases the trust on your Dina.
+**Ring 3 and beyond — Verified and Actioned.** If we add multiple credentials, like LinkedIn, GitHub, business registration number etc, each anchor increases trust weight. A seller who links their business registration is more trustworthy than an unverified or just verified Dina. This is because he/she is putting her business at risk if he/she does not complete a transaction. Same way, if you do multiple actions (buying items etc), again, your actions are considered in the trust network. *"This Dina has spent $20K  across 200 transactions over 2 years"* is a fundamentally different signal than *"this Dina has 5 stars."*. The probability of such a person doing a rug pull is lower. Thus, **transaction**, **time** and **peer approval/attestation** all increases the trust on your Dina.
 
 The principle: **if you don't want to verify, don't. But unverified trust is worth less than verified trust.** This is not a big brother rule - this is a societal behaviour which we will try to implement in Dina.
 
@@ -283,7 +299,7 @@ Because Dina uses Trust Network, a new kind of economy can possibly emerge — o
 
 - **Makers and sellers** earn by being good. The smaller players competes on merit.
 - **Bot operators** earn by being accurate. The best review bots, the best legal bots, etc gets paid more.
-- **Experts** earn by being trustworthy. our verified knowledge enters the Trust Network and drives real decisions for real people.
+- **Experts** earn by being trustworthy. Your verified knowledge enters the Trust Network and drives real decisions for real people.
 - **The protocol itself earns nothing.** Completely P2P and anyone should be able to run this. 
 
 
@@ -331,20 +347,20 @@ Dina is for everyone. If you believe your digital companion should work for you,
 
 ## Security Details
 
-I am adding this here because Security is fundamental for Dina. Dina stores your important data, so, it has to be doubly secure. These are the steps taken to secure Dina. 
+Security is fundamental for Dina. She stores your most important data, so she has to be doubly secure. Full details are in [SECURITY.MD](./SECURITY.md). The highlights:
 
-To store identity - Root key is Ed25519, generated from a BIP-39 24-word mnemonic. Persona keys derived via SLIP-0010 hardened paths under purpose code 9999'. Vault DEKs derived via HKDF-SHA256 with per-persona info strings. The master seed is key-wrapped on disk with an Argon2id-derived KEK. 
+**Identity**: Root key is Ed25519, generated from a BIP-39 24-word mnemonic. Persona keys derived via SLIP-0010 hardened paths under purpose code 9999'. Vault DEKs derived via HKDF-SHA256 with per-persona info strings. Master seed is key-wrapped with an Argon2id-derived KEK.
 
-Persona isolation is cryptographic, not application-level — each persona is a separate encrypted .sqlite file with its own DEK. Locked personas have no DEK in RAM; they're mathematically inaccessible. The gatekeeper enforces three tiers: open (brain queries freely), restricted (logged + user notified), and locked (403, requires human unlock with TTL).
+**Persona isolation**: Cryptographic, not application-level - each persona is a separate encrypted .sqlite file with its own DEK. Locked personas have no DEK in RAM; they're mathematically inaccessible. The gatekeeper enforces three tiers: open (brain queries freely), restricted (logged + user notified), and locked (403, requires human unlock with TTL).
 
-Security model is complex: two-tier static token auth (BRAIN_TOKEN for agent ops, CLIENT_TOKEN for admin), the brain can never touch admin endpoints, the Split Brain architecture for prompt injection defense (components that read possibly compromised content cannot send outbound messages), multiple secutity layers for any data which passes through, a 3-valve Dead Drop ingress system for when the vault is locked, egress enforcement in compiled code with no LLM reasoning involved, and the "Draft-Don't-Send" principle (no agent ever presses Send).
+**Agent security**: Split-brain architecture for prompt injection defense - components that read possibly compromised content cannot send outbound messages. Multi-layer security for any data which passes through. Egress enforcement in compiled code with no LLM reasoning involved. The "Draft-Don't-Send" principle - no agent ever presses Send (based on your level of security requirements).
 
-The PII scrubbing pipeline is three-tiered: regex in Go (structured PII — SSN, credit cards, phones), spaCy NER in Python (contextual — names, orgs, locations), and LLM NER via llama/smaller flash models (edge cases). The Entity Vault pattern allows cloud LLM usage for sensitive personas by scrubbing all identifying entities and rehydrating locally (using presidio with fakes).
+**PII scrubbing**: Three-tiered pipeline — regex in Go (structured PII), spaCy NER in Python (contextual), and LLM NER via local models/smaller flash cloud models (edge cases). The Entity Vault pattern allows cloud LLM usage for sensitive personas by scrubbing all identifying entities and rehydrating locally.
 
-Dina-to-Dina communication uses NaCl crypto_box_seal (ephemeral sender keys, forward secrecy - future plan with Noise XXX) over HTTPS, with DID Documents pointing to Home Node endpoints. The sharing policy system is category-based (presence, availability, context, preferences, location, health) with three tiers (none/summary/full) per contact, enforced at egress by core.
-The Trust Network is built on AT Protocol federation — public, signed Merkle repos for expert attestations, anonymized outcome data, and bot scores. It has a cold-start strategy (Phase 1 uses web search via OpenClaw; reputation data activates gradually). Signed tombstones handle deletion. L2 Merkle root anchoring is deferred to Phase 3.
+**Dina-to-Dina**: NaCl crypto_box_seal (ephemeral sender keys) over HTTPS, with DID Documents pointing to Home Node endpoints. Category-based sharing policies enforced at egress by core.
 
-If you want more details, please check [SECURITY.MD](./SECURITY.MD).
+**Trust Network**: Built on AT Protocol federation — public, signed Merkle repos for expert attestations, anonymized outcome data, and bot scores. Signed tombstones handle deletion.
+
 
 
 # Part III: Technical Architecture

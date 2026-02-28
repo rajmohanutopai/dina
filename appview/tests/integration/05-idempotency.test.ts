@@ -42,7 +42,7 @@ beforeEach(async () => {
 // ---------------------------------------------------------------------------
 describe('§5 Idempotency (Fix 1)', () => {
   it('IT-IDP-001: Fix 1: replay attestation 10 times → 1 row', async () => {
-    const collection = 'com.dina.reputation.attestation'
+    const collection = 'com.dina.trust.attestation'
     const rkey = 'idp001'
     const uri = makeUri(collection, rkey)
 
@@ -72,7 +72,7 @@ describe('§5 Idempotency (Fix 1)', () => {
   })
 
   it('IT-IDP-002: Fix 1: replay vouch 10 times → 1 row', async () => {
-    const collection = 'com.dina.reputation.vouch'
+    const collection = 'com.dina.trust.vouch'
     const rkey = 'idp002'
     const uri = makeUri(collection, rkey)
 
@@ -106,7 +106,7 @@ describe('§5 Idempotency (Fix 1)', () => {
   })
 
   it('IT-IDP-003: Fix 1: replay reaction → onConflictDoNothing', async () => {
-    const collection = 'com.dina.reputation.reaction'
+    const collection = 'com.dina.trust.reaction'
     const rkey = 'idp003'
     const uri = makeUri(collection, rkey)
 
@@ -118,7 +118,7 @@ describe('§5 Idempotency (Fix 1)', () => {
       rkey,
       cid: 'cid-idp003',
       record: {
-        targetUri: 'at://did:plc:someone/com.dina.reputation.attestation/target001',
+        targetUri: 'at://did:plc:someone/com.dina.trust.attestation/target001',
         reaction: 'helpful',
         createdAt: now,
       },
@@ -137,7 +137,7 @@ describe('§5 Idempotency (Fix 1)', () => {
   })
 
   it('IT-IDP-004: Fix 1: replay with changed data → updated', async () => {
-    const collection = 'com.dina.reputation.attestation'
+    const collection = 'com.dina.trust.attestation'
     const rkey = 'idp004'
     const uri = makeUri(collection, rkey)
 
@@ -187,7 +187,7 @@ describe('§5 Idempotency (Fix 1)', () => {
     // One record per handler type, each replayed twice
     const handlerConfigs = [
       {
-        collection: 'com.dina.reputation.attestation',
+        collection: 'com.dina.trust.attestation',
         rkey: 'idp005-att',
         record: {
           subject: { type: 'did', did: SUBJECT_DID, name: 'Test' },
@@ -198,7 +198,7 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.attestations,
       },
       {
-        collection: 'com.dina.reputation.vouch',
+        collection: 'com.dina.trust.vouch',
         rkey: 'idp005-vouch',
         record: {
           subject: SUBJECT_DID,
@@ -209,7 +209,7 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.vouches,
       },
       {
-        collection: 'com.dina.reputation.endorsement',
+        collection: 'com.dina.trust.endorsement',
         rkey: 'idp005-end',
         record: {
           subject: SUBJECT_DID,
@@ -220,7 +220,7 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.endorsements,
       },
       {
-        collection: 'com.dina.reputation.flag',
+        collection: 'com.dina.trust.flag',
         rkey: 'idp005-flag',
         record: {
           subject: { type: 'did', did: SUBJECT_DID, name: 'Flagged' },
@@ -231,11 +231,11 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.flags,
       },
       {
-        collection: 'com.dina.reputation.reply',
+        collection: 'com.dina.trust.reply',
         rkey: 'idp005-reply',
         record: {
-          rootUri: 'at://did:plc:root/com.dina.reputation.attestation/root001',
-          parentUri: 'at://did:plc:root/com.dina.reputation.attestation/root001',
+          rootUri: 'at://did:plc:root/com.dina.trust.attestation/root001',
+          parentUri: 'at://did:plc:root/com.dina.trust.attestation/root001',
           intent: 'agree',
           text: 'Agreed',
           createdAt: now,
@@ -243,37 +243,37 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.replies,
       },
       {
-        collection: 'com.dina.reputation.reaction',
+        collection: 'com.dina.trust.reaction',
         rkey: 'idp005-rxn',
         record: {
-          targetUri: 'at://did:plc:root/com.dina.reputation.attestation/root001',
+          targetUri: 'at://did:plc:root/com.dina.trust.attestation/root001',
           reaction: 'helpful',
           createdAt: now,
         },
         table: schema.reactions,
       },
       {
-        collection: 'com.dina.reputation.reportRecord',
+        collection: 'com.dina.trust.reportRecord',
         rkey: 'idp005-rpt',
         record: {
-          targetUri: 'at://did:plc:root/com.dina.reputation.attestation/root001',
+          targetUri: 'at://did:plc:root/com.dina.trust.attestation/root001',
           reportType: 'spam',
           createdAt: now,
         },
         table: schema.reportRecords,
       },
       {
-        collection: 'com.dina.reputation.revocation',
+        collection: 'com.dina.trust.revocation',
         rkey: 'idp005-rev',
         record: {
-          targetUri: 'at://did:plc:root/com.dina.reputation.attestation/nonexistent',
+          targetUri: 'at://did:plc:root/com.dina.trust.attestation/nonexistent',
           reason: 'Changed my mind',
           createdAt: now,
         },
         table: schema.revocations,
       },
       {
-        collection: 'com.dina.reputation.delegation',
+        collection: 'com.dina.trust.delegation',
         rkey: 'idp005-del',
         record: {
           subject: SUBJECT_DID,
@@ -284,21 +284,21 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.delegations,
       },
       {
-        collection: 'com.dina.reputation.collection',
+        collection: 'com.dina.trust.collection',
         rkey: 'idp005-col',
         record: {
           name: 'My Collection',
-          items: ['at://did:plc:item/com.dina.reputation.attestation/item1'],
+          items: ['at://did:plc:item/com.dina.trust.attestation/item1'],
           isPublic: true,
           createdAt: now,
         },
         table: schema.collections,
       },
       {
-        collection: 'com.dina.reputation.media',
+        collection: 'com.dina.trust.media',
         rkey: 'idp005-med',
         record: {
-          parentUri: 'at://did:plc:root/com.dina.reputation.attestation/root001',
+          parentUri: 'at://did:plc:root/com.dina.trust.attestation/root001',
           mediaType: 'image',
           url: 'https://example.com/photo.jpg',
           createdAt: now,
@@ -306,10 +306,10 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.media,
       },
       {
-        collection: 'com.dina.reputation.amendment',
+        collection: 'com.dina.trust.amendment',
         rkey: 'idp005-amd',
         record: {
-          targetUri: 'at://did:plc:root/com.dina.reputation.attestation/nonexistent',
+          targetUri: 'at://did:plc:root/com.dina.trust.attestation/nonexistent',
           amendmentType: 'correction',
           text: 'Correction here',
           createdAt: now,
@@ -317,10 +317,10 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.amendments,
       },
       {
-        collection: 'com.dina.reputation.verification',
+        collection: 'com.dina.trust.verification',
         rkey: 'idp005-ver',
         record: {
-          targetUri: 'at://did:plc:root/com.dina.reputation.attestation/nonexistent',
+          targetUri: 'at://did:plc:root/com.dina.trust.attestation/nonexistent',
           verificationType: 'purchase',
           result: 'inconclusive',
           createdAt: now,
@@ -328,7 +328,7 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.verifications,
       },
       {
-        collection: 'com.dina.reputation.reviewRequest',
+        collection: 'com.dina.trust.reviewRequest',
         rkey: 'idp005-rr',
         record: {
           subject: { type: 'did', did: SUBJECT_DID, name: 'Review Request Subject' },
@@ -338,7 +338,7 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.reviewRequests,
       },
       {
-        collection: 'com.dina.reputation.comparison',
+        collection: 'com.dina.trust.comparison',
         rkey: 'idp005-cmp',
         record: {
           subjects: [
@@ -351,7 +351,7 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.comparisons,
       },
       {
-        collection: 'com.dina.reputation.subjectClaim',
+        collection: 'com.dina.trust.subjectClaim',
         rkey: 'idp005-sc',
         record: {
           sourceSubjectId: 'sub_source001',
@@ -362,7 +362,7 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.subjectClaims,
       },
       {
-        collection: 'com.dina.reputation.trustPolicy',
+        collection: 'com.dina.trust.trustPolicy',
         rkey: 'idp005-tp',
         record: {
           maxGraphDepth: 3,
@@ -372,7 +372,7 @@ describe('§5 Idempotency (Fix 1)', () => {
         table: schema.trustPolicies,
       },
       {
-        collection: 'com.dina.reputation.notificationPrefs',
+        collection: 'com.dina.trust.notificationPrefs',
         rkey: 'idp005-np',
         record: {
           enableMentions: true,
@@ -412,7 +412,7 @@ describe('§5 Idempotency (Fix 1)', () => {
   })
 
   it('IT-IDP-006: Fix 1: crash simulation — cursor replay', async () => {
-    const collection = 'com.dina.reputation.attestation'
+    const collection = 'com.dina.trust.attestation'
     const handler = routeHandler(collection)!
 
     // Insert 100 unique events
@@ -463,7 +463,7 @@ describe('§5 Idempotency (Fix 1)', () => {
   })
 
   it('IT-IDP-007: Fix 1: concurrent replay — same event from two workers', async () => {
-    const collection = 'com.dina.reputation.attestation'
+    const collection = 'com.dina.trust.attestation'
     const rkey = 'idp007'
     const uri = makeUri(collection, rkey)
 

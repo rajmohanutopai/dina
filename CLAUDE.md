@@ -17,7 +17,7 @@ Dina also solves a critical safety gap: autonomous agents today operate without 
 Every design decision must honour these:
 
 1. **Silence First** — Never push content. Only speak when the human asked, or when silence would cause harm. Three priority levels: Fiduciary (interrupt — silence causes harm), Solicited (notify — user asked), Engagement (save for briefing — silence merely misses an opportunity).
-2. **Verified Truth** — Rank by reputation, not by ad spend. The Trust Network replaces marketing.
+2. **Verified Truth** — Rank by trust, not by ad spend. The Trust Network replaces marketing.
 3. **Absolute Loyalty** — The human holds the encryption keys. The agent cannot access the data without them. Loyalty is enforced by math, not by a privacy policy.
 4. **Never Replace a Human** — Dina never simulates emotional intimacy. When the human needs connection, Dina connects them to other humans — never to herself.
 
@@ -61,7 +61,7 @@ The long-term architecture is a **Home Node** (always-on, encrypted, sovereign):
 | Memory | ChromaDB + nomic-embed-text / text-embedding-004 | Vector store for verdict recall |
 | Identity | W3C DIDs (`did:plc`, `did:key`) | Self-sovereign identity |
 | Vault | Ceramic Network | Decentralized user-owned data streams |
-| Trust | Base / Polygon (L2) | On-chain reputation ledger |
+| Trust | Base / Polygon (L2) | On-chain trust ledger |
 | Privacy | ZK-SNARKs (Mina / Aztec) | Prove facts without revealing raw data |
 
 ## Current State: v0.4 (The Memory)

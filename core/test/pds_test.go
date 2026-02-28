@@ -23,13 +23,13 @@ import (
 
 // TST-CORE-710
 func TestPDS_22_1_1_SignAttestationRecord(t *testing.T) {
-	// Brain requests POST /v1/reputation/publish with attestation payload.
-	// Core signs with persona key and writes to PDS as com.dina.reputation.attestation record.
+	// Brain requests POST /v1/trust/publish with attestation payload.
+	// Core signs with persona key and writes to PDS as com.dina.trust.attestation record.
 	impl := realPDSPublisher
 	testutil.RequireImplementation(t, impl, "PDSPublisher")
 
 	record := testutil.PDSRecord{
-		Collection: "com.dina.reputation.attestation",
+		Collection: "com.dina.trust.attestation",
 		RecordKey:  "attestation-001",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -53,12 +53,12 @@ func TestPDS_22_1_1_SignAttestationRecord(t *testing.T) {
 // TST-CORE-711
 func TestPDS_22_1_2_SignOutcomeReport(t *testing.T) {
 	// Brain requests outcome publication.
-	// Core signs with Reputation Signing Key (HKDF "dina:reputation:v1") and writes to PDS.
+	// Core signs with Trust Signing Key (HKDF "dina:trust:v1") and writes to PDS.
 	impl := realPDSPublisher
 	testutil.RequireImplementation(t, impl, "PDSPublisher")
 
 	record := testutil.PDSRecord{
-		Collection: "com.dina.reputation.outcome",
+		Collection: "com.dina.trust.outcome",
 		RecordKey:  "outcome-001",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -86,7 +86,7 @@ func TestPDS_22_1_3_LexiconValidation(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "PDSPublisher")
 
 	record := testutil.PDSRecord{
-		Collection: "com.dina.reputation.attestation",
+		Collection: "com.dina.trust.attestation",
 		RecordKey:  "attestation-invalid-001",
 		Payload: map[string]interface{}{
 			"expertDid": "did:key:z6MkExpert",
@@ -110,7 +110,7 @@ func TestPDS_22_1_4_RecordInMerkleRepo(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "PDSPublisher")
 
 	record := testutil.PDSRecord{
-		Collection: "com.dina.reputation.attestation",
+		Collection: "com.dina.trust.attestation",
 		RecordKey:  "attestation-merkle-001",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -135,7 +135,7 @@ func TestPDS_22_1_5_PDSConnectionFailure(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "PDSPublisher")
 
 	record := testutil.PDSRecord{
-		Collection: "com.dina.reputation.attestation",
+		Collection: "com.dina.trust.attestation",
 		RecordKey:  "attestation-retry-001",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -159,7 +159,7 @@ func TestPDS_22_1_6_TypeBBundledPDS(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "PDSPublisher")
 
 	record := testutil.PDSRecord{
-		Collection: "com.dina.reputation.attestation",
+		Collection: "com.dina.trust.attestation",
 		RecordKey:  "attestation-bundled-001",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -184,7 +184,7 @@ func TestPDS_22_1_7_TypeAExternalPDS(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "PDSPublisher")
 
 	record := testutil.PDSRecord{
-		Collection: "com.dina.reputation.attestation",
+		Collection: "com.dina.trust.attestation",
 		RecordKey:  "attestation-external-001",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -210,7 +210,7 @@ func TestPDS_22_1_8_RatingRangeEnforcement(t *testing.T) {
 
 	makeRecord := func(rating int) testutil.PDSRecord {
 		return testutil.PDSRecord{
-			Collection: "com.dina.reputation.attestation",
+			Collection: "com.dina.trust.attestation",
 			RecordKey:  "attestation-rating-test",
 			Payload: map[string]interface{}{
 				"expertDid":       "did:key:z6MkExpert",
@@ -250,7 +250,7 @@ func TestPDS_22_1_9_VerdictIsStructuredObject(t *testing.T) {
 
 	// Plain string verdict -> rejected
 	badRecord := testutil.PDSRecord{
-		Collection: "com.dina.reputation.attestation",
+		Collection: "com.dina.trust.attestation",
 		RecordKey:  "attestation-verdict-string",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -266,7 +266,7 @@ func TestPDS_22_1_9_VerdictIsStructuredObject(t *testing.T) {
 
 	// Valid object verdict -> accepted
 	goodRecord := testutil.PDSRecord{
-		Collection: "com.dina.reputation.attestation",
+		Collection: "com.dina.trust.attestation",
 		RecordKey:  "attestation-verdict-object",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -313,7 +313,7 @@ func TestPDS_22_1_10_AllRequiredFieldsValidated(t *testing.T) {
 		delete(payload, field)
 
 		record := testutil.PDSRecord{
-			Collection: "com.dina.reputation.attestation",
+			Collection: "com.dina.trust.attestation",
 			RecordKey:  "attestation-missing-" + field,
 			Payload:    payload,
 			AuthorDID:  "did:key:z6MkAuthor",
@@ -383,7 +383,7 @@ func TestPDS_22_2_4_DeletedRecordAbsentFromQueries(t *testing.T) {
 
 	// Publish then delete.
 	record := testutil.PDSRecord{
-		Collection: "com.dina.reputation.attestation",
+		Collection: "com.dina.trust.attestation",
 		RecordKey:  "attestation-delete-query-001",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -410,12 +410,12 @@ func TestPDS_22_2_4_DeletedRecordAbsentFromQueries(t *testing.T) {
 
 // TST-CORE-918
 func TestPDS_22_2_5_BotLexiconValidation(t *testing.T) {
-	// com.dina.reputation.bot and com.dina.trust.membership Lexicons validated.
+	// com.dina.trust.bot and com.dina.trust.membership Lexicons validated.
 	impl := realPDSPublisher
 	testutil.RequireImplementation(t, impl, "PDSPublisher")
 
 	botRecord := testutil.PDSRecord{
-		Collection: "com.dina.reputation.bot",
+		Collection: "com.dina.trust.bot",
 		RecordKey:  "bot-lexicon-001",
 		Payload:    map[string]interface{}{"botDid": "did:key:z6MkBot", "score": 85},
 		AuthorDID:  "did:key:z6MkAuthor",
@@ -431,7 +431,7 @@ func TestPDS_22_2_6_OutcomeDataSchemaValidation(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "PDSPublisher")
 
 	outcomeRecord := testutil.PDSRecord{
-		Collection: "com.dina.reputation.outcome",
+		Collection: "com.dina.trust.outcome",
 		RecordKey:  "outcome-001",
 		Payload: map[string]interface{}{
 			"reporter_trust_ring": 2,
@@ -452,7 +452,7 @@ func TestPDS_22_2_7_AttestationOptionalFieldsURIFormat(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "PDSPublisher")
 
 	record := testutil.PDSRecord{
-		Collection: "com.dina.reputation.attestation",
+		Collection: "com.dina.trust.attestation",
 		RecordKey:  "att-uri-001",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -470,13 +470,13 @@ func TestPDS_22_2_7_AttestationOptionalFieldsURIFormat(t *testing.T) {
 }
 
 // TST-CORE-921
-func TestPDS_22_2_8_ReputationQueryResponseIncludesSignedPayloads(t *testing.T) {
-	// Reputation query response includes signed payloads.
+func TestPDS_22_2_8_TrustQueryResponseIncludesSignedPayloads(t *testing.T) {
+	// Trust query response includes signed payloads.
 	impl := realPDSPublisher
 	testutil.RequireImplementation(t, impl, "PDSPublisher")
 
 	record := testutil.PDSRecord{
-		Collection: "com.dina.reputation.attestation",
+		Collection: "com.dina.trust.attestation",
 		RecordKey:  "signed-001",
 		Payload: map[string]interface{}{
 			"expertDid":       "did:key:z6MkExpert",
@@ -514,7 +514,7 @@ func TestPDS_22_2_10_OutcomeRecordSigning(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "PDSPublisher")
 
 	outcomeRecord := testutil.PDSRecord{
-		Collection: "com.dina.reputation.outcome",
+		Collection: "com.dina.trust.outcome",
 		RecordKey:  "signed-outcome-001",
 		Payload: map[string]interface{}{
 			"reporter_trust_ring": 2,
@@ -536,7 +536,7 @@ func TestPDS_22_2_11_TypeA_FallbackToExternalHTTPS(t *testing.T) {
 
 	// When PDS is unreachable, record should be queued for retry.
 	record := testutil.PDSRecord{
-		Collection: "com.dina.reputation.attestation",
+		Collection: "com.dina.trust.attestation",
 		RecordKey:  "fallback-001",
 		Payload:    map[string]interface{}{"expertDid": "did:key:z6Mk", "productCategory": "test", "productId": "test", "rating": 50, "verdict": map[string]interface{}{"quality": 50}},
 		AuthorDID:  "did:key:z6MkAuthor",

@@ -4,7 +4,7 @@ import { routeHandler } from '@/ingester/handlers/index.js'
 import { isRateLimited } from '@/ingester/rate-limiter.js'
 import { logger } from '@/shared/utils/logger.js'
 import { metrics } from '@/shared/utils/metrics.js'
-import { REPUTATION_COLLECTIONS } from '@/config/lexicons.js'
+import { TRUST_COLLECTIONS } from '@/config/lexicons.js'
 import 'dotenv/config'
 
 interface BackfillConfig {
@@ -66,7 +66,7 @@ async function backfillFromPds(
   for (const repo of repos) {
     const did = repo.did
 
-    for (const collection of REPUTATION_COLLECTIONS) {
+    for (const collection of TRUST_COLLECTIONS) {
       let cursor: string | undefined
 
       do {

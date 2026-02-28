@@ -2,7 +2,7 @@
 
 ## Layer 3: Trust Network
 
-Distributed system for verified product reviews, expert attestations, and outcome data. **Built on AT Protocol** — reputation data is inherently public and benefits from federation, Merkle tree integrity, and ecosystem discoverability.
+Distributed system for verified product reviews, expert attestations, and outcome data. **Built on AT Protocol** — trust data is inherently public and benefits from federation, Merkle tree integrity, and ecosystem discoverability.
 
 ### Architecture
 
@@ -10,7 +10,7 @@ The Trust Network is NOT a single database. It's a distributed system built on A
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│               REPUTATION GRAPH (AT Protocol)                  │
+│               TRUST NETWORK (AT Protocol)                     │
 │                                                               │
 │  ┌─────────────────┐  ┌──────────────┐  ┌───────────┐       │
 │  │ Expert           │  │ Outcome      │  │ Bot       │       │
@@ -26,7 +26,7 @@ The Trust Network is NOT a single database. It's a distributed system built on A
 │           Sovereignty model, see section below)               │
 │           Records stored in signed Merkle repos               │
 │           Federated via AT Protocol Relay + AppView           │
-│           Custom Lexicons: com.dina.reputation.*              │
+│           Custom Lexicons: com.dina.trust.*                   │
 │           Signed tombstones for deletion                      │
 │           L2 Merkle root anchoring for timestamps (Phase 3)   │
 │                                                               │
@@ -35,7 +35,7 @@ The Trust Network is NOT a single database. It's a distributed system built on A
 │         ↓                                                     │
 │    AT Protocol Relay (aggregates firehose from all PDSes)     │
 │         ↓                                                     │
-│    Reputation AppView (indexes attestations, outcomes, bots)  │
+│    Trust AppView (indexes attestations, outcomes, bots)       │
 │                                                               │
 │  Rule: Only the keyholder can delete their own data.          │
 │        Repo is cryptographically signed — operators            │
@@ -44,14 +44,14 @@ The Trust Network is NOT a single database. It's a distributed system built on A
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### Why AT Protocol for Reputation
+### Why AT Protocol for Trust
 
 | Property | AT Protocol Fit |
 |----------|----------------|
-| **Public data** | Reputation data is inherently public — AT Protocol repos are public by design |
+| **Public data** | Trust data is inherently public — AT Protocol repos are public by design |
 | **Signed records** | AT Protocol repos are Merkle trees of signed CBOR records — tamper-evident by default |
 | **Federation** | Relays aggregate data from all PDSes — no single point of failure or censorship |
-| **Custom schemas** | Lexicons let us define `com.dina.reputation.attestation`, `com.dina.reputation.outcome`, etc. |
+| **Custom schemas** | Lexicons let us define `com.dina.trust.attestation`, `com.dina.trust.outcome`, etc. |
 | **Identity** | `did:plc` is native to AT Protocol — zero integration work |
 | **Deletion** | Users can delete records from their repo. Signed tombstones prevent unauthorized deletion. |
 | **Ecosystem** | Any AT Protocol AppView can index Dina's Trust Network. Handles (`alice.dina.host`) provide human-readable discovery. |
@@ -62,7 +62,7 @@ The Trust Network is NOT a single database. It's a distributed system built on A
 ```json
 {
   "lexicon": 1,
-  "id": "com.dina.reputation.attestation",
+  "id": "com.dina.trust.attestation",
   "defs": {
     "main": {
       "type": "record",
@@ -87,7 +87,7 @@ The Trust Network is NOT a single database. It's a distributed system built on A
 }
 ```
 
-Additional Lexicons: `com.dina.reputation.outcome` (anonymized purchase outcomes), `com.dina.reputation.bot` (bot registration and scores), `com.dina.trust.membership` (trust ring public info).
+Additional Lexicons: `com.dina.trust.outcome` (anonymized purchase outcomes), `com.dina.trust.bot` (bot registration and scores), `com.dina.trust.membership` (trust ring public info).
 
 ### Expert Attestations
 
@@ -146,7 +146,7 @@ We evaluated five options:
 | **B: DHT (Kademlia)** | No central server, good for key lookup | Can't do complex queries ("all chairs rated > 80") | ❌ Rejected |
 | **C: L2 blockchain** | Tamper-proof, auditable timestamps | **Cannot delete.** Immutability violates sovereignty. | ❌ Rejected for data storage |
 | **D: Custom federated servers** | Fast queries, simple to build, deletable | Must build federation, sync, discovery from scratch | ❌ Rejected — AT Protocol does this better |
-| **E: AT Protocol** | Federation built-in, signed Merkle repos, `did:plc` native, Lexicon schemas, relay infrastructure exists, Go/Python/Rust/TS SDKs | Public by design (fine — reputation IS public) | ✅ Chosen |
+| **E: AT Protocol** | Federation built-in, signed Merkle repos, `did:plc` native, Lexicon schemas, relay infrastructure exists, Go/Python/Rust/TS SDKs | Public by design (fine — trust data IS public) | ✅ Chosen |
 
 **Why AT Protocol wins over custom federation:** AT Protocol provides signed repos (Merkle tree integrity), relay-based federation (replication defeats censorship), custom Lexicons (schema-enforced records), `did:plc` identity (already our DID method), and an existing ecosystem of SDKs and infrastructure. Building custom federation would duplicate what AT Protocol already provides.
 
@@ -154,7 +154,7 @@ We evaluated five options:
 
 ### PDS Hosting: Split Sovereignty
 
-**Problem:** Reputation data must be queryable 24/7 — even when the seller's Home Node is a Raspberry Pi behind CGNAT that's currently offline. If your PDS goes down, your reviews, attestations, and trust score become invisible to the network. AT Protocol relays only crawl live PDSes.
+**Problem:** Trust data must be queryable 24/7 — even when the seller's Home Node is a Raspberry Pi behind CGNAT that's currently offline. If your PDS goes down, your reviews, attestations, and trust score become invisible to the network. AT Protocol relays only crawl live PDSes.
 
 **Principle: Split Sovereignty.** Separate *cryptographic authority* (who signs records) from *infrastructure availability* (who hosts the PDS). You always hold the signing keys. The PDS is a dumb host — it stores your signed Merkle repo and serves it to relays. It cannot forge records because it doesn't have your keys. It can censor (refuse to serve) but cannot fabricate. And if it censors, you move to another PDS — AT Protocol's account portability guarantees this.
 
@@ -187,10 +187,10 @@ External PDS (pds.dina.host or any AT Protocol PDS)
 AT Protocol Relay (firehose aggregation)
     │
     ▼
-Reputation AppView (indexes com.dina.reputation.* records)
+Trust AppView (indexes com.dina.trust.* records)
 ```
 
-The Home Node never receives inbound reputation traffic. The external PDS absorbs all read load. The Home Node only makes outbound pushes when it has new records to publish — a few requests per day for a typical user. Your Raspberry Pi is safe.
+The Home Node never receives inbound trust traffic. The external PDS absorbs all read load. The Home Node only makes outbound pushes when it has new records to publish — a few requests per day for a typical user. Your Raspberry Pi is safe.
 
 **Type B flow (Bundled PDS):**
 ```
@@ -203,10 +203,10 @@ Home Node (VPS with static IP)
             │
             │  Serves signed repo to relay on crawl
             ▼
-       AT Protocol Relay → Reputation AppView
+       AT Protocol Relay → Trust AppView
 ```
 
-The PDS container runs alongside the private stack but serves only reputation data (`com.dina.reputation.*` Lexicons). It handles relay crawl requests — infrequent, lightweight, and cacheable.
+The PDS container runs alongside the private stack but serves only trust data (`com.dina.trust.*` Lexicons). It handles relay crawl requests — infrequent, lightweight, and cacheable.
 
 #### Why Your Machine Isn't Overwhelmed (AT Protocol's Three Layers)
 
@@ -224,7 +224,7 @@ review                  │                │
                                             │
                                             ▼
                                     Other Dinas query
-                                    reputation here
+                                    trust data here
 ```
 
 | Layer | Role | Traffic pattern |
@@ -233,7 +233,7 @@ review                  │                │
 | **Relay** | Aggregates firehose from all PDSes | High: crawls thousands of PDSes, streams unified firehose to AppViews. Not your problem — relay operators handle this. |
 | **AppView** | Builds application-specific query indexes | High: serves all end-user queries ("show me all chairs rated > 80"). Not your problem — AppView operators handle this. |
 
-**Key insight: your PDS only talks to the relay.** It never serves end-user queries. When another Dina asks "what's the reputation of this seller?", that query hits the Reputation AppView — not your PDS. Your PDS's only job is to store your signed records and let the relay crawl them.
+**Key insight: your PDS only talks to the relay.** It never serves end-user queries. When another Dina asks "what's the trust score of this seller?", that query hits the Trust AppView — not your PDS. Your PDS's only job is to store your signed records and let the relay crawl them.
 
 **Merkle Search Trees make crawling cheap.** The relay doesn't download your entire repo on every crawl. AT Protocol repos use Merkle Search Trees (MSTs) — a self-balancing tree where the structure is determined by record key hashes. The relay stores the last root hash it saw. On the next crawl, it walks only the diff — new records since the last sync. For a typical user publishing a few attestations per week, delta sync transfers a few kilobytes.
 
@@ -243,7 +243,7 @@ review                  │                │
 
 The Dina Foundation will operate an AT Protocol PDS at `pds.dina.host` as the default Type A host. Users get a handle like `alice.dina.host` and a PDS that's always online.
 
-- **What it stores:** Only `com.dina.reputation.*` records (attestations, outcomes, bot scores). No private data ever touches it.
+- **What it stores:** Only `com.dina.trust.*` records (attestations, outcomes, bot scores). No private data ever touches it.
 - **What it can do:** Serve your signed repo to relays. That's it.
 - **What it cannot do:** Forge records (no signing keys), read private vault data (different protocol entirely), prevent you from leaving (AT Protocol account portability).
 - **If it goes down:** Your records are already replicated to relays. You migrate to another PDS. Zero data loss.
@@ -265,7 +265,7 @@ Start here
 
 Both topologies produce identical results on the network. A relay crawling `pds.dina.host/alice` and a relay crawling `your-vps:2583` see the same signed Merkle repo format. The choice is purely about infrastructure preference and availability guarantees. **Phase 1 default is Type B** — PDS is always in docker-compose.
 
-### Reputation AppView (Aggregation & Query Layer)
+### Trust AppView (Aggregation & Query Layer)
 
 Personal data lives on user PDSes, but global queries ("who are the top-rated sellers?", "what's the best laptop under ₹80K?") require an aggregation layer. This is the AppView.
 
@@ -273,7 +273,7 @@ The AppView does not hold user keys or create data. It is a **read-only indexer*
 
 #### Phase 1: The Monolith (0–1M users)
 
-**Philosophy: keep it simple.** Dina filters for a specific Lexicon (`com.dina.reputation.*`), so the data volume is <1% of the full AT Protocol firehose. A single optimized node handles this for years.
+**Philosophy: keep it simple.** Dina filters for a specific Lexicon (`com.dina.trust.*`), so the data volume is <1% of the full AT Protocol firehose. A single optimized node handles this for years.
 
 **Stack:**
 
@@ -293,7 +293,7 @@ AT Protocol Relay (bsky.network)
         │ WebSocket firehose
         ▼
 ┌─────────────────────────────────────────┐
-│  Reputation AppView (Single Go Binary)  │
+│  Trust AppView (Single Go Binary)       │
 │                                         │
 │  1. Firehose Consumer                   │
 │     └─ Connects to Relay WebSocket      │
@@ -301,7 +301,7 @@ AT Protocol Relay (bsky.network)
 │                                         │
 │  2. Filter                              │
 │     └─ Discards all events except       │
-│        com.dina.reputation.*            │
+│        com.dina.trust.*                 │
 │        com.dina.identity.attestation    │
 │                                         │
 │  3. Verifier                            │
@@ -315,7 +315,7 @@ AT Protocol Relay (bsky.network)
 │        trust_scores, bot_scores)        │
 │                                         │
 │  5. Query API                           │
-│     └─ GET /v1/reputation?did=...       │
+│     └─ GET /v1/trust?did=...            │
 │     └─ GET /v1/product?id=...           │
 │     └─ GET /v1/bot?did=...             │
 │     └─ Serves signed payloads for       │
@@ -380,7 +380,7 @@ Independent API cluster (Query Layer — The Reader)
 
 The AppView provides speed, but it is **not the ultimate source of truth**. Signed records on PDSes are. When multiple AppViews exist, a Dina agent employs a three-layer verification strategy:
 
-**Layer 1: Cryptographic Proof.** When the AppView returns a reputation record ("Alice rated this seller 92"), it includes the raw signed data payload and Alice's signature. The agent verifies the signature against Alice's public key (from her DID Document). The AppView cannot fake a record — it can only serve records actually signed by the author.
+**Layer 1: Cryptographic Proof.** When the AppView returns a trust record ("Alice rated this seller 92"), it includes the raw signed data payload and Alice's signature. The agent verifies the signature against Alice's public key (from her DID Document). The AppView cannot fake a record — it can only serve records actually signed by the author.
 
 **Layer 2: Consensus Check (anti-censorship).** An AppView cannot fake data, but it *can* hide it (e.g., censoring bad reviews for a paying seller). For high-value transactions, the agent queries multiple AppViews. If Provider A returns 5 reviews and Provider B returns 50, the agent detects censorship and alerts the user.
 
@@ -406,7 +406,7 @@ Tombstone { target: "review_id_555", author: "did:plc:abc...", sig: "xyz..." }
 
 **Anti-censorship through replication:** When you post a review, it replicates to servers A, B, and C. If the Chair Company operates Server A and wipes your review from their disk (censorship, not deletion), Servers B and C still have it. Other Dinas see the review on B and C, and may flag Server A as "censoring." When *you* delete via signed tombstone, the tombstone propagates to all servers and the review disappears from the entire network.
 
-**Aggregate scores are computed, not stored.** Bot reputation scores and seller trust scores are derived values — any server independently recalculates them from the signed individual entries it holds. You can delete your review (removing your contribution from the aggregate), but you can't delete someone else's contribution or manipulate the aggregate directly.
+**Aggregate scores are computed, not stored.** Bot trust scores and seller trust scores are derived values — any server independently recalculates them from the signed individual entries it holds. You can delete your review (removing your contribution from the aggregate), but you can't delete someone else's contribution or manipulate the aggregate directly.
 
 ### Timestamp Anchoring (The One Blockchain Use Case)
 
@@ -443,10 +443,10 @@ The Trust Network needs scale to be useful. With 10 users, there's no statistica
 
 | Phase | How Dina answers "What's the best office chair?" |
 |-------|--------------------------------------------------|
-| **Phase 1 (Single Player)** | Brain has no reputation data. Delegates to OpenClaw: "search web for best office chair reviews 2026." OpenClaw returns results. Brain synthesizes, applies user context from vault ("You had back pain last month. You sit 10+ hours. Budget was ₹50-80K based on previous purchases.") Nudge: "Based on web reviews and your back issues, the Steelcase Leap or Herman Miller Aeron. The Aeron is within your budget at ₹72,000." |
-| **Phase 2 (Multiplayer)** | Brain queries the Reputation AppView alongside web search. Nudge now includes: "34 people in the network bought the Aeron, but 5 returned it complaining about the mesh. Your friend Alice recommends the Steelcase Leap instead." |
+| **Phase 1 (Single Player)** | Brain has no trust data. Delegates to OpenClaw: "search web for best office chair reviews 2026." OpenClaw returns results. Brain synthesizes, applies user context from vault ("You had back pain last month. You sit 10+ hours. Budget was ₹50-80K based on previous purchases.") Nudge: "Based on web reviews and your back issues, the Steelcase Leap or Herman Miller Aeron. The Aeron is within your budget at ₹72,000." |
+| **Phase 2 (Multiplayer)** | Brain queries the Trust AppView alongside web search. Nudge now includes: "34 people in the network bought the Aeron, but 5 returned it complaining about the mesh. Your friend Alice recommends the Steelcase Leap instead." |
 
-The transition is gradual and invisible to the user. One day the nudge includes network data alongside web results. No flag day, no "activate reputation" moment.
+The transition is gradual and invisible to the user. One day the nudge includes network data alongside web results. No flag day, no "activate trust network" moment.
 
 **There is no "Review Bot" to build.** No scraping infrastructure, no crawlers, no YouTube/Reddit/RTINGS ingestion pipeline. In Phase 1, Dina researches the public web for you using her Brain + OpenClaw — the same way a human would Google things, but with your personal context applied. The Trust Network activates when it activates.
 

@@ -25,14 +25,14 @@ import {
 import { logger } from '@/shared/utils/logger.js'
 import { metrics } from '@/shared/utils/metrics.js'
 import { markDirty } from '@/db/queries/dirty-flags.js'
-import type { ReputationCollection } from '@/config/lexicons.js'
+import type { TrustCollection } from '@/config/lexicons.js'
 
 /**
  * Deletion handler with tombstone logic (Fix 13).
  *
  * When a user deletes a record, we check if it was disputed (reported,
  * had dispute replies, or suspicious reactions). If it was disputed,
- * we create a tombstone to preserve the reputation signal (the deletion
+ * we create a tombstone to preserve the trust signal (the deletion
  * itself is evidence of bad behavior). If not disputed, the record is
  * simply removed.
  *
@@ -45,24 +45,24 @@ import type { ReputationCollection } from '@/config/lexicons.js'
 // The 'subject' collection maps to the subjects table but deletions
 // of subject records are a special case — handled separately.
 export const COLLECTION_TABLE_MAP: Record<string, any> = {
-  'com.dina.reputation.attestation': attestations,
-  'com.dina.reputation.vouch': vouches,
-  'com.dina.reputation.endorsement': endorsements,
-  'com.dina.reputation.flag': flags,
-  'com.dina.reputation.reply': replies,
-  'com.dina.reputation.reaction': reactions,
-  'com.dina.reputation.reportRecord': reportRecords,
-  'com.dina.reputation.revocation': revocations,
-  'com.dina.reputation.delegation': delegations,
-  'com.dina.reputation.collection': collections,
-  'com.dina.reputation.media': media,
-  'com.dina.reputation.amendment': amendments,
-  'com.dina.reputation.verification': verifications,
-  'com.dina.reputation.reviewRequest': reviewRequests,
-  'com.dina.reputation.comparison': comparisons,
-  'com.dina.reputation.subjectClaim': subjectClaims,
-  'com.dina.reputation.trustPolicy': trustPolicies,
-  'com.dina.reputation.notificationPrefs': notificationPrefs,
+  'com.dina.trust.attestation': attestations,
+  'com.dina.trust.vouch': vouches,
+  'com.dina.trust.endorsement': endorsements,
+  'com.dina.trust.flag': flags,
+  'com.dina.trust.reply': replies,
+  'com.dina.trust.reaction': reactions,
+  'com.dina.trust.reportRecord': reportRecords,
+  'com.dina.trust.revocation': revocations,
+  'com.dina.trust.delegation': delegations,
+  'com.dina.trust.collection': collections,
+  'com.dina.trust.media': media,
+  'com.dina.trust.amendment': amendments,
+  'com.dina.trust.verification': verifications,
+  'com.dina.trust.reviewRequest': reviewRequests,
+  'com.dina.trust.comparison': comparisons,
+  'com.dina.trust.subjectClaim': subjectClaims,
+  'com.dina.trust.trustPolicy': trustPolicies,
+  'com.dina.trust.notificationPrefs': notificationPrefs,
 }
 
 /**
@@ -193,7 +193,7 @@ export const deletionHandler = {
    * Process a record deletion.
    *
    * 1. Check for dispute signals (reports, dispute replies, suspicious reactions)
-   * 2. If disputed, create a tombstone to preserve the reputation signal
+   * 2. If disputed, create a tombstone to preserve the trust signal
    * 3. Delete the record from the appropriate table
    * 4. Clean up trust edges referencing this record
    */

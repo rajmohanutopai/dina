@@ -21,6 +21,7 @@ x-core-base: &core-base
     DINA_LOG_LEVEL: debug
     DINA_TEST_MODE: "true"
     DINA_ENV: test
+    DINA_ALLOWED_ENDPOINTS: "core-alonso,core-sancho,core-chairmaker,core-albert"
   secrets:
     - brain_token
     - client_token

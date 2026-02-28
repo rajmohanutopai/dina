@@ -72,7 +72,7 @@ var HKDFInfoStrings = map[string]string{
 	"backup":     "dina:backup:v1",
 	"archive":    "dina:archive:v1",
 	"sync":       "dina:sync:v1",
-	"reputation": "dina:reputation:v1",
+	"trust": "dina:trust:v1",
 }
 
 // TestUserSalt is a deterministic 32-byte salt for testing.

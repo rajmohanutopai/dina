@@ -38,11 +38,11 @@ beforeEach(async () => {
 // ---------------------------------------------------------------------------
 describe('§1.1 Attestation Handler', () => {
   it('IT-ATT-001: create attestation — basic insert', async () => {
-    const handler = routeHandler('com.dina.reputation.attestation')!
+    const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/1',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/1',
       did: 'did:plc:author1',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '1',
       cid: 'bafytest1',
       record: {
@@ -52,7 +52,7 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.reputation.attestation/1'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].authorDid).toBe('did:plc:author1')
     expect(rows[0].sentiment).toBe('positive')
@@ -62,11 +62,11 @@ describe('§1.1 Attestation Handler', () => {
   })
 
   it('IT-ATT-002: create attestation — all optional fields', async () => {
-    const handler = routeHandler('com.dina.reputation.attestation')!
+    const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/2',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/2',
       did: 'did:plc:author2',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '2',
       cid: 'bafytest2',
       record: {
@@ -86,14 +86,14 @@ describe('§1.1 Attestation Handler', () => {
           { did: 'did:plc:mentioned1', role: 'witness' },
           { did: 'did:plc:mentioned2', role: 'expert' },
         ],
-        relatedAttestations: ['at://did:plc:other/com.dina.reputation.attestation/99'],
+        relatedAttestations: ['at://did:plc:other/com.dina.trust.attestation/99'],
         bilateralReview: { counterpartyDid: 'did:plc:subj2', status: 'pending' },
         tags: ['electronics', 'laptop'],
         text: 'Great laptop with excellent battery life',
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.reputation.attestation/2'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/2'))
     expect(rows).toHaveLength(1)
     const row = rows[0]
     expect(row.domain).toBe('electronics')
@@ -110,18 +110,18 @@ describe('§1.1 Attestation Handler', () => {
       { did: 'did:plc:mentioned1', role: 'witness' },
       { did: 'did:plc:mentioned2', role: 'expert' },
     ])
-    expect(row.relatedAttestationsJson).toEqual(['at://did:plc:other/com.dina.reputation.attestation/99'])
+    expect(row.relatedAttestationsJson).toEqual(['at://did:plc:other/com.dina.trust.attestation/99'])
     expect(row.bilateralReviewJson).toEqual({ counterpartyDid: 'did:plc:subj2', status: 'pending' })
     expect(row.tags).toEqual(['electronics', 'laptop'])
     expect(row.text).toBe('Great laptop with excellent battery life')
   })
 
   it('IT-ATT-003: subject resolved via Tier 1 (DID)', async () => {
-    const handler = routeHandler('com.dina.reputation.attestation')!
+    const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/3',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/3',
       did: 'did:plc:author3',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '3',
       cid: 'bafytest3',
       record: {
@@ -139,11 +139,11 @@ describe('§1.1 Attestation Handler', () => {
   })
 
   it('IT-ATT-004: subject resolved via Tier 1 (URI)', async () => {
-    const handler = routeHandler('com.dina.reputation.attestation')!
+    const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/4',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/4',
       did: 'did:plc:author4',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '4',
       cid: 'bafytest4',
       record: {
@@ -160,11 +160,11 @@ describe('§1.1 Attestation Handler', () => {
   })
 
   it('IT-ATT-005: subject resolved via Tier 1 (identifier)', async () => {
-    const handler = routeHandler('com.dina.reputation.attestation')!
+    const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/5',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/5',
       did: 'did:plc:author5',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '5',
       cid: 'bafytest5',
       record: {
@@ -181,11 +181,11 @@ describe('§1.1 Attestation Handler', () => {
   })
 
   it('IT-ATT-006: Fix 10: subject resolved via Tier 2 (name-only)', async () => {
-    const handler = routeHandler('com.dina.reputation.attestation')!
+    const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/6',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/6',
       did: 'did:plc:author6',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '6',
       cid: 'bafytest6',
       record: {
@@ -201,11 +201,11 @@ describe('§1.1 Attestation Handler', () => {
   })
 
   it('IT-ATT-007: Fix 10: same name, different authors — different subjects', async () => {
-    const handler = routeHandler('com.dina.reputation.attestation')!
+    const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/7a',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/7a',
       did: 'did:plc:authorA',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '7a',
       cid: 'bafytest7a',
       record: {
@@ -216,9 +216,9 @@ describe('§1.1 Attestation Handler', () => {
       },
     })
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/7b',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/7b',
       did: 'did:plc:authorB',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '7b',
       cid: 'bafytest7b',
       record: {
@@ -235,11 +235,11 @@ describe('§1.1 Attestation Handler', () => {
   })
 
   it('IT-ATT-008: Fix 10: same name, same author — same subject', async () => {
-    const handler = routeHandler('com.dina.reputation.attestation')!
+    const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/8a',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/8a',
       did: 'did:plc:authorC',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '8a',
       cid: 'bafytest8a',
       record: {
@@ -250,9 +250,9 @@ describe('§1.1 Attestation Handler', () => {
       },
     })
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/8b',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/8b',
       did: 'did:plc:authorC',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '8b',
       cid: 'bafytest8b',
       record: {
@@ -267,11 +267,11 @@ describe('§1.1 Attestation Handler', () => {
   })
 
   it('IT-ATT-009: Fix 10: same DID, different authors — same subject (Tier 1)', async () => {
-    const handler = routeHandler('com.dina.reputation.attestation')!
+    const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/9a',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/9a',
       did: 'did:plc:authorD',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '9a',
       cid: 'bafytest9a',
       record: {
@@ -282,9 +282,9 @@ describe('§1.1 Attestation Handler', () => {
       },
     })
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/9b',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/9b',
       did: 'did:plc:authorE',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '9b',
       cid: 'bafytest9b',
       record: {
@@ -300,11 +300,11 @@ describe('§1.1 Attestation Handler', () => {
   })
 
   it('IT-ATT-010: mention edges created', async () => {
-    const handler = routeHandler('com.dina.reputation.attestation')!
+    const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/10',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/10',
       did: 'did:plc:author10',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '10',
       cid: 'bafytest10',
       record: {
@@ -326,11 +326,11 @@ describe('§1.1 Attestation Handler', () => {
   })
 
   it('IT-ATT-011: mention edges idempotent on replay', async () => {
-    const handler = routeHandler('com.dina.reputation.attestation')!
+    const handler = routeHandler('com.dina.trust.attestation')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/11',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/11',
       did: 'did:plc:author11',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '11',
       cid: 'bafytest11',
       record: {
@@ -352,11 +352,11 @@ describe('§1.1 Attestation Handler', () => {
   })
 
   it('IT-ATT-012: Fix 9: dirty flags set — subject', async () => {
-    const handler = routeHandler('com.dina.reputation.attestation')!
+    const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/12',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/12',
       did: 'did:plc:author12',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '12',
       cid: 'bafytest12',
       record: {
@@ -372,11 +372,11 @@ describe('§1.1 Attestation Handler', () => {
   })
 
   it('IT-ATT-013: Fix 9: dirty flags set — author profile', async () => {
-    const handler = routeHandler('com.dina.reputation.attestation')!
+    const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/13',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/13',
       did: 'did:plc:author13',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '13',
       cid: 'bafytest13',
       record: {
@@ -392,11 +392,11 @@ describe('§1.1 Attestation Handler', () => {
   })
 
   it('IT-ATT-014: Fix 9: dirty flags set — mentioned DIDs', async () => {
-    const handler = routeHandler('com.dina.reputation.attestation')!
+    const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/14',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/14',
       did: 'did:plc:author14',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '14',
       cid: 'bafytest14',
       record: {
@@ -419,11 +419,11 @@ describe('§1.1 Attestation Handler', () => {
   })
 
   it('IT-ATT-015: Fix 9: dirty flags set — subject DID', async () => {
-    const handler = routeHandler('com.dina.reputation.attestation')!
+    const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/15',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/15',
       did: 'did:plc:author15',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '15',
       cid: 'bafytest15',
       record: {
@@ -439,11 +439,11 @@ describe('§1.1 Attestation Handler', () => {
   })
 
   it('IT-ATT-016: search content populated', async () => {
-    const handler = routeHandler('com.dina.reputation.attestation')!
+    const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/16',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/16',
       did: 'did:plc:author16',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '16',
       cid: 'bafytest16',
       record: {
@@ -455,7 +455,7 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.reputation.attestation/16'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/16'))
     expect(rows).toHaveLength(1)
     const sc = rows[0].searchContent!
     expect(sc).toContain('Absolutely love this widget')
@@ -466,11 +466,11 @@ describe('§1.1 Attestation Handler', () => {
   })
 
   it('IT-ATT-017: tsvector index functional', async () => {
-    const handler = routeHandler('com.dina.reputation.attestation')!
+    const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/17',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/17',
       did: 'did:plc:author17',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '17',
       cid: 'bafytest17',
       record: {
@@ -487,15 +487,15 @@ describe('§1.1 Attestation Handler', () => {
     `)
     const rows = (result as any).rows
     expect(rows).toHaveLength(1)
-    expect(rows[0].uri).toBe('at://did:plc:test/com.dina.reputation.attestation/17')
+    expect(rows[0].uri).toBe('at://did:plc:test/com.dina.trust.attestation/17')
   })
 
   it('IT-ATT-018: Fix 1: idempotent upsert — replay same event', async () => {
-    const handler = routeHandler('com.dina.reputation.attestation')!
+    const handler = routeHandler('com.dina.trust.attestation')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/18',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/18',
       did: 'did:plc:author18',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '18',
       cid: 'bafytest18',
       record: {
@@ -508,17 +508,17 @@ describe('§1.1 Attestation Handler', () => {
     await handler.handleCreate(ctx, op)
     // Replay the same event
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.reputation.attestation/18'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/18'))
     expect(rows).toHaveLength(1)
   })
 
   it('IT-ATT-019: Fix 1: upsert updates changed fields', async () => {
-    const handler = routeHandler('com.dina.reputation.attestation')!
+    const handler = routeHandler('com.dina.trust.attestation')!
     const createdAt = new Date().toISOString()
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/19',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/19',
       did: 'did:plc:author19',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '19',
       cid: 'bafytest19a',
       record: {
@@ -530,9 +530,9 @@ describe('§1.1 Attestation Handler', () => {
     })
     // Update same URI with different sentiment
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/19',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/19',
       did: 'did:plc:author19',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '19',
       cid: 'bafytest19b',
       record: {
@@ -542,18 +542,18 @@ describe('§1.1 Attestation Handler', () => {
         createdAt,
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.reputation.attestation/19'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/19'))
     expect(rows).toHaveLength(1)
     expect(rows[0].sentiment).toBe('negative')
     expect(rows[0].cid).toBe('bafytest19b')
   })
 
   it('IT-ATT-020: cosigner DID extracted', async () => {
-    const handler = routeHandler('com.dina.reputation.attestation')!
+    const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/20',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/20',
       did: 'did:plc:author20',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '20',
       cid: 'bafytest20',
       record: {
@@ -564,18 +564,18 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.reputation.attestation/20'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/20'))
     expect(rows).toHaveLength(1)
     expect(rows[0].hasCosignature).toBe(true)
     expect(rows[0].cosignerDid).toBe('did:plc:cosignerX')
   })
 
   it('IT-ATT-021: agent-generated flag', async () => {
-    const handler = routeHandler('com.dina.reputation.attestation')!
+    const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/21',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/21',
       did: 'did:plc:author21',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '21',
       cid: 'bafytest21',
       record: {
@@ -586,17 +586,17 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.reputation.attestation/21'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/21'))
     expect(rows).toHaveLength(1)
     expect(rows[0].isAgentGenerated).toBe(true)
   })
 
   it('IT-ATT-022: tags stored as array', async () => {
-    const handler = routeHandler('com.dina.reputation.attestation')!
+    const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/22',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/22',
       did: 'did:plc:author22',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '22',
       cid: 'bafytest22',
       record: {
@@ -607,17 +607,17 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.reputation.attestation/22'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/22'))
     expect(rows).toHaveLength(1)
     expect(rows[0].tags).toEqual(['food', 'quality'])
   })
 
   it('IT-ATT-023: domain nullable', async () => {
-    const handler = routeHandler('com.dina.reputation.attestation')!
+    const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.attestation/23',
+      uri: 'at://did:plc:test/com.dina.trust.attestation/23',
       did: 'did:plc:author23',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: '23',
       cid: 'bafytest23',
       record: {
@@ -627,7 +627,7 @@ describe('§1.1 Attestation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.reputation.attestation/23'))
+    const rows = await db.select().from(schema.attestations).where(eq(schema.attestations.uri, 'at://did:plc:test/com.dina.trust.attestation/23'))
     expect(rows).toHaveLength(1)
     expect(rows[0].domain).toBeNull()
   })
@@ -638,11 +638,11 @@ describe('§1.1 Attestation Handler', () => {
 // ---------------------------------------------------------------------------
 describe('§1.2 Vouch Handler', () => {
   it('IT-VCH-001: create vouch — basic insert', async () => {
-    const handler = routeHandler('com.dina.reputation.vouch')!
+    const handler = routeHandler('com.dina.trust.vouch')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.vouch/1',
+      uri: 'at://did:plc:test/com.dina.trust.vouch/1',
       did: 'did:plc:vouchAuthor1',
-      collection: 'com.dina.reputation.vouch',
+      collection: 'com.dina.trust.vouch',
       rkey: '1',
       cid: 'bafyvouch1',
       record: {
@@ -655,7 +655,7 @@ describe('§1.2 Vouch Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.vouches).where(eq(schema.vouches.uri, 'at://did:plc:test/com.dina.reputation.vouch/1'))
+    const rows = await db.select().from(schema.vouches).where(eq(schema.vouches.uri, 'at://did:plc:test/com.dina.trust.vouch/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].authorDid).toBe('did:plc:vouchAuthor1')
     expect(rows[0].subjectDid).toBe('did:plc:vouchSubj1')
@@ -666,11 +666,11 @@ describe('§1.2 Vouch Handler', () => {
   })
 
   it('IT-VCH-002: Fix 1: idempotent upsert', async () => {
-    const handler = routeHandler('com.dina.reputation.vouch')!
+    const handler = routeHandler('com.dina.trust.vouch')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.reputation.vouch/2',
+      uri: 'at://did:plc:test/com.dina.trust.vouch/2',
       did: 'did:plc:vouchAuthor2',
-      collection: 'com.dina.reputation.vouch',
+      collection: 'com.dina.trust.vouch',
       rkey: '2',
       cid: 'bafyvouch2',
       record: {
@@ -682,16 +682,16 @@ describe('§1.2 Vouch Handler', () => {
     }
     await handler.handleCreate(ctx, op)
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.vouches).where(eq(schema.vouches.uri, 'at://did:plc:test/com.dina.reputation.vouch/2'))
+    const rows = await db.select().from(schema.vouches).where(eq(schema.vouches.uri, 'at://did:plc:test/com.dina.trust.vouch/2'))
     expect(rows).toHaveLength(1)
   })
 
   it('IT-VCH-003: trust edge created', async () => {
-    const handler = routeHandler('com.dina.reputation.vouch')!
+    const handler = routeHandler('com.dina.trust.vouch')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.vouch/3',
+      uri: 'at://did:plc:test/com.dina.trust.vouch/3',
       did: 'did:plc:vouchAuthor3',
-      collection: 'com.dina.reputation.vouch',
+      collection: 'com.dina.trust.vouch',
       rkey: '3',
       cid: 'bafyvouch3',
       record: {
@@ -701,7 +701,7 @@ describe('§1.2 Vouch Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const edges = await db.select().from(schema.trustEdges).where(eq(schema.trustEdges.sourceUri, 'at://did:plc:test/com.dina.reputation.vouch/3'))
+    const edges = await db.select().from(schema.trustEdges).where(eq(schema.trustEdges.sourceUri, 'at://did:plc:test/com.dina.trust.vouch/3'))
     expect(edges).toHaveLength(1)
     expect(edges[0].fromDid).toBe('did:plc:vouchAuthor3')
     expect(edges[0].toDid).toBe('did:plc:vouchSubj3')
@@ -710,7 +710,7 @@ describe('§1.2 Vouch Handler', () => {
   })
 
   it('IT-VCH-004: trust edge weight varies by confidence', async () => {
-    const handler = routeHandler('com.dina.reputation.vouch')!
+    const handler = routeHandler('com.dina.trust.vouch')!
     const confidences = [
       { level: 'high', expected: 1.0, rkey: '4a' },
       { level: 'moderate', expected: 0.6, rkey: '4b' },
@@ -718,9 +718,9 @@ describe('§1.2 Vouch Handler', () => {
     ]
     for (const { level, expected, rkey } of confidences) {
       await handler.handleCreate(ctx, {
-        uri: `at://did:plc:test/com.dina.reputation.vouch/${rkey}`,
+        uri: `at://did:plc:test/com.dina.trust.vouch/${rkey}`,
         did: `did:plc:vouchAuthor${rkey}`,
-        collection: 'com.dina.reputation.vouch',
+        collection: 'com.dina.trust.vouch',
         rkey,
         cid: `bafyvouch${rkey}`,
         record: {
@@ -730,18 +730,18 @@ describe('§1.2 Vouch Handler', () => {
           createdAt: new Date().toISOString(),
         },
       })
-      const edges = await db.select().from(schema.trustEdges).where(eq(schema.trustEdges.sourceUri, `at://did:plc:test/com.dina.reputation.vouch/${rkey}`))
+      const edges = await db.select().from(schema.trustEdges).where(eq(schema.trustEdges.sourceUri, `at://did:plc:test/com.dina.trust.vouch/${rkey}`))
       expect(edges).toHaveLength(1)
       expect(edges[0].weight).toBeCloseTo(expected)
     }
   })
 
   it('IT-VCH-005: dirty flags set — subject DID', async () => {
-    const handler = routeHandler('com.dina.reputation.vouch')!
+    const handler = routeHandler('com.dina.trust.vouch')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.vouch/5',
+      uri: 'at://did:plc:test/com.dina.trust.vouch/5',
       did: 'did:plc:vouchAuthor5',
-      collection: 'com.dina.reputation.vouch',
+      collection: 'com.dina.trust.vouch',
       rkey: '5',
       cid: 'bafyvouch5',
       record: {
@@ -757,11 +757,11 @@ describe('§1.2 Vouch Handler', () => {
   })
 
   it('IT-VCH-006: dirty flags set — author DID', async () => {
-    const handler = routeHandler('com.dina.reputation.vouch')!
+    const handler = routeHandler('com.dina.trust.vouch')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.vouch/6',
+      uri: 'at://did:plc:test/com.dina.trust.vouch/6',
       did: 'did:plc:vouchAuthor6',
-      collection: 'com.dina.reputation.vouch',
+      collection: 'com.dina.trust.vouch',
       rkey: '6',
       cid: 'bafyvouch6',
       record: {
@@ -782,11 +782,11 @@ describe('§1.2 Vouch Handler', () => {
 // ---------------------------------------------------------------------------
 describe('§1.3 Endorsement Handler', () => {
   it('IT-END-001: create endorsement — basic insert', async () => {
-    const handler = routeHandler('com.dina.reputation.endorsement')!
+    const handler = routeHandler('com.dina.trust.endorsement')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.endorsement/1',
+      uri: 'at://did:plc:test/com.dina.trust.endorsement/1',
       did: 'did:plc:endAuthor1',
-      collection: 'com.dina.reputation.endorsement',
+      collection: 'com.dina.trust.endorsement',
       rkey: '1',
       cid: 'bafyend1',
       record: {
@@ -798,7 +798,7 @@ describe('§1.3 Endorsement Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.endorsements).where(eq(schema.endorsements.uri, 'at://did:plc:test/com.dina.reputation.endorsement/1'))
+    const rows = await db.select().from(schema.endorsements).where(eq(schema.endorsements.uri, 'at://did:plc:test/com.dina.trust.endorsement/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].authorDid).toBe('did:plc:endAuthor1')
     expect(rows[0].subjectDid).toBe('did:plc:endSubj1')
@@ -809,11 +809,11 @@ describe('§1.3 Endorsement Handler', () => {
   })
 
   it('IT-END-002: Fix 1: idempotent upsert', async () => {
-    const handler = routeHandler('com.dina.reputation.endorsement')!
+    const handler = routeHandler('com.dina.trust.endorsement')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.reputation.endorsement/2',
+      uri: 'at://did:plc:test/com.dina.trust.endorsement/2',
       did: 'did:plc:endAuthor2',
-      collection: 'com.dina.reputation.endorsement',
+      collection: 'com.dina.trust.endorsement',
       rkey: '2',
       cid: 'bafyend2',
       record: {
@@ -825,16 +825,16 @@ describe('§1.3 Endorsement Handler', () => {
     }
     await handler.handleCreate(ctx, op)
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.endorsements).where(eq(schema.endorsements.uri, 'at://did:plc:test/com.dina.reputation.endorsement/2'))
+    const rows = await db.select().from(schema.endorsements).where(eq(schema.endorsements.uri, 'at://did:plc:test/com.dina.trust.endorsement/2'))
     expect(rows).toHaveLength(1)
   })
 
   it('IT-END-003: trust edge created', async () => {
-    const handler = routeHandler('com.dina.reputation.endorsement')!
+    const handler = routeHandler('com.dina.trust.endorsement')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.endorsement/3',
+      uri: 'at://did:plc:test/com.dina.trust.endorsement/3',
       did: 'did:plc:endAuthor3',
-      collection: 'com.dina.reputation.endorsement',
+      collection: 'com.dina.trust.endorsement',
       rkey: '3',
       cid: 'bafyend3',
       record: {
@@ -844,7 +844,7 @@ describe('§1.3 Endorsement Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const edges = await db.select().from(schema.trustEdges).where(eq(schema.trustEdges.sourceUri, 'at://did:plc:test/com.dina.reputation.endorsement/3'))
+    const edges = await db.select().from(schema.trustEdges).where(eq(schema.trustEdges.sourceUri, 'at://did:plc:test/com.dina.trust.endorsement/3'))
     expect(edges).toHaveLength(1)
     expect(edges[0].edgeType).toBe('endorsement')
     expect(edges[0].domain).toBe('go')
@@ -852,11 +852,11 @@ describe('§1.3 Endorsement Handler', () => {
   })
 
   it('IT-END-004: dirty flags set', async () => {
-    const handler = routeHandler('com.dina.reputation.endorsement')!
+    const handler = routeHandler('com.dina.trust.endorsement')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.endorsement/4',
+      uri: 'at://did:plc:test/com.dina.trust.endorsement/4',
       did: 'did:plc:endAuthor4',
-      collection: 'com.dina.reputation.endorsement',
+      collection: 'com.dina.trust.endorsement',
       rkey: '4',
       cid: 'bafyend4',
       record: {
@@ -880,11 +880,11 @@ describe('§1.3 Endorsement Handler', () => {
 // ---------------------------------------------------------------------------
 describe('§1.4 Flag Handler', () => {
   it('IT-FLG-001: create flag — basic insert', async () => {
-    const handler = routeHandler('com.dina.reputation.flag')!
+    const handler = routeHandler('com.dina.trust.flag')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.flag/1',
+      uri: 'at://did:plc:test/com.dina.trust.flag/1',
       did: 'did:plc:flagAuthor1',
-      collection: 'com.dina.reputation.flag',
+      collection: 'com.dina.trust.flag',
       rkey: '1',
       cid: 'bafyflag1',
       record: {
@@ -896,7 +896,7 @@ describe('§1.4 Flag Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.flags).where(eq(schema.flags.uri, 'at://did:plc:test/com.dina.reputation.flag/1'))
+    const rows = await db.select().from(schema.flags).where(eq(schema.flags.uri, 'at://did:plc:test/com.dina.trust.flag/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].authorDid).toBe('did:plc:flagAuthor1')
     expect(rows[0].flagType).toBe('spam')
@@ -906,11 +906,11 @@ describe('§1.4 Flag Handler', () => {
   })
 
   it('IT-FLG-002: Fix 1: idempotent upsert', async () => {
-    const handler = routeHandler('com.dina.reputation.flag')!
+    const handler = routeHandler('com.dina.trust.flag')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.reputation.flag/2',
+      uri: 'at://did:plc:test/com.dina.trust.flag/2',
       did: 'did:plc:flagAuthor2',
-      collection: 'com.dina.reputation.flag',
+      collection: 'com.dina.trust.flag',
       rkey: '2',
       cid: 'bafyflag2',
       record: {
@@ -922,16 +922,16 @@ describe('§1.4 Flag Handler', () => {
     }
     await handler.handleCreate(ctx, op)
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.flags).where(eq(schema.flags.uri, 'at://did:plc:test/com.dina.reputation.flag/2'))
+    const rows = await db.select().from(schema.flags).where(eq(schema.flags.uri, 'at://did:plc:test/com.dina.trust.flag/2'))
     expect(rows).toHaveLength(1)
   })
 
   it('IT-FLG-003: dirty flags set', async () => {
-    const handler = routeHandler('com.dina.reputation.flag')!
+    const handler = routeHandler('com.dina.trust.flag')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.flag/3',
+      uri: 'at://did:plc:test/com.dina.trust.flag/3',
       did: 'did:plc:flagAuthor3',
-      collection: 'com.dina.reputation.flag',
+      collection: 'com.dina.trust.flag',
       rkey: '3',
       cid: 'bafyflag3',
       record: {
@@ -958,64 +958,64 @@ describe('§1.4 Flag Handler', () => {
 // ---------------------------------------------------------------------------
 describe('§1.5 Reply Handler', () => {
   it('IT-RPL-001: create reply — basic insert', async () => {
-    const handler = routeHandler('com.dina.reputation.reply')!
+    const handler = routeHandler('com.dina.trust.reply')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.reply/1',
+      uri: 'at://did:plc:test/com.dina.trust.reply/1',
       did: 'did:plc:replyAuthor1',
-      collection: 'com.dina.reputation.reply',
+      collection: 'com.dina.trust.reply',
       rkey: '1',
       cid: 'bafyreply1',
       record: {
-        rootUri: 'at://did:plc:other/com.dina.reputation.attestation/100',
-        parentUri: 'at://did:plc:other/com.dina.reputation.attestation/100',
+        rootUri: 'at://did:plc:other/com.dina.trust.attestation/100',
+        parentUri: 'at://did:plc:other/com.dina.trust.attestation/100',
         intent: 'agree',
         text: 'I completely agree with this assessment',
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.replies).where(eq(schema.replies.uri, 'at://did:plc:test/com.dina.reputation.reply/1'))
+    const rows = await db.select().from(schema.replies).where(eq(schema.replies.uri, 'at://did:plc:test/com.dina.trust.reply/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].authorDid).toBe('did:plc:replyAuthor1')
-    expect(rows[0].rootUri).toBe('at://did:plc:other/com.dina.reputation.attestation/100')
-    expect(rows[0].parentUri).toBe('at://did:plc:other/com.dina.reputation.attestation/100')
+    expect(rows[0].rootUri).toBe('at://did:plc:other/com.dina.trust.attestation/100')
+    expect(rows[0].parentUri).toBe('at://did:plc:other/com.dina.trust.attestation/100')
     expect(rows[0].intent).toBe('agree')
     expect(rows[0].text).toBe('I completely agree with this assessment')
   })
 
   it('IT-RPL-002: reply with intent "dispute"', async () => {
-    const handler = routeHandler('com.dina.reputation.reply')!
+    const handler = routeHandler('com.dina.trust.reply')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.reply/2',
+      uri: 'at://did:plc:test/com.dina.trust.reply/2',
       did: 'did:plc:replyAuthor2',
-      collection: 'com.dina.reputation.reply',
+      collection: 'com.dina.trust.reply',
       rkey: '2',
       cid: 'bafyreply2',
       record: {
-        rootUri: 'at://did:plc:other/com.dina.reputation.attestation/200',
-        parentUri: 'at://did:plc:other/com.dina.reputation.attestation/200',
+        rootUri: 'at://did:plc:other/com.dina.trust.attestation/200',
+        parentUri: 'at://did:plc:other/com.dina.trust.attestation/200',
         intent: 'dispute',
         text: 'I dispute the claims made here',
         evidence: [{ type: 'link', url: 'https://counter-evidence.example.com' }],
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.replies).where(eq(schema.replies.uri, 'at://did:plc:test/com.dina.reputation.reply/2'))
+    const rows = await db.select().from(schema.replies).where(eq(schema.replies.uri, 'at://did:plc:test/com.dina.trust.reply/2'))
     expect(rows).toHaveLength(1)
     expect(rows[0].intent).toBe('dispute')
     expect(rows[0].evidenceJson).toEqual([{ type: 'link', url: 'https://counter-evidence.example.com' }])
   })
 
   it('IT-RPL-003: Fix 1: idempotent upsert', async () => {
-    const handler = routeHandler('com.dina.reputation.reply')!
+    const handler = routeHandler('com.dina.trust.reply')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.reputation.reply/3',
+      uri: 'at://did:plc:test/com.dina.trust.reply/3',
       did: 'did:plc:replyAuthor3',
-      collection: 'com.dina.reputation.reply',
+      collection: 'com.dina.trust.reply',
       rkey: '3',
       cid: 'bafyreply3',
       record: {
-        rootUri: 'at://did:plc:other/com.dina.reputation.attestation/300',
-        parentUri: 'at://did:plc:other/com.dina.reputation.attestation/300',
+        rootUri: 'at://did:plc:other/com.dina.trust.attestation/300',
+        parentUri: 'at://did:plc:other/com.dina.trust.attestation/300',
         intent: 'agree',
         text: 'Replaying this reply',
         createdAt: new Date().toISOString(),
@@ -1023,7 +1023,7 @@ describe('§1.5 Reply Handler', () => {
     }
     await handler.handleCreate(ctx, op)
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.replies).where(eq(schema.replies.uri, 'at://did:plc:test/com.dina.reputation.reply/3'))
+    const rows = await db.select().from(schema.replies).where(eq(schema.replies.uri, 'at://did:plc:test/com.dina.trust.reply/3'))
     expect(rows).toHaveLength(1)
   })
 })
@@ -1033,36 +1033,36 @@ describe('§1.5 Reply Handler', () => {
 // ---------------------------------------------------------------------------
 describe('§1.6 Reaction Handler', () => {
   it('IT-RXN-001: create reaction — basic insert', async () => {
-    const handler = routeHandler('com.dina.reputation.reaction')!
+    const handler = routeHandler('com.dina.trust.reaction')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.reaction/1',
+      uri: 'at://did:plc:test/com.dina.trust.reaction/1',
       did: 'did:plc:rxnAuthor1',
-      collection: 'com.dina.reputation.reaction',
+      collection: 'com.dina.trust.reaction',
       rkey: '1',
       cid: 'bafyrxn1',
       record: {
-        targetUri: 'at://did:plc:other/com.dina.reputation.attestation/500',
+        targetUri: 'at://did:plc:other/com.dina.trust.attestation/500',
         reaction: 'helpful',
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.reactions).where(eq(schema.reactions.uri, 'at://did:plc:test/com.dina.reputation.reaction/1'))
+    const rows = await db.select().from(schema.reactions).where(eq(schema.reactions.uri, 'at://did:plc:test/com.dina.trust.reaction/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].authorDid).toBe('did:plc:rxnAuthor1')
-    expect(rows[0].targetUri).toBe('at://did:plc:other/com.dina.reputation.attestation/500')
+    expect(rows[0].targetUri).toBe('at://did:plc:other/com.dina.trust.attestation/500')
     expect(rows[0].reaction).toBe('helpful')
   })
 
   it('IT-RXN-002: Fix 1: idempotent — onConflictDoNothing', async () => {
-    const handler = routeHandler('com.dina.reputation.reaction')!
+    const handler = routeHandler('com.dina.trust.reaction')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.reputation.reaction/2',
+      uri: 'at://did:plc:test/com.dina.trust.reaction/2',
       did: 'did:plc:rxnAuthor2',
-      collection: 'com.dina.reputation.reaction',
+      collection: 'com.dina.trust.reaction',
       rkey: '2',
       cid: 'bafyrxn2',
       record: {
-        targetUri: 'at://did:plc:other/com.dina.reputation.attestation/501',
+        targetUri: 'at://did:plc:other/com.dina.trust.attestation/501',
         reaction: 'agree',
         createdAt: new Date().toISOString(),
       },
@@ -1070,24 +1070,24 @@ describe('§1.6 Reaction Handler', () => {
     await handler.handleCreate(ctx, op)
     // Replay: should silently skip
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.reactions).where(eq(schema.reactions.uri, 'at://did:plc:test/com.dina.reputation.reaction/2'))
+    const rows = await db.select().from(schema.reactions).where(eq(schema.reactions.uri, 'at://did:plc:test/com.dina.trust.reaction/2'))
     expect(rows).toHaveLength(1)
     // Verify reaction was not updated (immutable)
     expect(rows[0].reaction).toBe('agree')
   })
 
   it('IT-RXN-003: all reaction types', async () => {
-    const handler = routeHandler('com.dina.reputation.reaction')!
+    const handler = routeHandler('com.dina.trust.reaction')!
     const reactionTypes = ['helpful', 'unhelpful', 'agree', 'disagree', 'verified', 'can-confirm', 'suspicious', 'outdated']
     for (let i = 0; i < reactionTypes.length; i++) {
       await handler.handleCreate(ctx, {
-        uri: `at://did:plc:test/com.dina.reputation.reaction/rt${i}`,
+        uri: `at://did:plc:test/com.dina.trust.reaction/rt${i}`,
         did: `did:plc:rxnAuthor_rt${i}`,
-        collection: 'com.dina.reputation.reaction',
+        collection: 'com.dina.trust.reaction',
         rkey: `rt${i}`,
         cid: `bafyrxn_rt${i}`,
         record: {
-          targetUri: `at://did:plc:other/com.dina.reputation.attestation/rt${i}`,
+          targetUri: `at://did:plc:other/com.dina.trust.attestation/rt${i}`,
           reaction: reactionTypes[i],
           createdAt: new Date().toISOString(),
         },
@@ -1105,51 +1105,51 @@ describe('§1.6 Reaction Handler', () => {
 // ---------------------------------------------------------------------------
 describe('§1.7 Report Record Handler', () => {
   it('IT-RPT-001: create report — basic insert', async () => {
-    const handler = routeHandler('com.dina.reputation.reportRecord')!
+    const handler = routeHandler('com.dina.trust.reportRecord')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.reportRecord/1',
+      uri: 'at://did:plc:test/com.dina.trust.reportRecord/1',
       did: 'did:plc:rptAuthor1',
-      collection: 'com.dina.reputation.reportRecord',
+      collection: 'com.dina.trust.reportRecord',
       rkey: '1',
       cid: 'bafyrpt1',
       record: {
-        targetUri: 'at://did:plc:other/com.dina.reputation.attestation/600',
+        targetUri: 'at://did:plc:other/com.dina.trust.attestation/600',
         reportType: 'spam',
         text: 'This is spam content',
         evidence: [{ type: 'screenshot', url: 'https://proof.example.com/spam.png' }],
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.reportRecords).where(eq(schema.reportRecords.uri, 'at://did:plc:test/com.dina.reputation.reportRecord/1'))
+    const rows = await db.select().from(schema.reportRecords).where(eq(schema.reportRecords.uri, 'at://did:plc:test/com.dina.trust.reportRecord/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].authorDid).toBe('did:plc:rptAuthor1')
     expect(rows[0].reportType).toBe('spam')
-    expect(rows[0].targetUri).toBe('at://did:plc:other/com.dina.reputation.attestation/600')
+    expect(rows[0].targetUri).toBe('at://did:plc:other/com.dina.trust.attestation/600')
     expect(rows[0].text).toBe('This is spam content')
   })
 
   it('IT-RPT-002: Fix 1: idempotent upsert', async () => {
-    const handler = routeHandler('com.dina.reputation.reportRecord')!
+    const handler = routeHandler('com.dina.trust.reportRecord')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.reputation.reportRecord/2',
+      uri: 'at://did:plc:test/com.dina.trust.reportRecord/2',
       did: 'did:plc:rptAuthor2',
-      collection: 'com.dina.reputation.reportRecord',
+      collection: 'com.dina.trust.reportRecord',
       rkey: '2',
       cid: 'bafyrpt2',
       record: {
-        targetUri: 'at://did:plc:other/com.dina.reputation.attestation/601',
+        targetUri: 'at://did:plc:other/com.dina.trust.attestation/601',
         reportType: 'fake-review',
         createdAt: new Date().toISOString(),
       },
     }
     await handler.handleCreate(ctx, op)
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.reportRecords).where(eq(schema.reportRecords.uri, 'at://did:plc:test/com.dina.reputation.reportRecord/2'))
+    const rows = await db.select().from(schema.reportRecords).where(eq(schema.reportRecords.uri, 'at://did:plc:test/com.dina.trust.reportRecord/2'))
     expect(rows).toHaveLength(1)
   })
 
   it('IT-RPT-003: all report types stored', async () => {
-    const handler = routeHandler('com.dina.reputation.reportRecord')!
+    const handler = routeHandler('com.dina.trust.reportRecord')!
     const reportTypes = [
       'spam', 'fake-review', 'competitor-attack', 'conflict-of-interest',
       'harassment', 'misleading', 'plagiarism', 'privacy-violation',
@@ -1157,13 +1157,13 @@ describe('§1.7 Report Record Handler', () => {
     ]
     for (let i = 0; i < reportTypes.length; i++) {
       await handler.handleCreate(ctx, {
-        uri: `at://did:plc:test/com.dina.reputation.reportRecord/rpt${i}`,
+        uri: `at://did:plc:test/com.dina.trust.reportRecord/rpt${i}`,
         did: `did:plc:rptAuthor_rpt${i}`,
-        collection: 'com.dina.reputation.reportRecord',
+        collection: 'com.dina.trust.reportRecord',
         rkey: `rpt${i}`,
         cid: `bafyrpt_rpt${i}`,
         record: {
-          targetUri: `at://did:plc:other/com.dina.reputation.attestation/rpt${i}`,
+          targetUri: `at://did:plc:other/com.dina.trust.attestation/rpt${i}`,
           reportType: reportTypes[i],
           createdAt: new Date().toISOString(),
         },
@@ -1182,12 +1182,12 @@ describe('§1.7 Report Record Handler', () => {
 describe('§1.8 Revocation Handler', () => {
   it('IT-REV-001: create revocation — marks attestation as revoked', async () => {
     // First create an attestation to revoke
-    const attHandler = routeHandler('com.dina.reputation.attestation')!
-    const attestationUri = 'at://did:plc:revAuthor1/com.dina.reputation.attestation/target1'
+    const attHandler = routeHandler('com.dina.trust.attestation')!
+    const attestationUri = 'at://did:plc:revAuthor1/com.dina.trust.attestation/target1'
     await attHandler.handleCreate(ctx, {
       uri: attestationUri,
       did: 'did:plc:revAuthor1',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: 'target1',
       cid: 'bafyatt_target1',
       record: {
@@ -1199,12 +1199,12 @@ describe('§1.8 Revocation Handler', () => {
     })
 
     // Now revoke it
-    const revHandler = routeHandler('com.dina.reputation.revocation')!
-    const revocationUri = 'at://did:plc:revAuthor1/com.dina.reputation.revocation/rev1'
+    const revHandler = routeHandler('com.dina.trust.revocation')!
+    const revocationUri = 'at://did:plc:revAuthor1/com.dina.trust.revocation/rev1'
     await revHandler.handleCreate(ctx, {
       uri: revocationUri,
       did: 'did:plc:revAuthor1',
-      collection: 'com.dina.reputation.revocation',
+      collection: 'com.dina.trust.revocation',
       rkey: 'rev1',
       cid: 'bafyrev1',
       record: {
@@ -1229,33 +1229,33 @@ describe('§1.8 Revocation Handler', () => {
   })
 
   it('IT-REV-002: Fix 1: idempotent upsert', async () => {
-    const revHandler = routeHandler('com.dina.reputation.revocation')!
+    const revHandler = routeHandler('com.dina.trust.revocation')!
     const op = {
-      uri: 'at://did:plc:revAuthor2/com.dina.reputation.revocation/rev2',
+      uri: 'at://did:plc:revAuthor2/com.dina.trust.revocation/rev2',
       did: 'did:plc:revAuthor2',
-      collection: 'com.dina.reputation.revocation',
+      collection: 'com.dina.trust.revocation',
       rkey: 'rev2',
       cid: 'bafyrev2',
       record: {
-        targetUri: 'at://did:plc:revAuthor2/com.dina.reputation.attestation/nonexistent',
+        targetUri: 'at://did:plc:revAuthor2/com.dina.trust.attestation/nonexistent',
         reason: 'Duplicate revocation test',
         createdAt: new Date().toISOString(),
       },
     }
     await revHandler.handleCreate(ctx, op)
     await revHandler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.revocations).where(eq(schema.revocations.uri, 'at://did:plc:revAuthor2/com.dina.reputation.revocation/rev2'))
+    const rows = await db.select().from(schema.revocations).where(eq(schema.revocations.uri, 'at://did:plc:revAuthor2/com.dina.trust.revocation/rev2'))
     expect(rows).toHaveLength(1)
   })
 
   it('IT-REV-003: dirty flags set for revoked attestation\'s subject', async () => {
     // Create attestation first
-    const attHandler = routeHandler('com.dina.reputation.attestation')!
-    const attestationUri = 'at://did:plc:revAuthor3/com.dina.reputation.attestation/target3'
+    const attHandler = routeHandler('com.dina.trust.attestation')!
+    const attestationUri = 'at://did:plc:revAuthor3/com.dina.trust.attestation/target3'
     await attHandler.handleCreate(ctx, {
       uri: attestationUri,
       did: 'did:plc:revAuthor3',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: 'target3',
       cid: 'bafyatt_target3',
       record: {
@@ -1290,11 +1290,11 @@ describe('§1.8 Revocation Handler', () => {
 // ---------------------------------------------------------------------------
 describe('§1.9 Delegation Handler', () => {
   it('IT-DLG-001: create delegation — basic insert', async () => {
-    const handler = routeHandler('com.dina.reputation.delegation')!
+    const handler = routeHandler('com.dina.trust.delegation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.delegation/1',
+      uri: 'at://did:plc:test/com.dina.trust.delegation/1',
       did: 'did:plc:dlgAuthor1',
-      collection: 'com.dina.reputation.delegation',
+      collection: 'com.dina.trust.delegation',
       rkey: '1',
       cid: 'bafydlg1',
       record: {
@@ -1305,7 +1305,7 @@ describe('§1.9 Delegation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const rows = await db.select().from(schema.delegations).where(eq(schema.delegations.uri, 'at://did:plc:test/com.dina.reputation.delegation/1'))
+    const rows = await db.select().from(schema.delegations).where(eq(schema.delegations.uri, 'at://did:plc:test/com.dina.trust.delegation/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].authorDid).toBe('did:plc:dlgAuthor1')
     expect(rows[0].subjectDid).toBe('did:plc:dlgSubj1')
@@ -1315,11 +1315,11 @@ describe('§1.9 Delegation Handler', () => {
   })
 
   it('IT-DLG-002: trust edge created', async () => {
-    const handler = routeHandler('com.dina.reputation.delegation')!
+    const handler = routeHandler('com.dina.trust.delegation')!
     await handler.handleCreate(ctx, {
-      uri: 'at://did:plc:test/com.dina.reputation.delegation/2',
+      uri: 'at://did:plc:test/com.dina.trust.delegation/2',
       did: 'did:plc:dlgAuthor2',
-      collection: 'com.dina.reputation.delegation',
+      collection: 'com.dina.trust.delegation',
       rkey: '2',
       cid: 'bafydlg2',
       record: {
@@ -1329,7 +1329,7 @@ describe('§1.9 Delegation Handler', () => {
         createdAt: new Date().toISOString(),
       },
     })
-    const edges = await db.select().from(schema.trustEdges).where(eq(schema.trustEdges.sourceUri, 'at://did:plc:test/com.dina.reputation.delegation/2'))
+    const edges = await db.select().from(schema.trustEdges).where(eq(schema.trustEdges.sourceUri, 'at://did:plc:test/com.dina.trust.delegation/2'))
     expect(edges).toHaveLength(1)
     expect(edges[0].edgeType).toBe('delegation')
     expect(edges[0].weight).toBeCloseTo(0.9)
@@ -1339,11 +1339,11 @@ describe('§1.9 Delegation Handler', () => {
   })
 
   it('IT-DLG-003: Fix 1: idempotent upsert', async () => {
-    const handler = routeHandler('com.dina.reputation.delegation')!
+    const handler = routeHandler('com.dina.trust.delegation')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.reputation.delegation/3',
+      uri: 'at://did:plc:test/com.dina.trust.delegation/3',
       did: 'did:plc:dlgAuthor3',
-      collection: 'com.dina.reputation.delegation',
+      collection: 'com.dina.trust.delegation',
       rkey: '3',
       cid: 'bafydlg3',
       record: {
@@ -1355,7 +1355,7 @@ describe('§1.9 Delegation Handler', () => {
     }
     await handler.handleCreate(ctx, op)
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.delegations).where(eq(schema.delegations.uri, 'at://did:plc:test/com.dina.reputation.delegation/3'))
+    const rows = await db.select().from(schema.delegations).where(eq(schema.delegations.uri, 'at://did:plc:test/com.dina.trust.delegation/3'))
     expect(rows).toHaveLength(1)
   })
 })
@@ -1365,50 +1365,50 @@ describe('§1.9 Delegation Handler', () => {
 // ---------------------------------------------------------------------------
 describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
   it('IT-HND-001: collection handler — create + idempotent', async () => {
-    const handler = routeHandler('com.dina.reputation.collection')!
+    const handler = routeHandler('com.dina.trust.collection')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.reputation.collection/1',
+      uri: 'at://did:plc:test/com.dina.trust.collection/1',
       did: 'did:plc:collAuthor1',
-      collection: 'com.dina.reputation.collection',
+      collection: 'com.dina.trust.collection',
       rkey: '1',
       cid: 'bafycoll1',
       record: {
         name: 'My Trusted Reviews',
         description: 'Collection of reviews I trust',
         items: [
-          'at://did:plc:other/com.dina.reputation.attestation/1',
-          'at://did:plc:other/com.dina.reputation.attestation/2',
+          'at://did:plc:other/com.dina.trust.attestation/1',
+          'at://did:plc:other/com.dina.trust.attestation/2',
         ],
         isPublic: true,
         createdAt: new Date().toISOString(),
       },
     }
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.collections).where(eq(schema.collections.uri, 'at://did:plc:test/com.dina.reputation.collection/1'))
+    const rows = await db.select().from(schema.collections).where(eq(schema.collections.uri, 'at://did:plc:test/com.dina.trust.collection/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].name).toBe('My Trusted Reviews')
     expect(rows[0].isPublic).toBe(true)
     expect(rows[0].itemsJson).toEqual([
-      'at://did:plc:other/com.dina.reputation.attestation/1',
-      'at://did:plc:other/com.dina.reputation.attestation/2',
+      'at://did:plc:other/com.dina.trust.attestation/1',
+      'at://did:plc:other/com.dina.trust.attestation/2',
     ])
 
     // Replay: idempotent
     await handler.handleCreate(ctx, op)
-    const rows2 = await db.select().from(schema.collections).where(eq(schema.collections.uri, 'at://did:plc:test/com.dina.reputation.collection/1'))
+    const rows2 = await db.select().from(schema.collections).where(eq(schema.collections.uri, 'at://did:plc:test/com.dina.trust.collection/1'))
     expect(rows2).toHaveLength(1)
   })
 
   it('IT-HND-002: media handler — create + idempotent', async () => {
-    const handler = routeHandler('com.dina.reputation.media')!
+    const handler = routeHandler('com.dina.trust.media')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.reputation.media/1',
+      uri: 'at://did:plc:test/com.dina.trust.media/1',
       did: 'did:plc:mediaAuthor1',
-      collection: 'com.dina.reputation.media',
+      collection: 'com.dina.trust.media',
       rkey: '1',
       cid: 'bafymedia1',
       record: {
-        parentUri: 'at://did:plc:other/com.dina.reputation.attestation/1',
+        parentUri: 'at://did:plc:other/com.dina.trust.attestation/1',
         mediaType: 'image',
         url: 'https://example.com/photo.jpg',
         alt: 'Product photo',
@@ -1416,7 +1416,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
       },
     }
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.media).where(eq(schema.media.uri, 'at://did:plc:test/com.dina.reputation.media/1'))
+    const rows = await db.select().from(schema.media).where(eq(schema.media.uri, 'at://did:plc:test/com.dina.trust.media/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].mediaType).toBe('image')
     expect(rows[0].url).toBe('https://example.com/photo.jpg')
@@ -1424,16 +1424,16 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
 
     // Replay: idempotent
     await handler.handleCreate(ctx, op)
-    const rows2 = await db.select().from(schema.media).where(eq(schema.media.uri, 'at://did:plc:test/com.dina.reputation.media/1'))
+    const rows2 = await db.select().from(schema.media).where(eq(schema.media.uri, 'at://did:plc:test/com.dina.trust.media/1'))
     expect(rows2).toHaveLength(1)
   })
 
   it('IT-HND-003: subject handler — create + idempotent', async () => {
-    const handler = routeHandler('com.dina.reputation.subject')!
+    const handler = routeHandler('com.dina.trust.subject')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.reputation.subject/1',
+      uri: 'at://did:plc:test/com.dina.trust.subject/1',
       did: 'did:plc:subjAuthor1',
-      collection: 'com.dina.reputation.subject',
+      collection: 'com.dina.trust.subject',
       rkey: '1',
       cid: 'bafysubj1',
       record: {
@@ -1456,12 +1456,12 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
 
   it('IT-HND-004: amendment handler — create + marks original', async () => {
     // First create an attestation to amend
-    const attHandler = routeHandler('com.dina.reputation.attestation')!
-    const attestationUri = 'at://did:plc:amendAuthor1/com.dina.reputation.attestation/orig1'
+    const attHandler = routeHandler('com.dina.trust.attestation')!
+    const attestationUri = 'at://did:plc:amendAuthor1/com.dina.trust.attestation/orig1'
     await attHandler.handleCreate(ctx, {
       uri: attestationUri,
       did: 'did:plc:amendAuthor1',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: 'orig1',
       cid: 'bafyatt_orig1',
       record: {
@@ -1473,12 +1473,12 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
     })
 
     // Now amend it
-    const amendHandler = routeHandler('com.dina.reputation.amendment')!
-    const amendmentUri = 'at://did:plc:amendAuthor1/com.dina.reputation.amendment/amend1'
+    const amendHandler = routeHandler('com.dina.trust.amendment')!
+    const amendmentUri = 'at://did:plc:amendAuthor1/com.dina.trust.amendment/amend1'
     await amendHandler.handleCreate(ctx, {
       uri: amendmentUri,
       did: 'did:plc:amendAuthor1',
-      collection: 'com.dina.reputation.amendment',
+      collection: 'com.dina.trust.amendment',
       rkey: 'amend1',
       cid: 'bafyamend1',
       record: {
@@ -1504,18 +1504,18 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
   })
 
   it('IT-HND-005: verification handler — create + idempotent', async () => {
-    const handler = routeHandler('com.dina.reputation.verification')!
+    const handler = routeHandler('com.dina.trust.verification')!
     // Use 'inconclusive' result to avoid the raw SQL UPDATE path that references
     // attestations.is_verified (a column added via a later migration that may
     // not yet exist in the test database).
     const op = {
-      uri: 'at://did:plc:test/com.dina.reputation.verification/1',
+      uri: 'at://did:plc:test/com.dina.trust.verification/1',
       did: 'did:plc:verAuthor1',
-      collection: 'com.dina.reputation.verification',
+      collection: 'com.dina.trust.verification',
       rkey: '1',
       cid: 'bafyver1',
       record: {
-        targetUri: 'at://did:plc:other/com.dina.reputation.attestation/800',
+        targetUri: 'at://did:plc:other/com.dina.trust.attestation/800',
         verificationType: 'purchase-confirmation',
         result: 'inconclusive',
         text: 'Could not conclusively verify',
@@ -1523,7 +1523,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
       },
     }
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.verifications).where(eq(schema.verifications.uri, 'at://did:plc:test/com.dina.reputation.verification/1'))
+    const rows = await db.select().from(schema.verifications).where(eq(schema.verifications.uri, 'at://did:plc:test/com.dina.trust.verification/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].verificationType).toBe('purchase-confirmation')
     expect(rows[0].result).toBe('inconclusive')
@@ -1531,16 +1531,16 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
 
     // Replay: idempotent
     await handler.handleCreate(ctx, op)
-    const rows2 = await db.select().from(schema.verifications).where(eq(schema.verifications.uri, 'at://did:plc:test/com.dina.reputation.verification/1'))
+    const rows2 = await db.select().from(schema.verifications).where(eq(schema.verifications.uri, 'at://did:plc:test/com.dina.trust.verification/1'))
     expect(rows2).toHaveLength(1)
   })
 
   it('IT-HND-006: review-request handler — create + idempotent', async () => {
-    const handler = routeHandler('com.dina.reputation.reviewRequest')!
+    const handler = routeHandler('com.dina.trust.reviewRequest')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.reputation.reviewRequest/1',
+      uri: 'at://did:plc:test/com.dina.trust.reviewRequest/1',
       did: 'did:plc:rrAuthor1',
-      collection: 'com.dina.reputation.reviewRequest',
+      collection: 'com.dina.trust.reviewRequest',
       rkey: '1',
       cid: 'bafyrr1',
       record: {
@@ -1551,23 +1551,23 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
       },
     }
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.reviewRequests).where(eq(schema.reviewRequests.uri, 'at://did:plc:test/com.dina.reputation.reviewRequest/1'))
+    const rows = await db.select().from(schema.reviewRequests).where(eq(schema.reviewRequests.uri, 'at://did:plc:test/com.dina.trust.reviewRequest/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].requestType).toBe('initial-review')
     expect(rows[0].subjectId).toBeTruthy()
 
     // Replay: idempotent
     await handler.handleCreate(ctx, op)
-    const rows2 = await db.select().from(schema.reviewRequests).where(eq(schema.reviewRequests.uri, 'at://did:plc:test/com.dina.reputation.reviewRequest/1'))
+    const rows2 = await db.select().from(schema.reviewRequests).where(eq(schema.reviewRequests.uri, 'at://did:plc:test/com.dina.trust.reviewRequest/1'))
     expect(rows2).toHaveLength(1)
   })
 
   it('IT-HND-007: comparison handler — create + idempotent', async () => {
-    const handler = routeHandler('com.dina.reputation.comparison')!
+    const handler = routeHandler('com.dina.trust.comparison')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.reputation.comparison/1',
+      uri: 'at://did:plc:test/com.dina.trust.comparison/1',
       did: 'did:plc:cmpAuthor1',
-      collection: 'com.dina.reputation.comparison',
+      collection: 'com.dina.trust.comparison',
       rkey: '1',
       cid: 'bafycmp1',
       record: {
@@ -1582,7 +1582,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
       },
     }
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.comparisons).where(eq(schema.comparisons.uri, 'at://did:plc:test/com.dina.reputation.comparison/1'))
+    const rows = await db.select().from(schema.comparisons).where(eq(schema.comparisons.uri, 'at://did:plc:test/com.dina.trust.comparison/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].category).toBe('electronics')
     expect(rows[0].subjectsJson).toEqual([
@@ -1592,16 +1592,16 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
 
     // Replay: idempotent
     await handler.handleCreate(ctx, op)
-    const rows2 = await db.select().from(schema.comparisons).where(eq(schema.comparisons.uri, 'at://did:plc:test/com.dina.reputation.comparison/1'))
+    const rows2 = await db.select().from(schema.comparisons).where(eq(schema.comparisons.uri, 'at://did:plc:test/com.dina.trust.comparison/1'))
     expect(rows2).toHaveLength(1)
   })
 
   it('IT-HND-008: subject-claim handler — create + idempotent', async () => {
-    const handler = routeHandler('com.dina.reputation.subjectClaim')!
+    const handler = routeHandler('com.dina.trust.subjectClaim')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.reputation.subjectClaim/1',
+      uri: 'at://did:plc:test/com.dina.trust.subjectClaim/1',
       did: 'did:plc:scAuthor1',
-      collection: 'com.dina.reputation.subjectClaim',
+      collection: 'com.dina.trust.subjectClaim',
       rkey: '1',
       cid: 'bafysc1',
       record: {
@@ -1613,7 +1613,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
       },
     }
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.subjectClaims).where(eq(schema.subjectClaims.uri, 'at://did:plc:test/com.dina.reputation.subjectClaim/1'))
+    const rows = await db.select().from(schema.subjectClaims).where(eq(schema.subjectClaims.uri, 'at://did:plc:test/com.dina.trust.subjectClaim/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].claimType).toBe('same-entity')
     expect(rows[0].sourceSubjectId).toBe('sub_aaaaaaaaaaaaaaaaaaaaaaaaaaaa0001')
@@ -1621,16 +1621,16 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
 
     // Replay: idempotent
     await handler.handleCreate(ctx, op)
-    const rows2 = await db.select().from(schema.subjectClaims).where(eq(schema.subjectClaims.uri, 'at://did:plc:test/com.dina.reputation.subjectClaim/1'))
+    const rows2 = await db.select().from(schema.subjectClaims).where(eq(schema.subjectClaims.uri, 'at://did:plc:test/com.dina.trust.subjectClaim/1'))
     expect(rows2).toHaveLength(1)
   })
 
   it('IT-HND-009: trust-policy handler — create + idempotent', async () => {
-    const handler = routeHandler('com.dina.reputation.trustPolicy')!
+    const handler = routeHandler('com.dina.trust.trustPolicy')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.reputation.trustPolicy/1',
+      uri: 'at://did:plc:test/com.dina.trust.trustPolicy/1',
       did: 'did:plc:tpAuthor1',
-      collection: 'com.dina.reputation.trustPolicy',
+      collection: 'com.dina.trust.trustPolicy',
       rkey: '1',
       cid: 'bafytp1',
       record: {
@@ -1642,7 +1642,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
       },
     }
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.trustPolicies).where(eq(schema.trustPolicies.uri, 'at://did:plc:test/com.dina.reputation.trustPolicy/1'))
+    const rows = await db.select().from(schema.trustPolicies).where(eq(schema.trustPolicies.uri, 'at://did:plc:test/com.dina.trust.trustPolicy/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].maxGraphDepth).toBe(3)
     expect(rows[0].requireVouch).toBe(true)
@@ -1651,16 +1651,16 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
 
     // Replay: idempotent
     await handler.handleCreate(ctx, op)
-    const rows2 = await db.select().from(schema.trustPolicies).where(eq(schema.trustPolicies.uri, 'at://did:plc:test/com.dina.reputation.trustPolicy/1'))
+    const rows2 = await db.select().from(schema.trustPolicies).where(eq(schema.trustPolicies.uri, 'at://did:plc:test/com.dina.trust.trustPolicy/1'))
     expect(rows2).toHaveLength(1)
   })
 
   it('IT-HND-010: notification-prefs handler — create + idempotent', async () => {
-    const handler = routeHandler('com.dina.reputation.notificationPrefs')!
+    const handler = routeHandler('com.dina.trust.notificationPrefs')!
     const op = {
-      uri: 'at://did:plc:test/com.dina.reputation.notificationPrefs/1',
+      uri: 'at://did:plc:test/com.dina.trust.notificationPrefs/1',
       did: 'did:plc:npAuthor1',
-      collection: 'com.dina.reputation.notificationPrefs',
+      collection: 'com.dina.trust.notificationPrefs',
       rkey: '1',
       cid: 'bafynp1',
       record: {
@@ -1672,7 +1672,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
       },
     }
     await handler.handleCreate(ctx, op)
-    const rows = await db.select().from(schema.notificationPrefs).where(eq(schema.notificationPrefs.uri, 'at://did:plc:test/com.dina.reputation.notificationPrefs/1'))
+    const rows = await db.select().from(schema.notificationPrefs).where(eq(schema.notificationPrefs.uri, 'at://did:plc:test/com.dina.trust.notificationPrefs/1'))
     expect(rows).toHaveLength(1)
     expect(rows[0].enableMentions).toBe(true)
     expect(rows[0].enableReactions).toBe(false)
@@ -1681,7 +1681,7 @@ describe('§1.10 Remaining Handlers — Minimal Smoke Tests', () => {
 
     // Replay: idempotent
     await handler.handleCreate(ctx, op)
-    const rows2 = await db.select().from(schema.notificationPrefs).where(eq(schema.notificationPrefs.uri, 'at://did:plc:test/com.dina.reputation.notificationPrefs/1'))
+    const rows2 = await db.select().from(schema.notificationPrefs).where(eq(schema.notificationPrefs.uri, 'at://did:plc:test/com.dina.trust.notificationPrefs/1'))
     expect(rows2).toHaveLength(1)
   })
 })

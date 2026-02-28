@@ -115,9 +115,9 @@ describe('14 Backfill Script', () => {
   it('IT-BF-001: backfill from mock PDS -- single DID', async () => {
     const did = 'did:plc:backfill001'
     const records = Array.from({ length: 10 }, (_, i) => ({
-      uri: `at://${did}/com.dina.reputation.attestation/rec${i}`,
+      uri: `at://${did}/com.dina.trust.attestation/rec${i}`,
       cid: `cid-bf001-${i}`,
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       value: makeAttestationRecord(i),
     }))
 
@@ -133,9 +133,9 @@ describe('14 Backfill Script', () => {
   it('IT-BF-002: backfill -- idempotent replay', async () => {
     const did = 'did:plc:backfill002'
     const records = Array.from({ length: 10 }, (_, i) => ({
-      uri: `at://${did}/com.dina.reputation.attestation/rec${i}`,
+      uri: `at://${did}/com.dina.trust.attestation/rec${i}`,
       cid: `cid-bf002-${i}`,
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       value: makeAttestationRecord(i),
     }))
 
@@ -153,23 +153,23 @@ describe('14 Backfill Script', () => {
     const did = 'did:plc:backfill003'
 
     const attestationRecords = Array.from({ length: 3 }, (_, i) => ({
-      uri: `at://${did}/com.dina.reputation.attestation/rec${i}`,
+      uri: `at://${did}/com.dina.trust.attestation/rec${i}`,
       cid: `cid-bf003-att-${i}`,
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       value: makeAttestationRecord(i),
     }))
 
     const vouchRecords = Array.from({ length: 3 }, (_, i) => ({
-      uri: `at://${did}/com.dina.reputation.vouch/rec${i}`,
+      uri: `at://${did}/com.dina.trust.vouch/rec${i}`,
       cid: `cid-bf003-vch-${i}`,
-      collection: 'com.dina.reputation.vouch',
+      collection: 'com.dina.trust.vouch',
       value: makeVouchRecord(i),
     }))
 
     const flagRecords = Array.from({ length: 3 }, (_, i) => ({
-      uri: `at://${did}/com.dina.reputation.flag/rec${i}`,
+      uri: `at://${did}/com.dina.trust.flag/rec${i}`,
       cid: `cid-bf003-flg-${i}`,
-      collection: 'com.dina.reputation.flag',
+      collection: 'com.dina.trust.flag',
       value: makeFlagRecord(i),
     }))
 
@@ -190,9 +190,9 @@ describe('14 Backfill Script', () => {
   it('IT-BF-004: backfill -- rate limiting applied', async () => {
     const did = 'did:plc:backfill004'
     const records = Array.from({ length: 100 }, (_, i) => ({
-      uri: `at://${did}/com.dina.reputation.attestation/rec${i}`,
+      uri: `at://${did}/com.dina.trust.attestation/rec${i}`,
       cid: `cid-bf004-${i}`,
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       value: makeAttestationRecord(i),
     }))
 
@@ -210,24 +210,24 @@ describe('14 Backfill Script', () => {
     const did = 'did:plc:backfill005'
 
     const validRecords = Array.from({ length: 5 }, (_, i) => ({
-      uri: `at://${did}/com.dina.reputation.attestation/valid${i}`,
+      uri: `at://${did}/com.dina.trust.attestation/valid${i}`,
       cid: `cid-bf005-valid-${i}`,
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       value: makeAttestationRecord(i),
     }))
 
     // Invalid records: missing required fields
     const invalidRecords = [
       {
-        uri: `at://${did}/com.dina.reputation.attestation/invalid0`,
+        uri: `at://${did}/com.dina.trust.attestation/invalid0`,
         cid: 'cid-bf005-invalid-0',
-        collection: 'com.dina.reputation.attestation',
+        collection: 'com.dina.trust.attestation',
         value: { text: 'Missing subject and category and sentiment' }, // invalid
       },
       {
-        uri: `at://${did}/com.dina.reputation.attestation/invalid1`,
+        uri: `at://${did}/com.dina.trust.attestation/invalid1`,
         cid: 'cid-bf005-invalid-1',
-        collection: 'com.dina.reputation.attestation',
+        collection: 'com.dina.trust.attestation',
         value: { subject: { type: 'product' } }, // missing category, sentiment, createdAt
       },
     ]
@@ -311,9 +311,9 @@ describe('14 Backfill Script', () => {
         // Simulate successful backfill
         const did = `did:plc:bf007-${pds}`
         const records = Array.from({ length: 3 }, (_, i) => ({
-          uri: `at://${did}/com.dina.reputation.attestation/rec${i}`,
+          uri: `at://${did}/com.dina.trust.attestation/rec${i}`,
           cid: `cid-bf007-${pds}-${i}`,
-          collection: 'com.dina.reputation.attestation',
+          collection: 'com.dina.trust.attestation',
           value: makeAttestationRecord(i),
         }))
         await simulateBackfill(records, did)
@@ -339,9 +339,9 @@ describe('14 Backfill Script', () => {
 
     // Simulate fetching 250 records across 3 pages
     const allRecords = Array.from({ length: totalRecords }, (_, i) => ({
-      uri: `at://${did}/com.dina.reputation.attestation/rec${i}`,
+      uri: `at://${did}/com.dina.trust.attestation/rec${i}`,
       cid: `cid-bf008-${i}`,
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       value: makeAttestationRecord(i),
     }))
 
@@ -373,9 +373,9 @@ describe('14 Backfill Script', () => {
 
     // Backfill 10 records (under rate limit)
     const backfillRecords = Array.from({ length: 10 }, (_, i) => ({
-      uri: `at://${did}/com.dina.reputation.attestation/rec${i}`,
+      uri: `at://${did}/com.dina.trust.attestation/rec${i}`,
       cid: `cid-bf009-${i}`,
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       value: makeAttestationRecord(i),
     }))
 
@@ -385,16 +385,16 @@ describe('14 Backfill Script', () => {
     const liveRecords = [
       // 5 overlapping (same URIs as backfill)
       ...Array.from({ length: 5 }, (_, i) => ({
-        uri: `at://${did}/com.dina.reputation.attestation/rec${i}`,
+        uri: `at://${did}/com.dina.trust.attestation/rec${i}`,
         cid: `cid-bf009-live-${i}`,
-        collection: 'com.dina.reputation.attestation',
+        collection: 'com.dina.trust.attestation',
         value: makeAttestationRecord(i, { text: `Updated live text ${i}` }),
       })),
       // 5 new records
       ...Array.from({ length: 5 }, (_, i) => ({
-        uri: `at://${did}/com.dina.reputation.attestation/live${i}`,
+        uri: `at://${did}/com.dina.trust.attestation/live${i}`,
         cid: `cid-bf009-newlive-${i}`,
-        collection: 'com.dina.reputation.attestation',
+        collection: 'com.dina.trust.attestation',
         value: makeAttestationRecord(i + 100),
       })),
     ]
@@ -413,17 +413,17 @@ describe('14 Backfill Script', () => {
 
     // Records for target DID
     const targetRecords = Array.from({ length: 5 }, (_, i) => ({
-      uri: `at://${targetDid}/com.dina.reputation.attestation/rec${i}`,
+      uri: `at://${targetDid}/com.dina.trust.attestation/rec${i}`,
       cid: `cid-bf010-target-${i}`,
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       value: makeAttestationRecord(i),
     }))
 
     // Records for other DID (should be skipped)
     const otherRecords = Array.from({ length: 5 }, (_, i) => ({
-      uri: `at://${otherDid}/com.dina.reputation.attestation/rec${i}`,
+      uri: `at://${otherDid}/com.dina.trust.attestation/rec${i}`,
       cid: `cid-bf010-other-${i}`,
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       value: makeAttestationRecord(i),
     }))
 

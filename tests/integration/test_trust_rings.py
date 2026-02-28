@@ -528,7 +528,7 @@ class TestTrustComposite:
     def test_trust_degrades_with_bad_behavior(
         self, mock_trust_network: MockTrustNetwork
     ) -> None:
-        """Bad outcomes reduce a bot's reputation score over time."""
+        """Bad outcomes reduce a bot's trust score over time."""
         bot_did = "did:plc:BadBot12345678901234567890ab"
 
         # Start with a decent score
@@ -564,7 +564,7 @@ class TestTrustComposite:
     def test_trust_score_floor_at_zero(
         self, mock_trust_network: MockTrustNetwork
     ) -> None:
-        """Bot reputation cannot go below 0.0."""
+        """Bot trust cannot go below 0.0."""
         bot_did = "did:plc:Floor1234567890123456789012ab"
 
         # Massive negative adjustments

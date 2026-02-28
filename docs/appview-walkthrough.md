@@ -5,10 +5,10 @@
 Every time you buy something online, you're trusting a stranger. The only signal you have is a star rating that can be bought, a review that can be faked, and a platform that profits from both. Dina's AppView is the antidote: a **decentralized trust network** where trust is earned through cryptographic attestations, not purchased through ad spend.
 
 <details>
-<summary><strong>Design Decision — Why build reputation on the AT Protocol instead of a custom network?</strong></summary>
+<summary><strong>Design Decision — Why build trust on the AT Protocol instead of a custom network?</strong></summary>
 <br>
 
-The AT Protocol (used by Bluesky) solves the three hardest problems in decentralized systems: identity (DIDs), data portability (signed records in personal data stores), and discoverability (the Jetstream firehose). Building a custom network would mean reimplementing all of these. By using AT Protocol, every reputation record is a signed, portable, user-owned data object that can be verified by any party without trusting a central server. The user's reputation belongs to them — if they leave Dina's AppView, their attestations travel with them in their PDS (Personal Data Server). The AppView is one possible *view* of this data, not the canonical store. Anyone can build an alternative AppView that reads the same records and computes trust differently.
+The AT Protocol (used by Bluesky) solves the three hardest problems in decentralized systems: identity (DIDs), data portability (signed records in personal data stores), and discoverability (the Jetstream firehose). Building a custom network would mean reimplementing all of these. By using AT Protocol, every trust record is a signed, portable, user-owned data object that can be verified by any party without trusting a central server. The user's trust data belongs to them — if they leave Dina's AppView, their attestations travel with them in their PDS (Personal Data Server). The AppView is one possible *view* of this data, not the canonical store. Anyone can build an alternative AppView that reads the same records and computes trust differently.
 
 </details>
 
@@ -16,7 +16,7 @@ The AppView is a TypeScript/Node.js backend consisting of three daemons:
 
 - **Ingester** — Consumes the Jetstream firehose, validates records, and persists them to PostgreSQL.
 - **Scorer** — Runs 9 background jobs that compute trust scores, detect anomalies, and decay stale data.
-- **Web** — Serves 5 xRPC endpoints for reputation queries.
+- **Web** — Serves 5 xRPC endpoints for trust queries.
 
 <details>
 <summary><strong>Design Decision — Why TypeScript instead of Go or Python?</strong></summary>
@@ -56,17 +56,17 @@ Every environment variable is validated through a Zod schema at startup (line 5-
 
 ### Lexicons (config/lexicons.ts)
 
-19 reputation record collection NSIDs — the vocabulary of the trust network. Each maps to a `com.dina.reputation.*` collection in the AT Protocol namespace. These are the 19 record types that the ingester subscribes to on the Jetstream firehose.
+19 trust record collection NSIDs — the vocabulary of the trust network. Each maps to a `com.dina.trust.*` collection in the AT Protocol namespace. These are the 19 record types that the ingester subscribes to on the Jetstream firehose.
 
 ---
 
 ## Act III: The Ingester — Drinking from the Firehose
 
-The `JetstreamConsumer` in `ingester/jetstream-consumer.ts` is the ingester's heart. It connects to a Jetstream relay via WebSocket, receives every reputation record created or deleted across the entire network, and persists them to PostgreSQL.
+The `JetstreamConsumer` in `ingester/jetstream-consumer.ts` is the ingester's heart. It connects to a Jetstream relay via WebSocket, receives every trust record created or deleted across the entire network, and persists them to PostgreSQL.
 
 ### Connection (lines 45-106)
 
-When `start()` is called, the consumer loads the last cursor from the database (line 39), builds a WebSocket URL with `wantedCollections` for all 19 reputation record types (lines 46-52), and connects. The cursor is a microsecond timestamp — Jetstream replays all events since that timestamp on reconnection.
+When `start()` is called, the consumer loads the last cursor from the database (line 39), builds a WebSocket URL with `wantedCollections` for all 19 trust record types (lines 46-52), and connects. The cursor is a microsecond timestamp — Jetstream replays all events since that timestamp on reconnection.
 
 The consumer creates a `BoundedIngestionQueue` (lines 59-63) and wires it to the WebSocket. Every incoming message is parsed and pushed onto the queue (lines 71-92). If parsing fails, the error is logged and counted — never propagated.
 
@@ -84,7 +84,7 @@ This is TCP-level backpressure. `ws.pause()` stops reading from the socket, whic
 <summary><strong>Design Decision — Why TCP-level backpressure instead of dropping events?</strong></summary>
 <br>
 
-Dropping events means lost reputation records — a user's review disappears from the graph. The Jetstream relay supports backpressure natively: when a consumer stops reading, the relay buffers events server-side (up to its own limits). By pausing the WebSocket instead of dropping, we push the buffering responsibility upstream to the relay, which has dedicated resources for this. The relay will eventually disconnect us if we pause too long, but that triggers our reconnection logic with the last safe cursor, so we replay from where we left off. The spool-to-disk fallback (lines 80-86) is a last resort for events that arrive after the queue is full but before the WebSocket pause takes effect — a race condition that can happen in the event loop.
+Dropping events means lost trust records — a user's review disappears from the graph. The Jetstream relay supports backpressure natively: when a consumer stops reading, the relay buffers events server-side (up to its own limits). By pausing the WebSocket instead of dropping, we push the buffering responsibility upstream to the relay, which has dedicated resources for this. The relay will eventually disconnect us if we pause too long, but that triggers our reconnection logic with the last safe cursor, so we replay from where we left off. The spool-to-disk fallback (lines 80-86) is a last resort for events that arrive after the queue is full but before the WebSocket pause takes effect — a race condition that can happen in the event loop.
 
 </details>
 
@@ -106,11 +106,11 @@ If event A (timestamp 100) fails and event B (timestamp 200) succeeds, the curso
 
 1. **Identity events** (line 109) — DID handle changes. Logged for awareness.
 2. **Account events** (line 113) — Account takedowns/deletions. Logged for moderation.
-3. **Commit events** (line 117) — The main path. Create, update, or delete of reputation records.
+3. **Commit events** (line 117) — The main path. Create, update, or delete of trust records.
 
 For commit events, the pipeline is:
 
-1. **Collection filter** (line 122) — Only process reputation collections (ignore posts, likes, etc.).
+1. **Collection filter** (line 122) — Only process trust collections (ignore posts, likes, etc.).
 2. **Rate limiting** (line 124) — Per-DID write limits (50 records/hour, line 42 of constants). Prevents spam.
 3. **Validation** (line 150) — Zod schema validation. Invalid records are logged and dropped — never persisted.
 4. **Handler dispatch** (line 157) — Route to the correct handler based on collection NSID.
@@ -177,19 +177,19 @@ When a user deletes a record, the handler doesn't just `DELETE FROM table`. It f
 - How many replies with `intent: "dispute"` reference it?
 - How many `suspicious` reactions does it have?
 
-If *any* dispute signal exists, a **tombstone** is created (lines 146-186). The tombstone preserves the record's metadata (subject, category, sentiment, domain, duration, evidence status) without preserving the content. This is critical: if a restaurant owner posts a glowing self-review, gets reported for `self-review`, and then deletes the review, the tombstone remembers that a disputed record was deleted. The scorer applies a reputation penalty (×0.4) when tombstones accumulate past the threshold.
+If *any* dispute signal exists, a **tombstone** is created (lines 146-186). The tombstone preserves the record's metadata (subject, category, sentiment, domain, duration, evidence status) without preserving the content. This is critical: if a restaurant owner posts a glowing self-review, gets reported for `self-review`, and then deletes the review, the tombstone remembers that a disputed record was deleted. The scorer applies a trust penalty (×0.4) when tombstones accumulate past the threshold.
 
 <details>
 <summary><strong>Design Decision — Why tombstones for disputed deletions instead of just keeping all records?</strong></summary>
 <br>
 
-Keeping all records violates the user's right to delete (GDPR, AT Protocol data sovereignty). Deleting everything forgets the signal. Tombstones are the compromise: the *content* is deleted (honoring the deletion), but the *metadata* is preserved (the fact that a disputed review existed and was deleted is itself a reputation signal). A user who repeatedly posts and deletes disputed reviews accumulates tombstones, which the scorer penalizes. A user who deletes an undisputed review leaves no tombstone — their deletion is respected in full. This aligns with real-world norms: withdrawing a court filing after it's been challenged is different from withdrawing one before anyone responds.
+Keeping all records violates the user's right to delete (GDPR, AT Protocol data sovereignty). Deleting everything forgets the signal. Tombstones are the compromise: the *content* is deleted (honoring the deletion), but the *metadata* is preserved (the fact that a disputed review existed and was deleted is itself a trust signal). A user who repeatedly posts and deletes disputed reviews accumulates tombstones, which the scorer penalizes. A user who deletes an undisputed review leaves no tombstone — their deletion is respected in full. This aligns with real-world norms: withdrawing a court filing after it's been challenged is different from withdrawing one before anyone responds.
 
 </details>
 
 ---
 
-## Act V: The Trust Score — Arithmetic of Reputation
+## Act V: The Trust Score — Arithmetic of Trust
 
 The scoring engine in `scorer/algorithms/trust-score.ts` computes a single trust score (0.0-1.0) from four weighted components.
 
@@ -268,7 +268,7 @@ A high score with low confidence is dangerous. A new restaurant with one 5-star 
 
 ## Act VI: Subject Identity Resolution — The Three Tiers
 
-The `db/queries/subjects.ts` module solves one of the hardest problems in reputation: *what is the subject?* When Alice reviews "Dr. Sharma at Apollo Hospital" and Bob reviews "Dr. R. Sharma, Apollo Chennai," are they reviewing the same person?
+The `db/queries/subjects.ts` module solves one of the hardest problems in trust: *what is the subject?* When Alice reviews "Dr. Sharma at Apollo Hospital" and Bob reviews "Dr. R. Sharma, Apollo Chennai," are they reviewing the same person?
 
 ### Tier 1: Global Identifiers (lines 24-35)
 
@@ -276,17 +276,17 @@ If the subject has a DID, URI, or external identifier, the subject ID is a deter
 
 ### Tier 2: Author-Scoped Names (lines 37-39)
 
-If the subject only has a name (no DID, no URI), the subject ID is scoped to the author: `sub_${sha256("name:" + type + ":" + name + ":" + authorDid)}`. This means Alice's "Dr. Sharma" and Bob's "Dr. Sharma" create *separate* subjects by default. This prevents false merges — two different "Dr. Sharma"s in two different cities shouldn't share a reputation.
+If the subject only has a name (no DID, no URI), the subject ID is scoped to the author: `sub_${sha256("name:" + type + ":" + name + ":" + authorDid)}`. This means Alice's "Dr. Sharma" and Bob's "Dr. Sharma" create *separate* subjects by default. This prevents false merges — two different "Dr. Sharma"s in two different cities shouldn't share a trust score.
 
 ### Tier 3: Canonical Chains (lines 120-145)
 
-Subject Claims (`com.dina.reputation.subjectClaim`) allow users to assert that two subjects are the same entity. When approved, a `canonical_subject_id` pointer is set, creating a merge chain. `resolveCanonicalChain()` follows these pointers (with cycle detection at line 128 and depth limiting at line 127) to find the root canonical subject. All future attestations resolve to the canonical subject.
+Subject Claims (`com.dina.trust.subjectClaim`) allow users to assert that two subjects are the same entity. When approved, a `canonical_subject_id` pointer is set, creating a merge chain. `resolveCanonicalChain()` follows these pointers (with cycle detection at line 128 and depth limiting at line 127) to find the root canonical subject. All future attestations resolve to the canonical subject.
 
 <details>
 <summary><strong>Design Decision — Why three tiers instead of fuzzy name matching?</strong></summary>
 <br>
 
-Fuzzy matching ("Dr. Sharma" ≈ "Dr. R. Sharma" at 85% similarity) produces false merges. In a reputation system, a false merge is catastrophic: a bad actor's reputation gets mixed with a legitimate person's. The three-tier approach is conservative by design: Tier 1 merges are deterministic and correct (same DID = same entity). Tier 2 keeps name-based subjects separate by default (safe). Tier 3 allows explicit human-initiated merges via Subject Claims, which can be disputed and revoked. False merges are correctable; false non-merges just mean fragmented data, which is inconvenient but not harmful.
+Fuzzy matching ("Dr. Sharma" ≈ "Dr. R. Sharma" at 85% similarity) produces false merges. In a trust system, a false merge is catastrophic: a bad actor's trust score gets mixed with a legitimate person's. The three-tier approach is conservative by design: Tier 1 merges are deterministic and correct (same DID = same entity). Tier 2 keeps name-based subjects separate by default (safe). Tier 3 allows explicit human-initiated merges via Subject Claims, which can be disputed and revoked. False merges are correctable; false non-merges just mean fragmented data, which is inconvenient but not harmful.
 
 </details>
 
@@ -330,7 +330,7 @@ The scorer daemon runs 9 background jobs on cron schedules (`scorer/scheduler.ts
 | `refresh-domain-scores` | Every hour | Update domain-specific trust scores |
 | `detect-coordination` | Every 30 min | Detect coordinated inauthentic behavior |
 | `detect-sybil` | Every 6 hours | Detect Sybil attack clusters |
-| `process-tombstones` | Every 10 min | Apply reputation penalties for tombstones |
+| `process-tombstones` | Every 10 min | Apply trust penalties for tombstones |
 | `decay-scores` | 3:00 AM daily | Apply temporal decay to scores |
 | `cleanup-expired` | 4:00 AM daily | Remove expired records |
 
@@ -342,7 +342,7 @@ The ingester doesn't compute scores at write time — it just marks affected ent
 <summary><strong>Design Decision — Why incremental dirty-flag scoring instead of real-time computation?</strong></summary>
 <br>
 
-Computing a trust score requires gathering attestations, vouches, flags, reactions, trust edges, tombstones, and reviewer stats — at least 7 database queries per DID. Running this at ingestion time (every Jetstream event) would multiply write latency by 7-10x and couple ingestion throughput to scoring complexity. With dirty flags, the ingester does one `INSERT` + one `markDirty` (two fast writes). The scorer then batch-processes dirty entities every 5 minutes, amortizing the 7-query cost across thousands of entities at once. The tradeoff is up to 5 minutes of score staleness — acceptable for a reputation system where trust changes slowly.
+Computing a trust score requires gathering attestations, vouches, flags, reactions, trust edges, tombstones, and reviewer stats — at least 7 database queries per DID. Running this at ingestion time (every Jetstream event) would multiply write latency by 7-10x and couple ingestion throughput to scoring complexity. With dirty flags, the ingester does one `INSERT` + one `markDirty` (two fast writes). The scorer then batch-processes dirty entities every 5 minutes, amortizing the 7-query cost across thousands of entities at once. The tradeoff is up to 5 minutes of score staleness — acceptable for a trust system where trust changes slowly.
 
 </details>
 
@@ -369,15 +369,15 @@ The AppView serves 5 read-only endpoints. Express adds 30+ middleware layers, te
 
 ### The Five Endpoints
 
-1. **com.dina.reputation.resolve** (`api/xrpc/resolve.ts`) — The primary endpoint. Given a subject reference (DID, URI, or name), returns: trust level, confidence, attestation summary, active flags, authenticity assessment, graph context (if requester DID is provided), and a recommendation (proceed/caution/verify/avoid) with reasoning.
+1. **com.dina.trust.resolve** (`api/xrpc/resolve.ts`) — The primary endpoint. Given a subject reference (DID, URI, or name), returns: trust level, confidence, attestation summary, active flags, authenticity assessment, graph context (if requester DID is provided), and a recommendation (proceed/caution/verify/avoid) with reasoning.
 
-2. **com.dina.reputation.getProfile** — DID reputation profile with trust scores, vouch count, flag count, and component breakdown.
+2. **com.dina.trust.getProfile** — DID trust profile with trust scores, vouch count, flag count, and component breakdown.
 
-3. **com.dina.reputation.getGraph** — Trust graph visualization data (nodes and edges) around a DID.
+3. **com.dina.trust.getGraph** — Trust graph visualization data (nodes and edges) around a DID.
 
-4. **com.dina.reputation.search** — Full-text search across attestations with filters for sentiment, domain, tags, and confidence.
+4. **com.dina.trust.search** — Full-text search across attestations with filters for sentiment, domain, tags, and confidence.
 
-5. **com.dina.reputation.getAttestations** — Paginated attestation list for a subject or author.
+5. **com.dina.trust.getAttestations** — Paginated attestation list for a subject or author.
 
 ### SWR Caching (api/middleware/swr-cache.ts)
 
@@ -392,7 +392,7 @@ Every API endpoint is wrapped in a **Stale-While-Revalidate** cache (92 lines). 
 <summary><strong>Design Decision — Why SWR instead of simple TTL caching?</strong></summary>
 <br>
 
-Simple TTL caching has a "thundering herd" problem: when a popular cache entry expires, all concurrent requests hit the database simultaneously. SWR solves this by serving stale data to all-but-one request while one request refreshes the cache in the background. The `inFlight` map (line 15) ensures that at most one database query runs per cache key at any time. For a reputation API where data changes every 5 minutes (scorer interval) but queries arrive every second, SWR gives the best of both worlds: fresh-enough data and predictable database load.
+Simple TTL caching has a "thundering herd" problem: when a popular cache entry expires, all concurrent requests hit the database simultaneously. SWR solves this by serving stale data to all-but-one request while one request refreshes the cache in the background. The `inFlight` map (line 15) ensures that at most one database query runs per cache key at any time. For a trust API where data changes every 5 minutes (scorer interval) but queries arrive every second, SWR gives the best of both worlds: fresh-enough data and predictable database load.
 
 </details>
 
@@ -432,7 +432,7 @@ Each of the 19 AT Protocol record types has a corresponding PostgreSQL table:
 - **Tombstones** — Preserved metadata from disputed deletions.
 - **Anomaly Events** — Sybil and coordination detection results.
 - **DID Profiles** — Computed trust scores per DID.
-- **Subject Scores** — Computed reputation scores per subject.
+- **Subject Scores** — Computed trust scores per subject.
 - **Domain Scores** — Domain-specific trust scores.
 - **Ingester Cursor** — Jetstream cursor tracking.
 
@@ -443,7 +443,7 @@ Each of the 19 AT Protocol record types has a corresponding PostgreSQL table:
 The `docker-compose.yml` orchestrates six services:
 
 1. **postgres** — PostgreSQL 17 with persistent volume.
-2. **jetstream** — Bluesky Jetstream relay, subscribed to all 19 reputation collections.
+2. **jetstream** — Bluesky Jetstream relay, subscribed to all 19 trust collections.
 3. **migrate** — One-shot migration runner (Drizzle ORM).
 4. **ingester** — Jetstream consumer daemon.
 5. **scorer** — Background scoring scheduler.
@@ -473,7 +473,7 @@ The AppView is the third pillar of Dina's architecture:
 
 Core gives Dina her identity. Brain gives her judgment. AppView gives her memory of who to trust.
 
-When Dina advises you before a purchase ("This seller has a trust score of 0.72 from 47 attestations, 3 of which are from people in your trust graph"), the data comes from the AppView. When an autonomous agent submits an intent to buy something, the Brain checks the seller's reputation via the AppView before approving the transaction. When Core receives a D2D message from an unknown Dina, it queries the AppView to determine whether to accept or quarantine it.
+When Dina advises you before a purchase ("This seller has a trust score of 0.72 from 47 attestations, 3 of which are from people in your trust graph"), the data comes from the AppView. When an autonomous agent submits an intent to buy something, the Brain checks the seller's trust score via the AppView before approving the transaction. When Core receives a D2D message from an unknown Dina, it queries the AppView to determine whether to accept or quarantine it.
 
 The trust network replaces ad-funded ranking with trust-funded ranking. A product with 10 genuine reviews from trusted reviewers outranks a product with 1000 fake reviews from anonymous accounts. An expert's attestation (high reviewer quality, evidence included, co-signed) carries more weight than a drive-by rating. And because the data lives on the AT Protocol, no single company can suppress, manipulate, or delete it.
 

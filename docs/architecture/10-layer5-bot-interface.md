@@ -69,15 +69,15 @@ Response:
 
 **Attribution is mandatory in the protocol.** Every expert source in a bot response MUST include `creator_name`, `source_url`, and where possible `deep_link` + `deep_link_context`.
 
-Dina's default presentation uses the **Deep Link pattern**: drive traffic to the original source rather than extracting and replacing the expert's work. Bots that strip attribution receive a reputation penalty.
+Dina's default presentation uses the **Deep Link pattern**: drive traffic to the original source rather than extracting and replacing the expert's work. Bots that strip attribution receive a trust penalty.
 ```
 
-### Bot Reputation Scoring
+### Bot Trust Scoring
 
-Every bot interaction feeds back into the Bot Reputation Registry:
+Every bot interaction feeds back into the Bot Trust Registry:
 
 ```
-Bot Reputation = f(
+Bot Trust = f(
     response_accuracy,     // did outcomes match recommendations?
     response_time,         // latency
     uptime,               // availability
@@ -95,7 +95,7 @@ Dina tracks bot scores locally. If a bot's accuracy drops below a threshold, Din
 How does Dina find bots in the first place?
 
 - **Phase 1:** No bot registry needed. Brain delegates research to OpenClaw (web search). Users can configure preferred specialist bots manually.
-- **Phase 2:** Decentralized bot registry on the Trust Network. Bots self-register, and their reputation determines visibility.
+- **Phase 2:** Decentralized bot registry on the Trust Network. Bots self-register, and their trust score determines visibility.
 - **Phase 3:** Bot-to-bot recommendations. "This query is outside my domain. Try the Medical Bot at did:plc:..."
 
 ---

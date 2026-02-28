@@ -582,7 +582,7 @@ class TestPowerLoss:
         """Power loss simulation — all SQLite DBs have WAL mode, survive
         abrupt shutdown.
 
-        Every SQLite database in the system (vault, identity, reputation)
+        Every SQLite database in the system (vault, identity, trust)
         must use WAL journal mode.  This ensures that committed
         transactions survive power loss and uncommitted transactions are
         rolled back cleanly.

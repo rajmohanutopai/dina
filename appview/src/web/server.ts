@@ -33,11 +33,11 @@ function checkRateLimit(ip: string): boolean {
 }
 
 const ROUTES: Record<string, { params: any; handler: (db: any, params: any) => Promise<any> }> = {
-  'com.dina.reputation.resolve': { params: ResolveParams, handler: resolve },
-  'com.dina.reputation.search': { params: SearchParams, handler: search },
-  'com.dina.reputation.getGraph': { params: GetGraphParams, handler: getGraph },
-  'com.dina.reputation.getProfile': { params: GetProfileParams, handler: getProfile },
-  'com.dina.reputation.getAttestations': { params: GetAttestationsParams, handler: getAttestations },
+  'com.dina.trust.resolve': { params: ResolveParams, handler: resolve },
+  'com.dina.trust.search': { params: SearchParams, handler: search },
+  'com.dina.trust.getGraph': { params: GetGraphParams, handler: getGraph },
+  'com.dina.trust.getProfile': { params: GetProfileParams, handler: getProfile },
+  'com.dina.trust.getAttestations': { params: GetAttestationsParams, handler: getAttestations },
 }
 
 const server = http.createServer(async (req, res) => {

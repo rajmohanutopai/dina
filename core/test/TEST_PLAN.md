@@ -154,7 +154,7 @@
 | 9 | **[TST-CORE-088]** Archive Key (Tier 5) | Derive archive key | `HKDF(info="dina:archive:v1")` → wraps full vault snapshots for cold storage |
 | 10 | **[TST-CORE-089]** Archive Key separate from Backup Key | Rotate backup key | Archive key unaffected — archive survives backup key rotation |
 | 11 | **[TST-CORE-090]** Client Sync Key | Derive sync key | `HKDF(info="dina:sync:v1")` → encrypts vault cache pushes to client devices |
-| 12 | **[TST-CORE-091]** Reputation Signing Key | Derive reputation key | `HKDF(info="dina:reputation:v1")` → signs anonymized outcome data |
+| 12 | **[TST-CORE-091]** Trust Signing Key | Derive trust key | `HKDF(info="dina:trust:v1")` → signs anonymized outcome data |
 | 13 | **[TST-CORE-092]** `user_salt` is random 32-byte value | Inspect HKDF call parameters | HKDF uses `salt=user_salt` (a random 32-byte value generated at first setup), not `salt=nil` — prevents identical DEKs across Dina nodes that reuse the same BIP-39 mnemonic |
 | 14 | **[TST-CORE-093]** `user_salt` generated once at first setup | First-run key generation | 32 bytes from `crypto/rand`, stored in identity.sqlite (unencrypted — salt is not secret, it provides uniqueness) |
 | 15 | **[TST-CORE-094]** `user_salt` persisted across reboots | Restart core → derive DEKs | Same `user_salt` retrieved from identity.sqlite → same DEKs → vault files open correctly |
@@ -220,7 +220,7 @@
 | 5 | **[TST-CORE-129]** Nonce uniqueness | Wrap same key twice | Different wrapped outputs (random nonce) |
 | 6 | **[TST-CORE-880]** Key generation verified to use `crypto/rand` (not weak entropy) | Code audit of key generation functions | All key material sourced from `crypto/rand`, never `math/rand` |
 | 7 | **[TST-CORE-881]** Archive key survives backup key rotation (separate HKDF derivations) | Rotate backup key, verify archive key | Archive key unchanged — separate HKDF info string `dina:archive:v1` |
-| 8 | **[TST-CORE-882]** Client sync key used for sync encryption, reputation key for signing | Derive both keys, verify usage | Sync key (`dina:sync:v1`) encrypts cache; reputation key (`dina:reputation:v1`) signs data |
+| 8 | **[TST-CORE-882]** Client sync key used for sync encryption, trust key for signing | Derive both keys, verify usage | Sync key (`dina:sync:v1`) encrypts cache; trust key (`dina:trust:v1`) signs data |
 
 ---
 
@@ -716,7 +716,7 @@
 | 24 | **[TST-CORE-890]** Contact `updated_at` refreshed on sharing policy mutation | Update sharing policy for contact | `updated_at` timestamp refreshed in contacts table |
 | 25 | **[TST-CORE-891]** Draft confidence score: low → flagged for review | Draft with low confidence score | Flagged for human review, not auto-approved |
 | 26 | **[TST-CORE-892]** Agent `draft_only: true` constraint enforced | Agent with draft_only=true attempts direct action | Blocked — agent can only create drafts, not execute |
-| 27 | **[TST-CORE-893]** Agent outcomes recorded in Tier 3 for reputation scoring | Agent completes action | Outcome recorded in Tier 3 vault for reputation scoring |
+| 27 | **[TST-CORE-893]** Agent outcomes recorded in Tier 3 for trust scoring | Agent completes action | Outcome recorded in Tier 3 vault for trust scoring |
 
 ---
 
@@ -811,7 +811,7 @@
 | 2 | **[TST-CORE-440]** Message ID format | Inspect message ID | Format: `msg_YYYYMMDD_<random>` — unique, timestamp-prefixed |
 | 3 | **[TST-CORE-441]** Message envelope format | Inspect encrypted envelope | `{typ: "application/dina-encrypted+json", from_kid, to_kid, ciphertext: "<base64url>", sig: "<Ed25519>"}` |
 | 4 | **[TST-CORE-442]** Ed25519 signature on plaintext | Verify signature | `sig` field is Ed25519 signature over the canonical plaintext. Verification flow: recipient decrypts `ciphertext` via `crypto_box_seal_open` → recovers plaintext → verifies `sig` against `from_kid` public key. Sig is in the outer envelope (visible), but verification requires the plaintext (only recipient has it) |
-| 5 | **[TST-CORE-443]** Message categories | Create different types | `dina/social/*`, `dina/commerce/*`, `dina/identity/*`, `dina/reputation/*` — all valid |
+| 5 | **[TST-CORE-443]** Message categories | Create different types | `dina/social/*`, `dina/commerce/*`, `dina/identity/*`, `dina/trust/*` — all valid |
 | 6 | **[TST-CORE-444]** Unknown message type | Receive `dina/unknown/foo` | Accepted and stored (extensible) — brain classifies, no hard rejection |
 | 7 | **[TST-CORE-445]** Ephemeral key per message | Send two messages to same recipient | Each uses fresh ephemeral X25519 keypair for `crypto_box_seal` — different ciphertext |
 | 8 | **[TST-CORE-446]** `from_kid`/`to_kid` DID fragment format | Inspect envelope `from_kid` and `to_kid` | Format: `did:plc:...#key-1` — DID URL with fragment identifier referencing the correct `verificationMethod` entry in sender/recipient's DID Document |
@@ -1268,9 +1268,9 @@
 | 5 | **[TST-CORE-643]** Core exposes `/v1/pii/scrub` to brain | BRAIN_TOKEN + text | 200 with scrubbed text |
 | 6 | **[TST-CORE-644]** Core exposes `/v1/notify` to brain | BRAIN_TOKEN + push notification | 200 — notification pushed to connected clients |
 | 7 | **[TST-CORE-645]** All brain-callable endpoints accept BRAIN_TOKEN | Iterate all non-admin endpoints with BRAIN_TOKEN | All return 200 (not 403) |
-| 8 | **[TST-CORE-646]** No other endpoints exist beyond documented set | Enumerate all routes | Exact match with documented API surface — 8 brain-callable families (vault/query, vault/store, did/verify, pii/scrub, notify, msg/send, reputation/query, process+reason) plus admin-only endpoints (did/sign, did/rotate, vault/backup, persona/unlock, admin/*) |
+| 8 | **[TST-CORE-646]** No other endpoints exist beyond documented set | Enumerate all routes | Exact match with documented API surface — 8 brain-callable families (vault/query, vault/store, did/verify, pii/scrub, notify, msg/send, trust/query, process+reason) plus admin-only endpoints (did/sign, did/rotate, vault/backup, persona/unlock, admin/*) |
 | 9 | **[TST-CORE-647]** Core exposes `/v1/msg/send` to brain | BRAIN_TOKEN + encrypted message payload (recipient DID, ciphertext) | 200 — message queued in outbox for Dina-to-Dina delivery. Architecture §03 line 135 lists `msg/send` in BRAIN_TOKEN scope. Brain triggers outbound messages (e.g., sharing a verdict with a contact); core handles encryption envelope and transport |
-| 10 | **[TST-CORE-648]** Core exposes `/v1/reputation/query` to brain | BRAIN_TOKEN + query (entity, category) | 200 with reputation score from local cache or PDS federation. Architecture §03 line 135 lists `reputation/query` in BRAIN_TOKEN scope. Brain needs reputation data for LLM routing decisions (e.g., which bot to delegate to) and trust ring evaluation |
+| 10 | **[TST-CORE-648]** Core exposes `/v1/trust/query` to brain | BRAIN_TOKEN + query (entity, category) | 200 with trust score from local cache or PDS federation. Architecture §03 line 135 lists `trust/query` in BRAIN_TOKEN scope. Brain needs trust data for LLM routing decisions (e.g., which bot to delegate to) and trust ring evaluation |
 | 11 | **[TST-CORE-906]** `/v1/vault/crash` rejects requests missing required fields | POST /v1/vault/crash without error/traceback | 400 Bad Request — error and traceback fields required |
 | 12 | **[TST-CORE-907]** Vault query full response schema validated | POST /v1/vault/query | Response contains id, type, persona, summary, relevance, pagination |
 | 13 | **[TST-CORE-908]** Vault store response ID format (`vault_` prefix) | POST /v1/vault/store | Returned ID starts with `vault_` prefix |
@@ -1407,15 +1407,15 @@
 
 ## 22. PDS Integration (AT Protocol)
 
-> Core signs reputation records with user's Ed25519 persona key and writes them
+> Core signs trust records with user's Ed25519 persona key and writes them
 > to the AT Protocol PDS. PDS stores signed Merkle repos — cannot forge records.
 
 ### 22.1 Record Signing & Publishing
 
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-CORE-710]** Sign attestation record | Brain requests `POST /v1/reputation/publish` with attestation payload | Core signs with persona key → writes to PDS as `com.dina.reputation.attestation` record |
-| 2 | **[TST-CORE-711]** Sign outcome report | Brain requests outcome publication | Core signs with Reputation Signing Key (HKDF "dina:reputation:v1") → writes to PDS |
+| 1 | **[TST-CORE-710]** Sign attestation record | Brain requests `POST /v1/trust/publish` with attestation payload | Core signs with persona key → writes to PDS as `com.dina.trust.attestation` record |
+| 2 | **[TST-CORE-711]** Sign outcome report | Brain requests outcome publication | Core signs with Trust Signing Key (HKDF "dina:trust:v1") → writes to PDS |
 | 3 | **[TST-CORE-712]** Lexicon validation | Attestation missing required field (`productCategory`) | Core rejects before signing — schema enforced |
 | 4 | **[TST-CORE-713]** Record in Merkle repo | Inspect PDS after publish | Record stored in signed Merkle tree — tamper-evident |
 | 5 | **[TST-CORE-714]** PDS connection failure | PDS container down | Core queues record in outbox for retry — record not lost |
@@ -1433,12 +1433,12 @@
 | 2 | **[TST-CORE-721]** Non-author deletion rejected | External request to delete someone else's record | Signature doesn't match author → rejected |
 | 3 | **[TST-CORE-722]** Tombstone propagation | Tombstone published to PDS | Relay distributes tombstone to all federated AppViews |
 | 4 | **[TST-CORE-723]** Deleted record absent from queries | Record deleted via tombstone | AppView no longer returns record — aggregate scores recomputed without it |
-| 5 | **[TST-CORE-918]** `com.dina.reputation.bot` and `com.dina.trust.membership` Lexicons validated | Bot/membership Lexicon records | Schema validation passes for bot and membership Lexicon types |
+| 5 | **[TST-CORE-918]** `com.dina.trust.bot` and `com.dina.trust.membership` Lexicons validated | Bot/membership Lexicon records | Schema validation passes for bot and membership Lexicon types |
 | 6 | **[TST-CORE-919]** Outcome data schema validation (reporter_trust_ring, outcome, satisfaction) | Outcome record payload | Required fields validated: reporter_trust_ring, outcome, satisfaction, issues |
 | 7 | **[TST-CORE-920]** Attestation optional fields URI format (sourceUrl, deepLink) | Attestation with sourceUrl and deepLink | URI format validated for optional URL fields |
-| 8 | **[TST-CORE-921]** Reputation query response includes signed payloads | Query reputation endpoint | Response payloads include Ed25519 signatures |
+| 8 | **[TST-CORE-921]** Trust query response includes signed payloads | Query trust endpoint | Response payloads include Ed25519 signatures |
 | 9 | **[TST-CORE-922]** DID Document contains DIDComm service endpoint | Resolve DID Document | Service array includes DIDComm endpoint for D2D communication |
-| 10 | **[TST-CORE-923]** Outcome and Bot Lexicon signing and validation | Sign outcome/bot Lexicon record | Record signed with Reputation Signing Key, signature verifiable |
+| 10 | **[TST-CORE-923]** Outcome and Bot Lexicon signing and validation | Sign outcome/bot Lexicon record | Record signed with Trust Signing Key, signature verifiable |
 | 11 | **[TST-CORE-924]** PDS Type A: fallback to external HTTPS push | PDS unreachable on internal network | Fallback to outbound HTTPS push to external PDS |
 
 ---
@@ -1521,7 +1521,7 @@
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
 | 1 | **[TST-CORE-762]** Archive encrypted with Archive Key | Create Tier 5 snapshot | AES-256-GCM with `HKDF("dina:archive:v1")` key — separate from Backup Key |
-| 2 | **[TST-CORE-763]** Archive contains Tier 0 + 1 + 3 (NOT Tier 2 or 4) | Inspect archive contents | identity.sqlite (Tier 0) + all persona vaults (Tier 1) + reputation/preferences (Tier 3). Tier 2 (index/embeddings) explicitly ABSENT — regenerable from Tier 1. Tier 4 (staging) explicitly ABSENT — ephemeral. Verify by listing archive entries: no embedding tables, no staging tables, no sqlite-vec data |
+| 2 | **[TST-CORE-763]** Archive contains Tier 0 + 1 + 3 (NOT Tier 2 or 4) | Inspect archive contents | identity.sqlite (Tier 0) + all persona vaults (Tier 1) + trust/preferences (Tier 3). Tier 2 (index/embeddings) explicitly ABSENT — regenerable from Tier 1. Tier 4 (staging) explicitly ABSENT — ephemeral. Verify by listing archive entries: no embedding tables, no staging tables, no sqlite-vec data |
 | 3 | **[TST-CORE-764]** Weekly frequency (configurable) | Check schedule | Default weekly, configurable via config.json |
 | 4 | **[TST-CORE-765]** S3 Glacier + Compliance Mode Object Lock | Push to S3 | Object locked — even root user / cloud support cannot delete during retention period |
 | 5 | **[TST-CORE-766]** Sovereign: USB/LTO tape | Push to local drive | Physically unplugged after backup — air-gapped |
@@ -1557,7 +1557,7 @@
 |---|----------|-------|----------|
 | 1 | **[TST-CORE-858]** Bot query sanitization: no DID, no medical, no financial in outbound queries | Query containing user DID + medical terms | Sanitized query strips DID and sensitive categories before sending to bot |
 | 2 | **[TST-CORE-859]** Bot communication protocol: POST /query schema with bot_signature and attribution | Structured BotQuery payload | Response includes bot_signature and attribution fields per protocol spec |
-| 3 | **[TST-CORE-860]** Bot reputation scoring: local score tracking, threshold-based routing | Bot with low score | Score tracked locally, queries routed only to bots above threshold |
+| 3 | **[TST-CORE-860]** Bot trust scoring: local score tracking, threshold-based routing | Bot with low score | Score tracked locally, queries routed only to bots above threshold |
 | 4 | **[TST-CORE-861]** Deep Link attribution validation + penalty for stripping attribution | Bot response with stripped attribution | Attribution validated, penalty applied to bot score for stripping |
 
 ---

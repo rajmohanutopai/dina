@@ -1,7 +1,7 @@
 """E2E Test Suite 12: Trust Network Lifecycle.
 
 Tests the full trust network lifecycle: expert attestation publishing via
-AT Protocol (PDS -> Relay -> AppView), bot reputation degradation with
+AT Protocol (PDS -> Relay -> AppView), bot trust degradation with
 auto-routing, signed tombstone deletion, composite trust score computation,
 AT Protocol discovery, and AppView determinism / censorship detection.
 
@@ -19,7 +19,7 @@ import pytest
 
 from tests.e2e.actors import HomeNode, _mock_sign, _mock_verify
 from tests.e2e.mocks import (
-    BotReputation,
+    BotTrust,
     DIDDocument,
     ExpertAttestation,
     MockAppView,
@@ -37,7 +37,7 @@ from tests.e2e.mocks import (
 
 
 class TestTrustNetworkLifecycle:
-    """E2E-12.x -- Trust Network: attestations, bot reputation,
+    """E2E-12.x -- Trust Network: attestations, bot trust,
     tombstone deletion, trust scores, AT Protocol discovery, and
     AppView determinism."""
 
@@ -81,7 +81,7 @@ class TestTrustNetworkLifecycle:
         # Publish to Don Alonso's PDS (simulating ReviewBot publishing
         # to the AT Protocol network via its own PDS)
         record = {
-            "type": "dina.reputation.attestation",
+            "type": "dina.trust.attestation",
             "attestation_id": attestation.attestation_id,
             "expert_did": attestation.expert_did,
             "product_id": attestation.product_id,
@@ -89,7 +89,7 @@ class TestTrustNetworkLifecycle:
             "verdict": attestation.verdict,
             "signature": attestation.signature,
         }
-        record_id = don_alonso.pds.publish("dina.reputation.attestation", record)
+        record_id = don_alonso.pds.publish("dina.trust.attestation", record)
         assert record_id.startswith("at://")
 
         # Relay crawls the PDS
@@ -99,7 +99,7 @@ class TestTrustNetworkLifecycle:
 
         # Verify the attestation record is in the relay firehose
         firehose_types = [r.get("type") for r in relay.firehose]
-        assert "dina.reputation.attestation" in firehose_types
+        assert "dina.trust.attestation" in firehose_types
 
         # AppView indexes the attestation
         appview.index_attestation(attestation)
@@ -118,24 +118,24 @@ class TestTrustNetworkLifecycle:
         assert indexed_att.product_id == product_id
 
 # TST-E2E-060
-    def test_bot_reputation_degradation(
+    def test_bot_trust_degradation(
         self,
         don_alonso: HomeNode,
         appview: MockAppView,
     ) -> None:
-        """E2E-12.2 Bot Reputation Degradation.
+        """E2E-12.2 Bot Trust Degradation.
 
         10 accurate queries raise the bot's score. 5 poor queries drop it.
         When score drops below threshold, auto-route to an alternative bot.
-        Reputation changes are published to PDS.
+        Trust changes are published to PDS.
         """
         bot_did = "did:plc:testbot_degrade"
         alt_bot_did = "did:plc:altbot"
         threshold = 60
 
-        # Initialize bot reputation
-        appview.update_bot_reputation(bot_did, 50)
-        appview.update_bot_reputation(alt_bot_did, 85)
+        # Initialize bot trust
+        appview.update_bot_trust(bot_did, 50)
+        appview.update_bot_trust(alt_bot_did, 85)
 
         # 10 accurate queries -> score rises
         for i in range(10):
@@ -144,7 +144,7 @@ class TestTrustNetworkLifecycle:
             bot_rep.positive_outcomes += 1
             bot_rep.total_queries += 1
             new_score = min(100, bot_rep.score + 4)
-            appview.update_bot_reputation(bot_did, new_score)
+            appview.update_bot_trust(bot_did, new_score)
 
         bot_rep = appview.query_bot(bot_did)
         assert bot_rep is not None
@@ -159,7 +159,7 @@ class TestTrustNetworkLifecycle:
             bot_rep.negative_outcomes += 1
             bot_rep.total_queries += 1
             new_score = max(0, bot_rep.score - 10)
-            appview.update_bot_reputation(bot_did, new_score)
+            appview.update_bot_trust(bot_did, new_score)
 
         bot_rep = appview.query_bot(bot_did)
         assert bot_rep is not None
@@ -180,20 +180,20 @@ class TestTrustNetworkLifecycle:
         assert selected_rep is not None
         assert selected_rep.score >= bot_rep.score
 
-        # Publish reputation change to PDS
-        reputation_record = {
-            "type": "dina.reputation.bot_score",
+        # Publish trust change to PDS
+        trust_score_record = {
+            "type": "dina.trust.bot_score",
             "bot_did": bot_did,
             "score": bot_rep.score,
             "total_queries": bot_rep.total_queries,
             "positive_outcomes": bot_rep.positive_outcomes,
             "negative_outcomes": bot_rep.negative_outcomes,
         }
-        record_id = don_alonso.pds.publish("dina.reputation.bot_score", reputation_record)
+        record_id = don_alonso.pds.publish("dina.trust.bot_score", trust_score_record)
         assert record_id.startswith("at://")
 
         # Verify record is in PDS
-        records = don_alonso.pds.list_records("dina.reputation.bot_score")
+        records = don_alonso.pds.list_records("dina.trust.bot_score")
         assert len(records) >= 1
         last_record = records[-1]
         assert last_record["bot_did"] == bot_did
@@ -211,13 +211,13 @@ class TestTrustNetworkLifecycle:
         """
         # Don Alonso publishes an outcome report
         outcome_record = {
-            "type": "dina.reputation.outcome",
+            "type": "dina.trust.outcome",
             "product_id": "herman-miller-aeron",
             "outcome": "still_using",
             "satisfaction": "positive",
             "author_did": don_alonso.did,
         }
-        record_id = don_alonso.pds.publish("dina.reputation.outcome", outcome_record)
+        record_id = don_alonso.pds.publish("dina.trust.outcome", outcome_record)
         assert record_id in don_alonso.pds.records
 
         # Don Alonso signs a tombstone for deletion
@@ -252,8 +252,8 @@ class TestTrustNetworkLifecycle:
         # Non-author deletion attempt: create a record and try to delete
         # with a different key
         new_record_id = don_alonso.pds.publish(
-            "dina.reputation.outcome",
-            {"type": "dina.reputation.outcome", "product_id": "test",
+            "dina.trust.outcome",
+            {"type": "dina.trust.outcome", "product_id": "test",
              "author_did": don_alonso.did},
         )
 

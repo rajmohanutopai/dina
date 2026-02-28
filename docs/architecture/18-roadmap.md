@@ -33,7 +33,7 @@ The architecture described above is now the active implementation in this reposi
 | dina-core | `core/` | Go sovereign kernel: vault, keys, auth, gatekeeper, transport |
 | dina-brain | `brain/` | Python intelligence/orchestration: reasoning, sync, admin API/UI |
 | dina-pds | `docker-compose*.yml`, `data/pds/` | AT Protocol PDS for trust network records |
-| appview | `appview/` | Reputation AppView implementation |
+| appview | `appview/` | Trust AppView implementation |
 | cli | `cli/` | Client interface for interacting with running services |
 
 ### Legacy Note (v0.4)

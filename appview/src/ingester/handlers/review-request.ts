@@ -5,7 +5,7 @@ import { resolveOrCreateSubject } from '@/db/queries/subjects.js'
 import { deletionHandler } from '../deletion-handler.js'
 
 /**
- * Handler for com.dina.reputation.reviewRequest records.
+ * Handler for com.dina.trust.reviewRequest records.
  *
  * Review requests ask the community to provide attestations about a
  * specific subject. The handler resolves (or creates) the subject entity

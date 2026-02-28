@@ -285,12 +285,12 @@ class TestMessageTypes:
         assert msg.payload["challenge"] == "nonce_abc123"
 
 # TST-INT-474
-    def test_reputation_outcome(
+    def test_trust_outcome(
         self, mock_identity: MockIdentity, sancho_identity: MockIdentity
     ) -> None:
-        """reputation/outcome — share anonymized purchase outcome."""
+        """trust/outcome — share anonymized purchase outcome."""
         msg = DinaMessage(
-            type="dina/reputation/outcome",
+            type="dina/trust/outcome",
             from_did=mock_identity.root_did,
             to_did=sancho_identity.root_did,
             payload={
@@ -300,7 +300,7 @@ class TestMessageTypes:
                 "time_since_purchase_days": 90,
             },
         )
-        assert msg.type == "dina/reputation/outcome"
+        assert msg.type == "dina/trust/outcome"
         assert msg.payload["outcome"] == "still_using"
         assert msg.payload["satisfaction"] == "positive"
 

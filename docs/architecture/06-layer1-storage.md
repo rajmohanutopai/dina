@@ -143,7 +143,7 @@ CREATE TABLE relationships (
 
 **Embedding migration:** The embedding model name and version are stored in vault metadata (`embedding_model` column in the system table). On model change, core detects the mismatch, drops the sqlite-vec index, and triggers a background re-embed job. Brain processes items in batches → new embeddings → core writes to sqlite-vec. FTS5 keyword search remains available during re-indexing; only semantic search is temporarily unavailable. No dual-index or versioning needed — vault sizes are small enough for full rebuild (~25MB of vectors for 50K items, ~2-3 hours on local llama, ~5 minutes via cloud API).
 
-### Tier 3 — Reputation & Preferences
+### Tier 3 — Trust & Preferences
 
 | Property | Value |
 |----------|-------|
@@ -250,7 +250,7 @@ Master Seed (BIP-39 mnemonic → stored encrypted on Home Node; hardware-backed 
     ├── Client Sync Key (HKDF, info="dina:sync:v1")
     │       └── Encrypts vault cache pushes to client devices
     │
-    └── Reputation Signing Key (HKDF, info="dina:reputation:v1")
+    └── Trust Signing Key (HKDF, info="dina:trust:v1")
             └── Signs anonymized outcome data
 ```
 

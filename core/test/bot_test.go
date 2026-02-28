@@ -9,7 +9,7 @@ import (
 // ==========================================================================
 // TEST_PLAN §25 — Bot Interface
 // ==========================================================================
-// Covers bot query sanitization, communication protocol, reputation scoring,
+// Covers bot query sanitization, communication protocol, trust scoring,
 // and deep link attribution validation.
 // ==========================================================================
 
@@ -49,7 +49,7 @@ func TestBotInterface_25_2_QueryProtocolSchema(t *testing.T) {
 
 // TST-CORE-860
 func TestBotInterface_25_3_LocalBotScoreTracking(t *testing.T) {
-	// Bot reputation scoring: local score tracking, threshold-based routing.
+	// Bot trust scoring: local score tracking, threshold-based routing.
 	impl := realBotQueryHandler
 	testutil.RequireImplementation(t, impl, "BotQueryHandler")
 

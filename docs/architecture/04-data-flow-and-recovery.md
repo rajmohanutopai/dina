@@ -521,7 +521,7 @@ The layers are numbered 0-7 but the diagram reads **top-down** (7 → 0), like t
                       │
 ┌─────────────────────▼───────────────────────────────────────┐
 │  Layer 5: BOT INTERFACE                                     │
-│  Query sanitization, Bot reputation checks, Response verify │
+│  Query sanitization, Bot trust checks, Response verify      │
 └──────┬──────────────┬───────────────────────────────────────┘
        │              │
        ▼              ▼
@@ -533,7 +533,7 @@ The layers are numbered 0-7 but the diagram reads **top-down** (7 → 0), like t
 │  Recipe)   │
 └────────────┘
 ┌─────────────────────────────────────────────────────────────┐
-│  Layer 3: REPUTATION GRAPH                                  │
+│  Layer 3: TRUST NETWORK                                     │
 │  Expert attestations, Outcome data, Bot scores, Trust Rings │
 └─────────────────────────────────────────────────────────────┘
 

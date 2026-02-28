@@ -543,7 +543,7 @@
     "TST-CORE-091": {
       "path": "2.3",
       "row": 12,
-      "scenario": "Reputation Signing Key",
+      "scenario": "Trust Signing Key",
       "line": 143
     },
     "TST-CORE-092": {
@@ -789,7 +789,7 @@
     "TST-CORE-882": {
       "path": "2.8",
       "row": 8,
-      "scenario": "Client sync key used for sync encryption, reputation key for signing",
+      "scenario": "Client sync key used for sync encryption, trust key for signing",
       "line": 209
     },
     "TST-CORE-130": {
@@ -2631,7 +2631,7 @@
     "TST-CORE-893": {
       "path": "6.6",
       "row": 27,
-      "scenario": "Agent outcomes recorded in Tier 3 for reputation scoring",
+      "scenario": "Agent outcomes recorded in Tier 3 for trust scoring",
       "line": 705
     },
     "TST-CORE-394": {
@@ -4581,7 +4581,7 @@
     "TST-CORE-648": {
       "path": "18",
       "row": 10,
-      "scenario": "Core exposes `/v1/reputation/query` to brain",
+      "scenario": "Core exposes `/v1/trust/query` to brain",
       "line": 1259
     },
     "TST-CORE-906": {
@@ -5103,7 +5103,7 @@
     "TST-CORE-918": {
       "path": "22.2",
       "row": 5,
-      "scenario": "`com.dina.reputation.bot` and `com.dina.trust.membership` Lexicons validated",
+      "scenario": "`com.dina.trust.bot` and `com.dina.trust.membership` Lexicons validated",
       "line": 1422
     },
     "TST-CORE-919": {
@@ -5121,7 +5121,7 @@
     "TST-CORE-921": {
       "path": "22.2",
       "row": 8,
-      "scenario": "Reputation query response includes signed payloads",
+      "scenario": "Trust query response includes signed payloads",
       "line": 1425
     },
     "TST-CORE-922": {
@@ -5481,7 +5481,7 @@
     "TST-CORE-860": {
       "path": "25",
       "row": 3,
-      "scenario": "Bot reputation scoring: local score tracking, threshold-based routing",
+      "scenario": "Bot trust scoring: local score tracking, threshold-based routing",
       "line": 1546
     },
     "TST-CORE-861": {

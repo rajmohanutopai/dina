@@ -1530,7 +1530,7 @@ async def test_guardian_2_8_5_didcomm_message_type_parsing(guardian) -> None:
     """SS2.8.5: Brain correctly routes DIDComm message types.
 
     Architecture SS09: Brain must parse DIDComm message types
-    (dina/social/arrival, dina/commerce/*, dina/identity/*, dina/reputation/*)
+    (dina/social/arrival, dina/commerce/*, dina/identity/*, dina/trust/*)
     and route to appropriate handler.
     """
     msg = make_didcomm_message(msg_type="dina/social/arrival")
@@ -1549,7 +1549,7 @@ async def test_guardian_2_8_5_didcomm_message_type_parsing(guardian) -> None:
     result3 = await guardian.process_event(msg3)
     assert result3["handler"] == "identity_handler"
 
-    # Test reputation handler.
-    msg4 = make_didcomm_message(msg_type="dina/reputation/query")
+    # Test trust handler.
+    msg4 = make_didcomm_message(msg_type="dina/trust/query")
     result4 = await guardian.process_event(msg4)
-    assert result4["handler"] == "reputation_handler"
+    assert result4["handler"] == "trust_handler"

@@ -912,7 +912,7 @@ type BotQueryHandler interface {
 	SanitizeQuery(query string, userDID string) (string, error)
 	// SendQuery sends a sanitized query to a bot and returns the response.
 	SendQuery(botDID string, query BotQuery) (*BotResponse, error)
-	// ScoreBot records an outcome and updates the bot's local reputation score.
+	// ScoreBot records an outcome and updates the bot's local trust score.
 	ScoreBot(botDID string, outcome BotOutcome) error
 	// ValidateAttribution checks that the bot response includes valid attribution.
 	ValidateAttribution(resp BotResponse) (bool, error)

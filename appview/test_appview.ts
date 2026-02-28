@@ -2,7 +2,7 @@
 /**
  * AppView test status reporting: per-section pass/skip/fail breakdown.
  *
- * Runs unit and integration test suites for the AppView reputation service
+ * Runs unit and integration test suites for the AppView trust service
  * and reports per-section status. AppView is a standalone TypeScript service
  * with its own PostgreSQL database, independent of Core (Go) and Brain (Python).
  *
@@ -139,7 +139,7 @@ async function startDocker(restart: boolean): Promise<number> {
 
   // Sync schema to DB using drizzle-kit push (reads TypeScript schema directly,
   // no migration journal needed). Then apply any extra SQL migrations.
-  const dbUrl = 'postgresql://dina:dina@localhost:5432/dina_reputation'
+  const dbUrl = 'postgresql://dina:dina@localhost:5432/dina_trust'
   const pushEnv = { ...composeEnv, DATABASE_URL: dbUrl }
 
   process.stderr.write('  Syncing database schema (drizzle-kit push)...\n')
@@ -378,7 +378,7 @@ function runSuite(key: string): SuiteResult {
 
   const env = {
     ...process.env,
-    DATABASE_URL: process.env.DATABASE_URL ?? 'postgresql://dina:dina@localhost:5432/dina_reputation',
+    DATABASE_URL: process.env.DATABASE_URL ?? 'postgresql://dina:dina@localhost:5432/dina_trust',
   }
 
   const t0 = performance.now()

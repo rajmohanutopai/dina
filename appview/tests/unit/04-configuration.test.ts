@@ -12,8 +12,8 @@
 import { describe, it, expect } from 'vitest'
 import { envSchema } from '@/config/env'
 import { CONSTANTS } from '@/config/constants'
-import { REPUTATION_COLLECTIONS } from '@/config/lexicons'
-import type { ReputationCollection } from '@/config/lexicons'
+import { TRUST_COLLECTIONS } from '@/config/lexicons'
+import type { TrustCollection } from '@/config/lexicons'
 
 // ---------------------------------------------------------------------------
 // §4.1 Environment Validation
@@ -34,7 +34,7 @@ describe('§4.1 Environment Validation', () => {
     // The schema defines a default for DATABASE_URL, so omitting it uses the default.
     // (Original plan expected a throw, but the schema has .default().)
     const result = envSchema.parse({})
-    expect(result.DATABASE_URL).toBe('postgresql://dina:dina@localhost:5432/dina_reputation')
+    expect(result.DATABASE_URL).toBe('postgresql://dina:dina@localhost:5432/dina_trust')
   })
 
   it('UT-ENV-003: DATABASE_URL — any string accepted', () => {
@@ -153,57 +153,57 @@ describe('§4.2 Constants', () => {
 // §4.3 Lexicons
 // ---------------------------------------------------------------------------
 describe('§4.3 Lexicons', () => {
-  it('UT-LEX-001: REPUTATION_COLLECTIONS has 19 entries', () => {
-    expect(REPUTATION_COLLECTIONS).toHaveLength(19)
+  it('UT-LEX-001: TRUST_COLLECTIONS has 19 entries', () => {
+    expect(TRUST_COLLECTIONS).toHaveLength(19)
   })
 
-  it('UT-LEX-002: all entries prefixed with "com.dina.reputation."', () => {
-    for (const collection of REPUTATION_COLLECTIONS) {
-      expect(collection).toMatch(/^com\.dina\.reputation\./)
+  it('UT-LEX-002: all entries prefixed with "com.dina.trust."', () => {
+    for (const collection of TRUST_COLLECTIONS) {
+      expect(collection).toMatch(/^com\.dina\.trust\./)
     }
   })
 
   it('UT-LEX-003: no duplicate entries', () => {
-    const unique = new Set(REPUTATION_COLLECTIONS)
-    expect(unique.size).toBe(REPUTATION_COLLECTIONS.length)
+    const unique = new Set(TRUST_COLLECTIONS)
+    expect(unique.size).toBe(TRUST_COLLECTIONS.length)
   })
 
   it('UT-LEX-004: expected collections present', () => {
     const expected = [
-      'com.dina.reputation.attestation',
-      'com.dina.reputation.vouch',
-      'com.dina.reputation.endorsement',
-      'com.dina.reputation.flag',
-      'com.dina.reputation.reply',
-      'com.dina.reputation.reaction',
-      'com.dina.reputation.reportRecord',
-      'com.dina.reputation.revocation',
-      'com.dina.reputation.delegation',
-      'com.dina.reputation.collection',
-      'com.dina.reputation.media',
-      'com.dina.reputation.subject',
-      'com.dina.reputation.amendment',
-      'com.dina.reputation.verification',
-      'com.dina.reputation.reviewRequest',
-      'com.dina.reputation.comparison',
-      'com.dina.reputation.subjectClaim',
-      'com.dina.reputation.trustPolicy',
-      'com.dina.reputation.notificationPrefs',
+      'com.dina.trust.attestation',
+      'com.dina.trust.vouch',
+      'com.dina.trust.endorsement',
+      'com.dina.trust.flag',
+      'com.dina.trust.reply',
+      'com.dina.trust.reaction',
+      'com.dina.trust.reportRecord',
+      'com.dina.trust.revocation',
+      'com.dina.trust.delegation',
+      'com.dina.trust.collection',
+      'com.dina.trust.media',
+      'com.dina.trust.subject',
+      'com.dina.trust.amendment',
+      'com.dina.trust.verification',
+      'com.dina.trust.reviewRequest',
+      'com.dina.trust.comparison',
+      'com.dina.trust.subjectClaim',
+      'com.dina.trust.trustPolicy',
+      'com.dina.trust.notificationPrefs',
     ]
     for (const entry of expected) {
-      expect(REPUTATION_COLLECTIONS).toContain(entry)
+      expect(TRUST_COLLECTIONS).toContain(entry)
     }
   })
 
-  it('UT-LEX-005: type safety — ReputationCollection type', () => {
+  it('UT-LEX-005: type safety — TrustCollection type', () => {
     // Verify the type is correctly derived from the const array.
     // If the type were wrong, this assignment would fail at compile time.
-    const first: ReputationCollection = REPUTATION_COLLECTIONS[0]
-    expect(first).toBe('com.dina.reputation.attestation')
+    const first: TrustCollection = TRUST_COLLECTIONS[0]
+    expect(first).toBe('com.dina.trust.attestation')
 
     // Also verify that the type is a union of string literals, not just `string`
     // by checking that every element satisfies the type
-    const allTyped: readonly ReputationCollection[] = REPUTATION_COLLECTIONS
+    const allTyped: readonly TrustCollection[] = TRUST_COLLECTIONS
     expect(allTyped.length).toBe(19)
   })
 })

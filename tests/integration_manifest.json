@@ -2122,7 +2122,7 @@
       "line": 631
     },
     "TST-INT-304": {
-      "scenario": "Reputation tampering detected",
+      "scenario": "Trust tampering detected",
       "path": "11.2",
       "row": 1,
       "section": "Trust Network Integration",
@@ -2171,14 +2171,14 @@
       "line": 643
     },
     "TST-INT-311": {
-      "scenario": "Reputation affects agent routing",
+      "scenario": "Trust affects agent routing",
       "path": "11.3",
       "row": 1,
       "section": "Trust Network Integration",
       "line": 649
     },
     "TST-INT-312": {
-      "scenario": "Reputation affects trust tier",
+      "scenario": "Trust affects trust tier",
       "path": "11.3",
       "row": 2,
       "section": "Trust Network Integration",
@@ -2192,7 +2192,7 @@
       "line": 651
     },
     "TST-INT-314": {
-      "scenario": "Gradual reputation activation",
+      "scenario": "Gradual trust activation",
       "path": "11.3",
       "row": 4,
       "section": "Trust Network Integration",
@@ -2220,7 +2220,7 @@
       "line": 660
     },
     "TST-INT-318": {
-      "scenario": "Foundation PDS stores only reputation data",
+      "scenario": "Foundation PDS stores only trust data",
       "path": "11.4",
       "row": 3,
       "section": "Trust Network Integration",
@@ -2836,14 +2836,14 @@
       "line": 842
     },
     "TST-INT-406": {
-      "scenario": "Query API: reputation by DID",
+      "scenario": "Query API: trust by DID",
       "path": "16.7",
       "row": 3,
       "section": "Deferred (Phase 2+)",
       "line": 843
     },
     "TST-INT-407": {
-      "scenario": "Query API: product reputation",
+      "scenario": "Query API: product trust",
       "path": "16.7",
       "row": 4,
       "section": "Deferred (Phase 2+)",
@@ -2962,14 +2962,14 @@
       "line": 882
     },
     "TST-INT-424": {
-      "scenario": "Bot reputation: auto-route on low score",
+      "scenario": "Bot trust: auto-route on low score",
       "path": "16.10",
       "row": 5,
       "section": "Deferred (Phase 2+)",
       "line": 883
     },
     "TST-INT-425": {
-      "scenario": "Bot reputation scoring factors",
+      "scenario": "Bot trust scoring factors",
       "path": "16.10",
       "row": 6,
       "section": "Deferred (Phase 2+)",
@@ -3277,7 +3277,7 @@
       "line": 0
     },
     "TST-INT-619": {
-      "scenario": "Client Sync key + Reputation Signing key HKDF derivations",
+      "scenario": "Client Sync key + Trust Signing key HKDF derivations",
       "path": "18.8",
       "row": 2,
       "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
@@ -3438,7 +3438,7 @@
       "line": 0
     },
     "TST-INT-642": {
-      "scenario": "Bot response missing attribution \u2192 reputation penalty",
+      "scenario": "Bot response missing attribution \u2192 trust penalty",
       "path": "18.15",
       "row": 2,
       "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",

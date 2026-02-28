@@ -126,7 +126,7 @@
 | 6 | **[TST-BRAIN-058]** Cart handover expires | Payment intent not acted on within 12 hours | Staging item auto-expires (shorter TTL than drafts) |
 | 7 | **[TST-BRAIN-059]** Outcome follow-up question timing | 4 weeks after cart handover purchase | Brain asks: "How's that chair?" — follow-up timing configurable, triggers outcome data collection flow |
 | 8 | **[TST-BRAIN-060]** Outcome inference without explicit response | User continues using product, no explicit feedback | Brain infers outcome from usage signals (e.g. no return, product still mentioned) → outcome: `"still_using_6_months"` — doesn't require explicit user confirmation |
-| 9 | **[TST-BRAIN-061]** Outcome anonymization: exact fields from Section 08 Lexicon | Brain creates anonymized outcome record | Record contains ONLY fields from `com.dina.reputation.outcome` Lexicon: `{type: "outcome_report", reporter_trust_ring: 2, reporter_age_days: 730, product_category: "office_chairs", product_id: "herman_miller_aeron_2025", purchase_verified: true, purchase_amount_range: "50000-100000_INR", time_since_purchase_days: 180, outcome: "still_using", satisfaction: "positive", issues: [], timestamp: "2026-07-15T...", signature: "..."}` — 13 fields total. NO user DID, NO user name, NO seller name. reporter_trust_ring/age_days are the submitting Dina's ring level and age (not seller's). Brain strips all identifying information before creating record |
+| 9 | **[TST-BRAIN-061]** Outcome anonymization: exact fields from Section 08 Lexicon | Brain creates anonymized outcome record | Record contains ONLY fields from `com.dina.trust.outcome` Lexicon: `{type: "outcome_report", reporter_trust_ring: 2, reporter_age_days: 730, product_category: "office_chairs", product_id: "herman_miller_aeron_2025", purchase_verified: true, purchase_amount_range: "50000-100000_INR", time_since_purchase_days: 180, outcome: "still_using", satisfaction: "positive", issues: [], timestamp: "2026-07-15T...", signature: "..."}` — 13 fields total. NO user DID, NO user name, NO seller name. reporter_trust_ring/age_days are the submitting Dina's ring level and age (not seller's). Brain strips all identifying information before creating record |
 | 10 | **[TST-BRAIN-370]** Agent DID never holds wallet private keys | Inspect agent key access during crypto cart handover | Agent DID has zero access to wallet private keys — keys remain in user's custody |
 | 11 | **[TST-BRAIN-371]** Cart handover includes human-readable summary | Cart handover message sent to user | Handover message includes a human-readable summary of the purchase (item, qty, total) |
 | 12 | **[TST-BRAIN-372]** Duplicate cart handover idempotent | Same cart ID submitted twice | Second handover for same cart ID is idempotent — no duplicate staging entries |
@@ -552,12 +552,12 @@
 |---|----------|-------|----------|
 | 1 | **[TST-BRAIN-226]** Route to specialist agent | "Review this contract" | Routed to legal review MCP agent |
 | 2 | **[TST-BRAIN-227]** Route by capability | Task requires image analysis | Routed to vision-capable agent |
-| 3 | **[TST-BRAIN-228]** Route by reputation | Multiple agents available | Highest Trust Network score selected |
+| 3 | **[TST-BRAIN-228]** Route by trust | Multiple agents available | Highest Trust Network score selected |
 | 4 | **[TST-BRAIN-229]** No suitable agent | Task requiring unavailable capability | Fallback to local LLM or inform user |
 | 5 | **[TST-BRAIN-230]** Agent timeout | MCP agent doesn't respond in 30s | Timeout, try next agent or fail gracefully |
-| 6 | **[TST-BRAIN-408]** Reputation AppView query | Brain needs product recommendation | Brain queries `GET /v1/reputation?did=...` from Reputation AppView API — returns product scores, expert attestations |
-| 7 | **[TST-BRAIN-409]** Reputation AppView unavailable → web search fallback | Reputation AppView unreachable | Brain degrades gracefully to web search via OpenClaw — no disruption to user |
-| 8 | **[TST-BRAIN-410]** Bot reputation tracking and recalculation | Bot completes task, outcome recorded | Brain recalculates per-bot reputation score locally after each interaction outcome — next query routes to updated best bot |
+| 6 | **[TST-BRAIN-408]** Trust AppView query | Brain needs product recommendation | Brain queries `GET /v1/trust?did=...` from Trust AppView API — returns product scores, expert attestations |
+| 7 | **[TST-BRAIN-409]** Trust AppView unavailable → web search fallback | Trust AppView unreachable | Brain degrades gracefully to web search via OpenClaw — no disruption to user |
+| 8 | **[TST-BRAIN-410]** Bot trust tracking and recalculation | Bot completes task, outcome recorded | Brain recalculates per-bot trust score locally after each interaction outcome — next query routes to updated best bot |
 
 ### 6.2 Agent Safety (Intent Verification)
 
@@ -567,7 +567,7 @@
 | 2 | **[TST-BRAIN-232]** Agent submits risky intent | "Send email to boss@company.com" | Flagged for user review |
 | 3 | **[TST-BRAIN-233]** Agent submits blocked intent | "Transfer $500 to external account" | Blocked, user notified |
 | 4 | **[TST-BRAIN-234]** Agent tries to access raw vault | "Read all health records" | Blocked — agents get questions only, not raw data |
-| 5 | **[TST-BRAIN-235]** Agent from untrusted source | Unknown agent DID, no reputation | Higher scrutiny, more intents flagged |
+| 5 | **[TST-BRAIN-235]** Agent from untrusted source | Unknown agent DID, no trust | Higher scrutiny, more intents flagged |
 | 6 | **[TST-BRAIN-236]** Agent response validation | Agent returns response | Checked for PII leakage, malicious content |
 | 7 | **[TST-BRAIN-237]** Agent cannot access encryption keys | Agent requests key material via MCP | No MCP tool exposes keys — request fails or tool doesn't exist |
 | 8 | **[TST-BRAIN-238]** Agent cannot access persona metadata | Agent requests list of personas or persona details | Blocked — MCP tools do not expose persona internals |
@@ -577,7 +577,7 @@
 | 12 | **[TST-BRAIN-242]** Constraint: `draft_only: true` enforced | Agent receives `constraints: {draft_only: true}` | Agent cannot call `messages.send` — MCP tool enforces draft-only mode |
 | 13 | **[TST-BRAIN-243]** Constraint: `no_payment: true` enforced | Agent receives `constraints: {no_payment: true}` | Agent cannot initiate payment — only form-fill and research |
 | 14 | **[TST-BRAIN-244]** Silence protocol checked before delegation | Brain detects "license expires in 7 days" | Silence protocol classifies FIRST (fiduciary? solicited?), THEN decides whether to delegate |
-| 15 | **[TST-BRAIN-245]** Agent outcome recorded in Tier 3 | Agent completes task | Outcome stored in vault for agent reputation scoring — if quality drops, Brain routes to better agent |
+| 15 | **[TST-BRAIN-245]** Agent outcome recorded in Tier 3 | Agent completes task | Outcome stored in vault for agent trust scoring — if quality drops, Brain routes to better agent |
 | 16 | **[TST-BRAIN-246]** No raw vault data to agents | Brain delegates task with context | Agent receives minimal scrubbed context: `{task: "license_renewal", identity_persona: "/legal"}` — no vault items |
 | 17 | **[TST-BRAIN-395]** Bot response PII validation | Bot/agent returns response containing leaked PII | Brain runs spaCy NER on bot response, detects leaked PII (email, name), scrubs before showing to user |
 
@@ -933,7 +933,7 @@
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
 | 1 | **[TST-BRAIN-420]** Brain behavior during active estate recovery | Estate recovery procedure in-flight | Brain queues/rejects non-critical tasks while estate recovery is active |
-| 2 | **[TST-BRAIN-421]** ZKP credential verification for agent reputation | Agent presents Ring 2+ ZKP credential | Brain verifies ZKP credential when evaluating agent intent reputation — Phase 3 (ZK-SNARKs on L2) |
+| 2 | **[TST-BRAIN-421]** ZKP credential verification for agent trust | Agent presents Ring 2+ ZKP credential | Brain verifies ZKP credential when evaluating agent intent trust — Phase 3 (ZK-SNARKs on L2) |
 | 3 | **[TST-BRAIN-422]** SSS custodian recovery coordination | Shamir Secret Sharing recovery triggered via DIDComm | Brain coordinates human approval flow for SSS recovery — core handles crypto, brain handles UX |
 
 ---

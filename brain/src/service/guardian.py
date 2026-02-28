@@ -129,7 +129,7 @@ _DIDCOMM_HANDLERS: dict[str, str] = {
     "dina/social/": "nudge_assembly",
     "dina/commerce/": "commerce_handler",
     "dina/identity/": "identity_handler",
-    "dina/reputation/": "reputation_handler",
+    "dina/trust/": "trust_handler",
 }
 
 

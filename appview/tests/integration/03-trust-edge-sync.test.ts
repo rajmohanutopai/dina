@@ -43,7 +43,7 @@ beforeEach(async () => {
 // ---------------------------------------------------------------------------
 describe('§3.1 Trust Edge Creation + Removal', () => {
   it('IT-TE-001: vouch create → trust edge added', async () => {
-    const collection = 'com.dina.reputation.vouch'
+    const collection = 'com.dina.trust.vouch'
     const rkey = 'te001'
     const uri = makeUri(collection, rkey)
 
@@ -72,7 +72,7 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
   })
 
   it('IT-TE-002: endorsement create → trust edge added', async () => {
-    const collection = 'com.dina.reputation.endorsement'
+    const collection = 'com.dina.trust.endorsement'
     const rkey = 'te002'
     const uri = makeUri(collection, rkey)
 
@@ -102,7 +102,7 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
   })
 
   it('IT-TE-003: delegation create → trust edge added', async () => {
-    const collection = 'com.dina.reputation.delegation'
+    const collection = 'com.dina.trust.delegation'
     const rkey = 'te003'
     const uri = makeUri(collection, rkey)
 
@@ -132,7 +132,7 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
   })
 
   it('IT-TE-004: cosigned attestation → trust edge added', async () => {
-    const collection = 'com.dina.reputation.attestation'
+    const collection = 'com.dina.trust.attestation'
     const rkey = 'te004'
     const uri = makeUri(collection, rkey)
     const cosignerDid = 'did:plc:cosigner004'
@@ -165,7 +165,7 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
   })
 
   it('IT-TE-005: positive DID attestation → trust edge added', async () => {
-    const collection = 'com.dina.reputation.attestation'
+    const collection = 'com.dina.trust.attestation'
     const rkey = 'te005'
     const uri = makeUri(collection, rkey)
 
@@ -194,7 +194,7 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
   })
 
   it('IT-TE-006: vouch delete → trust edge removed', async () => {
-    const collection = 'com.dina.reputation.vouch'
+    const collection = 'com.dina.trust.vouch'
     const rkey = 'te006'
     const uri = makeUri(collection, rkey)
 
@@ -226,7 +226,7 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
   })
 
   it('IT-TE-007: endorsement delete → trust edge removed', async () => {
-    const collection = 'com.dina.reputation.endorsement'
+    const collection = 'com.dina.trust.endorsement'
     const rkey = 'te007'
     const uri = makeUri(collection, rkey)
 
@@ -258,7 +258,7 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
   })
 
   it('IT-TE-008: delegation delete → trust edge removed', async () => {
-    const collection = 'com.dina.reputation.delegation'
+    const collection = 'com.dina.trust.delegation'
     const rkey = 'te008'
     const uri = makeUri(collection, rkey)
 
@@ -290,7 +290,7 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
   })
 
   it('IT-TE-009: Fix 1: idempotent edge creation', async () => {
-    const collection = 'com.dina.reputation.vouch'
+    const collection = 'com.dina.trust.vouch'
     const rkey = 'te009'
     const uri = makeUri(collection, rkey)
 
@@ -320,12 +320,12 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
 
   it('IT-TE-010: multiple edge types from same author to same target', async () => {
     // Create vouch
-    const vouchUri = makeUri('com.dina.reputation.vouch', 'te010-vouch')
-    const vouchHandler = routeHandler('com.dina.reputation.vouch')!
+    const vouchUri = makeUri('com.dina.trust.vouch', 'te010-vouch')
+    const vouchHandler = routeHandler('com.dina.trust.vouch')!
     await vouchHandler.handleCreate(ctx, {
       uri: vouchUri,
       did: AUTHOR_DID,
-      collection: 'com.dina.reputation.vouch',
+      collection: 'com.dina.trust.vouch',
       rkey: 'te010-vouch',
       cid: 'cid-te010-vouch',
       record: {
@@ -337,12 +337,12 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
     })
 
     // Create endorsement
-    const endUri = makeUri('com.dina.reputation.endorsement', 'te010-end')
-    const endHandler = routeHandler('com.dina.reputation.endorsement')!
+    const endUri = makeUri('com.dina.trust.endorsement', 'te010-end')
+    const endHandler = routeHandler('com.dina.trust.endorsement')!
     await endHandler.handleCreate(ctx, {
       uri: endUri,
       did: AUTHOR_DID,
-      collection: 'com.dina.reputation.endorsement',
+      collection: 'com.dina.trust.endorsement',
       rkey: 'te010-end',
       cid: 'cid-te010-end',
       record: {
@@ -354,12 +354,12 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
     })
 
     // Create delegation
-    const delUri = makeUri('com.dina.reputation.delegation', 'te010-del')
-    const delHandler = routeHandler('com.dina.reputation.delegation')!
+    const delUri = makeUri('com.dina.trust.delegation', 'te010-del')
+    const delHandler = routeHandler('com.dina.trust.delegation')!
     await delHandler.handleCreate(ctx, {
       uri: delUri,
       did: AUTHOR_DID,
-      collection: 'com.dina.reputation.delegation',
+      collection: 'com.dina.trust.delegation',
       rkey: 'te010-del',
       cid: 'cid-te010-del',
       record: {
@@ -384,7 +384,7 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
   })
 
   it('IT-TE-011: negative DID attestation → no trust edge', async () => {
-    const collection = 'com.dina.reputation.attestation'
+    const collection = 'com.dina.trust.attestation'
     const rkey = 'te011'
     const uri = makeUri(collection, rkey)
 
@@ -414,7 +414,7 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
 
   it('IT-TE-012: delete record with no trust edge → no-op', async () => {
     // Create a flag (flags do NOT create trust edges)
-    const collection = 'com.dina.reputation.flag'
+    const collection = 'com.dina.trust.flag'
     const rkey = 'te012'
     const uri = makeUri(collection, rkey)
 

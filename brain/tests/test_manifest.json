@@ -1455,7 +1455,7 @@
     "TST-BRAIN-228": {
       "path": "6.1",
       "row": 3,
-      "scenario": "Route by reputation",
+      "scenario": "Route by trust",
       "line": 451
     },
     "TST-BRAIN-229": {
@@ -2445,19 +2445,19 @@
     "TST-BRAIN-408": {
       "path": "6.1",
       "row": 6,
-      "scenario": "Reputation AppView query",
+      "scenario": "Trust AppView query",
       "line": 446
     },
     "TST-BRAIN-409": {
       "path": "6.1",
       "row": 7,
-      "scenario": "Reputation AppView unavailable fallback",
+      "scenario": "Trust AppView unavailable fallback",
       "line": 446
     },
     "TST-BRAIN-410": {
       "path": "6.1",
       "row": 8,
-      "scenario": "Bot reputation tracking and recalculation",
+      "scenario": "Bot trust tracking and recalculation",
       "line": 446
     },
     "TST-BRAIN-411": {
@@ -2523,7 +2523,7 @@
     "TST-BRAIN-421": {
       "path": "17.4",
       "row": 2,
-      "scenario": "ZKP credential verification for agent reputation",
+      "scenario": "ZKP credential verification for agent trust",
       "line": 790
     },
     "TST-BRAIN-422": {

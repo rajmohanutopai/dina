@@ -27,7 +27,7 @@
 | 07 | [Layer 2: Ingestion](07-layer2-ingestion.md) | 415 | Connectors, MCP delegation, memory strategy, ingestion security |
 | 08 | [Layer 3: Trust Network](08-layer3-trust-network.md) | 452 | AT Protocol PDS, custom lexicons, attestations, outcome data, cold start |
 | 09 | [Layer 4: Dina-to-Dina](09-layer4-dina-to-dina.md) | 413 | Encryption protocol, connection establishment, message types, sharing policy, transport |
-| 10 | [Layer 5: Bot Interface](10-layer5-bot-interface.md) | 100 | Query sanitization, bot communication protocol, reputation scoring, discovery |
+| 10 | [Layer 5: Bot Interface](10-layer5-bot-interface.md) | 100 | Query sanitization, bot communication protocol, trust scoring, discovery |
 | 11 | [Layer 6: Intelligence](11-layer6-intelligence.md) | 284 | PII scrubber, entity vault pattern, LLM routing, context injection, silence protocol |
 | 12 | [Layer 7: Action Layer](12-layer7-action-layer.md) | 165 | Draft-don't-send, cart handover, agent delegation (MCP), scheduling |
 

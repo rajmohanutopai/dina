@@ -35,9 +35,9 @@ vi.mock('@/shared/utils/logger', () => ({
 // ---------------------------------------------------------------------------
 describe('§3.1 AT URI Parser', () => {
   it('UT-URI-001: parse valid AT URI', () => {
-    const result = parseAtUri('at://did:plc:abc/com.dina.reputation.attestation/tid123')
+    const result = parseAtUri('at://did:plc:abc/com.dina.trust.attestation/tid123')
     expect(result.did).toBe('did:plc:abc')
-    expect(result.collection).toBe('com.dina.reputation.attestation')
+    expect(result.collection).toBe('com.dina.trust.attestation')
     expect(result.rkey).toBe('tid123')
   })
 
@@ -49,8 +49,8 @@ describe('§3.1 AT URI Parser', () => {
   })
 
   it('UT-URI-003: construct AT URI', () => {
-    const uri = constructAtUri('did:plc:abc', 'com.dina.reputation.attestation', 'tid123')
-    expect(uri).toBe('at://did:plc:abc/com.dina.reputation.attestation/tid123')
+    const uri = constructAtUri('did:plc:abc', 'com.dina.trust.attestation', 'tid123')
+    expect(uri).toBe('at://did:plc:abc/com.dina.trust.attestation/tid123')
   })
 
   it('UT-URI-004: invalid URI — missing protocol', () => {
@@ -66,7 +66,7 @@ describe('§3.1 AT URI Parser', () => {
   })
 
   it('UT-URI-007: round-trip: parse -> construct -> parse', () => {
-    const original = 'at://did:plc:abc/com.dina.reputation.vouch/tid456'
+    const original = 'at://did:plc:abc/com.dina.trust.vouch/tid456'
     const parsed = parseAtUri(original)
     const reconstructed = constructAtUri(parsed.did, parsed.collection, parsed.rkey)
     expect(reconstructed).toBe(original)

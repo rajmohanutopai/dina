@@ -43,7 +43,7 @@ export function computeRecommendation(input: RecommendationInput): Recommendatio
       trustLevel: 'unknown',
       confidence: 0,
       action: 'verify',
-      reasoning: 'No reputation data available for this subject.',
+      reasoning: 'No trust data available for this subject.',
     }
   }
 

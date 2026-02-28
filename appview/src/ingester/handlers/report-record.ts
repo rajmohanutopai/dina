@@ -4,7 +4,7 @@ import { reportRecords } from '@/db/schema/index.js'
 import { deletionHandler } from '../deletion-handler.js'
 
 /**
- * Handler for com.dina.reputation.reportRecord records.
+ * Handler for com.dina.trust.reportRecord records.
  *
  * Reports flag content for moderation review (spam, fake review,
  * competitor attack, etc.). They feed into the dispute detection

@@ -220,7 +220,7 @@ def mock_agent_router() -> AsyncMock:
     """Mock agent router for task delegation."""
     router = AsyncMock()
     router.route_task.return_value = {"handler": "local_llm", "result": "Task completed"}
-    router.check_reputation.return_value = 0.85
+    router.check_trust.return_value = 0.85
     return router
 
 

@@ -19,7 +19,7 @@ export interface RecordOp {
   uri: string
   /** DID of the record author */
   did: string
-  /** Collection NSID (e.g. com.dina.reputation.attestation) */
+  /** Collection NSID (e.g. com.dina.trust.attestation) */
   collection: string
   /** Record key within the collection */
   rkey: string
@@ -62,25 +62,25 @@ import { trustPolicyHandler } from './trust-policy.js'
 import { notificationPrefsHandler } from './notification-prefs.js'
 
 const handlers: Record<string, RecordHandler> = {
-  'com.dina.reputation.attestation': attestationHandler,
-  'com.dina.reputation.vouch': vouchHandler,
-  'com.dina.reputation.endorsement': endorsementHandler,
-  'com.dina.reputation.flag': flagHandler,
-  'com.dina.reputation.reply': replyHandler,
-  'com.dina.reputation.reaction': reactionHandler,
-  'com.dina.reputation.reportRecord': reportRecordHandler,
-  'com.dina.reputation.revocation': revocationHandler,
-  'com.dina.reputation.delegation': delegationHandler,
-  'com.dina.reputation.collection': collectionHandler,
-  'com.dina.reputation.media': mediaHandler,
-  'com.dina.reputation.subject': subjectHandler,
-  'com.dina.reputation.amendment': amendmentHandler,
-  'com.dina.reputation.verification': verificationHandler,
-  'com.dina.reputation.reviewRequest': reviewRequestHandler,
-  'com.dina.reputation.comparison': comparisonHandler,
-  'com.dina.reputation.subjectClaim': subjectClaimHandler,
-  'com.dina.reputation.trustPolicy': trustPolicyHandler,
-  'com.dina.reputation.notificationPrefs': notificationPrefsHandler,
+  'com.dina.trust.attestation': attestationHandler,
+  'com.dina.trust.vouch': vouchHandler,
+  'com.dina.trust.endorsement': endorsementHandler,
+  'com.dina.trust.flag': flagHandler,
+  'com.dina.trust.reply': replyHandler,
+  'com.dina.trust.reaction': reactionHandler,
+  'com.dina.trust.reportRecord': reportRecordHandler,
+  'com.dina.trust.revocation': revocationHandler,
+  'com.dina.trust.delegation': delegationHandler,
+  'com.dina.trust.collection': collectionHandler,
+  'com.dina.trust.media': mediaHandler,
+  'com.dina.trust.subject': subjectHandler,
+  'com.dina.trust.amendment': amendmentHandler,
+  'com.dina.trust.verification': verificationHandler,
+  'com.dina.trust.reviewRequest': reviewRequestHandler,
+  'com.dina.trust.comparison': comparisonHandler,
+  'com.dina.trust.subjectClaim': subjectClaimHandler,
+  'com.dina.trust.trustPolicy': trustPolicyHandler,
+  'com.dina.trust.notificationPrefs': notificationPrefsHandler,
 }
 
 /**

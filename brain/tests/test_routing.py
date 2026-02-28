@@ -1,4 +1,4 @@
-"""Tests for agent routing, MCP delegation, and reputation checks.
+"""Tests for agent routing, MCP delegation, and trust checks.
 
 Maps to Brain TEST_PLAN SS8 (Admin UI/Routing) -- 10 scenarios.
 
@@ -175,43 +175,43 @@ async def test_routing_8_2_3_mcp_delegation_gatekeeper_check() -> None:
 
 
 # ---------------------------------------------------------------------------
-# SS8.3 Reputation Check (3 scenarios)
+# SS8.3 Trust Check (3 scenarios)
 # ---------------------------------------------------------------------------
 
 
 # TST-BRAIN-278
 @pytest.mark.asyncio
-async def test_routing_8_3_1_check_trusted_agent_reputation() -> None:
-    """SS8.3.1: Trusted agent has reputation score above threshold."""
-    # Reputation scores are maintained by the agent router
-    reputation_db = {
+async def test_routing_8_3_1_check_trusted_agent_trust_scores() -> None:
+    """SS8.3.1: Trusted agent has trust score above threshold."""
+    # Trust scores are maintained by the agent router
+    trust_db = {
         "did:key:z6MkTrustedBot": 0.85,
         "did:key:z6MkUntrustedBot": 0.15,
     }
-    score = reputation_db.get("did:key:z6MkTrustedBot", 0.0)
+    score = trust_db.get("did:key:z6MkTrustedBot", 0.0)
     assert score >= 0.7
 
 
 # TST-BRAIN-279
 @pytest.mark.asyncio
-async def test_routing_8_3_2_check_untrusted_agent_reputation() -> None:
-    """SS8.3.2: Untrusted agent has low reputation score."""
-    reputation_db = {
+async def test_routing_8_3_2_check_untrusted_agent_trust_scores() -> None:
+    """SS8.3.2: Untrusted agent has low trust score."""
+    trust_db = {
         "did:key:z6MkTrustedBot": 0.85,
         "did:key:z6MkUntrustedBot": 0.15,
     }
-    score = reputation_db.get("did:key:z6MkUntrustedBot", 0.0)
+    score = trust_db.get("did:key:z6MkUntrustedBot", 0.0)
     assert score < 0.5
 
 
 # TST-BRAIN-280
 @pytest.mark.asyncio
-async def test_routing_8_3_3_unknown_agent_default_reputation() -> None:
-    """SS8.3.3: Unknown agent gets a default reputation score (unverified tier)."""
-    reputation_db = {
+async def test_routing_8_3_3_unknown_agent_default_trust_scores() -> None:
+    """SS8.3.3: Unknown agent gets a default trust score (unverified tier)."""
+    trust_db = {
         "did:key:z6MkTrustedBot": 0.85,
     }
-    score = reputation_db.get("did:key:z6MkBrandNewBot", 0.0)
+    score = trust_db.get("did:key:z6MkBrandNewBot", 0.0)
     assert score == 0.0
 
 

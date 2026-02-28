@@ -53,8 +53,8 @@ func NewServer() *Server {
 		"/v1/pair/complete",
 		"/v1/pii/scrub",
 		"/v1/notify",
-		"/v1/reputation/query",
-		"/v1/reputation/publish",
+		"/v1/trust/query",
+		"/v1/trust/publish",
 	}
 	return s
 }

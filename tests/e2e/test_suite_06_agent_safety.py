@@ -196,15 +196,15 @@ class TestAgentSafetyDelegation:
     ) -> None:
         """E2E-6.3  Malicious Bot Blocking.
 
-        Brain checks bot reputations via the AppView before routing a
-        product query.  Routes to ReviewBot (reputation 94), NOT to
-        MaliciousBot (reputation 12).  MaliciousBot sends an injection
+        Brain checks bot trusts via the AppView before routing a
+        product query.  Routes to ReviewBot (trust score 94), NOT to
+        MaliciousBot (trust score 12).  MaliciousBot sends an injection
         attempt — verify it is rejected at schema validation.
         """
         node = don_alonso
 
         # ------------------------------------------------------------------
-        # Check reputations via AppView
+        # Check trust scores via AppView
         # ------------------------------------------------------------------
         reviewbot_rep = appview.query_bot("did:plc:reviewbot")
         malbot_rep = appview.query_bot("did:plc:malbot")
@@ -215,21 +215,21 @@ class TestAgentSafetyDelegation:
         assert malbot_rep.score == 12
 
         # ------------------------------------------------------------------
-        # Route query to the highest-reputation bot
+        # Route query to the highest-trust bot
         # ------------------------------------------------------------------
         candidates = [
             ("did:plc:reviewbot", reviewbot_rep.score, reviewbot),
             ("did:plc:malbot", malbot_rep.score, malicious_bot),
         ]
-        # Sort by reputation descending — pick the best
+        # Sort by trust score descending — pick the best
         candidates.sort(key=lambda c: c[1], reverse=True)
         chosen_did, chosen_score, chosen_bot = candidates[0]
 
         assert chosen_did == "did:plc:reviewbot", (
-            "Brain must route to the highest-reputation bot (ReviewBot, 94)"
+            "Brain must route to the highest-trust bot (ReviewBot, 94)"
         )
         assert chosen_did != "did:plc:malbot", (
-            "Brain must NOT route to MaliciousBot (reputation 12)"
+            "Brain must NOT route to MaliciousBot (trust score 12)"
         )
 
         # ------------------------------------------------------------------
@@ -279,7 +279,7 @@ class TestAgentSafetyDelegation:
         # Log the blocked attempt
         node._log_audit("malicious_bot_blocked", {
             "bot_did": "did:plc:malbot",
-            "reputation": malbot_rep.score,
+            "trust": malbot_rep.score,
             "reason": "injection_detected",
         })
         blocked_audits = node.get_audit_entries("malicious_bot_blocked")

@@ -1450,7 +1450,7 @@ describe('§1.5 Recommendation', () => {
     const result = computeRecommendation(input)
     expect(result.trustLevel).toBe('unknown')
     expect(result.action).toBe('verify')
-    expect(result.reasoning).toContain('No reputation data')
+    expect(result.reasoning).toContain('No trust data')
   })
 
   it('UT-RC-009: reasoning includes flag types', () => {

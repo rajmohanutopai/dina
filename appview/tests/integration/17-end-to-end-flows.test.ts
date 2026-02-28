@@ -53,7 +53,7 @@ async function insertAttestation(opts: {
   isAgentGenerated?: boolean
   createdAt?: string
 }) {
-  const handler = routeHandler('com.dina.reputation.attestation')!
+  const handler = routeHandler('com.dina.trust.attestation')!
   const subjectRef: Record<string, unknown> = {
     type: opts.subjectType ?? (opts.subjectDid ? 'did' : 'product'),
     name: opts.subjectName ?? opts.subjectDid ?? 'Test Subject',
@@ -63,7 +63,7 @@ async function insertAttestation(opts: {
   await handler.handleCreate(ctx, {
     uri: opts.uri,
     did: opts.did,
-    collection: 'com.dina.reputation.attestation',
+    collection: 'com.dina.trust.attestation',
     rkey: opts.uri.split('/').pop()!,
     cid: `cid-${opts.uri.replace(/[^a-z0-9]/gi, '').slice(0, 40)}`,
     record: {
@@ -86,11 +86,11 @@ async function insertVouch(opts: {
   subjectDid: string
   confidence?: string
 }) {
-  const handler = routeHandler('com.dina.reputation.vouch')!
+  const handler = routeHandler('com.dina.trust.vouch')!
   await handler.handleCreate(ctx, {
     uri: opts.uri,
     did: opts.authorDid,
-    collection: 'com.dina.reputation.vouch',
+    collection: 'com.dina.trust.vouch',
     rkey: opts.uri.split('/').pop()!,
     cid: `cid-${opts.uri.replace(/[^a-z0-9]/gi, '').slice(0, 40)}`,
     record: {
@@ -111,7 +111,7 @@ async function insertFlag(opts: {
   flagType?: string
   severity?: string
 }) {
-  const handler = routeHandler('com.dina.reputation.flag')!
+  const handler = routeHandler('com.dina.trust.flag')!
   const subjectRef: Record<string, unknown> = {
     type: opts.subjectDid ? 'did' : 'product',
     name: opts.subjectName ?? opts.subjectDid ?? 'Flagged Subject',
@@ -121,7 +121,7 @@ async function insertFlag(opts: {
   await handler.handleCreate(ctx, {
     uri: opts.uri,
     did: opts.did,
-    collection: 'com.dina.reputation.flag',
+    collection: 'com.dina.trust.flag',
     rkey: opts.uri.split('/').pop()!,
     cid: `cid-${opts.uri.replace(/[^a-z0-9]/gi, '').slice(0, 40)}`,
     record: {
@@ -144,7 +144,7 @@ describe('17.1 Ingest to Page', () => {
     // Step 1: Insert attestations via handler
     for (let i = 0; i < 5; i++) {
       await insertAttestation({
-        uri: `at://${authorDid}/com.dina.reputation.attestation/e2e001-${i}`,
+        uri: `at://${authorDid}/com.dina.trust.attestation/e2e001-${i}`,
         did: `did:plc:e2e001author${i}`,
         subjectDid,
         sentiment: i < 4 ? 'positive' : 'negative',
@@ -182,7 +182,7 @@ describe('17.1 Ingest to Page', () => {
 
     // Insert a vouch
     await insertVouch({
-      uri: `at://${voucher}/com.dina.reputation.vouch/e2e002`,
+      uri: `at://${voucher}/com.dina.trust.vouch/e2e002`,
       authorDid: voucher,
       subjectDid: vouchee,
       confidence: 'high',
@@ -209,7 +209,7 @@ describe('17.1 Ingest to Page', () => {
   it('IT-E2E-003: disputed delete -> tombstone -> profile penalty', async () => {
     const authorDid = 'did:plc:e2e003author'
     const subjectDid = 'did:plc:e2e003subject'
-    const attUri = `at://${authorDid}/com.dina.reputation.attestation/e2e003`
+    const attUri = `at://${authorDid}/com.dina.trust.attestation/e2e003`
 
     // Step 1: Create attestation
     await insertAttestation({
@@ -220,11 +220,11 @@ describe('17.1 Ingest to Page', () => {
     })
 
     // Step 2: Report the attestation
-    const reportHandler = routeHandler('com.dina.reputation.reportRecord')!
+    const reportHandler = routeHandler('com.dina.trust.reportRecord')!
     await reportHandler.handleCreate(ctx, {
-      uri: `at://did:plc:reporter/com.dina.reputation.reportRecord/e2e003-report`,
+      uri: `at://did:plc:reporter/com.dina.trust.reportRecord/e2e003-report`,
       did: 'did:plc:reporter',
-      collection: 'com.dina.reputation.reportRecord',
+      collection: 'com.dina.trust.reportRecord',
       rkey: 'e2e003-report',
       cid: 'cid-e2e003-report',
       record: {
@@ -236,11 +236,11 @@ describe('17.1 Ingest to Page', () => {
     })
 
     // Step 3: Delete the attestation (handler creates tombstone)
-    const attHandler = routeHandler('com.dina.reputation.attestation')!
+    const attHandler = routeHandler('com.dina.trust.attestation')!
     await attHandler.handleDelete(ctx, {
       uri: attUri,
       did: authorDid,
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: 'e2e003',
     })
 
@@ -267,7 +267,7 @@ describe('17.1 Ingest to Page', () => {
 
     // Create 2 attestations for the same subject via URI
     await insertAttestation({
-      uri: `at://${author1}/com.dina.reputation.attestation/e2e004-1`,
+      uri: `at://${author1}/com.dina.trust.attestation/e2e004-1`,
       did: author1,
       subjectName: 'Product Alpha',
       subjectType: 'product',
@@ -276,7 +276,7 @@ describe('17.1 Ingest to Page', () => {
 
     // Same product name, different author (Tier 2: author-scoped)
     await insertAttestation({
-      uri: `at://${author2}/com.dina.reputation.attestation/e2e004-2`,
+      uri: `at://${author2}/com.dina.trust.attestation/e2e004-2`,
       did: author2,
       subjectName: 'Product Alpha',
       subjectType: 'product',
@@ -295,7 +295,7 @@ describe('17.1 Ingest to Page', () => {
     // Now create attestations using a global identifier (Tier 1: URI)
     // Both should resolve to the same subject
     await insertAttestation({
-      uri: `at://${author1}/com.dina.reputation.attestation/e2e004-3`,
+      uri: `at://${author1}/com.dina.trust.attestation/e2e004-3`,
       did: author1,
       subjectName: 'Beta Product',
       subjectType: 'content',
@@ -303,7 +303,7 @@ describe('17.1 Ingest to Page', () => {
     })
 
     await insertAttestation({
-      uri: `at://${author2}/com.dina.reputation.attestation/e2e004-4`,
+      uri: `at://${author2}/com.dina.trust.attestation/e2e004-4`,
       did: author2,
       subjectName: 'Beta Product',
       subjectType: 'content',
@@ -324,7 +324,7 @@ describe('17.1 Ingest to Page', () => {
     // Insert 10 attestations with varied text
     for (let i = 0; i < 10; i++) {
       await insertAttestation({
-        uri: `at://did:plc:e2e005auth${i}/com.dina.reputation.attestation/e2e005-${i}`,
+        uri: `at://did:plc:e2e005auth${i}/com.dina.trust.attestation/e2e005-${i}`,
         did: `did:plc:e2e005auth${i}`,
         subjectName: `Restaurant ${i}`,
         category: i % 2 === 0 ? 'service' : 'product',
@@ -371,7 +371,7 @@ describe('17.2 Subject Page', () => {
 
     for (let i = 0; i < 5; i++) {
       await insertAttestation({
-        uri: `at://did:plc:e2e006auth${i}/com.dina.reputation.attestation/e2e006-${i}`,
+        uri: `at://did:plc:e2e006auth${i}/com.dina.trust.attestation/e2e006-${i}`,
         did: `did:plc:e2e006auth${i}`,
         subjectDid,
         text: `Review #${i} for subject page test`,
@@ -404,7 +404,7 @@ describe('17.2 Subject Page', () => {
 
     for (let i = 0; i < 3; i++) {
       await insertAttestation({
-        uri: `at://did:plc:e2e007auth${i}/com.dina.reputation.attestation/e2e007-${i}`,
+        uri: `at://did:plc:e2e007auth${i}/com.dina.trust.attestation/e2e007-${i}`,
         did: `did:plc:e2e007auth${i}`,
         subjectDid,
         sentiment: 'positive',
@@ -430,11 +430,11 @@ describe('17.2 Subject Page', () => {
     const subjectDid = 'did:plc:e2e008subject'
 
     // Insert attestation with dimension ratings
-    const handler = routeHandler('com.dina.reputation.attestation')!
+    const handler = routeHandler('com.dina.trust.attestation')!
     await handler.handleCreate(ctx, {
-      uri: `at://did:plc:e2e008auth/com.dina.reputation.attestation/e2e008`,
+      uri: `at://did:plc:e2e008auth/com.dina.trust.attestation/e2e008`,
       did: 'did:plc:e2e008auth',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: 'e2e008',
       cid: 'cid-e2e008',
       record: {
@@ -454,7 +454,7 @@ describe('17.2 Subject Page', () => {
     // Verify dimensions stored correctly
     const attResult = await db.execute(sql`
       SELECT dimensions_json FROM attestations
-      WHERE uri = 'at://did:plc:e2e008auth/com.dina.reputation.attestation/e2e008'
+      WHERE uri = 'at://did:plc:e2e008auth/com.dina.trust.attestation/e2e008'
     `)
     const dimensions = (attResult as any).rows[0]?.dimensions_json
     expect(dimensions).toBeDefined()
@@ -476,7 +476,7 @@ describe('17.3 Search Flow', () => {
     const terms = ['darshini tiffin spot', 'pizza place downtown', 'darshini masala dosa']
     for (let i = 0; i < terms.length; i++) {
       await insertAttestation({
-        uri: `at://did:plc:e2e009auth${i}/com.dina.reputation.attestation/e2e009-${i}`,
+        uri: `at://did:plc:e2e009auth${i}/com.dina.trust.attestation/e2e009-${i}`,
         did: `did:plc:e2e009auth${i}`,
         subjectName: `Place ${i}`,
         text: terms[i],
@@ -502,7 +502,7 @@ describe('17.3 Search Flow', () => {
     const categories = ['service', 'product', 'service', 'product', 'service']
     for (let i = 0; i < categories.length; i++) {
       await insertAttestation({
-        uri: `at://did:plc:e2e010auth${i}/com.dina.reputation.attestation/e2e010-${i}`,
+        uri: `at://did:plc:e2e010auth${i}/com.dina.trust.attestation/e2e010-${i}`,
         did: `did:plc:e2e010auth${i}`,
         subjectName: `Item ${i}`,
         category: categories[i],
@@ -532,7 +532,7 @@ describe('17.3 Search Flow', () => {
     // Insert > 25 attestations
     for (let i = 0; i < 30; i++) {
       await insertAttestation({
-        uri: `at://did:plc:e2e011auth${i}/com.dina.reputation.attestation/e2e011-${i}`,
+        uri: `at://did:plc:e2e011auth${i}/com.dina.trust.attestation/e2e011-${i}`,
         did: `did:plc:e2e011auth${i}`,
         subjectName: `Paginated Product ${i}`,
         category: 'service',

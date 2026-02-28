@@ -35,8 +35,8 @@ const mockHandler = {
 
 vi.mock('@/ingester/handlers/index.js', () => ({
   routeHandler: vi.fn((collection: string) => {
-    if (collection.startsWith('com.dina.reputation.')) {
-      const shortName = collection.replace('com.dina.reputation.', '')
+    if (collection.startsWith('com.dina.trust.')) {
+      const shortName = collection.replace('com.dina.trust.', '')
       // Return null for truly unknown short names
       const known = [
         'attestation', 'vouch', 'endorsement', 'flag', 'reply', 'reaction',
@@ -99,28 +99,28 @@ vi.mock('@/shared/utils/logger.js', () => ({
   },
 }))
 
-// Mock REPUTATION_COLLECTIONS
+// Mock TRUST_COLLECTIONS
 vi.mock('@/config/lexicons.js', () => ({
-  REPUTATION_COLLECTIONS: [
-    'com.dina.reputation.attestation',
-    'com.dina.reputation.vouch',
-    'com.dina.reputation.endorsement',
-    'com.dina.reputation.flag',
-    'com.dina.reputation.reply',
-    'com.dina.reputation.reaction',
-    'com.dina.reputation.reportRecord',
-    'com.dina.reputation.revocation',
-    'com.dina.reputation.delegation',
-    'com.dina.reputation.collection',
-    'com.dina.reputation.media',
-    'com.dina.reputation.subject',
-    'com.dina.reputation.amendment',
-    'com.dina.reputation.verification',
-    'com.dina.reputation.reviewRequest',
-    'com.dina.reputation.comparison',
-    'com.dina.reputation.subjectClaim',
-    'com.dina.reputation.trustPolicy',
-    'com.dina.reputation.notificationPrefs',
+  TRUST_COLLECTIONS: [
+    'com.dina.trust.attestation',
+    'com.dina.trust.vouch',
+    'com.dina.trust.endorsement',
+    'com.dina.trust.flag',
+    'com.dina.trust.reply',
+    'com.dina.trust.reaction',
+    'com.dina.trust.reportRecord',
+    'com.dina.trust.revocation',
+    'com.dina.trust.delegation',
+    'com.dina.trust.collection',
+    'com.dina.trust.media',
+    'com.dina.trust.subject',
+    'com.dina.trust.amendment',
+    'com.dina.trust.verification',
+    'com.dina.trust.reviewRequest',
+    'com.dina.trust.comparison',
+    'com.dina.trust.subjectClaim',
+    'com.dina.trust.trustPolicy',
+    'com.dina.trust.notificationPrefs',
   ],
 }))
 
@@ -179,7 +179,7 @@ function makeCommitCreate(overrides: Partial<JetstreamCommitCreate> = {}): Jetst
     commit: {
       rev: 'rev1',
       operation: 'create',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: 'tid1',
       record: { subject: { type: 'did', did: 'did:plc:abc' }, category: 'quality', sentiment: 'positive', createdAt: now },
       cid: 'cid1',
@@ -196,7 +196,7 @@ function makeCommitUpdate(): JetstreamCommitCreate {
     commit: {
       rev: 'rev2',
       operation: 'update',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: 'tid1',
       record: { subject: { type: 'did', did: 'did:plc:abc' }, category: 'quality', sentiment: 'positive', createdAt: now },
       cid: 'cid2',
@@ -212,7 +212,7 @@ function makeCommitDelete(): JetstreamCommitDelete {
     commit: {
       rev: 'rev3',
       operation: 'delete',
-      collection: 'com.dina.reputation.attestation',
+      collection: 'com.dina.trust.attestation',
       rkey: 'tid1',
     },
   }
@@ -339,7 +339,7 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
     expect(mockMetricsIncr).toHaveBeenCalledWith('ingester.events.account', expect.any(Object))
   })
 
-  it('UT-JC-006: non-reputation collection -> skipped', async () => {
+  it('UT-JC-006: non-trust collection -> skipped', async () => {
     // Description: collection = "app.bsky.feed.post"
     // Expected: No handler called, event silently dropped
     const { processEvent } = createTestConsumer()
@@ -397,11 +397,11 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
   })
 
   it('UT-JC-010: unknown handler -> event skipped', async () => {
-    // Description: Valid record, unknown collection that passes the REPUTATION_COLLECTIONS check
+    // Description: Valid record, unknown collection that passes the TRUST_COLLECTIONS check
     // Expected: No error thrown, logged as warning
-    // Note: The consumer first checks REPUTATION_COLLECTIONS.includes(), so unknown collections
+    // Note: The consumer first checks TRUST_COLLECTIONS.includes(), so unknown collections
     // are filtered before reaching routeHandler. We test that a collection NOT in
-    // REPUTATION_COLLECTIONS is silently skipped.
+    // TRUST_COLLECTIONS is silently skipped.
     const { processEvent } = createTestConsumer()
     const event: JetstreamCommitCreate = {
       did: 'did:plc:author',
@@ -410,13 +410,13 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
       commit: {
         rev: 'rev1',
         operation: 'create',
-        collection: 'com.dina.reputation.nonexistent',
+        collection: 'com.dina.trust.nonexistent',
         rkey: 'tid1',
         record: {},
         cid: 'cid1',
       },
     }
-    // This collection is not in REPUTATION_COLLECTIONS, so it's silently skipped
+    // This collection is not in TRUST_COLLECTIONS, so it's silently skipped
     await processEvent(event)
     expect(mockHandleCreate).not.toHaveBeenCalled()
   })

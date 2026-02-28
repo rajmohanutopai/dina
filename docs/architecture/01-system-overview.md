@@ -12,7 +12,7 @@ Dina is an orchestrator — she decides *what* needs to be done, but delegates *
 
 | | Dina (The CEO) | Child Agents (The Contractors) |
 |---|---|---|
-| **Role** | Holds intent, memory, identity, reputation | Specialized workers (browser, coding, travel, legal) |
+| **Role** | Holds intent, memory, identity, trust | Specialized workers (browser, coding, travel, legal) |
 | **Code** | Clean, minimal, high-security Go + Python | Whatever works — can crash without affecting Dina |
 | **Security** | No third-party code in-process | Run in separate containers or servers |
 | **Protocol** | Issues tasks, verifies results | Executes and reports back |

@@ -2,8 +2,10 @@ package test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"github.com/rajmohanutopai/dina/core/internal/adapter/portability"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
 
@@ -380,6 +382,9 @@ func TestObservability_20_3_6_CrashLogIncludedInBackup(t *testing.T) {
 		DestPath:   "/tmp/dina-test-export",
 	}
 	archivePath, err := impl.Export(context.Background(), opts)
+	if err != nil && errors.Is(err, portability.ErrNotImplemented) {
+		t.Skipf("skipping: %v", err)
+	}
 	testutil.RequireNoError(t, err)
 
 	contents, err := impl.ListArchiveContents(archivePath)

@@ -15,7 +15,7 @@ import { validateRecord } from './record-validator.js'
 import { BoundedIngestionQueue } from './bounded-queue.js'
 import { isRateLimited } from './rate-limiter.js'
 import { env } from '@/config/env.js'
-import { REPUTATION_COLLECTIONS } from '@/config/lexicons.js'
+import { TRUST_COLLECTIONS } from '@/config/lexicons.js'
 import { ingesterCursor } from '@/db/schema/index.js'
 import { logger } from '@/shared/utils/logger.js'
 import { metrics } from '@/shared/utils/metrics.js'
@@ -211,7 +211,7 @@ export class JetstreamConsumer {
 
   private connect(): void {
     const params = new URLSearchParams()
-    for (const collection of REPUTATION_COLLECTIONS) {
+    for (const collection of TRUST_COLLECTIONS) {
       params.append('wantedCollections', collection)
     }
     if (this.cursor > 0) {
@@ -219,7 +219,7 @@ export class JetstreamConsumer {
     }
 
     const url = `${env.JETSTREAM_URL}/subscribe?${params.toString()}`
-    logger.info({ url: env.JETSTREAM_URL, collections: REPUTATION_COLLECTIONS.length }, 'Connecting to Jetstream')
+    logger.info({ url: env.JETSTREAM_URL, collections: TRUST_COLLECTIONS.length }, 'Connecting to Jetstream')
 
     // SEC-MED-08: Validate TLS and hostname before opening WebSocket
     validateJetstreamUrl(env.JETSTREAM_URL)
@@ -300,7 +300,7 @@ export class JetstreamConsumer {
     const { commit, did } = event as JetstreamCommitCreate | JetstreamCommitDelete
     const collection = commit.collection
 
-    if (!REPUTATION_COLLECTIONS.includes(collection as any)) return
+    if (!TRUST_COLLECTIONS.includes(collection as any)) return
 
     if (isRateLimited(did)) {
       metrics.incr('ingester.rate_limited_drops', { collection })

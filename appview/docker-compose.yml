@@ -3,15 +3,15 @@ services:
   postgres:
     image: postgres:17
     environment:
-      POSTGRES_DB: dina_reputation
+      POSTGRES_DB: dina_trust
       POSTGRES_USER: dina
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
     # MED-07: DB port not exposed to host by default — use internal Docker network.
-    # For local debugging: docker compose exec postgres psql -U dina -d dina_reputation
+    # For local debugging: docker compose exec postgres psql -U dina -d dina_trust
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dina -d dina_reputation"]
+      test: ["CMD-SHELL", "pg_isready -U dina -d dina_trust"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -22,25 +22,25 @@ services:
     environment:
       JETSTREAM_RELAY_URL: ${RELAY_URL:-wss://bgs.bsky.network}
       JETSTREAM_WANTED_COLLECTIONS: >-
-        com.dina.reputation.attestation,
-        com.dina.reputation.vouch,
-        com.dina.reputation.endorsement,
-        com.dina.reputation.flag,
-        com.dina.reputation.reply,
-        com.dina.reputation.reaction,
-        com.dina.reputation.reportRecord,
-        com.dina.reputation.revocation,
-        com.dina.reputation.delegation,
-        com.dina.reputation.collection,
-        com.dina.reputation.media,
-        com.dina.reputation.subject,
-        com.dina.reputation.amendment,
-        com.dina.reputation.verification,
-        com.dina.reputation.reviewRequest,
-        com.dina.reputation.comparison,
-        com.dina.reputation.subjectClaim,
-        com.dina.reputation.trustPolicy,
-        com.dina.reputation.notificationPrefs
+        com.dina.trust.attestation,
+        com.dina.trust.vouch,
+        com.dina.trust.endorsement,
+        com.dina.trust.flag,
+        com.dina.trust.reply,
+        com.dina.trust.reaction,
+        com.dina.trust.reportRecord,
+        com.dina.trust.revocation,
+        com.dina.trust.delegation,
+        com.dina.trust.collection,
+        com.dina.trust.media,
+        com.dina.trust.subject,
+        com.dina.trust.amendment,
+        com.dina.trust.verification,
+        com.dina.trust.reviewRequest,
+        com.dina.trust.comparison,
+        com.dina.trust.subjectClaim,
+        com.dina.trust.trustPolicy,
+        com.dina.trust.notificationPrefs
       JETSTREAM_PORT: 6008
     ports:
       - "6008:6008"
@@ -57,7 +57,7 @@ services:
       context: .
       target: migrator
     environment:
-      DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_reputation
+      DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_trust
     depends_on:
       postgres: { condition: service_healthy }
 
@@ -67,7 +67,7 @@ services:
     build: .
     command: ["node", "dist/ingester/main.js"]
     environment:
-      DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_reputation
+      DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_trust
       DATABASE_POOL_MAX: 20
       JETSTREAM_URL: ws://jetstream:6008
       LOG_LEVEL: info
@@ -82,7 +82,7 @@ services:
     build: .
     command: ["node", "dist/scorer/main.js"]
     environment:
-      DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_reputation
+      DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_trust
       LOG_LEVEL: info
       NODE_ENV: production
     depends_on:
@@ -94,8 +94,8 @@ services:
     build: .
     command: ["node", "dist/web/server.js"]
     environment:
-      DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_reputation
-      NEXT_PUBLIC_BASE_URL: https://reputation.dina.foundation
+      DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_trust
+      NEXT_PUBLIC_BASE_URL: https://trust.dina.foundation
       PORT: 3000
       NODE_ENV: production
     ports:

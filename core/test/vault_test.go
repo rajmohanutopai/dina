@@ -2644,7 +2644,7 @@ func TestVault_4_8_9_HKDFInfoStringsPerPersona(t *testing.T) {
 
 	// Each persona name appears in the HKDF info string.
 	for persona, info := range testutil.HKDFInfoStrings {
-		if persona == "backup" || persona == "archive" || persona == "sync" || persona == "reputation" {
+		if persona == "backup" || persona == "archive" || persona == "sync" || persona == "trust" {
 			continue // Non-vault info strings.
 		}
 		testutil.RequireContains(t, info, persona)

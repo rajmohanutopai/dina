@@ -55,7 +55,7 @@ docker compose --profile local-llm up -d
 This starts 4 containers:
 - **dina-core** — vault, keys, messaging (always on)
 - **dina-brain** — reasoning, agent loop (always on)
-- **dina-pds** — AT Protocol PDS for reputation data (always on)
+- **dina-pds** — AT Protocol PDS for trust data (always on)
 - **llama** — llama.cpp serving Gemma 3n E4B (GGUF format, ~3GB RAM)
 
 Model files are downloaded automatically on first start. This takes 5-10 minutes depending on your internet speed.

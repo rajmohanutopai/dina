@@ -439,7 +439,7 @@
 | 7 | **[TST-INT-201]** Passphrase change: no re-encryption | Change passphrase → verify vault files unchanged | Vault `.sqlite` files untouched — only `wrapped_seed.bin` changes (re-wrapped with new KEK) |
 | 8 | **[TST-INT-202]** Convenience mode keyfile → same DEKs | Compare DEKs derived from keyfile vs passphrase-unwrapped seed | Identical DEKs — same master seed, same derivation |
 | 9 | **[TST-INT-203]** SQLCipher PRAGMAs enforced across stack | Open any persona vault, inspect PRAGMAs | `cipher_page_size=4096`, `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout=5000` |
-| 10 | **[TST-INT-204]** Backup + Archive keys separate from vault DEKs | Derive backup, archive, sync, reputation keys | All different from each other and from vault DEKs — 6+ distinct keys from same seed |
+| 10 | **[TST-INT-204]** Backup + Archive keys separate from vault DEKs | Derive backup, archive, sync, trust keys | All different from each other and from vault DEKs — 6+ distinct keys from same seed |
 | 11 | **[TST-INT-205]** `user_salt` uniqueness across nodes | Set up two Dina instances with SAME BIP-39 mnemonic | Different `user_salt` generated → different HKDF outputs → Node A's vault DEKs ≠ Node B's vault DEKs — Node B cannot open Node A's persona files |
 | 12 | **[TST-INT-206]** `user_salt` preserved in export/import | Export from Node A → import on Node B | Same `user_salt` → same DEKs → vault files open correctly on Node B |
 | 13 | **[TST-INT-207]** Exactly one root identity enforced | Set up Dina → attempt second first-run setup | Second setup rejected — `did:plc` already registered, root keypair already exists |
@@ -622,11 +622,11 @@
 
 | # | Scenario | Setup | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-INT-297]** Publish expert attestation | Brain creates attestation → core signs with persona key → writes to PDS | Record in AT Protocol PDS with valid `com.dina.reputation.attestation` Lexicon |
-| 2 | **[TST-INT-298]** Publish outcome report | Dina records purchase outcome → anonymized → signed → PDS | `com.dina.reputation.outcome` record — no user identity, only category + outcome |
+| 1 | **[TST-INT-297]** Publish expert attestation | Brain creates attestation → core signs with persona key → writes to PDS | Record in AT Protocol PDS with valid `com.dina.trust.attestation` Lexicon |
+| 2 | **[TST-INT-298]** Publish outcome report | Dina records purchase outcome → anonymized → signed → PDS | `com.dina.trust.outcome` record — no user identity, only category + outcome |
 | 3 | **[TST-INT-299]** Record signature valid | Fetch published record from PDS | Ed25519 signature verifies against author's DID Document public key |
 | 4 | **[TST-INT-300]** PDS cannot forge records | Inspect PDS data | PDS has no signing keys — stores signed Merkle repo, cannot create/modify records |
-| 5 | **[TST-INT-301]** Type B: bundled PDS in docker-compose | `docker compose up` | PDS container runs alongside core + brain, serves `com.dina.reputation.*` records |
+| 5 | **[TST-INT-301]** Type B: bundled PDS in docker-compose | `docker compose up` | PDS container runs alongside core + brain, serves `com.dina.trust.*` records |
 | 6 | **[TST-INT-302]** Type A: external PDS push | Home Node behind CGNAT (no inbound traffic) | Core pushes signed commits to external PDS via outbound HTTPS — zero inbound traffic to home node |
 | 7 | **[TST-INT-303]** Custom Lexicon validation | Publish record with wrong schema | PDS or core rejects — all 5 required fields enforced (`expertDid`, `productCategory`, `productId`, `rating`, `verdict`) |
 
@@ -634,31 +634,31 @@
 
 | # | Scenario | Setup | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-INT-304]** Reputation tampering detected | Modify published record bytes | Signature verification fails — Merkle tree integrity broken |
+| 1 | **[TST-INT-304]** Trust tampering detected | Modify published record bytes | Signature verification fails — Merkle tree integrity broken |
 | 2 | **[TST-INT-305]** Author deletes own review (signed tombstone) | User sends deletion signed by same key | `Tombstone {target, author, sig}` — record removed from PDS, tombstone propagates |
 | 3 | **[TST-INT-306]** Non-author cannot delete review | Chair Company sends deletion for user's review | Signature doesn't match author → rejection — only keyholder can delete |
-| 4 | **[TST-INT-307]** Outcome data exact anonymized fields — no PII | Inspect published outcome record | Exact fields per Section 08 `com.dina.reputation.outcome` Lexicon: `{type: "outcome_report", reporter_trust_ring, reporter_age_days, product_category, product_id, purchase_verified, purchase_amount_range, time_since_purchase_days, outcome, satisfaction, issues, timestamp, signature}` — 13 fields total. Zero user identity (no DID, no name). Zero seller identity (only trust ring). reporter_trust_ring/age_days are the submitting Dina's ring level and age. purchase_amount_range uses bucketed format (e.g. "50000-100000_INR"). satisfaction is categorical (positive/negative/neutral). issues is an array (empty if none) |
-| 5 | **[TST-INT-308]** Aggregate scores computed not stored | Query product reputation | Score computed from individual signed records — any AppView computes same score deterministically |
-| 6 | **[TST-INT-309]** Outcome data lifecycle E2E | Cart handover → weeks → follow-up → anonymized record → PDS | Full flow: (1) purchase via cart handover — Brain records `{product_category, seller_dina_id, price, timestamp}`, (2) weeks/months later Brain asks "How's that chair?", (3) user responds or Brain infers (still using? returned?), (4) anonymized outcome record created with Section 08 Lexicon fields (13 fields: type, reporter_trust_ring, reporter_age_days, product_category, product_id, purchase_verified, purchase_amount_range, time_since_purchase_days, outcome, satisfaction, issues, timestamp, signature), (5) signed with Reputation Signing Key (HKDF "dina:reputation:v1"), (6) submitted to Trust Network via PDS |
-| 7 | **[TST-INT-310]** Outcome report full Lexicon field validation | Inspect each field of published outcome record | Validate every field matches `com.dina.reputation.outcome` Lexicon constraints: `type` = "outcome_report" (string literal), `reporter_trust_ring` = integer (1-3), `reporter_age_days` = integer (≥0), `product_category` = string, `product_id` = string, `purchase_verified` = boolean, `purchase_amount_range` = string (bucketed format e.g. "50000-100000_INR"), `time_since_purchase_days` = integer (≥0), `outcome` = string enum (still_using/returned/broken/gifted), `satisfaction` = string enum (positive/negative/neutral), `issues` = array of strings (may be empty), `timestamp` = datetime ISO-8601, `signature` = Ed25519 hex string |
+| 4 | **[TST-INT-307]** Outcome data exact anonymized fields — no PII | Inspect published outcome record | Exact fields per Section 08 `com.dina.trust.outcome` Lexicon: `{type: "outcome_report", reporter_trust_ring, reporter_age_days, product_category, product_id, purchase_verified, purchase_amount_range, time_since_purchase_days, outcome, satisfaction, issues, timestamp, signature}` — 13 fields total. Zero user identity (no DID, no name). Zero seller identity (only trust ring). reporter_trust_ring/age_days are the submitting Dina's ring level and age. purchase_amount_range uses bucketed format (e.g. "50000-100000_INR"). satisfaction is categorical (positive/negative/neutral). issues is an array (empty if none) |
+| 5 | **[TST-INT-308]** Aggregate scores computed not stored | Query product trust | Score computed from individual signed records — any AppView computes same score deterministically |
+| 6 | **[TST-INT-309]** Outcome data lifecycle E2E | Cart handover → weeks → follow-up → anonymized record → PDS | Full flow: (1) purchase via cart handover — Brain records `{product_category, seller_dina_id, price, timestamp}`, (2) weeks/months later Brain asks "How's that chair?", (3) user responds or Brain infers (still using? returned?), (4) anonymized outcome record created with Section 08 Lexicon fields (13 fields: type, reporter_trust_ring, reporter_age_days, product_category, product_id, purchase_verified, purchase_amount_range, time_since_purchase_days, outcome, satisfaction, issues, timestamp, signature), (5) signed with Trust Signing Key (HKDF "dina:trust:v1"), (6) submitted to Trust Network via PDS |
+| 7 | **[TST-INT-310]** Outcome report full Lexicon field validation | Inspect each field of published outcome record | Validate every field matches `com.dina.trust.outcome` Lexicon constraints: `type` = "outcome_report" (string literal), `reporter_trust_ring` = integer (1-3), `reporter_age_days` = integer (≥0), `product_category` = string, `product_id` = string, `purchase_verified` = boolean, `purchase_amount_range` = string (bucketed format e.g. "50000-100000_INR"), `time_since_purchase_days` = integer (≥0), `outcome` = string enum (still_using/returned/broken/gifted), `satisfaction` = string enum (positive/negative/neutral), `issues` = array of strings (may be empty), `timestamp` = datetime ISO-8601, `signature` = Ed25519 hex string |
 
-### 11.3 Reputation in Agent Decisions
+### 11.3 Trust in Agent Decisions
 
 | # | Scenario | Setup | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-INT-311]** Reputation affects agent routing | Two MCP agents available, different reputation scores | Higher-reputation agent selected |
-| 2 | **[TST-INT-312]** Reputation affects trust tier | Contact accumulates positive outcome data | Trust level can be upgraded (Unverified → Verified) |
-| 3 | **[TST-INT-313]** Cold start: web search fallback (Phase 1) | No reputation data available | Brain→MCP→OpenClaw: web search for reviews + user context from vault → nudge with personal context applied |
-| 4 | **[TST-INT-314]** Gradual reputation activation | First reputation data appears in network | Brain includes reputation data alongside web search — transition invisible to user |
+| 1 | **[TST-INT-311]** Trust affects agent routing | Two MCP agents available, different trust scores | Higher-trust agent selected |
+| 2 | **[TST-INT-312]** Trust affects trust tier | Contact accumulates positive outcome data | Trust level can be upgraded (Unverified → Verified) |
+| 3 | **[TST-INT-313]** Cold start: web search fallback (Phase 1) | No trust data available | Brain→MCP→OpenClaw: web search for reviews + user context from vault → nudge with personal context applied |
+| 4 | **[TST-INT-314]** Gradual trust activation | First trust data appears in network | Brain includes trust data alongside web search — transition invisible to user |
 | 5 | **[TST-INT-315]** Cold start: personal context enrichment | Brain searches web for "best office chair" — user vault has back pain history, 10+ hour sitting, ₹50-80K budget | Brain synthesizes web results with personal vault context: "Based on web reviews and your back issues, the Steelcase Leap or Herman Miller Aeron. The Aeron is within your budget at ₹72,000." — vault data applied, not just raw web results |
 
 ### 11.4 PDS Topology & Availability
 
 | # | Scenario | Setup | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-INT-316]** PDS down: records already replicated | Bundled PDS container stops | Records already crawled by relay — reputation data still queryable via AppView |
+| 1 | **[TST-INT-316]** PDS down: records already replicated | Bundled PDS container stops | Records already crawled by relay — trust data still queryable via AppView |
 | 2 | **[TST-INT-317]** PDS migration (account portability) | User migrates from pds.dina.host to self-hosted PDS | `did:plc` rotation points to new PDS — all records transferred, identity preserved |
-| 3 | **[TST-INT-318]** Foundation PDS stores only reputation data | Inspect `pds.dina.host` content | Only `com.dina.reputation.*` records — no private vault data ever touches it |
+| 3 | **[TST-INT-318]** Foundation PDS stores only trust data | Inspect `pds.dina.host` content | Only `com.dina.trust.*` records — no private vault data ever touches it |
 | 4 | **[TST-INT-319]** Relay crawls PDS via delta sync | PDS publishes new record → relay crawls | Merkle Search Tree diff — only new records transferred (few KB), not entire repo |
 
 ### 11.5 AT Protocol Discovery (E2E)
@@ -831,17 +831,17 @@
 | 2 | **[TST-INT-402]** Key compromise doesn't expose past messages | Current session key leaked | Previously captured ciphertexts remain confidential |
 | 3 | **[TST-INT-403]** Session ratchet | Long-lived session | Keys rotate periodically, limiting exposure window |
 
-### 16.7 Reputation AppView (Phase 2+)
+### 16.7 Trust AppView (Phase 2+)
 
 > The AppView is a read-only indexer that consumes the AT Protocol firehose,
-> filters for `com.dina.reputation.*` records, and serves a query API.
+> filters for `com.dina.trust.*` records, and serves a query API.
 
 | # | Scenario | Setup | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-INT-404]** Firehose consumer filters correctly | AppView connected to relay | Only `com.dina.reputation.*` and `com.dina.identity.attestation` records indexed — all other Lexicons discarded |
+| 1 | **[TST-INT-404]** Firehose consumer filters correctly | AppView connected to relay | Only `com.dina.trust.*` and `com.dina.identity.attestation` records indexed — all other Lexicons discarded |
 | 2 | **[TST-INT-405]** Cryptographic verification on every record | Signed record arrives in firehose | AppView verifies Ed25519 signature against author's DID Document — unsigned/invalid records rejected |
-| 3 | **[TST-INT-406]** Query API: reputation by DID | `GET /v1/reputation?did=did:plc:abc` | Returns aggregate score + individual signed records |
-| 4 | **[TST-INT-407]** Query API: product reputation | `GET /v1/product?id=herman_miller_aeron_2025` | Returns product score, review count, individual signed reviews |
+| 3 | **[TST-INT-406]** Query API: trust by DID | `GET /v1/trust?did=did:plc:abc` | Returns aggregate score + individual signed records |
+| 4 | **[TST-INT-407]** Query API: product trust | `GET /v1/product?id=herman_miller_aeron_2025` | Returns product score, review count, individual signed reviews |
 | 5 | **[TST-INT-408]** Query API: bot scores | `GET /v1/bot?did=did:plc:xyz` | Returns bot trust score, accuracy history |
 | 6 | **[TST-INT-409]** Signed payloads in API responses | Any query response | Includes raw signed record payloads alongside computed scores — enables client-side verification |
 | 7 | **[TST-INT-410]** Aggregate scores deterministic | Two AppViews process same firehose | Both compute identical product ratings and trust composites |
@@ -853,7 +853,7 @@
 
 | # | Scenario | Setup | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-INT-412]** Layer 1: Cryptographic proof | AppView returns reputation record | Agent verifies Ed25519 signature against author's public key — AppView cannot fake records |
+| 1 | **[TST-INT-412]** Layer 1: Cryptographic proof | AppView returns trust record | Agent verifies Ed25519 signature against author's public key — AppView cannot fake records |
 | 2 | **[TST-INT-413]** Layer 2: Consensus check (anti-censorship) | Agent queries two AppViews | Provider A returns 5 reviews, Provider B returns 50 → agent detects censorship, alerts user |
 | 3 | **[TST-INT-414]** Layer 3: Direct PDS spot-check | Random 1-in-100 audit | Agent bypasses AppView, resolves DID to PDS, fetches records via `com.atproto.repo.listRecords` — discrepancies downgrade AppView trust |
 | 4 | **[TST-INT-415]** Dishonest AppView abandoned | AppView caught censoring | Agent switches to competitor AppView — AppView is infrastructure, not gatekeeper |
@@ -878,11 +878,11 @@
 |---|----------|-------|----------|
 | 1 | **[TST-INT-420]** Bot query format | Brain sends `POST bot/query` with `{query, requester_trust_ring, response_format, max_sources}` | Bot returns structured recommendations with sources, confidence, and `bot_signature` |
 | 2 | **[TST-INT-421]** Bot signature verification | Bot response includes `bot_did` + `bot_signature` | Brain verifies Ed25519 signature against bot's DID Document — forged responses rejected |
-| 3 | **[TST-INT-422]** Attribution mandatory | Bot response includes recommendations | Every source has `creator_name`, `source_url` — missing attribution → reputation penalty |
+| 3 | **[TST-INT-422]** Attribution mandatory | Bot response includes recommendations | Every source has `creator_name`, `source_url` — missing attribution → trust penalty |
 | 4 | **[TST-INT-423]** Deep Link pattern default | Bot response with `deep_link` + `deep_link_context` | Brain presents source links to user — drives traffic to original creator, not extraction |
-| 5 | **[TST-INT-424]** Bot reputation: auto-route on low score | Bot accuracy drops below threshold | Brain automatically routes next query to next-best bot — no manual intervention |
-| 6 | **[TST-INT-425]** Bot reputation scoring factors | Inspect bot score computation | `f(response_accuracy, response_time, uptime, user_ratings, consistency, age, peer_endorsements)` — all factors weighted |
-| 7 | **[TST-INT-426]** Bot discovery: decentralized registry | Brain needs specialist bot | Queries Trust Network for bots in relevant domain, selects highest-reputation |
+| 5 | **[TST-INT-424]** Bot trust: auto-route on low score | Bot accuracy drops below threshold | Brain automatically routes next query to next-best bot — no manual intervention |
+| 6 | **[TST-INT-425]** Bot trust scoring factors | Inspect bot score computation | `f(response_accuracy, response_time, uptime, user_ratings, consistency, age, peer_endorsements)` — all factors weighted |
+| 7 | **[TST-INT-426]** Bot discovery: decentralized registry | Brain needs specialist bot | Queries Trust Network for bots in relevant domain, selects highest-trust |
 | 8 | **[TST-INT-427]** Bot-to-bot recommendation | Bot says "This is outside my domain" | Redirects to specialist bot DID — Brain follows chain if trust is sufficient |
 | 9 | **[TST-INT-428]** Requester anonymity: trust ring only, no identity | Inspect `POST bot/query` request payload | Request contains `requester_trust_ring: 2` (integer) but NO user DID, no name, no Home Node URL, no persona path, no session ID — zero identifying information. Architecture §10: "anonymous — just the ring level." The bot knows the requester is trust ring 2 but cannot determine WHO is asking. If the request accidentally includes the DID alongside the trust ring, the bot can cross-reference queries and build a profile — breaking the anonymity guarantee |
 
@@ -1032,7 +1032,7 @@
 | # | Scenario | Setup | Expected |
 |---|----------|-------|----------|
 | 1 | **[TST-INT-618]** Backup key ≠ Archive key (independent HKDF) | Derive both | Different info strings → different keys; both deterministic |
-| 2 | **[TST-INT-619]** Sync key + Reputation key derived independently | Derive all 4 | All 4 keys distinct from each other |
+| 2 | **[TST-INT-619]** Sync key + Trust key derived independently | Derive all 4 | All 4 keys distinct from each other |
 | 3 | **[TST-INT-620]** Argon2id defaults: 128MB, 3 iter, 4 parallel | Check params | Default matches OWASP 2024 minimum; overrides respected |
 
 ### 18.8 Restricted Persona Audit (§5)
@@ -1079,7 +1079,7 @@
 | # | Scenario | Setup | Expected |
 |---|----------|-------|----------|
 | 1 | **[TST-INT-641]** Bot query wire format: response_format + max_sources types | Query bot | Fields present with correct types (str, int) |
-| 2 | **[TST-INT-642]** Missing attribution → reputation penalty | Source without creator_name | Violation detected |
+| 2 | **[TST-INT-642]** Missing attribution → trust penalty | Source without creator_name | Violation detected |
 | 3 | **[TST-INT-643]** Bot routing threshold boundary | At/below threshold | At threshold: used. Below: auto-route to alternative |
 | 4 | **[TST-INT-644]** Bot-to-bot referral: low-trust referred bot declined | Referral to low-score bot | Referral declined |
 

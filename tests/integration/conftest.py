@@ -274,7 +274,7 @@ def mock_external_agent() -> MockExternalAgent:
 
 @pytest.fixture
 def mock_review_bot() -> MockReviewBot:
-    bot = MockReviewBot(reputation=94)
+    bot = MockReviewBot(trust_score=94)
     # Pre-populate with some product responses
     bot.add_response("laptop", {
         "recommendations": [
@@ -328,7 +328,7 @@ def mock_review_bot() -> MockReviewBot:
 
 @pytest.fixture
 def mock_legal_bot() -> MockLegalBot:
-    return MockLegalBot(reputation=91)
+    return MockLegalBot(trust_score=91)
 
 
 @pytest.fixture

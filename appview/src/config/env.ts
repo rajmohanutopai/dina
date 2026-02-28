@@ -16,7 +16,7 @@ export const envSchema = z.object({
   // In production, DATABASE_URL is required (no default with weak creds)
   DATABASE_URL: isProduction
     ? z.string().url()
-    : z.string().default('postgresql://dina:dina@localhost:5432/dina_reputation'),
+    : z.string().default('postgresql://dina:dina@localhost:5432/dina_trust'),
   DATABASE_POOL_MIN: z.coerce.number().default(2),
   DATABASE_POOL_MAX: z.coerce.number().default(20),
 

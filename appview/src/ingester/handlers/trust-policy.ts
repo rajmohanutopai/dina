@@ -4,7 +4,7 @@ import { trustPolicies } from '@/db/schema/index.js'
 import { deletionHandler } from '../deletion-handler.js'
 
 /**
- * Handler for com.dina.reputation.trustPolicy records.
+ * Handler for com.dina.trust.trustPolicy records.
  *
  * Trust policies define per-user trust graph parameters: how deep to
  * traverse the graph, which domains to trust, which DIDs to block,

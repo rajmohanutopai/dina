@@ -9,7 +9,7 @@ The Home Node runs three containers by default, orchestrated by docker-compose: 
 **The docker-compose stack:**
 - **dina-core**: Go binary + SQLCipher vaults (`identity.sqlite` + per-persona `.sqlite` files) — **private layer**. Ports: 443 (external), 8100 (internal). Reverse-proxies `/admin` to brain:8200/admin. Browser authentication gateway (session cookie → Bearer token translation).
 - **dina-brain**: Python + Google ADK agent loop + Admin UI — **private layer**. Port: 8200 (unified — `/api/*` brain API, `/admin/*` admin UI, `/healthz` health).
-- **dina-pds**: AT Protocol PDS for Trust Network — **public layer** (reputation data only). Port: 2583 (external).
+- **dina-pds**: AT Protocol PDS for Trust Network — **public layer** (trust data only). Port: 2583 (external).
 - **llama** (optional): llama.cpp + Gemma 3n E4B GGUF — **private layer**. Port: 8080 (internal). Enabled via `--profile local-llm`.
 - Output: NaCl messaging endpoint + WebSocket API for clients + Admin UI + AT Protocol firehose
 - Deployment: `docker compose up -d` (3 containers) or `docker compose --profile local-llm up -d` (4 containers)
@@ -109,8 +109,8 @@ services:
         condition: service_healthy
 
   # -------------------------------------------------------------------
-  # 3. THE REPUTATION (AT Protocol PDS)
-  # Role: Public federation — relay crawling, reputation data
+  # 3. THE TRUST NETWORK (AT Protocol PDS)
+  # Role: Public federation — relay crawling, trust data
   # -------------------------------------------------------------------
   pds:
     image: ghcr.io/bluesky-social/pds@sha256:...  # PINNED DIGEST — never :latest

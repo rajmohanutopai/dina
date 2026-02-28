@@ -90,9 +90,9 @@ Tracks pending work only. See [ROADMAP.md](ROADMAP.md) for full specs and depend
 - [ ] **2.7 Multi-agent orchestration** — Google ADK Sequential/Parallel/Loop agents
 - [ ] **2.15 Nomic Embed V2** — 475M MoE upgrade
 
-### Reputation & Trust
+### Trust
 
-- [-] **2.3 Reputation AppView** — Go + PostgreSQL, `indigo` firehose consumer, query API. **AppView is for reputation only** — D2D messaging is direct P2P (no relay/AppView in path). See [AT Protocol Routing](#at-protocol-routing)
+- [-] **2.3 Trust AppView** — Go + PostgreSQL, `indigo` firehose consumer, query API. **AppView is for trust only** — D2D messaging is direct P2P (no relay/AppView in path). See [AT Protocol Routing](#at-protocol-routing)
 - [ ] **2.4 Outcome data collection** — track Cart Handover purchases, follow-up surveys
 - [ ] **2.5 Trust Rings (Ring 1-2)** — ZKP or Aadhaar e-KYC compromise
 
@@ -126,7 +126,7 @@ Tracks pending work only. See [ROADMAP.md](ROADMAP.md) for full specs and depend
 - [ ] **3.7 iOS client** — Swift + SwiftUI
 - [ ] **3.8 Thin clients** — glasses, watch, browser via WebSocket
 - [ ] **3.9 Foundation formation** — nonprofit, certified hosting partners
-- [ ] **3.10 Full D2D commerce** — buyer ↔ seller negotiation, reputation, delivery
+- [ ] **3.10 Full D2D commerce** — buyer ↔ seller negotiation, trust, delivery
 - [ ] **3.11 Timestamp anchoring** — Merkle root on L2 chain
 - [ ] **3.12 Noise XX sessions** — full forward secrecy
 - [ ] **3.13 AppView sharded cluster** — Kafka, ScyllaDB, Kubernetes for 10M+ users
@@ -152,8 +152,8 @@ NaCl encryption works E2E (Docker tests assert real decryption at `real_d2d.py:1
 **AppView + Relay are for the Trust Network (Layer 3) only.** D2D messaging (Layer 4) is direct P2P — no relay, no AppView, no firehose. See [`docs/architecture/09-layer4-dina-to-dina.md`](docs/architecture/09-layer4-dina-to-dina.md).
 
 - [ ] **PLC Directory integration** — resolve DIDs dynamically instead of hardcoded `DINA_KNOWN_PEERS`
-- [ ] **Reputation AppView** — Go + PostgreSQL, `indigo` firehose consumer for attestations/bot scores (depends on: PDS)
-- [ ] **DID document dual service** — advertise both `AtprotoPersonalDataServer` (reputation PDS) and `DinaMessaging` (direct D2D endpoint)
+- [ ] **Trust AppView** — Go + PostgreSQL, `indigo` firehose consumer for attestations/bot scores (depends on: PDS)
+- [ ] **DID document dual service** — advertise both `AtprotoPersonalDataServer` (trust PDS) and `DinaMessaging` (direct D2D endpoint)
 
 ---
 

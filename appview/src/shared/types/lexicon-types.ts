@@ -36,7 +36,7 @@ export interface RelatedAttestation {
   relation: string
 }
 
-/** com.dina.reputation.attestation */
+/** com.dina.trust.attestation */
 export interface Attestation {
   subject: SubjectRef
   category: string
@@ -58,7 +58,7 @@ export interface Attestation {
   createdAt: string
 }
 
-/** com.dina.reputation.vouch */
+/** com.dina.trust.vouch */
 export interface Vouch {
   subject: string
   vouchType: string
@@ -69,7 +69,7 @@ export interface Vouch {
   createdAt: string
 }
 
-/** com.dina.reputation.endorsement */
+/** com.dina.trust.endorsement */
 export interface Endorsement {
   subject: string
   skill: string
@@ -79,7 +79,7 @@ export interface Endorsement {
   createdAt: string
 }
 
-/** com.dina.reputation.flag */
+/** com.dina.trust.flag */
 export interface Flag {
   subject: SubjectRef
   flagType: string
@@ -89,7 +89,7 @@ export interface Flag {
   createdAt: string
 }
 
-/** com.dina.reputation.reply */
+/** com.dina.trust.reply */
 export interface Reply {
   rootUri: string
   parentUri: string
@@ -99,14 +99,14 @@ export interface Reply {
   createdAt: string
 }
 
-/** com.dina.reputation.reaction */
+/** com.dina.trust.reaction */
 export interface Reaction {
   targetUri: string
   reaction: 'helpful' | 'unhelpful' | 'agree' | 'disagree' | 'verified' | 'can-confirm' | 'suspicious' | 'outdated'
   createdAt: string
 }
 
-/** com.dina.reputation.reportRecord */
+/** com.dina.trust.reportRecord */
 export interface ReportRecord {
   targetUri: string
   reportType: 'spam' | 'fake-review' | 'incentivized-undisclosed' | 'self-review' |
@@ -119,14 +119,14 @@ export interface ReportRecord {
   createdAt: string
 }
 
-/** com.dina.reputation.revocation */
+/** com.dina.trust.revocation */
 export interface Revocation {
   targetUri: string
   reason: string
   createdAt: string
 }
 
-/** com.dina.reputation.delegation */
+/** com.dina.trust.delegation */
 export interface Delegation {
   subject: string
   scope: string
@@ -135,7 +135,7 @@ export interface Delegation {
   createdAt: string
 }
 
-/** com.dina.reputation.collection */
+/** com.dina.trust.collection */
 export interface Collection {
   name: string
   description?: string
@@ -144,7 +144,7 @@ export interface Collection {
   createdAt: string
 }
 
-/** com.dina.reputation.media */
+/** com.dina.trust.media */
 export interface Media {
   parentUri: string
   mediaType: string
@@ -153,7 +153,7 @@ export interface Media {
   createdAt: string
 }
 
-/** com.dina.reputation.subject */
+/** com.dina.trust.subject */
 export interface SubjectRecord {
   name: string
   subjectType: string
@@ -162,7 +162,7 @@ export interface SubjectRecord {
   createdAt: string
 }
 
-/** com.dina.reputation.amendment */
+/** com.dina.trust.amendment */
 export interface Amendment {
   targetUri: string
   amendmentType: string
@@ -171,7 +171,7 @@ export interface Amendment {
   createdAt: string
 }
 
-/** com.dina.reputation.verification */
+/** com.dina.trust.verification */
 export interface Verification {
   targetUri: string
   verificationType: string
@@ -181,7 +181,7 @@ export interface Verification {
   createdAt: string
 }
 
-/** com.dina.reputation.reviewRequest */
+/** com.dina.trust.reviewRequest */
 export interface ReviewRequest {
   subject: SubjectRef
   requestType: string
@@ -190,7 +190,7 @@ export interface ReviewRequest {
   createdAt: string
 }
 
-/** com.dina.reputation.comparison */
+/** com.dina.trust.comparison */
 export interface Comparison {
   subjects: SubjectRef[]
   category: string
@@ -199,7 +199,7 @@ export interface Comparison {
   createdAt: string
 }
 
-/** com.dina.reputation.subjectClaim */
+/** com.dina.trust.subjectClaim */
 export interface SubjectClaim {
   sourceSubjectId: string
   targetSubjectId: string
@@ -209,7 +209,7 @@ export interface SubjectClaim {
   createdAt: string
 }
 
-/** com.dina.reputation.trustPolicy */
+/** com.dina.trust.trustPolicy */
 export interface TrustPolicy {
   maxGraphDepth?: number
   trustedDomains?: string[]
@@ -218,7 +218,7 @@ export interface TrustPolicy {
   createdAt: string
 }
 
-/** com.dina.reputation.notificationPrefs */
+/** com.dina.trust.notificationPrefs */
 export interface NotificationPrefs {
   enableMentions: boolean
   enableReactions: boolean

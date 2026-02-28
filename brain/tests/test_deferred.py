@@ -479,10 +479,10 @@ def test_deferred_17_4_1_estate_recovery_queue_tasks() -> None:
 
 # TST-BRAIN-421
 def test_deferred_17_4_2_zkp_credential_verification() -> None:
-    """SS17.4.2: Brain verifies Ring 2+ ZKP credentials for agent reputation.
+    """SS17.4.2: Brain verifies Ring 2+ ZKP credentials for agent trust.
 
     Architecture SS05: Brain verifies ZKP credentials when evaluating agent
-    intent reputation. Phase 3 feature (ZK-SNARKs on L2).
+    intent trust. Phase 3 feature (ZK-SNARKs on L2).
     Verify the ZKP credential contract shape.
     """
     zkp_credential = {

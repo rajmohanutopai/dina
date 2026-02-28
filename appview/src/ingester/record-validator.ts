@@ -1,9 +1,9 @@
 import { z } from 'zod'
 import { logger } from '@/shared/utils/logger.js'
-import type { ReputationCollection } from '@/config/lexicons.js'
+import type { TrustCollection } from '@/config/lexicons.js'
 
 /**
- * Zod validation schemas for all 19 reputation record types.
+ * Zod validation schemas for all 19 trust record types.
  *
  * Each record arriving from Jetstream is validated before being passed
  * to a handler. Invalid records are logged and dropped — never persisted.
@@ -241,25 +241,25 @@ const notificationPrefsSchema = z.object({
 // ── Schema map ──────────────────────────────────────────────────────
 
 const SCHEMA_MAP: Record<string, z.ZodSchema> = {
-  'com.dina.reputation.attestation': attestationSchema,
-  'com.dina.reputation.vouch': vouchSchema,
-  'com.dina.reputation.endorsement': endorsementSchema,
-  'com.dina.reputation.flag': flagSchema,
-  'com.dina.reputation.reply': replySchema,
-  'com.dina.reputation.reaction': reactionSchema,
-  'com.dina.reputation.reportRecord': reportRecordSchema,
-  'com.dina.reputation.revocation': revocationSchema,
-  'com.dina.reputation.delegation': delegationSchema,
-  'com.dina.reputation.collection': collectionSchema,
-  'com.dina.reputation.media': mediaSchema,
-  'com.dina.reputation.subject': subjectRecordSchema,
-  'com.dina.reputation.amendment': amendmentSchema,
-  'com.dina.reputation.verification': verificationSchema,
-  'com.dina.reputation.reviewRequest': reviewRequestSchema,
-  'com.dina.reputation.comparison': comparisonSchema,
-  'com.dina.reputation.subjectClaim': subjectClaimSchema,
-  'com.dina.reputation.trustPolicy': trustPolicySchema,
-  'com.dina.reputation.notificationPrefs': notificationPrefsSchema,
+  'com.dina.trust.attestation': attestationSchema,
+  'com.dina.trust.vouch': vouchSchema,
+  'com.dina.trust.endorsement': endorsementSchema,
+  'com.dina.trust.flag': flagSchema,
+  'com.dina.trust.reply': replySchema,
+  'com.dina.trust.reaction': reactionSchema,
+  'com.dina.trust.reportRecord': reportRecordSchema,
+  'com.dina.trust.revocation': revocationSchema,
+  'com.dina.trust.delegation': delegationSchema,
+  'com.dina.trust.collection': collectionSchema,
+  'com.dina.trust.media': mediaSchema,
+  'com.dina.trust.subject': subjectRecordSchema,
+  'com.dina.trust.amendment': amendmentSchema,
+  'com.dina.trust.verification': verificationSchema,
+  'com.dina.trust.reviewRequest': reviewRequestSchema,
+  'com.dina.trust.comparison': comparisonSchema,
+  'com.dina.trust.subjectClaim': subjectClaimSchema,
+  'com.dina.trust.trustPolicy': trustPolicySchema,
+  'com.dina.trust.notificationPrefs': notificationPrefsSchema,
 }
 
 // ── Public API ──────────────────────────────────────────────────────

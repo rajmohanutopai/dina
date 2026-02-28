@@ -237,8 +237,8 @@ class AgentRouter(Protocol):
         """Route a task to the appropriate agent or local handler."""
         ...
 
-    async def check_reputation(self, agent_did: str) -> float:
-        """Check an agent's reputation score."""
+    async def check_trust(self, agent_did: str) -> float:
+        """Check an agent's trust score."""
         ...
 
 
@@ -281,19 +281,19 @@ class SilenceClassifier(Protocol):
         ...
 
 
-# ---------- §6.1 Reputation / AppView ----------
+# ---------- §6.1 Trust / AppView ----------
 
 
 @runtime_checkable
-class ReputationClient(Protocol):
-    """Contract for Reputation AppView queries (§6.1, arch §08)."""
+class TrustClient(Protocol):
+    """Contract for Trust AppView queries (§6.1, arch §08)."""
 
-    async def query_reputation(self, did: str) -> dict:
-        """Query reputation scores for a DID from AppView API."""
+    async def query_trust_scores(self, did: str) -> dict:
+        """Query trust scores for a DID from AppView API."""
         ...
 
     async def submit_outcome(self, bot_did: str, outcome: dict) -> None:
-        """Submit an interaction outcome for bot reputation scoring."""
+        """Submit an interaction outcome for bot trust scoring."""
         ...
 
 

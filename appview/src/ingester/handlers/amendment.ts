@@ -6,7 +6,7 @@ import { deletionHandler } from '../deletion-handler.js'
 import { markDirty } from '@/db/queries/dirty-flags.js'
 
 /**
- * Handler for com.dina.reputation.amendment records.
+ * Handler for com.dina.trust.amendment records.
  *
  * Amendments modify existing attestations (corrections, updates, retractions).
  * On create, the handler upserts the amendment record and also marks the

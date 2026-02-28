@@ -21,7 +21,7 @@ from tests.e2e.actors import HomeNode, _mock_sign
 from tests.e2e.mocks import (
     ActionRisk,
     AuditEntry,
-    BotReputation,
+    BotTrust,
     D2DMessage,
     DeviceType,
     ExpertAttestation,
@@ -64,7 +64,7 @@ class TestProductResearchPurchase:
         - Request contains trust_ring but NO DID or display name
         - Response contains deep_links (creator attribution)
         """
-        # Verify ReviewBot reputation in AppView before querying
+        # Verify ReviewBot trust in AppView before querying
         bot_rep = appview.query_bot(reviewbot.did)
         assert bot_rep is not None
         assert bot_rep.score >= 80  # Only query reputable bots
@@ -301,12 +301,12 @@ class TestProductResearchPurchase:
     ) -> None:
         """E2E-3.5 Cold Start Web Search.
 
-        No reputation data exists for a product. Fall back to web search
+        No trust data exists for a product. Fall back to web search
         via OpenClaw. Verify vault context enriches the search results.
         """
         unknown_product = "steelcase_gesture"
 
-        # Confirm no reputation data exists
+        # Confirm no trust data exists
         product_data = appview.query_product(unknown_product)
         assert product_data is None
 
@@ -405,12 +405,12 @@ class TestProductResearchPurchase:
         }
 
         record_uri = don_alonso.pds.publish(
-            "com.dina.reputation.outcome", record,
+            "com.dina.trust.outcome", record,
         )
         assert record_uri.startswith("at://")
 
         # Verify all 13 fields are present in the published record
-        published_records = don_alonso.pds.list_records("com.dina.reputation.outcome")
+        published_records = don_alonso.pds.list_records("com.dina.trust.outcome")
         assert len(published_records) >= 1
         published = published_records[-1]
 
@@ -430,7 +430,7 @@ class TestProductResearchPurchase:
         assert don_alonso.display_name not in published_str
         assert "alonso" not in published_str.lower()
         assert "email" not in published_str.lower() or "email" in "purchase_amount_range"
-        # The record uses trust_ring (anonymous reputation tier) instead of identity
+        # The record uses trust_ring (anonymous trust tier) instead of identity
         assert published["reporter_trust_ring"] == TrustRing.RING_3_SKIN_IN_GAME.value
 
         # Index in AppView for aggregation

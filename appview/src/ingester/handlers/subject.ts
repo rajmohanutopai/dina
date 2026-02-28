@@ -3,7 +3,7 @@ import type { SubjectRecord, SubjectRef } from '@/shared/types/lexicon-types.js'
 import { resolveOrCreateSubject } from '@/db/queries/subjects.js'
 
 /**
- * Handler for com.dina.reputation.subject records.
+ * Handler for com.dina.trust.subject records.
  *
  * Subject records define canonical entities (products, organizations,
  * datasets, etc.) that attestations reference. The handler constructs

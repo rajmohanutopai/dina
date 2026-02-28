@@ -4,7 +4,7 @@ import { notificationPrefs } from '@/db/schema/index.js'
 import { deletionHandler } from '../deletion-handler.js'
 
 /**
- * Handler for com.dina.reputation.notificationPrefs records.
+ * Handler for com.dina.trust.notificationPrefs records.
  *
  * Notification preferences control which event types generate
  * notifications for a user: mentions, reactions, replies, and flags.

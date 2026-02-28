@@ -3,7 +3,7 @@
 Tests the Sancho arrival scenario (contextual whispers, silence tiers,
 calendar awareness), the P2P protocol guarantees (E2E encryption, no
 intermediary, mutual auth), and seller negotiation (persona gating,
-reputation checks, direct transactions).
+trust checks, direct transactions).
 """
 
 from __future__ import annotations
@@ -406,13 +406,13 @@ class TestSellerNegotiation:
         mock_dina: MockDinaCore,
         seller_identity: MockIdentity,
     ) -> None:
-        """Before negotiating, buyer's Dina checks seller's reputation score."""
+        """Before negotiating, buyer's Dina checks seller's trust score."""
         # Set a trust score for the seller
-        mock_dina.reputation.set_trust_score(seller_identity.root_did, 78.5)
+        mock_dina.trust_network.set_trust_score(seller_identity.root_did, 78.5)
 
-        score = mock_dina.reputation.get_trust_score(seller_identity.root_did)
+        score = mock_dina.trust_network.get_trust_score(seller_identity.root_did)
         assert score == 78.5
-        assert score > 0.0  # Seller has some reputation
+        assert score > 0.0  # Seller has some trust
 
 # TST-INT-485
     def test_direct_transaction_no_marketplace(
@@ -457,32 +457,32 @@ class TestSellerNegotiation:
         assert received.payload["offer_price"] == 95000
 
 # TST-INT-486
-    def test_low_reputation_flagged(
+    def test_low_trust_flagged(
         self,
         mock_dina: MockDinaCore,
         mock_human: MockHuman,
     ) -> None:
-        """If a seller has low reputation, Dina flags it to the user before proceeding."""
+        """If a seller has low trust, Dina flags it to the user before proceeding."""
         low_rep_seller = "did:plc:LowRep123456789012345678901234"
-        mock_dina.reputation.set_trust_score(low_rep_seller, 15.0)
+        mock_dina.trust_network.set_trust_score(low_rep_seller, 15.0)
 
-        score = mock_dina.reputation.get_trust_score(low_rep_seller)
+        score = mock_dina.trust_network.get_trust_score(low_rep_seller)
         assert score < 30.0  # Below threshold
 
         # Dina creates a fiduciary-level alert
         notification = Notification(
             tier=SilenceTier.TIER_1_FIDUCIARY,
-            title="Low reputation seller",
-            body=f"Seller {low_rep_seller[:30]}... has reputation score {score}. "
+            title="Low trust seller",
+            body=f"Seller {low_rep_seller[:30]}... has trust score {score}. "
                  "Proceed with caution.",
             actions=["proceed", "block", "report"],
-            source="reputation_check",
+            source="trust_check",
         )
         mock_human.receive_notification(notification)
 
         assert len(mock_human.notifications) == 1
         assert mock_human.notifications[0].tier == SilenceTier.TIER_1_FIDUCIARY
-        assert "Low reputation" in mock_human.notifications[0].title
+        assert "Low trust" in mock_human.notifications[0].title
 
 
 # ---------------------------------------------------------------------------

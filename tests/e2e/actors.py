@@ -18,7 +18,7 @@ from typing import Any
 from tests.e2e.mocks import (
     ActionRisk,
     AuditEntry,
-    BotReputation,
+    BotTrust,
     D2DMessage,
     DIDDocument,
     DeviceToken,

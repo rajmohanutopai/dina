@@ -1,4 +1,4 @@
-# Dina Reputation AppView — Code Architecture v5 Final
+# Dina Trust AppView — Code Architecture v5 Final
 
 > **Revision history:**
 > - v1: Initial architecture (raw relay, precomputed graph, unified Next.js)
@@ -52,11 +52,11 @@ All three share the same codebase, database connection library, and TypeScript t
 
 The AppView does not connect directly to individual Dina PDS nodes. The AT Protocol uses a **relay** (Big Graph Service / BGS) as an intermediary that crawls all federated PDS repositories and merges them into a single firehose. The data flow is:
 
-1. **Dina Core (PDS)** — Each user's node stores reputation records in their personal data repository (signed, content-addressed Merkle tree). On first boot, the PDS sends `com.atproto.sync.requestCrawl` to the configured relay URL, registering itself for crawling.
+1. **Dina Core (PDS)** — Each user's node stores trust records in their personal data repository (signed, content-addressed Merkle tree). On first boot, the PDS sends `com.atproto.sync.requestCrawl` to the configured relay URL, registering itself for crawling.
 
-2. **Relay (BGS)** — Crawls all registered PDS repositories, verifies signatures, and merges all commits into a single firehose stream. The relay is lexicon-agnostic — it carries ALL record types from ALL PDS nodes, including custom `com.dina.reputation.*` records.
+2. **Relay (BGS)** — Crawls all registered PDS repositories, verifies signatures, and merges all commits into a single firehose stream. The relay is lexicon-agnostic — it carries ALL record types from ALL PDS nodes, including custom `com.dina.trust.*` records.
 
-3. **Jetstream (Go binary)** — Self-hosted container that connects to the relay firehose, does the heavy CBOR/MST decoding in Go, and exposes a lightweight JSON WebSocket stream. Subscribes with `wantedCollections` to filter for only reputation records.
+3. **Jetstream (Go binary)** — Self-hosted container that connects to the relay firehose, does the heavy CBOR/MST decoding in Go, and exposes a lightweight JSON WebSocket stream. Subscribes with `wantedCollections` to filter for only trust records.
 
 4. **AppView Ingester** — Connects to the local Jetstream container over the Docker network (`ws://jetstream:6008`). Receives pre-decoded JSON events. Validates, dispatches to handlers, writes to Postgres.
 
@@ -64,13 +64,13 @@ The AppView does not connect directly to individual Dina PDS nodes. The AT Proto
 
 **v1 (two-month sprint): Piggyback on Bluesky's global relay.**
 
-Configure the Jetstream binary to connect to `wss://bgs.bsky.network`. Bluesky's relay is lexicon-agnostic — it will crawl any PDS that sends `requestCrawl`, including Dina nodes with custom reputation records. Your Jetstream filters out the millions of Bluesky posts and feeds only `com.dina.reputation.*` events to the Ingester.
+Configure the Jetstream binary to connect to `wss://bgs.bsky.network`. Bluesky's relay is lexicon-agnostic — it will crawl any PDS that sends `requestCrawl`, including Dina nodes with custom trust records. Your Jetstream filters out the millions of Bluesky posts and feeds only `com.dina.trust.*` events to the Ingester.
 
 Pros: Zero relay infrastructure. Works immediately. Cons: Dependency on Bluesky's infrastructure.
 
 **v2 (post-validation): Sovereign Dina relay.**
 
-Deploy Bluesky's open-source `indigo` BGS as `relay.dina.foundation`. Dina Core nodes `requestCrawl` to the Dina relay instead of Bluesky's. Full sovereignty — the reputation network operates independently of Bluesky.
+Deploy Bluesky's open-source `indigo` BGS as `relay.dina.foundation`. Dina Core nodes `requestCrawl` to the Dina relay instead of Bluesky's. Full sovereignty — the trust network operates independently of Bluesky.
 
 The swap is a single env var change (`RELAY_URL` in the Jetstream container). Zero code changes to the AppView, the Ingester, or the PDS.
 
@@ -106,7 +106,7 @@ func registerWithRelay(relayURL string, pdsDID string) error {
 }
 ```
 
-This is called once on first boot. The relay then crawls the PDS on an ongoing basis, picking up all new reputation records as they're created.
+This is called once on first boot. The relay then crawls the PDS on an ongoing basis, picking up all new trust records as they're created.
 
 ### Why Jetstream, Not Raw Relay
 
@@ -114,9 +114,9 @@ The AT Proto relay firehose (`com.atproto.sync.subscribeRepos`) sends CBOR-encod
 - CBOR decoding
 - MST traversal to extract operations
 - Ed25519 signature verification per commit
-- Filtering (99.9%+ of commits are Bluesky posts, not reputation records)
+- Filtering (99.9%+ of commits are Bluesky posts, not trust records)
 
-All of this in single-threaded Node.js is a CPU bottleneck at scale. Bluesky built **Jetstream** specifically for AppViews — a Go intermediary that handles the cryptographic heavy lifting and emits a lightweight JSON WebSocket stream. The Ingester subscribes with `wantedCollections` and receives only `com.dina.reputation.*` records, already decoded to JSON.
+All of this in single-threaded Node.js is a CPU bottleneck at scale. Bluesky built **Jetstream** specifically for AppViews — a Go intermediary that handles the cryptographic heavy lifting and emits a lightweight JSON WebSocket stream. The Ingester subscribes with `wantedCollections` and receives only `com.dina.trust.*` records, already decoded to JSON.
 
 This eliminates: `@atproto/repo` dependency, MST walking code, CBOR decoding, signature verification. The Ingester becomes a JSON validator + Postgres writer.
 
@@ -175,8 +175,8 @@ dina-appview/
 │   │   │   ├── ingester-cursor.ts   # Jetstream cursor (last processed timestamp)
 │   │   │   │
 │   │   │   │  # ── Materialized tables (refreshed by Scorer) ──
-│   │   │   ├── did-profiles.ts      # Aggregated DID reputation + reviewer stats
-│   │   │   ├── subject-scores.ts    # Aggregated subject reputation
+│   │   │   ├── did-profiles.ts      # Aggregated DID trust + reviewer stats
+│   │   │   ├── subject-scores.ts    # Aggregated subject trust
 │   │   │   └── domain-scores.ts     # Per-DID per-domain trust scores
 │   │   │
 │   │   ├── migrations/
@@ -253,15 +253,15 @@ dina-appview/
 │   │   │
 │   │   │  # ── XRPC API endpoints (agents consume these) ──
 │   │   ├── xrpc/
-│   │   │   ├── com.dina.reputation.resolve/
+│   │   │   ├── com.dina.trust.resolve/
 │   │   │   │   └── route.ts
-│   │   │   ├── com.dina.reputation.getProfile/
+│   │   │   ├── com.dina.trust.getProfile/
 │   │   │   │   └── route.ts
-│   │   │   ├── com.dina.reputation.getAttestations/
+│   │   │   ├── com.dina.trust.getAttestations/
 │   │   │   │   └── route.ts
-│   │   │   ├── com.dina.reputation.getGraph/
+│   │   │   ├── com.dina.trust.getGraph/
 │   │   │   │   └── route.ts
-│   │   │   └── com.dina.reputation.search/
+│   │   │   └── com.dina.trust.search/
 │   │   │       └── route.ts
 │   │   │
 │   │   │  # ── API middleware ──
@@ -399,7 +399,7 @@ dina-appview/
 │       └── mock-jetstream.ts            # Mock Jetstream events
 │
 └── lexicons/                            # Lexicon JSON schemas (source of truth)
-    ├── com/dina/reputation/
+    ├── com/dina/trust/
     │   ├── attestation.json
     │   ├── vouch.json
     │   ├── ... (all 25 lexicons)
@@ -426,7 +426,7 @@ export interface JetstreamCommitCreate {
   commit: {
     rev: string                            // Repo revision
     operation: 'create' | 'update'
-    collection: string                     // e.g. "com.dina.reputation.attestation"
+    collection: string                     // e.g. "com.dina.trust.attestation"
     rkey: string                           // Record key (TID)
     record: Record<string, unknown>        // The actual record — already JSON
     cid: string                            // Content hash
@@ -725,7 +725,7 @@ import { validateRecord } from './record-validator'
 import { BoundedIngestionQueue } from './bounded-queue'
 import { isRateLimited } from './rate-limiter'
 import { env } from '@/config/env'
-import { REPUTATION_COLLECTIONS } from '@/config/lexicons'
+import { TRUST_COLLECTIONS } from '@/config/lexicons'
 import { logger } from '@/shared/utils/logger'
 import { metrics } from '@/shared/utils/metrics'
 
@@ -752,7 +752,7 @@ export class JetstreamConsumer {
   private connect(): void {
     // Build Jetstream URL with wanted collections filter
     const params = new URLSearchParams()
-    for (const collection of REPUTATION_COLLECTIONS) {
+    for (const collection of TRUST_COLLECTIONS) {
       params.append('wantedCollections', collection)
     }
     if (this.cursor > 0) {
@@ -760,7 +760,7 @@ export class JetstreamConsumer {
     }
 
     const url = `${env.JETSTREAM_URL}/subscribe?${params.toString()}`
-    logger.info({ url: env.JETSTREAM_URL, collections: REPUTATION_COLLECTIONS.length }, 'Connecting to Jetstream')
+    logger.info({ url: env.JETSTREAM_URL, collections: TRUST_COLLECTIONS.length }, 'Connecting to Jetstream')
 
     this.ws = new WebSocket(url)
 
@@ -837,7 +837,7 @@ export class JetstreamConsumer {
     const collection = commit.collection
 
     // Double-check: should already be filtered by wantedCollections
-    if (!REPUTATION_COLLECTIONS.includes(collection)) return
+    if (!TRUST_COLLECTIONS.includes(collection)) return
 
     // Rate limit check (Fix 11): drop records from abusive DIDs
     // BEFORE any database I/O. Costs zero Postgres resources.
@@ -1000,30 +1000,30 @@ export class JetstreamConsumer {
 ```typescript
 // src/config/lexicons.ts
 
-/** All reputation record collection NSIDs */
-export const REPUTATION_COLLECTIONS = [
-  'com.dina.reputation.attestation',
-  'com.dina.reputation.vouch',
-  'com.dina.reputation.endorsement',
-  'com.dina.reputation.flag',
-  'com.dina.reputation.reply',
-  'com.dina.reputation.reaction',
-  'com.dina.reputation.reportRecord',
-  'com.dina.reputation.revocation',
-  'com.dina.reputation.delegation',
-  'com.dina.reputation.collection',
-  'com.dina.reputation.media',
-  'com.dina.reputation.subject',
-  'com.dina.reputation.amendment',
-  'com.dina.reputation.verification',
-  'com.dina.reputation.reviewRequest',
-  'com.dina.reputation.comparison',
-  'com.dina.reputation.subjectClaim',
-  'com.dina.reputation.trustPolicy',
-  'com.dina.reputation.notificationPrefs',
+/** All trust record collection NSIDs */
+export const TRUST_COLLECTIONS = [
+  'com.dina.trust.attestation',
+  'com.dina.trust.vouch',
+  'com.dina.trust.endorsement',
+  'com.dina.trust.flag',
+  'com.dina.trust.reply',
+  'com.dina.trust.reaction',
+  'com.dina.trust.reportRecord',
+  'com.dina.trust.revocation',
+  'com.dina.trust.delegation',
+  'com.dina.trust.collection',
+  'com.dina.trust.media',
+  'com.dina.trust.subject',
+  'com.dina.trust.amendment',
+  'com.dina.trust.verification',
+  'com.dina.trust.reviewRequest',
+  'com.dina.trust.comparison',
+  'com.dina.trust.subjectClaim',
+  'com.dina.trust.trustPolicy',
+  'com.dina.trust.notificationPrefs',
 ] as const
 
-export type ReputationCollection = typeof REPUTATION_COLLECTIONS[number]
+export type TrustCollection = typeof TRUST_COLLECTIONS[number]
 ```
 
 ### Record Validator
@@ -1032,7 +1032,7 @@ export type ReputationCollection = typeof REPUTATION_COLLECTIONS[number]
 // src/ingester/record-validator.ts
 
 import { z } from 'zod'
-import type { ReputationCollection } from '@/config/lexicons'
+import type { TrustCollection } from '@/config/lexicons'
 
 // ── Shared schema fragments ──
 
@@ -1130,10 +1130,10 @@ const reportRecordSchema = z.object({
 // ── Validator map ──
 
 const schemas: Record<string, z.ZodSchema> = {
-  'com.dina.reputation.attestation': attestationSchema,
-  'com.dina.reputation.vouch': vouchSchema,
-  'com.dina.reputation.reaction': reactionSchema,
-  'com.dina.reputation.reportRecord': reportRecordSchema,
+  'com.dina.trust.attestation': attestationSchema,
+  'com.dina.trust.vouch': vouchSchema,
+  'com.dina.trust.reaction': reactionSchema,
+  'com.dina.trust.reportRecord': reportRecordSchema,
   // ... all 19 record types
 }
 
@@ -1176,9 +1176,9 @@ export interface HandlerContext {
 }
 
 export interface RecordOp {
-  uri: string             // at://did:plc:abc/com.dina.reputation.attestation/tid
+  uri: string             // at://did:plc:abc/com.dina.trust.attestation/tid
   did: string             // Author DID
-  collection: string      // com.dina.reputation.attestation
+  collection: string      // com.dina.trust.attestation
   rkey: string            // Record key
   cid?: string            // Content hash (present on create/update, absent on delete)
   record?: unknown        // Validated record (present on create/update, absent on delete)
@@ -1250,25 +1250,25 @@ import { trustPolicyHandler } from './trust-policy'
 import { notificationPrefsHandler } from './notification-prefs'
 
 const handlers: Record<string, RecordHandler> = {
-  'com.dina.reputation.attestation': attestationHandler,
-  'com.dina.reputation.vouch': vouchHandler,
-  'com.dina.reputation.endorsement': endorsementHandler,
-  'com.dina.reputation.flag': flagHandler,
-  'com.dina.reputation.reply': replyHandler,
-  'com.dina.reputation.reaction': reactionHandler,
-  'com.dina.reputation.reportRecord': reportRecordHandler,
-  'com.dina.reputation.revocation': revocationHandler,
-  'com.dina.reputation.delegation': delegationHandler,
-  'com.dina.reputation.collection': collectionHandler,
-  'com.dina.reputation.media': mediaHandler,
-  'com.dina.reputation.subject': subjectHandler,
-  'com.dina.reputation.amendment': amendmentHandler,
-  'com.dina.reputation.verification': verificationHandler,
-  'com.dina.reputation.reviewRequest': reviewRequestHandler,
-  'com.dina.reputation.comparison': comparisonHandler,
-  'com.dina.reputation.subjectClaim': subjectClaimHandler,
-  'com.dina.reputation.trustPolicy': trustPolicyHandler,
-  'com.dina.reputation.notificationPrefs': notificationPrefsHandler,
+  'com.dina.trust.attestation': attestationHandler,
+  'com.dina.trust.vouch': vouchHandler,
+  'com.dina.trust.endorsement': endorsementHandler,
+  'com.dina.trust.flag': flagHandler,
+  'com.dina.trust.reply': replyHandler,
+  'com.dina.trust.reaction': reactionHandler,
+  'com.dina.trust.reportRecord': reportRecordHandler,
+  'com.dina.trust.revocation': revocationHandler,
+  'com.dina.trust.delegation': delegationHandler,
+  'com.dina.trust.collection': collectionHandler,
+  'com.dina.trust.media': mediaHandler,
+  'com.dina.trust.subject': subjectHandler,
+  'com.dina.trust.amendment': amendmentHandler,
+  'com.dina.trust.verification': verificationHandler,
+  'com.dina.trust.reviewRequest': reviewRequestHandler,
+  'com.dina.trust.comparison': comparisonHandler,
+  'com.dina.trust.subjectClaim': subjectClaimHandler,
+  'com.dina.trust.trustPolicy': trustPolicyHandler,
+  'com.dina.trust.notificationPrefs': notificationPrefsHandler,
 }
 
 export function routeHandler(collection: string): RecordHandler | null {
@@ -1499,23 +1499,23 @@ import { removeTrustEdge } from './trust-edge-sync'
  * uses that table for both the tombstone metadata query and the delete.
  */
 const COLLECTION_TABLE_MAP: Record<string, PgTable> = {
-  'com.dina.reputation.attestation':       attestations,
-  'com.dina.reputation.vouch':             vouches,
-  'com.dina.reputation.endorsement':       endorsements,
-  'com.dina.reputation.flag':              flags,
-  'com.dina.reputation.reportRecord':      reportRecords,
-  'com.dina.reputation.reply':             replies,
-  'com.dina.reputation.reaction':          reactions,
-  'com.dina.reputation.revocation':        revocations,
-  'com.dina.reputation.delegation':        delegations,
-  'com.dina.reputation.comparison':        comparisons,
-  'com.dina.reputation.reviewRequest':     reviewRequests,
-  'com.dina.reputation.collection':        collectionsTable,
-  'com.dina.reputation.amendment':         amendments,
-  'com.dina.reputation.verification':      verifications,
-  'com.dina.reputation.subjectClaim':      subjectClaims,
-  'com.dina.reputation.trustPolicy':       trustPolicies,
-  'com.dina.reputation.notificationPrefs': notificationPrefs,
+  'com.dina.trust.attestation':       attestations,
+  'com.dina.trust.vouch':             vouches,
+  'com.dina.trust.endorsement':       endorsements,
+  'com.dina.trust.flag':              flags,
+  'com.dina.trust.reportRecord':      reportRecords,
+  'com.dina.trust.reply':             replies,
+  'com.dina.trust.reaction':          reactions,
+  'com.dina.trust.revocation':        revocations,
+  'com.dina.trust.delegation':        delegations,
+  'com.dina.trust.comparison':        comparisons,
+  'com.dina.trust.reviewRequest':     reviewRequests,
+  'com.dina.trust.collection':        collectionsTable,
+  'com.dina.trust.amendment':         amendments,
+  'com.dina.trust.verification':      verifications,
+  'com.dina.trust.subjectClaim':      subjectClaims,
+  'com.dina.trust.trustPolicy':       trustPolicies,
+  'com.dina.trust.notificationPrefs': notificationPrefs,
 }
 
 /**
@@ -1892,11 +1892,11 @@ The fix isn't to weaken Tier 2 isolation — it's to make Tier 1 the overwhelmin
 
 Now the attestation hits Tier 1 deterministically — same hash as every other attestation with that Place ID. Name-only Tier 2 attestations should be the rare exception (offline users, API-only clients without agent assistance), not the default path.
 
-This means the `com.dina.reputation.attestation` lexicon's `subject` field should **strongly prefer** structured identifiers. The agent documentation should emphasize that providing a bare name is a degraded experience.
+This means the `com.dina.trust.attestation` lexicon's `subject` field should **strongly prefer** structured identifiers. The agent documentation should emphasize that providing a bare name is a degraded experience.
 
 ### Community Merge (Tier 3)
 
-When orphaned Tier 2 subjects accumulate around the same real-world entity, they can be merged using the existing `com.dina.reputation.amendment` lexicon (or a future `subjectMerge` lexicon). A trusted labeler or community moderator asserts "Subject A is the same as Subject B."
+When orphaned Tier 2 subjects accumulate around the same real-world entity, they can be merged using the existing `com.dina.trust.amendment` lexicon (or a future `subjectMerge` lexicon). A trusted labeler or community moderator asserts "Subject A is the same as Subject B."
 
 The Scorer processes the merge:
 
@@ -1956,7 +1956,7 @@ export async function processMerge(
 The `/resolve` XRPC endpoint must follow the canonical chain when looking up subject scores:
 
 ```typescript
-// In computeResolveResponse (src/app/xrpc/com.dina.reputation.resolve/route.ts)
+// In computeResolveResponse (src/app/xrpc/com.dina.trust.resolve/route.ts)
 
 // 1. Parse the subject reference
 const subjectRef = JSON.parse(subjectJson)
@@ -2918,7 +2918,7 @@ export function computeTrustScore(input: TrustScoreInput): TrustScoreOutput {
  * The old code used `authorTrustScore ?? 0.5` — giving unscored authors
  * the same weight as moderately trusted ones. An attacker could spin up
  * 1,000 sybils, each with default 0.5 weight, and instantly shift a
- * subject's reputation.
+ * subject's trust score.
  *
  * The fix has two layers:
  *
@@ -3153,7 +3153,7 @@ export function resolveKey(
 
 /**
  * Cache TTLs by endpoint.
- * Short TTLs — reputation data should never be more than a few seconds stale.
+ * Short TTLs — trust data should never be more than a few seconds stale.
  */
 export const CACHE_TTLS = {
   RESOLVE: 5_000,           // 5 seconds — most critical, most queried
@@ -3169,7 +3169,7 @@ export const CACHE_TTLS = {
 ### Resolve (The Money Endpoint)
 
 ```typescript
-// src/app/xrpc/com.dina.reputation.resolve/route.ts
+// src/app/xrpc/com.dina.trust.resolve/route.ts
 
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -3293,7 +3293,7 @@ async function computeResolveResponse(
 ### Search
 
 ```typescript
-// src/app/xrpc/com.dina.reputation.search/route.ts
+// src/app/xrpc/com.dina.trust.search/route.ts
 
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -3393,7 +3393,7 @@ services:
   postgres:
     image: postgres:17
     environment:
-      POSTGRES_DB: dina_reputation
+      POSTGRES_DB: dina_trust
       POSTGRES_USER: dina
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
@@ -3401,7 +3401,7 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dina -d dina_reputation"]
+      test: ["CMD-SHELL", "pg_isready -U dina -d dina_trust"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -3409,7 +3409,7 @@ services:
   # ── Jetstream (Go binary) ──
   # Bridges the AT Proto relay firehose to lightweight JSON WebSocket.
   # Handles CBOR decoding, MST traversal, signature verification in Go.
-  # Filters for only com.dina.reputation.* collections.
+  # Filters for only com.dina.trust.* collections.
   #
   # v1: Connects to Bluesky's global relay (bgs.bsky.network).
   #     Switch RELAY_URL to relay.dina.foundation for sovereign operation.
@@ -3423,28 +3423,28 @@ services:
       # v2: relay.dina.foundation (sovereign Dina relay)
       JETSTREAM_RELAY_URL: ${RELAY_URL:-wss://bgs.bsky.network}
 
-      # Only emit events for reputation records — filters out
+      # Only emit events for trust records — filters out
       # millions of Bluesky posts, likes, follows, etc.
       JETSTREAM_WANTED_COLLECTIONS: >-
-        com.dina.reputation.attestation,
-        com.dina.reputation.vouch,
-        com.dina.reputation.endorsement,
-        com.dina.reputation.flag,
-        com.dina.reputation.reply,
-        com.dina.reputation.reaction,
-        com.dina.reputation.reportRecord,
-        com.dina.reputation.revocation,
-        com.dina.reputation.delegation,
-        com.dina.reputation.collection,
-        com.dina.reputation.media,
-        com.dina.reputation.subject,
-        com.dina.reputation.amendment,
-        com.dina.reputation.verification,
-        com.dina.reputation.reviewRequest,
-        com.dina.reputation.comparison,
-        com.dina.reputation.subjectClaim,
-        com.dina.reputation.trustPolicy,
-        com.dina.reputation.notificationPrefs
+        com.dina.trust.attestation,
+        com.dina.trust.vouch,
+        com.dina.trust.endorsement,
+        com.dina.trust.flag,
+        com.dina.trust.reply,
+        com.dina.trust.reaction,
+        com.dina.trust.reportRecord,
+        com.dina.trust.revocation,
+        com.dina.trust.delegation,
+        com.dina.trust.collection,
+        com.dina.trust.media,
+        com.dina.trust.subject,
+        com.dina.trust.amendment,
+        com.dina.trust.verification,
+        com.dina.trust.reviewRequest,
+        com.dina.trust.comparison,
+        com.dina.trust.subjectClaim,
+        com.dina.trust.trustPolicy,
+        com.dina.trust.notificationPrefs
 
       # WebSocket listen port (internal to Docker network)
       JETSTREAM_PORT: 6008
@@ -3463,7 +3463,7 @@ services:
     build: .
     command: ["node", "dist/ingester/main.js"]
     environment:
-      DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_reputation
+      DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_trust
       DATABASE_POOL_MAX: 20
       # Connect to LOCAL Jetstream container — not an external URL.
       # All CBOR/MST work happens in the Go binary above.
@@ -3478,7 +3478,7 @@ services:
     build: .
     command: ["node", "dist/scorer/main.js"]
     environment:
-      DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_reputation
+      DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_trust
       LOG_LEVEL: info
     depends_on:
       postgres: { condition: service_healthy }
@@ -3488,8 +3488,8 @@ services:
     build: .
     command: ["node", "dist/web/server.js"]
     environment:
-      DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_reputation
-      NEXT_PUBLIC_BASE_URL: https://reputation.dina.foundation
+      DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_trust
+      NEXT_PUBLIC_BASE_URL: https://trust.dina.foundation
       PORT: 3000
     ports:
       - "3000:3000"
@@ -3835,12 +3835,12 @@ The atomic upsert (Fix 2) is preserved — `ON CONFLICT (id)` on the determinist
 
 The AppView is strictly a **read-indexer**. It consumes records from the relay firehose and materializes them into queryable state. It never writes to any PDS.
 
-Writing reputation records is the exclusive domain of the **Dina Core** (the Go binary running on each user's personal infrastructure). The data flow for creating a new attestation is:
+Writing trust records is the exclusive domain of the **Dina Core** (the Go binary running on each user's personal infrastructure). The data flow for creating a new attestation is:
 
 ```
 ┌────────────────┐     ┌──────────────────┐     ┌──────────────┐     ┌──────────────┐     ┌───────────┐
 │  Python Brain  │────▶│  Go Core API     │────▶│  Local PDS   │────▶│  Relay (BGS) │────▶│  AppView  │
-│  (Agent logic) │     │  /v1/reputation  │     │  (AT Proto)  │     │  Firehose    │     │  Ingester │
+│  (Agent logic) │     │  /v1/trust       │     │  (AT Proto)  │     │  Firehose    │     │  Ingester │
 │  Decides what  │     │  Policy check +  │     │  Signs, hashes│    │  Broadcasts  │     │  Indexes  │
 │  to attest     │     │  record assembly │     │  into MST    │     │  to network  │     │           │
 └────────────────┘     └──────────────────┘     └──────────────┘     └──────────────┘     └───────────┘
@@ -3867,7 +3867,7 @@ intent = {
 }
 
 # Send to Go Core via internal API
-response = core_client.post("/v1/reputation/publish", json=intent)
+response = core_client.post("/v1/trust/publish", json=intent)
 ```
 
 ### Step 2: Core Gatekeeps and Assembles
@@ -3875,9 +3875,9 @@ response = core_client.post("/v1/reputation/publish", json=intent)
 The Go Core verifies the action against the user's sovereign policy (spending limits, content filters, rate limits) and assembles the full AT Protocol record:
 
 ```go
-// In dina-core (Go) — internal handler for /v1/reputation/publish
+// In dina-core (Go) — internal handler for /v1/trust/publish
 
-func (s *ReputationService) Publish(ctx context.Context, intent Intent) error {
+func (s *TrustService) Publish(ctx context.Context, intent Intent) error {
     // 1. Policy check: does the user's trust policy allow this?
     if err := s.policyEngine.Check(ctx, intent); err != nil {
         return fmt.Errorf("policy rejected: %w", err)
@@ -3885,7 +3885,7 @@ func (s *ReputationService) Publish(ctx context.Context, intent Intent) error {
 
     // 2. Assemble the full AT Protocol record with required fields
     record := map[string]interface{}{
-        "$type":     "com.dina.reputation.attestation",  // Lexicon type identifier
+        "$type":     "com.dina.trust.attestation",  // Lexicon type identifier
         "subject":   intent.Subject,
         "category":  intent.Category,
         "sentiment": intent.Sentiment,
@@ -3899,7 +3899,7 @@ func (s *ReputationService) Publish(ctx context.Context, intent Intent) error {
     // signs it with the user's key, and broadcasts to the relay.
     _, err := s.pdsClient.CreateRecord(ctx, &atproto.RepoCreateRecord_Input{
         Repo:       s.userDID,                              // User's DID
-        Collection: "com.dina.reputation.attestation",      // Lexicon NSID
+        Collection: "com.dina.trust.attestation",      // Lexicon NSID
         Record:     &lexutil.LexiconTypeDecoder{Val: record},
     })
     if err != nil {
@@ -3925,7 +3925,7 @@ The AppView never needs to know about the Brain, the Core, or the PDS. It only s
 
 AT Protocol PDS implementations accept ANY collection NSID in `createRecord` — they do not validate against a known set of lexicons. The PDS stores the record as an opaque CBOR blob in the user's repository. Validation is the AppView's responsibility, not the PDS's.
 
-This means Dina's custom `com.dina.reputation.*` collections work on any AT Protocol PDS (including Bluesky's hosted PDS) without any PDS modifications. The PDS doesn't need to "know about" Dina's lexicons.
+This means Dina's custom `com.dina.trust.*` collections work on any AT Protocol PDS (including Bluesky's hosted PDS) without any PDS modifications. The PDS doesn't need to "know about" Dina's lexicons.
 
 ---
 
@@ -3950,26 +3950,26 @@ import { isRateLimited } from '@/ingester/rate-limiter'
 import { createDb } from '@/db/connection'
 import { logger } from '@/shared/utils/logger'
 
-const REPUTATION_COLLECTIONS = [
-  'com.dina.reputation.attestation',
-  'com.dina.reputation.vouch',
-  'com.dina.reputation.endorsement',
-  'com.dina.reputation.flag',
-  'com.dina.reputation.reply',
-  'com.dina.reputation.reaction',
-  'com.dina.reputation.reportRecord',
-  'com.dina.reputation.revocation',
-  'com.dina.reputation.delegation',
-  'com.dina.reputation.collection',
-  'com.dina.reputation.media',
-  'com.dina.reputation.subject',
-  'com.dina.reputation.amendment',
-  'com.dina.reputation.verification',
-  'com.dina.reputation.reviewRequest',
-  'com.dina.reputation.comparison',
-  'com.dina.reputation.subjectClaim',
-  'com.dina.reputation.trustPolicy',
-  'com.dina.reputation.notificationPrefs',
+const TRUST_COLLECTIONS = [
+  'com.dina.trust.attestation',
+  'com.dina.trust.vouch',
+  'com.dina.trust.endorsement',
+  'com.dina.trust.flag',
+  'com.dina.trust.reply',
+  'com.dina.trust.reaction',
+  'com.dina.trust.reportRecord',
+  'com.dina.trust.revocation',
+  'com.dina.trust.delegation',
+  'com.dina.trust.collection',
+  'com.dina.trust.media',
+  'com.dina.trust.subject',
+  'com.dina.trust.amendment',
+  'com.dina.trust.verification',
+  'com.dina.trust.reviewRequest',
+  'com.dina.trust.comparison',
+  'com.dina.trust.subjectClaim',
+  'com.dina.trust.trustPolicy',
+  'com.dina.trust.notificationPrefs',
 ]
 
 /**
@@ -4038,8 +4038,8 @@ async function backfillFromPds(
   for (const repo of repos) {
     const did = repo.did
 
-    // 2. For each reputation collection, list all records
-    for (const collection of REPUTATION_COLLECTIONS) {
+    // 2. For each trust collection, list all records
+    for (const collection of TRUST_COLLECTIONS) {
       let cursor: string | undefined
 
       do {

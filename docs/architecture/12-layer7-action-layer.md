@@ -117,7 +117,7 @@ Option B — Delegate (if user has pre-authorized):
 1. Dina never gives an action agent raw vault data. She provides only the minimal context needed for the task, scrubbed through the PII layer.
 2. Every delegated action passes through the Silence Protocol first — Dina decides IF to act, not just HOW.
 3. Action agents operate under Dina's constraints. If Dina says `draft_only: true`, the agent cannot send.
-4. Outcomes are recorded in Tier 3 for the agent's reputation score. If OpenClaw's form-fill quality drops, Dina routes to a better agent.
+4. Outcomes are recorded in Tier 3 for the agent's trust score. If OpenClaw's form-fill quality drops, Dina routes to a better agent.
 
 ### Scheduling: Three Tiers, No Scheduler
 

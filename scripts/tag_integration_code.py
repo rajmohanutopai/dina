@@ -102,7 +102,7 @@ SYNONYMS = {
     "draft": {"draft", "drafts", "staging"},
     "payment": {"payment", "payments", "cart", "checkout", "purchase"},
     "bot": {"bot", "bots", "agent", "agents"},
-    "reputation": {"reputation", "attestation", "attestations", "trust"},
+    "trust": {"trust", "attestation", "attestations", "trust_network"},
     "sync": {"sync", "synced", "synchronization", "push"},
     "offline": {"offline", "disconnected", "down", "unavailable"},
     "recovery": {"recovery", "recover", "recovered", "restore", "restored"},

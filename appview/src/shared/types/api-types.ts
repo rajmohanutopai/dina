@@ -1,4 +1,4 @@
-/** Response from com.dina.reputation.resolve */
+/** Response from com.dina.trust.resolve */
 export interface ResolveResponse {
   subjectType: string
   trustLevel: string
@@ -26,14 +26,14 @@ export interface GraphContext {
   trustedAttestors: string[]
 }
 
-/** Response from com.dina.reputation.search */
+/** Response from com.dina.trust.search */
 export interface SearchResponse {
   results: unknown[]
   cursor?: string
   totalEstimate: number | null
 }
 
-/** Response from com.dina.reputation.getProfile */
+/** Response from com.dina.trust.getProfile */
 export interface GetProfileResponse {
   did: string
   overallTrustScore: number | null

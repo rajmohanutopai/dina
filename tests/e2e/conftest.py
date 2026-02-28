@@ -20,7 +20,7 @@ import pytest
 
 from tests.e2e.actors import HomeNode, Persona, PersonaType
 from tests.e2e.mocks import (
-    BotReputation,
+    BotTrust,
     D2DMessage,
     DeviceType,
     EstateBeneficiary,
@@ -164,9 +164,9 @@ def d2d_network(docker_services) -> MockD2DNetwork:
 def appview() -> MockAppView:
     """Mock Trust Network AppView."""
     av = MockAppView()
-    # Pre-populate bot reputations
-    av.update_bot_reputation("did:plc:reviewbot", 94)
-    av.update_bot_reputation("did:plc:malbot", 12)
+    # Pre-populate bot trusts
+    av.update_bot_trust("did:plc:reviewbot", 94)
+    av.update_bot_trust("did:plc:malbot", 12)
     return av
 
 
@@ -472,8 +472,8 @@ def openclaw() -> MockOpenClaw:
 
 @pytest.fixture(scope="session")
 def reviewbot() -> MockReviewBot:
-    """ReviewBot — Specialist review bot (reputation 94)."""
-    bot = MockReviewBot(reputation=94)
+    """ReviewBot — Specialist review bot (trust score 94)."""
+    bot = MockReviewBot(trust_score=94)
     bot.add_product_response("ergonomic chair", {
         "recommendations": [
             {
@@ -506,7 +506,7 @@ def reviewbot() -> MockReviewBot:
 
 @pytest.fixture(scope="session")
 def malicious_bot() -> MockMaliciousBot:
-    """MaliciousBot — Untrusted bot (reputation 12)."""
+    """MaliciousBot — Untrusted bot (trust score 12)."""
     return MockMaliciousBot()
 
 

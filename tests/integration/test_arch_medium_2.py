@@ -237,11 +237,11 @@ def test_bot_query_response_format_and_max_sources(
 
 
 # TST-INT-642
-def test_missing_attribution_reputation_penalty(
+def test_missing_attribution_trust_penalty(
     mock_review_bot: MockReviewBot,
     mock_trust_network: MockTrustNetwork,
 ):
-    """Source missing creator_name triggers a reputation violation."""
+    """Source missing creator_name triggers a trust violation."""
     # Add a response with a source missing creator_name
     mock_review_bot.add_response("headphones", {
         "recommendations": [
@@ -269,14 +269,14 @@ def test_missing_attribution_reputation_penalty(
     for rec in result.get("recommendations", []):
         for source in rec.get("sources", []):
             if source.get("type") == "expert" and "creator_name" not in source:
-                # Apply reputation penalty
+                # Apply trust penalty
                 mock_trust_network.update_bot_score(
                     mock_review_bot.bot_did, -5.0
                 )
 
     score = mock_trust_network.get_bot_score(mock_review_bot.bot_did)
     assert score < 50.0, (
-        "Bot with missing attribution must receive reputation penalty"
+        "Bot with missing attribution must receive trust penalty"
     )
 
 
@@ -284,7 +284,7 @@ def test_missing_attribution_reputation_penalty(
 def test_bot_routing_threshold_boundary(
     mock_trust_network: MockTrustNetwork,
 ):
-    """Bot at threshold=90 with reputation=90 is used; reputation=89 is not."""
+    """Bot at threshold=90 with trust score=90 is used; trust score=89 is not."""
     threshold = 90
     bot_a_did = "did:plc:BotA"
     bot_b_did = "did:plc:BotB"

@@ -6,7 +6,7 @@ import { addTrustEdge } from '../trust-edge-sync.js'
 import { markDirty } from '@/db/queries/dirty-flags.js'
 
 /**
- * Handler for com.dina.reputation.vouch records.
+ * Handler for com.dina.trust.vouch records.
  *
  * A vouch is a trust signal from one DID to another — "I trust this person."
  * The trust edge weight is derived from the confidence level.

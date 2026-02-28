@@ -10,7 +10,7 @@ Behavioral contracts tested:
 - Ingress tiers: Tailscale Funnel, Cloudflare Tunnel, Yggdrasil mesh,
   DID rotation on tier change, multiple tiers, Foundation relay.
 - Forward secrecy: Noise XX handshake, ratchet, past-key isolation.
-- AppView / Reputation Indexer: firehose filtering, cryptographic
+- AppView / Trust Indexer: firehose filtering, cryptographic
   verification, query APIs, deterministic aggregate scores, cursor recovery.
 - Three-layer verification: Ed25519 proof, consensus check, PDS spot-check,
   dishonest AppView abandonment.
@@ -724,11 +724,11 @@ class TestAppViewIndexer:
         self,
         mock_app_view: MockAppView,
     ) -> None:
-        """Only com.dina.reputation.* lexicons are indexed from the
+        """Only com.dina.trust.* lexicons are indexed from the
         firehose."""
         records = [
-            {"lexicon": "com.dina.reputation.verdict", "data": "good"},
-            {"lexicon": "com.dina.reputation.outcome", "data": "positive"},
+            {"lexicon": "com.dina.trust.verdict", "data": "good"},
+            {"lexicon": "com.dina.trust.outcome", "data": "positive"},
             {"lexicon": "com.bsky.feed.post", "data": "irrelevant"},
             {"lexicon": "com.dina.identity.attestation", "data": "ident"},
             {"lexicon": "com.other.app.record", "data": "noise"},
@@ -736,7 +736,7 @@ class TestAppViewIndexer:
 
         indexed = mock_app_view.consume_firehose(records)
 
-        # Only reputation + identity attestation records indexed
+        # Only trust + identity attestation records indexed
         assert indexed == 3
         assert len(mock_app_view.indexed_records) == 3
         lexicons = {r["lexicon"] for r in mock_app_view.indexed_records}
@@ -762,17 +762,17 @@ class TestAppViewIndexer:
         assert mock_verification_layer.layer1_checks == 2
 
     # TST-INT-406
-    def test_query_api_reputation_by_did(
+    def test_query_api_trust_by_did(
         self,
         mock_app_view: MockAppView,
     ) -> None:
-        """Query returns all reputation records by author DID."""
+        """Query returns all trust records by author DID."""
         records = [
-            {"lexicon": "com.dina.reputation.verdict",
+            {"lexicon": "com.dina.trust.verdict",
              "author_did": "did:plc:Alice", "rating": 90},
-            {"lexicon": "com.dina.reputation.verdict",
+            {"lexicon": "com.dina.trust.verdict",
              "author_did": "did:plc:Alice", "rating": 85},
-            {"lexicon": "com.dina.reputation.verdict",
+            {"lexicon": "com.dina.trust.verdict",
              "author_did": "did:plc:Bob", "rating": 70},
         ]
         mock_app_view.consume_firehose(records)
@@ -784,19 +784,19 @@ class TestAppViewIndexer:
         assert len(bob_records) == 1
 
     # TST-INT-407
-    def test_query_api_product_reputation(
+    def test_query_api_product_trust(
         self,
         mock_app_view: MockAppView,
     ) -> None:
         """Query returns all reviews for a given product."""
         records = [
-            {"lexicon": "com.dina.reputation.verdict",
+            {"lexicon": "com.dina.trust.verdict",
              "product_id": "thinkpad_x1", "rating": 92,
              "author_did": "did:plc:Expert1"},
-            {"lexicon": "com.dina.reputation.verdict",
+            {"lexicon": "com.dina.trust.verdict",
              "product_id": "thinkpad_x1", "rating": 88,
              "author_did": "did:plc:Expert2"},
-            {"lexicon": "com.dina.reputation.verdict",
+            {"lexicon": "com.dina.trust.verdict",
              "product_id": "aeron_chair", "rating": 91,
              "author_did": "did:plc:Expert3"},
         ]
@@ -813,7 +813,7 @@ class TestAppViewIndexer:
         self,
         mock_trust_network: MockTrustNetwork,
     ) -> None:
-        """Query returns bot reputation scores."""
+        """Query returns bot trust scores."""
         bot_did = "did:plc:ReviewBot001"
 
         # Default score
@@ -850,7 +850,7 @@ class TestAppViewIndexer:
             **record_data,
             "signature": signature,
             "author_did": mock_identity.root_did,
-            "lexicon": "com.dina.reputation.verdict",
+            "lexicon": "com.dina.trust.verdict",
         }
 
         mock_app_view.consume_firehose([signed_record])
@@ -874,13 +874,13 @@ class TestAppViewIndexer:
     ) -> None:
         """Same input always produces the same aggregate score."""
         records = [
-            {"lexicon": "com.dina.reputation.verdict",
+            {"lexicon": "com.dina.trust.verdict",
              "product_id": "laptop_x", "rating": 90,
              "author_did": "did:plc:A"},
-            {"lexicon": "com.dina.reputation.verdict",
+            {"lexicon": "com.dina.trust.verdict",
              "product_id": "laptop_x", "rating": 80,
              "author_did": "did:plc:B"},
-            {"lexicon": "com.dina.reputation.verdict",
+            {"lexicon": "com.dina.trust.verdict",
              "product_id": "laptop_x", "rating": 70,
              "author_did": "did:plc:C"},
         ]
@@ -901,7 +901,7 @@ class TestAppViewIndexer:
         """Cursor persists across batches; after simulated crash the
         firehose can resume from the last cursor position."""
         batch_1 = [
-            {"lexicon": "com.dina.reputation.verdict", "rating": 90},
+            {"lexicon": "com.dina.trust.verdict", "rating": 90},
             {"lexicon": "com.bsky.feed.post", "data": "skip"},
         ]
         mock_app_view.consume_firehose(batch_1)
@@ -915,7 +915,7 @@ class TestAppViewIndexer:
 
         # Resume from cursor position
         batch_2 = [
-            {"lexicon": "com.dina.reputation.outcome", "rating": 85},
+            {"lexicon": "com.dina.trust.outcome", "rating": 85},
         ]
         recovered_view.consume_firehose(batch_2)
 
@@ -1180,7 +1180,7 @@ class TestTimestampAnchoring:
 
 class TestBotProtocol:
     """Bot query protocol: format, signatures, attribution, deep
-    links, reputation routing, discovery, anonymity, push."""
+    links, trust routing, discovery, anonymity, push."""
 
     # TST-INT-420
     def test_bot_query_format(
@@ -1265,11 +1265,11 @@ class TestBotProtocol:
                 "http" in source["deep_link"]
 
     # TST-INT-424
-    def test_bot_reputation_auto_route_on_low_score(
+    def test_bot_trust_auto_route_on_low_score(
         self,
         mock_trust_network: MockTrustNetwork,
     ) -> None:
-        """Bots with low reputation are auto-demoted (not used for
+        """Bots with low trust are auto-demoted (not used for
         future queries)."""
         good_bot = "did:plc:GoodBot"
         bad_bot = "did:plc:BadBot"
@@ -1292,7 +1292,7 @@ class TestBotProtocol:
         assert should_use_bad is False
 
     # TST-INT-425
-    def test_bot_reputation_scoring_factors(
+    def test_bot_trust_scoring_factors(
         self,
         mock_trust_network: MockTrustNetwork,
     ) -> None:
