@@ -12,8 +12,10 @@
 #   GOOGLE_API_KEY  — optional, for real LLM reasoning tests
 #
 # Usage:
-#   ./run_user_story_tests.sh                          # verbose (default)
+#   ./run_user_story_tests.sh                          # sanity (default, skips Story 04)
+#   ./run_user_story_tests.sh --all                    # all 5 stories
 #   ./run_user_story_tests.sh --brief                  # banner + results only
+#   ./run_user_story_tests.sh --all --brief            # all stories, brief output
 #   GOOGLE_API_KEY=<key> ./run_user_story_tests.sh     # with LLM tests
 #   ./run_user_story_tests.sh -k "sancho"              # single story
 #   SYSTEM_RESTART=0 ./run_user_story_tests.sh         # reuse containers
@@ -21,16 +23,32 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# -- Parse --brief flag --
+# -- Parse flags --
 BRIEF=false
+MODE="sanity"
 PYTEST_ARGS=()
 for arg in "$@"; do
     if [ "$arg" = "--brief" ]; then
         BRIEF=true
+    elif [ "$arg" = "--all" ]; then
+        MODE="all"
+    elif [ "$arg" = "--sanity" ]; then
+        MODE="sanity"
     else
         PYTEST_ARGS+=("$arg")
     fi
 done
+
+# In sanity mode, skip Story 04 (License Renewal) unless user passed -k
+if [ "$MODE" = "sanity" ]; then
+    has_k=false
+    for arg in "${PYTEST_ARGS[@]+"${PYTEST_ARGS[@]}"}"; do
+        if [ "$arg" = "-k" ]; then has_k=true; break; fi
+    done
+    if [ "$has_k" = false ]; then
+        PYTEST_ARGS+=("-k" "not test_04_license_renewal")
+    fi
+fi
 
 # -- Colors (if terminal supports them) --
 if [ -t 1 ]; then
@@ -62,6 +80,11 @@ print_banner() {
     # Args: $1=s01_result .. $5=s05_result  (empty if not run yet)
     local s01="${1:-}" s02="${2:-}" s03="${3:-}" s04="${4:-}" s05="${5:-}"
 
+    local mode_label=""
+    if [ "$MODE" = "sanity" ]; then
+        mode_label="  ${DIM}(sanity — use --all for Story 04)${R}"
+    fi
+
     # Box: 2 leading spaces + ║ + 100 inner + ║ = 104 display columns
     echo -e "${B}  ╔════════════════════════════════════════════════════════════════════════════════════════════════════╗${R}"
     echo -e "${B}  ║${R}${BOLD}     DINA User Story Tests                                                                          ${B}║${R}"
@@ -71,7 +94,7 @@ print_banner() {
 
     # ── Story 01 ──────────────────────────────────────────────────────────
     printf "  ${B}║${R}  ${G}01${R} ${BOLD}The Purchase Journey${R}"
-    if [ -n "$s01" ]; then printf "%73s" "$s01"; else printf "%73s" "13 tests"; fi
+    if [ -n "$s01" ]; then printf "%86s" "$s01"; else printf "%73s" "13 tests"; fi
     echo -e "  ${B}║${R}"
     echo -e "${B}  ║${R}     ${BOLD}\"I need a chair\"${R}${D} -> 5 reviewers created (3 verified Ring 2, 2 unverified Ring 1)               ${B}║${R}"
     echo -e "${B}  ║${R}${D}     Dina checks health vault (back pain, needs lumbar), finance vault (budget 10-20K INR)          ${B}║${R}"
@@ -80,7 +103,7 @@ print_banner() {
 
     # ── Story 02 ──────────────────────────────────────────────────────────
     printf "  ${B}║${R}  ${G}02${R} ${BOLD}The Sancho Moment${R}"
-    if [ -n "$s02" ]; then printf "%76s" "$s02"; else printf "%76s" "7 tests"; fi
+    if [ -n "$s02" ]; then printf "%89s" "$s02"; else printf "%76s" "7 tests"; fi
     echo -e "  ${B}║${R}"
     echo -e "${B}  ║${R}     ${BOLD}Sancho arrives${R}${D} -> Sancho's Dina contacts your Dina (D2D encrypted, Ed25519 signed)             ${B}║${R}"
     echo -e "${B}  ║${R}${D}     Your Dina searches vault by Sancho's DID, finds: \"his mother had a fall\", \"likes cardamom tea\" ${B}║${R}"
@@ -89,31 +112,37 @@ print_banner() {
 
     # ── Story 03 ──────────────────────────────────────────────────────────
     printf "  ${B}║${R}  ${G}03${R} ${BOLD}The Dead Internet Filter${R}"
-    if [ -n "$s03" ]; then printf "%69s" "$s03"; else printf "%69s" "8 tests"; fi
+    if [ -n "$s03" ]; then printf "%82s" "$s03"; else printf "%69s" "8 tests"; fi
     echo -e "  ${B}║${R}"
     echo -e "${B}  ║${R}     ${BOLD}\"Is this video AI?\"${R}${D} -> Dina resolves creator DID via AT Protocol Trust Network                 ${B}║${R}"
     echo -e "${B}  ║${R}${D}     Elena (Ring 3): 200 attestations, 15 peer vouches, 2yr history -> \"authentic, trusted creator\" ${B}║${R}"
     echo -e "${B}  ║${R}${D}     BotFarm (Ring 1): 0 attestations, 3-day-old account -> \"unverified, check other sources\"       ${B}║${R}"
     echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
 
-    # ── Story 04 ──────────────────────────────────────────────────────────
-    printf "  ${B}║${R}  ${G}04${R} ${BOLD}The License Renewal${R}"
-    if [ -n "$s04" ]; then printf "%74s" "$s04"; else printf "%74s" "10 tests"; fi
-    echo -e "  ${B}║${R}"
-    echo -e "${B}  ║${R}     ${BOLD}User uploads license scan${R}${D} -> Brain LLM extracts fields with per-field confidence scores        ${B}║${R}"
-    echo -e "${B}  ║${R}${D}     Deterministic reminder fires 30 days before expiry (no LLM). Brain composes contextual nudge   ${B}║${R}"
-    echo -e "${B}  ║${R}${D}     Delegation: Brain generates strict JSON for RTO_Bot. Guardian flags for human review           ${B}║${R}"
-    echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+    # ── Story 04 (only in --all mode) ───────────────────────────────────
+    if [ "$MODE" = "all" ]; then
+        printf "  ${B}║${R}  ${G}04${R} ${BOLD}The License Renewal${R}"
+        if [ -n "$s04" ]; then printf "%87s" "$s04"; else printf "%74s" "10 tests"; fi
+        echo -e "  ${B}║${R}"
+        echo -e "${B}  ║${R}     ${BOLD}User uploads license scan${R}${D} -> Brain LLM extracts fields with per-field confidence scores        ${B}║${R}"
+        echo -e "${B}  ║${R}${D}     Deterministic reminder fires 30 days before expiry (no LLM). Brain composes contextual nudge   ${B}║${R}"
+        echo -e "${B}  ║${R}${D}     Delegation: Brain generates strict JSON for RTO_Bot. Guardian flags for human review           ${B}║${R}"
+        echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+    fi
 
     # ── Story 05 ──────────────────────────────────────────────────────────
     printf "  ${B}║${R}  ${G}05${R} ${BOLD}The Persona Wall${R}"
-    if [ -n "$s05" ]; then printf "%77s" "$s05"; else printf "%77s" "11 tests"; fi
+    if [ -n "$s05" ]; then printf "%90s" "$s05"; else printf "%77s" "11 tests"; fi
     echo -e "  ${B}║${R}"
     echo -e "${B}  ║${R}     ${BOLD}Shopping agent asks \"any health conditions?\"${R}${D} -> Guardian blocks cross-persona access           ${B}║${R}"
     echo -e "${B}  ║${R}${D}     Health (restricted): \"L4-L5 herniation\" withheld. Proposes \"chronic back pain\" only            ${B}║${R}"
     echo -e "${B}  ║${R}${D}     User approves minimal disclosure. PII scrubber confirms no diagnosis leaked                    ${B}║${R}"
     echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
     echo -e "${B}  ╚════════════════════════════════════════════════════════════════════════════════════════════════════╝${R}"
+
+    if [ -n "$mode_label" ]; then
+        echo -e "$mode_label"
+    fi
 }
 
 # -- Format result string with color --

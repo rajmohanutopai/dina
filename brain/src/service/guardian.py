@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import traceback
 from typing import Any
 from uuid import uuid4
@@ -115,9 +116,13 @@ _MEDICAL_ENTITY_TYPES = frozenset({
 # Catches specific diagnoses, vertebral references, drug names, and conditions
 # that must NEVER leak from a restricted health persona without explicit approval.
 _MEDICAL_PII_REGEX_FALLBACK = re.compile(
-    r'(?:L\d[- /]L\d|C\d[- /]C\d|T\d[- /]T\d|herniat|stenosis|'
-    r'fractur|tumor|tumour|malignant|benign|HIV|hepatitis[- ]|'
-    r'diabetes type|bipolar|schizophren|aneurysm)',
+    r'(?:'
+    r'\bL\d[- /]L\d\b|\bC\d[- /]C\d\b|\bT\d[- /]T\d\b|'
+    r'\bherniat\w*\b|\bstenosis\b|'
+    r'\bfractur\w*\b|\btumou?r\w*\b|\bmalignant\b|\bbenign\b|'
+    r'\bHIV\b|\bhepatitis[- ]\w*\b|'
+    r'\bdiabetes\s+type\b|\bbipolar\b|\bschizophren\w*\b|\baneurysm\b'
+    r')',
     re.IGNORECASE,
 )
 
@@ -212,6 +217,10 @@ class GuardianLoop:
 
         # Engagement-tier items saved for the morning briefing.
         self._briefing_items: list[dict] = []
+
+        # Pending disclosure proposals — maps disclosure_id → proposal.
+        # Entries expire after 1 hour.  Max 1000 entries.
+        self._pending_proposals: dict[str, dict] = {}
 
     # ------------------------------------------------------------------
     # Silence Classification (SS2.1)
@@ -1114,6 +1123,21 @@ class GuardianLoop:
             }
         except Exception as exc:
             log.warning("guardian.cross_persona.vault_query_failed", error=str(exc))
+            return {
+                "status": "error",
+                "action": "disclosure_error",
+                "error": f"Vault query failed: {exc}",
+                "response": {
+                    "blocked": blocked,
+                    "persona_tier": tier,
+                    "disclosure_id": disclosure_id,
+                    "requesting_agent": requesting_agent,
+                    "source_persona": source_persona,
+                    "query": query,
+                },
+                "approved": False,
+                "requires_approval": blocked,
+            }
 
         if not vault_items:
             return {
@@ -1133,6 +1157,15 @@ class GuardianLoop:
 
         # Build disclosure proposal using deterministic scan.
         proposal = self._build_disclosure_proposal(vault_items, query)
+
+        # Store proposal for binding verification at approval time.
+        self._pending_proposals[disclosure_id] = {
+            "safe_to_share": proposal.get("safe_to_share", ""),
+            "withheld": proposal.get("withheld", []),
+            "source_persona": source_persona,
+            "created_at": time.monotonic(),
+        }
+        self._evict_proposals()
 
         block_reason = ""
         if blocked:
@@ -1273,6 +1306,10 @@ class GuardianLoop:
                     elif ent_type == "PERSON":
                         # Doctor names are PII — withhold.
                         detected_values.append(ent_value)
+                    elif ent_type in ("ORG", "ORGANIZATION"):
+                        # In medical disclosure context, ORGs are likely
+                        # hospitals/clinics/pharmacies — withhold.
+                        detected_values.append(ent_value)
                 if detected_values:
                     return True, detected_values
             except Exception:
@@ -1286,12 +1323,32 @@ class GuardianLoop:
 
         return False, []
 
+    _PROPOSAL_TTL = 3600.0   # 1 hour
+    _PROPOSAL_MAX = 1000
+
+    def _evict_proposals(self) -> None:
+        """Remove expired and excess pending proposals."""
+        now = time.monotonic()
+        expired = [
+            k for k, v in self._pending_proposals.items()
+            if now - v.get("created_at", 0) > self._PROPOSAL_TTL
+        ]
+        for k in expired:
+            del self._pending_proposals[k]
+        if len(self._pending_proposals) > self._PROPOSAL_MAX:
+            sorted_keys = sorted(
+                self._pending_proposals,
+                key=lambda k: self._pending_proposals[k].get("created_at", 0),
+            )
+            for k in sorted_keys[: len(self._pending_proposals) - self._PROPOSAL_MAX]:
+                del self._pending_proposals[k]
+
     async def _handle_disclosure_approved(self, event: dict) -> dict:
         """Handle user approval of a cross-persona disclosure.
 
-        The user has reviewed the proposal and approved specific text
-        to share.  We perform a final PII check (audit, not gate) and
-        write an audit record.
+        The approved_text must match the safe_to_share from the stored
+        proposal (binding check).  A final PII check gates sharing —
+        if medical patterns are found, disclosure is blocked.
 
         Parameters
         ----------
@@ -1322,7 +1379,34 @@ class GuardianLoop:
                 "error": "approved_text is required",
             }
 
-        # Final PII check — audit only, user explicitly approved.
+        # Binding check: approved_text must match the stored proposal.
+        stored = self._pending_proposals.pop(disclosure_id, None)
+        if stored is None:
+            log.warning(
+                "guardian.disclosure.unknown_id",
+                disclosure_id=disclosure_id,
+            )
+            return {
+                "status": "error",
+                "action": "disclosure_invalid",
+                "error": f"Unknown or expired disclosure_id: {disclosure_id}",
+            }
+
+        expected_safe = stored.get("safe_to_share", "")
+        if approved_text != expected_safe:
+            log.warning(
+                "guardian.disclosure.text_mismatch",
+                disclosure_id=disclosure_id,
+                expected_len=len(expected_safe),
+                received_len=len(approved_text),
+            )
+            return {
+                "status": "error",
+                "action": "disclosure_blocked",
+                "error": "approved_text does not match the generated proposal",
+            }
+
+        # Final PII check — gates sharing, not just audit.
         entities_found: list[str] = []
         medical_patterns_found: list[str] = []
 
@@ -1344,7 +1428,11 @@ class GuardianLoop:
             if val not in medical_patterns_found:
                 medical_patterns_found.append(val)
 
-        pii_clean = len(entities_found) == 0 and len(medical_patterns_found) == 0
+        # Gate decision is based on medical patterns only.  Generic PII
+        # entities (e.g. SWIFT/BIC false positives on ordinary words) are
+        # audit-only — the proposal was already scrubbed for medical content.
+        medical_clean = len(medical_patterns_found) == 0
+        pii_clean = medical_clean
 
         # Write audit record to KV.
         audit_record = {
@@ -1366,6 +1454,30 @@ class GuardianLoop:
                 "guardian.disclosure.audit_write_failed",
                 error=str(exc),
             )
+
+        # PII gate: block only if medical patterns found.
+        if not medical_clean:
+            log.warning(
+                "guardian.disclosure.pii_gate_blocked",
+                disclosure_id=disclosure_id,
+                medical_patterns=medical_patterns_found,
+                entities_count=len(entities_found),
+            )
+            return {
+                "status": "ok",
+                "action": "disclosure_blocked",
+                "response": {
+                    "disclosure_id": disclosure_id,
+                    "block_reason": "Final PII check found medical patterns in approved text",
+                    "pii_check": {
+                        "entities_found": entities_found,
+                        "medical_patterns_found": medical_patterns_found,
+                        "clean": False,
+                    },
+                },
+                "approved": False,
+                "requires_approval": True,
+            }
 
         log.info(
             "guardian.disclosure.shared",

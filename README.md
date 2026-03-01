@@ -31,7 +31,15 @@ git clone https://github.com/rajmohanutopai/dina.git && cd dina
 ./install.sh
 ```
 
-`install.sh` generates secrets, picks your LLM provider, builds containers, and displays your DID + recovery phrase. 
+`install.sh` generates secrets, picks your LLM provider, builds containers, and displays your DID + recovery phrase.
+
+### User Story Tests
+
+Every capability is proven end-to-end against a real multi-node stack (2× Go Core, 2× Python Brain, PDS, AppView, Postgres) — zero mocks.
+
+![User Story Tests](./UserStories.png)
+
+`./run_user_story_tests.sh` runs the sanity suite. Use `--all` for the full 5-story suite including License Renewal.
 
 ---
 

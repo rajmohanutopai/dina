@@ -1554,3 +1554,107 @@ async def test_guardian_2_8_5_didcomm_message_type_parsing(guardian) -> None:
     msg4 = make_didcomm_message(msg_type="dina/trust/query")
     result4 = await guardian.process_event(msg4)
     assert result4["handler"] == "trust_handler"
+
+
+# ---------------------------------------------------------------------------
+# SS2.10 Cross-Persona Disclosure Control
+# ---------------------------------------------------------------------------
+
+
+def _make_cross_persona_event(**overrides):
+    """Create a cross_persona_request event."""
+    base = {
+        "type": "cross_persona_request",
+        "payload": {
+            "requesting_agent": "shopping_agent",
+            "source_persona": "health",
+            "target_persona": "consumer",
+            "source_persona_tier": "restricted",
+            "query": "back pain lumbar",
+        },
+    }
+    if "payload" in overrides:
+        base["payload"].update(overrides.pop("payload"))
+    base.update(overrides)
+    return base
+
+
+def _make_approval_event(disclosure_id, approved_text, **overrides):
+    """Create a disclosure_approved event."""
+    base = {
+        "type": "disclosure_approved",
+        "payload": {
+            "disclosure_id": disclosure_id,
+            "approved_text": approved_text,
+            "requesting_agent": "shopping_agent",
+            "source_persona": "health",
+        },
+    }
+    if "payload" in overrides:
+        base["payload"].update(overrides.pop("payload"))
+    base.update(overrides)
+    return base
+
+
+_SAMPLE_VAULT_ITEMS = [
+    {
+        "Summary": "Patient has chronic back pain.",
+        "BodyText": "Chronic back pain and lumbar discomfort. Needs ergonomic support.",
+    },
+]
+
+
+@pytest.mark.asyncio
+async def test_guardian_2_10_1_disclosure_approved_unknown_id(guardian) -> None:
+    """Approving with an unknown disclosure_id must return disclosure_invalid."""
+    event = _make_approval_event("disc-does-not-exist", "some text")
+    result = await guardian.process_event(event)
+    assert result["action"] == "disclosure_invalid"
+    assert "Unknown or expired" in result.get("error", "")
+
+
+@pytest.mark.asyncio
+async def test_guardian_2_10_2_disclosure_approved_text_mismatch(guardian) -> None:
+    """Approving with text that doesn't match the proposal must be blocked."""
+    # First, generate a proposal so a disclosure_id is stored.
+    guardian._test_core.query_vault.return_value = _SAMPLE_VAULT_ITEMS
+    event = _make_cross_persona_event()
+    proposal_result = await guardian.process_event(event)
+    assert proposal_result["action"] == "disclosure_proposed"
+
+    disclosure_id = proposal_result["response"]["disclosure_id"]
+
+    # Approve with WRONG text (raw diagnosis, not the safe_to_share).
+    event2 = _make_approval_event(disclosure_id, "L4-L5 disc herniation diagnosis")
+    result = await guardian.process_event(event2)
+    assert result["action"] == "disclosure_blocked"
+    assert "does not match" in result.get("error", "")
+
+
+@pytest.mark.asyncio
+async def test_guardian_2_10_3_disclosure_approved_binding_correct(guardian) -> None:
+    """Approving with matching text must succeed as disclosure_shared."""
+    guardian._test_core.query_vault.return_value = _SAMPLE_VAULT_ITEMS
+    event = _make_cross_persona_event()
+    proposal_result = await guardian.process_event(event)
+    assert proposal_result["action"] == "disclosure_proposed"
+
+    disclosure_id = proposal_result["response"]["disclosure_id"]
+    safe_text = proposal_result["response"]["proposal"]["safe_to_share"]
+
+    # Approve with the exact safe_to_share text.
+    event2 = _make_approval_event(disclosure_id, safe_text)
+    result = await guardian.process_event(event2)
+    assert result["action"] == "disclosure_shared"
+    assert result["response"]["shared_text"] == safe_text
+    assert result["response"]["pii_check"]["clean"] is True
+
+
+@pytest.mark.asyncio
+async def test_guardian_2_10_4_vault_query_error_returns_disclosure_error(guardian) -> None:
+    """Vault query failure must return disclosure_error, not no_relevant_data."""
+    guardian._test_core.query_vault.side_effect = RuntimeError("connection refused")
+    event = _make_cross_persona_event()
+    result = await guardian.process_event(event)
+    assert result["action"] == "disclosure_error"
+    assert "Vault query failed" in result.get("error", "")
