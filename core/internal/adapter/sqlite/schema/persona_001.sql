@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS vault_items (
                         'purchase_decision','relationship_note')),
     source        TEXT NOT NULL DEFAULT '',
     source_id     TEXT NOT NULL DEFAULT '',
+    contact_did   TEXT NOT NULL DEFAULT '',
     summary       TEXT NOT NULL DEFAULT '',
     body          TEXT NOT NULL DEFAULT '',
     metadata      TEXT NOT NULL DEFAULT '{}',
@@ -32,12 +33,14 @@ CREATE TABLE IF NOT EXISTS vault_items (
 CREATE INDEX IF NOT EXISTS idx_vault_items_type ON vault_items(type);
 CREATE INDEX IF NOT EXISTS idx_vault_items_source ON vault_items(source, source_id);
 CREATE INDEX IF NOT EXISTS idx_vault_items_ts ON vault_items(timestamp);
+CREATE INDEX IF NOT EXISTS idx_vault_items_contact ON vault_items(contact_did);
 
 -- FTS5 full-text search index on vault items
 CREATE VIRTUAL TABLE IF NOT EXISTS vault_items_fts USING fts5(
     summary,
     body,
     tags,
+    contact_did,
     content='vault_items',
     content_rowid='rowid',
     tokenize='unicode61 remove_diacritics 2'
@@ -45,20 +48,20 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vault_items_fts USING fts5(
 
 -- FTS5 triggers for automatic sync
 CREATE TRIGGER IF NOT EXISTS vault_items_ai AFTER INSERT ON vault_items BEGIN
-    INSERT INTO vault_items_fts(rowid, summary, body, tags)
-    VALUES (new.rowid, new.summary, new.body, new.tags);
+    INSERT INTO vault_items_fts(rowid, summary, body, tags, contact_did)
+    VALUES (new.rowid, new.summary, new.body, new.tags, new.contact_did);
 END;
 
 CREATE TRIGGER IF NOT EXISTS vault_items_ad AFTER DELETE ON vault_items BEGIN
-    INSERT INTO vault_items_fts(vault_items_fts, rowid, summary, body, tags)
-    VALUES ('delete', old.rowid, old.summary, old.body, old.tags);
+    INSERT INTO vault_items_fts(vault_items_fts, rowid, summary, body, tags, contact_did)
+    VALUES ('delete', old.rowid, old.summary, old.body, old.tags, old.contact_did);
 END;
 
 CREATE TRIGGER IF NOT EXISTS vault_items_au AFTER UPDATE ON vault_items BEGIN
-    INSERT INTO vault_items_fts(vault_items_fts, rowid, summary, body, tags)
-    VALUES ('delete', old.rowid, old.summary, old.body, old.tags);
-    INSERT INTO vault_items_fts(rowid, summary, body, tags)
-    VALUES (new.rowid, new.summary, new.body, new.tags);
+    INSERT INTO vault_items_fts(vault_items_fts, rowid, summary, body, tags, contact_did)
+    VALUES ('delete', old.rowid, old.summary, old.body, old.tags, old.contact_did);
+    INSERT INTO vault_items_fts(rowid, summary, body, tags, contact_did)
+    VALUES (new.rowid, new.summary, new.body, new.tags, new.contact_did);
 END;
 
 -- Staging area: temporary items before confirmation

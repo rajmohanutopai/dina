@@ -46,6 +46,7 @@ def guardian():
     core.health.return_value = {"status": "ok"}
     core.store_vault_item.return_value = "item-001"
     core.search_vault.return_value = []
+    core.query_vault.return_value = []
     core.write_scratchpad.return_value = None
     core.read_scratchpad.return_value = None
     core.get_kv.return_value = None
@@ -324,9 +325,9 @@ async def test_guardian_2_2_3_degraded_mode_when_vault_unreachable(guardian) -> 
     """SS2.2.3: Guardian enters degraded mode when core vault is unreachable."""
     from src.domain.errors import CoreUnreachableError
 
-    # Make the nudge assembler's search_vault raise CoreUnreachableError.
-    guardian._core.search_vault.side_effect = CoreUnreachableError("core unreachable")
-    guardian._nudge._core.search_vault.side_effect = CoreUnreachableError("core unreachable")
+    # Make the nudge assembler's query_vault raise CoreUnreachableError.
+    guardian._core.query_vault.side_effect = CoreUnreachableError("core unreachable")
+    guardian._nudge._core.query_vault.side_effect = CoreUnreachableError("core unreachable")
 
     # Process a fiduciary event that requires nudge assembly.
     # The process_event catches CoreUnreachableError and returns degraded_mode.
@@ -1142,7 +1143,7 @@ async def test_guardian_2_6_1_nudge_on_conversation_open(guardian) -> None:
 async def test_guardian_2_6_2_nudge_context_assembly(guardian) -> None:
     """SS2.6.2: Nudge context assembly — gathers messages, notes, tasks, calendar."""
     # Set up vault to return relevant context.
-    guardian._test_core.search_vault.return_value = [
+    guardian._test_core.query_vault.return_value = [
         {"id": "msg-1", "summary": "Asked for PDF", "source": "telegram"},
     ]
     event = make_fiduciary_event(
@@ -1151,8 +1152,8 @@ async def test_guardian_2_6_2_nudge_context_assembly(guardian) -> None:
     )
     result = await guardian.process_event(event)
     assert result["action"] == "interrupt"
-    # search_vault should have been called for context queries.
-    guardian._test_core.search_vault.assert_awaited()
+    # query_vault should have been called for context queries.
+    guardian._test_core.query_vault.assert_awaited()
 
 
 # TST-BRAIN-077
@@ -1163,7 +1164,7 @@ async def test_guardian_2_6_3_nudge_delivery_via_ws(guardian) -> None:
     When a nudge is assembled, the guardian calls core.notify() to deliver it.
     """
     # Set up vault to return data so a nudge is generated.
-    guardian._test_core.search_vault.return_value = [
+    guardian._test_core.query_vault.return_value = [
         {"id": "msg-1", "summary": "Lunch Thursday", "source": "calendar"},
     ]
     event = make_fiduciary_event(
@@ -1181,7 +1182,7 @@ async def test_guardian_2_6_3_nudge_delivery_via_ws(guardian) -> None:
 async def test_guardian_2_6_4_nudge_no_context_no_interrupt(guardian) -> None:
     """SS2.6.4: Nudge with no relevant context — no nudge payload generated."""
     # Vault returns nothing — no context for the contact.
-    guardian._test_core.search_vault.return_value = []
+    guardian._test_core.query_vault.return_value = []
     event = make_fiduciary_event(
         body="New message",
         contact_did="did:plc:new_contact",
@@ -1195,7 +1196,7 @@ async def test_guardian_2_6_4_nudge_no_context_no_interrupt(guardian) -> None:
 @pytest.mark.asyncio
 async def test_guardian_2_6_5_nudge_respects_persona_boundaries(guardian) -> None:
     """SS2.6.5: Nudge respects persona boundaries — queries per persona."""
-    guardian._test_core.search_vault.return_value = []
+    guardian._test_core.query_vault.return_value = []
     event = make_fiduciary_event(
         body="Context lookup for contact",
         contact_did="did:plc:sancho123",
@@ -1213,7 +1214,7 @@ async def test_guardian_2_6_5_nudge_respects_persona_boundaries(guardian) -> Non
 async def test_guardian_2_6_6_pending_promise_detection(guardian) -> None:
     """SS2.6.6: Pending promise detection — "I'll send the PDF tomorrow" surfaces."""
     # Set up vault to return message with a promise pattern.
-    guardian._test_core.search_vault.return_value = [
+    guardian._test_core.query_vault.return_value = [
         {
             "id": "msg-promise",
             "summary": "I'll send the PDF tomorrow",
@@ -1235,9 +1236,9 @@ async def test_guardian_2_6_6_pending_promise_detection(guardian) -> None:
 @pytest.mark.asyncio
 async def test_guardian_2_6_7_calendar_context_included(guardian) -> None:
     """SS2.6.7: Calendar context included — upcoming event with contact appears in nudge."""
-    # Calendar events are queried via search_vault with type:event prefix.
-    # All search_vault calls return the same mock, so set up accordingly.
-    guardian._test_core.search_vault.return_value = [
+    # Calendar events are queried via query_vault with type filter.
+    # All query_vault calls return the same mock, so set up accordingly.
+    guardian._test_core.query_vault.return_value = [
         {
             "id": "cal-1",
             "summary": "Lunch with Sancho on Thursday",

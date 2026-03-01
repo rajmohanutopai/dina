@@ -272,16 +272,16 @@ class NudgeAssembler:
     ) -> list[dict]:
         """Query vault for recent messages with the contact.
 
-        Searches by the contact's DID string.  The in-memory vault does
-        ``strings.Contains`` across Summary, BodyText, and ContactDID.
-        The SQLite vault uses FTS5 phrase matching.  Both paths find items
-        where the DID appears in any indexed field.
+        Filters to message types only (``message``, ``email``).
+        The DID is searched via FTS5 (indexed in the ``contact_did``
+        column and also often present in ``body``/``summary``).
         """
         try:
-            results = await self._core.search_vault(
+            results = await self._core.query_vault(
                 persona_id,
                 _quote_fts_value(contact_did),
                 mode="hybrid",
+                types=["message", "email"],
             )
             return results or []
         except Exception:
@@ -295,12 +295,17 @@ class NudgeAssembler:
     async def _query_relationship_notes(
         self, persona_id: str, contact_did: str
     ) -> list[dict]:
-        """Query vault for relationship notes about the contact."""
+        """Query vault for relationship notes about the contact.
+
+        Filters to note-like types (``relationship_note``, ``note``,
+        ``contact_card``).
+        """
         try:
-            results = await self._core.search_vault(
+            results = await self._core.query_vault(
                 persona_id,
                 _quote_fts_value(contact_did),
                 mode="hybrid",
+                types=["relationship_note", "note", "contact_card"],
             )
             return results or []
         except Exception:
@@ -309,12 +314,16 @@ class NudgeAssembler:
     async def _query_calendar_events(
         self, persona_id: str, contact_did: str
     ) -> list[dict]:
-        """Query vault for upcoming calendar events with the contact."""
+        """Query vault for upcoming calendar events with the contact.
+
+        Filters to event type only.
+        """
         try:
-            results = await self._core.search_vault(
+            results = await self._core.query_vault(
                 persona_id,
                 _quote_fts_value(contact_did),
                 mode="hybrid",
+                types=["event"],
             )
             return results or []
         except Exception:

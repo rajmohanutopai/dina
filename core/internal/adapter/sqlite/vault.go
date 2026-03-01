@@ -128,24 +128,26 @@ func (a *VaultAdapter) Store(ctx context.Context, persona domain.PersonaName, it
 		}
 	}
 
-	const q = `INSERT INTO vault_items (id, type, source, source_id, summary, body, metadata, embedding, timestamp, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	const q = `INSERT INTO vault_items (id, type, source, source_id, contact_did, summary, body, metadata, embedding, timestamp, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
-    type       = excluded.type,
-    source     = excluded.source,
-    source_id  = excluded.source_id,
-    summary    = excluded.summary,
-    body       = excluded.body,
-    metadata   = excluded.metadata,
-    embedding  = excluded.embedding,
-    timestamp  = excluded.timestamp,
-    updated_at = excluded.updated_at`
+    type        = excluded.type,
+    source      = excluded.source,
+    source_id   = excluded.source_id,
+    contact_did = excluded.contact_did,
+    summary     = excluded.summary,
+    body        = excluded.body,
+    metadata    = excluded.metadata,
+    embedding   = excluded.embedding,
+    timestamp   = excluded.timestamp,
+    updated_at  = excluded.updated_at`
 
 	_, err := db.ExecContext(ctx, q,
 		item.ID,
 		item.Type,
 		item.Source,
 		item.SourceID,
+		item.ContactDID,
 		item.Summary,
 		item.BodyText,
 		item.Metadata,
@@ -189,18 +191,19 @@ func (a *VaultAdapter) StoreBatch(ctx context.Context, persona domain.PersonaNam
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	const q = `INSERT INTO vault_items (id, type, source, source_id, summary, body, metadata, embedding, timestamp, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	const q = `INSERT INTO vault_items (id, type, source, source_id, contact_did, summary, body, metadata, embedding, timestamp, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
-    type       = excluded.type,
-    source     = excluded.source,
-    source_id  = excluded.source_id,
-    summary    = excluded.summary,
-    body       = excluded.body,
-    metadata   = excluded.metadata,
-    embedding  = excluded.embedding,
-    timestamp  = excluded.timestamp,
-    updated_at = excluded.updated_at`
+    type        = excluded.type,
+    source      = excluded.source,
+    source_id   = excluded.source_id,
+    contact_did = excluded.contact_did,
+    summary     = excluded.summary,
+    body        = excluded.body,
+    metadata    = excluded.metadata,
+    embedding   = excluded.embedding,
+    timestamp   = excluded.timestamp,
+    updated_at  = excluded.updated_at`
 
 	stmt, err := tx.PrepareContext(ctx, q)
 	if err != nil {
@@ -236,6 +239,7 @@ ON CONFLICT(id) DO UPDATE SET
 			item.Type,
 			item.Source,
 			item.SourceID,
+			item.ContactDID,
 			item.Summary,
 			item.BodyText,
 			item.Metadata,
@@ -290,7 +294,7 @@ func (a *VaultAdapter) GetItem(ctx context.Context, persona domain.PersonaName, 
 	}
 
 	row := db.QueryRowContext(ctx,
-		`SELECT id, type, source, source_id, summary, body, metadata, timestamp, created_at
+		`SELECT id, type, source, source_id, contact_did, summary, body, metadata, timestamp, created_at
 		 FROM vault_items WHERE id = ? AND deleted = 0`, id)
 
 	var item domain.VaultItem
@@ -299,6 +303,7 @@ func (a *VaultAdapter) GetItem(ctx context.Context, persona domain.PersonaName, 
 		&item.Type,
 		&item.Source,
 		&item.SourceID,
+		&item.ContactDID,
 		&item.Summary,
 		&item.BodyText,
 		&item.Metadata,
@@ -346,14 +351,14 @@ func (a *VaultAdapter) Query(ctx context.Context, persona domain.PersonaName, q 
 		// Sanitize the query to prevent FTS5 operator interpretation
 		// (e.g. hyphens being treated as NOT operators).
 		ftsQuery := sanitizeFTS5Query(q.Query)
-		sqlBuf.WriteString(`SELECT v.id, v.type, v.source, v.source_id, v.summary, v.body, v.metadata, v.timestamp, v.created_at
+		sqlBuf.WriteString(`SELECT v.id, v.type, v.source, v.source_id, v.contact_did, v.summary, v.body, v.metadata, v.timestamp, v.created_at
 FROM vault_items_fts f
 JOIN vault_items v ON v.rowid = f.rowid
 WHERE vault_items_fts MATCH ? AND v.deleted = 0`)
 		args = append(args, ftsQuery)
 	} else {
 		// Plain listing / filtering without FTS.
-		sqlBuf.WriteString(`SELECT id, type, source, source_id, summary, body, metadata, timestamp, created_at
+		sqlBuf.WriteString(`SELECT id, type, source, source_id, contact_did, summary, body, metadata, timestamp, created_at
 FROM vault_items WHERE deleted = 0`)
 	}
 
@@ -416,6 +421,7 @@ FROM vault_items WHERE deleted = 0`)
 			&item.Type,
 			&item.Source,
 			&item.SourceID,
+			&item.ContactDID,
 			&item.Summary,
 			&item.BodyText,
 			&item.Metadata,
@@ -453,7 +459,7 @@ func (a *VaultAdapter) VectorSearch(ctx context.Context, persona domain.PersonaN
 		args[i] = id
 	}
 
-	query := `SELECT id, type, source, source_id, summary, body, metadata, timestamp, created_at
+	query := `SELECT id, type, source, source_id, contact_did, summary, body, metadata, timestamp, created_at
 		FROM vault_items WHERE id IN (` + strings.Join(placeholders, ",") + `) AND deleted = 0`
 
 	rows, err := db.QueryContext(ctx, query, args...)
@@ -468,6 +474,7 @@ func (a *VaultAdapter) VectorSearch(ctx context.Context, persona domain.PersonaN
 		var item domain.VaultItem
 		if err := rows.Scan(
 			&item.ID, &item.Type, &item.Source, &item.SourceID,
+			&item.ContactDID,
 			&item.Summary, &item.BodyText, &item.Metadata,
 			&item.Timestamp, &item.IngestedAt,
 		); err != nil {

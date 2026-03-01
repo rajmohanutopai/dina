@@ -19,7 +19,9 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	_ "github.com/mutecomm/go-sqlcipher/v4"
@@ -84,6 +86,14 @@ func (p *Pool) Open(persona string, dek []byte) error {
 	if _, err := db.ExecContext(context.Background(), schema); err != nil {
 		db.Close()
 		return fmt.Errorf("sqlite: schema %q: %w", persona, err)
+	}
+
+	// Run migrations for existing persona databases.
+	if persona != "identity" {
+		if err := migratePersona(db, persona); err != nil {
+			db.Close()
+			return fmt.Errorf("sqlite: migrate %q: %w", persona, err)
+		}
 	}
 
 	// Store DEK copy for potential re-key operations.
@@ -166,4 +176,88 @@ func (p *Pool) OpenPersonas() []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+// migratePersona applies incremental migrations to an existing persona database.
+// Each migration checks its precondition before running, making them idempotent.
+func migratePersona(db *sql.DB, persona string) error {
+	ctx := context.Background()
+
+	// --- Migration v2: add contact_did column + rebuild FTS5 ---
+	// Check if contact_did column already exists.
+	if !hasColumn(db, "vault_items", "contact_did") {
+		slog.Info("sqlite: applying migration v2 (contact_did)", "persona", persona)
+
+		// Add the column with a default empty string.
+		if _, err := db.ExecContext(ctx,
+			`ALTER TABLE vault_items ADD COLUMN contact_did TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("v2: add contact_did column: %w", err)
+		}
+
+		// Drop old FTS5 table and triggers, then recreate with contact_did.
+		stmts := []string{
+			`DROP TRIGGER IF EXISTS vault_items_ai`,
+			`DROP TRIGGER IF EXISTS vault_items_ad`,
+			`DROP TRIGGER IF EXISTS vault_items_au`,
+			`DROP TABLE IF EXISTS vault_items_fts`,
+			`CREATE VIRTUAL TABLE vault_items_fts USING fts5(
+				summary, body, tags, contact_did,
+				content='vault_items', content_rowid='rowid',
+				tokenize='unicode61 remove_diacritics 2')`,
+			// Rebuild FTS5 content from existing rows.
+			`INSERT INTO vault_items_fts(vault_items_fts) VALUES('rebuild')`,
+			// Recreate triggers.
+			`CREATE TRIGGER vault_items_ai AFTER INSERT ON vault_items BEGIN
+				INSERT INTO vault_items_fts(rowid, summary, body, tags, contact_did)
+				VALUES (new.rowid, new.summary, new.body, new.tags, new.contact_did);
+			END`,
+			`CREATE TRIGGER vault_items_ad AFTER DELETE ON vault_items BEGIN
+				INSERT INTO vault_items_fts(vault_items_fts, rowid, summary, body, tags, contact_did)
+				VALUES ('delete', old.rowid, old.summary, old.body, old.tags, old.contact_did);
+			END`,
+			`CREATE TRIGGER vault_items_au AFTER UPDATE ON vault_items BEGIN
+				INSERT INTO vault_items_fts(vault_items_fts, rowid, summary, body, tags, contact_did)
+				VALUES ('delete', old.rowid, old.summary, old.body, old.tags, old.contact_did);
+				INSERT INTO vault_items_fts(rowid, summary, body, tags, contact_did)
+				VALUES (new.rowid, new.summary, new.body, new.tags, new.contact_did);
+			END`,
+		}
+		for _, stmt := range stmts {
+			if _, err := db.ExecContext(ctx, stmt); err != nil {
+				return fmt.Errorf("v2: rebuild FTS5: %w", err)
+			}
+		}
+
+		// Record migration.
+		db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO schema_version(version, description) VALUES (2, 'Add contact_did to vault_items and FTS5')`)
+
+		slog.Info("sqlite: migration v2 complete", "persona", persona)
+	}
+
+	return nil
+}
+
+// hasColumn checks whether a table has a specific column.
+func hasColumn(db *sql.DB, table, column string) bool {
+	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull int
+		var dfltValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+			continue
+		}
+		if strings.EqualFold(name, column) {
+			return true
+		}
+	}
+	return false
 }
