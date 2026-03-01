@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS vault_items (
                         'document','bookmark','voice_memo','kv',
                         'contact','health_context','work_context',
                         'finance_context','family_context','trust_review',
-                        'purchase_decision')),
+                        'purchase_decision','relationship_note')),
     source        TEXT NOT NULL DEFAULT '',
     source_id     TEXT NOT NULL DEFAULT '',
     summary       TEXT NOT NULL DEFAULT '',

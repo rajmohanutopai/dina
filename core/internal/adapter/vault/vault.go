@@ -400,7 +400,8 @@ func matchesQuery(item domain.VaultItem, q domain.SearchQuery) bool {
 		lower := strings.ToLower(q.Query)
 		if !strings.Contains(strings.ToLower(item.ID), lower) &&
 			!strings.Contains(strings.ToLower(item.Summary), lower) &&
-			!strings.Contains(strings.ToLower(item.BodyText), lower) {
+			!strings.Contains(strings.ToLower(item.BodyText), lower) &&
+			!strings.Contains(strings.ToLower(item.ContactDID), lower) {
 			return false
 		}
 	}

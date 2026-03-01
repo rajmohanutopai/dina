@@ -14,7 +14,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 log = logging.getLogger(__name__)
 
@@ -36,7 +36,10 @@ class ProcessEventRequest(BaseModel):
     - ``agent_intent``  : agent_did, action, target, risk_level are populated
     - ``alert``         : priority + body
     - ``vault_unlocked``: persona_id
+    - ``dina/social/*`` : from_did is the sender DID (DIDComm messages)
     """
+
+    model_config = {"populate_by_name": True}
 
     type: str
     task_id: str | None = None
@@ -45,6 +48,9 @@ class ProcessEventRequest(BaseModel):
     source: str | None = None
     body: str | dict | None = None
     priority: str | None = None
+    # DIDComm sender field — "from" is a Python reserved word.
+    from_did: str | None = Field(None, alias="from")
+    contact_did: str | None = None
     # Agent intent fields (Agent Safety Layer)
     agent_did: str | None = None
     action: str | None = None
@@ -66,6 +72,8 @@ class ProcessEventResponse(BaseModel):
     classification: str | None = None
     decision: str | None = None
     response: dict | None = None
+    # Nudge payload (populated for DIDComm social messages)
+    nudge: dict | None = None
     # Agent intent fields (populated for agent_intent events)
     risk: str | None = None
     approved: bool | None = None
@@ -110,7 +118,7 @@ async def process_event(event: ProcessEventRequest) -> ProcessEventResponse:
             detail="Guardian loop not initialised",
         )
 
-    event_dict = event.model_dump(exclude_none=True)
+    event_dict = event.model_dump(by_alias=True, exclude_none=True)
 
     try:
         result = await _guardian.process_event(event_dict)
@@ -143,6 +151,7 @@ async def process_event(event: ProcessEventRequest) -> ProcessEventResponse:
         classification=result.get("classification"),
         decision=result.get("decision"),
         response=result.get("response"),
+        nudge=result.get("nudge"),
         risk=result.get("risk"),
         approved=result.get("approved"),
         requires_approval=result.get("requires_approval"),

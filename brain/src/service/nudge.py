@@ -36,6 +36,21 @@ def _quote_fts_value(value: str) -> str:
 
 log = structlog.get_logger(__name__)
 
+
+def _get(d: dict, key: str, default: str = "") -> str:
+    """Get a value from a dict, trying lowercase, Title, and Go-style keys.
+
+    Go's JSON marshaler emits capitalized struct field names (e.g.
+    ``Summary``, ``BodyText``, ``ID``).  Python code typically uses
+    lowercase.  This helper bridges the two conventions.
+    """
+    return (
+        d.get(key)
+        or d.get(key[0].upper() + key[1:])  # Summary, BodyText
+        or d.get(key.upper())  # ID
+        or default
+    )
+
 # Patterns that indicate a pending promise in message text.
 _PROMISE_PATTERNS = re.compile(
     r"(?:I(?:'ll| will) send|I(?:'ll| will) share|I(?:'ll| will) forward|"
@@ -146,28 +161,31 @@ class NudgeAssembler:
 
         if relationship_notes:
             for note in relationship_notes:
-                summary = note.get("summary", "")
+                summary = _get(note, "summary")
                 if summary:
                     nudge_parts.append(summary)
-                if note.get("id"):
-                    sources.append(note["id"])
+                item_id = _get(note, "id") or _get(note, "ID")
+                if item_id:
+                    sources.append(item_id)
 
         if calendar_events:
             for evt in calendar_events:
-                summary = evt.get("summary", "")
+                summary = _get(evt, "summary")
                 if summary:
                     nudge_parts.append(f"Upcoming: {summary}")
-                if evt.get("id"):
-                    sources.append(evt["id"])
+                item_id = _get(evt, "id") or _get(evt, "ID")
+                if item_id:
+                    sources.append(item_id)
 
         if recent_messages and not nudge_parts:
             # Fall back to summarising recent messages.
             last_msg = recent_messages[0]
-            summary = last_msg.get("summary", "")
+            summary = _get(last_msg, "summary")
             if summary:
                 nudge_parts.append(f"Last exchange: {summary}")
-            if last_msg.get("id"):
-                sources.append(last_msg["id"])
+            item_id = _get(last_msg, "id") or _get(last_msg, "ID")
+            if item_id:
+                sources.append(item_id)
 
         nudge_text = " | ".join(nudge_parts) if nudge_parts else ""
 
@@ -252,11 +270,17 @@ class NudgeAssembler:
     async def _query_recent_messages(
         self, persona_id: str, contact_did: str
     ) -> list[dict]:
-        """Query vault for recent messages with the contact."""
+        """Query vault for recent messages with the contact.
+
+        Searches by the contact's DID string.  The in-memory vault does
+        ``strings.Contains`` across Summary, BodyText, and ContactDID.
+        The SQLite vault uses FTS5 phrase matching.  Both paths find items
+        where the DID appears in any indexed field.
+        """
         try:
             results = await self._core.search_vault(
                 persona_id,
-                f"contact:{_quote_fts_value(contact_did)}",
+                _quote_fts_value(contact_did),
                 mode="hybrid",
             )
             return results or []
@@ -275,7 +299,7 @@ class NudgeAssembler:
         try:
             results = await self._core.search_vault(
                 persona_id,
-                f'type:relationship_note contact:{_quote_fts_value(contact_did)}',
+                _quote_fts_value(contact_did),
                 mode="hybrid",
             )
             return results or []
@@ -289,7 +313,7 @@ class NudgeAssembler:
         try:
             results = await self._core.search_vault(
                 persona_id,
-                f'type:event contact:{_quote_fts_value(contact_did)}',
+                _quote_fts_value(contact_did),
                 mode="hybrid",
             )
             return results or []
@@ -304,11 +328,11 @@ class NudgeAssembler:
         """
         promises: list[dict] = []
         for msg in messages:
-            text = msg.get("summary", "") or msg.get("body_text", "")
+            text = _get(msg, "summary") or _get(msg, "bodyText") or _get(msg, "body_text")
             match = _PROMISE_PATTERNS.search(text)
             if match:
                 promises.append({
                     "text": text,
-                    "source_id": msg.get("id", ""),
+                    "source_id": _get(msg, "id") or _get(msg, "ID"),
                 })
         return promises

@@ -23,6 +23,8 @@ var ValidVaultItemTypes = map[string]bool{
 	"work_context":    true,
 	"finance_context": true,
 	"family_context":  true,
+	// Relationship context (stored by nudge assembler / user notes)
+	"relationship_note": true,
 	// Decision records (Dina used Trust Network + vault context to recommend)
 	"purchase_decision": true,
 	"trust_review":      true,
