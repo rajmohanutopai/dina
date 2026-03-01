@@ -98,6 +98,11 @@ _LABEL_MAP: dict[str, str] = {
     "CRYPTO": "CRYPTO",
     "IP_ADDRESS": "IP",
     "MEDICAL_LICENSE": "MEDICAL",
+    # Medical entity types (GLiNER)
+    "MEDICAL_CONDITION": "MEDICAL_CONDITION",
+    "MEDICATION": "MEDICATION",
+    "BLOOD_TYPE": "BLOOD_TYPE",
+    "HEALTH_INSURANCE_ID": "HEALTH_INSURANCE_ID",
     "URL": "URL",
     "US_SSN": "SSN",
     "AADHAAR_NUMBER": "AADHAAR_NUMBER",
@@ -215,6 +220,7 @@ class PresidioScrubber:
         model: str | None = None,
         use_faker: bool = True,
         faker_locale: str | None = None,
+        enable_gliner: bool | None = None,
     ) -> None:
         # Ensure tldextract (used by Presidio's URL recognizer) has a writable
         # cache directory — prevents OSError in Docker / read-only $HOME.
@@ -235,6 +241,12 @@ class PresidioScrubber:
         self._faker_locale = faker_locale or os.environ.get(
             "DINA_FAKER_LOCALE", "en_US",
         )
+        # GLiNER is opt-in: heavy transformer model (~200MB), only load
+        # when explicitly enabled via constructor arg or DINA_GLINER=1.
+        if enable_gliner is not None:
+            self._enable_gliner = enable_gliner
+        else:
+            self._enable_gliner = os.environ.get("DINA_GLINER", "0") == "1"
 
     # -- Faker integration --------------------------------------------------
 
@@ -350,10 +362,45 @@ class PresidioScrubber:
                 "eu_recognizers_setup_failed", error=str(exc),
             )
 
+        # Register GLiNER for medical entity detection.
+        # Opt-in only: heavy transformer model (~200MB), loads on CPU.
+        # Enable via DINA_GLINER=1 or enable_gliner=True in constructor.
+        self._gliner_available = False
+        if self._enable_gliner:
+            try:
+                from presidio_analyzer.predefined_recognizers import (
+                    GLiNERRecognizer,
+                )
+
+                gliner_recognizer = GLiNERRecognizer(
+                    model_name="urchade/gliner_multi_pii-v1",
+                    entity_mapping={
+                        "medication": "MEDICATION",
+                        "medical condition": "MEDICAL_CONDITION",
+                        "blood type": "BLOOD_TYPE",
+                        "health insurance id number": "HEALTH_INSURANCE_ID",
+                    },
+                    multi_label=True,
+                    map_location="cpu",
+                )
+                self._analyzer.registry.add_recognizer(gliner_recognizer)
+                self._gliner_available = True
+                logger.info("gliner_medical_recognizer_loaded")
+            except ImportError:
+                logger.info(
+                    "gliner_not_available",
+                    reason="gliner package not installed, skipping medical NER",
+                )
+            except Exception as exc:
+                logger.warning("gliner_setup_failed", error=str(exc))
+        else:
+            logger.info("gliner_disabled", reason="opt-in via DINA_GLINER=1")
+
         self._loaded = True
         logger.info(
             "presidio_analyzer_loaded",
             model=self._model_name,
+            gliner=self._gliner_available,
         )
         return self._analyzer
 

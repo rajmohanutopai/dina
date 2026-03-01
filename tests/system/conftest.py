@@ -208,7 +208,7 @@ def admin_headers(system_services):
 # Persona setup (session-scoped, runs once)
 # ---------------------------------------------------------------------------
 
-PERSONAS = ["personal", "consumer"]
+PERSONAS = ["personal", "consumer", "health"]
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -221,7 +221,7 @@ def setup_personas(system_services, admin_headers, brain_headers):
             try:
                 httpx.post(
                     f"{base}/v1/personas",
-                    json={"name": name, "tier": "open", "passphrase": "test"},
+                    json={"name": name, "tier": "restricted" if name == "health" else "open", "passphrase": "test"},
                     headers=admin_headers,
                     timeout=10,
                 )

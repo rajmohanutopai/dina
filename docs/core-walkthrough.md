@@ -634,6 +634,91 @@ The distinction prevents premature restarts. If readiness fails but liveness pas
 
 ---
 
+## Act X: The Five Stories — Proving the Architecture
+
+The user story tests (`tests/system/user_stories/`) run against a real multi-node stack: 2 Go Core instances, 2 Python Brain sidecars, PDS, AppView, Jetstream, Postgres — zero mocks. Each story proves a capability that depends on core's architecture.
+
+### Story 01: The Purchase Journey (12 tests)
+
+**What it proves:** Trust-weighted purchase advice where verified reviewers outrank unverified ones — no ad spend involved.
+
+Five Dinas are created with cryptographic DIDs. Three (Alice, Bob, Diana) are Ring 2 — verified via `POST /v1/trust/vouch` with Ed25519-signed attestations. Two (Charlie, Eve) remain Ring 1 — unverified. All five publish product reviews through PDS (`com.atproto.repo.createRecord`), which flow through Jetstream into AppView's Postgres.
+
+**Core's role:**
+- **Vault** stores Alonso's personal context across 4 personas (health, work, finance, family) — each an encrypted SQLCipher compartment.
+- **Trust resolver** (`/v1/trust/resolve`) proxies to AppView, returning trust profiles that brain uses for weighted ranking.
+- **Identity** provides the Ed25519 DIDs that anchor every vouch and attestation.
+
+The brain combines vault context (back pain → needs lumbar support, ₹10-20K budget, WFH schedule) with trust-weighted reviews (3 verified negatives for CheapChair, 3 verified positives for ErgoMax) to produce personalized advice. Core doesn't reason — it provides the trusted data.
+
+### Story 02: The Sancho Moment (7 tests)
+
+**What it proves:** Dina-to-Dina encrypted communication triggers a contextual nudge — "Sancho is 15 minutes away. Ask about his sick mother. Make cardamom tea."
+
+Sancho's Dina sends a `dina/social/arrival` message via `POST /v1/msg/send`. Core's ingress pipeline handles the rest:
+
+1. **Sweeper** (`ingress/sweeper.go`) picks up the message from the dead drop directory.
+2. **IP rate limiter** checks the sender isn't flooding.
+3. **NaCl sealed box** decrypts the payload using the recipient's X25519 key (derived from Ed25519).
+4. **Ed25519 signature** verifies the sender's DID — cryptographic proof of origin.
+5. **Inbox** stores the decrypted message for retrieval.
+
+Core then routes the DIDComm event to brain via `/api/v1/process`. Brain queries the vault by Sancho's DID (`/v1/vault/query`), finds relationship notes ("his mother had a fall", "likes cardamom tea"), and assembles the nudge. The nudge follows Silence First — it's a Fiduciary interrupt because silence would cause social harm (failing to ask about a friend's sick mother).
+
+### Story 03: The Dead Internet Filter (8 tests)
+
+**What it proves:** Content authenticity verification via identity, not forensics — "Is this video AI-generated?" becomes "Who made it, and do we trust them?"
+
+AppView's Postgres is seeded with two creator profiles:
+- **Elena** (Ring 3): trust_score 0.95, 200 attestations, 15 peer vouches, 2-year history.
+- **BotFarm** (Ring 1): trust_score 0.0, 0 attestations, 3-day-old account.
+
+Core's trust resolver (`/v1/trust/resolve?did={did}`) fetches these profiles from AppView's XRPC endpoint (`com.dina.trust.getProfile`) and passes them through unchanged — core doesn't editorialize. Brain's LLM receives the raw trust signals and recognizes the pattern: Elena's 2-year track record with 200 attestations means "authentic, trusted creator." BotFarm's empty history means "unverified, check other sources."
+
+**Core's role:** Identity resolution and trust data passthrough. The AppView integration uses the same XRPC pattern as AT Protocol — `com.dina.trust.getProfile` returns a standardised trust profile that any client can consume.
+
+### Story 04: The License Renewal (10 tests)
+
+**What it proves:** The Agent Safety Layer — deterministic scheduling + LLM reasoning + guardian enforcement, with PII isolated in metadata.
+
+A license scan is ingested via brain's `/api/v1/process` (event type: `document_ingest`). Brain extracts fields (license number, expiry date, holder name) with per-field confidence scores (≥0.95 for critical fields). Core stores the result in the vault with a critical design constraint: **PII lives in encrypted metadata only, never in searchable text.** The license number `KA-01-2020-1234567` is in metadata; the summary says "driving license, expires April 2026."
+
+Core's reminder scheduler (`/v1/reminder`) fires deterministically 30 days before expiry — no LLM involved in the trigger. When it fires, brain queries the vault for context (address, insurance provider, nearby RTO offices) and composes a notification: "Your license expires April 15. Nearest RTO is Koramangala. Your ICICI insurance covers renewal."
+
+The delegation test is the Agent Safety Layer in action: brain generates a `DelegationRequest` for an RTO bot with `denied_fields: [license_number, holder_name, date_of_birth]`. The guardian classifies it as HIGH risk and sets `requires_approval=True`. The bot never sees PII. The human decides.
+
+**Core's role:**
+- **Vault** enforces metadata isolation — PII in encrypted metadata, general description in searchable text.
+- **Reminder scheduler** provides deterministic, LLM-free triggers.
+- **Gatekeeper** enforces the guardian's access control decisions at the transport layer.
+
+### Story 05: The Persona Wall (11 tests)
+
+**What it proves:** Persona isolation as a security boundary — a shopping agent cannot read health data, even when the request is reasonable.
+
+The health persona is created with tier `restricted`. Three medical records are stored: diagnosis ("L4-L5 disc herniation"), medications ("Ibuprofen 400mg"), providers ("Dr. Sharma, Apollo Hospital"). A shopping agent (consumer persona, tier `open`) asks: "Does the user have any health conditions that affect chair selection?"
+
+Brain's guardian processes the `cross_persona_request` event with a **deterministic tier gate** — no LLM involved in the block decision. Restricted tier → automatic block. The guardian then builds a minimal disclosure proposal:
+
+- **Withheld:** L4-L5, herniation, Dr. Sharma, Apollo, Ibuprofen (medical PII detected via Presidio NER with optional GLiNER, regex fallback)
+- **Safe to share:** "chronic back pain", "needs lumbar support", "avoid prolonged standing" (general health terms that don't identify the condition)
+
+The user reviews and approves the proposal. Brain sends the approved text and runs a final PII audit — `medical_patterns_found: [], clean: true`. An audit record is written to core's KV store.
+
+**Core's role:**
+- **Vault** enforces persona compartmentalization — health and consumer are separate encrypted databases. Core won't serve a cross-persona vault query without going through the guardian.
+- **KV store** records the audit trail of every disclosure decision.
+
+<details>
+<summary><strong>Design Decision — Why deterministic tier gates instead of LLM-based access control?</strong></summary>
+<br>
+
+An LLM could theoretically decide whether to share data across personas. But LLMs are probabilistic — they might allow disclosure 99% of the time and leak 1% of the time. For a system that guards medical records, 1% is unacceptable. The tier gate is a boolean: restricted tier → block. Always. The LLM's job is limited to building the *proposal* (which terms are safe to share), not the *decision* (whether to share at all). The human makes the final call. This is the Deterministic Sandwich pattern: deterministic gate → LLM proposal → deterministic audit.
+
+</details>
+
+---
+
 ## Epilogue: The Architecture in One Sentence
 
 Every request enters through seven middleware layers, reaches a handler that delegates to a service, the service composes port interfaces to orchestrate business rules (gatekeeper for access control, persona manager for compartmentalization, vault for storage), and the adapters — hidden behind port interfaces — do the actual work with Ed25519 keys, SQLCipher databases, NaCl encryption, and filesystem dead drops. The human holds the seed. The math enforces the loyalty. Nothing leaves without permission.

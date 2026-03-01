@@ -103,6 +103,32 @@ _DOCUMENT_PII_FIELDS = frozenset({
 # Minimum confidence for critical fields before scheduling reminders.
 _CRITICAL_CONFIDENCE = 0.95
 
+# Entity types that indicate medical PII (from GLiNER/Presidio NER).
+# Used by _build_disclosure_proposal and _handle_disclosure_approved to
+# classify entities as medical and withhold them from cross-persona disclosure.
+_MEDICAL_ENTITY_TYPES = frozenset({
+    "MEDICAL_CONDITION", "MEDICATION", "BLOOD_TYPE",
+    "HEALTH_INSURANCE_ID", "MEDICAL",
+})
+
+# Regex fallback — used when Presidio scrubber is unavailable.
+# Catches specific diagnoses, vertebral references, drug names, and conditions
+# that must NEVER leak from a restricted health persona without explicit approval.
+_MEDICAL_PII_REGEX_FALLBACK = re.compile(
+    r'(?:L\d[- /]L\d|C\d[- /]C\d|T\d[- /]T\d|herniat|stenosis|'
+    r'fractur|tumor|tumour|malignant|benign|HIV|hepatitis[- ]|'
+    r'diabetes type|bipolar|schizophren|aneurysm)',
+    re.IGNORECASE,
+)
+
+# General health terms safe for minimal disclosure proposals.
+# Used as fallback when scrubber is unavailable.
+_GENERAL_HEALTH_TERMS = re.compile(
+    r'(?:back pain|chronic|lumbar|standing desk|ergonomic|posture|'
+    r'support chair|sitting|mobility|discomfort|stiffness)',
+    re.IGNORECASE,
+)
+
 # Actions that are categorically blocked — Agent Safety Layer.
 _BLOCKED_ACTIONS = frozenset({
     "read_vault",
@@ -306,6 +332,13 @@ class GuardianLoop:
             # ---- Delegation request (SS4.4 — Agent Safety Layer) ----
             if event_type == "delegation_request":
                 return await self._handle_delegation_request(event)
+
+            # ---- Cross-persona disclosure (SS5 — Persona Wall) ----
+            if event_type == "cross_persona_request":
+                return await self._handle_cross_persona_request(event)
+
+            if event_type == "disclosure_approved":
+                return await self._handle_disclosure_approved(event)
 
             # ---- Document ingestion (SS4.1) ----
             if event_type == "document_ingest":
@@ -992,6 +1025,370 @@ class GuardianLoop:
             "pii_clean": True,
             "approved": risk_result.get("approved", False),
             "requires_approval": risk_result.get("requires_approval", True),
+        }
+
+    # ------------------------------------------------------------------
+    # Cross-Persona Disclosure (SS5 — Persona Wall)
+    # ------------------------------------------------------------------
+
+    async def _handle_cross_persona_request(self, event: dict) -> dict:
+        """Handle a request for data from one persona on behalf of another.
+
+        Enforces the Persona Wall: restricted/locked personas NEVER
+        disclose automatically.  Instead, the Guardian queries the source
+        vault, builds a minimal disclosure proposal (withholding specific
+        diagnoses and PII), and returns it for user approval.
+
+        Parameters
+        ----------
+        event:
+            Must include ``payload`` dict with:
+            - ``source_persona`` (str, required): persona holding the data
+            - ``query`` (str, required): what the agent needs
+            - ``requesting_agent`` (str): who is asking
+            - ``target_persona`` (str): destination persona
+            - ``source_persona_tier`` (str): tier of source persona
+            - ``reason`` (str): why the data is needed
+        """
+        payload = event.get("payload", {})
+        if not payload:
+            return {
+                "status": "error",
+                "action": "cross_persona_invalid",
+                "error": "Missing payload",
+            }
+
+        source_persona = payload.get("source_persona", "")
+        query = payload.get("query", "")
+        requesting_agent = payload.get("requesting_agent", "unknown_agent")
+        target_persona = payload.get("target_persona", "")
+        reason = payload.get("reason", "")
+        # Fail-closed: default to restricted if tier not provided.
+        tier = (payload.get("source_persona_tier", "restricted") or "restricted").strip().lower()
+        if tier not in ("open", "restricted", "locked"):
+            tier = "restricted"
+
+        if not source_persona or not query:
+            return {
+                "status": "error",
+                "action": "cross_persona_invalid",
+                "error": "source_persona and query are required",
+            }
+
+        disclosure_id = f"disc-{uuid4().hex[:12]}"
+
+        # Deterministic tier gate — restricted/locked always blocks auto-disclosure.
+        blocked = tier in ("restricted", "locked")
+
+        if not blocked:
+            # Open tier — still generate proposal but mark as non-blocked.
+            pass
+
+        # Query source vault for relevant items.
+        vault_items: list[dict] = []
+        try:
+            vault_items = await self._core.query_vault(
+                source_persona, query, mode="fts5", limit=10,
+            )
+        except PersonaLockedError:
+            return {
+                "status": "ok",
+                "action": "disclosure_proposed",
+                "response": {
+                    "blocked": True,
+                    "block_reason": f"Persona '{source_persona}' is locked",
+                    "persona_tier": tier,
+                    "disclosure_id": disclosure_id,
+                    "proposal": {
+                        "safe_to_share": "",
+                        "withheld": ["Persona is locked — all data withheld"],
+                        "rationale": "Cannot access locked persona",
+                    },
+                    "requesting_agent": requesting_agent,
+                    "source_persona": source_persona,
+                    "target_persona": target_persona,
+                    "query": query,
+                },
+                "approved": False,
+                "requires_approval": True,
+            }
+        except Exception as exc:
+            log.warning("guardian.cross_persona.vault_query_failed", error=str(exc))
+
+        if not vault_items:
+            return {
+                "status": "ok",
+                "action": "no_relevant_data",
+                "response": {
+                    "blocked": blocked,
+                    "persona_tier": tier,
+                    "disclosure_id": disclosure_id,
+                    "requesting_agent": requesting_agent,
+                    "source_persona": source_persona,
+                    "query": query,
+                },
+                "approved": False,
+                "requires_approval": blocked,
+            }
+
+        # Build disclosure proposal using deterministic scan.
+        proposal = self._build_disclosure_proposal(vault_items, query)
+
+        block_reason = ""
+        if blocked:
+            block_reason = (
+                f"Source persona '{source_persona}' has {tier} tier — "
+                f"automatic cross-persona disclosure denied"
+            )
+
+        log.info(
+            "guardian.cross_persona.proposal_built",
+            disclosure_id=disclosure_id,
+            blocked=blocked,
+            safe_len=len(proposal.get("safe_to_share", "")),
+            withheld_count=len(proposal.get("withheld", [])),
+        )
+
+        return {
+            "status": "ok",
+            "action": "disclosure_proposed",
+            "response": {
+                "blocked": blocked,
+                "block_reason": block_reason,
+                "persona_tier": tier,
+                "disclosure_id": disclosure_id,
+                "proposal": proposal,
+                "requesting_agent": requesting_agent,
+                "source_persona": source_persona,
+                "target_persona": target_persona,
+                "query": query,
+            },
+            "approved": False,
+            "requires_approval": True,
+        }
+
+    def _build_disclosure_proposal(
+        self, vault_items: list[dict], query: str,
+    ) -> dict:
+        """Build a minimal disclosure proposal from vault items.
+
+        Uses Presidio + GLiNER NER (when available) to classify sentences
+        as containing medical PII (withheld) or general health terms (safe).
+        Falls back to regex patterns when the scrubber is unavailable.
+
+        Returns dict with ``safe_to_share``, ``withheld``, ``rationale``.
+        """
+        safe_fragments: list[str] = []
+        withheld: list[str] = []
+
+        for item in vault_items:
+            body = item.get("BodyText", "") or item.get("body_text", "") or ""
+            summary = item.get("Summary", "") or item.get("summary", "") or ""
+            text = f"{summary} {body}".strip()
+            if not text:
+                continue
+
+            # Split into sentences for fine-grained control.
+            sentences = re.split(r'(?<=[.!?])\s+', text)
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if not sentence:
+                    continue
+
+                should_withhold, detected_values = self._classify_sentence_medical(
+                    sentence,
+                )
+
+                if should_withhold:
+                    for val in detected_values:
+                        if val not in withheld:
+                            withheld.append(val)
+                    continue
+
+                # Check for general health terms — safe to propose.
+                if _GENERAL_HEALTH_TERMS.search(sentence):
+                    safe_fragments.append(sentence)
+
+        # Deduplicate safe fragments.
+        seen: set[str] = set()
+        unique_safe: list[str] = []
+        for frag in safe_fragments:
+            key = frag.lower().strip()
+            if key not in seen:
+                seen.add(key)
+                unique_safe.append(frag)
+
+        safe_to_share = " ".join(unique_safe) if unique_safe else ""
+
+        # Final safety net: scan safe_to_share for any medical PII that
+        # slipped through sentence splitting.
+        if safe_to_share:
+            _, final_detections = self._classify_sentence_medical(safe_to_share)
+            for val in final_detections:
+                if val not in withheld:
+                    withheld.append(val)
+                safe_to_share = safe_to_share.replace(val, "[REDACTED]")
+
+        if not withheld:
+            withheld.append("specific diagnoses")
+
+        rationale = (
+            "Extracted general health context relevant to the query. "
+            "Specific diagnoses, medications, doctor names, and hospital "
+            "details have been withheld pending user approval."
+        )
+
+        return {
+            "safe_to_share": safe_to_share,
+            "withheld": withheld,
+            "rationale": rationale,
+        }
+
+    def _classify_sentence_medical(
+        self, sentence: str,
+    ) -> tuple[bool, list[str]]:
+        """Classify whether a sentence contains medical PII.
+
+        Uses Presidio + GLiNER NER (via ``self._scrubber.detect()``)
+        when available, falling back to regex patterns.
+
+        Returns
+        -------
+        tuple[bool, list[str]]
+            ``(should_withhold, detected_values)`` — True if the sentence
+            contains medical entities (diagnoses, medications, doctor names),
+            with the specific values that were detected.
+        """
+        detected_values: list[str] = []
+
+        # Primary path: Presidio + GLiNER NER.
+        if self._scrubber is not None:
+            try:
+                entities = self._scrubber.detect(sentence)
+                for ent in entities:
+                    ent_type = ent.get("type", "")
+                    ent_value = ent.get("value", "")
+                    if ent_type in _MEDICAL_ENTITY_TYPES:
+                        detected_values.append(ent_value)
+                    elif ent_type == "PERSON":
+                        # Doctor names are PII — withhold.
+                        detected_values.append(ent_value)
+                if detected_values:
+                    return True, detected_values
+            except Exception:
+                # Fall through to regex fallback.
+                pass
+
+        # Fallback: regex patterns.
+        if _MEDICAL_PII_REGEX_FALLBACK.search(sentence):
+            matches = _MEDICAL_PII_REGEX_FALLBACK.findall(sentence)
+            return True, matches
+
+        return False, []
+
+    async def _handle_disclosure_approved(self, event: dict) -> dict:
+        """Handle user approval of a cross-persona disclosure.
+
+        The user has reviewed the proposal and approved specific text
+        to share.  We perform a final PII check (audit, not gate) and
+        write an audit record.
+
+        Parameters
+        ----------
+        event:
+            Must include ``payload`` dict with:
+            - ``approved_text`` (str, required): text the user approved
+            - ``disclosure_id`` (str): from the proposal
+            - ``requesting_agent`` (str): who gets the data
+            - ``source_persona`` (str): which persona it came from
+        """
+        payload = event.get("payload", {})
+        if not payload:
+            return {
+                "status": "error",
+                "action": "disclosure_invalid",
+                "error": "Missing payload",
+            }
+
+        approved_text = payload.get("approved_text", "")
+        disclosure_id = payload.get("disclosure_id", f"disc-{uuid4().hex[:12]}")
+        requesting_agent = payload.get("requesting_agent", "unknown_agent")
+        source_persona = payload.get("source_persona", "")
+
+        if not approved_text:
+            return {
+                "status": "error",
+                "action": "disclosure_invalid",
+                "error": "approved_text is required",
+            }
+
+        # Final PII check — audit only, user explicitly approved.
+        entities_found: list[str] = []
+        medical_patterns_found: list[str] = []
+
+        # Check with entity vault scrubber if available.
+        if self._entity_vault:
+            try:
+                _, vault = await self._entity_vault.scrub(approved_text)
+                entities_found = list(vault.keys()) if vault else []
+                vault.clear() if vault else None
+            except Exception as exc:
+                log.warning(
+                    "guardian.disclosure.scrub_check_failed",
+                    error=str(exc),
+                )
+
+        # Check for medical PII — NER first, regex fallback.
+        _, medical_detections = self._classify_sentence_medical(approved_text)
+        for val in medical_detections:
+            if val not in medical_patterns_found:
+                medical_patterns_found.append(val)
+
+        pii_clean = len(entities_found) == 0 and len(medical_patterns_found) == 0
+
+        # Write audit record to KV.
+        audit_record = {
+            "disclosure_id": disclosure_id,
+            "requesting_agent": requesting_agent,
+            "source_persona": source_persona,
+            "approved_text_length": len(approved_text),
+            "pii_clean": pii_clean,
+            "entities_found_count": len(entities_found),
+            "medical_patterns_found": medical_patterns_found,
+        }
+        try:
+            await self._core.set_kv(
+                f"disclosure:{disclosure_id}",
+                json.dumps(audit_record),
+            )
+        except Exception as exc:
+            log.warning(
+                "guardian.disclosure.audit_write_failed",
+                error=str(exc),
+            )
+
+        log.info(
+            "guardian.disclosure.shared",
+            disclosure_id=disclosure_id,
+            pii_clean=pii_clean,
+        )
+
+        return {
+            "status": "ok",
+            "action": "disclosure_shared",
+            "response": {
+                "disclosure_id": disclosure_id,
+                "shared_text": approved_text,
+                "requesting_agent": requesting_agent,
+                "source_persona": source_persona,
+                "pii_check": {
+                    "entities_found": entities_found,
+                    "medical_patterns_found": medical_patterns_found,
+                    "clean": pii_clean,
+                },
+            },
+            "approved": True,
+            "requires_approval": False,
         }
 
     # ------------------------------------------------------------------

@@ -618,6 +618,111 @@ A 148-line module that loads all brain config from environment variables. The `B
 
 ---
 
+## Act XI: The Five Stories — Proving the Brain
+
+The user story tests (`tests/system/user_stories/`) run against a real multi-node stack with zero mocks. Each story exercises a different brain capability. Here's what the brain does in each.
+
+### Story 01: The Purchase Journey (12 tests)
+
+**Brain capability:** Vault-enriched, trust-weighted LLM reasoning.
+
+The brain receives a reasoning request via `/api/v1/reason` with a query ("I need a chair") and trust-weighted review summaries from AppView. Before calling the LLM, it enriches the context by querying core's vault across multiple personas:
+
+1. **Health persona** → "chronic back pain, L4-L5 issues" → needs lumbar support.
+2. **Finance persona** → "budget ₹10-20K" → price filter.
+3. **Work persona** → "WFH, 8+ hours sitting" → needs durability.
+
+The LLM router (`service/llm_router.py`) selects the appropriate provider (light for chat, heavy for complex reasoning) and sends the enriched prompt. The response must reference specific trust signals: "3 verified reviewers (Ring 2) rate ErgoMax positively" vs "2 unverified reviewers liked CheapChair, but they lack attestations." The schema enforcer validates the output structure.
+
+**Key brain components:** LLM router (provider selection), vault enrichment (multi-persona context assembly), trust signal formatting.
+
+### Story 02: The Sancho Moment (7 tests)
+
+**Brain capability:** DIDComm event routing → vault query → nudge assembly.
+
+When core delivers a decrypted `dina/social/arrival` event to `/api/v1/process`, the brain's event router classifies it and dispatches to the nudge service (`service/nudge.py`). The nudge assembler:
+
+1. **Queries vault by ContactDID** — searches for any stored context about Sancho's DID across all personas. Finds: "his mother had a fall last month", "likes cardamom tea with extra sugar."
+2. **Applies Silence First** — classifies the nudge priority. An arriving friend with a sick mother is *Fiduciary* (silence causes social harm), not merely *Engagement*.
+3. **Composes the nudge** — LLM generates 1-3 sentences: warm, actionable, with source attribution (Deep Link default). Under 1000 characters.
+
+The nudge is returned to core, which delivers it via WebSocket to the user's device. The brain never sends the nudge directly — it advises, core acts.
+
+**Key brain components:** Event router (DIDComm classification), nudge assembler (vault query + priority classification + LLM generation), Silence First enforcement.
+
+### Story 03: The Dead Internet Filter (8 tests)
+
+**Brain capability:** Trust-signal reasoning — identity-based content verification.
+
+The brain receives two trust profiles from core's resolver and must reason about content authenticity. This is pure LLM reasoning with no vault enrichment (the query is about a creator, not about the user).
+
+For Elena (Ring 3): the LLM sees `trust_score: 0.95, attestations: 200, vouches: 15, account_age: 2yr` and produces "authentic, trusted creator — 200 attestations from verified peers over 2 years."
+
+For BotFarm (Ring 1): the LLM sees `trust_score: 0.0, attestations: 0, vouches: 0, account_age: 3d` and produces "unverified, no history — check other sources."
+
+The side-by-side comparison test verifies that the LLM identifies **identity and history** as the deciding factor, not pixel forensics or metadata analysis. This is the Dead Internet thesis: in a world of perfect deepfakes, trust comes from who you are (attestation history), not what the content looks like.
+
+**Key brain components:** LLM router (reasoning mode), trust profile formatting, schema-validated output.
+
+### Story 04: The License Renewal (10 tests)
+
+**Brain capability:** The Deterministic Sandwich — LLM extraction bookended by deterministic checks.
+
+This story exercises four brain services in sequence:
+
+**1. Document Ingestion** (`/api/v1/process`, event: `document_ingest`):
+The LLM extracts fields from a license scan with per-field confidence scores. Critical fields (license_number, expiry_date) require ≥0.95 confidence. The PII scrubber runs *before* storage — the license number goes into encrypted metadata, the searchable summary says only "driving license, expires April 2026."
+
+**2. Reminder Composition** (triggered by core's deterministic scheduler):
+When core fires the 30-day reminder, brain receives a `reminder_fired` event. It queries the vault for context (address near which RTO, insurance provider, previous renewal experience) and composes a notification. The trigger is deterministic (no LLM). The content is LLM-generated. This is the sandwich: deterministic trigger → LLM reasoning → deterministic audit.
+
+**3. Delegation Generation** (`/api/v1/reason`):
+Brain generates a `DelegationRequest` JSON for an RTO bot. The schema enforces `denied_fields` (PII the bot must not see) and `permitted_fields` (safe metadata). The LLM must produce valid JSON matching the strict schema — PydanticAI rejects malformed output.
+
+**4. Guardian Enforcement** (`service/guardian.py`):
+The guardian classifies the delegation as HIGH risk (interacts with government system, involves PII). Sets `requires_approval=True`. The constraints enforce `no_storage=True`, `no_forwarding=True`, `max_ttl_seconds ≤ 3600`. The bot gets a time-limited, non-storable, non-forwardable permission slip.
+
+**Key brain components:** LLM extraction (confidence scoring), PII scrubber (pre-storage), vault enrichment (reminder context), schema-strict generation (DelegationRequest), guardian (risk classification + constraint enforcement).
+
+### Story 05: The Persona Wall (11 tests)
+
+**Brain capability:** Cross-persona disclosure control — the guardian's most sensitive operation.
+
+A shopping agent (consumer persona) asks brain: "Does the user have any health conditions that affect chair selection?" Brain's guardian (`service/guardian.py`) processes this as a `cross_persona_request` event.
+
+**Step 1: Deterministic Tier Gate**
+The guardian checks the source persona's tier. Health is `restricted` → automatic block. No LLM involved. This is a boolean decision, not a probabilistic one.
+
+**Step 2: Minimal Disclosure Proposal**
+The guardian queries the health persona's vault and classifies each sentence:
+
+- **Medical PII detection** uses a two-tier approach:
+  - **Primary:** `PresidioScrubber.detect()` with optional GLiNER NER (`urchade/gliner_multi_pii-v1` model, opt-in via `DINA_GLINER=1`). Detects `MEDICAL_CONDITION`, `MEDICATION`, `BLOOD_TYPE`, `HEALTH_INSURANCE_ID`, and `PERSON` entity types.
+  - **Fallback:** Regex (`_MEDICAL_PII_REGEX_FALLBACK`) when Presidio is unavailable.
+
+- Sentences containing medical entities are **withheld**: "L4-L5 disc herniation", "Dr. Sharma at Apollo Hospital", "Ibuprofen 400mg twice daily."
+- General health terms are **safe to share**: "chronic back pain", "needs lumbar support", "avoid prolonged standing."
+
+**Step 3: Human Approval**
+The proposal is returned with `requires_approval=True`. The user sees what will be shared and what is withheld. They approve, modify, or reject.
+
+**Step 4: Final PII Audit**
+After approval, the guardian runs `_classify_sentence_medical()` on the approved text one more time. If any medical PII slipped through (the user manually typed something sensitive), it's caught. The audit result — `medical_patterns_found: [], clean: true` — is written to core's KV store.
+
+<details>
+<summary><strong>Design Decision — Why GLiNER for medical NER?</strong></summary>
+<br>
+
+The regex fallback (`_MEDICAL_PII_REGEX_FALLBACK`) catches terms we thought to list: "herniation", "ibuprofen", "MRI", etc. But medical terminology is vast — thousands of conditions, medications, and procedures. GLiNER's `urchade/gliner_multi_pii-v1` model (F1 90.87%) detects 50+ PII entity types including `medical condition` and `medication` using a pre-trained transformer. It runs locally on CPU (~200MB model), requires no cloud calls, and catches terms the regex misses.
+
+GLiNER is opt-in (`DINA_GLINER=1`) because the model is heavy for resource-constrained deployments. When disabled, the regex fallback still provides defense-in-depth. When enabled, GLiNER is the primary detector and the regex becomes the secondary safety net. Both paths satisfy the same test assertions — the Persona Wall works regardless of which detector is active.
+
+</details>
+
+**Key brain components:** Guardian (tier gate + proposal builder + PII audit), PII scrubber with GLiNER (medical NER), entity vault (cross-persona query), Deterministic Sandwich (deterministic block → LLM proposal → deterministic audit).
+
+---
+
 ## Epilogue: The Contract Between Core and Brain
 
 The relationship between core and brain is asymmetric by design:
