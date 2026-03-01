@@ -109,9 +109,9 @@ print_banner() {
     printf "  ${B}║${R}  ${G}05${R} ${BOLD}The Persona Wall${R}"
     if [ -n "$s05" ]; then printf "%77s" "$s05"; else printf "%77s" "11 tests"; fi
     echo -e "  ${B}║${R}"
-    echo -e "${B}  ║${R}     ${BOLD}Shopping agent asks \"any health conditions?\"${R}${D} -> Guardian blocks cross-persona access            ${B}║${R}"
-    echo -e "${B}  ║${R}${D}     Health (restricted): \"L4-L5 herniation\" withheld. Proposes \"chronic back pain\" only               ${B}║${R}"
-    echo -e "${B}  ║${R}${D}     User approves minimal disclosure. PII scrubber confirms no diagnosis leaked                      ${B}║${R}"
+    echo -e "${B}  ║${R}     ${BOLD}Shopping agent asks \"any health conditions?\"${R}${D} -> Guardian blocks cross-persona access           ${B}║${R}"
+    echo -e "${B}  ║${R}${D}     Health (restricted): \"L4-L5 herniation\" withheld. Proposes \"chronic back pain\" only            ${B}║${R}"
+    echo -e "${B}  ║${R}${D}     User approves minimal disclosure. PII scrubber confirms no diagnosis leaked                    ${B}║${R}"
     echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
     echo -e "${B}  ╚════════════════════════════════════════════════════════════════════════════════════════════════════╝${R}"
 }
