@@ -191,6 +191,47 @@ For a sovereign agent that people rely on for their identity, finances, and pers
 
 ---
 
+## Vector Storage Security: Why Not sqlite-vec, FAISS, or Any mmap-Based Vector DB
+
+### The Problem: mmap Defeats Encryption
+
+Dina encrypts every page of every persona vault with SQLCipher (AES-256-CBC). When the persona is locked, the encrypted `.sqlite` file is opaque bytes — useless without the passphrase-derived DEK. This is the foundation of Dina's absolute loyalty guarantee: **the human holds the encryption keys.**
+
+Traditional vector databases and vector extensions break this guarantee. They all share the same architectural pattern: store vectors in memory-mapped (`mmap`) files for fast similarity search. These mmap'd files sit **unencrypted on the filesystem**, completely bypassing SQLCipher's encryption layer.
+
+| Vector solution | Storage method | Encrypted at rest? |
+|-----------------|---------------|-------------------|
+| `sqlite-vec` | mmap'd vector files alongside SQLite | **No.** mmap files are plaintext. |
+| FAISS | Memory-mapped index files (`.faiss`) | **No.** Index files are plaintext. |
+| Qdrant / Weaviate / Pinecone | Separate process with its own disk storage | **No.** External DB, external security model. |
+| ChromaDB | SQLite + Parquet files on disk | **No.** Embedding files are plaintext. |
+
+**The attack:** An attacker who images the disk (stolen laptop, compromised VPS, malicious hosting operator) gets the encrypted `.sqlite` file AND plaintext vector index files side by side. The vector embeddings encode the semantic content of every item in the vault — health records, financial data, personal messages. Even without decrypting the SQLite file, the attacker can cluster embeddings, perform similarity searches, and infer what topics exist in the vault.
+
+### The Solution: Encrypted Cold Storage with Volatile RAM Hydration
+
+Dina stores 768-dimensional float32 embeddings as **BLOB columns inside SQLCipher**, in the same row as the text they represent. No separate index file. No mmap. SQLCipher encrypts the embedding bytes with the same per-page AES-256-CBC as everything else.
+
+**Lifecycle:**
+
+1. **At rest:** Embeddings are encrypted BLOBs inside SQLCipher. A disk image reveals nothing.
+2. **On persona unlock:** Core reads `(id, embedding_blob)` pairs, builds a pure-Go HNSW index in RAM ([`github.com/coder/hnsw`](https://github.com/coder/hnsw)). ~40-80ms for 10K items.
+3. **On query:** Search the RAM index (<1ms). Vectors exist in plaintext **only in process memory**, same as decrypted text during normal vault operations.
+4. **On persona lock:** Destroy the HNSW index, nil the reference, `runtime.GC()`. Zero residual vector data.
+
+**Security properties:**
+
+- **Same threat model as text.** Decrypted embeddings in RAM have the same exposure window as decrypted text in RAM — which is inherent to any system that processes encrypted data. The difference is that mmap-based solutions leave vectors **permanently** on disk in plaintext, while Dina's approach restricts plaintext to volatile RAM during an active session.
+- **No new attack surface.** No additional files, no additional processes, no additional network ports. The HNSW index is a Go struct on the heap — it doesn't touch the filesystem.
+- **ACID consistency.** Embedding + text in the same SQLite row means a single `INSERT` stores both atomically. No orphaned vectors if the process crashes mid-write. No sync protocol between separate vector DB and text DB.
+- **Persona isolation preserved.** Each persona's HNSW index is independent. Locking one persona destroys its index without affecting others.
+
+**Scale:** 768-dim × float32 = 3,072 bytes per embedding. For 10K items: ~30MB storage in SQLCipher, ~50MB RAM when hydrated into HNSW. For 50K items: ~150MB storage, ~235MB RAM. Well within budget for a personal device (Raspberry Pi 5: 8GB, Mac Mini: 16GB+).
+
+**Why pure-Go HNSW (coder/hnsw):** No CGO dependencies beyond what go-sqlcipher already requires. No C++ cross-compilation for FAISS or hnswlib. Compiles with `CGO_ENABLED=0` (excluding sqlcipher). CC0 public domain license. Built-in cosine distance. The entire vector search infrastructure is Go structs in heap memory — no files, no mmap, no new attack surface.
+
+---
+
 ## LLM Security: Prompt Injection Defense
 
 Supply chain security (above) protects the code running on your Home Node. **Prompt injection defense** protects against malicious content that tries to hijack the LLM reasoning pipeline — poisoned emails, crafted calendar invites, adversarial messages.

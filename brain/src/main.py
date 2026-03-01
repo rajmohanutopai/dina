@@ -46,6 +46,7 @@ from .service.scratchpad import ScratchpadService
 from .service.guardian import GuardianLoop
 from .service.nudge import NudgeAssembler
 from .service.sync_engine import SyncEngine
+from .service.vault_context import VaultContextAssembler
 
 # -- Sub-apps --
 from .dina_brain.app import create_brain_app
@@ -346,6 +347,7 @@ def create_app() -> FastAPI:
     entity_vault = EntityVaultService(scrubber=scrubber, core_client=brain_core_client)
     nudge = NudgeAssembler(core=brain_core_client, llm=llm_router, entity_vault=entity_vault)
     scratchpad = ScratchpadService(core=brain_core_client)
+    vault_context = VaultContextAssembler(core=brain_core_client, llm_router=llm_router)
     sync_engine = SyncEngine(core=brain_core_client, mcp=mcp_client, llm=llm_router)
     # HIGH-03: Register each validated MCP server as a sync source
     for _src_name in _mcp_source_names:
@@ -359,6 +361,7 @@ def create_app() -> FastAPI:
         entity_vault=entity_vault,
         nudge_assembler=nudge,
         scratchpad=scratchpad,
+        vault_context=vault_context,
     )
 
     # 4. Build sub-apps

@@ -402,20 +402,17 @@ def pds_url(system_services):
 
 
 # ---------------------------------------------------------------------------
-# PDS account (session-scoped — one test account for the full pipeline)
+# PDS account helpers
 # ---------------------------------------------------------------------------
 
-@pytest.fixture(scope="session")
-def pds_account(system_services):
-    """Create a test account on the local PDS. Returns (did, access_jwt)."""
-    url = system_services.pds_url
+
+def _create_pds_account(
+    pds_url: str, email: str, handle: str, password: str
+) -> tuple[str, str]:
+    """Create or login to a PDS account. Returns (did, accessJwt)."""
     r = httpx.post(
-        f"{url}/xrpc/com.atproto.server.createAccount",
-        json={
-            "email": "tester@dina.test",
-            "password": "test-pw-system",
-            "handle": "tester.test",
-        },
+        f"{pds_url}/xrpc/com.atproto.server.createAccount",
+        json={"email": email, "password": password, "handle": handle},
         timeout=15,
     )
     if r.status_code == 200:
@@ -423,20 +420,30 @@ def pds_account(system_services):
         return data["did"], data["accessJwt"]
     # Account may already exist from a previous run — try login
     login_r = httpx.post(
-        f"{url}/xrpc/com.atproto.server.createSession",
-        json={
-            "identifier": "tester@dina.test",
-            "password": "test-pw-system",
-        },
+        f"{pds_url}/xrpc/com.atproto.server.createSession",
+        json={"identifier": email, "password": password},
         timeout=15,
     )
     if login_r.status_code == 200:
         data = login_r.json()
         return data["did"], data["accessJwt"]
     raise RuntimeError(
-        f"Failed to create/login PDS account: "
+        f"Failed to create/login PDS account ({handle}): "
         f"create={r.status_code} {r.text[:200]}, "
         f"login={login_r.status_code} {login_r.text[:200]}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# PDS account fixtures (session-scoped)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def pds_account(system_services):
+    """Create pipeline test account on the local PDS. Returns (did, access_jwt)."""
+    return _create_pds_account(
+        system_services.pds_url, "tester@dina.test", "tester.test", "test-pw-system"
     )
 
 
@@ -445,3 +452,43 @@ def pds_auth_headers(pds_account):
     """Authorization headers for the PDS test account."""
     _, jwt = pds_account
     return {"Authorization": f"Bearer {jwt}"}
+
+
+@pytest.fixture(scope="session")
+def reviewer_alice(system_services):
+    """Create reviewer Alice's PDS account. Returns (did, access_jwt)."""
+    return _create_pds_account(
+        system_services.pds_url, "alice@dina.test", "alice.test", "test-pw-alice"
+    )
+
+
+@pytest.fixture(scope="session")
+def reviewer_bob(system_services):
+    """Create reviewer Bob's PDS account. Returns (did, access_jwt)."""
+    return _create_pds_account(
+        system_services.pds_url, "bob@dina.test", "bob.test", "test-pw-bob"
+    )
+
+
+@pytest.fixture(scope="session")
+def reviewer_charlie(system_services):
+    """Create unverified reviewer Charlie's PDS account. Returns (did, access_jwt)."""
+    return _create_pds_account(
+        system_services.pds_url, "charlie@dina.test", "charlie.test", "test-pw-charlie"
+    )
+
+
+@pytest.fixture(scope="session")
+def reviewer_diana(system_services):
+    """Create reviewer Diana's PDS account (verified via vouch from Alice)."""
+    return _create_pds_account(
+        system_services.pds_url, "diana@dina.test", "diana.test", "test-pw-diana"
+    )
+
+
+@pytest.fixture(scope="session")
+def reviewer_eve(system_services):
+    """Create unverified reviewer Eve's PDS account. Returns (did, access_jwt)."""
+    return _create_pds_account(
+        system_services.pds_url, "eve@dina.test", "eve.test", "test-pw-eve"
+    )

@@ -582,5 +582,5 @@ async def test_llm_4_3_2_no_providers_error() -> None:
 
     router = LLMRouter(providers={}, config={})
 
-    with pytest.raises(LLMError, match="No LLM providers configured"):
+    with pytest.raises(LLMError, match="No LLM provider"):
         await router.route(task_type="summarize", prompt="test")

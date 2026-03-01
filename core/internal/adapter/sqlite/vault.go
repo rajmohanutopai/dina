@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -24,24 +25,38 @@ var _ port.VaultWriter = (*VaultAdapter)(nil)
 // port.VaultReader, and port.VaultWriter interfaces using real database storage.
 type VaultAdapter struct {
 	pool *Pool
+	hnsw *HNSWManager
 }
 
 // NewVaultAdapter creates a new Pool rooted at dir and returns a VaultAdapter.
 func NewVaultAdapter(dir string) *VaultAdapter {
-	return &VaultAdapter{pool: NewPool(dir)}
+	return &VaultAdapter{pool: NewPool(dir), hnsw: NewHNSWManager()}
 }
 
 // ---------------------------------------------------------------------------
 // VaultManager
 // ---------------------------------------------------------------------------
 
-// Open delegates to Pool.Open, converting PersonaName to string.
+// Open delegates to Pool.Open and hydrates the HNSW index from stored embeddings.
 func (a *VaultAdapter) Open(_ context.Context, persona domain.PersonaName, dek []byte) error {
-	return a.pool.Open(persona.String(), dek)
+	if err := a.pool.Open(persona.String(), dek); err != nil {
+		return err
+	}
+	// Hydrate HNSW index from encrypted embedding BLOBs.
+	db := a.pool.DB(persona.String())
+	if db != nil {
+		if err := a.hnsw.Hydrate(persona.String(), db); err != nil {
+			slog.Warn("hnsw hydration failed, semantic search degraded",
+				"persona", persona.String(), "error", err)
+			// Non-fatal: FTS5 still works.
+		}
+	}
+	return nil
 }
 
-// Close delegates to Pool.Close.
+// Close destroys the HNSW index and delegates to Pool.Close.
 func (a *VaultAdapter) Close(persona domain.PersonaName) error {
+	a.hnsw.Destroy(persona.String())
 	return a.pool.Close(persona.String())
 }
 
@@ -101,8 +116,20 @@ func (a *VaultAdapter) Store(ctx context.Context, persona domain.PersonaName, it
 		item.Metadata = "{}"
 	}
 
-	const q = `INSERT INTO vault_items (id, type, source, source_id, summary, body, metadata, timestamp, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	// Encode embedding to BLOB if present.
+	var embeddingBlob []byte
+	if len(item.Embedding) > 0 {
+		var encErr error
+		embeddingBlob, encErr = EncodeEmbedding(item.Embedding)
+		if encErr != nil {
+			slog.Warn("sqlite: embedding encode failed, storing without embedding",
+				"id", item.ID, "error", encErr)
+			embeddingBlob = nil
+		}
+	}
+
+	const q = `INSERT INTO vault_items (id, type, source, source_id, summary, body, metadata, embedding, timestamp, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     type       = excluded.type,
     source     = excluded.source,
@@ -110,6 +137,7 @@ ON CONFLICT(id) DO UPDATE SET
     summary    = excluded.summary,
     body       = excluded.body,
     metadata   = excluded.metadata,
+    embedding  = excluded.embedding,
     timestamp  = excluded.timestamp,
     updated_at = excluded.updated_at`
 
@@ -121,6 +149,7 @@ ON CONFLICT(id) DO UPDATE SET
 		item.Summary,
 		item.BodyText,
 		item.Metadata,
+		embeddingBlob, // nullable BLOB
 		item.Timestamp,
 		now, // created_at
 		now, // updated_at
@@ -128,6 +157,12 @@ ON CONFLICT(id) DO UPDATE SET
 	if err != nil {
 		return "", fmt.Errorf("sqlite: store item: %w", err)
 	}
+
+	// Update live HNSW index.
+	if len(item.Embedding) == EmbeddingDim {
+		a.hnsw.Add(persona.String(), item.ID, item.Embedding)
+	}
+
 	return item.ID, nil
 }
 
@@ -154,8 +189,8 @@ func (a *VaultAdapter) StoreBatch(ctx context.Context, persona domain.PersonaNam
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	const q = `INSERT INTO vault_items (id, type, source, source_id, summary, body, metadata, timestamp, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	const q = `INSERT INTO vault_items (id, type, source, source_id, summary, body, metadata, embedding, timestamp, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     type       = excluded.type,
     source     = excluded.source,
@@ -163,6 +198,7 @@ ON CONFLICT(id) DO UPDATE SET
     summary    = excluded.summary,
     body       = excluded.body,
     metadata   = excluded.metadata,
+    embedding  = excluded.embedding,
     timestamp  = excluded.timestamp,
     updated_at = excluded.updated_at`
 
@@ -190,6 +226,11 @@ ON CONFLICT(id) DO UPDATE SET
 			item.Metadata = "{}"
 		}
 
+		var embeddingBlob []byte
+		if len(item.Embedding) > 0 {
+			embeddingBlob, _ = EncodeEmbedding(item.Embedding)
+		}
+
 		_, err := stmt.ExecContext(ctx,
 			item.ID,
 			item.Type,
@@ -198,6 +239,7 @@ ON CONFLICT(id) DO UPDATE SET
 			item.Summary,
 			item.BodyText,
 			item.Metadata,
+			embeddingBlob,
 			item.Timestamp,
 			now,
 			now,
@@ -206,6 +248,11 @@ ON CONFLICT(id) DO UPDATE SET
 			return nil, fmt.Errorf("sqlite: store batch item %d: %w", i, err)
 		}
 		ids[i] = item.ID
+
+		// Update live HNSW index.
+		if len(item.Embedding) == EmbeddingDim {
+			a.hnsw.Add(persona.String(), item.ID, item.Embedding)
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -278,9 +325,13 @@ func (a *VaultAdapter) Query(ctx context.Context, persona domain.PersonaName, q 
 		return nil, fmt.Errorf("sqlite: persona %q not open", persona)
 	}
 
-	// Semantic and hybrid modes require sqlite-vec which is not yet available.
-	// Fall back to FTS5 so brain queries still return results.
-	if q.Mode == domain.SearchSemantic || q.Mode == domain.SearchHybrid {
+	// Pure semantic queries without an embedding vector degrade to FTS5.
+	// Hybrid mode is handled by the service layer (VaultService.HybridSearch).
+	if q.Mode == domain.SearchSemantic && len(q.Embedding) == 0 {
+		q.Mode = domain.SearchFTS5
+	}
+	if q.Mode == domain.SearchHybrid {
+		// Hybrid is orchestrated by VaultService; adapter handles FTS5 leg only.
 		q.Mode = domain.SearchFTS5
 	}
 
@@ -381,9 +432,61 @@ FROM vault_items WHERE deleted = 0`)
 	return items, nil
 }
 
-// VectorSearch is a stub — requires the sqlite-vec extension which is not yet loaded.
-func (a *VaultAdapter) VectorSearch(_ context.Context, _ domain.PersonaName, _ []float32, _ int) ([]domain.VaultItem, error) {
-	return nil, nil
+// VectorSearch performs approximate nearest-neighbor search using the in-RAM
+// HNSW index (hydrated from encrypted BLOBs on persona unlock).
+func (a *VaultAdapter) VectorSearch(ctx context.Context, persona domain.PersonaName, vector []float32, topK int) ([]domain.VaultItem, error) {
+	ids := a.hnsw.Search(persona.String(), vector, topK)
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	db := a.pool.DB(persona.String())
+	if db == nil {
+		return nil, fmt.Errorf("sqlite: persona %q not open", persona)
+	}
+
+	// Batch-fetch items by ID, preserving HNSW rank order.
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	query := `SELECT id, type, source, source_id, summary, body, metadata, timestamp, created_at
+		FROM vault_items WHERE id IN (` + strings.Join(placeholders, ",") + `) AND deleted = 0`
+
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: vector search fetch: %w", err)
+	}
+	defer rows.Close()
+
+	// Index by ID so we can return in HNSW rank order.
+	byID := make(map[string]domain.VaultItem, len(ids))
+	for rows.Next() {
+		var item domain.VaultItem
+		if err := rows.Scan(
+			&item.ID, &item.Type, &item.Source, &item.SourceID,
+			&item.Summary, &item.BodyText, &item.Metadata,
+			&item.Timestamp, &item.IngestedAt,
+		); err != nil {
+			return nil, fmt.Errorf("sqlite: vector search scan: %w", err)
+		}
+		byID[item.ID] = item
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlite: vector search rows: %w", err)
+	}
+
+	// Return in HNSW rank order.
+	results := make([]domain.VaultItem, 0, len(ids))
+	for _, id := range ids {
+		if item, ok := byID[id]; ok {
+			results = append(results, item)
+		}
+	}
+	return results, nil
 }
 
 // ---------------------------------------------------------------------------

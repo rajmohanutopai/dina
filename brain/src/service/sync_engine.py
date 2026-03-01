@@ -364,8 +364,28 @@ class SyncEngine:
     ) -> None:
         """Store a batch of items to core vault.
 
+        Generates embeddings for items that have summary or body text.
         Retries once on failure (atomic — all or nothing on core side).
         """
+        # Generate embeddings for Tier 1 items only (intent/preference/context).
+        # Tier 2 items (transactional/ephemeral) get FTS5 keyword search only.
+        from .tier_classifier import classify
+
+        for item in items:
+            tier = classify(item)
+            if tier == 1:
+                text = item.get("summary", "") or item.get("body", "") or ""
+                if text and self._llm is not None and "embedding" not in item:
+                    try:
+                        embedding = await self._llm.embed(text[:2000])
+                        item["embedding"] = embedding
+                    except Exception as exc:
+                        log.debug(
+                            "sync.embed_failed",
+                            source_id=item.get("source_id", ""),
+                            error=str(exc),
+                        )
+
         try:
             await self._core.store_vault_batch(persona_id, items)
         except Exception:

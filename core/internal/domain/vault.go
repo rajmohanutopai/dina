@@ -12,7 +12,8 @@ type VaultItem struct {
 	BodyText   string
 	Timestamp  int64
 	IngestedAt int64
-	Metadata   string // JSON blob
+	Metadata   string    // JSON blob
+	Embedding  []float32 `json:"embedding,omitempty"` // 768-dim float32, nil when not computed
 }
 
 // SearchMode defines the type of vault search.

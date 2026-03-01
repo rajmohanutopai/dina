@@ -21,6 +21,7 @@ type DinaMessage struct {
 	To          []string // recipient DIDs
 	CreatedTime int64    // Unix timestamp
 	Body        []byte   // JSON payload
+	Quarantined bool     // true if sender not in trust cache — flagged for user review
 }
 
 // DinaEnvelope represents the encrypted envelope for transport.

@@ -72,6 +72,12 @@ func (s *VaultService) Query(ctx context.Context, agentDID string, persona domai
 		return nil, fmt.Errorf("vault query: %w: %s", domain.ErrForbidden, decision.Reason)
 	}
 
+	// Route hybrid/semantic queries with embeddings through HybridSearch
+	// which merges FTS5 keyword results with HNSW vector similarity.
+	if (q.Mode == domain.SearchHybrid || q.Mode == domain.SearchSemantic) && len(q.Embedding) > 0 {
+		return s.HybridSearch(ctx, persona, q)
+	}
+
 	items, err := s.reader.Query(ctx, persona, q)
 	if err != nil {
 		return nil, fmt.Errorf("vault query: %w", err)

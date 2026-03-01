@@ -28,11 +28,21 @@ class LLMProvider(Protocol):
 
         Parameters:
             messages: List of ``{"role": ..., "content": ...}`` dicts.
+                      Messages may also contain function call/response parts
+                      for multi-turn tool-calling conversations.
             **kwargs: Provider-specific options (temperature, max_tokens, etc.).
+                      Tool-calling kwargs (provider support varies):
+
+                      - ``tools``: list of tool/function declarations.
+                      - ``tool_config``: tool-calling configuration.
 
         Returns:
             A dict with at least ``content``, ``model``, ``tokens_in``,
             ``tokens_out``, and ``finish_reason`` keys.
+
+            When the model requests a tool call instead of generating text,
+            the dict includes ``tool_calls`` (list of dicts with ``name``
+            and ``args`` keys) and ``content`` may be empty.
         """
         ...
 

@@ -104,8 +104,38 @@ class GeminiProvider:
         for msg in messages:
             role = msg.get("role", "user")
             content = msg.get("content", "")
+
             if role == "system":
                 system_parts.append(content)
+
+            elif role == "tool_call":
+                # Model requested a function call — reconstruct as model turn
+                parts = []
+                for tc in msg.get("tool_calls", []):
+                    parts.append(types.Part(
+                        function_call=types.FunctionCall(
+                            name=tc["name"],
+                            args=tc.get("args", {}),
+                            id=tc.get("id"),
+                        )
+                    ))
+                if parts:
+                    contents.append(types.Content(role="model", parts=parts))
+
+            elif role == "tool_response":
+                # Function execution results — send as user turn with FunctionResponse
+                parts = []
+                for tr in msg.get("tool_responses", []):
+                    parts.append(types.Part(
+                        function_response=types.FunctionResponse(
+                            name=tr["name"],
+                            response=tr.get("response", {}),
+                            id=tr.get("id"),
+                        )
+                    ))
+                if parts:
+                    contents.append(types.Content(role="user", parts=parts))
+
             elif role == "assistant":
                 contents.append(types.Content(
                     role="model",
@@ -128,6 +158,12 @@ class GeminiProvider:
         if system_parts:
             config_kwargs["system_instruction"] = "\n".join(system_parts)
 
+        # Tool-calling support: pass tools and tool_config through
+        if "tools" in kwargs:
+            config_kwargs["tools"] = kwargs["tools"]
+        if "tool_config" in kwargs:
+            config_kwargs["tool_config"] = kwargs["tool_config"]
+
         config = types.GenerateContentConfig(**config_kwargs)
 
         try:
@@ -148,21 +184,48 @@ class GeminiProvider:
                 tokens_in = getattr(usage, "prompt_token_count", 0) or 0
                 tokens_out = getattr(usage, "candidates_token_count", 0) or 0
 
-            # Extract finish reason
+            # Extract finish reason and detect function calls
             finish_reason = "stop"
+            tool_calls: list[dict[str, Any]] = []
+            response_text = ""
+
             if response.candidates:
                 candidate = response.candidates[0]
                 fr = getattr(candidate, "finish_reason", None)
                 if fr is not None:
                     finish_reason = str(fr).lower().replace("finishreason.", "")
 
-            return {
-                "content": response.text,
+                # Check parts for function calls
+                content_part = getattr(candidate, "content", None)
+                if content_part and hasattr(content_part, "parts"):
+                    for part in content_part.parts:
+                        fc = getattr(part, "function_call", None)
+                        if fc is not None:
+                            tool_calls.append({
+                                "name": fc.name,
+                                "args": dict(fc.args) if fc.args else {},
+                                "id": getattr(fc, "id", None),
+                            })
+                        elif getattr(part, "text", None):
+                            response_text += part.text
+
+            if not response_text and not tool_calls:
+                # Fallback to response.text for simple responses
+                try:
+                    response_text = response.text or ""
+                except (ValueError, AttributeError):
+                    response_text = ""
+
+            result: dict[str, Any] = {
+                "content": response_text,
                 "model": self._model,
                 "tokens_in": tokens_in,
                 "tokens_out": tokens_out,
                 "finish_reason": finish_reason,
             }
+            if tool_calls:
+                result["tool_calls"] = tool_calls
+            return result
 
         except asyncio.TimeoutError:
             raise LLMError(

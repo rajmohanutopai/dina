@@ -1014,6 +1014,19 @@ func NewContactDirectory() *ContactDirectory {
 	}
 }
 
+// GetTrustLevel returns the trust_level for a DID, or "" if not a contact.
+// Implements port.ContactLookup for trust-based ingress decisions.
+func (cd *ContactDirectory) GetTrustLevel(did string) string {
+	cd.mu.RLock()
+	defer cd.mu.RUnlock()
+
+	c, ok := cd.contacts[did]
+	if !ok {
+		return ""
+	}
+	return c.TrustLevel
+}
+
 // Add adds a contact with a DID, display name, and trust level.
 func (cd *ContactDirectory) Add(_ context.Context, did, name, trustLevel string) error {
 	cd.mu.Lock()

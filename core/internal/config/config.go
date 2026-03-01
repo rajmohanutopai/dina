@@ -29,6 +29,7 @@ type Config struct {
 	PDSEmail         string `json:"pds_email"`
 	ClientToken      string `json:"client_token"`
 	OwnDID           string `json:"own_did"`
+	AppViewURL       string `json:"appview_url"`
 	AllowedOrigins   string `json:"allowed_origins"`
 	TrustedProxies   string `json:"trusted_proxies"` // comma-separated CIDRs for XFF trust
 }
@@ -202,6 +203,9 @@ func loadEnv(cfg *Config) {
 	}
 	if v := os.Getenv("DINA_OWN_DID"); v != "" {
 		cfg.OwnDID = v
+	}
+	if v := os.Getenv("DINA_APPVIEW_URL"); v != "" {
+		cfg.AppViewURL = v
 	}
 	if v := os.Getenv("DINA_ALLOWED_ORIGINS"); v != "" {
 		cfg.AllowedOrigins = v

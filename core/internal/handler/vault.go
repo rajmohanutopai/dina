@@ -30,11 +30,12 @@ func agentDID(r *http.Request) string {
 
 // queryRequest is the JSON body for POST /v1/vault/query.
 type queryRequest struct {
-	Persona string   `json:"persona"`
-	Query   string   `json:"query"`
-	Mode    string   `json:"mode"`
-	Types   []string `json:"types"`
-	Limit   int      `json:"limit"`
+	Persona   string    `json:"persona"`
+	Query     string    `json:"query"`
+	Mode      string    `json:"mode"`
+	Types     []string  `json:"types"`
+	Limit     int       `json:"limit"`
+	Embedding []float32 `json:"embedding"` // 768-dim from Brain, enables semantic/hybrid search
 }
 
 // HandleQuery handles POST /v1/vault/query. It parses the search parameters,
@@ -68,10 +69,11 @@ func (h *VaultHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := domain.SearchQuery{
-		Mode:  mode,
-		Query: req.Query,
-		Types: req.Types,
-		Limit: req.Limit,
+		Mode:      mode,
+		Query:     req.Query,
+		Types:     req.Types,
+		Limit:     req.Limit,
+		Embedding: req.Embedding,
 	}
 
 	// Track whether we requested a mode that falls back to FTS5.
@@ -83,8 +85,8 @@ func (h *VaultHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Signal degradation when semantic/hybrid was requested but FTS5 was used.
-	if requestedMode == domain.SearchSemantic || requestedMode == domain.SearchHybrid {
+	// Signal degradation when semantic/hybrid was requested but no embedding provided.
+	if (requestedMode == domain.SearchSemantic || requestedMode == domain.SearchHybrid) && len(req.Embedding) == 0 {
 		w.Header().Set("X-Search-Mode", "fts5")
 		w.Header().Set("X-Search-Degraded-From", string(requestedMode))
 	}

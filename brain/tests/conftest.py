@@ -64,10 +64,14 @@ def guardian(mock_guardian, mock_core_client, mock_llm_router, mock_pii_scrubber
         from src.service.entity_vault import EntityVaultService
         from src.service.nudge import NudgeAssembler
         from src.service.scratchpad import ScratchpadService
+        from src.service.vault_context import VaultContextAssembler
 
         entity_vault = EntityVaultService(mock_pii_scrubber, mock_core_client)
         nudge = NudgeAssembler(mock_core_client)
         scratchpad = ScratchpadService(mock_core_client)
+        vault_context = VaultContextAssembler(
+            core=mock_core_client, llm_router=mock_llm_router,
+        )
 
         return GuardianLoop(
             core=mock_core_client,
@@ -76,6 +80,7 @@ def guardian(mock_guardian, mock_core_client, mock_llm_router, mock_pii_scrubber
             entity_vault=entity_vault,
             nudge_assembler=nudge,
             scratchpad=scratchpad,
+            vault_context=vault_context,
         )
     except (ImportError, TypeError):
         return mock_guardian
@@ -205,6 +210,8 @@ def mock_core_client() -> AsyncMock:
     client.store_vault_item.return_value = "item-001"
     client.store_vault_batch.return_value = None
     client.search_vault.return_value = [make_vault_item()]
+    client.query_vault.return_value = [make_vault_item()]
+    client.list_personas.return_value = ["personal", "consumer"]
     client.write_scratchpad.return_value = None
     client.read_scratchpad.return_value = None
     client.get_kv.return_value = "2026-01-01T00:00:00Z"

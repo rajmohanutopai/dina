@@ -12,6 +12,18 @@ var ValidVaultItemTypes = map[string]bool{
 	"photo":         true,
 	"email_draft":   true,
 	"cart_handover": true,
+	"contact_card":  true,
+	"document":      true,
+	"bookmark":      true,
+	"voice_memo":    true,
 	"kv":            true,
 	"contact":       true,
+	// Personal context types (stored by Brain sync engine / user profile)
+	"health_context":  true,
+	"work_context":    true,
+	"finance_context": true,
+	"family_context":  true,
+	// Decision records (Dina used Trust Network + vault context to recommend)
+	"purchase_decision": true,
+	"trust_review":      true,
 }

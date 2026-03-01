@@ -31,6 +31,9 @@ log = structlog.get_logger(__name__)
 # Task types that can be answered without an LLM call.
 _FTS_ONLY_TASKS = frozenset({"fts_lookup", "keyword_search"})
 
+# Lightweight tasks — prefer local for speed & privacy.
+_LIGHTWEIGHT_TASKS = frozenset({"intent_classification", "summarize"})
+
 # Task types considered "complex" that benefit from cloud models.
 _COMPLEX_TASKS = frozenset({
     "complex_reasoning",
@@ -89,6 +92,10 @@ class LLMRouter:
         persona_tier: str = "open",
         context: dict | None = None,
         provider: str | None = None,
+        *,
+        messages: list[dict] | None = None,
+        tools: list | None = None,
+        tool_config: object | None = None,
     ) -> dict:
         """Route a task to the optimal LLM path.
 
@@ -184,9 +191,20 @@ class LLMRouter:
             model=provider_obj.model_name,
         )
 
+        # Build kwargs for tool-calling support
+        complete_kwargs: dict = {}
+        if tools is not None:
+            complete_kwargs["tools"] = tools
+        if tool_config is not None:
+            complete_kwargs["tool_config"] = tool_config
+
+        # Use explicit messages if provided, otherwise wrap prompt
+        call_messages = messages if messages is not None else [{"role": "user", "content": prompt}]
+
         try:
             response = await provider_obj.complete(
-                messages=[{"role": "user", "content": prompt}],
+                messages=call_messages,
+                **complete_kwargs,
             )
         except Exception as exc:
             # Attempt fallback before giving up.
@@ -210,7 +228,8 @@ class LLMRouter:
                         )
                 try:
                     response = await fallback.complete(
-                        messages=[{"role": "user", "content": prompt}],
+                        messages=call_messages,
+                        **complete_kwargs,
                     )
                     route_label = "local" if fallback.is_local else "cloud"
                     response["route"] = route_label
@@ -256,6 +275,30 @@ class LLMRouter:
         """Return list of available model identifiers."""
         return [p.model_name for p in self._providers.values()]
 
+    async def embed(self, text: str) -> list[float]:
+        """Generate an embedding vector via the best available provider.
+
+        Prefers local providers (privacy — data never leaves the Home Node),
+        falls back to cloud.  Raises ``LLMError`` if no provider supports
+        embedding.
+        """
+        providers = list(self._local.values()) + list(self._cloud.values())
+        last_exc: Exception | None = None
+        for provider in providers:
+            try:
+                return await provider.embed(text)
+            except Exception as exc:
+                log.warning(
+                    "llm_router.embed_failed",
+                    provider=provider.model_name,
+                    error=str(exc),
+                )
+                last_exc = exc
+                continue
+        raise LLMError(
+            f"No provider available for embedding: {last_exc}"
+        )
+
     # ------------------------------------------------------------------
     # Internal routing logic
     # ------------------------------------------------------------------
@@ -284,6 +327,16 @@ class LLMRouter:
                 return self._preferred_cloud()
             raise LLMError(
                 "No LLM provider available for sensitive persona query."
+            )
+
+        # Lightweight tasks: local preferred (fast, no PII exposure).
+        if task_type in _LIGHTWEIGHT_TASKS:
+            if has_local:
+                return next(iter(self._local.values()))
+            if has_cloud:
+                return self._preferred_cloud()
+            raise LLMError(
+                "No LLM provider available for lightweight task."
             )
 
         # Complex reasoning: cloud preferred (more capable).

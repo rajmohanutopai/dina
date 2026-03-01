@@ -1,0 +1,292 @@
+{% extends "base.html" %}
+{% set page = "trust" %}
+
+{% block title %}Dina Admin — Trust Neighborhood{% endblock %}
+{% block page_title %}Trust Neighborhood{% endblock %}
+
+{% block content %}
+<style nonce="{{ request.state.csp_nonce | default('') }}">
+    .page-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 20px;
+    }
+
+    .page-header h2 {
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--color-text);
+    }
+
+    .btn {
+        display: inline-block;
+        padding: 8px 16px;
+        font-size: 13px;
+        font-weight: 600;
+        font-family: system-ui, -apple-system, sans-serif;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        background: var(--color-surface);
+        color: var(--color-text);
+        cursor: pointer;
+        transition: background 0.15s;
+    }
+
+    .btn:hover {
+        background: #F5F5F4;
+    }
+
+    .btn-primary {
+        background: var(--color-primary);
+        color: var(--color-body-bg);
+        border-color: var(--color-primary);
+    }
+
+    .btn-primary:hover {
+        background: var(--color-primary-hover);
+    }
+
+    .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    /* ── Stats cards ── */
+    .stats-row {
+        display: flex;
+        gap: 16px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+    }
+
+    .stat-card {
+        flex: 1;
+        min-width: 140px;
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        padding: 16px;
+    }
+
+    .stat-card .stat-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--color-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .stat-card .stat-value {
+        font-size: 24px;
+        font-weight: 700;
+        color: var(--color-text);
+        margin-top: 4px;
+    }
+
+    /* ── Table ── */
+    .trust-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+    }
+
+    .trust-table th {
+        text-align: left;
+        padding: 10px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--color-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        border-bottom: 1px solid var(--color-border);
+    }
+
+    .trust-table td {
+        padding: 10px 12px;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+        color: var(--color-text);
+    }
+
+    .trust-table tr:hover td {
+        background: rgba(0, 0, 0, 0.02);
+    }
+
+    /* ── Score bar ── */
+    .score-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .score-bar-track {
+        width: 60px;
+        height: 6px;
+        background: rgba(0, 0, 0, 0.06);
+        border-radius: 3px;
+        overflow: hidden;
+    }
+
+    .score-bar-fill {
+        height: 100%;
+        border-radius: 3px;
+    }
+
+    .score-green { background: var(--color-green); }
+    .score-yellow { background: var(--color-yellow); }
+    .score-red { background: var(--color-red); }
+
+    /* ── Badges ── */
+    .badge {
+        display: inline-block;
+        padding: 2px 8px;
+        font-size: 11px;
+        font-weight: 600;
+        border-radius: 10px;
+    }
+
+    .badge-ring-1 { background: #FEF3C7; color: #92400E; }
+    .badge-ring-2 { background: #D1FAE5; color: #065F46; }
+    .badge-ring-3 { background: #DBEAFE; color: #1E40AF; }
+
+    .badge-contact { background: #DBEAFE; color: #1E40AF; }
+    .badge-frequent { background: #D1FAE5; color: #065F46; }
+    .badge-1-hop { background: #FEF3C7; color: #92400E; }
+    .badge-2-hop { background: #F3E8FF; color: #6B21A8; }
+    .badge-unknown { background: #F5F5F4; color: #78716C; }
+
+    .sync-status {
+        font-size: 13px;
+        color: var(--color-muted);
+    }
+</style>
+
+<!-- Header row -->
+<div class="page-header">
+    <div>
+        <span class="sync-status" id="sync-status"></span>
+    </div>
+    <button class="btn btn-primary" id="sync-btn" onclick="triggerSync()">Sync Now</button>
+</div>
+
+<!-- Stats row -->
+<div class="stats-row">
+    <div class="stat-card">
+        <div class="stat-label">Cached DIDs</div>
+        <div class="stat-value" id="stat-count">--</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Last Sync</div>
+        <div class="stat-value" id="stat-last-sync" style="font-size: 16px;">--</div>
+    </div>
+</div>
+
+<!-- Trust Cache Table -->
+<div class="card">
+    <table class="trust-table">
+        <thead>
+            <tr>
+                <th>DID</th>
+                <th>Name</th>
+                <th>Trust Score</th>
+                <th>Ring</th>
+                <th>Relationship</th>
+                <th>Last Verified</th>
+            </tr>
+        </thead>
+        <tbody id="trust-body">
+            <tr>
+                <td colspan="6" style="text-align:center;color:var(--color-muted);">Loading...</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ request.state.csp_nonce | default('') }}">
+var _ringLabels = { 1: 'Unverified', 2: 'Verified', 3: 'Actioned' };
+var _relLabels = { 'contact': 'Contact', 'frequent': 'Frequent', '1-hop': '1-Hop', '2-hop': '2-Hop', 'unknown': 'Unknown' };
+
+function escapeHtml(text) {
+    var div = document.createElement('div');
+    div.textContent = text || '';
+    return div.innerHTML;
+}
+
+function scoreColor(score) {
+    if (score >= 0.7) return 'score-green';
+    if (score >= 0.3) return 'score-yellow';
+    return 'score-red';
+}
+
+function formatTime(ts) {
+    if (!ts || ts === 0) return 'Never';
+    var d = new Date(ts * 1000);
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+}
+
+async function loadStats() {
+    var resp = await apiFetch('/admin/api/trust/stats');
+    if (!resp) return;
+    var stats = await resp.json();
+    document.getElementById('stat-count').textContent = stats.count || 0;
+    document.getElementById('stat-last-sync').textContent = formatTime(stats.last_sync_at);
+    document.getElementById('sync-status').textContent = stats.last_sync_at
+        ? 'Last synced: ' + formatTime(stats.last_sync_at)
+        : 'Never synced';
+}
+
+async function loadCache() {
+    var resp = await apiFetch('/admin/api/trust/cache');
+    if (!resp) return;
+    var data = await resp.json();
+    renderCache(data.entries || []);
+}
+
+function renderCache(entries) {
+    var tbody = document.getElementById('trust-body');
+    if (!entries || entries.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--color-muted);">No cached DIDs. Click "Sync Now" to fetch your trust neighborhood.</td></tr>';
+        return;
+    }
+    // Sort by trust_score descending
+    entries.sort(function(a, b) { return (b.trust_score || 0) - (a.trust_score || 0); });
+    tbody.innerHTML = entries.map(function(e) {
+        var score = (e.trust_score || 0).toFixed(2);
+        var pct = Math.round((e.trust_score || 0) * 100);
+        var ring = e.trust_ring || 1;
+        var rel = e.relationship || 'unknown';
+        return '<tr>' +
+            '<td title="' + escapeHtml(e.did) + '">' + escapeHtml((e.did || '').substring(0, 24)) + '...</td>' +
+            '<td>' + escapeHtml(e.display_name) + '</td>' +
+            '<td><div class="score-bar"><div class="score-bar-track"><div class="score-bar-fill ' + scoreColor(e.trust_score) + '" style="width:' + pct + '%"></div></div><span>' + score + '</span></div></td>' +
+            '<td><span class="badge badge-ring-' + ring + '">' + escapeHtml(_ringLabels[ring] || 'Ring ' + ring) + '</span></td>' +
+            '<td><span class="badge badge-' + escapeHtml(rel) + '">' + escapeHtml(_relLabels[rel] || rel) + '</span></td>' +
+            '<td>' + formatTime(e.last_verified_at) + '</td>' +
+        '</tr>';
+    }).join('');
+}
+
+async function triggerSync() {
+    var btn = document.getElementById('sync-btn');
+    btn.disabled = true;
+    btn.textContent = 'Syncing...';
+    try {
+        var resp = await apiFetch('/admin/api/trust/sync', { method: 'POST' });
+        if (resp && resp.ok) {
+            var data = await resp.json();
+            document.getElementById('sync-status').textContent = 'Synced ' + (data.synced_count || 0) + ' DIDs';
+        }
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Sync Now';
+    }
+    loadStats();
+    loadCache();
+}
+
+loadStats();
+loadCache();
+</script>
+{% endblock %}

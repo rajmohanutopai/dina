@@ -36,6 +36,7 @@ import (
 	"github.com/rajmohanutopai/dina/core/internal/adapter/server"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/taskqueue"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/transport"
+	trustadapter "github.com/rajmohanutopai/dina/core/internal/adapter/trust"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/vault"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/ws"
 	"github.com/mr-tron/base58"
@@ -350,6 +351,11 @@ func main() {
 	deviceRegistry := identity.NewDeviceRegistry()
 	recoveryMgr := identity.NewRecoveryManager()
 
+	// 5a. Trust cache + resolver (for ingress gatekeeper — no SQLite dependency for now)
+	trustCache := trustadapter.NewInMemoryCache()
+	trustResolver := trustadapter.NewResolver(cfg.AppViewURL)
+	trustSvc := service.NewTrustService(trustCache, trustResolver, contactDir)
+
 	// 5b. K256 rotation key + PLC/PDS (optional — enabled when DINA_PDS_URL is set)
 	k256Mgr := crypto.NewK256KeyManager(cfg.VaultPath)
 	var plcClient *pds.PLCClient
@@ -542,6 +548,18 @@ func main() {
 			slog.Warn("sweeper: per-DID rate limit exceeded", "did", msg.From)
 			return
 		}
+		// Trust-based ingress filtering.
+		if msg.From != "" {
+			decision := trustSvc.EvaluateIngress(msg.From)
+			switch decision {
+			case domain.IngressDrop:
+				slog.Info("sweeper: dropped message from blocked DID", "did", msg.From)
+				return
+			case domain.IngressQuarantine:
+				msg.Quarantined = true
+				slog.Info("sweeper: quarantined message from unknown DID", "did", msg.From)
+			}
+		}
 		transportSvc.StoreInbound(msg)
 	})
 	ingressSweeper.SetTransport(transportSvc)
@@ -556,6 +574,18 @@ func main() {
 		if msg.From != "" && !inboxMgr.CheckDIDRate(msg.From) {
 			slog.Warn("ingress: per-DID rate limit exceeded", "did", msg.From)
 			return fmt.Errorf("per-DID rate limit exceeded for %s", msg.From)
+		}
+		// Trust-based ingress filtering.
+		if msg.From != "" {
+			decision := trustSvc.EvaluateIngress(msg.From)
+			switch decision {
+			case domain.IngressDrop:
+				slog.Info("ingress: dropped message from blocked DID", "did", msg.From)
+				return nil // Not an error — intentionally discarded
+			case domain.IngressQuarantine:
+				msg.Quarantined = true
+				slog.Info("ingress: quarantined message from unknown DID", "did", msg.From)
+			}
 		}
 		transportSvc.StoreInbound(msg)
 		slog.Info("ingress: fast-path message decrypted and stored", "type", msg.Type)
@@ -631,6 +661,17 @@ func main() {
 		}
 	}()
 
+	// Trust cache: periodic neighborhood sync from AppView (1 hour).
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			if err := trustSvc.SyncNeighborhood(cfg.OwnDID); err != nil {
+				slog.Warn("trust sync failed", "error", err)
+			}
+		}
+	}()
+
 	taskSvc := service.NewTaskService(taskQueue, watchdog, brain, clk)
 
 	deviceSvc := service.NewDeviceService(pairer, deviceRegistry, clk)
@@ -684,6 +725,7 @@ func main() {
 	deviceH := &handler.DeviceHandler{Device: deviceSvc}
 
 	personaH := &handler.PersonaHandler{Identity: identitySvc, Personas: personaMgr, VaultManager: vaultMgr, KeyDeriver: keyDeriver, Seed: bootstrapSeed}
+	trustH := &handler.TrustHandler{Trust: trustSvc, OwnDID: cfg.OwnDID}
 	contactH := &handler.ContactHandler{Contacts: contactDir, Sharing: sharingMgr}
 	piiH := &handler.PIIHandler{Scrubber: scrubber}
 	notifyH := &handler.NotifyHandler{Notifier: notifier}
@@ -750,6 +792,11 @@ func main() {
 			}
 		}
 	})
+
+	// Trust Cache API
+	mux.HandleFunc("/v1/trust/cache", trustH.HandleListCache)
+	mux.HandleFunc("/v1/trust/stats", trustH.HandleStats)
+	mux.HandleFunc("/v1/trust/sync", trustH.HandleSync)
 
 	// Device Pairing API
 	mux.HandleFunc("/v1/pair/initiate", deviceH.HandleInitiatePairing)

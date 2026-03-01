@@ -222,6 +222,52 @@ Task Classification (dina-brain)
 
 Architecture remains model-agnostic. When Gemma 4n or equivalent arrives, swap in.
 
+### Agentic Vault Context Assembly
+
+When a user asks Dina something ("I need a new office chair"), Brain doesn't just send the prompt to the LLM. It runs an **agentic reasoning loop** where the LLM autonomously decides which persona vaults to query, what search terms to use, and how to assemble context — all via function calling.
+
+**Architecture (the Sancho scenario):**
+
+```
+User prompt + tool declarations → LLM (thinks)
+  → LLM calls list_personas → Python executes → returns persona names, item types, recent summaries
+  → LLM calls browse_vault("personal") → Python executes → returns "Chronic lower back pain from office work"
+  → LLM calls search_vault("consumer", "office chair") → Python executes → returns product reviews
+  → LLM calls search_vault("personal", "chronic lower back pain") → Python executes → returns health records
+  → LLM generates final personalized response incorporating all vault context
+```
+
+**The LLM is the agent.** Python just executes tool calls and feeds results back. No hardcoded keyword matching, no procedural intent classification.
+
+**Three vault tools (provider-agnostic declarations):**
+
+| Tool | Purpose | When to use |
+|------|---------|-------------|
+| `list_personas` | Returns persona names + item types + recent summaries | First — discover what vaults exist and what they contain |
+| `browse_vault` | Returns recent items from a persona (no search query) | After list — see actual stored text before searching |
+| `search_vault` | Keyword (FTS5) + semantic (HNSW cosine) search | After browse — use exact terms from browse results for FTS5, or natural language for semantic |
+
+**Search modes:**
+
+- **FTS5 (keyword):** Matches exact words. "office chair" only finds items containing those words. Fast, precise, but misses semantic relationships.
+- **Semantic (HNSW cosine):** Brain generates a 768-dim query embedding, Core searches the in-memory HNSW index. "office chair" finds "chronic lower back pain from sitting" (cosine similarity ~0.81). Catches indirect relationships.
+- **Hybrid (default):** `score = 0.4 × FTS5_rank + 0.6 × cosine_similarity`. Best of both — exact matches boosted, semantic matches discovered.
+
+**The discovery-first workflow** is critical because the LLM starts with zero knowledge of what's in the vault. The system prompt teaches it:
+1. Call `list_personas` first — see previews of all personas.
+2. For relevant personas, call `browse_vault` — see actual item summaries.
+3. For FTS5 search, use **exact terms from browse results**. FTS5 is keyword-based — "chronic back pain" only matches items containing those exact words, not "spinal condition" or "lumbar problem."
+4. For semantic search, use natural language — the embedding model handles synonyms and related concepts.
+5. Synthesize all gathered context into a personalized response.
+
+**Privacy guarantees:**
+- Tool declarations contain no PII — only the user's query + persona names.
+- Cross-persona data stays in-memory — assembled context is never persisted.
+- PII scrub still applies — the enriched prompt goes through Entity Vault scrub/rehydrate for sensitive tiers.
+- Locked personas are skipped gracefully — `PersonaLockedError` caught, persona excluded.
+
+**Agentic loop limits:** Maximum 6 tool-calling turns before forcing a text response. If the LLM hasn't finished gathering context in 6 turns, it must synthesize what it has. This prevents runaway API costs and latency.
+
 ### Context Injection (The Nudge)
 
 When the user opens an app or starts an interaction, Dina searches the Vault for relevant context.

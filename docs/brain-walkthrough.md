@@ -551,7 +551,29 @@ Delegates to `GuardianLoop.process_event()` and translates the returned dict int
 
 Complex LLM reasoning queries. The request carries a `prompt`, optional `persona_id` and `persona_tier` (for privacy-aware routing), and optional `provider` (to force a specific LLM). The route wraps the request as a `reason` event and delegates to `GuardianLoop.process_event()`, which routes to `_handle_reason()` (guardian.py:523-565).
 
-The reason pipeline: prompt → (optional PII scrub for sensitive personas) → LLM router → (optional rehydration) → response. The Entity Vault is created and destroyed within this single call.
+The reason pipeline uses **agentic vault context assembly** — the LLM autonomously decides which persona vaults to query and what search terms to use, via function calling:
+
+```
+User: "I need a new office chair"
+  ↓
+_handle_reason()
+  ↓
+1. PII scrub (if sensitive persona) — Entity Vault created
+  ↓
+2. Agentic reasoning loop (VaultContextAssembler → ReasoningAgent):
+   ├─ LLM receives prompt + tool declarations (list_personas, browse_vault, search_vault)
+   ├─ LLM calls list_personas → returns persona names + recent summaries + item types
+   ├─ LLM calls browse_vault("personal") → sees "Chronic lower back pain from office work"
+   ├─ LLM calls search_vault("personal", "chronic lower back pain") → full item details
+   ├─ LLM calls search_vault("consumer", "office chair") → product reviews
+   └─ LLM generates personalized response using all gathered vault context
+  ↓
+3. Rehydrate PII tokens → return {content, model, vault_context_used: true}
+```
+
+The key insight: **the LLM is the agent.** Python doesn't do keyword matching or intent classification — it declares tools, executes them when the LLM asks, and feeds results back. The system prompt teaches the LLM a discovery-first workflow: list personas (see what's available) → browse (see actual stored text) → search with exact terms from browse results (FTS5 is keyword-based). For semantic search, the `search_vault` tool generates a query embedding and Core searches its in-memory HNSW index, finding items by meaning rather than exact words.
+
+Tool declarations are provider-agnostic dicts (`vault_context.VAULT_TOOLS`). The LLM router translates them into provider-specific formats (e.g., `google.genai.types.FunctionDeclaration` for Gemini). The agentic loop runs up to 6 tool-calling turns before forcing a text response.
 
 ### POST /v1/pii/scrub (routes/pii.py)
 

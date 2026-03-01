@@ -50,7 +50,7 @@ Dina runs on a **Home Node** — a small, always-on server. Your phone, laptop, 
 │  │ Vault        │  │ - Connector scheduler         │  │
 │  │ (SQLite +    │  │ - PII scrubber                │  │
 │  │  FTS5 +      │  │ - DIDComm endpoint            │  │
-│  │  sqlite-vec) │  │ - WebSocket server            │  │
+│  │  HNSW)       │  │ - WebSocket server            │  │
 │  └──────────────┘  │ - Key management              │  │
 │                     └──────────────────────────────┘  │
 │  ┌──────────────┐  ┌──────────────────────────────┐  │
@@ -892,15 +892,16 @@ Brain extracts relationship → POST core:8100/v1/vault/store {type: "relationsh
 **3. Embeddings (brain generates, core stores)**
 ```
 Brain ingests new item via MCP
-  → brain generates embedding:
+  → brain generates 768-dim embedding:
       With llama: calls llama:8080 (EmbeddingGemma, local)
       Without llama: calls gemini-embedding-001 (cloud API)
-  → brain sends embedding back to core: POST core:8100/v1/vault/store
-      {type: "embedding", vector: [...], source_id: "..."}
-  → core writes vector into sqlite-vec
+  → brain sends text + embedding to core: POST core:8100/v1/vault/store
+      {type: "note", body_text: "...", embedding: [...768 floats...]}
+  → core stores text + embedding BLOB in same SQLCipher row (encrypted at rest)
+  → core inserts vector into in-memory HNSW index (if persona is unlocked)
 ```
 
-Brain generates the embedding because it already has the LLM routing logic and knows which model to use. Core just stores the vector — it doesn't need to understand embeddings, just execute the sqlite-vec INSERT.
+Brain generates the embedding because it already has the LLM routing logic and knows which model to use. Core stores the embedding as a BLOB in the same `vault_items` row as the text — encrypted by SQLCipher. If the persona is unlocked, the vector is also inserted into the in-memory HNSW index for immediate searchability.
 
 #### Reading
 
@@ -919,12 +920,14 @@ Client: "find emails from Sancho"
 Client: "what was that deal Sancho was worried about?"
   → client WebSocket → core
   → core sees this needs reasoning → POST brain:8200/v1/reason {query: "..."}
-  → brain generates query embedding via llama:8080 (or cloud API)
-  → brain asks core for vector search:
-      POST core:8100/v1/vault/query {vector: [...], top_k: 10}
-  → core runs sqlite-vec nearest-neighbor search → returns results to brain
-  → brain also asks core for FTS5 results:
-      POST core:8100/v1/vault/query {text: "Sancho deal"}
+  → brain's agentic reasoning loop (ReasoningAgent) autonomously decides what to search:
+      LLM calls list_personas → sees available vaults + recent summaries
+      LLM calls search_vault("personal", "Sancho deal") →
+        brain generates 768-dim query embedding via llama:8080 (or cloud API)
+        brain sends to core: POST core:8100/v1/vault/query {text: "Sancho deal", embedding: [...]}
+        core runs hybrid search: FTS5 keyword match + in-memory HNSW cosine similarity
+        score = 0.4 × FTS5_rank + 0.6 × cosine_similarity
+        core returns merged top-K results to brain
   → brain merges both result sets (hybrid search)
   → brain reasons over combined context via LLM
   → brain returns answer to core
@@ -959,7 +962,7 @@ Sancho's Dina sends "arriving in 15 minutes"
 │  - identity.sqlite + persona .sqlite files (open/close/read/write/backup) │
 │  - SQLCipher encryption/decryption                      │
 │  - FTS5 queries                                         │
-│  - sqlite-vec queries (given a vector, find neighbors)  │
+│  - HNSW vector queries (given embedding, find neighbors) │
 │  - WebSocket to clients                                 │
 │  - DIDComm endpoint                                     │
 │  - Gatekeeper RBAC (persona access, egress filtering)   │
@@ -1071,7 +1074,7 @@ The internal API between core and brain. All endpoints require `Authorization: B
 | Mode | Engine | Best for | `relevance` field |
 |------|--------|----------|-------------------|
 | `fts5` | SQLite FTS5 (`unicode61` tokenizer) | Exact keyword matching, fast | FTS5 rank score (normalized) |
-| `semantic` | sqlite-vec cosine similarity | Fuzzy meaning-based matching | Cosine similarity 0.0–1.0 |
+| `semantic` | In-memory HNSW cosine similarity (768-dim, `coder/hnsw`) | Fuzzy meaning-based matching | Cosine similarity 0.0–1.0 |
 | `hybrid` (default) | Both, merged + deduplicated | Most queries | `0.4 × fts5_rank + 0.6 × cosine_similarity` |
 
 **`include_content` design decision:** Default is `false` — brain gets `summary` only (LLM-generated at ingestion, already scrubbed). This makes the safe path the default. Setting `include_content: true` returns the raw `body_text` — brain is then responsible for PII scrubbing before sending to any cloud LLM. This flag is a signal to the developer that they're opting into a higher-trust path.
@@ -1767,23 +1770,45 @@ CREATE TABLE relationships (
 | Property | Value |
 |----------|-------|
 | Contents | Embeddings, summaries, relationship graphs, inferred patterns |
-| Encryption | Same per-persona `.sqlite` files — embeddings and indices stored in dedicated tables within each persona's encrypted database |
-| Storage engine | SQLite for structured data + sqlite-vec for vector embeddings |
+| Encryption | Same per-persona `.sqlite` files — embeddings stored as BLOBs in the same row as text, encrypted transparently by SQLCipher |
+| Storage engine | SQLite for structured data + **Encrypted Cold Storage with Volatile RAM Hydration** for vector search (pure-Go HNSW in-memory index, embeddings at rest in SQLCipher BLOBs) |
 | Location | Home node (primary). Rich clients may build a local subset from their cache for offline search. |
 | Backup | Not backed up separately. Regenerable from Tier 1. |
 | Breach impact | Attacker sees Dina's inferences. Metadata, not raw data. |
 
-**Vector storage options:**
-- Phase 1: `sqlite-vec` (successor to the now-deprecated `sqlite-vss`). Written in pure C, zero dependencies, runs anywhere SQLite runs — phones, desktops, WASM, Raspberry Pi. Mozilla Builders project, MIT/Apache-2.0 licensed. Supports metadata columns and partition keys alongside vectors.
-- Phase 2: Consider `sqlite-vector` (from SQLite Cloud, HNSW-based for faster ANN at scale) or Turso's native vector search (libSQL fork with built-in vector support) if index grows large.
-- Not using Pinecone/Weaviate — those are third-party cloud services. Dina's embeddings stay on your Home Node.
+**Vector storage: Encrypted Cold Storage with Volatile RAM Hydration**
 
-**Embedding model:** Runs on the Home Node (and optionally on rich client devices for offline search). Options:
+Traditional vector databases (Pinecone, Weaviate, Qdrant, FAISS, even sqlite-vec) store vectors in plaintext files on disk — typically via `mmap` for performance. This is a **fundamental security conflict** with Dina's encryption model: SQLCipher encrypts every page of the database, but an mmap'd vector index file sits unencrypted on the filesystem. A disk image or stolen backup exposes all embeddings — which encode the semantic content of a user's personal data.
+
+Dina solves this with a three-phase lifecycle:
+
+1. **At rest (encrypted cold storage):** 768-dim float32 embeddings are stored as `BLOB` columns in the same `vault_items` row as the text they represent. SQLCipher encrypts them transparently — same AES-256-CBC per-page encryption as everything else. One `INSERT` stores text + embedding atomically. No orphaned vectors, no sync issues, full ACID compliance.
+
+2. **On persona unlock (hydration):** Core reads all `(id, embedding_blob)` pairs from SQLCipher, deserializes the float32 arrays, and builds an HNSW index in RAM. For 10K items at 768-dim: ~50MB RAM, ~40-80ms build time. This runs once per persona unlock.
+
+3. **On query (volatile RAM search):** Brain generates a query embedding, sends it to Core. Core searches the in-memory HNSW index (<1ms), returns top-K item IDs with cosine similarity scores. Core fetches full metadata from SQLite for those IDs. Hybrid search merges: `score = 0.4 × FTS5_rank + 0.6 × cosine_similarity`.
+
+4. **On persona lock (destruction):** Core destroys the HNSW index, nils the reference, calls `runtime.GC()`. Zero residual vector data in memory.
+
+**HNSW library:** [`github.com/coder/hnsw`](https://github.com/coder/hnsw) (CC0 public domain license). Pure Go with generics, built-in cosine distance, ~800-1200 MB/s binary serialization, actively maintained. No CGO beyond what go-sqlcipher already requires.
+
+**Why NOT sqlite-vec / FAISS / mmap-based solutions:**
+
+| Solution | Problem |
+|----------|---------|
+| `sqlite-vec` | Uses `mmap` for vector storage — unencrypted memory-mapped files bypass SQLCipher's encryption. |
+| FAISS | C++ library requiring cross-compilation. Index files are plaintext on disk. |
+| Pinecone / Weaviate / Qdrant | Third-party cloud services. Dina's embeddings must stay on your Home Node. |
+
+See [`SECURITY.md`](SECURITY.md) § "Vector Storage Security" for the full security rationale.
+
+**Embedding model:** 768-dimensional vectors. Runs on the Home Node (and optionally on rich client devices for offline search).
 - **Phase 1: `EmbeddingGemma`** (308M params, <200MB RAM quantized, 100+ languages). Google's purpose-built on-device embedding model based on Gemma 3 architecture. Best-in-class on MTEB for models under 500M params. Supports Matryoshka representation (768 down to 128 dims) and 2K–8K context. Runs fully offline on phones.
+- **Phase 1 cloud alternative:** `gemini-embedding-001` (768-dim, $0.01/1M tokens, 100+ languages). Used when no local embedding model is available.
 - **Phase 2: `Nomic Embed Text V2`** (475M params, MoE architecture — only 305M active during inference). Trained on 1.6B multilingual pairs, 100+ languages. Flexible dimension truncation (768 → 256). Competitive with models twice its size on BEIR/MIRACL. Needs more hardware but significantly better quality for complex retrieval.
 - The embedding model is pluggable. Start small, upgrade later.
 
-**Embedding migration:** The embedding model name and version are stored in vault metadata (`embedding_model` column in the system table). On model change, core detects the mismatch, drops the sqlite-vec index, and triggers a background re-embed job. Brain processes items in batches → new embeddings → core writes to sqlite-vec. FTS5 keyword search remains available during re-indexing; only semantic search is temporarily unavailable. No dual-index or versioning needed — vault sizes are small enough for full rebuild (~25MB of vectors for 50K items, ~2-3 hours on local llama, ~5 minutes via cloud API).
+**Embedding migration:** The embedding model name and version are stored in vault metadata (`embedding_model` column in the system table). On model change, core detects the mismatch, destroys the RAM HNSW index, and triggers a background re-embed job. Brain processes items in batches → new embeddings → core writes BLOBs to SQLCipher. FTS5 keyword search remains available during re-indexing; only semantic search is temporarily unavailable. No dual-index or versioning needed — vault sizes are small enough for full rebuild (~30MB of embedding BLOBs for 10K items, ~2-3 hours on local llama, ~5 minutes via cloud API). On completion, core re-hydrates the HNSW index from the new BLOBs.
 
 ### Tier 3 — Trust & Preferences
 
@@ -2172,7 +2197,7 @@ What Dina does NOT store:
 
 **Why references beat copies:** The user already has the attachment — it's in Gmail, Drive, or their local filesystem. Duplicating it means encrypting 50GB with SQLCipher (slow), backing up 50GB to S3 (expensive), syncing 50GB to client devices (impossible on mobile), and the persona databases become unmovable.
 
-**What brain actually needs:** Brain doesn't need the raw PDF to assemble a nudge. Brain needs: "Sancho sent a contract (PDF, 2.3MB) titled 'Partnership_Agreement_v3.pdf' on Feb 15. Key terms: 60/40 revenue split, 2-year lock-in, exit clause in Section 7." That summary is a few KB, fully searchable via FTS5, embeddable via sqlite-vec.
+**What brain actually needs:** Brain doesn't need the raw PDF to assemble a nudge. Brain needs: "Sancho sent a contract (PDF, 2.3MB) titled 'Partnership_Agreement_v3.pdf' on Feb 15. Key terms: 60/40 revenue split, 2-year lock-in, exit clause in Section 7." That summary is a few KB, fully searchable via FTS5, embeddable as a 768-dim vector stored in SQLCipher.
 
 **When the user needs the file:** Brain returns a deep link to the source — the client app opens Gmail/Drive. The file was always there.
 
@@ -4466,7 +4491,7 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 | **Home Node (dina-core)** | | |
 | Core runtime | Go + net/http (HTTP server) | Fast compilation, single static binary, excellent crypto stdlib, goroutines for concurrency. Pure sovereign kernel — no external API calls, no OAuth, no connector code. |
 | Database | SQLite + SQLCipher + FTS5 (via `mutecomm/go-sqlcipher` with CGO) | Battle-tested, per-persona encrypted `.sqlite` files (`identity.sqlite`, `personal.sqlite`, `health.sqlite`, etc.). Each file has its own HKDF-derived DEK. No separate DB server. SQLCipher provides transparent whole-database AES-256 encryption. FTS5 tokenizer: `unicode61 remove_diacritics 1` (multilingual — Hindi, Tamil, Kannada, etc.). Porter stemmer forbidden (English-only). Phase 3: ICU tokenizer for CJK. **Not** `mattn/go-sqlite3` — SQLCipher support was never merged into mainline mattn; it only exists in forks. `mutecomm/go-sqlcipher` embeds SQLCipher directly. CI must assert raw `.sqlite` bytes are not valid SQLite headers (proving encryption is active). |
-| Vector search | Phase 1: vectors stored and queried in dina-brain (Python, sqlite-vec). Phase 2: sqlite-vec in core via CGO. | Brain handles embeddings initially; core handles structured/FTS queries. Clean separation. |
+| Vector search | **Encrypted Cold Storage with Volatile RAM Hydration.** 768-dim embeddings stored as BLOBs in SQLCipher (encrypted at rest). On persona unlock, hydrated into pure-Go HNSW index in RAM ([`github.com/coder/hnsw`](https://github.com/coder/hnsw), CC0 license). Query: <1ms. On lock: index destroyed + GC. Hybrid search: `0.4 × FTS5 + 0.6 × cosine`. | **Security:** mmap-based vector DBs (sqlite-vec, FAISS) store vectors as plaintext files, bypassing SQLCipher encryption. HNSW-in-RAM means vectors exist unencrypted only while persona is unlocked — same threat model as decrypted text in RAM. **DevOps:** pure Go, no C++ cross-compilation. **ACID:** embedding BLOB in same row as text — no orphaned vectors. |
 | PII scrubbing | Three tiers: (1) Regex in Go core (always), (2) spaCy NER in Python brain (always, ~15MB model), (3) LLM NER via llama:8080 (optional, `--profile local-llm`). | Tier 1+2 catch structured + contextual PII in all profiles. Tier 3 adds LLM-based detection for edge cases. |
 | Client ↔ Node protocol | Authenticated WebSocket (TLS + CLIENT_TOKEN auth frame) | Encrypted channel, per-device Bearer token proves identity. SHA-256 hash stored in `device_tokens` table. |
 | Home Node ↔ Home Node | Phase 1: libsodium `crypto_box_seal` (ephemeral sender keys) + DIDComm-shaped plaintext. Phase 2: full JWE (ECDH-1PU). Phase 3: Noise XX sessions for full forward secrecy. | Sender FS from day one. Full FS in Phase 3. Plaintext format is DIDComm-compatible throughout — migration is encryption-layer only. |
@@ -4489,7 +4514,7 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 | **Identity & Crypto** | | |
 | Identity | W3C DIDs (`did:plc` via PLC Directory) | Open standard, globally resolvable, key rotation, 30M+ identities, Go implementation available. Escape hatch: rotation op to `did:web`. |
 | Key management | SLIP-0010 HD derivation (Ed25519), BIP-39 mnemonic | Proven, Ed25519-compatible |
-| Vault encryption | SQLCipher (AES-256-CBC per page, transparent) | Per-persona file encryption (`identity.sqlite`, `personal.sqlite`, `health.sqlite`, etc.). Each file has its own DEK. FTS5/sqlite-vec indices encrypted transparently within each file. |
+| Vault encryption | SQLCipher (AES-256-CBC per page, transparent) | Per-persona file encryption (`identity.sqlite`, `personal.sqlite`, `health.sqlite`, etc.). Each file has its own DEK. FTS5 indices and embedding BLOBs encrypted transparently within each file. |
 | Wire encryption (Phase 1) | libsodium: X25519 + XSalsa20-Poly1305 (`crypto_box_seal`) | Ephemeral sender keys, ISC license, available in every language |
 | Wire encryption (Phase 3) | Noise XX: X25519 + ChaChaPoly + SHA256 | Full forward secrecy for always-on Home Node sessions |
 | Key wrapping / archive | AES-256-GCM, X25519, Ed25519 | Industry standard for key wrapping, archive snapshots |
@@ -5258,7 +5283,7 @@ When the Home Node has new data (ingested email, incoming Dina-to-Dina message, 
 | **PostgreSQL / MySQL** | Server databases designed for multi-tenant workloads. SQLite is the right database for a single-user personal agent. |
 | **Kubernetes** | Container orchestration for distributed services. Dina's Home Node is 3-4 containers on one machine. `docker compose up` is the entire deployment. |
 | **GraphQL** | API layer for complex multi-consumer APIs. Dina has one consumer: you. Direct SQLite queries from the agent loop. |
-| **Elasticsearch** | Distributed search cluster. SQLite FTS5 + sqlite-vec handles search for a single user's data. |
+| **Elasticsearch** | Distributed search cluster. SQLite FTS5 + in-memory HNSW handles search for a single user's data. |
 | **Blockchain (L1)** | Gas costs, latency, complexity. Immutability violates sovereignty (right to delete). Federated servers + signed tombstones handle the Trust Network. Only use case is L2 Merkle root hash anchoring for timestamp proofs (Phase 3). |
 | **CRDTs / Automerge** | Designed for peer-to-peer conflict resolution. With a Home Node as source of truth, client-server sync is simpler and sufficient. May reconsider for Phase 3 if we add collaborative features. |
 

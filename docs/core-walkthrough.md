@@ -104,9 +104,26 @@ Dina's core principle is **absolute loyalty** — the human holds the encryption
 1. **Zero network surface.** The database is a local file. No TCP port, no connection string, no SQL injection over the wire.
 2. **Transparent encryption.** SQLCipher encrypts every database page with AES-256-CBC. The DEK is derived per-persona from the master seed — different personas have different databases with different keys. Even if the disk is imaged, each persona vault is independently encrypted.
 3. **Single-file portability.** One `.db` file per persona. Backup = copy the file. Migrate = move the file. No dump/restore, no schema versioning headaches.
-4. **FTS5 full-text search.** SQLite's built-in full-text search engine is surprisingly powerful — good enough for verdict recall without a separate search service.
+4. **FTS5 full-text search.** SQLite's built-in full-text search engine is surprisingly powerful — good enough for keyword recall without a separate search service.
+5. **Encrypted vector search.** Embeddings are stored as BLOBs in the same `vault_items` row — encrypted by SQLCipher like everything else. On persona unlock, Core hydrates a pure-Go HNSW index in RAM for semantic similarity search (<1ms queries). On lock, the index is destroyed. No mmap'd vector files, no plaintext leakage.
 
 The build-tag factory (`newVaultBackend`) is a pragmatic compromise: CGO is required for SQLCipher's C library, but some CI environments and test runners don't have CGO. The in-memory fallback means tests run everywhere, and production uses the real encrypted backend.
+
+</details>
+
+<details>
+<summary><strong>Design Decision — Why in-memory HNSW instead of sqlite-vec or FAISS for vector search?</strong></summary>
+<br>
+
+Dina needs semantic search — "I need an office chair" should find health records about "chronic lower back pain from sitting." FTS5 is keyword-based and can't do this. The obvious choice would be a vector database or SQLite extension like `sqlite-vec`.
+
+The problem: **every popular vector solution stores vectors as plaintext files on disk via `mmap`.** sqlite-vec uses memory-mapped files. FAISS uses `.faiss` index files. ChromaDB uses Parquet files. These plaintext vector files sit alongside the encrypted SQLCipher database, completely bypassing the encryption that protects everything else. A disk image or stolen backup exposes all embeddings — which encode the semantic content of the user's personal data.
+
+Dina's solution: **Encrypted Cold Storage with Volatile RAM Hydration.** Embeddings are stored as `BLOB` columns in the same SQLCipher row as the text. On persona unlock, Core reads all `(id, embedding_blob)` pairs and builds an HNSW (Hierarchical Navigable Small World) graph in RAM using [`github.com/coder/hnsw`](https://github.com/coder/hnsw) — a pure-Go library with built-in cosine distance (CC0 license). On persona lock, the index is destroyed and garbage collected.
+
+The numbers work: 768-dim × float32 = 3,072 bytes per vector. 10K items = ~30MB in SQLCipher, ~50MB RAM when hydrated. Hydration takes ~40-80ms (one-time, during unlock). Queries take <1ms. For a personal vault on a Raspberry Pi 5 (8GB) or Mac Mini M4 (16GB), this is well within budget.
+
+Hybrid search merges both: `score = 0.4 × FTS5_rank + 0.6 × cosine_similarity`. FTS5 catches exact keyword matches. HNSW catches semantic similarity. Together they cover both precise and fuzzy recall.
 
 </details>
 

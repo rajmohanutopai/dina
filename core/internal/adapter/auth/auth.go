@@ -1136,10 +1136,12 @@ func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string, scope ...s
 	// Brain is allowed on these prefixes (after denials are checked).
 	brainAllowed := []string{
 		"/v1/vault",
+		"/v1/personas",
 		"/v1/msg",
 		"/v1/task",
 		"/v1/pii",
 		"/v1/did",
+		"/v1/contacts",
 		"/healthz",
 		"/readyz",
 	}

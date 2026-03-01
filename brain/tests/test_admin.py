@@ -47,6 +47,9 @@ def mock_core():
     core.search_vault.return_value = []
     core.update_contact.return_value = {"status": "updated"}
     core.delete_contact.return_value = {"status": "removed", "did": "did:key:z6MkAlice"}
+    # Trust routes use generic .get() / .post() HTTP methods
+    core.get.return_value = {"entries": [], "count": 0, "last_sync_at": 0}
+    core.post.return_value = {"synced_count": 0}
     return core
 
 
@@ -371,3 +374,40 @@ def test_admin_8_6_2_auth_no_token(client) -> None:
     """Admin rejects request without Authorization header."""
     resp = client.get("/admin/")
     assert resp.status_code in (401, 403)
+
+
+# ---------------------------------------------------------------------------
+# SS8.7 Trust Neighborhood Page
+# ---------------------------------------------------------------------------
+
+
+def test_admin_trust_page_loads(client, auth_headers) -> None:
+    """Trust page renders HTML when accessed with valid auth."""
+    resp = client.get("/admin/trust-page", headers=auth_headers)
+    assert resp.status_code == 200
+    assert "Trust Neighborhood" in resp.text
+
+
+def test_admin_trust_cache_api(client, auth_headers) -> None:
+    """Trust cache API returns entries list."""
+    resp = client.get("/admin/api/trust/cache", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    # Core client is mocked, so this tests the route exists and returns JSON
+    assert isinstance(data, dict)
+
+
+def test_admin_trust_stats_api(client, auth_headers) -> None:
+    """Trust stats API returns count and last sync."""
+    resp = client.get("/admin/api/trust/stats", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data, dict)
+
+
+def test_admin_trust_sync_api(client, auth_headers) -> None:
+    """Trust sync API accepts POST and returns result."""
+    resp = client.post("/admin/api/trust/sync", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data, dict)

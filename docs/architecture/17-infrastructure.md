@@ -850,7 +850,7 @@ When the Home Node has new data (ingested email, incoming Dina-to-Dina message, 
 | **PostgreSQL / MySQL** | Server databases designed for multi-tenant workloads. SQLite is the right database for a single-user personal agent. |
 | **Kubernetes** | Container orchestration for distributed services. Dina's Home Node is 3-4 containers on one machine. `docker compose up` is the entire deployment. |
 | **GraphQL** | API layer for complex multi-consumer APIs. Dina has one consumer: you. Direct SQLite queries from the agent loop. |
-| **Elasticsearch** | Distributed search cluster. SQLite FTS5 + sqlite-vec handles search for a single user's data. |
+| **Elasticsearch** | Distributed search cluster. SQLite FTS5 + in-memory HNSW handles search for a single user's data. |
 | **Blockchain (L1)** | Gas costs, latency, complexity. Immutability violates sovereignty (right to delete). Federated servers + signed tombstones handle the Trust Network. Only use case is L2 Merkle root hash anchoring for timestamp proofs (Phase 3). |
 | **CRDTs / Automerge** | Designed for peer-to-peer conflict resolution. With a Home Node as source of truth, client-server sync is simpler and sufficient. May reconsider for Phase 3 if we add collaborative features. |
 

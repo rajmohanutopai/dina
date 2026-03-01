@@ -38,6 +38,7 @@ class ReasonRequest(BaseModel):
     persona_id: str | None = Field(None, max_length=100)
     persona_tier: Literal["open", "restricted", "locked"] | None = Field(default="open")
     provider: str | None = Field(None, max_length=50)
+    skip_vault_enrichment: bool = False
 
 
 class ReasonResponse(BaseModel):
@@ -45,12 +46,15 @@ class ReasonResponse(BaseModel):
 
     ``content`` contains the rehydrated (PII-restored) answer.
     Token counts and model name are included for observability.
+    ``vault_context_used`` indicates whether the agentic reasoning loop
+    successfully queried persona vaults for personalization context.
     """
 
     content: str
     model: str | None = None
     tokens_in: int | None = None
     tokens_out: int | None = None
+    vault_context_used: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +109,7 @@ async def reason_query(request: ReasonRequest) -> ReasonResponse:
         "persona_id": request.persona_id,
         "persona_tier": request.persona_tier,
         "provider": request.provider,
+        "skip_vault_enrichment": request.skip_vault_enrichment,
     }
 
     try:
@@ -124,4 +129,5 @@ async def reason_query(request: ReasonRequest) -> ReasonResponse:
         model=result.get("model"),
         tokens_in=result.get("tokens_in"),
         tokens_out=result.get("tokens_out"),
+        vault_context_used=result.get("vault_context_used", False),
     )

@@ -258,13 +258,19 @@ class CoreHTTPClient:
         )
 
     async def search_vault(
-        self, persona_id: str, query: str, mode: str = "hybrid"
+        self, persona_id: str, query: str, mode: str = "hybrid",
+        embedding: list[float] | None = None,
     ) -> list[dict]:
         """POST /v1/vault/query — hybrid FTS5 + cosine."""
+        body: dict[str, Any] = {
+            "persona": persona_id, "query": query, "mode": mode, "limit": 50,
+        }
+        if embedding:
+            body["embedding"] = embedding
         resp = await self._request(
             "POST",
             "/v1/vault/query",
-            json={"persona": persona_id, "query": query, "mode": mode, "limit": 50},
+            json=body,
         )
         data = resp.json()
         items = data.get("items", []) if isinstance(data, dict) else data

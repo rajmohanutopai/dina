@@ -46,7 +46,7 @@ Dina runs on a **Home Node** — a small, always-on server. Your phone, laptop, 
 │  │ Vault        │  │ - Connector scheduler         │  │
 │  │ (SQLite +    │  │ - PII scrubber                │  │
 │  │  FTS5 +      │  │ - DIDComm endpoint            │  │
-│  │  sqlite-vec) │  │ - WebSocket server            │  │
+│  │  HNSW) │  │ - WebSocket server            │  │
 │  └──────────────┘  │ - Key management              │  │
 │                     └──────────────────────────────┘  │
 │  ┌──────────────┐  ┌──────────────────────────────┐  │

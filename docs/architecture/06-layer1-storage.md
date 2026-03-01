@@ -125,23 +125,86 @@ CREATE TABLE relationships (
 | Property | Value |
 |----------|-------|
 | Contents | Embeddings, summaries, relationship graphs, inferred patterns |
-| Encryption | Same per-persona `.sqlite` files — embeddings and indices stored in dedicated tables within each persona's encrypted database |
-| Storage engine | SQLite for structured data + sqlite-vec for vector embeddings |
+| Encryption | Same per-persona `.sqlite` files — embeddings stored as BLOBs in the same row as text, encrypted transparently by SQLCipher |
+| Storage engine | SQLite for structured data + **Encrypted Cold Storage with Volatile RAM Hydration** for vector search (pure-Go HNSW in-memory index, embeddings at rest in SQLCipher BLOBs) |
 | Location | Home node (primary). Rich clients may build a local subset from their cache for offline search. |
 | Backup | Not backed up separately. Regenerable from Tier 1. |
 | Breach impact | Attacker sees Dina's inferences. Metadata, not raw data. |
 
-**Vector storage options:**
-- Phase 1: `sqlite-vec` (successor to the now-deprecated `sqlite-vss`). Written in pure C, zero dependencies, runs anywhere SQLite runs — phones, desktops, WASM, Raspberry Pi. Mozilla Builders project, MIT/Apache-2.0 licensed. Supports metadata columns and partition keys alongside vectors.
-- Phase 2: Consider `sqlite-vector` (from SQLite Cloud, HNSW-based for faster ANN at scale) or Turso's native vector search (libSQL fork with built-in vector support) if index grows large.
-- Not using Pinecone/Weaviate — those are third-party cloud services. Dina's embeddings stay on your Home Node.
+**Vector storage: Encrypted Cold Storage with Volatile RAM Hydration**
 
-**Embedding model:** Runs on the Home Node (and optionally on rich client devices for offline search). Options:
+Traditional vector databases (Pinecone, Weaviate, Qdrant, FAISS, even sqlite-vec) store vectors in plaintext files on disk — typically via `mmap` for performance. This is a **fundamental security conflict** with Dina's encryption model: SQLCipher encrypts every page of the database, but an mmap'd vector index file sits unencrypted on the filesystem. A disk image or stolen backup exposes all embeddings — which encode the semantic content of a user's personal data.
+
+Dina solves this with a three-phase lifecycle:
+
+```
+┌──────────────────────────────────────┐
+│         SQLCipher (encrypted)         │
+│                                       │
+│  vault_items                          │
+│  ┌─────┬──────┬────────┬───────────┐ │
+│  │ id  │ text │ meta   │ embedding  │ │
+│  │     │      │        │ (BLOB)     │ │
+│  └─────┴──────┴────────┴───────────┘ │
+│         ACID • encrypted at rest      │
+└──────────────┬───────────────────────┘
+               │
+┌──────────────┴──────────────┐
+│       Persona Unlock         │
+│  Load BLOBs → RAM HNSW index │
+│     ~40-80ms / 10K items     │
+└──────────────┬──────────────┘
+               │
+┌──────────────┴──────────────┐
+│       RAM HNSW Index         │
+│  (pure-Go, ~30MB / 10K)     │
+│     query: <1ms              │
+│                              │
+│  On lock: destroy + GC       │
+└─────────────────────────────┘
+```
+
+1. **At rest (encrypted cold storage):** 768-dim float32 embeddings are stored as `BLOB` columns in the same `vault_items` row as the text they represent. SQLCipher encrypts them transparently — same AES-256-CBC per-page encryption as everything else. One `INSERT` stores text + embedding atomically. No orphaned vectors, no sync issues, full ACID compliance.
+
+2. **On persona unlock (hydration):** Core reads all `(id, embedding_blob)` pairs from SQLCipher, deserializes the float32 arrays, and builds an HNSW index in RAM. For 10K items at 768-dim: ~30MB RAM, ~40-80ms build time. This runs once per persona unlock — acceptable latency for a passphrase prompt.
+
+3. **On query (volatile RAM search):** Brain generates a query embedding, sends it to Core. Core searches the in-memory HNSW index (<1ms), returns top-K item IDs with cosine similarity scores. Core fetches full metadata from SQLite for those IDs. Hybrid search merges: `score = 0.4 × FTS5_rank + 0.6 × cosine_similarity`.
+
+4. **On persona lock (destruction):** Core destroys the HNSW index, nils the reference, calls `runtime.GC()`. Zero residual vector data in memory. The embeddings remain safely encrypted in SQLCipher.
+
+**Why NOT sqlite-vec / FAISS / mmap-based solutions:**
+
+| Solution | Problem |
+|----------|---------|
+| `sqlite-vec` | Uses `mmap` for vector storage — unencrypted memory-mapped files bypass SQLCipher's encryption. Disk image exposes all embeddings. |
+| FAISS | C++ library requiring cross-compilation. Index files are plaintext on disk. |
+| Pinecone / Weaviate / Qdrant | Third-party cloud services. Dina's embeddings must stay on your Home Node. |
+| ChromaDB | External process, plaintext persistence, not embeddable in Go core. |
+
+**HNSW library:** [`github.com/coder/hnsw`](https://github.com/coder/hnsw) (CC0 public domain license).
+- Pure Go with generics — no CGO beyond what go-sqlcipher already requires.
+- Built-in `CosineDistance` function — first-class support, no wrapper needed.
+- `Export`/`Import` binary serialization at ~800-1200 MB/s (for optional index caching).
+- Go assembly SIMD acceleration via `viterin/vek` on x86/AVX2, pure Go fallback on ARM64/Apple Silicon.
+- Actively maintained (last commit July 2025, 214+ stars).
+
+**Scale math (768-dim, float32):**
+
+| Items | Embedding storage | RAM (hydrated index) | Hydration time | Query time |
+|-------|-------------------|----------------------|----------------|------------|
+| 1K | ~3 MB | ~5 MB | <10ms | <1ms |
+| 10K | ~30 MB | ~50 MB | ~40-80ms | <1ms |
+| 50K | ~150 MB | ~235 MB | ~300ms | <1ms |
+
+A personal vault with 50K items (emails, messages, contacts, notes over years) uses ~235MB RAM for the HNSW index. On a Raspberry Pi 5 (8GB), this is 3% of RAM. On a Mac Mini M4 (16GB), it's 1.5%. Well within budget.
+
+**Embedding model:** 768-dimensional vectors. The model runs on the Home Node (and optionally on rich client devices for offline search).
 - **Phase 1: `EmbeddingGemma`** (308M params, <200MB RAM quantized, 100+ languages). Google's purpose-built on-device embedding model based on Gemma 3 architecture. Best-in-class on MTEB for models under 500M params. Supports Matryoshka representation (768 down to 128 dims) and 2K–8K context. Runs fully offline on phones.
+- **Phase 1 cloud alternative:** `gemini-embedding-001` (768-dim, $0.01/1M tokens, 100+ languages). Used when no local embedding model is available.
 - **Phase 2: `Nomic Embed Text V2`** (475M params, MoE architecture — only 305M active during inference). Trained on 1.6B multilingual pairs, 100+ languages. Flexible dimension truncation (768 → 256). Competitive with models twice its size on BEIR/MIRACL. Needs more hardware but significantly better quality for complex retrieval.
 - The embedding model is pluggable. Start small, upgrade later.
 
-**Embedding migration:** The embedding model name and version are stored in vault metadata (`embedding_model` column in the system table). On model change, core detects the mismatch, drops the sqlite-vec index, and triggers a background re-embed job. Brain processes items in batches → new embeddings → core writes to sqlite-vec. FTS5 keyword search remains available during re-indexing; only semantic search is temporarily unavailable. No dual-index or versioning needed — vault sizes are small enough for full rebuild (~25MB of vectors for 50K items, ~2-3 hours on local llama, ~5 minutes via cloud API).
+**Embedding migration:** The embedding model name and version are stored in vault metadata (`embedding_model` column in the system table). On model change, core detects the mismatch, destroys the RAM HNSW index, and triggers a background re-embed job. Brain processes items in batches → new embeddings → core writes BLOBs to SQLCipher. FTS5 keyword search remains available during re-indexing; only semantic search is temporarily unavailable. No dual-index or versioning needed — vault sizes are small enough for full rebuild (~30MB of embedding BLOBs for 10K items, ~2-3 hours on local llama, ~5 minutes via cloud API). On completion, core re-hydrates the HNSW index from the new BLOBs.
 
 ### Tier 3 — Trust & Preferences
 

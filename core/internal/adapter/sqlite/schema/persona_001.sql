@@ -12,12 +12,16 @@ CREATE TABLE IF NOT EXISTS vault_items (
     type          TEXT NOT NULL
         CHECK (type IN ('email','message','event','note','photo',
                         'email_draft','cart_handover','contact_card',
-                        'document','bookmark','voice_memo','kv')),
+                        'document','bookmark','voice_memo','kv',
+                        'contact','health_context','work_context',
+                        'finance_context','family_context','trust_review',
+                        'purchase_decision')),
     source        TEXT NOT NULL DEFAULT '',
     source_id     TEXT NOT NULL DEFAULT '',
     summary       TEXT NOT NULL DEFAULT '',
     body          TEXT NOT NULL DEFAULT '',
     metadata      TEXT NOT NULL DEFAULT '{}',
+    embedding     BLOB,
     tags          TEXT NOT NULL DEFAULT '[]',
     timestamp     INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
     created_at    INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
@@ -57,13 +61,6 @@ CREATE TRIGGER IF NOT EXISTS vault_items_au AFTER UPDATE ON vault_items BEGIN
     VALUES (new.rowid, new.summary, new.body, new.tags);
 END;
 
--- Vector embeddings (sqlite-vec)
--- Note: Requires sqlite-vec extension loaded at runtime
--- CREATE VIRTUAL TABLE IF NOT EXISTS vault_items_vec USING vec0(
---     embedding float[384],
---     item_id text
--- );
-
 -- Staging area: temporary items before confirmation
 CREATE TABLE IF NOT EXISTS staging (
     id            TEXT PRIMARY KEY,
@@ -97,7 +94,7 @@ CREATE TABLE IF NOT EXISTS embedding_meta (
     item_id       TEXT PRIMARY KEY REFERENCES vault_items(id) ON DELETE CASCADE,
     model_name    TEXT NOT NULL,
     model_version TEXT NOT NULL DEFAULT '',
-    dimensions    INTEGER NOT NULL DEFAULT 384,
+    dimensions    INTEGER NOT NULL DEFAULT 768,
     embedded_at   INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER))
 ) WITHOUT ROWID;
 

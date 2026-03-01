@@ -62,7 +62,7 @@ What Dina does NOT store:
 
 **Why references beat copies:** The user already has the attachment — it's in Gmail, Drive, or their local filesystem. Duplicating it means encrypting 50GB with SQLCipher (slow), backing up 50GB to S3 (expensive), syncing 50GB to client devices (impossible on mobile), and the persona databases become unmovable.
 
-**What brain actually needs:** Brain doesn't need the raw PDF to assemble a nudge. Brain needs: "Sancho sent a contract (PDF, 2.3MB) titled 'Partnership_Agreement_v3.pdf' on Feb 15. Key terms: 60/40 revenue split, 2-year lock-in, exit clause in Section 7." That summary is a few KB, fully searchable via FTS5, embeddable via sqlite-vec.
+**What brain actually needs:** Brain doesn't need the raw PDF to assemble a nudge. Brain needs: "Sancho sent a contract (PDF, 2.3MB) titled 'Partnership_Agreement_v3.pdf' on Feb 15. Key terms: 60/40 revenue split, 2-year lock-in, exit clause in Section 7." That summary is a few KB, fully searchable via FTS5, embeddable as a 768-dim vector stored in SQLCipher.
 
 **When the user needs the file:** Brain returns a deep link to the source — the client app opens Gmail/Drive. The file was always there.
 

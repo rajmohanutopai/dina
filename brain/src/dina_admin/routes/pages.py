@@ -86,3 +86,12 @@ async def devices_page(request: Request) -> HTMLResponse:
         "page": "devices",
         **_csrf_ctx(request),
     })
+
+
+@router.get("/trust-page", response_class=HTMLResponse)
+async def trust_page(request: Request) -> HTMLResponse:
+    """Render the trust neighborhood page."""
+    return templates.TemplateResponse(request, "trust.html", {
+        "page": "trust",
+        **_csrf_ctx(request),
+    })

@@ -40,7 +40,8 @@ class CoreClient(Protocol):
         ...
 
     async def search_vault(
-        self, persona_id: str, query: str, mode: str = "hybrid"
+        self, persona_id: str, query: str, mode: str = "hybrid",
+        embedding: list[float] | None = None,
     ) -> list[dict]:
         """POST /v1/vault/query — hybrid FTS5 + cosine."""
         ...
@@ -95,6 +96,26 @@ class CoreClient(Protocol):
 
     async def did_sign(self, data: bytes) -> bytes:
         """POST /v1/did/sign — Ed25519 sign via core's keypair (hex encoding)."""
+        ...
+
+    # -- Personas --
+
+    async def list_personas(self) -> list[str]:
+        """GET /v1/personas — list persona IDs."""
+        ...
+
+    # -- Vault query (typed search) --
+
+    async def query_vault(
+        self,
+        persona: str,
+        query: str = "",
+        *,
+        mode: str = "fts5",
+        types: list[str] | None = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """POST /v1/vault/query — search vault items with type filtering."""
         ...
 
     # -- Dina-to-Dina messaging --

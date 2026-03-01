@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -276,9 +277,59 @@ func (m *Manager) Query(_ context.Context, persona domain.PersonaName, q domain.
 	return results, nil
 }
 
-func (m *Manager) VectorSearch(_ context.Context, _ domain.PersonaName, _ []float32, _ int) ([]domain.VaultItem, error) {
-	// Stub — requires sqlite-vec integration.
-	return nil, nil
+func (m *Manager) VectorSearch(_ context.Context, persona domain.PersonaName, vector []float32, topK int) ([]domain.VaultItem, error) {
+	personaID := string(persona)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	v, ok := m.vaults[personaID]
+	if !ok {
+		return nil, fmt.Errorf("vault: persona %q not open", personaID)
+	}
+
+	// Linear scan: compute cosine similarity for all items with embeddings.
+	type scored struct {
+		item domain.VaultItem
+		sim  float64
+	}
+	var candidates []scored
+	for _, item := range v.items {
+		if len(item.Embedding) == 0 || len(item.Embedding) != len(vector) {
+			continue
+		}
+		sim := cosineSimilarity(item.Embedding, vector)
+		candidates = append(candidates, scored{item: item, sim: sim})
+	}
+
+	// Sort by similarity descending.
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].sim > candidates[j].sim
+	})
+
+	if topK > 0 && topK < len(candidates) {
+		candidates = candidates[:topK]
+	}
+
+	results := make([]domain.VaultItem, len(candidates))
+	for i, c := range candidates {
+		results[i] = c.item
+	}
+	return results, nil
+}
+
+// cosineSimilarity computes the cosine similarity between two float32 vectors.
+func cosineSimilarity(a, b []float32) float64 {
+	var dot, normA, normB float64
+	for i := range a {
+		ai, bi := float64(a[i]), float64(b[i])
+		dot += ai * bi
+		normA += ai * ai
+		normB += bi * bi
+	}
+	if normA == 0 || normB == 0 {
+		return 0
+	}
+	return dot / (math.Sqrt(normA) * math.Sqrt(normB))
 }
 
 // IsOpen checks if a persona vault is open (thread-safe).

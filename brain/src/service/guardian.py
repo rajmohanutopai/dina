@@ -160,6 +160,7 @@ class GuardianLoop:
         entity_vault: Any,  # EntityVaultService
         nudge_assembler: Any,  # NudgeAssembler
         scratchpad: Any,  # ScratchpadService
+        vault_context: Any = None,  # VaultContextAssembler
     ) -> None:
         self._core = core
         self._llm = llm_router
@@ -167,6 +168,7 @@ class GuardianLoop:
         self._entity_vault = entity_vault
         self._nudge = nudge_assembler
         self._scratchpad = scratchpad
+        self._vault_context = vault_context
 
         # Tracks which personas are currently unlocked.
         self._unlocked_personas: set[str] = set()
@@ -541,13 +543,19 @@ class GuardianLoop:
     # ------------------------------------------------------------------
 
     async def _handle_reason(self, event: dict) -> dict:
-        """Handle reason events — delegate to LLM router for completion.
+        """Handle reason events via agentic reasoning with vault tools.
 
-        The LLM router returns ``content``, ``model``, ``tokens_in``,
-        ``tokens_out`` which the reason route translates into its response.
+        Pipeline:
+            1. PII scrub — for sensitive personas before any cloud LLM call.
+            2. Agentic reasoning — the LLM autonomously calls vault tools
+               (list_personas, search_vault) via function calling, gathers
+               relevant context, and generates a personalized response.
+               Falls back to direct LLM call if vault context is disabled.
+            3. Rehydrate PII tokens in the response.
 
-        For sensitive personas (restricted/locked), PII is scrubbed before
-        the prompt reaches the cloud LLM, and rehydrated in the response.
+        The reasoning agent handles tool calling, context assembly, and
+        final response generation in a single agentic loop.  The LLM
+        decides which tools to call — no hardcoded classification.
         """
         prompt = event.get("prompt", "")
         persona_tier = event.get("persona_tier", "open")
@@ -556,27 +564,56 @@ class GuardianLoop:
             log.warning("guardian.invalid_persona_tier", extra={"tier": persona_tier})
             persona_tier = "restricted"
         provider = event.get("provider")
+        skip_vault = event.get("skip_vault_enrichment", False)
 
         try:
             vault = None
             llm_prompt = prompt
 
-            # Scrub PII for sensitive personas before cloud LLM routing.
+            # Step 1: Scrub PII for sensitive personas before cloud LLM routing.
             if persona_tier in ("restricted", "locked") and self._entity_vault:
-                llm_prompt, vault = await self._entity_vault.scrub(prompt)
+                llm_prompt, vault = await self._entity_vault.scrub(llm_prompt)
             elif persona_tier == "open" and self._entity_vault:
-                if _PII_QUICK_RE.search(prompt):
-                    llm_prompt, vault = await self._entity_vault.scrub(prompt)
+                if _PII_QUICK_RE.search(llm_prompt):
+                    llm_prompt, vault = await self._entity_vault.scrub(llm_prompt)
                     log.info("guardian.open_tier.auto_scrub")
 
-            result = await self._llm.route(
-                task_type="complex_reasoning",
-                prompt=llm_prompt,
-                persona_tier=persona_tier,
-                provider=provider,
-            )
+            # Step 2: Agentic reasoning with vault tools.
+            if self._vault_context and not skip_vault:
+                try:
+                    result = await self._vault_context.reason(
+                        llm_prompt, persona_tier,
+                    )
+                    vault_enriched = result.get("vault_context_used", False)
+                    if vault_enriched:
+                        log.info(
+                            "guardian.reason.vault_enriched",
+                            tools_called=len(result.get("tools_called", [])),
+                        )
+                except Exception as exc:
+                    log.warning(
+                        "guardian.reason.agent_failed",
+                        error=str(exc),
+                    )
+                    # Fallback: direct LLM call without vault context
+                    result = await self._llm.route(
+                        task_type="complex_reasoning",
+                        prompt=llm_prompt,
+                        persona_tier=persona_tier,
+                        provider=provider,
+                    )
+                    vault_enriched = False
+            else:
+                # No vault context agent — direct LLM call
+                result = await self._llm.route(
+                    task_type="complex_reasoning",
+                    prompt=llm_prompt,
+                    persona_tier=persona_tier,
+                    provider=provider,
+                )
+                vault_enriched = False
 
-            # Rehydrate PII tokens in the response.
+            # Step 3: Rehydrate PII tokens in the response.
             content = result.get("content", "")
             if vault and self._entity_vault:
                 content = self._entity_vault.rehydrate(content, vault)
@@ -587,6 +624,7 @@ class GuardianLoop:
                 "model": result.get("model"),
                 "tokens_in": result.get("tokens_in"),
                 "tokens_out": result.get("tokens_out"),
+                "vault_context_used": vault_enriched,
             }
         except Exception as exc:
             log.error("guardian.reason_failed", error=str(exc))

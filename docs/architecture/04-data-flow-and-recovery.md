@@ -49,15 +49,16 @@ Brain extracts relationship → POST core:8100/v1/vault/store {type: "relationsh
 **3. Embeddings (brain generates, core stores)**
 ```
 Brain ingests new item via MCP
-  → brain generates embedding:
+  → brain generates 768-dim embedding:
       With llama: calls llama:8080 (EmbeddingGemma, local)
       Without llama: calls gemini-embedding-001 (cloud API)
-  → brain sends embedding back to core: POST core:8100/v1/vault/store
-      {type: "embedding", vector: [...], source_id: "..."}
-  → core writes vector into sqlite-vec
+  → brain sends text + embedding to core: POST core:8100/v1/vault/store
+      {type: "note", body_text: "...", embedding: [...768 floats...]}
+  → core stores text + embedding BLOB in same SQLCipher row (encrypted at rest)
+  → core inserts vector into in-memory HNSW index (if persona is unlocked)
 ```
 
-Brain generates the embedding because it already has the LLM routing logic and knows which model to use. Core just stores the vector — it doesn't need to understand embeddings, just execute the sqlite-vec INSERT.
+Brain generates the embedding because it already has the LLM routing logic and knows which model to use. Core stores the embedding as a BLOB in the same `vault_items` row as the text — encrypted by SQLCipher. If the persona is unlocked, the vector is also inserted into the in-memory HNSW index for immediate searchability.
 
 #### Reading
 
@@ -76,14 +77,15 @@ Client: "find emails from Sancho"
 Client: "what was that deal Sancho was worried about?"
   → client WebSocket → core
   → core sees this needs reasoning → POST brain:8200/v1/reason {query: "..."}
-  → brain generates query embedding via llama:8080 (or cloud API)
-  → brain asks core for vector search:
-      POST core:8100/v1/vault/query {vector: [...], top_k: 10}
-  → core runs sqlite-vec nearest-neighbor search → returns results to brain
-  → brain also asks core for FTS5 results:
-      POST core:8100/v1/vault/query {text: "Sancho deal"}
-  → brain merges both result sets (hybrid search)
-  → brain reasons over combined context via LLM
+  → brain's agentic reasoning loop (ReasoningAgent) autonomously decides what to search:
+      LLM calls list_personas → sees available vaults + recent summaries
+      LLM calls search_vault("personal", "Sancho deal") →
+        brain generates 768-dim query embedding via llama:8080 (or cloud API)
+        brain sends to core: POST core:8100/v1/vault/query {text: "Sancho deal", embedding: [...]}
+        core runs hybrid search: FTS5 keyword match + in-memory HNSW cosine similarity
+        score = 0.4 × FTS5_rank + 0.6 × cosine_similarity
+        core returns merged top-K results to brain
+  → LLM reasons over combined context from all vault queries
   → brain returns answer to core
   → core pushes to client
 ```
@@ -116,7 +118,7 @@ Sancho's Dina sends "arriving in 15 minutes"
 │  - identity.sqlite + persona .sqlite files (open/close/read/write/backup) │
 │  - SQLCipher encryption/decryption                      │
 │  - FTS5 queries                                         │
-│  - sqlite-vec queries (given a vector, find neighbors)  │
+│  - HNSW vector queries (given embedding, find neighbors) │
 │  - WebSocket to clients                                 │
 │  - DIDComm endpoint                                     │
 │  - Gatekeeper RBAC (persona access, egress filtering)   │
@@ -228,7 +230,7 @@ The internal API between core and brain. All endpoints require `Authorization: B
 | Mode | Engine | Best for | `relevance` field |
 |------|--------|----------|-------------------|
 | `fts5` | SQLite FTS5 (`unicode61` tokenizer) | Exact keyword matching, fast | FTS5 rank score (normalized) |
-| `semantic` | sqlite-vec cosine similarity | Fuzzy meaning-based matching | Cosine similarity 0.0–1.0 |
+| `semantic` | In-memory HNSW cosine similarity (768-dim, `coder/hnsw`) | Fuzzy meaning-based matching | Cosine similarity 0.0–1.0 |
 | `hybrid` (default) | Both, merged + deduplicated | Most queries | `0.4 × fts5_rank + 0.6 × cosine_similarity` |
 
 **`include_content` design decision:** Default is `false` — brain gets `summary` only (LLM-generated at ingestion, already scrubbed). This makes the safe path the default. Setting `include_content: true` returns the raw `body_text` — brain is then responsible for PII scrubbing before sending to any cloud LLM. This flag is a signal to the developer that they're opting into a higher-trust path.
