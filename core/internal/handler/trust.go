@@ -2,8 +2,10 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
+	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/service"
 )
 
@@ -49,6 +51,42 @@ func (h *TrustHandler) HandleStats(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
+}
+
+// HandleResolve looks up a DID's trust profile from AppView.
+// GET /v1/trust/resolve?did={did}
+func (h *TrustHandler) HandleResolve(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	did := r.URL.Query().Get("did")
+	if did == "" {
+		http.Error(w, `{"error":"did parameter required"}`, http.StatusBadRequest)
+		return
+	}
+
+	profile, err := h.Trust.ResolveProfile(did)
+	if err != nil {
+		if errors.Is(err, domain.ErrAppViewNotConfigured) {
+			http.Error(w, `{"error":"appview not configured"}`, http.StatusServiceUnavailable)
+			return
+		}
+		// Transient upstream failure — report as 502 Bad Gateway so the caller
+		// can distinguish "AppView is down" from "DID not found".
+		http.Error(w, `{"error":"appview upstream error"}`, http.StatusBadGateway)
+		return
+	}
+
+	if profile == nil {
+		// (nil, nil) means DID genuinely not found in AppView (404).
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(profile)
 }
 
 // HandleSync triggers a manual trust neighborhood sync.

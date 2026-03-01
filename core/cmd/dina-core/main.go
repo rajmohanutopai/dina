@@ -797,6 +797,7 @@ func main() {
 	mux.HandleFunc("/v1/trust/cache", trustH.HandleListCache)
 	mux.HandleFunc("/v1/trust/stats", trustH.HandleStats)
 	mux.HandleFunc("/v1/trust/sync", trustH.HandleSync)
+	mux.HandleFunc("/v1/trust/resolve", trustH.HandleResolve)
 
 	// Device Pairing API
 	mux.HandleFunc("/v1/pair/initiate", deviceH.HandleInitiatePairing)

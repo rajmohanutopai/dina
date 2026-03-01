@@ -1,6 +1,10 @@
 package port
 
-import "github.com/rajmohanutopai/dina/core/internal/domain"
+import (
+	"encoding/json"
+
+	"github.com/rajmohanutopai/dina/core/internal/domain"
+)
 
 // TrustCache provides read/write access to the local trust neighborhood cache.
 // Implementations must be safe for concurrent use.
@@ -33,6 +37,10 @@ type TrustResolver interface {
 	// hops controls the graph depth (1 = direct, 2 = friends-of-friends).
 	// limit caps the number of entries returned.
 	ResolveNeighborhood(centerDID string, hops int, limit int) ([]domain.TrustEntry, error)
+
+	// ResolveFullProfile fetches the raw AppView profile JSON for a DID.
+	// Returns nil if AppView is not configured or the DID is unknown.
+	ResolveFullProfile(did string) (json.RawMessage, error)
 }
 
 // ContactLookup provides read-only access to the contact directory for trust decisions.

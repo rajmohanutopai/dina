@@ -1142,6 +1142,7 @@ func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string, scope ...s
 		"/v1/pii",
 		"/v1/did",
 		"/v1/contacts",
+		"/v1/trust",
 		"/healthz",
 		"/readyz",
 	}

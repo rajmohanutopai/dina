@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"log/slog"
 	"time"
 
@@ -121,6 +122,12 @@ func (s *TrustService) SyncNeighborhood(ownDID string) error {
 
 	slog.Info("trust.sync: complete", "synced", synced, "total_from_appview", len(entries))
 	return nil
+}
+
+// ResolveProfile fetches the full trust profile for a DID from AppView.
+// Returns the raw JSON so Brain can use all trust signals.
+func (s *TrustService) ResolveProfile(did string) (json.RawMessage, error) {
+	return s.resolver.ResolveFullProfile(did)
 }
 
 // GetCacheEntries returns all entries in the trust cache (for admin UI).

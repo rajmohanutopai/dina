@@ -475,6 +475,22 @@ class CoreHTTPClient:
         resp = await self._request("GET", "/v1/did")
         return resp.json()
 
+    # -- Trust Network -------------------------------------------------------
+
+    async def query_trust_profile(self, did: str) -> dict | None:
+        """GET /v1/trust/resolve?did={did} — fetch full trust profile from AppView via Core."""
+        import urllib.parse
+
+        try:
+            resp = await self._request(
+                "GET",
+                f"/v1/trust/resolve?did={urllib.parse.quote(did)}",
+            )
+            return resp.json()
+        except Exception:
+            logger.warning("trust_profile_query_failed", did=did)
+            return None
+
     # -- Dina-to-Dina messaging ----------------------------------------------
 
     async def send_d2d(self, to_did: str, payload: dict) -> None:

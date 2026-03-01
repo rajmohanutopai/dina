@@ -22,5 +22,6 @@ var (
 	ErrInvalidPassphrase = errors.New("invalid passphrase")
 	ErrEgressBlocked     = errors.New("egress blocked by policy")
 	ErrReplayDetected    = errors.New("replay detected")
-	ErrPersonaExists     = errors.New("persona already exists")
+	ErrPersonaExists        = errors.New("persona already exists")
+	ErrAppViewNotConfigured = errors.New("appview not configured")
 )
