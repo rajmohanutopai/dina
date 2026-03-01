@@ -36,4 +36,6 @@ type ReminderScheduler interface {
 	StoreReminder(ctx context.Context, r domain.Reminder) (string, error)
 	NextPending(ctx context.Context) (*domain.Reminder, error)
 	MarkFired(ctx context.Context, reminderID string) error
+	ListPending(ctx context.Context) ([]domain.Reminder, error)
+	GetByID(ctx context.Context, id string) (*domain.Reminder, error)
 }

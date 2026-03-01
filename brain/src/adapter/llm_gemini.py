@@ -158,9 +158,9 @@ class GeminiProvider:
         if system_parts:
             config_kwargs["system_instruction"] = "\n".join(system_parts)
 
-        # Tool-calling support: pass tools and tool_config through
+        # Tool-calling support: convert provider-agnostic dicts to Gemini format
         if "tools" in kwargs:
-            config_kwargs["tools"] = kwargs["tools"]
+            config_kwargs["tools"] = self._convert_tools(kwargs["tools"], types)
         if "tool_config" in kwargs:
             config_kwargs["tool_config"] = kwargs["tool_config"]
 
@@ -238,6 +238,28 @@ class GeminiProvider:
                     f"Gemini rate limited (429): {exc}",
                 ) from exc
             raise LLMError(f"Gemini API error: {exc}") from exc
+
+    @staticmethod
+    def _convert_tools(tools: list, types: Any) -> list:
+        """Convert provider-agnostic tool dicts to Gemini SDK format.
+
+        If tools are already Gemini SDK objects (legacy path), they are
+        returned as-is.
+        """
+        if not tools:
+            return tools
+        # Already Gemini SDK objects — pass through.
+        if hasattr(tools[0], "function_declarations"):
+            return tools
+        # Convert from provider-agnostic dicts.
+        declarations = []
+        for tool_def in tools:
+            declarations.append(types.FunctionDeclaration(
+                name=tool_def["name"],
+                description=tool_def["description"],
+                parameters=tool_def.get("parameters", {}),
+            ))
+        return [types.Tool(function_declarations=declarations)]
 
     async def embed(self, text: str) -> list[float]:
         """Generate an embedding vector via Gemini embedding model.

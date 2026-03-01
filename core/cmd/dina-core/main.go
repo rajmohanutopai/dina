@@ -44,6 +44,7 @@ import (
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/handler"
 	"github.com/rajmohanutopai/dina/core/internal/ingress"
+	"github.com/rajmohanutopai/dina/core/internal/reminder"
 	"github.com/rajmohanutopai/dina/core/internal/middleware"
 	"github.com/rajmohanutopai/dina/core/internal/port"
 	"github.com/rajmohanutopai/dina/core/internal/service"
@@ -463,7 +464,7 @@ func main() {
 	// 9. Task Queue
 	taskQueue := taskqueue.NewTaskQueue()
 	watchdog := taskqueue.NewWatchdog(taskQueue)
-	_ = taskqueue.NewReminderScheduler()
+	reminderSched := taskqueue.NewReminderScheduler()
 
 	// 10. WebSocket
 	wsHub := ws.NewWSHub()
@@ -474,6 +475,31 @@ func main() {
 
 	// 12. Brain Client
 	brain := brainclient.New(cfg.BrainURL, cfg.BrainToken)
+
+	// 12b. Reminder Loop — fires reminders on schedule, delegates to Brain.
+	reminderLoop := reminder.NewLoop(reminderSched, clk)
+	onReminderFire := func(ctx context.Context, reminderID, reminderType string) {
+		rem, err := reminderSched.GetByID(ctx, reminderID)
+		if err != nil {
+			slog.Error("reminder: get by id", "id", reminderID, "error", err)
+			return
+		}
+		event := domain.TaskEvent{
+			Type: "reminder_fired",
+			Payload: map[string]interface{}{
+				"reminder_id":   reminderID,
+				"reminder_type": reminderType,
+				"message":       rem.Message,
+				"metadata":      rem.Metadata,
+			},
+		}
+		if err := brain.Process(ctx, event); err != nil {
+			slog.Error("reminder: brain process", "id", reminderID, "error", err)
+		}
+	}
+	reminderCtx, reminderCancel := context.WithCancel(context.Background())
+	defer reminderCancel()
+	go reminderLoop.Run(reminderCtx, onReminderFire)
 
 	// 13. Observability
 	healthChecker := server.NewDynamicHealthChecker(func() bool {
@@ -730,6 +756,13 @@ func main() {
 	piiH := &handler.PIIHandler{Scrubber: scrubber}
 	notifyH := &handler.NotifyHandler{Notifier: notifier}
 	exportH := &handler.ExportHandler{}
+	reminderH := &handler.ReminderHandler{
+		Scheduler: reminderSched,
+		Loop:      reminderLoop,
+		OnFire: func(id, typ string) {
+			onReminderFire(context.Background(), id, typ)
+		},
+	}
 	wellknownH := &handler.WellKnownHandler{DID: didMgr, Signer: identitySigner}
 
 	// ---------- Build router ----------
@@ -808,6 +841,10 @@ func main() {
 	// Notification API
 	mux.HandleFunc("/v1/notify", notifyH.HandleNotify)
 
+	// Reminder API
+	mux.HandleFunc("/v1/reminder", reminderH.HandleStoreReminder)
+	mux.HandleFunc("/v1/reminders/pending", reminderH.HandleListPending)
+
 	// Admin proxy
 	mux.HandleFunc("/admin/sync-status", adminH.HandleSyncStatus)
 	mux.HandleFunc("/admin/", adminH.HandleAdmin)
@@ -853,10 +890,11 @@ func main() {
 		ws.ServeWS(wsUpgrader, wsHub, wsHandlerWS, hb, buf, w, r)
 	})
 
-	// Test-only: vault clear endpoint (guarded by DINA_TEST_MODE)
+	// Test-only endpoints (guarded by DINA_TEST_MODE)
 	if os.Getenv("DINA_TEST_MODE") == "true" {
-		slog.Warn("DINA_TEST_MODE enabled — /v1/vault/clear endpoint is active")
+		slog.Warn("DINA_TEST_MODE enabled — test-only endpoints active")
 		mux.HandleFunc("/v1/vault/clear", handler.HandleClearVault(vaultMgr))
+		mux.HandleFunc("/v1/reminder/fire", reminderH.HandleFireReminder)
 	}
 
 	// ---------- Apply middleware chain ----------

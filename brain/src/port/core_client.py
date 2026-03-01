@@ -123,3 +123,17 @@ class CoreClient(Protocol):
     async def send_d2d(self, to_did: str, payload: dict) -> None:
         """POST /v1/msg/send — outbound DIDComm message through core."""
         ...
+
+    # -- Reminders --
+
+    async def store_reminder(self, reminder: dict) -> str:
+        """POST /v1/reminder — store a new reminder and wake the loop."""
+        ...
+
+    async def list_pending_reminders(self) -> list[dict]:
+        """GET /v1/reminders/pending — list unfired reminders."""
+        ...
+
+    async def fire_reminder(self, reminder_id: str) -> dict:
+        """POST /v1/reminder/fire — simulate reminder firing (test-only)."""
+        ...

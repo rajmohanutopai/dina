@@ -92,6 +92,17 @@ _PII_QUICK_RE = re.compile(
     r'|\+\d{1,3}[\s.-]\d[\d\s.-]{6,12}\d)'
 )
 
+# Document PII fields — redacted from searchable vault text (Fix 6).
+_DOCUMENT_PII_FIELDS = frozenset({
+    "license_number",
+    "holder_name",
+    "date_of_birth",
+    "address",
+})
+
+# Minimum confidence for critical fields before scheduling reminders.
+_CRITICAL_CONFIDENCE = 0.95
+
 # Actions that are categorically blocked — Agent Safety Layer.
 _BLOCKED_ACTIONS = frozenset({
     "read_vault",
@@ -291,6 +302,18 @@ class GuardianLoop:
             # ---- Agent intent review (SS2.3) ----
             if event_type == "agent_intent":
                 return await self.review_intent(event)
+
+            # ---- Delegation request (SS4.4 — Agent Safety Layer) ----
+            if event_type == "delegation_request":
+                return await self._handle_delegation_request(event)
+
+            # ---- Document ingestion (SS4.1) ----
+            if event_type == "document_ingest":
+                return await self._handle_document_ingest(event)
+
+            # ---- Reminder fired (SS4.3) ----
+            if event_type == "reminder_fired":
+                return await self._handle_reminder_fired(event)
 
             # ---- LLM reasoning (SS10.3) ----
             if event_type == "reason":
@@ -539,6 +562,439 @@ class GuardianLoop:
         return briefing
 
     # ------------------------------------------------------------------
+    # Document Ingestion (SS4.1 — License Renewal Story)
+    # ------------------------------------------------------------------
+
+    async def _handle_document_ingest(self, event: dict) -> dict:
+        """Extract structured data from a document via LLM.
+
+        Pipeline (the Deterministic Sandwich — ingestion boundary):
+            1. PII-scrub the document text before any LLM call.
+            2. Call LLM with scrubbed text for structured extraction.
+            3. Rehydrate extracted field values from the ephemeral vault.
+            4. Store document in vault (all PII in metadata only).
+            5. Gate on confidence — only schedule reminder if critical
+               fields meet the threshold (≥ 0.95).
+            6. Return extraction results with per-field confidence.
+        """
+        body = event.get("body", "")
+        persona_id = event.get("persona_id", "personal")
+        source = event.get("source", "document_scan")
+
+        # Step 1: PII-scrub the document before sending to cloud LLM.
+        # Raw PII (license number, name, DOB, address) must never leave
+        # the Home Node.  The entity vault creates an ephemeral mapping
+        # (token → original) that we use to rehydrate after extraction.
+        pii_vault: dict | None = None
+        scrubbed_body = body
+        if self._entity_vault:
+            try:
+                scrubbed_body, pii_vault = await self._entity_vault.scrub(body)
+            except Exception as exc:
+                log.error("guardian.document_ingest.scrub_failed", error=str(exc))
+                return {
+                    "status": "error",
+                    "action": "document_ingested",
+                    "error": "PII scrub failed — refusing to send raw PII to cloud LLM",
+                }
+        else:
+            # No entity vault configured — cannot guarantee PII safety.
+            return {
+                "status": "error",
+                "action": "document_ingested",
+                "error": "Entity vault not available — cannot scrub PII before LLM call",
+            }
+
+        extraction_prompt = (
+            "You are a document data extraction system. Extract ALL structured fields "
+            "from this document text. Respond with ONLY valid JSON, no other text.\n\n"
+            "Required JSON schema:\n"
+            "{\n"
+            '  "fields": {\n'
+            '    "license_number": {"value": "...", "confidence": 0.0-1.0},\n'
+            '    "holder_name": {"value": "...", "confidence": 0.0-1.0},\n'
+            '    "date_of_birth": {"value": "YYYY-MM-DD", "confidence": 0.0-1.0},\n'
+            '    "expiry_date": {"value": "YYYY-MM-DD", "confidence": 0.0-1.0},\n'
+            '    "address": {"value": "...", "confidence": 0.0-1.0},\n'
+            '    "vehicle_class": {"value": "...", "confidence": 0.0-1.0},\n'
+            '    "issuing_rto": {"value": "...", "confidence": 0.0-1.0}\n'
+            "  },\n"
+            '  "document_type": "driving_license"\n'
+            "}\n\n"
+            "Set confidence to 1.0 if the field is clearly readable, lower if "
+            "ambiguous. If a field is not found, set value to null and confidence to 0.0.\n"
+            "Return the ORIGINAL values from the document exactly as written, even if "
+            "they appear as anonymised tokens.\n\n"
+            f"Document text:\n{scrubbed_body}"
+        )
+
+        # Step 2: Call LLM with scrubbed text.
+        result = await self._llm.route(
+            task_type="complex_reasoning",
+            prompt=extraction_prompt,
+            persona_tier="open",
+        )
+
+        content = result.get("content", "")
+
+        # Parse JSON from LLM response (strip markdown fences if present).
+        json_text = content.strip()
+        if json_text.startswith("```"):
+            lines = json_text.split("\n")
+            lines = [l for l in lines if not l.strip().startswith("```")]
+            json_text = "\n".join(lines)
+
+        try:
+            extracted = json.loads(json_text)
+        except json.JSONDecodeError:
+            log.error("guardian.document_ingest.json_parse_failed", content=content[:200])
+            return {
+                "status": "error",
+                "action": "document_ingest_failed",
+                "error": "LLM did not return valid JSON",
+            }
+
+        fields = extracted.get("fields", {})
+
+        # Step 3: Rehydrate extracted field values — the LLM may have
+        # returned PII tokens (e.g. <<PII_PERSON_1_abc>>) instead of
+        # real names.  Restore originals before storing in vault metadata.
+        if pii_vault and self._entity_vault:
+            for field_name, field_data in fields.items():
+                val = field_data.get("value")
+                if isinstance(val, str) and val:
+                    field_data["value"] = self._entity_vault.rehydrate(val, pii_vault)
+            pii_vault.clear()
+
+        # Step 4: Build vault items — redact ALL PII from searchable text.
+        # Only metadata (encrypted at rest by SQLCipher) holds real values.
+        expiry_field = fields.get("expiry_date", {})
+        expiry = expiry_field.get("value")
+        expiry_confidence = expiry_field.get("confidence", 0.0)
+        license_num = fields.get("license_number", {}).get("value", "")
+
+        # Summary: generic label, no PII (no holder name).
+        doc_summary = "Driving License Document"
+
+        # Body text: use the entity-vault-scrubbed text as base.
+        # The two-tier scrub (Tier 1 regex + Tier 2 Presidio NER) already
+        # replaced names, dates, addresses, IDs with tokens in-place.
+        # String-replacing LLM-extracted values against raw text is brittle
+        # because the LLM normalises formats (e.g. "15-03-1985" → "1985-03-15").
+        doc_body = scrubbed_body
+        pii_scrubbed: list[str] = list(
+            fn for fn in _DOCUMENT_PII_FIELDS if fields.get(fn, {}).get("value")
+        )
+
+        doc_id = f"doc-{uuid4().hex[:12]}"
+        doc_item = {
+            "id": doc_id,
+            "Type": "document",
+            "Source": source,
+            "Summary": doc_summary,
+            "BodyText": doc_body,
+            "Metadata": json.dumps({
+                "document_type": "driving_license",
+                "extracted_fields": fields,
+                "license_number": license_num,
+            }),
+        }
+
+        # Store document.
+        await self._core.store_vault_item(persona_id, doc_item)
+
+        # Create temporal event entry.
+        reminder_vault_id = f"evt-{uuid4().hex[:12]}"
+        reminder_item = {
+            "id": reminder_vault_id,
+            "Type": "event",
+            "Source": "reminder_system",
+            "Summary": f"License renewal due - {expiry or 'unknown'}",
+            "BodyText": f"Driving license expires {expiry}. Document ID: {doc_id}",
+            "Metadata": json.dumps({
+                "trigger_date": expiry,
+                "document_id": doc_id,
+                "reminder_type": "license_expiry",
+            }),
+        }
+        await self._core.store_vault_item(persona_id, reminder_item)
+
+        # Step 5: Gate on confidence — only schedule reminder if the
+        # critical expiry_date field meets the threshold.
+        reminder_id = ""
+        needs_confirmation = True
+        if expiry and expiry_confidence >= _CRITICAL_CONFIDENCE:
+            needs_confirmation = False
+            try:
+                from datetime import datetime, timedelta
+
+                # LLM may return dates in various formats despite
+                # the prompt requesting YYYY-MM-DD.
+                expiry_dt = None
+                for _fmt in ("%Y-%m-%d", "%d-%m-%Y", "%m-%d-%Y", "%Y/%m/%d", "%d/%m/%Y"):
+                    try:
+                        expiry_dt = datetime.strptime(expiry, _fmt)
+                        break
+                    except ValueError:
+                        continue
+                if expiry_dt is None:
+                    raise ValueError(f"Unrecognised date format: {expiry!r}")
+                trigger_dt = expiry_dt - timedelta(days=30)
+                trigger_at = int(trigger_dt.timestamp())
+
+                reminder_id = await self._core.store_reminder({
+                    "type": "license_expiry",
+                    "message": f"Driving license expires {expiry}",
+                    "trigger_at": trigger_at,
+                    "metadata": json.dumps({
+                        "vault_item_id": doc_id,
+                        "persona": persona_id,
+                        "expiry_date": expiry,
+                    }),
+                })
+            except Exception as exc:
+                log.warning("guardian.document_ingest.reminder_failed", error=str(exc))
+        elif expiry:
+            log.warning(
+                "guardian.document_ingest.low_confidence",
+                field="expiry_date",
+                confidence=expiry_confidence,
+            )
+
+        return {
+            "status": "ok",
+            "action": "document_ingested",
+            "response": {
+                "extracted_fields": fields,
+                "vault_items": {
+                    "document_id": doc_id,
+                    "reminder_vault_id": reminder_vault_id,
+                },
+                "reminder_id": reminder_id,
+                "pii_scrubbed": pii_scrubbed,
+                "needs_confirmation": needs_confirmation,
+            },
+        }
+
+    # ------------------------------------------------------------------
+    # Reminder Fired (SS4.3 — License Renewal Story)
+    # ------------------------------------------------------------------
+
+    async def _handle_reminder_fired(self, event: dict) -> dict:
+        """Compose a contextual notification when a reminder fires.
+
+        Pipeline (the Deterministic Sandwich — notification boundary):
+            1. Parse reminder metadata (vault_item_id, persona).
+            2. Retrieve the original document from vault.
+            3. Query vault for related personal context.
+            4. PII-scrub the assembled prompt before cloud LLM call.
+            5. Call LLM to compose a contextual notification.
+            6. Rehydrate the notification, then send via Core /v1/notify.
+        """
+        body = event.get("body") or event.get("payload", {})
+        if isinstance(body, str):
+            try:
+                body = json.loads(body)
+            except json.JSONDecodeError:
+                body = {}
+
+        reminder_type = body.get("reminder_type", "")
+        message = body.get("message", "")
+        metadata_str = body.get("metadata", "{}")
+        if isinstance(metadata_str, str):
+            try:
+                metadata = json.loads(metadata_str)
+            except json.JSONDecodeError:
+                metadata = {}
+        else:
+            metadata = metadata_str
+
+        vault_item_id = metadata.get("vault_item_id", "")
+        persona = metadata.get("persona", "personal")
+        expiry_date = metadata.get("expiry_date", "")
+
+        # Retrieve the original document from vault.
+        doc_context = ""
+        if vault_item_id:
+            try:
+                doc = await self._core.get_vault_item(persona, vault_item_id)
+                if doc:
+                    doc_context = (
+                        f"Document: {doc.get('Summary', '')}\n"
+                        f"Details: {doc.get('Metadata', '')}\n"
+                    )
+            except Exception as exc:
+                log.warning("guardian.reminder.doc_fetch_failed", error=str(exc))
+
+        # Query vault for personal context (address, insurance, previous renewals).
+        personal_context = ""
+        try:
+            results = await self._core.query_vault(
+                persona, "RTO renewal insurance address driving", mode="fts5", limit=10
+            )
+            for item in results:
+                personal_context += f"- {item.get('Summary', '')}: {item.get('BodyText', '')}\n"
+        except Exception as exc:
+            log.warning("guardian.reminder.context_fetch_failed", error=str(exc))
+
+        # Compose contextual notification via LLM.
+        notification_prompt = (
+            "You are Dina, a sovereign personal AI assistant. A reminder has fired "
+            "and you need to compose a brief, helpful notification for your human.\n\n"
+            f"Reminder: {message}\n"
+            f"Expiry date: {expiry_date}\n\n"
+        )
+        if doc_context:
+            notification_prompt += f"Original document:\n{doc_context}\n"
+        if personal_context:
+            notification_prompt += f"Related personal context:\n{personal_context}\n"
+        notification_prompt += (
+            "\nCompose a concise notification (2-4 sentences) that:\n"
+            "1. States the specific deadline and days remaining\n"
+            "2. References relevant personal context (RTO location, insurance, previous experience)\n"
+            "3. Offers a concrete next step\n"
+            "Be warm but concise. No emojis. No fluff."
+        )
+
+        # PII-scrub the assembled prompt before sending to cloud LLM.
+        # The prompt may contain vault metadata (extracted fields, license
+        # identifiers) — these must not leave the Home Node.
+        # FAIL-CLOSED: if scrub fails, use the generic reminder message
+        # instead of sending raw PII to the cloud LLM.
+        pii_vault: dict | None = None
+        scrubbed_prompt = None
+        if self._entity_vault:
+            try:
+                scrubbed_prompt, pii_vault = await self._entity_vault.scrub(
+                    notification_prompt,
+                )
+            except Exception as exc:
+                log.error("guardian.reminder.scrub_failed", error=str(exc))
+
+        if scrubbed_prompt is not None:
+            try:
+                result = await self._llm.route(
+                    task_type="complex_reasoning",
+                    prompt=scrubbed_prompt,
+                    persona_tier="open",
+                )
+                notification_text = result.get("content", message)
+            except Exception as exc:
+                log.warning("guardian.reminder.llm_failed", error=str(exc))
+                notification_text = message
+        else:
+            # Scrub failed or no entity vault — use the generic reminder
+            # message.  Never send raw PII to the cloud LLM.
+            log.warning("guardian.reminder.skipping_llm", reason="PII scrub unavailable")
+            notification_text = message
+
+        # Rehydrate PII tokens in the LLM response so the human sees
+        # real names, addresses, dates — not anonymised placeholders.
+        if pii_vault and self._entity_vault:
+            notification_text = self._entity_vault.rehydrate(
+                notification_text, pii_vault,
+            )
+            pii_vault.clear()
+
+        # Send notification via Core.
+        try:
+            await self._core.notify("default", {
+                "type": "reminder_notification",
+                "priority": "solicited",
+                "text": notification_text,
+                "reminder_type": reminder_type,
+            })
+        except Exception:
+            log.warning("guardian.reminder.notify_failed")
+
+        return {
+            "status": "ok",
+            "action": "reminder_notification_sent",
+            "response": {
+                "notification_text": notification_text,
+                "reminder_type": reminder_type,
+                "vault_context_used": bool(personal_context),
+            },
+        }
+
+    # ------------------------------------------------------------------
+    # Delegation Request (SS4.4 — Agent Safety Layer)
+    # ------------------------------------------------------------------
+
+    async def _handle_delegation_request(self, event: dict) -> dict:
+        """Validate and risk-assess a delegation request.
+
+        Unlike test_08's LLM-only path, this enforces the schema
+        deterministically: PII fields must NOT appear in permitted_fields
+        or data_payload.  The delegation then flows through review_intent
+        (share_data → HIGH risk → flag_for_review).
+
+        Parameters
+        ----------
+        event:
+            Must include ``payload`` dict with delegation fields:
+            ``agent_did``, ``action``, ``permitted_fields``,
+            ``denied_fields``, ``data_payload``, ``constraints``.
+        """
+        payload = event.get("payload", {})
+        if not payload:
+            return {
+                "status": "error",
+                "action": "delegation_invalid",
+                "error": "Missing delegation payload",
+            }
+
+        # Required fields.
+        required = ("agent_did", "action", "permitted_fields", "denied_fields")
+        missing = [f for f in required if f not in payload]
+        if missing:
+            return {
+                "status": "error",
+                "action": "delegation_invalid",
+                "error": f"Missing required fields: {', '.join(missing)}",
+            }
+
+        # PII enforcement: no PII field in permitted_fields or data_payload.
+        permitted = set(payload.get("permitted_fields", []))
+        data_payload = payload.get("data_payload", {})
+        violations: list[str] = []
+
+        for pii_field in _DOCUMENT_PII_FIELDS:
+            if pii_field in permitted:
+                violations.append(f"{pii_field} in permitted_fields")
+            if pii_field in data_payload:
+                violations.append(f"{pii_field} in data_payload")
+
+        if violations:
+            return {
+                "status": "error",
+                "action": "delegation_rejected",
+                "error": f"PII violation: {'; '.join(violations)}",
+                "violations": violations,
+                "approved": False,
+            }
+
+        # Schema validated — route through intent review for risk assessment.
+        intent = {
+            "agent_did": payload.get("agent_did", ""),
+            "action": payload.get("action", "share_data"),
+            "target": payload.get("agent_name", payload.get("agent_did", "")),
+            "trust_level": event.get("trust_level", "verified"),
+            "risk_level": payload.get("risk_level", ""),
+        }
+        risk_result = await self.review_intent(intent)
+
+        return {
+            "status": "ok",
+            "action": risk_result.get("action", "flag_for_review"),
+            "risk": risk_result.get("risk", "HIGH"),
+            "delegation_valid": True,
+            "pii_clean": True,
+            "approved": risk_result.get("approved", False),
+            "requires_approval": risk_result.get("requires_approval", True),
+        }
+
+    # ------------------------------------------------------------------
     # Vault Lifecycle Handlers (SS2.2)
     # ------------------------------------------------------------------
 
@@ -581,8 +1037,15 @@ class GuardianLoop:
             # Step 2: Agentic reasoning with vault tools.
             if self._vault_context and not skip_vault:
                 try:
+                    # Only scrub tool results when the prompt was also
+                    # scrubbed (vault is non-None).  For open-tier queries
+                    # without PII, scrubbing tool results is unnecessary
+                    # and can interfere with the agentic loop.
+                    ev = self._entity_vault if vault is not None else None
                     result = await self._vault_context.reason(
                         llm_prompt, persona_tier,
+                        entity_vault=ev,
+                        provider=provider,
                     )
                     vault_enriched = result.get("vault_context_used", False)
                     if vault_enriched:
@@ -614,6 +1077,12 @@ class GuardianLoop:
                 vault_enriched = False
 
             # Step 3: Rehydrate PII tokens in the response.
+            # Merge tool-result vault (from scrubbed tool responses) with
+            # the prompt vault so all PII tokens get rehydrated.
+            tool_vault = result.get("_tool_vault", {})
+            if tool_vault:
+                vault = {**(vault or {}), **tool_vault}
+
             content = result.get("content", "")
             if vault and self._entity_vault:
                 content = self._entity_vault.rehydrate(content, vault)

@@ -195,7 +195,7 @@ def check_persona_lifecycle(base: str, token: str) -> bool:
 def check_vault_crud(base: str, token: str) -> bool:
     """Store, query, verify an item in the vault."""
     item = {
-        "Type": "validation_check",
+        "Type": "kv",
         "Summary": "Dina validation test item — safe to delete",
         "BodyText": "This item was created by validate.py to confirm vault works.",
     }

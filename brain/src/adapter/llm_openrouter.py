@@ -104,10 +104,51 @@ class OpenRouterProvider:
         """
         client = self._ensure_client()
 
+        # Convert messages — handle tool_call / tool_response roles
+        api_messages: list[dict[str, Any]] = []
+        for m in messages:
+            role = m.get("role", "user")
+            if role == "tool_call":
+                # Model requested function calls — reconstruct as assistant
+                tool_calls_out = []
+                for tc in m.get("tool_calls", []):
+                    import json as _json
+                    tool_calls_out.append({
+                        "id": tc.get("id") or f"call_{tc['name']}",
+                        "type": "function",
+                        "function": {
+                            "name": tc["name"],
+                            "arguments": _json.dumps(tc.get("args", {})),
+                        },
+                    })
+                api_messages.append({
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": tool_calls_out,
+                })
+            elif role == "tool_response":
+                # Tool execution results — one message per tool response
+                for tr in m.get("tool_responses", []):
+                    import json as _json
+                    api_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tr.get("id") or f"call_{tr['name']}",
+                        "content": _json.dumps(tr.get("response", {})),
+                    })
+            else:
+                api_messages.append({
+                    "role": role if role in ("system", "user", "assistant") else "user",
+                    "content": m.get("content", ""),
+                })
+
         body: dict[str, Any] = {
             "model": self._model,
-            "messages": messages,
+            "messages": api_messages,
         }
+
+        # Tool declarations (OpenAI-compatible format)
+        if "tools" in kwargs:
+            body["tools"] = self._convert_tools(kwargs["tools"])
 
         # Forward supported kwargs
         for key in ("temperature", "max_tokens", "max_output_tokens",
@@ -130,7 +171,19 @@ class OpenRouterProvider:
 
             choice = choices[0]
             message = choice.get("message", {})
-            content = message.get("content", "")
+            content = message.get("content", "") or ""
+
+            # Check for function calls (OpenAI-compatible)
+            tool_calls: list[dict[str, Any]] = []
+            if message.get("tool_calls"):
+                import json as _json
+                for tc in message["tool_calls"]:
+                    fn = tc.get("function", {})
+                    tool_calls.append({
+                        "name": fn.get("name", ""),
+                        "args": _json.loads(fn.get("arguments", "{}")) if fn.get("arguments") else {},
+                        "id": tc.get("id"),
+                    })
 
             # Token usage
             usage = data.get("usage", {})
@@ -143,13 +196,16 @@ class OpenRouterProvider:
             # Use server-reported model name if available
             model = data.get("model", self._model)
 
-            return {
+            result: dict[str, Any] = {
                 "content": content,
                 "model": model,
                 "tokens_in": tokens_in,
                 "tokens_out": tokens_out,
                 "finish_reason": finish_reason,
             }
+            if tool_calls:
+                result["tool_calls"] = tool_calls
+            return result
 
         except asyncio.TimeoutError:
             raise LLMError(
@@ -179,6 +235,21 @@ class OpenRouterProvider:
             raise
         except Exception as exc:
             raise LLMError(f"OpenRouter completion error: {exc}") from exc
+
+    @staticmethod
+    def _convert_tools(tools: list) -> list[dict]:
+        """Convert provider-agnostic tool dicts to OpenAI-compatible format."""
+        result = []
+        for tool_def in tools:
+            result.append({
+                "type": "function",
+                "function": {
+                    "name": tool_def["name"],
+                    "description": tool_def.get("description", ""),
+                    "parameters": tool_def.get("parameters", {}),
+                },
+            })
+        return result
 
     async def embed(self, text: str) -> list[float]:
         """Not supported — OpenRouter does not provide an embedding API.

@@ -33,4 +33,5 @@ type Reminder struct {
 	Message   string
 	TriggerAt int64
 	Fired     bool
+	Metadata  string // JSON blob (vault_item_id, persona, etc.)
 }

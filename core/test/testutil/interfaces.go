@@ -301,6 +301,10 @@ type ReminderScheduler interface {
 	NextPending(ctx context.Context) (*Reminder, error)
 	// MarkFired marks a reminder as fired so it is not re-triggered.
 	MarkFired(ctx context.Context, reminderID string) error
+	// ListPending returns all unfired reminders ordered by trigger_at.
+	ListPending(ctx context.Context) ([]Reminder, error)
+	// GetByID retrieves a reminder by its ID.
+	GetByID(ctx context.Context, id string) (*Reminder, error)
 }
 
 // ---------- §9 WebSocket ----------

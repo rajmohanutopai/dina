@@ -92,11 +92,18 @@ class LlamaProvider:
         """
         client = self._ensure_client()
 
+        if "tools" in kwargs:
+            logger.info(
+                "llama_tools_skipped",
+                reason="Local Llama provider does not support tool calling; "
+                       "falling back to plain text completion.",
+            )
+
         body: dict[str, Any] = {
             "messages": messages,
         }
 
-        # Forward supported kwargs
+        # Forward supported kwargs (skip tools — not supported)
         for key in ("temperature", "max_tokens", "top_p", "stop"):
             if key in kwargs:
                 body[key] = kwargs[key]

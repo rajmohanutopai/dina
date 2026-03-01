@@ -98,13 +98,43 @@ class ClaudeProvider:
 
         # Separate system prompt from conversation messages
         system_parts: list[str] = []
-        api_messages: list[dict[str, str]] = []
+        api_messages: list[dict[str, Any]] = []
 
         for msg in messages:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             if role == "system":
                 system_parts.append(content)
+            elif role == "tool_call":
+                # Model requested function calls — reconstruct as assistant
+                tool_use_blocks: list[dict[str, Any]] = []
+                for tc in msg.get("tool_calls", []):
+                    tool_use_blocks.append({
+                        "type": "tool_use",
+                        "id": tc.get("id") or f"call_{tc['name']}",
+                        "name": tc["name"],
+                        "input": tc.get("args", {}),
+                    })
+                if tool_use_blocks:
+                    api_messages.append({
+                        "role": "assistant",
+                        "content": tool_use_blocks,
+                    })
+            elif role == "tool_response":
+                # Tool execution results — one tool_result block per response
+                tool_result_blocks: list[dict[str, Any]] = []
+                for tr in msg.get("tool_responses", []):
+                    import json as _json
+                    tool_result_blocks.append({
+                        "type": "tool_result",
+                        "tool_use_id": tr.get("id") or f"call_{tr['name']}",
+                        "content": _json.dumps(tr.get("response", {})),
+                    })
+                if tool_result_blocks:
+                    api_messages.append({
+                        "role": "user",
+                        "content": tool_result_blocks,
+                    })
             elif role in ("user", "assistant"):
                 api_messages.append({"role": role, "content": content})
             else:
@@ -124,6 +154,10 @@ class ClaudeProvider:
         if system_parts:
             req_kwargs["system"] = "\n\n".join(system_parts)
 
+        # Tool declarations
+        if "tools" in kwargs:
+            req_kwargs["tools"] = self._convert_tools(kwargs["tools"])
+
         for key in ("temperature", "top_p"):
             if key in kwargs:
                 req_kwargs[key] = kwargs[key]
@@ -134,14 +168,19 @@ class ClaudeProvider:
                 timeout=_TIMEOUT_S,
             )
 
-            # Extract content from response
+            # Extract content and tool calls from response
             content_text = ""
+            tool_calls: list[dict[str, Any]] = []
             if response.content:
-                content_text = "".join(
-                    block.text
-                    for block in response.content
-                    if hasattr(block, "text")
-                )
+                for block in response.content:
+                    if hasattr(block, "text"):
+                        content_text += block.text
+                    elif getattr(block, "type", None) == "tool_use":
+                        tool_calls.append({
+                            "name": block.name,
+                            "args": block.input if isinstance(block.input, dict) else {},
+                            "id": block.id,
+                        })
 
             # Token usage
             tokens_in = getattr(response.usage, "input_tokens", 0)
@@ -150,13 +189,16 @@ class ClaudeProvider:
             # Finish reason
             finish_reason = getattr(response, "stop_reason", "stop") or "stop"
 
-            return {
+            result: dict[str, Any] = {
                 "content": content_text,
                 "model": self._model,
                 "tokens_in": tokens_in,
                 "tokens_out": tokens_out,
                 "finish_reason": finish_reason,
             }
+            if tool_calls:
+                result["tool_calls"] = tool_calls
+            return result
 
         except asyncio.TimeoutError:
             raise LLMError(
@@ -173,6 +215,18 @@ class ClaudeProvider:
                     f"Claude authentication failed — check ANTHROPIC_API_KEY: {exc}"
                 ) from exc
             raise LLMError(f"Claude API error: {exc}") from exc
+
+    @staticmethod
+    def _convert_tools(tools: list) -> list[dict]:
+        """Convert provider-agnostic tool dicts to Anthropic tool format."""
+        result = []
+        for tool_def in tools:
+            result.append({
+                "name": tool_def["name"],
+                "description": tool_def.get("description", ""),
+                "input_schema": tool_def.get("parameters", {}),
+            })
+        return result
 
     async def embed(self, text: str) -> list[float]:
         """Not supported — Claude does not provide an embedding API.

@@ -1005,6 +1005,30 @@ func (m *MockReminderScheduler) MarkFired(_ context.Context, reminderID string) 
 	return ErrNotFound
 }
 
+func (m *MockReminderScheduler) ListPending(_ context.Context) ([]Reminder, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var pending []Reminder
+	for _, r := range m.reminders {
+		if !r.Fired {
+			pending = append(pending, r)
+		}
+	}
+	return pending, nil
+}
+
+func (m *MockReminderScheduler) GetByID(_ context.Context, id string) (*Reminder, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.reminders {
+		if m.reminders[i].ID == id {
+			r := m.reminders[i]
+			return &r, nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
 // ---------- Mock Crash Logger ----------
 
 // MockCrashLogger stores crash entries in memory (satisfies testutil.CrashLogger / port.CrashLogger).

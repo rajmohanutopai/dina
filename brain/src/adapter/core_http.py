@@ -15,6 +15,9 @@ Endpoint mapping (must match core/cmd/dina-core/main.go routes):
     /v1/notify               POST   push notification
     /v1/task/ack             POST   task queue ACK
     /v1/pii/scrub            POST   Tier 1 PII regex
+    /v1/reminder             POST   store a reminder
+    /v1/reminders/pending    GET    list unfired reminders
+    /v1/reminder/fire        POST   simulate firing (test-only)
     /healthz                 GET    liveness probe
 
 Scratchpad is implemented over the KV store (scratchpad:{task_id}).
@@ -503,3 +506,26 @@ class CoreHTTPClient:
             "/v1/msg/send",
             json={"to": to_did, "body": body_b64, "type": "dina/d2d"},
         )
+
+    # -- Reminder endpoints ----------------------------------------------------
+
+    async def store_reminder(self, reminder: dict) -> str:
+        """POST /v1/reminder — store a new reminder and wake the loop."""
+        resp = await self._request("POST", "/v1/reminder", json=reminder)
+        data = resp.json()
+        return data.get("id", "")
+
+    async def list_pending_reminders(self) -> list[dict]:
+        """GET /v1/reminders/pending — list unfired reminders."""
+        resp = await self._request("GET", "/v1/reminders/pending")
+        data = resp.json()
+        return data.get("reminders", [])
+
+    async def fire_reminder(self, reminder_id: str) -> dict:
+        """POST /v1/reminder/fire — simulate reminder firing (test-only)."""
+        resp = await self._request(
+            "POST",
+            "/v1/reminder/fire",
+            json={"reminder_id": reminder_id},
+        )
+        return resp.json()

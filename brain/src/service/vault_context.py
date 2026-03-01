@@ -384,6 +384,34 @@ Rules:
 """
 
 
+async def _scrub_tool_result(
+    entity_vault: Any,
+    tool_result: dict,
+    accumulated_vault: dict[str, str],
+) -> tuple[dict, dict[str, str]]:
+    """Scrub PII from a tool result dict before it enters the LLM messages.
+
+    Serializes the dict to JSON, runs it through the entity vault's
+    two-tier scrubber (Go regex + Presidio NER), then parses back.
+    New token→original mappings are merged into ``accumulated_vault``.
+
+    Returns
+    -------
+    tuple[dict, dict[str, str]]
+        ``(scrubbed_result, updated_accumulated_vault)``
+    """
+    raw = json.dumps(tool_result, ensure_ascii=False)
+    try:
+        scrubbed_text, new_vault = await entity_vault.scrub(raw)
+        accumulated_vault = {**accumulated_vault, **new_vault}
+        return json.loads(scrubbed_text), accumulated_vault
+    except Exception:
+        # If scrubbing fails, refuse to send raw data to cloud.
+        # Return a safe fallback that tells the LLM scrubbing failed.
+        log.warning("reasoning_agent.tool_result_scrub_failed")
+        return {"error": "PII scrubbing failed — result redacted"}, accumulated_vault
+
+
 class ReasoningAgent:
     """Agentic reasoning via LLM function calling.
 
@@ -401,18 +429,22 @@ class ReasoningAgent:
     def __init__(self, core: CoreClient, llm_router: Any) -> None:
         self._core = core
         self._llm = llm_router
-        self._gemini_tools: list[Any] | None = None
 
-    def _get_tools(self) -> list[Any]:
-        """Get provider-specific tool declarations (lazy-init)."""
-        if self._gemini_tools is None:
-            self._gemini_tools = _build_gemini_tools()
-        return self._gemini_tools
+    def _get_tools(self) -> list[dict]:
+        """Return provider-agnostic tool declarations.
+
+        Each provider adapter is responsible for converting these dicts
+        into its native format (Gemini FunctionDeclaration, OpenAI
+        function schema, Claude tool schema, etc.).
+        """
+        return VAULT_TOOLS
 
     async def reason(
         self,
         prompt: str,
         persona_tier: str = "open",
+        entity_vault: Any = None,
+        provider: str | None = None,
     ) -> dict:
         """Run the agentic reasoning loop.
 
@@ -422,6 +454,16 @@ class ReasoningAgent:
             The user's natural language query.
         persona_tier:
             Privacy tier for LLM routing.
+        entity_vault:
+            Optional ``EntityVaultService`` for PII scrubbing of tool
+            results before they are sent to a cloud LLM.  When provided,
+            every tool result is scrubbed and the accumulated vault
+            mapping is returned in ``result["_tool_vault"]`` so the
+            caller can rehydrate the final response.
+        provider:
+            Optional explicit provider name to use for LLM routing
+            (e.g. ``"gemini"``, ``"openai"``).  When ``None``, the
+            router selects a provider based on task type and tier.
 
         Returns
         -------
@@ -432,6 +474,9 @@ class ReasoningAgent:
         executor = ToolExecutor(self._core, llm_router=self._llm)
         tools = self._get_tools()
 
+        # Accumulated PII vault from scrubbing tool results.
+        accumulated_vault: dict[str, str] = {}
+
         if not tools:
             # No tool support (google-genai not installed) — pass-through
             log.warning("reasoning_agent.no_tools_available")
@@ -439,6 +484,7 @@ class ReasoningAgent:
                 task_type="complex_reasoning",
                 prompt=prompt,
                 persona_tier=persona_tier,
+                provider=provider,
             )
             result["vault_context_used"] = False
             result["tools_called"] = []
@@ -458,6 +504,7 @@ class ReasoningAgent:
                 persona_tier=persona_tier,
                 messages=messages,
                 tools=tools,
+                provider=provider,
             )
 
             tool_calls = result.get("tool_calls")
@@ -472,6 +519,8 @@ class ReasoningAgent:
                 )
                 result["vault_context_used"] = executor.was_enriched
                 result["tools_called"] = executor.tools_called
+                if accumulated_vault:
+                    result["_tool_vault"] = accumulated_vault
                 return result
 
             # Execute each tool call
@@ -491,6 +540,14 @@ class ReasoningAgent:
             tool_responses = []
             for tc in tool_calls:
                 tool_result = await executor.execute(tc["name"], tc.get("args", {}))
+
+                # Scrub PII from tool results before they enter the
+                # message array (which gets sent to the cloud LLM).
+                if entity_vault is not None:
+                    tool_result, accumulated_vault = await _scrub_tool_result(
+                        entity_vault, tool_result, accumulated_vault,
+                    )
+
                 tool_responses.append({
                     "name": tc["name"],
                     "response": tool_result,
@@ -510,9 +567,12 @@ class ReasoningAgent:
             prompt=prompt,
             persona_tier=persona_tier,
             messages=messages,
+            provider=provider,
         )
         result["vault_context_used"] = executor.was_enriched
         result["tools_called"] = executor.tools_called
+        if accumulated_vault:
+            result["_tool_vault"] = accumulated_vault
         return result
 
 
@@ -543,6 +603,8 @@ class VaultContextAssembler:
         self,
         prompt: str,
         persona_tier: str = "open",
+        entity_vault: Any = None,
+        provider: str | None = None,
     ) -> tuple[str, bool]:
         """Enrich a prompt with vault context via agentic reasoning.
 
@@ -552,13 +614,19 @@ class VaultContextAssembler:
             The user's original query.
         persona_tier:
             Privacy tier of the requesting persona.
+        entity_vault:
+            Optional PII scrubber for tool results sent to cloud LLMs.
+        provider:
+            Optional explicit provider name for LLM routing.
 
         Returns
         -------
         tuple[str, bool]
             (enriched_response, was_enriched).
         """
-        result = await self._agent.reason(prompt, persona_tier)
+        result = await self._agent.reason(
+            prompt, persona_tier, entity_vault=entity_vault, provider=provider,
+        )
         content = result.get("content", prompt)
         was_enriched = result.get("vault_context_used", False)
         return content, was_enriched
@@ -567,11 +635,22 @@ class VaultContextAssembler:
         self,
         prompt: str,
         persona_tier: str = "open",
+        entity_vault: Any = None,
+        provider: str | None = None,
     ) -> dict:
         """Run full agentic reasoning and return the complete result.
 
         Unlike ``enrich()`` which returns just (content, bool), this
         returns the full LLM response dict including model info, token
         counts, and tool call history.
+
+        Parameters
+        ----------
+        entity_vault:
+            Optional PII scrubber for tool results sent to cloud LLMs.
+        provider:
+            Optional explicit provider name for LLM routing.
         """
-        return await self._agent.reason(prompt, persona_tier)
+        return await self._agent.reason(
+            prompt, persona_tier, entity_vault=entity_vault, provider=provider,
+        )

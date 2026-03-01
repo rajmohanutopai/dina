@@ -471,6 +471,34 @@ func (s *ReminderScheduler) MarkFired(_ context.Context, reminderID string) erro
 	return ErrNotFound
 }
 
+// ListPending returns all unfired reminders ordered by trigger_at.
+func (s *ReminderScheduler) ListPending(_ context.Context) ([]Reminder, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var pending []Reminder
+	for _, r := range s.reminders {
+		if !r.Fired {
+			pending = append(pending, r)
+		}
+	}
+	return pending, nil
+}
+
+// GetByID retrieves a reminder by its ID.
+func (s *ReminderScheduler) GetByID(_ context.Context, id string) (*Reminder, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i := range s.reminders {
+		if s.reminders[i].ID == id {
+			r := s.reminders[i]
+			return &r, nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
 // ResetForTest clears all reminder state for test isolation.
 func (s *ReminderScheduler) ResetForTest() {
 	s.mu.Lock()

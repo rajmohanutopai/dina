@@ -282,8 +282,8 @@ class EntityVaultService:
 
         # -- Tier 1: Core regex scrub via Go --
         tier1_result = await self._core.pii_scrub(text)
-        tier1_scrubbed = tier1_result.get("scrubbed", text)
-        tier1_entities = tier1_result.get("entities", [])
+        tier1_scrubbed = tier1_result.get("scrubbed", text) or text
+        tier1_entities = tier1_result.get("entities") or []
         combined_entities.extend(tier1_entities)
 
         # -- Tier 2: Presidio NER scrub (local, in-process) --
@@ -297,6 +297,6 @@ class EntityVaultService:
         else:
             # ELEVATED / SENSITIVE: full NER scrubbing.
             tier2_scrubbed, tier2_entities = await asyncio.to_thread(self._scrubber.scrub, tier1_scrubbed)
-        combined_entities.extend(tier2_entities)
+        combined_entities.extend(tier2_entities or [])
 
         return tier2_scrubbed, combined_entities

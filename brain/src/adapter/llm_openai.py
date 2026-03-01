@@ -97,14 +97,53 @@ class OpenAIProvider:
 
         # Build request kwargs
         max_tokens = kwargs.pop("max_tokens", _DEFAULT_MAX_TOKENS)
+
+        # Convert messages — handle tool_call / tool_response roles
+        api_messages: list[dict[str, Any]] = []
+        for m in messages:
+            role = m.get("role", "user")
+            if role == "tool_call":
+                # Model requested function calls — reconstruct as assistant
+                tool_calls_out = []
+                for tc in m.get("tool_calls", []):
+                    import json as _json
+                    tool_calls_out.append({
+                        "id": tc.get("id") or f"call_{tc['name']}",
+                        "type": "function",
+                        "function": {
+                            "name": tc["name"],
+                            "arguments": _json.dumps(tc.get("args", {})),
+                        },
+                    })
+                api_messages.append({
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": tool_calls_out,
+                })
+            elif role == "tool_response":
+                # Tool execution results — one message per tool response
+                for tr in m.get("tool_responses", []):
+                    import json as _json
+                    api_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tr.get("id") or f"call_{tr['name']}",
+                        "content": _json.dumps(tr.get("response", {})),
+                    })
+            else:
+                api_messages.append({
+                    "role": role if role in ("system", "user", "assistant") else "user",
+                    "content": m.get("content", ""),
+                })
+
         req_kwargs: dict[str, Any] = {
             "model": self._model,
-            "messages": [
-                {"role": m.get("role", "user"), "content": m.get("content", "")}
-                for m in messages
-            ],
+            "messages": api_messages,
             "max_completion_tokens": max_tokens,
         }
+
+        # Tool declarations
+        if "tools" in kwargs:
+            req_kwargs["tools"] = self._convert_tools(kwargs["tools"])
 
         for key in ("temperature", "top_p"):
             if key in kwargs:
@@ -116,10 +155,22 @@ class OpenAIProvider:
                 timeout=_TIMEOUT_S,
             )
 
-            # Extract content
+            # Extract content and tool calls
             content_text = ""
+            tool_calls: list[dict[str, Any]] = []
             if response.choices:
-                content_text = response.choices[0].message.content or ""
+                msg = response.choices[0].message
+                content_text = msg.content or ""
+
+                # Check for function calls
+                if msg.tool_calls:
+                    import json as _json
+                    for tc in msg.tool_calls:
+                        tool_calls.append({
+                            "name": tc.function.name,
+                            "args": _json.loads(tc.function.arguments) if tc.function.arguments else {},
+                            "id": tc.id,
+                        })
 
             # Token usage
             tokens_in = 0
@@ -133,13 +184,16 @@ class OpenAIProvider:
             if response.choices:
                 finish_reason = response.choices[0].finish_reason or "stop"
 
-            return {
+            result: dict[str, Any] = {
                 "content": content_text,
                 "model": self._model,
                 "tokens_in": tokens_in,
                 "tokens_out": tokens_out,
                 "finish_reason": finish_reason,
             }
+            if tool_calls:
+                result["tool_calls"] = tool_calls
+            return result
 
         except asyncio.TimeoutError:
             raise LLMError(
@@ -156,6 +210,21 @@ class OpenAIProvider:
                     f"OpenAI authentication failed — check OPENAI_API_KEY: {exc}"
                 ) from exc
             raise LLMError(f"OpenAI API error: {exc}") from exc
+
+    @staticmethod
+    def _convert_tools(tools: list) -> list[dict]:
+        """Convert provider-agnostic tool dicts to OpenAI function format."""
+        result = []
+        for tool_def in tools:
+            result.append({
+                "type": "function",
+                "function": {
+                    "name": tool_def["name"],
+                    "description": tool_def.get("description", ""),
+                    "parameters": tool_def.get("parameters", {}),
+                },
+            })
+        return result
 
     async def embed(self, text: str) -> list[float]:
         """Not supported — use GeminiProvider or LlamaProvider for embeddings.
