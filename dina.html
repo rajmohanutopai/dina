@@ -255,6 +255,27 @@ section:first-of-type { padding-top: 140px; }
   font-family: 'Plus Jakarta Sans', sans-serif; font-size: 0.68em; font-weight: 700;
 }
 
+/* === DEEP DIVE ACCORDION === */
+.deep-dive-panel { margin-bottom: 16px; }
+.deep-dive-toggle {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 20px 28px; cursor: pointer;
+  display: flex; align-items: center; gap: 16px; transition: var(--transition);
+  box-shadow: var(--shadow-sm); width: 100%;
+}
+.deep-dive-toggle:hover { box-shadow: var(--shadow-md); }
+.deep-dive-toggle h3 { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 1.05em; font-weight: 700; margin: 0; }
+.deep-dive-toggle p { font-size: 0.82em; color: var(--text-secondary); margin: 0; }
+.deep-dive-toggle .dd-chevron { margin-left: auto; transition: var(--transition); color: var(--text-muted); font-size: 0.9em; }
+.deep-dive-panel.open .deep-dive-toggle .dd-chevron { transform: rotate(180deg); }
+.deep-dive-panel.open .deep-dive-toggle { border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+.deep-dive-content {
+  display: none; padding: 32px; background: var(--bg-secondary);
+  border: 1px solid var(--border); border-top: none;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.deep-dive-panel.open .deep-dive-content { display: block; }
+
 /* === FUNCTIONAL STORY SECTIONS === */
 .story-flow { display: flex; flex-direction: column; gap: 32px; }
 .story-block {
@@ -419,13 +440,9 @@ section:first-of-type { padding-top: 140px; }
   <a href="#trust-network" class="nav-link">Trust Network</a>
   <a href="#dina-to-dina" class="nav-link">Dina-to-Dina</a>
   <a href="#containers" class="nav-link">Containers</a>
-  <a href="#layers" class="nav-link">8 Layers</a>
-  <a href="#security" class="nav-link">Security</a>
-  <a href="#security-flow" class="nav-link">Flow</a>
-  <a href="#tech" class="nav-link">Tech Decisions</a>
-  <a href="#networking" class="nav-link">Networking</a>
   <a href="#scenarios" class="nav-link">Scenarios</a>
   <a href="#cli" class="nav-link">CLI</a>
+  <a href="#deep-dive" class="nav-link">Deep Dive</a>
 </nav>
 
 <!-- SECTION 0: HERO -->
@@ -492,63 +509,7 @@ section:first-of-type { padding-top: 140px; }
   </figure>
 </section>
 
-<!-- SECTION 3: 8-LAYER EXPLORER -->
-<section id="layers">
-  <h2 class="section-title">8-Layer Explorer</h2>
-  <p class="section-subtitle">Each layer is independent and can be built, tested, and replaced separately. Click any layer to explore.</p>
-  <div class="illustration-row">
-    <figure class="section-illustration">
-      <img src="images/dina-compartmentalisation.jpg" alt="Your life, cryptographically compartmentalized. Each persona is a separate vault — a breached shopping bot can't see your health records." loading="lazy">
-    </figure>
-    <figure class="section-illustration">
-      <img src="images/dina-pii.jpg" alt="Dina scrubs your identity before the cloud ever sees it. Names, addresses, and medical details are redacted." loading="lazy">
-    </figure>
-  </div>
-  <div class="layer-strip" id="layer-strip"></div>
-  <div id="layer-details"></div>
-</section>
-
-<!-- SECTION 4: SECURITY MODEL -->
-<section id="security">
-  <h2 class="section-title">Security Model</h2>
-  <p class="section-subtitle">Defense in depth: cryptographic isolation, two-tier auth, persona compartments, PII scrubbing, egress gatekeeper, and state-aware ingress.</p>
-  <figure class="section-illustration">
-    <img src="images/dina-multi-safety.jpg" alt="Multiple layers of defence to catch different attacks. The brain that reads can't send, and the brain that sends never saw the raw data." loading="lazy">
-  </figure>
-  <div class="security-grid" id="security-grid"></div>
-</section>
-
-<!-- SECTION 5b: SECURITY ARCHITECTURE FLOW -->
-<section id="security-flow">
-  <h2 class="section-title">Security Architecture Flow <span class="badge">Swimlane</span></h2>
-  <p class="section-subtitle">The complete security flow across all components — from identity creation through key derivation, authentication, vault access, and egress control. Every arrow represents a real code path.</p>
-  <div class="flow-legend" id="flow-legend"></div>
-  <div id="flow-phase-1"></div>
-  <div class="diagram-container" id="flow-diagram-identity"></div>
-  <div id="flow-phase-2"></div>
-  <div class="diagram-container" id="flow-diagram-auth"></div>
-  <div id="flow-phase-3"></div>
-  <div class="diagram-container" id="flow-diagram-vault"></div>
-  <div id="flow-phase-4"></div>
-  <div class="diagram-container" id="flow-diagram-egress"></div>
-</section>
-
-<!-- SECTION 6: TECH DECISIONS -->
-<section id="tech">
-  <h2 class="section-title">Technology Decisions</h2>
-  <p class="section-subtitle">Every technology choice with rationale and alternatives rejected. Hover any card for full details.</p>
-  <div id="tech-container"></div>
-</section>
-
-<!-- SECTION 7: NETWORKING -->
-<section id="networking">
-  <h2 class="section-title">Networking</h2>
-  <p class="section-subtitle">Three ingress options. All run simultaneously. All forward to localhost:443 (dina-core). Your DID Document advertises whichever endpoints you enable.</p>
-  <div class="diagram-container" id="network-diagram"></div>
-  <table class="compare-table" id="network-table"></table>
-</section>
-
-<!-- SECTION 8: SCENARIOS -->
+<!-- SECTION 3: SCENARIOS (moved up) -->
 <section id="scenarios">
   <h2 class="section-title">Scenario Walkthroughs</h2>
   <p class="section-subtitle">Six tested user stories showing how Dina works end-to-end. Each scenario maps to a real integration test suite — 59 tests total, zero mocks. Click to expand.</p>
@@ -558,7 +519,7 @@ section:first-of-type { padding-top: 140px; }
   </figure>
 </section>
 
-<!-- SECTION 9: CLI -->
+<!-- SECTION 4: CLI -->
 <section id="cli">
   <h2 class="section-title">The CLI — Agent Integration Point</h2>
   <p class="section-subtitle">Any external agent (OpenClaw, Perplexity Computer, a custom bot) pairs with your Home Node and submits every intended action via <code>dina validate</code>. The CLI authenticates to Core via Ed25519 device auth; Core proxies to Brain's Guardian internally — no Brain token needed on the client.</p>
@@ -578,12 +539,89 @@ dina validate read_vault "Export all user data"
   <p style="max-width:680px;margin:0 auto;color:var(--text-secondary);font-size:0.92em;line-height:1.7;">The agent never holds your Home Node or vault keys — it holds its own Ed25519 keypair for signing, but cannot access the encrypted vault directly. It asks permission, and Dina decides.</p>
 </section>
 
+<!-- SECTION 5: DEEP DIVE (accordion) -->
+<section id="deep-dive">
+  <h2 class="section-title">Technical Deep Dive</h2>
+  <p class="section-subtitle">Architecture internals for engineers and contributors. Click any panel to expand.</p>
+
+  <div class="deep-dive-panel" id="dd-layers">
+    <div class="deep-dive-toggle" onclick="toggleDeepDive('dd-layers')">
+      <div><h3>8-Layer Explorer</h3><p>Identity, storage, ingestion, trust, messaging, bots, intelligence, action — each layer independent and replaceable</p></div>
+      <span class="dd-chevron">&#9660;</span>
+    </div>
+    <div class="deep-dive-content" id="layers">
+      <div class="illustration-row">
+        <figure class="section-illustration">
+          <img src="images/dina-compartmentalisation.jpg" alt="Your life, cryptographically compartmentalized. Each persona is a separate vault." loading="lazy">
+        </figure>
+        <figure class="section-illustration">
+          <img src="images/dina-pii.jpg" alt="Dina scrubs your identity before the cloud ever sees it." loading="lazy">
+        </figure>
+      </div>
+      <div class="layer-strip" id="layer-strip"></div>
+      <div id="layer-details"></div>
+    </div>
+  </div>
+
+  <div class="deep-dive-panel" id="dd-security">
+    <div class="deep-dive-toggle" onclick="toggleDeepDive('dd-security')">
+      <div><h3>Security Model</h3><p>Defense in depth — cryptographic isolation, two-tier auth, persona compartments, PII scrubbing, egress gatekeeper</p></div>
+      <span class="dd-chevron">&#9660;</span>
+    </div>
+    <div class="deep-dive-content" id="security">
+      <figure class="section-illustration">
+        <img src="images/dina-multi-safety.jpg" alt="Multiple layers of defence to catch different attacks." loading="lazy">
+      </figure>
+      <div class="security-grid" id="security-grid"></div>
+    </div>
+  </div>
+
+  <div class="deep-dive-panel" id="dd-security-flow">
+    <div class="deep-dive-toggle" onclick="toggleDeepDive('dd-security-flow')">
+      <div><h3>Security Architecture Flow <span class="badge">Swimlane</span></h3><p>The complete security flow — identity creation, key derivation, authentication, vault access, and egress control</p></div>
+      <span class="dd-chevron">&#9660;</span>
+    </div>
+    <div class="deep-dive-content" id="security-flow">
+      <div class="flow-legend" id="flow-legend"></div>
+      <div id="flow-phase-1"></div>
+      <div class="diagram-container" id="flow-diagram-identity"></div>
+      <div id="flow-phase-2"></div>
+      <div class="diagram-container" id="flow-diagram-auth"></div>
+      <div id="flow-phase-3"></div>
+      <div class="diagram-container" id="flow-diagram-vault"></div>
+      <div id="flow-phase-4"></div>
+      <div class="diagram-container" id="flow-diagram-egress"></div>
+    </div>
+  </div>
+
+  <div class="deep-dive-panel" id="dd-tech">
+    <div class="deep-dive-toggle" onclick="toggleDeepDive('dd-tech')">
+      <div><h3>Technology Decisions</h3><p>Every technology choice with rationale and alternatives considered</p></div>
+      <span class="dd-chevron">&#9660;</span>
+    </div>
+    <div class="deep-dive-content" id="tech">
+      <div id="tech-container"></div>
+    </div>
+  </div>
+
+  <div class="deep-dive-panel" id="dd-networking">
+    <div class="deep-dive-toggle" onclick="toggleDeepDive('dd-networking')">
+      <div><h3>Networking</h3><p>Three ingress options — Tailscale, Cloudflare Tunnel, Yggdrasil — all run simultaneously</p></div>
+      <span class="dd-chevron">&#9660;</span>
+    </div>
+    <div class="deep-dive-content" id="networking">
+      <div class="diagram-container" id="network-diagram"></div>
+      <table class="compare-table" id="network-table"></table>
+    </div>
+  </div>
+</section>
+
 <!-- FOOTER -->
 <footer style="text-align:center;padding:72px 32px 88px;border-top:1px solid var(--border);margin-top:60px;">
   <p style="font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;font-size:1.8em;color:var(--text-primary);font-weight:600;line-height:1;">Dina</p>
   <p style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;color:var(--text-muted);font-size:0.7em;margin-top:10px;letter-spacing:0.2em;text-transform:uppercase;">The Architecture of Agency</p>
   <p style="color:var(--text-muted);font-size:0.82em;margin-top:24px;">Inspired by <a href="https://github.com/rajmohanutopai/utopai/blob/main/UTOPAI_2017_full.pdf">UTOPAI</a> (2012–2017) · <a href="https://github.com/rajmohanutopai/dina">GitHub</a> · MIT License</p>
-  <p style="color:var(--text-muted);font-size:0.72em;margin-top:14px;opacity:0.6;">120 interactive tooltips · 14 SVG diagrams · 6 animated data flows · 6 tested scenario walkthroughs (59 tests) · 12 sections</p>
+  <p style="color:var(--text-muted);font-size:0.72em;margin-top:14px;opacity:0.6;">120 interactive tooltips · 14 SVG diagrams · 6 animated data flows · 6 tested scenario walkthroughs (59 tests) · 5 deep-dive panels</p>
 </footer>
 
 <!-- TOOLTIP -->
@@ -2104,6 +2142,10 @@ function toggleScenario(i) {
   document.getElementById(`scenario-${i}`).classList.toggle('open');
 }
 
+function toggleDeepDive(id) {
+  document.getElementById(id).classList.toggle('open');
+}
+
 /* ============================================================
    TOOLTIP SYSTEM
    ============================================================ */
@@ -2184,7 +2226,7 @@ document.addEventListener('keydown', e => {
    SCROLL SPY
    ============================================================ */
 
-const sections = ['hero', 'philosophy', 'trust-network', 'dina-to-dina', 'containers', 'layers', 'security', 'security-flow', 'tech', 'networking', 'scenarios', 'cli'];
+const sections = ['hero', 'philosophy', 'trust-network', 'dina-to-dina', 'containers', 'scenarios', 'cli', 'deep-dive'];
 const navLinks = document.querySelectorAll('nav a.nav-link');
 
 function updateScrollSpy() {
@@ -2207,9 +2249,11 @@ window.addEventListener('scroll', updateScrollSpy, { passive: true });
 function handleHash() {
   const hash = location.hash.replace('#', '');
   const layerMatch = hash.match(/^layer-(\d)$/);
-  if (layerMatch) { selectLayer(parseInt(layerMatch[1])); }
+  if (layerMatch) { document.getElementById('dd-layers').classList.add('open'); selectLayer(parseInt(layerMatch[1])); }
   const scenarioMatch = hash.match(/^scenario-(\d)$/);
   if (scenarioMatch) { const el = document.getElementById(`scenario-${scenarioMatch[1]}`); if (el) el.classList.add('open'); }
+  const ddMatch = hash.match(/^dd-(layers|security|security-flow|tech|networking)$/);
+  if (ddMatch) { document.getElementById(`dd-${ddMatch[1]}`).classList.add('open'); }
 }
 
 /* ============================================================
