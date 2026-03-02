@@ -42,6 +42,48 @@ Before Core ever runs, `install.sh` handles seed generation and mnemonic display
 
 The hex seed and the 24 words are the **same thing** in two formats. If the user loses their machine, they enter the 24 words on a new install → the words convert back to the same hex seed → Core derives the same Ed25519 keypair → the same DID is restored. There is no "password reset" because there is no server.
 
+### Three Secrets, Three Different Jobs
+
+`install.sh` creates three independent secrets. Understanding what each does — and doesn't do — is essential:
+
+| Secret | Created by | Purpose | If compromised |
+|--------|-----------|---------|----------------|
+| **Identity Seed** | `install.sh` Step 4 — `secrets.token_hex(32)` | Derives ALL cryptographic keys: DID, signing key, per-persona vault encryption keys | Total compromise — attacker becomes you |
+| **Brain Token** | `install.sh` Step 3 — `secrets.token_urlsafe(32)` | Shared password between Core and Brain containers (Docker secret) | Attacker can call Core's API as Brain — but cannot derive DID or decrypt vaults |
+| **Client Token** | Core generates during `dina pair` — `crypto/rand.Read()` | Per-device auth for external clients (CLI, phone) | Revoke that one device — other devices and identity unaffected |
+
+The brain token and client token are **not derived from the seed**. They are independent random values. The seed never leaves Core's memory. Brain never sees it (`docker-compose.yml` passes `DINA_IDENTITY_SEED` only to Core, not to Brain). CLI never sees it (CLI only receives a client token during pairing).
+
+```
+                    Has seed?    Has brain_token?    Has client_token?
+Core                  YES            YES                 YES (hashes only)
+Brain                 NO             YES                 NO
+CLI                   NO             NO                  YES (one per device)
+PDS                   NO             NO                  NO
+```
+
+### Key Derivation: One Seed, Many Keys
+
+From the single seed, Core derives every key deterministically (`core/internal/adapter/crypto/keyderiver.go`). Two derivation methods serve two purposes:
+
+**Signing key** — SLIP-0010 (tree-shaped, by index):
+```
+Seed → SLIP-0010 → m/9999'/0' → Root Ed25519 signing key → DID
+```
+One signing key for the whole node. Used for DID authentication, D2D message signatures, and verdict signing. The `DeriveSigningKey(seed, index)` function supports per-index derivation for future per-persona signing keys, but today only index 0 is used.
+
+**Vault encryption keys** — HKDF-SHA256 (by persona name string):
+```
+Seed + HKDF(info="dina:persona:personal:dek:v1")  → Personal vault DEK (AES-256)
+Seed + HKDF(info="dina:persona:health:dek:v1")     → Health vault DEK (AES-256)
+Seed + HKDF(info="dina:persona:financial:dek:v1")  → Financial vault DEK (AES-256)
+Seed + HKDF(info="dina:backup:key:v1")             → Backup encryption key
+```
+
+The persona name goes into the HKDF `info` parameter, which mathematically guarantees each persona gets a different encryption key from the same seed. Signing keys (Ed25519, asymmetric) prove **who you are** — "this message is from me." Vault DEKs (AES-256, symmetric) protect **what you store** — "only I can read this data."
+
+Recover the seed → all keys regenerate identically → same DID, same vault decryption.
+
 ### Bootstrapping Identity from Seed
 
 Now the most delicate operation: **identity seed management** (lines 105-219). Dina's entire cryptographic identity derives from a single 32-byte seed. The code walks a priority chain:
@@ -387,28 +429,41 @@ Say the Python brain just analyzed a YouTube video and wants to store the verdic
 
 Now say an external agent (trust level: "verified") wants to query the vault. The flow changes:
 
-**VaultService.Query** (`core/internal/service/vault.go:50-80`) does everything Store does, but adds a **gatekeeper check**:
+**VaultService.Query** (`core/internal/service/vault.go:50-80`) does everything Store does, but adds a **gatekeeper check**. Every vault operation — query, get, store, delete — passes through the same gauntlet:
 
-```go
-intent := domain.Intent{
-    AgentDID:  agentDID,
-    Action:    domain.ActionVaultRead,  // "vault_read"
-    Target:    string(persona),
-    PersonaID: string(persona),
-}
-decision, err := s.gatekeeper.EvaluateIntent(ctx, intent)
+```
+Brain/Agent calls: POST /v1/vault/query {persona: "health", query: "..."}
+       │
+       ▼
+VaultService.Query()
+       │
+       ├── 1. Is persona unlocked?  ──── NO → ErrPersonaLocked (vault is sealed)
+       │
+       ├── 2. PersonaManager.AccessPersona() — persona-tier enforcement
+       │
+       └── 3. Gatekeeper.EvaluateIntent({
+               AgentDID:  "brain",         // who is asking
+               Action:    "vault_read",    // what they want to do
+               PersonaID: "health",        // which compartment
+               TrustLevel: "...",          // their trust ring
+               Constraints: {...}          // any agent-specific restrictions
+           })
 ```
 
-This hits **Gatekeeper.EvaluateIntent** (`core/internal/adapter/gatekeeper/gatekeeper.go:99-205`). The gatekeeper applies a decision tree:
+This hits **Gatekeeper.EvaluateIntent** (`core/internal/adapter/gatekeeper/gatekeeper.go:99-205`). The gatekeeper applies a decision tree, checked in this order:
 
-- **Brain agent + security-critical action?** (lines 109-116) — Denied. The brain can never sign DIDs, rotate keys, backup vaults, or unlock personas.
-- **Brain + locked persona?** — Denied. The brain shouldn't access locked compartments.
-- **Constraint violations?** (lines 136-161) — Cross-persona constraints prevent an agent authorized for "work" from accessing "personal". Draft-only constraints prevent direct actions.
-- **Untrusted agent?** (lines 164-170) — Flat denial for any vault or risky action.
-- **Money action without highest trust?** (lines 173-179) — Transfer money requires "Verified+Actioned" trust ring.
-- **Vault access by verified (not fully trusted) agent?** (lines 182-188) — Allowed but **audited**. The user can later review what was accessed.
-- **Risky action?** (lines 191-197) — Flagged for user review (send_email, transfer_money, share_data).
-- **Everything else** — Safe intent, pass silently, no audit trail.
+1. **Brain + security-critical action?** (lines 109-116) — Hard deny. Brain can never `did_sign`, `did_rotate`, `vault_backup`, or `persona_unlock`. These require the human (via CLIENT_TOKEN).
+2. **Brain + locked persona?** (line 118) — Denied. The brain cannot access locked compartments.
+3. **Brain + restricted persona?** (line 126) — Allowed but **audited**. Every access creates a trail.
+4. **Cross-persona constraint?** (lines 137-150) — If an agent has constraint `persona_health_only: true`, it can **only** access the health vault. Requesting financial → denied. This is how you scope an external agent (OpenClaw, Perplexity Computer) to one compartment.
+5. **Draft-only constraint?** (lines 152-160) — Agents with `draft_only: true` cannot perform risky actions (send_email, transfer_money). They can only prepare drafts.
+6. **Untrusted agent?** (lines 164-170) — Flat denial for any vault or risky action.
+7. **Money action without highest trust?** (lines 173-179) — `transfer_money` requires the "Verified+Actioned" trust ring (proven transaction history + peer attestation).
+8. **Vault access by verified (not fully trusted) agent?** (lines 182-188) — Allowed but **audited**. The user can review what was accessed.
+9. **Risky action?** (lines 191-197) — `send_email`, `transfer_money`, `share_data` are flagged for user review. Even trusted agents cannot silently send email.
+10. **Everything else** (line 200) — Safe intent, pass silently, no audit trail.
+
+Today, Brain's agent DID is `"brain"` and it can access any *unlocked* persona. The constraint mechanism (rules 4-5) exists for external agents where you'd scope access: "this agent can only see my personal vault, not health or financial." Brain itself is trusted (it runs on your hardware) — external agents are not.
 
 <details>
 <summary><strong>Design Decision — Why an in-process gatekeeper instead of OPA or an external policy engine?</strong></summary>
