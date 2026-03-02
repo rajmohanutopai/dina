@@ -12,7 +12,7 @@ Key design decisions:
   through; city/state-level GPE is still scrubbed.
 - **Short entity filter** — entities <= 2 characters are skipped.
 - **Synthetic data replacement** — when Faker is available, PII is
-  replaced with realistic fake values (``Dr. Meera Patel`` instead of
+  replaced with realistic fake values (``Robert Smith`` instead of
   ``<PERSON_1>``).  LLMs reason measurably better with natural language
   than with tags.  Falls back to numbered tags if Faker is not installed.
 - **Consistent fakes** — the same real value always maps to the same
@@ -207,7 +207,7 @@ class PresidioScrubber:
     recognizers (Aadhaar, PAN, IFSC, UPI, etc.) + EU recognizers.
 
     When Faker is installed, replaces PII with realistic synthetic data
-    (``Dr. Meera Patel`` instead of ``<PERSON_1>``).  LLMs reason better
+    (``Robert Smith`` instead of ``<PERSON_1>``).  LLMs reason better
     with natural language than with tags.  Falls back to numbered tags
     if Faker is not available.
 
@@ -273,9 +273,14 @@ class PresidioScrubber:
     ) -> str:
         """Generate a collision-resistant placeholder for *real_value*.
 
-        Produces delimited tokens like ``<<PII_PERSON_1_a3f2e1b0>>`` that
-        are safe for rehydration — the ``<<>>`` delimiters prevent
-        substring collisions with natural text.
+        When Faker is available, produces delimited Faker values like
+        ``<<PII:Robert Smith>>`` — LLMs reason measurably better
+        with natural language than with opaque tags.  The ``<<PII:``
+        prefix and ``>>`` suffix prevent substring collisions during
+        rehydration.
+
+        Falls back to ``<<PII_PERSON_1_a3f2e1b0>>`` if Faker is not
+        installed.
 
         Parameters:
             entity_type: Mapped entity type (PERSON, ORG, LOC, etc.).
@@ -294,9 +299,16 @@ class PresidioScrubber:
         count = counter.get(entity_type, 0) + 1
         counter[entity_type] = count
 
-        # HIGH-11: Use delimited placeholders instead of Faker values.
-        # The <<>> delimiters make substring collisions impossible.
-        placeholder = f"<<PII_{entity_type}_{count}_{uuid4().hex[:8]}>>"
+        # Try Faker for natural-language replacements that LLMs handle well.
+        faker = self._ensure_faker()
+        if faker is not None:
+            gen = _FAKER_GENERATORS.get(entity_type, _faker_fallback)
+            fake_value = gen(faker, count)
+            # Wrap in delimiters to prevent substring collision during rehydration.
+            placeholder = f"<<PII:{fake_value}>>"
+        else:
+            # Fallback: opaque delimited tag with UUID for uniqueness.
+            placeholder = f"<<PII_{entity_type}_{count}_{uuid4().hex[:8]}>>"
 
         seen[real_value] = placeholder
         return placeholder
