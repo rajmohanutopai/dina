@@ -59,6 +59,9 @@ class BrainConfig:
     llm_url: str | None
     cloud_llm: str | None
     llm_routing_enabled: bool
+    telegram_token: str | None
+    telegram_allowed_users: frozenset[int]
+    telegram_allowed_groups: frozenset[int]
 
 
 # ---------------------------------------------------------------------------
@@ -141,6 +144,28 @@ def load_brain_config() -> BrainConfig:
     # LLM routing is enabled only when a backend URL is configured
     llm_routing_enabled = llm_url is not None
 
+    # -- TELEGRAM (optional — graceful degradation when unset) --
+    telegram_token = os.environ.get("DINA_TELEGRAM_TOKEN", "").strip() or None
+    telegram_token_file = os.environ.get("DINA_TELEGRAM_TOKEN_FILE", "").strip()
+    if not telegram_token and telegram_token_file:
+        telegram_token = _read_token_from_file(telegram_token_file)
+
+    telegram_allowed_users: frozenset[int] = frozenset()
+    raw_tg_users = os.environ.get("DINA_TELEGRAM_ALLOWED_USERS", "").strip()
+    if raw_tg_users:
+        telegram_allowed_users = frozenset(
+            int(u.strip()) for u in raw_tg_users.split(",") if u.strip().isdigit()
+        )
+
+    telegram_allowed_groups: frozenset[int] = frozenset()
+    raw_tg_groups = os.environ.get("DINA_TELEGRAM_ALLOWED_GROUPS", "").strip()
+    if raw_tg_groups:
+        telegram_allowed_groups = frozenset(
+            int(g.strip())
+            for g in raw_tg_groups.split(",")
+            if g.strip().lstrip("-").isdigit()
+        )
+
     _env_mode = os.environ.get("DINA_ENV", "production").lower()
     if _env_mode == "production" and core_url.startswith("http://"):
         _is_docker = os.path.exists("/.dockerenv")
@@ -159,4 +184,7 @@ def load_brain_config() -> BrainConfig:
         llm_url=llm_url,
         cloud_llm=cloud_llm,
         llm_routing_enabled=llm_routing_enabled,
+        telegram_token=telegram_token,
+        telegram_allowed_users=telegram_allowed_users,
+        telegram_allowed_groups=telegram_allowed_groups,
     )

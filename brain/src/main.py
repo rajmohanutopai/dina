@@ -364,6 +364,40 @@ def create_app() -> FastAPI:
         vault_context=vault_context,
     )
 
+    # -- Telegram connector (optional — graceful degradation) --
+    telegram_bot = None  # type: ignore[assignment]
+    telegram_service = None  # type: ignore[assignment]
+    if cfg.telegram_token:
+        try:
+            from .adapter.telegram_bot import TelegramBotAdapter
+            from .service.telegram import TelegramService
+
+            telegram_service = TelegramService(
+                guardian=guardian,
+                core=brain_core_client,
+                allowed_user_ids=set(cfg.telegram_allowed_users),
+                allowed_group_ids=set(cfg.telegram_allowed_groups),
+            )
+            telegram_bot = TelegramBotAdapter(
+                bot_token=cfg.telegram_token,
+                message_callback=telegram_service.handle_message,
+                command_callbacks={"start": telegram_service.handle_start},
+            )
+            telegram_service.set_bot(telegram_bot)
+            log.info("brain.telegram.configured")
+        except ImportError:
+            log.warning(
+                "brain.telegram.missing_dependency",
+                extra={"hint": "pip install python-telegram-bot"},
+            )
+            telegram_bot = None
+            telegram_service = None
+    else:
+        log.info(
+            "brain.telegram.disabled",
+            extra={"hint": "Set DINA_TELEGRAM_TOKEN to enable"},
+        )
+
     # 4. Build sub-apps
     async def _sync_loop(engine: SyncEngine) -> None:
         """Background loop — runs sync cycles every 5 minutes."""
@@ -380,11 +414,36 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
-        task = asyncio.create_task(_sync_loop(sync_engine))
+        sync_task = asyncio.create_task(_sync_loop(sync_engine))
+
+        # Start Telegram polling if configured.
+        if telegram_bot and telegram_service:
+            try:
+                await telegram_service.load_paired_users()
+                await telegram_bot.start()
+                log.info("brain.telegram.polling_started")
+            except Exception as exc:
+                log.error(
+                    "brain.telegram.start_failed",
+                    extra={"error": str(exc)},
+                )
+
         yield
-        task.cancel()
+
+        # Stop Telegram polling.
+        if telegram_bot:
+            try:
+                await telegram_bot.stop()
+                log.info("brain.telegram.polling_stopped")
+            except Exception as exc:
+                log.warning(
+                    "brain.telegram.stop_error",
+                    extra={"error": str(exc)},
+                )
+
+        sync_task.cancel()
         try:
-            await task
+            await sync_task
         except asyncio.CancelledError:
             pass
 
@@ -439,7 +498,10 @@ def create_app() -> FastAPI:
             status = "degraded"
         if not providers:
             status = "degraded"
-        return {"status": status}
+        return {
+            "status": status,
+            "telegram": "active" if telegram_bot else "disabled",
+        }
 
     @master.on_event("shutdown")
     async def shutdown_event() -> None:

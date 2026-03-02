@@ -56,6 +56,14 @@ class MCPError(DinaError):
     """
 
 
+class TelegramError(DinaError):
+    """Telegram Bot API communication failed.
+
+    Raised by the Telegram adapter when the Bot API returns an error,
+    the connection times out, or the bot token is invalid.
+    """
+
+
 class PIIScrubError(DinaError):
     """PII scrubbing failed — blocks cloud send.
 

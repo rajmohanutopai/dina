@@ -1395,12 +1395,17 @@ class MockCalendarConnector(MockConnector):
 
 
 class MockTelegramConnector(MockConnector):
-    """Telegram connector — server-side Bot API, full message+media support."""
+    """Telegram connector — server-side Bot API, full message+media support.
+
+    Implements the ``TelegramBot`` port protocol for integration tests.
+    """
 
     def __init__(self, persona: PersonaType = PersonaType.SOCIAL) -> None:
         super().__init__("telegram", persona, poll_interval_minutes=5)
         self.supports_media = True
         self.bot_token: str | None = None
+        self._bot_username: str = "mock_dina_bot"
+        self._sent_messages: list[dict[str, Any]] = []
 
     def set_bot_token(self, token: str) -> None:
         self.bot_token = token
@@ -1412,6 +1417,22 @@ class MockTelegramConnector(MockConnector):
         # Telegram supports full media — no stripping needed
         self._data.extend(items)
         return True
+
+    # -- TelegramBot port protocol stubs --
+
+    async def send_message(self, chat_id: int, text: str, **kwargs: Any) -> None:
+        """Mock send — records sent messages for assertions."""
+        self._sent_messages.append({"chat_id": chat_id, "text": text, **kwargs})
+
+    async def start(self) -> None:
+        """Mock start — no-op."""
+
+    async def stop(self) -> None:
+        """Mock stop — no-op."""
+
+    @property
+    def bot_username(self) -> str:
+        return self._bot_username
 
 
 # ---------------------------------------------------------------------------
