@@ -504,18 +504,17 @@ echo ""
 
 echo -e "${BOLD}Step 10: Retrieving your identity${RESET}"
 
-# Single call to /v1/identity/mnemonic returns both DID and recovery phrase
-IDENTITY_RESPONSE=$(curl -s --connect-timeout 5 \
-    -H "Authorization: Bearer ${BRAIN_TOKEN}" \
-    "http://localhost:${CORE_PORT}/v1/identity/mnemonic" 2>/dev/null || true)
+# Derive mnemonic locally from the identity seed (no API call needed).
+# BIP-39: 256-bit hex seed → 24-word recovery phrase.
+# This avoids auth issues — the mnemonic API endpoint is admin-only,
+# but we already have the seed in memory from Step 4.
+MNEMONIC=$(python3 scripts/seed_to_mnemonic.py "${IDENTITY_SEED}" 2>/dev/null || true)
+DID=""
 
-DID=$(echo "${IDENTITY_RESPONSE}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('did',''))" 2>/dev/null || true)
-MNEMONIC=$(echo "${IDENTITY_RESPONSE}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('mnemonic',''))" 2>/dev/null || true)
-
-if [ -n "${DID}" ] && [ -n "${MNEMONIC}" ]; then
-    ok "Identity retrieved"
+if [ -n "${MNEMONIC}" ]; then
+    ok "Recovery phrase derived"
 else
-    warn "Could not retrieve identity (check logs: ${COMPOSE} logs core)"
+    warn "Could not derive recovery phrase"
 fi
 
 echo ""

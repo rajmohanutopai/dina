@@ -32,6 +32,16 @@ Many systems try to "keep running" with partial configuration — disable featur
 
 </details>
 
+### Before Core Starts: The Install Flow
+
+Before Core ever runs, `install.sh` handles seed generation and mnemonic display. This happens *outside* Docker, on the host machine:
+
+1. **Step 4** generates a random 256-bit hex string (`IDENTITY_SEED`) using Python's `secrets.token_hex(32)`.
+2. **Step 5** writes it to `.env` as `DINA_IDENTITY_SEED=<hex>`. Docker Compose passes this to the Core container.
+3. **Step 10** derives the 24-word BIP-39 mnemonic locally (`scripts/seed_to_mnemonic.py`) — pure Python stdlib, no API call, no auth needed. The script converts 256-bit entropy → SHA-256 checksum → 11-bit chunks → English wordlist lookup. The result is displayed in a yellow box for the user to write down on paper.
+
+The hex seed and the 24 words are the **same thing** in two formats. If the user loses their machine, they enter the 24 words on a new install → the words convert back to the same hex seed → Core derives the same Ed25519 keypair → the same DID is restored. There is no "password reset" because there is no server.
+
 ### Bootstrapping Identity from Seed
 
 Now the most delicate operation: **identity seed management** (lines 105-219). Dina's entire cryptographic identity derives from a single 32-byte seed. The code walks a priority chain:
