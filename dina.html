@@ -2143,7 +2143,10 @@ function toggleScenario(i) {
 }
 
 function toggleDeepDive(id) {
-  document.getElementById(id).classList.toggle('open');
+  const el = document.getElementById(id);
+  const opening = !el.classList.contains('open');
+  document.querySelectorAll('.deep-dive-panel.open').forEach(p => p.classList.remove('open'));
+  if (opening) el.classList.add('open');
 }
 
 /* ============================================================
