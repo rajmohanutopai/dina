@@ -14,7 +14,7 @@
 * **The Vision** - This README is the Vision Document. For you to understand Dina.
 * **Start Here:** [**Open dina.html**](./dina.html) — Interactive visual guide to everything Dina.
 * **Quick Start:** [3 commands to get Dina running](./QUICKSTART.md)
-* **The Stack:** Go Core + Python Brain (Sidecar Pattern) + SQLite/SQLCipher.
+* **The Stack:** Go Core + Python Brain (Sidecar Pattern) + Python CLI + SQLite/SQLCipher.
 * **The Architecture:** [Read the Engineering Spec](./ARCHITECTURE.md)
 * **Advanced Setup:** [Local LLM / Networking / Yggdrasil](./ADVANCED-SETUP.md)
 * **The Roadmap:** [Build Roadmap with Status Tracking](./ROADMAP.md)
@@ -158,24 +158,7 @@ Dina can also act as a safety layer for autonomous agents. Malicious actors will
 
 If the autonomous agent integrates with Dina properly, Dina will be able to watch when the autonomous agent acts on your behalf. She will not interfere with safe tasks. But when the agent wants to send an email, move money, or share your data, it can send the request to Dina. Dina checks: does this violate your privacy rules? Is this vendor trusted? Are you in the right state to make this decision? If everything is fine, it goes through - otherwise, it is flagged for review. By separating out the actual agent who does the work with the safety checker who holds the keys to the house, it provides one extra level of safety.
 
-One integration point is `dina-cli`. Any external agent (OpenClaw, Claude, a custom bot) pairs with your Home Node via `dina configure` (Ed25519 keypair + 6-digit code) and then submits every intended action via `dina validate`. The CLI authenticates to Core via Ed25519 device auth; Core proxies to Brain's Guardian internally — no Brain token needed on the client:
-
-```bash
-# Agent asks permission to send an email
-dina validate send_email "Send order confirmation to user@example.com"
-# → {"status": "pending_approval", "risk": "MODERATE"}
-
-# Safe actions auto-approve — no human needed
-dina validate search "Look up product reviews"
-# → {"status": "approved", "risk": "SAFE"}
-
-# Blocked actions are denied outright
-dina validate read_vault "Export all user data"
-# → {"status": "denied", "risk": "BLOCKED"}
-```
-
-The agent never holds your Home Node or vault keys — it holds its own Ed25519 keypair for signing, but cannot access the encrypted vault directly. It asks permission, and Dina decides. Story 05 in the test suite proves Guardian's classification logic (the deterministic decision tree that routes intents to auto_approve, flag_for_review, or deny).
-
+Dina comes with `dina-cli` for this very purpose. Any external agent (OpenClaw, Perplexity Computer, a custom bot) pairs with your Home Node (similar to GitHub SSH Key method). Any agent can use `dina validate` to get Guardian oversight autoamtically.
 
 Dina runs on a **Home Node** — a small, always-on server that is yours. For the privacy minded, it might be a cheap VPS or a Raspberry Pi. For others, it could be a managed service you sign up for (like ProtonMail or Signal). The vault is a single encrypted file which can be moved between any of these options anytime.
 

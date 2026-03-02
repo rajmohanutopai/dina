@@ -436,6 +436,7 @@ section:first-of-type { padding-top: 140px; }
   <a href="#tech" class="nav-link">Tech Decisions</a>
   <a href="#networking" class="nav-link">Networking</a>
   <a href="#scenarios" class="nav-link">Scenarios</a>
+  <a href="#cli" class="nav-link">CLI</a>
   <span class="search-hint" onclick="openSearch()"><kbd>/</kbd> Search</span>
 </nav>
 
@@ -498,6 +499,9 @@ section:first-of-type { padding-top: 140px; }
   </figure>
   <div class="diagram-container" id="container-diagram"></div>
   <div class="cards-grid" id="profiles-grid"></div>
+  <figure class="section-illustration" style="margin-top:36px;">
+    <img src="Architecture.png" alt="Dina Home Node architecture — Go Core, Python Brain sidecar, PDS, AppView, and CLI communicating via encrypted channels." loading="lazy">
+  </figure>
 </section>
 
 <!-- SECTION 3: 8-LAYER EXPLORER -->
@@ -546,6 +550,29 @@ section:first-of-type { padding-top: 140px; }
   <h2 class="section-title">Scenario Walkthroughs</h2>
   <p class="section-subtitle">Four real-world scenarios showing how Dina works end-to-end. Click to expand each walkthrough.</p>
   <div id="scenarios-container"></div>
+  <figure class="section-illustration" style="margin-top:36px;">
+    <img src="UserStories.png" alt="User Story test suite results — 6 stories, 59 tests, covering the full Dina pipeline from purchase journey to license renewal." loading="lazy">
+  </figure>
+</section>
+
+<!-- SECTION 9: CLI -->
+<section id="cli">
+  <h2 class="section-title">The CLI — Agent Integration Point</h2>
+  <p class="section-subtitle">Any external agent (OpenClaw, Perplexity Computer, a custom bot) pairs with your Home Node and submits every intended action via <code>dina validate</code>. The CLI authenticates to Core via Ed25519 device auth; Core proxies to Brain's Guardian internally — no Brain token needed on the client.</p>
+  <div style="max-width:680px;margin:0 auto 24px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius);padding:28px 32px;box-shadow:var(--shadow-sm);">
+    <pre style="font-family:var(--font-mono);font-size:0.85em;line-height:1.8;color:var(--text-primary);overflow-x:auto;"><span style="color:var(--text-muted)"># Agent asks permission to send an email</span>
+dina validate send_email "Send order confirmation to user@example.com"
+<span style="color:var(--c-brain)"># → {"status": "pending_approval", "risk": "MODERATE"}</span>
+
+<span style="color:var(--text-muted)"># Safe actions auto-approve — no human needed</span>
+dina validate search "Look up product reviews"
+<span style="color:var(--c-brain)"># → {"status": "approved", "risk": "SAFE"}</span>
+
+<span style="color:var(--text-muted)"># Blocked actions are denied outright</span>
+dina validate read_vault "Export all user data"
+<span style="color:var(--l0)"># → {"status": "denied", "risk": "BLOCKED"}</span></pre>
+  </div>
+  <p style="max-width:680px;margin:0 auto;color:var(--text-secondary);font-size:0.92em;line-height:1.7;">The agent never holds your Home Node or vault keys — it holds its own Ed25519 keypair for signing, but cannot access the encrypted vault directly. It asks permission, and Dina decides.</p>
 </section>
 
 <!-- FOOTER -->
