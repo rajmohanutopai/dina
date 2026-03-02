@@ -30,10 +30,12 @@ RUN groupadd -g 10001 dina && \
     useradd -u 10001 -g dina -s /bin/sh -M dina
 
 # Install only runtime shared libraries (no -dev packages).
+# gosu: lightweight setuid tool for dropping privileges in entrypoint.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libsqlcipher0 \
     ca-certificates \
     wget \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Create data directories with correct ownership.
@@ -43,8 +45,12 @@ RUN mkdir -p /data/vault /data/spool /data/config && \
 # Copy the binary from the builder stage.
 COPY --from=builder /dina-core /usr/local/bin/dina-core
 
-# Switch to non-root user.
-USER dina
+# Copy entrypoint script (reads Docker secrets as root, then drops to dina user).
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# NOTE: No USER directive — entrypoint runs as root to copy /run/secrets/*
+# into dina-owned files, then drops to UID 10001 via gosu before exec'ing the binary.
 
 # Expose the core HTTP port.
 EXPOSE 8100
@@ -62,4 +68,5 @@ ENV DINA_LISTEN_ADDR=":8100" \
     DINA_VAULT_PATH="/data/vault" \
     DINA_SECURITY_MODE="standard"
 
-ENTRYPOINT ["dina-core"]
+ENTRYPOINT ["entrypoint.sh"]
+CMD ["dina-core"]
