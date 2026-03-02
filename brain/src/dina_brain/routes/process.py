@@ -56,6 +56,7 @@ class ProcessEventRequest(BaseModel):
     action: str | None = None
     target: str | None = None
     risk_level: str | None = None
+    trust_level: str | None = None
     # Structured payload (alternative to flat fields above)
     payload: dict | None = None
 

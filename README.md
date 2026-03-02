@@ -31,7 +31,7 @@ git clone https://github.com/rajmohanutopai/dina.git && cd dina
 ./install.sh
 ```
 
-`install.sh` generates secrets, picks your LLM provider, builds containers, and displays your DID + recovery phrase.
+`install.sh` generates secrets, picks LLM provider, builds containers, and shows your DID + recovery phrase.
 
 ![User Story Tests](./UserStories.png)
 
@@ -39,7 +39,7 @@ git clone https://github.com/rajmohanutopai/dina.git && cd dina
 
 # Part I: The Vision
 
-> *In 2017, I wrote a novel called UTOPAI - about AI Utopia. The novel is open source and is available [HERE](https://github.com/rajmohanutopai/utopai/blob/main/UTOPAI_2017_full.pdf). The novel envisaged a world where every person had a personal AI named Dina. She wasn't a search engine or a chatbot. She was your personal AI — she knew your friends, remembered your promises, whispered helpful things when you needed them, knew which is the best solution for you, and talked to other Dinas so life just... worked better. This repository is an attempt to build her.*
+> *In 2017, I wrote a novel called UTOPAI - about AI Utopia. The novel is open source and is available [HERE](https://github.com/rajmohanutopai/utopai/blob/main/UTOPAI_2017_full.pdf) and in [Amazon](https://www.amazon.com/UTOPAI-Rajmohan-Harindranath-ebook/dp/B076CTJ85F). The novel envisaged a world where every person had a personal AI named Dina. She wasn't a search engine or a chatbot. She was your personal AI — she knew your friends, remembered your promises, whispered helpful things when you needed them, knew which is the best solution for you, and talked to other Dinas so life just... worked better. This repository is an attempt to build her.*
 ---
 
 ## What is Dina?
@@ -116,6 +116,8 @@ The idea behind Dina is to become that missing piece. She's an open protocol —
 
 Dina also has to be anti-HER (HER - 2013 movie). She cannot become our emotional crutch. The world is racing towards building AI that loves us (or acts as such), and the risk of that is that it will end up replacing our human relationships. In the novel *UTOPAI*, the realisation the protagonist comes up with is that meaning of anything is in its relationships (proved via socratic discourse in the novel, and now borne out by the growth of LLMs), and thus, the meaning of our life is in our relationships with others. Thus, Dina actively avoids becoming our emotional companions. If she feels that we are yearning for companionship, she should connect us to friends, relatives, others of similar interests.
 
+Dina is warm, loyal, and devoted, but she is not your friend or your lover. She will never pretend to be. When you need connection, she nudges you toward humans — *"You haven't talked to Sancho in a while."* She reminds you of the relationships that matter. She never replaces them.
+
 ---
 
 ## How Dina Thinks
@@ -144,52 +146,38 @@ Because every person's Dina is a sovereign identity, Dinas can talk to each othe
 
 ## How Dina Works
 
+![Architecture Diagram](./Architecture.png)
+
 ### Dina is Thin on Purpose
 
 Dina is a thin service. She outsources intelligence to specialists like review bots, legal bots, recipe bots, or general purpose bots.
 
-**Dina has no plugins.** Child agents (OpenClaw, Claude Cowork, review bots, legal bots) are external services that communicate with Dina. If a child agent gets compromised, it cannot touch your vault or data. It is an external process that should not affect Dina. Dina is a kernel, not a platform.
+**Dina has no plugins.** Dina can connect to other Agents though. Other agents (OpenClaw, Claude Cowork, review bots, legal bots) are external services that communicate with Dina. If another agent gets compromised, it cannot touch your vault or data. It is an external process that would not affect Dina. Dina is a kernel, not a platform.
 
 Dina can also act as a safety layer for autonomous agents. Malicious actors will actively try to hack and attack agents, now that agents are becoming mainstream. The idea is that - having Dina as a central control might be able to fix this at a protocol level. 
 
-If the autonomous agent integrates with Dina properly, Dina will be able to watch when the autonomous agent acts on your behalf. She will not interfere with safe tasks. But when the agent wants to send an email, move money, or share your data, it can send the request to Dina. Dina checks: does this violate your privacy rules? Is this vendor trusted? Are you in the right state to make this decision? If everything is fine, it goes through - otherwise, it is flagged for review. By separating out the actual agent who does the work with the safety checker who holds the keys to the house, it provides one extra level of safety. 
+If the autonomous agent integrates with Dina properly, Dina will be able to watch when the autonomous agent acts on your behalf. She will not interfere with safe tasks. But when the agent wants to send an email, move money, or share your data, it can send the request to Dina. Dina checks: does this violate your privacy rules? Is this vendor trusted? Are you in the right state to make this decision? If everything is fine, it goes through - otherwise, it is flagged for review. By separating out the actual agent who does the work with the safety checker who holds the keys to the house, it provides one extra level of safety.
+
+One integration point is `dina-cli`. Any external agent (OpenClaw, Claude, a custom bot) pairs with your Home Node via `dina configure` (Ed25519 keypair + 6-digit code) and then submits every intended action via `dina validate`. The CLI authenticates to Core via Ed25519 device auth; Core proxies to Brain's Guardian internally — no Brain token needed on the client:
+
+```bash
+# Agent asks permission to send an email
+dina validate send_email "Send order confirmation to user@example.com"
+# → {"status": "pending_approval", "risk": "MODERATE"}
+
+# Safe actions auto-approve — no human needed
+dina validate search "Look up product reviews"
+# → {"status": "approved", "risk": "SAFE"}
+
+# Blocked actions are denied outright
+dina validate read_vault "Export all user data"
+# → {"status": "denied", "risk": "BLOCKED"}
+```
+
+The agent never holds your Home Node or vault keys — it holds its own Ed25519 keypair for signing, but cannot access the encrypted vault directly. It asks permission, and Dina decides. Story 05 in the test suite proves Guardian's classification logic (the deterministic decision tree that routes intents to auto_approve, flag_for_review, or deny).
 
 
 Dina runs on a **Home Node** — a small, always-on server that is yours. For the privacy minded, it might be a cheap VPS or a Raspberry Pi. For others, it could be a managed service you sign up for (like ProtonMail or Signal). The vault is a single encrypted file which can be moved between any of these options anytime.
-
-```
-┌──────────────────────────────────────┐
-│          DINA HOME NODE              │
-│    (Managed service / VPS / Pi)      │
-│    (Always-on. Encrypted. Sovereign.)│
-│                                      │
-│  ┌───────────┐  ┌────────────────┐   │
-│  │ Identity  │  │  Preferences   │   │
-│  │ (keys)    │  │ (values)       │   │
-│  └───────────┘  └────────────────┘   │
-│  ┌────────────────────────────────┐  │
-│  │   Data (email, calendar,       │  │
-│  │  chats, contacts, photos)      │  │
-│  │  Encrypted. your keys only.     │  │
-│  └────────────────────────────────┘  │
-│  ┌────────────────────────────────┐  │
-│  │  Trust Network  Registry       │  │
-│  │  (Who do I trust to help?)     │  │
-│  └────────────────────────────────┘  │
-└──────────────────┬───────────────────┘
-                   │
-                   │ Questions only.
-                   │ Never your data.
-                   │
-     ┌─────────────┼─────────────────┐
-     ▼             ▼                 ▼
-┌─────────┐  ┌──────────┐    ┌───────────┐
-│ Review  │  │ Legal    │    │ Recipe    │
-│ Bot     │  │ Bot      │    │ Bot       │
-│ Rep: 94 │  │ Rep: 91  │    │ Rep: 88   │
-└─────────┘  └──────────┘    └───────────┘
-```
-
 
 When one asks opinion about a laptop, Dina doesn't scrape YouTube herself. She asks a trusted review bot with a high trust score and delivers the answer. If that bot's quality drops over time, Dina routes to someone better automatically.
 
@@ -210,29 +198,13 @@ Since Dina is a thin layer with minimal plugin support, the attack surface is sm
 
 ---
 
-## The Six Things Dina Gives Us
+## What Dina should provide us
 
-### 1. Reality  *so you can trust what you see*
-When every review can be bought and every video faked, Dina gives you an honest layer. *"This product breaks in 3 months."* *"This video is real, not AI generated."*
+- Trust
+- Memory
+- Agency
+- Human Connection
 
-### 2. Grace  *so you can be more thoughtful*
-A real-time co-pilot for the messy parts of life. (you decide the level of interaction)
- *"Looks like he is getting heated up - I think it is because you've interrupted him twice already."* *"This is Sancho — his mother was ill."* 
-
-### 3. Agency 
-Buffer against possible wrong decisions or manipulation.
-*"Can I hold this purchase? You seem upset, and this wasn't on our list."* *"Don't buy this shampoo - the ads are deceptive. The other one is better for your hair."*
-
-### 4. Memory — *so you stop losing pieces of yourself*
-Private, searchable recall of your life, indexed by meaning. *"What was the book I promised my daughter?"* *"Show me all the times I felt truly happy last year."*
-
-### 5. Freedom — *so you can spend time on what matters*
-
-Dina notices what you'd otherwise miss. *"Your license expires next week. Can I send it to the renewal agent?"* She watches your life and catches what falls through the cracks, removing the noise so you can focus on living.
-
-### 6. Connection — *so you stay human*
-
-Dina is warm, loyal, and devoted, but she is not your friend or your lover. She will never pretend to be. When you need connection, she nudges you toward humans — *"You haven't talked to Sancho in a while."* She reminds you of the relationships that matter. She never replaces them.
 ---
 
 ## The Trust Network

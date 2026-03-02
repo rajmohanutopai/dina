@@ -749,6 +749,16 @@ func main() {
 	messageH := &handler.MessageHandler{Transport: transportSvc, IngressRouter: ingressRouter}
 	taskH := &handler.TaskHandler{Task: taskSvc}
 	deviceH := &handler.DeviceHandler{Device: deviceSvc}
+	// Agent validation proxy uses DINA_INTERNAL_TOKEN (same as admin proxy),
+	// not cfg.BrainToken. This separates the internal proxy credential from
+	// the machine-to-machine Brain token used by Core's own BrainClient.
+	// In dev/test where DINA_INTERNAL_TOKEN may be unset, fall back to BrainToken.
+	agentProxyToken := internalToken
+	if agentProxyToken == "" {
+		agentProxyToken = cfg.BrainToken
+	}
+	agentBrain := brainclient.New(cfg.BrainURL, agentProxyToken)
+	agentH := &handler.AgentHandler{Brain: agentBrain}
 
 	personaH := &handler.PersonaHandler{Identity: identitySvc, Personas: personaMgr, VaultManager: vaultMgr, KeyDeriver: keyDeriver, Seed: bootstrapSeed}
 	trustH := &handler.TrustHandler{Trust: trustSvc, OwnDID: cfg.OwnDID}
@@ -837,6 +847,9 @@ func main() {
 	mux.HandleFunc("/v1/pair/complete", deviceH.HandleCompletePairing)
 	mux.HandleFunc("/v1/devices", deviceH.HandleListDevices)
 	mux.HandleFunc("/v1/devices/", deviceH.HandleRevokeDevice)
+
+	// Agent Safety Layer — proxies to brain's guardian
+	mux.HandleFunc("/v1/agent/validate", agentH.HandleValidate)
 
 	// Notification API
 	mux.HandleFunc("/v1/notify", notifyH.HandleNotify)

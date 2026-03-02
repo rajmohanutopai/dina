@@ -177,8 +177,8 @@ def validate(ctx: click.Context, action: str, description: str, count: int, reve
         print_result(output, json_mode)
 
     except DinaClientError as exc:
-        # Fallback: if Brain is unavailable, use conservative local policy
-        if "Brain not configured" in str(exc) or "Cannot reach" in str(exc):
+        # Fallback: if Core/Brain is unavailable, use conservative local policy
+        if "Cannot reach" in str(exc) or "unavailable" in str(exc).lower():
             if action in _SAFE_ACTIONS:
                 status = "approved"
             else:
@@ -192,7 +192,7 @@ def validate(ctx: click.Context, action: str, description: str, count: int, reve
             output = {"status": status, "id": val_id}
             if status == "pending_approval":
                 output["dashboard_url"] = f"{config.core_url}/approvals/{val_id}"
-                output["note"] = "Brain unavailable — conservative fallback"
+                output["note"] = "Guardian unavailable — conservative fallback"
             print_result(output, json_mode)
         else:
             print_error(str(exc), json_mode)

@@ -634,7 +634,7 @@ The distinction prevents premature restarts. If readiness fails but liveness pas
 
 ---
 
-## Act X: The Five Stories — Proving the Architecture
+## Act X: The Six Stories — Proving the Architecture
 
 The user story tests (`tests/system/user_stories/`) run against a real multi-node stack: 2 Go Core instances, 2 Python Brain sidecars, PDS, AppView, Jetstream, Postgres — zero mocks. Each story proves a capability that depends on core's architecture.
 
@@ -677,22 +677,7 @@ Core's trust resolver (`/v1/trust/resolve?did={did}`) fetches these profiles fro
 
 **Core's role:** Identity resolution and trust data passthrough. The AppView integration uses the same XRPC pattern as AT Protocol — `com.dina.trust.getProfile` returns a standardised trust profile that any client can consume.
 
-### Story 04: The License Renewal (10 tests)
-
-**What it proves:** The Agent Safety Layer — deterministic scheduling + LLM reasoning + guardian enforcement, with PII isolated in metadata.
-
-A license scan is ingested via brain's `/api/v1/process` (event type: `document_ingest`). Brain extracts fields (license number, expiry date, holder name) with per-field confidence scores (≥0.95 for critical fields). Core stores the result in the vault with a critical design constraint: **PII lives in encrypted metadata only, never in searchable text.** The license number `KA-01-2020-1234567` is in metadata; the summary says "driving license, expires April 2026."
-
-Core's reminder scheduler (`/v1/reminder`) fires deterministically 30 days before expiry — no LLM involved in the trigger. When it fires, brain queries the vault for context (address, insurance provider, nearby RTO offices) and composes a notification: "Your license expires April 15. Nearest RTO is Koramangala. Your ICICI insurance covers renewal."
-
-The delegation test is the Agent Safety Layer in action: brain generates a `DelegationRequest` for an RTO bot with `denied_fields: [license_number, holder_name, date_of_birth]`. The guardian classifies it as HIGH risk and sets `requires_approval=True`. The bot never sees PII. The human decides.
-
-**Core's role:**
-- **Vault** enforces metadata isolation — PII in encrypted metadata, general description in searchable text.
-- **Reminder scheduler** provides deterministic, LLM-free triggers.
-- **Gatekeeper** enforces the guardian's access control decisions at the transport layer.
-
-### Story 05: The Persona Wall (11 tests)
+### Story 04: The Persona Wall (11 tests)
 
 **What it proves:** Persona isolation as a security boundary — a shopping agent cannot read health data, even when the request is reasonable.
 
@@ -716,6 +701,48 @@ The user reviews and approves the proposal. Brain sends the approved text and ru
 An LLM could theoretically decide whether to share data across personas. But LLMs are probabilistic — they might allow disclosure 99% of the time and leak 1% of the time. For a system that guards medical records, 1% is unacceptable. The tier gate is a boolean: restricted tier → block. Always. The LLM's job is limited to building the *proposal* (which terms are safe to share), not the *decision* (whether to share at all). The human makes the final call. This is the Deterministic Sandwich pattern: deterministic gate → LLM proposal → deterministic audit.
 
 </details>
+
+### Story 05: The Agent Gateway (10 tests)
+
+**What it proves:** Guardian's deterministic intent classification — the decision tree that routes agent intents to auto_approve, flag_for_review, or deny. Also proves device pairing, persona isolation, and device revocation.
+
+An external agent pairs with the Home Node using `dina configure` (Ed25519 keypair + 6-digit pairing code → `POST /v1/pair/complete`; note: the CLI calls only `/v1/pair/complete`, not `/v1/pair/initiate`). Core registers the agent as a device and the agent appears in `GET /v1/devices`. The agent then submits intents via `dina validate <action> <description>`, which calls Core's `POST /v1/agent/validate`. Core proxies to brain's guardian internally using `BrainClient.ProcessEvent()` — the CLI authenticates to Core via Ed25519 device auth, no Brain token needed on the client.
+
+This follows the same pattern used for admin proxying:
+
+- Core reverse-proxies `/admin/*` to brain in `core/internal/handler/admin.go:18`.
+- Agent validation is proxied via `core/internal/handler/agent.go` using BrainClient (circuit breaker included).
+
+The guardian's classification is deterministic (no LLM):
+
+- **SAFE** → `auto_approve`: `search`, `fetch_weather` — agent proceeds without human intervention.
+- **MODERATE** → `flag_for_review`: `send_email`, `pay_upi` — human must approve before the agent acts.
+- **HIGH** → `flag_for_review`: `share_data`, `transfer_money` — human must approve, higher severity.
+- **BLOCKED** → `deny`: `read_vault`, `export_data`, `access_keys` — categorically denied, always.
+- **Untrusted agent** → `deny`: trust level `untrusted` → blocked regardless of action.
+
+Vault isolation is verified: data stored in the health persona is invisible from the consumer persona. Finally, admin revokes the agent's device (`DELETE /v1/devices/{token_id}`), and the agent's token immediately returns 401.
+
+**Core's role:**
+- **Device pairing** registers the agent through the same ceremony used by phones and laptops — agents are first-class devices.
+- **Agent validation proxy** (`/v1/agent/validate`) — Core authenticates the device, then forwards the intent to brain's guardian via BrainClient. Brain stays non-public.
+- **Auth validator** validates the agent's Ed25519 signature or bearer token on every request, and revokes it immediately when the admin calls `DELETE /v1/devices/{id}`.
+- **Vault** enforces persona isolation — the agent in the consumer context cannot query health data, regardless of what it asks for.
+
+### Story 06: The License Renewal (10 tests)
+
+**What it proves:** The Agent Safety Layer — deterministic scheduling + LLM reasoning + guardian enforcement, with PII isolated in metadata.
+
+A license scan is ingested via brain's `/api/v1/process` (event type: `document_ingest`). Brain extracts fields (license number, expiry date, holder name) with per-field confidence scores (≥0.95 for critical fields). Core stores the result in the vault with a critical design constraint: **PII lives in encrypted metadata only, never in searchable text.** The license number `KA-01-2020-1234567` is in metadata; the summary says "driving license, expires April 2026."
+
+Core's reminder scheduler (`/v1/reminder`) fires deterministically 30 days before expiry — no LLM involved in the trigger. When it fires, brain queries the vault for context (address, insurance provider, nearby RTO offices) and composes a notification: "Your license expires April 15. Nearest RTO is Koramangala. Your ICICI insurance covers renewal."
+
+The delegation test is the Agent Safety Layer in action: brain generates a `DelegationRequest` for an RTO bot with `denied_fields: [license_number, holder_name, date_of_birth]`. The guardian classifies it as HIGH risk and sets `requires_approval=True`. The bot never sees PII. The human decides.
+
+**Core's role:**
+- **Vault** enforces metadata isolation — PII in encrypted metadata, general description in searchable text.
+- **Reminder scheduler** provides deterministic, LLM-free triggers.
+- **Gatekeeper** enforces the guardian's access control decisions at the transport layer.
 
 ---
 

@@ -618,7 +618,7 @@ A 148-line module that loads all brain config from environment variables. The `B
 
 ---
 
-## Act XI: The Five Stories — Proving the Brain
+## Act XI: The Six Stories — Proving the Brain
 
 The user story tests (`tests/system/user_stories/`) run against a real multi-node stack with zero mocks. Each story exercises a different brain capability. Here's what the brain does in each.
 
@@ -664,27 +664,7 @@ The side-by-side comparison test verifies that the LLM identifies **identity and
 
 **Key brain components:** LLM router (reasoning mode), trust profile formatting, schema-validated output.
 
-### Story 04: The License Renewal (10 tests)
-
-**Brain capability:** The Deterministic Sandwich — LLM extraction bookended by deterministic checks.
-
-This story exercises four brain services in sequence:
-
-**1. Document Ingestion** (`/api/v1/process`, event: `document_ingest`):
-The LLM extracts fields from a license scan with per-field confidence scores. Critical fields (license_number, expiry_date) require ≥0.95 confidence. The PII scrubber runs *before* storage — the license number goes into encrypted metadata, the searchable summary says only "driving license, expires April 2026."
-
-**2. Reminder Composition** (triggered by core's deterministic scheduler):
-When core fires the 30-day reminder, brain receives a `reminder_fired` event. It queries the vault for context (address near which RTO, insurance provider, previous renewal experience) and composes a notification. The trigger is deterministic (no LLM). The content is LLM-generated. This is the sandwich: deterministic trigger → LLM reasoning → deterministic audit.
-
-**3. Delegation Generation** (`/api/v1/reason`):
-Brain generates a `DelegationRequest` JSON for an RTO bot. The schema enforces `denied_fields` (PII the bot must not see) and `permitted_fields` (safe metadata). The LLM must produce valid JSON matching the strict schema — PydanticAI rejects malformed output.
-
-**4. Guardian Enforcement** (`service/guardian.py`):
-The guardian classifies the delegation as HIGH risk (interacts with government system, involves PII). Sets `requires_approval=True`. The constraints enforce `no_storage=True`, `no_forwarding=True`, `max_ttl_seconds ≤ 3600`. The bot gets a time-limited, non-storable, non-forwardable permission slip.
-
-**Key brain components:** LLM extraction (confidence scoring), PII scrubber (pre-storage), vault enrichment (reminder context), schema-strict generation (DelegationRequest), guardian (risk classification + constraint enforcement).
-
-### Story 05: The Persona Wall (11 tests)
+### Story 04: The Persona Wall (11 tests)
 
 **Brain capability:** Cross-persona disclosure control — the guardian's most sensitive operation.
 
@@ -720,6 +700,48 @@ GLiNER is opt-in (`DINA_GLINER=1`) because the model is heavy for resource-const
 </details>
 
 **Key brain components:** Guardian (tier gate + proposal builder + PII audit), PII scrubber with GLiNER (medical NER), entity vault (cross-persona query), Deterministic Sandwich (deterministic block → LLM proposal → deterministic audit).
+
+### Story 05: The Agent Gateway (10 tests)
+
+**Brain capability:** Guardian's deterministic intent classification — the decision tree that routes agent intents to auto_approve, flag_for_review, or deny.
+
+An external agent (OpenClaw, Claude, or any custom bot) pairs with the Home Node via `dina configure` (Ed25519 keypair + 6-digit code → `POST /v1/pair/complete`) and submits every intended action via `dina validate`, which calls Core's `POST /v1/agent/validate`. Core authenticates the device (Ed25519 or bearer token) and proxies to brain's guardian via `BrainClient.ProcessEvent()` — no Brain token needed on the client. This follows the same pattern used for admin traffic (`core/internal/handler/admin.go`).
+
+**Intent Classification Pipeline** (`service/guardian.py → review_intent()`):
+
+The guardian extracts `action`, `trust_level`, and `risk_level` from the event and applies a deterministic decision tree (no LLM):
+
+1. **Trust gate:** If `trust_level == "untrusted"` → `deny`, risk `BLOCKED`. Full stop.
+2. **Blocked actions:** If `action ∈ _BLOCKED_ACTIONS` (`read_vault`, `export_data`, `access_keys`) → `deny`, risk `BLOCKED`. Even verified agents are denied.
+3. **High risk:** If `action ∈ _HIGH_ACTIONS` (`transfer_money`, `share_data`, `delete_data`, `sign_contract`) → `flag_for_review`, risk `HIGH`, `requires_approval=True`.
+4. **Moderate risk:** If `action ∈ _MODERATE_ACTIONS` (`send_email`, `draft_email`, `pay_upi`, `pay_crypto`, `web_checkout`) → `flag_for_review`, risk `MODERATE`, `requires_approval=True`.
+5. **Otherwise:** → `auto_approve`, risk `SAFE`, `approved=True`.
+
+Every decision is audited via `_audit_intent()` which writes to the KV store.
+
+The tests verify all five classification buckets, plus persona isolation (health vault data invisible from consumer context) and device revocation (revoked token → immediate 401).
+
+**Key brain components:** Guardian (`review_intent()` — deterministic action classification), `_BLOCKED_ACTIONS` / `_HIGH_ACTIONS` / `_MODERATE_ACTIONS` (frozen action sets), audit trail (KV store via core HTTP).
+
+### Story 06: The License Renewal (10 tests)
+
+**Brain capability:** The Deterministic Sandwich — LLM extraction bookended by deterministic checks.
+
+This story exercises four brain services in sequence:
+
+**1. Document Ingestion** (`/api/v1/process`, event: `document_ingest`):
+The LLM extracts fields from a license scan with per-field confidence scores. Critical fields (license_number, expiry_date) require ≥0.95 confidence. The PII scrubber runs *before* storage — the license number goes into encrypted metadata, the searchable summary says only "driving license, expires April 2026."
+
+**2. Reminder Composition** (triggered by core's deterministic scheduler):
+When core fires the 30-day reminder, brain receives a `reminder_fired` event. It queries the vault for context (address near which RTO, insurance provider, previous renewal experience) and composes a notification. The trigger is deterministic (no LLM). The content is LLM-generated. This is the sandwich: deterministic trigger → LLM reasoning → deterministic audit.
+
+**3. Delegation Generation** (`/api/v1/reason`):
+Brain generates a `DelegationRequest` JSON for an RTO bot. The schema enforces `denied_fields` (PII the bot must not see) and `permitted_fields` (safe metadata). The LLM must produce valid JSON matching the strict schema — PydanticAI rejects malformed output.
+
+**4. Guardian Enforcement** (`service/guardian.py`):
+The guardian classifies the delegation as HIGH risk (interacts with government system, involves PII). Sets `requires_approval=True`. The constraints enforce `no_storage=True`, `no_forwarding=True`, `max_ttl_seconds ≤ 3600`. The bot gets a time-limited, non-storable, non-forwardable permission slip.
+
+**Key brain components:** LLM extraction (confidence scoring), PII scrubber (pre-storage), vault enrichment (reminder context), schema-strict generation (DelegationRequest), guardian (risk classification + constraint enforcement).
 
 ---
 

@@ -226,15 +226,15 @@ class DinaClient:
     # -- Brain -------------------------------------------------------------
 
     def process_event(self, event: dict) -> dict:
-        """Send an event to the Brain for processing."""
-        if self._brain is None:
-            raise DinaClientError(
-                "Brain not configured. Set DINA_BRAIN_TOKEN."
-            )
+        """Send an event to Core's agent validation proxy.
+
+        Core authenticates via Ed25519 signature (device auth) and forwards
+        to brain's guardian internally.  No BRAIN_TOKEN needed on the client.
+        """
         resp = self._request(
-            self._brain,
+            self._core,
             "POST",
-            "/api/v1/process",
+            "/v1/agent/validate",
             json=event,
         )
         return resp.json()

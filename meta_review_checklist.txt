@@ -1,0 +1,482 @@
+Meta Review Checklist
+=====================
+
+Purpose
+-------
+Use this checklist to review the Dina codebase for structural quality risks that
+are actually relevant here. This is a triage and analysis guide, not a fix plan.
+For each category:
+
+- confirm whether the pattern exists
+- collect concrete file/line evidence
+- decide whether it is intentional, acceptable, or risky
+- only then propose fixes
+
+
+Review Order (highest signal first)
+-----------------------------------
+1. Runtime placeholder values and hardcoded identity/endpoint defaults
+2. Broad exception swallowing and silent fallback behavior
+3. Cross-service contract drift (Core <-> Brain <-> AppView)
+4. Test masking / false-green paths
+5. Large god-files / responsibility concentration
+6. Architectural complexity / simplification opportunities
+7. Policy constants and hidden business rules
+8. Config split-brain / inconsistent defaults
+9. Python dict-heavy event handling
+10. Mutable module state / singleton state
+11. TODO / STUB / placeholder implementation gaps
+
+
+1. Runtime Placeholder Values
+-----------------------------
+Question:
+- Are there hardcoded placeholders in runtime code that can leak into real behavior?
+
+Look for:
+- `localhost`
+- `dina.local`
+- fake DIDs
+- fake WebSocket URLs
+- hardcoded handles / emails
+- fallback service endpoints
+
+Why this matters:
+- In Dina, placeholder strings are more dangerous than most numeric constants.
+- They can leak into DID documents, pairing responses, or external registrations.
+
+Evidence to collect:
+- exact literal
+- file/line
+- whether it is exposed externally
+- whether it is only a fallback or always used
+
+Decide:
+- safe dev-only default
+- unsafe runtime placeholder
+- production misconfiguration risk
+
+
+2. Broad Exception Swallowing
+----------------------------
+Question:
+- Where does the code catch too broadly and continue in a degraded state?
+
+Look for:
+- `except Exception`
+- generic `if err != nil { log; continue }`
+- catch-and-return-empty patterns
+- silent retries that hide root cause
+- handlers that convert upstream failure into "not found" or "no data"
+
+Why this matters:
+- This codebase has multiple networked components and async flows.
+- A swallowed exception can make a broken system look healthy.
+
+Evidence to collect:
+- exception site
+- what failure is being hidden
+- what the user or caller sees instead
+- whether telemetry makes the failure visible
+
+Decide:
+- boundary guard
+- acceptable resilience
+- dangerous masking
+
+
+3. Cross-Service Contract Drift
+-------------------------------
+Question:
+- Do Core, Brain, and AppView agree on auth, payloads, and response shapes?
+
+Look for:
+- client methods added without updating the protocol/port interface
+- new endpoints not added to auth allowlists
+- request field mismatches
+- response schema mismatches
+- tests using admin or direct-write shortcuts instead of the real path
+
+Why this matters:
+- This is one of the main failure modes in Dina.
+- Many bugs here are "implemented in one layer, blocked or ignored in another."
+
+Evidence to collect:
+- endpoint
+- caller path
+- server path
+- auth mode expected vs actual
+- test path vs real path
+
+Decide:
+- fully wired
+- partially wired
+- test-only illusion
+
+
+4. Test Masking / False-Green Paths
+-----------------------------------
+Question:
+- Does a passing test actually prove the real runtime path works?
+
+Look for:
+- fallback data creation inside tests
+- direct DB or admin writes after the real path fails
+- tests that do not assert the critical output exists
+- tests that validate a concept but bypass enforcement
+- mock fallbacks in "real" suites
+
+Why this matters:
+- Dina has repeatedly had green tests that masked broken production paths.
+
+Evidence to collect:
+- test name
+- what it claims to prove
+- what path it actually executes
+- what failure would still allow it to pass
+
+Decide:
+- strong real-path test
+- mixed proof
+- false-green / masking test
+
+
+5. Large Files / Responsibility Concentration
+---------------------------------------------
+Question:
+- Which large files are carrying too many responsibilities?
+
+Look for:
+- files over ~500 lines
+- adapters that contain storage + validation + business logic
+- services that contain routing + orchestration + policy + formatting
+- giant startup files wiring too much by hand
+
+Why this matters:
+- Large files in Dina are where partial fixes and hidden coupling accumulate.
+
+Evidence to collect:
+- file path
+- rough responsibilities inside the file
+- signs of branching sprawl
+- repeated "fix added here but other path missed" patterns
+
+Decide:
+- acceptable concentration
+- should be split by concern
+- high regression risk file
+
+
+6. Policy Constants and Hidden Business Rules
+---------------------------------------------
+Question:
+- Which numeric constants are actual business policy, and are they intentionally fixed?
+
+Look for:
+- confidence thresholds
+- TTLs
+- retry limits
+- rate limits
+- body size caps
+- reminder offsets
+- sweep / watchdog intervals
+
+Why this matters:
+- These are not necessarily "bad magic numbers."
+- The real issue is whether policy is hidden, duplicated, or inconsistent.
+
+Evidence to collect:
+- constant value
+- file/line
+- whether it is documented
+- whether it appears in multiple places
+- whether it should be config vs code
+
+Decide:
+- correct fixed policy
+- should be centralized
+- should be configurable
+
+
+7. Architectural Complexity / Simplification Opportunities
+----------------------------------------------------------
+Question:
+- Has the architecture been made more complex than the problem requires?
+- Could the same behavior be achieved more simply, with fewer moving parts or
+  fewer cross-boundary transitions?
+
+Look for:
+- too many layers for a simple flow
+- multiple abstractions wrapping the same operation
+- async queues where a direct call would be enough
+- multiple representations of the same concept across services
+- feature flows that bounce across services unnecessarily
+- LLM use where deterministic code would be safer and simpler
+- "generic" frameworks added before a real second use case exists
+- split logic where one component could own the concern cleanly
+
+Why this matters:
+- Over-complex systems fail in more places, are harder to test, and are harder
+  to secure.
+- In Dina, complexity often appears as extra service hops, duplicated state, or
+  a mixture of deterministic and agentic logic where one would be sufficient.
+
+Evidence to collect:
+- the user-facing flow being reviewed
+- all services/modules touched by that flow
+- number of hops / transformations / representations
+- which parts are essential vs incidental
+- what a simpler design would look like
+
+Questions to ask explicitly:
+- Can one layer be removed?
+- Can two steps be merged?
+- Can a generic abstraction be replaced with a concrete one?
+- Can this be config instead of code branching?
+- Can this be deterministic instead of LLM-driven?
+- Is this separation enforcing a real boundary, or just adding indirection?
+
+Decide:
+- complexity is justified by a real boundary or future requirement
+- complexity is acceptable but should be documented
+- flow is over-engineered and should be simplified
+
+Rubric:
+- Justified complexity
+  The added layers enforce a real trust boundary, persistence boundary,
+  availability boundary, or materially reduce future migration cost.
+- Acceptable complexity
+  The design is a bit heavier than necessary, but the tradeoff is reasonable
+  and does not materially harm clarity, testing, or operability.
+- Over-engineered
+  The design adds indirection, generic abstractions, or service hops without a
+  corresponding gain in security, correctness, or flexibility.
+- Needs simplification now
+  The current complexity is already causing bugs, masking failures, making
+  tests untrustworthy, or obscuring ownership; this should be reduced before
+  adding more features.
+
+Quick scoring prompts:
+- Does this design reduce or increase the number of states that can fail?
+- Does it reduce or increase the number of boundaries that must stay aligned?
+- Is the extra abstraction paying for itself today, or only hypothetically?
+- If this were rebuilt from scratch today, would we choose this same shape?
+
+
+8. Config Split-Brain / Inconsistent Defaults
+---------------------------------------------
+Question:
+- Are the same defaults defined in multiple places with different values?
+
+Look for:
+- code defaults
+- compose defaults
+- env var fallbacks
+- per-handler fallbacks
+- duplicated port / URL / TTL defaults
+
+Why this matters:
+- This causes behavior to differ between compose, direct runs, tests, and prod.
+
+Evidence to collect:
+- config key
+- all places it is defined
+- actual values in each place
+- which one wins at runtime
+
+Decide:
+- single source of truth
+- duplicated but consistent
+- drift / confusion risk
+
+
+9. Python Dict-Heavy Event Handling
+-----------------------------------
+Question:
+- Where does Python runtime logic still depend on loose dict payloads?
+
+Look for:
+- `dict[str, Any]`
+- nested `.get(...)` chains
+- event handlers taking raw `dict`
+- JSON parsed into dict and passed through multiple layers
+- missing Pydantic models at important boundaries
+
+Why this matters:
+- Dina is not dominated by `TypedDict` problems, but Brain still has dynamic event handling.
+- This is the closest real analogue to the "dict as type system" critique.
+
+Evidence to collect:
+- flow name
+- where validation happens (or does not)
+- where key names are assumed
+- whether the same payload shape exists as a model elsewhere
+
+Decide:
+- acceptable boundary dict
+- should become a typed request model
+- high-risk unvalidated payload path
+
+
+10. Mutable Module State / Singleton State
+-----------------------------------------
+Question:
+- What state is stored process-locally and mutated globally?
+
+Look for:
+- `global` statements
+- in-memory session stores
+- module-level config singletons
+- mutable caches / registries
+- route modules with process-wide state
+
+Why this matters:
+- Process-local state can break under restarts, multiple workers, or tests.
+
+Evidence to collect:
+- state variable
+- file/line
+- lifecycle (startup, request, restart)
+- single-worker assumption?
+
+Decide:
+- acceptable local cache
+- should be explicitly documented as per-process
+- should move to a persistent/shared store
+
+
+11. TODO / STUB / Placeholder Gaps
+----------------------------------
+Question:
+- Where does runtime code still admit "not fully implemented" behavior?
+
+Look for:
+- `TODO`
+- `FIXME`
+- `HACK`
+- `STUB`
+- `placeholder`
+- comments that defer important security or correctness work
+
+Why this matters:
+- In Dina, these often mark architecture-vs-implementation gaps.
+
+Evidence to collect:
+- marker text
+- file/line
+- whether code still ships through this path
+- whether tests cover the placeholder behavior
+
+Decide:
+- harmless note
+- deferred feature
+- active production risk
+
+
+12. Security Boundary Shortcuts
+-------------------------------
+Question:
+- Do convenience paths weaken the intended security model?
+
+Look for:
+- local-only assumptions hardcoded into runtime paths
+- admin routes using wrong token class
+- fallback logic that widens permissions
+- proxy shortcuts that bypass session semantics
+- feature paths that assume trusted internal callers
+
+Why this matters:
+- Security in Dina depends on strict boundary discipline, not just crypto.
+
+Evidence to collect:
+- boundary being crossed
+- token / identity actually used
+- token / identity intended
+- whether failure is explicit or silent
+
+Decide:
+- aligned with security model
+- boundary confusion
+- security regression
+
+
+13. Duplication of Validation / Parsing Logic
+---------------------------------------------
+Question:
+- Are the same parsing, coercion, or validation rules implemented in multiple places?
+
+Look for:
+- repeated string/date parsing
+- repeated ID / DID / URL validation
+- repeated payload normalization
+- one helper in each subsystem doing the same job slightly differently
+
+Why this matters:
+- In a multi-service system, duplicated validation drifts over time.
+
+Evidence to collect:
+- duplicated rule
+- locations
+- whether behavior is identical
+- whether one path is stricter than another
+
+Decide:
+- acceptable local duplication
+- should be centralized
+- drift causing bugs
+
+
+How To Record Findings
+----------------------
+For each finding, record:
+
+- Category
+- Severity: Critical / High / Medium / Low
+- Summary: one sentence
+- Evidence: file + line
+- Why it matters
+- Is it a real runtime issue, a test-only issue, or a design smell?
+- Recommended next analysis step
+
+
+What Not To Over-Focus On
+-------------------------
+These are not currently the main pathology in this repo:
+
+- TypedDict sprawl
+- heavy `setdefault()` mutation culture
+- `__all__` facade-management complexity
+- NamedTuple / enum-philosophy chaos
+- giant re-export pyramids as primary architecture
+
+Do not force the wrong critique onto the codebase. Prioritize the real risks:
+
+- placeholder runtime values
+- swallowed failures
+- contract drift
+- test masking
+- concentrated large modules
+- unnecessary architectural complexity
+
+
+Pass Template
+-------------
+Use this structure for each review pass:
+
+1. Scope
+   Which subsystem or flow is being reviewed?
+
+2. Categories checked
+   Which checklist sections were applied?
+
+3. Findings
+   Ordered by severity, each with evidence.
+
+4. False alarms / acceptable patterns
+   Things that looked suspicious but are acceptable by design.
+
+5. Open questions
+   Things that need clarification before deciding whether they are issues.
+
+6. Next pass
+   Which category should be reviewed next?

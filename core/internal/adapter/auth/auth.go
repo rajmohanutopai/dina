@@ -1093,6 +1093,7 @@ func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string, scope ...s
 			"/v1/task/ack",
 			"/v1/contacts",
 			"/v1/notify",
+			"/v1/agent/validate",
 			"/healthz",
 			"/readyz",
 			"/ws",
