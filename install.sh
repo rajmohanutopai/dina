@@ -172,7 +172,7 @@ fi
 echo ""
 
 # ---------------------------------------------------------------------------
-# Step 4: Generate identity seed
+# Step 4: Identity setup — new or restore
 # ---------------------------------------------------------------------------
 
 echo -e "${BOLD}Step 4: Setting up identity${RESET}"
@@ -183,11 +183,95 @@ if [ -f "${ENV_FILE}" ]; then
     EXISTING_SEED=$(sed -n 's/^DINA_IDENTITY_SEED=\([a-f0-9]*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
 fi
 
+IDENTITY_NEW=true   # tracks whether we generated a new identity
+
 if [ -n "${EXISTING_SEED}" ]; then
     skip "Identity seed already set in .env"
     IDENTITY_SEED="${EXISTING_SEED}"
+    IDENTITY_NEW=false
+elif [ -t 0 ]; then
+    # Interactive terminal — ask user
+    echo ""
+    echo -e "  ${BOLD}Your identity is your cryptographic passport.${RESET}"
+    echo -e "  ${DIM}It determines your DID and all encryption keys.${RESET}"
+    echo ""
+    echo -e "    ${CYAN}1)${RESET} Create new identity          ${DIM}(first-time setup)${RESET}"
+    echo -e "    ${CYAN}2)${RESET} Restore from recovery phrase  ${DIM}(24 words from a previous install)${RESET}"
+    echo -e "    ${CYAN}3)${RESET} Restore from seed hex         ${DIM}(advanced — 64-char hex string)${RESET}"
+    echo ""
+    printf "  Enter choice [1-3]: "
+    read -r IDENTITY_CHOICE
+
+    case "${IDENTITY_CHOICE}" in
+        2)
+            # Restore from 24-word mnemonic
+            echo ""
+            echo -e "  Enter your 24-word recovery phrase (space-separated):"
+            printf "  > "
+            read -r MNEMONIC_INPUT
+
+            while true; do
+                SEED_ERR=$(python3 scripts/mnemonic_to_seed.py "${MNEMONIC_INPUT}" 2>&1)
+                if [ $? -eq 0 ]; then
+                    IDENTITY_SEED="${SEED_ERR}"
+                    IDENTITY_NEW=false
+                    ok "Identity restored from recovery phrase"
+                    break
+                else
+                    echo -e "  ${YELLOW}✗${RESET} ${SEED_ERR}"
+                    echo ""
+                    echo -e "    ${CYAN}1)${RESET} Try again"
+                    echo -e "    ${CYAN}2)${RESET} Create new identity instead"
+                    echo ""
+                    printf "  What would you like to do? [1-2]: "
+                    read -r RETRY_MNEMONIC
+                    case "${RETRY_MNEMONIC}" in
+                        1)
+                            echo ""
+                            echo -e "  Enter your 24-word recovery phrase:"
+                            printf "  > "
+                            read -r MNEMONIC_INPUT
+                            ;;
+                        *)
+                            # Fall through to generate new
+                            IDENTITY_SEED=""
+                            break
+                            ;;
+                    esac
+                fi
+            done
+            ;;
+        3)
+            # Restore from raw hex seed
+            echo ""
+            printf "  Enter your 64-character hex seed: "
+            read -r HEX_INPUT
+            HEX_INPUT=$(echo "${HEX_INPUT}" | tr -d '[:space:]')
+
+            if [ ${#HEX_INPUT} -eq 64 ] && echo "${HEX_INPUT}" | grep -qE '^[0-9a-fA-F]+$'; then
+                IDENTITY_SEED=$(echo "${HEX_INPUT}" | tr '[:upper:]' '[:lower:]')
+                IDENTITY_NEW=false
+                ok "Identity restored from hex seed"
+            else
+                warn "Invalid hex seed (expected 64 hex characters) — generating new identity"
+                IDENTITY_SEED=""
+            fi
+            ;;
+        *)
+            # Default: create new (option 1 or any other input)
+            IDENTITY_SEED=""
+            ;;
+    esac
+
+    # Generate new seed if not restored
+    if [ -z "${IDENTITY_SEED}" ]; then
+        IDENTITY_SEED=$(python3 -c "import secrets; print(secrets.token_hex(32), end='')" 2>/dev/null \
+            || openssl rand -hex 32 | tr -d '\n')
+        IDENTITY_NEW=true
+        ok "Generated new identity (256-bit seed)"
+    fi
 else
-    # Generate 32 random bytes (256 bits) → hex
+    # Non-interactive — generate new
     IDENTITY_SEED=$(python3 -c "import secrets; print(secrets.token_hex(32), end='')" 2>/dev/null \
         || openssl rand -hex 32 | tr -d '\n')
     ok "Generated identity seed (256-bit)"
@@ -504,17 +588,20 @@ echo ""
 
 echo -e "${BOLD}Step 10: Retrieving your identity${RESET}"
 
-# Derive mnemonic locally from the identity seed (no API call needed).
-# BIP-39: 256-bit hex seed → 24-word recovery phrase.
-# This avoids auth issues — the mnemonic API endpoint is admin-only,
-# but we already have the seed in memory from Step 4.
-MNEMONIC=$(python3 scripts/seed_to_mnemonic.py "${IDENTITY_SEED}" 2>/dev/null || true)
+# Only derive and show the mnemonic for new identities.
+# Restored users already have their recovery phrase.
+MNEMONIC=""
 DID=""
 
-if [ -n "${MNEMONIC}" ]; then
-    ok "Recovery phrase derived"
+if [ "${IDENTITY_NEW}" = true ]; then
+    MNEMONIC=$(python3 scripts/seed_to_mnemonic.py "${IDENTITY_SEED}" 2>/dev/null || true)
+    if [ -n "${MNEMONIC}" ]; then
+        ok "Recovery phrase derived — SAVE IT (shown below)"
+    else
+        warn "Could not derive recovery phrase"
+    fi
 else
-    warn "Could not derive recovery phrase"
+    ok "Identity restored — recovery phrase not shown (you already have it)"
 fi
 
 echo ""
@@ -552,6 +639,9 @@ if [ -n "${MNEMONIC}" ]; then
     echo ""
     echo -e "  ${RED}${BOLD}SAVE THIS! You need it to recover your Dina.${RESET}"
     echo -e "  ${RED}Write it down on paper. Do not store it digitally.${RESET}"
+    echo ""
+elif [ "${IDENTITY_NEW}" = false ]; then
+    echo -e "  ${GREEN}Identity restored successfully.${RESET}"
     echo ""
 fi
 
