@@ -274,14 +274,46 @@ if [ ! -f "${ENV_FILE}" ]; then
     # Validate API key by sending a tiny completion through the real provider.
     # Uses the same Brain adapter classes the application uses at runtime —
     # if this works here, it will work in production.
-    if [ -n "${LLM_KEY_NAME}" ] && [ -n "${LLM_KEY_VALUE}" ] && command -v python3 &>/dev/null; then
-        printf "  Validating API key (sending a test completion)... "
-        if python3 scripts/validate_key.py "${LLM_KEY_NAME}" "${LLM_KEY_VALUE}" 2>/dev/null; then
-            echo -e "${GREEN}✓${RESET} Key works"
-        else
-            echo -e "${YELLOW}✗${RESET} Could not validate"
-            echo -e "  ${DIM}Continuing anyway — you can fix the key in .env later${RESET}"
-        fi
+    if [ -n "${LLM_KEY_NAME}" ] && [ -n "${LLM_KEY_VALUE}" ] && [ -t 0 ] && command -v python3 &>/dev/null; then
+        while true; do
+            printf "  Validating API key (sending a test completion)... "
+            if python3 scripts/validate_key.py "${LLM_KEY_NAME}" "${LLM_KEY_VALUE}" 2>/dev/null; then
+                echo -e "${GREEN}✓${RESET} Key works"
+                break
+            else
+                echo -e "${YELLOW}✗${RESET} Key did not work"
+                echo ""
+                echo -e "    ${CYAN}1)${RESET} Re-enter key"
+                echo -e "    ${CYAN}2)${RESET} Continue without a key  ${DIM}(you can add it to .env later)${RESET}"
+                echo -e "    ${CYAN}3)${RESET} Exit"
+                echo ""
+                printf "  What would you like to do? [1-3]: "
+                read -r RETRY_CHOICE
+                case "${RETRY_CHOICE}" in
+                    1)
+                        printf "  Enter your API key: "
+                        read -r LLM_KEY_VALUE
+                        if [ -z "${LLM_KEY_VALUE}" ]; then
+                            info "Empty key — continuing without provider"
+                            LLM_KEY_NAME=""
+                            LLM_KEY_VALUE=""
+                            break
+                        fi
+                        ;;
+                    3)
+                        echo ""
+                        info "Exiting. Re-run ./install.sh when ready."
+                        exit 0
+                        ;;
+                    *)
+                        info "Continuing without validated key — edit .env later"
+                        LLM_KEY_NAME=""
+                        LLM_KEY_VALUE=""
+                        break
+                        ;;
+                esac
+            fi
+        done
     fi
 
     # Write .env file

@@ -20,6 +20,7 @@ services:
     volumes:
       - dina-data:/data
     environment:
+      - DINA_ENV=${DINA_ENV:-development}
       - DINA_VAULT_PATH=/data/vault
       - DINA_BRAIN_URL=http://brain:8200
       - DINA_BRAIN_TOKEN_FILE=/run/secrets/brain_token
@@ -109,12 +110,11 @@ services:
       - PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX=${DINA_PDS_ROTATION_KEY_HEX:-}
       - PDS_JWT_SECRET=${DINA_PDS_JWT_SECRET:-}
       - PDS_ADMIN_PASSWORD=${DINA_PDS_ADMIN_PASSWORD:-}
-      - PDS_DEV_MODE=${DINA_PDS_DEV_MODE:-false}
+      - PDS_DEV_MODE=${DINA_PDS_DEV_MODE:-true}
       - PDS_INVITE_REQUIRED=${DINA_PDS_INVITE_REQUIRED:-true}
     healthcheck:
-      # Use curl (available in PDS image) instead of wget.
-      # Print response on failure so `docker inspect` shows why.
-      test: ["CMD-SHELL", "curl -sf http://localhost:3000/xrpc/_health || (echo 'PDS healthcheck failed' && exit 1)"]
+      # PDS image has wget (not curl). On failure, fetch body for diagnostics.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/xrpc/_health || (echo 'PDS healthcheck failed' && exit 1)"]
       interval: 10s
       timeout: 5s
       retries: 8
