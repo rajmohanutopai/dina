@@ -610,9 +610,16 @@ echo ""
 # Final banner
 # ---------------------------------------------------------------------------
 
-echo -e "${BOLD}╔══════════════════════════════════════════════════════════════╗${RESET}"
-echo -e "${BOLD}║                  Your Dina Home Node is Live!               ║${RESET}"
-echo -e "${BOLD}╚══════════════════════════════════════════════════════════════╝${RESET}"
+BANNER_MSG="Your Dina Home Node is Live!"
+BANNER_W=$(( ${#BANNER_MSG} + 4 ))  # 2 space padding each side
+[ ${BANNER_W} -lt 40 ] && BANNER_W=40
+BANNER_BORDER=$(printf '═%.0s' $(seq 1 ${BANNER_W}))
+BANNER_PAD=$(( (BANNER_W - ${#BANNER_MSG}) / 2 ))
+BANNER_LEFT=$(printf '%*s' ${BANNER_PAD} '')
+BANNER_RIGHT=$(printf '%*s' $(( BANNER_W - BANNER_PAD - ${#BANNER_MSG} )) '')
+echo -e "${BOLD}╔${BANNER_BORDER}╗${RESET}"
+echo -e "${BOLD}║${BANNER_LEFT}${BANNER_MSG}${BANNER_RIGHT}║${RESET}"
+echo -e "${BOLD}╚${BANNER_BORDER}╝${RESET}"
 echo ""
 
 if [ -n "${DID}" ]; then
@@ -623,19 +630,35 @@ fi
 
 if [ -n "${MNEMONIC}" ]; then
     echo -e "  ${BOLD}Your Recovery Phrase:${RESET}"
-    echo -e "  ${YELLOW}╔══════════════════════════════════════════════════════════╗${RESET}"
-    # Print 4 words per line for readability
+    # Build lines first, then compute box width from the widest line.
+    MNEMONIC_LINES=()
     WORD_NUM=1
     LINE=""
     for word in ${MNEMONIC}; do
         LINE="${LINE}$(printf '%2d. %-12s' ${WORD_NUM} "${word}")"
         if [ $((WORD_NUM % 4)) -eq 0 ]; then
-            echo -e "  ${YELLOW}║${RESET}  ${LINE}${YELLOW}║${RESET}"
+            MNEMONIC_LINES+=("${LINE}")
             LINE=""
         fi
         WORD_NUM=$((WORD_NUM + 1))
     done
-    echo -e "  ${YELLOW}╚══════════════════════════════════════════════════════════╝${RESET}"
+    # Handle any remaining words (if word count not multiple of 4)
+    [ -n "${LINE}" ] && MNEMONIC_LINES+=("${LINE}")
+
+    # Find widest line
+    BOX_W=0
+    for ml in "${MNEMONIC_LINES[@]}"; do
+        [ ${#ml} -gt ${BOX_W} ] && BOX_W=${#ml}
+    done
+    BOX_W=$((BOX_W + 2))  # 1 space padding each side
+
+    # Draw box
+    BORDER=$(printf '═%.0s' $(seq 1 ${BOX_W}))
+    echo -e "  ${YELLOW}╔${BORDER}╗${RESET}"
+    for ml in "${MNEMONIC_LINES[@]}"; do
+        printf "  ${YELLOW}║${RESET} %-$((BOX_W - 2))s ${YELLOW}║${RESET}\n" "${ml}"
+    done
+    echo -e "  ${YELLOW}╚${BORDER}╝${RESET}"
     echo ""
     echo -e "  ${RED}${BOLD}SAVE THIS! You need it to recover your Dina.${RESET}"
     echo -e "  ${RED}Write it down on paper. Do not store it digitally.${RESET}"
