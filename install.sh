@@ -277,11 +277,15 @@ if [ ! -f "${ENV_FILE}" ]; then
     if [ -n "${LLM_KEY_NAME}" ] && [ -n "${LLM_KEY_VALUE}" ] && [ -t 0 ] && command -v python3 &>/dev/null; then
         while true; do
             printf "  Validating API key (sending a test completion)... "
-            if python3 scripts/validate_key.py "${LLM_KEY_NAME}" "${LLM_KEY_VALUE}" 2>/dev/null; then
+            VALIDATE_ERR=$(python3 scripts/validate_key.py "${LLM_KEY_NAME}" "${LLM_KEY_VALUE}" 2>&1)
+            if [ $? -eq 0 ]; then
                 echo -e "${GREEN}✓${RESET} Key works"
                 break
             else
                 echo -e "${YELLOW}✗${RESET} Key did not work"
+                if [ -n "${VALIDATE_ERR}" ]; then
+                    echo -e "  ${DIM}${VALIDATE_ERR}${RESET}"
+                fi
                 echo ""
                 echo -e "    ${CYAN}1)${RESET} Re-enter key"
                 echo -e "    ${CYAN}2)${RESET} Continue without a key  ${DIM}(you can add it to .env later)${RESET}"
