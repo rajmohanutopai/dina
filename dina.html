@@ -883,7 +883,7 @@ const SCENARIOS = [
     "AppView XRPC returns full trust profiles. Core's /v1/trust/resolve passes through without filtering — the raw data flows to Brain",
     "Brain sends both profiles to LLM with the same question. For Elena: 'Authentic. Strong track record.' For BotFarm: 'Unverified. No identity history'",
     "Side-by-side comparison: same breaking news video, two creators. LLM explains WHY identity matters more than forensic analysis",
-    "YouTube has no cryptographic identities. Perplexity has no trust history. Twitter checkmarks are pay-to-play. Dina proves identity first, runs forensics second"
+    "The key insight: persistent cryptographic identity + accumulated trust history enables verification that no single platform provides today. Identity first, forensics second"
   ]},
   { title: "Story 04: The Persona Wall", icon: "&#128737;", desc: "Cross-persona disclosure control — health data stays locked", tested: true, tests: "11 tests", steps: [
     "A shopping agent asks Dina about health conditions for ergonomic chair selection. Health persona is 'restricted' tier — automatic disclosure blocked",
@@ -893,7 +893,7 @@ const SCENARIOS = [
     "Verification: L4-L5, herniation, Dr. Wilson, Cedar Medical, Ibuprofen — none appear in safe_to_share. But useful terms (back, pain, lumbar, ergonomic) are present",
     "User reviews and approves the minimal text. shared_text must exactly match approved_text — no silent expansion",
     "Final PII scrubber check: the full response JSON is scanned — no medical patterns found anywhere, even in metadata. medical_patterns_found = [], clean = True",
-    "This is what OpenClaw cannot do. OpenClaw has full access to everything. Dina's persona isolation ensures a shopping agent NEVER sees raw health records"
+    "Persona isolation means the shopping agent sees only what you approved — raw health records stay in their encrypted compartment"
   ]},
   { title: "Story 05: The Agent Gateway", icon: "&#128274;", desc: "External agent pairing, intent validation, and revocation", tested: true, tests: "10 tests", steps: [
     "External agent (OpenClaw, Claude, a custom bot) pairs with Home Node: POST /v1/pair/initiate → 6-digit code → POST /v1/pair/complete → Ed25519 keypair + device token",
