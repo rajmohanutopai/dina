@@ -112,11 +112,13 @@ services:
       - PDS_DEV_MODE=${DINA_PDS_DEV_MODE:-false}
       - PDS_INVITE_REQUIRED=${DINA_PDS_INVITE_REQUIRED:-true}
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/xrpc/_health"]
+      # Use curl (available in PDS image) instead of wget.
+      # Print response on failure so `docker inspect` shows why.
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/xrpc/_health || (echo 'PDS healthcheck failed' && exit 1)"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 15s
+      retries: 8
+      start_period: 30s
     restart: unless-stopped
 
   llm:

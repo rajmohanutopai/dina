@@ -271,6 +271,19 @@ if [ ! -f "${ENV_FILE}" ]; then
             ;;
     esac
 
+    # Validate API key by sending a tiny completion through the real provider.
+    # Uses the same Brain adapter classes the application uses at runtime —
+    # if this works here, it will work in production.
+    if [ -n "${LLM_KEY_NAME}" ] && [ -n "${LLM_KEY_VALUE}" ] && command -v python3 &>/dev/null; then
+        printf "  Validating API key (sending a test completion)... "
+        if python3 scripts/validate_key.py "${LLM_KEY_NAME}" "${LLM_KEY_VALUE}" 2>/dev/null; then
+            echo -e "${GREEN}✓${RESET} Key works"
+        else
+            echo -e "${YELLOW}✗${RESET} Could not validate"
+            echo -e "  ${DIM}Continuing anyway — you can fix the key in .env later${RESET}"
+        fi
+    fi
+
     # Write .env file
     cat > "${ENV_FILE}" << ENVEOF
 # Dina Home Node Configuration
@@ -423,9 +436,26 @@ done
 
 if [ $ELAPSED -ge $HEALTH_TIMEOUT ]; then
     warn "Health check timed out after ${HEALTH_TIMEOUT}s"
-    echo -e "       Check logs: ${CYAN}${COMPOSE} logs${RESET}"
     echo ""
-    echo -e "${BOLD}Partial setup complete.${RESET} Containers are running but may still be starting."
+    echo -e "  ${BOLD}Container status:${RESET}"
+    $COMPOSE ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null | while IFS= read -r line; do
+        echo "    $line"
+    done
+    echo ""
+    # Show logs for any unhealthy container
+    for svc in pds core brain; do
+        HEALTH=$($COMPOSE ps "$svc" --format "{{.Health}}" 2>/dev/null || true)
+        if [ "$HEALTH" != "healthy" ] && [ -n "$HEALTH" ]; then
+            echo -e "  ${YELLOW}${svc}${RESET} is ${HEALTH} — last 15 log lines:"
+            $COMPOSE logs --tail=15 "$svc" 2>/dev/null | while IFS= read -r line; do
+                echo "    ${line}"
+            done
+            echo ""
+        fi
+    done
+    echo -e "  Full logs: ${CYAN}${COMPOSE} logs${RESET}"
+    echo ""
+    echo -e "${BOLD}Partial setup complete.${RESET} Containers may still be starting."
     echo -e "Re-run ${CYAN}./install.sh --skip-build${RESET} once services are ready."
     exit 1
 fi
