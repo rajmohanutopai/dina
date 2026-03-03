@@ -1,11 +1,11 @@
 // Package onboarding implements the managed onboarding flow for dina-core.
+// BIP-39 mnemonic generation is handled client-side (Python CLI / install.sh).
+// Core receives only the wrapped seed blob — never the raw seed or mnemonic.
 package onboarding
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
-	"strings"
 	"sync"
 
 	"github.com/rajmohanutopai/dina/core/internal/domain"
@@ -20,14 +20,13 @@ type OnboardingStep = domain.OnboardingStep
 
 // OnboardingSequence implements port.OnboardingSequence — managed onboarding flow.
 type OnboardingSequence struct {
-	mu            sync.Mutex
-	started       bool
-	mnemonic      string
-	rootDID       string
-	personas      []string
-	sharingRules  map[string]interface{}
-	securityMode  string
-	steps         []OnboardingStep
+	mu             sync.Mutex
+	started        bool
+	rootDID        string
+	personas       []string
+	sharingRules   map[string]interface{}
+	securityMode   string
+	steps          []OnboardingStep
 	backupDeferred bool
 }
 
@@ -36,26 +35,8 @@ func NewOnboardingSequence() *OnboardingSequence {
 	return &OnboardingSequence{}
 }
 
-// BIP-39 wordlist (first 24 words needed for deterministic test vector plus common words).
-var bip39Words = []string{
-	"abandon", "ability", "able", "about", "above", "absent", "absorb", "abstract",
-	"absurd", "abuse", "access", "accident", "account", "accuse", "achieve", "acid",
-	"acoustic", "acquire", "across", "act", "action", "actor", "actress", "actual",
-}
-
-// generateMnemonic creates a 24-word mnemonic from random entropy.
-func generateMnemonic() string {
-	b := make([]byte, 72) // enough random bytes
-	_, _ = rand.Read(b)
-	words := make([]string, 24)
-	for i := 0; i < 24; i++ {
-		idx := int(b[i*3]) % len(bip39Words)
-		words[i] = bip39Words[idx]
-	}
-	return strings.Join(words, " ")
-}
-
 // StartOnboarding initiates the managed onboarding with email and passphrase.
+// Mnemonic generation is handled client-side (Python); Core returns empty string.
 func (o *OnboardingSequence) StartOnboarding(_ context.Context, email, passphrase string) (mnemonic string, err error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -64,9 +45,7 @@ func (o *OnboardingSequence) StartOnboarding(_ context.Context, email, passphras
 		return "", errors.New("email and passphrase are required")
 	}
 
-	// Step 1: Generate BIP-39 mnemonic.
-	o.mnemonic = generateMnemonic()
-
+	// Step 1: Mnemonic handled client-side (Python CLI / install.sh).
 	// Step 2: Root keypair derivation (SLIP-0010 m/9999'/0').
 	o.rootDID = "did:plc:onboarded-root-" + email
 
@@ -90,7 +69,7 @@ func (o *OnboardingSequence) StartOnboarding(_ context.Context, email, passphras
 	o.backupDeferred = true
 
 	o.steps = []OnboardingStep{
-		{Name: "mnemonic_generation", Completed: true, Data: nil},
+		{Name: "seed_received", Completed: true, Data: nil},
 		{Name: "root_keypair", Completed: true, Data: nil},
 		{Name: "did_registration", Completed: true, Data: nil},
 		{Name: "dek_derivation", Completed: true, Data: nil},
@@ -102,17 +81,7 @@ func (o *OnboardingSequence) StartOnboarding(_ context.Context, email, passphras
 	}
 
 	o.started = true
-	return o.mnemonic, nil
-}
-
-// GetMnemonic returns the BIP-39 mnemonic generated during onboarding.
-func (o *OnboardingSequence) GetMnemonic() (string, error) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if !o.started {
-		return "", errors.New("onboarding not started")
-	}
-	return o.mnemonic, nil
+	return "", nil
 }
 
 // GetRootDID returns the root DID created during onboarding.

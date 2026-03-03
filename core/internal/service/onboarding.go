@@ -10,9 +10,10 @@ import (
 
 // OnboardingService orchestrates the first-run setup wizard.
 // It coordinates identity bootstrap, vault creation, and initial persona setup.
-// This is the entry point for the entire onboarding flow:
+// BIP-39 mnemonic generation is handled client-side (Python CLI / install.sh).
+// Core receives the pre-existing seed and passphrase:
 //
-//	email + passphrase -> mnemonic -> DID -> DEKs -> databases -> ready
+//	seed + passphrase -> DID -> DEKs -> databases -> ready
 type OnboardingService struct {
 	identity *IdentityService
 	vault    port.VaultManager
@@ -34,9 +35,6 @@ func NewOnboardingService(
 
 // OnboardingResult holds the outputs of the first-run setup.
 type OnboardingResult struct {
-	// Mnemonic is the BIP-39 recovery phrase. Shown once, never stored.
-	Mnemonic string
-
 	// RootDID is the user's root decentralized identifier.
 	RootDID domain.DID
 
@@ -51,19 +49,23 @@ type OnboardingResult struct {
 }
 
 // RunOnboarding performs the complete first-run setup:
-//  1. Validate inputs (email, passphrase).
-//  2. Bootstrap identity (mnemonic, DID, persona DEKs) via IdentityService.
+//  1. Validate inputs (email, seed, passphrase).
+//  2. Bootstrap identity (DID, persona DEKs) via IdentityService.
 //  3. Verify the default vault is open and operational.
-//  4. Return the mnemonic for one-time backup display.
 //
+// The seed must be generated and shown as mnemonic client-side (Python CLI
+// or install.sh) before calling this method. Core never generates mnemonics.
 // The email is used for contact bootstrapping and recovery association.
 // The passphrase protects the master seed via Argon2id-derived KEK.
-func (s *OnboardingService) RunOnboarding(ctx context.Context, email, passphrase string) (*OnboardingResult, error) {
+func (s *OnboardingService) RunOnboarding(ctx context.Context, email string, seed []byte, passphrase string) (*OnboardingResult, error) {
 	var steps []domain.OnboardingStep
 
 	// Step 1: Validate inputs.
 	if email == "" {
 		return nil, fmt.Errorf("onboarding: %w: email must not be empty", domain.ErrInvalidInput)
+	}
+	if len(seed) != 32 {
+		return nil, fmt.Errorf("onboarding: %w: seed must be 32 bytes", domain.ErrInvalidInput)
 	}
 	if passphrase == "" {
 		return nil, fmt.Errorf("onboarding: %w: passphrase must not be empty", domain.ErrInvalidInput)
@@ -76,7 +78,7 @@ func (s *OnboardingService) RunOnboarding(ctx context.Context, email, passphrase
 	})
 
 	// Step 2: Bootstrap identity.
-	setupResult, err := s.identity.Setup(ctx, passphrase)
+	setupResult, err := s.identity.Setup(ctx, seed, passphrase)
 	if err != nil {
 		return nil, fmt.Errorf("onboarding: identity setup failed: %w", err)
 	}
@@ -110,7 +112,6 @@ func (s *OnboardingService) RunOnboarding(ctx context.Context, email, passphrase
 	})
 
 	return &OnboardingResult{
-		Mnemonic:    setupResult.Mnemonic,
 		RootDID:     setupResult.RootDID,
 		WrappedSeed: setupResult.WrappedSeed,
 		Personas:    setupResult.Personas,

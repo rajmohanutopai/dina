@@ -8,11 +8,11 @@ import (
 	"github.com/rajmohanutopai/dina/core/internal/port"
 )
 
-// IdentityService orchestrates the full identity lifecycle:
-// mnemonic generation, HD key derivation, DID creation, persona management,
-// and vault unlocking. It composes port interfaces without depending on adapters.
+// IdentityService orchestrates the identity lifecycle:
+// HD key derivation, DID creation, persona management, and vault unlocking.
+// BIP-39 mnemonic generation is handled client-side (Python CLI / install.sh).
+// Core receives only the wrapped seed blob — never the raw seed or mnemonic.
 type IdentityService struct {
-	mnemonic port.MnemonicGenerator
 	hd       port.HDKeyDeriver
 	deriver  port.KeyDeriver
 	did      port.DIDManager
@@ -25,7 +25,6 @@ type IdentityService struct {
 
 // NewIdentityService constructs an IdentityService with the given port dependencies.
 func NewIdentityService(
-	mnemonic port.MnemonicGenerator,
 	hd port.HDKeyDeriver,
 	deriver port.KeyDeriver,
 	did port.DIDManager,
@@ -36,7 +35,6 @@ func NewIdentityService(
 	clock port.Clock,
 ) *IdentityService {
 	return &IdentityService{
-		mnemonic: mnemonic,
 		hd:       hd,
 		deriver:  deriver,
 		did:      did,
@@ -50,34 +48,28 @@ func NewIdentityService(
 
 // SetupResult holds the outputs of the identity setup workflow.
 type SetupResult struct {
-	Mnemonic    string
 	RootDID     domain.DID
 	WrappedSeed []byte
 	Personas    []string
 }
 
-// Setup performs the complete first-run identity bootstrap:
-//  1. Generate a BIP-39 mnemonic and derive the master seed.
-//  2. Derive a KEK from the passphrase and wrap the master seed.
-//  3. Derive the root signing key via SLIP-0010 and create the root DID.
-//  4. Create the default persona ("personal") and derive its DEK.
-//  5. Open the persona vault with the derived DEK.
+// Setup performs identity bootstrap from a pre-existing seed:
+//  1. Derive a KEK from the passphrase and wrap the master seed.
+//  2. Derive the root signing key via SLIP-0010 and create the root DID.
+//  3. Create the default persona ("personal") and derive its DEK.
+//  4. Open the persona vault with the derived DEK.
 //
-// The mnemonic is returned to the caller exactly once for backup.
-// The wrapped seed is persisted; the raw seed is never stored.
-func (s *IdentityService) Setup(ctx context.Context, passphrase string) (*SetupResult, error) {
+// The seed must be generated and shown as mnemonic client-side (Python CLI
+// or install.sh) before calling this method. Core never generates mnemonics.
+func (s *IdentityService) Setup(ctx context.Context, seed []byte, passphrase string) (*SetupResult, error) {
 	if passphrase == "" {
 		return nil, fmt.Errorf("identity setup: %w: passphrase must not be empty", domain.ErrInvalidInput)
 	}
-
-	// Step 1: Generate mnemonic and seed.
-	mnemonic, seed, err := s.mnemonic.Generate()
-	if err != nil {
-		return nil, fmt.Errorf("identity setup: mnemonic generation failed: %w", err)
+	if len(seed) != 32 {
+		return nil, fmt.Errorf("identity setup: %w: seed must be 32 bytes", domain.ErrInvalidInput)
 	}
 
-	// Step 2: Derive KEK from passphrase and wrap the seed.
-	// Use first 16 bytes of seed as salt for KEK derivation.
+	// Step 1: Derive KEK from passphrase and wrap the seed.
 	salt := seed[:16]
 	kekBytes, err := s.kek.DeriveKEK(passphrase, salt)
 	if err != nil {
@@ -89,8 +81,7 @@ func (s *IdentityService) Setup(ctx context.Context, passphrase string) (*SetupR
 		return nil, fmt.Errorf("identity setup: seed wrapping failed: %w", err)
 	}
 
-	// Step 3: Derive root signing key and create root DID.
-	// SLIP-0010 path for Dina root key: m/44'/60'/0'/0'/0'
+	// Step 2: Derive root signing key and create root DID.
 	rootPub, _, err := s.hd.DerivePath(seed, "m/44'/60'/0'/0'/0'")
 	if err != nil {
 		return nil, fmt.Errorf("identity setup: root key derivation failed: %w", err)
@@ -101,14 +92,14 @@ func (s *IdentityService) Setup(ctx context.Context, passphrase string) (*SetupR
 		return nil, fmt.Errorf("identity setup: DID creation failed: %w", err)
 	}
 
-	// Step 4: Create the default "personal" persona.
+	// Step 3: Create the default "personal" persona.
 	const defaultPersona = "personal"
 	_, err = s.personas.Create(ctx, defaultPersona, string(domain.TierOpen))
 	if err != nil {
 		return nil, fmt.Errorf("identity setup: persona creation failed: %w", err)
 	}
 
-	// Step 5: Derive persona DEK and open the vault.
+	// Step 4: Derive persona DEK and open the vault.
 	personaName, err := domain.NewPersonaName(defaultPersona)
 	if err != nil {
 		return nil, fmt.Errorf("identity setup: %w", err)
@@ -124,7 +115,6 @@ func (s *IdentityService) Setup(ctx context.Context, passphrase string) (*SetupR
 	}
 
 	return &SetupResult{
-		Mnemonic:    mnemonic,
 		RootDID:     rootDID,
 		WrappedSeed: wrappedSeed,
 		Personas:    []string{defaultPersona},

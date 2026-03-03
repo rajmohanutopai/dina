@@ -644,12 +644,11 @@ type APIContract interface {
 type OnboardingStep = domain.OnboardingStep
 
 // OnboardingSequence — contract for managed onboarding flow (§19).
+// BIP-39 mnemonic generation is handled client-side (Python CLI / install.sh).
 type OnboardingSequence interface {
 	// StartOnboarding initiates the managed onboarding with email and passphrase.
-	// Returns the generated mnemonic (for backup) and any error.
+	// Mnemonic generation is client-side; Core returns empty string for mnemonic.
 	StartOnboarding(ctx context.Context, email, passphrase string) (mnemonic string, err error)
-	// GetMnemonic returns the BIP-39 mnemonic generated during onboarding.
-	GetMnemonic() (string, error)
 	// GetRootDID returns the root DID created during onboarding.
 	GetRootDID() (string, error)
 	// GetPersonas returns the list of personas created during onboarding.

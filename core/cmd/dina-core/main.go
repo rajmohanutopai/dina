@@ -93,8 +93,7 @@ func main() {
 	// 1. Clock
 	clk := clock.NewRealClock()
 
-	// 2. Crypto primitives
-	bip39 := crypto.NewBIP39Generator()
+	// 2. Crypto primitives (BIP-39 mnemonic handled client-side in Python)
 	slip0010 := crypto.NewSLIP0010Deriver()
 	hkdfDeriver := crypto.NewHKDFKeyDeriver()
 	argon2Deriver := crypto.NewArgon2Deriver()
@@ -539,7 +538,7 @@ func main() {
 	// ---------- Construct services ----------
 
 	identitySvc := service.NewIdentityService(
-		bip39, slip0010, keyDeriver, didMgr, personaMgr,
+		slip0010, keyDeriver, didMgr, personaMgr,
 		keyWrapper, argon2Deriver, vaultMgr, clk,
 	)
 
@@ -755,7 +754,7 @@ func main() {
 	healthH := &handler.HealthHandler{Health: healthChecker}
 	adminH := &handler.AdminHandler{ProxyURL: cfg.BrainURL, Token: cfg.ClientToken, InternalToken: internalToken}
 	vaultH := &handler.VaultHandler{Vault: vaultSvc, PII: scrubber}
-	identityH := &handler.IdentityHandler{Identity: identitySvc, DID: didMgr, Signer: identitySigner, Mnemonic: bip39, IdentitySeed: bootstrapSeed}
+	identityH := &handler.IdentityHandler{Identity: identitySvc, DID: didMgr, Signer: identitySigner}
 	messageH := &handler.MessageHandler{Transport: transportSvc, IngressRouter: ingressRouter}
 	taskH := &handler.TaskHandler{Task: taskSvc}
 	deviceH := &handler.DeviceHandler{Device: deviceSvc}
@@ -811,7 +810,7 @@ func main() {
 	mux.HandleFunc("/v1/did/sign", identityH.HandleSign)
 	mux.HandleFunc("/v1/did/verify", identityH.HandleVerify)
 	mux.HandleFunc("/v1/did/document", identityH.HandleGetDocument)
-	mux.HandleFunc("/v1/identity/mnemonic", identityH.HandleGetMnemonic)
+
 
 	// Messaging API
 	mux.HandleFunc("/v1/msg/send", messageH.HandleSend)

@@ -3,16 +3,19 @@
 Parameters must match core/internal/adapter/crypto/argon2.go + keywrap.go:
   - Argon2id: memory=128 MB, time=3, parallelism=4, keyLen=32, saltLen=16
   - AES-256-GCM: nonce(12) || ciphertext(32) || tag(16) = 60 bytes
+
+BIP-39 mnemonic handling uses the official Trezor python-mnemonic library
+(reference implementation of BIP-0039).
 """
 
 from __future__ import annotations
 
-import hashlib
 import os
 from pathlib import Path
 
 from argon2.low_level import Type, hash_secret_raw
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from mnemonic import Mnemonic
 
 # Argon2id parameters — must match Go Core.
 ARGON2_MEMORY_KIB = 128 * 1024  # 131072 KiB
@@ -21,26 +24,8 @@ ARGON2_PARALLELISM = 4
 ARGON2_KEY_LEN = 32
 ARGON2_SALT_LEN = 16
 
-# BIP-39 wordlist (lazy-loaded).
-_WORDLIST: list[str] | None = None
-
-
-def _bip39_wordlist() -> list[str]:
-    """Load the BIP-39 English wordlist from scripts/."""
-    global _WORDLIST
-    if _WORDLIST is not None:
-        return _WORDLIST
-    # Try project-relative path first, then package-relative.
-    for candidate in [
-        Path(__file__).resolve().parents[3] / "scripts" / "bip39_english.txt",
-        Path(__file__).resolve().parents[4] / "scripts" / "bip39_english.txt",
-    ]:
-        if candidate.exists():
-            words = [w.strip() for w in candidate.read_text().splitlines() if w.strip()]
-            if len(words) == 2048:
-                _WORDLIST = words
-                return _WORDLIST
-    raise FileNotFoundError("Cannot find bip39_english.txt")
+# Trezor BIP-39 reference implementation.
+_M = Mnemonic("english")
 
 
 def generate_seed() -> bytes:
@@ -52,31 +37,17 @@ def seed_to_mnemonic(seed: bytes) -> list[str]:
     """Convert 32-byte seed to 24-word BIP-39 mnemonic."""
     if len(seed) != 32:
         raise ValueError(f"seed must be 32 bytes, got {len(seed)}")
-    words = _bip39_wordlist()
-    checksum = hashlib.sha256(seed).digest()
-    bits = bin(int.from_bytes(seed, "big"))[2:].zfill(256)
-    bits += bin(checksum[0])[2:].zfill(8)
-    return [words[int(bits[i : i + 11], 2)] for i in range(0, 264, 11)]
+    return _M.to_mnemonic(seed).split()
 
 
 def mnemonic_to_seed(mnemonic: list[str]) -> bytes:
-    """Convert 24-word BIP-39 mnemonic back to 32-byte seed."""
-    words = _bip39_wordlist()
-    word_index = {w: i for i, w in enumerate(words)}
+    """Convert 24-word BIP-39 mnemonic back to 32-byte seed (entropy)."""
     if len(mnemonic) != 24:
         raise ValueError(f"expected 24 words, got {len(mnemonic)}")
-    bits = ""
-    for w in mnemonic:
-        w = w.lower().strip()
-        if w not in word_index:
-            raise ValueError(f"unknown word: {w!r}")
-        bits += bin(word_index[w])[2:].zfill(11)
-    entropy_bits, checksum_bits = bits[:256], bits[256:]
-    entropy = int(entropy_bits, 2).to_bytes(32, "big")
-    expected = bin(hashlib.sha256(entropy).digest()[0])[2:].zfill(8)
-    if checksum_bits != expected:
-        raise ValueError("invalid checksum — mnemonic may be corrupted or misspelled")
-    return entropy
+    phrase = " ".join(mnemonic)
+    if not _M.check(phrase):
+        raise ValueError("invalid mnemonic — checksum failed or unknown words")
+    return bytes(_M.to_entropy(phrase))
 
 
 def derive_kek(passphrase: str, salt: bytes) -> bytes:

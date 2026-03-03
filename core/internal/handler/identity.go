@@ -16,11 +16,9 @@ import (
 
 // IdentityHandler exposes DID, signing, and verification endpoints.
 type IdentityHandler struct {
-	Identity     *service.IdentityService
-	DID          port.DIDManager
-	Signer       port.IdentitySigner
-	Mnemonic     port.MnemonicGenerator
-	IdentitySeed []byte // raw 32-byte entropy used for identity derivation
+	Identity *service.IdentityService
+	DID      port.DIDManager
+	Signer   port.IdentitySigner
 }
 
 // HandleGetDID handles GET /v1/did. It resolves the node's own DID and returns
@@ -203,33 +201,4 @@ func (h *IdentityHandler) HandleGetDocument(w http.ResponseWriter, r *http.Reque
 	w.Write(doc)
 }
 
-// HandleGetMnemonic handles GET /v1/identity/mnemonic. It converts the node's
-// identity seed to a 24-word BIP-39 mnemonic for backup/recovery.
-func (h *IdentityHandler) HandleGetMnemonic(w http.ResponseWriter, r *http.Request) {
-	// LOW-16: Enforce GET method.
-	if r.Method != http.MethodGet {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
-		return
-	}
 
-	if h.Mnemonic == nil || len(h.IdentitySeed) == 0 {
-		http.Error(w, `{"error":"mnemonic not available"}`, http.StatusServiceUnavailable)
-		return
-	}
-
-	mnemonic, err := h.Mnemonic.EntropyToMnemonic(h.IdentitySeed)
-	if err != nil {
-		clientError(w, "mnemonic generation failed", http.StatusInternalServerError, err)
-		return
-	}
-
-	// Also include the DID for convenience.
-	pubKey := h.Signer.PublicKey()
-	did, _ := h.DID.Create(r.Context(), pubKey)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"mnemonic": mnemonic,
-		"did":      string(did),
-	})
-}

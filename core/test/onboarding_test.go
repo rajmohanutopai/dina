@@ -28,11 +28,11 @@ func TestOnboarding_19_1_ManagedOnboarding(t *testing.T) {
 	impl := realOnboardingSequence
 	testutil.RequireImplementation(t, impl, "OnboardingSequence")
 
-	// User enters email + passphrase. Full silent setup completes,
-	// Dina starts ingesting.
+	// User enters email + passphrase. BIP-39 mnemonic is generated client-side.
+	// Core returns empty mnemonic — it only receives the wrapped seed blob.
 	mnemonic, err := impl.StartOnboarding(context.Background(), "user@example.com", testutil.TestPassphrase)
 	testutil.RequireNoError(t, err)
-	testutil.RequireTrue(t, len(mnemonic) > 0, "mnemonic must be generated")
+	testutil.RequireEqual(t, mnemonic, "")
 }
 
 // --------------------------------------------------------------------------
@@ -40,26 +40,17 @@ func TestOnboarding_19_1_ManagedOnboarding(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-650
-func TestOnboarding_19_2_MnemonicGenerated(t *testing.T) {
-	// var impl testutil.OnboardingSequence = realonboarding.New(...)
+func TestOnboarding_19_2_SeedReceivedFromClient(t *testing.T) {
+	// BIP-39 mnemonic generation is now handled client-side (Python CLI / install.sh).
+	// Core receives only the wrapped seed blob — never generates mnemonics.
 	impl := realOnboardingSequence
 	testutil.RequireImplementation(t, impl, "OnboardingSequence")
 
-	_, err := impl.StartOnboarding(context.Background(), "user@example.com", testutil.TestPassphrase)
+	mnemonic, err := impl.StartOnboarding(context.Background(), "user@example.com", testutil.TestPassphrase)
 	testutil.RequireNoError(t, err)
 
-	// 24-word mnemonic, 512-bit master seed.
-	mnemonic, err := impl.GetMnemonic()
-	testutil.RequireNoError(t, err)
-
-	// Count words in mnemonic.
-	wordCount := 1
-	for i := 0; i < len(mnemonic); i++ {
-		if mnemonic[i] == ' ' {
-			wordCount++
-		}
-	}
-	testutil.RequireEqual(t, wordCount, 24)
+	// Core no longer generates mnemonics — returns empty string.
+	testutil.RequireEqual(t, mnemonic, "")
 }
 
 // --------------------------------------------------------------------------

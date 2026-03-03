@@ -175,16 +175,17 @@ else
     skip "PDS secrets already set"
 fi
 
-# Prepare crypto venv for seed wrapping (argon2-cffi + cryptography)
+# Prepare crypto venv for seed wrapping + BIP-39 mnemonic
 INSTALL_VENV="${DINA_DIR}/.install-venv"
 if [ ! -f "${INSTALL_VENV}/bin/python3" ]; then
     info "Setting up crypto tools..."
     python3 -m venv "${INSTALL_VENV}" 2>/dev/null
-    "${INSTALL_VENV}/bin/pip" install -q argon2-cffi cryptography 2>/dev/null
+    "${INSTALL_VENV}/bin/pip" install -q argon2-cffi cryptography mnemonic 2>/dev/null
     ok "Crypto tools ready"
 else
     skip "Crypto tools already installed"
 fi
+VPYTHON="${INSTALL_VENV}/bin/python3"
 
 echo ""
 
@@ -240,7 +241,7 @@ elif [ -t 0 ]; then
             read -r MNEMONIC_INPUT
 
             while true; do
-                SEED_ERR=$(python3 scripts/mnemonic_to_seed.py "${MNEMONIC_INPUT}" 2>&1)
+                SEED_ERR=$("${VPYTHON}" scripts/mnemonic_to_seed.py "${MNEMONIC_INPUT}" 2>&1)
                 if [ $? -eq 0 ]; then
                     IDENTITY_SEED="${SEED_ERR}"
                     IDENTITY_NEW=false
@@ -308,7 +309,7 @@ fi
 
 # --- Show recovery phrase (only for new identities, before wrapping) ---
 if [ -n "${IDENTITY_SEED}" ] && [ "${IDENTITY_NEW}" = true ]; then
-    MNEMONIC=$(python3 scripts/seed_to_mnemonic.py "${IDENTITY_SEED}" 2>/dev/null || true)
+    MNEMONIC=$("${VPYTHON}" scripts/seed_to_mnemonic.py "${IDENTITY_SEED}" 2>/dev/null || true)
     if [ -n "${MNEMONIC}" ]; then
         echo ""
         echo -e "  ${BOLD}Your Recovery Phrase:${RESET}"
@@ -441,7 +442,7 @@ if [ -n "${IDENTITY_SEED}" ]; then
 
     # Call wrap_seed.py
     info "Encrypting identity seed (Argon2id + AES-256-GCM)..."
-    if "${INSTALL_VENV}/bin/python3" scripts/wrap_seed.py \
+    if "${VPYTHON}" scripts/wrap_seed.py \
         "${IDENTITY_SEED}" "${SEED_PASSPHRASE}" "${SECRETS_DIR}" >/dev/null 2>&1; then
         ok "Identity seed encrypted"
     else

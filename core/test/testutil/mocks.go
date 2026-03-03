@@ -20,36 +20,6 @@ var (
 	ErrInvalidInput   = errors.New("invalid input")
 )
 
-// ---------- Mock Mnemonic Generator ----------
-
-// MockMnemonicGenerator returns deterministic test data.
-type MockMnemonicGenerator struct {
-	GenerateMnemonic        string
-	GenerateSeed            []byte
-	GenerateErr             error
-	ValidateErr             error
-	ToSeedResult            []byte
-	ToSeedErr               error
-	EntropyToMnemonicResult string
-	EntropyToMnemonicErr    error
-}
-
-func (m *MockMnemonicGenerator) Generate() (string, []byte, error) {
-	return m.GenerateMnemonic, m.GenerateSeed, m.GenerateErr
-}
-
-func (m *MockMnemonicGenerator) Validate(mnemonic string) error {
-	return m.ValidateErr
-}
-
-func (m *MockMnemonicGenerator) ToSeed(mnemonic, passphrase string) ([]byte, error) {
-	return m.ToSeedResult, m.ToSeedErr
-}
-
-func (m *MockMnemonicGenerator) EntropyToMnemonic(entropy []byte) (string, error) {
-	return m.EntropyToMnemonicResult, m.EntropyToMnemonicErr
-}
-
 // ---------- Mock Key Deriver ----------
 
 // MockKeyDeriver returns deterministic keys.

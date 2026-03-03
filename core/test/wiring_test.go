@@ -45,7 +45,6 @@ import (
 // ---------- Crypto implementations (§2) ----------
 
 var (
-	realMnemonic        port.MnemonicGenerator = dinacrypto.NewBIP39Generator()
 	realHDKey           port.HDKeyDeriver      = dinacrypto.NewSLIP0010Deriver()
 	realVaultDEKDeriver port.VaultDEKDeriver   = dinacrypto.NewHKDFKeyDeriver()
 	realKEKDeriver      port.KEKDeriver        = dinacrypto.NewArgon2Deriver()
@@ -306,7 +305,7 @@ var realSecurityAuditor testutil.SecurityAuditor = security.NewSecurityAuditor("
 
 // ---------- Onboarding implementations (§19) ----------
 
-var realOnboardingSequence testutil.OnboardingSequence = onboarding.NewOnboardingSequence() // testutil superset (has GetMnemonic, GetRootDID, etc.)
+var realOnboardingSequence testutil.OnboardingSequence = onboarding.NewOnboardingSequence() // testutil superset (has GetRootDID, GetPersonas, etc.)
 
 // ---------- Error handling implementations (§16) ----------
 

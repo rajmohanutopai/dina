@@ -4,13 +4,11 @@ package testutil
 // Values are from published specifications (BIP-39, SLIP-0010, RFC 5869)
 // or are fixed constants for repeatable testing.
 
-// ---------- BIP-39 Test Vectors (§2.1) ----------
+// ---------- BIP-39 Test Seed (used by SLIP-0010 and HKDF tests) ----------
+// BIP-39 mnemonic generation is now handled client-side (Python CLI / install.sh).
+// This seed is the standard BIP-39 test vector output, kept for SLIP-0010 derivation tests.
 
-// TestMnemonic24 is the standard BIP-39 test vector (24 words, 256-bit entropy).
-// Source: https://github.com/trezor/python-mnemonic/blob/master/vectors.json
-const TestMnemonic24 = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
-
-// TestMnemonicSeed is the expected 512-bit seed for TestMnemonic24 with empty passphrase.
+// TestMnemonicSeed is the 512-bit seed for the standard BIP-39 "abandon...art" test vector.
 // PBKDF2-HMAC-SHA512, 2048 iterations, salt = "mnemonic".
 var TestMnemonicSeed = []byte{
 	0x40, 0x8b, 0x28, 0x5c, 0x12, 0x38, 0x36, 0x00, 0x4f, 0x4b,
@@ -21,15 +19,6 @@ var TestMnemonicSeed = []byte{
 	0xda, 0x1e, 0x24, 0x3c, 0x4a, 0x0e, 0xaf, 0xb2, 0x90, 0xd3,
 	0x99, 0x48, 0x08, 0x40,
 }
-
-// TestMnemonicInvalidChecksum has a bad last word.
-const TestMnemonicInvalidChecksum = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon zoo"
-
-// TestMnemonic12Word is 12 words where 24 are expected.
-const TestMnemonic12Word = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
-
-// TestMnemonicExtraSpaces has multiple spaces between words.
-const TestMnemonicExtraSpaces = "abandon  abandon  abandon  abandon  abandon  abandon  abandon  abandon  abandon  abandon  abandon  abandon  abandon  abandon  abandon  abandon  abandon  abandon  abandon  abandon  abandon  abandon  abandon  art"
 
 // ---------- SLIP-0010 Test Vectors (§2.2) ----------
 

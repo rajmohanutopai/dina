@@ -1,13 +1,5 @@
 package port
 
-// MnemonicGenerator creates BIP-39 mnemonic phrases and derives seeds.
-type MnemonicGenerator interface {
-	Generate() (mnemonic string, seed []byte, err error)
-	Validate(mnemonic string) error
-	ToSeed(mnemonic, passphrase string) ([]byte, error)
-	EntropyToMnemonic(entropy []byte) (string, error)
-}
-
 // HDKeyDeriver derives hierarchical deterministic keys per SLIP-0010.
 type HDKeyDeriver interface {
 	DerivePath(seed []byte, path string) (pub, priv []byte, err error)
