@@ -566,7 +566,7 @@ def init_identity(ctx: click.Context, restore_mnemonic: bool, restore_hex: bool)
 
     Output files (in ~/.dina/cli/identity/):
       wrapped_seed.bin      60 bytes (nonce + ciphertext + GCM tag)
-      identity_seed.salt    16 bytes (Argon2id salt)
+      master_seed.salt    16 bytes (Argon2id salt)
 
     Use 'dina bootstrap-server' to upload these to your Home Node.
     """
@@ -687,7 +687,7 @@ def init_identity(ctx: click.Context, restore_mnemonic: bool, restore_hex: bool)
     click.echo()
     click.echo(f"  Files saved to {out_dir}/")
     click.echo(f"    wrapped_seed.bin      (60 bytes)")
-    click.echo(f"    identity_seed.salt    (16 bytes)")
+    click.echo(f"    master_seed.salt    (16 bytes)")
     click.echo()
     click.echo("  Next: upload to your Home Node with:")
     click.echo(click.style("    dina bootstrap-server --host user@mynode.example", fg="cyan"))
@@ -726,7 +726,7 @@ def bootstrap_server(ctx: click.Context, ssh_host: str | None, remote_dir: str,
 
     # Verify wrapped files exist locally
     wrapped_path = src_dir / "wrapped_seed.bin"
-    salt_path = src_dir / "identity_seed.salt"
+    salt_path = src_dir / "master_seed.salt"
     if not wrapped_path.exists() or not salt_path.exists():
         click.echo(click.style(
             "Error: No wrapped seed found. Run 'dina init-identity' first.",
@@ -741,13 +741,13 @@ def bootstrap_server(ctx: click.Context, ssh_host: str | None, remote_dir: str,
         ctx.exit(1)
         return
     if salt_path.stat().st_size != 16:
-        click.echo(click.style("Error: identity_seed.salt is not 16 bytes — file may be corrupted", fg="red"), err=True)
+        click.echo(click.style("Error: master_seed.salt is not 16 bytes — file may be corrupted", fg="red"), err=True)
         ctx.exit(1)
         return
 
     click.echo(f"  Source: {src_dir}/")
     click.echo(f"    wrapped_seed.bin   ({wrapped_path.stat().st_size} bytes)")
-    click.echo(f"    identity_seed.salt ({salt_path.stat().st_size} bytes)")
+    click.echo(f"    master_seed.salt ({salt_path.stat().st_size} bytes)")
     click.echo()
 
     if local_dir:
@@ -755,7 +755,7 @@ def bootstrap_server(ctx: click.Context, ssh_host: str | None, remote_dir: str,
         dest = Path(local_dir)
         dest.mkdir(parents=True, exist_ok=True)
         shutil.copy2(str(wrapped_path), str(dest / "wrapped_seed.bin"))
-        shutil.copy2(str(salt_path), str(dest / "identity_seed.salt"))
+        shutil.copy2(str(salt_path), str(dest / "master_seed.salt"))
         click.echo(click.style(f"  [ok] Copied to {dest}/", fg="green"))
 
     elif ssh_host:
@@ -784,7 +784,7 @@ def bootstrap_server(ctx: click.Context, ssh_host: str | None, remote_dir: str,
 
         # Set permissions on remote
         chmod_cmd = ["ssh", ssh_host,
-                     f"chmod 600 {remote_dir}/wrapped_seed.bin {remote_dir}/identity_seed.salt"]
+                     f"chmod 600 {remote_dir}/wrapped_seed.bin {remote_dir}/master_seed.salt"]
         subprocess.run(chmod_cmd, capture_output=True)
 
         click.echo(click.style("  [ok] Uploaded to server", fg="green"))

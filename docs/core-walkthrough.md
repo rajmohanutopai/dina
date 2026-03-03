@@ -1,5 +1,10 @@
 # The Dina Core: A Walk Through the Fortress
 
+
+
+
+
+
 ## Act I: Waking Up — The Composition Root
 
 Core orchestrates every actor in the system.
@@ -36,8 +41,8 @@ Many systems try to "keep running" with partial configuration — disable featur
 
 Before Core ever runs, `install.sh` handles seed generation and mnemonic display. This happens *outside* Docker, on the host machine:
 
-1. **Step 4** generates a random 256-bit hex string (`IDENTITY_SEED`) using Python's `secrets.token_hex(32)`.
-2. **Step 5** writes it to `.env` as `DINA_IDENTITY_SEED=<hex>`. Docker Compose passes this to the Core container.
+1. **Step 4** generates a random 256-bit hex string (`MASTER_SEED`) using Python's `secrets.token_hex(32)`.
+2. **Step 5** writes it to `.env` as `DINA_MASTER_SEED=<hex>`. Docker Compose passes this to the Core container.
 3. **Step 10** derives the 24-word BIP-39 mnemonic locally (`scripts/seed_to_mnemonic.py`) — pure Python stdlib, no API call, no auth needed. The script converts 256-bit entropy → SHA-256 checksum → 11-bit chunks → English wordlist lookup. The result is displayed in a yellow box for the user to write down on paper.
 
 The hex seed and the 24 words are the **same thing** in two formats. If the user loses their machine, they enter the 24 words on a new install → the words convert back to the same hex seed → Core derives the same Ed25519 keypair → the same DID is restored. There is no "password reset" because there is no server.
@@ -52,7 +57,7 @@ The hex seed and the 24 words are the **same thing** in two formats. If the user
 | **Brain Token** | `install.sh` Step 3 — `secrets.token_urlsafe(32)` | Shared password between Core and Brain containers (Docker secret) | Attacker can call Core's API as Brain — but cannot derive DID or decrypt vaults |
 | **Client Token** | Core generates during `dina pair` — `crypto/rand.Read()` | Per-device auth for external clients (CLI, phone) | Revoke that one device — other devices and identity unaffected |
 
-The brain token and client token are **not derived from the seed**. They are independent random values. The seed never leaves Core's memory. Brain never sees it (`docker-compose.yml` passes `DINA_IDENTITY_SEED` only to Core, not to Brain). CLI never sees it (CLI only receives a client token during pairing).
+The brain token and client token are **not derived from the seed**. They are independent random values. The seed never leaves Core's memory. Brain never sees it (`docker-compose.yml` passes `DINA_MASTER_SEED` only to Core, not to Brain). CLI never sees it (CLI only receives a client token during pairing).
 
 ```
                     Has seed?    Has brain_token?    Has client_token?
@@ -88,13 +93,13 @@ Recover the seed → all keys regenerate identically → same DID, same vault de
 
 Now the most delicate operation: **identity seed management** (lines 105-219). Dina's entire cryptographic identity derives from a single 32-byte seed. The code walks a priority chain:
 
-1. **`DINA_IDENTITY_SEED` env var** — Direct injection (for CI/containers). If set, the hex is decoded and used immediately.
+1. **`DINA_MASTER_SEED` env var** — Direct injection (for CI/containers). If set, the hex is decoded and used immediately.
 
-2. **AES-GCM wrapped file** (`identity_seed.wrapped`) — If `DINA_SEED_PASSWORD` is set, derive a KEK from it via SHA-256, then try to unwrap the `.wrapped` file. If the password is wrong, the process dies — it won't silently regenerate your identity.
+2. **AES-GCM wrapped file** (`master_seed.wrapped`) — If `DINA_SEED_PASSWORD` is set, derive a KEK from it via SHA-256, then try to unwrap the `.wrapped` file. If the password is wrong, the process dies — it won't silently regenerate your identity.
 
 3. **Auto-migration** — If a plaintext `.hex` file exists alongside a seed password, the code reads it, wraps it with AES-GCM, writes the `.wrapped` version, and logs the migration. The old plaintext file remains (the user decides when to delete it).
 
-4. **Plaintext fallback** (`identity_seed.hex`) — If no password is set, loads from plaintext with a loud warning.
+4. **Plaintext fallback** (`master_seed.hex`) — If no password is set, loads from plaintext with a loud warning.
 
 5. **Generate fresh** — If nothing exists at all, generates 32 random bytes, optionally wraps them, and persists.
 
@@ -110,7 +115,7 @@ Every cryptographic key in Dina — the root signing key, each persona's vault D
 <summary><strong>Design Decision — Why AES-GCM wrapping instead of full-disk encryption?</strong></summary>
 <br>
 
-The seed could be protected by OS-level disk encryption (FileVault, LUKS) or a hardware enclave. AES-GCM wrapping was chosen as an *additional* layer because: (1) Dina runs on user hardware where disk encryption may or may not be enabled — we can't assume it, (2) the wrapping is **application-level** — even if the OS is compromised or the disk image is copied, the seed is still encrypted with the user's password, (3) it enables **auto-migration** — old plaintext seeds are transparently upgraded to wrapped format on next startup, and (4) the wrapped file is portable — you can move `identity_seed.wrapped` to a new machine and decrypt it with the same password. AES-256-GCM was chosen specifically because it provides both confidentiality and authenticity (if the ciphertext is tampered with, decryption fails) and is the NIST standard for symmetric authenticated encryption.
+The seed could be protected by OS-level disk encryption (FileVault, LUKS) or a hardware enclave. AES-GCM wrapping was chosen as an *additional* layer because: (1) Dina runs on user hardware where disk encryption may or may not be enabled — we can't assume it, (2) the wrapping is **application-level** — even if the OS is compromised or the disk image is copied, the seed is still encrypted with the user's password, (3) it enables **auto-migration** — old plaintext seeds are transparently upgraded to wrapped format on next startup, and (4) the wrapped file is portable — you can move `master_seed.wrapped` to a new machine and decrypt it with the same password. AES-256-GCM was chosen specifically because it provides both confidentiality and authenticity (if the ciphertext is tampered with, decryption fails) and is the NIST standard for symmetric authenticated encryption.
 
 </details>
 

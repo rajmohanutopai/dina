@@ -132,7 +132,7 @@ Files: core/cmd/dina-core/main.go, core/internal/adapter/ws/upgrader.go,
 Severity: HIGH
 Evidence:
 - core/cmd/dina-core/main.go:180-198
-  If DINA_SEED_PASSWORD is absent, seed is read/written via identity_seed.hex plaintext.
+  If DINA_SEED_PASSWORD is absent, seed is read/written via master_seed.hex plaintext.
 Impact:
 - At-rest compromise of filesystem yields raw root seed directly.
 Fix direction:
@@ -141,12 +141,12 @@ Fix direction:
 --- SUGGESTED SOLUTION ---
 Status: CONFIRMED
 1. In main.go:180-198, change the plaintext path:
-   - If identity_seed.hex exists AND DINA_SEED_PASSWORD is now set, auto-migrate:
-     read plaintext -> wrap with KEK -> write identity_seed.wrapped -> delete .hex file.
-   - If identity_seed.hex exists AND no password is set AND DINA_TEST_MODE != "true",
+   - If master_seed.hex exists AND DINA_SEED_PASSWORD is now set, auto-migrate:
+     read plaintext -> wrap with KEK -> write master_seed.wrapped -> delete .hex file.
+   - If master_seed.hex exists AND no password is set AND DINA_TEST_MODE != "true",
      fail startup with error "plaintext seed requires DINA_SEED_PASSWORD for migration".
    - New seed generation (line 188-199) should always require DINA_SEED_PASSWORD in
-     non-test mode. Never write identity_seed.hex in production.
+     non-test mode. Never write master_seed.hex in production.
 2. Add DINA_ALLOW_PLAINTEXT_SEED=1 escape hatch for migration-only scenarios, guarded
    by a startup warning log.
 3. Add test: assert startup fails when .hex exists without password in non-test mode.
@@ -516,9 +516,9 @@ Evidence:
 - core/cmd/dina-core/main.go:110-114
   `seedKEK` is derived as `sha256(seedPassword)` directly.
 - core/cmd/dina-core/main.go:131,151,168
-  The SHA-256-derived key is used for unwrap/wrap of `identity_seed.wrapped`.
+  The SHA-256-derived key is used for unwrap/wrap of `master_seed.wrapped`.
 Impact:
-- Enables fast offline password guessing if `identity_seed.wrapped` is exfiltrated.
+- Enables fast offline password guessing if `master_seed.wrapped` is exfiltrated.
 - Compromise yields root identity seed, cascading to full identity/key compromise.
 Fix direction:
 - Derive KEK with Argon2id (per-node random salt + stored parameters).
@@ -531,8 +531,8 @@ Status: CONFIRMED
      seedKEK = argon2.IDKey([]byte(seedPassword), salt, 3, 64*1024, 4, 32)
    The argon2Deriver (already instantiated at main.go:96) can be reused for this.
 2. Persist salt alongside the wrapped seed. File format:
-     identity_seed.wrapped  -> [16 bytes salt][12 bytes nonce][ciphertext][16 bytes tag]
-   Or store salt in a separate identity_seed.salt file.
+     master_seed.wrapped  -> [16 bytes salt][12 bytes nonce][ciphertext][16 bytes tag]
+   Or store salt in a separate master_seed.salt file.
 3. Migration: if an existing .wrapped file was created with SHA-256 KEK, detect by trying
    SHA-256 unwrap first. If successful, re-wrap with Argon2id-derived KEK and overwrite.
    Log "seed KEK upgraded to Argon2id".

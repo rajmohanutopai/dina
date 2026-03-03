@@ -161,6 +161,6 @@ secrets:
   wrapped_seed:
     file: ./secrets/wrapped_seed.bin
   identity_salt:
-    file: ./secrets/identity_seed.salt
+    file: ./secrets/master_seed.salt
   seed_password:
     file: ./secrets/seed_password

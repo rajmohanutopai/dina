@@ -104,11 +104,11 @@ func main() {
 	keyDeriver := crypto.NewKeyDeriver(slip0010)
 
 	// Bootstrap identity signing key from a deterministic seed.
-	// Priority: 1) DINA_IDENTITY_SEED env var, 2) wrapped seed file (.wrapped), 3) plaintext seed file (.hex), 4) generate new.
-	bootstrapSeed := make([]byte, 32)
-	seedPath := filepath.Join(cfg.VaultPath, "identity_seed.hex")
-	wrappedSeedPath := filepath.Join(cfg.VaultPath, "identity_seed.wrapped")
-	saltPath := filepath.Join(cfg.VaultPath, "identity_seed.salt")
+	// Priority: 1) DINA_MASTER_SEED env var, 2) wrapped seed file (.wrapped), 3) plaintext seed file (.hex), 4) generate new.
+	masterSeed := make([]byte, 32)
+	seedPath := filepath.Join(cfg.VaultPath, "master_seed.hex")
+	wrappedSeedPath := filepath.Join(cfg.VaultPath, "master_seed.wrapped")
+	saltPath := filepath.Join(cfg.VaultPath, "master_seed.salt")
 	seedPassword := os.Getenv("DINA_SEED_PASSWORD")
 	if seedPassword == "" {
 		if path := os.Getenv("DINA_SEED_PASSWORD_FILE"); path != "" {
@@ -122,11 +122,11 @@ func main() {
 	}
 
 	// SEC-CRITICAL-03: Early production guard — refuse plaintext seed paths before any file I/O.
-	// DINA_IDENTITY_SEED env var is acceptable (no file written), but no-password paths are not.
+	// DINA_MASTER_SEED env var is acceptable (no file written), but no-password paths are not.
 	dinaEnv := os.Getenv("DINA_ENV")
 	isDevOrTest := dinaEnv == "test" || dinaEnv == "development" || dinaEnv == "migration"
-	if seedPassword == "" && os.Getenv("DINA_IDENTITY_SEED") == "" && !isDevOrTest {
-		log.Fatal("SECURITY: DINA_SEED_PASSWORD or DINA_IDENTITY_SEED is required when DINA_ENV is not test/development/migration")
+	if seedPassword == "" && os.Getenv("DINA_MASTER_SEED") == "" && !isDevOrTest {
+		log.Fatal("SECURITY: DINA_SEED_PASSWORD or DINA_MASTER_SEED is required when DINA_ENV is not test/development/migration")
 	}
 
 	// Derive KEK from seed password if configured.
@@ -187,17 +187,17 @@ func main() {
 		copy(currentKEK, newKEK)
 	}
 
-	if seedHex := os.Getenv("DINA_IDENTITY_SEED"); seedHex != "" {
+	if seedHex := os.Getenv("DINA_MASTER_SEED"); seedHex != "" {
 		decoded, err := hex.DecodeString(seedHex)
 		if err != nil {
-			slog.Error("Invalid DINA_IDENTITY_SEED hex", "error", err)
+			slog.Error("Invalid DINA_MASTER_SEED hex", "error", err)
 			os.Exit(1)
 		}
 		if len(decoded) != 32 {
-			slog.Error("DINA_IDENTITY_SEED must be exactly 32 bytes (64 hex chars)", "got_bytes", len(decoded))
+			slog.Error("DINA_MASTER_SEED must be exactly 32 bytes (64 hex chars)", "got_bytes", len(decoded))
 			os.Exit(1)
 		}
-		copy(bootstrapSeed, decoded)
+		copy(masterSeed, decoded)
 	} else if seedKEK != nil {
 		// Try wrapped seed first.
 		if data, err := os.ReadFile(wrappedSeedPath); err == nil {
@@ -214,19 +214,19 @@ func main() {
 					slog.Error("Unwrapped seed has wrong length", "got_bytes", len(unwrapped))
 					os.Exit(1)
 				}
-				copy(bootstrapSeed, unwrapped)
+				copy(masterSeed, unwrapped)
 				// Re-wrap with Argon2id KEK + random salt.
-				migrateSalt(bootstrapSeed, seedKEK)
+				migrateSalt(masterSeed, seedKEK)
 				slog.Info("seed KEK upgraded from SHA-256 to Argon2id with random salt", "path", wrappedSeedPath)
 			} else {
 				if len(unwrapped) != 32 {
 					slog.Error("Unwrapped seed has wrong length", "got_bytes", len(unwrapped))
 					os.Exit(1)
 				}
-				copy(bootstrapSeed, unwrapped)
+				copy(masterSeed, unwrapped)
 				// SEC-HIGH-07: If unwrapped with deterministic salt, migrate to random salt.
 				if saltMigrationNeeded {
-					migrateSalt(bootstrapSeed, seedKEK)
+					migrateSalt(masterSeed, seedKEK)
 				} else {
 					slog.Info("Loaded wrapped identity seed", "path", wrappedSeedPath)
 				}
@@ -238,9 +238,9 @@ func main() {
 				slog.Error("Corrupt identity seed file — refusing to start", "path", seedPath, "error", err)
 				os.Exit(1)
 			}
-			copy(bootstrapSeed, decoded)
+			copy(masterSeed, decoded)
 			// Wrap with random salt (new installation path, skip deterministic salt entirely).
-			migrateSalt(bootstrapSeed, seedKEK)
+			migrateSalt(masterSeed, seedKEK)
 			// SEC-HIGH-06: Delete plaintext .hex file after successful migration.
 			if err := os.Remove(seedPath); err != nil {
 				slog.Warn("Could not delete plaintext seed file after migration", "path", seedPath, "error", err)
@@ -249,11 +249,11 @@ func main() {
 			}
 		} else {
 			// Generate new seed and wrap it with random salt.
-			if _, err := crypto_rand.Read(bootstrapSeed); err != nil {
+			if _, err := crypto_rand.Read(masterSeed); err != nil {
 				slog.Error("Failed to generate random seed", "error", err)
 				os.Exit(1)
 			}
-			migrateSalt(bootstrapSeed, seedKEK)
+			migrateSalt(masterSeed, seedKEK)
 			slog.Info("Generated and wrapped new identity seed with random salt", "path", wrappedSeedPath)
 		}
 	} else if isDevOrTest {
@@ -265,15 +265,15 @@ func main() {
 				slog.Error("Corrupt identity seed file — refusing to start", "path", seedPath, "error", err)
 				os.Exit(1)
 			}
-			copy(bootstrapSeed, decoded)
+			copy(masterSeed, decoded)
 			slog.Warn("Identity seed loaded from PLAINTEXT file (dev/test only)", "path", seedPath)
 		} else {
-			if _, err := crypto_rand.Read(bootstrapSeed); err != nil {
+			if _, err := crypto_rand.Read(masterSeed); err != nil {
 				slog.Error("Failed to generate random seed", "error", err)
 				os.Exit(1)
 			}
 			os.MkdirAll(filepath.Dir(seedPath), 0700)
-			if err := os.WriteFile(seedPath, []byte(hex.EncodeToString(bootstrapSeed)), 0600); err != nil {
+			if err := os.WriteFile(seedPath, []byte(hex.EncodeToString(masterSeed)), 0600); err != nil {
 				slog.Warn("Could not persist identity seed", "error", err)
 			} else {
 				slog.Warn("Generated new identity seed in PLAINTEXT (dev/test only)", "path", seedPath)
@@ -283,7 +283,7 @@ func main() {
 
 	// Verify seed is not all zeros.
 	allZero := true
-	for _, b := range bootstrapSeed {
+	for _, b := range masterSeed {
 		if b != 0 {
 			allZero = false
 			break
@@ -293,7 +293,7 @@ func main() {
 		slog.Error("Identity seed is all zeros — refusing to start")
 		os.Exit(1)
 	}
-	_, signingKeyBytes, _ := slip0010.DerivePath(bootstrapSeed, "m/9999'/0'")
+	_, signingKeyBytes, _ := slip0010.DerivePath(masterSeed, "m/9999'/0'")
 	var signingPrivKey ed25519.PrivateKey
 	if len(signingKeyBytes) == ed25519.SeedSize {
 		signingPrivKey = ed25519.NewKeyFromSeed(signingKeyBytes)
@@ -769,7 +769,7 @@ func main() {
 	agentBrain := brainclient.New(cfg.BrainURL, agentProxyToken)
 	agentH := &handler.AgentHandler{Brain: agentBrain}
 
-	personaH := &handler.PersonaHandler{Identity: identitySvc, Personas: personaMgr, VaultManager: vaultMgr, KeyDeriver: keyDeriver, Seed: bootstrapSeed}
+	personaH := &handler.PersonaHandler{Identity: identitySvc, Personas: personaMgr, VaultManager: vaultMgr, KeyDeriver: keyDeriver, Seed: masterSeed}
 	trustH := &handler.TrustHandler{Trust: trustSvc, OwnDID: cfg.OwnDID}
 	contactH := &handler.ContactHandler{Contacts: contactDir, Sharing: sharingMgr}
 	piiH := &handler.PIIHandler{Scrubber: scrubber}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Wrap a 256-bit identity seed with Argon2id + AES-256-GCM.
+"""Wrap a 256-bit master seed with Argon2id + AES-256-GCM.
 
 Produces output byte-identical to Go Core's crypto/keywrap.go + crypto/argon2.go:
   - Argon2id: memory=128 MB, time=3, parallelism=4, keyLen=32, saltLen=16
@@ -12,7 +12,7 @@ Usage:
 
 Output files (raw binary, permissions 0600):
     <output-dir>/wrapped_seed.bin      — 60 bytes
-    <output-dir>/identity_seed.salt    — 16 bytes
+    <output-dir>/master_seed.salt    — 16 bytes
 
 Exit codes:
     0 = success
@@ -33,7 +33,7 @@ ARGON2_SALT_LEN   = 16
 
 
 def wrap_seed(seed_hex: str, passphrase: str, output_dir: str) -> None:
-    """Wrap a hex seed and write wrapped_seed.bin + identity_seed.salt."""
+    """Wrap a hex seed and write wrapped_seed.bin + master_seed.salt."""
     # Lazy imports — only needed if actually wrapping.
     from argon2.low_level import hash_secret_raw, Type
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -73,7 +73,7 @@ def wrap_seed(seed_hex: str, passphrase: str, output_dir: str) -> None:
     os.makedirs(output_dir, exist_ok=True)
 
     wrapped_path = os.path.join(output_dir, "wrapped_seed.bin")
-    salt_path = os.path.join(output_dir, "identity_seed.salt")
+    salt_path = os.path.join(output_dir, "master_seed.salt")
 
     # Write atomically-ish: write then set permissions.
     for path, data in [(wrapped_path, wrapped), (salt_path, salt)]:
@@ -101,7 +101,7 @@ def main() -> None:
     try:
         wrap_seed(seed_hex, passphrase, output_dir)
         print(f"Wrapped seed written to {output_dir}/wrapped_seed.bin (60 bytes)")
-        print(f"Salt written to {output_dir}/identity_seed.salt (16 bytes)")
+        print(f"Salt written to {output_dir}/master_seed.salt (16 bytes)")
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)

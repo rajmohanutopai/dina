@@ -197,14 +197,14 @@ echo -e "${BOLD}Step 4: Setting up identity${RESET}"
 
 # Check if seed is already wrapped (wrapped_seed.bin exists)
 SEED_ALREADY_WRAPPED=false
-if [ -f "${SECRETS_DIR}/wrapped_seed.bin" ] && [ -f "${SECRETS_DIR}/identity_seed.salt" ]; then
+if [ -f "${SECRETS_DIR}/wrapped_seed.bin" ] && [ -f "${SECRETS_DIR}/master_seed.salt" ]; then
     SEED_ALREADY_WRAPPED=true
 fi
 
-# Check if .env has a raw DINA_IDENTITY_SEED (legacy — needs migration)
+# Check if .env has a raw DINA_MASTER_SEED (legacy — needs migration)
 EXISTING_SEED=""
 if [ -f "${ENV_FILE}" ]; then
-    EXISTING_SEED=$(sed -n 's/^DINA_IDENTITY_SEED=\([a-f0-9]*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
+    EXISTING_SEED=$(sed -n 's/^DINA_MASTER_SEED=\([a-f0-9]*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
 fi
 
 IDENTITY_NEW=true   # tracks whether we generated a new identity
@@ -212,12 +212,12 @@ SEED_MODE=""        # "maximum" or "server"
 
 if [ "${SEED_ALREADY_WRAPPED}" = true ] && [ -z "${EXISTING_SEED}" ]; then
     skip "Identity seed already wrapped"
-    IDENTITY_SEED=""
+    MASTER_SEED=""
     IDENTITY_NEW=false
 elif [ -n "${EXISTING_SEED}" ]; then
     # Legacy migration: raw seed in .env — wrap it now
     warn "Raw identity seed found in .env — migrating to encrypted storage"
-    IDENTITY_SEED="${EXISTING_SEED}"
+    MASTER_SEED="${EXISTING_SEED}"
     IDENTITY_NEW=false
 elif [ -t 0 ]; then
     # Interactive terminal — ask user
@@ -243,7 +243,7 @@ elif [ -t 0 ]; then
             while true; do
                 SEED_ERR=$("${VPYTHON}" scripts/mnemonic_to_seed.py "${MNEMONIC_INPUT}" 2>&1)
                 if [ $? -eq 0 ]; then
-                    IDENTITY_SEED="${SEED_ERR}"
+                    MASTER_SEED="${SEED_ERR}"
                     IDENTITY_NEW=false
                     ok "Identity restored from recovery phrase"
                     break
@@ -264,7 +264,7 @@ elif [ -t 0 ]; then
                             ;;
                         *)
                             # Fall through to generate new
-                            IDENTITY_SEED=""
+                            MASTER_SEED=""
                             break
                             ;;
                     esac
@@ -279,37 +279,37 @@ elif [ -t 0 ]; then
             HEX_INPUT=$(echo "${HEX_INPUT}" | tr -d '[:space:]')
 
             if [ ${#HEX_INPUT} -eq 64 ] && echo "${HEX_INPUT}" | grep -qE '^[0-9a-fA-F]+$'; then
-                IDENTITY_SEED=$(echo "${HEX_INPUT}" | tr '[:upper:]' '[:lower:]')
+                MASTER_SEED=$(echo "${HEX_INPUT}" | tr '[:upper:]' '[:lower:]')
                 IDENTITY_NEW=false
                 ok "Identity restored from hex seed"
             else
                 warn "Invalid hex seed (expected 64 hex characters) — generating new identity"
-                IDENTITY_SEED=""
+                MASTER_SEED=""
             fi
             ;;
         *)
             # Default: create new (option 1 or any other input)
-            IDENTITY_SEED=""
+            MASTER_SEED=""
             ;;
     esac
 
     # Generate new seed if not restored
-    if [ -z "${IDENTITY_SEED}" ]; then
-        IDENTITY_SEED=$(python3 -c "import secrets; print(secrets.token_hex(32), end='')" 2>/dev/null \
+    if [ -z "${MASTER_SEED}" ]; then
+        MASTER_SEED=$(python3 -c "import secrets; print(secrets.token_hex(32), end='')" 2>/dev/null \
             || openssl rand -hex 32 | tr -d '\n')
         IDENTITY_NEW=true
         ok "Generated new identity (256-bit seed)"
     fi
 else
     # Non-interactive — generate new
-    IDENTITY_SEED=$(python3 -c "import secrets; print(secrets.token_hex(32), end='')" 2>/dev/null \
+    MASTER_SEED=$(python3 -c "import secrets; print(secrets.token_hex(32), end='')" 2>/dev/null \
         || openssl rand -hex 32 | tr -d '\n')
     ok "Generated identity seed (256-bit)"
 fi
 
 # --- Show recovery phrase (only for new identities, before wrapping) ---
-if [ -n "${IDENTITY_SEED}" ] && [ "${IDENTITY_NEW}" = true ]; then
-    MNEMONIC=$("${VPYTHON}" scripts/seed_to_mnemonic.py "${IDENTITY_SEED}" 2>/dev/null || true)
+if [ -n "${MASTER_SEED}" ] && [ "${IDENTITY_NEW}" = true ]; then
+    MNEMONIC=$("${VPYTHON}" scripts/seed_to_mnemonic.py "${MASTER_SEED}" 2>/dev/null || true)
     if [ -n "${MNEMONIC}" ]; then
         echo ""
         echo -e "  ${BOLD}Your Recovery Phrase:${RESET}"
@@ -394,7 +394,7 @@ if [ -n "${IDENTITY_SEED}" ] && [ "${IDENTITY_NEW}" = true ]; then
 fi
 
 # --- Wrap the seed with a passphrase ---
-if [ -n "${IDENTITY_SEED}" ]; then
+if [ -n "${MASTER_SEED}" ]; then
     echo ""
     if [ -t 0 ]; then
         echo -e "  ${BOLD}Choose how to protect your identity seed:${RESET}"
@@ -443,7 +443,7 @@ if [ -n "${IDENTITY_SEED}" ]; then
     # Call wrap_seed.py
     info "Encrypting identity seed (Argon2id + AES-256-GCM)..."
     if "${VPYTHON}" scripts/wrap_seed.py \
-        "${IDENTITY_SEED}" "${SEED_PASSPHRASE}" "${SECRETS_DIR}" >/dev/null 2>&1; then
+        "${MASTER_SEED}" "${SEED_PASSPHRASE}" "${SECRETS_DIR}" >/dev/null 2>&1; then
         ok "Identity seed encrypted"
     else
         fail "Failed to encrypt identity seed"
@@ -462,15 +462,15 @@ if [ -n "${IDENTITY_SEED}" ]; then
 
     # If migrating from raw seed in .env, remove it
     if [ -n "${EXISTING_SEED}" ] && [ -f "${ENV_FILE}" ]; then
-        sed -i.bak '/^DINA_IDENTITY_SEED=/d' "${ENV_FILE}" 2>/dev/null \
-            || sed -i '' '/^DINA_IDENTITY_SEED=/d' "${ENV_FILE}"
+        sed -i.bak '/^DINA_MASTER_SEED=/d' "${ENV_FILE}" 2>/dev/null \
+            || sed -i '' '/^DINA_MASTER_SEED=/d' "${ENV_FILE}"
         rm -f "${ENV_FILE}.bak"
         ok "Removed raw seed from .env (migrated to encrypted storage)"
     fi
 
     # Zero the seed variable — raw seed must not persist
-    IDENTITY_SEED="0000000000000000000000000000000000000000000000000000000000000000"
-    unset IDENTITY_SEED
+    MASTER_SEED="0000000000000000000000000000000000000000000000000000000000000000"
+    unset MASTER_SEED
     SEED_PASSPHRASE=""; unset SEED_PASSPHRASE
     SEED_PASSPHRASE_CONFIRM=""; unset SEED_PASSPHRASE_CONFIRM
     ok "Raw seed zeroed from memory"

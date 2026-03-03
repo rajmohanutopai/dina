@@ -95,10 +95,10 @@ def unwrap(wrapped: bytes, salt: bytes, passphrase: str) -> bytes:
 
 
 def save_wrapped(wrapped: bytes, salt: bytes, directory: Path) -> None:
-    """Write wrapped_seed.bin + identity_seed.salt with 0600 permissions."""
+    """Write wrapped_seed.bin + master_seed.salt with 0600 permissions."""
     directory.mkdir(parents=True, exist_ok=True)
     os.chmod(directory, 0o700)
-    for name, data in [("wrapped_seed.bin", wrapped), ("identity_seed.salt", salt)]:
+    for name, data in [("wrapped_seed.bin", wrapped), ("master_seed.salt", salt)]:
         path = directory / name
         fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         try:
@@ -108,7 +108,7 @@ def save_wrapped(wrapped: bytes, salt: bytes, directory: Path) -> None:
 
 
 def load_wrapped(directory: Path) -> tuple[bytes, bytes]:
-    """Read wrapped_seed.bin + identity_seed.salt from a directory."""
+    """Read wrapped_seed.bin + master_seed.salt from a directory."""
     wrapped = (directory / "wrapped_seed.bin").read_bytes()
-    salt = (directory / "identity_seed.salt").read_bytes()
+    salt = (directory / "master_seed.salt").read_bytes()
     return wrapped, salt

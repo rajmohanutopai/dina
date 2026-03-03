@@ -38,20 +38,20 @@ if [ -f "$SECRET_DIR/client_token" ]; then
 fi
 
 # Seed wrapping files — copy to vault path on first start.
-# Core expects identity_seed.wrapped + identity_seed.salt in DINA_VAULT_PATH.
+# Core expects master_seed.wrapped + master_seed.salt in DINA_VAULT_PATH.
 VAULT_PATH="${DINA_VAULT_PATH:-/data/vault}"
 mkdir -p "$VAULT_PATH"
 
-if [ -f "/run/secrets/wrapped_seed" ] && [ ! -f "$VAULT_PATH/identity_seed.wrapped" ]; then
-    cp "/run/secrets/wrapped_seed" "$VAULT_PATH/identity_seed.wrapped"
-    chown dina:dina "$VAULT_PATH/identity_seed.wrapped"
-    chmod 0600 "$VAULT_PATH/identity_seed.wrapped"
+if [ -f "/run/secrets/wrapped_seed" ] && [ ! -f "$VAULT_PATH/master_seed.wrapped" ]; then
+    cp "/run/secrets/wrapped_seed" "$VAULT_PATH/master_seed.wrapped"
+    chown dina:dina "$VAULT_PATH/master_seed.wrapped"
+    chmod 0600 "$VAULT_PATH/master_seed.wrapped"
 fi
 
-if [ -f "/run/secrets/identity_salt" ] && [ ! -f "$VAULT_PATH/identity_seed.salt" ]; then
-    cp "/run/secrets/identity_salt" "$VAULT_PATH/identity_seed.salt"
-    chown dina:dina "$VAULT_PATH/identity_seed.salt"
-    chmod 0600 "$VAULT_PATH/identity_seed.salt"
+if [ -f "/run/secrets/identity_salt" ] && [ ! -f "$VAULT_PATH/master_seed.salt" ]; then
+    cp "/run/secrets/identity_salt" "$VAULT_PATH/master_seed.salt"
+    chown dina:dina "$VAULT_PATH/master_seed.salt"
+    chmod 0600 "$VAULT_PATH/master_seed.salt"
 fi
 
 # Seed password (Server Mode — non-empty file means auto-unlock).

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Unwrap an AES-256-GCM + Argon2id wrapped identity seed.
+"""Unwrap an AES-256-GCM + Argon2id wrapped master seed.
 
-Verification / debugging tool — reads wrapped_seed.bin + identity_seed.salt,
+Verification / debugging tool — reads wrapped_seed.bin + master_seed.salt,
 derives the KEK from the passphrase, and prints the original 256-bit hex seed.
 
 Compatible with Go Core's crypto/keywrap.go + crypto/argon2.go.
@@ -11,7 +11,7 @@ Usage:
 
 Reads:
     <secrets-dir>/wrapped_seed.bin      — 60 bytes (nonce || ciphertext || tag)
-    <secrets-dir>/identity_seed.salt    — 16 bytes
+    <secrets-dir>/master_seed.salt    — 16 bytes
 
 Output: 64-char hex seed to stdout.
 
@@ -38,7 +38,7 @@ def unwrap_seed(passphrase: str, secrets_dir: str) -> str:
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
     wrapped_path = os.path.join(secrets_dir, "wrapped_seed.bin")
-    salt_path = os.path.join(secrets_dir, "identity_seed.salt")
+    salt_path = os.path.join(secrets_dir, "master_seed.salt")
 
     with open(wrapped_path, "rb") as f:
         wrapped = f.read()
@@ -48,7 +48,7 @@ def unwrap_seed(passphrase: str, secrets_dir: str) -> str:
     if len(wrapped) != 60:
         raise ValueError(f"wrapped_seed.bin must be 60 bytes, got {len(wrapped)}")
     if len(salt) != 16:
-        raise ValueError(f"identity_seed.salt must be 16 bytes, got {len(salt)}")
+        raise ValueError(f"master_seed.salt must be 16 bytes, got {len(salt)}")
 
     # Derive KEK via Argon2id.
     kek = hash_secret_raw(
