@@ -341,6 +341,54 @@ if [ -n "${IDENTITY_SEED}" ] && [ "${IDENTITY_NEW}" = true ]; then
         echo ""
         echo -e "  ${RED}${BOLD}SAVE THIS! You need it to recover your Dina.${RESET}"
         echo -e "  ${RED}Write it down on paper. Do not store it digitally.${RESET}"
+
+        # --- Verify user saved it: ask for 3 random words ---
+        if [ -t 0 ]; then
+            echo ""
+            echo -e "  ${BOLD}Let's verify you saved it.${RESET}"
+            echo -e "  ${DIM}Enter the words for the positions below:${RESET}"
+            echo ""
+
+            # Split mnemonic into array
+            WORDS=()
+            for w in ${MNEMONIC}; do
+                WORDS+=("$w")
+            done
+
+            # Pick 3 random positions (1-indexed, unique, sorted)
+            VERIFY_POS=($(python3 -c "import random; nums = random.sample(range(1, 25), 3); nums.sort(); print(' '.join(str(n) for n in nums))" 2>/dev/null))
+
+            VERIFY_PASS=true
+            for pos in "${VERIFY_POS[@]}"; do
+                EXPECTED="${WORDS[$((pos - 1))]}"
+                printf "  Word #%d: " "${pos}"
+                read -r USER_WORD
+                USER_WORD=$(echo "${USER_WORD}" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+                if [ "${USER_WORD}" != "${EXPECTED}" ]; then
+                    VERIFY_PASS=false
+                    break
+                fi
+            done
+
+            if [ "${VERIFY_PASS}" = true ]; then
+                ok "Recovery phrase verified"
+            else
+                echo ""
+                echo -e "  ${YELLOW}✗${RESET} That doesn't match. Showing the phrase one more time:"
+                echo ""
+                echo -e "  ${YELLOW}╔${BORDER}╗${RESET}"
+                for ml in "${MNEMONIC_LINES[@]}"; do
+                    printf "  ${YELLOW}║${RESET} %-$((BOX_W - 2))s ${YELLOW}║${RESET}\n" "${ml}"
+                done
+                echo -e "  ${YELLOW}╚${BORDER}╝${RESET}"
+                echo ""
+                echo -e "  ${RED}${BOLD}Write it down now. This is your last chance to see it.${RESET}"
+                echo ""
+                printf "  Press Enter when you've saved it..."
+                read -r _
+                ok "Continuing (save your recovery phrase!)"
+            fi
+        fi
     fi
 fi
 

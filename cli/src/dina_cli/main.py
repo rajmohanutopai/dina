@@ -7,10 +7,12 @@ draft, sign, audit.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import uuid
 import webbrowser
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import click
@@ -545,6 +547,299 @@ def _pair_with_key(core_url: str, identity: Any, device_name: str) -> None:
     except httpx.HTTPStatusError as exc:
         click.echo(f"  Pairing failed: {exc.response.text}", err=True)
         click.echo("  Keypair saved. You can re-pair by running 'dina configure' again.")
+
+
+# ── init-identity ────────────────────────────────────────────────────
+
+_IDENTITY_DIR = Path.home() / ".dina" / "cli" / "identity"
+
+
+@cli.command("init-identity")
+@click.option("--restore-mnemonic", is_flag=True, help="Restore from a 24-word recovery phrase")
+@click.option("--restore-hex", is_flag=True, help="Restore from a 64-char hex seed")
+@click.pass_context
+def init_identity(ctx: click.Context, restore_mnemonic: bool, restore_hex: bool) -> None:
+    """Generate or restore an identity seed, wrap it with a passphrase.
+
+    The raw seed never touches disk. It is wrapped with AES-256-GCM using an
+    Argon2id-derived key, and only the encrypted blob is stored.
+
+    Output files (in ~/.dina/cli/identity/):
+      wrapped_seed.bin      60 bytes (nonce + ciphertext + GCM tag)
+      identity_seed.salt    16 bytes (Argon2id salt)
+
+    Use 'dina bootstrap-server' to upload these to your Home Node.
+    """
+    from . import seed_wrap
+
+    json_mode = ctx.obj["json"]
+    out_dir = _IDENTITY_DIR
+
+    # Check if already wrapped
+    if (out_dir / "wrapped_seed.bin").exists():
+        if not click.confirm("Identity seed already wrapped. Overwrite?", default=False):
+            click.echo("Aborted.")
+            return
+
+    # --- Step 1: Obtain the seed ---
+    seed: bytes
+
+    if restore_mnemonic:
+        click.echo()
+        click.echo("Enter your 24-word recovery phrase (space-separated):")
+        while True:
+            raw = click.prompt("  >")
+            words = raw.strip().split()
+            try:
+                seed = seed_wrap.mnemonic_to_seed(words)
+                click.echo(click.style("  [ok] Seed restored from recovery phrase", fg="green"))
+                break
+            except ValueError as exc:
+                click.echo(click.style(f"  Error: {exc}", fg="yellow"))
+                if not click.confirm("  Try again?", default=True):
+                    ctx.exit(1)
+                    return
+
+    elif restore_hex:
+        click.echo()
+        hex_input = click.prompt("Enter your 64-character hex seed").strip()
+        if len(hex_input) != 64:
+            click.echo(click.style(f"Error: expected 64 hex chars, got {len(hex_input)}", fg="red"), err=True)
+            ctx.exit(1)
+            return
+        try:
+            seed = bytes.fromhex(hex_input)
+        except ValueError:
+            click.echo(click.style("Error: invalid hex characters", fg="red"), err=True)
+            ctx.exit(1)
+            return
+        click.echo(click.style("  [ok] Seed loaded from hex", fg="green"))
+
+    else:
+        # Generate new seed
+        seed = seed_wrap.generate_seed()
+        click.echo(click.style("  [ok] Generated new identity (256-bit seed)", fg="green"))
+
+        # Show mnemonic
+        mnemonic = seed_wrap.seed_to_mnemonic(seed)
+        click.echo()
+        click.echo(click.style("  Your Recovery Phrase:", bold=True))
+        click.echo()
+        for i in range(0, 24, 4):
+            line = "    ".join(f"{i+j+1:2d}. {mnemonic[i+j]:<12s}" for j in range(4))
+            click.echo(f"    {line}")
+        click.echo()
+        click.echo(click.style("  SAVE THIS! Write it down on paper.", fg="red", bold=True))
+        click.echo(click.style("  Do not store it digitally.", fg="red"))
+
+        # Verify 3 random words
+        click.echo()
+        click.echo(click.style("  Let's verify you saved it.", bold=True))
+        import random
+        positions = sorted(random.sample(range(24), 3))
+        all_correct = True
+        for pos in positions:
+            answer = click.prompt(f"  Word #{pos + 1}").strip().lower()
+            if answer != mnemonic[pos]:
+                all_correct = False
+                break
+
+        if all_correct:
+            click.echo(click.style("  [ok] Recovery phrase verified", fg="green"))
+        else:
+            click.echo()
+            click.echo(click.style("  Mismatch. Showing the phrase one more time:", fg="yellow"))
+            click.echo()
+            for i in range(0, 24, 4):
+                line = "    ".join(f"{i+j+1:2d}. {mnemonic[i+j]:<12s}" for j in range(4))
+                click.echo(f"    {line}")
+            click.echo()
+            click.echo(click.style("  Write it down now. This is your last chance.", fg="red", bold=True))
+            click.prompt("  Press Enter when saved", default="", show_default=False)
+
+    # --- Step 2: Passphrase ---
+    click.echo()
+    click.echo(click.style("  Choose a passphrase to encrypt your identity seed:", bold=True))
+    click.echo("  (minimum 8 characters)")
+    while True:
+        passphrase = click.prompt("  Passphrase", hide_input=True)
+        if len(passphrase) < 8:
+            click.echo(click.style("  Passphrase must be at least 8 characters", fg="yellow"))
+            continue
+        confirm = click.prompt("  Confirm", hide_input=True)
+        if passphrase != confirm:
+            click.echo(click.style("  Passphrases do not match — try again", fg="yellow"))
+            continue
+        break
+
+    # --- Step 3: Wrap ---
+    click.echo("  Encrypting seed (Argon2id + AES-256-GCM)...")
+    wrapped, salt = seed_wrap.wrap(seed, passphrase)
+    seed_wrap.save_wrapped(wrapped, salt, out_dir)
+
+    # Zero sensitive variables
+    seed = b"\x00" * 32
+    passphrase = "\x00" * len(passphrase)
+    del seed, passphrase
+
+    click.echo(click.style("  [ok] Identity seed encrypted", fg="green"))
+    click.echo(click.style("  [ok] Raw seed zeroed from memory", fg="green"))
+    click.echo()
+    click.echo(f"  Files saved to {out_dir}/")
+    click.echo(f"    wrapped_seed.bin      (60 bytes)")
+    click.echo(f"    identity_seed.salt    (16 bytes)")
+    click.echo()
+    click.echo("  Next: upload to your Home Node with:")
+    click.echo(click.style("    dina bootstrap-server --host user@mynode.example", fg="cyan"))
+
+
+# ── bootstrap-server ─────────────────────────────────────────────────
+
+
+@cli.command("bootstrap-server")
+@click.option("--host", "ssh_host", help="SSH destination (user@host)")
+@click.option("--remote-dir", default="/opt/dina/secrets", show_default=True,
+              help="Remote directory for secrets on the server")
+@click.option("--local-dir", type=click.Path(exists=False),
+              help="Copy to a local path instead of SSH (self-hosted)")
+@click.option("--identity-dir", type=click.Path(exists=True), default=None,
+              help="Local identity directory (default: ~/.dina/cli/identity/)")
+@click.pass_context
+def bootstrap_server(ctx: click.Context, ssh_host: str | None, remote_dir: str,
+                     local_dir: str | None, identity_dir: str | None) -> None:
+    """Upload wrapped identity seed to a Dina Home Node.
+
+    The server never sees the raw seed — only the encrypted blob and salt
+    are transferred. Requires 'dina init-identity' first.
+
+    \b
+    Two modes:
+      SSH:   dina bootstrap-server --host user@mynode.example
+      Local: dina bootstrap-server --local-dir /path/to/dina/secrets
+    """
+    import shutil
+    import subprocess
+    from pathlib import Path
+    from . import seed_wrap
+
+    src_dir = Path(identity_dir) if identity_dir else _IDENTITY_DIR
+
+    # Verify wrapped files exist locally
+    wrapped_path = src_dir / "wrapped_seed.bin"
+    salt_path = src_dir / "identity_seed.salt"
+    if not wrapped_path.exists() or not salt_path.exists():
+        click.echo(click.style(
+            "Error: No wrapped seed found. Run 'dina init-identity' first.",
+            fg="red",
+        ), err=True)
+        ctx.exit(1)
+        return
+
+    # Verify file sizes
+    if wrapped_path.stat().st_size != 60:
+        click.echo(click.style("Error: wrapped_seed.bin is not 60 bytes — file may be corrupted", fg="red"), err=True)
+        ctx.exit(1)
+        return
+    if salt_path.stat().st_size != 16:
+        click.echo(click.style("Error: identity_seed.salt is not 16 bytes — file may be corrupted", fg="red"), err=True)
+        ctx.exit(1)
+        return
+
+    click.echo(f"  Source: {src_dir}/")
+    click.echo(f"    wrapped_seed.bin   ({wrapped_path.stat().st_size} bytes)")
+    click.echo(f"    identity_seed.salt ({salt_path.stat().st_size} bytes)")
+    click.echo()
+
+    if local_dir:
+        # Local copy mode
+        dest = Path(local_dir)
+        dest.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(str(wrapped_path), str(dest / "wrapped_seed.bin"))
+        shutil.copy2(str(salt_path), str(dest / "identity_seed.salt"))
+        click.echo(click.style(f"  [ok] Copied to {dest}/", fg="green"))
+
+    elif ssh_host:
+        # SSH/SCP mode
+        click.echo(f"  Uploading to {ssh_host}:{remote_dir}/")
+
+        # Create remote directory
+        mkdir_cmd = ["ssh", ssh_host, f"mkdir -p {remote_dir} && chmod 700 {remote_dir}"]
+        result = subprocess.run(mkdir_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            click.echo(click.style(f"  Error creating remote directory: {result.stderr.strip()}", fg="red"), err=True)
+            ctx.exit(1)
+            return
+
+        # SCP the files
+        scp_cmd = [
+            "scp", "-q",
+            str(wrapped_path), str(salt_path),
+            f"{ssh_host}:{remote_dir}/",
+        ]
+        result = subprocess.run(scp_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            click.echo(click.style(f"  Error: {result.stderr.strip()}", fg="red"), err=True)
+            ctx.exit(1)
+            return
+
+        # Set permissions on remote
+        chmod_cmd = ["ssh", ssh_host,
+                     f"chmod 600 {remote_dir}/wrapped_seed.bin {remote_dir}/identity_seed.salt"]
+        subprocess.run(chmod_cmd, capture_output=True)
+
+        click.echo(click.style("  [ok] Uploaded to server", fg="green"))
+
+    else:
+        click.echo(click.style(
+            "Error: specify --host (SSH) or --local-dir (local copy)",
+            fg="red",
+        ), err=True)
+        ctx.exit(1)
+        return
+
+    # Ask about seed password mode
+    click.echo()
+    click.echo(click.style("  Seed password mode:", bold=True))
+    click.echo("    1) Maximum Security — enter passphrase on every restart")
+    click.echo("    2) Server Mode — store passphrase for unattended boot")
+    mode = click.prompt("  Choice", type=click.IntRange(1, 2), default=1)
+
+    if mode == 2:
+        pw = click.prompt("  Enter seed passphrase (to store on server)", hide_input=True)
+        if local_dir:
+            dest = Path(local_dir)
+            pw_path = dest / "seed_password"
+            fd = os.open(str(pw_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            try:
+                os.write(fd, pw.encode("utf-8"))
+            finally:
+                os.close(fd)
+        elif ssh_host:
+            # Write passphrase to remote file via ssh
+            write_cmd = ["ssh", ssh_host,
+                         f"printf '%s' '{pw}' > {remote_dir}/seed_password && "
+                         f"chmod 600 {remote_dir}/seed_password"]
+            subprocess.run(write_cmd, capture_output=True)
+        click.echo(click.style("  [ok] Passphrase stored on server (Server Mode)", fg="green"))
+    else:
+        # Create empty seed_password file (Docker Secrets needs it)
+        if local_dir:
+            dest = Path(local_dir)
+            (dest / "seed_password").touch(mode=0o600)
+        elif ssh_host:
+            subprocess.run(
+                ["ssh", ssh_host, f"touch {remote_dir}/seed_password && chmod 600 {remote_dir}/seed_password"],
+                capture_output=True,
+            )
+
+    click.echo()
+    click.echo(click.style("  Done!", bold=True))
+    if mode == 1:
+        click.echo("  Start your node with:")
+        click.echo(click.style("    DINA_SEED_PASSWORD=<passphrase> docker compose up -d", fg="cyan"))
+    else:
+        click.echo("  Start your node with:")
+        click.echo(click.style("    docker compose up -d", fg="cyan"))
 
 
 # ── web ───────────────────────────────────────────────────────────────────
