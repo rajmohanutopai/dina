@@ -2,6 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Tests: 2,445 passing](https://img.shields.io/badge/Tests-3%2C073%20passing-brightgreen)]()
+[![Status: Developer Alpha](https://img.shields.io/badge/Status-Developer%20Alpha-orange)]()
 [![Stack: Go + Python](https://img.shields.io/badge/Stack-Go%20%7C%20Python-blue)]()
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-purple)](https://discord.gg/gDRcrEwy)
 
@@ -12,7 +13,7 @@
 ### ⚡ Developer Cockpit
 
 * **The Vision** - This README is the Vision Document. For you to understand Dina.
-* **Start Here:** [**Open dina.html**](./dina.html) — Interactive visual guide to everything Dina.
+* **Start Here:** [**Open dina.html**](https://rajmohanutopai.github.io/dina/dina.html) — Interactive visual guide to everything Dina.
 * **Quick Start:** [3 commands to get Dina running](./QUICKSTART.md)
 * **The Stack:** Go Core + Python Brain (Sidecar Pattern) + Python CLI + SQLite/SQLCipher.
 * **The Architecture:** [Read the Engineering Spec](./ARCHITECTURE.md)
@@ -27,7 +28,8 @@ See [`QUICKSTART.md`](./QUICKSTART.md) for the full guide including networking s
 **Prerequisites:** Docker & Docker Compose.
 
 ```bash
-git clone https://github.com/rajmohanutopai/dina.git && cd dina
+git clone https://github.com/rajmohanutopai/dina.git 
+cd dina
 ./install.sh
 ```
 

@@ -285,6 +285,61 @@ echo ""
 
 echo -e "${BOLD}Step 5: Writing configuration${RESET}"
 
+# --- Optional: Telegram bot setup ---
+# Runs for both new and existing .env (skips if already configured).
+TELEGRAM_TOKEN=""
+TELEGRAM_USER_ID=""
+EXISTING_TG_TOKEN=""
+if [ -f "${ENV_FILE}" ]; then
+    EXISTING_TG_TOKEN=$(sed -n 's/^DINA_TELEGRAM_TOKEN=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
+fi
+
+if [ -n "${EXISTING_TG_TOKEN}" ]; then
+    skip "Telegram bot already configured in .env"
+elif [ -t 0 ]; then
+    echo ""
+    echo -e "  ${BOLD}Would you like to connect a Telegram bot?${RESET}"
+    echo -e "  ${DIM}Dina can chat with you via Telegram — fully optional.${RESET}"
+    echo ""
+    echo -e "    ${CYAN}1)${RESET} Yes — I have a bot token (or will create one now)"
+    echo -e "    ${CYAN}2)${RESET} Skip ${DIM}(you can set this up later in .env)${RESET}"
+    echo ""
+    printf "  Enter choice [1-2]: "
+    read -r TG_CHOICE
+
+    if [ "${TG_CHOICE}" = "1" ]; then
+        echo ""
+        echo -e "  ${BOLD}Step A: Create a Telegram bot${RESET}"
+        echo -e "    1. Open Telegram and message ${CYAN}@BotFather${RESET}"
+        echo -e "    2. Send ${CYAN}/newbot${RESET} and follow the prompts"
+        echo -e "    3. Copy the token (looks like ${DIM}123456:ABC-DEF...${RESET})"
+        echo ""
+        printf "  Enter your bot token: "
+        read -r TELEGRAM_TOKEN
+        TELEGRAM_TOKEN=$(echo "${TELEGRAM_TOKEN}" | tr -d '[:space:]')
+
+        if [ -n "${TELEGRAM_TOKEN}" ]; then
+            echo ""
+            echo -e "  ${BOLD}Step B: Get your Telegram user ID${RESET}"
+            echo -e "    1. Message ${CYAN}@userinfobot${RESET} on Telegram"
+            echo -e "    2. It will reply with your numeric ID (e.g. ${DIM}987654321${RESET})"
+            echo ""
+            printf "  Enter your Telegram user ID: "
+            read -r TELEGRAM_USER_ID
+            TELEGRAM_USER_ID=$(echo "${TELEGRAM_USER_ID}" | tr -d '[:space:]')
+
+            if [ -n "${TELEGRAM_USER_ID}" ]; then
+                ok "Telegram bot configured (token + user ID)"
+            else
+                warn "No user ID entered — bot will reject all messages until DINA_TELEGRAM_ALLOWED_USERS is set in .env"
+            fi
+        else
+            info "No token entered — skipping Telegram setup"
+            TELEGRAM_TOKEN=""
+        fi
+    fi
+fi
+
 if [ ! -f "${ENV_FILE}" ]; then
     # --- Interactive LLM provider selection ---
     echo ""
@@ -428,6 +483,16 @@ ENVEOF
         fi
     fi
 
+    # Add Telegram config if provided
+    if [ -n "${TELEGRAM_TOKEN}" ]; then
+        echo "" >> "${ENV_FILE}"
+        echo "# Telegram Bot" >> "${ENV_FILE}"
+        echo "DINA_TELEGRAM_TOKEN=${TELEGRAM_TOKEN}" >> "${ENV_FILE}"
+        if [ -n "${TELEGRAM_USER_ID}" ]; then
+            echo "DINA_TELEGRAM_ALLOWED_USERS=${TELEGRAM_USER_ID}" >> "${ENV_FILE}"
+        fi
+    fi
+
     echo "" >> "${ENV_FILE}"
     cat >> "${ENV_FILE}" << 'ENVEOF'
 # Other providers (uncomment and set to enable)
@@ -437,6 +502,11 @@ ENVEOF
 # OPENROUTER_API_KEY=
 # OPENROUTER_MODEL=google/gemini-2.5-flash
 # OLLAMA_BASE_URL=http://localhost:11434
+
+# Telegram Bot (uncomment and set to enable)
+# DINA_TELEGRAM_TOKEN=
+# DINA_TELEGRAM_ALLOWED_USERS=
+# DINA_TELEGRAM_ALLOWED_GROUPS=
 ENVEOF
 
     chmod 600 "${ENV_FILE}"
@@ -465,6 +535,17 @@ else
         ok "Added PDS secrets to existing .env"
     else
         skip "PDS secrets already set"
+    fi
+
+    # Ensure Telegram config is in existing .env (if user provided it)
+    if [ -n "${TELEGRAM_TOKEN}" ] && ! grep -q "^DINA_TELEGRAM_TOKEN=" "${ENV_FILE}" 2>/dev/null; then
+        echo "" >> "${ENV_FILE}"
+        echo "# Telegram Bot (added by install.sh)" >> "${ENV_FILE}"
+        echo "DINA_TELEGRAM_TOKEN=${TELEGRAM_TOKEN}" >> "${ENV_FILE}"
+        if [ -n "${TELEGRAM_USER_ID}" ]; then
+            echo "DINA_TELEGRAM_ALLOWED_USERS=${TELEGRAM_USER_ID}" >> "${ENV_FILE}"
+        fi
+        ok "Added Telegram config to existing .env"
     fi
 
     chmod 600 "${ENV_FILE}"
@@ -669,9 +750,12 @@ elif [ "${IDENTITY_NEW}" = false ]; then
 fi
 
 echo -e "  ${BOLD}Services:${RESET}"
-echo -e "    Core:   ${CYAN}http://localhost:${CORE_PORT}${RESET}"
-echo -e "    PDS:    ${CYAN}http://localhost:${DINA_PDS_PORT:-2583}${RESET}"
-echo -e "    Health: ${CYAN}http://localhost:${CORE_PORT}/healthz${RESET}"
+echo -e "    Core:      ${CYAN}http://localhost:${CORE_PORT}${RESET}"
+echo -e "    PDS:       ${CYAN}http://localhost:${DINA_PDS_PORT:-2583}${RESET}"
+echo -e "    Health:    ${CYAN}http://localhost:${CORE_PORT}/healthz${RESET}"
+if [ -n "${TELEGRAM_TOKEN}" ] || [ -n "${EXISTING_TG_TOKEN}" ]; then
+    echo -e "    Telegram:  ${GREEN}connected${RESET}"
+fi
 echo ""
 echo -e "  ${BOLD}Commands:${RESET}"
 echo -e "    Logs:      ${CYAN}${COMPOSE} logs -f${RESET}"
