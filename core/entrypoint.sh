@@ -37,5 +37,28 @@ if [ -f "$SECRET_DIR/client_token" ]; then
     export DINA_CLIENT_TOKEN_FILE="$SECRET_DIR/client_token"
 fi
 
+# Seed wrapping files — copy to vault path on first start.
+# Core expects identity_seed.wrapped + identity_seed.salt in DINA_VAULT_PATH.
+VAULT_PATH="${DINA_VAULT_PATH:-/data/vault}"
+mkdir -p "$VAULT_PATH"
+
+if [ -f "/run/secrets/wrapped_seed" ] && [ ! -f "$VAULT_PATH/identity_seed.wrapped" ]; then
+    cp "/run/secrets/wrapped_seed" "$VAULT_PATH/identity_seed.wrapped"
+    chown dina:dina "$VAULT_PATH/identity_seed.wrapped"
+    chmod 0600 "$VAULT_PATH/identity_seed.wrapped"
+fi
+
+if [ -f "/run/secrets/identity_salt" ] && [ ! -f "$VAULT_PATH/identity_seed.salt" ]; then
+    cp "/run/secrets/identity_salt" "$VAULT_PATH/identity_seed.salt"
+    chown dina:dina "$VAULT_PATH/identity_seed.salt"
+    chmod 0600 "$VAULT_PATH/identity_seed.salt"
+fi
+
+# Seed password (Server Mode — non-empty file means auto-unlock).
+copy_secret "/run/secrets/seed_password" "$SECRET_DIR/seed_password"
+if [ -f "$SECRET_DIR/seed_password" ] && [ -s "$SECRET_DIR/seed_password" ]; then
+    export DINA_SEED_PASSWORD_FILE="$SECRET_DIR/seed_password"
+fi
+
 # Drop privileges and exec the Go binary.
 exec gosu dina "$@"

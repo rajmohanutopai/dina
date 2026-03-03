@@ -3,9 +3,12 @@
 # + plc (fake PLC directory, test-only profile)
 #
 # Usage:
-#   ./install.sh              # first-time setup
-#   docker compose up -d      # start all services (real plc.directory)
+#   ./install.sh              # first-time setup (creates secrets, .env, builds, starts)
+#   docker compose up -d      # restart after install (requires ./install.sh first)
 #   docker compose logs -f    # tail logs
+#
+# If you see "bind source path does not exist: .../secrets/brain_token",
+# run ./install.sh first — it generates the required secrets.
 #
 # Testing with local fake PLC (no internet, no pollution):
 #   DINA_PLC_URL=http://plc:2582 docker compose --profile test-plc up -d
@@ -24,8 +27,9 @@ services:
       - DINA_VAULT_PATH=/data/vault
       - DINA_BRAIN_URL=http://brain:8200
       - DINA_BRAIN_TOKEN_FILE=/run/secrets/brain_token
+      - DINA_SEED_PASSWORD_FILE=/run/secrets/seed_password
       - DINA_LISTEN_ADDR=:8100
-      - DINA_IDENTITY_SEED=${DINA_IDENTITY_SEED:-}
+      - DINA_SEED_PASSWORD=${DINA_SEED_PASSWORD:-}
       - DINA_RATE_LIMIT=${DINA_RATE_LIMIT:-100}
       - DINA_SPOOL_MAX=${DINA_SPOOL_MAX:-10485760}
       - DINA_PDS_URL=http://pds:3000
@@ -35,6 +39,9 @@ services:
       - DINA_PDS_EMAIL=${DINA_PDS_EMAIL:-dina@example.com}
     secrets:
       - brain_token
+      - wrapped_seed
+      - identity_salt
+      - seed_password
     depends_on:
       brain:
         condition: service_healthy
@@ -69,6 +76,9 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - OPENROUTER_MODEL=${OPENROUTER_MODEL:-}
+      - DINA_TELEGRAM_TOKEN=${DINA_TELEGRAM_TOKEN:-}
+      - DINA_TELEGRAM_ALLOWED_USERS=${DINA_TELEGRAM_ALLOWED_USERS:-}
+      - DINA_TELEGRAM_ALLOWED_GROUPS=${DINA_TELEGRAM_ALLOWED_GROUPS:-}
     secrets:
       - brain_token
     healthcheck:
@@ -148,3 +158,9 @@ volumes:
 secrets:
   brain_token:
     file: ./secrets/brain_token
+  wrapped_seed:
+    file: ./secrets/wrapped_seed.bin
+  identity_salt:
+    file: ./secrets/identity_seed.salt
+  seed_password:
+    file: ./secrets/seed_password

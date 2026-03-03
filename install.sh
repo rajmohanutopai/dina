@@ -9,11 +9,17 @@
 #   1. Checks prerequisites (docker, docker compose, curl)
 #   2. Checks port availability
 #   3. Generates secrets (brain_token, identity seed)
-#   4. Asks which LLM provider to use (Gemini, OpenAI, Claude, OpenRouter, Ollama)
-#   5. Creates .env configuration with your API key
-#   6. Builds and starts Docker containers
-#   7. Waits for health checks to pass
-#   8. Displays your DID and recovery phrase
+#   4. Wraps identity seed with passphrase (Argon2id + AES-256-GCM)
+#   5. Asks which LLM provider to use (Gemini, OpenAI, Claude, OpenRouter, Ollama)
+#   6. Creates .env configuration with your API key
+#   7. Builds and starts Docker containers
+#   8. Waits for health checks to pass
+#   9. Displays your DID
+#
+# Security: The raw identity seed never touches disk. It is wrapped with a
+# user-chosen passphrase and only the encrypted form is stored. Two modes:
+#   - Maximum Security: passphrase required on every restart (never stored)
+#   - Server Mode: passphrase stored in secrets/ for unattended boot
 #
 # Host filesystem: only secrets/ and .env are created.
 # All runtime data lives in Docker named volumes (dina-data, dina-models).
@@ -169,24 +175,47 @@ else
     skip "PDS secrets already set"
 fi
 
+# Prepare crypto venv for seed wrapping (argon2-cffi + cryptography)
+INSTALL_VENV="${DINA_DIR}/.install-venv"
+if [ ! -f "${INSTALL_VENV}/bin/python3" ]; then
+    info "Setting up crypto tools..."
+    python3 -m venv "${INSTALL_VENV}" 2>/dev/null
+    "${INSTALL_VENV}/bin/pip" install -q argon2-cffi cryptography 2>/dev/null
+    ok "Crypto tools ready"
+else
+    skip "Crypto tools already installed"
+fi
+
 echo ""
 
 # ---------------------------------------------------------------------------
-# Step 4: Identity setup — new or restore
+# Step 4: Identity setup — new or restore + wrap
 # ---------------------------------------------------------------------------
 
 echo -e "${BOLD}Step 4: Setting up identity${RESET}"
 
-# Check if .env already has DINA_IDENTITY_SEED
+# Check if seed is already wrapped (wrapped_seed.bin exists)
+SEED_ALREADY_WRAPPED=false
+if [ -f "${SECRETS_DIR}/wrapped_seed.bin" ] && [ -f "${SECRETS_DIR}/identity_seed.salt" ]; then
+    SEED_ALREADY_WRAPPED=true
+fi
+
+# Check if .env has a raw DINA_IDENTITY_SEED (legacy — needs migration)
 EXISTING_SEED=""
 if [ -f "${ENV_FILE}" ]; then
     EXISTING_SEED=$(sed -n 's/^DINA_IDENTITY_SEED=\([a-f0-9]*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
 fi
 
 IDENTITY_NEW=true   # tracks whether we generated a new identity
+SEED_MODE=""        # "maximum" or "server"
 
-if [ -n "${EXISTING_SEED}" ]; then
-    skip "Identity seed already set in .env"
+if [ "${SEED_ALREADY_WRAPPED}" = true ] && [ -z "${EXISTING_SEED}" ]; then
+    skip "Identity seed already wrapped"
+    IDENTITY_SEED=""
+    IDENTITY_NEW=false
+elif [ -n "${EXISTING_SEED}" ]; then
+    # Legacy migration: raw seed in .env — wrap it now
+    warn "Raw identity seed found in .env — migrating to encrypted storage"
     IDENTITY_SEED="${EXISTING_SEED}"
     IDENTITY_NEW=false
 elif [ -t 0 ]; then
@@ -275,6 +304,145 @@ else
     IDENTITY_SEED=$(python3 -c "import secrets; print(secrets.token_hex(32), end='')" 2>/dev/null \
         || openssl rand -hex 32 | tr -d '\n')
     ok "Generated identity seed (256-bit)"
+fi
+
+# --- Show recovery phrase (only for new identities, before wrapping) ---
+if [ -n "${IDENTITY_SEED}" ] && [ "${IDENTITY_NEW}" = true ]; then
+    MNEMONIC=$(python3 scripts/seed_to_mnemonic.py "${IDENTITY_SEED}" 2>/dev/null || true)
+    if [ -n "${MNEMONIC}" ]; then
+        echo ""
+        echo -e "  ${BOLD}Your Recovery Phrase:${RESET}"
+        # Build lines first, then compute box width from the widest line.
+        MNEMONIC_LINES=()
+        WORD_NUM=1
+        LINE=""
+        for word in ${MNEMONIC}; do
+            LINE="${LINE}$(printf '%2d. %-12s' ${WORD_NUM} "${word}")"
+            if [ $((WORD_NUM % 4)) -eq 0 ]; then
+                MNEMONIC_LINES+=("${LINE}")
+                LINE=""
+            fi
+            WORD_NUM=$((WORD_NUM + 1))
+        done
+        [ -n "${LINE}" ] && MNEMONIC_LINES+=("${LINE}")
+
+        BOX_W=0
+        for ml in "${MNEMONIC_LINES[@]}"; do
+            [ ${#ml} -gt ${BOX_W} ] && BOX_W=${#ml}
+        done
+        BOX_W=$((BOX_W + 2))
+
+        BORDER=$(printf '═%.0s' $(seq 1 ${BOX_W}))
+        echo -e "  ${YELLOW}╔${BORDER}╗${RESET}"
+        for ml in "${MNEMONIC_LINES[@]}"; do
+            printf "  ${YELLOW}║${RESET} %-$((BOX_W - 2))s ${YELLOW}║${RESET}\n" "${ml}"
+        done
+        echo -e "  ${YELLOW}╚${BORDER}╝${RESET}"
+        echo ""
+        echo -e "  ${RED}${BOLD}SAVE THIS! You need it to recover your Dina.${RESET}"
+        echo -e "  ${RED}Write it down on paper. Do not store it digitally.${RESET}"
+    fi
+fi
+
+# --- Wrap the seed with a passphrase ---
+if [ -n "${IDENTITY_SEED}" ]; then
+    echo ""
+    if [ -t 0 ]; then
+        echo -e "  ${BOLD}Choose how to protect your identity seed:${RESET}"
+        echo ""
+        echo -e "    ${CYAN}1)${RESET} Maximum Security  ${DIM}— enter passphrase on every restart (recommended)${RESET}"
+        echo -e "    ${CYAN}2)${RESET} Server Mode       ${DIM}— store passphrase for unattended boot${RESET}"
+        echo -e "                          ${DIM}(passphrase stored in secrets/ — convenience trade-off)${RESET}"
+        echo ""
+        printf "  Enter choice [1-2]: "
+        read -r SEED_MODE_CHOICE
+
+        case "${SEED_MODE_CHOICE}" in
+            2) SEED_MODE="server" ;;
+            *) SEED_MODE="maximum" ;;
+        esac
+
+        # Prompt for passphrase (min 8 chars, confirmed)
+        echo ""
+        echo -e "  ${BOLD}Choose a passphrase to encrypt your identity seed:${RESET}"
+        echo -e "  ${DIM}(minimum 8 characters)${RESET}"
+        while true; do
+            printf "  Passphrase: "
+            read -rs SEED_PASSPHRASE
+            echo ""
+            if [ ${#SEED_PASSPHRASE} -lt 8 ]; then
+                echo -e "  ${YELLOW}✗${RESET} Passphrase must be at least 8 characters"
+                continue
+            fi
+            printf "  Confirm:    "
+            read -rs SEED_PASSPHRASE_CONFIRM
+            echo ""
+            if [ "${SEED_PASSPHRASE}" != "${SEED_PASSPHRASE_CONFIRM}" ]; then
+                echo -e "  ${YELLOW}✗${RESET} Passphrases do not match — try again"
+                continue
+            fi
+            break
+        done
+    else
+        # Non-interactive: auto-generate passphrase, Server Mode
+        SEED_MODE="server"
+        SEED_PASSPHRASE=$(python3 -c "import secrets; print(secrets.token_urlsafe(32), end='')" 2>/dev/null \
+            || openssl rand -base64 32 | tr -d '\n')
+        warn "Non-interactive: auto-generated passphrase (Server Mode)"
+    fi
+
+    # Call wrap_seed.py
+    info "Encrypting identity seed (Argon2id + AES-256-GCM)..."
+    if "${INSTALL_VENV}/bin/python3" scripts/wrap_seed.py \
+        "${IDENTITY_SEED}" "${SEED_PASSPHRASE}" "${SECRETS_DIR}" >/dev/null 2>&1; then
+        ok "Identity seed encrypted"
+    else
+        fail "Failed to encrypt identity seed"
+    fi
+
+    # Server Mode: store passphrase in secrets/
+    if [ "${SEED_MODE}" = "server" ]; then
+        printf '%s' "${SEED_PASSPHRASE}" > "${SECRETS_DIR}/seed_password"
+        chmod 600 "${SECRETS_DIR}/seed_password"
+        ok "Passphrase stored in secrets/seed_password (Server Mode)"
+    else
+        # Maximum Security: create empty file (Docker Secrets needs it to exist)
+        : > "${SECRETS_DIR}/seed_password"
+        chmod 600 "${SECRETS_DIR}/seed_password"
+    fi
+
+    # If migrating from raw seed in .env, remove it
+    if [ -n "${EXISTING_SEED}" ] && [ -f "${ENV_FILE}" ]; then
+        sed -i.bak '/^DINA_IDENTITY_SEED=/d' "${ENV_FILE}" 2>/dev/null \
+            || sed -i '' '/^DINA_IDENTITY_SEED=/d' "${ENV_FILE}"
+        rm -f "${ENV_FILE}.bak"
+        ok "Removed raw seed from .env (migrated to encrypted storage)"
+    fi
+
+    # Zero the seed variable — raw seed must not persist
+    IDENTITY_SEED="0000000000000000000000000000000000000000000000000000000000000000"
+    unset IDENTITY_SEED
+    SEED_PASSPHRASE=""; unset SEED_PASSPHRASE
+    SEED_PASSPHRASE_CONFIRM=""; unset SEED_PASSPHRASE_CONFIRM
+    ok "Raw seed zeroed from memory"
+
+    # Show mode-specific guidance
+    echo ""
+    if [ "${SEED_MODE}" = "maximum" ]; then
+        echo -e "  ┌─────────────────────────────────────────────────────┐"
+        echo -e "  │ ${BOLD}Maximum Security mode${RESET}: you will need to provide     │"
+        echo -e "  │ your passphrase on every container restart.         │"
+        echo -e "  │                                                     │"
+        echo -e "  │ Start with:                                         │"
+        echo -e "  │   ${CYAN}DINA_SEED_PASSWORD=<passphrase> \\\\${RESET}                  │"
+        echo -e "  │     ${CYAN}docker compose up -d${RESET}                            │"
+        echo -e "  └─────────────────────────────────────────────────────┘"
+    else
+        echo -e "  ┌─────────────────────────────────────────────────────┐"
+        echo -e "  │ ${BOLD}Server Mode${RESET}: passphrase stored for unattended boot. │"
+        echo -e "  │ Containers restart automatically.                   │"
+        echo -e "  └─────────────────────────────────────────────────────┘"
+    fi
 fi
 
 echo ""
@@ -459,13 +627,12 @@ if [ ! -f "${ENV_FILE}" ]; then
         done
     fi
 
-    # Write .env file
+    # Write .env file (seed is NOT stored here — it's in secrets/wrapped_seed.bin)
     cat > "${ENV_FILE}" << ENVEOF
 # Dina Home Node Configuration
 # Generated by install.sh — $(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-# Identity seed (DO NOT SHARE — your recovery phrase derives from this)
-DINA_IDENTITY_SEED=${IDENTITY_SEED}
+#
+# Identity seed is encrypted in secrets/wrapped_seed.bin (not stored here).
 
 # AT Protocol PDS secrets (auto-generated, do not edit)
 DINA_PDS_JWT_SECRET=${PDS_JWT_SECRET}
@@ -515,16 +682,6 @@ ENVEOF
         ok "Configured ${LLM_KEY_NAME}"
     fi
 else
-    # Ensure DINA_IDENTITY_SEED is in existing .env
-    if [ -z "${EXISTING_SEED}" ]; then
-        echo "" >> "${ENV_FILE}"
-        echo "# Identity seed (added by install.sh)" >> "${ENV_FILE}"
-        echo "DINA_IDENTITY_SEED=${IDENTITY_SEED}" >> "${ENV_FILE}"
-        ok "Added identity seed to existing .env"
-    else
-        skip "Identity seed already set"
-    fi
-
     # Ensure PDS secrets are in existing .env
     if ! grep -q "^DINA_PDS_JWT_SECRET=" "${ENV_FILE}" 2>/dev/null; then
         echo "" >> "${ENV_FILE}"
@@ -664,30 +821,6 @@ fi
 echo ""
 
 # ---------------------------------------------------------------------------
-# Step 11: Retrieve identity
-# ---------------------------------------------------------------------------
-
-echo -e "${BOLD}Step 10: Retrieving your identity${RESET}"
-
-# Only derive and show the mnemonic for new identities.
-# Restored users already have their recovery phrase.
-MNEMONIC=""
-DID=""
-
-if [ "${IDENTITY_NEW}" = true ]; then
-    MNEMONIC=$(python3 scripts/seed_to_mnemonic.py "${IDENTITY_SEED}" 2>/dev/null || true)
-    if [ -n "${MNEMONIC}" ]; then
-        ok "Recovery phrase derived — SAVE IT (shown below)"
-    else
-        warn "Could not derive recovery phrase"
-    fi
-else
-    ok "Identity restored — recovery phrase not shown (you already have it)"
-fi
-
-echo ""
-
-# ---------------------------------------------------------------------------
 # Final banner
 # ---------------------------------------------------------------------------
 
@@ -703,51 +836,16 @@ echo -e "${BOLD}║${BANNER_LEFT}${BANNER_MSG}${BANNER_RIGHT}║${RESET}"
 echo -e "${BOLD}╚${BANNER_BORDER}╝${RESET}"
 echo ""
 
-if [ -n "${DID}" ]; then
-    echo -e "  ${BOLD}Your DID (Decentralized Identifier):${RESET}"
-    echo -e "  ${CYAN}${DID}${RESET}"
-    echo ""
+echo -e "  ${BOLD}Identity:${RESET}"
+echo -e "    Seed:      ${GREEN}encrypted${RESET} (AES-256-GCM + Argon2id)"
+if [ -n "${SEED_MODE}" ]; then
+    if [ "${SEED_MODE}" = "maximum" ]; then
+        echo -e "    Mode:      ${CYAN}Maximum Security${RESET} (passphrase on restart)"
+    else
+        echo -e "    Mode:      ${CYAN}Server Mode${RESET} (unattended boot)"
+    fi
 fi
-
-if [ -n "${MNEMONIC}" ]; then
-    echo -e "  ${BOLD}Your Recovery Phrase:${RESET}"
-    # Build lines first, then compute box width from the widest line.
-    MNEMONIC_LINES=()
-    WORD_NUM=1
-    LINE=""
-    for word in ${MNEMONIC}; do
-        LINE="${LINE}$(printf '%2d. %-12s' ${WORD_NUM} "${word}")"
-        if [ $((WORD_NUM % 4)) -eq 0 ]; then
-            MNEMONIC_LINES+=("${LINE}")
-            LINE=""
-        fi
-        WORD_NUM=$((WORD_NUM + 1))
-    done
-    # Handle any remaining words (if word count not multiple of 4)
-    [ -n "${LINE}" ] && MNEMONIC_LINES+=("${LINE}")
-
-    # Find widest line
-    BOX_W=0
-    for ml in "${MNEMONIC_LINES[@]}"; do
-        [ ${#ml} -gt ${BOX_W} ] && BOX_W=${#ml}
-    done
-    BOX_W=$((BOX_W + 2))  # 1 space padding each side
-
-    # Draw box
-    BORDER=$(printf '═%.0s' $(seq 1 ${BOX_W}))
-    echo -e "  ${YELLOW}╔${BORDER}╗${RESET}"
-    for ml in "${MNEMONIC_LINES[@]}"; do
-        printf "  ${YELLOW}║${RESET} %-$((BOX_W - 2))s ${YELLOW}║${RESET}\n" "${ml}"
-    done
-    echo -e "  ${YELLOW}╚${BORDER}╝${RESET}"
-    echo ""
-    echo -e "  ${RED}${BOLD}SAVE THIS! You need it to recover your Dina.${RESET}"
-    echo -e "  ${RED}Write it down on paper. Do not store it digitally.${RESET}"
-    echo ""
-elif [ "${IDENTITY_NEW}" = false ]; then
-    echo -e "  ${GREEN}Identity restored successfully.${RESET}"
-    echo ""
-fi
+echo ""
 
 echo -e "  ${BOLD}Services:${RESET}"
 echo -e "    Core:      ${CYAN}http://localhost:${CORE_PORT}${RESET}"

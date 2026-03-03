@@ -231,6 +231,9 @@ data/**
 secrets/*
 !secrets/.gitkeep
 
+# Install-time crypto venv (created by install.sh for seed wrapping)
+.install-venv/
+
 # Go build artifacts
 core/dina-core
 

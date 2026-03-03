@@ -59,6 +59,12 @@ if [ "${PURGE}" = true ]; then
     rm -rf "${DINA_DIR}/secrets"
     echo -e "  ${GREEN}[ok]${RESET} Secrets removed"
 
+    if [ -f "${DINA_DIR}/.env" ]; then
+        echo -e "  Removing .env..."
+        rm -f "${DINA_DIR}/.env"
+        echo -e "  ${GREEN}[ok]${RESET} .env removed"
+    fi
+
     echo ""
     echo -e "  ${RED}${BOLD}All data removed.${RESET}"
     echo -e "  Your DID and recovery phrase are the only way to restore your identity."

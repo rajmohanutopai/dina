@@ -111,6 +111,16 @@ func main() {
 	wrappedSeedPath := filepath.Join(cfg.VaultPath, "identity_seed.wrapped")
 	saltPath := filepath.Join(cfg.VaultPath, "identity_seed.salt")
 	seedPassword := os.Getenv("DINA_SEED_PASSWORD")
+	if seedPassword == "" {
+		if path := os.Getenv("DINA_SEED_PASSWORD_FILE"); path != "" {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				slog.Error("Failed to read DINA_SEED_PASSWORD_FILE", "path", path, "error", err)
+				os.Exit(1)
+			}
+			seedPassword = strings.TrimSpace(string(data))
+		}
+	}
 
 	// SEC-CRITICAL-03: Early production guard — refuse plaintext seed paths before any file I/O.
 	// DINA_IDENTITY_SEED env var is acceptable (no file written), but no-password paths are not.
