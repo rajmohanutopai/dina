@@ -434,7 +434,8 @@ type Config struct {
 	PDSURL         string // PDS XRPC endpoint
 	PLCURL         string // PLC directory URL
 	PDSAdminPassword string // PDS admin password
-	PDSHandle      string // AT Protocol handle
+	PDSHandle        string // AT Protocol handle
+	AdminSocketPath  string // Unix socket path for local admin CLI
 }
 
 // ConfigLoader — contract for loading configuration (§14).

@@ -146,6 +146,19 @@ func (a *Auth) Handler(next http.Handler) http.Handler {
 	})
 }
 
+// SocketAdminAuth returns middleware that pre-authenticates requests as admin.
+// Used for the Unix socket listener where socket access = admin auth.
+// No token validation is performed — the real trust boundary is docker exec
+// access to the container; whoever can exec in can reach the socket.
+func SocketAdminAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), TokenKindKey, "client")
+		ctx = context.WithValue(ctx, AgentDIDKey, "socket-local")
+		ctx = context.WithValue(ctx, TokenScopeKey, "admin")
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
 // NewAuthzMiddleware creates middleware that enforces endpoint-level authorization
 // based on the caller's token kind and scope. It reads token_kind and
 // token_scope from the request context (set by the auth middleware) and checks

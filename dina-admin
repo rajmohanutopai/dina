@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# dina-admin — thin wrapper that runs dina-admin inside the Core container.
+#
+# Usage:
+#   ./dina-admin status
+#   ./dina-admin --json persona list
+#   ./dina-admin device pair
+#
+# All arguments are forwarded to the container's dina-admin CLI.
+
+set -euo pipefail
+
+COMPOSE_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+if docker compose version >/dev/null 2>&1; then
+    COMPOSE="docker compose"
+elif command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE="docker-compose"
+else
+    echo "Error: docker compose not found" >&2
+    exit 1
+fi
+
+exec $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" exec -T core dina-admin "$@"

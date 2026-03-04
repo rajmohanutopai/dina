@@ -956,6 +956,56 @@ func main() {
 		MaxHeaderBytes: 1 << 20,
 	}
 
+	// ---------- Admin Unix socket (optional) ----------
+	//
+	// Core listens on a Unix domain socket for local admin CLI access.
+	// Socket access = admin auth: no CLIENT_TOKEN required.
+	// The real trust boundary is docker exec access to the container —
+	// whoever can exec in can reach the socket and act as admin.
+	// Usage: docker compose exec core dina-admin ...
+
+	var socketSrv *http.Server
+	if cfg.AdminSocketPath != "" {
+		// Build socket-specific middleware chain: same as TCP but replace
+		// Auth+Authz with SocketAdminAuth (pre-authenticated as admin).
+		var socketChain http.Handler = mux
+		socketChain = timeout.Handler(socketChain)
+		socketChain = middleware.SocketAdminAuth(socketChain)
+		socketChain = rateLimitMW.Handler(socketChain)
+		socketChain = logging.Handler(socketChain)
+		socketChain = recovery.Handler(socketChain)
+		socketChain = middleware.BodyLimit(1 << 20)(socketChain)
+
+		// Clean up stale socket file from previous run.
+		os.Remove(cfg.AdminSocketPath)
+		if err := os.MkdirAll(filepath.Dir(cfg.AdminSocketPath), 0o750); err != nil {
+			slog.Error("failed to create admin socket directory", "error", err)
+		} else {
+			sockLn, err := net.Listen("unix", cfg.AdminSocketPath)
+			if err != nil {
+				slog.Error("failed to listen on admin socket", "path", cfg.AdminSocketPath, "error", err)
+			} else {
+				// Socket is 0600. The real access gate is docker exec into
+				// the container, not the file mode.
+				os.Chmod(cfg.AdminSocketPath, 0o600)
+
+				socketSrv = &http.Server{
+					Handler:        socketChain,
+					ReadTimeout:    10 * time.Second,
+					WriteTimeout:   35 * time.Second,
+					IdleTimeout:    60 * time.Second,
+					MaxHeaderBytes: 1 << 20,
+				}
+				go func() {
+					slog.Info("admin socket listening", "path", cfg.AdminSocketPath)
+					if err := socketSrv.Serve(sockLn); err != nil && err != http.ErrServerClosed {
+						slog.Error("admin socket error", "error", err)
+					}
+				}()
+			}
+		}
+	}
+
 	// Graceful shutdown on SIGINT/SIGTERM.
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
@@ -976,6 +1026,12 @@ func main() {
 
 	if err := srv.Shutdown(ctx); err != nil {
 		slog.Error("shutdown error", "error", err)
+	}
+	if socketSrv != nil {
+		if err := socketSrv.Shutdown(ctx); err != nil {
+			slog.Error("admin socket shutdown error", "error", err)
+		}
+		os.Remove(cfg.AdminSocketPath)
 	}
 
 	slog.Info("dina-core stopped")

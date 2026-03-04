@@ -18,6 +18,8 @@ services:
     build:
       context: ./core
       dockerfile: Dockerfile
+      additional_contexts:
+        admin-cli: ./admin-cli
     ports:
       - "${DINA_CORE_PORT:-8100}:8100"
     volumes:

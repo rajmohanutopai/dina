@@ -33,7 +33,8 @@ type Config struct {
 	SessionTTL     int    // seconds
 	RateLimit      int    // requests per minute per IP
 	SpoolMax       int    // max spool directory size (buffered messages when locked)
-	BackupInterval int    // hours between automatic backups
+	BackupInterval  int    // hours between automatic backups
+	AdminSocketPath string // Unix socket path for local admin CLI (empty = disabled)
 }
 
 // EstatePlan holds the digital estate configuration.

@@ -1,4 +1,4 @@
-# Stage 1: Build with CGO (SQLCipher only)
+# Stage 1: Build Go binary with CGO (SQLCipher only)
 FROM golang:1.25-bookworm AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -22,7 +22,14 @@ RUN CGO_ENABLED=1 go build \
     -o /dina-core \
     ./cmd/dina-core/
 
-# Stage 2: Minimal runtime (no compiler, no headers)
+# Stage 2: Build dina-admin wheel
+FROM python:3.12-slim-bookworm AS admin-builder
+
+WORKDIR /build
+COPY --from=admin-cli . .
+RUN pip install --no-cache-dir build && python -m build --wheel --outdir /dist
+
+# Stage 3: Minimal runtime (no compiler, no headers)
 FROM debian:bookworm-slim
 
 # Security: run as non-root user.
@@ -31,19 +38,28 @@ RUN groupadd -g 10001 dina && \
 
 # Install only runtime shared libraries (no -dev packages).
 # gosu: lightweight setuid tool for dropping privileges in entrypoint.
+# python3 + pip: for dina-admin CLI (admin runs inside the container).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libsqlcipher0 \
     ca-certificates \
     wget \
     gosu \
+    python3 \
+    python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
 # Create data directories with correct ownership.
-RUN mkdir -p /data/vault /data/spool /data/config && \
+# /data/run holds the admin Unix socket (container-internal, 0600).
+RUN mkdir -p /data/vault /data/spool /data/config /data/run && \
     chown -R dina:dina /data
 
-# Copy the binary from the builder stage.
+# Copy the Go binary from the builder stage.
 COPY --from=builder /dina-core /usr/local/bin/dina-core
+
+# Install dina-admin CLI inside the container.
+# Socket access = admin auth — no token needed.
+COPY --from=admin-builder /dist/*.whl /tmp/
+RUN pip3 install --no-cache-dir --break-system-packages /tmp/*.whl && rm -f /tmp/*.whl
 
 # Copy entrypoint script (reads Docker secrets as root, then drops to dina user).
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
@@ -66,7 +82,8 @@ VOLUME ["/data"]
 ENV DINA_LISTEN_ADDR=":8100" \
     DINA_ADMIN_ADDR=":8200" \
     DINA_VAULT_PATH="/data/vault" \
-    DINA_SECURITY_MODE="standard"
+    DINA_SECURITY_MODE="standard" \
+    DINA_ADMIN_SOCKET="/data/run/admin.sock"
 
 ENTRYPOINT ["entrypoint.sh"]
 CMD ["dina-core"]

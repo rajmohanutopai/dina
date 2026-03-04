@@ -905,6 +905,7 @@ if [ -n "${TELEGRAM_TOKEN}" ] || [ -n "${EXISTING_TG_TOKEN}" ]; then
 fi
 echo ""
 echo -e "  ${BOLD}Commands:${RESET}"
+echo -e "    Admin:     ${CYAN}${COMPOSE} exec core dina-admin status${RESET}"
 echo -e "    Logs:      ${CYAN}${COMPOSE} logs -f${RESET}"
 echo -e "    Stop:      ${CYAN}${COMPOSE} down${RESET}"
 echo -e "    Uninstall: ${CYAN}./uninstall.sh${RESET}"

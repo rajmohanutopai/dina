@@ -82,6 +82,60 @@ Talking to AT Proto
 - Core authenticates to PDS via JWT (from createSession), then submits record content. PDS signs the commit.
 
 
+**Boundaries and Trust**
+
+Now that we have covered how the Master Seed wakes up and derives the various personas during boot, we need to look at how the moving parts of Dina actually talk to each other.
+
+The core philosophy of Dina's runtime architecture is simple: Core is the public gatekeeper, and Brain is the internal reasoning engine. To make this secure, we divide the system into three strict trust planes.
+
+1. The Three Planes of Trust
+
+Instead of using a single type of password or token for everything, Dina uses specific cryptographic tools depending on where the request is coming from.
+
+The Root Secret Plane: This is the foundation. It is controlled by your Master Seed and your Seed Passphrase. This plane dictates your ultimate cryptographic identity and your ability to decrypt data.
+
+The Client Device Plane: This is how you, as a user, interact with Core from the outside. Every paired device—like your CLI or a future mobile app—generates its own local Ed25519 keypair. The private key never leaves your device. Core only knows the public key.
+
+The Local Privileged Plane: This is how internal services (like the Python Brain talking to the Go Core) authenticate. Rather than passing API keys back and forth, they communicate over Unix Domain Sockets, relying entirely on the host operating system's file permissions.
+
+Admin Web UI - This is a very specific interface where we connect using CLIENT-TOKEN (a secret known to core)
+
+2. How Core and Brain Communicate (The Socket Model)
+
+When the Python Brain needs to ask the Go Core for a piece of data from the vault, it does not send a bearer token or a password.
+
+Instead, Core and Brain communicate over a private, local Unix socket. This socket is never exposed to the network. Because of how operating systems work, Core mathematically knows that only the specific Brain process has the file-level permission to write to that socket.
+
+This provides a massive security benefit: there are no internal API secrets to leak, no tokens to accidentally commit to source control, and no way for an external attacker to spoof an internal service call.
+
+3. Separating the "Who" from the "Why"
+
+By using Unix sockets for internal services, we cleanly separate two concepts that often get dangerously mixed up in software design: Authentication and Purpose.
+
+Authentication (The Who): The Unix socket and OS permissions definitively prove who is calling. Core knows it is the Brain.
+
+Request Purpose (The Why): Once the identity is proven, the Brain just needs to explain why it is calling by passing internal metadata headers (e.g., brain_task or agent_review).
+
+This keeps the architecture incredibly clean. We don't need a dozen different tokens for a dozen different internal roles.
+
+4. External Access: CLI and Admin
+
+With the internal services locked down via sockets, here is how external commands get through the gatekeeper.
+
+The CLI (Device Proof-of-Possession)
+When you use the CLI, it does not use your Master Seed, and it does not send a password.
+When you first set it up, the CLI generates a local keypair and registers the public half with Core. For every command you type after that, the CLI signs the request payload locally with its private key and attaches the signature. Core verifies the signature, confirms the device's permissions, and executes the command.
+
+The Local Operator (dina-admin)
+The dina-admin tool is not a normal client; it is a local operator utility. You run it directly on the host machine (or via SSH). Because it runs locally, it talks to Core over a dedicated local admin Unix socket. In this model, your access to the host machine's operating system is your admin authentication. There are no remote admin passwords floating around the network.
+
+5. The Network Boundary (PDS and D2D)
+
+Finally, when Dina reaches out to the public internet, we rely on the cryptographic boundaries we established during the boot process.
+
+AT Protocol Publishing: Dina holds a completely separate secp256k1 (k256) rotation key. When publishing public records, Dina submits the raw data to the PDS, and the PDS uses its own hosting keys to sign the actual repository commits on the AT Protocol network.
+
+Dina-to-Dina (D2D) Messaging: For direct agent-to-agent communication, the network is treated as zero-trust. Dina signs the plaintext message with its local Ed25519 key, wraps it in an anonymous NaCl sealed box using the recipient's public key, and fires it off. The receiving node decrypts it, verifies the DID signature, checks for replay attacks, and processes the message.
 
 **More Details**
 

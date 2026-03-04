@@ -60,5 +60,14 @@ if [ -f "$SECRET_DIR/seed_password" ] && [ -s "$SECRET_DIR/seed_password" ]; the
     export DINA_SEED_PASSWORD_FILE="$SECRET_DIR/seed_password"
 fi
 
+# Ensure admin socket directory exists and is writable by dina.
+# Socket is container-internal; dina-admin runs inside via docker exec.
+ADMIN_SOCK_DIR="${DINA_ADMIN_SOCKET%/*}"
+if [ -n "$ADMIN_SOCK_DIR" ] && [ "$ADMIN_SOCK_DIR" != "$DINA_ADMIN_SOCKET" ]; then
+    mkdir -p "$ADMIN_SOCK_DIR"
+    chown dina:dina "$ADMIN_SOCK_DIR"
+    chmod 0750 "$ADMIN_SOCK_DIR"
+fi
+
 # Drop privileges and exec the Go binary.
 exec gosu dina "$@"

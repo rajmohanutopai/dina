@@ -31,7 +31,8 @@ type Config struct {
 	OwnDID           string `json:"own_did"`
 	AppViewURL       string `json:"appview_url"`
 	AllowedOrigins   string `json:"allowed_origins"`
-	TrustedProxies   string `json:"trusted_proxies"` // comma-separated CIDRs for XFF trust
+	TrustedProxies   string `json:"trusted_proxies"`    // comma-separated CIDRs for XFF trust
+	AdminSocketPath  string `json:"admin_socket_path"` // Unix socket for local admin (empty = disabled)
 }
 
 // Loader implements testutil.ConfigLoader.
@@ -97,15 +98,16 @@ func (l *Loader) Validate(cfg *Config) error {
 
 func defaults() *Config {
 	return &Config{
-		ListenAddr:     ":8300",
-		AdminAddr:      ":8100",
-		VaultPath:      "/var/lib/dina",
-		BrainURL:       "http://brain:8200",
-		SecurityMode:   "security",
-		SessionTTL:     86400,
-		RateLimit:      60,
-		SpoolMax:       1000,
-		BackupInterval: 24,
+		ListenAddr:      ":8300",
+		AdminAddr:       ":8100",
+		VaultPath:       "/var/lib/dina",
+		BrainURL:        "http://brain:8200",
+		SecurityMode:    "security",
+		SessionTTL:      86400,
+		RateLimit:       60,
+		SpoolMax:        1000,
+		BackupInterval:  24,
+		AdminSocketPath: "/data/run/admin.sock",
 	}
 }
 
@@ -212,5 +214,9 @@ func loadEnv(cfg *Config) {
 	}
 	if v := os.Getenv("DINA_TRUSTED_PROXIES"); v != "" {
 		cfg.TrustedProxies = v
+	}
+	// DINA_ADMIN_SOCKET: non-empty overrides the path; explicitly empty disables the listener.
+	if v, ok := os.LookupEnv("DINA_ADMIN_SOCKET"); ok {
+		cfg.AdminSocketPath = v
 	}
 }
