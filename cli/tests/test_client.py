@@ -16,8 +16,6 @@ from dina_cli.config import Config
 def config():
     return Config(
         core_url="http://localhost:8100",
-        brain_url="http://localhost:8200",
-        brain_token="test-brain-token",
         persona="personal",
         timeout=5.0,
         device_name="test-device",
@@ -165,15 +163,6 @@ def test_no_bearer_on_core(config):
     """Core client should NOT have an Authorization header."""
     client = DinaClient(config)
     assert "authorization" not in {k.lower() for k in client._core.headers}
-    client.close()
-
-
-def test_brain_still_bearer(config):
-    """Brain client always uses Bearer for its own trust relationship."""
-    client = DinaClient(config)
-    assert client._brain is not None
-    auth = client._brain.headers.get("authorization", "")
-    assert auth.startswith("Bearer ")
     client.close()
 
 

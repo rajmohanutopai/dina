@@ -133,6 +133,14 @@ class CLIIdentity:
         encoded = base58.b58encode(_ED25519_MULTICODEC + self._raw_public_key())
         return f"z{encoded.decode('ascii')}"
 
+    # -- Data signing ----------------------------------------------------------
+
+    def sign_data(self, data: bytes) -> str:
+        """Sign arbitrary data and return the hex-encoded signature."""
+        self.ensure_loaded()
+        assert self._private_key is not None
+        return self._private_key.sign(data).hex()
+
     # -- Request signing -------------------------------------------------------
 
     def sign_request(

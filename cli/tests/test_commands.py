@@ -17,8 +17,6 @@ def _test_config():
     from dina_cli.config import Config
     return Config(
         core_url="http://localhost:8100",
-        brain_url="http://localhost:8200",
-        brain_token="test-brain-token",
         persona="personal",
         timeout=5.0,
         device_name="test-device",
@@ -219,15 +217,20 @@ def test_draft_json():
 # ── sign ──────────────────────────────────────────────────────────────────
 
 
-def test_sign_json():
-    mc = MagicMock()
-    mc.did_get.return_value = {"id": "did:key:z6Mk123"}
-    mc.did_sign.return_value = {"signature": "deadbeef"}
-    result = _invoke(["--json", "sign", "I approve the budget"], mock_client=mc)
+def test_sign_json(tmp_path):
+    """sign command signs locally — no server call needed."""
+    from dina_cli.signing import CLIIdentity
+
+    identity = CLIIdentity(identity_dir=tmp_path / "identity")
+    identity.generate()
+
+    runner = CliRunner()
+    with patch("dina_cli.signing.CLIIdentity", return_value=identity):
+        result = runner.invoke(cli, ["--json", "sign", "I approve the budget"], env={})
     assert result.exit_code == 0
     data = json.loads(result.output)
-    assert data["signed_by"] == "did:key:z6Mk123"
-    assert data["signature"] == "deadbeef"
+    assert data["signed_by"].startswith("did:key:z")
+    assert len(data["signature"]) == 128  # Ed25519 sig = 64 bytes = 128 hex
     assert "timestamp" in data
 
 
@@ -266,12 +269,10 @@ def test_configure_signature_mode(tmp_path):
     with patch("dina_cli.main._configure_signature") as mock_sig, \
          patch("dina_cli.main.save_config") as mock_save:
         mock_save.return_value = tmp_path / "config.json"
-        # Input: core_url (default), device_name, brain_url, brain_token, persona, test=no
+        # Input: core_url (default), device_name, persona, test=no
         user_input = "\n".join([
             "",           # core_url (default)
             "my-laptop",  # device name
-            "",           # brain_url (default)
-            "",           # brain_token (skip)
             "",           # persona (default)
             "n",          # don't test connection
         ])
@@ -283,6 +284,8 @@ def test_configure_signature_mode(tmp_path):
     assert saved["device_name"] == "my-laptop"
     assert "client_token" not in saved
     assert "auth_mode" not in saved
+    assert "brain_url" not in saved
+    assert "brain_token" not in saved
 
 
 def test_configure_help():

@@ -19,8 +19,6 @@ class Config:
     """Immutable CLI configuration."""
 
     core_url: str
-    brain_url: str
-    brain_token: str
     persona: str
     timeout: float
     device_name: str = ""
@@ -61,8 +59,6 @@ def load_config() -> Config:
     saved = _load_saved()
 
     core_url = os.environ.get("DINA_CORE_URL") or saved.get("core_url") or "http://localhost:8100"
-    brain_url = os.environ.get("DINA_BRAIN_URL") or saved.get("brain_url") or "http://localhost:8200"
-    brain_token = os.environ.get("DINA_BRAIN_TOKEN") or saved.get("brain_token") or ""
     persona = os.environ.get("DINA_PERSONA") or saved.get("persona") or "personal"
     timeout = float(os.environ.get("DINA_TIMEOUT") or saved.get("timeout") or 30.0)
     device_name = saved.get("device_name") or ""
@@ -75,8 +71,6 @@ def load_config() -> Config:
 
     return Config(
         core_url=core_url,
-        brain_url=brain_url,
-        brain_token=brain_token,
         persona=persona,
         timeout=timeout,
         device_name=device_name,

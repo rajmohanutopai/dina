@@ -18,8 +18,6 @@ def config(tmp_path) -> Config:
     identity.generate()
     return Config(
         core_url="http://localhost:8100",
-        brain_url="http://localhost:8200",
-        brain_token="test-brain-token",
         persona="personal",
         timeout=5.0,
         device_name="test-device",
@@ -28,15 +26,13 @@ def config(tmp_path) -> Config:
 
 @pytest.fixture()
 def sig_config(tmp_path) -> Config:
-    """Alias for config — all configs use Ed25519 signature mode now."""
+    """Alias for config — kept for backward compatibility."""
     from dina_cli.signing import CLIIdentity
 
     identity = CLIIdentity(identity_dir=tmp_path / "identity")
     identity.generate()
     return Config(
         core_url="http://localhost:8100",
-        brain_url="http://localhost:8200",
-        brain_token="test-brain-token",
         persona="personal",
         timeout=5.0,
         device_name="test-device",

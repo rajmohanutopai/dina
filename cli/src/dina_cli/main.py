@@ -320,19 +320,26 @@ def draft(ctx: click.Context, content: str, recipient: str, channel: str, subjec
 @click.argument("content")
 @click.pass_context
 def sign(ctx: click.Context, content: str) -> None:
-    """Cryptographic signature with user's DID key."""
-    client = _make_client(ctx)
+    """Cryptographic signature with user's DID key.
+
+    Signs locally using the CLI's Ed25519 private key — no server round-trip.
+    """
+    from .signing import CLIIdentity
+
     json_mode = ctx.obj["json"]
     try:
-        did_doc = client.did_get()
-        data_hex = content.encode().hex()
-        sig_result = client.did_sign(data_hex)
+        identity = CLIIdentity()
+        identity.ensure_loaded()
+        signature = identity.sign_data(content.encode())
         print_result({
-            "signed_by": did_doc.get("id", did_doc.get("did", "")),
-            "signature": sig_result.get("signature", ""),
+            "signed_by": identity.did(),
+            "signature": signature,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }, json_mode)
-    except DinaClientError as exc:
+    except FileNotFoundError:
+        print_error("No keypair found. Run 'dina configure' first.", json_mode)
+        ctx.exit(1)
+    except Exception as exc:
         print_error(str(exc), json_mode)
         ctx.exit(1)
 
@@ -402,17 +409,6 @@ def configure(ctx: click.Context) -> None:
     click.echo()
     _configure_signature(core_url, device_name)
 
-    brain_url = click.prompt(
-        "Brain URL",
-        default=existing.get("brain_url", core_url.replace(":8100", ":8200")),
-    )
-    brain_token = click.prompt(
-        "Brain token (optional, for validate/scrub tier-2)",
-        default=existing.get("brain_token", ""),
-        hide_input=True,
-        show_default=False,
-        prompt_suffix=" (hidden, press Enter to skip): ",
-    )
     persona = click.prompt(
         "Default persona",
         default=existing.get("persona", "personal"),
@@ -420,12 +416,9 @@ def configure(ctx: click.Context) -> None:
 
     values: dict[str, Any] = {
         "core_url": core_url,
-        "brain_url": brain_url,
         "persona": persona,
         "device_name": device_name,
     }
-    if brain_token:
-        values["brain_token"] = brain_token
 
     path = save_config(values)
     click.echo()
@@ -437,8 +430,6 @@ def configure(ctx: click.Context) -> None:
         from .config import Config
         cfg = Config(
             core_url=core_url,
-            brain_url=brain_url,
-            brain_token=brain_token,
             persona=persona,
             timeout=10.0,
             device_name=device_name,
@@ -820,8 +811,8 @@ def bootstrap_server(ctx: click.Context, ssh_host: str | None, remote_dir: str,
 def web(ctx: click.Context) -> None:
     """Open the Dina admin dashboard in your browser."""
     config = _load_cfg(ctx)
-    # Admin UI is served by Brain on the same port
-    url = config.brain_url.rstrip("/") + "/admin/dashboard"
+    # Core proxies /admin to Brain
+    url = config.core_url.rstrip("/") + "/admin/dashboard"
     click.echo(f"Opening {url}")
     webbrowser.open(url)
 

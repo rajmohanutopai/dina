@@ -1,4 +1,4 @@
-"""Synchronous HTTP client wrapping Dina Core and Brain."""
+"""Synchronous HTTP client wrapping Dina Core."""
 
 from __future__ import annotations
 
@@ -16,9 +16,9 @@ class DinaClientError(Exception):
 
 
 class DinaClient:
-    """Synchronous HTTP client for Dina Core and Brain services.
+    """Synchronous HTTP client for Dina Core.
 
-    Core requests are authenticated via Ed25519 request signing
+    All requests are authenticated via Ed25519 request signing
     (X-DID / X-Timestamp / X-Signature headers).
     """
 
@@ -28,17 +28,6 @@ class DinaClient:
         self._core = httpx.Client(
             base_url=config.core_url,
             timeout=config.timeout,
-        )
-
-        # Brain always uses Bearer token (separate trust relationship).
-        self._brain: httpx.Client | None = (
-            httpx.Client(
-                base_url=config.brain_url,
-                headers={"Authorization": f"Bearer {config.brain_token}"},
-                timeout=config.timeout,
-            )
-            if config.brain_token
-            else None
         )
 
     # -- Context manager support ------------------------------------------
@@ -55,10 +44,8 @@ class DinaClient:
         self.close()
 
     def close(self) -> None:
-        """Close the underlying HTTP clients."""
+        """Close the underlying HTTP client."""
         self._core.close()
-        if self._brain is not None:
-            self._brain.close()
 
     # -- Private helpers ---------------------------------------------------
 
@@ -200,16 +187,6 @@ class DinaClient:
     def did_get(self) -> dict:
         """Retrieve the DID document."""
         resp = self._request(self._core, "GET", "/v1/did")
-        return resp.json()
-
-    def did_sign(self, data_hex: str) -> dict:
-        """Sign data with the DID private key."""
-        resp = self._request(
-            self._core,
-            "POST",
-            "/v1/did/sign",
-            json={"data": data_hex},
-        )
         return resp.json()
 
     # -- Brain -------------------------------------------------------------
