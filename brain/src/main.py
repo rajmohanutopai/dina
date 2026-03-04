@@ -32,6 +32,7 @@ from .infra.logging import setup_logging
 
 # -- Adapters (only imported here) --
 from .adapter.core_http import CoreHTTPClient
+from .adapter.signing import ServiceIdentity
 from .adapter.llm_llama import LlamaProvider
 from .adapter.llm_gemini import GeminiProvider
 from .adapter.llm_claude import ClaudeProvider
@@ -154,10 +155,42 @@ def create_app() -> FastAPI:
         },
     )
 
-    # 2. Construct adapters
-    brain_core_client = CoreHTTPClient(cfg.core_url, cfg.brain_token)
+    # 2. Service identity (Ed25519 keypair for service-to-service auth)
+    from pathlib import Path
+    brain_identity = ServiceIdentity(Path(cfg.service_key_dir), service_name="brain")
+    try:
+        brain_identity.ensure_key()
+        log.info("brain.service_key.ready", extra={"did": brain_identity.did()})
+    except Exception as exc:
+        log.error("brain.service_key.failed", extra={"error": str(exc)})
+        brain_identity = None  # type: ignore[assignment]
+
+    # Lazy loader for Core's public key — resolves on first request, not at startup.
+    # This avoids the cold-start race where Brain starts before Core has generated
+    # its keypair. The callable caches after first successful load.
+    _core_key_cache = [None]  # mutable container for closure
+
+    def _get_core_public_key():
+        if _core_key_cache[0] is not None:
+            return _core_key_cache[0]
+        if brain_identity is None:
+            return None
+        try:
+            _core_key_cache[0] = brain_identity.load_peer_key("core")
+            log.info("brain.core_key.loaded_lazy")
+        except FileNotFoundError:
+            log.debug("brain.core_key.not_yet_available")
+        except Exception as exc:
+            log.warning("brain.core_key.load_error", extra={"error": str(exc)})
+        return _core_key_cache[0]
+
+    # 2b. Construct adapters
+    brain_core_client = CoreHTTPClient(
+        cfg.core_url,
+        service_identity=brain_identity,
+    )
     admin_core_client: CoreHTTPClient | None = (
-        CoreHTTPClient(cfg.core_url, cfg.client_token)
+        CoreHTTPClient(cfg.core_url, brain_token=cfg.client_token)
         if cfg.client_token
         else None
     )
@@ -457,7 +490,13 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json" if _is_dev else None,
     )
 
-    brain_api = create_brain_app(guardian, sync_engine, cfg.brain_token, scrubber=scrubber)
+    # Determine internal token for admin proxy bearer auth
+    _internal_token = cfg.internal_token or cfg.brain_token or ""
+    brain_api = create_brain_app(
+        guardian, sync_engine, scrubber=scrubber,
+        core_public_key=_get_core_public_key,
+        internal_token=_internal_token,
+    )
     # Resolve dina.html path (architecture visualization)
     # Local dev: project_root/dina.html (3 dirs up from src/main.py)
     # Docker:    /app/dina.html (mounted volume, 2 dirs up)

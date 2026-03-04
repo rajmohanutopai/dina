@@ -29,9 +29,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import re
-from typing import Any
+from typing import Any, TYPE_CHECKING
+from urllib.parse import urlparse
 
 import httpx
 import structlog
@@ -42,6 +44,9 @@ from ..domain.errors import (
     CoreUnreachableError,
     PersonaLockedError,
 )
+
+if TYPE_CHECKING:
+    from .signing import ServiceIdentity
 
 logger = structlog.get_logger(__name__)
 
@@ -85,7 +90,8 @@ class CoreHTTPClient:
     """Implements CoreClient protocol via HTTP calls to core.
 
     Features:
-    - ``Authorization: Bearer {brain_token}`` on every request.
+    - Ed25519 signed requests (X-DID/X-Timestamp/X-Signature) via ServiceIdentity.
+    - Falls back to ``Authorization: Bearer`` if service_identity is None.
     - 30-second timeout per request.
     - Retry with exponential backoff (1 s, 2 s, 4 s) for 5xx and
       connection errors.
@@ -97,13 +103,20 @@ class CoreHTTPClient:
     - Async context-manager support (``__aenter__`` / ``__aexit__``).
     """
 
-    def __init__(self, base_url: str, brain_token: str) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        brain_token: str | None = None,
+        *,
+        service_identity: ServiceIdentity | None = None,
+    ) -> None:
         if not base_url:
             raise ConfigError("CORE_URL must not be empty")
-        if not brain_token:
-            raise ConfigError("BRAIN_TOKEN must not be empty")
+        if service_identity is None and not brain_token:
+            raise ConfigError("Either service_identity or brain_token must be provided")
         self._base_url = base_url.rstrip("/")
         self._token = brain_token
+        self._identity = service_identity
         self._client: httpx.AsyncClient | None = None
 
     # -- Lifecycle -----------------------------------------------------------
@@ -113,7 +126,6 @@ class CoreHTTPClient:
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 base_url=self._base_url,
-                headers={"Authorization": f"Bearer {self._token}"},
                 timeout=httpx.Timeout(_TIMEOUT_S),
             )
         return self._client
@@ -136,6 +148,29 @@ class CoreHTTPClient:
             await self._client.aclose()
             self._client = None
 
+    # -- Auth helpers --------------------------------------------------------
+
+    def _sign_headers(
+        self, method: str, path: str, body: bytes | None,
+    ) -> dict[str, str]:
+        """Build auth headers for a request.
+
+        If service_identity is available, signs with Ed25519.
+        Otherwise falls back to bearer token.
+        """
+        if self._identity is not None:
+            parsed = urlparse(path)
+            did, ts, sig = self._identity.sign_request(
+                method=method,
+                path=parsed.path,
+                body=body,
+                query=parsed.query,
+            )
+            return {"X-DID": did, "X-Timestamp": ts, "X-Signature": sig}
+        if self._token:
+            return {"Authorization": f"Bearer {self._token}"}
+        return {}
+
     # -- Internal request helper ---------------------------------------------
 
     async def _request(
@@ -151,20 +186,31 @@ class CoreHTTPClient:
         client = self._ensure_client()
         last_exc: BaseException | None = None
 
+        # Serialize body once for both signing and sending.
+        body_bytes: bytes | None = content
+        if json is not None and body_bytes is None:
+            import json as json_mod
+            body_bytes = json_mod.dumps(json).encode("utf-8")
+
+        # Build auth headers.
+        auth_headers = self._sign_headers(method, path, body_bytes)
+        merged_headers = {**auth_headers, **(headers or {})}
+        if json is not None:
+            merged_headers.setdefault("Content-Type", "application/json")
+
         for attempt in range(_MAX_RETRIES):
             try:
                 resp = await client.request(
                     method,
                     path,
-                    json=json,
-                    content=content,
-                    headers=headers,
+                    content=body_bytes,
+                    headers=merged_headers,
                 )
 
                 # --- Non-retryable status codes ---
                 if resp.status_code == 401:
                     raise ConfigError(
-                        f"Core returned HTTP 401 — BRAIN_TOKEN is invalid "
+                        f"Core returned HTTP 401 — service authentication failed "
                         f"(path={_normalize_path(path)})"
                     )
                 if resp.status_code == 403:

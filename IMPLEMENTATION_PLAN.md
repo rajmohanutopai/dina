@@ -139,7 +139,7 @@ Pure crypto — no I/O, no database. Validates against §2 tests (77 test functi
 |---|------|------|-------|--------|
 | 3.2.1 | `service/identity.go` | IdentityService: setup, key derivation, DID registration, persona management | §3.2, §3.3 | [x] |
 | 3.2.2 | `service/gatekeeper.go` | GatekeeperService: persona access tiers, egress enforcement, audit | §6 (61 tests) | [x] |
-| 3.2.3 | `middleware/auth.go` | Two-tier token auth: BRAIN_TOKEN (constant-time) + CLIENT_TOKEN (hash lookup) | §1 (51 tests) | [x] |
+| 3.2.3 | `middleware/auth.go` | Ed25519 service key auth + CLIENT_TOKEN (hash lookup) | §1 (51 tests) | [x] |
 | 3.2.4 | `middleware/ratelimit.go` | IP token bucket + global cap + login rate limit | §13 (6 tests) | [x] |
 | 3.2.5 | `adapter/auth/session.go` | SessionStore: browser sessions, CSRF tokens, TTL-based expiry | §1.3 | [x] |
 
@@ -275,7 +275,7 @@ Pure crypto — no I/O, no database. Validates against §2 tests (77 test functi
 
 | # | File | What | Tests | Status |
 |---|------|------|-------|--------|
-| 6.4.1 | `core_http.py` | CoreClient → HTTP calls to core:8100 with BRAIN_TOKEN | §7 (1 test) | [x] |
+| 6.4.1 | `core_http.py` | CoreClient → HTTP calls to core:8100 with Ed25519 signed requests | §7 (1 test) | [x] |
 | 6.4.2 | `llm_gemini.py` | LLMProvider → Gemini API | §4 | [x] |
 | 6.4.3 | `llm_claude.py` | LLMProvider → Claude API | §4 | [x] |
 | 6.4.4 | `llm_llama.py` | LLMProvider → llama:8080 (local, OpenAI-compatible) | §4 | [x] |
@@ -287,7 +287,7 @@ Pure crypto — no I/O, no database. Validates against §2 tests (77 test functi
 
 | # | File | What | Tests | Status |
 |---|------|------|-------|--------|
-| 6.5.1 | `app.py` | FastAPI sub-app, BRAIN_TOKEN auth middleware | §1, §10 | [x] |
+| 6.5.1 | `app.py` | FastAPI sub-app, Ed25519 service key auth middleware | §1, §10 | [x] |
 | 6.5.2 | `routes/process.py` | POST /v1/process — new data event from core | §10 | [x] |
 | 6.5.3 | `routes/reason.py` | POST /v1/reason — complex query from core | §10 | [x] |
 

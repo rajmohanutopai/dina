@@ -96,31 +96,39 @@ The Root Secret Plane: This is the foundation. It is controlled by your Master S
 
 The Client Device Plane: This is how you, as a user, interact with Core from the outside. Every paired device—like your CLI or a future mobile app—generates its own local Ed25519 keypair. The private key never leaves your device. Core only knows the public key.
 
-The Local Privileged Plane: This is how internal services (like the Python Brain talking to the Go Core) authenticate. Rather than passing API keys back and forth, they communicate over Unix Domain Sockets, relying entirely on the host operating system's file permissions.
+The Local Privileged Plane: This is how internal services (like the Python Brain talking to the Go Core) authenticate. Each service generates its own Ed25519 keypair at first startup. Private keys are isolated by separate Docker bind mounts — Core's private key never exists in Brain's container filesystem and vice versa. On the host, `secrets/service_keys/` is split into `core/` (bind-mounted only to Core as `/run/secrets/service_keys/private`), `brain/` (bind-mounted only to Brain as `/run/secrets/service_keys/private`), and `public/` (bind-mounted to both containers as `/run/secrets/service_keys/public`). Each container sees only its own private key under `private/` and both services' public keys under `public/`. Every inter-service request is cryptographically signed using the sender's private key and verified by the receiver using the sender's known public key.
 
-Admin Web UI - This is a very specific interface where we connect using CLIENT-TOKEN (a secret known to core)
+Admin Web UI - This is a very specific interface where we connect using CLIENT-TOKEN (a secret known to core). The admin web UI proxy path uses a bearer token (DINA_INTERNAL_TOKEN) since browsers cannot perform Ed25519 signing.
 
-2. How Core and Brain Communicate (The Socket Model)
+2. How Core and Brain Communicate (The Service Key Model)
 
-When the Python Brain needs to ask the Go Core for a piece of data from the vault, it does not send a bearer token or a password.
+When the Python Brain needs to ask the Go Core for a piece of data from the vault, it does not send a bearer token or a shared secret.
 
-Instead, Core and Brain communicate over a private, local Unix socket. This socket is never exposed to the network. Because of how operating systems work, Core mathematically knows that only the specific Brain process has the file-level permission to write to that socket.
+Instead, Core and Brain each generate their own Ed25519 keypair on first startup. Private keys are isolated by separate Docker bind mounts — each container's `/run/secrets/service_keys/private/` contains only its own private key, while `/run/secrets/service_keys/public/` (shared to both containers) holds both services' public keys. Core's private key never exists in Brain's container filesystem and vice versa. When Brain calls Core (or vice versa), the caller signs each request using a canonical format:
 
-This provides a massive security benefit: there are no internal API secrets to leak, no tokens to accidentally commit to source control, and no way for an external attacker to spoof an internal service call.
+```
+{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{SHA256_HEX(BODY)}
+```
+
+The signature and metadata are transmitted via three HTTP headers: `X-DID` (the caller's public key identifier), `X-Timestamp` (current time), and `X-Signature` (the Ed25519 signature over the canonical payload).
+
+The receiver verifies the signature against the known public key, checks that the timestamp is within a 5-minute window, and maintains a double-buffer nonce cache to prevent replay attacks. If any check fails, the request is rejected.
+
+This provides a massive security benefit: there are no shared secrets to leak, no tokens to accidentally commit to source control, and no way for an external attacker to forge a valid signed request without the private key.
 
 3. Separating the "Who" from the "Why"
 
-By using Unix sockets for internal services, we cleanly separate two concepts that often get dangerously mixed up in software design: Authentication and Purpose.
+By using Ed25519 service keys for internal services, we cleanly separate two concepts that often get dangerously mixed up in software design: Authentication and Purpose.
 
-Authentication (The Who): The Unix socket and OS permissions definitively prove who is calling. Core knows it is the Brain.
+Authentication (The Who): The Ed25519 signature definitively proves who is calling. Core verifies it is the Brain (and vice versa) by checking the signature against the known public key.
 
-Request Purpose (The Why): Once the identity is proven, the Brain just needs to explain why it is calling by passing internal metadata headers (e.g., brain_task or agent_review).
+Request Purpose (The Why): Once the identity is proven via signature verification, the Brain just needs to explain why it is calling by passing internal metadata headers (e.g., brain_task or agent_review).
 
-This keeps the architecture incredibly clean. We don't need a dozen different tokens for a dozen different internal roles.
+This keeps the architecture incredibly clean. We don't need a dozen different tokens for a dozen different internal roles -- just one keypair per service.
 
 4. External Access: CLI and Admin
 
-With the internal services locked down via sockets, here is how external commands get through the gatekeeper.
+With the internal services locked down via Ed25519 service keys, here is how external commands get through the gatekeeper.
 
 The CLI (Device Proof-of-Possession)
 When you use the CLI, it does not use your Master Seed, and it does not send a password.
@@ -142,11 +150,9 @@ Dina-to-Dina (D2D) Messaging: For direct agent-to-agent communication, the netwo
 Let's review the four distinct types of tokens utilized in Dina and trace how they flow through the system.
 
 1. Master Seed (we discussed)
-2. BRAIN_TOKEN
+2. Service Keys (Ed25519)
 
-Used by Python Brain. Go Core also has it. So, it validates the token to ensure that it is coming from Python Brain.
-This is randomly created 256 bit token at installation.
-Since Core has it, Core can also call Brain in some cases (with Bearer Token as Brain token)
+Each service (Core and Brain) generates its own Ed25519 keypair on first startup. Private keys are isolated by separate Docker bind mounts: on the host, `secrets/service_keys/core/` is mounted only to Core and `secrets/service_keys/brain/` only to Brain (each as `/run/secrets/service_keys/private/`), while `secrets/service_keys/public/` is mounted to both containers (as `/run/secrets/service_keys/public/`). Each service writes its public key to the shared `public/` directory. There is no shared secret — each side only knows the other's public key, and neither side can access the other's private key at the filesystem level. Every inter-service request is signed using the canonical format: `{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{SHA256_HEX(BODY)}`, transmitted via X-DID, X-Timestamp, and X-Signature headers. The receiver verifies the signature, enforces a 5-minute timestamp window, and uses a double-buffer nonce cache for replay protection. This replaced the earlier BRAIN_TOKEN shared-secret approach (the legacy token is still accepted as an optional fallback for the admin proxy, but Ed25519 service keys are the primary mechanism).
 
 
 3. CLIENT_TOKEN

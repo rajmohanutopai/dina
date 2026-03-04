@@ -96,7 +96,7 @@ def _build_app(guardian: AsyncMock | None = None) -> FastAPI:
 
     master = FastAPI()
 
-    brain_api = create_brain_app(guardian, sync_engine, TEST_BRAIN_TOKEN)
+    brain_api = create_brain_app(guardian, sync_engine, internal_token=TEST_BRAIN_TOKEN)
     admin_ui = create_admin_app(core_client, _FakeConfig())
 
     master.mount("/api", brain_api)
@@ -337,7 +337,7 @@ def test_api_10_1_health_with_llm_down() -> None:
     sync_engine = AsyncMock()
 
     master = FastAPI()
-    brain_api = create_brain_app(guardian, sync_engine, TEST_BRAIN_TOKEN)
+    brain_api = create_brain_app(guardian, sync_engine, internal_token=TEST_BRAIN_TOKEN)
     master.mount("/api", brain_api)
 
     # Build a healthz that reports "degraded" when no LLM providers exist

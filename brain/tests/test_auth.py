@@ -76,7 +76,7 @@ def _build_app() -> FastAPI:
 
     master = FastAPI()
 
-    brain_api = create_brain_app(guardian, sync_engine, TEST_BRAIN_TOKEN)
+    brain_api = create_brain_app(guardian, sync_engine, internal_token=TEST_BRAIN_TOKEN)
     admin_ui = create_admin_app(core_client, _FakeConfig())
 
     master.mount("/api", brain_api)
@@ -166,8 +166,8 @@ def test_auth_1_1_4_token_from_docker_secret(tmp_path: object, monkeypatch: pyte
 
 
 # TST-BRAIN-005
-def test_auth_1_1_5_token_file_missing_refuses_start(monkeypatch: pytest.MonkeyPatch) -> None:
-    """S1.1.5: Secret mount absent -> brain refuses to start with clear error."""
+def test_auth_1_1_5_token_file_missing_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """S1.1.5: Secret mount absent -> brain starts anyway (service keys used instead)."""
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir, "src"))
 
@@ -177,8 +177,8 @@ def test_auth_1_1_5_token_file_missing_refuses_start(monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("DINA_BRAIN_TOKEN_FILE", "/nonexistent/path/brain_token")
     monkeypatch.setenv("DINA_CORE_URL", "http://core:8300")
 
-    with pytest.raises(ValueError, match="BRAIN_TOKEN"):
-        load_brain_config()
+    cfg = load_brain_config()
+    assert cfg.brain_token is None
 
 
 # TST-BRAIN-006
@@ -228,7 +228,6 @@ def test_auth_1_2_2_api_rejects_client_token(client: TestClient) -> None:
         json={"type": "query", "body": "test"},
     )
     assert resp.status_code == 401
-    assert "BRAIN_TOKEN" in resp.json()["detail"]
 
 
 # TST-BRAIN-009

@@ -315,21 +315,17 @@ func (m *MockGatekeeper) CheckEgress(_ context.Context, destination string, data
 
 // ---------- Mock Token Validator ----------
 
-// MockTokenValidator validates brain and client tokens.
+// MockTokenValidator validates service keys and client tokens.
 type MockTokenValidator struct {
-	BrainToken      string
+	ServiceKeys     map[string]string // did → serviceID
 	ClientTokens    map[string]string // token → deviceID
 }
 
 func NewMockTokenValidator() *MockTokenValidator {
 	return &MockTokenValidator{
-		BrainToken:   TestBrainToken,
+		ServiceKeys:  make(map[string]string),
 		ClientTokens: make(map[string]string),
 	}
-}
-
-func (m *MockTokenValidator) ValidateBrainToken(token string) bool {
-	return token == m.BrainToken
 }
 
 func (m *MockTokenValidator) ValidateClientToken(token string) (string, bool) {
@@ -338,9 +334,6 @@ func (m *MockTokenValidator) ValidateClientToken(token string) (string, bool) {
 }
 
 func (m *MockTokenValidator) IdentifyToken(token string) (domain.TokenType, string, error) {
-	if token == m.BrainToken {
-		return domain.TokenBrain, "brain", nil
-	}
 	if deviceID, ok := m.ClientTokens[token]; ok {
 		return domain.TokenClient, deviceID, nil
 	}
@@ -348,8 +341,16 @@ func (m *MockTokenValidator) IdentifyToken(token string) (domain.TokenType, stri
 }
 
 func (m *MockTokenValidator) VerifySignature(did, method, path, query, timestamp string, body []byte, signatureHex string) (domain.TokenType, string, error) {
-	// Mock always rejects — use the real tokenValidator for signature tests.
+	// Check service keys
+	if serviceID, ok := m.ServiceKeys[did]; ok {
+		return domain.TokenBrain, serviceID, nil
+	}
+	// Mock always rejects otherwise — use the real tokenValidator for signature tests.
 	return domain.TokenUnknown, "", ErrInvalidToken
+}
+
+func (m *MockTokenValidator) RegisterServiceKey(did string, pubKey []byte, serviceID string) {
+	m.ServiceKeys[did] = serviceID
 }
 
 // ---------- Mock Task Queuer ----------

@@ -172,7 +172,7 @@ The analogy: **core is the vault keeper** (stores, retrieves, encrypts, never in
 
 #### Core ↔ Brain API Contract
 
-The internal API between core and brain. All endpoints require `Authorization: Bearer <BRAIN_TOKEN>`. Admin endpoints use `CLIENT_TOKEN` (admin web UI) or Ed25519 signatures (CLI). All requests/responses are JSON. Core enforces gatekeeper access tiers before any query executes.
+The internal API between core and brain. All endpoints require Ed25519 signed requests (`X-DID`, `X-Timestamp`, `X-Signature` headers) or `CLIENT_TOKEN` bearer auth. Admin endpoints use `CLIENT_TOKEN` (admin web UI) or Ed25519 signatures (CLI). All requests/responses are JSON. Core enforces gatekeeper access tiers before any query executes.
 
 **`POST /v1/vault/query` — Search the vault**
 
@@ -480,7 +480,7 @@ except Exception as e:
         "error": f"{type(e).__name__} at {e.__traceback__.tb_lineno}",
         "traceback": traceback.format_exc(),
         "task_id": current_task_id
-    }, headers={"Authorization": f"Bearer {BRAIN_TOKEN}"})
+    }, headers={"X-DID": did, "X-Timestamp": ts, "X-Signature": sig})
     raise
 ```
 

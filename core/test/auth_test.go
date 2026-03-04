@@ -2,6 +2,9 @@ package test
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"sync"
 	"testing"
@@ -29,125 +32,108 @@ var authCtx = context.Background()
 // §1.1 BRAIN_TOKEN (9 scenarios)
 // --------------------------------------------------------------------------
 
-// TST-CORE-001, TST-CORE-002, TST-CORE-003, TST-CORE-004, TST-CORE-005, TST-CORE-006, TST-CORE-007
-// TST-CORE-008, TST-CORE-009
-func TestAuth_1_1_BrainToken(t *testing.T) {
-	// var impl testutil.TokenValidator = realauth.NewTokenValidator(...)
-	impl := realTokenValidator
-	testutil.RequireImplementation(t, impl, "TokenValidator")
+// TST-CORE-001 — Service key authentication via Ed25519 signatures.
+func TestAuth_1_1_ServiceKeyAuth(t *testing.T) {
+	tv := auth.NewDefaultTokenValidator()
+	testutil.RequireImplementation(t, tv, "TokenValidator")
 
-	tests := []struct {
-		name      string
-		header    string // full Authorization header value ("" = omitted)
-		wantValid bool
-		wantCode  int // expected HTTP status code
-	}{
-		{
-			name:      "1_ValidBrainToken",  // TST-CORE-001
-			header:    "Bearer " + testutil.TestBrainToken,
-			wantValid: true,
-			wantCode:  200,
-		},
-		{
-			name:      "2_MissingAuthHeader",  // TST-CORE-002
-			header:    "",
-			wantValid: false,
-			wantCode:  401,
-		},
-		{
-			name:      "3_MalformedHeaderBasic",  // TST-CORE-003
-			header:    "Basic " + testutil.TestBrainToken,
-			wantValid: false,
-			wantCode:  401,
-		},
-		{
-			name:      "4_WrongBrainToken",  // TST-CORE-004
-			header:    "Bearer " + testutil.TestBrainTokenWrong,
-			wantValid: false,
-			wantCode:  401,
-		},
-		{
-			name:      "5_EmptyBearerValue",  // TST-CORE-005
-			header:    "Bearer ",
-			wantValid: false,
-			wantCode:  401,
-		},
-		{
-			name:      "6_TokenWithWhitespace",  // TST-CORE-006
-			header:    "Bearer  " + testutil.TestBrainToken + " ",
-			wantValid: false, // trimmed and accepted, or rejected — either way, must not panic
-			wantCode:  401,   // whitespace around token should be rejected (or trimmed → 200)
-		},
-	}
+	// Generate a test keypair and register as "brain" service key.
+	pub, priv, err := ed25519.GenerateKey(nil)
+	testutil.RequireNoError(t, err)
+	brainDID := "did:key:zTestBrainKey"
+	tv.RegisterServiceKey(brainDID, []byte(pub), "brain")
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Extract token from header (strip "Bearer " prefix).
-			// Real test should issue an HTTP request and check status code.
-			// For unit-level, we call ValidateBrainToken directly.
-			token := ""
-			if len(tt.header) > 7 && tt.header[:7] == "Bearer " {
-				token = tt.header[7:]
-			}
-			got := impl.ValidateBrainToken(token)
-			if got != tt.wantValid {
-				t.Errorf("ValidateBrainToken(%q) = %v, want %v (expected HTTP %d)",
-					token, got, tt.wantValid, tt.wantCode)
-			}
-		})
-	}
+	t.Run("1_ValidSignature", func(t *testing.T) {
+		ts := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+		body := []byte(`{"event":"test"}`)
+		bodyHash := sha256.Sum256(body)
+		payload := fmt.Sprintf("POST\n/api/v1/process\n\n%s\n%s", ts, hex.EncodeToString(bodyHash[:]))
+		sig := ed25519.Sign(priv, []byte(payload))
+		sigHex := hex.EncodeToString(sig)
+
+		kind, identity, err := tv.VerifySignature(brainDID, "POST", "/api/v1/process", "", ts, body, sigHex)
+		testutil.RequireNoError(t, err)
+		testutil.RequireEqual(t, kind, domain.TokenBrain)
+		testutil.RequireEqual(t, identity, "brain")
+	})
+
+	t.Run("2_WrongSignature", func(t *testing.T) {
+		ts := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+		body := []byte(`{"event":"test"}`)
+		_, _, err := tv.VerifySignature(brainDID, "POST", "/api/v1/process", "", ts, body, "deadbeef")
+		testutil.RequireError(t, err)
+	})
+
+	t.Run("3_UnknownDID", func(t *testing.T) {
+		ts := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+		body := []byte(`{}`)
+		_, _, err := tv.VerifySignature("did:key:zUnknown", "POST", "/api/v1/process", "", ts, body, "deadbeef")
+		testutil.RequireError(t, err)
+	})
+
+	t.Run("4_ExpiredTimestamp", func(t *testing.T) {
+		ts := time.Now().UTC().Add(-10 * time.Minute).Format("2006-01-02T15:04:05Z")
+		body := []byte(`{}`)
+		bodyHash := sha256.Sum256(body)
+		payload := fmt.Sprintf("POST\n/api/v1/process\n\n%s\n%s", ts, hex.EncodeToString(bodyHash[:]))
+		sig := ed25519.Sign(priv, []byte(payload))
+		sigHex := hex.EncodeToString(sig)
+
+		_, _, err := tv.VerifySignature(brainDID, "POST", "/api/v1/process", "", ts, body, sigHex)
+		testutil.RequireError(t, err)
+	})
+
+	t.Run("5_BearerTokenNoLongerReturnsBrain", func(t *testing.T) {
+		// Bearer tokens should NOT return TokenBrain — brain uses signatures now.
+		kind, _, err := tv.IdentifyToken(testutil.TestBrainToken)
+		testutil.RequireError(t, err)
+		testutil.RequireEqual(t, kind, domain.TokenUnknown)
+	})
 }
 
-// TST-CORE-007
-func TestAuth_1_1_7_TokenFileMissing(t *testing.T) {
-	// var impl testutil.ConfigLoader = realconfig.NewLoader(...)
+// TST-CORE-007 — Missing token file is now silently ignored (service keys replace it).
+func TestAuth_1_1_7_MissingTokenFileIgnored(t *testing.T) {
 	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
-	// When the BRAIN_TOKEN file is absent, startup should fail.
-	// Point the loader at a non-existent path and expect an error.
+	// When the BRAIN_TOKEN file is absent, startup should succeed.
+	// Service keys are used for auth; brain token is optional/legacy.
 	dir := testutil.TempDir(t)
-	// Do NOT create a token file inside dir.
 	t.Setenv("DINA_BRAIN_TOKEN_FILE", dir+"/nonexistent_brain_token")
 
 	cfg, err := impl.Load()
-	if err == nil {
-		t.Fatalf("expected startup error when BRAIN_TOKEN file is missing, got cfg=%+v", cfg)
-	}
-	testutil.RequireContains(t, err.Error(), "token")
+	testutil.RequireNoError(t, err)
+	// BrainToken may be empty or populated from env — either is valid.
+	_ = cfg
 }
 
-// TST-CORE-008
-func TestAuth_1_1_8_TokenFileEmpty(t *testing.T) {
-	// var impl testutil.ConfigLoader = realconfig.NewLoader(...)
+// TST-CORE-008 — Empty token file is now silently ignored (service keys replace it).
+func TestAuth_1_1_8_EmptyTokenFileIgnored(t *testing.T) {
 	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
-	// When the BRAIN_TOKEN file exists but is 0 bytes, startup should fail.
+	// When the BRAIN_TOKEN file exists but is empty, startup should succeed.
 	dir := testutil.TempDir(t)
 	testutil.TempFile(t, dir, "brain_token", "")
 	t.Setenv("DINA_BRAIN_TOKEN_FILE", dir+"/brain_token")
 
 	cfg, err := impl.Load()
-	if err == nil {
-		t.Fatalf("expected startup error when BRAIN_TOKEN file is empty, got cfg=%+v", cfg)
-	}
-	testutil.RequireContains(t, err.Error(), "token")
+	testutil.RequireNoError(t, err)
+	_ = cfg
 }
 
-// TST-CORE-009
+// TST-CORE-009 — Client token timing attack resistance.
 func TestAuth_1_1_9_TimingAttackResistance(t *testing.T) {
-	// var impl testutil.TokenValidator = realauth.NewTokenValidator(...)
 	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
 
-	// Validate that comparing the correct token and a wrong token of the same
-	// length takes approximately the same time (constant-time comparison).
+	// Validate that comparing client tokens takes approximately the same time
+	// for valid and invalid tokens (constant-time hash comparison).
 	op1 := func() {
-		impl.ValidateBrainToken(testutil.TestBrainToken)
+		impl.ValidateClientToken(testutil.TestClientToken)
 	}
 	op2 := func() {
-		impl.ValidateBrainToken(testutil.TestBrainTokenWrong)
+		impl.ValidateClientToken("unknown-token-ffffffffffffffffffffffffffffffffffffffffffffffff")
 	}
 
 	testutil.AssertConstantTime(t, op1, op2, 50*time.Microsecond, 1000)
@@ -232,24 +218,15 @@ func TestAuth_1_2_4_ClientTokenOnBrainEndpoint(t *testing.T) {
 	// Middleware rule: "client" tokens on /v1/brain/* → 403 Forbidden.
 }
 
-// TST-CORE-014
-func TestAuth_1_2_5_BrainTokenOnAdminEndpoint(t *testing.T) {
-	// var impl testutil.TokenValidator = realauth.NewTokenValidator(...)
+// TST-CORE-014 — Random bearer tokens must not be accepted.
+func TestAuth_1_2_5_UnknownTokenRejected(t *testing.T) {
 	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
 
-	// BRAIN_TOKEN must not be accepted on /v1/admin/* endpoints.
+	// An arbitrary token (not registered as a client token) must be rejected.
 	kind, _, err := impl.IdentifyToken(testutil.TestBrainToken)
-	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, kind, domain.TokenBrain)
-
-	// In integration: GET /v1/admin/devices with BRAIN_TOKEN → 403.
-	// At unit level, verify the token type is "brain" and assert the
-	// middleware would reject it for admin-only paths.
-	if kind != domain.TokenBrain {
-		t.Fatalf("expected token kind 'brain', got %q", kind)
-	}
-	// Middleware rule: "brain" tokens on /v1/admin/* → 403 Forbidden.
+	testutil.RequireError(t, err)
+	testutil.RequireEqual(t, kind, domain.TokenUnknown)
 }
 
 // TST-CORE-015
@@ -559,28 +536,26 @@ func TestAuth_1_4_AuthSurface(t *testing.T) {
 		}
 	})
 
-	t.Run("5_IdentifyTokenPriority", func(t *testing.T) {  // TST-CORE-042
-		// BRAIN_TOKEN is checked first before CLIENT_TOKEN.
-		kind, identity, err := tokenImpl.IdentifyToken(testutil.TestBrainToken)
-		testutil.RequireNoError(t, err)
-		testutil.RequireEqual(t, kind, domain.TokenBrain)
-		testutil.RequireEqual(t, identity, "brain")
+	t.Run("5_UnregisteredTokenRejected", func(t *testing.T) {  // TST-CORE-042
+		// Tokens not registered as client tokens are rejected.
+		// Brain auth now uses Ed25519 signatures, not bearer tokens.
+		kind, _, err := tokenImpl.IdentifyToken(testutil.TestBrainToken)
+		testutil.RequireError(t, err)
+		testutil.RequireEqual(t, kind, domain.TokenUnknown)
 	})
 
-	t.Run("6_IdentifyTokenFallback", func(t *testing.T) {  // TST-CORE-043
-		// If the token is not a BRAIN_TOKEN, fall back to CLIENT_TOKEN via SHA-256.
+	t.Run("6_ClientTokenIdentified", func(t *testing.T) {  // TST-CORE-043
+		// Registered client tokens are identified correctly.
 		kind, _, err := tokenImpl.IdentifyToken(testutil.TestClientToken)
 		testutil.RequireNoError(t, err)
 		testutil.RequireEqual(t, kind, domain.TokenClient)
 	})
 
-	t.Run("7_BrainTokenOnAdminPathsForbidden", func(t *testing.T) {  // TST-CORE-044
-		// BRAIN_TOKEN on /v1/admin/* → 403.
-		// At unit level: verify token is classified as "brain".
-		kind, _, err := tokenImpl.IdentifyToken(testutil.TestBrainToken)
-		testutil.RequireNoError(t, err)
-		testutil.RequireEqual(t, kind, domain.TokenBrain)
-		// Middleware enforces: brain tokens cannot access admin paths → 403.
+	t.Run("7_RandomTokenRejected", func(t *testing.T) {  // TST-CORE-044
+		// Random tokens on any path → 401.
+		kind, _, err := tokenImpl.IdentifyToken("random-unregistered-token-value")
+		testutil.RequireError(t, err)
+		testutil.RequireEqual(t, kind, domain.TokenUnknown)
 	})
 
 	t.Run("8_ClientTokenFullAccess", func(t *testing.T) {  // TST-CORE-045
@@ -616,18 +591,16 @@ func TestAuth_1_4_AuthSurface(t *testing.T) {
 // TST-CORE-047, TST-CORE-048, TST-CORE-049, TST-CORE-050, TST-CORE-051, TST-CORE-052, TST-CORE-053
 // TST-CORE-054, TST-CORE-055
 func TestAuth_1_5_CompromisedBrain(t *testing.T) {
-	// These tests verify that a compromised brain (holding only BRAIN_TOKEN)
+	// These tests verify that a compromised brain (holding only a service key)
 	// cannot escalate to privileged operations. Each test confirms the
 	// operation is forbidden for brain-identified tokens.
 
-	// var tokenImpl testutil.TokenValidator = realauth.NewTokenValidator(...)
 	tokenImpl := realTokenValidator
 	testutil.RequireImplementation(t, tokenImpl, "TokenValidator")
 
-	// Confirm the brain token is classified correctly.
-	kind, _, err := tokenImpl.IdentifyToken(testutil.TestBrainToken)
-	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, kind, domain.TokenBrain)
+	// Brain auth is now via service key signatures — token type is verified
+	// through the gatekeeper, which checks intent.AgentDID = "brain".
+	_ = tokenImpl
 
 	t.Run("1_BrainAccessesOpenPersona", func(t *testing.T) {  // TST-CORE-047
 		// BRAIN_TOKEN + open persona → 200 (allowed).
@@ -754,13 +727,10 @@ func TestAuth_1_5_CompromisedBrain(t *testing.T) {
 		// This is a deployment/architecture invariant: the brain container
 		// does not have a volume mount to ~/.dina/vault/.
 		//
-		// At unit level: BRAIN_TOKEN holder can only use /v1/brain/* endpoints.
-		// No /v1/vault/raw or filesystem access is possible through the API.
-		brainKind, _, err := tokenImpl.IdentifyToken(testutil.TestBrainToken)
-		testutil.RequireNoError(t, err)
-		testutil.RequireEqual(t, brainKind, domain.TokenBrain)
+		// Brain authenticates via Ed25519 service key signatures (TokenBrain).
 		// Middleware enforces: brain tokens → only /v1/brain/* paths.
 		// No raw vault file access is exposed via any API endpoint.
+		_ = tokenImpl
 	})
 }
 
@@ -1226,16 +1196,15 @@ func TestAuth_1_4_4_NoPluginEndpoints(t *testing.T) {
 }
 
 // TST-CORE-042
-func TestAuth_1_4_5_IdentifyTokenPriority(t *testing.T) {
+func TestAuth_1_4_5_UnregisteredTokenRejected(t *testing.T) {
 	impl := realTokenValidator
 	testutil.RequireImplementation(t, impl, "TokenValidator")
 
-	// BRAIN_TOKEN must be checked first (constant-time) before CLIENT_TOKEN
-	// (SHA-256 hash lookup). This prevents timing leaks.
-	kind, identity, err := impl.IdentifyToken(testutil.TestBrainToken)
-	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, kind, domain.TokenBrain)
-	testutil.RequireEqual(t, identity, "brain")
+	// Tokens not registered as client tokens are rejected.
+	// Brain auth now uses Ed25519 service key signatures.
+	kind, _, err := impl.IdentifyToken(testutil.TestBrainToken)
+	testutil.RequireError(t, err)
+	testutil.RequireEqual(t, kind, domain.TokenUnknown)
 }
 
 // TST-CORE-043
@@ -1311,13 +1280,11 @@ func TestAuth_1_4_9_CoreNeverCallsExternalAPIs(t *testing.T) {
 	//
 	// At unit level, the absence of external calls is a design invariant.
 	// We verify the auth flow completes purely locally.
-	kind, _, err := impl.IdentifyToken(testutil.TestBrainToken)
-	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, kind, domain.TokenBrain)
-
-	kind, _, err = impl.IdentifyToken(testutil.TestClientToken)
+	// Client token flow is purely local (SHA-256 hash lookup).
+	kind, _, err := impl.IdentifyToken(testutil.TestClientToken)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, kind, domain.TokenClient)
+	// Service key verification is also local (Ed25519 signature check).
 }
 
 // --------------------------------------------------------------------------
@@ -1471,12 +1438,9 @@ func TestAuth_1_5_9_BrainCannotAccessRawVaultFiles(t *testing.T) {
 	serverImpl := realServer
 	testutil.RequireImplementation(t, serverImpl, "Server")
 
-	// Verify the brain token is classified correctly.
-	kind, _, err := impl.IdentifyToken(testutil.TestBrainToken)
-	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, kind, domain.TokenBrain)
-
+	// Brain auth is now via Ed25519 service keys.
 	// Verify no raw vault file endpoints exist.
+	_ = impl
 	routes := serverImpl.Routes()
 	for _, route := range routes {
 		if len(route) >= 13 && route[:13] == "/v1/vault/raw" {
@@ -1500,7 +1464,7 @@ func TestAuth_1_5_9_BrainCannotAccessRawVaultFiles(t *testing.T) {
 // clientTokens map. Run with `go test -race` to detect races.
 func TestAuth_1_6_9_ConcurrentTokenValidation(t *testing.T) {
 	// Use a fresh tokenValidator to avoid interference with other tests.
-	tv := auth.NewDefaultTokenValidator(testutil.TestBrainToken)
+	tv := auth.NewDefaultTokenValidator()
 
 	const goroutines = 50
 	const iterations = 100
@@ -1535,14 +1499,13 @@ func TestAuth_1_6_9_ConcurrentTokenValidation(t *testing.T) {
 		}(i)
 	}
 
-	// Spawn goroutines that call IdentifyToken concurrently (exercises both
-	// ValidateBrainToken and ValidateClientToken code paths).
+	// Spawn goroutines that call IdentifyToken concurrently (exercises
+	// client token code path).
 	for i := 0; i < goroutines; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for j := 0; j < iterations; j++ {
-				tv.IdentifyToken(testutil.TestBrainToken)
 				tv.IdentifyToken(testutil.TestClientToken)
 				tv.IdentifyToken("unknown-token")
 			}

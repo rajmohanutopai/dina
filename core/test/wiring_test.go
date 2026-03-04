@@ -104,7 +104,7 @@ var realConfigLoader testutil.ConfigLoader = &configLoaderAdapter{inner: config.
 // ---------- Auth implementations (§1) ----------
 
 var (
-	realTokenValidator port.TokenValidator      = auth.NewDefaultTokenValidator(testutil.TestBrainToken)
+	realTokenValidator port.TokenValidator      = auth.NewDefaultTokenValidator()
 	realSessionManager port.SessionManager      = auth.NewSessionManager(3600)
 	realRateLimiter    port.RateLimiter          = auth.NewRateLimiter(5, 60)
 )
@@ -119,7 +119,7 @@ func init() {
 	pv := auth.NewPassphraseVerifier(hash)
 	realPassphraseVerifier = pv
 	sm := auth.NewSessionManager(86400)
-	tv := auth.NewDefaultTokenValidator(testutil.TestBrainToken)
+	tv := auth.NewDefaultTokenValidator()
 	realAuthGateway = auth.NewAuthGateway(pv, sm, tv)
 }
 
@@ -261,7 +261,7 @@ var mockBrainServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWr
 	}
 }))
 
-var realBrainClient testutil.BrainClient = brainclient.New(mockBrainServer.URL, testutil.TestBrainToken)
+var realBrainClient testutil.BrainClient = brainclient.NewWithToken(mockBrainServer.URL, testutil.TestBrainToken)
 
 // ---------- Server implementations (§15) ----------
 

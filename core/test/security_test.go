@@ -564,18 +564,18 @@ func TestSecurity_17_24_SecretsTmpfsMount(t *testing.T) {
 	testutil.RequireTrue(t, strings.Contains(composeStr, "secrets:"),
 		"docker-compose.yml must define a secrets section")
 
-	// Verify brain_token secret is defined.
-	testutil.RequireTrue(t, strings.Contains(composeStr, "brain_token"),
-		"docker-compose.yml must define brain_token secret")
+	// Verify service_keys bind mount exists (Ed25519 keypairs for mutual auth).
+	testutil.RequireTrue(t, strings.Contains(composeStr, "service_keys"),
+		"docker-compose.yml must mount service_keys directory")
 
 	// Verify secrets are file-based (not environment variables).
 	// The secrets section should reference a file path.
 	testutil.RequireTrue(t, strings.Contains(composeStr, "file:"),
 		"secrets must be file-based (mounted as tmpfs in Docker)")
 
-	// Verify BRAIN_TOKEN is NOT in environment variables (it uses _FILE suffix).
+	// Verify BRAIN_TOKEN is NOT in environment variables (service keys replace it).
 	testutil.RequireFalse(t, strings.Contains(composeStr, "DINA_BRAIN_TOKEN="),
-		"BRAIN_TOKEN must not be passed as a plain environment variable — use _FILE or secrets mount")
+		"BRAIN_TOKEN must not be passed as a plain environment variable — service keys are used")
 }
 
 // --------------------------------------------------------------------------

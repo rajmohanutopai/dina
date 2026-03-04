@@ -50,7 +50,7 @@ func newSignatureTestValidator(t *testing.T) (*auth.DefaultTokenValidator, ed255
 	encoded := base58.Encode(multicodec)
 	did := "did:key:z" + encoded
 
-	tv := auth.NewDefaultTokenValidator(testutil.TestBrainToken)
+	tv := auth.NewDefaultTokenValidator()
 	tv.RegisterDeviceKey(did, pub, "device-sig-001")
 	now := time.Now().UTC()
 	tv.SetClock(&fixedClock{t: now})

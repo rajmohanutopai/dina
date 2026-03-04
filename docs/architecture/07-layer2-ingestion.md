@@ -129,7 +129,9 @@ ON-DEMAND (user asks):
 ```
 PUT  /v1/vault/kv/:key    → store cursor value
 GET  /v1/vault/kv/:key    → read cursor value
-Authorization: Bearer <BRAIN_TOKEN>
+X-DID: <service-did>
+X-Timestamp: <unix-timestamp>
+X-Signature: <ed25519-signature>
 
 Examples:
   PUT /v1/vault/kv/gmail_cursor    {"value": "2026-02-19T10:00:00Z"}

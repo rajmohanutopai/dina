@@ -440,7 +440,7 @@ func TestFixVerify_31_2_3_ReasonSendsPrompt(t *testing.T) {
 	defer ts.Close()
 
 	// Create a BrainClient pointing to our test server.
-	client := brainclient.New(ts.URL, "test-token")
+	client := brainclient.NewWithToken(ts.URL, "test-token")
 	ctx := context.Background()
 
 	// Call Reason.

@@ -166,7 +166,9 @@ New categories can be added over time via chat or admin UI — the system is not
 ```json
 // Request
 // GET /v1/contacts/did:plc:sancho.../policy
-// Authorization: Bearer <BRAIN_TOKEN>
+// X-DID: <service-did>
+// X-Timestamp: <unix-timestamp>
+// X-Signature: <ed25519-signature>
 
 // Response 200
 {
@@ -189,7 +191,9 @@ New categories can be added over time via chat or admin UI — the system is not
 ```json
 // Request
 // PATCH /v1/contacts/did:plc:sancho.../policy
-// Authorization: Bearer <BRAIN_TOKEN>
+// X-DID: <service-did>
+// X-Timestamp: <unix-timestamp>
+// X-Signature: <ed25519-signature>
 {
   "location": "exact_location",
   "health": "summary"

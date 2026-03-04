@@ -34,6 +34,7 @@ import (
 	"github.com/rajmohanutopai/dina/core/internal/adapter/pii"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/portability"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/server"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/servicekey"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/taskqueue"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/transport"
 	trustadapter "github.com/rajmohanutopai/dina/core/internal/adapter/trust"
@@ -388,8 +389,27 @@ func main() {
 	}
 	_, _ = plcClient, pdsPublisher
 
-	// 6. Auth
-	tokenValidator := auth.NewTokenValidator(cfg.BrainToken, map[string]string{})
+	// 6. Service Keys (Ed25519 service-to-service auth)
+	coreKey := servicekey.New(cfg.ServiceKeyDir)
+	if err := coreKey.EnsureKey("core"); err != nil {
+		log.Fatalf("Service key setup failed: %v", err)
+	}
+	slog.Info("Core service key ready", "did", coreKey.DID(), "key_dir", cfg.ServiceKeyDir)
+
+	// Load Brain's public key for signature verification.
+	brainPub, brainDID, err := coreKey.LoadPeerKey("brain")
+	if err != nil {
+		slog.Warn("Brain public key not yet available — will verify on first request", "error", err)
+	} else {
+		slog.Info("Loaded Brain public key", "did", brainDID)
+	}
+
+	// 6b. Auth
+	tokenValidator := auth.NewTokenValidator(map[string]string{})
+	if brainPub != nil {
+		tokenValidator.RegisterServiceKey(brainDID, []byte(brainPub), "brain")
+		slog.Info("Registered Brain service key in auth validator", "did", brainDID)
+	}
 	if cfg.ClientToken != "" {
 		tokenValidator.RegisterClientToken(cfg.ClientToken, "bootstrap", "admin")
 		slog.Info("Pre-registered client token from DINA_CLIENT_TOKEN", "scope", "admin")
@@ -483,7 +503,7 @@ func main() {
 	pairer := pairing.NewManager(pairing.DefaultConfig())
 
 	// 12. Brain Client
-	brain := brainclient.New(cfg.BrainURL, cfg.BrainToken)
+	brain := brainclient.New(cfg.BrainURL, coreKey)
 
 	// 12b. Reminder Loop — fires reminders on schedule, delegates to Brain.
 	reminderLoop := reminder.NewLoop(reminderSched, clk)
@@ -512,8 +532,8 @@ func main() {
 
 	// 13. Observability
 	healthChecker := server.NewDynamicHealthChecker(func() bool {
-		// Check 1: config must have a valid client/brain token
-		if cfg.BrainToken == "" {
+		// Check 1: service key must be initialized
+		if coreKey.DID() == "" {
 			return false
 		}
 		// Check 2: vault path must exist
@@ -758,15 +778,13 @@ func main() {
 	messageH := &handler.MessageHandler{Transport: transportSvc, IngressRouter: ingressRouter}
 	taskH := &handler.TaskHandler{Task: taskSvc}
 	deviceH := &handler.DeviceHandler{Device: deviceSvc}
-	// Agent validation proxy uses DINA_INTERNAL_TOKEN (same as admin proxy),
-	// not cfg.BrainToken. This separates the internal proxy credential from
-	// the machine-to-machine Brain token used by Core's own BrainClient.
-	// In dev/test where DINA_INTERNAL_TOKEN may be unset, fall back to BrainToken.
+	// Agent validation proxy uses DINA_INTERNAL_TOKEN (same as admin proxy).
+	// This is a bearer token path — browsers and agent proxies can't sign Ed25519.
 	agentProxyToken := internalToken
 	if agentProxyToken == "" {
-		agentProxyToken = cfg.BrainToken
+		agentProxyToken = cfg.BrainToken // legacy fallback for dev/test
 	}
-	agentBrain := brainclient.New(cfg.BrainURL, agentProxyToken)
+	agentBrain := brainclient.NewWithToken(cfg.BrainURL, agentProxyToken)
 	agentH := &handler.AgentHandler{Brain: agentBrain}
 
 	personaH := &handler.PersonaHandler{Identity: identitySvc, Personas: personaMgr, VaultManager: vaultMgr, KeyDeriver: keyDeriver, Seed: masterSeed}

@@ -314,10 +314,10 @@ func TestReminder(triggerAt int64) Reminder {
 
 // ---------- Auth Test Data (§1) ----------
 
-// TestBrainToken is a deterministic BRAIN_TOKEN for testing.
+// TestBrainToken is a deterministic token for admin proxy / legacy testing.
 const TestBrainToken = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-// TestBrainTokenWrong is an incorrect BRAIN_TOKEN.
+// TestBrainTokenWrong is an incorrect token for negative tests.
 const TestBrainTokenWrong = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 
 // TestClientToken is a deterministic CLIENT_TOKEN for testing.
@@ -333,6 +333,7 @@ func TestConfig() Config {
 		VaultPath:      "/var/lib/dina",
 		BrainURL:       "http://brain:8200",
 		BrainToken:     TestBrainToken,
+		ServiceKeyDir:  "/run/secrets/service_keys",
 		SecurityMode:   "security",
 		SessionTTL:     86400,
 		RateLimit:      60,

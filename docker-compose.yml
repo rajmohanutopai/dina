@@ -7,8 +7,12 @@
 #   docker compose up -d      # restart after install (requires ./install.sh first)
 #   docker compose logs -f    # tail logs
 #
-# If you see "bind source path does not exist: .../secrets/brain_token",
-# run ./install.sh first — it generates the required secrets.
+# If you see "bind source path does not exist: .../secrets/service_keys",
+# run ./install.sh first — it generates the required secrets and key directories.
+#
+# Service key isolation: each service's private key directory is bind-mounted
+# separately (core/ and brain/). Public keys share a common directory (public/).
+# This means Core's private key never exists in Brain's filesystem and vice versa.
 #
 # Testing with local fake PLC (no internet, no pollution):
 #   DINA_PLC_URL=http://plc:2582 docker compose --profile test-plc up -d
@@ -24,11 +28,14 @@ services:
       - "${DINA_CORE_PORT:-8100}:8100"
     volumes:
       - dina-data:/data
+      - ./secrets/service_keys/core:/run/secrets/service_keys/private
+      - ./secrets/service_keys/public:/run/secrets/service_keys/public
     environment:
       - DINA_ENV=${DINA_ENV:-development}
       - DINA_VAULT_PATH=/data/vault
       - DINA_BRAIN_URL=http://brain:8200
-      - DINA_BRAIN_TOKEN_FILE=/run/secrets/brain_token
+      - DINA_SERVICE_KEY_DIR=/run/secrets/service_keys
+      - DINA_INTERNAL_TOKEN=${DINA_INTERNAL_TOKEN:-}
       - DINA_SEED_PASSWORD_FILE=/run/secrets/seed_password
       - DINA_LISTEN_ADDR=:8100
       - DINA_SEED_PASSWORD=${DINA_SEED_PASSWORD:-}
@@ -40,7 +47,6 @@ services:
       - DINA_PDS_HANDLE=${DINA_PDS_HANDLE:-dina.test}
       - DINA_PDS_EMAIL=${DINA_PDS_EMAIL:-dina@example.com}
     secrets:
-      - brain_token
       - wrapped_seed
       - identity_salt
       - seed_password
@@ -66,9 +72,12 @@ services:
       - dina-data:/data
       - ./dina.html:/app/dina.html:ro
       - ./images:/app/images:ro
+      - ./secrets/service_keys/brain:/run/secrets/service_keys/private
+      - ./secrets/service_keys/public:/run/secrets/service_keys/public
     environment:
       - DINA_CORE_URL=http://core:8100
-      - DINA_BRAIN_TOKEN_FILE=/run/secrets/brain_token
+      - DINA_SERVICE_KEY_DIR=/run/secrets/service_keys
+      - DINA_INTERNAL_TOKEN=${DINA_INTERNAL_TOKEN:-}
       - DINA_BRAIN_PORT=8200
       - DINA_LLM_URL=${DINA_LLM_URL:-http://llm:8080}
       - DINA_LOG_LEVEL=${DINA_LOG_LEVEL:-INFO}
@@ -81,8 +90,6 @@ services:
       - DINA_TELEGRAM_TOKEN=${DINA_TELEGRAM_TOKEN:-}
       - DINA_TELEGRAM_ALLOWED_USERS=${DINA_TELEGRAM_ALLOWED_USERS:-}
       - DINA_TELEGRAM_ALLOWED_GROUPS=${DINA_TELEGRAM_ALLOWED_GROUPS:-}
-    secrets:
-      - brain_token
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8200/healthz').raise_for_status()"]
       interval: 10s
@@ -158,8 +165,6 @@ volumes:
     driver: local
 
 secrets:
-  brain_token:
-    file: ./secrets/brain_token
   wrapped_seed:
     file: ./secrets/wrapped_seed.bin
   identity_salt:

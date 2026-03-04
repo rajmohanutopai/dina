@@ -43,7 +43,7 @@ The single Brain splits into two isolated Docker containers with Core sitting be
 
 **Outbound Brain (Sender):** Composes whispers and outbound messages. Can send via notify and MCP. But it never saw the original poisoned content. It only sees the clean, validated, structured task from Core. The injection payload is gone — it couldn't survive the serialization boundary.
 
-**Neither brain has the full kill chain.** Inbound can read but not send. Outbound can send but never saw the raw content. Same Python codebase, different `DINA_BRAIN_ROLE` config, different Docker containers, different BRAIN_TOKENs with different permission scopes.
+**Neither brain has the full kill chain.** Inbound can read but not send. Outbound can send but never saw the raw content. Same Python codebase, different `DINA_BRAIN_ROLE` config, different Docker containers, different Ed25519 service keys with different permission scopes.
 
 **Context isolation is complete.** Inbound Brain's LLM conversation history (including any injected instructions) exists in a separate process. Outbound Brain starts with a fresh LLM context containing only the structured task data from Core.
 
@@ -61,7 +61,7 @@ The single Brain splits into two isolated Docker containers with Core sitting be
 │  │  ✗ MCP send tools    │     │  - summary (200 char, │     │  ✗ See raw      │  │
 │  │  ✗ Notify client     │     │    PII-scrubbed)      │     │    content      │  │
 │  │                      │     │  - DID (format-valid)  │     │                 │  │
-│  │  BRAIN_TOKEN: inbound│     │                       │     │  BRAIN_TOKEN:   │  │
+│  │  SERVICE_KEY: inbound │     │                       │     │  SERVICE_KEY:   │  │
 │  │                      │     │                       │     │  outbound       │  │
 │  └──────────────────────┘     └───────────────────────┘     └─────────────────┘  │
 │                                                                                 │

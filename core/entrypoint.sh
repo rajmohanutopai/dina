@@ -25,10 +25,14 @@ copy_secret() {
     fi
 }
 
-# Brain token (required).
-copy_secret "/run/secrets/brain_token" "$SECRET_DIR/brain_token"
-if [ -f "$SECRET_DIR/brain_token" ]; then
-    export DINA_BRAIN_TOKEN_FILE="$SECRET_DIR/brain_token"
+# Service keys — ensure the dina user owns the private key directory.
+# The bind-mounted host dir may be root:root; the Go binary runs as dina.
+if [ -d "/run/secrets/service_keys/private" ]; then
+    chown -R dina:dina /run/secrets/service_keys/private
+fi
+# Public key directory must be writable (Core writes its public key there).
+if [ -d "/run/secrets/service_keys/public" ]; then
+    chown -R dina:dina /run/secrets/service_keys/public
 fi
 
 # Client token (optional — for pre-registered admin access).

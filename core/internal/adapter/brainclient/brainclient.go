@@ -17,9 +17,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
+	"github.com/rajmohanutopai/dina/core/internal/adapter/servicekey"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/port"
 )
@@ -49,7 +51,8 @@ const (
 type BrainClient struct {
 	mu          sync.Mutex
 	baseURL     string
-	token       string
+	serviceKey  *servicekey.ServiceKey
+	token       string // legacy token for admin proxy only
 	httpClient  *http.Client
 
 	// Circuit breaker state.
@@ -60,8 +63,29 @@ type BrainClient struct {
 	cooldown    time.Duration
 }
 
-// New returns a new BrainClient configured with the brain's base URL and auth token.
-func New(baseURL, token string) *BrainClient {
+// New returns a new BrainClient that signs requests with an Ed25519 service key.
+func New(baseURL string, sk *servicekey.ServiceKey) *BrainClient {
+	transport := &http.Transport{
+		MaxIdleConns:        10,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+	}
+	return &BrainClient{
+		baseURL:    baseURL,
+		serviceKey: sk,
+		httpClient: &http.Client{
+			Timeout:   defaultTimeout,
+			Transport: transport,
+		},
+		cbState:     stateClosed,
+		maxFailures: defaultMaxFailures,
+		cooldown:    defaultCooldown,
+	}
+}
+
+// NewWithToken returns a BrainClient that authenticates with a bearer token.
+// Used by the admin proxy where the browser cannot perform Ed25519 signing.
+func NewWithToken(baseURL, token string) *BrainClient {
 	transport := &http.Transport{
 		MaxIdleConns:        10,
 		MaxIdleConnsPerHost: 10,
@@ -101,14 +125,14 @@ func (c *BrainClient) ProcessEvent(event []byte) ([]byte, error) {
 		return nil, ErrEmptyURL
 	}
 
-	url := c.baseURL + "/api/v1/process"
-	req, err := http.NewRequest("POST", url, bytes.NewReader(event))
+	reqURL := c.baseURL + "/api/v1/process"
+	req, err := http.NewRequest("POST", reqURL, bytes.NewReader(event))
 	if err != nil {
 		c.recordFailure()
 		return nil, fmt.Errorf("brainclient: request creation failed: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	c.signRequest(req, event)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -140,12 +164,12 @@ func (c *BrainClient) Health() error {
 		return ErrEmptyURL
 	}
 
-	url := c.baseURL + "/healthz"
-	req, err := http.NewRequest("GET", url, nil)
+	reqURL := c.baseURL + "/healthz"
+	req, err := http.NewRequest("GET", reqURL, nil)
 	if err != nil {
 		return fmt.Errorf("brainclient: health request creation failed: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	c.signRequest(req, nil)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -202,6 +226,25 @@ func (c *BrainClient) recordSuccess() {
 	c.cbState = stateClosed
 }
 
+// signRequest adds auth headers to the request.
+// If a service key is available, signs with Ed25519 (X-DID/X-Timestamp/X-Signature).
+// Otherwise, falls back to bearer token (admin proxy path).
+func (c *BrainClient) signRequest(req *http.Request, body []byte) {
+	if c.serviceKey != nil {
+		parsed, _ := url.Parse(req.URL.String())
+		query := ""
+		if parsed != nil {
+			query = parsed.RawQuery
+		}
+		did, ts, sig := c.serviceKey.SignRequest(req.Method, parsed.Path, query, body)
+		req.Header.Set("X-DID", did)
+		req.Header.Set("X-Timestamp", ts)
+		req.Header.Set("X-Signature", sig)
+	} else if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+}
+
 // Compile-time check: BrainClient satisfies port.BrainClient.
 var _ port.BrainClient = (*BrainClient)(nil)
 
@@ -238,14 +281,14 @@ func (c *BrainClient) Reason(ctx context.Context, query string) (*domain.ReasonR
 		return nil, fmt.Errorf("brainclient: marshal query: %w", err)
 	}
 
-	url := c.baseURL + "/api/v1/reason"
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	reqURL := c.baseURL + "/api/v1/reason"
+	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, bytes.NewReader(body))
 	if err != nil {
 		c.recordFailure()
 		return nil, fmt.Errorf("brainclient: request creation failed: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	c.signRequest(req, body)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

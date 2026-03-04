@@ -365,12 +365,12 @@ def test_core_client_7_3_1_rejects_empty_url() -> None:
 
 
 # TST-BRAIN-459
-def test_core_client_7_3_2_rejects_empty_token() -> None:
-    """CoreHTTPClient rejects empty brain_token at construction."""
+def test_core_client_7_3_2_rejects_no_auth() -> None:
+    """CoreHTTPClient rejects construction with no auth (no token, no service_identity)."""
     from src.adapter.core_http import CoreHTTPClient
     from src.domain.errors import ConfigError
 
-    with pytest.raises(ConfigError, match="BRAIN_TOKEN"):
+    with pytest.raises(ConfigError, match="service_identity|brain_token"):
         CoreHTTPClient("http://core:8100", "")
 
 

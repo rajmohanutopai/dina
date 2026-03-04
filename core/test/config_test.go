@@ -131,19 +131,17 @@ func TestConfig_14_9_DefaultSecurityMode(t *testing.T) {
 // §14.3 Validation (3 scenarios)
 // --------------------------------------------------------------------------
 
-// TST-CORE-553
-func TestConfig_14_3_1_MissingBrainToken(t *testing.T) {
-	// impl := realConfigLoader = realconfig.NewLoader(...)
+// TST-CORE-553 — BrainToken is now optional (service keys replace it).
+func TestConfig_14_3_1_EmptyBrainTokenAccepted(t *testing.T) {
 	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
-	// Config with missing BRAIN_TOKEN must fail validation.
+	// Config with empty BrainToken should pass validation — service keys are used instead.
 	cfg := testutil.TestConfig()
 	cfg.BrainToken = ""
 
 	err := impl.Validate(&cfg)
-	testutil.RequireError(t, err)
-	testutil.RequireContains(t, err.Error(), "token")
+	testutil.RequireNoError(t, err)
 }
 
 // TST-CORE-555

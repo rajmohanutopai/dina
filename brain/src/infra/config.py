@@ -3,9 +3,8 @@
 Maps to Brain TEST_PLAN SS9 (Configuration) and the contract in
 ``brain/tests/contracts.py::BrainConfig``.
 
-Supports Docker Secrets for ``BRAIN_TOKEN`` via
-``DINA_BRAIN_TOKEN_FILE`` pointing to a file path (typically
-``/run/secrets/brain_token``).
+Service authentication uses Ed25519 signed requests (service keys).
+Legacy BRAIN_TOKEN support is kept for admin proxy / backward compat.
 """
 
 from __future__ import annotations
@@ -42,7 +41,9 @@ class BrainConfig:
 
     Attributes:
         core_url:            URL for dina-core (default ``http://core:8100``).
-        brain_token:         BRAIN_TOKEN for authenticating with core.
+        brain_token:         Legacy token for admin proxy fallback (optional).
+        service_key_dir:     Directory for Ed25519 service keys.
+        internal_token:      DINA_INTERNAL_TOKEN for admin proxy auth (optional).
         listen_port:         Port brain listens on (default ``8200``).
         log_level:           Logging level (default ``"INFO"``).
         llm_url:             URL for the LLM sidecar (optional).
@@ -52,7 +53,9 @@ class BrainConfig:
     """
 
     core_url: str
-    brain_token: str
+    brain_token: str | None
+    service_key_dir: str
+    internal_token: str | None
     client_token: str | None
     listen_port: int
     log_level: str
@@ -89,29 +92,34 @@ def load_brain_config() -> BrainConfig:
 
     Environment variables:
         DINA_CORE_URL          — Core endpoint URL (default ``http://core:8100``).
-        DINA_BRAIN_TOKEN       — Shared secret for core ↔ brain auth.
-        DINA_BRAIN_TOKEN_FILE  — Path to a file containing the token
-                                 (Docker Secrets pattern).
+        DINA_SERVICE_KEY_DIR   — Directory for Ed25519 service keys (default
+                                 ``/run/secrets/service_keys``).
+        DINA_BRAIN_TOKEN       — Legacy token (optional, admin proxy fallback).
+        DINA_BRAIN_TOKEN_FILE  — Path to a file containing the token.
+        DINA_INTERNAL_TOKEN    — Internal token for admin proxy auth.
         DINA_BRAIN_PORT        — Brain listen port (default ``8200``).
         DINA_LOG_LEVEL         — Log level (default ``"INFO"``).
         DINA_LLM_URL           — LLM sidecar URL (optional).
         DINA_CLOUD_LLM         — Preferred cloud provider (optional).
 
     Raises:
-        ValueError: If BRAIN_TOKEN is missing or CORE_URL is invalid.
+        ValueError: If CORE_URL is invalid.
     """
-    # -- BRAIN_TOKEN (required) --
-    brain_token = os.environ.get("DINA_BRAIN_TOKEN", "").strip()
+    # -- SERVICE_KEY_DIR (for Ed25519 service-to-service auth) --
+    service_key_dir = os.environ.get("DINA_SERVICE_KEY_DIR", "").strip() or "/run/secrets/service_keys"
+
+    # -- BRAIN_TOKEN (optional — legacy / admin proxy fallback) --
+    brain_token = os.environ.get("DINA_BRAIN_TOKEN", "").strip() or None
     token_file = os.environ.get("DINA_BRAIN_TOKEN_FILE", "").strip()
 
     if not brain_token and token_file:
-        brain_token = _read_token_from_file(token_file)
+        try:
+            brain_token = _read_token_from_file(token_file)
+        except ValueError:
+            log.warning("config.brain_token_file.not_found", extra={"path": token_file})
 
-    if not brain_token:
-        raise ValueError(
-            "BRAIN_TOKEN must be set via DINA_BRAIN_TOKEN env var "
-            "or DINA_BRAIN_TOKEN_FILE pointing to a Docker secret"
-        )
+    # -- INTERNAL_TOKEN (for admin proxy auth into brain) --
+    internal_token = os.environ.get("DINA_INTERNAL_TOKEN", "").strip() or None
 
     # -- CORE_URL (default with validation) --
     core_url = os.environ.get("DINA_CORE_URL", "").strip() or _DEFAULT_CORE_URL
@@ -178,6 +186,8 @@ def load_brain_config() -> BrainConfig:
     return BrainConfig(
         core_url=core_url,
         brain_token=brain_token,
+        service_key_dir=service_key_dir,
+        internal_token=internal_token,
         client_token=client_token,
         listen_port=listen_port,
         log_level=log_level,

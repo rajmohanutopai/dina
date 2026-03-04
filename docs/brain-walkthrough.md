@@ -8,7 +8,7 @@ The brain is a Python FastAPI sidecar that provides Dina with the ability to *th
 <summary><strong>Design Decision — Why a separate Python sidecar instead of embedding LLM logic in Go?</strong></summary>
 <br>
 
-Go excels at I/O-bound, low-latency work: HTTP routing, crypto operations, database queries. But the LLM ecosystem — Presidio NER, spaCy models, OpenAI/Gemini/Claude SDKs, Faker for synthetic data — is overwhelmingly Python. Embedding all of this in Go would mean maintaining FFI bridges or re-implementing complex NLP pipelines in a language with no ML ecosystem. The sidecar pattern gives us the best of both worlds: Go handles crypto and storage at native speed, Python handles reasoning and NLP with the full ML toolkit. The two processes communicate over a single authenticated HTTP channel (`BRAIN_TOKEN`). If the brain crashes, core continues to serve — your vault stays open, your identity stays valid. The brain is disposable; your data is not.
+Go excels at I/O-bound, low-latency work: HTTP routing, crypto operations, database queries. But the LLM ecosystem — Presidio NER, spaCy models, OpenAI/Gemini/Claude SDKs, Faker for synthetic data — is overwhelmingly Python. Embedding all of this in Go would mean maintaining FFI bridges or re-implementing complex NLP pipelines in a language with no ML ecosystem. The sidecar pattern gives us the best of both worlds: Go handles crypto and storage at native speed, Python handles reasoning and NLP with the full ML toolkit. The two processes authenticate via Ed25519 service keys — each service generates its own keypair on first startup, and requests are signed with `X-DID`, `X-Timestamp`, and `X-Signature` headers. If the brain crashes, core continues to serve — your vault stays open, your identity stays valid. The brain is disposable; your data is not.
 
 </details>
 
@@ -26,19 +26,19 @@ FastAPI's `Depends()` is used for per-request concerns like authentication (`app
 
 ### Step 1: Configuration (line 138)
 
-`load_brain_config()` reads environment variables and returns a frozen dataclass (`infra/config.py:37`). The `frozen=True` flag means the config is immutable after construction — no one can accidentally mutate it mid-request. The token can come from `DINA_BRAIN_TOKEN` (env var) or `DINA_BRAIN_TOKEN_FILE` (Docker Secrets path at line 66-78). If neither is set, the process refuses to start (`config.py:104-108`).
+`load_brain_config()` reads environment variables and returns a frozen dataclass (`infra/config.py:37`). The `frozen=True` flag means the config is immutable after construction — no one can accidentally mutate it mid-request. The primary authentication mechanism is Ed25519 service keys, configured via `DINA_SERVICE_KEY_DIR` (defaults to `/run/secrets/service_keys`). Private keys are isolated by separate Docker bind mounts — Brain's container sees its own private key at `/run/secrets/service_keys/private/brain_ed25519_private.pem` and both services' public keys at `/run/secrets/service_keys/public/`. Core's private key never exists in Brain's container filesystem. The legacy `DINA_BRAIN_TOKEN` is still supported as an optional fallback for the admin proxy path (browsers cannot sign requests with Ed25519). An additional `DINA_INTERNAL_TOKEN` env var provides bearer token auth for the admin proxy.
 
 <details>
-<summary><strong>Design Decision — Why Docker Secrets support for the brain token?</strong></summary>
+<summary><strong>Design Decision — Why Ed25519 service keys instead of a shared bearer token?</strong></summary>
 <br>
 
-In Docker Compose and Swarm, secrets are mounted as files at `/run/secrets/`. Passing tokens as environment variables is convenient but insecure — `docker inspect` exposes env vars to anyone with container access. The `DINA_BRAIN_TOKEN_FILE` pattern (`config.py:66-78`) reads the token from the mounted file, strips whitespace (a trailing newline would break constant-time comparison), and fails loudly if the file doesn't exist. This is the same pattern used by PostgreSQL, MySQL, and Redis Docker images. The env var fallback exists for local development where Docker Secrets aren't available.
+The original `BRAIN_TOKEN` was a pre-shared secret — both core and brain had to know the same string. This creates key distribution problems (how do you rotate it without downtime?), makes it impossible to attribute requests to a specific service (any holder of the token looks the same), and is vulnerable to timing attacks unless you use constant-time comparison everywhere. Ed25519 service keys solve all three problems: each service generates its own keypair on first startup (`ServiceIdentity.ensure_key()`), reads only its peer's *public* key from a shared directory, and signs every request with a canonical payload (`{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{SHA256(BODY)}`). Requests carry `X-DID`, `X-Timestamp`, and `X-Signature` headers. The timestamp window (5 minutes) prevents replay attacks. The DID (`did:key:z{base58(0xed01 + pubkey)}`) gives each service a stable identity that can be logged and audited. The legacy bearer token path remains for the admin proxy — browsers cannot do Ed25519 signing, so the admin UI authenticates with `DINA_INTERNAL_TOKEN` via `Authorization: Bearer`.
 
 </details>
 
 ### Step 2: Adapter Construction (lines 150-251)
 
-The composition root builds two `CoreHTTPClient` instances — one authenticated with `BRAIN_TOKEN` (for brain API calls to core), and one with `CLIENT_TOKEN` (for admin UI calls). Then it walks through every possible LLM provider:
+The composition root first initializes a `ServiceIdentity` — the brain's Ed25519 keypair (`adapter/signing.py`). On first startup, `ensure_key()` generates a new keypair, persists the private key to `/run/secrets/service_keys/private/brain_ed25519_private.pem` and the public key to `/run/secrets/service_keys/public/brain_ed25519_public.pem`. It then loads core's public key via `load_peer_key_with_retry()` from `/run/secrets/service_keys/public/core_ed25519_public.pem` (waiting up to 30 seconds for core to start and write its key). Two `CoreHTTPClient` instances are built — the primary one authenticated with the brain's `ServiceIdentity` (Ed25519 signed requests), and an optional admin client authenticated with `CLIENT_TOKEN` (for admin UI calls that proxy through core). Then it walks through every possible LLM provider:
 
 - **Llama** (line 161-169) — Local, on-device. `is_local = True`. PII never leaves the Home Node.
 - **Gemini** (line 171-180) — Google cloud. Requires `GEMINI_API_KEY` or `GOOGLE_API_KEY`.
@@ -85,14 +85,14 @@ The **LLM hot-reload callback** (lines 261-320) deserves special attention. When
 
 The brain creates two FastAPI sub-apps:
 
-- **Brain API** (`/api/*`) — Authenticated with `BRAIN_TOKEN`. Only core talks to this.
+- **Brain API** (`/api/*`) — Authenticated via Ed25519 signed requests (core's service key) or `DINA_INTERNAL_TOKEN` bearer fallback (admin proxy). Only core and the admin proxy talk to this.
 - **Admin UI** (`/admin/*`) — Authenticated with `CLIENT_TOKEN`. Only the user's browser talks to this.
 
 <details>
 <summary><strong>Design Decision — Why two separate sub-apps with different tokens?</strong></summary>
 <br>
 
-The brain API and admin UI serve fundamentally different callers with different trust levels. Core calls `/api/v1/process` with the `BRAIN_TOKEN` — a machine-to-machine secret shared between two processes on the same host. The admin UI is accessed by the user's browser with a `CLIENT_TOKEN` that may cross the network. Separating them means: (1) a compromised admin token cannot call brain API endpoints (and vice versa), (2) module isolation is enforced at the import level (`dina_brain` never imports from `dina_admin`, line 12-13 of `main.py`), and (3) the admin UI can be disabled entirely by not setting `CLIENT_TOKEN` (line 381-388). The admin UI is convenience; the brain API is infrastructure.
+The brain API and admin UI serve fundamentally different callers with different trust levels. Core calls `/api/v1/process` with Ed25519 signed requests — each request carries `X-DID`, `X-Timestamp`, and `X-Signature` headers verified against core's pinned public key. The admin proxy uses a `DINA_INTERNAL_TOKEN` bearer token as a fallback (browsers cannot do Ed25519 signing). The admin UI is accessed by the user's browser with a `CLIENT_TOKEN` that may cross the network. Separating them means: (1) a compromised admin token cannot forge Ed25519-signed brain API requests (and vice versa), (2) module isolation is enforced at the import level (`dina_brain` never imports from `dina_admin`, line 12-13 of `main.py`), and (3) the admin UI can be disabled entirely by not setting `CLIENT_TOKEN` (line 381-388). The admin UI is convenience; the brain API is infrastructure.
 
 </details>
 
@@ -361,7 +361,7 @@ The `port/` package defines four protocol interfaces that form the dependency in
 
 A `@runtime_checkable` protocol with 13 async methods (lines 16-104). Every method maps to exactly one core REST endpoint. The docstring at lines 20-26 specifies the error classification contract:
 
-- HTTP 401 → fatal `ConfigError` (bad `BRAIN_TOKEN`), no retry.
+- HTTP 401 → fatal `ConfigError` (service authentication failed — bad signature or expired timestamp), no retry.
 - HTTP 403 → `PersonaLockedError`, no retry.
 - HTTP 5xx → retry with exponential backoff (max 3 attempts).
 - Timeout → `asyncio.TimeoutError` after 30 seconds.
@@ -400,12 +400,12 @@ MCP servers are child processes managed by the brain — they're not network ser
 
 ### CoreHTTPClient (adapter/core_http.py)
 
-The HTTP adapter implements the `CoreClient` protocol in 441 lines. The `_request` helper (lines 108-188) is the workhorse:
+The HTTP adapter implements the `CoreClient` protocol. The `_request` helper is the workhorse:
 
-- **Lazy client** (line 78-86) — `httpx.AsyncClient` is created on first use and reused. If it's closed (e.g., after a shutdown), a new one is created transparently.
-- **Bearer auth** (line 83) — Every request carries `Authorization: Bearer {brain_token}`.
-- **Retry with exponential backoff** (lines 121-183) — 3 attempts with 1s, 2s, 4s delays. Connection errors and 5xx responses are retried. 401 and 403 are not.
-- **Error classification** (lines 132-140) — 401 → `ConfigError` (fatal, won't retry). 403 → `PersonaLockedError` (the persona vault is locked, the guardian should whisper an unlock request).
+- **Lazy client** — `httpx.AsyncClient` is created on first use and reused. If it's closed (e.g., after a shutdown), a new one is created transparently.
+- **Ed25519 signed auth** — When constructed with a `ServiceIdentity`, every request is signed via `_sign_headers()`: the canonical payload (`{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{SHA256(BODY)}`) is signed with the brain's Ed25519 private key, and the request carries `X-DID`, `X-Timestamp`, and `X-Signature` headers. Falls back to `Authorization: Bearer {token}` when constructed with only a `brain_token` (used by the admin client).
+- **Retry with exponential backoff** — 3 attempts with 1s, 2s, 4s delays. Connection errors and 5xx responses are retried. 401 and 403 are not.
+- **Error classification** — 401 → `ConfigError` (fatal — service authentication failed, won't retry). 403 → `PersonaLockedError` (the persona vault is locked, the guardian should whisper an unlock request) or `AuthorizationError` for other access denials.
 
 <details>
 <summary><strong>Design Decision — Why httpx instead of aiohttp or requests?</strong></summary>
@@ -527,17 +527,21 @@ The selection rule (lines 218-239): highest confidence wins. On ties, higher sen
 
 ## Act IX: The API Surface — Three Endpoints
 
-The brain API exposes exactly three endpoints, all behind `BRAIN_TOKEN` authentication.
+The brain API exposes exactly three endpoints, all behind `verify_service_auth()` authentication.
 
-### Authentication (dina_brain/app.py:65-81)
+### Authentication (dina_brain/app.py)
 
-Every brain API request must carry `Authorization: Bearer {BRAIN_TOKEN}`. The token comparison uses `hmac.compare_digest()` (line 78) — a constant-time comparison that prevents timing side-channel attacks. An attacker cannot determine how many bytes of the token they've guessed correctly by measuring response time.
+Every brain API request is verified by `verify_service_auth()`, which checks two authentication paths in order:
+
+**Path 1: Ed25519 signed requests** (primary) — Core sends `X-DID`, `X-Timestamp`, and `X-Signature` headers. The dependency calls `ServiceIdentity.verify_request()` with core's pinned public key, reconstructing the canonical signing payload (`{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{SHA256(BODY)}`) and verifying the Ed25519 signature. The timestamp must be within a 5-minute window to prevent replay attacks. If the core public key is not loaded (startup race), the request is rejected with 401.
+
+**Path 2: Bearer token** (fallback for admin proxy) — If no signature headers are present, the request must carry `Authorization: Bearer {DINA_INTERNAL_TOKEN}`. This path exists because browsers cannot do Ed25519 signing, so the admin UI proxies requests through core's admin handler, which attaches the internal token. The token comparison still uses `hmac.compare_digest()` — constant-time comparison that prevents timing side-channel attacks.
 
 <details>
-<summary><strong>Design Decision — Why constant-time comparison for a machine-to-machine token?</strong></summary>
+<summary><strong>Design Decision — Why two authentication paths instead of one?</strong></summary>
 <br>
 
-The `BRAIN_TOKEN` is shared between core and brain on the same host, so a remote timing attack is unlikely. But defense-in-depth means assuming the worst. If brain is exposed through a misconfigured reverse proxy, or if an attacker has local access and can measure response times with nanosecond precision (speculative execution attacks), constant-time comparison closes the vulnerability. The cost is negligible — `hmac.compare_digest` is a single function call. The alternative (plain `==`) would save zero measurable time but open a theoretical attack vector. In security code, theoretical risks are treated as real risks.
+Ed25519 signatures are strictly superior to bearer tokens for machine-to-machine auth: no shared secret, no key distribution, replay-resistant via timestamps, and each service gets a verifiable identity (`did:key`). But browsers cannot compute Ed25519 signatures — the admin UI runs in a browser and proxies its API requests through core's admin handler. Core's admin handler authenticates the browser session (via `CLIENT_TOKEN`), then forwards the request to brain's API with a `DINA_INTERNAL_TOKEN` bearer token. This is the only path that uses bearer auth, and it is restricted to the admin proxy. Direct core-to-brain communication always uses Ed25519 signatures. The `verify_service_auth()` function checks signature headers first — if they are present, the bearer token path is never reached.
 
 </details>
 
@@ -610,10 +614,12 @@ An unrecoverable crash means the brain's internal state may be corrupted — a h
 
 ### Configuration (infra/config.py)
 
-A 148-line module that loads all brain config from environment variables. The `BrainConfig` dataclass (lines 37-58) is `frozen=True, slots=True` — immutable and memory-efficient. Key features:
+A module that loads all brain config from environment variables. The `BrainConfig` dataclass is `frozen=True, slots=True` — immutable and memory-efficient. Key features:
 
-- **Docker Secrets support** — `DINA_BRAIN_TOKEN_FILE` reads the token from a file, stripping whitespace (line 78).
-- **URL validation** — `CORE_URL` is checked against a regex pattern (line 113). Invalid URLs fail at startup, not at first request.
+- **Service key directory** — `DINA_SERVICE_KEY_DIR` points to the base directory for Ed25519 service keys (default `/run/secrets/service_keys`). Brain generates its private key in the `private/` subdirectory and its public key in the `public/` subdirectory. It reads core's public key from `public/`. Private keys are isolated by separate Docker bind mounts — Brain's `private/` directory contains only Brain's private key (Core's private key is never in Brain's filesystem).
+- **Internal token** — `DINA_INTERNAL_TOKEN` provides bearer token auth for the admin proxy path (browsers cannot sign with Ed25519).
+- **Legacy brain token** — `DINA_BRAIN_TOKEN` / `DINA_BRAIN_TOKEN_FILE` are still supported as optional fallback, but service keys are the primary authentication mechanism.
+- **URL validation** — `CORE_URL` is checked against a regex pattern. Invalid URLs fail at startup, not at first request.
 - **Graceful optionals** — `LLM_URL`, `CLOUD_LLM`, and `CLIENT_TOKEN` are all optional. The brain works with zero optional config — it just has fewer capabilities.
 
 ---
@@ -753,7 +759,7 @@ The relationship between core and brain is asymmetric by design:
 |---------|-----------|----------------|
 | Identity | Holds the keys | Cannot sign without core |
 | Storage | Encrypts and stores | Reads and writes via HTTP |
-| Auth | Issues and validates tokens | Presents tokens |
+| Auth | Verifies Ed25519 signatures + issues internal tokens | Signs requests with service key |
 | Crypto | NaCl seal/unseal, Ed25519 | None — delegates to core |
 | Reasoning | None | Full LLM pipeline |
 | PII scrubbing | Tier 1 (regex) | Tier 2 (NER) |

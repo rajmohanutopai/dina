@@ -42,7 +42,7 @@ cd ~/dina-alonso
 
 The script will:
 1. Check Docker prerequisites
-2. Generate `secrets/brain_token` (shared secret between core and brain)
+2. Create `secrets/service_keys/{core,brain,public}` directories (Ed25519 keypairs generated at first startup, private keys isolated by separate Docker bind mounts)
 3. Generate a 256-bit identity seed
 4. Ask which LLM provider (pick Gemini for free tier)
 5. Write `.env` with secrets + PDS credentials
@@ -104,8 +104,10 @@ curl -s http://localhost:8100/readyz | jq .
 # {"status":"ready"}
 
 # 4. Verify DID was created
-BRAIN_TOKEN=$(cat secrets/brain_token)
-curl -s -H "Authorization: Bearer $BRAIN_TOKEN" \
+# Use a CLIENT_TOKEN (device token) for API access.
+# Get yours from: docker exec dina-core dina-admin token
+CLIENT_TOKEN="<your-client-token>"
+curl -s -H "Authorization: Bearer $CLIENT_TOKEN" \
   http://localhost:8100/v1/did | jq .
 # {"did":"did:plc:..."}
 
@@ -113,9 +115,8 @@ curl -s -H "Authorization: Bearer $BRAIN_TOKEN" \
 curl -s http://localhost:8100/.well-known/atproto-did
 # did:plc:...
 
-# 6. Check brain is responding
-curl -s -H "Authorization: Bearer $BRAIN_TOKEN" \
-  http://localhost:8200/healthz | jq .
+# 6. Check brain is responding (brain health endpoint requires no auth)
+curl -s http://localhost:8200/healthz | jq .
 # {"status":"ok"}
 ```
 
@@ -172,31 +173,35 @@ If the health check fails across LAN:
 
 ## Phase 4: Device Pairing
 
-Each node needs a CLIENT_TOKEN (device token) for admin-level operations. The BRAIN_TOKEN is internal (core <-> brain). CLIENT_TOKEN is for external clients (you, CLI, admin UI).
+Each node needs a CLIENT_TOKEN (device token) for admin-level operations. Core and Brain authenticate internally using Ed25519 service keys (auto-generated in `secrets/service_keys/`). Private keys are isolated by separate Docker bind mounts — each service only sees its own private key. Public keys are shared. CLIENT_TOKEN is for external clients (you, CLI, admin UI).
 
 ### On Laptop 1 (Alonso)
 
 ```bash
 cd ~/dina-alonso
-BRAIN_TOKEN=$(cat secrets/brain_token)
+
+# Get a CLIENT_TOKEN (device token) for API access.
+# Option A: Use the dina-admin CLI inside the container:
+CLIENT_TOKEN=$(docker exec dina-core dina-admin token)
+# Option B: Use the pairing flow (initiate + complete):
 
 # Step 1: Initiate pairing (generates a 6-digit code)
+# Note: The initiate endpoint is open during initial setup (no paired devices yet)
 curl -s -X POST \
-  -H "Authorization: Bearer $BRAIN_TOKEN" \
   http://localhost:8100/v1/pair/initiate | jq .
 # {"code":"a1b2c3","expires_in":300}
 
 # Step 2: Complete pairing with the code
 PAIR_CODE="a1b2c3"  # use the actual code from step 1
 curl -s -X POST \
-  -H "Authorization: Bearer $BRAIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d "{\"code\":\"$PAIR_CODE\",\"device_name\":\"alonso-macbook\"}" \
   http://localhost:8100/v1/pair/complete | jq .
 # {"client_token":"hex64chars...","token_id":"tok-1","node_did":"did:plc:..."}
 
 # Save the client token
-echo "hex64chars..." > secrets/client_token
+CLIENT_TOKEN="hex64chars..."  # use the actual token from the response
+echo "$CLIENT_TOKEN" > secrets/client_token
 chmod 600 secrets/client_token
 ```
 
@@ -204,19 +209,21 @@ chmod 600 secrets/client_token
 
 ```bash
 cd ~/dina-sancho
-BRAIN_TOKEN=$(cat secrets/brain_token)
 
-curl -s -X POST -H "Authorization: Bearer $BRAIN_TOKEN" \
-  http://localhost:8100/v1/pair/initiate | jq .
+# Get a CLIENT_TOKEN (device token) for API access.
+CLIENT_TOKEN=$(docker exec dina-core dina-admin token)
+# Or use the pairing flow:
+
+curl -s -X POST http://localhost:8100/v1/pair/initiate | jq .
 
 PAIR_CODE="x9y8z7"  # use actual code
 curl -s -X POST \
-  -H "Authorization: Bearer $BRAIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d "{\"code\":\"$PAIR_CODE\",\"device_name\":\"sancho-macbook\"}" \
   http://localhost:8100/v1/pair/complete | jq .
 
-echo "hex64chars..." > secrets/client_token
+CLIENT_TOKEN="hex64chars..."  # use the actual token from the response
+echo "$CLIENT_TOKEN" > secrets/client_token
 chmod 600 secrets/client_token
 ```
 
@@ -291,16 +298,16 @@ curl -s -X POST \
 
 ## Phase 6: Vault Operations
 
-The vault is SQLCipher-encrypted, per-persona. Use BRAIN_TOKEN or CLIENT_TOKEN (both are accepted by vault endpoints).
+The vault is SQLCipher-encrypted, per-persona. Use CLIENT_TOKEN for all vault endpoints.
 
 ### Store Items
 
 ```bash
-BRAIN_TOKEN=$(cat secrets/brain_token)
+CLIENT_TOKEN=$(cat secrets/client_token)
 
 # Store a note in the "personal" vault
 curl -s -X POST \
-  -H "Authorization: Bearer $BRAIN_TOKEN" \
+  -H "Authorization: Bearer $CLIENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "persona": "personal",
@@ -320,7 +327,7 @@ curl -s -X POST \
 
 ```bash
 curl -s -X POST \
-  -H "Authorization: Bearer $BRAIN_TOKEN" \
+  -H "Authorization: Bearer $CLIENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "persona": "personal",
@@ -337,7 +344,7 @@ curl -s -X POST \
 ```bash
 # Full-text search
 curl -s -X POST \
-  -H "Authorization: Bearer $BRAIN_TOKEN" \
+  -H "Authorization: Bearer $CLIENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"persona":"personal","query":"cardamom tea","limit":10}' \
   http://localhost:8100/v1/vault/query | jq .
@@ -350,13 +357,13 @@ curl -s -X POST \
 ```bash
 # Set a KV pair
 curl -s -X PUT \
-  -H "Authorization: Bearer $BRAIN_TOKEN" \
+  -H "Authorization: Bearer $CLIENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"value":"true"}' \
   http://localhost:8100/v1/vault/kv/briefing_enabled | jq .
 
 # Get a KV pair
-curl -s -H "Authorization: Bearer $BRAIN_TOKEN" \
+curl -s -H "Authorization: Bearer $CLIENT_TOKEN" \
   http://localhost:8100/v1/vault/kv/briefing_enabled | jq .
 ```
 
@@ -364,7 +371,7 @@ curl -s -H "Authorization: Bearer $BRAIN_TOKEN" \
 
 ```bash
 ITEM_ID="<from store response>"
-curl -s -H "Authorization: Bearer $BRAIN_TOKEN" \
+curl -s -H "Authorization: Bearer $CLIENT_TOKEN" \
   "http://localhost:8100/v1/vault/item/$ITEM_ID?persona=personal" | jq .
 ```
 
@@ -447,11 +454,11 @@ docker compose up -d core
 On **Laptop 1**:
 
 ```bash
-BRAIN_TOKEN=$(cat secrets/brain_token)
+CLIENT_TOKEN=$(cat secrets/client_token)
 SANCHO_DID="did:plc:<sancho's DID>"
 
 curl -s -X POST \
-  -H "Authorization: Bearer $BRAIN_TOKEN" \
+  -H "Authorization: Bearer $CLIENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d "{
     \"to\": \"$SANCHO_DID\",
@@ -467,9 +474,9 @@ curl -s -X POST \
 On **Laptop 2**:
 
 ```bash
-BRAIN_TOKEN=$(cat secrets/brain_token)
+CLIENT_TOKEN=$(cat secrets/client_token)
 
-curl -s -H "Authorization: Bearer $BRAIN_TOKEN" \
+curl -s -H "Authorization: Bearer $CLIENT_TOKEN" \
   http://localhost:8100/v1/msg/inbox | jq .
 # Should contain the message from Alonso
 ```
@@ -482,7 +489,7 @@ On **Laptop 2**:
 ALONSO_DID="did:plc:<alonso's DID>"
 
 curl -s -X POST \
-  -H "Authorization: Bearer $BRAIN_TOKEN" \
+  -H "Authorization: Bearer $CLIENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d "{
     \"to\": \"$ALONSO_DID\",
@@ -497,7 +504,7 @@ curl -s -X POST \
 On **Laptop 1**:
 
 ```bash
-curl -s -H "Authorization: Bearer $BRAIN_TOKEN" \
+curl -s -H "Authorization: Bearer $CLIENT_TOKEN" \
   http://localhost:8100/v1/msg/inbox | jq .
 ```
 
@@ -530,10 +537,10 @@ Alonso types "send msg to Sancho"
 ### Core-Level Scrubbing (Regex — Go)
 
 ```bash
-BRAIN_TOKEN=$(cat secrets/brain_token)
+CLIENT_TOKEN=$(cat secrets/client_token)
 
 curl -s -X POST \
-  -H "Authorization: Bearer $BRAIN_TOKEN" \
+  -H "Authorization: Bearer $CLIENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text":"Call John Doe at 555-123-4567, SSN 123-45-6789, email john@example.com"}' \
   http://localhost:8100/v1/pii/scrub | jq .
@@ -544,7 +551,7 @@ curl -s -X POST \
 
 ```bash
 curl -s -X POST \
-  -H "Authorization: Bearer $BRAIN_TOKEN" \
+  -H "Authorization: Bearer $CLIENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text":"Patient John Doe from Google Inc visited Dr. Smith in New York"}' \
   http://localhost:8200/api/v1/pii/scrub | jq .
@@ -558,10 +565,10 @@ curl -s -X POST \
 ### Ask Brain a Question
 
 ```bash
-BRAIN_TOKEN=$(cat secrets/brain_token)
+CLIENT_TOKEN=$(cat secrets/client_token)
 
 curl -s -X POST \
-  -H "Authorization: Bearer $BRAIN_TOKEN" \
+  -H "Authorization: Bearer $CLIENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "What do I know about Sancho?",
@@ -577,7 +584,7 @@ curl -s -X POST \
 
 ```bash
 curl -s -X POST \
-  -H "Authorization: Bearer $BRAIN_TOKEN" \
+  -H "Authorization: Bearer $CLIENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "type": "agent_intent",
@@ -597,10 +604,10 @@ curl -s -X POST \
 ### Sign Data
 
 ```bash
-BRAIN_TOKEN=$(cat secrets/brain_token)
+CLIENT_TOKEN=$(cat secrets/client_token)
 
 curl -s -X POST \
-  -H "Authorization: Bearer $BRAIN_TOKEN" \
+  -H "Authorization: Bearer $CLIENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"data":"hello world"}' \
   http://localhost:8100/v1/did/sign | jq .
@@ -613,7 +620,7 @@ Take the signature from above and verify it:
 
 ```bash
 curl -s -X POST \
-  -H "Authorization: Bearer $BRAIN_TOKEN" \
+  -H "Authorization: Bearer $CLIENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d "{
     \"data\": \"hello world\",
@@ -710,10 +717,10 @@ This is the full vision test from the README. Run these steps in order.
 On **Laptop 1** (Alonso):
 
 ```bash
-BRAIN_TOKEN=$(cat secrets/brain_token)
+CLIENT_TOKEN=$(cat secrets/client_token)
 
 # Store relationship context
-curl -s -X POST -H "Authorization: Bearer $BRAIN_TOKEN" \
+curl -s -X POST -H "Authorization: Bearer $CLIENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "persona":"personal",
@@ -722,7 +729,7 @@ curl -s -X POST -H "Authorization: Bearer $BRAIN_TOKEN" \
   }' http://localhost:8100/v1/vault/store | jq .
 
 # Store calendar event
-curl -s -X POST -H "Authorization: Bearer $BRAIN_TOKEN" \
+curl -s -X POST -H "Authorization: Bearer $CLIENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "persona":"personal",
@@ -736,11 +743,11 @@ curl -s -X POST -H "Authorization: Bearer $BRAIN_TOKEN" \
 On **Laptop 2** (Sancho):
 
 ```bash
-BRAIN_TOKEN=$(cat secrets/brain_token)
+CLIENT_TOKEN=$(cat secrets/client_token)
 ALONSO_DID="did:plc:<alonso>"
 
 # Sancho's Dina notifies Alonso's Dina
-curl -s -X POST -H "Authorization: Bearer $BRAIN_TOKEN" \
+curl -s -X POST -H "Authorization: Bearer $CLIENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d "{
     \"to\":\"$ALONSO_DID\",
@@ -755,11 +762,11 @@ On **Laptop 1** (Alonso):
 
 ```bash
 # Check inbox — should have Sancho's arrival nudge
-curl -s -H "Authorization: Bearer $BRAIN_TOKEN" \
+curl -s -H "Authorization: Bearer $CLIENT_TOKEN" \
   http://localhost:8100/v1/msg/inbox | jq .
 
 # Ask Brain for context
-curl -s -X POST -H "Authorization: Bearer $BRAIN_TOKEN" \
+curl -s -X POST -H "Authorization: Bearer $CLIENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"prompt":"Sancho is arriving in 15 minutes. What should I prepare?","persona_id":"personal","persona_tier":"open"}' \
   http://localhost:8200/api/v1/reason | jq .
@@ -773,7 +780,7 @@ curl -s -X POST -H "Authorization: Bearer $BRAIN_TOKEN" \
 docker compose logs core | grep -E "outbox|delivered|acked"
 
 # Verify vault search works
-curl -s -X POST -H "Authorization: Bearer $BRAIN_TOKEN" \
+curl -s -X POST -H "Authorization: Bearer $CLIENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"persona":"personal","query":"Sancho tea mother"}' \
   http://localhost:8100/v1/vault/query | jq '.[] | .Summary'
@@ -786,14 +793,6 @@ curl -s -X POST -H "Authorization: Bearer $BRAIN_TOKEN" \
 ### Test Auth Boundaries
 
 ```bash
-# Brain token should NOT work for persona management
-BRAIN_TOKEN=$(cat secrets/brain_token)
-curl -s -X POST -H "Authorization: Bearer $BRAIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"evil","tier":"open","passphrase":"x"}' \
-  http://localhost:8100/v1/personas
-# Should be rejected (wrong token scope)
-
 # No token should fail
 curl -s http://localhost:8100/v1/vault/query
 # 401 unauthorized
@@ -802,6 +801,13 @@ curl -s http://localhost:8100/v1/vault/query
 curl -s -H "Authorization: Bearer invalid_token_here" \
   http://localhost:8100/v1/vault/query
 # 401 unauthorized
+
+# Revoked device token should fail
+# (revoke a token first, then try to use it)
+CLIENT_TOKEN=$(cat secrets/client_token)
+curl -s -H "Authorization: Bearer $CLIENT_TOKEN" \
+  http://localhost:8100/v1/devices | jq .
+# Note a token ID, then revoke it and verify it stops working
 ```
 
 ### Test Locked Persona Access
@@ -816,8 +822,7 @@ curl -s -X POST -H "Authorization: Bearer $CLIENT_TOKEN" \
   http://localhost:8100/v1/personas | jq .
 
 # Try to query the locked persona's vault (should fail with 403)
-BRAIN_TOKEN=$(cat secrets/brain_token)
-curl -s -X POST -H "Authorization: Bearer $BRAIN_TOKEN" \
+curl -s -X POST -H "Authorization: Bearer $CLIENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"persona":"financial","query":"anything"}' \
   http://localhost:8100/v1/vault/query
@@ -831,7 +836,7 @@ curl -s -X POST -H "Authorization: Bearer $CLIENT_TOKEN" \
 # {"status":"unlocked"}
 
 # Now vault query should work
-curl -s -X POST -H "Authorization: Bearer $BRAIN_TOKEN" \
+curl -s -X POST -H "Authorization: Bearer $CLIENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"persona":"financial","query":"anything"}' \
   http://localhost:8100/v1/vault/query | jq .
@@ -857,10 +862,10 @@ docker compose logs -f core | grep -E "dead.drop|sweeper|pending"
 The 24-word mnemonic is the master backup.
 
 ```bash
-BRAIN_TOKEN=$(cat secrets/brain_token)
+CLIENT_TOKEN=$(cat secrets/client_token)
 
 # Get mnemonic (only works once for security in production; in dev mode always available)
-curl -s -H "Authorization: Bearer $BRAIN_TOKEN" \
+curl -s -H "Authorization: Bearer $CLIENT_TOKEN" \
   http://localhost:8100/v1/identity/mnemonic | jq .
 # {"did":"did:plc:...","mnemonic":"word1 word2 ... word24"}
 ```
@@ -899,7 +904,7 @@ rm -rf secrets/ .env      # removes secrets
 | GET | `/.well-known/atproto-did` | AT Protocol DID discovery |
 | POST | `/msg` | NaCl-encrypted D2D ingress (authenticated by sealed box) |
 
-### Core (port 8100) — BRAIN_TOKEN or CLIENT_TOKEN
+### Core (port 8100) — CLIENT_TOKEN or Ed25519 device signature
 
 | Method | Path | Purpose |
 |--------|------|---------|
@@ -936,7 +941,7 @@ rm -rf secrets/ .env      # removes secrets
 | PUT/DELETE | `/v1/contacts/{did}` | Update/delete contact |
 | GET/PUT | `/v1/contacts/{did}/policy` | Sharing policy |
 
-### Brain (port 8200, internal only) — BRAIN_TOKEN
+### Brain (port 8200, internal only) — Ed25519 service key auth
 
 | Method | Path | Purpose |
 |--------|------|---------|

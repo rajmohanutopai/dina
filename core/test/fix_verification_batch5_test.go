@@ -66,7 +66,7 @@ func TestSecFix_32_1_2_DifferentSignaturesAccepted(t *testing.T) {
 
 // TST-CORE-1060
 func TestSecFix_32_1_3_DoubleBufferRotation(t *testing.T) {
-	tv := auth.NewDefaultTokenValidator(testutil.TestBrainToken)
+	tv := auth.NewDefaultTokenValidator()
 
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -115,7 +115,7 @@ func TestSecFix_32_1_3_DoubleBufferRotation(t *testing.T) {
 
 // TST-CORE-1061
 func TestSecFix_32_1_4_SafetyValveUnderLoad(t *testing.T) {
-	tv := auth.NewDefaultTokenValidator(testutil.TestBrainToken)
+	tv := auth.NewDefaultTokenValidator()
 
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {

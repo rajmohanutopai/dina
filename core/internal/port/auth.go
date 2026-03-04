@@ -7,17 +7,21 @@ import (
 )
 
 // TokenValidator authenticates incoming requests.
-// Three-tier: Ed25519 signature (did:key lookup) + BRAIN_TOKEN (constant-time)
-// + CLIENT_TOKEN (hash lookup).
+// Two-tier: Ed25519 signature (service keys → TokenBrain, device keys → TokenClient)
+// + CLIENT_TOKEN bearer (hash lookup → TokenClient).
 type TokenValidator interface {
-	ValidateBrainToken(token string) bool
 	ValidateClientToken(token string) (deviceID string, ok bool)
 	IdentifyToken(token string) (kind domain.TokenType, identity string, err error)
 	// VerifySignature validates an Ed25519 request signature.
-	// It looks up the DID in the device registry, checks replay protection
-	// (timestamp window + nonce cache), and verifies the cryptographic signature.
-	// The query parameter binds the URL query string into the signed payload.
+	// It checks service keys first (returns TokenBrain), then device keys
+	// (returns TokenClient). Enforces timestamp window + nonce replay cache.
 	VerifySignature(did, method, path, query, timestamp string, body []byte, signatureHex string) (kind domain.TokenType, identity string, err error)
+}
+
+// ServiceKeyRegistrar allows the composition root to register Ed25519
+// service keys (e.g. Brain's public key) for signature verification.
+type ServiceKeyRegistrar interface {
+	RegisterServiceKey(did string, pubKey []byte, serviceID string)
 }
 
 // DeviceKeyRegistrar allows the pairing/device layer to register and revoke

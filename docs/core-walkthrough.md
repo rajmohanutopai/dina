@@ -54,17 +54,17 @@ The hex seed and the 24 words are the **same thing** in two formats. If the user
 | Secret | Created by | Purpose | If compromised |
 |--------|-----------|---------|----------------|
 | **Identity Seed** | `install.sh` Step 4 — `secrets.token_hex(32)` | Derives ALL cryptographic keys: DID, signing key, per-persona vault encryption keys | Total compromise — attacker becomes you |
-| **Brain Token** | `install.sh` Step 3 — `secrets.token_urlsafe(32)` | Shared password between Core and Brain containers (Docker secret) | Attacker can call Core's API as Brain — but cannot derive DID or decrypt vaults |
+| **Brain Service Key** | Brain generates its own Ed25519 keypair on first start | Brain signs every request to Core (`X-DID`, `X-Timestamp`, `X-Signature` headers). Private keys are isolated by separate Docker bind mounts — Brain's private key is in `secrets/service_keys/brain/` (mounted only to Brain), public keys are in `secrets/service_keys/public/` (mounted to both containers). Core's private key never exists in Brain's container filesystem and vice versa. | Attacker can call Core's API as Brain — but cannot derive DID or decrypt vaults. Revoke by removing the public key from the shared `public/` directory |
 | **Client Token** | Core generates during `dina pair` — `crypto/rand.Read()` | Admin web UI login password (browser POSTs token, gets session cookie) | Revoke — other devices and identity unaffected |
 
-The brain token and client token are **not derived from the seed**. They are independent random values. The seed never leaves Core's memory. Brain never sees it (`docker-compose.yml` passes `DINA_MASTER_SEED` only to Core, not to Brain). CLI never sees it (CLI authenticates via Ed25519 signatures, not tokens).
+The client token is **not derived from the seed**. It is an independent random value. The seed never leaves Core's memory. Brain never sees it (`docker-compose.yml` passes `DINA_MASTER_SEED` only to Core, not to Brain). CLI and Brain authenticate via Ed25519 signatures, not tokens.
 
 ```
-                    Has seed?    Has brain_token?    Has Ed25519 keypair?
-Core                  YES            YES                 N/A (verifies)
-Brain                 NO             YES                 NO
-CLI                   NO             NO                  YES (one per device)
-PDS                   NO             NO                  NO
+                    Has seed?    Has service keypair?    Has Ed25519 keypair?
+Core                  YES         N/A (verifies)          N/A (verifies)
+Brain                 NO          YES                     NO
+CLI                   NO          NO                      YES (one per device)
+PDS                   NO          NO                      NO
 ```
 
 ### Key Derivation: One Seed, Many Keys
@@ -219,7 +219,7 @@ The Go core handles crypto, storage, identity, and HTTP — things that need to 
 - **Go** is better at: crypto operations, concurrent HTTP handling, low-latency API routing, and zero-dependency deployment.
 - **Python** is better at: LLM library ecosystem (PydanticAI, LiteLLM, ChromaDB, Google ADK), rapid iteration on prompt engineering, and native support for ML/AI tooling.
 
-A sidecar architecture means: (1) the core can run without the brain (health probes degrade gracefully), (2) the brain can be replaced or upgraded independently (swap Ollama for Gemini without touching the core), (3) a crash in the LLM layer doesn't take down identity or encryption, and (4) the brain communicates via a well-defined HTTP API with its own bearer token (`BRAIN_TOKEN`), creating a clear security boundary.
+A sidecar architecture means: (1) the core can run without the brain (health probes degrade gracefully), (2) the brain can be replaced or upgraded independently (swap Ollama for Gemini without touching the core), (3) a crash in the LLM layer doesn't take down identity or encryption, and (4) the brain communicates via a well-defined HTTP API authenticated with Ed25519 signed requests (service key), creating a clear security boundary.
 
 </details>
 
@@ -391,19 +391,21 @@ No framework means: (1) zero third-party dependencies in the HTTP layer (smaller
    - **Public paths** (`/healthz`, `/readyz`, `/.well-known/atproto-did`) — skip auth entirely.
    - **NaCl ingress** (`POST /msg`) — authenticated by the sealed box itself, no token needed.
    - **Ed25519 signature auth** (lines 78-120) — The client sends `X-DID`, `X-Signature`, `X-Timestamp` headers. The middleware verifies the timestamp is within 5 minutes (replay protection), reads the body (bounded to 1MB), and calls `VerifySignature()`. On success, it sets `token_kind=client`, `agent_did={identity}`, and `token_scope=device` in the request context.
-   - **Bearer token auth** (lines 123-145) — Classic `Authorization: Bearer <token>`. `IdentifyToken()` determines if it's a brain token or a client token. Used by the Brain sidecar (BRAIN_TOKEN) and the admin UI (CLIENT_TOKEN). CLI does **not** use Bearer tokens — it exclusively uses Ed25519 signature auth.
+   - **Bearer token auth** (lines 123-145) — Classic `Authorization: Bearer <token>`. `IdentifyToken()` handles client tokens only. Used by the admin UI proxy (`DINA_INTERNAL_TOKEN`) since browsers cannot sign requests. CLI and Brain do **not** use Bearer tokens — they exclusively use Ed25519 signature auth.
 
 <details>
 <summary><strong>Design Decision — Why two auth methods (Ed25519 signatures + Bearer tokens)?</strong></summary>
 <br>
 
-Ed25519 signature auth (`X-DID` + `X-Signature` + `X-Timestamp`) is the primary auth method for all external devices. The private key never leaves the device, and each request is signed with the current timestamp to prevent replay. CLI uses signature auth exclusively — there is no token-based fallback.
+Ed25519 signature auth (`X-DID` + `X-Signature` + `X-Timestamp`) is the primary auth method for all devices and services. The private key never leaves the device/service, and each request is signed with the current timestamp to prevent replay. The canonical signing payload is: `{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{SHA256_HEX(BODY)}`. `VerifySignature()` checks service keys first (Brain's public key, loaded from `/run/secrets/service_keys/public/`), then device keys.
 
-Bearer tokens serve internal and browser-based contexts only:
-- **The Python brain sidecar** uses a bearer token (`BRAIN_TOKEN`). It runs on the same machine as Core, communicates over localhost, and is a trusted internal component.
-- **The admin web UI** uses `CLIENT_TOKEN` as a login password, with session cookies for subsequent requests.
+- **CLI** uses Ed25519 signature auth exclusively (one keypair per device).
+- **The Python brain sidecar** uses Ed25519 signature auth with its own service keypair. It generates an Ed25519 keypair on first start. Private keys are isolated by separate Docker bind mounts — Brain's private key is in `secrets/service_keys/brain/` (mounted only to Brain as `/run/secrets/service_keys/private/`), while both services' public keys are in `secrets/service_keys/public/` (mounted to both containers as `/run/secrets/service_keys/public/`).
 
-The 5-minute timestamp window prevents replay attacks while accommodating reasonable clock skew between devices. The body is included in the signature to prevent request tampering.
+Bearer tokens serve browser-based contexts only:
+- **The admin web UI proxy** uses `DINA_INTERNAL_TOKEN` as a bearer token since browsers cannot sign Ed25519 requests. Session cookies are used for subsequent requests.
+
+The 5-minute timestamp window prevents replay attacks while accommodating reasonable clock skew between devices. The body hash is included in the signature to prevent request tampering.
 
 </details>
 

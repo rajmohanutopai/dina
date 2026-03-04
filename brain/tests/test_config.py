@@ -121,12 +121,12 @@ def test_config_9_3_2_log_level_default(monkeypatch) -> None:
 
 
 # TST-BRAIN-380
-def test_config_9_4_1_missing_brain_token_raises(monkeypatch) -> None:
-    """§9.4.1: Startup fails if BRAIN_TOKEN is missing and no secret file exists."""
+def test_config_9_4_1_missing_brain_token_accepted(monkeypatch) -> None:
+    """§9.4.1: Missing BRAIN_TOKEN is accepted — service keys are used instead."""
     _clear_config_env(monkeypatch)
 
-    with pytest.raises(ValueError, match="BRAIN_TOKEN"):
-        load_brain_config()
+    cfg = load_brain_config()
+    assert cfg.brain_token is None
 
 
 # TST-BRAIN-294

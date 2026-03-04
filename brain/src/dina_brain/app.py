@@ -1,8 +1,8 @@
 """FastAPI sub-app for the brain API (/api/*).
 
-All routes require BRAIN_TOKEN in ``Authorization: Bearer`` header.
-Uses ``hmac.compare_digest`` for constant-time token comparison to
-prevent timing attacks (Brain TEST_PLAN SS1.1.6).
+Routes are authenticated via Ed25519 signed requests (X-DID / X-Timestamp /
+X-Signature headers) from pinned service keys. Falls back to bearer token
+auth for the admin proxy path (browsers can't do Ed25519 signing).
 
 Module isolation: this module does NOT import from ``dina_admin``.
 
@@ -14,14 +14,16 @@ from __future__ import annotations
 import hmac
 import logging
 import os
-from typing import Any
+from typing import Any, Callable, TYPE_CHECKING
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from .routes import pii as pii_route
 from .routes import process as process_route
 from .routes import reason as reason_route
+
+if TYPE_CHECKING:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 log = logging.getLogger(__name__)
 
@@ -35,10 +37,12 @@ if not _is_dev and os.environ.get("DINA_TEST_MODE", "").lower() == "true":
 def create_brain_app(
     guardian: Any,
     sync_engine: Any,
-    brain_token: str,
     scrubber: Any = None,
+    *,
+    core_public_key: "Ed25519PublicKey | Callable[[], Ed25519PublicKey | None] | None" = None,
+    internal_token: str = "",
 ) -> FastAPI:
-    """Create the brain API sub-app with BRAIN_TOKEN auth middleware.
+    """Create the brain API sub-app with Ed25519 signature verification.
 
     Parameters
     ----------
@@ -46,12 +50,13 @@ def create_brain_app(
         GuardianLoop instance for event processing and reasoning.
     sync_engine:
         SyncEngine instance for ingestion pipeline access.
-    brain_token:
-        The shared secret for authenticating requests from core.
-        Compared with ``hmac.compare_digest`` (constant-time).
     scrubber:
         PII scrubber instance (Tier 2 NER).  Optional — if None,
         the ``/v1/pii/scrub`` endpoint returns text unchanged.
+    core_public_key:
+        Core's Ed25519 public key for verifying signed requests.
+    internal_token:
+        Bearer token for admin proxy path (browsers can't sign).
 
     Returns
     -------
@@ -139,29 +144,61 @@ def create_brain_app(
                 return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
         return await call_next(request)
 
-    security = HTTPBearer()
-
     # ------------------------------------------------------------------
-    # Auth dependency
+    # Auth dependency — Ed25519 signature or bearer token
     # ------------------------------------------------------------------
 
-    async def verify_brain_token(
-        credentials: HTTPAuthorizationCredentials = Depends(security),
-    ) -> HTTPAuthorizationCredentials:
-        """Verify that the request carries a valid BRAIN_TOKEN.
+    async def verify_service_auth(request: Request) -> None:
+        """Verify request authentication.
 
-        Uses ``hmac.compare_digest`` for constant-time comparison to
-        prevent timing side-channel attacks (SS1.1.6).
+        Checks Ed25519 signature headers first (X-DID, X-Timestamp,
+        X-Signature). Falls back to bearer token for admin proxy path.
 
         Raises
         ------
         HTTPException 401
-            If the token is missing, malformed, or does not match.
+            If authentication fails or no credentials provided.
         """
-        if not hmac.compare_digest(credentials.credentials, brain_token):
-            log.warning("brain_api.auth_failed")
-            raise HTTPException(status_code=401, detail="Invalid BRAIN_TOKEN")
-        return credentials
+        # Path 1: Ed25519 signed request
+        x_did = request.headers.get("x-did")
+        x_ts = request.headers.get("x-timestamp")
+        x_sig = request.headers.get("x-signature")
+
+        if x_did and x_ts and x_sig:
+            # Resolve key — may be a lazy-loading callable or a static key.
+            resolved_key = core_public_key() if callable(core_public_key) else core_public_key
+            if resolved_key is None:
+                log.warning("brain_api.no_core_key", msg="Core public key not loaded")
+                raise HTTPException(status_code=401, detail="Service key not configured")
+
+            from ..adapter.signing import ServiceIdentity
+
+            body = await request.body()
+            ok = ServiceIdentity.verify_request(
+                public_key=resolved_key,
+                method=request.method,
+                path=request.url.path,
+                query=request.url.query or "",
+                timestamp=x_ts,
+                body=body,
+                signature_hex=x_sig,
+            )
+            if not ok:
+                log.warning("brain_api.signature_invalid", did=x_did)
+                raise HTTPException(status_code=401, detail="Invalid signature")
+            return
+
+        # Path 2: Bearer token (admin proxy / internal)
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.startswith("Bearer ") and internal_token:
+            token = auth_header[7:].strip()
+            if hmac.compare_digest(token, internal_token):
+                return
+            log.warning("brain_api.bearer_auth_failed")
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        log.warning("brain_api.no_auth")
+        raise HTTPException(status_code=401, detail="Authentication required")
 
     # ------------------------------------------------------------------
     # Inject dependencies into route modules
@@ -172,20 +209,20 @@ def create_brain_app(
     pii_route.set_scrubber(scrubber)
 
     # ------------------------------------------------------------------
-    # Include routers — all routes require BRAIN_TOKEN
+    # Include routers — all routes require service auth
     # ------------------------------------------------------------------
 
     app.include_router(
         process_route.router,
-        dependencies=[Depends(verify_brain_token)],
+        dependencies=[Depends(verify_service_auth)],
     )
     app.include_router(
         reason_route.router,
-        dependencies=[Depends(verify_brain_token)],
+        dependencies=[Depends(verify_service_auth)],
     )
     app.include_router(
         pii_route.router,
-        dependencies=[Depends(verify_brain_token)],
+        dependencies=[Depends(verify_service_auth)],
     )
 
     # ------------------------------------------------------------------

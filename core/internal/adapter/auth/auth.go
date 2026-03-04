@@ -1,7 +1,8 @@
 // Package auth implements authentication adapters for dina-core (Section 1).
 //
 // It provides:
-//   - TokenValidator: BRAIN_TOKEN (constant-time) and CLIENT_TOKEN (SHA-256 hash lookup) validation.
+//   - TokenValidator: Ed25519 service key + device key signature verification,
+//     and CLIENT_TOKEN (SHA-256 hash lookup) validation.
 //   - SessionManager: in-memory browser session management with CSRF protection.
 //   - RateLimiter: per-IP token-bucket rate limiting.
 //   - RateLimitChecker: extended rate limiter with detailed result (Allowed, Remaining, ResetAt).
@@ -36,6 +37,7 @@ var _ port.TokenValidator = (*tokenValidator)(nil)
 var _ port.DeviceKeyRegistrar = (*tokenValidator)(nil)
 var _ port.ClientTokenRegistrar = (*tokenValidator)(nil)
 var _ port.TokenRevoker = (*tokenValidator)(nil)
+var _ port.ServiceKeyRegistrar = (*tokenValidator)(nil)
 var _ port.SessionManager = (*sessionManager)(nil)
 var _ port.PassphraseVerifier = (*passphraseVerifier)(nil)
 var _ port.RateLimiter = (*rateLimiter)(nil)
@@ -58,13 +60,21 @@ type devicePubKey struct {
 	revoked   bool
 }
 
-// tokenValidator validates BRAIN_TOKEN, CLIENT_TOKEN, and Ed25519 signature credentials.
+// servicePubKey holds an Ed25519 public key for a peer service (e.g. brain).
+type servicePubKey struct {
+	publicKey ed25519.PublicKey
+	serviceID string // "brain", "core", etc.
+}
+
+// tokenValidator validates CLIENT_TOKEN, Ed25519 device signatures, and
+// Ed25519 service signatures. Service keys return TokenBrain; device keys
+// return TokenClient.
 type tokenValidator struct {
 	mu           sync.RWMutex
-	brainToken   string
 	clientTokens map[string]string           // SHA-256(token) hex -> deviceID
 	tokenScopes  map[string]string           // SHA-256(token) hex -> scope ("admin" or "device")
 	deviceKeys   map[string]*devicePubKey    // did:key:z... -> public key entry
+	serviceKeys  map[string]*servicePubKey   // did:key:z... -> service key entry
 	// SEC-MED-11: Double-buffer nonce cache for O(1) eviction.
 	// Instead of scanning all entries on every request, we maintain two generations:
 	// - nonceCurrent: active generation, all new nonces go here
@@ -79,27 +89,21 @@ type tokenValidator struct {
 }
 
 // NewTokenValidator creates a TokenValidator.
-//   - brainToken: the raw BRAIN_TOKEN string (compared via constant-time).
 //   - clientTokens: a map of SHA-256(token) hex digest -> deviceID.
-//
-// Two client tokens are pre-registered for testing:
-//
-//	SHA-256("client-token-0123456789abcdef0123456789abcdef0123456789abcdef01") -> "device-001"
-//	SHA-256("client-token-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb") -> "device-002"
-func NewTokenValidator(brainToken string, clientTokens map[string]string) *tokenValidator {
+func NewTokenValidator(clientTokens map[string]string) *tokenValidator {
 	ct := make(map[string]string, len(clientTokens))
 	for k, v := range clientTokens {
 		ct[k] = v
 	}
 	return &tokenValidator{
-		brainToken:    brainToken,
-		clientTokens:  ct,
-		tokenScopes:   make(map[string]string),
-		deviceKeys:    make(map[string]*devicePubKey),
-		nonceCurrent:  make(map[string]struct{}),
-		noncePrevious: make(map[string]struct{}),
+		clientTokens:   ct,
+		tokenScopes:    make(map[string]string),
+		deviceKeys:     make(map[string]*devicePubKey),
+		serviceKeys:    make(map[string]*servicePubKey),
+		nonceCurrent:   make(map[string]struct{}),
+		noncePrevious:  make(map[string]struct{}),
 		nonceRotatedAt: time.Now(),
-		maxClockSkew:  5 * time.Minute,
+		maxClockSkew:   5 * time.Minute,
 	}
 }
 
@@ -165,7 +169,7 @@ func (v *tokenValidator) RevokeClientTokenByDevice(deviceIdentity string) {
 // WARNING: For testing only. Production should use NewTokenValidator with empty client tokens.
 // Pre-registered test tokens get "admin" scope so existing tests that expect
 // full CLIENT_TOKEN access continue to pass.
-func NewDefaultTokenValidator(brainToken string) *tokenValidator {
+func NewDefaultTokenValidator() *tokenValidator {
 	clientTokens := make(map[string]string)
 
 	// Pre-register testutil.TestClientToken -> "device-001".
@@ -178,7 +182,7 @@ func NewDefaultTokenValidator(brainToken string) *tokenValidator {
 	hashB := sha256Hex(tokenB)
 	clientTokens[hashB] = "device-002"
 
-	tv := NewTokenValidator(brainToken, clientTokens)
+	tv := NewTokenValidator(clientTokens)
 
 	// Set admin scope for pre-registered test tokens so they retain full access.
 	tv.tokenScopes[hashA] = "admin"
@@ -187,12 +191,16 @@ func NewDefaultTokenValidator(brainToken string) *tokenValidator {
 	return tv
 }
 
-// ValidateBrainToken checks a BRAIN_TOKEN using constant-time comparison.
-func (v *tokenValidator) ValidateBrainToken(token string) bool {
-	if len(token) == 0 {
-		return false
+// RegisterServiceKey registers an Ed25519 public key for a peer service.
+// Service keys are checked before device keys in VerifySignature() and
+// return TokenBrain instead of TokenClient.
+func (v *tokenValidator) RegisterServiceKey(did string, pubKey []byte, serviceID string) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.serviceKeys[did] = &servicePubKey{
+		publicKey: ed25519.PublicKey(pubKey),
+		serviceID: serviceID,
 	}
-	return subtle.ConstantTimeCompare([]byte(token), []byte(v.brainToken)) == 1
 }
 
 // ValidateClientToken hashes the input token with SHA-256 and looks it up
@@ -220,16 +228,10 @@ func (v *tokenValidator) GetTokenScope(token string) string {
 	return "device"
 }
 
-// IdentifyToken classifies a token as brain or client.
-// Brain token is checked first (constant-time), then client token (SHA-256 lookup).
-// Returns (domain.TokenUnknown, "", ErrInvalidToken) if neither matches.
+// IdentifyToken classifies a bearer token as a client token.
+// Brain/service auth now uses Ed25519 signatures (VerifySignature), not bearer tokens.
+// Returns (domain.TokenUnknown, "", ErrInvalidToken) if the token is not recognized.
 func (v *tokenValidator) IdentifyToken(token string) (kind domain.TokenType, identity string, err error) {
-	// Check brain token first (constant-time comparison).
-	if v.ValidateBrainToken(token) {
-		return domain.TokenBrain, "brain", nil
-	}
-
-	// Fall back to client token (SHA-256 hash lookup).
 	if deviceID, ok := v.ValidateClientToken(token); ok {
 		return domain.TokenClient, deviceID, nil
 	}
@@ -237,24 +239,42 @@ func (v *tokenValidator) IdentifyToken(token string) (kind domain.TokenType, ide
 	return domain.TokenUnknown, "", ErrInvalidToken
 }
 
-// VerifySignature validates an Ed25519 request signature against the device
-// key registry. It enforces a clock-skew window and nonce cache to prevent
-// replay attacks. The query parameter binds the URL query string into the
-// signed payload.
+// VerifySignature validates an Ed25519 request signature against the service
+// key registry (returns TokenBrain) or device key registry (returns TokenClient).
+// It enforces a clock-skew window and nonce cache to prevent replay attacks.
 //
 // The canonical signing payload is: "{method}\n{path}\n{query}\n{timestamp}\n{sha256hex(body)}"
 func (v *tokenValidator) VerifySignature(
 	did, method, path, query, timestamp string, body []byte, signatureHex string,
 ) (domain.TokenType, string, error) {
-	// 1. Look up the DID in the device key registry.
+	// 1. Look up the DID — service keys first, then device keys.
 	v.mu.RLock()
-	dpk, ok := v.deviceKeys[did]
-	v.mu.RUnlock()
-	if !ok {
-		return domain.TokenUnknown, "", ErrInvalidToken
+	spk, isService := v.serviceKeys[did]
+	var dpk *devicePubKey
+	var isDevice bool
+	if !isService {
+		dpk, isDevice = v.deviceKeys[did]
 	}
-	if dpk.revoked {
-		return domain.TokenUnknown, "", errors.New("device revoked")
+	v.mu.RUnlock()
+
+	var pubKey ed25519.PublicKey
+	var resultType domain.TokenType
+	var resultID string
+
+	switch {
+	case isService:
+		pubKey = spk.publicKey
+		resultType = domain.TokenBrain
+		resultID = spk.serviceID
+	case isDevice:
+		if dpk.revoked {
+			return domain.TokenUnknown, "", errors.New("device revoked")
+		}
+		pubKey = dpk.publicKey
+		resultType = domain.TokenClient
+		resultID = dpk.deviceID
+	default:
+		return domain.TokenUnknown, "", ErrInvalidToken
 	}
 
 	// 2. Verify timestamp is within acceptable window.
@@ -287,7 +307,7 @@ func (v *tokenValidator) VerifySignature(
 	}
 
 	// 6. Verify Ed25519 signature.
-	if !ed25519.Verify(dpk.publicKey, []byte(payload), sig) {
+	if !ed25519.Verify(pubKey, []byte(payload), sig) {
 		return domain.TokenUnknown, "", ErrInvalidToken
 	}
 
@@ -314,7 +334,7 @@ func (v *tokenValidator) VerifySignature(
 	}
 	v.mu.Unlock()
 
-	return domain.TokenClient, dpk.deviceID, nil
+	return resultType, resultID, nil
 }
 
 // sha256Hex returns the lowercase hex-encoded SHA-256 digest of s.

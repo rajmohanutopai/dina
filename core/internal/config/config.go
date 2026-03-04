@@ -16,7 +16,8 @@ type Config struct {
 	AdminAddr        string `json:"admin_addr"`
 	VaultPath        string `json:"vault_path"`
 	BrainURL         string `json:"brain_url"`
-	BrainToken       string `json:"brain_token"`
+	BrainToken       string `json:"brain_token"`       // deprecated: kept for admin proxy fallback only
+	ServiceKeyDir    string `json:"service_key_dir"`
 	SecurityMode     string `json:"security_mode"`
 	SessionTTL       int    `json:"session_ttl"`
 	RateLimit        int    `json:"rate_limit"`
@@ -44,7 +45,7 @@ func NewLoader() *Loader {
 }
 
 // Load reads config from defaults, config.json, env vars, and Docker Secrets.
-// Priority: Docker Secret (for BrainToken) > env vars > config.json > defaults.
+// Priority: Docker Secret > env vars > config.json > defaults.
 func (l *Loader) Load() (*Config, error) {
 	cfg := defaults()
 
@@ -58,11 +59,9 @@ func (l *Loader) Load() (*Config, error) {
 	// 2. Override with environment variables.
 	loadEnv(cfg)
 
-	// 3. Load BrainToken from Docker Secret file (highest priority for token).
+	// 3. Load BrainToken from Docker Secret file (optional — deprecated, only for admin proxy fallback).
 	if path := os.Getenv("DINA_BRAIN_TOKEN_FILE"); path != "" {
-		if err := loadSecretFileStrict(path, &cfg.BrainToken); err != nil {
-			return nil, err
-		}
+		loadSecretFile(path, &cfg.BrainToken)
 	}
 
 	// 4. Load ClientToken from Docker Secret file (optional — for pre-registered admin access).
@@ -80,9 +79,6 @@ func (l *Loader) Validate(cfg *Config) error {
 	}
 	if cfg.VaultPath == "" {
 		return fmt.Errorf("config: vault_path is required")
-	}
-	if cfg.BrainToken == "" {
-		return fmt.Errorf("config: brain_token is required")
 	}
 	if cfg.SecurityMode != "security" && cfg.SecurityMode != "convenience" {
 		return fmt.Errorf("config: security_mode must be 'security' or 'convenience', got %q", cfg.SecurityMode)
@@ -102,6 +98,7 @@ func defaults() *Config {
 		AdminAddr:       ":8100",
 		VaultPath:       "/var/lib/dina",
 		BrainURL:        "http://brain:8200",
+		ServiceKeyDir:   "/run/secrets/service_keys",
 		SecurityMode:    "security",
 		SessionTTL:      86400,
 		RateLimit:       60,
@@ -161,6 +158,9 @@ func loadEnv(cfg *Config) {
 	}
 	if v := os.Getenv("DINA_BRAIN_TOKEN"); v != "" {
 		cfg.BrainToken = v
+	}
+	if v := os.Getenv("DINA_SERVICE_KEY_DIR"); v != "" {
+		cfg.ServiceKeyDir = v
 	}
 	if v := os.Getenv("DINA_MODE"); v != "" {
 		cfg.SecurityMode = v
