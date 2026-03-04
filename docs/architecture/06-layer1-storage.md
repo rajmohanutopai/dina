@@ -66,13 +66,13 @@ CREATE TABLE kv_store (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Device tokens: per-device CLIENT_TOKEN hashes for client authentication.
--- Plaintext token sent to device once during pairing, never stored by core.
--- SHA-256 is sufficient (256-bit random input, no brute-force risk). Argon2id
--- is reserved for the passphrase (low-entropy human input).
+-- Device registry: Ed25519 public keys (client devices) or CLIENT_TOKEN hash (admin UI).
+-- Client devices authenticate via Ed25519 signatures. Admin web UI uses CLIENT_TOKEN.
+-- SHA-256 is sufficient for token hash (256-bit random input, no brute-force risk).
 CREATE TABLE device_tokens (
     token_id     TEXT PRIMARY KEY,       -- short display ID (e.g. "dev_a3f8b2")
-    token_hash   TEXT NOT NULL UNIQUE,   -- SHA-256(CLIENT_TOKEN), hex-encoded
+    token_hash   TEXT UNIQUE,            -- SHA-256(CLIENT_TOKEN), hex-encoded (admin UI only)
+    public_key   TEXT,                   -- Ed25519 public key multibase (client devices)
     device_name  TEXT,                   -- "Raj's iPhone", "MacBook Pro"
     created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
     last_seen    DATETIME,               -- updated on each authenticated request

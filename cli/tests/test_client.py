@@ -17,11 +17,21 @@ def config():
     return Config(
         core_url="http://localhost:8100",
         brain_url="http://localhost:8200",
-        client_token="test-token",
         brain_token="test-brain-token",
         persona="personal",
         timeout=5.0,
+        device_name="test-device",
     )
+
+
+@pytest.fixture(autouse=True)
+def mock_identity():
+    """Mock CLIIdentity so DinaClient doesn't need real keypair on disk."""
+    mock_id = MagicMock()
+    mock_id.sign_request.return_value = ("did:key:z6MkTest", "2026-01-01T00:00:00Z", "aabb" * 32)
+    mock_id.did.return_value = "did:key:z6MkTest"
+    with patch("dina_cli.client.CLIIdentity", return_value=mock_id):
+        yield mock_id
 
 
 def test_vault_store(config):
@@ -100,20 +110,18 @@ def test_auth_error(config):
         client.close()
 
 
-def test_process_event_no_brain():
-    """Brain not configured raises clear error."""
-    config = Config(
-        core_url="http://localhost:8100",
-        brain_url="http://localhost:8200",
-        client_token="test-token",
-        brain_token="",  # No brain token
-        persona="personal",
-        timeout=5.0,
-    )
-    client = DinaClient(config)
-    with pytest.raises(DinaClientError, match="Brain not configured"):
-        client.process_event({"type": "agent_intent"})
-    client.close()
+def test_process_event_via_core(config):
+    """process_event routes through Core (not Brain), so no brain_token needed."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"status": "approved"}
+    mock_resp.raise_for_status = MagicMock()
+
+    with patch.object(httpx.Client, "request", return_value=mock_resp):
+        client = DinaClient(config)
+        result = client.process_event({"type": "agent_intent"})
+        assert result["status"] == "approved"
+        client.close()
 
 
 def test_context_manager(config):
@@ -129,58 +137,11 @@ def test_context_manager(config):
             assert result["status"] == "ok"
 
 
-# ── Signature mode tests ─────────────────────────────────────────────────
+# ── Signature auth tests ─────────────────────────────────────────────────
 
 
-def test_signature_mode_sets_headers(sig_config, tmp_path):
-    """In signature mode, requests carry X-DID, X-Timestamp, X-Signature."""
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.json.return_value = {"items": []}
-    mock_resp.raise_for_status = MagicMock()
-
-    with patch.object(httpx.Client, "request", return_value=mock_resp) as mock_req, \
-         patch("dina_cli.client.CLIIdentity") as MockIdentity:
-        mock_id = MagicMock()
-        mock_id.sign_request.return_value = ("did:key:z6MkTest", "2026-01-01T00:00:00Z", "abcd" * 32)
-        MockIdentity.return_value = mock_id
-        client = DinaClient(sig_config)
-        client.vault_query("personal", "test")
-
-        # Check the request was called with signing headers.
-        call_kwargs = mock_req.call_args
-        headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers", {})
-        assert headers.get("X-DID") == "did:key:z6MkTest"
-        assert headers.get("X-Timestamp") == "2026-01-01T00:00:00Z"
-        assert headers.get("X-Signature") == "abcd" * 32
-        # No Bearer token.
-        assert "Authorization" not in (client._core.headers or {})
-        client.close()
-
-
-def test_signature_mode_no_bearer(sig_config):
-    """Signature mode Core client should NOT have an Authorization header."""
-    with patch("dina_cli.client.CLIIdentity") as MockIdentity:
-        mock_id = MagicMock()
-        MockIdentity.return_value = mock_id
-        client = DinaClient(sig_config)
-        assert "authorization" not in {k.lower() for k in client._core.headers}
-        client.close()
-
-
-def test_signature_mode_brain_still_bearer(sig_config):
-    """Brain client always uses Bearer, even when Core uses signatures."""
-    with patch("dina_cli.client.CLIIdentity") as MockIdentity:
-        MockIdentity.return_value = MagicMock()
-        client = DinaClient(sig_config)
-        assert client._brain is not None
-        auth = client._brain.headers.get("authorization", "")
-        assert auth.startswith("Bearer ")
-        client.close()
-
-
-def test_token_mode_no_signing_headers(config):
-    """In token mode, requests should NOT carry X-DID headers."""
+def test_signing_headers_set(config, mock_identity):
+    """Requests carry X-DID, X-Timestamp, X-Signature headers."""
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = {"items": []}
@@ -192,9 +153,28 @@ def test_token_mode_no_signing_headers(config):
 
         call_kwargs = mock_req.call_args
         headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers", {})
-        assert "X-DID" not in headers
-        assert "X-Signature" not in headers
+        assert "X-DID" in headers
+        assert "X-Timestamp" in headers
+        assert "X-Signature" in headers
+        # No Bearer token on Core client.
+        assert "Authorization" not in (client._core.headers or {})
         client.close()
+
+
+def test_no_bearer_on_core(config):
+    """Core client should NOT have an Authorization header."""
+    client = DinaClient(config)
+    assert "authorization" not in {k.lower() for k in client._core.headers}
+    client.close()
+
+
+def test_brain_still_bearer(config):
+    """Brain client always uses Bearer for its own trust relationship."""
+    client = DinaClient(config)
+    assert client._brain is not None
+    auth = client._brain.headers.get("authorization", "")
+    assert auth.startswith("Bearer ")
+    client.close()
 
 
 def test_extract_body_json():

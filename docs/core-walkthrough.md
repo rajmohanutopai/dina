@@ -55,13 +55,13 @@ The hex seed and the 24 words are the **same thing** in two formats. If the user
 |--------|-----------|---------|----------------|
 | **Identity Seed** | `install.sh` Step 4 — `secrets.token_hex(32)` | Derives ALL cryptographic keys: DID, signing key, per-persona vault encryption keys | Total compromise — attacker becomes you |
 | **Brain Token** | `install.sh` Step 3 — `secrets.token_urlsafe(32)` | Shared password between Core and Brain containers (Docker secret) | Attacker can call Core's API as Brain — but cannot derive DID or decrypt vaults |
-| **Client Token** | Core generates during `dina pair` — `crypto/rand.Read()` | Per-device auth for external clients (CLI, phone) | Revoke that one device — other devices and identity unaffected |
+| **Client Token** | Core generates during `dina pair` — `crypto/rand.Read()` | Admin web UI login password (browser POSTs token, gets session cookie) | Revoke — other devices and identity unaffected |
 
-The brain token and client token are **not derived from the seed**. They are independent random values. The seed never leaves Core's memory. Brain never sees it (`docker-compose.yml` passes `DINA_MASTER_SEED` only to Core, not to Brain). CLI never sees it (CLI only receives a client token during pairing).
+The brain token and client token are **not derived from the seed**. They are independent random values. The seed never leaves Core's memory. Brain never sees it (`docker-compose.yml` passes `DINA_MASTER_SEED` only to Core, not to Brain). CLI never sees it (CLI authenticates via Ed25519 signatures, not tokens).
 
 ```
-                    Has seed?    Has brain_token?    Has client_token?
-Core                  YES            YES                 YES (hashes only)
+                    Has seed?    Has brain_token?    Has Ed25519 keypair?
+Core                  YES            YES                 N/A (verifies)
 Brain                 NO             YES                 NO
 CLI                   NO             NO                  YES (one per device)
 PDS                   NO             NO                  NO
@@ -391,17 +391,17 @@ No framework means: (1) zero third-party dependencies in the HTTP layer (smaller
    - **Public paths** (`/healthz`, `/readyz`, `/.well-known/atproto-did`) — skip auth entirely.
    - **NaCl ingress** (`POST /msg`) — authenticated by the sealed box itself, no token needed.
    - **Ed25519 signature auth** (lines 78-120) — The client sends `X-DID`, `X-Signature`, `X-Timestamp` headers. The middleware verifies the timestamp is within 5 minutes (replay protection), reads the body (bounded to 1MB), and calls `VerifySignature()`. On success, it sets `token_kind=client`, `agent_did={identity}`, and `token_scope=device` in the request context.
-   - **Bearer token auth** (lines 123-145) — Classic `Authorization: Bearer <token>`. `IdentifyToken()` determines if it's a brain token or a client token. For client tokens, the scope resolver looks up whether it's `"admin"` or `"device"`.
+   - **Bearer token auth** (lines 123-145) — Classic `Authorization: Bearer <token>`. `IdentifyToken()` determines if it's a brain token or a client token. Used by the Brain sidecar (BRAIN_TOKEN) and the admin UI (CLIENT_TOKEN). CLI does **not** use Bearer tokens — it exclusively uses Ed25519 signature auth.
 
 <details>
 <summary><strong>Design Decision — Why two auth methods (Ed25519 signatures + Bearer tokens)?</strong></summary>
 <br>
 
-Bearer tokens are simple but dangerous: anyone who steals the token string can impersonate the device. Ed25519 signature auth (`X-DID` + `X-Signature` + `X-Timestamp`) is stronger — the private key never leaves the device, and each request is signed with the current timestamp to prevent replay. But signature auth requires the client to have an Ed25519 keypair and implement the signing protocol.
+Ed25519 signature auth (`X-DID` + `X-Signature` + `X-Timestamp`) is the primary auth method for all external devices. The private key never leaves the device, and each request is signed with the current timestamp to prevent replay. CLI uses signature auth exclusively — there is no token-based fallback.
 
-The dual approach serves two audiences:
-- **Paired devices** (phone, CLI) use signature auth after the QR pairing flow. The private key lives in the device's secure enclave or keychain. No token to steal.
-- **The Python brain sidecar** uses a bearer token (`BRAIN_TOKEN`). It runs on the same machine as the core, communicates over localhost, and is a trusted internal component. Signature auth would add complexity without meaningful security gain for a localhost-only sidecar.
+Bearer tokens serve internal and browser-based contexts only:
+- **The Python brain sidecar** uses a bearer token (`BRAIN_TOKEN`). It runs on the same machine as Core, communicates over localhost, and is a trusted internal component.
+- **The admin web UI** uses `CLIENT_TOKEN` as a login password, with session cookies for subsequent requests.
 
 The 5-minute timestamp window prevents replay attacks while accommodating reasonable clock skew between devices. The body is included in the signature to prevent request tampering.
 
@@ -627,10 +627,10 @@ For per-contact granularity, the **SharingPolicyManager** (`core/internal/adapte
 When you want to connect your phone to your Dina:
 
 1. `POST /v1/pair/initiate` generates a pairing session with a 6-digit code and a session ID (valid for 5 minutes).
-2. Your phone scans the QR code, sends `POST /v1/pair/complete` with the code.
-3. `DeviceService.CompletePairing` generates a unique client token for the device, registers it with scope `"device"` (not `"admin"`), registers the device's Ed25519 public key for future signature auth, and records the device in the device registry.
-4. The phone now authenticates via `X-DID` + `X-Signature` + `X-Timestamp` headers — no bearer token in local storage.
-5. If the device is revoked (`DELETE /v1/devices/{id}`), `DeviceService` calls `tokenRevoker.RevokeClientTokenByDevice()` to remove all associated tokens and marks the device key as revoked.
+2. The device (CLI, phone) sends `POST /v1/pair/complete` with the code and its Ed25519 public key (`public_key_multibase`).
+3. `DeviceService.CompletePairingWithKey` registers the Ed25519 public key with the auth validator and records the device in the device registry. No client token is generated — authentication is purely via Ed25519 signatures.
+4. The device now authenticates via `X-DID` + `X-Signature` + `X-Timestamp` headers — no bearer token, no shared secret.
+5. If the device is revoked (`DELETE /v1/devices/{id}`), `DeviceService.RevokeDevice` calls `keyRegistrar.RevokeDeviceKey()` to remove the Ed25519 public key.
 
 <details>
 <summary><strong>Design Decision — Why QR-code pairing with a 6-digit code instead of OAuth or password entry?</strong></summary>
@@ -654,7 +654,7 @@ After pairing, the device authenticates via Ed25519 signatures on every request 
 `/ws` is wired inline in `main.go:597-626`. Each WebSocket connection goes through:
 
 1. **Upgrade** (`ws.NewUpgrader` with `ws.ServeWS`) — checks origin if not in insecure mode.
-2. **Auth handshake** — 5-second timer. The first message must be an `auth` message with a valid client token. `wsTokenValidator` calls `tokenValidator.ValidateClientToken()`.
+2. **Auth handshake** — 5-second timer. The first message must be an `auth` message with a valid token or signed payload. `wsTokenValidator` validates the credentials.
 3. **Hub registration** — The authenticated client joins the WSHub. They can now receive broadcasts and targeted messages.
 4. **Message routing** — Non-auth messages are routed through `wsBrainRouter`, which forwards to the Python brain sidecar for LLM reasoning.
 5. **Heartbeat** — Ping every 30 seconds, expect pong within 10 seconds. After 3 missed pongs, the connection is dropped and the client is unregistered.

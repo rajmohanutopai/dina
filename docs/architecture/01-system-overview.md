@@ -26,7 +26,7 @@ Both talk to external processes. Neither runs code inside Dina. Child agents can
 
 **Why this matters for security:** The biggest attack surface in any system is third-party code. Plugins running inside your process can crash your vault, read across persona boundaries, or exfiltrate data. By refusing to run external code inside the process, entire categories of vulnerabilities are eliminated. A compromised child agent is contained — it can only respond to MCP calls, never initiate access to Dina's internals.
 
-**Why this matters for architecture:** No plugin store to maintain, no plugin review process, no sandboxing, no scoped tokens, no plugin API versioning. The two-tier auth model (`BRAIN_TOKEN` + `CLIENT_TOKEN`) is the permanent design, not a stepping stone. NaCl (for peers) and MCP (for agents) are the only extension points.
+**Why this matters for architecture:** No plugin store to maintain, no plugin review process, no sandboxing, no scoped tokens, no plugin API versioning. The three-tier auth model (`BRAIN_TOKEN` + `CLIENT_TOKEN` + `Ed25519 signatures`) is the permanent design, not a stepping stone. CLI uses Ed25519 exclusively; CLIENT_TOKEN serves the admin web UI only. NaCl (for peers) and MCP (for agents) are the only extension points.
 
 ### Deployment Model: Home Node + Client Devices
 

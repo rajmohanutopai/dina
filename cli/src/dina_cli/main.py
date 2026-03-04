@@ -395,34 +395,12 @@ def configure(ctx: click.Context) -> None:
         default=existing.get("core_url", "http://localhost:8100"),
     )
 
-    # Auth mode selection
+    device_name = click.prompt(
+        "Device name",
+        default=existing.get("device_name") or _default_device_name(),
+    )
     click.echo()
-    click.echo("Authentication method:")
-    click.echo("  1) Ed25519 signing (recommended) — keypair stays on this machine")
-    click.echo("  2) Bearer token (legacy) — shared secret")
-    auth_choice = click.prompt("Choose", type=click.IntRange(1, 2), default=1)
-
-    client_token = ""
-    auth_mode = "token"
-    device_name = ""
-
-    if auth_choice == 1:
-        auth_mode = "signature"
-        device_name = click.prompt(
-            "Device name",
-            default=existing.get("device_name") or _default_device_name(),
-        )
-        click.echo()
-        _configure_signature(core_url, device_name)
-    else:
-        auth_mode = "token"
-        client_token = click.prompt(
-            "Client token",
-            default=existing.get("client_token", ""),
-            hide_input=True,
-            show_default=False,
-            prompt_suffix=" (hidden): " if not existing.get("client_token") else " (press Enter to keep): ",
-        )
+    _configure_signature(core_url, device_name)
 
     brain_url = click.prompt(
         "Brain URL",
@@ -443,12 +421,9 @@ def configure(ctx: click.Context) -> None:
     values: dict[str, Any] = {
         "core_url": core_url,
         "brain_url": brain_url,
-        "client_token": client_token,
-        "auth_mode": auth_mode,
         "persona": persona,
+        "device_name": device_name,
     }
-    if device_name:
-        values["device_name"] = device_name
     if brain_token:
         values["brain_token"] = brain_token
 
@@ -463,21 +438,16 @@ def configure(ctx: click.Context) -> None:
         cfg = Config(
             core_url=core_url,
             brain_url=brain_url,
-            client_token=client_token,
             brain_token=brain_token,
             persona=persona,
             timeout=10.0,
-            auth_mode=auth_mode,
             device_name=device_name,
         )
         try:
             with DinaClient(cfg) as client:
                 client._request(client._core, "GET", "/healthz")
                 click.echo(f"  Core ({core_url}): Connected")
-                if auth_mode == "signature":
-                    click.echo(f"  Auth: Ed25519 signing (DID: {client._identity.did()})")
-                else:
-                    click.echo("  Auth: Bearer token")
+                click.echo(f"  Auth: Ed25519 signing (DID: {client._identity.did()})")
                 try:
                     did_doc = client.did_get()
                     did = did_doc.get("id", did_doc.get("did", ""))

@@ -406,7 +406,7 @@ PASS-THROUGH SEARCH PROTOCOL:
 3. **OpenClaw is sandboxed.** OpenClaw has no access to the vault, keys, or personas. It receives task requests ("fetch emails") and returns structured JSON. A compromised OpenClaw cannot read existing memories.
 4. **Brain scrubs before storing.** Data from OpenClaw passes through PII scrubbing (Tier 1 regex + Tier 2 spaCy) before brain sends summaries to cloud LLMs for reasoning.
 5. **User can see sync status.** Last successful sync, items ingested, current state — all visible in admin UI.
-6. **Phone-based connectors (SMS, Photos) authenticate to Home Node with CLIENT_TOKEN** before pushing data. These bypass MCP — phone pushes directly to Core via authenticated WebSocket. Telegram runs server-side on the Home Node via MCP.
+6. **Phone-based connectors (SMS, Photos) authenticate to Home Node via CLIENT_TOKEN or Ed25519 signatures** before pushing data. These bypass MCP — phone pushes directly to Core via authenticated WebSocket. Telegram runs server-side on the Home Node via MCP.
 7. **OAuth tokens live in OpenClaw, not in Dina.** Dina never touches Gmail/Calendar credentials. If OpenClaw is compromised, revoke its tokens — Dina's vault and identity are unaffected.
 
 ---

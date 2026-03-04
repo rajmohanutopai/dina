@@ -29,7 +29,7 @@ The Home Node is the single source of truth. Devices are clients.
 
 ```
 CLIENT STARTUP:
-  1. Authenticate to Home Node with CLIENT_TOKEN (TLS + auth frame)
+  1. Authenticate to Home Node (Ed25519 signature or CLIENT_TOKEN, TLS + auth frame)
   2. Send: "My last sync checkpoint was timestamp X"
   3. Home Node responds with all vault_items changed since X
   4. Client applies changes to local SQLite cache

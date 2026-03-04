@@ -12,20 +12,27 @@ from dina_cli.client import DinaClientError
 from dina_cli.main import cli
 
 
-def _env(**overrides):
-    """Minimal env vars for CLI to start."""
-    base = {"DINA_CLIENT_TOKEN": "test-token"}
-    base.update(overrides)
-    return base
+def _test_config():
+    """Return a Config suitable for tests (no real keypair needed)."""
+    from dina_cli.config import Config
+    return Config(
+        core_url="http://localhost:8100",
+        brain_url="http://localhost:8200",
+        brain_token="test-brain-token",
+        persona="personal",
+        timeout=5.0,
+        device_name="test-device",
+    )
 
 
 def _invoke(args, mock_client=None, env=None):
-    """Helper: invoke CLI with mocked client."""
+    """Helper: invoke CLI with mocked client and config."""
     runner = CliRunner()
-    with patch("dina_cli.main.DinaClient") as MockCls:
+    with patch("dina_cli.main.DinaClient") as MockCls, \
+         patch("dina_cli.main.load_config", return_value=_test_config()):
         if mock_client:
             MockCls.return_value = mock_client
-        result = runner.invoke(cli, args, env=env or _env())
+        result = runner.invoke(cli, args, env=env or {})
     return result
 
 
@@ -110,9 +117,9 @@ def test_validate_pending():
 
 
 def test_validate_fallback_safe():
-    """When Brain is unavailable, safe actions auto-approve."""
+    """When Core is unavailable, safe actions auto-approve."""
     mc = MagicMock()
-    mc.process_event.side_effect = DinaClientError("Brain not configured. Set DINA_BRAIN_TOKEN.")
+    mc.process_event.side_effect = DinaClientError("Cannot reach Dina at http://localhost:8100. Is it running?")
     result = _invoke(["--json", "validate", "search", "Search inbox"], mock_client=mc)
     assert result.exit_code == 0
     data = json.loads(result.output)
@@ -120,9 +127,9 @@ def test_validate_fallback_safe():
 
 
 def test_validate_fallback_risky():
-    """When Brain is unavailable, risky actions need approval."""
+    """When Core is unavailable, risky actions need approval."""
     mc = MagicMock()
-    mc.process_event.side_effect = DinaClientError("Brain not configured. Set DINA_BRAIN_TOKEN.")
+    mc.process_event.side_effect = DinaClientError("Cannot reach Dina at http://localhost:8100. Is it running?")
     result = _invoke(["--json", "validate", "send_email", "Send to 500 people"], mock_client=mc)
     assert result.exit_code == 0
     data = json.loads(result.output)
@@ -160,11 +167,12 @@ def test_scrub_json(tmp_path):
     }
     runner = CliRunner()
     with patch("dina_cli.main.DinaClient", return_value=mc), \
+         patch("dina_cli.main.load_config", return_value=_test_config()), \
          patch("dina_cli.main.SessionStore") as MockSS:
         mock_store = MagicMock()
         mock_store.new_id.return_value = "sess_test1234"
         MockSS.return_value = mock_store
-        result = runner.invoke(cli, ["--json", "scrub", "john@ex.com sent a message"], env=_env())
+        result = runner.invoke(cli, ["--json", "scrub", "john@ex.com sent a message"], env={})
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert data["scrubbed"] == "[EMAIL_1] sent a message"
@@ -177,6 +185,7 @@ def test_scrub_json(tmp_path):
 def test_rehydrate_json():
     runner = CliRunner()
     with patch("dina_cli.main.DinaClient"), \
+         patch("dina_cli.main.load_config", return_value=_test_config()), \
          patch("dina_cli.main.SessionStore") as MockSS:
         mock_store = MagicMock()
         mock_store.rehydrate.return_value = "Dr. Sharma at Apollo Hospital"
@@ -184,7 +193,7 @@ def test_rehydrate_json():
         result = runner.invoke(
             cli,
             ["--json", "rehydrate", "[PERSON_1] at [ORG_1]", "--session", "sess_abc"],
-            env=_env(),
+            env={},
         )
     assert result.exit_code == 0
     data = json.loads(result.output)
@@ -237,10 +246,11 @@ def test_audit_json():
     assert data[0]["action"] == "note"
 
 
-# ── missing token ─────────────────────────────────────────────────────────
+# ── missing keypair ───────────────────────────────────────────────────────
 
 
-def test_missing_token():
+def test_missing_keypair():
+    """CLI exits with error when no Ed25519 keypair exists."""
     runner = CliRunner()
     result = runner.invoke(cli, ["--json", "recall", "test"], env={})
     assert result.exit_code != 0
@@ -250,17 +260,15 @@ def test_missing_token():
 
 
 def test_configure_signature_mode(tmp_path):
-    """Configure in Ed25519 signing mode generates keypair and attempts pairing."""
+    """Configure generates Ed25519 keypair and attempts pairing."""
     runner = CliRunner()
-    identity_dir = tmp_path / "identity"
 
     with patch("dina_cli.main._configure_signature") as mock_sig, \
          patch("dina_cli.main.save_config") as mock_save:
         mock_save.return_value = tmp_path / "config.json"
-        # Input: core_url (default), auth=1 (signature), device_name, brain_url, brain_token, persona, test=no
+        # Input: core_url (default), device_name, brain_url, brain_token, persona, test=no
         user_input = "\n".join([
             "",           # core_url (default)
-            "1",          # Ed25519 signing
             "my-laptop",  # device name
             "",           # brain_url (default)
             "",           # brain_token (skip)
@@ -270,36 +278,11 @@ def test_configure_signature_mode(tmp_path):
         result = runner.invoke(cli, ["configure"], input=user_input, env={})
 
     assert result.exit_code == 0
-    assert "Ed25519 signing" in result.output
     mock_sig.assert_called_once()
-    # Verify save_config was called with auth_mode="signature"
     saved = mock_save.call_args[0][0]
-    assert saved["auth_mode"] == "signature"
     assert saved["device_name"] == "my-laptop"
-
-
-def test_configure_token_mode(tmp_path):
-    """Configure in legacy Bearer token mode saves client_token."""
-    runner = CliRunner()
-
-    with patch("dina_cli.main.save_config") as mock_save:
-        mock_save.return_value = tmp_path / "config.json"
-        user_input = "\n".join([
-            "",               # core_url (default)
-            "2",              # Bearer token
-            "my-secret-tok",  # client token
-            "",               # brain_url (default)
-            "",               # brain_token (skip)
-            "",               # persona (default)
-            "n",              # don't test connection
-        ])
-        result = runner.invoke(cli, ["configure"], input=user_input, env={})
-
-    assert result.exit_code == 0
-    assert "Bearer token" in result.output
-    saved = mock_save.call_args[0][0]
-    assert saved["auth_mode"] == "token"
-    assert saved["client_token"] == "my-secret-tok"
+    assert "client_token" not in saved
+    assert "auth_mode" not in saved
 
 
 def test_configure_help():

@@ -18,28 +18,17 @@ class DinaClientError(Exception):
 class DinaClient:
     """Synchronous HTTP client for Dina Core and Brain services.
 
-    Supports two auth modes:
-    - ``"signature"``: Ed25519 request signing (X-DID/X-Timestamp/X-Signature)
-    - ``"token"``: Legacy Bearer token (Authorization header)
+    Core requests are authenticated via Ed25519 request signing
+    (X-DID / X-Timestamp / X-Signature headers).
     """
 
     def __init__(self, config: Config) -> None:
-        self._auth_mode = config.auth_mode
-
-        if self._auth_mode == "signature":
-            self._identity = CLIIdentity()
-            self._identity.ensure_loaded()
-            self._core = httpx.Client(
-                base_url=config.core_url,
-                timeout=config.timeout,
-            )
-        else:
-            self._identity = None  # type: ignore[assignment]
-            self._core = httpx.Client(
-                base_url=config.core_url,
-                headers={"Authorization": f"Bearer {config.client_token}"},
-                timeout=config.timeout,
-            )
+        self._identity = CLIIdentity()
+        self._identity.ensure_loaded()
+        self._core = httpx.Client(
+            base_url=config.core_url,
+            timeout=config.timeout,
+        )
 
         # Brain always uses Bearer token (separate trust relationship).
         self._brain: httpx.Client | None = (
@@ -103,8 +92,8 @@ class DinaClient:
         **kwargs: Any,
     ) -> httpx.Response:
         """Send a request and translate transport / HTTP errors."""
-        # Sign Core requests in signature mode.
-        if client is self._core and self._identity is not None:
+        # Sign Core requests with Ed25519.
+        if client is self._core:
             body_bytes = self._extract_body(kwargs)
             # Extract query string from params if present
             query = ""

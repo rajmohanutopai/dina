@@ -172,7 +172,7 @@ The analogy: **core is the vault keeper** (stores, retrieves, encrypts, never in
 
 #### Core ↔ Brain API Contract
 
-The internal API between core and brain. All endpoints require `Authorization: Bearer <BRAIN_TOKEN>` (or `CLIENT_TOKEN` for admin endpoints). All requests/responses are JSON. Core enforces gatekeeper access tiers before any query executes.
+The internal API between core and brain. All endpoints require `Authorization: Bearer <BRAIN_TOKEN>`. Admin endpoints use `CLIENT_TOKEN` (admin web UI) or Ed25519 signatures (CLI). All requests/responses are JSON. Core enforces gatekeeper access tiers before any query executes.
 
 **`POST /v1/vault/query` — Search the vault**
 
@@ -220,7 +220,7 @@ The internal API between core and brain. All endpoints require `Authorization: B
 // Response (403 — persona locked)
 {
   "error": "persona_locked",
-  "message": "/financial requires CLIENT_TOKEN approval",
+  "message": "/financial requires authentication",
   "code": 403
 }
 ```

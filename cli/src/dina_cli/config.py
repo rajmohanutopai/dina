@@ -20,11 +20,9 @@ class Config:
 
     core_url: str
     brain_url: str
-    client_token: str
     brain_token: str
     persona: str
     timeout: float
-    auth_mode: str = "token"   # "token" or "signature"
     device_name: str = ""
 
 
@@ -52,47 +50,34 @@ def save_config(values: dict) -> Path:
     return CONFIG_FILE
 
 
-def _has_keypair() -> bool:
-    """Check whether an Ed25519 keypair exists on disk."""
-    return (IDENTITY_DIR / "ed25519_private.pem").exists()
-
-
 def load_config() -> Config:
     """Build Config from saved file + env overrides.
 
     Priority: env vars override saved file values.
 
-    When ``auth_mode`` is ``"signature"`` (Ed25519 signing), a client_token
-    is not required.  When ``auth_mode`` is ``"token"`` (legacy Bearer),
-    a client_token must be present or ``click.UsageError`` is raised.
+    CLI always uses Ed25519 signature auth.  A keypair must exist
+    (run ``dina configure`` to generate one).
     """
     saved = _load_saved()
 
     core_url = os.environ.get("DINA_CORE_URL") or saved.get("core_url") or "http://localhost:8100"
     brain_url = os.environ.get("DINA_BRAIN_URL") or saved.get("brain_url") or "http://localhost:8200"
-    client_token = os.environ.get("DINA_CLIENT_TOKEN") or saved.get("client_token") or ""
     brain_token = os.environ.get("DINA_BRAIN_TOKEN") or saved.get("brain_token") or ""
     persona = os.environ.get("DINA_PERSONA") or saved.get("persona") or "personal"
     timeout = float(os.environ.get("DINA_TIMEOUT") or saved.get("timeout") or 30.0)
     device_name = saved.get("device_name") or ""
 
-    # Determine auth mode: saved config > auto-detect from keypair > "token".
-    auth_mode = saved.get("auth_mode") or ""
-    if not auth_mode:
-        auth_mode = "signature" if _has_keypair() else "token"
-
-    # In token mode a client_token is mandatory.
-    if auth_mode == "token" and not client_token:
-        hint = "Run 'dina configure' to set up, or set DINA_CLIENT_TOKEN"
-        raise click.UsageError(f"No client token configured. {hint}")
+    # Ed25519 keypair is required — nudge users to run configure.
+    if not (IDENTITY_DIR / "ed25519_private.pem").exists():
+        raise click.UsageError(
+            "No Ed25519 keypair found. Run 'dina configure' to generate one."
+        )
 
     return Config(
         core_url=core_url,
         brain_url=brain_url,
-        client_token=client_token,
         brain_token=brain_token,
         persona=persona,
         timeout=timeout,
-        auth_mode=auth_mode,
         device_name=device_name,
     )
