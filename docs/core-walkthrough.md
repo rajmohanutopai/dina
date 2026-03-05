@@ -91,17 +91,15 @@ Recover the seed → all keys regenerate identically → same DID, same vault de
 
 ### Bootstrapping Identity from Seed
 
-Now the most delicate operation: **identity seed management** (lines 105-219). Dina's entire cryptographic identity derives from a single 32-byte seed. The code walks a priority chain:
+Now the most delicate operation: **identity seed management** (lines 105-219). Dina's entire cryptographic identity derives from a single 32-byte seed. The code now uses a strict priority chain:
 
 1. **`DINA_MASTER_SEED` env var** — Direct injection (for CI/containers). If set, the hex is decoded and used immediately.
 
-2. **AES-GCM wrapped file** (`master_seed.wrapped`) — If `DINA_SEED_PASSWORD` is set, derive a KEK from it via SHA-256, then try to unwrap the `.wrapped` file. If the password is wrong, the process dies — it won't silently regenerate your identity.
+2. **AES-GCM wrapped file** (`master_seed.wrapped`) — If `DINA_SEED_PASSWORD` is set, derive a KEK from it via Argon2id + persisted salt, then unwrap `.wrapped`. Wrong password or invalid salt is a hard failure.
 
-3. **Auto-migration** — If a plaintext `.hex` file exists alongside a seed password, the code reads it, wraps it with AES-GCM, writes the `.wrapped` version, and logs the migration. The old plaintext file remains (the user decides when to delete it).
+3. **Generate fresh wrapped seed** — If wrapped files do not exist and password mode is enabled, generate 32 random bytes and persist wrapped seed + salt.
 
-4. **Plaintext fallback** (`master_seed.hex`) — If no password is set, loads from plaintext with a loud warning.
-
-5. **Generate fresh** — If nothing exists at all, generates 32 random bytes, optionally wraps them, and persists.
+There is no plaintext `master_seed.hex` fallback path in the strict runtime model.
 
 <details>
 <summary><strong>Design Decision — Why a single 32-byte seed instead of per-key generation?</strong></summary>
@@ -391,19 +389,19 @@ No framework means: (1) zero third-party dependencies in the HTTP layer (smaller
    - **Public paths** (`/healthz`, `/readyz`, `/.well-known/atproto-did`) — skip auth entirely.
    - **NaCl ingress** (`POST /msg`) — authenticated by the sealed box itself, no token needed.
    - **Ed25519 signature auth** (lines 78-120) — The client sends `X-DID`, `X-Signature`, `X-Timestamp` headers. The middleware verifies the timestamp is within 5 minutes (replay protection), reads the body (bounded to 1MB), and calls `VerifySignature()`. On success, it sets `token_kind=client`, `agent_did={identity}`, and `token_scope=device` in the request context.
-   - **Bearer token auth** (lines 123-145) — Classic `Authorization: Bearer <token>`. `IdentifyToken()` handles client tokens only. Used by the admin UI proxy (`DINA_INTERNAL_TOKEN`) since browsers cannot sign requests. CLI and Brain do **not** use Bearer tokens — they exclusively use Ed25519 signature auth.
+   - **Bearer token auth** (lines 123-145) — Classic `Authorization: Bearer <token>`. `IdentifyToken()` handles client tokens only (admin/bootstrap contexts). CLI and Brain use Ed25519 signatures for normal operations.
 
 <details>
 <summary><strong>Design Decision — Why two auth methods (Ed25519 signatures + Bearer tokens)?</strong></summary>
 <br>
 
-Ed25519 signature auth (`X-DID` + `X-Signature` + `X-Timestamp`) is the primary auth method for all devices and services. The private key never leaves the device/service, and each request is signed with the current timestamp to prevent replay. The canonical signing payload is: `{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{SHA256_HEX(BODY)}`. `VerifySignature()` checks service keys first (Brain's public key, loaded from `/run/secrets/service_keys/public/`), then device keys.
+Ed25519 signature auth (`X-DID` + `X-Signature` + `X-Timestamp`) is the primary auth method for devices and services. The private key never leaves the device/service, and each request is signed with the current timestamp to prevent replay. The canonical signing payload is: `{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{SHA256_HEX(BODY)}`. `VerifySignature()` checks service keys first (Brain's public key, loaded from `/run/secrets/service_keys/public/`), then device keys.
 
 - **CLI** uses Ed25519 signature auth exclusively (one keypair per device).
 - **The Python brain sidecar** uses Ed25519 signature auth with its own service keypair. It generates an Ed25519 keypair on first start. Private keys are isolated by separate Docker bind mounts — Brain's private key is in `secrets/service_keys/brain/` (mounted only to Brain as `/run/secrets/service_keys/private/`), while both services' public keys are in `secrets/service_keys/public/` (mounted to both containers as `/run/secrets/service_keys/public/`).
 
 Bearer tokens serve browser-based contexts only:
-- **The admin web UI proxy** uses `DINA_INTERNAL_TOKEN` as a bearer token since browsers cannot sign Ed25519 requests. Session cookies are used for subsequent requests.
+- **Admin/browser path** is handled via Core auth/session and reverse proxying. The brain API itself stays on service-signature auth.
 
 The 5-minute timestamp window prevents replay attacks while accommodating reasonable clock skew between devices. The body hash is included in the signature to prevent request tampering.
 
@@ -415,9 +413,9 @@ The 5-minute timestamp window prevents replay attacks while accommodating reason
 
 ### Example: Storing a Verdict in the Vault
 
-Say the Python brain just analyzed a YouTube video and wants to store the verdict. It sends `POST /v1/vault/store` with a bearer token.
+Say the Python brain just analyzed a YouTube video and wants to store the verdict. It sends `POST /v1/vault/store` with Ed25519 service-signature headers.
 
-**Step 1: Auth middleware** identifies the token as `brain` (kind=`"brain"`, identity=`"brain"`).
+**Step 1: Auth middleware** verifies service signature and identifies caller as `brain` (kind=`"brain"`).
 
 **Step 2: Authz middleware** checks — is `"brain"` allowed to access `/v1/vault/store`? Yes, the brain can store data.
 
@@ -685,7 +683,7 @@ Two endpoints are always public (no auth required):
 **`/healthz`** — Liveness. Always returns 200 if the process is running.
 
 **`/readyz`** — Readiness (`core/cmd/dina-core/main.go:356-370`). Three real checks:
-1. Brain token must be configured.
+1. Brain service key trust must be configured.
 2. Vault path must exist on disk.
 3. Brain sidecar must be reachable (HTTP health check).
 
@@ -778,7 +776,7 @@ An LLM could theoretically decide whether to share data across personas. But LLM
 
 **What it proves:** Guardian's deterministic intent classification — the decision tree that routes agent intents to auto_approve, flag_for_review, or deny. Also proves device pairing, persona isolation, and device revocation.
 
-An external agent pairs with the Home Node using `dina configure` (Ed25519 keypair + 6-digit pairing code → `POST /v1/pair/complete`; note: the CLI calls only `/v1/pair/complete`, not `/v1/pair/initiate`). Core registers the agent as a device and the agent appears in `GET /v1/devices`. The agent then submits intents via `dina validate <action> <description>`, which calls Core's `POST /v1/agent/validate`. Core proxies to brain's guardian internally using `BrainClient.ProcessEvent()` — the CLI authenticates to Core via Ed25519 device auth, no Brain token needed on the client.
+An external agent pairs with the Home Node using `dina configure` (Ed25519 keypair + 6-digit pairing code → `POST /v1/pair/complete`; note: the CLI calls only `/v1/pair/complete`, not `/v1/pair/initiate`). Core registers the agent as a device and the agent appears in `GET /v1/devices`. The agent then submits intents via `dina validate <action> <description>`, which calls Core's `POST /v1/agent/validate`. Core proxies to brain's guardian internally using `BrainClient.ProcessEvent()` — the CLI authenticates to Core via Ed25519 device auth, no shared brain secret on the client.
 
 This follows the same pattern used for admin proxying:
 

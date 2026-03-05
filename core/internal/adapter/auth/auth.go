@@ -71,10 +71,10 @@ type servicePubKey struct {
 // return TokenClient.
 type tokenValidator struct {
 	mu           sync.RWMutex
-	clientTokens map[string]string           // SHA-256(token) hex -> deviceID
-	tokenScopes  map[string]string           // SHA-256(token) hex -> scope ("admin" or "device")
-	deviceKeys   map[string]*devicePubKey    // did:key:z... -> public key entry
-	serviceKeys  map[string]*servicePubKey   // did:key:z... -> service key entry
+	clientTokens map[string]string         // SHA-256(token) hex -> deviceID
+	tokenScopes  map[string]string         // SHA-256(token) hex -> scope ("admin" or "device")
+	deviceKeys   map[string]*devicePubKey  // did:key:z... -> public key entry
+	serviceKeys  map[string]*servicePubKey // did:key:z... -> service key entry
 	// SEC-MED-11: Double-buffer nonce cache for O(1) eviction.
 	// Instead of scanning all entries on every request, we maintain two generations:
 	// - nonceCurrent: active generation, all new nonces go here
@@ -953,7 +953,7 @@ func (g *authGateway) Login(passphrase string) (statusCode int, setCookie string
 	return 302, cookie, "/admin", nil
 }
 
-// LOW-17: ProxyRequest deleted — it injected BRAIN_TOKEN into responses, leaking credentials.
+// LOW-17: ProxyRequest deleted — it previously leaked proxy credentials in responses.
 
 // ServeLoginPage returns the login HTML page.
 func (g *authGateway) ServeLoginPage() (body []byte, contentType string, err error) {
@@ -1140,8 +1140,8 @@ func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string, scope ...s
 	// Brain is explicitly denied on these paths.
 	brainDenied := []string{
 		"/v1/did/sign",
-		"/v1/did/rotate",    // Planned — not yet routed in main.go; requires signature-based rotation (CORE-HIGH-14)
-		"/v1/vault/backup",  // Planned — not yet routed in main.go; requires MigrationService handler wiring
+		"/v1/did/rotate",   // Planned — not yet routed in main.go; requires signature-based rotation (CORE-HIGH-14)
+		"/v1/vault/backup", // Planned — not yet routed in main.go; requires MigrationService handler wiring
 		"/v1/persona",
 		"/admin",
 		"/v1/export",

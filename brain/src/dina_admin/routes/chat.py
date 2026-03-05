@@ -1,10 +1,7 @@
 """Chat endpoint for admin UI dashboard.
 
-POST /api/chat — forwards prompt to brain's /api/v1/reason via
-internal HTTP call. Preserves module isolation between dina_admin
-and dina_brain.
-
-No imports from dina_brain — module boundary enforced.
+POST /api/chat — calls GuardianLoop directly (no internal HTTP/token hop).
+Preserves module isolation by dependency injection from composition root.
 """
 
 from __future__ import annotations
@@ -12,7 +9,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -20,13 +16,13 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api")
 
-_config: Any = None
+_guardian: Any = None
 
 
-def set_config(config: Any) -> None:
-    """Set config. Called once during app creation."""
-    global _config
-    _config = config
+def set_guardian(guardian: Any) -> None:
+    """Set GuardianLoop dependency. Called once during app creation."""
+    global _guardian
+    _guardian = guardian
 
 
 class ChatRequest(BaseModel):
@@ -37,36 +33,23 @@ class ChatRequest(BaseModel):
 
 @router.post("/chat")
 async def chat(request: ChatRequest) -> dict:
-    """Forward chat prompt to brain's /api/v1/reason endpoint."""
-    if _config is None:
-        raise HTTPException(status_code=503, detail="Config not available")
-
-    brain_url = f"http://localhost:{getattr(_config, 'listen_port', 8200)}"
-    brain_token = getattr(_config, "brain_token", "")
-
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        try:
-            resp = await client.post(
-                f"{brain_url}/api/v1/reason",
-                json={"prompt": request.prompt, "persona_tier": request.persona_tier},
-                headers={"Authorization": f"Bearer {brain_token}"},
-            )
-            if resp.status_code != 200:
-                detail = resp.text[:500]
-                log.error("chat.brain_error", extra={
-                    "status": resp.status_code,
-                    "detail": detail,
-                })
-                raise HTTPException(
-                    status_code=502,
-                    detail="Brain API error",
-                )
-            return resp.json()
-        except HTTPException:
-            raise
-        except Exception as exc:
-            log.error("chat.error", extra={"error": str(exc)})
-            raise HTTPException(
-                status_code=502,
-                detail="Failed to reach brain API",
-            ) from exc
+    """Run a reasoning query through GuardianLoop."""
+    if _guardian is None:
+        raise HTTPException(status_code=503, detail="Guardian not available")
+    reason_event = {
+        "type": "reason",
+        "prompt": request.prompt,
+        "persona_tier": request.persona_tier,
+    }
+    try:
+        result = await _guardian.process_event(reason_event)
+        return {
+            "content": result.get("content", ""),
+            "model": result.get("model"),
+            "tokens_in": result.get("tokens_in"),
+            "tokens_out": result.get("tokens_out"),
+            "vault_context_used": result.get("vault_context_used", False),
+        }
+    except Exception as exc:
+        log.error("chat.error", extra={"error": str(exc)})
+        raise HTTPException(status_code=500, detail="Reasoning request failed") from exc

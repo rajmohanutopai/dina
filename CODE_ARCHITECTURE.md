@@ -207,7 +207,7 @@ dina/
 │   │   │   └── scratchpad.py      # Cognitive checkpointing: save/resume multi-step reasoning
 │   │   │
 │   │   ├── dina_brain/            # Brain API sub-app (/api/*)
-│   │   │   ├── app.py             # FastAPI sub-app, BRAIN_TOKEN auth middleware
+│   │   │   ├── app.py             # FastAPI sub-app, Ed25519 service-signature auth middleware
 │   │   │   └── routes/
 │   │   │       ├── process.py     # POST /v1/process — new data event from core
 │   │   │       └── reason.py      # POST /v1/reason — complex query from core
@@ -339,9 +339,9 @@ func NewDID(raw string) (DID, error) {
     return DID(raw), nil
 }
 
-// TokenType distinguishes brain tokens from client tokens at the type level.
-// A function that accepts BrainToken cannot accidentally receive a ClientToken.
-type BrainToken string
+// TokenType distinguishes service identities from client tokens at the type level.
+// A function that accepts ServiceIdentity cannot accidentally receive a ClientToken.
+type ServiceIdentity string
 type ClientToken string
 ```
 
@@ -1246,11 +1246,11 @@ func (f *FakeVaultManager) IsOpen(persona domain.PersonaName) bool {
 
 ### 1. Zero-Trust Between Containers
 
-Brain is untrusted. Every request from brain is authenticated (`BRAIN_TOKEN`), authorized (gatekeeper checks persona tier), and audited. The auth middleware in `middleware/auth.go` treats brain requests identically to external client requests — verify token, check endpoint ACL, log.
+Brain is untrusted. Every request from brain is authenticated (Ed25519 service signatures), authorized (gatekeeper checks persona tier), and audited. The auth middleware in `middleware/auth.go` treats brain requests identically to external clients — verify identity, check endpoint ACL, log.
 
 ### 2. Constant-Time Token Comparison
 
-`BRAIN_TOKEN` comparison uses `subtle.ConstantTimeCompare`. CLIENT_TOKEN validation hashes the presented token before database lookup. Both paths add a small uniform delay on failure to prevent timing attacks (Issue #10 from architecture review).
+Service-key verification uses Ed25519 signature checks plus timestamp+nonce replay defense. CLIENT_TOKEN validation hashes the presented token before database lookup. Both paths add a small uniform delay on failure to prevent timing attacks (Issue #10 from architecture review).
 
 ### 3. Memory Zeroing
 

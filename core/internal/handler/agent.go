@@ -11,8 +11,8 @@ import (
 
 // AgentHandler proxies agent validation requests to the brain sidecar.
 // External clients (CLI, paired devices) authenticate to core via Ed25519
-// signatures; core forwards the request to brain using DINA_INTERNAL_TOKEN.
-// This keeps brain non-public — no brain token in external clients.
+// signatures; core forwards the request to brain with service-key signatures.
+// This keeps brain non-public — no shared bearer secret in external clients.
 //
 // Only agent_intent events are accepted — this is not a generic proxy.
 // The caller's agent_did is overridden with the authenticated identity from

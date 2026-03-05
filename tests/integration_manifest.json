@@ -274,35 +274,35 @@
       "line": 93
     },
     "TST-INT-040": {
-      "scenario": "Brain with BRAIN_TOKEN: access open persona",
+      "scenario": "Brain with Service Signature Auth: access open persona",
       "path": "2.6",
       "row": 1,
       "section": "End-to-End User Flows",
       "line": 99
     },
     "TST-INT-041": {
-      "scenario": "Brain with BRAIN_TOKEN: blocked from locked persona",
+      "scenario": "Brain with Service Signature Auth: blocked from locked persona",
       "path": "2.6",
       "row": 2,
       "section": "End-to-End User Flows",
       "line": 100
     },
     "TST-INT-042": {
-      "scenario": "Brain with BRAIN_TOKEN: restricted creates trail",
+      "scenario": "Brain with Service Signature Auth: restricted creates trail",
       "path": "2.6",
       "row": 3,
       "section": "End-to-End User Flows",
       "line": 101
     },
     "TST-INT-043": {
-      "scenario": "Brain with BRAIN_TOKEN: cannot call admin endpoints",
+      "scenario": "Brain with Service Signature Auth: cannot call admin endpoints",
       "path": "2.6",
       "row": 4,
       "section": "End-to-End User Flows",
       "line": 102
     },
     "TST-INT-044": {
-      "scenario": "Brain with BRAIN_TOKEN: PII scrubber enforced",
+      "scenario": "Brain with Service Signature Auth: PII scrubber enforced",
       "path": "2.6",
       "row": 5,
       "section": "End-to-End User Flows",
@@ -890,7 +890,7 @@
       "line": 289
     },
     "TST-INT-128": {
-      "scenario": "Generates BRAIN_TOKEN",
+      "scenario": "Generates Service Signature Auth",
       "path": "5.6",
       "row": 2,
       "section": "Docker Networking & Isolation",
@@ -953,7 +953,7 @@
       "line": 303
     },
     "TST-INT-137": {
-      "scenario": "`BRAIN_TOKEN` shared by core and brain",
+      "scenario": "`Service Signature Auth` shared by core and brain",
       "path": "5.7",
       "row": 5,
       "section": "Docker Networking & Isolation",
@@ -1156,7 +1156,7 @@
       "line": 375
     },
     "TST-INT-166": {
-      "scenario": "BRAIN_TOKEN cannot perform admin actions",
+      "scenario": "Service Signature Auth cannot perform admin actions",
       "path": "7.3",
       "row": 2,
       "section": "Security Boundary Tests",
@@ -1709,7 +1709,7 @@
       "line": 514
     },
     "TST-INT-245": {
-      "scenario": "Telegram uses BRAIN_TOKEN",
+      "scenario": "Telegram uses Service Signature Auth",
       "path": "9.2",
       "row": 2,
       "section": "Ingestion-to-Vault Pipeline (Full E2E)",
@@ -1779,7 +1779,7 @@
       "line": 529
     },
     "TST-INT-255": {
-      "scenario": "Telegram connector uses BRAIN_TOKEN",
+      "scenario": "Telegram connector uses Service Signature Auth",
       "path": "9.3",
       "row": 6,
       "section": "Ingestion-to-Vault Pipeline (Full E2E)",
@@ -3221,7 +3221,7 @@
       "line": 0
     },
     "TST-INT-611": {
-      "scenario": "Export excludes device_tokens, BRAIN_TOKEN, passphrase",
+      "scenario": "Export excludes device_tokens, Service Signature Auth, passphrase",
       "path": "18.3",
       "row": 2,
       "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
@@ -3347,7 +3347,7 @@
       "line": 0
     },
     "TST-INT-629": {
-      "scenario": "Phone connectors require CLIENT_TOKEN, not BRAIN_TOKEN",
+      "scenario": "Phone connectors require CLIENT_TOKEN, not Service Signature Auth",
       "path": "18.12",
       "row": 7,
       "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",

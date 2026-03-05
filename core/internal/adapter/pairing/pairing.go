@@ -66,9 +66,9 @@ type pairingCode struct {
 type deviceRecord struct {
 	tokenID   string
 	name      string
-	tokenHash []byte             // nil for signature-auth devices
-	publicKey ed25519.PublicKey   // nil for legacy token devices
-	did       string             // did:key:z6Mk... (empty for legacy)
+	tokenHash []byte            // present for token-auth devices
+	publicKey ed25519.PublicKey // present for signature-auth devices
+	did       string            // did:key:z6Mk... for signature-auth devices
 	createdAt int64
 	lastSeen  int64
 	revoked   bool

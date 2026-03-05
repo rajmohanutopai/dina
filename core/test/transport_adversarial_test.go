@@ -421,8 +421,8 @@ func TestAdv_29_1_TamperedCiphertextRejected(t *testing.T) {
 	// Error could be decryption failure — that's fine, the point is it doesn't succeed.
 }
 
-// TST-ADV-005: ReceiveMessage with empty sig (backward compat) passes when verifier is set.
-func TestAdv_29_1_EmptySigBackwardCompat(t *testing.T) {
+// TST-ADV-005: ReceiveMessage with empty sig is rejected (no unsigned messages accepted).
+func TestAdv_29_1_EmptySigRejected(t *testing.T) {
 	env := newTransportTestEnv(t)
 	ctx := context.Background()
 
@@ -432,26 +432,23 @@ func TestAdv_29_1_EmptySigBackwardCompat(t *testing.T) {
 		From:        "did:key:z6MkSenderTest",
 		To:          []string{"did:key:z6MkRecipientTest"},
 		CreatedTime: time.Now().Unix(),
-		Body:        []byte(`{"q":"no sig backward compat"}`),
+		Body:        []byte(`{"q":"no sig rejected"}`),
 	}
 	plaintext, _ := json.Marshal(msg)
 
 	rcptX25519Pub, _ := env.converter.Ed25519ToX25519Public(env.rcptPub)
 	ciphertext, _ := env.encryptor.SealAnonymous(plaintext, rcptX25519Pub)
 
-	// Envelope with empty signature — backward compatibility.
+	// Envelope with empty signature — must be rejected.
 	envelope := domain.DinaEnvelope{
 		Typ:        "application/dina-encrypted+json",
 		Ciphertext: string(ciphertext),
 		Sig:        "", // no signature
 	}
 
-	result, err := env.svc.ReceiveMessage(ctx, envelope, env.rcptPub, env.rcptPriv)
-	if err != nil {
-		t.Fatalf("ReceiveMessage with empty sig should succeed (backward compat): %v", err)
-	}
-	if result.ID != "msg-sig-005" {
-		t.Fatalf("expected msg ID 'msg-sig-005', got %q", result.ID)
+	_, err := env.svc.ReceiveMessage(ctx, envelope, env.rcptPub, env.rcptPriv)
+	if err == nil {
+		t.Fatal("ReceiveMessage should reject empty-sig envelope")
 	}
 }
 

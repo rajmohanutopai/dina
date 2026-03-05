@@ -1,8 +1,7 @@
 """FastAPI sub-app for the brain API (/api/*).
 
 Routes are authenticated via Ed25519 signed requests (X-DID / X-Timestamp /
-X-Signature headers) from pinned service keys. Falls back to bearer token
-auth for the admin proxy path (browsers can't do Ed25519 signing).
+X-Signature headers) from pinned service keys.
 
 Module isolation: this module does NOT import from ``dina_admin``.
 
@@ -10,8 +9,6 @@ Maps to Brain TEST_PLAN SS10 (API Endpoints) and SS1 (Authentication).
 """
 
 from __future__ import annotations
-
-import hmac
 import logging
 import os
 from typing import Any, Callable, TYPE_CHECKING
@@ -40,7 +37,6 @@ def create_brain_app(
     scrubber: Any = None,
     *,
     core_public_key: "Ed25519PublicKey | Callable[[], Ed25519PublicKey | None] | None" = None,
-    internal_token: str = "",
 ) -> FastAPI:
     """Create the brain API sub-app with Ed25519 signature verification.
 
@@ -55,9 +51,6 @@ def create_brain_app(
         the ``/v1/pii/scrub`` endpoint returns text unchanged.
     core_public_key:
         Core's Ed25519 public key for verifying signed requests.
-    internal_token:
-        Bearer token for admin proxy path (browsers can't sign).
-
     Returns
     -------
     FastAPI
@@ -145,14 +138,13 @@ def create_brain_app(
         return await call_next(request)
 
     # ------------------------------------------------------------------
-    # Auth dependency — Ed25519 signature or bearer token
+    # Auth dependency — Ed25519 signature
     # ------------------------------------------------------------------
 
     async def verify_service_auth(request: Request) -> None:
         """Verify request authentication.
 
-        Checks Ed25519 signature headers first (X-DID, X-Timestamp,
-        X-Signature). Falls back to bearer token for admin proxy path.
+        Checks Ed25519 signature headers (X-DID, X-Timestamp, X-Signature).
 
         Raises
         ------
@@ -168,10 +160,13 @@ def create_brain_app(
             # Resolve key — may be a lazy-loading callable or a static key.
             resolved_key = core_public_key() if callable(core_public_key) else core_public_key
             if resolved_key is None:
-                log.warning("brain_api.no_core_key", msg="Core public key not loaded")
+                log.warning("brain_api.no_core_key: Core public key not loaded")
                 raise HTTPException(status_code=401, detail="Service key not configured")
 
-            from ..adapter.signing import ServiceIdentity
+            try:
+                from ..adapter.signing import ServiceIdentity
+            except ImportError:
+                from adapter.signing import ServiceIdentity
 
             body = await request.body()
             ok = ServiceIdentity.verify_request(
@@ -184,18 +179,9 @@ def create_brain_app(
                 signature_hex=x_sig,
             )
             if not ok:
-                log.warning("brain_api.signature_invalid", did=x_did)
+                log.warning("brain_api.signature_invalid: %s", x_did)
                 raise HTTPException(status_code=401, detail="Invalid signature")
             return
-
-        # Path 2: Bearer token (admin proxy / internal)
-        auth_header = request.headers.get("authorization", "")
-        if auth_header.startswith("Bearer ") and internal_token:
-            token = auth_header[7:].strip()
-            if hmac.compare_digest(token, internal_token):
-                return
-            log.warning("brain_api.bearer_auth_failed")
-            raise HTTPException(status_code=401, detail="Invalid token")
 
         log.warning("brain_api.no_auth")
         raise HTTPException(status_code=401, detail="Authentication required")

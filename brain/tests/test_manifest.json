@@ -3,7 +3,7 @@
     "TST-BRAIN-001": {
       "path": "1.1",
       "row": 1,
-      "scenario": "Valid BRAIN_TOKEN",
+      "scenario": "Valid Service Signature Auth",
       "line": 14
     },
     "TST-BRAIN-002": {
@@ -39,7 +39,7 @@
     "TST-BRAIN-007": {
       "path": "1.2",
       "row": 1,
-      "scenario": "`/api/*` requires BRAIN_TOKEN",
+      "scenario": "`/api/*` requires Service Signature Auth",
       "line": 25
     },
     "TST-BRAIN-008": {
@@ -57,7 +57,7 @@
     "TST-BRAIN-010": {
       "path": "1.2",
       "row": 4,
-      "scenario": "`/admin/*` rejects BRAIN_TOKEN",
+      "scenario": "`/admin/*` rejects Service Signature Auth",
       "line": 28
     },
     "TST-BRAIN-011": {
@@ -1845,7 +1845,7 @@
     "TST-BRAIN-293": {
       "path": "9",
       "row": 5,
-      "scenario": "BRAIN_TOKEN from secret",
+      "scenario": "Service Signature Auth from secret",
       "line": 585
     },
     "TST-BRAIN-294": {
@@ -1863,7 +1863,7 @@
     "TST-BRAIN-377": {
       "path": "9",
       "row": 8,
-      "scenario": "BRAIN_TOKEN from env",
+      "scenario": "Service Signature Auth from env",
       "line": 588
     },
     "TST-BRAIN-378": {
@@ -1881,7 +1881,7 @@
     "TST-BRAIN-380": {
       "path": "9",
       "row": 11,
-      "scenario": "Missing BRAIN_TOKEN raises",
+      "scenario": "Missing Service Signature Auth raises",
       "line": 591
     },
     "TST-BRAIN-295": {

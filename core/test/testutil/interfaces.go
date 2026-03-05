@@ -425,8 +425,8 @@ type Config struct {
 	AdminAddr     string
 	VaultPath     string
 	BrainURL      string
-	BrainToken    string // deprecated: kept for admin proxy fallback
 	ServiceKeyDir string
+	ClientToken   string
 	SecurityMode  string // "security" or "convenience"
 	SessionTTL    int    // seconds
 	RateLimit     int    // requests per minute per IP
@@ -980,4 +980,3 @@ type SystemWatchdog interface {
 	// CheckBrainHealth verifies brain sidecar is healthy.
 	CheckBrainHealth(ctx context.Context) (bool, error)
 }
-

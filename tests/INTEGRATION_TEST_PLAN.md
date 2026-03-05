@@ -7,7 +7,7 @@
 
 ## 1. Core ↔ Brain Communication
 
-### 1.1 BRAIN_TOKEN Shared Secret
+### 1.1 Service Signature Auth Shared Secret
 
 | # | Scenario | Setup | Expected |
 |---|----------|-------|----------|
@@ -96,11 +96,11 @@
 
 | # | Scenario | Setup | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-INT-040]** Brain with BRAIN_TOKEN: access open persona | Brain queries open persona vault | Data returned — expected damage radius |
-| 2 | **[TST-INT-041]** Brain with BRAIN_TOKEN: blocked from locked persona | Brain queries locked persona | 403 from core — cannot access |
-| 3 | **[TST-INT-042]** Brain with BRAIN_TOKEN: restricted creates trail | Brain queries restricted persona | Data returned, but audit entry + briefing notification visible to user |
-| 4 | **[TST-INT-043]** Brain with BRAIN_TOKEN: cannot call admin endpoints | Brain calls `/v1/did/sign`, `/v1/vault/backup` etc. | 403 on every admin path |
-| 5 | **[TST-INT-044]** Brain with BRAIN_TOKEN: PII scrubber enforced | Brain sends data to cloud LLM | Core-side PII gate scrubs before any outbound — brain cannot bypass |
+| 1 | **[TST-INT-040]** Brain with Service Signature Auth: access open persona | Brain queries open persona vault | Data returned — expected damage radius |
+| 2 | **[TST-INT-041]** Brain with Service Signature Auth: blocked from locked persona | Brain queries locked persona | 403 from core — cannot access |
+| 3 | **[TST-INT-042]** Brain with Service Signature Auth: restricted creates trail | Brain queries restricted persona | Data returned, but audit entry + briefing notification visible to user |
+| 4 | **[TST-INT-043]** Brain with Service Signature Auth: cannot call admin endpoints | Brain calls `/v1/did/sign`, `/v1/vault/backup` etc. | 403 on every admin path |
+| 5 | **[TST-INT-044]** Brain with Service Signature Auth: PII scrubber enforced | Brain sends data to cloud LLM | Core-side PII gate scrubs before any outbound — brain cannot bypass |
 
 ---
 
@@ -287,7 +287,7 @@
 | # | Scenario | Test Method | Expected |
 |---|----------|-------------|----------|
 | 1 | **[TST-INT-127]** Creates required directories | Run `install.sh` on fresh system | `secrets/`, `data/vault/`, `data/inbox/`, `data/pds/`, `data/models/` all exist |
-| 2 | **[TST-INT-128]** Generates BRAIN_TOKEN | Inspect `secrets/brain_token.txt` after install | 64 hex chars (32 bytes from `openssl rand -hex 32`) |
+| 2 | **[TST-INT-128]** Generates Service Signature Auth | Inspect `secrets/brain_token.txt` after install | 64 hex chars (32 bytes from `openssl rand -hex 32`) |
 | 3 | **[TST-INT-129]** Prompts for passphrase | Run `install.sh` interactively | `read -s -p` prompts without echo — passphrase written to `secrets/dina_passphrase.txt` |
 | 4 | **[TST-INT-130]** Sets file permissions | Inspect after install | `chmod 700 secrets`, `chmod 600 secrets/*` — only owner can access |
 | 5 | **[TST-INT-131]** Idempotent: re-run safe | Run `install.sh` twice | Second run: `mkdir -p` succeeds (no error), existing secrets NOT overwritten (or prompts to confirm) |
@@ -297,11 +297,11 @@
 
 | # | Scenario | Test Method | Expected |
 |---|----------|-------------|----------|
-| 1 | **[TST-INT-133]** Secrets never in `docker inspect` output | `docker inspect dina-core` → check `Config.Env` | No `BRAIN_TOKEN`, `DINA_PASSPHRASE` in environment section |
+| 1 | **[TST-INT-133]** Secrets never in `docker inspect` output | `docker inspect dina-core` → check `Config.Env` | No `Service Signature Auth`, `DINA_PASSPHRASE` in environment section |
 | 2 | **[TST-INT-134]** Secrets at `/run/secrets/` inside container | `docker exec dina-core cat /run/secrets/brain_token` | Token present and readable by container process |
 | 3 | **[TST-INT-135]** `GOOGLE_API_KEY` in `.env` (exception) | Inspect brain container env | API key visible in env — acceptable because it's a revocable cloud key, not a local credential |
 | 4 | **[TST-INT-136]** `.gitignore` blocks secrets directory | `git status` after creating secrets | `secrets/` directory not tracked by git |
-| 5 | **[TST-INT-137]** `BRAIN_TOKEN` shared by core and brain | Compare token in both containers | Identical value — same file mounted to both |
+| 5 | **[TST-INT-137]** `Service Signature Auth` shared by core and brain | Compare token in both containers | Identical value — same file mounted to both |
 
 ---
 
@@ -373,7 +373,7 @@
 | # | Scenario | Verification | Expected |
 |---|----------|--------------|----------|
 | 1 | **[TST-INT-165]** No unauthenticated API access | Hit every endpoint without token | All return 401 (except health) |
-| 2 | **[TST-INT-166]** BRAIN_TOKEN cannot perform admin actions | Use BRAIN_TOKEN on admin endpoints | 403 |
+| 2 | **[TST-INT-166]** Service Signature Auth cannot perform admin actions | Use Service Signature Auth on admin endpoints | 403 |
 | 3 | **[TST-INT-167]** CLIENT_TOKEN cannot perform brain actions | Use CLIENT_TOKEN on brain endpoints | 403 |
 | 4 | **[TST-INT-168]** Expired session cannot access admin | Use expired session cookie | 401, redirect to login |
 | 5 | **[TST-INT-169]** Revoked device cannot access anything | Revoked CLIENT_TOKEN | 401 on all endpoints |
@@ -507,12 +507,12 @@
 ### 9.2 Telegram Connector (Bot API → Core)
 
 > Telegram connector runs server-side on the Home Node via the official Bot API.
-> Goes through MCP like other connectors. Uses BRAIN_TOKEN authentication.
+> Goes through MCP like other connectors. Uses Service Signature Auth authentication.
 
 | # | Flow | Steps | Expected |
 |---|------|-------|----------|
 | 1 | **[TST-INT-244]** Telegram message ingestion | Bot API receives message on Home Node → forwards via MCP to core | Message stored in vault via core, brain notified |
-| 2 | **[TST-INT-245]** Telegram uses BRAIN_TOKEN | Bot API connector communicates with core via MCP | Authenticated with BRAIN_TOKEN (server-side connector), not CLIENT_TOKEN |
+| 2 | **[TST-INT-245]** Telegram uses Service Signature Auth | Bot API connector communicates with core via MCP | Authenticated with Service Signature Auth (server-side connector), not CLIENT_TOKEN |
 | 3 | **[TST-INT-246]** Telegram full message+media | Voice note, photo, or document message | Full message content including media (text, photos, documents, voice notes) ingested |
 | 4 | **[TST-INT-247]** Telegram no history | Add Dina bot to Telegram chat | Only new messages from when bot is added — no history before bot joins |
 | 5 | **[TST-INT-248]** Telegram Bot API token revocation | Bot token revoked or invalidated | Connector handles gracefully — logs auth error, transitions to EXPIRED. Tier 2 notification: "Telegram bot token expired, please reconfigure" |
@@ -527,7 +527,7 @@
 | 3 | **[TST-INT-252]** OpenClaw sandboxed | OpenClaw compromised (simulated) | Cannot read vault, keys, or personas — has no access to core APIs |
 | 4 | **[TST-INT-253]** Brain scrubs before cloud LLM | Brain sends data to cloud LLM for triage | PII scrubbed (Tier 1 + Tier 2) before any cloud call |
 | 5 | **[TST-INT-254]** OAuth tokens not in Dina | Inspect all vault tables + core config + brain config | Zero Gmail/Calendar OAuth tokens — all in OpenClaw |
-| 6 | **[TST-INT-255]** Telegram connector uses BRAIN_TOKEN | Telegram Bot API on Home Node | Authenticated via MCP with BRAIN_TOKEN — server-side connector |
+| 6 | **[TST-INT-255]** Telegram connector uses Service Signature Auth | Telegram Bot API on Home Node | Authenticated via MCP with Service Signature Auth — server-side connector |
 | 7 | **[TST-INT-256]** Attachment metadata only in vault | Email with PDF attachment ingested | Vault contains `{filename, size, mime_type, source_id}` + summary — no binary blob |
 | 8 | **[TST-INT-257]** Sync status visible in admin UI | Navigate to admin dashboard | Last sync time, items ingested, OpenClaw state visible |
 
@@ -1003,7 +1003,7 @@
 | # | Scenario | Setup | Expected |
 |---|----------|-------|----------|
 | 1 | **[TST-INT-610]** Import rejects tampered/incompatible archives | Tampered archive | Checksum mismatch → rejected |
-| 2 | **[TST-INT-611]** Export excludes secrets | Create export | No device_tokens, BRAIN_TOKEN, or passphrase in archive |
+| 2 | **[TST-INT-611]** Export excludes secrets | Create export | No device_tokens, Service Signature Auth, or passphrase in archive |
 
 ### 18.4 Vault Query API (§4)
 
@@ -1051,7 +1051,7 @@
 | 4 | **[TST-INT-626]** Backfill pauses for user query, resumes same cursor | Query during backfill | Cursor unchanged after user query processed |
 | 5 | **[TST-INT-627]** Cold archive pass-through: no vault writes | Search cold data | Results returned but vault write count unchanged |
 | 6 | **[TST-INT-628]** OpenClaw recovery resumes exact cursor position | Outage + recovery | Cursor values identical before and after outage |
-| 7 | **[TST-INT-629]** Phone connector requires CLIENT_TOKEN auth | Phone pushes data | CLIENT_TOKEN accepted; BRAIN_TOKEN rejected for phone connector |
+| 7 | **[TST-INT-629]** Phone connector requires CLIENT_TOKEN auth | Phone pushes data | CLIENT_TOKEN accepted; Service Signature Auth rejected for phone connector |
 
 ### 18.10 Trust Network (§8)
 

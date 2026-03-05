@@ -17,7 +17,7 @@ cd dina
 
 `install.sh` handles everything:
 1. Checks prerequisites (Docker, Docker Compose, curl)
-2. Generates secrets (brain token, identity seed, PDS JWT/rotation keys)
+2. Generates secrets (service keys, identity seed wrap files, PDS JWT/rotation keys)
 3. Asks which LLM provider to use (Gemini, OpenAI, Claude, OpenRouter, Ollama)
 4. Creates `.env` with your API key and secrets
 5. Builds and starts Docker containers

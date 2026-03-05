@@ -28,11 +28,14 @@ copy_secret() {
 # Service keys — ensure the dina user owns the private key directory.
 # The bind-mounted host dir may be root:root; the Go binary runs as dina.
 if [ -d "/run/secrets/service_keys/private" ]; then
-    chown -R dina:dina /run/secrets/service_keys/private
+    chown -R dina:dina /run/secrets/service_keys/private || true
 fi
-# Public key directory must be writable (Core writes its public key there).
+# Public key directory is read-only at runtime by default.
+# During explicit provisioning mode (DINA_SERVICE_KEY_INIT=1), keep writable.
 if [ -d "/run/secrets/service_keys/public" ]; then
-    chown -R dina:dina /run/secrets/service_keys/public
+    if [ "${DINA_SERVICE_KEY_INIT:-0}" = "1" ]; then
+        chown -R dina:dina /run/secrets/service_keys/public || true
+    fi
 fi
 
 # Client token (optional — for pre-registered admin access).

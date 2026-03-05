@@ -85,7 +85,7 @@ if [ -n "$STORY" ]; then
     case "$STORY" in
         1|01) STORY_FILE="tests/system/user_stories/test_01_purchase_journey.py" ;;
         2|02) STORY_FILE="tests/system/user_stories/test_02_sancho_moment.py" ;;
-        3|03) STORY_FILE="tests/system/user_stories/test_03_dead_internet.py" ;;
+        3|03) STORY_FILE="tests/system/user_stories/test_03_dead_internet_filter.py" ;;
         4|04) STORY_FILE="tests/system/user_stories/test_04_persona_wall.py" ;;
         5|05) STORY_FILE="tests/system/user_stories/test_05_agent_gateway.py" ;;
         6|06) STORY_FILE="tests/system/user_stories/test_06_license_renewal.py" ;;
@@ -245,33 +245,39 @@ if [ "$BRIEF" = true ]; then
     # Parse per-file results from pytest -v output
     s01_passed=$(echo "$OUTPUT" | grep -c "test_01_purchase_journey.*PASSED" || true)
     s01_failed=$(echo "$OUTPUT" | grep -c "test_01_purchase_journey.*FAILED" || true)
+    s01_errored=$(echo "$OUTPUT" | grep -c "test_01_purchase_journey.* ERROR" || true)
     s01_skipped=$(echo "$OUTPUT" | grep -c "test_01_purchase_journey.*SKIPPED" || true)
-    s01_total=$((s01_passed + s01_failed + s01_skipped))
+    s01_total=$((s01_passed + s01_failed + s01_errored + s01_skipped))
 
     s02_passed=$(echo "$OUTPUT" | grep -c "test_02_sancho_moment.*PASSED" || true)
     s02_failed=$(echo "$OUTPUT" | grep -c "test_02_sancho_moment.*FAILED" || true)
+    s02_errored=$(echo "$OUTPUT" | grep -c "test_02_sancho_moment.* ERROR" || true)
     s02_skipped=$(echo "$OUTPUT" | grep -c "test_02_sancho_moment.*SKIPPED" || true)
-    s02_total=$((s02_passed + s02_failed + s02_skipped))
+    s02_total=$((s02_passed + s02_failed + s02_errored + s02_skipped))
 
     s03_passed=$(echo "$OUTPUT" | grep -c "test_03_dead_internet.*PASSED" || true)
     s03_failed=$(echo "$OUTPUT" | grep -c "test_03_dead_internet.*FAILED" || true)
+    s03_errored=$(echo "$OUTPUT" | grep -c "test_03_dead_internet.* ERROR" || true)
     s03_skipped=$(echo "$OUTPUT" | grep -c "test_03_dead_internet.*SKIPPED" || true)
-    s03_total=$((s03_passed + s03_failed + s03_skipped))
+    s03_total=$((s03_passed + s03_failed + s03_errored + s03_skipped))
 
     s04_passed=$(echo "$OUTPUT" | grep -c "test_04_persona_wall.*PASSED" || true)
     s04_failed=$(echo "$OUTPUT" | grep -c "test_04_persona_wall.*FAILED" || true)
+    s04_errored=$(echo "$OUTPUT" | grep -c "test_04_persona_wall.* ERROR" || true)
     s04_skipped=$(echo "$OUTPUT" | grep -c "test_04_persona_wall.*SKIPPED" || true)
-    s04_total=$((s04_passed + s04_failed + s04_skipped))
+    s04_total=$((s04_passed + s04_failed + s04_errored + s04_skipped))
 
     s05_passed=$(echo "$OUTPUT" | grep -c "test_05_agent_gateway.*PASSED" || true)
     s05_failed=$(echo "$OUTPUT" | grep -c "test_05_agent_gateway.*FAILED" || true)
+    s05_errored=$(echo "$OUTPUT" | grep -c "test_05_agent_gateway.* ERROR" || true)
     s05_skipped=$(echo "$OUTPUT" | grep -c "test_05_agent_gateway.*SKIPPED" || true)
-    s05_total=$((s05_passed + s05_failed + s05_skipped))
+    s05_total=$((s05_passed + s05_failed + s05_errored + s05_skipped))
 
     s06_passed=$(echo "$OUTPUT" | grep -c "test_06_license_renewal.*PASSED" || true)
     s06_failed=$(echo "$OUTPUT" | grep -c "test_06_license_renewal.*FAILED" || true)
+    s06_errored=$(echo "$OUTPUT" | grep -c "test_06_license_renewal.* ERROR" || true)
     s06_skipped=$(echo "$OUTPUT" | grep -c "test_06_license_renewal.*SKIPPED" || true)
-    s06_total=$((s06_passed + s06_failed + s06_skipped))
+    s06_total=$((s06_passed + s06_failed + s06_errored + s06_skipped))
 
     # Clear "Running tests..." line
     echo -e "\033[2A\033[J"
@@ -302,22 +308,27 @@ if [ "$BRIEF" = true ]; then
     total_passed=$((s01_passed + s02_passed + s03_passed + s04_passed + s05_passed + s06_passed))
     total_all=$((s01_total + s02_total + s03_total + s04_total + s05_total + s06_total))
     total_failed=$((s01_failed + s02_failed + s03_failed + s04_failed + s05_failed + s06_failed))
+    total_errored=$((s01_errored + s02_errored + s03_errored + s04_errored + s05_errored + s06_errored))
     total_skipped=$((s01_skipped + s02_skipped + s03_skipped + s04_skipped + s05_skipped + s06_skipped))
     echo ""
-    if [ "$total_failed" -eq 0 ] && [ "$total_all" -gt 0 ]; then
+    if [ "$total_failed" -eq 0 ] && [ "$total_errored" -eq 0 ] && [ "$total_all" -gt 0 ]; then
         echo -e "  ${GREEN}${BOLD}${total_passed}/${total_all} passed${R}"
         if [ "$total_skipped" -gt 0 ]; then
             echo -e "  ${DIM}${total_skipped} skipped (set GOOGLE_API_KEY for LLM tests)${R}"
         fi
         echo -e "  ${DIM}Zero mocks. Real stack. Real crypto. Real trust.${R}"
     elif [ "$total_all" -gt 0 ]; then
-        echo -e "  ${RED}${BOLD}${total_failed} failed${R}, ${total_passed}/${total_all} passed  ${DIM}-- run without --brief for details${R}"
+        if [ "$total_errored" -gt 0 ]; then
+            echo -e "  ${RED}${BOLD}${total_errored} errors${R}, ${total_failed} failed, ${total_passed}/${total_all} passed  ${DIM}-- run without --brief for details${R}"
+        else
+            echo -e "  ${RED}${BOLD}${total_failed} failed${R}, ${total_passed}/${total_all} passed  ${DIM}-- run without --brief for details${R}"
+        fi
     else
         echo -e "  ${YELLOW}No tests collected.${R}"
     fi
     echo ""
 
-    [ "$total_failed" -eq 0 ] && exit 0 || exit 1
+    [ "$total_failed" -eq 0 ] && [ "$total_errored" -eq 0 ] && exit 0 || exit 1
 fi
 
 # ============================================================================

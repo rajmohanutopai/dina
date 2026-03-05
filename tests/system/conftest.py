@@ -40,6 +40,10 @@ PORTS = {
 HEALTH_TIMEOUT = 240  # seconds
 HEALTH_INTERVAL = 3   # seconds
 
+# Hardcoded test token — matches DINA_CLIENT_TOKEN in docker-compose-system.yml.
+# Used as bearer auth for Core admin/client endpoints.
+_SYSTEM_TEST_TOKEN = "test-system-admin-token"
+
 
 # ---------------------------------------------------------------------------
 # Docker lifecycle
@@ -50,8 +54,7 @@ class SystemServices:
 
     def __init__(self) -> None:
         self._started = False
-        self.brain_token = ""
-        self.client_token = ""
+        self.admin_token = _SYSTEM_TEST_TOKEN
 
     # -- URL accessors --
 
@@ -84,8 +87,6 @@ class SystemServices:
     # -- Lifecycle --
 
     def start(self, restart: bool = False) -> None:
-        self._load_tokens()
-
         if restart:
             print("\n  [system] Tearing down existing stack (restart)...")
             self._compose("down", "-v")
@@ -109,14 +110,6 @@ class SystemServices:
             print("\n  [system] Stopping system stack...")
             self._compose("down", "-v")
             print("  [system] Stack stopped.")
-
-    def _load_tokens(self) -> None:
-        brain_path = SECRETS_DIR / "brain_token"
-        client_path = SECRETS_DIR / "client_token"
-        if brain_path.exists():
-            self.brain_token = brain_path.read_text().strip()
-        if client_path.exists():
-            self.client_token = client_path.read_text().strip()
 
     def _compose(self, *args: str) -> subprocess.CompletedProcess:
         cmd = ["docker", "compose", "-f", str(COMPOSE_FILE)] + list(args)
@@ -196,12 +189,17 @@ def system_services():
 
 @pytest.fixture(scope="session")
 def brain_headers(system_services):
-    return {"Authorization": f"Bearer {system_services.brain_token}"}
+    """Bearer auth for Brain API and Core vault endpoints.
+
+    Uses the shared test token that Core registers as admin-scope client token.
+    """
+    return {"Authorization": f"Bearer {system_services.admin_token}"}
 
 
 @pytest.fixture(scope="session")
 def admin_headers(system_services):
-    return {"Authorization": f"Bearer {system_services.client_token}"}
+    """Bearer auth for Core admin endpoints (persona, unlock, etc.)."""
+    return {"Authorization": f"Bearer {system_services.admin_token}"}
 
 
 # ---------------------------------------------------------------------------

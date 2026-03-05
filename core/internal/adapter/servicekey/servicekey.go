@@ -45,6 +45,16 @@ func New(keyDir string) *ServiceKey {
 //	{keyDir}/private/{serviceName}_ed25519_private.pem  (0600, own container only)
 //	{keyDir}/public/{serviceName}_ed25519_public.pem    (0644, shared)
 func (sk *ServiceKey) EnsureKey(serviceName string) error {
+	return sk.ensureKey(serviceName, true)
+}
+
+// EnsureExistingKey loads an existing keypair for serviceName and fails if the
+// private key file is missing. It never generates new key material.
+func (sk *ServiceKey) EnsureExistingKey(serviceName string) error {
+	return sk.ensureKey(serviceName, false)
+}
+
+func (sk *ServiceKey) ensureKey(serviceName string, allowGenerate bool) error {
 	privDir := filepath.Join(sk.keyDir, "private")
 	pubDir := filepath.Join(sk.keyDir, "public")
 	privPath := filepath.Join(privDir, serviceName+"_ed25519_private.pem")
@@ -52,6 +62,9 @@ func (sk *ServiceKey) EnsureKey(serviceName string) error {
 
 	if _, err := os.Stat(privPath); err == nil {
 		return sk.loadKey(privPath, pubPath)
+	}
+	if !allowGenerate {
+		return fmt.Errorf("servicekey: missing private key %q (set DINA_SERVICE_KEY_INIT=1 only for provisioning)", privPath)
 	}
 
 	// Generate new keypair.
@@ -146,6 +159,26 @@ func (sk *ServiceKey) loadKey(privPath, pubPath string) error {
 	sk.privateKey = priv
 	sk.publicKey = priv.Public().(ed25519.PublicKey)
 	sk.did = deriveDID(sk.publicKey)
+
+	// Fail-closed: require matching public key file so tampering/partial state
+	// does not silently proceed at runtime.
+	pubPEM, err := os.ReadFile(pubPath)
+	if err != nil {
+		return fmt.Errorf("servicekey: read public key: %w", err)
+	}
+	pub, err := parsePublicKey(pubPEM)
+	if err != nil {
+		return fmt.Errorf("servicekey: parse public key: %w", err)
+	}
+	if len(pub) != len(sk.publicKey) {
+		return fmt.Errorf("servicekey: public key length mismatch")
+	}
+	for i := range pub {
+		if pub[i] != sk.publicKey[i] {
+			return fmt.Errorf("servicekey: public key mismatch with private key")
+		}
+	}
+
 	return nil
 }
 

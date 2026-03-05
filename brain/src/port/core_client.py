@@ -19,7 +19,7 @@ class CoreClient(Protocol):
     Every method maps to a single core endpoint.  Implementations must
     handle retries, timeouts (30 s), and error classification:
 
-    * HTTP 401 -> fatal ``ConfigError`` (bad BRAIN_TOKEN), no retry.
+    * HTTP 401 -> fatal ``ConfigError`` (service auth failure), no retry.
     * HTTP 403 -> ``PersonaLockedError``, no retry.
     * HTTP 5xx -> retry with exponential backoff (max 3 attempts).
     * Timeout  -> ``asyncio.TimeoutError`` after 30 s.

@@ -122,7 +122,7 @@ Core enforces hard limits on what Brain can retrieve, regardless of what Brain r
 - **Max 10 results** per query (configurable)
 - **Summaries only** by default (`include_content` flag must be explicitly set)
 - **Persona access control** — Brain cannot query locked or restricted personas
-- **Rate limiting** — max vault queries per minute, per Brain token
+- **Rate limiting** — max vault queries per minute, per authenticated brain service identity
 
 These are enforced server-side in Core (Go). Brain cannot override them. An injected Brain requesting "give me everything" gets back 10 PII-scrubbed summaries from the open persona, rate-limited.
 

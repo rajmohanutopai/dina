@@ -26,6 +26,7 @@ import os
 import re
 import secrets as _secrets
 import signal
+import shutil
 import subprocess
 import sys
 from collections import Counter
@@ -46,18 +47,6 @@ LOCAL_CORE_PORT = 18100
 LOCAL_BRAIN_PORT = 18200
 
 
-def _ensure_brain_token() -> str:
-    """Create secrets/brain_token if it doesn't exist yet. Return the token."""
-    secrets_dir = PROJECT_ROOT / "secrets"
-    token_file = secrets_dir / "brain_token"
-    if not token_file.exists():
-        secrets_dir.mkdir(parents=True, exist_ok=True)
-        token_file.write_text(_secrets.token_urlsafe(32))
-        token_file.chmod(0o600)
-        print("  Generated secrets/brain_token", file=sys.stderr)
-    return token_file.read_text().strip()
-
-
 def _ensure_client_token() -> str:
     """Create secrets/client_token if it doesn't exist yet. Return the token."""
     secrets_dir = PROJECT_ROOT / "secrets"
@@ -68,6 +57,100 @@ def _ensure_client_token() -> str:
         token_file.chmod(0o600)
         print("  Generated secrets/client_token", file=sys.stderr)
     return token_file.read_text().strip()
+
+
+def _ensure_service_key_dirs() -> None:
+    """Ensure service key bind-mount directories exist for docker-compose."""
+    key_root = PROJECT_ROOT / "secrets" / "service_keys"
+    (key_root / "core").mkdir(parents=True, exist_ok=True)
+    (key_root / "brain").mkdir(parents=True, exist_ok=True)
+    (key_root / "public").mkdir(parents=True, exist_ok=True)
+    try:
+        (key_root).chmod(0o700)
+        (key_root / "core").chmod(0o700)
+        (key_root / "brain").chmod(0o700)
+        (key_root / "public").chmod(0o755)
+    except Exception:
+        # Best-effort on platforms that may not honor chmod.
+        pass
+
+
+def _python_runtimes() -> list[str]:
+    """Return candidate Python executables for helper scripts."""
+    candidates: list[str] = []
+    install_python = PROJECT_ROOT / ".install-venv" / "bin" / "python3"
+    if install_python.exists():
+        candidates.append(str(install_python))
+    if sys.executable:
+        candidates.append(sys.executable)
+    system_python = shutil.which("python3")
+    if system_python:
+        candidates.append(system_python)
+    return candidates
+
+
+def _run_python_helper(script: Path, args: list[str]) -> None:
+    """Run a repo helper script with the first working Python runtime."""
+    attempted: list[str] = []
+    last_err = ""
+    for py in _python_runtimes():
+        if py in attempted:
+            continue
+        attempted.append(py)
+        result = subprocess.run([py, str(script), *args], capture_output=True, text=True)
+        if result.returncode == 0:
+            return
+        last_err = (result.stderr or result.stdout or "").strip()
+    detail = f": {last_err}" if last_err else ""
+    raise RuntimeError(f"Failed to run helper {script.name}{detail}")
+
+
+def _provision_service_keys(
+    key_root: Path | None = None,
+    *,
+    runtime_layout: bool = False,
+) -> None:
+    """Ensure Core/Brain Ed25519 service keys exist (private + shared public)."""
+    root = key_root or (PROJECT_ROOT / "secrets" / "service_keys")
+    root.mkdir(parents=True, exist_ok=True)
+
+    if key_root is None:
+        _ensure_service_key_dirs()
+
+    script = PROJECT_ROOT / "scripts" / "provision_service_keys.py"
+    if not script.exists():
+        raise RuntimeError(f"Missing key provision script: {script}")
+
+    _run_python_helper(script, [str(root)])
+
+    if runtime_layout:
+        # Runtime services (core/brain) load private keys from:
+        #   <root>/private/<service>_ed25519_private.pem
+        # The provision helper writes install-time files under:
+        #   <root>/<service>/<service>_ed25519_private.pem
+        priv_dir = root / "private"
+        priv_dir.mkdir(parents=True, exist_ok=True)
+        for svc in ("core", "brain"):
+            src = root / svc / f"{svc}_ed25519_private.pem"
+            dst = priv_dir / f"{svc}_ed25519_private.pem"
+            if not src.exists():
+                raise RuntimeError(f"Missing provisioned private key: {src}")
+            shutil.copy2(src, dst)
+            dst.chmod(0o600)
+
+
+def _provision_wrapped_seed(output_dir: Path, passphrase: str) -> None:
+    """Create wrapped_seed.bin + master_seed.salt compatible with Core unwrap."""
+    script = PROJECT_ROOT / "scripts" / "wrap_seed.py"
+    if not script.exists():
+        raise RuntimeError(f"Missing seed wrapper script: {script}")
+    seed_hex = _secrets.token_hex(32)
+    _run_python_helper(script, [seed_hex, passphrase, str(output_dir)])
+
+    wrapped = output_dir / "wrapped_seed.bin"
+    salt = output_dir / "master_seed.salt"
+    if not wrapped.exists() or not salt.exists():
+        raise RuntimeError("wrap_seed.py did not create wrapped seed artifacts")
 
 
 def _run_cleanup() -> None:
@@ -133,12 +216,15 @@ def _start_main_stack() -> float:
 
     Returns startup time in seconds.
     """
+    import shutil
+    import tempfile
     import time as _time
 
     import httpx
 
     t0 = _time.monotonic()
-    _ensure_brain_token()
+    _provision_service_keys()
+    client_token = _ensure_client_token()
 
     plc_url = f"http://localhost:{LOCAL_PLC_PORT}"
     pds_url = f"http://localhost:{MAIN_PDS_PORT}"
@@ -169,7 +255,33 @@ def _start_main_stack() -> float:
     print("  Starting main stack (fake PLC + PDS + Core + Brain)...",
           file=sys.stderr, flush=True)
 
-    compose_env = {**os.environ, "DINA_PLC_URL": "http://plc:2582"}
+    # Compose secrets need host files. Use an ephemeral temp dir so this script
+    # does not mutate install-time identity seed artifacts under ./secrets.
+    secret_tmp_dir = Path(tempfile.mkdtemp(prefix="dina-main-secrets-"))
+    wrapped_seed_file = secret_tmp_dir / "wrapped_seed.bin"
+    identity_salt_file = secret_tmp_dir / "master_seed.salt"
+    seed_password_file = secret_tmp_dir / "seed_password"
+    seed_password = _secrets.token_urlsafe(24)
+    _provision_wrapped_seed(secret_tmp_dir, seed_password)
+    seed_password_file.write_text(seed_password)
+    for p in (wrapped_seed_file, identity_salt_file, seed_password_file):
+        p.chmod(0o600)
+
+    compose_env = {
+        **os.environ,
+        "DINA_PLC_URL": "http://plc:2582",
+        "DINA_ENV": "test",
+        # Non-strict mode for quick-test bootstrap when install-time key pinning
+        # may not have run in this workspace yet.
+        "DINA_SERVICE_KEY_STRICT": "0",
+        "DINA_SERVICE_KEY_INIT": "0",
+        "DINA_CLIENT_TOKEN": client_token,
+        "DINA_SEED_PASSWORD": seed_password,
+        # Ephemeral compose secret file paths.
+        "DINA_WRAPPED_SEED_FILE": str(wrapped_seed_file),
+        "DINA_IDENTITY_SALT_FILE": str(identity_salt_file),
+        "DINA_SEED_PASSWORD_SECRET_FILE": str(seed_password_file),
+    }
     compose_cmd = ["docker", "compose", "--profile", "test-plc"]
 
     # Clean up stale containers, networks, AND volumes.
@@ -217,6 +329,7 @@ def _start_main_stack() -> float:
             cwd=str(PROJECT_ROOT),
             env=compose_env,
         )
+        shutil.rmtree(secret_tmp_dir, ignore_errors=True)
         print("  Main stack stopped.", file=sys.stderr)
 
     _register_cleanup(_stop)
@@ -227,7 +340,8 @@ def _start_docker() -> float:
     """Start Docker test containers. Returns startup time in seconds."""
     import time as _time
 
-    _ensure_brain_token()
+    _ensure_client_token()
+    _provision_service_keys()
     t0 = _time.monotonic()
 
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -261,9 +375,11 @@ def _start_local() -> float:
     import time as _time
 
     t0 = _time.monotonic()
-    token = _ensure_brain_token()
     client_token = _ensure_client_token()
     vault_dir = tempfile.mkdtemp(prefix="dina-test-vault-")
+    service_key_dir = tempfile.mkdtemp(prefix="dina-test-service-keys-")
+    _provision_service_keys(Path(service_key_dir), runtime_layout=True)
+    os.environ["DINA_INTEGRATION_SERVICE_KEY_DIR"] = service_key_dir
 
     core_url = f"http://localhost:{LOCAL_CORE_PORT}"
     brain_url = f"http://localhost:{LOCAL_BRAIN_PORT}"
@@ -273,8 +389,11 @@ def _start_local() -> float:
         "DINA_LISTEN_ADDR": f":{LOCAL_CORE_PORT}",
         "DINA_VAULT_PATH": vault_dir,
         "DINA_BRAIN_URL": brain_url,
-        "DINA_BRAIN_TOKEN": token,
+        "DINA_MASTER_SEED": _secrets.token_hex(32),
         "DINA_CLIENT_TOKEN": client_token,
+        "DINA_SERVICE_KEY_DIR": service_key_dir,
+        "DINA_SERVICE_KEY_STRICT": "0",
+        "DINA_SERVICE_KEY_INIT": "0",
         "DINA_TEST_MODE": "true",
         "DINA_ENV": "test",
         "DINA_RATE_LIMIT": "100000",
@@ -285,7 +404,9 @@ def _start_local() -> float:
     brain_env = {
         **os.environ,
         "DINA_CORE_URL": core_url,
-        "DINA_BRAIN_TOKEN": token,
+        "DINA_SERVICE_KEY_DIR": service_key_dir,
+        "DINA_SERVICE_KEY_STRICT": "0",
+        "DINA_SERVICE_KEY_INIT": "0",
         "DINA_BRAIN_PORT": str(LOCAL_BRAIN_PORT),
         "DINA_LLM_URL": "http://localhost:9999",  # no LLM in test
         "DINA_LOG_LEVEL": "DEBUG",
@@ -341,6 +462,8 @@ def _start_local() -> float:
                     proc.kill()
                 print(f"    {name} stopped (pid {proc.pid})", file=sys.stderr)
         shutil.rmtree(vault_dir, ignore_errors=True)
+        shutil.rmtree(service_key_dir, ignore_errors=True)
+        os.environ.pop("DINA_INTEGRATION_SERVICE_KEY_DIR", None)
         # Clean up compiled binary
         binary = PROJECT_ROOT / "core" / "dina-core"
         if binary.exists():
@@ -811,7 +934,7 @@ def _start_e2e_docker(*, restart: bool = False) -> float:
 
     import httpx
 
-    _ensure_brain_token()
+    _ensure_client_token()
     t0 = _time.monotonic()
 
     # Load .env for API keys (GOOGLE_API_KEY, OPENROUTER_API_KEY, etc.)

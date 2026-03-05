@@ -228,34 +228,22 @@ def check_vault_crud(base: str, token: str) -> bool:
 
 
 def check_brain_reason(base: str, token: str) -> bool:
-    """Quick LLM reachability test via Brain's /api/v1/reason."""
-    brain_token = _load_token("brain_token")
-    if not brain_token:
-        return _check("Brain /api/v1/reason", False, "no brain_token found")
-
-    # Brain may be at a different port; try common patterns
-    # In docker-compose.yml Brain is not exposed, but we check via Core port + /api prefix
-    # Actually, the reason endpoint is on Brain's port, not Core's.
-    # For the default setup: Brain is internal-only. We just skip if not reachable.
-
-    # Try localhost:8200 (Brain default), then the Core URL's /api path
-    for url in [
-        "http://localhost:8200/api/v1/reason",
-        f"{base.replace(':8100', ':8200')}/api/v1/reason",
-    ]:
-        status, body = _request(
-            url, method="POST", token=brain_token,
-            data={"prompt": "Hello, respond with one word: working", "skip_vault_enrichment": True},
-        )
-        if status == 200:
-            content = ""
-            if isinstance(body, dict):
-                content = body.get("content", "")[:80]
-            return _check("Brain LLM reachability", True, f"response={content}")
-
-    # Brain not directly reachable — this is expected in production Docker
-    skip("Brain /api/v1/reason — not reachable from host (expected in Docker)")
-    return True  # Not a failure — Brain is internal-only by design
+    """Quick brain-path test via Core /v1/agent/validate."""
+    status, body = _request(
+        f"{base}/v1/agent/validate",
+        method="POST",
+        token=token,
+        data={
+            "type": "agent_intent",
+            "action": "search",
+            "target": "validator health check",
+            "agent_did": "did:key:validator",
+        },
+    )
+    if status != 200:
+        return _check("Core→Brain path (/v1/agent/validate)", False, f"status={status}")
+    risk = body.get("risk", "") if isinstance(body, dict) else ""
+    return _check("Core→Brain path (/v1/agent/validate)", True, f"risk={risk or 'ok'}")
 
 
 def cleanup(base: str, token: str) -> None:
@@ -286,12 +274,9 @@ def main() -> int:
     base = f"http://localhost:{args.core_port}"
 
     # Load token
-    token = _load_token("brain_token")
+    token = _load_token("client_token")
     if not token:
-        # Try client_token
-        token = _load_token("client_token")
-    if not token:
-        fail("No secrets/brain_token or secrets/client_token found.")
+        fail("No secrets/client_token found.")
         fail("Run ./install.sh first.")
         return 1
 

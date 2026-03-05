@@ -106,16 +106,16 @@ class CoreHTTPClient:
     def __init__(
         self,
         base_url: str,
-        brain_token: str | None = None,
+        bearer_token: str | None = None,
         *,
         service_identity: ServiceIdentity | None = None,
     ) -> None:
         if not base_url:
             raise ConfigError("CORE_URL must not be empty")
-        if service_identity is None and not brain_token:
-            raise ConfigError("Either service_identity or brain_token must be provided")
+        if service_identity is None and not bearer_token:
+            raise ConfigError("Either service_identity or bearer_token must be provided")
         self._base_url = base_url.rstrip("/")
-        self._token = brain_token
+        self._token = bearer_token
         self._identity = service_identity
         self._client: httpx.AsyncClient | None = None
 

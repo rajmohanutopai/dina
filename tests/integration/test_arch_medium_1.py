@@ -17,7 +17,7 @@ from tests.integration.mocks import (
     MockAppView,
     MockAuditLog,
     MockBootManager,
-    MockBrainTokenAuth,
+    MockServiceAuth,
     MockDeadDropIngress,
     MockExportArchive,
     MockHKDFKeyManager,
@@ -720,32 +720,32 @@ def test_openclaw_recovery_exact_cursor():
 
 # TST-INT-629
 def test_phone_connector_client_token_auth(
-    mock_brain_token_auth: MockBrainTokenAuth,
+    mock_service_auth: MockServiceAuth,
 ):
     """M25: Phone connector uses CLIENT_TOKEN, not BRAIN_TOKEN."""
-    brain_token = mock_brain_token_auth.token
+    brain_token = mock_service_auth.token
 
     # Brain token works for brain endpoints
-    assert mock_brain_token_auth.validate(
+    assert mock_service_auth.validate(
         brain_token, "/v1/vault/query"
     ) is True, "Brain token must work for brain endpoints"
 
     # Brain token does NOT work for admin endpoints
-    assert mock_brain_token_auth.validate(
+    assert mock_service_auth.validate(
         brain_token, "/v1/admin/dashboard"
     ) is False, "Brain token must NOT work for admin endpoints"
 
     # Admin endpoints are separate from brain endpoints
-    assert mock_brain_token_auth.is_admin_endpoint("/v1/admin/dashboard") is True
-    assert mock_brain_token_auth.is_admin_endpoint("/v1/admin/login") is True
+    assert mock_service_auth.is_admin_endpoint("/v1/admin/dashboard") is True
+    assert mock_service_auth.is_admin_endpoint("/v1/admin/login") is True
 
     # Brain endpoints are not admin endpoints
-    assert mock_brain_token_auth.is_admin_endpoint("/v1/vault/query") is False
+    assert mock_service_auth.is_admin_endpoint("/v1/vault/query") is False
 
     # Phone connector would use CLIENT_TOKEN (a different token),
     # not the BRAIN_TOKEN. Verify wrong token is rejected.
     fake_client_token = "wrong_token_for_brain"
-    assert mock_brain_token_auth.validate(
+    assert mock_service_auth.validate(
         fake_client_token, "/v1/vault/query"
     ) is False, "Wrong token must be rejected"
 

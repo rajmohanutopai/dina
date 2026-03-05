@@ -1,22 +1,22 @@
 # Dina Core — Test Plan
 
 > Go service (`dina-core`): identity, vault, crypto, transport, gatekeeper, WebSocket, pairing.
-> Port 8300 (API), 8100 (admin proxy). Communicates with dina-brain via BRAIN_TOKEN.
+> Port 8300 (API), 8100 (admin proxy). Communicates with dina-brain via Service Signature Auth.
 
 ---
 
 ## 1. Authentication & Authorization
 
-### 1.1 BRAIN_TOKEN (Agent Operations)
+### 1.1 Service Signature Auth (Agent Operations)
 
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-CORE-001]** Valid BRAIN_TOKEN in `Authorization: Bearer` header | Correct token from `/run/secrets/brain_token` | 200 — request processed |
+| 1 | **[TST-CORE-001]** Valid Service Signature Auth in `Authorization: Bearer` header | Correct token from `/run/secrets/brain_token` | 200 — request processed |
 | 2 | **[TST-CORE-002]** Missing Authorization header | No header | 401 Unauthorized |
 | 3 | **[TST-CORE-003]** Malformed header (`Basic` instead of `Bearer`) | `Authorization: Basic <token>` | 401 Unauthorized |
-| 4 | **[TST-CORE-004]** Wrong BRAIN_TOKEN value | Random 64-hex string | 401 Unauthorized |
+| 4 | **[TST-CORE-004]** Wrong Service Signature Auth value | Random 64-hex string | 401 Unauthorized |
 | 5 | **[TST-CORE-005]** Empty Bearer value | `Authorization: Bearer ` | 401 Unauthorized |
-| 6 | **[TST-CORE-006]** BRAIN_TOKEN with leading/trailing whitespace | Token with `\n` or spaces | Trimmed and accepted, or 401 if mismatch |
+| 6 | **[TST-CORE-006]** Service Signature Auth with leading/trailing whitespace | Token with `\n` or spaces | Trimmed and accepted, or 401 if mismatch |
 | 7 | **[TST-CORE-007]** Token file missing at startup | `/run/secrets/brain_token` absent | Core refuses to start, exits with error |
 | 8 | **[TST-CORE-008]** Token file empty | 0-byte file | Core refuses to start |
 | 9 | **[TST-CORE-009]** Timing-attack resistance | Measure response time for wrong vs. correct token | Constant-time comparison (no measurable difference) |
@@ -28,8 +28,8 @@
 | 1 | **[TST-CORE-010]** Valid CLIENT_TOKEN | SHA-256 hash matches stored hash | 200 — full admin access |
 | 2 | **[TST-CORE-011]** Unknown CLIENT_TOKEN | Hash not in device registry | 401 |
 | 3 | **[TST-CORE-012]** Revoked CLIENT_TOKEN | Token previously registered then revoked | 401 |
-| 4 | **[TST-CORE-013]** CLIENT_TOKEN on BRAIN_TOKEN-only endpoint | Client token on `/v1/brain/*` | 403 Forbidden |
-| 5 | **[TST-CORE-014]** BRAIN_TOKEN on CLIENT_TOKEN-only endpoint | Brain token on `/v1/admin/*` | 403 Forbidden |
+| 4 | **[TST-CORE-013]** CLIENT_TOKEN on Service Signature Auth-only endpoint | Client token on `/v1/brain/*` | 403 Forbidden |
+| 5 | **[TST-CORE-014]** Service Signature Auth on CLIENT_TOKEN-only endpoint | Service signature auth on `/v1/admin/*` | 403 Forbidden |
 | 6 | **[TST-CORE-015]** Concurrent device sessions | Two devices with different CLIENT_TOKENs | Both work independently |
 | 7 | **[TST-CORE-016]** CLIENT_TOKEN hash lookup is constant-time | Timing analysis | No measurable difference between valid/invalid |
 
@@ -63,13 +63,13 @@
 
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-CORE-038]** No third authentication mechanism exists | Enumerate all middleware/auth handlers in source | Only BRAIN_TOKEN and CLIENT_TOKEN code paths — no API keys, no OAuth from external IdP |
+| 1 | **[TST-CORE-038]** No third authentication mechanism exists | Enumerate all middleware/auth handlers in source | Only Service Signature Auth and CLIENT_TOKEN code paths — no API keys, no OAuth from external IdP |
 | 2 | **[TST-CORE-039]** Unknown auth scheme ignored | `Authorization: ApiKey abc123` | 401 — scheme not recognized, no handler |
 | 3 | **[TST-CORE-040]** External JWT rejected | Valid JWT from external identity provider | 401 — core does not validate external JWTs |
 | 4 | **[TST-CORE-041]** Route enumeration shows no plugin endpoints | List all registered HTTP routes | No `/v1/plugins`, `/v1/extensions`, `/v1/hooks`, or similar |
-| 5 | **[TST-CORE-042]** `identifyToken()` priority: BRAIN_TOKEN first | Present BRAIN_TOKEN | Constant-time comparison checked before SHA-256 DB lookup (prevents timing leak) |
+| 5 | **[TST-CORE-042]** `identifyToken()` priority: Service Signature Auth first | Present Service Signature Auth | Constant-time comparison checked before SHA-256 DB lookup (prevents timing leak) |
 | 6 | **[TST-CORE-043]** `identifyToken()` fallback: CLIENT_TOKEN second | Present CLIENT_TOKEN | `SHA-256(token)` → lookup in `device_tokens WHERE revoked = 0` |
-| 7 | **[TST-CORE-044]** `isAdminEndpoint()` allowlist — BRAIN_TOKEN rejected on admin paths | BRAIN_TOKEN on `/v1/did/sign`, `/v1/did/rotate`, `/v1/vault/backup`, `/v1/persona/unlock`, `/admin/*` | 403 Forbidden on every admin endpoint |
+| 7 | **[TST-CORE-044]** `isAdminEndpoint()` allowlist — Service Signature Auth rejected on admin paths | Service Signature Auth on `/v1/did/sign`, `/v1/did/rotate`, `/v1/vault/backup`, `/v1/persona/unlock`, `/admin/*` | 403 Forbidden on every admin endpoint |
 | 8 | **[TST-CORE-045]** CLIENT_TOKEN accepted on all endpoints | CLIENT_TOKEN on admin + non-admin paths | 200 — full access including admin |
 | 9 | **[TST-CORE-046]** Core never calls external APIs | Code audit: grep for outbound HTTP clients (no OAuth, Gmail, connector calls) | Zero external API calls — core is the sovereign kernel |
 
@@ -77,26 +77,26 @@
 
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-CORE-047]** Compromised brain: can access open personas | BRAIN_TOKEN + vault query for open persona | 200 — data returned (this is the expected damage radius) |
-| 2 | **[TST-CORE-048]** Compromised brain: cannot access locked personas | BRAIN_TOKEN + vault query for locked persona | 403 Persona Locked — DEK not in RAM |
-| 3 | **[TST-CORE-049]** Compromised brain: restricted creates detection trail | BRAIN_TOKEN + vault query for restricted persona | 200 — served, but audit entry + daily briefing notification created |
-| 4 | **[TST-CORE-050]** Compromised brain: cannot call did/sign | BRAIN_TOKEN + `POST /v1/did/sign` | 403 — admin endpoint, BRAIN_TOKEN rejected |
-| 5 | **[TST-CORE-051]** Compromised brain: cannot call did/rotate | BRAIN_TOKEN + `POST /v1/did/rotate` | 403 |
-| 6 | **[TST-CORE-052]** Compromised brain: cannot call vault/backup | BRAIN_TOKEN + `POST /v1/vault/backup` | 403 |
-| 7 | **[TST-CORE-053]** Compromised brain: cannot call persona/unlock | BRAIN_TOKEN + `POST /v1/persona/unlock` | 403 |
-| 8 | **[TST-CORE-054]** Compromised brain: cannot bypass PII scrubber | BRAIN_TOKEN + request that should be scrubbed | PII scrubber runs in core pipeline — brain cannot skip it |
+| 1 | **[TST-CORE-047]** Compromised brain: can access open personas | Service Signature Auth + vault query for open persona | 200 — data returned (this is the expected damage radius) |
+| 2 | **[TST-CORE-048]** Compromised brain: cannot access locked personas | Service Signature Auth + vault query for locked persona | 403 Persona Locked — DEK not in RAM |
+| 3 | **[TST-CORE-049]** Compromised brain: restricted creates detection trail | Service Signature Auth + vault query for restricted persona | 200 — served, but audit entry + daily briefing notification created |
+| 4 | **[TST-CORE-050]** Compromised brain: cannot call did/sign | Service Signature Auth + `POST /v1/did/sign` | 403 — admin endpoint, Service Signature Auth rejected |
+| 5 | **[TST-CORE-051]** Compromised brain: cannot call did/rotate | Service Signature Auth + `POST /v1/did/rotate` | 403 |
+| 6 | **[TST-CORE-052]** Compromised brain: cannot call vault/backup | Service Signature Auth + `POST /v1/vault/backup` | 403 |
+| 7 | **[TST-CORE-053]** Compromised brain: cannot call persona/unlock | Service Signature Auth + `POST /v1/persona/unlock` | 403 |
+| 8 | **[TST-CORE-054]** Compromised brain: cannot bypass PII scrubber | Service Signature Auth + request that should be scrubbed | PII scrubber runs in core pipeline — brain cannot skip it |
 | 9 | **[TST-CORE-055]** Compromised brain: cannot access raw vault files | Brain container filesystem | No SQLite files mounted — brain accesses vault only via core API |
 
 ### 1.6 Authorization Middleware (Allowlist Enforcement)
 
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-CORE-1097]** Brain token on /v1/did/sign → forbidden | BRAIN_TOKEN + `POST /v1/did/sign` | 403 Forbidden |
+| 1 | **[TST-CORE-1097]** Service signature auth on /v1/did/sign → forbidden | Service Signature Auth + `POST /v1/did/sign` | 403 Forbidden |
 | 2 | **[TST-CORE-1098]** Client token on /v1/did/sign → allowed | CLIENT_TOKEN + `POST /v1/did/sign` | 200 OK |
-| 3 | **[TST-CORE-1099]** Brain token on /v1/vault/query → allowed | BRAIN_TOKEN + `POST /v1/vault/query` | 200 OK |
-| 4 | **[TST-CORE-1100]** Brain token on admin endpoints → forbidden | BRAIN_TOKEN + admin paths (sign, rotate, backup, unlock, export, import, pair) | 403 Forbidden for all |
+| 3 | **[TST-CORE-1099]** Service signature auth on /v1/vault/query → allowed | Service Signature Auth + `POST /v1/vault/query` | 200 OK |
+| 4 | **[TST-CORE-1100]** Service signature auth on admin endpoints → forbidden | Service Signature Auth + admin paths (sign, rotate, backup, unlock, export, import, pair) | 403 Forbidden for all |
 | 5 | **[TST-CORE-1101]** Client token on all endpoints → allowed | CLIENT_TOKEN + all paths (admin + brain-allowed) | 200 OK for all |
-| 6 | **[TST-CORE-1102]** Brain token on allowed non-admin paths → OK | BRAIN_TOKEN + allowed paths (vault, msg, task, pii, did) | 200 OK for all |
+| 6 | **[TST-CORE-1102]** Service signature auth on allowed non-admin paths → OK | Service Signature Auth + allowed paths (vault, msg, task, pii, did) | 200 OK for all |
 | 7 | **[TST-CORE-1103]** Unauthenticated requests on public paths pass through | No token + `/healthz` | 200 OK (authz middleware passes through) |
 | 8 | **[TST-CORE-1104]** Explicit context token_kind enforcement | Context with brain/client kinds on admin path | Brain → 403, Client → 200 |
 | 9 | **[TST-CORE-1105]** Concurrent token validation thread-safe | 100 goroutines validating concurrently | No data races, all succeed |
@@ -333,7 +333,7 @@
 | 5 | **[TST-CORE-195]** Share format | Inspect share bytes | Includes share index, threshold metadata |
 | 6 | **[TST-CORE-926]** DID Document endpoint update on ingress tier change | Change ingress tier | DID Document service endpoint updated to reflect new ingress |
 | 7 | **[TST-CORE-927]** Trust ring level enum defined in code | Inspect trust level constants | Enum values: unverified=1, verified=2, skin_in_game=3 |
-| 8 | **[TST-CORE-928]** No MCP/OpenClaw credential can access vault endpoints | MCP/OpenClaw token on /v1/vault/* | 401/403 — only BRAIN_TOKEN and CLIENT_TOKEN accepted |
+| 8 | **[TST-CORE-928]** No MCP/OpenClaw credential can access vault endpoints | MCP/OpenClaw token on /v1/vault/* | 401/403 — only Service Signature Auth and CLIENT_TOKEN accepted |
 
 ---
 
@@ -1024,7 +1024,7 @@
 
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-CORE-527]** List paired devices (GET /v1/devices) | BRAIN_TOKEN (or admin session) after 3 devices paired | 200 with array of `{token_id, device_name, last_seen, created_at, revoked}` for each device. `last_seen` reflects most recent WS auth_ok. Architecture §17: "Brain: queries device_tokens via core" — admin UI and brain both need this endpoint |
+| 1 | **[TST-CORE-527]** List paired devices (GET /v1/devices) | Service Signature Auth (or admin session) after 3 devices paired | 200 with array of `{token_id, device_name, last_seen, created_at, revoked}` for each device. `last_seen` reflects most recent WS auth_ok. Architecture §17: "Brain: queries device_tokens via core" — admin UI and brain both need this endpoint |
 | 2 | **[TST-CORE-528]** Revoke device (PATCH /v1/devices/{token_id}/revoke) | Admin request to revoke specific device | 200 — `revoked=true` in device_tokens. Next request from that device → 401 immediately. Core §9.1 #5 tests WS-level rejection; this tests the revocation API itself. Architecture §17: "Core sets revoked=true. Next request from iPad → 401. Immediate." |
 | 3 | **[TST-CORE-529]** Pair completion response includes node_did + ws_url | Successful pairing via POST /v1/pair/complete | Response body: `{client_token: "...", node_did: "did:plc:...", ws_url: "wss://..."}` — all three fields present. Client needs node_did for identity verification and ws_url for WebSocket connection. Architecture §17 pairing flow step 10 |
 | 4 | **[TST-CORE-530]** CLIENT_TOKEN format: 32 bytes, hex-encoded | Inspect token from pair completion | 64 hex chars (0-9a-f) — `crypto/rand` 32 bytes → hex. Architecture §17: "CLIENT_TOKEN is a 32-byte cryptographic random value (hex-encoded, 64 chars)" |
@@ -1104,7 +1104,7 @@
 | 10 | **[TST-CORE-854]** Negative session TTL rejected | `SessionTTL = -1` | Validation fails |
 | 11 | **[TST-CORE-855]** Load from config.json | `DINA_CONFIG_PATH` set | Config loaded from JSON file |
 | 12 | **[TST-CORE-856]** Env overrides config.json | Both config.json and env var set | Env var takes precedence |
-| 13 | **[TST-CORE-857]** Docker secret overrides env token | Both `DINA_BRAIN_TOKEN` and `_FILE` set | Secret file takes precedence |
+| 13 | **[TST-CORE-857]** Docker secret overrides env token | Both `DINA_Service Signature Auth` and `_FILE` set | Secret file takes precedence |
 | 14 | **[TST-CORE-898]** Audit log retention configurable via config.json (`retention_days`) | config.json with retention_days=30 | Audit log purge uses configured retention period |
 | 15 | **[TST-CORE-899]** Cloud LLM consent flag stored and enforced | consent_cloud_llm=false in config | Cloud LLM routing blocked when consent not given |
 | 16 | **[TST-CORE-900]** `DINA_HISTORY_DAYS` config default 365 | No DINA_HISTORY_DAYS set | Default to 365 days of history retention |
@@ -1197,7 +1197,7 @@
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
 | 1 | **[TST-CORE-600]** Scrub text | POST `/v1/pii/scrub` + text body | 200 with scrubbed text |
-| 2 | **[TST-CORE-901]** `/metrics` Prometheus endpoint requires CLIENT_TOKEN | GET /metrics with BRAIN_TOKEN | 403 — metrics is admin-only; CLIENT_TOKEN required |
+| 2 | **[TST-CORE-901]** `/metrics` Prometheus endpoint requires CLIENT_TOKEN | GET /metrics with Service Signature Auth | 403 — metrics is admin-only; CLIENT_TOKEN required |
 | 3 | **[TST-CORE-902]** Sync status API endpoint for admin UI | GET /admin/sync-status | 200 with sync status for connected devices |
 
 ---
@@ -1245,7 +1245,7 @@
 | 20 | **[TST-CORE-630]** Container image: digest pinning, never `:latest` | Inspect Dockerfiles and docker-compose.yml | All `FROM` statements use `@sha256:...` digest — never `:latest` tag |
 | 21 | **[TST-CORE-631]** Container image: Cosign signature | Inspect CI pipeline | Published images signed with Cosign — `cosign verify` passes |
 | 22 | **[TST-CORE-632]** SBOM generated | Inspect CI artifacts | `syft` generates SPDX SBOM for each image — enables supply chain auditing |
-| 23 | **[TST-CORE-633]** Secrets NEVER in environment variables | `docker inspect dina-core`, check `Env` section | No `BRAIN_TOKEN`, `DINA_PASSPHRASE` in environment — only in `/run/secrets/` (tmpfs) |
+| 23 | **[TST-CORE-633]** Secrets NEVER in environment variables | `docker inspect dina-core`, check `Env` section | No `Service Signature Auth`, `DINA_PASSPHRASE` in environment — only in `/run/secrets/` (tmpfs) |
 | 24 | **[TST-CORE-634]** Secrets tmpfs mount (never on disk) | Inspect `/run/secrets/` inside container | Files mounted as in-memory tmpfs — never touch disk inside container |
 | 25 | **[TST-CORE-635]** `GOOGLE_API_KEY` exception documented | Inspect `.env` and docker-compose env | API key in `.env` (not secrets) — it's a revocable cloud key, not a local credential |
 | 26 | **[TST-CORE-636]** Docker network: `dina-pds-net` is internal | Inspect `docker network inspect dina-pds-net` | `internal: true` — PDS network has no outbound internet access |
@@ -1261,16 +1261,16 @@
 
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-CORE-639]** Core exposes `/v1/vault/query` to brain | BRAIN_TOKEN + query request | 200 with results |
-| 2 | **[TST-CORE-640]** Core exposes `/v1/vault/store` to brain | BRAIN_TOKEN + store request | 201 Created |
-| 3 | **[TST-CORE-641]** Core exposes `/v1/did/sign` — admin only | BRAIN_TOKEN | 403 — admin endpoint |
-| 4 | **[TST-CORE-642]** Core exposes `/v1/did/verify` to brain | BRAIN_TOKEN + verify request | 200 with verification result |
-| 5 | **[TST-CORE-643]** Core exposes `/v1/pii/scrub` to brain | BRAIN_TOKEN + text | 200 with scrubbed text |
-| 6 | **[TST-CORE-644]** Core exposes `/v1/notify` to brain | BRAIN_TOKEN + push notification | 200 — notification pushed to connected clients |
-| 7 | **[TST-CORE-645]** All brain-callable endpoints accept BRAIN_TOKEN | Iterate all non-admin endpoints with BRAIN_TOKEN | All return 200 (not 403) |
+| 1 | **[TST-CORE-639]** Core exposes `/v1/vault/query` to brain | Service Signature Auth + query request | 200 with results |
+| 2 | **[TST-CORE-640]** Core exposes `/v1/vault/store` to brain | Service Signature Auth + store request | 201 Created |
+| 3 | **[TST-CORE-641]** Core exposes `/v1/did/sign` — admin only | Service Signature Auth | 403 — admin endpoint |
+| 4 | **[TST-CORE-642]** Core exposes `/v1/did/verify` to brain | Service Signature Auth + verify request | 200 with verification result |
+| 5 | **[TST-CORE-643]** Core exposes `/v1/pii/scrub` to brain | Service Signature Auth + text | 200 with scrubbed text |
+| 6 | **[TST-CORE-644]** Core exposes `/v1/notify` to brain | Service Signature Auth + push notification | 200 — notification pushed to connected clients |
+| 7 | **[TST-CORE-645]** All brain-callable endpoints accept Service Signature Auth | Iterate all non-admin endpoints with Service Signature Auth | All return 200 (not 403) |
 | 8 | **[TST-CORE-646]** No other endpoints exist beyond documented set | Enumerate all routes | Exact match with documented API surface — 8 brain-callable families (vault/query, vault/store, did/verify, pii/scrub, notify, msg/send, trust/query, process+reason) plus admin-only endpoints (did/sign, did/rotate, vault/backup, persona/unlock, admin/*) |
-| 9 | **[TST-CORE-647]** Core exposes `/v1/msg/send` to brain | BRAIN_TOKEN + encrypted message payload (recipient DID, ciphertext) | 200 — message queued in outbox for Dina-to-Dina delivery. Architecture §03 line 135 lists `msg/send` in BRAIN_TOKEN scope. Brain triggers outbound messages (e.g., sharing a verdict with a contact); core handles encryption envelope and transport |
-| 10 | **[TST-CORE-648]** Core exposes `/v1/trust/query` to brain | BRAIN_TOKEN + query (entity, category) | 200 with trust score from local cache or PDS federation. Architecture §03 line 135 lists `trust/query` in BRAIN_TOKEN scope. Brain needs trust data for LLM routing decisions (e.g., which bot to delegate to) and trust ring evaluation |
+| 9 | **[TST-CORE-647]** Core exposes `/v1/msg/send` to brain | Service Signature Auth + encrypted message payload (recipient DID, ciphertext) | 200 — message queued in outbox for Dina-to-Dina delivery. Architecture §03 line 135 lists `msg/send` in Service Signature Auth scope. Brain triggers outbound messages (e.g., sharing a verdict with a contact); core handles encryption envelope and transport |
+| 10 | **[TST-CORE-648]** Core exposes `/v1/trust/query` to brain | Service Signature Auth + query (entity, category) | 200 with trust score from local cache or PDS federation. Architecture §03 line 135 lists `trust/query` in Service Signature Auth scope. Brain needs trust data for LLM routing decisions (e.g., which bot to delegate to) and trust ring evaluation |
 | 11 | **[TST-CORE-906]** `/v1/vault/crash` rejects requests missing required fields | POST /v1/vault/crash without error/traceback | 400 Bad Request — error and traceback fields required |
 | 12 | **[TST-CORE-907]** Vault query full response schema validated | POST /v1/vault/query | Response contains id, type, persona, summary, relevance, pagination |
 | 13 | **[TST-CORE-908]** Vault store response ID format (`vault_` prefix) | POST /v1/vault/store | Returned ID starts with `vault_` prefix |
@@ -1296,7 +1296,7 @@
 | 11 | **[TST-CORE-659]** One default persona: `/personal` | After setup | Only `/personal` persona exists — no /health, /financial, /citizen |
 | 12 | **[TST-CORE-660]** Mnemonic backup deferred to Day 7 | Day 7 after setup | Prompt: "Write down these 24 words" — not shown during onboarding |
 | 13 | **[TST-CORE-661]** Sharing rules default to empty | After setup | No sharing policies — default-deny egress |
-| 14 | **[TST-CORE-932]** install.sh bootstrap: token gen, dirs, permissions | Run install.sh on fresh system | BRAIN_TOKEN generated, directories created with correct permissions |
+| 14 | **[TST-CORE-932]** install.sh bootstrap: token gen, dirs, permissions | Run install.sh on fresh system | Service Signature Auth generated, directories created with correct permissions |
 
 ---
 
@@ -1379,7 +1379,7 @@
 | 3 | **[TST-CORE-695]** Brain reasoning never logged | Brain assembles nudge | Log shows: `{task_id: "abc", step: 3, duration_ms: 150}` — not reasoning output |
 | 4 | **[TST-CORE-696]** NaCl plaintext never logged | Decrypt inbound DIDComm message | Log shows: `{sender_did: "did:key:...", persona: "/social"}` — not message content |
 | 5 | **[TST-CORE-697]** Passphrase never logged | Login attempt | Log shows: `{event: "login", ip: "...", success: true}` — not passphrase |
-| 6 | **[TST-CORE-698]** API tokens never logged | BRAIN_TOKEN or CLIENT_TOKEN in request | Log shows: `{auth: "brain"}` or `{auth: "client"}` — not token value |
+| 6 | **[TST-CORE-698]** API tokens never logged | Service Signature Auth or CLIENT_TOKEN in request | Log shows: `{auth: "brain"}` or `{auth: "client"}` — not token value |
 
 ### 21.3 CI Banned Log Patterns
 
@@ -1453,7 +1453,7 @@
 | 2 | **[TST-CORE-725]** WAL checkpoint before export | Active vault with pending WAL | `PRAGMA wal_checkpoint(TRUNCATE)` on all open databases before archiving |
 | 3 | **[TST-CORE-726]** Archive contains correct files | Inspect archive contents | identity.sqlite, vault/*.sqlite, keyfile (convenience only), config.json, manifest.json |
 | 4 | **[TST-CORE-727]** manifest.json contents | Inspect manifest | Contains: version, export timestamp, SHA-256 checksums per file |
-| 5 | **[TST-CORE-728]** Export excludes BRAIN_TOKEN | Inspect archive | BRAIN_TOKEN not present (per-machine, regenerated by install.sh) |
+| 5 | **[TST-CORE-728]** Export excludes Service Signature Auth | Inspect archive | Service Signature Auth not present (per-machine, regenerated by install.sh) |
 | 6 | **[TST-CORE-729]** Export excludes CLIENT_TOKEN hashes | Inspect archive | `device_tokens` table excluded — devices re-pair on new machine |
 | 7 | **[TST-CORE-730]** Export excludes passphrase | Inspect archive | Passphrase not stored — archive encrypted *with* it, not *containing* it |
 | 8 | **[TST-CORE-731]** Export excludes PDS data | Inspect archive | No PDS repo data — PDS re-syncs from relay via AT Protocol |
@@ -1759,14 +1759,14 @@
 ### 30.2 Authz Boundary Correctness (test_issues #2 — FIXED)
 
 > Status: FIXED. `conftest.py` now uses `CLIENT_TOKEN` for admin endpoints
-> and `BRAIN_TOKEN` for brain-internal endpoints. No fallback.
+> and `Service Signature Auth` for brain-internal endpoints. No fallback.
 
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
 | 1 | **[TST-CORE-987]** E2E conftest uses CLIENT_TOKEN for persona create/unlock | Inspect `conftest.py:103-116` | `client_token` used (not `brain_token`) |
 | 2 | **[TST-CORE-988]** Integration conftest uses CLIENT_TOKEN for admin setup | Inspect `conftest.py:151` | No `client_token or brain_token` fallback |
 | 3 | **[TST-CORE-989]** Docker mode fails fast if CLIENT_TOKEN missing | E2E setup without `client_token` secret | Setup fails with clear error (not silent fallback to brain_token) |
-| 4 | **[TST-CORE-990]** Matrix test: every admin endpoint rejects BRAIN_TOKEN | BRAIN_TOKEN on `/v1/persona/*`, `/v1/did/sign`, `/v1/pair/*` | 403 on every admin endpoint |
+| 4 | **[TST-CORE-990]** Matrix test: every admin endpoint rejects Service Signature Auth | Service Signature Auth on `/v1/persona/*`, `/v1/did/sign`, `/v1/pair/*` | 403 on every admin endpoint |
 
 ### 30.3 Core↔Brain Contract Verification (test_issues #3, #4 — FIXED)
 
@@ -1857,7 +1857,7 @@
 
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-CORE-1022]** BRAIN_TOKEN denied on all admin endpoints (real HTTP) | Real core HTTP server | 403 on every admin endpoint with BRAIN_TOKEN |
+| 1 | **[TST-CORE-1022]** Service Signature Auth denied on all admin endpoints (real HTTP) | Real core HTTP server | 403 on every admin endpoint with Service Signature Auth |
 | 2 | **[TST-CORE-1023]** CLIENT_TOKEN denied on brain-internal endpoints (real HTTP) | Real brain FastAPI | 403 on `/api/v1/process` with CLIENT_TOKEN |
 | 3 | **[TST-CORE-1024]** Locked persona: dead-drop ingress, no reads (real) | Real vault in locked state | Messages spooled, reads return 403 |
 | 4 | **[TST-CORE-1025]** Draft-don't-send: no direct send path from brain | Code audit + real test | Brain creates drafts only (no `messages.send`) |

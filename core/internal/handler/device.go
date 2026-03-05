@@ -44,7 +44,6 @@ type completePairingRequest struct {
 // HandleCompletePairing handles POST /v1/pair/complete. It validates the
 // pairing code and registers the device. When public_key_multibase is provided,
 // the device uses Ed25519 signature auth (no client token generated).
-// Otherwise falls back to legacy token auth.
 func (h *DeviceHandler) HandleCompletePairing(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
@@ -57,32 +56,24 @@ func (h *DeviceHandler) HandleCompletePairing(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Ed25519 signature-based pairing (new path).
-	if req.PublicKeyMultibase != "" {
-		deviceID, nodeDID, err := h.Device.CompletePairingWithKey(
-			r.Context(), req.Code, req.DeviceName, req.PublicKeyMultibase,
-		)
-		if err != nil {
-			clientError(w, "pairing failed", http.StatusInternalServerError, err)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"device_id": deviceID,
-			"node_did":  nodeDID,
-		})
+	if req.PublicKeyMultibase == "" {
+		http.Error(w, `{"error":"public_key_multibase is required"}`, http.StatusBadRequest)
 		return
 	}
 
-	// Legacy token-based pairing.
-	resp, err := h.Device.CompletePairing(r.Context(), req.Code, req.DeviceName)
+	deviceID, nodeDID, err := h.Device.CompletePairingWithKey(
+		r.Context(), req.Code, req.DeviceName, req.PublicKeyMultibase,
+	)
 	if err != nil {
 		clientError(w, "pairing failed", http.StatusInternalServerError, err)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"device_id": deviceID,
+		"node_did":  nodeDID,
+	})
 }
 
 // HandleListDevices handles GET /v1/devices. It returns all paired devices,

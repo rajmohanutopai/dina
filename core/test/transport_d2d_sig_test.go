@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
@@ -297,7 +296,7 @@ func TestFixVerify_31_8_3_ProcessInbound_JSONWrapperTamperedSig_Error(t *testing
 // --------------------------------------------------------------------------
 
 func TestFixVerify_31_8_6_ProcessInbound_RawBytesLegacy_Rejected(t *testing.T) {
-	// CRITICAL-04: unsigned legacy payloads are now rejected by default.
+	// CRITICAL-04: unsigned legacy payloads are rejected — no backward compat.
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
 
@@ -315,42 +314,10 @@ func TestFixVerify_31_8_6_ProcessInbound_RawBytesLegacy_Rejected(t *testing.T) {
 	rcptX25519Pub, _ := env.converter.Ed25519ToX25519Public(env.rcptPub)
 	rawCiphertext, _ := env.encryptor.SealAnonymous(plaintext, rcptX25519Pub)
 
-	// ProcessInbound with raw bytes should be rejected (unsigned).
+	// ProcessInbound with raw bytes should be rejected.
 	_, err := env.svc.ProcessInbound(ctx, rawCiphertext)
 	if err == nil {
 		t.Fatal("ProcessInbound should reject unsigned legacy payload")
-	}
-	if !strings.Contains(err.Error(), "unsigned") {
-		t.Fatalf("expected unsigned rejection error, got: %v", err)
-	}
-}
-
-func TestFixVerify_31_8_5_ProcessInbound_RawBytesLegacy_MigrationMode(t *testing.T) {
-	// CRITICAL-04: with migration flag, unsigned legacy payloads are accepted.
-	t.Setenv("DINA_ALLOW_UNSIGNED_D2D", "1")
-
-	env := newD2DSigTestEnv(t)
-	ctx := context.Background()
-
-	msg := domain.DinaMessage{
-		ID:          "msg-fix11-004m",
-		Type:        domain.MessageTypeQuery,
-		From:        "did:key:z6MkSenderTest",
-		To:          []string{"did:key:z6MkRecipientTest"},
-		CreatedTime: time.Now().Unix(),
-		Body:        []byte(`{"q":"legacy raw bytes migration test"}`),
-	}
-	plaintext, _ := json.Marshal(msg)
-
-	rcptX25519Pub, _ := env.converter.Ed25519ToX25519Public(env.rcptPub)
-	rawCiphertext, _ := env.encryptor.SealAnonymous(plaintext, rcptX25519Pub)
-
-	result, err := env.svc.ProcessInbound(ctx, rawCiphertext)
-	if err != nil {
-		t.Fatalf("ProcessInbound should accept legacy in migration mode: %v", err)
-	}
-	if result.ID != "msg-fix11-004m" {
-		t.Fatalf("expected msg ID 'msg-fix11-004m', got %q", result.ID)
 	}
 }
 
@@ -511,9 +478,6 @@ func TestFixVerify_31_8_4_ProcessInbound_JSONWrapperEmptySig_Rejected(t *testing
 	_, err := env.svc.ProcessInbound(ctx, wrapperBytes)
 	if err == nil {
 		t.Fatal("ProcessInbound should reject empty-sig wrapper")
-	}
-	if !strings.Contains(err.Error(), "unsigned") {
-		t.Fatalf("expected unsigned rejection error, got: %v", err)
 	}
 }
 

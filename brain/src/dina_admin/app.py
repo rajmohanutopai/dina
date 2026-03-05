@@ -51,6 +51,7 @@ def create_admin_app(
     images_dir: str | None = None,
     llm_reload_callback: Any | None = None,
     llm_router: Any | None = None,
+    guardian: Any | None = None,
 ) -> FastAPI:
     """Create the admin UI sub-app with CLIENT_TOKEN auth middleware.
 
@@ -231,7 +232,7 @@ def create_admin_app(
     # New routes
     login_route.set_client_token(client_token)
     pages_route.set_config(config)
-    chat_route.set_config(config)
+    chat_route.set_guardian(guardian)
     history_route.set_core_client(core_client)
     trust_route.set_core_client(core_client)
 

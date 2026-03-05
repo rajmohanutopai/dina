@@ -31,7 +31,7 @@ import pytest
 
 from tests.integration.mocks import (
     DinaMessage,
-    MockBrainTokenAuth,
+    MockServiceAuth,
     MockDinaCore,
     MockDockerCompose,
     MockDockerContainer,
@@ -226,7 +226,7 @@ class TestAPISecurity:
     # TST-INT-165
     def test_no_unauthenticated_api_access(
         self,
-        mock_brain_token_auth: MockBrainTokenAuth,
+        mock_service_auth: MockServiceAuth,
     ) -> None:
         """No unauthenticated API access — all core endpoints require
         BRAIN_TOKEN or CLIENT_TOKEN.
@@ -234,35 +234,35 @@ class TestAPISecurity:
         Every request to Go Core must carry a valid token.  Requests
         without a token or with an invalid token are rejected with 401.
         """
-        valid_token = mock_brain_token_auth.token
+        valid_token = mock_service_auth.token
         invalid_token = "INVALID_TOKEN_" + uuid.uuid4().hex
 
         # Valid token + allowed endpoint → accepted
-        assert mock_brain_token_auth.validate(
+        assert mock_service_auth.validate(
             valid_token, "/v1/vault/query"
         ) is True
 
         # Invalid token + allowed endpoint → rejected
-        assert mock_brain_token_auth.validate(
+        assert mock_service_auth.validate(
             invalid_token, "/v1/vault/query"
         ) is False
 
         # Valid token + admin endpoint → rejected (brain cannot access admin)
-        assert mock_brain_token_auth.validate(
+        assert mock_service_auth.validate(
             valid_token, "/v1/admin/dashboard"
         ) is False
 
         # No token at all → rejected
-        assert mock_brain_token_auth.validate(
+        assert mock_service_auth.validate(
             "", "/v1/vault/query"
         ) is False
 
         # Verify all attempts were logged
-        assert len(mock_brain_token_auth.auth_log) == 4
+        assert len(mock_service_auth.auth_log) == 4
 
         # Check the log entries
-        accepted = [e for e in mock_brain_token_auth.auth_log if e["result"]]
-        rejected = [e for e in mock_brain_token_auth.auth_log if not e["result"]]
+        accepted = [e for e in mock_service_auth.auth_log if e["result"]]
+        rejected = [e for e in mock_service_auth.auth_log if not e["result"]]
         assert len(accepted) == 1
         assert len(rejected) == 3
 

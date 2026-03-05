@@ -75,7 +75,7 @@ func (a *configLoaderAdapter) Load() (*testutil.Config, error) {
 		AdminAddr:      cfg.AdminAddr,
 		VaultPath:      cfg.VaultPath,
 		BrainURL:       cfg.BrainURL,
-		BrainToken:     cfg.BrainToken,
+		ClientToken:    cfg.ClientToken,
 		SecurityMode:   cfg.SecurityMode,
 		SessionTTL:     cfg.SessionTTL,
 		RateLimit:      cfg.RateLimit,
@@ -90,7 +90,7 @@ func (a *configLoaderAdapter) Validate(cfg *testutil.Config) error {
 		AdminAddr:      cfg.AdminAddr,
 		VaultPath:      cfg.VaultPath,
 		BrainURL:       cfg.BrainURL,
-		BrainToken:     cfg.BrainToken,
+		ClientToken:    cfg.ClientToken,
 		SecurityMode:   cfg.SecurityMode,
 		SessionTTL:     cfg.SessionTTL,
 		RateLimit:      cfg.RateLimit,
@@ -261,7 +261,7 @@ var mockBrainServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWr
 	}
 }))
 
-var realBrainClient testutil.BrainClient = brainclient.NewWithToken(mockBrainServer.URL, testutil.TestBrainToken)
+var realBrainClient testutil.BrainClient = brainclient.New(mockBrainServer.URL, nil)
 
 // ---------- Server implementations (§15) ----------
 
@@ -313,7 +313,7 @@ var realErrorHandler testutil.ErrorHandler = errpkg.NewErrorHandler(0)
 
 // ---------- Admin Proxy implementations (§12) ----------
 
-var realAdminProxy testutil.AdminProxy = adminproxy.NewAdminProxy("http://brain:8200", testutil.TestBrainToken)
+var realAdminProxy testutil.AdminProxy = adminproxy.NewAdminProxy("http://brain:8200", testutil.TestClientToken)
 
 // ---------- PDS implementations (§22) ----------
 

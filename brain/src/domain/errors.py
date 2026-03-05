@@ -77,7 +77,7 @@ class ConfigError(DinaError):
     """Configuration error detected at startup.
 
     Raised by ``load_brain_config()`` when required environment
-    variables are missing (e.g. BRAIN_TOKEN) or values are invalid
+    variables are missing (e.g. service key directory) or values are invalid
     (e.g. CORE_URL is not a valid URL).
     """
 

@@ -10,21 +10,28 @@ services:
       - "8300:8300"
     volumes:
       - dina-data:/data
-    secrets:
-      - brain_token
+      - dina-core-keys:/run/secrets/service_keys/private
+      - dina-service-keys-public:/run/secrets/service_keys/public
     environment:
-      - BRAIN_URL=http://brain:8200
-      - DINA_DATA_DIR=/data
+      - DINA_BRAIN_URL=http://brain:8200
+      - DINA_VAULT_PATH=/data/vault
+      - DINA_SERVICE_KEY_DIR=/run/secrets/service_keys
+      - DINA_SERVICE_KEY_INIT=1
+      - DINA_SERVICE_KEY_STRICT=1
 
   brain:
     image: dina-brain:latest
     restart: always
     expose:
       - "8200"
-    secrets:
-      - brain_token
+    volumes:
+      - dina-brain-keys:/run/secrets/service_keys/private
+      - dina-service-keys-public:/run/secrets/service_keys/public
     environment:
-      - CORE_URL=http://core:8300
+      - DINA_CORE_URL=http://core:8300
+      - DINA_SERVICE_KEY_DIR=/run/secrets/service_keys
+      - DINA_SERVICE_KEY_INIT=1
+      - DINA_SERVICE_KEY_STRICT=1
 
   llm:
     image: ghcr.io/ggerganov/llama.cpp:server
@@ -37,7 +44,6 @@ services:
 volumes:
   dina-data:
   dina-models:
-
-secrets:
-  brain_token:
-    file: ../../secrets/brain_token
+  dina-core-keys:
+  dina-brain-keys:
+  dina-service-keys-public:

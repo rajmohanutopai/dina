@@ -1,4 +1,4 @@
-"""Tests for brain authentication — BRAIN_TOKEN verification and endpoint access control.
+"""Tests for brain authentication — Ed25519 service-key verification and endpoint access control.
 
 Maps to Brain TEST_PLAN S1 (Authentication & Authorization).
 
@@ -9,6 +9,7 @@ wired with mock service dependencies, exercised through TestClient.
 from __future__ import annotations
 
 import glob
+import json
 import os
 import re
 from dataclasses import dataclass
@@ -18,7 +19,12 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from .factories import TEST_BRAIN_TOKEN, TEST_BRAIN_TOKEN_WRONG, TEST_CLIENT_TOKEN
+from .factories import (
+    TEST_BRAIN_TOKEN,
+    TEST_CLIENT_TOKEN,
+    TEST_CORE_PUBLIC_KEY,
+    sign_test_request,
+)
 
 # ---------------------------------------------------------------------------
 # Shared test app + client fixtures
@@ -33,7 +39,6 @@ class _FakeConfig:
     """Minimal config satisfying create_admin_app expectations."""
 
     core_url: str = "http://core:8300"
-    brain_token: str = TEST_BRAIN_TOKEN
     client_token: str = TEST_CLIENT_TOKEN
     listen_port: int = 8200
     log_level: str = "INFO"
@@ -76,7 +81,9 @@ def _build_app() -> FastAPI:
 
     master = FastAPI()
 
-    brain_api = create_brain_app(guardian, sync_engine, internal_token=TEST_BRAIN_TOKEN)
+    brain_api = create_brain_app(
+        guardian, sync_engine, core_public_key=TEST_CORE_PUBLIC_KEY,
+    )
     admin_ui = create_admin_app(core_client, _FakeConfig())
 
     master.mount("/api", brain_api)
@@ -87,6 +94,14 @@ def _build_app() -> FastAPI:
         return {"status": "ok"}
 
     return master
+
+
+def _signed_post(client: TestClient, path: str, data: dict) -> "Response":
+    """POST with Ed25519 signed headers."""
+    body = json.dumps(data).encode()
+    headers = sign_test_request("POST", path, body)
+    headers["Content-Type"] = "application/json"
+    return client.post(path, content=body, headers=headers)
 
 
 @pytest.fixture(scope="module")
@@ -102,24 +117,20 @@ def client(app: FastAPI) -> TestClient:
 
 
 # ---------------------------------------------------------------------------
-# S1.1 BRAIN_TOKEN Verification
+# S1.1 Ed25519 Service-Key Verification
 # ---------------------------------------------------------------------------
 
 
 # TST-BRAIN-001
-def test_auth_1_1_1_valid_brain_token(client: TestClient) -> None:
-    """S1.1.1: Valid BRAIN_TOKEN in Authorization: Bearer header -> 200."""
-    resp = client.post(
-        "/api/v1/process",
-        headers={"Authorization": f"Bearer {TEST_BRAIN_TOKEN}"},
-        json={"type": "message", "body": "test"},
-    )
+def test_auth_1_1_1_valid_service_key(client: TestClient) -> None:
+    """S1.1.1: Valid Ed25519 signed request -> 200."""
+    resp = _signed_post(client, "/api/v1/process", {"type": "message", "body": "test"})
     assert resp.status_code == 200
 
 
 # TST-BRAIN-002
-def test_auth_1_1_2_missing_token(client: TestClient) -> None:
-    """S1.1.2: Missing Authorization header -> 401 Unauthorized."""
+def test_auth_1_1_2_missing_auth(client: TestClient) -> None:
+    """S1.1.2: Missing auth headers -> 401 Unauthorized."""
     resp = client.post(
         "/api/v1/process",
         json={"type": "message", "body": "test"},
@@ -129,78 +140,76 @@ def test_auth_1_1_2_missing_token(client: TestClient) -> None:
 
 
 # TST-BRAIN-003
-def test_auth_1_1_3_wrong_token(client: TestClient) -> None:
-    """S1.1.3: Random/wrong hex string in Bearer -> 401."""
+def test_auth_1_1_3_wrong_signature(client: TestClient) -> None:
+    """S1.1.3: Invalid signature in X-Signature -> 401."""
     resp = client.post(
         "/api/v1/process",
-        headers={"Authorization": f"Bearer {TEST_BRAIN_TOKEN_WRONG}"},
         json={"type": "message", "body": "test"},
+        headers={
+            "X-DID": "did:key:zFakeKey",
+            "X-Timestamp": "2026-01-01T00:00:00Z",
+            "X-Signature": "deadbeef" * 16,
+        },
     )
     assert resp.status_code == 401
     assert "detail" in resp.json()
 
 
 # TST-BRAIN-004
-def test_auth_1_1_4_token_from_docker_secret(tmp_path: object, monkeypatch: pytest.MonkeyPatch) -> None:
-    """S1.1.4: Token loaded from /run/secrets/brain_token on startup.
-
-    Verifies that when DINA_BRAIN_TOKEN_FILE points to a valid file,
-    load_brain_config reads the token from that file.
-    """
+def test_auth_1_1_4_service_key_dir_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """S1.1.4: SERVICE_KEY_DIR is read from DINA_SERVICE_KEY_DIR env var."""
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir, "src"))
 
     from infra.config import load_brain_config
 
-    # Write a secret file
-    secret_file = os.path.join(str(tmp_path), "brain_token")
-    with open(secret_file, "w") as f:
-        f.write("secret-from-file-token\n")
-
-    monkeypatch.delenv("DINA_BRAIN_TOKEN", raising=False)
-    monkeypatch.setenv("DINA_BRAIN_TOKEN_FILE", secret_file)
+    monkeypatch.setenv("DINA_SERVICE_KEY_DIR", "/custom/keys")
     monkeypatch.setenv("DINA_CORE_URL", "http://core:8300")
 
     cfg = load_brain_config()
-    assert cfg.brain_token == "secret-from-file-token"
+    assert cfg.service_key_dir == "/custom/keys"
 
 
 # TST-BRAIN-005
-def test_auth_1_1_5_token_file_missing_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
-    """S1.1.5: Secret mount absent -> brain starts anyway (service keys used instead)."""
+def test_auth_1_1_5_service_key_dir_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """S1.1.5: SERVICE_KEY_DIR defaults to /run/secrets/service_keys."""
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir, "src"))
 
     from infra.config import load_brain_config
 
-    monkeypatch.delenv("DINA_BRAIN_TOKEN", raising=False)
-    monkeypatch.setenv("DINA_BRAIN_TOKEN_FILE", "/nonexistent/path/brain_token")
+    monkeypatch.delenv("DINA_SERVICE_KEY_DIR", raising=False)
     monkeypatch.setenv("DINA_CORE_URL", "http://core:8300")
 
     cfg = load_brain_config()
-    assert cfg.brain_token is None
+    assert cfg.service_key_dir == "/run/secrets/service_keys"
 
 
 # TST-BRAIN-006
 def test_auth_1_1_6_constant_time_comparison() -> None:
-    """S1.1.6: hmac.compare_digest used (no timing leak).
+    """S1.1.6: Admin sub-app uses hmac.compare_digest for CLIENT_TOKEN (no timing leak).
 
-    Code audit: token comparison in both sub-apps must use
-    hmac.compare_digest, never == or !=.
+    Brain sub-app uses Ed25519 signature verification (inherently constant-time).
     """
-    brain_app_path = os.path.normpath(
-        os.path.join(_BRAIN_SRC, "dina_brain", "app.py")
-    )
     admin_app_path = os.path.normpath(
         os.path.join(_BRAIN_SRC, "dina_admin", "app.py")
     )
 
-    for filepath in (brain_app_path, admin_app_path):
-        with open(filepath) as f:
-            source = f.read()
-        assert "hmac.compare_digest" in source, (
-            f"{filepath} does not use hmac.compare_digest for token comparison"
-        )
+    with open(admin_app_path) as f:
+        source = f.read()
+    assert "hmac.compare_digest" in source, (
+        f"{admin_app_path} does not use hmac.compare_digest for token comparison"
+    )
+
+    # Brain sub-app uses Ed25519 verify (not bearer tokens).
+    brain_app_path = os.path.normpath(
+        os.path.join(_BRAIN_SRC, "dina_brain", "app.py")
+    )
+    with open(brain_app_path) as f:
+        source = f.read()
+    assert "verify_request" in source, (
+        f"{brain_app_path} does not use Ed25519 verify_request"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -209,19 +218,15 @@ def test_auth_1_1_6_constant_time_comparison() -> None:
 
 
 # TST-BRAIN-007
-def test_auth_1_2_1_api_requires_brain_token(client: TestClient) -> None:
-    """S1.2.1: /api/* requires BRAIN_TOKEN -- 200 when correct token provided."""
-    resp = client.post(
-        "/api/v1/process",
-        headers={"Authorization": f"Bearer {TEST_BRAIN_TOKEN}"},
-        json={"type": "query", "body": "test"},
-    )
+def test_auth_1_2_1_api_requires_service_key(client: TestClient) -> None:
+    """S1.2.1: /api/* requires Ed25519 service key -- 200 when correctly signed."""
+    resp = _signed_post(client, "/api/v1/process", {"type": "query", "body": "test"})
     assert resp.status_code == 200
 
 
 # TST-BRAIN-008
 def test_auth_1_2_2_api_rejects_client_token(client: TestClient) -> None:
-    """S1.2.2: /api/* rejects CLIENT_TOKEN -- 401 (token does not match BRAIN_TOKEN)."""
+    """S1.2.2: /api/* rejects CLIENT_TOKEN bearer -- 401."""
     resp = client.post(
         "/api/v1/process",
         headers={"Authorization": f"Bearer {TEST_CLIENT_TOKEN}"},
@@ -364,27 +369,22 @@ def test_auth_1_2_9_admin_uses_client_token_to_core() -> None:
 def test_auth_1_2_10_brain_never_sees_cookies(client: TestClient) -> None:
     """S1.2.10: No Cookie header reaches brain -- core translates cookies to Bearer.
 
-    Verifies that the brain sub-app requires Bearer auth and does not
+    Verifies that the brain sub-app requires Ed25519 signed auth and does not
     accept cookies as authentication.  A request with only a Cookie header
-    (and no Authorization header) must be rejected.
+    (and no X-DID/X-Signature headers) must be rejected.
     """
     resp = client.post(
         "/api/v1/process",
         json={"type": "message", "body": "test"},
         headers={"Cookie": f"session={TEST_BRAIN_TOKEN}"},
     )
-    # Without a proper Authorization: Bearer header, the request is rejected
     assert resp.status_code == 401
 
 
 # TST-BRAIN-017
 def test_auth_1_2_11_brain_exposes_process(client: TestClient) -> None:
     """S1.2.11: Brain exposes POST /v1/process to core -- returns 200."""
-    resp = client.post(
-        "/api/v1/process",
-        headers={"Authorization": f"Bearer {TEST_BRAIN_TOKEN}"},
-        json={"type": "query", "body": "test"},
-    )
+    resp = _signed_post(client, "/api/v1/process", {"type": "query", "body": "test process endpoint"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "ok"
@@ -393,10 +393,8 @@ def test_auth_1_2_11_brain_exposes_process(client: TestClient) -> None:
 # TST-BRAIN-018
 def test_auth_1_2_12_brain_exposes_reason(client: TestClient) -> None:
     """S1.2.12: Brain exposes POST /v1/reason to core -- returns 200."""
-    resp = client.post(
-        "/api/v1/reason",
-        headers={"Authorization": f"Bearer {TEST_BRAIN_TOKEN}"},
-        json={"prompt": "test question", "type": "reason"},
+    resp = _signed_post(
+        client, "/api/v1/reason", {"prompt": "test question", "type": "reason"},
     )
     assert resp.status_code == 200
     body = resp.json()

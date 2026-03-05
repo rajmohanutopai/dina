@@ -43,20 +43,20 @@ class RealD2DNetwork(MockD2DNetwork):
     ----------
     did_to_core_url : dict[str, str]
         Mapping of DID -> external Core URL (e.g. localhost:18100).
-    brain_token : str
+    api_token : str
         Bearer token for authenticating API requests.
     """
 
     def __init__(
         self,
         did_to_core_url: dict[str, str],
-        brain_token: str,
+        api_token: str,
     ) -> None:
         super().__init__()
         self._did_to_core_url = {
             did: url.rstrip("/") for did, url in did_to_core_url.items()
         }
-        self._token = brain_token
+        self._token = api_token
 
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self._token}"}

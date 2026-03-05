@@ -32,7 +32,7 @@ func TestAdminProxy_12_1_ProxyToBrainAdminUI(t *testing.T) {
 
 	// Issue a GET /admin/ through the proxy and verify it reaches brain.
 	statusCode, _, _, err := impl.ProxyHTTP("GET", "/admin/", map[string]string{
-		"Authorization": "Bearer " + testutil.TestBrainToken,
+		"Authorization": "Bearer " + testutil.TestClientToken,
 	}, nil)
 	testutil.RequireNoError(t, err)
 	// A proxied request should return 200 (or 502 if brain is down, but the
@@ -90,7 +90,7 @@ func TestAdminProxy_12_3_StaticAssetProxying(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
 			statusCode, _, respHeaders, err := impl.ProxyHTTP("GET", tt.path, map[string]string{
-				"Authorization": "Bearer " + testutil.TestBrainToken,
+				"Authorization": "Bearer " + testutil.TestClientToken,
 			}, nil)
 			testutil.RequireNoError(t, err)
 
@@ -117,7 +117,7 @@ func TestAdminProxy_12_4_WebSocketUpgradeProxy(t *testing.T) {
 	// WS connection to :8100/ws must be proxied to brain:8200/ws.
 	// The proxy must handle the HTTP Upgrade handshake.
 	upgraded, err := impl.ProxyWebSocket("/ws", map[string]string{
-		"Authorization":          "Bearer " + testutil.TestBrainToken,
+		"Authorization":          "Bearer " + testutil.TestClientToken,
 		"Connection":             "Upgrade",
 		"Upgrade":                "websocket",
 		"Sec-WebSocket-Version":  "13",

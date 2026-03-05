@@ -48,9 +48,6 @@ func NewDID(raw string) (DID, error) {
 // String returns the DID as a plain string.
 func (d DID) String() string { return string(d) }
 
-// BrainToken is the shared secret between Go core and the Python brain sidecar.
-type BrainToken string
-
 // ClientToken is a per-device authentication token (hashed for storage).
 type ClientToken string
 

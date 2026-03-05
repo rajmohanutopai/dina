@@ -12,9 +12,13 @@ x-core-base: &core-base
   build:
     context: ./core
     dockerfile: Dockerfile
+    additional_contexts:
+      admin-cli: ./admin-cli
   environment: &core-env
-    DINA_BRAIN_TOKEN_FILE: /run/secrets/brain_token
     DINA_CLIENT_TOKEN_FILE: /run/secrets/client_token
+    DINA_SERVICE_KEY_DIR: /run/secrets/service_keys
+    DINA_SERVICE_KEY_INIT: "1"
+    DINA_SERVICE_KEY_STRICT: "1"
     DINA_LISTEN_ADDR: ":8100"
     DINA_RATE_LIMIT: "100000"
     DINA_SPOOL_MAX: "10485760"
@@ -23,7 +27,6 @@ x-core-base: &core-base
     DINA_ENV: test
     DINA_ALLOWED_ENDPOINTS: "core-alonso,core-sancho,core-chairmaker,core-albert"
   secrets:
-    - brain_token
     - client_token
   healthcheck:
     test: ["CMD", "wget", "--spider", "-q", "http://localhost:8100/healthz"]
@@ -39,7 +42,9 @@ x-brain-base: &brain-base
     context: ./brain
     dockerfile: Dockerfile
   environment: &brain-env
-    DINA_BRAIN_TOKEN_FILE: /run/secrets/brain_token
+    DINA_SERVICE_KEY_DIR: /run/secrets/service_keys
+    DINA_SERVICE_KEY_INIT: "1"
+    DINA_SERVICE_KEY_STRICT: "1"
     DINA_BRAIN_PORT: "8200"
     DINA_LLM_URL: "http://localhost:9999"
     DINA_LOG_LEVEL: DEBUG
@@ -48,8 +53,6 @@ x-brain-base: &brain-base
     ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
     OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
     OPENROUTER_MODEL: "${OPENROUTER_MODEL:-}"
-  secrets:
-    - brain_token
   healthcheck:
     test: ["CMD", "python", "-c", "import sys; from urllib.request import urlopen; r = urlopen('http://localhost:8200/healthz', timeout=2); sys.exit(0 if r.status == 200 else 1)"]
     interval: 10s
@@ -67,6 +70,8 @@ services:
       - "19100:8100"
     volumes:
       - alonso-data:/data
+      - alonso-keys-core-priv:/run/secrets/service_keys/private
+      - alonso-keys-pub:/run/secrets/service_keys/public
     environment:
       <<: *core-env
       DINA_VAULT_PATH: /data/vault
@@ -74,6 +79,9 @@ services:
       DINA_MASTER_SEED: "0000000000000000000000000000000000000000000000000000000000000001"
       DINA_OWN_DID: "did:plc:alonso"
       DINA_KNOWN_PEERS: "did:plc:sancho=http://core-sancho:8100/msg=0000000000000000000000000000000000000000000000000000000000000002,did:plc:chairmaker=http://core-chairmaker:8100/msg=0000000000000000000000000000000000000000000000000000000000000003,did:plc:albert=http://core-albert:8100/msg=0000000000000000000000000000000000000000000000000000000000000004"
+    depends_on:
+      brain-alonso:
+        condition: service_healthy
 
   brain-alonso:
     <<: *brain-base
@@ -81,6 +89,8 @@ services:
       - "19200:8200"
     volumes:
       - alonso-data:/data
+      - alonso-keys-brain-priv:/run/secrets/service_keys/private
+      - alonso-keys-pub:/run/secrets/service_keys/public
     environment:
       <<: *brain-env
       DINA_CORE_URL: http://core-alonso:8100
@@ -92,6 +102,8 @@ services:
       - "19101:8100"
     volumes:
       - sancho-data:/data
+      - sancho-keys-core-priv:/run/secrets/service_keys/private
+      - sancho-keys-pub:/run/secrets/service_keys/public
     environment:
       <<: *core-env
       DINA_VAULT_PATH: /data/vault
@@ -99,6 +111,9 @@ services:
       DINA_MASTER_SEED: "0000000000000000000000000000000000000000000000000000000000000002"
       DINA_OWN_DID: "did:plc:sancho"
       DINA_KNOWN_PEERS: "did:plc:alonso=http://core-alonso:8100/msg=0000000000000000000000000000000000000000000000000000000000000001,did:plc:chairmaker=http://core-chairmaker:8100/msg=0000000000000000000000000000000000000000000000000000000000000003,did:plc:albert=http://core-albert:8100/msg=0000000000000000000000000000000000000000000000000000000000000004"
+    depends_on:
+      brain-sancho:
+        condition: service_healthy
 
   brain-sancho:
     <<: *brain-base
@@ -106,6 +121,8 @@ services:
       - "19201:8200"
     volumes:
       - sancho-data:/data
+      - sancho-keys-brain-priv:/run/secrets/service_keys/private
+      - sancho-keys-pub:/run/secrets/service_keys/public
     environment:
       <<: *brain-env
       DINA_CORE_URL: http://core-sancho:8100
@@ -117,6 +134,8 @@ services:
       - "19102:8100"
     volumes:
       - chairmaker-data:/data
+      - chairmaker-keys-core-priv:/run/secrets/service_keys/private
+      - chairmaker-keys-pub:/run/secrets/service_keys/public
     environment:
       <<: *core-env
       DINA_VAULT_PATH: /data/vault
@@ -124,6 +143,9 @@ services:
       DINA_MASTER_SEED: "0000000000000000000000000000000000000000000000000000000000000003"
       DINA_OWN_DID: "did:plc:chairmaker"
       DINA_KNOWN_PEERS: "did:plc:alonso=http://core-alonso:8100/msg=0000000000000000000000000000000000000000000000000000000000000001,did:plc:sancho=http://core-sancho:8100/msg=0000000000000000000000000000000000000000000000000000000000000002,did:plc:albert=http://core-albert:8100/msg=0000000000000000000000000000000000000000000000000000000000000004"
+    depends_on:
+      brain-chairmaker:
+        condition: service_healthy
 
   brain-chairmaker:
     <<: *brain-base
@@ -131,6 +153,8 @@ services:
       - "19202:8200"
     volumes:
       - chairmaker-data:/data
+      - chairmaker-keys-brain-priv:/run/secrets/service_keys/private
+      - chairmaker-keys-pub:/run/secrets/service_keys/public
     environment:
       <<: *brain-env
       DINA_CORE_URL: http://core-chairmaker:8100
@@ -142,6 +166,8 @@ services:
       - "19103:8100"
     volumes:
       - albert-data:/data
+      - albert-keys-core-priv:/run/secrets/service_keys/private
+      - albert-keys-pub:/run/secrets/service_keys/public
     environment:
       <<: *core-env
       DINA_VAULT_PATH: /data/vault
@@ -149,6 +175,9 @@ services:
       DINA_MASTER_SEED: "0000000000000000000000000000000000000000000000000000000000000004"
       DINA_OWN_DID: "did:plc:albert"
       DINA_KNOWN_PEERS: "did:plc:alonso=http://core-alonso:8100/msg=0000000000000000000000000000000000000000000000000000000000000001,did:plc:sancho=http://core-sancho:8100/msg=0000000000000000000000000000000000000000000000000000000000000002,did:plc:chairmaker=http://core-chairmaker:8100/msg=0000000000000000000000000000000000000000000000000000000000000003"
+    depends_on:
+      brain-albert:
+        condition: service_healthy
 
   brain-albert:
     <<: *brain-base
@@ -156,6 +185,8 @@ services:
       - "19203:8200"
     volumes:
       - albert-data:/data
+      - albert-keys-brain-priv:/run/secrets/service_keys/private
+      - albert-keys-pub:/run/secrets/service_keys/public
     environment:
       <<: *brain-env
       DINA_CORE_URL: http://core-albert:8100
@@ -167,8 +198,6 @@ services:
       dockerfile: Dockerfile
     environment:
       DINA_CORE_URL: http://core-alonso:8100
-    secrets:
-      - brain_token
     depends_on:
       core-alonso:
         condition: service_healthy
@@ -184,13 +213,35 @@ volumes:
     driver: local
   albert-data:
     driver: local
+  alonso-keys-core-priv:
+    driver: local
+  alonso-keys-brain-priv:
+    driver: local
+  alonso-keys-pub:
+    driver: local
+  sancho-keys-core-priv:
+    driver: local
+  sancho-keys-brain-priv:
+    driver: local
+  sancho-keys-pub:
+    driver: local
+  chairmaker-keys-core-priv:
+    driver: local
+  chairmaker-keys-brain-priv:
+    driver: local
+  chairmaker-keys-pub:
+    driver: local
+  albert-keys-core-priv:
+    driver: local
+  albert-keys-brain-priv:
+    driver: local
+  albert-keys-pub:
+    driver: local
 
 networks:
   dina-e2e:
     driver: bridge
 
 secrets:
-  brain_token:
-    file: ./secrets/brain_token
   client_token:
     file: ./secrets/client_token

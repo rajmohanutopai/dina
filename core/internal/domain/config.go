@@ -28,7 +28,6 @@ type Config struct {
 	AdminAddr      string
 	VaultPath      string
 	BrainURL       string
-	BrainToken     string
 	SecurityMode   string // "security" or "convenience"
 	SessionTTL     int    // seconds
 	RateLimit      int    // requests per minute per IP

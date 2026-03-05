@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	crypto_rand "crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"log"
@@ -21,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mr-tron/base58"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/auth"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/brainclient"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/clock"
@@ -40,14 +40,13 @@ import (
 	trustadapter "github.com/rajmohanutopai/dina/core/internal/adapter/trust"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/vault"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/ws"
-	"github.com/mr-tron/base58"
 	"github.com/rajmohanutopai/dina/core/internal/config"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/handler"
 	"github.com/rajmohanutopai/dina/core/internal/ingress"
-	"github.com/rajmohanutopai/dina/core/internal/reminder"
 	"github.com/rajmohanutopai/dina/core/internal/middleware"
 	"github.com/rajmohanutopai/dina/core/internal/port"
+	"github.com/rajmohanutopai/dina/core/internal/reminder"
 	"github.com/rajmohanutopai/dina/core/internal/service"
 )
 
@@ -70,15 +69,6 @@ func main() {
 	}
 
 	// ---------- Security guards ----------
-
-	// HIGH-02: DINA_ALLOW_UNSIGNED_D2D must only be enabled in non-production environments.
-	if os.Getenv("DINA_ALLOW_UNSIGNED_D2D") == "1" {
-		env := os.Getenv("DINA_ENV")
-		if env != "test" && env != "migration" && env != "development" {
-			log.Fatal("SECURITY: DINA_ALLOW_UNSIGNED_D2D=1 is only allowed when DINA_ENV is test, migration, or development")
-		}
-		slog.Warn("SECURITY: unsigned D2D message acceptance is enabled", "env", env)
-	}
 
 	// HIGH-03: DINA_TEST_MODE must not be enabled in production.
 	if os.Getenv("DINA_TEST_MODE") == "true" {
@@ -105,9 +95,11 @@ func main() {
 	keyDeriver := crypto.NewKeyDeriver(slip0010)
 
 	// Bootstrap identity signing key from a deterministic seed.
-	// Priority: 1) DINA_MASTER_SEED env var, 2) wrapped seed file (.wrapped), 3) plaintext seed file (.hex), 4) generate new.
+	// Strict no-legacy mode:
+	//   1) DINA_MASTER_SEED env var (explicit bootstrap)
+	//   2) wrapped seed file (.wrapped + .salt)
+	//   3) generate new wrapped seed when password is available
 	masterSeed := make([]byte, 32)
-	seedPath := filepath.Join(cfg.VaultPath, "master_seed.hex")
 	wrappedSeedPath := filepath.Join(cfg.VaultPath, "master_seed.wrapped")
 	saltPath := filepath.Join(cfg.VaultPath, "master_seed.salt")
 	seedPassword := os.Getenv("DINA_SEED_PASSWORD")
@@ -122,30 +114,39 @@ func main() {
 		}
 	}
 
-	// SEC-CRITICAL-03: Early production guard — refuse plaintext seed paths before any file I/O.
-	// DINA_MASTER_SEED env var is acceptable (no file written), but no-password paths are not.
+	// Require one explicit bootstrap path: wrapped-seed password or raw master seed.
+	// No plaintext seed path is supported.
 	dinaEnv := os.Getenv("DINA_ENV")
 	isDevOrTest := dinaEnv == "test" || dinaEnv == "development" || dinaEnv == "migration"
-	if seedPassword == "" && os.Getenv("DINA_MASTER_SEED") == "" && !isDevOrTest {
-		log.Fatal("SECURITY: DINA_SEED_PASSWORD or DINA_MASTER_SEED is required when DINA_ENV is not test/development/migration")
+	if seedPassword == "" && os.Getenv("DINA_MASTER_SEED") == "" {
+		log.Fatal("SECURITY: DINA_SEED_PASSWORD or DINA_MASTER_SEED is required")
 	}
 
 	// Derive KEK from seed password if configured.
-	// SEC-HIGH-07: Use Argon2id with random persisted salt (not deterministic from path).
 	var seedKEK []byte
-	var legacySHA256KEK []byte // migration path for existing SHA-256 wrapped seeds
-	var saltMigrationNeeded bool
+	var argon2Salt []byte
 	if seedPassword != "" {
-		// Load persisted random salt, or fall back to deterministic salt for migration.
-		var argon2Salt []byte
-		if data, err := os.ReadFile(saltPath); err == nil && len(data) == 16 {
+		if data, err := os.ReadFile(saltPath); err == nil {
+			if len(data) != 16 {
+				slog.Error("Invalid Argon2id salt length", "path", saltPath, "got_bytes", len(data), "expected", 16)
+				os.Exit(1)
+			}
 			argon2Salt = data
-		} else {
-			// No salt file yet. If a wrapped seed exists, it was created with the
-			// old deterministic salt. Use that to unwrap, then migrate to random salt.
-			saltMigrationNeeded = true
-			legacySaltHash := sha256.Sum256([]byte(filepath.Dir(wrappedSeedPath)))
-			argon2Salt = legacySaltHash[:16]
+		} else if !os.IsNotExist(err) {
+			slog.Error("Failed to read Argon2id salt file", "path", saltPath, "error", err)
+			os.Exit(1)
+		}
+		// Wrapped seed without salt is an invalid state in strict mode.
+		if len(argon2Salt) == 0 {
+			if _, err := os.Stat(wrappedSeedPath); err == nil {
+				slog.Error("Wrapped seed exists but salt file is missing", "wrapped", wrappedSeedPath, "salt", saltPath)
+				os.Exit(1)
+			}
+			argon2Salt = make([]byte, 16)
+			if _, err := crypto_rand.Read(argon2Salt); err != nil {
+				slog.Error("Failed to generate Argon2id salt", "error", err)
+				os.Exit(1)
+			}
 		}
 		var kekErr error
 		seedKEK, kekErr = argon2Deriver.DeriveKEK(seedPassword, argon2Salt)
@@ -153,39 +154,27 @@ func main() {
 			slog.Error("Failed to derive Argon2id KEK from seed password", "error", kekErr)
 			os.Exit(1)
 		}
-		// Keep SHA-256 KEK for migration from legacy wrapped seeds.
-		legacyHash := sha256.Sum256([]byte(seedPassword))
-		legacySHA256KEK = legacyHash[:]
 	}
 
-	// migrateSalt generates a random salt, re-derives KEK, re-wraps the seed, and persists both.
-	migrateSalt := func(seed, currentKEK []byte) {
-		newSalt := make([]byte, 16)
-		if _, err := crypto_rand.Read(newSalt); err != nil {
-			slog.Error("Failed to generate random Argon2id salt", "error", err)
-			os.Exit(1)
+	// persistWrappedSeed writes wrapped seed + salt when password mode is active.
+	persistWrappedSeed := func(seed []byte) {
+		if seedKEK == nil {
+			return
 		}
-		newKEK, err := argon2Deriver.DeriveKEK(seedPassword, newSalt)
+		rewrapped, err := keyWrapper.Wrap(seed, seedKEK)
 		if err != nil {
-			slog.Error("Failed to derive Argon2id KEK with new salt", "error", err)
-			os.Exit(1)
-		}
-		rewrapped, err := keyWrapper.Wrap(seed, newKEK)
-		if err != nil {
-			slog.Error("Failed to re-wrap seed with new salt KEK", "error", err)
+			slog.Error("Failed to wrap seed with Argon2id KEK", "error", err)
 			os.Exit(1)
 		}
 		os.MkdirAll(filepath.Dir(wrappedSeedPath), 0700)
 		if err := os.WriteFile(wrappedSeedPath, rewrapped, 0600); err != nil {
-			slog.Warn("Could not persist re-wrapped identity seed", "error", err)
+			slog.Error("Could not persist wrapped identity seed", "error", err)
+			os.Exit(1)
 		}
-		if err := os.WriteFile(saltPath, newSalt, 0600); err != nil {
-			slog.Warn("Could not persist Argon2id salt", "error", err)
-		} else {
-			slog.Info("Argon2id salt migrated to random persisted value", "path", saltPath)
+		if err := os.WriteFile(saltPath, argon2Salt, 0600); err != nil {
+			slog.Error("Could not persist Argon2id salt", "error", err)
+			os.Exit(1)
 		}
-		// Update seedKEK to the new one for remainder of bootstrap.
-		copy(currentKEK, newKEK)
 	}
 
 	if seedHex := os.Getenv("DINA_MASTER_SEED"); seedHex != "" {
@@ -199,86 +188,30 @@ func main() {
 			os.Exit(1)
 		}
 		copy(masterSeed, decoded)
+		persistWrappedSeed(masterSeed)
 	} else if seedKEK != nil {
-		// Try wrapped seed first.
 		if data, err := os.ReadFile(wrappedSeedPath); err == nil {
-			// SEC-HIGH-07: Try Argon2id KEK first, then fall back to legacy SHA-256 KEK.
 			unwrapped, err := keyWrapper.Unwrap(data, seedKEK)
 			if err != nil {
-				// Migration path: try legacy SHA-256 KEK.
-				unwrapped, err = keyWrapper.Unwrap(data, legacySHA256KEK)
-				if err != nil {
-					slog.Error("Failed to unwrap identity seed — wrong DINA_SEED_PASSWORD?", "error", err)
-					os.Exit(1)
-				}
-				if len(unwrapped) != 32 {
-					slog.Error("Unwrapped seed has wrong length", "got_bytes", len(unwrapped))
-					os.Exit(1)
-				}
-				copy(masterSeed, unwrapped)
-				// Re-wrap with Argon2id KEK + random salt.
-				migrateSalt(masterSeed, seedKEK)
-				slog.Info("seed KEK upgraded from SHA-256 to Argon2id with random salt", "path", wrappedSeedPath)
-			} else {
-				if len(unwrapped) != 32 {
-					slog.Error("Unwrapped seed has wrong length", "got_bytes", len(unwrapped))
-					os.Exit(1)
-				}
-				copy(masterSeed, unwrapped)
-				// SEC-HIGH-07: If unwrapped with deterministic salt, migrate to random salt.
-				if saltMigrationNeeded {
-					migrateSalt(masterSeed, seedKEK)
-				} else {
-					slog.Info("Loaded wrapped identity seed", "path", wrappedSeedPath)
-				}
-			}
-		} else if data, err := os.ReadFile(seedPath); err == nil {
-			// Auto-migrate from plaintext .hex to .wrapped
-			decoded, err := hex.DecodeString(strings.TrimSpace(string(data)))
-			if err != nil || len(decoded) != 32 {
-				slog.Error("Corrupt identity seed file — refusing to start", "path", seedPath, "error", err)
+				slog.Error("Failed to unwrap identity seed — wrong DINA_SEED_PASSWORD?", "error", err)
 				os.Exit(1)
 			}
-			copy(masterSeed, decoded)
-			// Wrap with random salt (new installation path, skip deterministic salt entirely).
-			migrateSalt(masterSeed, seedKEK)
-			// SEC-HIGH-06: Delete plaintext .hex file after successful migration.
-			if err := os.Remove(seedPath); err != nil {
-				slog.Warn("Could not delete plaintext seed file after migration", "path", seedPath, "error", err)
-			} else {
-				slog.Info("Deleted plaintext seed file after migration to wrapped", "path", seedPath)
+			if len(unwrapped) != 32 {
+				slog.Error("Unwrapped seed has wrong length", "got_bytes", len(unwrapped))
+				os.Exit(1)
 			}
-		} else {
-			// Generate new seed and wrap it with random salt.
+			copy(masterSeed, unwrapped)
+			slog.Info("Loaded wrapped identity seed", "path", wrappedSeedPath)
+		} else if os.IsNotExist(err) {
 			if _, err := crypto_rand.Read(masterSeed); err != nil {
 				slog.Error("Failed to generate random seed", "error", err)
 				os.Exit(1)
 			}
-			migrateSalt(masterSeed, seedKEK)
-			slog.Info("Generated and wrapped new identity seed with random salt", "path", wrappedSeedPath)
-		}
-	} else if isDevOrTest {
-		// SEC-CRITICAL-03: Plaintext seed paths only allowed in dev/test/migration.
-		// The early production guard above already prevents reaching here in production.
-		if data, err := os.ReadFile(seedPath); err == nil {
-			decoded, err := hex.DecodeString(strings.TrimSpace(string(data)))
-			if err != nil || len(decoded) != 32 {
-				slog.Error("Corrupt identity seed file — refusing to start", "path", seedPath, "error", err)
-				os.Exit(1)
-			}
-			copy(masterSeed, decoded)
-			slog.Warn("Identity seed loaded from PLAINTEXT file (dev/test only)", "path", seedPath)
+			persistWrappedSeed(masterSeed)
+			slog.Info("Generated and wrapped new identity seed", "path", wrappedSeedPath)
 		} else {
-			if _, err := crypto_rand.Read(masterSeed); err != nil {
-				slog.Error("Failed to generate random seed", "error", err)
-				os.Exit(1)
-			}
-			os.MkdirAll(filepath.Dir(seedPath), 0700)
-			if err := os.WriteFile(seedPath, []byte(hex.EncodeToString(masterSeed)), 0600); err != nil {
-				slog.Warn("Could not persist identity seed", "error", err)
-			} else {
-				slog.Warn("Generated new identity seed in PLAINTEXT (dev/test only)", "path", seedPath)
-			}
+			slog.Error("Failed to read wrapped identity seed", "path", wrappedSeedPath, "error", err)
+			os.Exit(1)
 		}
 	}
 
@@ -390,23 +323,57 @@ func main() {
 	_, _ = plcClient, pdsPublisher
 
 	// 6. Service Keys (Ed25519 service-to-service auth)
+	serviceKeyInit := os.Getenv("DINA_SERVICE_KEY_INIT") == "1"
+	serviceKeyStrict := os.Getenv("DINA_SERVICE_KEY_STRICT") == "1"
 	coreKey := servicekey.New(cfg.ServiceKeyDir)
-	if err := coreKey.EnsureKey("core"); err != nil {
-		log.Fatalf("Service key setup failed: %v", err)
+	var keyErr error
+	if serviceKeyInit || !serviceKeyStrict {
+		keyErr = coreKey.EnsureKey("core")
+	} else {
+		keyErr = coreKey.EnsureExistingKey("core")
 	}
-	slog.Info("Core service key ready", "did", coreKey.DID(), "key_dir", cfg.ServiceKeyDir)
+	if keyErr != nil {
+		log.Fatalf("Service key setup failed: %v", keyErr)
+	}
+	slog.Info(
+		"Core service key ready",
+		"did", coreKey.DID(),
+		"key_dir", cfg.ServiceKeyDir,
+		"provision_mode", serviceKeyInit,
+		"strict_mode", serviceKeyStrict,
+	)
 
 	// Load Brain's public key for signature verification.
-	brainPub, brainDID, err := coreKey.LoadPeerKey("brain")
-	if err != nil {
-		slog.Warn("Brain public key not yet available — will verify on first request", "error", err)
-	} else {
+	var brainPub ed25519.PublicKey
+	var brainDID string
+	if serviceKeyStrict {
+		var peerErr error
+		peerDeadline := time.Now().Add(30 * time.Second)
+		for {
+			brainPub, brainDID, peerErr = coreKey.LoadPeerKey("brain")
+			if peerErr == nil {
+				break
+			}
+			if time.Now().After(peerDeadline) {
+				log.Fatalf("Brain public key load failed: %v", peerErr)
+			}
+			slog.Warn("Brain public key not yet available — retrying", "error", peerErr)
+			time.Sleep(1 * time.Second)
+		}
 		slog.Info("Loaded Brain public key", "did", brainDID)
+	} else {
+		brainPubTmp, brainDIDTmp, peerErr := coreKey.LoadPeerKey("brain")
+		if peerErr != nil {
+			slog.Warn("Brain public key not available — continuing in non-strict mode", "error", peerErr)
+		} else {
+			brainPub, brainDID = brainPubTmp, brainDIDTmp
+			slog.Info("Loaded Brain public key", "did", brainDID)
+		}
 	}
 
 	// 6b. Auth
 	tokenValidator := auth.NewTokenValidator(map[string]string{})
-	if brainPub != nil {
+	if len(brainPub) > 0 {
 		tokenValidator.RegisterServiceKey(brainDID, []byte(brainPub), "brain")
 		slog.Info("Registered Brain service key in auth validator", "did", brainDID)
 	}
@@ -428,53 +395,40 @@ func main() {
 	// Pre-populate DID resolver with known peer endpoints for D2D.
 	// Each peer gets a full DID document with a verificationMethod so that
 	// TransportService.SendMessage can resolve the key for encryption.
-	// Format: did=endpoint=seedhex (3 parts) or did=endpoint (2 parts, legacy).
+	// Format: did=endpoint=seedhex (strict, no legacy 2-part format).
 	if peers := os.Getenv("DINA_KNOWN_PEERS"); peers != "" {
 		for i, entry := range strings.Split(peers, ",") {
 			parts := strings.SplitN(entry, "=", 3)
-			if len(parts) < 2 {
-				// MEDIUM-09: Log bad entries instead of silently skipping.
-				slog.Warn("KNOWN_PEERS: skipping malformed entry", "index", i, "entry", entry)
-				continue
+			if len(parts) != 3 {
+				slog.Error("KNOWN_PEERS: invalid entry format (expected did=endpoint=seedhex)", "index", i, "entry", entry)
+				os.Exit(1)
 			}
 			did := strings.TrimSpace(parts[0])
 			endpoint := strings.TrimSpace(parts[1])
-
-			var pubKeyMultibase string
-			if len(parts) == 3 {
-				// Real key exchange: derive peer's Ed25519 public key from their seed.
-				peerSeedHex := strings.TrimSpace(parts[2])
-				peerSeedBytes, seedErr := hex.DecodeString(peerSeedHex)
-				if seedErr != nil {
-					slog.Warn("KNOWN_PEERS: skipping entry with invalid seed hex", "index", i, "did", did, "error", seedErr)
-					continue
-				}
-				if len(peerSeedBytes) != 32 {
-					slog.Warn("KNOWN_PEERS: skipping entry with invalid seed length", "index", i, "did", did, "got", len(peerSeedBytes), "expected", 32)
-					continue
-				}
-				_, peerKeyBytes, deriveErr := slip0010.DerivePath(peerSeedBytes, "m/9999'/0'")
-				if deriveErr != nil {
-					slog.Warn("KNOWN_PEERS: skipping entry with key derivation failure", "index", i, "did", did, "error", deriveErr)
-					continue
-				}
-				var peerPrivKey ed25519.PrivateKey
-				if len(peerKeyBytes) == ed25519.SeedSize {
-					peerPrivKey = ed25519.NewKeyFromSeed(peerKeyBytes)
-				} else {
-					peerPrivKey = ed25519.PrivateKey(peerKeyBytes)
-				}
-				peerPubKey := peerPrivKey.Public().(ed25519.PublicKey)
-				// HIGH-05: Encode as proper multibase (z + base58btc(0xed01 + pubkey)).
-				multicodecKey := append([]byte{0xed, 0x01}, peerPubKey...)
-				pubKeyMultibase = "z" + base58.Encode(multicodecKey)
-			} else {
-				// Legacy: deterministic placeholder pubkey from the DID.
-				peerSeed := sha256.Sum256([]byte(did))
-				multicodecKey := append([]byte{0xed, 0x01}, peerSeed[:]...)
-				pubKeyMultibase = "z" + base58.Encode(multicodecKey)
-				slog.Warn("KNOWN_PEERS: using SHA-256 placeholder key — provide seed for real key exchange", "did", did)
+			peerSeedHex := strings.TrimSpace(parts[2])
+			peerSeedBytes, seedErr := hex.DecodeString(peerSeedHex)
+			if seedErr != nil {
+				slog.Error("KNOWN_PEERS: invalid seed hex", "index", i, "did", did, "error", seedErr)
+				os.Exit(1)
 			}
+			if len(peerSeedBytes) != 32 {
+				slog.Error("KNOWN_PEERS: invalid seed length", "index", i, "did", did, "got", len(peerSeedBytes), "expected", 32)
+				os.Exit(1)
+			}
+			_, peerKeyBytes, deriveErr := slip0010.DerivePath(peerSeedBytes, "m/9999'/0'")
+			if deriveErr != nil {
+				slog.Error("KNOWN_PEERS: key derivation failure", "index", i, "did", did, "error", deriveErr)
+				os.Exit(1)
+			}
+			var peerPrivKey ed25519.PrivateKey
+			if len(peerKeyBytes) == ed25519.SeedSize {
+				peerPrivKey = ed25519.NewKeyFromSeed(peerKeyBytes)
+			} else {
+				peerPrivKey = ed25519.PrivateKey(peerKeyBytes)
+			}
+			peerPubKey := peerPrivKey.Public().(ed25519.PublicKey)
+			multicodecKey := append([]byte{0xed, 0x01}, peerPubKey...)
+			pubKeyMultibase := "z" + base58.Encode(multicodecKey)
 
 			doc := fmt.Sprintf(`{`+
 				`"id":"%s",`+
@@ -502,7 +456,7 @@ func main() {
 	// 11. Pairing
 	pairer := pairing.NewManager(pairing.DefaultConfig())
 
-	// 12. Brain Client
+	// 12. Brain Client (service-key auth only).
 	brain := brainclient.New(cfg.BrainURL, coreKey)
 
 	// 12b. Reminder Loop — fires reminders on schedule, delegates to Brain.
@@ -731,9 +685,6 @@ func main() {
 
 	deviceSvc := service.NewDeviceService(pairer, deviceRegistry, clk)
 	deviceSvc.SetKeyRegistrar(tokenValidator)
-	deviceSvc.SetTokenRegistrar(tokenValidator)
-	deviceSvc.SetTokenRevoker(tokenValidator)
-
 
 	estateSvc := service.NewEstateService(
 		estateMgr, vaultMgr, recoveryMgr, notifier, clk,
@@ -761,30 +712,15 @@ func main() {
 
 	// ---------- Construct handlers ----------
 
-	// SEC-HIGH-03: Use a separate internal token for brain proxy communication.
-	internalToken := os.Getenv("DINA_INTERNAL_TOKEN")
-	if internalToken == "" {
-		env := os.Getenv("DINA_ENV")
-		if env != "test" && env != "development" {
-			log.Fatal("SECURITY: DINA_INTERNAL_TOKEN must be set in production (required for brain proxy)")
-		}
-		slog.Warn("SECURITY: DINA_INTERNAL_TOKEN not set — admin proxy will return 503")
-	}
-
 	healthH := &handler.HealthHandler{Health: healthChecker}
-	adminH := &handler.AdminHandler{ProxyURL: cfg.BrainURL, Token: cfg.ClientToken, InternalToken: internalToken}
+	adminH := &handler.AdminHandler{ProxyURL: cfg.BrainURL}
 	vaultH := &handler.VaultHandler{Vault: vaultSvc, PII: scrubber}
 	identityH := &handler.IdentityHandler{Identity: identitySvc, DID: didMgr, Signer: identitySigner}
 	messageH := &handler.MessageHandler{Transport: transportSvc, IngressRouter: ingressRouter}
 	taskH := &handler.TaskHandler{Task: taskSvc}
 	deviceH := &handler.DeviceHandler{Device: deviceSvc}
-	// Agent validation proxy uses DINA_INTERNAL_TOKEN (same as admin proxy).
-	// This is a bearer token path — browsers and agent proxies can't sign Ed25519.
-	agentProxyToken := internalToken
-	if agentProxyToken == "" {
-		agentProxyToken = cfg.BrainToken // legacy fallback for dev/test
-	}
-	agentBrain := brainclient.NewWithToken(cfg.BrainURL, agentProxyToken)
+	// Agent validation proxy uses Ed25519 service-key auth.
+	agentBrain := brainclient.New(cfg.BrainURL, coreKey)
 	agentH := &handler.AgentHandler{Brain: agentBrain}
 
 	personaH := &handler.PersonaHandler{Identity: identitySvc, Personas: personaMgr, VaultManager: vaultMgr, KeyDeriver: keyDeriver, Seed: masterSeed}
@@ -828,7 +764,6 @@ func main() {
 	mux.HandleFunc("/v1/did/sign", identityH.HandleSign)
 	mux.HandleFunc("/v1/did/verify", identityH.HandleVerify)
 	mux.HandleFunc("/v1/did/document", identityH.HandleGetDocument)
-
 
 	// Messaging API
 	mux.HandleFunc("/v1/msg/send", messageH.HandleSend)

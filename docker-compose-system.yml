@@ -2,6 +2,9 @@
 # 2 Core+Brain pairs (Alonso, Sancho) + PLC + PDS + Jetstream + AppView (full stack).
 # Port range 19300+ avoids collisions with E2E (19100+) and dev (8100).
 #
+# Auth: Ed25519 service keys (per-pair named volumes) + CLIENT_TOKEN
+# for admin endpoints. No internal bearer token path.
+#
 # Usage:
 #   docker compose -f docker-compose-system.yml up --build -d
 #   python -m pytest tests/system/ -v --tb=short
@@ -11,9 +14,13 @@ x-core-base: &core-base
   build:
     context: ./core
     dockerfile: Dockerfile
+    additional_contexts:
+      admin-cli: ./admin-cli
   environment: &core-env
-    DINA_BRAIN_TOKEN_FILE: /run/secrets/brain_token
-    DINA_CLIENT_TOKEN_FILE: /run/secrets/client_token
+    DINA_CLIENT_TOKEN: test-system-admin-token
+    DINA_SERVICE_KEY_DIR: /run/secrets/service_keys
+    DINA_SERVICE_KEY_INIT: "1"
+    DINA_SERVICE_KEY_STRICT: "0"
     DINA_LISTEN_ADDR: ":8100"
     DINA_RATE_LIMIT: "100000"
     DINA_SPOOL_MAX: "10485760"
@@ -21,9 +28,6 @@ x-core-base: &core-base
     DINA_TEST_MODE: "true"
     DINA_ENV: test
     DINA_ALLOWED_ENDPOINTS: "core-alonso,core-sancho"
-  secrets:
-    - brain_token
-    - client_token
   healthcheck:
     test: ["CMD", "wget", "--spider", "-q", "http://localhost:8100/healthz"]
     interval: 5s
@@ -38,8 +42,9 @@ x-brain-base: &brain-base
     context: ./brain
     dockerfile: Dockerfile
   environment: &brain-env
-    DINA_BRAIN_TOKEN_FILE: /run/secrets/brain_token
-    DINA_CLIENT_TOKEN_FILE: /run/secrets/client_token
+    DINA_SERVICE_KEY_DIR: /run/secrets/service_keys
+    DINA_SERVICE_KEY_INIT: "1"
+    DINA_SERVICE_KEY_STRICT: "0"
     DINA_BRAIN_PORT: "8200"
     DINA_LLM_URL: "http://localhost:9999"
     DINA_LOG_LEVEL: DEBUG
@@ -48,9 +53,8 @@ x-brain-base: &brain-base
     ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
     OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
     OPENROUTER_MODEL: "${OPENROUTER_MODEL:-}"
-  secrets:
-    - brain_token
-    - client_token
+    DINA_ENV: test
+    DINA_TEST_MODE: "true"
   healthcheck:
     test: ["CMD", "python", "-c", "import sys; from urllib.request import urlopen; r = urlopen('http://localhost:8200/healthz', timeout=2); sys.exit(0 if r.status == 200 else 1)"]
     interval: 10s
@@ -68,6 +72,8 @@ services:
       - "19300:8100"
     volumes:
       - alonso-data:/data
+      - alonso-keys-core-priv:/run/secrets/service_keys/private
+      - alonso-keys-pub:/run/secrets/service_keys/public
     environment:
       <<: *core-env
       DINA_VAULT_PATH: /data/vault
@@ -76,6 +82,9 @@ services:
       DINA_OWN_DID: "did:plc:alonso"
       DINA_KNOWN_PEERS: "did:plc:sancho=http://core-sancho:8100/msg=0000000000000000000000000000000000000000000000000000000000000002"
       DINA_APPVIEW_URL: http://appview-web:3000
+    depends_on:
+      brain-alonso:
+        condition: service_healthy
 
   brain-alonso:
     <<: *brain-base
@@ -83,12 +92,11 @@ services:
       - "19400:8200"
     volumes:
       - alonso-data:/data
+      - alonso-keys-brain-priv:/run/secrets/service_keys/private
+      - alonso-keys-pub:/run/secrets/service_keys/public
     environment:
       <<: *brain-env
       DINA_CORE_URL: http://core-alonso:8100
-    depends_on:
-      core-alonso:
-        condition: service_healthy
 
   # ---- Core+Brain: Sancho ----
   core-sancho:
@@ -97,6 +105,8 @@ services:
       - "19301:8100"
     volumes:
       - sancho-data:/data
+      - sancho-keys-core-priv:/run/secrets/service_keys/private
+      - sancho-keys-pub:/run/secrets/service_keys/public
     environment:
       <<: *core-env
       DINA_VAULT_PATH: /data/vault
@@ -105,6 +115,9 @@ services:
       DINA_OWN_DID: "did:plc:sancho"
       DINA_KNOWN_PEERS: "did:plc:alonso=http://core-alonso:8100/msg=0000000000000000000000000000000000000000000000000000000000000001"
       DINA_APPVIEW_URL: http://appview-web:3000
+    depends_on:
+      brain-sancho:
+        condition: service_healthy
 
   brain-sancho:
     <<: *brain-base
@@ -112,12 +125,11 @@ services:
       - "19401:8200"
     volumes:
       - sancho-data:/data
+      - sancho-keys-brain-priv:/run/secrets/service_keys/private
+      - sancho-keys-pub:/run/secrets/service_keys/public
     environment:
       <<: *brain-env
       DINA_CORE_URL: http://core-sancho:8100
-    depends_on:
-      core-sancho:
-        condition: service_healthy
 
   # ---- AT Protocol tier ----
   plc:
@@ -282,15 +294,15 @@ services:
 volumes:
   alonso-data:
   sancho-data:
+  alonso-keys-core-priv:
+  alonso-keys-brain-priv:
+  alonso-keys-pub:
+  sancho-keys-core-priv:
+  sancho-keys-brain-priv:
+  sancho-keys-pub:
   pgdata:
   pds-data:
 
 networks:
   dina-system:
     driver: bridge
-
-secrets:
-  brain_token:
-    file: ./secrets/brain_token
-  client_token:
-    file: ./secrets/client_token

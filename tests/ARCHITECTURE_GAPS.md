@@ -45,7 +45,7 @@ All closed in `tests/integration/test_arch_medium_1.py` (TST-INT-605 through TST
 | M4 | TST-INT-608 | §2.2 | TTL-expired messages stored silently in history, no notification | CLOSED |
 | M5 | TST-INT-609 | §2.1 | Boot opens only identity + personal; other persona DBs closed | CLOSED |
 | M6 | TST-INT-610 | §2.3 | Import rejects manifest checksum mismatch + incompatible version | CLOSED |
-| M7 | TST-INT-611 | §2.3 | Export excludes device_tokens, BRAIN_TOKEN, passphrase | CLOSED |
+| M7 | TST-INT-611 | §2.3 | Export excludes device_tokens, Service Signature Auth, passphrase | CLOSED |
 | M8 | TST-INT-612 | §4 | include_content defaults false; true includes body_text | CLOSED |
 | M9 | TST-INT-614 | §4 | Hybrid search: relevance = 0.4 fts5 + 0.6 cosine | CLOSED |
 | M10 | TST-INT-615 | §4 | Dead letter after 3 failures + Tier 2 notification | CLOSED |
@@ -68,7 +68,7 @@ All closed in `tests/integration/test_arch_medium_1.py` (TST-INT-605 through TST
 | M22 | TST-INT-626 | §7 | Backfill pauses for user query, resumes from same cursor | CLOSED |
 | M23 | TST-INT-627 | §7 | Cold archive pass-through: results never written to vault | CLOSED |
 | M24 | TST-INT-628 | §7 | OpenClaw recovery resumes from exact cursor, no gap/dupes | CLOSED |
-| M25 | TST-INT-629 | §7 | Phone connectors require CLIENT_TOKEN, not BRAIN_TOKEN | CLOSED |
+| M25 | TST-INT-629 | §7 | Phone connectors require CLIENT_TOKEN, not Service Signature Auth | CLOSED |
 | M26 | TST-INT-630 | §8 | Attestation lexicon rejects missing fields + out-of-range rating | CLOSED |
 | M27 | TST-INT-631 | §8 | Consensus check: AppView censorship detection by count mismatch | CLOSED |
 | M28 | TST-INT-632 | §8 | PDS spot-check discrepancy downgrades AppView trust | CLOSED |

@@ -25,7 +25,7 @@ def _load_cfg(ctx: click.Context):
     if "config" not in ctx.obj:
         try:
             ctx.obj["config"] = load_config()
-        except click.UsageError:
+        except click.UsageError as exc:
             if ctx.obj.get("json"):
                 click.echo(
                     json.dumps({"error": str(exc)}),

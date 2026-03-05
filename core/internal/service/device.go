@@ -13,12 +13,12 @@ import (
 // DeviceService manages the device pairing lifecycle. It coordinates the
 // 6-digit pairing ceremony, device registration, listing, and revocation.
 type DeviceService struct {
-	pairer          port.DevicePairer
-	registry        port.DeviceRegistry
-	keyRegistrar    port.DeviceKeyRegistrar
-	tokenRegistrar  port.ClientTokenRegistrar
-	tokenRevoker    port.TokenRevoker
-	clock           port.Clock
+	pairer         port.DevicePairer
+	registry       port.DeviceRegistry
+	keyRegistrar   port.DeviceKeyRegistrar
+	tokenRegistrar port.ClientTokenRegistrar
+	tokenRevoker   port.TokenRevoker
+	clock          port.Clock
 }
 
 // NewDeviceService constructs a DeviceService with all required dependencies.
@@ -40,8 +40,8 @@ func (s *DeviceService) SetKeyRegistrar(kr port.DeviceKeyRegistrar) {
 	s.keyRegistrar = kr
 }
 
-// SetTokenRegistrar wires the auth token registrar so that legacy token
-// pairing can register CLIENT_TOKENs for bearer-based authentication.
+// SetTokenRegistrar wires the auth token registrar for CLIENT_TOKEN
+// registration when token-based pairing is explicitly used.
 func (s *DeviceService) SetTokenRegistrar(tr port.ClientTokenRegistrar) {
 	s.tokenRegistrar = tr
 }

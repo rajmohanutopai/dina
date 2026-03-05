@@ -4,7 +4,6 @@ Maps to Brain TEST_PLAN SS9 (Configuration) and the contract in
 ``brain/tests/contracts.py::BrainConfig``.
 
 Service authentication uses Ed25519 signed requests (service keys).
-Legacy BRAIN_TOKEN support is kept for admin proxy / backward compat.
 """
 
 from __future__ import annotations
@@ -41,9 +40,7 @@ class BrainConfig:
 
     Attributes:
         core_url:            URL for dina-core (default ``http://core:8100``).
-        brain_token:         Legacy token for admin proxy fallback (optional).
         service_key_dir:     Directory for Ed25519 service keys.
-        internal_token:      DINA_INTERNAL_TOKEN for admin proxy auth (optional).
         listen_port:         Port brain listens on (default ``8200``).
         log_level:           Logging level (default ``"INFO"``).
         llm_url:             URL for the LLM sidecar (optional).
@@ -53,9 +50,7 @@ class BrainConfig:
     """
 
     core_url: str
-    brain_token: str | None
     service_key_dir: str
-    internal_token: str | None
     client_token: str | None
     listen_port: int
     log_level: str
@@ -72,8 +67,8 @@ class BrainConfig:
 # ---------------------------------------------------------------------------
 
 
-def _read_token_from_file(path: str) -> str:
-    """Read the BRAIN_TOKEN from a Docker-secrets file.
+def _read_secret_from_file(path: str, *, secret_name: str) -> str:
+    """Read a secret from a Docker-secrets file.
 
     The file content is stripped of leading/trailing whitespace so that
     a trailing newline does not break constant-time comparison.
@@ -81,8 +76,7 @@ def _read_token_from_file(path: str) -> str:
     file_path = Path(path)
     if not file_path.is_file():
         raise ValueError(
-            f"BRAIN_TOKEN file not found at {path} "
-            "(set DINA_BRAIN_TOKEN_FILE to a valid path or provide DINA_BRAIN_TOKEN)"
+            f"{secret_name} file not found at {path}"
         )
     return file_path.read_text().strip()
 
@@ -94,9 +88,6 @@ def load_brain_config() -> BrainConfig:
         DINA_CORE_URL          — Core endpoint URL (default ``http://core:8100``).
         DINA_SERVICE_KEY_DIR   — Directory for Ed25519 service keys (default
                                  ``/run/secrets/service_keys``).
-        DINA_BRAIN_TOKEN       — Legacy token (optional, admin proxy fallback).
-        DINA_BRAIN_TOKEN_FILE  — Path to a file containing the token.
-        DINA_INTERNAL_TOKEN    — Internal token for admin proxy auth.
         DINA_BRAIN_PORT        — Brain listen port (default ``8200``).
         DINA_LOG_LEVEL         — Log level (default ``"INFO"``).
         DINA_LLM_URL           — LLM sidecar URL (optional).
@@ -107,19 +98,6 @@ def load_brain_config() -> BrainConfig:
     """
     # -- SERVICE_KEY_DIR (for Ed25519 service-to-service auth) --
     service_key_dir = os.environ.get("DINA_SERVICE_KEY_DIR", "").strip() or "/run/secrets/service_keys"
-
-    # -- BRAIN_TOKEN (optional — legacy / admin proxy fallback) --
-    brain_token = os.environ.get("DINA_BRAIN_TOKEN", "").strip() or None
-    token_file = os.environ.get("DINA_BRAIN_TOKEN_FILE", "").strip()
-
-    if not brain_token and token_file:
-        try:
-            brain_token = _read_token_from_file(token_file)
-        except ValueError:
-            log.warning("config.brain_token_file.not_found", extra={"path": token_file})
-
-    # -- INTERNAL_TOKEN (for admin proxy auth into brain) --
-    internal_token = os.environ.get("DINA_INTERNAL_TOKEN", "").strip() or None
 
     # -- CORE_URL (default with validation) --
     core_url = os.environ.get("DINA_CORE_URL", "").strip() or _DEFAULT_CORE_URL
@@ -147,7 +125,9 @@ def load_brain_config() -> BrainConfig:
     client_token = os.environ.get("DINA_CLIENT_TOKEN", "").strip() or None
     client_token_file = os.environ.get("DINA_CLIENT_TOKEN_FILE", "").strip()
     if not client_token and client_token_file:
-        client_token = _read_token_from_file(client_token_file)
+        client_token = _read_secret_from_file(
+            client_token_file, secret_name="CLIENT_TOKEN",
+        )
 
     # LLM routing is enabled only when a backend URL is configured
     llm_routing_enabled = llm_url is not None
@@ -156,7 +136,9 @@ def load_brain_config() -> BrainConfig:
     telegram_token = os.environ.get("DINA_TELEGRAM_TOKEN", "").strip() or None
     telegram_token_file = os.environ.get("DINA_TELEGRAM_TOKEN_FILE", "").strip()
     if not telegram_token and telegram_token_file:
-        telegram_token = _read_token_from_file(telegram_token_file)
+        telegram_token = _read_secret_from_file(
+            telegram_token_file, secret_name="TELEGRAM_TOKEN",
+        )
 
     telegram_allowed_users: frozenset[int] = frozenset()
     raw_tg_users = os.environ.get("DINA_TELEGRAM_ALLOWED_USERS", "").strip()
@@ -185,9 +167,7 @@ def load_brain_config() -> BrainConfig:
 
     return BrainConfig(
         core_url=core_url,
-        brain_token=brain_token,
         service_key_dir=service_key_dir,
-        internal_token=internal_token,
         client_token=client_token,
         listen_port=listen_port,
         log_level=log_level,

@@ -94,11 +94,19 @@ class ServiceIdentity:
         self._pub_path = self._pub_dir / f"{service_name}_ed25519_public.pem"
         self._private_key: Ed25519PrivateKey | None = None
 
-    def ensure_key(self) -> None:
-        """Generate or load the service keypair."""
+    def ensure_key(self, *, allow_generate: bool = False) -> None:
+        """Load the service keypair.
+
+        Generates a new keypair only when ``allow_generate=True``.
+        """
         if self._priv_path.exists():
             self._load()
         else:
+            if not allow_generate:
+                raise FileNotFoundError(
+                    f"Missing service private key: {self._priv_path} "
+                    "(set DINA_SERVICE_KEY_INIT=1 only for provisioning)"
+                )
             self._generate()
 
     def _generate(self) -> None:
@@ -131,6 +139,18 @@ class ServiceIdentity:
         if not isinstance(key, Ed25519PrivateKey):
             raise TypeError(f"Expected Ed25519 private key, got {type(key)}")
         self._private_key = key
+
+        # Fail-closed: require matching public key file at runtime.
+        if not self._pub_path.exists():
+            raise FileNotFoundError(f"Missing service public key: {self._pub_path}")
+        pub_pem = self._pub_path.read_bytes()
+        pub_key = load_pem_public_key(pub_pem)
+        if not isinstance(pub_key, Ed25519PublicKey):
+            raise TypeError(f"Expected Ed25519 public key, got {type(pub_key)}")
+        expected = self._private_key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+        actual = pub_key.public_bytes(Encoding.Raw, PublicFormat.Raw)
+        if expected != actual:
+            raise ValueError("Service public key does not match private key")
 
     def load_peer_key(self, peer_name: str) -> Ed25519PublicKey:
         """Load a peer service's public key from the shared public directory."""

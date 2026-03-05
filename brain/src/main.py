@@ -157,13 +157,22 @@ def create_app() -> FastAPI:
 
     # 2. Service identity (Ed25519 keypair for service-to-service auth)
     from pathlib import Path
+    service_key_init = os.environ.get("DINA_SERVICE_KEY_INIT", "").strip() == "1"
+    service_key_strict = os.environ.get("DINA_SERVICE_KEY_STRICT", "").strip() == "1"
     brain_identity = ServiceIdentity(Path(cfg.service_key_dir), service_name="brain")
     try:
-        brain_identity.ensure_key()
+        brain_identity.ensure_key(allow_generate=(service_key_init or not service_key_strict))
         log.info("brain.service_key.ready", extra={"did": brain_identity.did()})
     except Exception as exc:
-        log.error("brain.service_key.failed", extra={"error": str(exc)})
-        brain_identity = None  # type: ignore[assignment]
+        log.error(
+            "brain.service_key.failed",
+            extra={
+                "error": str(exc),
+                "provision_mode": service_key_init,
+                "strict_mode": service_key_strict,
+            },
+        )
+        raise
 
     # Lazy loader for Core's public key — resolves on first request, not at startup.
     # This avoids the cold-start race where Brain starts before Core has generated
@@ -190,7 +199,7 @@ def create_app() -> FastAPI:
         service_identity=brain_identity,
     )
     admin_core_client: CoreHTTPClient | None = (
-        CoreHTTPClient(cfg.core_url, brain_token=cfg.client_token)
+        CoreHTTPClient(cfg.core_url, bearer_token=cfg.client_token)
         if cfg.client_token
         else None
     )
@@ -490,12 +499,9 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json" if _is_dev else None,
     )
 
-    # Determine internal token for admin proxy bearer auth
-    _internal_token = cfg.internal_token or cfg.brain_token or ""
     brain_api = create_brain_app(
         guardian, sync_engine, scrubber=scrubber,
         core_public_key=_get_core_public_key,
-        internal_token=_internal_token,
     )
     # Resolve dina.html path (architecture visualization)
     # Local dev: project_root/dina.html (3 dirs up from src/main.py)
@@ -520,6 +526,7 @@ def create_app() -> FastAPI:
             admin_core_client, cfg, dina_html_path=_dina_html, images_dir=_images_dir,
             llm_reload_callback=reload_llm_providers,
             llm_router=llm_router,
+            guardian=guardian,
         )
         master.mount("/admin", admin_ui)
     else:
@@ -532,7 +539,9 @@ def create_app() -> FastAPI:
         """Health check -- no auth required."""
         status = "ok"
         try:
-            await brain_core_client.health()
+            # Keep liveness fast even when Core is unavailable; report degraded
+            # instead of blocking until CoreHTTPClient retries are exhausted.
+            await asyncio.wait_for(brain_core_client.health(), timeout=0.8)
         except Exception:
             status = "degraded"
         if not providers:

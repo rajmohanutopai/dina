@@ -195,7 +195,7 @@ class DinaClient:
         """Send an event to Core's agent validation proxy.
 
         Core authenticates via Ed25519 signature (device auth) and forwards
-        to brain's guardian internally.  No BRAIN_TOKEN needed on the client.
+        to brain's guardian internally.
         """
         resp = self._request(
             self._core,

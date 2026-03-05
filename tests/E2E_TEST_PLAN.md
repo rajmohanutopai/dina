@@ -1286,7 +1286,7 @@ prefixes.
 
 | Step | Actor | Action | Component Boundary | Expected Outcome |
 |------|-------|--------|--------------------|------------------|
-| 1 | — | Simulate compromised brain with BRAIN_TOKEN | test harness | Brain has valid BRAIN_TOKEN |
+| 1 | — | Simulate compromised brain with Service Signature Auth | test harness | Brain has valid Service Signature Auth |
 | 2 | — | Brain queries open persona `/personal` | Brain → Don Alonso's Core | Data returned — expected damage radius |
 | 3 | — | Brain queries locked persona `/financial` | Brain → Don Alonso's Core | `403 persona_locked` — cannot access |
 | 4 | — | Brain queries restricted persona `/health` | Brain → Don Alonso's Core | Data returned BUT audit entry + briefing notification to user |
@@ -1296,7 +1296,7 @@ prefixes.
 - Compromised brain can access open personas (expected, documented damage radius)
 - Locked personas are inaccessible (DEK not in RAM)
 - Restricted personas audited (user always informed)
-- Admin endpoints require higher privilege than BRAIN_TOKEN
+- Admin endpoints require higher privilege than Service Signature Auth
 
 #### E2E-13.5: **[TST-E2E-069]** Oversized Payload Attack
 

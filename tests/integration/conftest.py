@@ -25,7 +25,7 @@ from tests.integration.mocks import (
     MockAdminAPI,
     MockAppView,
     MockAuditLog,
-    MockBrainTokenAuth,
+    MockServiceAuth,
     MockCalendarConnector,
     MockChaosMonkey,
     MockCrashLog,
@@ -98,7 +98,7 @@ if DOCKER_MODE:
     from tests.integration.docker_services import DockerServices
     from tests.integration.real_clients import (
         RealAdminAPI,
-        RealBrainTokenAuth,
+        RealServiceAuth,
         RealDockerCompose,
         RealGoCore,
         RealPairingManager,
@@ -146,9 +146,8 @@ def docker_persona_setup(docker_services):
     """
     if not DOCKER_MODE:
         return
-    # Persona management requires a client token (brain token is denied
-    # on /v1/persona/* by the authz middleware).
-    token = docker_services.client_token or docker_services.brain_token
+    # Persona management requires an admin-scoped client token.
+    token = docker_services.client_token
     headers = {"Authorization": f"Bearer {token}"}
     base = docker_services.core_url
     for name in _ALL_PERSONAS:
@@ -163,15 +162,14 @@ def docker_persona_setup(docker_services):
             headers=headers, timeout=10,
         )
 
-    # Clear all vaults at session start for a clean slate
-    # Vault clear uses brain token (allowed on /v1/vault/*)
-    brain_headers = {"Authorization": f"Bearer {docker_services.brain_token}"}
+    # Clear all vaults at session start for a clean slate.
+    clear_headers = {"Authorization": f"Bearer {docker_services.client_token}"}
     for name in _ALL_PERSONAS:
         try:
             httpx.post(
                 f"{base}/v1/vault/clear",
                 json={"persona": name},
-                headers=brain_headers, timeout=10,
+                headers=clear_headers, timeout=10,
             )
         except Exception:
             pass
@@ -211,7 +209,7 @@ def mock_identity() -> MockIdentity:
 def mock_vault(docker_services, docker_vault_cleanup) -> MockVault:
     if DOCKER_MODE:
         return RealVault(
-            docker_services.core_url, docker_services.brain_token,
+            docker_services.core_url,
             docker_vault_cleanup,
         )
     return MockVault()
@@ -224,7 +222,6 @@ def mock_dina(mock_identity: MockIdentity, mock_vault: MockVault,
     if DOCKER_MODE:
         real_scrubber = RealPIIScrubber(
             docker_services.core_url, docker_services.brain_url,
-            docker_services.brain_token,
         )
         dina.scrubber = real_scrubber
         dina.go_core._scrubber = real_scrubber
@@ -345,7 +342,6 @@ def mock_scrubber(docker_services) -> MockPIIScrubber:
     if DOCKER_MODE:
         return RealPIIScrubber(
             docker_services.core_url, docker_services.brain_url,
-            docker_services.brain_token,
         )
     return MockPIIScrubber()
 
@@ -355,7 +351,7 @@ def mock_go_core(mock_vault: MockVault, mock_identity: MockIdentity,
                  mock_scrubber: MockPIIScrubber, docker_services) -> MockGoCore:
     if DOCKER_MODE:
         return RealGoCore(
-            docker_services.core_url, docker_services.brain_token, mock_vault,
+            docker_services.core_url, mock_vault,
             scrubber=mock_scrubber,
             client_token=docker_services.client_token,
         )
@@ -391,7 +387,7 @@ def mock_brain(mock_classifier: MockSilenceClassifier,
                docker_services) -> MockPythonBrain:
     if DOCKER_MODE:
         return RealPythonBrain(
-            docker_services.brain_url, docker_services.brain_token,
+            docker_services.brain_url,
             mock_classifier, mock_whisper, mock_llm_router,
         )
     return MockPythonBrain(mock_classifier, mock_whisper, mock_llm_router)
@@ -624,19 +620,19 @@ def sample_sharing_rules(
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def mock_brain_token_auth(docker_services) -> MockBrainTokenAuth:
+def mock_service_auth(docker_services) -> MockServiceAuth:
     if DOCKER_MODE:
-        return RealBrainTokenAuth(
-            docker_services.core_url, docker_services.brain_token,
+        return RealServiceAuth(
+            docker_services.core_url, docker_services.client_token,
         )
-    return MockBrainTokenAuth()
+    return MockServiceAuth()
 
 
 @pytest.fixture
 def mock_ws_server(docker_services) -> MockWebSocketServer:
     if DOCKER_MODE:
         return RealWebSocketClient(
-            docker_services.core_url, docker_services.brain_token,
+            docker_services.core_url,
         )
     return MockWebSocketServer()
 
@@ -647,7 +643,7 @@ def mock_admin_api(
 ) -> MockAdminAPI:
     if DOCKER_MODE:
         return RealAdminAPI(
-            docker_services.brain_url, docker_services.brain_token,
+            docker_services.brain_url,
         )
     return MockAdminAPI(mock_identity, mock_vault)
 
@@ -656,7 +652,7 @@ def mock_admin_api(
 def mock_pairing_manager(docker_services) -> MockPairingManager:
     if DOCKER_MODE:
         return RealPairingManager(
-            docker_services.core_url, docker_services.brain_token,
+            docker_services.core_url,
         )
     return MockPairingManager()
 

@@ -70,7 +70,6 @@ class DockerServices:
             core=f"http://localhost:{core_port}",
             brain=f"http://localhost:{brain_port}",
         )
-        self.brain_token: str = ""
         self.client_token: str = ""
 
     # -- lifecycle -----------------------------------------------------------
@@ -83,7 +82,6 @@ class DockerServices:
         if self._started:
             return
 
-        self._load_brain_token()
         self._load_client_token()
 
         # Skip docker compose up if services are already healthy
@@ -168,15 +166,6 @@ class DockerServices:
             text=True,
             timeout=300,
         )
-
-    def _load_brain_token(self) -> None:
-        """Read the shared brain token from secrets/brain_token."""
-        token_path = PROJECT_ROOT / "secrets" / "brain_token"
-        if token_path.exists():
-            self.brain_token = token_path.read_text().strip()
-        else:
-            # install.sh should have created it; warn but continue
-            self.brain_token = ""
 
     def _load_client_token(self) -> None:
         """Read the client token from secrets/client_token."""

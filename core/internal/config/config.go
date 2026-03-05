@@ -16,7 +16,6 @@ type Config struct {
 	AdminAddr        string `json:"admin_addr"`
 	VaultPath        string `json:"vault_path"`
 	BrainURL         string `json:"brain_url"`
-	BrainToken       string `json:"brain_token"`       // deprecated: kept for admin proxy fallback only
 	ServiceKeyDir    string `json:"service_key_dir"`
 	SecurityMode     string `json:"security_mode"`
 	SessionTTL       int    `json:"session_ttl"`
@@ -32,7 +31,7 @@ type Config struct {
 	OwnDID           string `json:"own_did"`
 	AppViewURL       string `json:"appview_url"`
 	AllowedOrigins   string `json:"allowed_origins"`
-	TrustedProxies   string `json:"trusted_proxies"`    // comma-separated CIDRs for XFF trust
+	TrustedProxies   string `json:"trusted_proxies"`   // comma-separated CIDRs for XFF trust
 	AdminSocketPath  string `json:"admin_socket_path"` // Unix socket for local admin (empty = disabled)
 }
 
@@ -59,12 +58,7 @@ func (l *Loader) Load() (*Config, error) {
 	// 2. Override with environment variables.
 	loadEnv(cfg)
 
-	// 3. Load BrainToken from Docker Secret file (optional — deprecated, only for admin proxy fallback).
-	if path := os.Getenv("DINA_BRAIN_TOKEN_FILE"); path != "" {
-		loadSecretFile(path, &cfg.BrainToken)
-	}
-
-	// 4. Load ClientToken from Docker Secret file (optional — for pre-registered admin access).
+	// 3. Load ClientToken from Docker Secret file (optional — for pre-registered admin access).
 	if path := os.Getenv("DINA_CLIENT_TOKEN_FILE"); path != "" {
 		loadSecretFile(path, &cfg.ClientToken)
 	}
@@ -127,22 +121,6 @@ func loadSecretFile(path string, target *string) {
 	}
 }
 
-// loadSecretFileStrict reads a token from a file and returns an error
-// if the file is missing or empty. Used for DINA_BRAIN_TOKEN_FILE where
-// a missing or empty token file must fail startup.
-func loadSecretFileStrict(path string, target *string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("config: brain token file error: %w", err)
-	}
-	val := strings.TrimSpace(string(data))
-	if val == "" {
-		return fmt.Errorf("config: brain token file is empty: %s", path)
-	}
-	*target = val
-	return nil
-}
-
 func loadEnv(cfg *Config) {
 	if v := os.Getenv("DINA_LISTEN_ADDR"); v != "" {
 		cfg.ListenAddr = v
@@ -155,9 +133,6 @@ func loadEnv(cfg *Config) {
 	}
 	if v := os.Getenv("DINA_BRAIN_URL"); v != "" {
 		cfg.BrainURL = v
-	}
-	if v := os.Getenv("DINA_BRAIN_TOKEN"); v != "" {
-		cfg.BrainToken = v
 	}
 	if v := os.Getenv("DINA_SERVICE_KEY_DIR"); v != "" {
 		cfg.ServiceKeyDir = v

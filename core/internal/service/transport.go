@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"sync"
 	"time"
 
@@ -22,38 +21,24 @@ import (
 var ed25519MulticodecPrefix = []byte{0xed, 0x01}
 
 // decodeMultibase decodes a multibase-encoded Ed25519 public key.
-// HIGH-05: Supports "z" prefix (base58btc with multicodec), falls back to hex for legacy.
+// Strict format: z + base58btc(0xed01 + 32-byte-pubkey).
 func decodeMultibase(multibaseKey string) ([]byte, error) {
 	if len(multibaseKey) < 2 {
 		return nil, fmt.Errorf("invalid multibase key: too short")
 	}
 
-	prefix := multibaseKey[0]
-	encoded := multibaseKey[1:]
-
-	switch prefix {
-	case 'z':
-		// base58btc encoding: z + base58btc(0xed01 + 32-byte-pubkey)
-		decoded, err := base58.Decode(encoded)
-		if err != nil {
-			return nil, fmt.Errorf("base58btc decode failed: %w", err)
-		}
-		// Validate multicodec prefix (0xed, 0x01) and strip it.
-		if len(decoded) != 34 || decoded[0] != 0xed || decoded[1] != 0x01 {
-			return nil, fmt.Errorf("invalid Ed25519 multikey: expected 34 bytes with 0xed01 prefix, got %d bytes", len(decoded))
-		}
-		return decoded[2:], nil
-	default:
-		// Legacy fallback: hex-encoded 32-byte key.
-		key, err := hex.DecodeString(encoded)
-		if err != nil {
-			return nil, fmt.Errorf("hex decode failed: %w", err)
-		}
-		if len(key) != 32 {
-			return nil, fmt.Errorf("invalid key length: expected 32 bytes, got %d", len(key))
-		}
-		return key, nil
+	if multibaseKey[0] != 'z' {
+		return nil, fmt.Errorf("invalid multibase key: expected z-prefix")
 	}
+	decoded, err := base58.Decode(multibaseKey[1:])
+	if err != nil {
+		return nil, fmt.Errorf("base58btc decode failed: %w", err)
+	}
+	// Validate multicodec prefix (0xed, 0x01) and strip it.
+	if len(decoded) != 34 || decoded[0] != 0xed || decoded[1] != 0x01 {
+		return nil, fmt.Errorf("invalid Ed25519 multikey: expected 34 bytes with 0xed01 prefix, got %d bytes", len(decoded))
+	}
+	return decoded[2:], nil
 }
 
 // d2dPayload is the JSON wrapper sent over the wire containing both
@@ -76,8 +61,8 @@ type TransportService struct {
 	outbox    port.OutboxManager
 	inbox     port.InboxManager
 	clock     port.Clock
-	deliverer port.Deliverer    // optional: immediate delivery to remote endpoint
-	egress    port.Gatekeeper   // SEC-HIGH-04: egress policy enforcement
+	deliverer port.Deliverer  // optional: immediate delivery to remote endpoint
+	egress    port.Gatekeeper // SEC-HIGH-04: egress policy enforcement
 
 	recipientPub  []byte
 	recipientPriv []byte
@@ -283,19 +268,26 @@ func (s *TransportService) ReceiveMessage(ctx context.Context, envelope domain.D
 		return nil, fmt.Errorf("transport: %w: sender has no verification methods", domain.ErrInvalidSignature)
 	}
 
-	// HIGH-05: Verify the sender's Ed25519 signature over the plaintext.
-	if s.verifier != nil && envelope.Sig != "" {
-		senderMultibase := senderDoc.VerificationMethod[0].PublicKeyMultibase
-		senderPubKey, decErr := decodeMultibase(senderMultibase)
-		if decErr == nil {
-			sigBytes, sigErr := hex.DecodeString(envelope.Sig)
-			if sigErr == nil {
-				valid, verErr := s.verifier.Verify(senderPubKey, plaintext, sigBytes)
-				if verErr != nil || !valid {
-					return nil, fmt.Errorf("transport: %w", domain.ErrInvalidSignature)
-				}
-			}
-		}
+	if s.verifier == nil {
+		return nil, fmt.Errorf("transport: signature verifier not configured")
+	}
+	if envelope.Sig == "" {
+		return nil, fmt.Errorf("transport: %w: missing signature", domain.ErrInvalidSignature)
+	}
+
+	// Verify the sender's Ed25519 signature over the plaintext.
+	senderMultibase := senderDoc.VerificationMethod[0].PublicKeyMultibase
+	senderPubKey, decErr := decodeMultibase(senderMultibase)
+	if decErr != nil {
+		return nil, fmt.Errorf("transport: decode sender public key: %w", decErr)
+	}
+	sigBytes, sigErr := hex.DecodeString(envelope.Sig)
+	if sigErr != nil {
+		return nil, fmt.Errorf("transport: decode signature hex: %w", sigErr)
+	}
+	valid, verErr := s.verifier.Verify(senderPubKey, plaintext, sigBytes)
+	if verErr != nil || !valid {
+		return nil, fmt.Errorf("transport: %w", domain.ErrInvalidSignature)
 	}
 
 	return &msg, nil
@@ -389,51 +381,32 @@ func (s *TransportService) SetSenderDID(did string) {
 }
 
 // ProcessInbound decrypts an inbound message using the node's own X25519 keys.
-// It accepts two formats:
-//   - JSON wrapper: {"c": "<base64 ciphertext>", "s": "<hex sig>"} — new format with signature
-//   - Raw bytes: NaCl sealed box ciphertext — legacy format (no signature verification)
-//
-// When a signature is present, it is verified against the sender's public key
-// resolved from their DID document.
+// Strict format: JSON wrapper {"c": "<base64 ciphertext>", "s": "<hex sig>"}.
+// Signature verification is mandatory.
 func (s *TransportService) ProcessInbound(ctx context.Context, sealed []byte) (*domain.DinaMessage, error) {
 	if s.recipientPub == nil || s.recipientPriv == nil {
 		return nil, fmt.Errorf("transport: recipient keys not configured")
 	}
+	if s.verifier == nil {
+		return nil, fmt.Errorf("transport: signature verifier not configured")
+	}
 
-	// Try to parse as JSON wrapper (new format with signature).
+	// Parse JSON wrapper and require both ciphertext and signature.
 	var ciphertext []byte
 	var sigHex string
 	var payload d2dPayload
-	if json.Unmarshal(sealed, &payload) == nil && payload.Ciphertext != "" {
-		// New JSON wrapper format — decode base64 ciphertext and extract sig.
-		decoded, decErr := base64.StdEncoding.DecodeString(payload.Ciphertext)
-		if decErr != nil {
-			return nil, fmt.Errorf("transport: decode ciphertext base64: %w", decErr)
-		}
-		ciphertext = decoded
-		sigHex = payload.Sig
-
-		// Reject unsigned JSON-wrapped messages unless migration mode is enabled.
-		if payload.Sig == "" {
-			if os.Getenv("DINA_ALLOW_UNSIGNED_D2D") != "1" {
-				return nil, fmt.Errorf("transport: %w: unsigned inbound messages rejected", domain.ErrInvalidSignature)
-			}
-			slog.Warn("SECURITY: accepting unsigned D2D message",
-				"mode", "migration",
-				"format", "json-wrapped",
-			)
-		}
-	} else {
-		// Legacy format — raw NaCl sealed box bytes (no signature).
-		if os.Getenv("DINA_ALLOW_UNSIGNED_D2D") != "1" {
-			return nil, fmt.Errorf("transport: %w: unsigned legacy payload rejected", domain.ErrInvalidSignature)
-		}
-		slog.Warn("SECURITY: accepting unsigned D2D message",
-			"mode", "migration",
-			"format", "legacy",
-		)
-		ciphertext = sealed
+	if err := json.Unmarshal(sealed, &payload); err != nil || payload.Ciphertext == "" {
+		return nil, fmt.Errorf("transport: %w: invalid envelope format", domain.ErrInvalidSignature)
 	}
+	if payload.Sig == "" {
+		return nil, fmt.Errorf("transport: %w: missing signature", domain.ErrInvalidSignature)
+	}
+	decoded, decErr := base64.StdEncoding.DecodeString(payload.Ciphertext)
+	if decErr != nil {
+		return nil, fmt.Errorf("transport: decode ciphertext base64: %w", decErr)
+	}
+	ciphertext = decoded
+	sigHex = payload.Sig
 
 	x25519Priv, err := s.converter.Ed25519ToX25519Private(s.recipientPriv)
 	if err != nil {
@@ -452,39 +425,37 @@ func (s *TransportService) ProcessInbound(ctx context.Context, sealed []byte) (*
 		return nil, fmt.Errorf("transport: unmarshal inbound: %w", err)
 	}
 
-	// Verify the sender's signature if present (new format only).
-	if sigHex != "" && s.verifier != nil {
-		sigBytes, sigErr := hex.DecodeString(sigHex)
-		if sigErr != nil {
-			return nil, fmt.Errorf("transport: decode signature hex: %w", sigErr)
-		}
+	// Verify the sender's signature.
+	sigBytes, sigErr := hex.DecodeString(sigHex)
+	if sigErr != nil {
+		return nil, fmt.Errorf("transport: decode signature hex: %w", sigErr)
+	}
 
-		// Resolve the sender's DID document to get their public key.
-		senderDID, didErr := domain.NewDID(msg.From)
-		if didErr != nil {
-			return nil, fmt.Errorf("transport: invalid sender DID: %w", didErr)
-		}
+	// Resolve the sender's DID document to get their public key.
+	senderDID, didErr := domain.NewDID(msg.From)
+	if didErr != nil {
+		return nil, fmt.Errorf("transport: invalid sender DID: %w", didErr)
+	}
 
-		senderDoc, resolveErr := s.resolver.Resolve(ctx, senderDID)
-		if resolveErr != nil {
-			return nil, fmt.Errorf("transport: resolve sender DID for sig verification: %w", resolveErr)
-		}
+	senderDoc, resolveErr := s.resolver.Resolve(ctx, senderDID)
+	if resolveErr != nil {
+		return nil, fmt.Errorf("transport: resolve sender DID for sig verification: %w", resolveErr)
+	}
 
-		if len(senderDoc.VerificationMethod) == 0 {
-			return nil, fmt.Errorf("transport: %w: sender has no verification methods", domain.ErrInvalidSignature)
-		}
+	if len(senderDoc.VerificationMethod) == 0 {
+		return nil, fmt.Errorf("transport: %w: sender has no verification methods", domain.ErrInvalidSignature)
+	}
 
-		// HIGH-05: Decode the sender's public key from the DID document.
-		senderMultibase := senderDoc.VerificationMethod[0].PublicKeyMultibase
-		senderPubKey, decErr := decodeMultibase(senderMultibase)
-		if decErr != nil {
-			return nil, fmt.Errorf("transport: decode sender public key: %w", decErr)
-		}
+	// Decode the sender's public key from the DID document.
+	senderMultibase := senderDoc.VerificationMethod[0].PublicKeyMultibase
+	senderPubKey, decErr := decodeMultibase(senderMultibase)
+	if decErr != nil {
+		return nil, fmt.Errorf("transport: decode sender public key: %w", decErr)
+	}
 
-		valid, verErr := s.verifier.Verify(senderPubKey, plaintext, sigBytes)
-		if verErr != nil || !valid {
-			return nil, fmt.Errorf("transport: %w", domain.ErrInvalidSignature)
-		}
+	valid, verErr := s.verifier.Verify(senderPubKey, plaintext, sigBytes)
+	if verErr != nil || !valid {
+		return nil, fmt.Errorf("transport: %w", domain.ErrInvalidSignature)
 	}
 
 	// SEC-HIGH-08: Replay detection using bounded (sender, msgID) cache.

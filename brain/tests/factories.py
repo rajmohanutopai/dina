@@ -296,13 +296,45 @@ def make_vault_item(item_id: str = "item-001", **overrides: Any) -> dict:
     return base
 
 
-# ---------- Auth Tokens (§1) ----------
+# ---------- Auth Tokens & Service Keys (§1) ----------
 
 
-# Deterministic test tokens
+# Deterministic test tokens (CLIENT_TOKEN still used by admin UI)
 TEST_BRAIN_TOKEN = "test-brain-token-" + "a" * 46
 TEST_BRAIN_TOKEN_WRONG = "wrong-brain-token-" + "b" * 46
 TEST_CLIENT_TOKEN = "test-client-token-" + "c" * 46
+
+
+# Ed25519 test keypair for service-to-service auth (simulates core → brain)
+import hashlib
+from datetime import datetime, timezone
+
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+_TEST_SIGNING_KEY = Ed25519PrivateKey.generate()
+TEST_CORE_PUBLIC_KEY = _TEST_SIGNING_KEY.public_key()
+
+_EMPTY_BODY_HASH = hashlib.sha256(b"").hexdigest()
+
+
+def sign_test_request(
+    method: str, path: str, body: bytes = b"", query: str = "",
+) -> dict[str, str]:
+    """Create Ed25519 signed request headers for brain API tests.
+
+    The ``path`` should be the sub-app path (e.g. ``/v1/process``, not
+    ``/api/v1/process``), matching what the mounted sub-app sees in
+    ``request.url.path``.
+    """
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    body_hash = hashlib.sha256(body).hexdigest() if body else _EMPTY_BODY_HASH
+    payload = f"{method}\n{path}\n{query}\n{timestamp}\n{body_hash}"
+    signature = _TEST_SIGNING_KEY.sign(payload.encode("utf-8"))
+    return {
+        "X-DID": "did:key:zTestCoreServiceKey",
+        "X-Timestamp": timestamp,
+        "X-Signature": signature.hex(),
+    }
 
 
 # ---------- Config (§9) ----------

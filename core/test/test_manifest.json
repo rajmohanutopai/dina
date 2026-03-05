@@ -3,7 +3,7 @@
     "TST-CORE-001": {
       "path": "1.1",
       "row": 1,
-      "scenario": "Valid BRAIN_TOKEN in `Authorization: Bearer` header",
+      "scenario": "Valid Service Signature Auth in `Authorization: Bearer` header",
       "line": 14
     },
     "TST-CORE-002": {
@@ -21,7 +21,7 @@
     "TST-CORE-004": {
       "path": "1.1",
       "row": 4,
-      "scenario": "Wrong BRAIN_TOKEN value",
+      "scenario": "Wrong Service Signature Auth value",
       "line": 17
     },
     "TST-CORE-005": {
@@ -33,7 +33,7 @@
     "TST-CORE-006": {
       "path": "1.1",
       "row": 6,
-      "scenario": "BRAIN_TOKEN with leading/trailing whitespace",
+      "scenario": "Service Signature Auth with leading/trailing whitespace",
       "line": 19
     },
     "TST-CORE-007": {
@@ -75,13 +75,13 @@
     "TST-CORE-013": {
       "path": "1.2",
       "row": 4,
-      "scenario": "CLIENT_TOKEN on BRAIN_TOKEN-only endpoint",
+      "scenario": "CLIENT_TOKEN on Service Signature Auth-only endpoint",
       "line": 31
     },
     "TST-CORE-014": {
       "path": "1.2",
       "row": 5,
-      "scenario": "BRAIN_TOKEN on CLIENT_TOKEN-only endpoint",
+      "scenario": "Service Signature Auth on CLIENT_TOKEN-only endpoint",
       "line": 32
     },
     "TST-CORE-015": {
@@ -249,7 +249,7 @@
     "TST-CORE-042": {
       "path": "1.4",
       "row": 5,
-      "scenario": "`identifyToken()` priority: BRAIN_TOKEN first",
+      "scenario": "`identifyToken()` priority: Service Signature Auth first",
       "line": 70
     },
     "TST-CORE-043": {
@@ -261,7 +261,7 @@
     "TST-CORE-044": {
       "path": "1.4",
       "row": 7,
-      "scenario": "`isAdminEndpoint()` allowlist \u2014 BRAIN_TOKEN rejected on admin paths",
+      "scenario": "`isAdminEndpoint()` allowlist \u2014 Service Signature Auth rejected on admin paths",
       "line": 72
     },
     "TST-CORE-045": {
@@ -4563,7 +4563,7 @@
     "TST-CORE-645": {
       "path": "18",
       "row": 7,
-      "scenario": "All brain-callable endpoints accept BRAIN_TOKEN",
+      "scenario": "All brain-callable endpoints accept Service Signature Auth",
       "line": 1256
     },
     "TST-CORE-646": {
@@ -5169,7 +5169,7 @@
     "TST-CORE-728": {
       "path": "23.1",
       "row": 5,
-      "scenario": "Export excludes BRAIN_TOKEN",
+      "scenario": "Export excludes Service Signature Auth",
       "line": 1442
     },
     "TST-CORE-729": {
@@ -5929,7 +5929,7 @@
     "TST-CORE-990": {
       "path": "30.2",
       "row": 4,
-      "scenario": "Matrix test: every admin endpoint rejects BRAIN_TOKEN"
+      "scenario": "Matrix test: every admin endpoint rejects Service Signature Auth"
     },
     "TST-CORE-991": {
       "path": "30.3",
@@ -6089,7 +6089,7 @@
     "TST-CORE-1022": {
       "path": "30.10",
       "row": 1,
-      "scenario": "BRAIN_TOKEN denied on all admin endpoints (real HTTP)"
+      "scenario": "Service Signature Auth denied on all admin endpoints (real HTTP)"
     },
     "TST-CORE-1023": {
       "path": "30.10",

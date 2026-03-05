@@ -98,7 +98,7 @@ The Client Device Plane: This is how you, as a user, interact with Core from the
 
 The Local Privileged Plane: This is how internal services (like the Python Brain talking to the Go Core) authenticate. Each service generates its own Ed25519 keypair at first startup. Private keys are isolated by separate Docker bind mounts — Core's private key never exists in Brain's container filesystem and vice versa. On the host, `secrets/service_keys/` is split into `core/` (bind-mounted only to Core as `/run/secrets/service_keys/private`), `brain/` (bind-mounted only to Brain as `/run/secrets/service_keys/private`), and `public/` (bind-mounted to both containers as `/run/secrets/service_keys/public`). Each container sees only its own private key under `private/` and both services' public keys under `public/`. Every inter-service request is cryptographically signed using the sender's private key and verified by the receiver using the sender's known public key.
 
-Admin Web UI - This is a very specific interface where we connect using CLIENT-TOKEN (a secret known to core). The admin web UI proxy path uses a bearer token (DINA_INTERNAL_TOKEN) since browsers cannot perform Ed25519 signing.
+Admin Web UI - This is a specific interface where we connect using CLIENT_TOKEN-backed session auth on the admin surface.
 
 2. How Core and Brain Communicate (The Service Key Model)
 
@@ -152,7 +152,7 @@ Let's review the four distinct types of tokens utilized in Dina and trace how th
 1. Master Seed (we discussed)
 2. Service Keys (Ed25519)
 
-Each service (Core and Brain) generates its own Ed25519 keypair on first startup. Private keys are isolated by separate Docker bind mounts: on the host, `secrets/service_keys/core/` is mounted only to Core and `secrets/service_keys/brain/` only to Brain (each as `/run/secrets/service_keys/private/`), while `secrets/service_keys/public/` is mounted to both containers (as `/run/secrets/service_keys/public/`). Each service writes its public key to the shared `public/` directory. There is no shared secret — each side only knows the other's public key, and neither side can access the other's private key at the filesystem level. Every inter-service request is signed using the canonical format: `{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{SHA256_HEX(BODY)}`, transmitted via X-DID, X-Timestamp, and X-Signature headers. The receiver verifies the signature, enforces a 5-minute timestamp window, and uses a double-buffer nonce cache for replay protection. This replaced the earlier BRAIN_TOKEN shared-secret approach (the legacy token is still accepted as an optional fallback for the admin proxy, but Ed25519 service keys are the primary mechanism).
+Each service (Core and Brain) generates its own Ed25519 keypair on first startup. Private keys are isolated by separate Docker bind mounts: on the host, `secrets/service_keys/core/` is mounted only to Core and `secrets/service_keys/brain/` only to Brain (each as `/run/secrets/service_keys/private/`), while `secrets/service_keys/public/` is mounted to both containers (as `/run/secrets/service_keys/public/`). Each service writes its public key to the shared `public/` directory. There is no shared secret — each side only knows the other's public key, and neither side can access the other's private key at the filesystem level. Every inter-service request is signed using the canonical format: `{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{SHA256_HEX(BODY)}`, transmitted via X-DID, X-Timestamp, and X-Signature headers. The receiver verifies the signature, enforces a 5-minute timestamp window, and uses a double-buffer nonce cache for replay protection.
 
 
 3. CLIENT_TOKEN
@@ -163,9 +163,9 @@ Generated during device pairing (`crypto/rand.Read()`, 32 bytes). Two uses:
 
 4. CLI Authentication - CLI authenticates exclusively via Ed25519 request signing (X-DID + X-Timestamp + X-Signature headers). During `dina configure`, the CLI generates an Ed25519 keypair and registers the public key via the pairing ceremony. No shared secret is exchanged.
 
-4. Dina Internal Token
+4. Admin Session Boundary
 
-Used by the Brain admin UI to proxy requests to Core. When the admin dashboard needs to call Core APIs on behalf of the logged-in user, it uses this token.
+Admin UI actions run on the admin app surface with CLIENT_TOKEN-backed session auth. Core remains the gatekeeper for privileged operations.
 
 
 >> Some normal questions and answers

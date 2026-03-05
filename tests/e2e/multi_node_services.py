@@ -16,6 +16,7 @@ Usage as a pytest fixture (session-scoped):
 
 from __future__ import annotations
 
+import os
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -57,7 +58,6 @@ class MultiNodeDockerServices:
         self._compose_file = compose_file
         self._started = False
         self._externally_managed = False
-        self.brain_token: str = ""
         self.client_token: str = ""
 
     # -- per-actor URLs ------------------------------------------------------
@@ -81,7 +81,7 @@ class MultiNodeDockerServices:
         if self._started:
             return
 
-        self._load_brain_token()
+        self._load_tokens()
 
         if self._all_healthy():
             self._externally_managed = True
@@ -174,14 +174,8 @@ class MultiNodeDockerServices:
             timeout=600,
         )
 
-    def _load_brain_token(self) -> None:
-        """Read the shared brain and client tokens from secrets/."""
-        token_path = PROJECT_ROOT / "secrets" / "brain_token"
-        if token_path.exists():
-            self.brain_token = token_path.read_text().strip()
-        else:
-            self.brain_token = ""
-
+    def _load_tokens(self) -> None:
+        """Read auth tokens used by the E2E stack."""
         client_path = PROJECT_ROOT / "secrets" / "client_token"
         if client_path.exists():
             self.client_token = client_path.read_text().strip()

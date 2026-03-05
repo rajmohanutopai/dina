@@ -68,6 +68,12 @@ func (a *Auth) Handler(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// /admin/* is authenticated by Brain admin session/login middleware.
+		// Core acts as a transport proxy for this path.
+		if r.URL.Path == "/admin" || strings.HasPrefix(r.URL.Path, "/admin/") {
+			next.ServeHTTP(w, r)
+			return
+		}
 		// POST /msg is the NaCl ingress endpoint — authenticated by the sealed box itself.
 		if r.URL.Path == "/msg" && r.Method == http.MethodPost {
 			next.ServeHTTP(w, r)

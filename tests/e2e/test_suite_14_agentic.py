@@ -50,10 +50,12 @@ pytestmark = [
 # Helper functions — call Brain HTTP APIs directly
 # ---------------------------------------------------------------------------
 
-def _brain_process(brain_url: str, token: str, event: dict) -> dict:
-    """POST to Brain /api/v1/process and return the JSON response."""
+def _brain_process(core_url: str, token: str, event: dict) -> dict:
+    """POST agent intents through Core /v1/agent/validate."""
+    if event.get("type") != "agent_intent":
+        pytest.skip("Direct Brain /api access is internal-only (service-key authenticated)")
     resp = httpx.post(
-        f"{brain_url}/api/v1/process",
+        f"{core_url}/v1/agent/validate",
         json=event,
         headers={"Authorization": f"Bearer {token}"},
         timeout=30,
@@ -65,18 +67,9 @@ def _brain_process(brain_url: str, token: str, event: dict) -> dict:
 def _brain_reason(
     brain_url: str, token: str, prompt: str, provider: str | None = None,
 ) -> dict:
-    """POST to Brain /api/v1/reason and return the JSON response."""
-    body: dict = {"prompt": prompt, "persona_tier": "open"}
-    if provider:
-        body["provider"] = provider
-    resp = httpx.post(
-        f"{brain_url}/api/v1/reason",
-        json=body,
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=60,
-    )
-    resp.raise_for_status()
-    return resp.json()
+    """Direct Brain /api access is internal-only."""
+    del brain_url, token, prompt, provider
+    pytest.skip("Direct Brain /api access is internal-only (service-key authenticated)")
 
 
 def _brain_healthz(brain_url: str) -> dict:
@@ -86,15 +79,9 @@ def _brain_healthz(brain_url: str) -> dict:
 
 
 def _brain_pii_scrub(brain_url: str, token: str, text: str) -> dict:
-    """POST to Brain /api/v1/pii/scrub and return the JSON response."""
-    resp = httpx.post(
-        f"{brain_url}/api/v1/pii/scrub",
-        json={"text": text},
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=10,
-    )
-    resp.raise_for_status()
-    return resp.json()
+    """Direct Brain /api access is internal-only."""
+    del brain_url, token, text
+    pytest.skip("Direct Brain /api access is internal-only (service-key authenticated)")
 
 
 # ---------------------------------------------------------------------------
@@ -138,8 +125,8 @@ class TestAgenticBehavior:
         The deterministic gate checks for 'fraud' keyword BEFORE the LLM.
         """
         result = _brain_process(
-            docker_services.brain_url("alonso"),
-            docker_services.brain_token,
+            docker_services.core_url("alonso"),
+            docker_services.client_token,
             {
                 "type": "classify_silence",
                 "body": "URGENT: Suspicious transaction of $4,999 detected "
@@ -171,8 +158,8 @@ class TestAgenticBehavior:
         because the same source can produce different priority events.
         """
         result = _brain_process(
-            docker_services.brain_url("alonso"),
-            docker_services.brain_token,
+            docker_services.core_url("alonso"),
+            docker_services.client_token,
             {
                 "type": "classify_silence",
                 "body": "New video from MKBHD: The BEST Phone of 2026!",
@@ -196,8 +183,8 @@ class TestAgenticBehavior:
         boundary — the LLM cannot downgrade it.
         """
         result = _brain_process(
-            docker_services.brain_url("alonso"),
-            docker_services.brain_token,
+            docker_services.core_url("alonso"),
+            docker_services.client_token,
             {
                 "type": "agent_intent",
                 "action": "transfer_money",
@@ -224,8 +211,8 @@ class TestAgenticBehavior:
         gate. The LLM is never consulted for known-safe actions.
         """
         result = _brain_process(
-            docker_services.brain_url("alonso"),
-            docker_services.brain_token,
+            docker_services.core_url("alonso"),
+            docker_services.client_token,
             {
                 "type": "agent_intent",
                 "action": "search",
@@ -251,7 +238,7 @@ class TestAgenticBehavior:
         """
         result = _brain_pii_scrub(
             docker_services.brain_url("alonso"),
-            docker_services.brain_token,
+            docker_services.client_token,
             "Dr. Sharma prescribed medication for patient Rajmohan "
             "at Apollo Hospital in Chennai.",
         )
@@ -282,8 +269,8 @@ class TestAgenticBehavior:
         regardless of LLM response.
         """
         result = _brain_process(
-            docker_services.brain_url("alonso"),
-            docker_services.brain_token,
+            docker_services.core_url("alonso"),
+            docker_services.client_token,
             {
                 "type": "agent_intent",
                 "action": "modify_dns_records",
@@ -324,7 +311,7 @@ class TestAgenticBehavior:
 
         result = _brain_reason(
             docker_services.brain_url("alonso"),
-            docker_services.brain_token,
+            docker_services.client_token,
             "What is the capital of France? Answer in one word.",
         )
         assert result.get("content"), "Response must have content"
@@ -356,7 +343,7 @@ class TestAgenticBehavior:
         """
         result = _brain_reason(
             docker_services.brain_url("alonso"),
-            docker_services.brain_token,
+            docker_services.client_token,
             "What is 2 + 2? Answer in one word.",
             provider="openrouter",
         )

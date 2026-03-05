@@ -22,7 +22,7 @@ import uuid
 import pytest
 
 from tests.integration.mocks import (
-    MockBrainTokenAuth,
+    MockServiceAuth,
     MockCrashLog,
     MockDeploymentProfile,
     MockDockerCompose,
@@ -818,13 +818,13 @@ class TestSecretsManagement:
     # TST-INT-133
     def test_secrets_never_in_docker_inspect_env(
         self, mock_compose: MockDockerCompose,
-        mock_brain_token_auth: MockBrainTokenAuth
+        mock_service_auth: MockServiceAuth
     ) -> None:
         """Secrets must not appear in container environment variables
         (which would be visible via docker inspect)."""
         mock_compose.up()
 
-        token = mock_brain_token_auth.token
+        token = mock_service_auth.token
 
         for name, container in mock_compose.containers.items():
             # Environment should not contain the raw token
@@ -902,7 +902,7 @@ class TestSecretsManagement:
     # TST-INT-137
     def test_brain_token_shared_by_core_and_brain(
         self, mock_compose: MockDockerCompose,
-        mock_brain_token_auth: MockBrainTokenAuth
+        mock_service_auth: MockServiceAuth
     ) -> None:
         """BRAIN_TOKEN is the same secret file mounted into both core
         and brain containers. Both use the same token for auth."""
@@ -920,5 +920,5 @@ class TestSecretsManagement:
         assert core.secrets["brain_token"] == brain.secrets["brain_token"]
 
         # Token validation works with the shared token
-        token = mock_brain_token_auth.token
-        assert mock_brain_token_auth.validate(token, "/v1/vault/query") is True
+        token = mock_service_auth.token
+        assert mock_service_auth.validate(token, "/v1/vault/query") is True

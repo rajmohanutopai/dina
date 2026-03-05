@@ -91,8 +91,8 @@ def e2e_persona_setup(docker_services):
     creates/unlocks every persona on each node.  Also clears vault data
     from prior runs via POST /v1/vault/clear.
 
-    Uses CLIENT_TOKEN for persona endpoints (admin-only) and BRAIN_TOKEN
-    for vault operations, respecting the authz model.
+    Uses CLIENT_TOKEN for persona and vault operations, respecting the
+    authz model.
     Only active in Docker mode.
     """
     if not DOCKER_MODE or docker_services is None:
@@ -101,9 +101,9 @@ def e2e_persona_setup(docker_services):
     import httpx
 
     # Persona create/unlock are admin-only → require CLIENT_TOKEN.
-    # Vault clear is a data operation → uses BRAIN_TOKEN.
+    # Vault clear also uses CLIENT_TOKEN in E2E test mode.
     admin_headers = {"Authorization": f"Bearer {docker_services.client_token}"}
-    data_headers = {"Authorization": f"Bearer {docker_services.brain_token}"}
+    data_headers = {"Authorization": f"Bearer {docker_services.client_token}"}
 
     for actor in ["alonso", "sancho", "chairmaker", "albert"]:
         base = docker_services.core_url(actor)
@@ -156,7 +156,7 @@ def d2d_network(docker_services) -> MockD2DNetwork:
             "did:plc:chairmaker": docker_services.core_url("chairmaker"),
             "did:plc:albert": docker_services.core_url("albert"),
         }
-        return RealD2DNetwork(did_to_core_url, docker_services.brain_token)
+        return RealD2DNetwork(did_to_core_url, docker_services.client_token)
     return MockD2DNetwork()
 
 
@@ -203,7 +203,6 @@ def don_alonso(plc_directory, d2d_network, docker_services) -> HomeNode:
         node = RealHomeNode(
             core_url=docker_services.core_url("alonso"),
             brain_url=docker_services.brain_url("alonso"),
-            brain_token=docker_services.brain_token,
             client_token=docker_services.client_token,
             did="did:plc:alonso",
             display_name="Don Alonso",
@@ -301,7 +300,6 @@ def sancho(plc_directory, d2d_network, docker_services) -> HomeNode:
         node = RealHomeNode(
             core_url=docker_services.core_url("sancho"),
             brain_url=docker_services.brain_url("sancho"),
-            brain_token=docker_services.brain_token,
             client_token=docker_services.client_token,
             did="did:plc:sancho",
             display_name="Sancho",
@@ -356,7 +354,6 @@ def chairmaker(plc_directory, d2d_network, docker_services) -> HomeNode:
         node = RealHomeNode(
             core_url=docker_services.core_url("chairmaker"),
             brain_url=docker_services.brain_url("chairmaker"),
-            brain_token=docker_services.brain_token,
             client_token=docker_services.client_token,
             did="did:plc:chairmaker",
             display_name="ChairMaker",
@@ -396,7 +393,6 @@ def albert(plc_directory, d2d_network, docker_services) -> HomeNode:
         node = RealHomeNode(
             core_url=docker_services.core_url("albert"),
             brain_url=docker_services.brain_url("albert"),
-            brain_token=docker_services.brain_token,
             client_token=docker_services.client_token,
             did="did:plc:albert",
             display_name="Albert",

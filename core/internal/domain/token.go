@@ -1,7 +1,6 @@
 package domain
 
-// TokenType distinguishes authentication token types at the type level.
-// A function that accepts BrainToken cannot accidentally receive a ClientToken.
+// TokenType distinguishes authenticated caller classes at the type level.
 type TokenType string
 
 const (

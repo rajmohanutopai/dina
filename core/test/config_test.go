@@ -34,7 +34,7 @@ func TestConfig_14_1_1_LoadFromEnvVars(t *testing.T) {
 	t.Setenv("DINA_ADMIN_ADDR", ":9100")
 	t.Setenv("DINA_VAULT_PATH", "/tmp/dina-test-vault")
 	t.Setenv("DINA_BRAIN_URL", "http://brain:8200")
-	t.Setenv("DINA_BRAIN_TOKEN", testutil.TestBrainToken)
+	t.Setenv("DINA_CLIENT_TOKEN", testutil.TestClientToken)
 	t.Setenv("DINA_MODE", "convenience")
 
 	cfg, err := impl.Load()
@@ -43,7 +43,7 @@ func TestConfig_14_1_1_LoadFromEnvVars(t *testing.T) {
 	testutil.RequireEqual(t, cfg.AdminAddr, ":9100")
 	testutil.RequireEqual(t, cfg.VaultPath, "/tmp/dina-test-vault")
 	testutil.RequireEqual(t, cfg.BrainURL, "http://brain:8200")
-	testutil.RequireEqual(t, cfg.BrainToken, testutil.TestBrainToken)
+	testutil.RequireEqual(t, cfg.ClientToken, testutil.TestClientToken)
 	testutil.RequireEqual(t, cfg.SecurityMode, "convenience")
 }
 
@@ -55,7 +55,7 @@ func TestConfig_14_7_PartialEnvVars(t *testing.T) {
 
 	// When only some env vars are set, the rest should use defaults.
 	t.Setenv("DINA_LISTEN_ADDR", ":7300")
-	t.Setenv("DINA_BRAIN_TOKEN", testutil.TestBrainToken)
+	t.Setenv("DINA_CLIENT_TOKEN", testutil.TestClientToken)
 	// Leave all other vars unset — they should fall back to defaults.
 
 	cfg, err := impl.Load()
@@ -72,7 +72,7 @@ func TestConfig_14_8_EnvVarTypeParsing(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
 	// Numeric env vars should be correctly parsed to int fields.
-	t.Setenv("DINA_BRAIN_TOKEN", testutil.TestBrainToken)
+	t.Setenv("DINA_CLIENT_TOKEN", testutil.TestClientToken)
 	t.Setenv("DINA_SESSION_TTL", "3600")
 	t.Setenv("DINA_RATE_LIMIT", "120")
 	t.Setenv("DINA_SPOOL_MAX", "2000")
@@ -97,7 +97,7 @@ func TestConfig_14_2_1_DefaultValues(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
 	// With minimal env (only required token), defaults should populate.
-	t.Setenv("DINA_BRAIN_TOKEN", testutil.TestBrainToken)
+	t.Setenv("DINA_CLIENT_TOKEN", testutil.TestClientToken)
 
 	cfg, err := impl.Load()
 	testutil.RequireNoError(t, err)
@@ -120,7 +120,7 @@ func TestConfig_14_9_DefaultSecurityMode(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
 	// Default SecurityMode must be "security" (not "convenience").
-	t.Setenv("DINA_BRAIN_TOKEN", testutil.TestBrainToken)
+	t.Setenv("DINA_CLIENT_TOKEN", testutil.TestClientToken)
 
 	cfg, err := impl.Load()
 	testutil.RequireNoError(t, err)
@@ -131,14 +131,14 @@ func TestConfig_14_9_DefaultSecurityMode(t *testing.T) {
 // §14.3 Validation (3 scenarios)
 // --------------------------------------------------------------------------
 
-// TST-CORE-553 — BrainToken is now optional (service keys replace it).
-func TestConfig_14_3_1_EmptyBrainTokenAccepted(t *testing.T) {
+// TST-CORE-553 — ClientToken is optional at config-validation layer.
+func TestConfig_14_3_1_EmptyClientTokenAccepted(t *testing.T) {
 	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
-	// Config with empty BrainToken should pass validation — service keys are used instead.
+	// Config with empty ClientToken should pass validation.
 	cfg := testutil.TestConfig()
-	cfg.BrainToken = ""
+	cfg.ClientToken = ""
 
 	err := impl.Validate(&cfg)
 	testutil.RequireNoError(t, err)
@@ -190,7 +190,7 @@ func TestConfig_14_11_LoadFromConfigJSON(t *testing.T) {
 		"security_mode": "convenience"
 	}`)
 	t.Setenv("DINA_CONFIG_PATH", dir+"/config.json")
-	t.Setenv("DINA_BRAIN_TOKEN", testutil.TestBrainToken)
+	t.Setenv("DINA_CLIENT_TOKEN", testutil.TestClientToken)
 
 	cfg, err := impl.Load()
 	testutil.RequireNoError(t, err)
@@ -204,19 +204,19 @@ func TestConfig_14_11_LoadFromConfigJSON(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-552
-func TestConfig_14_5_1_LoadBrainTokenFromDockerSecret(t *testing.T) {
+func TestConfig_14_5_1_LoadClientTokenFromDockerSecret(t *testing.T) {
 	// impl := realConfigLoader = realconfig.NewLoader(...)
 	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
-	// BRAIN_TOKEN can be loaded from a Docker secret file at a known path.
+	// CLIENT_TOKEN can be loaded from a Docker secret file at a known path.
 	dir := testutil.TempDir(t)
-	testutil.TempFile(t, dir, "brain_token", testutil.TestBrainToken)
-	t.Setenv("DINA_BRAIN_TOKEN_FILE", dir+"/brain_token")
+	testutil.TempFile(t, dir, "client_token", testutil.TestClientToken)
+	t.Setenv("DINA_CLIENT_TOKEN_FILE", dir+"/client_token")
 
 	cfg, err := impl.Load()
 	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, cfg.BrainToken, testutil.TestBrainToken)
+	testutil.RequireEqual(t, cfg.ClientToken, testutil.TestClientToken)
 }
 
 // --------------------------------------------------------------------------
@@ -236,7 +236,7 @@ func TestConfig_14_12_EnvOverridesConfigJSON(t *testing.T) {
 		"admin_addr": ":6100"
 	}`)
 	t.Setenv("DINA_CONFIG_PATH", dir+"/config.json")
-	t.Setenv("DINA_BRAIN_TOKEN", testutil.TestBrainToken)
+	t.Setenv("DINA_CLIENT_TOKEN", testutil.TestClientToken)
 	t.Setenv("DINA_LISTEN_ADDR", ":5300") // env override
 
 	cfg, err := impl.Load()
@@ -251,16 +251,16 @@ func TestConfig_14_13_DockerSecretOverridesEnvToken(t *testing.T) {
 	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
-	// Docker secret file takes precedence over DINA_BRAIN_TOKEN env var.
+	// Docker secret file takes precedence over DINA_CLIENT_TOKEN env var.
 	secretToken := "secret-token-from-docker-" + strings.Repeat("f", 39)
 	dir := testutil.TempDir(t)
-	testutil.TempFile(t, dir, "brain_token", secretToken)
-	t.Setenv("DINA_BRAIN_TOKEN", testutil.TestBrainToken)
-	t.Setenv("DINA_BRAIN_TOKEN_FILE", dir+"/brain_token")
+	testutil.TempFile(t, dir, "client_token", secretToken)
+	t.Setenv("DINA_CLIENT_TOKEN", testutil.TestClientToken)
+	t.Setenv("DINA_CLIENT_TOKEN_FILE", dir+"/client_token")
 
 	cfg, err := impl.Load()
 	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, cfg.BrainToken, secretToken)
+	testutil.RequireEqual(t, cfg.ClientToken, secretToken)
 }
 
 // ==========================================================================
@@ -275,7 +275,7 @@ func TestConfig_14_6_3_SpoolMaxEnforcement(t *testing.T) {
 	// DINA_SPOOL_MAX configures the spool directory size limit.
 	// When the spool directory exceeds the configured max, Valve 2 closes
 	// and new spooling is rejected.
-	t.Setenv("DINA_BRAIN_TOKEN", testutil.TestBrainToken)
+	t.Setenv("DINA_CLIENT_TOKEN", testutil.TestClientToken)
 	t.Setenv("DINA_SPOOL_MAX", "500")
 
 	cfg, err := impl.Load()
@@ -300,7 +300,7 @@ func TestConfig_14_15_CloudLLMConsentFlag(t *testing.T) {
 	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
-	t.Setenv("DINA_BRAIN_TOKEN", testutil.TestBrainToken)
+	t.Setenv("DINA_CLIENT_TOKEN", testutil.TestClientToken)
 	cfg, err := impl.Load()
 	testutil.RequireNoError(t, err)
 	err = impl.Validate(cfg)

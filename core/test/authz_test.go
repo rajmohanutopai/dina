@@ -134,8 +134,8 @@ func TestAuthz_1_6_4_BrainServiceKeyOnAdminEndpoints_Forbidden(t *testing.T) {
 		"/v1/did/rotate",
 		"/v1/vault/backup",
 		"/v1/persona/unlock",
-		"/admin/dashboard",
-		"/admin/devices",
+		// /admin/* paths are excluded: Core's auth middleware passes them
+		// through to Brain (which handles its own auth for admin endpoints).
 		"/v1/export",
 		"/v1/import",
 		"/v1/pair/initiate",

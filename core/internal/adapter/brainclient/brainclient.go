@@ -42,18 +42,17 @@ const (
 
 // Default configuration.
 const (
-	defaultTimeout      = 30 * time.Second
-	defaultMaxFailures  = 5
-	defaultCooldown     = 30 * time.Second
+	defaultTimeout     = 30 * time.Second
+	defaultMaxFailures = 5
+	defaultCooldown    = 30 * time.Second
 )
 
 // BrainClient implements testutil.BrainClient — typed HTTP calls to brain.
 type BrainClient struct {
-	mu          sync.Mutex
-	baseURL     string
-	serviceKey  *servicekey.ServiceKey
-	token       string // legacy token for admin proxy only
-	httpClient  *http.Client
+	mu         sync.Mutex
+	baseURL    string
+	serviceKey *servicekey.ServiceKey
+	httpClient *http.Client
 
 	// Circuit breaker state.
 	cbState     string
@@ -73,27 +72,6 @@ func New(baseURL string, sk *servicekey.ServiceKey) *BrainClient {
 	return &BrainClient{
 		baseURL:    baseURL,
 		serviceKey: sk,
-		httpClient: &http.Client{
-			Timeout:   defaultTimeout,
-			Transport: transport,
-		},
-		cbState:     stateClosed,
-		maxFailures: defaultMaxFailures,
-		cooldown:    defaultCooldown,
-	}
-}
-
-// NewWithToken returns a BrainClient that authenticates with a bearer token.
-// Used by the admin proxy where the browser cannot perform Ed25519 signing.
-func NewWithToken(baseURL, token string) *BrainClient {
-	transport := &http.Transport{
-		MaxIdleConns:        10,
-		MaxIdleConnsPerHost: 10,
-		IdleConnTimeout:     90 * time.Second,
-	}
-	return &BrainClient{
-		baseURL: baseURL,
-		token:   token,
 		httpClient: &http.Client{
 			Timeout:   defaultTimeout,
 			Transport: transport,
@@ -227,21 +205,21 @@ func (c *BrainClient) recordSuccess() {
 }
 
 // signRequest adds auth headers to the request.
-// If a service key is available, signs with Ed25519 (X-DID/X-Timestamp/X-Signature).
-// Otherwise, falls back to bearer token (admin proxy path).
+// If a service key is available, signs with Ed25519
+// (X-DID/X-Timestamp/X-Signature).
 func (c *BrainClient) signRequest(req *http.Request, body []byte) {
 	if c.serviceKey != nil {
 		parsed, _ := url.Parse(req.URL.String())
+		path := req.URL.Path
 		query := ""
 		if parsed != nil {
+			path = parsed.Path
 			query = parsed.RawQuery
 		}
-		did, ts, sig := c.serviceKey.SignRequest(req.Method, parsed.Path, query, body)
+		did, ts, sig := c.serviceKey.SignRequest(req.Method, path, query, body)
 		req.Header.Set("X-DID", did)
 		req.Header.Set("X-Timestamp", ts)
 		req.Header.Set("X-Signature", sig)
-	} else if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 }
 

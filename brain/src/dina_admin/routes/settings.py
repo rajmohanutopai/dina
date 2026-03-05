@@ -107,8 +107,6 @@ async def get_settings() -> dict:
         settings["listen_port"] = getattr(_config, "listen_port", None)
         settings["log_level"] = getattr(_config, "log_level", None)
         settings["cloud_llm"] = getattr(_config, "cloud_llm", None)
-        # Never expose tokens
-        settings["brain_token"] = "***REDACTED***"
 
     # Identity info from core
     try:

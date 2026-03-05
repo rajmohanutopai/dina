@@ -51,10 +51,10 @@ def _core_available() -> bool:
         return False
 
 
-def _main_brain_token() -> str:
-    """Read the brain token from the secrets file."""
+def _main_client_token() -> str:
+    """Read the client token from the secrets file."""
     token_path = os.path.join(
-        os.path.dirname(__file__), "..", "..", "secrets", "brain_token",
+        os.path.dirname(__file__), "..", "..", "secrets", "client_token",
     )
     try:
         return open(token_path).read().strip()
@@ -136,9 +136,9 @@ class TestATProtocolPDS:
         if DOCKER_MODE and docker_services is not None:
             if not _pds_available() or not _core_available():
                 pytest.skip("Main stack (PDS+Core) not running — start with: docker compose up -d")
-            token = _main_brain_token()
+            token = _main_client_token()
             if not token:
-                pytest.skip("Brain token not found in secrets/brain_token")
+                pytest.skip("Client token not found in secrets/client_token")
             resp = httpx.get(
                 f"{_MAIN_CORE_URL}/v1/did",
                 headers={"Authorization": f"Bearer {token}"},
@@ -181,9 +181,9 @@ class TestATProtocolPDS:
         if DOCKER_MODE and docker_services is not None:
             if not _pds_available() or not _core_available():
                 pytest.skip("Main stack (PDS+Core) not running — start with: docker compose up -d")
-            token = _main_brain_token()
+            token = _main_client_token()
             if not token:
-                pytest.skip("Brain token not found")
+                pytest.skip("Client token not found")
 
             # First ensure DID exists
             resp_did = httpx.get(
@@ -224,9 +224,9 @@ class TestATProtocolPDS:
         if DOCKER_MODE and docker_services is not None:
             if not _pds_available() or not _core_available():
                 pytest.skip("Main stack (PDS+Core) not running — start with: docker compose up -d")
-            token = _main_brain_token()
+            token = _main_client_token()
             if not token:
-                pytest.skip("Brain token not found")
+                pytest.skip("Client token not found")
 
             # Get DID from Core
             resp_did = httpx.get(
@@ -265,9 +265,9 @@ class TestATProtocolPDS:
         if DOCKER_MODE and docker_services is not None:
             if not _pds_available() or not _core_available():
                 pytest.skip("Main stack (PDS+Core) not running — start with: docker compose up -d")
-            token = _main_brain_token()
+            token = _main_client_token()
             if not token:
-                pytest.skip("Brain token not found")
+                pytest.skip("Client token not found")
             headers = {"Authorization": f"Bearer {token}"}
 
             # First call

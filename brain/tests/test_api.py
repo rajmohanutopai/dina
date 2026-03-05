@@ -18,13 +18,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from .factories import (
-    TEST_BRAIN_TOKEN,
-    TEST_BRAIN_TOKEN_WRONG,
     TEST_CLIENT_TOKEN,
+    TEST_CORE_PUBLIC_KEY,
     make_event,
     make_fiduciary_event,
     make_llm_response,
     make_routing_task,
+    sign_test_request,
 )
 
 # ---------------------------------------------------------------------------
@@ -37,7 +37,6 @@ class _FakeConfig:
     """Minimal config satisfying create_admin_app expectations."""
 
     core_url: str = "http://core:8300"
-    brain_token: str = TEST_BRAIN_TOKEN
     client_token: str = TEST_CLIENT_TOKEN
     listen_port: int = 8200
     log_level: str = "INFO"
@@ -96,7 +95,9 @@ def _build_app(guardian: AsyncMock | None = None) -> FastAPI:
 
     master = FastAPI()
 
-    brain_api = create_brain_app(guardian, sync_engine, internal_token=TEST_BRAIN_TOKEN)
+    brain_api = create_brain_app(
+        guardian, sync_engine, core_public_key=TEST_CORE_PUBLIC_KEY,
+    )
     admin_ui = create_admin_app(core_client, _FakeConfig())
 
     master.mount("/api", brain_api)
@@ -109,6 +110,14 @@ def _build_app(guardian: AsyncMock | None = None) -> FastAPI:
     return master
 
 
+def _signed_post(client: TestClient, path: str, data: dict) -> "Response":
+    """POST with Ed25519 signed headers."""
+    body = json.dumps(data).encode()
+    headers = sign_test_request("POST", path, body)
+    headers["Content-Type"] = "application/json"
+    return client.post(path, content=body, headers=headers)
+
+
 @pytest.fixture(scope="module")
 def app() -> FastAPI:
     """Module-scoped test app (created once for all tests in this file)."""
@@ -119,11 +128,6 @@ def app() -> FastAPI:
 def client(app: FastAPI) -> TestClient:
     """Module-scoped test client."""
     return TestClient(app, raise_server_exceptions=False)
-
-
-def _auth_headers(token: str = TEST_BRAIN_TOKEN) -> dict[str, str]:
-    """Convenience helper for Authorization header."""
-    return {"Authorization": f"Bearer {token}"}
 
 
 # ---------------------------------------------------------------------------
@@ -166,11 +170,7 @@ def test_api_10_1_2_healthz_includes_components(client: TestClient) -> None:
 def test_api_10_2_1_process_valid_event(client: TestClient) -> None:
     """S10.2.1: POST /v1/process with valid event returns 200 and result."""
     event = make_event(type="message", body="Hello, Dina")
-    resp = client.post(
-        "/api/v1/process",
-        json=event,
-        headers=_auth_headers(),
-    )
+    resp = _signed_post(client, "/api/v1/process", event)
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "ok"
@@ -185,13 +185,17 @@ def test_api_10_2_2_process_missing_auth(client: TestClient) -> None:
 
 
 # TST-BRAIN-384
-def test_api_10_2_3_process_wrong_token(client: TestClient) -> None:
-    """S10.2.3: POST /v1/process with wrong BRAIN_TOKEN returns 401."""
+def test_api_10_2_3_process_wrong_signature(client: TestClient) -> None:
+    """S10.2.3: POST /v1/process with wrong signature returns 401."""
     event = make_event()
     resp = client.post(
         "/api/v1/process",
         json=event,
-        headers=_auth_headers(TEST_BRAIN_TOKEN_WRONG),
+        headers={
+            "X-DID": "did:key:zFakeKey",
+            "X-Timestamp": "2026-01-01T00:00:00Z",
+            "X-Signature": "deadbeef" * 16,
+        },
     )
     assert resp.status_code == 401
 
@@ -203,14 +207,10 @@ def test_api_10_2_4_process_invalid_json(client: TestClient) -> None:
     FastAPI returns 422 Unprocessable Entity for JSON parse errors
     (Pydantic validation).
     """
-    resp = client.post(
-        "/api/v1/process",
-        content="not-json{{{",
-        headers={
-            **_auth_headers(),
-            "Content-Type": "application/json",
-        },
-    )
+    body = b"not-json{{{"
+    headers = sign_test_request("POST", "/api/v1/process", body)
+    headers["Content-Type"] = "application/json"
+    resp = client.post("/api/v1/process", content=body, headers=headers)
     assert resp.status_code == 422
 
 
@@ -218,11 +218,7 @@ def test_api_10_2_4_process_invalid_json(client: TestClient) -> None:
 def test_api_10_2_5_process_missing_required_fields(client: TestClient) -> None:
     """S10.2.5: POST /v1/process with incomplete event payload returns 422."""
     # 'type' is required by ProcessEventRequest
-    resp = client.post(
-        "/api/v1/process",
-        json={"body": "hello"},  # missing 'type'
-        headers=_auth_headers(),
-    )
+    resp = _signed_post(client, "/api/v1/process", {"body": "hello"})
     assert resp.status_code == 422
     body = resp.json()
     assert "detail" in body  # Pydantic validation error list
@@ -236,10 +232,8 @@ def test_api_10_2_5_process_missing_required_fields(client: TestClient) -> None:
 # TST-BRAIN-386
 def test_api_10_3_1_reason_valid_request(client: TestClient) -> None:
     """S10.3.1: POST /v1/reason with valid task returns 200 and LLM response."""
-    resp = client.post(
-        "/api/v1/reason",
-        json={"prompt": "Why is the sky blue?"},
-        headers=_auth_headers(),
+    resp = _signed_post(
+        client, "/api/v1/reason", {"prompt": "Why is the sky blue?"},
     )
     assert resp.status_code == 200
     body = resp.json()
@@ -250,11 +244,7 @@ def test_api_10_3_1_reason_valid_request(client: TestClient) -> None:
 # TST-BRAIN-387
 def test_api_10_3_2_reason_missing_prompt(client: TestClient) -> None:
     """S10.3.2: POST /v1/reason without 'prompt' field returns 422."""
-    resp = client.post(
-        "/api/v1/reason",
-        json={"type": "reason"},  # missing 'prompt'
-        headers=_auth_headers(),
-    )
+    resp = _signed_post(client, "/api/v1/reason", {"type": "reason"})
     assert resp.status_code == 422
 
 
@@ -279,11 +269,8 @@ def test_api_10_4_1_response_content_type_json(client: TestClient) -> None:
     resp = client.get("/healthz")
     assert resp.headers["content-type"].startswith("application/json")
 
-    resp = client.post(
-        "/api/v1/process",
-        json=make_event(),
-        headers=_auth_headers(),
-    )
+    event = make_event()
+    resp = _signed_post(client, "/api/v1/process", event)
     assert resp.headers["content-type"].startswith("application/json")
 
 
@@ -296,11 +283,7 @@ def test_api_10_4_2_error_response_format(client: TestClient) -> None:
     assert "detail" in body
 
     # Missing required field -> 422 with detail
-    resp = client.post(
-        "/api/v1/process",
-        json={},
-        headers=_auth_headers(),
-    )
+    resp = _signed_post(client, "/api/v1/process", {})
     body = resp.json()
     assert "detail" in body
 
@@ -308,11 +291,14 @@ def test_api_10_4_2_error_response_format(client: TestClient) -> None:
 # TST-BRAIN-391
 def test_api_10_4_3_unknown_route_returns_404(client: TestClient) -> None:
     """S10.4.3: Request to undefined route returns 404."""
-    resp = client.get(
-        "/api/v1/nonexistent",
-        headers=_auth_headers(),
-    )
+    resp = _signed_get_path(client, "/api/v1/nonexistent")
     assert resp.status_code == 404
+
+
+def _signed_get_path(client: TestClient, path: str) -> "Response":
+    """GET with Ed25519 signed headers."""
+    headers = sign_test_request("GET", path)
+    return client.get(path, headers=headers)
 
 
 # ---------------------------------------------------------------------------
@@ -337,7 +323,9 @@ def test_api_10_1_health_with_llm_down() -> None:
     sync_engine = AsyncMock()
 
     master = FastAPI()
-    brain_api = create_brain_app(guardian, sync_engine, internal_token=TEST_BRAIN_TOKEN)
+    brain_api = create_brain_app(
+        guardian, sync_engine, core_public_key=TEST_CORE_PUBLIC_KEY,
+    )
     master.mount("/api", brain_api)
 
     # Build a healthz that reports "degraded" when no LLM providers exist
@@ -361,11 +349,7 @@ def test_api_10_1_health_with_llm_down() -> None:
 def test_api_10_2_process_text_query(client: TestClient) -> None:
     """S10.2 row 1: POST /v1/process with text query returns guardian response."""
     event = make_event(type="query", body="What is my schedule today?")
-    resp = client.post(
-        "/api/v1/process",
-        json=event,
-        headers=_auth_headers(),
-    )
+    resp = _signed_post(client, "/api/v1/process", event)
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "ok"
@@ -384,11 +368,7 @@ def test_api_10_2_process_agent_intent(client: TestClient) -> None:
         target="boss@company.com",
         risk_level="risky",
     )
-    resp = client.post(
-        "/api/v1/process",
-        json=event,
-        headers=_auth_headers(),
-    )
+    resp = _signed_post(client, "/api/v1/process", event)
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "ok"
@@ -398,11 +378,7 @@ def test_api_10_2_process_agent_intent(client: TestClient) -> None:
 def test_api_10_2_process_incoming_message(client: TestClient) -> None:
     """S10.2 row 3: POST /v1/process with incoming message returns classification."""
     event = make_event(type="message", body="Your flight has been cancelled")
-    resp = client.post(
-        "/api/v1/process",
-        json=event,
-        headers=_auth_headers(),
-    )
+    resp = _signed_post(client, "/api/v1/process", event)
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "ok"
@@ -423,11 +399,7 @@ def test_api_10_2_invalid_event_type() -> None:
     test_client = TestClient(app, raise_server_exceptions=False)
 
     event = make_event(type="invalid_type", body="test")
-    resp = test_client.post(
-        "/api/v1/process",
-        json=event,
-        headers=_auth_headers(),
-    )
+    resp = _signed_post(test_client, "/api/v1/process", event)
     assert resp.status_code == 400
     assert "detail" in resp.json()
 

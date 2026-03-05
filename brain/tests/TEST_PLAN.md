@@ -1,17 +1,17 @@
 # Dina Brain — Test Plan
 
 > Python service (`dina-brain`): LLM reasoning, guardian loop, admin UI, PII scrubbing, sync, MCP routing.
-> Port 8200 (internal only, not exposed to host). Communicates with dina-core via BRAIN_TOKEN.
+> Port 8200 (internal only, not exposed to host). Communicates with dina-core via Service Signature Auth.
 
 ---
 
 ## 1. Authentication & Authorization
 
-### 1.1 BRAIN_TOKEN Verification
+### 1.1 Service Signature Auth Verification
 
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-BRAIN-001]** Valid BRAIN_TOKEN | Correct token in `Authorization: Bearer` | 200 — request processed |
+| 1 | **[TST-BRAIN-001]** Valid Service Signature Auth | Correct token in `Authorization: Bearer` | 200 — request processed |
 | 2 | **[TST-BRAIN-002]** Missing token | No Authorization header | 401 Unauthorized |
 | 3 | **[TST-BRAIN-003]** Wrong token | Random hex string | 401 |
 | 4 | **[TST-BRAIN-004]** Token from Docker secret | `/run/secrets/brain_token` mounted | Token loaded on startup |
@@ -22,15 +22,15 @@
 
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-BRAIN-007]** `/api/*` requires BRAIN_TOKEN | BRAIN_TOKEN on `/api/v1/process` | 200 — accepted |
-| 2 | **[TST-BRAIN-008]** `/api/*` rejects CLIENT_TOKEN | CLIENT_TOKEN on `/api/v1/process` | 403 — only BRAIN_TOKEN accepted |
+| 1 | **[TST-BRAIN-007]** `/api/*` requires Service Signature Auth | Service Signature Auth on `/api/v1/process` | 200 — accepted |
+| 2 | **[TST-BRAIN-008]** `/api/*` rejects CLIENT_TOKEN | CLIENT_TOKEN on `/api/v1/process` | 403 — only Service Signature Auth accepted |
 | 3 | **[TST-BRAIN-009]** `/admin/*` requires CLIENT_TOKEN | CLIENT_TOKEN on `/admin/` | 200 — accepted |
-| 4 | **[TST-BRAIN-010]** `/admin/*` rejects BRAIN_TOKEN | BRAIN_TOKEN on `/admin/` | 403 — only CLIENT_TOKEN accepted |
+| 4 | **[TST-BRAIN-010]** `/admin/*` rejects Service Signature Auth | Service Signature Auth on `/admin/` | 403 — only CLIENT_TOKEN accepted |
 | 5 | **[TST-BRAIN-011]** `/healthz` unauthenticated | GET `/healthz` (no auth) | 200 `{"status": "ok"}` |
 | 6 | **[TST-BRAIN-012]** Single Uvicorn process, single port | Inspect running process | One uvicorn process on port 8200, one healthcheck endpoint |
 | 7 | **[TST-BRAIN-013]** Sub-app isolation: brain API cannot call admin UI | Code audit: `dina_brain` module | No imports from `dina_admin` — module boundary enforced |
 | 8 | **[TST-BRAIN-014]** Sub-app isolation: admin UI cannot call brain API | Code audit: `dina_admin` module | No imports from `dina_brain` |
-| 9 | **[TST-BRAIN-015]** Admin UI calls core:8100 with CLIENT_TOKEN | Admin UI requests vault data | Uses CLIENT_TOKEN (not BRAIN_TOKEN) to call core:8100 |
+| 9 | **[TST-BRAIN-015]** Admin UI calls core:8100 with CLIENT_TOKEN | Admin UI requests vault data | Uses CLIENT_TOKEN (not Service Signature Auth) to call core:8100 |
 | 10 | **[TST-BRAIN-016]** Brain never sees cookies | Inspect inbound requests to brain | No `Cookie` header — core translates cookies to Bearer before proxying |
 | 11 | **[TST-BRAIN-017]** Brain exposes `/v1/process` to core | Core sends process event | 200 with guardian response |
 | 12 | **[TST-BRAIN-018]** Brain exposes `/v1/reason` to core | Core sends complex decision request | 200 with reasoning result |
@@ -628,7 +628,7 @@
 |---|----------|-------|----------|
 | 1 | **[TST-BRAIN-265]** Core unreachable | Connection refused | `httpx.ConnectError` caught, retry with backoff |
 | 2 | **[TST-BRAIN-266]** Core returns 500 | Internal server error | Logged, retried once, then error propagated |
-| 3 | **[TST-BRAIN-267]** Core returns 401 | Wrong BRAIN_TOKEN | Fatal error — brain cannot operate without core auth |
+| 3 | **[TST-BRAIN-267]** Core returns 401 | Wrong Service Signature Auth | Fatal error — brain cannot operate without core auth |
 | 4 | **[TST-BRAIN-268]** Timeout | Core doesn't respond in 30s | Request cancelled, error returned |
 | 5 | **[TST-BRAIN-269]** Invalid response JSON | Core returns malformed body | Parse error caught, logged |
 | 6 | **[TST-BRAIN-407]** Dead letter notification | Task fails 3x → `status = 'dead'` | Brain receives Tier 2 notification: "Brain failed to process an event 3 times. Check crash logs." — dead letter handling |
@@ -709,13 +709,13 @@
 | 2 | **[TST-BRAIN-290]** Load LLM_URL | `LLM_URL=http://llm:8080` | LLM client configured |
 | 3 | **[TST-BRAIN-291]** Missing CORE_URL uses default | Not set | CORE_URL defaults to `http://core:8300` — startup succeeds with default (consistent with TST-BRAIN-376) |
 | 4 | **[TST-BRAIN-292]** Missing LLM_URL | Not set | Brain starts but LLM routing disabled (graceful degradation) |
-| 5 | **[TST-BRAIN-293]** BRAIN_TOKEN from secret | `/run/secrets/brain_token` | Token loaded for self-validation |
+| 5 | **[TST-BRAIN-293]** Service Signature Auth from secret | `/run/secrets/brain_token` | Token loaded for self-validation |
 | 6 | **[TST-BRAIN-294]** Invalid URL format | `CORE_URL=not-a-url` | Startup validation fails |
 | 7 | **[TST-BRAIN-376]** CORE_URL default value | `CORE_URL` not set | Defaults to `http://core:8300` |
-| 8 | **[TST-BRAIN-377]** BRAIN_TOKEN from env | `DINA_BRAIN_TOKEN=xxx` | Token loaded from env var |
+| 8 | **[TST-BRAIN-377]** Service Signature Auth from env | `DINA_Service Signature Auth=xxx` | Token loaded from env var |
 | 9 | **[TST-BRAIN-378]** LISTEN_PORT default | `DINA_BRAIN_PORT` not set | Defaults to 8200 |
 | 10 | **[TST-BRAIN-379]** LOG_LEVEL default | `DINA_LOG_LEVEL` not set | Defaults to INFO |
-| 11 | **[TST-BRAIN-380]** Missing BRAIN_TOKEN raises | No token, no secret file | Startup fails with ValueError |
+| 11 | **[TST-BRAIN-380]** Missing Service Signature Auth raises | No token, no secret file | Startup fails with ValueError |
 
 ---
 
@@ -740,7 +740,7 @@
 | 5 | **[TST-BRAIN-301]** Missing required fields | Incomplete event payload | 422 Validation Error (Pydantic) |
 | 6 | **[TST-BRAIN-382]** Process valid event (generic) | POST `/v1/process` with valid event payload | 200 with result |
 | 7 | **[TST-BRAIN-383]** Process missing auth | POST `/v1/process` without `Authorization` header | 401 Unauthorized |
-| 8 | **[TST-BRAIN-384]** Process wrong token | POST `/v1/process` with wrong BRAIN_TOKEN | 401 Unauthorized |
+| 8 | **[TST-BRAIN-384]** Process wrong token | POST `/v1/process` with wrong Service Signature Auth | 401 Unauthorized |
 | 9 | **[TST-BRAIN-385]** Process invalid JSON | POST `/v1/process` with malformed JSON body | 400 Bad Request |
 
 ---

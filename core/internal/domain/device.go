@@ -4,9 +4,9 @@ package domain
 type Device struct {
 	ID        string
 	Name      string
-	TokenHash []byte // SHA-256 hash of the CLIENT_TOKEN (nil for signature-auth devices)
-	PublicKey []byte // Raw 32-byte Ed25519 public key (nil for legacy token devices)
-	DID       string // did:key:z6Mk... (empty for legacy token devices)
+	TokenHash []byte // SHA-256 hash of CLIENT_TOKEN (admin/bootstrap path only)
+	PublicKey []byte // Raw 32-byte Ed25519 public key for paired devices
+	DID       string // did:key:z6Mk... for paired devices
 	Revoked   bool
 	LastSeen  int64 // Unix timestamp
 }
@@ -21,8 +21,8 @@ type DeviceToken struct {
 type PairedDevice struct {
 	TokenID   string
 	Name      string
-	DID       string // did:key:z6Mk... for Ed25519 devices, empty for legacy
-	AuthType  string // "ed25519" or "token"
+	DID       string // did:key:z6Mk... for Ed25519 devices
+	AuthType  string // "ed25519" (primary). "token" may exist only in older records.
 	LastSeen  int64
 	CreatedAt int64
 	Revoked   bool

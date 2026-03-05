@@ -134,24 +134,15 @@ mkdir -p "${SECRETS_DIR}"
 
 # Service key directories (Ed25519 keypairs for Core↔Brain mutual auth)
 # Separate bind mounts ensure private keys never exist in the peer's container.
+# Keys are provisioned at install time; runtime does not auto-generate.
 #   core/   → mounted only to Core container (private key)
 #   brain/  → mounted only to Brain container (private key)
-#   public/ → mounted to both containers (public keys)
+#   public/ → mounted read-only to both containers (public keys)
 SERVICE_KEY_DIR="${SECRETS_DIR}/service_keys"
 mkdir -p "${SERVICE_KEY_DIR}/core" "${SERVICE_KEY_DIR}/brain" "${SERVICE_KEY_DIR}/public"
 chmod 700 "${SERVICE_KEY_DIR}" "${SERVICE_KEY_DIR}/core" "${SERVICE_KEY_DIR}/brain"
 chmod 755 "${SERVICE_KEY_DIR}/public"
 ok "Service key directories ready (core/, brain/, public/)"
-
-# Internal token for admin/agent proxy (Core→Brain bearer auth for browser paths)
-INTERNAL_TOKEN_FILE="${SECRETS_DIR}/internal_token"
-if [ ! -f "${INTERNAL_TOKEN_FILE}" ]; then
-    openssl rand -hex 32 > "${INTERNAL_TOKEN_FILE}"
-    chmod 600 "${INTERNAL_TOKEN_FILE}"
-    ok "Generated DINA_INTERNAL_TOKEN"
-else
-    skip "DINA_INTERNAL_TOKEN already exists"
-fi
 
 # PDS secrets (JWT secret, admin password, K256 rotation key)
 PDS_JWT_SECRET=""
@@ -198,6 +189,11 @@ else
 fi
 VPYTHON="${INSTALL_VENV}/bin/python3"
 
+# Provision Core/Brain service keys now (install-time bootstrap).
+"${VPYTHON}" scripts/provision_service_keys.py "${SERVICE_KEY_DIR}" \
+    || fail "Failed to provision Core/Brain service keys"
+ok "Service keys provisioned (install-time)"
+
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -212,23 +208,17 @@ if [ -f "${SECRETS_DIR}/wrapped_seed.bin" ] && [ -f "${SECRETS_DIR}/master_seed.
     SEED_ALREADY_WRAPPED=true
 fi
 
-# Check if .env has a raw DINA_MASTER_SEED (legacy — needs migration)
-EXISTING_SEED=""
-if [ -f "${ENV_FILE}" ]; then
-    EXISTING_SEED=$(sed -n 's/^DINA_MASTER_SEED=\([a-f0-9]*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
+# Strict no-legacy mode: raw DINA_MASTER_SEED in .env is not supported.
+if [ -f "${ENV_FILE}" ] && grep -q '^DINA_MASTER_SEED=' "${ENV_FILE}" 2>/dev/null; then
+    fail "Legacy DINA_MASTER_SEED detected in .env. Remove it and rerun install.sh."
 fi
 
 IDENTITY_NEW=true   # tracks whether we generated a new identity
 SEED_MODE=""        # "maximum" or "server"
 
-if [ "${SEED_ALREADY_WRAPPED}" = true ] && [ -z "${EXISTING_SEED}" ]; then
+if [ "${SEED_ALREADY_WRAPPED}" = true ]; then
     skip "Identity seed already wrapped"
     MASTER_SEED=""
-    IDENTITY_NEW=false
-elif [ -n "${EXISTING_SEED}" ]; then
-    # Legacy migration: raw seed in .env — wrap it now
-    warn "Raw identity seed found in .env — migrating to encrypted storage"
-    MASTER_SEED="${EXISTING_SEED}"
     IDENTITY_NEW=false
 elif [ -t 0 ]; then
     # Interactive terminal — ask user
@@ -471,14 +461,6 @@ if [ -n "${MASTER_SEED}" ]; then
         chmod 600 "${SECRETS_DIR}/seed_password"
     fi
 
-    # If migrating from raw seed in .env, remove it
-    if [ -n "${EXISTING_SEED}" ] && [ -f "${ENV_FILE}" ]; then
-        sed -i.bak '/^DINA_MASTER_SEED=/d' "${ENV_FILE}" 2>/dev/null \
-            || sed -i '' '/^DINA_MASTER_SEED=/d' "${ENV_FILE}"
-        rm -f "${ENV_FILE}.bak"
-        ok "Removed raw seed from .env (migrated to encrypted storage)"
-    fi
-
     # Zero the seed variable — raw seed must not persist
     MASTER_SEED="0000000000000000000000000000000000000000000000000000000000000000"
     unset MASTER_SEED
@@ -687,12 +669,6 @@ if [ ! -f "${ENV_FILE}" ]; then
         done
     fi
 
-    # Read internal token for .env
-    INTERNAL_TOKEN_VALUE=""
-    if [ -f "${SECRETS_DIR}/internal_token" ]; then
-        INTERNAL_TOKEN_VALUE=$(cat "${SECRETS_DIR}/internal_token" | tr -d '\n')
-    fi
-
     # Write .env file (seed is NOT stored here — it's in secrets/wrapped_seed.bin)
     cat > "${ENV_FILE}" << ENVEOF
 # Dina Home Node Configuration
@@ -700,8 +676,9 @@ if [ ! -f "${ENV_FILE}" ]; then
 #
 # Identity seed is encrypted in secrets/wrapped_seed.bin (not stored here).
 
-# Internal token for admin/agent proxy (auto-generated, do not edit)
-DINA_INTERNAL_TOKEN=${INTERNAL_TOKEN_VALUE}
+# Service-key provisioning mode (0 = runtime fail-closed; install provisions keys)
+DINA_SERVICE_KEY_INIT=0
+DINA_SERVICE_KEY_STRICT=1
 
 # AT Protocol PDS secrets (auto-generated, do not edit)
 DINA_PDS_JWT_SECRET=${PDS_JWT_SECRET}
@@ -751,18 +728,18 @@ ENVEOF
         ok "Configured ${LLM_KEY_NAME}"
     fi
 else
-    # Ensure DINA_INTERNAL_TOKEN is in existing .env
-    if ! grep -q "^DINA_INTERNAL_TOKEN=" "${ENV_FILE}" 2>/dev/null; then
-        INTERNAL_TOKEN_VALUE=""
-        if [ -f "${SECRETS_DIR}/internal_token" ]; then
-            INTERNAL_TOKEN_VALUE=$(cat "${SECRETS_DIR}/internal_token" | tr -d '\n')
-        fi
-        echo "" >> "${ENV_FILE}"
-        echo "# Internal token for admin/agent proxy (added by install.sh)" >> "${ENV_FILE}"
-        echo "DINA_INTERNAL_TOKEN=${INTERNAL_TOKEN_VALUE}" >> "${ENV_FILE}"
-        ok "Added DINA_INTERNAL_TOKEN to existing .env"
+    if ! grep -q "^DINA_SERVICE_KEY_INIT=" "${ENV_FILE}" 2>/dev/null; then
+        echo "DINA_SERVICE_KEY_INIT=0" >> "${ENV_FILE}"
+        ok "Added DINA_SERVICE_KEY_INIT=0 to existing .env"
     else
-        skip "DINA_INTERNAL_TOKEN already in .env"
+        skip "DINA_SERVICE_KEY_INIT already in .env"
+    fi
+
+    if ! grep -q "^DINA_SERVICE_KEY_STRICT=" "${ENV_FILE}" 2>/dev/null; then
+        echo "DINA_SERVICE_KEY_STRICT=1" >> "${ENV_FILE}"
+        ok "Added DINA_SERVICE_KEY_STRICT=1 to existing .env"
+    else
+        skip "DINA_SERVICE_KEY_STRICT already in .env"
     fi
 
     # Ensure PDS secrets are in existing .env

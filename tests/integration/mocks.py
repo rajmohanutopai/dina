@@ -1644,15 +1644,15 @@ class MockDinaCore:
 
 
 # ---------------------------------------------------------------------------
-# Mock: BRAIN_TOKEN Authentication (§1.1)
+# Mock: Service Authentication (§1.1)
 # ---------------------------------------------------------------------------
 
-class MockBrainTokenAuth:
-    """Token-based authentication between Go Core and Python Brain.
+class MockServiceAuth:
+    """Service authentication model between Go Core and Python Brain.
 
     Both services mount the same secret file. Requests without valid
-    BRAIN_TOKEN are rejected. Admin endpoints are never accessible
-    to the brain — only operational endpoints.
+    service credential are rejected. Admin endpoints are never accessible
+    to service-tier callers — only operational endpoints.
     """
 
     BRAIN_ENDPOINTS = frozenset({

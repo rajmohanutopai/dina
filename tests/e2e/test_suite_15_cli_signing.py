@@ -295,7 +295,7 @@ class TestCLIEd25519Signing:
         """E2E-15.8 Bearer token fallback still works (backward compat)."""
         if DOCKER_MODE and docker_services is not None:
             base = docker_services.core_url("alonso")
-            headers = {"Authorization": f"Bearer {docker_services.brain_token}"}
+            headers = {"Authorization": f"Bearer {docker_services.client_token}"}
             body = json.dumps({"query": "test", "persona": "personal"}).encode()
             headers["Content-Type"] = "application/json"
 

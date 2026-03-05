@@ -29,13 +29,15 @@ services:
     volumes:
       - dina-data:/data
       - ./secrets/service_keys/core:/run/secrets/service_keys/private
-      - ./secrets/service_keys/public:/run/secrets/service_keys/public
+      - ./secrets/service_keys/public:/run/secrets/service_keys/public:ro
     environment:
       - DINA_ENV=${DINA_ENV:-development}
       - DINA_VAULT_PATH=/data/vault
       - DINA_BRAIN_URL=http://brain:8200
+      - DINA_CLIENT_TOKEN=${DINA_CLIENT_TOKEN:-}
       - DINA_SERVICE_KEY_DIR=/run/secrets/service_keys
-      - DINA_INTERNAL_TOKEN=${DINA_INTERNAL_TOKEN:-}
+      - DINA_SERVICE_KEY_INIT=${DINA_SERVICE_KEY_INIT:-0}
+      - DINA_SERVICE_KEY_STRICT=${DINA_SERVICE_KEY_STRICT:-1}
       - DINA_SEED_PASSWORD_FILE=/run/secrets/seed_password
       - DINA_LISTEN_ADDR=:8100
       - DINA_SEED_PASSWORD=${DINA_SEED_PASSWORD:-}
@@ -73,11 +75,12 @@ services:
       - ./dina.html:/app/dina.html:ro
       - ./images:/app/images:ro
       - ./secrets/service_keys/brain:/run/secrets/service_keys/private
-      - ./secrets/service_keys/public:/run/secrets/service_keys/public
+      - ./secrets/service_keys/public:/run/secrets/service_keys/public:ro
     environment:
       - DINA_CORE_URL=http://core:8100
       - DINA_SERVICE_KEY_DIR=/run/secrets/service_keys
-      - DINA_INTERNAL_TOKEN=${DINA_INTERNAL_TOKEN:-}
+      - DINA_SERVICE_KEY_INIT=${DINA_SERVICE_KEY_INIT:-0}
+      - DINA_SERVICE_KEY_STRICT=${DINA_SERVICE_KEY_STRICT:-1}
       - DINA_BRAIN_PORT=8200
       - DINA_LLM_URL=${DINA_LLM_URL:-http://llm:8080}
       - DINA_LOG_LEVEL=${DINA_LOG_LEVEL:-INFO}
@@ -166,8 +169,8 @@ volumes:
 
 secrets:
   wrapped_seed:
-    file: ./secrets/wrapped_seed.bin
+    file: ${DINA_WRAPPED_SEED_FILE:-./secrets/wrapped_seed.bin}
   identity_salt:
-    file: ./secrets/master_seed.salt
+    file: ${DINA_IDENTITY_SALT_FILE:-./secrets/master_seed.salt}
   seed_password:
-    file: ./secrets/seed_password
+    file: ${DINA_SEED_PASSWORD_SECRET_FILE:-./secrets/seed_password}

@@ -113,15 +113,20 @@ class RealPIIScrubber(MockPIIScrubber):
         self,
         core_url: str,
         brain_url: str,
-        brain_token: str,
+        core_token: str,
     ) -> None:
         super().__init__()
         self._core_url = core_url.rstrip("/")
         self._brain_url = brain_url.rstrip("/")
-        self._token = brain_token
+        self._core_token = core_token
 
-    def _headers(self) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self._token}"}
+    def _core_headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self._core_token}"}
+
+    def _brain_headers(self) -> dict[str, str]:
+        # Brain API is service-key authenticated and internal-only.
+        # Host-side E2E callers do not hold service keys.
+        return {}
 
     def scrub_tier1(self, text: str) -> tuple[str, dict[str, str]]:
         """Tier 1: regex-based scrubbing via Go Core POST /v1/pii/scrub.
@@ -136,7 +141,7 @@ class RealPIIScrubber(MockPIIScrubber):
             "post",
             f"{self._core_url}/v1/pii/scrub",
             json={"text": scrubbed},
-            headers=self._headers(),
+            headers=self._core_headers(),
         )
         if resp is not None:
             data = resp.json()
@@ -203,7 +208,7 @@ class RealPIIScrubber(MockPIIScrubber):
             "post",
             f"{self._brain_url}/api/v1/pii/scrub",
             json={"text": scrubbed},
-            headers=self._headers(),
+            headers=self._brain_headers(),
         )
         if resp is not None:
             data = resp.json()
@@ -290,15 +295,13 @@ class RealHomeNode(HomeNode):
         self,
         core_url: str,
         brain_url: str,
-        brain_token: str,
-        client_token: str = "",
+        client_token: str,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         self._core_url = core_url.rstrip("/")
         self._brain_url = brain_url.rstrip("/")
-        self._token = brain_token
-        self._client_token = client_token or brain_token
+        self._client_token = client_token
         # Maps (persona_name, mock_item_id) -> real_item_id from Go Core
         self._vault_id_map: dict[str, str] = {}
         # Maps real_item_id -> mock_item_id for reverse lookups
@@ -308,12 +311,12 @@ class RealHomeNode(HomeNode):
         self.scrubber = RealPIIScrubber(
             core_url=self._core_url,
             brain_url=self._brain_url,
-            brain_token=self._token,
+            core_token=self._client_token,
         )
 
     def _headers(self) -> dict[str, str]:
-        """Brain token headers — for data operations (vault, KV, PII, messaging)."""
-        return {"Authorization": f"Bearer {self._token}"}
+        """Client token headers — for data operations (vault, KV, PII, messaging)."""
+        return {"Authorization": f"Bearer {self._client_token}"}
 
     def _admin_headers(self) -> dict[str, str]:
         """Client token headers — for admin operations (persona, pairing, DID sign)."""

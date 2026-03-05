@@ -1,5 +1,5 @@
 // Package main provisions a new managed Dina instance.
-// Generates BRAIN_TOKEN, creates data directories, pulls images,
+// Provisions service-key directories, creates data directories, pulls images,
 // and starts the container stack.
 package main
 

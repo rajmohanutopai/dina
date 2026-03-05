@@ -12,6 +12,8 @@ services:
     build:
       context: ./core
       dockerfile: Dockerfile
+      additional_contexts:
+        admin-cli: ./admin-cli
     ports:
       - "18100:8100"
     volumes:
@@ -22,7 +24,6 @@ services:
       - DINA_VAULT_PATH=/data/vault
       - DINA_BRAIN_URL=http://brain:8200
       - DINA_SERVICE_KEY_DIR=/run/secrets/service_keys
-      - DINA_INTERNAL_TOKEN=test-internal-token-for-integration
       - DINA_LISTEN_ADDR=:8100
       - DINA_RATE_LIMIT=100000
       - DINA_SPOOL_MAX=10485760
@@ -49,7 +50,6 @@ services:
     environment:
       - DINA_CORE_URL=http://core:8100
       - DINA_SERVICE_KEY_DIR=/run/secrets/service_keys
-      - DINA_INTERNAL_TOKEN=test-internal-token-for-integration
       - DINA_BRAIN_PORT=8200
       - DINA_LLM_URL=http://localhost:9999
       - DINA_LOG_LEVEL=DEBUG
@@ -66,4 +66,3 @@ services:
 volumes:
   dina-test-data:
     driver: local
-
