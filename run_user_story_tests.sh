@@ -7,6 +7,9 @@
 # Every test runs against a real multi-node stack: Go Core, Python Brain,
 # AT Protocol PDS, AppView, Postgres — zero mocks.
 #
+# Each run gets a 3-char session ID (e.g. AzA) and auto-allocated ports,
+# so multiple runs can execute in parallel without conflicts.
+#
 # Requires:
 #   Docker          — full system stack (2 Core+Brain, PDS, AppView, Postgres)
 #   GOOGLE_API_KEY  — optional, for real LLM reasoning tests
@@ -25,6 +28,25 @@
 # ============================================================================
 set -euo pipefail
 cd "$(dirname "$0")"
+
+# Activate venv if present and not already active
+if [ -z "${VIRTUAL_ENV:-}" ] && [ -f .venv/bin/activate ]; then
+    # shellcheck disable=SC1091
+    source .venv/bin/activate
+fi
+
+# ---------------------------------------------------------------------------
+# Session ID + port allocation
+# ---------------------------------------------------------------------------
+
+# Generate 3-char session ID for Docker project isolation.
+# Port allocation is handled by conftest.py (auto-scans for free ports,
+# retries on conflict — no TOCTOU race).
+SESSION_ID="${DINA_TEST_SESSION:-$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 3 || true)}"
+export COMPOSE_PROJECT_NAME="dina-system-${SESSION_ID}"
+# conftest.py reads PORT_CORE_ALONSO as starting hint; defaults to 19300.
+PORT_BASE="${DINA_TEST_PORT_BASE:-19300}"
+export PORT_CORE_ALONSO="$PORT_BASE"
 
 # -- Parse flags --
 BRIEF=false
@@ -147,7 +169,7 @@ print_banner() {
     # Box: 2 leading spaces + ║ + 100 inner + ║ = 104 display columns
     echo -e "${B}  ╔════════════════════════════════════════════════════════════════════════════════════════════════════╗${R}"
     echo -e "${B}  ║${R}${BOLD}     DINA User Story Tests                                                                          ${B}║${R}"
-    echo -e "${B}  ║${R}${D}     Stack: 2x Go Core + 2x Python Brain + PDS + AppView + Postgres + SQLCipher -- zero mocks       ${B}║${R}"
+    printf "  ${B}║${R}${D}     Stack: 2x Go Core + 2x Python Brain + PDS + AppView + Postgres -- session %-4s ports %s+     ${B}║${R}\n" "${SESSION_ID}" "${PORT_BASE}"
     echo -e "${B}  ╠════════════════════════════════════════════════════════════════════════════════════════════════════╣${R}"
     echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
 
@@ -236,7 +258,8 @@ if [ "$BRIEF" = true ]; then
     LOG_DIR="/tmp/dina-user-story-$(date +%Y%m%d-%H%M%S)"
     mkdir -p "$LOG_DIR"
 
-    # Run pytest with verbose + short tracebacks to capture failure details
+    # Run pytest with verbose + short tracebacks to capture failure details.
+    # Port conflicts are handled inside conftest.py (auto re-allocation).
     TEST_PATH="${STORY_FILE:-tests/system/user_stories/}"
     python -m pytest "$TEST_PATH" \
         -v --tb=short --no-header \
@@ -466,6 +489,7 @@ fi
 echo ""
 
 # -- Run tests --
+# Port conflicts are handled inside conftest.py (auto re-allocation).
 TEST_PATH="${STORY_FILE:-tests/system/user_stories/}"
 python -m pytest "$TEST_PATH" \
     -v --tb=long -s \

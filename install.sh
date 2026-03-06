@@ -35,10 +35,13 @@ set -euo pipefail
 DINA_DIR="${DINA_DIR:-$(pwd)}"
 SECRETS_DIR="${DINA_DIR}/secrets"
 ENV_FILE="${DINA_DIR}/.env"
-CORE_PORT="${DINA_CORE_PORT:-8100}"
 HEALTH_TIMEOUT=90     # seconds to wait for health check
 HEALTH_INTERVAL=3     # seconds between health check attempts
 SKIP_BUILD=false
+
+# Default port bases (auto-allocated if in use)
+DEFAULT_CORE_PORT=8100
+DEFAULT_PDS_PORT=2583
 
 for arg in "$@"; do
     case "$arg" in
@@ -113,15 +116,49 @@ echo ""
 # Step 2: Port check
 # ---------------------------------------------------------------------------
 
-echo -e "${BOLD}Step 2: Checking port availability${RESET}"
+echo -e "${BOLD}Step 2: Allocating ports${RESET}"
 
-if curl -s --connect-timeout 2 "http://localhost:${CORE_PORT}/healthz" >/dev/null 2>&1; then
-    warn "Port ${CORE_PORT} is already in use (Dina may already be running)"
-    echo -e "       Run ${CYAN}./uninstall.sh${RESET} first, or set DINA_CORE_PORT to a different port."
-    echo ""
+# If ports were previously allocated and saved in .env, reuse them.
+if [ -f "${ENV_FILE}" ]; then
+    SAVED_CORE_PORT=$(sed -n 's/^DINA_CORE_PORT=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
+    SAVED_PDS_PORT=$(sed -n 's/^DINA_PDS_PORT=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
 fi
 
-ok "Port ${CORE_PORT} ready"
+# Check if a TCP port is free (returns 0 if free, 1 if in use).
+port_free() {
+    ! nc -z localhost "$1" 2>/dev/null
+}
+
+# Find a free port starting from $1, stepping by 100.
+find_free_port() {
+    local port="$1"
+    local max_attempts=20
+    local i=0
+    while [ $i -lt $max_attempts ]; do
+        if port_free "$port"; then
+            echo "$port"
+            return 0
+        fi
+        port=$((port + 100))
+        i=$((i + 1))
+    done
+    # Fallback: return original
+    echo "$1"
+}
+
+# Use saved ports, env overrides, or auto-detect free ports.
+CORE_PORT="${SAVED_CORE_PORT:-${DINA_CORE_PORT:-}}"
+PDS_PORT="${SAVED_PDS_PORT:-${DINA_PDS_PORT:-}}"
+
+if [ -z "${CORE_PORT}" ]; then
+    CORE_PORT=$(find_free_port "${DEFAULT_CORE_PORT}")
+fi
+if [ -z "${PDS_PORT}" ]; then
+    PDS_PORT=$(find_free_port "${DEFAULT_PDS_PORT}")
+fi
+
+ok "Core port: ${CORE_PORT}"
+ok "PDS port:  ${PDS_PORT}"
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -143,6 +180,21 @@ mkdir -p "${SERVICE_KEY_DIR}/core" "${SERVICE_KEY_DIR}/brain" "${SERVICE_KEY_DIR
 chmod 700 "${SERVICE_KEY_DIR}" "${SERVICE_KEY_DIR}/core" "${SERVICE_KEY_DIR}/brain"
 chmod 755 "${SERVICE_KEY_DIR}/public"
 ok "Service key directories ready (core/, brain/, public/)"
+
+# Session ID — 3-char alphanumeric identifier for this deployment.
+# Scopes all container names (core-a7k, brain-a7k) and Docker resources.
+# Lowercase only — Docker Compose project names require it.
+# Generated once; preserved across re-runs.
+SESSION_ID_FILE="${SECRETS_DIR}/session_id"
+if [ -f "${SESSION_ID_FILE}" ]; then
+    DINA_SESSION=$(cat "${SESSION_ID_FILE}")
+    skip "Session ID: ${DINA_SESSION}"
+else
+    DINA_SESSION=$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 3 || true)
+    printf '%s' "${DINA_SESSION}" > "${SESSION_ID_FILE}"
+    chmod 600 "${SESSION_ID_FILE}"
+    ok "Session ID: ${DINA_SESSION}"
+fi
 
 # PDS secrets (JWT secret, admin password, K256 rotation key)
 PDS_JWT_SECRET=""
@@ -676,6 +728,14 @@ if [ ! -f "${ENV_FILE}" ]; then
 #
 # Identity seed is encrypted in secrets/wrapped_seed.bin (not stored here).
 
+# Session ID — scopes container names and Docker resources for this deployment.
+DINA_SESSION=${DINA_SESSION}
+COMPOSE_PROJECT_NAME=dina-${DINA_SESSION}
+
+# Host ports (auto-allocated to avoid conflicts with other sessions)
+DINA_CORE_PORT=${CORE_PORT}
+DINA_PDS_PORT=${PDS_PORT}
+
 # Service-key provisioning mode (0 = runtime fail-closed; install provisions keys)
 DINA_SERVICE_KEY_INIT=0
 DINA_SERVICE_KEY_STRICT=1
@@ -728,6 +788,26 @@ ENVEOF
         ok "Configured ${LLM_KEY_NAME}"
     fi
 else
+    if ! grep -q "^DINA_SESSION=" "${ENV_FILE}" 2>/dev/null; then
+        echo "" >> "${ENV_FILE}"
+        echo "# Session ID — scopes container names and Docker resources" >> "${ENV_FILE}"
+        echo "DINA_SESSION=${DINA_SESSION}" >> "${ENV_FILE}"
+        echo "COMPOSE_PROJECT_NAME=dina-${DINA_SESSION}" >> "${ENV_FILE}"
+        ok "Added DINA_SESSION=${DINA_SESSION} to existing .env"
+    else
+        skip "DINA_SESSION already in .env"
+    fi
+
+    if ! grep -q "^DINA_CORE_PORT=" "${ENV_FILE}" 2>/dev/null; then
+        echo "" >> "${ENV_FILE}"
+        echo "# Host ports (auto-allocated)" >> "${ENV_FILE}"
+        echo "DINA_CORE_PORT=${CORE_PORT}" >> "${ENV_FILE}"
+        echo "DINA_PDS_PORT=${PDS_PORT}" >> "${ENV_FILE}"
+        ok "Added ports: Core=${CORE_PORT}, PDS=${PDS_PORT}"
+    else
+        skip "Ports already in .env"
+    fi
+
     if ! grep -q "^DINA_SERVICE_KEY_INIT=" "${ENV_FILE}" 2>/dev/null; then
         echo "DINA_SERVICE_KEY_INIT=0" >> "${ENV_FILE}"
         ok "Added DINA_SERVICE_KEY_INIT=0 to existing .env"
@@ -895,6 +975,9 @@ echo -e "${BOLD}║${BANNER_LEFT}${BANNER_MSG}${BANNER_RIGHT}║${RESET}"
 echo -e "${BOLD}╚${BANNER_BORDER}╝${RESET}"
 echo ""
 
+echo -e "  ${BOLD}Session:${RESET}   ${CYAN}${DINA_SESSION}${RESET}  ${DIM}(containers: core-${DINA_SESSION}, brain-${DINA_SESSION}, ...)${RESET}"
+echo ""
+
 echo -e "  ${BOLD}Identity:${RESET}"
 echo -e "    Seed:      ${GREEN}encrypted${RESET} (AES-256-GCM + Argon2id)"
 if [ -n "${SEED_MODE}" ]; then
@@ -908,7 +991,7 @@ echo ""
 
 echo -e "  ${BOLD}Services:${RESET}"
 echo -e "    Core:      ${CYAN}http://localhost:${CORE_PORT}${RESET}"
-echo -e "    PDS:       ${CYAN}http://localhost:${DINA_PDS_PORT:-2583}${RESET}"
+echo -e "    PDS:       ${CYAN}http://localhost:${PDS_PORT}${RESET}"
 echo -e "    Health:    ${CYAN}http://localhost:${CORE_PORT}/healthz${RESET}"
 if [ -n "${TELEGRAM_TOKEN}" ] || [ -n "${EXISTING_TG_TOKEN}" ]; then
     echo -e "    Telegram:  ${GREEN}connected${RESET}"

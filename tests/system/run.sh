@@ -14,6 +14,19 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
+# Activate venv if present and not already active
+if [ -z "${VIRTUAL_ENV:-}" ] && [ -f .venv/bin/activate ]; then
+    # shellcheck disable=SC1091
+    source .venv/bin/activate
+fi
+
+# Session ID for Docker project isolation.
+# Port allocation is handled by conftest.py (auto-scans for free ports).
+if [ -z "${COMPOSE_PROJECT_NAME:-}" ]; then
+    SESSION_ID="${DINA_TEST_SESSION:-$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 3 || true)}"
+    export COMPOSE_PROJECT_NAME="dina-system-${SESSION_ID}"
+fi
+
 # If first arg is a path, use it as the test target; otherwise default to all
 if [[ "${1:-}" == tests/* ]]; then
     TARGET="$1"

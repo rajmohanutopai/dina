@@ -1,6 +1,8 @@
 # Dina System Tests — All three service tiers + full AT Protocol pipeline, zero mocks.
 # 2 Core+Brain pairs (Alonso, Sancho) + PLC + PDS + Jetstream + AppView (full stack).
-# Port range 19300+ avoids collisions with E2E (19100+) and dev (8100).
+#
+# All host ports are configurable via PORT_* env vars (defaults: 19300+).
+# run_user_story_tests.sh auto-allocates a free port base per session.
 #
 # Auth: Ed25519 service keys (per-pair named volumes) + CLIENT_TOKEN
 # for admin endpoints. No internal bearer token path.
@@ -69,7 +71,7 @@ services:
   core-alonso:
     <<: *core-base
     ports:
-      - "19300:8100"
+      - "${PORT_CORE_ALONSO:-19300}:8100"
     volumes:
       - alonso-data:/data
       - alonso-keys-core-priv:/run/secrets/service_keys/private
@@ -89,7 +91,7 @@ services:
   brain-alonso:
     <<: *brain-base
     ports:
-      - "19400:8200"
+      - "${PORT_BRAIN_ALONSO:-19400}:8200"
     volumes:
       - alonso-data:/data
       - alonso-keys-brain-priv:/run/secrets/service_keys/private
@@ -102,7 +104,7 @@ services:
   core-sancho:
     <<: *core-base
     ports:
-      - "19301:8100"
+      - "${PORT_CORE_SANCHO:-19301}:8100"
     volumes:
       - sancho-data:/data
       - sancho-keys-core-priv:/run/secrets/service_keys/private
@@ -122,7 +124,7 @@ services:
   brain-sancho:
     <<: *brain-base
     ports:
-      - "19401:8200"
+      - "${PORT_BRAIN_SANCHO:-19401}:8200"
     volumes:
       - sancho-data:/data
       - sancho-keys-brain-priv:/run/secrets/service_keys/private
@@ -137,7 +139,7 @@ services:
       context: ./plc
       dockerfile: Dockerfile
     ports:
-      - "19600:2582"
+      - "${PORT_PLC:-19600}:2582"
     healthcheck:
       test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:2582/healthz', timeout=2)"]
       interval: 5s
@@ -150,7 +152,7 @@ services:
   pds:
     image: ghcr.io/bluesky-social/pds:0.4
     ports:
-      - "19601:3000"
+      - "${PORT_PDS:-19601}:3000"
     volumes:
       - pds-data:/pds
     environment:
@@ -180,7 +182,7 @@ services:
     image: ghcr.io/bluesky-social/jetstream:sha-e027425
     platform: linux/amd64
     ports:
-      - "19602:6008"
+      - "${PORT_JETSTREAM:-19602}:6008"
     environment:
       JETSTREAM_WS_URL: ws://pds:3000/xrpc/com.atproto.sync.subscribeRepos
       JETSTREAM_LISTEN_ADDR: ":6008"
@@ -207,7 +209,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "19432:5432"
+      - "${PORT_POSTGRES:-19432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dina -d dina_trust"]
       interval: 5s
@@ -239,7 +241,7 @@ services:
       NODE_ENV: production
       RATE_LIMIT_RPM: "100000"
     ports:
-      - "19500:3000"
+      - "${PORT_APPVIEW:-19500}:3000"
     depends_on:
       postgres:
         condition: service_healthy

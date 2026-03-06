@@ -28,20 +28,71 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 COMPOSE_FILE = PROJECT_ROOT / "docker-compose-system.yml"
 SECRETS_DIR = PROJECT_ROOT / "secrets"
 
-PORTS = {
-    "core_alonso": 19300,
-    "core_sancho": 19301,
-    "brain_alonso": 19400,
-    "brain_sancho": 19401,
-    "postgres": 19432,
-    "appview_web": 19500,
-    "plc": 19600,
-    "pds": 19601,
-    "jetstream": 19602,
-}
-
 HEALTH_TIMEOUT = 240  # seconds
 HEALTH_INTERVAL = 3   # seconds
+
+# Default port base — overridable by shell via PORT_* env vars.
+_DEFAULT_PORT_BASE = 19300
+
+
+def _port_free(port: int) -> bool:
+    """Check if a TCP port is free on localhost."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.settimeout(0.5)
+        s.connect(("localhost", port))
+        s.close()
+        return False
+    except (ConnectionRefusedError, OSError):
+        return True
+
+
+def _allocate_ports(base: int | None = None) -> dict[str, int]:
+    """Find a free port base and compute all port assignments.
+
+    Scans from *base* (default 19300), stepping by 500 until the base port
+    is free.  Returns a dict matching the PORTS layout.
+    """
+    if base is None:
+        base = int(os.environ.get("PORT_CORE_ALONSO", str(_DEFAULT_PORT_BASE)))
+
+    for _ in range(40):
+        if _port_free(base):
+            break
+        base += 500
+
+    ports = {
+        "core_alonso": base,
+        "core_sancho": base + 1,
+        "brain_alonso": base + 100,
+        "brain_sancho": base + 101,
+        "postgres": base + 132,
+        "appview_web": base + 200,
+        "plc": base + 300,
+        "pds": base + 301,
+        "jetstream": base + 302,
+    }
+
+    # Push into env so Docker Compose picks them up.
+    _env_keys = {
+        "core_alonso": "PORT_CORE_ALONSO",
+        "core_sancho": "PORT_CORE_SANCHO",
+        "brain_alonso": "PORT_BRAIN_ALONSO",
+        "brain_sancho": "PORT_BRAIN_SANCHO",
+        "postgres": "PORT_POSTGRES",
+        "appview_web": "PORT_APPVIEW",
+        "plc": "PORT_PLC",
+        "pds": "PORT_PDS",
+        "jetstream": "PORT_JETSTREAM",
+    }
+    for key, env_var in _env_keys.items():
+        os.environ[env_var] = str(ports[key])
+
+    return ports
+
+
+# Initial allocation.
+PORTS = _allocate_ports()
 
 # Hardcoded test token — matches DINA_CLIENT_TOKEN in docker-compose-system.yml.
 # Used as bearer auth for Core admin/client endpoints.
@@ -90,19 +141,36 @@ class SystemServices:
     # -- Lifecycle --
 
     def start(self, restart: bool = False) -> None:
+        global PORTS
+
         if restart:
             print("\n  [system] Tearing down existing stack (restart)...")
             self._compose("down", "-v")
 
-        # Always rebuild so tests run against the latest code.
-        # Docker layer caching makes this fast when nothing changed.
-        print("  [system] Building and starting system stack (docker compose up --build -d)...")
-        result = self._compose("up", "--build", "-d")
-        if result.returncode != 0:
-            stderr = result.stderr or ""
-            raise RuntimeError(
-                f"docker compose up failed (exit {result.returncode}):\n{stderr[-1000:]}"
+        # Try up to 5 times — on port conflict, re-allocate and retry immediately.
+        for attempt in range(5):
+            base = PORTS["core_alonso"]
+            print(
+                f"  [system] Starting system stack "
+                f"(ports {base}+, attempt {attempt + 1})..."
             )
+            result = self._compose("up", "--build", "-d")
+            if result.returncode == 0:
+                break
+
+            stderr = (result.stderr or "").lower()
+            if "port is already allocated" in stderr or "address already in use" in stderr or "bind for" in stderr:
+                print(f"  [system] Port conflict on base {base} — re-allocating...")
+                self._compose("down", "-v")
+                PORTS = _allocate_ports(base + 500)
+                continue
+
+            raise RuntimeError(
+                f"docker compose up failed (exit {result.returncode}):\n"
+                f"{(result.stderr or '')[-1000:]}"
+            )
+        else:
+            raise RuntimeError("Failed to start system stack after 5 port re-allocations")
 
         self._wait_for_health()
         self._started = True

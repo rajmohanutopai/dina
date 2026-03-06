@@ -4,6 +4,7 @@
 
 services:
   core:
+    container_name: core-${DINA_SESSION:-dna}
     image: dina-core:latest
     restart: always
     ports:
@@ -20,6 +21,7 @@ services:
       - DINA_SERVICE_KEY_STRICT=1
 
   brain:
+    container_name: brain-${DINA_SESSION:-dna}
     image: dina-brain:latest
     restart: always
     expose:
@@ -34,6 +36,7 @@ services:
       - DINA_SERVICE_KEY_STRICT=1
 
   llm:
+    container_name: llm-${DINA_SESSION:-dna}
     image: ghcr.io/ggerganov/llama.cpp:server
     restart: always
     expose:
