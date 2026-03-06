@@ -852,7 +852,7 @@ class TestPurchaseJourney:
         reason="GOOGLE_API_KEY not set — skipping real LLM test",
     )
     def test_11_dina_gives_personalized_purchase_advice(
-        self, alonso_brain, brain_headers
+        self, alonso_brain, brain_signer
     ):
         """Brain assembles vault context + trust data → personalized advice.
 
@@ -934,13 +934,12 @@ class TestPurchaseJourney:
             "their specific needs."
         )
 
-        r = httpx.post(
+        r = brain_signer.post(
             f"{alonso_brain}/api/v1/reason",
             json={
                 "prompt": prompt,
                 "persona_tier": "open",
             },
-            headers=brain_headers,
             timeout=60,
         )
         assert r.status_code == 200, (
@@ -1052,7 +1051,7 @@ class TestPurchaseJourney:
         reason="GOOGLE_API_KEY not set — skipping real LLM test",
     )
     def test_12_five_words_to_personalized_advice(
-        self, alonso_brain, brain_headers
+        self, alonso_brain, brain_signer
     ):
         """Five words in, personalized advice out. The Dina value proposition.
 
@@ -1095,7 +1094,6 @@ class TestPurchaseJourney:
         # A quick health check avoids wasting LLM calls if Core is slow.
         warmup = httpx.get(
             f"{alonso_brain}/healthz",
-            headers=brain_headers,
             timeout=10,
         )
         assert warmup.status_code == 200, (
@@ -1106,13 +1104,12 @@ class TestPurchaseJourney:
         _MAX_ATTEMPTS = 3
 
         for attempt in range(_MAX_ATTEMPTS):
-            r = httpx.post(
+            r = brain_signer.post(
                 f"{alonso_brain}/api/v1/reason",
                 json={
                     "prompt": "I need a new office chair",
                     "persona_tier": "open",
                 },
-                headers=brain_headers,
                 timeout=120,
             )
             assert r.status_code == 200, (
@@ -1205,14 +1202,13 @@ class TestPurchaseJourney:
             "family_context: YES or NO\n"
         )
 
-        judge_r = httpx.post(
+        judge_r = brain_signer.post(
             f"{alonso_brain}/api/v1/reason",
             json={
                 "prompt": judge_prompt,
                 "persona_tier": "open",
                 "skip_vault_enrichment": True,
             },
-            headers=brain_headers,
             timeout=60,
         )
         assert judge_r.status_code == 200, (

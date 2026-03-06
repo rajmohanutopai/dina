@@ -169,7 +169,7 @@ class TestPersonaWall:
     # ==================================================================
 
     def test_02_cross_persona_request_blocked(
-        self, alonso_brain, brain_headers,
+        self, alonso_brain, brain_signer,
     ):
         """Shopping agent asks about health conditions for ergonomic chair.
 
@@ -180,7 +180,7 @@ class TestPersonaWall:
 
         The Guardian must process this and return a disclosure proposal.
         """
-        r = httpx.post(
+        r = brain_signer.post(
             f"{alonso_brain}/api/v1/process",
             json={
                 "type": "cross_persona_request",
@@ -196,7 +196,6 @@ class TestPersonaWall:
                     ),
                 },
             },
-            headers=brain_headers,
             timeout=30,
         )
         assert r.status_code == 200, (
@@ -328,7 +327,7 @@ class TestPersonaWall:
     # ==================================================================
 
     def test_07_approve_disclosure(
-        self, alonso_brain, brain_headers,
+        self, alonso_brain, brain_signer,
     ):
         """User reviews and approves the minimal disclosure text.
 
@@ -342,7 +341,7 @@ class TestPersonaWall:
         assert disclosure_id, "No disclosure_id — test_02 must pass first"
         assert safe_text, "No safe_to_share — test_04 must pass first"
 
-        r = httpx.post(
+        r = brain_signer.post(
             f"{alonso_brain}/api/v1/process",
             json={
                 "type": "disclosure_approved",
@@ -353,7 +352,6 @@ class TestPersonaWall:
                     "source_persona": "health",
                 },
             },
-            headers=brain_headers,
             timeout=15,
         )
         assert r.status_code == 200, (

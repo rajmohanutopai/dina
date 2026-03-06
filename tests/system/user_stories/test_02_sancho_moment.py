@@ -322,7 +322,7 @@ class TestSanchoMoment:
     # -----------------------------------------------------------------
 
     def test_03_brain_processes_didcomm_arrival(
-        self, alonso_brain, brain_headers
+        self, alonso_brain, brain_signer
     ):
         """Send the arrival event to Alonso's Brain for processing.
 
@@ -344,7 +344,7 @@ class TestSanchoMoment:
             except Exception:
                 body = str(body)
 
-        r = httpx.post(
+        r = brain_signer.post(
             f"{alonso_brain}/api/v1/process",
             json={
                 "type": "dina/social/arrival",
@@ -354,7 +354,6 @@ class TestSanchoMoment:
                 "source": "d2d",
                 "contact_did": sancho_did,
             },
-            headers=brain_headers,
             timeout=15,
         )
         assert r.status_code == 200, (
@@ -449,7 +448,7 @@ class TestSanchoMoment:
         reason="GOOGLE_API_KEY not set — skipping real LLM test",
     )
     def test_06_llm_generates_human_quality_nudge(
-        self, alonso_brain, brain_headers
+        self, alonso_brain, brain_signer
     ):
         """LLM generates a natural, warm nudge from vault context.
 
@@ -484,14 +483,13 @@ class TestSanchoMoment:
             "this is a helpful whisper, not a briefing document."
         )
 
-        r = httpx.post(
+        r = brain_signer.post(
             f"{alonso_brain}/api/v1/reason",
             json={
                 "prompt": prompt,
                 "persona_tier": "open",
                 "skip_vault_enrichment": True,
             },
-            headers=brain_headers,
             timeout=60,
         )
         assert r.status_code == 200, (

@@ -232,15 +232,133 @@ if [ "$BRIEF" = true ]; then
     echo ""
     echo -e "  ${DIM}Running tests...${R}"
 
-    # Run pytest with verbose to capture PASSED/FAILED/SKIPPED per test
-    TMPFILE=$(mktemp)
+    # Log directory for grouped test output
+    LOG_DIR="/tmp/dina-user-story-$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$LOG_DIR"
+
+    # Run pytest with verbose + short tracebacks to capture failure details
     TEST_PATH="${STORY_FILE:-tests/system/user_stories/}"
     python -m pytest "$TEST_PATH" \
-        -v --tb=no --no-header \
-        ${PYTEST_ARGS[@]+"${PYTEST_ARGS[@]}"} > "$TMPFILE" 2>&1 || true
+        -v --tb=short --no-header \
+        ${PYTEST_ARGS[@]+"${PYTEST_ARGS[@]}"} > "$LOG_DIR/raw_pytest.log" 2>&1 || true
 
-    OUTPUT=$(cat "$TMPFILE")
-    rm -f "$TMPFILE"
+    OUTPUT=$(cat "$LOG_DIR/raw_pytest.log")
+
+    # Generate grouped log file from pytest output
+    python3 -c "
+import re, sys, os
+from datetime import datetime
+from collections import OrderedDict
+
+raw = open('$LOG_DIR/raw_pytest.log').read()
+lines = raw.splitlines()
+
+# Story metadata
+STORIES = {
+    '01': 'The Purchase Journey',
+    '02': 'The Sancho Moment',
+    '03': 'The Dead Internet Filter',
+    '04': 'The Persona Wall',
+    '05': 'The Agent Gateway',
+    '06': 'The License Renewal',
+}
+
+# Parse per-test results from verbose lines
+# Format: tests/system/.../test_0X_name.py::test_0X_YY_name PASSED/FAILED/SKIPPED/ERROR
+test_results = OrderedDict()  # story_num -> [(test_name, status)]
+result_re = re.compile(r'(test_(\d{2})_\w+\.py)::(\S+)\s+(PASSED|FAILED|SKIPPED|ERROR)')
+for line in lines:
+    m = result_re.search(line)
+    if m:
+        story = m.group(2)
+        test_name = m.group(3)
+        status = m.group(4)
+        test_results.setdefault(story, []).append((test_name, status))
+
+# Parse failure tracebacks from FAILURES section
+# Header format: ___ TestClass.test_name ___ (with dots and spaces)
+failures = {}  # test_name -> traceback_text
+in_failures = False
+current_test = None
+current_lines = []
+
+for line in lines:
+    if '= FAILURES =' in line or '= ERRORS =' in line:
+        in_failures = True
+        continue
+    if in_failures and line.startswith('='):
+        if current_test:
+            failures[current_test] = '\n'.join(current_lines)
+        in_failures = False
+        continue
+    if in_failures:
+        header = re.match(r'^_+ (.+?) _+$', line)
+        if header:
+            if current_test:
+                failures[current_test] = '\n'.join(current_lines)
+            # Normalize 'TestClass.test_name' to 'TestClass::test_name'
+            current_test = header.group(1).strip().replace('.', '::')
+            current_lines = []
+        elif current_test is not None:
+            current_lines.append(line)
+if current_test and current_test not in failures:
+    failures[current_test] = '\n'.join(current_lines)
+
+# Write grouped log
+log_path = '$LOG_DIR/grouped.log'
+with open(log_path, 'w') as f:
+    f.write('=' * 80 + '\n')
+    f.write(f'DINA User Story Test Log — {datetime.now():%Y-%m-%d %H:%M:%S}\n')
+    f.write('=' * 80 + '\n\n')
+
+    for story_num in sorted(test_results.keys()):
+        results = test_results[story_num]
+        name = STORIES.get(story_num, 'Unknown')
+        passed = sum(1 for _, s in results if s == 'PASSED')
+        failed = sum(1 for _, s in results if s == 'FAILED')
+        errored = sum(1 for _, s in results if s == 'ERROR')
+        skipped = sum(1 for _, s in results if s == 'SKIPPED')
+        total = len(results)
+
+        status_parts = []
+        if passed: status_parts.append(f'{passed} passed')
+        if failed: status_parts.append(f'{failed} failed')
+        if errored: status_parts.append(f'{errored} errors')
+        if skipped: status_parts.append(f'{skipped} skipped')
+
+        f.write(f'Story {story_num}: {name} ({total} tests: {\", \".join(status_parts)})\n')
+        f.write('-' * 80 + '\n\n')
+
+        for test_name, status in results:
+            if status == 'PASSED':
+                icon = 'PASS'
+            elif status == 'FAILED':
+                icon = 'FAIL'
+            elif status == 'ERROR':
+                icon = 'ERR '
+            else:
+                icon = 'SKIP'
+            f.write(f'  [{icon}]  {test_name}\n')
+
+            # Append failure details inline
+            if status in ('FAILED', 'ERROR') and test_name in failures:
+                tb = failures[test_name].rstrip()
+                for tb_line in tb.splitlines():
+                    f.write(f'         {tb_line}\n')
+                f.write('\n')
+
+        f.write('\n')
+
+    # Grand total
+    all_tests = [(t, s) for results in test_results.values() for t, s in results]
+    tp = sum(1 for _, s in all_tests if s == 'PASSED')
+    tf = sum(1 for _, s in all_tests if s == 'FAILED')
+    te = sum(1 for _, s in all_tests if s == 'ERROR')
+    ts = sum(1 for _, s in all_tests if s == 'SKIPPED')
+    f.write('=' * 80 + '\n')
+    f.write(f'Total: {len(all_tests)} tests — {tp} passed, {tf} failed, {te} errors, {ts} skipped\n')
+    f.write('=' * 80 + '\n')
+" 2>/dev/null || true
 
     # Parse per-file results from pytest -v output
     s01_passed=$(echo "$OUTPUT" | grep -c "test_01_purchase_journey.*PASSED" || true)
@@ -319,13 +437,15 @@ if [ "$BRIEF" = true ]; then
         echo -e "  ${DIM}Zero mocks. Real stack. Real crypto. Real trust.${R}"
     elif [ "$total_all" -gt 0 ]; then
         if [ "$total_errored" -gt 0 ]; then
-            echo -e "  ${RED}${BOLD}${total_errored} errors${R}, ${total_failed} failed, ${total_passed}/${total_all} passed  ${DIM}-- run without --brief for details${R}"
+            echo -e "  ${RED}${BOLD}${total_errored} errors${R}, ${total_failed} failed, ${total_passed}/${total_all} passed"
         else
-            echo -e "  ${RED}${BOLD}${total_failed} failed${R}, ${total_passed}/${total_all} passed  ${DIM}-- run without --brief for details${R}"
+            echo -e "  ${RED}${BOLD}${total_failed} failed${R}, ${total_passed}/${total_all} passed"
         fi
     else
         echo -e "  ${YELLOW}No tests collected.${R}"
     fi
+    echo ""
+    echo -e "  ${DIM}Logs: ${LOG_DIR}/grouped.log${R}"
     echo ""
 
     [ "$total_failed" -eq 0 ] && [ "$total_errored" -eq 0 ] && exit 0 || exit 1

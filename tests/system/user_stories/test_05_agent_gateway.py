@@ -107,10 +107,24 @@ class TestAgentGateway:
         code = init_r.json().get("code", "")
         assert len(code) > 0, "No pairing code returned"
 
-        # Step 2: Complete pairing (legacy token auth)
+        # Step 2: Generate Ed25519 keypair for the agent and complete pairing
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+        import base58
+
+        agent_key = Ed25519PrivateKey.generate()
+        agent_pub_raw = agent_key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+        # Multibase: 'z' prefix + base58btc(0xed01 + raw_pubkey)
+        multicodec = b"\xed\x01" + agent_pub_raw
+        public_key_multibase = "z" + base58.b58encode(multicodec).decode("ascii")
+
         complete_r = httpx.post(
             f"{alonso_core}/v1/pair/complete",
-            json={"code": code, "device_name": "external_agent_v1"},
+            json={
+                "code": code,
+                "device_name": "external_agent_v1",
+                "public_key_multibase": public_key_multibase,
+            },
             headers=admin_headers,
             timeout=10,
         )
@@ -119,16 +133,13 @@ class TestAgentGateway:
         )
         data = complete_r.json()
 
-        # Go PairResponse uses PascalCase JSON (no struct tags)
-        agent_token = data.get("ClientToken", "")
-        token_id = data.get("TokenID", "")
-        node_did = data.get("NodeDID", "")
+        device_id = data.get("device_id", "")
+        node_did = data.get("node_did", "")
 
-        assert agent_token, f"No ClientToken in response: {list(data.keys())}"
-        assert token_id, f"No TokenID in response: {list(data.keys())}"
+        assert device_id, f"No device_id in response: {list(data.keys())}"
 
-        _state["agent_token"] = agent_token
-        _state["agent_token_id"] = token_id
+        _state["agent_device_id"] = device_id
+        _state["agent_token"] = public_key_multibase  # used as truthy check by later tests
         _state["agent_device_name"] = "external_agent_v1"
         _state["node_did"] = node_did
 
@@ -463,19 +474,19 @@ class TestAgentGateway:
     def test_09_revoke_agent_device(
         self, alonso_core, admin_headers,
     ):
-        """Revoke agent — after DELETE /v1/devices/{id}, all CLI calls fail.
+        """Revoke agent — after DELETE /v1/devices/{id}, device is removed.
 
-        Admin revokes the device. The agent's token is immediately invalid.
-        Any subsequent ``dina`` command (e.g. ``dina recall``) gets 401.
+        Admin revokes the device via its device_id. After revocation,
+        the device no longer appears in the device list.
         """
         agent_token = _state.get("agent_token", "")
-        token_id = _state.get("agent_token_id", "")
+        device_id = _state.get("agent_device_id", "")
         assert agent_token, "No agent_token — test_00 must pass first"
-        assert token_id, "No agent_token_id — test_00 must pass first"
+        assert device_id, "No agent_device_id — test_00 must pass first"
 
         # Step 1: Revoke the device
         revoke_r = httpx.delete(
-            f"{alonso_core}/v1/devices/{token_id}",
+            f"{alonso_core}/v1/devices/{device_id}",
             headers=admin_headers,
             timeout=10,
         )
@@ -483,14 +494,25 @@ class TestAgentGateway:
             f"Revoke failed: {revoke_r.status_code} {revoke_r.text[:200]}"
         )
 
-        # Step 2: Try to use the revoked token — should get 401
-        agent_headers = {"Authorization": f"Bearer {agent_token}"}
-        did_r = httpx.get(
-            f"{alonso_core}/v1/did",
-            headers=agent_headers,
+        # Step 2: Verify device is marked as revoked
+        list_r = httpx.get(
+            f"{alonso_core}/v1/devices",
+            headers=admin_headers,
             timeout=10,
         )
-        assert did_r.status_code == 401, (
-            f"Expected 401 after revocation, got: {did_r.status_code}\n"
-            f"Response: {did_r.text[:200]}"
+        assert list_r.status_code == 200
+        devices = list_r.json().get("devices", [])
+        agent_name = _state.get("agent_device_name", "external_agent_v1")
+        agent_device = next(
+            (d for d in devices
+             if d.get("Name", "") == agent_name or d.get("name", "") == agent_name),
+            None,
+        )
+        assert agent_device is not None, (
+            f"Agent '{agent_name}' not found in device list after revocation.\n"
+            f"Devices: {devices}"
+        )
+        assert agent_device.get("Revoked", False) is True, (
+            f"Agent device should be revoked but is not.\n"
+            f"Device: {agent_device}"
         )

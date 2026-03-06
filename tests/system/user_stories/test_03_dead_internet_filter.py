@@ -378,7 +378,7 @@ class TestDeadInternetFilter:
         reason="GOOGLE_API_KEY not set — skipping real LLM test",
     )
     def test_05_brain_confirms_trusted_creator(
-        self, alonso_brain, brain_headers
+        self, alonso_brain, brain_signer
     ):
         """Brain reasons about trusted creator using trust profile.
 
@@ -412,14 +412,13 @@ class TestDeadInternetFilter:
 
         content = ""
         for attempt in range(_MAX_LLM_ATTEMPTS):
-            r = httpx.post(
+            r = brain_signer.post(
                 f"{alonso_brain}/api/v1/reason",
                 json={
                     "prompt": prompt,
                     "persona_tier": "open",
                     "skip_vault_enrichment": True,
                 },
-                headers=brain_headers,
                 timeout=60,
             )
             assert r.status_code == 200, (
@@ -452,7 +451,7 @@ class TestDeadInternetFilter:
         reason="GOOGLE_API_KEY not set — skipping real LLM test",
     )
     def test_06_brain_flags_untrusted_creator(
-        self, alonso_brain, brain_headers
+        self, alonso_brain, brain_signer
     ):
         """Brain reasons about untrusted creator using trust profile.
 
@@ -490,14 +489,13 @@ class TestDeadInternetFilter:
 
         content = ""
         for attempt in range(_MAX_LLM_ATTEMPTS):
-            r = httpx.post(
+            r = brain_signer.post(
                 f"{alonso_brain}/api/v1/reason",
                 json={
                     "prompt": prompt,
                     "persona_tier": "open",
                     "skip_vault_enrichment": True,
                 },
-                headers=brain_headers,
                 timeout=60,
             )
             assert r.status_code == 200, (
@@ -530,7 +528,7 @@ class TestDeadInternetFilter:
         reason="GOOGLE_API_KEY not set — skipping real LLM test",
     )
     def test_07_side_by_side_trust_comparison(
-        self, alonso_brain, brain_headers
+        self, alonso_brain, brain_signer
     ):
         """LLM compares two creators publishing the same content.
 
@@ -576,14 +574,13 @@ class TestDeadInternetFilter:
         content = ""
         model = ""
         for attempt in range(_MAX_LLM_ATTEMPTS):
-            r = httpx.post(
+            r = brain_signer.post(
                 f"{alonso_brain}/api/v1/reason",
                 json={
                     "prompt": prompt,
                     "persona_tier": "open",
                     "skip_vault_enrichment": True,
                 },
-                headers=brain_headers,
                 timeout=60,
             )
             assert r.status_code == 200, (

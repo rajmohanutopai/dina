@@ -6,9 +6,11 @@ via Docker Compose. Seeds AppView Postgres with test data for trust queries.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import socket
 import subprocess
+import tempfile
 import time
 import uuid
 from datetime import datetime, timezone
@@ -16,6 +18,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
 # ---------------------------------------------------------------------------
 # Paths & ports
@@ -158,6 +161,18 @@ class SystemServices:
         except (OSError, ConnectionRefusedError):
             return False
 
+    def extract_core_private_key(self, actor: str = "alonso") -> bytes:
+        """Extract Core's Ed25519 private key PEM from a running container."""
+        result = self._compose(
+            "exec", "-T", f"core-{actor}",
+            "cat", "/run/secrets/service_keys/private/core_ed25519_private.pem",
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"Failed to extract core private key: {result.stderr[:200]}"
+            )
+        return result.stdout.encode() if isinstance(result.stdout, str) else result.stdout
+
     def _wait_for_health(self) -> None:
         deadline = time.time() + HEALTH_TIMEOUT
         while time.time() < deadline:
@@ -187,11 +202,45 @@ def system_services():
     svc.stop()
 
 
+class BrainSigner:
+    """Ed25519 request signer for calling Brain API endpoints directly.
+
+    Loads Core's private key from the running Docker container and signs
+    requests using the canonical payload format that Brain verifies.
+    """
+
+    def __init__(self, private_key_pem: bytes) -> None:
+        key = load_pem_private_key(private_key_pem, password=None)
+        self._private_key = key
+
+    def _sign(self, method: str, path: str, body: bytes, query: str = "") -> dict[str, str]:
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        body_hash = hashlib.sha256(body).hexdigest()
+        payload = f"{method}\n{path}\n{query}\n{timestamp}\n{body_hash}"
+        signature = self._private_key.sign(payload.encode("utf-8"))
+        return {
+            "X-DID": "did:key:zSystemTestSigner",
+            "X-Timestamp": timestamp,
+            "X-Signature": signature.hex(),
+        }
+
+    def post(self, url: str, *, json: dict | None = None, timeout: int = 30) -> httpx.Response:
+        """POST with Ed25519 signed headers — drop-in replacement for httpx.post."""
+        import json as _json
+        body = _json.dumps(json).encode() if json is not None else b""
+        # Extract path from URL for signature
+        parsed = httpx.URL(url)
+        path = parsed.raw_path.decode("ascii")
+        headers = self._sign("POST", path, body)
+        headers["Content-Type"] = "application/json"
+        return httpx.post(url, content=body, headers=headers, timeout=timeout)
+
+
 @pytest.fixture(scope="session")
 def brain_headers(system_services):
-    """Bearer auth for Brain API and Core vault endpoints.
+    """Bearer auth for Core vault/admin endpoints.
 
-    Uses the shared test token that Core registers as admin-scope client token.
+    Brain API endpoints now require Ed25519 — use brain_signer fixture instead.
     """
     return {"Authorization": f"Bearer {system_services.admin_token}"}
 
@@ -200,6 +249,20 @@ def brain_headers(system_services):
 def admin_headers(system_services):
     """Bearer auth for Core admin endpoints (persona, unlock, etc.)."""
     return {"Authorization": f"Bearer {system_services.admin_token}"}
+
+
+@pytest.fixture(scope="session")
+def brain_signer(system_services) -> BrainSigner:
+    """Ed25519 signer for direct Brain API calls.
+
+    Extracts Core's private key from the running Docker container and returns
+    a BrainSigner that can sign POST requests to Brain's /api/v1/* endpoints.
+
+    Usage in tests:
+        r = brain_signer.post(f"{alonso_brain}/api/v1/reason", json={...}, timeout=60)
+    """
+    pem = system_services.extract_core_private_key("alonso")
+    return BrainSigner(pem)
 
 
 # ---------------------------------------------------------------------------
