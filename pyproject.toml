@@ -22,4 +22,5 @@ ceramic = ["ceramicsdk>=0.1"]
 [tool.pytest.ini_options]
 markers = [
     "slow: marks tests as slow (100k scale, real LLM calls) — deselect with -m 'not slow'",
+    "e2e: end-to-end Docker bootstrap tests — requires Docker daemon",
 ]

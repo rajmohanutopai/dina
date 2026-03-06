@@ -27,6 +27,7 @@
 # Idempotent: safe to re-run. Existing secrets and seeds are preserved.
 
 set -euo pipefail
+cd "$(dirname "$0")"
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -50,26 +51,17 @@ for arg in "$@"; do
 done
 
 # ---------------------------------------------------------------------------
-# Colors (disabled if not a terminal)
+# Shared modules
 # ---------------------------------------------------------------------------
 
-if [ -t 1 ]; then
-    GREEN='\033[0;32m'
-    YELLOW='\033[1;33m'
-    RED='\033[0;31m'
-    CYAN='\033[0;36m'
-    BOLD='\033[1m'
-    DIM='\033[2m'
-    RESET='\033[0m'
-else
-    GREEN='' YELLOW='' RED='' CYAN='' BOLD='' DIM='' RESET=''
-fi
-
-ok()   { echo -e "  ${GREEN}[ok]${RESET}   $1"; }
-skip() { echo -e "  ${DIM}[skip]${RESET} $1"; }
-fail() { echo -e "  ${RED}[fail]${RESET} $1" >&2; exit 1; }
-warn() { echo -e "  ${YELLOW}[warn]${RESET} $1"; }
-info() { echo -e "  ${DIM}[....]${RESET} $1"; }
+# shellcheck source=scripts/setup/colors.sh
+source scripts/setup/colors.sh
+# shellcheck source=scripts/setup/env_ensure.sh
+source scripts/setup/env_ensure.sh
+# shellcheck source=scripts/setup/llm_provider.sh
+source scripts/setup/llm_provider.sh
+# shellcheck source=scripts/setup/telegram.sh
+source scripts/setup/telegram.sh
 
 # ---------------------------------------------------------------------------
 # Banner
@@ -123,28 +115,6 @@ if [ -f "${ENV_FILE}" ]; then
     SAVED_CORE_PORT=$(sed -n 's/^DINA_CORE_PORT=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
     SAVED_PDS_PORT=$(sed -n 's/^DINA_PDS_PORT=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
 fi
-
-# Check if a TCP port is free (returns 0 if free, 1 if in use).
-port_free() {
-    ! nc -z localhost "$1" 2>/dev/null
-}
-
-# Find a free port starting from $1, stepping by 100.
-find_free_port() {
-    local port="$1"
-    local max_attempts=20
-    local i=0
-    while [ $i -lt $max_attempts ]; do
-        if port_free "$port"; then
-            echo "$port"
-            return 0
-        fi
-        port=$((port + 100))
-        i=$((i + 1))
-    done
-    # Fallback: return original
-    echo "$1"
-}
 
 # Use saved ports, env overrides, or auto-detect free ports.
 CORE_PORT="${SAVED_CORE_PORT:-${DINA_CORE_PORT:-}}"
@@ -549,177 +519,11 @@ echo -e "${BOLD}Step 5: Writing configuration${RESET}"
 
 # --- Optional: Telegram bot setup ---
 # Runs for both new and existing .env (skips if already configured).
-TELEGRAM_TOKEN=""
-TELEGRAM_USER_ID=""
-EXISTING_TG_TOKEN=""
-if [ -f "${ENV_FILE}" ]; then
-    EXISTING_TG_TOKEN=$(sed -n 's/^DINA_TELEGRAM_TOKEN=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
-fi
-
-if [ -n "${EXISTING_TG_TOKEN}" ]; then
-    skip "Telegram bot already configured in .env"
-elif [ -t 0 ]; then
-    echo ""
-    echo -e "  ${BOLD}Would you like to connect a Telegram bot?${RESET}"
-    echo -e "  ${DIM}Dina can chat with you via Telegram — fully optional.${RESET}"
-    echo ""
-    echo -e "    ${CYAN}1)${RESET} Yes — I have a bot token (or will create one now)"
-    echo -e "    ${CYAN}2)${RESET} Skip ${DIM}(you can set this up later in .env)${RESET}"
-    echo ""
-    printf "  Enter choice [1-2]: "
-    read -r TG_CHOICE
-
-    if [ "${TG_CHOICE}" = "1" ]; then
-        echo ""
-        echo -e "  ${BOLD}Step A: Create a Telegram bot${RESET}"
-        echo -e "    1. Open Telegram and message ${CYAN}@BotFather${RESET}"
-        echo -e "    2. Send ${CYAN}/newbot${RESET} and follow the prompts"
-        echo -e "    3. Copy the token (looks like ${DIM}123456:ABC-DEF...${RESET})"
-        echo ""
-        printf "  Enter your bot token: "
-        read -r TELEGRAM_TOKEN
-        TELEGRAM_TOKEN=$(echo "${TELEGRAM_TOKEN}" | tr -d '[:space:]')
-
-        if [ -n "${TELEGRAM_TOKEN}" ]; then
-            echo ""
-            echo -e "  ${BOLD}Step B: Get your Telegram user ID${RESET}"
-            echo -e "    1. Message ${CYAN}@userinfobot${RESET} on Telegram"
-            echo -e "    2. It will reply with your numeric ID (e.g. ${DIM}987654321${RESET})"
-            echo ""
-            printf "  Enter your Telegram user ID: "
-            read -r TELEGRAM_USER_ID
-            TELEGRAM_USER_ID=$(echo "${TELEGRAM_USER_ID}" | tr -d '[:space:]')
-
-            if [ -n "${TELEGRAM_USER_ID}" ]; then
-                ok "Telegram bot configured (token + user ID)"
-            else
-                warn "No user ID entered — bot will reject all messages until DINA_TELEGRAM_ALLOWED_USERS is set in .env"
-            fi
-        else
-            info "No token entered — skipping Telegram setup"
-            TELEGRAM_TOKEN=""
-        fi
-    fi
-fi
+setup_telegram "${ENV_FILE}"
 
 if [ ! -f "${ENV_FILE}" ]; then
     # --- Interactive LLM provider selection ---
-    echo ""
-    echo -e "  ${BOLD}Which LLM provider would you like to use?${RESET}"
-    echo ""
-    echo -e "    ${CYAN}1)${RESET} Gemini      ${DIM}(Google — free tier available)${RESET}"
-    echo -e "    ${CYAN}2)${RESET} OpenAI      ${DIM}(GPT-5.2)${RESET}"
-    echo -e "    ${CYAN}3)${RESET} Claude      ${DIM}(Anthropic)${RESET}"
-    echo -e "    ${CYAN}4)${RESET} OpenRouter  ${DIM}(access 200+ models via one key)${RESET}"
-    echo -e "    ${CYAN}5)${RESET} Ollama      ${DIM}(local models, fully private — no API key needed)${RESET}"
-    echo -e "    ${CYAN}6)${RESET} Skip        ${DIM}(configure later in .env)${RESET}"
-    echo ""
-
-    PROVIDER_CHOICE=""
-    LLM_KEY_NAME=""
-    LLM_KEY_VALUE=""
-    LLM_EXTRA_LINES=""
-
-    if [ -t 0 ]; then
-        # Interactive terminal — prompt user
-        printf "  Enter choice [1-6]: "
-        read -r PROVIDER_CHOICE
-    else
-        # Non-interactive (piped input) — default to skip
-        PROVIDER_CHOICE="6"
-        info "Non-interactive mode — skipping provider selection"
-    fi
-
-    case "${PROVIDER_CHOICE}" in
-        1)
-            LLM_KEY_NAME="GEMINI_API_KEY"
-            echo ""
-            echo -e "  Get a free key at: ${CYAN}https://aistudio.google.com/apikey${RESET}"
-            printf "  Enter your Gemini API key: "
-            read -r LLM_KEY_VALUE
-            ;;
-        2)
-            LLM_KEY_NAME="OPENAI_API_KEY"
-            echo ""
-            echo -e "  Get a key at: ${CYAN}https://platform.openai.com/api-keys${RESET}"
-            printf "  Enter your OpenAI API key: "
-            read -r LLM_KEY_VALUE
-            ;;
-        3)
-            LLM_KEY_NAME="ANTHROPIC_API_KEY"
-            echo ""
-            echo -e "  Get a key at: ${CYAN}https://console.anthropic.com/${RESET}"
-            printf "  Enter your Anthropic API key: "
-            read -r LLM_KEY_VALUE
-            ;;
-        4)
-            LLM_KEY_NAME="OPENROUTER_API_KEY"
-            LLM_EXTRA_LINES="OPENROUTER_MODEL=google/gemini-2.5-flash"
-            echo ""
-            echo -e "  Get a key at: ${CYAN}https://openrouter.ai/keys${RESET}"
-            printf "  Enter your OpenRouter API key: "
-            read -r LLM_KEY_VALUE
-            ;;
-        5)
-            LLM_KEY_NAME="OLLAMA_BASE_URL"
-            LLM_KEY_VALUE="http://localhost:11434"
-            echo ""
-            echo -e "  ${DIM}Using local Ollama at http://localhost:11434${RESET}"
-            echo -e "  ${DIM}Make sure Ollama is running: ollama serve${RESET}"
-            ;;
-        *)
-            info "Skipping provider setup — edit .env later to add your API key"
-            ;;
-    esac
-
-    # Validate API key by sending a tiny completion through the real provider.
-    # Uses the same Brain adapter classes the application uses at runtime —
-    # if this works here, it will work in production.
-    if [ -n "${LLM_KEY_NAME}" ] && [ -n "${LLM_KEY_VALUE}" ] && [ -t 0 ] && command -v python3 &>/dev/null; then
-        while true; do
-            printf "  Validating API key (sending a test completion)... "
-            VALIDATE_ERR=$(python3 scripts/validate_key.py "${LLM_KEY_NAME}" "${LLM_KEY_VALUE}" 2>&1)
-            if [ $? -eq 0 ]; then
-                echo -e "${GREEN}✓${RESET} Key works"
-                break
-            else
-                echo -e "${YELLOW}✗${RESET} Key did not work"
-                if [ -n "${VALIDATE_ERR}" ]; then
-                    echo -e "  ${DIM}${VALIDATE_ERR}${RESET}"
-                fi
-                echo ""
-                echo -e "    ${CYAN}1)${RESET} Re-enter key"
-                echo -e "    ${CYAN}2)${RESET} Continue without a key  ${DIM}(you can add it to .env later)${RESET}"
-                echo -e "    ${CYAN}3)${RESET} Exit"
-                echo ""
-                printf "  What would you like to do? [1-3]: "
-                read -r RETRY_CHOICE
-                case "${RETRY_CHOICE}" in
-                    1)
-                        printf "  Enter your API key: "
-                        read -r LLM_KEY_VALUE
-                        if [ -z "${LLM_KEY_VALUE}" ]; then
-                            info "Empty key — continuing without provider"
-                            LLM_KEY_NAME=""
-                            LLM_KEY_VALUE=""
-                            break
-                        fi
-                        ;;
-                    3)
-                        echo ""
-                        info "Exiting. Re-run ./install.sh when ready."
-                        exit 0
-                        ;;
-                    *)
-                        info "Continuing without validated key — edit .env later"
-                        LLM_KEY_NAME=""
-                        LLM_KEY_VALUE=""
-                        break
-                        ;;
-                esac
-            fi
-        done
-    fi
+    setup_llm_provider
 
     # Write .env file (seed is NOT stored here — it's in secrets/wrapped_seed.bin)
     cat > "${ENV_FILE}" << ENVEOF
@@ -746,25 +550,8 @@ DINA_PDS_ADMIN_PASSWORD=${PDS_ADMIN_PASSWORD}
 DINA_PDS_ROTATION_KEY_HEX=${PDS_ROTATION_KEY}
 ENVEOF
 
-    # Add the selected provider key
-    if [ -n "${LLM_KEY_NAME}" ] && [ -n "${LLM_KEY_VALUE}" ]; then
-        echo "" >> "${ENV_FILE}"
-        echo "# LLM Provider" >> "${ENV_FILE}"
-        echo "${LLM_KEY_NAME}=${LLM_KEY_VALUE}" >> "${ENV_FILE}"
-        if [ -n "${LLM_EXTRA_LINES}" ]; then
-            echo "${LLM_EXTRA_LINES}" >> "${ENV_FILE}"
-        fi
-    fi
-
-    # Add Telegram config if provided
-    if [ -n "${TELEGRAM_TOKEN}" ]; then
-        echo "" >> "${ENV_FILE}"
-        echo "# Telegram Bot" >> "${ENV_FILE}"
-        echo "DINA_TELEGRAM_TOKEN=${TELEGRAM_TOKEN}" >> "${ENV_FILE}"
-        if [ -n "${TELEGRAM_USER_ID}" ]; then
-            echo "DINA_TELEGRAM_ALLOWED_USERS=${TELEGRAM_USER_ID}" >> "${ENV_FILE}"
-        fi
-    fi
+    write_llm_to_env "${ENV_FILE}"
+    write_telegram_to_env "${ENV_FILE}"
 
     echo "" >> "${ENV_FILE}"
     cat >> "${ENV_FILE}" << 'ENVEOF'
@@ -788,65 +575,14 @@ ENVEOF
         ok "Configured ${LLM_KEY_NAME}"
     fi
 else
-    if ! grep -q "^DINA_SESSION=" "${ENV_FILE}" 2>/dev/null; then
-        echo "" >> "${ENV_FILE}"
-        echo "# Session ID — scopes container names and Docker resources" >> "${ENV_FILE}"
-        echo "DINA_SESSION=${DINA_SESSION}" >> "${ENV_FILE}"
-        echo "COMPOSE_PROJECT_NAME=dina-${DINA_SESSION}" >> "${ENV_FILE}"
-        ok "Added DINA_SESSION=${DINA_SESSION} to existing .env"
-    else
-        skip "DINA_SESSION already in .env"
-    fi
-
-    if ! grep -q "^DINA_CORE_PORT=" "${ENV_FILE}" 2>/dev/null; then
-        echo "" >> "${ENV_FILE}"
-        echo "# Host ports (auto-allocated)" >> "${ENV_FILE}"
-        echo "DINA_CORE_PORT=${CORE_PORT}" >> "${ENV_FILE}"
-        echo "DINA_PDS_PORT=${PDS_PORT}" >> "${ENV_FILE}"
-        ok "Added ports: Core=${CORE_PORT}, PDS=${PDS_PORT}"
-    else
-        skip "Ports already in .env"
-    fi
-
-    if ! grep -q "^DINA_SERVICE_KEY_INIT=" "${ENV_FILE}" 2>/dev/null; then
-        echo "DINA_SERVICE_KEY_INIT=0" >> "${ENV_FILE}"
-        ok "Added DINA_SERVICE_KEY_INIT=0 to existing .env"
-    else
-        skip "DINA_SERVICE_KEY_INIT already in .env"
-    fi
-
-    if ! grep -q "^DINA_SERVICE_KEY_STRICT=" "${ENV_FILE}" 2>/dev/null; then
-        echo "DINA_SERVICE_KEY_STRICT=1" >> "${ENV_FILE}"
-        ok "Added DINA_SERVICE_KEY_STRICT=1 to existing .env"
-    else
-        skip "DINA_SERVICE_KEY_STRICT already in .env"
-    fi
-
-    # Ensure PDS secrets are in existing .env
-    if ! grep -q "^DINA_PDS_JWT_SECRET=" "${ENV_FILE}" 2>/dev/null; then
-        echo "" >> "${ENV_FILE}"
-        echo "# AT Protocol PDS secrets (added by install.sh)" >> "${ENV_FILE}"
-        echo "DINA_PDS_JWT_SECRET=${PDS_JWT_SECRET}" >> "${ENV_FILE}"
-        echo "DINA_PDS_ADMIN_PASSWORD=${PDS_ADMIN_PASSWORD}" >> "${ENV_FILE}"
-        echo "DINA_PDS_ROTATION_KEY_HEX=${PDS_ROTATION_KEY}" >> "${ENV_FILE}"
-        ok "Added PDS secrets to existing .env"
-    else
-        skip "PDS secrets already set"
-    fi
-
-    # Ensure Telegram config is in existing .env (if user provided it)
-    if [ -n "${TELEGRAM_TOKEN}" ] && ! grep -q "^DINA_TELEGRAM_TOKEN=" "${ENV_FILE}" 2>/dev/null; then
-        echo "" >> "${ENV_FILE}"
-        echo "# Telegram Bot (added by install.sh)" >> "${ENV_FILE}"
-        echo "DINA_TELEGRAM_TOKEN=${TELEGRAM_TOKEN}" >> "${ENV_FILE}"
-        if [ -n "${TELEGRAM_USER_ID}" ]; then
-            echo "DINA_TELEGRAM_ALLOWED_USERS=${TELEGRAM_USER_ID}" >> "${ENV_FILE}"
-        fi
-        ok "Added Telegram config to existing .env"
-    fi
-
-    chmod 600 "${ENV_FILE}"
+    # Backfill required keys in existing .env (migration from older installs)
+    ensure_required_env "${ENV_FILE}"
+    write_telegram_to_env "${ENV_FILE}"
 fi
+
+# Re-read ports from .env (ensure_required_env may have written new values)
+CORE_PORT=$(sed -n 's/^DINA_CORE_PORT=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || echo "${CORE_PORT}")
+PDS_PORT=$(sed -n 's/^DINA_PDS_PORT=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || echo "${PDS_PORT}")
 
 echo ""
 
@@ -993,7 +729,7 @@ echo -e "  ${BOLD}Services:${RESET}"
 echo -e "    Core:      ${CYAN}http://localhost:${CORE_PORT}${RESET}"
 echo -e "    PDS:       ${CYAN}http://localhost:${PDS_PORT}${RESET}"
 echo -e "    Health:    ${CYAN}http://localhost:${CORE_PORT}/healthz${RESET}"
-if [ -n "${TELEGRAM_TOKEN}" ] || [ -n "${EXISTING_TG_TOKEN}" ]; then
+if has_telegram "${ENV_FILE}"; then
     echo -e "    Telegram:  ${GREEN}connected${RESET}"
 fi
 echo ""
