@@ -124,19 +124,19 @@
 
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-CORE-066]** Derive root identity key | Path `m/9999'/0'` | Deterministic Ed25519 keypair |
-| 2 | **[TST-CORE-067]** Derive persona N key | Path `m/9999'/N'` (N=1,2,3...) | Unique keypair per persona index |
+| 1 | **[TST-CORE-066]** Derive root identity key | Path `m/9999'/0'/0'` | Deterministic Ed25519 keypair |
+| 2 | **[TST-CORE-067]** Derive persona N key | Path `m/9999'/1'/N'/0'` (N=0,1,2...) | Unique keypair per persona index |
 | 3 | **[TST-CORE-068]** Determinism | Same seed, same path, two runs | Identical keypair both times |
-| 4 | **[TST-CORE-069]** Different paths → different keys | `m/9999'/0'` vs `m/9999'/1'` | Different keypairs |
+| 4 | **[TST-CORE-069]** Different paths → different keys | `m/9999'/0'/0'` vs `m/9999'/1'/0'/0'` | Different keypairs |
 | 5 | **[TST-CORE-070]** Hardened-only enforcement | Attempt non-hardened path `m/9999/0` | Rejected — only hardened derivation allowed |
 | 6 | **[TST-CORE-071]** Known test vectors | SLIP-0010 spec test vectors | Output matches published vectors exactly |
-| 7 | **[TST-CORE-072]** Purpose `9999'` namespace isolation | Derive at `m/9999'/0'` and `m/44'/0'` from same seed | Different keypairs — Dina purpose `9999'` never collides with BIP-44 `44'` |
+| 7 | **[TST-CORE-072]** Purpose `9999'` namespace isolation | Derive at `m/9999'/0'/0'` and `m/44'/0'` from same seed | Different keypairs — Dina purpose `9999'` never collides with BIP-44 `44'` |
 | 8 | **[TST-CORE-073]** Purpose `44'` STRICTLY FORBIDDEN | Attempt `m/44'/0'` derivation via Dina API | Rejected with error — purpose `44'` explicitly blocked to prevent crypto wallet key collision |
 | 9 | **[TST-CORE-074]** Same mnemonic across Dina + crypto wallet | Reuse BIP-39 mnemonic in both | `m/9999'/*` (Dina) and `m/44'/*` (wallet) produce mathematically independent key trees |
-| 10 | **[TST-CORE-075]** Sibling key unlinkability | Derive `m/9999'/1'` and `m/9999'/2'` | No mathematical relationship between siblings — hardened derivation prevents computing one from the other |
+| 10 | **[TST-CORE-075]** Sibling key unlinkability | Derive `m/9999'/1'/0'/0'` and `m/9999'/1'/1'/0'` | No mathematical relationship between siblings — hardened derivation prevents computing one from the other |
 | 11 | **[TST-CORE-076]** Go implementation: stellar/go library | Code audit | Uses `github.com/stellar/go/exp/crypto/derivation` or equivalent — no custom HD derivation |
-| 12 | **[TST-CORE-077]** Canonical persona index mapping | Derive all default persona keys | `m/9999'/0'` = root identity, `m/9999'/1'` = consumer, `m/9999'/2'` = professional, `m/9999'/3'` = social, `m/9999'/4'` = health, `m/9999'/5'` = financial, `m/9999'/6'` = citizen — indexes match architecture spec exactly |
-| 13 | **[TST-CORE-078]** Custom persona index: sequential from 7 | User creates first custom persona | Assigned `m/9999'/7'` — next unused index after built-in personas (0-6) |
+| 12 | **[TST-CORE-077]** Canonical persona index mapping | Derive all default persona keys | `m/9999'/0'/0'` = root, `m/9999'/1'/0'/0'` = consumer, `m/9999'/1'/1'/0'` = professional, `m/9999'/1'/2'/0'` = social, `m/9999'/1'/3'/0'` = health, `m/9999'/1'/4'/0'` = financial, `m/9999'/1'/5'/0'` = citizen — purpose-separated tree, personas scale to thousands |
+| 13 | **[TST-CORE-078]** Custom persona index: sequential from 6 | User creates first custom persona | Assigned `m/9999'/1'/6'/0'` — next unused persona index after built-in (0-5) |
 | 14 | **[TST-CORE-079]** Persona index stored in identity.sqlite | Inspect `personas` table after creation | Each persona record includes `derivation_index` column — maps persona name to SLIP-0010 path index |
 
 ### 2.3 HKDF-SHA256 (Vault DEK Derivation)
@@ -230,7 +230,7 @@
 
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-CORE-130]** Generate root DID | First-run | `did:plc` identity registered with PLC Directory from SLIP-0010 `m/9999'/0'` Ed25519 pubkey |
+| 1 | **[TST-CORE-130]** Generate root DID | First-run | `did:plc` identity registered with PLC Directory from SLIP-0010 `m/9999'/0'/0'` Ed25519 pubkey |
 | 2 | **[TST-CORE-131]** Load existing DID | Subsequent startup | Same `did:plc` as initial generation |
 | 3 | **[TST-CORE-132]** DID Document structure | Resolve own DID | Contains: `id`, `service` (type `DinaMessaging`, endpoint → Home Node URL), `verificationMethod` (type `Multikey`, `publicKeyMultibase: z6Mk...`) |
 | 4 | **[TST-CORE-133]** Multiple persona DIDs | Create personas "work", "personal" | Different DIDs, each derived from unique SLIP-0010 path |
@@ -275,8 +275,8 @@
 | 8 | **[TST-CORE-157]** Per-persona independent DEK | Compromise `health.sqlite` DEK | Cannot decrypt `financial.sqlite` — different HKDF info string → different key |
 | 9 | **[TST-CORE-158]** Locked persona: file is opaque bytes | Inspect vault file when persona locked | DEK not in RAM — no application bug, no brain compromise, no code path can read it |
 | 10 | **[TST-CORE-159]** Selective unlock with TTL | Unlock `/financial` for 15 min | Core derives DEK → opens file → serves queries → closes after TTL → zeroes DEK from RAM |
-| 11 | **[TST-CORE-160]** Persona Ed25519 key signs DIDComm (NOT root key) | Persona `/social` sends DIDComm message | Signature verifies against `/social` persona pubkey (`m/9999'/3'`), NOT root pubkey (`m/9999'/0'`) — verify both: signature valid with persona key, signature INVALID with root key |
-| 12 | **[TST-CORE-161]** Persona Ed25519 key signs Trust Network entries (NOT root key) | Persona publishes attestation | Signed by persona key (e.g., `/consumer` at `m/9999'/1'`), verifiable against persona's DID Document — root key cannot sign on behalf of persona |
+| 11 | **[TST-CORE-160]** Persona Ed25519 key signs DIDComm (NOT root key) | Persona `/social` sends DIDComm message | Signature verifies against `/social` persona pubkey (`m/9999'/1'/2'/0'`), NOT root pubkey (`m/9999'/0'/0'`) — verify both: signature valid with persona key, signature INVALID with root key |
+| 12 | **[TST-CORE-161]** Persona Ed25519 key signs Trust Network entries (NOT root key) | Persona publishes attestation | Signed by persona key (e.g., `/consumer` at `m/9999'/1'/0'/0'`), verifiable against persona's DID Document — root key cannot sign on behalf of persona |
 | 13 | **[TST-CORE-162]** Even Dina's code cannot cross compartments | Code audit | No code path reads persona B data using persona A's context without root key + logged operation |
 
 ### 3.3 Persona Gatekeeper (Tier Enforcement)
@@ -1285,7 +1285,7 @@
 |---|----------|-------|----------|
 | 1 | **[TST-CORE-649]** Managed onboarding: "email + password → done" | User enters email + passphrase | Full silent setup completes, Dina starts ingesting |
 | 2 | **[TST-CORE-650]** Silent step 1: BIP-39 mnemonic generated | First-run | 24-word mnemonic, 512-bit master seed |
-| 3 | **[TST-CORE-651]** Silent step 2: root Ed25519 keypair derived | Master seed | SLIP-0010 `m/9999'/0'` → root keypair |
+| 3 | **[TST-CORE-651]** Silent step 2: root Ed25519 keypair derived | Master seed | SLIP-0010 `m/9999'/0'/0'` → root keypair |
 | 4 | **[TST-CORE-652]** Silent step 3: did:plc registered | Root keypair | DID registered with plc.directory |
 | 5 | **[TST-CORE-653]** Silent step 4: per-database DEKs derived | Master seed | HKDF with persona-specific info strings |
 | 6 | **[TST-CORE-654]** Silent step 5: password wraps master seed | Passphrase | Argon2id → KEK → AES-256-GCM wrap (key wrapping, not derivation) |
@@ -1710,7 +1710,7 @@
 |---|----------|-------|----------|
 | 1 | **[TST-CORE-969]** Non-hardened path rejected | `m/9999/0` (no apostrophe) | Error: only hardened allowed |
 | 2 | **[TST-CORE-970]** BIP-44 purpose 44' forbidden | `m/44'/0'` | Error: forbidden in Dina |
-| 3 | **[TST-CORE-971]** Sibling hardened path unlinkability | `m/9999'/1'` vs `m/9999'/2'` | Different keys, cross-sig verification fails |
+| 3 | **[TST-CORE-971]** Sibling hardened path unlinkability | `m/9999'/1'/0'/0'` vs `m/9999'/1'/1'/0'` | Different keys, cross-sig verification fails |
 
 ### 29.8 BIP-39 Recovery Safety
 

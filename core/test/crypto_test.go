@@ -1,8 +1,11 @@
 package test
 
 import (
+	"fmt"
 	"testing"
 
+	"github.com/bluesky-social/indigo/atproto/atcrypto"
+	dinacrypto "github.com/rajmohanutopai/dina/core/internal/adapter/crypto"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
 
@@ -218,15 +221,17 @@ func TestCrypto_2_2_CanonicalPersonaIndexes(t *testing.T) {
 	// impl = slip0010.New()
 	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
 
-	// Verify that m/9999'/0' through m/9999'/6' match the spec exactly.
+	// Verify that root and persona paths produce unique keys per the derivation tree:
+	//   m/9999'/0'/0' = root signing gen 0
+	//   m/9999'/1'/N'/0' = persona N gen 0 (N=0..5 for built-in personas)
 	expectedPaths := map[int]string{
-		0: "m/9999'/0'", // root
-		1: "m/9999'/1'", // consumer
-		2: "m/9999'/2'", // professional
-		3: "m/9999'/3'", // social
-		4: "m/9999'/4'", // health
-		5: "m/9999'/5'", // financial
-		6: "m/9999'/6'", // citizen
+		0: "m/9999'/0'/0'",   // root signing key gen 0
+		1: "m/9999'/1'/0'/0'", // consumer gen 0
+		2: "m/9999'/1'/1'/0'", // professional gen 0
+		3: "m/9999'/1'/2'/0'", // social gen 0
+		4: "m/9999'/1'/3'/0'", // health gen 0
+		5: "m/9999'/1'/4'/0'", // financial gen 0
+		6: "m/9999'/1'/5'/0'", // citizen gen 0
 	}
 
 	keys := make(map[int][]byte)
@@ -1537,4 +1542,285 @@ func TestCrypto_2_8_8_ClientSyncKeyUsedForSyncEncryption(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	// Keys must be different — different HKDF info strings.
 	testutil.RequireBytesNotEqual(t, syncKey, trustKey)
+}
+
+// --------------------------------------------------------------------------
+// §2.9 K256 Deterministic Derivation from Master Seed
+// --------------------------------------------------------------------------
+
+func TestCrypto_2_9_DeriveK256Deterministic(t *testing.T) {
+	// Same seed always produces the same k256 key.
+	impl := realHDKey
+	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
+
+	deriver := impl.(*dinacrypto.SLIP0010Deriver)
+
+	key1, err := deriver.DerivePathK256(testutil.TestMnemonicSeed, "m/9999'/2'/0'")
+	if err != nil {
+		t.Fatalf("DerivePathK256: %v", err)
+	}
+	key2, err := deriver.DerivePathK256(testutil.TestMnemonicSeed, "m/9999'/2'/0'")
+	if err != nil {
+		t.Fatalf("DerivePathK256: %v", err)
+	}
+
+	testutil.RequireBytesLen(t, key1, 32)
+	testutil.RequireBytesEqual(t, key1, key2)
+}
+
+func TestCrypto_2_9_K256DifferentFromEd25519(t *testing.T) {
+	// K256 at m/9999'/2'/0' must differ from Ed25519 at m/9999'/0'.
+	impl := realHDKey
+	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
+
+	deriver := impl.(*dinacrypto.SLIP0010Deriver)
+
+	k256Key, err := deriver.DerivePathK256(testutil.TestMnemonicSeed, "m/9999'/2'/0'")
+	if err != nil {
+		t.Fatalf("DerivePathK256: %v", err)
+	}
+
+	_, ed25519Priv, err := deriver.DerivePath(testutil.TestMnemonicSeed, "m/9999'/0'")
+	if err != nil {
+		t.Fatalf("DerivePath: %v", err)
+	}
+
+	// Ed25519 priv is 64 bytes; compare first 32 (seed portion) to k256.
+	testutil.RequireBytesNotEqual(t, k256Key, ed25519Priv[:32])
+}
+
+func TestCrypto_2_9_K256DifferentPaths(t *testing.T) {
+	// Different k256 derivation paths produce different keys.
+	impl := realHDKey
+	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
+
+	deriver := impl.(*dinacrypto.SLIP0010Deriver)
+
+	key100, err := deriver.DerivePathK256(testutil.TestMnemonicSeed, "m/9999'/2'/0'")
+	if err != nil {
+		t.Fatalf("DerivePathK256: %v", err)
+	}
+	key1, err := deriver.DerivePathK256(testutil.TestMnemonicSeed, "m/9999'/2'/1'")
+	if err != nil {
+		t.Fatalf("DerivePathK256: %v", err)
+	}
+
+	testutil.RequireBytesNotEqual(t, key100, key1)
+}
+
+func TestCrypto_2_9_K256EmptySeedRejected(t *testing.T) {
+	deriver := dinacrypto.NewSLIP0010Deriver()
+	_, err := deriver.DerivePathK256(nil, "m/9999'/2'/0'")
+	if err == nil {
+		t.Fatal("expected error for nil seed")
+	}
+	_, err = deriver.DerivePathK256([]byte{}, "m/9999'/2'/0'")
+	if err == nil {
+		t.Fatal("expected error for empty seed")
+	}
+}
+
+func TestCrypto_2_9_K256BIP44Forbidden(t *testing.T) {
+	deriver := dinacrypto.NewSLIP0010Deriver()
+	_, err := deriver.DerivePathK256(testutil.TestMnemonicSeed, "m/44'/0'")
+	if err == nil {
+		t.Fatal("expected BIP-44 to be forbidden")
+	}
+}
+
+func TestCrypto_2_9_K256ParseableByAtcrypto(t *testing.T) {
+	// Derived k256 key must be parseable by atcrypto.
+	deriver := dinacrypto.NewSLIP0010Deriver()
+	raw, err := deriver.DerivePathK256(testutil.TestMnemonicSeed, "m/9999'/2'/0'")
+	if err != nil {
+		t.Fatalf("DerivePathK256: %v", err)
+	}
+
+	key, err := atcrypto.ParsePrivateBytesK256(raw)
+	if err != nil {
+		t.Fatalf("ParsePrivateBytesK256: %v", err)
+	}
+
+	pub, err := key.PublicKey()
+	if err != nil {
+		t.Fatalf("PublicKey: %v", err)
+	}
+	didKey := pub.DIDKey()
+	if didKey == "" {
+		t.Fatal("expected non-empty did:key")
+	}
+}
+
+func TestCrypto_2_9_K256ManagerWithSeed(t *testing.T) {
+	// K256KeyManager with seed derives deterministically and persists to disk.
+	tmpDir := t.TempDir()
+	mgr := dinacrypto.NewK256KeyManager(tmpDir)
+	mgr.SetMasterSeed(testutil.TestMnemonicSeed)
+
+	key1, err := mgr.GenerateOrLoad()
+	if err != nil {
+		t.Fatalf("GenerateOrLoad: %v", err)
+	}
+
+	didKey1, err := mgr.PublicDIDKey()
+	if err != nil {
+		t.Fatalf("PublicDIDKey: %v", err)
+	}
+	if didKey1 == "" {
+		t.Fatal("expected non-empty did:key")
+	}
+
+	// Second manager with same seed loads from disk (same result).
+	mgr2 := dinacrypto.NewK256KeyManager(tmpDir)
+	mgr2.SetMasterSeed(testutil.TestMnemonicSeed)
+
+	key2, err := mgr2.GenerateOrLoad()
+	if err != nil {
+		t.Fatalf("GenerateOrLoad (2nd): %v", err)
+	}
+
+	if key1.Bytes() == nil || key2.Bytes() == nil {
+		t.Fatal("expected non-nil key bytes")
+	}
+	testutil.RequireBytesEqual(t, key1.Bytes(), key2.Bytes())
+}
+
+func TestCrypto_2_9_K256ManagerBackwardCompat(t *testing.T) {
+	// A manager without seed falls back to random generation (legacy path).
+	tmpDir := t.TempDir()
+	mgr := dinacrypto.NewK256KeyManager(tmpDir)
+	// No SetMasterSeed — random generation.
+
+	key, err := mgr.GenerateOrLoad()
+	if err != nil {
+		t.Fatalf("GenerateOrLoad: %v", err)
+	}
+	if key == nil {
+		t.Fatal("expected non-nil key")
+	}
+	if len(key.Bytes()) != 32 {
+		t.Fatalf("expected 32-byte key, got %d", len(key.Bytes()))
+	}
+}
+
+func TestCrypto_2_9_K256ManagerExistingKeyPreferred(t *testing.T) {
+	// If a key exists on disk (from random generation), it is loaded even
+	// when a seed is later provided. This ensures backward compatibility:
+	// existing DIDs with random rotation keys continue working.
+	tmpDir := t.TempDir()
+
+	// Step 1: Create a random key (no seed).
+	mgr1 := dinacrypto.NewK256KeyManager(tmpDir)
+	randomKey, err := mgr1.GenerateOrLoad()
+	if err != nil {
+		t.Fatalf("random GenerateOrLoad: %v", err)
+	}
+
+	// Step 2: Create new manager with seed.
+	mgr2 := dinacrypto.NewK256KeyManager(tmpDir)
+	mgr2.SetMasterSeed(testutil.TestMnemonicSeed)
+
+	loadedKey, err := mgr2.GenerateOrLoad()
+	if err != nil {
+		t.Fatalf("seeded GenerateOrLoad: %v", err)
+	}
+
+	// Must load the existing random key, not derive a new one.
+	testutil.RequireBytesEqual(t, randomKey.Bytes(), loadedKey.Bytes())
+}
+
+func TestCrypto_2_9_KeyDeriverRotationKey(t *testing.T) {
+	// KeyDeriver.DeriveRotationKey produces the same result as direct SLIP-0010.
+	deriver := dinacrypto.NewSLIP0010Deriver()
+	kd := dinacrypto.NewKeyDeriver(deriver)
+
+	rotKey, err := kd.DeriveRotationKey(testutil.TestMnemonicSeed)
+	if err != nil {
+		t.Fatalf("DeriveRotationKey: %v", err)
+	}
+
+	direct, err := deriver.DerivePathK256(testutil.TestMnemonicSeed, "m/9999'/2'/0'")
+	if err != nil {
+		t.Fatalf("DerivePathK256: %v", err)
+	}
+
+	testutil.RequireBytesEqual(t, rotKey, direct)
+}
+
+// --------------------------------------------------------------------------
+// §2.10 Service Key Derivation (m/9999'/3'/...)
+// --------------------------------------------------------------------------
+
+func TestCrypto_2_10_1_DeriveServiceKeyDeterministic(t *testing.T) {
+	// DeriveServiceKey at the same index always produces the same key.
+	slip := dinacrypto.NewSLIP0010Deriver()
+	kd := dinacrypto.NewKeyDeriver(slip)
+	seed := testutil.TestMnemonicSeed
+
+	key1, err := kd.DeriveServiceKey(seed, 0)
+	testutil.RequireNoError(t, err)
+	key2, err := kd.DeriveServiceKey(seed, 0)
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesEqual(t, key1.Seed(), key2.Seed())
+}
+
+func TestCrypto_2_10_2_DeriveServiceKeyDistinctIndexes(t *testing.T) {
+	// Different service indexes produce different keys.
+	slip := dinacrypto.NewSLIP0010Deriver()
+	kd := dinacrypto.NewKeyDeriver(slip)
+	seed := testutil.TestMnemonicSeed
+
+	core, err := kd.DeriveServiceKey(seed, 0)
+	testutil.RequireNoError(t, err)
+	brain, err := kd.DeriveServiceKey(seed, 1)
+	testutil.RequireNoError(t, err)
+
+	if string(core.Seed()) == string(brain.Seed()) {
+		t.Fatal("core and brain service keys must differ")
+	}
+}
+
+func TestCrypto_2_10_3_DeriveServiceKeyMatchesSLIP0010Path(t *testing.T) {
+	// DeriveServiceKey(seed, 0) must produce the same key as
+	// DerivePath(seed, "m/9999'/3'/0'").
+	slip := dinacrypto.NewSLIP0010Deriver()
+	kd := dinacrypto.NewKeyDeriver(slip)
+	seed := testutil.TestMnemonicSeed
+
+	serviceKey, err := kd.DeriveServiceKey(seed, 0)
+	testutil.RequireNoError(t, err)
+
+	_, directPriv, err := slip.DerivePath(seed, "m/9999'/3'/0'")
+	testutil.RequireNoError(t, err)
+
+	// DerivePath returns the full 64-byte ed25519.PrivateKey.
+	testutil.RequireBytesEqual(t, []byte(serviceKey), directPriv)
+}
+
+func TestCrypto_2_10_4_DeriveServiceKeyCrossLanguage(t *testing.T) {
+	// Verify Go derivation matches the Python provision_derived_service_keys.py
+	// output for TestEd25519Seed. This ensures install-time PEM files will
+	// match the keys Go expects.
+	slip := dinacrypto.NewSLIP0010Deriver()
+	kd := dinacrypto.NewKeyDeriver(slip)
+	seed := testutil.TestEd25519Seed[:]
+
+	coreKey, err := kd.DeriveServiceKey(seed, 0)
+	testutil.RequireNoError(t, err)
+	brainKey, err := kd.DeriveServiceKey(seed, 1)
+	testutil.RequireNoError(t, err)
+
+	// Expected values from Python provision_derived_service_keys.py.
+	expectedCorePub := "ab88ac362dd891fef58a97dd09abb9e25a06396aaebba5cf356d9ecdfdc1a9ba"
+	expectedBrainPub := "11893492182d27400bfaa0aa67b8d11c75cbf1b2b684e83d8120da8f6b321073"
+
+	corePubHex := fmt.Sprintf("%x", coreKey.Public())
+	brainPubHex := fmt.Sprintf("%x", brainKey.Public())
+
+	if corePubHex != expectedCorePub {
+		t.Fatalf("core pub mismatch: go=%s, python=%s", corePubHex, expectedCorePub)
+	}
+	if brainPubHex != expectedBrainPub {
+		t.Fatalf("brain pub mismatch: go=%s, python=%s", brainPubHex, expectedBrainPub)
+	}
 }

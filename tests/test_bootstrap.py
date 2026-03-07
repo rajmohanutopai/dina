@@ -181,21 +181,6 @@ class TestEnsureRequiredEnv:
         assert "DINA_CORE_PORT=" in content
         assert "DINA_PDS_PORT=" in content
 
-    def test_backfills_service_key_mode(self, tmp_path: Path) -> None:
-        env_file = tmp_path / ".env"
-        env_file.write_text("DINA_SESSION=abc\nDINA_CORE_PORT=8100\n")
-        (tmp_path / "secrets").mkdir()
-
-        _run_bash(f"""
-            source scripts/setup/colors.sh
-            source scripts/setup/env_ensure.sh
-            ensure_required_env "{env_file}"
-        """)
-
-        content = env_file.read_text()
-        assert "DINA_SERVICE_KEY_INIT=0" in content
-        assert "DINA_SERVICE_KEY_STRICT=1" in content
-
     def test_backfills_pds_secrets(self, tmp_path: Path) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text("DINA_SESSION=abc\nDINA_CORE_PORT=8100\n")
@@ -225,8 +210,6 @@ class TestEnsureRequiredEnv:
             COMPOSE_PROJECT_NAME=dina-xyz
             DINA_CORE_PORT=9999
             DINA_PDS_PORT=9998
-            DINA_SERVICE_KEY_INIT=0
-            DINA_SERVICE_KEY_STRICT=1
             DINA_PDS_JWT_SECRET=aabbcc
             DINA_PDS_ADMIN_PASSWORD=ddeeff
             DINA_PDS_ROTATION_KEY_HEX=112233
@@ -334,8 +317,6 @@ class TestEnsureRequiredEnv:
             DINA_SESSION=abc
             DINA_CORE_PORT=8100
             DINA_PDS_PORT=2583
-            DINA_SERVICE_KEY_INIT=0
-            DINA_SERVICE_KEY_STRICT=1
             DINA_PDS_JWT_SECRET=existing_jwt
         """))
         (tmp_path / "secrets").mkdir()
@@ -453,7 +434,7 @@ class TestRunShNonInteractive:
         )
         combined = out + err
         assert rc != 0
-        assert "Cannot install non-interactively" in combined or "fail" in combined.lower()
+        assert "Dina is not installed in this directory" in combined
 
     def test_refuses_partial_install_non_interactive(self, tmp_path: Path) -> None:
         """With partial artifacts (e.g., secrets/ but no wrapped_seed), still refuses."""
@@ -473,7 +454,7 @@ class TestRunShNonInteractive:
         )
         combined = out + err
         assert rc != 0
-        assert "Cannot install non-interactively" in combined
+        assert "Dina is not installed in this directory" in combined
 
 
 # ---------------------------------------------------------------------------
@@ -521,5 +502,4 @@ class TestRunShEnvBackfill:
 
         content = env_file.read_text()
         assert "DINA_CORE_PORT=" in content
-        assert "DINA_SERVICE_KEY_INIT=0" in content
         assert "DINA_PDS_JWT_SECRET=" in content

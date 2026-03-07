@@ -43,15 +43,22 @@ Which are the child keys?
 4. backup keys
 
    Master Seed (32 bytes)
-    └─ SLIP-0010 m/9999'/0'  →  Ed25519 keypair (signing key)
-    │                              └─ Public key  →  did:plc (identity)
-    │                              └─ Private key →  IdentitySigner (in memory only)
-    └─ HKDF("personal")      →  Personal Persona DEK (vault encryption)
-    └─ HKDF("work")          →  Work Persona DEK
-    └─ ...
+    └─ SLIP-0010 purpose tree (all under m/9999')
+    │   ├─ m/9999'/0'/0'      →  Root Ed25519 signing key gen 0
+    │   │                          └─ Public key  →  did:plc (identity)
+    │   │                          └─ Private key →  IdentitySigner (in memory only)
+    │   ├─ m/9999'/1'/0'/0'   →  Consumer persona signing key gen 0
+    │   ├─ m/9999'/1'/1'/0'   →  Professional persona signing key gen 0
+    │   ├─ m/9999'/1'/N'/0'   →  (scales to thousands of personas)
+    │   ├─ m/9999'/2'/0'      →  secp256k1 PLC rotation key gen 0
+    │   └─ m/9999'/3'/0'      →  Core service auth key
+    └─ HKDF per-persona DEKs (vault encryption)
+        ├─ HKDF("personal")   →  Personal Persona DEK
+        ├─ HKDF("work")       →  Work Persona DEK
+        └─ ...
 
 
-We use SLIP-0010 algo/tree with hardened (cannot get original back) branch (we use m/9999'/x), send it to Ed25519 key creation to create  the key pair - public/private keys (key pair is when m/9999'/0') - and m/9999'/1' onward for personas (consumer, professional, social, health, etc. DEKs), 
+We use SLIP-0010 algo/tree with hardened (cannot get original back) derivation under purpose `m/9999'`. The top-level branches separate concerns: `0'` for root signing (with generations underneath: `m/9999'/0'/0'` gen 0, `m/9999'/0'/1'` gen 1), `1'` for persona signing keys (with persona index and generation: `m/9999'/1'/<index>'/<gen>'`), `2'` for secp256k1 PLC recovery keys, and `3'` for service auth keys. This design lets personas scale to thousands without ever colliding with root, PLC, or service keys.
 
 A 64-byte Private Key: We immediately wrap this in our IdentitySigner and keep it strictly locked in memory. Its only job is to sign data. 
 
@@ -96,7 +103,7 @@ The Root Secret Plane: This is the foundation. It is controlled by your Master S
 
 The Client Device Plane: This is how you, as a user, interact with Core from the outside. Every paired device—like your CLI or a future mobile app—generates its own local Ed25519 keypair. The private key never leaves your device. Core only knows the public key.
 
-The Local Privileged Plane: This is how internal services (like the Python Brain talking to the Go Core) authenticate. Each service generates its own Ed25519 keypair at first startup. Private keys are isolated by separate Docker bind mounts — Core's private key never exists in Brain's container filesystem and vice versa. On the host, `secrets/service_keys/` is split into `core/` (bind-mounted only to Core as `/run/secrets/service_keys/private`), `brain/` (bind-mounted only to Brain as `/run/secrets/service_keys/private`), and `public/` (bind-mounted to both containers as `/run/secrets/service_keys/public`). Each container sees only its own private key under `private/` and both services' public keys under `public/`. Every inter-service request is cryptographically signed using the sender's private key and verified by the receiver using the sender's known public key.
+The Local Privileged Plane: This is how internal services (like the Python Brain talking to the Go Core) authenticate. Each service has its own Ed25519 keypair, derived deterministically from the master seed via SLIP-0010 at install time (`install.sh`). Private keys are isolated by separate Docker bind mounts — Core's private key never exists in Brain's container filesystem and vice versa. On the host, `secrets/service_keys/` is split into `core/` (bind-mounted only to Core as `/run/secrets/service_keys/private`), `brain/` (bind-mounted only to Brain as `/run/secrets/service_keys/private`), and `public/` (bind-mounted to both containers as `/run/secrets/service_keys/public`). Each container sees only its own private key under `private/` and both services' public keys under `public/`. At runtime, services only load existing keys — they never generate new key material. Every inter-service request is cryptographically signed using the sender's private key and verified by the receiver using the sender's known public key.
 
 Admin Web UI - This is a specific interface where we connect using CLIENT_TOKEN-backed session auth on the admin surface.
 
@@ -104,7 +111,7 @@ Admin Web UI - This is a specific interface where we connect using CLIENT_TOKEN-
 
 When the Python Brain needs to ask the Go Core for a piece of data from the vault, it does not send a bearer token or a shared secret.
 
-Instead, Core and Brain each generate their own Ed25519 keypair on first startup. Private keys are isolated by separate Docker bind mounts — each container's `/run/secrets/service_keys/private/` contains only its own private key, while `/run/secrets/service_keys/public/` (shared to both containers) holds both services' public keys. Core's private key never exists in Brain's container filesystem and vice versa. When Brain calls Core (or vice versa), the caller signs each request using a canonical format:
+Instead, Core and Brain each have their own Ed25519 keypair, derived deterministically from the master seed at install time via SLIP-0010 (at `m/9999'/3'/0'` for Core, `m/9999'/3'/1'` for Brain). Private keys are isolated by separate Docker bind mounts — each container's `/run/secrets/service_keys/private/` contains only its own private key, while `/run/secrets/service_keys/public/` (shared to both containers) holds both services' public keys. Core's private key never exists in Brain's container filesystem and vice versa. At runtime, both services load existing keys only — they never generate new key material. When Brain calls Core (or vice versa), the caller signs each request using a canonical format:
 
 ```
 {METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{SHA256_HEX(BODY)}
@@ -152,7 +159,7 @@ Let's review the four distinct types of tokens utilized in Dina and trace how th
 1. Master Seed (we discussed)
 2. Service Keys (Ed25519)
 
-Each service (Core and Brain) generates its own Ed25519 keypair on first startup. Private keys are isolated by separate Docker bind mounts: on the host, `secrets/service_keys/core/` is mounted only to Core and `secrets/service_keys/brain/` only to Brain (each as `/run/secrets/service_keys/private/`), while `secrets/service_keys/public/` is mounted to both containers (as `/run/secrets/service_keys/public/`). Each service writes its public key to the shared `public/` directory. There is no shared secret — each side only knows the other's public key, and neither side can access the other's private key at the filesystem level. Every inter-service request is signed using the canonical format: `{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{SHA256_HEX(BODY)}`, transmitted via X-DID, X-Timestamp, and X-Signature headers. The receiver verifies the signature, enforces a 5-minute timestamp window, and uses a double-buffer nonce cache for replay protection.
+Each service (Core and Brain) has its own Ed25519 keypair, derived deterministically from the master seed at install time via SLIP-0010. Private keys are isolated by separate Docker bind mounts: on the host, `secrets/service_keys/core/` is mounted only to Core and `secrets/service_keys/brain/` only to Brain (each as `/run/secrets/service_keys/private/`), while `secrets/service_keys/public/` is mounted to both containers (as `/run/secrets/service_keys/public/`). There is no shared secret — each side only knows the other's public key, and neither side can access the other's private key at the filesystem level. At runtime, services load existing keys and fail if they are missing — no key generation occurs. Every inter-service request is signed using the canonical format: `{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{SHA256_HEX(BODY)}`, transmitted via X-DID, X-Timestamp, and X-Signature headers. The receiver verifies the signature, enforces a 5-minute timestamp window, and uses a double-buffer nonce cache for replay protection.
 
 
 3. CLIENT_TOKEN

@@ -1,10 +1,11 @@
 // Package servicekey manages Ed25519 keypairs for service-to-service authentication.
 //
-// Each service (core, brain) generates its own keypair at first startup.
-// Private keys are written to {keyDir}/private/ — each container bind-mounts
-// a different host directory here, so private keys are never in the peer's
-// filesystem namespace. Public keys are written to {keyDir}/public/ — a shared
-// directory both containers can read.
+// Keys are provisioned at install time (seed-derived via SLIP-0010). At runtime,
+// each service loads its existing keypair — no key generation occurs.
+// Private keys live in {keyDir}/private/ — each container bind-mounts a
+// different host directory here, so private keys are never in the peer's
+// filesystem namespace. Public keys live in {keyDir}/public/ — a shared
+// read-only directory both containers can read.
 //
 // Signing uses the same canonical payload format as CLI device auth:
 //
@@ -36,73 +37,24 @@ func New(keyDir string) *ServiceKey {
 	return &ServiceKey{keyDir: keyDir}
 }
 
-// EnsureKey generates or loads the keypair for the named service.
-// On first call, generates a new Ed25519 keypair and writes PEM files.
-// On subsequent calls, loads from disk.
+// EnsureExistingKey loads an existing keypair for serviceName and fails if the
+// private key file is missing. Keys are provisioned at install time — this
+// method never generates new key material.
 //
 // Layout (isolation enforced by separate Docker bind mounts):
 //
 //	{keyDir}/private/{serviceName}_ed25519_private.pem  (0600, own container only)
 //	{keyDir}/public/{serviceName}_ed25519_public.pem    (0644, shared)
-func (sk *ServiceKey) EnsureKey(serviceName string) error {
-	return sk.ensureKey(serviceName, true)
-}
-
-// EnsureExistingKey loads an existing keypair for serviceName and fails if the
-// private key file is missing. It never generates new key material.
 func (sk *ServiceKey) EnsureExistingKey(serviceName string) error {
-	return sk.ensureKey(serviceName, false)
-}
-
-func (sk *ServiceKey) ensureKey(serviceName string, allowGenerate bool) error {
 	privDir := filepath.Join(sk.keyDir, "private")
 	pubDir := filepath.Join(sk.keyDir, "public")
 	privPath := filepath.Join(privDir, serviceName+"_ed25519_private.pem")
 	pubPath := filepath.Join(pubDir, serviceName+"_ed25519_public.pem")
 
-	if _, err := os.Stat(privPath); err == nil {
-		return sk.loadKey(privPath, pubPath)
+	if _, err := os.Stat(privPath); err != nil {
+		return fmt.Errorf("servicekey: missing private key %q (run install.sh to provision)", privPath)
 	}
-	if !allowGenerate {
-		return fmt.Errorf("servicekey: missing private key %q (set DINA_SERVICE_KEY_INIT=1 only for provisioning)", privPath)
-	}
-
-	// Generate new keypair.
-	pub, priv, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		return fmt.Errorf("servicekey: generate: %w", err)
-	}
-	sk.privateKey = priv
-	sk.publicKey = pub
-	sk.did = deriveDID(pub)
-
-	// Ensure directories exist.
-	if err := os.MkdirAll(privDir, 0o700); err != nil {
-		return fmt.Errorf("servicekey: mkdir private: %w", err)
-	}
-	if err := os.MkdirAll(pubDir, 0o755); err != nil {
-		return fmt.Errorf("servicekey: mkdir public: %w", err)
-	}
-
-	// Write private key (owner-only).
-	privPEM, err := marshalPrivateKey(priv)
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(privPath, privPEM, 0o600); err != nil {
-		return fmt.Errorf("servicekey: write private key: %w", err)
-	}
-
-	// Write public key (readable by peer service).
-	pubPEM, err := marshalPublicKey(pub)
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(pubPath, pubPEM, 0o644); err != nil {
-		return fmt.Errorf("servicekey: write public key: %w", err)
-	}
-
-	return nil
+	return sk.loadKey(privPath, pubPath)
 }
 
 // LoadPeerKey reads a peer service's public key from the shared public directory.

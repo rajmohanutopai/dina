@@ -227,15 +227,6 @@ func main() {
 		slog.Error("Identity seed is all zeros — refusing to start")
 		os.Exit(1)
 	}
-	_, signingKeyBytes, _ := slip0010.DerivePath(masterSeed, "m/9999'/0'")
-	var signingPrivKey ed25519.PrivateKey
-	if len(signingKeyBytes) == ed25519.SeedSize {
-		signingPrivKey = ed25519.NewKeyFromSeed(signingKeyBytes)
-	} else {
-		signingPrivKey = ed25519.PrivateKey(signingKeyBytes)
-	}
-	identitySigner := crypto.NewIdentitySigner(signingPrivKey)
-
 	// 3. Vault — build-tag factory selects SQLCipher (CGO) or in-memory (no CGO)
 	vaultMgr := newVaultBackend(cfg.VaultPath)
 	backupMgr := newBackupMgr(vaultMgr)
@@ -244,8 +235,35 @@ func main() {
 	// 4. PII
 	scrubber := pii.NewScrubber()
 
-	// 5. Identity
+	// 5. Identity — consume persisted signing generation if metadata exists,
+	//    otherwise default to generation 0. Fail-closed: a corrupt or
+	//    unreadable metadata file is fatal — silently falling back to gen-0
+	//    would put the node on the wrong signing key path.
 	didMgr := identity.NewDIDManager(cfg.VaultPath)
+	signingGeneration := uint32(0)
+	meta, metaErr := didMgr.LoadDIDMetadata()
+	if metaErr != nil {
+		slog.Error("Cannot read DID metadata — refusing to start (corrupt file?)", "error", metaErr)
+		os.Exit(1)
+	}
+	if meta != nil && meta.SigningGeneration > 0 {
+		signingGeneration = uint32(meta.SigningGeneration)
+		slog.Info("Resuming from persisted signing generation",
+			"generation", signingGeneration,
+			"signing_key_path", meta.SigningKeyPath,
+		)
+	}
+	_, signingKeyBytes, _ := slip0010.DerivePath(masterSeed, identity.RootSigningPath(int(signingGeneration)))
+	var signingPrivKey ed25519.PrivateKey
+	if len(signingKeyBytes) == ed25519.SeedSize {
+		signingPrivKey = ed25519.NewKeyFromSeed(signingKeyBytes)
+	} else {
+		signingPrivKey = ed25519.PrivateKey(signingKeyBytes)
+	}
+	identitySigner := crypto.NewIdentitySigner(signingPrivKey)
+	didMgr.SetSigningKeyPath(identity.RootSigningPath(int(signingGeneration)))
+	didMgr.SetSigningGeneration(int(signingGeneration))
+	didMgr.SetMasterSeed(masterSeed, keyDeriver)
 	personaMgr := identity.NewPersonaManager()
 	// CRITICAL-01/02: Enable file-based persona persistence.
 	personaStatePath := filepath.Join(cfg.VaultPath, "persona_state.json")
@@ -302,6 +320,7 @@ func main() {
 
 	// 5b. K256 rotation key + PLC/PDS (optional — enabled when DINA_PDS_URL is set)
 	k256Mgr := crypto.NewK256KeyManager(cfg.VaultPath)
+	k256Mgr.SetMasterSeed(masterSeed)
 	var plcClient *pds.PLCClient
 	var pdsPublisher port.PDSPublisher
 	if cfg.PDSURL != "" {
@@ -323,30 +342,19 @@ func main() {
 	_, _ = plcClient, pdsPublisher
 
 	// 6. Service Keys (Ed25519 service-to-service auth)
-	serviceKeyInit := os.Getenv("DINA_SERVICE_KEY_INIT") == "1"
-	serviceKeyStrict := os.Getenv("DINA_SERVICE_KEY_STRICT") == "1"
+	// PEM files are provisioned at install time via provision_derived_service_keys.py
+	// (seed-derived at m/9999'/3'/<index>'). Runtime is load-only, fail-closed.
 	coreKey := servicekey.New(cfg.ServiceKeyDir)
-	var keyErr error
-	if serviceKeyInit || !serviceKeyStrict {
-		keyErr = coreKey.EnsureKey("core")
-	} else {
-		keyErr = coreKey.EnsureExistingKey("core")
+	if err := coreKey.EnsureExistingKey("core"); err != nil {
+		log.Fatalf("Service key load failed (provisioned at install time?): %v", err)
 	}
-	if keyErr != nil {
-		log.Fatalf("Service key setup failed: %v", keyErr)
-	}
-	slog.Info(
-		"Core service key ready",
-		"did", coreKey.DID(),
-		"key_dir", cfg.ServiceKeyDir,
-		"provision_mode", serviceKeyInit,
-		"strict_mode", serviceKeyStrict,
-	)
+	slog.Info("Core service key ready", "did", coreKey.DID(), "key_dir", cfg.ServiceKeyDir)
 
 	// Load Brain's public key for signature verification.
+	// Keys are provisioned at install time — must be available at startup.
 	var brainPub ed25519.PublicKey
 	var brainDID string
-	if serviceKeyStrict {
+	{
 		var peerErr error
 		peerDeadline := time.Now().Add(30 * time.Second)
 		for {
@@ -361,14 +369,6 @@ func main() {
 			time.Sleep(1 * time.Second)
 		}
 		slog.Info("Loaded Brain public key", "did", brainDID)
-	} else {
-		brainPubTmp, brainDIDTmp, peerErr := coreKey.LoadPeerKey("brain")
-		if peerErr != nil {
-			slog.Warn("Brain public key not available — continuing in non-strict mode", "error", peerErr)
-		} else {
-			brainPub, brainDID = brainPubTmp, brainDIDTmp
-			slog.Info("Loaded Brain public key", "did", brainDID)
-		}
 	}
 
 	// 6b. Auth
@@ -415,7 +415,7 @@ func main() {
 				slog.Error("KNOWN_PEERS: invalid seed length", "index", i, "did", did, "got", len(peerSeedBytes), "expected", 32)
 				os.Exit(1)
 			}
-			_, peerKeyBytes, deriveErr := slip0010.DerivePath(peerSeedBytes, "m/9999'/0'")
+			_, peerKeyBytes, deriveErr := slip0010.DerivePath(peerSeedBytes, "m/9999'/0'/0'")
 			if deriveErr != nil {
 				slog.Error("KNOWN_PEERS: key derivation failure", "index", i, "did", did, "error", deriveErr)
 				os.Exit(1)

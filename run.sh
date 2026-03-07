@@ -74,22 +74,22 @@ echo -e "${BOLD}Dina Home Node${RESET}"
 echo ""
 
 if ! check_install_complete "${DINA_DIR}"; then
-    warn "Installation incomplete (missing:${INSTALL_MISSING})"
-    echo ""
     if [ ! -t 0 ]; then
         # Non-interactive: refuse to bootstrap — identity creation requires
         # human interaction (passphrase, recovery phrase verification).
-        fail "Cannot install non-interactively. Run ./install.sh in a terminal first."
+        fail "Dina is not installed in this directory. Run ./install.sh in a terminal first."
     fi
-    printf "  Would you like to install? [Y/n]: "
-    read -r INSTALL_CHOICE
-    case "${INSTALL_CHOICE}" in
-        [nN]*)
-            info "Exiting. Run ./install.sh when ready."
-            exit 0
-            ;;
-    esac
-    exec ./install.sh "$@"
+    echo -e "  Dina is not installed in this directory."
+    echo ""
+    while true; do
+        printf "  Install Dina? (Y/N): "
+        read -r INSTALL_CHOICE
+        case "${INSTALL_CHOICE}" in
+            [yY]) exec ./install.sh "$@" ;;
+            [nN]) exit 0 ;;
+            *)    echo -e "  ${DIM}Please enter Y or N.${RESET}" ;;
+        esac
+    done
 fi
 
 ok "Installation verified"

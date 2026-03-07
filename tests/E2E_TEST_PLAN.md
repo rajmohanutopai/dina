@@ -194,7 +194,7 @@ prefixes.
 |------|-------|--------|--------------------|------------------|
 | 1 | Don Alonso | Enters email + password on managed host | Admin UI → Core | Core receives setup request |
 | 2 | — | Core generates BIP-39 mnemonic (24 words, 256-bit) | Core (crypto) | Mnemonic generated using device entropy |
-| 3 | — | Core derives master seed via SLIP-0010 | Core (crypto) | Root key at `m/9999'/0'` (purpose `9999'`, not `44'`) |
+| 3 | — | Core derives master seed via SLIP-0010 | Core (crypto) | Root key at `m/9999'/0'/0'` (purpose `9999'`, not `44'`) |
 | 4 | — | Core registers `did:plc:alonso` via PLC Directory | Core → PLC Directory | DID Document created with `DinaMessaging` service endpoint |
 | 5 | — | Core derives vault DEKs via HKDF-SHA256 | Core (crypto) | `info="dina:vault:identity:v1"` → identity DEK, `info="dina:vault:personal:v1"` → personal DEK |
 | 6 | — | Core wraps master seed: Argon2id (128MB, 3 iter, 4 parallel) → KEK → AES-256-GCM | Core (crypto) | `wrapped_seed.bin` written |
@@ -257,7 +257,7 @@ prefixes.
 |------|-------|--------|--------------------|------------------|
 | 1 | Don Alonso | Enters 24-word mnemonic on fresh Home Node | New Core (crypto) | Master seed derived, same root DID `did:plc:alonso` |
 | 2 | — | HKDF derives same vault DEKs | New Core (crypto) | `identity.sqlite` and `personal.sqlite` from backup open successfully |
-| 3 | — | SLIP-0010 derives same signing keys | New Core (crypto) | `m/9999'/0'` matches original root key, `m/9999'/1'` matches personal persona key |
+| 3 | — | SLIP-0010 derives same signing keys | New Core (crypto) | `m/9999'/0'/0'` matches original root key, `m/9999'/1'/0'/0'` matches consumer persona key |
 | 4 | — | DID resolves to new endpoint | New Core → PLC Directory | Signed rotation operation updates `serviceEndpoint` |
 
 **Verification:**

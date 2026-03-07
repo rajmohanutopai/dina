@@ -39,7 +39,7 @@ find_free_port() {
 # Sets INSTALL_MISSING (space-separated list of missing items).
 #
 # Verifies actual PEM files, not just directories — runtime is fail-closed
-# with DINA_SERVICE_KEY_STRICT=1 and will reject empty key directories.
+# and will reject empty key directories at runtime (fail-closed).
 check_install_complete() {
     local dir="$1"
     local secrets="${dir}/secrets"
@@ -119,16 +119,6 @@ ensure_required_env() {
         fi
         echo "DINA_PDS_PORT=${pds_port}" >> "$env_file"
         ok "Added DINA_PDS_PORT=${pds_port} to .env"
-    fi
-
-    # Service key provisioning mode
-    if ! grep -q "^DINA_SERVICE_KEY_INIT=" "$env_file" 2>/dev/null; then
-        echo "DINA_SERVICE_KEY_INIT=0" >> "$env_file"
-        ok "Added DINA_SERVICE_KEY_INIT=0 to .env"
-    fi
-    if ! grep -q "^DINA_SERVICE_KEY_STRICT=" "$env_file" 2>/dev/null; then
-        echo "DINA_SERVICE_KEY_STRICT=1" >> "$env_file"
-        ok "Added DINA_SERVICE_KEY_STRICT=1 to .env"
     fi
 
     # PDS secrets (each checked independently)

@@ -89,15 +89,24 @@ def _python_runtimes() -> list[str]:
     return candidates
 
 
-def _run_python_helper(script: Path, args: list[str]) -> None:
-    """Run a repo helper script with the first working Python runtime."""
+def _run_python_helper(
+    script: Path,
+    args: list[str],
+    *,
+    extra_env: dict[str, str] | None = None,
+) -> None:
+    """Run a repo helper script with the first working Python runtime.
+
+    Secrets should be passed via extra_env (not args) to avoid process-list exposure.
+    """
     attempted: list[str] = []
     last_err = ""
+    env = {**os.environ, **(extra_env or {})}
     for py in _python_runtimes():
         if py in attempted:
             continue
         attempted.append(py)
-        result = subprocess.run([py, str(script), *args], capture_output=True, text=True)
+        result = subprocess.run([py, str(script), *args], capture_output=True, text=True, env=env)
         if result.returncode == 0:
             return
         last_err = (result.stderr or result.stdout or "").strip()
@@ -109,19 +118,29 @@ def _provision_service_keys(
     key_root: Path | None = None,
     *,
     runtime_layout: bool = False,
+    seed_hex: str | None = None,
 ) -> None:
-    """Ensure Core/Brain Ed25519 service keys exist (private + shared public)."""
+    """Provision Core/Brain Ed25519 service keys.
+
+    When seed_hex is provided, derives deterministic keys via SLIP-0010 at
+    m/9999'/3'/<index>'. Otherwise falls back to random key generation.
+    """
     root = key_root or (PROJECT_ROOT / "secrets" / "service_keys")
     root.mkdir(parents=True, exist_ok=True)
 
     if key_root is None:
         _ensure_service_key_dirs()
 
-    script = PROJECT_ROOT / "scripts" / "provision_service_keys.py"
-    if not script.exists():
-        raise RuntimeError(f"Missing key provision script: {script}")
-
-    _run_python_helper(script, [str(root)])
+    if seed_hex:
+        script = PROJECT_ROOT / "scripts" / "provision_derived_service_keys.py"
+        if not script.exists():
+            raise RuntimeError(f"Missing derived key provision script: {script}")
+        _run_python_helper(script, [str(root)], extra_env={"DINA_SEED_HEX": seed_hex})
+    else:
+        script = PROJECT_ROOT / "scripts" / "provision_service_keys.py"
+        if not script.exists():
+            raise RuntimeError(f"Missing key provision script: {script}")
+        _run_python_helper(script, [str(root)])
 
     if runtime_layout:
         # Runtime services (core/brain) load private keys from:
@@ -145,7 +164,10 @@ def _provision_wrapped_seed(output_dir: Path, passphrase: str) -> None:
     if not script.exists():
         raise RuntimeError(f"Missing seed wrapper script: {script}")
     seed_hex = _secrets.token_hex(32)
-    _run_python_helper(script, [seed_hex, passphrase, str(output_dir)])
+    _run_python_helper(
+        script, [str(output_dir)],
+        extra_env={"DINA_SEED_HEX": seed_hex, "DINA_SEED_PASSPHRASE": passphrase},
+    )
 
     wrapped = output_dir / "wrapped_seed.bin"
     salt = output_dir / "master_seed.salt"
@@ -271,10 +293,6 @@ def _start_main_stack() -> float:
         **os.environ,
         "DINA_PLC_URL": "http://plc:2582",
         "DINA_ENV": "test",
-        # Non-strict mode for quick-test bootstrap when install-time key pinning
-        # may not have run in this workspace yet.
-        "DINA_SERVICE_KEY_STRICT": "0",
-        "DINA_SERVICE_KEY_INIT": "0",
         "DINA_CLIENT_TOKEN": client_token,
         "DINA_SEED_PASSWORD": seed_password,
         # Ephemeral compose secret file paths.
@@ -378,7 +396,8 @@ def _start_local() -> float:
     client_token = _ensure_client_token()
     vault_dir = tempfile.mkdtemp(prefix="dina-test-vault-")
     service_key_dir = tempfile.mkdtemp(prefix="dina-test-service-keys-")
-    _provision_service_keys(Path(service_key_dir), runtime_layout=True)
+    master_seed = _secrets.token_hex(32)
+    _provision_service_keys(Path(service_key_dir), runtime_layout=True, seed_hex=master_seed)
     os.environ["DINA_INTEGRATION_SERVICE_KEY_DIR"] = service_key_dir
 
     core_url = f"http://localhost:{LOCAL_CORE_PORT}"
@@ -389,11 +408,9 @@ def _start_local() -> float:
         "DINA_LISTEN_ADDR": f":{LOCAL_CORE_PORT}",
         "DINA_VAULT_PATH": vault_dir,
         "DINA_BRAIN_URL": brain_url,
-        "DINA_MASTER_SEED": _secrets.token_hex(32),
+        "DINA_MASTER_SEED": master_seed,
         "DINA_CLIENT_TOKEN": client_token,
         "DINA_SERVICE_KEY_DIR": service_key_dir,
-        "DINA_SERVICE_KEY_STRICT": "0",
-        "DINA_SERVICE_KEY_INIT": "0",
         "DINA_TEST_MODE": "true",
         "DINA_ENV": "test",
         "DINA_RATE_LIMIT": "100000",
@@ -405,8 +422,6 @@ def _start_local() -> float:
         **os.environ,
         "DINA_CORE_URL": core_url,
         "DINA_SERVICE_KEY_DIR": service_key_dir,
-        "DINA_SERVICE_KEY_STRICT": "0",
-        "DINA_SERVICE_KEY_INIT": "0",
         "DINA_BRAIN_PORT": str(LOCAL_BRAIN_PORT),
         "DINA_LLM_URL": "http://localhost:9999",  # no LLM in test
         "DINA_LOG_LEVEL": "DEBUG",

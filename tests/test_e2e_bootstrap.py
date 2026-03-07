@@ -107,8 +107,9 @@ def _provision_seed() -> None:
 
     subprocess.run(
         [str(vpython), str(PROJECT_ROOT / "scripts" / "wrap_seed.py"),
-         test_seed, test_passphrase, str(SECRETS_DIR)],
+         str(SECRETS_DIR)],
         check=True, capture_output=True, timeout=120,
+        env={**os.environ, "DINA_SEED_HEX": test_seed, "DINA_SEED_PASSPHRASE": test_passphrase},
     )
 
     # Write seed password for Server Mode (auto-unlock)

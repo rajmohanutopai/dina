@@ -6,6 +6,7 @@
 package identity
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -166,17 +167,21 @@ type rotationRecord struct {
 
 // DIDManager implements port.DIDManager — DID document lifecycle (§3.1).
 type DIDManager struct {
-	mu            sync.RWMutex
-	dataDir       string
-	dids          map[string]*didDocument // did string -> document
-	pubKeys       map[string][]byte       // did string -> current public key
-	rotations     []rotationRecord
-	createdInTest map[string]bool // tracks keys created in the current test epoch
-	plcClient     *pds.PLCClient         // nil = local-only mode
-	k256Mgr       *crypto.K256KeyManager // nil = no rotation key
-	pdsHandle     string
-	pdsPassword   string
-	pdsEmail      string
+	mu             sync.RWMutex
+	dataDir        string
+	dids           map[string]*didDocument // did string -> document
+	pubKeys        map[string][]byte       // did string -> current public key
+	rotations      []rotationRecord
+	createdInTest  map[string]bool // tracks keys created in the current test epoch
+	plcClient      *pds.PLCClient         // nil = local-only mode
+	k256Mgr        *crypto.K256KeyManager // nil = no rotation key
+	pdsHandle         string
+	pdsPassword       string
+	pdsEmail          string
+	signingKeyPath    string // SLIP-0010 path for Ed25519 signing key (e.g. "m/9999'/0'/0'")
+	signingGeneration int    // current root key generation (0, 1, 2, ...)
+	masterSeed        []byte // master seed for deterministic rotation enforcement
+	keyDeriver        *crypto.KeyDeriver // derives next-generation keys for rotation verification
 }
 
 // NewDIDManager returns a new DIDManager that persists data at dataDir.
@@ -307,19 +312,29 @@ func (dm *DIDManager) Create(ctx context.Context, publicKey []byte) (domain.DID,
 		DeviceOrigin: hostname,
 	}
 
+	// Persist before mutating in-memory state so a write failure
+	// leaves the manager unchanged (fail-closed).
+	if dm.dataDir != "" {
+		if err := dm.persistDID(did, doc); err != nil {
+			return "", fmt.Errorf("identity: create failed — %w", err)
+		}
+		if err := dm.persistDIDMetadata(&DIDMetadata{
+			DID:               did,
+			SigningKeyPath:    dm.signingKeyPath,
+			SigningGeneration: dm.signingGeneration,
+			RotationKeyPath:   "", // local-only — no rotation key
+			PLCRegistered:     false,
+			CreatedAt:         doc.CreatedAt,
+		}); err != nil {
+			return "", fmt.Errorf("identity: create failed — %w", err)
+		}
+	}
+
 	dm.dids[did] = doc
-	// Store the current public key for this DID.
 	keyCopy := make([]byte, len(publicKey))
 	copy(keyCopy, publicKey)
 	dm.pubKeys[did] = keyCopy
-
-	// Mark this key as created in the current test epoch.
 	dm.createdInTest[keyFingerprint] = true
-
-	// Persist to data directory if set.
-	if dm.dataDir != "" {
-		dm.persistDID(did, doc)
-	}
 
 	return domain.DID(did), nil
 }
@@ -394,14 +409,34 @@ func (dm *DIDManager) createWithPLC(ctx context.Context, publicKey []byte) (doma
 		DeviceOrigin: hostname,
 	}
 
+	// Persist before mutating in-memory state (fail-closed).
+	if dm.dataDir != "" {
+		if err := dm.persistDID(did, doc); err != nil {
+			return "", fmt.Errorf("identity: PLC create failed — %w", err)
+		}
+
+		rotationPath := ""
+		if dm.k256Mgr != nil {
+			rotationPath = "m/9999'/2'/0'"
+		}
+		if err := dm.persistDIDMetadata(&DIDMetadata{
+			DID:               did,
+			SigningKeyPath:    dm.signingKeyPath,
+			SigningGeneration: dm.signingGeneration,
+			RotationKeyPath:   rotationPath,
+			PLCRegistered:     true,
+			PDSURL:            dm.plcClient.PDSURL(),
+			Handle:            dm.pdsHandle,
+			CreatedAt:         doc.CreatedAt,
+		}); err != nil {
+			return "", fmt.Errorf("identity: PLC create failed — %w", err)
+		}
+	}
+
 	dm.dids[did] = doc
 	keyCopy := make([]byte, len(publicKey))
 	copy(keyCopy, publicKey)
 	dm.pubKeys[did] = keyCopy
-
-	if dm.dataDir != "" {
-		dm.persistDID(did, doc)
-	}
 
 	return domain.DID(did), nil
 }
@@ -425,6 +460,13 @@ func (dm *DIDManager) Resolve(_ context.Context, did domain.DID) ([]byte, error)
 // The caller must prove possession of the current signing key by providing
 // a rotationPayload signed with the current private key. The signature is
 // verified against the stored public key before the rotation is accepted.
+//
+// Rotation is constrained to deterministic next-generation keys: the new
+// public key must match the key derived at m/9999'/0'/<next_generation>'.
+// This ensures that the same master seed can always re-derive the full
+// signing key history, which is required for identity recovery.
+//
+// Rotation must be an explicit user action, never automatic.
 func (dm *DIDManager) Rotate(_ context.Context, did domain.DID, rotationPayload, signature, newPubKey []byte) error {
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
@@ -448,7 +490,62 @@ func (dm *DIDManager) Rotate(_ context.Context, did domain.DID, rotationPayload,
 		return fmt.Errorf("identity: rotation denied — signature verification failed")
 	}
 
-	// Record the rotation with proof metadata.
+	// Enforce deterministic rotation: the new public key must match the key
+	// derived at the next generation from the master seed.
+	if dm.masterSeed != nil && dm.keyDeriver != nil {
+		nextGen := uint32(dm.signingGeneration + 1)
+		expectedPub, _, err := dm.keyDeriver.DeriveRootSigningKey(dm.masterSeed, nextGen)
+		if err != nil {
+			return fmt.Errorf("identity: rotation denied — cannot derive next-generation key: %w", err)
+		}
+		if !bytes.Equal(expectedPub, newPubKey) {
+			return fmt.Errorf("identity: rotation denied — new key does not match deterministic generation %d", nextGen)
+		}
+	}
+
+	// Fail-closed: load existing metadata before modifying any in-memory state.
+	// If metadata cannot be loaded, abort — creating a minimal record would
+	// drop PLC/PDS recovery fields.
+	var meta *DIDMetadata
+	if dm.dataDir != "" {
+		var metaErr error
+		meta, metaErr = dm.LoadDIDMetadata()
+		if metaErr != nil {
+			return fmt.Errorf("identity: rotation aborted — cannot load metadata: %w", metaErr)
+		}
+		if meta == nil {
+			return fmt.Errorf("identity: rotation aborted — no metadata file (expected after Create)")
+		}
+	}
+
+	// Build new multikey value for the updated document.
+	multicodecBytes := append(ed25519MulticodecPrefix, newPubKey...)
+	multikey := "z" + base58btcEncode(multicodecBytes)
+	nextGeneration := dm.signingGeneration + 1
+	nextSigningPath := RootSigningPath(nextGeneration)
+
+	// Persist before mutating in-memory state (fail-closed).
+	if dm.dataDir != "" {
+		// Write the updated DID document to a temporary in-memory copy
+		// so disk is written before the in-memory doc is mutated.
+		updatedDoc := *doc
+		if len(updatedDoc.VerificationMethod) > 0 {
+			updatedDoc.VerificationMethod = make([]verificationMethod, len(doc.VerificationMethod))
+			copy(updatedDoc.VerificationMethod, doc.VerificationMethod)
+			updatedDoc.VerificationMethod[0].PublicKeyMultibase = multikey
+		}
+		if err := dm.persistDID(didStr, &updatedDoc); err != nil {
+			return fmt.Errorf("identity: rotation persist failed — %w", err)
+		}
+
+		meta.SigningKeyPath = nextSigningPath
+		meta.SigningGeneration = nextGeneration
+		if err := dm.persistDIDMetadata(meta); err != nil {
+			return fmt.Errorf("identity: rotation persist failed — %w", err)
+		}
+	}
+
+	// Persistence succeeded — now commit to in-memory state.
 	oldKeyHash := sha256.Sum256(currentPubKey)
 	dm.rotations = append(dm.rotations, rotationRecord{
 		DID:        didStr,
@@ -457,23 +554,16 @@ func (dm *DIDManager) Rotate(_ context.Context, did domain.DID, rotationPayload,
 		Timestamp:  time.Now().UTC().Format(time.RFC3339),
 	})
 
-	// Update the DID Document's verification method with the new key.
-	multicodecBytes := append(ed25519MulticodecPrefix, newPubKey...)
-	multikey := "z" + base58btcEncode(multicodecBytes)
-
 	if len(doc.VerificationMethod) > 0 {
 		doc.VerificationMethod[0].PublicKeyMultibase = multikey
 	}
 
-	// Update stored public key.
 	keyCopy := make([]byte, len(newPubKey))
 	copy(keyCopy, newPubKey)
 	dm.pubKeys[didStr] = keyCopy
 
-	// Persist if data directory is set.
-	if dm.dataDir != "" {
-		dm.persistDID(didStr, doc)
-	}
+	dm.signingGeneration = nextGeneration
+	dm.signingKeyPath = nextSigningPath
 
 	return nil
 }
@@ -485,19 +575,206 @@ func (dm *DIDManager) ResolveWeb(_ context.Context, did domain.DID) ([]byte, err
 }
 
 // persistDID writes a DID document to disk.
-func (dm *DIDManager) persistDID(did string, doc *didDocument) {
+func (dm *DIDManager) persistDID(did string, doc *didDocument) error {
 	dir := filepath.Join(dm.dataDir, "identity")
-	_ = os.MkdirAll(dir, 0700)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return fmt.Errorf("identity: create DID dir: %w", err)
+	}
 
 	data, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
-		return
+		return fmt.Errorf("identity: marshal DID doc: %w", err)
 	}
 
 	// Use a safe filename from the DID.
 	hash := sha256.Sum256([]byte(did))
 	filename := fmt.Sprintf("did_%x.json", hash[:8])
-	_ = os.WriteFile(filepath.Join(dir, filename), data, 0600)
+	if err := os.WriteFile(filepath.Join(dir, filename), data, 0600); err != nil {
+		return fmt.Errorf("identity: write DID doc: %w", err)
+	}
+	return nil
+}
+
+// DIDMetadata holds recovery-critical metadata about a DID.
+// This is persisted alongside the DID document so that a recovery process
+// can re-derive keys and reclaim the DID without user intervention.
+type DIDMetadata struct {
+	DID                string `json:"did"`
+	SigningKeyPath     string `json:"signing_key_path"`              // full path, e.g. "m/9999'/0'/0'"
+	SigningGeneration  int    `json:"signing_generation"`            // current root key generation (0, 1, 2, ...)
+	RotationKeyPath    string `json:"rotation_key_path,omitempty"`   // e.g. "m/9999'/2'/0'" (empty if no rotation key)
+	PLCRegistered      bool   `json:"plc_registered"`                // true if registered on PLC directory
+	PDSURL             string `json:"pds_url,omitempty"`             // PDS endpoint (if PLC-registered)
+	Handle             string `json:"handle,omitempty"`              // AT Protocol handle (if PLC-registered)
+	CreatedAt          string `json:"created_at"`
+}
+
+// RootSigningPath returns the SLIP-0010 derivation path for the given generation.
+func RootSigningPath(generation int) string {
+	return fmt.Sprintf("m/9999'/0'/%d'", generation)
+}
+
+// SetSigningKeyPath sets the SLIP-0010 derivation path used for the Ed25519 signing key.
+// Must be called before Create() to persist the correct path in metadata.
+func (dm *DIDManager) SetSigningKeyPath(path string) {
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+	dm.signingKeyPath = path
+}
+
+// SetSigningGeneration sets the current root key generation (0, 1, 2, ...).
+// Must be called at startup when resuming from persisted metadata.
+func (dm *DIDManager) SetSigningGeneration(gen int) {
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+	dm.signingGeneration = gen
+}
+
+// SigningGeneration returns the current root key generation.
+func (dm *DIDManager) SigningGeneration() int {
+	dm.mu.RLock()
+	defer dm.mu.RUnlock()
+	return dm.signingGeneration
+}
+
+// SetMasterSeed stores the master seed and key deriver for deterministic
+// rotation enforcement. When set, Rotate() verifies that the new public key
+// matches the key derived at the next generation from this seed.
+func (dm *DIDManager) SetMasterSeed(seed []byte, kd *crypto.KeyDeriver) {
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+	dm.masterSeed = make([]byte, len(seed))
+	copy(dm.masterSeed, seed)
+	dm.keyDeriver = kd
+}
+
+// persistDIDMetadata writes recovery metadata for a DID to disk.
+func (dm *DIDManager) persistDIDMetadata(meta *DIDMetadata) error {
+	dir := filepath.Join(dm.dataDir, "identity")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return fmt.Errorf("identity: create metadata dir: %w", err)
+	}
+
+	data, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return fmt.Errorf("identity: marshal metadata: %w", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "did_metadata.json"), data, 0600); err != nil {
+		return fmt.Errorf("identity: write metadata: %w", err)
+	}
+	return nil
+}
+
+// LoadDIDMetadata reads persisted DID metadata from disk.
+// Returns nil if no metadata file exists.
+func (dm *DIDManager) LoadDIDMetadata() (*DIDMetadata, error) {
+	path := filepath.Join(dm.dataDir, "identity", "did_metadata.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("identity: read DID metadata: %w", err)
+	}
+
+	var meta DIDMetadata
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return nil, fmt.Errorf("identity: parse DID metadata: %w", err)
+	}
+	return &meta, nil
+}
+
+// RestoreDID restores a DID from persisted metadata and a re-derived Ed25519
+// public key. This is used during identity recovery: the master seed produces
+// the same signing key, and the metadata tells us which DID it maps to.
+//
+// The method rebuilds the DID document in memory and persists it to disk.
+// For PLC-registered DIDs, the caller is responsible for submitting any
+// required PLC directory update operations using the rotation key.
+//
+// Returns ErrDIDAlreadyExists if the DID is already loaded in memory.
+func (dm *DIDManager) RestoreDID(_ context.Context, meta *DIDMetadata, publicKey []byte) (domain.DID, error) {
+	if meta == nil {
+		return "", fmt.Errorf("identity: metadata must not be nil")
+	}
+	if len(publicKey) != ed25519.PublicKeySize {
+		return "", ErrInvalidPublicKey
+	}
+	if meta.DID == "" {
+		return "", fmt.Errorf("identity: metadata missing DID")
+	}
+
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+
+	// Reject if already loaded.
+	if _, exists := dm.dids[meta.DID]; exists {
+		return domain.DID(meta.DID), ErrDIDAlreadyExists
+	}
+
+	// Build the multikey value for the Ed25519 signing key.
+	multicodecBytes := append(ed25519MulticodecPrefix, publicKey...)
+	multikey := "z" + base58btcEncode(multicodecBytes)
+
+	hostname, _ := os.Hostname()
+	if hostname == "" {
+		hostname = "unknown"
+	}
+
+	doc := &didDocument{
+		Context: []string{
+			"https://www.w3.org/ns/did/v1",
+			"https://w3id.org/security/multikey/v1",
+		},
+		ID: meta.DID,
+		VerificationMethod: []verificationMethod{
+			{
+				ID:                 meta.DID + "#key-1",
+				Type:               "Multikey",
+				Controller:         meta.DID,
+				PublicKeyMultibase: multikey,
+			},
+		},
+		Authentication: []string{meta.DID + "#key-1"},
+		Service: []serviceEndpoint{
+			{
+				ID:              meta.DID + "#dina-messaging",
+				Type:            "DinaMessaging",
+				ServiceEndpoint: "https://localhost:8300",
+			},
+		},
+		CreatedAt:    meta.CreatedAt,
+		DeviceOrigin: hostname,
+	}
+
+	// Persist before mutating in-memory state (fail-closed).
+	if dm.dataDir != "" {
+		if err := dm.persistDID(meta.DID, doc); err != nil {
+			return "", fmt.Errorf("identity: restore persist failed — %w", err)
+		}
+		if err := dm.persistDIDMetadata(meta); err != nil {
+			return "", fmt.Errorf("identity: restore persist failed — %w", err)
+		}
+	}
+
+	dm.dids[meta.DID] = doc
+	keyCopy := make([]byte, len(publicKey))
+	copy(keyCopy, publicKey)
+	dm.pubKeys[meta.DID] = keyCopy
+
+	// Hydrate generation state so Rotate() starts from the correct generation.
+	dm.signingGeneration = meta.SigningGeneration
+	dm.signingKeyPath = meta.SigningKeyPath
+
+	slog.Info("DID restored from metadata",
+		"did", meta.DID,
+		"plc_registered", meta.PLCRegistered,
+		"signing_key_path", meta.SigningKeyPath,
+		"signing_generation", meta.SigningGeneration,
+	)
+
+	return domain.DID(meta.DID), nil
 }
 
 // ---------- Persona Manager ----------

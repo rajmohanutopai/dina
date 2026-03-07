@@ -25,19 +25,31 @@ var TestMnemonicSeed = []byte{
 // DinaDerivationPath is the reserved SLIP-0010 purpose for Dina identity keys.
 const DinaDerivationPath = "m/9999'"
 
-// DinaRootKeyPath derives the root identity key.
-const DinaRootKeyPath = "m/9999'/0'"
+// DinaRootKeyPath derives the root identity key (generation 0).
+// Root signing keys live in a subtree: m/9999'/0'/<generation>'
+const DinaRootKeyPath = "m/9999'/0'/0'"
 
-// DinaPersonaPaths maps built-in persona indexes.
+// DinaPersonaPaths maps built-in persona indexes to their generation 0 signing keys.
+//
+// Top-level purpose branches under m/9999':
+//   0 = root signing (generations)
+//   1 = personas (index/generation)
+//   2 = PLC recovery (generations)
+//   3 = service auth keys
+//
+// Persona keys: m/9999'/1'/<personaIndex>'/<generation>'
 var DinaPersonaPaths = map[string]string{
-	"root":         "m/9999'/0'",
-	"consumer":     "m/9999'/1'",
-	"professional": "m/9999'/2'",
-	"social":       "m/9999'/3'",
-	"health":       "m/9999'/4'",
-	"financial":    "m/9999'/5'",
-	"citizen":      "m/9999'/6'",
+	"root":         "m/9999'/0'/0'",   // root signing key gen 0
+	"consumer":     "m/9999'/1'/0'/0'", // persona 0 gen 0
+	"professional": "m/9999'/1'/1'/0'", // persona 1 gen 0
+	"social":       "m/9999'/1'/2'/0'", // persona 2 gen 0
+	"health":       "m/9999'/1'/3'/0'", // persona 3 gen 0
+	"financial":    "m/9999'/1'/4'/0'", // persona 4 gen 0
+	"citizen":      "m/9999'/1'/5'/0'", // persona 5 gen 0
 }
+
+// DinaPLCRecoveryPath is the derivation path for the PLC rotation key (generation 0).
+const DinaPLCRecoveryPath = "m/9999'/2'/0'"
 
 // ForbiddenBIP44Path must be rejected by the Dina key derivation API.
 const ForbiddenBIP44Path = "m/44'/0'"
@@ -46,7 +58,8 @@ const ForbiddenBIP44Path = "m/44'/0'"
 const NonHardenedPath = "m/9999/0"
 
 // FirstCustomPersonaIndex is the first available index for user-created personas.
-const FirstCustomPersonaIndex = 7
+// Built-in personas use indexes 0-5 (consumer through citizen).
+const FirstCustomPersonaIndex = 6
 
 // ---------- HKDF-SHA256 Test Vectors (§2.3) ----------
 

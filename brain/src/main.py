@@ -156,22 +156,15 @@ def create_app() -> FastAPI:
     )
 
     # 2. Service identity (Ed25519 keypair for service-to-service auth)
+    # PEM files are provisioned at install time via provision_derived_service_keys.py
+    # (seed-derived at m/9999'/3'/1'). Runtime is load-only, fail-closed.
     from pathlib import Path
-    service_key_init = os.environ.get("DINA_SERVICE_KEY_INIT", "").strip() == "1"
-    service_key_strict = os.environ.get("DINA_SERVICE_KEY_STRICT", "").strip() == "1"
     brain_identity = ServiceIdentity(Path(cfg.service_key_dir), service_name="brain")
     try:
-        brain_identity.ensure_key(allow_generate=(service_key_init or not service_key_strict))
+        brain_identity.ensure_key()
         log.info("brain.service_key.ready", extra={"did": brain_identity.did()})
     except Exception as exc:
-        log.error(
-            "brain.service_key.failed",
-            extra={
-                "error": str(exc),
-                "provision_mode": service_key_init,
-                "strict_mode": service_key_strict,
-            },
-        )
+        log.error("brain.service_key.failed", extra={"error": str(exc)})
         raise
 
     # Lazy loader for Core's public key — resolves on first request, not at startup.

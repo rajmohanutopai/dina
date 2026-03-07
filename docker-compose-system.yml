@@ -21,8 +21,6 @@ x-core-base: &core-base
   environment: &core-env
     DINA_CLIENT_TOKEN: test-system-admin-token
     DINA_SERVICE_KEY_DIR: /run/secrets/service_keys
-    DINA_SERVICE_KEY_INIT: "1"
-    DINA_SERVICE_KEY_STRICT: "0"
     DINA_LISTEN_ADDR: ":8100"
     DINA_RATE_LIMIT: "100000"
     DINA_SPOOL_MAX: "10485760"
@@ -45,8 +43,6 @@ x-brain-base: &brain-base
     dockerfile: Dockerfile
   environment: &brain-env
     DINA_SERVICE_KEY_DIR: /run/secrets/service_keys
-    DINA_SERVICE_KEY_INIT: "1"
-    DINA_SERVICE_KEY_STRICT: "0"
     DINA_BRAIN_PORT: "8200"
     DINA_LLM_URL: "http://localhost:9999"
     DINA_LOG_LEVEL: DEBUG
@@ -66,7 +62,45 @@ x-brain-base: &brain-base
   networks:
     - dina-system
 
+# Keygen init container — derives SLIP-0010 service keys from master seed,
+# writes PEMs to the three key volumes before Core/Brain start.
+x-keygen-base: &keygen-base
+  build:
+    context: ./brain
+    dockerfile: Dockerfile
+  entrypoint: ["sh", "-c"]
+  command:
+    - >
+      python /tmp/provision.py /tmp/keys &&
+      cp /tmp/keys/core/* /keys-core-priv/ &&
+      cp /tmp/keys/brain/* /keys-brain-priv/ &&
+      cp /tmp/keys/public/* /keys-pub/
+  restart: "no"
+  networks:
+    - dina-system
+
 services:
+  # ---- Keygen init containers (provision service keys before Core/Brain) ----
+  keygen-alonso:
+    <<: *keygen-base
+    environment:
+      DINA_SEED_HEX: "0000000000000000000000000000000000000000000000000000000000000001"
+    volumes:
+      - ./scripts/provision_derived_service_keys.py:/tmp/provision.py:ro
+      - alonso-keys-core-priv:/keys-core-priv
+      - alonso-keys-brain-priv:/keys-brain-priv
+      - alonso-keys-pub:/keys-pub
+
+  keygen-sancho:
+    <<: *keygen-base
+    environment:
+      DINA_SEED_HEX: "0000000000000000000000000000000000000000000000000000000000000002"
+    volumes:
+      - ./scripts/provision_derived_service_keys.py:/tmp/provision.py:ro
+      - sancho-keys-core-priv:/keys-core-priv
+      - sancho-keys-brain-priv:/keys-brain-priv
+      - sancho-keys-pub:/keys-pub
+
   # ---- Core+Brain: Alonso ----
   core-alonso:
     <<: *core-base
@@ -99,6 +133,9 @@ services:
     environment:
       <<: *brain-env
       DINA_CORE_URL: http://core-alonso:8100
+    depends_on:
+      keygen-alonso:
+        condition: service_completed_successfully
 
   # ---- Core+Brain: Sancho ----
   core-sancho:
@@ -132,6 +169,9 @@ services:
     environment:
       <<: *brain-env
       DINA_CORE_URL: http://core-sancho:8100
+    depends_on:
+      keygen-sancho:
+        condition: service_completed_successfully
 
   # ---- AT Protocol tier ----
   plc:

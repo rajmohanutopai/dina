@@ -46,7 +46,7 @@ func (o *OnboardingSequence) StartOnboarding(_ context.Context, email, passphras
 	}
 
 	// Step 1: Mnemonic handled client-side (Python CLI / install.sh).
-	// Step 2: Root keypair derivation (SLIP-0010 m/9999'/0').
+	// Step 2: Root keypair derivation (SLIP-0010 m/9999'/0'/0').
 	o.rootDID = "did:plc:onboarded-root-" + email
 
 	// Step 3: DID registration.

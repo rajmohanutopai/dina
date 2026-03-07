@@ -293,15 +293,21 @@ Master Seed (BIP-39 mnemonic → stored encrypted on Home Node; hardware-backed 
     │
     ├── SLIP-0010 Ed25519 Hardened Derivation (purpose: 9999')
     │   │
-    │   ├── m/9999'/0' → Root Identity Key (signs DID Document)
+    │   ├── m/9999'/0'/0' → Root Identity Key gen 0
+    │   ├── m/9999'/0'/1' → Root Identity Key gen 1 (after rotation)
     │   │
-    │   ├── m/9999'/1' → Persona Key: /consumer     (signing + DIDComm encryption)
-    │   ├── m/9999'/2' → Persona Key: /professional  (signing + DIDComm encryption)
-    │   ├── m/9999'/3' → Persona Key: /social        (signing + DIDComm encryption)
-    │   ├── m/9999'/4' → Persona Key: /health        (signing + DIDComm encryption)
-    │   ├── m/9999'/5' → Persona Key: /financial     (signing + DIDComm encryption)
-    │   ├── m/9999'/6' → Persona Key: /citizen       (signing + DIDComm encryption)
-    │   └── m/9999'/N' → Persona Key: /custom/*      (user-defined)
+    │   ├── m/9999'/1'/0'/0' → Persona: /consumer gen 0     (signing + DIDComm)
+    │   ├── m/9999'/1'/1'/0' → Persona: /professional gen 0  (signing + DIDComm)
+    │   ├── m/9999'/1'/2'/0' → Persona: /social gen 0        (signing + DIDComm)
+    │   ├── m/9999'/1'/3'/0' → Persona: /health gen 0        (signing + DIDComm)
+    │   ├── m/9999'/1'/4'/0' → Persona: /financial gen 0     (signing + DIDComm)
+    │   ├── m/9999'/1'/5'/0' → Persona: /citizen gen 0       (signing + DIDComm)
+    │   ├── m/9999'/1'/N'/0' → Persona: /custom/* gen 0      (user-defined)
+    │   │
+    │   ├── m/9999'/2'/0' → secp256k1 PLC rotation key gen 0
+    │   │
+    │   ├── m/9999'/3'/0' → Service auth: Core
+    │   └── m/9999'/3'/1' → Service auth: Brain
     │
     ├── Backup Encryption Key (HKDF, info="dina:backup:v1")
     │       └── Wraps persona file snapshots for off-node backup storage

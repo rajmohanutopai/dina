@@ -132,7 +132,7 @@ Think of it as filesystem permissions. You don't get a popup every time an app r
 Three auth methods:
 
 ED25519_SERVICE_KEY (Core↔Brain mutual auth):
-  Each service generates an Ed25519 keypair at first startup.
+  Each service has an Ed25519 keypair derived from the master seed at install time via SLIP-0010.
   Keys stored in secrets/service_keys/ (bind-mounted in Docker).
   Private keys isolated by separate bind mounts:
     Host secrets/service_keys/core/   → Core container /run/secrets/service_keys/private/
@@ -466,7 +466,7 @@ What the user sees (managed hosting):
 
 What happens silently:
   1. Core generates BIP-39 mnemonic (24 words) → master seed (512-bit)
-  2. Core derives root Ed25519 keypair via SLIP-0010 (m/9999'/0')
+  2. Core derives root Ed25519 keypair via SLIP-0010 (m/9999'/0'/0')
   3. Core registers did:plc with plc.directory
   4. Core derives per-database DEKs from master seed via HKDF
   5. Password → Argon2id → KEK → wraps master seed (key wrapping, not derivation)

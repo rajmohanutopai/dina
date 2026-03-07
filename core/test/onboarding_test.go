@@ -66,7 +66,7 @@ func TestOnboarding_19_3_RootKeypairDerived(t *testing.T) {
 	_, err := impl.StartOnboarding(context.Background(), "user@example.com", testutil.TestPassphrase)
 	testutil.RequireNoError(t, err)
 
-	// SLIP-0010 m/9999'/0' -> root keypair. The DID should be derivable.
+	// SLIP-0010 m/9999'/0'/0' -> root keypair (generation 0). The DID should be derivable.
 	steps, err := impl.GetSteps()
 	testutil.RequireNoError(t, err)
 

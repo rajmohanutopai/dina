@@ -30,13 +30,8 @@ copy_secret() {
 if [ -d "/run/secrets/service_keys/private" ]; then
     chown -R dina:dina /run/secrets/service_keys/private || true
 fi
-# Public key directory is read-only at runtime by default.
-# During explicit provisioning mode (DINA_SERVICE_KEY_INIT=1), keep writable.
-if [ -d "/run/secrets/service_keys/public" ]; then
-    if [ "${DINA_SERVICE_KEY_INIT:-0}" = "1" ]; then
-        chown -R dina:dina /run/secrets/service_keys/public || true
-    fi
-fi
+# Public key directory is read-only at runtime (provisioned at install time).
+# No chown needed — keys are pre-provisioned before containers start.
 
 # Client token (optional — for pre-registered admin access).
 copy_secret "/run/secrets/client_token" "$SECRET_DIR/client_token"

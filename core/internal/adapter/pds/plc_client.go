@@ -48,6 +48,11 @@ func NewPLCClient(pdsURL, plcURL string) *PLCClient {
 	}
 }
 
+// PDSURL returns the configured PDS endpoint URL.
+func (c *PLCClient) PDSURL() string {
+	return c.pdsURL
+}
+
 // CreateAccountAndDID creates a PDS account which registers the did:plc
 // on the PLC directory. Returns the DID and auth tokens.
 // When the PDS requires invite codes and an admin token is configured,

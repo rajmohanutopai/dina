@@ -1,10 +1,10 @@
 """Ed25519 keypair management and request signing for service-to-service auth.
 
-Each service generates its own Ed25519 keypair at first startup. Private keys
-are written to {keyDir}/private/ — each container bind-mounts a different host
-directory here, so private keys never exist in the peer's filesystem namespace.
-Public keys are written to {keyDir}/public/ — a shared directory both services
-can read.
+Service keys are derived from the master seed at install time via SLIP-0010
+and loaded at runtime (load-only, fail-closed). Private keys live in
+{keyDir}/private/ — each container bind-mounts a different host directory here,
+so private keys never exist in the peer's filesystem namespace. Public keys
+live in {keyDir}/public/ — a shared read-only directory both services can read.
 
 Signing uses the same canonical payload format as CLI device auth::
 
@@ -16,7 +16,6 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
-import stat
 import threading
 import time
 from datetime import datetime, timezone
@@ -28,8 +27,6 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 )
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
-    NoEncryption,
-    PrivateFormat,
     PublicFormat,
     load_pem_private_key,
     load_pem_public_key,
@@ -94,43 +91,17 @@ class ServiceIdentity:
         self._pub_path = self._pub_dir / f"{service_name}_ed25519_public.pem"
         self._private_key: Ed25519PrivateKey | None = None
 
-    def ensure_key(self, *, allow_generate: bool = False) -> None:
-        """Load the service keypair.
+    def ensure_key(self) -> None:
+        """Load the service keypair from disk (provisioned at install time).
 
-        Generates a new keypair only when ``allow_generate=True``.
+        Fails if the private key file is missing — never generates new keys.
         """
-        if self._priv_path.exists():
-            self._load()
-        else:
-            if not allow_generate:
-                raise FileNotFoundError(
-                    f"Missing service private key: {self._priv_path} "
-                    "(set DINA_SERVICE_KEY_INIT=1 only for provisioning)"
-                )
-            self._generate()
-
-    def _generate(self) -> None:
-        """Generate and persist a new Ed25519 keypair."""
-        self._priv_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        os.chmod(self._priv_dir, 0o700)
-        self._pub_dir.mkdir(parents=True, exist_ok=True, mode=0o755)
-        self._private_key = Ed25519PrivateKey.generate()
-
-        # Write private key (owner-only).
-        pem_priv = self._private_key.private_bytes(
-            Encoding.PEM, PrivateFormat.PKCS8, NoEncryption(),
-        )
-        self._priv_path.write_bytes(pem_priv)
-        os.chmod(self._priv_path, stat.S_IRUSR | stat.S_IWUSR)
-
-        # Write public key (readable by peer).
-        pem_pub = self._private_key.public_key().public_bytes(
-            Encoding.PEM, PublicFormat.SubjectPublicKeyInfo,
-        )
-        self._pub_path.write_bytes(pem_pub)
-        os.chmod(self._pub_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
-
-        log.info("service_key.generated", extra={"service": self._name, "did": self.did()})
+        if not self._priv_path.exists():
+            raise FileNotFoundError(
+                f"Missing service private key: {self._priv_path} "
+                "(run install.sh to provision)"
+            )
+        self._load()
 
     def _load(self) -> None:
         """Load an existing keypair from disk."""

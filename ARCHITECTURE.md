@@ -589,7 +589,7 @@ CLIENT_TOKEN (admin login/session bootstrap):
 
 | Credential | Generated | Storage | Validated by | Scope |
 |------------|-----------|---------|-------------|-------|
-| Service keypair (Ed25519) | Per service (`core`, `brain`) at install/startup | Private key isolated per service; public keys shared | Ed25519 signature verification over canonical request payload | Internal service calls |
+| Service keypair (Ed25519) | Per service (`core`, `brain`) at install time via SLIP-0010 (load-only at runtime) | Private key isolated per service; public keys shared | Ed25519 signature verification over canonical request payload | Internal service calls |
 | `CLIENT_TOKEN` | During admin/bootstrap provisioning | Hashed when registered for token lookup/session bootstrap | SHA-256(token) lookup + scope checks | Admin/bootstrap contexts |
 
 Core's middleware is a static allowlist checked at request time:
@@ -816,7 +816,7 @@ What the user sees (managed hosting):
 
 What happens silently:
   1. Core generates BIP-39 mnemonic (24 words) → master seed (512-bit)
-  2. Core derives root Ed25519 keypair via SLIP-0010 (m/9999'/0')
+  2. Core derives root Ed25519 keypair via SLIP-0010 (m/9999'/0'/0')
   3. Core registers did:plc with plc.directory
   4. Core derives per-database DEKs from master seed via HKDF
   5. Password → Argon2id → KEK → wraps master seed (key wrapping, not derivation)
@@ -1480,15 +1480,25 @@ BIP-39 Mnemonic (24 words = 256-bit entropy)
     │
     └── SLIP-0010 Ed25519 Hardened Derivation (purpose: 9999')
         │
-        ├── m/9999'/0'  → Root Identity Key (signs DID Document, root of trust)
+        ├── m/9999'/0'/...   → Root Signing (purpose 0)
+        │   ├── m/9999'/0'/0'  → Root Identity Key gen 0 (signs DID Document)
+        │   └── m/9999'/0'/1'  → Root Identity Key gen 1 (after rotation)
         │
-        ├── m/9999'/1'  → /persona/consumer     (shopping, product interactions)
-        ├── m/9999'/2'  → /persona/professional  (work, LinkedIn-style)
-        ├── m/9999'/3'  → /persona/social        (friends, Dina-to-Dina)
-        ├── m/9999'/4'  → /persona/health        (medical data)
-        ├── m/9999'/5'  → /persona/financial     (banking, tax, insurance)
-        ├── m/9999'/6'  → /persona/citizen       (government, legal identity)
-        └── m/9999'/N'  → /persona/custom/*      (user-defined compartments)
+        ├── m/9999'/1'/...   → Personas (purpose 1, index/generation)
+        │   ├── m/9999'/1'/0'/0'  → /consumer gen 0     (shopping, product interactions)
+        │   ├── m/9999'/1'/1'/0'  → /professional gen 0  (work, LinkedIn-style)
+        │   ├── m/9999'/1'/2'/0'  → /social gen 0        (friends, Dina-to-Dina)
+        │   ├── m/9999'/1'/3'/0'  → /health gen 0        (medical data)
+        │   ├── m/9999'/1'/4'/0'  → /financial gen 0     (banking, tax, insurance)
+        │   ├── m/9999'/1'/5'/0'  → /citizen gen 0       (government, legal identity)
+        │   └── m/9999'/1'/N'/0'  → /custom/* gen 0      (user-defined, scales to thousands)
+        │
+        ├── m/9999'/2'/...   → PLC Recovery (purpose 2, secp256k1)
+        │   └── m/9999'/2'/0'    → PLC rotation key gen 0
+        │
+        └── m/9999'/3'/...   → Service Auth (purpose 3)
+            ├── m/9999'/3'/0'    → Core signing key
+            └── m/9999'/3'/1'    → Brain signing key
 ```
 
 Each persona's Ed25519 keypair is used for **signing** — the persona's private key signs DIDComm messages and Trust Network entries.
@@ -1892,15 +1902,21 @@ Master Seed (BIP-39 mnemonic → stored encrypted on Home Node; hardware-backed 
     │
     ├── SLIP-0010 Ed25519 Hardened Derivation (purpose: 9999')
     │   │
-    │   ├── m/9999'/0' → Root Identity Key (signs DID Document)
+    │   ├── m/9999'/0'/0' → Root Identity Key gen 0
+    │   ├── m/9999'/0'/1' → Root Identity Key gen 1 (after rotation)
     │   │
-    │   ├── m/9999'/1' → Persona Key: /consumer     (signing + DIDComm encryption)
-    │   ├── m/9999'/2' → Persona Key: /professional  (signing + DIDComm encryption)
-    │   ├── m/9999'/3' → Persona Key: /social        (signing + DIDComm encryption)
-    │   ├── m/9999'/4' → Persona Key: /health        (signing + DIDComm encryption)
-    │   ├── m/9999'/5' → Persona Key: /financial     (signing + DIDComm encryption)
-    │   ├── m/9999'/6' → Persona Key: /citizen       (signing + DIDComm encryption)
-    │   └── m/9999'/N' → Persona Key: /custom/*      (user-defined)
+    │   ├── m/9999'/1'/0'/0' → Persona: /consumer gen 0     (signing + DIDComm)
+    │   ├── m/9999'/1'/1'/0' → Persona: /professional gen 0  (signing + DIDComm)
+    │   ├── m/9999'/1'/2'/0' → Persona: /social gen 0        (signing + DIDComm)
+    │   ├── m/9999'/1'/3'/0' → Persona: /health gen 0        (signing + DIDComm)
+    │   ├── m/9999'/1'/4'/0' → Persona: /financial gen 0     (signing + DIDComm)
+    │   ├── m/9999'/1'/5'/0' → Persona: /citizen gen 0       (signing + DIDComm)
+    │   ├── m/9999'/1'/N'/0' → Persona: /custom/* gen 0      (user-defined)
+    │   │
+    │   ├── m/9999'/2'/0' → secp256k1 PLC rotation key gen 0
+    │   │
+    │   ├── m/9999'/3'/0' → Service auth: Core
+    │   └── m/9999'/3'/1' → Service auth: Brain
     │
     ├── Backup Encryption Key (HKDF, info="dina:backup:v1")
     │       └── Wraps persona file snapshots for off-node backup storage

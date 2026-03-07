@@ -240,7 +240,7 @@ my-dina.dina (encrypted tar.gz, encrypted with passphrase-derived key)
 
 | Excluded | Why |
 |----------|-----|
-| Service Keys | Each machine generates its own Ed25519 keypair at first startup via `install.sh`. Per-machine identity, never shared. |
+| Service Keys | Ed25519 keypairs derived from the master seed at install time via SLIP-0010 (`install.sh`). Per-machine identity, never shared. Runtime is load-only — services fail if keys are missing. |
 | `CLIENT_TOKEN` | Admin web UI login password (32-byte random, hex). SHA-256 hash stored in `device_tokens` table (identity.sqlite) — but the table is excluded from export. All client devices (CLI, phone, etc.) use Ed25519 keypairs. Re-pair on new machine via 6-digit code flow. |
 | `DINA_PASSPHRASE` | The user knows it. Archive is encrypted *with* it, not *containing* it. |
 | PDS data | Replicated via AT Protocol. New PDS re-syncs from relay. |

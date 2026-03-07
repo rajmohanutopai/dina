@@ -7,7 +7,10 @@ derives the KEK from the passphrase, and prints the original 256-bit hex seed.
 Compatible with Go Core's crypto/keywrap.go + crypto/argon2.go.
 
 Usage:
-    python3 scripts/unwrap_seed.py <passphrase> <secrets-dir>
+    DINA_SEED_PASSPHRASE=<pass> python3 scripts/unwrap_seed.py <secrets-dir>
+
+Passphrase is read from DINA_SEED_PASSPHRASE environment variable (not argv)
+to avoid process-list exposure on multi-user hosts.
 
 Reads:
     <secrets-dir>/wrapped_seed.bin      — 60 bytes (nonce || ciphertext || tag)
@@ -78,12 +81,16 @@ def unwrap_seed(passphrase: str, secrets_dir: str) -> str:
 
 
 def main() -> None:
-    if len(sys.argv) != 3:
-        print("Usage: unwrap_seed.py <passphrase> <secrets-dir>", file=sys.stderr)
+    if len(sys.argv) != 2:
+        print("Usage: DINA_SEED_PASSPHRASE=<pass> unwrap_seed.py <secrets-dir>", file=sys.stderr)
         sys.exit(1)
 
-    passphrase = sys.argv[1]
-    secrets_dir = sys.argv[2]
+    passphrase = os.environ.get("DINA_SEED_PASSPHRASE", "")
+    secrets_dir = sys.argv[1]
+
+    if not passphrase:
+        print("Error: DINA_SEED_PASSPHRASE environment variable not set", file=sys.stderr)
+        sys.exit(1)
 
     try:
         seed_hex = unwrap_seed(passphrase, secrets_dir)

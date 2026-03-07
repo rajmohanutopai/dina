@@ -11,7 +11,7 @@ import (
 type KeyDeriver interface {
 	DerivePersonaDEK(seed []byte, persona domain.PersonaName) ([]byte, error)
 	DerivePersonaDEKVersioned(seed []byte, persona domain.PersonaName, dekVersion int) ([]byte, error)
-	DeriveSigningKey(seed []byte, index uint32) (ed25519.PrivateKey, error)
+	DeriveSigningKey(seed []byte, personaIndex uint32, generation uint32) (ed25519.PrivateKey, error)
 	DeriveBackupKey(seed []byte) ([]byte, error)
 }
 

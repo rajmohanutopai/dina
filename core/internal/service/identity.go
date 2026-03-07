@@ -82,7 +82,7 @@ func (s *IdentityService) Setup(ctx context.Context, seed []byte, passphrase str
 	}
 
 	// Step 2: Derive root signing key and create root DID.
-	rootPub, _, err := s.hd.DerivePath(seed, "m/44'/60'/0'/0'/0'")
+	rootPub, _, err := s.hd.DerivePath(seed, "m/9999'/0'/0'")
 	if err != nil {
 		return nil, fmt.Errorf("identity setup: root key derivation failed: %w", err)
 	}

@@ -432,7 +432,7 @@
 |---|----------|--------------|----------|
 | 1 | **[TST-INT-195]** Full key derivation chain | BIP-39 → master seed → HKDF("dina:vault:identity:v1") → open identity.sqlite | Database opens successfully, contacts readable |
 | 2 | **[TST-INT-196]** Different HKDF info → different DEK | Derive keys for identity + personal with same seed | Two different 256-bit keys — identity DEK cannot open personal.sqlite |
-| 3 | **[TST-INT-197]** SLIP-0010 keys independent from HKDF DEKs | Compare signing key `m/9999'/0'` with HKDF("dina:vault:identity:v1") | Different key material — signing key ≠ vault DEK |
+| 3 | **[TST-INT-197]** SLIP-0010 keys independent from HKDF DEKs | Compare signing key `m/9999'/0'/0'` with HKDF("dina:vault:identity:v1") | Different key material — signing key ≠ vault DEK |
 | 4 | **[TST-INT-198]** Per-persona file isolation | Store data in `/personal`, attempt to read with `/health` DEK | `SQLITE_NOTADB` — wrong key |
 | 5 | **[TST-INT-199]** Locked persona: DEK never derived | Lock persona, dump core process memory | HKDF not called for locked persona — key material absent from RAM |
 | 6 | **[TST-INT-200]** Key wrapping roundtrip | Passphrase → Argon2id → KEK → wrap seed → unwrap seed → derive DEKs → open vault | Full roundtrip succeeds — same data accessible |
@@ -443,7 +443,7 @@
 | 11 | **[TST-INT-205]** `user_salt` uniqueness across nodes | Set up two Dina instances with SAME BIP-39 mnemonic | Different `user_salt` generated → different HKDF outputs → Node A's vault DEKs ≠ Node B's vault DEKs — Node B cannot open Node A's persona files |
 | 12 | **[TST-INT-206]** `user_salt` preserved in export/import | Export from Node A → import on Node B | Same `user_salt` → same DEKs → vault files open correctly on Node B |
 | 13 | **[TST-INT-207]** Exactly one root identity enforced | Set up Dina → attempt second first-run setup | Second setup rejected — `did:plc` already registered, root keypair already exists |
-| 14 | **[TST-INT-208]** SLIP-0010 persona index mapping E2E | Create all default personas → inspect signing keys | Consumer (`m/9999'/1'`), professional (`m/9999'/2'`), social (`m/9999'/3'`) — each persona's public key matches deterministic derivation from seed + index |
+| 14 | **[TST-INT-208]** SLIP-0010 persona index mapping E2E | Create all default personas → inspect signing keys | Consumer (`m/9999'/1'/0'/0'`), professional (`m/9999'/1'/1'/0'`), social (`m/9999'/1'/2'/0'`) — each persona's public key matches deterministic derivation from seed + persona index |
 
 ### 7.9 Data Corruption Immunity (E2E)
 

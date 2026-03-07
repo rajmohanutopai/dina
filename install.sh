@@ -4,17 +4,17 @@
 # Usage:
 #   ./install.sh                 # first-time setup
 #   ./install.sh --skip-build    # skip Docker build (use existing images)
+#   ./install.sh --verbose       # show detailed internal output
 #
 # What it does:
 #   1. Checks prerequisites (docker, docker compose, curl)
-#   2. Checks port availability
+#   2. Allocates ports
 #   3. Generates secrets (service key directory, identity seed)
 #   4. Wraps identity seed with passphrase (Argon2id + AES-256-GCM)
 #   5. Asks which LLM provider to use (Gemini, OpenAI, Claude, OpenRouter, Ollama)
 #   6. Creates .env configuration with your API key
 #   7. Builds and starts Docker containers
 #   8. Waits for health checks to pass
-#   9. Displays your DID
 #
 # Security: The raw identity seed never touches disk. It is wrapped with a
 # user-chosen passphrase and only the encrypted form is stored. Two modes:
@@ -39,6 +39,7 @@ ENV_FILE="${DINA_DIR}/.env"
 HEALTH_TIMEOUT=90     # seconds to wait for health check
 HEALTH_INTERVAL=3     # seconds between health check attempts
 SKIP_BUILD=false
+VERBOSE=false
 
 # Default port bases (auto-allocated if in use)
 DEFAULT_CORE_PORT=8100
@@ -47,6 +48,7 @@ DEFAULT_PDS_PORT=2583
 for arg in "$@"; do
     case "$arg" in
         --skip-build) SKIP_BUILD=true ;;
+        --verbose|-v) VERBOSE=true ;;
     esac
 done
 
@@ -64,51 +66,78 @@ source scripts/setup/llm_provider.sh
 source scripts/setup/telegram.sh
 
 # ---------------------------------------------------------------------------
+# Output helpers (default = clean user-facing; --verbose = full detail)
+# ---------------------------------------------------------------------------
+
+# Verbose-only output — replaces ok/skip/info for internal details.
+verbose_ok()   { [ "${VERBOSE}" = true ] && ok "$1"   || true; }
+verbose_skip() { [ "${VERBOSE}" = true ] && skip "$1"  || true; }
+verbose_info() { [ "${VERBOSE}" = true ] && info "$1"  || true; }
+
+# Progress lines for non-interactive sections.
+#   step_begin "Doing something..."   → prints line without newline
+#   step_end                          → appends "done" (default) or nothing (verbose)
+step_begin() {
+    if [ "${VERBOSE}" = true ]; then
+        echo ""
+        echo -e "${BOLD}$1${RESET}"
+    else
+        printf "  %-44s" "$1"
+    fi
+}
+step_end() {
+    [ "${VERBOSE}" = true ] || echo -e "${GREEN}done${RESET}"
+}
+step_end_skip() {
+    [ "${VERBOSE}" = true ] || echo -e "${DIM}already done${RESET}"
+}
+
+# ---------------------------------------------------------------------------
 # Banner
 # ---------------------------------------------------------------------------
 
 echo ""
-echo -e "${BOLD}╔══════════════════════════════════════╗${RESET}"
-echo -e "${BOLD}║       Dina Home Node Setup           ║${RESET}"
-echo -e "${BOLD}╚══════════════════════════════════════╝${RESET}"
-echo ""
-echo -e "  Directory: ${CYAN}${DINA_DIR}${RESET}"
+echo -e "  ${BOLD}Setting up Dina${RESET}"
+echo -e "  ${DIM}${DINA_DIR}${RESET}"
 echo ""
 
 # ---------------------------------------------------------------------------
 # Step 1: Prerequisites
 # ---------------------------------------------------------------------------
 
-echo -e "${BOLD}Step 1: Checking prerequisites${RESET}"
+step_begin "Checking your system..."
 
 command -v docker >/dev/null 2>&1 || fail "Docker is not installed. Install from https://docs.docker.com/get-docker/"
-ok "Docker found"
+verbose_ok "Docker found"
 
 # Check for 'docker compose' (v2 plugin) or 'docker-compose' (legacy)
 if docker compose version >/dev/null 2>&1; then
     COMPOSE="docker compose"
-    ok "Docker Compose found (plugin)"
+    verbose_ok "Docker Compose found (plugin)"
 elif command -v docker-compose >/dev/null 2>&1; then
     COMPOSE="docker-compose"
-    ok "Docker Compose found (standalone)"
+    verbose_ok "Docker Compose found (standalone)"
 else
     fail "Docker Compose not found. Install from https://docs.docker.com/compose/install/"
 fi
 
 command -v curl >/dev/null 2>&1 || fail "curl is not installed."
-ok "curl found"
+verbose_ok "curl found"
 
 # Check Docker daemon is running
 docker info >/dev/null 2>&1 || fail "Docker daemon is not running. Start Docker and try again."
-ok "Docker daemon running"
+verbose_ok "Docker daemon running"
 
-echo ""
+step_end
 
 # ---------------------------------------------------------------------------
-# Step 2: Port check
+# Step 2: Port allocation (verbose-only — shown in final banner)
 # ---------------------------------------------------------------------------
 
-echo -e "${BOLD}Step 2: Allocating ports${RESET}"
+if [ "${VERBOSE}" = true ]; then
+    echo ""
+    echo -e "${BOLD}Allocating ports${RESET}"
+fi
 
 # If ports were previously allocated and saved in .env, reuse them.
 if [ -f "${ENV_FILE}" ]; then
@@ -127,15 +156,14 @@ if [ -z "${PDS_PORT}" ]; then
     PDS_PORT=$(find_free_port "${DEFAULT_PDS_PORT}")
 fi
 
-ok "Core port: ${CORE_PORT}"
-ok "PDS port:  ${PDS_PORT}"
-echo ""
+verbose_ok "Core port: ${CORE_PORT}"
+verbose_ok "PDS port:  ${PDS_PORT}"
 
 # ---------------------------------------------------------------------------
-# Step 3: Generate secrets
+# Step 3: Prepare secure storage
 # ---------------------------------------------------------------------------
 
-echo -e "${BOLD}Step 3: Generating secrets${RESET}"
+step_begin "Preparing secure storage..."
 
 mkdir -p "${SECRETS_DIR}"
 
@@ -149,7 +177,7 @@ SERVICE_KEY_DIR="${SECRETS_DIR}/service_keys"
 mkdir -p "${SERVICE_KEY_DIR}/core" "${SERVICE_KEY_DIR}/brain" "${SERVICE_KEY_DIR}/public"
 chmod 700 "${SERVICE_KEY_DIR}" "${SERVICE_KEY_DIR}/core" "${SERVICE_KEY_DIR}/brain"
 chmod 755 "${SERVICE_KEY_DIR}/public"
-ok "Service key directories ready (core/, brain/, public/)"
+verbose_ok "Service key directories ready"
 
 # Session ID — 3-char alphanumeric identifier for this deployment.
 # Scopes all container names (core-a7k, brain-a7k) and Docker resources.
@@ -158,12 +186,12 @@ ok "Service key directories ready (core/, brain/, public/)"
 SESSION_ID_FILE="${SECRETS_DIR}/session_id"
 if [ -f "${SESSION_ID_FILE}" ]; then
     DINA_SESSION=$(cat "${SESSION_ID_FILE}")
-    skip "Session ID: ${DINA_SESSION}"
+    verbose_skip "Session ID: ${DINA_SESSION}"
 else
     DINA_SESSION=$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 3 || true)
     printf '%s' "${DINA_SESSION}" > "${SESSION_ID_FILE}"
     chmod 600 "${SESSION_ID_FILE}"
-    ok "Session ID: ${DINA_SESSION}"
+    verbose_ok "Session ID: ${DINA_SESSION}"
 fi
 
 # PDS secrets (JWT secret, admin password, K256 rotation key)
@@ -194,35 +222,31 @@ if [ -z "${PDS_ROTATION_KEY}" ]; then
 fi
 
 if [ "${PDS_GENERATED}" = true ]; then
-    ok "Generated PDS secrets"
+    verbose_ok "Generated PDS secrets"
 else
-    skip "PDS secrets already set"
+    verbose_skip "PDS secrets already set"
 fi
 
 # Prepare crypto venv for seed wrapping + BIP-39 mnemonic
 INSTALL_VENV="${DINA_DIR}/.install-venv"
 if [ ! -f "${INSTALL_VENV}/bin/python3" ]; then
-    info "Setting up crypto tools..."
+    verbose_info "Setting up crypto tools..."
     python3 -m venv "${INSTALL_VENV}" 2>/dev/null
     "${INSTALL_VENV}/bin/pip" install -q argon2-cffi cryptography mnemonic 2>/dev/null
-    ok "Crypto tools ready"
+    verbose_ok "Crypto tools ready"
 else
-    skip "Crypto tools already installed"
+    verbose_skip "Crypto tools already installed"
 fi
 VPYTHON="${INSTALL_VENV}/bin/python3"
 
-# Provision Core/Brain service keys now (install-time bootstrap).
-"${VPYTHON}" scripts/provision_service_keys.py "${SERVICE_KEY_DIR}" \
-    || fail "Failed to provision Core/Brain service keys"
-ok "Service keys provisioned (install-time)"
+# Service key provisioning is deferred until the master seed is available
+# (after identity setup). See the provisioning block below wrap_seed.py.
 
-echo ""
+step_end
 
 # ---------------------------------------------------------------------------
 # Step 4: Identity setup — new or restore + wrap
 # ---------------------------------------------------------------------------
-
-echo -e "${BOLD}Step 4: Setting up identity${RESET}"
 
 # Check if seed is already wrapped (wrapped_seed.bin exists)
 SEED_ALREADY_WRAPPED=false
@@ -239,13 +263,17 @@ IDENTITY_NEW=true   # tracks whether we generated a new identity
 SEED_MODE=""        # "maximum" or "server"
 
 if [ "${SEED_ALREADY_WRAPPED}" = true ]; then
-    skip "Identity seed already wrapped"
+    step_begin "Creating your identity..."
+    verbose_skip "Identity already created"
     MASTER_SEED=""
     IDENTITY_NEW=false
+    step_end_skip
 elif [ -t 0 ]; then
     # Interactive terminal — ask user
     echo ""
-    echo -e "  ${BOLD}Your identity is your cryptographic passport.${RESET}"
+    echo -e "  ${BOLD}Creating your identity${RESET}"
+    echo ""
+    echo -e "  ${DIM}Your identity is your cryptographic passport.${RESET}"
     echo -e "  ${DIM}It determines your DID and all encryption keys.${RESET}"
     echo ""
     echo -e "    ${CYAN}1)${RESET} Create new identity          ${DIM}(first-time setup)${RESET}"
@@ -306,7 +334,7 @@ elif [ -t 0 ]; then
                 IDENTITY_NEW=false
                 ok "Identity restored from hex seed"
             else
-                warn "Invalid hex seed (expected 64 hex characters) — generating new identity"
+                warn "Invalid hex seed (expected 64 hex characters) — creating new identity"
                 MASTER_SEED=""
             fi
             ;;
@@ -321,13 +349,13 @@ elif [ -t 0 ]; then
         MASTER_SEED=$(python3 -c "import secrets; print(secrets.token_hex(32), end='')" 2>/dev/null \
             || openssl rand -hex 32 | tr -d '\n')
         IDENTITY_NEW=true
-        ok "Generated new identity (256-bit seed)"
+        verbose_ok "Generated new identity seed"
     fi
 else
     # Non-interactive — generate new
     MASTER_SEED=$(python3 -c "import secrets; print(secrets.token_hex(32), end='')" 2>/dev/null \
         || openssl rand -hex 32 | tr -d '\n')
-    ok "Generated identity seed (256-bit)"
+    verbose_ok "Generated identity seed"
 fi
 
 # --- Show recovery phrase (only for new identities, before wrapping) ---
@@ -335,7 +363,8 @@ if [ -n "${MASTER_SEED}" ] && [ "${IDENTITY_NEW}" = true ]; then
     MNEMONIC=$("${VPYTHON}" scripts/seed_to_mnemonic.py "${MASTER_SEED}" 2>/dev/null || true)
     if [ -n "${MNEMONIC}" ]; then
         echo ""
-        echo -e "  ${BOLD}Your Recovery Phrase:${RESET}"
+        echo -e "  ${BOLD}Your Recovery Phrase${RESET}"
+        echo ""
         # Build lines first, then compute box width from the widest line.
         MNEMONIC_LINES=()
         WORD_NUM=1
@@ -410,7 +439,6 @@ if [ -n "${MASTER_SEED}" ] && [ "${IDENTITY_NEW}" = true ]; then
                 echo ""
                 printf "  Press Enter when you've saved it..."
                 read -r _
-                ok "Continuing (save your recovery phrase!)"
             fi
         fi
     fi
@@ -420,11 +448,10 @@ fi
 if [ -n "${MASTER_SEED}" ]; then
     echo ""
     if [ -t 0 ]; then
-        echo -e "  ${BOLD}Choose how to protect your identity seed:${RESET}"
+        echo -e "  ${BOLD}How should Dina start?${RESET}"
         echo ""
-        echo -e "    ${CYAN}1)${RESET} Maximum Security  ${DIM}— enter passphrase on every restart (recommended)${RESET}"
-        echo -e "    ${CYAN}2)${RESET} Server Mode       ${DIM}— store passphrase for unattended boot${RESET}"
-        echo -e "                          ${DIM}(passphrase stored in secrets/ — convenience trade-off)${RESET}"
+        echo -e "    ${CYAN}1)${RESET} Enter passphrase each time  ${DIM}(most secure)${RESET}"
+        echo -e "    ${CYAN}2)${RESET} Start automatically         ${DIM}(passphrase stored locally)${RESET}"
         echo ""
         printf "  Enter choice [1-2]: "
         read -r SEED_MODE_CHOICE
@@ -436,7 +463,7 @@ if [ -n "${MASTER_SEED}" ]; then
 
         # Prompt for passphrase (min 8 chars, confirmed)
         echo ""
-        echo -e "  ${BOLD}Choose a passphrase to encrypt your identity seed:${RESET}"
+        echo -e "  ${BOLD}Choose a passphrase to protect your identity:${RESET}"
         echo -e "  ${DIM}(minimum 8 characters)${RESET}"
         while true; do
             printf "  Passphrase: "
@@ -460,14 +487,14 @@ if [ -n "${MASTER_SEED}" ]; then
         SEED_MODE="server"
         SEED_PASSPHRASE=$(python3 -c "import secrets; print(secrets.token_urlsafe(32), end='')" 2>/dev/null \
             || openssl rand -base64 32 | tr -d '\n')
-        warn "Non-interactive: auto-generated passphrase (Server Mode)"
+        verbose_info "Non-interactive: auto-generated passphrase (Server Mode)"
     fi
 
-    # Call wrap_seed.py
-    info "Encrypting identity seed (Argon2id + AES-256-GCM)..."
-    if "${VPYTHON}" scripts/wrap_seed.py \
-        "${MASTER_SEED}" "${SEED_PASSPHRASE}" "${SECRETS_DIR}" >/dev/null 2>&1; then
-        ok "Identity seed encrypted"
+    # Call wrap_seed.py — secrets passed via env to avoid process-list exposure.
+    info "Securing your identity..."
+    if DINA_SEED_HEX="${MASTER_SEED}" DINA_SEED_PASSPHRASE="${SEED_PASSPHRASE}" \
+        "${VPYTHON}" scripts/wrap_seed.py "${SECRETS_DIR}" >/dev/null 2>&1; then
+        verbose_ok "Identity seed encrypted"
     else
         fail "Failed to encrypt identity seed"
     fi
@@ -476,50 +503,55 @@ if [ -n "${MASTER_SEED}" ]; then
     if [ "${SEED_MODE}" = "server" ]; then
         printf '%s' "${SEED_PASSPHRASE}" > "${SECRETS_DIR}/seed_password"
         chmod 600 "${SECRETS_DIR}/seed_password"
-        ok "Passphrase stored in secrets/seed_password (Server Mode)"
+        verbose_ok "Passphrase stored (Server Mode)"
     else
         # Maximum Security: create empty file (Docker Secrets needs it to exist)
         : > "${SECRETS_DIR}/seed_password"
         chmod 600 "${SECRETS_DIR}/seed_password"
     fi
 
+    # Provision deterministic service keys from master seed (SLIP-0010 at m/9999'/3'/').
+    # Must happen before the seed is zeroed. Writes PEM files to the same layout
+    # that Docker mounts expect (core/, brain/, public/).
+    DINA_SEED_HEX="${MASTER_SEED}" "${VPYTHON}" scripts/provision_derived_service_keys.py \
+        "${SERVICE_KEY_DIR}" \
+        || fail "Failed to provision service keys"
+    verbose_ok "Service keys provisioned (seed-derived)"
+
     # Zero the seed variable — raw seed must not persist
     MASTER_SEED="0000000000000000000000000000000000000000000000000000000000000000"
     unset MASTER_SEED
     SEED_PASSPHRASE=""; unset SEED_PASSPHRASE
     SEED_PASSPHRASE_CONFIRM=""; unset SEED_PASSPHRASE_CONFIRM
-    ok "Raw seed zeroed from memory"
+    verbose_ok "Raw seed zeroed from memory"
+
+    ok "Identity secured"
 
     # Show mode-specific guidance
     echo ""
     if [ "${SEED_MODE}" = "maximum" ]; then
-        echo -e "  ┌─────────────────────────────────────────────────────┐"
-        echo -e "  │ ${BOLD}Maximum Security mode${RESET}: you will need to provide     │"
-        echo -e "  │ your passphrase on every container restart.         │"
-        echo -e "  │                                                     │"
-        echo -e "  │ Start with:                                         │"
-        echo -e "  │   ${CYAN}DINA_SEED_PASSWORD=<passphrase> \\\\${RESET}                  │"
-        echo -e "  │     ${CYAN}docker compose up -d${RESET}                            │"
-        echo -e "  └─────────────────────────────────────────────────────┘"
+        echo -e "  ${DIM}You'll need your passphrase each time Dina starts:${RESET}"
+        echo -e "    ${CYAN}DINA_SEED_PASSWORD=<passphrase> ./run.sh${RESET}"
     else
-        echo -e "  ┌─────────────────────────────────────────────────────┐"
-        echo -e "  │ ${BOLD}Server Mode${RESET}: passphrase stored for unattended boot. │"
-        echo -e "  │ Containers restart automatically.                   │"
-        echo -e "  └─────────────────────────────────────────────────────┘"
+        echo -e "  ${DIM}Dina will start automatically — no passphrase needed on restart.${RESET}"
     fi
 fi
 
 echo ""
 
 # ---------------------------------------------------------------------------
-# Step 5: Create .env
+# Step 5: Configure
 # ---------------------------------------------------------------------------
 
-echo -e "${BOLD}Step 5: Writing configuration${RESET}"
+echo -e "  ${BOLD}Configuring Dina${RESET}"
 
 # --- Optional: Telegram bot setup ---
 # Runs for both new and existing .env (skips if already configured).
-setup_telegram "${ENV_FILE}"
+if has_telegram "${ENV_FILE}" 2>/dev/null; then
+    verbose_skip "Telegram already configured"
+else
+    setup_telegram "${ENV_FILE}"
+fi
 
 if [ ! -f "${ENV_FILE}" ]; then
     # --- Interactive LLM provider selection ---
@@ -539,10 +571,6 @@ COMPOSE_PROJECT_NAME=dina-${DINA_SESSION}
 # Host ports (auto-allocated to avoid conflicts with other sessions)
 DINA_CORE_PORT=${CORE_PORT}
 DINA_PDS_PORT=${PDS_PORT}
-
-# Service-key provisioning mode (0 = runtime fail-closed; install provisions keys)
-DINA_SERVICE_KEY_INIT=0
-DINA_SERVICE_KEY_STRICT=1
 
 # AT Protocol PDS secrets (auto-generated, do not edit)
 DINA_PDS_JWT_SECRET=${PDS_JWT_SECRET}
@@ -570,13 +598,14 @@ ENVEOF
 ENVEOF
 
     chmod 600 "${ENV_FILE}"
-    ok "Created .env (mode 600)"
-    if [ -n "${LLM_KEY_NAME}" ] && [ -n "${LLM_KEY_VALUE}" ]; then
-        ok "Configured ${LLM_KEY_NAME}"
-    fi
+    verbose_ok "Created .env"
 else
     # Backfill required keys in existing .env (migration from older installs)
-    ensure_required_env "${ENV_FILE}"
+    if [ "${VERBOSE}" = true ]; then
+        ensure_required_env "${ENV_FILE}"
+    else
+        ensure_required_env "${ENV_FILE}" > /dev/null
+    fi
     write_telegram_to_env "${ENV_FILE}"
 fi
 
@@ -587,10 +616,12 @@ PDS_PORT=$(sed -n 's/^DINA_PDS_PORT=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || e
 echo ""
 
 # ---------------------------------------------------------------------------
-# Step 6: Lock permissions
+# Step 6: Lock permissions (verbose-only)
 # ---------------------------------------------------------------------------
 
-echo -e "${BOLD}Step 6: Locking permissions${RESET}"
+if [ "${VERBOSE}" = true ]; then
+    echo -e "${BOLD}Locking permissions${RESET}"
+fi
 
 chmod 700 "${SECRETS_DIR}"
 # Lock files but preserve directory permissions (service_keys/ has subdirs)
@@ -605,51 +636,50 @@ else
     printf '.env\nsecrets/\n' > "${GITIGNORE}"
 fi
 
-ok "Permissions locked (.env: 600, secrets/: 700)"
-echo ""
+verbose_ok "Permissions locked"
 
 # ---------------------------------------------------------------------------
-# Step 8: Build Docker images
+# Step 7: Build Docker images
 # ---------------------------------------------------------------------------
 
-echo -e "${BOLD}Step 7: Building Docker images${RESET}"
+step_begin "Building Dina..."
 
 if [ "${SKIP_BUILD}" = true ]; then
-    skip "Build skipped (--skip-build)"
+    [ "${VERBOSE}" = true ] || echo -e "${DIM}skipped${RESET}"
 else
-    info "This may take a few minutes on first run..."
     if $COMPOSE build 2>&1 | while IFS= read -r line; do
-        # Show progress dots
-        printf "."
+        if [ "${VERBOSE}" = true ]; then
+            echo -e "  ${DIM}${line}${RESET}"
+        else
+            printf "."
+        fi
     done; then
-        echo ""
-        ok "Docker images built"
+        step_end
     else
-        echo ""
-        fail "Docker build failed. Check the output above."
+        [ "${VERBOSE}" = true ] || echo ""
+        fail "Build failed. Run with --verbose to see details."
     fi
 fi
 
-echo ""
-
 # ---------------------------------------------------------------------------
-# Step 9: Start containers
+# Step 8: Start containers
 # ---------------------------------------------------------------------------
 
-echo -e "${BOLD}Step 8: Starting containers${RESET}"
+step_begin "Starting Dina..."
 
 $COMPOSE up -d 2>&1 | while IFS= read -r line; do
-    echo -e "  ${DIM}${line}${RESET}"
+    if [ "${VERBOSE}" = true ]; then
+        echo -e "  ${DIM}${line}${RESET}"
+    fi
 done
 
-ok "Containers started"
-echo ""
+step_end
 
 # ---------------------------------------------------------------------------
-# Step 10: Wait for health
+# Step 9: Wait for health
 # ---------------------------------------------------------------------------
 
-echo -e "${BOLD}Step 9: Waiting for health check${RESET}"
+step_begin "Waiting for Dina to be ready..."
 
 ELAPSED=0
 
@@ -658,16 +688,21 @@ while [ $ELAPSED -lt $HEALTH_TIMEOUT ]; do
         "http://localhost:${CORE_PORT}/healthz" 2>/dev/null || true)
 
     if echo "${STATUS}" | grep -q '"status"'; then
-        ok "Core is healthy"
+        step_end
         break
     fi
 
-    printf "  ${DIM}[....]${RESET} Waiting... (%ds/%ds)\r" "$ELAPSED" "$HEALTH_TIMEOUT"
+    if [ "${VERBOSE}" = true ]; then
+        printf "  ${DIM}[....]${RESET} Waiting... (%ds/%ds)\r" "$ELAPSED" "$HEALTH_TIMEOUT"
+    else
+        printf "."
+    fi
     sleep $HEALTH_INTERVAL
     ELAPSED=$((ELAPSED + HEALTH_INTERVAL))
 done
 
 if [ $ELAPSED -ge $HEALTH_TIMEOUT ]; then
+    [ "${VERBOSE}" = true ] || echo ""
     warn "Health check timed out after ${HEALTH_TIMEOUT}s"
     echo ""
     echo -e "  ${BOLD}Container status:${RESET}"
@@ -688,8 +723,8 @@ if [ $ELAPSED -ge $HEALTH_TIMEOUT ]; then
     done
     echo -e "  Full logs: ${CYAN}${COMPOSE} logs${RESET}"
     echo ""
-    echo -e "${BOLD}Partial setup complete.${RESET} Containers may still be starting."
-    echo -e "Re-run ${CYAN}./install.sh --skip-build${RESET} once services are ready."
+    echo -e "  Containers may still be starting."
+    echo -e "  Re-run ${CYAN}./install.sh --skip-build${RESET} once services are ready."
     exit 1
 fi
 
@@ -699,43 +734,33 @@ echo ""
 # Final banner
 # ---------------------------------------------------------------------------
 
-BANNER_MSG="Your Dina Home Node is Live!"
-BANNER_W=$(( ${#BANNER_MSG} + 4 ))  # 2 space padding each side
-[ ${BANNER_W} -lt 40 ] && BANNER_W=40
-BANNER_BORDER=$(printf '═%.0s' $(seq 1 ${BANNER_W}))
-BANNER_PAD=$(( (BANNER_W - ${#BANNER_MSG}) / 2 ))
-BANNER_LEFT=$(printf '%*s' ${BANNER_PAD} '')
-BANNER_RIGHT=$(printf '%*s' $(( BANNER_W - BANNER_PAD - ${#BANNER_MSG} )) '')
-echo -e "${BOLD}╔${BANNER_BORDER}╗${RESET}"
-echo -e "${BOLD}║${BANNER_LEFT}${BANNER_MSG}${BANNER_RIGHT}║${RESET}"
-echo -e "${BOLD}╚${BANNER_BORDER}╝${RESET}"
+echo -e "  ${BOLD}Dina is ready!${RESET}"
 echo ""
-
-echo -e "  ${BOLD}Session:${RESET}   ${CYAN}${DINA_SESSION}${RESET}  ${DIM}(containers: core-${DINA_SESSION}, brain-${DINA_SESSION}, ...)${RESET}"
+echo -e "  ${CYAN}http://localhost:${CORE_PORT}${RESET}"
 echo ""
-
-echo -e "  ${BOLD}Identity:${RESET}"
-echo -e "    Seed:      ${GREEN}encrypted${RESET} (AES-256-GCM + Argon2id)"
 if [ -n "${SEED_MODE}" ]; then
     if [ "${SEED_MODE}" = "maximum" ]; then
-        echo -e "    Mode:      ${CYAN}Maximum Security${RESET} (passphrase on restart)"
+        echo -e "  Security:  ${CYAN}passphrase required on restart${RESET}"
     else
-        echo -e "    Mode:      ${CYAN}Server Mode${RESET} (unattended boot)"
+        echo -e "  Security:  ${CYAN}starts automatically${RESET}"
     fi
 fi
-echo ""
-
-echo -e "  ${BOLD}Services:${RESET}"
-echo -e "    Core:      ${CYAN}http://localhost:${CORE_PORT}${RESET}"
-echo -e "    PDS:       ${CYAN}http://localhost:${PDS_PORT}${RESET}"
-echo -e "    Health:    ${CYAN}http://localhost:${CORE_PORT}/healthz${RESET}"
 if has_telegram "${ENV_FILE}"; then
-    echo -e "    Telegram:  ${GREEN}connected${RESET}"
+    echo -e "  Telegram:  ${GREEN}connected${RESET}"
 fi
-echo ""
+if [ -n "${SEED_MODE}" ] || has_telegram "${ENV_FILE}" 2>/dev/null; then
+    echo ""
+fi
 echo -e "  ${BOLD}Commands:${RESET}"
-echo -e "    Admin:     ${CYAN}${COMPOSE} exec core dina-admin status${RESET}"
-echo -e "    Logs:      ${CYAN}${COMPOSE} logs -f${RESET}"
-echo -e "    Stop:      ${CYAN}${COMPOSE} down${RESET}"
-echo -e "    Uninstall: ${CYAN}./uninstall.sh${RESET}"
+echo -e "    Stop:      ${CYAN}./run.sh --stop${RESET}"
+echo -e "    Logs:      ${CYAN}./run.sh --logs${RESET}"
+echo -e "    Status:    ${CYAN}./run.sh --status${RESET}"
+
+if [ "${VERBOSE}" = true ]; then
+    echo ""
+    echo -e "  ${DIM}Session: ${DINA_SESSION} (core-${DINA_SESSION}, brain-${DINA_SESSION})${RESET}"
+    echo -e "  ${DIM}PDS: http://localhost:${PDS_PORT}${RESET}"
+    echo -e "  ${DIM}Health: http://localhost:${CORE_PORT}/healthz${RESET}"
+fi
+
 echo ""

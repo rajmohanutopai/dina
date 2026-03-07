@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/ed25519"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	dinacrypto "github.com/rajmohanutopai/dina/core/internal/adapter/crypto"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/identity"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
@@ -304,6 +306,46 @@ func TestIdentity_3_1_1_5_RecoveryKeysCanReclaimDID(t *testing.T) {
 	doc, err := impl.Resolve(idCtx, did)
 	testutil.RequireNoError(t, err)
 	testutil.RequireNotNil(t, doc)
+}
+
+// TST-CORE-145a
+func TestIdentity_3_1_1_6_DeterministicRotationEnforcement(t *testing.T) {
+	// When masterSeed + keyDeriver are set, Rotate() must reject keys that
+	// don't match the deterministic next generation.
+	slip := dinacrypto.NewSLIP0010Deriver()
+	kd := dinacrypto.NewKeyDeriver(slip)
+	dm := identity.NewDIDManager(t.TempDir())
+
+	// Derive gen-0 key and create DID.
+	seed := testutil.TestEd25519Seed[:]
+	gen0Pub, gen0Priv, err := kd.DeriveRootSigningKey(seed, 0)
+	testutil.RequireNoError(t, err)
+	dm.SetMasterSeed(seed, kd)
+	dm.SetSigningKeyPath(identity.RootSigningPath(0))
+
+	did, err := dm.Create(idCtx, gen0Pub)
+	testutil.RequireNoError(t, err)
+
+	// Derive the correct gen-1 key.
+	gen1Pub, _, err := kd.DeriveRootSigningKey(seed, 1)
+	testutil.RequireNoError(t, err)
+
+	// Attempt rotation with a WRONG key — must be rejected.
+	wrongKey := make([]byte, 32)
+	wrongKey[0] = 0xff
+	payload := []byte("rotate:" + string(did))
+	sig := ed25519.Sign(gen0Priv, payload)
+	err = dm.Rotate(idCtx, did, payload, sig, wrongKey)
+	if err == nil {
+		t.Fatal("Rotate must reject non-deterministic key")
+	}
+	if !strings.Contains(err.Error(), "does not match deterministic") {
+		t.Fatalf("expected deterministic rejection, got: %v", err)
+	}
+
+	// Attempt rotation with the CORRECT gen-1 key — must succeed.
+	err = dm.Rotate(idCtx, did, payload, sig, gen1Pub)
+	testutil.RequireNoError(t, err)
 }
 
 // ---------- §3.1.2 did:web Fallback (5 scenarios) ----------
@@ -1031,4 +1073,685 @@ func TestIdentity_3_6_8_NoMCPOrOpenClawVaultAccess(t *testing.T) {
 
 	allowed = impl.AllowedForTokenKind("openclaw", "/v1/vault/query")
 	testutil.RequireFalse(t, allowed, "OpenClaw token must not access vault endpoints")
+}
+
+// ---------- §3.7 DID Metadata Persistence ----------
+
+func TestIdentity_3_7_1_MetadataPersisted(t *testing.T) {
+	// Creating a DID persists metadata to did_metadata.json.
+	tmpDir := t.TempDir()
+	mgr := identity.NewDIDManager(tmpDir)
+	mgr.SetSigningKeyPath("m/9999'/0'/0'")
+
+	pub, _, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+
+	did, err := mgr.Create(idCtx, pub)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	meta, err := mgr.LoadDIDMetadata()
+	if err != nil {
+		t.Fatalf("LoadDIDMetadata: %v", err)
+	}
+	if meta == nil {
+		t.Fatal("expected metadata to be persisted")
+	}
+	if meta.DID != string(did) {
+		t.Fatalf("DID mismatch: got %q, want %q", meta.DID, string(did))
+	}
+	if meta.SigningKeyPath != "m/9999'/0'/0'" {
+		t.Fatalf("signing key path: got %q, want %q", meta.SigningKeyPath, "m/9999'/0'/0'")
+	}
+	if meta.PLCRegistered {
+		t.Fatal("expected PLCRegistered=false for local-only DID")
+	}
+	if meta.CreatedAt == "" {
+		t.Fatal("expected non-empty CreatedAt")
+	}
+}
+
+func TestIdentity_3_7_2_MetadataLocalOnlyNoRotationKey(t *testing.T) {
+	// Local-only DID has empty rotation key path.
+	tmpDir := t.TempDir()
+	mgr := identity.NewDIDManager(tmpDir)
+	mgr.SetSigningKeyPath("m/9999'/0'/0'")
+
+	pub, _, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+
+	_, err = mgr.Create(idCtx, pub)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	meta, err := mgr.LoadDIDMetadata()
+	if err != nil {
+		t.Fatalf("LoadDIDMetadata: %v", err)
+	}
+	if meta.RotationKeyPath != "" {
+		t.Fatalf("expected empty rotation key path for local-only, got %q", meta.RotationKeyPath)
+	}
+}
+
+func TestIdentity_3_7_3_MetadataLoadNoFile(t *testing.T) {
+	// LoadDIDMetadata returns nil when no file exists (not an error).
+	tmpDir := t.TempDir()
+	mgr := identity.NewDIDManager(tmpDir)
+
+	meta, err := mgr.LoadDIDMetadata()
+	if err != nil {
+		t.Fatalf("LoadDIDMetadata: %v", err)
+	}
+	if meta != nil {
+		t.Fatal("expected nil metadata when no file exists")
+	}
+}
+
+func TestIdentity_3_7_4_MetadataRoundTrip(t *testing.T) {
+	// Metadata survives a manager reload (new instance, same dataDir).
+	tmpDir := t.TempDir()
+	mgr1 := identity.NewDIDManager(tmpDir)
+	mgr1.SetSigningKeyPath("m/9999'/0'/0'")
+
+	pub, _, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+
+	did, err := mgr1.Create(idCtx, pub)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Load from a fresh manager pointing to the same directory.
+	mgr2 := identity.NewDIDManager(tmpDir)
+	meta, err := mgr2.LoadDIDMetadata()
+	if err != nil {
+		t.Fatalf("LoadDIDMetadata: %v", err)
+	}
+	if meta == nil {
+		t.Fatal("expected metadata to survive reload")
+	}
+	if meta.DID != string(did) {
+		t.Fatalf("DID mismatch after reload: got %q, want %q", meta.DID, string(did))
+	}
+	if meta.SigningKeyPath != "m/9999'/0'/0'" {
+		t.Fatalf("signing key path lost after reload: got %q", meta.SigningKeyPath)
+	}
+}
+
+// ---------- §3.8 DID Restoration from Seed ----------
+
+func TestIdentity_3_8_1_RestoreDIDFromMetadata(t *testing.T) {
+	// Full round-trip: create DID, load metadata on new manager, restore.
+	tmpDir := t.TempDir()
+
+	// Step 1: Create original DID.
+	mgr1 := identity.NewDIDManager(tmpDir)
+	mgr1.SetSigningKeyPath("m/9999'/0'/0'")
+
+	pub, _, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+
+	originalDID, err := mgr1.Create(idCtx, pub)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Step 2: Simulate recovery — fresh manager, load metadata, restore.
+	mgr2 := identity.NewDIDManager(tmpDir)
+	meta, err := mgr2.LoadDIDMetadata()
+	if err != nil {
+		t.Fatalf("LoadDIDMetadata: %v", err)
+	}
+	if meta == nil {
+		t.Fatal("metadata must exist")
+	}
+
+	restoredDID, err := mgr2.RestoreDID(idCtx, meta, pub)
+	if err != nil {
+		t.Fatalf("RestoreDID: %v", err)
+	}
+
+	if restoredDID != originalDID {
+		t.Fatalf("restored DID mismatch: got %q, want %q", restoredDID, originalDID)
+	}
+
+	// Step 3: Verify the restored DID resolves correctly.
+	doc, err := mgr2.Resolve(idCtx, restoredDID)
+	if err != nil {
+		t.Fatalf("Resolve after restore: %v", err)
+	}
+	if doc == nil {
+		t.Fatal("expected non-nil DID document after restore")
+	}
+}
+
+func TestIdentity_3_8_2_RestoreDIDDeterministic(t *testing.T) {
+	// Restoring with the same key always produces the same DID.
+	tmpDir := t.TempDir()
+
+	// Use SLIP-0010 to derive the signing key deterministically.
+	deriver := dinacrypto.NewSLIP0010Deriver()
+	pub, _, err := deriver.DerivePath(testutil.TestMnemonicSeed, "m/9999'/0'/0'")
+	if err != nil {
+		t.Fatalf("DerivePath: %v", err)
+	}
+
+	// Create the original DID.
+	mgr1 := identity.NewDIDManager(tmpDir)
+	mgr1.SetSigningKeyPath("m/9999'/0'/0'")
+	originalDID, err := mgr1.Create(idCtx, pub)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Simulate recovery on a fresh data directory.
+	tmpDir2 := t.TempDir()
+
+	// Re-derive the same key from the same seed.
+	pub2, _, err := deriver.DerivePath(testutil.TestMnemonicSeed, "m/9999'/0'/0'")
+	if err != nil {
+		t.Fatalf("DerivePath: %v", err)
+	}
+
+	// Metadata would normally come from backup; here we construct it.
+	meta := &identity.DIDMetadata{
+		DID:            string(originalDID),
+		SigningKeyPath: "m/9999'/0'/0'",
+		CreatedAt:      "2025-01-01T00:00:00Z",
+	}
+
+	mgr2 := identity.NewDIDManager(tmpDir2)
+	restoredDID, err := mgr2.RestoreDID(idCtx, meta, pub2)
+	if err != nil {
+		t.Fatalf("RestoreDID: %v", err)
+	}
+
+	if restoredDID != originalDID {
+		t.Fatalf("deterministic restore failed: got %q, want %q", restoredDID, originalDID)
+	}
+}
+
+func TestIdentity_3_8_3_RestoreRejectsDuplicate(t *testing.T) {
+	// RestoreDID rejects if the DID is already loaded.
+	tmpDir := t.TempDir()
+	mgr := identity.NewDIDManager(tmpDir)
+	mgr.SetSigningKeyPath("m/9999'/0'/0'")
+
+	pub, _, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+
+	did, err := mgr.Create(idCtx, pub)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	meta := &identity.DIDMetadata{
+		DID:            string(did),
+		SigningKeyPath: "m/9999'/0'/0'",
+		CreatedAt:      "2025-01-01T00:00:00Z",
+	}
+
+	_, err = mgr.RestoreDID(idCtx, meta, pub)
+	if err == nil {
+		t.Fatal("expected error for duplicate restore")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("expected 'already exists' error, got: %v", err)
+	}
+}
+
+func TestIdentity_3_8_4_RestoreRejectsNilMetadata(t *testing.T) {
+	mgr := identity.NewDIDManager(t.TempDir())
+	pub, _, _ := ed25519.GenerateKey(nil)
+
+	_, err := mgr.RestoreDID(idCtx, nil, pub)
+	if err == nil {
+		t.Fatal("expected error for nil metadata")
+	}
+}
+
+func TestIdentity_3_8_5_RestoreRejectsInvalidKey(t *testing.T) {
+	mgr := identity.NewDIDManager(t.TempDir())
+	meta := &identity.DIDMetadata{
+		DID:            "did:plc:test123",
+		SigningKeyPath: "m/9999'/0'/0'",
+		CreatedAt:      "2025-01-01T00:00:00Z",
+	}
+
+	_, err := mgr.RestoreDID(idCtx, meta, []byte("too-short"))
+	if err == nil {
+		t.Fatal("expected error for invalid key length")
+	}
+}
+
+func TestIdentity_3_8_6_RestorePreservesMetadataFields(t *testing.T) {
+	// After restore, metadata on disk is unchanged.
+	tmpDir := t.TempDir()
+	mgr := identity.NewDIDManager(tmpDir)
+	mgr.SetSigningKeyPath("m/9999'/0'/0'")
+
+	pub, _, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+
+	_, err = mgr.Create(idCtx, pub)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	meta1, err := mgr.LoadDIDMetadata()
+	if err != nil {
+		t.Fatalf("LoadDIDMetadata: %v", err)
+	}
+
+	// Restore on fresh manager.
+	mgr2 := identity.NewDIDManager(tmpDir)
+	_, err = mgr2.RestoreDID(idCtx, meta1, pub)
+	if err != nil {
+		t.Fatalf("RestoreDID: %v", err)
+	}
+
+	// Metadata file should still be readable with same content.
+	meta2, err := mgr2.LoadDIDMetadata()
+	if err != nil {
+		t.Fatalf("LoadDIDMetadata after restore: %v", err)
+	}
+	if meta2.DID != meta1.DID {
+		t.Fatalf("DID changed after restore: %q → %q", meta1.DID, meta2.DID)
+	}
+	if meta2.SigningKeyPath != meta1.SigningKeyPath {
+		t.Fatalf("signing key path changed: %q → %q", meta1.SigningKeyPath, meta2.SigningKeyPath)
+	}
+}
+
+func TestIdentity_3_8_7_RestoreHydratesGeneration(t *testing.T) {
+	// RestoreDID must hydrate signingGeneration from metadata so that
+	// subsequent Rotate() calls start from the correct generation.
+	tmpDir := t.TempDir()
+	slip := dinacrypto.NewSLIP0010Deriver()
+	kd := dinacrypto.NewKeyDeriver(slip)
+	seed := testutil.TestEd25519Seed[:]
+
+	// Simulate a rotated identity: gen-2 is the current signing key.
+	gen2Pub, _, err := kd.DeriveRootSigningKey(seed, 2)
+	if err != nil {
+		t.Fatalf("DeriveRootSigningKey: %v", err)
+	}
+
+	meta := &identity.DIDMetadata{
+		DID:               "did:key:z6MkTestRestore",
+		SigningKeyPath:    identity.RootSigningPath(2),
+		SigningGeneration: 2,
+		CreatedAt:         "2025-01-01T00:00:00Z",
+	}
+
+	mgr := identity.NewDIDManager(tmpDir)
+	mgr.SetMasterSeed(seed, kd)
+
+	_, err = mgr.RestoreDID(idCtx, meta, gen2Pub)
+	if err != nil {
+		t.Fatalf("RestoreDID: %v", err)
+	}
+
+	// Generation must be hydrated to 2 (not default 0).
+	if mgr.SigningGeneration() != 2 {
+		t.Fatalf("expected generation 2, got %d", mgr.SigningGeneration())
+	}
+}
+
+// ---------- §3.9 Identity Export / Import ----------
+
+func TestIdentity_3_9_1_ExportBundle(t *testing.T) {
+	// ExportIdentity creates a valid bundle file with integrity HMAC.
+	dataDir := t.TempDir()
+	secretsDir := t.TempDir()
+
+	// Create DID.
+	mgr := identity.NewDIDManager(dataDir)
+	mgr.SetSigningKeyPath("m/9999'/0'/0'")
+	pub, _, _ := ed25519.GenerateKey(nil)
+	_, err := mgr.Create(idCtx, pub)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Create fake secrets.
+	wrappedSeed := []byte("encrypted-seed-data-32-bytes-ok!")
+	salt := []byte("sixteen-byte-slt")
+	os.WriteFile(filepath.Join(secretsDir, "wrapped_seed.bin"), wrappedSeed, 0600)
+	os.WriteFile(filepath.Join(secretsDir, "master_seed.salt"), salt, 0600)
+
+	bundlePath := filepath.Join(t.TempDir(), "identity.bundle")
+	err = mgr.ExportIdentity(bundlePath, secretsDir, testutil.TestMnemonicSeed)
+	if err != nil {
+		t.Fatalf("ExportIdentity: %v", err)
+	}
+
+	// Verify file exists and is parseable.
+	bundle, err := identity.LoadIdentityBundle(bundlePath)
+	if err != nil {
+		t.Fatalf("LoadIdentityBundle: %v", err)
+	}
+	if bundle.Version != 1 {
+		t.Fatalf("version: got %d, want 1", bundle.Version)
+	}
+	if bundle.Metadata == nil {
+		t.Fatal("metadata missing from bundle")
+	}
+	if bundle.Metadata.SigningKeyPath != "m/9999'/0'/0'" {
+		t.Fatalf("signing key path: got %q", bundle.Metadata.SigningKeyPath)
+	}
+	if string(bundle.WrappedSeed) != string(wrappedSeed) {
+		t.Fatal("wrapped seed mismatch")
+	}
+	if string(bundle.Salt) != string(salt) {
+		t.Fatal("salt mismatch")
+	}
+	if len(bundle.MetadataHMAC) == 0 {
+		t.Fatal("expected non-empty MetadataHMAC")
+	}
+
+	// Verify integrity with correct seed.
+	err = identity.VerifyBundleIntegrity(bundle, testutil.TestMnemonicSeed)
+	if err != nil {
+		t.Fatalf("VerifyBundleIntegrity: %v", err)
+	}
+}
+
+func TestIdentity_3_9_2_ExportRequiresDID(t *testing.T) {
+	// ExportIdentity fails if no DID has been created.
+	mgr := identity.NewDIDManager(t.TempDir())
+	err := mgr.ExportIdentity(filepath.Join(t.TempDir(), "bundle"), t.TempDir(), testutil.TestMnemonicSeed)
+	if err == nil {
+		t.Fatal("expected error when no DID exists")
+	}
+}
+
+func TestIdentity_3_9_3_ImportBundleSecrets(t *testing.T) {
+	// ImportIdentitySecrets writes wrapped seed and salt to a new directory.
+	bundle := &identity.IdentityBundle{
+		Version: 1,
+		Metadata: &identity.DIDMetadata{
+			DID:            "did:plc:test",
+			SigningKeyPath: "m/9999'/0'/0'",
+			CreatedAt:      "2025-01-01T00:00:00Z",
+		},
+		WrappedSeed: []byte("wrapped-seed-bytes"),
+		Salt:        []byte("salt-bytes-16chr"),
+	}
+
+	secretsDir := filepath.Join(t.TempDir(), "secrets")
+	err := identity.ImportIdentitySecrets(bundle, secretsDir)
+	if err != nil {
+		t.Fatalf("ImportIdentitySecrets: %v", err)
+	}
+
+	// Verify files were written.
+	got, err := os.ReadFile(filepath.Join(secretsDir, "wrapped_seed.bin"))
+	if err != nil {
+		t.Fatalf("read wrapped_seed: %v", err)
+	}
+	if string(got) != "wrapped-seed-bytes" {
+		t.Fatalf("wrapped seed content mismatch")
+	}
+
+	got, err = os.ReadFile(filepath.Join(secretsDir, "master_seed.salt"))
+	if err != nil {
+		t.Fatalf("read salt: %v", err)
+	}
+	if string(got) != "salt-bytes-16chr" {
+		t.Fatalf("salt content mismatch")
+	}
+}
+
+func TestIdentity_3_9_4_ImportRefusesOverwrite(t *testing.T) {
+	// ImportIdentitySecrets refuses to overwrite existing secrets.
+	secretsDir := t.TempDir()
+	os.WriteFile(filepath.Join(secretsDir, "wrapped_seed.bin"), []byte("existing"), 0600)
+
+	bundle := &identity.IdentityBundle{
+		Version: 1,
+		Metadata: &identity.DIDMetadata{
+			DID:       "did:plc:test",
+			CreatedAt: "2025-01-01T00:00:00Z",
+		},
+		WrappedSeed: []byte("new-data"),
+		Salt:        []byte("new-salt"),
+	}
+
+	err := identity.ImportIdentitySecrets(bundle, secretsDir)
+	if err == nil {
+		t.Fatal("expected error when secrets already exist")
+	}
+	if !strings.Contains(err.Error(), "refusing to overwrite") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestIdentity_3_9_5_LoadBundleRejectsInvalid(t *testing.T) {
+	// LoadIdentityBundle rejects files with wrong version or missing fields.
+	tmpDir := t.TempDir()
+
+	// Wrong version.
+	badVersion := `{"version":99,"metadata":{"did":"test","created_at":"x"},"wrapped_seed":"AA==","salt":"AA=="}`
+	os.WriteFile(filepath.Join(tmpDir, "bad_ver.bundle"), []byte(badVersion), 0600)
+	_, err := identity.LoadIdentityBundle(filepath.Join(tmpDir, "bad_ver.bundle"))
+	if err == nil {
+		t.Fatal("expected error for unsupported version")
+	}
+
+	// Missing metadata.
+	noMeta := `{"version":1,"wrapped_seed":"AA==","salt":"AA=="}`
+	os.WriteFile(filepath.Join(tmpDir, "no_meta.bundle"), []byte(noMeta), 0600)
+	_, err = identity.LoadIdentityBundle(filepath.Join(tmpDir, "no_meta.bundle"))
+	if err == nil {
+		t.Fatal("expected error for missing metadata")
+	}
+
+	// Missing wrapped seed.
+	noSeed := `{"version":1,"metadata":{"did":"test","created_at":"x"},"salt":"AA=="}`
+	os.WriteFile(filepath.Join(tmpDir, "no_seed.bundle"), []byte(noSeed), 0600)
+	_, err = identity.LoadIdentityBundle(filepath.Join(tmpDir, "no_seed.bundle"))
+	if err == nil {
+		t.Fatal("expected error for missing wrapped seed")
+	}
+}
+
+func TestIdentity_3_9_6_FullExportImportRoundTrip(t *testing.T) {
+	// End-to-end: create DID → export → verify integrity → import → restore.
+	origDataDir := t.TempDir()
+	origSecretsDir := t.TempDir()
+
+	// Derive a deterministic key.
+	deriver := dinacrypto.NewSLIP0010Deriver()
+	pub, _, err := deriver.DerivePath(testutil.TestMnemonicSeed, "m/9999'/0'/0'")
+	if err != nil {
+		t.Fatalf("DerivePath: %v", err)
+	}
+
+	// Create DID on original device.
+	mgr1 := identity.NewDIDManager(origDataDir)
+	mgr1.SetSigningKeyPath("m/9999'/0'/0'")
+	originalDID, err := mgr1.Create(idCtx, pub)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Write fake secrets.
+	os.WriteFile(filepath.Join(origSecretsDir, "wrapped_seed.bin"), []byte("wrapped-data"), 0600)
+	os.WriteFile(filepath.Join(origSecretsDir, "master_seed.salt"), []byte("salt-data-bytes!"), 0600)
+
+	// Export.
+	bundlePath := filepath.Join(t.TempDir(), "identity.bundle")
+	err = mgr1.ExportIdentity(bundlePath, origSecretsDir, testutil.TestMnemonicSeed)
+	if err != nil {
+		t.Fatalf("ExportIdentity: %v", err)
+	}
+
+	// --- Simulate new device ---
+
+	newDataDir := t.TempDir()
+	newSecretsDir := filepath.Join(t.TempDir(), "new-secrets")
+
+	// Load bundle.
+	bundle, err := identity.LoadIdentityBundle(bundlePath)
+	if err != nil {
+		t.Fatalf("LoadIdentityBundle: %v", err)
+	}
+
+	// Verify integrity before using metadata.
+	err = identity.VerifyBundleIntegrity(bundle, testutil.TestMnemonicSeed)
+	if err != nil {
+		t.Fatalf("VerifyBundleIntegrity: %v", err)
+	}
+
+	// Import secrets.
+	err = identity.ImportIdentitySecrets(bundle, newSecretsDir)
+	if err != nil {
+		t.Fatalf("ImportIdentitySecrets: %v", err)
+	}
+
+	// Re-derive signing key from seed.
+	pub2, _, err := deriver.DerivePath(testutil.TestMnemonicSeed, bundle.Metadata.SigningKeyPath)
+	if err != nil {
+		t.Fatalf("DerivePath: %v", err)
+	}
+
+	// Restore DID.
+	mgr2 := identity.NewDIDManager(newDataDir)
+	restoredDID, err := mgr2.RestoreDID(idCtx, bundle.Metadata, pub2)
+	if err != nil {
+		t.Fatalf("RestoreDID: %v", err)
+	}
+
+	if restoredDID != originalDID {
+		t.Fatalf("DID mismatch: original %q, restored %q", originalDID, restoredDID)
+	}
+
+	// Verify DID resolves on new device.
+	doc, err := mgr2.Resolve(idCtx, restoredDID)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if doc == nil {
+		t.Fatal("expected DID document after restore")
+	}
+
+	// Verify metadata was persisted on the restored node.
+	meta, err := mgr2.LoadDIDMetadata()
+	if err != nil {
+		t.Fatalf("LoadDIDMetadata after restore: %v", err)
+	}
+	if meta == nil {
+		t.Fatal("metadata must be persisted after restore")
+	}
+	if meta.DID != string(originalDID) {
+		t.Fatalf("persisted metadata DID mismatch: %q", meta.DID)
+	}
+}
+
+func TestIdentity_3_9_7_IntegrityDetectsTamperedMetadata(t *testing.T) {
+	// A bundle with tampered metadata fails integrity verification.
+	dataDir := t.TempDir()
+	secretsDir := t.TempDir()
+
+	mgr := identity.NewDIDManager(dataDir)
+	mgr.SetSigningKeyPath("m/9999'/0'/0'")
+	pub, _, _ := ed25519.GenerateKey(nil)
+	mgr.Create(idCtx, pub)
+
+	os.WriteFile(filepath.Join(secretsDir, "wrapped_seed.bin"), []byte("wrapped"), 0600)
+	os.WriteFile(filepath.Join(secretsDir, "master_seed.salt"), []byte("salt-16-bytes!!!"), 0600)
+
+	bundlePath := filepath.Join(t.TempDir(), "bundle")
+	mgr.ExportIdentity(bundlePath, secretsDir, testutil.TestMnemonicSeed)
+
+	bundle, _ := identity.LoadIdentityBundle(bundlePath)
+
+	// Tamper with the metadata.
+	bundle.Metadata.DID = "did:plc:evil-attacker-did"
+
+	err := identity.VerifyBundleIntegrity(bundle, testutil.TestMnemonicSeed)
+	if err == nil {
+		t.Fatal("expected integrity check to fail after tampering")
+	}
+	if !strings.Contains(err.Error(), "tampered") {
+		t.Fatalf("expected tampering error, got: %v", err)
+	}
+}
+
+func TestIdentity_3_9_8_IntegrityFailsWithWrongSeed(t *testing.T) {
+	// Integrity check fails when verified with a different seed.
+	dataDir := t.TempDir()
+	secretsDir := t.TempDir()
+
+	mgr := identity.NewDIDManager(dataDir)
+	mgr.SetSigningKeyPath("m/9999'/0'/0'")
+	pub, _, _ := ed25519.GenerateKey(nil)
+	mgr.Create(idCtx, pub)
+
+	os.WriteFile(filepath.Join(secretsDir, "wrapped_seed.bin"), []byte("wrapped"), 0600)
+	os.WriteFile(filepath.Join(secretsDir, "master_seed.salt"), []byte("salt-16-bytes!!!"), 0600)
+
+	bundlePath := filepath.Join(t.TempDir(), "bundle")
+	mgr.ExportIdentity(bundlePath, secretsDir, testutil.TestMnemonicSeed)
+
+	bundle, _ := identity.LoadIdentityBundle(bundlePath)
+
+	// Verify with a different seed.
+	wrongSeed := make([]byte, 64)
+	wrongSeed[0] = 0xFF
+	err := identity.VerifyBundleIntegrity(bundle, wrongSeed)
+	if err == nil {
+		t.Fatal("expected integrity check to fail with wrong seed")
+	}
+}
+
+func TestIdentity_3_9_9_RestorePersistedMetadataAvailableForExport(t *testing.T) {
+	// After RestoreDID, metadata is persisted so ExportIdentity works.
+	dataDir := t.TempDir()
+	secretsDir := t.TempDir()
+
+	mgr := identity.NewDIDManager(dataDir)
+	pub, _, _ := ed25519.GenerateKey(nil)
+	meta := &identity.DIDMetadata{
+		DID:            "did:plc:restored-test",
+		SigningKeyPath: "m/9999'/0'/0'",
+		CreatedAt:      "2025-01-01T00:00:00Z",
+	}
+
+	_, err := mgr.RestoreDID(idCtx, meta, pub)
+	if err != nil {
+		t.Fatalf("RestoreDID: %v", err)
+	}
+
+	// Metadata should be loadable for a subsequent export.
+	loaded, err := mgr.LoadDIDMetadata()
+	if err != nil {
+		t.Fatalf("LoadDIDMetadata: %v", err)
+	}
+	if loaded == nil {
+		t.Fatal("metadata must be available after restore")
+	}
+
+	// ExportIdentity should succeed (metadata exists).
+	os.WriteFile(filepath.Join(secretsDir, "wrapped_seed.bin"), []byte("data"), 0600)
+	os.WriteFile(filepath.Join(secretsDir, "master_seed.salt"), []byte("salt"), 0600)
+	err = mgr.ExportIdentity(filepath.Join(t.TempDir(), "bundle"), secretsDir, testutil.TestMnemonicSeed)
+	if err != nil {
+		t.Fatalf("ExportIdentity after restore: %v", err)
+	}
 }

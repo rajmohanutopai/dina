@@ -54,7 +54,7 @@ The hex seed and the 24 words are the **same thing** in two formats. If the user
 | Secret | Created by | Purpose | If compromised |
 |--------|-----------|---------|----------------|
 | **Identity Seed** | `install.sh` Step 4 — `secrets.token_hex(32)` | Derives ALL cryptographic keys: DID, signing key, per-persona vault encryption keys | Total compromise — attacker becomes you |
-| **Brain Service Key** | Brain generates its own Ed25519 keypair on first start | Brain signs every request to Core (`X-DID`, `X-Timestamp`, `X-Signature` headers). Private keys are isolated by separate Docker bind mounts — Brain's private key is in `secrets/service_keys/brain/` (mounted only to Brain), public keys are in `secrets/service_keys/public/` (mounted to both containers). Core's private key never exists in Brain's container filesystem and vice versa. | Attacker can call Core's API as Brain — but cannot derive DID or decrypt vaults. Revoke by removing the public key from the shared `public/` directory |
+| **Brain Service Key** | `install.sh` derives via SLIP-0010 at `m/9999'/3'/1'` | Brain signs every request to Core (`X-DID`, `X-Timestamp`, `X-Signature` headers). Private keys are isolated by separate Docker bind mounts — Brain's private key is in `secrets/service_keys/brain/` (mounted only to Brain), public keys are in `secrets/service_keys/public/` (mounted to both containers). Core's private key never exists in Brain's container filesystem and vice versa. At runtime, services load existing keys only — no generation occurs. | Attacker can call Core's API as Brain — but cannot derive DID or decrypt vaults. Revoke by removing the public key from the shared `public/` directory |
 | **Client Token** | Core generates during `dina pair` — `crypto/rand.Read()` | Admin web UI login password (browser POSTs token, gets session cookie) | Revoke — other devices and identity unaffected |
 
 The client token is **not derived from the seed**. It is an independent random value. The seed never leaves Core's memory. Brain never sees it (`docker-compose.yml` passes `DINA_MASTER_SEED` only to Core, not to Brain). CLI and Brain authenticate via Ed25519 signatures, not tokens.
@@ -73,9 +73,9 @@ From the single seed, Core derives every key deterministically (`core/internal/a
 
 **Signing key** — SLIP-0010 (tree-shaped, by index):
 ```
-Seed → SLIP-0010 → m/9999'/0' → Root Ed25519 signing key → DID
+Seed → SLIP-0010 → m/9999'/0'/0' → Root Ed25519 signing key (generation 0) → DID
 ```
-One signing key for the whole node. Used for DID authentication, D2D message signatures, and verdict signing. The `DeriveSigningKey(seed, index)` function supports per-index derivation for future per-persona signing keys, but today only index 0 is used.
+One root signing key for the whole node. Used for DID authentication, D2D message signatures, and verdict signing. The derivation tree separates concerns at the top level: `m/9999'/0'/...` for root signing (with generations), `m/9999'/1'/...` for persona signing keys (index + generation), `m/9999'/2'/...` for PLC recovery, `m/9999'/3'/...` for service auth. Personas can grow to thousands without collisions.
 
 **Vault encryption keys** — HKDF-SHA256 (by persona name string):
 ```
@@ -117,13 +117,13 @@ The seed could be protected by OS-level disk encryption (FileVault, LUKS) or a h
 
 </details>
 
-After loading, the code verifies the seed isn't all zeros (lines 201-211). Then it derives the signing key via SLIP-0010 at path `m/9999'/0'` — a deterministic HD derivation that produces the same Ed25519 keypair from the same seed every time (`core/internal/adapter/crypto/` package).
+After loading, the code verifies the seed isn't all zeros (lines 201-211). Then it derives the signing key via SLIP-0010 at path `m/9999'/0'/0'` — the root signing key at generation 0. This is a deterministic HD derivation that produces the same Ed25519 keypair from the same seed every time (`core/internal/adapter/crypto/` package).
 
 <details>
-<summary><strong>Design Decision — Why SLIP-0010 HD derivation at path `m/9999'/0'`?</strong></summary>
+<summary><strong>Design Decision — Why SLIP-0010 HD derivation at path `m/9999'/0'/0'`?</strong></summary>
 <br>
 
-SLIP-0010 is the Ed25519-specific variant of BIP-32 hierarchical deterministic key derivation (BIP-32 itself only works with secp256k1). The path `m/9999'/0'` uses purpose `9999'` — a custom purpose number that won't collide with Bitcoin (`44'`), Ethereum (`60'`), or any registered BIP-44 coin type. The `'` means hardened derivation, which means knowing a child public key doesn't reveal the parent. The alternative — BIP-32 with secp256k1 — would give us ECDSA keys instead of Ed25519, which are slower to verify and have a more complex signing algorithm. SLIP-0010 + Ed25519 gives us the best of both worlds: deterministic derivation and fast, simple signatures.
+SLIP-0010 is the Ed25519-specific variant of BIP-32 hierarchical deterministic key derivation (BIP-32 itself only works with secp256k1). The path `m/9999'/0'/0'` uses purpose `9999'` — a custom purpose number that won't collide with Bitcoin (`44'`), Ethereum (`60'`), or any registered BIP-44 coin type. The `'` means hardened derivation, which means knowing a child public key doesn't reveal the parent. The top-level branches under `m/9999'` separate concerns: `0'` for root signing (generations), `1'` for persona signing keys (`m/9999'/1'/<index>'/<gen>'`), `2'` for PLC recovery (secp256k1), `3'` for service auth. This purpose-separated tree lets personas scale to thousands without ever colliding with root, PLC, or service keys. The alternative — BIP-32 with secp256k1 — would give us ECDSA keys instead of Ed25519, which are slower to verify and have a more complex signing algorithm. SLIP-0010 + Ed25519 gives us the best of both worlds: deterministic derivation and fast, simple signatures.
 
 </details>
 
@@ -398,7 +398,7 @@ No framework means: (1) zero third-party dependencies in the HTTP layer (smaller
 Ed25519 signature auth (`X-DID` + `X-Signature` + `X-Timestamp`) is the primary auth method for devices and services. The private key never leaves the device/service, and each request is signed with the current timestamp to prevent replay. The canonical signing payload is: `{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{SHA256_HEX(BODY)}`. `VerifySignature()` checks service keys first (Brain's public key, loaded from `/run/secrets/service_keys/public/`), then device keys.
 
 - **CLI** uses Ed25519 signature auth exclusively (one keypair per device).
-- **The Python brain sidecar** uses Ed25519 signature auth with its own service keypair. It generates an Ed25519 keypair on first start. Private keys are isolated by separate Docker bind mounts — Brain's private key is in `secrets/service_keys/brain/` (mounted only to Brain as `/run/secrets/service_keys/private/`), while both services' public keys are in `secrets/service_keys/public/` (mounted to both containers as `/run/secrets/service_keys/public/`).
+- **The Python brain sidecar** uses Ed25519 signature auth with its own service keypair, derived from the master seed at install time via SLIP-0010. Private keys are isolated by separate Docker bind mounts — Brain's private key is in `secrets/service_keys/brain/` (mounted only to Brain as `/run/secrets/service_keys/private/`), while both services' public keys are in `secrets/service_keys/public/` (mounted to both containers as `/run/secrets/service_keys/public/`). At runtime, services load existing keys only — no generation occurs.
 
 Bearer tokens serve browser-based contexts only:
 - **Admin/browser path** is handled via Core auth/session and reverse proxying. The brain API itself stays on service-signature auth.

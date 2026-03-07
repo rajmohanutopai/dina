@@ -223,8 +223,8 @@ func TestAdv_29_6_KeyDeriverPersonaDEK(t *testing.T) {
 	}
 }
 
-// TST-ADV-033: DeriveSigningKey at different indices produces independent Ed25519 keys.
-// Architecture §6: "each persona gets its own signing key at m/9999'/index'."
+// TST-ADV-033: DeriveSigningKey at different persona indices produces independent Ed25519 keys.
+// Architecture §6: "each persona gets its own signing key at m/9999'/1'/<index>'/<gen>'."
 func TestAdv_29_6_KeyDeriverSigningKey(t *testing.T) {
 	slip := dinacrypto.NewSLIP0010Deriver()
 	kd := dinacrypto.NewKeyDeriver(slip)
@@ -234,25 +234,26 @@ func TestAdv_29_6_KeyDeriverSigningKey(t *testing.T) {
 		seed[i] = byte(i + 1)
 	}
 
-	key0, err := kd.DeriveSigningKey(seed, 0)
+	// Derive persona signing keys at different indexes, all generation 0.
+	key0, err := kd.DeriveSigningKey(seed, 0, 0)
 	if err != nil {
-		t.Fatalf("DeriveSigningKey(0): %v", err)
+		t.Fatalf("DeriveSigningKey(0,0): %v", err)
 	}
-	key1, err := kd.DeriveSigningKey(seed, 1)
+	key1, err := kd.DeriveSigningKey(seed, 1, 0)
 	if err != nil {
-		t.Fatalf("DeriveSigningKey(1): %v", err)
+		t.Fatalf("DeriveSigningKey(1,0): %v", err)
 	}
-	key2, err := kd.DeriveSigningKey(seed, 2)
+	key2, err := kd.DeriveSigningKey(seed, 2, 0)
 	if err != nil {
-		t.Fatalf("DeriveSigningKey(2): %v", err)
+		t.Fatalf("DeriveSigningKey(2,0): %v", err)
 	}
 
 	// All private keys must differ.
 	if bytes.Equal([]byte(key0), []byte(key1)) {
-		t.Fatal("signing keys at index 0 and 1 must differ")
+		t.Fatal("signing keys at persona 0 and 1 must differ")
 	}
 	if bytes.Equal([]byte(key1), []byte(key2)) {
-		t.Fatal("signing keys at index 1 and 2 must differ")
+		t.Fatal("signing keys at persona 1 and 2 must differ")
 	}
 
 	// Each key signs independently — cross-verification must fail.
@@ -260,6 +261,15 @@ func TestAdv_29_6_KeyDeriverSigningKey(t *testing.T) {
 	sig0 := ed25519.Sign(key0, message)
 	if ed25519.Verify(key1.Public().(ed25519.PublicKey), message, sig0) {
 		t.Fatal("key0's signature must NOT verify with key1's public key")
+	}
+
+	// Verify different generations at same index also produce different keys.
+	key0g1, err := kd.DeriveSigningKey(seed, 0, 1)
+	if err != nil {
+		t.Fatalf("DeriveSigningKey(0,1): %v", err)
+	}
+	if bytes.Equal([]byte(key0), []byte(key0g1)) {
+		t.Fatal("same persona, different generations must produce different keys")
 	}
 }
 

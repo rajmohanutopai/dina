@@ -8,7 +8,10 @@ Produces output byte-identical to Go Core's crypto/keywrap.go + crypto/argon2.go
 Dependencies: argon2-cffi, cryptography (installed in .install-venv/).
 
 Usage:
-    python3 scripts/wrap_seed.py <64-char-hex-seed> <passphrase> <output-dir>
+    DINA_SEED_HEX=<64hex> DINA_SEED_PASSPHRASE=<pass> python3 scripts/wrap_seed.py <output-dir>
+
+Secrets are read from environment variables (not argv) to avoid
+process-list exposure on multi-user hosts.
 
 Output files (raw binary, permissions 0600):
     <output-dir>/wrapped_seed.bin      — 60 bytes
@@ -85,17 +88,23 @@ def wrap_seed(seed_hex: str, passphrase: str, output_dir: str) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) != 4:
-        print("Usage: wrap_seed.py <64-char-hex-seed> <passphrase> <output-dir>",
+    if len(sys.argv) != 2:
+        print("Usage: DINA_SEED_HEX=<hex> DINA_SEED_PASSPHRASE=<pass> wrap_seed.py <output-dir>",
               file=sys.stderr)
         sys.exit(1)
 
-    seed_hex = sys.argv[1].strip()
-    passphrase = sys.argv[2]
-    output_dir = sys.argv[3]
+    seed_hex = os.environ.get("DINA_SEED_HEX", "").strip()
+    passphrase = os.environ.get("DINA_SEED_PASSPHRASE", "")
+    output_dir = sys.argv[1]
 
+    if not seed_hex:
+        print("Error: DINA_SEED_HEX environment variable not set", file=sys.stderr)
+        sys.exit(1)
     if len(seed_hex) != 64:
         print(f"Error: expected 64 hex chars, got {len(seed_hex)}", file=sys.stderr)
+        sys.exit(1)
+    if not passphrase:
+        print("Error: DINA_SEED_PASSPHRASE environment variable not set", file=sys.stderr)
         sys.exit(1)
 
     try:

@@ -30,11 +30,16 @@ const (
 // K256KeyManager generates, persists, and loads secp256k1 (k256) rotation keys
 // for PLC directory operations. The rotation key authorizes DID updates.
 //
+// When a master seed is provided via SetMasterSeed, new keys are derived
+// deterministically at m/9999'/2'/0' instead of generated randomly. Existing
+// keys on disk are always loaded first for backward compatibility.
+//
 // All methods that access the private key are safe for concurrent use.
 type K256KeyManager struct {
 	mu      sync.Mutex
 	dataDir string
 	privKey *atcrypto.PrivateKeyK256
+	seed    []byte // optional master seed for deterministic derivation
 }
 
 // NewK256KeyManager creates a key manager that persists keys to the given
@@ -43,6 +48,15 @@ func NewK256KeyManager(dataDir string) *K256KeyManager {
 	return &K256KeyManager{
 		dataDir: dataDir,
 	}
+}
+
+// SetMasterSeed configures the master seed for deterministic k256 derivation.
+// When set, GenerateOrLoad will derive the key from the seed (at m/9999'/2'/0')
+// instead of generating randomly, if no key exists on disk.
+func (m *K256KeyManager) SetMasterSeed(seed []byte) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.seed = seed
 }
 
 // keyPath returns the full filesystem path to the k256 key file.
@@ -90,16 +104,36 @@ func (m *K256KeyManager) Generate() error {
 }
 
 // generateLocked performs key generation without acquiring the mutex.
+// If a master seed is set, derives deterministically; otherwise generates randomly.
 // The caller must hold m.mu.
 func (m *K256KeyManager) generateLocked() error {
-	key, err := atcrypto.GeneratePrivateKeyK256()
-	if err != nil {
-		return fmt.Errorf("k256: generate key: %w", err)
+	var raw []byte
+	if len(m.seed) > 0 {
+		// Deterministic: derive from master seed at m/9999'/2'/0'.
+		// Generation is intentionally fixed at 0 — PLC recovery key rotation
+		// is a separate, rare operation handled via DeriveRotationKeyVersioned.
+		deriver := NewSLIP0010Deriver()
+		derived, err := deriver.DerivePathK256(m.seed, "m/9999'/2'/0'")
+		if err != nil {
+			return fmt.Errorf("k256: derive from seed: %w", err)
+		}
+		raw = derived
+	} else {
+		// Random: legacy behavior.
+		key, err := atcrypto.GeneratePrivateKeyK256()
+		if err != nil {
+			return fmt.Errorf("k256: generate key: %w", err)
+		}
+		raw = key.Bytes()
 	}
 
-	raw := key.Bytes()
 	if len(raw) != k256KeySize {
-		return fmt.Errorf("k256: generated key has unexpected size %d (want %d)", len(raw), k256KeySize)
+		return fmt.Errorf("k256: key has unexpected size %d (want %d)", len(raw), k256KeySize)
+	}
+
+	key, err := atcrypto.ParsePrivateBytesK256(raw)
+	if err != nil {
+		return fmt.Errorf("k256: parse derived key: %w", err)
 	}
 
 	// Ensure the identity directory exists.
