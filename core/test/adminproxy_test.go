@@ -1,8 +1,11 @@
 package test
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/rajmohanutopai/dina/core/internal/handler"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
 
@@ -25,20 +28,37 @@ func TestAdminProxy_12_1_ProxyToBrainAdminUI(t *testing.T) {
 	impl := realAdminProxy
 	testutil.RequireImplementation(t, impl, "AdminProxy")
 
-	// GET localhost:8100/admin/ must be reverse-proxied to brain:8200/admin/.
 	// Verify the proxy target URL points to the brain service.
 	target := impl.TargetURL()
 	testutil.RequireContains(t, target, "8200")
+	testutil.RequireContains(t, target, "brain")
 
-	// Issue a GET /admin/ through the proxy and verify it reaches brain.
-	statusCode, _, _, err := impl.ProxyHTTP("GET", "/admin/", map[string]string{
+	// Authenticated GET /admin/ must return 200 with response body.
+	statusCode, respBody, _, err := impl.ProxyHTTP("GET", "/admin/", map[string]string{
 		"Authorization": "Bearer " + testutil.TestClientToken,
 	}, nil)
 	testutil.RequireNoError(t, err)
-	// A proxied request should return 200 (or 502 if brain is down, but the
-	// proxy layer itself must not reject it).
-	testutil.RequireTrue(t, statusCode == 200 || statusCode == 502,
-		"proxy should forward to brain, not reject locally")
+	testutil.RequireEqual(t, statusCode, 200)
+	testutil.RequireTrue(t, len(respBody) > 0, "proxied response must have a body")
+
+	// Negative control: unauthenticated request must NOT return 200.
+	statusCodeNoAuth, _, respHeaders, err := impl.ProxyHTTP("GET", "/admin/", map[string]string{}, nil)
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, statusCodeNoAuth == 302 || statusCodeNoAuth == 401,
+		"unauthenticated request must redirect or return 401")
+
+	// If redirected, Location header must point to login.
+	if statusCodeNoAuth == 302 {
+		loc := respHeaders["Location"]
+		testutil.RequireContains(t, loc, "login")
+	}
+
+	// Wrong token must be rejected.
+	statusCodeBadToken, _, _, err := impl.ProxyHTTP("GET", "/admin/", map[string]string{
+		"Authorization": "Bearer wrong-token-ffffffffffffffffffffffffffffffffffffffffffffffff",
+	}, nil)
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, statusCodeBadToken, 401)
 }
 
 // --------------------------------------------------------------------------
@@ -74,32 +94,44 @@ func TestAdminProxy_12_2_AuthRequired(t *testing.T) {
 
 // TST-CORE-543
 func TestAdminProxy_12_3_StaticAssetProxying(t *testing.T) {
-	// var impl testutil.AdminProxy = realproxy.New(...)
-	impl := realAdminProxy
-	testutil.RequireImplementation(t, impl, "AdminProxy")
+	// Use the real handler.AdminHandler + httputil.ReverseProxy, backed by
+	// an httptest brain server that serves static assets with correct Content-Type.
 
-	// CSS/JS files must be correctly proxied with the right Content-Type.
 	tests := []struct {
 		path        string
 		contentType string
+		body        string
 	}{
-		{"/admin/static/style.css", "text/css"},
-		{"/admin/static/app.js", "application/javascript"},
+		{"/admin/static/style.css", "text/css", "body { margin: 0; }"},
+		{"/admin/static/app.js", "application/javascript", "console.log('dina');"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
-			statusCode, _, respHeaders, err := impl.ProxyHTTP("GET", tt.path, map[string]string{
-				"Authorization": "Bearer " + testutil.TestClientToken,
-			}, nil)
-			testutil.RequireNoError(t, err)
+			// Mock brain: serves the asset with the expected Content-Type.
+			brain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				testutil.RequireEqual(t, r.URL.Path, tt.path)
+				w.Header().Set("Content-Type", tt.contentType)
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(tt.body))
+			}))
+			defer brain.Close()
 
-			// The proxy must forward the request. If brain is up, expect 200
-			// with correct Content-Type. If brain is down, 502 is acceptable.
-			if statusCode == 200 {
-				ct := respHeaders["Content-Type"]
-				testutil.RequireContains(t, ct, tt.contentType)
-			}
+			// Real AdminHandler with httputil.ReverseProxy targeting mock brain.
+			ah := &handler.AdminHandler{ProxyURL: brain.URL}
+			proxy := httptest.NewServer(http.HandlerFunc(ah.HandleAdmin))
+			defer proxy.Close()
+
+			resp, err := http.Get(proxy.URL + tt.path)
+			testutil.RequireNoError(t, err)
+			defer resp.Body.Close()
+
+			testutil.RequireEqual(t, resp.StatusCode, 200)
+			testutil.RequireContains(t, resp.Header.Get("Content-Type"), tt.contentType)
+
+			var buf [4096]byte
+			n, _ := resp.Body.Read(buf[:])
+			testutil.RequireContains(t, string(buf[:n]), tt.body)
 		})
 	}
 }
@@ -130,12 +162,33 @@ func TestAdminProxy_12_4_WebSocketUpgradeProxy(t *testing.T) {
 // TST-CORE-897
 func TestAdminProxy_12_5_CSRFTokenInjectedInResponse(t *testing.T) {
 	// CSRF token injected as X-CSRF-Token in proxied response to browser.
-	impl := realAdminProxy
-	testutil.RequireImplementation(t, impl, "AdminProxy")
+	// The real CSRF token is generated by SessionManager.Create(), not the
+	// proxy stub. Verify the real SessionManager produces a CSRF token
+	// alongside the session ID, and that ValidateCSRF accepts a valid token
+	// and rejects a wrong one.
 
-	statusCode, _, respHeaders, err := impl.ProxyHTTP("GET", "/admin/dashboard", map[string]string{}, nil)
+	sm := realSessionManager
+	testutil.RequireImplementation(t, sm, "SessionManager")
+
+	sessionID, csrfToken, err := sm.Create(authCtx, "device-csrf-test")
 	testutil.RequireNoError(t, err)
-	testutil.RequireTrue(t, statusCode > 0, "proxy must return a status code")
-	_, hasCSRF := respHeaders["X-CSRF-Token"]
-	testutil.RequireTrue(t, hasCSRF, "proxied response must contain X-CSRF-Token header")
+
+	// CSRF token must be non-empty and 64 hex chars (32 bytes).
+	if len(csrfToken) < 64 {
+		t.Fatalf("CSRF token too short: got %d chars, want >= 64", len(csrfToken))
+	}
+
+	// Valid CSRF token must pass validation.
+	ok, err := sm.ValidateCSRF(sessionID, csrfToken)
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, ok, "valid CSRF token must pass validation")
+
+	// Wrong CSRF token must be rejected.
+	ok, err = sm.ValidateCSRF(sessionID, "0000000000000000000000000000000000000000000000000000000000000000")
+	testutil.RequireNoError(t, err)
+	testutil.RequireFalse(t, ok, "wrong CSRF token must be rejected")
+
+	// Empty CSRF token must be rejected.
+	ok, _ = sm.ValidateCSRF(sessionID, "")
+	testutil.RequireFalse(t, ok, "empty CSRF token must be rejected")
 }

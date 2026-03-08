@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rajmohanutopai/dina/core/internal/adapter/brainclient"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/identity"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/transport"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
@@ -24,21 +25,50 @@ import (
 
 // TST-CORE-1031 DrainSpool returns all non-expired payloads
 func TestFixVerify_31_1_1_DrainSpoolReturnsPayloads(t *testing.T) {
-	inbox := newTestInboxManager(t)
+	// Use the real transport.InboxManager, not the test-only mock.
+	inbox := transport.NewInboxManager(transport.InboxConfig{
+		IPRateLimit:     50,
+		GlobalRateLimit: 1000,
+		SpoolMaxBytes:   500 * 1024 * 1024,
+		DIDRateLimit:    100,
+	})
 	ctx := context.Background()
-	inbox.Spool(ctx, []byte("msg1"))
-	inbox.Spool(ctx, []byte("msg2"))
-	inbox.Spool(ctx, []byte("msg3"))
+
+	// Set a long TTL so messages don't expire during the test.
+	inbox.SetTTL(10 * time.Minute)
+
+	msgs := []string{"msg1", "msg2", "msg3"}
+	for _, m := range msgs {
+		_, err := inbox.Spool(ctx, []byte(m))
+		if err != nil {
+			t.Fatalf("Spool(%q) error: %v", m, err)
+		}
+	}
 
 	payloads, err := inbox.DrainSpool(ctx)
 	if err != nil {
 		t.Fatalf("DrainSpool error: %v", err)
 	}
 	if len(payloads) != 3 {
-		t.Errorf("expected 3 payloads, got %d", len(payloads))
+		t.Fatalf("expected 3 payloads, got %d", len(payloads))
 	}
-	// Spool should be empty after drain
-	payloads2, _ := inbox.DrainSpool(ctx)
+
+	// Verify actual payload content (not just count).
+	found := map[string]bool{}
+	for _, p := range payloads {
+		found[string(p)] = true
+	}
+	for _, m := range msgs {
+		if !found[m] {
+			t.Errorf("expected payload %q in drained results", m)
+		}
+	}
+
+	// Spool must be empty after drain.
+	payloads2, err := inbox.DrainSpool(ctx)
+	if err != nil {
+		t.Fatalf("second DrainSpool error: %v", err)
+	}
 	if len(payloads2) != 0 {
 		t.Errorf("expected empty spool after drain, got %d", len(payloads2))
 	}
@@ -174,9 +204,12 @@ func TestFixVerify_31_1_6_ImmediateDecrypt(t *testing.T) {
 
 // TST-CORE-1037 Cross-node D2D: Alonso -> Sancho roundtrip
 func TestFixVerify_31_1_7_CrossNodeD2D_AlonsoToSancho(t *testing.T) {
-	// Test the D2D message wire format by creating a DinaMessage,
-	// marshaling it to JSON, and verifying the structure.
-	msg := testutil.D2DMessage{
+	// Test cross-node D2D message delivery using the PRODUCTION domain.DinaMessage
+	// through TransportService.StoreInbound / GetInbound — not the testutil fixture.
+	env := newTransportTestEnv(t)
+
+	// Positive: store a valid inbound D2D message from Alonso to Sancho.
+	msg := &domain.DinaMessage{
 		ID:          "msg_alonso_to_sancho_001",
 		Type:        "dina/social/arrival",
 		From:        "did:plc:alonso",
@@ -184,51 +217,38 @@ func TestFixVerify_31_1_7_CrossNodeD2D_AlonsoToSancho(t *testing.T) {
 		CreatedTime: time.Now().Unix(),
 		Body:        []byte(`{"text":"Sancho, saddle Rocinante!"}`),
 	}
+	env.svc.StoreInbound(msg)
 
-	data, err := json.Marshal(msg)
-	if err != nil {
-		t.Fatalf("Marshal error: %v", err)
+	// Retrieve and verify all fields survived the round-trip through production code.
+	inbox := env.svc.GetInbound()
+	if len(inbox) != 1 {
+		t.Fatalf("expected 1 inbound message, got %d", len(inbox))
 	}
+	got := inbox[0]
+	testutil.RequireEqual(t, got.ID, "msg_alonso_to_sancho_001")
+	testutil.RequireEqual(t, got.From, "did:plc:alonso")
+	if len(got.To) != 1 || got.To[0] != "did:plc:sancho" {
+		t.Fatalf("expected To=['did:plc:sancho'], got %v", got.To)
+	}
+	testutil.RequireEqual(t, string(got.Type), "dina/social/arrival")
+	testutil.RequireEqual(t, string(got.Body), `{"text":"Sancho, saddle Rocinante!"}`)
 
-	// Verify the JSON has all expected fields.
-	var m map[string]interface{}
-	if err := json.Unmarshal(data, &m); err != nil {
-		t.Fatalf("Unmarshal error: %v", err)
-	}
-
-	requiredFields := []string{"id", "type", "from", "to", "created_time", "body"}
-	for _, field := range requiredFields {
-		if _, ok := m[field]; !ok {
-			t.Errorf("missing required field %q in D2D message JSON", field)
-		}
-	}
-
-	// Verify sender and recipient.
-	if m["from"] != "did:plc:alonso" {
-		t.Errorf("expected from='did:plc:alonso', got %q", m["from"])
-	}
-	toSlice, ok := m["to"].([]interface{})
-	if !ok || len(toSlice) != 1 || toSlice[0] != "did:plc:sancho" {
-		t.Errorf("expected to=['did:plc:sancho'], got %v", m["to"])
-	}
-
-	// Verify round-trip: unmarshal back to D2DMessage.
-	var decoded testutil.D2DMessage
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("round-trip Unmarshal error: %v", err)
-	}
-	if decoded.ID != msg.ID {
-		t.Errorf("round-trip ID mismatch: got %q, want %q", decoded.ID, msg.ID)
-	}
-	if decoded.From != msg.From {
-		t.Errorf("round-trip From mismatch: got %q, want %q", decoded.From, msg.From)
+	// Negative: empty inbox after clear — proves GetInbound returns a copy, not alias.
+	env.svc.ClearInbound()
+	inbox2 := env.svc.GetInbound()
+	if len(inbox2) != 0 {
+		t.Fatalf("expected empty inbox after ClearInbound, got %d", len(inbox2))
 	}
 }
 
 // TST-CORE-1038 Cross-node D2D: Sancho -> Alonso roundtrip
 func TestFixVerify_31_1_8_CrossNodeD2D_SanchoToAlonso(t *testing.T) {
-	// Test the reverse direction: Sancho -> Alonso.
-	msg := testutil.D2DMessage{
+	// Test the reverse direction: Sancho → Alonso using PRODUCTION domain.DinaMessage
+	// through TransportService.StoreInbound / GetInbound.
+	env := newTransportTestEnv(t)
+
+	// Positive: store a response message from Sancho to Alonso.
+	msg := &domain.DinaMessage{
 		ID:          "msg_sancho_to_alonso_001",
 		Type:        "dina/response",
 		From:        "did:plc:sancho",
@@ -236,54 +256,45 @@ func TestFixVerify_31_1_8_CrossNodeD2D_SanchoToAlonso(t *testing.T) {
 		CreatedTime: time.Now().Unix(),
 		Body:        []byte(`{"text":"Rocinante is saddled, my lord."}`),
 	}
+	env.svc.StoreInbound(msg)
 
-	data, err := json.Marshal(msg)
-	if err != nil {
-		t.Fatalf("Marshal error: %v", err)
+	// Retrieve and verify all fields round-tripped through production code.
+	inbox := env.svc.GetInbound()
+	if len(inbox) != 1 {
+		t.Fatalf("expected 1 inbound message, got %d", len(inbox))
 	}
+	got := inbox[0]
+	testutil.RequireEqual(t, got.ID, "msg_sancho_to_alonso_001")
+	testutil.RequireEqual(t, got.From, "did:plc:sancho")
+	if len(got.To) != 1 || got.To[0] != "did:plc:alonso" {
+		t.Fatalf("expected To=['did:plc:alonso'], got %v", got.To)
+	}
+	testutil.RequireEqual(t, string(got.Type), "dina/response")
+	testutil.RequireEqual(t, string(got.Body), `{"text":"Rocinante is saddled, my lord."}`)
 
-	// Verify round-trip.
-	var decoded testutil.D2DMessage
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("round-trip Unmarshal error: %v", err)
+	// Negative: store a second message, verify ordering (FIFO).
+	msg2 := &domain.DinaMessage{
+		ID:   "msg_sancho_to_alonso_002",
+		Type: "dina/ack",
+		From: "did:plc:sancho",
+		To:   []string{"did:plc:alonso"},
 	}
-	if decoded.From != "did:plc:sancho" {
-		t.Errorf("expected From='did:plc:sancho', got %q", decoded.From)
+	env.svc.StoreInbound(msg2)
+	inbox2 := env.svc.GetInbound()
+	if len(inbox2) != 2 {
+		t.Fatalf("expected 2 inbound messages, got %d", len(inbox2))
 	}
-	if len(decoded.To) != 1 || decoded.To[0] != "did:plc:alonso" {
-		t.Errorf("expected To=['did:plc:alonso'], got %v", decoded.To)
-	}
-	if decoded.Type != "dina/response" {
-		t.Errorf("expected Type='dina/response', got %q", decoded.Type)
-	}
-
-	// Verify the envelope wrapper format as well.
-	envelope := testutil.D2DEnvelope{
-		Typ:        "application/dina-encrypted+json",
-		FromKID:    "did:plc:sancho#key-1",
-		ToKID:      "did:plc:alonso#key-1",
-		Ciphertext: "base64url-encoded-ciphertext-placeholder",
-		Sig:        "ed25519-signature-placeholder",
-	}
-	envData, err := json.Marshal(envelope)
-	if err != nil {
-		t.Fatalf("Marshal envelope error: %v", err)
-	}
-	var envMap map[string]interface{}
-	if err := json.Unmarshal(envData, &envMap); err != nil {
-		t.Fatalf("Unmarshal envelope error: %v", err)
-	}
-	for _, field := range []string{"typ", "from_kid", "to_kid", "ciphertext", "sig"} {
-		if _, ok := envMap[field]; !ok {
-			t.Errorf("missing required field %q in D2D envelope JSON", field)
-		}
-	}
+	testutil.RequireEqual(t, inbox2[0].ID, "msg_sancho_to_alonso_001")
+	testutil.RequireEqual(t, inbox2[1].ID, "msg_sancho_to_alonso_002")
 }
 
 // TST-CORE-1039 Cross-node D2D: multicast (Alonso -> all 3)
 func TestFixVerify_31_1_9_CrossNodeD2D_Multicast(t *testing.T) {
-	// Test multicast by creating a message with multiple recipients.
-	msg := testutil.D2DMessage{
+	// Test multicast using PRODUCTION domain.DinaMessage through TransportService.
+	env := newTransportTestEnv(t)
+
+	// Positive: store a multicast message with 3 recipients.
+	msg := &domain.DinaMessage{
 		ID:          "msg_multicast_001",
 		Type:        "dina/social/arrival",
 		From:        "did:plc:alonso",
@@ -291,27 +302,26 @@ func TestFixVerify_31_1_9_CrossNodeD2D_Multicast(t *testing.T) {
 		CreatedTime: time.Now().Unix(),
 		Body:        []byte(`{"text":"We ride at dawn!"}`),
 	}
+	env.svc.StoreInbound(msg)
 
-	data, err := json.Marshal(msg)
-	if err != nil {
-		t.Fatalf("Marshal error: %v", err)
+	// Retrieve and verify all 3 recipients survived the round-trip.
+	inbox := env.svc.GetInbound()
+	if len(inbox) != 1 {
+		t.Fatalf("expected 1 inbound message, got %d", len(inbox))
+	}
+	got := inbox[0]
+	testutil.RequireEqual(t, got.ID, "msg_multicast_001")
+	testutil.RequireEqual(t, got.From, "did:plc:alonso")
+	if len(got.To) != 3 {
+		t.Fatalf("expected 3 recipients, got %d", len(got.To))
 	}
 
-	var decoded testutil.D2DMessage
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("round-trip Unmarshal error: %v", err)
-	}
-
-	// Verify all 3 recipients are present.
-	if len(decoded.To) != 3 {
-		t.Fatalf("expected 3 recipients, got %d", len(decoded.To))
-	}
 	expectedRecipients := map[string]bool{
 		"did:plc:sancho":    false,
 		"did:plc:dulcinea":  false,
 		"did:plc:rocinante": false,
 	}
-	for _, r := range decoded.To {
+	for _, r := range got.To {
 		if _, ok := expectedRecipients[r]; !ok {
 			t.Errorf("unexpected recipient %q", r)
 		}
@@ -322,24 +332,21 @@ func TestFixVerify_31_1_9_CrossNodeD2D_Multicast(t *testing.T) {
 			t.Errorf("missing expected recipient %q", r)
 		}
 	}
+	testutil.RequireEqual(t, string(got.Body), `{"text":"We ride at dawn!"}`)
 
-	// Verify the wire format supports per-recipient delivery:
-	// In a real system, each recipient gets its own envelope.
-	for _, recipientDID := range decoded.To {
-		envelope := testutil.D2DEnvelope{
-			Typ:        "application/dina-encrypted+json",
-			FromKID:    "did:plc:alonso#key-1",
-			ToKID:      recipientDID + "#key-1",
-			Ciphertext: "per-recipient-encrypted-payload",
-			Sig:        "ed25519-signature",
-		}
-		envData, err := json.Marshal(envelope)
-		if err != nil {
-			t.Fatalf("Marshal envelope for %s error: %v", recipientDID, err)
-		}
-		if !json.Valid(envData) {
-			t.Errorf("invalid JSON for envelope to %s", recipientDID)
-		}
+	// Negative: single-recipient message must have exactly 1 To entry.
+	single := &domain.DinaMessage{
+		ID:   "msg_single_001",
+		From: "did:plc:alonso",
+		To:   []string{"did:plc:sancho"},
+	}
+	env.svc.StoreInbound(single)
+	inbox2 := env.svc.GetInbound()
+	if len(inbox2) != 2 {
+		t.Fatalf("expected 2 inbound messages, got %d", len(inbox2))
+	}
+	if len(inbox2[1].To) != 1 || inbox2[1].To[0] != "did:plc:sancho" {
+		t.Fatalf("single-recipient message corrupted: To=%v", inbox2[1].To)
 	}
 }
 
@@ -501,103 +508,143 @@ func TestFixVerify_31_2_4_ReasonResultFields(t *testing.T) {
 
 // TST-CORE-1050 Degradation signal in response
 func TestFixVerify_31_4_2_DegradationSignal(t *testing.T) {
-	// Verify that SearchMode constants exist and that a SearchQuery can
-	// represent hybrid mode. The actual fallback behavior from hybrid/semantic
-	// to FTS5 is in the SQLite vault adapter; here we test the domain contract.
+	// Test real degradation: VectorSearch on items without embeddings returns
+	// empty (degradation signal), while FTS5 Query on the same items succeeds.
+	// This proves the caller can detect degradation and fallback.
 
-	// Verify SearchMode constants are defined.
-	if domain.SearchHybrid != "hybrid" {
-		t.Errorf("expected SearchHybrid='hybrid', got %q", domain.SearchHybrid)
-	}
-	if domain.SearchSemantic != "semantic" {
-		t.Errorf("expected SearchSemantic='semantic', got %q", domain.SearchSemantic)
-	}
-	if domain.SearchFTS5 != "fts5" {
-		t.Errorf("expected SearchFTS5='fts5', got %q", domain.SearchFTS5)
-	}
+	ctx := context.Background()
+	mgr := realVaultManager
+	persona := domain.PersonaName("degradation-signal-test")
+	dek := make([]byte, 32)
+	copy(dek, []byte("degradation-signal-dek-key-12345"))
 
-	// Verify a SearchQuery with hybrid mode marshals correctly.
-	q := domain.SearchQuery{
-		Mode:           domain.SearchHybrid,
-		Query:          "test search",
-		IncludeContent: true,
-		Limit:          10,
+	if err := mgr.Open(ctx, persona, dek); err != nil {
+		t.Fatalf("Open vault: %v", err)
 	}
-	data, err := json.Marshal(q)
+	defer mgr.Close(persona)
+
+	// Store an item WITHOUT embeddings.
+	item := domain.VaultItem{
+		Type:      "note",
+		Summary:   "degradation test meeting agenda",
+		BodyText:  "Review Q4 targets and team capacity",
+		Timestamp: 5000,
+	}
+	_, err := mgr.Store(ctx, persona, item)
 	if err != nil {
-		t.Fatalf("Marshal error: %v", err)
-	}
-	var m map[string]interface{}
-	if err := json.Unmarshal(data, &m); err != nil {
-		t.Fatalf("Unmarshal error: %v", err)
+		t.Fatalf("Store: %v", err)
 	}
 
-	// The Mode field should be present in the serialized query.
-	if mode, ok := m["Mode"]; !ok || mode != "hybrid" {
-		t.Errorf("expected Mode='hybrid' in serialized query, got %v", m["Mode"])
+	// Semantic path: VectorSearch returns 0 results (degradation signal).
+	results, err := mgr.VectorSearch(ctx, persona, []float32{0.1, 0.2, 0.3}, 10)
+	if err != nil {
+		t.Fatalf("VectorSearch error: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("VectorSearch must return 0 for items without embeddings (degradation signal), got %d", len(results))
 	}
 
-	// Verify fallback progression: hybrid -> semantic -> fts5.
-	// This tests that the enum values support the documented degradation path.
-	fallbackOrder := []domain.SearchMode{domain.SearchHybrid, domain.SearchSemantic, domain.SearchFTS5}
-	if len(fallbackOrder) != 3 {
-		t.Errorf("expected 3 search modes in fallback chain")
+	// FTS5 path: Query finds the same item — proves fallback works.
+	ftsResults, err := mgr.Query(ctx, persona, domain.SearchQuery{
+		Mode:  domain.SearchFTS5,
+		Query: "degradation meeting",
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("Query (FTS5) error: %v", err)
 	}
-	if fallbackOrder[0] != domain.SearchHybrid {
-		t.Errorf("fallback chain should start with hybrid")
+	if len(ftsResults) == 0 {
+		t.Fatal("FTS5 Query must find the item that VectorSearch could not — fallback path broken")
 	}
-	if fallbackOrder[2] != domain.SearchFTS5 {
-		t.Errorf("fallback chain should end with fts5")
+
+	// Verify the three SearchMode constants are distinct (prevents typo collapse).
+	if domain.SearchHybrid == domain.SearchSemantic || domain.SearchSemantic == domain.SearchFTS5 || domain.SearchHybrid == domain.SearchFTS5 {
+		t.Fatal("SearchMode constants must all be distinct")
 	}
 }
 
 // TST-CORE-1051 Semantic query returns FTS5 with degradation flag
 func TestFixVerify_31_4_3_SemanticFallbackToFTS5(t *testing.T) {
-	// Test the domain-level contract: a SearchQuery with semantic mode
-	// can be downgraded to FTS5 by changing the Mode field.
-	// This proves the adapter can perform the fallback.
+	// Test the real fallback pattern: VectorSearch returns nothing when
+	// items have no embeddings, so the caller falls back to Query (FTS5).
+	// Both methods exercise real vault.Manager production code.
 
-	// Create a semantic query.
-	q := domain.SearchQuery{
-		Mode:           domain.SearchSemantic,
-		Query:          "important meeting notes",
-		IncludeContent: true,
-		Limit:          20,
-	}
-	if q.Mode != domain.SearchSemantic {
-		t.Fatalf("initial mode should be semantic, got %q", q.Mode)
-	}
+	ctx := context.Background()
+	mgr := realVaultManager
+	persona := domain.PersonaName("fallback-fts5-test")
+	dek := make([]byte, 32)
+	copy(dek, []byte("fallback-fts5-dek-test-key-12345"))
 
-	// Simulate the fallback that the vault adapter performs when
-	// semantic search is unavailable (no embeddings indexed).
-	// The adapter downgrades the mode to FTS5.
-	q.Mode = domain.SearchFTS5
-	if q.Mode != domain.SearchFTS5 {
-		t.Errorf("after fallback, mode should be fts5, got %q", q.Mode)
+	if err := mgr.Open(ctx, persona, dek); err != nil {
+		t.Fatalf("Open vault: %v", err)
 	}
+	defer mgr.Close(persona)
 
-	// Verify the query string and other fields survive the mode switch.
-	if q.Query != "important meeting notes" {
-		t.Errorf("query string changed during fallback: got %q", q.Query)
+	// Store items WITHOUT embeddings (simulating pre-embedding-migration data).
+	items := []domain.VaultItem{
+		{Type: "note", Summary: "important meeting notes from Monday", BodyText: "Discussed Q3 roadmap with the team.", Timestamp: 1000},
+		{Type: "note", Summary: "grocery list", BodyText: "Buy milk, eggs, and bread.", Timestamp: 2000},
+		{Type: "note", Summary: "important quarterly review", BodyText: "Review all meeting notes for Q3.", Timestamp: 3000},
 	}
-	if q.Limit != 20 {
-		t.Errorf("limit changed during fallback: got %d", q.Limit)
+	for _, item := range items {
+		if _, err := mgr.Store(ctx, persona, item); err != nil {
+			t.Fatalf("Store item: %v", err)
+		}
 	}
 
-	// Verify that SearchQuery can carry an embedding vector for semantic mode.
-	qWithEmbed := domain.SearchQuery{
-		Mode:      domain.SearchSemantic,
-		Query:     "test",
-		Embedding: []float32{0.1, 0.2, 0.3, 0.4},
-		Limit:     5,
+	// Step 1: Attempt VectorSearch (semantic mode) — should return empty
+	// because none of the items have embeddings.
+	queryVec := []float32{0.1, 0.2, 0.3, 0.4}
+	semanticResults, err := mgr.VectorSearch(ctx, persona, queryVec, 10)
+	if err != nil {
+		t.Fatalf("VectorSearch error: %v", err)
 	}
-	if len(qWithEmbed.Embedding) != 4 {
-		t.Errorf("expected 4 embedding dimensions, got %d", len(qWithEmbed.Embedding))
+	if len(semanticResults) != 0 {
+		t.Fatalf("VectorSearch should return 0 results for items without embeddings, got %d", len(semanticResults))
 	}
-	// After fallback to FTS5, embeddings would be ignored but the field remains.
-	qWithEmbed.Mode = domain.SearchFTS5
-	if len(qWithEmbed.Embedding) != 4 {
-		t.Error("embedding vector should persist even after mode fallback (adapter ignores it)")
+
+	// Step 2: Fallback to FTS5 text search via Query — should find matches.
+	ftsQuery := domain.SearchQuery{
+		Mode:  domain.SearchFTS5,
+		Query: "meeting notes",
+		Limit: 10,
+	}
+	ftsResults, err := mgr.Query(ctx, persona, ftsQuery)
+	if err != nil {
+		t.Fatalf("Query (FTS5 fallback) error: %v", err)
+	}
+	if len(ftsResults) != 2 {
+		t.Fatalf("FTS5 fallback should find 2 items matching 'meeting notes', got %d", len(ftsResults))
+	}
+
+	// Verify results are sorted by timestamp descending (most recent first).
+	if ftsResults[0].Timestamp <= ftsResults[1].Timestamp {
+		t.Errorf("expected descending timestamp order, got %d then %d",
+			ftsResults[0].Timestamp, ftsResults[1].Timestamp)
+	}
+
+	// Step 3: Now store an item WITH an embedding and verify VectorSearch
+	// finds it (confirming VectorSearch works when embeddings exist).
+	embeddedItem := domain.VaultItem{
+		Type:      "note",
+		Summary:   "embedded meeting notes",
+		BodyText:  "This item has an embedding vector.",
+		Timestamp: 4000,
+		Embedding: []float32{0.1, 0.2, 0.3, 0.4}, // matches query vector exactly
+	}
+	if _, err := mgr.Store(ctx, persona, embeddedItem); err != nil {
+		t.Fatalf("Store embedded item: %v", err)
+	}
+
+	semanticResults2, err := mgr.VectorSearch(ctx, persona, queryVec, 10)
+	if err != nil {
+		t.Fatalf("VectorSearch (with embeddings) error: %v", err)
+	}
+	if len(semanticResults2) != 1 {
+		t.Fatalf("VectorSearch should return 1 result for item with matching embedding, got %d", len(semanticResults2))
+	}
+	if semanticResults2[0].Summary != "embedded meeting notes" {
+		t.Errorf("VectorSearch returned wrong item: got %q", semanticResults2[0].Summary)
 	}
 }
 
@@ -607,9 +654,8 @@ func TestFixVerify_31_4_3_SemanticFallbackToFTS5(t *testing.T) {
 
 // TST-CORE-1052 PUT /v1/contacts/{did} updates contact name
 func TestFixVerify_31_5_1_UpdateContact(t *testing.T) {
-	// Use the real ContactDirectory from wiring_test.go.
-	cd := realContactDirectory
-	testutil.RequireImplementation(t, cd, "ContactDirectory")
+	// Fresh ContactDirectory per test — no shared state leaks.
+	cd := identity.NewContactDirectory()
 
 	ctx := context.Background()
 
@@ -617,62 +663,60 @@ func TestFixVerify_31_5_1_UpdateContact(t *testing.T) {
 	originalName := "Original Name"
 	updatedName := "Updated Name"
 
+	// Negative: Resolve on empty directory must fail.
+	_, err := cd.Resolve(ctx, originalName)
+	testutil.RequireError(t, err)
+
 	// Add a contact.
-	err := cd.Add(ctx, testDID, originalName, "trusted")
-	if err != nil {
-		t.Fatalf("Add contact error: %v", err)
-	}
+	err = cd.Add(ctx, testDID, originalName, "trusted")
+	testutil.RequireNoError(t, err)
 
 	// Verify the contact was added with the original name.
 	resolvedDID, err := cd.Resolve(ctx, originalName)
-	if err != nil {
-		t.Fatalf("Resolve error: %v", err)
-	}
-	if resolvedDID != testDID {
-		t.Errorf("Resolve returned wrong DID: got %q, want %q", resolvedDID, testDID)
-	}
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, resolvedDID, testDID)
+
+	// Verify trust level was stored correctly.
+	trust, err := cd.GetTrustLevel(ctx, testDID)
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, trust, "trusted")
 
 	// Update the contact name (this is what PUT /v1/contacts/{did} does).
 	err = cd.UpdateName(ctx, testDID, updatedName)
-	if err != nil {
-		t.Fatalf("UpdateName error: %v", err)
-	}
+	testutil.RequireNoError(t, err)
 
 	// Verify the name changed: old name should no longer resolve.
 	_, err = cd.Resolve(ctx, originalName)
-	if err == nil {
-		t.Error("expected error resolving old name after update, got nil")
-	}
+	testutil.RequireError(t, err)
 
 	// New name should resolve to the same DID.
 	resolvedDID, err = cd.Resolve(ctx, updatedName)
-	if err != nil {
-		t.Fatalf("Resolve updated name error: %v", err)
-	}
-	if resolvedDID != testDID {
-		t.Errorf("Resolve after update returned wrong DID: got %q, want %q", resolvedDID, testDID)
-	}
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, resolvedDID, testDID)
 
 	// Verify the contact appears in the list with the updated name.
 	contacts, err := cd.List(ctx)
-	if err != nil {
-		t.Fatalf("List error: %v", err)
-	}
-	found := false
-	for _, c := range contacts {
-		if c.DID == testDID {
-			found = true
-			if c.Name != updatedName {
-				t.Errorf("contact in list has wrong name: got %q, want %q", c.Name, updatedName)
-			}
-		}
-	}
-	if !found {
-		t.Error("contact not found in list after update")
-	}
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, len(contacts), 1)
+	testutil.RequireEqual(t, contacts[0].DID, testDID)
+	testutil.RequireEqual(t, contacts[0].Name, updatedName)
+	testutil.RequireEqual(t, contacts[0].TrustLevel, "trusted")
 
-	// Clean up.
-	_ = cd.Delete(ctx, testDID)
+	// Negative: UpdateName for non-existent DID must fail.
+	err = cd.UpdateName(ctx, "did:plc:nonexistent", "Foo")
+	testutil.RequireError(t, err)
+
+	// Delete and verify removal.
+	err = cd.Delete(ctx, testDID)
+	testutil.RequireNoError(t, err)
+
+	contacts2, err := cd.List(ctx)
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, len(contacts2), 0)
+
+	// Negative: Delete non-existent DID should not error (idempotent) or error.
+	// Either behavior is acceptable — just verify no panic.
+	_ = cd.Delete(ctx, "did:plc:nonexistent")
 }
 
 // TST-CORE-1054 Admin UI update calls core API (not vault hack)
@@ -680,8 +724,7 @@ func TestFixVerify_31_5_3_AdminUICallsCoreAPI(t *testing.T) {
 	// This test verifies the core API contract that the admin UI would call.
 	// The admin UI must use the ContactDirectory API (Add, UpdateName, UpdateTrust)
 	// rather than directly modifying the vault.
-	cd := realContactDirectory
-	testutil.RequireImplementation(t, cd, "ContactDirectory")
+	cd := identity.NewContactDirectory()
 
 	ctx := context.Background()
 	testDID := "did:plc:admin-ui-test"

@@ -2,7 +2,9 @@ package test
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
@@ -24,9 +26,23 @@ func TestWatchdog_20_3_10_SystemTicker_1HourInterval(t *testing.T) {
 	impl := realSystemWatchdog
 	testutil.RequireImplementation(t, impl, "SystemWatchdog")
 
+	beforeCall := time.Now().Unix()
 	report, err := impl.RunTick(wdCtx)
+	afterCall := time.Now().Unix()
 	testutil.RequireNoError(t, err)
-	testutil.RequireTrue(t, report.Timestamp > 0, "watchdog report must have timestamp")
+
+	// Timestamp must be within the call window, not just > 0.
+	testutil.RequireTrue(t, report.Timestamp >= beforeCall && report.Timestamp <= afterCall,
+		fmt.Sprintf("timestamp %d not in [%d,%d]", report.Timestamp, beforeCall, afterCall))
+
+	// Verify wired values are reflected in the report.
+	testutil.RequireTrue(t, report.ConnectorAlive, "connector should be alive (wired to true)")
+	testutil.RequireTrue(t, report.BrainHealthy, "brain should be healthy (wired to true)")
+	testutil.RequireEqual(t, report.DiskUsageBytes, int64(1000000))
+
+	// Purge counts must be non-negative (actual value depends on seeded state).
+	testutil.RequireTrue(t, report.AuditEntriesPurged >= 0, "audit purge count must be non-negative")
+	testutil.RequireTrue(t, report.CrashEntriesPurged >= 0, "crash purge count must be non-negative")
 }
 
 // TST-CORE-915

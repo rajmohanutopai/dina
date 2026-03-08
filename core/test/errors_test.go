@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/rajmohanutopai/dina/core/internal/adapter/server"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
@@ -43,23 +44,27 @@ func TestErrors_16_1_MalformedJSON(t *testing.T) {
 
 // TST-CORE-602
 func TestErrors_16_2_RequestBodyTooLarge(t *testing.T) {
-	// var impl testutil.ErrorHandler = realhandler.New(...)
 	impl := realErrorHandler
 	testutil.RequireImplementation(t, impl, "ErrorHandler")
 
-	// Body exceeding 10 MiB must be rejected with 413 Payload Too Large.
+	// MaxBodySize must be positive and match expected default (10 MiB).
 	maxSize := impl.MaxBodySize()
-	if maxSize <= 0 {
-		maxSize = 10 * 1024 * 1024 // 10 MiB default
-	}
-	oversizedBody := make([]byte, maxSize+1)
-	for i := range oversizedBody {
-		oversizedBody[i] = 'x'
-	}
+	testutil.RequireTrue(t, maxSize > 0, "MaxBodySize must be positive")
+	testutil.RequireEqual(t, maxSize, int64(10*1024*1024))
 
-	statusCode, _, err := impl.HandleRequest("POST", "/v1/vault/store", "application/json", oversizedBody)
+	// Body at exactly the limit must be accepted (boundary test).
+	atLimitBody := make([]byte, maxSize)
+	copy(atLimitBody, []byte(`{"persona":"personal","type":"email","source":"test","summary":"ok"}`))
+	statusCode, _, err := impl.HandleRequest("POST", "/v1/vault/store", "application/json", atLimitBody)
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, statusCode != 413, "body at exactly max size must not be rejected as too large")
+
+	// Body exceeding the limit by 1 byte must be rejected with 413.
+	oversizedBody := make([]byte, maxSize+1)
+	statusCode, respBody, err := impl.HandleRequest("POST", "/v1/vault/store", "application/json", oversizedBody)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, statusCode, 413)
+	testutil.RequireContains(t, string(respBody), "too large")
 }
 
 // --------------------------------------------------------------------------
@@ -73,9 +78,20 @@ func TestErrors_16_3_UnknownEndpoint(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "ErrorHandler")
 
 	// GET /v1/nonexistent must return 404 Not Found.
-	statusCode, _, err := impl.HandleRequest("GET", "/v1/nonexistent", "", nil)
+	statusCode, respBody, err := impl.HandleRequest("GET", "/v1/nonexistent", "", nil)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, statusCode, 404)
+	testutil.RequireTrue(t, len(respBody) > 0, "404 response must have a body")
+
+	// POST to unknown endpoint must also return 404.
+	statusCode2, _, err := impl.HandleRequest("POST", "/v1/does_not_exist", "application/json", []byte(`{}`))
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, statusCode2, 404)
+
+	// Positive control: known endpoint must NOT return 404.
+	statusCode3, _, err := impl.HandleRequest("GET", "/healthz", "", nil)
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, statusCode3, 200)
 }
 
 // --------------------------------------------------------------------------
@@ -88,10 +104,29 @@ func TestErrors_16_4_MethodNotAllowed(t *testing.T) {
 	impl := realErrorHandler
 	testutil.RequireImplementation(t, impl, "ErrorHandler")
 
+	// Verify the allowed method (GET) succeeds — proves the endpoint map
+	// recognises /healthz and doesn't blanket-reject everything.
+	statusOK, _, err := impl.HandleRequest("GET", "/healthz", "", nil)
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, statusOK, 200)
+
 	// DELETE on a GET-only endpoint must return 405 Method Not Allowed.
-	statusCode, _, err := impl.HandleRequest("DELETE", "/healthz", "", nil)
+	statusCode, respBody, err := impl.HandleRequest("DELETE", "/healthz", "", nil)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, statusCode, 405)
+	testutil.RequireContains(t, string(respBody), "method not allowed")
+
+	// POST on a GET-only endpoint must also return 405.
+	statusCode2, respBody2, err2 := impl.HandleRequest("POST", "/healthz", "application/json", []byte(`{}`))
+	testutil.RequireNoError(t, err2)
+	testutil.RequireEqual(t, statusCode2, 405)
+	testutil.RequireContains(t, string(respBody2), "method not allowed")
+
+	// PUT on a POST-only endpoint must return 405.
+	statusCode3, respBody3, err3 := impl.HandleRequest("PUT", "/v1/vault/store", "application/json", []byte(`{"type":"email"}`))
+	testutil.RequireNoError(t, err3)
+	testutil.RequireEqual(t, statusCode3, 405)
+	testutil.RequireContains(t, string(respBody3), "method not allowed")
 }
 
 // --------------------------------------------------------------------------
@@ -100,15 +135,39 @@ func TestErrors_16_4_MethodNotAllowed(t *testing.T) {
 
 // TST-CORE-605
 func TestErrors_16_5_ContentTypeEnforcement(t *testing.T) {
-	// var impl testutil.ErrorHandler = realhandler.New(...)
 	impl := realErrorHandler
 	testutil.RequireImplementation(t, impl, "ErrorHandler")
 
-	// POST without Content-Type: application/json must return 415.
 	body := []byte(`{"type": "email"}`)
+
+	// Wrong Content-Type must return 415.
 	statusCode, _, err := impl.HandleRequest("POST", "/v1/vault/store", "text/plain", body)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, statusCode, 415)
+
+	// Positive control: correct Content-Type must NOT return 415.
+	statusCode2, _, err := impl.HandleRequest("POST", "/v1/vault/store", "application/json", body)
+	testutil.RequireNoError(t, err)
+	if statusCode2 == 415 {
+		t.Fatal("application/json must not trigger 415 — positive control failed")
+	}
+
+	// Content-Type with charset suffix must also be accepted.
+	statusCode3, _, err := impl.HandleRequest("POST", "/v1/vault/store", "application/json; charset=utf-8", body)
+	testutil.RequireNoError(t, err)
+	if statusCode3 == 415 {
+		t.Fatal("application/json with charset must not trigger 415")
+	}
+
+	// Additional wrong types must also be rejected.
+	wrongTypes := []string{"text/html", "multipart/form-data", "application/xml"}
+	for _, ct := range wrongTypes {
+		sc, _, err := impl.HandleRequest("POST", "/v1/vault/store", ct, body)
+		testutil.RequireNoError(t, err)
+		if sc != 415 {
+			t.Fatalf("Content-Type %q should return 415, got %d", ct, sc)
+		}
+	}
 }
 
 // --------------------------------------------------------------------------
@@ -152,6 +211,21 @@ func TestErrors_16_6_ConcurrentVaultWrites(t *testing.T) {
 	// Both must succeed or at least not return corruption errors.
 	testutil.RequireNoError(t, err1)
 	testutil.RequireNoError(t, err2)
+
+	// Read back both items to verify no data corruption from concurrent writes.
+	got1, err := impl.GetItem(vaultCtx, domain.PersonaName(personaID), "concurrent-item-001")
+	testutil.RequireNoError(t, err)
+	if got1 == nil {
+		t.Fatal("concurrent-item-001 must be retrievable after concurrent write")
+	}
+	testutil.RequireEqual(t, got1.ID, "concurrent-item-001")
+
+	got2, err := impl.GetItem(vaultCtx, domain.PersonaName(personaID), "concurrent-item-002")
+	testutil.RequireNoError(t, err)
+	if got2 == nil {
+		t.Fatal("concurrent-item-002 must be retrievable after concurrent write")
+	}
+	testutil.RequireEqual(t, got2.ID, "concurrent-item-002")
 }
 
 // --------------------------------------------------------------------------
@@ -164,6 +238,14 @@ func TestErrors_16_7_DiskFull(t *testing.T) {
 	// The error handler must return a graceful error (not panic).
 	impl := realErrorHandler
 	testutil.RequireImplementation(t, impl, "ErrorHandler")
+
+	// Positive control: normal-sized body must succeed (proves handler is not always-413).
+	normalBody := []byte(`{"type":"email","source":"test","summary":"normal request"}`)
+	statusOK, _, err := impl.HandleRequest("POST", "/v1/vault/store", "application/json", normalBody)
+	testutil.RequireNoError(t, err)
+	if statusOK == 413 {
+		t.Fatal("normal-sized body must not trigger 413 — positive control failed")
+	}
 
 	// Create a body that exceeds the max body size (simulates resource exhaustion).
 	maxSize := impl.MaxBodySize()
@@ -183,9 +265,10 @@ func TestErrors_16_7_DiskFull(t *testing.T) {
 				didPanic = true
 			}
 		}()
-		statusCode, _, err := impl.HandleRequest("POST", "/v1/vault/store", "application/json", oversizedBody)
+		statusCode, respBody, err := impl.HandleRequest("POST", "/v1/vault/store", "application/json", oversizedBody)
 		testutil.RequireNoError(t, err)
 		testutil.RequireEqual(t, statusCode, 413)
+		testutil.RequireContains(t, string(respBody), "too large")
 	}()
 
 	testutil.RequireFalse(t, didPanic, "error handler must not panic on oversized request — graceful 413 required")
@@ -237,13 +320,24 @@ func TestErrors_16_8_VaultFileCorruption(t *testing.T) {
 
 // TST-CORE-609
 func TestErrors_16_9_GracefulShutdown(t *testing.T) {
-	// var impl testutil.Server = realserver.New(...)
-	impl := realServer
-	testutil.RequireImplementation(t, impl, "Server")
+	// Use a fresh server instance for lifecycle test (don't mutate shared realServer).
+	impl := server.NewServer()
 
-	// SIGTERM received: in-flight requests must complete, outbox flushed,
-	// connections closed. Shutdown() must return without error.
-	err := impl.Shutdown()
+	// Start the server first — shutdown without start should also be safe.
+	err := impl.ListenAndServe()
+	testutil.RequireNoError(t, err)
+
+	// Shutdown after start must succeed.
+	err = impl.Shutdown()
+	testutil.RequireNoError(t, err)
+
+	// Double-shutdown must be idempotent (no panic, no error).
+	err = impl.Shutdown()
+	testutil.RequireNoError(t, err)
+
+	// Shutdown without prior start (cold shutdown) must also be safe.
+	coldServer := server.NewServer()
+	err = coldServer.Shutdown()
 	testutil.RequireNoError(t, err)
 }
 

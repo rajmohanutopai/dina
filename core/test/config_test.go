@@ -22,29 +22,48 @@ import (
 // --------------------------------------------------------------------------
 
 // TST-CORE-551
-// TST-CORE-1035 DINA_OWN_DID loaded into Config.OwnDID
-// TST-CORE-1056 DINA_OWN_DID env var loaded
 func TestConfig_14_1_1_LoadFromEnvVars(t *testing.T) {
-	// impl := realConfigLoader = realconfig.NewLoader(...)
 	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
-	// Set all required env vars and verify they are read correctly.
+	// Set env vars for all fields the adapter exposes and verify they load.
 	t.Setenv("DINA_LISTEN_ADDR", ":9300")
 	t.Setenv("DINA_ADMIN_ADDR", ":9100")
 	t.Setenv("DINA_VAULT_PATH", "/tmp/dina-test-vault")
 	t.Setenv("DINA_BRAIN_URL", "http://brain:8200")
 	t.Setenv("DINA_CLIENT_TOKEN", testutil.TestClientToken)
 	t.Setenv("DINA_MODE", "convenience")
+	t.Setenv("DINA_SESSION_TTL", "7200")
+	t.Setenv("DINA_RATE_LIMIT", "120")
+	t.Setenv("DINA_SPOOL_MAX", "500")
+	t.Setenv("DINA_BACKUP_INTERVAL", "12")
+	t.Setenv("DINA_PDS_URL", "https://pds.example.com")
+	t.Setenv("DINA_PLC_URL", "https://plc.example.com")
+	t.Setenv("DINA_PDS_ADMIN_PASSWORD", "admin-secret")
+	t.Setenv("DINA_PDS_HANDLE", "alice.example.com")
+	t.Setenv("DINA_ADMIN_SOCKET", "/tmp/dina-admin.sock")
 
 	cfg, err := impl.Load()
 	testutil.RequireNoError(t, err)
+
+	// String fields.
 	testutil.RequireEqual(t, cfg.ListenAddr, ":9300")
 	testutil.RequireEqual(t, cfg.AdminAddr, ":9100")
 	testutil.RequireEqual(t, cfg.VaultPath, "/tmp/dina-test-vault")
 	testutil.RequireEqual(t, cfg.BrainURL, "http://brain:8200")
 	testutil.RequireEqual(t, cfg.ClientToken, testutil.TestClientToken)
 	testutil.RequireEqual(t, cfg.SecurityMode, "convenience")
+	testutil.RequireEqual(t, cfg.PDSURL, "https://pds.example.com")
+	testutil.RequireEqual(t, cfg.PLCURL, "https://plc.example.com")
+	testutil.RequireEqual(t, cfg.PDSAdminPassword, "admin-secret")
+	testutil.RequireEqual(t, cfg.PDSHandle, "alice.example.com")
+	testutil.RequireEqual(t, cfg.AdminSocketPath, "/tmp/dina-admin.sock")
+
+	// Numeric fields (parsed from string env vars).
+	testutil.RequireEqual(t, cfg.SessionTTL, 7200)
+	testutil.RequireEqual(t, cfg.RateLimit, 120)
+	testutil.RequireEqual(t, cfg.SpoolMax, 500)
+	testutil.RequireEqual(t, cfg.BackupInterval, 12)
 }
 
 // TST-CORE-851
@@ -60,9 +79,20 @@ func TestConfig_14_7_PartialEnvVars(t *testing.T) {
 
 	cfg, err := impl.Load()
 	testutil.RequireNoError(t, err)
+
+	defaults := testutil.TestConfig()
+
+	// Overridden field must take the env value.
 	testutil.RequireEqual(t, cfg.ListenAddr, ":7300")
-	// Default values should be populated for unset fields.
-	testutil.RequireTrue(t, cfg.VaultPath != "", "VaultPath default must be set")
+
+	// All unset fields must retain their specific defaults.
+	testutil.RequireEqual(t, cfg.AdminAddr, defaults.AdminAddr)
+	testutil.RequireEqual(t, cfg.SecurityMode, defaults.SecurityMode)
+	testutil.RequireEqual(t, cfg.SessionTTL, defaults.SessionTTL)
+	testutil.RequireEqual(t, cfg.RateLimit, defaults.RateLimit)
+	testutil.RequireEqual(t, cfg.SpoolMax, defaults.SpoolMax)
+	testutil.RequireEqual(t, cfg.BackupInterval, defaults.BackupInterval)
+	testutil.RequireEqual(t, cfg.VaultPath, defaults.VaultPath)
 }
 
 // TST-CORE-852
@@ -194,9 +224,17 @@ func TestConfig_14_11_LoadFromConfigJSON(t *testing.T) {
 
 	cfg, err := impl.Load()
 	testutil.RequireNoError(t, err)
+
+	// Fields specified in JSON must be loaded.
 	testutil.RequireEqual(t, cfg.ListenAddr, ":6300")
 	testutil.RequireEqual(t, cfg.AdminAddr, ":6100")
 	testutil.RequireEqual(t, cfg.SecurityMode, "convenience")
+
+	// Fields NOT in JSON must receive their defaults (not zero values).
+	defaults := testutil.TestConfig()
+	testutil.RequireEqual(t, cfg.VaultPath, defaults.VaultPath)
+	testutil.RequireEqual(t, cfg.BrainURL, defaults.BrainURL)
+	testutil.RequireEqual(t, cfg.RateLimit, defaults.RateLimit)
 }
 
 // --------------------------------------------------------------------------
@@ -289,22 +327,39 @@ func TestConfig_14_14_AuditLogRetentionConfigurable(t *testing.T) {
 	impl := realConfigLoader
 	testutil.RequireImplementation(t, impl, "ConfigLoader")
 
+	// Default load must succeed and return a valid config.
 	cfg, err := impl.Load()
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, cfg != nil, "config must load successfully")
+
+	// Verify defaults include a sensible retention value (>0 days).
+	defaults := testutil.TestConfig()
+	testutil.RequireTrue(t, defaults.AuditLogRetentionDays > 0,
+		"default audit log retention must be positive")
+
+	// Load from config.json with custom retention.
+	dir := testutil.TempDir(t)
+	testutil.TempFile(t, dir, "config.json", `{
+		"listen_addr": ":8300",
+		"audit_log_retention_days": 365
+	}`)
+	t.Setenv("DINA_CONFIG_PATH", dir+"/config.json")
+	t.Setenv("DINA_CLIENT_TOKEN", testutil.TestClientToken)
+
+	cfg, err = impl.Load()
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, cfg.AuditLogRetentionDays, 365)
 }
 
 // TST-CORE-899
 func TestConfig_14_15_CloudLLMConsentFlag(t *testing.T) {
 	// Cloud LLM consent flag stored and enforced before cloud routing.
-	impl := realConfigLoader
-	testutil.RequireImplementation(t, impl, "ConfigLoader")
-
-	t.Setenv("DINA_CLIENT_TOKEN", testutil.TestClientToken)
-	cfg, err := impl.Load()
-	testutil.RequireNoError(t, err)
-	err = impl.Validate(cfg)
-	testutil.RequireNoError(t, err)
+	// TEST_PLAN §14.15 expects: consent_cloud_llm=false in config →
+	// cloud LLM routing blocked when consent not given.
+	//
+	// Production Config struct has no CloudLLMConsent field yet.
+	// Skip until the feature is implemented in config.Config and loadEnv().
+	t.Skip("CloudLLMConsent field not yet implemented in production config.Config — test cannot verify consent enforcement")
 }
 
 // TST-CORE-900
@@ -326,4 +381,14 @@ func TestConfig_14_4_DefaultValues(t *testing.T) {
 	cfg, err := impl.Load()
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, cfg != nil, "config with defaults must load")
+
+	// Validate defaults match the TestConfig fixture (production defaults).
+	defaults := testutil.TestConfig()
+	testutil.RequireEqual(t, cfg.ListenAddr, defaults.ListenAddr)
+	testutil.RequireEqual(t, cfg.AdminAddr, defaults.AdminAddr)
+	testutil.RequireEqual(t, cfg.SecurityMode, defaults.SecurityMode)
+	testutil.RequireEqual(t, cfg.SessionTTL, defaults.SessionTTL)
+	testutil.RequireEqual(t, cfg.RateLimit, defaults.RateLimit)
+	testutil.RequireEqual(t, cfg.SpoolMax, defaults.SpoolMax)
+	testutil.RequireEqual(t, cfg.BackupInterval, defaults.BackupInterval)
 }

@@ -35,6 +35,20 @@ func NewOnboardingSequence() *OnboardingSequence {
 	return &OnboardingSequence{}
 }
 
+// ResetForTest clears all onboarding state so that the shared singleton
+// provides per-test isolation when called by testutil.RequireImplementation.
+func (o *OnboardingSequence) ResetForTest() {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.started = false
+	o.rootDID = ""
+	o.personas = nil
+	o.sharingRules = nil
+	o.securityMode = ""
+	o.steps = nil
+	o.backupDeferred = false
+}
+
 // StartOnboarding initiates the managed onboarding with email and passphrase.
 // Mnemonic generation is handled client-side (Python); Core returns empty string.
 func (o *OnboardingSequence) StartOnboarding(_ context.Context, email, passphrase string) (mnemonic string, err error) {

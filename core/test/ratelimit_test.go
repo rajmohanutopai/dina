@@ -2,7 +2,9 @@ package test
 
 import (
 	"testing"
+	"time"
 
+	"github.com/rajmohanutopai/dina/core/internal/adapter/auth"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
 
@@ -84,13 +86,21 @@ func TestRateLimit_13_3_AboveLimit(t *testing.T) {
 		limit = 60
 	}
 
-	for i := 0; i < limit; i++ {
+	// Positive control: the first request must be allowed.
+	first := impl.Check(ip)
+	testutil.RequireTrue(t, first.Allowed, "first request must be allowed")
+
+	// Consume remaining quota.
+	for i := 1; i < limit; i++ {
 		impl.Check(ip)
 	}
 
+	// Boundary: last in-limit request should have consumed all tokens.
 	// The next request exceeds the limit.
 	overflow := impl.Check(ip)
 	testutil.RequireFalse(t, overflow.Allowed, "request above limit must be rejected (429)")
+	testutil.RequireEqual(t, overflow.Remaining, 0)
+	testutil.RequireTrue(t, overflow.ResetAt > 0, "ResetAt must be set on rejection")
 }
 
 // --------------------------------------------------------------------------
@@ -99,27 +109,29 @@ func TestRateLimit_13_3_AboveLimit(t *testing.T) {
 
 // TST-CORE-548
 func TestRateLimit_13_4_Reset(t *testing.T) {
-	// var impl testutil.RateLimitChecker = reallimit.New(...)
-	impl := realRateLimitChecker
-	testutil.RequireImplementation(t, impl, "RateLimitChecker")
+	rl := auth.NewRateLimitChecker(10, 60)
+	testutil.RequireImplementation(t, rl, "RateLimitChecker")
 
 	ip := "192.168.1.40"
-	impl.Reset(ip)
 
-	// Exhaust the limit.
-	cfg := testutil.TestConfig()
-	limit := cfg.RateLimit
-	if limit <= 0 {
-		limit = 60
-	}
-	for i := 0; i < limit+1; i++ {
-		impl.Check(ip)
+	// Positive: first request allowed on fresh limiter.
+	first := rl.Check(ip)
+	testutil.RequireTrue(t, first.Allowed, "first request must be allowed")
+
+	// Exhaust the limit (10 total, 1 already consumed).
+	for i := 1; i < 10; i++ {
+		rl.Check(ip)
 	}
 
-	// After reset (simulating window expiry), requests must succeed again.
-	impl.Reset(ip)
-	result := impl.Check(ip)
-	testutil.RequireTrue(t, result.Allowed, "after reset/window expiry, requests must succeed")
+	// Verify limit is exhausted.
+	overflow := rl.Check(ip)
+	testutil.RequireFalse(t, overflow.Allowed, "request above limit must be rejected")
+
+	// After reset, requests must succeed again.
+	rl.Reset(ip)
+	result := rl.Check(ip)
+	testutil.RequireTrue(t, result.Allowed, "after reset, requests must succeed")
+	testutil.RequireTrue(t, result.Remaining > 0, "after reset, remaining must be positive")
 }
 
 // --------------------------------------------------------------------------
@@ -128,32 +140,32 @@ func TestRateLimit_13_4_Reset(t *testing.T) {
 
 // TST-CORE-549
 func TestRateLimit_13_5_PerIPIsolation(t *testing.T) {
-	// var impl testutil.RateLimitChecker = reallimit.New(...)
-	impl := realRateLimitChecker
-	testutil.RequireImplementation(t, impl, "RateLimitChecker")
+	rl := auth.NewRateLimitChecker(5, 60)
+	testutil.RequireImplementation(t, rl, "RateLimitChecker")
 
 	ipA := "10.0.0.1"
 	ipB := "10.0.0.2"
-	impl.Reset(ipA)
-	impl.Reset(ipB)
 
-	// Exhaust the limit for IP A.
-	cfg := testutil.TestConfig()
-	limit := cfg.RateLimit
-	if limit <= 0 {
-		limit = 60
-	}
-	for i := 0; i < limit+1; i++ {
-		impl.Check(ipA)
+	// Positive: both IPs start with full quota.
+	firstA := rl.Check(ipA)
+	testutil.RequireTrue(t, firstA.Allowed, "IP A first request must be allowed")
+	firstB := rl.Check(ipB)
+	testutil.RequireTrue(t, firstB.Allowed, "IP B first request must be allowed")
+
+	// Exhaust the remaining quota for IP A (4 already consumed for A, need 4 more).
+	for i := 1; i < 5; i++ {
+		rl.Check(ipA)
 	}
 
 	// IP A should be rate-limited.
-	resultA := impl.Check(ipA)
-	testutil.RequireFalse(t, resultA.Allowed, "IP A must be rate-limited")
+	overflowA := rl.Check(ipA)
+	testutil.RequireFalse(t, overflowA.Allowed, "IP A must be rate-limited after exhaustion")
+	testutil.RequireEqual(t, overflowA.Remaining, 0)
 
 	// IP B should still be allowed — tracked independently.
-	resultB := impl.Check(ipB)
+	resultB := rl.Check(ipB)
 	testutil.RequireTrue(t, resultB.Allowed, "IP B must not be affected by IP A's rate limit")
+	testutil.RequireTrue(t, resultB.Remaining > 0, "IP B remaining must be positive")
 }
 
 // --------------------------------------------------------------------------
@@ -162,18 +174,36 @@ func TestRateLimit_13_5_PerIPIsolation(t *testing.T) {
 
 // TST-CORE-550
 func TestRateLimit_13_6_RateLimitHeaders(t *testing.T) {
-	// var impl testutil.RateLimitChecker = reallimit.New(...)
 	impl := realRateLimitChecker
 	testutil.RequireImplementation(t, impl, "RateLimitChecker")
 
 	ip := "10.0.0.10"
 	impl.Reset(ip)
 
-	// Every response must include X-RateLimit-Remaining and X-RateLimit-Reset.
-	// The Check method returns these values in the RateLimitResult struct.
-	result := impl.Check(ip)
-	testutil.RequireTrue(t, result.Remaining >= 0,
-		"X-RateLimit-Remaining must be non-negative")
-	testutil.RequireTrue(t, result.ResetAt > 0,
-		"X-RateLimit-Reset must be a positive Unix timestamp")
+	// First request: must be allowed with Remaining = limit - 1.
+	first := impl.Check(ip)
+	testutil.RequireTrue(t, first.Allowed, "first request must be allowed")
+	testutil.RequireTrue(t, first.Remaining >= 0, "Remaining must be non-negative")
+
+	// ResetAt must be in the future (current time or later).
+	now := time.Now().Unix()
+	testutil.RequireTrue(t, first.ResetAt >= now,
+		"ResetAt must be in the future (window hasn't expired yet)")
+
+	// Second request: Remaining must decrement by 1.
+	second := impl.Check(ip)
+	testutil.RequireTrue(t, second.Allowed, "second request must be allowed")
+	testutil.RequireEqual(t, second.Remaining, first.Remaining-1)
+
+	// Exhaust remaining quota.
+	for i := 0; i < second.Remaining; i++ {
+		impl.Check(ip)
+	}
+
+	// After exhaustion: must be denied with Remaining == 0 and ResetAt still set.
+	denied := impl.Check(ip)
+	testutil.RequireFalse(t, denied.Allowed, "request above limit must be denied")
+	testutil.RequireEqual(t, denied.Remaining, 0)
+	testutil.RequireTrue(t, denied.ResetAt > 0,
+		"ResetAt must still be set when denied (tells client when to retry)")
 }

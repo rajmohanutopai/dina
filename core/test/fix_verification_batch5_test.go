@@ -10,6 +10,8 @@ import (
 
 	"github.com/rajmohanutopai/dina/core/internal/adapter/auth"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/pairing"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/server"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/transport"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
 
@@ -157,8 +159,11 @@ func TestSecFix_32_1_4_SafetyValveUnderLoad(t *testing.T) {
 func TestSecFix_32_2_1_InboundCapEnforced(t *testing.T) {
 	env := newTransportTestEnv(t)
 
-	// Store 100 messages and verify all are stored in order.
-	for i := 0; i < 100; i++ {
+	// The production hard cap is maxInboundMessages = 10000 (SEC-MED-09).
+	const cap = 10000
+
+	// Fill the inbox to exactly the cap.
+	for i := 0; i < cap; i++ {
 		msg := &domain.DinaMessage{
 			Type: "com.dina.test",
 			ID:   fmt.Sprintf("msg-%d", i),
@@ -168,11 +173,28 @@ func TestSecFix_32_2_1_InboundCapEnforced(t *testing.T) {
 	}
 
 	msgs := env.svc.GetInbound()
-	testutil.RequireEqual(t, len(msgs), 100)
+	testutil.RequireEqual(t, len(msgs), cap)
 
-	// Verify ordering is preserved.
+	// Verify ordering is preserved at capacity.
 	testutil.RequireEqual(t, msgs[0].ID, "msg-0")
-	testutil.RequireEqual(t, msgs[99].ID, "msg-99")
+	testutil.RequireEqual(t, msgs[cap-1].ID, fmt.Sprintf("msg-%d", cap-1))
+
+	// Store one more message beyond the cap — should trigger FIFO eviction
+	// of the oldest message (msg-0), keeping total at cap.
+	env.svc.StoreInbound(&domain.DinaMessage{
+		Type: "com.dina.test",
+		ID:   "msg-overflow",
+		Body: []byte("overflow"),
+	})
+
+	msgs = env.svc.GetInbound()
+	testutil.RequireEqual(t, len(msgs), cap)
+
+	// The oldest message (msg-0) should have been evicted.
+	testutil.RequireEqual(t, msgs[0].ID, "msg-1")
+
+	// The overflow message should be at the end.
+	testutil.RequireEqual(t, msgs[cap-1].ID, "msg-overflow")
 }
 
 // TST-CORE-1063
@@ -195,19 +217,29 @@ func TestSecFix_32_2_2_InboundClearWorks(t *testing.T) {
 
 // TST-CORE-1064
 func TestSecFix_32_3_1_PerDIDRateIsolation(t *testing.T) {
-	impl := realInboxManager
+	// Create a fresh InboxManager with a low per-DID rate limit so we can
+	// actually exhaust one DID's quota and verify the other is unaffected.
+	cfg := transport.DefaultInboxConfig()
+	cfg.DIDRateLimit = 5
+	impl := transport.NewInboxManager(cfg)
 
-	// Use 5 requests from DID-A (should all pass since default limit is higher).
+	// Exhaust DID-A's rate limit (5 allowed, 6th should be rejected).
 	for i := 0; i < 5; i++ {
 		testutil.RequireTrue(t, impl.CheckDIDRate("did:key:z6MkIsolationA"),
 			fmt.Sprintf("DID-A request %d should pass", i))
 	}
+	testutil.RequireFalse(t, impl.CheckDIDRate("did:key:z6MkIsolationA"),
+		"DID-A should be rate-limited after exhausting quota")
 
-	// DID-B should have an independent counter — all should pass.
+	// DID-B must have an independent counter — all 5 should pass despite
+	// DID-A being fully exhausted (proves per-DID isolation).
 	for i := 0; i < 5; i++ {
 		testutil.RequireTrue(t, impl.CheckDIDRate("did:key:z6MkIsolationB"),
-			fmt.Sprintf("DID-B request %d should pass", i))
+			fmt.Sprintf("DID-B request %d should pass (isolation from DID-A)", i))
 	}
+	// And DID-B should also hit its own limit at the 6th call.
+	testutil.RequireFalse(t, impl.CheckDIDRate("did:key:z6MkIsolationB"),
+		"DID-B should be rate-limited after exhausting its own quota")
 }
 
 // TST-CORE-1065
@@ -350,14 +382,23 @@ func TestSecFix_32_5_1_WellKnownIdempotent(t *testing.T) {
 	impl := realATProtoDiscovery
 	testutil.RequireImplementation(t, impl, "ATProtoDiscovery")
 
-	// First call should return a DID.
+	// Positive: first call should return a DID with correct prefix.
 	did1, err := impl.GetATProtoDID()
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(did1) > 0, "DID must not be empty")
 	testutil.RequireContains(t, did1, "did:")
 
-	// Second call should also return the same DID (not error).
+	// Idempotency: second call returns the same DID.
 	did2, err := impl.GetATProtoDID()
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, did1, did2)
+
+	// Negative: ATProtoDiscovery with empty rootDID must return error.
+	var emptyImpl testutil.ATProtoDiscovery = server.NewATProtoDiscovery("")
+	_, err = emptyImpl.GetATProtoDID()
+	testutil.RequireError(t, err)
+
+	// HasRootDID must reflect the state accurately.
+	testutil.RequireTrue(t, impl.HasRootDID(), "configured instance must have root DID")
+	testutil.RequireFalse(t, emptyImpl.HasRootDID(), "empty instance must not have root DID")
 }
