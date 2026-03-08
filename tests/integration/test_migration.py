@@ -41,12 +41,26 @@ class TestSchemaMigration:
     ) -> None:
         """When the application upgrades, the schema version is bumped and
         migration is applied to all vaults."""
+        # Pre-condition: starts at version 1 with no migrations applied
         assert mock_schema_migration.current_version == 1
+        assert len(mock_schema_migration.applied) == 0
+        assert mock_schema_migration.backup is None
 
         success = mock_schema_migration.apply(2, mock_vault)
         assert success is True
         assert mock_schema_migration.current_version == 2
         assert 2 in mock_schema_migration.applied
+
+        # Pre-flight backup was created during migration
+        assert mock_schema_migration.backup is not None
+
+        # Counter-proof: failed migration does NOT bump version
+        mock_schema_migration.set_integrity_failure()
+        failed = mock_schema_migration.apply(3, mock_vault)
+        assert failed is False
+        assert mock_schema_migration.current_version == 2  # unchanged
+        assert 3 not in mock_schema_migration.applied
+        assert mock_schema_migration.rolled_back is True
 
 # TST-INT-325
     def test_data_preserved_across_upgrade(
@@ -103,6 +117,9 @@ class TestSchemaMigration:
     ) -> None:
         """Old config format is auto-converted to the new format during
         migration. The legacy keys are replaced by their new equivalents."""
+        # Pre-condition: no config stored
+        assert mock_vault.retrieve(0, "config") is None
+
         # Old-style flat config
         old_config = {
             "llm_provider": "ollama",
@@ -112,10 +129,15 @@ class TestSchemaMigration:
         }
         mock_vault.store(0, "config", old_config)
 
+        # Verify old format was stored
+        pre_migration = mock_vault.retrieve(0, "config")
+        assert "llm_provider" in pre_migration
+        assert "DINA_LIGHT" not in pre_migration
+
         # Migration converts to new provider/model format
         new_config = {
-            "DINA_LIGHT": f"{old_config['llm_provider']}/{old_config['llm_model']}",
-            "DINA_EMBED": f"{old_config['embed_provider']}/{old_config['embed_model']}",
+            "DINA_LIGHT": f"{pre_migration['llm_provider']}/{pre_migration['llm_model']}",
+            "DINA_EMBED": f"{pre_migration['embed_provider']}/{pre_migration['embed_model']}",
         }
         mock_vault.store(0, "config", new_config)
 
@@ -123,9 +145,12 @@ class TestSchemaMigration:
         assert "DINA_LIGHT" in stored
         assert stored["DINA_LIGHT"] == "ollama/gemma3"
         assert stored["DINA_EMBED"] == "ollama/nomic-embed-text"
-        # Old keys are gone
+        # Old keys are gone (overwrite replaces entirely)
         assert "llm_provider" not in stored
         assert "llm_model" not in stored
+
+        # Config is in Tier 0 (system), not in other tiers
+        assert mock_vault.retrieve(1, "config") is None
 
 # TST-INT-333
     def test_schema_migration_identity_sqlite(
@@ -165,18 +190,22 @@ class TestSchemaMigration:
         """Persona vault schemas are migrated per-partition. Each persona's
         encrypted data survives the migration."""
         # Store data in consumer and health persona partitions
-        consumer = mock_identity.derive_persona(PersonaType.CONSUMER)
-        health = mock_identity.derive_persona(PersonaType.HEALTH)
-
         mock_vault.store(1, "purchase_history", {"items": 5},
                          persona=PersonaType.CONSUMER)
         mock_vault.store(1, "health_record", {"bp": "120/80"},
                          persona=PersonaType.HEALTH)
 
+        # Pre-condition: cross-partition isolation — consumer can't see health
+        assert mock_vault.retrieve(1, "health_record",
+                                   persona=PersonaType.CONSUMER) is None
+        assert mock_vault.retrieve(1, "purchase_history",
+                                   persona=PersonaType.HEALTH) is None
+
         success = mock_schema_migration.apply(2, mock_vault)
         assert success is True
+        assert mock_schema_migration.current_version == 2
 
-        # Both partitions preserved
+        # Both partitions preserved after migration
         consumer_data = mock_vault.retrieve(1, "purchase_history",
                                             persona=PersonaType.CONSUMER)
         health_data = mock_vault.retrieve(1, "health_record",
@@ -185,6 +214,15 @@ class TestSchemaMigration:
         assert consumer_data["items"] == 5
         assert health_data is not None
         assert health_data["bp"] == "120/80"
+
+        # Cross-partition isolation still holds after migration
+        assert mock_vault.retrieve(1, "health_record",
+                                   persona=PersonaType.CONSUMER) is None
+        assert mock_vault.retrieve(1, "purchase_history",
+                                   persona=PersonaType.HEALTH) is None
+
+        # Backup was created during migration
+        assert mock_schema_migration.backup is not None
 
 # TST-INT-335
     def test_schema_migration_partial_failure(
@@ -270,26 +308,52 @@ class TestExportImport:
     ) -> None:
         """A full export followed by import into a fresh vault preserves
         all data."""
-        # Populate vault
+        # Pre-condition: archive is empty
+        assert mock_export_archive.checksum == ""
+        assert mock_export_archive.did == ""
+        assert mock_export_archive.data == {}
+
+        # Populate vault with data across multiple tiers
         mock_vault.store(1, "verdict_laptop", {"product": "ThinkPad", "rating": 92})
         mock_vault.store(1, "contact_bob", {"name": "Bob", "ring": "verified"})
         mock_vault.store(0, "config", {"DINA_LIGHT": "ollama/gemma3"})
+
+        # Pre-condition: fresh vault starts empty
+        fresh_vault = MockVault()
+        assert fresh_vault.retrieve(1, "verdict_laptop") is None
+        assert fresh_vault.retrieve(0, "config") is None
 
         # Export
         mock_export_archive.export_from(mock_vault, mock_identity)
         assert mock_export_archive.checksum != ""
         assert mock_export_archive.did == mock_identity.root_did
+        assert mock_export_archive.exported_at > 0
 
         # Import into a fresh vault
-        fresh_vault = MockVault()
         success = mock_export_archive.import_into(fresh_vault, mock_identity)
         assert success is True
 
-        # All data present in fresh vault
-        assert fresh_vault.retrieve(1, "verdict_laptop") is not None
-        assert fresh_vault.retrieve(1, "verdict_laptop")["rating"] == 92
-        assert fresh_vault.retrieve(1, "contact_bob")["name"] == "Bob"
-        assert fresh_vault.retrieve(0, "config")["DINA_LIGHT"] == "ollama/gemma3"
+        # All data present in fresh vault — verify each field
+        laptop = fresh_vault.retrieve(1, "verdict_laptop")
+        assert laptop is not None
+        assert laptop["product"] == "ThinkPad"
+        assert laptop["rating"] == 92
+
+        contact = fresh_vault.retrieve(1, "contact_bob")
+        assert contact is not None
+        assert contact["name"] == "Bob"
+        assert contact["ring"] == "verified"
+
+        config = fresh_vault.retrieve(0, "config")
+        assert config is not None
+        assert config["DINA_LIGHT"] == "ollama/gemma3"
+
+        # Counter-proof: original vault still has its data (export is non-destructive)
+        assert mock_vault.retrieve(1, "verdict_laptop")["rating"] == 92
+        assert mock_vault.retrieve(1, "contact_bob")["name"] == "Bob"
+
+        # Counter-proof: key not in original vault is also absent in fresh vault
+        assert fresh_vault.retrieve(1, "nonexistent_key") is None
 
 # TST-INT-329
     def test_export_import_preserves_did_identity(
@@ -323,14 +387,24 @@ class TestExportImport:
         mock_vault.store(1, "original_data", {"safe": True})
         mock_export_archive.export_from(mock_vault, mock_identity)
 
-        # Tamper with the archive
+        # Positive proof: untampered import works
+        clean_vault = MockVault()
+        clean_success = mock_export_archive.import_into(clean_vault, mock_identity)
+        assert clean_success is True
+        assert clean_vault.retrieve(1, "original_data") == {"safe": True}
+
+        # Now tamper with the archive
         mock_export_archive.tamper()
 
+        # Tampered import fails
         fresh_vault = MockVault()
         success = mock_export_archive.import_into(fresh_vault, mock_identity)
         assert success is False
         # Fresh vault remains empty — no partial import
         assert fresh_vault.retrieve(1, "original_data") is None
+
+        # Original vault untouched by failed import
+        assert mock_vault.retrieve(1, "original_data") == {"safe": True}
 
 
 # ---------------------------------------------------------------------------

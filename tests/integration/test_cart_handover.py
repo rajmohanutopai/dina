@@ -70,24 +70,52 @@ class TestCartHandover:
     def test_never_holds_payment_info(
         self, mock_dina: MockDinaCore,
     ) -> None:
-        """Dina's vault must never store raw payment credentials. The vault
-        tiers should be free of card numbers, PINs, and wallet keys."""
+        """Dina's vault must never store raw payment credentials.  The staging
+        tier stores payment intents (URIs/links) but never raw credentials.
+        Cart Handover: Dina advises, user pays."""
         vault = mock_dina.vault
+        staging = mock_dina.staging
 
-        # Store some legitimate user data
+        # Store legitimate user preferences — these ARE allowed
         vault.store(1, "preference_laptop", {
             "category": "laptops",
             "budget": "150000-200000_INR",
             "priority": "battery_life",
         })
+        retrieved = vault.retrieve(1, "preference_laptop")
+        assert retrieved is not None
+        assert retrieved["category"] == "laptops"
 
-        # Verify no payment-sensitive data is in the vault
-        for tier_num, tier_data in vault._tiers.items():
-            tier_str = str(tier_data)
-            assert "4111-2222-3333-4444" not in tier_str
-            assert "upi_pin" not in tier_str.lower()
-            assert "private_key" not in tier_str.lower()
-            assert "cvv" not in tier_str.lower()
+        # Payment intents go to staging, not vault — they contain
+        # links/URIs, never raw credentials
+        intent = PaymentIntent(
+            intent_id="pay_test_no_creds",
+            method="upi",
+            intent_uri="upi://pay?pa=merchant@upi&am=5000&cu=INR",
+            merchant="SafeShop",
+            amount=5000.0,
+            currency="INR",
+        )
+        staging.store_payment_intent(intent)
+
+        # Intent exists in staging, not in vault
+        assert staging.get("pay_test_no_creds") is not None
+        assert vault.retrieve(1, "pay_test_no_creds") is None, (
+            "Payment intents must live in staging, not vault"
+        )
+
+        # The intent URI contains no raw credentials
+        stored = staging.get("pay_test_no_creds")
+        intent_str = str(vars(stored))
+        for pattern in ("4111", "cvv", "private_key", "password", "PIN"):
+            assert pattern not in intent_str, (
+                f"Payment intent must not contain '{pattern}'"
+            )
+
+        # Counter-proof: the intent IS accessible and has correct data
+        assert stored.method == "upi"
+        assert stored.executed is False
+        assert stored.amount == 5000.0
 
 # TST-INT-455
     def test_handover_with_link(
@@ -197,22 +225,32 @@ class TestCartHandover:
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
     ) -> None:
         """Dina's silence classifier flags content containing scam or fraud
-        keywords as Tier 1 (fiduciary — must warn user)."""
+        keywords as Tier 1 (fiduciary — must warn user).  Legitimate
+        recommendations are NOT flagged (counter-proof)."""
+        from tests.integration.mocks import SilenceTier
         classifier = mock_dina.classifier
 
-        # Classify a deceptive ad
+        # Counter-proof: a legitimate recommendation is NOT fiduciary
+        legit_tier = classifier.classify(
+            event_type="product_recommendation",
+            content="The ThinkPad X1 Carbon scored 92/100 from MKBHD. "
+                    "Great keyboard, solid battery life.",
+        )
+        assert legit_tier == SilenceTier.TIER_3_ENGAGEMENT, (
+            "Legitimate recommendation must NOT be flagged as fiduciary"
+        )
+
+        # Classify a deceptive ad — "scam" and "fraud" are fiduciary keywords
         tier = classifier.classify(
             event_type="product_recommendation",
             content="AMAZING DEAL! This is definitely not a scam or fraud. "
                     "Limited stock — buy now before it's gone!",
         )
-
-        # "scam" and "fraud" are fiduciary keywords — must interrupt
-        from tests.integration.mocks import SilenceTier
         assert tier == SilenceTier.TIER_1_FIDUCIARY
 
         # The classification log should record the match
-        assert len(classifier.classification_log) >= 1
-        last_log = classifier.classification_log[-1]
-        assert last_log["tier"] == SilenceTier.TIER_1_FIDUCIARY
-        assert last_log["reason"] == "keyword_match"
+        fiduciary_logs = [e for e in classifier.classification_log
+                          if e["tier"] == SilenceTier.TIER_1_FIDUCIARY]
+        assert len(fiduciary_logs) == 1
+        assert fiduciary_logs[0]["reason"] == "keyword_match"
+        assert fiduciary_logs[0]["event_type"] == "product_recommendation"

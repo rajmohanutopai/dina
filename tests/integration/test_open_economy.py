@@ -89,6 +89,9 @@ class TestDirectTransactions:
     ):
         """Even with open protocols, the user can still choose to buy via
         Amazon/Flipkart — Dina presents both options."""
+        # Pre-condition: no purchase channels configured
+        assert mock_dina.vault.retrieve(0, "purchase_channels") is None
+
         mock_dina.vault.store(0, "purchase_channels", {
             "open_protocol": True,
             "amazon": True,
@@ -98,7 +101,25 @@ class TestDirectTransactions:
         channels = mock_dina.vault.retrieve(0, "purchase_channels")
         assert channels["open_protocol"] is True
         assert channels["amazon"] is True
-        # User freedom: all channels available, none blocked
+        assert channels["flipkart"] is True
+
+        # User freedom: all three channels present — none blocked
+        assert len(channels) == 3
+
+        # Counter-proof: disabling a channel is the user's choice, not Dina's
+        # Overwrite with amazon disabled — vault accepts the update
+        mock_dina.vault.store(0, "purchase_channels", {
+            "open_protocol": True,
+            "amazon": False,
+            "flipkart": True,
+        })
+        updated = mock_dina.vault.retrieve(0, "purchase_channels")
+        assert updated["amazon"] is False
+        assert updated["open_protocol"] is True
+
+        # Counter-proof: channel config is stored in Tier 0 (identity),
+        # not in Tier 1 (personal data) — it's a system preference
+        assert mock_dina.vault.retrieve(1, "purchase_channels") is None
 
 # TST-INT-515
     def test_negotiates_with_seller(
@@ -336,6 +357,24 @@ class TestMultiPartyCoordination:
         assert mock_p2p.send(delivery) is True
 
         # All three messages are in the channel
+        assert len(mock_p2p.messages) == 3
+
+        # Verify message routing: each message reached intended recipient
+        assert mock_p2p.messages[0].to_did == mock_seller_dina.identity.root_did
+        assert mock_p2p.messages[1].to_did == logistics_dina.identity.root_did
+        assert mock_p2p.messages[2].to_did == mock_dina.identity.root_did
+
+        # Counter-proof: unauthenticated party cannot send messages
+        rogue_dina = MockDinaCore()
+        # rogue_dina is NOT added to authenticated_peers
+        rogue_msg = DinaMessage(
+            type="dina/commerce/purchase",
+            from_did=rogue_dina.identity.root_did,
+            to_did=mock_seller_dina.identity.root_did,
+            payload={"product_id": "stolen_item", "quantity": 999},
+        )
+        assert mock_p2p.send(rogue_msg) is False
+        # Message count unchanged — rogue message rejected
         assert len(mock_p2p.messages) == 3
 
 # TST-INT-519

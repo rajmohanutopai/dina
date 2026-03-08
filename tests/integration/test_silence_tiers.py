@@ -38,13 +38,31 @@ class TestTier1Fiduciary:
         self, mock_dina: MockDinaCore, mock_human: MockHuman
     ) -> None:
         """A malicious contract detection must interrupt immediately."""
+        # Counter-proof: a normal contract review is NOT fiduciary
+        normal_tier = mock_dina.classifier.classify(
+            "contract_review",
+            "This contract grants a standard 30-day return policy.",
+        )
+        assert normal_tier == SilenceTier.TIER_3_ENGAGEMENT, (
+            "Normal contract content must not trigger fiduciary alert"
+        )
+
+        # Malicious contract triggers Tier 1
         tier = mock_dina.classifier.classify(
             "contract_review",
             "This contract contains a malicious clause that forfeits all rights.",
         )
         assert tier == SilenceTier.TIER_1_FIDUCIARY
 
-        # Deliver the notification
+        # Verify classification log captures the reason
+        fiduciary_logs = [
+            e for e in mock_dina.classifier.classification_log
+            if e["tier"] == SilenceTier.TIER_1_FIDUCIARY
+        ]
+        assert len(fiduciary_logs) == 1
+        assert fiduciary_logs[0]["reason"] == "keyword_match"
+
+        # Deliver and verify notification reaches user at correct tier
         notification = Notification(
             tier=tier,
             title="Malicious contract detected",
@@ -98,11 +116,33 @@ class TestTier1Fiduciary:
         self, mock_classifier: MockSilenceClassifier
     ) -> None:
         """Financial fraud triggers Tier 1."""
+        # Pre-condition: no classifications logged yet
+        assert len(mock_classifier.classification_log) == 0
+
         tier = mock_classifier.classify(
             "transaction_monitor",
             "Suspicious fraud transaction of $5,000 to unknown account.",
         )
         assert tier == SilenceTier.TIER_1_FIDUCIARY
+
+        # Classification was logged
+        assert len(mock_classifier.classification_log) == 1
+        assert mock_classifier.classification_log[0]["reason"] == "keyword_match"
+
+        # Counter-proof: a normal transaction (no fraud keywords) is NOT Tier 1
+        normal_tier = mock_classifier.classify(
+            "transaction_monitor",
+            "Monthly salary deposit of $3,000 received.",
+        )
+        assert normal_tier != SilenceTier.TIER_1_FIDUCIARY, \
+            "Normal transaction must not trigger fiduciary alert"
+
+        # Counter-proof: different fiduciary keywords also trigger Tier 1
+        phishing_tier = mock_classifier.classify(
+            "email_scanner",
+            "Phishing attempt detected from unknown sender.",
+        )
+        assert phishing_tier == SilenceTier.TIER_1_FIDUCIARY
 
 
 # -----------------------------------------------------------------------
@@ -130,6 +170,30 @@ class TestTier2Solicited:
             "price_alert", "ThinkPad X1 Carbon dropped to 140,000 INR."
         )
         assert tier == SilenceTier.TIER_2_SOLICITED
+
+        # Classification logged with correct reason
+        log_entry = [
+            e for e in mock_classifier.classification_log
+            if e.get("event_type") == "price_alert"
+        ]
+        assert len(log_entry) >= 1
+        assert log_entry[0]["reason"] == "solicited_type"
+
+        # Counter-proof: an unsolicited marketing message is NOT Tier 2
+        marketing_tier = mock_classifier.classify(
+            "marketing_push",
+            "Amazing deal on ThinkPad X1 — buy now!",
+        )
+        assert marketing_tier == SilenceTier.TIER_3_ENGAGEMENT, \
+            "Unsolicited marketing must be Tier 3 (save for briefing)"
+
+        # Counter-proof: user can override price_alert to a different tier
+        mock_classifier.user_overrides["price_alert"] = SilenceTier.TIER_3_ENGAGEMENT
+        overridden_tier = mock_classifier.classify(
+            "price_alert", "MacBook Air dropped to 89,000 INR."
+        )
+        assert overridden_tier == SilenceTier.TIER_3_ENGAGEMENT, \
+            "User override must take precedence over default classification"
 
 # TST-INT-552
     def test_respects_timing(
@@ -233,15 +297,44 @@ class TestTier3Engagement:
     def test_tier_3_never_interrupts(
         self, mock_classifier: MockSilenceClassifier, mock_human: MockHuman
     ) -> None:
-        """Tier 3 events produce no immediate notification on their own."""
+        """Tier 3 events produce no immediate notification on their own.
+        Silence First: engagement content is saved for briefing, never pushed."""
+        # Pre-condition: no notifications
+        assert len(mock_human.notifications) == 0
+
+        # Classify a Tier 3 event
         tier = mock_classifier.classify(
             "content_recommendation",
             "You might enjoy this article about AI ethics.",
         )
         assert tier == SilenceTier.TIER_3_ENGAGEMENT
 
-        # User has received nothing yet -- Tier 3 waits for briefing
+        # Tier 3 → DO NOT notify immediately, save for briefing
+        # (The system should not call receive_notification for Tier 3)
         assert len(mock_human.notifications) == 0
+
+        # Counter-proof: Tier 1 (fiduciary) DOES produce immediate notification
+        fiduciary_tier = mock_classifier.classify(
+            "security_alert",
+            "Unauthorized access attempt detected on your account",
+        )
+        assert fiduciary_tier == SilenceTier.TIER_1_FIDUCIARY
+        # Fiduciary events must be delivered immediately
+        fiduciary_notif = Notification(
+            tier=fiduciary_tier,
+            title="Security Alert",
+            body="Unauthorized access attempt detected",
+        )
+        mock_human.receive_notification(fiduciary_notif)
+        assert len(mock_human.notifications) == 1
+        assert mock_human.notifications[0].tier == SilenceTier.TIER_1_FIDUCIARY
+
+        # Tier 3 should still NOT have been delivered — only the Tier 1 was
+        tier3_notifications = [
+            n for n in mock_human.notifications
+            if n.tier == SilenceTier.TIER_3_ENGAGEMENT
+        ]
+        assert len(tier3_notifications) == 0
 
 
 # -----------------------------------------------------------------------
@@ -290,6 +383,15 @@ class TestSilenceClassifier:
         self, mock_classifier: MockSilenceClassifier
     ) -> None:
         """Any content with harm keywords overrides default tier."""
+        # Counter-proof: 'social_feed' without harm keywords stays Tier 3
+        tier_normal = mock_classifier.classify(
+            "social_feed",
+            "Your friend posted a new photo.",
+        )
+        assert tier_normal == SilenceTier.TIER_3_ENGAGEMENT, (
+            "social_feed without harm keywords must remain Tier 3"
+        )
+
         # 'social_feed' would normally be Tier 3, but the content
         # mentions a security breach -- fiduciary duty takes over.
         tier = mock_classifier.classify(
@@ -297,6 +399,14 @@ class TestSilenceClassifier:
             "Your account has an unauthorized login from Russia.",
         )
         assert tier == SilenceTier.TIER_1_FIDUCIARY
+
+        # Classification log must show keyword_match reason, not default
+        fiduciary_logs = [
+            e for e in mock_classifier.classification_log
+            if e["tier"] == SilenceTier.TIER_1_FIDUCIARY
+        ]
+        assert len(fiduciary_logs) >= 1
+        assert fiduciary_logs[-1]["reason"] == "keyword_match"
 
 # TST-INT-559
     def test_user_can_override_tier(

@@ -67,12 +67,28 @@ class TestRing1Unverified:
         risk = mock_dina.classify_action_risk(intent)
         assert risk == ActionRisk.HIGH
 
-        # Even if the human has a default-approve policy, this should
-        # be flagged for explicit approval (the test proves the system
-        # asks, it does not silently auto-approve).
+        # Human explicitly rejects the transfer
         mock_human.set_approval("transfer_money", False)
         approved = mock_dina.approve_intent(intent, mock_human)
         assert approved is False
+
+        # Counter-proof: if human explicitly approves, it goes through
+        mock_human.set_approval("transfer_money", True)
+        approved_now = mock_dina.approve_intent(intent, mock_human)
+        assert approved_now is True, \
+            "Explicit human approval must override for HIGH risk"
+
+        # Counter-proof: a SAFE action (read/search) does not need approval
+        safe_intent = AgentIntent(
+            agent_did="did:plc:Anonymous123456789012345678",
+            action="search",
+            target="product_catalog",
+        )
+        safe_risk = mock_dina.classify_action_risk(safe_intent)
+        assert safe_risk == ActionRisk.SAFE
+        # SAFE actions pass without human involvement
+        safe_approved = mock_dina.approve_intent(safe_intent, mock_human)
+        assert safe_approved is True
 
 # TST-INT-571
     def test_low_trust_weight(
@@ -318,6 +334,7 @@ class TestRing3AndBeyond:
         self, mock_trust_evaluator: MockTrustEvaluator
     ) -> None:
         """Peer attestations (vouching) increase trust."""
+        # Pre-condition: scores start at 0 before any computation
         no_peers = mock_trust_evaluator.compute_composite(
             ring=TrustRing.RING_3_SKIN_IN_GAME,
             time_alive_days=365,
@@ -327,6 +344,8 @@ class TestRing3AndBeyond:
             peer_attestations=0,
             credential_count=0,
         )
+        assert no_peers > 0, "Non-zero inputs must produce a positive score"
+
         with_peers = mock_trust_evaluator.compute_composite(
             ring=TrustRing.RING_3_SKIN_IN_GAME,
             time_alive_days=365,
@@ -337,6 +356,35 @@ class TestRing3AndBeyond:
             credential_count=0,
         )
         assert with_peers > no_peers
+
+        # More peers → even higher trust (monotonic increase)
+        with_many_peers = mock_trust_evaluator.compute_composite(
+            ring=TrustRing.RING_3_SKIN_IN_GAME,
+            time_alive_days=365,
+            transaction_count=50,
+            transaction_volume=20000.0,
+            outcome_count=10,
+            peer_attestations=20,
+            credential_count=0,
+        )
+        assert with_many_peers > with_peers, (
+            "Peer attestation effect must be monotonically increasing"
+        )
+
+        # Counter-proof: zero peers on a lower ring still gets lower score
+        # than zero peers on Ring 3 (ring baseline matters)
+        ring2_no_peers = mock_trust_evaluator.compute_composite(
+            ring=TrustRing.RING_2_VERIFIED,
+            time_alive_days=365,
+            transaction_count=50,
+            transaction_volume=20000.0,
+            outcome_count=10,
+            peer_attestations=0,
+            credential_count=0,
+        )
+        assert ring2_no_peers < no_peers, (
+            "Ring 2 baseline must be lower than Ring 3 baseline"
+        )
 
 # TST-INT-580
     def test_time_factor(
@@ -531,6 +579,9 @@ class TestTrustComposite:
         """Bad outcomes reduce a bot's trust score over time."""
         bot_did = "did:plc:BadBot12345678901234567890ab"
 
+        # Pre-condition: unknown bot starts at default 50.0
+        assert mock_trust_network.get_bot_score(bot_did) == 50.0
+
         # Start with a decent score
         mock_trust_network.update_bot_score(bot_did, 40.0)
         initial = mock_trust_network.get_bot_score(bot_did)
@@ -543,6 +594,16 @@ class TestTrustComposite:
         degraded = mock_trust_network.get_bot_score(bot_did)
         assert degraded < initial
         assert degraded == 15.0  # 90 - 75
+
+        # Counter-proof: floor clamping — score cannot go below 0.0
+        for _ in range(10):
+            mock_trust_network.update_bot_score(bot_did, -50.0)
+        floored = mock_trust_network.get_bot_score(bot_did)
+        assert floored == 0.0
+
+        # Counter-proof: a different bot is unaffected
+        other_did = "did:plc:GoodBot1234567890123456789ab"
+        assert mock_trust_network.get_bot_score(other_did) == 50.0
 
 # TST-INT-585
     def test_trust_score_capped_at_100(
@@ -581,6 +642,9 @@ class TestTrustComposite:
         """Outcome reports are recorded regardless of reporter ring,
         but the ring is preserved for downstream weighting.
         """
+        # Pre-condition: no outcomes exist yet
+        assert len(mock_trust_network.outcomes) == 0
+
         for ring in TrustRing:
             outcome = OutcomeReport(
                 reporter_trust_ring=ring,
@@ -602,6 +666,31 @@ class TestTrustComposite:
             TrustRing.RING_2_VERIFIED,
             TrustRing.RING_3_SKIN_IN_GAME,
         }
+
+        # Verify individual outcome fields are preserved (not just the ring)
+        for outcome in mock_trust_network.outcomes:
+            assert outcome.product_id == "thinkpad_x1_2025"
+            assert outcome.purchase_verified is True
+            assert outcome.satisfaction == "positive"
+            assert outcome.reporter_age_days == 365
+
+        # Counter-proof: a negative outcome is also recorded faithfully
+        negative = OutcomeReport(
+            reporter_trust_ring=TrustRing.RING_3_SKIN_IN_GAME,
+            reporter_age_days=30,
+            product_category="laptops",
+            product_id="thinkpad_x1_2025",
+            purchase_verified=True,
+            time_since_purchase_days=10,
+            outcome="returned",
+            satisfaction="negative",
+        )
+        mock_trust_network.add_outcome(negative)
+        assert len(mock_trust_network.outcomes) == 4
+        neg_outcomes = [o for o in mock_trust_network.outcomes
+                        if o.satisfaction == "negative"]
+        assert len(neg_outcomes) == 1
+        assert neg_outcomes[0].outcome == "returned"
 
 # TST-INT-587
     def test_signed_tombstone_only_by_author(

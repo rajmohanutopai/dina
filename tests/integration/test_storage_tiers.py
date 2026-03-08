@@ -53,7 +53,8 @@ class TestTier0IdentityVault:
 
         In production: passphrase → Argon2id (KEK) → AES-256-GCM wraps the
         Master Key (DEK). Here we verify the mock produces a wrapped blob
-        that differs from the plaintext key.
+        that differs from the plaintext key, and that different passphrases
+        produce different wrapped outputs.
         """
         km = MockKeyManager(mock_identity)
         wrapped = km.key_wrap(
@@ -62,6 +63,25 @@ class TestTier0IdentityVault:
 
         assert wrapped.startswith("WRAPPED[")
         assert mock_identity.root_private_key not in wrapped
+
+        # Counter-proof: different passphrase produces different wrapped blob
+        wrapped_other = km.key_wrap(
+            mock_identity.root_private_key, passphrase="different-passphrase"
+        )
+        assert wrapped_other.startswith("WRAPPED[")
+        assert wrapped_other != wrapped, (
+            "Different passphrases must produce different wrapped blobs"
+        )
+
+        # Counter-proof: a different identity's key produces different wrap
+        other_identity = MockIdentity(did="did:plc:OTHER_KEYPAIR_TEST_001")
+        other_km = MockKeyManager(other_identity)
+        wrapped_other_id = other_km.key_wrap(
+            other_identity.root_private_key, passphrase="strong-passphrase"
+        )
+        assert wrapped_other_id != wrapped, (
+            "Same passphrase on different key must produce different wrap"
+        )
 
 # TST-INT-182
     def test_bip39_recovery_mnemonic_exists(
@@ -73,8 +93,26 @@ class TestTier0IdentityVault:
         """
         words = mock_identity.bip39_mnemonic.split()
         assert len(words) == 24, "BIP-39 mnemonic must be 24 words"
-        # Each word must be non-empty
         assert all(len(w) > 0 for w in words)
+
+        # Derive persona keys from this identity
+        km = MockKeyManager(mock_identity)
+        consumer_key = km.derive_persona_key(PersonaType.CONSUMER)
+        health_key = km.derive_persona_key(PersonaType.HEALTH)
+
+        # Keys are deterministic — re-deriving produces the same result
+        consumer_key_2 = km.derive_persona_key(PersonaType.CONSUMER)
+        assert consumer_key == consumer_key_2
+
+        # Different personas produce different keys
+        assert consumer_key != health_key
+
+        # Counter-proof: a different mnemonic (different identity) produces
+        # different keys — the mnemonic actually seeds derivation
+        other_identity = MockIdentity(did="did:plc:OTHER_IDENTITY_FOR_BIP39_TEST")
+        other_km = MockKeyManager(other_identity)
+        other_consumer_key = other_km.derive_persona_key(PersonaType.CONSUMER)
+        assert other_consumer_key != consumer_key
 
 # TST-INT-197
     def test_bip32_derivation_produces_child_keys(
@@ -100,6 +138,9 @@ class TestTier0IdentityVault:
 
         The derived DIDs share no common prefix beyond the method scheme.
         """
+        # Pre-condition: no personas derived yet
+        assert len(mock_identity.personas) == 0
+
         consumer = mock_identity.derive_persona(PersonaType.CONSUMER)
         health = mock_identity.derive_persona(PersonaType.HEALTH)
 
@@ -112,17 +153,20 @@ class TestTier0IdentityVault:
         health_suffix = health.did.split("z6Mk")[1]
         assert consumer_suffix != health_suffix
 
-        # Derived keys share no common pattern detectable by an observer
-        overlap = sum(
-            1 for a, b in zip(consumer.derived_key, health.derived_key)
-            if a == b
-        )
-        # With SHA-256, random overlap is ~1/16 per hex char; 64 chars
-        # means ~4 matches on average. Allow generous margin but ensure
-        # it is nowhere near identical.
-        assert overlap < len(consumer.derived_key), (
-            "Persona keys must not be identical"
-        )
+        # Derived keys must differ entirely
+        assert consumer.derived_key != health.derived_key
+
+        # Determinism: re-deriving same persona returns identical DID and key
+        consumer_again = mock_identity.derive_persona(PersonaType.CONSUMER)
+        assert consumer_again.did == consumer.did
+        assert consumer_again.derived_key == consumer.derived_key
+
+        # Counter-proof: different root identity produces different DIDs
+        # for the same persona type — no cross-identity linkability
+        other_identity = MockIdentity()
+        other_consumer = other_identity.derive_persona(PersonaType.CONSUMER)
+        assert other_consumer.did != consumer.did
+        assert other_consumer.derived_key != consumer.derived_key
 
 # TST-INT-183
     def test_root_key_stored_in_tier_0(
@@ -240,7 +284,8 @@ class TestTier1Vault:
     def test_data_encrypted_with_persona_key(
         self, mock_identity: MockIdentity, mock_vault: MockVault
     ) -> None:
-        """Data stored in Tier 1 is encrypted with the persona's key."""
+        """Data stored in Tier 1 is encrypted with the persona's key.
+        The correct persona can decrypt; a different persona cannot."""
         health = mock_identity.derive_persona(PersonaType.HEALTH)
 
         plaintext = "blood pressure: 120/80"
@@ -250,7 +295,26 @@ class TestTier1Vault:
         assert plaintext not in encrypted
         assert encrypted.startswith(f"ENC[{health.storage_partition}]:")
 
-        # Store the encrypted blob
+        # Correct persona can decrypt
+        decrypted = health.decrypt(encrypted)
+        assert decrypted == plaintext, (
+            "Same persona must decrypt its own encrypted data"
+        )
+
+        # Counter-proof: a different persona type CANNOT decrypt
+        consumer = mock_identity.derive_persona(PersonaType.CONSUMER)
+        cross_decrypt = consumer.decrypt(encrypted)
+        assert cross_decrypt is None, (
+            "Different persona must NOT decrypt another persona's data"
+        )
+
+        # Different persona produces different ciphertext for same plaintext
+        consumer_encrypted = consumer.encrypt(plaintext)
+        assert consumer_encrypted != encrypted, (
+            "Same plaintext under different personas must produce different ciphertext"
+        )
+
+        # Store and retrieve the encrypted blob — vault preserves it exactly
         mock_vault.store(
             tier=1, key="bp_reading", value=encrypted,
             persona=PersonaType.HEALTH,
@@ -265,6 +329,9 @@ class TestTier1Vault:
         self, mock_vault: MockVault
     ) -> None:
         """FTS5 full-text search indexes Tier 1 entries by keyword."""
+        # Pre-condition: no FTS results before indexing
+        assert mock_vault.search_fts("chair") == []
+
         mock_vault.store(tier=1, key="note_alpha",
                          value={"text": "ergonomic chair review"})
         mock_vault.index_for_fts("note_alpha",
@@ -275,13 +342,25 @@ class TestTier1Vault:
         mock_vault.index_for_fts("note_beta",
                                   "laptop battery life ThinkPad performance")
 
+        # "chair" matches only note_alpha
         results = mock_vault.search_fts("chair")
         assert "note_alpha" in results
         assert "note_beta" not in results
 
+        # "laptop" matches only note_beta
         results = mock_vault.search_fts("laptop")
         assert "note_beta" in results
         assert "note_alpha" not in results
+
+        # Counter-proof: non-matching query returns empty
+        results = mock_vault.search_fts("smartphone")
+        assert len(results) == 0
+
+        # Shared keyword matches both
+        results = mock_vault.search_fts("review")
+        assert "note_alpha" in results  # "ergonomic chair review"
+        # note_beta doesn't have "review" in its FTS text
+        assert "note_beta" not in results
 
 # TST-INT-217
     def test_fts5_search_case_insensitive(
@@ -418,6 +497,9 @@ class TestTier4Staging:
         self, mock_staging: MockStagingTier
     ) -> None:
         """Payment intents are staged for user review before execution."""
+        # Pre-condition: staging is empty
+        assert mock_staging.get("pay_001") is None
+
         intent = PaymentIntent(
             intent_id="pay_001",
             method="upi",
@@ -430,11 +512,18 @@ class TestTier4Staging:
         stored_id = mock_staging.store_payment_intent(intent)
         assert stored_id == "pay_001"
 
+        # Expiry auto-set by staging tier (72h default)
+        assert intent.expires_at > intent.created_at
+
         retrieved = mock_staging.get("pay_001")
         assert retrieved is not None
         assert retrieved.merchant == "ChairMaker Co."
         assert retrieved.amount == 95000.0
+        assert retrieved.currency == "INR"
         assert not retrieved.executed
+
+        # Counter-proof: non-existent intent returns None
+        assert mock_staging.get("pay_nonexistent") is None
 
 # TST-INT-561
     def test_payment_intent_also_expires(
@@ -506,9 +595,16 @@ class TestTier5DeepArchive:
 # TST-INT-216
     def test_encrypted_snapshots(self, mock_vault: MockVault) -> None:
         """Vault snapshots are created for archival purposes."""
+        # Pre-condition: empty vault snapshot has tiers but no data in tier 1
+        empty_snap = mock_vault.snapshot()
+        assert "tiers" in empty_snap
+        assert "timestamp" in empty_snap
+        assert len(empty_snap["tiers"].get(1, {})) == 0
+
         # Populate some data
         mock_vault.store(tier=1, key="note1", value="hello")
         mock_vault.store(tier=1, key="note2", value="world")
+        mock_vault.store(tier=5, key="archive1", value="deep")
 
         snapshot = mock_vault.snapshot()
 
@@ -516,30 +612,49 @@ class TestTier5DeepArchive:
         assert "timestamp" in snapshot
         assert snapshot["timestamp"] > 0
 
-        # Snapshot contains the data
+        # Snapshot contains the data from multiple tiers
         assert "note1" in snapshot["tiers"][1]
         assert snapshot["tiers"][1]["note1"] == "hello"
+        assert snapshot["tiers"][1]["note2"] == "world"
+        assert snapshot["tiers"][5]["archive1"] == "deep"
+
+        # Counter-proof: tier with no data is empty in snapshot
+        assert len(snapshot["tiers"].get(2, {})) == 0
 
 # TST-INT-209
     def test_immutable_archive(self, mock_vault: MockVault) -> None:
         """Archived data in Tier 5 is stored and cannot be accidentally
         overwritten by a Tier 1 store.
         """
+        # Pre-condition: archive key does not exist in any tier
+        assert mock_vault.retrieve(tier=5, key="archive_2025") is None
+        assert mock_vault.retrieve(tier=1, key="archive_2025") is None
+
         # Store in archive
         mock_vault.store(tier=5, key="archive_2025",
                          value={"year": 2025, "records": 1200})
 
-        # Store same key in Tier 1
+        # Verify archive stored correctly
+        archived = mock_vault.retrieve(tier=5, key="archive_2025")
+        assert archived["records"] == 1200
+
+        # Store same key in Tier 1 — must NOT affect Tier 5
         mock_vault.store(tier=1, key="archive_2025",
                          value={"year": 2025, "records": 0})
 
-        # Tier 5 is untouched
-        archived = mock_vault.retrieve(tier=5, key="archive_2025")
-        assert archived["records"] == 1200
+        # Tier 5 is untouched after Tier 1 write
+        archived_after = mock_vault.retrieve(tier=5, key="archive_2025")
+        assert archived_after["records"] == 1200
 
         # Tier 1 has its own copy
         tier1_copy = mock_vault.retrieve(tier=1, key="archive_2025")
         assert tier1_copy["records"] == 0
+
+        # Counter-proof: deleting Tier 1 copy does not affect Tier 5
+        deleted = mock_vault.delete(tier=1, key="archive_2025")
+        assert deleted is True
+        assert mock_vault.retrieve(tier=1, key="archive_2025") is None
+        assert mock_vault.retrieve(tier=5, key="archive_2025")["records"] == 1200
 
 # TST-INT-123
     def test_right_to_delete_still_works(
@@ -692,12 +807,34 @@ class TestSQLiteConcurrentAccess:
         In production: read connections have PRAGMA query_only=ON.
         In mock: retrieve() never touches the write path.
         """
+        # Pre-condition: vault is empty
+        assert mock_vault.retrieve(1, "concurrent_key") is None
+
         mock_vault.store(1, "concurrent_key", "concurrent_val")
         # Read immediately after write — should always succeed
         assert mock_vault.retrieve(1, "concurrent_key") == "concurrent_val"
-        # FTS read also succeeds
+
+        # FTS read also succeeds immediately after indexing
         mock_vault.index_for_fts("concurrent_key", "concurrent test")
         assert "concurrent_key" in mock_vault.search_fts("concurrent")
+
+        # Multiple writes followed by reads — all reads succeed
+        for i in range(10):
+            mock_vault.store(1, f"rw_key_{i}", f"rw_val_{i}")
+        for i in range(10):
+            assert mock_vault.retrieve(1, f"rw_key_{i}") == f"rw_val_{i}", \
+                f"Read of rw_key_{i} must succeed after batch writes"
+
+        # Counter-proof: reading a non-existent key returns None (not blocked)
+        assert mock_vault.retrieve(1, "nonexistent_key") is None
+
+        # Counter-proof: FTS search for non-indexed term returns empty
+        assert len(mock_vault.search_fts("zzz_never_indexed")) == 0
+
+        # Counter-proof: writes to different tiers don't interfere with reads
+        mock_vault.store(2, "tier2_key", "tier2_val")
+        assert mock_vault.retrieve(1, "concurrent_key") == "concurrent_val", \
+            "Write to tier 2 must not affect reads from tier 1"
 
     # --- Batch ingestion ---
 
@@ -769,6 +906,10 @@ class TestSQLiteConcurrentAccess:
         self, mock_vault: MockVault
     ) -> None:
         """A small set of items (< batch_size) is still one transaction."""
+        # Pre-condition: vault is empty
+        assert mock_vault._tx_count == 0
+        assert mock_vault._write_count == 0
+
         connector = MockGmailConnector()
         items = [
             {"id": f"small_{i}", "content": f"Content {i}"}
@@ -777,8 +918,16 @@ class TestSQLiteConcurrentAccess:
         total = connector.batch_ingest(items, mock_vault)
 
         assert total == 5
+        # 5 items < BATCH_SIZE (100) → exactly 1 transaction
         assert mock_vault._tx_count == 1
+        assert mock_vault._write_count == 5
         assert len(mock_vault._batch_notifications) == 1
+        # Notification reports the correct item count
+        assert mock_vault._batch_notifications[0]["count"] == 5
+
+        # Verify data actually stored and retrievable
+        stored = mock_vault.retrieve(1, "small_0")
+        assert stored is not None
 
 # TST-INT-569
     @pytest.mark.slow
@@ -849,6 +998,10 @@ class TestDataFlowBoundaries:
     ) -> None:
         """Large batch (5000-email initial sync) stored correctly in vault.
         Uses batch transactions for efficiency."""
+        # Pre-condition: vault is empty
+        assert mock_vault._tx_count == 0
+        assert mock_vault._write_count == 0
+
         connector = MockGmailConnector()
         items = [
             {"id": f"init_{i}", "content": f"Initial sync email {i}"}
@@ -858,13 +1011,23 @@ class TestDataFlowBoundaries:
 
         assert total == 5000
         assert mock_vault._write_count == 5000
-        # 5000 / 100 = 50 batch transactions
+        # 5000 / 100 = 50 batch transactions (not 5000 individual writes)
         assert mock_vault._tx_count == 50
         assert len(mock_vault._batch_notifications) == 50
 
-        # All items are retrievable
+        # Verify notification counts sum to total
+        notif_sum = sum(n["count"] for n in mock_vault._batch_notifications)
+        assert notif_sum == 5000
+
+        # Boundary items are retrievable
         assert mock_vault.retrieve(1, "init_0") is not None
         assert mock_vault.retrieve(1, "init_4999") is not None
+        # Mid-point spot check
+        mid = mock_vault.retrieve(1, "init_2500")
+        assert mid is not None
+
+        # Counter-proof: item beyond range doesn't exist
+        assert mock_vault.retrieve(1, "init_5000") is None
 
 # TST-INT-270
     def test_batch_ingestion_concurrent_reads_unblocked(
@@ -905,6 +1068,10 @@ class TestStagingAreaLifecycle:
         A draft lives in staging until the user acts on it."""
         now = time.time()
 
+        # Pre-condition: staging and vault are empty
+        assert mock_staging.get("lifecycle_001") is None
+        assert len(mock_vault._tiers.get(1, {})) == 0
+
         # Create a draft
         draft = Draft(
             draft_id="lifecycle_001",
@@ -914,23 +1081,34 @@ class TestStagingAreaLifecycle:
             confidence=0.88,
             created_at=now,
         )
-        mock_staging.store_draft(draft)
+        draft_id = mock_staging.store_draft(draft)
+        assert draft_id == "lifecycle_001"
 
         # Draft exists in staging
         retrieved = mock_staging.get("lifecycle_001")
         assert retrieved is not None
         assert not retrieved.sent
+        # Verify draft content survived staging
+        assert retrieved.to == "colleague@work.com"
+        assert retrieved.subject == "Project update"
+        assert retrieved.body == "Here is the latest progress report."
 
-        # User reviews and promotes (sends) the draft
-        retrieved.sent = True
+        # Expiry was auto-set (72 hours from creation)
+        assert retrieved.expires_at > 0
+        assert retrieved.expires_at == now + 72 * 3600
+
+        # Promote: store to vault, then mark sent
         mock_vault.store(1, "sent_lifecycle_001", {
             "to": retrieved.to,
             "subject": retrieved.subject,
             "body": retrieved.body,
         })
-        assert mock_vault.retrieve(1, "sent_lifecycle_001") is not None
+        retrieved.sent = True
+        promoted = mock_vault.retrieve(1, "sent_lifecycle_001")
+        assert promoted is not None
+        assert promoted["to"] == "colleague@work.com"
 
-        # Create another draft and discard it
+        # Create another draft and let it expire (discard path)
         discard_draft = Draft(
             draft_id="lifecycle_002",
             to="nobody@example.com",
@@ -942,13 +1120,21 @@ class TestStagingAreaLifecycle:
         mock_staging.store_draft(discard_draft)
         assert mock_staging.get("lifecycle_002") is not None
 
-        # User discards — just let it expire or remove
-        expired = mock_staging.auto_expire(
-            current_time=now + 73 * 3600
-        )
-        # lifecycle_002 expired; lifecycle_001 also expired from staging
-        # (but it was already promoted to vault)
+        # Counter-proof: before 72 hours, nothing expires
+        expired_early = mock_staging.auto_expire(current_time=now + 71 * 3600)
+        assert expired_early == 0, \
+            "Drafts must NOT expire before 72 hours"
+        assert mock_staging.get("lifecycle_002") is not None
+
+        # After 73 hours, both drafts expire from staging
+        expired = mock_staging.auto_expire(current_time=now + 73 * 3600)
         assert expired >= 1
+        assert mock_staging.get("lifecycle_002") is None, \
+            "Discarded draft must be gone after expiry"
+
+        # Counter-proof: promoted data survives in vault even after staging expires
+        assert mock_vault.retrieve(1, "sent_lifecycle_001") is not None, \
+            "Promoted draft must persist in vault after staging cleanup"
 
 # TST-INT-272
     def test_staging_area_72_hour_expiry(
@@ -1207,6 +1393,15 @@ class TestComponentBoundaries:
     ) -> None:
         """All client communication goes through Core. Brain sends
         results to Core, which forwards to clients via WebSocket."""
+        # Pre-condition: no API calls or notifications yet
+        assert len(mock_go_core.api_calls) == 0
+        assert len(mock_go_core._notifications_sent) == 0
+
+        # Brain has no client connection or device reference
+        assert not hasattr(mock_brain, "client")
+        assert not hasattr(mock_brain, "device")
+        assert not hasattr(mock_brain, "websocket")
+
         # Brain generates a notification
         notification = Notification(
             tier=SilenceTier.TIER_2_SOLICITED,
@@ -1225,10 +1420,10 @@ class TestComponentBoundaries:
         assert len(notify_calls) == 1
         assert mock_go_core._notifications_sent[-1] is notification
 
-        # Brain has no client connection or device reference
-        assert not hasattr(mock_brain, "client")
-        assert not hasattr(mock_brain, "device")
-        assert not hasattr(mock_brain, "websocket")
+        # Verify the notification content survived the Core relay
+        sent = mock_go_core._notifications_sent[-1]
+        assert sent.title == "New email summary"
+        assert sent.tier == SilenceTier.TIER_2_SOLICITED
 
 # TST-INT-289
     def test_llama_is_stateless(
@@ -1268,6 +1463,9 @@ class TestComponentBoundaries:
         On startup, any past-due reminders are immediately surfaced."""
         now = time.time()
 
+        # Pre-condition: no notifications sent yet
+        notifications_before = len(mock_go_core._notifications_sent)
+
         # Schedule a reminder before "shutdown"
         reminder = {
             "type": "reminder",
@@ -1278,6 +1476,15 @@ class TestComponentBoundaries:
         mock_vault.store(1, "reminder_license", reminder)
         mock_vault.index_for_fts("reminder_license",
                                   "driver license expires reminder")
+
+        # Also store a future reminder that should NOT be delivered
+        future_reminder = {
+            "type": "reminder",
+            "title": "Annual checkup",
+            "scheduled_at": now + 86400,  # due tomorrow
+            "delivered": False,
+        }
+        mock_vault.store(1, "reminder_future", future_reminder)
 
         # Save checkpoint for the reminder task
         mock_scratchpad.save("reminder_loop", step=1, context={
@@ -1298,7 +1505,13 @@ class TestComponentBoundaries:
         assert stored_reminder["scheduled_at"] < now  # past due
         assert stored_reminder["delivered"] is False
 
-        # Deliver the missed reminder via Core
+        # Counter-proof: future reminder is NOT past due
+        stored_future = mock_vault.retrieve(1, "reminder_future")
+        assert stored_future is not None
+        assert stored_future["scheduled_at"] > now  # not yet due
+        assert stored_future["delivered"] is False
+
+        # Deliver the missed reminder via Core (FIDUCIARY — silence causes harm)
         notification = Notification(
             tier=SilenceTier.TIER_1_FIDUCIARY,
             title=stored_reminder["title"],
@@ -1310,7 +1523,16 @@ class TestComponentBoundaries:
         stored_reminder["delivered"] = True
         mock_vault.store(1, "reminder_license", stored_reminder)
 
-        # Verify delivery
-        assert mock_go_core._notifications_sent[-1].title == "Driver's license expires"
+        # Verify delivery — exactly one new notification
+        assert len(mock_go_core._notifications_sent) == notifications_before + 1
+        sent = mock_go_core._notifications_sent[-1]
+        assert sent.title == "Driver's license expires"
+        assert sent.tier == SilenceTier.TIER_1_FIDUCIARY
+
+        # Verify vault updated
         updated = mock_vault.retrieve(1, "reminder_license")
         assert updated["delivered"] is True
+
+        # Counter-proof: future reminder still undelivered
+        still_future = mock_vault.retrieve(1, "reminder_future")
+        assert still_future["delivered"] is False

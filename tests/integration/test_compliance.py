@@ -181,91 +181,84 @@ class TestAuditTrail:
     ) -> None:
         """Every vault access and message send has audit entry.
 
-        Perform a sequence of vault stores, vault queries, DID signs,
-        PII scrubs, and message sends.  Each operation must produce a
-        corresponding entry in the audit log.
+        Verify that MockGoCore.api_calls automatically captures every
+        operation without the test manually writing audit entries.
+        Then verify those records form a complete, PII-free audit trail.
         """
-        actor = mock_dina.identity.root_did
+        # api_calls starts empty
+        assert len(mock_dina.go_core.api_calls) == 0
 
         # 1. Vault store
         mock_dina.go_core.vault_store("audit_item_1", {"data": "secret"})
-        mock_audit_log.record(
-            actor=actor,
-            action="vault_store",
-            resource="audit_item_1",
-            result="success",
-        )
 
         # 2. Vault query
         mock_dina.vault.index_for_fts("audit_item_1", "secret data audit")
         results = mock_dina.go_core.vault_query("secret")
-        mock_audit_log.record(
-            actor=actor,
-            action="vault_query",
-            resource="secret",
-            result="success",
-            details={"result_count": len(results)},
-        )
 
         # 3. DID sign
         sig = mock_dina.go_core.did_sign(b"audit payload")
-        mock_audit_log.record(
-            actor=actor,
-            action="did_sign",
-            resource="audit payload",
-            result="success",
-        )
 
-        # 4. PII scrub
-        scrubbed, _map = mock_dina.go_core.pii_scrub("Rajmohan audit test")
-        mock_audit_log.record(
-            actor=actor,
-            action="pii_scrub",
-            resource="inbound_text",
-            result="success",
-            details={"replacements": len(_map)},
-        )
+        # 4. PII scrub — uses real PII to verify scrubbing
+        scrubbed, pii_map = mock_dina.go_core.pii_scrub("Rajmohan audit test")
+        assert "Rajmohan" not in scrubbed, "PII must be scrubbed from output"
+        assert len(pii_map) > 0, "Scrubber must report replacements"
 
-        # 5. Message send
+        # 5. P2P message send
         recipient = "did:plc:AuditTestPeer12345678901234"
         mock_dina.p2p.add_contact(recipient)
         mock_dina.p2p.authenticated_peers.add(recipient)
         msg = DinaMessage(
             type="dina/social/ping",
-            from_did=actor,
+            from_did=mock_dina.identity.root_did,
             to_did=recipient,
             payload={"text": "audit test message"},
         )
         sent = mock_dina.p2p.send(msg)
-        mock_audit_log.record(
-            actor=actor,
-            action="msg_send",
-            resource=recipient,
-            result="success" if sent else "error",
+        assert sent is True, "Authenticated send must succeed"
+
+        # --- Verify api_calls captured operations automatically ---
+        # MockGoCore records every call in api_calls without manual intervention
+        assert len(mock_dina.go_core.api_calls) == 4, (
+            "GoCore must auto-record all 4 operations (store, query, sign, scrub)"
         )
+        endpoints = [c["endpoint"] for c in mock_dina.go_core.api_calls]
+        assert "/v1/vault/store" in endpoints
+        assert "/v1/vault/query" in endpoints
+        assert "/v1/did/sign" in endpoints
+        assert "/v1/pii/scrub" in endpoints
 
-        # Verify completeness: 5 operations = 5 audit entries
-        assert len(mock_audit_log.entries) == 5
+        # P2P send is tracked separately in p2p.messages
+        assert len(mock_dina.p2p.messages) >= 1
+        assert mock_dina.p2p.messages[-1].type == "dina/social/ping"
 
-        # Verify each action type is present
-        actions = [e.action for e in mock_audit_log.entries]
-        assert "vault_store" in actions
-        assert "vault_query" in actions
-        assert "did_sign" in actions
-        assert "pii_scrub" in actions
-        assert "msg_send" in actions
-
-        # All results are "success"
-        assert all(e.result == "success" for e in mock_audit_log.entries)
-
-        # Audit entries must not contain PII
-        assert not mock_audit_log.has_pii(PII_PATTERNS), (
-            "Audit log must not contain raw PII"
+        # Counter-proof: unauthenticated send is rejected (not recorded)
+        rogue_did = "did:plc:RogueAuditPeerXXXXXXXXXXXXXX"
+        rogue_msg = DinaMessage(
+            type="dina/social/ping",
+            from_did=mock_dina.identity.root_did,
+            to_did=rogue_did,
+            payload={"text": "should fail"},
         )
+        assert mock_dina.p2p.send(rogue_msg) is False
 
-        # Audit log is exportable
+        # api_calls endpoint strings must not contain PII
+        api_calls_text = json.dumps(mock_dina.go_core.api_calls)
+        for pii in PII_PATTERNS:
+            assert pii not in api_calls_text, (
+                f"api_calls audit trail must not contain PII: {pii}"
+            )
+
+        # Build audit entries from api_calls and verify export schema
+        actor = mock_dina.identity.root_did
+        for call in mock_dina.go_core.api_calls:
+            mock_audit_log.record(
+                actor=actor,
+                action=call["endpoint"].split("/")[-1],
+                resource=call.get("key", call.get("query", "n/a")),
+                result="success",
+            )
         exported = mock_audit_log.export()
-        assert len(exported) == 5
+        assert len(exported) == 4
         for entry in exported:
             assert "actor" in entry
             assert "action" in entry

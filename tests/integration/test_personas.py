@@ -37,6 +37,26 @@ class TestPersonaCreation:
         assert persona.did != mock_identity.root_did
         assert persona.derived_key != mock_identity.root_private_key
 
+        # Deterministic: re-deriving the same persona type produces identical keys
+        persona_again = mock_identity.derive_persona(PersonaType.CONSUMER)
+        assert persona_again.did == persona.did, \
+            "Same persona type must produce deterministic DID"
+        assert persona_again.derived_key == persona.derived_key, \
+            "Same persona type must produce deterministic key"
+
+        # Counter-proof: different persona type produces different DID/key
+        health = mock_identity.derive_persona(PersonaType.HEALTH)
+        assert health.did != persona.did, \
+            "Different persona types must have different DIDs"
+        assert health.derived_key != persona.derived_key, \
+            "Different persona types must have different keys"
+
+        # Counter-proof: different identity produces different consumer persona
+        other_identity = MockIdentity(did="did:plc:OtherUser12345678901234")
+        other_consumer = other_identity.derive_persona(PersonaType.CONSUMER)
+        assert other_consumer.did != persona.did, \
+            "Same persona type on different identity must differ"
+
 # TST-INT-033
     def test_root_identity_generates_health_persona(
         self, mock_identity: MockIdentity
@@ -198,18 +218,29 @@ class TestPersonaIsolation:
         A malicious agent cannot simply ask for cross-persona data; the
         encryption makes it impossible without the correct derived key.
         """
+        # Pre-condition: no personas derived
+        assert len(mock_identity.personas) == 0
+
         health = mock_identity.derive_persona(PersonaType.HEALTH)
         financial = mock_identity.derive_persona(PersonaType.FINANCIAL)
 
         # Health encrypts sensitive record
         encrypted_health = health.encrypt("patient record: confidential")
 
+        # Same-persona decrypt works (positive proof)
+        assert health.decrypt(encrypted_health) is not None
+
         # Financial persona physically cannot decrypt health data
         assert financial.decrypt(encrypted_health) is None
 
         # And the other direction is equally impossible
         encrypted_fin = financial.encrypt("bank account: secret")
+        assert financial.decrypt(encrypted_fin) is not None
         assert health.decrypt(encrypted_fin) is None
+
+        # Encrypted output does not contain plaintext
+        assert "patient record" not in encrypted_health
+        assert "bank account" not in encrypted_fin
 
 # TST-INT-160
     def test_persona_keys_derived_from_root(
@@ -236,10 +267,26 @@ class TestPersonaIsolation:
         self, mock_identity: MockIdentity
     ) -> None:
         """Each persona's storage partition name is canonical and predictable."""
+        # Pre-condition: no personas derived yet
+        assert len(mock_identity.personas) == 0
+
         for pt in PersonaType:
             persona = mock_identity.derive_persona(pt)
             expected_partition = f"partition_{pt.value}"
             assert persona.storage_partition == expected_partition
+            # Each persona gets a unique DID
+            assert persona.did.startswith("did:key:z6Mk")
+
+        # All persona types derived
+        assert len(mock_identity.personas) == len(PersonaType)
+
+        # Counter-proof: different personas have different DIDs and keys
+        consumer = mock_identity.derive_persona(PersonaType.CONSUMER)
+        health = mock_identity.derive_persona(PersonaType.HEALTH)
+        assert consumer.did != health.did
+        assert consumer.derived_key != health.derived_key
+        # But partitions follow naming convention
+        assert consumer.storage_partition != health.storage_partition
 
 
 # ---------------------------------------------------------------------------
@@ -261,11 +308,22 @@ class TestPersonaInInteraction:
         consumer = mock_dina.identity.derive_persona(PersonaType.CONSUMER)
         health = mock_dina.identity.derive_persona(PersonaType.HEALTH)
 
+        # Pre-condition: partitions are empty
+        assert len(mock_dina.vault.per_persona_partition(PersonaType.HEALTH)) == 0
+        assert len(mock_dina.vault.per_persona_partition(PersonaType.CONSUMER)) == 0
+
         # Store health data that must NOT leak to the seller
         mock_dina.vault.store(
             tier=1, key="allergies",
             value={"latex": True},
             persona=PersonaType.HEALTH,
+        )
+
+        # Store consumer preferences
+        mock_dina.vault.store(
+            tier=1, key="chair_budget",
+            value={"max_inr": 100000},
+            persona=PersonaType.CONSUMER,
         )
 
         # Query the review bot for chair recommendations
@@ -275,17 +333,26 @@ class TestPersonaInInteraction:
         rec = result["recommendations"][0]
         assert rec["product"] == "Herman Miller Aeron"
 
-        # Verify consumer persona was used (not health)
-        consumer_data = mock_dina.vault.per_persona_partition(
-            PersonaType.CONSUMER
-        )
-        health_data = mock_dina.vault.per_persona_partition(
-            PersonaType.HEALTH
-        )
+        # Verify partition isolation
+        consumer_data = mock_dina.vault.per_persona_partition(PersonaType.CONSUMER)
+        health_data = mock_dina.vault.per_persona_partition(PersonaType.HEALTH)
 
         # Health data stays in health partition, not consumer
         assert "allergies" not in consumer_data
         assert "allergies" in health_data
+
+        # Consumer data stays in consumer partition, not health
+        assert "chair_budget" in consumer_data
+        assert "chair_budget" not in health_data
+
+        # Counter-proof: consumer and health personas have different DIDs
+        assert consumer.did != health.did, \
+            "Each persona must have a unique DID"
+
+        # Counter-proof: cross-persona encryption fails
+        encrypted_health = health.encrypt("latex allergy details")
+        assert consumer.decrypt(encrypted_health) is None, \
+            "Consumer persona must not decrypt health data"
 
 # TST-INT-525
     def test_license_renewal_uses_legal_persona(
@@ -365,27 +432,36 @@ class TestPersonaInInteraction:
     def test_auto_selection_by_context_product_query(
         self, mock_dina: MockDinaCore
     ) -> None:
-        """A product query auto-routes to consumer persona context."""
-        # Derive all personas so they exist
-        mock_dina.identity.derive_persona(PersonaType.CONSUMER)
+        """A product query auto-routes to consumer persona context.
+        Consumer persona is NOT sensitive, so cloud LLM is permitted."""
+        from tests.integration.mocks import LLMTarget
+
+        # Derive consumer and health personas
+        consumer = mock_dina.identity.derive_persona(PersonaType.CONSUMER)
         mock_dina.identity.derive_persona(PersonaType.HEALTH)
-        mock_dina.identity.derive_persona(PersonaType.CITIZEN)
 
-        # Simulate context-based routing: product searches are "consumer"
-        query_type = "product_search"
-        persona_map = {
-            "product_search": PersonaType.CONSUMER,
-            "medical_query": PersonaType.HEALTH,
-            "form_filling": PersonaType.CITIZEN,
-            "social_chat": PersonaType.SOCIAL,
-        }
+        # Consumer persona: summarize routes to CLOUD (non-sensitive)
+        target = mock_dina.llm_router.route("summarize", PersonaType.CONSUMER)
+        assert target == LLMTarget.CLOUD, \
+            "Consumer persona is not sensitive — cloud LLM allowed"
 
-        selected = persona_map.get(query_type)
-        assert selected == PersonaType.CONSUMER
+        # Counter-proof: health persona routes LOCALLY (sensitive)
+        health_target = mock_dina.llm_router.route("summarize", PersonaType.HEALTH)
+        assert health_target != LLMTarget.CLOUD, \
+            "Health persona is sensitive — must NOT route to cloud"
 
-        # The selected persona has its own isolated partition
-        partition = mock_dina.vault.per_persona_partition(selected)
-        assert isinstance(partition, dict)
+        # Consumer persona has its own isolated partition
+        mock_dina.vault.store(1, "product_search_result",
+                              {"product": "ThinkPad X1", "rating": 92},
+                              PersonaType.CONSUMER)
+        consumer_partition = mock_dina.vault.per_persona_partition(
+            PersonaType.CONSUMER)
+        assert "product_search_result" in consumer_partition
+
+        # Counter-proof: product data NOT in health partition
+        health_partition = mock_dina.vault.per_persona_partition(
+            PersonaType.HEALTH)
+        assert "product_search_result" not in health_partition
 
 # TST-INT-527
     def test_auto_selection_by_context_medical_query(
@@ -413,11 +489,20 @@ class TestPersonaInInteraction:
         self, mock_dina: MockDinaCore
     ) -> None:
         """Financial data is equally sensitive as health: never goes to cloud."""
+        from tests.integration.mocks import LLMTarget
+
         mock_dina.identity.derive_persona(PersonaType.FINANCIAL)
 
         target = mock_dina.llm_router.route("summarize", PersonaType.FINANCIAL)
-        from tests.integration.mocks import LLMTarget
         assert target == LLMTarget.LOCAL
+
+        # HEALTH also routes locally (equally sensitive)
+        health_target = mock_dina.llm_router.route("summarize", PersonaType.HEALTH)
+        assert health_target == LLMTarget.LOCAL
+
+        # Counter-proof: CONSUMER routes to cloud (non-sensitive)
+        consumer_target = mock_dina.llm_router.route("summarize", PersonaType.CONSUMER)
+        assert consumer_target == LLMTarget.CLOUD
 
 # TST-INT-156
     def test_persona_data_survives_across_sessions(

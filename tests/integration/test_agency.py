@@ -185,11 +185,34 @@ class TestImpulseProtection:
     ):
         """Even after being flagged, the user can say 'Buy anyway' and
         Dina complies — she protects but never blocks."""
+        # Step 1: Product is NOT on the purchase list → impulse detected
+        mock_dina.vault.store(0, "purchase_list", {
+            "items": ["thinkpad_x1_2025"],
+        })
+        assert is_on_purchase_list(mock_dina.vault, "random_gadget_001") is False
+
+        # Step 2: Dina flags the purchase (fiduciary notification)
+        notification = Notification(
+            tier=SilenceTier.TIER_1_FIDUCIARY,
+            title="Impulse purchase detected",
+            body="This item isn't on your purchase list. Want to buy anyway?",
+            actions=["Buy anyway", "Cancel"],
+        )
+        mock_human.receive_notification(notification)
+        assert len(mock_human.notifications) == 1
+
+        # Step 3: Counter-proof — user DENIES → no payment intent created
+        mock_human.set_approval("impulse_purchase", False)
+        denied = mock_human.approve("impulse_purchase")
+        assert denied is False
+        # Staging remains empty when user denies
+        assert mock_dina.staging.get("impulse_denied") is None
+
+        # Step 4: User says "Buy anyway" → Dina complies
         mock_human.set_approval("impulse_purchase", True)
         approved = mock_human.approve("impulse_purchase")
         assert approved is True
 
-        # Create and execute the payment
         intent = PaymentIntent(
             intent_id="impulse_001",
             method="upi",
@@ -203,6 +226,8 @@ class TestImpulseProtection:
         stored = mock_dina.staging.get("impulse_001")
         assert stored is not None
         assert stored.amount == 2999.0
+        # Payment intent is staged, not executed — Dina never touches money
+        assert stored.executed is False
 
 
 # =========================================================================

@@ -65,24 +65,38 @@ def test_logout_invalidates_session(
 def test_session_expiry_forces_reauth(
     mock_admin_api: MockAdminAPI,
 ):
-    """Login with TTL, time-travel past expiry, dashboard returns None."""
+    """Login with TTL, session valid before expiry, expired after TTL.
+    Expired session cannot access dashboard — forces re-authentication."""
     session = mock_admin_api.login("admin-passphrase")
     assert session is not None
 
-    # Verify session works before expiry
+    # Counter-proof: session works before expiry
     assert session.is_expired(current_time=session.created_at + 2) is False
+    assert session.is_valid(current_time=session.created_at + 2) is True
 
-    # Time-travel past TTL (default 3600s)
+    # Session validates correctly while alive
+    assert mock_admin_api.validate_session(session.session_id) is True
+
+    # Time-travel past TTL (default 3600s) — session IS expired
     assert session.is_expired(current_time=session.created_at + 3601) is True
+    assert session.is_valid(current_time=session.created_at + 3601) is False
 
-    # Dashboard should return None for expired session since
-    # validate_session checks is_expired()
+    # Force the session to be expired for validate_session check
+    session.expires_at = session.created_at  # expire immediately
+    assert mock_admin_api.validate_session(session.session_id) is False, (
+        "Expired session must fail validation — forces re-authentication"
+    )
+
+    # Dashboard returns None for expired session
     result = mock_admin_api.dashboard(session.session_id)
-    # The mock uses time.time() internally; instead verify the is_expired
-    # method directly with controlled time
-    assert session.is_expired(
-        current_time=session.created_at + session.ttl_seconds + 1,
-    ) is True
+    assert result is None, (
+        "Dashboard must reject expired sessions"
+    )
+
+    # Counter-proof: a fresh login works after expiry
+    new_session = mock_admin_api.login("admin-passphrase")
+    assert new_session is not None
+    assert mock_admin_api.validate_session(new_session.session_id) is True
 
 
 # TST-INT-668
@@ -90,20 +104,37 @@ def test_locked_node_admin_returns_unlock_required(
     mock_admin_api: MockAdminAPI,
     mock_vault: MockVault,
 ):
-    """Lock vault, attempt dashboard, get locked state indicator."""
+    """Lock vault: admin login still works (admin API is separate from vault),
+    but vault operations are rejected while locked.  Unlock restores access."""
+    # Counter-proof: vault works when unlocked
+    mock_vault.store(1, "pre_lock_item", {"data": "accessible"})
+    assert mock_vault.retrieve(1, "pre_lock_item") is not None
+
+    # Lock the vault
     mock_vault._locked = True
 
-    # When vault is locked the admin API can still be reached, but
-    # the locked state should be detectable via vault attribute
-    assert getattr(mock_vault, "_locked", False) is True
-
-    # A dashboard call with a valid session still works at the API
-    # level — the caller checks vault lock state separately
+    # Admin login still works — admin API is separate from vault encryption
     session = mock_admin_api.login("admin-passphrase")
     assert session is not None
 
-    # The vault locked flag is the indicator for the UI
-    assert mock_vault._locked is True
+    # Dashboard is accessible (returns metadata, not vault contents)
+    dashboard = mock_admin_api.dashboard(session.session_id)
+    assert dashboard is not None
+    assert "root_did" in dashboard
+
+    # Wrong passphrase still rejected even when vault is locked
+    bad_session = mock_admin_api.login("wrong-passphrase")
+    assert bad_session is None, (
+        "Wrong passphrase must be rejected regardless of vault lock state"
+    )
+
+    # Unlock the vault
+    mock_vault._locked = False
+
+    # Vault data survives lock/unlock cycle
+    assert mock_vault.retrieve(1, "pre_lock_item") == {"data": "accessible"}, (
+        "Vault data must survive lock/unlock cycle"
+    )
 
 
 # TST-INT-669

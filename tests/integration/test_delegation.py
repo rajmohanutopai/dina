@@ -59,7 +59,21 @@ class TestLicenseRenewalFlow:
         mock_legal_bot: MockLegalBot,
     ) -> None:
         """Dina suggests delegating the license renewal to LegalBot.
-        This is a notification, not an auto-action."""
+        This is a notification, not an auto-action — user must approve."""
+        # Pre-condition: no notifications yet
+        assert len(mock_human.notifications) == 0
+
+        # Classify the delegation task — "create_draft" is MODERATE risk
+        intent = AgentIntent(
+            agent_did=mock_legal_bot.bot_did,
+            action="create_draft",
+            target="government_portal",
+            context={"task": "license_renewal"},
+        )
+        risk = mock_dina.classify_action_risk(intent)
+        assert risk == ActionRisk.MODERATE  # not SAFE — needs approval
+
+        # Notification offers delegation as an option, not auto-action
         notification = Notification(
             tier=SilenceTier.TIER_2_SOLICITED,
             title="License renewal due soon",
@@ -69,9 +83,13 @@ class TestLicenseRenewalFlow:
             source="calendar_connector",
         )
         mock_human.receive_notification(notification)
-
         assert len(mock_human.notifications) == 1
         assert "delegate_to_legal_bot" in mock_human.notifications[0].actions
+
+        # Counter-proof: delegation is NOT auto-approved — user must consent
+        mock_human.set_approval("create_draft", False)
+        rejected = mock_dina.approve_intent(intent, mock_human)
+        assert rejected is False  # user rejected → no delegation
 
 # TST-INT-293
     def test_user_approves_delegation(
@@ -89,10 +107,36 @@ class TestLicenseRenewalFlow:
             context={"task": "license_renewal",
                       "deadline": "2026-02-22"},
         )
-        approved = mock_dina.approve_intent(intent, mock_human)
 
+        # Risk classification: create_draft → MODERATE (not SAFE, not BLOCKED)
+        risk = mock_dina.classify_action_risk(intent)
+        assert risk == ActionRisk.MODERATE
+
+        approved = mock_dina.approve_intent(intent, mock_human)
         assert approved is True
         assert intent.risk_level == ActionRisk.MODERATE
+
+        # Counter-proof: user rejects → returns False
+        mock_human.set_approval("create_draft", False)
+        intent2 = AgentIntent(
+            agent_did=mock_legal_bot.bot_did,
+            action="create_draft",
+            target="government_portal",
+            context={"task": "license_renewal"},
+        )
+        rejected = mock_dina.approve_intent(intent2, mock_human)
+        assert rejected is False
+
+        # Counter-proof: SAFE action doesn't need user approval
+        safe_intent = AgentIntent(
+            agent_did=mock_legal_bot.bot_did,
+            action="search",
+            target="knowledge_base",
+            context={},
+        )
+        safe_approved = mock_dina.approve_intent(safe_intent, mock_human)
+        assert safe_approved is True
+        assert safe_intent.risk_level == ActionRisk.SAFE
 
 # TST-INT-292
     def test_agent_executes_with_oversight(
@@ -136,29 +180,39 @@ class TestLicenseRenewalFlow:
         mock_legal_bot: MockLegalBot,
     ) -> None:
         """After the user reviews and sends the draft, a completion
-        notification is generated."""
+        notification is generated.  Verifies the full staging pipeline:
+        form_fill → store → retrieve → mark sent."""
+        # Counter-proof: non-existent draft returns None
+        assert mock_dina.staging.get("nonexistent_draft_id") is None
+
         # LegalBot fills the form
         draft = mock_legal_bot.form_fill(
             task="License renewal",
             identity_data={"name": "Rajmohan"},
         )
-        mock_dina.staging.store_draft(draft)
+        assert draft.draft_id  # must have an ID
+        assert draft.sent is False  # draft starts unsent
 
-        # User reviews and approves
+        # Store in staging
+        stored_id = mock_dina.staging.store_draft(draft)
+        assert stored_id == draft.draft_id
+
+        # Retrieve and verify content matches form_fill output
         retrieved = mock_dina.staging.get(draft.draft_id)
+        assert retrieved is not None
+        assert retrieved.draft_id == draft.draft_id
+        assert retrieved.sent is False  # still unsent before review
+
+        # Counter-proof: a different draft_id does not collide
+        assert mock_dina.staging.get("some_other_draft") is None
+
+        # User reviews and marks as sent
         retrieved.sent = True
+        assert mock_dina.staging.get(draft.draft_id).sent is True
 
-        # Generate completion notification
-        completion = Notification(
-            tier=SilenceTier.TIER_2_SOLICITED,
-            title="License renewal submitted",
-            body=f"Draft '{draft.draft_id}' was reviewed and submitted.",
-            source="legal_bot",
-        )
-        mock_human.receive_notification(completion)
-
-        assert len(mock_human.notifications) == 1
-        assert "submitted" in mock_human.notifications[0].body
+        # Verify the draft has meaningful content from form_fill
+        assert "License renewal" in retrieved.body
+        assert retrieved.subject == "Draft: License renewal"
 
 # TST-INT-466
     def test_failure_handled(
@@ -211,7 +265,8 @@ class TestGenericDelegation:
         mock_external_agent: MockExternalAgent,
     ) -> None:
         """Read-only operations (search, lookup, read) are SAFE and
-        auto-approved without user interaction."""
+        auto-approved without user interaction.  Write/financial actions
+        are NOT auto-approved — they require human consent."""
         for action in ("search", "lookup", "read"):
             intent = mock_external_agent.submit_intent(
                 AgentIntent(agent_did="", action=action,
@@ -221,6 +276,30 @@ class TestGenericDelegation:
 
             assert approved is True
             assert intent.risk_level == ActionRisk.SAFE
+
+        # Counter-proof: a write action is NOT auto-approved (MODERATE risk)
+        mock_human.set_approval("send_email", False)
+        write_intent = mock_external_agent.submit_intent(
+            AgentIntent(agent_did="", action="send_email",
+                        target="colleague@work.com")
+        )
+        write_approved = mock_dina.approve_intent(write_intent, mock_human)
+        assert write_approved is False, (
+            "Write action must NOT be auto-approved — requires human consent"
+        )
+        assert write_intent.risk_level == ActionRisk.MODERATE
+
+        # Counter-proof: a financial action is HIGH risk, never auto-approved
+        mock_human.set_approval("transfer_money", False)
+        financial_intent = mock_external_agent.submit_intent(
+            AgentIntent(agent_did="", action="transfer_money",
+                        target="vendor_account")
+        )
+        financial_approved = mock_dina.approve_intent(financial_intent, mock_human)
+        assert financial_approved is False, (
+            "Financial action must NOT be auto-approved"
+        )
+        assert financial_intent.risk_level == ActionRisk.HIGH
 
 # TST-INT-242
     def test_write_requires_approval(

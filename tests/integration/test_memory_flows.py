@@ -15,6 +15,7 @@ from tests.integration.mocks import (
     MockDinaCore,
     MockGmailConnector,
     MockCalendarConnector,
+    MockPIIScrubber,
     MockReviewBot,
     MockVault,
     MockTelegramConnector,
@@ -116,18 +117,41 @@ class TestMemoryPrivacy:
         mock_review_bot: MockReviewBot,
         sample_memory: MockVault,
     ):
-        """When Dina queries a review bot, raw vault entries are NOT included
-        in the query payload. Only the product query string is sent."""
-        response = mock_review_bot.query_product("best laptop for travel")
+        """When Dina queries a review bot, raw vault data is scrubbed first.
+        PII (names, emails, etc.) must be replaced before leaving the node."""
+        scrubber = MockPIIScrubber()
 
-        # The bot received the query string, NOT vault contents
+        # Simulate the real flow: user context contains PII from vault
+        raw_context = (
+            "Rajmohan wants a laptop for travel. "
+            "Sancho recommended ThinkPad last week via sancho@email.com. "
+            "Budget from contact_sancho vault entry."
+        )
+
+        # PII scrubber strips personal data before it leaves the node
+        scrubbed, replacements = scrubber.scrub(raw_context)
+
+        # Verify PII was actually removed
+        assert "Rajmohan" not in scrubbed
+        assert "Sancho" not in scrubbed
+        assert "sancho@email.com" not in scrubbed
+        assert "[PERSON_1]" in scrubbed
+        assert "[PERSON_2]" in scrubbed
+        assert "[EMAIL_2]" in scrubbed
+
+        # Only the scrubbed query goes to the bot
+        response = mock_review_bot.query_product(scrubbed)
         assert len(mock_review_bot.queries) == 1
-        sent_query = mock_review_bot.queries[0]
-        assert "query" in sent_query
-        # Ensure none of the private vault keys leak into the query
-        assert "promise_book" not in str(sent_query)
-        assert "moment_happy_1" not in str(sent_query)
-        assert "contact_sancho" not in str(sent_query)
+        sent_query = str(mock_review_bot.queries[0])
+
+        # Counter-proof: raw PII must NOT appear in what the bot received
+        assert "Rajmohan" not in sent_query
+        assert "Sancho" not in sent_query
+        assert "sancho@email.com" not in sent_query
+
+        # But the product intent survived scrubbing
+        assert "laptop" in sent_query
+        assert "travel" in sent_query
 
 # TST-INT-511
     def test_deletion_is_permanent(self, mock_dina: MockDinaCore):
@@ -212,6 +236,10 @@ class TestMemoryIngestion:
     ):
         """Calendar events are polled, normalized, and stored in the vault
         so they become searchable."""
+        # Pre-condition: no data and vault partition empty
+        assert len(mock_calendar_connector.poll()) == 0
+        assert len(mock_dina.vault.per_persona_partition(PersonaType.PROFESSIONAL)) == 0
+
         mock_calendar_connector.add_data(sample_events)
         raw_items = mock_calendar_connector.poll()
         assert len(raw_items) == 2
@@ -219,11 +247,16 @@ class TestMemoryIngestion:
         # Normalize and store each event
         for item in raw_items:
             normalized = mock_calendar_connector.normalize(item)
+            assert normalized["source"] == "calendar"
+            assert "id" in normalized
             mock_dina.vault.store(
                 1, normalized["id"], normalized,
                 persona=PersonaType.PROFESSIONAL,
             )
-            mock_dina.vault.index_for_fts(normalized["id"], normalized["content"])
+            # Index by title for FTS — normalize() may return empty content
+            # for calendar items, so use the raw title for searchability
+            fts_text = item.get("title", normalized["content"])
+            mock_dina.vault.index_for_fts(normalized["id"], fts_text)
 
         # The events are now in the vault
         assert mock_dina.vault.retrieve(
@@ -233,6 +266,18 @@ class TestMemoryIngestion:
             1, "license_renewal", persona=PersonaType.PROFESSIONAL
         ) is not None
 
+        # FTS search finds stored events by title
+        results = mock_dina.vault.search_fts("standup")
+        assert "meeting_1" in results
+
+        # Counter-proof: non-matching FTS returns empty
+        assert len(mock_dina.vault.search_fts("nonexistent_event")) == 0
+
+        # Counter-proof: not in SOCIAL partition
+        assert mock_dina.vault.retrieve(
+            1, "meeting_1", persona=PersonaType.SOCIAL
+        ) is None
+
 # TST-INT-277
     def test_chat_ingestion(
         self,
@@ -241,10 +286,17 @@ class TestMemoryIngestion:
     ):
         """Telegram messages include full text+media, ingested via Bot API
         after bot token configuration, and stored in the social partition."""
+        # Pre-condition: no data ingested, social partition empty
+        assert len(mock_telegram_connector.poll()) == 0
+        assert len(mock_dina.vault.per_persona_partition(PersonaType.SOCIAL)) == 0
+
         # Without bot token, ingestion fails
+        assert mock_telegram_connector.bot_token is None
         assert mock_telegram_connector.ingest_from_bot_api([
             {"content": "Hello!", "media": "photo.jpg"},
         ]) is False
+        # Rejected items are NOT stored
+        assert len(mock_telegram_connector.poll()) == 0
 
         # Configure bot token
         mock_telegram_connector.set_bot_token("bot_token_123")
@@ -264,6 +316,9 @@ class TestMemoryIngestion:
         # Store in social partition
         for item in items:
             normalized = mock_telegram_connector.normalize(item)
+            assert "id" in normalized, "Normalized item must have an id"
+            assert "source" in normalized, "Normalized item must have a source"
+            assert normalized["source"] == "telegram"
             mock_dina.vault.store(
                 1, normalized["id"], normalized,
                 persona=PersonaType.SOCIAL,
@@ -271,3 +326,7 @@ class TestMemoryIngestion:
 
         social_partition = mock_dina.vault.per_persona_partition(PersonaType.SOCIAL)
         assert len(social_partition) == 2
+
+        # Counter-proof: items are NOT in the consumer partition
+        consumer_partition = mock_dina.vault.per_persona_partition(PersonaType.CONSUMER)
+        assert len(consumer_partition) == 0

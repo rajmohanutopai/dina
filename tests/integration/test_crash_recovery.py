@@ -122,29 +122,49 @@ class TestCoreCrash:
         """Core crash during vault write — WAL protects against corruption.
 
         SQLite WAL mode ensures that an incomplete write is rolled back on
-        restart.  We verify the vault's PRAGMA settings include WAL mode
-        and that a simulated incomplete write does not corrupt existing data.
+        restart.  We verify the vault's PRAGMA settings enforce WAL mode
+        and that batch writes are atomic (single transaction), so a crash
+        mid-batch cannot leave partial data.
         """
-        # Verify WAL mode is configured
+        # Verify WAL mode is configured — these are architectural requirements
+        assert "journal_mode" in mock_vault.PRAGMAS
         assert mock_vault.PRAGMAS["journal_mode"] == "WAL"
         assert mock_vault.PRAGMAS["synchronous"] == "NORMAL"
+        # Counter-proof: DELETE mode would not have WAL protection
+        assert mock_vault.PRAGMAS["journal_mode"] != "DELETE"
 
         # Store a known-good value before crash
         mock_vault.store(1, "pre_crash_key", {"status": "committed"})
         assert mock_vault.retrieve(1, "pre_crash_key") == {"status": "committed"}
 
-        # Simulate an interrupted write: we store a value but pretend the
-        # transaction never committed.  In WAL mode the incomplete write
-        # would be rolled back automatically.  We model this by storing
-        # into a separate tier and then "rolling back" (deleting).
-        mock_vault.store(1, "incomplete_write", {"status": "writing"})
-        # --- CRASH mid-write → WAL rollback ---
-        mock_vault.delete(1, "incomplete_write")
+        # Verify batch write atomicity: store_batch uses a single transaction
+        tx_before = mock_vault._tx_count
+        write_before = mock_vault._write_count
+        batch_items = [
+            ("batch_item_1", {"status": "batch"}),
+            ("batch_item_2", {"status": "batch"}),
+            ("batch_item_3", {"status": "batch"}),
+        ]
+        written = mock_vault.store_batch(1, batch_items)
+        assert written == 3
+        # Batch is a single transaction — critical for WAL crash safety
+        assert mock_vault._tx_count == tx_before + 1
+        # But all 3 items were individually written
+        assert mock_vault._write_count == write_before + 3
 
-        # After restart: the pre-crash data is intact
+        # All batch items are retrievable (atomic commit)
+        for key, value in batch_items:
+            assert mock_vault.retrieve(1, key) == value
+
+        # Pre-crash data survives independent operations
         assert mock_vault.retrieve(1, "pre_crash_key") == {"status": "committed"}
-        # The incomplete write was rolled back
-        assert mock_vault.retrieve(1, "incomplete_write") is None
+
+        # Counter-proof: a delete of one key does not affect others
+        mock_vault.delete(1, "batch_item_2")
+        assert mock_vault.retrieve(1, "batch_item_2") is None
+        assert mock_vault.retrieve(1, "batch_item_1") == {"status": "batch"}
+        assert mock_vault.retrieve(1, "batch_item_3") == {"status": "batch"}
+        assert mock_vault.retrieve(1, "pre_crash_key") == {"status": "committed"}
 
     # TST-INT-140
     def test_core_crash_ws_clients_detect_disconnect(
@@ -455,35 +475,36 @@ class TestLLMCrash:
         self,
         mock_brain: MockPythonBrain,
     ) -> None:
-        """LLM crash during inference — brain gets timeout, returns graceful
-        error.
+        """LLM crash during inference — brain raises error, recovers
+        after restart.
 
-        If the LLM process crashes or times out, the Brain catches the
-        error and returns a user-friendly message instead of propagating
-        the crash to the client.
+        If the LLM process crashes, the Brain raises RuntimeError.
+        After restart, inference works again and produces a result.
         """
-        # Simulate LLM crash by crashing the Brain (which wraps LLM calls)
+        # Counter-proof: Brain works BEFORE crash
+        pre_crash = mock_brain.reason("What laptop should I buy?")
+        assert pre_crash is not None
+        assert len(mock_brain.reasoned) == 1
+
+        # Simulate LLM crash
         mock_brain.crash()
 
-        # Brain should raise a RuntimeError (simulating LLM timeout)
+        # All inference calls fail while crashed
         with pytest.raises(RuntimeError, match="Brain has crashed"):
             mock_brain.reason("What laptop should I buy?")
 
-        # The graceful error response that Core sends to the client
-        error_response = {
-            "type": "error",
-            "code": 504,
-            "message": "LLM inference timed out. Please try again.",
-            "retry_after_seconds": 30,
-        }
-        assert error_response["code"] == 504
-        assert "timed out" in error_response["message"]
-        assert error_response["retry_after_seconds"] > 0
+        # A second call also fails — crash is persistent, not transient
+        with pytest.raises(RuntimeError, match="Brain has crashed"):
+            mock_brain.reason("Different query entirely")
+
+        # No new reasoned entries added during crashed state
+        assert len(mock_brain.reasoned) == 1
 
         # Brain can be restarted and LLM calls succeed
         mock_brain.restart()
         answer = mock_brain.reason("What laptop should I buy?")
         assert answer is not None
+        assert len(mock_brain.reasoned) == 2
 
     # TST-INT-147
     def test_llm_oom_fallback_to_cloud(
@@ -498,9 +519,17 @@ class TestLLMCrash:
         falls back to the cloud profile for non-sensitive tasks.  Sensitive
         personas still refuse cloud routing.
         """
+        # Pre-condition: routing logs are empty
+        assert len(mock_llm_router.routing_log) == 0
+        assert len(mock_cloud_llm_router.routing_log) == 0
+
         # Local LLM is healthy: basic tasks go LOCAL
         target = mock_llm_router.route("summarize")
         assert target == LLMTarget.LOCAL
+
+        # Verify the routing log recorded the decision
+        assert len(mock_llm_router.routing_log) == 1
+        assert mock_llm_router.routing_log[0]["target"] == LLMTarget.LOCAL
 
         # --- LOCAL LLM OOM ---
         # Simulate fallback: switch to cloud router profile
@@ -524,6 +553,14 @@ class TestLLMCrash:
         )
         assert target_financial != LLMTarget.CLOUD
         assert target_financial == LLMTarget.ON_DEVICE
+
+        # Verify cloud router logged ALL routing decisions with reasons
+        assert len(mock_cloud_llm_router.routing_log) == 4
+        sensitive_entries = [e for e in mock_cloud_llm_router.routing_log
+                            if "sensitive" in e.get("reason", "")]
+        assert len(sensitive_entries) == 2, (
+            "Both HEALTH and FINANCIAL must be logged as sensitive persona routing"
+        )
 
     # TST-INT-148
     def test_corrupted_model_file_halts_routing(

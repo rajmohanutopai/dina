@@ -202,6 +202,19 @@ class TestDinaToDinaProtocol:
         decrypted = social_persona.decrypt(encrypted)
         assert decrypted is not None
 
+        # Counter-proof: a different persona CANNOT decrypt
+        consumer_persona = mock_identity.derive_persona(PersonaType.CONSUMER)
+        cross_decrypt = consumer_persona.decrypt(encrypted)
+        assert cross_decrypt is None, (
+            "Different persona must not decrypt another persona's data"
+        )
+
+        # Verify two different persona types produce different ciphertext
+        consumer_encrypted = consumer_persona.encrypt(plaintext)
+        assert consumer_encrypted != encrypted, (
+            "Same plaintext under different personas must produce different ciphertext"
+        )
+
 # TST-INT-478
     def test_no_platform_intermediary(
         self,
@@ -211,6 +224,10 @@ class TestDinaToDinaProtocol:
         sancho_identity: MockIdentity,
     ) -> None:
         """Communication is direct P2P — no central platform routes or stores messages."""
+        # Pre-condition: no messages, no authenticated peers
+        assert len(mock_dina.p2p.messages) == 0
+        assert len(mock_dina.p2p.authenticated_peers) == 0
+
         # User's Dina authenticates Sancho as a contact and sends TO Sancho
         mock_dina.p2p.add_contact(sancho_identity.root_did)
         doc = DIDDocument(
@@ -234,10 +251,20 @@ class TestDinaToDinaProtocol:
 
         # Message is directly in p2p.messages — no intermediary store
         assert len(mock_dina.p2p.messages) == 1
-        # No external platform was involved
         received = mock_dina.p2p.receive()
         assert received is not None
         assert received.payload["message"] == "Welcome!"
+        assert received.from_did == mock_identity.root_did
+        assert received.to_did == sancho_identity.root_did
+
+        # After receive(), message is consumed from the channel
+        assert len(mock_dina.p2p.messages) == 0
+
+        # Counter-proof: the other Dina's P2P is completely independent
+        assert len(mock_another_dina.p2p.messages) == 0, \
+            "Other Dina must have zero messages — no shared platform"
+        assert len(mock_another_dina.p2p.authenticated_peers) == 0, \
+            "Other Dina has no authenticated peers — channels are independent"
 
 # TST-INT-479
     def test_mutual_authentication_required(
@@ -289,6 +316,25 @@ class TestDinaToDinaProtocol:
         sancho_identity: MockIdentity,
     ) -> None:
         """Messages to a trusted (authenticated) contact are delivered immediately."""
+        # Pre-condition: no messages, no authenticated peers
+        assert len(mock_p2p.messages) == 0
+        assert len(mock_p2p.authenticated_peers) == 0
+
+        # Counter-proof: sending to unauthenticated peer queues, not delivers
+        unauthenticated_msg = DinaMessage(
+            type="dina/social/greeting",
+            from_did=mock_identity.root_did,
+            to_did=sancho_identity.root_did,
+            payload={"message": "premature hello"},
+        )
+        sent_early = mock_p2p.send(unauthenticated_msg)
+        assert sent_early is False, \
+            "Message to unauthenticated peer must not be delivered"
+        assert len(mock_p2p.messages) == 0
+        assert len(mock_p2p.queue) == 1, \
+            "Undelivered message must be queued for later"
+
+        # Now authenticate
         mock_p2p.add_contact(sancho_identity.root_did)
         doc = DIDDocument(
             did=sancho_identity.root_did,
@@ -299,6 +345,7 @@ class TestDinaToDinaProtocol:
             mock_identity.root_did, sancho_identity.root_did,
             mock_identity, doc,
         )
+        assert sancho_identity.root_did in mock_p2p.authenticated_peers
 
         msg = DinaMessage(
             type="dina/social/greeting",
@@ -309,6 +356,13 @@ class TestDinaToDinaProtocol:
         sent = mock_p2p.send(msg)
         assert sent is True
         assert len(mock_p2p.messages) == 1
+
+        # Verify message content survived delivery
+        delivered = mock_p2p.messages[0]
+        assert delivered.payload["message"] == "hello friend"
+        assert delivered.from_did == mock_identity.root_did
+        assert delivered.to_did == sancho_identity.root_did
+        assert delivered.type == "dina/social/greeting"
 
 # TST-INT-286
     def test_no_raw_data_shared(
@@ -347,6 +401,17 @@ class TestSellerNegotiation:
         seller_identity: MockIdentity,
     ) -> None:
         """Buyer's Dina contacts seller's Dina with a product inquiry."""
+        # Counter-proof: unauthenticated send fails
+        unauthenticated_msg = DinaMessage(
+            type="dina/commerce/inquiry",
+            from_did=mock_identity.root_did,
+            to_did=seller_identity.root_did,
+            payload={"product_id": "aeron_2025"},
+        )
+        assert mock_dina.p2p.send(unauthenticated_msg) is False, (
+            "Send to unauthenticated peer must fail"
+        )
+
         # Authenticate seller
         mock_dina.p2p.add_contact(seller_identity.root_did)
         seller_doc = DIDDocument(
@@ -370,6 +435,14 @@ class TestSellerNegotiation:
         )
         sent = mock_dina.p2p.send(inquiry)
         assert sent is True
+
+        # Verify message recorded with correct content
+        assert len(mock_dina.p2p.messages) >= 1
+        last_msg = mock_dina.p2p.messages[-1]
+        assert last_msg.type == "dina/commerce/inquiry"
+        assert last_msg.to_did == seller_identity.root_did
+        assert last_msg.payload["product_id"] == "aeron_2025"
+        assert len(last_msg.payload["questions"]) == 2
 
 # TST-INT-483
     def test_seller_sees_only_buyer_persona(
@@ -406,13 +479,31 @@ class TestSellerNegotiation:
         mock_dina: MockDinaCore,
         seller_identity: MockIdentity,
     ) -> None:
-        """Before negotiating, buyer's Dina checks seller's trust score."""
-        # Set a trust score for the seller
-        mock_dina.trust_network.set_trust_score(seller_identity.root_did, 78.5)
+        """Before negotiating, buyer's Dina checks seller's trust score.
+        Unknown sellers default to 0.0 (untrusted). Trusted sellers
+        have positive scores. The check must happen before engagement."""
+        # Pre-condition: unknown seller has zero trust (default)
+        unknown_score = mock_dina.trust_network.get_trust_score(
+            "did:plc:UnknownSeller000000000000000"
+        )
+        assert unknown_score == 0.0  # unknown DID → zero trust
 
+        # Seller has no trust initially
+        initial = mock_dina.trust_network.get_trust_score(seller_identity.root_did)
+        assert initial == 0.0
+
+        # After trust is established (e.g., via attestations, transactions)
+        mock_dina.trust_network.set_trust_score(seller_identity.root_did, 78.5)
         score = mock_dina.trust_network.get_trust_score(seller_identity.root_did)
         assert score == 78.5
         assert score > 0.0  # Seller has some trust
+
+        # Counter-proof: different seller has independent score
+        other_did = "did:plc:OtherSeller0000000000000000"
+        mock_dina.trust_network.set_trust_score(other_did, 30.0)
+        assert mock_dina.trust_network.get_trust_score(other_did) == 30.0
+        # Original seller's score unchanged
+        assert mock_dina.trust_network.get_trust_score(seller_identity.root_did) == 78.5
 
 # TST-INT-485
     def test_direct_transaction_no_marketplace(
@@ -463,13 +554,27 @@ class TestSellerNegotiation:
         mock_human: MockHuman,
     ) -> None:
         """If a seller has low trust, Dina flags it to the user before proceeding."""
-        low_rep_seller = "did:plc:LowRep123456789012345678901234"
-        mock_dina.trust_network.set_trust_score(low_rep_seller, 15.0)
+        # Pre-condition: no notifications yet
+        assert len(mock_human.notifications) == 0
 
+        low_rep_seller = "did:plc:LowRep123456789012345678901234"
+
+        # Pre-condition: unknown seller has default score
+        default_score = mock_dina.trust_network.get_trust_score(low_rep_seller)
+        assert default_score == 0.0  # unknown → 0.0
+
+        mock_dina.trust_network.set_trust_score(low_rep_seller, 15.0)
         score = mock_dina.trust_network.get_trust_score(low_rep_seller)
+        assert score == 15.0
         assert score < 30.0  # Below threshold
 
-        # Dina creates a fiduciary-level alert
+        # Counter-proof: high-trust seller should NOT trigger fiduciary alert
+        high_rep_seller = "did:plc:HighRep12345678901234567890123"
+        mock_dina.trust_network.set_trust_score(high_rep_seller, 85.0)
+        high_score = mock_dina.trust_network.get_trust_score(high_rep_seller)
+        assert high_score >= 30.0  # Above threshold — no alert needed
+
+        # Dina creates a fiduciary-level alert for low-trust seller
         notification = Notification(
             tier=SilenceTier.TIER_1_FIDUCIARY,
             title="Low trust seller",
@@ -483,6 +588,10 @@ class TestSellerNegotiation:
         assert len(mock_human.notifications) == 1
         assert mock_human.notifications[0].tier == SilenceTier.TIER_1_FIDUCIARY
         assert "Low trust" in mock_human.notifications[0].title
+        # Verify the notification body contains the actual score
+        assert "15.0" in mock_human.notifications[0].body
+        # Fiduciary tier must offer actionable choices
+        assert "block" in mock_human.notifications[0].actions
 
 
 # ---------------------------------------------------------------------------
@@ -624,6 +733,10 @@ class TestSharingPolicyAndEgress:
         """Every outbound message is logged in the audit trail, recording
         the sender, recipient, message type, and timestamp. This ensures
         forensic traceability of all data leaving the Home Node."""
+        # Pre-condition: audit log and P2P messages empty
+        assert len(mock_audit_log.entries) == 0
+        assert len(mock_dina.p2p.messages) == 0
+
         # Authenticate peer
         mock_dina.p2p.add_contact(sancho_identity.root_did)
         mock_dina.p2p.authenticated_peers.add(sancho_identity.root_did)
@@ -661,6 +774,13 @@ class TestSharingPolicyAndEgress:
 
         # Audit trail must not contain raw PII
         assert not mock_audit_log.has_pii(["Rajmohan", "rajmohan@email.com"])
+
+        # Counter-proof: query by different action returns empty
+        assert len(mock_audit_log.query(action="d2d_ingress")) == 0
+
+        # Counter-proof: query by actor filters correctly
+        assert len(mock_audit_log.query(actor=sancho_identity.root_did)) == 0
+        assert len(mock_audit_log.query(actor=mock_identity.root_did)) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -799,6 +919,9 @@ class TestOfflineDeliveryAndResilience:
         """When the recipient is offline, the message is queued in the outbox
         rather than being dropped. The outbox persists the message until
         delivery succeeds or retries are exhausted."""
+        # Pre-condition: outbox is empty
+        assert len(mock_outbox.get_pending()) == 0
+
         msg = DinaMessage(
             type="dina/social/arrival",
             from_did=mock_identity.root_did,
@@ -816,10 +939,17 @@ class TestOfflineDeliveryAndResilience:
         assert len(pending) == 1
         assert pending[0][0] == msg_id
         assert pending[0][1].type == "dina/social/arrival"
+        assert pending[0][1].to_did == sancho_identity.root_did
 
         # Message is NOT in delivered or failed sets
         assert msg_id not in mock_outbox.delivered
         assert msg_id not in mock_outbox.failed
+
+        # Retry count starts at 0
+        assert mock_outbox.retry_counts[msg_id] == 0
+
+        # Counter-proof: acking a nonexistent msg_id returns False
+        assert mock_outbox.ack("msg_nonexistent") is False
 
 # TST-INT-065
     def test_recipient_recovers_within_retry_window(
@@ -905,6 +1035,10 @@ class TestOfflineDeliveryAndResilience:
         """After a network partition heals, queued messages resume delivery.
         The outbox retries during the partition, and once the peer is reachable
         again the message is acked and delivered."""
+        # Pre-condition: outbox and P2P channel empty
+        assert len(mock_outbox.get_pending()) == 0
+        assert len(mock_dina.p2p.messages) == 0
+
         msg = DinaMessage(
             type="dina/social/context_share",
             from_did=mock_identity.root_did,
@@ -915,11 +1049,16 @@ class TestOfflineDeliveryAndResilience:
         # Network partition: message queued
         msg_id = mock_outbox.enqueue(msg)
         assert len(mock_outbox.get_pending()) == 1
+        assert msg_id not in mock_outbox.delivered
 
         # Retry during partition (fails to reach peer)
-        mock_outbox.retry(msg_id)
-        mock_outbox.retry(msg_id)
+        assert mock_outbox.retry(msg_id) is True  # still within retry window
+        assert mock_outbox.retry(msg_id) is True
         assert mock_outbox.retry_counts[msg_id] == 2
+
+        # Message still pending — not delivered, not failed
+        assert msg_id not in mock_outbox.failed
+        assert len(mock_outbox.get_pending()) == 1
 
         # Partition heals -- peer is reachable
         mock_dina.p2p.add_contact(sancho_identity.root_did)
@@ -928,7 +1067,12 @@ class TestOfflineDeliveryAndResilience:
         # Deliver the pending message via P2P
         pending = mock_outbox.get_pending()
         assert len(pending) == 1
-        _, pending_msg = pending[0]
+        pending_id, pending_msg = pending[0]
+        assert pending_id == msg_id
+        # Message content survived retries
+        assert pending_msg.type == "dina/social/context_share"
+        assert pending_msg.payload["context"] == "meeting rescheduled"
+
         sent = mock_dina.p2p.send(pending_msg)
         assert sent is True
 
@@ -936,6 +1080,7 @@ class TestOfflineDeliveryAndResilience:
         mock_outbox.ack(msg_id)
         assert msg_id in mock_outbox.delivered
         assert len(mock_outbox.get_pending()) == 0
+        assert len(mock_dina.p2p.messages) == 1
 
 # TST-INT-068
     def test_duplicate_delivery_prevention(
@@ -988,6 +1133,10 @@ class TestOfflineDeliveryAndResilience:
         """When direct P2P fails due to NAT, the relay is used as a fallback.
         The relay only sees encrypted blobs -- it cannot read message content.
         The blob hash is recorded for audit, but no plaintext leaks."""
+        # Pre-condition: no relay forwarding yet
+        assert len(mock_relay.forwarded) == 0
+        assert len(mock_dina.p2p.messages) == 0
+
         # Direct P2P fails -- Sancho is not authenticated (behind NAT)
         msg = DinaMessage(
             type="dina/social/arrival",
@@ -997,9 +1146,16 @@ class TestOfflineDeliveryAndResilience:
         )
         direct_sent = mock_dina.p2p.send(msg)
         assert direct_sent is False  # P2P failed (no authenticated peer)
+        # Message was queued, not delivered
+        assert len(mock_dina.p2p.queue) == 1
+        assert len(mock_dina.p2p.messages) == 0
 
-        # Fall back to relay with encrypted blob
-        encrypted_blob = f"ENC[{mock_identity.root_did}]:{msg.payload}"
+        # Fall back to relay — encrypt with persona, not manual string concat
+        persona = mock_identity.derive_persona(PersonaType.PERSONAL)
+        encrypted_blob = persona.encrypt(str(msg.payload))
+        assert encrypted_blob.startswith("ENC["), \
+            "Blob must be encrypted before relay forwarding"
+
         relay_ok = mock_relay.forward(
             from_did=mock_identity.root_did,
             to_did=sancho_identity.root_did,
@@ -1017,3 +1173,18 @@ class TestOfflineDeliveryAndResilience:
         assert "blob_hash" in entry
         assert "coffee_shop" not in entry["blob_hash"]
         assert "location" not in entry.get("blob", "")
+
+        # Counter-proof: plaintext does NOT appear in encrypted blob
+        assert "coffee_shop" not in encrypted_blob, \
+            "Plaintext must not survive encryption for relay"
+
+        # Counter-proof: second relay forward produces a distinct entry
+        relay_ok_2 = mock_relay.forward(
+            from_did=mock_identity.root_did,
+            to_did=sancho_identity.root_did,
+            encrypted_blob=persona.encrypt("another_message"),
+        )
+        assert relay_ok_2 is True
+        assert len(mock_relay.forwarded) == 2
+        # Different payloads produce different hashes
+        assert mock_relay.forwarded[0]["blob_hash"] != mock_relay.forwarded[1]["blob_hash"]

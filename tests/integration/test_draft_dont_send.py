@@ -154,11 +154,25 @@ class TestDraftProtocol:
         retrieved = staging.get(draft.draft_id)
         assert retrieved.sent is False
 
-        # Simulate user review and approval
+        # Counter-proof: human DENIES approval → draft stays unsent
+        mock_human.set_approval("send_email", False)
         if mock_human.approve("send_email"):
             retrieved.sent = True
+        assert retrieved.sent is False, (
+            "Draft must remain unsent when human denies approval"
+        )
 
+        # Human APPROVES → now the draft can be marked sent
+        mock_human.set_approval("send_email", True)
+        if mock_human.approve("send_email"):
+            retrieved.sent = True
         assert retrieved.sent is True
+
+        # MockStagingTier has no send() method — the architecture enforces
+        # that only manual flag-flip after human approval can mark sent
+        assert not hasattr(staging, "send"), (
+            "Staging must not expose a send() method — drafts only"
+        )
 
 # TST-INT-292
     def test_delegated_agent_also_drafts_only(
@@ -225,6 +239,9 @@ class TestPaymentIntentProtocol:
         signs the transaction in their own wallet."""
         staging = mock_dina.staging
 
+        # Pre-condition: nonexistent intent returns None
+        assert staging.get("pay_crypto_test") is None
+
         intent = PaymentIntent(
             intent_id="pay_crypto_test",
             method="crypto",
@@ -233,21 +250,48 @@ class TestPaymentIntentProtocol:
             amount=150.0,
             currency="USDC",
         )
-        staging.store_payment_intent(intent)
+        intent_id = staging.store_payment_intent(intent)
+        assert intent_id == "pay_crypto_test"
 
         retrieved = staging.get(intent.intent_id)
         assert retrieved is not None
         assert retrieved.method == "crypto"
         assert "ethereum:" in retrieved.intent_uri
+        # Cart Handover: Dina never executes — user signs in own wallet
         assert retrieved.executed is False
+        # Expiry window was auto-set by staging
+        assert retrieved.expires_at > retrieved.created_at
+
+        # Counter-proof: a different intent doesn't collide
+        web_intent = PaymentIntent(
+            intent_id="pay_web_separate",
+            method="web",
+            intent_uri="https://store.example.com/checkout",
+            merchant="OtherStore",
+            amount=50.0,
+            currency="USD",
+        )
+        staging.store_payment_intent(web_intent)
+        # Crypto intent still retrievable and unchanged
+        still_crypto = staging.get("pay_crypto_test")
+        assert still_crypto is not None
+        assert still_crypto.method == "crypto"
+        # Web intent is separate
+        web_retrieved = staging.get("pay_web_separate")
+        assert web_retrieved is not None
+        assert web_retrieved.method == "web"
 
 # TST-INT-293
     def test_web_checkout_link(
         self, mock_dina: MockDinaCore,
     ) -> None:
         """For traditional web checkouts, Dina provides a link. The user
-        completes payment in their browser."""
+        completes payment in their browser.  Cart Handover: Dina never
+        executes payment — only stores the intent for user action."""
         staging = mock_dina.staging
+
+        # Counter-proof: non-existent intent returns None
+        assert staging.get("nonexistent_intent") is None
 
         intent = PaymentIntent(
             intent_id="pay_web_test",
@@ -257,13 +301,31 @@ class TestPaymentIntentProtocol:
             amount=4999.0,
             currency="INR",
         )
-        staging.store_payment_intent(intent)
+        stored_id = staging.store_payment_intent(intent)
+        assert stored_id == "pay_web_test"
 
         retrieved = staging.get(intent.intent_id)
         assert retrieved is not None
-        assert retrieved.method == "web"
-        assert "https://" in retrieved.intent_uri
+        # Cart Handover contract: Dina NEVER executes
         assert retrieved.executed is False
+
+        # Staging auto-expiry: intent has a valid expiry window
+        assert retrieved.expires_at > retrieved.created_at, (
+            "Payment intent must have an expiry window"
+        )
+
+        # Counter-proof: a different method (UPI) produces distinct intent
+        upi_intent = PaymentIntent(
+            intent_id="pay_upi_test",
+            method="upi",
+            intent_uri="upi://pay?pa=merchant@upi&am=5000",
+            merchant="SafeShop",
+            amount=5000.0,
+            currency="INR",
+        )
+        staging.store_payment_intent(upi_intent)
+        assert staging.get("pay_upi_test").method == "upi"
+        assert staging.get("pay_web_test").method == "web"  # no collision
 
 # TST-INT-493
     def test_dina_never_sees_payment_credentials(

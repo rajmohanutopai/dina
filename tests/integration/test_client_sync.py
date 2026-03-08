@@ -19,6 +19,7 @@ from tests.integration.mocks import (
     MockDinaCore,
     MockGoCore,
     MockIdentity,
+    MockPairingManager,
     MockRichClient,
     MockThinClient,
     MockVault,
@@ -65,19 +66,38 @@ class TestRichClientSync:
         mock_dina: MockDinaCore,
     ):
         """New data added to the home node is pushed to the rich client
-        in real time when connected."""
-        # Initial sync
+        in real time when connected. The client's local cache reflects
+        the vault state after sync."""
+        # Pre-condition: client cache is empty
+        assert len(mock_rich_client.local_cache) == 0
+        assert mock_rich_client.connected is True
+
+        # Initial sync from home node
         mock_rich_client.sync([{"id": "item_1", "content": "first"}])
         assert "item_1" in mock_rich_client.local_cache
+        assert mock_rich_client.sync_checkpoint > 0  # checkpoint advanced
 
-        # New item arrives at home node
+        # New item arrives at home node vault
         new_item = {"id": "item_2", "content": "second"}
         mock_dina.vault.store(1, "item_2", new_item)
+        # Verify item exists in vault
+        assert mock_dina.vault.retrieve(1, "item_2") is not None
 
-        # Push to connected client
+        # Push to connected client (simulates Core→WS→Client push)
         mock_rich_client.cache_item("item_2", new_item)
         assert "item_2" in mock_rich_client.local_cache
         assert mock_rich_client.local_cache["item_2"]["content"] == "second"
+
+        # Client cache now has both items
+        assert len(mock_rich_client.local_cache) == 2
+
+        # Client can search locally for pushed content
+        results = mock_rich_client.search_local("second")
+        assert len(results) == 1
+        assert results[0]["content"] == "second"
+
+        # Counter-proof: non-matching search returns empty
+        assert len(mock_rich_client.search_local("nonexistent")) == 0
 
 # TST-INT-381
     def test_offline_queue_then_sync(
@@ -130,28 +150,45 @@ class TestRichClientSync:
         self, mock_rich_client: MockRichClient, mock_dina: MockDinaCore
     ):
         """If the local cache is corrupted, the client detects it and
-        re-syncs from the home node checkpoint."""
-        # Normal sync
+        re-syncs from the home node vault."""
+        # Populate the authoritative vault (home node)
+        mock_dina.vault.store(1, "item_x", {"content": "valid data"})
+        mock_dina.vault.store(1, "item_y", {"content": "other data"})
+
+        # Normal sync: client caches from home node
         mock_rich_client.sync([
             {"id": "item_x", "content": "valid data"},
+            {"id": "item_y", "content": "other data"},
         ])
+        pre_corruption_checkpoint = mock_rich_client.sync_checkpoint
+        assert len(mock_rich_client.local_cache) == 2
         assert "item_x" in mock_rich_client.local_cache
+        assert "item_y" in mock_rich_client.local_cache
 
-        # Simulate corruption: wipe the cache
+        # Simulate corruption: cache loses data
         mock_rich_client.local_cache.clear()
+
+        # Corruption detection: cache empty but checkpoint says we had data
         assert len(mock_rich_client.local_cache) == 0
+        assert pre_corruption_checkpoint > 0, \
+            "Checkpoint proves we previously synced — empty cache is corruption"
 
-        # Detect corruption (cache unexpectedly empty)
-        is_corrupted = len(mock_rich_client.local_cache) == 0
-        assert is_corrupted is True
+        # Re-sync: reset checkpoint and pull fresh data from home node vault
+        mock_rich_client.sync_checkpoint = 0.0
+        vault_items = []
+        for key, value in mock_dina.vault._tiers[1].items():
+            vault_items.append({"id": key, **value})
+        mock_rich_client.sync(vault_items)
 
-        # Re-sync from home node
-        mock_rich_client.sync_checkpoint = 0.0  # Reset checkpoint
-        home_items = [{"id": "item_x", "content": "valid data"}]
-        mock_rich_client.sync(home_items)
-
+        # All home node data restored
+        assert len(mock_rich_client.local_cache) == 2
         assert "item_x" in mock_rich_client.local_cache
+        assert "item_y" in mock_rich_client.local_cache
         assert mock_rich_client.sync_checkpoint > 0
+
+        # Counter-proof: search works after resync
+        results = mock_rich_client.search_local("valid")
+        assert len(results) > 0, "Search should find restored data"
 
 
 # =========================================================================
@@ -212,31 +249,44 @@ class TestDeviceOnboarding:
 
 # TST-INT-030
     def test_qr_code_pairing(self, mock_dina: MockDinaCore):
-        """QR code contains a one-time pairing token derived from the
-        root identity. Scanning it initiates device registration."""
-        # Generate a pairing token (simulates QR code content)
-        pairing_token = hashlib.sha256(
-            f"{mock_dina.identity.root_private_key}:pairing:{time.time()}".encode()
-        ).hexdigest()
+        """Pairing code is single-use: generate → complete → token issued.
+        Re-using the same code must fail."""
+        pairing_mgr = MockPairingManager()
 
-        assert len(pairing_token) == 64  # SHA-256 hex
-        assert pairing_token != mock_dina.identity.root_private_key
+        # --- Generate a pairing code (simulates QR display) ---
+        pairing = pairing_mgr.generate_code()
+        assert len(pairing.code) == 6, "Pairing code must be 6 digits"
+        assert pairing.code in pairing_mgr.pending_codes, (
+            "Generated code must be tracked in pending_codes"
+        )
+        assert pairing.used is False, "New code must not be marked used"
 
-        # The pairing token is single-use
-        mock_dina.vault.store(0, f"pairing_{pairing_token[:16]}", {
-            "token": pairing_token,
-            "used": False,
-            "created_at": time.time(),
-        })
+        # --- Complete pairing with valid code → token issued ---
+        token = pairing_mgr.complete_pairing(pairing.code, "phone_001")
+        assert token is not None, (
+            "Valid pairing code must issue a CLIENT_TOKEN"
+        )
+        assert len(token.token) == 64, "Token must be 64-char hex"
+        assert pairing.used is True, (
+            "Code must be marked used after successful pairing"
+        )
 
-        stored = mock_dina.vault.retrieve(0, f"pairing_{pairing_token[:16]}")
-        assert stored["used"] is False
+        # --- Single-use: re-using same code must fail ---
+        token2 = pairing_mgr.complete_pairing(pairing.code, "tablet_001")
+        assert token2 is None, (
+            "Used pairing code must not issue a second token"
+        )
 
-        # Mark as used after pairing
-        stored["used"] = True
-        mock_dina.vault.store(0, f"pairing_{pairing_token[:16]}", stored)
-        updated = mock_dina.vault.retrieve(0, f"pairing_{pairing_token[:16]}")
-        assert updated["used"] is True
+        # --- Invalid code must fail ---
+        token3 = pairing_mgr.complete_pairing("999999", "laptop_001")
+        assert token3 is None, (
+            "Invalid pairing code must not issue a token"
+        )
+
+        # --- Issued token is valid ---
+        assert pairing_mgr.is_token_valid(token.token) is True, (
+            "Freshly issued token must be valid"
+        )
 
 # TST-INT-367
     def test_key_stored_in_hardware(self, mock_dina: MockDinaCore):
@@ -244,21 +294,31 @@ class TestDeviceOnboarding:
         per device. In production this would be stored in the Secure Enclave
         or TPM — here we verify derivation produces a deterministic,
         device-unique key."""
+        # Pre-condition: no devices registered
+        assert len(mock_dina.identity.devices) == 0
+
         key_phone = mock_dina.identity.register_device("phone_001")
         key_laptop = mock_dina.identity.register_device("laptop_001")
 
-        # Keys are deterministic for the same device ID
-        key_phone_again = hashlib.sha256(
-            f"{mock_dina.identity.root_private_key}device:phone_001".encode()
-        ).hexdigest()
-        assert key_phone == key_phone_again
+        # Both devices are registered
+        assert "phone_001" in mock_dina.identity.devices
+        assert "laptop_001" in mock_dina.identity.devices
 
-        # Different devices get different keys
+        # Different devices get different keys (per-device uniqueness)
         assert key_phone != key_laptop
 
         # Keys are 256-bit (64 hex chars)
         assert len(key_phone) == 64
         assert len(key_laptop) == 64
+
+        # Determinism: re-registering same device produces same key
+        key_phone_again = mock_dina.identity.register_device("phone_001")
+        assert key_phone_again == key_phone
+
+        # Counter-proof: different identity produces different key for same device
+        other_identity = MockIdentity()
+        other_key = other_identity.register_device("phone_001")
+        assert other_key != key_phone  # different root key → different device key
 
 # TST-INT-378
     def test_device_registered(self, mock_dina: MockDinaCore):

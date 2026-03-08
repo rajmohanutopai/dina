@@ -224,8 +224,14 @@ def test_export_excludes_secrets(
     mock_vault: MockVault,
     mock_identity: MockIdentity,
 ):
-    """M7: Export excludes device_tokens, BRAIN_TOKEN, passphrase."""
-    # Store items including some that look like secrets
+    """M7: Export excludes device_tokens, BRAIN_TOKEN, passphrase.
+
+    Secrets live outside the vault (Docker secrets, env vars, identity
+    keychain).  This test verifies that vault data — which is what
+    export_from snapshots — does not contain secret field names, and
+    that non-secret user data IS present in the export.
+    """
+    # Store regular vault data
     mock_vault.store(0, "config", {
         "mode": "convenience",
         "created_at": time.time(),
@@ -234,9 +240,20 @@ def test_export_excludes_secrets(
 
     mock_export_archive.export_from(mock_vault, mock_identity)
 
-    # Serialize the entire snapshot to check for secret keys
+    # Positive proof: regular data IS in the export
     snapshot_str = json.dumps(mock_export_archive.data, default=str).lower()
+    assert "convenience" in snapshot_str, (
+        "Export must contain non-secret vault data"
+    )
+    assert "personal stuff" in snapshot_str, (
+        "Export must contain user data"
+    )
 
+    # Export has a valid checksum (tamper detection works)
+    assert mock_export_archive.checksum is not None
+    assert len(mock_export_archive.checksum) == 64  # SHA-256 hex
+
+    # Secret field names must not appear in exported vault snapshot
     assert "brain_token" not in snapshot_str, (
         "Export must not contain brain_token"
     )
@@ -246,6 +263,10 @@ def test_export_excludes_secrets(
     assert "passphrase" not in snapshot_str, (
         "Export must not contain passphrase"
     )
+
+    # Counter-proof: import rejects tampered export
+    mock_export_archive.tamper()
+    assert mock_export_archive.import_into(mock_vault, mock_identity) is False
 
 
 # ---------------------------------------------------------------------------
@@ -354,20 +375,39 @@ def test_task_queue_dead_letter_after_3_failures(
     mock_task_queue: MockTaskQueue,
 ):
     """M10: Dead letter after 3 fails + Tier 2 notification."""
+    # Pre-condition: queue is empty
+    assert len(mock_task_queue.tasks) == 0
+    assert len(mock_task_queue.dead_letter) == 0
+    assert len(mock_task_queue.notifications) == 0
+
     mock_task_queue.enqueue("task_99", {"action": "process_email"})
+    assert mock_task_queue.tasks["task_99"]["status"] == "pending"
 
-    # Fail 3 times
-    for attempt in range(3):
-        mock_task_queue.start_processing("task_99")
-        mock_task_queue.fail("task_99")
+    # Counter-proof: after 1 failure, task goes back to pending (not dead)
+    mock_task_queue.start_processing("task_99")
+    mock_task_queue.fail("task_99")
+    assert mock_task_queue.tasks["task_99"]["status"] == "pending", \
+        "1 failure must NOT dead-letter the task"
+    assert "task_99" not in mock_task_queue.dead_letter
 
-    # After 3rd fail: status is "dead"
+    # Counter-proof: after 2 failures, still not dead
+    mock_task_queue.start_processing("task_99")
+    mock_task_queue.fail("task_99")
+    assert mock_task_queue.tasks["task_99"]["status"] == "pending", \
+        "2 failures must NOT dead-letter the task"
+    assert len(mock_task_queue.notifications) == 0, \
+        "No notification until dead-lettered"
+
+    # 3rd failure: dead-lettered
+    mock_task_queue.start_processing("task_99")
+    mock_task_queue.fail("task_99")
+
     assert mock_task_queue.tasks["task_99"]["status"] == "dead"
     assert "task_99" in mock_task_queue.dead_letter
 
     # Tier 2 notification generated
-    assert len(mock_task_queue.notifications) >= 1
-    notif = mock_task_queue.notifications[-1]
+    assert len(mock_task_queue.notifications) == 1
+    notif = mock_task_queue.notifications[0]
     assert notif["tier"] == SilenceTier.TIER_2_SOLICITED
     assert notif["task_id"] == "task_99"
 
@@ -403,41 +443,53 @@ def test_task_queue_watchdog_5min_timeout(
 def test_scratchpad_auto_expires_24h(
     mock_scratchpad: MockScratchpad,
 ):
-    """M12: Scratchpad entries expire after 24h."""
-    # Save checkpoint with old timestamp
-    old_time = time.time() - (23 * 3600)  # 23 hours ago
-    mock_scratchpad.checkpoints["task_fresh"] = {
-        "step": 3,
-        "context": {"partial": "data"},
-        "timestamp": old_time,
-    }
+    """M12: Scratchpad entries older than 24h are expired by TTL sweep.
 
-    # Before 24h: checkpoint exists
-    assert mock_scratchpad.has_checkpoint("task_fresh") is True
+    Uses save() to create checkpoints, then backdates timestamps to simulate
+    age. The TTL sweep (inline, as MockScratchpad has no built-in expiry)
+    deletes stale entries while preserving fresh ones.
+    """
+    TTL_SECONDS = 24 * 3600
 
-    # Save another with timestamp 25 hours ago
-    very_old_time = time.time() - (25 * 3600)
-    mock_scratchpad.checkpoints["task_old"] = {
-        "step": 1,
-        "context": {"stale": "data"},
-        "timestamp": very_old_time,
-    }
+    # --- Create checkpoints via the mock API ---
+    mock_scratchpad.save("task_fresh", step=3, context={"partial": "data"})
+    mock_scratchpad.save("task_old", step=1, context={"stale": "data"})
+    mock_scratchpad.save("task_boundary", step=2, context={"edge": "case"})
 
-    # Both exist in storage
-    assert mock_scratchpad.has_checkpoint("task_old") is True
-    assert mock_scratchpad.has_checkpoint("task_fresh") is True
-
-    # Simulate expiration check: entries older than 24h should be considered expired
+    # Backdate timestamps to simulate age
     now = time.time()
-    ttl_seconds = 24 * 3600
-    for task_id, checkpoint in list(mock_scratchpad.checkpoints.items()):
-        if now - checkpoint["timestamp"] > ttl_seconds:
-            mock_scratchpad.delete(task_id)
+    mock_scratchpad.checkpoints["task_fresh"]["timestamp"] = now - (23 * 3600)
+    mock_scratchpad.checkpoints["task_old"]["timestamp"] = now - (25 * 3600)
+    mock_scratchpad.checkpoints["task_boundary"]["timestamp"] = now - TTL_SECONDS - 1
 
-    # task_old should be expired and deleted
-    assert mock_scratchpad.has_checkpoint("task_old") is False
-    # task_fresh should still exist (only 23h old)
+    # All exist before sweep
     assert mock_scratchpad.has_checkpoint("task_fresh") is True
+    assert mock_scratchpad.has_checkpoint("task_old") is True
+    assert mock_scratchpad.has_checkpoint("task_boundary") is True
+
+    # --- TTL sweep: delete entries older than 24h ---
+    for task_id, checkpoint in list(mock_scratchpad.checkpoints.items()):
+        if now - checkpoint["timestamp"] > TTL_SECONDS:
+            deleted = mock_scratchpad.delete(task_id)
+            assert deleted is True, f"{task_id} must be deletable"
+
+    # Stale entries removed
+    assert mock_scratchpad.has_checkpoint("task_old") is False, (
+        "25h-old checkpoint must be expired"
+    )
+    assert mock_scratchpad.has_checkpoint("task_boundary") is False, (
+        "Checkpoint at exactly TTL+1s must be expired"
+    )
+
+    # Fresh entry preserved
+    assert mock_scratchpad.has_checkpoint("task_fresh") is True, (
+        "23h-old checkpoint must survive the sweep"
+    )
+    fresh = mock_scratchpad.load("task_fresh")
+    assert fresh is not None
+    assert fresh["context"] == {"partial": "data"}, (
+        "Surviving checkpoint data must be intact"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -514,28 +566,44 @@ def test_argon2id_default_parameters():
 def test_kv_store_cursor_survives_brain_restart(
     mock_kv_store: MockKVStore,
 ):
-    """M17: Sync cursor survives brain restart (persists in identity.sqlite)."""
-    # Store cursor value
+    """M17: Sync cursor survives brain restart (persists in identity.sqlite).
+
+    The KV store is on the Go Core side (identity.sqlite), so when the
+    Python Brain crashes and restarts, cursors must still be readable.
+    We simulate this by creating a new MockKVStore backed by the same
+    underlying dict (shared identity.sqlite).
+    """
+    # Store cursor values
     mock_kv_store.put("gmail_cursor", "msg_id_abc123")
     mock_kv_store.put("calendar_cursor", "event_xyz789")
 
-    # Verify stored
     assert mock_kv_store.get("gmail_cursor") == "msg_id_abc123"
     assert mock_kv_store.get("calendar_cursor") == "event_xyz789"
 
-    # Simulate brain restart: the KV store is in identity.sqlite,
-    # so the same instance persists (Go Core survives brain restart)
-    # Reading the same instance after "restart" shows persistence
-    assert mock_kv_store.get("gmail_cursor") == "msg_id_abc123", (
-        "Cursor must survive brain restart"
-    )
-    assert mock_kv_store.get("calendar_cursor") == "event_xyz789", (
-        "Cursor must survive brain restart"
-    )
+    # Simulate brain restart: a NEW MockKVStore instance is created,
+    # but it reads from the same backing store (Go Core's identity.sqlite)
+    restarted_kv = MockKVStore()
+    restarted_kv._store = mock_kv_store._store  # shared backing store
 
-    # Update cursor after restart
-    mock_kv_store.put("gmail_cursor", "msg_id_def456")
-    assert mock_kv_store.get("gmail_cursor") == "msg_id_def456"
+    # Cursors survive the restart
+    assert restarted_kv.get("gmail_cursor") == "msg_id_abc123", \
+        "Cursor must survive brain restart"
+    assert restarted_kv.get("calendar_cursor") == "event_xyz789", \
+        "Cursor must survive brain restart"
+
+    # Update cursor via restarted brain
+    restarted_kv.put("gmail_cursor", "msg_id_def456")
+    assert restarted_kv.get("gmail_cursor") == "msg_id_def456"
+
+    # Original view also sees the update (same backing store)
+    assert mock_kv_store.get("gmail_cursor") == "msg_id_def456", \
+        "Both KV instances must share the same backing store"
+
+    # Counter-proof: a truly fresh KV store (different identity.sqlite)
+    # does NOT see the cursors
+    isolated_kv = MockKVStore()
+    assert isolated_kv.get("gmail_cursor") is None, \
+        "Fresh KV store must not have cursors from another identity"
 
 
 # ---------------------------------------------------------------------------
@@ -547,6 +615,9 @@ def test_restricted_persona_audit_entry_schema(
     mock_audit_log: MockAuditLog,
 ):
     """M18: Exact audit schema for restricted persona access."""
+    # Pre-condition: no audit entries yet
+    assert len(mock_audit_log.query(action="persona_access")) == 0
+
     # Record an access to restricted persona
     mock_audit_log.record(
         actor="did:plc:BrainService",
@@ -579,6 +650,33 @@ def test_restricted_persona_audit_entry_schema(
     assert details["query_type"] == "fts_search"
     assert details["reason"] == "user_initiated_query"
 
+    # Verify top-level audit fields are correct
+    assert entry.actor == "did:plc:BrainService"
+    assert entry.action == "persona_access"
+    assert entry.resource == "health"
+    assert entry.result == "success"
+
+    # Counter-proof: querying by a different action returns empty
+    other_entries = mock_audit_log.query(action="vault_write")
+    assert len(other_entries) == 0, \
+        "Query for non-existent action must return empty"
+
+    # Record a second entry with different action — verify isolation
+    mock_audit_log.record(
+        actor="did:plc:BrainService",
+        action="vault_write",
+        resource="consumer",
+        result="success",
+        details={"key": "test_key"},
+    )
+    assert len(mock_audit_log.query(action="persona_access")) == 1, \
+        "persona_access query must still return exactly 1 entry"
+    assert len(mock_audit_log.query(action="vault_write")) == 1
+
+    # Counter-proof: audit entry must not contain PII
+    assert not mock_audit_log.has_pii(entry), \
+        "Audit entries must not contain PII"
+
 
 # ---------------------------------------------------------------------------
 # S7 Ingestion (M19-M25)
@@ -588,27 +686,47 @@ def test_restricted_persona_audit_entry_schema(
 def test_voice_memo_transcript_only(
     mock_vault: MockVault,
 ):
-    """M19: Voice memo transcript stored, audio binary discarded."""
-    # Store voice memo with transcript only — no binary blob
-    voice_item = {
+    """M19: Voice memo transcript stored, audio binary discarded.
+
+    Simulates the ingestion contract: raw voice input arrives with both
+    audio binary and transcript. Only the transcript is persisted to the
+    vault; binary data is stripped before storage.
+    """
+    # Raw voice input arrives with audio binary + transcript
+    raw_voice_input = {
         "id": "voice_001",
         "type": "voice_memo",
         "body_text": "Remind me to call dentist tomorrow at 3pm",
+        "audio_blob": b"\x00\xff" * 5000,  # raw PCM audio
+        "raw_audio": b"RIFF....WAVEfmt",  # WAV container
         "source": "voice_input",
         "timestamp": time.time(),
     }
-    mock_vault.store(1, "voice_001", voice_item)
 
-    # Retrieve and verify
+    # --- Ingestion contract: strip binary, keep transcript ---
+    BINARY_FIELDS = {"audio_blob", "raw_audio", "binary"}
+    stored_item = {
+        k: v for k, v in raw_voice_input.items() if k not in BINARY_FIELDS
+    }
+    mock_vault.store(1, "voice_001", stored_item)
+
+    # Retrieve and verify transcript preserved
     stored = mock_vault.retrieve(1, "voice_001")
     assert stored is not None
     assert "body_text" in stored, "Transcript must be stored"
     assert stored["body_text"] == "Remind me to call dentist tomorrow at 3pm"
 
-    # No binary blob field
+    # Binary fields were stripped before storage
     assert "audio_blob" not in stored, "Audio binary must be discarded"
     assert "raw_audio" not in stored, "Raw audio must be discarded"
-    assert "binary" not in stored, "Binary data must be discarded"
+
+    # Counter-proof: the raw input DID have binary data
+    assert "audio_blob" in raw_voice_input, (
+        "Test must start with audio_blob present in raw input"
+    )
+    assert "raw_audio" in raw_voice_input, (
+        "Test must start with raw_audio present in raw input"
+    )
 
 
 # TST-INT-624
@@ -616,6 +734,15 @@ def test_fiduciary_override_beats_regex(
     mock_classifier: MockSilenceClassifier,
 ):
     """M20: Security alert from noreply overrides regex skip — classified as FIDUCIARY."""
+    # Counter-proof: normal email without fiduciary keywords → Tier 3
+    tier_normal = mock_classifier.classify(
+        event_type="email",
+        content="Your weekly newsletter is here. Read the latest articles.",
+    )
+    assert tier_normal == SilenceTier.TIER_3_ENGAGEMENT, (
+        "Normal email without fiduciary keywords must be Tier 3"
+    )
+
     # Email from noreply@ with "security" keyword
     tier = mock_classifier.classify(
         event_type="email",
@@ -629,6 +756,14 @@ def test_fiduciary_override_beats_regex(
         "Security alerts must be classified as Tier 1 FIDUCIARY "
         "regardless of sender address"
     )
+
+    # Verify classification log shows keyword_match as reason
+    fiduciary_logs = [
+        e for e in mock_classifier.classification_log
+        if e["tier"] == SilenceTier.TIER_1_FIDUCIARY
+    ]
+    assert len(fiduciary_logs) >= 1
+    assert fiduciary_logs[-1]["reason"] == "keyword_match"
 
 
 # TST-INT-625
@@ -649,28 +784,73 @@ def test_subject_patterns_produce_thin_records(
             f"Subject '{subject}' should be Tier 3 ENGAGEMENT, got {tier}"
         )
 
+    # Counter-proof: fiduciary keyword in content overrides to Tier 1
+    tier_fiduciary = mock_classifier.classify(
+        event_type="product_update",
+        content="URGENT: Security breach detected in your account",
+    )
+    assert tier_fiduciary == SilenceTier.TIER_1_FIDUCIARY, (
+        "Security keyword must override thin-record classification to Tier 1"
+    )
+
+    # Counter-proof: solicited event type produces Tier 2
+    tier_solicited = mock_classifier.classify(
+        event_type="price_alert",
+        content="ThinkPad X1 dropped to ₹89,999",
+    )
+    assert tier_solicited == SilenceTier.TIER_2_SOLICITED, (
+        "Solicited event type must produce Tier 2, not Tier 3"
+    )
+
 
 # TST-INT-626
 def test_backfill_pauses_for_user_query():
     """M22: Backfill pauses and resumes; cursor unchanged after resume."""
-    from tests.integration.mocks import MockGmailConnector
+    from tests.integration.mocks import MockGmailConnector, OAuthToken
+    import time as _time
 
     connector = MockGmailConnector()
-
-    # Set up a cursor simulating an in-progress backfill
-    connector.save_cursor("backfill_cursor_page_42")
-
-    # Simulate user query arriving during backfill
-    user_query_arrived = True
-    if user_query_arrived:
-        # Pause: do not advance cursor
-        paused_cursor = connector.cursor
-
-    # After user query completes, resume
-    assert connector.cursor == paused_cursor, (
-        "Backfill cursor must be unchanged after user query pause/resume"
+    # Give connector a valid token so poll() works
+    token = OAuthToken(
+        access_token="valid_token",
+        expires_at=_time.time() + 3600,
     )
-    assert connector.cursor == "backfill_cursor_page_42"
+    connector.set_oauth_token(token)
+
+    # Populate a large dataset for fast_sync + backfill
+    all_items = [
+        {"message_id": f"msg_{i}", "content": f"email body {i}"}
+        for i in range(20)
+    ]
+
+    # Fast sync: returns first batch, queues the rest for backfill
+    first_batch = connector.fast_sync(all_items)
+    assert len(first_batch) > 0
+    assert len(connector._backfill_queue) > 0, \
+        "Backfill queue should have remaining items"
+    backfill_pending = len(connector._backfill_queue)
+
+    # Save cursor at current position (mid-backfill)
+    connector.save_cursor("cursor_after_fast_sync")
+
+    # Simulate pause: user query arrives, backfill does NOT advance
+    # The backfill queue remains untouched during the pause
+    assert len(connector._backfill_queue) == backfill_pending, \
+        "Backfill queue must not change while paused for user query"
+    assert connector.cursor == "cursor_after_fast_sync"
+
+    # Resume: drain the backfill queue
+    remaining = connector.backfill()
+    assert len(remaining) == backfill_pending
+    assert connector._backfill_complete is True
+    assert len(connector._backfill_queue) == 0
+
+    # Cursor is still at the saved position (not auto-advanced)
+    assert connector.cursor == "cursor_after_fast_sync", \
+        "Cursor must be unchanged — only explicit save_cursor advances it"
+
+    # Counter-proof: total items = first_batch + remaining
+    assert len(first_batch) + len(remaining) == len(all_items)
 
 
 # TST-INT-627
@@ -703,19 +883,38 @@ def test_openclaw_recovery_exact_cursor():
 
     kv = MockKVStore()
 
-    # Store cursor before outage
+    # Pre-condition: no cursor exists before processing starts
+    assert kv.get("openclaw_cursor") is None, \
+        "Cursor must not exist before any processing"
+
+    # Simulate processing tasks 1-3, advancing cursor each time
+    for task_id in ["task_id_001", "task_id_002", "task_id_003"]:
+        kv.put("openclaw_cursor", task_id)
+
+    # Cursor reflects the LAST processed task, not earlier ones
+    assert kv.get("openclaw_cursor") == "task_id_003", \
+        "Cursor must advance to last processed task"
+
+    # Process two more tasks
+    kv.put("openclaw_cursor", "task_id_004")
     kv.put("openclaw_cursor", "task_id_5678")
+
+    # After recovery (simulated: create new KV from same store),
+    # cursor is at the last committed position
     pre_outage_cursor = kv.get("openclaw_cursor")
+    assert pre_outage_cursor == "task_id_5678"
 
-    # Simulate outage (no state changes)
-    # ...
+    # Counter-proof: deleting cursor loses position
+    kv.delete("openclaw_cursor")
+    assert kv.get("openclaw_cursor") is None, \
+        "Deleted cursor must not be recoverable"
 
-    # After recovery, cursor is unchanged
-    post_outage_cursor = kv.get("openclaw_cursor")
-    assert post_outage_cursor == pre_outage_cursor, (
-        "OpenClaw cursor must be recoverable after outage"
-    )
-    assert post_outage_cursor == "task_id_5678"
+    # Counter-proof: other keys are not affected by cursor operations
+    kv.put("other_key", "other_value")
+    kv.put("openclaw_cursor", "task_id_9999")
+    assert kv.get("other_key") == "other_value", \
+        "Cursor operations must not affect other keys"
+    assert kv.get("openclaw_cursor") == "task_id_9999"
 
 
 # TST-INT-629
@@ -756,8 +955,30 @@ def test_phone_connector_client_token_auth(
 
 # TST-INT-630
 def test_attestation_lexicon_field_validation():
-    """M26: Missing fields rejected, rating range 0-100."""
-    # Valid attestation
+    """M26: Missing fields rejected, rating range 0-100.
+
+    Validates attestation constraints via a validator function and
+    verifies that MockTrustNetwork accepts valid attestations while
+    the validator rejects invalid ones.
+    """
+    def validate_attestation(att: ExpertAttestation) -> list[str]:
+        """Return list of validation errors (empty = valid)."""
+        errors = []
+        if not att.expert_did:
+            errors.append("expert_did is required")
+        if not att.product_id:
+            errors.append("product_id is required")
+        if not att.product_category:
+            errors.append("product_category is required")
+        if not (0 <= att.rating <= 100):
+            errors.append(f"rating {att.rating} out of range [0, 100]")
+        if not att.verdict:
+            errors.append("verdict is required")
+        if not att.source_url:
+            errors.append("source_url is required")
+        return errors
+
+    # --- Valid attestation: accepted by validator and trust network ---
     valid = ExpertAttestation(
         expert_did="did:plc:Expert123",
         expert_trust_ring=TrustRing.RING_3_SKIN_IN_GAME,
@@ -767,9 +988,29 @@ def test_attestation_lexicon_field_validation():
         verdict={"summary": "Great laptop"},
         source_url="https://example.com/review",
     )
-    assert 0 <= valid.rating <= 100, "Valid rating must be in range"
+    errors = validate_attestation(valid)
+    assert errors == [], f"Valid attestation must pass: {errors}"
 
-    # Rating out of range: -1
+    trust_net = MockTrustNetwork()
+    trust_net.add_attestation(valid)
+    assert len(trust_net.attestations) == 1
+
+    # --- Rating boundary: 0 and 100 are valid ---
+    for boundary_rating in (0, 100):
+        boundary = ExpertAttestation(
+            expert_did="did:plc:Expert123",
+            expert_trust_ring=TrustRing.RING_2_VERIFIED,
+            product_category="laptops",
+            product_id="thinkpad_x1",
+            rating=boundary_rating,
+            verdict={"summary": "Edge"},
+            source_url="https://example.com",
+        )
+        assert validate_attestation(boundary) == [], (
+            f"Rating {boundary_rating} must be valid (boundary)"
+        )
+
+    # --- Rating out of range: -1 rejected ---
     invalid_low = ExpertAttestation(
         expert_did="did:plc:Expert123",
         expert_trust_ring=TrustRing.RING_3_SKIN_IN_GAME,
@@ -779,10 +1020,11 @@ def test_attestation_lexicon_field_validation():
         verdict={"summary": "Bad"},
         source_url="https://example.com",
     )
-    assert invalid_low.rating < 0, "Rating -1 is below valid range"
-    assert not (0 <= invalid_low.rating <= 100), "Rating -1 must be rejected"
+    errors_low = validate_attestation(invalid_low)
+    assert len(errors_low) == 1, f"Rating -1 must produce exactly 1 error: {errors_low}"
+    assert "out of range" in errors_low[0]
 
-    # Rating out of range: 101
+    # --- Rating out of range: 101 rejected ---
     invalid_high = ExpertAttestation(
         expert_did="did:plc:Expert123",
         expert_trust_ring=TrustRing.RING_3_SKIN_IN_GAME,
@@ -792,11 +1034,12 @@ def test_attestation_lexicon_field_validation():
         verdict={"summary": "Perfect"},
         source_url="https://example.com",
     )
-    assert invalid_high.rating > 100, "Rating 101 is above valid range"
-    assert not (0 <= invalid_high.rating <= 100), "Rating 101 must be rejected"
+    errors_high = validate_attestation(invalid_high)
+    assert len(errors_high) == 1, f"Rating 101 must produce exactly 1 error: {errors_high}"
+    assert "out of range" in errors_high[0]
 
-    # Missing required fields: empty expert_did
-    missing_did = ExpertAttestation(
+    # --- Missing required fields: multiple errors ---
+    missing_fields = ExpertAttestation(
         expert_did="",
         expert_trust_ring=TrustRing.RING_1_UNVERIFIED,
         product_category="",
@@ -805,8 +1048,11 @@ def test_attestation_lexicon_field_validation():
         verdict={},
         source_url="",
     )
-    assert missing_did.expert_did == "", "Empty expert_did should be rejected by validator"
-    assert missing_did.product_id == "", "Empty product_id should be rejected by validator"
+    errors_missing = validate_attestation(missing_fields)
+    assert len(errors_missing) >= 4, (
+        f"Empty expert_did, product_id, product_category, verdict, "
+        f"source_url must produce ≥4 errors, got {len(errors_missing)}: {errors_missing}"
+    )
 
 
 # TST-INT-631
@@ -814,6 +1060,12 @@ def test_appview_censorship_detection():
     """M27: Count mismatch between two AppViews triggers alert."""
     appview_a = MockAppView()
     appview_b = MockAppView()
+
+    # Pre-condition: both AppViews start empty
+    assert len(appview_a.indexed_records) == 0
+    assert len(appview_b.indexed_records) == 0
+    assert appview_a.cursor == 0
+    assert appview_b.cursor == 0
 
     # AppView A indexes 50 records
     records = [
@@ -823,10 +1075,16 @@ def test_appview_censorship_detection():
          "rating": 80 + (i % 20)}
         for i in range(50)
     ]
-    appview_a.consume_firehose(records)
+    indexed_a = appview_a.consume_firehose(records)
+    assert indexed_a == 50
 
     # AppView B only indexes 5 of the same records (censorship)
-    appview_b.consume_firehose(records[:5])
+    indexed_b = appview_b.consume_firehose(records[:5])
+    assert indexed_b == 5
+
+    # Cursor tracks all processed records
+    assert appview_a.cursor == 50
+    assert appview_b.cursor == 5
 
     # Discrepancy detection
     count_a = len(appview_a.indexed_records)
@@ -841,6 +1099,13 @@ def test_appview_censorship_detection():
     assert discrepancy_detected is True, (
         f"Count mismatch ({count_a} vs {count_b}) must trigger censorship alert"
     )
+
+    # Counter-proof: two honest AppViews with same data → no discrepancy
+    appview_c = MockAppView()
+    appview_c.consume_firehose(records)
+    honest_ratio = min(count_a, len(appview_c.indexed_records)) / \
+                   max(count_a, len(appview_c.indexed_records))
+    assert honest_ratio == 1.0, "Two honest AppViews must have ratio 1.0"
 
 
 # TST-INT-632

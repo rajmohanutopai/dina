@@ -108,27 +108,30 @@ class TestDeepLinkOverride:
     ):
         """User sets a preference to strip deep links from verdicts.
         The verdict still exists but links are removed before display."""
-        # Store user preference
-        mock_dina.vault.store(0, "pref_deep_links", {"enabled": False})
+        # By default, deep links are present in bot responses
+        response_before = mock_review_bot.query_product("laptop review")
+        recs_before = response_before["recommendations"]
+        assert len(recs_before) >= 1
+        for rec in recs_before:
+            for source in rec.get("sources", []):
+                assert "deep_link" in source, (
+                    "Bot responses must include deep_link field"
+                )
+                assert len(source["deep_link"]) > 0, (
+                    "Deep links must be non-empty by default"
+                )
+                assert "youtube.com" in source["deep_link"]
 
-        response = mock_review_bot.query_product("laptop review")
+        # User stores a preference to disable deep links
+        mock_dina.vault.store(0, "pref_deep_links", {"enabled": False})
         pref = mock_dina.vault.retrieve(0, "pref_deep_links")
         assert pref is not None
         assert pref["enabled"] is False
 
-        # When deep links are disabled, the application layer strips them
-        # before display. We verify the preference is honored.
-        recs = response["recommendations"]
-        if not pref["enabled"]:
-            for rec in recs:
-                for source in rec.get("sources", []):
-                    # Application would set these to empty
-                    source["deep_link"] = ""
-                    source["deep_link_context"] = ""
-
-        for rec in recs:
-            for source in rec.get("sources", []):
-                assert source["deep_link"] == ""
+        # Counter-proof: re-enabling restores the default
+        mock_dina.vault.store(0, "pref_deep_links", {"enabled": True})
+        pref_enabled = mock_dina.vault.retrieve(0, "pref_deep_links")
+        assert pref_enabled["enabled"] is True
 
 # TST-INT-463
     def test_default_is_enabled(self, mock_dina: MockDinaCore):
@@ -148,29 +151,57 @@ class TestDeepLinkOverride:
         mock_review_bot: MockReviewBot,
         mock_trust_network: MockTrustNetwork,
     ):
-        """User prefers video sources over text. Deep links from video
-        experts are listed first."""
-        mock_dina.vault.store(0, "pref_source_priority", {
+        """User stores source priority preferences in vault; bot returns
+        sources with attribution. Verify vault round-trip and source types."""
+        # --- Step 1: Store and retrieve priority preferences ---
+        pref_data = {
             "order": ["video", "outcome_data", "text_review"],
-        })
+        }
+        mock_dina.vault.store(0, "pref_source_priority", pref_data)
+        retrieved_pref = mock_dina.vault.retrieve(0, "pref_source_priority")
+        assert retrieved_pref is not None, (
+            "Priority preferences must be retrievable from vault"
+        )
+        assert retrieved_pref["order"] == ["video", "outcome_data", "text_review"], (
+            "Priority order must round-trip through vault unchanged"
+        )
 
+        # --- Step 2: Bot returns sources for a matching query ---
         response = mock_review_bot.query_product("best office chair")
+        assert len(response["recommendations"]) > 0, (
+            "Bot must return at least one recommendation for 'chair' query"
+        )
         sources = response["recommendations"][0]["sources"]
+        assert len(sources) >= 2, (
+            "Chair recommendation must include multiple source types"
+        )
 
-        pref = mock_dina.vault.retrieve(0, "pref_source_priority")
-        priority_order = pref["order"]
+        # --- Step 3: Verify source attribution (Deep Link Default) ---
+        source_types = [s["type"] for s in sources]
+        assert "expert" in source_types, (
+            "Sources must include an expert review"
+        )
+        assert "outcome" in source_types, (
+            "Sources must include outcome data"
+        )
 
-        # Re-sort sources according to user priority
-        def source_priority(s):
-            stype = s.get("type", "")
-            if stype == "expert" and "youtube" in s.get("source_url", ""):
-                return priority_order.index("video") if "video" in priority_order else 99
-            if stype == "outcome":
-                return priority_order.index("outcome_data") if "outcome_data" in priority_order else 99
-            return priority_order.index("text_review") if "text_review" in priority_order else 99
+        # Expert source must have deep link for attribution
+        expert_source = next(s for s in sources if s["type"] == "expert")
+        assert "deep_link" in expert_source, (
+            "Expert source must include a deep_link for creator attribution"
+        )
+        assert "deep_link_context" in expert_source, (
+            "Expert source must include context describing the link"
+        )
+        assert "creator_name" in expert_source or "source_url" in expert_source, (
+            "Expert source must attribute the creator"
+        )
 
-        sorted_sources = sorted(sources, key=source_priority)
-
-        # Video sources should come first when user prefers them
-        if sorted_sources and "youtube" in sorted_sources[0].get("source_url", ""):
-            assert sorted_sources[0]["type"] == "expert"
+        # Outcome source must have sample size
+        outcome_source = next(s for s in sources if s["type"] == "outcome")
+        assert "sample_size" in outcome_source, (
+            "Outcome source must include sample_size"
+        )
+        assert outcome_source["sample_size"] > 0, (
+            "Outcome sample_size must be positive"
+        )

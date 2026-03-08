@@ -46,6 +46,16 @@ class TestGmailConnector:
         """Gmail connector must request read-only OAuth scope — never send or modify."""
         assert mock_gmail_connector.oauth_scope == "readonly"
 
+        # Counter-proof: a connector with a different persona still defaults readonly
+        other_connector = MockGmailConnector(persona=PersonaType.SOCIAL)
+        assert other_connector.oauth_scope == "readonly", \
+            "Gmail scope must be readonly regardless of persona"
+
+        # Verify the scope string is exactly "readonly" (not "read-only", "read_only", etc.)
+        assert mock_gmail_connector.oauth_scope == "readonly"
+        assert " " not in mock_gmail_connector.oauth_scope
+        assert "write" not in mock_gmail_connector.oauth_scope
+
 # TST-INT-242
     def test_polling_interval_default(self, mock_gmail_connector: MockGmailConnector) -> None:
         """Default polling interval for Gmail is 15 minutes."""
@@ -70,23 +80,40 @@ class TestGmailConnector:
         mock_vault: MockVault,
     ) -> None:
         """Ingested data must be encrypted before storing in the vault."""
+        # Pre-condition: vault tier 1 is empty
+        assert len(mock_vault._tiers.get(1, {})) == 0
+
         persona = mock_identity.derive_persona(mock_gmail_connector.persona)
         mock_gmail_connector.add_data([
             {"message_id": "msg_enc_1", "content": "Sensitive email body"}
         ])
         items = mock_gmail_connector.poll()
+        assert len(items) == 1
+
         for item in items:
             normalized = mock_gmail_connector.normalize(item)
             encrypted = persona.encrypt(normalized["content"])
             mock_vault.store(1, normalized["id"], encrypted, persona.persona_type)
 
-        stored = mock_vault.retrieve(1, items[0]["message_id"], PersonaType.PROFESSIONAL)
-        # Stored value must be the encrypted form, not the raw content.
-        # MockPersona.encrypt returns "ENC[partition_...]:<sha256>"
-        assert stored is not None or mock_vault._tiers[1]  # vault received data
-        # Verify the encrypted string format
-        stored_value = list(mock_vault._tiers[1].values())[0]
-        assert stored_value.startswith("ENC[")
+        # Vault must have received exactly one entry
+        assert len(mock_vault._tiers.get(1, {})) == 1
+
+        # Retrieve via the normalized id and verify encrypted format
+        normalized_id = mock_gmail_connector.normalize(items[0])["id"]
+        stored_value = mock_vault.retrieve(1, normalized_id, PersonaType.PROFESSIONAL)
+        assert stored_value is not None, "Encrypted data must be retrievable"
+        assert stored_value.startswith("ENC["), \
+            "Stored value must be encrypted (ENC[...] format)"
+
+        # Counter-proof: plaintext must NOT appear in stored value
+        assert "Sensitive email body" not in stored_value, \
+            "Raw plaintext must not survive encryption"
+
+        # Counter-proof: different persona cannot decrypt
+        social_persona = mock_identity.derive_persona(PersonaType.SOCIAL)
+        cross_decrypt = social_persona.decrypt(stored_value)
+        assert cross_decrypt is None, \
+            "Wrong persona must not decrypt the data"
 
 # TST-INT-495
     def test_persona_routing(self, mock_gmail_connector: MockGmailConnector) -> None:
@@ -140,13 +167,31 @@ class TestGmailConnector:
         self, mock_gmail_connector: MockGmailConnector
     ) -> None:
         """items_ingested must count raw items pulled (before dedup)."""
+        # Pre-condition: counter starts at zero
+        assert mock_gmail_connector.items_ingested == 0
+
         mock_gmail_connector.add_data([
             {"message_id": "c1", "content": "x"},
             {"message_id": "c2", "content": "y"},
         ])
-        mock_gmail_connector.poll()
-        # The parent poll counts all items, dedup happens afterward
-        assert mock_gmail_connector.items_ingested >= 2
+        items = mock_gmail_connector.poll()
+        assert len(items) == 2
+        assert mock_gmail_connector.items_ingested == 2
+
+        # Counter accumulates across polls
+        mock_gmail_connector.add_data([
+            {"message_id": "c3", "content": "z"},
+        ])
+        items2 = mock_gmail_connector.poll()
+        assert len(items2) == 1
+        assert mock_gmail_connector.items_ingested == 3, \
+            "Counter must accumulate across multiple polls"
+
+        # Counter-proof: polling with no data does not increment
+        items3 = mock_gmail_connector.poll()
+        assert len(items3) == 0
+        assert mock_gmail_connector.items_ingested == 3, \
+            "Empty poll must not increment the counter"
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +208,25 @@ class TestTelegramConnector:
     ) -> None:
         """Telegram uses Bot API polling (poll_interval 5 min) — runs server-side on Home Node."""
         assert mock_telegram_connector.poll_interval_minutes == 5
+
+        # Pre-condition: no data polled yet
+        assert mock_telegram_connector.last_poll is None
+        assert mock_telegram_connector.items_ingested == 0
+
+        # Polling actually works and records timestamp
+        mock_telegram_connector.set_bot_token("bot_test_token")
+        mock_telegram_connector.add_data([
+            {"content": "test message from Telegram"}
+        ])
+        items = mock_telegram_connector.poll()
+        assert len(items) == 1
+        assert mock_telegram_connector.last_poll is not None
+        assert mock_telegram_connector.items_ingested == 1
+
+        # Counter-proof: Gmail has a different polling interval (15 min)
+        gmail = MockGmailConnector()
+        assert gmail.poll_interval_minutes == 15
+        assert gmail.poll_interval_minutes != mock_telegram_connector.poll_interval_minutes
 
 # TST-INT-246
     def test_supports_media(
@@ -402,6 +466,10 @@ class TestOAuthTokenLifecycle:
         self, mock_gmail_connector: MockGmailConnector
     ) -> None:
         """Failed auto-refresh transitions NEEDS_REFRESH → EXPIRED."""
+        # Pre-condition: no refresh attempts or notifications yet
+        assert mock_gmail_connector.refresh_attempts == 0
+        assert len(mock_gmail_connector.notifications_emitted) == 0
+
         old_token = self._make_token(expires_in=120)
 
         def failing_handler(token: OAuthToken) -> OAuthToken | None:
@@ -414,6 +482,12 @@ class TestOAuthTokenLifecycle:
         assert status == ConnectorStatus.EXPIRED
         assert mock_gmail_connector.refresh_attempts == 1
 
+        # Failed refresh emits a Tier 2 re-authorization notification
+        assert len(mock_gmail_connector.notifications_emitted) == 1
+        notif = mock_gmail_connector.notifications_emitted[0]
+        assert notif.tier == SilenceTier.TIER_2_SOLICITED
+        assert "Gmail" in notif.title
+
     # --- Expired token ---
 
 # TST-INT-505
@@ -421,6 +495,9 @@ class TestOAuthTokenLifecycle:
         self, mock_gmail_connector: MockGmailConnector
     ) -> None:
         """Expired token emits a Tier 2 'Re-authorize' notification."""
+        # Pre-condition: no notifications, connector starts ACTIVE after token set
+        assert len(mock_gmail_connector.notifications_emitted) == 0
+
         token = self._make_token(expires_in=-10)  # Already expired
         mock_gmail_connector.set_oauth_token(token)
 
@@ -432,6 +509,15 @@ class TestOAuthTokenLifecycle:
         assert notif.tier == SilenceTier.TIER_2_SOLICITED
         assert "Gmail" in notif.title
         assert "Re-authorize" in notif.body
+
+        # Counter-proof: a healthy token does NOT emit notification
+        healthy_connector = MockGmailConnector()
+        healthy_token = self._make_token(expires_in=3600)
+        healthy_connector.set_oauth_token(healthy_token)
+        healthy_connector.check_token_health()
+        assert healthy_connector.status == ConnectorStatus.ACTIVE
+        assert len(healthy_connector.notifications_emitted) == 0, \
+            "Healthy token must not emit any notification"
 
 # TST-INT-241
     def test_expired_connector_returns_no_data_on_poll(
@@ -497,14 +583,39 @@ class TestOAuthTokenLifecycle:
         self, mock_gmail_connector: MockGmailConnector
     ) -> None:
         """User can re-authorize after revocation."""
+        # Pre-condition: no notifications yet
+        assert len(mock_gmail_connector.notifications_emitted) == 0
+
         token = self._make_token(expires_in=3600)
         mock_gmail_connector.set_oauth_token(token)
+        assert mock_gmail_connector.status == ConnectorStatus.ACTIVE
+
         mock_gmail_connector.revoke()
         assert mock_gmail_connector.status == ConnectorStatus.REVOKED
 
+        # Revocation emitted a notification
+        assert len(mock_gmail_connector.notifications_emitted) >= 1
+
+        # Counter-proof: polling while revoked returns empty
+        mock_gmail_connector.add_data([
+            {"message_id": "revoked_msg", "content": "Should not be returned"},
+        ])
+        items = mock_gmail_connector.poll()
+        assert items == [], \
+            "Revoked connector must not return data on poll"
+
+        # Re-authorize with fresh token
         fresh_token = self._make_token(expires_in=3600)
         mock_gmail_connector.reauthorize(fresh_token)
         assert mock_gmail_connector.status == ConnectorStatus.ACTIVE
+
+        # Counter-proof: after re-auth, polling works again
+        mock_gmail_connector.add_data([
+            {"message_id": "reauth_msg", "content": "Now it works"},
+        ])
+        items_after = mock_gmail_connector.poll()
+        assert len(items_after) >= 1, \
+            "Reauthorized connector must resume polling"
 
     # --- No token ---
 
@@ -619,6 +730,10 @@ class TestFullIngestionPipelines:
         mock_vault: MockVault,
     ) -> None:
         """Contacts synced from Gmail to vault."""
+        # Pre-condition: no contacts and vault is empty
+        assert len(mock_gmail_connector.sync_contacts()) == 0
+        assert len(mock_vault.per_persona_partition(PersonaType.PROFESSIONAL)) == 0
+
         mock_gmail_connector.add_contacts([
             {"email": "alice@example.com", "name": "Alice Smith"},
             {"email": "bob@corp.com", "name": "Bob Jones"},
@@ -627,6 +742,9 @@ class TestFullIngestionPipelines:
 
         contacts = mock_gmail_connector.sync_contacts()
         assert len(contacts) == 3
+
+        # sync_contacts drains the list — second call returns empty
+        assert len(mock_gmail_connector.sync_contacts()) == 0
 
         # Store contacts in vault
         for contact in contacts:
@@ -640,6 +758,16 @@ class TestFullIngestionPipelines:
         assert len(results) == 1
         assert "contact_alice@example.com" in results
 
+        # Counter-proof: non-matching search returns empty
+        assert len(mock_vault.search_fts("Zoe")) == 0
+
+        # Contacts stored in PROFESSIONAL partition
+        prof_partition = mock_vault.per_persona_partition(PersonaType.PROFESSIONAL)
+        assert len(prof_partition) == 3
+
+        # Counter-proof: not in SOCIAL partition
+        assert len(mock_vault.per_persona_partition(PersonaType.SOCIAL)) == 0
+
 # TST-INT-239
     def test_cursor_continuity_across_restart(
         self,
@@ -647,7 +775,7 @@ class TestFullIngestionPipelines:
     ) -> None:
         """After restart, ingestion resumes from last cursor, not from the
         beginning. The cursor is persisted so no messages are re-processed."""
-        # First session: ingest some messages and save cursor
+        # First session: ingest some messages
         mock_gmail_connector.add_data([
             {"message_id": "msg_100", "content": "First batch"},
             {"message_id": "msg_101", "content": "First batch"},
@@ -655,25 +783,45 @@ class TestFullIngestionPipelines:
         items = mock_gmail_connector.poll()
         assert len(items) == 2
 
-        # Save cursor after processing
+        # Save cursor and capture dedup state after processing
         mock_gmail_connector.save_cursor("cursor_after_msg_101")
         assert mock_gmail_connector.cursor == "cursor_after_msg_101"
+        persisted_dedup_ids = set(mock_gmail_connector.dedup_ids)
+        assert "msg_100" in persisted_dedup_ids
+        assert "msg_101" in persisted_dedup_ids
 
-        # Simulate restart: create a new connector but restore cursor
+        # Simulate restart: new connector, restore cursor AND dedup state
         restarted_connector = MockGmailConnector()
-        saved_cursor = mock_gmail_connector.cursor
-        restarted_connector.save_cursor(saved_cursor)
+        restarted_connector.save_cursor(mock_gmail_connector.cursor)
+        restarted_connector.dedup_ids = set(persisted_dedup_ids)
 
-        # The restarted connector has the cursor from the previous session
         assert restarted_connector.cursor == "cursor_after_msg_101"
 
-        # New messages arrive after cursor position
+        # Re-add ALL messages (old + new) — simulates provider returning
+        # everything from cursor position (which may include duplicates)
         restarted_connector.add_data([
+            {"message_id": "msg_100", "content": "First batch"},
+            {"message_id": "msg_101", "content": "First batch"},
             {"message_id": "msg_102", "content": "New after restart"},
         ])
         new_items = restarted_connector.poll()
-        assert len(new_items) == 1
+
+        # Only the genuinely new message passes dedup
+        assert len(new_items) == 1, \
+            "Old messages must be deduplicated — only new ones returned"
         assert new_items[0]["message_id"] == "msg_102"
+
+        # Counter-proof: without dedup state, old messages re-appear
+        naive_connector = MockGmailConnector()
+        naive_connector.save_cursor(mock_gmail_connector.cursor)
+        # No dedup_ids restored — simulates losing state
+        naive_connector.add_data([
+            {"message_id": "msg_100", "content": "First batch"},
+            {"message_id": "msg_102", "content": "New after restart"},
+        ])
+        naive_items = naive_connector.poll()
+        assert len(naive_items) == 2, \
+            "Without dedup state, old messages are re-processed"
 
 
 # ---------------------------------------------------------------------------
@@ -796,7 +944,12 @@ class TestCoreBrainBoundary:
         mock_vault: MockVault,
     ) -> None:
         """Attachments are stored as metadata only — not raw file content.
-        The vault stores filename, size, type, etc. but not the binary blob."""
+        The vault stores filename, size, type, etc. but not the binary blob.
+
+        Counter-proof: the raw input DOES contain binary content (file_content),
+        so the stripping step is meaningful — not vacuously true.
+        """
+        # --- Raw input includes binary file_content blobs ---
         mock_gmail_connector.add_data([
             {
                 "message_id": "att_msg_1",
@@ -806,42 +959,63 @@ class TestCoreBrainBoundary:
                         "filename": "Q3_Report.pdf",
                         "size_bytes": 2_500_000,
                         "mime_type": "application/pdf",
+                        "file_content": b"%PDF-1.4 binary content " * 100,
                     },
                     {
                         "filename": "budget.xlsx",
                         "size_bytes": 150_000,
                         "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        "file_content": b"PK\x03\x04 xlsx binary " * 50,
                     },
                 ],
             },
         ])
         items = mock_gmail_connector.poll()
+        assert len(items) == 1
 
-        for item in items:
-            # Store metadata only — strip binary content
-            metadata = {
-                "id": item["message_id"],
-                "content": item["content"],
-                "attachment_metadata": [
-                    {
-                        "filename": att["filename"],
-                        "size_bytes": att["size_bytes"],
-                        "mime_type": att["mime_type"],
-                    }
-                    for att in item.get("attachments", [])
-                ],
-            }
-            mock_vault.store(1, item["message_id"], metadata,
-                             persona=PersonaType.PROFESSIONAL)
+        item = items[0]
+
+        # --- Counter-proof: raw input DOES have file_content ---
+        for att in item["attachments"]:
+            assert "file_content" in att, (
+                "Raw attachment must include file_content for stripping test to be valid"
+            )
+            assert isinstance(att["file_content"], bytes)
+
+        # --- Strip binary fields, keeping only metadata ---
+        BINARY_FIELDS = {"file_content", "raw_bytes", "binary_data"}
+        metadata = {
+            "id": item["message_id"],
+            "content": item["content"],
+            "attachment_metadata": [
+                {k: v for k, v in att.items() if k not in BINARY_FIELDS}
+                for att in item.get("attachments", [])
+            ],
+        }
+        mock_vault.store(1, item["message_id"], metadata,
+                         persona=PersonaType.PROFESSIONAL)
 
         stored = mock_vault.retrieve(1, "att_msg_1",
                                       persona=PersonaType.PROFESSIONAL)
         assert stored is not None
         assert len(stored["attachment_metadata"]) == 2
         assert stored["attachment_metadata"][0]["filename"] == "Q3_Report.pdf"
-        # No raw file content in vault — only metadata fields
-        assert "file_content" not in str(stored)
-        assert "binary" not in str(stored).lower()  # no binary blobs stored
+        assert stored["attachment_metadata"][0]["size_bytes"] == 2_500_000
+
+        # --- Verify binary content was stripped ---
+        stored_str = str(stored)
+        assert "file_content" not in stored_str, (
+            "file_content must be stripped before vault storage"
+        )
+        assert b"PDF" not in str(stored).encode(), (
+            "Raw PDF binary must not appear in vault"
+        )
+
+        # --- Metadata fields preserved ---
+        for att_meta in stored["attachment_metadata"]:
+            assert "filename" in att_meta
+            assert "size_bytes" in att_meta
+            assert "mime_type" in att_meta
 
 
 # ---------------------------------------------------------------------------

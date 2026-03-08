@@ -102,11 +102,11 @@ class TestChaosEngineering:
         mock_compose: MockDockerCompose,
         mock_chaos_monkey: MockChaosMonkey,
     ) -> None:
-        """Core killed, brain detects and enters standby.
+        """Core killed, brain survives, system recovers after restart.
 
-        When Go Core is SIGKILLed, the Python Brain must detect the loss
-        (via healthcheck or connection failure) and enter a standby mode
-        where it buffers requests until Core recovers.
+        When Go Core is SIGKILLed, the Python Brain container remains
+        running. The system is unhealthy while Core is down. After
+        Core restarts, the full system recovers.
         """
         mock_compose.up()
         assert mock_compose.is_all_healthy()
@@ -114,31 +114,36 @@ class TestChaosEngineering:
         core = mock_compose.containers["core"]
         brain = mock_compose.containers["brain"]
 
+        # Both containers start healthy
+        assert core.running is True
+        assert brain.running is True
+        assert core.restart_count == 0
+
         # Kill the Core
         mock_chaos_monkey.kill_random(core)
         assert core.running is False
+        assert core in mock_chaos_monkey.kill_targets
 
-        # Brain is still running but cannot reach Core
+        # Brain is still running — sidecar survives core death
         assert brain.running is True
 
-        # Brain detects Core is down — simulate by checking reachability
-        # Core and Brain share "dina-brain-net"; with Core dead,
-        # the Brain should detect unavailability.
-        assert core.running is False
+        # System is NOT healthy while Core is down
+        assert not mock_compose.is_all_healthy()
 
-        # Brain enters standby: log the detection
-        brain.log("warn", "Core unavailable, entering standby mode")
-        logs = brain.get_logs_json()
-        standby_logs = [
-            entry for entry in logs if "standby" in entry.get("msg", "")
-        ]
-        assert len(standby_logs) >= 1
-
-        # Core can be restarted
+        # Core restarts
         core.restart()
         assert core.running is True
         assert core.restart_count == 1
+
+        # System fully recovers
         assert mock_compose.is_all_healthy()
+
+        # Restart produced a start log entry automatically
+        logs = core.get_logs_json()
+        start_logs = [e for e in logs if "started" in e.get("msg", "")]
+        assert len(start_logs) >= 1, (
+            "Core restart must produce a start log entry"
+        )
 
 # TST-INT-354
     def test_network_partition_brain_core(
@@ -243,38 +248,37 @@ class TestChaosEngineering:
         mock_compose.up()
         assert mock_compose.is_all_healthy()
 
+        # Pre-condition: no pressure applied
+        assert mock_chaos_monkey.cpu_pressure is False
+
         # Apply CPU pressure
         mock_chaos_monkey.apply_resource_pressure(cpu=True)
         assert mock_chaos_monkey.cpu_pressure is True
 
-        # All containers still running
+        # All containers still running — CPU pressure does NOT crash them
         for name, container in mock_compose.containers.items():
             assert container.running is True, (
                 f"Container {name} crashed under CPU pressure"
             )
+            assert container.restart_count == 0, (
+                f"Container {name} restarted under CPU pressure"
+            )
 
-        # Operations still succeed (may be slower)
-        vault = MockVault()
-        identity = MockIdentity()
-        scrubber = MockPIIScrubber()
-        go_core = MockGoCore(vault, identity, scrubber)
-
-        go_core.vault_store("cpu_stress_test", {"status": "survived"})
-        result = vault.retrieve(1, "cpu_stress_test")
-        assert result is not None
-        assert result["status"] == "survived"
-
-        # Healthchecks still pass
+        # Healthchecks still pass under load
         assert mock_compose.is_all_healthy()
 
-        # Log the pressure event
-        core = mock_compose.containers["core"]
-        core.log("warn", "CPU pressure detected", cpu_throttled=True)
-        logs = core.get_logs_json()
-        pressure_logs = [
-            e for e in logs if "CPU pressure" in e.get("msg", "")
-        ]
-        assert len(pressure_logs) >= 1
+        # Counter-proof: kill_random DOES stop a container
+        brain = mock_compose.containers["brain"]
+        mock_chaos_monkey.kill_random(brain)
+        assert brain.running is False
+        assert len(mock_chaos_monkey.kill_targets) == 1
+        # System is no longer all-healthy
+        assert mock_compose.is_all_healthy() is False
+
+        # Recovery: restart brings it back
+        brain.restart()
+        assert brain.running is True
+        assert brain.restart_count == 1
 
 # TST-INT-357
     def test_memory_pressure(
@@ -291,18 +295,24 @@ class TestChaosEngineering:
         mock_compose.up()
         assert mock_compose.is_all_healthy()
 
-        # Apply memory pressure
-        mock_chaos_monkey.apply_resource_pressure(memory=True)
-        assert mock_chaos_monkey.memory_pressure is True
-
-        # Brain is the most memory-intensive — OOM kills it
         brain = mock_compose.containers["brain"]
+        core = mock_compose.containers["core"]
+
+        # Both containers start healthy
+        assert brain.running is True
+        assert core.running is True
+        assert brain.restart_count == 0
+
+        # OOM kills brain — chaos monkey records target
         mock_chaos_monkey.kill_random(brain)
         assert brain.running is False
+        assert brain in mock_chaos_monkey.kill_targets
 
-        # Core survives memory pressure
-        core = mock_compose.containers["core"]
+        # Core survives — OOM only kills the memory-heavy container
         assert core.running is True
+
+        # System is NOT fully healthy while brain is down
+        assert not mock_compose.is_all_healthy()
 
         # Brain restarts (docker restart policy: unless-stopped)
         brain.restart()
@@ -312,13 +322,12 @@ class TestChaosEngineering:
         # System returns to healthy state after restart
         assert mock_compose.is_all_healthy()
 
-        # Verify restart was logged
-        brain.log("info", "Brain restarted after OOM kill")
+        # Restart produces a start log entry automatically
         logs = brain.get_logs_json()
-        restart_logs = [
-            e for e in logs if "OOM" in e.get("msg", "")
-        ]
-        assert len(restart_logs) >= 1
+        start_logs = [e for e in logs if "started" in e.get("msg", "")]
+        assert len(start_logs) >= 1, (
+            "Container restart must produce a start log entry"
+        )
 
 # TST-INT-358
     def test_disk_io_saturation(

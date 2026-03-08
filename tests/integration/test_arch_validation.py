@@ -103,12 +103,19 @@ def test_core_makes_zero_external_api_calls(
     """Architecture §3: 'Core never calls external APIs — no OAuth, no Gmail,
     no connector code.' All Core endpoints are local Docker network only.
     """
+    # Pre-condition: no API calls yet
+    assert len(mock_go_core.api_calls) == 0
+
     # Exercise various Core operations
     mock_go_core.vault_query("test search")
     mock_go_core.vault_store("key1", {"data": "value"})
     mock_go_core.did_sign(b"test data")
     mock_go_core.did_verify(b"test data", mock_go_core.did_sign(b"test data"))
     mock_go_core.pii_scrub("Rajmohan lives at 123 Main Street")
+
+    # All operations must have generated API calls
+    assert len(mock_go_core.api_calls) >= 5, \
+        "5 Core operations must produce at least 5 API call records"
 
     # Inspect ALL API calls made by Core
     external_prefixes = (
@@ -476,6 +483,10 @@ def test_appview_phase1_single_go_binary_postgresql():
     """
     app_view = MockAppView()
 
+    # Pre-condition: fresh AppView has no indexed records and cursor at 0
+    assert len(app_view.indexed_records) == 0
+    assert app_view.cursor == 0
+
     # Phase 1: single process, not sharded
     assert hasattr(app_view, "consume_firehose"), \
         "AppView must consume AT Protocol firehose"
@@ -497,12 +508,26 @@ def test_appview_phase1_single_go_binary_postgresql():
     indexed = app_view.consume_firehose(records)
     assert indexed == 2, "Only trust + attestation records indexed"
 
+    # Verify indexed records contain only trust-related data
+    assert len(app_view.indexed_records) == 2
+    assert app_view.indexed_records[0]["product_id"] == "aeron_2025"
+
     # Deterministic aggregate computation
     score = app_view.compute_aggregate("aeron_2025")
     assert score == 90.0
 
     # Cursor tracking for crash recovery
     assert app_view.cursor == 3  # All records processed, cursor advanced
+
+    # Counter-proof: query for non-existent product returns empty
+    assert app_view.query_by_product("nonexistent_product") == []
+    assert app_view.compute_aggregate("nonexistent_product") == 0.0
+
+    # Counter-proof: query by DID returns only matching records
+    did_a_records = app_view.query_by_did("did:plc:a")
+    assert len(did_a_records) == 1
+    assert did_a_records[0]["rating"] == 90
+    assert app_view.query_by_did("did:plc:unknown") == []
 
 
 # ---------------------------------------------------------------------------
@@ -587,22 +612,47 @@ def test_stt_available_in_all_deployment_profiles(
     """Architecture §17: Deepgram Nova-3 available in ALL deployment profiles
     (Cloud LLM, Local LLM, Hybrid). STT is not profile-dependent.
     """
-    profiles = ["cloud", "local-llm"]
+    # Pre-condition: no failovers have occurred
+    assert mock_stt_router.failover_count == 0
 
-    for profile_name in profiles:
+    # Primary STT is Deepgram via WebSocket
+    assert mock_stt_router.primary.provider == "deepgram"
+    assert mock_stt_router.primary.connection_type == "websocket"
+
+    # Verify STT transcription works (primary path)
+    result = mock_stt_router.transcribe(b"audio_data")
+    assert result["provider"] == "deepgram"
+    assert "text" in result
+    assert mock_stt_router.failover_count == 0, (
+        "Healthy primary must not trigger failover"
+    )
+
+    # Both profiles include core and brain containers
+    for profile_name in ["cloud", "local-llm"]:
         profile = MockDeploymentProfile(profile=profile_name)
-
-        # STT router is available regardless of profile
-        assert mock_stt_router.supports_all_profiles() is True
-
-        # STT works in this profile
-        result = mock_stt_router.transcribe(b"audio_data")
-        assert result["provider"] in ("deepgram", "gemini")
-
-        # Verify containers exist for this profile
         assert "core" in profile.containers
         assert "brain" in profile.containers
 
-    # STT functionality is identical across profiles
-    assert mock_stt_router.primary.provider == "deepgram"
-    assert mock_stt_router.primary.connection_type == "websocket"
+    # local-llm has llama container; cloud does not
+    local_profile = MockDeploymentProfile(profile="local-llm")
+    cloud_profile = MockDeploymentProfile(profile="cloud")
+    assert "llama" in local_profile.containers
+    assert "llama" not in cloud_profile.containers
+
+    # Counter-proof: when primary fails, fallback to Gemini works
+    mock_stt_router.primary.fail()
+    fallback_result = mock_stt_router.transcribe(b"audio_data")
+    assert fallback_result["provider"] == "gemini", (
+        "Failed primary must fall back to Gemini STT"
+    )
+    assert mock_stt_router.failover_count == 1
+
+    # Recover primary, verify Deepgram is back
+    mock_stt_router.primary.recover()
+    recovered_result = mock_stt_router.transcribe(b"audio_data")
+    assert recovered_result["provider"] == "deepgram", (
+        "Recovered primary must route back to Deepgram"
+    )
+    assert mock_stt_router.failover_count == 1, (
+        "Successful primary should not increment failover count"
+    )

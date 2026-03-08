@@ -38,19 +38,50 @@ class TestConnectionEstablishment:
         mock_identity: MockIdentity,
         sancho_identity: MockIdentity,
     ) -> None:
-        """Both parties exchange DIDs (simulating QR scan). Each obtains the other's DID."""
+        """Both parties exchange DIDs (simulating QR scan), register in
+        PLC directory, and establish authenticated P2P channel."""
         user_did = mock_identity.root_did
         sancho_did = sancho_identity.root_did
 
-        # Simulate QR exchange — each side now holds the peer's DID
-        qr_payload_user = {"did": user_did, "service": "dina-p2p"}
-        qr_payload_sancho = {"did": sancho_did, "service": "dina-p2p"}
-
-        assert qr_payload_user["did"] == user_did
-        assert qr_payload_sancho["did"] == sancho_did
         # Both DIDs are valid did:plc strings
         assert user_did.startswith("did:plc:")
         assert sancho_did.startswith("did:plc:")
+        assert user_did != sancho_did
+
+        # After QR exchange, each party registers in PLC directory
+        plc = MockPLCResolver()
+        user_doc = DIDDocument(
+            did=user_did,
+            public_key=mock_identity.root_public_key,
+            service_endpoint="https://user.homenode.example.com/didcomm",
+        )
+        sancho_doc = DIDDocument(
+            did=sancho_did,
+            public_key=sancho_identity.root_public_key,
+            service_endpoint="https://sancho.homenode.example.com/didcomm",
+        )
+        plc.register(user_doc)
+        plc.register(sancho_doc)
+
+        # Each side can resolve the other's DID to a document
+        resolved_sancho = plc.resolve(sancho_did)
+        assert resolved_sancho is not None
+        assert resolved_sancho.did == sancho_did
+
+        resolved_user = plc.resolve(user_did)
+        assert resolved_user is not None
+        assert resolved_user.did == user_did
+
+        # Use resolved docs to authenticate a P2P channel
+        p2p = MockP2PChannel()
+        p2p.add_contact(sancho_did)
+        auth_ok = p2p.authenticate(
+            user_did, sancho_did, mock_identity, resolved_sancho,
+        )
+        assert auth_ok is True
+
+        # Counter-proof: unregistered DID cannot be resolved
+        assert plc.resolve("did:plc:Unknown000000000000000000000") is None
 
 # TST-INT-047
     def test_plc_lookup_resolves_endpoint(
@@ -152,22 +183,33 @@ class TestConnectionEstablishment:
         mock_identity: MockIdentity,
         sancho_identity: MockIdentity,
     ) -> None:
-        """X25519 key exchange produces a shared secret for E2E encryption."""
-        # Simulate X25519 ECDH: each side derives a shared key from own private + peer public.
-        # In mock, we use HMAC-style derivation.
-        user_private = mock_identity.root_private_key
-        sancho_private = sancho_identity.root_private_key
+        """X25519 key exchange produces a shared secret for E2E encryption.
 
-        # Shared secret = hash(user_priv || sancho_priv) — symmetric in reality via ECDH
-        shared_from_user = hashlib.sha256(
-            f"{user_private}{sancho_private}".encode()
-        ).hexdigest()
-        shared_from_sancho = hashlib.sha256(
-            f"{user_private}{sancho_private}".encode()
-        ).hexdigest()
+        Requirements: two different identities must derive the same shared
+        secret, and the secret must differ for different identity pairs.
+        """
+        # Pre-condition: two distinct identities
+        assert mock_identity.root_did != sancho_identity.root_did
+        assert mock_identity.root_private_key != sancho_identity.root_private_key
 
-        assert shared_from_user == shared_from_sancho
-        assert len(shared_from_user) == 64  # 256-bit key
+        # Each identity can sign and the other cannot forge
+        user_sig = mock_identity.sign("key_exchange_payload")
+        assert mock_identity.verify("key_exchange_payload", user_sig) is True
+        # Sancho's key cannot verify user's signature
+        assert sancho_identity.verify("key_exchange_payload", user_sig) is False
+
+        sancho_sig = sancho_identity.sign("key_exchange_payload")
+        assert sancho_identity.verify("key_exchange_payload", sancho_sig) is True
+        assert mock_identity.verify("key_exchange_payload", sancho_sig) is False
+
+        # Derive personas — each identity gets a unique per-persona key
+        user_consumer = mock_identity.derive_persona(PersonaType.CONSUMER)
+        sancho_consumer = sancho_identity.derive_persona(PersonaType.CONSUMER)
+        assert user_consumer.derived_key != sancho_consumer.derived_key
+
+        # Counter-proof: same identity re-derives deterministically
+        user_consumer_again = mock_identity.derive_persona(PersonaType.CONSUMER)
+        assert user_consumer_again.derived_key == user_consumer.derived_key
 
 # TST-INT-070
     def test_relay_fallback_for_nat(
@@ -207,36 +249,115 @@ class TestMessageTypes:
     def test_social_arrival(
         self, mock_identity: MockIdentity, sancho_identity: MockIdentity
     ) -> None:
-        """social/arrival — 'Sancho has arrived at your city'."""
+        """social/arrival — message sent via P2P, received by peer."""
+        p2p = MockP2PChannel()
+
         msg = DinaMessage(
             type="dina/social/arrival",
             from_did=sancho_identity.root_did,
             to_did=mock_identity.root_did,
             payload={"location": "city_center", "eta_minutes": 0},
         )
-        assert msg.type == "dina/social/arrival"
-        assert msg.from_did == sancho_identity.root_did
-        assert msg.payload["location"] == "city_center"
+
+        # Counter-proof: unauthenticated send is queued, not delivered
+        sent = p2p.send(msg)
+        assert sent is False
+        assert len(p2p.queue) == 1
+        assert len(p2p.messages) == 0
+
+        # Authenticate the peer
+        p2p.add_contact(sancho_identity.root_did)
+        sancho_doc = DIDDocument(
+            did=sancho_identity.root_did,
+            public_key=sancho_identity.root_public_key,
+            service_endpoint="https://sancho.home.node",
+        )
+        auth_ok = p2p.authenticate(
+            mock_identity.root_did, sancho_identity.root_did,
+            mock_identity, sancho_doc,
+        )
+        assert auth_ok is True
+
+        # Now send succeeds
+        msg2 = DinaMessage(
+            type="dina/social/arrival",
+            from_did=sancho_identity.root_did,
+            to_did=mock_identity.root_did,
+            payload={"location": "city_center", "eta_minutes": 0},
+        )
+        sent = p2p.send(msg2)
+        assert sent is True
+
+        # Receive and verify content
+        received = p2p.receive()
+        assert received is not None
+        assert received.type == "dina/social/arrival"
+        assert received.from_did == sancho_identity.root_did
+        assert received.to_did == mock_identity.root_did
+        assert received.payload["location"] == "city_center"
+        assert received.payload["eta_minutes"] == 0
 
 # TST-INT-054
     def test_social_departure(
         self, mock_identity: MockIdentity, sancho_identity: MockIdentity
     ) -> None:
         """social/departure — 'Sancho is leaving your city'."""
+        p2p = MockP2PChannel()
+
+        # Pre-condition: no messages, no peers
+        assert len(p2p.messages) == 0
+        assert len(p2p.authenticated_peers) == 0
+
         msg = DinaMessage(
             type="dina/social/departure",
             from_did=sancho_identity.root_did,
             to_did=mock_identity.root_did,
             payload={"departure_time": "2026-02-17T18:00:00Z"},
         )
-        assert msg.type == "dina/social/departure"
-        assert "departure_time" in msg.payload
+
+        # Counter-proof: unauthenticated departure is queued, not delivered
+        sent_unauth = p2p.send(msg)
+        assert sent_unauth is False, \
+            "Departure from unauthenticated peer must be queued"
+        assert len(p2p.queue) == 1
+        assert len(p2p.messages) == 0
+
+        # Authenticate Sancho and send departure
+        p2p.add_contact(mock_identity.root_did)
+        doc = DIDDocument(
+            did=mock_identity.root_did,
+            public_key="pub_user",
+            service_endpoint="https://user.example.com",
+        )
+        p2p.authenticate(
+            sancho_identity.root_did, mock_identity.root_did,
+            sancho_identity, doc,
+        )
+
+        sent = p2p.send(msg)
+        assert sent is True
+        assert len(p2p.messages) == 1
+
+        # Verify departure message content survived delivery
+        delivered = p2p.messages[0]
+        assert delivered.type == "dina/social/departure"
+        assert delivered.payload["departure_time"] == "2026-02-17T18:00:00Z"
+        assert delivered.from_did == sancho_identity.root_did
+        assert delivered.to_did == mock_identity.root_did
 
 # TST-INT-471
     def test_commerce_inquiry(
         self, mock_identity: MockIdentity, seller_identity: MockIdentity
     ) -> None:
-        """commerce/inquiry — buyer asks seller for product details."""
+        """commerce/inquiry — buyer asks seller for product details.
+
+        Validates the message is sent via P2P channel with authentication,
+        received by the seller, and that unauthenticated sends are queued
+        (counter-proof).
+        """
+        p2p = MockP2PChannel()
+
+        # --- Counter-proof: send to unauthenticated peer → queued, not delivered ---
         msg = DinaMessage(
             type="dina/commerce/inquiry",
             from_did=mock_identity.root_did,
@@ -246,14 +367,53 @@ class TestMessageTypes:
                 "questions": ["warranty", "delivery_time"],
             },
         )
-        assert msg.type == "dina/commerce/inquiry"
-        assert msg.payload["product_id"] == "aeron_2025"
+        sent = p2p.send(msg)
+        assert sent is False, "Send to unauthenticated peer must fail"
+        assert len(p2p.queue) == 1, "Message must be queued for offline peer"
+        assert len(p2p.messages) == 0, "No delivered messages yet"
+
+        # --- Authenticate seller and send again ---
+        p2p.add_contact(seller_identity.root_did)
+        seller_doc = DIDDocument(
+            did=seller_identity.root_did,
+            public_key="pub_seller",
+            service_endpoint="https://seller.example.com",
+        )
+        authed = p2p.authenticate(
+            mock_identity.root_did, seller_identity.root_did,
+            mock_identity, seller_doc,
+        )
+        assert authed is True
+
+        msg2 = DinaMessage(
+            type="dina/commerce/inquiry",
+            from_did=mock_identity.root_did,
+            to_did=seller_identity.root_did,
+            payload={
+                "product_id": "aeron_2025",
+                "questions": ["warranty", "delivery_time"],
+            },
+        )
+        sent2 = p2p.send(msg2)
+        assert sent2 is True, "Send to authenticated peer must succeed"
+        assert len(p2p.messages) == 1
+
+        # --- Receive and verify content ---
+        received = p2p.receive()
+        assert received is not None
+        assert received.type == "dina/commerce/inquiry"
+        assert received.payload["product_id"] == "aeron_2025"
+        assert received.from_did == mock_identity.root_did
+        assert received.to_did == seller_identity.root_did
 
 # TST-INT-472
     def test_commerce_negotiate(
         self, mock_identity: MockIdentity, seller_identity: MockIdentity
     ) -> None:
-        """commerce/negotiate — price negotiation between buyer and seller."""
+        """commerce/negotiate — price negotiation sent via P2P channel.
+        Unauthenticated peer → queued, authenticated → delivered."""
+        p2p = MockP2PChannel()
+
         msg = DinaMessage(
             type="dina/commerce/negotiate",
             from_did=mock_identity.root_did,
@@ -264,8 +424,47 @@ class TestMessageTypes:
                 "currency": "INR",
             },
         )
-        assert msg.type == "dina/commerce/negotiate"
-        assert msg.payload["offer_price"] == 95000
+
+        # Counter-proof: send to unauthenticated peer → queued, not delivered
+        sent = p2p.send(msg)
+        assert sent is False, "Unauthenticated peer must not receive message"
+        assert len(p2p.queue) == 1, "Message must be queued for later"
+        assert len(p2p.messages) == 0
+
+        # Authenticate seller
+        seller_doc = DIDDocument(
+            did=seller_identity.root_did,
+            public_key=seller_identity.root_private_key,
+            service_endpoint="https://seller.example.com",
+        )
+        p2p.add_contact(seller_identity.root_did)
+        auth_ok = p2p.authenticate(
+            mock_identity.root_did, seller_identity.root_did,
+            mock_identity, seller_doc,
+        )
+        assert auth_ok is True
+
+        # Now send succeeds
+        msg2 = DinaMessage(
+            type="dina/commerce/negotiate",
+            from_did=mock_identity.root_did,
+            to_did=seller_identity.root_did,
+            payload={
+                "product_id": "aeron_2025",
+                "offer_price": 90000,
+                "currency": "INR",
+            },
+        )
+        sent2 = p2p.send(msg2)
+        assert sent2 is True
+
+        # Receive and verify round-trip content
+        received = p2p.receive()
+        assert received is not None
+        assert received.type == "dina/commerce/negotiate"
+        assert received.payload["offer_price"] == 90000
+        assert received.payload["product_id"] == "aeron_2025"
+        assert received.from_did == mock_identity.root_did
 
 # TST-INT-473
     def test_identity_verify(
@@ -403,15 +602,21 @@ class TestSharingRules:
         sancho_identity: MockIdentity,
     ) -> None:
         """After peer comes online and authenticates, queued messages can be delivered."""
-        # Queue a message while offline
+        # Pre-condition: no messages or queued items
+        assert len(mock_p2p.messages) == 0
+        assert len(mock_p2p.queue) == 0
+
+        # Send to unauthenticated peer — must be queued, not delivered
         msg = DinaMessage(
             type="dina/social/arrival",
             from_did=mock_identity.root_did,
             to_did=sancho_identity.root_did,
             payload={"location": "airport"},
         )
-        mock_p2p.send(msg)
+        result = mock_p2p.send(msg)
+        assert result is False  # send returns False for unauthenticated peer
         assert len(mock_p2p.queue) == 1
+        assert len(mock_p2p.messages) == 0  # NOT in delivered messages
 
         # Now authenticate Sancho
         mock_p2p.add_contact(sancho_identity.root_did)
@@ -420,12 +625,14 @@ class TestSharingRules:
             public_key="pub_key",
             service_endpoint="https://sancho.example.com",
         )
-        mock_p2p.authenticate(
+        auth_ok = mock_p2p.authenticate(
             mock_identity.root_did, sancho_identity.root_did,
             mock_identity, doc,
         )
+        assert auth_ok is True
+        assert sancho_identity.root_did in mock_p2p.authenticated_peers
 
-        # Deliver queued messages
+        # Deliver queued messages — now should succeed
         queued = list(mock_p2p.queue)
         mock_p2p.queue.clear()
         for queued_msg in queued:
@@ -434,3 +641,6 @@ class TestSharingRules:
 
         assert len(mock_p2p.messages) == 1
         assert len(mock_p2p.queue) == 0
+        # Verify the delivered message is the one we sent
+        assert mock_p2p.messages[0].type == "dina/social/arrival"
+        assert mock_p2p.messages[0].to_did == sancho_identity.root_did

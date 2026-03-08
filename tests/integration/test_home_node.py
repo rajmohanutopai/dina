@@ -115,6 +115,13 @@ class TestSidecarPattern:
             c["endpoint"] == "/v1/did/verify" for c in mock_go_core.api_calls
         )
 
+        # Counter-proof: tampered data fails verification
+        tampered = b"tampered payload"
+        assert mock_go_core.did_verify(tampered, signature) is False
+
+        # Counter-proof: wrong signature fails verification
+        assert mock_go_core.did_verify(data, "bad_signature_hex") is False
+
 # TST-INT-082
     def test_core_exposes_pii_scrub(
         self, mock_go_core: MockGoCore
@@ -134,7 +141,11 @@ class TestSidecarPattern:
     def test_core_exposes_notify(
         self, mock_go_core: MockGoCore
     ) -> None:
-        """Go Core exposes /v1/notify for sending notifications."""
+        """Go Core exposes /v1/notify for sending notifications.
+        The notification tier is recorded in the api_calls log."""
+        # Counter-proof: no notifications before sending
+        assert len(mock_go_core._notifications_sent) == 0
+
         notification = Notification(
             tier=SilenceTier.TIER_2_SOLICITED,
             title="Price alert",
@@ -144,9 +155,18 @@ class TestSidecarPattern:
         mock_go_core.notify(notification)
 
         assert len(mock_go_core._notifications_sent) == 1
-        assert any(
-            c["endpoint"] == "/v1/notify" for c in mock_go_core.api_calls
-        )
+        sent = mock_go_core._notifications_sent[0]
+        assert sent.tier == SilenceTier.TIER_2_SOLICITED
+        assert sent.title == "Price alert"
+        assert sent.source == "price_monitor"
+
+        # API call log records the endpoint and tier
+        notify_calls = [
+            c for c in mock_go_core.api_calls
+            if c["endpoint"] == "/v1/notify"
+        ]
+        assert len(notify_calls) == 1
+        assert notify_calls[0]["tier"] == SilenceTier.TIER_2_SOLICITED
 
 # TST-INT-008
     def test_brain_exposes_process(
@@ -323,6 +343,9 @@ class TestLLMRouting:
         self, mock_llm_router: MockLLMRouter
     ) -> None:
         """Multi-step analysis and complex reasoning go to cloud via scrubber."""
+        # Pre-condition: no routing logged yet
+        assert len(mock_llm_router.routing_log) == 0
+
         target = mock_llm_router.route("multi_step_analysis")
         assert target == LLMTarget.CLOUD
 
@@ -333,7 +356,18 @@ class TestLLMRouting:
             e for e in mock_llm_router.routing_log
             if e["target"] == LLMTarget.CLOUD
         ]
+        assert len(cloud_entries) == 2
         assert all(e["reason"] == "complex_task" for e in cloud_entries)
+
+        # Counter-proof: basic tasks route to LOCAL, not CLOUD
+        basic_target = mock_llm_router.route("summarize")
+        assert basic_target == LLMTarget.LOCAL, \
+            "Basic tasks must route to LOCAL, not CLOUD"
+
+        # Counter-proof: simple lookups need no LLM at all
+        lookup_target = mock_llm_router.route("fts_search")
+        assert lookup_target == LLMTarget.NONE, \
+            "FTS search needs no LLM"
 
 # TST-INT-081
     def test_sensitive_persona_never_uses_cloud(
@@ -508,18 +542,27 @@ class TestBrainTokenAuth:
         """Different tokens on Core and Brain -- system is non-functional.
 
         In production the HTTP middleware rejects every request with 401.
-        Here we verify the mismatch is detectable so the guard can fire.
+        Here we verify MockServiceAuth.validate() rejects the wrong token.
         """
-        core = self._core_with_token("token_for_core_AAAA")
-        brain = self._brain_with_token("token_for_brain_BBBB")
+        from tests.integration.mocks import MockServiceAuth
 
-        assert not self._tokens_match(core, brain)
+        auth = MockServiceAuth()
+        correct_token = auth.token
 
-        # A real middleware would reject; here we prove the guard detects it.
-        # Simulate: if tokens don't match, brain refuses to process.
-        if not self._tokens_match(core, brain):
-            with pytest.raises(RuntimeError):
-                raise RuntimeError("BRAIN_TOKEN mismatch — 401 Unauthorized")
+        # Wrong token is rejected on a valid brain endpoint
+        wrong_token = "token_for_brain_BBBB"
+        assert wrong_token != correct_token
+        assert auth.validate(wrong_token, "/v1/vault/query") is False
+
+        # Counter-proof: correct token on same endpoint succeeds
+        assert auth.validate(correct_token, "/v1/vault/query") is True
+
+        # Auth log captures both attempts with correct verdicts
+        assert len(auth.auth_log) == 2
+        assert auth.auth_log[0]["token_valid"] is False
+        assert auth.auth_log[0]["result"] is False
+        assert auth.auth_log[1]["token_valid"] is True
+        assert auth.auth_log[1]["result"] is True
 
 # TST-INT-003
     def test_token_rotation(self) -> None:
@@ -656,6 +699,9 @@ class TestRequestFlowBrainToCore:
         The scratchpad is stored in the vault at tier 4 (ephemeral staging)
         so that a Brain crash can resume from the last checkpoint.
         """
+        # Pre-condition: tier 4 has no scratchpad yet
+        assert mock_dina.vault.retrieve(4, "scratchpad_analysis_001") is None
+
         scratchpad_data = {
             "task_id": "analysis_001",
             "step": 3,
@@ -663,19 +709,37 @@ class TestRequestFlowBrainToCore:
             "checkpoint_ts": time.time(),
         }
 
+        api_calls_before = len(mock_dina.go_core.api_calls)
+
         # Brain writes scratchpad via Core
         mock_dina.go_core.vault_store(
             "scratchpad_analysis_001", scratchpad_data, tier=4
         )
 
-        # Verify the scratchpad is persisted
+        # Verify the scratchpad is persisted at tier 4 (ephemeral staging)
         stored = mock_dina.vault.retrieve(4, "scratchpad_analysis_001")
         assert stored is not None
         assert stored["task_id"] == "analysis_001"
         assert stored["step"] == 3
-        assert any(
-            c["endpoint"] == "/v1/vault/store" for c in mock_dina.go_core.api_calls
+
+        # Verify API call was logged
+        new_calls = mock_dina.go_core.api_calls[api_calls_before:]
+        vault_store_calls = [c for c in new_calls if c["endpoint"] == "/v1/vault/store"]
+        assert len(vault_store_calls) == 1
+        assert vault_store_calls[0]["key"] == "scratchpad_analysis_001"
+
+        # Counter-proof: scratchpad is NOT in tier 1 (permanent storage)
+        assert mock_dina.vault.retrieve(1, "scratchpad_analysis_001") is None
+
+        # Overwrite with updated checkpoint (step 4)
+        scratchpad_data["step"] = 4
+        scratchpad_data["partial_result"] = "Collected 5 of 6 reviews"
+        mock_dina.go_core.vault_store(
+            "scratchpad_analysis_001", scratchpad_data, tier=4
         )
+        updated = mock_dina.vault.retrieve(4, "scratchpad_analysis_001")
+        assert updated["step"] == 4
+        assert "5 of 6" in updated["partial_result"]
 
 # TST-INT-015
     def test_send_outbound_message(
@@ -686,6 +750,9 @@ class TestRequestFlowBrainToCore:
         Core handles the DIDComm encryption and relay; Brain just provides
         the plaintext payload and destination DID.
         """
+        # Pre-condition: no messages sent yet
+        assert len(mock_dina.p2p.messages) == 0
+
         recipient_did = "did:plc:Sancho12345678901234567890abc"
         mock_dina.p2p.add_contact(recipient_did)
         mock_dina.p2p.authenticated_peers.add(recipient_did)
@@ -701,7 +768,25 @@ class TestRequestFlowBrainToCore:
 
         assert sent is True
         assert len(mock_dina.p2p.messages) == 1
-        assert mock_dina.p2p.messages[0].type == "dina/social/tea_invite"
+        # Verify message content survived delivery
+        delivered = mock_dina.p2p.messages[0]
+        assert delivered.type == "dina/social/tea_invite"
+        assert delivered.from_did == mock_dina.identity.root_did
+        assert delivered.to_did == recipient_did
+        assert delivered.payload["text"] == "Tea at 4pm?"
+
+        # Counter-proof: unauthenticated recipient → queued, not delivered
+        rogue_did = "did:plc:Rogue123456789012345678901234"
+        rogue_msg = DinaMessage(
+            type="dina/social/tea_invite",
+            from_did=mock_dina.identity.root_did,
+            to_did=rogue_did,
+            payload={"text": "Suspicious invite"},
+        )
+        rogue_sent = mock_dina.p2p.send(rogue_msg)
+        assert rogue_sent is False
+        assert len(mock_dina.p2p.messages) == 1  # unchanged
+        assert len(mock_dina.p2p.queue) == 1  # queued instead
 
 
 # -----------------------------------------------------------------------
@@ -726,6 +811,21 @@ class TestUserQueryWS:
         The thin client connects, sends a query payload, Brain produces a
         result, and Core streams it back.
         """
+        # Pre-condition: client not connected, no streams received
+        assert mock_thin_client.connected is False
+        assert len(mock_thin_client.received_streams) == 0
+        assert len(mock_dina.brain.processed) == 0
+
+        # Counter-proof: unauthenticated client cannot receive streams
+        mock_thin_client.receive_stream({"type": "rogue_data"})
+        assert len(mock_thin_client.received_streams) == 0, \
+            "Unauthenticated client must not receive data"
+
+        # Counter-proof: connecting without device_key fails
+        connected_no_key = mock_thin_client.connect(mock_dina.go_core)
+        assert connected_no_key is False, \
+            "Connection without device key must fail"
+
         # Step 1: Authenticate the client
         device_key = mock_dina.identity.register_device(mock_thin_client.device_id)
         mock_thin_client.device_key = device_key
@@ -741,6 +841,7 @@ class TestUserQueryWS:
         # Step 3: Brain processes the query
         result = mock_dina.brain.process(query_payload)
         assert result["processed"] is True
+        assert len(mock_dina.brain.processed) == 1
 
         # Step 4: Core streams the response back to the thin client
         response = {
@@ -751,7 +852,11 @@ class TestUserQueryWS:
         mock_thin_client.receive_stream(response)
 
         assert len(mock_thin_client.received_streams) == 1
-        assert mock_thin_client.received_streams[0]["type"] == "query_response"
+        received = mock_thin_client.received_streams[0]
+        assert received["type"] == "query_response"
+        # Verify response content survived streaming
+        assert "Herman Miller" in received["answer"]
+        assert received["tier"] is not None
 
 # TST-INT-019
     def test_streaming_response_chunks(
@@ -761,10 +866,19 @@ class TestUserQueryWS:
 
         Each chunk is a partial response; the last chunk has is_final=True.
         """
+        # Pre-condition: no streams received yet
+        assert len(mock_thin_client.received_streams) == 0
+
+        # Counter-proof: unauthenticated client silently drops streams
+        mock_thin_client.receive_stream({"chunk_id": 0, "text": "rogue"})
+        assert len(mock_thin_client.received_streams) == 0, \
+            "Unauthenticated client must not receive data"
+
         # Authenticate
         device_key = mock_dina.identity.register_device(mock_thin_client.device_id)
         mock_thin_client.device_key = device_key
-        mock_thin_client.connect(mock_dina.go_core)
+        connected = mock_thin_client.connect(mock_dina.go_core)
+        assert connected is True
 
         # Brain processes and produces multiple chunks
         result = mock_dina.brain.process({
@@ -786,79 +900,127 @@ class TestUserQueryWS:
 
         assert len(mock_thin_client.received_streams) == 4
 
+        # Verify chunks arrive in order with correct content
+        assert mock_thin_client.received_streams[0]["chunk_id"] == 1
+        assert mock_thin_client.received_streams[2]["text"] == " MacBook has better battery."
+
         # Verify the final chunk
         final = mock_thin_client.received_streams[-1]
         assert final["is_final"] is True
         assert "whisper" in final
+        assert final["whisper"] == "User prefers keyboard quality."
+
+        # Non-final chunks must NOT carry whispers
+        for chunk in mock_thin_client.received_streams[:-1]:
+            assert chunk["is_final"] is False
+            assert "whisper" not in chunk
 
 # TST-INT-020
     def test_query_during_brain_outage(
         self, mock_dina: MockDinaCore, mock_thin_client: MockThinClient
     ) -> None:
-        """When Brain is down, a user query should produce a 503 error response.
+        """When Brain is down, a user query should fail with RuntimeError.
 
-        Core detects the Brain crash and returns an error to the WS client
-        instead of hanging indefinitely.
+        Core detects the Brain crash. The Brain sidecar is independent —
+        Core and vault remain operational even when Brain is down.
+        After Brain restarts, queries succeed again.
         """
-        # Authenticate
+        # Authenticate and connect
         device_key = mock_dina.identity.register_device(mock_thin_client.device_id)
         mock_thin_client.device_key = device_key
         mock_thin_client.connect(mock_dina.go_core)
 
+        # Counter-proof: Brain works before crash
+        result_before = mock_dina.brain.process({
+            "type": "user_query",
+            "content": "Normal query before crash",
+        })
+        assert result_before is not None
+
         # Brain crashes
         mock_dina.brain.crash()
 
-        # Query attempt fails
+        # Query attempt fails with RuntimeError
         with pytest.raises(RuntimeError, match="Brain has crashed"):
             mock_dina.brain.process({
                 "type": "user_query",
                 "content": "What time is the meeting?",
             })
 
-        # Core sends a 503-equivalent error to the WS client
-        error_response = {
-            "type": "error",
-            "code": 503,
-            "message": "Brain service unavailable. Try again shortly.",
-        }
-        mock_thin_client.receive_stream(error_response)
-
-        assert len(mock_thin_client.received_streams) == 1
-        assert mock_thin_client.received_streams[0]["code"] == 503
-
         # Core itself is still alive (sidecar resilience)
         mock_dina.go_core.vault_store("still_alive", {"status": "ok"})
         assert mock_dina.vault.retrieve(1, "still_alive") == {"status": "ok"}
+
+        # Core API audit trail is still recording
+        vault_calls = [
+            c for c in mock_dina.go_core.api_calls
+            if c["endpoint"] == "/v1/vault/store"
+        ]
+        assert len(vault_calls) >= 1
+
+        # Brain restart restores query capability
+        mock_dina.brain.restart()
+        result_after = mock_dina.brain.process({
+            "type": "user_query",
+            "content": "Query after restart",
+        })
+        assert result_after is not None
 
 # TST-INT-023
     def test_heartbeat_round_trip(
         self, mock_dina: MockDinaCore, mock_thin_client: MockThinClient
     ) -> None:
-        """Idle 30s -> Core sends ping -> client must pong within 10s.
+        """Heartbeat: authenticated client receives ping; unauthenticated
+        or disconnected client does not.
 
-        We model this as: after idle time, a ping message is generated;
-        the client responds with a pong; the connection stays alive.
+        Verifies: device registration, connection gating, stream delivery
+        to connected clients, and stream rejection for disconnected clients.
         """
-        # Authenticate
-        device_key = mock_dina.identity.register_device(mock_thin_client.device_id)
-        mock_thin_client.device_key = device_key
-        mock_thin_client.connect(mock_dina.go_core)
+        # --- Unauthenticated client cannot connect ---
+        assert mock_thin_client.device_key is None
+        connected = mock_thin_client.connect(mock_dina.go_core)
+        assert connected is False, (
+            "Client without device_key must fail to connect"
+        )
 
-        # Simulate 30s idle: Core sends ping
+        # --- Authenticate and connect ---
+        device_key = mock_dina.identity.register_device(
+            mock_thin_client.device_id
+        )
+        assert device_key is not None, "register_device must return a key"
+        mock_thin_client.device_key = device_key
+        connected = mock_thin_client.connect(mock_dina.go_core)
+        assert connected is True, (
+            "Client with valid device_key must connect successfully"
+        )
+
+        # --- Connected client receives ping ---
         ping = {"type": "ping", "ts": time.time()}
         mock_thin_client.receive_stream(ping)
+        assert len(mock_thin_client.received_streams) == 1, (
+            "Connected client must receive exactly one stream message"
+        )
+        received_ping = mock_thin_client.received_streams[0]
+        assert received_ping["type"] == "ping", (
+            "Received message must be the ping we sent"
+        )
+        assert received_ping["ts"] == ping["ts"], (
+            "Ping timestamp must be preserved through delivery"
+        )
 
-        # Client responds with pong
-        pong_ts = time.time()
-        pong = {"type": "pong", "ts": pong_ts}
+        # --- Disconnected client does NOT receive streams ---
+        mock_thin_client.connected = False
+        mock_thin_client.receive_stream({"type": "ping", "ts": time.time()})
+        assert len(mock_thin_client.received_streams) == 1, (
+            "Disconnected client must not accumulate stream messages"
+        )
 
-        # Verify round-trip: pong timestamp is within 10s of ping
-        rtt = pong["ts"] - ping["ts"]
-        assert rtt < 10.0, "Pong must arrive within 10 seconds of ping"
-
-        # Connection is still alive
-        assert mock_thin_client.connected is True
-        assert len(mock_thin_client.received_streams) == 1  # the ping
+        # --- Reconnected client receives again ---
+        mock_thin_client.connected = True
+        mock_thin_client.receive_stream({"type": "ping", "ts": time.time()})
+        assert len(mock_thin_client.received_streams) == 2, (
+            "Reconnected client must receive stream messages again"
+        )
 
 
 # -----------------------------------------------------------------------
@@ -898,32 +1060,32 @@ class TestAdminUI:
 
 # TST-INT-025
     def test_browser_login_dashboard(
-        self, mock_dina: MockDinaCore
+        self, mock_dina: MockDinaCore, mock_admin_api: MockAdminAPI
     ) -> None:
         """Browser login via Argon2id auth -- valid password grants dashboard access."""
-        admin_password = "strong_passphrase_42!"
-        stored_hash = self._hash_password_argon2id(admin_password)
+        # Wrong password must be rejected
+        bad_session = mock_admin_api.login("wrong-password-123")
+        assert bad_session is None, "Wrong passphrase must not produce a session"
 
-        # Store the hash in vault tier 0 (key material)
-        mock_dina.vault.store(0, "admin_password_hash", {"hash": stored_hash})
+        # Correct password grants a session
+        session = mock_admin_api.login("admin-passphrase")
+        assert session is not None, "Valid passphrase must produce a session"
+        assert session.is_valid(), "Fresh session must not be expired"
 
-        # User submits password
-        submitted = "strong_passphrase_42!"
-        assert self._verify_password(submitted, stored_hash)
+        # Dashboard accessible with valid session
+        dashboard = mock_admin_api.dashboard(session.session_id)
+        assert dashboard is not None, "Valid session must grant dashboard access"
+        assert "root_did" in dashboard
+        assert dashboard["root_did"] == mock_dina.identity.root_did
 
-        # Create session
-        session = self._create_session("admin")
-        assert session["expires_at"] > time.time()
-        assert len(session["session_id"]) == 32  # hex UUID
+        # Dashboard inaccessible with invalid session
+        no_dashboard = mock_admin_api.dashboard("invalid_session_id")
+        assert no_dashboard is None, "Invalid session must deny dashboard access"
 
-        # Dashboard data is accessible with valid session
-        mock_dina.vault.store(1, "dashboard_stats", {
-            "total_verdicts": 42,
-            "personas_active": 3,
-            "brain_status": "healthy",
-        })
-        stats = mock_dina.vault.retrieve(1, "dashboard_stats")
-        assert stats["total_verdicts"] == 42
+        # Logout invalidates the session
+        mock_admin_api.logout(session.session_id)
+        post_logout = mock_admin_api.dashboard(session.session_id)
+        assert post_logout is None, "Logged-out session must deny dashboard access"
 
 # TST-INT-026
     def test_dashboard_query_response(
@@ -976,24 +1138,43 @@ class TestAdminUI:
         """After session expires, any dashboard request redirects to login.
 
         The session has a TTL; once expired, the user must re-authenticate.
+        Validates that vault-stored sessions are distinguishable by expiry
+        and that valid sessions are NOT flagged as expired (counter-proof).
         """
-        # Create an already-expired session
-        session = self._create_session("admin", ttl_seconds=0)
-        # Force expiry by setting expires_at in the past
-        session["expires_at"] = time.time() - 1
+        # --- Valid session: created with 1-hour TTL ---
+        valid_session = self._create_session("admin", ttl_seconds=3600)
+        mock_dina.vault.store(0, f"session_{valid_session['session_id']}", valid_session)
 
-        is_expired = time.time() > session["expires_at"]
-        assert is_expired is True
+        retrieved_valid = mock_dina.vault.retrieve(0, f"session_{valid_session['session_id']}")
+        assert retrieved_valid is not None
+        assert retrieved_valid["user_id"] == "admin"
+        valid_expired = time.time() > retrieved_valid["expires_at"]
+        assert valid_expired is False, (
+            "A session with 1h TTL must NOT be expired immediately"
+        )
 
-        # An expired session must not grant access to dashboard endpoints
-        # Instead, a redirect to /login is issued
-        redirect = {
-            "status": 302,
-            "location": "/login",
-            "reason": "session_expired",
-        }
-        assert redirect["status"] == 302
-        assert redirect["location"] == "/login"
+        # --- Expired session: TTL 0 then backdated ---
+        expired_session = self._create_session("admin", ttl_seconds=0)
+        expired_session["expires_at"] = time.time() - 60  # 1 minute ago
+        mock_dina.vault.store(0, f"session_{expired_session['session_id']}", expired_session)
+
+        retrieved_expired = mock_dina.vault.retrieve(0, f"session_{expired_session['session_id']}")
+        assert retrieved_expired is not None
+        expired_check = time.time() > retrieved_expired["expires_at"]
+        assert expired_check is True, (
+            "A backdated session must be detected as expired"
+        )
+
+        # --- The two sessions have different IDs (no collision) ---
+        assert valid_session["session_id"] != expired_session["session_id"]
+
+        # --- Verify session fields are structurally correct ---
+        for sess in (retrieved_valid, retrieved_expired):
+            assert "session_id" in sess
+            assert "user_id" in sess
+            assert "created_at" in sess
+            assert "expires_at" in sess
+            assert sess["created_at"] <= sess["expires_at"] or sess is retrieved_expired
 
 
 # -----------------------------------------------------------------------
@@ -1189,25 +1370,37 @@ class TestOnboarding:
         """
         dina = MockDinaCore()
 
+        # Pre-condition: vault is empty before onboarding
+        assert dina.vault.retrieve(0, "onboarding_complete") is None
+
         # Mark onboarding done
         dina.vault.store(0, "onboarding_complete", {"completed_at": time.time()})
         assert dina.vault.retrieve(0, "onboarding_complete") is not None
 
-        # Vault store + query
+        # Vault store + query through Core API
+        api_calls_before = len(dina.go_core.api_calls)
         dina.go_core.vault_store("post_onboard_test", {"ok": True})
         assert dina.vault.retrieve(1, "post_onboard_test") == {"ok": True}
+        # Verify API call was logged
+        new_calls = [c for c in dina.go_core.api_calls[api_calls_before:]
+                     if c["endpoint"] == "/v1/vault/store"]
+        assert len(new_calls) == 1
 
         # Brain process
         result = dina.brain.process({"type": "test", "content": "hello"})
         assert result["processed"] is True
 
-        # PII scrub
-        scrubbed, _ = dina.go_core.pii_scrub("Rajmohan at rajmohan@email.com")
+        # PII scrub — both name and email should be redacted
+        scrubbed, replacements = dina.go_core.pii_scrub("Rajmohan at rajmohan@email.com")
         assert "Rajmohan" not in scrubbed
+        assert "rajmohan@email.com" not in scrubbed
+        assert len(replacements) > 0  # replacements map was populated
 
-        # DID sign + verify
+        # DID sign + verify round-trip
         sig = dina.go_core.did_sign(b"onboarding done")
         assert dina.go_core.did_verify(b"onboarding done", sig) is True
+        # Counter-proof: wrong data fails verification
+        assert dina.go_core.did_verify(b"tampered data", sig) is False
 
 # TST-INT-037
     def test_only_personal_persona_initially(self) -> None:
@@ -1277,9 +1470,12 @@ class TestOnboarding:
         """Before using a cloud LLM, the user must explicitly consent to
         PII scrubbing and data leaving the device.
 
-        If the user declines, only on-device/local LLM is available.
+        Tests three things:
+        1. Consent notification delivered with correct structure
+        2. MockHuman approval mechanism (grant and deny)
+        3. Sensitive personas always route locally regardless of consent
         """
-        # Consent flow: present notification asking for cloud LLM consent
+        # --- Step 1: Consent notification structure ---
         consent_notification = Notification(
             tier=SilenceTier.TIER_2_SOLICITED,
             title="Cloud LLM access",
@@ -1292,27 +1488,45 @@ class TestOnboarding:
             source="onboarding",
         )
         mock_human.receive_notification(consent_notification)
-
-        # Case 1: User consents
-        mock_human.set_approval("allow_cloud", True)
-        consent_granted = mock_human.approve("allow_cloud")
-        assert consent_granted is True
-
-        # With consent, complex tasks can go to cloud
-        target = mock_dina.llm_router.route("complex_reasoning")
-        assert target == LLMTarget.CLOUD
-
-        # Case 2: User denies -- complex tasks must stay local
-        mock_human.set_approval("allow_cloud", False)
-        consent_denied = not mock_human.approve("allow_cloud")
-        assert consent_denied is True
-
-        # When denied, the router should be constrained to local only
-        # (in production, a flag prevents CLOUD routing)
-        target_local = mock_dina.llm_router.route(
-            "complex_reasoning", persona=PersonaType.HEALTH
+        assert len(mock_human.notifications) == 1, (
+            "Human must receive exactly one consent notification"
         )
-        assert target_local != LLMTarget.CLOUD
+        received = mock_human.notifications[0]
+        assert "allow_cloud" in received.actions, (
+            "Consent notification must include allow_cloud action"
+        )
+        assert "deny_cloud" in received.actions, (
+            "Consent notification must include deny_cloud action"
+        )
+
+        # --- Step 2: Approval mechanism works both ways ---
+        mock_human.set_approval("allow_cloud", True)
+        assert mock_human.approve("allow_cloud") is True, (
+            "Granting consent must return True"
+        )
+        mock_human.set_approval("allow_cloud", False)
+        assert mock_human.approve("allow_cloud") is False, (
+            "Denying consent must return False"
+        )
+
+        # --- Step 3: Sensitive personas ALWAYS route locally ---
+        # This is the persona-gating invariant, independent of consent.
+        for sensitive_persona in (PersonaType.HEALTH, PersonaType.FINANCIAL):
+            target = mock_dina.llm_router.route(
+                "complex_reasoning", persona=sensitive_persona
+            )
+            assert target != LLMTarget.CLOUD, (
+                f"{sensitive_persona.value} data must never route to cloud, "
+                f"got {target}"
+            )
+
+        # --- Step 4: Non-sensitive complex reasoning routes to cloud ---
+        # NOTE: MockLLMRouter has no consent-awareness; this documents
+        # the baseline behavior. Production must wire consent → routing.
+        target_no_persona = mock_dina.llm_router.route("complex_reasoning")
+        assert target_no_persona == LLMTarget.CLOUD, (
+            "Non-sensitive complex reasoning routes to cloud (baseline)"
+        )
 
 
 # -----------------------------------------------------------------------
@@ -1427,6 +1641,11 @@ class TestBrainLocalLLM:
         For basic tasks (summarize, draft, classify), the router selects
         LOCAL target. The Brain processes the result through the classifier
         and returns a structured response."""
+        # Pre-condition: no processing or routing has occurred
+        assert len(mock_dina.brain.processed) == 0
+        assert len(mock_dina.brain.reasoned) == 0
+        assert len(mock_llm_router.routing_log) == 0
+
         # Verify the router directs basic tasks to LOCAL
         target = mock_llm_router.route("summarize")
         assert target == LLMTarget.LOCAL
@@ -1459,6 +1678,18 @@ class TestBrainLocalLLM:
         assert len(local_entries) >= 1
         assert local_entries[0]["reason"] == "basic_task"
 
+        # Counter-proof: complex tasks route to CLOUD, not LOCAL
+        complex_target = mock_llm_router.route("complex_reasoning")
+        assert complex_target == LLMTarget.CLOUD, \
+            "Complex tasks must route to CLOUD, not LOCAL"
+
+        # Counter-proof: sensitive persona routes to LOCAL even for complex tasks
+        sensitive_target = mock_llm_router.route(
+            "complex_reasoning", persona=PersonaType.HEALTH
+        )
+        assert sensitive_target == LLMTarget.LOCAL, \
+            "Sensitive persona must stay LOCAL regardless of task complexity"
+
 
 # -----------------------------------------------------------------------
 # TestCloudLLMRateLimited  (S4.2)
@@ -1474,27 +1705,14 @@ class TestCloudLLMRateLimited:
         mock_cloud_llm_router: MockLLMRouter,
         mock_dina: MockDinaCore,
     ) -> None:
-        """When a cloud LLM is rate limited, the system returns an appropriate
-        error rather than crashing or hanging. The router still determines
-        CLOUD as the target, but the execution layer surfaces the 429 status
-        so the caller can retry with backoff."""
+        """When a cloud LLM is rate limited, the system can fall back to
+        local LLM for basic tasks.  Complex tasks route to CLOUD in online
+        mode; basic tasks route to LOCAL in offline mode (fallback)."""
         # Cloud router directs complex tasks to CLOUD
         target = mock_cloud_llm_router.route("complex_reasoning")
         assert target == LLMTarget.CLOUD
 
-        # Simulate a rate-limited response from the cloud LLM
-        rate_limit_response = {
-            "status": 429,
-            "error": "rate_limited",
-            "message": "Too many requests. Retry after 60 seconds.",
-            "retry_after_seconds": 60,
-        }
-
-        # The system must surface this error clearly
-        assert rate_limit_response["status"] == 429
-        assert rate_limit_response["retry_after_seconds"] > 0
-
-        # The router log confirms CLOUD was targeted
+        # The router log confirms CLOUD was targeted with correct reason
         cloud_entries = [
             e for e in mock_cloud_llm_router.routing_log
             if e["target"] == LLMTarget.CLOUD
@@ -1502,12 +1720,23 @@ class TestCloudLLMRateLimited:
         assert len(cloud_entries) == 1
         assert cloud_entries[0]["reason"] == "complex_task"
 
-        # On rate limit, the system can fall back to local if available
-        # by re-routing with a persona override or task downgrade
+        # Counter-proof: basic tasks also route to CLOUD in online profile
+        basic_target = mock_cloud_llm_router.route("summarize")
+        assert basic_target == LLMTarget.CLOUD, (
+            "Online profile routes basic tasks to CLOUD"
+        )
+
+        # Fallback: offline router (mock_dina default) routes basic tasks
+        # to LOCAL — this is the fallback path when cloud is unavailable
+        assert mock_dina.llm_router.profile == "offline"
         fallback_target = mock_dina.llm_router.route("summarize")
         assert fallback_target == LLMTarget.LOCAL, (
-            "Fallback for basic tasks should route to LOCAL in offline mode"
+            "Offline profile routes basic tasks to LOCAL (fallback)"
         )
+
+        # Counter-proof: simple lookups need no LLM in either profile
+        assert mock_cloud_llm_router.route("fts_search") == LLMTarget.NONE
+        assert mock_dina.llm_router.route("fts_search") == LLMTarget.NONE
 
 
 # -----------------------------------------------------------------------
@@ -1584,13 +1813,16 @@ class TestPIIScrubberPipeline:
         assert "Rajmohan" not in scrubbed_query
         assert "rajmohan@email.com" not in scrubbed_query
 
+        # Scrubbed text should pass validate_clean (no residual PII)
+        assert mock_scrubber.validate_clean(scrubbed_query), \
+            "Scrubbed text must pass PII validation before LLM send"
+
         # Replacement map captures original PII values (format-agnostic)
         pii_values = set(replacement_map.values())
         assert "Rajmohan" in pii_values
         assert "rajmohan@email.com" in pii_values
 
         # Step 2: Simulate LLM response using actual tokens from replacement map
-        # (tokens may be [PERSON_1] or faker-generated names — use real tokens)
         person_token = next(k for k, v in replacement_map.items() if v == "Rajmohan")
         email_token = next(k for k, v in replacement_map.items() if v == "rajmohan@email.com")
         llm_response = (
@@ -1614,6 +1846,14 @@ class TestPIIScrubberPipeline:
 
         # Round-trip integrity: the rehydrated text reads naturally
         assert "I've drafted an email to Rajmohan" in rehydrated
+
+        # Counter-proof: text with no PII returns empty replacement map
+        clean_text = "What is the weather today?"
+        scrubbed_clean, clean_map = mock_scrubber.scrub(clean_text)
+        assert len(clean_map) == 0, \
+            "No PII in input must produce empty replacement map"
+        assert scrubbed_clean == clean_text, \
+            "Clean text must pass through unchanged"
 
 # TST-INT-084
     def test_tier3_absent_gracefully(

@@ -41,12 +41,15 @@ from tests.integration.mocks import (
     MockDinaCore,
     MockDockerCompose,
     MockGoCore,
+    MockHKDFKeyManager,
     MockIdentity,
+    MockKeyManager,
     MockIngressTier,
     MockLLMRouter,
     MockNoiseSession,
     MockOnboardingManager,
     MockPIIScrubber,
+    MockPLCResolver,
     MockPushProvider,
     MockTrustNetwork,
     MockReviewBot,
@@ -79,10 +82,14 @@ class TestClientSync:
     ) -> None:
         """Home Node stays fully operational even when all client
         devices are offline."""
+        # Pre-condition: vault is empty for this key
+        assert mock_dina.vault.retrieve(1, "new_item") is None
+
         # Take client offline
         mock_rich_client.connected = False
+        assert mock_rich_client.connected is False
 
-        # Home Node vault operations still work
+        # Home Node vault operations still work while client is offline
         mock_dina.vault.store(1, "new_item", {"content": "hello"})
         result = mock_dina.vault.retrieve(1, "new_item")
         assert result is not None
@@ -92,6 +99,21 @@ class TestClientSync:
         processed = mock_dina.brain.process({"type": "test", "content": "ping"})
         assert processed["processed"] is True
 
+        # Identity operations still work (sign/verify cycle)
+        sig = mock_dina.identity.sign("offline_payload")
+        assert mock_dina.identity.verify("offline_payload", sig) is True
+
+        # PII scrubbing still works (Go Core is independent of clients)
+        scrubbed, replacements = mock_dina.go_core.pii_scrub(
+            "Rajmohan at rajmohan@email.com"
+        )
+        assert "Rajmohan" not in scrubbed
+        assert len(replacements) >= 1
+
+        # Counter-proof: client is still offline — queuing works, not pushing
+        mock_rich_client.queue_offline({"id": "queued_1", "content": "while offline"})
+        assert len(mock_rich_client.offline_queue) == 1
+
     # TST-INT-366
     def test_client_offline_no_effect_on_home_node(
         self,
@@ -100,18 +122,22 @@ class TestClientSync:
     ) -> None:
         """A single client device going offline has no impact on
         Home Node operation or other subsystems."""
-        # Populate some vault data
+        # Pre-condition: vault keys don't exist yet
+        assert mock_dina.vault.retrieve(1, "data_a") is None
+
+        # Populate some vault data while client is online
         mock_dina.vault.store(1, "data_a", {"value": 1})
         mock_dina.vault.store(1, "data_b", {"value": 2})
 
         # Client goes offline
         mock_rich_client.connected = False
+        assert mock_rich_client.connected is False
 
         # Vault is still fully accessible
         assert mock_dina.vault.retrieve(1, "data_a")["value"] == 1
         assert mock_dina.vault.retrieve(1, "data_b")["value"] == 2
 
-        # New writes succeed
+        # New writes succeed while client is offline
         mock_dina.vault.store(1, "data_c", {"value": 3})
         assert mock_dina.vault.retrieve(1, "data_c")["value"] == 3
 
@@ -119,6 +145,17 @@ class TestClientSync:
         mock_dina.vault.index_for_fts("data_a", "alpha value")
         results = mock_dina.vault.search_fts("alpha")
         assert "data_a" in results
+
+        # Counter-proof: non-matching FTS returns empty
+        assert len(mock_dina.vault.search_fts("nonexistent")) == 0
+
+        # Identity sign/verify works while client is offline
+        sig = mock_dina.identity.sign("offline_test")
+        assert mock_dina.identity.verify("offline_test", sig) is True
+
+        # Delete works while offline
+        assert mock_dina.vault.delete(1, "data_c") is True
+        assert mock_dina.vault.retrieve(1, "data_c") is None
 
     # TST-INT-372
     def test_multiple_rich_clients_sync_consistently(
@@ -201,41 +238,59 @@ class TestClientSync:
     ) -> None:
         """Conflicting writes from different devices are flagged
         for user review when detection is enabled."""
-        # Simulate two concurrent writes from different sources
+        # Write v1 from phone
         write_a = {"version": 1, "author": "phone", "ts": time.time()}
-        write_b = {"version": 1, "author": "laptop", "ts": time.time() + 0.001}
+        mock_dina.vault.store(1, "shared_item", write_a)
 
-        # Store both under conflict-tracking keys
-        mock_dina.vault.store(1, "conflict_a", write_a)
-        mock_dina.vault.store(1, "conflict_b", write_b)
+        # Capture the pre-overwrite value (simulates conflict detection)
+        before_overwrite = mock_dina.vault.retrieve(1, "shared_item")
+        assert before_overwrite["author"] == "phone"
 
-        # Detect conflict: same logical entity, different authors
-        val_a = mock_dina.vault.retrieve(1, "conflict_a")
-        val_b = mock_dina.vault.retrieve(1, "conflict_b")
-        authors = {val_a["author"], val_b["author"]}
+        # Write v2 from laptop to the SAME key — this is the conflict
+        write_b = {"version": 2, "author": "laptop", "ts": time.time() + 0.001}
+        mock_dina.vault.store(1, "shared_item", write_b)
 
-        assert len(authors) == 2, "Two distinct authors means conflict detected"
+        # Detect conflict: current value differs from captured snapshot
+        after_overwrite = mock_dina.vault.retrieve(1, "shared_item")
+        assert after_overwrite["author"] != before_overwrite["author"], \
+            "Overwrite detected — two different authors wrote to same key"
+        assert after_overwrite["version"] == 2, "Last-write-wins applied"
 
-        # Record conflict for user review
-        conflict_record = {
+        # The pre-overwrite value is LOST from the key (conflict consequence)
+        assert mock_dina.vault.retrieve(1, "shared_item")["version"] != 1
+
+        # Flag for user review: store both candidates in a review record
+        mock_dina.vault.store(1, "conflict_review_001", {
             "type": "conflict",
             "key": "shared_item",
-            "candidates": [val_a, val_b],
+            "candidates": [before_overwrite, after_overwrite],
             "resolved": False,
-        }
-        mock_dina.vault.store(1, "conflict_review_001", conflict_record)
-        stored = mock_dina.vault.retrieve(1, "conflict_review_001")
-        assert stored["resolved"] is False
-        assert len(stored["candidates"]) == 2
+        })
+        review = mock_dina.vault.retrieve(1, "conflict_review_001")
+        assert review["resolved"] is False
+        assert len(review["candidates"]) == 2
+        candidate_authors = {c["author"] for c in review["candidates"]}
+        assert candidate_authors == {"phone", "laptop"}, \
+            "Both conflicting authors must be preserved for review"
+
+        # Counter-proof: a key with only one writer has no conflict
+        mock_dina.vault.store(1, "solo_item", {"version": 1, "author": "phone"})
+        solo = mock_dina.vault.retrieve(1, "solo_item")
+        assert solo["author"] == "phone"
+        assert solo["version"] == 1  # no overwrite occurred
 
     # TST-INT-377
     def test_most_data_append_only(
         self,
         mock_dina: MockDinaCore,
     ) -> None:
-        """Most Dina data (verdicts, whispers, events) is append-only,
-        making conflicts inherently rare."""
-        # Append-only pattern: each item gets a unique key
+        """Most Dina data (verdicts, whispers, events) is append-only.
+        Each item gets a unique key, so conflicts are inherently rare.
+        Verify that unique-key insertion preserves all items, and
+        demonstrate that overwriting a key IS possible (the pattern
+        relies on key uniqueness, not storage-level immutability).
+        """
+        # --- Append-only pattern: unique keys, no overwrites ---
         items = [
             {"id": "verdict_001", "product": "ThinkPad"},
             {"id": "verdict_002", "product": "Aeron"},
@@ -245,15 +300,29 @@ class TestClientSync:
         for item in items:
             mock_dina.vault.store(1, item["id"], item)
 
-        # All items coexist with no overwrites
+        # All items coexist
         for item in items:
             stored = mock_dina.vault.retrieve(1, item["id"])
             assert stored is not None
             assert stored["id"] == item["id"]
 
-        # Total items equals the number we stored (no conflicts)
         tier_1_count = len(mock_dina.vault._tiers[1])
-        assert tier_1_count == len(items)
+        assert tier_1_count == len(items), (
+            "Unique keys must produce exactly N entries — no conflicts"
+        )
+
+        # --- Counter-proof: re-using a key DOES overwrite ---
+        # The append-only safety comes from key uniqueness, not from
+        # storage-level immutability. If a key is reused, data is lost.
+        mock_dina.vault.store(1, "verdict_001", {"product": "OVERWRITTEN"})
+        overwritten = mock_dina.vault.retrieve(1, "verdict_001")
+        assert overwritten["product"] == "OVERWRITTEN", (
+            "Reusing a key must overwrite — append-only relies on key "
+            "uniqueness, not storage-level protection"
+        )
+        assert len(mock_dina.vault._tiers[1]) == len(items), (
+            "Overwrite must not increase item count — same key reused"
+        )
 
 
 # =========================================================================
@@ -271,46 +340,76 @@ class TestTEEEnclaves:
     ) -> None:
         """Client verifies enclave attestation before trusting
         the Home Node with decrypted data."""
-        # Simulate enclave attestation report
-        attestation = {
+        # Home Node signs attestation report
+        attestation_data = json.dumps({
             "enclave_id": "sgx_enclave_001",
-            "measurement": hashlib.sha256(b"dina_enclave_binary_v1").hexdigest(),
-            "nonce": hashlib.sha256(str(time.time()).encode()).hexdigest(),
             "platform": "SGX",
-        }
+        }, sort_keys=True).encode()
 
-        # Client-side verification: measurement matches expected value
-        expected_measurement = hashlib.sha256(b"dina_enclave_binary_v1").hexdigest()
-        assert attestation["measurement"] == expected_measurement
+        sig = mock_dina.identity.sign(attestation_data)
 
-        # Nonce is present and non-empty (replay protection)
-        assert len(attestation["nonce"]) == 64
-        assert attestation["nonce"] != attestation["measurement"]
+        # Client verifies attestation signature — valid signature accepted
+        assert mock_dina.identity.verify(attestation_data, sig) is True
 
-        # Sign the attestation with identity for audit
-        sig = mock_dina.identity.sign(
-            json.dumps(attestation, sort_keys=True).encode()
-        )
-        assert len(sig) > 0
+        # Tampered attestation — verification must fail
+        tampered = json.dumps({
+            "enclave_id": "sgx_enclave_001",
+            "platform": "COMPROMISED",
+        }, sort_keys=True).encode()
+        assert mock_dina.identity.verify(tampered, sig) is False
+
+        # Different identity cannot produce a valid signature
+        rogue = MockIdentity(did="did:plc:RogueNode000000000000000000000")
+        rogue_sig = rogue.sign(attestation_data)
+        assert rogue_sig != sig, \
+            "Different identity must produce different signature"
+        assert mock_dina.identity.verify(attestation_data, rogue_sig) is False
+
+        # Attestation stored in vault for audit trail
+        mock_dina.vault.store(0, "enclave_attestation", {
+            "data": attestation_data.decode(),
+            "signature": sig,
+        })
+        stored = mock_dina.vault.retrieve(0, "enclave_attestation")
+        assert stored is not None
+        assert stored["signature"] == sig
 
     # TST-INT-383
     def test_host_root_cannot_read_enclave_memory(
         self,
+        mock_vault: MockVault,
+        mock_identity: MockIdentity,
     ) -> None:
         """Even with root access on the host, the enclave's memory
-        is inaccessible -- modeled by opaque byte representation."""
-        # Enclave memory is a sealed blob
-        enclave_secret = b"user_master_key_plaintext"
-        sealed = hashlib.sha256(enclave_secret).digest()
+        is inaccessible -- modeled by encrypted-at-rest vault + opaque
+        signatures that don't reveal the private key."""
+        # Store sensitive data in the HEALTH persona partition
+        secret_data = {"master_key": "sk_live_abc123", "ssn": "123-45-6789"}
+        mock_vault.store(1, "enclave_secrets", secret_data,
+                         persona=PersonaType.HEALTH)
 
-        # Host root can only see the sealed form
-        assert sealed != enclave_secret
-        # There is no way to reverse the hash to recover the original
-        assert len(sealed) == 32
+        # "Host root" reads raw file header — must NOT see plaintext SQLite
+        header = mock_vault.raw_file_header(PersonaType.HEALTH)
+        assert header != b"SQLite format 3\x00", \
+            "Encrypted partition must not expose plaintext SQLite header"
 
-        # Even knowing the sealed form, the original is not recoverable
-        # (modeled: sealed bytes don't contain any substring of the original)
-        assert enclave_secret not in sealed
+        # Data IS retrievable through the vault API (in-enclave access)
+        retrieved = mock_vault.retrieve(1, "enclave_secrets",
+                                        persona=PersonaType.HEALTH)
+        assert retrieved is not None
+        assert retrieved["master_key"] == "sk_live_abc123"
+
+        # Signing produces output that does NOT contain the private key
+        signature = mock_identity.sign(b"enclave_operation")
+        assert signature != mock_identity.root_private_key, \
+            "Signature must not leak the private key"
+        assert mock_identity.root_private_key not in signature, \
+            "Private key must not appear as substring of signature"
+
+        # Counter-proof: verification works (enclave can use the key)
+        assert mock_identity.verify(b"enclave_operation", signature) is True
+        # Counter-proof: tampered data fails verification
+        assert mock_identity.verify(b"tampered_operation", signature) is False
 
     # TST-INT-384
     def test_enclave_sealed_keys(
@@ -319,27 +418,33 @@ class TestTEEEnclaves:
     ) -> None:
         """Keys sealed by the enclave can only be unsealed inside
         the same enclave on the same platform."""
-        # Derive a key
-        raw_key = mock_identity.root_private_key
+        # Derive enclave-bound keys via HKDF with platform-specific info
+        enclave_km = MockHKDFKeyManager(mock_identity.root_private_key)
+        sealed_backup = enclave_km.derive("sgx_platform_A:backup")
+        sealed_sync = enclave_km.derive("sgx_platform_A:sync")
 
-        # Seal with enclave measurement (platform-bound)
-        enclave_measurement = hashlib.sha256(b"sgx_platform_key").hexdigest()
-        sealed_key = hashlib.sha256(
-            f"{raw_key}:{enclave_measurement}".encode()
-        ).hexdigest()
+        # Different key purposes produce different sealed keys
+        assert sealed_backup != sealed_sync
 
-        # Unsealing with correct measurement recovers the same sealed form
-        unseal_attempt = hashlib.sha256(
-            f"{raw_key}:{enclave_measurement}".encode()
-        ).hexdigest()
-        assert unseal_attempt == sealed_key
+        # Re-deriving with same seed + info is deterministic (same enclave)
+        enclave_km2 = MockHKDFKeyManager(mock_identity.root_private_key)
+        assert enclave_km2.derive("sgx_platform_A:backup") == sealed_backup
 
-        # Unsealing with wrong measurement fails
-        wrong_measurement = hashlib.sha256(b"different_platform").hexdigest()
-        wrong_unseal = hashlib.sha256(
-            f"{raw_key}:{wrong_measurement}".encode()
-        ).hexdigest()
-        assert wrong_unseal != sealed_key
+        # Different platform (different seed) cannot unseal
+        other_identity = MockIdentity(did="did:plc:DIFFERENT_PLATFORM_ENCLAVE")
+        other_km = MockHKDFKeyManager(other_identity.root_private_key)
+        other_backup = other_km.derive("sgx_platform_A:backup")
+        assert other_backup != sealed_backup, \
+            "Different enclave seed must produce different sealed keys"
+
+        # Key wrapping with passphrase hides the raw key
+        km = MockKeyManager(mock_identity)
+        wrapped = km.key_wrap(sealed_backup, "enclave_passphrase")
+        assert sealed_backup not in wrapped, \
+            "Wrapped key must not contain plaintext key material"
+
+        # All derived keys are tracked
+        assert len(enclave_km.derived_keys) == 2
 
 
 # =========================================================================
@@ -358,8 +463,12 @@ class TestProgressiveDisclosure:
     ) -> None:
         """Day 1: email + calendar ingestion works; user gets basic nudges
         only. No advanced features exposed yet."""
+        # Pre-condition: onboarding not complete, no personas
+        assert mock_onboarding.is_complete() is False
+        assert mock_onboarding.get_personas_after_setup() == []
+
         # Complete onboarding
-        mock_onboarding.run_all()
+        assert mock_onboarding.run_all() is True
         assert mock_onboarding.is_complete()
 
         # Only the default /personal persona exists
@@ -370,6 +479,11 @@ class TestProgressiveDisclosure:
         # No progressive prompts on day 1
         prompt = mock_onboarding.get_progressive_prompt(1)
         assert prompt is None
+
+        # Counter-proof: milestone days DO return prompts
+        day_7 = mock_onboarding.get_progressive_prompt(7)
+        assert day_7 is not None
+        assert "recovery" in day_7.lower() or "24-word" in day_7.lower()
 
     # TST-INT-386
     def test_day_7_mnemonic_backup_prompt(
@@ -391,9 +505,27 @@ class TestProgressiveDisclosure:
     ) -> None:
         """Day 14: user is prompted to connect Telegram."""
         mock_onboarding.run_all()
+
+        # Verify onboarding actually completed all steps
+        assert len(mock_onboarding.completed_steps) == 10, \
+            "All 10 onboarding steps must complete before progressive prompts"
+
         prompt = mock_onboarding.get_progressive_prompt(14)
         assert prompt is not None
         assert "telegram" in prompt.lower()
+
+        # Counter-proof: non-milestone days return no prompt
+        for day in (1, 2, 10, 13, 15, 20, 29):
+            assert mock_onboarding.get_progressive_prompt(day) is None, \
+                f"Day {day} is not a milestone — should return None"
+
+        # Verify day 14 prompt is distinct from other milestone prompts
+        day_7_prompt = mock_onboarding.get_progressive_prompt(7)
+        day_30_prompt = mock_onboarding.get_progressive_prompt(30)
+        assert prompt != day_7_prompt, "Day 14 prompt must differ from day 7"
+        assert prompt != day_30_prompt, "Day 14 prompt must differ from day 30"
+        assert "telegram" not in (day_7_prompt or "").lower(), \
+            "Telegram should only appear in day 14 prompt, not day 7"
 
     # TST-INT-388
     def test_day_30_persona_compartments_prompt(
@@ -415,10 +547,33 @@ class TestProgressiveDisclosure:
     ) -> None:
         """Month 3 (~90 days): user discovers power-user features
         like self-hosting."""
+        # Pre-condition: onboarding not yet complete
+        assert not mock_onboarding.is_complete()
+
         mock_onboarding.run_all()
+        assert mock_onboarding.is_complete()
+
         prompt = mock_onboarding.get_progressive_prompt(90)
         assert prompt is not None
         assert "self-host" in prompt.lower() or "host" in prompt.lower()
+
+        # Counter-proof: day 1 has no prompt (not a milestone)
+        day_1_prompt = mock_onboarding.get_progressive_prompt(1)
+        assert day_1_prompt is None, \
+            "Day 1 is not a milestone — no progressive prompt expected"
+
+        # Counter-proof: day 7 IS a milestone (recovery phrase)
+        day_7_prompt = mock_onboarding.get_progressive_prompt(7)
+        assert day_7_prompt is not None
+        assert "recovery" in day_7_prompt.lower() or "phrase" in day_7_prompt.lower()
+
+        # Counter-proof: day 14 IS a milestone (Telegram)
+        day_14_prompt = mock_onboarding.get_progressive_prompt(14)
+        assert day_14_prompt is not None
+        assert "telegram" in day_14_prompt.lower()
+
+        # Milestones are distinct — day 90 is NOT the same as day 7
+        assert prompt != day_7_prompt
 
 
 # =========================================================================
@@ -554,33 +709,53 @@ class TestIngressTiers:
         mock_identity: MockIdentity,
     ) -> None:
         """Changing ingress tier updates the DID service endpoint,
-        triggering a DID rotation operation."""
+        triggering a DID rotation operation. The PLC directory is updated
+        with the new endpoint while the DID stays the same."""
+        plc = MockPLCResolver()
         old_endpoint = "https://my-dina.tailnet.ts.net"
         new_endpoint = "https://dina.example.com"
 
-        # Old DID document
+        # Register old DID document in PLC directory
         old_doc = DIDDocument(
             did=mock_identity.root_did,
             public_key="pub_key_001",
             service_endpoint=old_endpoint,
         )
+        plc.register(old_doc)
 
-        # Tier change: community -> production
+        # Verify old endpoint is resolvable
+        resolved = plc.resolve(mock_identity.root_did)
+        assert resolved is not None
+        assert resolved.service_endpoint == old_endpoint
+
+        # Tier change: community -> production — sign the rotation
+        rotation_payload = json.dumps({
+            "did": mock_identity.root_did,
+            "prev_endpoint": old_endpoint,
+            "new_endpoint": new_endpoint,
+        }).encode()
+        sig = mock_identity.sign(rotation_payload)
+        assert len(sig) > 0
+        # Verify the signature is valid
+        assert mock_identity.verify(rotation_payload, sig) is True
+
+        # Update PLC directory with new endpoint
         new_doc = DIDDocument(
             did=mock_identity.root_did,
             public_key="pub_key_001",
             service_endpoint=new_endpoint,
         )
+        plc.register(new_doc)
 
-        # Endpoint changed, DID stays the same
-        assert old_doc.did == new_doc.did
-        assert old_doc.service_endpoint != new_doc.service_endpoint
+        # DID stays the same, endpoint changed
+        resolved_after = plc.resolve(mock_identity.root_did)
+        assert resolved_after is not None
+        assert resolved_after.did == old_doc.did  # same DID
+        assert resolved_after.service_endpoint == new_endpoint  # new endpoint
+        assert resolved_after.service_endpoint != old_endpoint
 
-        # The new document must be signed (rotation operation)
-        sig = mock_identity.sign(
-            json.dumps({"did": new_doc.did, "endpoint": new_endpoint}).encode()
-        )
-        assert len(sig) > 0
+        # Counter-proof: unknown DID still unresolvable
+        assert plc.resolve("did:plc:UnknownDID000000000000000") is None
 
     # TST-INT-399
     def test_multiple_tiers_simultaneously(self) -> None:
@@ -995,34 +1170,51 @@ class TestThreeLayerVerification:
     ) -> None:
         """When an AppView shows significant discrepancy from both
         consensus and PDS, it is abandoned in favor of the honest one."""
+        # Pre-condition: no checks performed yet
+        assert mock_verification_layer.layer2_checks == 0
+        assert mock_verification_layer.layer3_checks == 0
+
         # Honest AppView results
         honest_results = [{"id": f"r{i}"} for i in range(10)]
 
-        # Dishonest AppView results (heavily censored)
+        # Dishonest AppView results (heavily censored — only 2 of 10)
         dishonest_results = [{"id": "r0"}, {"id": "r1"}]
 
-        # Consensus check fails
+        # Consensus check fails (ratio 2/10 = 0.2 < 0.5)
         consensus_ok = mock_verification_layer.consensus_check(
             honest_results, dishonest_results
         )
         assert consensus_ok is False
+        assert mock_verification_layer.layer2_checks == 1
 
-        # PDS spot-check also fails for dishonest view
+        # PDS spot-check: dishonest records ARE in PDS (subset)
         pds_records = [{"id": f"r{i}"} for i in range(10)]
         pds_ok = mock_verification_layer.spot_check_pds(
             dishonest_results, pds_records
         )
-        # The dishonest records ARE in PDS (they are a subset), so
-        # spot_check_pds passes. But the missing records prove censorship.
-        assert pds_ok is True  # subset is valid
+        assert pds_ok is True  # subset is valid — censorship, not fabrication
+        assert mock_verification_layer.layer3_checks == 1
 
-        # Decision: if consensus fails AND the dishonest view has
-        # significantly fewer records, switch to the honest view.
-        honest_count = len(honest_results)
-        dishonest_count = len(dishonest_results)
-        ratio = dishonest_count / honest_count
-        should_abandon = ratio < 0.5
-        assert should_abandon is True
+        # Counter-proof: two honest AppViews pass consensus check
+        consensus_honest = mock_verification_layer.consensus_check(
+            honest_results, [{"id": f"r{i}"} for i in range(9)]
+        )
+        assert consensus_honest is True, \
+            "Two AppViews with similar record counts must pass consensus"
+
+        # Counter-proof: fabricated records fail PDS spot-check
+        fabricated_results = [{"id": "fake_1"}, {"id": "fake_2"}]
+        pds_fabricated = mock_verification_layer.spot_check_pds(
+            fabricated_results, pds_records
+        )
+        assert pds_fabricated is False, \
+            "Fabricated records not in PDS must fail spot-check"
+
+        # Counter-proof: identical results pass consensus
+        identical_consensus = mock_verification_layer.consensus_check(
+            honest_results, honest_results
+        )
+        assert identical_consensus is True
 
 
 # =========================================================================
@@ -1189,6 +1381,9 @@ class TestBotProtocol:
     ) -> None:
         """Standardized query envelope: query string, trust ring,
         max_sources."""
+        # Pre-condition: no queries logged
+        assert len(mock_review_bot.queries) == 0
+
         result = mock_review_bot.query_product(
             "best laptop for coding",
             requester_trust_ring=TrustRing.RING_2_VERIFIED,
@@ -1206,6 +1401,21 @@ class TestBotProtocol:
         assert "recommendations" in result
         assert "bot_signature" in result
         assert "bot_did" in result
+        assert result["bot_did"] == mock_review_bot.bot_did
+
+        # Counter-proof: no matching keyword → empty recommendations
+        assert len(result["recommendations"]) == 0, \
+            "Default response with no registered keywords must have empty recommendations"
+
+        # Add a response and verify it matches
+        mock_review_bot.add_response("laptop", {
+            "recommendations": [{"product": "ThinkPad", "sources": ["MKBHD"]}],
+            "bot_signature": "real_sig",
+            "bot_did": mock_review_bot.bot_did,
+        })
+        matched = mock_review_bot.query_product("laptop reviews")
+        assert len(matched["recommendations"]) == 1
+        assert matched["recommendations"][0]["product"] == "ThinkPad"
 
     # TST-INT-421
     def test_bot_signature_verification(
@@ -1228,7 +1438,8 @@ class TestBotProtocol:
         self,
         mock_review_bot: MockReviewBot,
     ) -> None:
-        """Bot results must include source attribution."""
+        """Bot results must include source attribution.  Results without
+        matching responses return empty recommendations (counter-proof)."""
         result = mock_review_bot.query_product("laptop")
 
         recommendations = result.get("recommendations", [])
@@ -1239,6 +1450,26 @@ class TestBotProtocol:
             assert len(sources) > 0, "Every recommendation must have sources"
             for source in sources:
                 assert "type" in source
+                assert source["type"] in ("expert", "community", "outcome"), (
+                    f"Source type '{source['type']}' must be a known type"
+                )
+
+        # Every response must include bot_did and bot_signature for
+        # accountability — the bot signs its output
+        assert "bot_did" in result, "Response must include bot_did"
+        assert result["bot_did"].startswith("did:plc:"), (
+            "Bot DID must be a valid did:plc identifier"
+        )
+        assert "bot_signature" in result, "Response must include bot_signature"
+
+        # Counter-proof: unknown product returns empty recommendations
+        unknown = mock_review_bot.query_product("quantum teleporter")
+        assert len(unknown["recommendations"]) == 0, (
+            "Unknown product must return empty recommendations"
+        )
+        # But even empty results carry bot_did and signature
+        assert "bot_did" in unknown
+        assert "bot_signature" in unknown
 
     # TST-INT-423
     def test_deep_link_pattern_default(
@@ -1318,20 +1549,36 @@ class TestBotProtocol:
         mock_review_bot: MockReviewBot,
     ) -> None:
         """Bots are discovered via PDS (AT Protocol), not a
-        centralized registry. Bot DID is self-sovereign."""
-        # Bot has a DID
+        centralized registry. Bot DID is self-sovereign and
+        resolvable through the PLC directory."""
+        plc = MockPLCResolver()
+
+        # Bot has a valid DID
         assert mock_review_bot.bot_did.startswith("did:plc:")
 
-        # Bot can be discovered by resolving its DID
+        # Register bot's DIDDocument in PLC directory (decentralized)
         bot_doc = DIDDocument(
             did=mock_review_bot.bot_did,
             public_key="bot_pub_key",
             service_endpoint="https://reviewbot.example.com",
         )
-        assert bot_doc.did == mock_review_bot.bot_did
+        plc.register(bot_doc)
 
-        # Bot lives on its own PDS, no central registry needed
-        assert "example.com" in bot_doc.service_endpoint
+        # Discover bot by resolving its DID — no central registry needed
+        resolved = plc.resolve(mock_review_bot.bot_did)
+        assert resolved is not None, "Bot must be discoverable via PLC"
+        assert resolved.did == mock_review_bot.bot_did
+        assert resolved.service_endpoint == "https://reviewbot.example.com"
+
+        # Counter-proof: unknown bot DID is NOT resolvable
+        assert plc.resolve("did:plc:UnknownBot0000000000000000") is None, (
+            "Unregistered bot must not be discoverable"
+        )
+
+        # The bot's query API works at the resolved endpoint
+        result = mock_review_bot.query_product("best laptop")
+        assert "bot_did" in result
+        assert result["bot_did"] == mock_review_bot.bot_did
 
     # TST-INT-427
     def test_bot_to_bot_recommendation(
@@ -1339,25 +1586,41 @@ class TestBotProtocol:
         mock_review_bot: MockReviewBot,
     ) -> None:
         """A bot can recommend another specialist bot for queries
-        outside its domain."""
-        # Query outside review bot's domain
+        outside its domain.
+
+        Validates: out-of-domain queries return empty recommendations,
+        in-domain queries return populated recommendations (counter-proof),
+        and response structure includes bot_did and signature.
+        """
+        # --- Out-of-domain query: no matching response registered ---
         result = mock_review_bot.query_product("legal advice on warranty")
+        assert len(result["recommendations"]) == 0, (
+            "Out-of-domain query must return empty recommendations"
+        )
+        assert "bot_did" in result, "Response must include bot_did"
+        assert "bot_signature" in result, "Response must include signature"
+        assert result["bot_did"].startswith("did:plc:"), (
+            "Bot DID must be a valid did:plc identifier"
+        )
 
-        # When no match is found, recommendations list is empty
-        assert len(result["recommendations"]) == 0
+        # --- Counter-proof: in-domain query returns recommendations ---
+        mock_review_bot.add_response("laptop", {
+            "recommendations": [
+                {"product": "ThinkPad X1", "score": 92, "source": "MKBHD"},
+            ],
+            "bot_signature": "sig_laptop",
+            "bot_did": mock_review_bot.bot_did,
+        })
+        in_domain = mock_review_bot.query_product("best laptop for coding")
+        assert len(in_domain["recommendations"]) > 0, (
+            "In-domain query must return non-empty recommendations"
+        )
+        assert in_domain["recommendations"][0]["product"] == "ThinkPad X1"
 
-        # In practice, the bot would return a recommendation for
-        # a specialist bot. Simulate this:
-        referral = {
-            "type": "bot_referral",
-            "recommended_bot_did": "did:plc:LegalBot001",
-            "reason": "Query is about legal/warranty, not product reviews",
-            "confidence": 0.95,
-        }
-
-        assert referral["type"] == "bot_referral"
-        assert referral["recommended_bot_did"].startswith("did:plc:")
-        assert referral["confidence"] > 0.5
+        # --- Verify query log captured both queries ---
+        assert len(mock_review_bot.queries) == 2
+        assert "legal" in mock_review_bot.queries[0]["query"]
+        assert "laptop" in mock_review_bot.queries[1]["query"]
 
     # TST-INT-428
     def test_requester_anonymity_trust_ring_only(
@@ -1453,26 +1716,53 @@ class TestPushNotifications:
         device_id = "phone_001"
         ws_token = "valid_ws_token_001"
 
-        # Establish WS connection
+        # Pre-condition: no connections, no pushes
+        assert len(mock_ws_server.connections) == 0
+        assert len(mock_push_provider.sent) == 0
+
+        # Counter-proof: when NO WS connection, push IS sent
+        assert device_id not in mock_ws_server.connections
+        mock_push_provider.send_wake("device_token_phone")
+        assert len(mock_push_provider.sent) == 1, \
+            "Push must be sent when no WS connection exists"
+
+        # Reset push state for the real test
+        mock_push_provider.sent.clear()
+
+        # Now establish WS connection
         mock_ws_server.add_valid_token(ws_token)
         conn = mock_ws_server.accept(device_id)
         mock_ws_server.authenticate_connection(conn, ws_token)
         assert conn.authenticated is True
 
-        # Since WS is active, push should be suppressed
-        ws_connected = (
+        # Verify WS is genuinely active via mock state
+        assert device_id in mock_ws_server.connections
+        assert mock_ws_server.connections[device_id].connected is True
+        assert mock_ws_server.connections[device_id].authenticated is True
+
+        # System rule: when WS is active, push is suppressed.
+        # Verify the WS connection state is queryable so the system
+        # can make the suppression decision.
+        ws_active = (
             device_id in mock_ws_server.connections
             and mock_ws_server.connections[device_id].connected
             and mock_ws_server.connections[device_id].authenticated
         )
-        assert ws_connected is True
+        assert ws_active is True, \
+            "WS connection must be queryable for push suppression decision"
 
-        # Push decision: skip push when WS is active
-        if not ws_connected:
-            mock_push_provider.send_wake("device_token_phone")
-
-        # No push was sent
+        # No push should have been sent since WS connected
         assert len(mock_push_provider.sent) == 0
+
+        # Counter-proof: after WS disconnects, push would be needed again
+        conn.close()
+        assert mock_ws_server.connections[device_id].connected is False
+        ws_still_active = (
+            device_id in mock_ws_server.connections
+            and mock_ws_server.connections[device_id].connected
+        )
+        assert ws_still_active is False, \
+            "Disconnected WS must not appear active"
 
     # TST-INT-433
     def test_unified_push_no_google_dependency(self) -> None:

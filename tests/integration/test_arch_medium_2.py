@@ -289,12 +289,21 @@ def test_bot_routing_threshold_boundary(
     bot_a_did = "did:plc:BotA"
     bot_b_did = "did:plc:BotB"
 
-    mock_trust_network.bot_scores[bot_a_did] = 90.0
-    mock_trust_network.bot_scores[bot_b_did] = 89.0
+    # Both bots start at default score (50.0)
+    assert mock_trust_network.get_bot_score(bot_a_did) == 50.0
+    assert mock_trust_network.get_bot_score(bot_b_did) == 50.0
 
+    # Bot A earns trust through positive interactions → reaches threshold
+    mock_trust_network.update_bot_score(bot_a_did, 40.0)  # 50+40=90
     score_a = mock_trust_network.get_bot_score(bot_a_did)
-    score_b = mock_trust_network.get_bot_score(bot_b_did)
+    assert score_a == 90.0
 
+    # Bot B earns slightly less → just below threshold
+    mock_trust_network.update_bot_score(bot_b_did, 39.0)  # 50+39=89
+    score_b = mock_trust_network.get_bot_score(bot_b_did)
+    assert score_b == 89.0
+
+    # Boundary test: exactly at threshold passes, one below fails
     assert score_a >= threshold, (
         "Bot A at threshold boundary should be used"
     )
@@ -302,25 +311,47 @@ def test_bot_routing_threshold_boundary(
         "Bot B below threshold should NOT be used"
     )
 
+    # Counter-proof: negative review drops Bot A below threshold
+    mock_trust_network.update_bot_score(bot_a_did, -1.0)  # 90-1=89
+    assert mock_trust_network.get_bot_score(bot_a_did) < threshold, (
+        "Single negative review must drop bot below threshold"
+    )
+
 
 # TST-INT-644
 def test_bot_referral_below_threshold_declined(
     mock_trust_network: MockTrustNetwork,
 ):
-    """Referral to a low-trust bot is declined."""
+    """Referral to a low-trust bot is declined.  A bot above the
+    threshold IS accepted (counter-proof)."""
     primary_bot = "did:plc:PrimaryBot"
     referred_bot = "did:plc:ReferredBot"
+    trusted_bot = "did:plc:TrustedBot"
     referral_threshold = 80
 
-    mock_trust_network.bot_scores[primary_bot] = 95.0
-    mock_trust_network.bot_scores[referred_bot] = 60.0
+    # Set scores via update_bot_score (uses real delta + clamp logic)
+    mock_trust_network.update_bot_score(primary_bot, 45.0)  # 50+45=95
+    mock_trust_network.update_bot_score(referred_bot, -30.0)  # 50-30=20
 
-    # Primary bot suggests referred bot
+    # Low-trust bot is below threshold → referral declined
     referred_score = mock_trust_network.get_bot_score(referred_bot)
-    referral_accepted = referred_score >= referral_threshold
+    assert referred_score < referral_threshold, (
+        f"Referred bot score {referred_score} should be below {referral_threshold}"
+    )
+    assert referred_score >= referral_threshold is False
 
-    assert referral_accepted is False, (
-        "Referral to a bot with score below threshold must be declined"
+    # Counter-proof: a high-trust bot IS above threshold → accepted
+    mock_trust_network.update_bot_score(trusted_bot, 40.0)  # 50+40=90
+    trusted_score = mock_trust_network.get_bot_score(trusted_bot)
+    assert trusted_score >= referral_threshold, (
+        f"Trusted bot score {trusted_score} should be >= {referral_threshold}"
+    )
+
+    # Counter-proof: penalty drops trusted bot below threshold
+    mock_trust_network.update_bot_score(trusted_bot, -20.0)  # 90-20=70
+    degraded_score = mock_trust_network.get_bot_score(trusted_bot)
+    assert degraded_score < referral_threshold, (
+        f"Degraded bot score {degraded_score} should drop below {referral_threshold}"
     )
 
 
@@ -387,13 +418,31 @@ def test_entity_vault_destroyed_after_rehydration(
 def test_simple_lookup_no_llm(
     mock_llm_router: MockLLMRouter,
 ):
-    """Simple lookup routes to FTS5 (LLMTarget.NONE), not to any LLM."""
+    """Simple lookup routes to FTS5 (LLMTarget.NONE), not to any LLM.
+    Non-lookup tasks DO route to an LLM (counter-proof)."""
     for task_type in ("fts_search", "exact_match", "id_lookup"):
         target = mock_llm_router.route(task_type)
         assert target == LLMTarget.NONE, (
             f"Task type '{task_type}' must route to NONE (no LLM), "
             f"got {target}"
         )
+
+    # Verify routing_log records the reason correctly
+    lookup_logs = [e for e in mock_llm_router.routing_log
+                   if e.get("reason") == "no_llm_needed"]
+    assert len(lookup_logs) == 3, (
+        "All 3 lookup tasks should log reason 'no_llm_needed'"
+    )
+
+    # Counter-proof: summarization/drafting DOES route to an LLM
+    summarize_target = mock_llm_router.route("summarize")
+    assert summarize_target != LLMTarget.NONE, (
+        "Summarize task must route to an LLM, not NONE"
+    )
+    draft_target = mock_llm_router.route("draft")
+    assert draft_target != LLMTarget.NONE, (
+        "Draft task must route to an LLM, not NONE"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -448,37 +497,74 @@ def test_payment_intent_12h_expiry(
 def test_agent_draft_only_prevents_send(
     mock_staging: MockStagingTier,
 ):
-    """Agent with draft_only=True constraint downgrades send_email to draft."""
-    intent = AgentIntent(
+    """Agent with draft_only=True constraint downgrades send_email to draft.
+
+    Tests both paths: draft_only=True → draft created (not sent),
+    draft_only=False → no draft created (counter-proof).
+    """
+    def apply_draft_constraint(intent: AgentIntent,
+                               staging: MockStagingTier) -> str:
+        """Downgrade send_email to create_draft when draft_only is set."""
+        if intent.constraints.get("draft_only"):
+            draft = Draft(
+                draft_id=f"agent_draft_{intent.agent_did[-6:]}",
+                to=intent.target,
+                subject=intent.context["subject"],
+                body=intent.context["body"],
+                confidence=0.85,
+                sent=False,
+            )
+            staging.store_draft(draft)
+            return "create_draft"
+        return "send_email"
+
+    # --- Case 1: draft_only=True → downgraded to create_draft ---
+    constrained = AgentIntent(
         agent_did="did:plc:AgentWriter",
         action="send_email",
         target="colleague@example.com",
         context={"subject": "Meeting notes", "body": "Here are the notes..."},
         constraints={"draft_only": True},
     )
-
-    # When draft_only is True, action should be downgraded to draft
-    if intent.constraints.get("draft_only"):
-        # Downgrade to draft instead of send
-        draft = Draft(
-            draft_id="agent_draft_001",
-            to=intent.target,
-            subject=intent.context["subject"],
-            body=intent.context["body"],
-            confidence=0.85,
-            sent=False,
-        )
-        mock_staging.store_draft(draft)
-        actual_action = "create_draft"
-    else:
-        actual_action = "send_email"
-
-    assert actual_action == "create_draft", (
-        "draft_only constraint must downgrade send_email to create_draft"
+    action = apply_draft_constraint(constrained, mock_staging)
+    assert action == "create_draft", (
+        "draft_only=True must downgrade send_email to create_draft"
     )
-    stored = mock_staging.get("agent_draft_001")
-    assert stored is not None
-    assert stored.sent is False, "Draft must NOT be marked as sent"
+
+    draft = mock_staging.get("agent_draft_Writer")
+    assert draft is not None, "Draft must be stored in staging"
+    assert draft.sent is False, "Draft must NOT be marked as sent"
+    assert draft.to == "colleague@example.com"
+    assert draft.subject == "Meeting notes"
+
+    # --- Counter-proof: draft_only=False → send_email, no draft ---
+    unconstrained = AgentIntent(
+        agent_did="did:plc:AgentDirect",
+        action="send_email",
+        target="boss@example.com",
+        context={"subject": "Urgent", "body": "Please review"},
+        constraints={"draft_only": False},
+    )
+    action2 = apply_draft_constraint(unconstrained, mock_staging)
+    assert action2 == "send_email", (
+        "draft_only=False must NOT downgrade — action stays send_email"
+    )
+    assert mock_staging.get("agent_draft_Direct") is None, (
+        "No draft should be stored when draft_only is False"
+    )
+
+    # --- Counter-proof: no constraints at all → send_email ---
+    no_constraint = AgentIntent(
+        agent_did="did:plc:AgentPlain0",
+        action="send_email",
+        target="team@example.com",
+        context={"subject": "FYI", "body": "Info"},
+        constraints={},
+    )
+    action3 = apply_draft_constraint(no_constraint, mock_staging)
+    assert action3 == "send_email", (
+        "Empty constraints must NOT downgrade — action stays send_email"
+    )
 
 
 # TST-INT-650
@@ -508,7 +594,12 @@ def test_reminder_negative_sleep_fires_immediately():
 def test_cart_outcome_recorded_tier3(
     mock_vault: MockVault,
 ):
-    """Cart handover outcome is stored in vault tier 3, not tier 4."""
+    """Cart handover outcome is stored in vault tier 3, not tier 4.
+
+    Tier 3 = durable outcomes (purchase history, satisfaction).
+    Tier 4 = ephemeral staging (drafts, payment intents that expire).
+    Cart outcomes must survive staging expiry.
+    """
     outcome = {
         "type": "cart_outcome",
         "merchant": "ChairMaker Co.",
@@ -519,18 +610,40 @@ def test_cart_outcome_recorded_tier3(
         "timestamp": time.time(),
     }
 
-    # Store in tier 3 (outcomes), NOT tier 4 (ephemeral staging)
+    # Verify required fields for a valid cart outcome
+    required_fields = {"type", "merchant", "product", "amount",
+                       "currency", "status", "timestamp"}
+    assert required_fields.issubset(outcome.keys()), (
+        "Cart outcome must include all required fields"
+    )
+
+    # Store in tier 3 (outcomes)
     mock_vault.store(3, "outcome_aeron_2025", outcome)
 
-    # Verify it's in tier 3
-    retrieved = mock_vault.retrieve(3, "outcome_aeron_2025")
-    assert retrieved is not None
-    assert retrieved["status"] == "purchase_confirmed"
+    # Tier isolation: same key in tier 4 is independent
+    staging_draft = {"type": "draft", "status": "pending"}
+    mock_vault.store(4, "outcome_aeron_2025", staging_draft)
 
-    # Verify it's NOT in tier 4
-    tier4 = mock_vault.retrieve(4, "outcome_aeron_2025")
-    assert tier4 is None, (
-        "Cart outcome must be stored in tier 3, not tier 4"
+    # Both tiers have the same key but different data
+    tier3_val = mock_vault.retrieve(3, "outcome_aeron_2025")
+    tier4_val = mock_vault.retrieve(4, "outcome_aeron_2025")
+    assert tier3_val is not None
+    assert tier4_val is not None
+    assert tier3_val["type"] == "cart_outcome", (
+        "Tier 3 must hold the durable outcome record"
+    )
+    assert tier4_val["type"] == "draft", (
+        "Tier 4 holds ephemeral staging data, not outcomes"
+    )
+
+    # Outcome data is complete and uncorrupted after storage
+    assert tier3_val["merchant"] == "ChairMaker Co."
+    assert tier3_val["amount"] == 85000.0
+    assert tier3_val["status"] == "purchase_confirmed"
+
+    # Counter-proof: tier 0 (root keys) does NOT have outcome data
+    assert mock_vault.retrieve(0, "outcome_aeron_2025") is None, (
+        "Outcome data must not leak into root key tier"
     )
 
 
@@ -542,39 +655,50 @@ def test_cart_outcome_recorded_tier3(
 def test_conflict_resolution_last_write_wins(
     mock_vault: MockVault,
 ):
-    """Offline concurrent edits resolve by last-write-wins; earlier edit
-    is logged as a recoverable version."""
+    """Offline concurrent edits resolve by last-write-wins; the vault's
+    store() with the same key overwrites, preserving last-write-wins
+    semantics.  Earlier edits should be stored as recoverable versions."""
     item_key = "note_conflict"
-    now = time.time()
 
-    # Edit A (earlier timestamp)
-    edit_a = {"content": "Version A", "updated_at": now - 10}
-    # Edit B (later timestamp)
-    edit_b = {"content": "Version B", "updated_at": now - 2}
+    # Pre-condition: key does not exist
+    assert mock_vault.retrieve(1, item_key) is None
 
-    # Simulate conflict resolution: last write wins
-    edits = [edit_a, edit_b]
-    edits.sort(key=lambda e: e["updated_at"])
-    winner = edits[-1]
-    loser = edits[0]
+    # First write (Edit A)
+    edit_a = {"content": "Version A", "author": "device_phone"}
+    mock_vault.store(1, item_key, edit_a)
 
-    # Store winner as canonical
-    mock_vault.store(1, item_key, winner)
-    # Store loser as recoverable version
-    mock_vault.store(1, f"{item_key}_conflict_{int(loser['updated_at'])}",
-                     loser)
+    # Verify first write is stored
+    stored_a = mock_vault.retrieve(1, item_key)
+    assert stored_a is not None
+    assert stored_a["content"] == "Version A"
 
+    # Second write (Edit B) to the SAME key — last-write-wins
+    edit_b = {"content": "Version B", "author": "device_laptop"}
+    mock_vault.store(1, item_key, edit_b)
+
+    # Vault overwrites with the latest write
     canonical = mock_vault.retrieve(1, item_key)
     assert canonical is not None
     assert canonical["content"] == "Version B", (
-        "Later timestamp must win in last-write-wins resolution"
+        "Last write must win when storing to the same key"
     )
+    assert canonical["author"] == "device_laptop"
 
-    # Loser is recoverable
-    conflict_key = f"{item_key}_conflict_{int(loser['updated_at'])}"
+    # Counter-proof: Version A is gone from the canonical key
+    assert canonical["content"] != "Version A"
+
+    # Store the earlier version as a recoverable conflict record
+    conflict_key = f"{item_key}_conflict_v1"
+    mock_vault.store(1, conflict_key, edit_a)
     recoverable = mock_vault.retrieve(1, conflict_key)
     assert recoverable is not None
     assert recoverable["content"] == "Version A"
+
+    # Counter-proof: conflict record does not affect canonical
+    assert mock_vault.retrieve(1, item_key)["content"] == "Version B"
+
+    # Counter-proof: a different key is unaffected
+    assert mock_vault.retrieve(1, "unrelated_key") is None
 
 
 # TST-INT-653
@@ -584,6 +708,10 @@ def test_ws_missed_message_buffer(
     """Buffer caps at 50 messages, TTL 5 min, ACK removes specific message."""
     session_id = mock_ws_session_mgr.connect("phone_001")
     mock_ws_session_mgr.authenticate(session_id, "valid_token")
+
+    # Pre-condition: buffer is empty
+    drained_pre = mock_ws_session_mgr.drain_buffer(session_id)
+    assert len(drained_pre) == 0
 
     # Buffer exactly 50 messages
     for i in range(50):
@@ -597,6 +725,13 @@ def test_ws_missed_message_buffer(
         session_id, {"id": "msg_50", "text": "Overflow message"}
     )
     assert result_51 is False, "51st message must be dropped (buffer full)"
+
+    # Counter-proof: before TTL, nothing expires
+    before_ttl = time.time() + 299  # < 300s TTL
+    expired_early = mock_ws_session_mgr.expire_buffer(
+        session_id, current_time=before_ttl
+    )
+    assert expired_early == 0, "Messages must NOT expire before 5 min TTL"
 
     # After 5 min TTL, buffer expires
     future_time = time.time() + 301  # > 300s TTL
@@ -613,10 +748,14 @@ def test_ws_missed_message_buffer(
     mock_ws_session_mgr.buffer_message(
         session_id, {"id": "ack_test", "text": "ACK me"}
     )
+    mock_ws_session_mgr.buffer_message(
+        session_id, {"id": "keep_me", "text": "Don't ACK"}
+    )
     ack_result = mock_ws_session_mgr.ack_message(session_id, 0)
     assert ack_result is True
     remaining = mock_ws_session_mgr.drain_buffer(session_id)
-    assert len(remaining) == 0, "ACKed message should be removed"
+    assert len(remaining) == 1, "Only ACKed message removed, other stays"
+    assert remaining[0]["id"] == "keep_me"
 
 
 # ---------------------------------------------------------------------------
@@ -705,16 +844,34 @@ def test_ws_reconnect_backoff_caps_30s(
 def test_well_known_atproto_did_endpoint(
     mock_identity: MockIdentity,
 ):
-    """/.well-known/atproto-did returns root DID as text/plain."""
-    # Simulate handler: returns root_did
-    response_body = mock_identity.root_did
-    content_type = "text/plain"
+    """/.well-known/atproto-did contract: root DID is did:plc with correct
+    format, stable across reads, and unique per identity."""
+    root_did = mock_identity.root_did
 
-    assert response_body.startswith("did:plc:"), (
-        "atproto-did endpoint must return a did:plc: identifier"
+    # --- Format: did:plc: prefix ---
+    assert root_did.startswith("did:plc:"), (
+        f"root_did must start with 'did:plc:', got '{root_did}'"
     )
-    assert content_type == "text/plain"
-    assert response_body == mock_identity.root_did
+
+    # --- Suffix: 40-char lowercase hex (from uuid4) ---
+    suffix = root_did[len("did:plc:"):]
+    assert len(suffix) == 40, (
+        f"did:plc suffix must be 40 chars, got {len(suffix)}"
+    )
+    assert all(c in "0123456789abcdef" for c in suffix), (
+        f"did:plc suffix must be lowercase hex, got '{suffix}'"
+    )
+
+    # --- Stability: multiple reads return same value ---
+    assert mock_identity.root_did == root_did, (
+        "root_did must be stable across reads"
+    )
+
+    # --- Uniqueness: different identity produces different DID ---
+    other_identity = MockIdentity()
+    assert other_identity.root_did != root_did, (
+        "Two independently created identities must have different DIDs"
+    )
 
 
 # TST-INT-658
@@ -750,19 +907,33 @@ def test_pairing_code_single_use(
     mock_pairing_manager: MockPairingManager,
 ):
     """Second use of pairing code is rejected."""
+    # Pre-condition: no paired devices
+    assert len(mock_pairing_manager.paired_devices) == 0
+
     code_obj = mock_pairing_manager.generate_code()
     code_str = code_obj.code
+    assert len(code_str) == 6  # 6-digit pairing code
+    assert code_obj.used is False
 
-    # First use: success
+    # Counter-proof: invalid code rejected
+    invalid_token = mock_pairing_manager.complete_pairing("000000", "Rogue")
+    assert invalid_token is None
+
+    # First use: success — issues CLIENT_TOKEN
     token = mock_pairing_manager.complete_pairing(code_str, "iPhone 15")
     assert token is not None, "First use of pairing code should succeed"
     assert code_obj.used is True
+    assert token.device_name == "iPhone 15"
+    assert len(token.token) == 64  # SHA-256 hex
+    assert len(mock_pairing_manager.paired_devices) == 1
 
-    # Second use: rejected
+    # Second use: rejected — single-use enforcement
     token2 = mock_pairing_manager.complete_pairing(code_str, "iPad Pro")
     assert token2 is None, (
         "Second use of same pairing code must be rejected"
     )
+    # No new device was paired
+    assert len(mock_pairing_manager.paired_devices) == 1
 
 
 # TST-INT-660

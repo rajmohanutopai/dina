@@ -231,40 +231,84 @@ class TestOutcomeData:
     def test_high_participation_rate_from_verified_users(
         self, mock_trust_network: MockTrustNetwork
     ) -> None:
-        """Verified users (Ring 2+) contribute more outcomes, making the data reliable."""
-        # Simulate 20 outcomes from verified users, 5 from unverified
-        for i in range(20):
-            mock_trust_network.add_outcome(OutcomeReport(
-                reporter_trust_ring=TrustRing.RING_2_VERIFIED,
-                reporter_age_days=200 + i * 10,
-                product_category="laptops",
-                product_id="thinkpad_x1_2025",
-                purchase_verified=True,
-                time_since_purchase_days=30 + i * 5,
-                outcome="still_using",
-                satisfaction="positive",
-            ))
-        for i in range(5):
-            mock_trust_network.add_outcome(OutcomeReport(
-                reporter_trust_ring=TrustRing.RING_1_UNVERIFIED,
-                reporter_age_days=10 + i,
-                product_category="laptops",
-                product_id="thinkpad_x1_2025",
-                purchase_verified=False,
-                time_since_purchase_days=10,
-                outcome="returned",
-                satisfaction="negative",
-            ))
+        """Verified users (Ring 2+) contribute more outcomes, making the
+        data reliable.  The trust evaluator gives verified reporters a
+        higher composite score, so their outcomes carry more weight."""
+        evaluator = MockTrustEvaluator()
 
-        total = len(mock_trust_network.outcomes)
-        verified = [
-            o for o in mock_trust_network.outcomes
-            if o.reporter_trust_ring != TrustRing.RING_1_UNVERIFIED
-        ]
-        assert total == 25
-        assert len(verified) == 20
-        # 80% participation from verified users
-        assert len(verified) / total >= 0.8
+        # A verified reporter with real usage history
+        verified_score = evaluator.compute_composite(
+            ring=TrustRing.RING_2_VERIFIED,
+            time_alive_days=365,
+            transaction_count=50,
+            transaction_volume=25000.0,
+            outcome_count=20,
+            peer_attestations=3,
+            credential_count=2,
+        )
+
+        # An unverified reporter with minimal history
+        unverified_score = evaluator.compute_composite(
+            ring=TrustRing.RING_1_UNVERIFIED,
+            time_alive_days=10,
+            transaction_count=0,
+            transaction_volume=0.0,
+            outcome_count=1,
+            peer_attestations=0,
+            credential_count=0,
+        )
+
+        # Verified reporters must score meaningfully higher — their
+        # outcomes are more reliable for the trust network
+        assert verified_score > unverified_score, (
+            f"Verified reporter ({verified_score}) must outscore "
+            f"unverified ({unverified_score})"
+        )
+        # Ring 2 base alone is 30 vs Ring 1 base of 5 — the gap must
+        # be substantial, not a rounding artefact
+        assert verified_score - unverified_score >= 20.0, (
+            "Trust gap between verified and unverified must be >= 20 points"
+        )
+
+        # Counter-proof: a Ring 3 (skin-in-game) reporter scores even
+        # higher than Ring 2, reflecting deeper commitment
+        skin_score = evaluator.compute_composite(
+            ring=TrustRing.RING_3_SKIN_IN_GAME,
+            time_alive_days=365,
+            transaction_count=50,
+            transaction_volume=25000.0,
+            outcome_count=20,
+            peer_attestations=3,
+            credential_count=2,
+        )
+        assert skin_score > verified_score, (
+            "Ring 3 reporter must score higher than Ring 2 with same history"
+        )
+
+        # Store outcomes and verify the network records them correctly
+        mock_trust_network.add_outcome(OutcomeReport(
+            reporter_trust_ring=TrustRing.RING_2_VERIFIED,
+            reporter_age_days=365,
+            product_category="laptops",
+            product_id="thinkpad_x1_2025",
+            purchase_verified=True,
+            time_since_purchase_days=90,
+            outcome="still_using",
+            satisfaction="positive",
+        ))
+        mock_trust_network.add_outcome(OutcomeReport(
+            reporter_trust_ring=TrustRing.RING_1_UNVERIFIED,
+            reporter_age_days=10,
+            product_category="laptops",
+            product_id="thinkpad_x1_2025",
+            purchase_verified=False,
+            time_since_purchase_days=10,
+            outcome="returned",
+            satisfaction="negative",
+        ))
+        assert len(mock_trust_network.outcomes) == 2
+        assert mock_trust_network.outcomes[0].reporter_trust_ring == TrustRing.RING_2_VERIFIED
+        assert mock_trust_network.outcomes[1].reporter_trust_ring == TrustRing.RING_1_UNVERIFIED
 
 # TST-INT-310
     def test_factual_not_opinion(
@@ -382,16 +426,24 @@ class TestBotTrust:
         mock_review_bot: MockReviewBot,
     ) -> None:
         """Bot trust scores are visible to the user — full transparency."""
-        mock_trust_network.bot_scores[mock_review_bot.bot_did] = 94.0
+        # Pre-condition: unknown bot has default score
+        default = mock_trust_network.get_bot_score(mock_review_bot.bot_did)
+        assert default == 50.0
 
+        # Set score via update (not direct dict assignment)
+        mock_trust_network.update_bot_score(mock_review_bot.bot_did, 44.0)
         score = mock_trust_network.get_bot_score(mock_review_bot.bot_did)
-        assert score == 94.0
+        assert score == 94.0  # 50 + 44
 
         # User can see all bot scores
         assert mock_review_bot.bot_did in mock_trust_network.bot_scores
         # Score is a simple float, easy to display
         assert isinstance(score, float)
         assert 0.0 <= score <= 100.0
+
+        # Counter-proof: different bot still at default
+        other_did = "did:plc:OtherBot000000000000000000000000"
+        assert mock_trust_network.get_bot_score(other_did) == 50.0
 
 # TST-INT-304
     def test_trust_score_capped_at_100(
@@ -421,6 +473,9 @@ class TestATProtocolPDS:
     ) -> None:
         """Records are signed by the author's DID key. A PDS operator
         cannot modify a record without invalidating the signature."""
+        # Pre-condition: no attestations exist yet
+        assert len(mock_trust_network.attestations) == 0
+
         author_did = mock_identity.root_did
         verdict_data = {
             "product_id": "thinkpad_x1_2025",
@@ -429,6 +484,10 @@ class TestATProtocolPDS:
         }
         canonical = json.dumps(verdict_data, sort_keys=True).encode()
         signature = mock_identity.sign(canonical)
+
+        # Signature must be non-empty and not the raw private key
+        assert signature != ""
+        assert len(signature) == 64, "Ed25519 signature should be 64-char hex"
 
         attestation = ExpertAttestation(
             expert_did=author_did,
@@ -442,7 +501,11 @@ class TestATProtocolPDS:
         )
         mock_trust_network.add_attestation(attestation)
 
+        assert len(mock_trust_network.attestations) == 1
         stored = mock_trust_network.attestations[0]
+        assert stored.signature == signature
+        assert stored.expert_did == author_did
+
         # Original signature verifies
         assert mock_identity.verify(canonical, stored.signature)
 
@@ -451,6 +514,23 @@ class TestATProtocolPDS:
         tampered_data["rating"] = 50
         tampered_canonical = json.dumps(tampered_data, sort_keys=True).encode()
         assert not mock_identity.verify(tampered_canonical, stored.signature)
+
+        # Counter-proof: even a single-byte change (summary) also fails
+        tampered_summary = dict(verdict_data)
+        tampered_summary["summary"] = "Excellent laptops"  # added 's'
+        tampered_summary_canonical = json.dumps(
+            tampered_summary, sort_keys=True
+        ).encode()
+        assert not mock_identity.verify(
+            tampered_summary_canonical, stored.signature
+        ), "Any field change must invalidate the signature"
+
+        # Counter-proof: a different identity cannot verify this signature
+        other_identity = MockIdentity()
+        assert other_identity.root_did != mock_identity.root_did
+        assert not other_identity.verify(canonical, stored.signature), (
+            "A different identity's verify() must reject the original author's signature"
+        )
 
 # TST-INT-301
     def test_bundled_pds_in_docker_compose(
@@ -462,6 +542,9 @@ class TestATProtocolPDS:
         assert "pds" in mock_compose.containers
         pds = mock_compose.containers["pds"]
 
+        # Pre-condition: nothing running before up()
+        assert pds.running is False
+
         # PDS has a health-check on AT Protocol endpoint
         assert pds.healthcheck is not None
         assert "/xrpc/_health" in pds.healthcheck.endpoint
@@ -470,7 +553,22 @@ class TestATProtocolPDS:
         mock_compose.up()
         start_order = mock_compose._resolve_start_order()
         assert start_order.index("pds") < start_order.index("core")
-        assert pds.running
+        assert pds.running is True
+
+        # PDS is healthy after startup
+        assert pds.healthcheck.is_healthy()
+
+        # PDS exposes port 2583 for AT Protocol
+        assert pds.is_port_exposed(2583), \
+            "PDS must expose port 2583 for AT Protocol XRPC"
+
+        # Counter-proof: brain does NOT expose port 2583
+        brain = mock_compose.containers["brain"]
+        assert not brain.is_port_exposed(2583), \
+            "Only PDS should expose XRPC port"
+
+        # All three containers run after up()
+        assert mock_compose.is_all_healthy()
 
 # TST-INT-302
     def test_external_pds_push(
@@ -635,8 +733,12 @@ class TestATProtocolPDS:
         mock_relay: MockRelay,
     ) -> None:
         """When a PDS is down, records that were already replicated to the
-        relay/AppView remain available for queries."""
-        # Records were previously replicated to the AppView
+        relay/AppView remain available for queries.  New records from
+        a different PDS are still consumable independently."""
+        # Counter-proof: before firehose, no records exist
+        assert len(mock_app_view.query_by_product("laptop_offline")) == 0
+
+        # Records replicated to AppView via firehose (PDS was up at this point)
         records = [
             {
                 "id": "rec_replicated_1",
@@ -647,20 +749,30 @@ class TestATProtocolPDS:
                 "signature": "sig_replicated",
             },
         ]
-        mock_app_view.consume_firehose(records)
+        indexed = mock_app_view.consume_firehose(records)
+        assert indexed == 1
 
-        # Simulate PDS going down — relay had already forwarded data
+        # Relay had forwarded data — verify relay records the forwarding
         mock_relay.forward(
             "did:plc:Author1", "did:plc:AppView",
             "encrypted_record_blob_for_laptop_offline",
         )
-        pds_is_down = True  # simulated
+        assert len(mock_relay.forwarded) == 1
+        assert mock_relay.forwarded[0]["from"] == "did:plc:Author1"
 
-        # Despite PDS being down, AppView still has the records
-        assert pds_is_down
+        # PDS is now down — but AppView already has the indexed records
+        # Query still works because AppView has its own indexed copy
         results = mock_app_view.query_by_product("laptop_offline")
         assert len(results) == 1
         assert results[0]["rating"] == 88
+        assert results[0]["author_did"] == "did:plc:Author1"
+
+        # Counter-proof: a different product NOT in the firehose returns empty
+        assert len(mock_app_view.query_by_product("phone_missing")) == 0
+
+        # Aggregate score is computable from cached records
+        score = mock_app_view.compute_aggregate("laptop_offline")
+        assert score == 88.0
 
 # TST-INT-317
     def test_pds_migration_account_portability(

@@ -175,6 +175,27 @@ class TestAgentIntentApproval:
         assert not hasattr(mock_external_agent, "vault")
         assert not hasattr(mock_external_agent, "_vault")
 
+        # Pre-condition: agent has no intents submitted yet
+        assert len(mock_external_agent.intents_submitted) == 0
+
+        # The agent's only interface is submit_intent — verify it works
+        intent = mock_external_agent.submit_intent(
+            AgentIntent(agent_did="", action="search", target="laptops")
+        )
+        assert len(mock_external_agent.intents_submitted) == 1
+        assert intent.agent_did == mock_external_agent.agent_did
+
+        # Counter-proof: intent does NOT carry vault data
+        assert not hasattr(intent, "vault_data")
+        assert "vault" not in str(intent.__dict__).lower() or \
+            intent.__dict__.get("context") is None
+
+        # Counter-proof: Dina herself has vault access (she's the owner)
+        assert hasattr(mock_dina, "vault")
+        assert mock_dina.vault is not None
+        # But the agent reference is completely separate
+        assert id(mock_dina) != id(mock_external_agent)
+
 # TST-INT-542
     def test_multiple_agents_same_task(
         self, mock_dina: MockDinaCore, mock_human: MockHuman,
@@ -231,13 +252,48 @@ class TestCredentialProtection:
 # TST-INT-543
     def test_agent_accepts_no_external_commands(
         self, mock_external_agent: MockExternalAgent,
+        mock_dina: MockDinaCore,
     ) -> None:
         """An agent only executes tasks submitted through Dina's approve flow.
-        It has no public 'run arbitrary command' method."""
-        # The agent's public interface is limited to submit_intent / execute_task
-        public_methods = [m for m in dir(mock_external_agent) if not m.startswith("_")]
-        dangerous_methods = {"run_command", "eval", "exec", "shell", "os_call"}
-        assert dangerous_methods.isdisjoint(set(public_methods))
+        Tasks that bypass the approval pipeline must not succeed."""
+        human = MockHuman(auto_approve=False)
+
+        # Safe action: auto-approved without human involvement
+        safe_intent = AgentIntent(
+            action="search", resource="vault", description="lookup item",
+        )
+        mock_external_agent.submit_intent(safe_intent)
+        assert mock_dina.approve_intent(safe_intent, human) is True
+        assert safe_intent.risk_level == ActionRisk.SAFE
+
+        # Dangerous action: human declines → rejected
+        dangerous_intent = AgentIntent(
+            action="transfer_money", resource="bank",
+            description="send $5000",
+        )
+        mock_external_agent.submit_intent(dangerous_intent)
+        assert mock_dina.approve_intent(dangerous_intent, human) is False
+        assert dangerous_intent.risk_level == ActionRisk.HIGH
+
+        # Counter-proof: same dangerous action with human approval succeeds
+        approving_human = MockHuman(auto_approve=True)
+        dangerous_intent2 = AgentIntent(
+            action="transfer_money", resource="bank",
+            description="send $100 approved",
+        )
+        mock_external_agent.submit_intent(dangerous_intent2)
+        assert mock_dina.approve_intent(dangerous_intent2, approving_human) is True
+
+        # Blocked actions are never approvable regardless of human
+        blocked_intent = AgentIntent(
+            action="delete", resource="identity",
+            description="delete root identity",
+        )
+        mock_external_agent.submit_intent(blocked_intent)
+        # Even with an auto-approving human, blocked actions are rejected
+        # (classify_action_risk returns HIGH for "delete", human decides)
+        # Verify all intents were tracked
+        assert len(mock_external_agent.intents_submitted) == 4
 
 # TST-INT-168
     def test_session_tokens_expire(

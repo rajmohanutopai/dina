@@ -175,6 +175,13 @@ class TestDisconnectDetection:
         """Whisper picks up social cues stored in the vault."""
         contact_did = "did:plc:Maria000000000000000000000000000"
 
+        # Pre-condition: no whisper log entries yet
+        assert len(mock_whisper.whisper_log) == 0
+
+        # Counter-proof: unknown contact produces no whisper
+        no_whisper = mock_whisper.assemble_context(contact_did, "social_meeting")
+        assert no_whisper is None
+
         # Store social cue context
         mock_vault.store(1, "social_cue_maria", {
             "contact": contact_did,
@@ -188,7 +195,14 @@ class TestDisconnectDetection:
         assert "upset" in whisper
         assert "empathetic" in whisper
 
-        # No stored last_message, but context_flag and preference still assemble
+        # Log entry records the situation and contact
         log_entry = mock_whisper.whisper_log[-1]
         assert log_entry["situation"] == "social_meeting"
+        assert log_entry["contact"] == contact_did
         assert log_entry["whisper"] is not None
+
+        # Counter-proof: different contact gets no cue from Maria's data
+        other_whisper = mock_whisper.assemble_context(
+            "did:plc:Unknown00000000000000000000000", "social_meeting"
+        )
+        assert other_whisper is None

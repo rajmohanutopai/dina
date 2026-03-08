@@ -117,6 +117,14 @@ class TestCustodianRecovery:
     ):
         """When estate mode activates via SSS threshold, beneficiaries are
         notified via Dina-to-Dina P2P messages."""
+        # Pre-condition: no messages sent yet
+        assert len(mock_p2p.messages) == 0
+
+        # Counter-proof: deliver_keys without estate mode returns empty
+        empty_result = mock_estate_manager.deliver_keys(mock_p2p)
+        assert len(empty_result) == 0
+        assert len(mock_p2p.messages) == 0
+
         # All beneficiary DIDs must be authenticated peers for delivery
         for b in mock_estate_manager._plan.beneficiaries:
             mock_p2p.add_contact(b.dina_did)
@@ -124,17 +132,28 @@ class TestCustodianRecovery:
 
         # Submit enough shares to meet threshold
         for i in range(3):
-            mock_estate_manager.submit_share(f"SSS_SHARE_{i}".encode())
+            accepted = mock_estate_manager.submit_share(f"SSS_SHARE_{i}".encode())
+            assert accepted is True
         mock_estate_manager.enter_estate_mode()
+        assert mock_estate_manager.estate_mode_active is True
 
         # Deliver keys
         delivered = mock_estate_manager.deliver_keys(mock_p2p)
         assert len(delivered) == 3  # Daughter, Spouse, Colleague
 
-        # P2P messages were sent
+        # P2P messages were sent — one per beneficiary
         assert len(mock_p2p.messages) == 3
-        message_types = {m.type for m in mock_p2p.messages}
-        assert "dina/estate/key_delivery" in message_types
+        for msg in mock_p2p.messages:
+            assert msg.type == "dina/estate/key_delivery"
+            assert msg.from_did == mock_estate_manager._identity.root_did
+            # Each message has personas and access_type in payload
+            assert "personas" in msg.payload
+            assert "access_type" in msg.payload
+
+        # All beneficiary DIDs received messages
+        recipient_dids = {m.to_did for m in mock_p2p.messages}
+        for b in mock_estate_manager._plan.beneficiaries:
+            assert b.dina_did in recipient_dids
 
 # TST-INT-223
     def test_per_beneficiary_keys(
@@ -144,14 +163,25 @@ class TestCustodianRecovery:
     ):
         """Each beneficiary receives keys ONLY for the personas assigned
         to them in the estate plan."""
+        # Pre-condition: no keys delivered, no messages sent
+        assert len(mock_estate_manager.keys_delivered) == 0
+        assert len(mock_p2p.messages) == 0
+
         for b in mock_estate_manager._plan.beneficiaries:
             mock_p2p.add_contact(b.dina_did)
             mock_p2p.authenticated_peers.add(b.dina_did)
+
+        # Counter-proof: deliver_keys before estate mode returns empty
+        early = mock_estate_manager.deliver_keys(mock_p2p)
+        assert early == {}
+        assert len(mock_p2p.messages) == 0
 
         # Meet threshold and enter estate mode
         for i in range(3):
             mock_estate_manager.submit_share(f"SSS_SHARE_{i}".encode())
         mock_estate_manager.enter_estate_mode()
+        assert mock_estate_manager.estate_mode_active is True
+
         delivered = mock_estate_manager.deliver_keys(mock_p2p)
 
         # Daughter gets SOCIAL + HEALTH
@@ -170,6 +200,12 @@ class TestCustodianRecovery:
         colleague_did = "did:plc:Colleague12345678901234567"
         assert PersonaType.PROFESSIONAL in delivered[colleague_did]
         assert len(delivered[colleague_did]) == 1
+
+        # Verify P2P messages were actually sent — one per beneficiary
+        assert len(mock_p2p.messages) == len(mock_estate_manager._plan.beneficiaries)
+        for msg in mock_p2p.messages:
+            assert msg.type == "dina/estate/key_delivery"
+            assert "personas" in msg.payload
 
 # TST-INT-228
     def test_keys_delivered_via_dina_to_dina(
@@ -203,6 +239,11 @@ class TestCustodianRecovery:
     ):
         """After key delivery, all unclaimed data is destroyed per the
         estate plan's default_action='destroy'."""
+        # Pre-condition: not in estate mode, no data destroyed
+        assert mock_estate_manager.estate_mode_active is False
+        assert mock_estate_manager.data_destroyed is False
+        assert len(mock_estate_manager.keys_delivered) == 0
+
         for b in mock_estate_manager._plan.beneficiaries:
             mock_p2p.add_contact(b.dina_did)
             mock_p2p.authenticated_peers.add(b.dina_did)
@@ -211,10 +252,30 @@ class TestCustodianRecovery:
         for i in range(3):
             mock_estate_manager.submit_share(f"SSS_SHARE_{i}".encode())
         mock_estate_manager.enter_estate_mode()
-        mock_estate_manager.deliver_keys(mock_p2p)
-        mock_estate_manager.destroy_remaining()
+        assert mock_estate_manager.estate_mode_active is True
 
+        delivered = mock_estate_manager.deliver_keys(mock_p2p)
+        assert len(delivered) > 0, "Keys must be delivered to beneficiaries"
+
+        # Verify the plan's default action is destroy
+        assert mock_estate_manager._plan.default_action == "destroy"
+
+        mock_estate_manager.destroy_remaining()
         assert mock_estate_manager.data_destroyed is True
+
+        # Counter-proof: if default_action is NOT destroy, data is preserved
+        from tests.integration.mocks import EstatePlan
+        preserve_manager = MockEstateManager(
+            mock_estate_manager._identity,
+            plan=EstatePlan(default_action="preserve"),
+        )
+        preserve_manager.destroy_remaining()
+        assert preserve_manager.data_destroyed is False, \
+            "Data must NOT be destroyed when default_action is 'preserve'"
+
+        # Counter-proof: delivery messages were sent via P2P
+        assert len(mock_p2p.messages) >= len(delivered), \
+            "Each beneficiary must receive a key delivery message"
 
 
 # =========================================================================
@@ -267,32 +328,44 @@ class TestEstateConfiguration:
 
 # TST-INT-229
     def test_manual_trigger_with_recovery_phrase(
-        self, mock_dina: MockDinaCore
+        self, mock_dina: MockDinaCore, mock_p2p: MockP2PChannel
     ):
         """The primary human-initiated trigger: next-of-kin provides the
         BIP-39 recovery phrase to activate estate mode. This is the main
         mechanism for estate recovery alongside SSS custodian coordination."""
-        correct_mnemonic = mock_dina.identity.bip39_mnemonic
-        wrong_mnemonic = "wrong " * 23 + "phrase"
-
-        # Wrong phrase: rejected
-        assert hashlib.sha256(wrong_mnemonic.encode()).hexdigest() != \
-               hashlib.sha256(correct_mnemonic.encode()).hexdigest()
-
-        # Correct phrase: accepted
-        provided_hash = hashlib.sha256(correct_mnemonic.encode()).hexdigest()
-        expected_hash = hashlib.sha256(
-            mock_dina.identity.bip39_mnemonic.encode()
-        ).hexdigest()
-        assert provided_hash == expected_hash
-
-        # Manual trigger creates an estate manager with enough shares
-        # pre-loaded (recovery phrase bypasses SSS threshold)
         plan = EstatePlan(custodian_threshold=1)
         estate = MockEstateManager(mock_dina.identity, plan)
-        estate.submit_share(b"RECOVERY_PHRASE_SHARE")
+
+        # Insufficient shares — estate mode must fail
+        assert estate.estate_mode_active is False
+        with pytest.raises(RuntimeError):
+            estate.enter_estate_mode()
+
+        # Invalid share rejected
+        assert estate.submit_share(b"") is False
+        assert estate.submit_share(b"CORRUPTED") is False
+        assert len(estate.shares_collected) == 0
+
+        # Valid recovery phrase share accepted
+        assert estate.submit_share(b"RECOVERY_PHRASE_SHARE") is True
+        assert len(estate.shares_collected) == 1
+
+        # Now threshold is met — estate mode activates
         estate.enter_estate_mode()
         assert estate.estate_mode_active is True
+
+        # Authenticate beneficiaries and deliver keys
+        for b in plan.beneficiaries:
+            mock_p2p.add_contact(b.dina_did)
+            mock_p2p.authenticated_peers.add(b.dina_did)
+
+        delivered = estate.deliver_keys(mock_p2p)
+        assert len(delivered) > 0, "Keys must be delivered to beneficiaries"
+
+        # Verify delivered messages use Dina-to-Dina protocol
+        for msg in mock_p2p.messages:
+            assert msg.type == "dina/estate/key_delivery"
+            assert msg.from_did == mock_dina.identity.root_did
 
 # TST-INT-230
     def test_sss_custodian_coordination(self, mock_dina: MockDinaCore):
@@ -497,6 +570,10 @@ class TestBeneficiaryAccessTypes:
         """A beneficiary with read_only_90_days access has their access
         expire after 90 days. The access type is properly communicated
         in the key delivery message."""
+        # Pre-condition: no keys delivered yet, no messages sent
+        assert len(mock_estate_manager.keys_delivered) == 0
+        assert len(mock_p2p.messages) == 0
+
         for b in mock_estate_manager._plan.beneficiaries:
             mock_p2p.add_contact(b.dina_did)
             mock_p2p.authenticated_peers.add(b.dina_did)
@@ -521,19 +598,26 @@ class TestBeneficiaryAccessTypes:
         assert len(colleague_msgs) == 1
         assert colleague_msgs[0].payload["access_type"] == "read_only_90_days"
 
+        # Verify message is a key delivery, not some other type
+        assert colleague_msgs[0].type == "dina/estate/key_delivery"
+
         # Colleague only gets PROFESSIONAL persona
         assert delivered[colleague_did] == [PersonaType.PROFESSIONAL]
 
-        # Simulate time-based access check:
-        # Within 90 days — access valid
-        now = time.time()
-        grant_time = now
-        days_elapsed = 45
-        assert days_elapsed < 90  # still valid
+        # Counter-proof: spouse (full_access) gets different access type
+        spouse_did = "did:plc:Spouse1234567890123456789012"
+        spouse_msgs = [m for m in mock_p2p.messages if m.to_did == spouse_did]
+        assert len(spouse_msgs) == 1
+        assert spouse_msgs[0].payload["access_type"] != "read_only_90_days"
 
-        # After 90 days — access expired
-        days_elapsed = 91
-        assert days_elapsed > 90  # expired
+        # Counter-proof: colleague does NOT get PERSONAL persona
+        assert PersonaType.PERSONAL not in delivered.get(colleague_did, [])
+
+        # Counter-proof: delivery before estate mode returns empty
+        mock_estate_manager_2 = MockEstateManager(mock_estate_manager._identity)
+        empty_delivery = mock_estate_manager_2.deliver_keys(mock_p2p)
+        assert empty_delivery == {}, \
+            "deliver_keys before estate_mode must return empty"
 
 
 # =========================================================================
@@ -552,6 +636,10 @@ class TestDestructionGating:
         """Data destruction only happens after ALL beneficiaries have
         confirmed receipt of their keys via P2P delivery confirmation.
         Destruction must not proceed if any delivery is unconfirmed."""
+        # Pre-condition: no confirmations, data not destroyed
+        assert len(mock_estate_manager.delivery_confirmations) == 0
+        assert mock_estate_manager.data_destroyed is False
+
         for b in mock_estate_manager._plan.beneficiaries:
             mock_p2p.add_contact(b.dina_did)
             mock_p2p.authenticated_peers.add(b.dina_did)
@@ -560,6 +648,7 @@ class TestDestructionGating:
         for i in range(3):
             mock_estate_manager.submit_share(f"SSS_SHARE_{i}".encode())
         mock_estate_manager.enter_estate_mode()
+        assert mock_estate_manager.estate_mode_active is True
         mock_estate_manager.deliver_keys(mock_p2p)
 
         # Before any confirmations — not all confirmed
@@ -572,6 +661,7 @@ class TestDestructionGating:
 
         mock_estate_manager.confirm_delivery(daughter_did)
         assert mock_estate_manager.all_deliveries_confirmed() is False
+        assert mock_estate_manager.delivery_confirmations[daughter_did] is True
 
         mock_estate_manager.confirm_delivery(spouse_did)
         assert mock_estate_manager.all_deliveries_confirmed() is False
@@ -579,7 +669,13 @@ class TestDestructionGating:
         # After all confirm — now safe to destroy
         mock_estate_manager.confirm_delivery(colleague_did)
         assert mock_estate_manager.all_deliveries_confirmed() is True
+        assert len(mock_estate_manager.delivery_confirmations) == 3
 
-        # Only now destroy remaining data
+        # The caller gates destruction on all_deliveries_confirmed()
+        # BUG: MockEstateManager.destroy_remaining() does NOT check
+        # all_deliveries_confirmed() — it only checks default_action.
+        # The real Go EstateService must enforce this gate. The test
+        # validates the caller-side pattern: check confirmed, then destroy.
+        assert mock_estate_manager.all_deliveries_confirmed() is True
         mock_estate_manager.destroy_remaining()
         assert mock_estate_manager.data_destroyed is True
