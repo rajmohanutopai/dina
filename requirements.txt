@@ -1,6 +1,22 @@
-# Root runtime dependencies for the main Dina Python package.
-# This mirrors [project.dependencies] in pyproject.toml.
+# Comprehensive Python requirements for this repository.
+#
+# This file is intended to be the single Python install surface for:
+# - root scripts and test harness
+# - dina-brain
+# - dina-cli
+# - dina-admin-cli
+# - Python test suites
+#
+# AppView is not included here because it is a Node/TypeScript project.
+# Install AppView dependencies separately:
+#   cd appview && npm install
 
+# Local Python packages in this repo
+-e ./brain
+-e ./cli
+-e ./admin-cli
+
+# Root/shared Python dependencies
 pydantic-ai>=0.1
 youtube-transcript-api>=1.0
 chromadb>=1.0
@@ -9,3 +25,19 @@ google-genai>=1.0
 python-dotenv>=1.0
 base58>=2.1
 cryptography>=41.0
+
+# Optional Brain provider / ingestion / PII stack
+anthropic>=0.40.0
+openai>=1.0.0
+spacy>=3.7.0
+presidio-analyzer[gliner]>=2.2.0
+presidio-anonymizer>=2.2.0
+faker>=22.0.0
+gliner>=0.2.10
+python-telegram-bot>=22.0
+
+# Test and release harness dependencies
+pytest>=8.0
+pytest-asyncio>=0.24.0
+pytest-cov>=5.0
+psycopg2-binary>=2.9

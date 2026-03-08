@@ -1,26 +1,4 @@
-# Root development dependencies for local testing and iteration.
-#
-# Installs:
-# - the root runtime dependencies
-# - editable Python subprojects used by the test harness
-# - common test tooling
-# - psycopg2 for AppView/Postgres-backed tests
+# Backwards-compatible alias.
+# requirements.txt is now the single comprehensive Python dependency file.
 
 -r requirements.txt
-
--e ./brain
--e ./cli
--e ./admin-cli
-
-pytest>=8.0
-pytest-asyncio>=0.24.0
-pytest-cov>=5.0
-psycopg2-binary>=2.9
-
-# Optional extras for fuller local coverage:
-# presidio-analyzer[gliner]>=2.2.0
-# presidio-anonymizer>=2.2.0
-# spacy>=3.7.0
-# faker>=22.0.0
-# gliner>=0.2.10
-# python-telegram-bot>=22.0
