@@ -252,6 +252,9 @@ core/dina-core
 appview/test-results*.json
 appview/dist/
 
+# Claude Code session artifacts
+.claude/scheduled_tasks.lock
+
 # Scratch / personal notes
 issues.txt
 marketing.txt
