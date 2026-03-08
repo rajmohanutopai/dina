@@ -71,16 +71,21 @@ func (a *configLoaderAdapter) Load() (*testutil.Config, error) {
 		return nil, err
 	}
 	return &testutil.Config{
-		ListenAddr:     cfg.ListenAddr,
-		AdminAddr:      cfg.AdminAddr,
-		VaultPath:      cfg.VaultPath,
-		BrainURL:       cfg.BrainURL,
-		ClientToken:    cfg.ClientToken,
-		SecurityMode:   cfg.SecurityMode,
-		SessionTTL:     cfg.SessionTTL,
-		RateLimit:      cfg.RateLimit,
-		SpoolMax:       cfg.SpoolMax,
-		BackupInterval: cfg.BackupInterval,
+		ListenAddr:       cfg.ListenAddr,
+		AdminAddr:        cfg.AdminAddr,
+		VaultPath:        cfg.VaultPath,
+		BrainURL:         cfg.BrainURL,
+		ClientToken:      cfg.ClientToken,
+		SecurityMode:     cfg.SecurityMode,
+		SessionTTL:       cfg.SessionTTL,
+		RateLimit:        cfg.RateLimit,
+		SpoolMax:         cfg.SpoolMax,
+		BackupInterval:   cfg.BackupInterval,
+		PDSURL:           cfg.PDSURL,
+		PLCURL:           cfg.PLCURL,
+		PDSAdminPassword: cfg.PDSAdminPassword,
+		PDSHandle:        cfg.PDSHandle,
+		AdminSocketPath:  cfg.AdminSocketPath,
 	}, nil
 }
 

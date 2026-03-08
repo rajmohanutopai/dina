@@ -94,6 +94,13 @@ func (h *QueryHandler) ScoreBot(botDID string, outcome testutil.BotOutcome) erro
 	return nil
 }
 
+// GetScore returns the current trust score for a bot.
+func (h *QueryHandler) GetScore(botDID string) (float64, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.scores[botDID], nil
+}
+
 // ValidateAttribution checks that the bot response includes valid attribution.
 func (h *QueryHandler) ValidateAttribution(resp testutil.BotResponse) (bool, error) {
 	if resp.Attribution == "" {

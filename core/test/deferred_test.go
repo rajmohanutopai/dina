@@ -306,22 +306,57 @@ func TestDeferred_24_3_5_SovereignUSBLTOTape(t *testing.T) {
 // TST-CORE-767
 func TestDeferred_24_3_6_ArchiveUselessWithoutKeys(t *testing.T) {
 	// Attacker obtains archive blob — cannot decrypt without master seed.
-	var impl testutil.ArchiveManager
-	testutil.RequireImplementation(t, impl, "ArchiveManager")
+	// Uses real AES-256-GCM key wrapping + HKDF key derivation to prove that
+	// an encrypted archive payload is useless without the correct key material.
 
-	config := testutil.ArchiveConfig{
-		Frequency:     "weekly",
-		Destination:   "local",
-		RetentionDays: 365,
-		EncryptionKey: []byte("mock-archive-key-32-bytes-long!!"),
+	wrapper := realKeyWrapper
+	testutil.RequireImplementation(t, wrapper, "KeyWrapper")
+	dekDeriver := realVaultDEKDeriver
+	testutil.RequireImplementation(t, dekDeriver, "VaultDEKDeriver")
+
+	// Step 1: Derive an archive-specific DEK from the master seed via HKDF,
+	// using the "archive" persona (info = "dina:vault:archive:v1").
+	archiveDEK, err := dekDeriver.DeriveVaultDEK(testutil.TestMnemonicSeed, "archive", testutil.TestUserSalt[:])
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesLen(t, archiveDEK, 32)
+
+	// Step 2: Wrap a payload DEK with the archive DEK (simulates archive encryption).
+	payloadDEK := testutil.TestDEK[:]
+	wrapped, err := wrapper.Wrap(payloadDEK, archiveDEK)
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, len(wrapped) > 0, "wrapped blob must be non-empty")
+
+	// Step 3: Verify the correct key can unwrap.
+	recovered, err := wrapper.Unwrap(wrapped, archiveDEK)
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesEqual(t, recovered, payloadDEK)
+
+	// Step 4: Attacker has the wrapped blob but uses a wrong key — must fail.
+	wrongKey := [32]byte{
+		0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef,
+		0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef,
+		0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef,
+		0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef,
 	}
-	entry, err := impl.CreateArchive(config)
-	testutil.RequireNoError(t, err)
+	_, err = wrapper.Unwrap(wrapped, wrongKey[:])
+	testutil.RequireError(t, err)
 
-	// Verify the archive exists and is valid with the correct key.
-	valid, err := impl.VerifyArchive(entry.ID)
+	// Step 5: Attacker derives a key from a different seed — must also fail.
+	wrongSeed := make([]byte, len(testutil.TestMnemonicSeed))
+	copy(wrongSeed, testutil.TestMnemonicSeed)
+	wrongSeed[0] ^= 0xff // flip one byte
+	wrongArchiveDEK, err := dekDeriver.DeriveVaultDEK(wrongSeed, "archive", testutil.TestUserSalt[:])
 	testutil.RequireNoError(t, err)
-	testutil.RequireTrue(t, valid, "archive must verify with correct key")
+	testutil.RequireBytesNotEqual(t, wrongArchiveDEK, archiveDEK)
+	_, err = wrapper.Unwrap(wrapped, wrongArchiveDEK)
+	testutil.RequireError(t, err)
+
+	// Step 6: Tampered ciphertext must also fail decryption.
+	tampered := make([]byte, len(wrapped))
+	copy(tampered, wrapped)
+	tampered[len(tampered)-1] ^= 0xff
+	_, err = wrapper.Unwrap(tampered, archiveDEK)
+	testutil.RequireError(t, err)
 }
 
 // --------------------------------------------------------------------------

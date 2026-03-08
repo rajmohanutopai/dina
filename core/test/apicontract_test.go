@@ -109,7 +109,7 @@ func TestAPIContract_18_5_PIIScrubExposed(t *testing.T) {
 	impl := realAPIContract
 	testutil.RequireImplementation(t, impl, "APIContract")
 
-	// BRAIN_TOKEN + text must return 200 with scrubbed text.
+	// Positive: /v1/pii/scrub must be brain-callable.
 	testutil.RequireTrue(t, impl.IsBrainCallable("/v1/pii/scrub"),
 		"/v1/pii/scrub must accept BRAIN_TOKEN")
 
@@ -117,6 +117,15 @@ func TestAPIContract_18_5_PIIScrubExposed(t *testing.T) {
 		[]byte(`{"text":"Email me at john@example.com"}`))
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, statusCode, 200)
+
+	// Negative control: admin-only endpoint must NOT be brain-callable.
+	testutil.RequireFalse(t, impl.IsBrainCallable("/v1/did/sign"),
+		"/v1/did/sign is admin-only — must not be brain-callable")
+
+	// Negative: brain token on admin-only endpoint must return 403.
+	statusCode2, _, err := impl.CallEndpoint("POST", "/v1/did/sign", testutil.TestBrainToken, nil)
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, statusCode2, 403)
 }
 
 // --------------------------------------------------------------------------
@@ -129,7 +138,7 @@ func TestAPIContract_18_6_NotifyExposed(t *testing.T) {
 	impl := realAPIContract
 	testutil.RequireImplementation(t, impl, "APIContract")
 
-	// BRAIN_TOKEN + push notification must return 200.
+	// Positive: /v1/notify must be brain-callable and return 200.
 	testutil.RequireTrue(t, impl.IsBrainCallable("/v1/notify"),
 		"/v1/notify must accept BRAIN_TOKEN")
 
@@ -137,6 +146,15 @@ func TestAPIContract_18_6_NotifyExposed(t *testing.T) {
 		[]byte(`{"type":"alert","message":"sync complete"}`))
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, statusCode, 200)
+
+	// Negative control: admin-only endpoint must NOT be brain-callable.
+	testutil.RequireFalse(t, impl.IsBrainCallable("/v1/did/rotate"),
+		"/v1/did/rotate is admin-only — must not be brain-callable")
+
+	// Negative: brain token on admin-only endpoint must return 403.
+	statusCode2, _, err := impl.CallEndpoint("POST", "/v1/did/rotate", testutil.TestBrainToken, nil)
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, statusCode2, 403)
 }
 
 // --------------------------------------------------------------------------
@@ -209,7 +227,7 @@ func TestAPIContract_18_9_MsgSendExposed(t *testing.T) {
 	impl := realAPIContract
 	testutil.RequireImplementation(t, impl, "APIContract")
 
-	// BRAIN_TOKEN + encrypted message payload must return 200 — queued in outbox.
+	// Positive: /v1/msg/send must be brain-callable and return 200.
 	testutil.RequireTrue(t, impl.IsBrainCallable("/v1/msg/send"),
 		"/v1/msg/send must accept BRAIN_TOKEN")
 
@@ -217,6 +235,15 @@ func TestAPIContract_18_9_MsgSendExposed(t *testing.T) {
 		[]byte(`{"recipient_did":"did:plc:abc123","ciphertext":"base64encodeddata"}`))
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, statusCode, 200)
+
+	// Negative control: admin-only endpoint must NOT be brain-callable.
+	testutil.RequireFalse(t, impl.IsBrainCallable("/v1/vault/backup"),
+		"/v1/vault/backup is admin-only — must not be brain-callable")
+
+	// Negative: wrong token on brain-callable endpoint must return 401.
+	statusCode2, _, err := impl.CallEndpoint("POST", "/v1/msg/send", "wrong-token-value", nil)
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, statusCode2, 401)
 }
 
 // --------------------------------------------------------------------------
@@ -245,10 +272,27 @@ func TestAPIContract_18_11_VaultCrashMissingFieldsRejected(t *testing.T) {
 	impl := realErrorHandler
 	testutil.RequireImplementation(t, impl, "ErrorHandler")
 
-	// POST with empty body — missing required fields.
-	statusCode, _, err := impl.HandleRequest("POST", "/v1/vault/crash", "application/json", []byte(`{}`))
+	// POST with empty body — both fields missing → 400.
+	statusCode, respBody, err := impl.HandleRequest("POST", "/v1/vault/crash", "application/json", []byte(`{}`))
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, statusCode, 400)
+	testutil.RequireContains(t, string(respBody), "missing")
+
+	// POST with only "error" field — should be accepted (at least one field present).
+	statusCode2, _, err := impl.HandleRequest("POST", "/v1/vault/crash", "application/json", []byte(`{"error":"something broke"}`))
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, statusCode2, 200)
+
+	// POST with only "traceback" field — should also be accepted.
+	statusCode3, _, err := impl.HandleRequest("POST", "/v1/vault/crash", "application/json", []byte(`{"traceback":"line 42 in main.go"}`))
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, statusCode3, 200)
+
+	// POST with both fields — should be accepted.
+	statusCode4, _, err := impl.HandleRequest("POST", "/v1/vault/crash", "application/json",
+		[]byte(`{"error":"panic","traceback":"goroutine 1 [running]:\nmain.go:42"}`))
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, statusCode4, 200)
 }
 
 // TST-CORE-907
@@ -257,26 +301,83 @@ func TestAPIContract_18_12_VaultQueryResponseSchema(t *testing.T) {
 	impl := realVaultAPI
 	testutil.RequireImplementation(t, impl, "VaultAPI")
 
-	results, err := impl.Search("personal", "test query", "fts5")
+	// Store an item first so Search has something to return.
+	item := testutil.VaultItem{
+		Type:      "note",
+		Source:    "test",
+		Summary:   "meeting notes about project alpha",
+		Timestamp: 1700000000,
+	}
+	storedID, err := impl.StoreItem("personal", item)
 	testutil.RequireNoError(t, err)
-	_ = results // schema validated via typed VaultItem response
+	testutil.RequireTrue(t, storedID != "", "stored item must have an ID")
+
+	// Search must return results including the stored item.
+	results, err := impl.Search("personal", "meeting", "fts5")
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, len(results) > 0, "search must return at least one result after storing an item")
+
+	// Validate schema: each result must have required fields populated.
+	found := false
+	for _, r := range results {
+		testutil.RequireTrue(t, r.ID != "", "result ID must not be empty")
+		testutil.RequireTrue(t, r.Type != "", "result Type must not be empty")
+		if r.ID == storedID {
+			found = true
+			testutil.RequireEqual(t, r.Type, "note")
+			testutil.RequireEqual(t, r.Source, "test")
+			testutil.RequireContains(t, r.Summary, "meeting")
+		}
+	}
+	testutil.RequireTrue(t, found, "stored item must appear in search results")
 }
 
 // TST-CORE-908
 func TestAPIContract_18_13_VaultStoreResponseIDFormat(t *testing.T) {
-	// Vault store response ID format (vault_ prefix).
+	// Vault store response ID format (vault_ prefix) + uniqueness.
 	impl := realVaultAPI
 	testutil.RequireImplementation(t, impl, "VaultAPI")
 
-	item := testutil.VaultItem{
+	item1 := testutil.VaultItem{
 		Type:      "note",
 		Source:    "test",
-		Summary:   "test item for ID format",
+		Summary:   "test item for ID format 1",
 		Timestamp: 1700000000,
 	}
-	id, err := impl.StoreItem("personal", item)
+	id1, err := impl.StoreItem("personal", item1)
 	testutil.RequireNoError(t, err)
-	testutil.RequireHasPrefix(t, id, "vault_")
+	testutil.RequireHasPrefix(t, id1, "vault_")
+	testutil.RequireTrue(t, len(id1) > len("vault_"),
+		"ID must have content after the vault_ prefix")
+
+	// Second store must produce a different ID.
+	item2 := testutil.VaultItem{
+		Type:      "note",
+		Source:    "test",
+		Summary:   "test item for ID format 2",
+		Timestamp: 1700000001,
+	}
+	id2, err := impl.StoreItem("personal", item2)
+	testutil.RequireNoError(t, err)
+	testutil.RequireHasPrefix(t, id2, "vault_")
+
+	if id1 == id2 {
+		t.Fatalf("two stores must produce different IDs: both got %q", id1)
+	}
+
+	// Third store for additional uniqueness confidence.
+	item3 := testutil.VaultItem{
+		Type:      "email",
+		Source:    "test",
+		Summary:   "test item for ID format 3",
+		Timestamp: 1700000002,
+	}
+	id3, err := impl.StoreItem("personal", item3)
+	testutil.RequireNoError(t, err)
+	testutil.RequireHasPrefix(t, id3, "vault_")
+	if id3 == id1 || id3 == id2 {
+		t.Fatalf("third store ID must be unique: got %q (id1=%q, id2=%q)", id3, id1, id2)
+	}
 }
 
 // TST-CORE-909

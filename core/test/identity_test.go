@@ -3,6 +3,8 @@ package test
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rajmohanutopai/dina/core/internal/adapter/auth"
 	dinacrypto "github.com/rajmohanutopai/dina/core/internal/adapter/crypto"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/identity"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
@@ -35,9 +38,24 @@ func TestIdentity_3_1_1_GenerateRootDID(t *testing.T) {
 	// impl = identity.NewDIDManager(testutil.TempDir(t))
 	testutil.RequireImplementation(t, impl, "DIDManager")
 
+	// Positive: valid 32-byte seed produces a did:plc: DID.
 	did, err := impl.Create(idCtx, testutil.TestEd25519Seed[:])
 	testutil.RequireNoError(t, err)
 	testutil.RequireHasPrefix(t, string(did), "did:plc:")
+	testutil.RequireTrue(t, len(string(did)) > len("did:plc:"), "DID must have content after prefix")
+
+	// Determinism: same seed must produce the same DID.
+	did2, err := impl.Create(idCtx, testutil.TestEd25519Seed[:])
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, string(did), string(did2))
+
+	// Negative: invalid key size must be rejected.
+	_, err = impl.Create(idCtx, []byte("too-short"))
+	testutil.RequireError(t, err)
+
+	// Negative: empty key must be rejected.
+	_, err = impl.Create(idCtx, []byte{})
+	testutil.RequireError(t, err)
 }
 
 // TST-CORE-131
@@ -45,10 +63,20 @@ func TestIdentity_3_1_2_LoadExistingDID(t *testing.T) {
 	impl := realDIDManager
 	testutil.RequireImplementation(t, impl, "DIDManager")
 
-	did1, _ := impl.Create(idCtx, testutil.TestEd25519Seed[:])
+	// Positive: create a DID then resolve it — doc must be valid JSON with expected fields.
+	did1, err := impl.Create(idCtx, testutil.TestEd25519Seed[:])
+	testutil.RequireNoError(t, err)
+
 	doc, err := impl.Resolve(idCtx, did1)
 	testutil.RequireNoError(t, err)
 	testutil.RequireNotNil(t, doc)
+	testutil.RequireTrue(t, len(doc) > 0, "resolved DID document must not be empty")
+	// The document must contain the DID itself as its id.
+	testutil.RequireContains(t, string(doc), string(did1))
+
+	// Negative: resolving a nonexistent DID must return an error.
+	_, err = impl.Resolve(idCtx, domain.DID("did:plc:nonexistent_12345"))
+	testutil.RequireError(t, err)
 }
 
 // TST-CORE-132
@@ -56,12 +84,37 @@ func TestIdentity_3_1_3_DIDDocumentStructure(t *testing.T) {
 	impl := realDIDManager
 	testutil.RequireImplementation(t, impl, "DIDManager")
 
-	did, _ := impl.Create(idCtx, testutil.TestEd25519Seed[:])
+	did, err := impl.Create(idCtx, testutil.TestEd25519Seed[:])
+	testutil.RequireNoError(t, err)
+
 	doc, err := impl.Resolve(idCtx, did)
 	testutil.RequireNoError(t, err)
-	testutil.RequireContains(t, string(doc), `"id"`)
-	testutil.RequireContains(t, string(doc), `"service"`)
-	testutil.RequireContains(t, string(doc), `"verificationMethod"`)
+
+	// Required W3C DID document fields must be present.
+	docStr := string(doc)
+	testutil.RequireContains(t, docStr, `"id"`)
+	testutil.RequireContains(t, docStr, `"service"`)
+	testutil.RequireContains(t, docStr, `"verificationMethod"`)
+	testutil.RequireContains(t, docStr, `"authentication"`)
+	testutil.RequireContains(t, docStr, `"@context"`)
+
+	// The document's "id" value must match the created DID.
+	testutil.RequireContains(t, docStr, string(did))
+
+	// Parse as JSON to verify it's valid and has correct structure.
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(doc, &parsed); err != nil {
+		t.Fatalf("DID document is not valid JSON: %v", err)
+	}
+	// The "id" field must equal the created DID.
+	if id, ok := parsed["id"].(string); !ok || id != string(did) {
+		t.Fatalf("DID doc id=%q does not match created DID=%q", parsed["id"], did)
+	}
+	// verificationMethod must be a non-empty array.
+	vm, ok := parsed["verificationMethod"].([]interface{})
+	if !ok || len(vm) == 0 {
+		t.Fatal("verificationMethod must be a non-empty array")
+	}
 }
 
 // TST-CORE-133
@@ -73,11 +126,32 @@ func TestIdentity_3_1_4_MultiplePersonaDIDs(t *testing.T) {
 	key2 := make([]byte, 32)
 	key1[0] = 1
 	key2[0] = 2
-	did1, _ := impl.Create(idCtx, key1)
-	did2, _ := impl.Create(idCtx, key2)
+
+	did1, err := impl.Create(idCtx, key1)
+	testutil.RequireNoError(t, err)
+	testutil.RequireHasPrefix(t, string(did1), "did:plc:")
+
+	did2, err := impl.Create(idCtx, key2)
+	testutil.RequireNoError(t, err)
+	testutil.RequireHasPrefix(t, string(did2), "did:plc:")
+
+	// Different keys must produce different DIDs.
 	if did1 == did2 {
 		t.Fatal("different keys should produce different DIDs")
 	}
+
+	// Both DIDs must be independently resolvable.
+	doc1, err := impl.Resolve(idCtx, did1)
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, len(doc1) > 0, "first DID must be resolvable")
+
+	doc2, err := impl.Resolve(idCtx, did2)
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, len(doc2) > 0, "second DID must be resolvable")
+
+	// Each document must contain its own DID, not the other.
+	testutil.RequireContains(t, string(doc1), string(did1))
+	testutil.RequireContains(t, string(doc2), string(did2))
 }
 
 // TST-CORE-134
@@ -98,9 +172,27 @@ func TestIdentity_3_1_6_PLCDirectorySignedOpsOnly(t *testing.T) {
 		t.Fatalf("cannot read identity source: %v", err)
 	}
 	content := string(src)
+
+	// The ed25519 package must be imported (not just mentioned in comments).
+	if !strings.Contains(content, `"crypto/ed25519"`) {
+		t.Fatal("identity.go must import crypto/ed25519 for signature verification")
+	}
+
 	// DIDManager.Rotate requires signature verification before accepting rotation.
 	if !strings.Contains(content, "ed25519.Verify") {
 		t.Fatal("PLC Directory operations must verify Ed25519 signature on rotation payload")
+	}
+
+	// The Rotate function must exist as a method (not just a comment).
+	if !strings.Contains(content, "func (") || !strings.Contains(content, "Rotate(") {
+		t.Fatal("DIDManager must have a Rotate method for key rotation")
+	}
+
+	// Negative audit: unsigned operations must not be accepted.
+	// Verify no "Rotate" path bypasses signature verification (no "skipVerify" or "noSig").
+	lower := strings.ToLower(content)
+	if strings.Contains(lower, "skipverify") || strings.Contains(lower, "nosig") {
+		t.Fatal("identity.go must not contain signature bypass flags (skipVerify/noSig)")
 	}
 }
 
@@ -109,10 +201,15 @@ func TestIdentity_3_1_7_SecondRootGenerationRejected(t *testing.T) {
 	impl := realDIDManager
 	testutil.RequireImplementation(t, impl, "DIDManager")
 
-	_, err1 := impl.Create(idCtx, testutil.TestEd25519Seed[:])
+	// Positive control: first creation must succeed and return a valid DID.
+	did1, err1 := impl.Create(idCtx, testutil.TestEd25519Seed[:])
 	testutil.RequireNoError(t, err1)
+	testutil.RequireContains(t, string(did1), "did:plc:")
+
+	// Negative: second creation with same key must be rejected.
 	_, err2 := impl.Create(idCtx, testutil.TestEd25519Seed[:])
 	testutil.RequireError(t, err2)
+	testutil.RequireContains(t, err2.Error(), "already exists")
 }
 
 // TST-CORE-137
@@ -120,19 +217,75 @@ func TestIdentity_3_1_8_RootIdentityCreatedAtTimestamp(t *testing.T) {
 	impl := realDIDManager
 	testutil.RequireImplementation(t, impl, "DIDManager")
 
-	did, _ := impl.Create(idCtx, testutil.TestEd25519Seed[:])
-	doc, _ := impl.Resolve(idCtx, did)
-	testutil.RequireContains(t, string(doc), `"created_at"`)
+	before := time.Now().UTC().Add(-2 * time.Second)
+	did, err := impl.Create(idCtx, testutil.TestEd25519Seed[:])
+	testutil.RequireNoError(t, err)
+	after := time.Now().UTC().Add(2 * time.Second)
+
+	doc, err := impl.Resolve(idCtx, did)
+	testutil.RequireNoError(t, err)
+
+	// Parse the JSON document and extract the created_at value.
+	var parsed map[string]interface{}
+	if jsonErr := json.Unmarshal(doc, &parsed); jsonErr != nil {
+		t.Fatalf("failed to parse DID document JSON: %v", jsonErr)
+	}
+	raw, ok := parsed["created_at"]
+	if !ok {
+		t.Fatal("DID document missing 'created_at' field")
+	}
+	tsStr, ok := raw.(string)
+	if !ok || tsStr == "" {
+		t.Fatalf("created_at is not a non-empty string: %v", raw)
+	}
+
+	// Validate that created_at is a valid RFC3339 timestamp within the expected window.
+	ts, parseErr := time.Parse(time.RFC3339, tsStr)
+	if parseErr != nil {
+		t.Fatalf("created_at is not valid RFC3339: %q — %v", tsStr, parseErr)
+	}
+	if ts.Before(before) || ts.After(after) {
+		t.Fatalf("created_at %v is outside expected window [%v, %v]", ts, before, after)
+	}
 }
 
 // TST-CORE-138
 func TestIdentity_3_1_9_DeviceOriginFingerprint(t *testing.T) {
-	impl := realDIDManager
-	testutil.RequireImplementation(t, impl, "DIDManager")
+	// Fresh DIDManager for isolation.
+	dir := t.TempDir()
+	mgr := identity.NewDIDManager(dir)
+	testutil.RequireImplementation(t, mgr, "DIDManager")
 
-	did, _ := impl.Create(idCtx, testutil.TestEd25519Seed[:])
-	doc, _ := impl.Resolve(idCtx, did)
-	testutil.RequireContains(t, string(doc), `"device_origin"`)
+	// Create a DID — device_origin should be set to the hostname.
+	did, err := mgr.Create(idCtx, testutil.TestEd25519Seed[:])
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, len(did) > 0, "DID must be non-empty")
+
+	doc, err := mgr.Resolve(idCtx, did)
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, len(doc) > 0, "DID document must be non-empty")
+
+	// Parse the DID document and verify device_origin field.
+	var parsed struct {
+		DeviceOrigin string `json:"device_origin"`
+		ID           string `json:"id"`
+	}
+	err = json.Unmarshal(doc, &parsed)
+	testutil.RequireNoError(t, err)
+
+	// device_origin must be a non-empty string (hostname or "unknown").
+	testutil.RequireTrue(t, len(parsed.DeviceOrigin) > 0,
+		"device_origin must be non-empty in DID document")
+
+	// Verify it matches the actual hostname (production uses os.Hostname()).
+	hostname, _ := os.Hostname()
+	if hostname == "" {
+		hostname = "unknown"
+	}
+	testutil.RequireEqual(t, parsed.DeviceOrigin, hostname)
+
+	// Verify DID document ID matches the created DID.
+	testutil.RequireEqual(t, parsed.ID, string(did))
 }
 
 // TST-CORE-139
@@ -140,9 +293,38 @@ func TestIdentity_3_1_10_MultikeyZ6MkPrefix(t *testing.T) {
 	impl := realDIDManager
 	testutil.RequireImplementation(t, impl, "DIDManager")
 
-	did, _ := impl.Create(idCtx, testutil.TestEd25519Seed[:])
-	doc, _ := impl.Resolve(idCtx, did)
-	testutil.RequireContains(t, string(doc), `z6Mk`)
+	did, err := impl.Create(idCtx, testutil.TestEd25519Seed[:])
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, strings.HasPrefix(did, "did:key:z6Mk"),
+		"DID must start with did:key:z6Mk for Ed25519 multicodec, got: "+did)
+
+	doc, err := impl.Resolve(idCtx, did)
+	testutil.RequireNoError(t, err)
+
+	// Parse the DID document and extract publicKeyMultibase.
+	var parsed struct {
+		VerificationMethod []struct {
+			ID                 string `json:"id"`
+			Type               string `json:"type"`
+			PublicKeyMultibase string `json:"publicKeyMultibase"`
+		} `json:"verificationMethod"`
+	}
+	testutil.RequireNoError(t, json.Unmarshal(doc, &parsed))
+	testutil.RequireTrue(t, len(parsed.VerificationMethod) >= 1,
+		"DID document must have at least one verificationMethod")
+
+	multikey := parsed.VerificationMethod[0].PublicKeyMultibase
+	testutil.RequireTrue(t, strings.HasPrefix(multikey, "z6Mk"),
+		"publicKeyMultibase must start with z6Mk (Ed25519 multicodec), got: "+multikey)
+
+	// Multikey must be a reasonable length (z + base58btc of 34 bytes ≈ 48-50 chars).
+	testutil.RequireTrue(t, len(multikey) >= 40,
+		"publicKeyMultibase too short for Ed25519 multikey")
+
+	// Determinism: same seed must produce same DID.
+	did2, err := impl.Create(idCtx, testutil.TestEd25519Seed[:])
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, did, did2)
 }
 
 // ---------- §3.1.1 Key Rotation (5 scenarios) ----------
@@ -152,19 +334,61 @@ func TestIdentity_3_1_1_1_RotateSigningKey(t *testing.T) {
 	impl := realDIDManager
 	testutil.RequireImplementation(t, impl, "DIDManager")
 
-	// Generate a real Ed25519 keypair from the test seed.
-	oldPriv := ed25519.NewKeyFromSeed(testutil.TestEd25519Seed[:])
+	// Use a unique seed to avoid shared-state conflicts with other rotation tests.
+	seed140 := [32]byte{}
+	seed140[0] = 0xd0
+	oldPriv := ed25519.NewKeyFromSeed(seed140[:])
 	oldPub := oldPriv.Public().(ed25519.PublicKey)
 
-	did, _ := impl.Create(idCtx, []byte(oldPub))
+	did, err := impl.Create(idCtx, []byte(oldPub))
+	testutil.RequireNoError(t, err)
+
+	// Resolve the document BEFORE rotation to capture the old key's multibase.
+	docBefore, err := impl.Resolve(idCtx, did)
+	testutil.RequireNoError(t, err)
+	docBeforeStr := string(docBefore)
+	testutil.RequireContains(t, docBeforeStr, "publicKeyMultibase")
+
+	// Extract the old multibase value from the pre-rotation document.
+	// Find the value between the quotes after "publicKeyMultibase".
+	oldMultibaseStart := strings.Index(docBeforeStr, `"publicKeyMultibase": "`)
+	if oldMultibaseStart < 0 {
+		t.Fatal("could not find publicKeyMultibase in pre-rotation document")
+	}
+	oldMultibaseStart += len(`"publicKeyMultibase": "`)
+	oldMultibaseEnd := strings.Index(docBeforeStr[oldMultibaseStart:], `"`)
+	if oldMultibaseEnd < 0 {
+		t.Fatal("could not find end of publicKeyMultibase value")
+	}
+	oldMultibase := docBeforeStr[oldMultibaseStart : oldMultibaseStart+oldMultibaseEnd]
+
 	newKey := make([]byte, 32)
 	newKey[0] = 0xff
 
 	// Sign the rotation payload with the old key to prove possession.
 	payload := []byte("rotate:" + string(did))
 	sig := ed25519.Sign(oldPriv, payload)
-	err := impl.Rotate(idCtx, did, payload, sig, newKey)
+	err = impl.Rotate(idCtx, did, payload, sig, newKey)
 	testutil.RequireNoError(t, err)
+
+	// Resolve AFTER rotation — the document must have changed.
+	docAfter, err := impl.Resolve(idCtx, did)
+	testutil.RequireNoError(t, err)
+	docAfterStr := string(docAfter)
+
+	// The DID itself must be preserved across rotation.
+	testutil.RequireContains(t, docAfterStr, string(did))
+
+	// The document must contain a NEW publicKeyMultibase (not the old one).
+	testutil.RequireContains(t, docAfterStr, "publicKeyMultibase")
+	if strings.Contains(docAfterStr, oldMultibase) {
+		t.Fatalf("document still contains old key multibase after rotation: %s", oldMultibase)
+	}
+
+	// The pre- and post-rotation documents must differ.
+	if docBeforeStr == docAfterStr {
+		t.Fatal("resolved document is identical before and after rotation — rotation had no effect")
+	}
 }
 
 // TST-CORE-141
@@ -206,6 +430,24 @@ func TestIdentity_3_1_1_3_OldKeyInvalidAfterRotation(t *testing.T) {
 	did, err := impl.Create(idCtx, []byte(oldPub))
 	testutil.RequireNoError(t, err)
 
+	// Capture the pre-rotation document to extract the old key's multibase.
+	docBefore, err := impl.Resolve(idCtx, did)
+	testutil.RequireNoError(t, err)
+	var parsedBefore map[string]interface{}
+	if jsonErr := json.Unmarshal(docBefore, &parsedBefore); jsonErr != nil {
+		t.Fatalf("failed to parse pre-rotation DID document: %v", jsonErr)
+	}
+	// Extract old publicKeyMultibase.
+	vmList, _ := parsedBefore["verificationMethod"].([]interface{})
+	if len(vmList) == 0 {
+		t.Fatal("pre-rotation document must have at least one verificationMethod")
+	}
+	vm0, _ := vmList[0].(map[string]interface{})
+	oldMultibase, _ := vm0["publicKeyMultibase"].(string)
+	if oldMultibase == "" {
+		t.Fatal("pre-rotation publicKeyMultibase must not be empty")
+	}
+
 	// Rotate to a new key.
 	newKey := make([]byte, 32)
 	newKey[0] = 0xfe
@@ -216,18 +458,33 @@ func TestIdentity_3_1_1_3_OldKeyInvalidAfterRotation(t *testing.T) {
 	err = impl.Rotate(idCtx, did, payload, sig, newKey)
 	testutil.RequireNoError(t, err)
 
-	// Resolve the DID — the document should contain the NEW key, not the old one.
-	doc, err := impl.Resolve(idCtx, did)
+	// Resolve the DID — the document must contain the NEW key, not the old one.
+	docAfter, err := impl.Resolve(idCtx, did)
 	testutil.RequireNoError(t, err)
-	docStr := string(doc)
+	docAfterStr := string(docAfter)
 
-	// After rotation, the document should have the new key's multibase.
-	testutil.RequireNotNil(t, doc)
-	if len(docStr) == 0 {
-		t.Fatal("resolved document should not be empty after rotation")
+	// The old key's multibase must be absent from the rotated document.
+	if strings.Contains(docAfterStr, oldMultibase) {
+		t.Fatalf("old key multibase %q must NOT appear in document after rotation", oldMultibase)
 	}
-	// The document should contain a verification method with the new key.
-	testutil.RequireContains(t, docStr, "publicKeyMultibase")
+
+	// The document must still contain a publicKeyMultibase (the new key).
+	var parsedAfter map[string]interface{}
+	if jsonErr := json.Unmarshal(docAfter, &parsedAfter); jsonErr != nil {
+		t.Fatalf("failed to parse post-rotation DID document: %v", jsonErr)
+	}
+	vmListAfter, _ := parsedAfter["verificationMethod"].([]interface{})
+	if len(vmListAfter) == 0 {
+		t.Fatal("post-rotation document must have at least one verificationMethod")
+	}
+	vm0After, _ := vmListAfter[0].(map[string]interface{})
+	newMultibase, _ := vm0After["publicKeyMultibase"].(string)
+	if newMultibase == "" {
+		t.Fatal("post-rotation publicKeyMultibase must not be empty")
+	}
+	if newMultibase == oldMultibase {
+		t.Fatal("post-rotation publicKeyMultibase must differ from pre-rotation value")
+	}
 }
 
 // TST-CORE-143
@@ -363,16 +620,33 @@ func TestIdentity_3_1_2_1_DIDWebResolution(t *testing.T) {
 
 // TST-CORE-146
 func TestIdentity_3_1_2_2_DIDWebSameKeypair(t *testing.T) {
-	// Architecture test: verify that the identity adapter uses Ed25519 keypairs,
-	// meaning did:web would use the same key material as did:plc.
+	// §3.1.2.2: did:web must use the same Ed25519 keypair as did:plc.
+	// Verify via source audit that identity adapter uses Ed25519 throughout,
+	// meaning any future did:web implementation shares the same key material.
 	src, err := os.ReadFile("../internal/adapter/identity/identity.go")
 	if err != nil {
 		t.Fatalf("cannot read identity source: %v", err)
 	}
 	content := string(src)
-	if !strings.Contains(content, "ed25519") {
-		t.Fatal("identity adapter must use ed25519 keypair (shared between did:plc and did:web)")
-	}
+
+	// Positive: must import crypto/ed25519 (not just mention in comments).
+	testutil.RequireTrue(t, strings.Contains(content, `"crypto/ed25519"`),
+		"identity adapter must import crypto/ed25519")
+
+	// Positive: DIDManager must use ed25519 for key generation.
+	testutil.RequireTrue(t, strings.Contains(content, "ed25519.GenerateKey") ||
+		strings.Contains(content, "ed25519.NewKeyFromSeed"),
+		"identity adapter must generate or derive Ed25519 keys")
+
+	// Positive: ResolveWeb exists (did:web will reuse same key infrastructure).
+	testutil.RequireTrue(t, strings.Contains(content, "ResolveWeb"),
+		"DIDManager must have ResolveWeb method for future did:web support")
+
+	// Negative: must not use RSA or ECDSA (would mean different key material).
+	testutil.RequireFalse(t, strings.Contains(content, `"crypto/rsa"`),
+		"identity adapter must not use RSA — Ed25519 only for key uniformity")
+	testutil.RequireFalse(t, strings.Contains(content, `"crypto/ecdsa"`),
+		"identity adapter must not use ECDSA — Ed25519 only for key uniformity")
 }
 
 // TST-CORE-147
@@ -414,16 +688,28 @@ func TestIdentity_3_1_2_4_DIDWebPiggybacksIngress(t *testing.T) {
 // TST-CORE-149
 func TestIdentity_3_1_2_5_DIDWebTradeoffAcknowledged(t *testing.T) {
 	// Architecture acknowledgment: did:web depends on DNS, which is a centralized system.
-	// This is a known tradeoff documented in the design. The primary method is did:key/did:plc.
-	// did:web is a fallback only.
-	src, err := os.ReadFile("../internal/adapter/identity/identity.go")
+	// This is a known tradeoff documented in the design. The primary method is did:plc.
+	// did:web is a fallback resolver only, never the default creation method.
+
+	// 1. Verify that DIDManager.Create() produces did:plc DIDs by default.
+	dm := identity.NewDIDManager(t.TempDir())
+	pub, _, err := ed25519.GenerateKey(nil)
 	if err != nil {
-		t.Fatalf("cannot read identity source: %v", err)
+		t.Fatalf("keygen: %v", err)
 	}
-	content := string(src)
-	// Verify DIDManager uses did:plc as primary method (did:key is the base encoding).
-	if !strings.Contains(content, "did:plc") {
-		t.Fatal("DIDManager must use did:plc as primary DID method")
+	did, err := dm.Create(context.Background(), pub)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if !strings.HasPrefix(string(did), "did:plc:") {
+		t.Fatalf("default DID method must be did:plc, got %s", did)
+	}
+
+	// 2. Verify that did:web resolution is a separate, explicit path (ResolveWeb),
+	//    and that it is not wired into the default Create flow (stub returns error).
+	_, webErr := dm.ResolveWeb(context.Background(), domain.DID("did:web:example.com"))
+	if webErr == nil {
+		t.Fatal("ResolveWeb should return an error (stub/fallback), not silently succeed")
 	}
 }
 
@@ -431,22 +717,81 @@ func TestIdentity_3_1_2_5_DIDWebTradeoffAcknowledged(t *testing.T) {
 
 // TST-CORE-150
 func TestIdentity_3_2_1_CreatePersona(t *testing.T) {
-	impl := testutil.NewMockPersonaManager()
-	id, err := impl.Create(idCtx, "work", "restricted")
+	impl := realPersonaManager
+	testutil.RequireImplementation(t, impl, "PersonaManager")
+
+	// Positive: create a persona with valid tier.
+	id, err := impl.Create(idCtx, "work-create-test", "restricted")
 	testutil.RequireNoError(t, err)
 	if id == "" {
 		t.Fatal("expected non-empty persona ID")
 	}
+	testutil.RequireContains(t, id, "work-create-test")
+
+	// Round-trip: verify it appears in List.
+	list, err := impl.List(idCtx)
+	testutil.RequireNoError(t, err)
+	found := false
+	for _, p := range list {
+		if p == id {
+			found = true
+			break
+		}
+	}
+	testutil.RequireTrue(t, found, "created persona must appear in List")
+
+	// Negative control: invalid tier must be rejected.
+	_, err = impl.Create(idCtx, "bad-tier-test", "invalid-tier")
+	testutil.RequireError(t, err)
+
+	// Negative control: duplicate name must be rejected.
+	_, err = impl.Create(idCtx, "work-create-test", "restricted")
+	testutil.RequireError(t, err)
+
+	// Cleanup.
+	_ = impl.Delete(idCtx, id)
 }
 
 // TST-CORE-151
 func TestIdentity_3_2_2_ListPersonas(t *testing.T) {
-	impl := testutil.NewMockPersonaManager()
-	impl.Create(idCtx, "work", "open")
-	impl.Create(idCtx, "personal", "open")
+	impl := realPersonaManager
+	testutil.RequireImplementation(t, impl, "PersonaManager")
+
+	// Positive: create two personas and verify they appear in List.
+	id1, err := impl.Create(idCtx, "list-test-work", "open")
+	testutil.RequireNoError(t, err)
+	id2, err := impl.Create(idCtx, "list-test-personal", "open")
+	testutil.RequireNoError(t, err)
+
 	list, err := impl.List(idCtx)
 	testutil.RequireNoError(t, err)
-	testutil.RequireLen(t, len(list), 2)
+
+	// Verify both IDs are present.
+	found1, found2 := false, false
+	for _, p := range list {
+		if p == id1 {
+			found1 = true
+		}
+		if p == id2 {
+			found2 = true
+		}
+	}
+	testutil.RequireTrue(t, found1, "first persona must appear in List")
+	testutil.RequireTrue(t, found2, "second persona must appear in List")
+
+	// Negative control: after deleting one, List must reflect the removal.
+	err = impl.Delete(idCtx, id1)
+	testutil.RequireNoError(t, err)
+	listAfter, err := impl.List(idCtx)
+	testutil.RequireNoError(t, err)
+	for _, p := range listAfter {
+		if p == id1 {
+			t.Fatal("deleted persona must not appear in List")
+		}
+	}
+
+	// Cleanup.
+	_ = impl.Delete(idCtx, id2)
 }
 
 // TST-CORE-152
@@ -461,78 +806,194 @@ func TestIdentity_3_2_3_DeletePersona(t *testing.T) {
 
 // TST-CORE-153
 func TestIdentity_3_2_4_DeleteFileRemovesPersona(t *testing.T) {
-	// Create a persona, delete it, verify List no longer includes it.
 	pm := identity.NewPersonaManager()
-	id, err := pm.Create(idCtx, "deleteme", "open")
+	ctx := context.Background()
+
+	// Create two personas.
+	id1, err := pm.Create(ctx, "deleteme", "open")
+	testutil.RequireNoError(t, err)
+	_, err = pm.Create(ctx, "keepme", "open")
 	testutil.RequireNoError(t, err)
 
-	// Verify it exists.
-	list, _ := pm.List(idCtx)
+	// Verify both exist.
+	list, err := pm.List(ctx)
+	testutil.RequireNoError(t, err)
+	testutil.RequireLen(t, len(list), 2)
+
+	// Delete the first persona.
+	err = pm.Delete(ctx, id1)
+	testutil.RequireNoError(t, err)
+
+	// Verify only one remains and it's the right one.
+	list, err = pm.List(ctx)
+	testutil.RequireNoError(t, err)
 	testutil.RequireLen(t, len(list), 1)
+	testutil.RequireEqual(t, list[0], "persona-keepme")
 
-	// Delete.
-	err = pm.Delete(idCtx, id)
-	testutil.RequireNoError(t, err)
+	// Negative: deleting a non-existent persona must fail.
+	err = pm.Delete(ctx, "persona-nonexistent")
+	testutil.RequireError(t, err)
 
-	// Verify it is gone.
-	list, _ = pm.List(idCtx)
-	testutil.RequireLen(t, len(list), 0)
+	// Negative: deleting the same persona twice must fail.
+	err = pm.Delete(ctx, id1)
+	testutil.RequireError(t, err)
 }
 
 // TST-CORE-154
 func TestIdentity_3_2_5_PersonaIsolation(t *testing.T) {
-	vm := testutil.NewMockVaultManager()
-	vm.Open("persona-a", testutil.TestDEK[:])
-	vm.Open("persona-b", testutil.TestDEK[:])
+	vm := realVaultManager
+	testutil.RequireImplementation(t, vm, "VaultManager")
+
+	ctx := context.Background()
+
+	// Open two isolated personas.
+	err := vm.Open(ctx, "persona-iso-a", testutil.TestDEK[:])
+	testutil.RequireNoError(t, err)
+	err = vm.Open(ctx, "persona-iso-b", testutil.TestDEK[:])
+	testutil.RequireNoError(t, err)
+
+	// Store an item in persona A.
 	item := testutil.TestVaultItem()
-	vm.Store("persona-a", item)
-	_, err := vm.Retrieve("persona-b", item.ID)
+	storedID, err := vm.Store(ctx, "persona-iso-a", item)
+	testutil.RequireNoError(t, err)
+
+	// Positive control: persona A can retrieve its own item.
+	retrieved, err := vm.GetItem(ctx, "persona-iso-a", storedID)
+	testutil.RequireNoError(t, err)
+	testutil.RequireNotNil(t, retrieved)
+
+	// Negative control: persona B must NOT see persona A's item.
+	_, err = vm.GetItem(ctx, "persona-iso-b", storedID)
 	testutil.RequireError(t, err)
 }
 
 // TST-CORE-155
 func TestIdentity_3_2_6_DefaultPersonaExists(t *testing.T) {
-	impl := realPersonaManager
+	impl := identity.NewPersonaManager()
 	testutil.RequireImplementation(t, impl, "PersonaManager")
+
+	// A fresh PersonaManager must start with an empty persona list.
+	ctx := context.Background()
+	list, err := impl.List(ctx)
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, len(list), 0)
+
+	// Create a "default" persona and verify it appears.
+	id, err := impl.Create(ctx, "default", "open")
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, id, "persona-default")
+
+	list2, err := impl.List(ctx)
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, len(list2), 1)
+	testutil.RequireEqual(t, list2[0], "persona-default")
+
+	// Negative: duplicate creation must fail.
+	_, err = impl.Create(ctx, "default", "open")
+	testutil.RequireError(t, err)
 }
 
 // TST-CORE-156
 func TestIdentity_3_2_7_PerPersonaFileLayout(t *testing.T) {
-	// Create multiple personas and verify each has isolated storage (different IDs).
+	// Fresh PersonaManager — no shared state.
 	pm := identity.NewPersonaManager()
-	id1, err := pm.Create(idCtx, "work", "open")
+
+	ctx := context.Background()
+
+	// Negative control: listing empty manager must return 0 personas.
+	emptyList, err := pm.List(ctx)
 	testutil.RequireNoError(t, err)
-	id2, err := pm.Create(idCtx, "personal", "open")
+	testutil.RequireLen(t, len(emptyList), 0)
+
+	// Create 3 personas with different tiers.
+	id1, err := pm.Create(ctx, "work", "open")
 	testutil.RequireNoError(t, err)
-	id3, err := pm.Create(idCtx, "health", "restricted")
+	id2, err := pm.Create(ctx, "personal", "open")
+	testutil.RequireNoError(t, err)
+	id3, err := pm.Create(ctx, "health", "restricted")
 	testutil.RequireNoError(t, err)
 
-	// All IDs must be unique — isolated storage.
-	if id1 == id2 || id2 == id3 || id1 == id3 {
-		t.Fatal("persona IDs must be unique for file isolation")
-	}
+	// Verify IDs follow the expected format "persona-<name>".
+	testutil.RequireEqual(t, id1, "persona-work")
+	testutil.RequireEqual(t, id2, "persona-personal")
+	testutil.RequireEqual(t, id3, "persona-health")
 
-	// Verify they are all listed.
-	list, _ := pm.List(idCtx)
+	// All IDs must be unique — isolated storage per persona.
+	testutil.RequireTrue(t, id1 != id2 && id2 != id3 && id1 != id3,
+		"persona IDs must be unique for file isolation")
+
+	// Verify all 3 are listed (check error too).
+	list, err := pm.List(ctx)
+	testutil.RequireNoError(t, err)
 	testutil.RequireLen(t, len(list), 3)
+
+	// Verify each created persona appears in the list.
+	listed := map[string]bool{}
+	for _, id := range list {
+		listed[id] = true
+	}
+	testutil.RequireTrue(t, listed["persona-work"], "work persona must be in list")
+	testutil.RequireTrue(t, listed["persona-personal"], "personal persona must be in list")
+	testutil.RequireTrue(t, listed["persona-health"], "health persona must be in list")
+
+	// Negative control: duplicate creation must fail (ErrPersonaExists).
+	_, err = pm.Create(ctx, "work", "open")
+	testutil.RequireError(t, err)
 }
 
 // TST-CORE-157
 func TestIdentity_3_2_8_PerPersonaIndependentDEK(t *testing.T) {
 	impl := realVaultDEKDeriver
 	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
+
+	// Derive DEK for persona "health".
+	dekHealth, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "health", testutil.TestUserSalt[:])
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesLen(t, dekHealth, 32)
+
+	// Derive DEK for persona "financial".
+	dekFinancial, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "financial", testutil.TestUserSalt[:])
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesLen(t, dekFinancial, 32)
+
+	// Different personas must derive different DEKs (HKDF info string includes persona ID).
+	testutil.RequireBytesNotEqual(t, dekHealth, dekFinancial)
+
+	// Determinism: same persona always derives the same DEK.
+	dekFinancial2, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "financial", testutil.TestUserSalt[:])
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesEqual(t, dekFinancial, dekFinancial2)
 }
 
 // TST-CORE-158
 func TestIdentity_3_2_9_LockedPersonaOpaqueBytes(t *testing.T) {
-	// Create a locked persona, verify IsLocked returns true.
+	// §3.2.9: Locked persona must report IsLocked=true; open/restricted must not.
 	pm := identity.NewPersonaManager()
-	id, err := pm.Create(idCtx, "financial", "locked")
-	testutil.RequireNoError(t, err)
 
-	locked, err := pm.IsLocked(id)
+	// Positive: locked tier persona reports IsLocked=true.
+	lockedID, err := pm.Create(idCtx, "financial-lock9", "locked")
 	testutil.RequireNoError(t, err)
-	testutil.RequireTrue(t, locked, "locked tier persona should report IsLocked=true")
+	locked, err := pm.IsLocked(lockedID)
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, locked, "locked tier persona must report IsLocked=true")
+
+	// Negative: open tier persona must NOT report IsLocked.
+	openID, err := pm.Create(idCtx, "social-lock9", "open")
+	testutil.RequireNoError(t, err)
+	openLocked, err := pm.IsLocked(openID)
+	testutil.RequireNoError(t, err)
+	testutil.RequireFalse(t, openLocked, "open tier persona must report IsLocked=false")
+
+	// Negative: restricted tier persona must NOT report IsLocked.
+	restrictedID, err := pm.Create(idCtx, "work-lock9", "restricted")
+	testutil.RequireNoError(t, err)
+	restrictedLocked, err := pm.IsLocked(restrictedID)
+	testutil.RequireNoError(t, err)
+	testutil.RequireFalse(t, restrictedLocked, "restricted tier persona must report IsLocked=false")
+
+	// Negative: non-existent persona returns error.
+	_, err = pm.IsLocked("persona-nonexistent")
+	testutil.RequireTrue(t, err != nil, "IsLocked on non-existent persona must return error")
 }
 
 // TST-CORE-159
@@ -543,20 +1004,35 @@ func TestIdentity_3_2_10_SelectiveUnlockWithTTL(t *testing.T) {
 
 // TST-CORE-160
 func TestIdentity_3_2_11_PersonaKeySignsDIDComm(t *testing.T) {
-	// Architecture test: verify persona key is used for signing (not root key).
+	// §3.2.11: Each persona must have its own key for DIDComm signing.
+	// Verify via source analysis that persona keys are used, not root key.
 	src, err := os.ReadFile("../internal/adapter/identity/identity.go")
 	if err != nil {
 		t.Fatalf("cannot read identity source: %v", err)
 	}
 	content := string(src)
-	// Personas are isolated with their own IDs and keys.
-	if !strings.Contains(content, "ed25519") {
-		t.Fatal("identity adapter must use ed25519 for persona key signing")
-	}
-	// Each persona has its own ID — distinct from the root DID.
-	if !strings.Contains(content, "PersonaManager") {
-		t.Fatal("PersonaManager must exist for per-persona key management")
-	}
+
+	// Positive: must import crypto/ed25519 (not just mention it in comments).
+	testutil.RequireTrue(t, strings.Contains(content, `"crypto/ed25519"`),
+		"identity adapter must import crypto/ed25519 for persona key signing")
+
+	// Positive: must call ed25519 sign or verify for actual signing operations.
+	hasSign := strings.Contains(content, "ed25519.Sign") || strings.Contains(content, "ed25519.Verify")
+	testutil.RequireTrue(t, hasSign,
+		"identity adapter must call ed25519.Sign or ed25519.Verify")
+
+	// Positive: Persona struct must exist for per-persona key isolation.
+	testutil.RequireTrue(t, strings.Contains(content, "type Persona struct"),
+		"Persona struct must exist for per-persona key management")
+
+	// Positive: PersonaManager must satisfy the port interface.
+	testutil.RequireTrue(t, strings.Contains(content, "port.PersonaManager"),
+		"PersonaManager must implement port.PersonaManager interface")
+
+	// Negative: must not use a single shared signing key for all personas.
+	// If there's a "globalSigningKey" or "rootKey" used for persona ops, that's wrong.
+	testutil.RequireFalse(t, strings.Contains(content, "globalSigningKey"),
+		"must not use a global signing key — each persona needs its own key")
 }
 
 // TST-CORE-161
@@ -567,13 +1043,34 @@ func TestIdentity_3_2_12_PersonaKeySignsTrustNetwork(t *testing.T) {
 		t.Fatalf("cannot read identity source: %v", err)
 	}
 	content := string(src)
-	// Ed25519 keypairs are used for all signing operations.
-	if !strings.Contains(content, "ed25519") {
-		t.Fatal("identity adapter must use ed25519 for trust network signing")
+
+	// Positive: Ed25519 signing primitives must be present.
+	if !strings.Contains(content, `"crypto/ed25519"`) {
+		t.Fatal("identity adapter must import crypto/ed25519 for signing")
 	}
-	// Persona isolation ensures each persona signs with its own key.
-	if !strings.Contains(content, "Persona") {
+	if !strings.Contains(content, "ed25519.Verify") {
+		t.Fatal("identity adapter must call ed25519.Verify for signature verification")
+	}
+
+	// Positive: Persona struct must have per-persona identity fields (ID, Tier, Salt).
+	if !strings.Contains(content, "type Persona struct") {
 		t.Fatal("Persona struct must exist for per-persona key isolation")
+	}
+
+	// Positive: PersonaManager must implement port.PersonaManager interface check.
+	if !strings.Contains(content, "port.PersonaManager") {
+		t.Fatal("PersonaManager must satisfy port.PersonaManager interface")
+	}
+
+	// Positive: DIDManager must have signing key management.
+	if !strings.Contains(content, "SetSigningKeyPath") {
+		t.Fatal("DIDManager must support signing key configuration for trust network ops")
+	}
+
+	// Negative: no hard-coded signing bypass or skip flags.
+	lower := strings.ToLower(content)
+	if strings.Contains(lower, "skipverify") || strings.Contains(lower, "nosig") || strings.Contains(lower, "skip_verify") {
+		t.Fatal("identity code must not contain signing bypass flags")
 	}
 }
 
@@ -595,22 +1092,84 @@ func TestIdentity_3_2_13_NoCrossCompartmentCode(t *testing.T) {
 
 // TST-CORE-163
 func TestIdentity_3_3_1_AccessOpenTier(t *testing.T) {
-	impl := realPersonaManager
-	testutil.RequireImplementation(t, impl, "PersonaManager")
+	pm := identity.NewPersonaManager()
+	testutil.RequireImplementation(t, pm, "PersonaManager")
+
+	ctx := context.Background()
+
+	// Create an open-tier persona.
+	_, err := pm.Create(ctx, "social", "open")
+	testutil.RequireNoError(t, err)
+
+	// Positive: accessing an open persona must succeed without error.
+	err = pm.AccessPersona(ctx, "persona-social")
+	testutil.RequireNoError(t, err)
+
+	// Negative: accessing a non-existent persona must fail.
+	err = pm.AccessPersona(ctx, "persona-nonexistent")
+	testutil.RequireError(t, err)
+
+	// Negative: a locked persona must NOT be accessible without unlock.
+	_, err = pm.Create(ctx, "secrets", "locked")
+	testutil.RequireNoError(t, err)
+	err = pm.AccessPersona(ctx, "persona-secrets")
+	testutil.RequireError(t, err)
 }
 
 // TST-CORE-164
 func TestIdentity_3_3_2_AccessRestrictedTier(t *testing.T) {
-	impl := realPersonaManager
-	testutil.RequireImplementation(t, impl, "PersonaManager")
+	pm := identity.NewPersonaManager()
+	testutil.RequireImplementation(t, pm, "PersonaManager")
+
+	ctx := context.Background()
+
+	// Create a restricted-tier persona.
+	_, err := pm.Create(ctx, "medical", "restricted")
+	testutil.RequireNoError(t, err)
+
+	// Track whether the restricted-access callback fires.
+	var callbackFired bool
+	var callbackPersona string
+	pm.OnRestrictedAccess = func(personaID, reason string) {
+		callbackFired = true
+		callbackPersona = personaID
+	}
+
+	// Positive: accessing a restricted persona must succeed (no error)
+	// but must trigger the notification callback.
+	err = pm.AccessPersona(ctx, "persona-medical")
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, callbackFired, "restricted access must fire OnRestrictedAccess callback")
+	testutil.RequireEqual(t, callbackPersona, "persona-medical")
+
+	// Negative: open-tier persona must NOT trigger the restricted callback.
+	callbackFired = false
+	_, err = pm.Create(ctx, "casual", "open")
+	testutil.RequireNoError(t, err)
+	err = pm.AccessPersona(ctx, "persona-casual")
+	testutil.RequireNoError(t, err)
+	testutil.RequireFalse(t, callbackFired, "open tier must NOT fire restricted access callback")
 }
 
 // TST-CORE-165
 func TestIdentity_3_3_3_AccessLockedTierWithoutUnlock(t *testing.T) {
-	impl := testutil.NewMockPersonaManager()
-	impl.Create(idCtx, "financial", "locked")
-	locked, _ := impl.IsLocked("persona-financial")
-	testutil.RequireTrue(t, locked, "financial persona should be locked")
+	pm := identity.NewPersonaManager()
+	_, err := pm.Create(idCtx, "financial", "locked", testutil.TestPassphraseHash)
+	testutil.RequireNoError(t, err)
+
+	// Verify the persona starts locked.
+	locked, err := pm.IsLocked("persona-financial")
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, locked, "financial persona should be locked after creation")
+
+	// Access without unlock must fail.
+	err = pm.AccessPersona(idCtx, "persona-financial")
+	if err == nil {
+		t.Fatal("AccessPersona on a locked persona should return an error")
+	}
+	if !strings.Contains(err.Error(), "locked") {
+		t.Fatalf("expected error to mention 'locked', got: %s", err.Error())
+	}
 }
 
 // TST-CORE-166
@@ -654,13 +1213,33 @@ func TestIdentity_3_3_5_LockedPersonaTTLExpiry(t *testing.T) {
 
 // TST-CORE-168
 func TestIdentity_3_3_6_LockedPersonaReLock(t *testing.T) {
-	impl := testutil.NewMockPersonaManager()
-	impl.Create(idCtx, "financial", "locked")
-	impl.Unlock(idCtx, "persona-financial", testutil.TestPassphrase, 300)
-	err := impl.Lock(idCtx, "persona-financial")
+	pm := identity.NewPersonaManager()
+	pm.VerifyPassphrase = func(storedHash, passphrase string) (bool, error) {
+		return passphrase == testutil.TestPassphrase, nil
+	}
+	_, err := pm.Create(idCtx, "financial", "locked", testutil.TestPassphraseHash)
 	testutil.RequireNoError(t, err)
-	locked, _ := impl.IsLocked("persona-financial")
-	testutil.RequireTrue(t, locked, "persona should be re-locked")
+
+	// Verify initially locked.
+	locked, err := pm.IsLocked("persona-financial")
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, locked, "persona should start locked")
+
+	// Unlock with correct passphrase.
+	err = pm.Unlock(idCtx, "persona-financial", testutil.TestPassphrase, 300)
+	testutil.RequireNoError(t, err)
+
+	locked, err = pm.IsLocked("persona-financial")
+	testutil.RequireNoError(t, err)
+	testutil.RequireFalse(t, locked, "persona should be unlocked after Unlock()")
+
+	// Re-lock.
+	err = pm.Lock(idCtx, "persona-financial")
+	testutil.RequireNoError(t, err)
+
+	locked, err = pm.IsLocked("persona-financial")
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, locked, "persona should be re-locked after Lock()")
 }
 
 // TST-CORE-169
@@ -686,25 +1265,32 @@ func TestIdentity_3_3_7_AuditLogForRestrictedAccess(t *testing.T) {
 
 // TST-CORE-170
 func TestIdentity_3_3_8_NotificationOnRestrictedAccess(t *testing.T) {
-	// Set OnRestrictedAccess callback, trigger restricted access, verify called.
 	pm := identity.NewPersonaManager()
+
+	// Create both a restricted and an open persona.
 	_, err := pm.Create(idCtx, "notified", "restricted")
 	testutil.RequireNoError(t, err)
+	_, err = pm.Create(idCtx, "openone", "open")
+	testutil.RequireNoError(t, err)
 
+	callCount := 0
 	var notifiedPersona, notifiedReason string
 	pm.OnRestrictedAccess = func(personaID, reason string) {
+		callCount++
 		notifiedPersona = personaID
 		notifiedReason = reason
 	}
 
+	// Positive: restricted persona triggers notification callback.
 	_ = pm.AccessPersona(idCtx, "persona-notified")
+	testutil.RequireEqual(t, callCount, 1)
+	testutil.RequireEqual(t, notifiedPersona, "persona-notified")
+	testutil.RequireTrue(t, notifiedReason != "", "reason must be non-empty")
 
-	if notifiedPersona != "persona-notified" {
-		t.Fatalf("expected notification for persona-notified, got %q", notifiedPersona)
-	}
-	if notifiedReason == "" {
-		t.Fatal("expected non-empty reason in notification")
-	}
+	// Negative: open persona does NOT trigger notification callback.
+	err = pm.AccessPersona(idCtx, "persona-openone")
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, callCount, 1) // still 1 — callback not fired again
 }
 
 // TST-CORE-171
@@ -731,10 +1317,9 @@ func TestIdentity_3_3_9_LockedPersonaUnlockFlow(t *testing.T) {
 
 // TST-CORE-172
 func TestIdentity_3_3_10_LockedPersonaUnlockDenied(t *testing.T) {
-	// Try unlock with wrong passphrase, verify still locked.
 	pm := identity.NewPersonaManager()
 
-	// CRITICAL-01: Set up a passphrase verifier that rejects wrong passphrases.
+	// Set up a passphrase verifier that rejects wrong passphrases.
 	pm.VerifyPassphrase = func(storedHash, passphrase string) (bool, error) {
 		return passphrase == testutil.TestPassphrase, nil
 	}
@@ -746,16 +1331,26 @@ func TestIdentity_3_3_10_LockedPersonaUnlockDenied(t *testing.T) {
 	pm.SetPersonaPassphraseHash("persona-denied", "argon2id$hash$placeholder")
 
 	// Verify initially locked.
-	locked, _ := pm.IsLocked("persona-denied")
+	locked, err := pm.IsLocked("persona-denied")
+	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, locked, "persona should start locked")
 
-	// Try unlock with wrong passphrase.
+	// Negative: wrong passphrase must fail unlock.
 	err = pm.Unlock(idCtx, "persona-denied", "WRONG_PASSPHRASE", 300)
 	testutil.RequireError(t, err)
 
-	// Verify still locked.
-	locked, _ = pm.IsLocked("persona-denied")
+	// Verify still locked after wrong passphrase.
+	locked, err = pm.IsLocked("persona-denied")
+	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, locked, "persona should remain locked after wrong passphrase")
+
+	// Positive control: correct passphrase must succeed.
+	err = pm.Unlock(idCtx, "persona-denied", testutil.TestPassphrase, 300)
+	testutil.RequireNoError(t, err)
+
+	locked, err = pm.IsLocked("persona-denied")
+	testutil.RequireNoError(t, err)
+	testutil.RequireFalse(t, locked, "persona should be unlocked after correct passphrase")
 }
 
 // TST-CORE-173
@@ -790,17 +1385,15 @@ func TestIdentity_3_3_12_CrossPersonaParallelReads(t *testing.T) {
 	// Concurrent goroutines creating/accessing different personas.
 	pm := identity.NewPersonaManager()
 
+	const numWorkers = 10
 	var wg sync.WaitGroup
-	errs := make(chan error, 10)
+	errs := make(chan error, numWorkers)
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			_ = "parallel" + strings.Replace(strings.Replace(
-				strings.Replace(string(rune('a'+idx)), "\x00", "", -1), "", "", -1), "", "", -1)
-			// Use simple integer-based naming.
-			pName := "par" + string(rune('a'+idx))
+			pName := fmt.Sprintf("par%c", rune('a'+idx))
 			_, err := pm.Create(idCtx, pName, "open")
 			if err != nil {
 				errs <- err
@@ -818,6 +1411,21 @@ func TestIdentity_3_3_12_CrossPersonaParallelReads(t *testing.T) {
 
 	for err := range errs {
 		t.Fatalf("concurrent operation failed: %v", err)
+	}
+
+	// Positive: all 10 personas must exist after parallel creation.
+	names, err := pm.List(idCtx)
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, len(names), numWorkers)
+
+	// Verify each expected name is present.
+	nameSet := make(map[string]bool)
+	for _, n := range names {
+		nameSet[n] = true
+	}
+	for i := 0; i < numWorkers; i++ {
+		expected := fmt.Sprintf("par%c", rune('a'+i))
+		testutil.RequireTrue(t, nameSet[expected], "persona "+expected+" must exist after parallel creation")
 	}
 }
 
@@ -854,16 +1462,25 @@ func TestIdentity_3_3_14_GetPersonasForContactLockedInvisible(t *testing.T) {
 	testutil.RequireNoError(t, err)
 
 	contactDID := "did:key:z6MkSharedContact"
-	_ = pm.AddContactToPersona("persona-visible", contactDID)
-	_ = pm.AddContactToPersona("persona-hidden", contactDID)
+	err = pm.AddContactToPersona("persona-visible", contactDID)
+	testutil.RequireNoError(t, err)
+	err = pm.AddContactToPersona("persona-hidden", contactDID)
+	testutil.RequireNoError(t, err)
 
-	// Query — locked persona should be excluded.
+	// Positive: query returns only unlocked persona — locked persona is invisible.
 	personas, err := pm.GetPersonasForContact(idCtx, contactDID)
 	testutil.RequireNoError(t, err)
 	testutil.RequireLen(t, len(personas), 1)
-	if personas[0] != "persona-visible" {
-		t.Fatalf("expected only persona-visible, got %s", personas[0])
-	}
+	testutil.RequireEqual(t, personas[0], "persona-visible")
+
+	// Negative: contact not added to any persona returns empty.
+	unknownPersonas, err := pm.GetPersonasForContact(idCtx, "did:key:z6MkUnknownContact")
+	testutil.RequireNoError(t, err)
+	testutil.RequireLen(t, len(unknownPersonas), 0)
+
+	// Negative: adding contact to non-existent persona must error.
+	err = pm.AddContactToPersona("persona-nonexistent", contactDID)
+	testutil.RequireTrue(t, err != nil, "adding contact to non-existent persona must fail")
 }
 
 // TST-CORE-177
@@ -871,20 +1488,30 @@ func TestIdentity_3_3_15_TierConfigInConfigJSON(t *testing.T) {
 	// Verify persona tier structure is valid — all tier values are recognized.
 	pm := identity.NewPersonaManager()
 
-	// Create personas with each valid tier.
-	_, err := pm.Create(idCtx, "t_open", "open")
+	// Positive: create personas with each valid tier.
+	idOpen, err := pm.Create(idCtx, "t_open", "open")
 	testutil.RequireNoError(t, err)
-	_, err = pm.Create(idCtx, "t_restricted", "restricted")
-	testutil.RequireNoError(t, err)
-	_, err = pm.Create(idCtx, "t_locked", "locked")
-	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, idOpen, "persona-t_open")
 
-	// Invalid tier should fail.
+	idRestricted, err := pm.Create(idCtx, "t_restricted", "restricted")
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, idRestricted, "persona-t_restricted")
+
+	idLocked, err := pm.Create(idCtx, "t_locked", "locked")
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, idLocked, "persona-t_locked")
+
+	// Negative: invalid tier must be rejected.
 	_, err = pm.Create(idCtx, "t_invalid", "invalid_tier")
 	testutil.RequireError(t, err)
 
-	// Verify all valid personas are listed.
-	list, _ := pm.List(idCtx)
+	// Negative: empty tier must be rejected.
+	_, err = pm.Create(idCtx, "t_empty", "")
+	testutil.RequireError(t, err)
+
+	// Verify all valid personas are listed — exactly 3.
+	list, err := pm.List(idCtx)
+	testutil.RequireNoError(t, err)
 	testutil.RequireLen(t, len(list), 3)
 }
 
@@ -898,33 +1525,232 @@ func TestIdentity_3_4_1_AddContact(t *testing.T) {
 
 // TST-CORE-179
 func TestIdentity_3_4_2_ResolveContactDID(t *testing.T) {
-	impl := realContactDirectory
+	impl := identity.NewContactDirectory()
 	testutil.RequireImplementation(t, impl, "ContactDirectory")
+
+	ctx := context.Background()
+
+	// Negative: resolve unknown name must return error.
+	_, err := impl.Resolve(ctx, "NoSuchContact")
+	testutil.RequireError(t, err)
+	testutil.RequireTrue(t, err == identity.ErrContactNotFound,
+		"expected ErrContactNotFound for unknown name, got: "+err.Error())
+
+	// Positive: add a contact then resolve by name returns the DID.
+	contactDID := "did:key:z6MkResolveTest"
+	err = impl.Add(ctx, contactDID, "Alice", "unknown")
+	testutil.RequireNoError(t, err)
+
+	resolvedDID, err := impl.Resolve(ctx, "Alice")
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, resolvedDID, contactDID)
+
+	// Negative: resolve with wrong name still returns error.
+	_, err = impl.Resolve(ctx, "Bob")
+	testutil.RequireError(t, err)
 }
 
 // TST-CORE-180
 func TestIdentity_3_4_3_UpdateContactTrustLevel(t *testing.T) {
 	impl := realContactDirectory
 	testutil.RequireImplementation(t, impl, "ContactDirectory")
+
+	ctx := context.Background()
+	contactDID := "did:key:z6MkTrustUpdate"
+
+	// UpdateTrust on non-existent contact must return error.
+	err := impl.UpdateTrust(ctx, contactDID, "trusted")
+	testutil.RequireError(t, err)
+	testutil.RequireTrue(t, err == identity.ErrContactNotFound,
+		"expected ErrContactNotFound for unknown DID, got: "+err.Error())
+
+	// Add a contact with initial trust level "unknown".
+	err = impl.Add(ctx, contactDID, "TrustTestContact", "unknown")
+	testutil.RequireNoError(t, err)
+
+	// Verify initial trust level via List.
+	contacts, err := impl.List(ctx)
+	testutil.RequireNoError(t, err)
+	found := false
+	for _, c := range contacts {
+		if c.DID == contactDID {
+			testutil.RequireEqual(t, c.TrustLevel, "unknown")
+			found = true
+			break
+		}
+	}
+	testutil.RequireTrue(t, found, "contact must exist after Add")
+
+	// UpdateTrust to "trusted" — should succeed.
+	err = impl.UpdateTrust(ctx, contactDID, "trusted")
+	testutil.RequireNoError(t, err)
+
+	// Verify trust level was actually changed.
+	contacts, err = impl.List(ctx)
+	testutil.RequireNoError(t, err)
+	for _, c := range contacts {
+		if c.DID == contactDID {
+			testutil.RequireEqual(t, c.TrustLevel, "trusted")
+			break
+		}
+	}
+
+	// UpdateTrust with invalid level must return error.
+	err = impl.UpdateTrust(ctx, contactDID, "invalid_level")
+	testutil.RequireError(t, err)
+	testutil.RequireTrue(t, err == identity.ErrInvalidTrustLevel,
+		"expected ErrInvalidTrustLevel, got: "+err.Error())
+
+	// Verify trust level was NOT corrupted by the failed update.
+	contacts, err = impl.List(ctx)
+	testutil.RequireNoError(t, err)
+	for _, c := range contacts {
+		if c.DID == contactDID {
+			testutil.RequireEqual(t, c.TrustLevel, "trusted")
+			break
+		}
+	}
+
+	// All three valid trust levels must be accepted.
+	for _, level := range []string{"blocked", "unknown", "trusted"} {
+		err = impl.UpdateTrust(ctx, contactDID, level)
+		testutil.RequireNoError(t, err)
+	}
 }
 
 // TST-CORE-181
 // TST-CORE-1053 DELETE /v1/contacts/{did} removes contact
 func TestIdentity_3_4_4_DeleteContact(t *testing.T) {
-	impl := realContactDirectory
+	impl := identity.NewContactDirectory()
 	testutil.RequireImplementation(t, impl, "ContactDirectory")
+
+	ctx := context.Background()
+	contactDID := "did:key:z6MkDeleteTest"
+
+	// Negative: delete non-existent contact must return ErrContactNotFound.
+	err := impl.Delete(ctx, contactDID)
+	testutil.RequireError(t, err)
+	testutil.RequireTrue(t, err == identity.ErrContactNotFound,
+		"expected ErrContactNotFound for unknown DID, got: "+err.Error())
+
+	// Positive: add contact, verify it exists, delete, verify gone.
+	err = impl.Add(ctx, contactDID, "ToDelete", "unknown")
+	testutil.RequireNoError(t, err)
+
+	// Verify it exists via List.
+	contacts, err := impl.List(ctx)
+	testutil.RequireNoError(t, err)
+	found := false
+	for _, c := range contacts {
+		if c.DID == contactDID {
+			found = true
+		}
+	}
+	testutil.RequireTrue(t, found, "contact must appear in List before deletion")
+
+	// Delete the contact.
+	err = impl.Delete(ctx, contactDID)
+	testutil.RequireNoError(t, err)
+
+	// Verify it is gone from List.
+	contacts, err = impl.List(ctx)
+	testutil.RequireNoError(t, err)
+	for _, c := range contacts {
+		if c.DID == contactDID {
+			t.Fatal("deleted contact must not appear in List")
+		}
+	}
+
+	// Verify Resolve by name also fails after deletion.
+	_, err = impl.Resolve(ctx, "ToDelete")
+	testutil.RequireError(t, err)
 }
 
 // TST-CORE-182
 func TestIdentity_3_4_5_PerPersonaContactRouting(t *testing.T) {
-	impl := realContactDirectory
-	testutil.RequireImplementation(t, impl, "ContactDirectory")
+	// Per-persona contact routing: a contact added to persona "work"
+	// should route to "work" only, not to "personal".
+	cd := identity.NewContactDirectory()
+	pm := identity.NewPersonaManager()
+
+	// Create two personas.
+	_, err := pm.Create(idCtx, "work", "open")
+	testutil.RequireNoError(t, err)
+	_, err = pm.Create(idCtx, "personal", "open")
+	testutil.RequireNoError(t, err)
+
+	// Add a contact to the global directory.
+	contactDID := "did:key:z6MkWorkColleague"
+	err = cd.Add(idCtx, contactDID, "Alice", "trusted")
+	testutil.RequireNoError(t, err)
+
+	// Associate the contact with the "work" persona only.
+	err = pm.AddContactToPersona("persona-work", contactDID)
+	testutil.RequireNoError(t, err)
+
+	// Query: contact should route to "work" persona only.
+	personas, err := pm.GetPersonasForContact(idCtx, contactDID)
+	testutil.RequireNoError(t, err)
+	testutil.RequireLen(t, len(personas), 1)
+	testutil.RequireEqual(t, personas[0], "persona-work")
+
+	// A contact NOT associated with any persona returns empty.
+	unlinkedDID := "did:key:z6MkStranger"
+	personas2, err := pm.GetPersonasForContact(idCtx, unlinkedDID)
+	testutil.RequireNoError(t, err)
+	testutil.RequireLen(t, len(personas2), 0)
+
+	// Associate the same contact with "personal" too — should return both.
+	err = pm.AddContactToPersona("persona-personal", contactDID)
+	testutil.RequireNoError(t, err)
+	personas3, err := pm.GetPersonasForContact(idCtx, contactDID)
+	testutil.RequireNoError(t, err)
+	testutil.RequireLen(t, len(personas3), 2)
+
+	// AddContactToPersona with a nonexistent persona fails.
+	err = pm.AddContactToPersona("persona-nonexistent", contactDID)
+	testutil.RequireError(t, err)
 }
 
 // TST-CORE-183
 func TestIdentity_3_4_6_ContactsTableNoPersonaColumn(t *testing.T) {
 	// Schema validation: contacts table must NOT have a persona column.
 	// Contacts are global — persona isolation is at the vault level.
+	//
+	// Validates against the REAL SQL schema file (identity_001.sql), not the
+	// hardcoded Go map in SchemaInspect — the Go map has drifted before
+	// (see TST-CORE-184).
+
+	// 1. Read the real SQL schema — this is the source of truth.
+	ddl, err := os.ReadFile("../internal/adapter/sqlite/schema/identity_001.sql")
+	if err != nil {
+		t.Fatalf("failed to read identity schema file: %v", err)
+	}
+	schema := string(ddl)
+
+	// 2. Extract the CREATE TABLE contacts block from the real schema.
+	idx := strings.Index(schema, "CREATE TABLE IF NOT EXISTS contacts")
+	if idx < 0 {
+		idx = strings.Index(schema, "CREATE TABLE contacts")
+	}
+	if idx < 0 {
+		t.Fatal("contacts table not found in identity_001.sql")
+	}
+	// Find the closing parenthesis/semicolon of the CREATE TABLE.
+	contactsDDL := schema[idx:]
+	if end := strings.Index(contactsDDL, ";"); end >= 0 {
+		contactsDDL = contactsDDL[:end]
+	}
+
+	// 3. Verify no persona column in the real SQL schema.
+	lower := strings.ToLower(contactsDDL)
+	for _, forbidden := range []string{"persona", "persona_id"} {
+		if strings.Contains(lower, forbidden) {
+			t.Fatalf("contacts table in identity_001.sql must NOT have a %q column — contacts are global; found in DDL:\n%s", forbidden, contactsDDL)
+		}
+	}
+
+	// 4. Also validate the in-memory SchemaInspector for consistency.
 	impl := realSchemaInspector
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
@@ -932,7 +1758,7 @@ func TestIdentity_3_4_6_ContactsTableNoPersonaColumn(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	for _, col := range cols {
 		if col == "persona" || col == "persona_id" {
-			t.Fatal("contacts table must NOT have a persona column — contacts are global")
+			t.Fatalf("SchemaInspector.TableColumns returned forbidden column %q — contacts are global", col)
 		}
 	}
 }
@@ -962,8 +1788,26 @@ func TestIdentity_3_4_7_ContactsFullSchemaValidation(t *testing.T) {
 
 // TST-CORE-185
 func TestIdentity_3_4_8_TrustLevelEnumValidation(t *testing.T) {
-	impl := realContactDirectory
+	impl := identity.NewContactDirectory()
 	testutil.RequireImplementation(t, impl, "ContactDirectory")
+
+	ctx := context.Background()
+
+	// Positive: all valid trust levels must be accepted.
+	validLevels := []string{"blocked", "unknown", "trusted"}
+	for i, level := range validLevels {
+		did := fmt.Sprintf("did:plc:trust-enum-%d", i)
+		err := impl.Add(ctx, did, fmt.Sprintf("contact-%d", i), level)
+		testutil.RequireNoError(t, err)
+	}
+
+	// Negative: invalid trust levels must be rejected.
+	invalidLevels := []string{"", "verified", "admin", "TRUSTED", "Blocked"}
+	for i, level := range invalidLevels {
+		did := fmt.Sprintf("did:plc:trust-invalid-%d", i)
+		err := impl.Add(ctx, did, fmt.Sprintf("invalid-%d", i), level)
+		testutil.RequireError(t, err)
+	}
 }
 
 // TST-CORE-186
@@ -981,26 +1825,165 @@ func TestIdentity_3_4_9_ContactsTrustIndex(t *testing.T) {
 
 // TST-CORE-187
 func TestIdentity_3_5_1_RegisterDevice(t *testing.T) {
-	impl := realDeviceRegistry
+	impl := identity.NewDeviceRegistry()
 	testutil.RequireImplementation(t, impl, "DeviceRegistry")
+
+	// Positive: register a device and verify it appears in List.
+	id, err := impl.Register(idCtx, "test-laptop", []byte("hash-test-laptop"))
+	testutil.RequireNoError(t, err)
+	if id == "" {
+		t.Fatal("expected non-empty device ID")
+	}
+
+	devices, err := impl.List(idCtx)
+	testutil.RequireNoError(t, err)
+	testutil.RequireLen(t, len(devices), 1)
+	testutil.RequireEqual(t, devices[0].Name, "test-laptop")
+	testutil.RequireEqual(t, devices[0].ID, id)
+	testutil.RequireTrue(t, !devices[0].Revoked, "newly registered device must not be revoked")
+
+	// Negative control: registering with empty name must still succeed
+	// (name is metadata, not an identifier).
+	id2, err := impl.Register(idCtx, "", []byte("hash-noname"))
+	testutil.RequireNoError(t, err)
+	if id == id2 {
+		t.Fatal("each device must get a unique ID")
+	}
+
+	devices, err = impl.List(idCtx)
+	testutil.RequireNoError(t, err)
+	testutil.RequireLen(t, len(devices), 2)
 }
 
 // TST-CORE-188
 func TestIdentity_3_5_2_ListDevices(t *testing.T) {
-	impl := realDeviceRegistry
+	impl := identity.NewDeviceRegistry()
 	testutil.RequireImplementation(t, impl, "DeviceRegistry")
+
+	// Empty registry returns empty list.
+	devices, err := impl.List(idCtx)
+	testutil.RequireNoError(t, err)
+	testutil.RequireLen(t, len(devices), 0)
+
+	// Register two devices.
+	id1, err := impl.Register(idCtx, "laptop", []byte("hash-laptop"))
+	testutil.RequireNoError(t, err)
+	id2, err := impl.Register(idCtx, "phone", []byte("hash-phone"))
+	testutil.RequireNoError(t, err)
+
+	// List returns both devices with correct fields.
+	devices, err = impl.List(idCtx)
+	testutil.RequireNoError(t, err)
+	testutil.RequireLen(t, len(devices), 2)
+
+	// Build a map for order-independent assertions.
+	byID := make(map[string]domain.Device)
+	for _, d := range devices {
+		byID[d.ID] = d
+	}
+	d1, ok1 := byID[id1]
+	d2, ok2 := byID[id2]
+	testutil.RequireTrue(t, ok1, "device 1 must appear in list")
+	testutil.RequireTrue(t, ok2, "device 2 must appear in list")
+	testutil.RequireEqual(t, d1.Name, "laptop")
+	testutil.RequireEqual(t, d2.Name, "phone")
+	testutil.RequireTrue(t, !d1.Revoked, "device 1 should not be revoked")
+	testutil.RequireTrue(t, !d2.Revoked, "device 2 should not be revoked")
+
+	// Revoke one device; list still returns it (marked revoked).
+	err = impl.Revoke(idCtx, id1)
+	testutil.RequireNoError(t, err)
+	devices, err = impl.List(idCtx)
+	testutil.RequireNoError(t, err)
+	testutil.RequireLen(t, len(devices), 2)
+	byID = make(map[string]domain.Device)
+	for _, d := range devices {
+		byID[d.ID] = d
+	}
+	testutil.RequireTrue(t, byID[id1].Revoked, "revoked device must have Revoked=true")
+	testutil.RequireTrue(t, !byID[id2].Revoked, "non-revoked device must remain active")
 }
 
 // TST-CORE-189
 func TestIdentity_3_5_3_RevokeDevice(t *testing.T) {
-	impl := realDeviceRegistry
-	testutil.RequireImplementation(t, impl, "DeviceRegistry")
+	impl := identity.NewDeviceRegistry()
+
+	ctx := context.Background()
+
+	// Revoking a non-existent device must return ErrDeviceNotFound.
+	err := impl.Revoke(ctx, "device-nonexistent")
+	testutil.RequireError(t, err)
+	testutil.RequireTrue(t, err == identity.ErrDeviceNotFound,
+		"expected ErrDeviceNotFound, got: "+err.Error())
+
+	// Register a device, then revoke it.
+	deviceID, err := impl.Register(ctx, "test-laptop", []byte("token-hash-revoke"))
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, deviceID != "", "device ID must be non-empty")
+
+	err = impl.Revoke(ctx, deviceID)
+	testutil.RequireNoError(t, err)
+
+	// Verify the device is marked Revoked=true in the list.
+	devices, err := impl.List(ctx)
+	testutil.RequireNoError(t, err)
+	found := false
+	for _, d := range devices {
+		if d.ID == deviceID {
+			testutil.RequireTrue(t, d.Revoked, "device should be revoked after Revoke()")
+			found = true
+			break
+		}
+	}
+	testutil.RequireTrue(t, found, "revoked device must still appear in list")
+
+	// Revoking an already-revoked device: should still succeed (idempotent set).
+	err = impl.Revoke(ctx, deviceID)
+	testutil.RequireNoError(t, err)
 }
 
 // TST-CORE-190
 func TestIdentity_3_5_4_MaxDeviceLimit(t *testing.T) {
-	impl := realDeviceRegistry
+	impl := identity.NewDeviceRegistry()
 	testutil.RequireImplementation(t, impl, "DeviceRegistry")
+
+	// Register exactly MaxDevices (10) devices — all should succeed.
+	ids := make([]string, 0, identity.MaxDevices)
+	for i := 0; i < identity.MaxDevices; i++ {
+		id, err := impl.Register(idCtx, "device", []byte("hash"))
+		testutil.RequireNoError(t, err)
+		testutil.RequireTrue(t, id != "", "registered device ID must be non-empty")
+		ids = append(ids, id)
+	}
+
+	// The (MaxDevices+1)-th registration must fail with ErrMaxDevicesReached.
+	_, err := impl.Register(idCtx, "one-too-many", []byte("hash"))
+	testutil.RequireError(t, err)
+	testutil.RequireContains(t, err.Error(), "maximum device limit reached")
+
+	// List must show exactly MaxDevices devices, all active.
+	devices, err := impl.List(idCtx)
+	testutil.RequireNoError(t, err)
+	testutil.RequireLen(t, len(devices), identity.MaxDevices)
+
+	// Revoke one device — this frees a slot.
+	err = impl.Revoke(idCtx, ids[0])
+	testutil.RequireNoError(t, err)
+
+	// Now registration should succeed again (active count is MaxDevices-1).
+	newID, err := impl.Register(idCtx, "replacement", []byte("hash-new"))
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, newID != "", "replacement device ID must be non-empty")
+
+	// Total devices = MaxDevices + 1 (one revoked, MaxDevices active).
+	devices, err = impl.List(idCtx)
+	testutil.RequireNoError(t, err)
+	testutil.RequireLen(t, len(devices), identity.MaxDevices+1)
+
+	// Attempting another registration should fail again (back at MaxDevices active).
+	_, err = impl.Register(idCtx, "second-overflow", []byte("hash"))
+	testutil.RequireError(t, err)
+	testutil.RequireContains(t, err.Error(), "maximum device limit reached")
 }
 
 // ---------- §3.6 Recovery (5 scenarios) ----------
@@ -1157,42 +2140,138 @@ func TestIdentity_3_6_5_ShareFormat(t *testing.T) {
 
 // TST-CORE-926
 func TestIdentity_3_6_6_IngressTierChange_DIDDocRotation(t *testing.T) {
-	// MEDIUM-10: Unknown DIDs must return an error, not a synthetic document.
-	impl := realDIDManager
-	testutil.RequireImplementation(t, impl, "DIDManager")
+	// §3.6.6: DID resolution requirements:
+	// 1. Unknown DIDs must return error (MEDIUM-10), not synthetic document.
+	// 2. Created DIDs must be resolvable with valid DID document.
+	// 3. DID document must contain verification methods and service endpoints.
+	dir := t.TempDir()
+	dm := identity.NewDIDManager(dir)
+	testutil.RequireImplementation(t, dm, "DIDManager")
 
-	// Resolving an unknown DID should return an error (not a synthetic doc).
-	_, err := impl.Resolve(idCtx, domain.DID("did:plc:testingress"))
-	if err == nil {
-		t.Fatal("expected error for unknown DID, got nil")
-	}
+	ctx := context.Background()
+
+	// Negative: resolving an unknown DID must return error, not synthetic doc.
+	_, err := dm.Resolve(ctx, domain.DID("did:plc:nonexistent"))
+	testutil.RequireError(t, err)
+	testutil.RequireContains(t, err.Error(), "not found")
+
+	// Positive: create a DID and verify it can be resolved.
+	_, pubKey, err := dinacrypto.GenerateEd25519()
+	testutil.RequireNoError(t, err)
+
+	did, err := dm.Create(ctx, pubKey)
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, string(did) != "", "Create must return a non-empty DID")
+
+	// Resolve the created DID — must succeed and return valid JSON document.
+	docBytes, err := dm.Resolve(ctx, did)
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, len(docBytes) > 0, "resolved document must not be empty")
+
+	// Verify the DID document has expected structure.
+	var doc map[string]interface{}
+	err = json.Unmarshal(docBytes, &doc)
+	testutil.RequireNoError(t, err)
+
+	// DID document must reference the DID itself.
+	docID, ok := doc["id"].(string)
+	testutil.RequireTrue(t, ok && docID == string(did),
+		fmt.Sprintf("DID document id must match: got %q, want %q", docID, string(did)))
+
+	// Must have verification methods.
+	vmRaw, ok := doc["verificationMethod"]
+	testutil.RequireTrue(t, ok && vmRaw != nil,
+		"DID document must contain verificationMethod")
+	vmList, ok := vmRaw.([]interface{})
+	testutil.RequireTrue(t, ok && len(vmList) > 0,
+		"verificationMethod must have at least one entry")
+
+	// Negative: a second unknown DID still returns error (no pollution).
+	_, err = dm.Resolve(ctx, domain.DID("did:plc:anotherunknown"))
+	testutil.RequireError(t, err)
 	testutil.RequireContains(t, err.Error(), "not found")
 }
 
 // TST-CORE-927
 func TestIdentity_3_6_7_TrustRingLevelsDefinedInCode(t *testing.T) {
-	// Trust ring level enum defined in code.
-	// Validate that trust levels are well-defined: unverified, verified, skin_in_game.
-	impl := realContactDirectory
-	testutil.RequireImplementation(t, impl, "ContactDirectory")
+	// §3.6.7: Trust ring levels must be well-defined in code.
+	// Production supports: blocked, unknown, trusted.
+	cd := identity.NewContactDirectory()
+	testutil.RequireImplementation(t, cd, "ContactDirectory")
 
-	// Adding a contact with valid trust level should succeed.
-	err := impl.Add(idCtx, "did:key:z6MkTrustTest", "Trust Test", "unknown")
-	testutil.RequireNoError(t, err)
+	ctx := context.Background()
+
+	// Positive: all valid trust levels must be accepted.
+	validLevels := []string{"blocked", "unknown", "trusted"}
+	for i, level := range validLevels {
+		did := fmt.Sprintf("did:key:z6MkTrust%d", i)
+		err := cd.Add(ctx, did, fmt.Sprintf("Trust-%s", level), level)
+		testutil.RequireNoError(t, err)
+
+		// Verify the trust level is stored correctly.
+		got := cd.GetTrustLevel(did)
+		testutil.RequireEqual(t, got, level)
+	}
+
+	// Negative: invalid trust levels must be rejected.
+	invalidLevels := []string{"unverified", "verified", "skin_in_game", "admin", ""}
+	for _, level := range invalidLevels {
+		did := fmt.Sprintf("did:key:z6MkInvalid%s", level)
+		err := cd.Add(ctx, did, "Invalid", level)
+		testutil.RequireError(t, err)
+	}
+
+	// Unknown DID returns empty trust level (not in directory).
+	testutil.RequireEqual(t, cd.GetTrustLevel("did:key:z6MkNotAContact"), "")
 }
 
 // TST-CORE-928
 func TestIdentity_3_6_8_NoMCPOrOpenClawVaultAccess(t *testing.T) {
-	// No MCP/OpenClaw credential can access vault endpoints.
-	impl := realAdminEndpointChecker
-	testutil.RequireImplementation(t, impl, "AdminEndpointChecker")
+	// §3.6.8: MCP and OpenClaw credentials must NEVER access vault, identity,
+	// persona, or admin endpoints. Only brain and client tokens are recognized.
+	checker := auth.NewAdminEndpointChecker()
+	testutil.RequireImplementation(t, checker, "AdminEndpointChecker")
 
-	// Only brain and client token kinds should be recognized.
-	allowed := impl.AllowedForTokenKind("mcp", "/v1/vault/query")
-	testutil.RequireFalse(t, allowed, "MCP token must not access vault endpoints")
+	// Sensitive paths that MCP/OpenClaw must be denied.
+	sensitivePaths := []string{
+		"/v1/vault/query",
+		"/v1/vault/store",
+		"/v1/vault/item/abc123",
+		"/v1/persona/create",
+		"/v1/did/sign",
+		"/v1/did/rotate",
+		"/admin/status",
+		"/v1/export/full",
+		"/v1/import/restore",
+		"/v1/pair/initiate",
+		"/v1/vault/backup",
+	}
 
-	allowed = impl.AllowedForTokenKind("openclaw", "/v1/vault/query")
-	testutil.RequireFalse(t, allowed, "OpenClaw token must not access vault endpoints")
+	forbiddenKinds := []string{"mcp", "openclaw", "plugin", ""}
+
+	for _, kind := range forbiddenKinds {
+		for _, path := range sensitivePaths {
+			allowed := checker.AllowedForTokenKind(kind, path)
+			testutil.RequireFalse(t, allowed,
+				fmt.Sprintf("%q token must NOT access %s", kind, path))
+		}
+	}
+
+	// Positive control: brain CAN access vault endpoints (it needs them to function).
+	testutil.RequireTrue(t, checker.AllowedForTokenKind("brain", "/v1/vault/query"),
+		"brain token must be allowed to access /v1/vault/query")
+	testutil.RequireTrue(t, checker.AllowedForTokenKind("brain", "/v1/vault/store"),
+		"brain token must be allowed to access /v1/vault/store")
+
+	// Positive control: client with admin scope has full access.
+	testutil.RequireTrue(t, checker.AllowedForTokenKind("client", "/v1/vault/query", "admin"),
+		"client admin token must access vault")
+
+	// Negative control: brain must NOT access admin-only paths.
+	testutil.RequireFalse(t, checker.AllowedForTokenKind("brain", "/v1/did/sign"),
+		"brain must NOT access /v1/did/sign")
+	testutil.RequireFalse(t, checker.AllowedForTokenKind("brain", "/v1/persona/create"),
+		"brain must NOT access /v1/persona/create")
 }
 
 // ---------- §3.7 DID Metadata Persistence ----------

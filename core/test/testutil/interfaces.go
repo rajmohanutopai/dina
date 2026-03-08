@@ -919,8 +919,12 @@ type BotQueryHandler interface {
 	SendQuery(botDID string, query BotQuery) (*BotResponse, error)
 	// ScoreBot records an outcome and updates the bot's local trust score.
 	ScoreBot(botDID string, outcome BotOutcome) error
+	// GetScore returns the current trust score for a bot.
+	GetScore(botDID string) (float64, error)
 	// ValidateAttribution checks that the bot response includes valid attribution.
 	ValidateAttribution(resp BotResponse) (bool, error)
+	// ResetForTest clears all state for test isolation.
+	ResetForTest()
 }
 
 // ---------- §26 Client Sync Protocol ----------
@@ -954,6 +958,8 @@ type EstateManager interface {
 	GetPlan() (*EstatePlan, error)
 	// Activate triggers estate recovery when custodian threshold is met.
 	Activate(trigger string, custodianShares [][]byte) error
+	// IsActivated returns true if the estate plan has been activated.
+	IsActivated() bool
 	// DeliverKeys sends per-beneficiary DEKs via Dina-to-Dina encrypted channel.
 	DeliverKeys(beneficiaryDID string) error
 	// NotifyContacts sends activation notifications to all contacts in the notification list.
@@ -962,6 +968,8 @@ type EstateManager interface {
 	EnforceDefaultAction(action string) error
 	// CheckExpiry checks if a time-limited access grant has expired.
 	CheckExpiry(accessType string, grantedAt int64) (bool, error)
+	// ResetForTest clears all state for test isolation.
+	ResetForTest()
 }
 
 // ---------- §20 System Watchdog ----------

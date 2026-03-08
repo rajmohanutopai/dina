@@ -2,8 +2,12 @@ package test
 
 import (
 	"context"
+	"os"
+	"strings"
 	"testing"
 
+	"github.com/rajmohanutopai/dina/core/internal/adapter/logging"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/observability"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
 
@@ -30,37 +34,100 @@ func TestLogging_21_1_1_GoCoreSlogJSON(t *testing.T) {
 	line := `{"time":"2026-02-20T10:00:00Z","level":"INFO","msg":"vault opened","module":"vault"}`
 	entry, err := impl.ParseLine(line)
 	testutil.RequireNoError(t, err)
-	testutil.RequireTrue(t, entry.Time != "", "time field must be present")
-	testutil.RequireTrue(t, entry.Level != "", "level field must be present")
-	testutil.RequireTrue(t, entry.Msg != "", "msg field must be present")
-	testutil.RequireTrue(t, entry.Module != "", "module field must be present")
+
+	// Verify exact field values, not just non-empty (catches wrong field mapping).
+	testutil.RequireEqual(t, entry.Time, "2026-02-20T10:00:00Z")
+	testutil.RequireEqual(t, entry.Level, "INFO")
+	testutil.RequireEqual(t, entry.Msg, "vault opened")
+	testutil.RequireEqual(t, entry.Module, "vault")
+
+	// Negative control: malformed JSON must produce an error.
+	_, err = impl.ParseLine("not valid json {{{")
+	testutil.RequireError(t, err)
+
+	// Negative control: JSON without slog fields must produce empty strings.
+	sparseEntry, err := impl.ParseLine(`{"foo":"bar"}`)
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, sparseEntry.Time, "")
+	testutil.RequireEqual(t, sparseEntry.Msg, "")
+	testutil.RequireEqual(t, sparseEntry.Level, "")
 }
 
 // TST-CORE-690
 func TestLogging_21_1_2_PythonBrainStructlogJSON(t *testing.T) {
 	// Python brain must emit structured JSON log lines to stdout.
+	// Verify by reading the actual Python source and checking structlog config,
+	// then verify ParseLine correctly maps structlog field names.
 	impl := realLogAuditor
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
+	// --- Part 1: Verify Python brain configures structlog with JSONRenderer ---
+	src, err := os.ReadFile("../../brain/src/infra/logging.py")
+	if err != nil {
+		t.Fatalf("failed to read brain logging source: %v", err)
+	}
+	srcStr := string(src)
+
+	testutil.RequireTrue(t, strings.Contains(srcStr, "import structlog"),
+		"brain logging module must import structlog")
+	testutil.RequireTrue(t, strings.Contains(srcStr, "JSONRenderer"),
+		"brain logging module must configure structlog.processors.JSONRenderer for production JSON output")
+	testutil.RequireTrue(t, strings.Contains(srcStr, "TimeStamper"),
+		"brain logging module must use TimeStamper processor for ISO timestamps")
+	testutil.RequireTrue(t, strings.Contains(srcStr, "add_log_level"),
+		"brain logging module must use add_log_level processor")
+	testutil.RequireTrue(t, strings.Contains(srcStr, "StreamHandler(sys.stdout)"),
+		"brain logging must output to stdout (not file)")
+
+	// --- Part 2: Verify ParseLine correctly maps structlog field names ---
+	// structlog uses "event" (not "msg"), "timestamp" (not "time"), "level"
 	line := `{"event":"guardian_loop_tick","level":"info","timestamp":"2026-02-20T10:00:00Z"}`
 	entry, err := impl.ParseLine(line)
 	testutil.RequireNoError(t, err)
 	testutil.RequireNotNil(t, entry)
+	testutil.RequireTrue(t, entry.Msg == "guardian_loop_tick",
+		"ParseLine must map structlog 'event' field to entry.Msg")
+	testutil.RequireTrue(t, entry.Level == "info",
+		"ParseLine must map structlog 'level' field to entry.Level")
+	testutil.RequireTrue(t, entry.Time == "2026-02-20T10:00:00Z",
+		"ParseLine must map structlog 'timestamp' field to entry.Time")
 }
 
 // TST-CORE-691
 func TestLogging_21_1_3_NoFileLogs(t *testing.T) {
-	// No log files written anywhere — stdout only. Containers should have no log files
-	// on their filesystem after 24h of operation.
-	impl := realLogAuditor
-	testutil.RequireImplementation(t, impl, "LogAuditor")
+	// Source audit: Go core must log to os.Stdout only — no file handlers,
+	// no os.OpenFile for logging, no log file paths.
+	src, err := os.ReadFile("../cmd/dina-core/main.go")
+	if err != nil {
+		t.Fatalf("cannot read main.go for source audit: %v", err)
+	}
+	content := string(src)
 
-	// This test verifies the logging policy: stdout only, no file logs.
-	// In production, inspect container filesystems. Here, verify the contract.
-	line := `{"time":"2026-02-20T10:00:00Z","level":"INFO","msg":"no file logs"}`
-	entry, err := impl.ParseLine(line)
-	testutil.RequireNoError(t, err)
-	testutil.RequireNotNil(t, entry)
+	// Positive: slog must be configured with os.Stdout.
+	if !strings.Contains(content, "os.Stdout") {
+		t.Fatal("main.go must configure slog handler with os.Stdout")
+	}
+	if !strings.Contains(content, "slog.NewJSONHandler") {
+		t.Fatal("main.go must use slog.NewJSONHandler (structured JSON to stdout)")
+	}
+
+	// Negative: no file-based log handlers.
+	if strings.Contains(content, "os.OpenFile") && strings.Contains(content, "log") {
+		t.Fatal("main.go must NOT open log files — stdout only policy")
+	}
+	if strings.Contains(content, "lumberjack") || strings.Contains(content, "rotatelogs") {
+		t.Fatal("main.go must NOT use file rotation libraries — Docker handles rotation")
+	}
+
+	// Also verify brain logging goes to stdout (structlog + StreamHandler).
+	brainSrc, err := os.ReadFile("../../brain/src/infra/logging.py")
+	if err != nil {
+		t.Skipf("brain logging.py not found — skipping brain stdout audit: %v", err)
+	}
+	brainContent := string(brainSrc)
+	if !strings.Contains(brainContent, "sys.stdout") {
+		t.Fatal("brain logging.py must configure structlog to stream to sys.stdout")
+	}
 }
 
 // TST-CORE-692
@@ -191,10 +258,24 @@ func TestLogging_21_3_1_CIBannedLogQuery(t *testing.T) {
 	impl := realLogAuditor
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
+	// Positive: slog line with "query" field must be flagged.
 	codeLine := `slog.Info("search", "query", userQuery)`
-	matched, _, err := impl.MatchesBannedPattern(codeLine)
+	matched, reason, err := impl.MatchesBannedPattern(codeLine)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, matched, "log with query= should be flagged by CI")
+	testutil.RequireContains(t, reason, "query")
+
+	// Negative control: safe slog line without banned fields must NOT be flagged.
+	safeLine := `slog.Info("search complete", "results", count, "latency_ms", elapsed)`
+	matched, _, err = impl.MatchesBannedPattern(safeLine)
+	testutil.RequireNoError(t, err)
+	testutil.RequireFalse(t, matched, "safe log line with only metadata must not be flagged")
+
+	// Negative control: non-log code containing "query" must NOT be flagged.
+	nonLogLine := `db.Query("SELECT * FROM items WHERE query = ?", q)`
+	matched, _, err = impl.MatchesBannedPattern(nonLogLine)
+	testutil.RequireNoError(t, err)
+	testutil.RequireFalse(t, matched, "non-log code with query must not be flagged — only log statements targeted")
 }
 
 // TST-CORE-700
@@ -215,10 +296,23 @@ func TestLogging_21_3_3_CIBannedLogBody(t *testing.T) {
 	impl := realLogAuditor
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
+	// Positive: slog line with "body" field must be flagged.
 	codeLine := `slog.Info("request", "body", reqBody)`
 	matched, _, err := impl.MatchesBannedPattern(codeLine)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, matched, "log with body= should be flagged by CI")
+
+	// Negative: a slog line WITHOUT banned fields must NOT be flagged.
+	safeLine := `slog.Info("request processed", "status", 200, "latency_ms", elapsed)`
+	matched, _, err = impl.MatchesBannedPattern(safeLine)
+	testutil.RequireNoError(t, err)
+	testutil.RequireFalse(t, matched, "safe log line without body must not be flagged")
+
+	// Negative: non-log code mentioning "body" must NOT be flagged.
+	nonLogLine := `resp.Body = io.NopCloser(strings.NewReader(body))`
+	matched, _, err = impl.MatchesBannedPattern(nonLogLine)
+	testutil.RequireNoError(t, err)
+	testutil.RequireFalse(t, matched, "non-log code with body must not be flagged")
 }
 
 // TST-CORE-702
@@ -248,15 +342,29 @@ func TestLogging_21_3_5_CIBannedFStringUserData(t *testing.T) {
 // TST-CORE-704
 func TestLogging_21_3_6_NoSpaCyNEROnLogLines(t *testing.T) {
 	// PII scrubbing is for data path to cloud LLMs, not log output.
-	// No spaCy NER should run on log lines — wrong layer, expensive, unreliable.
+	// The log auditor uses simple pattern matching, not NER.
 	impl := realLogAuditor
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
-	// Verify that a safe log line passes without NER overhead.
+	// Negative: safe log line without banned fields must NOT be flagged.
 	safeLine := `slog.Info("task completed", "task_id", taskID, "duration_ms", elapsed)`
 	matched, _, err := impl.MatchesBannedPattern(safeLine)
 	testutil.RequireNoError(t, err)
 	testutil.RequireFalse(t, matched, "safe log line should not trigger any banned pattern")
+
+	// Positive control: a log line WITH a banned field must still be caught
+	// (proves the auditor is actually running, not a no-op).
+	bannedLine := `slog.Warn("debug output", "token", userToken)`
+	matched, _, err = impl.MatchesBannedPattern(bannedLine)
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, matched, "log line with 'token' field must be flagged")
+
+	// Negative: non-log code with PII-like content must NOT be flagged
+	// (confirms pattern matching is log-context-aware, not NER-like).
+	nonLogLine := `user.Name = "John Doe"  // assign user name`
+	matched, _, err = impl.MatchesBannedPattern(nonLogLine)
+	testutil.RequireNoError(t, err)
+	testutil.RequireFalse(t, matched, "non-log code must not be flagged (no NER)")
 }
 
 // --------------------------------------------------------------------------
@@ -301,66 +409,96 @@ RuntimeError: test error`
 	entry := testutil.CrashEntry{
 		Error:     "RuntimeError: test error",
 		Traceback: fullTraceback,
-		TaskID:    "task-crash-full-001",
+		TaskID:    "task-crash-full-002",
 	}
 	err := impl.Store(context.Background(), entry)
 	testutil.RequireNoError(t, err)
 
-	entries, err := impl.Query(context.Background(), "2020-01-01T00:00:00Z")
+	// Query all entries and find ours by unique TaskID.
+	entries, err := impl.Query(context.Background(), "")
 	testutil.RequireNoError(t, err)
 	found := false
 	for _, e := range entries {
-		if e.TaskID == "task-crash-full-001" {
-			testutil.RequireContains(t, e.Traceback, "Traceback")
+		if e.TaskID == "task-crash-full-002" {
+			// Verify the FULL traceback is preserved, not just "Traceback" substring.
+			testutil.RequireContains(t, e.Traceback, "Traceback (most recent call last):")
+			testutil.RequireContains(t, e.Traceback, "main.py")
+			testutil.RequireContains(t, e.Traceback, "guardian_loop")
+			testutil.RequireContains(t, e.Traceback, "RuntimeError: test error")
+
+			// Verify Error field matches.
+			testutil.RequireEqual(t, e.Error, "RuntimeError: test error")
+
+			// Timestamp must be auto-populated by Store.
+			testutil.RequireTrue(t, e.Timestamp != "", "Timestamp must be auto-populated")
+
 			found = true
 			break
 		}
 	}
-	testutil.RequireTrue(t, found, "full traceback must be stored in vault")
+	testutil.RequireTrue(t, found, "full traceback must be stored and retrievable from vault")
 }
 
 // TST-CORE-707
 func TestLogging_21_4_3_CatchAllWrapsMainLoop(t *testing.T) {
-	// Brain main.py must have try/except wrapping guardian_loop.
-	// Logs type + line to stdout, full trace to vault.
-	impl := realLogAuditor
+	impl := logging.NewLogAuditor()
 	testutil.RequireImplementation(t, impl, "LogAuditor")
 
-	// Simulate the catch-all output: sanitized one-liner.
+	// Positive: full traceback → sanitized one-liner with exception type + line number.
 	fullTraceback := `Traceback (most recent call last):
   File "main.py", line 42, in guardian_loop
     raise ValueError("bad input")
 ValueError: bad input`
 
 	sanitized := impl.SanitizeCrash(fullTraceback)
+	// Production format: "ExceptionType at line NNN: ExceptionType: message"
 	testutil.RequireContains(t, sanitized, "ValueError")
-	testutil.RequireContains(t, sanitized, "42")
+	testutil.RequireContains(t, sanitized, "at line 42")
+	testutil.RequireContains(t, sanitized, "bad input")
+
+	// Negative: empty traceback → empty output.
+	empty := impl.SanitizeCrash("")
+	testutil.RequireEqual(t, empty, "")
+
+	// Positive: multi-frame traceback extracts FIRST line number (outermost frame).
+	multiFrame := `Traceback (most recent call last):
+  File "server.py", line 100, in run
+    handle_request()
+  File "handler.py", line 55, in handle_request
+    process()
+RuntimeError: connection lost`
+
+	multiSanitized := impl.SanitizeCrash(multiFrame)
+	testutil.RequireContains(t, multiSanitized, "RuntimeError")
+	testutil.RequireContains(t, multiSanitized, "at line 100")
 }
 
 // TST-CORE-708
 func TestLogging_21_4_4_CrashHandlerSendsTaskID(t *testing.T) {
-	// Crash handler must include current_task_id for correlation with dina_tasks.
-	impl := realCrashLogger
+	impl := observability.NewCrashLogger()
 	testutil.RequireImplementation(t, impl, "CrashLogger")
 
+	ctx := context.Background()
+
+	// Positive: store crash with TaskID, query must return it with all fields intact.
 	entry := testutil.CrashEntry{
 		Error:     "RuntimeError: crash during task",
-		Traceback: "traceback...",
+		Traceback: "traceback details here",
 		TaskID:    "task-correlation-001",
 	}
-	err := impl.Store(context.Background(), entry)
+	err := impl.Store(ctx, entry)
 	testutil.RequireNoError(t, err)
 
-	entries, err := impl.Query(context.Background(), "2020-01-01T00:00:00Z")
+	entries, err := impl.Query(ctx, "2020-01-01T00:00:00Z")
 	testutil.RequireNoError(t, err)
-	found := false
-	for _, e := range entries {
-		if e.TaskID == "task-correlation-001" {
-			found = true
-			break
-		}
-	}
-	testutil.RequireTrue(t, found, "crash entry must contain task_id for correlation")
+	testutil.RequireEqual(t, len(entries), 1)
+	testutil.RequireEqual(t, entries[0].TaskID, "task-correlation-001")
+	testutil.RequireEqual(t, entries[0].Error, "RuntimeError: crash during task")
+
+	// Negative: query with future timestamp returns empty (no entries after that date).
+	futureEntries, err := impl.Query(ctx, "2099-01-01T00:00:00Z")
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, len(futureEntries), 0)
 }
 
 // TST-CORE-709

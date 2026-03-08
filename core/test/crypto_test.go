@@ -1,13 +1,17 @@
 package test
 
 import (
+	"crypto/ed25519"
+	"crypto/sha256"
 	"fmt"
+	"io"
 	"testing"
 
 	"github.com/bluesky-social/indigo/atproto/atcrypto"
 	dinacrypto "github.com/rajmohanutopai/dina/core/internal/adapter/crypto"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
 	"golang.org/x/crypto/argon2"
+	"golang.org/x/crypto/hkdf"
 )
 
 // ==========================================================================
@@ -24,13 +28,24 @@ import (
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
 func TestCrypto_2_2_DeriveRootIdentityKey(t *testing.T) {
 	impl := realHDKey
-	// impl = slip0010.New()
 	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
 
 	pub, priv, err := impl.DerivePath(testutil.TestMnemonicSeed, testutil.DinaRootKeyPath)
 	testutil.RequireNoError(t, err)
 	testutil.RequireBytesLen(t, pub, 32)
 	testutil.RequireBytesLen(t, priv, 64)
+
+	// Sign/verify round-trip: proves pub and priv are a valid Ed25519 keypair.
+	msg := []byte("dina-root-identity-test-message")
+	sig := ed25519.Sign(ed25519.PrivateKey(priv), msg)
+	testutil.RequireTrue(t, ed25519.Verify(ed25519.PublicKey(pub), msg, sig),
+		"derived root identity key must produce a valid Ed25519 signature")
+
+	// Determinism: same seed + path must always produce the same keypair.
+	pub2, priv2, err := impl.DerivePath(testutil.TestMnemonicSeed, testutil.DinaRootKeyPath)
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesEqual(t, pub, pub2)
+	testutil.RequireBytesEqual(t, priv, priv2)
 }
 
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
@@ -40,13 +55,40 @@ func TestCrypto_2_2_DerivePersonaKey(t *testing.T) {
 	// impl = slip0010.New()
 	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
 
+	// Collect all derived public keys to verify cross-persona uniqueness.
+	pubKeys := make(map[string]string) // hex(pub) → persona name
+
 	for name, path := range testutil.DinaPersonaPaths {
 		t.Run(name, func(t *testing.T) {
 			pub, priv, err := impl.DerivePath(testutil.TestMnemonicSeed, path)
 			testutil.RequireNoError(t, err)
 			testutil.RequireBytesLen(t, pub, 32)
 			testutil.RequireBytesLen(t, priv, 64)
+
+			// Public key must not be all zeros.
+			allZero := true
+			for _, b := range pub {
+				if b != 0 {
+					allZero = false
+					break
+				}
+			}
+			if allZero {
+				t.Fatalf("persona %q: derived public key must not be all zeros", name)
+			}
+
+			// Each persona must produce a unique public key.
+			pubHex := fmt.Sprintf("%x", pub)
+			if prev, exists := pubKeys[pubHex]; exists {
+				t.Fatalf("persona %q has same public key as %q — derivation paths not independent", name, prev)
+			}
+			pubKeys[pubHex] = name
 		})
+	}
+
+	// Sanity: we tested all 7 canonical personas.
+	if len(pubKeys) < 7 {
+		t.Fatalf("expected at least 7 unique persona keys, got %d", len(pubKeys))
 	}
 }
 
@@ -175,8 +217,19 @@ func TestCrypto_2_2_Purpose44Forbidden(t *testing.T) {
 	// impl = slip0010.New()
 	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
 
+	// Positive control: Dina's own purpose (9999') must succeed.
+	pub, priv, err := impl.DerivePath(testutil.TestMnemonicSeed, "m/9999'/0'")
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, len(pub) > 0, "valid path must produce a public key")
+	testutil.RequireTrue(t, len(priv) > 0, "valid path must produce a private key")
+
 	// BIP-44 purpose path must be explicitly rejected by Dina's API.
-	_, _, err := impl.DerivePath(testutil.TestMnemonicSeed, testutil.ForbiddenBIP44Path)
+	_, _, err = impl.DerivePath(testutil.TestMnemonicSeed, testutil.ForbiddenBIP44Path)
+	testutil.RequireError(t, err)
+	testutil.RequireContains(t, err.Error(), "44")
+
+	// Other forbidden BIP-44 sub-paths must also be rejected.
+	_, _, err = impl.DerivePath(testutil.TestMnemonicSeed, "m/44'/60'/0'")
 	testutil.RequireError(t, err)
 }
 
@@ -364,6 +417,31 @@ func TestCrypto_2_3_DerivePerPersonaDEK(t *testing.T) {
 	dek, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", testutil.TestUserSalt[:])
 	testutil.RequireNoError(t, err)
 	testutil.RequireBytesLen(t, dek, 32) // 256-bit DEK
+
+	// DEK must not be all zeros — HKDF with real inputs produces non-trivial output.
+	allZero := true
+	for _, b := range dek {
+		if b != 0 {
+			allZero = false
+			break
+		}
+	}
+	if allZero {
+		t.Fatal("derived DEK must not be all zeros")
+	}
+
+	// Determinism: same inputs must produce identical DEK.
+	dek2, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", testutil.TestUserSalt[:])
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesEqual(t, dek, dek2)
+
+	// Error cases: empty inputs must be rejected.
+	_, err = impl.DeriveVaultDEK(nil, "personal", testutil.TestUserSalt[:])
+	testutil.RequireError(t, err)
+	_, err = impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "", testutil.TestUserSalt[:])
+	testutil.RequireError(t, err)
+	_, err = impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", nil)
+	testutil.RequireError(t, err)
 }
 
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
@@ -405,23 +483,35 @@ func TestCrypto_2_3_Determinism(t *testing.T) {
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
 func TestCrypto_2_3_KnownHKDFTestVectors(t *testing.T) {
 	impl := realVaultDEKDeriver
-	// impl = keyderiver.New()
 	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
-	// RFC 5869 Test Case 1:
-	// IKM  = 0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b (22 bytes)
-	// salt = 0x000102030405060708090a0b0c (13 bytes)
-	// info = 0xf0f1f2f3f4f5f6f7f8f9 (10 bytes)
-	// L    = 42
-	// Expected OKM (first 32 bytes used as DEK):
-	//   3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf
-	//
-	// This test verifies the underlying HKDF implementation matches RFC 5869.
-	// The actual assertion depends on the implementation exposing raw HKDF
-	// or producing known outputs for the Dina-specific info strings.
-	dek, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "identity", testutil.TestUserSalt[:])
-	testutil.RequireNoError(t, err)
-	testutil.RequireBytesLen(t, dek, 32)
+	// Verify production DeriveVaultDEK output matches independently-computed
+	// HKDF-SHA256 with Dina's info string format "dina:vault:<persona>:v1".
+	personas := []string{"identity", "health", "financial"}
+	for _, persona := range personas {
+		dek, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, persona, testutil.TestUserSalt[:])
+		testutil.RequireNoError(t, err)
+		testutil.RequireBytesLen(t, dek, 32)
+
+		// Independently derive the expected value using raw HKDF-SHA256.
+		info := []byte("dina:vault:" + persona + ":v1")
+		reader := hkdf.New(sha256.New, testutil.TestMnemonicSeed, testutil.TestUserSalt[:], info)
+		expected := make([]byte, 32)
+		_, err = io.ReadFull(reader, expected)
+		testutil.RequireNoError(t, err)
+
+		testutil.RequireBytesEqual(t, dek, expected)
+	}
+
+	// Determinism: same inputs → same output.
+	dek1, _ := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "identity", testutil.TestUserSalt[:])
+	dek2, _ := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "identity", testutil.TestUserSalt[:])
+	testutil.RequireBytesEqual(t, dek1, dek2)
+
+	// Different personas → different keys.
+	dekH, _ := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "health", testutil.TestUserSalt[:])
+	dekF, _ := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "financial", testutil.TestUserSalt[:])
+	testutil.RequireBytesNotEqual(t, dekH, dekF)
 }
 
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
@@ -429,7 +519,6 @@ func TestCrypto_2_3_KnownHKDFTestVectors(t *testing.T) {
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
 func TestCrypto_2_3_AllInfoStrings(t *testing.T) {
 	impl := realVaultDEKDeriver
-	// impl = keyderiver.New()
 	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	// Every persona info string must produce a unique 256-bit key.
@@ -454,6 +543,16 @@ func TestCrypto_2_3_AllInfoStrings(t *testing.T) {
 				testutil.RequireBytesNotEqual(t, deks[names[i]], deks[names[j]])
 			}
 		}
+	}
+
+	// Verify fixture info strings match the format production uses.
+	// DeriveVaultDEK constructs "dina:vault:<personaID>:v1" — the fixture
+	// must agree, otherwise the fixture is out of sync with production code.
+	for name, expectedInfo := range testutil.HKDFInfoStrings {
+		t.Run("info_format/"+name, func(t *testing.T) {
+			productionInfo := "dina:vault:" + name + ":v1"
+			testutil.RequireEqual(t, expectedInfo, productionInfo)
+		})
 	}
 }
 
@@ -501,6 +600,16 @@ func TestCrypto_2_3_CustomPersonaInfoString(t *testing.T) {
 		testutil.RequireNoError(t, err)
 		testutil.RequireBytesNotEqual(t, dek, builtinDEK)
 	}
+
+	// Determinism: same custom persona + same inputs must produce the same DEK.
+	dek2, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, customPersona, testutil.TestUserSalt[:])
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesEqual(t, dek, dek2)
+
+	// Different custom personas must produce different DEKs.
+	dekOther, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "another_custom_persona", testutil.TestUserSalt[:])
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesNotEqual(t, dek, dekOther)
 }
 
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
@@ -512,9 +621,19 @@ func TestCrypto_2_3_BackupEncryptionKey(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	// HKDF(info="dina:backup:v1") produces a valid 256-bit key.
-	dek, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "backup", testutil.TestUserSalt[:])
+	dekBackup, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "backup", testutil.TestUserSalt[:])
 	testutil.RequireNoError(t, err)
-	testutil.RequireBytesLen(t, dek, 32)
+	testutil.RequireBytesLen(t, dekBackup, 32)
+
+	// Backup key must differ from personal key (different HKDF info).
+	dekPersonal, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", testutil.TestUserSalt[:])
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesNotEqual(t, dekBackup, dekPersonal)
+
+	// Backup key must be deterministic (same inputs → same output).
+	dekBackup2, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "backup", testutil.TestUserSalt[:])
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesEqual(t, dekBackup, dekBackup2)
 }
 
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
@@ -526,9 +645,23 @@ func TestCrypto_2_3_ArchiveKey(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	// HKDF(info="dina:archive:v1") produces a valid 256-bit key.
-	dek, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "archive", testutil.TestUserSalt[:])
+	dekArchive, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "archive", testutil.TestUserSalt[:])
 	testutil.RequireNoError(t, err)
-	testutil.RequireBytesLen(t, dek, 32)
+	testutil.RequireBytesLen(t, dekArchive, 32)
+
+	// Archive key must differ from personal and backup keys (different HKDF info).
+	dekPersonal, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", testutil.TestUserSalt[:])
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesNotEqual(t, dekArchive, dekPersonal)
+
+	dekBackup, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "backup", testutil.TestUserSalt[:])
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesNotEqual(t, dekArchive, dekBackup)
+
+	// Archive key must be deterministic.
+	dekArchive2, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "archive", testutil.TestUserSalt[:])
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesEqual(t, dekArchive, dekArchive2)
 }
 
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
@@ -536,16 +669,34 @@ func TestCrypto_2_3_ArchiveKey(t *testing.T) {
 // TST-CORE-094, TST-CORE-095, TST-CORE-096, TST-CORE-097
 func TestCrypto_2_3_ArchiveSeparateFromBackup(t *testing.T) {
 	impl := realVaultDEKDeriver
-	// impl = keyderiver.New()
 	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	dekArchive, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "archive", testutil.TestUserSalt[:])
 	testutil.RequireNoError(t, err)
+	testutil.RequireBytesLen(t, dekArchive, 32)
 
 	dekBackup, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "backup", testutil.TestUserSalt[:])
 	testutil.RequireNoError(t, err)
+	testutil.RequireBytesLen(t, dekBackup, 32)
 
+	// Different persona IDs must produce different keys.
 	testutil.RequireBytesNotEqual(t, dekArchive, dekBackup)
+
+	// Verify each key matches an independently computed HKDF-SHA256 derivation
+	// using the Dina info string format "dina:vault:<persona>:v1".
+	archiveInfo := []byte("dina:vault:archive:v1")
+	archiveReader := hkdf.New(sha256.New, testutil.TestMnemonicSeed, testutil.TestUserSalt[:], archiveInfo)
+	expectedArchive := make([]byte, 32)
+	_, err = io.ReadFull(archiveReader, expectedArchive)
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesEqual(t, dekArchive, expectedArchive)
+
+	backupInfo := []byte("dina:vault:backup:v1")
+	backupReader := hkdf.New(sha256.New, testutil.TestMnemonicSeed, testutil.TestUserSalt[:], backupInfo)
+	expectedBackup := make([]byte, 32)
+	_, err = io.ReadFull(backupReader, expectedBackup)
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesEqual(t, dekBackup, expectedBackup)
 }
 
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
@@ -585,7 +736,6 @@ func TestCrypto_2_3_UserSaltRandom32Bytes(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	// User salt must be random 32 bytes, not nil.
-	// The test fixture has a deterministic salt for repeatability.
 	salt := testutil.TestUserSalt[:]
 	testutil.RequireBytesLen(t, salt, 32)
 
@@ -597,6 +747,16 @@ func TestCrypto_2_3_UserSaltRandom32Bytes(t *testing.T) {
 	dek, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", salt)
 	testutil.RequireNoError(t, err)
 	testutil.RequireBytesLen(t, dek, 32)
+
+	// Different salt must produce a different DEK (proves salt is actually used).
+	altSalt := make([]byte, 32)
+	for i := range altSalt {
+		altSalt[i] = byte(i + 1)
+	}
+	dekAlt, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", altSalt)
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesLen(t, dekAlt, 32)
+	testutil.RequireBytesNotEqual(t, dek, dekAlt)
 }
 
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
@@ -618,6 +778,16 @@ func TestCrypto_2_3_UserSaltGeneratedOnce(t *testing.T) {
 	testutil.RequireNoError(t, err)
 
 	testutil.RequireBytesEqual(t, dek1, dek2)
+
+	// Negative control: a different salt must produce a different DEK
+	// (proves the function is not ignoring the salt parameter).
+	altSalt := make([]byte, 32)
+	for i := range altSalt {
+		altSalt[i] = byte(0xff - i)
+	}
+	dekAlt, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", altSalt)
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesNotEqual(t, dek1, dekAlt)
 }
 
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
@@ -663,6 +833,15 @@ func TestCrypto_2_3_UserSaltInExport(t *testing.T) {
 	dekReimported, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "financial", salt)
 	testutil.RequireNoError(t, err)
 	testutil.RequireBytesEqual(t, dek, dekReimported)
+
+	// Negative control: a different salt must produce a different DEK.
+	differentSalt := make([]byte, len(salt))
+	copy(differentSalt, salt)
+	differentSalt[0] ^= 0xFF // flip bits in first byte
+	dekDiffSalt, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "financial", differentSalt)
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesLen(t, dekDiffSalt, 32)
+	testutil.RequireBytesNotEqual(t, dek, dekDiffSalt)
 }
 
 // TST-CORE-080, TST-CORE-081, TST-CORE-082, TST-CORE-083, TST-CORE-084, TST-CORE-085, TST-CORE-086
@@ -850,21 +1029,49 @@ func TestCrypto_2_4_RunsOnceNotPerRequest(t *testing.T) {
 	// impl = keyderiver.New()
 	testutil.RequireImplementation(t, impl, "KEKDeriver")
 
-	// KEK should be derived once at unlock, not per request.
-	// Verify by deriving twice and confirming identical output
-	// (the implementation caches the KEK after first derivation).
+	// The KEK derivation (Argon2id) is expensive by design. At the
+	// architectural level it should be called once at unlock, not per
+	// request. This test validates the production DeriveKEK properties
+	// that make that pattern safe: determinism, correct key length,
+	// input validation, and domain separation (different inputs yield
+	// different KEKs so a cached KEK cannot be confused across users/salts).
+
 	salt := make([]byte, testutil.Argon2idSaltLen)
 	for i := range salt {
 		salt[i] = byte(i)
 	}
 
+	// 1. Determinism: same passphrase+salt always yields the same KEK,
+	//    so the result can safely be cached after a single derivation.
 	kek1, err := impl.DeriveKEK(testutil.TestPassphrase, salt)
 	testutil.RequireNoError(t, err)
+	testutil.RequireBytesLen(t, kek1, 32)
 
 	kek2, err := impl.DeriveKEK(testutil.TestPassphrase, salt)
 	testutil.RequireNoError(t, err)
-
 	testutil.RequireBytesEqual(t, kek1, kek2)
+
+	// 2. Input validation: empty passphrase must be rejected.
+	_, err = impl.DeriveKEK("", salt)
+	testutil.RequireError(t, err)
+
+	// 3. Input validation: salt shorter than 16 bytes must be rejected.
+	_, err = impl.DeriveKEK(testutil.TestPassphrase, salt[:8])
+	testutil.RequireError(t, err)
+
+	// 4. Domain separation: different passphrase must produce a different KEK.
+	kekOther, err := impl.DeriveKEK(testutil.TestPassphraseWrong, salt)
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesNotEqual(t, kek1, kekOther)
+
+	// 5. Domain separation: different salt must produce a different KEK.
+	salt2 := make([]byte, testutil.Argon2idSaltLen)
+	for i := range salt2 {
+		salt2[i] = byte(i + 100)
+	}
+	kekSalt2, err := impl.DeriveKEK(testutil.TestPassphrase, salt2)
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesNotEqual(t, kek1, kekSalt2)
 }
 
 // TST-CORE-098, TST-CORE-099, TST-CORE-100, TST-CORE-101, TST-CORE-102, TST-CORE-103, TST-CORE-104
@@ -899,15 +1106,32 @@ func TestCrypto_2_4_PassphraseChangeReWrapOnly(t *testing.T) {
 // TST-CORE-106, TST-CORE-107, TST-CORE-108, TST-CORE-109, TST-CORE-110, TST-CORE-111
 func TestCrypto_2_5_SignMessage(t *testing.T) {
 	impl := realSigner
-	// impl = signer.New()
 	testutil.RequireImplementation(t, impl, "Signer")
 
-	_, priv, err := impl.GenerateFromSeed(testutil.TestEd25519Seed[:])
+	pub, priv, err := impl.GenerateFromSeed(testutil.TestEd25519Seed[:])
 	testutil.RequireNoError(t, err)
 
 	sig, err := impl.Sign(priv, testutil.TestMessage)
 	testutil.RequireNoError(t, err)
-	testutil.RequireBytesLen(t, sig, 64) // Ed25519 signature is 64 bytes
+	testutil.RequireBytesLen(t, sig, 64)
+
+	// Signature must verify against the correct public key.
+	valid, err := impl.Verify(pub, testutil.TestMessage, sig)
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, valid, "signature from Sign() must verify with matching public key")
+
+	// Signature must NOT verify against a tampered message.
+	tampered := make([]byte, len(testutil.TestMessage))
+	copy(tampered, testutil.TestMessage)
+	tampered[0] ^= 0xff
+	valid, err = impl.Verify(pub, tampered, sig)
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, !valid, "signature must not verify on tampered message")
+
+	// Ed25519 is deterministic — same key+message must produce same signature.
+	sig2, err := impl.Sign(priv, testutil.TestMessage)
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesEqual(t, sig, sig2)
 }
 
 // TST-CORE-106, TST-CORE-107, TST-CORE-108, TST-CORE-109, TST-CORE-110, TST-CORE-111
@@ -972,23 +1196,19 @@ func TestCrypto_2_5_VerifyWrongKey(t *testing.T) {
 	testutil.RequireNoError(t, err)
 
 	valid, err := impl.Verify(wrongPub, testutil.TestMessage, sig)
-	if err == nil {
-		testutil.RequireFalse(t, valid, "wrong public key should not verify")
-	}
+	testutil.RequireNoError(t, err)
+	testutil.RequireFalse(t, valid, "wrong public key should not verify")
 }
 
 // TST-CORE-106, TST-CORE-107, TST-CORE-108, TST-CORE-109, TST-CORE-110, TST-CORE-111
 func TestCrypto_2_5_CanonicalJSON(t *testing.T) {
 	impl := realSigner
-	// impl = signer.New()
 	testutil.RequireImplementation(t, impl, "Signer")
 
 	pub, priv, err := impl.GenerateFromSeed(testutil.TestEd25519Seed[:])
 	testutil.RequireNoError(t, err)
 
 	// Canonical JSON: sorted keys, no signature fields.
-	// Two semantically identical JSON payloads with different key ordering
-	// must produce the same signature when canonicalized.
 	canonical := []byte(`{"product":"Widget","rating":4,"reviewer":"did:key:z6Mk"}`)
 
 	sig, err := impl.Sign(priv, canonical)
@@ -998,10 +1218,32 @@ func TestCrypto_2_5_CanonicalJSON(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, valid, "canonical JSON signature should verify")
 
-	// Verify determinism: same canonical message → same signature.
+	// Determinism: same canonical message → same signature.
 	sig2, err := impl.Sign(priv, canonical)
 	testutil.RequireNoError(t, err)
 	testutil.RequireBytesEqual(t, sig, sig2)
+
+	// Different key ordering (non-canonical) must produce a DIFFERENT
+	// signature, proving the signer signs raw bytes and does NOT
+	// canonicalize internally. Canonicalization must happen upstream.
+	nonCanonical := []byte(`{"reviewer":"did:key:z6Mk","product":"Widget","rating":4}`)
+	sigNonCanon, err := impl.Sign(priv, nonCanonical)
+	testutil.RequireNoError(t, err)
+
+	// Same logical JSON but different bytes → must produce different signature.
+	testutil.RequireBytesNotEqual(t, sig, sigNonCanon)
+
+	// Non-canonical signature must NOT verify against canonical payload.
+	valid, err = impl.Verify(pub, canonical, sigNonCanon)
+	testutil.RequireNoError(t, err)
+	testutil.RequireFalse(t, valid,
+		"signature of non-canonical bytes must NOT verify against canonical bytes")
+
+	// Each signature must verify against its own payload.
+	valid, err = impl.Verify(pub, nonCanonical, sigNonCanon)
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, valid,
+		"non-canonical signature must verify against its own payload")
 }
 
 // TST-CORE-106, TST-CORE-107, TST-CORE-108, TST-CORE-109, TST-CORE-110, TST-CORE-111
@@ -1030,19 +1272,35 @@ func TestCrypto_2_5_EmptyMessage(t *testing.T) {
 // TST-CORE-112, TST-CORE-113, TST-CORE-114, TST-CORE-115, TST-CORE-116, TST-CORE-117, TST-CORE-118
 func TestCrypto_2_6_ConvertPrivateKey(t *testing.T) {
 	sImpl := realSigner
-	// sImpl = signer.New()
 	testutil.RequireImplementation(t, sImpl, "Signer")
 
 	impl := realConverter
-	// impl = converter.New()
 	testutil.RequireImplementation(t, impl, "KeyConverter")
 
-	_, priv, err := sImpl.GenerateFromSeed(testutil.TestEd25519Seed[:])
+	pub, priv, err := sImpl.GenerateFromSeed(testutil.TestEd25519Seed[:])
 	testutil.RequireNoError(t, err)
 
 	x25519Priv, err := impl.Ed25519ToX25519Private(priv)
 	testutil.RequireNoError(t, err)
-	testutil.RequireBytesLen(t, x25519Priv, 32) // X25519 private key is 32 bytes
+	testutil.RequireBytesLen(t, x25519Priv, 32)
+
+	// Determinism: same input → same output.
+	x25519Priv2, err := impl.Ed25519ToX25519Private(priv)
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesEqual(t, x25519Priv, x25519Priv2)
+
+	// Functional verification: converted key must work for NaCl box encryption.
+	x25519Pub, err := impl.Ed25519ToX25519Public(pub)
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesLen(t, x25519Pub, 32)
+
+	plaintext := []byte("test key conversion")
+	sealed, err := realEncryptor.SealAnonymous(plaintext, x25519Pub)
+	testutil.RequireNoError(t, err)
+
+	opened, err := realEncryptor.OpenAnonymous(sealed, x25519Pub, x25519Priv)
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesEqual(t, plaintext, opened)
 }
 
 // TST-CORE-112, TST-CORE-113, TST-CORE-114, TST-CORE-115, TST-CORE-116, TST-CORE-117, TST-CORE-118
@@ -1061,6 +1319,24 @@ func TestCrypto_2_6_ConvertPublicKey(t *testing.T) {
 	x25519Pub, err := impl.Ed25519ToX25519Public(pub)
 	testutil.RequireNoError(t, err)
 	testutil.RequireBytesLen(t, x25519Pub, 32) // X25519 public key is 32 bytes
+
+	// The X25519 key must differ from the Ed25519 key (different curves).
+	testutil.RequireBytesNotEqual(t, x25519Pub, pub)
+
+	// Determinism: same Ed25519 key always converts to the same X25519 key.
+	x25519Pub2, err := impl.Ed25519ToX25519Public(pub)
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesEqual(t, x25519Pub, x25519Pub2)
+
+	// Different Ed25519 keys must produce different X25519 keys.
+	seed2 := make([]byte, 32)
+	copy(seed2, testutil.TestEd25519Seed[:])
+	seed2[0] ^= 0xFF // flip bits to get a different seed
+	pub2, _, err := sImpl.GenerateFromSeed(seed2)
+	testutil.RequireNoError(t, err)
+	x25519Pub3, err := impl.Ed25519ToX25519Public(pub2)
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesNotEqual(t, x25519Pub, x25519Pub3)
 }
 
 // TST-CORE-112, TST-CORE-113, TST-CORE-114, TST-CORE-115, TST-CORE-116, TST-CORE-117, TST-CORE-118
@@ -1248,28 +1524,39 @@ func TestCrypto_2_6_EphemeralZeroed(t *testing.T) {
 // TST-CORE-119, TST-CORE-120, TST-CORE-121, TST-CORE-122, TST-CORE-123, TST-CORE-124
 func TestCrypto_2_7_SealMessage(t *testing.T) {
 	impl := realEncryptor
-	// impl = box.New()
 	testutil.RequireImplementation(t, impl, "Encryptor")
 
 	// Generate a recipient X25519 keypair (via Ed25519 conversion).
 	sImpl := realSigner
-	// sImpl = signer.New()
 	testutil.RequireImplementation(t, sImpl, "Signer")
 
 	convImpl := realConverter
-	// convImpl = converter.New()
 	testutil.RequireImplementation(t, convImpl, "KeyConverter")
 
-	pub, _, err := sImpl.GenerateFromSeed(testutil.TestEd25519Seed[:])
+	pub, priv, err := sImpl.GenerateFromSeed(testutil.TestEd25519Seed[:])
 	testutil.RequireNoError(t, err)
 
 	recipientPub, err := convImpl.Ed25519ToX25519Public(pub)
+	testutil.RequireNoError(t, err)
+
+	recipientPriv, err := convImpl.Ed25519ToX25519Private(priv)
 	testutil.RequireNoError(t, err)
 
 	plaintext := []byte("secret message for recipient")
 	sealed, err := impl.SealAnonymous(plaintext, recipientPub)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(sealed) > len(plaintext), "ciphertext must be longer than plaintext")
+
+	// Seal→Open round-trip: verify decryption recovers the original plaintext.
+	opened, err := impl.OpenAnonymous(sealed, recipientPub, recipientPriv)
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesEqual(t, opened, plaintext)
+
+	// Sealing the same plaintext twice must produce different ciphertext
+	// (ephemeral keys are random).
+	sealed2, err := impl.SealAnonymous(plaintext, recipientPub)
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesNotEqual(t, sealed, sealed2)
 }
 
 // TST-CORE-119, TST-CORE-120, TST-CORE-121, TST-CORE-122, TST-CORE-123, TST-CORE-124
@@ -1560,17 +1847,37 @@ func xorBytes(a, b []byte) []byte {
 
 // TST-CORE-880
 func TestCrypto_2_8_6_KeyGenerationUsesSecureRandom(t *testing.T) {
-	// Key generation verified to use crypto/rand (not weak entropy source).
-	// This is a code audit test — verified by inspecting key generation source.
+	// Verify that Go's Ed25519 key generation uses crypto/rand (not weak entropy).
+	// ed25519.GenerateKey(nil) uses crypto/rand.Reader internally.
+
+	// Generate 5 keypairs via crypto/rand — all must be unique.
+	pubKeys := make(map[string]bool)
+	for i := 0; i < 5; i++ {
+		pub, _, err := ed25519.GenerateKey(nil)
+		if err != nil {
+			t.Fatalf("ed25519.GenerateKey failed on iteration %d: %v", i, err)
+		}
+		pubHex := fmt.Sprintf("%x", pub)
+		if pubKeys[pubHex] {
+			t.Fatalf("duplicate public key on iteration %d — entropy source may be weak", i)
+		}
+		pubKeys[pubHex] = true
+	}
+
+	// Verify that GenerateFromSeed is deterministic (same seed → same key).
 	impl := realSigner
 	testutil.RequireImplementation(t, impl, "Signer")
 
-	// Generate two keys — they must be different (would be identical with weak seed).
 	pub1, _, err := impl.GenerateFromSeed(testutil.TestDEK[:])
 	testutil.RequireNoError(t, err)
-	pub2, _, err := impl.GenerateFromSeed(testutil.TestKEK[:])
+	pub2, _, err := impl.GenerateFromSeed(testutil.TestDEK[:])
 	testutil.RequireNoError(t, err)
-	testutil.RequireBytesNotEqual(t, pub1, pub2)
+	testutil.RequireBytesEqual(t, pub1, pub2)
+
+	// Different seeds must produce different keys.
+	pub3, _, err := impl.GenerateFromSeed(testutil.TestKEK[:])
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesNotEqual(t, pub1, pub3)
 }
 
 // TST-CORE-881

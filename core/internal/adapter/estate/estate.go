@@ -133,6 +133,13 @@ func (m *EstateManager) Activate(trigger string, _ [][]byte) error {
 	return nil
 }
 
+// IsActivated returns true if the estate plan has been activated.
+func (m *EstateManager) IsActivated() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.activated
+}
+
 // DeliverKeys sends per-beneficiary DEKs via Dina-to-Dina encrypted channel.
 func (m *EstateManager) DeliverKeys(_ string) error {
 	return nil
