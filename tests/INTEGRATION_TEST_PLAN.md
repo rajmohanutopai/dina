@@ -1128,6 +1128,62 @@
 | 7 | **[TST-INT-663]** Watchdog breach → Tier 2 system message | Health check fails | Tier 2 notification with warning level + text |
 | 8 | **[TST-INT-664]** Docker log rotation: all services `max-size: 10m, max-file: 3` | Compose config | All 4 services have correct logging driver config |
 
+### 18.18 Admin and Session Lifecycle (§2.2, §17)
+
+| # | Scenario | Setup | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-INT-665]** Wrong admin login rejected cleanly | Invalid admin credential | 401 or explicit denial with no stack trace or leaked internals |
+| 2 | **[TST-INT-666]** Logout invalidates session immediately | Valid login, then logout | Subsequent admin request redirected or rejected until re-auth |
+| 3 | **[TST-INT-667]** Session expiry forces re-authentication | Valid session past TTL | Fresh login required |
+| 4 | **[TST-INT-668]** Locked-node admin path returns unlock-required | Node locked, admin request made | Clear locked or unlock-required response, not generic 500 |
+| 5 | **[TST-INT-669]** Admin session semantics survive core restart safely | Valid session, core restart | No stale privilege leak; post-restart behavior matches design |
+
+### 18.19 WebSocket Reconnect and Client State Recovery (§17)
+
+| # | Scenario | Setup | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-INT-670]** Reconnect after core restart re-establishes live session | Authenticated client, core restart | Client reconnects successfully and resumes normal interaction |
+| 2 | **[TST-INT-671]** Reconnect does not replay stale notifications unexpectedly | Pending events + reconnect | No duplicate stale event flood beyond documented missed-message semantics |
+| 3 | **[TST-INT-672]** Device online/offline state tracks reconnect lifecycle | Connect, disconnect, reconnect | Device state transitions accurate in exposed status surfaces |
+| 4 | **[TST-INT-673]** Unauthenticated socket held open past timeout closes cleanly | Open socket, no auth frame | Closed with timeout semantics and no resource leak |
+
+### 18.20 Prompt Injection Containment (§19)
+
+| # | Scenario | Setup | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-INT-674]** Poisoned inbound content cannot directly trigger outbound send | Malicious email or message with injection payload | Reader path processes input but no direct outbound side effect occurs |
+| 2 | **[TST-INT-675]** Sender path receives structured task, not raw poisoned payload | Split-brain pipeline active | Outbound path sees sanitized or structured payload only |
+| 3 | **[TST-INT-676]** MCP allowlist blocks disallowed outbound tools | Injected request for `send_email`, `http_post`, or `execute_command` | Denied before request leaves brain container |
+| 4 | **[TST-INT-677]** User-directed egress allowed where autonomous egress is blocked | Same sensitive content under two trigger types | User-directed path may pass; autonomous path blocked by policy |
+| 5 | **[TST-INT-678]** Vault query limits enforced under compromised reasoning path | Malicious reasoning loop requests oversized or broad query | Core-enforced limits applied safely |
+
+### 18.21 Silence Protocol and Daily Briefing (§11)
+
+| # | Scenario | Setup | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-INT-679]** Tier 1 event interrupts immediately | Fiduciary event | Immediate push or interrupt path |
+| 2 | **[TST-INT-680]** Tier 2 event notifies immediately | Requested alert | Notification sent without waiting for briefing |
+| 3 | **[TST-INT-681]** Tier 3 event queues for briefing only | Engagement or noise event | No immediate interrupt; item queued |
+| 4 | **[TST-INT-682]** Daily briefing drains queued Tier 3 items correctly | Multiple queued items | Briefing contains queued items once with correct count |
+| 5 | **[TST-INT-683]** Crash during briefing generation does not duplicate items | Crash or restart mid-briefing | Briefing re-generated safely from source state |
+
+### 18.22 Dead-Drop and Spool Edge Semantics (§2)
+
+| # | Scenario | Setup | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-INT-684]** Queued message expired by TTL is stored silently, not surfaced as live alert | Vault locked, message expires before unlock | After unlock, item handled as expired history only |
+| 2 | **[TST-INT-685]** Full spool rejects new mail and preserves existing mail | Spool at cap, new inbound arrives | New message rejected; existing queued blobs retained |
+| 3 | **[TST-INT-686]** Crash and restart preserve spool contents until unlock processing | Locked node with queued blobs, restart | Spool intact and processed after unlock |
+
+### 18.23 AppView Federation Correctness (AppView Architecture)
+
+| # | Scenario | Setup | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-INT-687]** Backfill-to-live cutover introduces no duplicates or gaps | AppView backfill then Jetstream live handoff | Record counts and cursors remain consistent |
+| 2 | **[TST-INT-688]** Subject canonicalization chain resolves consistently after merge or rename | Subject with alias or canonical chain | Query resolves to stable canonical subject |
+| 3 | **[TST-INT-689]** Aggregate scores recompute after amendment or deletion | Existing scored subject, then amendment or tombstone | Query output reflects recomputed aggregates |
+| 4 | **[TST-INT-690]** Tombstone propagation removes deleted record from downstream query results | Delete previously indexed attestation | AppView no longer returns deleted record in query path |
+
 ---
 
 ## Appendix A: Test Environment Setup

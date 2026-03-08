@@ -3,7 +3,7 @@
 # Dina User Story Tests — proving the value proposition end-to-end.
 # ============================================================================
 #
-# Six user stories, each demonstrating a capability no other system has.
+# Ten user stories, each demonstrating a capability no other system has.
 # Every test runs against a real multi-node stack: Go Core, Python Brain,
 # AT Protocol PDS, AppView, Postgres — zero mocks.
 #
@@ -15,10 +15,10 @@
 #   GOOGLE_API_KEY  — optional, for real LLM reasoning tests
 #
 # Usage:
-#   ./run_user_story_tests.sh                          # sanity (default, skips Story 06)
-#   ./run_user_story_tests.sh --all                    # all 6 stories
-#   ./run_user_story_tests.sh --brief                  # banner + results only
-#   ./run_user_story_tests.sh --all --brief            # all stories, brief output
+#   ./run_user_story_tests.sh                          # sanity (default, skips Stories 06-10)
+#   ./run_user_story_tests.sh --all                    # all 10 stories
+#   ./run_user_story_tests.sh --brief                  # all 10 stories, banner + results only
+#   ./run_user_story_tests.sh --all --brief            # same as --brief
 #   ./run_user_story_tests.sh --story 5                # run only Story 05 (verbose)
 #   ./run_user_story_tests.sh --story 5 --brief        # run only Story 05 (brief)
 #   ./run_user_story_tests.sh --list                   # list all stories
@@ -73,6 +73,10 @@ for i in "$@"; do
             echo "    4  The Persona Wall           (11 tests)  — cross-persona access control"
             echo "    5  The Agent Gateway          (10 tests)  — external agent safety layer"
             echo "    6  The License Renewal        (10 tests)  — LLM extraction + deterministic scheduling"
+            echo "    7  The Daily Briefing          (5 tests)  — silence-first notification triage"
+            echo "    8  Move to a New Machine       (5 tests)  — data portability & DID stability"
+            echo "    9  Connector Credential Expiry (5 tests)  — graceful degradation & recovery"
+            echo "   10  The Operator Journey        (5 tests)  — bootstrap idempotency & admin lifecycle"
             echo ""
             echo "  Usage: ./run_user_story_tests.sh --story 5"
             echo ""
@@ -111,21 +115,26 @@ if [ -n "$STORY" ]; then
         4|04) STORY_FILE="tests/system/user_stories/test_04_persona_wall.py" ;;
         5|05) STORY_FILE="tests/system/user_stories/test_05_agent_gateway.py" ;;
         6|06) STORY_FILE="tests/system/user_stories/test_06_license_renewal.py" ;;
+        7|07) STORY_FILE="tests/system/user_stories/test_07_daily_briefing.py" ;;
+        8|08) STORY_FILE="tests/system/user_stories/test_08_move_to_new_machine.py" ;;
+        9|09) STORY_FILE="tests/system/user_stories/test_09_connector_expiry.py" ;;
+        10)   STORY_FILE="tests/system/user_stories/test_10_operator_journey.py" ;;
         *)
-            echo "Error: --story must be 1-6 (got: $STORY)"
+            echo "Error: --story must be 1-10 (got: $STORY)"
             exit 1
             ;;
     esac
 fi
 
-# In sanity mode, skip Story 06 (License Renewal) unless user passed -k
-if [ "$MODE" = "sanity" ]; then
+# In sanity mode (verbose, non-brief), skip Stories 06-10 unless user passed -k.
+# Brief mode always runs all stories regardless of MODE.
+if [ "$MODE" = "sanity" ] && [ "$BRIEF" = false ]; then
     has_k=false
     for arg in "${PYTEST_ARGS[@]+"${PYTEST_ARGS[@]}"}"; do
         if [ "$arg" = "-k" ]; then has_k=true; break; fi
     done
     if [ "$has_k" = false ]; then
-        PYTEST_ARGS+=("-k" "not test_06_license_renewal")
+        PYTEST_ARGS+=("-k" "not (test_06_license_renewal or test_07_daily_briefing or test_08_move_to_new_machine or test_09_connector_expiry or test_10_operator_journey)")
     fi
 fi
 
@@ -156,14 +165,15 @@ Y="${YELLOW}"
 # Border:     2 leading spaces + ╔ + 100 ═ chars + ╗ = 104 display columns
 
 print_banner() {
-    # Args: $1=s01_result .. $6=s06_result  (empty if not run yet)
+    # Args: $1=s01_result .. $10=s10_result  (empty if not run yet)
     local s01="${1:-}" s02="${2:-}" s03="${3:-}" s04="${4:-}" s05="${5:-}" s06="${6:-}"
+    local s07="${7:-}" s08="${8:-}" s09="${9:-}" s10="${10:-}"
 
     local mode_label=""
     if [ -n "$STORY" ]; then
         mode_label="  ${DIM}(--story ${STORY} — running only Story $(printf '%02d' "$STORY"))${R}"
-    elif [ "$MODE" = "sanity" ]; then
-        mode_label="  ${DIM}(sanity — use --all for Story 06)${R}"
+    elif [ "$MODE" = "sanity" ] && [ "$BRIEF" = false ]; then
+        mode_label="  ${DIM}(sanity — use --all or --brief for Stories 06-10)${R}"
     fi
 
     # Box: 2 leading spaces + ║ + 100 inner + ║ = 104 display columns
@@ -218,14 +228,50 @@ print_banner() {
     echo -e "${B}  ║${R}${D}     Safe tasks (web search) pass silently. Rogue agent with no auth -> 401, blocked at the gate    ${B}║${R}"
     echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
 
-    # ── Story 06 (only in --all mode) ───────────────────────────────────
-    if [ "$MODE" = "all" ]; then
+    # ── Stories 06-10 (shown in --all mode or --brief mode) ─────────────
+    if [ "$MODE" = "all" ] || [ "$BRIEF" = true ]; then
         printf "  ${B}║${R}  ${G}06${R} ${BOLD}The License Renewal${R}"
         if [ -n "$s06" ]; then printf "%87s" "$s06"; else printf "%74s" "10 tests"; fi
         echo -e "  ${B}║${R}"
         echo -e "${B}  ║${R}     ${BOLD}User uploads license scan${R}${D} -> Brain LLM extracts fields with per-field confidence scores        ${B}║${R}"
         echo -e "${B}  ║${R}${D}     Deterministic reminder fires 30 days before expiry (no LLM). Brain composes contextual nudge   ${B}║${R}"
         echo -e "${B}  ║${R}${D}     Delegation: Brain generates strict JSON for RTO_Bot. Guardian flags for human review           ${B}║${R}"
+        echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+
+        # ── Story 07 ──────────────────────────────────────────────────────────
+        printf "  ${B}║${R}  ${G}07${R} ${BOLD}The Daily Briefing${R}"
+        if [ -n "$s07" ]; then printf "%88s" "$s07"; else printf "%75s" "5 tests"; fi
+        echo -e "  ${B}║${R}"
+        echo -e "${B}  ║${R}     ${BOLD}Noise all day, one calm summary${R}${D} -> Tier 3 events queued silently in vault KV                   ${B}║${R}"
+        echo -e "${B}  ║${R}${D}     Fiduciary event (transfer_money) interrupts immediately — silence would cause harm              ${B}║${R}"
+        echo -e "${B}  ║${R}${D}     Daily briefing retrieves queued items, clears queue. Silence First enforced by design           ${B}║${R}"
+        echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+
+        # ── Story 08 ──────────────────────────────────────────────────────────
+        printf "  ${B}║${R}  ${G}08${R} ${BOLD}Move to a New Machine${R}"
+        if [ -n "$s08" ]; then printf "%85s" "$s08"; else printf "%72s" "5 tests"; fi
+        echo -e "  ${B}║${R}"
+        echo -e "${B}  ║${R}     ${BOLD}Laptop dying, move Dina${R}${D} -> vault data exportable, DID stable across machines                  ${B}║${R}"
+        echo -e "${B}  ║${R}${D}     Node B operates independently: own DID (same method), vault store/query works                  ${B}║${R}"
+        echo -e "${B}  ║${R}${D}     YOUR data, YOUR identity, YOUR machine. Google has nothing to do with it                      ${B}║${R}"
+        echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+
+        # ── Story 09 ──────────────────────────────────────────────────────────
+        printf "  ${B}║${R}  ${G}09${R} ${BOLD}Connector Credential Expiry${R}"
+        if [ -n "$s09" ]; then printf "%79s" "$s09"; else printf "%66s" "5 tests"; fi
+        echo -e "  ${B}║${R}"
+        echo -e "${B}  ║${R}     ${BOLD}Gmail OAuth expires${R}${D} -> connector status: expired. Vault, identity fully operational            ${B}║${R}"
+        echo -e "${B}  ║${R}${D}     User reconfigures credentials -> connector resumes. No cascade, no crash                      ${B}║${R}"
+        echo -e "${B}  ║${R}${D}     Isolation guarantee: one connector down, everything else still works                           ${B}║${R}"
+        echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+
+        # ── Story 10 ──────────────────────────────────────────────────────────
+        printf "  ${B}║${R}  ${G}10${R} ${BOLD}The Operator Journey${R}"
+        if [ -n "$s10" ]; then printf "%86s" "$s10"; else printf "%73s" "5 tests"; fi
+        echo -e "  ${B}║${R}"
+        echo -e "${B}  ║${R}     ${BOLD}Re-run install script${R}${D} -> DID unchanged (idempotent). No rotation, no orphaned data             ${B}║${R}"
+        echo -e "${B}  ║${R}${D}     Lock vault for maintenance: health endpoint still accessible. Unlock: operations resume        ${B}║${R}"
+        echo -e "${B}  ║${R}${D}     Identity is derived from master seed — immutable after bootstrap, stable across lifecycle      ${B}║${R}"
         echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
     fi
     echo -e "${B}  ╚════════════════════════════════════════════════════════════════════════════════════════════════════╝${R}"
@@ -284,6 +330,10 @@ STORIES = {
     '04': 'The Persona Wall',
     '05': 'The Agent Gateway',
     '06': 'The License Renewal',
+    '07': 'The Daily Briefing',
+    '08': 'Move to a New Machine',
+    '09': 'Connector Credential Expiry',
+    '10': 'The Operator Journey',
 }
 
 # Parse per-test results from verbose lines
@@ -420,6 +470,30 @@ with open(log_path, 'w') as f:
     s06_skipped=$(echo "$OUTPUT" | grep -c "test_06_license_renewal.*SKIPPED" || true)
     s06_total=$((s06_passed + s06_failed + s06_errored + s06_skipped))
 
+    s07_passed=$(echo "$OUTPUT" | grep -c "test_07_daily_briefing.*PASSED" || true)
+    s07_failed=$(echo "$OUTPUT" | grep -c "test_07_daily_briefing.*FAILED" || true)
+    s07_errored=$(echo "$OUTPUT" | grep -c "test_07_daily_briefing.* ERROR" || true)
+    s07_skipped=$(echo "$OUTPUT" | grep -c "test_07_daily_briefing.*SKIPPED" || true)
+    s07_total=$((s07_passed + s07_failed + s07_errored + s07_skipped))
+
+    s08_passed=$(echo "$OUTPUT" | grep -c "test_08_move_to_new_machine.*PASSED" || true)
+    s08_failed=$(echo "$OUTPUT" | grep -c "test_08_move_to_new_machine.*FAILED" || true)
+    s08_errored=$(echo "$OUTPUT" | grep -c "test_08_move_to_new_machine.* ERROR" || true)
+    s08_skipped=$(echo "$OUTPUT" | grep -c "test_08_move_to_new_machine.*SKIPPED" || true)
+    s08_total=$((s08_passed + s08_failed + s08_errored + s08_skipped))
+
+    s09_passed=$(echo "$OUTPUT" | grep -c "test_09_connector_expiry.*PASSED" || true)
+    s09_failed=$(echo "$OUTPUT" | grep -c "test_09_connector_expiry.*FAILED" || true)
+    s09_errored=$(echo "$OUTPUT" | grep -c "test_09_connector_expiry.* ERROR" || true)
+    s09_skipped=$(echo "$OUTPUT" | grep -c "test_09_connector_expiry.*SKIPPED" || true)
+    s09_total=$((s09_passed + s09_failed + s09_errored + s09_skipped))
+
+    s10_passed=$(echo "$OUTPUT" | grep -c "test_10_operator_journey.*PASSED" || true)
+    s10_failed=$(echo "$OUTPUT" | grep -c "test_10_operator_journey.*FAILED" || true)
+    s10_errored=$(echo "$OUTPUT" | grep -c "test_10_operator_journey.* ERROR" || true)
+    s10_skipped=$(echo "$OUTPUT" | grep -c "test_10_operator_journey.*SKIPPED" || true)
+    s10_total=$((s10_passed + s10_failed + s10_errored + s10_skipped))
+
     # Clear "Running tests..." line
     echo -e "\033[2A\033[J"
 
@@ -442,15 +516,27 @@ with open(log_path, 'w') as f:
     if [ "$s06_total" -gt 0 ]; then
         s06_r=$(format_result "$s06_passed" "$s06_total")
     else s06_r=""; fi
+    if [ "$s07_total" -gt 0 ]; then
+        s07_r=$(format_result "$s07_passed" "$s07_total")
+    else s07_r=""; fi
+    if [ "$s08_total" -gt 0 ]; then
+        s08_r=$(format_result "$s08_passed" "$s08_total")
+    else s08_r=""; fi
+    if [ "$s09_total" -gt 0 ]; then
+        s09_r=$(format_result "$s09_passed" "$s09_total")
+    else s09_r=""; fi
+    if [ "$s10_total" -gt 0 ]; then
+        s10_r=$(format_result "$s10_passed" "$s10_total")
+    else s10_r=""; fi
 
-    print_banner "$s01_r" "$s02_r" "$s03_r" "$s04_r" "$s05_r" "$s06_r"
+    print_banner "$s01_r" "$s02_r" "$s03_r" "$s04_r" "$s05_r" "$s06_r" "$s07_r" "$s08_r" "$s09_r" "$s10_r"
 
     # Overall summary
-    total_passed=$((s01_passed + s02_passed + s03_passed + s04_passed + s05_passed + s06_passed))
-    total_all=$((s01_total + s02_total + s03_total + s04_total + s05_total + s06_total))
-    total_failed=$((s01_failed + s02_failed + s03_failed + s04_failed + s05_failed + s06_failed))
-    total_errored=$((s01_errored + s02_errored + s03_errored + s04_errored + s05_errored + s06_errored))
-    total_skipped=$((s01_skipped + s02_skipped + s03_skipped + s04_skipped + s05_skipped + s06_skipped))
+    total_passed=$((s01_passed + s02_passed + s03_passed + s04_passed + s05_passed + s06_passed + s07_passed + s08_passed + s09_passed + s10_passed))
+    total_all=$((s01_total + s02_total + s03_total + s04_total + s05_total + s06_total + s07_total + s08_total + s09_total + s10_total))
+    total_failed=$((s01_failed + s02_failed + s03_failed + s04_failed + s05_failed + s06_failed + s07_failed + s08_failed + s09_failed + s10_failed))
+    total_errored=$((s01_errored + s02_errored + s03_errored + s04_errored + s05_errored + s06_errored + s07_errored + s08_errored + s09_errored + s10_errored))
+    total_skipped=$((s01_skipped + s02_skipped + s03_skipped + s04_skipped + s05_skipped + s06_skipped + s07_skipped + s08_skipped + s09_skipped + s10_skipped))
     echo ""
     if [ "$total_failed" -eq 0 ] && [ "$total_errored" -eq 0 ] && [ "$total_all" -gt 0 ]; then
         echo -e "  ${GREEN}${BOLD}${total_passed}/${total_all} passed${R}"
@@ -477,7 +563,7 @@ fi
 # ============================================================================
 # Verbose mode (default): show banner, then full pytest output
 # ============================================================================
-print_banner "" "" "" "" "" ""
+print_banner "" "" "" "" "" "" "" "" "" ""
 
 # -- API key notice --
 if [ -z "${GOOGLE_API_KEY:-}" ]; then

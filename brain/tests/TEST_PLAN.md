@@ -1113,6 +1113,34 @@
 
 ---
 
+## 20. Additional Architecture-Review Coverage
+
+### 20.1 Prompt Injection Pipeline Semantics
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-503]** Reader pipeline has no outbound-capable tools | Inspect reader-stage toolset | No notify, send, or MCP outbound tools available |
+| 2 | **[TST-BRAIN-504]** Sender pipeline receives structured task, not raw poisoned content | Injected inbound payload | Sender sees sanitized or structured payload only |
+| 3 | **[TST-BRAIN-505]** Disallowed MCP tool request rejected before execution | Request `send_email`, `http_post`, or `execute_command` | Client rejects locally with deterministic error |
+
+### 20.2 Briefing and Silence-Protocol Assembly
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-506]** Tier 3 item included in briefing, not immediate interrupt | Low-priority event | Queued for briefing path only |
+| 2 | **[TST-BRAIN-507]** Briefing assembly deduplicates repeated queued items | Duplicate queued signals | Single summarized entry or correct deduplicated count |
+| 3 | **[TST-BRAIN-508]** Briefing crash regenerates from source state | Exception mid-briefing | Rebuild succeeds after restart without double-delivery |
+
+### 20.3 Connector and Degradation State Mapping
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-BRAIN-509]** OpenClaw unavailable maps to degraded user-facing status | MCP failure | State and message suitable for admin or UI surface |
+| 2 | **[TST-BRAIN-510]** Telegram auth failure maps to expired or reconfigure status | Invalid Telegram token | Explicit remediation-oriented state emitted |
+| 3 | **[TST-BRAIN-511]** Connector recovery resumes healthy state without stale error | Temporary outage then success | State returns to healthy and stale error cleared |
+
+---
+
 ## Appendix A: Test Fixtures
 
 - **Sample emails**: 100 emails across categories (promotions, social, primary, updates) for ingestion testing

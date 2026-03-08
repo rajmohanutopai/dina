@@ -893,6 +893,10 @@ _E2E_SECTION_MAP: dict[int, str] = {
     14: "Agentic LLM Behavior",
     15: "CLI Ed25519 Request Signing",
     16: "AT Protocol PDS Integration",
+    17: "The Quiet Dina (Silence Protocol)",
+    18: "Move to a New Machine",
+    19: "Connector Failure & Recovery",
+    20: "Operator & Upgrade Journeys",
 }
 
 _E2E_FILE_SECTION_RE = re.compile(r"test_suite_(\d+)_")

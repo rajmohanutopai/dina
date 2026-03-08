@@ -2059,6 +2059,36 @@
 
 ---
 
+## 33. Additional Architecture-Review Coverage
+
+### 33.1 Deterministic Identity State
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-1106]** DID metadata corruption fails closed on startup path | Corrupt persisted DID metadata | Startup or loader returns error, no generation guess |
+| 2 | **[TST-CORE-1107]** Root signing generation persists across restart | Rotate deterministic key, restart | Same generation and path reloaded after restart |
+| 3 | **[TST-CORE-1108]** Deterministic rotation rejects non-next-generation key | Caller-supplied wrong public key | Rotation denied with clear error |
+| 4 | **[TST-CORE-1109]** PLC derivation branch isolated from persona and service branches | Derive multiple branch families | No branch collision or overlapping output |
+
+### 33.2 Vector Security Lifecycle
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-1110]** Unlock hydrates in-memory HNSW from encrypted blobs | Persona unlock | Search index materialized in memory only |
+| 2 | **[TST-CORE-1111]** Persona lock destroys HNSW index | Persona lock | In-memory index removed; future search requires rehydrate |
+| 3 | **[TST-CORE-1112]** No plaintext vector side files exist | Inspect filesystem after indexing | No mmap or plaintext vector artifact on disk |
+| 4 | **[TST-CORE-1113]** Restart rebuilds vector index from SQLCipher data | Restart with stored embeddings | Search works after rebuild, no stale side artifact dependency |
+
+### 33.3 Static Deployment and Security Audits
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-1114]** Production compose files use no floating `latest` tags | Code/config audit | No `:latest` in release-facing image refs |
+| 2 | **[TST-CORE-1115]** No unexpected public routes beyond documented API surface | Route enumeration | Surface matches docs and existing API contract |
+| 3 | **[TST-CORE-1116]** No plaintext vector or index artifact patterns in codebase | Code audit | No mmap or vector side-file storage introduced |
+
+---
+
 ## Appendix A: Test Data & Fixtures
 
 - **Test mnemonic**: Use a fixed BIP-39 test mnemonic for deterministic key derivation tests

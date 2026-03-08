@@ -6265,6 +6265,61 @@
       "path": "31.6",
       "row": 3,
       "scenario": "DINA_KNOWN_PEERS parsed into peer registry"
+    },
+    "TST-CORE-1106": {
+      "path": "33.1",
+      "row": 1,
+      "scenario": "DID metadata corruption fails closed on startup path"
+    },
+    "TST-CORE-1107": {
+      "path": "33.1",
+      "row": 2,
+      "scenario": "Root signing generation persists across restart"
+    },
+    "TST-CORE-1108": {
+      "path": "33.1",
+      "row": 3,
+      "scenario": "Deterministic rotation rejects non-next-generation key"
+    },
+    "TST-CORE-1109": {
+      "path": "33.1",
+      "row": 4,
+      "scenario": "PLC derivation branch isolated from persona and service branches"
+    },
+    "TST-CORE-1110": {
+      "path": "33.2",
+      "row": 1,
+      "scenario": "Unlock hydrates in-memory HNSW from encrypted blobs"
+    },
+    "TST-CORE-1111": {
+      "path": "33.2",
+      "row": 2,
+      "scenario": "Persona lock destroys HNSW index"
+    },
+    "TST-CORE-1112": {
+      "path": "33.2",
+      "row": 3,
+      "scenario": "No plaintext vector side files exist"
+    },
+    "TST-CORE-1113": {
+      "path": "33.2",
+      "row": 4,
+      "scenario": "Restart rebuilds vector index from SQLCipher data"
+    },
+    "TST-CORE-1114": {
+      "path": "33.3",
+      "row": 1,
+      "scenario": "Production compose files use no floating latest tags"
+    },
+    "TST-CORE-1115": {
+      "path": "33.3",
+      "row": 2,
+      "scenario": "No unexpected public routes beyond documented API surface"
+    },
+    "TST-CORE-1116": {
+      "path": "33.3",
+      "row": 3,
+      "scenario": "No plaintext vector or index artifact patterns in codebase"
     }
   },
   "sections": {

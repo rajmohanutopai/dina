@@ -443,6 +443,66 @@
       "path": "13.10",
       "suite": "Security Adversarial",
       "line": 1372
+    },
+    "TST-E2E-099": {
+      "scenario": "Mixed Tier Behavior \u2014 Interrupt, Notify, Queue",
+      "path": "17.1",
+      "suite": "The Quiet Dina"
+    },
+    "TST-E2E-100": {
+      "scenario": "Daily Briefing Summarizes Queued Items",
+      "path": "17.2",
+      "suite": "The Quiet Dina"
+    },
+    "TST-E2E-101": {
+      "scenario": "Briefing Regenerates Cleanly After Brain Crash",
+      "path": "17.3",
+      "suite": "The Quiet Dina"
+    },
+    "TST-E2E-102": {
+      "scenario": "Export from Existing Node, Import to Fresh Node",
+      "path": "18.1",
+      "suite": "Move to a New Machine"
+    },
+    "TST-E2E-103": {
+      "scenario": "Mnemonic-Only Recovery Restores Identity, Not Vault Data",
+      "path": "18.2",
+      "suite": "Move to a New Machine"
+    },
+    "TST-E2E-104": {
+      "scenario": "Import Requires Device Re-Pairing",
+      "path": "18.3",
+      "suite": "Move to a New Machine"
+    },
+    "TST-E2E-105": {
+      "scenario": "OpenClaw Outage Degrades Clearly and Recovers",
+      "path": "19.1",
+      "suite": "Connector Failure and Recovery"
+    },
+    "TST-E2E-106": {
+      "scenario": "Telegram Credential Expiry Surfaces Reconfigure Path",
+      "path": "19.2",
+      "suite": "Connector Failure and Recovery"
+    },
+    "TST-E2E-107": {
+      "scenario": "Fast Sync, Backfill, and Resume After Interruption",
+      "path": "19.3",
+      "suite": "Connector Failure and Recovery"
+    },
+    "TST-E2E-108": {
+      "scenario": "Re-Running Install Does Not Rotate Identity",
+      "path": "20.1",
+      "suite": "Operator and Upgrade Journeys"
+    },
+    "TST-E2E-109": {
+      "scenario": "Locked-Node Admin Journey",
+      "path": "20.2",
+      "suite": "Operator and Upgrade Journeys"
+    },
+    "TST-E2E-110": {
+      "scenario": "Verified Upgrade Requires Explicit Operator Action",
+      "path": "20.3",
+      "suite": "Operator and Upgrade Journeys"
     }
   },
   "summary": {

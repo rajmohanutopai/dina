@@ -3597,6 +3597,162 @@
       "row": 1,
       "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",
       "line": 0
+    },
+    "TST-INT-665": {
+      "scenario": "Wrong admin login rejected cleanly",
+      "path": "18.18",
+      "row": 1,
+      "section": "Admin and Session Lifecycle"
+    },
+    "TST-INT-666": {
+      "scenario": "Logout invalidates session immediately",
+      "path": "18.18",
+      "row": 2,
+      "section": "Admin and Session Lifecycle"
+    },
+    "TST-INT-667": {
+      "scenario": "Session expiry forces re-authentication",
+      "path": "18.18",
+      "row": 3,
+      "section": "Admin and Session Lifecycle"
+    },
+    "TST-INT-668": {
+      "scenario": "Locked-node admin path returns unlock-required",
+      "path": "18.18",
+      "row": 4,
+      "section": "Admin and Session Lifecycle"
+    },
+    "TST-INT-669": {
+      "scenario": "Admin session semantics survive core restart safely",
+      "path": "18.18",
+      "row": 5,
+      "section": "Admin and Session Lifecycle"
+    },
+    "TST-INT-670": {
+      "scenario": "Reconnect after core restart re-establishes live session",
+      "path": "18.19",
+      "row": 1,
+      "section": "WebSocket Reconnect and Client State Recovery"
+    },
+    "TST-INT-671": {
+      "scenario": "Reconnect does not replay stale notifications unexpectedly",
+      "path": "18.19",
+      "row": 2,
+      "section": "WebSocket Reconnect and Client State Recovery"
+    },
+    "TST-INT-672": {
+      "scenario": "Device online/offline state tracks reconnect lifecycle",
+      "path": "18.19",
+      "row": 3,
+      "section": "WebSocket Reconnect and Client State Recovery"
+    },
+    "TST-INT-673": {
+      "scenario": "Unauthenticated socket held open past timeout closes cleanly",
+      "path": "18.19",
+      "row": 4,
+      "section": "WebSocket Reconnect and Client State Recovery"
+    },
+    "TST-INT-674": {
+      "scenario": "Poisoned inbound content cannot directly trigger outbound send",
+      "path": "18.20",
+      "row": 1,
+      "section": "Prompt Injection Containment"
+    },
+    "TST-INT-675": {
+      "scenario": "Sender path receives structured task, not raw poisoned payload",
+      "path": "18.20",
+      "row": 2,
+      "section": "Prompt Injection Containment"
+    },
+    "TST-INT-676": {
+      "scenario": "MCP allowlist blocks disallowed outbound tools",
+      "path": "18.20",
+      "row": 3,
+      "section": "Prompt Injection Containment"
+    },
+    "TST-INT-677": {
+      "scenario": "User-directed egress allowed where autonomous egress is blocked",
+      "path": "18.20",
+      "row": 4,
+      "section": "Prompt Injection Containment"
+    },
+    "TST-INT-678": {
+      "scenario": "Vault query limits enforced under compromised reasoning path",
+      "path": "18.20",
+      "row": 5,
+      "section": "Prompt Injection Containment"
+    },
+    "TST-INT-679": {
+      "scenario": "Tier 1 event interrupts immediately",
+      "path": "18.21",
+      "row": 1,
+      "section": "Silence Protocol and Daily Briefing"
+    },
+    "TST-INT-680": {
+      "scenario": "Tier 2 event notifies immediately",
+      "path": "18.21",
+      "row": 2,
+      "section": "Silence Protocol and Daily Briefing"
+    },
+    "TST-INT-681": {
+      "scenario": "Tier 3 event queues for briefing only",
+      "path": "18.21",
+      "row": 3,
+      "section": "Silence Protocol and Daily Briefing"
+    },
+    "TST-INT-682": {
+      "scenario": "Daily briefing drains queued Tier 3 items correctly",
+      "path": "18.21",
+      "row": 4,
+      "section": "Silence Protocol and Daily Briefing"
+    },
+    "TST-INT-683": {
+      "scenario": "Crash during briefing generation does not duplicate items",
+      "path": "18.21",
+      "row": 5,
+      "section": "Silence Protocol and Daily Briefing"
+    },
+    "TST-INT-684": {
+      "scenario": "Queued message expired by TTL is stored silently, not surfaced as live alert",
+      "path": "18.22",
+      "row": 1,
+      "section": "Dead-Drop and Spool Edge Semantics"
+    },
+    "TST-INT-685": {
+      "scenario": "Full spool rejects new mail and preserves existing mail",
+      "path": "18.22",
+      "row": 2,
+      "section": "Dead-Drop and Spool Edge Semantics"
+    },
+    "TST-INT-686": {
+      "scenario": "Crash and restart preserve spool contents until unlock processing",
+      "path": "18.22",
+      "row": 3,
+      "section": "Dead-Drop and Spool Edge Semantics"
+    },
+    "TST-INT-687": {
+      "scenario": "Backfill-to-live cutover introduces no duplicates or gaps",
+      "path": "18.23",
+      "row": 1,
+      "section": "AppView Federation Correctness"
+    },
+    "TST-INT-688": {
+      "scenario": "Subject canonicalization chain resolves consistently after merge or rename",
+      "path": "18.23",
+      "row": 2,
+      "section": "AppView Federation Correctness"
+    },
+    "TST-INT-689": {
+      "scenario": "Aggregate scores recompute after amendment or deletion",
+      "path": "18.23",
+      "row": 3,
+      "section": "AppView Federation Correctness"
+    },
+    "TST-INT-690": {
+      "scenario": "Tombstone propagation removes deleted record from downstream query results",
+      "path": "18.23",
+      "row": 4,
+      "section": "AppView Federation Correctness"
     }
   },
   "summary": {

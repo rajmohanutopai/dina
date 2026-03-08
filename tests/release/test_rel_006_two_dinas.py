@@ -1,0 +1,129 @@
+"""REL-006 Two Dinas Talk — D2D messaging between Node A and Node B.
+
+Verify Dina-to-Dina encrypted messaging works between two separate
+Core+Brain nodes running in the release Docker stack.
+
+Node A: release-core (did:plc:release-a)
+Node B: release-core-b (did:plc:release-b)
+
+Execution class: Harness.
+"""
+
+from __future__ import annotations
+
+import base64
+import json
+import time
+
+import httpx
+import pytest
+
+
+class TestTwoDinas:
+    """Real API tests for REL-006: D2D messaging between two nodes."""
+
+    # REL-006
+    def test_rel_006_node_b_healthy(self, core_b_url) -> None:
+        """Node B Core is reachable and healthy."""
+        resp = httpx.get(f"{core_b_url}/healthz", timeout=10)
+        assert resp.status_code == 200
+
+    # REL-006
+    def test_rel_006_send_message_a_to_b(
+        self, core_url, auth_headers,
+    ) -> None:
+        """Node A sends a D2D message to Node B via POST /v1/msg/send."""
+        body_payload = json.dumps({"greeting": "hello from node A"})
+
+        resp = httpx.post(
+            f"{core_url}/v1/msg/send",
+            json={
+                "to": "did:plc:release-b",
+                "body": base64.b64encode(body_payload.encode()).decode(),
+                "type": "dina/test/ping",
+            },
+            headers=auth_headers,
+            timeout=15,
+        )
+        assert resp.status_code == 202, (
+            f"D2D send A→B failed: {resp.status_code} {resp.text}"
+        )
+
+    # REL-006
+    def test_rel_006_message_arrives_in_b_inbox(
+        self, core_b_url, auth_headers,
+    ) -> None:
+        """Node B receives the D2D message in its inbox."""
+        deadline = time.time() + 30
+        found = False
+
+        while time.time() < deadline:
+            resp = httpx.get(
+                f"{core_b_url}/v1/msg/inbox",
+                headers=auth_headers,
+                timeout=10,
+            )
+            if resp.status_code != 200:
+                time.sleep(1)
+                continue
+
+            messages = resp.json().get("messages", [])
+            for msg in messages:
+                if msg.get("Type") == "dina/test/ping":
+                    found = True
+                    break
+            if found:
+                break
+            time.sleep(1)
+
+        assert found, (
+            "D2D message not received in Node B inbox after 30s"
+        )
+
+    # REL-006
+    def test_rel_006_send_message_b_to_a(
+        self, core_b_url, core_url, auth_headers,
+    ) -> None:
+        """Node B sends a D2D message back to Node A."""
+        body_payload = json.dumps({"greeting": "hello from node B"})
+
+        resp = httpx.post(
+            f"{core_b_url}/v1/msg/send",
+            json={
+                "to": "did:plc:release-a",
+                "body": base64.b64encode(body_payload.encode()).decode(),
+                "type": "dina/test/pong",
+            },
+            headers=auth_headers,
+            timeout=15,
+        )
+        assert resp.status_code == 202, (
+            f"D2D send B→A failed: {resp.status_code} {resp.text}"
+        )
+
+        # Verify arrival in Node A's inbox
+        deadline = time.time() + 30
+        found = False
+
+        while time.time() < deadline:
+            resp = httpx.get(
+                f"{core_url}/v1/msg/inbox",
+                headers=auth_headers,
+                timeout=10,
+            )
+            if resp.status_code != 200:
+                time.sleep(1)
+                continue
+
+            messages = resp.json().get("messages", [])
+            for msg in messages:
+                if msg.get("Type") == "dina/test/pong":
+                    found = True
+                    break
+            if found:
+                break
+            time.sleep(1)
+
+        assert found, (
+            "D2D message not received in Node A inbox after 30s"
+        )

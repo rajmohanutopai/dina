@@ -2975,6 +2975,51 @@
       "path": "19.11",
       "row": 3,
       "scenario": "Lifespan shutdown cancels sync task"
+    },
+    "TST-BRAIN-503": {
+      "scenario": "Reader pipeline has no outbound-capable tools",
+      "section": "Prompt Injection Pipeline Semantics",
+      "path": "20.1"
+    },
+    "TST-BRAIN-504": {
+      "scenario": "Sender pipeline receives structured task, not raw poisoned content",
+      "section": "Prompt Injection Pipeline Semantics",
+      "path": "20.1"
+    },
+    "TST-BRAIN-505": {
+      "scenario": "Disallowed MCP tool request rejected before execution",
+      "section": "Prompt Injection Pipeline Semantics",
+      "path": "20.1"
+    },
+    "TST-BRAIN-506": {
+      "scenario": "Tier 3 item included in briefing, not immediate interrupt",
+      "section": "Briefing and Silence-Protocol Assembly",
+      "path": "20.2"
+    },
+    "TST-BRAIN-507": {
+      "scenario": "Briefing assembly deduplicates repeated queued items",
+      "section": "Briefing and Silence-Protocol Assembly",
+      "path": "20.2"
+    },
+    "TST-BRAIN-508": {
+      "scenario": "Briefing crash regenerates from source state",
+      "section": "Briefing and Silence-Protocol Assembly",
+      "path": "20.2"
+    },
+    "TST-BRAIN-509": {
+      "scenario": "OpenClaw unavailable maps to degraded user-facing status",
+      "section": "Connector and Degradation State Mapping",
+      "path": "20.3"
+    },
+    "TST-BRAIN-510": {
+      "scenario": "Telegram auth failure maps to expired or reconfigure status",
+      "section": "Connector and Degradation State Mapping",
+      "path": "20.3"
+    },
+    "TST-BRAIN-511": {
+      "scenario": "Connector recovery resumes healthy state without stale error",
+      "section": "Connector and Degradation State Mapping",
+      "path": "20.3"
     }
   },
   "sections": {

@@ -1694,6 +1694,131 @@ prefixes.
 - Core logs PDS configuration at startup (observability)
 - DID registration logged with structured fields (DID, handle)
 
+### Suite 17: The Quiet Dina
+
+> Product-level validation of the silence protocol and daily briefing behavior.
+
+#### E2E-17.1: **[TST-E2E-099]** Mixed Tier Behavior — Interrupt, Notify, Queue
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | Don Alonso | Trigger fiduciary event | Core → Brain → Client | Immediate interrupt |
+| 2 | Don Alonso | Trigger requested reminder | Core → Brain → Client | Immediate notification |
+| 3 | Don Alonso | Trigger low-priority engagement event | Core → Brain → Queue | No interrupt; event queued |
+| 4 | — | Inspect queued and visible state | Brain → Client/Admin | Tier behavior matches documented silence protocol |
+
+#### E2E-17.2: **[TST-E2E-100]** Daily Briefing Summarizes Queued Items
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | Don Alonso | Accumulate multiple Tier 3 items | Core → Brain | Items stored in briefing queue |
+| 2 | — | Trigger briefing generation | Brain → Client | Briefing summarizes queued items once |
+| 3 | — | Verify no duplicate or missing items | Brain/Admin | Counts and content match queue state |
+
+#### E2E-17.3: **[TST-E2E-101]** Briefing Regenerates Cleanly After Brain Crash
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | Don Alonso | Queue Tier 3 items | Core → Brain | Queue populated |
+| 2 | — | Crash Brain during briefing generation | Container lifecycle | Brain stops mid-briefing |
+| 3 | — | Restart Brain | Docker → Brain | Briefing regenerated from source state, no duplicate delivery |
+
+### Suite 18: Move to a New Machine
+
+> Portability and recovery as a user journey, distinct from first-run onboarding.
+
+#### E2E-18.1: **[TST-E2E-102]** Export from Existing Node, Import to Fresh Node
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | Don Alonso | Export populated node | Core → archive | Encrypted export artifact produced |
+| 2 | — | Import on fresh machine | Fresh Core → import path | Personas and vault data restored according to design |
+| 3 | — | Verify identity and search | Core + Brain | Restored node usable on new machine |
+
+#### E2E-18.2: **[TST-E2E-103]** Mnemonic-Only Recovery Restores Identity, Not Vault Data
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | Don Alonso | Destroy local state, keep mnemonic only | Operator action | Original local vault lost |
+| 2 | — | Run mnemonic-based recovery | Recovery flow | Identity recovered per design |
+| 3 | — | Verify fresh-start semantics | Core + Brain | Same identity control if claimed; vault data absent if archive not restored |
+
+#### E2E-18.3: **[TST-E2E-104]** Import Requires Device Re-Pairing
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | Don Alonso | Import onto new node | Import flow | New node boots successfully |
+| 2 | Existing device | Attempt old paired auth | Device → Core | Old device credentials rejected if import invalidates them |
+| 3 | Don Alonso | Re-pair device | Admin/Core → device | New pairing works cleanly |
+
+### Suite 19: Connector Failure and Recovery
+
+> User-visible resilience of Dina's senses.
+
+#### E2E-19.1: **[TST-E2E-105]** OpenClaw Outage Degrades Clearly and Recovers
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | Don Alonso | Run ingestion or sync with OpenClaw healthy | Brain → MCP → OpenClaw | Baseline sync succeeds |
+| 2 | — | Stop OpenClaw | Container or network | Connector state becomes degraded or offline |
+| 3 | Don Alonso | Observe status | Admin/Client | User sees actionable degraded-state message |
+| 4 | — | Restore OpenClaw | Container or network | Sync resumes from correct cursor without dupes or gaps |
+
+#### E2E-19.2: **[TST-E2E-106]** Telegram Credential Expiry Surfaces Reconfigure Path
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | Don Alonso | Configure Telegram path | Connector setup | Baseline healthy |
+| 2 | — | Revoke or expire token | Upstream connector state | Dina surfaces expired or reconfigure status |
+| 3 | Don Alonso | Reconfigure credential | Admin/UI → connector | Connector returns to healthy state |
+
+#### E2E-19.3: **[TST-E2E-107]** Fast Sync, Backfill, and Resume After Interruption
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | Don Alonso | Start initial connector sync | Brain → MCP → OpenClaw | Fast window completes and system becomes ready |
+| 2 | — | Interrupt during backfill | Network or container | Backfill pauses with preserved cursor |
+| 3 | — | Restore connector | Recovery path | Backfill resumes correctly from preserved state |
+
+### Suite 20: Operator and Upgrade Journeys
+
+> Release-facing operator flows that are easy to miss in lower-level testing.
+
+#### E2E-20.1: **[TST-E2E-108]** Re-Running Install Does Not Rotate Identity
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | Don Alonso | Record DID and node state | Operator observation | Baseline identity captured |
+| 2 | — | Re-run install or startup bootstrap | install.sh/run.sh | Existing node preserved; no silent identity rotation |
+| 3 | — | Restart services | Docker lifecycle | Node still operational with same identity |
+
+#### E2E-20.2: **[TST-E2E-109]** Locked-Node Admin Journey
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | Don Alonso | Access admin while node locked | Browser/Admin → Core/Brain | Clear unlock-required path |
+| 2 | — | Unlock node | Core unlock flow | Admin becomes usable without broken session state |
+| 3 | — | Log out and back in | Admin session lifecycle | Session semantics remain correct |
+
+#### E2E-20.3: **[TST-E2E-110]** Verified Upgrade Requires Explicit Operator Action
+
+| Step | Actor | Action | Component Boundary | Expected Outcome |
+|------|-------|--------|--------------------|------------------|
+| 1 | Don Alonso | Attempt documented upgrade flow | Operator → deploy tooling | Upgrade starts only with explicit user action |
+| 2 | — | Feed invalid or tampered candidate | Verification path | Upgrade aborted with clear explanation |
+| 3 | — | Retry valid candidate | Verification path | Upgrade proceeds and running node remains healthy |
+
+### Suggested User-Story Implementations
+
+These are the natural user-story files to add after the current `test_01` through `test_06` set:
+
+| Proposed file | Primary coverage |
+|---------------|------------------|
+| `tests/system/user_stories/test_07_daily_briefing.py` | Suite 17 — quiet-by-default behavior and daily briefing |
+| `tests/system/user_stories/test_08_move_to_new_machine.py` | Suite 18 — export/import and mnemonic-only recovery semantics |
+| `tests/system/user_stories/test_09_connector_expiry.py` | Suite 19 — connector outage, expiry, and recovery |
+| `tests/system/user_stories/test_10_operator_journey.py` | Suite 20 — rerun, locked admin, and upgrade operator path |
+
 ---
 
 ## 5. Test Execution Strategy
@@ -1717,6 +1842,10 @@ Suite 13 (Security) ──→ Requires Suite 1 + Attacker tools
 Suite 14 (Agentic LLM) ──→ Requires Docker containers + GOOGLE_API_KEY (for @slow tests)
 Suite 15 (CLI Signing) ──→ Requires Suite 1 + CLI identity
 Suite 16 (AT Protocol PDS) ──→ Requires Docker containers + PDS service running
+Suite 17 (Quiet Dina) ──→ Requires Suite 1 + event injection paths
+Suite 18 (Move to New Machine) ──→ Requires Suite 1 + export/import support
+Suite 19 (Connector Failure) ──→ Requires Suite 1 + OpenClaw and Telegram paths
+Suite 20 (Operator Journeys) ──→ Requires Suite 1 + deploy/upgrade harness
 ```
 
 ### Parallelization
@@ -1734,6 +1863,8 @@ After Suite 1 completes, the following groups can run in parallel:
 | G | 13 | Don Alonso node + attacker tools |
 | H | 14 | Don Alonso's Brain + LLM API keys |
 | I | 15 | Don Alonso's Core + CLI identity |
+| J | 17, 19 | Don Alonso node + event and connector state injection |
+| K | 18, 20 | Don Alonso node + export/import or upgrade harness |
 
 Groups E and G require exclusive access to Don Alonso's node (crash/attack scenarios)
 and should run sequentially after other groups complete.
@@ -1797,6 +1928,10 @@ jobs:
 | Digital estate / beneficiary | Suite 9 | E2E-9.1 through E2E-9.4 |
 | Agent safety (exposed agents) | Suite 6 | E2E-6.3, E2E-6.4 |
 | Silence First (never push content) | Suite 14 | E2E-14.2, E2E-14.3 |
+| Daily briefing / quiet-by-default behavior | Suite 17 | E2E-17.1, E2E-17.2 |
+| Move to a new machine | Suite 18 | E2E-18.1, E2E-18.2, E2E-18.3 |
+| Connector expiry and recovery | Suite 19 | E2E-19.1, E2E-19.2, E2E-19.3 |
+| Admin and upgrade operator journey | Suite 20 | E2E-20.1, E2E-20.2, E2E-20.3 |
 | Agent intent gating (deterministic) | Suite 14 | E2E-14.4, E2E-14.5, E2E-14.7 |
 | Ed25519 device signing (CLI) | Suite 15 | E2E-15.1 through E2E-15.8 |
 | AT Protocol DID registration | Suite 16 | E2E-16.3, E2E-16.4, E2E-16.5 |
@@ -1821,6 +1956,14 @@ jobs:
 | Brain crash recovery (scratchpad) | Suite 10 | E2E-10.1 |
 | Sharing policy egress enforcement | Suite 2 | E2E-2.2 |
 | Deterministic safety gates (Silence First) | Suite 14 | E2E-14.2, E2E-14.3 |
+| Daily briefing queue and regeneration | Suite 17 | E2E-17.2, E2E-17.3 |
+| Export/import portability | Suite 18 | E2E-18.1, E2E-18.3 |
+| Mnemonic-only identity recovery | Suite 18 | E2E-18.2 |
+| Connector outage and resume | Suite 19 | E2E-19.1, E2E-19.3 |
+| Telegram reconfigure path | Suite 19 | E2E-19.2 |
+| Idempotent install rerun | Suite 20 | E2E-20.1 |
+| Locked admin operator path | Suite 20 | E2E-20.2 |
+| Verified upgrade path | Suite 20 | E2E-20.3 |
 | Agent intent risk classification | Suite 14 | E2E-14.4, E2E-14.5, E2E-14.7 |
 | PII Tier 2 NER scrubbing (spaCy) | Suite 14 | E2E-14.6 |
 | Ed25519 canonical request signing | Suite 15 | E2E-15.3, E2E-15.4 |

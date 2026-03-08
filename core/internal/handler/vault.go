@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -12,6 +13,25 @@ import (
 	"github.com/rajmohanutopai/dina/core/internal/port"
 	"github.com/rajmohanutopai/dina/core/internal/service"
 )
+
+// vaultErrStatus maps domain errors to HTTP status codes.
+// ErrPersonaLocked → 403 (client error, not server error).
+func vaultErrStatus(err error) int {
+	if errors.Is(err, domain.ErrPersonaLocked) {
+		return http.StatusForbidden
+	}
+	return http.StatusInternalServerError
+}
+
+// vaultErrMsg returns a client-safe error message. When the error is
+// ErrPersonaLocked the client sees "persona locked" (actionable); for
+// all other errors the caller-supplied default is used.
+func vaultErrMsg(err error, defaultMsg string) string {
+	if errors.Is(err, domain.ErrPersonaLocked) {
+		return "persona locked"
+	}
+	return defaultMsg
+}
 
 // VaultHandler exposes vault CRUD and KV endpoints.
 type VaultHandler struct {
@@ -81,7 +101,7 @@ func (h *VaultHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.Vault.Query(r.Context(), agentDID(r), persona, q)
 	if err != nil {
-		clientError(w, "query failed", http.StatusInternalServerError, err)
+		clientError(w, vaultErrMsg(err, "query failed"), vaultErrStatus(err), err)
 		return
 	}
 
@@ -123,7 +143,7 @@ func (h *VaultHandler) HandleStore(w http.ResponseWriter, r *http.Request) {
 
 	id, err := h.Vault.Store(r.Context(), agentDID(r), persona, req.Item)
 	if err != nil {
-		clientError(w, "store failed", http.StatusInternalServerError, err)
+		clientError(w, vaultErrMsg(err, "store failed"), vaultErrStatus(err), err)
 		return
 	}
 
@@ -160,7 +180,7 @@ func (h *VaultHandler) HandleStoreBatch(w http.ResponseWriter, r *http.Request) 
 
 	ids, err := h.Vault.StoreBatch(r.Context(), agentDID(r), persona, req.Items)
 	if err != nil {
-		clientError(w, "store batch failed", http.StatusInternalServerError, err)
+		clientError(w, vaultErrMsg(err, "store batch failed"), vaultErrStatus(err), err)
 		return
 	}
 
@@ -198,7 +218,7 @@ func (h *VaultHandler) HandleGetItem(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"item not found"}`, http.StatusNotFound)
 			return
 		}
-		clientError(w, "get item failed", http.StatusInternalServerError, err)
+		clientError(w, vaultErrMsg(err, "get item failed"), vaultErrStatus(err), err)
 		return
 	}
 	if item == nil {
@@ -237,7 +257,7 @@ func (h *VaultHandler) HandleDeleteItem(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := h.Vault.Delete(r.Context(), agentDID(r), persona, id); err != nil {
-		clientError(w, "delete failed", http.StatusInternalServerError, err)
+		clientError(w, vaultErrMsg(err, "delete failed"), vaultErrStatus(err), err)
 		return
 	}
 
@@ -279,7 +299,7 @@ func HandleClearVault(clearer VaultClearer) http.HandlerFunc {
 
 		count, err := clearer.ClearAll(r.Context(), persona)
 		if err != nil {
-			clientError(w, "clear failed", http.StatusInternalServerError, err)
+			clientError(w, vaultErrMsg(err, "clear failed"), vaultErrStatus(err), err)
 			return
 		}
 
@@ -344,7 +364,7 @@ func (h *VaultHandler) HandlePutKV(w http.ResponseWriter, r *http.Request) {
 		BodyText: value,
 	}
 	if _, err := h.Vault.Store(r.Context(), agentDID(r), persona, item); err != nil {
-		clientError(w, "store failed", http.StatusInternalServerError, err)
+		clientError(w, vaultErrMsg(err, "store failed"), vaultErrStatus(err), err)
 		return
 	}
 
@@ -385,7 +405,7 @@ func (h *VaultHandler) HandleGetKV(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"key not found"}`, http.StatusNotFound)
 			return
 		}
-		clientError(w, "get failed", http.StatusInternalServerError, err)
+		clientError(w, vaultErrMsg(err, "get failed"), vaultErrStatus(err), err)
 		return
 	}
 	if item == nil {
