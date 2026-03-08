@@ -21,30 +21,38 @@ from .factories import make_voice_transcription
 
 
 # TST-BRAIN-400
-def test_voice_18_1_deepgram_to_guardian() -> None:
+@pytest.mark.asyncio
+async def test_voice_18_1_deepgram_to_guardian() -> None:
     """SS18.1: Voice input via Deepgram -> text -> guardian loop.
 
     Architecture SS16: Brain integrates with Deepgram Nova-3 via WebSocket
     streaming for real-time voice-to-text. Transcribed text is processed
     as a regular text query through the guardian loop.
     """
+    from src.service.guardian import GuardianLoop
+
+    core = AsyncMock()
+    core.write_scratchpad = AsyncMock()
+    core.get_kv = AsyncMock(return_value=None)
+    guardian = GuardianLoop(core=core, llm=AsyncMock(), mcp=AsyncMock())
+
     # Simulate voice transcription result
     transcription = make_voice_transcription(text="Check my email")
-    assert transcription["text"] == "Check my email"
-    assert transcription["confidence"] >= 0.9
     assert transcription["provider"] == "deepgram"
     assert transcription["model"] == "nova-3"
+    assert transcription["confidence"] >= 0.9
 
-    # The transcribed text would be sent to the guardian loop as a regular event
+    # Feed transcribed text into guardian as a voice-sourced event.
     event = {
         "type": "query",
         "body": transcription["text"],
         "source": "voice",
         "confidence": transcription["confidence"],
     }
-    assert event["type"] == "query"
-    assert event["body"] == "Check my email"
-    assert event["source"] == "voice"
+    result = await guardian.process_event(event)
+    # Guardian must process voice events like any other query.
+    assert isinstance(result, dict)
+    assert "action" in result, "Guardian must return an action for voice events"
 
 
 # TST-BRAIN-401

@@ -73,29 +73,61 @@ def local_only_router(local_provider):
 
 # TST-BRAIN-270
 @pytest.mark.asyncio
-async def test_routing_8_1_1_route_to_local_llm(llm_router, local_provider) -> None:
-    """SS8.1.1: Simple summarization task routes to local LLM."""
+async def test_routing_8_1_1_route_to_local_llm(
+    llm_router, local_provider, cloud_provider
+) -> None:
+    """SS8.1.1: Lightweight summarization task routes to local LLM.
+
+    'summarize' is in _LIGHTWEIGHT_TASKS, so the router should prefer
+    the local provider when both local and cloud are available.
+    """
     task = make_routing_task(task_type="summarize")
     result = await llm_router.route(
         task_type=task["type"],
         prompt=task["prompt"],
         persona_tier=task["persona_tier"],
     )
+
+    # Routing decision.
     assert result["route"] == "local"
+
+    # Response shape — verify the LLM output propagated correctly.
+    assert "content" in result
+    assert result["model"] == "llama-3.2-3b"
+
+    # Provider call verification.
     local_provider.complete.assert_awaited_once()
+    cloud_provider.complete.assert_not_awaited()
 
 
 # TST-BRAIN-271
 @pytest.mark.asyncio
 async def test_routing_8_1_2_route_to_mcp_agent() -> None:
     """SS8.1.2: Email fetch task routes to MCP gmail agent."""
-    # MCP routing is handled by the agent router, not the LLM router.
-    # Verify MCP client can be called for email fetch.
+    from src.service.sync_engine import SyncEngine
+
+    core = AsyncMock()
+    core.get_kv = AsyncMock(return_value=None)
+    core.set_kv = AsyncMock()
+    core.search_vault = AsyncMock(return_value=[])
+    core.store_vault_item = AsyncMock(return_value="item-001")
+
     mcp = AsyncMock()
-    mcp.call_tool.return_value = {"result": "Fetched 5 emails"}
-    result = await mcp.call_tool("gmail_server", "gmail_fetch", {"limit": 10})
-    assert result["result"] == "Fetched 5 emails"
-    mcp.call_tool.assert_awaited_once_with("gmail_server", "gmail_fetch", {"limit": 10})
+    mcp.call_tool.return_value = {"items": [
+        {"source_id": "msg-1", "subject": "Hello", "sender": "a@b.com", "category": "PRIMARY"},
+    ]}
+
+    engine = SyncEngine(core=core, mcp=mcp, llm=None)
+    result = await engine.run_sync_cycle("gmail")
+
+    # MCP was called to fetch emails from the gmail server
+    mcp.call_tool.assert_awaited_once()
+    call_args = mcp.call_tool.await_args
+    assert call_args[0][0] == "gmail" or "gmail" in str(call_args), (
+        "Sync cycle must delegate to MCP gmail server"
+    )
+    assert isinstance(result, dict)
+    assert "fetched" in result
 
 
 # TST-BRAIN-272
@@ -165,13 +197,26 @@ async def test_routing_8_2_2_mcp_tool_not_found() -> None:
 @pytest.mark.asyncio
 async def test_routing_8_2_3_mcp_delegation_gatekeeper_check() -> None:
     """SS8.2.3: MCP delegation checks gatekeeper before executing tool."""
-    # Verify intent classification occurs before delegation
-    intent = make_risky_intent(action="send_email")
-    assert intent["risk_level"] == "risky"
+    from src.service.guardian import GuardianLoop
 
-    # Gatekeeper would flag this for review before allowing MCP execution
-    assert intent["action"] == "send_email"
-    assert intent.get("attachment") is True  # Risky: has attachment
+    core = AsyncMock()
+    core.write_scratchpad = AsyncMock()
+    core.get_kv = AsyncMock(return_value=None)
+    guardian = GuardianLoop(core=core, llm=AsyncMock(), mcp=AsyncMock())
+
+    # send_email is a MODERATE action — gatekeeper must flag for review
+    intent = make_risky_intent(action="send_email")
+    result = await guardian.review_intent(intent)
+
+    assert result["action"] == "flag_for_review", "send_email must be flagged"
+    assert result["approved"] is False
+    assert result["requires_approval"] is True
+
+    # Counter-proof: safe action passes through
+    safe_intent = {"action": "search", "trust_level": "verified", "agent_did": "did:key:z6MkBot"}
+    safe_result = await guardian.review_intent(safe_intent)
+    assert safe_result["action"] == "auto_approve"
+    assert safe_result["approved"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -182,26 +227,47 @@ async def test_routing_8_2_3_mcp_delegation_gatekeeper_check() -> None:
 # TST-BRAIN-278
 @pytest.mark.asyncio
 async def test_routing_8_3_1_check_trusted_agent_trust_scores() -> None:
-    """SS8.3.1: Trusted agent has trust score above threshold."""
-    # Trust scores are maintained by the agent router
-    trust_db = {
-        "did:key:z6MkTrustedBot": 0.85,
-        "did:key:z6MkUntrustedBot": 0.15,
+    """SS8.3.1: Trusted agent with verified trust_level is auto-approved via review_intent."""
+    from src.service.guardian import GuardianLoop
+
+    core = AsyncMock()
+    core.write_scratchpad = AsyncMock()
+    core.get_kv = AsyncMock(return_value=None)
+    guardian = GuardianLoop(core=core, llm=AsyncMock(), mcp=AsyncMock())
+
+    # Verified agent with safe action → auto-approved.
+    intent = {
+        "action": "fetch_weather",
+        "trust_level": "verified",
+        "agent_did": "did:key:z6MkTrustedBot",
     }
-    score = trust_db.get("did:key:z6MkTrustedBot", 0.0)
-    assert score >= 0.7
+    result = await guardian.review_intent(intent)
+    assert result["action"] == "auto_approve", "Verified agent with safe action must be auto-approved"
+    assert result["approved"] is True
+    assert result["risk"] != "BLOCKED"
 
 
 # TST-BRAIN-279
 @pytest.mark.asyncio
 async def test_routing_8_3_2_check_untrusted_agent_trust_scores() -> None:
-    """SS8.3.2: Untrusted agent has low trust score."""
-    trust_db = {
-        "did:key:z6MkTrustedBot": 0.85,
-        "did:key:z6MkUntrustedBot": 0.15,
+    """SS8.3.2: Untrusted agent is denied by guardian review_intent."""
+    from src.service.guardian import GuardianLoop
+
+    core = AsyncMock()
+    core.write_scratchpad = AsyncMock()
+    core.get_kv = AsyncMock(return_value=None)
+    guardian = GuardianLoop(core=core, llm=AsyncMock(), mcp=AsyncMock())
+
+    # Untrusted agent attempting any action → BLOCKED
+    intent = {
+        "action": "fetch_data",
+        "trust_level": "untrusted",
+        "agent_did": "did:key:z6MkUntrustedBot",
     }
-    score = trust_db.get("did:key:z6MkUntrustedBot", 0.0)
-    assert score < 0.5
+    result = await guardian.review_intent(intent)
+    assert result["action"] == "deny", "Untrusted agent must be denied"
+    assert result["approved"] is False
+    assert result["risk"] == "BLOCKED"
 
 
 # TST-BRAIN-280

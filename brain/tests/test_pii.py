@@ -130,6 +130,17 @@ def test_pii_3_1_1_person_name_detection(spacy_scrubber) -> None:
     assert person_entities[0]["value"] == "John Smith"
     assert "John Smith" not in scrubbed
 
+    # Verify entity contract: each entity must have type, value, and token
+    for ent in person_entities:
+        assert "type" in ent
+        assert "value" in ent
+        assert "token" in ent, "Entity must include a 'token' replacement field"
+        assert ent["token"], "Token cannot be empty"
+        # The replacement token must appear in the scrubbed text
+        assert ent["token"] in scrubbed, (
+            f"Token {ent['token']!r} must appear in scrubbed output"
+        )
+
 
 # TST-BRAIN-092
 def test_pii_3_1_2_organization_detection(spacy_scrubber) -> None:
@@ -163,13 +174,21 @@ def test_pii_3_1_3_location_detection(spacy_scrubber) -> None:
 # TST-BRAIN-094
 def test_pii_3_1_4_date_with_context(spacy_scrubber) -> None:
     """SS3.1.4: Dates are NOT scrubbed — DATE is in the SAFE whitelist."""
+    from src.adapter.scrubber_presidio import SAFE_ENTITIES
+
+    # Structural: DATE and DATE_TIME must be in SAFE_ENTITIES.
+    assert "DATE" in SAFE_ENTITIES, "DATE must be in SAFE_ENTITIES whitelist"
+    assert "DATE_TIME" in SAFE_ENTITIES, "DATE_TIME must be in SAFE_ENTITIES whitelist"
+
     text = "Born on March 15, 1990"
 
     scrubbed, entities = spacy_scrubber.scrub(text)
 
     # DATE entities should not be detected (they're in the SAFE whitelist).
-    date_entities = [e for e in entities if e["type"] == "DATE"]
-    assert len(date_entities) == 0
+    date_entities = [e for e in entities if e["type"] in ("DATE", "DATE_TIME")]
+    assert len(date_entities) == 0, (
+        f"DATE/DATE_TIME entities should be filtered by SAFE whitelist, got: {date_entities}"
+    )
     # The date should pass through unchanged.
     assert "March 15, 1990" in scrubbed
 
@@ -232,27 +251,35 @@ def test_pii_3_1_9_non_english_text(spacy_scrubber) -> None:
     # Must not crash on non-English input.
     scrubbed, entities = spacy_scrubber.scrub(text)
 
-    # "Paris" is commonly detected as LOC even by the English model.
-    loc_entities = [e for e in entities if e["type"] == "LOC"]
-    assert len(loc_entities) >= 1 or True  # best-effort, no crash is success
+    # "Paris" is commonly detected as GPE/LOC even by the English model.
+    loc_entities = [e for e in entities if e["type"] in ("LOC", "GPE")]
+    assert len(loc_entities) >= 1, (
+        f"'Paris' should be detected as LOC/GPE by en_core_web_sm, got: {entities}"
+    )
+    assert "Paris" not in scrubbed, "Detected location must be scrubbed"
 
 
 # TST-BRAIN-100
 def test_pii_3_1_10_medical_terms(spacy_scrubber) -> None:
     """SS3.1.10: 'L4-L5 disc herniation' detected via custom spaCy rules as MEDICAL."""
+    # Verify EntityRuler is loaded — skip if setup failed (best-effort feature).
+    if "entity_ruler" not in spacy_scrubber._nlp.pipe_names:
+        pytest.skip("EntityRuler not loaded — medical detection unavailable")
+
     text = make_pii_text(include=("medical",))
     assert "L4-L5 disc herniation" in text
 
     scrubbed, entities = spacy_scrubber.scrub(text)
 
-    # Custom entity ruler should detect MEDICAL entities.
+    # Custom entity ruler MUST detect MEDICAL entities when loaded.
     medical_entities = [e for e in entities if e["type"] == "MEDICAL"]
-    if medical_entities:
-        assert medical_entities[0]["value"] not in scrubbed
-    else:
-        # If medical detection is best-effort and didn't fire,
-        # at least verify no crash occurred.
-        assert isinstance(scrubbed, str)
+    assert len(medical_entities) >= 1, (
+        f"EntityRuler is loaded but did not detect MEDICAL in: {text}\n"
+        f"Detected entities: {entities}"
+    )
+    assert medical_entities[0]["value"] not in scrubbed, (
+        "Medical term must be replaced in scrubbed output"
+    )
 
 
 # TST-BRAIN-101
@@ -265,15 +292,20 @@ def test_pii_3_1_11_multiple_same_type(spacy_scrubber) -> None:
     person_entities = [e for e in entities if e["type"] == "PERSON"]
     org_entities = [e for e in entities if e["type"] == "ORG"]
 
-    # Should have at least 2 persons and 2 orgs (spaCy-model dependent).
-    if len(person_entities) >= 2:
-        assert "John Smith" not in scrubbed
-        assert "Jane Doe" not in scrubbed
-        # The two fake replacements must be different.
-        assert person_entities[0]["token"] != person_entities[1]["token"]
-    if len(org_entities) >= 2:
-        assert "Google" not in scrubbed
-        assert "Meta" not in scrubbed
+    # Must detect at least 2 persons — mandatory, not conditional
+    assert len(person_entities) >= 2, (
+        f"Expected at least 2 PERSON entities, got {len(person_entities)}: {entities}"
+    )
+    assert "John Smith" not in scrubbed
+    assert "Jane Doe" not in scrubbed
+    # The two replacements must have different tokens
+    assert person_entities[0]["token"] != person_entities[1]["token"]
+
+    # Must detect at least 1 org
+    assert len(org_entities) >= 1, (
+        f"Expected at least 1 ORG entity, got {len(org_entities)}: {entities}"
+    )
+    assert "Google" not in scrubbed
 
 
 # TST-BRAIN-102
@@ -307,14 +339,16 @@ def test_pii_3_1_13_address_detection(spacy_scrubber) -> None:
 
     scrubbed, entities = spacy_scrubber.scrub(text)
 
-    loc_entities = [e for e in entities if e["type"] == "LOC"]
-    if loc_entities:
-        # Real location should be replaced with a fake city or tag.
-        for loc in loc_entities:
-            assert loc["value"] not in scrubbed
-    # At minimum "London" should be detected.
-    all_values = [e["value"] for e in entities]
-    assert any("London" in v for v in all_values) or len(entities) > 0
+    # spaCy must detect "London" as a location entity (LOC or GPE)
+    loc_entities = [e for e in entities if e["type"] in ("LOC", "GPE")]
+    assert len(loc_entities) >= 1, (
+        f"'London' must be detected as LOC/GPE by spaCy, got: {entities}"
+    )
+    # Detected location values must be replaced in scrubbed output
+    for loc in loc_entities:
+        assert loc["value"] not in scrubbed, (
+            f"Location '{loc['value']}' must be scrubbed from output"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -562,21 +596,45 @@ def test_pii_3_3_3_rehydrate_after_llm(entity_vault) -> None:
     ]
     vault = entity_vault.create_vault(entities)
 
+    # Validate vault structure before rehydration.
+    assert isinstance(vault, dict), "Vault must be a dict"
+    assert len(vault) == 2, "Vault must contain exactly 2 mappings"
+    assert vault["<PERSON_1>"] == "Dr. Sharma", "Vault must map token to original value"
+    assert vault["<ORG_1>"] == "Apollo Hospital", "Vault must map token to original value"
+
     llm_response = "<PERSON_1> at <ORG_1> noted your A1C was 11.2"
     rehydrated = entity_vault.rehydrate(llm_response, vault)
 
     assert rehydrated == "Dr. Sharma at Apollo Hospital noted your A1C was 11.2"
+    # No tokens should remain in the rehydrated text.
+    assert "<PERSON_1>" not in rehydrated
+    assert "<ORG_1>" not in rehydrated
 
 
 # TST-BRAIN-113
 def test_pii_3_3_4_entity_vault_destroyed(entity_vault) -> None:
-    """SS3.3.4: Entity vault dict is garbage-collected after rehydration."""
+    """SS3.3.4: Entity vault dict is garbage-collected after rehydration.
+
+    Verifies:
+    1. Vault contents are cleared (no PII values remain in dict).
+    2. The dict object itself is garbage-collected (weakref goes dead).
+    3. PII string values ("Dr. Sharma") are no longer reachable from
+       the vault reference after clear + delete.
+    """
+    import gc
+
     entities = [
         {"type": "PERSON", "value": "Dr. Sharma", "token": "<PERSON_1>"},
+        {"type": "ORG", "value": "Apollo Hospital", "token": "<ORG_1>"},
     ]
     vault = entity_vault.create_vault(entities)
-    assert len(vault) == 1
+    assert len(vault) == 2
     assert vault["<PERSON_1>"] == "Dr. Sharma"
+    assert vault["<ORG_1>"] == "Apollo Hospital"
+
+    # Track the dict with a weak reference — goes None when GC'd.
+    vault_ref = weakref.ref(vault)
+    assert vault_ref() is not None, "Weak ref should be alive before clear"
 
     # Simulate the end of a request — clear the vault.
     vault.clear()
@@ -584,10 +642,20 @@ def test_pii_3_3_4_entity_vault_destroyed(entity_vault) -> None:
     # After clearing, no PII values remain in the dict.
     assert len(vault) == 0
     assert "<PERSON_1>" not in vault
+    assert "<ORG_1>" not in vault
+    # Values should not be retrievable.
+    assert "Dr. Sharma" not in vault.values()
+    assert "Apollo Hospital" not in vault.values()
 
-    # Verify the vault reference can be deleted (no lingering refs).
-    vault_id = id(vault)
+    # Delete the reference and force GC.
     del vault
+    gc.collect()
+
+    # The dict object must actually be garbage-collected.
+    assert vault_ref() is None, (
+        "Entity vault dict still alive after del + gc.collect() — "
+        "PII may be leaking via lingering references"
+    )
 
 
 # TST-BRAIN-114
@@ -599,7 +667,7 @@ def test_pii_3_3_5_entity_vault_never_persisted() -> None:
     source_lower = source.lower()
 
     # No filesystem operations in the entity vault code.
-    assert "open(" not in source_lower or "# never" in source_lower
+    assert "open(" not in source_lower, "EntityVaultService must not use open() — vault is purely in-memory"
     assert "write_text" not in source_lower
     assert "write_bytes" not in source_lower
     assert "pickle" not in source_lower
@@ -647,8 +715,14 @@ def test_pii_3_3_8_nested_redaction_tokens(entity_vault) -> None:
     llm_response = "The pattern <PERSON_1> is commonly used as a placeholder"
     rehydrated = entity_vault.rehydrate(llm_response, vault)
 
-    # Current implementation does simple string replacement.
-    assert "Dr. Sharma" in rehydrated or "<PERSON_1>" in rehydrated
+    # Production rehydrate() does simple string replacement — the token
+    # in the vault IS <PERSON_1>, so it WILL be replaced with the original.
+    assert "Dr. Sharma" in rehydrated, (
+        f"Vault token must be rehydrated to original value, got: {rehydrated}"
+    )
+    assert "<PERSON_1>" not in rehydrated, (
+        "Token must be replaced after rehydration"
+    )
 
 
 # TST-BRAIN-118
@@ -692,26 +766,58 @@ def test_pii_3_3_10_scope_one_request(entity_vault) -> None:
 
 # TST-BRAIN-120
 def test_pii_3_3_11_cloud_sees_topics_not_identities(entity_vault) -> None:
-    """SS3.3.11: Cloud LLM sees health topics but cannot identify the patient."""
+    """SS3.3.11: Cloud LLM sees health topics but cannot identify the patient.
+
+    The original test constructed scrubbed text manually (a tautology).
+    This version creates entities, builds a vault, verifies the vault
+    mapping is correct, then simulates the cloud-LLM round-trip:
+    scrubbed text → (cloud LLM response) → rehydrate.  It checks that
+    PII tokens are opaque and that health *topics* survive scrubbing.
+    """
     entities = [
         {"type": "PERSON", "value": "Dr. Sharma", "token": "<PERSON_1>"},
         {"type": "ORG", "value": "Apollo Hospital", "token": "<ORG_1>"},
     ]
     vault = entity_vault.create_vault(entities)
 
+    # Vault must map tokens → original values
+    assert vault["<PERSON_1>"] == "Dr. Sharma"
+    assert vault["<ORG_1>"] == "Apollo Hospital"
+
+    # Simulate scrubbed text that would be sent to cloud LLM.
+    # Health topics ("blood sugar") remain; PII is replaced by tokens.
     scrubbed_text = (
         "What did <PERSON_1> say about my blood sugar at <ORG_1>?"
     )
 
+    # Topics survive — the cloud can reason about health subjects
     assert "blood sugar" in scrubbed_text
+
+    # PII is NOT present in what the cloud sees
     assert "Dr. Sharma" not in scrubbed_text
     assert "Apollo Hospital" not in scrubbed_text
 
-    rehydrated = entity_vault.rehydrate(
-        "<PERSON_1> at <ORG_1> noted your A1C was 11.2", vault
-    )
+    # Tokens ARE present (the cloud sees only these placeholders)
+    assert "<PERSON_1>" in scrubbed_text
+    assert "<ORG_1>" in scrubbed_text
+
+    # Simulate cloud LLM response using tokens
+    llm_response = "<PERSON_1> at <ORG_1> noted your A1C was 11.2"
+
+    # Rehydrate the response back to real PII (locally, never sent back)
+    rehydrated = entity_vault.rehydrate(llm_response, vault)
     assert "Dr. Sharma" in rehydrated
     assert "Apollo Hospital" in rehydrated
+    # Tokens must be fully replaced — no leftover placeholders
+    assert "<PERSON_1>" not in rehydrated, (
+        "Token <PERSON_1> survived rehydration — PII leak in output"
+    )
+    assert "<ORG_1>" not in rehydrated, (
+        "Token <ORG_1> survived rehydration — PII leak in output"
+    )
+    # Health topic data preserved through round-trip
+    assert "A1C" in rehydrated
+    assert "11.2" in rehydrated
 
 
 # ---------------------------------------------------------------------------
@@ -727,8 +833,12 @@ def test_pii_3_2_7_include_content_pii_scrub(spacy_scrubber) -> None:
     scrubbed_text, entities = spacy_scrubber.scrub(vault_response["body_text"])
 
     person_entities = [e for e in entities if e["type"] == "PERSON"]
-    if person_entities:
-        assert "John Smith" not in scrubbed_text
+    assert len(person_entities) >= 1, (
+        f"PERSON entity must be detected for 'John Smith', got: {entities}"
+    )
+    assert "John Smith" not in scrubbed_text, (
+        "Original PII must be scrubbed from body_text"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -816,6 +926,9 @@ def test_pii_3_4_2_india_pan(presidio_scrubber) -> None:
 
     pan = [e for e in entities if e["type"] == "IN_PAN"]
     assert len(pan) >= 1, f"Expected PAN detection, got: {entities}"
+    assert pan[0]["value"] == "ABCDE1234F", "Entity value must match raw PAN"
+    assert pan[0]["token"], "Entity must have a non-empty token"
+    assert pan[0]["token"] in scrubbed, "Token must appear in scrubbed text"
     assert "ABCDE1234F" not in scrubbed
 
 
@@ -841,6 +954,18 @@ def test_pii_3_4_4_india_upi(presidio_scrubber) -> None:
     upi = [e for e in entities if e["type"] == "IN_UPI_ID"]
     assert len(upi) >= 1, f"Expected UPI detection, got: {entities}"
     assert "user@okicici" not in scrubbed
+
+    # Entity contract: value captured correctly
+    assert upi[0]["value"] == "user@okicici", (
+        f"Expected captured value 'user@okicici', got {upi[0]['value']!r}"
+    )
+
+    # Entity contract: token field present and in scrubbed text
+    assert "token" in upi[0], "Entity must include 'token' field"
+    assert upi[0]["token"], "Token cannot be empty"
+    assert upi[0]["token"] in scrubbed, (
+        f"Token {upi[0]['token']!r} must appear in scrubbed output"
+    )
 
 
 # TST-BRAIN-428
@@ -869,19 +994,37 @@ def test_pii_3_4_6_india_passport(presidio_scrubber) -> None:
 
 # TST-BRAIN-430
 def test_pii_3_4_7_india_bank_account(presidio_scrubber) -> None:
-    """SS3.4.7: Indian bank account number detected with context."""
+    """SS3.4.7: Indian bank account number detected with context.
+
+    Presidio may detect this as IN_BANK_ACCOUNT (custom India recognizer)
+    or US_BANK_NUMBER (built-in) — either way the number must be scrubbed.
+    We verify both detection AND that the entity carries the original
+    value for vault storage.
+    """
     text = "Account number: 123456789012345"
 
     scrubbed, entities = presidio_scrubber.scrub(text)
 
-    # Presidio may detect this as IN_BANK_ACCOUNT or US_BANK_NUMBER —
-    # either way the number should be scrubbed.
+    # Either India or US bank recognizer must fire.
     bank = [
         e for e in entities
         if e["type"] in ("IN_BANK_ACCOUNT", "US_BANK_NUMBER")
     ]
     assert len(bank) >= 1, f"Expected bank account detection, got: {entities}"
+
+    # Original number must be removed from scrubbed output.
     assert "123456789012345" not in scrubbed
+
+    # Entity must carry the original value for vault rehydration.
+    assert bank[0]["value"] == "123456789012345", (
+        f"Entity value should be the original number, got: {bank[0].get('value')}"
+    )
+
+    # Token must be present in scrubbed text (replacing the original).
+    assert "token" in bank[0], "Entity must include a token field"
+    assert bank[0]["token"] in scrubbed, (
+        f"Token {bank[0]['token']} should appear in scrubbed text"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -961,14 +1104,33 @@ def test_pii_3_5_5_classifier_mixed() -> None:
 
 # TST-BRAIN-436
 def test_pii_3_6_1_safe_date(presidio_scrubber) -> None:
-    """SS3.6.1: Dates pass through unchanged — DATE is in SAFE whitelist."""
+    """SS3.6.1: Dates pass through unchanged — DATE is in SAFE whitelist.
+
+    Verifies the filtering mechanism, not just the result:
+    1. DATE and DATE_TIME are in SAFE_ENTITIES whitelist.
+    2. Scrubbed text contains the date unchanged.
+    3. No date entities appear in the returned entity list.
+    """
+    from src.adapter.scrubber_presidio import SAFE_ENTITIES
+
+    # Structural check: DATE must be in the SAFE whitelist
+    assert "DATE" in SAFE_ENTITIES, "DATE must be in SAFE_ENTITIES whitelist"
+    assert "DATE_TIME" in SAFE_ENTITIES, "DATE_TIME must be in SAFE_ENTITIES whitelist"
+
     text = "The meeting is on January 15, 2026"
 
     scrubbed, entities = presidio_scrubber.scrub(text)
 
+    # Date entities must be filtered out of the returned list
     date_entities = [e for e in entities if e["type"] in ("DATE", "DATE_TIME")]
-    assert len(date_entities) == 0
-    assert "January 15, 2026" in scrubbed
+    assert len(date_entities) == 0, (
+        f"DATE entities must not appear in scrub output: {date_entities}"
+    )
+
+    # Date text must survive unchanged in scrubbed output
+    assert "January 15, 2026" in scrubbed, (
+        f"Date must pass through unchanged, got: {scrubbed}"
+    )
 
 
 # TST-BRAIN-437
@@ -1056,16 +1218,35 @@ def test_pii_3_7_1_vault_general_patterns() -> None:
 
 # TST-BRAIN-441
 def test_pii_3_7_2_vault_sensitive_scrub() -> None:
-    """SS3.7.2: SENSITIVE sensitivity uses full NER scrubbing."""
+    """SS3.7.2: SENSITIVE sensitivity uses full NER scrubbing.
+
+    Verifies:
+    1. Routing: SENSITIVE selects scrub() not scrub_patterns_only().
+    2. Scrub input: Tier 1 output is fed to Tier 2 (full NER).
+    3. Scrubbed text hides PII from the LLM.
+    4. Entity contract: each entity has type/value/token fields.
+    """
     from src.service.entity_vault import EntityVaultService
     from src.domain.enums import Sensitivity
 
+    # Realistic Tier 2 mock: returns scrubbed text with tokens + entities
+    sensitive_entities = [
+        {"type": "PERSON", "value": "Dr. Sharma", "token": "<<PII_PERSON_1>>"},
+        {"type": "MEDICAL_CONDITION", "value": "severe diabetes", "token": "<<PII_MEDICAL_1>>"},
+    ]
     mock_scrubber = MagicMock()
-    mock_scrubber.scrub_patterns_only = MagicMock(return_value=("text", []))
-    mock_scrubber.scrub = MagicMock(return_value=("text", []))
+    mock_scrubber.scrub_patterns_only = MagicMock(return_value=("should not be called", []))
+    mock_scrubber.scrub = MagicMock(return_value=(
+        "<<PII_PERSON_1>> diagnosed with <<PII_MEDICAL_1>>",
+        sensitive_entities,
+    ))
 
     mock_core = AsyncMock()
-    mock_core.pii_scrub.return_value = {"scrubbed": "text", "entities": []}
+    # Tier 1 passes text through (no regex hits in this input)
+    mock_core.pii_scrub.return_value = {
+        "scrubbed": "Dr. Sharma diagnosed with severe diabetes",
+        "entities": [],
+    }
 
     classifier = MagicMock()
     classifier.classify.return_value = MagicMock(
@@ -1080,18 +1261,36 @@ def test_pii_3_7_2_vault_sensitive_scrub() -> None:
 
     import asyncio
     mock_llm = AsyncMock()
-    mock_llm.complete.return_value = {"content": "response"}
+    mock_llm.complete.return_value = {"content": "<<PII_PERSON_1>> needs insulin"}
 
     asyncio.get_event_loop().run_until_complete(
         evs.scrub_and_call(
             llm=mock_llm,
-            messages=[{"role": "user", "content": "My diagnosis is severe"}],
+            messages=[{"role": "user", "content": "Dr. Sharma diagnosed with severe diabetes"}],
         )
     )
 
-    # SENSITIVE: should use full scrub.
+    # 1. Routing: SENSITIVE must use full scrub, not patterns-only
     mock_scrubber.scrub.assert_called_once()
     mock_scrubber.scrub_patterns_only.assert_not_called()
+
+    # 2. Scrub input: Tier 1 output fed to Tier 2
+    tier2_input = mock_scrubber.scrub.call_args[0][0]
+    assert isinstance(tier2_input, str)
+    assert len(tier2_input) > 0
+
+    # 3. LLM received scrubbed text (no raw PII)
+    llm_call_args = mock_llm.complete.call_args
+    llm_messages = llm_call_args[1].get("messages") or llm_call_args[0][0]
+    user_msg = next(m for m in llm_messages if m["role"] == "user")
+    assert "Dr. Sharma" not in user_msg["content"], "Raw PII must not reach LLM"
+
+    # 4. Entity contract: each entity has required fields
+    for ent in sensitive_entities:
+        assert "type" in ent
+        assert "value" in ent
+        assert "token" in ent
+        assert ent["token"], "Token cannot be empty"
 
 
 # TST-BRAIN-442
@@ -1140,9 +1339,14 @@ def test_pii_3_7_4_rehydrate_hallucinated(presidio_scrubber) -> None:
     text = "<PERSON_1> discussed <PERSON_2> with the team"
     result = presidio_scrubber.rehydrate(text, entity_map)
 
+    # Known token must be replaced.
     assert "Dr. Sharma" in result
-    # <PERSON_2> is hallucinated — should remain as-is.
+    assert "<PERSON_1>" not in result, "Known token must be replaced by original value"
+    # Hallucinated token must remain as-is (not cause error or disappear).
     assert "<PERSON_2>" in result
+    # Non-token text must be preserved.
+    assert "discussed" in result
+    assert "with the team" in result
 
 
 # ---------------------------------------------------------------------------
@@ -1169,14 +1373,32 @@ def test_pii_3_8_1_eu_steuer_id(presidio_scrubber) -> None:
 
 # TST-BRAIN-445
 def test_pii_3_8_2_eu_personalausweis(presidio_scrubber) -> None:
-    """SS3.8.2: German Personalausweis number detected with context."""
+    """SS3.8.2: German Personalausweis number detected with context.
+
+    The regex pattern accepts [CFGHJKLMNPRTVWXYZ][CFGHJKLMNPRTVWXYZ0-9]{8,9}
+    which is broader than the official format.  We test with a value
+    that matches the regex and verify detection + scrubbing.
+    """
     text = "My Personalausweis number is LM3456789X"
 
     scrubbed, entities = presidio_scrubber.scrub(text)
 
     ausweis = [e for e in entities if e["type"] == "DE_PERSONALAUSWEIS"]
     assert len(ausweis) >= 1, f"Expected Personalausweis detection, got: {entities}"
+
+    # Original ID must be removed from scrubbed output.
     assert "LM3456789X" not in scrubbed
+
+    # Entity must carry the original value for vault storage.
+    assert ausweis[0]["value"] == "LM3456789X", (
+        f"Entity value should be the original ID, got: {ausweis[0].get('value')}"
+    )
+
+    # Token must be present in scrubbed text (replacing the original).
+    assert "token" in ausweis[0], "Entity must include a token field"
+    assert ausweis[0]["token"] in scrubbed, (
+        f"Token {ausweis[0]['token']} should appear in scrubbed text"
+    )
 
 
 # TST-BRAIN-446
@@ -1263,9 +1485,14 @@ def test_pii_3_9_2_faker_consistency(presidio_scrubber) -> None:
 
     person_entities = [e for e in entities if e["type"] == "PERSON"]
     same_value = [e for e in person_entities if e["value"] == "John Smith"]
-    if len(same_value) >= 2:
-        # Both occurrences of "John Smith" should get the same fake.
-        assert same_value[0]["token"] == same_value[1]["token"]
+    assert len(same_value) >= 2, (
+        f"Presidio must detect both occurrences of 'John Smith', "
+        f"got {len(same_value)} matches: {person_entities}"
+    )
+    # Both occurrences of "John Smith" should get the same fake.
+    assert same_value[0]["token"] == same_value[1]["token"], (
+        "Same real value must map to same fake token within one scrub() call"
+    )
 
 
 # TST-BRAIN-452
@@ -1277,8 +1504,17 @@ def test_pii_3_9_3_faker_different(presidio_scrubber) -> None:
     scrubbed, entities = presidio_scrubber.scrub(text)
 
     person_entities = [e for e in entities if e["type"] == "PERSON"]
-    if len(person_entities) >= 2:
-        assert person_entities[0]["token"] != person_entities[1]["token"]
+    assert len(person_entities) >= 2, (
+        f"Must detect at least 2 PERSON entities, got {len(person_entities)}: {person_entities}"
+    )
+    # Different persons must get different tokens.
+    assert person_entities[0]["token"] != person_entities[1]["token"], (
+        "Different persons must get distinct tokens"
+    )
+    # Different persons must have different values.
+    assert person_entities[0]["value"] != person_entities[1]["value"], (
+        "Different persons must have distinct original values"
+    )
 
 
 # TST-BRAIN-453
@@ -1317,10 +1553,18 @@ def test_pii_3_9_5_faker_fallback_tags() -> None:
     scrubbed, entities = scrubber.scrub(text)
 
     person_entities = [e for e in entities if e["type"] == "PERSON"]
-    if person_entities:
-        # Should use tag format when Faker is disabled.
-        assert person_entities[0]["token"].startswith("<")
-        assert person_entities[0]["token"].endswith(">")
+    assert len(person_entities) >= 1, (
+        f"PERSON entity must be detected for 'John Smith', got: {entities}"
+    )
+    # Should use tag format when Faker is disabled.
+    assert person_entities[0]["token"].startswith("<"), (
+        f"Token must start with '<' when Faker disabled, got: {person_entities[0]['token']}"
+    )
+    assert person_entities[0]["token"].endswith(">"), (
+        f"Token must end with '>' when Faker disabled, got: {person_entities[0]['token']}"
+    )
+    # Counter-proof: original name must NOT appear in scrubbed text
+    assert "John Smith" not in scrubbed, "Original PII must be replaced"
 
 
 # TST-BRAIN-455
@@ -1332,6 +1576,24 @@ def test_pii_3_9_6_faker_org(presidio_scrubber) -> None:
     scrubbed, entities = presidio_scrubber.scrub(text)
 
     org_entities = [e for e in entities if e["type"] == "ORG"]
-    if org_entities:
-        assert "Google" not in scrubbed
-        assert "<ORG_" not in scrubbed
+    assert len(org_entities) >= 1, f"ORG entity must be detected, got: {entities}"
+
+    org = org_entities[0]
+
+    # Entity contract: type, value, token fields
+    assert org["value"] == "Google Inc.", f"Expected 'Google Inc.', got {org['value']!r}"
+    assert "token" in org, "Entity must include 'token' field"
+    assert org["token"], "Token cannot be empty"
+
+    # Token must use Faker format (<<PII:...>>), not fallback tag format
+    assert org["token"].startswith("<<PII:"), (
+        f"Token should use Faker <<PII:...>> format, got {org['token']!r}"
+    )
+
+    # Original org name removed from scrubbed text
+    assert "Google" not in scrubbed
+
+    # Token appears in scrubbed text as the replacement
+    assert org["token"] in scrubbed, (
+        f"Token {org['token']!r} must appear in scrubbed text"
+    )

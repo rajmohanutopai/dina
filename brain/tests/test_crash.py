@@ -165,18 +165,43 @@ async def test_crash_13_5_task_id_correlated(mock_core_client) -> None:
 
 # TST-BRAIN-325
 @pytest.mark.asyncio
-async def test_crash_13_6_crash_handler_reraises() -> None:
-    """SS13.6: Crash handler re-raises.
+async def test_crash_13_6_crash_handler_reraises(mock_core_client) -> None:
+    """SS13.6: Crash handler re-raises after logging + vault write.
 
-    After logging + vault write, the handler re-raises so Docker
-    restart policy triggers container restart.
+    The handler must:
+    1. Write the crash report to the vault via core_client.
+    2. Re-raise the *original* error (same type, same message) so
+       Docker restart policy triggers a container restart.
+
+    The original test passed no core_client, so the vault-write step
+    was silently skipped — only testing re-raise in isolation.
     """
     error = _make_exception_with_traceback("reraise test")
 
-    with pytest.raises(RuntimeError, match="reraise test"):
-        await handle_crash(error)
+    with pytest.raises(RuntimeError, match="reraise test") as exc_info:
+        await handle_crash(
+            error, task_id="task-reraise", core_client=mock_core_client
+        )
 
-    # If we get here the error was re-raised -- test passes.
+    # The re-raised exception must be the exact same object, not a wrapper.
+    assert exc_info.value is error, (
+        "Handler must re-raise the original exception object, not a copy"
+    )
+
+    # Vault write must have been attempted before re-raise.
+    mock_core_client.write_scratchpad.assert_awaited_once()
+    call_args = mock_core_client.write_scratchpad.call_args
+    assert call_args[0][0] == "task-reraise", (
+        "Crash report must be stored under the failing task's ID"
+    )
+    # Step 0 is reserved for crash reports by convention.
+    assert call_args[0][1] == 0, (
+        "Crash report must use step=0 (reserved for crash data)"
+    )
+    report = call_args[0][2]
+    assert "error_type" in report or "traceback" in report, (
+        "Crash report dict must contain diagnostic information"
+    )
 
 
 # TST-BRAIN-326

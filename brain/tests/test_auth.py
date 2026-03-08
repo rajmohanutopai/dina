@@ -190,25 +190,79 @@ def test_auth_1_1_6_constant_time_comparison() -> None:
     """S1.1.6: Admin sub-app uses hmac.compare_digest for CLIENT_TOKEN (no timing leak).
 
     Brain sub-app uses Ed25519 signature verification (inherently constant-time).
+
+    We use AST parsing to verify that hmac.compare_digest is actually
+    *called* in the admin auth path, not just imported or mentioned in
+    a comment.
     """
+    import ast
+
     admin_app_path = os.path.normpath(
         os.path.join(_BRAIN_SRC, "dina_admin", "app.py")
     )
 
     with open(admin_app_path) as f:
         source = f.read()
-    assert "hmac.compare_digest" in source, (
-        f"{admin_app_path} does not use hmac.compare_digest for token comparison"
+
+    # AST-level check: hmac.compare_digest must appear as a Call node,
+    # not just as a string in a comment or dead code.
+    tree = ast.parse(source, filename=admin_app_path)
+    found_call = False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            func = node.func
+            # Match hmac.compare_digest(...)
+            if (
+                isinstance(func, ast.Attribute)
+                and func.attr == "compare_digest"
+                and isinstance(func.value, ast.Name)
+                and func.value.id == "hmac"
+            ):
+                found_call = True
+                break
+    assert found_call, (
+        f"{admin_app_path} does not *call* hmac.compare_digest — "
+        "string presence alone could be a comment or dead code"
     )
+
+    # Also verify that raw '==' is NOT used on token/secret variables.
+    # Scan for patterns like `token == ` or `== client_token` which
+    # would indicate an insecure comparison path.
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Compare):
+            for comparator_group in [node.left, *node.comparators]:
+                if isinstance(comparator_group, ast.Name) and comparator_group.id in (
+                    "token", "client_token", "csrf_header", "expected",
+                ):
+                    for op in node.ops:
+                        assert not isinstance(op, ast.Eq), (
+                            f"{admin_app_path} uses '==' on security-sensitive "
+                            f"variable '{comparator_group.id}' — must use "
+                            "hmac.compare_digest to prevent timing leaks"
+                        )
 
     # Brain sub-app uses Ed25519 verify (not bearer tokens).
     brain_app_path = os.path.normpath(
         os.path.join(_BRAIN_SRC, "dina_brain", "app.py")
     )
     with open(brain_app_path) as f:
-        source = f.read()
-    assert "verify_request" in source, (
-        f"{brain_app_path} does not use Ed25519 verify_request"
+        brain_source = f.read()
+
+    # AST-level check: verify_request must be called, not just imported.
+    brain_tree = ast.parse(brain_source, filename=brain_app_path)
+    found_verify = False
+    for node in ast.walk(brain_tree):
+        if isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Attribute) and func.attr == "verify_request":
+                found_verify = True
+                break
+            if isinstance(func, ast.Name) and func.id == "verify_request":
+                found_verify = True
+                break
+    assert found_verify, (
+        f"{brain_app_path} does not *call* verify_request — "
+        "string presence alone could be an import or comment"
     )
 
 
@@ -233,6 +287,11 @@ def test_auth_1_2_2_api_rejects_client_token(client: TestClient) -> None:
         json={"type": "query", "body": "test"},
     )
     assert resp.status_code == 401
+    body = resp.json()
+    assert body.get("status") != "ok", "CLIENT_TOKEN must not grant API access"
+    # Counter-proof: Ed25519 signed request succeeds.
+    signed_resp = _signed_post(client, "/api/v1/process", {"type": "query", "body": "test"})
+    assert signed_resp.status_code == 200, "Ed25519 signed request must succeed (counter-proof)"
 
 
 # TST-BRAIN-009
@@ -379,6 +438,12 @@ def test_auth_1_2_10_brain_never_sees_cookies(client: TestClient) -> None:
         headers={"Cookie": f"session={TEST_BRAIN_TOKEN}"},
     )
     assert resp.status_code == 401
+    # Cookie must not grant access — verify no success indicators.
+    body = resp.json()
+    assert body.get("status") != "ok", "Cookie-only request must not succeed"
+    # Verify the same request WITH proper signing succeeds (counter-proof).
+    signed_resp = _signed_post(client, "/api/v1/process", {"type": "query", "body": "test"})
+    assert signed_resp.status_code == 200, "Signed request must succeed (counter-proof)"
 
 
 # TST-BRAIN-017
@@ -408,27 +473,41 @@ def test_auth_1_2_12_brain_exposes_reason(client: TestClient) -> None:
 
 # TST-BRAIN-416
 def test_auth_1_2_13_zero_sqlite_calls() -> None:
-    """S1.2.13: Code audit -- brain has zero sqlite3.connect() calls.
+    """S1.2.13: Code audit -- brain has zero sqlite3/sqlalchemy usage.
 
-    Architecture S03: Brain codebase has zero sqlite3.connect() or sqlalchemy
+    Architecture S03: Brain codebase has zero sqlite3 or sqlalchemy
     calls. All data access goes through core HTTP API. CI-enforceable invariant.
+
+    Checks for: sqlite3.connect, import sqlite3, from sqlite3,
+    import sqlalchemy, from sqlalchemy — in non-comment lines.
     """
     brain_src = os.path.normpath(_BRAIN_SRC)
     py_files = glob.glob(os.path.join(brain_src, "**", "*.py"), recursive=True)
     assert len(py_files) > 0, "No Python files found in brain src"
 
+    # Patterns that indicate direct database usage (bypassing core HTTP API)
+    _SQLITE_PATTERNS = [
+        re.compile(r"\bsqlite3\.connect\b"),
+        re.compile(r"\bimport\s+sqlite3\b"),
+        re.compile(r"\bfrom\s+sqlite3\b"),
+        re.compile(r"\bimport\s+sqlalchemy\b"),
+        re.compile(r"\bfrom\s+sqlalchemy\b"),
+    ]
+
     violations: list[str] = []
     for filepath in py_files:
         with open(filepath) as f:
-            content = f.read()
-        if "sqlite3.connect" in content:
-            violations.append(f"sqlite3.connect found in {filepath}")
-        # Check for sqlalchemy imports (not just mentions in comments)
-        for line in content.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("#"):
-                continue
-            if "import sqlalchemy" in stripped or "from sqlalchemy" in stripped:
-                violations.append(f"sqlalchemy import found in {filepath}")
+            for lineno, line in enumerate(f, 1):
+                stripped = line.strip()
+                if stripped.startswith("#"):
+                    continue
+                for pat in _SQLITE_PATTERNS:
+                    if pat.search(stripped):
+                        violations.append(
+                            f"{filepath}:{lineno}: {pat.pattern}"
+                        )
 
-    assert not violations, f"SQLite/SQLAlchemy violations:\n" + "\n".join(violations)
+    assert not violations, (
+        f"SQLite/SQLAlchemy violations (brain must use core HTTP API only):\n"
+        + "\n".join(violations)
+    )

@@ -38,18 +38,40 @@ async def test_resilience_11_1_unhandled_exception() -> None:
 
     Caught by FastAPI exception handler, returns 500 with log.
     """
+    from src.service.guardian import GuardianLoop
+    from src.service.entity_vault import EntityVaultService
+    from src.service.nudge import NudgeAssembler
+    from src.service.scratchpad import ScratchpadService
+
+    core = AsyncMock()
+    llm = AsyncMock()
+    scrubber = MagicMock()
+    entity_vault = EntityVaultService(scrubber, core)
+    nudge = NudgeAssembler(core, llm, entity_vault)
+    scratchpad = ScratchpadService(core)
+
+    guardian = GuardianLoop(
+        core=core, llm_router=llm, scrubber=scrubber,
+        entity_vault=entity_vault, nudge_assembler=nudge,
+        scratchpad=scratchpad,
+    )
+
+    # Simulate LLM returning unexpected format during nudge assembly
+    guardian._nudge.assemble_nudge = AsyncMock(
+        side_effect=LLMError("Unexpected format from LLM")
+    )
+
     event = make_event(type="message", body="trigger unexpected format")
-    assert event["type"] == "message"
+    result = await guardian.process_event(event)
 
-    # Verify error hierarchy allows catching all brain errors
-    with pytest.raises(DinaError):
-        raise LLMError("Unexpected format from LLM")
+    # Production catches LLMError and returns error action (not crash)
+    assert result["action"] == "error"
+    assert result["status"] == "error"
 
-    # Verify LLMError is catchable as DinaError
-    try:
-        raise LLMError("bad response format")
-    except DinaError as e:
-        assert "bad response format" in str(e)
+    # Counter-proof: without the error, event processes normally
+    guardian._nudge.assemble_nudge = AsyncMock(return_value=None)
+    result2 = await guardian.process_event(event)
+    assert result2["action"] != "error"
 
 
 # TST-BRAIN-303
@@ -60,11 +82,28 @@ async def test_resilience_11_2_memory_leak_detection() -> None:
     Entity vaults are ephemeral; memory usage should remain stable
     during long-running brain process.
     """
-    # Simulate creating and destroying entity vaults
+    from src.service.entity_vault import EntityVaultService
+
+    mock_scrubber = MagicMock()
+    mock_core = AsyncMock()
+
+    evs = EntityVaultService(scrubber=mock_scrubber, core_client=mock_core)
+
+    # Create 100 independent vaults (simulating concurrent cloud LLM calls)
     vaults = []
     for i in range(100):
-        vault = {"[PERSON_1]": f"Person {i}", "[ORG_1]": f"Org {i}"}
+        entities = [
+            {"type": "PERSON", "value": f"Person {i}", "token": f"<PERSON_{i}>"},
+            {"type": "ORG", "value": f"Org {i}", "token": f"<ORG_{i}>"},
+        ]
+        vault = evs.create_vault(entities)
+        assert len(vault) == 2, f"Vault {i} must have 2 entries"
         vaults.append(vault)
+
+    # Each vault is independent (no cross-contamination)
+    assert vaults[0][f"<PERSON_0>"] == "Person 0"
+    assert vaults[99][f"<PERSON_99>"] == "Person 99"
+    assert f"<PERSON_99>" not in vaults[0], "Vaults must be independent"
 
     # Destroy vaults (simulating ephemeral lifecycle)
     for vault in vaults:
@@ -73,9 +112,9 @@ async def test_resilience_11_2_memory_leak_detection() -> None:
     # All vaults should be empty after clearing
     assert all(len(v) == 0 for v in vaults)
 
-    # Clear references
-    vaults.clear()
-    assert len(vaults) == 0
+    # Rehydrate with an empty vault returns text unchanged
+    result = evs.rehydrate("Some <PERSON_0> text", {})
+    assert result == "Some <PERSON_0> text", "Empty vault must not modify text"
 
 
 # TST-BRAIN-304
@@ -104,42 +143,76 @@ async def test_resilience_11_3_graceful_shutdown() -> None:
 # TST-BRAIN-305
 @pytest.mark.asyncio
 async def test_resilience_11_4_startup_dependency_check() -> None:
-    """SS11.4: Startup dependency check -- core unreachable at startup.
+    """SS11.4: Core unreachable -- GuardianLoop degrades gracefully.
 
-    Brain starts, retries core connection with exponential backoff.
+    When core raises CoreUnreachableError during event processing,
+    production process_event (guardian.py:440) catches it and returns
+    {"action": "degraded_mode"} instead of crashing.
     """
-    mock_core = AsyncMock()
-    # First two calls fail, third succeeds
-    mock_core.health.side_effect = [
-        CoreUnreachableError("core not ready"),
-        CoreUnreachableError("core still not ready"),
-        {"status": "ok"},
-    ]
+    from src.service.guardian import GuardianLoop
+    from src.service.entity_vault import EntityVaultService
+    from src.service.nudge import NudgeAssembler
+    from src.service.scratchpad import ScratchpadService
 
-    # Simulate retry logic
-    retries = 0
-    for attempt in range(3):
-        try:
-            result = await mock_core.health()
-            break
-        except CoreUnreachableError:
-            retries += 1
+    core = AsyncMock()
+    llm = AsyncMock()
+    scrubber = MagicMock()
+    entity_vault = EntityVaultService(scrubber, core)
+    nudge = NudgeAssembler(core, llm, entity_vault)
+    scratchpad = ScratchpadService(core)
 
-    assert retries == 2
-    assert result == {"status": "ok"}
+    guardian = GuardianLoop(
+        core=core, llm_router=llm, scrubber=scrubber,
+        entity_vault=entity_vault, nudge_assembler=nudge,
+        scratchpad=scratchpad,
+    )
+
+    # Make nudge assembly raise CoreUnreachableError (simulating core down)
+    guardian._nudge.assemble_nudge = AsyncMock(
+        side_effect=CoreUnreachableError("core not ready")
+    )
+
+    from tests.factories import make_fiduciary_event
+    event = make_fiduciary_event(body="Emergency alert")
+    result = await guardian.process_event(event)
+
+    # Production catches CoreUnreachableError and returns degraded_mode
+    assert result["action"] == "degraded_mode"
+
+    # Counter-proof: when core is available, fiduciary event is processed normally
+    guardian._nudge.assemble_nudge = AsyncMock(return_value={"text": "nudge"})
+    core.notify = AsyncMock()
+    core.send_d2d = AsyncMock()
+    result2 = await guardian.process_event(event)
+    assert result2["action"] == "notify"
 
 
 # TST-BRAIN-306
-@pytest.mark.asyncio
-async def test_resilience_11_5_spacy_model_missing() -> None:
+def test_resilience_11_5_spacy_model_missing() -> None:
     """SS11.5: spaCy model missing -- startup fails with clear error.
 
-    When en_core_web_sm is not installed, startup fails with a clear
-    error message about the missing model.
+    When spaCy model is not installed, SpacyScrubber._ensure_nlp() raises
+    PIIScrubError with a clear message about the missing model.  We
+    simulate this by pointing at a nonexistent model name.
     """
-    # Verify PIIScrubError is the correct exception for scrubbing failures
-    with pytest.raises(PIIScrubError, match="scrubbing"):
-        raise PIIScrubError("PII scrubbing unavailable: missing spaCy model en_core_web_sm")
+    from src.adapter.scrubber_spacy import SpacyScrubber
+
+    # Construct scrubber with a model that does not exist
+    scrubber = SpacyScrubber(model="nonexistent_model_xyz")
+
+    # _ensure_nlp must raise PIIScrubError with guidance about the model
+    with pytest.raises(PIIScrubError, match="nonexistent_model_xyz"):
+        scrubber.scrub("Test text with John Smith")
+
+    # Counter-proof: default model (en_core_web_sm) loads successfully
+    try:
+        default_scrubber = SpacyScrubber()
+        result, entities = default_scrubber.scrub("John Smith lives in London")
+        assert isinstance(result, str)
+    except (PIIScrubError, OSError):
+        # If en_core_web_sm isn't installed in this env, that's OK —
+        # the test above already proved the error path works.
+        pass
 
 
 # TST-BRAIN-307
@@ -148,21 +221,27 @@ async def test_resilience_11_6_concurrent_requests() -> None:
     """SS11.6: Concurrent request handling -- 50 simultaneous requests.
 
     All handled by uvicorn worker pool without drops or errors.
+    Uses a real GuardianLoop to verify concurrent process_event calls
+    don't corrupt shared state.
     """
-    events = [make_event(type="message", body=f"concurrent msg {i}") for i in range(50)]
-    assert len(events) == 50
+    from src.service.guardian import GuardianLoop
 
-    # Process all events through a mock guardian
-    guardian = AsyncMock()
-    guardian.process_event.return_value = {"action": "save_for_briefing"}
+    core = AsyncMock()
+    core.write_scratchpad = AsyncMock()
+    core.get_kv = AsyncMock(return_value=None)
+    guardian = GuardianLoop(core=core, llm=AsyncMock(), mcp=AsyncMock())
+
+    events = [make_event(type="message", body=f"concurrent msg {i}") for i in range(50)]
 
     import asyncio
     results = await asyncio.gather(
         *[guardian.process_event(e) for e in events]
     )
-    assert len(results) == 50
-    assert all(r["action"] == "save_for_briefing" for r in results)
-    assert guardian.process_event.await_count == 50
+    assert len(results) == 50, "All 50 requests must return results"
+    # Every result must be a well-formed dict with an action.
+    for i, r in enumerate(results):
+        assert isinstance(r, dict), f"Result {i} must be a dict"
+        assert "action" in r, f"Result {i} must have an action"
 
 
 # ---------------------------------------------------------------------------
@@ -194,19 +273,37 @@ def test_resilience_11_7_startup_waits_for_core() -> None:
 
 
 # TST-BRAIN-415
-def test_resilience_11_8_sharing_policy_invalid_did() -> None:
+@pytest.mark.asyncio
+async def test_resilience_11_8_sharing_policy_invalid_did() -> None:
     """SS11.8: Brain validates contact DID before applying sharing policy.
 
     Architecture SS09: Brain validates contact DID exists in contacts table
     before applying sharing policy PATCH. Invalid DID returns clear error.
     """
-    # Verify error for invalid DID
+    # Verify ConfigError is correctly constructed and inherits from DinaError
     invalid_did = "did:plc:nonexistent"
-    assert invalid_did.startswith("did:")
+    err = ConfigError(f"contact_not_found: {invalid_did}")
+    assert isinstance(err, DinaError), "ConfigError must inherit from DinaError"
+    assert "did:plc:nonexistent" in str(err)
 
-    # ConfigError is appropriate for invalid configuration/input
-    with pytest.raises(DinaError):
-        raise ConfigError(f"contact_not_found: {invalid_did}")
+    # Verify production NudgeAssembler returns None for unknown contacts
+    # (brain gracefully handles missing contacts)
+    from src.service.nudge import NudgeAssembler
+    from src.service.entity_vault import EntityVaultService
+
+    core = AsyncMock()
+    llm = AsyncMock()
+    scrubber = MagicMock()
+    entity_vault = EntityVaultService(scrubber, core)
+    nudge = NudgeAssembler(core, llm, entity_vault)
+
+    # No vault data for this contact
+    core.search_vault.return_value = []
+    result = await nudge.assemble_nudge(
+        contact_did=invalid_did, persona="personal"
+    )
+    # Silence First: no data → nudge is None
+    assert result is None, "Unknown contact must return None nudge (Silence First)"
 
 
 # ---------------------------------------------------------------------------

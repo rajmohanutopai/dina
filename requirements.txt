@@ -12,9 +12,6 @@
 #   cd appview && npm install
 
 # Local Python packages in this repo
--e ./brain
--e ./cli
--e ./admin-cli
 
 # Root/shared Python dependencies
 pydantic-ai>=0.1

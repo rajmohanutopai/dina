@@ -56,8 +56,13 @@ def _make_response(
 
 @pytest.fixture(autouse=True)
 def _no_backoff_sleep(monkeypatch):
-    """Eliminate real asyncio.sleep in retry backoff — tests run instantly."""
-    monkeypatch.setattr("src.adapter.core_http.asyncio.sleep", AsyncMock())
+    """Eliminate real asyncio.sleep in retry backoff — tests run instantly.
+
+    Returns the mock so individual tests can inspect backoff durations.
+    """
+    mock_sleep = AsyncMock()
+    monkeypatch.setattr("src.adapter.core_http.asyncio.sleep", mock_sleep)
+    return mock_sleep
 
 
 @pytest.fixture
@@ -213,8 +218,17 @@ async def test_core_client_7_1_6_send_message(core_client) -> None:
 
 # TST-BRAIN-265
 @pytest.mark.asyncio
-async def test_core_client_7_2_1_core_unreachable_retry(core_client) -> None:
-    """SS7.2.1: Core unreachable — client retries with exponential backoff."""
+async def test_core_client_7_2_1_core_unreachable_retry(
+    core_client, _no_backoff_sleep
+) -> None:
+    """SS7.2.1: Core unreachable — client retries with exponential backoff.
+
+    Verifies three properties:
+    1. All 3 retry attempts are made before giving up.
+    2. Exponential backoff durations: 1.0s after attempt 0, 2.0s after attempt 1.
+       (No sleep after the final attempt — it raises immediately.)
+    3. The correct domain error is raised with a descriptive message.
+    """
     import httpx
 
     from src.domain.errors import CoreUnreachableError
@@ -231,6 +245,19 @@ async def test_core_client_7_2_1_core_unreachable_retry(core_client) -> None:
 
         # Should have retried 3 times.
         assert mock_http.request.await_count == 3
+
+        # Verify exponential backoff durations.
+        # Formula: _BACKOFF_BASE_S * (2 ** attempt) = 1.0 * 2^0, 1.0 * 2^1
+        # Two sleeps: after attempt 0 (1.0s) and after attempt 1 (2.0s).
+        # No sleep after attempt 2 — it raises immediately.
+        assert _no_backoff_sleep.await_count == 2, (
+            f"Expected 2 backoff sleeps (attempts 0 and 1), "
+            f"got {_no_backoff_sleep.await_count}"
+        )
+        sleep_args = [call.args[0] for call in _no_backoff_sleep.call_args_list]
+        assert sleep_args == [1.0, 2.0], (
+            f"Expected exponential backoff [1.0, 2.0], got {sleep_args}"
+        )
 
 
 # TST-BRAIN-266
@@ -302,20 +329,41 @@ async def test_core_client_7_2_4_timeout_30s(core_client) -> None:
 
 # TST-BRAIN-269
 @pytest.mark.asyncio
-async def test_core_client_7_2_5_invalid_response_json(core_client) -> None:
-    """SS7.2.5: Core returns invalid JSON — error caught and reported."""
+async def test_core_client_7_2_5_invalid_response_json(
+    core_client, _no_backoff_sleep
+) -> None:
+    """SS7.2.5: Core returns 200 with unparseable body — error propagates.
+
+    The _request() layer returns the raw response; get_vault_item() calls
+    resp.json() which raises.  We mock at _ensure_client level (consistent
+    with other error tests) so the real _request() retry logic is exercised
+    and we can verify no retry is attempted for JSON parse errors.
+    """
     with patch.object(
-        core_client, "_request", new_callable=AsyncMock
-    ) as mock_req:
+        core_client, "_ensure_client"
+    ) as mock_ensure:
+        mock_http = AsyncMock()
         mock_resp = MagicMock()
         mock_resp.status_code = 200
+        mock_resp.headers = {"content-type": "text/html"}
         mock_resp.json.side_effect = ValueError(
             "Invalid JSON: Expecting value: line 1 column 1"
         )
-        mock_req.return_value = mock_resp
+        mock_http.request.return_value = mock_resp
+        mock_ensure.return_value = mock_http
 
         with pytest.raises(ValueError, match="Invalid JSON"):
             await core_client.get_vault_item("personal", "item-001")
+
+        # JSON parse errors happen AFTER a successful HTTP 200, so
+        # _request() should have returned without retrying.
+        assert mock_http.request.await_count == 1, (
+            "Invalid JSON should not trigger retries — it's a protocol error, "
+            "not a transient failure"
+        )
+        assert _no_backoff_sleep.await_count == 0, (
+            "No backoff sleep should occur for JSON parse errors"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -402,9 +450,24 @@ async def test_core_client_7_3_4_pii_scrub(core_client) -> None:
 
         result = await core_client.pii_scrub("john@example.com sent a message")
 
-    assert result["scrubbed"] == "[EMAIL_1] sent a message"
+    # Verify correct HTTP request.
     mock_req.assert_awaited_once_with(
         "POST",
         "/v1/pii/scrub",
         json={"text": "john@example.com sent a message"},
     )
+
+    # Response schema validation — pii_scrub returns resp.json().
+    assert isinstance(result, dict), "Result must be a dict"
+    assert "scrubbed" in result, "Result must contain 'scrubbed' key"
+    assert "entities" in result, "Result must contain 'entities' key"
+    assert isinstance(result["scrubbed"], str), "scrubbed must be a string"
+    assert isinstance(result["entities"], list), "entities must be a list"
+
+    # Entity contract: each entity has type/value/token.
+    for entity in result["entities"]:
+        assert "type" in entity, "Entity must have 'type'"
+        assert "value" in entity, "Entity must have 'value'"
+        assert "token" in entity, "Entity must have 'token'"
+    assert result["scrubbed"] == "[EMAIL_1] sent a message"
+    assert result["entities"][0]["token"] == "[EMAIL_1]"

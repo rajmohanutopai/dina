@@ -244,51 +244,42 @@ async def test_guardian_2_1_14_no_notification_routine_sync(guardian) -> None:
 # TST-BRAIN-030
 @pytest.mark.asyncio
 async def test_guardian_2_1_15_fiduciary_composite_heuristic(guardian) -> None:
-    """SS2.1.15: Composite heuristic — trusted sender + 'urgent' keyword -> fiduciary;
-    unknown sender -> NOT fiduciary (avoids spam-as-fiduciary attack)."""
-    # Trusted source: fiduciary keywords trigger fiduciary classification.
+    """SS2.1.15: Composite heuristic — trusted sender + fiduciary keyword -> fiduciary;
+    unknown sender + same keyword -> solicited (avoids spam-as-fiduciary attack)."""
+    body_with_keyword = "Security alert: suspicious activity on your account"
+
+    # Trusted source + fiduciary keyword → fiduciary.
     event_trusted = make_event(
         type="message",
-        body="Urgent: please review this immediately",
+        body=body_with_keyword,
         source="trusted_contact",
     )
     result_trusted = await guardian.classify_silence(event_trusted)
-    # 'Urgent' is not in _FIDUCIARY_KEYWORDS but the factory doesn't set
-    # priority hint. However, looking at the regex: no 'urgent' keyword.
-    # Actually, the body doesn't match _FIDUCIARY_KEYWORDS regex, so we fall
-    # through to engagement default. Let me re-check...
-    # The regex has: cancel|security alert|unusual login|overdraft|critical|
-    # emergency|alarm|smoke|fire|breach|fraud|suspend|lab result|potassium|
-    # health critical|payment due
-    # "Urgent" is NOT in the list. So with no priority hint and a non-matching
-    # source, it defaults to engagement.
-    # But wait - the test intention is about composite heuristic. The test
-    # should use a body that contains fiduciary keywords.
-    # Let me re-read the test description: "trusted sender + 'urgent' keyword".
-    # The word "urgent" is NOT in the fiduciary keyword regex, so both cases
-    # default to engagement. We need to use a body that HAS fiduciary keywords.
-    # Actually re-checking: the test is about the COMPOSITE heuristic in the
-    # guardian. Let me use a body with actual fiduciary keywords.
-    # The factory event has body with no fiduciary keywords, no priority hint
-    # -> engagement for both.
-    # This tests the Silence First default behavior correctly.
-
-    # For the composite test to be meaningful, test with fiduciary keywords:
-    event_trusted_kw = make_event(
-        type="message",
-        body="Security alert: suspicious activity on your account",
-        source="trusted_contact",
+    assert result_trusted == "fiduciary", (
+        "Trusted sender with fiduciary keyword must classify as fiduciary"
     )
-    result_trusted_kw = await guardian.classify_silence(event_trusted_kw)
-    assert result_trusted_kw == "fiduciary"
 
-    event_unknown_kw = make_event(
+    # Unknown sender + same fiduciary keyword → demoted to solicited.
+    event_unknown = make_event(
         type="message",
-        body="Security alert: suspicious activity on your account",
+        body=body_with_keyword,
         source="unknown_sender",
     )
-    result_unknown_kw = await guardian.classify_silence(event_unknown_kw)
-    assert result_unknown_kw == "solicited"  # Composite: unknown sender demoted
+    result_unknown = await guardian.classify_silence(event_unknown)
+    assert result_unknown == "solicited", (
+        "Unknown sender with fiduciary keyword must be demoted to solicited"
+    )
+
+    # Counter-proof: body without fiduciary keywords → engagement for both.
+    event_no_kw = make_event(
+        type="message",
+        body="Hey, how's the weather today?",
+        source="trusted_contact",
+    )
+    result_no_kw = await guardian.classify_silence(event_no_kw)
+    assert result_no_kw == "engagement", (
+        "Body without fiduciary keywords must default to engagement"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -327,38 +318,36 @@ async def test_guardian_2_2_2_vault_locked(guardian) -> None:
 # TST-BRAIN-032
 @pytest.mark.asyncio
 async def test_guardian_2_2_3_degraded_mode_when_vault_unreachable(guardian) -> None:
-    """SS2.2.3: Guardian enters degraded mode when core vault is unreachable."""
+    """SS2.2.3: Guardian enters degraded mode when core is unreachable.
+
+    When core raises CoreUnreachableError during event processing,
+    process_event must catch it and return {"action": "degraded_mode"}.
+
+    NudgeAssembler catches Exception internally (so vault query failures
+    won't propagate), but scratchpad.checkpoint raises through.  We set
+    both to confirm the guardian handles CoreUnreachableError at any
+    point in the pipeline.
+    """
     from src.domain.errors import CoreUnreachableError
 
-    # Make the nudge assembler's query_vault raise CoreUnreachableError.
+    # Make ALL core calls raise — simulates core being completely down.
     guardian._core.query_vault.side_effect = CoreUnreachableError("core unreachable")
+    guardian._core.write_scratchpad.side_effect = CoreUnreachableError("core unreachable")
     guardian._nudge._core.query_vault.side_effect = CoreUnreachableError("core unreachable")
 
-    # Process a fiduciary event that requires nudge assembly.
-    # The process_event catches CoreUnreachableError and returns degraded_mode.
     event = make_fiduciary_event(body="Your flight is cancelled in 2 hours")
-    # Override to bypass the classify_silence step and trigger the CoreUnreachable
-    # during nudge assembly. We need the nudge's assemble_nudge to raise it.
-    # Actually, process_event wraps everything in try/except CoreUnreachableError.
-    # The nudge search_vault failure is caught internally by NudgeAssembler,
-    # so it won't propagate. We need to make a higher-level call raise it.
-    guardian._core.notify.side_effect = CoreUnreachableError("core unreachable")
-
-    # For a fiduciary event, after classify_silence it tries to assemble a nudge
-    # then notify. The nudge assembly internally catches exceptions, but the
-    # notify call will raise CoreUnreachableError.
-    # Actually, looking at the code: notify failure is caught with generic Exception
-    # (line 311: `except Exception`). So it won't propagate either.
-    # We need something that raises CoreUnreachableError before the catch-all.
-    # Let's make the scratchpad checkpoint raise it:
-    guardian._core.notify.side_effect = None  # Reset
-    guardian._scratchpad._core.write_scratchpad.side_effect = CoreUnreachableError("core unreachable")
-
-    # For the fiduciary path, scratchpad.checkpoint is only called if task_id is set.
-    # Let's add a task_id to the event.
     event["task_id"] = "test-task-001"
+
     result = await guardian.process_event(event)
-    assert result["action"] == "degraded_mode"
+
+    # Guardian must enter degraded mode, not crash.
+    assert result["action"] == "degraded_mode", (
+        f"Expected degraded_mode when core is unreachable, got: {result['action']}"
+    )
+
+    # Verify the exception was actually raised (scratchpad checkpoint
+    # was attempted and failed, triggering the CoreUnreachableError handler).
+    guardian._core.write_scratchpad.assert_awaited()
 
 
 # TST-BRAIN-034
@@ -366,12 +355,23 @@ async def test_guardian_2_2_3_degraded_mode_when_vault_unreachable(guardian) -> 
 async def test_guardian_2_2_4_vault_unlocked_idempotent(guardian) -> None:
     """SS2.2.4: Duplicate vault_unlocked events are idempotent — no double init."""
     event = make_vault_unlocked_event()
+
+    # Pre-condition: persona not yet unlocked.
+    assert "default" not in guardian._unlocked_personas
+
     result1 = await guardian.process_event(event)
     assert result1["action"] == "vault_unlocked"
+
+    # State after first call: persona is tracked as unlocked.
+    assert "default" in guardian._unlocked_personas
+    state_snapshot = frozenset(guardian._unlocked_personas)
 
     result2 = await guardian.process_event(event)
     assert result2["action"] == "vault_already_unlocked"
     assert result2["persona_id"] == "default"
+
+    # State after second call: must be identical — no side-effects.
+    assert guardian._unlocked_personas == state_snapshot
 
 
 # ---------------------------------------------------------------------------
@@ -402,6 +402,16 @@ async def test_guardian_2_3_2_multi_step_reasoning_with_scratchpad(guardian) -> 
     # Scratchpad should have been called for checkpointing.
     core = guardian._test_core
     assert core.write_scratchpad.await_count >= 1
+    # Verify checkpoint content: step numbers should be sequential.
+    write_calls = core.write_scratchpad.await_args_list
+    # First checkpoint must reference the task_id.
+    first_call_args = write_calls[0][0]
+    assert first_call_args[0] == "guardian-001", "Checkpoint must reference the task_id"
+    # Step numbers must be positive integers (1, 2, ...).
+    steps = [c[0][1] for c in write_calls]
+    assert all(isinstance(s, int) and s > 0 for s in steps), (
+        f"Checkpoint steps must be positive integers, got {steps}"
+    )
 
 
 # TST-BRAIN-037
@@ -419,11 +429,35 @@ async def test_guardian_2_3_11_agent_intent_review_general(guardian) -> None:
 # TST-BRAIN-038
 @pytest.mark.asyncio
 async def test_guardian_2_3_3_agent_intent_review_safe(guardian) -> None:
-    """SS2.3.3: Safe agent intent (fetch_weather) is auto-approved."""
+    """SS2.3.3: Safe agent intent (fetch_weather) is auto-approved.
+
+    Verifies all 5 return fields and confirms no audit trail is written
+    (SAFE intents should not trigger _audit_intent / set_kv).
+    """
+    core = guardian._test_core
+    core.set_kv.reset_mock()
+
     intent = make_safe_intent()
     result = await guardian.review_intent(intent)
+
+    # Action and risk classification.
     assert result["action"] == "auto_approve"
     assert result["risk"] == "SAFE"
+
+    # Approval flags — critical for downstream decision logic.
+    assert result["approved"] is True, (
+        "SAFE intent must set approved=True"
+    )
+    assert result["requires_approval"] is False, (
+        "SAFE intent must not require user approval"
+    )
+
+    # Reason must reference the action for transparency.
+    assert "reason" in result
+    assert "fetch_weather" in result["reason"]
+
+    # No audit trail for SAFE intents — _audit_intent calls core.set_kv.
+    core.set_kv.assert_not_awaited()
 
 
 # TST-BRAIN-039
@@ -479,19 +513,23 @@ async def test_guardian_2_3_7_blocked_intent_logs_audit_trail(guardian) -> None:
 async def test_guardian_2_3_8_processing_timeout(guardian) -> None:
     """SS2.3.8: Guardian imposes a timeout on event processing.
 
-    When a slow event causes an exception, guardian catches it and returns
-    an error action without crashing.
+    When a slow event causes a TimeoutError during nudge assembly,
+    guardian catches it via the crash handler and returns an error action
+    without crashing.  Must use a fiduciary event so the flow reaches
+    nudge assembly (engagement events return early before that point).
     """
-    event = make_event(type="slow_event", body="Takes too long")
-    # Simulate timeout during nudge assembly.
     import asyncio
+
+    # Fiduciary event — reaches nudge assembly at process_event line 396.
+    event = make_fiduciary_event(body="Security alert: breach detected")
     guardian._nudge.assemble_nudge = AsyncMock(
         side_effect=asyncio.TimeoutError("processing timed out")
     )
     result = await guardian.process_event(event)
-    # The event classifies as "engagement" so it won't reach nudge assembly.
-    # Engagement events are saved for briefing and return immediately.
-    assert result["action"] == "save_for_briefing"
+    # TimeoutError is caught by the generic Exception handler → error action.
+    assert result["action"] == "error"
+    assert result["error"] == "TimeoutError"
+    assert result.get("status") == "error"
 
 
 # TST-BRAIN-042
@@ -516,13 +554,21 @@ async def test_guardian_2_3_9_error_recovery_continues_loop(guardian) -> None:
 async def test_guardian_2_3_12_crash_handler_sanitized_stdout(guardian) -> None:
     """SS2.3.12: Crash handler writes ONLY sanitized one-liner to stdout — no PII, no traceback frames."""
     # Force an exception during fiduciary processing (after classify_silence).
-    event = make_fiduciary_event(body="Emergency alert")
+    pii_body = "Emergency alert for John Doe at 555-1234"
+    event = make_fiduciary_event(body=pii_body)
     guardian._nudge.assemble_nudge = AsyncMock(
         side_effect=RuntimeError("internal failure")
     )
     result = await guardian.process_event(event)
     assert result["action"] == "error"
     assert result["error"] == "RuntimeError"
+    # The sanitised result must NOT leak PII from the event body.
+    result_str = str(result)
+    assert "John Doe" not in result_str, "PII must not leak into crash result"
+    assert "555-1234" not in result_str, "PII must not leak into crash result"
+    # No traceback frames in the result (no file paths or line references).
+    assert "Traceback" not in result_str
+    assert result.get("status") == "error"
 
 
 # TST-BRAIN-044
@@ -558,12 +604,20 @@ async def test_guardian_2_3_1_1_never_calls_messages_send(guardian) -> None:
     """SS2.3.1.1: Guardian never calls messages.send — only drafts.
 
     When a send_email intent is submitted, the guardian flags it for review
-    rather than executing the send.
+    rather than executing the send. MCP must NOT be called (no actual send).
     """
     intent = make_risky_intent(action="send_email", target="boss@company.com")
     result = await guardian.review_intent(intent)
     assert result["action"] == "flag_for_review"
     assert result["risk"] == "MODERATE"
+    assert result["approved"] is False, "send_email must not be auto-approved"
+    assert result["requires_approval"] is True
+
+    # The key assertion: no MCP/core send was invoked — only flagged
+    guardian._test_core.notify.assert_not_awaited()
+    # send_d2d must not be called either
+    if hasattr(guardian._test_core, "send_d2d"):
+        guardian._test_core.send_d2d.assert_not_awaited()
 
 
 # TST-BRAIN-046
@@ -589,8 +643,14 @@ async def test_guardian_2_3_1_3_draft_includes_confidence_score(guardian) -> Non
     intent = make_risky_intent(action="draft_email")
     result = await guardian.review_intent(intent)
     assert result["action"] == "flag_for_review"
+    assert result["approved"] is False, "Draft must not be auto-approved"
+    assert result["requires_approval"] is True, "Draft must require approval"
+    # The full original intent must be attached for user review.
     assert "intent" in result
     assert result["intent"]["action"] == "draft_email"
+    assert result["intent"]["agent_did"] == intent["agent_did"], (
+        "Attached intent must preserve original agent_did"
+    )
 
 
 # TST-BRAIN-048
@@ -607,14 +667,43 @@ async def test_guardian_2_3_1_9_below_threshold_flagged(guardian) -> None:
 # TST-BRAIN-049
 @pytest.mark.asyncio
 async def test_guardian_2_3_1_10_high_risk_legal(guardian) -> None:
-    """SS2.3.1.10: Email from attorney with legal terms -> flagged for review, NOT auto-executed."""
+    """SS2.3.1.10: Email from attorney with legal terms -> flagged for review, NOT auto-executed.
+
+    draft_email is a MODERATE action; the test verifies all return
+    fields and confirms an audit trail entry is written.
+    """
+    core = guardian._test_core
+    core.set_kv.reset_mock()
+
     intent = make_risky_intent(
         action="draft_email",
         target="attorney@lawfirm.com",
     )
     result = await guardian.review_intent(intent)
+
+    # Classification and action.
     assert result["action"] == "flag_for_review"
     assert result["risk"] == "MODERATE"
+
+    # Approval flags — critical for downstream decision logic.
+    assert result["approved"] is False, (
+        "Risky intent must not be pre-approved"
+    )
+    assert result["requires_approval"] is True, (
+        "Risky intent must require user approval"
+    )
+
+    # Reason must reference the action for transparency.
+    assert "reason" in result
+    assert "draft_email" in result["reason"]
+
+    # Intent must be echoed back for audit/logging.
+    assert result["intent"] is intent
+
+    # Audit trail MUST be written for non-SAFE intents.
+    core.set_kv.assert_awaited_once()
+    audit_key = core.set_kv.await_args[0][0]
+    assert "audit:intent:" in audit_key
 
 
 # TST-BRAIN-050
@@ -673,9 +762,17 @@ async def test_guardian_2_3_1_6_no_send_even_if_agent_requests(guardian) -> None
     """SS2.3.1.6: Even if agent explicitly requests send, guardian downgrades to review."""
     intent = make_risky_intent(action="send_email", force_send=True)
     result = await guardian.review_intent(intent)
-    # send_email is in _RISKY_ACTIONS — always flagged regardless of force_send.
+    # send_email is in _MODERATE_ACTIONS — always flagged regardless of force_send.
     assert result["action"] == "flag_for_review"
     assert result["risk"] == "MODERATE"
+    assert result["requires_approval"] is True, "Must require user approval"
+    assert result["approved"] is False, "Must not be auto-approved"
+    # Counter-proof: same action WITHOUT force_send gets same result.
+    intent_no_force = make_risky_intent(action="send_email", force_send=False)
+    result_no_force = await guardian.review_intent(intent_no_force)
+    assert result_no_force["action"] == result["action"], (
+        "force_send must not change the guardian's decision"
+    )
 
 
 # TST-BRAIN-052
@@ -818,16 +915,36 @@ async def test_guardian_2_3_2_7_cart_handover_expiry(guardian) -> None:
 # TST-BRAIN-059
 @pytest.mark.asyncio
 async def test_guardian_2_3_2_10_outcome_followup_timing(guardian) -> None:
-    """SS2.3.2.10: Outcome followup is a future engagement event.
+    """SS2.3.2.10: Outcome followup event classifies as engagement.
 
-    The engagement event for followup should classify as engagement.
+    Scheduling logic (4-week delay after purchase) is not in scope for
+    the Guardian Loop — it belongs to a scheduler service.  This test
+    verifies that when a follow-up event *arrives*, it is correctly
+    classified as engagement both with and without an explicit
+    priority hint.
     """
+    # With explicit priority hint (from factory).
     followup = make_engagement_event(
         body="How's that chair? (4 weeks after purchase)",
         source="calendar",
     )
     result = await guardian.classify_silence(followup)
     assert result == "engagement"
+
+    # Without explicit priority hint — classification must still work
+    # via type="notification" (in _ENGAGEMENT_TYPES) or source="calendar".
+    followup_no_hint = {
+        "type": "notification",
+        "timestamp": "2026-02-12T10:00:00Z",
+        "persona_id": "default",
+        "source": "calendar",
+        "body": "How's that chair?",
+    }
+    result2 = await guardian.classify_silence(followup_no_hint)
+    assert result2 == "engagement", (
+        "Follow-up event without explicit priority hint should still "
+        f"classify as engagement via type/source, got: {result2}"
+    )
 
 
 # TST-BRAIN-060
@@ -850,14 +967,26 @@ async def test_guardian_2_3_2_12_outcome_anonymization(guardian) -> None:
     """SS2.3.2.12: Anonymized outcome does not contain user DID or names.
 
     The engagement event for outcome should not contain PII in the body.
+    Process the event through the guardian and verify PII scrubbing was invoked.
     """
+    # Body with PII that should be scrubbed before outcome storage
     event = make_engagement_event(
+        body="Product satisfaction from John Smith (did:plc:abc123): 4/5 stars",
+    )
+    result = await guardian.process_event(event)
+    assert result["action"] == "save_for_briefing"
+
+    # Verify entity_vault scrubbing was invoked (Tier 1 + Tier 2 pipeline)
+    guardian._test_core.pii_scrub.assert_awaited()
+
+    # Counter-proof: PII-free body should still be classified correctly
+    clean_event = make_engagement_event(
         body="Product satisfaction: 4/5 stars for SKU-12345",
     )
-    assert "did:" not in event.get("body", "")
-    assert "@" not in event.get("body", "")
-    result = await guardian.classify_silence(event)
-    assert result == "engagement"
+    assert "did:" not in clean_event["body"]
+    assert "@" not in clean_event["body"]
+    clean_result = await guardian.process_event(clean_event)
+    assert clean_result["action"] == "save_for_briefing"
 
 
 # TST-BRAIN-371
@@ -1031,7 +1160,14 @@ async def test_guardian_2_5_6_restricted_persona_summary(guardian) -> None:
     await guardian.process_event(event)
     briefing = await guardian.generate_briefing()
     assert briefing["count"] == 1
-    assert briefing["items"][0]["persona_id"] == "financial"
+    item = briefing["items"][0]
+    assert item["persona_id"] == "financial"
+    assert item["body"] == "New financial statement available", (
+        "Briefing must preserve original event body"
+    )
+    # Briefing structure must include required keys.
+    assert "fiduciary_recap" in briefing
+    assert isinstance(briefing["fiduciary_recap"], list)
 
 
 # TST-BRAIN-072
@@ -1045,17 +1181,31 @@ async def test_guardian_2_5_10_zero_restricted_accesses_omitted(guardian) -> Non
 # TST-BRAIN-073
 @pytest.mark.asyncio
 async def test_guardian_2_5_11_restricted_summary_queries_audit_log(guardian) -> None:
-    """SS2.5.11: Brain queries core for fiduciary recap during briefing generation."""
-    # Add some engagement items first.
+    """SS2.5.11: Brain queries core for fiduciary recap during briefing generation.
+
+    Verifies that generate_briefing() queries core.search_vault for recent
+    fiduciary events and includes the results in the briefing's
+    fiduciary_recap field.
+    """
+    # Add an engagement item so briefing is non-empty (empty → early return).
     await guardian.process_event(make_engagement_event(body="Test item"))
 
     # Set up core to return fiduciary recap items.
-    guardian._test_core.search_vault.return_value = [
-        {"body": "Fiduciary event 1", "priority": "fiduciary"},
-    ]
+    fiduciary_item = {"body": "Fiduciary event 1", "priority": "fiduciary"}
+    guardian._test_core.search_vault.return_value = [fiduciary_item]
     briefing = await guardian.generate_briefing()
+
+    # Engagement item counted.
     assert briefing["count"] == 1
+    # Core was queried for fiduciary recap.
     guardian._test_core.search_vault.assert_awaited()
+    # Fiduciary recap must appear in the briefing output.
+    assert len(briefing["fiduciary_recap"]) == 1, (
+        "Briefing must include fiduciary recap from core.search_vault"
+    )
+    assert briefing["fiduciary_recap"][0]["body"] == "Fiduciary event 1", (
+        "Fiduciary recap item body must match what core returned"
+    )
 
 
 # TST-BRAIN-074
@@ -1177,9 +1327,14 @@ async def test_guardian_2_6_3_nudge_delivery_via_ws(guardian) -> None:
         contact_did="did:plc:sancho123",
     )
     result = await guardian.process_event(event)
-    # notify should have been called (may or may not have nudge data
-    # depending on vault results matching the nudge logic).
     assert result["action"] == "interrupt"
+
+    # The core point: notify() must be called to deliver the nudge via WS
+    guardian._test_core.notify.assert_awaited()
+
+    # If a nudge was assembled, it should be in the result
+    if result.get("nudge") is not None:
+        assert isinstance(result["nudge"], dict)
 
 
 # TST-BRAIN-078
@@ -1209,32 +1364,55 @@ async def test_guardian_2_6_5_nudge_respects_persona_boundaries(guardian) -> Non
     )
     result = await guardian.process_event(event)
     assert result["action"] == "interrupt"
-    # The nudge assembler queries for the specific persona.
     # With empty results, nudge is None — persona boundary respected.
     assert result["nudge"] is None
+
+    # Verify query_vault was called with the specific persona_id
+    # to confirm persona boundary enforcement (not a cross-persona query)
+    vault_calls = guardian._test_core.query_vault.call_args_list
+    assert len(vault_calls) > 0, "query_vault must be called for nudge assembly"
+    for call in vault_calls:
+        assert call.args[0] == "personal", (
+            f"query_vault must use persona_id 'personal', got '{call.args[0]}'"
+        )
 
 
 # TST-BRAIN-080
 @pytest.mark.asyncio
 async def test_guardian_2_6_6_pending_promise_detection(guardian) -> None:
-    """SS2.6.6: Pending promise detection — "I'll send the PDF tomorrow" surfaces."""
-    # Set up vault to return message with a promise pattern.
-    guardian._test_core.query_vault.return_value = [
-        {
-            "id": "msg-promise",
-            "summary": "I'll send the PDF tomorrow",
-            "source": "telegram",
-        },
-    ]
+    """SS2.6.6: Pending promise detection — "I'll send the PDF tomorrow" surfaces.
+
+    Isolates promise detection by returning the promise message ONLY for
+    message/email queries (not relationship_notes or calendar), so the
+    "You promised:" prefix proves _detect_promises() ran.
+    """
+    promise_msg = {
+        "id": "msg-promise",
+        "summary": "I'll send the PDF tomorrow",
+        "source": "telegram",
+    }
+
+    # Return promise only for message queries; empty for notes and events.
+    async def _mock_query_vault(persona_id, query, *, mode=None, types=None):
+        if types and "message" in types:
+            return [promise_msg]
+        return []
+
+    guardian._test_core.query_vault.side_effect = _mock_query_vault
+
     event = make_fiduciary_event(
         body="Chat with contact",
         contact_did="did:plc:sancho123",
     )
     result = await guardian.process_event(event)
     assert result["action"] == "interrupt"
-    # The nudge should include the promise.
-    if result["nudge"]:
-        assert "PDF" in result["nudge"]["text"]
+
+    # The nudge must include the promise with the detection prefix.
+    assert result["nudge"] is not None, "Nudge must be generated for promise"
+    assert "You promised:" in result["nudge"]["text"], (
+        "Promise detection must add 'You promised:' prefix"
+    )
+    assert "PDF" in result["nudge"]["text"]
 
 
 # TST-BRAIN-081
@@ -1493,12 +1671,28 @@ async def test_guardian_2_2_6_persona_unlock_retry(guardian) -> None:
     """SS2.2.6: Brain retries query after persona unlock notification.
 
     Brain receives persona_unlocked event -> signals retry_query.
+    Verifies state transition: persona was NOT unlocked before, IS after.
     """
+    # Pre-condition: financial is not in unlocked set yet
+    assert "financial" not in guardian._unlocked_personas
+
     event = make_event(type="persona_unlocked", persona_id="financial")
     result = await guardian.process_event(event)
+
+    # Response contract
     assert result["action"] == "retry_query"
     assert result["persona_id"] == "financial"
+
+    # State transition: persona tracked as unlocked
     assert "financial" in guardian._unlocked_personas
+
+    # Idempotence: second unlock doesn't crash or change result shape
+    result2 = await guardian.process_event(event)
+    assert result2["action"] == "retry_query"
+    assert result2["persona_id"] == "financial"
+
+    # Other personas remain unaffected
+    assert "personal" not in guardian._unlocked_personas
 
 
 # ---------------------------------------------------------------------------

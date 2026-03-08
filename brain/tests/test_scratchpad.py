@@ -80,19 +80,54 @@ async def test_scratchpad_12_1_3_checkpoint_overwrites_previous(
     """SS12.1.3: Checkpoint overwrites previous.
 
     Step 2 checkpoint replaces step 1 -- single entry per task_id (upsert),
-    not a growing list.
+    not a growing list.  Verifies:
+    1. Both writes target the same task_id (same KV key in core).
+    2. Step number advances.
+    3. Second context is cumulative (includes step 1 data + step 2 data).
+    4. A read-back after both writes returns only step 2 data.
     """
+    import json
     svc, core = scratchpad
 
-    await svc.checkpoint("task-001", 1, {"relationship": "friend"})
-    await svc.checkpoint("task-001", 2, {"relationship": "friend", "messages": ["m1"]})
+    step1_ctx = {"relationship": "friend"}
+    step2_ctx = {"relationship": "friend", "messages": ["m1"]}
 
-    # Both writes go to the same task_id -- core is responsible for upsert
+    await svc.checkpoint("task-001", 1, step1_ctx)
+    await svc.checkpoint("task-001", 2, step2_ctx)
+
+    # Both writes go to the same task_id.
     assert core.write_scratchpad.await_count == 2
     first_call = core.write_scratchpad.call_args_list[0]
     second_call = core.write_scratchpad.call_args_list[1]
-    assert first_call[0][0] == second_call[0][0] == "task-001"
-    assert second_call[0][1] > first_call[0][1]  # step 2 > step 1
+
+    # Same task_id for both calls (upsert key must match).
+    assert first_call[0][0] == "task-001"
+    assert second_call[0][0] == "task-001"
+
+    # Step number advances.
+    assert first_call[0][1] == 1
+    assert second_call[0][1] == 2
+    assert second_call[0][1] > first_call[0][1]
+
+    # Second context is cumulative — contains data from both steps.
+    second_ctx = second_call[0][2]
+    assert "relationship" in second_ctx, "Step 2 must carry forward step 1 data"
+    assert "messages" in second_ctx, "Step 2 must include its own new data"
+    assert second_ctx["messages"] == ["m1"]
+
+    # First context must NOT contain step 2 data (it was written before).
+    first_ctx = first_call[0][2]
+    assert "messages" not in first_ctx, (
+        "Step 1 context should not have step 2 data"
+    )
+
+    # Simulate read-back: configure mock to return step 2 checkpoint.
+    core.read_scratchpad.return_value = {"step": 2, "context": step2_ctx}
+    result = await svc.resume("task-001")
+    assert result is not None, "Resume must return checkpoint data"
+    assert result["step"] == 2, "Read-back must return step 2, not step 1"
+    assert result["context"]["messages"] == ["m1"]
+    assert result["context"]["relationship"] == "friend"
 
 
 # TST-BRAIN-311
@@ -103,20 +138,34 @@ async def test_scratchpad_12_1_4_checkpoint_includes_all_prior_context(
     """SS12.1.4: Checkpoint includes all prior context.
 
     Step 3 checkpoint contains step 1 + step 2 + step 3 results.
-    Brain doesn't re-query completed steps.
+    Brain doesn't re-query completed steps.  The caller accumulates
+    context across steps; the service passes it through to core.
     """
     svc, core = scratchpad
-    accumulated_context = {
-        "relationship": "friend",
-        "messages": ["msg1"],
-        "analysis": "positive sentiment",
-    }
 
-    await svc.checkpoint("task-001", 3, accumulated_context)
+    # Simulate step-by-step accumulation as the caller would do.
+    step1_context = {"relationship": "friend"}
+    await svc.checkpoint("task-001", 1, step1_context)
+    core.write_scratchpad.assert_awaited_once_with("task-001", 1, step1_context)
+    core.write_scratchpad.reset_mock()
 
-    core.write_scratchpad.assert_awaited_once_with("task-001", 3, accumulated_context)
+    step2_context = {**step1_context, "messages": ["msg1"]}
+    await svc.checkpoint("task-001", 2, step2_context)
+    core.write_scratchpad.assert_awaited_once_with("task-001", 2, step2_context)
+    core.write_scratchpad.reset_mock()
+
+    step3_context = {**step2_context, "analysis": "positive sentiment"}
+    await svc.checkpoint("task-001", 3, step3_context)
+    core.write_scratchpad.assert_awaited_once_with("task-001", 3, step3_context)
+
+    # Verify the final checkpoint carries ALL prior-step data.
     written_context = core.write_scratchpad.call_args[0][2]
-    assert len(written_context) == 3
+    assert "relationship" in written_context, "Step 1 data must be in step 3 context"
+    assert "messages" in written_context, "Step 2 data must be in step 3 context"
+    assert "analysis" in written_context, "Step 3 data must be in step 3 context"
+    # Step number must be 3.
+    written_step = core.write_scratchpad.call_args[0][1]
+    assert written_step == 3
 
 
 # ---------------------------------------------------------------------------
@@ -167,6 +216,19 @@ async def test_scratchpad_12_2_2_no_scratchpad_fresh_start(
 
     core.read_scratchpad.assert_awaited_once_with("new-task")
     assert result is None  # None signals fresh start
+
+    # Counter-proof: verify service passes through non-None (breaks tautology).
+    # If the service hardcoded `return None`, this would fail.
+    checkpoint = make_scratchpad_checkpoint(task_id="new-task", step=1)
+    core.read_scratchpad.return_value = checkpoint
+    result2 = await svc.resume("new-task")
+    assert result2 is not None, "Service must pass through non-None results"
+    assert result2["step"] == 1
+    assert result2["task_id"] == "new-task"
+
+    # After fresh start, brain can checkpoint at step 1
+    await svc.checkpoint("new-task", 1, {"started": True})
+    core.write_scratchpad.assert_awaited_once_with("new-task", 1, {"started": True})
 
 
 # TST-BRAIN-314
@@ -242,6 +304,12 @@ async def test_scratchpad_12_2_5_multiple_tasks_resume_independently(
     assert result_b["step"] == 4
     assert result_a["task_id"] != result_b["task_id"]
     assert result_a["step"] != result_b["step"]
+
+    # Verify read_scratchpad was called with correct task_ids (not arbitrary order)
+    calls = core.read_scratchpad.call_args_list
+    assert len(calls) == 2
+    assert calls[0].args[0] == "task-A", "First resume must read task-A"
+    assert calls[1].args[0] == "task-B", "Second resume must read task-B"
 
 
 # ---------------------------------------------------------------------------

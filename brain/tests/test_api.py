@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
 import pytest
@@ -178,26 +179,52 @@ def test_api_10_2_1_process_valid_event(client: TestClient) -> None:
 
 # TST-BRAIN-383
 def test_api_10_2_2_process_missing_auth(client: TestClient) -> None:
-    """S10.2.2: POST /v1/process without auth returns 401."""
+    """S10.2.2: POST /v1/process without auth returns 401.
+
+    Verifies:
+    1. Status code is 401 (not 403, not 500).
+    2. Response body is JSON with a 'detail' field.
+    3. Detail message distinguishes missing auth from bad signature.
+    """
     event = make_event()
     resp = client.post("/api/v1/process", json=event)
     assert resp.status_code == 401
 
+    body = resp.json()
+    assert "detail" in body, (
+        "401 response must include a 'detail' field for error context"
+    )
+    assert body["detail"] == "Authentication required", (
+        f"Missing-auth 401 should say 'Authentication required', "
+        f"got: {body['detail']}"
+    )
+
 
 # TST-BRAIN-384
 def test_api_10_2_3_process_wrong_signature(client: TestClient) -> None:
-    """S10.2.3: POST /v1/process with wrong signature returns 401."""
+    """S10.2.3: POST /v1/process with wrong signature returns 401.
+
+    Uses a *fresh* timestamp (within the 5-minute clock skew window) so
+    the rejection is guaranteed to come from cryptographic verification,
+    not stale-timestamp rejection.  Asserts the error detail confirms
+    "Invalid signature" (not "Service key not configured" or other).
+    """
     event = make_event()
+    fresh_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     resp = client.post(
         "/api/v1/process",
         json=event,
         headers={
             "X-DID": "did:key:zFakeKey",
-            "X-Timestamp": "2026-01-01T00:00:00Z",
+            "X-Timestamp": fresh_ts,
             "X-Signature": "deadbeef" * 16,
         },
     )
     assert resp.status_code == 401
+    body = resp.json()
+    assert body["detail"] == "Invalid signature", (
+        f"Expected cryptographic rejection, got: {body['detail']}"
+    )
 
 
 # TST-BRAIN-385
@@ -265,25 +292,56 @@ def test_api_10_3_3_reason_no_auth(client: TestClient) -> None:
 
 # TST-BRAIN-389
 def test_api_10_4_1_response_content_type_json(client: TestClient) -> None:
-    """S10.4.1: All API responses have Content-Type: application/json."""
+    """S10.4.1: All API responses have Content-Type: application/json.
+
+    Covers success (200), auth failure (401), and validation error (422)
+    code paths — each may return JSON through different mechanisms
+    (route return, HTTPException, FastAPI validation).
+    """
+    # --- Success responses ---
     resp = client.get("/healthz")
-    assert resp.headers["content-type"].startswith("application/json")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/json"), (
+        f"healthz Content-Type: {resp.headers['content-type']}"
+    )
 
     event = make_event()
     resp = _signed_post(client, "/api/v1/process", event)
-    assert resp.headers["content-type"].startswith("application/json")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/json"), (
+        f"process 200 Content-Type: {resp.headers['content-type']}"
+    )
+
+    # --- Error responses must also be JSON (not HTML/plain text) ---
+
+    # 401 — missing auth headers (HTTPException path)
+    resp = client.post("/api/v1/process", json=make_event())
+    assert resp.status_code == 401
+    assert resp.headers["content-type"].startswith("application/json"), (
+        f"401 Content-Type: {resp.headers['content-type']}"
+    )
+
+    # 422 — validation error (FastAPI RequestValidationError path)
+    resp = _signed_post(client, "/api/v1/process", {"not_a_valid_field": True})
+    assert resp.status_code == 422
+    assert resp.headers["content-type"].startswith("application/json"), (
+        f"422 Content-Type: {resp.headers['content-type']}"
+    )
 
 
 # TST-BRAIN-390
 def test_api_10_4_2_error_response_format(client: TestClient) -> None:
     """S10.4.2: Error responses follow consistent JSON format with 'detail' field."""
-    # Missing auth -> 401 with detail
+    # Missing auth -> 401 with detail.
     resp = client.post("/api/v1/process", json=make_event())
+    assert resp.status_code == 401, "Missing auth must return 401"
     body = resp.json()
     assert "detail" in body
+    assert isinstance(body["detail"], str), "detail must be a string"
 
-    # Missing required field -> 422 with detail
+    # Missing required field -> 422 with detail.
     resp = _signed_post(client, "/api/v1/process", {})
+    assert resp.status_code == 422, "Missing required field must return 422"
     body = resp.json()
     assert "detail" in body
 

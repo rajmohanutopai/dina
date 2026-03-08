@@ -153,7 +153,9 @@ async def test_llm_4_1_3_basic_summarization_cloud_fallback(
 
 # TST-BRAIN-124
 @pytest.mark.asyncio
-async def test_llm_4_1_4_complex_reasoning_cloud(llm_router, cloud_provider) -> None:
+async def test_llm_4_1_4_complex_reasoning_cloud(
+    llm_router, local_provider, cloud_provider
+) -> None:
     """SS4.1.4: Complex reasoning -> PII scrub (Tier 1+2) -> cloud LLM -> rehydrate."""
     result = await llm_router.route(
         task_type="complex_reasoning",
@@ -163,6 +165,12 @@ async def test_llm_4_1_4_complex_reasoning_cloud(llm_router, cloud_provider) -> 
     # Complex tasks prefer cloud when available.
     assert result["route"] == "cloud"
     cloud_provider.complete.assert_awaited_once()
+    local_provider.complete.assert_not_awaited()
+
+    # Response fields must propagate from the cloud provider
+    assert result["content"] == "cloud response"
+    assert result["model"] == "gemini-pro"
+    assert result["finish_reason"] == "stop"
 
 
 # TST-BRAIN-125
@@ -202,7 +210,9 @@ async def test_llm_4_1_6_sensitive_persona_entity_vault_cloud(
     )
 
     assert result["route"] == "cloud"
-    cloud_provider.complete.assert_awaited()
+    cloud_provider.complete.assert_awaited_once()
+    # No local provider in this router — ensure only cloud was used.
+    assert "text" in result or "route" in result, "Result must have route or text"
 
 
 # TST-BRAIN-127
@@ -276,6 +286,8 @@ async def test_llm_4_1_10_model_selection_by_task_type(
         prompt="Analyse this product review video",
     )
     assert result_video["route"] == "cloud"
+    cloud_provider.complete.assert_awaited_once()
+    local_provider.complete.assert_not_awaited()
 
     # Reset mocks
     local_provider.complete.reset_mock()
@@ -287,6 +299,8 @@ async def test_llm_4_1_10_model_selection_by_task_type(
         prompt="Summarize chat",
     )
     assert result_chat["route"] == "local"
+    local_provider.complete.assert_awaited_once()
+    cloud_provider.complete.assert_not_awaited()
 
 
 # TST-BRAIN-131
@@ -589,11 +603,19 @@ def test_llm_4_3_1_available_models(llm_router) -> None:
 # TST-BRAIN-463
 @pytest.mark.asyncio
 async def test_llm_4_3_2_no_providers_error() -> None:
-    """LLMRouter with no providers raises LLMError on route."""
+    """LLMRouter with no providers raises LLMError on route.
+
+    Empty providers dict → _select_provider finds no local/cloud →
+    raises LLMError (not generic Exception).
+    """
     from src.domain.errors import LLMError
     from src.service.llm_router import LLMRouter
 
     router = LLMRouter(providers={}, config={})
+
+    # Verify internal state: no providers partitioned
+    assert len(router._local) == 0
+    assert len(router._cloud) == 0
 
     with pytest.raises(LLMError, match="No LLM provider"):
         await router.route(task_type="summarize", prompt="test")

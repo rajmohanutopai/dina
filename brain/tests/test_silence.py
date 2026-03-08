@@ -173,30 +173,46 @@ async def test_silence_15_4_context_dependent_time_of_day(guardian) -> None:
 # TST-BRAIN-338
 @pytest.mark.asyncio
 async def test_silence_15_5_repeated_similar_events_batched(guardian) -> None:
-    """SS15.5: 10th 'new follower' notification -- all classified as engagement.
+    """SS15.5: 10 repeated 'new follower' notifications batched into 1 briefing item.
 
-    Repeated similar low-priority events should be batched into a single
-    briefing item. The classifier itself classifies each individually as
-    engagement; batching is a higher-level concern.
+    Verifies the full pipeline:
+    1. All 10 events classify as engagement.
+    2. process_event() saves each for briefing.
+    3. generate_briefing() deduplicates by body text → 1 unique item.
     """
+    # Use IDENTICAL body so deduplication collapses them.
     events = [
         make_engagement_event(
-            body=f"New follower: User{i}",
+            body="New follower notification",
             source="social",
         )
-        for i in range(10)
+        for _ in range(10)
     ]
-    assert len(events) == 10
 
-    results = []
+    # Step 1: Classification — all must be engagement.
     for event in events:
-        result = await guardian.classify_silence(event)
-        results.append(result)
+        tier = await guardian.classify_silence(event)
+        assert tier == "engagement"
 
-    # All 10 events classified as engagement (type "notification" in
-    # _ENGAGEMENT_TYPES, priority "engagement")
-    assert all(r == "engagement" for r in results)
-    assert len(results) == 10
+    # Step 2: Process each event through the full pipeline.
+    for event in events:
+        result = await guardian.process_event(event)
+        assert result["action"] == "save_for_briefing"
+        assert result["classification"] == "engagement"
+
+    # Step 3: All 10 should be buffered.
+    assert len(guardian._briefing_items) == 10
+
+    # Step 4: Generate briefing — dedup by body text collapses to 1.
+    briefing = await guardian.generate_briefing()
+    assert briefing["count"] == 1, (
+        f"10 identical events should deduplicate to 1, got {briefing['count']}"
+    )
+    assert len(briefing["items"]) == 1
+    assert briefing["items"][0]["body"] == "New follower notification"
+
+    # Step 5: Briefing buffer cleared after generation.
+    assert len(guardian._briefing_items) == 0
 
 
 # TST-BRAIN-339

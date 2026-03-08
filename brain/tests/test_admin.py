@@ -224,12 +224,16 @@ async def test_admin_8_2_4_remove_contact(client, auth_headers) -> None:
 
 # TST-BRAIN-278
 @pytest.mark.asyncio
-async def test_admin_8_3_1_list_devices(client, auth_headers) -> None:
+async def test_admin_8_3_1_list_devices(client, auth_headers, mock_core) -> None:
     """SS8.3.1: List devices -- table with paired devices and last-seen."""
-    # Device management is a contract test -- admin proxies to core
-    device = make_device()
-    assert "device_id" in device
-    assert "last_seen" in device
+    mock_core.list_devices = AsyncMock(return_value=[make_device()])
+    resp = client.get("/admin/devices", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data, list)
+    assert len(data) >= 1
+    assert "device_id" in data[0]
+    assert "last_seen" in data[0]
 
 
 # TST-BRAIN-279
@@ -244,12 +248,12 @@ async def test_admin_8_3_2_initiate_pairing(client, auth_headers) -> None:
 
 # TST-BRAIN-280
 @pytest.mark.asyncio
-async def test_admin_8_3_3_revoke_device(client, auth_headers) -> None:
-    """SS8.3.3: Revoke device -- device removed, CLIENT_TOKEN invalidated."""
-    device = make_device(device_id="dev-revoke")
-    assert device["device_id"] == "dev-revoke"
-    # Revocation is a core operation; verify the device data structure
-    assert "status" in device
+async def test_admin_8_3_3_revoke_device(client, auth_headers, mock_core) -> None:
+    """SS8.3.3: Revoke device -- DELETE /admin/devices/{id} returns 204."""
+    mock_core.revoke_device = AsyncMock(return_value=None)
+    resp = client.delete("/admin/devices/dev-revoke", headers=auth_headers)
+    assert resp.status_code == 204, "Revoke device must return 204 No Content"
+    mock_core.revoke_device.assert_awaited_once_with("dev-revoke")
 
 
 # ---------------------------------------------------------------------------
@@ -259,33 +263,57 @@ async def test_admin_8_3_3_revoke_device(client, auth_headers) -> None:
 
 # TST-BRAIN-281
 @pytest.mark.asyncio
-async def test_admin_8_4_1_list_personas(client, auth_headers) -> None:
-    """SS8.4.1: List personas -- table with tier and item count."""
-    persona = make_persona()
-    assert "tier" in persona
-    assert "item_count" in persona
-    assert persona["item_count"] == 42
+async def test_admin_8_4_1_list_personas(client, auth_headers, mock_core) -> None:
+    """SS8.4.1: List personas -- dashboard returns persona count from core."""
+    mock_core.list_personas.return_value = ["personal", "work"]
+    resp = client.get("/admin/", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    # Dashboard must report the persona count from core.
+    assert data["personas"] == 2, "Dashboard must report persona count from core"
+    mock_core.list_personas.assert_awaited_once()
 
 
 # TST-BRAIN-282
 @pytest.mark.asyncio
-async def test_admin_8_4_2_create_persona(client, auth_headers) -> None:
-    """SS8.4.2: Create persona -- form with name and tier."""
-    persona = make_persona(persona_id="work", tier="locked")
-    assert persona["persona_id"] == "work"
-    assert persona["tier"] == "locked"
+async def test_admin_8_4_2_create_persona(admin_app, auth_headers) -> None:
+    """SS8.4.2: Admin dashboard reflects personas from core.
+
+    Persona creation is a core operation. The admin brain UI fetches
+    persona count from core.list_personas() on the dashboard route.
+    Verify the dashboard correctly displays persona count after core
+    reports a new persona.
+    """
+    app, mock_core, _ = admin_app
+    mock_core.list_personas.return_value = ["default", "work"]
+    mock_core.list_devices.return_value = []
+    mock_core.health.return_value = {"status": "healthy"}
+    mock_core.search_vault.return_value = []
+
+    test_client = TestClient(app)
+    resp = test_client.get("/admin/dashboard", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["personas"] == 2, "Dashboard must reflect 2 personas from core"
+    mock_core.list_personas.assert_awaited()
 
 
 # TST-BRAIN-283
 @pytest.mark.asyncio
-async def test_admin_8_4_3_change_persona_tier(client, auth_headers) -> None:
-    """SS8.4.3: Change persona tier -- Open to Locked."""
-    persona_open = make_persona(tier="open")
-    assert persona_open["tier"] == "open"
-    persona_locked = make_persona(tier="locked")
-    assert persona_locked["tier"] == "locked"
-    # Tier change implies DEK behavior changes
-    assert persona_open["tier"] != persona_locked["tier"]
+async def test_admin_8_4_3_change_persona_tier(client, auth_headers, mock_core) -> None:
+    """SS8.4.3: Change persona tier -- Open to Locked.
+
+    Persona tier changes are core operations. The admin dashboard reflects
+    the current tier from core.list_personas(). Verify that when core
+    reports different tiers, the dashboard count stays consistent.
+    """
+    # Core reports 3 personas (simulating a tier change added a new locked persona)
+    mock_core.list_personas.return_value = ["default", "work", "health"]
+    resp = client.get("/admin/", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["personas"] == 3, "Dashboard must reflect persona count from core after tier change"
+    mock_core.list_personas.assert_awaited()
 
 
 # TST-BRAIN-284
@@ -307,10 +335,15 @@ async def test_admin_8_4_4_delete_persona(client, auth_headers) -> None:
 # TST-BRAIN-497 Dashboard escapes item.summary in innerHTML
 @pytest.mark.asyncio
 async def test_admin_8_5_1_xss_contact_name(client, auth_headers) -> None:
-    """SS8.5.1: XSS in contact name -- HTML-escaped in template output."""
-    malicious_contact = make_contact(name="<script>alert(1)</script>")
-    assert "<script>" in malicious_contact["name"]
-    # When sent through the API, the name is stored as-is (JSON, not HTML)
+    """SS8.5.1: XSS in contact name -- HTML-escaped in template output.
+
+    XSS defense layers verified:
+    1. JSON API returns data as-is (correct — JSON is not rendered as HTML).
+    2. API response Content-Type is application/json (browser won't execute scripts).
+    3. HTML page sets Content-Security-Policy with nonce-based script-src
+       (inline scripts injected via DOM are blocked even if escaping fails).
+    """
+    # Layer 1: JSON API accepts and returns the payload as-is
     resp = client.post("/admin/contacts/", json={
         "did": "did:key:z6MkXSS",
         "name": "<script>alert(1)</script>",
@@ -319,8 +352,24 @@ async def test_admin_8_5_1_xss_contact_name(client, auth_headers) -> None:
     }, headers=auth_headers)
     assert resp.status_code == 200
     data = resp.json()
-    # JSON API returns the name as stored; HTML escaping is a frontend concern
     assert data["name"] == "<script>alert(1)</script>"
+
+    # Layer 2: API response is application/json — browser will not parse as HTML
+    assert resp.headers["content-type"].startswith("application/json"), (
+        "JSON API must serve application/json, not text/html"
+    )
+
+    # Layer 3: HTML page sets CSP headers that block inline script execution
+    html_resp = client.get("/admin/contacts-page", headers=auth_headers)
+    assert html_resp.status_code == 200
+    csp = html_resp.headers.get("content-security-policy", "")
+    assert "script-src" in csp, "CSP must restrict script sources"
+    # CSP must NOT include 'unsafe-inline' — that would defeat XSS protection
+    assert "'unsafe-inline'" not in csp, (
+        "CSP script-src must not allow 'unsafe-inline'"
+    )
+    # Verify nonce-based script policy is in place
+    assert "nonce-" in csp, "CSP must use nonce-based script-src"
 
 
 # TST-BRAIN-286
@@ -338,13 +387,47 @@ async def test_admin_8_5_2_csrf_protection(client) -> None:
 # TST-BRAIN-287
 @pytest.mark.asyncio
 async def test_admin_8_5_3_sql_injection_search(client, auth_headers) -> None:
-    """SS8.5.3: SQL injection via search -- safely parameterized."""
-    malicious_query = "'; DROP TABLE contacts--"
-    assert "DROP TABLE" in malicious_query
-    # The admin API uses core client which parameterizes queries
-    # Verify the contacts endpoint handles the request without error
+    """SS8.5.3: SQL injection via contact fields -- safely handled.
+
+    Brain is an HTTP boundary, not a SQL boundary.  SQL injection in the
+    brain layer is structurally impossible because no SQL runs here --
+    all data is proxied to core via HTTP.  This test verifies:
+    1. Malicious SQL payloads in contact *name* field are accepted by
+       Pydantic (they're valid strings) and forwarded to core without
+       interpretation.
+    2. Malicious SQL payloads in DID path param are forwarded without error.
+    3. The contacts listing endpoint is unaffected by prior malicious writes.
+    """
+    sql_payloads = [
+        "'; DROP TABLE contacts--",
+        "Robert'); DELETE FROM vault_items;--",
+        "1 OR 1=1",
+        "' UNION SELECT * FROM identity--",
+    ]
+    for payload in sql_payloads:
+        # POST malicious name — Pydantic accepts it (valid string, ≤128 chars),
+        # core_client.add_contact receives the raw string without interpretation.
+        resp = client.post(
+            "/admin/contacts/",
+            json={"did": "did:key:z6MkTest", "name": payload},
+            headers=auth_headers,
+        )
+        # Should succeed (brain proxies to core mock) or fail cleanly (502),
+        # never crash with a SQL error.
+        assert resp.status_code in (200, 502), (
+            f"Unexpected status {resp.status_code} for payload: {payload}"
+        )
+
+    # Listing endpoint still works after malicious writes.
     resp = client.get("/admin/contacts/", headers=auth_headers)
     assert resp.status_code == 200
+
+    # Verify malicious DID in path doesn't cause route injection.
+    resp = client.delete(
+        "/admin/contacts/'; DROP TABLE contacts--",
+        headers=auth_headers,
+    )
+    assert resp.status_code in (200, 502)
 
 
 # TST-BRAIN-288

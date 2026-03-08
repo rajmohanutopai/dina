@@ -121,11 +121,21 @@ async def test_fix_19_2_2_sensitive_persona_scrubbed():
     vault_svc = EntityVaultService(scrubber, core)
     scrubbed_text, vault = await vault_svc.scrub("Dr. Sharma works at Apollo Hospital")
 
+    # Tier 1 (core) must have been called first.
+    core.pii_scrub.assert_awaited_once_with("Dr. Sharma works at Apollo Hospital")
+    # Tier 2 (scrubber) must have been called with Tier 1 output.
+    scrubber.scrub.assert_called_once()
+
     # The scrub was performed: vault should have token mappings.
     assert "[PERSON_1]" in vault
     assert vault["[PERSON_1]"] == "Dr. Sharma"
-    # The text was passed through the scrubber.
-    scrubber.scrub.assert_called_once()
+    assert "[ORG_1]" in vault
+    assert vault["[ORG_1]"] == "Apollo Hospital"
+
+    # The scrubbed text must not contain raw PII.
+    assert "Dr. Sharma" not in scrubbed_text, "Raw PII must be scrubbed from output"
+    assert "Apollo Hospital" not in scrubbed_text, "Raw PII must be scrubbed from output"
+    assert "[PERSON_1]" in scrubbed_text, "Scrubbed text must contain tokens"
 
 
 # TST-BRAIN-471
@@ -205,8 +215,9 @@ def test_fix_19_3_1_llm_router_config_keys():
 
 
 # TST-BRAIN-473
-def test_fix_19_3_2_reconfigure_correct_keys():
-    """Reconfigure callback passes correct keys."""
+@pytest.mark.asyncio
+async def test_fix_19_3_2_reconfigure_correct_keys():
+    """Reconfigure callback passes correct keys and affects routing."""
     from src.service.llm_router import LLMRouter
 
     local = _make_provider("local-model", True)
@@ -221,10 +232,27 @@ def test_fix_19_3_2_reconfigure_correct_keys():
         {"preferred_cloud": "cloud", "cloud_llm_consent": True},
     )
 
+    # Internal state updated
     assert router._config["preferred_cloud"] == "cloud"
     assert router._config["cloud_llm_consent"] is True
     assert "cloud" in router._cloud
     assert "local" in router._local
+
+    # Verify reconfigure actually affects routing: complex task now routes
+    # to cloud (before reconfigure, no cloud provider was available)
+    result = await router.route(
+        task_type="complex_reasoning",
+        prompt="Analyze this document",
+    )
+    assert result["route"] == "cloud"
+    assert result["model"] == "gemini-2.5"
+    new_cloud.complete.assert_awaited_once()
+
+    # Verify config=None preserves existing config
+    router.reconfigure({"local": local, "cloud": new_cloud}, config=None)
+    assert router._config["preferred_cloud"] == "cloud", (
+        "config=None must preserve existing config"
+    )
 
 
 # ============================================================================
@@ -322,16 +350,27 @@ async def test_fix_19_5_2_solicited_notify_failure_still_acked():
 # TST-BRAIN-478
 @pytest.mark.asyncio
 async def test_fix_19_5_3_engagement_notify_failure_still_acked():
-    """Engagement notify failure -> task still ACKed."""
+    """Engagement events never call notify; task is still ACKed.
+
+    Unlike fiduciary/solicited events, engagement events skip the
+    notify path entirely — they're saved for briefing.  We inject a
+    notify failure to *prove* the code path never touches it.
+    """
     guardian, core = _build_guardian()
 
-    # Engagement events skip notify entirely (save for briefing).
+    # Wire notify to explode — engagement must never invoke it.
+    core.notify.side_effect = RuntimeError("should not be called")
+
     event = make_engagement_event(task_id="task-eng-001")
     result = await guardian.process_event(event)
 
     assert result["action"] == "save_for_briefing"
     assert result["classification"] == "engagement"
-    # Engagement events are ACKed immediately after being saved for briefing.
+
+    # Engagement events must NEVER call notify (they save for briefing).
+    core.notify.assert_not_called()
+
+    # Task must still be ACKed despite no notification step.
     core.task_ack.assert_called_once_with("task-eng-001")
 
 
@@ -459,10 +498,15 @@ def test_fix_19_7_3_secure_flag_unset_http():
     # The cookie is set. Verify via the Set-Cookie header.
     set_cookie = resp.headers.get("set-cookie", "")
     assert "dina_client_token" in set_cookie
-    # On HTTP, secure flag should NOT be present (secure=False in source).
-    assert "Secure" not in set_cookie or "secure" not in set_cookie.lower().split("dina_client_token")[0]
-    # Verify httponly is set.
-    assert "httponly" in set_cookie.lower()
+    # On HTTP (TestClient default), Secure flag should NOT be present.
+    # Parse cookie attributes after the value (split on ';').
+    cookie_attrs = set_cookie.lower().split(";")
+    attr_names = [a.strip().split("=")[0] for a in cookie_attrs[1:]]
+    assert "secure" not in attr_names, (
+        f"Secure flag must not be set on HTTP, got: {set_cookie}"
+    )
+    # Verify httponly IS set.
+    assert "httponly" in attr_names, "httponly must be set on session cookie"
 
 
 # TST-BRAIN-485
@@ -577,53 +621,56 @@ def test_fix_19_8_4_empty_mcp_config_inert():
 # TST-BRAIN-491
 def test_fix_19_8_5_presidio_primary():
     """PresidioScrubber used as primary when available."""
-    # Test that the scrubber import priority logic is correct.
-    # The main.py tries PresidioScrubber first.
     try:
         from src.adapter.scrubber_presidio import PresidioScrubber
         scrubber = PresidioScrubber()
-        # If we get here, Presidio is available and is the primary.
-        assert hasattr(scrubber, "scrub")
-        assert hasattr(scrubber, "detect")
+        # Verify the scrubber interface is callable, not just present.
+        assert callable(getattr(scrubber, "scrub", None)), "scrub must be callable"
+        assert callable(getattr(scrubber, "detect", None)), "detect must be callable"
+        # Actually call scrub to verify it works end-to-end.
+        scrubbed, entities = scrubber.scrub("John Doe lives in NYC")
+        assert isinstance(scrubbed, str), "scrub must return a string"
+        assert isinstance(entities, list), "scrub must return entity list"
     except (ImportError, OSError):
-        # Presidio not installed -- test that the class exists in the module.
+        # Presidio not installed -- verify module file exists.
         import importlib
         spec = importlib.util.find_spec("src.adapter.scrubber_presidio")
-        # The module must exist even if its deps are missing.
         assert spec is not None, "scrubber_presidio module should exist"
 
 
 # TST-BRAIN-492
 def test_fix_19_8_6_spacy_fallback():
     """Fallback to SpacyScrubber when Presidio unavailable."""
-    # The main.py fallback logic: PresidioScrubber -> SpacyScrubber -> None.
-    # We test the spaCy scrubber interface directly (without importing main.py
-    # which triggers module-level create_app()).
     try:
         import spacy
-        nlp = spacy.load("en_core_web_sm")
+        spacy.load("en_core_web_sm")
     except (ImportError, OSError):
         pytest.skip("spaCy en_core_web_sm not installed")
 
-    # Build a minimal SpacyScrubber equivalent using the same logic as main.py.
-    doc = nlp("John Smith works at Google in San Francisco")
-    safe_entities = frozenset({
-        "DATE", "TIME", "MONEY", "PERCENT", "QUANTITY",
-        "ORDINAL", "CARDINAL", "NORP", "EVENT",
-        "WORK_OF_ART", "LAW", "PRODUCT", "LANGUAGE",
-    })
-    entities = []
-    for ent in doc.ents:
-        if ent.label_ not in safe_entities and len(ent.text.strip()) > 2:
-            entities.append({"type": ent.label_, "value": ent.text})
+    from src.adapter.scrubber_spacy import SpacyScrubber
 
-    # spaCy should detect at least one PII entity (PERSON or ORG).
-    assert len(entities) > 0, "spaCy should detect PII entities"
+    scrubber = SpacyScrubber()
+    text = "John Smith works at Google in San Francisco"
+    scrubbed, entities = scrubber.scrub(text)
+
+    # Must detect PII entities
+    assert len(entities) > 0, "SpacyScrubber should detect PII entities"
     entity_types = {e["type"] for e in entities}
-    # At minimum, spaCy should detect a PERSON or ORG.
-    assert entity_types & {"PERSON", "ORG", "GPE"}, (
-        f"Expected PERSON/ORG/GPE in {entity_types}"
+    assert entity_types & {"PERSON", "ORG", "LOC"}, (
+        f"Expected PERSON/ORG/LOC in {entity_types}"
     )
+
+    # Scrubbed text must not contain original PII values
+    assert "John Smith" not in scrubbed
+    # Scrubbed text must contain replacement tokens
+    assert "[PERSON_1]" in scrubbed
+
+    # Each entity must have type, value, token keys
+    for ent in entities:
+        assert "type" in ent
+        assert "value" in ent
+        assert "token" in ent
+        assert ent["token"] in scrubbed
 
 
 # TST-BRAIN-493
