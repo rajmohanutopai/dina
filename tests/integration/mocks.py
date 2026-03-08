@@ -1868,6 +1868,14 @@ class MockAdminAPI:
         self.sessions[session.session_id] = session
         return session
 
+    def logout(self, session_id: str) -> bool:
+        """Invalidate a session (mirrors POST /admin/logout)."""
+        self.api_calls.append({"endpoint": "/admin/logout"})
+        if session_id not in self.sessions:
+            return False
+        del self.sessions[session_id]
+        return True
+
     def validate_session(self, session_id: str) -> bool:
         session = self.sessions.get(session_id)
         if not session or session.is_expired():

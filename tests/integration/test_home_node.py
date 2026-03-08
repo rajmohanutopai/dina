@@ -32,6 +32,7 @@ import pytest
 from tests.integration.mocks import (
     DinaMessage,
     LLMTarget,
+    MockAdminAPI,
     MockDinaCore,
     MockGoCore,
     MockHuman,
@@ -277,25 +278,45 @@ class TestLLMRouting:
         )
 
 # TST-INT-083
-    def test_basic_summarization_uses_local(
-        self, mock_llm_router: MockLLMRouter
-    ) -> None:
-        """Summarization and drafting use the local LLM (Gemma 3n)."""
-        target = mock_llm_router.route("summarize")
-        assert target == LLMTarget.LOCAL
+    def test_basic_summarization_uses_local(self) -> None:
+        """Summarization and lightweight tasks route to local LLM.
 
-        target = mock_llm_router.route("draft")
-        assert target == LLMTarget.LOCAL
+        Exercises the real LLMRouter._select_provider decision tree from
+        brain/src/service/llm_router.py with stub providers at the I/O
+        boundary.  "summarize" and "intent_classification" are in production
+        _LIGHTWEIGHT_TASKS; unknown tasks default to local when available.
+        """
+        from brain.src.service.llm_router import LLMRouter
 
-        target = mock_llm_router.route("classify")
-        assert target == LLMTarget.LOCAL
+        class _StubProvider:
+            def __init__(self, name: str, *, local: bool):
+                self._name = name
+                self._local = local
 
-        # Verify routing log records basic_task reason
-        local_entries = [
-            e for e in mock_llm_router.routing_log
-            if e["target"] == LLMTarget.LOCAL
-        ]
-        assert all(e["reason"] == "basic_task" for e in local_entries)
+            @property
+            def model_name(self) -> str:
+                return self._name
+
+            @property
+            def is_local(self) -> bool:
+                return self._local
+
+        router = LLMRouter(
+            {"local": _StubProvider("local-model", local=True),
+             "cloud": _StubProvider("cloud-model", local=False)},
+        )
+
+        # "summarize" is in production _LIGHTWEIGHT_TASKS → local preferred
+        selected = router._select_provider("summarize", "open")
+        assert selected.is_local, "summarize should route to local"
+
+        # "intent_classification" is in production _LIGHTWEIGHT_TASKS → local
+        selected = router._select_provider("intent_classification", "open")
+        assert selected.is_local, "intent_classification should route to local"
+
+        # Unknown task type falls to default → local preferred when available
+        selected = router._select_provider("draft", "open")
+        assert selected.is_local, "unknown task should default to local"
 
 # TST-INT-075
     def test_complex_reasoning_uses_cloud(
@@ -906,34 +927,47 @@ class TestAdminUI:
 
 # TST-INT-026
     def test_dashboard_query_response(
-        self, mock_dina: MockDinaCore
+        self, mock_dina: MockDinaCore, mock_admin_api: MockAdminAPI
     ) -> None:
         """After logging in, user submits a query from the dashboard and
         receives a response.
 
-        This is the same Brain.process() path but triggered from the Admin UI
-        instead of WebSocket.
+        Exercises MockAdminAPI.login -> dashboard -> query_via_dashboard,
+        verifying session-gated access and query routing.
         """
-        # Simulate authenticated session
-        session = self._create_session("admin")
-        assert session["expires_at"] > time.time()
+        # Login via AdminAPI (uses Argon2id mock)
+        session = mock_admin_api.login("admin-passphrase")
+        assert session is not None, "Valid passphrase must produce a session"
+        assert session.is_valid(), "Fresh session must not be expired"
 
-        # User types a query in the dashboard
-        query = {
-            "type": "user_query",
-            "content": "Show me all laptop reviews",
-            "source": "admin_dashboard",
-        }
+        # Wrong passphrase must be rejected
+        bad_session = mock_admin_api.login("wrong-password")
+        assert bad_session is None, "Invalid passphrase must not produce a session"
 
-        # Brain processes it
-        result = mock_dina.brain.process(query)
-        assert result["processed"] is True
+        # Dashboard data is accessible with valid session
+        dashboard_data = mock_admin_api.dashboard(session.session_id)
+        assert dashboard_data is not None, "Valid session must grant dashboard access"
+        assert "root_did" in dashboard_data
+        assert dashboard_data["root_did"] == mock_dina.identity.root_did
 
-        # Core can also search the vault for existing data
-        mock_dina.vault.store(1, "laptop_review_1", {"product": "ThinkPad X1"})
-        mock_dina.vault.index_for_fts("laptop_review_1", "ThinkPad X1 laptop review")
-        results = mock_dina.go_core.vault_query("laptop")
-        assert "laptop_review_1" in results
+        # Submit a query through the dashboard
+        response = mock_admin_api.query_via_dashboard(
+            session.session_id, "Show me all laptop reviews",
+        )
+        assert response is not None, "Valid session must allow queries"
+        assert "laptop" in response.lower()
+
+        # Query with an invalid session must be rejected
+        rejected = mock_admin_api.query_via_dashboard(
+            "invalid-session-id", "Show me all laptop reviews",
+        )
+        assert rejected is None, "Invalid session must not return query results"
+
+        # Verify API call audit trail was recorded
+        endpoints_called = [c["endpoint"] for c in mock_admin_api.api_calls]
+        assert "/admin/login" in endpoints_called
+        assert "/admin/dashboard" in endpoints_called
+        assert "/admin/query" in endpoints_called
 
 # TST-INT-027
     def test_session_expiry_redirect(

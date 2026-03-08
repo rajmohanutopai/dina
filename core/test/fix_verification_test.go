@@ -721,18 +721,11 @@ func TestFixVerify_31_5_3_AdminUICallsCoreAPI(t *testing.T) {
 
 // TST-CORE-1055 Default brain config core URL is http://core:8100
 func TestFixVerify_31_6_1_DefaultCoreURL(t *testing.T) {
-	// Verify that the default config has BrainURL set to http://brain:8200
-	// and AdminAddr set to :8100 (which is the core admin URL that brain connects to).
-	cfg := testutil.TestConfig()
+	// Clear env vars that could override defaults, ensuring we test production defaults().
+	t.Setenv("DINA_ADMIN_ADDR", "")
+	t.Setenv("DINA_BRAIN_URL", "")
+	t.Setenv("DINA_CONFIG_PATH", "")
 
-	if cfg.BrainURL != "http://brain:8200" {
-		t.Errorf("expected default BrainURL='http://brain:8200', got %q", cfg.BrainURL)
-	}
-	if cfg.AdminAddr != ":8100" {
-		t.Errorf("expected default AdminAddr=':8100', got %q", cfg.AdminAddr)
-	}
-
-	// Verify the real config loader produces these defaults.
 	loader := realConfigLoader
 	testutil.RequireImplementation(t, loader, "ConfigLoader")
 
@@ -740,9 +733,12 @@ func TestFixVerify_31_6_1_DefaultCoreURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config Load error: %v", err)
 	}
-	// The loaded config should have AdminAddr=:8100 (brain connects to core on this port).
+	// The real config loader's defaults() must produce the expected values.
 	if loadedCfg.AdminAddr != ":8100" {
 		t.Errorf("loaded config AdminAddr: got %q, want ':8100'", loadedCfg.AdminAddr)
+	}
+	if loadedCfg.BrainURL != "http://brain:8200" {
+		t.Errorf("loaded config BrainURL: got %q, want 'http://brain:8200'", loadedCfg.BrainURL)
 	}
 }
 

@@ -294,9 +294,9 @@ var realLogAuditor testutil.LogAuditor = logging.NewLogAuditor()
 // ---------- Observability implementations (§20) ----------
 
 var (
-	realSystemWatchdog      testutil.SystemWatchdog       = observability.NewSystemWatchdog(true, true, 1000000) // testutil superset (has CheckConnectorLiveness)
-	realDockerComposeParser testutil.DockerComposeParser  = observability.NewDockerComposeParser()
 	realCrashLogger         port.CrashLogger              = observability.NewCrashLogger()
+	realSystemWatchdog      testutil.SystemWatchdog       = observability.NewSystemWatchdogWithPurge(true, true, 1000000, realCrashLogger, realVaultAuditLogger)
+	realDockerComposeParser testutil.DockerComposeParser  = observability.NewDockerComposeParser()
 )
 
 // ---------- Security implementations (§17) ----------

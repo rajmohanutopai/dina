@@ -350,15 +350,21 @@ async def test_llm_4_1_12_pii_scrub_failure_blocks_cloud_send() -> None:
 
 # TST-BRAIN-133
 @pytest.mark.asyncio
-async def test_llm_4_2_1_successful_completion(llm_router) -> None:
+async def test_llm_4_2_1_successful_completion(llm_router, local_provider, cloud_provider) -> None:
     """SS4.2.1: Successful completion — valid prompt returns LLM response."""
     result = await llm_router.route(
         task_type="summarize",
         prompt="What is 2+2?",
     )
 
-    assert result["content"]
-    assert result["route"] in ("local", "cloud")
+    # "summarize" is a lightweight task → deterministically routes to local.
+    assert result["route"] == "local"
+    assert result["content"] == "local response"
+    assert result["model"] == "llama-local"
+    assert result["finish_reason"] == "stop"
+    # Verify the correct provider was invoked.
+    local_provider.complete.assert_awaited_once()
+    cloud_provider.complete.assert_not_awaited()
 
 
 # TST-BRAIN-134
@@ -419,7 +425,7 @@ async def test_llm_4_2_4_token_limit_exceeded(local_provider) -> None:
 
 # TST-BRAIN-137
 @pytest.mark.asyncio
-async def test_llm_4_2_5_malformed_llm_response(llm_router, local_provider) -> None:
+async def test_llm_4_2_5_malformed_llm_response(llm_router, local_provider, cloud_provider) -> None:
     """SS4.2.5: Malformed LLM response — dict returned without standard keys still works."""
     local_provider.complete.return_value = {"raw": "not valid structured response"}
 
@@ -427,7 +433,14 @@ async def test_llm_4_2_5_malformed_llm_response(llm_router, local_provider) -> N
 
     # Router attaches the route label even to malformed responses.
     assert result["route"] == "local"
-    assert "raw" in result
+    assert result["raw"] == "not valid structured response"
+    # Standard keys must be absent — proves the response is genuinely malformed.
+    assert "content" not in result, "malformed response should lack 'content' key"
+    assert "model" not in result, "malformed response should lack 'model' key"
+    # Verify the local provider was actually called.
+    local_provider.complete.assert_awaited_once()
+    # Cloud provider must NOT have been called — routing decision was correct.
+    cloud_provider.complete.assert_not_awaited()
 
 
 # TST-BRAIN-138

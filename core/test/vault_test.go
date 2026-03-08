@@ -2,9 +2,13 @@ package test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"sync"
 	"testing"
 
+	"github.com/rajmohanutopai/dina/core/internal/adapter/vault"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
@@ -301,27 +305,33 @@ func TestVault_4_1_1_2_SingleWriterSerialization(t *testing.T) {
 
 // TST-CORE-208
 func TestVault_4_1_1_3_ReadPoolMultipleReaders(t *testing.T) {
-	// Use mock to verify that multiple concurrent reads are served.
-	vm := testutil.NewMockVaultManager()
-	persona := "test-read-pool"
+	impl := realVaultManager
+	testutil.RequireImplementation(t, impl, "VaultManager")
+
+	persona := domain.PersonaName("test-read-pool")
 	dek := testutil.TestDEK[:]
-	_ = vm.Open(persona, dek)
+	err := impl.Open(vaultCtx, persona, dek)
+	testutil.RequireNoError(t, err)
+	defer impl.Close(persona)
 
-	// Store a test item.
+	// Store a test item so searches have data to return.
 	item := testutil.TestVaultItem()
-	_, _ = vm.Store(persona, item)
+	_, err = impl.Store(vaultCtx, persona, item)
+	testutil.RequireNoError(t, err)
 
-	// 10 concurrent readers.
+	// 10 concurrent readers exercising the real SQLCipher read pool.
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			results, err := vm.Search(persona, testutil.SearchQuery{Query: "test"})
+			results, err := impl.Search(vaultCtx, persona, domain.SearchQuery{Query: "test"})
 			if err != nil {
 				t.Errorf("concurrent read error: %v", err)
 			}
-			_ = results
+			if len(results) < 1 {
+				t.Errorf("expected at least 1 result from concurrent read, got %d", len(results))
+			}
 		}()
 	}
 	wg.Wait()
@@ -2358,13 +2368,42 @@ func TestVault_4_7_4_QueryAuditLog(t *testing.T) {
 
 // TST-CORE-312
 func TestVault_4_7_5_AuditLogIntegrityHashChain(t *testing.T) {
-	impl := realVaultAuditLogger
-	testutil.RequireImplementation(t, impl, "VaultAuditLogger")
+	// Create a fresh logger so we control the exact chain state.
+	logger := vault.NewAuditLogger()
+	ctx := context.Background()
 
-	// Each entry's hash includes previous entry hash — tamper-evident chain.
-	valid, err := impl.VerifyChain()
+	// Append 3 entries to build a chain.
+	actions := []string{"vault_store", "vault_query", "vault_delete"}
+	for _, action := range actions {
+		_, err := logger.Append(ctx, domain.VaultAuditEntry{
+			Action:    action,
+			Persona:   "default",
+			Requester: "did:key:z6MkTest",
+		})
+		testutil.RequireNoError(t, err)
+	}
+
+	// Positive: chain must verify after honest appends.
+	valid, err := logger.VerifyChain()
 	testutil.RequireNoError(t, err)
-	testutil.RequireTrue(t, valid, "audit log hash chain must be valid")
+	testutil.RequireTrue(t, valid, "audit log hash chain must be valid after honest appends")
+
+	// KAT: independently verify the hash chain by querying entries
+	// and recomputing hashes using the same formula as production.
+	entries, err := logger.Query(ctx, domain.VaultAuditFilter{})
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, len(entries), 3)
+
+	// First entry must have "genesis" as PrevHash.
+	testutil.RequireEqual(t, entries[0].PrevHash, "genesis")
+
+	// Subsequent entries: PrevHash == SHA256(prevID:prevTimestamp:prevAction:prevPrevHash).
+	for i := 1; i < len(entries); i++ {
+		prev := entries[i-1]
+		h := sha256.Sum256([]byte(fmt.Sprintf("%d:%s:%s:%s", prev.ID, prev.Timestamp, prev.Action, prev.PrevHash)))
+		expected := hex.EncodeToString(h[:])
+		testutil.RequireEqual(t, entries[i].PrevHash, expected)
+	}
 }
 
 // TST-CORE-313

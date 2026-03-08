@@ -1009,30 +1009,150 @@ func TestIdentity_3_5_4_MaxDeviceLimit(t *testing.T) {
 func TestIdentity_3_6_1_SplitMasterSeed(t *testing.T) {
 	impl := realRecoveryManager
 	testutil.RequireImplementation(t, impl, "RecoveryManager")
+
+	// A 32-byte master seed split into 5 shares with threshold 3.
+	seed := make([]byte, 32)
+	for i := range seed {
+		seed[i] = byte(i + 1)
+	}
+	shares, err := impl.Split(seed, 3, 5)
+	testutil.RequireNoError(t, err)
+	testutil.RequireLen(t, len(shares), 5)
+
+	// Each share must be 33 bytes (1 x-coordinate + 32 data bytes).
+	for i, s := range shares {
+		testutil.RequireBytesLen(t, s, 33)
+		// x-coordinate must be 1-indexed and unique.
+		testutil.RequireEqual(t, int(s[0]), i+1)
+	}
+
+	// Shares must not be identical to each other (randomized polynomials).
+	allSame := true
+	for i := 1; i < len(shares); i++ {
+		if string(shares[i]) != string(shares[0]) {
+			allSame = false
+			break
+		}
+	}
+	testutil.RequireFalse(t, allSame, "shares must not all be identical")
 }
 
 // TST-CORE-192
 func TestIdentity_3_6_2_ReconstructWithThreshold(t *testing.T) {
 	impl := realRecoveryManager
 	testutil.RequireImplementation(t, impl, "RecoveryManager")
+
+	// Split a 32-byte seed into 5 shares with threshold 3.
+	seed := make([]byte, 32)
+	for i := range seed {
+		seed[i] = byte(0xA0 ^ byte(i))
+	}
+	shares, err := impl.Split(seed, 3, 5)
+	testutil.RequireNoError(t, err)
+
+	// Exactly threshold (3) shares must reconstruct the original seed.
+	recovered, err := impl.Combine(shares[:3])
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesEqual(t, recovered, seed)
+
+	// A different subset of 3 shares must also reconstruct correctly.
+	subset := [][]byte{shares[0], shares[2], shares[4]}
+	recovered2, err := impl.Combine(subset)
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesEqual(t, recovered2, seed)
+
+	// All 5 shares (more than threshold) must also work.
+	recoveredAll, err := impl.Combine(shares)
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesEqual(t, recoveredAll, seed)
 }
 
 // TST-CORE-193
 func TestIdentity_3_6_3_ReconstructFewerThanThreshold(t *testing.T) {
 	impl := realRecoveryManager
 	testutil.RequireImplementation(t, impl, "RecoveryManager")
+
+	// Split with threshold 3, then try to reconstruct with only 2 shares.
+	// Lagrange interpolation with fewer points than the polynomial degree
+	// must NOT recover the original secret.
+	seed := make([]byte, 32)
+	for i := range seed {
+		seed[i] = byte(0x55 + i)
+	}
+	shares, err := impl.Split(seed, 3, 5)
+	testutil.RequireNoError(t, err)
+
+	// 2 shares (below threshold of 3) — reconstruction must yield wrong data.
+	recovered, err := impl.Combine(shares[:2])
+	testutil.RequireNoError(t, err) // Combine doesn't know the threshold, so no error.
+	testutil.RequireBytesNotEqual(t, recovered, seed)
 }
 
 // TST-CORE-194
 func TestIdentity_3_6_4_ReconstructWithInvalidShare(t *testing.T) {
 	impl := realRecoveryManager
 	testutil.RequireImplementation(t, impl, "RecoveryManager")
+
+	// Combine with fewer than 2 shares must fail.
+	_, err := impl.Combine([][]byte{{1, 2, 3}})
+	testutil.RequireError(t, err)
+	testutil.RequireContains(t, err.Error(), "insufficient")
+
+	// Combine with nil/empty input must fail.
+	_, err = impl.Combine(nil)
+	testutil.RequireError(t, err)
+
+	// Shares with inconsistent lengths must fail.
+	_, err = impl.Combine([][]byte{{1, 2, 3}, {2, 4}})
+	testutil.RequireError(t, err)
+	testutil.RequireContains(t, err.Error(), "invalid")
+
+	// Share with zero x-coordinate must fail.
+	_, err = impl.Combine([][]byte{{0, 1, 2}, {1, 3, 4}})
+	testutil.RequireError(t, err)
+	testutil.RequireContains(t, err.Error(), "invalid")
+
+	// Split with invalid parameters must fail.
+	seed := []byte("test-secret-data")
+	_, err = impl.Split(seed, 1, 3) // k < 2
+	testutil.RequireError(t, err)
+
+	_, err = impl.Split(seed, 4, 3) // k > n
+	testutil.RequireError(t, err)
+
+	_, err = impl.Split(nil, 2, 3) // empty secret
+	testutil.RequireError(t, err)
 }
 
 // TST-CORE-195
 func TestIdentity_3_6_5_ShareFormat(t *testing.T) {
 	impl := realRecoveryManager
 	testutil.RequireImplementation(t, impl, "RecoveryManager")
+
+	// Verify share format: first byte is x-coordinate (1-indexed),
+	// remaining bytes are the evaluated polynomial values.
+	secret := []byte{0xDE, 0xAD, 0xBE, 0xEF}
+	shares, err := impl.Split(secret, 2, 3)
+	testutil.RequireNoError(t, err)
+	testutil.RequireLen(t, len(shares), 3)
+
+	for i, s := range shares {
+		// Each share: [x-coordinate, data...]
+		testutil.RequireBytesLen(t, s, len(secret)+1)
+		testutil.RequireEqual(t, int(s[0]), i+1) // x = 1, 2, 3
+	}
+
+	// x-coordinates must be unique.
+	xs := map[byte]bool{}
+	for _, s := range shares {
+		testutil.RequireFalse(t, xs[s[0]], "duplicate x-coordinate in shares")
+		xs[s[0]] = true
+	}
+
+	// Roundtrip: any 2-of-3 must recover the secret.
+	recovered, err := impl.Combine(shares[:2])
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesEqual(t, recovered, secret)
 }
 
 // TST-CORE-926

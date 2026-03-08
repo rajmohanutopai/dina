@@ -410,6 +410,17 @@ class TestDeadInternetFilter:
             "proven", "reputation", "solid", "positive",
         ]
 
+        # LLM must also reference specific profile data — not just
+        # generic positive words.  Any of these concrete numbers from
+        # Elena's profile prove the model actually read the data.
+        data_signals = [
+            "200", "197", "0.95", "95%", "95 %",
+            "94%", "94 %", "0.94",
+            "88%", "88 %", "0.88",
+            "15 vouch", "15 peer",
+            "two year", "2 year", "2-year",
+        ]
+
         content = ""
         for attempt in range(_MAX_LLM_ATTEMPTS):
             r = brain_signer.post(
@@ -426,17 +437,25 @@ class TestDeadInternetFilter:
             )
 
             content = r.json().get("content", "")
-            if any(s in content.lower() for s in trust_signals):
+            has_trust = any(s in content.lower() for s in trust_signals)
+            has_data = any(s in content.lower() for s in data_signals)
+            if has_trust and has_data:
                 break
             if attempt < _MAX_LLM_ATTEMPTS - 1:
-                print(f"\n  [trust] Retry {attempt + 1}: no keyword match, retrying...")
+                print(f"\n  [trust] Retry {attempt + 1}: missing keyword/data match, retrying...")
                 time.sleep(1)
 
         _state["elena_llm_response"] = content
         has_trust = any(s in content.lower() for s in trust_signals)
+        has_data = any(s in content.lower() for s in data_signals)
         assert has_trust, (
             f"LLM should recognize Elena as trustworthy. "
             f"Expected one of {trust_signals}. Got: {content[:300]}"
+        )
+        assert has_data, (
+            f"LLM should reference specific profile data (attestation counts, "
+            f"trust score, account age) — not just generic positive words. "
+            f"Expected one of {data_signals}. Got: {content[:300]}"
         )
 
         print("\n  [trust] Brain → Elena assessment:")

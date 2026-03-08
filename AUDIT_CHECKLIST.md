@@ -30,7 +30,7 @@ Runner: `test_status.py` | Directory: `tests/integration/`
 | 20 | test_arch_medium_1.py | `test_per_did_rate_limit_only_when_vault_unlocked` | TST-INT-606 | No |  |
 | 21 | test_arch_medium_1.py | `test_sweeper_blocklists_spam_did_source_ip` | TST-INT-607 | No |  |
 | 22 | test_arch_medium_1.py | `test_ttl_expired_message_stored_silently` | TST-INT-608 | Yes | BUG: 2-line mock stub store_expired_silently(); production Go sweeper.Ack() never touched; tautological assertions on hardcoded dict |
-| 23 | test_arch_medium_1.py | `test_boot_minimal_persona_dbs_opened` | TST-INT-609 | No |  |
+| 23 | test_arch_medium_1.py | `test_boot_minimal_persona_dbs_opened` | TST-INT-609 | Yes | BUG: Tautological — tests MockBootManager's hardcoded in-memory set (unconditionally adds "identity.sqlite"/"personal.sqlite"), not Go BootSequencer; assertions echo mock's own hardcoded values; Go tests already cover real boot (TestVault_4_8_5) |
 | 24 | test_arch_medium_1.py | `test_import_rejects_bad_manifest` | TST-INT-610 | No |  |
 | 25 | test_arch_medium_1.py | `test_export_excludes_secrets` | TST-INT-611 | No |  |
 | 26 | test_arch_medium_1.py | `test_vault_query_include_content_default` | TST-INT-612 | No |  |
@@ -76,7 +76,7 @@ Runner: `test_status.py` | Directory: `tests/integration/`
 | 66 | test_arch_medium_2.py | `test_conflict_resolution_last_write_wins` | TST-INT-652 | No |  |
 | 67 | test_arch_medium_2.py | `test_ws_missed_message_buffer` | TST-INT-653 | No |  |
 | 68 | test_arch_medium_2.py | `test_ws_three_missed_pongs_disconnect` | TST-INT-654 | Yes | BUG: Exercises only Python mock (MockWSSessionManager.miss_pong) that reimplements disconnect logic independently from Go production HeartbeatManager/writePump — tautological |
-| 69 | test_arch_medium_2.py | `test_ws_auth_timeout_5s` | TST-INT-655 | No |  |
+| 69 | test_arch_medium_2.py | `test_ws_auth_timeout_5s` | TST-INT-655 | Yes | BUG: Exercises only MockWSSessionManager; production auth timeout is Go context.WithTimeout in ws/upgrader.go; constant assertion checks mock's own hardcoded 5, not production ws.AuthTimeoutSeconds; Go test TestWS_9_1_3 already covers. Not fixable — needs Docker mode |
 | 70 | test_arch_medium_2.py | `test_ws_reconnect_backoff_caps_30s` | TST-INT-656 | Yes | WEAK: validates standalone MockReconnectBackoff arithmetic (min(2^n,30)); no production reconnect backoff implementation exists in the codebase |
 | 71 | test_arch_medium_2.py | `test_well_known_atproto_did_endpoint` | TST-INT-657 | No |  |
 | 72 | test_arch_medium_2.py | `test_pds_net_internal_no_outbound` | TST-INT-658 | Yes | BUG: Asserts mock's hardcoded networks; production docker-compose.yml has zero network isolation — real missing isolation invisible to test |
@@ -87,7 +87,7 @@ Runner: `test_status.py` | Directory: `tests/integration/`
 | 77 | test_arch_medium_2.py | `test_watchdog_breach_tier2_notification` | TST-INT-663 | Yes |  |
 | 78 | test_arch_medium_2.py | `test_docker_log_rotation_config` | TST-INT-664 | Yes |  |
 | 79 | test_arch_medium_3.py | `test_wrong_admin_login_rejected_cleanly` | TST-INT-665 | Yes | BUG: exercises only MockAdminAPI.login() with SHA-256 passphrase auth, not production FastAPI HMAC CLIENT_TOKEN login; would pass even if production login rejection were broken |
-| 80 | test_arch_medium_3.py | `test_logout_invalidates_session` | TST-INT-666 | No |  |
+| 80 | test_arch_medium_3.py | `test_logout_invalidates_session` | TST-INT-666 | Yes | Fixed: Was BUG — test manually did `del mock.sessions[id]` (tests Python dict, not production code). Added logout() method to MockAdminAPI mirroring POST /admin/logout contract. Test now calls logout(), asserts True, validates session invalidation, and tests idempotent re-logout returns False |
 | 81 | test_arch_medium_3.py | `test_session_expiry_forces_reauth` | TST-INT-667 | No |  |
 | 82 | test_arch_medium_3.py | `test_locked_node_admin_returns_unlock_required` | TST-INT-668 | No |  |
 | 83 | test_arch_medium_3.py | `test_admin_session_survives_core_restart` | TST-INT-669 | No |  |
@@ -130,16 +130,16 @@ Runner: `test_status.py` | Directory: `tests/integration/`
 | 120 | test_cart_handover.py | `test_recommends_but_user_buys` | TST-INT-293 | No |  |
 | 121 | test_cart_handover.py | `test_never_holds_payment_info` | TST-INT-296 | No |  |
 | 122 | test_cart_handover.py | `test_handover_with_link` | TST-INT-455 | Yes | WEAK: Exercises only mock dict wrappers; asserts substrings test itself hardcoded; no production cart handover code exists |
-| 123 | test_cart_handover.py | `test_multiple_options_presented` | TST-INT-456 | No |  |
+| 123 | test_cart_handover.py | `test_multiple_options_presented` | TST-INT-456 | Yes | BUG: Tests only MockReviewBot.query_product(); no production ReviewBot exists; asserts test's own hardcoded data (3-item list sorted descending); mock_dina injected but never used. Not fixable — no production code |
 | 124 | test_cart_handover.py | `test_impulse_purchase_protection` | TST-INT-457 | No |  |
 | 125 | test_cart_handover.py | `test_deceptive_ad_detection` | TST-INT-458 | No |  |
 | 126 | test_chaos.py | `test_kill_brain_randomly` | TST-INT-352 | No |  |
 | 127 | test_chaos.py | `test_kill_core_randomly` | TST-INT-353 | No |  |
 | 128 | test_chaos.py | `test_network_partition_brain_core` | TST-INT-354 | No |  |
-| 129 | test_chaos.py | `test_slow_network` | TST-INT-355 | IN_REVIEW |  |
+| 129 | test_chaos.py | `test_slow_network` | TST-INT-355 | Yes | BUG: Pure mock theater — MockChaosMonkey.add_latency() just sets an int field, test manually adds that int to measured time creating circular tautology; MockVault stores succeed instantly with no actual latency; no production Go/network code exercised |
 | 130 | test_chaos.py | `test_cpu_pressure` | TST-INT-356 | No |  |
 | 131 | test_chaos.py | `test_memory_pressure` | TST-INT-357 | No |  |
-| 132 | test_chaos.py | `test_disk_io_saturation` | TST-INT-358 | No |  |
+| 132 | test_chaos.py | `test_disk_io_saturation` | TST-INT-358 | Yes | BUG: Fully mock-only; sets disk_io_saturation=True on MockChaosMonkey but nothing reads it; writes to Python dict MockVault; manually fabricates +50ms "degradation"; all assertions tautological. Not fixable — needs real Docker fault injection |
 | 133 | test_client_sync.py | `test_initial_sync_from_checkpoint` | TST-INT-369 | No |  |
 | 134 | test_client_sync.py | `test_realtime_push` | TST-INT-380 | No |  |
 | 135 | test_client_sync.py | `test_offline_queue_then_sync` | TST-INT-381 | No |  |
@@ -155,14 +155,14 @@ Runner: `test_status.py` | Directory: `tests/integration/`
 | 145 | test_compliance.py | `test_no_pii_in_error_messages` | TST-INT-360 | No |  |
 | 146 | test_compliance.py | `test_audit_trail_completeness` | TST-INT-361 | No |  |
 | 147 | test_compliance.py | `test_data_deletion_right_to_erasure` | TST-INT-362 | No |  |
-| 148 | test_compliance.py | `test_data_export_portability` | TST-INT-363 | No |  |
+| 148 | test_compliance.py | `test_data_export_portability` | TST-INT-363 | Yes | BUG: All objects (MockExportArchive, MockVault, MockAuditLog) are test-only; production portability.go Export/Import return ErrNotImplemented; tamper check is tautological boolean; no production code exercised |
 | 149 | test_compliance.py | `test_consent_tracking` | TST-INT-364 | Yes | BUG: MockLLMRouter.route() ignores consent record entirely (always returns CLOUD); audit entries manually injected then tautologically asserted; post-revocation test only hits sensitive-persona guard, not consent |
 | 150 | test_crash_recovery.py | `test_core_crash_pending_outbox_persists` | TST-INT-138 | No |  |
 | 151 | test_crash_recovery.py | `test_core_crash_during_vault_write_wal_protects` | TST-INT-139 | No |  |
 | 152 | test_crash_recovery.py | `test_core_crash_ws_clients_detect_disconnect` | TST-INT-140 | No |  |
 | 153 | test_crash_recovery.py | `test_core_crash_locked_persona_spool_survives` | TST-INT-141 | No |  |
 | 154 | test_crash_recovery.py | `test_brain_crash_scratchpad_checkpoint_resume` | TST-INT-142 | Yes | BUG: Entirely tautological — writes to trivial in-memory dict mock and reads it back, exercising zero production code (real ScratchpadService/GuardianLoop/CoreClient never called) |
-| 155 | test_crash_recovery.py | `test_brain_crash_no_checkpoint_starts_fresh` | TST-INT-143 | No |  |
+| 155 | test_crash_recovery.py | `test_brain_crash_no_checkpoint_starts_fresh` | TST-INT-143 | Yes | BUG: Entirely tautological — MockScratchpad is a dict wrapper (save/load/delete), not real ScratchpadService (async checkpoint/resume/clear); MockPythonBrain is a boolean flag; verifies empty dict returns None and dict read-back works |
 | 156 | test_crash_recovery.py | `test_brain_crash_during_llm_call_idempotent_retry` | TST-INT-144 | No |  |
 | 157 | test_crash_recovery.py | `test_brain_crash_pending_briefing_reconstructed` | TST-INT-145 | No |  |
 | 158 | test_crash_recovery.py | `test_llm_crash_during_inference_graceful_error` | TST-INT-146 | No |  |
@@ -198,7 +198,7 @@ Runner: `test_status.py` | Directory: `tests/integration/`
 | 188 | test_didcomm.py | `test_social_departure` | TST-INT-054 | No |  |
 | 189 | test_didcomm.py | `test_commerce_inquiry` | TST-INT-471 | No |  |
 | 190 | test_didcomm.py | `test_commerce_negotiate` | TST-INT-472 | No |  |
-| 191 | test_didcomm.py | `test_identity_verify` | TST-INT-473 | No |  |
+| 191 | test_didcomm.py | `test_identity_verify` | TST-INT-473 | Yes | BUG: Purely tautological — constructs mock DinaMessage dataclass with hardcoded values, asserts those same values back; no production identity verification protocol exists; mock DinaMessage != production domain.DinaMessage. Not fixable — no challenge-response protocol implemented |
 | 192 | test_didcomm.py | `test_trust_outcome` | TST-INT-474 | Yes | BUG: Purely tautological — constructs mock dataclass, assigns values, asserts those same values back; zero production code exercised; message type "dina/trust/outcome" does not exist in production domain model |
 | 193 | test_didcomm.py | `test_friend_sharing_rules_applied` | TST-INT-050 | Yes | BUG: Pure tautological — tests mock-only SharingRule dataclass, no production sharing-rule enforcement exists; zero production code exercised |
 | 194 | test_didcomm.py | `test_seller_sharing_rules_applied` | TST-INT-051 | Yes | WEAK: tautological fixture self-check; asserts hardcoded SharingRule values from conftest against themselves; zero production code (real SharingPolicyManager never called); mock type diverges from production struct |
@@ -224,7 +224,7 @@ Runner: `test_status.py` | Directory: `tests/integration/`
 | 214 | test_dina_to_dina.py | `test_suggest_tea_preference` | TST-INT-061 | No |  |
 | 215 | test_dina_to_dina.py | `test_suggest_clearing_calendar` | TST-INT-062 | No |  |
 | 216 | test_dina_to_dina.py | `test_notification_is_tier_2` | TST-INT-476 | No |  |
-| 217 | test_dina_to_dina.py | `test_no_notification_if_user_busy` | TST-INT-477 | No |  |
+| 217 | test_dina_to_dina.py | `test_no_notification_if_user_busy` | TST-INT-477 | Yes | BUG: MockSilenceClassifier has no code path reading user_busy from context; returns TIER_3 as default fallthrough for any unrecognized event type; test passes identically with context=None; no production busy-state suppression exists |
 | 218 | test_dina_to_dina.py | `test_end_to_end_encrypted` | TST-INT-290 | No |  |
 | 219 | test_dina_to_dina.py | `test_no_platform_intermediary` | TST-INT-478 | No |  |
 | 220 | test_dina_to_dina.py | `test_mutual_authentication_required` | TST-INT-479 | No |  |
@@ -257,7 +257,7 @@ Runner: `test_status.py` | Directory: `tests/integration/`
 | 247 | test_docker_infra.py | `test_core_readyz_returns_200_vault_open` | TST-INT-095 | No |  |
 | 248 | test_docker_infra.py | `test_core_readyz_returns_503_vault_locked` | TST-INT-096 | No |  |
 | 249 | test_docker_infra.py | `test_docker_restarts_unhealthy_core` | TST-INT-097 | Yes | BUG: Purely tautological — tests mock counter/flag logic in MockHealthcheck and MockDockerContainer; exercises zero production code; even RealDockerCompose uses same mock containers |
-| 250 | test_docker_infra.py | `test_brain_starts_only_after_core_healthy` | TST-INT-098 | No |  |
+| 250 | test_docker_infra.py | `test_brain_starts_only_after_core_healthy` | TST-INT-098 | Yes | BUG: Pure mock tautology AND wrong — MockDockerCompose hardcodes brain.depends_on=["core"], but real docker-compose.yml has core depends_on brain; mock encodes inverted dependency direction; no production code exercised |
 | 251 | test_docker_infra.py | `test_pds_healthcheck_endpoint` | TST-INT-099 | Yes | BUG: purely tautological — asserts value hardcoded in mock constructor; no real PDS healthcheck endpoint hit |
 | 252 | test_docker_infra.py | `test_pds_healthcheck_params` | TST-INT-100 | No |  |
 | 253 | test_docker_infra.py | `test_structured_json_logs_core` | TST-INT-101 | No |  |
@@ -314,7 +314,7 @@ Runner: `test_status.py` | Directory: `tests/integration/`
 | 304 | test_home_node.py | `test_brain_crash_doesnt_kill_core` | TST-INT-009 | Yes | WEAK: Validates mock wiring not real process isolation; no container kill + verify Core continues serving |
 | 305 | test_home_node.py | `test_internal_api_not_exposed_externally` | TST-INT-089 | No |  |
 | 306 | test_home_node.py | `test_simple_lookup_uses_sqlite_no_llm` | TST-INT-090 | No |  |
-| 307 | test_home_node.py | `test_basic_summarization_uses_local` | TST-INT-083 | No |  |
+| 307 | test_home_node.py | `test_basic_summarization_uses_local` | TST-INT-083 | Fixed | Was BUG: tested MockLLMRouter not production. Fixed: now exercises real LLMRouter._select_provider with stub providers at I/O boundary; uses correct production task types (summarize, intent_classification); asserts local routing via real decision tree |
 | 308 | test_home_node.py | `test_complex_reasoning_uses_cloud` | TST-INT-075 | No |  |
 | 309 | test_home_node.py | `test_sensitive_persona_never_uses_cloud` | TST-INT-081 | No |  |
 | 310 | test_home_node.py | `test_latency_sensitive_uses_on_device` | TST-INT-073 | No |  |
@@ -336,7 +336,7 @@ Runner: `test_status.py` | Directory: `tests/integration/`
 | 326 | test_home_node.py | `test_query_during_brain_outage` | TST-INT-020 | No |  |
 | 327 | test_home_node.py | `test_heartbeat_round_trip` | TST-INT-023 | No |  |
 | 328 | test_home_node.py | `test_browser_login_dashboard` | TST-INT-025 | No |  |
-| 329 | test_home_node.py | `test_dashboard_query_response` | TST-INT-026 | No |  |
+| 329 | test_home_node.py | `test_dashboard_query_response` | TST-INT-026 | Yes | Fixed: Was BUG — inline dict construction + hardcoded MockPythonBrain.process() return. Rewrote to use MockAdminAPI: tests login with valid/invalid passphrase, session-gated dashboard access, query_via_dashboard routing, invalid session rejection, and API call audit trail verification |
 | 330 | test_home_node.py | `test_session_expiry_redirect` | TST-INT-027 | No |  |
 | 331 | test_home_node.py | `test_full_pairing_flow` | TST-INT-028 | No |  |
 | 332 | test_home_node.py | `test_pairing_then_immediate_use` | TST-INT-029 | No |  |
@@ -436,7 +436,7 @@ Runner: `test_status.py` | Directory: `tests/integration/`
 | 426 | test_open_economy.py | `test_dispute_resolution` | TST-INT-520 | Yes | BUG: Pure mock-on-mock — no production dispute resolution code exists anywhere; assertions tautological (verifying values the test itself set on in-memory mock dicts/lists) |
 | 427 | test_performance.py | `test_concurrent_websocket_connections` | TST-INT-338 | No |  |
 | 428 | test_performance.py | `test_vault_write_throughput` | TST-INT-339 | No |  |
-| 429 | test_performance.py | `test_vault_search_under_load` | TST-INT-340 | No |  |
+| 429 | test_performance.py | `test_vault_search_under_load` | TST-INT-340 | Yes | BUG: Mock mode tests Python dict ops not production FTS5; no concurrency (single-threaded sequential); assertion search_results_count>0 unfailable since every seeded item contains "review"; no latency/throughput thresholds checked |
 | 430 | test_performance.py | `test_inbound_message_handling` | TST-INT-341 | No |  |
 | 431 | test_performance.py | `test_outbox_drain_rate` | TST-INT-342 | No |  |
 | 432 | test_performance.py | `test_query_to_response_local_llm` | TST-INT-343 | Yes | BUG: Purely mock-on-mock; production LLMRouter.route() has different async signature; MockPythonBrain.process() always returns processed=True making error assertions tautological |
@@ -459,7 +459,7 @@ Runner: `test_status.py` | Directory: `tests/integration/`
 | 449 | test_personas.py | `test_health_bot_cannot_see_purchases` | TST-INT-032 | No |  |
 | 450 | test_personas.py | `test_cross_persona_requires_authorization` | TST-INT-164 | No |  |
 | 451 | test_personas.py | `test_malicious_system_cannot_jailbreak_persona` | TST-INT-157 | No |  |
-| 452 | test_personas.py | `test_persona_keys_derived_from_root` | TST-INT-160 | No |  |
+| 452 | test_personas.py | `test_persona_keys_derived_from_root` | TST-INT-160 | Yes | BUG: Tests only MockIdentity.derive_persona() which uses Python hashlib.sha256; real production uses Go SLIP-0010 HMAC-SHA512; tautological: len(sha256_hex)==64 always true, determinism proves nothing about production. Not fixable — needs Go test or Docker mode |
 | 453 | test_personas.py | `test_vault_partition_naming_matches_persona_type` | TST-INT-162 | No |  |
 | 454 | test_personas.py | `test_buying_chair_uses_consumer_persona` | TST-INT-524 | No |  |
 | 455 | test_personas.py | `test_license_renewal_uses_legal_persona` | TST-INT-525 | Yes | WEAK: pure mock test; identity data hand-passed not vault-fetched; legal bot stub returns canned values; no production persona-routing or isolation code exercised |
@@ -493,7 +493,7 @@ Runner: `test_status.py` | Directory: `tests/integration/`
 | 483 | test_phase2.py | `test_sovereign_tier_yggdrasil_ipv6` | TST-INT-397 | No |  |
 | 484 | test_phase2.py | `test_tier_change_triggers_did_rotation` | TST-INT-398 | No |  |
 | 485 | test_phase2.py | `test_multiple_tiers_simultaneously` | TST-INT-399 | No |  |
-| 486 | test_phase2.py | `test_foundation_relay_wildcard` | TST-INT-400 | No |  |
+| 486 | test_phase2.py | `test_foundation_relay_wildcard` | TST-INT-400 | Yes | BUG: Tests MockRelay.forward() — a Python stub that always returns True and SHA-256s its input; no production Go relay code (Transporter.relayURL) exercised; assertions verify mock's own hardcoded behavior |
 | 487 | test_phase2.py | `test_noise_xx_handshake_mutual_authentication` | TST-INT-401 | No |  |
 | 488 | test_phase2.py | `test_key_compromise_does_not_expose_past_messages` | TST-INT-402 | No |  |
 | 489 | test_phase2.py | `test_session_ratchet_key_rotates` | TST-INT-403 | Yes | BUG: Exercises only MockNoiseSession with zero production code — Noise XX handshake and key ratchet feature not implemented anywhere in Go or Python |
@@ -526,7 +526,7 @@ Runner: `test_status.py` | Directory: `tests/integration/`
 | 516 | test_phase2.py | `test_ios_apns_wake_only_push` | TST-INT-430 | No |  |
 | 517 | test_phase2.py | `test_push_payload_contains_no_user_data` | TST-INT-431 | No |  |
 | 518 | test_phase2.py | `test_push_suppressed_when_ws_active` | TST-INT-432 | No |  |
-| 519 | test_phase2.py | `test_unified_push_no_google_dependency` | TST-INT-433 | No |  |
+| 519 | test_phase2.py | `test_unified_push_no_google_dependency` | TST-INT-433 | Yes | BUG: Purely tautological mock test; no production push notification code exists; tests MockPushProvider's own constructor defaults; would pass even if entire push system broken. Not fixable — no production code |
 | 520 | test_phase2.py | `test_cloud_profile_three_containers` | TST-INT-434 | No |  |
 | 521 | test_phase2.py | `test_local_llm_profile_four_containers` | TST-INT-435 | No |  |
 | 522 | test_phase2.py | `test_profile_switch_cloud_to_local` | TST-INT-436 | Yes | BUG: mock's hardcoded constructor (if profile=="local-llm": add llama); no real docker-compose.yml parsed; same pattern as TST-INT-391 |
@@ -579,7 +579,7 @@ Runner: `test_status.py` | Directory: `tests/integration/`
 | 569 | test_security.py | `test_per_user_sqlite_isolation` | TST-INT-191 | No |  |
 | 570 | test_security.py | `test_user_a_compromise_doesnt_expose_user_b` | TST-INT-192 | No |  |
 | 571 | test_security.py | `test_no_shared_state_between_user_containers` | TST-INT-193 | No |  |
-| 572 | test_security.py | `test_container_escape_doesnt_grant_vault_access` | TST-INT-194 | No |  |
+| 572 | test_security.py | `test_container_escape_doesnt_grant_vault_access` | TST-INT-194 | Yes | BUG: Pure tautology; raw_file_header() exists only on MockVault (no production counterpart); asserts sha256("financial")[:16] != SQLite magic header; no SQLCipher, no filesystem, no containers. Not fixable — needs Docker mode |
 | 573 | test_security.py | `test_different_hkdf_info_different_dek` | TST-INT-196 | No |  |
 | 574 | test_security.py | `test_key_wrapping_roundtrip` | TST-INT-200 | Yes | BUG: claims wrap+unwrap=original but never calls unwrap (method doesn't exist on mock); exercises SHA-256 stub that contradicts production's non-deterministic AES-GCM; zero production code tested |
 | 575 | test_security.py | `test_user_salt_uniqueness_across_nodes` | TST-INT-205 | No |  |
@@ -610,7 +610,7 @@ Runner: `test_status.py` | Directory: `tests/integration/`
 | 600 | test_storage_tiers.py | `test_device_key_derivation` | TST-INT-195 | No |  |
 | 601 | test_storage_tiers.py | `test_encrypted_vault_has_no_sqlite_header` | TST-INT-190 | No |  |
 | 602 | test_storage_tiers.py | `test_all_persona_vaults_encrypted` | TST-INT-201 | No |  |
-| 603 | test_storage_tiers.py | `test_empty_vault_would_fail_check` | TST-INT-189 | IN_REVIEW |  |
+| 603 | test_storage_tiers.py | `test_empty_vault_would_fail_check` | TST-INT-189 | Yes | BUG: Pure tautology — asserts MockVault.raw_file_header() returns its own hardcoded constant; no production Go code exercised; would pass even if real vault encryption is completely broken |
 | 604 | test_storage_tiers.py | `test_data_encrypted_with_persona_key` | TST-INT-119 | No |  |
 | 605 | test_storage_tiers.py | `test_fts5_search_returns_matching_keys` | TST-INT-188 | No |  |
 | 606 | test_storage_tiers.py | `test_fts5_search_case_insensitive` | TST-INT-217 | No |  |
@@ -625,7 +625,7 @@ Runner: `test_status.py` | Directory: `tests/integration/`
 | 615 | test_storage_tiers.py | `test_staging_get_returns_none_for_missing` | TST-INT-563 | No |  |
 | 616 | test_storage_tiers.py | `test_encrypted_snapshots` | TST-INT-216 | No |  |
 | 617 | test_storage_tiers.py | `test_immutable_archive` | TST-INT-209 | No |  |
-| 618 | test_storage_tiers.py | `test_right_to_delete_still_works` | TST-INT-123 | No |  |
+| 618 | test_storage_tiers.py | `test_right_to_delete_still_works` | TST-INT-123 | Yes | WEAK: In mock mode exercises only MockVault dict.pop; in Docker mode calls real DELETE API but assertions verify mock-internal state not server-side; needs re-query via GET to confirm real deletion |
 | 619 | test_storage_tiers.py | `test_delete_nonexistent_returns_false` | TST-INT-178 | No |  |
 | 620 | test_storage_tiers.py | `test_delete_removes_from_all_partitions_and_fts` | TST-INT-208 | No |  |
 | 621 | test_storage_tiers.py | `test_snapshot_is_point_in_time` | TST-INT-184 | No |  |
@@ -743,7 +743,7 @@ Runner: `test_status.py` | Directory: `tests/e2e/`
 | 16 | test_suite_03_product_research.py | `test_d2d_commerce_persona_gating` | TST-E2E-016 | No |  |
 | 17 | test_suite_03_product_research.py | `test_cold_start_web_search` | TST-E2E-017 | Yes | BUG: entirely mock-only — pre-populates MockOpenClaw/MockAppView fixtures then asserts those exact hardcoded values back; no production web search or agent intent code exercised |
 | 18 | test_suite_03_product_research.py | `test_outcome_reporting` | TST-E2E-018 | No |  |
-| 19 | test_suite_04_memory_recall.py | `test_hybrid_search_fts5_plus_vector` | TST-E2E-019 | No |  |
+| 19 | test_suite_04_memory_recall.py | `test_hybrid_search_fts5_plus_vector` | TST-E2E-019 | Yes | BUG: 100% mock-only — Python mock FTS5 (word-set intersection) and semantic (word overlap) bear no resemblance to real Go VaultService.HybridSearch (SQLite FTS5 MATCH + HNSW vector + reciprocal-rank fusion); test would pass if production deleted |
 | 20 | test_suite_04_memory_recall.py | `test_emotional_recall` | TST-E2E-020 | Yes | WEAK: Mock _semantic_search does literal word-intersection not vector similarity; cannot validate emotional recall; partially tautological |
 | 21 | test_suite_04_memory_recall.py | `test_offline_recall_rich_client_cache` | TST-E2E-021 | Yes | BUG: Mock-only; HomeNode/Device/VaultItem all from test mocks; "offline cache" is Python list comprehension, not real Go Core cache |
 | 22 | test_suite_04_memory_recall.py | `test_cross_persona_search_isolation` | TST-E2E-022 | Yes | WEAK: Isolation guaranteed by mock's per-persona dict structure; doesn't test real SQLCipher DB separation |
@@ -782,7 +782,7 @@ Runner: `test_status.py` | Directory: `tests/e2e/`
 | 55 | test_suite_11_multi_device.py | `test_thin_client_no_local_storage` | TST-E2E-055 | No |  |
 | 56 | test_suite_11_multi_device.py | `test_rich_client_offline_operations` | TST-E2E-056 | No |  |
 | 57 | test_suite_11_multi_device.py | `test_cache_corruption_recovery` | TST-E2E-057 | No |  |
-| 58 | test_suite_11_multi_device.py | `test_heartbeat_stale_connection_cleanup` | TST-E2E-058 | No |  |
+| 58 | test_suite_11_multi_device.py | `test_heartbeat_stale_connection_cleanup` | TST-E2E-058 | Yes | BUG: Test reimplements heartbeat logic inline (missed_pongs>=3 loop); sets mock state then asserts same state; production HeartbeatManager in Go ws.go never called; MockFCM has no production counterpart. Not fixable — needs real WS connections |
 | 59 | test_suite_12_trust.py | `test_expert_attestation_publish_relay_query` | TST-E2E-059 | No |  |
 | 60 | test_suite_12_trust.py | `test_bot_trust_degradation` | TST-E2E-060 | No |  |
 | 61 | test_suite_12_trust.py | `test_signed_tombstone_deletion` | TST-E2E-061 | No |  |
@@ -794,11 +794,11 @@ Runner: `test_status.py` | Directory: `tests/e2e/`
 | 67 | test_suite_13_security.py | `test_replay_attack_prevention` | TST-E2E-067 | No |  |
 | 68 | test_suite_13_security.py | `test_cross_persona_violation` | TST-E2E-068 | Yes | BUG: Exercises only mock HomeNode code (actors.py), not production Go Core or Brain; assertions verify mock-internal behavior, would pass even if production persona isolation were absent |
 | 69 | test_suite_13_security.py | `test_oversized_payload_rejection` | TST-E2E-069 | Yes | BUG: Tautological — asserts 100MB > 10MB via local arithmetic; never sends HTTP request to real bodylimit middleware |
-| 70 | test_suite_13_security.py | `test_log_exfiltration_prevention` | TST-E2E-070 | No |  |
+| 70 | test_suite_13_security.py | `test_log_exfiltration_prevention` | TST-E2E-070 | Yes | BUG: Fully mock-only; audit log entries never contain PII so scrub loop is vacuous; crash traceback test uses MockPIIScrubber with hardcoded str.replace, not production regex/NER scrubber; tautological. Not fixable — needs Docker mode with real scrubbers |
 | 71 | test_suite_13_security.py | `test_token_brute_force` | TST-E2E-071 | No |  |
 | 72 | test_suite_13_security.py | `test_did_spoofing` | TST-E2E-072 | No |  |
 | 73 | test_suite_13_security.py | `test_relay_cannot_read_content` | TST-E2E-073 | No |  |
-| 74 | test_suite_13_security.py | `test_data_sovereignty_on_disk` | TST-E2E-074 | No |  |
+| 74 | test_suite_13_security.py | `test_data_sovereignty_on_disk` | TST-E2E-074 | Yes | BUG: All objects (HomeNode, Persona, _derive_dek, vault_store) are test-only Python mocks; zero production Go crypto/vault code exercised; DEK derivation uses fake HKDF unrelated to real hkdf.go |
 | 75 | test_suite_14_agentic.py | `test_llm_available_in_docker` |  | No |  |
 | 76 | test_suite_14_agentic.py | `test_bank_fraud_always_interrupts` |  | No |  |
 | 77 | test_suite_14_agentic.py | `test_youtube_recommendation_never_interrupts` |  | Yes | BUG: Silently skipped every run; _brain_process calls pytest.skip() for non-agent_intent types; no assertions ever execute |
@@ -846,17 +846,17 @@ Runner: `test_status.py` | Directory: `core/test/`
 | # | File | Test Function | Marker | Reviewed | Note |
 |---|------|---------------|--------|----------|------|
 | 1 | adminproxy_test.go | `TestAdminProxy_12_1_ProxyToBrainAdminUI` | TST-CORE-541 | No |  |
-| 2 | adminproxy_test.go | `TestAdminProxy_12_2_AuthRequired` | TST-CORE-542 | No |  |
+| 2 | adminproxy_test.go | `TestAdminProxy_12_2_AuthRequired` | TST-CORE-542 | Yes | BUG: Tests fake adminproxy.NewAdminProxy() stub that hardcodes 302→/login; production middleware explicitly exempts /admin/* from auth and delegates to Brain via httputil.ReverseProxy; test validates a security property that doesn't exist in production Go code |
 | 3 | adminproxy_test.go | `TestAdminProxy_12_3_StaticAssetProxying` | TST-CORE-543 | No |  |
 | 4 | adminproxy_test.go | `TestAdminProxy_12_4_WebSocketUpgradeProxy` | TST-CORE-544 | Yes | BUG: Tests fake in-memory adapter stub; real proxy uses httputil.ReverseProxy in handler/admin.go; assertion checks exact strings test passed in |
 | 5 | adminproxy_test.go | `TestAdminProxy_12_5_CSRFTokenInjectedInResponse` | TST-CORE-897 | No |  |
 | 6 | apicontract_test.go | `TestAPIContract_18_1_VaultQueryExposed` | TST-CORE-639 | No |  |
 | 7 | apicontract_test.go | `TestAPIContract_18_2_VaultStoreExposed` | TST-CORE-640 | No |  |
-| 8 | apicontract_test.go | `TestAPIContract_18_3_DIDSignAdminOnly` | TST-CORE-641 | No |  |
+| 8 | apicontract_test.go | `TestAPIContract_18_3_DIDSignAdminOnly` | TST-CORE-641 | Yes | Fixed: Was BUG — apicontract had hardcoded maps independent of real auth.adminEndpointChecker; test passed even if real brainDenied list changed. Fixed apicontract.go to delegate IsAdminOnly→checker.IsAdminEndpoint and IsBrainCallable→checker.AllowedForTokenKind("brain",path) using real auth.NewAdminEndpointChecker(). Surfaced real drift: /v1/notify was fake-allowed but not in production brainAllowed |
 | 9 | apicontract_test.go | `TestAPIContract_18_4_DIDVerifyExposed` | TST-CORE-642 | Yes | BUG: Purely tautological — IsBrainCallable and CallEndpoint return hardcoded values from in-memory map; no real HTTP server, router, or handler exercised; would pass even if /v1/did/verify removed from production |
 | 10 | apicontract_test.go | `TestAPIContract_18_5_PIIScrubExposed` | TST-CORE-643 | No |  |
 | 11 | apicontract_test.go | `TestAPIContract_18_6_NotifyExposed` | TST-CORE-644 | No |  |
-| 12 | apicontract_test.go | `TestAPIContract_18_7_AllBrainEndpointsAcceptToken` | TST-CORE-645 | No |  |
+| 12 | apicontract_test.go | `TestAPIContract_18_7_AllBrainEndpointsAcceptToken` | TST-CORE-645 | Yes | Fixed: Post-refactor (apicontract delegates to real auth checker), test caught a real production bug — /v1/notify was missing from brainAllowed list in auth.go. Added /v1/notify to brainAllowed. Test now exercises real AllowedForTokenKind("brain",path) for 7 endpoints. Validates the refactor design works as intended |
 | 13 | apicontract_test.go | `TestAPIContract_18_8_ExactAPIServiceMatch` | TST-CORE-646 | Yes | BUG: checks hardcoded endpoint list in test-only adapter against itself; never consults real HTTP router; would pass even if production API surface changed completely |
 | 14 | apicontract_test.go | `TestAPIContract_18_9_MsgSendExposed` | TST-CORE-647 | No |  |
 | 15 | apicontract_test.go | `TestAPIContract_18_10_TrustQueryExposed` | TST-CORE-648 | No |  |
@@ -869,10 +869,10 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 22 | auth_test.go | `TestAuth_1_1_7_MissingTokenFileIgnored` | TST-CORE-007 | No |  |
 | 23 | auth_test.go | `TestAuth_1_1_8_EmptyTokenFileIgnored` | TST-CORE-008 | Yes | BUG: DINA_BRAIN_TOKEN_FILE exists only in test code, not production; tests nonexistent config feature |
 | 24 | auth_test.go | `TestAuth_1_1_9_TimingAttackResistance` | TST-CORE-009 | No |  |
-| 25 | auth_test.go | `TestAuth_1_2_ClientToken` | TST-CORE-010 | No |  |
+| 25 | auth_test.go | `TestAuth_1_2_ClientToken` | TST-CORE-010 | Yes | PASS: Exercises real tokenValidator.ValidateClientToken() (auth.go:208-217) with valid, unknown, and revoked tokens; asserts both ok boolean and deviceID mapping; SHA-256 hash lookup would fail if broken |
 | 26 | auth_test.go | `TestAuth_1_2_4_ClientTokenOnBrainEndpoint` | TST-CORE-013 | Yes | WEAK: Only calls IdentifyToken() confirming kind=="client"; never exercises auth middleware that enforces the 403 on brain endpoints |
 | 27 | auth_test.go | `TestAuth_1_2_5_UnknownTokenRejected` | TST-CORE-014 | No |  |
-| 28 | auth_test.go | `TestAuth_1_2_6_ConcurrentDeviceSessions` | TST-CORE-015 | No |  |
+| 28 | auth_test.go | `TestAuth_1_2_6_ConcurrentDeviceSessions` | TST-CORE-015 | Yes | PASS: Real auth.NewDefaultTokenValidator() with two pre-registered client tokens; ValidateClientToken() exercises SHA-256 hash + concurrent-safe map lookup; asserts both valid and device IDs are distinct. No mocks, no silent pass guards |
 | 29 | auth_test.go | `TestAuth_1_2_7_ClientTokenConstantTime` | TST-CORE-016 | No |  |
 | 30 | auth_test.go | `TestAuth_1_3_BrowserSession` | TST-CORE-017 | No |  |
 | 31 | auth_test.go | `TestAuth_1_4_AuthSurface` | TST-CORE-038 | Yes | WEAK: Route-surface subtest validates hardcoded stub list not real HTTP router; subtest 9 has zero assertions; subtest 8 never invokes middleware |
@@ -886,17 +886,17 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 39 | auth_test.go | `TestAuth_1_3_7_SessionFixationResistance` | TST-CORE-023 | No |  |
 | 40 | auth_test.go | `TestAuth_1_3_8_ConcurrentBrowserSessions` | TST-CORE-024 | No |  |
 | 41 | auth_test.go | `TestAuth_1_3_9_Logout` | TST-CORE-025 | No |  |
-| 42 | auth_test.go | `TestAuth_1_3_10_CookieAttributes` | TST-CORE-026 | No |  |
+| 42 | auth_test.go | `TestAuth_1_3_10_CookieAttributes` | TST-CORE-026 | Yes | PASS: Exercises real authGateway.Login() (auth.go:934); asserts Set-Cookie contains HttpOnly and SameSite=Strict from production fmt.Sprintf at line 950; would catch missing security attributes |
 | 43 | auth_test.go | `TestAuth_1_3_11_LoginRateLimit` | TST-CORE-027 | No |  |
 | 44 | auth_test.go | `TestAuth_1_3_12_SessionStorageLostOnRestart` | TST-CORE-028 | No |  |
-| 45 | auth_test.go | `TestAuth_1_3_13_SessionTTLConfigurable` | TST-CORE-029 | No |  |
+| 45 | auth_test.go | `TestAuth_1_3_13_SessionTTLConfigurable` | TST-CORE-029 | Fixed | Was BUG: never tested TTL, just create+validate. Fixed: short-TTL(1s) manager, validate ok, sleep 2s, validate returns "session expired"; long-TTL(3600) comparison stays valid |
 | 46 | auth_test.go | `TestAuth_1_3_14_SessionIDGeneration` | TST-CORE-030 | No |  |
 | 47 | auth_test.go | `TestAuth_1_3_15_CookieMaxAgeMatchesTTL` | TST-CORE-031 | Yes | PASS: real authGateway.Login with Argon2id verification and session creation; correctly asserts cookie Max-Age=86400 matches SessionManager TTL |
 | 48 | auth_test.go | `TestAuth_1_3_16_SuccessfulLogin302Redirect` | TST-CORE-032 | No |  |
 | 49 | auth_test.go | `TestAuth_1_3_17_LoginPageGoEmbed` | TST-CORE-033 | No |  |
 | 50 | auth_test.go | `TestAuth_1_3_18_DeviceBearerPassthrough` | TST-CORE-034 | Yes | WEAK: exercises real HandleAdminRequest/IdentifyToken/ValidateClientToken, but both authenticated and unauthenticated paths return 200; test cannot verify bearer passthrough actually occurred vs login page fallback |
 | 51 | auth_test.go | `TestAuth_1_3_19_NoCookieShowsLoginPage` | TST-CORE-035 | No |  |
-| 52 | auth_test.go | `TestAuth_1_3_20_ConvenienceModeAdminPassphrase` | TST-CORE-036 | No |  |
+| 52 | auth_test.go | `TestAuth_1_3_20_ConvenienceModeAdminPassphrase` | TST-CORE-036 | Yes | WEAK: Calls real PassphraseVerifier.Verify (Argon2id) but is functionally identical to TestAuth_1_3_1; never sets DINA_MODE=convenience or tests any convenience-mode code path; would pass even if convenience mode bypassed passphrase checks at handler layer |
 | 53 | auth_test.go | `TestAuth_1_3_21_BrainNeverSeesCookies` | TST-CORE-037 | No |  |
 | 54 | auth_test.go | `TestAuth_1_4_1_NoThirdAuthMechanism` | TST-CORE-038 | No |  |
 | 55 | auth_test.go | `TestAuth_1_4_2_UnknownSchemeIgnored` | TST-CORE-039 | No |  |
@@ -912,17 +912,17 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 65 | auth_test.go | `TestAuth_1_5_3_RestrictedCreatesDetectionTrail` | TST-CORE-049 | Yes | PASS: Real Gatekeeper.EvaluateIntent exercised with restricted-persona intent; meaningfully asserts Audit==true, would fail if restricted-access audit branch were removed |
 | 66 | auth_test.go | `TestAuth_1_5_4_BrainCannotCallDIDSign` | TST-CORE-050 | Yes | WEAK: Validates Gatekeeper domain object denies brain/did_sign, but this code path is never invoked in production; actual enforcement is in HTTP auth middleware which is tested separately |
 | 67 | auth_test.go | `TestAuth_1_5_5_BrainCannotCallDIDRotate` | TST-CORE-051 | No |  |
-| 68 | auth_test.go | `TestAuth_1_5_6_BrainCannotCallVaultBackup` | TST-CORE-052 | No |  |
+| 68 | auth_test.go | `TestAuth_1_5_6_BrainCannotCallVaultBackup` | TST-CORE-052 | Yes | WEAK: Tests real gatekeeper.EvaluateIntent with vault_backup action, but no production code constructs this Intent — actual enforcement is HTTP authz middleware (AllowedForTokenKind); defense-in-depth only |
 | 69 | auth_test.go | `TestAuth_1_5_7_BrainCannotCallPersonaUnlock` | TST-CORE-053 | No |  |
 | 70 | auth_test.go | `TestAuth_1_5_8_BrainCannotBypassPIIScrubber` | TST-CORE-054 | No |  |
 | 71 | auth_test.go | `TestAuth_1_5_9_BrainCannotAccessRawVaultFiles` | TST-CORE-055 | No |  |
 | 72 | auth_test.go | `TestAuth_1_6_9_ConcurrentTokenValidation` |  | No |  |
-| 73 | authz_test.go | `TestAuthz_1_6_1_BrainServiceKeyOnDIDSign_Forbidden` |  | No |  |
+| 73 | authz_test.go | `TestAuthz_1_6_1_BrainServiceKeyOnDIDSign_Forbidden` |  | Yes | PASS: Real Ed25519 keypair registered as brain service key; doSignedRequest() signs canonical payload; flows through real Auth.Handler → VerifySignature() → TokenBrain → real NewAuthzMiddleware → adminEndpointChecker.AllowedForTokenKind("brain", "/v1/did/sign") → brainDenied list → 403. No mocks |
 | 74 | authz_test.go | `TestAuthz_1_6_2_ClientTokenOnDIDSign_Allowed` |  | No |  |
 | 75 | authz_test.go | `TestAuthz_1_6_3_BrainServiceKeyOnVaultQuery_Allowed` |  | No |  |
 | 76 | authz_test.go | `TestAuthz_1_6_4_BrainServiceKeyOnAdminEndpoints_Forbidden` |  | No |  |
 | 77 | authz_test.go | `TestAuthz_1_6_5_ClientTokenOnAllEndpoints_Allowed` |  | No |  |
-| 78 | authz_test.go | `TestAuthz_1_6_6_BrainServiceKeyOnAllowedPaths_OK` |  | No |  |
+| 78 | authz_test.go | `TestAuthz_1_6_6_BrainServiceKeyOnAllowedPaths_OK` |  | Yes | PASS: Real Ed25519 keypair registered via tokenValidator.RegisterServiceKey(); doSignedRequest() signs with real crypto; request flows through real Auth.Handler → real NewAuthzMiddleware → real adminEndpointChecker.AllowedForTokenKind("brain", path). Tests 9 allowed paths return 200. No mocks |
 | 79 | authz_test.go | `TestAuthz_1_6_7_UnauthenticatedPublicPaths_PassThrough` |  | No |  |
 | 80 | authz_test.go | `TestAuthz_1_6_8_ExplicitContextTokenKind` |  | No |  |
 | 81 | bot_test.go | `TestBotInterface_25_1_QuerySanitizationNoDIDNoMedical` | TST-CORE-858 | No |  |
@@ -940,7 +940,7 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 93 | brainclient_test.go | `TestBrainClient_11_2_3_BrainRecovery` | TST-CORE-539 | No |  |
 | 94 | brainclient_test.go | `TestBrainClient_11_2_4_WatchdogInterval` | TST-CORE-540 | No |  |
 | 95 | brainclient_test.go | `TestBrainClient_11_3_1_SendEventToBrain` | TST-CORE-843 | No |  |
-| 96 | brainclient_test.go | `TestBrainClient_11_3_2_BrainReturnsError` | TST-CORE-844 | No |  |
+| 96 | brainclient_test.go | `TestBrainClient_11_3_2_BrainReturnsError` | TST-CORE-844 | Yes | BUG: Tautological — sets MockBrainClient.ProcessErr then asserts ProcessEvent() returns that same error; zero production BrainClient code exercised; real error handling (HTTP status parsing) never tested |
 | 97 | brainclient_test.go | `TestBrainClient_11_1_7_BrainReturnsMalformedJSON` | TST-CORE-845 | No |  |
 | 98 | brainclient_test.go | `TestBrainClient_11_1_8_ConcurrentRequests` | TST-CORE-846 | No |  |
 | 99 | brainclient_test.go | `TestBrainClient_11_1_9_EmptyURLReturnsError` | TST-CORE-847 | No |  |
@@ -953,9 +953,9 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 106 | config_test.go | `TestConfig_14_8_EnvVarTypeParsing` | TST-CORE-852 | No |  |
 | 107 | config_test.go | `TestConfig_14_2_1_DefaultValues` | TST-CORE-554 | No |  |
 | 108 | config_test.go | `TestConfig_14_9_DefaultSecurityMode` | TST-CORE-853 | No |  |
-| 109 | config_test.go | `TestConfig_14_3_1_EmptyClientTokenAccepted` | TST-CORE-553 | No |  |
+| 109 | config_test.go | `TestConfig_14_3_1_EmptyClientTokenAccepted` | TST-CORE-553 | Yes | WEAK: Real config.Loader.Validate() called but production Validate() has zero ClientToken logic; setting ClientToken="" is a no-op; test passes because other fields are valid, not because of any deliberate empty-token acceptance |
 | 110 | config_test.go | `TestConfig_14_3_2_InvalidSecurityMode` | TST-CORE-555 | No |  |
-| 111 | config_test.go | `TestConfig_14_10_NegativeSessionTTL` | TST-CORE-854 | No |  |
+| 111 | config_test.go | `TestConfig_14_10_NegativeSessionTTL` | TST-CORE-854 | Yes | PASS: Exercises real config.Loader.Validate which checks SessionTTL<=0 on line 80; TestConfig() provides valid baseline so only TTL mutation triggers error; would catch regression if validation removed |
 | 112 | config_test.go | `TestConfig_14_11_LoadFromConfigJSON` | TST-CORE-855 | No |  |
 | 113 | config_test.go | `TestConfig_14_5_1_LoadClientTokenFromDockerSecret` | TST-CORE-552 | No |  |
 | 114 | config_test.go | `TestConfig_14_12_EnvOverridesConfigJSON` | TST-CORE-856 | No |  |
@@ -978,14 +978,14 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 131 | crypto_test.go | `TestCrypto_2_2_Determinism` | TST-CORE-066 | No |  |
 | 132 | crypto_test.go | `TestCrypto_2_2_DifferentPathsDifferentKeys` | TST-CORE-066 | No |  |
 | 133 | crypto_test.go | `TestCrypto_2_2_HardenedOnlyEnforced` | TST-CORE-066 | No |  |
-| 134 | crypto_test.go | `TestCrypto_2_2_KnownTestVectors` | TST-CORE-066 | No |  |
+| 134 | crypto_test.go | `TestCrypto_2_2_KnownTestVectors` | TST-CORE-066 | Yes | Fixed: Was WEAK — used correct SLIP-0010 Test Vector 1 seed and path m/0' but only asserted pub key is 32 bytes, never compared against spec value. Added byte-exact comparison against authoritative SLIP-0010 expected public key 8c8a13df77a28f3445213a0f432fde644acaa215fc72dcdf300d5efaa85d350c |
 | 135 | crypto_test.go | `TestCrypto_2_2_PurposeIsolation` | TST-CORE-066 | No |  |
 | 136 | crypto_test.go | `TestCrypto_2_2_Purpose44Forbidden` | TST-CORE-066 | No |  |
 | 137 | crypto_test.go | `TestCrypto_2_2_SameMnemonicIndependentTrees` | TST-CORE-066 | No |  |
 | 138 | crypto_test.go | `TestCrypto_2_2_SiblingUnlinkability` | TST-CORE-066 | No |  |
 | 139 | crypto_test.go | `TestCrypto_2_2_GoImplementation` | TST-CORE-066 | Yes | WEAK: claims to verify implementation library choice but just does redundant smoke test (derive key, check 32 bytes) — subset of adjacent test, no known-answer vectors |
 | 140 | crypto_test.go | `TestCrypto_2_2_CanonicalPersonaIndexes` | TST-CORE-066 | No |  |
-| 141 | crypto_test.go | `TestCrypto_2_2_CustomPersonaIndex7Plus` | TST-CORE-066 | No |  |
+| 141 | crypto_test.go | `TestCrypto_2_2_CustomPersonaIndex7Plus` | TST-CORE-066 | Yes | Fixed: Was BUG — derived at wrong path m/9999'/7' (2-level) instead of production m/9999'/1'/idx'/gen' (4-level); tautological cross-depth non-collision; wrong index constant (7 vs FirstCustomPersonaIndex=6). Rewritten with real KeyDeriver.DeriveSigningKey, compares against canonical indexes 0-5, root key, and determinism check |
 | 142 | crypto_test.go | `TestCrypto_2_2_DerivationIndexStored` | TST-CORE-066 | Yes | WEAK: Claims to verify derivation_index stored in persona records but never touches PersonaManager or storage; only re-tests deterministic derivation |
 | 143 | crypto_test.go | `TestCrypto_2_3_DerivePerPersonaDEK` | TST-CORE-080 | No |  |
 | 144 | crypto_test.go | `TestCrypto_2_3_DifferentPersonasDifferentDEKs` | TST-CORE-080 | No |  |
@@ -1008,7 +1008,7 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 161 | crypto_test.go | `TestCrypto_2_4_HashPassphrase` | TST-CORE-098 | Yes | WEAK: Real Argon2id DeriveKEK exercised but only checks err==nil and len==32; no known test vector comparison; any 32-byte KDF would pass |
 | 162 | crypto_test.go | `TestCrypto_2_4_VerifyCorrect` | TST-CORE-098 | No |  |
 | 163 | crypto_test.go | `TestCrypto_2_4_VerifyWrong` | TST-CORE-098 | No |  |
-| 164 | crypto_test.go | `TestCrypto_2_4_DefaultParameters` | TST-CORE-098 | No |  |
+| 164 | crypto_test.go | `TestCrypto_2_4_DefaultParameters` | TST-CORE-098 | Fixed | Was BUG: fixture constant self-comparison. Fixed: KAT — calls argon2.IDKey directly with expected production params (128MB, 3 iters, 4 threads, 32B) and asserts byte-equal match with DeriveKEK output; any parameter change in production diverges |
 | 165 | crypto_test.go | `TestCrypto_2_4_UniqueSalts` | TST-CORE-098 | No |  |
 | 166 | crypto_test.go | `TestCrypto_2_4_ConfigurableParameters` | TST-CORE-098 | Yes | WEAK: Production has hardcoded Argon2id constants with no config mechanism; test just re-checks basic 32-byte output, no parameter variation verified |
 | 167 | crypto_test.go | `TestCrypto_2_4_RunsOnceNotPerRequest` | TST-CORE-098 | No |  |
@@ -1024,10 +1024,10 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 177 | crypto_test.go | `TestCrypto_2_6_Roundtrip` | TST-CORE-112 | No |  |
 | 178 | crypto_test.go | `TestCrypto_2_6_OneWayProperty` | TST-CORE-112 | Yes | WEAK: real production code but only checks inequality (not correctness against test vectors); round-trip correctness covered by adjacent seal/open tests |
 | 179 | crypto_test.go | `TestCrypto_2_6_EphemeralPerMessage` | TST-CORE-112 | Yes |  |
-| 180 | crypto_test.go | `TestCrypto_2_6_ConsciousReuse` | TST-CORE-112 | No |  |
+| 180 | crypto_test.go | `TestCrypto_2_6_ConsciousReuse` | TST-CORE-112 | Yes | WEAK: Exercises real Ed25519ToX25519 conversion (crypto/convert.go) but only asserts deterministic function returns same output twice — mathematically guaranteed; would pass even if conversion returned garbage deterministically; needs test vectors or DH exchange to verify correctness |
 | 181 | crypto_test.go | `TestCrypto_2_6_EphemeralZeroed` | TST-CORE-112 | No |  |
 | 182 | crypto_test.go | `TestCrypto_2_7_SealMessage` | TST-CORE-119 | No |  |
-| 183 | crypto_test.go | `TestCrypto_2_7_OpenSealed` | TST-CORE-119 | No |  |
+| 183 | crypto_test.go | `TestCrypto_2_7_OpenSealed` | TST-CORE-119 | Yes | PASS: Full NaCl seal/open round-trip via real NaClBoxSealer+Ed25519Signer+KeyConverter; exercises Ed25519→X25519 conversion, SealAnonymous, OpenAnonymous; byte-level equality assertion on decrypted plaintext |
 | 184 | crypto_test.go | `TestCrypto_2_7_WrongRecipient` | TST-CORE-119 | No |  |
 | 185 | crypto_test.go | `TestCrypto_2_7_TamperedCiphertext` | TST-CORE-119 | No |  |
 | 186 | crypto_test.go | `TestCrypto_2_7_EmptyPlaintext` | TST-CORE-119 | Yes | PASS: Genuine edge-case test exercising real NaCl crypto_box_seal production code end-to-end on empty plaintext with meaningful round-trip assertions; no mocks involved |
@@ -1036,7 +1036,7 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 189 | crypto_test.go | `TestCrypto_2_8_UnwrapCorrect` | TST-CORE-125 | No |  |
 | 190 | crypto_test.go | `TestCrypto_2_8_UnwrapWrong` | TST-CORE-125 | No |  |
 | 191 | crypto_test.go | `TestCrypto_2_8_TamperedBlob` | TST-CORE-125 | Yes | PASS: Real AES-GCM unwrap; flips last byte of ciphertext; gcm.Open correctly rejects; non-tautological tamper detection |
-| 192 | crypto_test.go | `TestCrypto_2_8_NonceUniqueness` | TST-CORE-125 | No |  |
+| 192 | crypto_test.go | `TestCrypto_2_8_NonceUniqueness` | TST-CORE-125 | Yes | PASS: Exercises real AESGCMKeyWrapper.Wrap() (keywrap.go:24) twice with same DEK/KEK; asserts ciphertexts differ (proving fresh nonce from crypto/rand) and both unwrap correctly; would catch fixed-nonce or corruption bugs |
 | 193 | crypto_test.go | `TestCrypto_2_8_6_KeyGenerationUsesSecureRandom` | TST-CORE-880 | No |  |
 | 194 | crypto_test.go | `TestCrypto_2_8_7_ArchiveKeySurvivesBackupKeyRotation` | TST-CORE-881 | No |  |
 | 195 | crypto_test.go | `TestCrypto_2_8_8_ClientSyncKeyUsedForSyncEncryption` | TST-CORE-882 | Yes | WEAK: Exercises real HKDF derivation but assertion is tautological (different info strings produce different keys is inherent HKDF property); does not verify sync encryption path actually uses this key — sync subsystem performs no encryption |
@@ -1046,7 +1046,7 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 199 | crypto_test.go | `TestCrypto_2_9_K256EmptySeedRejected` |  | Yes | PASS: exercises real DerivePathK256 with nil and empty seeds; validates security guard that empty seeds are rejected |
 | 200 | crypto_test.go | `TestCrypto_2_9_K256BIP44Forbidden` |  | Yes | PASS: exercises real DerivePathK256 with BIP-44 path; asserts security guard rejects it; no mocks, would catch regression if BIP-44 prohibition were removed |
 | 201 | crypto_test.go | `TestCrypto_2_9_K256ParseableByAtcrypto` |  | Yes | PASS: exercises full production DerivePathK256 pipeline with real BIP-39 seed and validates cross-library compatibility with Bluesky atcrypto K-256 parser |
-| 202 | crypto_test.go | `TestCrypto_2_9_K256ManagerWithSeed` |  | No |  |
+| 202 | crypto_test.go | `TestCrypto_2_9_K256ManagerWithSeed` |  | Yes | PASS: Real K256KeyManager with deterministic seed → DerivePathK256(m/9999'/2'/0') via real SLIP0010Deriver → disk write → second manager loads from same dir → RequireBytesEqual on private keys. Tests generate, persist, and reload paths. No mocks |
 | 203 | crypto_test.go | `TestCrypto_2_9_K256ManagerBackwardCompat` |  | No |  |
 | 204 | crypto_test.go | `TestCrypto_2_9_K256ManagerExistingKeyPreferred` |  | No |  |
 | 205 | crypto_test.go | `TestCrypto_2_9_KeyDeriverRotationKey` |  | No |  |
@@ -1101,8 +1101,8 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 254 | estate_test.go | `TestEstate_27_9_Recovery_KeysDeliveredViaD2D` | TST-CORE-877 | No |  |
 | 255 | estate_test.go | `TestEstate_27_10_Recovery_NonAssignedDataDestroyed` | TST-CORE-878 | No |  |
 | 256 | estate_test.go | `TestEstate_27_11_NoTimerTriggerInCodebase` | TST-CORE-879 | No |  |
-| 257 | fix_verification_batch5_test.go | `TestSecFix_32_1_1_ReplaySignatureRejected` | TST-CORE-1058 | No |  |
-| 258 | fix_verification_batch5_test.go | `TestSecFix_32_1_2_DifferentSignaturesAccepted` | TST-CORE-1059 | No |  |
+| 257 | fix_verification_batch5_test.go | `TestSecFix_32_1_1_ReplaySignatureRejected` | TST-CORE-1058 | Yes | PASS: Real DefaultTokenValidator.VerifySignature() — Ed25519 sign+verify, nonce double-buffer replay check. First call succeeds (asserts kind=TokenClient, identity=device-sig-001); second call with same signature rejected with "replayed" error. Exercises full 6-step verification pipeline. No mocks |
+| 258 | fix_verification_batch5_test.go | `TestSecFix_32_1_2_DifferentSignaturesAccepted` | TST-CORE-1059 | Fixed | Was WEAK: only asserted RequireNoError. Fixed: now asserts kind==TokenClient and identity=="device-sig-001" for both signatures, catching regressions where VerifySignature returns wrong type or empty identity |
 | 259 | fix_verification_batch5_test.go | `TestSecFix_32_1_3_DoubleBufferRotation` | TST-CORE-1060 | Yes | PASS: Exercises real double-buffer nonce rotation in tokenValidator.VerifySignature() with meaningful assertions on clock-skew rejection, nonce survival across rotation, and replay detection |
 | 260 | fix_verification_batch5_test.go | `TestSecFix_32_1_4_SafetyValveUnderLoad` | TST-CORE-1061 | No |  |
 | 261 | fix_verification_batch5_test.go | `TestSecFix_32_2_1_InboundCapEnforced` | TST-CORE-1062 | No |  |
@@ -1146,11 +1146,11 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 299 | fix_verification_test.go | `TestFixVerify_31_4_3_SemanticFallbackToFTS5` | TST-CORE-1051 | No |  |
 | 300 | fix_verification_test.go | `TestFixVerify_31_5_1_UpdateContact` | TST-CORE-1052 | No |  |
 | 301 | fix_verification_test.go | `TestFixVerify_31_5_3_AdminUICallsCoreAPI` | TST-CORE-1054 | Yes | WEAK: real ContactDirectory but never tests HTTP handler despite name; trust assertion silently passes if contact not in list |
-| 302 | fix_verification_test.go | `TestFixVerify_31_6_1_DefaultCoreURL` | TST-CORE-1055 | No |  |
+| 302 | fix_verification_test.go | `TestFixVerify_31_6_1_DefaultCoreURL` | TST-CORE-1055 | Fixed | Was WEAK: tautological Part 1, missing BrainURL assertion, no env isolation. Fixed: removed fixture tautology, clear env vars via t.Setenv, assert both AdminAddr and BrainURL on real config.NewLoader().Load() |
 | 303 | fix_verification_test.go | `TestFixVerify_31_6_3_KnownPeersParsed` | TST-CORE-1057 | No |  |
 | 304 | gatekeeper_adversarial_test.go | `TestAdv_29_9_LockedPersonaDenied` | TST-ADV-037 | No |  |
 | 305 | gatekeeper_adversarial_test.go | `TestAdv_29_9_LockedPersonaAudited` | TST-ADV-038 | No |  |
-| 306 | gatekeeper_adversarial_test.go | `TestAdv_29_9_EgressDeniedAudited` | TST-ADV-039 | No |  |
+| 306 | gatekeeper_adversarial_test.go | `TestAdv_29_9_EgressDeniedAudited` | TST-ADV-039 | Yes | PASS: Exercises real service.GatekeeperService.EnforceEgress() with port-interface mocks (hexagonal); asserts deny propagation, audit reason=="denied", and notification sent |
 | 307 | gatekeeper_adversarial_test.go | `TestAdv_29_10_MissingCategoryDenied` | TST-ADV-040 | No |  |
 | 308 | gatekeeper_adversarial_test.go | `TestAdv_29_10_TierNoneBlocks` | TST-ADV-041 | Yes | BUG: exercises only MockSharingPolicyManager.FilterEgress (copy-pasted logic); never touches real gatekeeper.SharingPolicyManager; would pass even if production code broken |
 | 309 | gatekeeper_adversarial_test.go | `TestAdv_29_10_NoPolicyDefaultDeny` | TST-ADV-042 | No |  |
@@ -1247,7 +1247,7 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 400 | identity_test.go | `TestIdentity_3_1_2_2_DIDWebSameKeypair` | TST-CORE-146 | No |  |
 | 401 | identity_test.go | `TestIdentity_3_1_2_3_RotationPLCToDIDWeb` | TST-CORE-147 | Yes | BUG: Source-code grep only; no runtime rotation; did:plc-to-did:web migration doesn't exist in production; Rotate only rotates signing keys |
 | 402 | identity_test.go | `TestIdentity_3_1_2_4_DIDWebPiggybacksIngress` | TST-CORE-148 | Yes | BUG: source-code grep only; ResolveWeb is unimplemented stub returning error; no runtime behavior tested |
-| 403 | identity_test.go | `TestIdentity_3_1_2_5_DIDWebTradeoffAcknowledged` | TST-CORE-149 | No |  |
+| 403 | identity_test.go | `TestIdentity_3_1_2_5_DIDWebTradeoffAcknowledged` | TST-CORE-149 | IN_REVIEW |  |
 | 404 | identity_test.go | `TestIdentity_3_2_1_CreatePersona` | TST-CORE-150 | No |  |
 | 405 | identity_test.go | `TestIdentity_3_2_2_ListPersonas` | TST-CORE-151 | No |  |
 | 406 | identity_test.go | `TestIdentity_3_2_3_DeletePersona` | TST-CORE-152 | Yes | BUG: exercises trivial in-memory mock (delete from map) not production PersonaManager.Delete; would pass even if real deletion were broken; adjacent test 3_2_4 covers real code |
@@ -1265,15 +1265,15 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 418 | identity_test.go | `TestIdentity_3_3_2_AccessRestrictedTier` | TST-CORE-164 | No |  |
 | 419 | identity_test.go | `TestIdentity_3_3_3_AccessLockedTierWithoutUnlock` | TST-CORE-165 | No |  |
 | 420 | identity_test.go | `TestIdentity_3_3_4_UnlockLockedPersona` | TST-CORE-166 | Yes | WEAK: pure mock-only; MockPersonaManager.Unlock ignores passphrase and TTL — no production unlock logic (passphrase verification, hash upgrade, TTL timers, persistence) exercised |
-| 421 | identity_test.go | `TestIdentity_3_3_5_LockedPersonaTTLExpiry` | TST-CORE-167 | No |  |
+| 421 | identity_test.go | `TestIdentity_3_3_5_LockedPersonaTTLExpiry` | TST-CORE-167 | Yes | PASS: Real PersonaManager — Create(locked tier) → Unlock(passphrase, ttl=1) → testTick channel trigger → IsLocked() confirms auto-lock. testTick is a built-in production testing hook (not a mock). Exercises create, unlock, passphrase validation, TTL goroutine, and auto-lock. No mocks |
 | 422 | identity_test.go | `TestIdentity_3_3_6_LockedPersonaReLock` | TST-CORE-168 | No |  |
-| 423 | identity_test.go | `TestIdentity_3_3_7_AuditLogForRestrictedAccess` | TST-CORE-169 | No |  |
+| 423 | identity_test.go | `TestIdentity_3_3_7_AuditLogForRestrictedAccess` | TST-CORE-169 | Yes | PASS: Exercises real PersonaManager.Create/AccessPersona/AuditLog (identity.go); restricted-tier access triggers addAuditEntry with "access_restricted"; asserts entry exists with correct action |
 | 424 | identity_test.go | `TestIdentity_3_3_8_NotificationOnRestrictedAccess` | TST-CORE-170 | No |  |
 | 425 | identity_test.go | `TestIdentity_3_3_9_LockedPersonaUnlockFlow` | TST-CORE-171 | No |  |
 | 426 | identity_test.go | `TestIdentity_3_3_10_LockedPersonaUnlockDenied` | TST-CORE-172 | No |  |
 | 427 | identity_test.go | `TestIdentity_3_3_11_LockedPersonaUnlockTTLExpires` | TST-CORE-173 | No |  |
 | 428 | identity_test.go | `TestIdentity_3_3_12_CrossPersonaParallelReads` | TST-CORE-174 | No |  |
-| 429 | identity_test.go | `TestIdentity_3_3_13_GetPersonasForContactDerived` | TST-CORE-175 | No |  |
+| 429 | identity_test.go | `TestIdentity_3_3_13_GetPersonasForContactDerived` | TST-CORE-175 | Yes | PASS: Exercises real PersonaManager.Create/AddContactToPersona/GetPersonasForContact (identity.go); verifies contact maps to correct persona and not to others; meaningful positive+negative assertions |
 | 430 | identity_test.go | `TestIdentity_3_3_14_GetPersonasForContactLockedInvisible` | TST-CORE-176 | No |  |
 | 431 | identity_test.go | `TestIdentity_3_3_15_TierConfigInConfigJSON` | TST-CORE-177 | No |  |
 | 432 | identity_test.go | `TestIdentity_3_4_1_AddContact` | TST-CORE-178 | Yes | WEAK: Pure stub — confirms ContactDirectory struct is non-nil but never calls Add() and makes zero behavioral assertions; all production logic (trust level validation, duplicate detection) completely untested |
@@ -1289,11 +1289,11 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 442 | identity_test.go | `TestIdentity_3_5_2_ListDevices` | TST-CORE-188 | No |  |
 | 443 | identity_test.go | `TestIdentity_3_5_3_RevokeDevice` | TST-CORE-189 | No |  |
 | 444 | identity_test.go | `TestIdentity_3_5_4_MaxDeviceLimit` | TST-CORE-190 | No |  |
-| 445 | identity_test.go | `TestIdentity_3_6_1_SplitMasterSeed` | TST-CORE-191 | No |  |
-| 446 | identity_test.go | `TestIdentity_3_6_2_ReconstructWithThreshold` | TST-CORE-192 | No |  |
-| 447 | identity_test.go | `TestIdentity_3_6_3_ReconstructFewerThanThreshold` | TST-CORE-193 | No |  |
-| 448 | identity_test.go | `TestIdentity_3_6_4_ReconstructWithInvalidShare` | TST-CORE-194 | No |  |
-| 449 | identity_test.go | `TestIdentity_3_6_5_ShareFormat` | TST-CORE-195 | No |  |
+| 445 | identity_test.go | `TestIdentity_3_6_1_SplitMasterSeed` | TST-CORE-191 | Yes | Fixed: Was BUG — stub that only called RequireImplementation and returned. Rewritten to call real Split(seed,3,5), assert 5 shares of 33 bytes each, verify 1-indexed x-coordinates, verify shares are distinct. Also fixed 3_6_2 through 3_6_5 (all were stubs). Exercises real GF(256) Shamir's Secret Sharing in identity.go |
+| 446 | identity_test.go | `TestIdentity_3_6_2_ReconstructWithThreshold` | TST-CORE-192 | Yes | Fixed: Was BUG stub. Now calls real Split(seed,3,5) then Combine with exactly-k, different-k-subset, and all-n shares — all must recover original seed via GF(256) Lagrange interpolation |
+| 447 | identity_test.go | `TestIdentity_3_6_3_ReconstructFewerThanThreshold` | TST-CORE-193 | Yes | Fixed: Was BUG stub. Now splits with k=3, combines with 2 shares, asserts result ≠ original seed (information-theoretic security of Shamir's scheme) |
+| 448 | identity_test.go | `TestIdentity_3_6_4_ReconstructWithInvalidShare` | TST-CORE-194 | Yes | Fixed: Was BUG stub. Now tests 7 error paths: <2 shares, nil input, inconsistent lengths, zero x-coordinate, k<2, k>n, empty secret |
+| 449 | identity_test.go | `TestIdentity_3_6_5_ShareFormat` | TST-CORE-195 | Yes | Fixed: Was BUG stub. Now verifies share structure [x-coord, data...], correct length, unique 1-indexed x-coordinates, and 2-of-3 roundtrip reconstruction |
 | 450 | identity_test.go | `TestIdentity_3_6_6_IngressTierChange_DIDDocRotation` | TST-CORE-926 | No |  |
 | 451 | identity_test.go | `TestIdentity_3_6_7_TrustRingLevelsDefinedInCode` | TST-CORE-927 | No |  |
 | 452 | identity_test.go | `TestIdentity_3_6_8_NoMCPOrOpenClawVaultAccess` | TST-CORE-928 | No |  |
@@ -1320,17 +1320,17 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 473 | logging_test.go | `TestLogging_21_1_1_GoCoreSlogJSON` | TST-CORE-689 | No |  |
 | 474 | logging_test.go | `TestLogging_21_1_2_PythonBrainStructlogJSON` | TST-CORE-690 | No |  |
 | 475 | logging_test.go | `TestLogging_21_1_3_NoFileLogs` | TST-CORE-691 | No |  |
-| 476 | logging_test.go | `TestLogging_21_1_4_DockerLogRotation` | TST-CORE-692 | No |  |
+| 476 | logging_test.go | `TestLogging_21_1_4_DockerLogRotation` | TST-CORE-692 | Yes | BUG: Constructs hardcoded JSON with max_size/max_file, feeds to ParseLine(), only asserts non-nil — any valid JSON passes. Docker log rotation is infrastructure config (compose logging: stanza) but no compose file defines it. LogAuditor.ParseLine() is a generic JSON parser with no rotation awareness. Not fixable without adding compose logging config + compose parser |
 | 477 | logging_test.go | `TestLogging_21_2_1_VaultContentNeverLogged` | TST-CORE-693 | No |  |
 | 478 | logging_test.go | `TestLogging_21_2_2_UserQueriesNeverLogged` | TST-CORE-694 | No |  |
 | 479 | logging_test.go | `TestLogging_21_2_3_BrainReasoningNeverLogged` | TST-CORE-695 | Yes | WEAK: Only tests trivially-true negative case (safe line not flagged); never tests that brain reasoning content would be caught, and ContainsPII() has no mechanism to detect reasoning fields |
 | 480 | logging_test.go | `TestLogging_21_2_4_NaClPlaintextNeverLogged` | TST-CORE-696 | No |  |
-| 481 | logging_test.go | `TestLogging_21_2_5_PassphraseNeverLogged` | TST-CORE-697 | No |  |
+| 481 | logging_test.go | `TestLogging_21_2_5_PassphraseNeverLogged` | TST-CORE-697 | Yes | BUG: Tests standalone LogAuditor.ContainsPII() with hardcoded synthetic JSON containing "passphrase" — tautological (checks that a function looking for "passphrase" finds "passphrase"). LogAuditor is never wired into production slog pipeline; auth Login() never calls ContainsPII. Would pass even if production code logged passphrases. Not fixable without wiring ContainsPII into slog.Handler |
 | 482 | logging_test.go | `TestLogging_21_2_6_APITokensNeverLogged` | TST-CORE-698 | No |  |
 | 483 | logging_test.go | `TestLogging_21_3_1_CIBannedLogQuery` | TST-CORE-699 | No |  |
-| 484 | logging_test.go | `TestLogging_21_3_2_CIBannedLogContent` | TST-CORE-700 | No |  |
+| 484 | logging_test.go | `TestLogging_21_3_2_CIBannedLogContent` | TST-CORE-700 | Yes | WEAK: MatchesBannedPattern() correctly detects "content" in slog-like source lines, but function is never wired into any CI pipeline or pre-commit hook. MatchesBannedPattern not in port.LogAuditor interface — exists only on concrete struct and test-only testutil.LogAuditor. Same family as §21.2/21.3 LogAuditor tests |
 | 485 | logging_test.go | `TestLogging_21_3_3_CIBannedLogBody` | TST-CORE-701 | No |  |
-| 486 | logging_test.go | `TestLogging_21_3_4_CIBannedLogPlaintext` | TST-CORE-702 | No |  |
+| 486 | logging_test.go | `TestLogging_21_3_4_CIBannedLogPlaintext` | TST-CORE-702 | Yes | WEAK: MatchesBannedPattern() correctly detects "plaintext" in log-like source lines, but function is never wired into any CI pipeline, pre-commit hook, or production port interface. Same family as §21.2/21.3 LogAuditor tests — validates a function that nothing outside the test suite calls |
 | 487 | logging_test.go | `TestLogging_21_3_5_CIBannedFStringUserData` | TST-CORE-703 | Yes | PASS: Real LogAuditor.MatchesBannedPattern exercised; non-tautological assertion on f-string banned pattern detection |
 | 488 | logging_test.go | `TestLogging_21_3_6_NoSpaCyNEROnLogLines` | TST-CORE-704 | No |  |
 | 489 | logging_test.go | `TestLogging_21_4_1_CrashStdoutSanitizedOneLiner` | TST-CORE-705 | Yes | WEAK: ContainsPII assertion vacuous — only works on JSON but SanitizeCrash returns plain text; substring check is meaningful but PII guard is illusory |
@@ -1347,7 +1347,7 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 500 | observability_test.go | `TestObservability_20_1_6_HealthzUnauthenticated` | TST-CORE-667 | Yes | WEAK: Calls Liveness() directly on in-memory struct that always returns nil; never exercises HTTP middleware auth-bypass (publicPaths) that implements the unauthenticated property it claims to validate |
 | 501 | observability_test.go | `TestObservability_20_1_7_ReadyzUnauthenticated` | TST-CORE-668 | No |  |
 | 502 | observability_test.go | `TestObservability_20_2_1_CoreHealthcheckEndpoint` | TST-CORE-669 | No |  |
-| 503 | observability_test.go | `TestObservability_20_2_2_CoreHealthcheckInterval` | TST-CORE-670 | No |  |
+| 503 | observability_test.go | `TestObservability_20_2_2_CoreHealthcheckInterval` | TST-CORE-670 | Yes | BUG: Tautological — asserts hardcoded Interval:"60s" from in-memory map; ParseService ignores composePath entirely and never reads YAML; would pass even if docker-compose.yml has different interval or doesn't exist |
 | 504 | observability_test.go | `TestObservability_20_2_3_CoreHealthcheckTimeout` | TST-CORE-671 | Yes | BUG: Asserts hardcoded Timeout:"3s" from map literal; composePath param ignored; docker-compose bugs invisible |
 | 505 | observability_test.go | `TestObservability_20_2_4_CoreHealthcheckRetries` | TST-CORE-672 | No |  |
 | 506 | observability_test.go | `TestObservability_20_2_5_CoreHealthcheckStartPeriod` | TST-CORE-673 | No |  |
@@ -1380,7 +1380,7 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 533 | onboarding_test.go | `TestOnboarding_19_10_InitialSyncTriggered` | TST-CORE-658 | No |  |
 | 534 | onboarding_test.go | `TestOnboarding_19_11_OneDefaultPersona` | TST-CORE-659 | No |  |
 | 535 | onboarding_test.go | `TestOnboarding_19_12_MnemonicBackupDeferred` | TST-CORE-660 | No |  |
-| 536 | onboarding_test.go | `TestOnboarding_19_13_SharingRulesDefaultEmpty` | TST-CORE-661 | No |  |
+| 536 | onboarding_test.go | `TestOnboarding_19_13_SharingRulesDefaultEmpty` | TST-CORE-661 | IN_REVIEW |  |
 | 537 | onboarding_test.go | `TestOnboarding_19_14_InstallSH_Bootstrap` | TST-CORE-932 | Yes | BUG: Stub production code returns hardcoded steps; test relies on leaked state; len(steps)>0 tautological against hardcoded 9-step list |
 | 538 | pairing_test.go | `TestPairing_10_1_1_GenerateCode` | TST-CORE-520 | No |  |
 | 539 | pairing_test.go | `TestPairing_10_1_2_GenerateCodeUniqueness` | TST-CORE-520 | No |  |
@@ -1414,17 +1414,17 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 567 | pds_test.go | `TestPDS_22_2_2_NonAuthorDeletionRejected` | TST-CORE-721 | No |  |
 | 568 | pds_test.go | `TestPDS_22_2_3_TombstonePropagation` | TST-CORE-722 | No |  |
 | 569 | pds_test.go | `TestPDS_22_2_4_DeletedRecordAbsentFromQueries` | TST-CORE-723 | No |  |
-| 570 | pds_test.go | `TestPDS_22_2_5_BotLexiconValidation` | TST-CORE-918 | No |  |
+| 570 | pds_test.go | `TestPDS_22_2_5_BotLexiconValidation` | TST-CORE-918 | Yes | WEAK: Exercises real ValidateLexicon() dispatch (pds.go:60) routing to validateBot(), but validateBot() is a no-op stub returning nil unconditionally; assertion always passes regardless of payload content |
 | 571 | pds_test.go | `TestPDS_22_2_6_OutcomeDataSchemaValidation` | TST-CORE-919 | No |  |
 | 572 | pds_test.go | `TestPDS_22_2_7_AttestationOptionalFieldsURIFormat` | TST-CORE-920 | No |  |
 | 573 | pds_test.go | `TestPDS_22_2_8_TrustQueryResponseIncludesSignedPayloads` | TST-CORE-921 | No |  |
 | 574 | pds_test.go | `TestPDS_22_2_9_DIDDocContainsDIDCommServiceEndpoint` | TST-CORE-922 | No |  |
 | 575 | pds_test.go | `TestPDS_22_2_10_OutcomeRecordSigning` | TST-CORE-923 | No |  |
 | 576 | pds_test.go | `TestPDS_22_2_11_TypeA_FallbackToExternalHTTPS` | TST-CORE-924 | Yes | BUG: tautological err==nil on always-nil QueueForRetry; no HTTPS fallback code exists; tests nonexistent feature |
-| 577 | pii_test.go | `TestPII_5_1_EmailDetection` | TST-CORE-343 | No |  |
+| 577 | pii_test.go | `TestPII_5_1_EmailDetection` | TST-CORE-343 | Yes | PASS: Exercises real piipkg.NewScrubber() with compiled EMAIL regex; asserts exact scrubbed string "Email me at [EMAIL_1]", error==nil, and entity count==1; would catch regex, token format, or pipeline regressions |
 | 578 | pii_test.go | `TestPII_5_2_PhoneDetection` | TST-CORE-344 | No |  |
 | 579 | pii_test.go | `TestPII_5_3_SSNDetection` | TST-CORE-345 | No |  |
-| 580 | pii_test.go | `TestPII_5_4_CreditCardDetection` | TST-CORE-346 | No |  |
+| 580 | pii_test.go | `TestPII_5_4_CreditCardDetection` | TST-CORE-346 | Yes | PASS: Real pii.Scrubber with production regex; asserts exact scrubbed output "Card [CREDIT_CARD_1]", entity count==1; would catch regex breakage, overlap bugs, or tokenization errors |
 | 581 | pii_test.go | `TestPII_5_5_MultipleEmails` | TST-CORE-355 | No |  |
 | 582 | pii_test.go | `TestPII_5_6_NoPII` | TST-CORE-348 | No |  |
 | 583 | pii_test.go | `TestPII_5_7_MixedPII` | TST-CORE-349 | No |  |
@@ -1445,7 +1445,7 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 598 | pii_test.go | `TestPII_5_22_BankAccountNumber` | TST-CORE-354 | No |  |
 | 599 | pii_test.go | `TestPII_5_23_ReplacementMapReturned` | TST-CORE-356 | No |  |
 | 600 | pii_test.go | `TestPII_5_24_ReplacementMapRoundTrip` | TST-CORE-357 | No |  |
-| 601 | pii_test.go | `TestPII_5_16_NoFalsePositivesOnNumbers` | TST-CORE-358 | No |  |
+| 601 | pii_test.go | `TestPII_5_16_NoFalsePositivesOnNumbers` | TST-CORE-358 | Yes | PASS: Exercises real Scrubber.Scrub() (pii/scrubber.go) with currency string "$1,234.56"; asserts output unchanged and zero entities; would catch overly broad PII patterns |
 | 602 | pii_test.go | `TestPII_5_26_DeSanitizeEndpoint_RestoresTokensFromMap` | TST-CORE-886 | No |  |
 | 603 | pii_test.go | `TestPII_5_27_ScrubEndpoint_NoOutboundNetworkCalls` | TST-CORE-887 | No |  |
 | 604 | pii_test.go | `TestPII_5_28_SensitivePersona_MandatoryPIIScrubBeforeCloudLLM` | TST-CORE-888 | No |  |
@@ -1453,9 +1453,9 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 606 | portability_test.go | `TestPortability_23_1_2_WALCheckpointBeforeExport` | TST-CORE-725 | No |  |
 | 607 | portability_test.go | `TestPortability_23_1_3_ArchiveContainsCorrectFiles` | TST-CORE-726 | No |  |
 | 608 | portability_test.go | `TestPortability_23_1_4_ManifestContents` | TST-CORE-727 | Yes | BUG: Always skipped — collectExportData() returns ErrNotImplemented; assertions are dead code masking unimplemented feature |
-| 609 | portability_test.go | `TestPortability_23_1_5_ExportExcludesBrainToken` | TST-CORE-728 | No |  |
+| 609 | portability_test.go | `TestPortability_23_1_5_ExportExcludesBrainToken` | TST-CORE-728 | Yes | Fixed: Was BUG — ListArchiveContents was hardcoded stub returning {"identity.sqlite","config.json","manifest.json"}; all exclusion assertions tautological. Replaced with real impl that decrypts archive + inspects payload.Files. Updated port interface + 6 call sites. Tests still skipped until collectExportData() implemented |
 | 610 | portability_test.go | `TestPortability_23_1_6_ExportExcludesClientTokenHashes` | TST-CORE-729 | No |  |
-| 611 | portability_test.go | `TestPortability_23_1_7_ExportExcludesPassphrase` | TST-CORE-730 | No |  |
+| 611 | portability_test.go | `TestPortability_23_1_7_ExportExcludesPassphrase` | TST-CORE-730 | Yes | Fixed: Was BUG — always skipped (collectExportData returns ErrNotImplemented), passphrase assertion never reached. Added BuildTestArchive helper to construct encrypted archives independently, decoupled from Export stub. Added canary subtest proving ListArchiveContents surfaces "passphrase" file if present |
 | 612 | portability_test.go | `TestPortability_23_1_8_ExportExcludesPDSData` | TST-CORE-731 | No |  |
 | 613 | portability_test.go | `TestPortability_23_1_9_ExportExcludesDockerSecrets` | TST-CORE-732 | Yes | BUG: Always skips via ErrNotImplemented from stub collectExportData(), and ListArchiveContents returns hardcoded file list making Docker secrets assertion tautological |
 | 614 | portability_test.go | `TestPortability_23_1_10_ExportWhileVaultLocked` | TST-CORE-733 | No |  |
@@ -1519,7 +1519,7 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 672 | server_test.go | `TestServer_15_1_3_ReadinessProbeVaultLocked` | TST-CORE-559 | No |  |
 | 673 | server_test.go | `TestServer_15_1_4_ReadinessProbeSQLiteLocked` | TST-CORE-560 | No |  |
 | 674 | server_test.go | `TestServer_15_1_5_LivenessNotEqualReadiness` | TST-CORE-561 | No |  |
-| 675 | server_test.go | `TestServer_15_1_6_DockerHealthcheckUsesHealthz` | TST-CORE-562 | No |  |
+| 675 | server_test.go | `TestServer_15_1_6_DockerHealthcheckUsesHealthz` | TST-CORE-562 | Yes | BUG: Test-only stub server.Server hardcodes "/healthz" in static slice; test asserts the hardcoded value is present — tautological; real route registration in main.go:746 never exercised |
 | 676 | server_test.go | `TestServer_15_1_7_DockerHealthcheckParams` | TST-CORE-563 | No |  |
 | 677 | server_test.go | `TestServer_15_1_8_BrainStartsAfterCoreHealthy` | TST-CORE-564 | No |  |
 | 678 | server_test.go | `TestServer_15_2_1_SearchVault` | TST-CORE-565 | No |  |
@@ -1565,7 +1565,7 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 718 | signature_test.go | `TestSignature_28_InvalidSignature_Rejected` |  | Yes |  |
 | 719 | signature_test.go | `TestSignature_28_WrongKey_Rejected` |  | No |  |
 | 720 | signature_test.go | `TestSignature_28_TamperedBody_Rejected` |  | No |  |
-| 721 | signature_test.go | `TestSignature_28_TamperedPath_Rejected` |  | No |  |
+| 721 | signature_test.go | `TestSignature_28_TamperedPath_Rejected` |  | Yes | PASS: Signs with path /v1/vault/store, verifies with /v1/vault/delete via real auth.VerifySignature; ed25519.Verify rejects because canonical payloads differ; would catch regression if path excluded from signed payload |
 | 722 | signature_test.go | `TestSignature_28_TamperedMethod_Rejected` |  | No |  |
 | 723 | signature_test.go | `TestSignature_28_ExpiredTimestamp_Rejected` |  | No |  |
 | 724 | signature_test.go | `TestSignature_28_FutureTimestamp_Rejected` |  | Yes |  |
@@ -1579,7 +1579,7 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 732 | signature_test.go | `TestPairing_28_CompletePairingWithKey_InvalidMultibase` |  | Yes | PASS: Exercises real production multibase validation in CompletePairingWithKey, correctly triggers z-prefix guard and asserts failure; not mocked |
 | 733 | signature_test.go | `TestPairing_28_CompletePairingWithKey_CodeAlreadyUsed` |  | No |  |
 | 734 | signature_test.go | `TestPairing_28_CompletePairingWithKey_DeviceAppearsInList` |  | No |  |
-| 735 | signature_test.go | `TestSignature_28_MockValidator_FallsBackToBearerToken` |  | No |  |
+| 735 | signature_test.go | `TestSignature_28_MockValidator_FallsBackToBearerToken` |  | Fixed | FIXED: Was BUG (tested mock directly); now exercises real Auth.Handler middleware with httptest — verifies Bearer token fallback sets context values, and missing auth returns 401 |
 | 736 | sync_test.go | `TestSync_26_1_ClientSendsCheckpoint_CoreReturnsChangedItems` | TST-CORE-862 | No |  |
 | 737 | sync_test.go | `TestSync_26_2_NewVaultItem_PushedToConnectedClients` | TST-CORE-863 | No |  |
 | 738 | sync_test.go | `TestSync_26_3_ConflictResolution_LastWriteWins` | TST-CORE-864 | No |  |
@@ -1588,11 +1588,11 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 741 | sync_test.go | `TestSync_26_6_NewDeviceFullSync` | TST-CORE-867 | No |  |
 | 742 | sync_test.go | `TestSync_26_7_OfflineQueueSyncsOnReconnect` | TST-CORE-868 | No |  |
 | 743 | taskqueue_test.go | `TestTaskQueue_8_1_1_EnqueueReturnsID` | TST-CORE-456 | No |  |
-| 744 | taskqueue_test.go | `TestTaskQueue_8_1_2_DequeueReturnsPending` | TST-CORE-828 | No |  |
+| 744 | taskqueue_test.go | `TestTaskQueue_8_1_2_DequeueReturnsPending` | TST-CORE-828 | Yes | Fixed: Was WEAK — misleading name (says "Pending" but asserts TaskRunning), discarded enqueue ID, no round-trip data verification. Renamed to DequeueTransitionsToRunning, added assertions for dequeued.ID == id, Type, and Priority. Exercises real taskqueue.NewTaskQueue() |
 | 745 | taskqueue_test.go | `TestTaskQueue_8_1_3_DequeueEmptyReturnsNil` | TST-CORE-829 | No |  |
 | 746 | taskqueue_test.go | `TestTaskQueue_8_1_4_CompleteTask` | TST-CORE-830 | No |  |
 | 747 | taskqueue_test.go | `TestTaskQueue_8_1_5_MockEnqueueDequeue` | TST-CORE-831 | No |  |
-| 748 | taskqueue_test.go | `TestTaskQueue_8_2_1_HighPriorityFirst` | TST-CORE-832 | No |  |
+| 748 | taskqueue_test.go | `TestTaskQueue_8_2_1_HighPriorityFirst` | TST-CORE-832 | IN_REVIEW |  |
 | 749 | taskqueue_test.go | `TestTaskQueue_8_2_2_SamePriorityFIFO` | TST-CORE-833 | Yes | PASS: Exercises real TaskQueue.Enqueue and Dequeue with precise assertion on FIFO ordering for same-priority tasks that catches inversion bugs |
 | 750 | taskqueue_test.go | `TestTaskQueue_8_2_3_MockPriorityNotEnforced` | TST-CORE-834 | No |  |
 | 751 | taskqueue_test.go | `TestTaskQueue_8_3_1_FailTask` | TST-CORE-835 | No |  |
@@ -1616,13 +1616,13 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 769 | taskqueue_test.go | `TestTaskQueue_8_3_6_TaskCancellation` | TST-CORE-471 | No |  |
 | 770 | taskqueue_test.go | `TestTaskQueue_8_3_7_IndexOnStatusTimeout` | TST-CORE-472 | No |  |
 | 771 | taskqueue_test.go | `TestTaskQueue_8_3_8_NoSilentDataLoss` | TST-CORE-473 | Yes | PASS: exercises real taskqueue.TaskQueue through full Enqueue/Dequeue/Fail/Retry cycle; asserts tasks exceeding max retries are preserved in dead letter queue, not silently deleted |
-| 772 | taskqueue_test.go | `TestTaskQueue_8_4_5_StoreReminder` | TST-CORE-474 | IN_REVIEW |  |
+| 772 | taskqueue_test.go | `TestTaskQueue_8_4_5_StoreReminder` | TST-CORE-474 | Yes | BUG: Uses MockReminderScheduler instead of real production ReminderScheduler; assertions are tautological against mock's in-memory map; no production code exercised |
 | 773 | taskqueue_test.go | `TestTaskQueue_8_4_6_NextPendingReminder` | TST-CORE-475 | No |  |
 | 774 | taskqueue_test.go | `TestTaskQueue_8_4_7_SleepUntilTriggerTime` | TST-CORE-476 | No |  |
 | 775 | taskqueue_test.go | `TestTaskQueue_8_4_8_MissedReminderOnStartup` | TST-CORE-477 | No |  |
-| 776 | taskqueue_test.go | `TestTaskQueue_8_4_9_FireAndMarkDone` | TST-CORE-478 | No |  |
+| 776 | taskqueue_test.go | `TestTaskQueue_8_4_9_FireAndMarkDone` | TST-CORE-478 | Fixed | Was BUG: used MockReminderScheduler. Fixed: switched to realReminderScheduler, added pre-fire NextPending assertion (ID match), post-fire check that fired reminder no longer returned |
 | 777 | taskqueue_test.go | `TestTaskQueue_8_4_10_NoPendingSleepOneMinute` | TST-CORE-479 | Yes | BUG: creates empty mock ReminderScheduler, calls NextPending() which trivially returns nil; never exercises production ReminderScheduler or actual sleep/poll logic |
-| 778 | taskqueue_test.go | `TestTaskQueue_8_4_11_NoCronLibrary` | TST-CORE-480 | No |  |
+| 778 | taskqueue_test.go | `TestTaskQueue_8_4_11_NoCronLibrary` | TST-CORE-480 | Yes | PASS: Reads real go.mod and validates no cron library (robfig/cron, go-co-op/gocron, jasonlvhit/gocron); genuine architectural guardrail protecting the time.Sleep reminder loop design |
 | 779 | taskqueue_test.go | `TestTaskQueue_8_4_12_ComplexSchedulingDelegated` | TST-CORE-481 | No |  |
 | 780 | taskqueue_test.go | `TestTaskQueue_8_1_11_BrainNoACKCrash` | TST-CORE-460 | No |  |
 | 781 | taskqueue_test.go | `TestTaskQueue_8_1_12_TaskPersistenceAcrossRestart` | TST-CORE-462 | Yes | BUG: named "PersistenceAcrossRestart" but never simulates restart; production TaskQueue is purely in-memory (no persistence at all) despite port contract saying "persistent task queuing" |
@@ -1660,7 +1660,7 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 813 | transport_d2d_sig_test.go | `TestFixVerify_31_8_1_SendMessage_DeliveryPayloadIsJSONWrapper` |  | Yes | PASS: Exercises real production SendMessage (marshalD2DPayload, real Ed25519 signing, real NaCl encryption) with meaningful structural assertions on JSON wire format, base64/hex encoding, and signature length; mocks only at I/O boundaries |
 | 814 | transport_d2d_sig_test.go | `TestFixVerify_31_8_2_ProcessInbound_JSONWrapperValidSig_Success` |  | No |  |
 | 815 | transport_d2d_sig_test.go | `TestFixVerify_31_8_3_ProcessInbound_JSONWrapperTamperedSig_Error` |  | No |  |
-| 816 | transport_d2d_sig_test.go | `TestFixVerify_31_8_6_ProcessInbound_RawBytesLegacy_Rejected` |  | No |  |
+| 816 | transport_d2d_sig_test.go | `TestFixVerify_31_8_6_ProcessInbound_RawBytesLegacy_Rejected` |  | Yes | PASS: Exercises real service.TransportService.ProcessInbound() with real NaClBoxSealer crypto; tests security-critical rejection of raw unsigned ciphertext (CRITICAL-04) |
 | 817 | transport_d2d_sig_test.go | `TestFixVerify_31_8_8_ProcessOutbox_UsesJSONWrapper` |  | Yes | WEAK: Real ProcessOutbox code but critical assertions guarded by `if processed > 0`; silently skippable on production bug |
 | 818 | transport_d2d_sig_test.go | `TestFixVerify_31_8_9_FullRoundTrip_SendAndReceiveWithSig` |  | No |  |
 | 819 | transport_d2d_sig_test.go | `TestFixVerify_31_8_4_ProcessInbound_JSONWrapperEmptySig_Rejected` |  | No |  |
@@ -1668,10 +1668,10 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 821 | transport_test.go | `TestTransport_7_1_1_SendToKnownRecipient` | TST-CORE-394 | No |  |
 | 822 | transport_test.go | `TestTransport_7_1_2_SendToUnresolvableDIDFails` | TST-CORE-805 | Yes | WEAK: Exercises correct path but only asserts err!=nil not error type; can't distinguish DID resolution failure from other errors |
 | 823 | transport_test.go | `TestTransport_7_1_3_SendEmptyEnvelopeRejected` | TST-CORE-806 | No |  |
-| 824 | transport_test.go | `TestTransport_7_1_4_SendNilEnvelopeRejected` | TST-CORE-807 | No |  |
+| 824 | transport_test.go | `TestTransport_7_1_4_SendNilEnvelopeRejected` | TST-CORE-807 | Yes | PASS: Calls real Transporter.Send() with nil envelope; production code (transport.go:106) has explicit nil guard returning ErrEmptyEnvelope; would fail if guard removed |
 | 825 | transport_test.go | `TestTransport_7_1_5_MockSendRecordsMessages` | TST-CORE-808 | No |  |
 | 826 | transport_test.go | `TestTransport_7_1_OutboxSchema` | TST-CORE-395 | No |  |
-| 827 | transport_test.go | `TestTransport_7_2_1_ReceiveFromInbox` | TST-CORE-810 | No |  |
+| 827 | transport_test.go | `TestTransport_7_2_1_ReceiveFromInbox` | TST-CORE-810 | Fixed | Was WEAK: empty inbox after reset, only tested nil path. Fixed: enqueues payload via EnqueueInbox, asserts Receive returns byte-equal message, then verifies inbox empty after dequeue |
 | 828 | transport_test.go | `TestTransport_7_2_2_EmptyInboxReturnsNil` | TST-CORE-811 | No |  |
 | 829 | transport_test.go | `TestTransport_7_2_3_InboxFIFOOrder` | TST-CORE-812 | No |  |
 | 830 | transport_test.go | `TestTransport_7_2_4_InboxSpoolWhenLocked` | TST-CORE-813 | No |  |
@@ -1696,11 +1696,11 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 849 | transport_test.go | `TestTransport_7_1_9_MaxRetriesExhaustedNudge` | TST-CORE-398 | No |  |
 | 850 | transport_test.go | `TestTransport_7_1_10_UserRequeueAfterFailure` | TST-CORE-399 | Yes | BUG: uses MockOutboxManager not realOutboxManager; production Requeue logic (reset retries/NextRetry) never exercised; neighboring tests use real impl |
 | 851 | transport_test.go | `TestTransport_7_1_11_TTL24Hours` | TST-CORE-400 | No |  |
-| 852 | transport_test.go | `TestTransport_7_1_12_QueueSizeLimit100` | TST-CORE-401 | No |  |
-| 853 | transport_test.go | `TestTransport_7_1_13_OutboxSurvivesRestart` | TST-CORE-402 | No |  |
+| 852 | transport_test.go | `TestTransport_7_1_12_QueueSizeLimit100` | TST-CORE-401 | Yes | Fixed: Was BUG — used MockOutboxManager while all siblings use realOutboxManager; mock counts all messages (incl delivered/failed) vs production counts only pending/sending; no error type check. Replaced with real transport.NewOutboxManager(100), added errors.Is(err, transport.ErrOutboxFull) |
+| 853 | transport_test.go | `TestTransport_7_1_13_OutboxSurvivesRestart` | TST-CORE-402 | Yes | BUG: Claims outbox survives restart but OutboxManager is purely in-memory (Go slice); test enqueues then GetByID on same live instance — no restart, no disk, no second instance. Test plan says "reloaded from SQLite" but no SQLite-backed outbox exists. Renamed to OutboxEnqueueRetrieveRoundTrip to be honest. Not fixable without durable outbox |
 | 854 | transport_test.go | `TestTransport_7_1_14_IdempotentDelivery` | TST-CORE-404 | No |  |
 | 855 | transport_test.go | `TestTransport_7_1_15_PriorityOrdering` | TST-CORE-407 | No |  |
-| 856 | transport_test.go | `TestTransport_7_1_16_PayloadIsPreEncrypted` | TST-CORE-408 | No |  |
+| 856 | transport_test.go | `TestTransport_7_1_16_PayloadIsPreEncrypted` | TST-CORE-408 | Fixed | FIXED: Was BUG (MockOutboxManager tautology); now uses realOutboxManager (transport.NewOutboxManager) to verify pre-encrypted payloads are preserved byte-for-byte through real storage |
 | 857 | transport_test.go | `TestTransport_7_1_17_SendingStatusDuringDelivery` | TST-CORE-409 | No |  |
 | 858 | transport_test.go | `TestTransport_7_1_18_UserIgnoresNudgeExpires` | TST-CORE-410 | No |  |
 | 859 | transport_test.go | `TestTransport_7_2_6_Valve1IPRateLimitExceeded` | TST-CORE-411 | No |  |
@@ -1730,7 +1730,7 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 883 | transport_test.go | `TestTransport_7_4_5_PlaintextStructure` | TST-CORE-439 | No |  |
 | 884 | transport_test.go | `TestTransport_7_4_6_MessageIDFormat` | TST-CORE-440 | No |  |
 | 885 | transport_test.go | `TestTransport_7_4_7_MessageCategories` | TST-CORE-443 | Yes | WEAK: Asserts hardcoded strings start with "dina/" — tautological from literals; no routing or classification logic tested |
-| 886 | transport_test.go | `TestTransport_7_4_8_UnknownMessageTypeAccepted` | TST-CORE-444 | No |  |
+| 886 | transport_test.go | `TestTransport_7_4_8_UnknownMessageTypeAccepted` | TST-CORE-444 | Yes | BUG: Sets Type="dina/unknown/foo" on test-only D2DMessage struct, asserts HasPrefix — tautological; no production inbox/transport code invoked; no message-type validation exists in production |
 | 887 | transport_test.go | `TestTransport_7_4_9_EnvelopeFormat` | TST-CORE-441 | Yes | BUG: Purely tautological — constructs test-only struct with hardcoded literals and asserts same literals back; uses testutil.D2DEnvelope not production domain.DinaEnvelope |
 | 888 | transport_test.go | `TestTransport_7_5_4_FullConnectionFlow` | TST-CORE-448 | No |  |
 | 889 | transport_test.go | `TestTransport_7_5_5_MutualAuthentication` | TST-CORE-449 | No |  |
@@ -1785,7 +1785,7 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 938 | vault_test.go | `TestVault_4_1_10_BusyTimeout5000` | TST-CORE-205 | No |  |
 | 939 | vault_test.go | `TestVault_4_1_1_1_VaultManagerStructure` | TST-CORE-206 | No |  |
 | 940 | vault_test.go | `TestVault_4_1_1_2_SingleWriterSerialization` | TST-CORE-207 | No |  |
-| 941 | vault_test.go | `TestVault_4_1_1_3_ReadPoolMultipleReaders` | TST-CORE-208 | No |  |
+| 941 | vault_test.go | `TestVault_4_1_1_3_ReadPoolMultipleReaders` | TST-CORE-208 | Fixed | FIXED: Was BUG (MockVaultManager); now uses realVaultManager with real SQLCipher read pool; 10 concurrent goroutines search and assert results returned |
 | 942 | vault_test.go | `TestVault_4_1_1_4_ReadConnectionQueryOnly` | TST-CORE-209 | No |  |
 | 943 | vault_test.go | `TestVault_4_1_1_5_WriteAutocheckpoint` | TST-CORE-210 | Yes | BUG: Claims to validate WAL autocheckpoint but exercises in-memory map-based vault with no SQLite/WAL involvement; no autocheckpoint pragma exists in production code; assertions are only that no errors occurred |
 | 944 | vault_test.go | `TestVault_4_1_1_6_CrossPersonaWriteIndependence` | TST-CORE-211 | No |  |
@@ -1812,7 +1812,7 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 965 | vault_test.go | `TestVault_4_4_3_Accumulation` | TST-CORE-273 | No |  |
 | 966 | vault_test.go | `TestVault_4_4_4_ResumeFromExactStep` | TST-CORE-274 | No |  |
 | 967 | vault_test.go | `TestVault_4_4_5_NoScratchpadStartFresh` | TST-CORE-275 | No |  |
-| 968 | vault_test.go | `TestVault_4_4_6_TTLAutoExpire` | TST-CORE-276 | No |  |
+| 968 | vault_test.go | `TestVault_4_4_6_TTLAutoExpire` | TST-CORE-276 | IN_REVIEW |  |
 | 969 | vault_test.go | `TestVault_4_4_7_DeleteOnCompletion` | TST-CORE-277 | No |  |
 | 970 | vault_test.go | `TestVault_4_4_8_SizeLimit` | TST-CORE-278 | No |  |
 | 971 | vault_test.go | `TestVault_4_4_9_StoredInIdentitySQLite` | TST-CORE-279 | No |  |
@@ -1843,11 +1843,11 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 996 | vault_test.go | `TestVault_4_2_1_3_ContactsSharingPolicyJSON` | TST-CORE-223 | No |  |
 | 997 | vault_test.go | `TestVault_4_2_1_4_IdxContactsTrustExists` | TST-CORE-224 | No |  |
 | 998 | vault_test.go | `TestVault_4_2_1_5_AuditLogTableSchema` | TST-CORE-225 | No |  |
-| 999 | vault_test.go | `TestVault_4_2_1_6_KVStoreForSyncCursors` | TST-CORE-226 | No |  |
+| 999 | vault_test.go | `TestVault_4_2_1_6_KVStoreForSyncCursors` | TST-CORE-226 | Yes | BUG: SchemaInspector is pure in-memory fake with hardcoded column lists; tests fake's own Go map insert/read, not real SQLite; real kv_store table exists in identity_001.sql but is never touched. Same class as other SchemaInspector tests. Not fixable without SQLite test infrastructure |
 | 1000 | vault_test.go | `TestVault_4_2_1_7_DeviceTokensSHA256Hash` | TST-CORE-227 | No |  |
 | 1001 | vault_test.go | `TestVault_4_2_1_8_DeviceTokensPartialIndex` | TST-CORE-228 | No |  |
 | 1002 | vault_test.go | `TestVault_4_2_1_9_CrashLogTableSchema` | TST-CORE-229 | No |  |
-| 1003 | vault_test.go | `TestVault_4_2_2_1_VaultItemsRequiredColumns` | TST-CORE-230 | No |  |
+| 1003 | vault_test.go | `TestVault_4_2_2_1_VaultItemsRequiredColumns` | TST-CORE-230 | Yes | BUG: Validates against hardcoded personaTableColumns map, not real SQLite DDL; map has drifted — lists body_text/ingested_at but real schema uses body/created_at; omits embedding/tags/updated_at/deleted columns; same class as 4_2_2_2 |
 | 1004 | vault_test.go | `TestVault_4_2_2_2_VaultItemsFTS5Table` | TST-CORE-231 | Yes | BUG: validates hardcoded stub DDL (body_text, 2 cols, remove_diacritics 1) that has drifted from real schema (body, 4 cols, remove_diacritics 2); masks column-name and config mismatches |
 | 1005 | vault_test.go | `TestVault_4_2_2_3_FTS5TokenizerUnicode61` | TST-CORE-232 | No |  |
 | 1006 | vault_test.go | `TestVault_4_2_2_4_PorterStemmerForbidden` | TST-CORE-233 | Yes | BUG: checks hardcoded DDL string in SchemaInspect.TableDDL (already diverges from real schema in persona_001.sql/pool.go), not actual DB schema — porter in real SQL would go undetected |
@@ -1855,7 +1855,7 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 1008 | vault_test.go | `TestVault_4_2_2_6_RelationshipsTable` | TST-CORE-235 | No |  |
 | 1009 | vault_test.go | `TestVault_4_2_2_7_VaultItemsTypeEnforced` | TST-CORE-236 | No |  |
 | 1010 | vault_test.go | `TestVault_4_2_2_8_RelationshipsEntityTypeEnforced` | TST-CORE-237 | No |  |
-| 1011 | vault_test.go | `TestVault_4_2_2_9_FTS5ContentSyncInsert` | TST-CORE-238 | No |  |
+| 1011 | vault_test.go | `TestVault_4_2_2_9_FTS5ContentSyncInsert` | TST-CORE-238 | Yes | BUG: Same SchemaInspector fake pattern — ExecSQL hardcodes manual copy of rows into both vault_items and vault_items_fts Go map slices; QuerySQL does strings.Contains substring match, not real FTS5 tokenization. Tautological: test can never fail. Does not exercise real SQLite FTS5 content-sync triggers. Not fixable without real SQLCipher test infra |
 | 1012 | vault_test.go | `TestVault_4_2_2_10_FTS5ContentSyncUpdate` | TST-CORE-239 | No |  |
 | 1013 | vault_test.go | `TestVault_4_2_2_11_FTS5ContentSyncDelete` | TST-CORE-240 | Yes | BUG: Exercises in-memory map simulation not real SQLite/FTS5; tautological (verifies mock's delete logic); contradicts production where Delete is soft-delete that doesn't trigger FTS5 removal |
 | 1014 | vault_test.go | `TestVault_4_2_2_12_SchemaVersionIdentity` | TST-CORE-241 | Yes | BUG: SchemaVersion() is hardcoded stub returning "v1"; test verifies hardcoded return matches hardcoded expected; no real SQLite schema checked |
@@ -1875,7 +1875,7 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 1028 | vault_test.go | `TestVault_4_3_16_SimpleSearchFastPath` | TST-CORE-263 | No |  |
 | 1029 | vault_test.go | `TestVault_4_3_17_SemanticSearchBrainOrchestrates` | TST-CORE-264 | No |  |
 | 1030 | vault_test.go | `TestVault_4_3_1_1_EmbeddingModelTrackedInMetadata` | TST-CORE-265 | Yes | BUG: in-memory map stub with hardcoded default "nomic-embed-text"; assertion len>0 on hardcoded string can never fail |
-| 1031 | vault_test.go | `TestVault_4_3_1_2_ModelChangeDetected` | TST-CORE-266 | No |  |
+| 1031 | vault_test.go | `TestVault_4_3_1_2_ModelChangeDetected` | TST-CORE-266 | Yes | BUG: EmbeddingMig is an in-memory map stub (not a real port interface); DetectMismatch on empty map always returns hardcoded "nomic-embed-text" which always differs from "EmbeddingGemma:2.0"; tautological assertion can never fail |
 | 1032 | vault_test.go | `TestVault_4_3_1_3_ReindexTriggered` | TST-CORE-267 | No |  |
 | 1033 | vault_test.go | `TestVault_4_3_1_4_FTS5AvailableDuringReindexing` | TST-CORE-268 | No |  |
 | 1034 | vault_test.go | `TestVault_4_3_1_5_ReembedCompletes` | TST-CORE-269 | Yes | BUG: Result discarded (_ = available); production is in-memory stub (map flip); no items stored/reembedded; no-op impl passes |
@@ -1890,7 +1890,7 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 1043 | vault_test.go | `TestVault_4_7_2_AppendOnlyEnforcement` | TST-CORE-309 | No |  |
 | 1044 | vault_test.go | `TestVault_4_7_3_AuditLogRotation` | TST-CORE-310 | No |  |
 | 1045 | vault_test.go | `TestVault_4_7_4_QueryAuditLog` | TST-CORE-311 | No |  |
-| 1046 | vault_test.go | `TestVault_4_7_5_AuditLogIntegrityHashChain` | TST-CORE-312 | No |  |
+| 1046 | vault_test.go | `TestVault_4_7_5_AuditLogIntegrityHashChain` | TST-CORE-312 | Fixed | Was WEAK: used shared logger, no tamper test. Fixed: fresh logger, 3 appends, VerifyChain() positive, then KAT — independently recomputes SHA-256 chain using Query() entries and asserts genesis + hash linkage |
 | 1047 | vault_test.go | `TestVault_4_7_6_AuditLogJSONFormat` | TST-CORE-313 | No |  |
 | 1048 | vault_test.go | `TestVault_4_7_7_RetentionConfigurable` | TST-CORE-314 | No |  |
 | 1049 | vault_test.go | `TestVault_4_7_8_WatchdogDailyCleanup` | TST-CORE-315 | No |  |
@@ -1925,7 +1925,7 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 1078 | vault_test.go | `TestVault_4_9_2_UsesSqliteVecNotVSS` | TST-CORE-884 | No |  |
 | 1079 | vault_test.go | `TestVault_4_9_3_FTS5AvailableDuringReindex` | TST-CORE-885 | No |  |
 | 1080 | watchdog_test.go | `TestWatchdog_20_3_10_SystemTicker_1HourInterval` | TST-CORE-916 | No |  |
-| 1081 | watchdog_test.go | `TestWatchdog_20_3_9_SingleSweepCleansAuditAndCrashLogs` | TST-CORE-915 | No |  |
+| 1081 | watchdog_test.go | `TestWatchdog_20_3_9_SingleSweepCleansAuditAndCrashLogs` | TST-CORE-915 | Yes | Fixed: Was BUG — production RunTick() hardcoded AuditEntriesPurged=0, CrashEntriesPurged=0; test asserted >=0 (always true). Added purge dependencies to SystemWatchdog via NewSystemWatchdogWithPurge(), updated wiring with real crash+audit loggers, seeded old entries before sweep, changed assertions to >0 |
 | 1082 | watchdog_test.go | `TestWatchdog_20_3_8_ConnectorLiveness` | TST-CORE-914 | Yes | WEAK: Stub returns constructor-injected canned bool; result discarded with `_ = alive`; no real connector probe |
 | 1083 | watchdog_test.go | `TestWatchdog_20_3_11_DiskUsageCheck` | TST-CORE-917 | Yes | BUG: CheckDiskUsage() returns canned constructor value; test verifies it gets back same canned value; no real disk measurement |
 | 1084 | ws_test.go | `TestWS_9_1_1_WSUpgradeAccepted` | TST-CORE-482 | Yes | WEAK: Exercises real WSHub.Register but only validates trivial map insertion; stated purpose (HTTP 101 upgrade, 5-second auth timer) is entirely untested, nil conn passed |
@@ -1937,7 +1937,7 @@ Runner: `test_status.py` | Directory: `core/test/`
 | 1090 | ws_test.go | `TestWS_9_1_7_GracefulDisconnect` | TST-CORE-488 | No |  |
 | 1091 | ws_test.go | `TestWS_9_1_8_AbnormalDisconnect` | TST-CORE-489 | No |  |
 | 1092 | ws_test.go | `TestWS_9_2_1_QueryMessage` | TST-CORE-490 | Yes | WEAK: brainRouter is nil so tests stub fallback ("brain not connected") not actual brain query routing |
-| 1093 | ws_test.go | `TestWS_9_2_2_QueryWithPersonaField` | TST-CORE-491 | No |  |
+| 1093 | ws_test.go | `TestWS_9_2_2_QueryWithPersonaField` | TST-CORE-491 | Yes | Fixed: Was WEAK — brainRouter was nil so persona field never forwarded; assertions only checked reply_to. Rewritten: creates local WSHandler with brain router callback that captures payload; asserts err unconditionally; verifies response envelope type=whisper + reply_to; verifies persona="/financial" forwarded to brain router |
 | 1094 | ws_test.go | `TestWS_9_2_3_CommandMessage` | TST-CORE-492 | No |  |
 | 1095 | ws_test.go | `TestWS_9_2_4_ACKMessage` | TST-CORE-493 | No |  |
 | 1096 | ws_test.go | `TestWS_9_2_5_PongMessage` | TST-CORE-494 | No |  |
@@ -1979,7 +1979,7 @@ Runner: `test_status.py` | Directory: `brain/tests/`
 
 | # | File | Test Function | Marker | Reviewed | Note |
 |---|------|---------------|--------|----------|------|
-| 1 | test_admin.py | `test_admin_8_1_1_dashboard_loads` | TST-BRAIN-270 | No |  |
+| 1 | test_admin.py | `test_admin_8_1_1_dashboard_loads` | TST-BRAIN-270 | Fixed | Was WEAK: only checked page+core key existence. Fixed: now asserts status=="ok", core=="healthy", personas/devices keys present with int type; catches renamed keys, broken health path, or missing stats sections |
 | 2 | test_admin.py | `test_admin_8_1_2_system_status` | TST-BRAIN-271 | Yes | WEAK: Exercises real FastAPI /status endpoint handler but assertions are shallow — only checks status_code==200 and presence of "core" key |
 | 3 | test_admin.py | `test_admin_8_1_3_degraded_status` | TST-BRAIN-272 | No |  |
 | 4 | test_admin.py | `test_admin_8_1_4_recent_activity` | TST-BRAIN-273 | No |  |
@@ -2039,7 +2039,7 @@ Runner: `test_status.py` | Directory: `brain/tests/`
 | 58 | test_api.py | `test_api_10_2_invalid_event_type` | TST-BRAIN-300 | No |  |
 | 59 | test_api.py | `test_api_10_5_1_language_agnostic_contract` | TST-BRAIN-419 | No |  |
 | 60 | test_auth.py | `test_auth_1_1_1_valid_service_key` | TST-BRAIN-001 | No |  |
-| 61 | test_auth.py | `test_auth_1_1_2_missing_auth` | TST-BRAIN-002 | No |  |
+| 61 | test_auth.py | `test_auth_1_1_2_missing_auth` | TST-BRAIN-002 | Yes | PASS: Exercises real FastAPI app with real verify_service_auth dependency; sends request with no auth headers; validates fail-closed 401 response with detail body |
 | 62 | test_auth.py | `test_auth_1_1_3_wrong_signature` | TST-BRAIN-003 | No |  |
 | 63 | test_auth.py | `test_auth_1_1_4_service_key_dir_config` | TST-BRAIN-004 | No |  |
 | 64 | test_auth.py | `test_auth_1_1_5_service_key_dir_default` | TST-BRAIN-005 | Yes | PASS: Real load_auth_config() with env var deleted; asserts correct default /run/secrets/service_keys path |
@@ -2150,7 +2150,7 @@ Runner: `test_status.py` | Directory: `brain/tests/`
 | 169 | test_guardian.py | `test_guardian_2_1_1_fiduciary_flight_cancelled` | TST-BRAIN-019 | No |  |
 | 170 | test_guardian.py | `test_guardian_2_1_2_fiduciary_security_threat` | TST-BRAIN-020 | Yes | WEAK: Real classify_silence exercised but factory pre-sets priority:"fiduciary", so classifier echoes input hint at line 262 without exercising keyword/source heuristics; broken keyword regex would not cause failure |
 | 171 | test_guardian.py | `test_guardian_2_1_3_fiduciary_health_critical` | TST-BRAIN-029 | No |  |
-| 172 | test_guardian.py | `test_guardian_2_1_4_fiduciary_financial_overdraft` | TST-BRAIN-021 | No |  |
+| 172 | test_guardian.py | `test_guardian_2_1_4_fiduciary_financial_overdraft` | TST-BRAIN-021 | Fixed | FIXED: Was WEAK (priority hint echo); now passes priority="" so classify_silence must detect fiduciary via source/keyword heuristics |
 | 173 | test_guardian.py | `test_guardian_2_1_5_solicited_meeting_reminder` | TST-BRAIN-022 | Yes | WEAK: factory bakes priority:"solicited" so classify_silence hits trivial echo-back path; never tests type-based _SOLICITED_TYPES heuristic |
 | 174 | test_guardian.py | `test_guardian_2_1_6_solicited_search_result` | TST-BRAIN-023 | No |  |
 | 175 | test_guardian.py | `test_guardian_2_1_7_engagement_podcast_released` | TST-BRAIN-024 | No |  |
@@ -2234,7 +2234,7 @@ Runner: `test_status.py` | Directory: `brain/tests/`
 | 253 | test_guardian.py | `test_guardian_2_8_2_brain_sends_max_detail` | TST-BRAIN-088 | No |  |
 | 254 | test_guardian.py | `test_guardian_2_8_3_brain_never_prefilters_by_policy` | TST-BRAIN-089 | No |  |
 | 255 | test_guardian.py | `test_guardian_2_8_4_brain_calls_post_dina_send` | TST-BRAIN-090 | No |  |
-| 256 | test_guardian.py | `test_guardian_2_3_13_task_ack_after_success` | TST-BRAIN-392 | No |  |
+| 256 | test_guardian.py | `test_guardian_2_3_13_task_ack_after_success` | TST-BRAIN-392 | Yes | PASS: Exercises real GuardianLoop.process_event (guardian.py:305); verifies engagement event routes to save_for_briefing and core.task_ack is called with correct task_id |
 | 257 | test_guardian.py | `test_guardian_2_3_14_task_not_acked_on_failure` | TST-BRAIN-393 | No |  |
 | 258 | test_guardian.py | `test_guardian_2_3_15_retried_task_after_crash` | TST-BRAIN-394 | Yes | WEAK: Engagement event skips checkpoint recovery; scratchpad mock unused; ScratchpadService.resume() never called in production |
 | 259 | test_guardian.py | `test_guardian_2_2_5_persona_locked_whisper` | TST-BRAIN-398 | No |  |
@@ -2257,11 +2257,11 @@ Runner: `test_status.py` | Directory: `brain/tests/`
 | 276 | test_llm.py | `test_llm_4_1_10_model_selection_by_task_type` | TST-BRAIN-130 | No |  |
 | 277 | test_llm.py | `test_llm_4_1_11_user_configures_preferred_cloud` | TST-BRAIN-131 | Yes | PASS: Real LLMRouter._select_provider and _preferred_cloud logic exercised; meaningfully asserts preferred_cloud config drives provider selection for complex tasks |
 | 278 | test_llm.py | `test_llm_4_1_12_pii_scrub_failure_blocks_cloud_send` | TST-BRAIN-132 | No |  |
-| 279 | test_llm.py | `test_llm_4_2_1_successful_completion` | TST-BRAIN-133 | No |  |
+| 279 | test_llm.py | `test_llm_4_2_1_successful_completion` | TST-BRAIN-133 | Fixed | Was WEAK: accepted either route, no provider verification. Fixed: assert route=="local", exact content/model/finish_reason, assert local called once, cloud not called |
 | 280 | test_llm.py | `test_llm_4_2_2_streaming_response` | TST-BRAIN-134 | No |  |
 | 281 | test_llm.py | `test_llm_4_2_3_timeout` | TST-BRAIN-135 | No |  |
 | 282 | test_llm.py | `test_llm_4_2_4_token_limit_exceeded` | TST-BRAIN-136 | No |  |
-| 283 | test_llm.py | `test_llm_4_2_5_malformed_llm_response` | TST-BRAIN-137 | No |  |
+| 283 | test_llm.py | `test_llm_4_2_5_malformed_llm_response` | TST-BRAIN-137 | Fixed | Was WEAK: "raw" in result trivially true, no mock call verification. Fixed: assert exact value, verify standard keys absent, assert local_provider called, assert cloud_provider NOT called |
 | 284 | test_llm.py | `test_llm_4_2_6_rate_limiting` | TST-BRAIN-138 | No |  |
 | 285 | test_llm.py | `test_llm_4_2_7_cost_tracking` | TST-BRAIN-139 | No |  |
 | 286 | test_llm.py | `test_llm_4_1_13_cloud_consent_not_given_rejects` | TST-BRAIN-396 | Yes | PASS: real LLMRouter.route() consent gate at lines 172-182; cloud+no-consent+restricted persona correctly raises CloudConsentError; mock provider never called |
@@ -2279,7 +2279,7 @@ Runner: `test_status.py` | Directory: `brain/tests/`
 | 298 | test_mcp.py | `test_mcp_6_2_2_risky_intent_flagged` | TST-BRAIN-232 | No |  |
 | 299 | test_mcp.py | `test_mcp_6_2_3_blocked_intent_denied` | TST-BRAIN-233 | No |  |
 | 300 | test_mcp.py | `test_mcp_6_2_4_agent_raw_vault_access_blocked` | TST-BRAIN-234 | Yes | BUG: Exercises test-only IntentClassifier class, never touches production GuardianLoop.screen_intent() — fully tautological |
-| 301 | test_mcp.py | `test_mcp_6_2_5_untrusted_source_higher_scrutiny` | TST-BRAIN-235 | No |  |
+| 301 | test_mcp.py | `test_mcp_6_2_5_untrusted_source_higher_scrutiny` | TST-BRAIN-235 | Yes | BUG: Exercises test-local IntentClassifier (defined in test file), not production Guardian.review_intent(); test returns "flag_for_review" but production unconditionally denies untrusted sources — divergence masked by overly permissive assertion |
 | 302 | test_mcp.py | `test_mcp_6_2_6_agent_response_pii_leakage_check` | TST-BRAIN-236 | No |  |
 | 303 | test_mcp.py | `test_mcp_6_2_7_agent_cannot_access_encryption_keys` | TST-BRAIN-237 | No |  |
 | 304 | test_mcp.py | `test_mcp_6_2_8_agent_cannot_access_persona_metadata` | TST-BRAIN-238 | No |  |
@@ -2300,7 +2300,7 @@ Runner: `test_status.py` | Directory: `brain/tests/`
 | 319 | test_mcp.py | `test_mcp_6_4_3_medical_details_generalized` | TST-BRAIN-253 | No |  |
 | 320 | test_mcp.py | `test_mcp_6_4_4_no_persona_data_in_query` | TST-BRAIN-254 | No |  |
 | 321 | test_mcp.py | `test_mcp_6_4_5_past_purchase_context_included` | TST-BRAIN-255 | Yes | BUG: No production code; assertion passes trivially because substring already in input query string, not from context assembly |
-| 322 | test_mcp.py | `test_mcp_6_4_6_no_pii_even_if_user_types_pii` | TST-BRAIN-256 | No |  |
+| 322 | test_mcp.py | `test_mcp_6_4_6_no_pii_even_if_user_types_pii` | TST-BRAIN-256 | Yes | BUG: Tests fake QuerySanitizer defined in test file (hardcoded regex), not production PresidioScrubber or Go Core pii.Scrubber; tautological self-test. Not fixable without Presidio/spaCy in test env |
 | 323 | test_mcp.py | `test_mcp_6_4_7_attribution_preserved_in_response` | TST-BRAIN-257 | No |  |
 | 324 | test_mcp.py | `test_mcp_6_4_8_bot_response_without_attribution` | TST-BRAIN-258 | No |  |
 | 325 | test_mcp.py | `test_mcp_6_1_6_trust_scores_appview_query` | TST-BRAIN-408 | No |  |
@@ -2325,7 +2325,7 @@ Runner: `test_status.py` | Directory: `brain/tests/`
 | 344 | test_pii.py | `test_pii_3_1_16_gliner_mixed_medical_text` |  | No |  |
 | 345 | test_pii.py | `test_pii_3_1_17_gliner_scrub_medical` |  | No |  |
 | 346 | test_pii.py | `test_pii_3_2_1_email_plus_person` | TST-BRAIN-104 | Yes | WEAK: Exercises real NER for PERSON detection but has no assertion that email address was actually removed from scrubbed output; tests single scrubber not the claimed Tier 1+2 pipeline |
-| 347 | test_pii.py | `test_pii_3_2_2_phone_plus_location` | TST-BRAIN-105 | No |  |
+| 347 | test_pii.py | `test_pii_3_2_2_phone_plus_location` | TST-BRAIN-105 | Fixed | Was WEAK: only checked LOC, never verified phone removal. Fixed: uses full phone format (+1-415-555-1234), asserts phone entity detected (PHONE/PHONE_NUMBER type) and phone number absent from scrubbed output |
 | 348 | test_pii.py | `test_pii_3_2_3_tier1_runs_first` | TST-BRAIN-106 | No |  |
 | 349 | test_pii.py | `test_pii_3_2_4_batch_performance` | TST-BRAIN-107 | No |  |
 | 350 | test_pii.py | `test_pii_3_2_5_full_pipeline_to_cloud` | TST-BRAIN-108 | Yes | WEAK: Only exercises scrubber.scrub(), not the full pipeline/cloud/entity-vault its name claims; assertion loop is vacuous when NER detects zero entities |
@@ -2407,10 +2407,10 @@ Runner: `test_status.py` | Directory: `brain/tests/`
 | 426 | test_routing.py | `test_routing_8_1_5_complex_prefers_cloud` | TST-BRAIN-465 | No |  |
 | 427 | test_routing.py | `test_routing_8_1_6_fts_only_no_llm` | TST-BRAIN-466 | No |  |
 | 428 | test_scratchpad.py | `test_scratchpad_12_1_1_checkpoint_after_step1` | TST-BRAIN-308 | No |  |
-| 429 | test_scratchpad.py | `test_scratchpad_12_1_2_checkpoint_after_step2` | TST-BRAIN-309 | No |  |
+| 429 | test_scratchpad.py | `test_scratchpad_12_1_2_checkpoint_after_step2` | TST-BRAIN-309 | Yes | WEAK: Exercises real ScratchpadService.checkpoint() but production is trivial 2-line passthrough (log+delegate); key assertions on context dict are tautological (verify test's own input); mock interaction check is the only meaningful assertion |
 | 430 | test_scratchpad.py | `test_scratchpad_12_1_3_checkpoint_overwrites_previous` | TST-BRAIN-310 | No |  |
 | 431 | test_scratchpad.py | `test_scratchpad_12_1_4_checkpoint_includes_all_prior_context` | TST-BRAIN-311 | No |  |
-| 432 | test_scratchpad.py | `test_scratchpad_12_2_1_resume_from_step3` | TST-BRAIN-312 | No |  |
+| 432 | test_scratchpad.py | `test_scratchpad_12_2_1_resume_from_step3` | TST-BRAIN-312 | Yes | WEAK: Production resume() is a trivial one-line pass-through (returns self._core.read_scratchpad(task_id)); test asserts mock's own return value. assert_awaited_once_with provides some delegation-checking value. Step-skipping logic claimed in docstring doesn't exist in ScratchpadService |
 | 433 | test_scratchpad.py | `test_scratchpad_12_2_2_no_scratchpad_fresh_start` | TST-BRAIN-313 | No |  |
 | 434 | test_scratchpad.py | `test_scratchpad_12_2_3_stale_checkpoint_expired` | TST-BRAIN-314 | No |  |
 | 435 | test_scratchpad.py | `test_scratchpad_12_2_4_resume_uses_accumulated_context` | TST-BRAIN-315 | No |  |
@@ -2463,13 +2463,13 @@ Runner: `test_status.py` | Directory: `brain/tests/`
 | 482 | test_sync.py | `test_sync_5_2_16_fiduciary_override_financial` | TST-BRAIN-171 | No |  |
 | 483 | test_sync.py | `test_sync_5_2_17_always_ingest_sender_exception` | TST-BRAIN-172 | Yes | BUG: always_ingest sender allowlist feature does not exist in production; test passes trivially via default PRIMARY path without exercising exception |
 | 484 | test_sync.py | `test_sync_5_2_18_dina_triage_off` | TST-BRAIN-173 | No |  |
-| 485 | test_sync.py | `test_sync_5_2_19_llm_triage_cost_tracking` | TST-BRAIN-174 | No |  |
+| 485 | test_sync.py | `test_sync_5_2_19_llm_triage_cost_tracking` | TST-BRAIN-174 | Yes | WEAK: Exercises real SyncEngine.run_sync_cycle but no cost-tracking code exists in production; assertions just check "fetched"/"stored"/"skipped" keys exist (already tested by dozen other tests with stronger checks) |
 | 486 | test_sync.py | `test_sync_5_2_20_llm_triage_sees_only_subject_sender` | TST-BRAIN-175 | No |  |
 | 487 | test_sync.py | `test_sync_5_2_21_llm_triage_prompt_audit` | TST-BRAIN-176 | No |  |
 | 488 | test_sync.py | `test_sync_5_2_22_thin_record_skip_reason_differentiates` | TST-BRAIN-177 | No |  |
 | 489 | test_sync.py | `test_sync_5_2_23_fiduciary_override_account_expiration` | TST-BRAIN-178 | No |  |
-| 490 | test_sync.py | `test_sync_5_2_24_llm_triage_batch_size_max_50` | TST-BRAIN-179 | No |  |
-| 491 | test_sync.py | `test_sync_5_2_25_normalizer_standard_schema` | TST-BRAIN-180 | No |  |
+| 490 | test_sync.py | `test_sync_5_2_24_llm_triage_batch_size_max_50` | TST-BRAIN-179 | Yes | BUG: Tests nonexistent LLM triage batching code; asserts _BATCH_SIZE==100 (storage batch, not LLM triage); contradicts own spec "max 50"; tautological constant self-check; no production code invoked. Not fixable — no LLM triage pipeline implemented |
+| 491 | test_sync.py | `test_sync_5_2_25_normalizer_standard_schema` | TST-BRAIN-180 | Yes | BUG: Never uses sync_engine; only asserts factory dicts contain hardcoded keys (source, source_id, type); no production normalizer code exists; tautological. Not fixable — no normalize() method in SyncEngine |
 | 492 | test_sync.py | `test_sync_5_2_26_persona_routing_configurable` | TST-BRAIN-181 | Yes | WEAK: Validates zero production behavior; run_sync_cycle hardcodes "default" persona ignoring config; tests mock internals only |
 | 493 | test_sync.py | `test_sync_5_3_1_exact_duplicate_gmail_id_upsert` | TST-BRAIN-182 | No |  |
 | 494 | test_sync.py | `test_sync_5_3_2_near_duplicate_normalized_hash` | TST-BRAIN-183 | No |  |
@@ -2561,7 +2561,7 @@ Runner: `test_status.py` | Directory: `brain/tests/`
 | 580 | test_tier_classifier.py | `test_all_known_vault_types_classified` |  | No |  |
 | 581 | test_vault_context.py | `test_list_personas` |  | No |  |
 | 582 | test_vault_context.py | `test_list_personas_empty_vault` |  | Yes | PASS: Exercises real ToolExecutor._list_personas production code with mocked CoreClient port; assertions verify empty-vault branch correctly sets item_count=0 and recent_summaries=[] |
-| 583 | test_vault_context.py | `test_browse_vault_returns_items` |  | No |  |
+| 583 | test_vault_context.py | `test_browse_vault_returns_items` |  | Yes | PASS: Exercises real ToolExecutor._browse_vault with mock at I/O boundary (CoreClient); asserts dispatch, argument forwarding (persona, query, mode, limit), item count, and summary pass-through via simplification loop |
 | 584 | test_vault_context.py | `test_browse_vault_locked_persona` |  | Yes | PASS: Exercises real ToolExecutor._browse_vault error-handling path with mock at I/O boundary; assertions meaningfully distinguish locked-persona response shape (note key, empty items) from generic error path |
 | 585 | test_vault_context.py | `test_browse_vault_missing_persona` |  | No |  |
 | 586 | test_vault_context.py | `test_search_vault_returns_items` |  | No |  |
@@ -2625,7 +2625,7 @@ Runner: `run_user_story_tests.sh` | Directory: `tests/system/user_stories/`
 | 23 | test_03_dead_internet_filter.py | `test_02_appview_returns_untrusted_creator` |  | No |  |
 | 24 | test_03_dead_internet_filter.py | `test_03_core_resolves_trusted_creator` |  | No |  |
 | 25 | test_03_dead_internet_filter.py | `test_04_core_resolves_untrusted_creator` |  | Yes | WEAK: score < 0.1 assertion tautological for missing values via `or 0` fallback; doesn't verify Core passthrough preserves all trust fields |
-| 26 | test_03_dead_internet_filter.py | `test_05_brain_confirms_trusted_creator` |  | No |  |
+| 26 | test_03_dead_internet_filter.py | `test_05_brain_confirms_trusted_creator` |  | Yes | Fixed: Was WEAK — assertions were too shallow (16 generic positive words trivially match any LLM given high trust scores). Added data_signals assertion requiring LLM to reference specific profile numbers (200 attestations, 0.95 score, etc.), proving it read the data. Structural limitation: no production code path exists for Brain to autonomously fetch trust profiles — query_trust_profile() is defined but never wired |
 | 27 | test_03_dead_internet_filter.py | `test_06_brain_flags_untrusted_creator` |  | No |  |
 | 28 | test_03_dead_internet_filter.py | `test_07_side_by_side_trust_comparison` |  | No |  |
 | 29 | test_04_persona_wall.py | `test_00_seed_health_persona_vault` |  | No |  |
@@ -2657,7 +2657,7 @@ Runner: `run_user_story_tests.sh` | Directory: `tests/system/user_stories/`
 | 55 | test_06_license_renewal.py | `test_05_store_and_verify_reminder` |  | No |  |
 | 56 | test_06_license_renewal.py | `test_06_reminder_fires_contextual_notification` |  | No |  |
 | 57 | test_06_license_renewal.py | `test_07_verify_notification_context` |  | No |  |
-| 58 | test_06_license_renewal.py | `test_08_delegation_request_with_enforcement` |  | No |  |
+| 58 | test_06_license_renewal.py | `test_08_delegation_request_with_enforcement` |  | Yes | Fixed: Was WEAK — used brain_headers (Bearer token) but Brain requires Ed25519. Switched to brain_signer.post() for both Phase A (/reason) and Phase B (/process) calls. Phase B now exercises real Guardian._handle_delegation_request() with proper auth |
 | 59 | test_06_license_renewal.py | `test_09_guardian_reviews_delegation` |  | No |  |
 | 60 | test_07_daily_briefing.py | `test_00_store_context_for_briefing` |  | Yes |  |
 | 61 | test_07_daily_briefing.py | `test_01_fiduciary_event_interrupts` |  | Yes |  |
@@ -2701,14 +2701,14 @@ Runner: `test_release.py` | Directory: `tests/release/`
 | 10 | test_rel_002_first_conversation.py | `test_rel_002_brain_process_accepts_signed_request` |  | No |  |
 | 11 | test_rel_003_vault_persistence.py | `test_rel_003_data_persists_via_api` |  | Yes | WEAK: validates store returns 201 + non-empty ID against real Docker containers, but never retrieves the stored item to confirm actual persistence |
 | 12 | test_rel_003_vault_persistence.py | `test_rel_003_fts_retrieval_works` |  | No |  |
-| 13 | test_rel_003_vault_persistence.py | `test_rel_003_no_duplicate_on_re_store` |  | No |  |
+| 13 | test_rel_003_vault_persistence.py | `test_rel_003_no_duplicate_on_re_store` |  | Yes | WEAK: Stores twice via real Docker POST /v1/vault/store but never queries to verify only one item exists; production upsert keys on id not source_id, and each store generates new random id, so duplicates are actually created; idempotency claim unproven |
 | 14 | test_rel_003_vault_persistence.py | `test_rel_003_healthz_returns_ok` |  | No |  |
 | 15 | test_rel_004_locked_state.py | `test_rel_004_locked_persona_returns_403` |  | No |  |
 | 16 | test_rel_004_locked_state.py | `test_rel_004_unlock_resumes_access` |  | No |  |
 | 17 | test_rel_004_locked_state.py | `test_rel_004_no_data_in_locked_error` |  | No |  |
-| 18 | test_rel_004_locked_state.py | `test_rel_004_wrong_passphrase_rejected` |  | No |  |
+| 18 | test_rel_004_locked_state.py | `test_rel_004_wrong_passphrase_rejected` |  | Yes | PASS: Real HTTP to Go Core in Docker; creates locked persona with Argon2id-hashed passphrase, attempts unlock with wrong passphrase, asserts 401/403; exercises full HandleUnlockPersona→VerifyPassphrase→ErrInvalidPassphrase chain |
 | 19 | test_rel_005_recovery.py | `test_rel_005_did_is_stable` |  | No |  |
-| 20 | test_rel_005_recovery.py | `test_rel_005_did_consistent_across_calls` |  | No |  |
+| 20 | test_rel_005_recovery.py | `test_rel_005_did_consistent_across_calls` |  | Yes | WEAK: Real HTTP to Go Core /v1/did (3 calls), checks DID consistency; but silently skips non-200 responses so intermittent failures could mask inconsistency; should assert 200 on every call |
 | 21 | test_rel_005_recovery.py | `test_rel_005_did_sign_and_verify` |  | No |  |
 | 22 | test_rel_005_recovery.py | `test_rel_005_well_known_atproto_did` |  | No |  |
 | 23 | test_rel_006_two_dinas.py | `test_rel_006_node_b_healthy` |  | No |  |
@@ -2717,7 +2717,7 @@ Runner: `test_release.py` | Directory: `tests/release/`
 | 26 | test_rel_006_two_dinas.py | `test_rel_006_send_message_b_to_a` |  | No |  |
 | 27 | test_rel_007_trust_network.py | `test_rel_007_trust_resolve_endpoint_exists` |  | No |  |
 | 28 | test_rel_007_trust_network.py | `test_rel_007_trust_resolve_requires_did_param` |  | Yes | WEAK: Exercises real handler end-to-end through Docker but only validates trivial missing-parameter guard (4 lines), not meaningful trust resolution or AppView logic |
-| 29 | test_rel_007_trust_network.py | `test_rel_007_trust_cache_endpoint` |  | No |  |
+| 29 | test_rel_007_trust_network.py | `test_rel_007_trust_cache_endpoint` |  | Yes | WEAK: Hits real Docker endpoint GET /v1/trust/cache but only asserts status 200 + "entries" key exists; no data seeded so cache always empty; never validates entry schema, type, or count; would pass with hardcoded {"entries": null} |
 | 30 | test_rel_007_trust_network.py | `test_rel_007_trust_stats_endpoint` |  | No |  |
 | 31 | test_rel_007_trust_network.py | `test_rel_007_trust_sync_endpoint` |  | No |  |
 | 32 | test_rel_007_trust_network.py | `test_rel_007_appview_accessible_from_core` |  | Yes | WEAK: Accepts HTTP 502 (AppView crashed/unreachable) as passing; only rejects 503 (not configured) — doesn't prove actual reachability |
@@ -2764,7 +2764,7 @@ Runner: `test_release.py` | Directory: `tests/release/`
 | 73 | test_rel_017_admin_lifecycle.py | `test_rel_017_device_pairing_requires_auth` |  | No |  |
 | 74 | test_rel_018_connector_outage.py | `test_rel_018_core_usable_without_brain_features` |  | Yes | WEAK: Brain always healthy during test; never simulates Brain outage despite name; only validates normal happy-path vault store/query |
 | 75 | test_rel_018_connector_outage.py | `test_rel_018_healthz_reports_service_status` |  | No |  |
-| 76 | test_rel_018_connector_outage.py | `test_rel_018_error_on_brain_failure_is_clear` |  | No |  |
+| 76 | test_rel_018_connector_outage.py | `test_rel_018_error_on_brain_failure_is_clear` |  | Yes | WEAK: Real HTTP to Docker but never simulates Brain failure (Brain is up); asserts status in (200,503) but Core returns 502 not 503; no response content validation; tests happy path only despite name claiming failure testing |
 | 77 | test_rel_018_connector_outage.py | `test_rel_018_did_works_independently` |  | No |  |
 | 78 | test_rel_019_silence_briefing.py | `test_rel_019_fiduciary_event_classified` |  | No |  |
 | 79 | test_rel_019_silence_briefing.py | `test_rel_019_safe_action_auto_approved` |  | No |  |

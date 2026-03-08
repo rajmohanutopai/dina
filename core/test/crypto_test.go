@@ -7,6 +7,7 @@ import (
 	"github.com/bluesky-social/indigo/atproto/atcrypto"
 	dinacrypto "github.com/rajmohanutopai/dina/core/internal/adapter/crypto"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
+	"golang.org/x/crypto/argon2"
 )
 
 // ==========================================================================
@@ -102,16 +103,46 @@ func TestCrypto_2_2_KnownTestVectors(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
 
 	// SLIP-0010 test vector 1: seed = "000102030405060708090a0b0c0d0e0f"
-	// path m/0' → known public key from specification.
+	// Reference: https://github.com/satoshilabs/slips/blob/master/slip-0010.md
 	slip0010Seed := []byte{
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
 		0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
 	}
 
-	// Derive at m/0' — the exact output depends on the SLIP-0010 spec.
+	// ---------- Chain m (master) ----------
+	// SLIP-0010 spec master chain for this seed:
+	//   private: 2b4be7f19ee27bbf30c667b642d5f4aa69fd169872f8fc3059c08ebae2eb19e7
+	//   public:  00a4b2856bfec510abab89753fac1ac0e1112364e7d250545963f135f2a33188ed
+	//            (0x00 prefix is SLIP-0010 serialization; raw Ed25519 pubkey is 32 bytes after prefix)
+	pubM, _, errM := impl.DerivePath(slip0010Seed, "m")
+	if errM == nil {
+		// Master path supported — verify against spec.
+		// The Ed25519 pubkey is derived from the IL seed via ed25519.NewKeyFromSeed,
+		// which should produce the same public key as the SLIP-0010 spec (minus 0x00 prefix).
+		expectedPubM := []byte{
+			0xa4, 0xb2, 0x85, 0x6b, 0xfe, 0xc5, 0x10, 0xab,
+			0xab, 0x89, 0x75, 0x3f, 0xac, 0x1a, 0xc0, 0xe1,
+			0x11, 0x23, 0x64, 0xe7, 0xd2, 0x50, 0x54, 0x59,
+			0x63, 0xf1, 0x35, 0xf2, 0xa3, 0x31, 0x88, 0xed,
+		}
+		testutil.RequireBytesEqual(t, pubM, expectedPubM)
+	}
+
+	// ---------- Chain m/0' ----------
+	// SLIP-0010 spec for m/0':
+	//   private: 68e0fe46dfb67e368c75379acec591dad19df3cde26e63b93a8e704f1dade7a3
+	//   public:  008c8a13df77a28f3445213a0f432fde644acaa215fc72dcdf300d5efaa85d350c
 	pub, _, err := impl.DerivePath(slip0010Seed, "m/0'")
 	testutil.RequireNoError(t, err)
 	testutil.RequireBytesLen(t, pub, 32)
+
+	expectedPub := []byte{
+		0x8c, 0x8a, 0x13, 0xdf, 0x77, 0xa2, 0x8f, 0x34,
+		0x45, 0x21, 0x3a, 0x0f, 0x43, 0x2f, 0xde, 0x64,
+		0x4a, 0xca, 0xa2, 0x15, 0xfc, 0x72, 0xdc, 0xdf,
+		0x30, 0x0d, 0x5e, 0xfa, 0xa8, 0x5d, 0x35, 0x0c,
+	}
+	testutil.RequireBytesEqual(t, pub, expectedPub)
 }
 
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
@@ -258,21 +289,39 @@ func TestCrypto_2_2_CanonicalPersonaIndexes(t *testing.T) {
 // TST-CORE-073, TST-CORE-074, TST-CORE-075, TST-CORE-076, TST-CORE-077, TST-CORE-078, TST-CORE-079
 func TestCrypto_2_2_CustomPersonaIndex7Plus(t *testing.T) {
 	impl := realHDKey
-	// impl = slip0010.New()
 	testutil.RequireImplementation(t, impl, "HDKeyDeriver")
 
-	// First custom persona starts at index 7 (FirstCustomPersonaIndex).
-	customPath := "m/9999'/7'"
-	pub, _, err := impl.DerivePath(testutil.TestMnemonicSeed, customPath)
+	// Use the production KeyDeriver which constructs the correct
+	// SLIP-0010 path: m/9999'/1'/<personaIndex>'/<generation>'.
+	slip := dinacrypto.NewSLIP0010Deriver()
+	kd := dinacrypto.NewKeyDeriver(slip)
+
+	// First custom persona starts at FirstCustomPersonaIndex (6).
+	customIdx := uint32(testutil.FirstCustomPersonaIndex)
+	customKey, err := kd.DeriveSigningKey(testutil.TestMnemonicSeed, customIdx, 0)
 	testutil.RequireNoError(t, err)
+
+	// Extract the 32-byte public key from the Ed25519 private key.
+	pub := []byte(customKey[32:])
 	testutil.RequireBytesLen(t, pub, 32)
 
-	// Must differ from all canonical personas.
-	for _, canonPath := range testutil.DinaPersonaPaths {
-		canonPub, _, err := impl.DerivePath(testutil.TestMnemonicSeed, canonPath)
+	// Must differ from all canonical persona signing keys (indexes 0-5).
+	for i := uint32(0); i < customIdx; i++ {
+		canonKey, err := kd.DeriveSigningKey(testutil.TestMnemonicSeed, i, 0)
 		testutil.RequireNoError(t, err)
+		canonPub := []byte(canonKey[32:])
 		testutil.RequireBytesNotEqual(t, pub, canonPub)
 	}
+
+	// Also must differ from root signing key (purpose 0).
+	rootPub, _, err := slip.DerivePath(testutil.TestMnemonicSeed, testutil.DinaRootKeyPath)
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesNotEqual(t, pub, rootPub)
+
+	// Verify determinism: same index always yields the same key.
+	customKey2, err := kd.DeriveSigningKey(testutil.TestMnemonicSeed, customIdx, 0)
+	testutil.RequireNoError(t, err)
+	testutil.RequireBytesEqual(t, []byte(customKey), []byte(customKey2))
 }
 
 // TST-CORE-066, TST-CORE-067, TST-CORE-068, TST-CORE-069, TST-CORE-070, TST-CORE-071, TST-CORE-072
@@ -724,20 +773,28 @@ func TestCrypto_2_4_DefaultParameters(t *testing.T) {
 	// impl = keyderiver.New()
 	testutil.RequireImplementation(t, impl, "KEKDeriver")
 
-	// Default Argon2id parameters: memory=128MB, iterations=3, parallelism=4.
-	// These are validated via the fixture constants.
-	testutil.RequireEqual(t, testutil.Argon2idMemoryMB, 128)
-	testutil.RequireEqual(t, testutil.Argon2idIterations, 3)
-	testutil.RequireEqual(t, testutil.Argon2idParallelism, 4)
-
-	// Functional test: hash with default parameters produces a valid KEK.
+	// Known-Answer Test: call argon2.IDKey directly with the expected
+	// production parameters (128MB, 3 iterations, 4 threads, 32-byte key).
+	// If production changes any parameter, the outputs diverge and the test fails.
 	salt := make([]byte, testutil.Argon2idSaltLen)
 	for i := range salt {
 		salt[i] = byte(i + 42)
 	}
+
 	kek, err := impl.DeriveKEK(testutil.TestPassphrase, salt)
 	testutil.RequireNoError(t, err)
 	testutil.RequireBytesLen(t, kek, 32)
+
+	// Direct computation with expected production parameters.
+	expected := argon2.IDKey(
+		[]byte(testutil.TestPassphrase),
+		salt,
+		3,        // expected iterations
+		128*1024, // expected memory (128 MB in KiB)
+		4,        // expected parallelism
+		32,       // expected key length
+	)
+	testutil.RequireBytesEqual(t, kek, expected)
 }
 
 // TST-CORE-098, TST-CORE-099, TST-CORE-100, TST-CORE-101, TST-CORE-102, TST-CORE-103, TST-CORE-104

@@ -113,8 +113,13 @@ async def test_guardian_2_1_3_fiduciary_health_critical(guardian) -> None:
 # TST-BRAIN-021
 @pytest.mark.asyncio
 async def test_guardian_2_1_4_fiduciary_financial_overdraft(guardian) -> None:
-    """SS2.1.4: Payment due with overdrawn account -> fiduciary."""
-    event = make_financial_alert()
+    """SS2.1.4: Payment due with overdrawn account -> fiduciary.
+
+    Omit priority hint so classify_silence must detect fiduciary status
+    via source heuristics (_FIDUCIARY_SOURCES: "bank") or keyword
+    heuristics (_FIDUCIARY_KEYWORDS: "overdrawn", "payment due").
+    """
+    event = make_financial_alert(priority="")
     result = await guardian.classify_silence(event)
     assert result == "fiduciary"
 

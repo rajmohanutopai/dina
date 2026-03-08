@@ -123,22 +123,28 @@ func (e *ExportManager) Export(_ context.Context, opts ExportOptions) (archivePa
 	return archivePath, nil
 }
 
-// ListArchiveContents returns the file list inside an archive.
-func (e *ExportManager) ListArchiveContents(archivePath string) ([]string, error) {
-	data, err := os.ReadFile(archivePath)
+// ListArchiveContents decrypts the archive and returns the actual file list.
+func (e *ExportManager) ListArchiveContents(archivePath, passphrase string) ([]string, error) {
+	archive, err := os.ReadFile(archivePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read archive: %w", err)
 	}
 
-	if !bytes.HasPrefix(data, []byte(archiveHeader)) {
-		return nil, fmt.Errorf("portability: invalid archive format")
+	plaintext, err := decryptArchive(archive, passphrase)
+	if err != nil {
+		return nil, fmt.Errorf("portability: list contents: %w", err)
 	}
 
-	// We cannot decrypt without a passphrase, but the standard set of files
-	// in a valid dina export is known from the archive structure.
-	// Return the standard file list (matches what collectExportData produces).
-	_ = data
-	return []string{"identity.sqlite", "config.json", "manifest.json"}, nil
+	var payload archivePayload
+	if err := json.Unmarshal(plaintext, &payload); err != nil {
+		return nil, fmt.Errorf("portability: unmarshal payload: %w", err)
+	}
+
+	names := make([]string, 0, len(payload.Files))
+	for name := range payload.Files {
+		names = append(names, name)
+	}
+	return names, nil
 }
 
 // ReadManifest extracts the manifest from an archive.
@@ -292,6 +298,69 @@ func decryptArchive(archive []byte, passphrase string) ([]byte, error) {
 
 // ErrNotImplemented indicates a feature stub that is not yet wired to real vault data.
 var ErrNotImplemented = errors.New("portability: not yet implemented — requires vault integration")
+
+// BuildTestArchive creates an encrypted archive from the given file map and
+// passphrase, writing it to destPath. This is intended for tests that need a
+// valid archive without depending on collectExportData (which is still a stub).
+func BuildTestArchive(files map[string][]byte, passphrase, destPath string) (string, error) {
+	if passphrase == "" {
+		return "", errors.New("passphrase is required")
+	}
+
+	checksums := make(map[string]string, len(files))
+	for name, content := range files {
+		checksums[name] = hexHash(content)
+	}
+
+	payload := archivePayload{
+		Manifest: ExportManifest{
+			Version:   "2",
+			Timestamp: "2025-01-01T00:00:00Z",
+			Checksums: checksums,
+		},
+		Files: files,
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("marshal test payload: %w", err)
+	}
+
+	salt := make([]byte, saltLen)
+	if _, err := rand.Read(salt); err != nil {
+		return "", fmt.Errorf("generate salt: %w", err)
+	}
+
+	key := argon2.IDKey([]byte(passphrase), salt, argonTime, argonMemory, argonThreads, argonKeyLen)
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("create cipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("create GCM: %w", err)
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", fmt.Errorf("generate nonce: %w", err)
+	}
+	ciphertext := gcm.Seal(nil, nonce, data, nil)
+
+	var buf bytes.Buffer
+	buf.WriteString(archiveHeader)
+	buf.Write(salt)
+	buf.Write(nonce)
+	buf.Write(ciphertext)
+
+	// Use a unique filename to avoid collisions when called multiple times.
+	archivePath := filepath.Join(destPath, fmt.Sprintf("dina-test-export-%s.dina", hex.EncodeToString(salt[:4])))
+	if err := os.WriteFile(archivePath, buf.Bytes(), 0600); err != nil {
+		return "", fmt.Errorf("write test archive: %w", err)
+	}
+
+	return archivePath, nil
+}
 
 // collectExportData gathers the vault data and serialises it as JSON.
 //

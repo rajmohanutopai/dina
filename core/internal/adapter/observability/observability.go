@@ -22,11 +22,16 @@ var _ port.CrashLogger = (*CrashLogger)(nil)
 // WatchdogReport holds the results of a system health check tick.
 type WatchdogReport = domain.WatchdogReport
 
+// defaultWatchdogRetentionDays is the default number of days to retain crash and audit logs.
+const defaultWatchdogRetentionDays = 90
+
 // SystemWatchdog implements port.SystemWatchdog — 1-hour system health ticker.
 type SystemWatchdog struct {
 	brainHealthy     bool
 	connectorAlive   bool
 	diskUsageBytes   int64
+	crash            port.CrashLogger
+	auditor          port.VaultAuditLogger
 }
 
 // NewSystemWatchdog returns a new SystemWatchdog.
@@ -38,11 +43,39 @@ func NewSystemWatchdog(brainHealthy, connectorAlive bool, diskUsageBytes int64) 
 	}
 }
 
+// NewSystemWatchdogWithPurge returns a SystemWatchdog that purges crash and audit
+// logs during RunTick. When crash or auditor is nil the corresponding purge is skipped.
+func NewSystemWatchdogWithPurge(brainHealthy, connectorAlive bool, diskUsageBytes int64, crash port.CrashLogger, auditor port.VaultAuditLogger) *SystemWatchdog {
+	return &SystemWatchdog{
+		brainHealthy:   brainHealthy,
+		connectorAlive: connectorAlive,
+		diskUsageBytes: diskUsageBytes,
+		crash:          crash,
+		auditor:        auditor,
+	}
+}
+
 // RunTick executes a single watchdog sweep.
 func (w *SystemWatchdog) RunTick(ctx context.Context) (*WatchdogReport, error) {
 	alive, _ := w.CheckConnectorLiveness()
 	disk, _ := w.CheckDiskUsage()
 	brain, _ := w.CheckBrainHealth(ctx)
+
+	var crashPurged, auditPurged int64
+
+	if w.crash != nil {
+		n, err := w.crash.Purge(ctx, defaultWatchdogRetentionDays)
+		if err == nil {
+			crashPurged = n
+		}
+	}
+
+	if w.auditor != nil {
+		n, err := w.auditor.Purge(defaultWatchdogRetentionDays)
+		if err == nil {
+			auditPurged = n
+		}
+	}
 
 	return &WatchdogReport{
 		Timestamp:          time.Now().Unix(),
@@ -50,8 +83,8 @@ func (w *SystemWatchdog) RunTick(ctx context.Context) (*WatchdogReport, error) {
 		DiskUsageBytes:     disk,
 		DiskUsagePercent:   float64(disk) / float64(100*1024*1024*1024) * 100,
 		BrainHealthy:       brain,
-		AuditEntriesPurged: 0,
-		CrashEntriesPurged: 0,
+		AuditEntriesPurged: auditPurged,
+		CrashEntriesPurged: crashPurged,
 	}, nil
 }
 

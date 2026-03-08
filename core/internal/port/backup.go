@@ -23,7 +23,7 @@ type MigrationSafety interface {
 // ExportManager handles .dina archive exports for portability.
 type ExportManager interface {
 	Export(ctx context.Context, opts domain.ExportOptions) (archivePath string, err error)
-	ListArchiveContents(archivePath string) ([]string, error)
+	ListArchiveContents(archivePath, passphrase string) ([]string, error)
 	ReadManifest(archivePath, passphrase string) (*domain.ExportManifest, error)
 }
 

@@ -732,8 +732,8 @@ type ExportOptions = domain.ExportOptions
 type ExportManager interface {
 	// Export creates an encrypted archive of the Home Node.
 	Export(ctx context.Context, opts ExportOptions) (archivePath string, err error)
-	// ListArchiveContents returns the file list inside an archive.
-	ListArchiveContents(archivePath string) ([]string, error)
+	// ListArchiveContents decrypts the archive and returns the actual file list.
+	ListArchiveContents(archivePath, passphrase string) ([]string, error)
 	// ReadManifest extracts the manifest from an archive.
 	ReadManifest(archivePath string, passphrase string) (*ExportManifest, error)
 }

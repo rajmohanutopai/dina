@@ -85,7 +85,7 @@ func TestPortability_23_1_3_ArchiveContainsCorrectFiles(t *testing.T) {
 	skipIfNotImplemented(t, err)
 	testutil.RequireNoError(t, err)
 
-	contents, err := impl.ListArchiveContents(archivePath)
+	contents, err := impl.ListArchiveContents(archivePath, testutil.TestPassphrase)
 	testutil.RequireNoError(t, err)
 
 	requiredFiles := []string{"identity.sqlite", "manifest.json", "config.json"}
@@ -138,7 +138,7 @@ func TestPortability_23_1_5_ExportExcludesBrainToken(t *testing.T) {
 	skipIfNotImplemented(t, err)
 	testutil.RequireNoError(t, err)
 
-	contents, err := impl.ListArchiveContents(archivePath)
+	contents, err := impl.ListArchiveContents(archivePath, testutil.TestPassphrase)
 	testutil.RequireNoError(t, err)
 
 	for _, f := range contents {
@@ -173,22 +173,45 @@ func TestPortability_23_1_7_ExportExcludesPassphrase(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "ExportManager")
 
 	dir := testutil.TempDir(t)
-	opts := testutil.ExportOptions{
-		Passphrase: testutil.TestPassphrase,
-		DestPath:   dir,
+
+	// Build a synthetic archive with known files to test ListArchiveContents
+	// independently of the collectExportData stub.
+	files := map[string][]byte{
+		"identity.sqlite": []byte("test-identity-data"),
+		"config.json":     []byte(`{"version":"2"}`),
+		"manifest.json":   []byte(`{}`),
 	}
-	archivePath, err := impl.Export(portCtx, opts)
-	skipIfNotImplemented(t, err)
+	archivePath, err := portability.BuildTestArchive(files, testutil.TestPassphrase, dir)
 	testutil.RequireNoError(t, err)
 
-	contents, err := impl.ListArchiveContents(archivePath)
+	contents, err := impl.ListArchiveContents(archivePath, testutil.TestPassphrase)
 	testutil.RequireNoError(t, err)
 
 	for _, f := range contents {
-		if f == "passphrase" || f == "passphrase.txt" {
-			t.Fatal("archive must not contain passphrase file")
+		if f == "passphrase" || f == "passphrase.txt" || f == "passphrase.key" {
+			t.Fatalf("archive must not contain passphrase file, found: %s", f)
 		}
 	}
+
+	// Also verify the test has teeth: if we build an archive that
+	// deliberately contains a "passphrase" file, the check must catch it.
+	badFiles := map[string][]byte{
+		"identity.sqlite": []byte("test-identity-data"),
+		"passphrase":      []byte("should-not-be-here"),
+	}
+	badArchive, err := portability.BuildTestArchive(badFiles, testutil.TestPassphrase, dir)
+	testutil.RequireNoError(t, err)
+
+	badContents, err := impl.ListArchiveContents(badArchive, testutil.TestPassphrase)
+	testutil.RequireNoError(t, err)
+
+	foundPassphrase := false
+	for _, f := range badContents {
+		if f == "passphrase" {
+			foundPassphrase = true
+		}
+	}
+	testutil.RequireTrue(t, foundPassphrase, "canary: ListArchiveContents must surface a 'passphrase' file when one exists in the archive")
 }
 
 // TST-CORE-731
@@ -206,7 +229,7 @@ func TestPortability_23_1_8_ExportExcludesPDSData(t *testing.T) {
 	skipIfNotImplemented(t, err)
 	testutil.RequireNoError(t, err)
 
-	contents, err := impl.ListArchiveContents(archivePath)
+	contents, err := impl.ListArchiveContents(archivePath, testutil.TestPassphrase)
 	testutil.RequireNoError(t, err)
 
 	for _, f := range contents {
@@ -231,7 +254,7 @@ func TestPortability_23_1_9_ExportExcludesDockerSecrets(t *testing.T) {
 	skipIfNotImplemented(t, err)
 	testutil.RequireNoError(t, err)
 
-	contents, err := impl.ListArchiveContents(archivePath)
+	contents, err := impl.ListArchiveContents(archivePath, testutil.TestPassphrase)
 	testutil.RequireNoError(t, err)
 
 	for _, f := range contents {

@@ -57,11 +57,15 @@ func TestSecFix_32_1_2_DifferentSignaturesAccepted(t *testing.T) {
 	sig1 := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, body1)
 	sig2 := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, body2)
 
-	_, _, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, body1, sig1)
+	kind1, identity1, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, body1, sig1)
 	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, kind1, domain.TokenClient)
+	testutil.RequireEqual(t, identity1, "device-sig-001")
 
-	_, _, err = tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, body2, sig2)
+	kind2, identity2, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, body2, sig2)
 	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, kind2, domain.TokenClient)
+	testutil.RequireEqual(t, identity2, "device-sig-001")
 }
 
 // TST-CORE-1060

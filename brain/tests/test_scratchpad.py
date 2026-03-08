@@ -145,7 +145,10 @@ async def test_scratchpad_12_2_1_resume_from_step3(scratchpad) -> None:
     core.read_scratchpad.assert_awaited_once_with("task-001")
     assert result is not None
     assert result["step"] == 2
-    # Caller would resume from step 3 based on this
+    assert result["task_id"] == "task-001"
+    assert result["context"] == {"relationship": "friend", "messages": ["m1"]}
+    # Verify the contract: next step to execute is step + 1
+    assert result["step"] + 1 == 3, "Caller should resume from step 3"
 
 
 # TST-BRAIN-313

@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -105,15 +106,27 @@ func TestTransport_7_1_OutboxSchema(t *testing.T) {
 // TST-CORE-810
 func TestTransport_7_2_1_ReceiveFromInbox(t *testing.T) {
 	impl := realTransporter
-	// impl = transport.New()
 	testutil.RequireImplementation(t, impl, "Transporter")
+
+	// Type-assert to concrete Transporter to access EnqueueInbox.
+	concrete, ok := impl.(*transport.Transporter)
+	if !ok {
+		t.Fatal("realTransporter is not *transport.Transporter")
+	}
+
+	// Enqueue a message so Receive exercises the real dequeue path.
+	payload := []byte(`{"type":"dina/test","body":"hello inbox"}`)
+	concrete.EnqueueInbox(payload)
 
 	msg, err := impl.Receive()
 	testutil.RequireNoError(t, err)
-	// Empty inbox returns nil message, no error.
-	if msg != nil {
-		testutil.RequireTrue(t, len(msg) > 0, "received message should have content")
-	}
+	testutil.RequireNotNil(t, msg)
+	testutil.RequireBytesEqual(t, msg, payload)
+
+	// After dequeue, inbox should be empty.
+	msg2, err2 := impl.Receive()
+	testutil.RequireNoError(t, err2)
+	testutil.RequireNil(t, msg2)
 }
 
 // TST-CORE-811
@@ -570,36 +583,42 @@ func TestTransport_7_1_11_TTL24Hours(t *testing.T) {
 
 // TST-CORE-401
 func TestTransport_7_1_12_QueueSizeLimit100(t *testing.T) {
-	mock := testutil.NewMockOutboxManager()
-	mock.MaxQueue = 100
+	// Use a fresh production OutboxManager (not the shared singleton) to avoid
+	// polluting other tests, and to exercise the real queue-limit logic.
+	impl := transport.NewOutboxManager(100)
 
 	// Fill the queue to capacity.
 	for i := 0; i < 100; i++ {
 		msg := testutil.TestOutboxMessage()
-		_, err := mock.Enqueue(context.Background(), msg)
+		_, err := impl.Enqueue(context.Background(), msg)
 		testutil.RequireNoError(t, err)
 	}
 
-	// 101st message should be rejected.
+	// 101st message should be rejected with ErrOutboxFull.
 	msg := testutil.TestOutboxMessage()
-	_, err := mock.Enqueue(context.Background(), msg)
+	_, err := impl.Enqueue(context.Background(), msg)
 	testutil.RequireError(t, err)
+	if !errors.Is(err, transport.ErrOutboxFull) {
+		t.Fatalf("expected ErrOutboxFull, got: %v", err)
+	}
 }
 
 // TST-CORE-402
-func TestTransport_7_1_13_OutboxSurvivesRestart(t *testing.T) {
+// NOTE: True restart-survival requires a persistent (e.g. SQLite-backed)
+// OutboxManager, which does not yet exist. This test verifies the weaker
+// property: enqueue → retrieve round-trip returns the correct message.
+// TODO: Upgrade to a real restart test once a durable OutboxManager is implemented.
+func TestTransport_7_1_13_OutboxEnqueueRetrieveRoundTrip(t *testing.T) {
 	impl := realOutboxManager
 	testutil.RequireImplementation(t, impl, "OutboxManager")
 
-	// Enqueue a message and verify it persists (retrievable by ID).
-	// In the in-memory implementation, this verifies the message survives
-	// between Enqueue and GetByID calls (the contract for persistence).
+	// Enqueue a message and verify it is retrievable by ID.
 	msg := testutil.TestOutboxMessage()
 	msg.ID = "persist-test-001"
 	id, err := impl.Enqueue(context.Background(), msg)
 	testutil.RequireNoError(t, err)
 
-	// Retrieve by ID — simulates post-restart lookup.
+	// Retrieve by ID — verifies basic enqueue/retrieve contract.
 	retrieved, err := impl.GetByID(id)
 	testutil.RequireNoError(t, err)
 	testutil.RequireNotNil(t, retrieved)
@@ -654,15 +673,19 @@ func TestTransport_7_1_15_PriorityOrdering(t *testing.T) {
 
 // TST-CORE-408
 func TestTransport_7_1_16_PayloadIsPreEncrypted(t *testing.T) {
-	mock := testutil.NewMockOutboxManager()
+	impl := realOutboxManager
+	testutil.RequireImplementation(t, impl, "OutboxManager")
 
 	msg := testutil.TestOutboxMessage()
 	msg.Payload = []byte("encrypted-nacl-blob")
-	id, err := mock.Enqueue(context.Background(), msg)
+	id, err := impl.Enqueue(context.Background(), msg)
 	testutil.RequireNoError(t, err)
 
 	// Payload in outbox should be the encrypted blob — ready to send.
-	retrieved, err := mock.GetByID(id)
+	// This exercises real OutboxManager storage, verifying it preserves
+	// pre-encrypted payloads byte-for-byte without re-encrypting or
+	// modifying the content.
+	retrieved, err := impl.GetByID(id)
 	testutil.RequireNoError(t, err)
 	testutil.RequireBytesEqual(t, retrieved.Payload, []byte("encrypted-nacl-blob"))
 }

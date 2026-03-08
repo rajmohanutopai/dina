@@ -387,7 +387,7 @@ func TestObservability_20_3_6_CrashLogIncludedInBackup(t *testing.T) {
 	}
 	testutil.RequireNoError(t, err)
 
-	contents, err := impl.ListArchiveContents(archivePath)
+	contents, err := impl.ListArchiveContents(archivePath, testutil.TestPassphrase)
 	testutil.RequireNoError(t, err)
 
 	found := false

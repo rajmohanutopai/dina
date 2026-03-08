@@ -577,7 +577,7 @@ class TestLicenseRenewal:
         reason="GOOGLE_API_KEY not set — skipping LLM delegation test",
     )
     def test_08_delegation_request_with_enforcement(
-        self, alonso_brain, brain_headers,
+        self, alonso_brain, brain_signer,
     ):
         """LLM generates a DelegationRequest, then Guardian enforces it.
 
@@ -616,14 +616,13 @@ class TestLicenseRenewal:
             "denied_fields and must NOT appear in data_payload or permitted_fields."
         )
 
-        r = httpx.post(
+        r = brain_signer.post(
             f"{alonso_brain}/api/v1/reason",
             json={
                 "prompt": delegation_prompt,
                 "persona_tier": "open",
                 "skip_vault_enrichment": True,
             },
-            headers=brain_headers,
             timeout=60,
         )
         assert r.status_code == 200, f"Reason failed: {r.status_code} {r.text[:300]}"
@@ -672,14 +671,13 @@ class TestLicenseRenewal:
         assert constraints.get("no_forwarding") is True, "no_forwarding must be true"
 
         # Phase B: Submit to Guardian for enforcement.
-        r2 = httpx.post(
+        r2 = brain_signer.post(
             f"{alonso_brain}/api/v1/process",
             json={
                 "type": "delegation_request",
                 "payload": delegation,
                 "trust_level": "verified",
             },
-            headers=brain_headers,
             timeout=15,
         )
         assert r2.status_code == 200, (

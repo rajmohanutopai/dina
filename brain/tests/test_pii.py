@@ -428,14 +428,20 @@ def test_pii_3_2_1_email_plus_person(spacy_scrubber) -> None:
 
 # TST-BRAIN-105
 def test_pii_3_2_2_phone_plus_location(spacy_scrubber) -> None:
-    """SS3.2.2: Phone number (Tier 1) + location (Tier 2) — NER detects LOC."""
-    text = "Call 555-1234 in San Francisco"
+    """SS3.2.2: Phone number (Tier 1) + location (Tier 2) — both must be scrubbed."""
+    text = "Call +1-415-555-1234 in San Francisco"
 
     scrubbed, entities = spacy_scrubber.scrub(text)
 
+    # Tier 2: location must be detected and removed
     loc_entities = [e for e in entities if e["type"] == "LOC"]
     assert len(loc_entities) >= 1
     assert "San Francisco" not in scrubbed
+
+    # Tier 1: phone number must be detected and removed
+    phone_entities = [e for e in entities if e["type"] in ("PHONE", "PHONE_NUMBER")]
+    assert len(phone_entities) >= 1, "phone entity not detected — Tier 1 scrubbing gap"
+    assert "415-555-1234" not in scrubbed, "phone number not removed from scrubbed output"
 
 
 # TST-BRAIN-106

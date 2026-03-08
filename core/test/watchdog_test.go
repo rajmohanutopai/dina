@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
 
@@ -34,11 +35,31 @@ func TestWatchdog_20_3_9_SingleSweepCleansAuditAndCrashLogs(t *testing.T) {
 	impl := realSystemWatchdog
 	testutil.RequireImplementation(t, impl, "SystemWatchdog")
 
+	ctx := context.Background()
+
+	// Seed an old crash entry (timestamp well beyond the 90-day retention).
+	oldTimestamp := "2020-01-01T00:00:00Z"
+	err := realCrashLogger.Store(ctx, domain.CrashEntry{
+		Timestamp: oldTimestamp,
+		Error:     "old crash for purge test",
+	})
+	testutil.RequireNoError(t, err)
+
+	// Seed an old audit entry (timestamp well beyond the 90-day retention).
+	_, err = realVaultAuditLogger.Append(ctx, domain.VaultAuditEntry{
+		Timestamp: oldTimestamp,
+		Action:    "test_old_audit",
+		Persona:   "test",
+		Requester: "watchdog_test",
+	})
+	testutil.RequireNoError(t, err)
+
 	report, err := impl.RunTick(wdCtx)
 	testutil.RequireNoError(t, err)
-	// Both purge counts should be non-negative (may be 0 on fresh instance).
-	testutil.RequireTrue(t, report.AuditEntriesPurged >= 0, "audit purge count must be non-negative")
-	testutil.RequireTrue(t, report.CrashEntriesPurged >= 0, "crash purge count must be non-negative")
+
+	// After seeding old entries, both purge counts must be > 0.
+	testutil.RequireTrue(t, report.AuditEntriesPurged > 0, "audit purge count must be > 0 after seeding old entries")
+	testutil.RequireTrue(t, report.CrashEntriesPurged > 0, "crash purge count must be > 0 after seeding old entries")
 }
 
 // TST-CORE-914 (subsection for this in observability but test is here)

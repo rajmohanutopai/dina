@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/rajmohanutopai/dina/core/internal/adapter/ws"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
 
@@ -137,23 +138,43 @@ func TestWS_9_2_1_QueryMessage(t *testing.T) {
 
 // TST-CORE-491
 func TestWS_9_2_2_QueryWithPersonaField(t *testing.T) {
-	impl := realWSHandler
-	testutil.RequireImplementation(t, impl, "WSHandler")
+	// §9.2 #2: Query with persona field — verify the handler accepts a query
+	// bearing a persona field, routes it through the brain router with the
+	// persona preserved in the payload, and returns a well-formed response
+	// envelope with reply_to linking back to the original request ID.
+	//
+	// NOTE: persona access tier checking (open/restricted/locked) is not yet
+	// implemented in WSHandler.HandleMessage. When it is, this test should
+	// be extended to verify that a locked persona returns an error envelope
+	// with code 403 and that an open persona returns a whisper.
 
-	// §9.2 #2: Query with persona field — core checks persona access tier
-	// (open/restricted/locked) before routing to brain.
+	// Build a handler with a brain router that captures the payload so we can
+	// verify the persona field is forwarded.
+	var capturedPayload map[string]interface{}
+	handler := ws.NewWSHandler(
+		func(token string) (string, error) { return "test-device", nil },
+		func(clientID, msgType string, payload map[string]interface{}) ([]byte, error) {
+			capturedPayload = payload
+			return json.Marshal(map[string]interface{}{"text": "brain response"})
+		},
+	)
+
 	msg := `{"type":"query","id":"req_002","payload":{"text":"What's my balance?","persona":"/financial"}}`
-	resp, err := impl.HandleMessage(context.Background(), "client-001", []byte(msg))
-	// If persona is locked, expect an error response; if open, expect success.
-	// Either way, we verify the response links back to the original request.
-	if err == nil {
-		var envelope map[string]interface{}
-		testutil.RequireNoError(t, json.Unmarshal(resp, &envelope))
-		// Response must reference the original request ID.
-		replyTo, ok := envelope["reply_to"]
-		testutil.RequireTrue(t, ok, "response must include reply_to field")
-		testutil.RequireEqual(t, replyTo, "req_002")
-	}
+	resp, err := handler.HandleMessage(context.Background(), "client-001", []byte(msg))
+	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, resp != nil, "response must not be nil")
+
+	// Verify the response envelope has reply_to and is a whisper.
+	var envelope map[string]interface{}
+	testutil.RequireNoError(t, json.Unmarshal(resp, &envelope))
+	testutil.RequireEqual(t, envelope["reply_to"], "req_002")
+	testutil.RequireEqual(t, envelope["type"], "whisper")
+
+	// Verify the persona field was forwarded to the brain router.
+	testutil.RequireTrue(t, capturedPayload != nil, "brain router must be called")
+	persona, ok := capturedPayload["persona"].(string)
+	testutil.RequireTrue(t, ok, "payload must include persona field")
+	testutil.RequireEqual(t, persona, "/financial")
 }
 
 // TST-CORE-492

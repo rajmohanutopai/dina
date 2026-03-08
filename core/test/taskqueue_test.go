@@ -35,19 +35,22 @@ func TestTaskQueue_8_1_1_EnqueueReturnsID(t *testing.T) {
 }
 
 // TST-CORE-828
-func TestTaskQueue_8_1_2_DequeueReturnsPending(t *testing.T) {
+func TestTaskQueue_8_1_2_DequeueTransitionsToRunning(t *testing.T) {
 	impl := realTaskQueuer
 	// impl = taskqueue.New()
 	testutil.RequireImplementation(t, impl, "TaskQueuer")
 
 	task := testutil.TestTask()
-	_, err := impl.Enqueue(context.Background(), task)
+	id, err := impl.Enqueue(context.Background(), task)
 	testutil.RequireNoError(t, err)
 
 	dequeued, err := impl.Dequeue(context.Background())
 	testutil.RequireNoError(t, err)
 	testutil.RequireNotNil(t, dequeued)
+	testutil.RequireEqual(t, dequeued.ID, id)
 	testutil.RequireEqual(t, dequeued.Status, domain.TaskRunning)
+	testutil.RequireEqual(t, dequeued.Type, task.Type)
+	testutil.RequireEqual(t, dequeued.Priority, task.Priority)
 }
 
 // TST-CORE-829
@@ -792,20 +795,32 @@ func TestTaskQueue_8_4_8_MissedReminderOnStartup(t *testing.T) {
 
 // TST-CORE-478
 func TestTaskQueue_8_4_9_FireAndMarkDone(t *testing.T) {
-	mock := testutil.NewMockReminderScheduler()
+	impl := realReminderScheduler
+	testutil.RequireImplementation(t, impl, "ReminderScheduler")
 
+	ctx := context.Background()
+
+	// Store a reminder with a past trigger time so it's immediately pending.
 	reminder := testutil.TestReminder(1740200000)
-	id, err := mock.StoreReminder(context.Background(), reminder)
+	id, err := impl.StoreReminder(ctx, reminder)
 	testutil.RequireNoError(t, err)
 
-	// Fire: notify(next) -> vault.MarkFired(next.ID) -> not re-triggered.
-	err = mock.MarkFired(context.Background(), id)
+	// Verify it appears as pending before firing.
+	next, err := impl.NextPending(ctx)
+	testutil.RequireNoError(t, err)
+	testutil.RequireNotNil(t, next)
+	testutil.RequireEqual(t, next.ID, id)
+
+	// Fire: mark reminder as done so it is not re-triggered.
+	err = impl.MarkFired(ctx, id)
 	testutil.RequireNoError(t, err)
 
 	// After marking fired, NextPending should not return this reminder.
-	next, err := mock.NextPending(context.Background())
+	next, err = impl.NextPending(ctx)
 	testutil.RequireNoError(t, err)
-	testutil.RequireNil(t, next)
+	if next != nil && next.ID == id {
+		t.Fatalf("fired reminder %q should not appear in NextPending", id)
+	}
 }
 
 // TST-CORE-479

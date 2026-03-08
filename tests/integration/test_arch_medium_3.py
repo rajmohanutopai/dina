@@ -42,18 +42,23 @@ def test_wrong_admin_login_rejected_cleanly(
 def test_logout_invalidates_session(
     mock_admin_api: MockAdminAPI,
 ):
-    """Login, get session_id, then delete from sessions dict,
-    validate_session returns False."""
+    """Login, get session_id, call logout(), validate_session returns False."""
     session = mock_admin_api.login("admin-passphrase")
     assert session is not None
 
     session_id = session.session_id
     assert mock_admin_api.validate_session(session_id) is True
 
-    # Simulate logout
-    del mock_admin_api.sessions[session.session_id]
+    # Logout via the API method (mirrors POST /admin/logout)
+    result = mock_admin_api.logout(session_id)
+    assert result is True
 
+    # Session must be invalid after logout
     assert mock_admin_api.validate_session(session_id) is False
+
+    # Logging out again should return False (idempotent, no crash)
+    result_again = mock_admin_api.logout(session_id)
+    assert result_again is False
 
 
 # TST-INT-667

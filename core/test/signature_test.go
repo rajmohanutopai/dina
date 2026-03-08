@@ -7,11 +7,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/rajmohanutopai/dina/core/internal/adapter/auth"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/middleware"
 	"github.com/rajmohanutopai/dina/core/internal/port"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
 
@@ -386,19 +389,37 @@ func TestPairing_28_CompletePairingWithKey_DeviceAppearsInList(t *testing.T) {
 // --------------------------------------------------------------------------
 
 func TestSignature_28_MockValidator_FallsBackToBearerToken(t *testing.T) {
-	// MockTokenValidator.VerifySignature always rejects.
-	// This verifies the middleware pattern: if X-DID headers are absent,
-	// the middleware falls back to Bearer token auth.
+	// Verify the real Auth.Handler middleware: when X-DID headers are absent,
+	// the middleware falls back to Bearer token auth via IdentifyToken.
 	mock := testutil.NewMockTokenValidator()
 	mock.ClientTokens["test-token"] = "device-001"
 
-	// Bearer auth works.
-	kind, identity, err := mock.IdentifyToken("test-token")
-	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, kind, domain.TokenClient)
-	testutil.RequireEqual(t, identity, "device-001")
+	authMiddleware := middleware.Auth{Tokens: mock}
 
-	// Signature auth rejects (mock always rejects).
-	_, _, err = mock.VerifySignature("did:key:zTest", "GET", "/", "", "2026-01-01T00:00:00Z", nil, "aabb")
-	testutil.RequireError(t, err)
+	// Inner handler captures the context values set by the middleware.
+	var capturedKind, capturedIdentity string
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedKind, _ = r.Context().Value(middleware.TokenKindKey).(string)
+		capturedIdentity, _ = r.Context().Value(middleware.AgentDIDKey).(string)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := authMiddleware.Handler(inner)
+
+	// --- Case 1: Bearer token (no X-DID headers) → fallback path ---
+	req := httptest.NewRequest("GET", "/v1/did", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	testutil.RequireEqual(t, rec.Code, http.StatusOK)
+	testutil.RequireEqual(t, capturedKind, "client")
+	testutil.RequireEqual(t, capturedIdentity, "device-001")
+
+	// --- Case 2: No auth at all → 401 ---
+	req2 := httptest.NewRequest("GET", "/v1/did", nil)
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, req2)
+
+	testutil.RequireEqual(t, rec2.Code, http.StatusUnauthorized)
 }

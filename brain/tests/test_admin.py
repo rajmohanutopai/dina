@@ -100,7 +100,14 @@ async def test_admin_8_1_1_dashboard_loads(client, auth_headers) -> None:
     assert resp.status_code == 200
     data = resp.json()
     assert data["page"] == "dashboard"
-    assert "core" in data
+    # Core health path: mock returns {"status": "healthy"} → status stays "ok"
+    assert data["status"] == "ok", "expected non-degraded status when core healthy"
+    assert data["core"] == "healthy", "core health not propagated to response"
+    # Stats sections must be present (fallback to 0 if core calls fail)
+    assert "personas" in data, "personas key missing from dashboard response"
+    assert "devices" in data, "devices key missing from dashboard response"
+    assert isinstance(data["personas"], int), "personas must be an integer count"
+    assert isinstance(data["devices"], int), "devices must be an integer count"
 
 
 # TST-BRAIN-271

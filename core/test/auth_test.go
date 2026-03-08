@@ -990,18 +990,29 @@ func TestAuth_1_3_12_SessionStorageLostOnRestart(t *testing.T) {
 
 // TST-CORE-029
 func TestAuth_1_3_13_SessionTTLConfigurable(t *testing.T) {
-	impl := realSessionManager
-	testutil.RequireImplementation(t, impl, "SessionManager")
-
-	// This test documents the contract: DINA_SESSION_TTL environment variable
-	// controls the session TTL. Default is 86400 seconds (24 hours).
-	// Integration test sets DINA_SESSION_TTL=2, creates a session, waits 3s,
-	// and verifies Validate returns an error.
-	//
-	// At unit level, verify that the session manager respects its TTL config.
-	sessionID, _, err := impl.Create(authCtx, "device-001")
+	// Create a session manager with a 1-second TTL.
+	shortTTL := auth.NewSessionManager(1)
+	sessionID, _, err := shortTTL.Create(authCtx, "device-ttl-test")
 	testutil.RequireNoError(t, err)
-	_, err = impl.Validate(authCtx, sessionID)
+
+	// Immediately after creation, session must be valid.
+	deviceID, err := shortTTL.Validate(authCtx, sessionID)
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, deviceID, "device-ttl-test")
+
+	// Wait for the session to expire.
+	time.Sleep(2 * time.Second)
+
+	// After TTL expiry, Validate must return ErrSessionExpired.
+	_, err = shortTTL.Validate(authCtx, sessionID)
+	testutil.RequireError(t, err)
+	testutil.RequireContains(t, err.Error(), "session expired")
+
+	// A long-TTL manager should still have a valid session after the same wait.
+	longTTL := auth.NewSessionManager(3600)
+	longID, _, err := longTTL.Create(authCtx, "device-long")
+	testutil.RequireNoError(t, err)
+	_, err = longTTL.Validate(authCtx, longID)
 	testutil.RequireNoError(t, err)
 }
 
