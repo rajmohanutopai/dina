@@ -1,0 +1,11 @@
+# Root runtime dependencies for the main Dina Python package.
+# This mirrors [project.dependencies] in pyproject.toml.
+
+pydantic-ai>=0.1
+youtube-transcript-api>=1.0
+chromadb>=1.0
+ollama>=0.4
+google-genai>=1.0
+python-dotenv>=1.0
+base58>=2.1
+cryptography>=41.0
