@@ -127,14 +127,29 @@ class TestAgentSafetyDelegation:
         - OpenClaw NEVER calls messages.send.
         - A draft is created and stored.
         - A staging item is created for user review.
+        - draft_only=False is REJECTED (negative control).
+        - verify_agent_intent classifies draft_create as MODERATE risk.
         """
         node = don_alonso
+
+        # ------------------------------------------------------------------
+        # 1. Agent intent: draft_create must be MODERATE risk
+        # ------------------------------------------------------------------
+        intent = node.verify_agent_intent(
+            agent_did=openclaw.did,
+            action="draft_create",
+            target="sancho@example.com",
+        )
+        assert intent["risk"] == "MODERATE", (
+            f"draft_create should be MODERATE risk, got {intent['risk']}"
+        )
+        assert intent["requires_approval"] is True
 
         # Record initial state of sent messages
         initial_sent_count = len(openclaw.gmail.messages_sent)
 
         # ------------------------------------------------------------------
-        # Brain drafts an email via OpenClaw
+        # 2. Brain drafts an email via OpenClaw (draft_only=True)
         # ------------------------------------------------------------------
         draft_request = {
             "action": "draft_create",
@@ -155,7 +170,7 @@ class TestAgentSafetyDelegation:
         )
 
         # ------------------------------------------------------------------
-        # CRITICAL: Verify messages.send was NEVER called
+        # 3. CRITICAL: Verify messages.send was NEVER called
         # ------------------------------------------------------------------
         assert len(openclaw.gmail.messages_sent) == initial_sent_count, (
             "messages.send must NEVER be called — Dina drafts, never sends. "
@@ -163,14 +178,47 @@ class TestAgentSafetyDelegation:
             "unauthorized sends."
         )
 
-        # Verify draft was stored in OpenClaw's drafts
-        assert len(openclaw.gmail.drafts_created) >= 1
+        # Verify draft field VALUES
+        assert len(openclaw.gmail.drafts_created) == 1, (
+            f"Expected exactly 1 draft, got {len(openclaw.gmail.drafts_created)}"
+        )
         latest_draft = openclaw.gmail.drafts_created[-1]
         assert latest_draft["to"] == "sancho@example.com"
         assert latest_draft["subject"] == "Tea this afternoon?"
+        assert "Darjeeling" in latest_draft["body"], (
+            "Draft body must contain the original message text"
+        )
 
         # ------------------------------------------------------------------
-        # Create staging item for user review
+        # 4. NEGATIVE CONTROL: draft_only=False must be REJECTED
+        # ------------------------------------------------------------------
+        send_request = {
+            "action": "draft_create",
+            "draft_only": False,
+            "draft": {
+                "to": "sancho@example.com",
+                "subject": "Unauthorized send attempt",
+                "body": "This should never be sent.",
+            },
+        }
+        reject_response = openclaw.handle_request(send_request)
+        assert reject_response["status"] == "error", (
+            "draft_only=False must be rejected — Dina never sends directly"
+        )
+        assert "draft_only must be true" in reject_response.get("reason", ""), (
+            "Rejection reason must explain the draft_only requirement"
+        )
+        # Confirm no email was sent
+        assert len(openclaw.gmail.messages_sent) == initial_sent_count, (
+            "draft_only=False must NOT result in any sent messages"
+        )
+        # Confirm no extra draft was created for the rejected request
+        assert len(openclaw.gmail.drafts_created) == 1, (
+            "Rejected request must not create a draft"
+        )
+
+        # ------------------------------------------------------------------
+        # 5. Create staging item for user review
         # ------------------------------------------------------------------
         staging = node.create_staging_item(
             item_type="email_draft",
@@ -185,6 +233,22 @@ class TestAgentSafetyDelegation:
 
         assert staging.staging_id in node.staging
         assert staging.data["action_required"] == "review_and_send"
+        assert staging.data["to"] == "sancho@example.com"
+        assert staging.data["subject"] == "Tea this afternoon?"
+        assert staging.data["draft_id"] == response["draft"]["draft_id"]
+
+        # ------------------------------------------------------------------
+        # 6. Audit trail: verify agent_intent was logged
+        # ------------------------------------------------------------------
+        intent_audits = [
+            e for e in node.audit_log
+            if e.action == "agent_intent"
+            and e.details.get("action") == "draft_create"
+        ]
+        assert len(intent_audits) == 1, (
+            f"Expected exactly 1 agent_intent audit for draft_create, "
+            f"got {len(intent_audits)}"
+        )
 
     # TST-E2E-031
     def test_malicious_bot_blocking(
@@ -441,20 +505,55 @@ class TestAgentSafetyDelegation:
         assert node.healthz()["status"] == "ok"
 
         # ------------------------------------------------------------------
-        # Step 6: Read scratchpad and resume
+        # Step 6: Read scratchpad and verify checkpoint survived crash
         # ------------------------------------------------------------------
         restored = node.read_scratchpad(task_id)
         assert restored is not None, (
             "Scratchpad checkpoint must survive brain crash"
         )
-        assert restored["emails_processed"] == 25
-        assert restored["last_cursor"] == "email_0024"
-        assert restored["phase"] == "pass_2_body_fetch"
+        assert restored["emails_processed"] == 25, (
+            "Scratchpad must preserve emails_processed count"
+        )
+        assert restored["last_cursor"] == "email_0024", (
+            "Scratchpad must preserve last_cursor position"
+        )
+        assert restored["phase"] == "pass_2_body_fetch", (
+            "Scratchpad must preserve processing phase"
+        )
+        assert restored["action"] == "gmail_full_sync", (
+            "Scratchpad must preserve original action"
+        )
+        assert restored["total_emails"] == 50, (
+            "Scratchpad must preserve total_emails count"
+        )
 
-        # Resume the task from checkpoint
+        # Verify task is still in PENDING state (set by watchdog)
         task_after = node.tasks[task_id]
-        task_after.status = TaskStatus.IN_PROGRESS
-        assert task_after.status == TaskStatus.IN_PROGRESS
+        assert task_after.status == TaskStatus.PENDING, (
+            "Task must remain PENDING after brain restart (awaiting scheduler)"
+        )
+        assert task_after.attempts == 1, (
+            "Attempt counter must be preserved across restart"
+        )
+
+        # --- Negative control: non-existent task scratchpad returns None ---
+        ghost_pad = node.read_scratchpad("task_nonexistent_xyz")
+        assert ghost_pad is None, (
+            "Scratchpad for non-existent task must return None"
+        )
+
+        # --- Verify brain is functional after restart ---
+        # Create a new task to confirm brain can process new work
+        new_task = node.create_task(
+            action="calendar_sync",
+            timeout_seconds=30,
+        )
+        assert new_task.status == TaskStatus.IN_PROGRESS, (
+            "Brain must be able to create new tasks after restart"
+        )
+        assert new_task.task_id != task_id, (
+            "New task must have a different ID from the recovered task"
+        )
 
     # TST-E2E-034
     def test_dead_letter_notification(

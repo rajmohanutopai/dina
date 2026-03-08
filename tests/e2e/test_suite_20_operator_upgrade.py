@@ -154,9 +154,13 @@ class TestOperatorUpgrade:
         node.unlock_persona("financial", "passphrase", ttl_seconds=300)
         node.vault_store("financial", "admin_test_entry", "balance check OK")
         results = node.vault_query("financial", "admin_test_entry")
-        assert len(results) >= 1, (
-            "Admin must be able to query vault after unlock"
+        assert len(results) == 1, (
+            f"Expected exactly 1 admin entry, got {len(results)}"
         )
+        assert "balance check OK" in results[0].body_text, (
+            "Stored admin entry must have correct VALUE"
+        )
+        assert results[0].persona == "financial"
 
         # -- Step 3: Logout (lock) + Login (unlock) -> session correct -----
         # Logout: lock vault and personas
@@ -181,23 +185,30 @@ class TestOperatorUpgrade:
         # Unlock financial and verify it works again
         node.unlock_persona("financial", "passphrase")
         results = node.vault_query("financial", "admin_test_entry")
-        assert len(results) >= 1
+        assert len(results) == 1, (
+            "Previously stored admin entry must survive lock/unlock cycle"
+        )
+        assert "balance check OK" in results[0].body_text
+
+        # Audit trail records lock/unlock events
+        node._log_audit("vault_lock_cycle", {"action": "test_complete"})
+        lock_audits = node.get_audit_entries("vault_lock_cycle")
+        assert len(lock_audits) >= 1
 
 # TST-E2E-110
     def test_verified_upgrade_requires_operator_action(
         self,
         don_alonso: HomeNode,
     ) -> None:
-        """E2E-20.3 Upgrade requires explicit operator action; tampered rejected.
+        """E2E-20.3 Upgrade metadata stored, checksum verified, audit logged.
 
-        1. An upgrade is only applied when the operator explicitly
-           triggers it (no silent auto-updates).
-        2. A tampered upgrade candidate (bad checksum) is rejected.
-        3. A valid candidate (correct checksum) succeeds.
+        Exercises real KV storage for upgrade metadata, SHA-256 checksum
+        verification, and audit trail logging. No production upgrade
+        manager exists yet — this tests the data contracts.
         """
         node = don_alonso
 
-        # -- Simulate upgrade metadata ------------------------------------
+        # -- Store upgrade metadata in KV (real kv_put/kv_get) -------------
         upgrade_payload = json.dumps({
             "version": "0.5.0",
             "changelog": "The Hand: autonomous purchasing support",
@@ -205,52 +216,25 @@ class TestOperatorUpgrade:
             "binary_size": 42_000_000,
         }).encode()
 
-        # Compute a valid checksum
         valid_checksum = hashlib.sha256(upgrade_payload).hexdigest()
+        assert len(valid_checksum) == 64, "SHA-256 hex must be 64 chars"
 
-        upgrade_candidate = {
+        # Store upgrade candidate in KV
+        node.kv_put("system:pending_upgrade", {
             "version": "0.5.0",
-            "payload": upgrade_payload.decode(),
             "checksum_sha256": valid_checksum,
             "requires_operator_action": True,
-        }
-
-        # -- Verify upgrade requires explicit operator action --------------
-        assert upgrade_candidate["requires_operator_action"] is True, (
-            "Upgrade must require explicit operator action"
-        )
-
-        # Simulate the check: operator has NOT approved yet
-        operator_approved = False
-
-        if not operator_approved:
-            # Upgrade must not proceed without approval
-            upgrade_applied = False
-        else:
-            upgrade_applied = True
-
-        assert upgrade_applied is False, (
-            "Upgrade must NOT be applied without operator approval"
-        )
-
-        # Notify operator about available upgrade
-        node._push_to_devices({
-            "type": "whisper",
-            "payload": {
-                "text": f"Upgrade available: v{upgrade_candidate['version']}. "
-                        f"Review changelog and approve in Settings > Updates.",
-                "tier": SilenceTier.TIER_2_SOLICITED.value,
-            },
+            "operator_approved": False,
         })
-        upgrade_notifs = [
-            n for n in node.notifications
-            if "Upgrade available" in n.get("payload", {}).get("text", "")
-        ]
-        assert len(upgrade_notifs) >= 1, (
-            "Operator must be notified about available upgrade"
-        )
 
-        # -- Tampered candidate: bad checksum -> rejected ------------------
+        # Verify pending upgrade is retrievable with correct VALUES
+        pending = node.kv_get("system:pending_upgrade")
+        assert pending["version"] == "0.5.0"
+        assert pending["checksum_sha256"] == valid_checksum
+        assert pending["requires_operator_action"] is True
+        assert pending["operator_approved"] is False
+
+        # -- Tampered payload produces DIFFERENT checksum ------------------
         tampered_payload = json.dumps({
             "version": "0.5.0",
             "changelog": "TAMPERED: injected malicious code",
@@ -259,55 +243,44 @@ class TestOperatorUpgrade:
         }).encode()
 
         tampered_checksum = hashlib.sha256(tampered_payload).hexdigest()
-
-        # The tampered payload has a DIFFERENT checksum than the valid one
         assert tampered_checksum != valid_checksum, (
             "Tampered payload must produce a different checksum"
         )
+        assert len(tampered_checksum) == 64
 
-        # Verify checksum validation catches the tamper
-        presented_checksum = valid_checksum  # attacker claims valid checksum
-        actual_checksum = hashlib.sha256(tampered_payload).hexdigest()
-        checksum_valid = (presented_checksum == actual_checksum)
-
-        assert checksum_valid is False, (
-            "Tampered upgrade must fail checksum validation"
-        )
-
-        # Log the rejection in audit
+        # Log the rejection in audit (real _log_audit + get_audit_entries)
         node._log_audit("upgrade_rejected", {
-            "version": upgrade_candidate["version"],
+            "version": "0.5.0",
             "reason": "checksum_mismatch",
-            "expected": presented_checksum,
-            "actual": actual_checksum,
+            "expected": valid_checksum,
+            "actual": tampered_checksum,
         })
 
         rejection_audits = node.get_audit_entries("upgrade_rejected")
-        assert len(rejection_audits) >= 1, (
-            "Tampered upgrade rejection must be logged in audit"
-        )
-        assert rejection_audits[-1].details["reason"] == "checksum_mismatch"
-
-        # -- Valid candidate: operator approves, checksum passes -----------
-        operator_approved = True
-
-        # Verify checksum on the valid payload
-        actual_valid = hashlib.sha256(upgrade_payload).hexdigest()
-        checksum_passes = (valid_checksum == actual_valid)
-        assert checksum_passes is True, (
-            "Valid upgrade candidate must pass checksum validation"
+        assert len(rejection_audits) >= 1
+        last_rejection = rejection_audits[-1]
+        assert last_rejection.details["reason"] == "checksum_mismatch"
+        assert last_rejection.details["expected"] == valid_checksum
+        assert last_rejection.details["actual"] == tampered_checksum
+        assert last_rejection.details["expected"] != last_rejection.details["actual"], (
+            "Rejection audit must show mismatched checksums"
         )
 
-        # Apply the upgrade (simulated)
-        upgrade_applied = operator_approved and checksum_passes
-        assert upgrade_applied is True, (
-            "Upgrade must proceed when operator approves and checksum is valid"
-        )
+        # -- Operator approves: update KV and apply ------------------------
+        node.kv_put("system:pending_upgrade", {
+            "version": "0.5.0",
+            "checksum_sha256": valid_checksum,
+            "requires_operator_action": True,
+            "operator_approved": True,
+        })
+
+        approved = node.kv_get("system:pending_upgrade")
+        assert approved["operator_approved"] is True
 
         # Record successful upgrade in KV and audit
-        node.kv_put("system:version", upgrade_candidate["version"])
+        node.kv_put("system:version", "0.5.0")
         node._log_audit("upgrade_applied", {
-            "version": upgrade_candidate["version"],
+            "version": "0.5.0",
             "checksum": valid_checksum,
         })
 
@@ -315,5 +288,12 @@ class TestOperatorUpgrade:
 
         applied_audits = node.get_audit_entries("upgrade_applied")
         assert len(applied_audits) >= 1
-        assert applied_audits[-1].details["version"] == "0.5.0"
-        assert applied_audits[-1].details["checksum"] == valid_checksum
+        last_applied = applied_audits[-1]
+        assert last_applied.details["version"] == "0.5.0"
+        assert last_applied.details["checksum"] == valid_checksum
+
+        # Clean up pending upgrade after apply
+        node.kv_put("system:pending_upgrade", None)
+        assert node.kv_get("system:pending_upgrade") is None, (
+            "Pending upgrade must be cleared after apply"
+        )

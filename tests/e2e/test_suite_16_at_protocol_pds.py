@@ -93,6 +93,7 @@ class TestATProtocolPDS:
     # TST-E2E-093
     def test_16_pds_server_description(
         self,
+        don_alonso,
         docker_services,
     ) -> None:
         """E2E-16.2 PDS describeServer returns DID, domains, no invite required."""
@@ -116,15 +117,27 @@ class TestATProtocolPDS:
                 "PDS must require invite codes in production"
             )
         else:
-            # Mock mode: verify expected contract shape
-            mock_desc = {
-                "did": "did:web:localhost",
-                "availableUserDomains": [".test"],
-                "inviteCodeRequired": True,
-            }
-            assert mock_desc["did"].startswith("did:web:")
-            assert len(mock_desc["availableUserDomains"]) > 0
-            assert mock_desc["inviteCodeRequired"] is True
+            # Mock mode: exercise HomeNode DID document via PLC resolution
+            from tests.e2e.actors import _derive_dek
+
+            # HomeNode DID must be properly formatted
+            did = don_alonso.did
+            assert did == "did:plc:alonso", f"Expected fixture DID, got {did}"
+
+            # DID document must be registered in PLC directory
+            doc = don_alonso.plc.resolve(did)
+            assert doc is not None, "DID document must be PLC-registered"
+
+            # DID document must contain public_key derived from private key
+            expected_pub = _derive_dek(don_alonso.root_private_key, "pub")
+            assert doc.public_key == expected_pub, (
+                f"DID doc public_key {doc.public_key!r} != derived {expected_pub!r}"
+            )
+
+            # Service endpoint must reference the DID
+            assert "alonso" in doc.service_endpoint, (
+                f"service_endpoint must reference DID owner: {doc.service_endpoint}"
+            )
 
     # TST-E2E-094
     def test_16_did_registration_via_core(
@@ -167,9 +180,31 @@ class TestATProtocolPDS:
             assert "#key-1" in auth[0]
         else:
             # Mock mode: verify DID creation contract via HomeNode
+            from tests.e2e.actors import _derive_dek
+
             did = don_alonso.did
-            assert did.startswith("did:plc:") or did.startswith("did:key:")
-            assert len(did) > 10
+            assert did == "did:plc:alonso", f"Unexpected DID: {did}"
+
+            # DID document registered in PLC with correct structure
+            doc = don_alonso.plc.resolve(did)
+            assert doc is not None, "DID must be PLC-registered"
+
+            # Public key must be derived from root private key (verification method)
+            expected_pub = _derive_dek(don_alonso.root_private_key, "pub")
+            assert doc.public_key == expected_pub, (
+                f"Verification method public_key mismatch"
+            )
+
+            # Service endpoint must be well-formed
+            assert doc.service_endpoint.startswith("https://"), (
+                f"Service endpoint must be HTTPS: {doc.service_endpoint}"
+            )
+
+            # Persona DIDs should be populated after first_run_setup
+            assert isinstance(doc.persona_dids, dict)
+
+            # Negative: unregistered DID must NOT resolve
+            assert don_alonso.plc.resolve("did:plc:nonexistent") is None
 
     # TST-E2E-095
     def test_16_well_known_atproto_did(
@@ -209,10 +244,22 @@ class TestATProtocolPDS:
                 f"well-known DID {well_known_did!r} != /v1/did {expected_did!r}"
             )
         else:
-            # Mock mode: verify contract
+            # Mock mode: exercise well_known_atproto_did() production method
             did = don_alonso.did
-            # In mock mode, DID is available immediately
-            assert len(did) > 0
+            well_known = don_alonso.well_known_atproto_did()
+
+            # well_known_atproto_did() must return exact DID (AT Protocol spec)
+            assert well_known == did, (
+                f"well_known_atproto_did() {well_known!r} != .did {did!r}"
+            )
+
+            # DID VALUE must match fixture
+            assert well_known == "did:plc:alonso"
+
+            # PLC resolution must agree
+            doc = don_alonso.plc.resolve(well_known)
+            assert doc is not None, "well-known DID must be PLC-resolvable"
+            assert doc.did == did, "PLC doc DID must match well-known"
 
     # TST-E2E-096
     def test_16_pds_handle_resolution(
@@ -299,14 +346,38 @@ class TestATProtocolPDS:
                 f"{did1!r} vs {did3!r}"
             )
         else:
-            # Mock mode: HomeNode DID is stable
-            did1 = don_alonso.did
-            did2 = don_alonso.did
-            assert did1 == did2
+            # Mock mode: DID stability across multiple access paths
+            did_prop = don_alonso.did
+            did_well_known = don_alonso.well_known_atproto_did()
+            did_doc = don_alonso.plc.resolve(did_prop)
+
+            # All three access paths must return the same DID
+            assert did_prop == did_well_known, (
+                f".did {did_prop!r} != well_known {did_well_known!r}"
+            )
+            assert did_doc is not None, "PLC must resolve the DID"
+            assert did_doc.did == did_prop, (
+                f"PLC doc DID {did_doc.did!r} != .did {did_prop!r}"
+            )
+
+            # VALUE check — not just equality with self
+            assert did_prop == "did:plc:alonso"
+
+            # Negative: a different HomeNode must get a DIFFERENT DID
+            from tests.e2e.actors import HomeNode
+            other = HomeNode(
+                did="did:plc:other",
+                display_name="Other",
+                trust_ring=don_alonso.trust_ring,
+                plc=don_alonso.plc,
+                network=don_alonso.network,
+            )
+            assert other.did != don_alonso.did, "Different nodes must have different DIDs"
 
     # TST-E2E-098
     def test_16_core_logs_pds_configuration(
         self,
+        don_alonso,
         docker_services,
     ) -> None:
         """E2E-16.7 Core startup logs confirm PDS configuration."""
@@ -332,6 +403,23 @@ class TestATProtocolPDS:
                 "Core must log pds_url field"
             )
         else:
-            # Mock mode: verify log message contract
-            expected_msg = "AT Protocol PDS configured"
-            assert "PDS" in expected_msg
+            # Mock mode: verify MockPDS is properly initialized on HomeNode
+            pds = don_alonso.pds
+            assert pds is not None, "HomeNode must have a PDS instance"
+            assert pds.did == don_alonso.did, (
+                f"PDS DID {pds.did!r} != HomeNode DID {don_alonso.did!r}"
+            )
+
+            # PDS records dict must exist and be initially empty or populated
+            assert isinstance(pds.records, dict)
+
+            # PDS tombstones list must exist
+            assert isinstance(pds.tombstones, list)
+
+            # Verify PDS can publish and record (functional check)
+            record_id = pds.publish("app.bsky.feed.post", {"text": "test"})
+            assert record_id.startswith(f"at://{don_alonso.did}/"), (
+                f"Record URI must reference owner DID: {record_id}"
+            )
+            assert record_id in pds.records
+            assert pds.records[record_id] == {"text": "test"}

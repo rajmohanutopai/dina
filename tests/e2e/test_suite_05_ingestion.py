@@ -39,12 +39,13 @@ class TestIngestionPipeline:
         PROMOTIONS, SOCIAL, UPDATES, FORUMS — 10 each, round-robin).
 
         Pass 1: Filter out PROMOTIONS, SOCIAL, UPDATES, FORUMS.
-        Pass 2: Remaining PRIMARY emails are classified and ingested.
+        Pass 2: Remaining PRIMARY emails get full vault records.
 
         Verify:
-        - Skipped emails get thin records (category + sender only).
-        - Ingested PRIMARY emails get full vault records.
-        - No email is lost — every email has either a thin or full record.
+        - Skipped emails get thin records (category + sender only, no body).
+        - Ingested PRIMARY emails get full vault records with body.
+        - No email is lost — thin + full = 50.
+        - FTS retrieval with specific VALUE assertions.
         """
         node = don_alonso
 
@@ -70,8 +71,14 @@ class TestIngestionPipeline:
             else:
                 primary.append(email)
 
-        assert len(primary) == 10, "Exactly 10 PRIMARY emails expected (50 / 5 categories)"
+        assert len(primary) == 10, "Exactly 10 PRIMARY emails expected"
         assert len(skipped) == 40, "40 non-PRIMARY emails should be skipped"
+
+        # Verify all 4 skip categories are represented
+        skip_cats_found = {e["category"] for e in skipped}
+        assert skip_cats_found == skip_categories, (
+            f"Expected all 4 skip categories, got {skip_cats_found}"
+        )
 
         # ------------------------------------------------------------------
         # Store thin records for skipped emails (category + sender only)
@@ -124,17 +131,62 @@ class TestIngestionPipeline:
         # ------------------------------------------------------------------
         # Verify: no email lost — thin + full = 50
         # ------------------------------------------------------------------
-        total_records = len(thin_ids) + len(full_ids)
-        assert total_records == 50, (
-            f"Every email must have a record: {total_records} != 50"
+        assert len(thin_ids) + len(full_ids) == 50, (
+            "Every email must have a record: thin + full must equal 50"
         )
 
-        # Verify thin records contain only metadata (no body)
-        thin_search = node.vault_query("personal", "email_thin", mode="fts5")
-        for item in thin_search:
-            assert "thin" in item.body_text, (
-                "Thin records must be identifiable as thin"
+        # ------------------------------------------------------------------
+        # Verify thin records: contain metadata, NO body field
+        # ------------------------------------------------------------------
+        persona = node.personas["personal"]
+        for item_id in thin_ids:
+            item = persona.items[item_id]
+            body = json.loads(item.body_text)
+            assert body["record_type"] == "thin", (
+                f"Thin record {item_id} must have record_type='thin'"
             )
+            assert body["category"] in skip_categories, (
+                f"Thin record category {body['category']} not in skip set"
+            )
+            assert "body" not in body, (
+                f"Thin record {item_id} must NOT contain email body"
+            )
+            assert "email_id" in body
+            assert "sender" in body
+
+        # ------------------------------------------------------------------
+        # Verify full records: contain body field with content
+        # ------------------------------------------------------------------
+        for item_id in full_ids:
+            item = persona.items[item_id]
+            body = json.loads(item.body_text)
+            assert body["record_type"] == "full", (
+                f"Full record {item_id} must have record_type='full'"
+            )
+            assert body["category"] == "PRIMARY"
+            assert "body" in body, (
+                f"Full record {item_id} must contain email body"
+            )
+            assert "subject" in body
+
+        # ------------------------------------------------------------------
+        # FTS retrieval: thin and full records findable
+        # ------------------------------------------------------------------
+        thin_search = node.vault_query("personal", "email_thin", mode="fts5")
+        assert len(thin_search) == 40, (
+            f"Expected 40 thin records via FTS, got {len(thin_search)}"
+        )
+
+        full_search = node.vault_query("personal", "email_full", mode="fts5")
+        assert len(full_search) == 10, (
+            f"Expected 10 full records via FTS, got {len(full_search)}"
+        )
+
+        # ------------------------------------------------------------------
+        # Negative control: non-existent query returns empty
+        # ------------------------------------------------------------------
+        empty = node.vault_query("personal", "xyzzy_nonexistent_email")
+        assert len(empty) == 0
 
     # TST-E2E-024
     def test_telegram_ingestion(
@@ -143,13 +195,13 @@ class TestIngestionPipeline:
         """E2E-5.2  Telegram Ingestion.
 
         Simulate a Telegram message arriving.  Verify it is stored in the
-        vault, the brain is notified, and it is classified as Priority 3
-        (engagement tier — unsolicited message from a contact).
+        vault with correct field values, classified as Priority 3
+        (engagement tier), and retrievable via FTS.
         """
         node = don_alonso
 
         # ------------------------------------------------------------------
-        # Simulate incoming Telegram message
+        # 1. Simulate incoming Telegram message
         # ------------------------------------------------------------------
         telegram_msg = {
             "platform": "telegram",
@@ -159,7 +211,7 @@ class TestIngestionPipeline:
             "timestamp": node._now(),
         }
 
-        # Store in vault (use space-separated summary for FTS indexing)
+        # Store in vault
         item_id = node.vault_store(
             "social",
             f"telegram message from {telegram_msg['sender']}",
@@ -169,29 +221,67 @@ class TestIngestionPipeline:
         )
         assert item_id.startswith("vi_"), "Vault item ID must be generated"
 
-        # Notify brain (classify the event)
+        # ------------------------------------------------------------------
+        # 2. Verify stored item has correct field VALUES
+        # ------------------------------------------------------------------
+        stored = node.personas["social"].items[item_id]
+        assert stored.persona == "social"
+        body = json.loads(stored.body_text)
+        assert body["platform"] == "telegram"
+        assert body["sender"] == "friend_42"
+        assert body["chat_id"] == "chat_abc"
+        assert "SpaceX" in body["text"]
+
+        # ------------------------------------------------------------------
+        # 3. Silence classification: engagement tier
+        # ------------------------------------------------------------------
         tier = node._classify_silence("telegram_message", telegram_msg)
         assert tier == SilenceTier.TIER_3_ENGAGEMENT, (
-            "Unsolicited Telegram message must be classified as Priority 3 (engagement)"
+            "Unsolicited Telegram message must be Priority 3 (engagement)"
         )
 
-        # Queue for briefing (engagement tier = save for briefing, do NOT interrupt)
-        node.briefing_queue.append({
-            "type": "telegram_message",
-            "source": "telegram",
-            "sender": telegram_msg["sender"],
-            "preview": telegram_msg["text"][:80],
-            "tier": tier.value,
-        })
+        # Positive control: fiduciary event is TIER_1
+        fiduciary_tier = node._classify_silence("security_alert", {})
+        assert fiduciary_tier == SilenceTier.TIER_1_FIDUCIARY, (
+            "Security alert must be Priority 1 (fiduciary)"
+        )
 
-        assert len(node.briefing_queue) >= 1
-        queued = node.briefing_queue[-1]
-        assert queued["tier"] == SilenceTier.TIER_3_ENGAGEMENT.value
-        assert queued["source"] == "telegram"
+        # Positive control: user-requested event is TIER_2
+        solicited_tier = node._classify_silence("query", {"user_requested": True})
+        assert solicited_tier == SilenceTier.TIER_2_SOLICITED, (
+            "User-requested event must be Priority 2 (solicited)"
+        )
 
-        # Verify retrievable from vault
+        # ------------------------------------------------------------------
+        # 4. FTS retrieval with VALUE assertions
+        # ------------------------------------------------------------------
         results = node.vault_query("social", "telegram", mode="fts5")
-        assert len(results) >= 1, "Telegram message must be retrievable from vault"
+        assert len(results) >= 1, "Telegram message must be retrievable via FTS"
+        found = [r for r in results if r.item_id == item_id]
+        assert len(found) == 1, (
+            f"Stored telegram item {item_id} must be findable by FTS"
+        )
+        assert found[0].persona == "social"
+
+        # SpaceX keyword search
+        spacex_results = node.vault_query("social", "SpaceX", mode="fts5")
+        assert len(spacex_results) >= 1, (
+            "Message containing 'SpaceX' must be findable by FTS"
+        )
+
+        # ------------------------------------------------------------------
+        # 5. Persona isolation: not visible from personal
+        # ------------------------------------------------------------------
+        cross_results = node.vault_query("personal", "telegram")
+        assert len(cross_results) == 0, (
+            "Telegram message stored in 'social' must NOT be visible from 'personal'"
+        )
+
+        # ------------------------------------------------------------------
+        # 6. Negative control: non-existent query
+        # ------------------------------------------------------------------
+        empty = node.vault_query("social", "xyzzy_nonexistent_content")
+        assert len(empty) == 0
 
     # TST-E2E-025
     def test_calendar_sync(
@@ -199,12 +289,20 @@ class TestIngestionPipeline:
     ) -> None:
         """E2E-5.3  Calendar Sync.
 
-        Sync events from OpenClaw calendar.  Verify events are stored in
-        the vault with all fields (title, start, end, attendees, location).
-        Then ask 'Am I free at 4 PM?' and verify the answer comes from
-        the local vault (not from a cloud API call).
+        Requirement: calendar events synced from OpenClaw must be stored
+        in the vault with all fields preserved and retrievable via FTS.
+        Events must be stored in the correct persona (professional) and
+        must NOT be visible from other personas (isolation).
+
+        Verify:
+        - All events synced and stored with correct field values
+        - FTS retrieval finds events by title keywords
+        - Specific field values match what was synced (not just key presence)
+        - Events are persona-isolated (professional only)
+        - Negative: non-existent event query returns empty
         """
         node = don_alonso
+        import json
 
         # ------------------------------------------------------------------
         # Sync calendar events via OpenClaw
@@ -217,7 +315,7 @@ class TestIngestionPipeline:
         events = cal_response["events"]
         assert len(events) >= 2, "OpenClaw calendar must have at least 2 events"
 
-        # Store each event in the vault (space-separated summary for FTS)
+        # Store each event in the vault
         stored_ids: list[str] = []
         for event in events:
             item_id = node.vault_store(
@@ -239,34 +337,68 @@ class TestIngestionPipeline:
         assert len(stored_ids) == len(events)
 
         # ------------------------------------------------------------------
-        # Verify all fields are stored
+        # Verify specific field VALUES match what was synced
         # ------------------------------------------------------------------
-        search_results = node.vault_query("professional", "calendar", mode="fts5")
-        assert len(search_results) >= 2
+        search_results = node.vault_query(
+            "professional", "calendar", mode="fts5"
+        )
+        assert len(search_results) >= 2, (
+            "FTS must return at least 2 calendar events"
+        )
+
+        # Parse stored body and verify field values
+        found_titles: set[str] = set()
         for item in search_results:
-            assert "title" in item.body_text, "Calendar item must contain 'title'"
-            assert "start" in item.body_text, "Calendar item must contain 'start'"
-            assert "end" in item.body_text, "Calendar item must contain 'end'"
+            body = json.loads(item.body_text)
+            assert "event_id" in body, "Stored event must have event_id"
+            assert "title" in body, "Stored event must have title"
+            assert "start" in body, "Stored event must have start"
+            assert "end" in body, "Stored event must have end"
+            assert body["start"] < body["end"], (
+                "Event start must precede end"
+            )
+            found_titles.add(body["title"])
 
-        # ------------------------------------------------------------------
-        # Ask "Am I free at 4 PM?" — answer from local vault
-        # ------------------------------------------------------------------
-        # The first event (Meeting with Sancho) is ~4 hours from now.
-        # Set up LLM to answer based on vault context.
-        node.set_llm_response(
-            "free at 4",
-            "You have 'Meeting with Sancho' scheduled around that time. "
-            "You are not free at 4 PM.",
+        # Verify specific known events from OpenClaw fixture
+        assert "Meeting with Sancho" in found_titles, (
+            "Must find 'Meeting with Sancho' event from OpenClaw calendar"
+        )
+        assert "License renewal deadline" in found_titles, (
+            "Must find 'License renewal deadline' event from OpenClaw calendar"
         )
 
-        # Query vault for calendar context
-        cal_items = node.vault_query("professional", "calendar", mode="fts5")
-        context = [item.body_text for item in cal_items]
-        answer = node.llm_reason("Am I free at 4 PM?", context=context)
-
-        assert "meeting" in answer.lower() or "not free" in answer.lower(), (
-            "Answer must reference the stored calendar event"
+        # ------------------------------------------------------------------
+        # Verify FTS works by title keywords
+        # ------------------------------------------------------------------
+        sancho_results = node.vault_query(
+            "professional", "Sancho", mode="fts5"
         )
+        assert len(sancho_results) >= 1, (
+            "FTS for 'Sancho' must find the meeting event"
+        )
+        sancho_body = json.loads(sancho_results[0].body_text)
+        assert sancho_body["title"] == "Meeting with Sancho"
+
+        # ------------------------------------------------------------------
+        # Negative: non-existent event returns empty
+        # ------------------------------------------------------------------
+        no_results = node.vault_query(
+            "professional", "xyznonexistentevent99", mode="fts5"
+        )
+        assert len(no_results) == 0, (
+            "FTS for a non-existent term must return empty"
+        )
+
+        # ------------------------------------------------------------------
+        # Persona isolation: calendar NOT visible from personal
+        # ------------------------------------------------------------------
+        personal_cal = node.vault_query("personal", "calendar", mode="fts5")
+        professional_titles = found_titles
+        for item in personal_cal:
+            body = json.loads(item.body_text) if item.body_text.startswith("{") else {}
+            assert body.get("title") not in professional_titles, (
+                "Calendar events must NOT leak from professional to personal persona"
+            )
 
     # TST-E2E-026
     def test_cursor_continuity(

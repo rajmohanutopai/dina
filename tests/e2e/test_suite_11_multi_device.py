@@ -45,6 +45,13 @@ class TestMultiDeviceSync:
         Phone and laptop are both connected. A D2D message arrives from
         Sancho. Both devices receive identical whisper notifications via
         ws_messages.
+
+        Verify:
+        - Both connected devices receive exactly 1 whisper each
+        - Whisper type is "whisper" on both
+        - Whisper text is identical on both devices
+        - Whisper contains all context elements: ETA, context_flags, tea
+        - Each device gets exactly 1 message (not duplicated)
         """
         node = don_alonso
 
@@ -66,27 +73,42 @@ class TestMultiDeviceSync:
             node.did,
             "dina/social/arrival",
             {
+                "type": "dina/social/arrival",
                 "eta_minutes": 15,
                 "context_flags": ["mother_ill"],
                 "tea_preference": "strong chai",
             },
         )
 
-        # Both devices should have received the whisper notification
-        assert len(phone.ws_messages) >= 1, "Phone did not receive ws_message"
-        assert len(laptop.ws_messages) >= 1, "Laptop did not receive ws_message"
+        # Both devices should have received exactly 1 whisper each
+        assert len(phone.ws_messages) == 1, (
+            f"Phone must receive exactly 1 ws_message, got {len(phone.ws_messages)}"
+        )
+        assert len(laptop.ws_messages) == 1, (
+            f"Laptop must receive exactly 1 ws_message, got {len(laptop.ws_messages)}"
+        )
 
         # The whisper content should be identical on both devices
-        phone_whisper = phone.ws_messages[-1]
-        laptop_whisper = laptop.ws_messages[-1]
+        phone_whisper = phone.ws_messages[0]
+        laptop_whisper = laptop.ws_messages[0]
 
         assert phone_whisper["type"] == "whisper"
         assert laptop_whisper["type"] == "whisper"
-        assert phone_whisper["payload"]["text"] == laptop_whisper["payload"]["text"]
+        assert phone_whisper["payload"]["text"] == laptop_whisper["payload"]["text"], (
+            "Whisper text must be identical on both devices"
+        )
 
-        # The whisper should contain contextual information
+        # The whisper must contain ALL three context elements
         whisper_text = phone_whisper["payload"]["text"]
-        assert "15" in whisper_text or "minutes" in whisper_text
+        assert "15" in whisper_text, (
+            "Whisper must contain ETA (15 minutes)"
+        )
+        assert "mother" in whisper_text.lower() or "ill" in whisper_text.lower(), (
+            "Whisper must contain context_flags content (mother_ill)"
+        )
+        assert "chai" in whisper_text.lower(), (
+            "Whisper must contain tea_preference (strong chai)"
+        )
 
 # TST-E2E-054
     def test_offline_sync_reconciliation(
@@ -95,8 +117,14 @@ class TestMultiDeviceSync:
     ) -> None:
         """E2E-11.2 Offline Sync Reconciliation.
 
-        Phone goes offline. 10 new vault items arrive. Phone reconnects
-        with last_sync_ts=0. Core sends a delta containing all 10 items.
+        Phone goes offline.  D2D arrival messages arrive (triggering
+        vault enrichment and device push).  Phone reconnects.
+        Verify:
+        - While phone is offline, only laptop receives ws_messages
+        - Phone gets zero ws_messages while disconnected
+        - After reconnect, vault items that arrived during offline period
+          are available and can be synced (delta computation from timestamps)
+        - Items stored while phone was offline have timestamps ≥ disconnect time
         """
         node = fresh_don_alonso
         node.first_run_setup("alonso@example.com", "passphrase123")
@@ -111,68 +139,99 @@ class TestMultiDeviceSync:
         laptop = node.pair_device(code2, DeviceType.RICH_CLIENT)
         assert laptop is not None
 
-        # Phone goes offline
+        # Both connected initially
+        assert phone.connected is True
+        assert laptop.connected is True
+
+        # Clear ws_messages
+        phone.ws_messages.clear()
+        laptop.ws_messages.clear()
+
+        # Phone goes offline — record the disconnect time
+        disconnect_time = time.time()
+        node.set_test_clock(disconnect_time)
         node.disconnect_device(phone.device_id)
         assert phone.connected is False
+        assert laptop.connected is True
 
-        # 10 new items arrive while phone is offline
-        new_item_ids = []
+        # --- Create a sender so we can use real D2D flow ---
+        from tests.e2e.mocks import MockPLCDirectory, MockD2DNetwork, TrustRing
+        sender_plc = node.plc
+        sender_net = node.network
+        sender = HomeNode(
+            did="did:plc:sync_sender",
+            display_name="Sync Sender",
+            trust_ring=TrustRing.RING_2_VERIFIED,
+            plc=sender_plc,
+            network=sender_net,
+        )
+        sender.first_run_setup("sender@example.com", "pass_sender")
+
+        # 10 D2D arrivals while phone is offline
+        # Each arrival triggers _handle_arrival → _push_to_devices
         for i in range(10):
+            node.set_test_clock(disconnect_time + i + 1)
+            sender.send_d2d(
+                to_did=node.did,
+                message_type="dina/social/arrival",
+                payload={
+                    "type": "dina/social/arrival",
+                    "eta_minutes": 10 + i,
+                },
+            )
+
+        # Laptop received notifications (10 arrivals), phone received zero
+        assert len(laptop.ws_messages) == 10, (
+            f"Laptop (connected) must receive all 10 pushes, got {len(laptop.ws_messages)}"
+        )
+        assert len(phone.ws_messages) == 0, (
+            "Phone (disconnected) must receive zero pushes"
+        )
+
+        # All laptop messages are whisper notifications from arrivals
+        for ws_msg in laptop.ws_messages:
+            assert ws_msg["type"] == "whisper", (
+                f"Expected 'whisper' notification, got '{ws_msg['type']}'"
+            )
+
+        # Also store vault items while phone is offline (for delta check)
+        stored_ids = []
+        for i in range(10):
+            node.set_test_clock(disconnect_time + 20 + i)
             item_id = node.vault_store(
                 "consumer", f"offline_item_{i}",
                 {"data": f"arrived_while_offline_{i}"},
             )
-            new_item_ids.append(item_id)
+            stored_ids.append(item_id)
 
-            # Push to connected devices (only laptop receives)
-            node._push_to_devices({
-                "type": "vault_update",
-                "payload": {"item_id": item_id, "persona": "consumer"},
-            })
-
-        # Laptop received all 10 pushes, phone received none
-        laptop_vault_updates = [
-            m for m in laptop.ws_messages if m["type"] == "vault_update"
-        ]
-        phone_vault_updates = [
-            m for m in phone.ws_messages if m["type"] == "vault_update"
-        ]
-        assert len(laptop_vault_updates) == 10
-        assert len(phone_vault_updates) == 0
-
-        # Phone reconnects with last_sync_ts=0 (requesting full delta)
-        phone.last_sync_ts = 0
+        # --- Phone reconnects ---
+        phone.last_sync_ts = disconnect_time
         node.connect_device(phone.device_id)
         assert phone.connected is True
 
-        # Core computes the delta: all items since last_sync_ts=0
+        # Delta computation: items stored since phone disconnected
         persona = node.personas["consumer"]
         delta_items = [
             item for item in persona.items.values()
-            if item.timestamp >= phone.last_sync_ts
+            if item.timestamp >= disconnect_time
         ]
 
-        # Push the delta to the phone
+        # All 10 items stored during offline period are in the delta
+        assert len(delta_items) >= 10, (
+            f"Delta must contain at least 10 items, got {len(delta_items)}"
+        )
+        delta_ids = {item.item_id for item in delta_items}
+        for item_id in stored_ids:
+            assert item_id in delta_ids, (
+                f"Item {item_id} stored while offline must appear in delta"
+            )
+
+        # Verify delta items have correct persona
         for item in delta_items:
-            phone.ws_messages.append({
-                "type": "sync_delta",
-                "payload": {
-                    "item_id": item.item_id,
-                    "persona": item.persona,
-                    "summary": item.summary,
-                },
-            })
+            assert item.persona == "consumer"
 
-        # Phone should now have all 10 items in its sync delta
-        sync_deltas = [
-            m for m in phone.ws_messages if m["type"] == "sync_delta"
-        ]
-        assert len(sync_deltas) >= 10
-
-        # Verify each offline item is present in the delta
-        delta_item_ids = {m["payload"]["item_id"] for m in sync_deltas}
-        for item_id in new_item_ids:
-            assert item_id in delta_item_ids
+        # Negative: items that don't exist in vault are not in delta
+        assert "nonexistent_item" not in delta_ids
 
 # TST-E2E-055
     def test_thin_client_no_local_storage(
@@ -181,51 +240,89 @@ class TestMultiDeviceSync:
     ) -> None:
         """E2E-11.3 Thin Client No Local Storage.
 
-        Pair a thin client (DeviceType.THIN_CLIENT). Verify it has no
-        local_cache. When the node goes down, the thin client cannot
-        query data.
+        Pair both a thin and rich client. Verify the thin client has no
+        local_cache while the rich client CAN have local_cache.
+        When the node goes down, the thin client cannot serve data
+        but the rich client's cache persists.
         """
         node = fresh_don_alonso
         node.first_run_setup("alonso@example.com", "passphrase123")
         node.create_persona("consumer", PersonaType.CONSUMER, "open")
 
-        # Store some data in the vault
-        node.vault_store("consumer", "product_review", {"product": "Widget A"})
+        # Store data in the vault
+        item_id = node.vault_store(
+            "consumer", "product_review", {"product": "Widget A"},
+        )
 
-        # Pair a thin client
-        code = node.generate_pairing_code()
-        thin = node.pair_device(code, DeviceType.THIN_CLIENT)
+        # ------------------------------------------------------------------
+        # 1. Pair BOTH thin and rich clients
+        # ------------------------------------------------------------------
+        code_thin = node.generate_pairing_code()
+        thin = node.pair_device(code_thin, DeviceType.THIN_CLIENT)
         assert thin is not None
         assert thin.device_type == DeviceType.THIN_CLIENT
 
-        # Thin client must have NO local_cache (empty dict)
-        assert thin.local_cache == {}
+        code_rich = node.generate_pairing_code()
+        rich = node.pair_device(code_rich, DeviceType.RICH_CLIENT)
+        assert rich is not None
+        assert rich.device_type == DeviceType.RICH_CLIENT
+
+        # ------------------------------------------------------------------
+        # 2. POSITIVE CONTROL: Rich client CAN have local_cache
+        # ------------------------------------------------------------------
+        item = node.personas["consumer"].items[item_id]
+        rich.local_cache[item_id] = item
+        assert len(rich.local_cache) == 1, (
+            "Rich client must be able to cache vault items locally"
+        )
+        assert rich.local_cache[item_id].persona == "consumer"
+        assert "Widget A" in rich.local_cache[item_id].body_text
+
+        # ------------------------------------------------------------------
+        # 3. Thin client must have NO local_cache (empty dict)
+        # ------------------------------------------------------------------
+        assert thin.local_cache == {}, (
+            "Thin client must never have local cached data"
+        )
 
         # While node is up, queries through the node work
         results = node.vault_query("consumer", "product_review")
-        assert len(results) >= 1
+        assert len(results) == 1
 
-        # Simulate node going down (brain crash)
+        # ------------------------------------------------------------------
+        # 4. Brain crash: thin client is helpless, rich client has cache
+        # ------------------------------------------------------------------
         node.crash_brain()
         assert node.healthz()["brain"] == "crashed"
 
-        # Thin client has no local_cache to fall back on
-        assert len(thin.local_cache) == 0
+        # Thin client has nothing to fall back on
+        assert thin.local_cache == {}
 
-        # Any attempt to process through the brain raises
+        # Rich client still has its cached data
+        assert len(rich.local_cache) == 1, (
+            "Rich client cache must survive brain crash"
+        )
+        assert rich.local_cache[item_id].persona == "consumer"
+
+        # Brain queries fail
         with pytest.raises(RuntimeError, match="Brain has crashed"):
             node._brain_process("query", {"q": "product_review"})
 
-        # Thin client cannot independently serve data
-        assert thin.local_cache == {}
-
-        # Restore the node
+        # ------------------------------------------------------------------
+        # 5. Restore and verify
+        # ------------------------------------------------------------------
         node.restart_brain()
         assert node.healthz()["brain"] == "healthy"
 
-        # After restart, queries work again
+        # Node queries work again
         results = node.vault_query("consumer", "product_review")
-        assert len(results) >= 1
+        assert len(results) == 1
+
+        # Thin client STILL has no cache (it didn't magically get one)
+        assert thin.local_cache == {}
+
+        # Rich client cache is still intact
+        assert len(rich.local_cache) == 1
 
 # TST-E2E-056
     def test_rich_client_offline_operations(

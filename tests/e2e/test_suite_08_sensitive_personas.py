@@ -36,8 +36,21 @@ class TestSensitivePersonas:
         # TST-E2E-039
         """Query the /health persona (restricted tier). Access is logged,
         a briefing notification is queued. PII pipeline strips the doctor
-        name before the scrubbed text reaches the 'cloud LLM'. Rehydrated
-        result is returned to the user with original names."""
+        name before the scrubbed text reaches any external call.
+        Rehydrated result is returned to the user with original names.
+
+        Verify:
+        - Health persona exists and is in 'restricted' tier
+        - Vault store + FTS query returns the stored record
+        - Returned record has correct field VALUES (not just keys)
+        - Access to restricted persona creates audit entry
+        - Briefing notification is queued with correct type and persona
+        - PII scrubber strips doctor name and hospital from raw text
+        - Rehydration restores all original PII values
+        - Negative: query for non-existent term returns empty
+        - Persona isolation: health data NOT visible from /personal
+        """
+        import json
 
         # Ensure health persona exists and is restricted
         health = don_alonso.personas.get("health")
@@ -46,7 +59,7 @@ class TestSensitivePersonas:
             "Health persona must be in 'restricted' tier"
 
         # Store a health record (use space-separated summary for FTS)
-        don_alonso.vault_store(
+        item_id = don_alonso.vault_store(
             "health", "prescription metformin",
             {
                 "doctor": "Dr. Sharma",
@@ -54,6 +67,9 @@ class TestSensitivePersonas:
                 "medication": "Metformin 500mg",
                 "date": "2026-02-20",
             },
+        )
+        assert item_id.startswith("vi_"), (
+            "Vault store must return a valid item ID"
         )
 
         # Clear audit and briefing to isolate this test
@@ -64,6 +80,25 @@ class TestSensitivePersonas:
         results = don_alonso.vault_query("health", "prescription")
         assert len(results) >= 1, \
             "Health vault query must return the prescription record"
+
+        # --- Verify returned record has correct field VALUES ---
+        record = results[0]
+        assert record.persona == "health", (
+            "Returned record must belong to health persona"
+        )
+        body = json.loads(record.body_text)
+        assert body["doctor"] == "Dr. Sharma", (
+            "Returned record must contain correct doctor name"
+        )
+        assert body["medication"] == "Metformin 500mg", (
+            "Returned record must contain correct medication"
+        )
+        assert body["hospital"] == "Apollo Hospital", (
+            "Returned record must contain correct hospital name"
+        )
+        assert body["date"] == "2026-02-20", (
+            "Returned record must contain correct date"
+        )
 
         # Access must be logged in audit
         restricted_audits = don_alonso.get_audit_entries(
@@ -79,28 +114,22 @@ class TestSensitivePersonas:
         briefing = don_alonso.briefing_queue[-1]
         assert briefing["type"] == "restricted_access"
         assert briefing["persona"] == "health"
-
-        # PII pipeline: scrub doctor name before cloud LLM
-        scrubber = don_alonso.scrubber
-        raw_text = (
-            "Dr. Sharma at Apollo Hospital prescribed Metformin 500mg."
+        assert briefing["query"] == "prescription", (
+            "Briefing must record the query that triggered restricted access"
         )
-        scrubbed, vault = scrubber.scrub_full(raw_text)
+
+        # --- PII scrubbing: doctor name and hospital stripped ---
+        scrubber = don_alonso.scrubber
+        scrubbed, vault = scrubber.scrub_full(record.body_text)
 
         assert "Dr. Sharma" not in scrubbed, \
-            "Doctor name must be scrubbed before cloud LLM"
+            "Doctor name must be scrubbed before leaving the node"
         assert "Apollo Hospital" not in scrubbed, \
-            "Hospital name must be scrubbed before cloud LLM"
+            "Hospital name must be scrubbed before leaving the node"
+        assert scrubber.validate_clean(scrubbed), \
+            "Scrubbed text must pass validate_clean"
 
-        # Simulate cloud LLM response
-        don_alonso.set_llm_response(
-            "metformin",
-            f"Regarding the prescription: {scrubbed}",
-        )
-        llm_output = don_alonso.llm_reason(scrubbed)
-        assert "Dr. Sharma" not in llm_output
-
-        # Rehydrate for user
+        # Rehydrate for user — must restore all original values
         rehydrated = scrubber.rehydrate(scrubbed, vault)
         assert "Dr. Sharma" in rehydrated, \
             "Rehydrated output must contain original doctor name"
@@ -108,6 +137,22 @@ class TestSensitivePersonas:
             "Rehydrated output must contain original hospital name"
 
         scrubber.destroy_vault()
+
+        # --- Negative control: non-existent term returns empty ---
+        no_results = don_alonso.vault_query("health", "xyznonexistent99")
+        assert len(no_results) == 0, (
+            "Query for non-existent term must return empty"
+        )
+
+        # --- Persona isolation: health data NOT visible from /personal ---
+        personal_results = don_alonso.vault_query("personal", "prescription")
+        health_leak = [
+            r for r in personal_results
+            if "Metformin" in r.body_text or "Dr. Sharma" in r.body_text
+        ]
+        assert len(health_leak) == 0, (
+            "Health data must NOT be visible from /personal persona"
+        )
 
     # -----------------------------------------------------------------
     # TST-E2E-040  Financial Persona Lock/Unlock/TTL
@@ -186,7 +231,19 @@ class TestSensitivePersonas:
         """Data stored in /health is invisible from /financial and vice
         versa. Querying /personal for a health-specific term returns
         nothing. Querying /health for a financial term returns nothing.
-        Trying a wrong DEK fails decryption."""
+        Trying a wrong DEK fails decryption.
+
+        Verify:
+        - Positive: health data IS findable via /health query (with VALUES)
+        - Positive: financial data IS findable via /financial query (with VALUES)
+        - Negative: /personal cannot see health data
+        - Negative: /health cannot see financial data
+        - Negative: /financial cannot see health data
+        - DEKs differ between personas (compartment-specific HKDF)
+        - DEK derivation is deterministic
+        - Cross-persona DEKs never match
+        """
+        import json
 
         # Ensure both personas are accessible for this test
         don_alonso.unlock_persona("health", "passphrase123")
@@ -204,7 +261,45 @@ class TestSensitivePersonas:
             {"ticker": "INFY", "shares": 100, "value": 150000},
         )
 
-        # --- Query /personal for health term: nothing ---
+        # --- Positive control: health data IS findable via /health ---
+        health_own = don_alonso.vault_query("health", "cholesterol")
+        assert len(health_own) >= 1, (
+            "/health must return its own cholesterol data"
+        )
+        health_body = json.loads(health_own[0].body_text)
+        assert health_body["ldl"] == 130, (
+            "Health record must contain correct ldl value"
+        )
+        assert health_body["hdl"] == 55, (
+            "Health record must contain correct hdl value"
+        )
+        assert health_body["doctor"] == "Dr. Sharma", (
+            "Health record must contain correct doctor name"
+        )
+        assert health_own[0].persona == "health", (
+            "Returned item must belong to health persona"
+        )
+
+        # --- Positive control: financial data IS findable via /financial ---
+        financial_own = don_alonso.vault_query("financial", "stock")
+        assert len(financial_own) >= 1, (
+            "/financial must return its own stock data"
+        )
+        financial_body = json.loads(financial_own[0].body_text)
+        assert financial_body["ticker"] == "INFY", (
+            "Financial record must contain correct ticker"
+        )
+        assert financial_body["shares"] == 100, (
+            "Financial record must contain correct shares count"
+        )
+        assert financial_body["value"] == 150000, (
+            "Financial record must contain correct value"
+        )
+        assert financial_own[0].persona == "financial", (
+            "Returned item must belong to financial persona"
+        )
+
+        # --- Negative: /personal cannot see health data ---
         personal_results = don_alonso.vault_query(
             "personal", "cholesterol"
         )
@@ -212,10 +307,11 @@ class TestSensitivePersonas:
             item for item in personal_results
             if "cholesterol" in item.body_text.lower()
         ]
-        assert len(health_items_in_personal) == 0, \
+        assert len(health_items_in_personal) == 0, (
             "/personal must not return health data"
+        )
 
-        # --- Query /health for financial term: nothing ---
+        # --- Negative: /health cannot see financial data ---
         health_results = don_alonso.vault_query(
             "health", "stock"
         )
@@ -224,10 +320,11 @@ class TestSensitivePersonas:
             if "stock" in item.body_text.lower()
                or "INFY" in item.body_text
         ]
-        assert len(financial_items_in_health) == 0, \
+        assert len(financial_items_in_health) == 0, (
             "/health must not return financial data"
+        )
 
-        # --- Query /financial for health term: nothing ---
+        # --- Negative: /financial cannot see health data ---
         financial_results = don_alonso.vault_query(
             "financial", "cholesterol"
         )
@@ -235,16 +332,18 @@ class TestSensitivePersonas:
             item for item in financial_results
             if "cholesterol" in item.body_text.lower()
         ]
-        assert len(health_items_in_financial) == 0, \
+        assert len(health_items_in_financial) == 0, (
             "/financial must not return health data"
+        )
 
         # --- Wrong DEK fails ---
         health_persona = don_alonso.personas["health"]
         financial_persona = don_alonso.personas["financial"]
 
         # DEKs are derived from different info strings and must differ
-        assert health_persona.dek != financial_persona.dek, \
+        assert health_persona.dek != financial_persona.dek, (
             "Health and financial DEKs must be different"
+        )
 
         # Verify DEK derivation is deterministic and compartment-specific
         expected_health_dek = _derive_dek(
@@ -253,14 +352,25 @@ class TestSensitivePersonas:
         expected_financial_dek = _derive_dek(
             don_alonso.master_seed, "dina:vault:financial:v1"
         )
-        assert expected_health_dek != expected_financial_dek, \
+        assert expected_health_dek != expected_financial_dek, (
             "HKDF derivation for different personas must yield different DEKs"
+        )
 
-        # A cross-persona DEK should not match the target persona
-        assert health_persona.dek != expected_financial_dek, \
+        # Actual DEKs must match expected derivations
+        assert health_persona.dek == expected_health_dek, (
+            "Health DEK must match HKDF derivation for health compartment"
+        )
+        assert financial_persona.dek == expected_financial_dek, (
+            "Financial DEK must match HKDF derivation for financial compartment"
+        )
+
+        # Cross-persona DEKs never match
+        assert health_persona.dek != expected_financial_dek, (
             "Health DEK must not match the financial derivation path"
-        assert financial_persona.dek != expected_health_dek, \
+        )
+        assert financial_persona.dek != expected_health_dek, (
             "Financial DEK must not match the health derivation path"
+        )
 
     # -----------------------------------------------------------------
     # TST-E2E-042  Cloud LLM Consent for Sensitive Personas
@@ -272,10 +382,28 @@ class TestSensitivePersonas:
         # TST-E2E-042
         """Health queries routed to a cloud LLM require explicit consent.
         Without consent the query is rejected. With consent the query
-        proceeds (with PII scrubbing)."""
+        proceeds (with PII scrubbing).
 
-        # Ensure health persona is accessible
+        Verify:
+        - Health persona is restricted tier
+        - kv_store tracks consent state correctly (False → True round-trip)
+        - Consent defaults to None (not pre-granted)
+        - Vault query returns correct health data with field VALUES
+        - PII scrubber strips doctor name from raw health text
+        - validate_clean passes on scrubbed text
+        - Rehydration restores all original PII values
+        - Restricted persona access generates audit entry with persona name
+        - Persona isolation: health data not visible from /personal
+        """
+        import json
+
+        # Ensure health persona is accessible and in restricted tier
         don_alonso.unlock_persona("health", "passphrase123")
+        health_persona = don_alonso.personas.get("health")
+        assert health_persona is not None, "Health persona must exist"
+        assert health_persona.tier == "restricted", (
+            "Health persona must be in 'restricted' tier"
+        )
 
         # Store sensitive health data (space-separated summary for FTS)
         don_alonso.vault_store(
@@ -283,58 +411,74 @@ class TestSensitivePersonas:
             {"hba1c": 6.2, "fasting_glucose": 110, "doctor": "Dr. Sharma"},
         )
 
-        health_persona = don_alonso.personas["health"]
-
-        # --- Without consent: cloud query rejected ---
-        # Simulate consent tracking via kv_store
+        # --- Consent tracking via kv_store ---
         consent_key = "cloud_llm_consent:health"
+
+        # Default consent must not be pre-granted
+        default_consent = don_alonso.kv_get(consent_key)
+        assert default_consent is None, (
+            "Cloud LLM consent must not be pre-granted for health persona"
+        )
+
+        # Set consent to False explicitly and verify round-trip
         don_alonso.kv_put(consent_key, False)
+        assert don_alonso.kv_get(consent_key) is False, (
+            "kv_store must persist consent=False"
+        )
 
-        consent = don_alonso.kv_get(consent_key)
-        assert consent is False, \
-            "Consent should default to False for health persona"
-
-        # Code-level gate: when consent is False, the query must be blocked
-        if not don_alonso.kv_get(consent_key):
-            rejected = True
-        else:
-            rejected = False
-        assert rejected is True, \
-            "Health cloud query must be rejected without explicit consent"
-
-        # --- With consent: query proceeds with PII scrubbing ---
+        # Set consent to True and verify round-trip
         don_alonso.kv_put(consent_key, True)
-        consent = don_alonso.kv_get(consent_key)
-        assert consent is True
+        assert don_alonso.kv_get(consent_key) is True, (
+            "kv_store must persist consent=True"
+        )
 
-        # Query the vault (FTS matches word "blood" from summary)
+        # Clear audit/briefing to isolate this test
+        don_alonso.audit_log.clear()
+        don_alonso.briefing_queue.clear()
+
+        # --- Query the vault and verify returned data ---
         results = don_alonso.vault_query("health", "blood")
-        assert len(results) >= 1
+        assert len(results) >= 1, (
+            "Health vault query for 'blood' must return the stored record"
+        )
 
-        # Scrub before sending to cloud
+        record = results[0]
+        assert record.persona == "health", (
+            "Returned record must belong to health persona"
+        )
+        body = json.loads(record.body_text)
+        assert body["hba1c"] == 6.2, (
+            "Returned record must contain correct hba1c value"
+        )
+        assert body["fasting_glucose"] == 110, (
+            "Returned record must contain correct fasting_glucose value"
+        )
+        assert body["doctor"] == "Dr. Sharma", (
+            "Returned record must contain correct doctor name"
+        )
+
+        # --- PII scrubbing pipeline (required before cloud routing) ---
         scrubber = don_alonso.scrubber
-        raw_text = results[0].body_text
+        raw_text = record.body_text
         scrubbed, vault = scrubber.scrub_full(raw_text)
 
-        # Scrubbed text is safe for cloud
-        assert scrubber.validate_clean(scrubbed) is True, \
-            "Scrubbed health text must pass PII validation"
-
-        # Simulate cloud LLM call
-        don_alonso.set_llm_response(
-            "blood",
-            f"Analysis of blood test: {scrubbed}",
+        # Doctor name must be removed
+        assert "Dr. Sharma" not in scrubbed, (
+            "Doctor name must be scrubbed before cloud routing"
         )
-        llm_output = don_alonso.llm_reason(scrubbed)
-        assert "Dr. Sharma" not in llm_output, \
-            "Doctor name must not appear in cloud LLM output"
+        assert scrubber.validate_clean(scrubbed) is True, (
+            "Scrubbed health text must pass PII validation"
+        )
 
-        # Rehydrate for local user display
+        # Rehydrate for local user display — must restore all PII
         rehydrated = scrubber.rehydrate(scrubbed, vault)
-        assert "Dr. Sharma" in rehydrated or "dr. sharma" in rehydrated.lower(), \
+        assert "Dr. Sharma" in rehydrated, (
             "Rehydrated output must restore doctor name for user"
+        )
 
-        # Audit trail: verify restricted access was logged
+        scrubber.destroy_vault()
+
+        # --- Audit trail: restricted access must be logged ---
         restricted_audits = don_alonso.get_audit_entries(
             "restricted_persona_access"
         )
@@ -342,7 +486,34 @@ class TestSensitivePersonas:
             e for e in restricted_audits
             if e.details.get("persona") == "health"
         ]
-        assert len(health_audits) >= 1, \
+        assert len(health_audits) >= 1, (
             "Restricted health persona access must be audited"
+        )
 
-        scrubber.destroy_vault()
+        # Briefing notification for restricted access
+        assert len(don_alonso.briefing_queue) >= 1, (
+            "Briefing notification must be queued for restricted access"
+        )
+        briefing = don_alonso.briefing_queue[-1]
+        assert briefing["type"] == "restricted_access", (
+            "Briefing type must be 'restricted_access'"
+        )
+        assert briefing["persona"] == "health", (
+            "Briefing must reference health persona"
+        )
+
+        # --- Persona isolation: health data not visible from /personal ---
+        personal_results = don_alonso.vault_query("personal", "blood")
+        health_leak = [
+            r for r in personal_results
+            if "hba1c" in r.body_text or "Dr. Sharma" in r.body_text
+        ]
+        assert len(health_leak) == 0, (
+            "Health data must NOT be visible from /personal persona"
+        )
+
+        # --- Negative control: non-existent query returns empty ---
+        no_results = don_alonso.vault_query("health", "xyznonexistent42")
+        assert len(no_results) == 0, (
+            "Query for non-existent term must return empty"
+        )

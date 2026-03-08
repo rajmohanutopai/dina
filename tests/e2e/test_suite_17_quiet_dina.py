@@ -43,8 +43,12 @@ class TestQuietDina:
         assert len(device_list) >= 1, "Don Alonso must have at least 1 device"
         device = device_list[0]
         device.ws_messages.clear()
+        node.notifications.clear()
+        node.briefing_queue.clear()
+        node.dnd_active = False
 
         # -- Tier 1: Fiduciary -- must interrupt immediately ---------------
+        ws_before_t1 = len(device.ws_messages)
         tier1_result = node._brain_process(
             "security_alert",
             {"fiduciary": True, "text": "Suspicious login from unknown IP"},
@@ -57,7 +61,8 @@ class TestQuietDina:
         )
         assert tier1_result.get("tier") == SilenceTier.TIER_1_FIDUCIARY.value
 
-        # -- Tier 2: Solicited -- notification delivered -------------------
+        # -- Tier 2: Solicited -- notification delivered (DND off) ---------
+        ws_before_t2 = len(device.ws_messages)
         tier2_result = node._brain_process(
             "dina/social/arrival",
             {
@@ -74,42 +79,74 @@ class TestQuietDina:
         assert tier2_class == SilenceTier.TIER_2_SOLICITED, (
             "Social arrival event must be Tier 2"
         )
-        # Tier 2 events should be pushed to devices (not queued for briefing)
+        # Tier 2 events must be pushed to devices (not queued)
         assert tier2_result.get("status") == "ok"
-        assert len(node.notifications) >= 1
-
-        # -- Tier 3: Engagement -- queued, not pushed ----------------------
-        # Enable DND so Tier 3 events are queued in briefing_queue
-        node.dnd_active = True
-
-        notifications_before = len(device.ws_messages)
-        briefing_before = len(node.briefing_queue)
-
-        tier3_result = node._brain_process(
-            "dina/social/arrival",
-            {
-                "eta_minutes": 30,
-                "text": "Newsletter digest available",
-            },
-            from_did="did:plc:sancho",
+        assert len(node.notifications) == 1, (
+            "Exactly 1 notification after 1 solicited event"
         )
+        # Device must have received the whisper push
+        assert len(device.ws_messages) > ws_before_t2, (
+            "Tier 2 must push ws_message to device when DND off"
+        )
+        tier2_whisper = device.ws_messages[-1]
+        assert "10" in tier2_whisper["payload"]["text"], (
+            "Tier 2 whisper must contain ETA"
+        )
+
+        # -- Tier 3: Classification verified directly ----------------------
         tier3_class = node._classify_silence(
             "content_suggestion",
             {"text": "Newsletter digest available"},
         )
         assert tier3_class == SilenceTier.TIER_3_ENGAGEMENT, (
-            "Content suggestion without fiduciary/user_requested must be Tier 3"
+            "content_suggestion without fiduciary/user_requested must be Tier 3"
         )
 
-        # The event should be queued in briefing, not pushed to device
-        assert tier3_result.get("status") == "queued_for_briefing"
-        assert len(node.briefing_queue) > briefing_before, (
-            "Tier 3 event must be added to the briefing queue"
+        # -- DND queuing: non-fiduciary arrivals queued during DND ---------
+        # Note: "dina/social/arrival" is classified as TIER_2 (prefix match),
+        # but DND queues ALL non-fiduciary arrivals, proving the DND gate.
+        node.dnd_active = True
+        ws_before_dnd = len(device.ws_messages)
+        briefing_before = len(node.briefing_queue)
+
+        dnd_result = node._brain_process(
+            "dina/social/arrival",
+            {"eta_minutes": 30, "text": "Newsletter digest available"},
+            from_did="did:plc:sancho",
+        )
+        assert dnd_result["status"] == "queued_for_briefing", (
+            "Non-fiduciary arrivals must be queued during DND"
+        )
+        assert len(node.briefing_queue) == briefing_before + 1, (
+            "Exactly 1 new item in briefing queue"
+        )
+        # No new ws_message pushed during DND
+        assert len(device.ws_messages) == ws_before_dnd, (
+            "No device push during DND for non-fiduciary events"
         )
 
-        # No new ws_message should have been pushed for the Tier 3 event
-        # during DND (the arrival handler queues instead of pushing)
-        assert tier3_result["status"] == "queued_for_briefing"
+        # Queued item must contain the arrival content
+        queued = node.briefing_queue[-1]
+        assert queued["type"] == "whisper"
+        assert "30" in queued["payload"]["text"], (
+            "Queued briefing item must contain ETA"
+        )
+
+        # -- Fiduciary BYPASSES DND ----------------------------------------
+        ws_before_fiduciary = len(device.ws_messages)
+        fiduciary_dnd_result = node._brain_process(
+            "security_alert",
+            {"fiduciary": True, "text": "Account compromised"},
+        )
+        assert fiduciary_dnd_result.get("tier") == SilenceTier.TIER_1_FIDUCIARY.value, (
+            "Fiduciary events must NOT be queued even during DND"
+        )
+        # Fiduciary must not be in briefing queue
+        assert len(node.briefing_queue) == briefing_before + 1, (
+            "Fiduciary event must not be added to briefing queue"
+        )
+
+        node.dnd_active = False
 
 # TST-E2E-100
     def test_daily_briefing_summarizes_queued(
@@ -118,55 +155,67 @@ class TestQuietDina:
     ) -> None:
         """E2E-17.2 Daily briefing summarizes all queued Tier 3 items.
 
-        Queue multiple Tier 3 items into the briefing queue, then drain
-        the briefing and verify it contains all items exactly once.
+        Queue multiple items via real _brain_process during DND, then
+        drain the briefing and verify it contains all items exactly once.
         """
         node = don_alonso
         node.dnd_active = True
+        node.briefing_queue.clear()
 
-        # Queue 5 Tier 3 engagement notifications
-        engagement_items = []
+        # Queue 5 arrival events through REAL _brain_process during DND.
+        # DND queues non-fiduciary arrivals in briefing_queue.
         for i in range(5):
-            notification = {
-                "type": "whisper",
-                "payload": {
-                    "text": f"Engagement item {i}: product deal #{i}",
-                    "trigger": f"feed:item_{i}",
-                    "tier": SilenceTier.TIER_3_ENGAGEMENT.value,
-                },
-            }
-            node.briefing_queue.append(notification)
-            engagement_items.append(notification)
+            result = node._brain_process(
+                "dina/social/arrival",
+                {"eta_minutes": (i + 1) * 5, "text": f"Visitor {i} arriving"},
+                from_did=f"did:plc:visitor_{i}",
+            )
+            assert result["status"] == "queued_for_briefing", (
+                f"Event {i} must be queued during DND"
+            )
 
-        assert len(node.briefing_queue) >= 5
+        # All 5 must be in the briefing queue
+        assert len(node.briefing_queue) == 5, (
+            f"Expected exactly 5 queued items, got {len(node.briefing_queue)}"
+        )
+
+        # Each queued item must have correct structure and unique content
+        for i, item in enumerate(node.briefing_queue):
+            assert item["type"] == "whisper"
+            assert "tier" in item["payload"]
+            assert item["payload"]["tier"] == SilenceTier.TIER_2_SOLICITED.value
+
+        # Verify unique ETA values appear (no duplicate events)
+        eta_values = set()
+        for item in node.briefing_queue:
+            text = item["payload"]["text"]
+            for eta in [5, 10, 15, 20, 25]:
+                if str(eta) in text:
+                    eta_values.add(eta)
+        assert len(eta_values) == 5, (
+            f"Expected 5 unique ETAs in briefing, got {eta_values}"
+        )
 
         # Drain the briefing queue (simulates daily briefing generation)
         briefing_snapshot = list(node.briefing_queue)
         node.briefing_queue.clear()
+        assert len(node.briefing_queue) == 0, "Queue must be empty after drain"
 
-        # Verify all 5 items appear in the briefing exactly once
-        briefing_texts = [
-            item["payload"]["text"]
-            for item in briefing_snapshot
-            if item.get("type") == "whisper"
-            and item["payload"].get("tier") == SilenceTier.TIER_3_ENGAGEMENT.value
-        ]
+        # No duplicates in drained briefing
+        briefing_texts = [item["payload"]["text"] for item in briefing_snapshot]
+        assert len(briefing_texts) == len(set(briefing_texts)), (
+            "Briefing must contain no duplicate items"
+        )
 
+        # Each visitor's arrival text must be present
         for i in range(5):
-            expected_text = f"Engagement item {i}: product deal #{i}"
-            count = briefing_texts.count(expected_text)
-            assert count == 1, (
-                f"Expected exactly 1 occurrence of engagement item {i} "
-                f"in briefing, found {count}"
+            found = any(
+                f"did:plc:visitor_{i}" in text or f"{(i+1)*5}" in text
+                for text in briefing_texts
             )
+            assert found, f"Visitor {i} not found in briefing"
 
-        # Queue is now empty after drain
-        assert len(node.briefing_queue) == 0
-
-        # Verify LLM can produce a summary from the briefing items
-        context = [item["payload"]["text"] for item in briefing_snapshot]
-        summary = node.llm_reason("Summarize today's briefing", context=context)
-        assert len(summary) > 0, "Briefing summary must not be empty"
+        node.dnd_active = False
 
 # TST-E2E-101
     def test_briefing_regenerates_after_crash(
@@ -175,12 +224,13 @@ class TestQuietDina:
     ) -> None:
         """E2E-17.3 Briefing regenerates from source after brain crash.
 
-        Queue Tier 3 items, simulate a brain crash (clear in-memory
-        briefing state), rebuild the briefing from the vault source
-        records, and verify no duplicates.
+        Store engagement events in vault, queue via DND arrival flow,
+        crash the brain, rebuild from vault source-of-truth, verify
+        no data loss and no duplicates.
         """
         node = don_alonso
         node.dnd_active = True
+        node.briefing_queue.clear()
 
         # Store engagement events in the vault as source-of-truth
         source_item_ids = []
@@ -198,18 +248,29 @@ class TestQuietDina:
             )
             source_item_ids.append(item_id)
 
-            # Also queue in briefing_queue (in-memory)
-            node.briefing_queue.append({
-                "type": "whisper",
-                "payload": {
-                    "text": f"Queued event {i}: daily tip #{i}",
-                    "tier": SilenceTier.TIER_3_ENGAGEMENT.value,
-                    "source_item_id": item_id,
-                },
-            })
-
-        assert len(node.briefing_queue) >= 4
         assert len(source_item_ids) == 4
+
+        # Also queue arrivals via real _brain_process during DND
+        for i in range(4):
+            result = node._brain_process(
+                "dina/social/arrival",
+                {"eta_minutes": (i + 1) * 10, "text": f"daily tip #{i}"},
+                from_did=f"did:plc:feed_{i}",
+            )
+            assert result["status"] == "queued_for_briefing"
+
+        assert len(node.briefing_queue) == 4
+
+        # Pre-crash positive control: vault_query returns stored items
+        pre_crash_results = node.vault_query("personal", "daily")
+        pre_crash_notifications = [
+            item for item in pre_crash_results
+            if item.item_type == "notification"
+            and item.source == "engagement_feed"
+        ]
+        assert len(pre_crash_notifications) == 4, (
+            f"Pre-crash: expected 4 notifications, got {len(pre_crash_notifications)}"
+        )
 
         # Simulate brain crash: clear in-memory briefing state
         node.crash_brain()
@@ -222,9 +283,7 @@ class TestQuietDina:
 
         # Rebuild briefing from vault (source-of-truth persists the crash).
         # Query for "daily" — a standalone FTS token present in every
-        # notification body ("Queued event N: daily tip #N").  The key
-        # "engagement_event_N" is a single underscore-joined token, so
-        # querying "engagement_event" would not match any FTS word.
+        # notification body ("Queued event N: daily tip #N").
         rebuilt_items = node.vault_query("personal", "daily")
 
         # Filter to only the notification-type items from this test
@@ -234,25 +293,32 @@ class TestQuietDina:
             and item.source == "engagement_feed"
         ]
 
-        # All 4 source items must be recoverable
-        assert len(rebuilt_notifications) >= 4, (
-            f"Expected at least 4 engagement events after rebuild, "
+        # All 4 source items must be recoverable (exact count)
+        assert len(rebuilt_notifications) == 4, (
+            f"Expected exactly 4 engagement events after rebuild, "
             f"got {len(rebuilt_notifications)}"
         )
 
-        # Re-populate the briefing queue from vault
-        seen_ids: set[str] = set()
+        # Verify VALUE assertions on rebuilt items
         for item in rebuilt_notifications:
-            if item.item_id not in seen_ids:
-                seen_ids.add(item.item_id)
-                node.briefing_queue.append({
-                    "type": "whisper",
-                    "payload": {
-                        "text": item.body_text,
-                        "tier": SilenceTier.TIER_3_ENGAGEMENT.value,
-                        "source_item_id": item.item_id,
-                    },
-                })
+            assert item.persona == "personal"
+            assert "daily tip" in item.body_text, (
+                f"Rebuilt item must contain 'daily tip': {item.body_text}"
+            )
+            assert item.item_id in source_item_ids, (
+                f"Rebuilt item {item.item_id} not in original source IDs"
+            )
+
+        # Re-populate the briefing queue from vault
+        for item in rebuilt_notifications:
+            node.briefing_queue.append({
+                "type": "whisper",
+                "payload": {
+                    "text": item.body_text,
+                    "tier": SilenceTier.TIER_3_ENGAGEMENT.value,
+                    "source_item_id": item.item_id,
+                },
+            })
 
         # No duplicates in rebuilt briefing
         rebuilt_source_ids = [
@@ -262,9 +328,16 @@ class TestQuietDina:
         assert len(rebuilt_source_ids) == len(set(rebuilt_source_ids)), (
             "Rebuilt briefing queue must contain no duplicate source items"
         )
+        assert len(rebuilt_source_ids) == 4
 
         # All original source items are present
         for sid in source_item_ids:
             assert sid in rebuilt_source_ids, (
                 f"Source item {sid} missing from rebuilt briefing"
             )
+
+        # Negative control: non-existent query returns empty
+        empty = node.vault_query("personal", "nonexistent_xyz_briefing")
+        assert len(empty) == 0
+
+        node.dnd_active = False
