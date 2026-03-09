@@ -26,6 +26,15 @@ func (h *AdminHandler) HandleAdmin(w http.ResponseWriter, r *http.Request) {
 			req.URL.Scheme = target.Scheme
 			req.URL.Host = target.Host
 			req.Host = target.Host
+			// Forward the original client protocol so Brain can set
+			// Secure cookie flag correctly behind the reverse proxy.
+			if req.Header.Get("X-Forwarded-Proto") == "" {
+				if req.TLS != nil {
+					req.Header.Set("X-Forwarded-Proto", "https")
+				} else {
+					req.Header.Set("X-Forwarded-Proto", "http")
+				}
+			}
 		},
 	}
 

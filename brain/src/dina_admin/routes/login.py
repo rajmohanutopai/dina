@@ -167,7 +167,11 @@ async def login(raw_request: Request, body: LoginRequest) -> JSONResponse:
     _sessions[session_id] = {"created": now, "csrf_token": csrf_token}
 
     # --- LOW-02: Secure flag matches actual transport layer ---
-    is_https = raw_request.url.scheme == "https"
+    # Brain sits behind Core's reverse proxy, so request.url.scheme is
+    # usually "http" (internal hop).  Use X-Forwarded-Proto from the proxy
+    # to detect the real client-facing transport.
+    forwarded_proto = raw_request.headers.get("x-forwarded-proto", "").lower()
+    is_https = forwarded_proto == "https" or raw_request.url.scheme == "https"
     if not is_https:
         log.warning("admin.cookies.insecure", extra={"detail": "Secure cookie flag disabled — HTTP request"})
 

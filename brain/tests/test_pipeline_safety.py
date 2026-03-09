@@ -47,7 +47,7 @@ def guardian():
     llm_router.route.return_value = {"content": "test", "model": "test"}
 
     scrubber = MagicMock()
-    scrubber.scrub.return_value = ("scrubbed", [])
+    scrubber.scrub.side_effect = lambda text: (text, [])
     scrubber.detect.return_value = []
 
     entity_vault = EntityVaultService(scrubber, core)

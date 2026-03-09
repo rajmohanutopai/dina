@@ -56,7 +56,7 @@ def guardian():
     core.pii_scrub.return_value = {"scrubbed": "text", "entities": []}
 
     scrubber = MagicMock()
-    scrubber.scrub.return_value = ("scrubbed text", [])
+    scrubber.scrub.side_effect = lambda text: (text, [])
 
     llm_router = AsyncMock()
     llm_router.route.return_value = {"content": "Test response", "model": "test"}
@@ -968,8 +968,14 @@ async def test_guardian_2_3_2_12_outcome_anonymization(guardian) -> None:
     """SS2.3.2.12: Anonymized outcome does not contain user DID or names.
 
     The engagement event for outcome should not contain PII in the body.
-    Process the event through the guardian and verify PII scrubbing was invoked.
+    PII scrubbing happens at briefing generation time (not at classification).
     """
+    # Override the scrubber to simulate real PII detection and removal.
+    guardian._scrubber.scrub.side_effect = lambda text: (
+        text.replace("John Smith", "[PERSON_1]").replace("did:plc:abc123", "[DID_1]"),
+        [{"type": "PERSON", "value": "John Smith", "token": "[PERSON_1]"}],
+    )
+
     # Body with PII that should be scrubbed before outcome storage
     event = make_engagement_event(
         body="Product satisfaction from John Smith (did:plc:abc123): 4/5 stars",
@@ -977,10 +983,18 @@ async def test_guardian_2_3_2_12_outcome_anonymization(guardian) -> None:
     result = await guardian.process_event(event)
     assert result["action"] == "save_for_briefing"
 
-    # Engagement events return early (save_for_briefing) — PII scrubbing
-    # happens when the briefing is assembled, not at classification time.
-    # Verify the scrubber is wired to the guardian for that future step.
-    assert hasattr(guardian, '_scrubber'), "Guardian must have scrubber for anonymization"
+    # Generate briefing — this is where PII scrubbing actually happens.
+    briefing = await guardian.generate_briefing()
+    assert briefing["count"] >= 1
+
+    # Verify the scrubber was called on the body text.
+    guardian._scrubber.scrub.assert_called()
+
+    # Verify the briefing items have scrubbed bodies (not raw PII).
+    for item in briefing["items"]:
+        body = item.get("body", "")
+        assert "John Smith" not in body, "Name PII must be scrubbed from briefing"
+        assert "did:plc:abc123" not in body, "DID PII must be scrubbed from briefing"
 
     # Counter-proof: PII-free body should still be classified correctly
     clean_event = make_engagement_event(

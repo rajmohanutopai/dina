@@ -547,10 +547,21 @@ class GuardianLoop:
         if not self._briefing_items:
             return {"items": [], "fiduciary_recap": [], "count": 0}
 
+        # Scrub PII from engagement items before inclusion in briefing.
+        # Outcome data must never contain user DIDs or personal names.
+        scrubbed_items: list[dict] = []
+        for item in self._briefing_items:
+            scrubbed = dict(item)
+            body = scrubbed.get("body", "")
+            if body:
+                scrubbed_text, _entities = self._scrubber.scrub(body)
+                scrubbed["body"] = scrubbed_text
+            scrubbed_items.append(scrubbed)
+
         # Deduplicate by body text.
         seen_bodies: set[str] = set()
         unique_items: list[dict] = []
-        for item in self._briefing_items:
+        for item in scrubbed_items:
             body = item.get("body", "")
             if body not in seen_bodies:
                 seen_bodies.add(body)
