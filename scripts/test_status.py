@@ -228,13 +228,16 @@ MAIN_PDS_PORT = 2583
 MAIN_CORE_PORT = 8100
 
 
-def _start_main_stack() -> float:
+def _start_main_stack(*, restart: bool = False) -> float:
     """Start the main docker-compose stack with fake PLC for testing.
 
     Brings up plc (fake PLC directory), pds, core, and brain from the
     main ``docker-compose.yml`` with ``DINA_PLC_URL`` pointed at the local
     fake PLC.  This allows E2E Suite 16 (AT Protocol PDS Integration)
     tests to run against real PDS + PLC containers.
+
+    Pass ``restart=True`` to force teardown and rebuild even if the stack
+    is already healthy.
 
     Returns startup time in seconds.
     """
@@ -252,27 +255,32 @@ def _start_main_stack() -> float:
     pds_url = f"http://localhost:{MAIN_PDS_PORT}"
     core_url = f"http://localhost:{MAIN_CORE_PORT}"
 
-    # Check if the main stack is already healthy
-    all_healthy = True
-    for url, label in [
-        (f"{plc_url}/healthz", "PLC"),
-        (f"{pds_url}/xrpc/_health", "PDS"),
-        (f"{core_url}/healthz", "Core"),
-    ]:
-        try:
-            resp = httpx.get(url, timeout=2)
-            if not resp.is_success:
+    # Check if the main stack is already healthy (skip when restarting).
+    all_healthy = not restart
+    if all_healthy:
+        for url, label in [
+            (f"{plc_url}/healthz", "PLC"),
+            (f"{pds_url}/xrpc/_health", "PDS"),
+            (f"{core_url}/healthz", "Core"),
+        ]:
+            try:
+                resp = httpx.get(url, timeout=2)
+                if not resp.is_success:
+                    all_healthy = False
+                    break
+            except Exception:
                 all_healthy = False
                 break
-        except Exception:
-            all_healthy = False
-            break
 
     if all_healthy:
         elapsed = _time.monotonic() - t0
         print(f"  Main stack already healthy (PLC+PDS+Core+Brain)",
               file=sys.stderr, flush=True)
         return elapsed
+
+    if restart:
+        print("  Tearing down existing main stack (--restart)...",
+              file=sys.stderr, flush=True)
 
     print("  Starting main stack (fake PLC + PDS + Core + Brain)...",
           file=sys.stderr, flush=True)
@@ -1560,7 +1568,7 @@ def main() -> None:
     # so E2E Suite 16 can test real AT Protocol PDS integration.
     if service_mode != "mock" or has_e2e:
         try:
-            main_stack_startup = _start_main_stack()
+            main_stack_startup = _start_main_stack(restart=restart)
             startup_time += main_stack_startup
         except Exception as exc:
             if not json_mode:
