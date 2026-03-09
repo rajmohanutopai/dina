@@ -113,6 +113,8 @@ services:
       - "${DINA_PLC_PORT:-2582}:2582"
     profiles:
       - test-plc
+    networks:
+      - dina-pds-net    # PDS must be able to reach PLC for DID resolution
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2582/healthz')"]
       interval: 10s

@@ -387,18 +387,19 @@ func collectExportData() ([]byte, error) {
 	return nil, ErrNotImplemented
 }
 
-// restoreData deserialises the decrypted JSON payload and returns an ImportResult.
+// restoreData deserialises the decrypted JSON payload, validates structure
+// and checksums, then returns ErrNotImplemented.
 //
-// HIGH-12: Validates the archive structure and checksums. Full vault-level
-// restoration (writing files to vault path, re-deriving persona DEKs,
-// verifying identity continuity) is not yet wired.
+// HIGH-12: Full vault-level restoration (writing files to vault path,
+// re-deriving persona DEKs, extracting real DID, verifying identity
+// continuity) is not yet implemented. Only validation is wired.
 func restoreData(plaintext []byte) (*ImportResult, error) {
 	var payload archivePayload
 	if err := json.Unmarshal(plaintext, &payload); err != nil {
 		return nil, fmt.Errorf("unmarshal import data: %w", err)
 	}
 
-	// Validate checksums before restoration.
+	// Validate checksums — this is real validation, not a stub.
 	for name, content := range payload.Files {
 		expected, ok := payload.Manifest.Checksums[name]
 		if !ok {
@@ -410,24 +411,14 @@ func restoreData(plaintext []byte) (*ImportResult, error) {
 	}
 
 	// Require identity.sqlite — vault restoration needs the identity vault.
-	// Device token invalidation (§23.3.5) and vault-level file writing are
-	// not yet wired for archives without the standard identity file.
 	if _, hasIdentity := payload.Files["identity.sqlite"]; !hasIdentity {
 		return nil, ErrNotImplemented
 	}
 
-	// Extract DID from identity data if present.
-	did := ""
-	if identityData, ok := payload.Files["identity.sqlite"]; ok && len(identityData) > 0 {
-		did = "did:plc:imported"
-	}
-
-	return &ImportResult{
-		FilesRestored:  len(payload.Files),
-		RequiresRepair: true, // imported data always needs re-pairing with new device
-		DID:            did,
-		PersonaCount:   len(payload.Files),
-	}, nil
+	// Archive is structurally valid and checksums pass, but actual
+	// restoration (file writing, persona recovery, DID extraction)
+	// is not yet implemented. Return honest not-implemented.
+	return nil, ErrNotImplemented
 }
 
 func hexHash(data []byte) string {

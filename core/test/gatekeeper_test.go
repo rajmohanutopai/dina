@@ -562,7 +562,8 @@ func TestGatekeeper_6_3_5_MoneyActionRequiresTrustedRing(t *testing.T) {
 	// Verified but not Verified+Actioned — should be denied or flagged.
 	testutil.RequireFalse(t, decision.Allowed, "money actions require highest trust ring")
 
-	// Positive control: trusted agent with transfer_money must be allowed.
+	// Even trusted agents cannot silently transfer money (Four Laws).
+	// Risky actions always require explicit user approval.
 	trustedIntent := testutil.Intent{
 		AgentDID:   "did:key:z6MkPaymentBot",
 		Action:     "transfer_money",
@@ -572,9 +573,8 @@ func TestGatekeeper_6_3_5_MoneyActionRequiresTrustedRing(t *testing.T) {
 	}
 	trustedDecision, err := impl.EvaluateIntent(context.Background(), trustedIntent)
 	testutil.RequireNoError(t, err)
-	if !trustedDecision.Allowed {
-		t.Fatal("trusted agent must be allowed to transfer_money")
-	}
+	testutil.RequireFalse(t, trustedDecision.Allowed, "transfer_money must be flagged for user review, even for trusted agents")
+	testutil.RequireTrue(t, trustedDecision.Audit, "transfer_money must create audit trail")
 }
 
 // TST-CORE-804
@@ -594,7 +594,7 @@ func TestGatekeeper_6_3_6_DataSharingActionFlagged(t *testing.T) {
 	decision, err := impl.EvaluateIntent(context.Background(), intent)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, decision.Audit, "data sharing actions must be flagged for review")
-	testutil.RequireTrue(t, decision.Allowed, "trusted agent share_data should be allowed (but audited)")
+	testutil.RequireFalse(t, decision.Allowed, "share_data must be flagged for user review, even for trusted agents")
 
 	// Negative control: a safe, non-risky action must NOT be flagged.
 	safeIntent := testutil.Intent{
