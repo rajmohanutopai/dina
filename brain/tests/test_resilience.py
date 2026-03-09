@@ -61,7 +61,10 @@ async def test_resilience_11_1_unhandled_exception() -> None:
         side_effect=LLMError("Unexpected format from LLM")
     )
 
-    event = make_event(type="message", body="trigger unexpected format")
+    # Use a fiduciary event so classify_silence returns "fiduciary" (not "engagement")
+    # and the event reaches the nudge assembly step where the LLMError is raised.
+    from tests.factories import make_fiduciary_event
+    event = make_fiduciary_event(body="trigger unexpected format")
     result = await guardian.process_event(event)
 
     # Production catches LLMError and returns error action (not crash)
@@ -180,11 +183,12 @@ async def test_resilience_11_4_startup_dependency_check() -> None:
     assert result["action"] == "degraded_mode"
 
     # Counter-proof: when core is available, fiduciary event is processed normally
+    # Fiduciary events always get "interrupt" action (silence causes harm).
     guardian._nudge.assemble_nudge = AsyncMock(return_value={"text": "nudge"})
     core.notify = AsyncMock()
     core.send_d2d = AsyncMock()
     result2 = await guardian.process_event(event)
-    assert result2["action"] == "notify"
+    assert result2["action"] == "interrupt"
 
 
 # TST-BRAIN-306
@@ -225,11 +229,23 @@ async def test_resilience_11_6_concurrent_requests() -> None:
     don't corrupt shared state.
     """
     from src.service.guardian import GuardianLoop
+    from src.service.entity_vault import EntityVaultService
+    from src.service.nudge import NudgeAssembler
+    from src.service.scratchpad import ScratchpadService
 
     core = AsyncMock()
     core.write_scratchpad = AsyncMock()
     core.get_kv = AsyncMock(return_value=None)
-    guardian = GuardianLoop(core=core, llm=AsyncMock(), mcp=AsyncMock())
+    llm_router = AsyncMock()
+    scrubber = MagicMock()
+    entity_vault = EntityVaultService(scrubber, core)
+    nudge = NudgeAssembler(core, llm_router, entity_vault)
+    scratchpad = ScratchpadService(core)
+    guardian = GuardianLoop(
+        core=core, llm_router=llm_router, scrubber=scrubber,
+        entity_vault=entity_vault, nudge_assembler=nudge,
+        scratchpad=scratchpad,
+    )
 
     events = [make_event(type="message", body=f"concurrent msg {i}") for i in range(50)]
 
@@ -297,10 +313,11 @@ async def test_resilience_11_8_sharing_policy_invalid_did() -> None:
     entity_vault = EntityVaultService(scrubber, core)
     nudge = NudgeAssembler(core, llm, entity_vault)
 
-    # No vault data for this contact
-    core.search_vault.return_value = []
+    # No vault data for this contact — mock query_vault (used by NudgeAssembler internals)
+    core.query_vault.return_value = []
     result = await nudge.assemble_nudge(
-        contact_did=invalid_did, persona="personal"
+        event={"type": "conversation_open", "persona": "personal"},
+        contact_did=invalid_did,
     )
     # Silence First: no data → nudge is None
     assert result is None, "Unknown contact must return None nudge (Silence First)"

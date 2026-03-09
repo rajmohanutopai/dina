@@ -123,7 +123,7 @@ async def test_routing_8_1_2_route_to_mcp_agent() -> None:
     # MCP was called to fetch emails from the gmail server
     mcp.call_tool.assert_awaited_once()
     call_args = mcp.call_tool.await_args
-    assert call_args[0][0] == "gmail" or "gmail" in str(call_args), (
+    assert call_args.kwargs.get("server") == "gmail" or "gmail" in str(call_args), (
         "Sync cycle must delegate to MCP gmail server"
     )
     assert isinstance(result, dict)
@@ -198,11 +198,23 @@ async def test_routing_8_2_2_mcp_tool_not_found() -> None:
 async def test_routing_8_2_3_mcp_delegation_gatekeeper_check() -> None:
     """SS8.2.3: MCP delegation checks gatekeeper before executing tool."""
     from src.service.guardian import GuardianLoop
+    from src.service.entity_vault import EntityVaultService
+    from src.service.nudge import NudgeAssembler
+    from src.service.scratchpad import ScratchpadService
 
     core = AsyncMock()
     core.write_scratchpad = AsyncMock()
     core.get_kv = AsyncMock(return_value=None)
-    guardian = GuardianLoop(core=core, llm=AsyncMock(), mcp=AsyncMock())
+    llm_router = AsyncMock()
+    scrubber = MagicMock()
+    entity_vault = EntityVaultService(scrubber, core)
+    nudge = NudgeAssembler(core, llm_router, entity_vault)
+    scratchpad = ScratchpadService(core)
+    guardian = GuardianLoop(
+        core=core, llm_router=llm_router, scrubber=scrubber,
+        entity_vault=entity_vault, nudge_assembler=nudge,
+        scratchpad=scratchpad,
+    )
 
     # send_email is a MODERATE action — gatekeeper must flag for review
     intent = make_risky_intent(action="send_email")
@@ -229,11 +241,23 @@ async def test_routing_8_2_3_mcp_delegation_gatekeeper_check() -> None:
 async def test_routing_8_3_1_check_trusted_agent_trust_scores() -> None:
     """SS8.3.1: Trusted agent with verified trust_level is auto-approved via review_intent."""
     from src.service.guardian import GuardianLoop
+    from src.service.entity_vault import EntityVaultService
+    from src.service.nudge import NudgeAssembler
+    from src.service.scratchpad import ScratchpadService
 
     core = AsyncMock()
     core.write_scratchpad = AsyncMock()
     core.get_kv = AsyncMock(return_value=None)
-    guardian = GuardianLoop(core=core, llm=AsyncMock(), mcp=AsyncMock())
+    llm_router = AsyncMock()
+    scrubber = MagicMock()
+    entity_vault = EntityVaultService(scrubber, core)
+    nudge = NudgeAssembler(core, llm_router, entity_vault)
+    scratchpad = ScratchpadService(core)
+    guardian = GuardianLoop(
+        core=core, llm_router=llm_router, scrubber=scrubber,
+        entity_vault=entity_vault, nudge_assembler=nudge,
+        scratchpad=scratchpad,
+    )
 
     # Verified agent with safe action → auto-approved.
     intent = {
@@ -252,11 +276,23 @@ async def test_routing_8_3_1_check_trusted_agent_trust_scores() -> None:
 async def test_routing_8_3_2_check_untrusted_agent_trust_scores() -> None:
     """SS8.3.2: Untrusted agent is denied by guardian review_intent."""
     from src.service.guardian import GuardianLoop
+    from src.service.entity_vault import EntityVaultService
+    from src.service.nudge import NudgeAssembler
+    from src.service.scratchpad import ScratchpadService
 
     core = AsyncMock()
     core.write_scratchpad = AsyncMock()
     core.get_kv = AsyncMock(return_value=None)
-    guardian = GuardianLoop(core=core, llm=AsyncMock(), mcp=AsyncMock())
+    llm_router = AsyncMock()
+    scrubber = MagicMock()
+    entity_vault = EntityVaultService(scrubber, core)
+    nudge = NudgeAssembler(core, llm_router, entity_vault)
+    scratchpad = ScratchpadService(core)
+    guardian = GuardianLoop(
+        core=core, llm_router=llm_router, scrubber=scrubber,
+        entity_vault=entity_vault, nudge_assembler=nudge,
+        scratchpad=scratchpad,
+    )
 
     # Untrusted agent attempting any action → BLOCKED
     intent = {

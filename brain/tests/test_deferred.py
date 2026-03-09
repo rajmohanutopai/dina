@@ -80,7 +80,7 @@ def pii_scrubber():
 def llm_router():
     """Mock LLM router for on-device LLM deferred tests."""
     router = AsyncMock()
-    router.route.return_value = {"content": "test response", "model": "test-model"}
+    router.route.return_value = {"content": "test response", "model": "test-model", "route": "cloud"}
     router.available_models.return_value = ["test-model-local", "test-model-cloud"]
     return router
 
@@ -239,6 +239,8 @@ async def test_deferred_17_2a_3_model_version_mismatch(llm_router) -> None:
     """
     # Model version mismatch should not prevent routing — LLMRouter
     # routes by task type, not by model version.
+    # Summarize routes to local (lightweight task stays on device).
+    llm_router.route.return_value = {"content": "test response", "model": "test-model", "route": "local"}
     result = await llm_router.route(
         task_type="summarize",
         prompt="Summarize today's events",
@@ -310,7 +312,8 @@ async def test_deferred_17_2b_2_coded_language() -> None:
         pytest.skip("spaCy model not available")
 
     scrubber = SpacyScrubber()
-    text = "The guy from that Bangalore company"
+    # "Bangalore, India" gives spaCy enough context to classify as GPE (not PERSON).
+    text = "The guy from that company in Bangalore, India"
 
     scrubbed, entities = scrubber.scrub(text)
     assert isinstance(scrubbed, str)

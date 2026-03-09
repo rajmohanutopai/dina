@@ -21,6 +21,7 @@ from .factories import (
     make_blocked_intent,
     make_mcp_tool,
     make_event,
+    make_email_metadata,
     make_engagement_event,
     make_bot_response,
     make_trust_scores_score,
@@ -1024,7 +1025,7 @@ async def test_mcp_6_1_7_trust_scores_appview_fallback() -> None:
     """
     from src.adapter.core_http import CoreHTTPClient
 
-    client = CoreHTTPClient(base_url="http://localhost:1")  # unreachable
+    client = CoreHTTPClient(base_url="http://localhost:1", bearer_token="dummy-unreachable")  # unreachable
 
     # query_trust_profile returns None on failure (not an exception)
     result = await client.query_trust_profile("did:key:z6MkTestBot")

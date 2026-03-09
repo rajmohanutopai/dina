@@ -116,6 +116,14 @@ def client(app: FastAPI) -> TestClient:
     return TestClient(app, raise_server_exceptions=False)
 
 
+@pytest.fixture(autouse=True)
+def _clear_nonce_cache() -> None:
+    """Reset the signing nonce cache between tests to prevent replay rejection."""
+    from adapter.signing import _nonce_cache
+    _nonce_cache._current.clear()
+    _nonce_cache._previous.clear()
+
+
 # ---------------------------------------------------------------------------
 # S1.1 Ed25519 Service-Key Verification
 # ---------------------------------------------------------------------------

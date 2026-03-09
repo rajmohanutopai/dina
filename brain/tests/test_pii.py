@@ -262,6 +262,9 @@ def test_pii_3_1_9_non_english_text(spacy_scrubber) -> None:
 # TST-BRAIN-100
 def test_pii_3_1_10_medical_terms(spacy_scrubber) -> None:
     """SS3.1.10: 'L4-L5 disc herniation' detected via custom spaCy rules as MEDICAL."""
+    # This test requires SpacyScrubber (with _nlp), not PresidioScrubber.
+    if not hasattr(spacy_scrubber, "_nlp"):
+        pytest.skip("Requires SpacyScrubber with _nlp (PresidioScrubber lacks EntityRuler)")
     # Verify EntityRuler is loaded — skip if setup failed (best-effort feature).
     if "entity_ruler" not in spacy_scrubber._nlp.pipe_names:
         pytest.skip("EntityRuler not loaded — medical detection unavailable")
@@ -627,7 +630,13 @@ def test_pii_3_3_4_entity_vault_destroyed(entity_vault) -> None:
         {"type": "PERSON", "value": "Dr. Sharma", "token": "<PERSON_1>"},
         {"type": "ORG", "value": "Apollo Hospital", "token": "<ORG_1>"},
     ]
-    vault = entity_vault.create_vault(entities)
+    vault_raw = entity_vault.create_vault(entities)
+
+    # Plain dicts don't support weakref; wrap in a subclass for GC tracking.
+    class _TrackableDict(dict):
+        __slots__ = ("__weakref__",)
+
+    vault = _TrackableDict(vault_raw)
     assert len(vault) == 2
     assert vault["<PERSON_1>"] == "Dr. Sharma"
     assert vault["<ORG_1>"] == "Apollo Hospital"

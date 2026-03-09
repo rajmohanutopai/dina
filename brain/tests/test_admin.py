@@ -291,7 +291,7 @@ async def test_admin_8_4_2_create_persona(admin_app, auth_headers) -> None:
     mock_core.search_vault.return_value = []
 
     test_client = TestClient(app)
-    resp = test_client.get("/admin/dashboard", headers=auth_headers)
+    resp = test_client.get("/admin/", headers=auth_headers)
     assert resp.status_code == 200
     data = resp.json()
     assert data["personas"] == 2, "Dashboard must reflect 2 personas from core"

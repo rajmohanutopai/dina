@@ -521,8 +521,13 @@ def test_fix_19_7_4_logout_clears_cookie():
     )
     assert login_resp.status_code == 200
 
-    # Now log out.
-    logout_resp = client.post("/admin/logout")
+    # Get the CSRF token for the logout request (required by CSRF validation).
+    from src.dina_admin.routes.login import get_csrf_token
+    session_id = client.cookies.get("dina_client_token")
+    csrf_token = get_csrf_token(session_id) if session_id else ""
+
+    # Now log out with CSRF token.
+    logout_resp = client.post("/admin/logout", headers={"X-CSRF-Token": csrf_token})
     assert logout_resp.status_code == 200
 
     data = logout_resp.json()

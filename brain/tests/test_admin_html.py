@@ -57,7 +57,15 @@ def admin_app(mock_core, admin_config, monkeypatch):
     # TestClient uses HTTP; secure cookies won't be sent back over HTTP.
     monkeypatch.setenv("DINA_ENV", "test")
     monkeypatch.setenv("DINA_HTTPS", "0")
-    sub_app = create_admin_app(mock_core, admin_config)
+    # Provide a mock guardian so /api/chat works.
+    guardian = AsyncMock()
+    guardian.process_event.return_value = {
+        "content": "Hello! I'm Dina.",
+        "model": "test-model",
+        "tokens_in": 10,
+        "tokens_out": 5,
+    }
+    sub_app = create_admin_app(mock_core, admin_config, guardian=guardian)
     parent = FastAPI()
     parent.mount("/admin", sub_app)
     return parent, mock_core, admin_config
@@ -210,30 +218,17 @@ def test_history_api_returns_paginated(client, auth_headers) -> None:
 
 
 def test_chat_api_forwards_to_brain(client, auth_headers) -> None:
-    """POST /admin/api/chat calls brain's reason endpoint."""
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "content": "Hello! I'm Dina.",
-        "model": "test-model",
-    }
-    mock_response.raise_for_status = MagicMock()
-
-    with patch("httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(return_value=mock_response)
-        mock_client_cls.return_value = mock_client
-
-        resp = client.post(
-            "/admin/api/chat",
-            json={"prompt": "Hello"},
-            headers=auth_headers,
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["content"] == "Hello! I'm Dina."
+    """POST /admin/api/chat calls guardian directly (not httpx)."""
+    # The chat endpoint calls _guardian.process_event() directly.
+    # The guardian mock is configured in the admin_app fixture.
+    resp = client.post(
+        "/admin/api/chat",
+        json={"prompt": "Hello"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["content"] == "Hello! I'm Dina."
 
 
 # ---------------------------------------------------------------------------

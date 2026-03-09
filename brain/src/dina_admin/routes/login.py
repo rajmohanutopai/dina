@@ -166,11 +166,10 @@ async def login(raw_request: Request, body: LoginRequest) -> JSONResponse:
     csrf_token = secrets.token_hex(32)
     _sessions[session_id] = {"created": now, "csrf_token": csrf_token}
 
-    # --- LOW-02: Production guard — force secure=True in production ---
-    _is_dev = os.environ.get("DINA_ENV", "production").lower() in ("development", "test")
-    is_https = not _is_dev or os.environ.get("DINA_HTTPS", "1").lower() not in ("0", "false", "no")
+    # --- LOW-02: Secure flag matches actual transport layer ---
+    is_https = raw_request.url.scheme == "https"
     if not is_https:
-        log.warning("admin.cookies.insecure", extra={"detail": "Secure cookie flag disabled — dev mode only"})
+        log.warning("admin.cookies.insecure", extra={"detail": "Secure cookie flag disabled — HTTP request"})
 
     response = JSONResponse(content={"status": "ok", "redirect": "/admin/dashboard"})
     response.set_cookie(

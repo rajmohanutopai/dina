@@ -30,11 +30,23 @@ async def test_voice_18_1_deepgram_to_guardian() -> None:
     as a regular text query through the guardian loop.
     """
     from src.service.guardian import GuardianLoop
+    from src.service.entity_vault import EntityVaultService
+    from src.service.nudge import NudgeAssembler
+    from src.service.scratchpad import ScratchpadService
 
     core = AsyncMock()
     core.write_scratchpad = AsyncMock()
     core.get_kv = AsyncMock(return_value=None)
-    guardian = GuardianLoop(core=core, llm=AsyncMock(), mcp=AsyncMock())
+    llm_router = AsyncMock()
+    scrubber = MagicMock()
+    entity_vault = EntityVaultService(scrubber, core)
+    nudge = NudgeAssembler(core, llm_router, entity_vault)
+    scratchpad = ScratchpadService(core)
+    guardian = GuardianLoop(
+        core=core, llm_router=llm_router, scrubber=scrubber,
+        entity_vault=entity_vault, nudge_assembler=nudge,
+        scratchpad=scratchpad,
+    )
 
     # Simulate voice transcription result
     transcription = make_voice_transcription(text="Check my email")

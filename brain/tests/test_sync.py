@@ -299,7 +299,7 @@ async def test_sync_5_1_16_calendar_read_write_split(sync_engine) -> None:
     engine, core, mcp = sync_engine
 
     # Write path: sync goes through MCP (call_tool with calendar_fetch)
-    cal_event = make_calendar_event(event_id="cal-rw-1")
+    cal_event = make_calendar_event(source_id="cal-rw-1")
     mcp.call_tool.return_value = {"items": [cal_event]}
     result = await engine.run_sync_cycle("calendar")
     assert result["fetched"] == 1
@@ -1654,7 +1654,7 @@ async def test_sync_5_8_3_cold_results_not_saved(sync_engine) -> None:
     mcp.call_tool.return_value = {"items": [make_email_metadata()]}
     result = await engine.run_sync_cycle("gmail")
     assert result["stored"] >= 1, "Sync cycle must store items (counter-proof)"
-    core.store_vault_item.assert_awaited()
+    core.store_vault_batch.assert_awaited()
 
     # Reset store mocks for the cold-path check.
     core.store_vault_item.reset_mock()
@@ -1735,6 +1735,7 @@ def test_sync_5_2_27_llm_triage_timeout_fallback(sync_engine) -> None:
 
 
 # TST-BRAIN-406
+@pytest.mark.asyncio
 async def test_sync_5_2_28_llm_triage_timeout_admin_status(sync_engine) -> None:
     """SS5.2.28: Admin UI shows triage LLM timeout status."""
     engine, core, mcp = sync_engine
