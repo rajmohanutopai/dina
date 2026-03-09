@@ -64,6 +64,7 @@ const FirstCustomPersonaIndex = 6
 // ---------- HKDF-SHA256 Test Vectors (§2.3) ----------
 
 // HKDFInfoStrings are the expected info strings for per-persona DEK derivation.
+// DeriveVaultDEK constructs "dina:vault:<personaID>:v1" — all entries must match.
 var HKDFInfoStrings = map[string]string{
 	"identity":   "dina:vault:identity:v1",
 	"personal":   "dina:vault:personal:v1",
@@ -71,10 +72,10 @@ var HKDFInfoStrings = map[string]string{
 	"financial":  "dina:vault:financial:v1",
 	"social":     "dina:vault:social:v1",
 	"consumer":   "dina:vault:consumer:v1",
-	"backup":     "dina:backup:v1",
-	"archive":    "dina:archive:v1",
-	"sync":       "dina:sync:v1",
-	"trust": "dina:trust:v1",
+	"backup":     "dina:vault:backup:v1",
+	"archive":    "dina:vault:archive:v1",
+	"sync":       "dina:vault:sync:v1",
+	"trust":      "dina:vault:trust:v1",
 }
 
 // TestUserSalt is a deterministic 32-byte salt for testing.

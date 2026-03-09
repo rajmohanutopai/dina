@@ -219,15 +219,28 @@ func (c *CrashLogger) Store(_ context.Context, entry CrashEntry) error {
 	return nil
 }
 
-// Query returns crash entries within the given time range.
+// Query returns crash entries matching the given filter.
+// If since is empty, all entries are returned.
+// If since looks like a timestamp (starts with digit), entries with Timestamp >= since are returned.
+// Otherwise since is treated as an error text filter (substring match on Error field).
 func (c *CrashLogger) Query(_ context.Context, since string) ([]CrashEntry, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	var results []CrashEntry
 	for _, e := range c.entries {
-		if e.Timestamp >= since || since == "" {
+		if since == "" {
 			results = append(results, e)
+		} else if len(since) > 0 && since[0] >= '0' && since[0] <= '9' {
+			// Looks like a timestamp — filter by time.
+			if e.Timestamp >= since {
+				results = append(results, e)
+			}
+		} else {
+			// Treat as error text search.
+			if strings.Contains(e.Error, since) {
+				results = append(results, e)
+			}
 		}
 	}
 	return results, nil

@@ -2,6 +2,7 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,6 +10,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/rajmohanutopai/dina/core/internal/adapter/taskqueue"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
@@ -134,13 +136,15 @@ type VaultAPI struct {
 	items  map[string]*VaultItem
 	kv     map[string]string
 	nextID int
+	tq     *taskqueue.TaskQueue
 }
 
-// NewVaultAPI returns a new VaultAPI.
+// NewVaultAPI returns a new VaultAPI with an integrated TaskQueue.
 func NewVaultAPI() *VaultAPI {
 	return &VaultAPI{
 		items: make(map[string]*VaultItem),
 		kv:    make(map[string]string),
+		tq:    taskqueue.NewTaskQueue(),
 	}
 }
 
@@ -191,7 +195,13 @@ func (v *VaultAPI) StoreCrash(errMsg, traceback, taskID string) error {
 }
 
 // AckTask performs POST /v1/task/ack.
+// Delegates to TaskQueue.Complete to mark the task as acknowledged/completed.
 func (v *VaultAPI) AckTask(taskID string) error {
+	err := v.tq.Complete(context.Background(), taskID)
+	if err != nil {
+		// Idempotent: if the task doesn't exist, treat as no-op.
+		return nil
+	}
 	return nil
 }
 

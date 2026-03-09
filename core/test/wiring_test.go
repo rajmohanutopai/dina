@@ -148,6 +148,8 @@ func init() {
 	vaultMgr = vault.NewManager(vaultDir)
 	// Open the identity vault so the dynamic HealthChecker reports healthy.
 	_ = vaultMgr.Open(context.Background(), "identity", testutil.TestDEK[:])
+	// Open the personal vault for backup and other tests that reference it.
+	_ = vaultMgr.Open(context.Background(), "personal", testutil.TestDEK[:])
 }
 
 var (

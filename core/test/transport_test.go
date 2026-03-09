@@ -486,7 +486,7 @@ func TestTransport_7_4_3_EnvelopeMaxSize(t *testing.T) {
 	}
 	err := impl.Send("did:key:z6MkMaxSizeRecipient", oversized)
 	testutil.RequireError(t, err)
-	testutil.RequireContains(t, err.Error(), "too large")
+	testutil.RequireContains(t, err.Error(), "exceeds 1 MiB limit")
 
 	// Negative control: exactly 1 MiB envelope must NOT be rejected for size.
 	// (It may still fail for DID resolution or invalid JSON, but NOT for size.)
@@ -495,7 +495,7 @@ func TestTransport_7_4_3_EnvelopeMaxSize(t *testing.T) {
 	err = impl.Send("did:key:z6MkMaxSizeRecipient", exactLimit)
 	// If we get an error, it must NOT be about size.
 	if err != nil {
-		if strings.Contains(err.Error(), "too large") {
+		if strings.Contains(err.Error(), "exceeds 1 MiB limit") {
 			t.Fatal("exactly 1 MiB envelope must not be rejected for size")
 		}
 	}
@@ -1192,6 +1192,7 @@ func TestTransport_7_1_18_UserIgnoresNudgeExpires(t *testing.T) {
 
 	// Enqueue a fresh message (just now) — should NOT be deleted.
 	freshMsg := testutil.TestOutboxMessage()
+	freshMsg.CreatedAt = time.Now().Unix()
 	freshID, err := impl.Enqueue(ctx, freshMsg)
 	testutil.RequireNoError(t, err)
 
@@ -2268,8 +2269,10 @@ func TestTransport_7_6_5_RelayCannotReadContent(t *testing.T) {
 	tr.SetRelayURL("https://relay.example.com")
 
 	// Recipient DID is unresolvable directly → relay fallback.
+	// Wrap ciphertext in a valid JSON envelope (Send validates JSON).
 	recipientDID := "did:key:z6MkRelayRecipient"
-	err = tr.Send(recipientDID, ciphertext)
+	ciphertextHex := fmt.Sprintf(`{"type":"dina/encrypted","ciphertext":"%x","to":"%s"}`, ciphertext, recipientDID)
+	err = tr.Send(recipientDID, []byte(ciphertextHex))
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, tr.SentCount(), 1)
 
@@ -2702,8 +2705,8 @@ func TestTransport_7_4_12_PhaseMigrationInvariant(t *testing.T) {
 	testutil.RequireTrue(t, errors.Is(err, transport.ErrInvalidJSON),
 		"invalid JSON must be rejected with ErrInvalidJSON")
 
-	// Negative: oversized payload is rejected.
-	oversized := make([]byte, 300*1024)
+	// Negative: oversized payload (>1 MiB) is rejected.
+	oversized := make([]byte, 1<<20+1)
 	copy(oversized, []byte(`{"data":"`))
 	for i := 9; i < len(oversized)-2; i++ {
 		oversized[i] = 'A'
@@ -2829,7 +2832,7 @@ func TestTransport_7_4_4_Ed25519SignatureOnPlaintext(t *testing.T) {
 	testutil.RequireTrue(t, !validTampered, "signature on tampered plaintext must NOT verify")
 
 	// Wrong key must fail verification.
-	_, wrongPub, err := hdKey.DerivePath(testutil.TestMnemonicSeed, "m/9999'/0'/1'")
+	wrongPub, _, err := hdKey.DerivePath(testutil.TestMnemonicSeed, "m/9999'/0'/1'")
 	testutil.RequireNoError(t, err)
 	validWrongKey, err := signer.Verify(wrongPub, plaintext, sig)
 	testutil.RequireNoError(t, err)

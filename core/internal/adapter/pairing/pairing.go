@@ -143,9 +143,9 @@ func (pm *PairingManager) GenerateCode(_ context.Context) (string, []byte, error
 	}
 
 	// Derive the pairing code from the secret.
-	// Use first 16 bytes of SHA-256(secret) as a hex code.
+	// Use full SHA-256(secret) as a hex code (32 bytes = 64 hex chars = 256 bits).
 	hash := sha256.Sum256(secret)
-	code := hex.EncodeToString(hash[:16])
+	code := hex.EncodeToString(hash[:])
 
 	pc := &pairingCode{
 		code:      code,

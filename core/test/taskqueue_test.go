@@ -113,7 +113,7 @@ func TestTaskQueue_8_1_4_CompleteTask(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	testutil.RequireNotNil(t, dequeued)
 	testutil.RequireEqual(t, dequeued.ID, id)
-	testutil.RequireEqual(t, dequeued.Status, "running")
+	testutil.RequireEqual(t, dequeued.Status, domain.TaskRunning)
 
 	// Complete the task.
 	err = q.Complete(ctx, id)
@@ -356,7 +356,7 @@ func TestTaskQueue_8_3_4_FailNonExistentTaskFails(t *testing.T) {
 	failed, err := q.GetByID(ctx, id)
 	testutil.RequireNoError(t, err)
 	testutil.RequireNotNil(t, failed)
-	testutil.RequireEqual(t, failed.Status, "failed")
+	testutil.RequireEqual(t, failed.Status, domain.TaskFailed)
 	testutil.RequireEqual(t, failed.Error, "network timeout")
 }
 
@@ -424,7 +424,7 @@ func TestTaskQueue_8_4_2_RetryScheduleExponentialBackoff(t *testing.T) {
 		testutil.RequireNoError(t, err)
 		testutil.RequireNotNil(t, found)
 		testutil.RequireEqual(t, found.Retries, i+1)
-		testutil.RequireEqual(t, found.Status, "pending")
+		testutil.RequireEqual(t, found.Status, domain.TaskPending)
 		testutil.RequireTrue(t, found.NextRetry > 0, "NextRetry should be set after retry")
 
 		if i > 0 {
@@ -463,7 +463,7 @@ func TestTaskQueue_8_4_3_MaxRetriesExceededMarksDeadLetter(t *testing.T) {
 		testutil.RequireNoError(t, err)
 		testutil.RequireNotNil(t, dequeued)
 		testutil.RequireEqual(t, dequeued.ID, taskID)
-		testutil.RequireEqual(t, dequeued.Status, "running")
+		testutil.RequireEqual(t, dequeued.Status, domain.TaskRunning)
 
 		err = q.Fail(ctx, taskID, "persistent failure")
 		testutil.RequireNoError(t, err)
@@ -477,7 +477,7 @@ func TestTaskQueue_8_4_3_MaxRetriesExceededMarksDeadLetter(t *testing.T) {
 		testutil.RequireNotNil(t, found)
 		if i < 3 {
 			testutil.RequireEqual(t, found.Retries, i+1)
-			testutil.RequireEqual(t, found.Status, "pending")
+			testutil.RequireEqual(t, found.Status, domain.TaskPending)
 		}
 	}
 
@@ -542,7 +542,7 @@ func TestTaskQueue_8_4_4_PersistenceAcrossRestart(t *testing.T) {
 	dequeued2, err := queue.Dequeue(ctx)
 	testutil.RequireNoError(t, err)
 	testutil.RequireNotNil(t, dequeued2)
-	testutil.RequireEqual(t, dequeued2.Status, domain.TaskStatus("processing"))
+	testutil.RequireEqual(t, dequeued2.Status, domain.TaskRunning)
 
 	// Negative: non-existent task ID returns error or nil.
 	notFound, err := queue.GetByID(ctx, "nonexistent-task-id")
@@ -737,7 +737,7 @@ func TestTaskQueue_8_2_5_WatchdogRunsPeriodically(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	testutil.RequireNotNil(t, dequeued)
 	testutil.RequireEqual(t, dequeued.ID, taskID)
-	testutil.RequireEqual(t, dequeued.Status, "running")
+	testutil.RequireEqual(t, dequeued.Status, domain.TaskRunning)
 
 	// Task has a future timeout — watchdog should NOT detect it.
 	timedOut, err = watchdog.ScanTimedOut(ctx)
@@ -794,7 +794,7 @@ func TestTaskQueue_8_2_6_WatchdogDoesNotTouchHealthyTasks(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	testutil.RequireNotNil(t, dequeued)
 	testutil.RequireEqual(t, dequeued.ID, id)
-	testutil.RequireEqual(t, dequeued.Status, "running")
+	testutil.RequireEqual(t, dequeued.Status, domain.TaskRunning)
 
 	// ScanTimedOut should NOT return this task since its timeout is in the future.
 	timedOut, err = watchdog.ScanTimedOut(ctx)
@@ -804,7 +804,7 @@ func TestTaskQueue_8_2_6_WatchdogDoesNotTouchHealthyTasks(t *testing.T) {
 	// Verify the task is still running (watchdog didn't reset it).
 	found, err := q.GetByID(ctx, id)
 	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, found.Status, "running")
+	testutil.RequireEqual(t, found.Status, domain.TaskRunning)
 }
 
 // TST-CORE-467
@@ -1291,7 +1291,7 @@ func TestTaskQueue_8_1_11_BrainNoACKCrash(t *testing.T) {
 	timedOut, err := wd.ScanTimedOut(ctx)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, len(timedOut), 1)
-	testutil.RequireEqual(t, timedOut[0], taskID)
+	testutil.RequireEqual(t, timedOut[0].ID, taskID)
 
 	// After reset, task should be back to "pending" with incremented retries.
 	err = wd.ResetTask(ctx, taskID)

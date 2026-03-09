@@ -140,6 +140,7 @@ func (a *LogAuditor) MatchesBannedPattern(codeLine string) (bool, string, error)
 		{`"content"`, "log contains content= field"},
 		{`"body"`, "log contains body= field"},
 		{`"plaintext"`, "log contains plaintext= field"},
+		{`"token"`, "log contains token= field"},
 		{`f"`, "f-string with potential user data"},
 	}
 

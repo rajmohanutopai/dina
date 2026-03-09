@@ -116,7 +116,7 @@ func TestVault_4_1_2_OpenExistingVault(t *testing.T) {
 	testutil.RequireNoError(t, err)
 
 	item := domain.VaultItem{
-		Type:    "test_reopen",
+		Type:    "note",
 		Source:  "audit",
 		Summary: "reopen check",
 	}
