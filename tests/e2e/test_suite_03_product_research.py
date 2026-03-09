@@ -478,7 +478,7 @@ class TestProductResearchPurchase:
         send_audits = don_alonso.get_audit_entries("d2d_send")
         commerce_sends = [
             e for e in send_audits
-            if e.details.get("to_did") == chairmaker.did
+            if e.details.get("contact_did") == chairmaker.did
             and e.details.get("type") == "dina/commerce/inquiry"
         ]
         assert len(commerce_sends) == 1, (

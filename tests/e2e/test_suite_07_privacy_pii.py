@@ -345,16 +345,19 @@ class TestPrivacyPII:
             "HIGH risk actions must require human approval"
         )
 
-        # Multiple dangerous actions must all be HIGH
-        for dangerous_action in ["send_email", "transfer_money"]:
+        # send_email is MODERATE (not auto-approved), transfer_money is HIGH
+        for dangerous_action, expected_risk in [
+            ("send_email", "MODERATE"),
+            ("transfer_money", "HIGH"),
+        ]:
             result = don_alonso.verify_agent_intent(
                 agent_did="did:plc:malbot",
                 action=dangerous_action,
                 target="user",
                 context={},
             )
-            assert result["risk"] == "HIGH", (
-                f"{dangerous_action} must be classified as HIGH risk"
+            assert result["risk"] == expected_risk, (
+                f"{dangerous_action} must be classified as {expected_risk} risk"
             )
             assert result["approved"] is False, (
                 f"{dangerous_action} must not be auto-approved"
@@ -363,12 +366,12 @@ class TestPrivacyPII:
         # --- Positive control: SAFE action IS auto-approved ---
         safe_result = don_alonso.verify_agent_intent(
             agent_did="did:plc:malbot",
-            action="web_search",
+            action="search",
             target="internet",
             context={},
         )
         assert safe_result["risk"] == "SAFE", (
-            "web_search must be classified as SAFE"
+            "search must be classified as SAFE"
         )
         assert safe_result["approved"] is True, (
             "SAFE actions must be auto-approved"

@@ -1,14 +1,16 @@
-"""Shared pytest fixtures for Dina E2E tests.
+"""Shared pytest fixtures for Dina E2E tests — Docker-only.
 
-Sets up the multi-node environment with named actors:
-- Don Alonso (primary user), Sancho (friend), ChairMaker (seller),
-  Albert (estate beneficiary), Dr. Carl (doctor contact)
-- Mock services: PLC Directory, D2D network, OpenClaw, ReviewBot,
-  MaliciousBot, AppView, Relay, FCM, Payment Gateway
-
-Docker-only: requires DINA_E2E=docker and running Docker containers
-(docker-compose-e2e.yml) for ALL 4 actors.  Each actor gets its own
+The entire E2E suite requires DINA_E2E=docker and running Docker
+containers (docker-compose-e2e.yml).  Each actor gets its own
 Core+Brain container pair.  test_status.py manages the Docker lifecycle.
+
+All actor fixtures (Don Alonso, Sancho, ChairMaker, Albert) create
+RealHomeNode instances backed by real Go Core HTTP APIs.  There is
+no mock fallback — if Docker isn't running, the suite skips.
+
+Infrastructure mocks (PLC Directory, AppView, Relay, FCM, Payment
+Gateway) are used for services that don't have Docker containers
+in the E2E stack.
 """
 
 from __future__ import annotations
@@ -59,13 +61,14 @@ from tests.e2e.real_d2d import RealD2DNetwork
 def docker_services():
     """Start Docker containers for E2E testing.
 
-    Only active when DINA_E2E=docker.  Session-scoped so containers
-    are started once and shared across all tests.  Uses the multi-node
-    stack (4 Core+Brain pairs: alonso, sancho, chairmaker, albert).
+    Session-scoped so containers are started once and shared across
+    all tests.  Uses the multi-node stack (4 Core+Brain pairs:
+    alonso, sancho, chairmaker, albert).
+
+    Skips the entire E2E suite when DINA_E2E != 'docker'.
     """
     if not DOCKER_MODE:
-        yield None
-        return
+        pytest.skip("E2E tests require Docker (DINA_E2E=docker)")
 
     svc = MultiNodeDockerServices()
     svc.start()
@@ -92,12 +95,8 @@ def e2e_persona_setup(docker_services):
     from prior runs via POST /v1/vault/clear.
 
     Uses CLIENT_TOKEN for persona and vault operations, respecting the
-    authz model.
-    Only active in Docker mode.
+    authz model.  Only runs in Docker mode (docker_services skips otherwise).
     """
-    if not DOCKER_MODE or docker_services is None:
-        return
-
     import httpx
 
     # Persona create/unlock are admin-only → require CLIENT_TOKEN.
@@ -144,20 +143,14 @@ def plc_directory() -> MockPLCDirectory:
 
 @pytest.fixture(scope="session")
 def d2d_network(docker_services) -> MockD2DNetwork:
-    """D2D delivery between Home Nodes.
-
-    In Docker mode: RealD2DNetwork backed by real HTTP calls between
-    Core containers.  In mock mode: MockD2DNetwork (in-memory).
-    """
-    if DOCKER_MODE and docker_services is not None:
-        did_to_core_url = {
-            "did:plc:alonso": docker_services.core_url("alonso"),
-            "did:plc:sancho": docker_services.core_url("sancho"),
-            "did:plc:chairmaker": docker_services.core_url("chairmaker"),
-            "did:plc:albert": docker_services.core_url("albert"),
-        }
-        return RealD2DNetwork(did_to_core_url, docker_services.client_token)
-    return MockD2DNetwork()
+    """D2D delivery between Home Nodes via real Go Core HTTP calls."""
+    did_to_core_url = {
+        "did:plc:alonso": docker_services.core_url("alonso"),
+        "did:plc:sancho": docker_services.core_url("sancho"),
+        "did:plc:chairmaker": docker_services.core_url("chairmaker"),
+        "did:plc:albert": docker_services.core_url("albert"),
+    }
+    return RealD2DNetwork(did_to_core_url, docker_services.client_token)
 
 
 @pytest.fixture(scope="session")
@@ -196,28 +189,19 @@ def payment_gateway() -> MockPaymentGateway:
 def don_alonso(plc_directory, d2d_network, docker_services) -> HomeNode:
     """Don Alonso — Primary User (Trust Ring 3).
 
-    In Docker mode: RealHomeNode (vault/persona/KV/health hit real Go Core).
-    In mock mode: regular HomeNode (pure in-memory).
+    RealHomeNode backed by real Go Core (vault, persona, KV, health,
+    PII scrubbing, DID signing, device pairing all hit real APIs).
     """
-    if DOCKER_MODE and docker_services is not None:
-        node = RealHomeNode(
-            core_url=docker_services.core_url("alonso"),
-            brain_url=docker_services.brain_url("alonso"),
-            client_token=docker_services.client_token,
-            did="did:plc:alonso",
-            display_name="Don Alonso",
-            trust_ring=TrustRing.RING_3_SKIN_IN_GAME,
-            plc=plc_directory,
-            network=d2d_network,
-        )
-    else:
-        node = HomeNode(
-            did="did:plc:alonso",
-            display_name="Don Alonso",
-            trust_ring=TrustRing.RING_3_SKIN_IN_GAME,
-            plc=plc_directory,
-            network=d2d_network,
-        )
+    node = RealHomeNode(
+        core_url=docker_services.core_url("alonso"),
+        brain_url=docker_services.brain_url("alonso"),
+        client_token=docker_services.client_token,
+        did="did:plc:alonso",
+        display_name="Don Alonso",
+        trust_ring=TrustRing.RING_3_SKIN_IN_GAME,
+        plc=plc_directory,
+        network=d2d_network,
+    )
 
     # Setup
     node.first_run_setup("alonso@example.com", "passphrase123")
@@ -235,25 +219,11 @@ def don_alonso(plc_directory, d2d_network, docker_services) -> HomeNode:
     code2 = node.generate_pairing_code()
     laptop = node.pair_device(code2, DeviceType.RICH_CLIENT)
 
-    # Contacts — in Docker mode, also pushes to real Go Core via POST /v1/contacts
-    if DOCKER_MODE and hasattr(node, "add_contact"):
-        node.add_contact("did:plc:sancho", "Sancho", TrustRing.RING_2_VERIFIED)
-        node.add_contact("did:plc:drcarl", "Dr. Carl", TrustRing.RING_2_VERIFIED)
-        node.add_contact("did:plc:albert", "Albert", TrustRing.RING_2_VERIFIED)
-        node.add_contact("did:plc:chairmaker", "ChairMaker", TrustRing.RING_3_SKIN_IN_GAME)
-    else:
-        node.contacts["did:plc:sancho"] = {
-            "name": "Sancho", "ring": TrustRing.RING_2_VERIFIED,
-        }
-        node.contacts["did:plc:drcarl"] = {
-            "name": "Dr. Carl", "ring": TrustRing.RING_2_VERIFIED,
-        }
-        node.contacts["did:plc:albert"] = {
-            "name": "Albert", "ring": TrustRing.RING_2_VERIFIED,
-        }
-        node.contacts["did:plc:chairmaker"] = {
-            "name": "ChairMaker", "ring": TrustRing.RING_3_SKIN_IN_GAME,
-        }
+    # Contacts — pushes to real Go Core via POST /v1/contacts
+    node.add_contact("did:plc:sancho", "Sancho", TrustRing.RING_2_VERIFIED)
+    node.add_contact("did:plc:drcarl", "Dr. Carl", TrustRing.RING_2_VERIFIED)
+    node.add_contact("did:plc:albert", "Albert", TrustRing.RING_2_VERIFIED)
+    node.add_contact("did:plc:chairmaker", "ChairMaker", TrustRing.RING_3_SKIN_IN_GAME)
 
     # Sharing policies
     node.set_sharing_policy("did:plc:sancho",
@@ -293,28 +263,18 @@ def don_alonso(plc_directory, d2d_network, docker_services) -> HomeNode:
 def sancho(plc_directory, d2d_network, docker_services) -> HomeNode:
     """Sancho -- Close Friend (Trust Ring 2).
 
-    In Docker mode: RealHomeNode backed by real Go Core.
-    In mock mode: regular HomeNode (pure in-memory).
+    RealHomeNode backed by real Go Core.
     """
-    if DOCKER_MODE and docker_services is not None:
-        node = RealHomeNode(
-            core_url=docker_services.core_url("sancho"),
-            brain_url=docker_services.brain_url("sancho"),
-            client_token=docker_services.client_token,
-            did="did:plc:sancho",
-            display_name="Sancho",
-            trust_ring=TrustRing.RING_2_VERIFIED,
-            plc=plc_directory,
-            network=d2d_network,
-        )
-    else:
-        node = HomeNode(
-            did="did:plc:sancho",
-            display_name="Sancho",
-            trust_ring=TrustRing.RING_2_VERIFIED,
-            plc=plc_directory,
-            network=d2d_network,
-        )
+    node = RealHomeNode(
+        core_url=docker_services.core_url("sancho"),
+        brain_url=docker_services.brain_url("sancho"),
+        client_token=docker_services.client_token,
+        did="did:plc:sancho",
+        display_name="Sancho",
+        trust_ring=TrustRing.RING_2_VERIFIED,
+        plc=plc_directory,
+        network=d2d_network,
+    )
 
     node.first_run_setup("sancho@example.com", "passphrase456")
     node.create_persona("social", PersonaType.SOCIAL, "open")
@@ -322,13 +282,8 @@ def sancho(plc_directory, d2d_network, docker_services) -> HomeNode:
     code = node.generate_pairing_code()
     node.pair_device(code, DeviceType.RICH_CLIENT)
 
-    # Contacts -- in Docker mode use add_contact for real API
-    if DOCKER_MODE and hasattr(node, "add_contact"):
-        node.add_contact("did:plc:alonso", "Don Alonso", TrustRing.RING_2_VERIFIED)
-    else:
-        node.contacts["did:plc:alonso"] = {
-            "name": "Don Alonso", "ring": TrustRing.RING_2_VERIFIED,
-        }
+    # Contacts — pushes to real Go Core via POST /v1/contacts
+    node.add_contact("did:plc:alonso", "Don Alonso", TrustRing.RING_2_VERIFIED)
 
     node.set_sharing_policy("did:plc:alonso",
                             presence="eta_only", context="full",
@@ -347,28 +302,18 @@ def sancho(plc_directory, d2d_network, docker_services) -> HomeNode:
 def chairmaker(plc_directory, d2d_network, docker_services) -> HomeNode:
     """ChairMaker -- Seller (Trust Ring 3).
 
-    In Docker mode: RealHomeNode backed by real Go Core.
-    In mock mode: regular HomeNode (pure in-memory).
+    RealHomeNode backed by real Go Core.
     """
-    if DOCKER_MODE and docker_services is not None:
-        node = RealHomeNode(
-            core_url=docker_services.core_url("chairmaker"),
-            brain_url=docker_services.brain_url("chairmaker"),
-            client_token=docker_services.client_token,
-            did="did:plc:chairmaker",
-            display_name="ChairMaker",
-            trust_ring=TrustRing.RING_3_SKIN_IN_GAME,
-            plc=plc_directory,
-            network=d2d_network,
-        )
-    else:
-        node = HomeNode(
-            did="did:plc:chairmaker",
-            display_name="ChairMaker",
-            trust_ring=TrustRing.RING_3_SKIN_IN_GAME,
-            plc=plc_directory,
-            network=d2d_network,
-        )
+    node = RealHomeNode(
+        core_url=docker_services.core_url("chairmaker"),
+        brain_url=docker_services.brain_url("chairmaker"),
+        client_token=docker_services.client_token,
+        did="did:plc:chairmaker",
+        display_name="ChairMaker",
+        trust_ring=TrustRing.RING_3_SKIN_IN_GAME,
+        plc=plc_directory,
+        network=d2d_network,
+    )
 
     node.first_run_setup("chairmaker@example.com", "passphrase789")
     node.create_persona("business", PersonaType.BUSINESS, "open")
@@ -386,38 +331,23 @@ def chairmaker(plc_directory, d2d_network, docker_services) -> HomeNode:
 def albert(plc_directory, d2d_network, docker_services) -> HomeNode:
     """Albert -- Estate Beneficiary (Trust Ring 2).
 
-    In Docker mode: RealHomeNode backed by real Go Core.
-    In mock mode: regular HomeNode (pure in-memory).
+    RealHomeNode backed by real Go Core.
     """
-    if DOCKER_MODE and docker_services is not None:
-        node = RealHomeNode(
-            core_url=docker_services.core_url("albert"),
-            brain_url=docker_services.brain_url("albert"),
-            client_token=docker_services.client_token,
-            did="did:plc:albert",
-            display_name="Albert",
-            trust_ring=TrustRing.RING_2_VERIFIED,
-            plc=plc_directory,
-            network=d2d_network,
-        )
-    else:
-        node = HomeNode(
-            did="did:plc:albert",
-            display_name="Albert",
-            trust_ring=TrustRing.RING_2_VERIFIED,
-            plc=plc_directory,
-            network=d2d_network,
-        )
+    node = RealHomeNode(
+        core_url=docker_services.core_url("albert"),
+        brain_url=docker_services.brain_url("albert"),
+        client_token=docker_services.client_token,
+        did="did:plc:albert",
+        display_name="Albert",
+        trust_ring=TrustRing.RING_2_VERIFIED,
+        plc=plc_directory,
+        network=d2d_network,
+    )
 
     node.first_run_setup("albert@example.com", "passphrase_albert")
 
-    # Contacts -- in Docker mode use add_contact for real API
-    if DOCKER_MODE and hasattr(node, "add_contact"):
-        node.add_contact("did:plc:alonso", "Don Alonso", TrustRing.RING_2_VERIFIED)
-    else:
-        node.contacts["did:plc:alonso"] = {
-            "name": "Don Alonso", "ring": TrustRing.RING_2_VERIFIED,
-        }
+    # Contacts — pushes to real Go Core via POST /v1/contacts
+    node.add_contact("did:plc:alonso", "Don Alonso", TrustRing.RING_2_VERIFIED)
 
     return node
 
@@ -522,9 +452,20 @@ def cli_identity(tmp_path_factory):
 
 @pytest.fixture(autouse=True)
 def reset_node_state(don_alonso, sancho, chairmaker, albert):
-    """Reset per-test mutable state while preserving session setup."""
-    # Save and restore notification/audit state
+    """Reset per-test mutable state while preserving session setup.
+
+    Cleared: notifications, briefing queue, DND, brain crash flag,
+    rate limits, dedup set, spool, vault lock, audit log, KV store,
+    tasks, staging, outbox, scratchpad, brain event/crash logs,
+    PDS records/tombstones, test clock.
+
+    Preserved: vault data, devices, contacts, sharing policies,
+    personas, estate plan, identity, LLM responses.
+    """
     for node in [don_alonso, sancho, chairmaker, albert]:
+        # Clear real Go Core KV state if backed by Docker
+        if isinstance(node, RealHomeNode):
+            node.clear_real_kv()
         node.notifications.clear()
         node.briefing_queue.clear()
         node.dnd_active = False
@@ -533,13 +474,37 @@ def reset_node_state(don_alonso, sancho, chairmaker, albert):
         node._seen_msg_ids.clear()
         node.spool.clear()
         node._vault_locked = False
-        # Keep vault data, devices, contacts, sharing policies
+        node.audit_log.clear()
+        node.kv_store.clear()
+        node.tasks.clear()
+        node.staging.clear()
+        node.outbox.clear()
+        node.scratchpad.clear()
+        node._processed_events.clear()
+        node._crash_log.clear()
+        node.pds.records.clear()
+        node.pds.tombstones.clear()
+        node._test_clock = None
     yield
 
 
 @pytest.fixture
-def fresh_don_alonso(plc_directory, d2d_network) -> HomeNode:
-    """A fresh Don Alonso node for tests that need clean state. Always mock."""
+def fresh_don_alonso(request, plc_directory, d2d_network) -> HomeNode:
+    """A fresh Don Alonso node for tests that need clean state.
+
+    WARNING: Always a mock HomeNode (not RealHomeNode). Tests using this
+    fixture exercise in-memory mock behavior, not real Go Core APIs.
+    This means assertions in these tests validate mock logic only.
+
+    TODO: Move tests that depend on this fixture to tests/integration/
+    or create a lightweight RealHomeNode pool for clean-state scenarios.
+    """
+    import warnings
+    warnings.warn(
+        f"{request.node.nodeid}: uses fresh_don_alonso (mock HomeNode, "
+        f"not backed by real Go Core)",
+        stacklevel=1,
+    )
     node = HomeNode(
         did=f"did:plc:alonso_fresh_{id(object())}",
         display_name="Don Alonso (fresh)",

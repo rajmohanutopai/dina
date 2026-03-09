@@ -431,18 +431,6 @@ class TestSanchoMoment:
             "Spool must be empty after unlock — all messages processed"
         )
 
-        # --- Verify spooled arrivals were processed ---
-        # _handle_vault_unlocked processes spool → _brain_process for each
-        # Arrival messages produce whisper notifications
-        notif_count_after_unlock = len(don_alonso.notifications)
-        new_notifications = notif_count_after_unlock - notif_count_after_lock
-        # We expect at least 2 new notifications (one per spooled arrival)
-        # Note: if mock decrypt fails (key mismatch), 0 would be processed —
-        # this is still a valid test: it catches that production gap.
-        assert new_notifications >= 0, (
-            "After unlock, spooled messages should be attempted for processing"
-        )
-
         # Verify audit trail for the unlock event
         processed_entries = don_alonso.get_audit_entries("d2d_receive")
         # If messages were processed from spool, receive entries will appear

@@ -36,10 +36,17 @@ from tests.e2e.mocks import (
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.mock_heavy
 class TestTrustNetworkLifecycle:
     """E2E-12.x -- Trust Network: attestations, bot trust,
     tombstone deletion, trust scores, AT Protocol discovery, and
-    AppView determinism."""
+    AppView determinism.
+
+    NOTE: ~98% mock-only — exercises MockPDS, MockRelay, MockAppView
+    objects. No real Go Core or AppView API calls. Consider migrating
+    to tests/integration/ or adding real AppView + PDS to the E2E
+    Docker stack.
+    """
 
 # TST-E2E-059
     def test_expert_attestation_publish_relay_query(

@@ -15,7 +15,6 @@ from tests.e2e.actors import HomeNode
 from tests.e2e.mocks import (
     ConnectorStatus,
     MockOpenClaw,
-    SilenceTier,
 )
 
 
@@ -64,16 +63,22 @@ class TestConnectorFailure:
         # Request was recorded by the agent
         assert len(openclaw.requests_received) == requests_before + 1
 
-        # Persist connector status via real KV
-        node.kv_put("connector:openclaw:status", ConnectorStatus.ACTIVE.name)
-
-        # Store baseline items in vault for later verification
+        # Store baseline items in vault for later survival verification
+        stored_ids = []
         for email in emails[:3]:
-            node.vault_store(
+            item_id = node.vault_store(
                 "personal", f"email_{email['id']}",
                 {"subject": email["subject"], "sender": email["sender"]},
                 item_type="email", source="gmail",
             )
+            stored_ids.append(item_id)
+
+        # Verify vault_store created system-generated audit entries
+        store_audits = node.get_audit_entries("vault_store")
+        baseline_store_count = len(store_audits)
+        assert baseline_store_count >= 3, (
+            "vault_store must create system-generated audit entries"
+        )
 
         # -- Step 2: OpenClaw outage -> agent crashes ----------------------
         openclaw.set_should_fail(True)
@@ -84,21 +89,6 @@ class TestConnectorFailure:
                 "cursor": "",
                 "limit": 10,
             })
-
-        # Update connector status and log audit trail
-        node.kv_put("connector:openclaw:status", ConnectorStatus.ERROR.name)
-        node._log_audit("connector_outage", {
-            "connector": "openclaw", "status": "ERROR",
-        })
-
-        # KV status must reflect ERROR
-        assert node.kv_get("connector:openclaw:status") == ConnectorStatus.ERROR.name
-
-        # Audit trail must record the outage
-        outage_audits = node.get_audit_entries("connector_outage")
-        assert len(outage_audits) >= 1
-        assert outage_audits[-1].details["connector"] == "openclaw"
-        assert outage_audits[-1].details["status"] == "ERROR"
 
         # Previously stored vault items survive the outage
         pre_outage_results = node.vault_query("personal", "email_email_0000")
@@ -118,18 +108,6 @@ class TestConnectorFailure:
             "OpenClaw must resume after outage"
         )
         assert len(recovery_result["emails"]) == 10
-
-        # Update connector status back to ACTIVE
-        node.kv_put("connector:openclaw:status", ConnectorStatus.ACTIVE.name)
-        assert node.kv_get("connector:openclaw:status") == ConnectorStatus.ACTIVE.name
-
-        # Log recovery in audit
-        node._log_audit("connector_restored", {
-            "connector": "openclaw", "status": "ACTIVE",
-        })
-        restore_audits = node.get_audit_entries("connector_restored")
-        assert len(restore_audits) >= 1
-        assert restore_audits[-1].details["connector"] == "openclaw"
 
 # TST-E2E-106
     def test_telegram_credential_expiry(
@@ -166,25 +144,15 @@ class TestConnectorFailure:
         expired_config = dict(stored)
         expired_config["expires_at"] = time.time() - 1
         node.kv_put("connector:telegram:config", expired_config)
-        node.kv_put("connector:telegram:status", ConnectorStatus.EXPIRED.name)
 
-        # Log expiry in audit trail (real _log_audit)
-        node._log_audit("connector_credential_expired", {
-            "connector": "telegram",
-            "old_status": ConnectorStatus.ACTIVE.name,
-            "new_status": ConnectorStatus.EXPIRED.name,
-        })
-
-        # Verify KV status transition
-        assert node.kv_get("connector:telegram:status") == ConnectorStatus.EXPIRED.name
-
-        # Audit trail must record the expiry event
-        expiry_audits = node.get_audit_entries("connector_credential_expired")
-        assert len(expiry_audits) >= 1
-        last_expiry = expiry_audits[-1]
-        assert last_expiry.details["connector"] == "telegram"
-        assert last_expiry.details["old_status"] == ConnectorStatus.ACTIVE.name
-        assert last_expiry.details["new_status"] == ConnectorStatus.EXPIRED.name
+        # Verify expired config persisted through real Go Core KV
+        expired_stored = node.kv_get("connector:telegram:config")
+        assert expired_stored["expires_at"] < time.time(), (
+            "Expired token must have past expiry timestamp"
+        )
+        assert expired_stored["bot_token"] == initial_token, (
+            "Token value must be preserved even when expired"
+        )
 
         # -- Reconfigure with fresh token ----------------------------------
         fresh_token = "654321:NEW-TOKEN-xyz789"
@@ -194,16 +162,6 @@ class TestConnectorFailure:
             "expires_at": time.time() + 86400,
         }
         node.kv_put("connector:telegram:config", fresh_config)
-        node.kv_put("connector:telegram:status", ConnectorStatus.ACTIVE.name)
-
-        # Log reconfiguration in audit
-        node._log_audit("connector_reconfigured", {
-            "connector": "telegram",
-            "status": ConnectorStatus.ACTIVE.name,
-        })
-
-        # Verify restored status
-        assert node.kv_get("connector:telegram:status") == ConnectorStatus.ACTIVE.name
 
         # Verify old token completely replaced (token isolation)
         restored = node.kv_get("connector:telegram:config")
@@ -220,11 +178,6 @@ class TestConnectorFailure:
         assert restored["chat_id"] == chat_id, (
             "chat_id must be preserved across reconfiguration"
         )
-
-        # Audit trail records the reconfiguration
-        reconfig_audits = node.get_audit_entries("connector_reconfigured")
-        assert len(reconfig_audits) >= 1
-        assert reconfig_audits[-1].details["connector"] == "telegram"
 
 # TST-E2E-107
     def test_fast_sync_backfill_resume(

@@ -24,4 +24,5 @@ markers = [
     "slow: marks tests as slow (100k scale, real LLM calls) — deselect with -m 'not slow'",
     "e2e: end-to-end Docker bootstrap tests — requires Docker daemon",
     "manual: manual release check — requires human judgment or external infrastructure",
+    "mock_heavy: E2E suites that exercise mock logic (>90%), not real Go Core APIs — deselect with -m 'not mock_heavy'",
 ]

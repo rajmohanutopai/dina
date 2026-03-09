@@ -20,9 +20,16 @@ from tests.e2e.mocks import (
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.mock_heavy
 class TestQuietDina:
     """E2E-17.x -- Silence protocol, notification tiers, and daily briefing
-    queue behavior."""
+    queue behavior.
+
+    NOTE: ~98% mock-only — exercises _classify_silence(), briefing_queue,
+    and notifications list on HomeNode. No real Go Core or Brain API calls.
+    Consider migrating to tests/integration/ or adding real Brain silence
+    classification endpoints to the Docker stack.
+    """
 
 # TST-E2E-099
     def test_mixed_tier_interrupt_notify_queue(

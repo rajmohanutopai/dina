@@ -9,6 +9,7 @@ Actors: Don Alonso (fresh), D2D Network, PLC Directory.
 
 from __future__ import annotations
 
+import json
 import time
 
 import pytest
@@ -32,9 +33,16 @@ from tests.e2e.mocks import (
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.mock_heavy
 class TestResilienceRecovery:
     """E2E-10.x -- Brain crash recovery, WAL integrity, power loss,
-    dead letter queue, disk full, and batch atomicity."""
+    dead letter queue, disk full, and batch atomicity.
+
+    NOTE: ~95% mock-only — exercises scratchpad, crash state, watchdog,
+    and outbox dicts on HomeNode. No real Go Core API calls. Consider
+    migrating to tests/integration/ or adding real Brain crash/recovery
+    endpoints to the Docker stack.
+    """
 
 # TST-E2E-047
     def test_brain_crash_scratchpad_resume(

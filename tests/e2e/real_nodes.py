@@ -306,6 +306,8 @@ class RealHomeNode(HomeNode):
         self._vault_id_map: dict[str, str] = {}
         # Maps real_item_id -> mock_item_id for reverse lookups
         self._real_to_mock_id: dict[str, str] = {}
+        # KV keys written during the current test (for per-test cleanup)
+        self._kv_keys_written: set[str] = set()
 
         # Replace MockPIIScrubber with RealPIIScrubber
         self.scrubber = RealPIIScrubber(
@@ -588,7 +590,25 @@ class RealHomeNode(HomeNode):
             json={"value": json.dumps(value) if not isinstance(value, str) else value},
             headers=self._headers(),
         )
+        self._kv_keys_written.add(key)
         super().kv_put(key, value)
+
+    def clear_real_kv(self) -> None:
+        """Delete all KV keys written during the current test from real Go Core.
+
+        Uses DELETE /v1/vault/item/kv:{key} to fully remove each tracked
+        key so subsequent kv_get() returns 404 (None), not an empty string.
+        Raises on failure to prevent silent cross-test leakage.
+        """
+        for key in self._kv_keys_written:
+            # KV items are stored with ID "kv:<key>" in the vault
+            _api_request(
+                "delete",
+                f"{self._core_url}/v1/vault/item/kv:{key}",
+                headers=self._headers(),
+                raise_on_fail=True,
+            )
+        self._kv_keys_written.clear()
 
     def kv_get(self, key: str) -> Any:
         """Get KV via real Go Core API, fall back to mock on failure."""

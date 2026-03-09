@@ -18,7 +18,6 @@ from tests.e2e.mocks import (
     MockD2DNetwork,
     MockPLCDirectory,
     PersonaType,
-    SilenceTier,
     TrustRing,
 )
 
@@ -190,25 +189,35 @@ class TestOperatorUpgrade:
         )
         assert "balance check OK" in results[0].body_text
 
-        # Audit trail records lock/unlock events
-        node._log_audit("vault_lock_cycle", {"action": "test_complete"})
-        lock_audits = node.get_audit_entries("vault_lock_cycle")
-        assert len(lock_audits) >= 1
+        # Verify system-generated audit trail from operations above
+        # (vault_store and persona_unlock create audit entries internally)
+        store_audits = node.get_audit_entries("vault_store")
+        assert any(
+            a.details.get("key") == "admin_test_entry" for a in store_audits
+        ), "vault_store must create a system-generated audit entry"
+
+        unlock_audits = node.get_audit_entries("persona_unlock")
+        assert any(
+            a.details.get("persona") == "financial" for a in unlock_audits
+        ), "persona_unlock must create a system-generated audit entry"
 
 # TST-E2E-110
     def test_verified_upgrade_requires_operator_action(
         self,
         don_alonso: HomeNode,
     ) -> None:
-        """E2E-20.3 Upgrade metadata stored, checksum verified, audit logged.
+        """E2E-20.3 Upgrade checksum verification and KV persistence.
 
-        Exercises real KV storage for upgrade metadata, SHA-256 checksum
-        verification, and audit trail logging. No production upgrade
-        manager exists yet — this tests the data contracts.
+        Tests the data contracts for upgrade metadata: KV round-trip
+        through real Go Core, SHA-256 checksum verification (tampered
+        payload produces different hash), and operator approval workflow.
+
+        No production upgrade manager exists yet — the test exercises
+        KV persistence and checksum computation, not a real upgrade flow.
         """
         node = don_alonso
 
-        # -- Store upgrade metadata in KV (real kv_put/kv_get) -------------
+        # -- Compute upgrade checksum --------------------------------------
         upgrade_payload = json.dumps({
             "version": "0.5.0",
             "changelog": "The Hand: autonomous purchasing support",
@@ -217,9 +226,8 @@ class TestOperatorUpgrade:
         }).encode()
 
         valid_checksum = hashlib.sha256(upgrade_payload).hexdigest()
-        assert len(valid_checksum) == 64, "SHA-256 hex must be 64 chars"
 
-        # Store upgrade candidate in KV
+        # -- Store upgrade candidate in KV (real Go Core API) --------------
         node.kv_put("system:pending_upgrade", {
             "version": "0.5.0",
             "checksum_sha256": valid_checksum,
@@ -227,7 +235,7 @@ class TestOperatorUpgrade:
             "operator_approved": False,
         })
 
-        # Verify pending upgrade is retrievable with correct VALUES
+        # Verify KV round-trip through real Go Core preserves values
         pending = node.kv_get("system:pending_upgrade")
         assert pending["version"] == "0.5.0"
         assert pending["checksum_sha256"] == valid_checksum
@@ -246,27 +254,8 @@ class TestOperatorUpgrade:
         assert tampered_checksum != valid_checksum, (
             "Tampered payload must produce a different checksum"
         )
-        assert len(tampered_checksum) == 64
 
-        # Log the rejection in audit (real _log_audit + get_audit_entries)
-        node._log_audit("upgrade_rejected", {
-            "version": "0.5.0",
-            "reason": "checksum_mismatch",
-            "expected": valid_checksum,
-            "actual": tampered_checksum,
-        })
-
-        rejection_audits = node.get_audit_entries("upgrade_rejected")
-        assert len(rejection_audits) >= 1
-        last_rejection = rejection_audits[-1]
-        assert last_rejection.details["reason"] == "checksum_mismatch"
-        assert last_rejection.details["expected"] == valid_checksum
-        assert last_rejection.details["actual"] == tampered_checksum
-        assert last_rejection.details["expected"] != last_rejection.details["actual"], (
-            "Rejection audit must show mismatched checksums"
-        )
-
-        # -- Operator approves: update KV and apply ------------------------
+        # -- Operator approves: update KV ----------------------------------
         node.kv_put("system:pending_upgrade", {
             "version": "0.5.0",
             "checksum_sha256": valid_checksum,
@@ -277,20 +266,9 @@ class TestOperatorUpgrade:
         approved = node.kv_get("system:pending_upgrade")
         assert approved["operator_approved"] is True
 
-        # Record successful upgrade in KV and audit
+        # Record version in KV (real Go Core persistence)
         node.kv_put("system:version", "0.5.0")
-        node._log_audit("upgrade_applied", {
-            "version": "0.5.0",
-            "checksum": valid_checksum,
-        })
-
         assert node.kv_get("system:version") == "0.5.0"
-
-        applied_audits = node.get_audit_entries("upgrade_applied")
-        assert len(applied_audits) >= 1
-        last_applied = applied_audits[-1]
-        assert last_applied.details["version"] == "0.5.0"
-        assert last_applied.details["checksum"] == valid_checksum
 
         # Clean up pending upgrade after apply
         node.kv_put("system:pending_upgrade", None)
