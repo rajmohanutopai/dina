@@ -102,18 +102,18 @@ class TestNetworkIsolation:
         assert len(brain.networks) >= 1
 
     # TST-INT-092
-    def test_pds_cannot_reach_internet_outbound(
+    def test_pds_on_pds_net_with_outbound(
         self, mock_compose: MockDockerCompose
     ) -> None:
-        """PDS is on dina-pds-net only, which is internal.
-        PDS has no public-facing network, so no outbound internet."""
+        """PDS is on dina-pds-net (standard bridge, not internal).
+        PDS needs outbound to reach public plc.directory for DID resolution."""
         mock_compose.up()
 
         pds = mock_compose.containers["pds"]
 
-        # PDS is only on pds-net (internal network)
+        # PDS is only on pds-net (standard bridge — needs outbound for plc.directory)
         assert pds.networks == ["dina-pds-net"], (
-            "PDS must be on dina-pds-net only (no outbound internet)"
+            "PDS must be on dina-pds-net only"
         )
         assert "dina-public" not in pds.networks
         assert "dina-brain-net" not in pds.networks

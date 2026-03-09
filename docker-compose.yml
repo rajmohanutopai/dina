@@ -171,7 +171,8 @@ services:
 
 networks:
   dina-pds-net:
-    internal: true    # no outbound internet — PDS stays isolated
+    # NOT internal — PDS needs outbound to reach public plc.directory by default.
+    # When using --profile test-plc, PLC is on this same network (no internet needed).
   dina-brain-net:
     internal: false   # brain needs outbound for LLM APIs
 

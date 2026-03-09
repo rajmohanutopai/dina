@@ -179,8 +179,7 @@ networks:
   dina-public:       # Internet-facing (core ingress, PDS federation)
   dina-brain-net:    # Core ↔ Brain (standard bridge — brain needs outbound internet
                      #   for Gemini/Claude API and host.docker.internal for OpenClaw)
-  dina-pds-net:      # Core ↔ PDS (internal — PDS only needs inbound from relay + core)
-    internal: true
+  dina-pds-net:      # Core ↔ PDS (standard bridge — PDS needs outbound to reach plc.directory)
 ```
 
 **Network topology — "The Bowtie":**

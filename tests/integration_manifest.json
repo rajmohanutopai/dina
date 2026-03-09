@@ -3550,7 +3550,7 @@
       "line": 0
     },
     "TST-INT-658": {
-      "scenario": "PDS network internal: true prevents outbound internet",
+      "scenario": "PDS network: standard bridge with outbound for plc.directory",
       "path": "18.20",
       "row": 2,
       "section": "Architecture Validation \u2014 MEDIUM Severity Gaps",

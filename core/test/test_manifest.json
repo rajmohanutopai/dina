@@ -4491,7 +4491,7 @@
     "TST-CORE-636": {
       "path": "17",
       "row": 26,
-      "scenario": "Docker network: `dina-pds-net` is internal",
+      "scenario": "Docker network: `dina-pds-net` allows outbound (plc.directory)",
       "line": 1237
     },
     "TST-CORE-637": {

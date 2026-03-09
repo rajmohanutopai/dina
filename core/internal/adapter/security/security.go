@@ -32,8 +32,8 @@ func defaultDockerConfig() *DockerConfig {
 	return &DockerConfig{
 		ExposedPorts: []string{"8100", "2583"},
 		Networks: map[string]bool{
-			"dina-pds-net":   true,  // internal
-			"dina-brain-net": false, // standard bridge
+			"dina-pds-net":   false, // standard bridge — PDS needs outbound to reach plc.directory
+			"dina-brain-net": false, // standard bridge — brain needs outbound for LLM APIs
 		},
 		SecretsMountPath: "/run/secrets/",
 		EnvVars:          []string{"DINA_MODE", "DINA_LISTEN_ADDR"},

@@ -875,20 +875,21 @@ def test_well_known_atproto_did_endpoint(
 
 
 # TST-INT-658
-def test_pds_net_internal_no_outbound(
+def test_pds_net_outbound_for_plc(
     mock_compose: MockDockerCompose,
 ):
-    """PDS container is on an internal network with no outbound access."""
+    """PDS container is on dina-pds-net (standard bridge, not internal).
+    PDS needs outbound access to reach public plc.directory for DID resolution."""
     mock_compose.up()
     pds = mock_compose.containers["pds"]
 
-    # PDS should only be on dina-pds-net (internal)
+    # PDS should only be on dina-pds-net (standard bridge — outbound for plc.directory)
     assert len(pds.networks) == 1, (
-        "PDS should be on exactly one network (internal)"
+        "PDS should be on exactly one network"
     )
     assert "dina-pds-net" in pds.networks
 
-    # PDS should NOT be on the public network
+    # PDS should NOT be on the public network or brain network
     assert "dina-public" not in pds.networks, (
         "PDS must NOT be on the public network"
     )

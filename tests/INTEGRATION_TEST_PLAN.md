@@ -208,7 +208,7 @@
 ### 5.1 Bowtie Topology
 
 > Core is the hub ("knot"). Brain and PDS are the loops. They never touch each other.
-> Three Docker networks: `dina-public` (standard), `dina-brain-net` (standard), `dina-pds-net` (internal).
+> Three Docker networks: `dina-public` (standard), `dina-brain-net` (standard), `dina-pds-net` (standard — PDS needs outbound for plc.directory).
 
 | # | Scenario | Test Method | Expected |
 |---|----------|-------------|----------|
@@ -219,7 +219,7 @@
 | 5 | **[TST-INT-089]** Only core + PDS exposed on host | `curl localhost:8100` from host | 200; `curl localhost:8200` → refused; `curl localhost:2583` → PDS responds |
 | 6 | **[TST-INT-090]** LLM not exposed (production) | `curl localhost:8080` from host | Connection refused — port not mapped in docker-compose |
 | 7 | **[TST-INT-091]** Brain can reach internet (outbound) | `docker exec brain wget -q --spider https://api.google.com` | Connection succeeds — `dina-brain-net` is standard bridge (not internal) |
-| 8 | **[TST-INT-092]** PDS cannot reach internet (outbound) | `docker exec pds wget -q --spider https://example.com` | Connection refused — `dina-pds-net` is `internal: true` (relay initiates inbound to PDS) |
+| 8 | **[TST-INT-092]** PDS on pds-net with outbound | `docker exec pds wget -q --spider https://example.com` | Connection succeeds — `dina-pds-net` is standard bridge (PDS needs outbound to reach plc.directory) |
 | 9 | **[TST-INT-093]** Brain can reach `host.docker.internal` | `docker exec brain wget -q --spider http://host.docker.internal:3000` | OpenClaw on host reachable via `extra_hosts` directive |
 
 ### 5.2 Observability & Health (End-to-End)
@@ -1120,7 +1120,7 @@
 | # | Scenario | Setup | Expected |
 |---|----------|-------|----------|
 | 1 | **[TST-INT-657]** `GET /.well-known/atproto-did` returns did:plc | Serve endpoint | Returns identity DID as text/plain |
-| 2 | **[TST-INT-658]** PDS network `internal: true` — no outbound internet | Network config | PDS cannot make outbound connections |
+| 2 | **[TST-INT-658]** PDS network: standard bridge with outbound | Network config | PDS can make outbound connections (plc.directory for DID resolution) |
 | 3 | **[TST-INT-659]** Pairing code single-use: second attempt rejected | Use code twice | First: success. Second: returns None (used) |
 | 4 | **[TST-INT-660]** Brain cannot directly reach PDS container | Network topology | No shared Docker network between brain and PDS |
 | 5 | **[TST-INT-661]** Managed hosting: 15-min filesystem snapshots | Snapshot config | Interval = 15 minutes |

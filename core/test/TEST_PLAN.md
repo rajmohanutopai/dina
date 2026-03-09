@@ -1248,7 +1248,7 @@
 | 23 | **[TST-CORE-633]** Secrets NEVER in environment variables | `docker inspect dina-core`, check `Env` section | No `Service Signature Auth`, `DINA_PASSPHRASE` in environment — only in `/run/secrets/` (tmpfs) |
 | 24 | **[TST-CORE-634]** Secrets tmpfs mount (never on disk) | Inspect `/run/secrets/` inside container | Files mounted as in-memory tmpfs — never touch disk inside container |
 | 25 | **[TST-CORE-635]** `GOOGLE_API_KEY` exception documented | Inspect `.env` and docker-compose env | API key in `.env` (not secrets) — it's a revocable cloud key, not a local credential |
-| 26 | **[TST-CORE-636]** Docker network: `dina-pds-net` is internal | Inspect `docker network inspect dina-pds-net` | `internal: true` — PDS network has no outbound internet access |
+| 26 | **[TST-CORE-636]** Docker network: `dina-pds-net` allows outbound | Inspect `docker network inspect dina-pds-net` | Standard bridge (not internal) — PDS needs outbound to reach plc.directory for DID resolution |
 | 27 | **[TST-CORE-637]** Docker network: `dina-brain-net` is standard | Inspect `docker network inspect dina-brain-net` | Standard bridge (not internal) — brain needs outbound internet for Gemini/Claude API |
 | 28 | **[TST-CORE-638]** External ports: only 8100 + 2583 | Inspect docker-compose port mappings | Only `8100:8100` (core) and `2583:2583` (PDS) exposed to host — brain and llama internal only |
 | 29 | **[TST-CORE-903]** No Go `plugin.Open()` or dynamic library loading | Code audit for plugin/dlopen | Zero matches — kernel guarantee against dynamic code loading |

@@ -99,7 +99,7 @@ All closed in `tests/integration/test_arch_medium_1.py` (TST-INT-605 through TST
 | M48 | TST-INT-654 | §17 | 3 missed pongs closes connection, marks device offline | CLOSED |
 | M49 | TST-INT-655 | §17 | WebSocket auth frame 5-second timeout closes connection | CLOSED |
 | M50 | TST-INT-657 | §17 | GET /.well-known/atproto-did returns did:plc for PDS federation | CLOSED |
-| M51 | TST-INT-658 | §17 | PDS network internal: true prevents outbound internet | CLOSED |
+| M51 | TST-INT-658 | §17 | PDS network: standard bridge (outbound for plc.directory) | CLOSED |
 | M52 | TST-INT-663 | §16 | Watchdog ticker: breach triggers Tier 2 system message | CLOSED |
 | M53 | TST-INT-659 | §17 | Pairing code single-use: second attempt rejected | CLOSED |
 | M54 | TST-INT-662 | §14 | read_only_90_days access expires server-side after 90 days | CLOSED |

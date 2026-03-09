@@ -221,7 +221,7 @@ func TestSecurity_17_7_DockerNetworkIsolation(t *testing.T) {
 
 	pdsInternal, pdsExists := dockerCfg.Networks["dina-pds-net"]
 	testutil.RequireTrue(t, pdsExists, "dina-pds-net must exist in config")
-	testutil.RequireTrue(t, pdsInternal, "dina-pds-net must be internal")
+	testutil.RequireFalse(t, pdsInternal, "dina-pds-net must NOT be internal — PDS needs outbound to reach plc.directory")
 
 	_, brainExists := dockerCfg.Networks["dina-brain-net"]
 	testutil.RequireTrue(t, brainExists, "dina-brain-net must exist in config")
@@ -944,11 +944,11 @@ func TestSecurity_17_25_GoogleAPIKeyException(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
-// §17.26 Docker Network: dina-pds-net is Internal
+// §17.26 Docker Network: dina-pds-net outbound (PDS needs plc.directory)
 // --------------------------------------------------------------------------
 
 // TST-CORE-636
-func TestSecurity_17_26_PdsNetInternal(t *testing.T) {
+func TestSecurity_17_26_PdsNetOutbound(t *testing.T) {
 	// Fresh SecurityAuditor — no shared state.
 	impl := security.NewSecurityAuditor("", nil)
 	testutil.RequireImplementation(t, impl, "SecurityAuditor")
@@ -956,10 +956,11 @@ func TestSecurity_17_26_PdsNetInternal(t *testing.T) {
 	dockerCfg, err := impl.InspectDockerConfig()
 	testutil.RequireNoError(t, err)
 
-	// Positive: dina-pds-net must be defined and internal.
+	// Positive: dina-pds-net must be defined and NOT internal.
+	// PDS needs outbound to reach public plc.directory for DID resolution.
 	internal, exists := dockerCfg.Networks["dina-pds-net"]
 	testutil.RequireTrue(t, exists, "dina-pds-net must be defined in Networks")
-	testutil.RequireTrue(t, internal, "dina-pds-net must be internal: true — no outbound internet")
+	testutil.RequireFalse(t, internal, "dina-pds-net must NOT be internal — PDS needs outbound to reach plc.directory")
 
 	// Positive: dina-brain-net must exist and NOT be internal (brain needs outbound for LLM APIs).
 	brainInternal, brainExists := dockerCfg.Networks["dina-brain-net"]
