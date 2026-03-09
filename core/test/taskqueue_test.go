@@ -536,7 +536,7 @@ func TestTaskQueue_8_4_4_PersistenceAcrossRestart(t *testing.T) {
 	// Completed task should still be retrievable with correct status.
 	completed, err := queue.GetByID(ctx, dequeued.ID)
 	testutil.RequireNoError(t, err)
-	testutil.RequireEqual(t, completed.Status, domain.TaskDone)
+	testutil.RequireEqual(t, completed.Status, domain.TaskCompleted)
 
 	// Remaining task should still be pending and dequeue-able.
 	dequeued2, err := queue.Dequeue(ctx)
@@ -946,7 +946,8 @@ func TestTaskQueue_8_3_7_IndexOnStatusTimeout(t *testing.T) {
 	watchdog := taskqueue.NewWatchdog(impl)
 
 	// Negative: empty queue has no timed-out tasks.
-	timedOut := watchdog.ScanTimedOut()
+	timedOut, err := watchdog.ScanTimedOut(ctx)
+	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, len(timedOut), 0)
 
 	// Enqueue and dequeue a task (sets it running with timeout).
@@ -958,7 +959,8 @@ func TestTaskQueue_8_3_7_IndexOnStatusTimeout(t *testing.T) {
 	testutil.RequireEqual(t, dequeued.ID, id)
 
 	// Before timeout expires, scan should return 0.
-	timedOut = watchdog.ScanTimedOut()
+	timedOut, err = watchdog.ScanTimedOut(ctx)
+	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, len(timedOut), 0)
 
 	// Simulate timeout by mutating the in-flight task's TimeoutAt via GetByID pointer.
@@ -968,9 +970,10 @@ func TestTaskQueue_8_3_7_IndexOnStatusTimeout(t *testing.T) {
 	inFlight.TimeoutAt = time.Now().Add(-1 * time.Minute).Unix()
 
 	// After timeout, scan must find exactly 1 timed-out task.
-	timedOut = watchdog.ScanTimedOut()
+	timedOut, err = watchdog.ScanTimedOut(ctx)
+	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, len(timedOut), 1)
-	testutil.RequireEqual(t, timedOut[0], id)
+	testutil.RequireEqual(t, timedOut[0].ID, id)
 }
 
 // TST-CORE-473

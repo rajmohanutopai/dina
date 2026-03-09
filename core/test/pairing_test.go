@@ -309,8 +309,8 @@ func TestPairing_10_4_2_NumericCodeBruteForceResistance(t *testing.T) {
 	// Negative: two independent codes must differ (random generation).
 	testutil.RequireTrue(t, code1 != code2, "two generated codes must be distinct")
 
-	t.Logf("pairing code length=%d chars, entropy=%.0f bits (2^%.0f combinations)",
-		codeLen, totalEntropy, totalEntropy, math.Pow(2, totalEntropy))
+	t.Logf("pairing code length=%d chars, entropy=%.0f bits (%.0f combinations)",
+		codeLen, totalEntropy, math.Pow(2, totalEntropy))
 }
 
 // --------------------------------------------------------------------------

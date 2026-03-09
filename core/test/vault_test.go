@@ -804,7 +804,7 @@ func TestVault_4_2_1_StoreItem(t *testing.T) {
 	testutil.RequireImplementation(t, vm, "VaultManager")
 
 	ctx := context.Background()
-	persona := "test-store-item"
+	persona := domain.PersonaName("test-store-item")
 	err := vm.Open(ctx, persona, testutil.TestDEK[:])
 	testutil.RequireNoError(t, err)
 
@@ -832,7 +832,7 @@ func TestVault_4_2_2_RetrieveByID(t *testing.T) {
 	testutil.RequireImplementation(t, vm, "VaultManager")
 
 	ctx := context.Background()
-	persona := "test-retrieve-by-id"
+	persona := domain.PersonaName("test-retrieve-by-id")
 	err := vm.Open(ctx, persona, testutil.TestDEK[:])
 	testutil.RequireNoError(t, err)
 
@@ -862,7 +862,7 @@ func TestVault_4_2_3_RetrieveNonExistent(t *testing.T) {
 	testutil.RequireImplementation(t, vm, "VaultManager")
 
 	ctx := context.Background()
-	persona := "test-retrieve-nonexistent"
+	persona := domain.PersonaName("test-retrieve-nonexistent")
 	err := vm.Open(ctx, persona, testutil.TestDEK[:])
 	testutil.RequireNoError(t, err)
 
@@ -914,7 +914,7 @@ func TestVault_4_2_5_DeleteItem(t *testing.T) {
 	testutil.RequireImplementation(t, vm, "VaultManager")
 
 	ctx := context.Background()
-	persona := "test-delete-item"
+	persona := domain.PersonaName("test-delete-item")
 	err := vm.Open(ctx, persona, testutil.TestDEK[:])
 	testutil.RequireNoError(t, err)
 
@@ -3723,13 +3723,12 @@ func TestVault_4_3_11_FilterByTimeRange(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	defer os.RemoveAll(vaultDir)
 
+	ctx := context.Background()
 	vm := vault.NewManager(vaultDir)
 	persona := domain.PersonaName("test-time-range")
 	dek := testutil.TestDEK[:]
-	err = vm.Open(persona, dek)
+	err = vm.Open(ctx, persona, dek)
 	testutil.RequireNoError(t, err)
-
-	ctx := context.Background()
 
 	// Store items at different timestamps.
 	item1 := domain.VaultItem{ID: "time-jan", Type: "note", Source: "test", Timestamp: 1704067200} // Jan 1
@@ -4957,8 +4956,9 @@ func TestVault_4_7_9_RawEntriesForForensics(t *testing.T) {
 		fmt.Sprintf("all 5 timestamps must be distinct (got %d unique)", len(seenTimestamps)))
 
 	// Verify hash chain integrity on the raw entries.
-	err = al.VerifyChain(vaultCtx)
+	valid, err := al.VerifyChain()
 	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, valid, "hash chain integrity must pass")
 }
 
 // TST-CORE-317
@@ -4993,7 +4993,7 @@ func TestVault_4_7_10_AuditLogStoredInIdentitySQLite(t *testing.T) {
 	testutil.RequireTrue(t, id2 > id1, "second entry must have higher ID (sequential)")
 
 	// Query all entries — both personas' entries in the same log.
-	entries, err := logger.Query(vaultCtx, testutil.AuditQuery{})
+	entries, err := logger.Query(vaultCtx, domain.VaultAuditFilter{})
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, len(entries), 2)
 
@@ -5002,8 +5002,9 @@ func TestVault_4_7_10_AuditLogStoredInIdentitySQLite(t *testing.T) {
 	testutil.RequireEqual(t, entries[1].Persona, "/health")
 
 	// Verify hash chain integrity — entries are tamper-evident.
-	err = logger.VerifyChain()
+	chainValid, err := logger.VerifyChain()
 	testutil.RequireNoError(t, err)
+	testutil.RequireTrue(t, chainValid, "hash chain must be valid")
 
 	// Source audit: verify audit_log is defined in identity_001.sql.
 	src, err := os.ReadFile("../internal/adapter/sqlite/schema/identity_001.sql")
@@ -5061,7 +5062,7 @@ func TestVault_4_7_11_StorageGrowthBounded(t *testing.T) {
 	testutil.RequireEqual(t, len(remaining), 3)
 
 	// Hash chain must still be valid after purge.
-	valid, err := logger.VerifyChain(ctx)
+	valid, err := logger.VerifyChain()
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, valid, "hash chain must remain valid after purge")
 }
@@ -6123,25 +6124,26 @@ func TestVault_4_9_2_UsesSqliteVecNotVSS(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	defer os.RemoveAll(dir)
 
+	ctx := context.Background()
 	mgr := vault.NewManager(dir)
-	err = mgr.Open("vectest", "test-key-vec")
+	err = mgr.Open(ctx, "vectest", []byte("test-key-vec"))
 	testutil.RequireNoError(t, err)
 	defer mgr.Close("vectest")
 
 	// Store an item with an embedding (768-dim float32 → BLOB).
 	item := domain.VaultItem{
-		ID:      "vec-item-1",
-		Type:    "note",
-		Summary: "sqlite-vec test item",
-		Body:    "verifying vector storage uses BLOB embeddings",
+		ID:       "vec-item-1",
+		Type:     "note",
+		Summary:  "sqlite-vec test item",
+		BodyText: "verifying vector storage uses BLOB embeddings",
 	}
-	err = mgr.Store("vectest", item)
+	_, err = mgr.Store(ctx, "vectest", item)
 	testutil.RequireNoError(t, err)
 
 	// VectorSearch should not error — sqlite-vec extension must be usable.
 	embedding := make([]float32, 768)
 	embedding[0] = 1.0
-	results, err := mgr.VectorSearch("vectest", embedding, 5)
+	results, err := mgr.VectorSearch(ctx, "vectest", embedding, 5)
 	// If VectorSearch returns results or nil error, sqlite-vec is working.
 	// An error mentioning "vss" would indicate the wrong extension.
 	if err != nil {
@@ -6188,24 +6190,25 @@ func TestVault_4_9_3_FTS5AvailableDuringReindex(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	defer os.RemoveAll(dir)
 
+	ctx := context.Background()
 	mgr := vault.NewManager(dir)
-	err = mgr.Open("reindextest", "test-key-reindex")
+	err = mgr.Open(ctx, "reindextest", []byte("test-key-reindex"))
 	testutil.RequireNoError(t, err)
 	defer mgr.Close("reindextest")
 
 	item := domain.VaultItem{
-		ID:      "reindex-item-1",
-		Type:    "note",
-		Summary: "quantum computing breakthrough",
-		Body:    "superconducting qubits achieve error correction",
+		ID:       "reindex-item-1",
+		Type:     "note",
+		Summary:  "quantum computing breakthrough",
+		BodyText: "superconducting qubits achieve error correction",
 	}
-	err = mgr.Store("reindextest", item)
+	_, err = mgr.Store(ctx, "reindextest", item)
 	testutil.RequireNoError(t, err)
 
 	// FTS5 query succeeds even while migrator reports reindexing.
-	results, err := mgr.Query("reindextest", domain.SearchQuery{
-		Text: "quantum",
-		Mode: domain.SearchFTS5,
+	results, err := mgr.Query(ctx, "reindextest", domain.SearchQuery{
+		Query: "quantum",
+		Mode:  domain.SearchFTS5,
 	})
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, len(results), 1)

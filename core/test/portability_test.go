@@ -123,19 +123,20 @@ func TestPortability_23_1_2_WALCheckpointBeforeExport(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	defer os.RemoveAll(dir)
 
+	ctx := context.Background()
 	mgr := vault.NewManager(dir)
-	err = mgr.Open("waltest", "test-key-wal")
+	err = mgr.Open(ctx, "waltest", []byte("test-key-wal"))
 	testutil.RequireNoError(t, err)
 
 	// Store items to generate WAL activity.
 	for i := 0; i < 10; i++ {
 		item := domain.VaultItem{
-			ID:      fmt.Sprintf("wal-item-%d", i),
-			Type:    "note",
-			Summary: fmt.Sprintf("WAL checkpoint test item %d", i),
-			Body:    "data to trigger WAL writes",
+			ID:       fmt.Sprintf("wal-item-%d", i),
+			Type:     "note",
+			Summary:  fmt.Sprintf("WAL checkpoint test item %d", i),
+			BodyText: "data to trigger WAL writes",
 		}
-		err = mgr.Store("waltest", item)
+		_, err = mgr.Store(ctx, "waltest", item)
 		testutil.RequireNoError(t, err)
 	}
 
@@ -459,18 +460,19 @@ func TestPortability_23_1_10_ExportWhileVaultLocked(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	// 1. Create a fresh vault, store data, then close it (vault is now "locked").
+	ctx := context.Background()
 	mgr := vault.NewManager(dir)
-	err = mgr.Open("personal", "test-dek-locked")
+	err = mgr.Open(ctx, "personal", []byte("test-dek-locked"))
 	testutil.RequireNoError(t, err)
 
 	for i := 0; i < 5; i++ {
 		item := domain.VaultItem{
-			ID:      fmt.Sprintf("locked-item-%d", i),
-			Type:    "note",
-			Summary: fmt.Sprintf("locked vault item %d", i),
-			Body:    "this data is encrypted at rest via SQLCipher",
+			ID:       fmt.Sprintf("locked-item-%d", i),
+			Type:     "note",
+			Summary:  fmt.Sprintf("locked vault item %d", i),
+			BodyText: "this data is encrypted at rest via SQLCipher",
 		}
-		err = mgr.Store("personal", item)
+		_, err = mgr.Store(ctx, "personal", item)
 		testutil.RequireNoError(t, err)
 	}
 	err = mgr.Close("personal")
@@ -1103,36 +1105,37 @@ func TestPortability_23_3_4_MigrationPreservesVaultSearch(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	defer os.RemoveAll(dir)
 
-	dek := "migration-test-dek"
+	ctx := context.Background()
+	dek := []byte("migration-test-dek")
 
 	// 1. Create vault, store searchable items.
 	mgr := vault.NewManager(dir)
-	err = mgr.Open("searchtest", dek)
+	err = mgr.Open(ctx, "searchtest", dek)
 	testutil.RequireNoError(t, err)
 
 	items := []domain.VaultItem{
-		{ID: "mig-1", Type: "note", Summary: "quantum computing breakthrough", Body: "Google achieves quantum supremacy"},
-		{ID: "mig-2", Type: "note", Summary: "electric vehicle review", Body: "Tesla Model 3 battery range test"},
-		{ID: "mig-3", Type: "note", Summary: "cooking recipe pasta", Body: "Italian carbonara with guanciale"},
-		{ID: "mig-4", Type: "note", Summary: "quantum entanglement paper", Body: "Bell inequality experiments prove nonlocality"},
-		{ID: "mig-5", Type: "note", Summary: "mechanical keyboard review", Body: "Cherry MX brown switches tactile feel"},
+		{ID: "mig-1", Type: "note", Summary: "quantum computing breakthrough", BodyText: "Google achieves quantum supremacy"},
+		{ID: "mig-2", Type: "note", Summary: "electric vehicle review", BodyText: "Tesla Model 3 battery range test"},
+		{ID: "mig-3", Type: "note", Summary: "cooking recipe pasta", BodyText: "Italian carbonara with guanciale"},
+		{ID: "mig-4", Type: "note", Summary: "quantum entanglement paper", BodyText: "Bell inequality experiments prove nonlocality"},
+		{ID: "mig-5", Type: "note", Summary: "mechanical keyboard review", BodyText: "Cherry MX brown switches tactile feel"},
 	}
 	for _, item := range items {
-		err = mgr.Store("searchtest", item)
+		_, err = mgr.Store(ctx, "searchtest", item)
 		testutil.RequireNoError(t, err)
 	}
 
 	// 2. Search BEFORE migration — baseline.
-	preResults, err := mgr.Query("searchtest", domain.SearchQuery{
-		Text: "quantum",
-		Mode: domain.SearchFTS5,
+	preResults, err := mgr.Query(ctx, "searchtest", domain.SearchQuery{
+		Query: "quantum",
+		Mode:  domain.SearchFTS5,
 	})
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, len(preResults), 2)
 
-	preResults2, err := mgr.Query("searchtest", domain.SearchQuery{
-		Text: "review",
-		Mode: domain.SearchFTS5,
+	preResults2, err := mgr.Query(ctx, "searchtest", domain.SearchQuery{
+		Query: "review",
+		Mode:  domain.SearchFTS5,
 	})
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, len(preResults2), 2)
@@ -1141,29 +1144,29 @@ func TestPortability_23_3_4_MigrationPreservesVaultSearch(t *testing.T) {
 	err = mgr.Close("searchtest")
 	testutil.RequireNoError(t, err)
 
-	err = mgr.Open("searchtest", dek)
+	err = mgr.Open(ctx, "searchtest", dek)
 	testutil.RequireNoError(t, err)
 	defer mgr.Close("searchtest")
 
 	// 4. Search AFTER migration — must match pre-migration results exactly.
-	postResults, err := mgr.Query("searchtest", domain.SearchQuery{
-		Text: "quantum",
-		Mode: domain.SearchFTS5,
+	postResults, err := mgr.Query(ctx, "searchtest", domain.SearchQuery{
+		Query: "quantum",
+		Mode:  domain.SearchFTS5,
 	})
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, len(postResults), 2)
 
-	postResults2, err := mgr.Query("searchtest", domain.SearchQuery{
-		Text: "review",
-		Mode: domain.SearchFTS5,
+	postResults2, err := mgr.Query(ctx, "searchtest", domain.SearchQuery{
+		Query: "review",
+		Mode:  domain.SearchFTS5,
 	})
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, len(postResults2), 2)
 
 	// 5. Negative: term not in any item must return 0 results.
-	noResults, err := mgr.Query("searchtest", domain.SearchQuery{
-		Text: "cryptocurrency",
-		Mode: domain.SearchFTS5,
+	noResults, err := mgr.Query(ctx, "searchtest", domain.SearchQuery{
+		Query: "cryptocurrency",
+		Mode:  domain.SearchFTS5,
 	})
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, len(noResults), 0)

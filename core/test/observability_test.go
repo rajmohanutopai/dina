@@ -732,7 +732,7 @@ func TestObservability_20_3_11_DataVolumeLayout(t *testing.T) {
 	compose := readCompose(t)
 
 	// Extract the core service block.
-	coreBlock := extractServiceBlock(t, compose, "core")
+	coreBlock := extractServiceBlock(compose,"core")
 
 	// Core must mount dina-data volume at /data.
 	testutil.RequireTrue(t, strings.Contains(coreBlock, "dina-data:/data"),
@@ -749,7 +749,7 @@ func TestObservability_20_3_11_DataVolumeLayout(t *testing.T) {
 		"core must mount shared public key directory")
 
 	// Extract the brain service block.
-	brainBlock := extractServiceBlock(t, compose, "brain")
+	brainBlock := extractServiceBlock(compose,"brain")
 
 	// Brain must mount dina-data volume at /data.
 	testutil.RequireTrue(t, strings.Contains(brainBlock, "dina-data:/data"),
@@ -760,7 +760,7 @@ func TestObservability_20_3_11_DataVolumeLayout(t *testing.T) {
 		"brain must mount its own private key directory (not core's)")
 
 	// Extract the pds service block.
-	pdsBlock := extractServiceBlock(t, compose, "pds")
+	pdsBlock := extractServiceBlock(compose,"pds")
 
 	// PDS must mount pds-data volume at /pds.
 	testutil.RequireTrue(t, strings.Contains(pdsBlock, "pds-data:/pds"),

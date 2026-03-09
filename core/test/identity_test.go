@@ -295,8 +295,8 @@ func TestIdentity_3_1_10_MultikeyZ6MkPrefix(t *testing.T) {
 
 	did, err := impl.Create(idCtx, testutil.TestEd25519Seed[:])
 	testutil.RequireNoError(t, err)
-	testutil.RequireTrue(t, strings.HasPrefix(did, "did:key:z6Mk"),
-		"DID must start with did:key:z6Mk for Ed25519 multicodec, got: "+did)
+	testutil.RequireTrue(t, strings.HasPrefix(string(did), "did:key:z6Mk"),
+		"DID must start with did:key:z6Mk for Ed25519 multicodec, got: "+string(did))
 
 	doc, err := impl.Resolve(idCtx, did)
 	testutil.RequireNoError(t, err)
@@ -2156,7 +2156,8 @@ func TestIdentity_3_6_6_IngressTierChange_DIDDocRotation(t *testing.T) {
 	testutil.RequireContains(t, err.Error(), "not found")
 
 	// Positive: create a DID and verify it can be resolved.
-	_, pubKey, err := dinacrypto.GenerateEd25519()
+	signer := dinacrypto.NewEd25519Signer()
+	pubKey, _, err := signer.GenerateFromSeed(testutil.TestEd25519Seed[:])
 	testutil.RequireNoError(t, err)
 
 	did, err := dm.Create(ctx, pubKey)

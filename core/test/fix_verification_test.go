@@ -677,8 +677,7 @@ func TestFixVerify_31_5_1_UpdateContact(t *testing.T) {
 	testutil.RequireEqual(t, resolvedDID, testDID)
 
 	// Verify trust level was stored correctly.
-	trust, err := cd.GetTrustLevel(ctx, testDID)
-	testutil.RequireNoError(t, err)
+	trust := cd.GetTrustLevel(testDID)
 	testutil.RequireEqual(t, trust, "trusted")
 
 	// Update the contact name (this is what PUT /v1/contacts/{did} does).

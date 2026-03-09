@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
@@ -56,11 +55,11 @@ func TestServer_15_1_1_LivenessProbe(t *testing.T) {
 	// This proves Liveness ≠ Readiness — it doesn't accidentally check vault state.
 	unhealthyImpl := newHealthChecker(false)
 	err = unhealthyImpl.Liveness()
-	testutil.RequireNoError(t, err, "Liveness must succeed even when vault is unhealthy")
+	testutil.RequireNoError(t, err) // Liveness must succeed even when vault is unhealthy
 
 	// Negative control: Readiness on same unhealthy checker must FAIL.
 	err = unhealthyImpl.Readiness()
-	testutil.RequireError(t, err, "Readiness must fail when vault is unhealthy — proves Liveness ≠ Readiness")
+	testutil.RequireError(t, err) // Readiness must fail when vault is unhealthy — proves Liveness ≠ Readiness
 }
 
 // TST-CORE-558

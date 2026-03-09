@@ -191,14 +191,20 @@ func TestTransport_7_2_3_InboxFIFOOrder(t *testing.T) {
 	impl := realTransporter
 	testutil.RequireImplementation(t, impl, "Transporter")
 
+	// Type-assert to concrete Transporter to access EnqueueInbox.
+	concrete, ok := impl.(*transport.Transporter)
+	if !ok {
+		t.Fatal("realTransporter is not *transport.Transporter")
+	}
+
 	msg1 := []byte(`{"seq":1,"type":"fifo-test"}`)
 	msg2 := []byte(`{"seq":2,"type":"fifo-test"}`)
 	msg3 := []byte(`{"seq":3,"type":"fifo-test"}`)
 
 	// Enqueue 3 messages via real production EnqueueInbox.
-	impl.EnqueueInbox(msg1)
-	impl.EnqueueInbox(msg2)
-	impl.EnqueueInbox(msg3)
+	concrete.EnqueueInbox(msg1)
+	concrete.EnqueueInbox(msg2)
+	concrete.EnqueueInbox(msg3)
 
 	// Messages must be received in FIFO order via real Receive().
 	received1, err := impl.Receive()
@@ -871,7 +877,7 @@ func TestTransport_7_1_9_MaxRetriesExhaustedNudge(t *testing.T) {
 	testutil.RequireEqual(t, final.Retries, 5)
 
 	// Message should NOT be in pending list.
-	pending, err := impl.ListPending()
+	pending, err := impl.ListPending(ctx)
 	testutil.RequireNoError(t, err)
 	for _, p := range pending {
 		if p.ID == id {
@@ -1195,11 +1201,11 @@ func TestTransport_7_1_18_UserIgnoresNudgeExpires(t *testing.T) {
 	testutil.RequireEqual(t, deleted, 1)
 
 	// Negative: old message is gone.
-	_, err = impl.GetByID(ctx, oldID)
+	_, err = impl.GetByID(oldID)
 	testutil.RequireTrue(t, err != nil, "expired message should be deleted after TTL")
 
 	// Positive: fresh message survives cleanup.
-	surviving, err := impl.GetByID(ctx, freshID)
+	surviving, err := impl.GetByID(freshID)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, surviving.ID, freshID)
 }

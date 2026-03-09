@@ -588,11 +588,11 @@ func TestPDS_22_2_2_NonAuthorDeletionRejected(t *testing.T) {
 // TST-CORE-722
 func TestPDS_22_2_3_TombstonePropagation(t *testing.T) {
 	// Tombstone published to PDS must be distributed by relay to federated AppViews.
-	pub := pds.NewPDSPublisher()
+	authorDID := "did:key:z6MkPropagationAuthor"
+	pub := pds.NewPDSPublisher(authorDID)
 	testutil.RequireImplementation(t, pub, "PDSPublisher")
 
 	ctx := context.Background()
-	authorDID := "did:key:z6MkPropagationAuthor"
 	attackerDID := "did:key:z6MkAttacker"
 
 	// Publish a record first so tombstone has something to propagate.

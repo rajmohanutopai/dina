@@ -277,6 +277,23 @@ def _start_main_stack() -> float:
     print("  Starting main stack (fake PLC + PDS + Core + Brain)...",
           file=sys.stderr, flush=True)
 
+    # Pre-flight: check required ports are free.  If another project
+    # left a stale container bound to one of our ports, fail early
+    # with a helpful message instead of a cryptic Docker error.
+    import socket as _socket
+    for _port, _label in [
+        (LOCAL_PLC_PORT, "PLC"),
+        (MAIN_PDS_PORT, "PDS"),
+        (MAIN_CORE_PORT, "Core"),
+    ]:
+        with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as _s:
+            if _s.connect_ex(("127.0.0.1", _port)) == 0:
+                raise RuntimeError(
+                    f"Port {_port} ({_label}) already in use. "
+                    f"Run: docker ps | grep {_port}   to find the container, "
+                    f"then stop it before retrying."
+                )
+
     # Compose secrets need host files. Use an ephemeral temp dir so this script
     # does not mutate install-time identity seed artifacts under ./secrets.
     secret_tmp_dir = Path(tempfile.mkdtemp(prefix="dina-main-secrets-"))
@@ -301,6 +318,22 @@ def _start_main_stack() -> float:
         "DINA_SEED_PASSWORD_SECRET_FILE": str(seed_password_file),
     }
     compose_cmd = ["docker", "compose", "--profile", "test-plc"]
+
+    # Register cleanup BEFORE starting so partially-created stacks are
+    # always torn down — even if 'up --build' fails (e.g. port conflict).
+    def _stop() -> None:
+        print("\n  Stopping main stack...", file=sys.stderr, flush=True)
+        subprocess.run(
+            [*compose_cmd, "down", "-v"],
+            capture_output=True,
+            timeout=60,
+            cwd=str(PROJECT_ROOT),
+            env=compose_env,
+        )
+        shutil.rmtree(secret_tmp_dir, ignore_errors=True)
+        print("  Main stack stopped.", file=sys.stderr)
+
+    _register_cleanup(_stop)
 
     # Clean up stale containers, networks, AND volumes.
     # The fake PLC is in-memory so old PDS volumes would contain stale
@@ -338,19 +371,6 @@ def _start_main_stack() -> float:
         file=sys.stderr,
     )
 
-    def _stop() -> None:
-        print("\n  Stopping main stack...", file=sys.stderr, flush=True)
-        subprocess.run(
-            [*compose_cmd, "down", "-v"],
-            capture_output=True,
-            timeout=60,
-            cwd=str(PROJECT_ROOT),
-            env=compose_env,
-        )
-        shutil.rmtree(secret_tmp_dir, ignore_errors=True)
-        print("  Main stack stopped.", file=sys.stderr)
-
-    _register_cleanup(_stop)
     return elapsed
 
 

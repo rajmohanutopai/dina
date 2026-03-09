@@ -1770,7 +1770,7 @@ func TestGatekeeper_6_4_AuditLog_90DayRollingRetention(t *testing.T) {
 		Requester: "did:plc:old-contact",
 		Timestamp: time.Now().AddDate(0, 0, -100).UTC().Format(time.RFC3339),
 	}
-	err := impl.Append(ctx, oldEntry)
+	_, err := impl.Append(ctx, oldEntry)
 	testutil.RequireNoError(t, err)
 
 	recentEntry := domain.VaultAuditEntry{
@@ -1779,7 +1779,7 @@ func TestGatekeeper_6_4_AuditLog_90DayRollingRetention(t *testing.T) {
 		Requester: "did:plc:recent-contact",
 		Timestamp: time.Now().AddDate(0, 0, -10).UTC().Format(time.RFC3339),
 	}
-	err = impl.Append(ctx, recentEntry)
+	_, err = impl.Append(ctx, recentEntry)
 	testutil.RequireNoError(t, err)
 
 	// Purge with 90-day retention — old entry should be removed.

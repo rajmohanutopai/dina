@@ -800,7 +800,12 @@ func TestWS_9_3_7_NoReplyToMeansProactive(t *testing.T) {
 // TST-CORE-504
 func TestWS_9_3_8_WhisperStreamTerminatedByFinalWhisper(t *testing.T) {
 	// Fresh WSHandler with no brain router — synchronous response path.
-	validator := func(clientID, token string) bool { return token == "valid-token" }
+	validator := ws.TokenValidator(func(token string) (string, error) {
+		if token == "valid-token" {
+			return "test-device", nil
+		}
+		return "", fmt.Errorf("invalid token")
+	})
 	handler := ws.NewWSHandler(validator, nil)
 	testutil.RequireImplementation(t, handler, "WSHandler")
 
