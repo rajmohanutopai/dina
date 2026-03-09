@@ -59,6 +59,7 @@ type TaskQueue struct {
 	mu         sync.Mutex
 	tasks      []Task
 	inFlight   map[string]*Task // taskID -> running/failed task
+	completed  map[string]*Task // taskID -> completed task
 	cancelled  map[string]*Task // taskID -> cancelled task
 	deadLetter map[string]*Task // taskID -> dead-lettered task
 	nextID     int
@@ -69,6 +70,7 @@ type TaskQueue struct {
 func NewTaskQueue() *TaskQueue {
 	return &TaskQueue{
 		inFlight:   make(map[string]*Task),
+		completed:  make(map[string]*Task),
 		cancelled:  make(map[string]*Task),
 		deadLetter: make(map[string]*Task),
 	}
@@ -157,11 +159,16 @@ func (q *TaskQueue) Complete(_ context.Context, taskID string) error {
 	if t, ok := q.inFlight[taskID]; ok {
 		t.Status = "completed"
 		delete(q.inFlight, taskID)
+		q.completed[taskID] = t
 		return nil
 	}
 	for i := range q.tasks {
 		if q.tasks[i].ID == taskID {
 			q.tasks[i].Status = "completed"
+			t := q.tasks[i]
+			q.completed[taskID] = &t
+			// Remove from pending queue.
+			q.tasks = append(q.tasks[:i], q.tasks[i+1:]...)
 			return nil
 		}
 	}
@@ -169,17 +176,24 @@ func (q *TaskQueue) Complete(_ context.Context, taskID string) error {
 }
 
 // Fail marks a task as failed with a reason.
+// Returns an error if the task is already failed (not idempotent).
 func (q *TaskQueue) Fail(_ context.Context, taskID, reason string) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
 	if t, ok := q.inFlight[taskID]; ok {
+		if t.Status == "failed" {
+			return fmt.Errorf("task %s is already failed", taskID)
+		}
 		t.Status = "failed"
 		t.Error = reason
 		return nil
 	}
 	for i := range q.tasks {
 		if q.tasks[i].ID == taskID {
+			if q.tasks[i].Status == "failed" {
+				return fmt.Errorf("task %s is already failed", taskID)
+			}
 			q.tasks[i].Status = "failed"
 			q.tasks[i].Error = reason
 			return nil
@@ -324,6 +338,11 @@ func (q *TaskQueue) GetByID(_ context.Context, taskID string) (*Task, error) {
 		}
 	}
 
+	// Check completed.
+	if task, ok := q.completed[taskID]; ok {
+		return task, nil
+	}
+
 	// Check cancelled.
 	if task, ok := q.cancelled[taskID]; ok {
 		return task, nil
@@ -350,6 +369,7 @@ func (q *TaskQueue) ResetForTest() {
 	defer q.mu.Unlock()
 	q.tasks = nil
 	q.inFlight = make(map[string]*Task)
+	q.completed = make(map[string]*Task)
 	q.cancelled = make(map[string]*Task)
 	q.deadLetter = make(map[string]*Task)
 	q.maxRetries = 0

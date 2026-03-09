@@ -64,7 +64,7 @@ func (p *Pool) Open(persona string, dek []byte) error {
 	keyHex := hex.EncodeToString(dek)
 
 	// SQLCipher DSN: pragma_key via URI parameter.
-	dsn := fmt.Sprintf("file:%s?_pragma_key=x'%s'&_pragma_cipher_page_size=4096&_journal_mode=WAL&_busy_timeout=5000",
+	dsn := fmt.Sprintf("file:%s?_pragma_key=x'%s'&_pragma_cipher_page_size=4096&_journal_mode=WAL&_busy_timeout=5000&_synchronous=NORMAL",
 		dbPath, keyHex)
 
 	db, err := sql.Open("sqlite3", dsn)

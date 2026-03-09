@@ -240,13 +240,22 @@ func TestBrainClient_11_2_1_BrainHealthy(t *testing.T) {
 
 // TST-CORE-538
 func TestBrainClient_11_2_2_BrainUnhealthy(t *testing.T) {
-	impl := realBrainClient
-	// impl = brainclient.New("http://brain:8200", testutil.TestBrainToken)
-	testutil.RequireImplementation(t, impl, "BrainClient")
+	// Dedicated httptest.Server that always returns 503 on /healthz.
+	// Avoids shared mockBrainServer atomic counter state issues.
+	unhealthyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer unhealthyServer.Close()
 
-	// /healthz fails 3 consecutive times → alert dispatched, circuit
-	// breaker opened. Health() should return an error.
-	err := impl.Health()
+	client := brainclient.New(unhealthyServer.URL, nil)
+	testutil.RequireImplementation(t, client, "BrainClient")
+
+	// /healthz returns 503 → Health() should return an error.
+	err := client.Health()
 	// When brain is unhealthy, Health() returns an error.
 	testutil.RequireError(t, err)
 }

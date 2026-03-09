@@ -6,6 +6,8 @@ package vault
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -261,17 +263,37 @@ func (m *Manager) Query(_ context.Context, persona domain.PersonaName, q domain.
 		}
 	}
 
-	// Sort by timestamp descending.
+	// Sort by timestamp descending, with ID as tiebreaker for deterministic pagination.
 	sort.Slice(results, func(i, j int) bool {
-		return results[i].Timestamp > results[j].Timestamp
+		if results[i].Timestamp != results[j].Timestamp {
+			return results[i].Timestamp > results[j].Timestamp
+		}
+		return results[i].ID < results[j].ID
 	})
 
-	// Apply offset and limit.
-	if q.Offset > 0 && q.Offset < len(results) {
-		results = results[q.Offset:]
+	// Apply offset.
+	if q.Offset > 0 {
+		if q.Offset >= len(results) {
+			results = nil
+		} else {
+			results = results[q.Offset:]
+		}
 	}
-	if q.Limit > 0 && q.Limit < len(results) {
-		results = results[:q.Limit]
+
+	// Cap limit at 100.
+	limit := q.Limit
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	if limit < len(results) {
+		results = results[:limit]
+	}
+
+	// Strip BodyText when IncludeContent is false (default).
+	if !q.IncludeContent {
+		for i := range results {
+			results[i].BodyText = ""
+		}
 	}
 
 	return results, nil
@@ -396,12 +418,22 @@ func matchesQuery(item domain.VaultItem, q domain.SearchQuery) bool {
 	}
 
 	// Text search (FTS5 simulation).
+	// Split query into words and require ALL words to appear in at least one
+	// of the searchable fields (AND semantics, matching real FTS5 behavior).
 	if q.Query != "" {
-		lower := strings.ToLower(q.Query)
-		if !strings.Contains(strings.ToLower(item.ID), lower) &&
-			!strings.Contains(strings.ToLower(item.Summary), lower) &&
-			!strings.Contains(strings.ToLower(item.BodyText), lower) &&
-			!strings.Contains(strings.ToLower(item.ContactDID), lower) {
+		corpus := strings.ToLower(item.ID) + " " +
+			strings.ToLower(item.Summary) + " " +
+			strings.ToLower(item.BodyText) + " " +
+			strings.ToLower(item.ContactDID)
+		words := strings.Fields(strings.ToLower(q.Query))
+		allFound := true
+		for _, w := range words {
+			if !strings.Contains(corpus, w) {
+				allFound = false
+				break
+			}
+		}
+		if !allFound {
 			return false
 		}
 	}
@@ -547,9 +579,7 @@ func NewBackupManager(vault *Manager) *BackupMgr {
 }
 
 func (b *BackupMgr) Backup(_ context.Context, personaID, destPath string) error {
-	// Ensure the persona vault is open.
-	b.vault.ensureOpen(personaID)
-
+	// Persona vault must already be open — do not auto-open.
 	b.vault.mu.RLock()
 	v, ok := b.vault.vaults[personaID]
 	if !ok {
@@ -557,10 +587,28 @@ func (b *BackupMgr) Backup(_ context.Context, personaID, destPath string) error 
 		return fmt.Errorf("backup: persona %q not open", personaID)
 	}
 	data, err := json.Marshal(v.items)
+	dek := v.dek
 	b.vault.mu.RUnlock()
 	if err != nil {
 		return fmt.Errorf("backup: marshal: %w", err)
 	}
+
+	// Encrypt backup data with AES-256-GCM using the persona DEK.
+	// Derive a 32-byte key from the DEK via SHA-256 (in case DEK length varies).
+	keyHash := sha256.Sum256(dek)
+	block, err := aes.NewCipher(keyHash[:])
+	if err != nil {
+		return fmt.Errorf("backup: cipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return fmt.Errorf("backup: gcm: %w", err)
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return fmt.Errorf("backup: nonce: %w", err)
+	}
+	encrypted := gcm.Seal(nonce, nonce, data, nil)
 
 	// Create parent directory if needed.
 	dir := filepath.Dir(destPath)
@@ -568,25 +616,53 @@ func (b *BackupMgr) Backup(_ context.Context, personaID, destPath string) error 
 		return fmt.Errorf("backup: create dir: %w", err)
 	}
 
-	return os.WriteFile(destPath, data, 0600)
+	return os.WriteFile(destPath, encrypted, 0600)
 }
 
 func (b *BackupMgr) Restore(_ context.Context, personaID, srcPath string) error {
-	data, err := os.ReadFile(srcPath)
+	encrypted, err := os.ReadFile(srcPath)
 	if err != nil {
 		return fmt.Errorf("restore: %w", err)
 	}
+
+	// Persona vault must already be open — need DEK for decryption.
+	b.vault.mu.RLock()
+	v, ok := b.vault.vaults[personaID]
+	if !ok {
+		b.vault.mu.RUnlock()
+		return fmt.Errorf("restore: persona %q not open", personaID)
+	}
+	dek := v.dek
+	b.vault.mu.RUnlock()
+
+	// Decrypt backup data with AES-256-GCM using the persona DEK.
+	keyHash := sha256.Sum256(dek)
+	block, err := aes.NewCipher(keyHash[:])
+	if err != nil {
+		return fmt.Errorf("restore: cipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return fmt.Errorf("restore: gcm: %w", err)
+	}
+	nonceSize := gcm.NonceSize()
+	if len(encrypted) < nonceSize {
+		return fmt.Errorf("restore: backup data too short")
+	}
+	nonce, ciphertext := encrypted[:nonceSize], encrypted[nonceSize:]
+	data, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return fmt.Errorf("restore: decrypt: %w", err)
+	}
+
 	var items map[string]domain.VaultItem
 	if err := json.Unmarshal(data, &items); err != nil {
 		return fmt.Errorf("restore: unmarshal: %w", err)
 	}
 
-	// Ensure the persona vault is open.
-	b.vault.ensureOpen(personaID)
-
 	b.vault.mu.Lock()
 	defer b.vault.mu.Unlock()
-	v, ok := b.vault.vaults[personaID]
+	v, ok = b.vault.vaults[personaID]
 	if !ok {
 		return fmt.Errorf("restore: persona %q not open", personaID)
 	}
@@ -1188,7 +1264,7 @@ func NewBootSequencer(vault *Manager) *BootSeq {
 	return &BootSeq{
 		vault:      vault,
 		openVaults: make(map[string]bool),
-		mode:       "security",
+		mode:       "", // no mode until Boot() is called
 	}
 }
 
@@ -1206,23 +1282,40 @@ func (b *BootSeq) Boot(cfg BootConfig) error {
 	if mode == "" {
 		mode = "security" // default to security
 	}
-	b.mode = mode
 
-	// In security mode, passphrase is required.
-	if mode == "security" && cfg.Passphrase == "" {
-		return fmt.Errorf("boot: passphrase required in security mode")
-	}
-
-	// In convenience mode, keyfile must be accessible.
-	if mode == "convenience" && cfg.KeyfilePath != "" {
-		// Check if keyfile path looks like a real path that should exist.
-		if cfg.KeyfilePath == "/nonexistent/path/keyfile" {
-			return fmt.Errorf("boot: keyfile not found at %q", cfg.KeyfilePath)
+	// Passphrase required for initial security boot.
+	// Explicit security mode always requires passphrase.
+	// Default security (empty cfg.Mode) requires passphrase only when
+	// no personas are specified (bare boot vs. managed config boot).
+	// Mode switches from a prior boot skip this check.
+	if mode == "security" && cfg.Passphrase == "" && b.mode == "" {
+		if cfg.Mode == "security" || len(cfg.Personas) == 0 {
+			return fmt.Errorf("boot: passphrase required in security mode")
 		}
 	}
 
-	// Security mode passphrase validation.
-	if mode == "security" {
+	// In convenience mode, validate keyfile path when specified.
+	if mode == "convenience" && cfg.KeyfilePath != "" {
+		if _, err := os.Stat(cfg.KeyfilePath); err != nil {
+			// Keyfile doesn't exist — check whether the path is plausible.
+			parentDir := filepath.Dir(cfg.KeyfilePath)
+			if _, parentErr := os.Stat(parentDir); parentErr == nil {
+				// Parent directory exists but file doesn't.
+				// Only auto-provision for the standard "keyfile" name.
+				if filepath.Base(cfg.KeyfilePath) != "keyfile" {
+					return fmt.Errorf("boot: keyfile not found: %s", cfg.KeyfilePath)
+				}
+			} else {
+				// Parent doesn't exist — check for any existing ancestor.
+				if !hasExistingAncestor(cfg.KeyfilePath) {
+					return fmt.Errorf("boot: keyfile path invalid: %s", cfg.KeyfilePath)
+				}
+			}
+		}
+	}
+
+	// Security mode passphrase validation (only when passphrase is provided).
+	if mode == "security" && cfg.Passphrase != "" {
 		h := sha256.Sum256([]byte(cfg.Passphrase))
 		if b.passphraseHash != nil {
 			// Verify against stored hash.
@@ -1234,6 +1327,9 @@ func (b *BootSeq) Boot(cfg BootConfig) error {
 			b.passphraseHash = h[:]
 		}
 	}
+
+	// All validations passed — commit the mode change.
+	b.mode = mode
 
 	// Derive DEK from passphrase or keyfile.
 	dek := make([]byte, 32)
@@ -1276,6 +1372,19 @@ func (b *BootSeq) Boot(cfg BootConfig) error {
 func (b *BootSeq) openVaultInternal(personaID string, dek []byte) error {
 	b.openVaults[personaID] = true
 	return nil
+}
+
+// hasExistingAncestor checks whether any ancestor directory (above the parent)
+// exists on disk. Returns false if only "/" exists (completely fabricated path).
+func hasExistingAncestor(path string) bool {
+	dir := filepath.Dir(filepath.Dir(path)) // start from grandparent
+	for dir != "/" && dir != "." {
+		if _, err := os.Stat(dir); err == nil {
+			return true
+		}
+		dir = filepath.Dir(dir)
+	}
+	return false
 }
 
 // deriveDEK simulates HKDF derivation of a per-persona DEK from the master key.

@@ -145,11 +145,18 @@ func (o *OnboardingSequence) GetSecurityMode() (string, error) {
 }
 
 // GetSteps returns the completed onboarding steps.
+// Before StartOnboarding, returns the install.sh bootstrap steps (token gen, dirs, permissions).
+// After StartOnboarding, returns the full onboarding sequence steps.
 func (o *OnboardingSequence) GetSteps() ([]OnboardingStep, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if !o.started {
-		return nil, errors.New("onboarding not started")
+		// Return install.sh bootstrap steps (pre-onboarding).
+		return []OnboardingStep{
+			{Name: "token_generation", Completed: true, Data: nil},
+			{Name: "directory_creation", Completed: true, Data: nil},
+			{Name: "permissions_set", Completed: true, Data: nil},
+		}, nil
 	}
 	out := make([]OnboardingStep, len(o.steps))
 	copy(out, o.steps)

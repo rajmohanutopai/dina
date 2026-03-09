@@ -9,7 +9,7 @@
 services:
   core:
     container_name: core-${DINA_SESSION:-dna}
-    image: dina-core:latest
+    image: dina-core:v0.4.0
     restart: always
     ports:
       - "8300:8300"
@@ -24,7 +24,7 @@ services:
 
   brain:
     container_name: brain-${DINA_SESSION:-dna}
-    image: dina-brain:latest
+    image: dina-brain:v0.4.0
     restart: always
     expose:
       - "8200"

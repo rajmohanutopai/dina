@@ -751,7 +751,7 @@ func TestCrypto_2_3_UserSaltRandom32Bytes(t *testing.T) {
 	// Different salt must produce a different DEK (proves salt is actually used).
 	altSalt := make([]byte, 32)
 	for i := range altSalt {
-		altSalt[i] = byte(i + 1)
+		altSalt[i] = byte(i + 0x80)
 	}
 	dekAlt, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", altSalt)
 	testutil.RequireNoError(t, err)

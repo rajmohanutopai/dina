@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"sync"
 
 	"github.com/rajmohanutopai/dina/core/internal/domain"
@@ -51,8 +52,14 @@ func (p *PDSPublisher) SignAndPublish(_ context.Context, record PDSRecord) (stri
 	record.Signature = []byte("ed25519-signature-placeholder")
 	p.records[record.RecordKey] = &record
 
+	// Use record's AuthorDID, falling back to the publisher's own DID.
+	did := record.AuthorDID
+	if did == "" {
+		did = p.authorDID
+	}
+
 	// Return AT URI.
-	uri := fmt.Sprintf("at://%s/%s/%s", record.AuthorDID, record.Collection, record.RecordKey)
+	uri := fmt.Sprintf("at://%s/%s/%s", did, record.Collection, record.RecordKey)
 	return uri, nil
 }
 
@@ -106,11 +113,57 @@ func validateAttestation(payload map[string]interface{}) error {
 		return errors.New("lexicon validation: verdict must be a structured object (#verdictDetail), not a string")
 	}
 
+	// Validate optional URI fields when present.
+	for _, field := range []string{"sourceUrl", "deepLink"} {
+		if v, ok := payload[field]; ok && v != nil {
+			s, isStr := v.(string)
+			if !isStr {
+				return fmt.Errorf("lexicon validation: %s must be a string", field)
+			}
+			u, err := url.Parse(s)
+			if err != nil || u.Scheme == "" || u.Host == "" {
+				return fmt.Errorf("lexicon validation: %s must be a valid URI", field)
+			}
+		}
+	}
+
 	return nil
 }
 
 func validateOutcome(payload map[string]interface{}) error {
-	// Outcome records have flexible schema — validate basic presence.
+	// Outcome records must have at least one field.
+	if len(payload) == 0 {
+		return fmt.Errorf("lexicon validation: missing required field %q", "reporter_trust_ring")
+	}
+
+	// If this is a strict outcome data report (has reporter_trust_ring),
+	// enforce full schema validation. Product review records (expertDid, verdict)
+	// use a different schema within the same collection.
+	if _, hasReporter := payload["reporter_trust_ring"]; hasReporter {
+		requiredFields := []string{"reporter_trust_ring", "outcome", "satisfaction", "issues"}
+		for _, field := range requiredFields {
+			v, ok := payload[field]
+			if !ok || v == nil {
+				return fmt.Errorf("lexicon validation: missing required field %q", field)
+			}
+		}
+
+		// Validate satisfaction range (0-100).
+		sat := payload["satisfaction"]
+		var satVal float64
+		switch s := sat.(type) {
+		case int:
+			satVal = float64(s)
+		case float64:
+			satVal = s
+		default:
+			return errors.New("lexicon validation: satisfaction must be a number")
+		}
+		if satVal < 0 || satVal > 100 {
+			return fmt.Errorf("lexicon validation: satisfaction %v out of range 0-100", satVal)
+		}
+	}
+
 	return nil
 }
 

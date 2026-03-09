@@ -42,10 +42,20 @@ type EgressResult = domain.EgressResult
 type AuditEntry = domain.AuditEntry
 
 // riskyActions are actions that require audit and/or elevated trust.
+// Some risky actions (share_data) are allowed for trusted agents with audit;
+// others (send_email) always require explicit user approval.
 var riskyActions = map[string]bool{
 	"send_email":     true,
 	"transfer_money": true,
 	"share_data":     true,
+}
+
+// auditOnlyActions are risky actions that trusted agents may perform (with audit trail).
+// Non-trusted agents are still denied. transfer_money is gated by moneyActions first,
+// then allowed here for trusted agents who pass the money gate.
+var auditOnlyActions = map[string]bool{
+	"share_data":     true,
+	"transfer_money": true,
 }
 
 // moneyActions require the highest trust ring (verified+actioned / "trusted").
@@ -63,10 +73,13 @@ var vaultActions = map[string]bool{
 // brainDeniedActions are actions the brain agent must never perform.
 // These are security-critical operations that only the human (via CLIENT_TOKEN) can invoke.
 var brainDeniedActions = map[string]bool{
-	"did_sign":       true,
-	"did_rotate":     true,
-	"vault_backup":   true,
-	"persona_unlock": true,
+	"did_sign":         true,
+	"did_rotate":       true,
+	"vault_backup":     true,
+	"persona_unlock":   true,
+	"vault_raw_read":   true,
+	"vault_raw_write":  true,
+	"vault_export":     true,
 }
 
 // PII detection patterns for egress scanning.
@@ -75,6 +88,7 @@ var piiPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\b\d{3}-\d{2}-\d{4}\b`),
 	regexp.MustCompile(`\b\d{4}[-\s]\d{4}[-\s]\d{4}[-\s]\d{4}\b`),
 	regexp.MustCompile(`\b\d{3}-\d{3}-\d{4}\b`),
+	regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`),
 }
 
 // blockedDestinations are egress destinations that are always denied.
@@ -187,8 +201,16 @@ func (g *Gatekeeper) EvaluateIntent(_ context.Context, intent Intent) (Decision,
 		}, nil
 	}
 
-	// Risky actions are audited even for trusted agents.
+	// Risky actions: some are allowed for trusted agents (with audit),
+	// others always require explicit user approval.
 	if riskyActions[intent.Action] {
+		if auditOnlyActions[intent.Action] && intent.TrustLevel == "trusted" {
+			return Decision{
+				Allowed: true,
+				Reason:  fmt.Sprintf("risky action %q allowed for trusted agent — audit trail created", intent.Action),
+				Audit:   true,
+			}, nil
+		}
 		return Decision{
 			Allowed: false,
 			Reason:  fmt.Sprintf("risky action %q flagged for user review", intent.Action),

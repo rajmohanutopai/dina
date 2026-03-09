@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS contacts (
     updated_at    INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER))
 ) WITHOUT ROWID;
 
+CREATE INDEX IF NOT EXISTS idx_contacts_trust ON contacts(trust_level);
+
 -- Audit log: append-only, hash-chained
 CREATE TABLE IF NOT EXISTS audit_log (
     seq           INTEGER PRIMARY KEY AUTOINCREMENT,

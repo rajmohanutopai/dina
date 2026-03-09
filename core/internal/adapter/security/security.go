@@ -2,6 +2,7 @@
 package security
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/rajmohanutopai/dina/core/test/testutil"
@@ -45,14 +46,32 @@ func defaultDockerConfig() *DockerConfig {
 }
 
 // AuditSourceCode scans source code for disallowed patterns and returns violations.
+// The pattern is treated as a literal string match first; if it contains regex
+// metacharacters like backslash escapes, it is compiled as a regex.
 func (a *SecurityAuditor) AuditSourceCode(pattern string) ([]string, error) {
 	if a.sourceCode == "" {
 		return nil, nil
 	}
+
+	// If the pattern contains regex escapes (backslash), use regex matching.
+	// Otherwise, use literal string matching for safety.
+	var matchFunc func(string) bool
+	if strings.Contains(pattern, `\`) {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return nil, err
+		}
+		matchFunc = re.MatchString
+	} else {
+		matchFunc = func(line string) bool {
+			return strings.Contains(line, pattern)
+		}
+	}
+
 	var violations []string
 	lines := strings.Split(a.sourceCode, "\n")
 	for _, line := range lines {
-		if strings.Contains(line, pattern) {
+		if matchFunc(line) {
 			violations = append(violations, line)
 		}
 	}

@@ -20,7 +20,7 @@ When the brain starts, `create_app()` in `brain/src/main.py:118` runs the same p
 <summary><strong>Design Decision — Why explicit construction instead of a DI framework like FastAPI's Depends everywhere?</strong></summary>
 <br>
 
-FastAPI's `Depends()` is used for per-request concerns like authentication (`app.py:65-81`). But for application-level singletons — the LLM router, the guardian loop, the entity vault — explicit construction in `main.py` is clearer. You can read lines 150-332 top-to-bottom and see every dependency relationship. A DI framework would scatter this across decorators and class annotations, making the wiring invisible until runtime. When debugging a production issue at 3am, you want to grep one file, not chase a decorator chain across twenty modules.
+FastAPI's `Depends()` is used for per-request concerns like authentication (`app.py:65-81`). But for application-level singletons — the LLM router, the guardian loop, the entity vault — explicit construction in `main.py` is clearer. You can read lines 150-332 top-to-bottom and see every dependency relationship. A DI framework would scatter this across decorators and class annotations, making the wiring invisible until runtime. 
 
 </details>
 
@@ -32,7 +32,7 @@ FastAPI's `Depends()` is used for per-request concerns like authentication (`app
 <summary><strong>Design Decision — Why Ed25519 service keys instead of a shared bearer token?</strong></summary>
 <br>
 
-The original shared-brain-token model required both core and brain to know the same static secret. That creates key distribution and attribution problems. Ed25519 service keys solve this: each service's keypair is derived deterministically from the master seed at install time via SLIP-0010 (`provision_derived_service_keys.py`), loaded at runtime via `ServiceIdentity.ensure_key()`. Each service reads only its peer's *public* key from a shared directory, and signs every request with a canonical payload (`{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{SHA256(BODY)}`). Requests carry `X-DID`, `X-Timestamp`, and `X-Signature` headers. The timestamp window (5 minutes) prevents replay attacks. The DID (`did:key:z{base58(0xed01 + pubkey)}`) gives each service a stable identity that can be logged and audited.
+The shared-brain-token model required both core and brain to know the same static secret. That creates key distribution and attribution problems. Ed25519 service keys solve this: each service's keypair is derived deterministically from the master seed at install time via SLIP-0010 (`provision_derived_service_keys.py`), loaded at runtime via `ServiceIdentity.ensure_key()`. Each service reads only its peer's *public* key from a shared directory, and signs every request with a canonical payload (`{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{SHA256(BODY)}`). Requests carry `X-DID`, `X-Timestamp`, and `X-Signature` headers. The timestamp window (5 minutes) prevents replay attacks. The DID (`did:key:z{base58(0xed01 + pubkey)}`) gives each service a stable identity that can be logged and audited.
 
 </details>
 

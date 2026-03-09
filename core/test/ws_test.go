@@ -624,7 +624,8 @@ func TestWS_9_3_2_WhisperFinalResponse(t *testing.T) {
 
 // TST-CORE-499
 func TestWS_9_3_3_ProactiveWhisper(t *testing.T) {
-	impl := realWSHub
+	// Use a fresh hub to avoid test isolation issues from shared realWSHub.
+	impl := ws.NewWSHub()
 	testutil.RequireImplementation(t, impl, "WSHub")
 
 	// Register a client to receive the proactive whisper.
