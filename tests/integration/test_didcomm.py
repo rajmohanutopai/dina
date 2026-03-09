@@ -265,7 +265,7 @@ class TestMessageTypes:
         assert len(p2p.queue) == 1
         assert len(p2p.messages) == 0
 
-        # Authenticate the peer
+        # Authenticate both peers (mutual auth for bidirectional communication)
         p2p.add_contact(sancho_identity.root_did)
         sancho_doc = DIDDocument(
             did=sancho_identity.root_did,
@@ -277,6 +277,8 @@ class TestMessageTypes:
             mock_identity, sancho_doc,
         )
         assert auth_ok is True
+        # Register reverse session so Sancho can send to mock_identity
+        p2p.add_session(sancho_identity.root_did, mock_identity.root_did)
 
         # Now send succeeds
         msg2 = DinaMessage(

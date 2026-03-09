@@ -125,10 +125,11 @@ class TestCustodianRecovery:
         assert len(empty_result) == 0
         assert len(mock_p2p.messages) == 0
 
-        # All beneficiary DIDs must be authenticated peers for delivery
+        # All beneficiary DIDs must have sessions for delivery
+        owner_did = mock_estate_manager._identity.root_did
         for b in mock_estate_manager._plan.beneficiaries:
             mock_p2p.add_contact(b.dina_did)
-            mock_p2p.authenticated_peers.add(b.dina_did)
+            mock_p2p.add_session(owner_did, b.dina_did)
 
         # Submit enough shares to meet threshold
         for i in range(3):
@@ -167,9 +168,10 @@ class TestCustodianRecovery:
         assert len(mock_estate_manager.keys_delivered) == 0
         assert len(mock_p2p.messages) == 0
 
+        owner_did = mock_estate_manager._identity.root_did
         for b in mock_estate_manager._plan.beneficiaries:
             mock_p2p.add_contact(b.dina_did)
-            mock_p2p.authenticated_peers.add(b.dina_did)
+            mock_p2p.add_session(owner_did, b.dina_did)
 
         # Counter-proof: deliver_keys before estate mode returns empty
         early = mock_estate_manager.deliver_keys(mock_p2p)
@@ -215,9 +217,10 @@ class TestCustodianRecovery:
     ):
         """Keys are delivered via encrypted Dina-to-Dina P2P channel,
         not email, not SMS, not any centralized service."""
+        owner_did = mock_estate_manager._identity.root_did
         for b in mock_estate_manager._plan.beneficiaries:
             mock_p2p.add_contact(b.dina_did)
-            mock_p2p.authenticated_peers.add(b.dina_did)
+            mock_p2p.add_session(owner_did, b.dina_did)
 
         # Meet threshold and enter estate mode
         for i in range(3):
@@ -227,7 +230,7 @@ class TestCustodianRecovery:
 
         for msg in mock_p2p.messages:
             assert msg.type == "dina/estate/key_delivery"
-            assert msg.from_did == mock_estate_manager._identity.root_did
+            assert msg.from_did == owner_did
             assert "personas" in msg.payload
             assert "access_type" in msg.payload
 
@@ -244,9 +247,10 @@ class TestCustodianRecovery:
         assert mock_estate_manager.data_destroyed is False
         assert len(mock_estate_manager.keys_delivered) == 0
 
+        owner_did = mock_estate_manager._identity.root_did
         for b in mock_estate_manager._plan.beneficiaries:
             mock_p2p.add_contact(b.dina_did)
-            mock_p2p.authenticated_peers.add(b.dina_did)
+            mock_p2p.add_session(owner_did, b.dina_did)
 
         # Meet threshold and enter estate mode
         for i in range(3):
@@ -333,7 +337,17 @@ class TestEstateConfiguration:
         """The primary human-initiated trigger: next-of-kin provides the
         BIP-39 recovery phrase to activate estate mode. This is the main
         mechanism for estate recovery alongside SSS custodian coordination."""
-        plan = EstatePlan(custodian_threshold=1)
+        plan = EstatePlan(
+            custodian_threshold=1,
+            beneficiaries=[
+                EstateBeneficiary(
+                    name="Daughter",
+                    dina_did="did:plc:Daughter1234567890123456789",
+                    receives_personas=[PersonaType.SOCIAL, PersonaType.HEALTH],
+                    access_type="full_decrypt",
+                ),
+            ],
+        )
         estate = MockEstateManager(mock_dina.identity, plan)
 
         # Insufficient shares — estate mode must fail
@@ -354,10 +368,10 @@ class TestEstateConfiguration:
         estate.enter_estate_mode()
         assert estate.estate_mode_active is True
 
-        # Authenticate beneficiaries and deliver keys
+        # Register sessions for key delivery (owner → each beneficiary)
         for b in plan.beneficiaries:
             mock_p2p.add_contact(b.dina_did)
-            mock_p2p.authenticated_peers.add(b.dina_did)
+            mock_p2p.add_session(mock_dina.identity.root_did, b.dina_did)
 
         delivered = estate.deliver_keys(mock_p2p)
         assert len(delivered) > 0, "Keys must be delivered to beneficiaries"
@@ -519,9 +533,10 @@ class TestBeneficiaryAccessTypes:
                          persona=PersonaType.HEALTH)
 
         # Activate estate mode and deliver keys
+        owner_did = mock_estate_manager._identity.root_did
         for b in mock_estate_manager._plan.beneficiaries:
             mock_p2p.add_contact(b.dina_did)
-            mock_p2p.authenticated_peers.add(b.dina_did)
+            mock_p2p.add_session(owner_did, b.dina_did)
 
         for i in range(3):
             mock_estate_manager.submit_share(f"SSS_SHARE_{i}".encode())
@@ -574,9 +589,11 @@ class TestBeneficiaryAccessTypes:
         assert len(mock_estate_manager.keys_delivered) == 0
         assert len(mock_p2p.messages) == 0
 
+        # Register sessions for key delivery (owner → each beneficiary)
+        owner_did = mock_estate_manager._identity.root_did
         for b in mock_estate_manager._plan.beneficiaries:
             mock_p2p.add_contact(b.dina_did)
-            mock_p2p.authenticated_peers.add(b.dina_did)
+            mock_p2p.add_session(owner_did, b.dina_did)
 
         for i in range(3):
             mock_estate_manager.submit_share(f"SSS_SHARE_{i}".encode())
@@ -605,13 +622,13 @@ class TestBeneficiaryAccessTypes:
         assert delivered[colleague_did] == [PersonaType.PROFESSIONAL]
 
         # Counter-proof: spouse (full_access) gets different access type
-        spouse_did = "did:plc:Spouse1234567890123456789012"
+        spouse_did = "did:plc:Spouse123456789012345678901"
         spouse_msgs = [m for m in mock_p2p.messages if m.to_did == spouse_did]
         assert len(spouse_msgs) == 1
         assert spouse_msgs[0].payload["access_type"] != "read_only_90_days"
 
-        # Counter-proof: colleague does NOT get PERSONAL persona
-        assert PersonaType.PERSONAL not in delivered.get(colleague_did, [])
+        # Counter-proof: colleague does NOT get CONSUMER persona
+        assert PersonaType.CONSUMER not in delivered.get(colleague_did, [])
 
         # Counter-proof: delivery before estate mode returns empty
         mock_estate_manager_2 = MockEstateManager(mock_estate_manager._identity)
@@ -640,9 +657,10 @@ class TestDestructionGating:
         assert len(mock_estate_manager.delivery_confirmations) == 0
         assert mock_estate_manager.data_destroyed is False
 
+        owner_did = mock_estate_manager._identity.root_did
         for b in mock_estate_manager._plan.beneficiaries:
             mock_p2p.add_contact(b.dina_did)
-            mock_p2p.authenticated_peers.add(b.dina_did)
+            mock_p2p.add_session(owner_did, b.dina_did)
 
         # Activate estate and deliver keys
         for i in range(3):

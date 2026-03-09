@@ -202,7 +202,7 @@ class TestPersonaIsolation:
 
         # Same persona can decrypt
         decrypted = health.decrypt(encrypted)
-        assert decrypted == "DECRYPTED_CONTENT"
+        assert decrypted == "diagnosis: healthy"
 
         # Different persona CANNOT decrypt
         cross_decrypt = consumer.decrypt(encrypted)

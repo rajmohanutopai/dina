@@ -744,7 +744,7 @@ class TestTier5DeepArchive:
         assert retrieved == encrypted
 
         # Only the health persona can decrypt
-        assert health.decrypt(retrieved) == "DECRYPTED_CONTENT"
+        assert health.decrypt(retrieved) == "annual checkup 2025 results"
 
         consumer = mock_identity.derive_persona(PersonaType.CONSUMER)
         assert consumer.decrypt(retrieved) is None

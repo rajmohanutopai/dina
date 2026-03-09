@@ -206,7 +206,7 @@ class TestAuditTrail:
         # 5. P2P message send
         recipient = "did:plc:AuditTestPeer12345678901234"
         mock_dina.p2p.add_contact(recipient)
-        mock_dina.p2p.authenticated_peers.add(recipient)
+        mock_dina.p2p.add_session(mock_dina.identity.root_did, recipient)
         msg = DinaMessage(
             type="dina/social/ping",
             from_did=mock_dina.identity.root_did,

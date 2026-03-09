@@ -338,7 +338,7 @@ def test_bot_referral_below_threshold_declined(
     assert referred_score < referral_threshold, (
         f"Referred bot score {referred_score} should be below {referral_threshold}"
     )
-    assert referred_score >= referral_threshold is False
+    assert not (referred_score >= referral_threshold)
 
     # Counter-proof: a high-trust bot IS above threshold → accepted
     mock_trust_network.update_bot_score(trusted_bot, 40.0)  # 50+40=90

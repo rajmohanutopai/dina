@@ -1144,6 +1144,9 @@ class TestSecretsManagement:
         core.environment["DINA_PORT"] = "8080"
         brain.environment["DINA_LOG_LEVEL"] = "info"
         brain.environment["PYTHONUNBUFFERED"] = "1"
+        pds = mock_compose.containers["pds"]
+        pds.environment["PDS_LOG_LEVEL"] = "info"
+        pds.environment["PDS_PORT"] = "3000"
 
         for name, container in mock_compose.containers.items():
             # Must have at least one env var to avoid vacuous truth

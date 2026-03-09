@@ -753,9 +753,9 @@ class TestRequestFlowBrainToCore:
         # Pre-condition: no messages sent yet
         assert len(mock_dina.p2p.messages) == 0
 
-        recipient_did = "did:plc:Sancho12345678901234567890abc"
+        recipient_did = "did:plc:b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1"
         mock_dina.p2p.add_contact(recipient_did)
-        mock_dina.p2p.authenticated_peers.add(recipient_did)
+        mock_dina.p2p.add_session(mock_dina.identity.root_did, recipient_did)
 
         message = DinaMessage(
             type="dina/social/tea_invite",

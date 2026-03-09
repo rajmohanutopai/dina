@@ -674,7 +674,8 @@ def test_restricted_persona_audit_entry_schema(
     assert len(mock_audit_log.query(action="vault_write")) == 1
 
     # Counter-proof: audit entry must not contain PII
-    assert not mock_audit_log.has_pii(entry), \
+    pii_samples = ["alice@example.com", "123-45-6789", "John Smith"]
+    assert not mock_audit_log.has_pii(pii_samples), \
         "Audit entries must not contain PII"
 
 
@@ -813,14 +814,16 @@ def test_backfill_pauses_for_user_query():
     # Give connector a valid token so poll() works
     token = OAuthToken(
         access_token="valid_token",
+        refresh_token="refresh_token",
         expires_at=_time.time() + 3600,
     )
     connector.set_oauth_token(token)
 
     # Populate a large dataset for fast_sync + backfill
+    # Must exceed _fast_sync_batch_size (50) so backfill queue is non-empty.
     all_items = [
         {"message_id": f"msg_{i}", "content": f"email body {i}"}
-        for i in range(20)
+        for i in range(100)
     ]
 
     # Fast sync: returns first batch, queues the rest for backfill

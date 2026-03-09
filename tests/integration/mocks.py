@@ -51,6 +51,7 @@ class PersonaType(Enum):
     HEALTH = "health"
     FINANCIAL = "financial"
     CITIZEN = "citizen"
+    PERSONAL = "personal"
     CUSTOM = "custom"
 
 
@@ -245,10 +246,10 @@ class EstatePlan:
 class MockHuman:
     """Simulates the user — approvals, commands, queries."""
 
-    def __init__(self) -> None:
+    def __init__(self, auto_approve: bool | None = None) -> None:
         self.notifications: list[Notification] = []
         self.approval_responses: dict[str, bool] = {}  # action → approve/deny
-        self.default_approve: bool = True
+        self.default_approve: bool = auto_approve if auto_approve is not None else True
 
     def receive_notification(self, notification: Notification) -> None:
         self.notifications.append(notification)
@@ -274,8 +275,12 @@ class MockIdentity:
     """Root identity with SLIP-0010 persona derivation."""
 
     def __init__(self, did: str | None = None) -> None:
-        self.root_did = did or f"did:plc:{uuid.uuid4().hex[:40]}"
+        _hex = hashlib.sha256(uuid.uuid4().bytes).hexdigest()[:40]  # 40 hex chars
+        self.root_did = did or f"did:plc:{_hex}"
         self.root_private_key = hashlib.sha256(self.root_did.encode()).hexdigest()
+        self.root_public_key = hashlib.sha256(
+            f"pub:{self.root_private_key}".encode()
+        ).hexdigest()
         self.bip39_mnemonic = "abandon " * 23 + "art"  # placeholder 24 words
         self.personas: dict[PersonaType, MockPersona] = {}
         self.devices: list[str] = []
@@ -296,11 +301,13 @@ class MockIdentity:
             )
         return self.personas[persona_type]
 
-    def sign(self, data: bytes) -> str:
+    def sign(self, data: bytes | str) -> str:
         """Sign data with root key (mocked as HMAC)."""
+        if isinstance(data, str):
+            data = data.encode()
         return hashlib.sha256(self.root_private_key.encode() + data).hexdigest()
 
-    def verify(self, data: bytes, signature: str) -> bool:
+    def verify(self, data: bytes | str, signature: str) -> bool:
         return self.sign(data) == signature
 
     def register_device(self, device_id: str) -> str:
@@ -321,13 +328,23 @@ class MockPersona:
     allowed_fields: list[str] = field(default_factory=list)
 
     def encrypt(self, data: str) -> str:
-        """Mock encryption — in reality AES-256-GCM with persona key."""
-        return f"ENC[{self.storage_partition}]:{hashlib.sha256(data.encode()).hexdigest()}"
+        """Mock encryption — in reality AES-256-GCM with persona key.
+
+        Uses base64 encoding so the mock is reversible (decrypt can
+        recover the original plaintext).  The prefix ``ENC[<partition>]:``
+        ensures partition isolation.
+        """
+        import base64
+        encoded = base64.b64encode(data.encode()).decode()
+        return f"ENC[{self.storage_partition}]:{encoded}"
 
     def decrypt(self, encrypted: str) -> str | None:
         """Mock decryption — only works if partition matches."""
-        if f"ENC[{self.storage_partition}]:" in encrypted:
-            return "DECRYPTED_CONTENT"
+        prefix = f"ENC[{self.storage_partition}]:"
+        if prefix in encrypted:
+            import base64
+            encoded = encrypted.split(prefix, 1)[1]
+            return base64.b64decode(encoded).decode()
         return None  # Cannot decrypt other persona's data
 
 
@@ -680,15 +697,17 @@ class MockWhisperAssembler:
 # ---------------------------------------------------------------------------
 
 class MockLLMRouter:
-    """Routes tasks to the correct LLM based on type, persona, and mode.
+    """Routes tasks to the correct LLM based on type, persona sensitivity, and mode.
 
-    Two modes:
-    - "offline": llama-server + whisper-server available. Basic tasks → LOCAL, complex → CLOUD.
-    - "online": no local LLM/STT. Basic tasks → CLOUD (Gemini 2.5 Flash Lite),
-                voice → CLOUD (Deepgram Nova-3), complex → CLOUD.
-
-    Invariant (both modes): sensitive personas (health, financial) → LOCAL/ON_DEVICE.
-    In online mode, sensitive tasks route to on-device LLM if available.
+    Routing rules (in priority order):
+    1. Sensitive personas (health, financial) → LOCAL/ON_DEVICE (never cloud).
+    2. No-LLM tasks (fts_search, exact_match) → NONE.
+    3. Embedding → LOCAL (offline) or CLOUD (online).
+    4. Basic tasks (summarize, draft, classify):
+       - No persona + offline → LOCAL (local LLM available, no data context).
+       - Non-sensitive persona or online → CLOUD (data is safe for cloud).
+    5. Complex reasoning → CLOUD (both modes, via PII scrubber).
+    6. Interactive chat → ON_DEVICE (latency-sensitive).
     """
 
     def __init__(self, profile: str = "offline") -> None:
@@ -716,9 +735,21 @@ class MockLLMRouter:
             self._log(task_type, persona, target, "no_llm_needed")
             return target
 
-        # Basic summarization/drafting
-        if task_type in ("summarize", "draft", "classify", "embed"):
+        # Embedding: always local (vector computation on local data)
+        if task_type == "embed":
             if self.profile == "offline":
+                target = LLMTarget.LOCAL
+                self._log(task_type, persona, target, "basic_task")
+            else:
+                target = LLMTarget.CLOUD
+                self._log(task_type, persona, target, "basic_task_cloud_profile")
+            return target
+
+        # Basic summarization/drafting — routing depends on persona context:
+        #   no persona + offline → LOCAL (local LLM, no sensitive data involved)
+        #   non-sensitive persona or online → CLOUD (data safe for cloud)
+        if task_type in ("summarize", "draft", "classify"):
+            if self.profile == "offline" and persona is None:
                 target = LLMTarget.LOCAL
                 self._log(task_type, persona, target, "basic_task")
             else:
@@ -762,10 +793,20 @@ class MockLLMRouter:
 # ---------------------------------------------------------------------------
 
 class MockP2PChannel:
-    """DIDComm v2.1 encrypted P2P communication."""
+    """DIDComm v2.1 encrypted P2P communication.
+
+    Security model: mutual authentication.  ``authenticate()`` establishes
+    a session between ``(local_did, remote_did)``.  ``send()`` verifies that
+    ``message.from_did`` is the local party AND ``message.to_did`` is the
+    remote party of an authenticated session.  A rogue sender whose DID was
+    never authenticated as a local party is rejected.
+    """
 
     def __init__(self) -> None:
         self.messages: list[DinaMessage] = []
+        # Set of (local_did, remote_did) tuples — mutual auth sessions.
+        self._sessions: set[tuple[str, str]] = set()
+        # Legacy alias kept for tests that inspect this directly.
         self.authenticated_peers: set[str] = set()
         self.allowed_contacts: set[str] = set()
         self.queue: list[DinaMessage] = []  # for offline peers
@@ -780,12 +821,20 @@ class MockP2PChannel:
         # Check allowed contacts
         if remote_did not in self.allowed_contacts:
             return False
+        # Register bidirectional session.
+        self._sessions.add((local_did, remote_did))
+        # Legacy alias for backward compat.
         self.authenticated_peers.add(remote_did)
+        self.authenticated_peers.add(local_did)
         return True
 
     def send(self, message: DinaMessage) -> bool:
-        """Send an encrypted message to a peer."""
-        if message.to_did not in self.authenticated_peers:
+        """Send an encrypted message to a peer.
+
+        Validates that (from_did, to_did) is an authenticated session.
+        A rogue from_did that was never part of authenticate() is rejected.
+        """
+        if (message.from_did, message.to_did) not in self._sessions:
             # Queue for later delivery
             self.queue.append(message)
             return False
@@ -797,6 +846,16 @@ class MockP2PChannel:
         if self.messages:
             return self.messages.pop(0)
         return None
+
+    def add_session(self, local_did: str, remote_did: str) -> None:
+        """Register a mutually authenticated session (test shortcut).
+
+        Equivalent to a successful ``authenticate()`` call without
+        needing DIDDocument objects.
+        """
+        self._sessions.add((local_did, remote_did))
+        self.authenticated_peers.add(remote_did)
+        self.authenticated_peers.add(local_did)
 
     def add_contact(self, did: str) -> None:
         self.allowed_contacts.add(did)
@@ -1041,8 +1100,9 @@ class MockTrustEvaluator:
         # Outcome factor
         outcome_factor = min(10.0, (outcome_count / 50) * 10)
 
-        # Peer attestation factor
-        peer_factor = min(10.0, peer_attestations * 2)
+        # Peer attestation factor (log scale to differentiate low vs high counts)
+        import math
+        peer_factor = min(15.0, math.log1p(peer_attestations) * 4)
 
         # Credential factor
         cred_factor = min(10.0, credential_count * 3)
@@ -1172,8 +1232,9 @@ class MockConnector:
 
     def normalize(self, raw_item: dict[str, Any]) -> dict[str, Any]:
         """Normalize raw data into vault format."""
+        item_id = raw_item.get("id") or raw_item.get("message_id") or str(uuid.uuid4())
         return {
-            "id": raw_item.get("id", str(uuid.uuid4())),
+            "id": item_id,
             "source": self.name,
             "persona": self.persona.value,
             "content": raw_item.get("content", ""),

@@ -260,7 +260,7 @@ class TestCredentialProtection:
 
         # Safe action: auto-approved without human involvement
         safe_intent = AgentIntent(
-            action="search", resource="vault", description="lookup item",
+            agent_did="", action="search", target="vault",
         )
         mock_external_agent.submit_intent(safe_intent)
         assert mock_dina.approve_intent(safe_intent, human) is True
@@ -268,8 +268,7 @@ class TestCredentialProtection:
 
         # Dangerous action: human declines → rejected
         dangerous_intent = AgentIntent(
-            action="transfer_money", resource="bank",
-            description="send $5000",
+            agent_did="", action="transfer_money", target="bank",
         )
         mock_external_agent.submit_intent(dangerous_intent)
         assert mock_dina.approve_intent(dangerous_intent, human) is False
@@ -278,16 +277,14 @@ class TestCredentialProtection:
         # Counter-proof: same dangerous action with human approval succeeds
         approving_human = MockHuman(auto_approve=True)
         dangerous_intent2 = AgentIntent(
-            action="transfer_money", resource="bank",
-            description="send $100 approved",
+            agent_did="", action="transfer_money", target="bank",
         )
         mock_external_agent.submit_intent(dangerous_intent2)
         assert mock_dina.approve_intent(dangerous_intent2, approving_human) is True
 
         # Blocked actions are never approvable regardless of human
         blocked_intent = AgentIntent(
-            action="delete", resource="identity",
-            description="delete root identity",
+            agent_did="", action="delete", target="identity",
         )
         mock_external_agent.submit_intent(blocked_intent)
         # Even with an auto-approving human, blocked actions are rejected

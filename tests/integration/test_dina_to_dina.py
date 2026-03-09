@@ -659,7 +659,7 @@ class TestSharingPolicyAndEgress:
 
         # Authenticate and send
         mock_dina.p2p.add_contact(sancho_identity.root_did)
-        mock_dina.p2p.authenticated_peers.add(sancho_identity.root_did)
+        mock_dina.p2p.add_session(mock_identity.root_did, sancho_identity.root_did)
         sent = mock_dina.p2p.send(msg)
         assert sent is True
 
@@ -713,7 +713,7 @@ class TestSharingPolicyAndEgress:
             payload={"text": scrubbed_text},
         )
         mock_dina.p2p.add_contact(sancho_identity.root_did)
-        mock_dina.p2p.authenticated_peers.add(sancho_identity.root_did)
+        mock_dina.p2p.add_session(mock_identity.root_did, sancho_identity.root_did)
         sent = mock_dina.p2p.send(msg)
         assert sent is True
 
@@ -739,7 +739,7 @@ class TestSharingPolicyAndEgress:
 
         # Authenticate peer
         mock_dina.p2p.add_contact(sancho_identity.root_did)
-        mock_dina.p2p.authenticated_peers.add(sancho_identity.root_did)
+        mock_dina.p2p.add_session(mock_identity.root_did, sancho_identity.root_did)
 
         # Send a message
         msg = DinaMessage(
@@ -855,11 +855,11 @@ class TestConcurrentBidirectional:
 
         # Alice authenticates Bob
         alice_p2p.add_contact(sancho_identity.root_did)
-        alice_p2p.authenticated_peers.add(sancho_identity.root_did)
+        alice_p2p.add_session(mock_identity.root_did, sancho_identity.root_did)
 
         # Bob authenticates Alice
         bob_p2p.add_contact(mock_identity.root_did)
-        bob_p2p.authenticated_peers.add(mock_identity.root_did)
+        bob_p2p.add_session(sancho_identity.root_did, mock_identity.root_did)
 
         # Alice sends to Bob
         alice_msg = DinaMessage(
@@ -1062,7 +1062,7 @@ class TestOfflineDeliveryAndResilience:
 
         # Partition heals -- peer is reachable
         mock_dina.p2p.add_contact(sancho_identity.root_did)
-        mock_dina.p2p.authenticated_peers.add(sancho_identity.root_did)
+        mock_dina.p2p.add_session(mock_identity.root_did, sancho_identity.root_did)
 
         # Deliver the pending message via P2P
         pending = mock_outbox.get_pending()

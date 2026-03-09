@@ -1006,6 +1006,45 @@ async def test_guardian_2_3_2_12_outcome_anonymization(guardian) -> None:
     assert clean_result["action"] == "save_for_briefing"
 
 
+# TST-BRAIN-062
+@pytest.mark.asyncio
+async def test_guardian_2_5_briefing_works_without_scrubber() -> None:
+    """Briefing generation must not crash when scrubber=None (degraded mode)."""
+    from src.service.guardian import GuardianLoop
+    from src.service.entity_vault import EntityVaultService
+    from src.service.nudge import NudgeAssembler
+    from src.service.scratchpad import ScratchpadService
+
+    core = AsyncMock()
+    core.search_vault.return_value = []
+    core.write_scratchpad.return_value = None
+    core.read_scratchpad.return_value = None
+    core.task_ack.return_value = None
+
+    llm_router = AsyncMock()
+    llm_router.route.return_value = {"content": "test", "model": "test"}
+
+    # scrubber=None simulates degraded mode (no Presidio, no spaCy).
+    entity_vault = EntityVaultService(MagicMock(), core)
+    nudge = NudgeAssembler(core, llm_router, entity_vault)
+    scratchpad = ScratchpadService(core)
+
+    g = GuardianLoop(
+        core=core, llm_router=llm_router, scrubber=None,
+        entity_vault=entity_vault, nudge_assembler=nudge,
+        scratchpad=scratchpad,
+    )
+
+    event = make_engagement_event(body="User feedback: great product")
+    result = await g.process_event(event)
+    assert result["action"] == "save_for_briefing"
+
+    # This must not raise even though scrubber is None.
+    briefing = await g.generate_briefing()
+    assert briefing["count"] == 1
+    assert briefing["items"][0]["body"] == "User feedback: great product"
+
+
 # TST-BRAIN-371
 @pytest.mark.asyncio
 async def test_guardian_2_3_2_8_handover_includes_summary(guardian) -> None:

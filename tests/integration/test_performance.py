@@ -341,7 +341,7 @@ class TestLatency:
         """
         recipient_did = "did:plc:LatencyTestPeer123456789012"
         mock_dina.p2p.add_contact(recipient_did)
-        mock_dina.p2p.authenticated_peers.add(recipient_did)
+        mock_dina.p2p.add_session(mock_dina.identity.root_did, recipient_did)
 
         num_messages = 20
 

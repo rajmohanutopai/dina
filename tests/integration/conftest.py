@@ -202,7 +202,7 @@ def mock_human() -> MockHuman:
 
 @pytest.fixture
 def mock_identity() -> MockIdentity:
-    return MockIdentity(did="did:plc:TestUser1234567890abcdefghijk")
+    return MockIdentity(did="did:plc:a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0")
 
 
 @pytest.fixture
@@ -230,7 +230,7 @@ def mock_dina(mock_identity: MockIdentity, mock_vault: MockVault,
 
 @pytest.fixture
 def sancho_identity() -> MockIdentity:
-    return MockIdentity(did="did:plc:Sancho12345678901234567890abc")
+    return MockIdentity(did="did:plc:b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1")
 
 
 @pytest.fixture
@@ -240,7 +240,7 @@ def mock_another_dina(sancho_identity: MockIdentity) -> MockDinaCore:
 
 @pytest.fixture
 def seller_identity() -> MockIdentity:
-    return MockIdentity(did="did:plc:Seller12345678901234567890abc")
+    return MockIdentity(did="did:plc:c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2")
 
 
 @pytest.fixture

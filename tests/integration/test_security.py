@@ -118,7 +118,7 @@ class TestKeyIsolation:
         # Send a P2P message
         recipient = "did:plc:TestRecipient123456789012345"
         mock_dina.p2p.add_contact(recipient)
-        mock_dina.p2p.authenticated_peers.add(recipient)
+        mock_dina.p2p.add_session(mock_dina.identity.root_did, recipient)
         msg = DinaMessage(
             type="dina/social/greeting",
             from_did=mock_dina.identity.root_did,
@@ -449,7 +449,7 @@ class TestNetworkSecurity:
 
         # After authentication, sends succeed
         p2p.add_contact(remote_did)
-        p2p.authenticated_peers.add(remote_did)
+        p2p.add_session(local_did, remote_did)
         assert p2p.send(msg) is True
 
 
@@ -476,9 +476,10 @@ class TestProtocolSecurity:
         sender_did = "did:plc:Sender123456789012345678901"
         receiver_did = mock_dina.identity.root_did
 
-        # --- Set up P2P channel with authenticated sender ---
+        # --- Set up P2P channel with authenticated peers ---
         p2p = MockP2PChannel()
         p2p.add_contact(sender_did)
+        p2p.add_contact(receiver_did)
         from tests.integration.mocks import DIDDocument
         sender_doc = DIDDocument(
             did=sender_did,
@@ -490,6 +491,8 @@ class TestProtocolSecurity:
             mock_dina.identity, sender_doc,
         )
         assert authed is True
+        # Register reverse session so sender can send to receiver
+        p2p.add_session(sender_did, receiver_did)
 
         # --- Send first message and receive it ---
         msg_id = f"msg_{uuid.uuid4().hex[:16]}"

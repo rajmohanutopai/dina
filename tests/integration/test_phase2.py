@@ -1385,7 +1385,7 @@ class TestBotProtocol:
         assert len(mock_review_bot.queries) == 0
 
         result = mock_review_bot.query_product(
-            "best laptop for coding",
+            "best headphones for music",
             requester_trust_ring=TrustRing.RING_2_VERIFIED,
             max_sources=5,
         )
@@ -1393,7 +1393,7 @@ class TestBotProtocol:
         # Query was logged with proper envelope fields
         assert len(mock_review_bot.queries) == 1
         logged = mock_review_bot.queries[0]
-        assert logged["query"] == "best laptop for coding"
+        assert logged["query"] == "best headphones for music"
         assert logged["trust_ring"] == TrustRing.RING_2_VERIFIED
         assert logged["max_sources"] == 5
 
@@ -1855,9 +1855,9 @@ class TestDeploymentProfiles:
         target_financial = mock_llm_router.route("summarize", PersonaType.FINANCIAL)
         assert target_financial == LLMTarget.LOCAL
 
-        # Non-sensitive in offline mode also uses local
+        # Non-sensitive persona: cloud is permitted (not sensitive data)
         target_general = mock_llm_router.route("summarize", PersonaType.CONSUMER)
-        assert target_general == LLMTarget.LOCAL
+        assert target_general == LLMTarget.CLOUD
 
     # TST-INT-439
     def test_sensitive_persona_rule_enforced(

@@ -43,8 +43,9 @@ def setup_p2p_pair(
     """Wire two Dinas for P2P communication."""
     p2p.add_contact(buyer.identity.root_did)
     p2p.add_contact(seller.identity.root_did)
-    p2p.authenticated_peers.add(buyer.identity.root_did)
-    p2p.authenticated_peers.add(seller.identity.root_did)
+    # Register bidirectional sessions so send() works in both directions.
+    p2p.add_session(buyer.identity.root_did, seller.identity.root_did)
+    p2p.add_session(seller.identity.root_did, buyer.identity.root_did)
 
 
 # =========================================================================
@@ -175,7 +176,10 @@ class TestDirectTransactions:
         also communicating over P2P."""
         logistics_dina = MockDinaCore()
         mock_p2p.add_contact(logistics_dina.identity.root_did)
-        mock_p2p.authenticated_peers.add(logistics_dina.identity.root_did)
+        mock_p2p.add_session(
+            mock_seller_dina.identity.root_did,
+            logistics_dina.identity.root_did,
+        )
 
         # Seller sends shipment request to logistics Dina
         ship_request = DinaMessage(
@@ -323,7 +327,13 @@ class TestMultiPartyCoordination:
             logistics_dina.identity.root_did,
         ]:
             mock_p2p.add_contact(did)
-            mock_p2p.authenticated_peers.add(did)
+        # Register directed sessions for each sender→receiver pair.
+        mock_p2p.add_session(mock_dina.identity.root_did,
+                             mock_seller_dina.identity.root_did)
+        mock_p2p.add_session(mock_seller_dina.identity.root_did,
+                             logistics_dina.identity.root_did)
+        mock_p2p.add_session(logistics_dina.identity.root_did,
+                             mock_dina.identity.root_did)
 
         # Step 1: Buyer -> Seller: purchase request
         purchase = DinaMessage(
@@ -364,17 +374,17 @@ class TestMultiPartyCoordination:
         assert mock_p2p.messages[1].to_did == logistics_dina.identity.root_did
         assert mock_p2p.messages[2].to_did == mock_dina.identity.root_did
 
-        # Counter-proof: unauthenticated party cannot send messages
+        # Counter-proof: unauthenticated party cannot send messages.
+        # The rogue uses its own P2P channel where the seller is not authenticated.
         rogue_dina = MockDinaCore()
-        # rogue_dina is NOT added to authenticated_peers
         rogue_msg = DinaMessage(
             type="dina/commerce/purchase",
             from_did=rogue_dina.identity.root_did,
             to_did=mock_seller_dina.identity.root_did,
             payload={"product_id": "stolen_item", "quantity": 999},
         )
-        assert mock_p2p.send(rogue_msg) is False
-        # Message count unchanged — rogue message rejected
+        assert rogue_dina.p2p.send(rogue_msg) is False
+        # Message count unchanged on the shared channel — rogue message rejected
         assert len(mock_p2p.messages) == 3
 
 # TST-INT-519
@@ -392,7 +402,11 @@ class TestMultiPartyCoordination:
             mock_seller_dina.identity.root_did,
         ]:
             mock_p2p.add_contact(did)
-            mock_p2p.authenticated_peers.add(did)
+        # Both buyers send to seller.
+        mock_p2p.add_session(mock_dina.identity.root_did,
+                             mock_seller_dina.identity.root_did)
+        mock_p2p.add_session(mock_another_dina.identity.root_did,
+                             mock_seller_dina.identity.root_did)
 
         # Both buyers express intent
         for buyer in [mock_dina, mock_another_dina]:

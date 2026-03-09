@@ -553,7 +553,7 @@ class GuardianLoop:
         for item in self._briefing_items:
             scrubbed = dict(item)
             body = scrubbed.get("body", "")
-            if body:
+            if body and self._scrubber is not None:
                 scrubbed_text, _entities = self._scrubber.scrub(body)
                 scrubbed["body"] = scrubbed_text
             scrubbed_items.append(scrubbed)

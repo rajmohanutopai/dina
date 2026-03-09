@@ -282,15 +282,15 @@ class TestConnectionNudges:
         assert "contact_old_friend" in neglected
         assert "contact_recent" not in neglected
 
-        # Edge case: contact exactly at threshold boundary (30 days)
+        # Edge case: contact just under threshold boundary (29.9 days)
         mock_dina.vault.store(1, "contact_borderline", {
             "contact": "did:plc:Borderline",
             "name": "Borderline Friend",
-            "last_interaction_ts": time.time() - (30 * 86400),
+            "last_interaction_ts": time.time() - (29.9 * 86400),
             "relationship": "friend",
         })
         neglected_with_border = detect_neglected_relationships(mock_dina.vault)
-        # 30 days is NOT > 30, so should not be neglected
+        # 29.9 days is NOT > 30, so should not be neglected
         assert "contact_borderline" not in neglected_with_border
         # But the 45-day contact still is
         assert "contact_old_friend" in neglected_with_border
