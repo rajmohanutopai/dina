@@ -1,14 +1,129 @@
 # Part III: Technical Architecture
 
-This is the engineering blueprint for Dina. It covers every layer, every connection, every hard problem. Where choices are clear, they're stated. Where they're open, they're flagged.
+This is the engineering blueprint for Dina. It defines the current system shape, the Phase 1 target, and the longer-horizon protocol direction. Where choices are locked, they are stated plainly. Where work is deferred, it is marked explicitly.
+
+**Status labels used in this document**
+
+- **Implemented**: already present in the repository in meaningful form
+- **Current Phase 1 Target**: part of the canonical architecture we are actively shaping now
+- **Deferred**: intentionally not part of the current architecture commitment
+- **Future Protocol**: long-horizon direction, not a current implementation promise
 
 ---
 
 ## System Overview
 
-Dina has eight layers. Each is independent and can be built, tested, and replaced separately.
+**Status:** Current Phase 1 Target
+
+Dina has eight layers, but the system should be understood in one simpler way first:
+
+**Dina is a user-owned Home Node with a sovereign private core.**
+
+The private core stores memory, holds identity, enforces privacy and action boundaries, and delegates outside work to external agents. A public trust subsystem ships beside it in v1, but Dina's minimum Phase 1 value must not depend on network-scale trust adoption. Phase 1 Dina is already coherent as:
+
+- multi-persona secure memory
+- quiet-first nudges with human-connection enforcement
+- initial data ingestion and classification into persona vaults
+- safe delegation to external agents
+- working trust network with sparse-graph tolerance
+- user-owned identity and vault
+
+### Canonical Phase 1 Architecture
+
+**Status:** Current Phase 1 Target
+
+| Subsystem | Components | Phase 1 release scope | Purpose |
+|---|---|---|---|
+| **Private core** | `dina-core` + `dina-brain` + encrypted vault | Yes | Identity, multi-persona vaults, safety, ingestion/classification, messaging, nudges, action gating, delegation |
+| **Public trust layer** | `dina-pds` + Trust AppView ecosystem | Yes | Publish and query public trust records, attestations, outcomes, bot reputation |
+| **Local inference** | `llama` | Optional | Higher-privacy local LLM routing, local NER, local embeddings |
+
+**Canonical Phase 1 rule:** Dina v1 ships both the private core and a working public trust layer. The private core comes first, and user value must still hold even when the Trust Network is small. The trust layer is part of the release, but its usefulness compounds with network adoption.
+
+### Phase Shape
+
+**Status:** Current Phase 1 Target
+
+| Phase | Expected Shape | Not Required Yet |
+|---|---|---|
+| **Phase 1** | Home Node private core first: `dina-core` + `dina-brain` + multi-persona encrypted vaults, initial customer-data ingestion into persona vaults, quiet-first nudges, active human-connection enforcement, MCP delegation to external agents, safe Dina-to-Dina messaging, approval-gated action handoff, intent-economy defaults, and a working Trust Network via PDS/AppView. Core value must still stand even when the trust graph is sparse. | Trust-network scale, Shamir recovery, local LLM by default, full settlement/commercial protocols, estate execution |
+| **Phase 2** | Denser and more resilient Dina: stronger Trust AppView usage, bot discovery/routing, Shamir recovery, local/hybrid inference profiles, richer verification, and broader source ingestion around the same core shape. | Full open market infrastructure, timestamp anchoring, estate automation at scale |
+| **Phase 2+** | Mature public trust and open-economy layer: advanced verification, deeper commerce/settlement flows, estate workflows, and richer network/device capabilities. | None beyond long-horizon implementation detail; this is the expansion frontier |
+
+### Responsibility Split: Core, Brain, Devices, Public Trust
+
+**Status:** Current Phase 1 Target
+
+| Component | Role | Owns | Must not own |
+|---|---|---|---|
+| **dina-core** | Sovereign kernel | Root identity, master seed, vault access, device trust, sharing policy, egress control, Dina-to-Dina messaging, final action gates | OAuth flows, external connector logic, cloud API workflows, LLM orchestration |
+| **dina-brain** | Orchestrator and reasoning layer | Ingestion scheduling, sync orchestration, classification, nudges, context assembly, external-agent delegation | Root keys, direct database access, final egress enforcement, final action authority |
+| **Client devices** | Delegated access points | Device keys, local cache when applicable, local UI, optional on-device inference | Root identity, vault master keys, policy enforcement authority |
+| **Public trust layer** | Public data subsystem | Signed trust publication, trust query indexing, public evidence retrieval | Private user data, vault contents, private messaging |
+
+**Canonical auth and identity model for this document:**
+
+- The **Home Node** holds the root identity and master seed.
+- Paired **client devices** authenticate with device-specific **Ed25519 keypairs**.
+- `CLIENT_TOKEN` is reserved for **browser/admin bootstrap and session translation**, not as the default credential for paired devices.
+
+### Cross-Cutting Invariants
+
+**Status:** Current Phase 1 Target
+
+These are not features. They are architectural constraints that every component must respect.
+
+#### Loyalty Invariants
+
+1. External agents receive only task-minimal context, never broad vault visibility.
+2. Recommendation ranking must be attributable, inspectable, and explainable to the user.
+3. Sponsorship, paid placement, and opaque ranking must be tagged explicitly or excluded by default.
+4. User policy overrides platform defaults, vendor defaults, and connector defaults.
+5. Dina defaults to evidence-ranked pull, not vendor-ranked push.
+
+**Architectural consequences:**
+
+- Core-side PII scrubbing and persona gating happen before external delegation.
+- Brain must preserve provenance, evidence, and ranking reasons for recommendations that reach the user.
+- Trust, search, and commerce surfaces must carry attribution and sponsorship metadata as first-class fields.
+- Connector integrations may provide candidates, but final ranking and policy application belong to Dina.
+- When ranking cannot be explained or attributed, Dina should degrade to links, evidence summaries, or explicit uncertainty instead of pretending confidence.
+
+#### Human Connection Invariants
+
+1. Dina strengthens human-to-human relationships and must not position itself as their replacement.
+2. Relational nudges are a core behavior, not a cosmetic add-on.
+3. Companionship-seeking patterns should trigger redirection toward real people or real-world action.
+4. Conversation design must not optimize for emotional dependency, attachment loops, or synthetic intimacy.
+5. Long-term memory exists to help the user show up for people, not to become the primary relationship.
+
+**Architectural consequences:**
+
+- Silence classification and nudge generation must treat relationship maintenance as a first-class category.
+- Memory retrieval should preferentially support reconnection, follow-through, and care for real people.
+- The admin UI, prompt design, and interaction policy must avoid product patterns that reward prolonged emotional entanglement with Dina itself.
+- The anti-Her safeguard later in this document is one concrete enforcement mechanism of this invariant family, not the whole policy.
+- Future social, companion, or voice features must be rejected if they undermine this boundary, even if they improve engagement metrics.
+
+#### Intent Economy / Pull Economy Invariants
+
+1. Dina is an intent router, not an engagement maximizer.
+2. Default behavior is silence when no harm follows from silence.
+3. Discovery must be trust-ranked, attributable, and user-directed.
+4. Creator value return is the default path, not an optional courtesy.
+5. No feed, no engagement farming, and no push notifications whose purpose is to create habit loops.
+
+**Architectural consequences:**
+
+- The guardian loop optimizes for relevance and harm prevention, not session length or daily active use.
+- Bot interfaces and search flows should return deep links, source attribution, and handoff options rather than trapping the user in Dina-owned surfaces.
+- Trust-network publication, attribution metadata, and future commerce flows must support rewarding original creators and verified sellers directly.
+- Notification infrastructure should remain quiet-first; unsolicited interruption requires a user-interest or harm-prevention justification.
+- Any future recommendation, marketplace, or monetization subsystem must prove that it operates as pull-on-intent rather than push-for-attention.
 
 ### Core Philosophy: Dina is a Kernel, Not a Platform
+
+**Status:** Implemented
 
 **No internal plugins. No untrusted third-party code inside Dina's process. Ever.**
 
@@ -30,9 +145,11 @@ Both talk to external processes. Neither runs code inside Dina. Child agents can
 
 **Why this matters for security:** The biggest attack surface in any system is third-party code. Plugins running inside your process can crash your vault, read across persona boundaries, or exfiltrate data. By refusing to run external code inside the process, entire categories of vulnerabilities are eliminated. A compromised child agent is contained — it can only respond to MCP calls, never initiate access to Dina's internals.
 
-**Why this matters for architecture:** No plugin store to maintain, no plugin review process, no sandboxing, no scoped tokens, no plugin API versioning. The auth model is Ed25519 signatures for services/devices plus CLIENT_TOKEN-backed admin login/session. CLI uses Ed25519 exclusively; CLIENT_TOKEN serves admin/browser contexts. NaCl (for peers) and MCP (for agents) are the only extension points.
+**Why this matters for architecture:** No plugin store to maintain, no plugin review process, no sandboxing, no scoped tokens, no plugin API versioning. NaCl (for peers) and MCP (for agents) are the only extension points. Devices pair with Ed25519 device keys. Browser/admin access is bridged separately by core.
 
 ### Deployment Model: Home Node + Client Devices
+
+**Status:** Current Phase 1 Target
 
 **Dina is not an app on your phone. Dina is a service that runs on infrastructure you control.**
 
@@ -47,18 +164,19 @@ Dina runs on a **Home Node** — a small, always-on server. Your phone, laptop, 
 │                                                       │
 │  ┌──────────────┐  ┌──────────────────────────────┐  │
 │  │ Encrypted    │  │ Go Core (dina-core)           │  │
-│  │ Vault        │  │ - Connector scheduler         │  │
+│  │ Vault        │  │ - Vault and key management    │  │
 │  │ (SQLite +    │  │ - PII scrubber                │  │
 │  │  FTS5 +      │  │ - DIDComm endpoint            │  │
 │  │  HNSW)       │  │ - WebSocket server            │  │
-│  └──────────────┘  │ - Key management              │  │
+│  └──────────────┘  │ - Policy and egress control   │  │
 │                     └──────────────────────────────┘  │
 │  ┌──────────────┐  ┌──────────────────────────────┐  │
 │  │ Local LLM    │  │ Python Brain (dina-brain)     │  │
 │  │ (llama.cpp   │  │ - Guardian angel loop (ADK)   │  │
 │  │  + Gemma 3n) │  │ - Silence classification      │  │
-│  └──────────────┘  │ - Nudge assembly             │  │
-│                     │ - Agent orchestration          │  │
+│  └──────────────┘  │ - Nudge assembly              │  │
+│                     │ - Ingestion scheduling        │  │
+│                     │ - Agent orchestration         │  │
 │                     └──────────────────────────────┘  │
 └──────────┬──────────────┬──────────────┬─────────────┘
            │              │              │
@@ -83,6 +201,8 @@ Dina runs on a **Home Node** — a small, always-on server. Your phone, laptop, 
 **Privacy model:** All vault data encrypted at rest with user's keys. Home Node decrypts in-memory only during processing, then discards plaintext. Binary is open source and auditable. Hosting provider sees only encrypted blobs. Long-term: Confidential Computing (AMD SEV-SNP / Intel TDX / AWS Nitro Enclaves) makes even RAM inspection impossible.
 
 ### Hosting Levels
+
+**Status:** Current Phase 1 Target
 
 Same containers, same SQLite vault, same Docker image at every level. Migration between levels = `dina export` on old machine, `dina import` on new machine (see "Portability & Migration" below).
 
@@ -321,8 +441,8 @@ Import (new machine):
 my-dina.dina (encrypted tar.gz, encrypted with passphrase-derived key)
 ├── identity.sqlite            ← Tier 0: contacts, sharing policy, audit log
 ├── vault/
-│   ├── personal.sqlite        ← Phase 1: all content here
-│   ├── health.sqlite          ← Phase 2: per-persona files (if enabled)
+│   ├── personal.sqlite        ← default general persona vault
+│   ├── health.sqlite          ← health persona vault (if enabled)
 │   ├── financial.sqlite
 │   └── ...
 ├── keyfile                    ← Convenience mode only (raw master seed, chmod 600)
@@ -335,7 +455,7 @@ my-dina.dina (encrypted tar.gz, encrypted with passphrase-derived key)
 | Excluded | Why |
 |----------|-----|
 | Service-key files | Re-provisioned by `install.sh` on new machine. Per-machine trust material. |
-| `CLIENT_TOKEN` | Admin web UI login password (32-byte random, hex). SHA-256 hash stored in `device_tokens` table (identity.sqlite) — but the table is excluded from export. All client devices (CLI, phone, etc.) use Ed25519 keypairs. Re-pair on new machine via 6-digit code flow. |
+| `CLIENT_TOKEN` | Internal admin bridge credential between core and brain. Re-provisioned during install/bootstrap on a new machine. Not paired to user devices and not part of the exported device registry. |
 | `DINA_PASSPHRASE` | The user knows it. Archive is encrypted *with* it, not *containing* it. |
 | PDS data | Replicated via AT Protocol. New PDS re-syncs from relay. |
 | Docker secrets directory | Regenerated by `install.sh`. |
@@ -408,8 +528,8 @@ On disk (what the developer sees):
   └── data/
       ├── identity.sqlite              ← Tier 0: contacts, sharing policy, audit log, kv_store
       ├── vault/
-      │   ├── personal.sqlite          ← Phase 1: everything here (single persona)
-      │   ├── health.sqlite            ← Phase 2: per-persona files
+      │   ├── personal.sqlite          ← general persona vault
+      │   ├── health.sqlite            ← health persona vault
       │   ├── financial.sqlite
       │   ├── social.sqlite
       │   └── consumer.sqlite
@@ -444,7 +564,7 @@ Inside container (what the code sees):
 - **Portability.** User leaves → `dina export` bundles identity + persona files + config into a single encrypted `.dina` archive. `dina import` on the new machine restores everything.
 - **Right to delete.** `rm data/vault/health.sqlite`. Persona physically annihilated — no SQL needed, no VACUUM, no residual data. The entire file is gone.
 - **Selective unlock.** `identity.sqlite` always unlocked first (gatekeeper needs contacts/sharing policy). `/personal` unlocked by default. Other personas remain locked until explicitly requested. Locked = DEK not in RAM = invisible, not just access-controlled.
-- **Phase 1 simplicity.** Single `personal.sqlite` — same developer experience as one file. Per-persona files appear only when multi-persona is enabled in Phase 2.
+- **Phase 1 simplicity.** Multi-persona files exist from the start, but the user experience should still feel like one Dina. Personas are a security boundary, not an onboarding burden.
 
 ### The Sidecar Pattern: Go Core + Python Brain
 
@@ -572,7 +692,7 @@ Think of it as filesystem permissions. You don't get a popup every time an app r
 
 **What a compromised brain can do:** access open personas (social, consumer, professional) through its authenticated service identity. It cannot touch locked personas (financial, citizen) without human approval. It cannot touch restricted personas (health) without creating a detection trail the user sees in their daily briefing. It cannot call admin endpoints (`did/sign`, `did/rotate`, `vault/backup`, `persona/unlock`) because admin scope is enforced separately. It cannot bypass the PII scrubber — that's a core-side gate. The damage radius of a compromised brain is limited to open persona data.
 
-**Authentication: Service Signatures + Admin Token, no JWTs.**
+**Authentication: Service Signatures + Internal Admin Bridge, no JWTs.**
 
 ```
 Two auth classes:
@@ -581,16 +701,16 @@ Service signatures (Ed25519, per-service keypairs):
   ✓ Core↔Brain internal calls on service endpoints
   ✗ Do not grant admin/browser privilege by themselves
 
-CLIENT_TOKEN (admin login/session bootstrap):
+CLIENT_TOKEN (internal admin bridge credential):
   ✓ Admin web UI login/session path and explicitly admin-scoped operations
 ```
 
-**What these tokens are:**
+**What these credentials are:**
 
 | Credential | Generated | Storage | Validated by | Scope |
 |------------|-----------|---------|-------------|-------|
 | Service keypair (Ed25519) | Per service (`core`, `brain`) at install time via SLIP-0010 (load-only at runtime) | Private key isolated per service; public keys shared | Ed25519 signature verification over canonical request payload | Internal service calls |
-| `CLIENT_TOKEN` | During admin/bootstrap provisioning | Hashed when registered for token lookup/session bootstrap | SHA-256(token) lookup + scope checks | Admin/bootstrap contexts |
+| `CLIENT_TOKEN` | During admin/bootstrap provisioning | Deployment secret material for the core↔brain admin bridge | Constant-time comparison on proxied admin requests | Admin/bootstrap contexts |
 
 Core's middleware is a static allowlist checked at request time:
 
@@ -612,15 +732,10 @@ func auth(next http.Handler) http.Handler {
 }
 
 // Service signatures are validated with Ed25519 + timestamp/nonce replay checks.
-// CLIENT_TOKEN — SHA-256 hash the presented token and look it up
-// in the device_tokens table (admin web UI login only).
+// CLIENT_TOKEN is an internal admin bridge secret, not a paired-device credential.
 func identifyToken(header string) TokenType {
     raw := strings.TrimPrefix(header, "Bearer ")
-    if subtle.ConstantTimeCompare([]byte(raw), brainTokenBytes) == 1 {
-        return BrainToken
-    }
-    hash := sha256Hex(raw)
-    if deviceTokenExists(hash) {  // SELECT 1 FROM device_tokens WHERE token_hash = ? AND revoked = 0
+    if subtle.ConstantTimeCompare([]byte(raw), clientTokenBytes) == 1 {
         return ClientToken
     }
     return Unknown
@@ -635,6 +750,8 @@ A static allowlist is simpler to audit (reviewable at compile time), has zero ru
 
 ### Admin UI: Python, Not Go
 
+Status: `Current Phase 1 Target`
+
 The admin UI (dashboard, settings, connector status, onboarding flow) and the brain API are **sub-mounted into a single FastAPI master app** in the brain container on port 8200. One Uvicorn process, one port, one healthcheck. Users access the admin UI via `https://my-dina.example.com/admin` — core reverse-proxies the request to brain:8200/admin.
 
 ```
@@ -642,11 +759,12 @@ brain container (single Uvicorn process on port 8200):
 
   master app
     ├── /api/*    → Brain API sub-app   (Ed25519 service-signature auth)
-    └── /admin/*  → Admin UI sub-app    (CLIENT_TOKEN — full admin access)
+    └── /admin/*  → Admin UI sub-app    (CLIENT_TOKEN bridge credential)
     └── /healthz  → health endpoint     (no auth)
 
   Two separate FastAPI sub-apps. They share nothing except the Uvicorn process.
-  Auth is per-sub-app: brain API checks service signatures, admin UI checks CLIENT_TOKEN/session.
+  Auth is per-sub-app: brain API checks service signatures, admin UI checks the
+  internal admin bridge credential while browser session state is enforced at core.
   Admin UI calls core:8100 with CLIENT_TOKEN.
 
 External access (browser — see "Browser Authentication Gateway" below):
@@ -656,13 +774,13 @@ External access (browser — see "Browser Authentication Gateway" below):
     → user enters DINA_PASSPHRASE → core validates via Argon2id
     → core sets HttpOnly/Secure/SameSite=Strict session cookie
     → core injects CLIENT_TOKEN header, proxies to brain:8200/admin
-    → admin UI sees Bearer token, renders page
+    → admin UI sees the internal bridge credential, renders page
     → response flows back through core to browser
 
-External access (device app — existing flow):
-  App sends Authorization: Bearer <CLIENT_TOKEN>
-    → core validates token, proxies to brain:8200/admin
-    → same as browser, no cookie needed
+Paired device apps do NOT use CLIENT_TOKEN:
+  Devices authenticate to core with Ed25519 device keys
+    → core authorizes device-scoped APIs and WebSocket access
+    → admin browser flow remains separate
 
   One Uvicorn process, one port, one healthcheck, one external port (443).
 ```
@@ -677,7 +795,7 @@ from dina_admin.app import admin_ui
 
 master = FastAPI()
 master.mount("/api", brain_api)      # Ed25519 service-signature auth
-master.mount("/admin", admin_ui)     # CLIENT_TOKEN auth
+master.mount("/admin", admin_ui)     # CLIENT_TOKEN bridge auth
 
 @master.get("/healthz")
 async def healthz():
@@ -686,15 +804,17 @@ async def healthz():
 
 **Why Python, not Go:** Go templates are painful for forms, tables, and interactive pages. FastAPI + Jinja2 ships a decent admin interface in days, not weeks. The extra HTTP hop to core (`admin → core:8100 → vault → core → admin → browser`) is ~5ms on localhost Docker networking — imperceptible for a dashboard that refreshes every 30 seconds.
 
-**Why core proxies admin UI:** Only two external ports (443 for core, 2583 for PDS). One TLS certificate, one auth layer. The user never needs to know admin is in the brain container. Core checks CLIENT_TOKEN on `/admin/*` requests, then proxies to brain:8200/admin. Smaller attack surface than exposing brain ports directly.
+**Why core proxies admin UI:** Only two external ports (443 for core, 2583 for PDS). One TLS certificate, one auth layer. The user never needs to know admin is in the brain container. Core checks browser session state, then injects the internal admin bridge credential (`CLIENT_TOKEN`) when proxying to brain:8200/admin. Smaller attack surface than exposing brain ports directly.
 
-**Why separate sub-apps (not one monolith):** The brain API is an untrusted tenant authenticated by service signatures. The admin UI uses CLIENT_TOKEN-backed session auth for privileged operations. Sub-mounting as separate FastAPI apps with per-app auth middleware enforces the permission boundary even though they share a process. Neither sub-app can import or call the other — isolation via Python module boundaries.
+**Why separate sub-apps (not one monolith):** The brain API is an untrusted tenant authenticated by service signatures. The admin UI uses session auth at the browser edge and a `CLIENT_TOKEN` bridge between core and brain for privileged operations. Sub-mounting as separate FastAPI apps with per-app auth middleware enforces the permission boundary even though they share a process. Neither sub-app can import or call the other — isolation via Python module boundaries.
 
 ### Browser Authentication Gateway
 
-The Admin UI uses `CLIENT_TOKEN` for authorization, but browsers can't inject Bearer tokens into requests like device apps can. Copy-pasting a 64-character hex token into a browser is a UX failure. Building a separate auth system in Python Brain would violate the "Core is the Gatekeeper" model.
+Status: `Current Phase 1 Target`
 
-The fix: **Core handles browser sessions natively and translates them into Bearer tokens before proxying.** The brain never knows about cookies, sessions, or web logins.
+The Admin UI uses `CLIENT_TOKEN` as an internal bridge credential between core and brain, but browsers cannot and should not handle that secret directly. Copy-pasting a 64-character hex token into a browser is a UX failure. Building a separate auth system in Python Brain would violate the "Core is the Gatekeeper" model.
+
+The fix: **Core handles browser sessions natively and translates them into the internal admin bridge credential before proxying.** The brain never knows about cookies, sessions, or web logins.
 
 ```
 Browser Authentication Flow:
@@ -718,7 +838,7 @@ Browser Authentication Flow:
                           │                          │
                           ▼                          ▼
                    Core validates             Proxy to brain:8200/admin
-                   (same Argon2id            (brain sees Bearer token,
+                   (same Argon2id            (brain sees bridge credential,
                     as vault unlock)          serves page normally)
                           │
                           ▼
@@ -749,39 +869,29 @@ Browser Authentication Flow:
 | **Rate limiting** | 5 login attempts per minute per IP. Argon2id is intentionally slow (~1s with 128MB/3 iter defaults), making brute force impractical. |
 | **Convenience mode** | Same login flow. Vault auto-unlocks on boot, but browser access still requires passphrase. Defense in depth — an open network shouldn't mean open admin access. |
 | **Login page** | ~30-line static HTML form, compiled into Go binary via `embed.FS`. Zero external dependencies. Posts to `POST /admin/login`. |
-| **Brain changes** | Zero. Brain continues to check Bearer token on every request. Browser and device app look identical to brain. |
+| **Brain changes** | Zero. Brain continues to check the internal admin bridge credential on proxied admin requests. Browser sessions stay entirely in core. |
 
-**The bridge — session-to-token translation (Go middleware):**
+**The bridge — session-to-bridge translation (Go middleware):**
 
 ```go
 // In core's admin proxy middleware
 func adminProxyHandler(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        // Path 1: Device app with Bearer token — pass through
-        if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
-            if validateClientToken(auth[7:]) {
-                proxyToBrain(w, r)
-                return
-            }
-            http.Error(w, "Unauthorized", 401)
-            return
-        }
-
-        // Path 2: Browser with session cookie — translate to Bearer
+        // Browser session at the edge, internal bridge token behind the edge
         cookie, err := r.Cookie("dina_session")
         if err != nil || !validateSession(cookie.Value) {
             serveLoginPage(w, r)  // embed.FS static HTML
             return
         }
 
-        // Inject CLIENT_TOKEN before proxying (brain sees Bearer token)
+        // Inject the internal admin bridge credential before proxying
         r.Header.Set("Authorization", "Bearer "+clientToken)
         proxyToBrain(w, r)
     })
 }
 ```
 
-**Why passphrase, not a separate admin password:** Adding another credential means another thing to lose, another thing to brute-force, another thing to configure in `install.sh`. The passphrase is already the user's "master key" for Dina — vault encryption, identity recovery, and now admin access. One credential, one responsibility. Users who want passwordless admin access can use device apps (Bearer token from pairing flow).
+**Why passphrase, not a separate admin password:** Adding another credential means another thing to lose, another thing to brute-force, another thing to configure in `install.sh`. The passphrase is already the user's "master key" for Dina — vault encryption, identity recovery, and now admin access. One credential, one responsibility. Paired device apps keep their own Ed25519 device keys, but browser admin login is still passphrase-gated at core.
 
 ```
 brain/
@@ -790,7 +900,7 @@ brain/
     dina_brain/            # Brain API sub-app (/api/*, Ed25519 service signatures)
       app.py
       ...
-    dina_admin/            # Admin UI sub-app (/admin/*, CLIENT_TOKEN)
+    dina_admin/            # Admin UI sub-app (/admin/*, internal admin bridge)
       app.py
       core_client.py       # Calls core:8100 with CLIENT_TOKEN
       templates/
@@ -836,7 +946,7 @@ Features unlock as the user is ready:
 | **Day 30** | Prompt: "You can separate health and financial data into private compartments" |
 | **Month 3** | Power user discovers personas, sharing rules, self-hosting option |
 
-One default persona (`/personal`), not five. The multi-persona key hierarchy exists in the code but only `/personal` is created at setup. Adding `/health`, `/financial`, `/citizen` is a settings screen action, not an onboarding step. Mnemonic backup is deferred, not skipped — generated at setup, prompted after the user has had a week to see value. Sharing rules default to empty.
+Multi-persona security exists from setup, but onboarding still uses progressive disclosure. The user does not need to manually reason about every persona on day one. Dina can create and fill multiple persona vaults from the start while keeping the setup experience simple. Mnemonic backup is deferred, not skipped — generated at setup, prompted after the user has had a week to see value. Sharing rules default to empty.
 
 ### Data Flow: Who Touches What
 
@@ -855,7 +965,7 @@ WHO TOUCHES SQLITE?
 
 **1. Ingestion (brain orchestrates via MCP, core stores)**
 
-**Content routing is brain's job.** Contacts don't belong to personas — people span contexts. Dr. Patel sends lab results (→ `/health`) AND cricket chat (→ `/social`). Brain classifies each piece of content by its subject matter, not by who sent it. Phase 1: everything goes to `/personal` (single persona). Phase 2: brain uses LLM classification.
+**Content routing is brain's job.** Contacts don't belong to personas — people span contexts. Dr. Patel sends lab results (→ `/health`) AND cricket chat (→ `/social`). Brain classifies each piece of content by its subject matter, not by who sent it. Multi-persona routing is part of Phase 1 because compartmentalization is a security property, not just an organizational convenience.
 
 ```
 Brain → MCP → OpenClaw: "fetch emails since last sync cursor"
@@ -865,15 +975,14 @@ Brain → MCP → OpenClaw: "fetch emails since last sync cursor"
       Subject: "Team standup notes"   → persona='professional'
       Subject: "Dinner Friday?"       → persona='social'
       Subject: "Your order shipped"   → persona='consumer'
-      (Phase 1: all → persona='personal')
   → Brain → POST core:8100/v1/vault/store (persona=<classified>)
   → Brain → PUT core:8100/v1/vault/kv/gmail_cursor {timestamp: "..."}
 
 Brain → MCP → OpenClaw: "fetch calendar events"
   → OpenClaw calls Calendar API → returns structured JSON
-  → Brain → POST core:8100/v1/vault/store (persona='professional', or 'personal' in Phase 1)
+  → Brain → POST core:8100/v1/vault/store (persona='professional')
 
-Telegram → Bot API → Home Node (MCP connector) → core writes to social.sqlite (or personal.sqlite in Phase 1)
+Telegram → Bot API → Home Node (MCP connector) → core writes to social.sqlite
   → Core notifies brain: POST brain:8200/v1/process {item_id, source, type}
 ```
 
@@ -1059,7 +1168,7 @@ The internal API between core and brain uses Ed25519 signed requests (`X-DID`, `
 // Response (403 — persona locked)
 {
   "error": "persona_locked",
-  "message": "/financial requires CLIENT_TOKEN approval",
+  "message": "/financial requires human approval",
   "code": 403
 }
 ```
@@ -1402,20 +1511,22 @@ All eight layers run on the Home Node. Rich client devices run a subset (cached 
 
 ### Root Identity
 
-Every Dina has exactly one root identity — a cryptographic keypair generated during initial setup, stored encrypted on the Home Node, never transmitted in plaintext.
+**Status:** Current Phase 1 Target
+
+Every Dina has exactly one root identity — a cryptographic keypair derived during initial setup on the Home Node, stored encrypted on the Home Node, and never transmitted in plaintext to client devices.
 
 ```
 Root Identity
 ├── Root keypair (Ed25519)
 ├── Created: timestamp
-├── Device origin: device fingerprint
+├── Node origin: Home Node installation
 ├── Recovery (Phase 1): BIP-39 mnemonic (24 words, written on paper)
 └── Recovery (Phase 2): Shamir's Secret Sharing (3-of-5, trusted contacts + physical)
 ```
 
-**Key generation:** Happens locally using device entropy (Secure Enclave on iOS, StrongBox on Android, TPM on desktop). The private key never leaves the hardware security module.
+**Key generation:** Happens locally on the Home Node during setup. Core generates the BIP-39 mnemonic, derives the master seed, and derives the root Ed25519 identity via SLIP-0010. The root key remains on the Home Node. Hardware-backed storage on client devices applies to delegated **device keys**, not to the root identity.
 
-**Recovery (Phase 1):** BIP-39 standard mnemonic phrase. 24 words. User writes them down on paper. This is the baseline backup of the root identity. If you lose both the device and the paper, the identity is gone. This is by design — there is no "password reset" because there is no server that knows your password.
+**Recovery (Phase 1):** BIP-39 standard mnemonic phrase. 24 words. User writes them down on paper. This is the baseline backup of the root identity. If you lose both the Home Node state and the paper, the identity is gone. This is by design — there is no "password reset" because there is no server that knows your password.
 
 **Recovery (Phase 2): Shamir's Secret Sharing (3-of-5).** The BIP-39 entropy is split into 5 Shamir shares — any 3 reconstruct the seed, no single share reveals anything. Custodians: trusted Dina contacts (Ring 2+), family members' Dinas, physical storage (QR code in a bank safe), self-held (USB). Digital shards are encrypted to each custodian's public key and delivered via Dina-to-Dina NaCl. Recovery flow: contact 3+ custodians → each approves on their Dina → shards reassemble locally → seed restored. Share rotation: re-split with new randomness when trust changes — old shares become mathematically useless. A signed recovery manifest on the PDS lists custodian DIDs (not the shards themselves) so a fresh Dina knows who to contact. SSS is architecturally native to Dina — it leverages existing Trust Rings for custodian eligibility, Dina-to-Dina NaCl for shard transport, and aligns with "Trust No One" (no single custodian can compromise the seed). Implementation: ~100 lines of Go (GF(256) polynomial interpolation), same scheme used by Gnosis Safe and Argent wallet.
 
@@ -1537,11 +1648,11 @@ Persona isolation is enforced by **cryptographic separation** — each persona i
 /var/lib/dina/
 ├── identity.sqlite              ← Tier 0: contacts, sharing policy, audit log
 └── vault/
-    ├── personal.sqlite          ← Phase 1: everything here
-    ├── health.sqlite            ← Phase 2: separate DEK from HKDF("dina:vault:health:v1")
-    ├── financial.sqlite         ← Phase 2: separate DEK from HKDF("dina:vault:financial:v1")
-    ├── social.sqlite            ← Phase 2: separate DEK from HKDF("dina:vault:social:v1")
-    └── consumer.sqlite          ← Phase 2: separate DEK from HKDF("dina:vault:consumer:v1")
+    ├── personal.sqlite          ← separate DEK from HKDF("dina:vault:personal:v1")
+    ├── health.sqlite            ← separate DEK from HKDF("dina:vault:health:v1")
+    ├── financial.sqlite         ← separate DEK from HKDF("dina:vault:financial:v1")
+    ├── social.sqlite            ← separate DEK from HKDF("dina:vault:social:v1")
+    └── consumer.sqlite          ← separate DEK from HKDF("dina:vault:consumer:v1")
 ```
 
 **Why per-persona files, not a single vault:**
@@ -1561,7 +1672,7 @@ Core's `gatekeeper.go` manages which databases are open. Brain makes separate AP
 Persona Access Tiers (configured by user, stored in config.json):
 
   "brain_access": {
-    "/personal":     "open",        ← always open (Phase 1: everything here)
+    "/personal":     "open",        ← general persona, always open by default
     "/social":       "open",        ← database open, brain queries freely
     "/consumer":     "open",        ← database open, brain queries freely
     "/professional": "open",        ← database open, brain queries freely
@@ -1644,7 +1755,7 @@ Trust Score = f(
 
 ### Open Questions — Identity
 - **Key rotation:** If root key is compromised, how does the user rotate while preserving trust? Possible: pre-signed rotation certificate stored in recovery.
-- **Multi-device root:** ~~Does each device get a copy of the root key, or do devices get delegated sub-keys?~~ **Resolved:** Devices never hold the root key. CLI devices generate Ed25519 keypairs and register the public key during pairing — they authenticate via request signing (no token). Non-CLI devices get a CLIENT_TOKEN (32-byte random Bearer token) during the pairing ceremony. Root key stays on the Home Node. Compromised device = revoke one device entry, not lose root identity.
+- **Multi-device root:** ~~Does each device get a copy of the root key, or do devices get delegated sub-keys?~~ **Resolved:** Devices never hold the root key. Client devices generate Ed25519 device keypairs during pairing and register only their public keys with the Home Node. The root key stays on the Home Node. Compromised device = revoke one device entry, not lose root identity.
 - **Seed recovery:** ~~Single point of failure — BIP-39 mnemonic on paper is the only backup. Non-technical users will lose it.~~ **Resolved (Phase 2):** Shamir's Secret Sharing (3-of-5) splits the seed across trusted contacts and physical backups. Day 1 still uses paper mnemonic; SSS activates once the user has a sufficient trust graph.
 - **Death detection:** ~~How does the Digital Estate know the user has died? Timer-based dead man's switch?~~ **Resolved:** Human-initiated via SSS custodian coordination. Same Shamir shares used for identity recovery. No timer — avoids false activations. Aligns with real-world probate.
 
@@ -1659,9 +1770,9 @@ Six tiers (Tier 0-5). Each with different encryption, sync, and backup strategie
 | Property | Value |
 |----------|-------|
 | Contents | Root keypair, persona keys, ZKP credentials, recovery config |
-| Encryption | Hardware-backed (Secure Enclave / StrongBox / TPM) where available |
+| Encryption | Home Node passphrase-wrapped seed by default; hardware-backed on the Home Node where available (for example TPM / enclave-backed key wrapping) |
 | Location | Home node (primary) + each client device holds delegated device keys |
-| Backup | Phase 1: BIP-39 mnemonic on paper. Phase 2: Shamir's Secret Sharing (3-of-5) — seed split across trusted Dina contacts + physical backups. Home node stores encrypted root key blob (decryptable only with mnemonic or hardware key). |
+| Backup | Phase 1: BIP-39 mnemonic on paper. Phase 2: Shamir's Secret Sharing (3-of-5) — seed split across trusted Dina contacts + physical backups. Home Node stores the encrypted root seed blob; client devices only store delegated device keys. |
 | Breach impact | Total identity compromise. Catastrophic. |
 
 ### Tier 1 — The Vault (Raw Ingested Data)
@@ -1716,19 +1827,17 @@ CREATE TABLE kv_store (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Device registry: Ed25519 public keys (client devices) or CLIENT_TOKEN hash (admin UI).
--- Client devices authenticate via Ed25519 signatures. Admin web UI uses CLIENT_TOKEN.
--- SHA-256 is sufficient for token hash (256-bit random input, no brute-force risk).
-CREATE TABLE device_tokens (
-    token_id     TEXT PRIMARY KEY,       -- short display ID (e.g. "dev_a3f8b2")
-    token_hash   TEXT UNIQUE,            -- SHA-256(CLIENT_TOKEN), hex-encoded (admin UI only)
-    public_key   TEXT,                   -- Ed25519 public key multibase (client devices)
+-- Paired device registry: Ed25519 public keys for paired client devices.
+-- Admin web UI uses a separate internal bridge credential; it is not a device entry.
+CREATE TABLE paired_devices (
+    device_id    TEXT PRIMARY KEY,       -- short display ID (e.g. "dev_a3f8b2")
+    public_key   TEXT UNIQUE,            -- Ed25519 public key multibase
     device_name  TEXT,                   -- "Raj's iPhone", "MacBook Pro"
     created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
     last_seen    DATETIME,               -- updated on each authenticated request
     revoked      BOOLEAN DEFAULT 0
 );
-CREATE INDEX idx_device_tokens_hash ON device_tokens(token_hash) WHERE revoked = 0;
+CREATE INDEX idx_paired_devices_active ON paired_devices(revoked, last_seen);
 ```
 
 **Schema sketch for Persona Vault (per-persona SQLCipher database):**
@@ -1737,7 +1846,7 @@ CREATE INDEX idx_device_tokens_hash ON device_tokens(token_hash) WHERE revoked =
 -- DINA VAULT SCHEMA (v3)
 -- Storage: SQLCipher Encrypted Database (per-persona file, AES-256-CBC per page)
 -- Key: Master Seed → HKDF-SHA256("dina:vault:<persona>:v1") → SQLCipher passphrase
--- Phase 1: only personal.sqlite exists. Phase 2: per-persona files.
+-- Phase 1 already uses per-persona files; the same schema applies to each persona vault.
 
 -- Core ingestion table
 CREATE TABLE vault_items (
@@ -2552,7 +2661,7 @@ PASS-THROUGH SEARCH PROTOCOL:
 3. **OpenClaw is sandboxed.** OpenClaw has no access to the vault, keys, or personas. It receives task requests ("fetch emails") and returns structured JSON. A compromised OpenClaw cannot read existing memories.
 4. **Brain scrubs before storing.** Data from OpenClaw passes through PII scrubbing (Tier 1 regex + Tier 2 spaCy) before brain sends summaries to cloud LLMs for reasoning.
 5. **User can see sync status.** Last successful sync, items ingested, current state — all visible in admin UI.
-6. **Phone-based connectors (SMS) authenticate to Home Node with CLIENT_TOKEN** before pushing data. These bypass MCP — phone pushes directly to Core via authenticated WebSocket.
+6. **Phone-based connectors (SMS) authenticate to Home Node with device-specific Ed25519 keys** before pushing data. These bypass MCP — phone pushes directly to Core via authenticated WebSocket.
 7. **OAuth tokens live in OpenClaw, not in Dina.** Dina never touches Gmail/Calendar credentials. If OpenClaw is compromised, revoke its tokens — Dina's vault and identity are unaffected.
 
 ---
@@ -3793,16 +3902,16 @@ The hash reveals nothing about the content. Privacy is preserved. When you delet
 
 ### Cold Start Strategy: Tool First, Network Second
 
-The Trust Network needs scale to be useful. With 10 users, there's no statistically meaningful outcome data. **Phase 1 value must not depend on the Trust Network.**
+The Trust Network ships in Phase 1, including PDS and AppView, but it still needs scale to become deeply useful. With 10 users, there is not yet statistically meaningful outcome data. **Phase 1 value must not depend on the Trust Network being large.**
 
 | Phase | How Dina answers "What's the best office chair?" |
 |-------|--------------------------------------------------|
-| **Phase 1 (Single Player)** | Brain has no trust data. Delegates to OpenClaw: "search web for best office chair reviews 2026." OpenClaw returns results. Brain synthesizes, applies user context from vault ("You had back pain last month. You sit 10+ hours. Budget was ₹50-80K based on previous purchases.") Nudge: "Based on web reviews and your back issues, the Steelcase Leap or Herman Miller Aeron. The Aeron is within your budget at ₹72,000." |
+| **Phase 1 (Early Network)** | Brain can query the Trust AppView when trust data exists, but always falls back to web research plus user context. OpenClaw returns results. Brain synthesizes, applies vault context ("You had back pain last month. You sit 10+ hours. Budget was ₹50-80K based on previous purchases.") and uses trust data opportunistically when available. |
 | **Phase 2 (Multiplayer)** | Brain queries the Trust AppView alongside web search. Nudge now includes: "34 people in the network bought the Aeron, but 5 returned it complaining about the mesh. Your friend Alice recommends the Steelcase Leap instead." |
 
 The transition is gradual and invisible to the user. One day the nudge includes network data alongside web results. No flag day, no "activate trust network" moment.
 
-**There is no "Review Bot" to build.** No scraping infrastructure, no crawlers, no YouTube/Reddit/RTINGS ingestion pipeline. In Phase 1, Dina researches the public web for you using her Brain + OpenClaw — the same way a human would Google things, but with your personal context applied. The Trust Network activates when it activates.
+**There is no "Review Bot" to build.** No scraping infrastructure, no crawlers, no YouTube/Reddit/RTINGS ingestion pipeline. In Phase 1, Dina researches the public web for you using her Brain + OpenClaw — the same way a human would Google things, but with your personal context applied. The Trust Network is already present in v1, but its practical weight in recommendations grows gradually as the network fills in.
 
 ---
 
@@ -3965,7 +4074,7 @@ On reboot, the loop starts, finds the next reminder, sleeps until it's due. If t
 
 **Content verification (Phase 2+).** C2PA/Content Credentials for media provenance. Cross-reference claims against Trust Network. Requires significant ML infrastructure.
 
-**Anti-Her safeguard (Phase 2+).** If interaction patterns suggest user is treating Dina as emotional replacement for human relationships, Dina redirects: "You haven't talked to Sancho in a while." Heuristic-based, tracks frequency/content/time-of-day. Architectural enforcement of the Four Laws.
+**Anti-Her safeguard (Phase 2+).** This is one future enforcement mechanism of the `Human Connection Invariants` defined near the top of this document. If interaction patterns suggest user is treating Dina as emotional replacement for human relationships, Dina redirects: "You haven't talked to Sancho in a while." Heuristic-based, tracks frequency/content/time-of-day. Architectural enforcement of the Four Laws.
 
 **Open Economy (Phase 3+).** Dina-to-Dina negotiation via ONDC, UPI/crypto payments. Cart Handover extends to discovery and direct commerce. Requires mature Trust Network and commerce protocol.
 
@@ -4297,7 +4406,7 @@ The Home Node is the single source of truth. Devices are clients.
 
 ```
 CLIENT STARTUP:
-  1. Authenticate to Home Node with CLIENT_TOKEN (TLS + auth frame)
+  1. Authenticate to Home Node with Ed25519 device signature (TLS + auth frame)
   2. Send: "My last sync checkpoint was timestamp X"
   3. Home Node responds with all vault_items changed since X
   4. Client applies changes to local SQLite cache
@@ -4504,7 +4613,7 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 | Database | SQLite + SQLCipher + FTS5 (via `mutecomm/go-sqlcipher` with CGO) | Battle-tested, per-persona encrypted `.sqlite` files (`identity.sqlite`, `personal.sqlite`, `health.sqlite`, etc.). Each file has its own HKDF-derived DEK. No separate DB server. SQLCipher provides transparent whole-database AES-256 encryption. FTS5 tokenizer: `unicode61 remove_diacritics 1` (multilingual — Hindi, Tamil, Kannada, etc.). Porter stemmer forbidden (English-only). Phase 3: ICU tokenizer for CJK. **Not** `mattn/go-sqlite3` — SQLCipher support was never merged into mainline mattn; it only exists in forks. `mutecomm/go-sqlcipher` embeds SQLCipher directly. CI must assert raw `.sqlite` bytes are not valid SQLite headers (proving encryption is active). |
 | Vector search | **Encrypted Cold Storage with Volatile RAM Hydration.** 768-dim embeddings stored as BLOBs in SQLCipher (encrypted at rest). On persona unlock, hydrated into pure-Go HNSW index in RAM ([`github.com/coder/hnsw`](https://github.com/coder/hnsw), CC0 license). Query: <1ms. On lock: index destroyed + GC. Hybrid search: `0.4 × FTS5 + 0.6 × cosine`. | **Security:** mmap-based vector DBs (sqlite-vec, FAISS) store vectors as plaintext files, bypassing SQLCipher encryption. HNSW-in-RAM means vectors exist unencrypted only while persona is unlocked — same threat model as decrypted text in RAM. **DevOps:** pure Go, no C++ cross-compilation. **ACID:** embedding BLOB in same row as text — no orphaned vectors. |
 | PII scrubbing | Three tiers: (1) Regex in Go core (always), (2) spaCy NER in Python brain (always, ~15MB model), (3) LLM NER via llama:8080 (optional, `--profile local-llm`). | Tier 1+2 catch structured + contextual PII in all profiles. Tier 3 adds LLM-based detection for edge cases. |
-| Client ↔ Node protocol | Authenticated WebSocket (TLS + Ed25519 signature or CLIENT_TOKEN auth frame) | Encrypted channel. CLI uses Ed25519 request signing exclusively. Non-CLI clients use CLIENT_TOKEN Bearer. SHA-256 hash stored in `device_tokens` table. |
+| Client ↔ Node protocol | Authenticated WebSocket (TLS + Ed25519 signatures for paired devices; internal `CLIENT_TOKEN` bridge only for proxied admin path) | Encrypted channel. All paired client devices use Ed25519 request signing. Browser-admin traffic is translated by core into the internal admin bridge credential. |
 | Home Node ↔ Home Node | Phase 1: libsodium `crypto_box_seal` (ephemeral sender keys) + DIDComm-shaped plaintext. Phase 2: full JWE (ECDH-1PU). Phase 3: Noise XX sessions for full forward secrecy. | Sender FS from day one. Full FS in Phase 3. Plaintext format is DIDComm-compatible throughout — migration is encryption-layer only. |
 | **Home Node (dina-brain)** | | |
 | Brain runtime | Python + Google ADK (v1.25+, Apache 2.0) | Model-agnostic agent framework, multi-agent orchestration |
@@ -4555,7 +4664,7 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 | Health probes | `/healthz` (liveness), `/readyz` (readiness) | Docker kills and restarts zombie containers automatically |
 | Logging | Go `slog` + Python `structlog` → JSON to stdout | No file logs; Docker log rotation handles retention. **PII policy:** log metadata only (persona, type, count, error code). Never log vault content, queries, or plaintext. Brain crash tracebacks → encrypted vault, not stdout. CI linter rejects banned patterns. |
 | Self-healing | `restart: always` + healthcheck + dependency chain | Brain waits for core; all containers auto-recover |
-| Metrics (optional) | `/metrics` (Prometheus format, protected by `CLIENT_TOKEN`) | For power users with existing homelab dashboards. Not required for default operation. |
+| Metrics (optional) | `/metrics` (Prometheus format, protected by admin session or admin-only reverse proxy auth) | For power users with existing homelab dashboards. Not required for default operation. |
 | **Data Safety** | | |
 | Database config | WAL mode + `synchronous=NORMAL` | Crash-safe atomic writes |
 | Migration safety | `sqlcipher_export()` + `PRAGMA integrity_check` | Pre-flight snapshot before every schema change. **Never `VACUUM INTO`** — creates unencrypted copies on SQLCipher (CVE-level vulnerability). |
@@ -4573,10 +4682,12 @@ This hybrid approach mirrors **Roomy** (Discord-like chat on AT Protocol) — wh
 
 ### Home Node Deployment
 
+Status: `Current Phase 1 Target`
+
 The Home Node runs three containers by default, orchestrated by docker-compose: dina-core (Go/net/http — vault, keys, NaCl messaging, admin proxy), dina-brain (Python/Google ADK — agent reasoning + admin UI), and dina-pds (AT Protocol PDS — public Trust Network). An optional fourth container (llama — llama.cpp, local LLM) is available via `--profile local-llm`. No separate database server, no Kubernetes.
 
 **The docker-compose stack:**
-- **dina-core**: Go binary + SQLCipher vaults (`identity.sqlite` + per-persona `.sqlite` files) — **private layer**. Ports: 443 (external), 8100 (internal). Reverse-proxies `/admin` to brain:8200/admin. Browser authentication gateway (session cookie → Bearer token translation).
+- **dina-core**: Go binary + SQLCipher vaults (`identity.sqlite` + per-persona `.sqlite` files) — **private layer**. Ports: 443 (external), 8100 (internal). Reverse-proxies `/admin` to brain:8200/admin. Browser authentication gateway (session cookie → internal admin bridge translation).
 - **dina-brain**: Python + Google ADK agent loop + Admin UI — **private layer**. Port: 8200 (unified — `/api/*` brain API, `/admin/*` admin UI, `/healthz` health).
 - **dina-pds**: AT Protocol PDS for Trust Network — **public layer** (trust data only). Port: 2583 (external).
 - **llama** (optional): llama.cpp + Gemma 3n E4B GGUF — **private layer**. Port: 8080 (internal). Enabled via `--profile local-llm`.
@@ -4868,8 +4979,8 @@ data/
 ```
 core:
   ./data/identity.sqlite        — Tier 0: contacts, sharing policy, audit log, kv_store (SQLCipher)
-  ./data/vault/personal.sqlite  — Phase 1: all content (SQLCipher, per-persona DEK)
-  ./data/vault/health.sqlite    — Phase 2: per-persona files (each with own DEK)
+  ./data/vault/personal.sqlite  — general persona vault (SQLCipher, per-persona DEK)
+  ./data/vault/health.sqlite    — health persona vault (SQLCipher, per-persona DEK)
   ./data/vault/...
   ./data/keyfile                — convenience mode master seed (chmod 600, absent in security mode)
   ./data/inbox/                 — Dead Drop spool (encrypted blobs, locked state)
@@ -4908,7 +5019,7 @@ brain:
 - Credentials are **never** set as `environment:` variables in docker-compose — they would appear in `docker inspect`, `/proc/*/environ`, process listings, and crash dumps.
 - All secrets use Docker Secrets (file-based), mounted as in-memory tmpfs files at `/run/secrets/` — they never touch disk inside the container.
 - The `secrets/` directory is in `.gitignore` and `.dockerignore`.
-- Service keys are provisioned by `install.sh` (per-service Ed25519 keypairs). Core and Brain share only public keys; private keys remain isolated per container. `CLIENT_TOKEN` is used only for admin web UI login/session bootstrap, stored as SHA-256 hash when registered. All client devices use Ed25519 keypairs (no shared secret).
+- Service keys are provisioned by `install.sh` (per-service Ed25519 keypairs). Core and Brain share only public keys; private keys remain isolated per container. `CLIENT_TOKEN` is the internal admin bridge credential for proxied browser-admin traffic. All paired client devices use Ed25519 keypairs (no shared secret).
 - `GOOGLE_API_KEY` is the one exception — it lives in `.env` (not secrets) because it's a cloud API key, not a local credential. If compromised, you revoke it in the Google Console. It doesn't unlock your vault or compromise your identity.
 - For managed hosting (Fly.io), use `fly secrets set VAULT_PASSPHRASE=...` — Fly injects as an env var visible only to the process, not in logs or inspect output.
 
@@ -5004,18 +5115,21 @@ Four things total: domain, API key, OpenClaw URL, vault mode, plus install-time 
 
 ### Client Authentication
 
-All client devices authenticate to the Home Node using **Ed25519 signature auth**: the client generates an Ed25519 keypair, registers the public key via the pairing ceremony, and signs every request with `X-DID` + `X-Timestamp` + `X-Signature` headers. **CLIENT_TOKEN** is used only for the admin web UI login (browser POSTs it to `/admin/login`, gets a session cookie).
+Status: `Current Phase 1 Target`
 
-**CLIENT_TOKEN is a 32-byte cryptographic random value (hex-encoded, 64 chars).** It is generated by core during pairing, sent to the device once over TLS, and never retransmitted. Core stores only the SHA-256 hash — same principle as password storage. If `identity.sqlite` is exfiltrated, the attacker cannot extract usable tokens.
+All paired client devices authenticate to the Home Node using **Ed25519 signature auth**: the client generates an Ed25519 keypair, registers the public key via the pairing ceremony, and signs every request with `X-DID` + `X-Timestamp` + `X-Signature` headers.
 
-**Why SHA-256, not Argon2id?** CLIENT_TOKEN has 256 bits of entropy (cryptographic random). Argon2id is designed for low-entropy inputs like human-chosen passwords where you need to slow down brute force. Nobody is brute-forcing a 256-bit random token. SHA-256 is sufficient and avoids wasting CPU on every request validation.
+**CLIENT_TOKEN** is a separate admin bridge credential used only on the browser/admin path. It is provisioned during install/bootstrap, held by core and brain as deployment secret material, and never issued to paired devices. Browser users authenticate to core with passphrase and session cookie; core injects `CLIENT_TOKEN` only when proxying authenticated admin requests to brain.
+
+**Why this split exists:** Device identity and browser admin are different trust problems. Devices are long-lived principals and should have revocable asymmetric keys. Browser admin is an edge-login problem and is cleaner when core translates session state into an internal credential that brain never exposes.
 
 ```
 THE PAIRING FLOW:
 
   ┌─────────────────────────────────────────────────────────┐
   │  6-digit code = short-lived physical proximity proof    │
-  │  CLIENT_TOKEN = admin web UI login password              │
+  │  Ed25519 device key = persistent paired-device auth     │
+  │  CLIENT_TOKEN = internal admin bridge credential        │
   │  These are NOT the same thing.                          │
   └─────────────────────────────────────────────────────────┘
 
@@ -5035,7 +5149,7 @@ FIRST DEVICE (docker compose up):
      public_key_multibase: "z6MkhaXg..."}
   8. Core validates:
        code exists? YES. Expired? NO. Already used? NO.
-  9. Core registers public key in identity.sqlite device_tokens table
+  9. Core registers public key in identity.sqlite paired_devices table
   10. Core returns (over TLS):
        {
          device_id: "dev_...",
@@ -5062,7 +5176,7 @@ Ed25519 REQUEST SIGNING:
   All client devices generate Ed25519 keypair → derive did:key:z6Mk...
   (multicodec 0xed01 + base58btc). During pairing, device sends
   public_key_multibase in POST /v1/pair/complete.
-  Core stores the public key in device_tokens.
+  Core stores the public key in paired_devices.
 
   Every HTTP request carries three headers:
     X-DID:       did:key:z6MkhaXg...   (device identity)
@@ -5073,7 +5187,7 @@ Ed25519 REQUEST SIGNING:
     {METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{SHA256_HEX(body)}
 
   Core middleware verifies: DID is paired, timestamp within 5-min window,
-  signature matches. Reject → 401. No Bearer token fallback for client devices.
+  signature matches. Reject → 401. No shared-secret fallback for client devices.
 ```
 
 **Pairing API endpoints:**
@@ -5086,18 +5200,14 @@ POST /v1/pair/initiate
 
 POST /v1/pair/complete
   Body: {code: "847291", device_name: "Raj's iPhone",
-         public_key_multibase: "z6MkhaXg..."}   ← required for CLI (Ed25519 pairing)
+         public_key_multibase: "z6MkhaXg..."}   ← required for all paired devices
   → Core validates code (exists, not expired, not used)
-  → If public_key_multibase provided (CLI): register Ed25519 public key,
-    derive device DID. No CLIENT_TOKEN generated.
-  → If no public_key_multibase (admin UI setup): generate CLIENT_TOKEN
-    (crypto/rand 32 bytes → hex), store SHA-256 hash in device_tokens.
+  → Register Ed25519 public key, derive device DID
   → Core deletes pending pairing
   → Returns: {
       device_id: "dev_...",
       node_did: "did:plc:5qtzkvd...",
-      device_did: "did:key:z6MkhaXg...",  ← if Ed25519 pairing
-      client_token: "a3f8b2c1d4e5...",    ← only if token pairing (not CLI)
+      device_did: "did:key:z6MkhaXg...",
       ws_url: "wss://192.168.1.42:8100/ws"
     }
   → Device stores keypair in secure storage (CLI: ~/.dina/cli/identity/,
@@ -5108,40 +5218,41 @@ POST /v1/pair/complete
 
 ```
 User: "Show my paired devices"
-Brain: queries device_tokens via core
+Brain: queries paired_devices via core
 Brain: "You have 3 paired devices:
         1. Raj's iPhone (last seen: 2 minutes ago)
         2. MacBook Pro (last seen: yesterday)
         3. iPad (last seen: 3 weeks ago)"
 
 User: "Revoke the iPad"
-Brain: PATCH /v1/devices/{token_id}/revoke
+Brain: PATCH /v1/devices/{device_id}/revoke
 Brain: "iPad revoked. It will need to re-pair to connect."
 
 Core sets revoked=true. Next request from iPad → 401. Immediate.
 ```
 
-**Token lifecycle summary:**
+**Credential lifecycle summary:**
 
 ```
-For CLIENT_TOKEN (admin web UI):
-  Generate:   crypto/rand 32 bytes → hex → CLIENT_TOKEN (plaintext)
-  Store:      SHA-256(CLIENT_TOKEN) → device_tokens.token_hash
-  Send:       plaintext returned to device ONCE during pairing (over TLS)
-  Validate:   device sends token → core hashes → compares to stored hash
-  Revoke:     user says "revoke device" → core sets revoked=true
-  Re-pair:    after import/restore, all tokens invalidated → re-pair required
+For CLIENT_TOKEN (internal admin bridge):
+  Generate:   install/bootstrap time
+  Store:      deployment secret material for core/brain admin bridge
+  Send:       never issued to paired devices
+  Validate:   core injects on authenticated admin proxy requests
+  Rotate:     operator rotates admin bridge secret, browser sessions re-login
 
-For Ed25519 (CLI devices):
-  Generate:   CLI creates Ed25519 keypair locally during `dina configure`
-  Store:      Public key registered in device_tokens during pairing
-  Send:       Only public key sent to Core (private key never leaves CLI)
-  Validate:   CLI signs every request → Core verifies signature against stored public key
+For Ed25519 (all paired devices):
+  Generate:   device creates Ed25519 keypair locally during pairing
+  Store:      Public key registered in paired_devices during pairing
+  Send:       Only public key sent to Core (private key never leaves device)
+  Validate:   device signs every request → Core verifies signature against stored public key
   Revoke:     user says "revoke device" → core sets revoked=true
-  Re-pair:    CLI runs `dina configure` again with new keypair
+  Re-pair:    device runs pairing flow again with new keypair
 ```
 
 ### Client ↔ Home Node WebSocket Protocol
+
+Status: `Current Phase 1 Target`
 
 After pairing, clients communicate with the Home Node over an authenticated WebSocket connection. This is the primary real-time channel for queries, responses, proactive whispers, and system notifications.
 
@@ -5154,20 +5265,20 @@ Phase 1 (auth frame — no token in URL):
   2. Core accepts upgrade, starts 5-second auth timer
   3. Client sends auth frame:
        {"type": "auth", "did": "...", "timestamp": "...", "signature": "..."}  ← client devices
-       {"type": "auth", "token": "<CLIENT_TOKEN>"}     ← admin web UI (via Brain proxy)
-  4. Core validates: Ed25519 signature verification (all client devices),
-     or SHA-256(token) → lookup in device_tokens table (admin UI)
-       Valid (signature verified or hash found, not revoked):
+       {"type": "auth", "token": "<CLIENT_TOKEN>"}     ← internal admin proxy path only
+  4. Core validates: Ed25519 signature verification (paired devices),
+     or internal admin bridge token on proxied browser-admin path
+       Valid (signature verified or bridge token accepted):
          {"type": "auth_ok", "device": "phone_pixel7"}
          Core updates last_seen timestamp
-       Invalid (hash not found, signature invalid, or revoked):
+       Invalid (signature invalid, revoked device, or invalid admin bridge):
          {"type": "auth_fail"} → core closes connection
        Timeout: core closes connection after 5s with no auth frame
 
-Phase 2 (session tokens — reduces token exposure):
-  POST /v1/auth/session {token: CLIENT_TOKEN}
-    → returns short-lived session_token (24h TTL)
-  Client connects with session_token in auth frame instead
+Future protocol hardening (admin proxy path only):
+  Core may mint a short-lived internal admin session when proxying browser-admin
+  traffic, instead of forwarding the long-lived bridge credential directly.
+  Paired client devices remain Ed25519-only; no shared-secret session mode is planned.
 ```
 
 **Message envelope — all messages are JSON with `type`/`id`/`payload`:**
