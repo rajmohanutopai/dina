@@ -2838,3 +2838,299 @@ func TestTransport_7_4_4_Ed25519SignatureOnPlaintext(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, !validWrongKey, "signature with wrong key must NOT verify")
 }
+
+// ---------------------------------------------------------------------------
+// TST-CORE-1028 — DID resolution + endpoint verification (networked)
+// ---------------------------------------------------------------------------
+// §30.11 Requirement: Resolve `did:plc:sancho` and verify that the service
+// endpoint resolves to the correct container/host. This validates the full
+// DID resolution pipeline: DID string → DIDResolver → DID Document → service
+// endpoint extraction → URL verification.
+//
+// In production, DID resolution goes over the network to a PLC directory or
+// DID Web host. In this unit test, we simulate the network path using a
+// pluggable fetcher that returns DID Documents — exercising the same code
+// path that real networked resolution uses.
+//
+// Critical requirements:
+//   - DID documents must contain a service array with serviceEndpoint
+//   - Service endpoint must be extractable from the resolved document
+//   - Cache must serve previously resolved DIDs without re-fetching
+//   - Cache TTL expiration must trigger re-fetch from the network
+//   - Invalid DID formats must be rejected before any network call
+//   - Unknown DIDs without a fetcher must return ErrDIDNotFound
+//   - Cache invalidation must force re-resolution on next Resolve()
+//   - Error responses from the network must NOT be cached
+
+func TestTransport_30_11_2_DIDResolutionEndpointVerification(t *testing.T) {
+	// Helper: create a DID document JSON with a service endpoint.
+	didDoc := func(did, endpoint string) []byte {
+		return []byte(fmt.Sprintf(
+			`{"id":%q,"service":[{"id":"#didcomm","type":"DIDCommMessaging","serviceEndpoint":%q}]}`,
+			did, endpoint,
+		))
+	}
+
+	t.Run("resolve_did_returns_correct_service_endpoint", func(t *testing.T) {
+		// Simulate a networked DID resolution: the fetcher returns a DID
+		// document for did:plc:sancho containing the expected endpoint.
+		// Transporter.ResolveEndpoint must extract the serviceEndpoint URL.
+		resolver := transport.NewDIDResolver()
+		fetchCount := 0
+		resolver.SetFetcher(func(did string) ([]byte, error) {
+			fetchCount++
+			if did == "did:plc:sancho" {
+				return didDoc("did:plc:sancho", "https://sancho.home.example.com/didcomm"), nil
+			}
+			return nil, fmt.Errorf("not found: %s", did)
+		})
+
+		tr := transport.NewTransporter(resolver)
+		endpoint, err := tr.ResolveEndpoint("did:plc:sancho")
+		testutil.RequireNoError(t, err)
+		testutil.RequireEqual(t, endpoint, "https://sancho.home.example.com/didcomm")
+		testutil.RequireEqual(t, fetchCount, 1)
+	})
+
+	t.Run("cache_serves_resolved_did_without_refetch", func(t *testing.T) {
+		// After the first resolution, subsequent resolves must be served
+		// from cache — the fetcher must NOT be called again.
+		resolver := transport.NewDIDResolver()
+		fetchCount := 0
+		resolver.SetFetcher(func(did string) ([]byte, error) {
+			fetchCount++
+			return didDoc(did, "https://cached.example.com/didcomm"), nil
+		})
+
+		tr := transport.NewTransporter(resolver)
+
+		// First resolve — triggers fetch.
+		ep1, err := tr.ResolveEndpoint("did:plc:cachedpeer")
+		testutil.RequireNoError(t, err)
+		testutil.RequireEqual(t, ep1, "https://cached.example.com/didcomm")
+		testutil.RequireEqual(t, fetchCount, 1)
+
+		// Second resolve — served from cache (no additional fetch).
+		ep2, err := tr.ResolveEndpoint("did:plc:cachedpeer")
+		testutil.RequireNoError(t, err)
+		testutil.RequireEqual(t, ep2, "https://cached.example.com/didcomm")
+		testutil.RequireEqual(t, fetchCount, 1) // still 1 — cache hit
+	})
+
+	t.Run("cache_ttl_expiration_triggers_refetch", func(t *testing.T) {
+		// When the cache TTL expires, the next resolve must re-fetch from
+		// the network. This ensures stale endpoints are refreshed.
+		resolver := transport.NewDIDResolver()
+		resolver.SetTTL(50 * time.Millisecond) // very short TTL for test
+		fetchCount := 0
+		resolver.SetFetcher(func(did string) ([]byte, error) {
+			fetchCount++
+			return didDoc(did, fmt.Sprintf("https://fetch%d.example.com/didcomm", fetchCount)), nil
+		})
+
+		tr := transport.NewTransporter(resolver)
+
+		// First resolve.
+		ep1, err := tr.ResolveEndpoint("did:plc:ttltest")
+		testutil.RequireNoError(t, err)
+		testutil.RequireEqual(t, ep1, "https://fetch1.example.com/didcomm")
+
+		// Wait for TTL to expire.
+		time.Sleep(60 * time.Millisecond)
+
+		// Second resolve — must re-fetch (different endpoint).
+		ep2, err := tr.ResolveEndpoint("did:plc:ttltest")
+		testutil.RequireNoError(t, err)
+		testutil.RequireEqual(t, ep2, "https://fetch2.example.com/didcomm")
+		testutil.RequireEqual(t, fetchCount, 2) // both fetched
+	})
+
+	t.Run("invalid_did_format_rejected_before_fetch", func(t *testing.T) {
+		// Invalid DIDs must be rejected immediately — no network call.
+		resolver := transport.NewDIDResolver()
+		fetched := false
+		resolver.SetFetcher(func(did string) ([]byte, error) {
+			fetched = true
+			return nil, nil
+		})
+
+		tr := transport.NewTransporter(resolver)
+
+		invalidDIDs := []string{
+			"",            // empty
+			"not-a-did",   // no did: prefix
+			"did:",        // missing method and id
+			"did:plc",     // missing id (only 1 colon)
+			"did:x",       // too short
+		}
+		for _, invalid := range invalidDIDs {
+			_, err := tr.ResolveEndpoint(invalid)
+			if err == nil {
+				t.Fatalf("invalid DID %q must be rejected, got nil error", invalid)
+			}
+		}
+		if fetched {
+			t.Fatal("fetcher must NOT be called for invalid DIDs")
+		}
+	})
+
+	t.Run("unknown_did_without_fetcher_returns_error", func(t *testing.T) {
+		// When no fetcher is configured and the DID is not in cache,
+		// resolution must fail with ErrDIDNotFound.
+		resolver := transport.NewDIDResolver() // no fetcher
+		tr := transport.NewTransporter(resolver)
+
+		_, err := tr.ResolveEndpoint("did:plc:unknown")
+		testutil.RequireError(t, err)
+	})
+
+	t.Run("fetcher_error_not_cached", func(t *testing.T) {
+		// If the fetcher returns an error, the result must NOT be cached.
+		// On the next attempt, the fetcher must be called again — giving
+		// it a chance to succeed (e.g., transient network failure).
+		resolver := transport.NewDIDResolver()
+		attempt := 0
+		resolver.SetFetcher(func(did string) ([]byte, error) {
+			attempt++
+			if attempt == 1 {
+				return nil, fmt.Errorf("network timeout") // transient error
+			}
+			return didDoc(did, "https://recovered.example.com/didcomm"), nil
+		})
+
+		tr := transport.NewTransporter(resolver)
+
+		// First attempt fails.
+		_, err := tr.ResolveEndpoint("did:plc:transient")
+		testutil.RequireError(t, err)
+
+		// Second attempt succeeds — error was NOT cached.
+		ep, err := tr.ResolveEndpoint("did:plc:transient")
+		testutil.RequireNoError(t, err)
+		testutil.RequireEqual(t, ep, "https://recovered.example.com/didcomm")
+		testutil.RequireEqual(t, attempt, 2)
+	})
+
+	t.Run("cache_invalidation_forces_refetch", func(t *testing.T) {
+		// InvalidateCache must remove the DID from cache, forcing the
+		// next Resolve() to call the fetcher again. This is needed when
+		// a DID's service endpoint changes (e.g., node migration).
+		resolver := transport.NewDIDResolver()
+		fetchCount := 0
+		resolver.SetFetcher(func(did string) ([]byte, error) {
+			fetchCount++
+			return didDoc(did, fmt.Sprintf("https://v%d.example.com/didcomm", fetchCount)), nil
+		})
+
+		tr := transport.NewTransporter(resolver)
+
+		// Initial resolution.
+		ep1, err := tr.ResolveEndpoint("did:plc:migrating")
+		testutil.RequireNoError(t, err)
+		testutil.RequireEqual(t, ep1, "https://v1.example.com/didcomm")
+
+		// Invalidate cache — simulating endpoint migration.
+		resolver.InvalidateCache("did:plc:migrating")
+
+		// Next resolve must re-fetch — getting the new endpoint.
+		ep2, err := tr.ResolveEndpoint("did:plc:migrating")
+		testutil.RequireNoError(t, err)
+		testutil.RequireEqual(t, ep2, "https://v2.example.com/didcomm")
+		testutil.RequireEqual(t, fetchCount, 2)
+	})
+
+	t.Run("multiple_dids_resolve_to_different_endpoints", func(t *testing.T) {
+		// Each DID must resolve independently to its own service endpoint.
+		// Resolving one DID must not affect another's cached result.
+		resolver := transport.NewDIDResolver()
+		resolver.SetFetcher(func(did string) ([]byte, error) {
+			switch did {
+			case "did:plc:alonso":
+				return didDoc(did, "https://alonso.home.example.com/didcomm"), nil
+			case "did:plc:sancho":
+				return didDoc(did, "https://sancho.home.example.com/didcomm"), nil
+			case "did:plc:chairmaker":
+				return didDoc(did, "https://chairmaker.shop.example.com/didcomm"), nil
+			default:
+				return nil, fmt.Errorf("unknown: %s", did)
+			}
+		})
+
+		tr := transport.NewTransporter(resolver)
+
+		ep1, err := tr.ResolveEndpoint("did:plc:alonso")
+		testutil.RequireNoError(t, err)
+		testutil.RequireEqual(t, ep1, "https://alonso.home.example.com/didcomm")
+
+		ep2, err := tr.ResolveEndpoint("did:plc:sancho")
+		testutil.RequireNoError(t, err)
+		testutil.RequireEqual(t, ep2, "https://sancho.home.example.com/didcomm")
+
+		ep3, err := tr.ResolveEndpoint("did:plc:chairmaker")
+		testutil.RequireNoError(t, err)
+		testutil.RequireEqual(t, ep3, "https://chairmaker.shop.example.com/didcomm")
+
+		// All three are distinct.
+		if ep1 == ep2 || ep2 == ep3 || ep1 == ep3 {
+			t.Fatal("each DID must resolve to a unique endpoint")
+		}
+	})
+
+	t.Run("did_document_missing_service_array_rejected", func(t *testing.T) {
+		// A DID document without a service array is useless for messaging.
+		// ResolveEndpoint must return an error — we can't determine where
+		// to send messages without a serviceEndpoint.
+		resolver := transport.NewDIDResolver()
+		resolver.SetFetcher(func(did string) ([]byte, error) {
+			return []byte(`{"id":"did:plc:noservice"}`), nil // no service array
+		})
+
+		tr := transport.NewTransporter(resolver)
+		_, err := tr.ResolveEndpoint("did:plc:noservice")
+		testutil.RequireError(t, err)
+	})
+
+	t.Run("did_document_empty_service_endpoint_rejected", func(t *testing.T) {
+		// A service entry with an empty serviceEndpoint is invalid.
+		resolver := transport.NewDIDResolver()
+		resolver.SetFetcher(func(did string) ([]byte, error) {
+			return []byte(`{"id":"did:plc:empty","service":[{"id":"#didcomm","type":"DIDCommMessaging","serviceEndpoint":""}]}`), nil
+		})
+
+		tr := transport.NewTransporter(resolver)
+		_, err := tr.ResolveEndpoint("did:plc:empty")
+		testutil.RequireError(t, err)
+	})
+
+	t.Run("cache_stats_track_hits_and_misses", func(t *testing.T) {
+		// Verify cache statistics are correctly maintained.
+		// This validates the observability of the resolution system —
+		// operators need to monitor cache effectiveness.
+		resolver := transport.NewDIDResolver()
+		resolver.SetFetcher(func(did string) ([]byte, error) {
+			return didDoc(did, "https://stats.example.com/didcomm"), nil
+		})
+		resolver.ResetForTest() // clear initial stats
+
+		// Resolve a new DID — should be a cache miss.
+		_, err := resolver.Resolve("did:plc:statstest")
+		testutil.RequireNoError(t, err)
+		hits, misses := resolver.CacheStats()
+		testutil.RequireEqual(t, hits, 0)
+		testutil.RequireEqual(t, misses, 1)
+
+		// Resolve same DID again — should be a cache hit.
+		_, err = resolver.Resolve("did:plc:statstest")
+		testutil.RequireNoError(t, err)
+		hits, misses = resolver.CacheStats()
+		testutil.RequireEqual(t, hits, 1)
+		testutil.RequireEqual(t, misses, 1)
+
+		// Resolve different DID — another miss.
+		_, err = resolver.Resolve("did:plc:other")
+		testutil.RequireNoError(t, err)
+		hits, misses = resolver.CacheStats()
+		testutil.RequireEqual(t, hits, 1)
+		testutil.RequireEqual(t, misses, 2)
+	})
+}

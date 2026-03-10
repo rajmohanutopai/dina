@@ -7,6 +7,7 @@ import json
 from dina_cli.session import SessionStore
 
 
+# TST-CLI-047
 def test_new_id_format():
     store = SessionStore()
     sid = store.new_id()
@@ -14,6 +15,7 @@ def test_new_id_format():
     assert len(sid) == 13  # "sess_" + 8 hex chars
 
 
+# TST-CLI-048
 def test_save_and_load(tmp_path):
     store = SessionStore(base_dir=tmp_path)
     entities = [
@@ -30,6 +32,7 @@ def test_save_and_load(tmp_path):
     assert loaded[2] == {"token": "[EMAIL_2]", "value": "jane@example.com"}
 
 
+# TST-CLI-049
 def test_save_python_style_keys(tmp_path):
     """Accept lowercase keys from Brain's PII response."""
     store = SessionStore(base_dir=tmp_path)
@@ -44,6 +47,7 @@ def test_save_python_style_keys(tmp_path):
     assert loaded[1] == {"token": "[ORG_1]", "value": "Acme Corp"}
 
 
+# TST-CLI-050
 def test_rehydrate(tmp_path):
     store = SessionStore(base_dir=tmp_path)
     entities = [
@@ -59,6 +63,7 @@ def test_rehydrate(tmp_path):
     assert result == "Dr. Sharma at Apollo Hospital recommends dietary changes"
 
 
+# TST-CLI-051
 def test_load_missing_session(tmp_path):
     store = SessionStore(base_dir=tmp_path)
     try:
@@ -68,6 +73,7 @@ def test_load_missing_session(tmp_path):
         pass
 
 
+# TST-CLI-052
 def test_atomic_write(tmp_path):
     """Verify no .tmp file is left behind after save."""
     store = SessionStore(base_dir=tmp_path)

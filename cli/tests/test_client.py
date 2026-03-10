@@ -32,6 +32,7 @@ def mock_identity():
         yield mock_id
 
 
+# TST-CLI-015
 def test_vault_store(config):
     mock_resp = MagicMock()
     mock_resp.status_code = 200
@@ -45,6 +46,7 @@ def test_vault_store(config):
         client.close()
 
 
+# TST-CLI-016
 def test_vault_query(config):
     mock_resp = MagicMock()
     mock_resp.status_code = 200
@@ -59,6 +61,7 @@ def test_vault_query(config):
         client.close()
 
 
+# TST-CLI-017
 def test_kv_get_found(config):
     mock_resp = MagicMock()
     mock_resp.status_code = 200
@@ -71,6 +74,7 @@ def test_kv_get_found(config):
         client.close()
 
 
+# TST-CLI-018
 def test_kv_get_not_found(config):
     mock_resp = MagicMock()
     mock_resp.status_code = 404
@@ -85,6 +89,7 @@ def test_kv_get_not_found(config):
         client.close()
 
 
+# TST-CLI-019
 def test_connection_error(config):
     with patch.object(httpx.Client, "request", side_effect=httpx.ConnectError("fail")):
         client = DinaClient(config)
@@ -93,6 +98,7 @@ def test_connection_error(config):
         client.close()
 
 
+# TST-CLI-020
 def test_auth_error(config):
     mock_resp = MagicMock()
     mock_resp.status_code = 401
@@ -108,6 +114,7 @@ def test_auth_error(config):
         client.close()
 
 
+# TST-CLI-021
 def test_process_event_via_core(config):
     """process_event routes through Core (not Brain), so no brain_token needed."""
     mock_resp = MagicMock()
@@ -122,6 +129,7 @@ def test_process_event_via_core(config):
         client.close()
 
 
+# TST-CLI-022
 def test_context_manager(config):
     with patch.object(httpx.Client, "request") as mock_req:
         mock_resp = MagicMock()
@@ -138,6 +146,7 @@ def test_context_manager(config):
 # ── Signature auth tests ─────────────────────────────────────────────────
 
 
+# TST-CLI-023
 def test_signing_headers_set(config, mock_identity):
     """Requests carry X-DID, X-Timestamp, X-Signature headers."""
     mock_resp = MagicMock()
@@ -159,6 +168,7 @@ def test_signing_headers_set(config, mock_identity):
         client.close()
 
 
+# TST-CLI-024
 def test_no_bearer_on_core(config):
     """Core client should NOT have an Authorization header."""
     client = DinaClient(config)
@@ -166,6 +176,7 @@ def test_no_bearer_on_core(config):
     client.close()
 
 
+# TST-CLI-025
 def test_extract_body_json():
     """_extract_body serializes json= kwarg with compact separators."""
     kwargs = {"json": {"key": "value", "num": 42}}
@@ -176,12 +187,14 @@ def test_extract_body_json():
     assert kwargs["headers"]["Content-Type"] == "application/json"
 
 
+# TST-CLI-026
 def test_extract_body_content_string():
     kwargs = {"content": "hello"}
     body = DinaClient._extract_body(kwargs)
     assert body == b"hello"
 
 
+# TST-CLI-027
 def test_extract_body_empty():
     kwargs = {}
     body = DinaClient._extract_body(kwargs)

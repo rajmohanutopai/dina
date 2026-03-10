@@ -168,12 +168,22 @@ class DockerServices:
         )
 
     def _load_client_token(self) -> None:
-        """Read the client token from secrets/client_token."""
+        """Read the client token from secrets/client_token.
+
+        Raises RuntimeError if CLIENT_TOKEN is missing — fail fast rather than
+        silently falling back to empty auth (TST-CORE-989).
+        """
         token_path = PROJECT_ROOT / "secrets" / "client_token"
         if token_path.exists():
             self.client_token = token_path.read_text().strip()
         else:
             self.client_token = ""
+        if not self.client_token:
+            raise RuntimeError(
+                f"CLIENT_TOKEN not found or empty at {token_path}. "
+                "Docker integration mode requires a pre-provisioned client_token. "
+                "Run install.sh or create secrets/client_token manually."
+            )
 
     # -- convenience for tests -----------------------------------------------
 

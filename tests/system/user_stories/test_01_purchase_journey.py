@@ -166,6 +166,7 @@ class TestPurchaseJourney:
     # 00 — Cryptographic identity: 5 distinct DIDs, trust edges
     # -----------------------------------------------------------------
 
+    # TST-USR-001
     def test_00_five_dinas_with_distinct_identities_and_trust_edges(
         self, pds_url,
         reviewer_alice, reviewer_bob, reviewer_diana,
@@ -265,6 +266,7 @@ class TestPurchaseJourney:
     # 01 — Alice reviews both chairs
     # -----------------------------------------------------------------
 
+    # TST-USR-002
     def test_01_alice_reviews_chairs(self, pds_url, reviewer_alice):
         """Alice (Ring 2) reviews CheapChair NEGATIVE, ErgoMax POSITIVE."""
         did, jwt = reviewer_alice
@@ -301,6 +303,7 @@ class TestPurchaseJourney:
     # 02 — Bob reviews both chairs
     # -----------------------------------------------------------------
 
+    # TST-USR-003
     def test_02_bob_reviews_chairs(self, pds_url, reviewer_bob):
         """Bob (Ring 2) reviews CheapChair NEGATIVE, ErgoMax POSITIVE."""
         did, jwt = reviewer_bob
@@ -337,6 +340,7 @@ class TestPurchaseJourney:
     # 03 — Diana reviews both chairs
     # -----------------------------------------------------------------
 
+    # TST-USR-004
     def test_03_diana_reviews_chairs(self, pds_url, reviewer_diana):
         """Diana (Ring 2, vouched by Alice) reviews CheapChair NEGATIVE, ErgoMax POSITIVE."""
         did, jwt = reviewer_diana
@@ -373,6 +377,7 @@ class TestPurchaseJourney:
     # 04 — Charlie + Eve (unverified) pump positive CheapChair reviews
     # -----------------------------------------------------------------
 
+    # TST-USR-005
     def test_04_unverified_dinas_pump_positive_cheapchair(
         self, pds_url, reviewer_charlie, reviewer_eve
     ):
@@ -414,6 +419,7 @@ class TestPurchaseJourney:
     # 05 — All attestations ingested into Postgres
     # -----------------------------------------------------------------
 
+    # TST-USR-006
     def test_05_all_attestations_ingested(self, system_services):
         """All 11 attestations (3 vouches + 6 verified product + 2 unverified)
         flow through PDS → Jetstream → Ingester → Postgres.
@@ -460,6 +466,7 @@ class TestPurchaseJourney:
     # 06 — Trust rings: verified have edges, unverified don't
     # -----------------------------------------------------------------
 
+    # TST-USR-007
     def test_06_trust_rings_established(self, system_services):
         """Alice ↔ Bob and Alice → Diana have trust edges (Ring 2).
         Charlie and Eve have zero edges (Ring 1, unverified).
@@ -537,6 +544,7 @@ class TestPurchaseJourney:
     # 07 — Trust network: 3 verified negatives for CheapChair
     # -----------------------------------------------------------------
 
+    # TST-USR-008
     def test_07_verified_negatives_for_cheapchair(self, system_services):
         """3 verified Dinas (Alice, Bob, Diana) gave CheapChair negative reviews."""
         try:
@@ -574,6 +582,7 @@ class TestPurchaseJourney:
     # 08 — Trust network: 3 verified positives for ErgoMax
     # -----------------------------------------------------------------
 
+    # TST-USR-009
     def test_08_verified_positives_for_ergomax(self, system_services):
         """3 verified Dinas (Alice, Bob, Diana) gave ErgoMax positive reviews."""
         try:
@@ -611,6 +620,7 @@ class TestPurchaseJourney:
     # 09 — Store personal context in vault (what Dina already knows)
     # -----------------------------------------------------------------
 
+    # TST-USR-010
     def test_09_store_personal_context_in_vault(self, alonso_core, brain_headers):
         """Populate Alonso's vault with personal context across personas.
 
@@ -742,6 +752,7 @@ class TestPurchaseJourney:
     # 10 — Store purchase decision record in vault
     # -----------------------------------------------------------------
 
+    # TST-USR-011
     def test_10_store_purchase_decision_in_vault(self, alonso_core, brain_headers):
         """Store a purchase decision record — not raw Trust Network data.
 
@@ -847,6 +858,7 @@ class TestPurchaseJourney:
     # 11 — Dina gives personalized, trust-weighted purchase advice
     # -----------------------------------------------------------------
 
+    # TST-USR-012
     @pytest.mark.skipif(
         not os.environ.get("GOOGLE_API_KEY"),
         reason="GOOGLE_API_KEY not set — skipping real LLM test",
@@ -1046,6 +1058,7 @@ class TestPurchaseJourney:
     # 12 — Five words to personalized advice (absolute E2E)
     # -----------------------------------------------------------------
 
+    # TST-USR-013
     @pytest.mark.skipif(
         not os.environ.get("GOOGLE_API_KEY"),
         reason="GOOGLE_API_KEY not set — skipping real LLM test",

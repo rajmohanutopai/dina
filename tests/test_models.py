@@ -7,9 +7,12 @@ import json
 import pytest
 from pydantic import ValidationError
 
+pytestmark = pytest.mark.compat
+
 from dina.models import ProductVerdict
 
 
+@pytest.mark.compat
 class TestProductVerdictSignatureFields:
     """Tests for the v0.3 signature_hex and signer_did fields."""
 

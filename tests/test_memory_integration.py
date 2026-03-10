@@ -12,6 +12,8 @@ from unittest.mock import MagicMock, patch
 import chromadb
 import pytest
 
+pytestmark = pytest.mark.compat
+
 from dina.identity import DinaIdentity
 from dina.models import ProductVerdict
 from dina.signing import canonicalize_verdict, sign_verdict, verify_verdict_signature
@@ -42,6 +44,7 @@ def identity(tmp_path: Path) -> DinaIdentity:
     return DinaIdentity(identity_dir=tmp_path / "identity")
 
 
+@pytest.mark.compat
 class TestStoreUnsignedVerdict:
     """Tests for storing verdicts without signatures (backward compat)."""
 

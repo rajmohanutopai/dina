@@ -88,11 +88,19 @@ func (h *VaultHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
 		mode = domain.SearchFTS5
 	}
 
+	// Cap query limit to prevent data exfiltration (§34.2 TST-CORE-1126).
+	// Any limit above maxQueryLimit is silently capped. Zero/negative means "use default".
+	const maxQueryLimit = 100
+	limit := req.Limit
+	if limit > maxQueryLimit {
+		limit = maxQueryLimit
+	}
+
 	q := domain.SearchQuery{
 		Mode:      mode,
 		Query:     req.Query,
 		Types:     req.Types,
-		Limit:     req.Limit,
+		Limit:     limit,
 		Embedding: req.Embedding,
 	}
 

@@ -73,6 +73,11 @@ type TransportService struct {
 	// SEC-HIGH-08: replay cache for inbound message dedup.
 	replayMu    sync.Mutex
 	replayCache map[string]int64 // key: "senderDID|msgID" -> Unix timestamp
+
+	// TST-CORE-1092: Legacy migration flag. When true, ProcessInbound accepts
+	// raw NaCl sealed box bytes (no JSON wrapper, no signature) with a warning.
+	// Set via DINA_ALLOW_UNSIGNED_D2D=1. Must be removed after migration.
+	allowUnsignedD2D bool
 }
 
 // NewTransportService constructs a TransportService with all required dependencies.
@@ -112,6 +117,15 @@ func (s *TransportService) SetVerifier(v port.Signer) {
 // SetEgress sets the gatekeeper used for egress policy enforcement on outbound messages.
 func (s *TransportService) SetEgress(gk port.Gatekeeper) {
 	s.egress = gk
+}
+
+// SetAllowUnsignedD2D enables legacy raw-bytes D2D processing (TST-CORE-1092).
+// When enabled, ProcessInbound falls back to raw NaCl decryption if JSON
+// wrapper parsing fails. The message is accepted WITHOUT signature verification
+// and a warning is logged. This is a migration aid — remove once all senders
+// use the signed JSON wrapper format.
+func (s *TransportService) SetAllowUnsignedD2D(allow bool) {
+	s.allowUnsignedD2D = allow
 }
 
 // SendMessage signs and encrypts a message for the recipient, then attempts
@@ -396,6 +410,10 @@ func (s *TransportService) ProcessInbound(ctx context.Context, sealed []byte) (*
 	var sigHex string
 	var payload d2dPayload
 	if err := json.Unmarshal(sealed, &payload); err != nil || payload.Ciphertext == "" {
+		// TST-CORE-1092: Legacy migration — accept raw NaCl bytes if explicitly enabled.
+		if s.allowUnsignedD2D {
+			return s.processLegacyInbound(ctx, sealed)
+		}
 		return nil, fmt.Errorf("transport: %w: invalid envelope format", domain.ErrInvalidSignature)
 	}
 	if payload.Sig == "" {
@@ -470,6 +488,40 @@ func (s *TransportService) ProcessInbound(ctx context.Context, sealed []byte) (*
 		s.replayCache[replayKey] = now
 		s.replayMu.Unlock()
 	}
+
+	return &msg, nil
+}
+
+// processLegacyInbound decrypts a raw NaCl sealed box without signature
+// verification. This is the TST-CORE-1092 legacy migration path — it allows
+// old senders that haven't migrated to the signed JSON wrapper format to
+// continue sending messages. A warning is logged for every legacy message
+// to track migration progress. The message is accepted but flagged as
+// unsigned via the UnsignedLegacy field.
+func (s *TransportService) processLegacyInbound(_ context.Context, sealed []byte) (*domain.DinaMessage, error) {
+	x25519Priv, err := s.converter.Ed25519ToX25519Private(s.recipientPriv)
+	if err != nil {
+		return nil, fmt.Errorf("transport: legacy: convert private key: %w", err)
+	}
+	x25519Pub, err := s.converter.Ed25519ToX25519Public(s.recipientPub)
+	if err != nil {
+		return nil, fmt.Errorf("transport: legacy: convert public key: %w", err)
+	}
+	plaintext, err := s.encryptor.OpenAnonymous(sealed, x25519Pub, x25519Priv)
+	if err != nil {
+		return nil, fmt.Errorf("transport: legacy: decrypt raw NaCl failed: %w", err)
+	}
+	var msg domain.DinaMessage
+	if err := json.Unmarshal(plaintext, &msg); err != nil {
+		return nil, fmt.Errorf("transport: legacy: unmarshal plaintext: %w", err)
+	}
+
+	// Log warning for migration tracking — never silent about unsigned messages.
+	slog.Warn("transport: accepted unsigned D2D message (legacy migration)",
+		"from", msg.From,
+		"id", msg.ID,
+		"hint", "sender should migrate to signed JSON wrapper format",
+	)
 
 	return &msg, nil
 }

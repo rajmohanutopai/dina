@@ -78,6 +78,7 @@ class TestMoveToNewMachine:
     # test_00: Store vault data on Node A (old machine)
     # ==================================================================
 
+    # TST-USR-065
     def test_00_store_data_on_node_a(
         self, alonso_core, admin_headers,
     ):
@@ -136,6 +137,7 @@ class TestMoveToNewMachine:
     # test_01: Record Node A's identity (DID)
     # ==================================================================
 
+    # TST-USR-066
     def test_01_record_identity(
         self, alonso_core, admin_headers,
     ):
@@ -176,6 +178,7 @@ class TestMoveToNewMachine:
     # test_02: Verify vault data is exportable (queryable)
     # ==================================================================
 
+    # TST-USR-067
     def test_02_data_exportable(
         self, alonso_core, admin_headers,
     ):
@@ -232,6 +235,7 @@ class TestMoveToNewMachine:
     # test_03: Node B has a valid DID (different from Node A)
     # ==================================================================
 
+    # TST-USR-068
     def test_03_node_b_has_same_identity_scheme(
         self, sancho_core, admin_headers,
     ):
@@ -292,6 +296,7 @@ class TestMoveToNewMachine:
     # test_04: Vault operations work independently on Node B
     # ==================================================================
 
+    # TST-USR-069
     def test_04_vault_operations_work_on_node_b(
         self, sancho_core, admin_headers,
     ):

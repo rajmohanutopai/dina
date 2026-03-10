@@ -1,6 +1,9 @@
 package test
 
 import (
+	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -206,4 +209,171 @@ func TestRateLimit_13_6_RateLimitHeaders(t *testing.T) {
 	testutil.RequireEqual(t, denied.Remaining, 0)
 	testutil.RequireTrue(t, denied.ResetAt > 0,
 		"ResetAt must still be set when denied (tells client when to retry)")
+}
+
+// ==========================================================================
+// TST-CORE-1125: Agent attempts rate limit bypass via concurrent requests
+// §34.2 Agent Sandbox Adversarial
+// Requirement: 1000 concurrent requests from same agent DID → rate limiter
+// enforces per-IP limit, excess requests rejected. No races or panics.
+// ==========================================================================
+
+func TestRateLimit_34_2_5_ConcurrentRateLimitBypass(t *testing.T) {
+	// Use a fresh rate limiter with a small limit for testability.
+	const limit = 60
+	rl := auth.NewRateLimitChecker(limit, 60)
+
+	t.Run("concurrent_requests_enforce_limit_no_excess_allowed", func(t *testing.T) {
+		// Fire 200 concurrent requests from the same IP.
+		// The rate limiter must allow at most `limit` requests total.
+		// This verifies the mutex protection prevents double-spending tokens.
+		ip := "10.10.10.1"
+		rl.Reset(ip)
+
+		const goroutines = 200
+		var allowed int64
+		var denied int64
+		var wg sync.WaitGroup
+
+		wg.Add(goroutines)
+		for i := 0; i < goroutines; i++ {
+			go func() {
+				defer wg.Done()
+				result := rl.Check(ip)
+				if result.Allowed {
+					atomic.AddInt64(&allowed, 1)
+				} else {
+					atomic.AddInt64(&denied, 1)
+				}
+			}()
+		}
+		wg.Wait()
+
+		// Exactly `limit` requests must be allowed. No more.
+		// The token bucket starts with `limit` tokens and each Allow() consumes one.
+		if allowed > int64(limit) {
+			t.Fatalf("rate limiter bypass! allowed %d requests but limit is %d", allowed, limit)
+		}
+		if allowed+denied != goroutines {
+			t.Fatalf("total mismatch: allowed=%d + denied=%d != %d", allowed, denied, goroutines)
+		}
+		// At least some requests must be denied (200 > 60).
+		if denied == 0 {
+			t.Fatal("expected some denied requests when sending 200 concurrent to a limit-60 bucket")
+		}
+	})
+
+	t.Run("per_IP_isolation_under_concurrent_load", func(t *testing.T) {
+		// Verify that concurrent requests from DIFFERENT IPs don't interfere.
+		// Each IP gets its own independent bucket.
+		const ipsCount = 5
+		const perIP = 50
+
+		for i := 0; i < ipsCount; i++ {
+			rl.Reset(fmt.Sprintf("172.16.0.%d", i))
+		}
+
+		var wg sync.WaitGroup
+		allowedPerIP := make([]int64, ipsCount)
+
+		for ipIdx := 0; ipIdx < ipsCount; ipIdx++ {
+			for req := 0; req < perIP; req++ {
+				wg.Add(1)
+				go func(idx int) {
+					defer wg.Done()
+					ip := fmt.Sprintf("172.16.0.%d", idx)
+					result := rl.Check(ip)
+					if result.Allowed {
+						atomic.AddInt64(&allowedPerIP[idx], 1)
+					}
+				}(ipIdx)
+			}
+		}
+		wg.Wait()
+
+		// Each IP should get its full limit (50 < 60 limit).
+		for i := 0; i < ipsCount; i++ {
+			if allowedPerIP[i] != perIP {
+				t.Errorf("IP 172.16.0.%d: expected %d allowed, got %d (cross-IP interference)",
+					i, perIP, allowedPerIP[i])
+			}
+		}
+	})
+
+	t.Run("no_panics_under_heavy_concurrent_access", func(t *testing.T) {
+		// Stress test: 500 goroutines hit the rate limiter simultaneously.
+		// Must not panic, deadlock, or produce data races.
+		const stress = 500
+		var wg sync.WaitGroup
+		wg.Add(stress)
+
+		for i := 0; i < stress; i++ {
+			go func(n int) {
+				defer wg.Done()
+				ip := fmt.Sprintf("stress.%d", n%10)
+				rl.Check(ip)
+			}(i)
+		}
+		wg.Wait()
+		// If we reach here without panic/deadlock, the test passes.
+	})
+
+	t.Run("after_window_reset_quota_restored_under_concurrency", func(t *testing.T) {
+		// Verify that after the window resets, the token bucket is replenished.
+		// Use a short-window limiter.
+		shortRL := auth.NewRateLimitChecker(10, 1) // 10 req/sec
+		ip := "10.20.30.40"
+		shortRL.Reset(ip)
+
+		// Exhaust the quota.
+		for i := 0; i < 10; i++ {
+			shortRL.Check(ip)
+		}
+		result := shortRL.Check(ip)
+		if result.Allowed {
+			t.Fatal("expected denial after exhausting quota")
+		}
+
+		// Wait for window to reset.
+		time.Sleep(1100 * time.Millisecond)
+
+		// After reset, concurrent requests should succeed again.
+		var allowed int64
+		var wg sync.WaitGroup
+		const burst = 8
+		wg.Add(burst)
+		for i := 0; i < burst; i++ {
+			go func() {
+				defer wg.Done()
+				if shortRL.Check(ip).Allowed {
+					atomic.AddInt64(&allowed, 1)
+				}
+			}()
+		}
+		wg.Wait()
+
+		if allowed != burst {
+			t.Fatalf("after window reset, expected %d allowed, got %d", burst, allowed)
+		}
+	})
+
+	t.Run("positive_control_sequential_requests_work", func(t *testing.T) {
+		// Contrast check: sequential requests below limit all succeed.
+		// Without this, the test passes if the rate limiter rejects everything.
+		seqRL := auth.NewRateLimitChecker(20, 60)
+		ip := "10.99.99.99"
+		seqRL.Reset(ip)
+
+		for i := 0; i < 20; i++ {
+			result := seqRL.Check(ip)
+			if !result.Allowed {
+				t.Fatalf("sequential request %d should be allowed (limit=20)", i)
+			}
+		}
+		// 21st should be denied.
+		result := seqRL.Check(ip)
+		if result.Allowed {
+			t.Fatal("request beyond limit should be denied even sequentially")
+		}
+	})
 }

@@ -8,6 +8,8 @@ from pathlib import Path
 import base58
 import pytest
 
+pytestmark = pytest.mark.legacy
+
 from dina.did_key import (
     _ED25519_MULTICODEC_PREFIX,
     derive_did_key,

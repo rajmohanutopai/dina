@@ -37,6 +37,7 @@ def _invoke(args, mock_client=None, env=None):
 # ── remember ──────────────────────────────────────────────────────────────
 
 
+# TST-CLI-028
 def test_remember_json():
     mc = MagicMock()
     mc.vault_store.return_value = {"item_id": "abc12345deadbeef"}
@@ -48,6 +49,7 @@ def test_remember_json():
     mc.vault_store.assert_called_once()
 
 
+# TST-CLI-029
 def test_remember_human():
     mc = MagicMock()
     mc.vault_store.return_value = {"item_id": "abc12345"}
@@ -56,6 +58,7 @@ def test_remember_human():
     assert "stored: True" in result.output
 
 
+# TST-CLI-030
 def test_remember_with_category():
     mc = MagicMock()
     mc.vault_store.return_value = {"item_id": "x"}
@@ -69,6 +72,7 @@ def test_remember_with_category():
 # ── recall ────────────────────────────────────────────────────────────────
 
 
+# TST-CLI-031
 def test_recall_json():
     mc = MagicMock()
     mc.vault_query.return_value = [
@@ -81,6 +85,7 @@ def test_recall_json():
     assert data[0]["content"] == "Buy milk"
 
 
+# TST-CLI-032
 def test_recall_empty():
     mc = MagicMock()
     mc.vault_query.return_value = []
@@ -92,6 +97,7 @@ def test_recall_empty():
 # ── validate ──────────────────────────────────────────────────────────────
 
 
+# TST-CLI-033
 def test_validate_approved():
     mc = MagicMock()
     mc.process_event.return_value = {"approved": True, "requires_approval": False, "risk": "SAFE"}
@@ -103,6 +109,7 @@ def test_validate_approved():
     assert data["id"].startswith("val_")
 
 
+# TST-CLI-034
 def test_validate_pending():
     mc = MagicMock()
     mc.process_event.return_value = {"approved": False, "requires_approval": True, "risk": "HIGH"}
@@ -114,6 +121,7 @@ def test_validate_pending():
     assert "dashboard_url" in data
 
 
+# TST-CLI-035
 def test_validate_fallback_safe():
     """When Core is unavailable, safe actions auto-approve."""
     mc = MagicMock()
@@ -124,6 +132,7 @@ def test_validate_fallback_safe():
     assert data["status"] == "approved"
 
 
+# TST-CLI-036
 def test_validate_fallback_risky():
     """When Core is unavailable, risky actions need approval."""
     mc = MagicMock()
@@ -137,6 +146,7 @@ def test_validate_fallback_risky():
 # ── validate-status ───────────────────────────────────────────────────────
 
 
+# TST-CLI-037
 def test_validate_status_found():
     mc = MagicMock()
     mc.kv_get.return_value = json.dumps({"status": "approved", "action": "read_email"})
@@ -147,6 +157,7 @@ def test_validate_status_found():
     assert data["id"] == "val_abc12345"
 
 
+# TST-CLI-038
 def test_validate_status_not_found():
     mc = MagicMock()
     mc.kv_get.return_value = None
@@ -157,6 +168,7 @@ def test_validate_status_not_found():
 # ── scrub ─────────────────────────────────────────────────────────────────
 
 
+# TST-CLI-039
 def test_scrub_json(tmp_path):
     mc = MagicMock()
     mc.pii_scrub.return_value = {
@@ -180,6 +192,7 @@ def test_scrub_json(tmp_path):
 # ── rehydrate ─────────────────────────────────────────────────────────────
 
 
+# TST-CLI-040
 def test_rehydrate_json():
     runner = CliRunner()
     with patch("dina_cli.main.DinaClient"), \
@@ -201,6 +214,7 @@ def test_rehydrate_json():
 # ── draft ─────────────────────────────────────────────────────────────────
 
 
+# TST-CLI-041
 def test_draft_json():
     mc = MagicMock()
     mc.vault_store.return_value = {"item_id": "draftitem123"}
@@ -217,6 +231,7 @@ def test_draft_json():
 # ── sign ──────────────────────────────────────────────────────────────────
 
 
+# TST-CLI-042
 def test_sign_json(tmp_path):
     """sign command signs locally — no server call needed."""
     from dina_cli.signing import CLIIdentity
@@ -237,6 +252,7 @@ def test_sign_json(tmp_path):
 # ── audit ─────────────────────────────────────────────────────────────────
 
 
+# TST-CLI-043
 def test_audit_json():
     mc = MagicMock()
     mc.vault_query.return_value = [
@@ -252,6 +268,7 @@ def test_audit_json():
 # ── missing keypair ───────────────────────────────────────────────────────
 
 
+# TST-CLI-044
 def test_missing_keypair():
     """CLI exits with error when no Ed25519 keypair exists."""
     runner = CliRunner()
@@ -262,6 +279,7 @@ def test_missing_keypair():
 # ── configure ─────────────────────────────────────────────────────────────
 
 
+# TST-CLI-045
 def test_configure_signature_mode(tmp_path):
     """Configure generates Ed25519 keypair and attempts pairing."""
     runner = CliRunner()
@@ -288,6 +306,7 @@ def test_configure_signature_mode(tmp_path):
     assert "brain_token" not in saved
 
 
+# TST-CLI-046
 def test_configure_help():
     """Configure --help shows without requiring a token."""
     runner = CliRunner()

@@ -10,6 +10,7 @@ import (
 	"github.com/rajmohanutopai/dina/core/internal/adapter/gatekeeper"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/vault"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/service"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
 
@@ -1860,7 +1861,7 @@ func TestGatekeeper_6_6_DraftConfidenceScore_Validated(t *testing.T) {
 	testutil.RequireError(t, err)
 }
 
-// TST-CORE-892
+// TST-CORE-892 TST-CORE-1025
 func TestGatekeeper_6_6_26_AgentConstraint_DraftOnlyEnforced(t *testing.T) {
 	// Agent draft_only: true constraint enforced, no raw vault data to agents.
 	impl := realGatekeeper
@@ -1914,4 +1915,1102 @@ func TestGatekeeper_6_6_27_AgentOutcome_RecordedForTrust(t *testing.T) {
 	valid, err := logger.VerifyChain()
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, valid, "audit hash chain must be valid after agent_outcome append")
+}
+
+// ==========================================================================
+// §33.1 — Agent Sandbox Escape Prevention
+// ==========================================================================
+
+// TST-CORE-1122
+// Requirement: Agent DID with access to /consumer queries /health data → 403.
+// Gatekeeper denies cross-persona access for agent identity.
+// This tests the ATTACK VECTOR — a compromised agent trying to escape its sandbox.
+func TestGatekeeper_33_1_1_AgentCrossPersonaVaultQuery(t *testing.T) {
+	impl := gatekeeper.New()
+	testutil.RequireImplementation(t, impl, "Gatekeeper")
+
+	ctx := context.Background()
+
+	// Sub-test 1: Consumer agent tries to read health data → denied.
+	t.Run("consumer_agent_reads_health_denied", func(t *testing.T) {
+		intent := testutil.Intent{
+			AgentDID:    "did:key:z6MkConsumerAgent",
+			Action:      "vault_read",
+			Target:      "health",
+			PersonaID:   "health",
+			TrustLevel:  "trusted",
+			Constraints: map[string]bool{"persona_consumer_only": true},
+		}
+		decision, err := impl.EvaluateIntent(ctx, intent)
+		testutil.RequireNoError(t, err)
+
+		// MUST be denied — agent is sandboxed to consumer persona.
+		testutil.RequireFalse(t, decision.Allowed, "consumer agent must NOT access health persona")
+
+		// Denial reason must reference cross-persona violation.
+		testutil.RequireTrue(t, strings.Contains(decision.Reason, "cross-persona"),
+			"denial reason must mention 'cross-persona': "+decision.Reason)
+
+		// Denial must be audited (security event).
+		testutil.RequireTrue(t, decision.Audit, "cross-persona denial must be audited")
+	})
+
+	// Sub-test 2: Consumer agent tries to read financial data → denied.
+	t.Run("consumer_agent_reads_financial_denied", func(t *testing.T) {
+		intent := testutil.Intent{
+			AgentDID:    "did:key:z6MkConsumerAgent",
+			Action:      "vault_read",
+			Target:      "financial",
+			PersonaID:   "financial",
+			TrustLevel:  "trusted",
+			Constraints: map[string]bool{"persona_consumer_only": true},
+		}
+		decision, err := impl.EvaluateIntent(ctx, intent)
+		testutil.RequireNoError(t, err)
+		testutil.RequireFalse(t, decision.Allowed, "consumer agent must NOT access financial persona")
+	})
+
+	// Sub-test 3: Same-persona access is allowed (not a sandbox escape).
+	t.Run("consumer_agent_reads_consumer_allowed", func(t *testing.T) {
+		intent := testutil.Intent{
+			AgentDID:    "did:key:z6MkConsumerAgent",
+			Action:      "vault_read",
+			Target:      "consumer",
+			PersonaID:   "consumer",
+			TrustLevel:  "trusted",
+			Constraints: map[string]bool{"persona_consumer_only": true},
+		}
+		decision, err := impl.EvaluateIntent(ctx, intent)
+		testutil.RequireNoError(t, err)
+		testutil.RequireTrue(t, decision.Allowed, "consumer agent accessing own persona must be allowed")
+	})
+
+	// Sub-test 4: Health agent tries to read consumer data → denied.
+	// Verifies enforcement is symmetric — not just consumer→health.
+	t.Run("health_agent_reads_consumer_denied", func(t *testing.T) {
+		intent := testutil.Intent{
+			AgentDID:    "did:key:z6MkHealthAgent",
+			Action:      "vault_read",
+			Target:      "consumer",
+			PersonaID:   "consumer",
+			TrustLevel:  "trusted",
+			Constraints: map[string]bool{"persona_health_only": true},
+		}
+		decision, err := impl.EvaluateIntent(ctx, intent)
+		testutil.RequireNoError(t, err)
+		testutil.RequireFalse(t, decision.Allowed, "health agent must NOT access consumer persona")
+		testutil.RequireTrue(t, strings.Contains(decision.Reason, "cross-persona"),
+			"reason must mention cross-persona: "+decision.Reason)
+	})
+
+	// Sub-test 5: Agent with no persona constraints can access any persona.
+	// This is the baseline — constraints must be explicit.
+	t.Run("unconstrained_agent_accesses_any_persona", func(t *testing.T) {
+		intent := testutil.Intent{
+			AgentDID:   "did:key:z6MkUnconstrainedAgent",
+			Action:     "vault_read",
+			Target:     "health",
+			PersonaID:  "health",
+			TrustLevel: "trusted",
+			// No constraints map → no persona restriction.
+		}
+		decision, err := impl.EvaluateIntent(ctx, intent)
+		testutil.RequireNoError(t, err)
+		testutil.RequireTrue(t, decision.Allowed, "unconstrained agent should be allowed (no persona_X_only constraint)")
+	})
+}
+
+// --------------------------------------------------------------------------
+// §29.10 Sharing Policy Egress Enforcement — No policy default deny
+// --------------------------------------------------------------------------
+
+// TST-CORE-980
+func TestGatekeeper_29_10_NoPolicyForContact_AllCategoriesDenied(t *testing.T) {
+	// Requirement: Unknown contact DID (no sharing policy) → ALL categories denied.
+	// This is the fail-closed default-deny behavior. Missing policy = all blocked.
+	// No information should ever leak to an unknown contact.
+
+	t.Run("all_six_categories_denied_real_impl", func(t *testing.T) {
+		// Use real implementation — not mock — to verify production behavior.
+		impl := realSharingPolicyManager
+		testutil.RequireImplementation(t, impl, "SharingPolicyManager")
+
+		ctx := context.Background()
+		unknownDID := "did:plc:completely_unknown_contact_980"
+
+		// Build a payload with ALL 6 recognized sharing categories.
+		payload := testutil.EgressPayload{
+			RecipientDID: unknownDID,
+			Categories: map[string]interface{}{
+				"presence":     testutil.TieredPayload{Summary: "Online", Full: "Online since 10am"},
+				"availability": testutil.TieredPayload{Summary: "Free", Full: "Free until 3pm, then meeting"},
+				"context":      testutil.TieredPayload{Summary: "Working", Full: "Working on project X at home office"},
+				"preferences":  testutil.TieredPayload{Summary: "Prefers email", Full: "Email preferred, no calls before 9am"},
+				"location":     testutil.TieredPayload{Summary: "Downtown", Full: "123 Main Street, Apt 4B"},
+				"health":       testutil.TieredPayload{Summary: "Fine", Full: "Blood pressure 120/80, on medication X"},
+			},
+		}
+
+		result, err := impl.FilterEgress(ctx, payload)
+		testutil.RequireNoError(t, err)
+
+		// ALL 6 categories must be denied — no exceptions.
+		if len(result.Denied) != 6 {
+			t.Fatalf("expected ALL 6 categories denied for unknown contact, got %d denied: %v",
+				len(result.Denied), result.Denied)
+		}
+
+		// No data should pass through — Filtered must be completely empty.
+		if len(result.Filtered) != 0 {
+			t.Fatalf("expected zero filtered categories for unknown contact, got %d: %v",
+				len(result.Filtered), result.Filtered)
+		}
+
+		// Verify EACH specific category is in the denied list.
+		deniedSet := make(map[string]bool)
+		for _, d := range result.Denied {
+			deniedSet[d] = true
+		}
+		for _, cat := range []string{"presence", "availability", "context", "preferences", "location", "health"} {
+			if !deniedSet[cat] {
+				t.Errorf("category %q missing from denied list — should be blocked for unknown contact", cat)
+			}
+		}
+
+		// RecipientDID must be echoed back correctly.
+		testutil.RequireEqual(t, result.RecipientDID, unknownDID)
+	})
+
+	t.Run("single_category_also_denied", func(t *testing.T) {
+		// Even a single harmless category must be denied for unknown contacts.
+		impl := realSharingPolicyManager
+		testutil.RequireImplementation(t, impl, "SharingPolicyManager")
+
+		payload := testutil.EgressPayload{
+			RecipientDID: "did:plc:stranger_980_single",
+			Categories: map[string]interface{}{
+				"presence": testutil.TieredPayload{Summary: "Available", Full: "Available for chat"},
+			},
+		}
+
+		result, err := impl.FilterEgress(context.Background(), payload)
+		testutil.RequireNoError(t, err)
+		testutil.RequireEqual(t, len(result.Denied), 1)
+		testutil.RequireEqual(t, result.Denied[0], "presence")
+		testutil.RequireEqual(t, len(result.Filtered), 0)
+	})
+
+	t.Run("contrast_known_contact_with_policy_allowed", func(t *testing.T) {
+		// Positive control: a known contact WITH a policy SHOULD have
+		// their allowed categories pass through. This proves the deny
+		// above is specific to missing policy, not a broken implementation.
+		impl := realSharingPolicyManager
+		testutil.RequireImplementation(t, impl, "SharingPolicyManager")
+
+		ctx := context.Background()
+		knownDID := "did:plc:trusted_sancho_980"
+
+		// Set up a policy that allows presence (summary) and context (full).
+		err := impl.SetPolicy(ctx, knownDID, map[string]testutil.SharingTier{
+			"presence": "summary",
+			"context":  "full",
+		})
+		testutil.RequireNoError(t, err)
+
+		payload := testutil.EgressPayload{
+			RecipientDID: knownDID,
+			Categories: map[string]interface{}{
+				"presence": testutil.TieredPayload{Summary: "Online", Full: "Online since 10am"},
+				"context":  testutil.TieredPayload{Summary: "Working", Full: "Working on project X"},
+				"health":   testutil.TieredPayload{Summary: "Fine", Full: "Blood pressure 120/80"},
+			},
+		}
+
+		result, err := impl.FilterEgress(ctx, payload)
+		testutil.RequireNoError(t, err)
+
+		// Presence (summary tier) should pass through with summary value.
+		if result.Filtered["presence"] != "Online" {
+			t.Errorf("presence should be allowed at summary tier, got %q", result.Filtered["presence"])
+		}
+		// Context (full tier) should pass through with full value.
+		if result.Filtered["context"] != "Working on project X" {
+			t.Errorf("context should be allowed at full tier, got %q", result.Filtered["context"])
+		}
+		// Health (no policy entry) should still be denied.
+		deniedSet := make(map[string]bool)
+		for _, d := range result.Denied {
+			deniedSet[d] = true
+		}
+		if !deniedSet["health"] {
+			t.Error("health should be denied — no policy entry for this category")
+		}
+	})
+
+	t.Run("empty_categories_payload_no_crash", func(t *testing.T) {
+		// Edge case: empty categories map for unknown contact must not crash.
+		impl := realSharingPolicyManager
+		testutil.RequireImplementation(t, impl, "SharingPolicyManager")
+
+		payload := testutil.EgressPayload{
+			RecipientDID: "did:plc:empty_payload_980",
+			Categories:   map[string]interface{}{},
+		}
+
+		result, err := impl.FilterEgress(context.Background(), payload)
+		testutil.RequireNoError(t, err)
+		testutil.RequireEqual(t, len(result.Denied), 0)
+		testutil.RequireEqual(t, len(result.Filtered), 0)
+	})
+}
+
+// --------------------------------------------------------------------------
+// §29.10 Sharing Policy Egress Enforcement — Malformed payload denied
+// --------------------------------------------------------------------------
+
+// TST-CORE-981
+func TestGatekeeper_29_10_4_MalformedPayloadNonTieredPayloadDenied(t *testing.T) {
+	// Requirement (§29.10, row 4):
+	//   Malformed payload (non-TieredPayload) must be denied. When a category
+	//   value is NOT a TieredPayload struct, FilterEgress must:
+	//   1. Deny the category (add to Denied list)
+	//   2. NOT include it in Filtered output
+	//   3. Log audit entry with Reason="malformed"
+	//   4. NOT crash or return an error
+	//
+	// This uses the real SharingPolicyManager to test the production type-assertion
+	// guard in FilterEgress (line ~372: `tp, isTP := val.(TieredPayload)`).
+	//
+	// Anti-tautological design:
+	//   - Every negative case has a positive contrast (well-formed TieredPayload allowed)
+	//   - Multiple malformed types tested (string, int, bool, nil, nested map, slice)
+	//   - Audit entries verified for Reason="malformed"
+
+	impl := realSharingPolicyManager
+	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
+
+	ctx := context.Background()
+	contactDID := "did:plc:malformed_test_981"
+
+	// Set policy: "availability" at "summary" tier, "presence" at "full".
+	err := impl.SetPolicy(ctx, contactDID, map[string]testutil.SharingTier{
+		"availability": "summary",
+		"presence":     "full",
+	})
+	testutil.RequireNoError(t, err)
+
+	t.Run("raw_string_denied", func(t *testing.T) {
+		// Raw string is not a TieredPayload — must be denied.
+		payload := testutil.EgressPayload{
+			RecipientDID: contactDID,
+			Categories: map[string]interface{}{
+				"availability": "just a raw string",
+			},
+		}
+		result, err := impl.FilterEgress(ctx, payload)
+		testutil.RequireNoError(t, err)
+
+		denied := make(map[string]bool)
+		for _, d := range result.Denied {
+			denied[d] = true
+		}
+		if !denied["availability"] {
+			t.Fatal("raw string must be denied — it is not a TieredPayload")
+		}
+		if _, ok := result.Filtered["availability"]; ok {
+			t.Fatal("malformed category must not appear in filtered output")
+		}
+	})
+
+	t.Run("integer_denied", func(t *testing.T) {
+		payload := testutil.EgressPayload{
+			RecipientDID: contactDID,
+			Categories: map[string]interface{}{
+				"availability": 42,
+			},
+		}
+		result, err := impl.FilterEgress(ctx, payload)
+		testutil.RequireNoError(t, err)
+
+		denied := make(map[string]bool)
+		for _, d := range result.Denied {
+			denied[d] = true
+		}
+		if !denied["availability"] {
+			t.Fatal("integer must be denied — it is not a TieredPayload")
+		}
+	})
+
+	t.Run("bool_denied", func(t *testing.T) {
+		payload := testutil.EgressPayload{
+			RecipientDID: contactDID,
+			Categories: map[string]interface{}{
+				"presence": true,
+			},
+		}
+		result, err := impl.FilterEgress(ctx, payload)
+		testutil.RequireNoError(t, err)
+
+		denied := make(map[string]bool)
+		for _, d := range result.Denied {
+			denied[d] = true
+		}
+		if !denied["presence"] {
+			t.Fatal("bool must be denied — it is not a TieredPayload")
+		}
+	})
+
+	t.Run("nil_value_denied", func(t *testing.T) {
+		payload := testutil.EgressPayload{
+			RecipientDID: contactDID,
+			Categories: map[string]interface{}{
+				"availability": nil,
+			},
+		}
+		result, err := impl.FilterEgress(ctx, payload)
+		testutil.RequireNoError(t, err)
+
+		denied := make(map[string]bool)
+		for _, d := range result.Denied {
+			denied[d] = true
+		}
+		if !denied["availability"] {
+			t.Fatal("nil must be denied — it is not a TieredPayload")
+		}
+	})
+
+	t.Run("nested_map_denied", func(t *testing.T) {
+		payload := testutil.EgressPayload{
+			RecipientDID: contactDID,
+			Categories: map[string]interface{}{
+				"availability": map[string]string{"summary": "free", "full": "details"},
+			},
+		}
+		result, err := impl.FilterEgress(ctx, payload)
+		testutil.RequireNoError(t, err)
+
+		denied := make(map[string]bool)
+		for _, d := range result.Denied {
+			denied[d] = true
+		}
+		if !denied["availability"] {
+			t.Fatal("map[string]string must be denied — it is not a TieredPayload struct")
+		}
+	})
+
+	t.Run("slice_denied", func(t *testing.T) {
+		payload := testutil.EgressPayload{
+			RecipientDID: contactDID,
+			Categories: map[string]interface{}{
+				"presence": []string{"a", "b"},
+			},
+		}
+		result, err := impl.FilterEgress(ctx, payload)
+		testutil.RequireNoError(t, err)
+
+		denied := make(map[string]bool)
+		for _, d := range result.Denied {
+			denied[d] = true
+		}
+		if !denied["presence"] {
+			t.Fatal("slice must be denied — it is not a TieredPayload")
+		}
+	})
+
+	t.Run("contrast_well_formed_allowed", func(t *testing.T) {
+		// Positive control: well-formed TieredPayload MUST be allowed.
+		// Without this, the test would pass even if FilterEgress denied everything.
+		payload := testutil.EgressPayload{
+			RecipientDID: contactDID,
+			Categories: map[string]interface{}{
+				"availability": testutil.TieredPayload{Summary: "Busy", Full: "In meeting until 3pm"},
+				"presence":     testutil.TieredPayload{Summary: "Online", Full: "Online from home office"},
+			},
+		}
+		result, err := impl.FilterEgress(ctx, payload)
+		testutil.RequireNoError(t, err)
+
+		// availability at summary tier → should get Summary value.
+		if result.Filtered["availability"] != "Busy" {
+			t.Errorf("well-formed availability should be allowed at summary tier, got %q", result.Filtered["availability"])
+		}
+		// presence at full tier → should get Full value.
+		if result.Filtered["presence"] != "Online from home office" {
+			t.Errorf("well-formed presence should be allowed at full tier, got %q", result.Filtered["presence"])
+		}
+		// No denials for well-formed data.
+		if len(result.Denied) != 0 {
+			t.Errorf("well-formed payloads should have zero denials, got %v", result.Denied)
+		}
+	})
+
+	t.Run("mixed_well_formed_and_malformed", func(t *testing.T) {
+		// Mix: one well-formed category + one malformed. Must handle both correctly.
+		payload := testutil.EgressPayload{
+			RecipientDID: contactDID,
+			Categories: map[string]interface{}{
+				"availability": testutil.TieredPayload{Summary: "Free", Full: "Available all day"},
+				"presence":     999, // malformed
+			},
+		}
+		result, err := impl.FilterEgress(ctx, payload)
+		testutil.RequireNoError(t, err)
+
+		// availability (well-formed) should pass.
+		if result.Filtered["availability"] != "Free" {
+			t.Errorf("well-formed category should pass, got %q", result.Filtered["availability"])
+		}
+
+		// presence (malformed) should be denied.
+		denied := make(map[string]bool)
+		for _, d := range result.Denied {
+			denied[d] = true
+		}
+		if !denied["presence"] {
+			t.Fatal("malformed category must be denied even when mixed with well-formed ones")
+		}
+		if _, ok := result.Filtered["presence"]; ok {
+			t.Fatal("malformed category must not appear in filtered output")
+		}
+	})
+
+	t.Run("audit_reason_malformed", func(t *testing.T) {
+		// Audit entries for malformed payloads must have Reason="malformed".
+		payload := testutil.EgressPayload{
+			RecipientDID: contactDID,
+			Categories: map[string]interface{}{
+				"availability": "not a tiered payload",
+			},
+		}
+		result, err := impl.FilterEgress(ctx, payload)
+		testutil.RequireNoError(t, err)
+
+		foundMalformed := false
+		for _, entry := range result.AuditEntries {
+			if entry.Category == "availability" && entry.Reason == "malformed" {
+				foundMalformed = true
+			}
+		}
+		if !foundMalformed {
+			t.Fatal("audit entry for malformed payload must have Reason='malformed'")
+		}
+	})
+}
+
+// --------------------------------------------------------------------------
+// §29.10 Sharing Policy Egress Enforcement — Tier "none" blocks category
+// --------------------------------------------------------------------------
+
+// TST-CORE-979
+func TestGatekeeper_29_10_2_TierNoneBlocksCategory(t *testing.T) {
+	// Requirement (§29.10, row 2):
+	//   When a sharing policy explicitly sets a category tier to "none",
+	//   that category must be blocked (added to Denied list) regardless
+	//   of whether a valid TieredPayload was provided.
+	//
+	// Production code (gatekeeper.go:363):
+	//   if !hasTier || tier == "none" { result.Denied = append(...); continue }
+	//
+	// Anti-tautological design:
+	//   1. Tier "none" → denied (even with valid TieredPayload)
+	//   2. Positive control: other tier → allowed (proves it's tier-specific)
+	//   3. Audit entry has Reason="tier_none"
+	//   4. Multiple categories: some "none", some allowed → selective blocking
+	//   5. All categories "none" → nothing filtered
+	//   6. Contrast with missing category (same deny behavior but different root cause)
+
+	impl := realSharingPolicyManager
+	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
+
+	ctx := context.Background()
+	contactDID := "did:plc:tier_none_test_979"
+
+	t.Run("tier_none_denies_valid_payload", func(t *testing.T) {
+		// Set policy: health explicitly set to "none".
+		impl := realSharingPolicyManager
+		testutil.RequireImplementation(t, impl, "SharingPolicyManager")
+
+		err := impl.SetPolicy(ctx, contactDID, map[string]testutil.SharingTier{
+			"health": "none",
+		})
+		testutil.RequireNoError(t, err)
+
+		// Send a valid TieredPayload for "health" — it must still be denied.
+		payload := testutil.EgressPayload{
+			RecipientDID: contactDID,
+			Categories: map[string]interface{}{
+				"health": testutil.TieredPayload{
+					Summary: "Feeling fine",
+					Full:    "Blood pressure 120/80, heart rate 72",
+				},
+			},
+		}
+		result, err := impl.FilterEgress(ctx, payload)
+		testutil.RequireNoError(t, err)
+
+		// Health must be denied despite valid TieredPayload.
+		denied := make(map[string]bool)
+		for _, d := range result.Denied {
+			denied[d] = true
+		}
+		if !denied["health"] {
+			t.Fatal("tier 'none' must deny category even with valid TieredPayload")
+		}
+
+		// Must NOT appear in filtered output.
+		if _, ok := result.Filtered["health"]; ok {
+			t.Fatal("tier 'none' category must not appear in filtered output")
+		}
+	})
+
+	t.Run("positive_control_summary_tier_allows", func(t *testing.T) {
+		// Contrast: "summary" tier must allow the same type of payload.
+		// Without this, the test passes if FilterEgress denies everything.
+		impl := realSharingPolicyManager
+		testutil.RequireImplementation(t, impl, "SharingPolicyManager")
+
+		allowedDID := "did:plc:tier_summary_control_979"
+		err := impl.SetPolicy(ctx, allowedDID, map[string]testutil.SharingTier{
+			"health": "summary",
+		})
+		testutil.RequireNoError(t, err)
+
+		payload := testutil.EgressPayload{
+			RecipientDID: allowedDID,
+			Categories: map[string]interface{}{
+				"health": testutil.TieredPayload{
+					Summary: "Feeling fine",
+					Full:    "Blood pressure 120/80, heart rate 72",
+				},
+			},
+		}
+		result, err := impl.FilterEgress(ctx, payload)
+		testutil.RequireNoError(t, err)
+
+		// Health at summary tier → must return Summary value.
+		if result.Filtered["health"] != "Feeling fine" {
+			t.Errorf("summary tier must allow category with summary value, got %q",
+				result.Filtered["health"])
+		}
+		if len(result.Denied) != 0 {
+			t.Errorf("summary tier should have zero denials, got %v", result.Denied)
+		}
+	})
+
+	t.Run("audit_entry_reason_tier_none", func(t *testing.T) {
+		impl := realSharingPolicyManager
+		testutil.RequireImplementation(t, impl, "SharingPolicyManager")
+
+		auditDID := "did:plc:tier_none_audit_979"
+		err := impl.SetPolicy(ctx, auditDID, map[string]testutil.SharingTier{
+			"location": "none",
+		})
+		testutil.RequireNoError(t, err)
+
+		payload := testutil.EgressPayload{
+			RecipientDID: auditDID,
+			Categories: map[string]interface{}{
+				"location": testutil.TieredPayload{Summary: "NYC", Full: "123 Main St, NYC"},
+			},
+		}
+		result, err := impl.FilterEgress(ctx, payload)
+		testutil.RequireNoError(t, err)
+
+		// Audit entry must have Reason="tier_none" (not "malformed" or empty).
+		foundTierNone := false
+		for _, entry := range result.AuditEntries {
+			if entry.Category == "location" && entry.Reason == "tier_none" && entry.Decision == "denied" {
+				foundTierNone = true
+			}
+		}
+		if !foundTierNone {
+			t.Fatal("audit entry for tier 'none' must have Reason='tier_none' and Decision='denied'")
+		}
+	})
+
+	t.Run("selective_blocking_mixed_tiers", func(t *testing.T) {
+		// Mix of "none" and allowed tiers: only "none" categories blocked.
+		impl := realSharingPolicyManager
+		testutil.RequireImplementation(t, impl, "SharingPolicyManager")
+
+		mixedDID := "did:plc:mixed_tiers_979"
+		err := impl.SetPolicy(ctx, mixedDID, map[string]testutil.SharingTier{
+			"presence":     "full",
+			"health":       "none",
+			"availability": "summary",
+			"location":     "none",
+		})
+		testutil.RequireNoError(t, err)
+
+		payload := testutil.EgressPayload{
+			RecipientDID: mixedDID,
+			Categories: map[string]interface{}{
+				"presence":     testutil.TieredPayload{Summary: "Online", Full: "Active on mobile"},
+				"health":       testutil.TieredPayload{Summary: "Good", Full: "All vitals normal"},
+				"availability": testutil.TieredPayload{Summary: "Busy", Full: "In meeting until 3pm"},
+				"location":     testutil.TieredPayload{Summary: "NYC", Full: "Manhattan office"},
+			},
+		}
+		result, err := impl.FilterEgress(ctx, payload)
+		testutil.RequireNoError(t, err)
+
+		// Presence (full) → allowed with full value.
+		if result.Filtered["presence"] != "Active on mobile" {
+			t.Errorf("presence at 'full' tier should return full value, got %q", result.Filtered["presence"])
+		}
+		// Availability (summary) → allowed with summary value.
+		if result.Filtered["availability"] != "Busy" {
+			t.Errorf("availability at 'summary' tier should return summary value, got %q", result.Filtered["availability"])
+		}
+
+		// Health and location (none) → denied.
+		denied := make(map[string]bool)
+		for _, d := range result.Denied {
+			denied[d] = true
+		}
+		if !denied["health"] {
+			t.Error("health at tier 'none' must be denied")
+		}
+		if !denied["location"] {
+			t.Error("location at tier 'none' must be denied")
+		}
+
+		// Denied categories must NOT appear in filtered.
+		if _, ok := result.Filtered["health"]; ok {
+			t.Error("health must not appear in filtered output")
+		}
+		if _, ok := result.Filtered["location"]; ok {
+			t.Error("location must not appear in filtered output")
+		}
+	})
+
+	t.Run("all_categories_none_nothing_filtered", func(t *testing.T) {
+		impl := realSharingPolicyManager
+		testutil.RequireImplementation(t, impl, "SharingPolicyManager")
+
+		allNoneDID := "did:plc:all_none_979"
+		err := impl.SetPolicy(ctx, allNoneDID, map[string]testutil.SharingTier{
+			"presence":     "none",
+			"availability": "none",
+			"health":       "none",
+		})
+		testutil.RequireNoError(t, err)
+
+		payload := testutil.EgressPayload{
+			RecipientDID: allNoneDID,
+			Categories: map[string]interface{}{
+				"presence":     testutil.TieredPayload{Summary: "Online", Full: "Active"},
+				"availability": testutil.TieredPayload{Summary: "Free", Full: "No meetings"},
+				"health":       testutil.TieredPayload{Summary: "Fine", Full: "All good"},
+			},
+		}
+		result, err := impl.FilterEgress(ctx, payload)
+		testutil.RequireNoError(t, err)
+
+		// All categories must be denied.
+		if len(result.Denied) != 3 {
+			t.Fatalf("all 3 categories with tier 'none' must be denied, got %d denied", len(result.Denied))
+		}
+		// Nothing should be filtered.
+		if len(result.Filtered) != 0 {
+			t.Fatalf("expected 0 filtered when all tiers are 'none', got %d", len(result.Filtered))
+		}
+	})
+}
+
+// --------------------------------------------------------------------------
+// §29.9 Persona Gatekeeper & Vault Access — Egress denied and audited
+// --------------------------------------------------------------------------
+
+// TST-CORE-977
+func TestGatekeeper_29_9_3_EgressDeniedAndAudited(t *testing.T) {
+	// Requirement (§29.9, row 3):
+	//   When EnforceEgress is called to an untrusted destination and the
+	//   gatekeeper denies egress, the system must:
+	//     1. Return allowed=false
+	//     2. Record an audit entry with Action="egress_check", Reason="denied"
+	//     3. Trigger a client notification
+	//
+	// Anti-tautological design:
+	//   1. Denied destination → allowed=false, audit entry, notification
+	//   2. Positive control: allowed destination → allowed=true, audit with "allowed", NO notification
+	//   3. Audit entry fields validated (Action, Requester, Reason, QueryType)
+	//   4. Notification payload contains destination info
+
+	t.Run("denied_egress_audited_and_notified", func(t *testing.T) {
+		vault := newGatekeeperVaultManager()
+		gk := &gatekeeperMock{
+			egressFn: func(dest string, _ []byte) (bool, error) {
+				if dest == "did:key:z6MkUntrustedDest977" {
+					return false, nil
+				}
+				return true, nil
+			},
+		}
+		audit := &gatekeeperAuditLog{}
+		notifier := &gatekeeperNotifier{}
+		clk := &gatekeeperClock{now: time.Now()}
+
+		svc := service.NewGatekeeperService(vault, &nullVaultReader{}, gk, audit, notifier, clk)
+		ctx := context.Background()
+
+		allowed, err := svc.EnforceEgress(ctx, "did:key:z6MkUntrustedDest977", []byte("sensitive-data"))
+		if err != nil {
+			t.Fatalf("EnforceEgress: %v", err)
+		}
+		if allowed {
+			t.Fatal("egress to untrusted destination must be denied")
+		}
+
+		// Verify audit entry recorded with correct fields.
+		entries, _ := audit.Query(ctx, domain.VaultAuditFilter{})
+		if len(entries) == 0 {
+			t.Fatal("egress denial must generate an audit entry")
+		}
+		entry := entries[len(entries)-1]
+		if entry.Action != "egress_check" {
+			t.Fatalf("audit Action must be 'egress_check', got %q", entry.Action)
+		}
+		if entry.Reason != "denied" {
+			t.Fatalf("audit Reason must be 'denied', got %q", entry.Reason)
+		}
+		if entry.Requester != "did:key:z6MkUntrustedDest977" {
+			t.Fatalf("audit Requester must be destination DID, got %q", entry.Requester)
+		}
+		if entry.QueryType != "egress" {
+			t.Fatalf("audit QueryType must be 'egress', got %q", entry.QueryType)
+		}
+		if entry.Timestamp == "" {
+			t.Fatal("audit Timestamp must be set")
+		}
+
+		// Verify client notification triggered.
+		notifier.mu.Lock()
+		notifyCount := len(notifier.broadcasts)
+		notifier.mu.Unlock()
+		if notifyCount == 0 {
+			t.Fatal("denied egress must trigger client notification")
+		}
+	})
+
+	t.Run("positive_control_allowed_egress_audited_but_not_notified", func(t *testing.T) {
+		// Contrast: allowed egress is audited but does NOT trigger notification.
+		// Without this, the test passes if the service always notifies.
+		vault := newGatekeeperVaultManager()
+		gk := &gatekeeperMock{
+			egressFn: func(_ string, _ []byte) (bool, error) {
+				return true, nil // allow all
+			},
+		}
+		audit := &gatekeeperAuditLog{}
+		notifier := &gatekeeperNotifier{}
+		clk := &gatekeeperClock{now: time.Now()}
+
+		svc := service.NewGatekeeperService(vault, &nullVaultReader{}, gk, audit, notifier, clk)
+		ctx := context.Background()
+
+		allowed, err := svc.EnforceEgress(ctx, "did:key:z6MkTrustedDest977", []byte("public-data"))
+		if err != nil {
+			t.Fatalf("EnforceEgress: %v", err)
+		}
+		if !allowed {
+			t.Fatal("egress to trusted destination must be allowed")
+		}
+
+		// Audit entry must still be recorded (even for allowed egress).
+		entries, _ := audit.Query(ctx, domain.VaultAuditFilter{})
+		if len(entries) == 0 {
+			t.Fatal("allowed egress must also generate an audit entry")
+		}
+		entry := entries[len(entries)-1]
+		if entry.Reason != "allowed" {
+			t.Fatalf("allowed egress audit Reason must be 'allowed', got %q", entry.Reason)
+		}
+
+		// Notification must NOT be triggered for allowed egress.
+		notifier.mu.Lock()
+		notifyCount := len(notifier.broadcasts)
+		notifier.mu.Unlock()
+		if notifyCount != 0 {
+			t.Fatalf("allowed egress must NOT trigger notification, got %d broadcasts", notifyCount)
+		}
+	})
+
+	t.Run("multiple_destinations_selective_denial", func(t *testing.T) {
+		vault := newGatekeeperVaultManager()
+		gk := &gatekeeperMock{
+			egressFn: func(dest string, _ []byte) (bool, error) {
+				if dest == "did:key:z6MkBlocked977" {
+					return false, nil
+				}
+				return true, nil
+			},
+		}
+		audit := &gatekeeperAuditLog{}
+		notifier := &gatekeeperNotifier{}
+		clk := &gatekeeperClock{now: time.Now()}
+
+		svc := service.NewGatekeeperService(vault, &nullVaultReader{}, gk, audit, notifier, clk)
+		ctx := context.Background()
+
+		// Allowed egress.
+		allowed1, err := svc.EnforceEgress(ctx, "did:key:z6MkAllowed977", []byte("data"))
+		if err != nil {
+			t.Fatalf("EnforceEgress allowed: %v", err)
+		}
+		if !allowed1 {
+			t.Fatal("first destination should be allowed")
+		}
+
+		// Denied egress.
+		allowed2, err := svc.EnforceEgress(ctx, "did:key:z6MkBlocked977", []byte("data"))
+		if err != nil {
+			t.Fatalf("EnforceEgress denied: %v", err)
+		}
+		if allowed2 {
+			t.Fatal("second destination should be denied")
+		}
+
+		// Audit log should have 2 entries (one allowed, one denied).
+		entries, _ := audit.Query(ctx, domain.VaultAuditFilter{})
+		if len(entries) != 2 {
+			t.Fatalf("expected 2 audit entries, got %d", len(entries))
+		}
+
+		// Notification should be triggered exactly once (for the denied one only).
+		notifier.mu.Lock()
+		notifyCount := len(notifier.broadcasts)
+		notifier.mu.Unlock()
+		if notifyCount != 1 {
+			t.Fatalf("expected exactly 1 notification (for denied egress), got %d", notifyCount)
+		}
+	})
+}
+
+// --------------------------------------------------------------------------
+// §34.1 Recommendation Integrity — Sharing Policy Overrides Bot Suggestion
+// --------------------------------------------------------------------------
+
+// TST-CORE-1121
+func TestGatekeeper_34_1_5_UserSharingPolicyOverridesBotSuggestedVisibility(t *testing.T) {
+	// Requirement (§34.1 / Absolute Loyalty):
+	//   If a bot suggests visibility level "full" for some data, but the user's
+	//   sharing policy says "summary" or "none" for that category, the user's
+	//   policy MUST win. The bot cannot override the user's privacy preferences.
+	//   FilterEgress enforces user policy — bot suggestion ignored.
+	//
+	// Anti-tautological design:
+	//   1. Bot suggests full, user policy says none → data blocked (denied)
+	//   2. Bot suggests full, user policy says summary → only summary passes
+	//   3. Bot suggests full, user policy says full → full content passes (positive control)
+	//   4. Multiple categories with mixed policies → each enforced independently
+	//   5. Audit entries record the user's policy tier, not the bot's suggestion
+
+	impl := realSharingPolicyManager
+	testutil.RequireImplementation(t, impl, "SharingPolicyManager")
+	ctx := context.Background()
+
+	t.Run("user_policy_none_blocks_bot_full_suggestion", func(t *testing.T) {
+		contactDID := "did:key:z6MkBotSuggestFull1121a"
+
+		// User sets policy: health category = "none" (blocked).
+		err := impl.SetPolicy(ctx, contactDID, map[string]domain.SharingTier{
+			"health": "none",
+		})
+		testutil.RequireNoError(t, err)
+
+		// Bot suggests full visibility — provides both Summary and Full content.
+		payload := testutil.EgressPayload{
+			RecipientDID: contactDID,
+			Categories: map[string]interface{}{
+				"health": domain.TieredPayload{
+					Summary: "Patient is healthy",
+					Full:    "Blood pressure 120/80, cholesterol 180, on medication X",
+				},
+			},
+		}
+
+		result, err := impl.FilterEgress(ctx, payload)
+		testutil.RequireNoError(t, err)
+
+		// User policy "none" must win — health category denied.
+		healthDenied := false
+		for _, d := range result.Denied {
+			if d == "health" {
+				healthDenied = true
+			}
+		}
+		if !healthDenied {
+			t.Fatal("user policy 'none' must block health — bot suggestion overridden")
+		}
+		if _, ok := result.Filtered["health"]; ok {
+			t.Fatal("blocked category must NOT appear in filtered output")
+		}
+	})
+
+	t.Run("user_policy_summary_downgrades_bot_full_suggestion", func(t *testing.T) {
+		contactDID := "did:key:z6MkBotSuggestFull1121b"
+
+		// User policy: location = "summary" only.
+		err := impl.SetPolicy(ctx, contactDID, map[string]domain.SharingTier{
+			"location": "summary",
+		})
+		testutil.RequireNoError(t, err)
+
+		// Bot provides full location data.
+		payload := testutil.EgressPayload{
+			RecipientDID: contactDID,
+			Categories: map[string]interface{}{
+				"location": domain.TieredPayload{
+					Summary: "Downtown area",
+					Full:    "123 Main Street, Apt 4B, New York, NY 10001",
+				},
+			},
+		}
+
+		result, err := impl.FilterEgress(ctx, payload)
+		testutil.RequireNoError(t, err)
+
+		// Only Summary must pass — Full content blocked by user policy.
+		if result.Filtered["location"] != "Downtown area" {
+			t.Fatalf("user policy 'summary' must select Summary only, got %q", result.Filtered["location"])
+		}
+		if result.Filtered["location"] == "123 Main Street, Apt 4B, New York, NY 10001" {
+			t.Fatal("Full content must NOT pass through when user policy is 'summary'")
+		}
+	})
+
+	t.Run("positive_control_user_policy_full_allows_full_content", func(t *testing.T) {
+		contactDID := "did:key:z6MkBotSuggestFull1121c"
+
+		// User explicitly allows full visibility.
+		err := impl.SetPolicy(ctx, contactDID, map[string]domain.SharingTier{
+			"preferences": "full",
+		})
+		testutil.RequireNoError(t, err)
+
+		payload := testutil.EgressPayload{
+			RecipientDID: contactDID,
+			Categories: map[string]interface{}{
+				"preferences": domain.TieredPayload{
+					Summary: "Likes chai",
+					Full:    "Chai, no sugar, served warm. Allergic to dairy. Prefers morning delivery.",
+				},
+			},
+		}
+
+		result, err := impl.FilterEgress(ctx, payload)
+		testutil.RequireNoError(t, err)
+
+		// Full content must pass through when user policy explicitly allows it.
+		expected := "Chai, no sugar, served warm. Allergic to dairy. Prefers morning delivery."
+		if result.Filtered["preferences"] != expected {
+			t.Fatalf("user policy 'full' must allow Full content, got %q", result.Filtered["preferences"])
+		}
+		if len(result.Denied) != 0 {
+			t.Fatalf("no categories should be denied when user policy allows full, denied: %v", result.Denied)
+		}
+	})
+
+	t.Run("mixed_policies_enforced_independently_per_category", func(t *testing.T) {
+		contactDID := "did:key:z6MkBotSuggestFull1121d"
+
+		// User sets mixed policies: health=none, location=summary, preferences=full.
+		err := impl.SetPolicy(ctx, contactDID, map[string]domain.SharingTier{
+			"health":      "none",
+			"location":    "summary",
+			"preferences": "full",
+		})
+		testutil.RequireNoError(t, err)
+
+		// Bot provides full content for all three categories.
+		payload := testutil.EgressPayload{
+			RecipientDID: contactDID,
+			Categories: map[string]interface{}{
+				"health": domain.TieredPayload{
+					Summary: "Healthy",
+					Full:    "Full medical records",
+				},
+				"location": domain.TieredPayload{
+					Summary: "Nearby",
+					Full:    "123 Secret Address",
+				},
+				"preferences": domain.TieredPayload{
+					Summary: "Likes tea",
+					Full:    "Complete preference profile",
+				},
+			},
+		}
+
+		result, err := impl.FilterEgress(ctx, payload)
+		testutil.RequireNoError(t, err)
+
+		// Health: denied (policy=none).
+		healthDenied := false
+		for _, d := range result.Denied {
+			if d == "health" {
+				healthDenied = true
+			}
+		}
+		if !healthDenied {
+			t.Fatal("health must be denied (policy=none)")
+		}
+
+		// Location: summary only.
+		if result.Filtered["location"] != "Nearby" {
+			t.Fatalf("location must be summary only, got %q", result.Filtered["location"])
+		}
+
+		// Preferences: full content.
+		if result.Filtered["preferences"] != "Complete preference profile" {
+			t.Fatalf("preferences must be full, got %q", result.Filtered["preferences"])
+		}
+	})
+
+	t.Run("audit_entries_reflect_user_policy_not_bot_suggestion", func(t *testing.T) {
+		contactDID := "did:key:z6MkBotSuggestFull1121e"
+
+		err := impl.SetPolicy(ctx, contactDID, map[string]domain.SharingTier{
+			"health":   "none",
+			"location": "summary",
+		})
+		testutil.RequireNoError(t, err)
+
+		payload := testutil.EgressPayload{
+			RecipientDID: contactDID,
+			Categories: map[string]interface{}{
+				"health": domain.TieredPayload{
+					Summary: "Fine",
+					Full:    "Full health data",
+				},
+				"location": domain.TieredPayload{
+					Summary: "City center",
+					Full:    "Exact address",
+				},
+			},
+		}
+
+		result, err := impl.FilterEgress(ctx, payload)
+		testutil.RequireNoError(t, err)
+
+		// Check audit entries record the USER's policy tier, not bot suggestion.
+		for _, entry := range result.AuditEntries {
+			if entry.Category == "health" {
+				if entry.Decision != "denied" {
+					t.Fatalf("health audit must show denied, got %q", entry.Decision)
+				}
+				if entry.Reason != "tier_none" {
+					t.Fatalf("health audit reason must be 'tier_none', got %q", entry.Reason)
+				}
+			}
+			if entry.Category == "location" {
+				if entry.Decision != "allowed" {
+					t.Fatalf("location audit must show allowed, got %q", entry.Decision)
+				}
+				if entry.Reason != "tier_summary" {
+					t.Fatalf("location audit reason must be 'tier_summary', got %q", entry.Reason)
+				}
+			}
+		}
+	})
 }

@@ -76,6 +76,7 @@ class TestConnectorExpiry:
     # test_00: Establish healthy baseline
     # ==================================================================
 
+    # TST-USR-070
     def test_00_core_healthy_baseline(
         self, alonso_core, alonso_brain,
     ):
@@ -105,6 +106,7 @@ class TestConnectorExpiry:
     # test_01: Vault works independently (no Brain dependency)
     # ==================================================================
 
+    # TST-USR-071
     def test_01_vault_works_without_brain(
         self, alonso_core, admin_headers,
     ):
@@ -182,6 +184,7 @@ class TestConnectorExpiry:
     # test_02: Brain-dependent endpoint returns clear error (not crash)
     # ==================================================================
 
+    # TST-USR-072
     def test_02_brain_down_error_clear(
         self, alonso_core, admin_headers,
     ):
@@ -245,6 +248,7 @@ class TestConnectorExpiry:
     # test_03: Recovery — Brain healthz still healthy
     # ==================================================================
 
+    # TST-USR-073
     def test_03_recovery_after_outage(
         self, alonso_brain,
     ):
@@ -273,6 +277,7 @@ class TestConnectorExpiry:
     # test_04: DID works independently of connector state
     # ==================================================================
 
+    # TST-USR-074
     def test_04_did_works_independently(
         self, alonso_core, admin_headers,
     ):

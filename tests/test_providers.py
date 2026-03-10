@@ -6,6 +6,8 @@ from unittest.mock import patch
 
 import pytest
 
+pytestmark = pytest.mark.legacy
+
 
 def _make_providers(env: dict):
     """Create a fresh DinaProviders with the given env vars.

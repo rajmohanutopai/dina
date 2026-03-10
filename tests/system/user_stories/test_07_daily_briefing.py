@@ -82,6 +82,7 @@ class TestDailyBriefing:
     # test_00: Store low-priority items in vault for briefing
     # ==================================================================
 
+    # TST-USR-060
     def test_00_store_context_for_briefing(
         self, alonso_core, admin_headers,
     ):
@@ -152,6 +153,7 @@ class TestDailyBriefing:
     # test_01: Fiduciary event interrupts immediately
     # ==================================================================
 
+    # TST-USR-061
     def test_01_fiduciary_event_interrupts(
         self, alonso_core, admin_headers,
     ):
@@ -210,6 +212,7 @@ class TestDailyBriefing:
     # test_02: Engagement event queued via vault KV
     # ==================================================================
 
+    # TST-USR-062
     def test_02_engagement_event_queued(
         self, alonso_core, admin_headers,
     ):
@@ -266,6 +269,7 @@ class TestDailyBriefing:
     # test_03: Briefing retrieves queued items
     # ==================================================================
 
+    # TST-USR-063
     def test_03_briefing_retrieves_queued_items(
         self, alonso_core, admin_headers,
     ):
@@ -315,6 +319,7 @@ class TestDailyBriefing:
     # test_04: Clear briefing queue after delivery
     # ==================================================================
 
+    # TST-USR-064
     def test_04_briefing_clear_after_delivery(
         self, alonso_core, admin_headers,
     ):

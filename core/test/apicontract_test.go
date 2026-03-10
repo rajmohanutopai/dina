@@ -402,3 +402,168 @@ func TestAPIContract_18_15_CoreCallsOnlyDocumentedBrainEndpoints(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	testutil.RequireLen(t, len(violations), 0)
 }
+
+// --------------------------------------------------------------------------
+// §30.8 CI Pipeline Gates — contract-core-brain stage
+// --------------------------------------------------------------------------
+
+// TST-CORE-1016
+func TestCI_30_8_ContractCoreBrainStage(t *testing.T) {
+	// Requirements (§30.8, test_issues #9):
+	//   - The `contract-core-brain` CI stage validates that the Core↔Brain
+	//     API contracts are correct: every brain-callable endpoint accepts
+	//     BRAIN_TOKEN, every admin-only endpoint rejects it with 403.
+	//   - The stage uses real APIContract (backed by real auth.AdminEndpointChecker)
+	//     to prevent drift between documented API surface and production auth rules.
+	//   - No undocumented endpoints, no gaps in classification.
+
+	impl := realAPIContract
+	testutil.RequireImplementation(t, impl, "APIContract")
+
+	t.Run("all_brain_callable_endpoints_accept_brain_token", func(t *testing.T) {
+		// Every endpoint classified as brain-callable must accept BRAIN_TOKEN.
+		// This is the positive contract: brain CAN call these endpoints.
+		brainCallable := []string{
+			"/v1/vault/query",
+			"/v1/vault/store",
+			"/v1/did/verify",
+			"/v1/pii/scrub",
+			"/v1/notify",
+			"/v1/msg/send",
+			"/v1/trust/query",
+			"/healthz",
+			"/readyz",
+		}
+
+		for _, path := range brainCallable {
+			if !impl.IsBrainCallable(path) {
+				t.Errorf("CI contract check: %s must be classified as brain-callable", path)
+			}
+		}
+
+		// Verify we tested a meaningful number of endpoints.
+		if len(brainCallable) < 7 {
+			t.Fatalf("brain-callable list must include at least 7 endpoints, has %d", len(brainCallable))
+		}
+	})
+
+	t.Run("all_admin_endpoints_reject_brain_token", func(t *testing.T) {
+		// Every admin-only endpoint must reject BRAIN_TOKEN with 403.
+		// This is the negative contract: brain CANNOT call these endpoints.
+		adminOnly := []string{
+			"/v1/did/sign",
+			"/v1/did/rotate",
+			"/v1/vault/backup",
+			"/v1/persona/unlock",
+		}
+
+		for _, path := range adminOnly {
+			if !impl.IsAdminOnly(path) {
+				t.Errorf("CI contract check: %s must be classified as admin-only", path)
+			}
+			if impl.IsBrainCallable(path) {
+				t.Errorf("CI contract check: %s must NOT be brain-callable", path)
+			}
+
+			// Verify the endpoint actually returns 403 when called with brain token.
+			statusCode, _, err := impl.CallEndpoint("POST", path, testutil.TestBrainToken, nil)
+			if err != nil {
+				t.Errorf("CallEndpoint %s: %v", path, err)
+				continue
+			}
+			if statusCode != 403 {
+				t.Errorf("CI contract check: %s with BRAIN_TOKEN must return 403, got %d", path, statusCode)
+			}
+		}
+	})
+
+	t.Run("registered_endpoint_list_is_comprehensive", func(t *testing.T) {
+		// The APIContract must register a comprehensive list of endpoints.
+		// A CI stage must not pass with an incomplete registry.
+		endpoints := impl.ListEndpoints()
+
+		if len(endpoints) < 10 {
+			t.Fatalf("CI contract registry must have at least 10 endpoints, has %d", len(endpoints))
+		}
+
+		// Verify critical endpoints are present in the registry.
+		requiredPaths := map[string]bool{
+			"/v1/vault/query": false,
+			"/v1/vault/store": false,
+			"/v1/did/sign":    false,
+			"/v1/did/verify":  false,
+			"/v1/pii/scrub":   false,
+			"/v1/notify":      false,
+			"/v1/msg/send":    false,
+			"/healthz":        false,
+		}
+
+		for _, ep := range endpoints {
+			if _, wanted := requiredPaths[ep.Path]; wanted {
+				requiredPaths[ep.Path] = true
+			}
+		}
+
+		for path, found := range requiredPaths {
+			if !found {
+				t.Errorf("CI contract registry missing critical endpoint: %s", path)
+			}
+		}
+	})
+
+	t.Run("brain_callable_and_admin_only_are_disjoint", func(t *testing.T) {
+		// No endpoint should be both brain-callable AND admin-only.
+		// This is a structural invariant of the authorization model.
+		endpoints := impl.ListEndpoints()
+
+		for _, ep := range endpoints {
+			brainOK := impl.IsBrainCallable(ep.Path)
+			adminOnly := impl.IsAdminOnly(ep.Path)
+
+			if brainOK && adminOnly {
+				t.Errorf("endpoint %s classified as BOTH brain-callable and admin-only — must be one or the other", ep.Path)
+			}
+		}
+	})
+
+	t.Run("health_endpoints_are_brain_callable", func(t *testing.T) {
+		// /healthz and /readyz must be accessible to brain for monitoring.
+		// These are operational endpoints, not admin endpoints.
+		for _, path := range []string{"/healthz", "/readyz"} {
+			if !impl.IsBrainCallable(path) {
+				t.Errorf("%s must be brain-callable for health monitoring", path)
+			}
+			if impl.IsAdminOnly(path) {
+				t.Errorf("%s must NOT be admin-only", path)
+			}
+		}
+	})
+
+	t.Run("contract_delegates_to_real_auth_checker", func(t *testing.T) {
+		// Anti-tautological: verify the APIContract delegates to the real
+		// auth.AdminEndpointChecker, not a hardcoded list. If the auth
+		// checker changes, the contract tests must catch the drift.
+		//
+		// We verify this by checking that AdminEndpointChecker and APIContract
+		// agree on classification for a representative sample.
+		checker := realAdminEndpointChecker
+
+		adminPaths := []string{"/v1/did/sign", "/v1/did/rotate", "/v1/vault/backup"}
+		for _, path := range adminPaths {
+			checkerSays := checker.IsAdminEndpoint(path)
+			contractSays := impl.IsAdminOnly(path)
+			if checkerSays != contractSays {
+				t.Errorf("drift detected: AdminEndpointChecker says admin=%v but APIContract says admin=%v for %s",
+					checkerSays, contractSays, path)
+			}
+		}
+
+		brainPaths := []string{"/v1/vault/query", "/v1/pii/scrub", "/v1/msg/send"}
+		for _, path := range brainPaths {
+			checkerSays := checker.IsAdminEndpoint(path)
+			if checkerSays {
+				t.Errorf("drift detected: AdminEndpointChecker classifies %s as admin but it should be brain-callable", path)
+			}
+		}
+	})
+}

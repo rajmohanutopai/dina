@@ -104,6 +104,16 @@ def _get_signer(service_name: str) -> _ServiceSigner | None:
 
 
 # ---------------------------------------------------------------------------
+# Strict-real mode (TST-CORE-982, TST-CORE-983)
+# ---------------------------------------------------------------------------
+# When DINA_STRICT_REAL=1, _try_request() raises on ANY API failure instead
+# of returning None. This prevents silent mock fallback: if a real API call
+# fails, the test MUST fail immediately rather than falling back to mock
+# state, which would mask real integration bugs.
+_STRICT_REAL = os.environ.get("DINA_STRICT_REAL", "").strip() == "1"
+
+
+# ---------------------------------------------------------------------------
 # Helper: safe HTTP call (real API call, swallow failures)
 # ---------------------------------------------------------------------------
 
@@ -117,6 +127,10 @@ def _try_request(
     """Make HTTP request, return response or None on failure.
 
     Retries on 429 (rate limit) up to 3 times with backoff.
+
+    In strict-real mode (DINA_STRICT_REAL=1), raises RuntimeError on any
+    non-success response instead of returning None. This prevents silent
+    fallback to mock state.
     """
     timeout = kwargs.pop("timeout", 10)
     req_kwargs = dict(kwargs)
@@ -143,9 +157,19 @@ def _try_request(
                 import time as _time
                 _time.sleep(0.1 * (attempt + 1))
                 continue
+            if _STRICT_REAL:
+                raise RuntimeError(
+                    f"STRICT_REAL: {method.upper()} {url} failed with "
+                    f"{resp.status_code} — no mock fallback allowed"
+                )
             return None
         except (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout,
-                httpx.ReadError):
+                httpx.ReadError) as exc:
+            if _STRICT_REAL:
+                raise RuntimeError(
+                    f"STRICT_REAL: {method.upper()} {url} connection failed "
+                    f"({type(exc).__name__}) — no mock fallback allowed"
+                ) from exc
             return None
     return None
 

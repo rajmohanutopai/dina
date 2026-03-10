@@ -91,6 +91,7 @@ class TestSanchoMoment:
     # 00 — Previous conversation: Alonso tells Dina to remember context
     # -----------------------------------------------------------------
 
+    # TST-USR-014
     def test_00_previous_conversation_stored_in_vault(
         self, alonso_core, admin_headers
     ):
@@ -224,6 +225,7 @@ class TestSanchoMoment:
     # 01 — Sancho's Dina sends D2D arrival message
     # -----------------------------------------------------------------
 
+    # TST-USR-015
     def test_01_sancho_sends_d2d_arrival_message(
         self, sancho_core, admin_headers
     ):
@@ -263,6 +265,7 @@ class TestSanchoMoment:
     # 02 — Alonso's Core receives and decrypts the message
     # -----------------------------------------------------------------
 
+    # TST-USR-016
     def test_02_alonso_receives_decrypted_d2d_message(
         self, alonso_core, admin_headers
     ):
@@ -321,6 +324,7 @@ class TestSanchoMoment:
     # 03 — Brain processes the DIDComm event
     # -----------------------------------------------------------------
 
+    # TST-USR-017
     def test_03_brain_processes_didcomm_arrival(
         self, alonso_brain, brain_signer
     ):
@@ -368,6 +372,7 @@ class TestSanchoMoment:
     # 04 — Verify nudge was assembled
     # -----------------------------------------------------------------
 
+    # TST-USR-018
     def test_04_nudge_was_assembled(self):
         """Verify Brain assembled a nudge (not silence).
 
@@ -396,6 +401,7 @@ class TestSanchoMoment:
     # 05 — Verify nudge contains vault context
     # -----------------------------------------------------------------
 
+    # TST-USR-019
     def test_05_nudge_contains_vault_context(self):
         """Verify the nudge references both vault items.
 
@@ -443,6 +449,7 @@ class TestSanchoMoment:
     # 06 — LLM generates human-quality nudge (optional)
     # -----------------------------------------------------------------
 
+    # TST-USR-020
     @pytest.mark.skipif(
         not os.environ.get("GOOGLE_API_KEY"),
         reason="GOOGLE_API_KEY not set — skipping real LLM test",

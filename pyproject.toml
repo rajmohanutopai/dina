@@ -25,4 +25,6 @@ markers = [
     "e2e: end-to-end Docker bootstrap tests — requires Docker daemon",
     "manual: manual release check — requires human judgment or external infrastructure",
     "mock_heavy: E2E suites that exercise mock logic (>90%), not real Go Core APIs — deselect with -m 'not mock_heavy'",
+    "legacy: legacy v0.1-v0.3 tests — run explicitly with -m legacy, excluded from default pipeline",
+    "compat: backward compatibility tests — verifies migration paths and legacy format support",
 ]

@@ -87,6 +87,7 @@ class TestDeadInternetFilter:
     # 00 — Seed AppView with creator profiles
     # -----------------------------------------------------------------
 
+    # TST-USR-021
     def test_00_seed_creator_profiles(self, system_services):
         """Seed AppView Postgres with two creator profiles.
 
@@ -234,6 +235,7 @@ class TestDeadInternetFilter:
     # 01 — AppView returns trusted creator profile
     # -----------------------------------------------------------------
 
+    # TST-USR-022
     def test_01_appview_returns_trusted_creator(self, appview):
         """Direct XRPC call to AppView for trusted Elena.
 
@@ -271,6 +273,7 @@ class TestDeadInternetFilter:
     # 02 — AppView returns untrusted creator profile
     # -----------------------------------------------------------------
 
+    # TST-USR-023
     def test_02_appview_returns_untrusted_creator(self, appview):
         """Direct XRPC call to AppView for untrusted BotFarm.
 
@@ -309,6 +312,7 @@ class TestDeadInternetFilter:
     # 03 — Core resolves trusted creator via AppView
     # -----------------------------------------------------------------
 
+    # TST-USR-024
     def test_03_core_resolves_trusted_creator(self, alonso_core, brain_headers):
         """Core's /v1/trust/resolve fetches full profile from AppView.
 
@@ -341,6 +345,7 @@ class TestDeadInternetFilter:
     # 04 — Core resolves untrusted creator via AppView
     # -----------------------------------------------------------------
 
+    # TST-USR-025
     def test_04_core_resolves_untrusted_creator(self, alonso_core, brain_headers):
         """Core returns low/empty profile for untrusted creator.
 
@@ -373,6 +378,7 @@ class TestDeadInternetFilter:
     # 05 — Brain confirms trusted creator's content
     # -----------------------------------------------------------------
 
+    # TST-USR-026
     @pytest.mark.skipif(
         not os.environ.get("GOOGLE_API_KEY"),
         reason="GOOGLE_API_KEY not set — skipping real LLM test",
@@ -465,6 +471,7 @@ class TestDeadInternetFilter:
     # 06 — Brain flags untrusted creator's content
     # -----------------------------------------------------------------
 
+    # TST-USR-027
     @pytest.mark.skipif(
         not os.environ.get("GOOGLE_API_KEY"),
         reason="GOOGLE_API_KEY not set — skipping real LLM test",
@@ -542,6 +549,7 @@ class TestDeadInternetFilter:
     # 07 — Side-by-side trust comparison (LLM)
     # -----------------------------------------------------------------
 
+    # TST-USR-028
     @pytest.mark.skipif(
         not os.environ.get("GOOGLE_API_KEY"),
         reason="GOOGLE_API_KEY not set — skipping real LLM test",

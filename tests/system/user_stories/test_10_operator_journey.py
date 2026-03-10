@@ -74,6 +74,7 @@ class TestOperatorJourney:
     # test_00: Record baseline DID
     # ==================================================================
 
+    # TST-USR-075
     def test_00_record_baseline_did(
         self, alonso_core, admin_headers,
     ):
@@ -111,6 +112,7 @@ class TestOperatorJourney:
     # test_01: DID stable across requests
     # ==================================================================
 
+    # TST-USR-076
     def test_01_did_stable_across_requests(
         self, alonso_core, admin_headers,
     ):
@@ -151,6 +153,7 @@ class TestOperatorJourney:
     # test_02: Persona create is idempotent
     # ==================================================================
 
+    # TST-USR-077
     def test_02_persona_recreate_idempotent(
         self, alonso_core, admin_headers,
     ):
@@ -196,6 +199,7 @@ class TestOperatorJourney:
     # test_03: Healthz stable under repeated probing
     # ==================================================================
 
+    # TST-USR-078
     def test_03_healthz_stable(
         self, alonso_core,
     ):
@@ -222,6 +226,7 @@ class TestOperatorJourney:
     # test_04: Locked persona returns clear error
     # ==================================================================
 
+    # TST-USR-079
     def test_04_locked_persona_clear_error(
         self, alonso_core, admin_headers,
     ):

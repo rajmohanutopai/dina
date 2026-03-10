@@ -423,3 +423,135 @@ func TestSignature_28_MockValidator_FallsBackToBearerToken(t *testing.T) {
 
 	testutil.RequireEqual(t, rec2.Code, http.StatusUnauthorized)
 }
+
+// --------------------------------------------------------------------------
+// §34.2 Agent Sandbox Adversarial — Agent Revocation
+// --------------------------------------------------------------------------
+
+// TST-CORE-1129
+func TestSignature_34_2_8_AgentRevocationTakesImmediateEffect(t *testing.T) {
+	// Requirement (§34.2):
+	//   When an agent DID is revoked, the revocation must take immediate effect.
+	//   Any subsequent request signed by the revoked agent must be rejected with
+	//   an error containing "revoked". No caching delay is acceptable.
+	//
+	// Anti-tautological design:
+	//   1. Register agent → valid signature accepted (positive control)
+	//   2. Revoke agent → same signature format rejected with "revoked"
+	//   3. Revocation affects only the revoked agent (other agents still work)
+	//   4. Revocation is immediate — no delay between revoke and rejection
+	//   5. Re-registration after revocation restores access (contrast)
+
+	t.Run("valid_before_revocation_rejected_after", func(t *testing.T) {
+		tv, _, priv, did := newSignatureTestValidator(t)
+
+		// Before revocation: valid signature accepted.
+		timestamp := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+		body := []byte(`{"action":"agent_intent","intent":"query_product"}`)
+		sigHex := signRequest(priv, "POST", "/v1/agent/validate", "", timestamp, body)
+
+		_, _, err := tv.VerifySignature(did, "POST", "/v1/agent/validate", "", timestamp, body, sigHex)
+		if err != nil {
+			t.Fatalf("before revocation, valid signature must be accepted: %v", err)
+		}
+
+		// Revoke the agent.
+		tv.RevokeDeviceKey(did)
+
+		// After revocation: same format of request must fail.
+		timestamp2 := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+		body2 := []byte(`{"action":"agent_intent","intent":"query_product_2"}`)
+		sigHex2 := signRequest(priv, "POST", "/v1/agent/validate", "", timestamp2, body2)
+
+		_, _, err = tv.VerifySignature(did, "POST", "/v1/agent/validate", "", timestamp2, body2, sigHex2)
+		if err == nil {
+			t.Fatal("after revocation, agent request must be rejected")
+		}
+		testutil.RequireContains(t, err.Error(), "revoked")
+	})
+
+	t.Run("revocation_does_not_affect_other_agents", func(t *testing.T) {
+		// Register two agents.
+		tv := auth.NewDefaultTokenValidator()
+		tv.SetClock(&fixedClock{t: time.Now().UTC()})
+
+		pub1, priv1, _ := ed25519.GenerateKey(rand.Reader)
+		mc1 := append([]byte{0xed, 0x01}, pub1...)
+		did1 := "did:key:z" + base58.Encode(mc1)
+		tv.RegisterDeviceKey(did1, pub1, "agent-001")
+
+		pub2, priv2, _ := ed25519.GenerateKey(rand.Reader)
+		mc2 := append([]byte{0xed, 0x01}, pub2...)
+		did2 := "did:key:z" + base58.Encode(mc2)
+		tv.RegisterDeviceKey(did2, pub2, "agent-002")
+
+		// Revoke only agent 1.
+		tv.RevokeDeviceKey(did1)
+
+		// Agent 1: rejected.
+		ts := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+		body := []byte(`{"action":"test"}`)
+		sig1 := signRequest(priv1, "POST", "/v1/agent/validate", "", ts, body)
+		_, _, err := tv.VerifySignature(did1, "POST", "/v1/agent/validate", "", ts, body, sig1)
+		if err == nil {
+			t.Fatal("revoked agent-001 must be rejected")
+		}
+		testutil.RequireContains(t, err.Error(), "revoked")
+
+		// Agent 2: still accepted.
+		sig2 := signRequest(priv2, "POST", "/v1/agent/validate", "", ts, body)
+		_, _, err = tv.VerifySignature(did2, "POST", "/v1/agent/validate", "", ts, body, sig2)
+		if err != nil {
+			t.Fatalf("non-revoked agent-002 must still be accepted: %v", err)
+		}
+	})
+
+	t.Run("revocation_is_immediate_no_cache_delay", func(t *testing.T) {
+		tv, _, priv, did := newSignatureTestValidator(t)
+
+		// Verify access works.
+		ts1 := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+		body := []byte(`{"test":"immediate"}`)
+		sig := signRequest(priv, "POST", "/v1/vault/query", "", ts1, body)
+		_, _, err := tv.VerifySignature(did, "POST", "/v1/vault/query", "", ts1, body, sig)
+		testutil.RequireNoError(t, err)
+
+		// Revoke and IMMEDIATELY verify rejection — no sleep, no delay.
+		tv.RevokeDeviceKey(did)
+
+		ts2 := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+		sig2 := signRequest(priv, "POST", "/v1/vault/query", "", ts2, body)
+		_, _, err = tv.VerifySignature(did, "POST", "/v1/vault/query", "", ts2, body, sig2)
+		if err == nil {
+			t.Fatal("revocation must take effect immediately — no cache delay")
+		}
+		testutil.RequireContains(t, err.Error(), "revoked")
+	})
+
+	t.Run("multiple_endpoints_all_rejected_after_revocation", func(t *testing.T) {
+		tv, _, priv, did := newSignatureTestValidator(t)
+
+		tv.RevokeDeviceKey(did)
+
+		endpoints := []struct {
+			method string
+			path   string
+		}{
+			{"POST", "/v1/agent/validate"},
+			{"POST", "/v1/vault/store"},
+			{"GET", "/v1/vault/query"},
+			{"POST", "/v1/did/sign"},
+		}
+
+		for _, ep := range endpoints {
+			ts := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+			body := []byte(`{"test":"revoked"}`)
+			sig := signRequest(priv, ep.method, ep.path, "", ts, body)
+			_, _, err := tv.VerifySignature(did, ep.method, ep.path, "", ts, body, sig)
+			if err == nil {
+				t.Fatalf("revoked agent must be rejected on %s %s", ep.method, ep.path)
+			}
+			testutil.RequireContains(t, err.Error(), "revoked")
+		}
+	})
+}

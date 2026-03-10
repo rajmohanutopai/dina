@@ -16,6 +16,8 @@ package test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -37,6 +39,7 @@ import (
 // CORE-HIGH-03: onEnvelope error → dead-drop fallback
 // ===========================================================================
 
+// TST-CORE-1071
 // TestFixVerify_31_7_1_OnEnvelopeError_FallsBackToDeadDrop verifies that when the
 // onEnvelope callback returns an error on the fast path, the Router falls back
 // to storing the envelope in the dead drop instead of losing it.
@@ -86,6 +89,7 @@ func TestFixVerify_31_7_1_OnEnvelopeError_FallsBackToDeadDrop(t *testing.T) {
 	}
 }
 
+// TST-CORE-1072
 // TestFixVerify_31_7_2_ProcessPending_ReSpoolsOnError verifies that ProcessPending
 // re-spools envelopes to the dead drop when the onEnvelope callback fails.
 func TestFixVerify_31_7_2_ProcessPending_ReSpoolsOnError(t *testing.T) {
@@ -127,6 +131,7 @@ func TestFixVerify_31_7_2_ProcessPending_ReSpoolsOnError(t *testing.T) {
 // CORE-HIGH-06: Complete removes inFlight map entry
 // ===========================================================================
 
+// TST-CORE-1073
 // TestFixVerify_31_7_3_Complete_RemovesInFlight verifies that after Dequeue puts a
 // task into inFlight, Complete removes it — preventing the in-flight leak.
 func TestFixVerify_31_7_3_Complete_RemovesInFlight(t *testing.T) {
@@ -170,6 +175,7 @@ func TestFixVerify_31_7_3_Complete_RemovesInFlight(t *testing.T) {
 // CORE-HIGH-13: Sweeper SetTransport wiring
 // ===========================================================================
 
+// TST-CORE-1074
 // TestFixVerify_31_7_4_Sweeper_HasSetTransport verifies that the Sweeper has a
 // SetTransport method that can be called to wire the transport processor.
 func TestFixVerify_31_7_4_Sweeper_HasSetTransport(t *testing.T) {
@@ -186,6 +192,7 @@ func TestFixVerify_31_7_4_Sweeper_HasSetTransport(t *testing.T) {
 // CORE-MED-02: Error sanitization — no internal details to client
 // ===========================================================================
 
+// TST-CORE-1075
 // TestFixVerify_31_7_5_ErrorSanitization_NoInternalDetails verifies that handler
 // error responses use generic messages and don't leak internal error details.
 func TestFixVerify_31_7_5_ErrorSanitization_NoInternalDetails(t *testing.T) {
@@ -221,6 +228,7 @@ func TestFixVerify_31_7_5_ErrorSanitization_NoInternalDetails(t *testing.T) {
 // CORE-MED-07: /ws route wired
 // ===========================================================================
 
+// TST-CORE-1076
 // TestFixVerify_31_7_6_WS_Components_Constructable verifies that all ws components
 // required for the /ws route can be constructed and wired together.
 func TestFixVerify_31_7_6_WS_Components_Constructable(t *testing.T) {
@@ -252,6 +260,7 @@ func TestFixVerify_31_7_6_WS_Components_Constructable(t *testing.T) {
 // CORE-MED-08: sentIDs pruned on DeleteExpired
 // ===========================================================================
 
+// TST-CORE-1077
 // TestFixVerify_31_7_7_DeleteExpired_PrunesSentIDs verifies that DeleteExpired
 // removes expired message IDs from the sentIDs dedup index, so that
 // re-enqueue of the same ID after expiry creates a new message entry.
@@ -302,6 +311,7 @@ func TestFixVerify_31_7_7_DeleteExpired_PrunesSentIDs(t *testing.T) {
 // CORE-MED-10: Vault item validation (size + type)
 // ===========================================================================
 
+// TST-CORE-1078
 // TestFixVerify_31_7_8_VaultStore_RejectsOversizedItem verifies the Store method
 // rejects items whose body exceeds MaxVaultItemSize.
 func TestFixVerify_31_7_8_VaultStore_RejectsOversizedItem(t *testing.T) {
@@ -324,6 +334,7 @@ func TestFixVerify_31_7_8_VaultStore_RejectsOversizedItem(t *testing.T) {
 	}
 }
 
+// TST-CORE-1079
 // TestFixVerify_31_7_9_VaultStore_RejectsInvalidType verifies the Store method
 // rejects items with unrecognized types.
 func TestFixVerify_31_7_9_VaultStore_RejectsInvalidType(t *testing.T) {
@@ -344,6 +355,7 @@ func TestFixVerify_31_7_9_VaultStore_RejectsInvalidType(t *testing.T) {
 	}
 }
 
+// TST-CORE-1080
 // TestFixVerify_31_7_10_VaultStoreBatch_RejectsInvalidItem verifies StoreBatch
 // rejects the entire batch if any item is invalid (transactional behavior).
 func TestFixVerify_31_7_10_VaultStoreBatch_RejectsInvalidItem(t *testing.T) {
@@ -365,6 +377,7 @@ func TestFixVerify_31_7_10_VaultStoreBatch_RejectsInvalidItem(t *testing.T) {
 	}
 }
 
+// TST-CORE-1081
 // TestFixVerify_31_7_11_VaultStore_AcceptsValidTypes verifies valid types are accepted.
 func TestFixVerify_31_7_11_VaultStore_AcceptsValidTypes(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -388,6 +401,7 @@ func TestFixVerify_31_7_11_VaultStore_AcceptsValidTypes(t *testing.T) {
 // CORE-LOW-01: CORS wildcard handling
 // ===========================================================================
 
+// TST-CORE-1082
 // TestFixVerify_31_7_12_CORS_Wildcard_SetsStarNoCredentials verifies that when
 // AllowOrigin is "*", the response has Access-Control-Allow-Origin: * and
 // does NOT include Access-Control-Allow-Credentials (per CORS spec).
@@ -414,6 +428,7 @@ func TestFixVerify_31_7_12_CORS_Wildcard_SetsStarNoCredentials(t *testing.T) {
 	}
 }
 
+// TST-CORE-1083
 // TestFixVerify_31_7_13_CORS_Whitelist_SetsCredentials verifies that when a specific
 // origin matches, credentials are allowed (unlike wildcard).
 func TestFixVerify_31_7_13_CORS_Whitelist_SetsCredentials(t *testing.T) {
@@ -436,6 +451,7 @@ func TestFixVerify_31_7_13_CORS_Whitelist_SetsCredentials(t *testing.T) {
 	}
 }
 
+// TST-CORE-1084
 // TestFixVerify_31_7_14_CORS_Wildcard_PreflightReturns204 verifies OPTIONS preflight
 // with wildcard CORS returns 204.
 func TestFixVerify_31_7_14_CORS_Wildcard_PreflightReturns204(t *testing.T) {
@@ -459,6 +475,7 @@ func TestFixVerify_31_7_14_CORS_Wildcard_PreflightReturns204(t *testing.T) {
 // CORE-LOW-02: WS upgrader secure-by-default
 // ===========================================================================
 
+// TST-CORE-1085
 // TestFixVerify_31_7_15_WS_DefaultUpgrader_SecureByDefault verifies that NewUpgrader()
 // with no options has InsecureSkipVerify=false (origin checking enabled).
 func TestFixVerify_31_7_15_WS_DefaultUpgrader_SecureByDefault(t *testing.T) {
@@ -483,6 +500,7 @@ func TestFixVerify_31_7_15_WS_DefaultUpgrader_SecureByDefault(t *testing.T) {
 	}
 }
 
+// TST-CORE-1086
 // TestFixVerify_31_7_16_WS_InsecureSkipVerify_Enabled verifies that
 // WithInsecureSkipVerify() disables origin checking (for dev mode).
 func TestFixVerify_31_7_16_WS_InsecureSkipVerify_Enabled(t *testing.T) {
@@ -493,6 +511,7 @@ func TestFixVerify_31_7_16_WS_InsecureSkipVerify_Enabled(t *testing.T) {
 	}
 }
 
+// TST-CORE-1087
 // TestFixVerify_31_7_17_WS_WithOriginPatterns_Configurable verifies that
 // WithOriginPatterns() can be used to configure allowed origins.
 func TestFixVerify_31_7_17_WS_WithOriginPatterns_Configurable(t *testing.T) {
@@ -521,4 +540,167 @@ func (s *fixStubInbox) DrainSpool(_ context.Context) ([][]byte, error) {
 	result := s.spooled
 	s.spooled = nil
 	return result, nil
+}
+
+// ===========================================================================
+// §29.2 — Queue Limit Enforcement
+// ===========================================================================
+
+// TST-CORE-945
+func TestTransport_29_2_9_QueueLimitEnforcedRejectWhenFull(t *testing.T) {
+	// Requirement (§9, queue limit):
+	//   Outbox enforces a maximum queue size. When the queue is full,
+	//   new Enqueue calls must be rejected with ErrOutboxFull. This
+	//   prevents unbounded memory growth from accumulating unsent messages.
+	//
+	// Anti-tautological design:
+	//   1. Enqueue up to limit succeeds, next one fails with ErrOutboxFull
+	//   2. Positive control: below-limit enqueue always succeeds
+	//   3. Delivered/failed messages don't count — space freed for new messages
+	//   4. Empty ID returned on rejection (no partial state)
+	//   5. Default queue size is 100 when maxQueue <= 0
+
+	t.Run("queue_full_returns_ErrOutboxFull", func(t *testing.T) {
+		outbox := transport.NewOutboxManager(3) // Small limit for testing.
+		ctx := context.Background()
+
+		// Fill the queue to capacity.
+		for i := 0; i < 3; i++ {
+			_, err := outbox.Enqueue(ctx, domain.OutboxMessage{
+				Payload: []byte(fmt.Sprintf("msg-%d", i)),
+			})
+			if err != nil {
+				t.Fatalf("enqueue %d should succeed: %v", i, err)
+			}
+		}
+
+		// 4th message must be rejected.
+		id, err := outbox.Enqueue(ctx, domain.OutboxMessage{
+			Payload: []byte("overflow"),
+		})
+		if err == nil {
+			t.Fatal("enqueue beyond limit must fail")
+		}
+		if !errors.Is(err, transport.ErrOutboxFull) {
+			t.Fatalf("expected ErrOutboxFull, got: %v", err)
+		}
+		if id != "" {
+			t.Fatalf("rejected enqueue must return empty ID, got %q", id)
+		}
+	})
+
+	t.Run("positive_control_below_limit_succeeds", func(t *testing.T) {
+		outbox := transport.NewOutboxManager(5)
+		ctx := context.Background()
+
+		// Enqueue 5 messages — all must succeed.
+		for i := 0; i < 5; i++ {
+			id, err := outbox.Enqueue(ctx, domain.OutboxMessage{
+				Payload: []byte(fmt.Sprintf("msg-%d", i)),
+			})
+			if err != nil {
+				t.Fatalf("enqueue %d must succeed: %v", i, err)
+			}
+			if id == "" {
+				t.Fatalf("enqueue %d must return non-empty ID", i)
+			}
+		}
+	})
+
+	t.Run("delivered_messages_dont_count_toward_limit", func(t *testing.T) {
+		outbox := transport.NewOutboxManager(3)
+		ctx := context.Background()
+
+		// Fill queue.
+		ids := make([]string, 3)
+		for i := 0; i < 3; i++ {
+			id, err := outbox.Enqueue(ctx, domain.OutboxMessage{
+				Payload: []byte(fmt.Sprintf("msg-%d", i)),
+			})
+			if err != nil {
+				t.Fatalf("enqueue %d: %v", i, err)
+			}
+			ids[i] = id
+		}
+
+		// Queue full.
+		_, err := outbox.Enqueue(ctx, domain.OutboxMessage{Payload: []byte("blocked")})
+		if !errors.Is(err, transport.ErrOutboxFull) {
+			t.Fatalf("expected ErrOutboxFull, got: %v", err)
+		}
+
+		// Mark first 2 as delivered — frees 2 slots.
+		for i := 0; i < 2; i++ {
+			err := outbox.MarkDelivered(ctx, ids[i])
+			if err != nil {
+				t.Fatalf("MarkDelivered %d: %v", i, err)
+			}
+		}
+
+		// Now we can enqueue 2 more (only 1 pending remains).
+		for i := 0; i < 2; i++ {
+			_, err := outbox.Enqueue(ctx, domain.OutboxMessage{
+				Payload: []byte(fmt.Sprintf("new-msg-%d", i)),
+			})
+			if err != nil {
+				t.Fatalf("enqueue after delivery %d must succeed: %v", i, err)
+			}
+		}
+	})
+
+	t.Run("failed_messages_dont_count_toward_limit", func(t *testing.T) {
+		outbox := transport.NewOutboxManager(2)
+		ctx := context.Background()
+
+		// Fill queue.
+		ids := make([]string, 2)
+		for i := 0; i < 2; i++ {
+			id, err := outbox.Enqueue(ctx, domain.OutboxMessage{
+				Payload: []byte(fmt.Sprintf("msg-%d", i)),
+			})
+			if err != nil {
+				t.Fatalf("enqueue %d: %v", i, err)
+			}
+			ids[i] = id
+		}
+
+		// Queue full.
+		_, err := outbox.Enqueue(ctx, domain.OutboxMessage{Payload: []byte("blocked")})
+		if !errors.Is(err, transport.ErrOutboxFull) {
+			t.Fatalf("expected ErrOutboxFull, got: %v", err)
+		}
+
+		// Mark one as failed — frees 1 slot.
+		err = outbox.MarkFailed(ctx, ids[0])
+		if err != nil {
+			t.Fatalf("MarkFailed: %v", err)
+		}
+
+		// Now we can enqueue 1 more.
+		_, err = outbox.Enqueue(ctx, domain.OutboxMessage{Payload: []byte("after-fail")})
+		if err != nil {
+			t.Fatalf("enqueue after failure must succeed: %v", err)
+		}
+	})
+
+	t.Run("default_queue_size_100_when_zero", func(t *testing.T) {
+		// When maxQueue <= 0, default is 100. Verify by enqueuing 100.
+		outbox := transport.NewOutboxManager(0)
+		ctx := context.Background()
+
+		for i := 0; i < 100; i++ {
+			_, err := outbox.Enqueue(ctx, domain.OutboxMessage{
+				Payload: []byte(fmt.Sprintf("msg-%d", i)),
+			})
+			if err != nil {
+				t.Fatalf("enqueue %d with default limit should succeed: %v", i, err)
+			}
+		}
+
+		// 101st must fail.
+		_, err := outbox.Enqueue(ctx, domain.OutboxMessage{Payload: []byte("overflow")})
+		if !errors.Is(err, transport.ErrOutboxFull) {
+			t.Fatalf("expected ErrOutboxFull at default limit, got: %v", err)
+		}
+	})
 }

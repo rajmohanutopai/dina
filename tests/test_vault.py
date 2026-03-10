@@ -8,6 +8,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+pytestmark = pytest.mark.legacy
+
 from dina.identity import DinaIdentity
 from dina.models import ProductVerdict
 

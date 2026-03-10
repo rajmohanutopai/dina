@@ -425,7 +425,7 @@ func TestFixVerify_31_2_2_ProcessEventAcceptsTaskID(t *testing.T) {
 	}
 }
 
-// TST-CORE-1042 BrainClient.Reason sends "prompt" (not "query")
+// TST-CORE-1042 TST-CORE-995 BrainClient.Reason sends "prompt" (not "query")
 func TestFixVerify_31_2_3_ReasonSendsPrompt(t *testing.T) {
 	// Create a test HTTP server that captures the request body.
 	var capturedBody []byte

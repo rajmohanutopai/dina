@@ -189,3 +189,178 @@ func TestBotInterface_25_4_DeepLinkAttributionValidation(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	testutil.RequireFalse(t, valid, "stripped attribution must fail validation")
 }
+
+// --------------------------------------------------------------------------
+// §33.1 Dead Internet Filter — Bot response without attribution rejected
+// --------------------------------------------------------------------------
+
+// TST-CORE-1118
+func TestBotInterface_33_1_BotResponseWithoutAttributionRejectedAtIngestion(t *testing.T) {
+	// Requirement (§33.1 / §34.1):
+	//   A bot response with no source_url and no creator_name must be rejected.
+	//   Core must make it architecturally impossible for unattributed
+	//   (AI-generated or malicious) recommendations to enter the vault.
+	//   Deep Link principle: creators get traffic, users get truth.
+	//
+	//   ValidateAttribution(resp) must return false for:
+	//     - Empty Attribution field
+	//     - Non-URL Attribution (e.g., "source: bot")
+	//     - Whitespace-only Attribution
+	//   And must return true for:
+	//     - Valid https:// URL
+	//     - Valid http:// URL
+	//
+	// Anti-tautological design:
+	//   1. Empty attribution → validation fails
+	//   2. Non-URL attribution → validation fails
+	//   3. Positive control: valid URL → validation passes
+	//   4. Multiple URL schemes tested (https, http)
+	//   5. Whitespace-only attribution → fails
+	//   6. Protocol-relative URL (//example.com) → fails
+
+	impl := realBotQueryHandler
+	testutil.RequireImplementation(t, impl, "BotQueryHandler")
+
+	t.Run("empty_attribution_rejected", func(t *testing.T) {
+		resp := testutil.BotResponse{
+			Answer:      "Buy this product, it's great",
+			Attribution: "", // No attribution — bot stripped source
+			BotDID:      "did:key:z6MkUnattributedBot",
+			Signature:   []byte("sig"),
+			Confidence:  0.8,
+		}
+		valid, err := impl.ValidateAttribution(resp)
+		testutil.RequireNoError(t, err)
+		if valid {
+			t.Fatal("empty attribution must fail validation — unattributed content cannot enter vault")
+		}
+	})
+
+	t.Run("non_url_attribution_rejected", func(t *testing.T) {
+		// A plain string that is not a URL should fail — it doesn't link
+		// to the original source (Deep Link principle violated).
+		resp := testutil.BotResponse{
+			Answer:      "This is a review from my training data",
+			Attribution: "source: internal knowledge base",
+			BotDID:      "did:key:z6MkFakeAttribBot",
+			Signature:   []byte("sig"),
+			Confidence:  0.7,
+		}
+		valid, err := impl.ValidateAttribution(resp)
+		testutil.RequireNoError(t, err)
+		if valid {
+			t.Fatal("non-URL attribution must fail — must be a linkable source")
+		}
+	})
+
+	t.Run("whitespace_only_attribution_rejected", func(t *testing.T) {
+		resp := testutil.BotResponse{
+			Answer:      "Some answer",
+			Attribution: "   ",
+			BotDID:      "did:key:z6MkWhitespaceBot",
+			Signature:   []byte("sig"),
+			Confidence:  0.5,
+		}
+		valid, err := impl.ValidateAttribution(resp)
+		testutil.RequireNoError(t, err)
+		if valid {
+			t.Fatal("whitespace-only attribution must fail validation")
+		}
+	})
+
+	t.Run("protocol_relative_url_rejected", func(t *testing.T) {
+		// "//example.com/path" is not a full URL (no scheme).
+		resp := testutil.BotResponse{
+			Answer:      "Answer from somewhere",
+			Attribution: "//example.com/article",
+			BotDID:      "did:key:z6MkRelativeBot",
+			Signature:   []byte("sig"),
+			Confidence:  0.6,
+		}
+		valid, err := impl.ValidateAttribution(resp)
+		testutil.RequireNoError(t, err)
+		if valid {
+			t.Fatal("protocol-relative URL must fail — requires explicit http:// or https://")
+		}
+	})
+
+	t.Run("positive_control_https_url_accepted", func(t *testing.T) {
+		// Contrast: valid HTTPS URL must pass validation.
+		// Without this, the test passes if ValidateAttribution always returns false.
+		resp := testutil.BotResponse{
+			Answer:      "The Steelcase Leap scored 92/100 in durability tests",
+			Attribution: "https://youtube.com/watch?v=abc123&t=142",
+			BotDID:      "did:key:z6MkGoodBot",
+			Signature:   []byte("sig"),
+			Confidence:  0.95,
+		}
+		valid, err := impl.ValidateAttribution(resp)
+		testutil.RequireNoError(t, err)
+		if !valid {
+			t.Fatal("valid HTTPS attribution must pass validation — positive control failed")
+		}
+	})
+
+	t.Run("positive_control_http_url_accepted", func(t *testing.T) {
+		resp := testutil.BotResponse{
+			Answer:      "Review from legacy site",
+			Attribution: "http://reviews.example.com/product/42",
+			BotDID:      "did:key:z6MkLegacyBot",
+			Signature:   []byte("sig"),
+			Confidence:  0.8,
+		}
+		valid, err := impl.ValidateAttribution(resp)
+		testutil.RequireNoError(t, err)
+		if !valid {
+			t.Fatal("valid HTTP attribution must pass validation")
+		}
+	})
+
+	t.Run("trust_penalty_for_stripped_attribution", func(t *testing.T) {
+		// Requirement: bots that strip attribution receive a trust penalty.
+		// A bot with stripped attribution must end up with a LOWER score
+		// than an identical bot that preserves attribution. This validates
+		// the penalty exists without depending on absolute score values.
+		impl.ResetForTest()
+
+		goodBot := "did:key:z6MkGoodBot1118"
+		badBot := "did:key:z6MkStripperBot1118"
+
+		// Give both bots the same helpful outcome with attribution.
+		for _, did := range []string{goodBot, badBot} {
+			err := impl.ScoreBot(did, testutil.BotOutcome{
+				BotDID:      did,
+				Attribution: true,
+				Helpful:     true,
+			})
+			testutil.RequireNoError(t, err)
+		}
+
+		// Now good bot gets another attributed outcome...
+		err := impl.ScoreBot(goodBot, testutil.BotOutcome{
+			BotDID:      goodBot,
+			Attribution: true,
+			Helpful:     true,
+		})
+		testutil.RequireNoError(t, err)
+
+		// ...while bad bot strips attribution on the same interaction.
+		err = impl.ScoreBot(badBot, testutil.BotOutcome{
+			BotDID:      badBot,
+			Attribution: false, // Stripped attribution
+			Helpful:     true,
+		})
+		testutil.RequireNoError(t, err)
+
+		goodScore, err := impl.GetScore(goodBot)
+		testutil.RequireNoError(t, err)
+		badScore, err := impl.GetScore(badBot)
+		testutil.RequireNoError(t, err)
+
+		// The bot that stripped attribution must have a lower score.
+		if badScore >= goodScore {
+			t.Fatalf("bot that strips attribution must score lower than one that preserves it: "+
+				"stripped=%.4f, preserved=%.4f", badScore, goodScore)
+		}
+	})
+}

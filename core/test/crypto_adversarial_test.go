@@ -54,6 +54,7 @@ func TestAdv_29_6_HKDFCrossPersona(t *testing.T) {
 	}
 }
 
+// TST-CORE-965
 // TST-ADV-027: Same persona + same seed + different user_salt → different DEKs.
 // Architecture §5: "user_salt uniqueness — two nodes with same mnemonic get different DEKs."
 func TestAdv_29_6_HKDFUserSalt(t *testing.T) {
@@ -80,6 +81,7 @@ func TestAdv_29_6_HKDFUserSalt(t *testing.T) {
 	}
 }
 
+// TST-CORE-966
 // TST-ADV-028: HKDF determinism — same inputs always produce same DEK.
 // Architecture §5: "Deterministic recovery — same mnemonic → same DEKs."
 func TestAdv_29_6_HKDFDeterminism(t *testing.T) {
@@ -100,6 +102,7 @@ func TestAdv_29_6_HKDFDeterminism(t *testing.T) {
 
 // ---------- §B2 — SLIP-0010 Hardened Path Enforcement ----------
 
+// TST-CORE-969
 // TST-ADV-029: Non-hardened derivation path is rejected.
 // Architecture §6: "Only hardened derivation is allowed for Ed25519."
 func TestAdv_29_7_SLIP0010NonHardened(t *testing.T) {
@@ -116,6 +119,7 @@ func TestAdv_29_7_SLIP0010NonHardened(t *testing.T) {
 	}
 }
 
+// TST-CORE-970
 // TST-ADV-030: BIP-44 purpose 44' is explicitly forbidden.
 // Architecture §6: "Purpose 9999' namespace isolation — 44' strictly forbidden."
 func TestAdv_29_7_SLIP0010BIP44Forbidden(t *testing.T) {
@@ -132,6 +136,7 @@ func TestAdv_29_7_SLIP0010BIP44Forbidden(t *testing.T) {
 	}
 }
 
+// TST-CORE-971
 // TST-ADV-031: Sibling hardened paths produce unrelated keypairs.
 // Architecture §6: "Hardened derivation unlinkability — siblings cannot be derived from each other."
 func TestAdv_29_7_SLIP0010SiblingUnlink(t *testing.T) {
@@ -223,6 +228,7 @@ func TestAdv_29_6_KeyDeriverPersonaDEK(t *testing.T) {
 	}
 }
 
+// TST-CORE-968
 // TST-ADV-033: DeriveSigningKey at different persona indices produces independent Ed25519 keys.
 // Architecture §6: "each persona gets its own signing key at m/9999'/1'/<index>'/<gen>'."
 func TestAdv_29_6_KeyDeriverSigningKey(t *testing.T) {
@@ -271,6 +277,123 @@ func TestAdv_29_6_KeyDeriverSigningKey(t *testing.T) {
 	if bytes.Equal([]byte(key0), []byte(key0g1)) {
 		t.Fatal("same persona, different generations must produce different keys")
 	}
+}
+
+// TST-CORE-967
+// KeyDeriver.DerivePersonaDEK produces cryptographically isolated DEKs per persona.
+// Architecture §5: "each persona is a separate encrypted database file with its own DEK."
+// The HKDF info string includes the persona name, ensuring different personas derive
+// completely different keys even from the same master seed.
+func TestCrypto_29_6_4_KeyDeriverPersonaDEKIsolation(t *testing.T) {
+	slip := dinacrypto.NewSLIP0010Deriver()
+	kd := dinacrypto.NewKeyDeriver(slip)
+
+	// Deterministic seed (not all-zero — realistic test data).
+	seed := make([]byte, 64)
+	for i := range seed {
+		seed[i] = byte(i + 1)
+	}
+
+	t.Run("three_personas_all_pairs_distinct_and_32_bytes", func(t *testing.T) {
+		// Requirement: DerivePersonaDEK for 3 personas → all DEKs distinct.
+		// Also verify each DEK is exactly 32 bytes (AES-256 key size).
+		personas := []string{"personal", "health", "financial"}
+		deks := make(map[string][]byte)
+
+		for _, name := range personas {
+			p, err := domain.NewPersonaName(name)
+			if err != nil {
+				t.Fatalf("NewPersonaName(%q): %v", name, err)
+			}
+			dek, err := kd.DerivePersonaDEK(seed, p)
+			if err != nil {
+				t.Fatalf("DerivePersonaDEK(%q): %v", name, err)
+			}
+			if len(dek) != 32 {
+				t.Fatalf("persona %q DEK must be 32 bytes (AES-256), got %d", name, len(dek))
+			}
+			deks[name] = dek
+		}
+
+		// All pairwise comparisons must differ.
+		for i, n1 := range personas {
+			for j, n2 := range personas {
+				if i >= j {
+					continue
+				}
+				if bytes.Equal(deks[n1], deks[n2]) {
+					t.Fatalf("DEK collision between %q and %q — persona isolation violated", n1, n2)
+				}
+			}
+		}
+	})
+
+	t.Run("determinism_same_seed_and_persona_yields_identical_DEK", func(t *testing.T) {
+		// Requirement: HKDF is deterministic — same inputs produce identical output.
+		// Without this, vault unlock would produce a different DEK and data would be lost.
+		p, _ := domain.NewPersonaName("health")
+		dek1, err := kd.DerivePersonaDEK(seed, p)
+		if err != nil {
+			t.Fatalf("first derivation: %v", err)
+		}
+		dek2, err := kd.DerivePersonaDEK(seed, p)
+		if err != nil {
+			t.Fatalf("second derivation: %v", err)
+		}
+		if !bytes.Equal(dek1, dek2) {
+			t.Fatal("same seed + persona must always produce the same DEK — determinism broken")
+		}
+	})
+
+	t.Run("version_isolation_v1_and_v2_produce_different_DEKs", func(t *testing.T) {
+		// Requirement: version tag in HKDF info string ensures v1 and v2 are different.
+		// This is required for vault re-encryption during migration.
+		p, _ := domain.NewPersonaName("financial")
+		dekV1, err := kd.DerivePersonaDEKVersioned(seed, p, 1)
+		if err != nil {
+			t.Fatalf("v1 derivation: %v", err)
+		}
+		dekV2, err := kd.DerivePersonaDEKVersioned(seed, p, 2)
+		if err != nil {
+			t.Fatalf("v2 derivation: %v", err)
+		}
+		if bytes.Equal(dekV1, dekV2) {
+			t.Fatal("v1 and v2 DEKs must differ — version isolation required for migration")
+		}
+		// Verify default DerivePersonaDEK returns v1.
+		dekDefault, _ := kd.DerivePersonaDEK(seed, p)
+		if !bytes.Equal(dekDefault, dekV1) {
+			t.Fatal("DerivePersonaDEK must return v1 by default for backward compatibility")
+		}
+	})
+
+	t.Run("empty_seed_returns_error", func(t *testing.T) {
+		// Requirement: derivation from empty seed must fail — not silently return zeros.
+		p, _ := domain.NewPersonaName("personal")
+		_, err := kd.DerivePersonaDEK(nil, p)
+		if err == nil {
+			t.Fatal("DerivePersonaDEK with nil seed must return an error")
+		}
+		_, err = kd.DerivePersonaDEK([]byte{}, p)
+		if err == nil {
+			t.Fatal("DerivePersonaDEK with empty seed must return an error")
+		}
+	})
+
+	t.Run("positive_control_different_seeds_produce_different_key_sets", func(t *testing.T) {
+		// Contrast check: two different master seeds produce entirely different DEK sets.
+		// Without this, the test passes even if DerivePersonaDEK ignores the seed.
+		seed2 := make([]byte, 64)
+		for i := range seed2 {
+			seed2[i] = byte(i + 100) // different seed
+		}
+		p, _ := domain.NewPersonaName("health")
+		dek1, _ := kd.DerivePersonaDEK(seed, p)
+		dek2, _ := kd.DerivePersonaDEK(seed2, p)
+		if bytes.Equal(dek1, dek2) {
+			t.Fatal("different seeds must produce different DEKs — seed is ignored")
+		}
+	})
 }
 
 // §B4 — BIP-39 Recovery Safety tests removed.

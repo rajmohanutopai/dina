@@ -3,8 +3,12 @@ package test
 import (
 	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/bluesky-social/indigo/atproto/atcrypto"
@@ -2187,4 +2191,1240 @@ func TestCrypto_2_10_4_DeriveServiceKeyCrossLanguage(t *testing.T) {
 	if brainPubHex != expectedBrainPub {
 		t.Fatalf("brain pub mismatch: go=%s, python=%s", brainPubHex, expectedBrainPub)
 	}
+}
+
+// --------------------------------------------------------------------------
+// §2.1 BIP-39 Mnemonic Generation — Master seed IS the DEK
+// --------------------------------------------------------------------------
+
+// TST-CORE-061
+func TestCrypto_2_1_6_MasterSeedIsTheDEK(t *testing.T) {
+	// Requirement (§2.1, row 6):
+	//   The 512-bit BIP-39 seed is used directly as key material for all
+	//   derivations — persona DEKs via HKDF-SHA256, signing keys via SLIP-0010.
+	//   The seed itself is key-wrapped on disk by an Argon2id-derived KEK
+	//   using AES-256-GCM. The master seed never touches disk unwrapped in
+	//   security mode.
+	//
+	// Anti-tautological design:
+	//   1. Same seed → same DEK (deterministic derivation proves seed IS the material)
+	//   2. Different seeds → different DEKs (derivation depends on seed, not a constant)
+	//   3. Seed → persona DEK → can encrypt/decrypt (DEK is usable key material)
+	//   4. Key wrapping round-trips (KEK wraps seed, unwrap recovers exact seed)
+	//   5. Wrapped seed differs from raw seed (wrapping is not a no-op)
+
+	deriver := dinacrypto.NewHKDFKeyDeriver()
+	wrapper := realKeyWrapper
+
+	seed := testutil.TestMnemonicSeed // 64-byte BIP-39 seed
+	salt := testutil.TestUserSalt[:]
+
+	t.Run("seed_deterministic_derivation", func(t *testing.T) {
+		// Same seed + persona + salt → identical DEK every time.
+		// This proves the seed IS the root key material (not discarded or
+		// replaced with a random key during derivation).
+		dek1, err := deriver.DeriveVaultDEK(seed, "personal", salt)
+		if err != nil {
+			t.Fatalf("first derivation failed: %v", err)
+		}
+		if len(dek1) != 32 {
+			t.Fatalf("DEK must be 32 bytes, got %d", len(dek1))
+		}
+
+		dek2, err := deriver.DeriveVaultDEK(seed, "personal", salt)
+		if err != nil {
+			t.Fatalf("second derivation failed: %v", err)
+		}
+
+		for i := range dek1 {
+			if dek1[i] != dek2[i] {
+				t.Fatal("same seed must produce identical DEK — derivation is non-deterministic")
+			}
+		}
+	})
+
+	t.Run("different_seeds_different_DEKs", func(t *testing.T) {
+		// Contrast: different seed → different DEK.
+		// Without this, the test would pass even if DeriveVaultDEK ignored
+		// the seed parameter entirely and returned a constant.
+		dek1, err := deriver.DeriveVaultDEK(seed, "personal", salt)
+		if err != nil {
+			t.Fatalf("derivation with seed1: %v", err)
+		}
+
+		// Construct a different 64-byte seed (flip all bits).
+		altSeed := make([]byte, len(seed))
+		for i, b := range seed {
+			altSeed[i] = ^b
+		}
+
+		dek2, err := deriver.DeriveVaultDEK(altSeed, "personal", salt)
+		if err != nil {
+			t.Fatalf("derivation with seed2: %v", err)
+		}
+
+		match := true
+		for i := range dek1 {
+			if dek1[i] != dek2[i] {
+				match = false
+				break
+			}
+		}
+		if match {
+			t.Fatal("different seeds must produce different DEKs")
+		}
+	})
+
+	t.Run("persona_isolation_from_same_seed", func(t *testing.T) {
+		// Two personas derived from the SAME seed must get different DEKs.
+		// This tests HKDF info string differentiation ("dina:vault:<persona>:v1").
+		dekPersonal, err := deriver.DeriveVaultDEK(seed, "personal", salt)
+		if err != nil {
+			t.Fatalf("personal DEK: %v", err)
+		}
+		dekHealth, err := deriver.DeriveVaultDEK(seed, "health", salt)
+		if err != nil {
+			t.Fatalf("health DEK: %v", err)
+		}
+
+		match := true
+		for i := range dekPersonal {
+			if dekPersonal[i] != dekHealth[i] {
+				match = false
+				break
+			}
+		}
+		if match {
+			t.Fatal("different personas must derive different DEKs from the same seed")
+		}
+	})
+
+	t.Run("key_wrap_round_trip", func(t *testing.T) {
+		// In security mode, the master seed is wrapped on disk:
+		//   wrapped = AES-256-GCM(KEK, seed)
+		//   unwrapped = AES-256-GCM-Open(KEK, wrapped)
+		// The unwrapped seed must exactly match the original.
+		kek := testutil.TestKEK[:]
+		wrapped, err := wrapper.Wrap(seed, kek)
+		if err != nil {
+			t.Fatalf("Wrap failed: %v", err)
+		}
+
+		unwrapped, err := wrapper.Unwrap(wrapped, kek)
+		if err != nil {
+			t.Fatalf("Unwrap failed: %v", err)
+		}
+
+		if len(unwrapped) != len(seed) {
+			t.Fatalf("unwrapped length %d != original %d", len(unwrapped), len(seed))
+		}
+		for i := range seed {
+			if unwrapped[i] != seed[i] {
+				t.Fatal("unwrapped seed must exactly match original — key wrapping corrupted seed")
+			}
+		}
+	})
+
+	t.Run("wrapped_differs_from_raw", func(t *testing.T) {
+		// Wrapping must not be a no-op — wrapped bytes must differ from raw seed.
+		kek := testutil.TestKEK[:]
+		wrapped, err := wrapper.Wrap(seed, kek)
+		if err != nil {
+			t.Fatalf("Wrap: %v", err)
+		}
+
+		// Wrapped output must be larger (nonce + ciphertext + tag).
+		if len(wrapped) <= len(seed) {
+			t.Fatalf("wrapped output (%d bytes) should be larger than raw seed (%d bytes)",
+				len(wrapped), len(seed))
+		}
+
+		// Content must differ (not just appended zeros).
+		match := true
+		minLen := len(seed)
+		if len(wrapped) < minLen {
+			minLen = len(wrapped)
+		}
+		for i := 0; i < minLen; i++ {
+			if wrapped[i] != seed[i] {
+				match = false
+				break
+			}
+		}
+		if match && len(wrapped) == len(seed) {
+			t.Fatal("wrapped bytes must differ from raw seed")
+		}
+	})
+
+	t.Run("wrong_KEK_fails_unwrap", func(t *testing.T) {
+		// Wrapping with one KEK and unwrapping with a different KEK must fail.
+		// This proves the KEK actually protects the seed.
+		kek := testutil.TestKEK[:]
+		wrapped, err := wrapper.Wrap(seed, kek)
+		if err != nil {
+			t.Fatalf("Wrap: %v", err)
+		}
+
+		wrongKEK := testutil.TestDEK[:] // Different 32-byte key
+		_, err = wrapper.Unwrap(wrapped, wrongKEK)
+		if err == nil {
+			t.Fatal("unwrap with wrong KEK must fail — seed protection is broken")
+		}
+	})
+
+	t.Run("derived_DEK_encrypts_data", func(t *testing.T) {
+		// End-to-end: seed → HKDF → DEK → AES-256-GCM encrypt → decrypt.
+		// Proves the DEK derived from the master seed is usable key material.
+		dek, err := deriver.DeriveVaultDEK(seed, "personal", salt)
+		if err != nil {
+			t.Fatalf("derive DEK: %v", err)
+		}
+		if len(dek) != 32 {
+			t.Fatalf("DEK must be 32 bytes for AES-256")
+		}
+
+		// Use the DEK to wrap and unwrap some test data.
+		testData := []byte("vault item encrypted with persona DEK")
+		wrapped, err := wrapper.Wrap(testData, dek)
+		if err != nil {
+			t.Fatalf("encrypt with DEK: %v", err)
+		}
+		unwrapped, err := wrapper.Unwrap(wrapped, dek)
+		if err != nil {
+			t.Fatalf("decrypt with DEK: %v", err)
+		}
+		for i := range testData {
+			if testData[i] != unwrapped[i] {
+				t.Fatal("DEK derived from master seed must produce usable encryption key")
+			}
+		}
+	})
+}
+
+// --------------------------------------------------------------------------
+// §29.6 HKDF & Key Derivation Isolation
+// --------------------------------------------------------------------------
+
+// TST-CORE-964
+func TestCrypto_29_6_1_CrossPersonaDEKIsolation5Personas(t *testing.T) {
+	// Requirement (§29.6):
+	//   Same master seed + same user salt + 5 different persona names must
+	//   produce 5 mutually distinct DEKs. All 10 pairwise combinations must
+	//   differ. Each derivation must be deterministic (same inputs → same output).
+	//
+	// Anti-tautological design:
+	//   1. Derive DEKs for 5 production personas
+	//   2. Verify all 10 pairwise combinations are distinct
+	//   3. Verify each DEK is exactly 32 bytes (AES-256)
+	//   4. Verify determinism: re-derive each and compare
+	//   5. Verify different seed produces entirely different DEKs (contrast)
+
+	impl := realVaultDEKDeriver
+	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
+
+	personas := []string{"personal", "health", "financial", "social", "consumer"}
+	seed := testutil.TestMnemonicSeed
+	salt := testutil.TestUserSalt[:]
+
+	// Derive DEKs for all 5 personas.
+	deks := make([][]byte, len(personas))
+	for i, p := range personas {
+		dek, err := impl.DeriveVaultDEK(seed, p, salt)
+		testutil.RequireNoError(t, err)
+		deks[i] = dek
+	}
+
+	t.Run("all_deks_are_32_bytes", func(t *testing.T) {
+		for i, dek := range deks {
+			if len(dek) != 32 {
+				t.Fatalf("persona %q DEK must be 32 bytes (AES-256), got %d", personas[i], len(dek))
+			}
+		}
+	})
+
+	t.Run("all_10_pairwise_combinations_distinct", func(t *testing.T) {
+		// 5 choose 2 = 10 pairs.
+		pairs := 0
+		for i := 0; i < len(deks); i++ {
+			for j := i + 1; j < len(deks); j++ {
+				pairs++
+				testutil.RequireBytesNotEqual(t, deks[i], deks[j])
+			}
+		}
+		if pairs != 10 {
+			t.Fatalf("expected 10 pairwise comparisons, got %d", pairs)
+		}
+	})
+
+	t.Run("deterministic_re_derivation", func(t *testing.T) {
+		// Re-derive every persona DEK and verify it matches the original.
+		for i, p := range personas {
+			dek2, err := impl.DeriveVaultDEK(seed, p, salt)
+			testutil.RequireNoError(t, err)
+			testutil.RequireBytesEqual(t, deks[i], dek2)
+		}
+	})
+
+	t.Run("different_seed_produces_different_deks", func(t *testing.T) {
+		// Contrast: same personas + salt but different seed → all DEKs differ.
+		altSeed := make([]byte, 64)
+		copy(altSeed, seed)
+		altSeed[0] ^= 0xFF // Flip first byte
+
+		for i, p := range personas {
+			altDEK, err := impl.DeriveVaultDEK(altSeed, p, salt)
+			testutil.RequireNoError(t, err)
+			testutil.RequireBytesNotEqual(t, deks[i], altDEK)
+		}
+	})
+
+	t.Run("different_salt_produces_different_deks", func(t *testing.T) {
+		// Contrast: same seed + personas but different salt → all DEKs differ.
+		altSalt := make([]byte, 32)
+		copy(altSalt, salt)
+		altSalt[0] ^= 0xFF
+
+		for i, p := range personas {
+			altDEK, err := impl.DeriveVaultDEK(seed, p, altSalt)
+			testutil.RequireNoError(t, err)
+			testutil.RequireBytesNotEqual(t, deks[i], altDEK)
+		}
+	})
+}
+
+// ==========================================================================
+// §30.11 — Crypto/Identity Cross-Process Tests
+// ==========================================================================
+
+// TST-CORE-1030
+// Ed25519 → X25519 conversion verified across nodes.
+// Requirement: Two independent nodes (separate Ed25519 keypairs from different
+// seeds) must be able to exchange NaCl sealed-box messages by converting their
+// Ed25519 keys to X25519. Node A seals to Node B's public key, Node B opens
+// with their private key, and vice versa. Cross-contamination must fail.
+func TestCrypto_30_11_4_CrossNodeEd25519ToX25519SealedBoxExchange(t *testing.T) {
+	sImpl := realSigner
+	testutil.RequireImplementation(t, sImpl, "Signer")
+
+	convImpl := realConverter
+	testutil.RequireImplementation(t, convImpl, "KeyConverter")
+
+	boxImpl := realEncryptor
+	testutil.RequireImplementation(t, boxImpl, "Encryptor")
+
+	// --- Set up two independent nodes with different seeds ---
+
+	seedA := make([]byte, 32)
+	copy(seedA, testutil.TestEd25519Seed[:])
+	// Flip bits to get a completely different seed for Node B.
+	seedB := make([]byte, 32)
+	copy(seedB, testutil.TestEd25519Seed[:])
+	seedB[0] ^= 0xFF
+	seedB[15] ^= 0xAA
+	seedB[31] ^= 0x55
+
+	pubA, privA, err := sImpl.GenerateFromSeed(seedA)
+	testutil.RequireNoError(t, err)
+
+	pubB, privB, err := sImpl.GenerateFromSeed(seedB)
+	testutil.RequireNoError(t, err)
+
+	// Keys must differ between nodes.
+	testutil.RequireBytesNotEqual(t, pubA, pubB)
+
+	// Convert to X25519.
+	x25519PubA, err := convImpl.Ed25519ToX25519Public(pubA)
+	testutil.RequireNoError(t, err)
+	x25519PrivA, err := convImpl.Ed25519ToX25519Private(privA)
+	testutil.RequireNoError(t, err)
+
+	x25519PubB, err := convImpl.Ed25519ToX25519Public(pubB)
+	testutil.RequireNoError(t, err)
+	x25519PrivB, err := convImpl.Ed25519ToX25519Private(privB)
+	testutil.RequireNoError(t, err)
+
+	// X25519 keys must differ between nodes.
+	testutil.RequireBytesNotEqual(t, x25519PubA, x25519PubB)
+	testutil.RequireBytesNotEqual(t, x25519PrivA, x25519PrivB)
+
+	t.Run("node_A_seals_to_node_B_and_B_opens", func(t *testing.T) {
+		// Node A encrypts a message intended for Node B.
+		message := []byte("Hello from Node A to Node B — cross-node NaCl sealed box")
+		sealed, err := boxImpl.SealAnonymous(message, x25519PubB)
+		testutil.RequireNoError(t, err)
+
+		// Node B opens it with their own X25519 keys.
+		opened, err := boxImpl.OpenAnonymous(sealed, x25519PubB, x25519PrivB)
+		testutil.RequireNoError(t, err)
+		testutil.RequireBytesEqual(t, message, opened)
+	})
+
+	t.Run("node_B_seals_to_node_A_and_A_opens", func(t *testing.T) {
+		// Reverse direction: Node B encrypts for Node A.
+		message := []byte("Hello from Node B to Node A — reverse direction test")
+		sealed, err := boxImpl.SealAnonymous(message, x25519PubA)
+		testutil.RequireNoError(t, err)
+
+		// Node A opens it with their own X25519 keys.
+		opened, err := boxImpl.OpenAnonymous(sealed, x25519PubA, x25519PrivA)
+		testutil.RequireNoError(t, err)
+		testutil.RequireBytesEqual(t, message, opened)
+	})
+
+	t.Run("cross_contamination_fails_wrong_private_key", func(t *testing.T) {
+		// A message sealed to Node B's public key must NOT be openable
+		// with Node A's private key.
+		message := []byte("sealed for B only")
+		sealed, err := boxImpl.SealAnonymous(message, x25519PubB)
+		testutil.RequireNoError(t, err)
+
+		// Attempt to open with Node A's keys — must fail.
+		_, err = boxImpl.OpenAnonymous(sealed, x25519PubA, x25519PrivA)
+		if err == nil {
+			t.Fatal("opening a message sealed to Node B with Node A's keys must fail — cross-contamination detected")
+		}
+	})
+
+	t.Run("cross_contamination_fails_mismatched_pub_priv", func(t *testing.T) {
+		// Try opening with Node B's public key but Node A's private key — must fail.
+		message := []byte("sealed for B only — mismatch test")
+		sealed, err := boxImpl.SealAnonymous(message, x25519PubB)
+		testutil.RequireNoError(t, err)
+
+		_, err = boxImpl.OpenAnonymous(sealed, x25519PubB, x25519PrivA)
+		if err == nil {
+			t.Fatal("opening with mismatched pub/priv keys must fail")
+		}
+	})
+
+	t.Run("ed25519_signature_interop_across_nodes", func(t *testing.T) {
+		// Node A signs a message with Ed25519, Node B verifies using Node A's
+		// Ed25519 public key. This proves Ed25519 identity verification works
+		// cross-node alongside X25519 encryption.
+		message := []byte("signed by Node A, verified by Node B")
+		sig, err := sImpl.Sign(privA, message)
+		testutil.RequireNoError(t, err)
+
+		// Node B verifies using Node A's Ed25519 public key.
+		valid, err := sImpl.Verify(pubA, message, sig)
+		testutil.RequireNoError(t, err)
+		testutil.RequireTrue(t, valid, "Node B must verify Node A's signature")
+
+		// Node B's public key must NOT verify Node A's signature.
+		valid2, err := sImpl.Verify(pubB, message, sig)
+		testutil.RequireNoError(t, err)
+		if valid2 {
+			t.Fatal("Node B's public key must NOT verify Node A's signature — identity confusion")
+		}
+	})
+
+	t.Run("sign_seal_unseal_verify_full_cross_node_roundtrip", func(t *testing.T) {
+		// Full cross-node roundtrip: Node A signs a message with Ed25519, seals
+		// the message+signature with NaCl to Node B's X25519 public key. Node B
+		// unseals, then verifies the signature using Node A's Ed25519 public key.
+		message := []byte("full roundtrip: sign → seal → unseal → verify")
+		sig, err := sImpl.Sign(privA, message)
+		testutil.RequireNoError(t, err)
+
+		// Combine message + signature into a single payload.
+		payload := make([]byte, 0, len(message)+len(sig))
+		payload = append(payload, message...)
+		payload = append(payload, sig...)
+
+		// Seal to Node B.
+		sealed, err := boxImpl.SealAnonymous(payload, x25519PubB)
+		testutil.RequireNoError(t, err)
+
+		// Node B unseals.
+		opened, err := boxImpl.OpenAnonymous(sealed, x25519PubB, x25519PrivB)
+		testutil.RequireNoError(t, err)
+
+		// Extract message and signature.
+		recoveredMsg := opened[:len(message)]
+		recoveredSig := opened[len(message):]
+
+		testutil.RequireBytesEqual(t, message, recoveredMsg)
+
+		// Verify signature using Node A's Ed25519 public key.
+		valid, err := sImpl.Verify(pubA, recoveredMsg, recoveredSig)
+		testutil.RequireNoError(t, err)
+		testutil.RequireTrue(t, valid, "full cross-node roundtrip signature must verify")
+	})
+}
+
+// TST-CORE-1027
+// Real cross-node D2D: sign → encrypt → POST → decrypt → verify.
+// Requirement: Two independent nodes exchange DIDComm-style messages
+// through the full D2D pipeline. Node A signs a message with Ed25519,
+// wraps it in the JSON envelope {"c":"<base64>","s":"<hex-sig>"}, encrypts
+// the payload with NaCl sealed box to Node B's X25519 key. Node B decrypts,
+// extracts the envelope, verifies the Ed25519 signature. The test covers
+// the exact wire format used by Core's transport layer.
+func TestCrypto_30_11_1_RealCrossNodeD2DSignEncryptDecryptVerify(t *testing.T) {
+	sImpl := realSigner
+	testutil.RequireImplementation(t, sImpl, "Signer")
+
+	convImpl := realConverter
+	testutil.RequireImplementation(t, convImpl, "KeyConverter")
+
+	boxImpl := realEncryptor
+	testutil.RequireImplementation(t, boxImpl, "Encryptor")
+
+	// --- Set up two independent nodes ---
+	seedA := make([]byte, 32)
+	copy(seedA, testutil.TestEd25519Seed[:])
+
+	seedB := make([]byte, 32)
+	copy(seedB, testutil.TestEd25519Seed[:])
+	seedB[0] ^= 0xFF
+	seedB[15] ^= 0xAA
+
+	pubA, privA, err := sImpl.GenerateFromSeed(seedA)
+	testutil.RequireNoError(t, err)
+
+	pubB, privB, err := sImpl.GenerateFromSeed(seedB)
+	testutil.RequireNoError(t, err)
+
+	x25519PubA, err := convImpl.Ed25519ToX25519Public(pubA)
+	testutil.RequireNoError(t, err)
+	x25519PrivA, err := convImpl.Ed25519ToX25519Private(privA)
+	testutil.RequireNoError(t, err)
+
+	x25519PubB, err := convImpl.Ed25519ToX25519Public(pubB)
+	testutil.RequireNoError(t, err)
+	x25519PrivB, err := convImpl.Ed25519ToX25519Private(privB)
+	testutil.RequireNoError(t, err)
+
+	t.Run("node_a_to_node_b_full_d2d_pipeline", func(t *testing.T) {
+		// Step 1: Node A creates the plaintext message.
+		message := []byte(`{"type":"nudge","content":"Time to take a break","from":"did:plc:nodeA"}`)
+
+		// Step 2: Node A signs the message with Ed25519.
+		sig, err := sImpl.Sign(privA, message)
+		testutil.RequireNoError(t, err)
+		testutil.RequireBytesLen(t, sig, 64) // Ed25519 signatures are 64 bytes.
+
+		// Step 3: Build the D2D envelope: {"c":"<base64(message)>","s":"<hex(sig)>"}
+		// This matches Core's ProcessInbound wire format.
+		envelope := struct {
+			Ciphertext string `json:"c"`
+			Sig        string `json:"s"`
+		}{
+			Ciphertext: fmt.Sprintf("%x", message), // hex encoding of plaintext
+			Sig:        fmt.Sprintf("%x", sig),      // hex encoding of signature
+		}
+		envelopeJSON, err := json.Marshal(envelope)
+		if err != nil {
+			t.Fatalf("envelope marshal: %v", err)
+		}
+
+		// Step 4: Encrypt the envelope with NaCl sealed box to Node B's X25519 key.
+		sealed, err := boxImpl.SealAnonymous(envelopeJSON, x25519PubB)
+		testutil.RequireNoError(t, err)
+
+		// --- Network transit (simulated) ---
+
+		// Step 5: Node B decrypts with their X25519 private key.
+		opened, err := boxImpl.OpenAnonymous(sealed, x25519PubB, x25519PrivB)
+		testutil.RequireNoError(t, err)
+
+		// Step 6: Parse the D2D envelope.
+		var received struct {
+			Ciphertext string `json:"c"`
+			Sig        string `json:"s"`
+		}
+		if err := json.Unmarshal(opened, &received); err != nil {
+			t.Fatalf("envelope unmarshal: %v", err)
+		}
+
+		// Both fields must be present (non-empty).
+		if received.Ciphertext == "" {
+			t.Fatal("envelope missing ciphertext field 'c'")
+		}
+		if received.Sig == "" {
+			t.Fatal("envelope missing signature field 's'")
+		}
+
+		// Step 7: Decode the message and signature from hex.
+		recoveredMsg, err := hex.DecodeString(received.Ciphertext)
+		if err != nil {
+			t.Fatalf("hex decode ciphertext: %v", err)
+		}
+		recoveredSig, err := hex.DecodeString(received.Sig)
+		if err != nil {
+			t.Fatalf("hex decode sig: %v", err)
+		}
+
+		// Step 8: Verify the original message was preserved.
+		testutil.RequireBytesEqual(t, message, recoveredMsg)
+
+		// Step 9: Verify the Ed25519 signature using Node A's public key.
+		valid, err := sImpl.Verify(pubA, recoveredMsg, recoveredSig)
+		testutil.RequireNoError(t, err)
+		testutil.RequireTrue(t, valid, "Node B must verify Node A's signature on the message")
+
+		// Step 10: Node B's key must NOT verify the signature (authenticity proof).
+		valid2, err := sImpl.Verify(pubB, recoveredMsg, recoveredSig)
+		testutil.RequireNoError(t, err)
+		if valid2 {
+			t.Fatal("Node B's key must NOT verify Node A's signature — identity confusion")
+		}
+	})
+
+	t.Run("bidirectional_exchange", func(t *testing.T) {
+		// Both nodes exchange messages simultaneously. Each verifies the other.
+		msgAtoB := []byte(`{"from":"nodeA","to":"nodeB","msg":"hello B"}`)
+		msgBtoA := []byte(`{"from":"nodeB","to":"nodeA","msg":"hello A"}`)
+
+		// Node A signs and seals to B.
+		sigA, err := sImpl.Sign(privA, msgAtoB)
+		testutil.RequireNoError(t, err)
+		payloadA, _ := json.Marshal(map[string]string{
+			"c": fmt.Sprintf("%x", msgAtoB),
+			"s": fmt.Sprintf("%x", sigA),
+		})
+		sealedAtoB, err := boxImpl.SealAnonymous(payloadA, x25519PubB)
+		testutil.RequireNoError(t, err)
+
+		// Node B signs and seals to A.
+		sigB, err := sImpl.Sign(privB, msgBtoA)
+		testutil.RequireNoError(t, err)
+		payloadB, _ := json.Marshal(map[string]string{
+			"c": fmt.Sprintf("%x", msgBtoA),
+			"s": fmt.Sprintf("%x", sigB),
+		})
+		sealedBtoA, err := boxImpl.SealAnonymous(payloadB, x25519PubA)
+		testutil.RequireNoError(t, err)
+
+		// Node B decrypts A's message.
+		openedFromA, err := boxImpl.OpenAnonymous(sealedAtoB, x25519PubB, x25519PrivB)
+		testutil.RequireNoError(t, err)
+		var envFromA map[string]string
+		json.Unmarshal(openedFromA, &envFromA)
+		decMsg, _ := hex.DecodeString(envFromA["c"])
+		decSig, _ := hex.DecodeString(envFromA["s"])
+		valid, _ := sImpl.Verify(pubA, decMsg, decSig)
+		testutil.RequireTrue(t, valid, "B must verify A's message")
+		testutil.RequireBytesEqual(t, msgAtoB, decMsg)
+
+		// Node A decrypts B's message.
+		openedFromB, err := boxImpl.OpenAnonymous(sealedBtoA, x25519PubA, x25519PrivA)
+		testutil.RequireNoError(t, err)
+		var envFromB map[string]string
+		json.Unmarshal(openedFromB, &envFromB)
+		decMsg2, _ := hex.DecodeString(envFromB["c"])
+		decSig2, _ := hex.DecodeString(envFromB["s"])
+		valid2, _ := sImpl.Verify(pubB, decMsg2, decSig2)
+		testutil.RequireTrue(t, valid2, "A must verify B's message")
+		testutil.RequireBytesEqual(t, msgBtoA, decMsg2)
+	})
+
+	t.Run("tampered_ciphertext_fails_verification", func(t *testing.T) {
+		// Node A sends a message. An attacker tampers with the sealed payload.
+		message := []byte(`{"sensitive":"vault data"}`)
+		sig, _ := sImpl.Sign(privA, message)
+		payload, _ := json.Marshal(map[string]string{
+			"c": fmt.Sprintf("%x", message),
+			"s": fmt.Sprintf("%x", sig),
+		})
+		sealed, _ := boxImpl.SealAnonymous(payload, x25519PubB)
+
+		// Tamper with the sealed bytes.
+		tampered := make([]byte, len(sealed))
+		copy(tampered, sealed)
+		tampered[len(tampered)/2] ^= 0xFF
+
+		// Node B tries to open tampered payload — must fail.
+		_, err := boxImpl.OpenAnonymous(tampered, x25519PubB, x25519PrivB)
+		if err == nil {
+			t.Fatal("opening tampered sealed payload must fail — integrity violation")
+		}
+	})
+
+	t.Run("forged_signature_detected", func(t *testing.T) {
+		// Attacker creates a message with a valid-looking envelope but signs
+		// with their own key (not Node A's). Node B must detect the forgery.
+		message := []byte(`{"type":"transfer_money","amount":10000}`)
+
+		// Attacker signs with Node B's private key (pretending to be Node A).
+		forgeSig, _ := sImpl.Sign(privB, message)
+		payload, _ := json.Marshal(map[string]string{
+			"c": fmt.Sprintf("%x", message),
+			"s": fmt.Sprintf("%x", forgeSig),
+		})
+		sealed, _ := boxImpl.SealAnonymous(payload, x25519PubB)
+
+		// Node B decrypts (encryption succeeded, attacker knew B's public key).
+		opened, err := boxImpl.OpenAnonymous(sealed, x25519PubB, x25519PrivB)
+		testutil.RequireNoError(t, err)
+
+		// Parse envelope.
+		var env map[string]string
+		json.Unmarshal(opened, &env)
+		decMsg, _ := hex.DecodeString(env["c"])
+		decSig, _ := hex.DecodeString(env["s"])
+
+		// Verify using Node A's public key — must FAIL (signature was made by attacker).
+		valid, _ := sImpl.Verify(pubA, decMsg, decSig)
+		if valid {
+			t.Fatal("forged signature verified as Node A — catastrophic authentication failure")
+		}
+	})
+}
+
+// TST-CORE-062
+// Mnemonic recovery: re-derive everything.
+// §2.1 BIP-39 Mnemonic Generation
+// Requirement: Entering the same 24-word mnemonic on a new install produces
+// identical root keypair, identical persona signing keys, identical vault DEKs,
+// identical service keys, and an identical DID. This test validates the Go
+// side of recovery: given the SAME seed (which a correct mnemonic produces),
+// ALL derived keys are byte-identical across two independent derivation runs.
+// This proves full identity restoration is possible from just the mnemonic.
+func TestCrypto_2_1_7_MnemonicRecoveryReDeriveEverything(t *testing.T) {
+	slip := dinacrypto.NewSLIP0010Deriver()
+	kd := dinacrypto.NewKeyDeriver(slip)
+	dekDeriver := realVaultDEKDeriver
+	testutil.RequireImplementation(t, dekDeriver, "VaultDEKDeriver")
+
+	seed := testutil.TestMnemonicSeed
+
+	// Simulate two independent derivation runs (original install vs recovery).
+	// Both must produce byte-identical output at every level.
+
+	t.Run("root_signing_key_deterministic", func(t *testing.T) {
+		// The root identity signing key must be identical across recovery.
+		// This key generates the DID — if it differs, the identity is lost.
+		pub1, priv1, err := kd.DeriveRootSigningKey(seed, 0)
+		testutil.RequireNoError(t, err)
+		pub2, priv2, err := kd.DeriveRootSigningKey(seed, 0)
+		testutil.RequireNoError(t, err)
+		testutil.RequireBytesEqual(t, pub1, pub2)
+		testutil.RequireBytesEqual(t, []byte(priv1), []byte(priv2))
+		testutil.RequireBytesLen(t, pub1, 32)
+		testutil.RequireBytesLen(t, []byte(priv1), 64)
+	})
+
+	t.Run("all_persona_signing_keys_deterministic", func(t *testing.T) {
+		// Every persona's signing key must be identical after recovery.
+		// Without this, persona-specific signatures won't verify.
+		personas := []struct {
+			name  string
+			index uint32
+		}{
+			{"consumer", 0}, {"professional", 1}, {"social", 2},
+			{"health", 3}, {"financial", 4}, {"citizen", 5},
+		}
+		for _, p := range personas {
+			key1, err := kd.DeriveSigningKey(seed, p.index, 0)
+			testutil.RequireNoError(t, err)
+			key2, err := kd.DeriveSigningKey(seed, p.index, 0)
+			testutil.RequireNoError(t, err)
+			if string(key1) != string(key2) {
+				t.Fatalf("persona %q (index %d): signing keys differ after recovery", p.name, p.index)
+			}
+		}
+	})
+
+	t.Run("all_persona_vault_deks_deterministic", func(t *testing.T) {
+		// Every persona's vault DEK must be identical after recovery.
+		// Without this, encrypted vault data is inaccessible.
+		personas := []string{"identity", "personal", "health", "financial", "social", "consumer"}
+		for _, persona := range personas {
+			dek1, err := dekDeriver.DeriveVaultDEK(seed, persona, testutil.TestUserSalt[:])
+			testutil.RequireNoError(t, err)
+			dek2, err := dekDeriver.DeriveVaultDEK(seed, persona, testutil.TestUserSalt[:])
+			testutil.RequireNoError(t, err)
+			testutil.RequireBytesEqual(t, dek1, dek2)
+			testutil.RequireBytesLen(t, dek1, 32)
+		}
+	})
+
+	t.Run("service_keys_deterministic", func(t *testing.T) {
+		// Core (index 0) and Brain (index 1) service keys must match after recovery.
+		// Without this, inter-service auth breaks.
+		for _, idx := range []uint32{0, 1} {
+			key1, err := kd.DeriveServiceKey(seed, idx)
+			testutil.RequireNoError(t, err)
+			key2, err := kd.DeriveServiceKey(seed, idx)
+			testutil.RequireNoError(t, err)
+			testutil.RequireBytesEqual(t, key1.Seed(), key2.Seed())
+		}
+	})
+
+	t.Run("did_key_deterministic_from_root_pubkey", func(t *testing.T) {
+		// The DID derived from the root public key must be identical.
+		// This is the user's permanent identity — it MUST survive recovery.
+		pub1, _, err := kd.DeriveRootSigningKey(seed, 0)
+		testutil.RequireNoError(t, err)
+		pub2, _, err := kd.DeriveRootSigningKey(seed, 0)
+		testutil.RequireNoError(t, err)
+
+		// Construct did:key:z... from Ed25519 public key.
+		// Multicodec prefix for Ed25519: 0xed 0x01
+		did1 := ed25519DIDKey(pub1)
+		did2 := ed25519DIDKey(pub2)
+		if did1 != did2 {
+			t.Fatalf("DID changed after recovery: %s vs %s", did1, did2)
+		}
+		if did1 == "" {
+			t.Fatal("DID must not be empty")
+		}
+	})
+
+	t.Run("cross_layer_isolation_preserved_after_recovery", func(t *testing.T) {
+		// Critical: even though all keys are derived from one seed,
+		// they must be cryptographically isolated. Root key != persona key != DEK.
+		rootPub, _, err := kd.DeriveRootSigningKey(seed, 0)
+		testutil.RequireNoError(t, err)
+
+		personaKey, err := kd.DeriveSigningKey(seed, 0, 0) // consumer persona
+		testutil.RequireNoError(t, err)
+		personaPub := []byte(personaKey[32:])
+
+		serviceKey, err := kd.DeriveServiceKey(seed, 0) // core service
+		testutil.RequireNoError(t, err)
+		servicePub := []byte(serviceKey[32:])
+
+		dek, err := dekDeriver.DeriveVaultDEK(seed, "personal", testutil.TestUserSalt[:])
+		testutil.RequireNoError(t, err)
+
+		// All must be different from each other.
+		testutil.RequireBytesNotEqual(t, rootPub, personaPub)
+		testutil.RequireBytesNotEqual(t, rootPub, servicePub)
+		testutil.RequireBytesNotEqual(t, rootPub, dek)
+		testutil.RequireBytesNotEqual(t, personaPub, servicePub)
+		testutil.RequireBytesNotEqual(t, personaPub, dek)
+		testutil.RequireBytesNotEqual(t, servicePub, dek)
+	})
+}
+
+// ed25519DIDKey converts a 32-byte Ed25519 public key to a did:key:z identifier.
+// Uses the multicodec prefix 0xed 0x01 for Ed25519, then base58btc encoding.
+func ed25519DIDKey(pub []byte) string {
+	if len(pub) != 32 {
+		return ""
+	}
+	multicodec := append([]byte{0xed, 0x01}, pub...)
+	// Minimal base58btc encoding (Bitcoin alphabet).
+	const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+	result := make([]byte, 0, 50)
+	x := make([]byte, len(multicodec))
+	copy(x, multicodec)
+	for {
+		allZero := true
+		remainder := 0
+		for i := range x {
+			val := remainder*256 + int(x[i])
+			x[i] = byte(val / 58)
+			remainder = val % 58
+			if x[i] != 0 {
+				allZero = false
+			}
+		}
+		result = append(result, alphabet[remainder])
+		if allZero {
+			break
+		}
+	}
+	for _, b := range multicodec {
+		if b != 0 {
+			break
+		}
+		result = append(result, alphabet[0])
+	}
+	// Reverse.
+	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
+		result[i], result[j] = result[j], result[i]
+	}
+	return "did:key:z" + string(result)
+}
+
+// TST-CORE-064
+// Lose device + paper = identity gone.
+// §2.1 BIP-39 Mnemonic Generation
+// Requirement: Without the mnemonic (and therefore the seed), the identity is
+// completely unrecoverable. There is no password reset, no server-side recovery,
+// no backdoor. This is by design: sovereignty = responsibility.
+// This test validates that a DIFFERENT seed (simulating loss of the original)
+// produces a completely different identity at every derivation layer.
+func TestCrypto_2_1_9_LoseDeviceAndPaperIdentityGone(t *testing.T) {
+	slip := dinacrypto.NewSLIP0010Deriver()
+	kd := dinacrypto.NewKeyDeriver(slip)
+	dekDeriver := realVaultDEKDeriver
+	testutil.RequireImplementation(t, dekDeriver, "VaultDEKDeriver")
+
+	originalSeed := testutil.TestMnemonicSeed
+	// Create a completely different seed (simulating lost mnemonic).
+	lostSeed := make([]byte, len(originalSeed))
+	copy(lostSeed, originalSeed)
+	// Flip every byte — ensures maximum distance from the original.
+	for i := range lostSeed {
+		lostSeed[i] ^= 0xFF
+	}
+
+	t.Run("root_key_irrecoverable", func(t *testing.T) {
+		// A different seed produces a completely different root signing key.
+		// The user's DID changes, and the original identity is GONE.
+		origPub, _, err := kd.DeriveRootSigningKey(originalSeed, 0)
+		testutil.RequireNoError(t, err)
+		lostPub, _, err := kd.DeriveRootSigningKey(lostSeed, 0)
+		testutil.RequireNoError(t, err)
+		testutil.RequireBytesNotEqual(t, origPub, lostPub)
+	})
+
+	t.Run("did_irrecoverable", func(t *testing.T) {
+		// The DID derived from a wrong seed is completely different.
+		// No server can fix this — the DID is a pure function of the seed.
+		origPub, _, _ := kd.DeriveRootSigningKey(originalSeed, 0)
+		lostPub, _, _ := kd.DeriveRootSigningKey(lostSeed, 0)
+		origDID := ed25519DIDKey(origPub)
+		lostDID := ed25519DIDKey(lostPub)
+		if origDID == lostDID {
+			t.Fatal("different seeds must produce different DIDs — identity collision would break sovereignty")
+		}
+	})
+
+	t.Run("all_persona_keys_irrecoverable", func(t *testing.T) {
+		// Every persona's signing key changes with a different seed.
+		// Nothing signed under the original identity can be reproduced.
+		for idx := uint32(0); idx < 6; idx++ {
+			origKey, err := kd.DeriveSigningKey(originalSeed, idx, 0)
+			testutil.RequireNoError(t, err)
+			lostKey, err := kd.DeriveSigningKey(lostSeed, idx, 0)
+			testutil.RequireNoError(t, err)
+			if string(origKey) == string(lostKey) {
+				t.Fatalf("persona index %d: different seeds produced same signing key — catastrophic", idx)
+			}
+		}
+	})
+
+	t.Run("vault_deks_irrecoverable", func(t *testing.T) {
+		// Every persona's vault DEK changes with a different seed.
+		// ALL encrypted data in ALL vaults becomes permanently inaccessible.
+		personas := []string{"identity", "personal", "health", "financial", "social"}
+		for _, persona := range personas {
+			origDEK, err := dekDeriver.DeriveVaultDEK(originalSeed, persona, testutil.TestUserSalt[:])
+			testutil.RequireNoError(t, err)
+			lostDEK, err := dekDeriver.DeriveVaultDEK(lostSeed, persona, testutil.TestUserSalt[:])
+			testutil.RequireNoError(t, err)
+			testutil.RequireBytesNotEqual(t, origDEK, lostDEK)
+		}
+	})
+
+	t.Run("service_keys_irrecoverable", func(t *testing.T) {
+		// Service keys change — inter-service auth with the original Core/Brain pair fails.
+		for _, idx := range []uint32{0, 1} {
+			origKey, err := kd.DeriveServiceKey(originalSeed, idx)
+			testutil.RequireNoError(t, err)
+			lostKey, err := kd.DeriveServiceKey(lostSeed, idx)
+			testutil.RequireNoError(t, err)
+			if string(origKey.Seed()) == string(lostKey.Seed()) {
+				t.Fatalf("service index %d: different seeds produced same key", idx)
+			}
+		}
+	})
+
+	t.Run("single_bit_change_still_irrecoverable", func(t *testing.T) {
+		// Even a SINGLE bit difference in the seed produces a completely
+		// different identity. There's no "close enough" in cryptography.
+		nearSeed := make([]byte, len(originalSeed))
+		copy(nearSeed, originalSeed)
+		nearSeed[0] ^= 0x01 // flip just one bit
+
+		origPub, _, err := kd.DeriveRootSigningKey(originalSeed, 0)
+		testutil.RequireNoError(t, err)
+		nearPub, _, err := kd.DeriveRootSigningKey(nearSeed, 0)
+		testutil.RequireNoError(t, err)
+		testutil.RequireBytesNotEqual(t, origPub, nearPub)
+
+		// Also check DEK — one-bit seed change must produce different vault key.
+		origDEK, _ := dekDeriver.DeriveVaultDEK(originalSeed, "personal", testutil.TestUserSalt[:])
+		nearDEK, _ := dekDeriver.DeriveVaultDEK(nearSeed, "personal", testutil.TestUserSalt[:])
+		testutil.RequireBytesNotEqual(t, origDEK, nearDEK)
+	})
+
+	t.Run("no_server_side_recovery_possible", func(t *testing.T) {
+		// This test validates the DESIGN PRINCIPLE: all key material is
+		// derived deterministically from the seed. There is no "recovery
+		// service" that holds a copy. The seed IS the identity.
+		//
+		// We verify this by checking that the derivation is purely mathematical:
+		// same inputs always produce same outputs, different inputs always
+		// produce different outputs. No external state, no server interaction.
+		origPub, _, _ := kd.DeriveRootSigningKey(originalSeed, 0)
+		verifyPub, _, _ := kd.DeriveRootSigningKey(originalSeed, 0)
+		testutil.RequireBytesEqual(t, origPub, verifyPub)
+
+		// The ONLY way to get origPub back is to have originalSeed.
+		// Any other seed produces a different key.
+		wrongSeeds := [][]byte{lostSeed}
+		for _, ws := range wrongSeeds {
+			wrongPub, _, _ := kd.DeriveRootSigningKey(ws, 0)
+			testutil.RequireBytesNotEqual(t, origPub, wrongPub)
+		}
+	})
+}
+
+// TST-CORE-974
+// Deterministic seed derivation.
+// §29.8 BIP-39 Recovery Safety
+// Requirement: The same seed input always produces identical derived key
+// material. This is the foundation of recovery: if derivation were
+// non-deterministic, recovery from mnemonic would be impossible.
+// While BIP-39 mnemonic → seed conversion is handled client-side (Python),
+// Go Core MUST guarantee that seed → keys is perfectly deterministic.
+// This test calls every derivation function TWICE with the same seed
+// and verifies byte-exact identity of all outputs.
+func TestCrypto_29_8_3_DeterministicSeedDerivation(t *testing.T) {
+	slip := dinacrypto.NewSLIP0010Deriver()
+	kd := dinacrypto.NewKeyDeriver(slip)
+	dekDeriver := realVaultDEKDeriver
+	testutil.RequireImplementation(t, dekDeriver, "VaultDEKDeriver")
+
+	seed := testutil.TestMnemonicSeed
+
+	t.Run("slip0010_determinism_all_paths", func(t *testing.T) {
+		// SLIP-0010 derivation at EVERY standard path must be deterministic.
+		paths := []string{
+			"m/9999'/0'/0'",  // root signing key
+			"m/9999'/1'/0'",  // purpose 1 (persona signing)
+			"m/9999'/1'/0'/0'", // consumer persona gen 0
+			"m/9999'/1'/3'/0'", // health persona gen 0
+			"m/9999'/2'/0'",  // PLC rotation key path
+			"m/9999'/3'/0'",  // core service key
+			"m/9999'/3'/1'",  // brain service key
+		}
+		for _, path := range paths {
+			pub1, priv1, err := slip.DerivePath(seed, path)
+			testutil.RequireNoError(t, err)
+			pub2, priv2, err := slip.DerivePath(seed, path)
+			testutil.RequireNoError(t, err)
+			testutil.RequireBytesEqual(t, pub1, pub2)
+			testutil.RequireBytesEqual(t, priv1, priv2)
+		}
+	})
+
+	t.Run("hkdf_determinism_all_personas", func(t *testing.T) {
+		// HKDF-SHA256 DEK derivation for every persona must be deterministic.
+		personas := []string{"identity", "personal", "health", "financial", "social", "consumer", "professional"}
+		for _, persona := range personas {
+			dek1, err := dekDeriver.DeriveVaultDEK(seed, persona, testutil.TestUserSalt[:])
+			testutil.RequireNoError(t, err)
+			dek2, err := dekDeriver.DeriveVaultDEK(seed, persona, testutil.TestUserSalt[:])
+			testutil.RequireNoError(t, err)
+			testutil.RequireBytesEqual(t, dek1, dek2)
+		}
+	})
+
+	t.Run("keyderiver_high_level_determinism", func(t *testing.T) {
+		// High-level KeyDeriver functions wrapping SLIP-0010 must be deterministic.
+		// Root signing key.
+		pub1, priv1, err := kd.DeriveRootSigningKey(seed, 0)
+		testutil.RequireNoError(t, err)
+		pub2, priv2, err := kd.DeriveRootSigningKey(seed, 0)
+		testutil.RequireNoError(t, err)
+		testutil.RequireBytesEqual(t, pub1, pub2)
+		testutil.RequireBytesEqual(t, []byte(priv1), []byte(priv2))
+
+		// Persona signing keys.
+		for idx := uint32(0); idx < 6; idx++ {
+			k1, _ := kd.DeriveSigningKey(seed, idx, 0)
+			k2, _ := kd.DeriveSigningKey(seed, idx, 0)
+			testutil.RequireBytesEqual(t, []byte(k1), []byte(k2))
+		}
+
+		// Service keys.
+		for idx := uint32(0); idx < 2; idx++ {
+			k1, _ := kd.DeriveServiceKey(seed, idx)
+			k2, _ := kd.DeriveServiceKey(seed, idx)
+			testutil.RequireBytesEqual(t, k1.Seed(), k2.Seed())
+		}
+	})
+
+	t.Run("independent_instances_same_output", func(t *testing.T) {
+		// Two independently-created deriver instances must produce
+		// identical output. This proves there's no hidden state.
+		slip1 := dinacrypto.NewSLIP0010Deriver()
+		slip2 := dinacrypto.NewSLIP0010Deriver()
+
+		pub1, priv1, _ := slip1.DerivePath(seed, testutil.DinaRootKeyPath)
+		pub2, priv2, _ := slip2.DerivePath(seed, testutil.DinaRootKeyPath)
+		testutil.RequireBytesEqual(t, pub1, pub2)
+		testutil.RequireBytesEqual(t, priv1, priv2)
+	})
+}
+
+// TST-CORE-057
+// Mnemonic → seed derivation.
+// §2.1 BIP-39 Mnemonic Generation
+// Requirement: Given a known BIP-39 test vector mnemonic, the system produces
+// the correct 512-bit seed via PBKDF2-HMAC-SHA512, 2048 iterations, with
+// salt = "mnemonic" (no passphrase). The Go side uses the 64-byte seed as
+// input key material for SLIP-0010 and HKDF derivation. The Python side handles
+// the mnemonic ↔ entropy conversion using the Trezor reference library.
+// Both sides must agree: the same mnemonic always produces the same seed,
+// and that seed feeds deterministic key derivation.
+func TestCrypto_2_1_2_MnemonicToSeedDerivation(t *testing.T) {
+	root := findProjectRoot(t)
+
+	t.Run("go_test_vector_is_standard_bip39_512bit_seed", func(t *testing.T) {
+		// The TestMnemonicSeed fixture must be exactly 64 bytes (512 bits).
+		// BIP-39 PBKDF2-HMAC-SHA512 always produces 512 bits regardless of input.
+		seed := testutil.TestMnemonicSeed
+		if len(seed) != 64 {
+			t.Fatalf("TestMnemonicSeed must be 64 bytes (512-bit BIP-39 seed), got %d bytes", len(seed))
+		}
+	})
+
+	t.Run("go_test_vector_matches_known_bip39_output", func(t *testing.T) {
+		// The "abandon" x 23 + "art" test vector is the most widely used BIP-39
+		// test vector. Its PBKDF2-HMAC-SHA512(mnemonic, "mnemonic", 2048) output
+		// is published in https://github.com/trezor/python-mnemonic/blob/master/vectors.json
+		// First 8 bytes: 0x408b285c12383600
+		seed := testutil.TestMnemonicSeed
+		expectedPrefix := []byte{0x40, 0x8b, 0x28, 0x5c, 0x12, 0x38, 0x36, 0x00}
+		for i, b := range expectedPrefix {
+			if seed[i] != b {
+				t.Fatalf("TestMnemonicSeed[%d] = 0x%02x, expected 0x%02x — "+
+					"does not match published BIP-39 'abandon...art' test vector",
+					i, seed[i], b)
+			}
+		}
+		// Last 4 bytes: 0x99480840
+		expectedSuffix := []byte{0x99, 0x48, 0x08, 0x40}
+		for i, b := range expectedSuffix {
+			idx := len(seed) - 4 + i
+			if seed[idx] != b {
+				t.Fatalf("TestMnemonicSeed[%d] = 0x%02x, expected 0x%02x — "+
+					"tail mismatch with published BIP-39 test vector", idx, seed[idx], b)
+			}
+		}
+	})
+
+	t.Run("go_fixtures_document_pbkdf2_derivation", func(t *testing.T) {
+		// The fixtures file must explicitly document that the seed comes from
+		// PBKDF2-HMAC-SHA512 with 2048 iterations and salt = "mnemonic".
+		// This ensures future developers don't confuse raw entropy with derived seed.
+		content := readProjectFile(t, root, "core/test/testutil/fixtures.go")
+
+		if !strings.Contains(content, "PBKDF2") {
+			t.Fatal("fixtures.go must document PBKDF2 derivation method for TestMnemonicSeed")
+		}
+		if !strings.Contains(content, "HMAC-SHA512") || !strings.Contains(content, "SHA512") {
+			t.Fatal("fixtures.go must document SHA512 hash for PBKDF2 derivation")
+		}
+		if !strings.Contains(content, "2048") {
+			t.Fatal("fixtures.go must document 2048 iterations for PBKDF2")
+		}
+		if !strings.Contains(content, `"mnemonic"`) {
+			t.Fatal(`fixtures.go must document salt = "mnemonic" (BIP-39 standard salt)`)
+		}
+	})
+
+	t.Run("seed_feeds_slip0010_derivation_correctly", func(t *testing.T) {
+		// The 64-byte seed from PBKDF2 must produce valid SLIP-0010 keys.
+		// If the seed were wrong (e.g., truncated or from a different mnemonic),
+		// derivation would still work but produce wrong keys — so we verify
+		// that at least the root key is non-zero and has valid Ed25519 properties.
+		slip := dinacrypto.NewSLIP0010Deriver()
+		seed := testutil.TestMnemonicSeed
+
+		pub, priv, err := slip.DerivePath(seed, testutil.DinaRootKeyPath)
+		if err != nil {
+			t.Fatalf("SLIP-0010 derivation from BIP-39 seed failed: %v", err)
+		}
+
+		// Public key must be exactly 32 bytes (Ed25519 compressed point).
+		if len(pub) != 32 {
+			t.Fatalf("derived public key must be 32 bytes, got %d", len(pub))
+		}
+		// SLIP-0010 private key output is either 32 bytes (seed) or 64 bytes
+		// (full Ed25519 key = seed + public). Both are valid representations.
+		if len(priv) != 32 && len(priv) != 64 {
+			t.Fatalf("derived private key must be 32 or 64 bytes, got %d", len(priv))
+		}
+
+		// Public key must not be all zeros (would indicate derivation failure).
+		allZero := true
+		for _, b := range pub {
+			if b != 0 {
+				allZero = false
+				break
+			}
+		}
+		if allZero {
+			t.Fatal("derived public key is all zeros — derivation failure")
+		}
+
+		// Ed25519 signing/verification must succeed with derived keys.
+		// Use the private key directly if 64 bytes, or expand from seed if 32.
+		var fullPriv ed25519.PrivateKey
+		if len(priv) == 64 {
+			fullPriv = ed25519.PrivateKey(priv)
+		} else {
+			fullPriv = ed25519.NewKeyFromSeed(priv)
+		}
+		msg := []byte("BIP-39 seed derivation test")
+		sig := ed25519.Sign(fullPriv, msg)
+		if !ed25519.Verify(ed25519.PublicKey(pub), msg, sig) {
+			t.Fatal("Ed25519 sign/verify failed with BIP-39-derived SLIP-0010 keys")
+		}
+	})
+
+	t.Run("python_roundtrip_uses_to_mnemonic_and_to_entropy", func(t *testing.T) {
+		// The Python CLI converts entropy → mnemonic (for backup display) and
+		// mnemonic → entropy (for recovery). These use the Trezor library's
+		// to_mnemonic() and to_entropy() respectively, which are the inverse
+		// functions. to_entropy recovers the original 32-byte entropy from the
+		// 24 words (NOT the PBKDF2-derived 512-bit seed).
+		// The Go side receives the 64-byte PBKDF2 seed from install.sh.
+		seedWrap := readProjectFile(t, root, "cli/src/dina_cli/seed_wrap.py")
+
+		// Forward path: entropy → mnemonic (for display/backup).
+		if !strings.Contains(seedWrap, ".to_mnemonic(") {
+			t.Fatal("Python must use Trezor .to_mnemonic() for entropy → mnemonic conversion")
+		}
+
+		// Reverse path: mnemonic → entropy (for recovery).
+		if !strings.Contains(seedWrap, ".to_entropy(") {
+			t.Fatal("Python must use Trezor .to_entropy() for mnemonic → entropy recovery")
+		}
+
+		// Return type of mnemonic_to_seed must be bytes (raw entropy).
+		retTypeRe := regexp.MustCompile(`def\s+mnemonic_to_seed\s*\([^)]*\)\s*->\s*bytes`)
+		if !retTypeRe.MatchString(seedWrap) {
+			t.Fatal("mnemonic_to_seed must return bytes (raw entropy), not str or int")
+		}
+
+		// The to_entropy result must be wrapped in bytes() since the Trezor
+		// library returns a bytearray.
+		if !strings.Contains(seedWrap, "bytes(_M.to_entropy(") {
+			t.Fatal("mnemonic_to_seed must wrap to_entropy result in bytes() for type consistency")
+		}
+	})
+
+	t.Run("seed_hkdf_derivation_uses_full_64_bytes", func(t *testing.T) {
+		// HKDF-SHA256 DEK derivation must use the full 64-byte seed as IKM.
+		// Truncating the seed would reduce entropy and weaken vault encryption.
+		dekDeriver := realVaultDEKDeriver
+		testutil.RequireImplementation(t, dekDeriver, "VaultDEKDeriver")
+		seed := testutil.TestMnemonicSeed
+
+		// Derive a DEK — must succeed with 64-byte seed.
+		dek, err := dekDeriver.DeriveVaultDEK(seed, "personal", testutil.TestUserSalt[:])
+		if err != nil {
+			t.Fatalf("HKDF derivation from 64-byte BIP-39 seed failed: %v", err)
+		}
+		// DEK must be exactly 32 bytes (AES-256).
+		if len(dek) != 32 {
+			t.Fatalf("vault DEK must be 32 bytes, got %d", len(dek))
+		}
+
+		// Different personas from same seed must produce different DEKs.
+		dek2, _ := dekDeriver.DeriveVaultDEK(seed, "health", testutil.TestUserSalt[:])
+		if string(dek) == string(dek2) {
+			t.Fatal("different personas must produce different DEKs from same seed")
+		}
+	})
 }

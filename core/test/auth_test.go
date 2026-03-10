@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -88,6 +89,25 @@ func TestAuth_1_1_ServiceKeyAuth(t *testing.T) {
 	t.Run("5_BearerTokenNoLongerReturnsBrain", func(t *testing.T) {
 		// Bearer tokens should NOT return TokenBrain — brain uses signatures now.
 		kind, _, err := tv.IdentifyToken(testutil.TestBrainToken)
+		testutil.RequireError(t, err)
+		testutil.RequireEqual(t, kind, domain.TokenUnknown)
+	})
+
+	// TST-CORE-005: Empty Bearer value → 401 Unauthorized.
+	// Requirement: `Authorization: Bearer ` (empty value after "Bearer ") must be rejected.
+	// After middleware strips "Bearer " prefix, the token is "". IdentifyToken("")
+	// must return an error — empty tokens cannot authenticate anyone.
+	t.Run("6_EmptyBearerValue", func(t *testing.T) {
+		// Empty string is what middleware extracts from "Authorization: Bearer "
+		kind, identity, err := tv.IdentifyToken("")
+		testutil.RequireError(t, err)
+		testutil.RequireEqual(t, kind, domain.TokenUnknown)
+		testutil.RequireEqual(t, identity, "")
+	})
+
+	// Additional: whitespace-only Bearer value should also be rejected.
+	t.Run("7_WhitespaceOnlyBearerValue", func(t *testing.T) {
+		kind, _, err := tv.IdentifyToken("   ")
 		testutil.RequireError(t, err)
 		testutil.RequireEqual(t, kind, domain.TokenUnknown)
 	})
@@ -1840,4 +1860,158 @@ func TestAuth_1_6_9_ConcurrentTokenValidation(t *testing.T) {
 	if deviceID != "device-0-0" {
 		t.Fatalf("expected device-0-0, got %q", deviceID)
 	}
+}
+
+// ==========================================================================
+// TST-CORE-1105: Concurrent token validation thread-safe
+// §1.1 Service Signature Auth
+// Requirement: 100 goroutines validate tokens simultaneously — no race,
+// no panics, consistent results. The token validator must be safe for
+// concurrent access from multiple HTTP handler goroutines.
+// ==========================================================================
+
+func TestAuth_1_1_5_ConcurrentTokenValidationThreadSafe(t *testing.T) {
+	tv := auth.NewDefaultTokenValidator()
+	// The default validator has TestClientToken pre-registered.
+
+	t.Run("100_goroutines_validate_same_valid_token_all_succeed", func(t *testing.T) {
+		// All 100 goroutines validate the same valid client token.
+		// Every single one must succeed with the same result.
+		const goroutines = 100
+		var wg sync.WaitGroup
+		var failures int64
+
+		wg.Add(goroutines)
+		for i := 0; i < goroutines; i++ {
+			go func() {
+				defer wg.Done()
+				kind, identity, err := tv.IdentifyToken(testutil.TestClientToken)
+				if err != nil {
+					atomic.AddInt64(&failures, 1)
+					return
+				}
+				if kind != domain.TokenClient {
+					atomic.AddInt64(&failures, 1)
+					return
+				}
+				if identity != "device-001" {
+					atomic.AddInt64(&failures, 1)
+				}
+			}()
+		}
+		wg.Wait()
+
+		if failures > 0 {
+			t.Fatalf("concurrent validation produced %d failures out of %d — thread safety violation", failures, goroutines)
+		}
+	})
+
+	t.Run("100_goroutines_validate_invalid_token_all_reject", func(t *testing.T) {
+		// All goroutines validate an invalid token. Every one must get an error.
+		const goroutines = 100
+		var wg sync.WaitGroup
+		var wrongAccepts int64
+
+		wg.Add(goroutines)
+		for i := 0; i < goroutines; i++ {
+			go func() {
+				defer wg.Done()
+				kind, _, err := tv.IdentifyToken("totally-invalid-token-value")
+				if err == nil || kind != domain.TokenUnknown {
+					atomic.AddInt64(&wrongAccepts, 1)
+				}
+			}()
+		}
+		wg.Wait()
+
+		if wrongAccepts > 0 {
+			t.Fatalf("concurrent invalid validation accepted %d tokens — should all be rejected", wrongAccepts)
+		}
+	})
+
+	t.Run("concurrent_mixed_valid_and_invalid_tokens", func(t *testing.T) {
+		// Half goroutines validate a valid token, half validate an invalid token.
+		// Each must get the correct result for its input.
+		const goroutines = 200
+		var wg sync.WaitGroup
+		var validFailures int64
+		var invalidAccepts int64
+
+		wg.Add(goroutines)
+		for i := 0; i < goroutines; i++ {
+			go func(n int) {
+				defer wg.Done()
+				if n%2 == 0 {
+					// Valid token.
+					kind, _, err := tv.IdentifyToken(testutil.TestClientToken)
+					if err != nil || kind != domain.TokenClient {
+						atomic.AddInt64(&validFailures, 1)
+					}
+				} else {
+					// Invalid token.
+					kind, _, err := tv.IdentifyToken(fmt.Sprintf("bad-token-%d", n))
+					if err == nil || kind != domain.TokenUnknown {
+						atomic.AddInt64(&invalidAccepts, 1)
+					}
+				}
+			}(i)
+		}
+		wg.Wait()
+
+		if validFailures > 0 {
+			t.Fatalf("%d valid token validations failed under concurrent load", validFailures)
+		}
+		if invalidAccepts > 0 {
+			t.Fatalf("%d invalid tokens were accepted under concurrent load", invalidAccepts)
+		}
+	})
+
+	t.Run("concurrent_registration_and_validation", func(t *testing.T) {
+		// Register new tokens while simultaneously validating existing ones.
+		// Both operations must complete without races.
+		freshTV := auth.NewDefaultTokenValidator()
+		const goroutines = 100
+		var wg sync.WaitGroup
+
+		// Goroutines: half register new tokens, half validate existing.
+		wg.Add(goroutines)
+		for i := 0; i < goroutines; i++ {
+			go func(n int) {
+				defer wg.Done()
+				if n%2 == 0 {
+					// Register a new client token.
+					freshTV.RegisterClientToken(
+						fmt.Sprintf("conc-reg-token-%d", n),
+						fmt.Sprintf("device-conc-%d", n),
+					)
+				} else {
+					// Validate the pre-registered token.
+					freshTV.IdentifyToken(testutil.TestClientToken)
+				}
+			}(i)
+		}
+		wg.Wait()
+		// If we reach here without panic, races, or deadlock, the test passes.
+
+		// Verify at least some registrations succeeded.
+		_, ok := freshTV.ValidateClientToken("conc-reg-token-0")
+		if !ok {
+			t.Fatal("token registered during concurrent access should be valid")
+		}
+	})
+
+	t.Run("positive_control_sequential_validation_works", func(t *testing.T) {
+		// Contrast check: sequential validation produces correct results.
+		// Without this, the test passes if IdentifyToken always fails.
+		kind, identity, err := tv.IdentifyToken(testutil.TestClientToken)
+		if err != nil {
+			t.Fatalf("sequential validation must succeed: %v", err)
+		}
+		if kind != domain.TokenClient {
+			t.Fatalf("expected TokenClient, got %v", kind)
+		}
+		if identity != "device-001" {
+			t.Fatalf("expected device-001, got %q", identity)
+		}
+	})
 }

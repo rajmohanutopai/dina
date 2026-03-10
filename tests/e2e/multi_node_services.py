@@ -175,12 +175,22 @@ class MultiNodeDockerServices:
         )
 
     def _load_tokens(self) -> None:
-        """Read auth tokens used by the E2E stack."""
+        """Read auth tokens used by the E2E stack.
+
+        Raises RuntimeError if CLIENT_TOKEN is missing — fail fast rather than
+        silently falling back to empty auth (TST-CORE-989).
+        """
         client_path = PROJECT_ROOT / "secrets" / "client_token"
         if client_path.exists():
             self.client_token = client_path.read_text().strip()
         else:
             self.client_token = ""
+        if not self.client_token:
+            raise RuntimeError(
+                f"CLIENT_TOKEN not found or empty at {client_path}. "
+                "Docker E2E mode requires a pre-provisioned client_token. "
+                "Run install.sh or create secrets/client_token manually."
+            )
 
     def is_running(self) -> bool:
         """Check if all services respond to health checks."""

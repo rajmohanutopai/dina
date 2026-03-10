@@ -52,6 +52,17 @@ def _normalize_item_type(item_type: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Strict-real mode (TST-CORE-982, TST-CORE-984)
+# ---------------------------------------------------------------------------
+# When DINA_STRICT_REAL=1, _api_request() raises on ANY API failure instead
+# of returning None. This prevents silent mock fallback: if a real API call
+# fails, the test MUST fail immediately rather than falling back to mock
+# state, which would mask real E2E integration bugs.
+import os
+_STRICT_REAL = os.environ.get("DINA_STRICT_REAL", "").strip() == "1"
+
+
+# ---------------------------------------------------------------------------
 # Helper: HTTP request with retry on 429/503
 # ---------------------------------------------------------------------------
 
@@ -66,9 +77,13 @@ def _api_request(
 
     Returns response on success (2xx or 201), None on persistent failure.
     Raises on store operations only if explicitly requested via raise_on_fail.
+
+    In strict-real mode (DINA_STRICT_REAL=1), raises RuntimeError on any
+    non-success response or connection failure instead of returning None.
+    This prevents silent fallback to mock state.
     """
     kwargs.setdefault("timeout", 10)
-    raise_on_fail = kwargs.pop("raise_on_fail", False)
+    raise_on_fail = kwargs.pop("raise_on_fail", False) or _STRICT_REAL
 
     for attempt in range(max_retries + 1):
         try:
@@ -80,7 +95,8 @@ def _api_request(
                 continue
             if raise_on_fail:
                 raise RuntimeError(
-                    f"API {method.upper()} {url} failed: {resp.status_code} {resp.text[:200]}"
+                    f"STRICT_REAL: {method.upper()} {url} failed with "
+                    f"{resp.status_code} — no mock fallback allowed"
                 )
             return None
         except (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout,

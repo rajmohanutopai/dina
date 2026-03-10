@@ -93,6 +93,7 @@ class TestLicenseRenewal:
     # test_00: Store personal context in vault
     # ==================================================================
 
+    # TST-USR-050
     def test_00_store_personal_context(
         self, alonso_core, admin_headers, brain_headers,
     ):
@@ -150,6 +151,7 @@ class TestLicenseRenewal:
     # test_01: Brain extracts license data (LLM)
     # ==================================================================
 
+    # TST-USR-051
     @pytest.mark.skipif(
         not os.environ.get("GOOGLE_API_KEY"),
         reason="GOOGLE_API_KEY not set — skipping LLM extraction test",
@@ -212,6 +214,7 @@ class TestLicenseRenewal:
     # test_02: Verify document + reminder in vault
     # ==================================================================
 
+    # TST-USR-052
     def test_02_verify_vault_entries(
         self, alonso_core, admin_headers,
     ):
@@ -319,6 +322,7 @@ class TestLicenseRenewal:
     # test_03: Verify confidence scores
     # ==================================================================
 
+    # TST-USR-053
     def test_03_verify_confidence_scores(self):
         """Check that critical fields have high confidence.
 
@@ -346,6 +350,7 @@ class TestLicenseRenewal:
     # test_04: Verify PII not in searchable fields
     # ==================================================================
 
+    # TST-USR-054
     def test_04_verify_pii_not_in_searchable_fields(
         self, alonso_core, admin_headers,
     ):
@@ -407,6 +412,7 @@ class TestLicenseRenewal:
     # test_05: Store/verify reminder in Core
     # ==================================================================
 
+    # TST-USR-055
     def test_05_store_and_verify_reminder(
         self, alonso_core, admin_headers,
     ):
@@ -475,6 +481,7 @@ class TestLicenseRenewal:
     # test_06: Fire reminder → contextual notification (LLM)
     # ==================================================================
 
+    # TST-USR-056
     @pytest.mark.skipif(
         not os.environ.get("GOOGLE_API_KEY"),
         reason="GOOGLE_API_KEY not set — skipping LLM notification test",
@@ -540,6 +547,7 @@ class TestLicenseRenewal:
     # test_07: Verify notification has vault context
     # ==================================================================
 
+    # TST-USR-057
     def test_07_verify_notification_context(self):
         """The notification must reference personal context, not be generic.
 
@@ -572,6 +580,7 @@ class TestLicenseRenewal:
     # test_08: Delegation — LLM generation + Guardian enforcement
     # ==================================================================
 
+    # TST-USR-058
     @pytest.mark.skipif(
         not os.environ.get("GOOGLE_API_KEY"),
         reason="GOOGLE_API_KEY not set — skipping LLM delegation test",
@@ -701,6 +710,7 @@ class TestLicenseRenewal:
     # test_09: Guardian reviews delegation intent
     # ==================================================================
 
+    # TST-USR-059
     def test_09_guardian_reviews_delegation(
         self, alonso_brain, brain_headers,
     ):

@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.legacy
+
 from dina.identity import DinaIdentity
 from dina.models import ProductVerdict
 from dina.signing import canonicalize_verdict, sign_verdict, verify_verdict_signature

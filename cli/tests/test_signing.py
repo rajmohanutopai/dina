@@ -18,6 +18,7 @@ from dina_cli.signing import CLIIdentity, _ED25519_MULTICODEC
 # -- Keypair generation & persistence -----------------------------------------
 
 
+# TST-CLI-001
 def test_generate_creates_files(tmp_path):
     identity = CLIIdentity(identity_dir=tmp_path)
     assert not identity.exists
@@ -27,6 +28,7 @@ def test_generate_creates_files(tmp_path):
     assert (tmp_path / "ed25519_public.pem").exists()
 
 
+# TST-CLI-002
 def test_private_key_permissions(tmp_path):
     identity = CLIIdentity(identity_dir=tmp_path)
     identity.generate()
@@ -34,6 +36,7 @@ def test_private_key_permissions(tmp_path):
     assert mode & 0o777 == stat.S_IRUSR | stat.S_IWUSR  # 0600
 
 
+# TST-CLI-003
 def test_load_existing_keypair(tmp_path):
     # Generate, then load in a fresh instance.
     CLIIdentity(identity_dir=tmp_path).generate()
@@ -42,6 +45,7 @@ def test_load_existing_keypair(tmp_path):
     assert loaded.did().startswith("did:key:z")
 
 
+# TST-CLI-004
 def test_ensure_loaded_auto_loads(tmp_path):
     CLIIdentity(identity_dir=tmp_path).generate()
     identity = CLIIdentity(identity_dir=tmp_path)
@@ -49,6 +53,7 @@ def test_ensure_loaded_auto_loads(tmp_path):
     assert identity.did().startswith("did:key:z")
 
 
+# TST-CLI-005
 def test_ensure_loaded_raises_when_missing(tmp_path):
     identity = CLIIdentity(identity_dir=tmp_path)
     with pytest.raises(FileNotFoundError, match="No keypair found"):
@@ -58,6 +63,7 @@ def test_ensure_loaded_raises_when_missing(tmp_path):
 # -- DID derivation ------------------------------------------------------------
 
 
+# TST-CLI-006
 def test_did_format(tmp_path):
     identity = CLIIdentity(identity_dir=tmp_path)
     identity.generate()
@@ -65,12 +71,14 @@ def test_did_format(tmp_path):
     assert did.startswith("did:key:z6Mk"), f"Ed25519 did:key should start with z6Mk, got {did}"
 
 
+# TST-CLI-007
 def test_did_deterministic(tmp_path):
     identity = CLIIdentity(identity_dir=tmp_path)
     identity.generate()
     assert identity.did() == identity.did()
 
 
+# TST-CLI-008
 def test_did_different_keys(tmp_path):
     id1 = CLIIdentity(identity_dir=tmp_path / "a")
     id1.generate()
@@ -82,6 +90,7 @@ def test_did_different_keys(tmp_path):
 # -- public_key_multibase -----------------------------------------------------
 
 
+# TST-CLI-009
 def test_public_key_multibase_format(tmp_path):
     identity = CLIIdentity(identity_dir=tmp_path)
     identity.generate()
@@ -94,6 +103,7 @@ def test_public_key_multibase_format(tmp_path):
     assert len(raw) == 34  # 2 bytes multicodec + 32 bytes pubkey
 
 
+# TST-CLI-010
 def test_public_key_multibase_roundtrip(tmp_path):
     """Verify the multibase encodes the correct public key."""
     identity = CLIIdentity(identity_dir=tmp_path)
@@ -110,6 +120,7 @@ def test_public_key_multibase_roundtrip(tmp_path):
 # -- Request signing -----------------------------------------------------------
 
 
+# TST-CLI-011
 def test_sign_request_returns_three_parts(tmp_path):
     identity = CLIIdentity(identity_dir=tmp_path)
     identity.generate()
@@ -119,6 +130,7 @@ def test_sign_request_returns_three_parts(tmp_path):
     assert len(sig) == 128  # 64 bytes hex-encoded
 
 
+# TST-CLI-012
 def test_sign_request_verifiable(tmp_path):
     """Verify the signature matches the canonical payload."""
     identity = CLIIdentity(identity_dir=tmp_path)
@@ -136,6 +148,7 @@ def test_sign_request_verifiable(tmp_path):
     pubkey.verify(sig_bytes, payload.encode("utf-8"))  # raises on failure
 
 
+# TST-CLI-013
 def test_sign_request_empty_body(tmp_path):
     """GET requests with no body use SHA-256 of empty string."""
     identity = CLIIdentity(identity_dir=tmp_path)
@@ -149,6 +162,7 @@ def test_sign_request_empty_body(tmp_path):
     pubkey.verify(bytes.fromhex(sig_hex), payload.encode("utf-8"))
 
 
+# TST-CLI-014
 def test_sign_request_different_payloads_differ(tmp_path):
     identity = CLIIdentity(identity_dir=tmp_path)
     identity.generate()

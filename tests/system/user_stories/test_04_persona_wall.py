@@ -118,6 +118,7 @@ class TestPersonaWall:
     # test_00: Seed health persona vault with medical records
     # ==================================================================
 
+    # TST-USR-029
     def test_00_seed_health_persona_vault(
         self, alonso_core, admin_headers,
     ):
@@ -149,6 +150,7 @@ class TestPersonaWall:
     # test_01: Store shopping context in consumer persona
     # ==================================================================
 
+    # TST-USR-030
     def test_01_store_shopping_context(
         self, alonso_core, admin_headers,
     ):
@@ -168,6 +170,7 @@ class TestPersonaWall:
     # test_02: Shopping agent requests health data → Guardian processes
     # ==================================================================
 
+    # TST-USR-031
     def test_02_cross_persona_request_blocked(
         self, alonso_brain, brain_signer,
     ):
@@ -216,6 +219,7 @@ class TestPersonaWall:
     # test_03: Verify automatic disclosure was blocked
     # ==================================================================
 
+    # TST-USR-032
     def test_03_verify_automatic_disclosure_blocked(self):
         """The restricted health persona must block automatic disclosure.
 
@@ -241,6 +245,7 @@ class TestPersonaWall:
     # test_04: Verify disclosure proposal exists
     # ==================================================================
 
+    # TST-USR-033
     def test_04_verify_disclosure_proposal_exists(self):
         """The Guardian must produce a proposal with safe_to_share and withheld."""
         response = _state.get("response", {})
@@ -268,6 +273,7 @@ class TestPersonaWall:
     # test_05: Verify specific diagnoses are withheld
     # ==================================================================
 
+    # TST-USR-034
     def test_05_verify_diagnosis_withheld(self):
         """Specific diagnoses, doctor names, hospitals, and medications
         must NOT appear in safe_to_share.
@@ -302,6 +308,7 @@ class TestPersonaWall:
     # test_06: Verify proposal is useful (contains general terms)
     # ==================================================================
 
+    # TST-USR-035
     def test_06_verify_proposal_is_useful(self):
         """The safe_to_share must contain useful general health terms.
 
@@ -326,6 +333,7 @@ class TestPersonaWall:
     # test_07: User approves minimal disclosure
     # ==================================================================
 
+    # TST-USR-036
     def test_07_approve_disclosure(
         self, alonso_brain, brain_signer,
     ):
@@ -371,6 +379,7 @@ class TestPersonaWall:
     # test_08: Verify shared text matches approved text
     # ==================================================================
 
+    # TST-USR-037
     def test_08_verify_shared_text_matches_approved(self):
         """The shared_text must exactly match the approved_text sent."""
         inner = _state.get("approval_inner", {})
@@ -387,6 +396,7 @@ class TestPersonaWall:
     # test_09: Verify no diagnosis in full shared response
     # ==================================================================
 
+    # TST-USR-038
     def test_09_verify_no_diagnosis_in_shared_response(self):
         """Stringify the full approval response — no forbidden terms.
 
@@ -408,6 +418,7 @@ class TestPersonaWall:
     # test_10: Verify PII check is clean
     # ==================================================================
 
+    # TST-USR-039
     def test_10_verify_pii_check_clean(self):
         """The final PII check must report clean — no medical patterns.
 

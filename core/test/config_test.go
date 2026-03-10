@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rajmohanutopai/dina/core/internal/config"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
 
@@ -369,4 +370,87 @@ func TestConfig_14_4_DefaultValues(t *testing.T) {
 	testutil.RequireEqual(t, cfg.RateLimit, defaults.RateLimit)
 	testutil.RequireEqual(t, cfg.SpoolMax, defaults.SpoolMax)
 	testutil.RequireEqual(t, cfg.BackupInterval, defaults.BackupInterval)
+}
+
+// --------------------------------------------------------------------------
+// §14.1 DINA_OWN_DID Env Var Loading
+// --------------------------------------------------------------------------
+
+// TST-CORE-1035 TST-CORE-1056
+func TestConfig_14_1_4_OwnDIDLoadedFromEnvVar(t *testing.T) {
+	// Requirement (§14.1):
+	//   The DINA_OWN_DID environment variable must be loaded into
+	//   Config.OwnDID. This DID identifies the node's own identity
+	//   for outbound D2D messages and DID resolution.
+	//
+	// Anti-tautological design:
+	//   1. When set, OwnDID contains the exact env var value
+	//   2. When not set, OwnDID defaults to empty string
+	//   3. Positive control: other env vars still work alongside OwnDID
+	//   4. DID format preserved exactly (no trimming/modification of DID string)
+
+	loader := config.NewLoader()
+
+	t.Run("env_var_loaded_into_OwnDID", func(t *testing.T) {
+		t.Setenv("DINA_OWN_DID", "did:plc:abc123test456")
+
+		cfg, err := loader.Load()
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.OwnDID != "did:plc:abc123test456" {
+			t.Fatalf("OwnDID must be 'did:plc:abc123test456', got %q", cfg.OwnDID)
+		}
+	})
+
+	t.Run("default_OwnDID_empty_when_not_set", func(t *testing.T) {
+		// Ensure DINA_OWN_DID is not set (t.Setenv restores on cleanup).
+		t.Setenv("DINA_OWN_DID", "")
+
+		cfg, err := loader.Load()
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		// Empty env var means loadEnv does not override (v != "" check).
+		// Default OwnDID is "" — no node identity configured yet.
+		if cfg.OwnDID != "" {
+			t.Fatalf("OwnDID must be empty when DINA_OWN_DID is empty, got %q", cfg.OwnDID)
+		}
+	})
+
+	t.Run("positive_control_other_vars_work_alongside", func(t *testing.T) {
+		t.Setenv("DINA_OWN_DID", "did:plc:mynode")
+		t.Setenv("DINA_LISTEN_ADDR", ":7777")
+
+		cfg, err := loader.Load()
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.OwnDID != "did:plc:mynode" {
+			t.Fatalf("OwnDID wrong: %q", cfg.OwnDID)
+		}
+		if cfg.ListenAddr != ":7777" {
+			t.Fatalf("ListenAddr wrong: %q", cfg.ListenAddr)
+		}
+	})
+
+	t.Run("DID_format_preserved_exactly", func(t *testing.T) {
+		// Verify various DID formats are preserved without modification.
+		dids := []string{
+			"did:plc:z72i7hdynmk6r22z27h6tvur",
+			"did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK",
+			"did:web:example.com:user:alice",
+		}
+		for _, did := range dids {
+			t.Setenv("DINA_OWN_DID", did)
+
+			cfg, err := loader.Load()
+			if err != nil {
+				t.Fatalf("Load with DID %q: %v", did, err)
+			}
+			if cfg.OwnDID != did {
+				t.Fatalf("DID must be preserved exactly: want %q, got %q", did, cfg.OwnDID)
+			}
+		}
+	})
 }

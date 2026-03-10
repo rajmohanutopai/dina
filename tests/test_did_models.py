@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
+pytestmark = pytest.mark.legacy
+
 from dina.did_models import DIDDocument, VerificationMethod
 
 

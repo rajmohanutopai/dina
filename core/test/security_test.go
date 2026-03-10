@@ -1210,3 +1210,194 @@ func TestSecurity_17_31_NoVectorClocksNoCRDTs(t *testing.T) {
 	testutil.RequireTrue(t, len(violations) >= 1,
 		"auditor must detect injected VectorClock pattern")
 }
+
+// --------------------------------------------------------------------------
+// §2.1 Root Identity Never Transmitted in Plaintext
+// --------------------------------------------------------------------------
+
+// TST-CORE-065
+func TestSecurity_2_1_RootIdentityNeverTransmittedInPlaintext(t *testing.T) {
+	// Requirement: Master seed, mnemonic, and DEKs must never appear in any
+	// network traffic. This test audits the handler and adapter source code
+	// to ensure no API endpoint or logging statement could leak these secrets.
+
+	t.Run("handler_source_never_returns_seed_or_mnemonic", func(t *testing.T) {
+		// Scan all handler code for patterns that would transmit secrets.
+		handlerDir := filepath.Join("..", "internal", "handler")
+		var sourceBuilder strings.Builder
+		err := filepath.Walk(handlerDir, func(path string, info os.FileInfo, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if info.IsDir() || !strings.HasSuffix(path, ".go") {
+				return nil
+			}
+			data, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return readErr
+			}
+			sourceBuilder.Write(data)
+			sourceBuilder.WriteByte('\n')
+			return nil
+		})
+		testutil.RequireNoError(t, err)
+		source := strings.ToLower(sourceBuilder.String())
+
+		// Handler code must never contain patterns that would send secrets in responses.
+		// These patterns indicate a seed/mnemonic/DEK being written to an HTTP response.
+		dangerousResponsePatterns := []struct {
+			pattern string
+			reason  string
+		}{
+			{"w.write([]byte(seed", "handler writes raw seed to HTTP response"},
+			{"w.write([]byte(mnemonic", "handler writes mnemonic to HTTP response"},
+			{"encode(seed)", "handler JSON-encodes seed to response"},
+			{"encode(mnemonic)", "handler JSON-encodes mnemonic to response"},
+			{`"master_seed"`, "handler includes master_seed field in response JSON"},
+			{`"mnemonic"`, "handler includes mnemonic field in response JSON"},
+			{`"raw_seed"`, "handler includes raw_seed field in response JSON"},
+		}
+
+		for _, dp := range dangerousResponsePatterns {
+			if strings.Contains(source, dp.pattern) {
+				t.Errorf("SECURITY VIOLATION: handler source contains %q — %s", dp.pattern, dp.reason)
+			}
+		}
+	})
+
+	t.Run("adapter_source_never_logs_seed_or_dek", func(t *testing.T) {
+		// Scan all adapter code for logging patterns that would leak secrets.
+		adapterDir := filepath.Join("..", "internal", "adapter")
+		var sourceBuilder strings.Builder
+		err := filepath.Walk(adapterDir, func(path string, info os.FileInfo, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if info.IsDir() || !strings.HasSuffix(path, ".go") {
+				return nil
+			}
+			data, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return readErr
+			}
+			sourceBuilder.Write(data)
+			sourceBuilder.WriteByte('\n')
+			return nil
+		})
+		testutil.RequireNoError(t, err)
+		source := sourceBuilder.String()
+
+		auditor := security.NewSecurityAuditor(source, nil)
+
+		// Patterns that would log sensitive material to stdout/stderr.
+		dangerousLogPatterns := []string{
+			"log.Print(seed",
+			"fmt.Print(seed",
+			"log.Print(mnemonic",
+			"fmt.Print(mnemonic",
+			"log.Printf(\"%x\", seed",
+			"log.Printf(\"%x\", dek",
+			"log.Print(string(dek",
+			"fmt.Print(string(dek",
+		}
+
+		for _, p := range dangerousLogPatterns {
+			violations, auditErr := auditor.AuditSourceCode(p)
+			testutil.RequireNoError(t, auditErr)
+			if len(violations) > 0 {
+				t.Errorf("SECURITY VIOLATION: source contains %q — plaintext secret in log output", p)
+			}
+		}
+
+		// Positive control: injected seed log must be detected.
+		tainted := source + "\nfmt.Println(hex.EncodeToString(seed))\n"
+		taintedAuditor := security.NewSecurityAuditor(tainted, nil)
+		leakViolations, err := taintedAuditor.AuditSourceCode("fmt.Println(hex.EncodeToString(seed")
+		testutil.RequireNoError(t, err)
+		testutil.RequireTrue(t, len(leakViolations) >= 1,
+			"positive control: injected seed log must be detected by auditor")
+	})
+
+	t.Run("did_endpoint_returns_only_public_data", func(t *testing.T) {
+		// The DID document returned by GET /v1/did must contain only public keys,
+		// never the master seed or private key material.
+		impl := realDIDManager
+		testutil.RequireImplementation(t, impl, "DIDManager")
+
+		did, err := impl.Create(idCtx, testutil.TestEd25519Seed[:])
+		testutil.RequireNoError(t, err)
+
+		doc, err := impl.Resolve(idCtx, did)
+		testutil.RequireNoError(t, err)
+		docStr := strings.ToLower(string(doc))
+
+		// DID document must NOT contain sensitive field names.
+		forbiddenFields := []string{
+			"master_seed", "mnemonic", "private_key", "secret_key",
+			"dek", "data_encryption_key", "passphrase", "raw_seed",
+		}
+		for _, field := range forbiddenFields {
+			if strings.Contains(docStr, field) {
+				t.Errorf("DID document contains forbidden field %q — leaks sensitive identity data", field)
+			}
+		}
+
+		// DID document MUST contain expected public fields.
+		testutil.RequireContains(t, string(doc), `"id"`)
+		testutil.RequireContains(t, string(doc), `"verificationMethod"`)
+	})
+
+	t.Run("export_bundle_contains_no_plaintext_seed", func(t *testing.T) {
+		// The IdentityBundle used for export/import must wrap the seed with
+		// AES-256-GCM, never including it in plaintext.
+		wrapper := realKeyWrapper
+		testutil.RequireImplementation(t, wrapper, "KeyWrapper")
+
+		// Wrap a test seed.
+		plainSeed := testutil.TestEd25519Seed[:]
+		wrapped, err := wrapper.Wrap(plainSeed, testutil.TestKEK[:])
+		testutil.RequireNoError(t, err)
+
+		// The wrapped output must NOT contain the plaintext seed.
+		plainHex := fmt.Sprintf("%x", plainSeed)
+		wrappedHex := fmt.Sprintf("%x", wrapped)
+		if strings.Contains(wrappedHex, plainHex) {
+			t.Fatal("wrapped seed contains plaintext seed bytes — encryption not applied")
+		}
+
+		// Wrapped data must be longer than plaintext (nonce + tag overhead).
+		if len(wrapped) <= len(plainSeed) {
+			t.Fatalf("wrapped data (%d bytes) not larger than plaintext (%d bytes) — missing nonce/tag",
+				len(wrapped), len(plainSeed))
+		}
+
+		// Round-trip: unwrap must recover the original seed.
+		recovered, err := wrapper.Unwrap(wrapped, testutil.TestKEK[:])
+		testutil.RequireNoError(t, err)
+		testutil.RequireBytesEqual(t, plainSeed, recovered)
+	})
+
+	t.Run("onboarding_never_stores_mnemonic_in_core", func(t *testing.T) {
+		// Verify by code audit that Core's onboarding package never stores
+		// or returns the BIP-39 mnemonic — it's generated client-side only.
+		onboardingDir := filepath.Join("..", "internal", "adapter", "onboarding")
+		var sourceBuilder strings.Builder
+		err := filepath.Walk(onboardingDir, func(path string, info os.FileInfo, walkErr error) error {
+			if walkErr != nil || info.IsDir() || !strings.HasSuffix(path, ".go") {
+				return walkErr
+			}
+			data, _ := os.ReadFile(path)
+			sourceBuilder.Write(data)
+			sourceBuilder.WriteByte('\n')
+			return nil
+		})
+		testutil.RequireNoError(t, err)
+		source := strings.ToLower(sourceBuilder.String())
+
+		// Verify the design comment: "Core receives only the wrapped seed —
+		// never the raw seed or mnemonic."
+		if strings.Contains(source, "bip39.generate") || strings.Contains(source, "generatemnemonic") {
+			t.Error("Core onboarding must NOT generate BIP-39 mnemonics — client-side only")
+		}
+	})
+}

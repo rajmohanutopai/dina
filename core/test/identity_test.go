@@ -2965,3 +2965,110 @@ func TestIdentity_3_9_9_RestorePersistedMetadataAvailableForExport(t *testing.T)
 		t.Fatalf("ExportIdentity after restore: %v", err)
 	}
 }
+
+// --------------------------------------------------------------------------
+// §2.1 BIP-39 Mnemonic Recovery → Same DID (TST-CORE-063)
+// --------------------------------------------------------------------------
+
+// TST-CORE-063
+func TestIdentity_2_1_MnemonicRecovery_SameDID(t *testing.T) {
+	// Requirement: Enter known test mnemonic → Same did:plc identity as original.
+	// DID must be preserved across recovery — same mnemonic produces the same
+	// root signing key via SLIP-0010, which produces the same DID.
+	hdKey := realHDKey
+	testutil.RequireImplementation(t, hdKey, "HDKeyDeriver")
+
+	t.Run("full_recovery_pipeline", func(t *testing.T) {
+		// --- Step 1: Original identity creation (first machine) ---
+		// Derive root signing key from BIP-39 seed via SLIP-0010 at m/9999'/0'/0'.
+		origPub, origPriv, err := hdKey.DerivePath(testutil.TestMnemonicSeed, testutil.DinaRootKeyPath)
+		testutil.RequireNoError(t, err)
+		testutil.RequireBytesLen(t, origPub, 32)
+		testutil.RequireBytesLen(t, origPriv, 64)
+
+		// Create DID from derived public key on a fresh DIDManager (original machine).
+		dm1 := identity.NewDIDManager(t.TempDir())
+		origDID, err := dm1.Create(idCtx, origPub)
+		testutil.RequireNoError(t, err)
+		testutil.RequireHasPrefix(t, string(origDID), "did:plc:")
+
+		// --- Step 2: Recovery simulation (new machine, same mnemonic) ---
+		// Re-derive root key from the SAME seed (simulates mnemonic re-entry after loss).
+		recoveredPub, recoveredPriv, err := hdKey.DerivePath(testutil.TestMnemonicSeed, testutil.DinaRootKeyPath)
+		testutil.RequireNoError(t, err)
+
+		// Verify determinism: recovered public key matches original byte-for-byte.
+		testutil.RequireBytesEqual(t, origPub, recoveredPub)
+
+		// Create DID on a NEW DIDManager (new machine, empty state).
+		dm2 := identity.NewDIDManager(t.TempDir())
+		recoveredDID, err := dm2.Create(idCtx, recoveredPub)
+		testutil.RequireNoError(t, err)
+
+		// CORE ASSERTION: DID preserved across recovery.
+		testutil.RequireEqual(t, string(origDID), string(recoveredDID))
+
+		// Verify recovered key can sign (proves keypair validity after recovery).
+		msg := []byte("recovery-verification-payload")
+		sig := ed25519.Sign(ed25519.PrivateKey(recoveredPriv), msg)
+		testutil.RequireTrue(t, ed25519.Verify(ed25519.PublicKey(recoveredPub), msg, sig),
+			"recovered key must produce valid Ed25519 signatures")
+
+		// Cross-verify: signature from original key verifiable with recovered key.
+		origSig := ed25519.Sign(ed25519.PrivateKey(origPriv), msg)
+		testutil.RequireTrue(t, ed25519.Verify(ed25519.PublicKey(recoveredPub), msg, origSig),
+			"signature from original key must be verifiable with recovered key")
+	})
+
+	t.Run("different_mnemonic_different_DID", func(t *testing.T) {
+		// Negative: a different BIP-39 seed must produce a DIFFERENT DID.
+		// This ensures the DID is cryptographically bound to the mnemonic.
+		altSeed := make([]byte, 64)
+		copy(altSeed, testutil.TestMnemonicSeed)
+		altSeed[0] ^= 0xFF // Flip one byte to simulate a different mnemonic.
+
+		origPub, _, err := hdKey.DerivePath(testutil.TestMnemonicSeed, testutil.DinaRootKeyPath)
+		testutil.RequireNoError(t, err)
+		altPub, _, err := hdKey.DerivePath(altSeed, testutil.DinaRootKeyPath)
+		testutil.RequireNoError(t, err)
+
+		// Public keys must differ.
+		if fmt.Sprintf("%x", origPub) == fmt.Sprintf("%x", altPub) {
+			t.Fatal("different seeds must produce different public keys")
+		}
+
+		dm1 := identity.NewDIDManager(t.TempDir())
+		did1, err := dm1.Create(idCtx, origPub)
+		testutil.RequireNoError(t, err)
+
+		dm2 := identity.NewDIDManager(t.TempDir())
+		did2, err := dm2.Create(idCtx, altPub)
+		testutil.RequireNoError(t, err)
+
+		if string(did1) == string(did2) {
+			t.Fatalf("different mnemonics must produce different DIDs: both got %s", did1)
+		}
+	})
+
+	t.Run("all_persona_keys_recoverable", func(t *testing.T) {
+		// Verify that ALL persona keys (not just root) are deterministically
+		// recoverable from the same seed. This ensures full identity restoration.
+		for name, path := range testutil.DinaPersonaPaths {
+			pub1, _, err := hdKey.DerivePath(testutil.TestMnemonicSeed, path)
+			testutil.RequireNoError(t, err)
+
+			pub2, _, err := hdKey.DerivePath(testutil.TestMnemonicSeed, path)
+			testutil.RequireNoError(t, err)
+
+			testutil.RequireBytesEqual(t, pub1, pub2)
+
+			// Each persona key must be unique (no key reuse across personas).
+			if name != "root" {
+				rootPub, _, _ := hdKey.DerivePath(testutil.TestMnemonicSeed, testutil.DinaRootKeyPath)
+				if fmt.Sprintf("%x", pub1) == fmt.Sprintf("%x", rootPub) {
+					t.Fatalf("persona %q key must differ from root key", name)
+				}
+			}
+		}
+	})
+}

@@ -139,6 +139,7 @@ type d2dPayloadWire struct {
 
 // --------------------------------------------------------------------------
 // Test 1: SendMessage delivery payload is JSON with "c" and "s" fields
+// TST-CORE-1088 TST-CORE-1002
 // --------------------------------------------------------------------------
 
 func TestFixVerify_31_8_1_SendMessage_DeliveryPayloadIsJSONWrapper(t *testing.T) {
@@ -195,12 +196,29 @@ func TestFixVerify_31_8_1_SendMessage_DeliveryPayloadIsJSONWrapper(t *testing.T)
 	if len(sigBytes) != ed25519.SignatureSize {
 		t.Fatalf("expected signature length %d, got %d", ed25519.SignatureSize, len(sigBytes))
 	}
+
+	// Verify the JSON payload contains ONLY "c" and "s" — no extra fields leaked.
+	var rawFields map[string]json.RawMessage
+	if err := json.Unmarshal(deliveredBytes, &rawFields); err != nil {
+		t.Fatalf("re-parse as raw map: %v", err)
+	}
+	if len(rawFields) != 2 {
+		t.Fatalf("expected exactly 2 JSON fields (c, s), got %d: %v",
+			len(rawFields), func() []string {
+				keys := make([]string, 0, len(rawFields))
+				for k := range rawFields {
+					keys = append(keys, k)
+				}
+				return keys
+			}())
+	}
 }
 
 // --------------------------------------------------------------------------
 // Test 2: ProcessInbound with JSON wrapper + valid sig succeeds
 // --------------------------------------------------------------------------
 
+// TST-CORE-1089
 func TestFixVerify_31_8_2_ProcessInbound_JSONWrapperValidSig_Success(t *testing.T) {
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
@@ -250,6 +268,7 @@ func TestFixVerify_31_8_2_ProcessInbound_JSONWrapperValidSig_Success(t *testing.
 // Test 3: ProcessInbound with JSON wrapper + tampered sig returns error
 // --------------------------------------------------------------------------
 
+// TST-CORE-1090
 func TestFixVerify_31_8_3_ProcessInbound_JSONWrapperTamperedSig_Error(t *testing.T) {
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
@@ -292,39 +311,82 @@ func TestFixVerify_31_8_3_ProcessInbound_JSONWrapperTamperedSig_Error(t *testing
 }
 
 // --------------------------------------------------------------------------
-// Test 4: ProcessInbound with raw bytes (legacy) still works
+// Test 4: ProcessInbound with raw bytes (legacy) → rejected without override
+// TST-CORE-1093
 // --------------------------------------------------------------------------
 
 func TestFixVerify_31_8_6_ProcessInbound_RawBytesLegacy_Rejected(t *testing.T) {
-	// CRITICAL-04: unsigned legacy payloads are rejected — no backward compat.
+	// TST-CORE-1093: ProcessInbound raw bytes legacy rejected
+	// Requirement: Raw NaCl bytes (no JSON wrapper), without DINA_ALLOW_UNSIGNED_D2D
+	// override, must be rejected. No backward compatibility for unsigned messages.
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
 
-	msg := domain.DinaMessage{
-		ID:          "msg-fix11-004",
-		Type:        domain.MessageTypeQuery,
-		From:        "did:key:z6MkSenderTest",
-		To:          []string{"did:key:z6MkRecipientTest"},
-		CreatedTime: time.Now().Unix(),
-		Body:        []byte(`{"q":"legacy raw bytes test"}`),
-	}
-	plaintext, _ := json.Marshal(msg)
+	// Sub-test 1: Real encrypted payload without JSON wrapper → rejected.
+	t.Run("encrypted_raw_nacl_rejected", func(t *testing.T) {
+		msg := domain.DinaMessage{
+			ID:          "msg-fix11-004",
+			Type:        domain.MessageTypeQuery,
+			From:        "did:key:z6MkSenderTest",
+			To:          []string{"did:key:z6MkRecipientTest"},
+			CreatedTime: time.Now().Unix(),
+			Body:        []byte(`{"q":"legacy raw bytes test"}`),
+		}
+		plaintext, _ := json.Marshal(msg)
 
-	// Encrypt for recipient (no JSON wrapping — raw NaCl sealed box).
-	rcptX25519Pub, _ := env.converter.Ed25519ToX25519Public(env.rcptPub)
-	rawCiphertext, _ := env.encryptor.SealAnonymous(plaintext, rcptX25519Pub)
+		// Encrypt for recipient (no JSON wrapping — raw NaCl sealed box).
+		rcptX25519Pub, _ := env.converter.Ed25519ToX25519Public(env.rcptPub)
+		rawCiphertext, _ := env.encryptor.SealAnonymous(plaintext, rcptX25519Pub)
 
-	// ProcessInbound with raw bytes should be rejected.
-	_, err := env.svc.ProcessInbound(ctx, rawCiphertext)
-	if err == nil {
-		t.Fatal("ProcessInbound should reject unsigned legacy payload")
-	}
+		_, err := env.svc.ProcessInbound(ctx, rawCiphertext)
+		if err == nil {
+			t.Fatal("ProcessInbound should reject unsigned legacy payload")
+		}
+		// Verify error wraps ErrInvalidSignature (envelope format check).
+		if !errors.Is(err, domain.ErrInvalidSignature) {
+			t.Fatalf("expected ErrInvalidSignature, got: %v", err)
+		}
+	})
+
+	// Sub-test 2: Random garbage bytes → rejected.
+	t.Run("random_bytes_rejected", func(t *testing.T) {
+		garbage := []byte{0xde, 0xad, 0xbe, 0xef, 0x01, 0x02, 0x03, 0x04}
+		_, err := env.svc.ProcessInbound(ctx, garbage)
+		if err == nil {
+			t.Fatal("ProcessInbound should reject random bytes")
+		}
+		if !errors.Is(err, domain.ErrInvalidSignature) {
+			t.Fatalf("expected ErrInvalidSignature for garbage, got: %v", err)
+		}
+	})
+
+	// Sub-test 3: Empty payload → rejected.
+	t.Run("empty_payload_rejected", func(t *testing.T) {
+		_, err := env.svc.ProcessInbound(ctx, []byte{})
+		if err == nil {
+			t.Fatal("ProcessInbound should reject empty payload")
+		}
+	})
+
+	// Sub-test 4: JSON without required "c" and "s" fields → rejected.
+	t.Run("json_missing_sig_field_rejected", func(t *testing.T) {
+		// Has ciphertext but no signature — not the proper wrapper format.
+		partial := []byte(`{"c":"dGVzdA=="}`)
+		_, err := env.svc.ProcessInbound(ctx, partial)
+		if err == nil {
+			t.Fatal("ProcessInbound should reject JSON without signature field")
+		}
+		if !errors.Is(err, domain.ErrInvalidSignature) {
+			t.Fatalf("expected ErrInvalidSignature for missing sig, got: %v", err)
+		}
+	})
 }
 
 // --------------------------------------------------------------------------
 // Test 5: ProcessOutbox retry uses JSON wrapper format
 // --------------------------------------------------------------------------
 
+// TST-CORE-1095
 func TestFixVerify_31_8_8_ProcessOutbox_UsesJSONWrapper(t *testing.T) {
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
@@ -398,6 +460,7 @@ func TestFixVerify_31_8_8_ProcessOutbox_UsesJSONWrapper(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
+// TST-CORE-1096
 // Test 6: Full round-trip: SendMessage -> delivery -> ProcessInbound
 // --------------------------------------------------------------------------
 
@@ -448,6 +511,7 @@ func TestFixVerify_31_8_9_FullRoundTrip_SendAndReceiveWithSig(t *testing.T) {
 // Test 7: ProcessInbound with JSON wrapper but empty sig (no verification)
 // --------------------------------------------------------------------------
 
+// TST-CORE-1091
 func TestFixVerify_31_8_4_ProcessInbound_JSONWrapperEmptySig_Rejected(t *testing.T) {
 	// CRITICAL-04: unsigned messages (empty sig) are now rejected by default.
 	env := newD2DSigTestEnv(t)
@@ -485,6 +549,7 @@ func TestFixVerify_31_8_4_ProcessInbound_JSONWrapperEmptySig_Rejected(t *testing
 // Test 8: ProcessInbound with JSON wrapper + sig from wrong sender DID
 // --------------------------------------------------------------------------
 
+// TST-CORE-1094
 func TestFixVerify_31_8_7_ProcessInbound_JSONWrapper_DIDSpoofing_Rejected(t *testing.T) {
 	env := newD2DSigTestEnv(t)
 	ctx := context.Background()
@@ -521,4 +586,208 @@ func TestFixVerify_31_8_7_ProcessInbound_JSONWrapper_DIDSpoofing_Rejected(t *tes
 	if !errors.Is(err, domain.ErrInvalidSignature) {
 		t.Fatalf("expected ErrInvalidSignature, got: %v", err)
 	}
+}
+
+// --------------------------------------------------------------------------
+// Test 8: ProcessInbound raw bytes legacy migration (DINA_ALLOW_UNSIGNED_D2D)
+// TST-CORE-1092
+// --------------------------------------------------------------------------
+// §31.8 Requirement: When DINA_ALLOW_UNSIGNED_D2D is enabled, ProcessInbound
+// must accept raw NaCl sealed box bytes (no JSON wrapper, no signature) as a
+// migration aid for legacy senders. The message is decrypted and returned
+// WITHOUT signature verification, with a warning logged.
+//
+// This is NOT a security hole — it's an explicit, auditable migration path.
+// The override must be opt-in (off by default) and every legacy message must
+// generate a log warning for migration tracking.
+
+func TestFixVerify_31_8_5_ProcessInbound_RawBytesLegacy_Migration(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("raw_nacl_accepted_when_allow_unsigned_enabled", func(t *testing.T) {
+		// With DINA_ALLOW_UNSIGNED_D2D enabled, raw NaCl sealed box bytes
+		// that aren't JSON should be decrypted without signature verification.
+		env := newD2DSigTestEnv(t)
+		env.svc.SetAllowUnsignedD2D(true)
+
+		msg := domain.DinaMessage{
+			ID:          "msg-legacy-001",
+			Type:        domain.MessageTypeQuery,
+			From:        "did:key:z6MkSenderTest",
+			To:          []string{"did:key:z6MkRecipientTest"},
+			CreatedTime: time.Now().Unix(),
+			Body:        []byte(`{"q":"legacy message"}`),
+		}
+		plaintext, _ := json.Marshal(msg)
+
+		// Encrypt for recipient as raw NaCl sealed box (no JSON wrapper).
+		rcptX25519Pub, _ := env.converter.Ed25519ToX25519Public(env.rcptPub)
+		rawCiphertext, encErr := env.encryptor.SealAnonymous(plaintext, rcptX25519Pub)
+		if encErr != nil {
+			t.Fatalf("SealAnonymous failed: %v", encErr)
+		}
+
+		result, err := env.svc.ProcessInbound(ctx, rawCiphertext)
+		if err != nil {
+			t.Fatalf("ProcessInbound with allowUnsignedD2D should accept raw NaCl, got: %v", err)
+		}
+		if result.ID != "msg-legacy-001" {
+			t.Fatalf("expected message ID msg-legacy-001, got %q", result.ID)
+		}
+		if result.From != "did:key:z6MkSenderTest" {
+			t.Fatalf("expected From=did:key:z6MkSenderTest, got %q", result.From)
+		}
+	})
+
+	t.Run("raw_nacl_rejected_when_allow_unsigned_disabled", func(t *testing.T) {
+		// Default (disabled): raw NaCl bytes must still be rejected.
+		// This confirms the override is opt-in, not default.
+		env := newD2DSigTestEnv(t)
+		// NOT calling SetAllowUnsignedD2D — default is false.
+
+		msg := domain.DinaMessage{
+			ID:          "msg-legacy-002",
+			Type:        domain.MessageTypeQuery,
+			From:        "did:key:z6MkSenderTest",
+			To:          []string{"did:key:z6MkRecipientTest"},
+			CreatedTime: time.Now().Unix(),
+			Body:        []byte(`{"q":"should be rejected"}`),
+		}
+		plaintext, _ := json.Marshal(msg)
+		rcptX25519Pub, _ := env.converter.Ed25519ToX25519Public(env.rcptPub)
+		rawCiphertext, _ := env.encryptor.SealAnonymous(plaintext, rcptX25519Pub)
+
+		_, err := env.svc.ProcessInbound(ctx, rawCiphertext)
+		if err == nil {
+			t.Fatal("raw NaCl must be rejected when allowUnsignedD2D is disabled")
+		}
+		if !errors.Is(err, domain.ErrInvalidSignature) {
+			t.Fatalf("expected ErrInvalidSignature, got: %v", err)
+		}
+	})
+
+	t.Run("json_wrapper_still_works_with_allow_unsigned_enabled", func(t *testing.T) {
+		// With allowUnsignedD2D enabled, properly signed JSON wrappers must
+		// STILL work normally. The legacy path is a fallback, not a replacement.
+		env := newD2DSigTestEnv(t)
+		env.svc.SetAllowUnsignedD2D(true)
+		env.svc.SetSenderDID("did:key:z6MkSenderTest")
+
+		msg := domain.DinaMessage{
+			ID:          "msg-signed-with-override",
+			Type:        domain.MessageTypeQuery,
+			From:        "did:key:z6MkSenderTest",
+			To:          []string{"did:key:z6MkRecipientTest"},
+			CreatedTime: time.Now().Unix(),
+			Body:        []byte(`{"q":"signed message"}`),
+		}
+		plaintext, _ := json.Marshal(msg)
+
+		// Sign with sender's private key.
+		sig, sigErr := env.signer.Sign(env.senderPriv, plaintext)
+		if sigErr != nil {
+			t.Fatalf("sign failed: %v", sigErr)
+		}
+
+		// Encrypt for recipient.
+		rcptX25519Pub, _ := env.converter.Ed25519ToX25519Public(env.rcptPub)
+		ciphertext, _ := env.encryptor.SealAnonymous(plaintext, rcptX25519Pub)
+
+		// Build proper JSON wrapper.
+		wrapper := d2dPayloadWire{
+			Ciphertext: base64.StdEncoding.EncodeToString(ciphertext),
+			Sig:        hex.EncodeToString(sig),
+		}
+		wrapperBytes, _ := json.Marshal(wrapper)
+
+		result, err := env.svc.ProcessInbound(ctx, wrapperBytes)
+		if err != nil {
+			t.Fatalf("signed JSON wrapper should still work with override enabled: %v", err)
+		}
+		if result.ID != "msg-signed-with-override" {
+			t.Fatalf("expected msg-signed-with-override, got %q", result.ID)
+		}
+	})
+
+	t.Run("garbage_bytes_rejected_even_with_allow_unsigned", func(t *testing.T) {
+		// Random garbage that isn't valid NaCl must still be rejected.
+		// The legacy path tries to decrypt — decryption failure = rejection.
+		env := newD2DSigTestEnv(t)
+		env.svc.SetAllowUnsignedD2D(true)
+
+		garbage := []byte{0xde, 0xad, 0xbe, 0xef, 0x01, 0x02, 0x03, 0x04}
+		_, err := env.svc.ProcessInbound(ctx, garbage)
+		if err == nil {
+			t.Fatal("garbage bytes must be rejected even with allowUnsignedD2D")
+		}
+	})
+
+	t.Run("empty_payload_rejected_even_with_allow_unsigned", func(t *testing.T) {
+		env := newD2DSigTestEnv(t)
+		env.svc.SetAllowUnsignedD2D(true)
+
+		_, err := env.svc.ProcessInbound(ctx, []byte{})
+		if err == nil {
+			t.Fatal("empty payload must be rejected even with allowUnsignedD2D")
+		}
+	})
+
+	t.Run("message_body_preserved_in_legacy_path", func(t *testing.T) {
+		// The decrypted message body must be intact after legacy decryption.
+		env := newD2DSigTestEnv(t)
+		env.svc.SetAllowUnsignedD2D(true)
+
+		msg := domain.DinaMessage{
+			ID:          "msg-body-check",
+			Type:        domain.MessageTypeQuery,
+			From:        "did:key:z6MkSenderTest",
+			To:          []string{"did:key:z6MkRecipientTest"},
+			CreatedTime: time.Now().Unix(),
+			Body:        []byte(`{"important":"data with special chars: é à ü"}`),
+		}
+		plaintext, _ := json.Marshal(msg)
+		rcptX25519Pub, _ := env.converter.Ed25519ToX25519Public(env.rcptPub)
+		rawCiphertext, _ := env.encryptor.SealAnonymous(plaintext, rcptX25519Pub)
+
+		result, err := env.svc.ProcessInbound(ctx, rawCiphertext)
+		if err != nil {
+			t.Fatalf("legacy decryption failed: %v", err)
+		}
+		if string(result.Body) != `{"important":"data with special chars: é à ü"}` {
+			t.Fatalf("body not preserved: got %q", string(result.Body))
+		}
+	})
+
+	t.Run("toggle_allow_unsigned_off_rejects_again", func(t *testing.T) {
+		// Verify SetAllowUnsignedD2D(false) re-enables rejection.
+		env := newD2DSigTestEnv(t)
+		env.svc.SetAllowUnsignedD2D(true)
+
+		msg := domain.DinaMessage{
+			ID:   "msg-toggle",
+			Type: domain.MessageTypeQuery,
+			From: "did:key:z6MkSenderTest",
+			To:   []string{"did:key:z6MkRecipientTest"},
+		}
+		plaintext, _ := json.Marshal(msg)
+		rcptX25519Pub, _ := env.converter.Ed25519ToX25519Public(env.rcptPub)
+		rawCiphertext, _ := env.encryptor.SealAnonymous(plaintext, rcptX25519Pub)
+
+		// Enable → accept.
+		_, err := env.svc.ProcessInbound(ctx, rawCiphertext)
+		if err != nil {
+			t.Fatalf("should accept with allowUnsigned: %v", err)
+		}
+
+		// Disable → reject (need fresh ciphertext for replay cache).
+		env.svc.SetAllowUnsignedD2D(false)
+		msg.ID = "msg-toggle-2"
+		plaintext2, _ := json.Marshal(msg)
+		rawCiphertext2, _ := env.encryptor.SealAnonymous(plaintext2, rcptX25519Pub)
+
+		_, err = env.svc.ProcessInbound(ctx, rawCiphertext2)
+		if err == nil {
+			t.Fatal("should reject after disabling allowUnsigned")
+		}
+	})
 }

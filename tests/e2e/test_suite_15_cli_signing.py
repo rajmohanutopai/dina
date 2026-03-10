@@ -382,6 +382,7 @@ class TestCLIEd25519Signing:
                     )
 
     # TST-E2E-091
+    @pytest.mark.compat
     def test_15_bearer_token_fallback_still_works(
         self,
         don_alonso,

@@ -10,7 +10,7 @@ build:
 # --- Test ---
 test:
 	cd core && go test ./...
-	cd brain && pytest tests/
+	cd brain && pytest tests/ -m 'not legacy'
 
 # --- Lint ---
 lint:

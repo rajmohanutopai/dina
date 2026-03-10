@@ -81,6 +81,7 @@ class TestAgentGateway:
     # test_00: Register external agent via pairing ceremony
     # ==================================================================
 
+    # TST-USR-040
     def test_00_register_agent_via_pairing(
         self, alonso_core, admin_headers,
     ):
@@ -147,6 +148,7 @@ class TestAgentGateway:
     # test_01: Verify agent appears in device list
     # ==================================================================
 
+    # TST-USR-041
     def test_01_verify_agent_in_device_list(
         self, alonso_core, admin_headers,
     ):
@@ -179,6 +181,7 @@ class TestAgentGateway:
     # test_02: Safe intent → auto_approve
     # ==================================================================
 
+    # TST-USR-042
     def test_02_safe_intent_auto_approved(
         self, alonso_core, admin_headers,
     ):
@@ -222,6 +225,7 @@ class TestAgentGateway:
     # test_03: Moderate intent → flag_for_review
     # ==================================================================
 
+    # TST-USR-043
     def test_03_moderate_intent_flagged(
         self, alonso_core, admin_headers,
     ):
@@ -265,6 +269,7 @@ class TestAgentGateway:
     # test_04: High-risk intent → flag_for_review
     # ==================================================================
 
+    # TST-USR-044
     def test_04_high_risk_intent_flagged(
         self, alonso_core, admin_headers,
     ):
@@ -308,6 +313,7 @@ class TestAgentGateway:
     # test_05: Untrusted agent → deny (regardless of action)
     # ==================================================================
 
+    # TST-USR-045
     def test_05_unauthenticated_agent_rejected(
         self, alonso_core,
     ):
@@ -338,6 +344,7 @@ class TestAgentGateway:
     # test_06: Blocked action → deny (even for verified agent)
     # ==================================================================
 
+    # TST-USR-046
     def test_06_blocked_action_denied(
         self, alonso_core, admin_headers,
     ):
@@ -375,6 +382,7 @@ class TestAgentGateway:
     # test_07: Export data → deny (second blocked action)
     # ==================================================================
 
+    # TST-USR-047
     def test_07_export_data_blocked(
         self, alonso_core, admin_headers,
     ):
@@ -412,6 +420,7 @@ class TestAgentGateway:
     # test_08: Agent cannot cross personas (vault isolation)
     # ==================================================================
 
+    # TST-USR-048
     def test_08_agent_cannot_cross_personas(
         self, alonso_core, admin_headers,
     ):
@@ -471,6 +480,7 @@ class TestAgentGateway:
     # test_09: Revoke agent device → token invalidated
     # ==================================================================
 
+    # TST-USR-049
     def test_09_revoke_agent_device(
         self, alonso_core, admin_headers,
     ):
