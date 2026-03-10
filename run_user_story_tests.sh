@@ -3,7 +3,7 @@
 # Dina User Story Tests — proving the value proposition end-to-end.
 # ============================================================================
 #
-# Ten user stories, each demonstrating a capability no other system has.
+# Fourteen user stories, each demonstrating a capability no other system has.
 # Every test runs against a real multi-node stack: Go Core, Python Brain,
 # AT Protocol PDS, AppView, Postgres — zero mocks.
 #
@@ -78,6 +78,13 @@ for i in "$@"; do
             echo "    9  Connector Credential Expiry (5 tests)  — graceful degradation & recovery"
             echo "   10  The Operator Journey        (5 tests)  — bootstrap idempotency & admin lifecycle"
             echo ""
+            echo "  Thesis invariant stories:"
+            echo ""
+            echo "   11  The Anti-Her                 (5 tests)  — proactive relationship maintenance"
+            echo "   12  Verified Truth                (5 tests)  — trust data density spectrum"
+            echo "   13  Silence Under Stress          (3 tests)  — notification storms & ambiguity"
+            echo "   14  Agent Sandbox                 (3 tests)  — adversarial agent escape attempts"
+            echo ""
             echo "  Usage: ./run_user_story_tests.sh --story 5"
             echo ""
             exit 0
@@ -119,8 +126,12 @@ if [ -n "$STORY" ]; then
         8|08) STORY_FILE="tests/system/user_stories/test_08_move_to_new_machine.py" ;;
         9|09) STORY_FILE="tests/system/user_stories/test_09_connector_expiry.py" ;;
         10)   STORY_FILE="tests/system/user_stories/test_10_operator_journey.py" ;;
+        11)   STORY_FILE="tests/system/user_stories/test_11_anti_her.py" ;;
+        12)   STORY_FILE="tests/system/user_stories/test_12_verified_truth.py" ;;
+        13)   STORY_FILE="tests/system/user_stories/test_13_silence_under_stress.py" ;;
+        14)   STORY_FILE="tests/system/user_stories/test_14_agent_sandbox.py" ;;
         *)
-            echo "Error: --story must be 1-10 (got: $STORY)"
+            echo "Error: --story must be 1-14 (got: $STORY)"
             exit 1
             ;;
     esac
@@ -134,7 +145,7 @@ if [ "$MODE" = "sanity" ] && [ "$BRIEF" = false ]; then
         if [ "$arg" = "-k" ]; then has_k=true; break; fi
     done
     if [ "$has_k" = false ]; then
-        PYTEST_ARGS+=("-k" "not (test_06_license_renewal or test_07_daily_briefing or test_08_move_to_new_machine or test_09_connector_expiry or test_10_operator_journey)")
+        PYTEST_ARGS+=("-k" "not (test_06_license_renewal or test_07_daily_briefing or test_08_move_to_new_machine or test_09_connector_expiry or test_10_operator_journey or test_11_anti_her or test_12_verified_truth or test_13_silence_under_stress or test_14_agent_sandbox)")
     fi
 fi
 
@@ -165,9 +176,10 @@ Y="${YELLOW}"
 # Border:     2 leading spaces + ╔ + 100 ═ chars + ╗ = 104 display columns
 
 print_banner() {
-    # Args: $1=s01_result .. $10=s10_result  (empty if not run yet)
+    # Args: $1=s01_result .. $14=s14_result  (empty if not run yet)
     local s01="${1:-}" s02="${2:-}" s03="${3:-}" s04="${4:-}" s05="${5:-}" s06="${6:-}"
-    local s07="${7:-}" s08="${8:-}" s09="${9:-}" s10="${10:-}"
+    local s07="${7:-}" s08="${8:-}" s09="${9:-}" s10="${10:-}" s11="${11:-}" s12="${12:-}"
+    local s13="${13:-}" s14="${14:-}"
 
     local mode_label=""
     if [ -n "$STORY" ]; then
@@ -273,6 +285,46 @@ print_banner() {
         echo -e "${B}  ║${R}${D}     Lock vault for maintenance: health endpoint still accessible. Unlock: operations resume        ${B}║${R}"
         echo -e "${B}  ║${R}${D}     Identity is derived from master seed — immutable after bootstrap, stable across lifecycle      ${B}║${R}"
         echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+
+        echo -e "${B}  ╠════════════════════════════════════════════════════════════════════════════════════════════════════╣${R}"
+        echo -e "${B}  ║${R}${D}     Thesis Invariants — Dina is not just a kernel, she is the civilizational thesis                ${B}║${R}"
+        echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+
+        # ── Story 11 ──────────────────────────────────────────────────────────
+        printf "  ${B}║${R}  ${G}11${R} ${BOLD}The Anti-Her${R}"
+        if [ -n "$s11" ]; then printf "%94s" "$s11"; else printf "%81s" "5 tests"; fi
+        echo -e "  ${B}║${R}"
+        echo -e "${B}  ║${R}     ${BOLD}\"Haven't talked to Sarah in 45 days\"${R}${D} -> proactive nudge in briefing, not on demand            ${B}║${R}"
+        echo -e "${B}  ║${R}${D}     Life event follow-up: \"Sancho's mother was ill\" -> \"you might want to check in\"                ${B}║${R}"
+        echo -e "${B}  ║${R}${D}     Emotional dependency escalation: cross-session patterns trigger specific contact suggestions   ${B}║${R}"
+        echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+
+        # ── Story 12 ──────────────────────────────────────────────────────────
+        printf "  ${B}║${R}  ${G}12${R} ${BOLD}Verified Truth${R}"
+        if [ -n "$s12" ]; then printf "%92s" "$s12"; else printf "%79s" "5 tests"; fi
+        echo -e "  ${B}║${R}"
+        echo -e "${B}  ║${R}     ${BOLD}0 reviews -> sparse -> dense${R}${D} -> same code path, honest uncertainty at every density level   ${B}║${R}"
+        echo -e "${B}  ║${R}${D}     No hallucinated trust scores. 2 conflicting reviews = \"opinions split\", not \"score: 5/10\"      ${B}║${R}"
+        echo -e "${B}  ║${R}${D}     Deep links back to creators: experts get traffic, not just extracted summaries                 ${B}║${R}"
+        echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+
+        # ── Story 13 ──────────────────────────────────────────────────────────
+        printf "  ${B}║${R}  ${G}13${R} ${BOLD}Silence Under Stress${R}"
+        if [ -n "$s13" ]; then printf "%86s" "$s13"; else printf "%73s" "3 tests"; fi
+        echo -e "  ${B}║${R}"
+        echo -e "${B}  ║${R}     ${BOLD}100 notifications + 1 fraud alert${R}${D} -> only the fraud alert interrupts. 100 queued silently  ${B}║${R}"
+        echo -e "${B}  ║${R}${D}     \"URGENT\" from unknown sender = phishing risk, NOT fiduciary. Same word from trusted = fiduciary ${B}║${R}"
+        echo -e "${B}  ║${R}${D}     DND respects hierarchy: fiduciary overrides, solicited deferred, engagement always queued      ${B}║${R}"
+        echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+
+        # ── Story 14 ──────────────────────────────────────────────────────────
+        printf "  ${B}║${R}  ${G}14${R} ${BOLD}Agent Sandbox${R}"
+        if [ -n "$s14" ]; then printf "%93s" "$s14"; else printf "%80s" "3 tests"; fi
+        echo -e "  ${B}║${R}"
+        echo -e "${B}  ║${R}     ${BOLD}Malicious agent tries /health${R}${D} -> 403, attempt logged, user notified in next briefing        ${B}║${R}"
+        echo -e "${B}  ║${R}${D}     Agent revoked: immediate effect, no grace period, no stale cache allows access                 ${B}║${R}"
+        echo -e "${B}  ║${R}${D}     Agent forges user DID in D2D: Core overrides from_did — impersonation impossible               ${B}║${R}"
+        echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
     fi
     echo -e "${B}  ╚════════════════════════════════════════════════════════════════════════════════════════════════════╝${R}"
 
@@ -334,6 +386,10 @@ STORIES = {
     '08': 'Move to a New Machine',
     '09': 'Connector Credential Expiry',
     '10': 'The Operator Journey',
+    '11': 'The Anti-Her',
+    '12': 'Verified Truth',
+    '13': 'Silence Under Stress',
+    '14': 'Agent Sandbox',
 }
 
 # Parse per-test results from verbose lines
@@ -494,6 +550,30 @@ with open(log_path, 'w') as f:
     s10_skipped=$(echo "$OUTPUT" | grep -c "test_10_operator_journey.*SKIPPED" || true)
     s10_total=$((s10_passed + s10_failed + s10_errored + s10_skipped))
 
+    s11_passed=$(echo "$OUTPUT" | grep -c "test_11_anti_her.*PASSED" || true)
+    s11_failed=$(echo "$OUTPUT" | grep -c "test_11_anti_her.*FAILED" || true)
+    s11_errored=$(echo "$OUTPUT" | grep -c "test_11_anti_her.* ERROR" || true)
+    s11_skipped=$(echo "$OUTPUT" | grep -c "test_11_anti_her.*SKIPPED" || true)
+    s11_total=$((s11_passed + s11_failed + s11_errored + s11_skipped))
+
+    s12_passed=$(echo "$OUTPUT" | grep -c "test_12_verified_truth.*PASSED" || true)
+    s12_failed=$(echo "$OUTPUT" | grep -c "test_12_verified_truth.*FAILED" || true)
+    s12_errored=$(echo "$OUTPUT" | grep -c "test_12_verified_truth.* ERROR" || true)
+    s12_skipped=$(echo "$OUTPUT" | grep -c "test_12_verified_truth.*SKIPPED" || true)
+    s12_total=$((s12_passed + s12_failed + s12_errored + s12_skipped))
+
+    s13_passed=$(echo "$OUTPUT" | grep -c "test_13_silence_under_stress.*PASSED" || true)
+    s13_failed=$(echo "$OUTPUT" | grep -c "test_13_silence_under_stress.*FAILED" || true)
+    s13_errored=$(echo "$OUTPUT" | grep -c "test_13_silence_under_stress.* ERROR" || true)
+    s13_skipped=$(echo "$OUTPUT" | grep -c "test_13_silence_under_stress.*SKIPPED" || true)
+    s13_total=$((s13_passed + s13_failed + s13_errored + s13_skipped))
+
+    s14_passed=$(echo "$OUTPUT" | grep -c "test_14_agent_sandbox.*PASSED" || true)
+    s14_failed=$(echo "$OUTPUT" | grep -c "test_14_agent_sandbox.*FAILED" || true)
+    s14_errored=$(echo "$OUTPUT" | grep -c "test_14_agent_sandbox.* ERROR" || true)
+    s14_skipped=$(echo "$OUTPUT" | grep -c "test_14_agent_sandbox.*SKIPPED" || true)
+    s14_total=$((s14_passed + s14_failed + s14_errored + s14_skipped))
+
     # Clear "Running tests..." line
     echo -e "\033[2A\033[J"
 
@@ -528,15 +608,27 @@ with open(log_path, 'w') as f:
     if [ "$s10_total" -gt 0 ]; then
         s10_r=$(format_result "$s10_passed" "$s10_total")
     else s10_r=""; fi
+    if [ "$s11_total" -gt 0 ]; then
+        s11_r=$(format_result "$s11_passed" "$s11_total")
+    else s11_r=""; fi
+    if [ "$s12_total" -gt 0 ]; then
+        s12_r=$(format_result "$s12_passed" "$s12_total")
+    else s12_r=""; fi
+    if [ "$s13_total" -gt 0 ]; then
+        s13_r=$(format_result "$s13_passed" "$s13_total")
+    else s13_r=""; fi
+    if [ "$s14_total" -gt 0 ]; then
+        s14_r=$(format_result "$s14_passed" "$s14_total")
+    else s14_r=""; fi
 
-    print_banner "$s01_r" "$s02_r" "$s03_r" "$s04_r" "$s05_r" "$s06_r" "$s07_r" "$s08_r" "$s09_r" "$s10_r"
+    print_banner "$s01_r" "$s02_r" "$s03_r" "$s04_r" "$s05_r" "$s06_r" "$s07_r" "$s08_r" "$s09_r" "$s10_r" "$s11_r" "$s12_r" "$s13_r" "$s14_r"
 
     # Overall summary
-    total_passed=$((s01_passed + s02_passed + s03_passed + s04_passed + s05_passed + s06_passed + s07_passed + s08_passed + s09_passed + s10_passed))
-    total_all=$((s01_total + s02_total + s03_total + s04_total + s05_total + s06_total + s07_total + s08_total + s09_total + s10_total))
-    total_failed=$((s01_failed + s02_failed + s03_failed + s04_failed + s05_failed + s06_failed + s07_failed + s08_failed + s09_failed + s10_failed))
-    total_errored=$((s01_errored + s02_errored + s03_errored + s04_errored + s05_errored + s06_errored + s07_errored + s08_errored + s09_errored + s10_errored))
-    total_skipped=$((s01_skipped + s02_skipped + s03_skipped + s04_skipped + s05_skipped + s06_skipped + s07_skipped + s08_skipped + s09_skipped + s10_skipped))
+    total_passed=$((s01_passed + s02_passed + s03_passed + s04_passed + s05_passed + s06_passed + s07_passed + s08_passed + s09_passed + s10_passed + s11_passed + s12_passed + s13_passed + s14_passed))
+    total_all=$((s01_total + s02_total + s03_total + s04_total + s05_total + s06_total + s07_total + s08_total + s09_total + s10_total + s11_total + s12_total + s13_total + s14_total))
+    total_failed=$((s01_failed + s02_failed + s03_failed + s04_failed + s05_failed + s06_failed + s07_failed + s08_failed + s09_failed + s10_failed + s11_failed + s12_failed + s13_failed + s14_failed))
+    total_errored=$((s01_errored + s02_errored + s03_errored + s04_errored + s05_errored + s06_errored + s07_errored + s08_errored + s09_errored + s10_errored + s11_errored + s12_errored + s13_errored + s14_errored))
+    total_skipped=$((s01_skipped + s02_skipped + s03_skipped + s04_skipped + s05_skipped + s06_skipped + s07_skipped + s08_skipped + s09_skipped + s10_skipped + s11_skipped + s12_skipped + s13_skipped + s14_skipped))
     echo ""
     if [ "$total_failed" -eq 0 ] && [ "$total_errored" -eq 0 ] && [ "$total_all" -gt 0 ]; then
         echo -e "  ${GREEN}${BOLD}${total_passed}/${total_all} passed${R}"
@@ -563,7 +655,7 @@ fi
 # ============================================================================
 # Verbose mode (default): show banner, then full pytest output
 # ============================================================================
-print_banner "" "" "" "" "" "" "" "" "" ""
+print_banner "" "" "" "" "" "" "" "" "" "" "" "" "" ""
 
 # -- API key notice --
 if [ -z "${GOOGLE_API_KEY:-}" ]; then

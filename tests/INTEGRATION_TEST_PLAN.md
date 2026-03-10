@@ -1186,6 +1186,142 @@
 
 ---
 
+## 19. Thesis Invariants — Loyalty (Integration)
+
+> **"The human holds the encryption keys. Loyalty is enforced by math, not by a privacy policy."**
+> These tests validate that loyalty invariants hold across Core↔Brain boundaries
+> under real integration conditions — not just within each service in isolation.
+
+### 19.1 Recommendation Pipeline Integrity (Core↔Brain)
+
+> Brain assembles recommendations, Core stores them. The provenance chain
+> must survive the entire pipeline without losing attribution.
+
+| # | Scenario | Setup | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-INT-691]** Attribution survives Brain→Core pipeline | Brain produces recommendation with `{source_url, creator_name, deep_link}` → `POST core/v1/vault/store` → `POST core/v1/vault/query` | Retrieved item has identical attribution fields — nothing stripped in transit |
+| 2 | **[TST-INT-692]** Sponsored metadata preserved through pipeline | Brain stores item with `{sponsored: true}` → retrieve via query | `sponsored` flag intact — Core cannot strip sponsorship disclosure |
+| 3 | **[TST-INT-693]** Unattributed item rejected at Core boundary | Brain stores recommendation missing `source_url` | Core accepts storage (metadata is freeform) BUT Brain must pre-validate attribution before storing — integration test verifies Brain-side enforcement |
+| 4 | **[TST-INT-694]** Provenance immutable after storage | Store item → attempt update with different `creator_name` | Provenance fields write-once — update rejected or ignored |
+| 5 | **[TST-INT-733]** Sponsorship cannot distort ranking order | Brain stores: Product A (`sponsored: true`, trust score 0.6) and Product B (unsponsored, trust score 0.9) → Brain assembles ranked recommendation → Core delivers | Product B ranks above Product A — sponsorship flag preserved for disclosure but has zero weight in ranking. Trust evidence alone determines order |
+
+### 19.2 Agent Sandbox (Core↔Brain Integration)
+
+> Agent sandbox must hold across the service boundary.
+> Brain orchestrates agents; Core enforces access control. Neither alone is sufficient.
+
+| # | Scenario | Setup | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-INT-695]** Agent queries only permitted personas | Brain delegates search to agent → agent queries `/health` via Brain → Brain forwards to Core | Core returns 403 (restricted/locked) OR Brain pre-filters — agent never sees health data |
+| 2 | **[TST-INT-696]** Agent intent logged in audit trail | Agent submits purchase intent → Brain processes → Core stores | Audit log contains: agent DID, intent action, intent target, approval status, timestamp |
+| 3 | **[TST-INT-697]** Agent revocation propagates from Core to Brain | Core revokes agent DID → Brain receives revocation event | Brain immediately stops delegating to revoked agent — no stale trust |
+| 4 | **[TST-INT-698]** Agent cannot access another user's data (multi-tenant) | Agent authenticated for User A attempts vault query for User B | Request fails — agent scoped to single user identity |
+| 5 | **[TST-INT-699]** Agent crash does not leak partial results | Agent crashes mid-query | Core returns timeout/error — no partial vault data leaked through error response |
+
+---
+
+## 20. Thesis Invariants — Human Connection (Integration)
+
+> **"Relational nudges are core behavior, not cosmetic."**
+> These tests validate the full Anti-Her pipeline across Core and Brain:
+> vault context → pattern detection → nudge assembly → delivery.
+
+### 20.1 Relationship Maintenance Pipeline (Core↔Brain)
+
+| # | Scenario | Setup | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-INT-700]** Neglected contact produces briefing nudge | Vault has contact "Sarah" with `last_interaction` > 30 days → Brain queries vault → detects neglect → generates nudge | Nudge appears in daily briefing: "It's been X days since you connected with Sarah" |
+| 2 | **[TST-INT-701]** Birthday + neglect produces elevated nudge | Contact birthday in 3 days + no interaction in 40 days | Nudge elevated in briefing priority — birthday context adds urgency |
+| 3 | **[TST-INT-702]** D2D message context triggers outreach suggestion | Vault contains "Sancho's mother was ill" (from D2D message 2 weeks ago), no follow-up detected | Brain suggests: "Sancho's mother was ill — you might want to check in" |
+| 4 | **[TST-INT-703]** Promise detection across vault items | Vault contains message "I'll send the PDF tomorrow" (5 days ago) + no outbound PDF detected | Brain nudges: "You promised to send Sancho the PDF" — cross-item correlation |
+| 5 | **[TST-INT-704]** Human interaction resets all nudge timers | User sends D2D message to Sarah (stored in vault) | All pending nudges for Sarah cleared — interaction detected |
+
+### 20.2 Emotional Dependency Detection (Cross-Service)
+
+| # | Scenario | Setup | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-INT-705]** Multi-session emotional pattern detection | 5 sessions across 2 weeks with emotional messages, zero human-contact mentions in vault | Brain identifies cross-session dependency — escalated response includes specific contact suggestion |
+| 2 | **[TST-INT-706]** Social isolation signal from vault data | Vault shows declining outbound D2D messages over 30 days + increasing Brain interaction | Brain generates concern-level nudge: suggests professional support in addition to contact reconnection |
+| 3 | **[TST-INT-707]** Anti-Her response never stored as emotional memory | Brain generates boundary response → stores in vault | Stored item has `type: "boundary_response"` — NOT `type: "emotional_connection"` or similar |
+
+---
+
+## 21. Thesis Invariants — Silence First (Integration)
+
+> **"Only speak when asked, or when silence would cause harm."**
+> These tests validate the full notification pipeline across Core↔Brain:
+> event ingestion → classification → routing → delivery.
+
+### 21.1 Full Notification Pipeline
+
+| # | Scenario | Setup | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-INT-708]** Fiduciary event: ingestion → interrupt | External event (flight cancellation) → Core ingests → Brain classifies as fiduciary → `POST core/v1/notify {priority: "fiduciary"}` → Core pushes via WebSocket | User receives immediate push — end-to-end latency < 5s |
+| 2 | **[TST-INT-709]** Engagement event: ingestion → briefing only | Promotional email → Core ingests → Brain classifies as engagement → queued | No WebSocket push. Item appears in next daily briefing only |
+| 3 | **[TST-INT-710]** Priority conflict resolution | Two events about same topic: one says fiduciary (from trusted source), one says engagement (from unknown source) | Fiduciary wins — higher priority takes precedence for same topic |
+| 4 | **[TST-INT-711]** Notification with PII scrubbed | Fiduciary event contains user's doctor name → Brain classifies → scrubs PII → pushes | Push notification text contains `[PERSON_1]` not "Dr. Sharma" — PII scrubbing in notification path |
+| 5 | **[TST-INT-712]** DND state respected across services | User sets DND via admin UI → Brain receives DND state from Core → solicited event arrives | Brain defers notification → Core does not push — DND respected across the boundary |
+
+### 21.2 Classification Edge Cases (Integration)
+
+| # | Scenario | Setup | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-INT-713]** Untrusted sender urgency not fiduciary | Unknown DID sends "URGENT: your account is compromised" via D2D | Brain classifies as engagement (phishing risk from untrusted sender) — NOT fiduciary |
+| 2 | **[TST-INT-714]** Health context elevates classification | "Lab results ready" from known health provider → Brain has user's health persona with active monitoring | Brain classifies as fiduciary — health context matters |
+| 3 | **[TST-INT-715]** Stale event demotion | Event with timestamp 12 hours old arrives (delayed ingestion) | Brain demotes time-sensitive classification — a cancelled flight from 12 hours ago is no longer fiduciary |
+| 4 | **[TST-INT-731]** Reclassification on later corroboration | "Flight delayed" from unknown source (engagement) → same info from airline connector (trusted) 10 min later | Brain reclassifies original event to fiduciary — Core pushes interrupt notification. Audit log shows reclassification with reason |
+
+---
+
+## 22. Thesis Invariants — Pull Economy & Verified Truth (Integration)
+
+> **"Discovery is trust-ranked, attributable, user-directed."**
+> These tests validate the full trust data flow: AppView → Brain → Core → User.
+
+### 22.1 Trust Data Density Spectrum (Full Pipeline)
+
+> Same code path, different data densities. The system must produce useful
+> responses across the entire spectrum without crashing, hallucinating, or
+> fabricating confidence.
+
+| # | Scenario | Setup | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-INT-716]** Zero trust data: graceful absence | AppView returns empty for product query → Brain assembles response | Response uses web search + vault context. No "Trust Network error." No hallucinated score. Brain says "No verified reviews in the Trust Network" |
+| 2 | **[TST-INT-717]** Single review: honest uncertainty | 1 attestation in AppView → Brain assembles response | Response includes the review but notes limited data: "One verified review — limited evidence" |
+| 3 | **[TST-INT-718]** Sparse conflicting: transparent split | 3 reviews (2 positive, 1 negative) in AppView | Response reports split honestly: "Mixed reviews from verified sources — 2 recommend, 1 cautions" |
+| 4 | **[TST-INT-719]** Dense consensus: earned confidence | 50+ reviews with 90%+ agreement | Response communicates confidence: "Strong consensus from 50+ verified reviewers" |
+| 5 | **[TST-INT-720]** Stale reviews: recency disclosure | 20 reviews, all >365 days old | Response includes but flags: "Reviews are over a year old — product may have changed" |
+| 6 | **[TST-INT-721]** Mixed ring levels: weighting visible | 5 Ring 1 (unverified) positive + 3 Ring 2 (verified) negative | Response clearly weights verified higher: "Verified reviewers caution against it; unverified reviews are more positive" — ring affects narrative |
+| 7 | **[TST-INT-722]** Reviews + no outcomes | Attestations present, zero outcome records | Brain notes: "Reviews available but no verified purchase outcomes — long-term satisfaction unknown" |
+
+### 22.2 Creator Value Return (Full Pipeline)
+
+| # | Scenario | Setup | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-INT-723]** Deep link preserved: AppView → Brain → User | AppView returns attestation with `source_url` → Brain assembles → delivers to user | User-facing response includes clickable link to original creator content |
+| 2 | **[TST-INT-724]** Expert credited individually | 3 expert attestations from different DIDs → Brain assembles | Each expert named and linked individually — not "experts say" |
+| 3 | **[TST-INT-725]** Attribution violation feeds bot trust degradation | Bot returns recommendation with no `creator_name` | Brain logs violation → bot trust score decreased → next routing prefers other bots |
+
+---
+
+## 23. Thesis Invariants — Action Integrity (Integration)
+
+> **"Draft-don't-send. Approval gates. Cart handover."**
+> These tests validate the action layer across Core↔Brain boundaries.
+
+### 23.1 Action Pipeline (Core↔Brain)
+
+| # | Scenario | Setup | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-INT-726]** Draft lifecycle: create → review → expire | Brain creates draft via Core staging API → no user action → 73 hours pass | Draft expired and deleted. Next briefing includes "Draft expired" notice |
+| 2 | **[TST-INT-727]** Cart handover lifecycle: create → expire | Brain creates payment intent → 13 hours pass | Intent expired — shorter TTL than drafts |
+| 3 | **[TST-INT-728]** Agent send request → always downgraded to draft | Agent via Brain requests `messages.send` → hits Core | Core receives `drafts.create` not `messages.send` — downgrade happened in Brain |
+| 4 | **[TST-INT-729]** Approval survives brain crash | Draft pending approval → brain crashes → brain restarts | Draft still pending in Core staging — brain recovers state from scratchpad |
+| 5 | **[TST-INT-730]** Concurrent actions: independent approval tokens | 3 drafts + 2 cart handovers pending | Each action has unique approval token — approving one does not affect others |
+| 6 | **[TST-INT-732]** Approval invalidated on payload mutation | Draft approved by user → agent modifies body before send → Core receives modified payload | Core rejects — approval hash no longer matches payload. Draft returned to pending with "content changed, re-approval required" |
+
+---
+
 ## Appendix A: Test Environment Setup
 
 ### Docker Compose (test)

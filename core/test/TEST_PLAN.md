@@ -2089,6 +2089,82 @@
 
 ---
 
+## 34. Thesis Invariants — Loyalty
+
+> **"Ranking is attributable, inspectable, explainable. User policy overrides vendor defaults."**
+> These tests verify that Core enforces loyalty as an architectural constraint,
+> not a policy promise. The kernel must make it impossible — not merely inconvenient
+> — for external parties to influence what the user sees, trusts, or acts on.
+
+### 34.1 Recommendation Integrity (Core-Enforced)
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-1117]** Bot response with sponsored content tagged | Bot returns `{sponsored: true, sponsor: "AcmeCorp"}` | Core preserves sponsorship metadata in vault item — never stripped, always inspectable by user |
+| 2 | **[TST-CORE-1118]** Bot response without attribution rejected at ingestion | Bot returns recommendation with no `source_url`, no `creator_name` | Core rejects store: unattributed recommendations cannot enter vault |
+| 3 | **[TST-CORE-1119]** Deep link preserved through vault store/retrieve cycle | Bot returns `{deep_link: "https://creator.example/review"}` | After store + retrieve, `deep_link` field intact — creator gets traffic |
+| 4 | **[TST-CORE-1120]** Vault item provenance chain immutable after storage | Attempt to PATCH `source_url` or `creator_name` on existing vault item | Rejected — provenance fields are write-once, never updatable |
+| 5 | **[TST-CORE-1121]** User sharing policy overrides bot-suggested visibility | Bot suggests `{visibility: "public"}`, user policy says `none` for that contact | Egress gatekeeper enforces user policy — bot suggestion ignored |
+| 6 | **[TST-CORE-1144]** Sponsorship has zero ranking weight | Two vault items: A (`sponsored: true`, trust_score 0.6), B (unsponsored, trust_score 0.9) → hybrid search query | B ranks above A — `sponsored` flag is metadata for disclosure only, NEVER a ranking input. Core search scoring ignores it entirely |
+
+### 34.2 Agent Sandbox Adversarial
+
+> A compromised or malicious agent must not be able to escape its sandbox.
+> These tests simulate actual attack vectors, not just happy-path delegation.
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-1122]** Agent attempts cross-persona vault query | Agent DID with access to `/consumer` queries `/health` data | 403 — gatekeeper denies cross-persona access for agent identity |
+| 2 | **[TST-CORE-1123]** Agent attempts admin endpoint via service signature | Agent's service key on `POST /v1/did/sign` | 403 — admin endpoints reject service signature auth |
+| 3 | **[TST-CORE-1124]** Agent attempts to read other agents' data | Agent A queries vault items stored by Agent B | Empty result — agent-scoped data isolation |
+| 4 | **[TST-CORE-1125]** Agent attempts rate limit bypass via concurrent requests | 1000 concurrent requests from same agent DID | Rate limiter enforces per-DID limit — excess requests rejected |
+| 5 | **[TST-CORE-1126]** Agent attempts to exfiltrate vault via oversized query | Agent queries with `limit: 999999` | Core caps query results to configured maximum (e.g., 100) |
+| 6 | **[TST-CORE-1127]** Agent sends malformed intent to bypass gatekeeper | Intent with missing `action` or `target` fields | Rejected with validation error — no partial processing |
+| 7 | **[TST-CORE-1128]** Agent attempts credential harvesting via error messages | Agent sends deliberately malformed requests | Error responses contain no internal state, no key material, no vault metadata |
+| 8 | **[TST-CORE-1129]** Agent revocation takes immediate effect | Revoke agent DID → agent sends next request | 401 — revoked agent cannot send any further requests |
+| 9 | **[TST-CORE-1130]** Agent cannot escalate from task-scoped to full access | Agent with `scope: ["search"]` attempts `POST /v1/vault/store` | 403 — scope enforcement denies write access |
+| 10 | **[TST-CORE-1131]** Agent cannot forge `from_did` in outbound D2D messages | Agent submits D2D message with `from_did` set to user's DID | Core overrides `from_did` with agent's actual DID — impersonation impossible |
+
+---
+
+## 35. Thesis Invariants — Silence First
+
+> **"Never push content. Only speak when asked, or when silence would cause harm."**
+> These tests verify that Core's notification pipeline enforces the silence protocol
+> at the transport level — independent of Brain's classification.
+
+### 35.1 Core-Enforced Notification Discipline
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-1132]** WebSocket push requires explicit priority | `POST /v1/notify` with no `priority` field | Rejected — Core refuses to push without classification |
+| 2 | **[TST-CORE-1133]** Engagement-tier notification never pushed via WebSocket | `POST /v1/notify {priority: "engagement"}` | Core queues for briefing — WebSocket push not triggered |
+| 3 | **[TST-CORE-1134]** Fiduciary notification pushed even during DND | `POST /v1/notify {priority: "fiduciary"}` while user DND is active | WebSocket push sent — fiduciary overrides DND |
+| 4 | **[TST-CORE-1135]** Solicited notification deferred during DND | `POST /v1/notify {priority: "solicited"}` while DND active | Not pushed — deferred until DND ends, not dropped |
+| 5 | **[TST-CORE-1136]** Notification rate limiting per client | 50 notifications in 1 second to same WebSocket | Core batches or throttles — client never flooded |
+| 6 | **[TST-CORE-1137]** Brain cannot bypass priority classification | Brain calls `POST /v1/notify` with `{force_push: true}` | `force_push` field ignored — Core enforces classification-based routing |
+
+---
+
+## 36. Thesis Invariants — Action Integrity
+
+> **"No agent under the Dina Protocol shall ever press Send."**
+> Core enforces action boundaries at the API level. Even a fully compromised
+> Brain cannot execute irreversible actions without human approval.
+
+### 36.1 Core-Enforced Action Gates
+
+| # | Scenario | Input | Expected |
+|---|----------|-------|----------|
+| 1 | **[TST-CORE-1138]** Staging items auto-expire after TTL | Store draft in Tier 4 staging, wait 73 hours | Item deleted — expired drafts never linger |
+| 2 | **[TST-CORE-1139]** Staging item cannot be executed without user approval | Brain calls hypothetical `POST /v1/staging/execute` | 404 or 403 — no execute endpoint exists, staging is read-only to Brain |
+| 3 | **[TST-CORE-1140]** Approval token single-use | User approves action → approval token used → same token resubmitted | Second use rejected — replay prevention on approval |
+| 4 | **[TST-CORE-1141]** Approval expires if not acted on | Generate approval, wait past TTL | Approval token invalid — user must re-review |
+| 5 | **[TST-CORE-1142]** Batch approvals require individual consent | Brain submits 10 drafts for approval | Each draft gets separate approval token — no bulk approve without review |
+| 6 | **[TST-CORE-1143]** Cart handover intent: no payment credentials stored | After cart handover, inspect all vault tiers | Zero records containing UPI PIN, card number, bank password, or wallet private key |
+
+---
+
 ## Appendix A: Test Data & Fixtures
 
 - **Test mnemonic**: Use a fixed BIP-39 test mnemonic for deterministic key derivation tests

@@ -71,7 +71,8 @@ Dina isn't just another agent. She's your personal AI, and she's fundamentally d
 - Your Dina is **Your Dina**. She has a cryptographic identity, which makes her yours and only yours. She is not an account a company lets you use.
 - Dinas talk directly to each other in encrypted, peer-to-peer network. No company or system in the middle verifies/validates anything.
 - Together, Dinas build a Trust Network. This provides you verified outcomes from real people, not anonymous reviews / AI generated data. 
-- Together, Dinas also support a buy/sell marketplace with verified trust system.
+- Dina replaces the attention economy with an intent economy: nothing is pushed at you; your agent pulls what you need from a trust-ranked open network
+
 
 ### Agents can buy and sell even now, right?
 
