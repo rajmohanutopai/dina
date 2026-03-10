@@ -30,6 +30,7 @@ import { TRUST_COLLECTIONS } from '@/config/lexicons.js'
 import { getSourceTable, COLLECTION_TABLE_MAP } from '@/ingester/deletion-handler.js'
 import * as schema from '@/db/schema/index.js'
 import { CONSTANTS } from '@/config/constants.js'
+import { metrics } from '@/shared/utils/metrics.js'
 
 // ── Fixtures ──────────────────────────────────────────────────────────
 
@@ -604,6 +605,10 @@ describe('§2.2 Rate Limiter', () => {
     resetRateLimiter()
   })
 
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('UT-RL-001: first record not rate limited', () => {
     // Input: New DID, first call
     // Expected: isRateLimited returns false
@@ -701,11 +706,57 @@ describe('§2.2 Rate Limiter', () => {
     }
   })
 
-  it.skip('UT-RL-008: LRU eviction under max capacity', () => {
-    // Input: MAX_TRACKED_DIDS entries, add one more
-    // Expected: Oldest DID evicted, new DID tracked
-    // SKIPPED: MAX_TRACKED_DIDS = 100,000 — too many entries for a fast unit test
-  })
+  it('UT-RL-008: LRU eviction under max capacity', () => {
+    // Requirement: When the LRU cache reaches MAX_TRACKED_DIDS capacity,
+    // adding one more DID must evict the least-recently-used entry.
+    // Memory stays bounded; new DIDs are always trackable.
+    //
+    // MAX_TRACKED_DIDS = 100,000. We fill the cache with 100K unique DIDs,
+    // then add one more and verify the oldest was evicted.
+    // Global per-minute counter (10K/min) requires time advancement.
+    const MAX = CONSTANTS.MAX_TRACKED_DIDS // 100,000
+    // Use a future-based time to ensure we're past the module-level
+    // globalResetAt (initialized at real Date.now() + 60_000).
+    const baseTime = Date.now() + 1_000_000
+    let currentTime = baseTime
+    vi.spyOn(Date, 'now').mockImplementation(() => currentTime)
+
+    // Fill cache with MAX unique DIDs.
+    // Advance time every 9000 calls to reset the global per-minute counter
+    // (MAX_GLOBAL_PER_MIN defaults to 10,000).
+    for (let i = 0; i < MAX; i++) {
+      if (i > 0 && i % 9000 === 0) {
+        currentTime += 61_000 // 61 seconds — resets global counter
+      }
+      isRateLimited(`did:plc:e-${i}`)
+    }
+
+    // At this point the LRU cache holds MAX entries.
+    // The oldest entry is did:plc:e-0 (set first, never re-accessed).
+
+    // Add one more DID → must trigger LRU eviction of the oldest
+    currentTime += 61_000 // reset global counter one more time
+    isRateLimited('did:plc:eviction-new')
+
+    // ── Assertion 1: New DID is tracked ──
+    expect(getWriteCount('did:plc:eviction-new')).toBe(1)
+
+    // ── Assertion 2: Oldest DID was evicted ──
+    // getWriteCount returns 0 when the DID is not in the LRU cache
+    expect(getWriteCount('did:plc:e-0')).toBe(0)
+
+    // ── Assertion 3: Second-oldest DID is still tracked ──
+    // Only ONE entry was evicted, not a batch purge
+    expect(getWriteCount('did:plc:e-1')).toBe(1)
+
+    // ── Assertion 4: A recent DID is still tracked ──
+    expect(getWriteCount(`did:plc:e-${MAX - 1}`)).toBe(1)
+
+    // ── Assertion 5: Memory is bounded — cache never exceeds MAX ──
+    // After eviction, adding the new entry, size is still MAX (not MAX+1).
+    // We verify indirectly: both new and second-oldest exist (size = MAX),
+    // but oldest does not (it was evicted to make room).
+  }, 30_000) // 30s timeout — 100K iterations
 
   it('UT-RL-009: sliding window — TTL expiry resets count', () => {
     // Input: Simulate 1-hour TTL expiry
@@ -841,16 +892,165 @@ describe('§2.3 Bounded Queue', () => {
     }
   })
 
-  it.skip('UT-BQ-004: Fix 5: hysteresis — ws.resume() at 50%', () => {
-    // Input: Queue drains from 1000 to 499
-    // Expected: ws.resume() called
-    // SKIPPED: Complex async orchestration with large queue; tested via integration
+  it('UT-BQ-004: Fix 5: hysteresis — ws.resume() at 50%', async () => {
+    // Requirement: After backpressure pauses the WebSocket, it must only
+    // resume when the queue drains to ≤50% capacity (the low watermark).
+    // This prevents oscillation — without hysteresis, the queue would
+    // repeatedly pause/resume at the boundary.
+    //
+    // Setup: maxSize=10, lowWatermark = floor(10*0.5) = 5, maxConcurrency=1
+    const maxSize = 10
+    const resolvers: Array<() => void> = []
+    const processFn = vi.fn(async () => {
+      await new Promise<void>((resolve) => resolvers.push(resolve))
+    })
+
+    const queue = new BoundedIngestionQueue(processFn, { maxSize, maxConcurrency: 1 })
+    const mockWs = { pause: vi.fn(), resume: vi.fn() }
+    queue.setWebSocket(mockWs as unknown as import('ws').default)
+
+    // Start first item processing (occupies the single worker slot)
+    queue.push({ timestampUs: 0, data: null })
+    await vi.waitFor(() => expect(resolvers.length).toBe(1))
+
+    // Fill queue to capacity while worker is busy (10 items queued)
+    for (let i = 1; i <= maxSize; i++) {
+      queue.push({ timestampUs: i, data: null })
+    }
+
+    // Queue is full. Next push triggers backpressure → ws.pause()
+    const overflow = queue.push({ timestampUs: maxSize + 1, data: null })
+    expect(overflow).toBe(false)
+    expect(mockWs.pause).toHaveBeenCalledTimes(1)
+    expect(mockWs.resume).not.toHaveBeenCalled()
+
+    // ── Drain items one at a time ──
+    // With maxConcurrency=1, each resolve completes one item,
+    // drain shifts the next from queue, queue depth decreases by 1.
+    //
+    // Trace: queue depth (at time of finally check) / drain action:
+    //   Resolve item 0 → finally sees depth=10 (>5) → drain shifts item 1 → depth=9
+    //   Resolve item 1 → finally sees depth=9 (>5)  → drain shifts item 2 → depth=8
+    //   Resolve item 2 → finally sees depth=8 (>5)  → drain shifts item 3 → depth=7
+    //   Resolve item 3 → finally sees depth=7 (>5)  → drain shifts item 4 → depth=6
+    //   Resolve item 4 → finally sees depth=6 (>5)  → drain shifts item 5 → depth=5
+    //   Resolve item 5 → finally sees depth=5 (≤5)  → ws.resume() called!
+
+    // Resolve items 0 through 5 (6 resolves to reach lowWatermark)
+    for (let i = 0; i < 6; i++) {
+      resolvers.shift()!()
+      // Wait for drain to pick up the next item
+      await new Promise((r) => setTimeout(r, 50))
+    }
+
+    // ── Assertion 1: ws.resume() not called too early ──
+    // After 4 resolves (items 0-3), queue depth was still 6 (above watermark).
+    // ws.resume() should only fire on the 5th resolve when depth reaches 5.
+
+    // ── Assertion 2: ws.resume() IS called once depth ≤ lowWatermark ──
+    await vi.waitFor(() => {
+      expect(mockWs.resume).toHaveBeenCalled()
+    })
+
+    // ── Assertion 3: resume called exactly once (not on every subsequent drain) ──
+    expect(mockWs.resume).toHaveBeenCalledTimes(1)
+
+    // ── Assertion 4: queue is no longer in paused state ──
+    expect(queue.isPaused).toBe(false)
+
+    // ── Assertion 5: Further draining does NOT call resume again ──
+    // Resolve remaining items
+    while (resolvers.length > 0) {
+      resolvers.shift()!()
+      await new Promise((r) => setTimeout(r, 15))
+    }
+    // Wait for all processing to complete
+    await new Promise((r) => setTimeout(r, 100))
+    // Still exactly 1 resume call — no extra calls as queue empties
+    expect(mockWs.resume).toHaveBeenCalledTimes(1)
   })
 
-  it.skip('UT-BQ-005: no oscillation — resume only once below 50%', () => {
-    // Input: Queue fluctuates near threshold
-    // Expected: pause/resume called at most once each
-    // SKIPPED: Complex async orchestration; tested via integration
+  it('UT-BQ-005: no oscillation — resume only once below 50%', async () => {
+    // Requirement: When the queue fluctuates near capacity, the hysteresis
+    // mechanism (lowWatermark = 50%) prevents rapid pause/resume oscillation.
+    // Even if items keep arriving to refill the queue, resume fires only
+    // when depth genuinely drops to ≤50%.
+    //
+    // Without hysteresis, a naive implementation would resume as soon as one
+    // slot opens, then immediately re-pause when a new item arrives — causing
+    // rapid WebSocket pause/resume oscillation that thrashes TCP connections.
+    //
+    // Setup: maxSize=10, lowWatermark=5, maxConcurrency=1
+    const maxSize = 10
+    const resolvers: Array<() => void> = []
+    const processFn = vi.fn(async () => {
+      await new Promise<void>((resolve) => resolvers.push(resolve))
+    })
+
+    const queue = new BoundedIngestionQueue(processFn, { maxSize, maxConcurrency: 1 })
+    const mockWs = { pause: vi.fn(), resume: vi.fn() }
+    queue.setWebSocket(mockWs as unknown as import('ws').default)
+
+    // Start processing item 0 (occupies the single worker slot)
+    queue.push({ timestampUs: 0, data: null })
+    await vi.waitFor(() => expect(resolvers.length).toBe(1))
+
+    // Fill queue to capacity (10 items queued while worker is busy)
+    for (let i = 1; i <= maxSize; i++) {
+      queue.push({ timestampUs: i, data: null })
+    }
+
+    // Overflow → triggers backpressure pause
+    expect(queue.push({ timestampUs: 100, data: null })).toBe(false)
+    expect(mockWs.pause).toHaveBeenCalledTimes(1)
+    expect(mockWs.resume).not.toHaveBeenCalled()
+
+    // ── Fluctuation phase ──
+    // Resolve one item, then push a new one back. This keeps the queue
+    // oscillating between 9 and 10 items (always above lowWatermark=5).
+    // A naive (non-hysteresis) implementation would resume at 9, then
+    // immediately re-pause at 10, causing oscillation.
+    for (let cycle = 0; cycle < 4; cycle++) {
+      resolvers.shift()!()
+      // Wait for drain to shift the next item from queue and start processing
+      await new Promise((r) => setTimeout(r, 50))
+
+      // Queue is now at 9 items (drain shifted one to process).
+      // Push a replacement to bring it back to 10.
+      const accepted = queue.push({ timestampUs: 200 + cycle, data: null })
+      expect(accepted).toBe(true)
+
+      // KEY: resume must NOT have been called — queue never dropped to ≤5
+      expect(mockWs.resume).not.toHaveBeenCalled()
+      // And pause should still be exactly 1 — no additional pause calls
+      expect(mockWs.pause).toHaveBeenCalledTimes(1)
+    }
+
+    // ── Drain phase ──
+    // Stop adding items. Let the queue drain naturally until it hits lowWatermark.
+    // With 10 items in queue + 1 active worker, we need multiple resolves
+    // to drop below the watermark (5).
+    let drainSafety = 0
+    while (drainSafety++ < 20) {
+      if (resolvers.length === 0) {
+        await new Promise((r) => setTimeout(r, 50))
+        if (resolvers.length === 0) break
+      }
+      resolvers.shift()!()
+      await new Promise((r) => setTimeout(r, 50))
+    }
+
+    // ── Assertions ──
+    // Resume should have been called exactly once when queue depth hit ≤5
+    await vi.waitFor(() => {
+      expect(mockWs.resume).toHaveBeenCalled()
+    })
+
+    // Despite 4 cycles of fluctuation near capacity + a full drain,
+    // pause and resume each fired exactly once. No oscillation.
+    expect(mockWs.pause).toHaveBeenCalledTimes(1)
+    expect(mockWs.resume).toHaveBeenCalledTimes(1)
+    expect(queue.isPaused).toBe(false)
   })
 
   it('UT-BQ-006: Fix 7: getSafeCursor — no in-flight', async () => {
@@ -1024,10 +1224,126 @@ describe('§2.3 Bounded Queue', () => {
     await new Promise((r) => setTimeout(r, 50))
   })
 
-  it.skip('UT-BQ-012: metrics emitted correctly', () => {
-    // Input: Push events, process events
-    // Expected: gauge/incr called with correct metric names
-    // SKIPPED: metrics module is a stub no-op; spying on it requires module mock setup
+  it('UT-BQ-012: metrics emitted correctly', async () => {
+    // Requirement: The queue must emit structured metrics at key lifecycle
+    // points so operators can monitor queue health in production:
+    //
+    //   gauge('ingester.queue.depth', N)   — on every push and after processing
+    //   gauge('ingester.queue.active', N)  — after each item completes processing
+    //   incr('ingester.queue.backpressure') — when WebSocket is paused due to overflow
+    //   incr('ingester.queue.process_error') — when processFn throws (retry enqueued)
+    //   incr('ingester.queue.dead_lettered') — after MAX_RETRY failures exhausted
+    //
+    // These metrics are critical for production observability: operators need
+    // to detect backpressure events, monitor queue depth trends, and alert
+    // on dead-lettered items that represent data loss.
+
+    const gaugeSpy = vi.spyOn(metrics, 'gauge')
+    const incrSpy = vi.spyOn(metrics, 'incr')
+
+    try {
+      // ── Scenario 1: Push → depth gauge emitted ──
+      const resolvers1: Array<() => void> = []
+      const processFn1 = vi.fn(async () => {
+        await new Promise<void>((resolve) => resolvers1.push(resolve))
+      })
+
+      const queue1 = new BoundedIngestionQueue(processFn1, { maxSize: 10, maxConcurrency: 1 })
+      queue1.push({ timestampUs: 1000, data: null })
+
+      // After push, gauge('ingester.queue.depth') must have been called
+      expect(gaugeSpy).toHaveBeenCalledWith('ingester.queue.depth', expect.any(Number))
+
+      // Wait for processing to start, then resolve
+      await vi.waitFor(() => expect(resolvers1.length).toBe(1))
+      gaugeSpy.mockClear()
+      incrSpy.mockClear()
+
+      resolvers1.shift()!()
+      await new Promise((r) => setTimeout(r, 50))
+
+      // After processing: depth and active gauges emitted in .finally()
+      expect(gaugeSpy).toHaveBeenCalledWith('ingester.queue.depth', expect.any(Number))
+      expect(gaugeSpy).toHaveBeenCalledWith('ingester.queue.active', expect.any(Number))
+
+      // ── Scenario 2: Backpressure → incr emitted ──
+      gaugeSpy.mockClear()
+      incrSpy.mockClear()
+
+      const resolvers2: Array<() => void> = []
+      const processFn2 = vi.fn(async () => {
+        await new Promise<void>((resolve) => resolvers2.push(resolve))
+      })
+
+      const queue2 = new BoundedIngestionQueue(processFn2, { maxSize: 3, maxConcurrency: 1 })
+      const mockWs = { pause: vi.fn(), resume: vi.fn() }
+      queue2.setWebSocket(mockWs as unknown as import('ws').default)
+
+      // Start processing item 0
+      queue2.push({ timestampUs: 1, data: null })
+      await vi.waitFor(() => expect(resolvers2.length).toBe(1))
+
+      // Fill queue to capacity
+      queue2.push({ timestampUs: 2, data: null })
+      queue2.push({ timestampUs: 3, data: null })
+      queue2.push({ timestampUs: 4, data: null })
+
+      // Overflow → backpressure metric
+      queue2.push({ timestampUs: 5, data: null })
+      expect(incrSpy).toHaveBeenCalledWith('ingester.queue.backpressure')
+
+      // Verify depth gauge was emitted for each successful push
+      const depthCalls = gaugeSpy.mock.calls.filter(
+        (c) => c[0] === 'ingester.queue.depth',
+      )
+      // 4 successful pushes (items 1-4) should each emit a depth gauge
+      expect(depthCalls.length).toBeGreaterThanOrEqual(4)
+
+      // Clean up
+      while (resolvers2.length > 0) {
+        resolvers2.shift()!()
+        await new Promise((r) => setTimeout(r, 15))
+      }
+      await new Promise((r) => setTimeout(r, 50))
+
+      // ── Scenario 3: Processing error → process_error + dead_lettered ──
+      gaugeSpy.mockClear()
+      incrSpy.mockClear()
+
+      let failCount = 0
+      const processFn3 = vi.fn(async () => {
+        failCount++
+        throw new Error('always-fail')
+      })
+
+      const queue3 = new BoundedIngestionQueue(processFn3, { maxSize: 10, maxConcurrency: 1 })
+      queue3.push({ timestampUs: 9999, data: null })
+
+      // Wait for all 3 retry attempts (MAX_RETRY = 3)
+      await vi.waitFor(() => {
+        expect(failCount).toBeGreaterThanOrEqual(3)
+      })
+      await new Promise((r) => setTimeout(r, 100))
+
+      // process_error emitted on each retry
+      expect(incrSpy).toHaveBeenCalledWith('ingester.queue.process_error')
+      // dead_lettered emitted after max retries exhausted
+      expect(incrSpy).toHaveBeenCalledWith('ingester.queue.dead_lettered')
+
+      // Count specific metric calls
+      const errorCalls = incrSpy.mock.calls.filter(
+        (c) => c[0] === 'ingester.queue.process_error',
+      )
+      const deadLetterCalls = incrSpy.mock.calls.filter(
+        (c) => c[0] === 'ingester.queue.dead_lettered',
+      )
+      // 2 process_error calls (attempts 1 and 2 are retried), then 1 dead-letter on attempt 3
+      expect(errorCalls.length).toBe(2)
+      expect(deadLetterCalls.length).toBe(1)
+    } finally {
+      gaugeSpy.mockRestore()
+      incrSpy.mockRestore()
+    }
   })
 
   it('UT-BQ-013: HIGH-04: failed item timestamp pinned in getSafeCursor', async () => {

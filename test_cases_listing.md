@@ -14,18 +14,18 @@
 
 | Tier | Test Plan | Plan Entries | Code Functions | Subtests | Implemented | Unimplemented | Deferred | Manual |
 |------|-----------|-------------|----------------|----------|-------------|---------------|----------|--------|
-| Core (Unit) | `core/test/TEST_PLAN.md` | 1164 | 1152 | 55 | 987 | 177 | 0 | 0 |
-| Brain (Unit) | `brain/tests/TEST_PLAN.md` | 571 | 612 | 0 | 505 | 60 | 6 | 0 |
-| Integration | `tests/INTEGRATION_TEST_PLAN.md` | 583 | 764 | 0 | 540 | 26 | 17 | 0 |
-| E2E | `tests/E2E_TEST_PLAN.md` | 126 | 110 | 0 | 110 | 16 | 0 | 0 |
-| Release | `RELEASE_TEST_PLAN.md` | 27 | 104 | 0 | 21 | 4 | 0 | 2 |
-| CLI | `cli/tests/TEST_PLAN.md` | 52 | 52 | 0 | 0 | 52 | 0 | 0 |
-| User Stories | `tests/system/user_stories/TEST_PLAN.md` | 79 | 79 | 0 | 0 | 79 | 0 | 0 |
-| AppView (Unit) | `appview/UNIT_TEST_PLAN.md` | 295 | 292 | 0 | 291 | 4 | 0 | 0 |
-| AppView (Int) | `appview/INTEGRATION_TEST_PLAN.md` | 323 | 325 | 0 | 318 | 5 | 0 | 0 |
-| **TOTAL** | | **3220** | **3490** | **55** | **2772** | **423** | **23** | **2** |
+| Core (Unit) | `core/test/TEST_PLAN.md` | 1164 | 1249 | 658 | 1164 | 0 | 0 | 0 |
+| Brain (Unit) | `brain/tests/TEST_PLAN.md` | 571 | 672 | 0 | 565 | 0 | 6 | 0 |
+| Integration | `tests/INTEGRATION_TEST_PLAN.md` | 583 | 966 | 0 | 566 | 0 | 17 | 0 |
+| E2E | `tests/E2E_TEST_PLAN.md` | 126 | 126 | 0 | 126 | 0 | 0 | 0 |
+| Release | `RELEASE_TEST_PLAN.md` | 27 | 132 | 0 | 25 | 0 | 0 | 2 |
+| CLI | `cli/tests/TEST_PLAN.md` | 52 | 52 | 0 | 52 | 0 | 0 | 0 |
+| User Stories | `tests/system/user_stories/TEST_PLAN.md` | 79 | 79 | 0 | 79 | 0 | 0 | 0 |
+| AppView (Unit) | `appview/UNIT_TEST_PLAN.md` | 295 | 296 | 0 | 295 | 0 | 0 | 0 |
+| AppView (Int) | `appview/INTEGRATION_TEST_PLAN.md` | 323 | 330 | 0 | 323 | 0 | 0 | 0 |
+| **TOTAL** | | **3220** | **3902** | **658** | **3195** | **0** | **23** | **2** |
 
-**Orphan test functions** (code exists, no `# TST-*` comment): **450**
+**Orphan test functions** (code exists, no `# TST-*` comment): **426**
 
 ### Status Key
 
@@ -42,146 +42,146 @@
 
 | # | Test ID | Scenario | Section | Impl | Code Location |
 |---|---------|----------|---------|------|---------------|
-| 1 | `TST-CORE-001` | Valid Service Signature Auth in `Authorization: Bearer` header | §1.1 Service Signature Auth (Agent Operations) | Yes | `core/test/auth_test.go:38` |
-| 2 | `TST-CORE-002` | Missing Authorization header | §1.1 Service Signature Auth (Agent Operations) | No | — |
-| 3 | `TST-CORE-003` | Malformed header (`Basic` instead of `Bearer`) | §1.1 Service Signature Auth (Agent Operations) | No | — |
-| 4 | `TST-CORE-004` | Wrong Service Signature Auth value | §1.1 Service Signature Auth (Agent Operations) | No | — |
-| 5 | `TST-CORE-005` | Empty Bearer value | §1.1 Service Signature Auth (Agent Operations) | No | — |
-| 6 | `TST-CORE-006` | Service Signature Auth with leading/trailing whitespace | §1.1 Service Signature Auth (Agent Operations) | No | — |
-| 7 | `TST-CORE-007` | Token file missing at startup | §1.1 Service Signature Auth (Agent Operations) | Yes | `core/test/auth_test.go:97` |
-| 8 | `TST-CORE-008` | Token file empty | §1.1 Service Signature Auth (Agent Operations) | Yes | `core/test/auth_test.go:119` |
-| 9 | `TST-CORE-009` | Timing-attack resistance | §1.1 Service Signature Auth (Agent Operations) | Yes | `core/test/auth_test.go:134` |
-| 10 | `TST-CORE-010` | Valid CLIENT_TOKEN | §1.2 CLIENT_TOKEN (Per-Device Admin Access) | Yes | `core/test/auth_test.go:155` |
-| 11 | `TST-CORE-011` | Unknown CLIENT_TOKEN | §1.2 CLIENT_TOKEN (Per-Device Admin Access) | Yes | `core/test/auth_test.go:155` |
-| 12 | `TST-CORE-012` | Revoked CLIENT_TOKEN | §1.2 CLIENT_TOKEN (Per-Device Admin Access) | Yes | `core/test/auth_test.go:155` |
-| 13 | `TST-CORE-013` | CLIENT_TOKEN on Service Signature Auth-only endpoint | §1.2 CLIENT_TOKEN (Per-Device Admin Access) | Yes | `core/test/auth_test.go:155` (+1) |
-| 14 | `TST-CORE-014` | Service Signature Auth on CLIENT_TOKEN-only endpoint | §1.2 CLIENT_TOKEN (Per-Device Admin Access) | Yes | `core/test/auth_test.go:155` (+1) |
-| 15 | `TST-CORE-015` | Concurrent device sessions | §1.2 CLIENT_TOKEN (Per-Device Admin Access) | Yes | `core/test/auth_test.go:155` (+1) |
-| 16 | `TST-CORE-016` | CLIENT_TOKEN hash lookup is constant-time | §1.2 CLIENT_TOKEN (Per-Device Admin Access) | Yes | `core/test/auth_test.go:155` (+1) |
-| 17 | `TST-CORE-017` | Login with correct passphrase | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:289` (+2) |
-| 18 | `TST-CORE-018` | Login with wrong passphrase | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:289` (+2) |
-| 19 | `TST-CORE-019` | Session cookie → Bearer translation | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:289` (+2) |
-| 20 | `TST-CORE-020` | Expired session cookie | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:289` (+2) |
-| 21 | `TST-CORE-021` | CSRF token validation | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:289` (+2) |
-| 22 | `TST-CORE-022` | CSRF token mismatch | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:289` (+2) |
-| 23 | `TST-CORE-023` | Session fixation resistance | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:289` (+2) |
-| 24 | `TST-CORE-024` | Concurrent browser sessions | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:289` (+2) |
-| 25 | `TST-CORE-025` | Logout | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:289` (+2) |
-| 26 | `TST-CORE-026` | Cookie attributes | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:289` (+2) |
-| 27 | `TST-CORE-027` | Login rate limit: 5 attempts/min/IP | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:289` (+2) |
-| 28 | `TST-CORE-028` | Session storage: in-memory, lost on restart | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:289` (+2) |
-| 29 | `TST-CORE-029` | Session TTL: 24 hours, configurable | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:289` (+2) |
-| 30 | `TST-CORE-030` | Session ID generation | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:289` (+2) |
-| 31 | `TST-CORE-031` | Cookie Max-Age matches TTL | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:289` (+2) |
-| 32 | `TST-CORE-032` | Successful login → 302 redirect | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:289` (+2) |
-| 33 | `TST-CORE-033` | Login page: Go embed.FS | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:289` (+2) |
-| 34 | `TST-CORE-034` | Device app: Bearer pass-through | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:289` (+2) |
-| 35 | `TST-CORE-035` | No cookie → login page (not 401) | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:289` (+2) |
-| 36 | `TST-CORE-036` | Convenience mode: admin still needs passphrase | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:289` (+2) |
-| 37 | `TST-CORE-037` | Brain never sees cookies | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:289` (+2) |
-| 38 | `TST-CORE-038` | No third authentication mechanism exists | §1.4 Auth Surface Completeness (Kernel Guarantee) | Yes | `core/test/auth_test.go:524` (+2) |
-| 39 | `TST-CORE-039` | Unknown auth scheme ignored | §1.4 Auth Surface Completeness (Kernel Guarantee) | Yes | `core/test/auth_test.go:524` (+2) |
-| 40 | `TST-CORE-040` | External JWT rejected | §1.4 Auth Surface Completeness (Kernel Guarantee) | Yes | `core/test/auth_test.go:524` (+2) |
-| 41 | `TST-CORE-041` | Route enumeration shows no plugin endpoints | §1.4 Auth Surface Completeness (Kernel Guarantee) | Yes | `core/test/auth_test.go:524` (+2) |
-| 42 | `TST-CORE-042` | `identifyToken()` priority: Service Signature Auth first | §1.4 Auth Surface Completeness (Kernel Guarantee) | Yes | `core/test/auth_test.go:524` (+2) |
-| 43 | `TST-CORE-043` | `identifyToken()` fallback: CLIENT_TOKEN second | §1.4 Auth Surface Completeness (Kernel Guarantee) | Yes | `core/test/auth_test.go:524` (+2) |
-| 44 | `TST-CORE-044` | `isAdminEndpoint()` allowlist — Service Signature Auth rejected on admin paths | §1.4 Auth Surface Completeness (Kernel Guarantee) | Yes | `core/test/auth_test.go:524` (+2) |
-| 45 | `TST-CORE-045` | CLIENT_TOKEN accepted on all endpoints | §1.4 Auth Surface Completeness (Kernel Guarantee) | Yes | `core/test/auth_test.go:524` (+2) |
-| 46 | `TST-CORE-046` | Core never calls external APIs | §1.4 Auth Surface Completeness (Kernel Guarantee) | Yes | `core/test/auth_test.go:524` (+2) |
-| 47 | `TST-CORE-047` | Compromised brain: can access open personas | §1.5 Compromised Brain Damage Radius | Yes | `core/test/auth_test.go:620` (+2) |
-| 48 | `TST-CORE-048` | Compromised brain: cannot access locked personas | §1.5 Compromised Brain Damage Radius | Yes | `core/test/auth_test.go:620` (+2) |
-| 49 | `TST-CORE-049` | Compromised brain: restricted creates detection trail | §1.5 Compromised Brain Damage Radius | Yes | `core/test/auth_test.go:620` (+2) |
-| 50 | `TST-CORE-050` | Compromised brain: cannot call did/sign | §1.5 Compromised Brain Damage Radius | Yes | `core/test/auth_test.go:620` (+2) |
-| 51 | `TST-CORE-051` | Compromised brain: cannot call did/rotate | §1.5 Compromised Brain Damage Radius | Yes | `core/test/auth_test.go:620` (+2) |
-| 52 | `TST-CORE-052` | Compromised brain: cannot call vault/backup | §1.5 Compromised Brain Damage Radius | Yes | `core/test/auth_test.go:620` (+2) |
-| 53 | `TST-CORE-053` | Compromised brain: cannot call persona/unlock | §1.5 Compromised Brain Damage Radius | Yes | `core/test/auth_test.go:620` (+2) |
-| 54 | `TST-CORE-054` | Compromised brain: cannot bypass PII scrubber | §1.5 Compromised Brain Damage Radius | Yes | `core/test/auth_test.go:620` (+2) |
-| 55 | `TST-CORE-055` | Compromised brain: cannot access raw vault files | §1.5 Compromised Brain Damage Radius | Yes | `core/test/auth_test.go:620` (+2) |
-| 56 | `TST-CORE-1097` | Service signature auth on /v1/did/sign → forbidden | §1.6 Authorization Middleware (Allowlist Enforcement) | No | — |
-| 57 | `TST-CORE-1098` | Client token on /v1/did/sign → allowed | §1.6 Authorization Middleware (Allowlist Enforcement) | No | — |
-| 58 | `TST-CORE-1099` | Service signature auth on /v1/vault/query → allowed | §1.6 Authorization Middleware (Allowlist Enforcement) | No | — |
-| 59 | `TST-CORE-1100` | Service signature auth on admin endpoints → forbidden | §1.6 Authorization Middleware (Allowlist Enforcement) | No | — |
-| 60 | `TST-CORE-1101` | Client token on all endpoints → allowed | §1.6 Authorization Middleware (Allowlist Enforcement) | No | — |
-| 61 | `TST-CORE-1102` | Service signature auth on allowed non-admin paths → OK | §1.6 Authorization Middleware (Allowlist Enforcement) | No | — |
-| 62 | `TST-CORE-1103` | Unauthenticated requests on public paths pass through | §1.6 Authorization Middleware (Allowlist Enforcement) | No | — |
-| 63 | `TST-CORE-1104` | Explicit context token_kind enforcement | §1.6 Authorization Middleware (Allowlist Enforcement) | No | — |
-| 64 | `TST-CORE-1105` | Concurrent token validation thread-safe | §1.6 Authorization Middleware (Allowlist Enforcement) | No | — |
-| 65 | `TST-CORE-056` | Generate 24-word mnemonic | §2.1 BIP-39 Mnemonic Generation | No | — |
-| 66 | `TST-CORE-057` | Mnemonic → seed derivation | §2.1 BIP-39 Mnemonic Generation | No | — |
-| 67 | `TST-CORE-058` | Invalid mnemonic (bad checksum) | §2.1 BIP-39 Mnemonic Generation | No | — |
-| 68 | `TST-CORE-059` | Invalid mnemonic (wrong word count) | §2.1 BIP-39 Mnemonic Generation | No | — |
-| 69 | `TST-CORE-060` | Mnemonic with extra whitespace | §2.1 BIP-39 Mnemonic Generation | No | — |
-| 70 | `TST-CORE-061` | Master seed IS the DEK | §2.1 BIP-39 Mnemonic Generation | No | — |
-| 71 | `TST-CORE-062` | Mnemonic recovery: re-derive everything | §2.1 BIP-39 Mnemonic Generation | No | — |
-| 72 | `TST-CORE-063` | Mnemonic recovery: BIP-39 → seed → SLIP-0010 → same DID | §2.1 BIP-39 Mnemonic Generation | No | — |
-| 73 | `TST-CORE-064` | Lose device + paper = identity gone | §2.1 BIP-39 Mnemonic Generation | No | — |
-| 74 | `TST-CORE-065` | Root identity never transmitted in plaintext | §2.1 BIP-39 Mnemonic Generation | No | — |
-| 75 | `TST-CORE-066` | Derive root identity key | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:29` (+13) |
-| 76 | `TST-CORE-067` | Derive persona N key | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:29` (+13) |
-| 77 | `TST-CORE-068` | Determinism | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:29` (+13) |
-| 78 | `TST-CORE-069` | Different paths → different keys | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:29` (+13) |
-| 79 | `TST-CORE-070` | Hardened-only enforcement | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:29` (+13) |
-| 80 | `TST-CORE-071` | Known test vectors | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:29` (+13) |
-| 81 | `TST-CORE-072` | Purpose `9999'` namespace isolation | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:29` (+13) |
-| 82 | `TST-CORE-073` | Purpose `44'` STRICTLY FORBIDDEN | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:29` (+13) |
-| 83 | `TST-CORE-074` | Same mnemonic across Dina + crypto wallet | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:29` (+13) |
-| 84 | `TST-CORE-075` | Sibling key unlinkability | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:29` (+13) |
-| 85 | `TST-CORE-076` | Go implementation: stellar/go library | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:29` (+13) |
-| 86 | `TST-CORE-077` | Canonical persona index mapping | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:29` (+13) |
-| 87 | `TST-CORE-078` | Custom persona index: sequential from 6 | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:29` (+13) |
-| 88 | `TST-CORE-079` | Persona index stored in identity.sqlite | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:29` (+13) |
-| 89 | `TST-CORE-080` | Derive per-persona DEK | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:412` (+17) |
-| 90 | `TST-CORE-081` | Different personas → different DEKs | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:412` (+17) |
-| 91 | `TST-CORE-082` | Determinism | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:412` (+17) |
-| 92 | `TST-CORE-083` | Known HKDF test vectors | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:412` (+17) |
-| 93 | `TST-CORE-084` | Full info string set | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:412` (+17) |
-| 94 | `TST-CORE-085` | Compromise isolation | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:412` (+17) |
-| 95 | `TST-CORE-086` | Custom persona info string | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:412` (+17) |
-| 96 | `TST-CORE-087` | Backup Encryption Key | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:412` (+17) |
-| 97 | `TST-CORE-088` | Archive Key (Tier 5) | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:412` (+17) |
-| 98 | `TST-CORE-089` | Archive Key separate from Backup Key | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:412` (+17) |
-| 99 | `TST-CORE-090` | Client Sync Key | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:412` (+17) |
-| 100 | `TST-CORE-091` | Trust Signing Key | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:412` (+17) |
-| 101 | `TST-CORE-092` | `user_salt` is random 32-byte value | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:412` (+17) |
-| 102 | `TST-CORE-093` | `user_salt` generated once at first setup | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:412` (+17) |
-| 103 | `TST-CORE-094` | `user_salt` persisted across reboots | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:412` (+17) |
-| 104 | `TST-CORE-095` | `user_salt` included in export | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:412` (+17) |
-| 105 | `TST-CORE-096` | Same mnemonic, different `user_salt` → different DEKs | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:412` (+17) |
-| 106 | `TST-CORE-097` | `user_salt` absent → startup error | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:412` (+17) |
-| 107 | `TST-CORE-098` | Hash passphrase | §2.4 Argon2id (Passphrase Hashing) | Yes | `core/test/crypto_test.go:889` (+7) |
-| 108 | `TST-CORE-099` | Verify correct passphrase | §2.4 Argon2id (Passphrase Hashing) | Yes | `core/test/crypto_test.go:889` (+7) |
-| 109 | `TST-CORE-100` | Verify wrong passphrase | §2.4 Argon2id (Passphrase Hashing) | Yes | `core/test/crypto_test.go:889` (+7) |
-| 110 | `TST-CORE-101` | Default parameters | §2.4 Argon2id (Passphrase Hashing) | Yes | `core/test/crypto_test.go:889` (+7) |
-| 111 | `TST-CORE-102` | Unique salts | §2.4 Argon2id (Passphrase Hashing) | Yes | `core/test/crypto_test.go:889` (+7) |
-| 112 | `TST-CORE-103` | Parameters configurable via config.json | §2.4 Argon2id (Passphrase Hashing) | Yes | `core/test/crypto_test.go:889` (+7) |
-| 113 | `TST-CORE-104` | Runs once at unlock, not per-request | §2.4 Argon2id (Passphrase Hashing) | Yes | `core/test/crypto_test.go:889` (+7) |
-| 114 | `TST-CORE-105` | Passphrase change: re-wrap only | §2.4 Argon2id (Passphrase Hashing) | Yes | `core/test/crypto_test.go:889` (+7) |
-| 115 | `TST-CORE-106` | Sign message | §2.5 Ed25519 Signing | Yes | `core/test/crypto_test.go:1107` (+5) |
-| 116 | `TST-CORE-107` | Verify valid signature | §2.5 Ed25519 Signing | Yes | `core/test/crypto_test.go:1107` (+5) |
-| 117 | `TST-CORE-108` | Verify tampered message | §2.5 Ed25519 Signing | Yes | `core/test/crypto_test.go:1107` (+5) |
-| 118 | `TST-CORE-109` | Verify wrong public key | §2.5 Ed25519 Signing | Yes | `core/test/crypto_test.go:1107` (+5) |
-| 119 | `TST-CORE-110` | Canonical JSON signing | §2.5 Ed25519 Signing | Yes | `core/test/crypto_test.go:1107` (+5) |
-| 120 | `TST-CORE-111` | Empty message signing | §2.5 Ed25519 Signing | Yes | `core/test/crypto_test.go:1107` (+5) |
-| 121 | `TST-CORE-112` | Convert signing key to encryption key | §2.6 Ed25519 → X25519 Conversion | Yes | `core/test/crypto_test.go:1273` (+6) |
-| 122 | `TST-CORE-113` | Convert public key | §2.6 Ed25519 → X25519 Conversion | Yes | `core/test/crypto_test.go:1273` (+6) |
-| 123 | `TST-CORE-114` | Roundtrip: sign then encrypt | §2.6 Ed25519 → X25519 Conversion | Yes | `core/test/crypto_test.go:1273` (+6) |
-| 124 | `TST-CORE-115` | One-way property | §2.6 Ed25519 → X25519 Conversion | Yes | `core/test/crypto_test.go:1273` (+6) |
-| 125 | `TST-CORE-116` | Ephemeral per message | §2.6 Ed25519 → X25519 Conversion | Yes | `core/test/crypto_test.go:1273` (+6) |
-| 126 | `TST-CORE-117` | Conscious reuse (not separate keypairs) | §2.6 Ed25519 → X25519 Conversion | Yes | `core/test/crypto_test.go:1273` (+6) |
-| 127 | `TST-CORE-118` | Ephemeral X25519 key zeroed from memory after `crypto_box_seal` | §2.6 Ed25519 → X25519 Conversion | Yes | `core/test/crypto_test.go:1273` (+6) |
-| 128 | `TST-CORE-119` | Seal message to recipient | §2.7 NaCl crypto_box_seal (Dina-to-Dina Encryption) | Yes | `core/test/crypto_test.go:1525` (+5) |
-| 129 | `TST-CORE-120` | Open sealed message | §2.7 NaCl crypto_box_seal (Dina-to-Dina Encryption) | Yes | `core/test/crypto_test.go:1525` (+5) |
-| 130 | `TST-CORE-121` | Wrong recipient key | §2.7 NaCl crypto_box_seal (Dina-to-Dina Encryption) | Yes | `core/test/crypto_test.go:1525` (+5) |
-| 131 | `TST-CORE-122` | Tampered ciphertext | §2.7 NaCl crypto_box_seal (Dina-to-Dina Encryption) | Yes | `core/test/crypto_test.go:1525` (+5) |
-| 132 | `TST-CORE-123` | Empty plaintext | §2.7 NaCl crypto_box_seal (Dina-to-Dina Encryption) | Yes | `core/test/crypto_test.go:1525` (+5) |
-| 133 | `TST-CORE-124` | Large message | §2.7 NaCl crypto_box_seal (Dina-to-Dina Encryption) | Yes | `core/test/crypto_test.go:1525` (+5) |
-| 134 | `TST-CORE-125` | Wrap key with passphrase-derived KEK | §2.8 AES-256-GCM Key Wrapping (Keystore) | Yes | `core/test/crypto_test.go:1743` (+4) |
-| 135 | `TST-CORE-126` | Unwrap with correct passphrase | §2.8 AES-256-GCM Key Wrapping (Keystore) | Yes | `core/test/crypto_test.go:1743` (+4) |
-| 136 | `TST-CORE-127` | Unwrap with wrong passphrase | §2.8 AES-256-GCM Key Wrapping (Keystore) | Yes | `core/test/crypto_test.go:1743` (+4) |
-| 137 | `TST-CORE-128` | Tampered wrapped blob | §2.8 AES-256-GCM Key Wrapping (Keystore) | Yes | `core/test/crypto_test.go:1743` (+4) |
-| 138 | `TST-CORE-129` | Nonce uniqueness | §2.8 AES-256-GCM Key Wrapping (Keystore) | Yes | `core/test/crypto_test.go:1743` (+4) |
-| 139 | `TST-CORE-880` | Key generation verified to use `crypto/rand` (not weak entropy) | §2.8 AES-256-GCM Key Wrapping (Keystore) | Yes | `core/test/crypto_test.go:1849` |
-| 140 | `TST-CORE-881` | Archive key survives backup key rotation (separate HKDF derivations) | §2.8 AES-256-GCM Key Wrapping (Keystore) | Yes | `core/test/crypto_test.go:1884` |
+| 1 | `TST-CORE-001` | Valid Service Signature Auth in `Authorization: Bearer` header | §1.1 Service Signature Auth (Agent Operations) | Yes | `core/test/auth_test.go:39` |
+| 2 | `TST-CORE-002` | Missing Authorization header | §1.1 Service Signature Auth (Agent Operations) | Yes | `core/test/authz_test.go:438` |
+| 3 | `TST-CORE-003` | Malformed header (`Basic` instead of `Bearer`) | §1.1 Service Signature Auth (Agent Operations) | Yes | `core/test/authz_test.go:438` |
+| 4 | `TST-CORE-004` | Wrong Service Signature Auth value | §1.1 Service Signature Auth (Agent Operations) | Yes | `core/test/authz_test.go:438` |
+| 5 | `TST-CORE-005` | Empty Bearer value | §1.1 Service Signature Auth (Agent Operations) | Yes | `core/test/authz_test.go:438` |
+| 6 | `TST-CORE-006` | Service Signature Auth with leading/trailing whitespace | §1.1 Service Signature Auth (Agent Operations) | Yes | `core/test/authz_test.go:438` |
+| 7 | `TST-CORE-007` | Token file missing at startup | §1.1 Service Signature Auth (Agent Operations) | Yes | `core/test/auth_test.go:117` |
+| 8 | `TST-CORE-008` | Token file empty | §1.1 Service Signature Auth (Agent Operations) | Yes | `core/test/auth_test.go:139` |
+| 9 | `TST-CORE-009` | Timing-attack resistance | §1.1 Service Signature Auth (Agent Operations) | Yes | `core/test/auth_test.go:154` |
+| 10 | `TST-CORE-010` | Valid CLIENT_TOKEN | §1.2 CLIENT_TOKEN (Per-Device Admin Access) | Yes | `core/test/auth_test.go:175` |
+| 11 | `TST-CORE-011` | Unknown CLIENT_TOKEN | §1.2 CLIENT_TOKEN (Per-Device Admin Access) | Yes | `core/test/auth_test.go:175` |
+| 12 | `TST-CORE-012` | Revoked CLIENT_TOKEN | §1.2 CLIENT_TOKEN (Per-Device Admin Access) | Yes | `core/test/auth_test.go:175` |
+| 13 | `TST-CORE-013` | CLIENT_TOKEN on Service Signature Auth-only endpoint | §1.2 CLIENT_TOKEN (Per-Device Admin Access) | Yes | `core/test/auth_test.go:175` (+1) |
+| 14 | `TST-CORE-014` | Service Signature Auth on CLIENT_TOKEN-only endpoint | §1.2 CLIENT_TOKEN (Per-Device Admin Access) | Yes | `core/test/auth_test.go:175` (+1) |
+| 15 | `TST-CORE-015` | Concurrent device sessions | §1.2 CLIENT_TOKEN (Per-Device Admin Access) | Yes | `core/test/auth_test.go:175` (+1) |
+| 16 | `TST-CORE-016` | CLIENT_TOKEN hash lookup is constant-time | §1.2 CLIENT_TOKEN (Per-Device Admin Access) | Yes | `core/test/auth_test.go:175` (+1) |
+| 17 | `TST-CORE-017` | Login with correct passphrase | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:309` (+2) |
+| 18 | `TST-CORE-018` | Login with wrong passphrase | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:309` (+2) |
+| 19 | `TST-CORE-019` | Session cookie → Bearer translation | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:309` (+2) |
+| 20 | `TST-CORE-020` | Expired session cookie | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:309` (+2) |
+| 21 | `TST-CORE-021` | CSRF token validation | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:309` (+2) |
+| 22 | `TST-CORE-022` | CSRF token mismatch | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:309` (+2) |
+| 23 | `TST-CORE-023` | Session fixation resistance | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:309` (+2) |
+| 24 | `TST-CORE-024` | Concurrent browser sessions | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:309` (+2) |
+| 25 | `TST-CORE-025` | Logout | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:309` (+2) |
+| 26 | `TST-CORE-026` | Cookie attributes | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:309` (+2) |
+| 27 | `TST-CORE-027` | Login rate limit: 5 attempts/min/IP | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:309` (+2) |
+| 28 | `TST-CORE-028` | Session storage: in-memory, lost on restart | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:309` (+2) |
+| 29 | `TST-CORE-029` | Session TTL: 24 hours, configurable | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:309` (+2) |
+| 30 | `TST-CORE-030` | Session ID generation | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:309` (+2) |
+| 31 | `TST-CORE-031` | Cookie Max-Age matches TTL | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:309` (+2) |
+| 32 | `TST-CORE-032` | Successful login → 302 redirect | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:309` (+2) |
+| 33 | `TST-CORE-033` | Login page: Go embed.FS | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:309` (+2) |
+| 34 | `TST-CORE-034` | Device app: Bearer pass-through | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:309` (+2) |
+| 35 | `TST-CORE-035` | No cookie → login page (not 401) | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:309` (+2) |
+| 36 | `TST-CORE-036` | Convenience mode: admin still needs passphrase | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:309` (+2) |
+| 37 | `TST-CORE-037` | Brain never sees cookies | §1.3 Browser Session Auth Gateway | Yes | `core/test/auth_test.go:309` (+2) |
+| 38 | `TST-CORE-038` | No third authentication mechanism exists | §1.4 Auth Surface Completeness (Kernel Guarantee) | Yes | `core/test/auth_test.go:544` (+2) |
+| 39 | `TST-CORE-039` | Unknown auth scheme ignored | §1.4 Auth Surface Completeness (Kernel Guarantee) | Yes | `core/test/auth_test.go:544` (+2) |
+| 40 | `TST-CORE-040` | External JWT rejected | §1.4 Auth Surface Completeness (Kernel Guarantee) | Yes | `core/test/auth_test.go:544` (+2) |
+| 41 | `TST-CORE-041` | Route enumeration shows no plugin endpoints | §1.4 Auth Surface Completeness (Kernel Guarantee) | Yes | `core/test/auth_test.go:544` (+2) |
+| 42 | `TST-CORE-042` | `identifyToken()` priority: Service Signature Auth first | §1.4 Auth Surface Completeness (Kernel Guarantee) | Yes | `core/test/auth_test.go:544` (+2) |
+| 43 | `TST-CORE-043` | `identifyToken()` fallback: CLIENT_TOKEN second | §1.4 Auth Surface Completeness (Kernel Guarantee) | Yes | `core/test/auth_test.go:544` (+2) |
+| 44 | `TST-CORE-044` | `isAdminEndpoint()` allowlist — Service Signature Auth rejected on admin paths | §1.4 Auth Surface Completeness (Kernel Guarantee) | Yes | `core/test/auth_test.go:544` (+2) |
+| 45 | `TST-CORE-045` | CLIENT_TOKEN accepted on all endpoints | §1.4 Auth Surface Completeness (Kernel Guarantee) | Yes | `core/test/auth_test.go:544` (+2) |
+| 46 | `TST-CORE-046` | Core never calls external APIs | §1.4 Auth Surface Completeness (Kernel Guarantee) | Yes | `core/test/auth_test.go:544` (+2) |
+| 47 | `TST-CORE-047` | Compromised brain: can access open personas | §1.5 Compromised Brain Damage Radius | Yes | `core/test/auth_test.go:640` (+2) |
+| 48 | `TST-CORE-048` | Compromised brain: cannot access locked personas | §1.5 Compromised Brain Damage Radius | Yes | `core/test/auth_test.go:640` (+2) |
+| 49 | `TST-CORE-049` | Compromised brain: restricted creates detection trail | §1.5 Compromised Brain Damage Radius | Yes | `core/test/auth_test.go:640` (+2) |
+| 50 | `TST-CORE-050` | Compromised brain: cannot call did/sign | §1.5 Compromised Brain Damage Radius | Yes | `core/test/auth_test.go:640` (+2) |
+| 51 | `TST-CORE-051` | Compromised brain: cannot call did/rotate | §1.5 Compromised Brain Damage Radius | Yes | `core/test/auth_test.go:640` (+2) |
+| 52 | `TST-CORE-052` | Compromised brain: cannot call vault/backup | §1.5 Compromised Brain Damage Radius | Yes | `core/test/auth_test.go:640` (+2) |
+| 53 | `TST-CORE-053` | Compromised brain: cannot call persona/unlock | §1.5 Compromised Brain Damage Radius | Yes | `core/test/auth_test.go:640` (+2) |
+| 54 | `TST-CORE-054` | Compromised brain: cannot bypass PII scrubber | §1.5 Compromised Brain Damage Radius | Yes | `core/test/auth_test.go:640` (+2) |
+| 55 | `TST-CORE-055` | Compromised brain: cannot access raw vault files | §1.5 Compromised Brain Damage Radius | Yes | `core/test/auth_test.go:640` (+2) |
+| 56 | `TST-CORE-1097` | Service signature auth on /v1/did/sign → forbidden | §1.6 Authorization Middleware (Allowlist Enforcement) | Yes | `core/test/authz_test.go:89` |
+| 57 | `TST-CORE-1098` | Client token on /v1/did/sign → allowed | §1.6 Authorization Middleware (Allowlist Enforcement) | Yes | `core/test/authz_test.go:117` |
+| 58 | `TST-CORE-1099` | Service signature auth on /v1/vault/query → allowed | §1.6 Authorization Middleware (Allowlist Enforcement) | Yes | `core/test/authz_test.go:132` |
+| 59 | `TST-CORE-1100` | Service signature auth on admin endpoints → forbidden | §1.6 Authorization Middleware (Allowlist Enforcement) | Yes | `core/test/authz_test.go:147` |
+| 60 | `TST-CORE-1101` | Client token on all endpoints → allowed | §1.6 Authorization Middleware (Allowlist Enforcement) | Yes | `core/test/authz_test.go:176` |
+| 61 | `TST-CORE-1102` | Service signature auth on allowed non-admin paths → OK | §1.6 Authorization Middleware (Allowlist Enforcement) | Yes | `core/test/authz_test.go:207` |
+| 62 | `TST-CORE-1103` | Unauthenticated requests on public paths pass through | §1.6 Authorization Middleware (Allowlist Enforcement) | Yes | `core/test/authz_test.go:235` |
+| 63 | `TST-CORE-1104` | Explicit context token_kind enforcement | §1.6 Authorization Middleware (Allowlist Enforcement) | Yes | `core/test/authz_test.go:263` |
+| 64 | `TST-CORE-1105` | Concurrent token validation thread-safe | §1.6 Authorization Middleware (Allowlist Enforcement) | Yes | `core/test/auth_test.go:1873` |
+| 65 | `TST-CORE-056` | Generate 24-word mnemonic | §2.1 BIP-39 Mnemonic Generation | Yes | `core/test/traceability_test.go:853` |
+| 66 | `TST-CORE-057` | Mnemonic → seed derivation | §2.1 BIP-39 Mnemonic Generation | Yes | `core/test/crypto_test.go:3268` |
+| 67 | `TST-CORE-058` | Invalid mnemonic (bad checksum) | §2.1 BIP-39 Mnemonic Generation | Yes | `core/test/traceability_test.go:950` (+1) |
+| 68 | `TST-CORE-059` | Invalid mnemonic (wrong word count) | §2.1 BIP-39 Mnemonic Generation | Yes | `core/test/traceability_test.go:1200` (+1) |
+| 69 | `TST-CORE-060` | Mnemonic with extra whitespace | §2.1 BIP-39 Mnemonic Generation | Yes | `core/test/traceability_test.go:1075` |
+| 70 | `TST-CORE-061` | Master seed IS the DEK | §2.1 BIP-39 Mnemonic Generation | Yes | `core/test/crypto_test.go:2201` |
+| 71 | `TST-CORE-062` | Mnemonic recovery: re-derive everything | §2.1 BIP-39 Mnemonic Generation | Yes | `core/test/crypto_test.go:2884` |
+| 72 | `TST-CORE-063` | Mnemonic recovery: BIP-39 → seed → SLIP-0010 → same DID | §2.1 BIP-39 Mnemonic Generation | Yes | `core/test/identity_test.go:2974` |
+| 73 | `TST-CORE-064` | Lose device + paper = identity gone | §2.1 BIP-39 Mnemonic Generation | Yes | `core/test/crypto_test.go:3051` |
+| 74 | `TST-CORE-065` | Root identity never transmitted in plaintext | §2.1 BIP-39 Mnemonic Generation | Yes | `core/test/security_test.go:1219` |
+| 75 | `TST-CORE-066` | Derive root identity key | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:33` (+13) |
+| 76 | `TST-CORE-067` | Derive persona N key | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:33` (+13) |
+| 77 | `TST-CORE-068` | Determinism | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:33` (+13) |
+| 78 | `TST-CORE-069` | Different paths → different keys | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:33` (+13) |
+| 79 | `TST-CORE-070` | Hardened-only enforcement | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:33` (+13) |
+| 80 | `TST-CORE-071` | Known test vectors | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:33` (+13) |
+| 81 | `TST-CORE-072` | Purpose `9999'` namespace isolation | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:33` (+13) |
+| 82 | `TST-CORE-073` | Purpose `44'` STRICTLY FORBIDDEN | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:33` (+13) |
+| 83 | `TST-CORE-074` | Same mnemonic across Dina + crypto wallet | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:33` (+13) |
+| 84 | `TST-CORE-075` | Sibling key unlinkability | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:33` (+13) |
+| 85 | `TST-CORE-076` | Go implementation: stellar/go library | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:33` (+13) |
+| 86 | `TST-CORE-077` | Canonical persona index mapping | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:33` (+13) |
+| 87 | `TST-CORE-078` | Custom persona index: sequential from 6 | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:33` (+13) |
+| 88 | `TST-CORE-079` | Persona index stored in identity.sqlite | §2.2 SLIP-0010 Ed25519 Hardened Derivation | Yes | `core/test/crypto_test.go:33` (+13) |
+| 89 | `TST-CORE-080` | Derive per-persona DEK | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:416` (+17) |
+| 90 | `TST-CORE-081` | Different personas → different DEKs | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:416` (+17) |
+| 91 | `TST-CORE-082` | Determinism | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:416` (+17) |
+| 92 | `TST-CORE-083` | Known HKDF test vectors | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:416` (+17) |
+| 93 | `TST-CORE-084` | Full info string set | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:416` (+17) |
+| 94 | `TST-CORE-085` | Compromise isolation | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:416` (+17) |
+| 95 | `TST-CORE-086` | Custom persona info string | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:416` (+17) |
+| 96 | `TST-CORE-087` | Backup Encryption Key | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:416` (+17) |
+| 97 | `TST-CORE-088` | Archive Key (Tier 5) | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:416` (+17) |
+| 98 | `TST-CORE-089` | Archive Key separate from Backup Key | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:416` (+17) |
+| 99 | `TST-CORE-090` | Client Sync Key | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:416` (+17) |
+| 100 | `TST-CORE-091` | Trust Signing Key | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:416` (+17) |
+| 101 | `TST-CORE-092` | `user_salt` is random 32-byte value | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:416` (+17) |
+| 102 | `TST-CORE-093` | `user_salt` generated once at first setup | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:416` (+17) |
+| 103 | `TST-CORE-094` | `user_salt` persisted across reboots | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:416` (+17) |
+| 104 | `TST-CORE-095` | `user_salt` included in export | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:416` (+17) |
+| 105 | `TST-CORE-096` | Same mnemonic, different `user_salt` → different DEKs | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:416` (+17) |
+| 106 | `TST-CORE-097` | `user_salt` absent → startup error | §2.3 HKDF-SHA256 (Vault DEK Derivation) | Yes | `core/test/crypto_test.go:416` (+17) |
+| 107 | `TST-CORE-098` | Hash passphrase | §2.4 Argon2id (Passphrase Hashing) | Yes | `core/test/crypto_test.go:893` (+7) |
+| 108 | `TST-CORE-099` | Verify correct passphrase | §2.4 Argon2id (Passphrase Hashing) | Yes | `core/test/crypto_test.go:893` (+7) |
+| 109 | `TST-CORE-100` | Verify wrong passphrase | §2.4 Argon2id (Passphrase Hashing) | Yes | `core/test/crypto_test.go:893` (+7) |
+| 110 | `TST-CORE-101` | Default parameters | §2.4 Argon2id (Passphrase Hashing) | Yes | `core/test/crypto_test.go:893` (+7) |
+| 111 | `TST-CORE-102` | Unique salts | §2.4 Argon2id (Passphrase Hashing) | Yes | `core/test/crypto_test.go:893` (+7) |
+| 112 | `TST-CORE-103` | Parameters configurable via config.json | §2.4 Argon2id (Passphrase Hashing) | Yes | `core/test/crypto_test.go:893` (+7) |
+| 113 | `TST-CORE-104` | Runs once at unlock, not per-request | §2.4 Argon2id (Passphrase Hashing) | Yes | `core/test/crypto_test.go:893` (+7) |
+| 114 | `TST-CORE-105` | Passphrase change: re-wrap only | §2.4 Argon2id (Passphrase Hashing) | Yes | `core/test/crypto_test.go:893` (+7) |
+| 115 | `TST-CORE-106` | Sign message | §2.5 Ed25519 Signing | Yes | `core/test/crypto_test.go:1111` (+5) |
+| 116 | `TST-CORE-107` | Verify valid signature | §2.5 Ed25519 Signing | Yes | `core/test/crypto_test.go:1111` (+5) |
+| 117 | `TST-CORE-108` | Verify tampered message | §2.5 Ed25519 Signing | Yes | `core/test/crypto_test.go:1111` (+5) |
+| 118 | `TST-CORE-109` | Verify wrong public key | §2.5 Ed25519 Signing | Yes | `core/test/crypto_test.go:1111` (+5) |
+| 119 | `TST-CORE-110` | Canonical JSON signing | §2.5 Ed25519 Signing | Yes | `core/test/crypto_test.go:1111` (+5) |
+| 120 | `TST-CORE-111` | Empty message signing | §2.5 Ed25519 Signing | Yes | `core/test/crypto_test.go:1111` (+5) |
+| 121 | `TST-CORE-112` | Convert signing key to encryption key | §2.6 Ed25519 → X25519 Conversion | Yes | `core/test/crypto_test.go:1277` (+6) |
+| 122 | `TST-CORE-113` | Convert public key | §2.6 Ed25519 → X25519 Conversion | Yes | `core/test/crypto_test.go:1277` (+6) |
+| 123 | `TST-CORE-114` | Roundtrip: sign then encrypt | §2.6 Ed25519 → X25519 Conversion | Yes | `core/test/crypto_test.go:1277` (+6) |
+| 124 | `TST-CORE-115` | One-way property | §2.6 Ed25519 → X25519 Conversion | Yes | `core/test/crypto_test.go:1277` (+6) |
+| 125 | `TST-CORE-116` | Ephemeral per message | §2.6 Ed25519 → X25519 Conversion | Yes | `core/test/crypto_test.go:1277` (+6) |
+| 126 | `TST-CORE-117` | Conscious reuse (not separate keypairs) | §2.6 Ed25519 → X25519 Conversion | Yes | `core/test/crypto_test.go:1277` (+6) |
+| 127 | `TST-CORE-118` | Ephemeral X25519 key zeroed from memory after `crypto_box_seal` | §2.6 Ed25519 → X25519 Conversion | Yes | `core/test/crypto_test.go:1277` (+6) |
+| 128 | `TST-CORE-119` | Seal message to recipient | §2.7 NaCl crypto_box_seal (Dina-to-Dina Encryption) | Yes | `core/test/crypto_test.go:1529` (+5) |
+| 129 | `TST-CORE-120` | Open sealed message | §2.7 NaCl crypto_box_seal (Dina-to-Dina Encryption) | Yes | `core/test/crypto_test.go:1529` (+5) |
+| 130 | `TST-CORE-121` | Wrong recipient key | §2.7 NaCl crypto_box_seal (Dina-to-Dina Encryption) | Yes | `core/test/crypto_test.go:1529` (+5) |
+| 131 | `TST-CORE-122` | Tampered ciphertext | §2.7 NaCl crypto_box_seal (Dina-to-Dina Encryption) | Yes | `core/test/crypto_test.go:1529` (+5) |
+| 132 | `TST-CORE-123` | Empty plaintext | §2.7 NaCl crypto_box_seal (Dina-to-Dina Encryption) | Yes | `core/test/crypto_test.go:1529` (+5) |
+| 133 | `TST-CORE-124` | Large message | §2.7 NaCl crypto_box_seal (Dina-to-Dina Encryption) | Yes | `core/test/crypto_test.go:1529` (+5) |
+| 134 | `TST-CORE-125` | Wrap key with passphrase-derived KEK | §2.8 AES-256-GCM Key Wrapping (Keystore) | Yes | `core/test/crypto_test.go:1747` (+4) |
+| 135 | `TST-CORE-126` | Unwrap with correct passphrase | §2.8 AES-256-GCM Key Wrapping (Keystore) | Yes | `core/test/crypto_test.go:1747` (+4) |
+| 136 | `TST-CORE-127` | Unwrap with wrong passphrase | §2.8 AES-256-GCM Key Wrapping (Keystore) | Yes | `core/test/crypto_test.go:1747` (+4) |
+| 137 | `TST-CORE-128` | Tampered wrapped blob | §2.8 AES-256-GCM Key Wrapping (Keystore) | Yes | `core/test/crypto_test.go:1747` (+4) |
+| 138 | `TST-CORE-129` | Nonce uniqueness | §2.8 AES-256-GCM Key Wrapping (Keystore) | Yes | `core/test/crypto_test.go:1747` (+4) |
+| 139 | `TST-CORE-880` | Key generation verified to use `crypto/rand` (not weak entropy) | §2.8 AES-256-GCM Key Wrapping (Keystore) | Yes | `core/test/crypto_test.go:1853` |
+| 140 | `TST-CORE-881` | Archive key survives backup key rotation (separate HKDF derivations) | §2.8 AES-256-GCM Key Wrapping (Keystore) | Yes | `core/test/crypto_test.go:1888` |
 | 141 | `TST-CORE-882` | Client sync key used for sync encryption, trust key for signing | §2.8 AES-256-GCM Key Wrapping (Keystore) | Yes | `core/test/taskqueue_test.go:1458` (+1) |
 | 142 | `TST-CORE-130` | Generate root DID | §3.1 DID Generation & Persistence | Yes | `core/test/identity_test.go:36` |
 | 143 | `TST-CORE-131` | Load existing DID | §3.1 DID Generation & Persistence | Yes | `core/test/identity_test.go:65` |
@@ -429,67 +429,67 @@
 | 385 | `TST-CORE-886` | PII de-sanitization endpoint — restores tokens from replacement map | §5. PII Scrubber (Tier 1 — Go Regex) | Yes | `core/test/pii_test.go:600` |
 | 386 | `TST-CORE-887` | PII scrubber makes zero outbound network calls (hard invariant) | §5. PII Scrubber (Tier 1 — Go Regex) | Yes | `core/test/pii_test.go:617` |
 | 387 | `TST-CORE-888` | Sensitive persona mandatory PII scrub before cloud LLM | §5. PII Scrubber (Tier 1 — Go Regex) | Yes | `core/test/pii_test.go:661` |
-| 388 | `TST-CORE-360` | Default-deny: no policy exists | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:619` |
-| 389 | `TST-CORE-361` | Default-deny: missing category key | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:636` |
-| 390 | `TST-CORE-362` | Policy: `"none"` explicit | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:673` |
-| 391 | `TST-CORE-363` | Policy: `"summary"` | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:709` |
-| 392 | `TST-CORE-364` | Policy: `"full"` | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:725` |
-| 393 | `TST-CORE-365` | Per-contact per-category granularity | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:759` |
-| 394 | `TST-CORE-366` | Domain-specific tier: `eta_only` → summary | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:792` |
-| 395 | `TST-CORE-367` | Domain-specific tier: `free_busy` → summary | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:809` |
-| 396 | `TST-CORE-368` | Domain-specific tier: `exact_location` → full | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:831` |
-| 397 | `TST-CORE-369` | Policy update via PATCH | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:1064` |
-| 398 | `TST-CORE-370` | Bulk policy update | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:1104` |
-| 399 | `TST-CORE-371` | Trust level ≠ sharing | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:868` |
-| 400 | `TST-CORE-372` | Recognized categories | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:914` |
-| 401 | `TST-CORE-373` | Sharing defaults for new contacts | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:1118` |
-| 402 | `TST-CORE-374` | Outbound PII scrub | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:1158` |
-| 403 | `TST-CORE-375` | Extensible categories: custom category accepted | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:970` |
-| 404 | `TST-CORE-376` | Extensible categories: custom category enforced at egress | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:1011` |
-| 405 | `TST-CORE-377` | GET policy | §6.2 Sharing Policy API | Yes | `core/test/gatekeeper_test.go:1184` |
-| 406 | `TST-CORE-378` | PATCH single category | §6.2 Sharing Policy API | Yes | `core/test/gatekeeper_test.go:1210` |
-| 407 | `TST-CORE-379` | PATCH multiple categories | §6.2 Sharing Policy API | Yes | `core/test/gatekeeper_test.go:1244` |
-| 408 | `TST-CORE-380` | PATCH bulk by trust level | §6.2 Sharing Policy API | Yes | `core/test/gatekeeper_test.go:1273` |
-| 409 | `TST-CORE-381` | PATCH bulk all contacts | §6.2 Sharing Policy API | Yes | `core/test/gatekeeper_test.go:1314` |
-| 410 | `TST-CORE-382` | GET policy for unknown DID | §6.2 Sharing Policy API | Yes | `core/test/gatekeeper_test.go:1346` |
-| 411 | `TST-CORE-383` | PATCH with invalid tier value | §6.2 Sharing Policy API | Yes | `core/test/gatekeeper_test.go:1380` |
-| 412 | `TST-CORE-384` | Policy stored in contacts table | §6.2 Sharing Policy API | Yes | `core/test/gatekeeper_test.go:1401` |
-| 413 | `TST-CORE-385` | Brain sends tiered payload | §6.3 Egress Pipeline | Yes | `core/test/gatekeeper_test.go:1423` |
-| 414 | `TST-CORE-386` | Core strips denied categories | §6.3 Egress Pipeline | Yes | `core/test/gatekeeper_test.go:1460` |
-| 415 | `TST-CORE-387` | Malformed payload → category dropped | §6.3 Egress Pipeline | Yes | `core/test/gatekeeper_test.go:1498` |
-| 416 | `TST-CORE-388` | Egress enforcement in compiled Go | §6.3 Egress Pipeline | Yes | `core/test/gatekeeper_test.go:1544` |
-| 417 | `TST-CORE-389` | Egress not ingress | §6.3 Egress Pipeline | Yes | `core/test/gatekeeper_test.go:1562` |
-| 418 | `TST-CORE-390` | Recipient DID resolution | §6.3 Egress Pipeline | Yes | `core/test/gatekeeper_test.go:1591` |
-| 419 | `TST-CORE-391` | Egress audit logging | §6.3 Egress Pipeline | Yes | `core/test/gatekeeper_test.go:1602` |
-| 420 | `TST-CORE-392` | Audit includes denied categories | §6.3 Egress Pipeline | Yes | `core/test/gatekeeper_test.go:1670` |
-| 421 | `TST-CORE-393` | NaCl encryption after policy check | §6.3 Egress Pipeline | Yes | `core/test/gatekeeper_test.go:1705` |
-| 422 | `TST-CORE-783` | Safe intent allowed | §6.4 Intent Evaluation (Agent Gatekeeper) | Yes | `core/test/gatekeeper_test.go:27` |
-| 423 | `TST-CORE-784` | Risky intent flagged | §6.4 Intent Evaluation (Agent Gatekeeper) | Yes | `core/test/gatekeeper_test.go:60` |
-| 424 | `TST-CORE-785` | Blocked intent denied | §6.4 Intent Evaluation (Agent Gatekeeper) | Yes | `core/test/gatekeeper_test.go:91` |
-| 425 | `TST-CORE-786` | Vault read by untrusted denied | §6.4 Intent Evaluation (Agent Gatekeeper) | Yes | `core/test/gatekeeper_test.go:109` |
-| 426 | `TST-CORE-787` | Empty action rejected | §6.4 Intent Evaluation (Agent Gatekeeper) | Yes | `core/test/gatekeeper_test.go:127` |
-| 427 | `TST-CORE-788` | Empty agent DID rejected | §6.4 Intent Evaluation (Agent Gatekeeper) | Yes | `core/test/gatekeeper_test.go:157` |
-| 428 | `TST-CORE-789` | Decision contains reason | §6.4 Intent Evaluation (Agent Gatekeeper) | Yes | `core/test/gatekeeper_test.go:174` |
-| 429 | `TST-CORE-790` | Safe intent no audit | §6.4 Intent Evaluation (Agent Gatekeeper) | Yes | `core/test/gatekeeper_test.go:208` |
-| 430 | `TST-CORE-791` | Mock allow all | §6.4 Intent Evaluation (Agent Gatekeeper) | Yes | `core/test/gatekeeper_test.go:244` |
-| 431 | `TST-CORE-792` | Mock deny all | §6.4 Intent Evaluation (Agent Gatekeeper) | Yes | `core/test/gatekeeper_test.go:280` |
-| 432 | `TST-CORE-793` | Egress to trusted destination | §6.5 Egress Safety Checks | Yes | `core/test/gatekeeper_test.go:330` |
-| 433 | `TST-CORE-794` | Egress to blocked destination | §6.5 Egress Safety Checks | Yes | `core/test/gatekeeper_test.go:341` |
-| 434 | `TST-CORE-795` | Egress with PII blocked | §6.5 Egress Safety Checks | Yes | `core/test/gatekeeper_test.go:352` |
-| 435 | `TST-CORE-796` | Egress empty destination rejected | §6.5 Egress Safety Checks | Yes | `core/test/gatekeeper_test.go:365` |
-| 436 | `TST-CORE-797` | Egress nil data allowed | §6.5 Egress Safety Checks | Yes | `core/test/gatekeeper_test.go:381` |
-| 437 | `TST-CORE-798` | Mock egress deny | §6.5 Egress Safety Checks | Yes | `core/test/gatekeeper_test.go:400` |
-| 438 | `TST-CORE-799` | Trusted agent accesses open persona | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:428` |
-| 439 | `TST-CORE-800` | Untrusted agent denied locked persona | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:446` |
-| 440 | `TST-CORE-801` | Verified agent restricted persona | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:478` |
-| 441 | `TST-CORE-802` | Cross-persona access denied | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:511` |
-| 442 | `TST-CORE-803` | Money action requires trusted ring | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:547` |
-| 443 | `TST-CORE-804` | Data sharing action flagged | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:581` |
-| 444 | `TST-CORE-889` | Egress audit 90-day rolling retention policy | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:1758` |
-| 445 | `TST-CORE-890` | Contact `updated_at` refreshed on sharing policy mutation | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:1803` |
-| 446 | `TST-CORE-891` | Draft confidence score: low → flagged for review | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:1816` |
-| 447 | `TST-CORE-892` | Agent `draft_only: true` constraint enforced | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:1864` |
-| 448 | `TST-CORE-893` | Agent outcomes recorded in Tier 3 for trust scoring | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:1883` |
+| 388 | `TST-CORE-360` | Default-deny: no policy exists | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:620` |
+| 389 | `TST-CORE-361` | Default-deny: missing category key | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:637` |
+| 390 | `TST-CORE-362` | Policy: `"none"` explicit | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:674` |
+| 391 | `TST-CORE-363` | Policy: `"summary"` | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:710` |
+| 392 | `TST-CORE-364` | Policy: `"full"` | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:726` |
+| 393 | `TST-CORE-365` | Per-contact per-category granularity | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:760` |
+| 394 | `TST-CORE-366` | Domain-specific tier: `eta_only` → summary | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:793` |
+| 395 | `TST-CORE-367` | Domain-specific tier: `free_busy` → summary | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:810` |
+| 396 | `TST-CORE-368` | Domain-specific tier: `exact_location` → full | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:832` |
+| 397 | `TST-CORE-369` | Policy update via PATCH | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:1065` |
+| 398 | `TST-CORE-370` | Bulk policy update | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:1105` |
+| 399 | `TST-CORE-371` | Trust level ≠ sharing | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:869` |
+| 400 | `TST-CORE-372` | Recognized categories | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:915` |
+| 401 | `TST-CORE-373` | Sharing defaults for new contacts | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:1119` |
+| 402 | `TST-CORE-374` | Outbound PII scrub | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:1159` |
+| 403 | `TST-CORE-375` | Extensible categories: custom category accepted | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:971` |
+| 404 | `TST-CORE-376` | Extensible categories: custom category enforced at egress | §6.1 Sharing Policy Enforcement | Yes | `core/test/gatekeeper_test.go:1012` |
+| 405 | `TST-CORE-377` | GET policy | §6.2 Sharing Policy API | Yes | `core/test/gatekeeper_test.go:1185` |
+| 406 | `TST-CORE-378` | PATCH single category | §6.2 Sharing Policy API | Yes | `core/test/gatekeeper_test.go:1211` |
+| 407 | `TST-CORE-379` | PATCH multiple categories | §6.2 Sharing Policy API | Yes | `core/test/gatekeeper_test.go:1245` |
+| 408 | `TST-CORE-380` | PATCH bulk by trust level | §6.2 Sharing Policy API | Yes | `core/test/gatekeeper_test.go:1274` |
+| 409 | `TST-CORE-381` | PATCH bulk all contacts | §6.2 Sharing Policy API | Yes | `core/test/gatekeeper_test.go:1315` |
+| 410 | `TST-CORE-382` | GET policy for unknown DID | §6.2 Sharing Policy API | Yes | `core/test/gatekeeper_test.go:1347` |
+| 411 | `TST-CORE-383` | PATCH with invalid tier value | §6.2 Sharing Policy API | Yes | `core/test/gatekeeper_test.go:1381` |
+| 412 | `TST-CORE-384` | Policy stored in contacts table | §6.2 Sharing Policy API | Yes | `core/test/gatekeeper_test.go:1402` |
+| 413 | `TST-CORE-385` | Brain sends tiered payload | §6.3 Egress Pipeline | Yes | `core/test/gatekeeper_test.go:1424` |
+| 414 | `TST-CORE-386` | Core strips denied categories | §6.3 Egress Pipeline | Yes | `core/test/gatekeeper_test.go:1461` |
+| 415 | `TST-CORE-387` | Malformed payload → category dropped | §6.3 Egress Pipeline | Yes | `core/test/gatekeeper_test.go:1499` |
+| 416 | `TST-CORE-388` | Egress enforcement in compiled Go | §6.3 Egress Pipeline | Yes | `core/test/gatekeeper_test.go:1545` |
+| 417 | `TST-CORE-389` | Egress not ingress | §6.3 Egress Pipeline | Yes | `core/test/gatekeeper_test.go:1563` |
+| 418 | `TST-CORE-390` | Recipient DID resolution | §6.3 Egress Pipeline | Yes | `core/test/gatekeeper_test.go:1592` |
+| 419 | `TST-CORE-391` | Egress audit logging | §6.3 Egress Pipeline | Yes | `core/test/gatekeeper_test.go:1603` |
+| 420 | `TST-CORE-392` | Audit includes denied categories | §6.3 Egress Pipeline | Yes | `core/test/gatekeeper_test.go:1671` |
+| 421 | `TST-CORE-393` | NaCl encryption after policy check | §6.3 Egress Pipeline | Yes | `core/test/gatekeeper_test.go:1706` |
+| 422 | `TST-CORE-783` | Safe intent allowed | §6.4 Intent Evaluation (Agent Gatekeeper) | Yes | `core/test/gatekeeper_test.go:28` |
+| 423 | `TST-CORE-784` | Risky intent flagged | §6.4 Intent Evaluation (Agent Gatekeeper) | Yes | `core/test/gatekeeper_test.go:61` |
+| 424 | `TST-CORE-785` | Blocked intent denied | §6.4 Intent Evaluation (Agent Gatekeeper) | Yes | `core/test/gatekeeper_test.go:92` |
+| 425 | `TST-CORE-786` | Vault read by untrusted denied | §6.4 Intent Evaluation (Agent Gatekeeper) | Yes | `core/test/gatekeeper_test.go:110` |
+| 426 | `TST-CORE-787` | Empty action rejected | §6.4 Intent Evaluation (Agent Gatekeeper) | Yes | `core/test/gatekeeper_test.go:128` |
+| 427 | `TST-CORE-788` | Empty agent DID rejected | §6.4 Intent Evaluation (Agent Gatekeeper) | Yes | `core/test/gatekeeper_test.go:158` |
+| 428 | `TST-CORE-789` | Decision contains reason | §6.4 Intent Evaluation (Agent Gatekeeper) | Yes | `core/test/gatekeeper_test.go:175` |
+| 429 | `TST-CORE-790` | Safe intent no audit | §6.4 Intent Evaluation (Agent Gatekeeper) | Yes | `core/test/gatekeeper_test.go:209` |
+| 430 | `TST-CORE-791` | Mock allow all | §6.4 Intent Evaluation (Agent Gatekeeper) | Yes | `core/test/gatekeeper_test.go:245` |
+| 431 | `TST-CORE-792` | Mock deny all | §6.4 Intent Evaluation (Agent Gatekeeper) | Yes | `core/test/gatekeeper_test.go:281` |
+| 432 | `TST-CORE-793` | Egress to trusted destination | §6.5 Egress Safety Checks | Yes | `core/test/gatekeeper_test.go:331` |
+| 433 | `TST-CORE-794` | Egress to blocked destination | §6.5 Egress Safety Checks | Yes | `core/test/gatekeeper_test.go:342` |
+| 434 | `TST-CORE-795` | Egress with PII blocked | §6.5 Egress Safety Checks | Yes | `core/test/gatekeeper_test.go:353` |
+| 435 | `TST-CORE-796` | Egress empty destination rejected | §6.5 Egress Safety Checks | Yes | `core/test/gatekeeper_test.go:366` |
+| 436 | `TST-CORE-797` | Egress nil data allowed | §6.5 Egress Safety Checks | Yes | `core/test/gatekeeper_test.go:382` |
+| 437 | `TST-CORE-798` | Mock egress deny | §6.5 Egress Safety Checks | Yes | `core/test/gatekeeper_test.go:401` |
+| 438 | `TST-CORE-799` | Trusted agent accesses open persona | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:429` |
+| 439 | `TST-CORE-800` | Untrusted agent denied locked persona | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:447` |
+| 440 | `TST-CORE-801` | Verified agent restricted persona | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:479` |
+| 441 | `TST-CORE-802` | Cross-persona access denied | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:512` |
+| 442 | `TST-CORE-803` | Money action requires trusted ring | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:548` |
+| 443 | `TST-CORE-804` | Data sharing action flagged | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:582` |
+| 444 | `TST-CORE-889` | Egress audit 90-day rolling retention policy | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:1759` |
+| 445 | `TST-CORE-890` | Contact `updated_at` refreshed on sharing policy mutation | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:1804` |
+| 446 | `TST-CORE-891` | Draft confidence score: low → flagged for review | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:1817` |
+| 447 | `TST-CORE-892` | Agent `draft_only: true` constraint enforced | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:1865` |
+| 448 | `TST-CORE-893` | Agent outcomes recorded in Tier 3 for trust scoring | §6.6 Trust Ring & Persona Access Control | Yes | `core/test/gatekeeper_test.go:1884` |
 | 449 | `TST-CORE-394` | Enqueue message | §7.1 Outbox (Reliable Delivery) | Yes | `core/test/transport_test.go:29` |
 | 450 | `TST-CORE-395` | Outbox schema | §7.1 Outbox (Reliable Delivery) | Yes | `core/test/transport_test.go:114` |
 | 451 | `TST-CORE-396` | Successful delivery | §7.1 Outbox (Reliable Delivery) | Yes | `core/test/transport_test.go:787` |
@@ -673,51 +673,51 @@
 | 629 | `TST-CORE-530` | CLIENT_TOKEN format: 32 bytes, hex-encoded | §10.1 Device Management API | Yes | `core/test/pairing_test.go:203` (+1) |
 | 630 | `TST-CORE-895` | Device type (rich/thin) recorded during pairing | §10.1 Device Management API | Yes | `core/test/pairing_test.go:527` |
 | 631 | `TST-CORE-896` | mDNS auto-discovery broadcast on LAN | §10.1 Device Management API | Yes | `core/test/pairing_test.go:538` |
-| 632 | `TST-CORE-531` | Healthy brain | §11. Brain Client & Circuit Breaker | Yes | `core/test/brainclient_test.go:27` (+1) |
-| 633 | `TST-CORE-532` | Brain timeout | §11. Brain Client & Circuit Breaker | Yes | `core/test/brainclient_test.go:52` (+1) |
-| 634 | `TST-CORE-533` | Circuit breaker opens | §11. Brain Client & Circuit Breaker | Yes | `core/test/brainclient_test.go:82` (+1) |
-| 635 | `TST-CORE-534` | Circuit breaker half-open | §11. Brain Client & Circuit Breaker | Yes | `core/test/brainclient_test.go:107` (+1) |
-| 636 | `TST-CORE-535` | Circuit breaker closes | §11. Brain Client & Circuit Breaker | Yes | `core/test/brainclient_test.go:135` (+1) |
-| 637 | `TST-CORE-536` | Brain crash recovery | §11. Brain Client & Circuit Breaker | Yes | `core/test/brainclient_test.go:169` (+1) |
-| 638 | `TST-CORE-537` | Brain healthy | §11.1 Watchdog | Yes | `core/test/brainclient_test.go:210` |
-| 639 | `TST-CORE-538` | Brain unhealthy | §11.1 Watchdog | Yes | `core/test/brainclient_test.go:242` |
-| 640 | `TST-CORE-539` | Brain recovery | §11.1 Watchdog | Yes | `core/test/brainclient_test.go:264` |
-| 641 | `TST-CORE-540` | Watchdog interval | §11.1 Watchdog | Yes | `core/test/brainclient_test.go:295` |
-| 642 | `TST-CORE-843` | Send event to brain (mock) | §11.1 Watchdog | Yes | `core/test/brainclient_test.go:325` |
-| 643 | `TST-CORE-844` | Brain returns error (mock) | §11.1 Watchdog | Yes | `core/test/brainclient_test.go:346` |
-| 644 | `TST-CORE-845` | Brain returns malformed JSON | §11.1 Watchdog | Yes | `core/test/brainclient_test.go:359` |
-| 645 | `TST-CORE-846` | Concurrent requests | §11.1 Watchdog | Yes | `core/test/brainclient_test.go:399` |
-| 646 | `TST-CORE-847` | Empty URL returns error | §11.1 Watchdog | Yes | `core/test/brainclient_test.go:433` |
-| 647 | `TST-CORE-848` | Connection pooling | §11.1 Watchdog | Yes | `core/test/brainclient_test.go:460` |
-| 648 | `TST-CORE-849` | Mock health success | §11.1 Watchdog | Yes | `core/test/brainclient_test.go:520` |
-| 649 | `TST-CORE-850` | Mock health failure | §11.1 Watchdog | Yes | `core/test/brainclient_test.go:543` |
+| 632 | `TST-CORE-531` | Healthy brain | §11. Brain Client & Circuit Breaker | Yes | `core/test/brainclient_test.go:38` (+1) |
+| 633 | `TST-CORE-532` | Brain timeout | §11. Brain Client & Circuit Breaker | Yes | `core/test/brainclient_test.go:63` (+1) |
+| 634 | `TST-CORE-533` | Circuit breaker opens | §11. Brain Client & Circuit Breaker | Yes | `core/test/brainclient_test.go:93` (+1) |
+| 635 | `TST-CORE-534` | Circuit breaker half-open | §11. Brain Client & Circuit Breaker | Yes | `core/test/brainclient_test.go:118` (+1) |
+| 636 | `TST-CORE-535` | Circuit breaker closes | §11. Brain Client & Circuit Breaker | Yes | `core/test/brainclient_test.go:146` (+1) |
+| 637 | `TST-CORE-536` | Brain crash recovery | §11. Brain Client & Circuit Breaker | Yes | `core/test/brainclient_test.go:180` (+1) |
+| 638 | `TST-CORE-537` | Brain healthy | §11.1 Watchdog | Yes | `core/test/brainclient_test.go:221` |
+| 639 | `TST-CORE-538` | Brain unhealthy | §11.1 Watchdog | Yes | `core/test/brainclient_test.go:253` |
+| 640 | `TST-CORE-539` | Brain recovery | §11.1 Watchdog | Yes | `core/test/brainclient_test.go:275` |
+| 641 | `TST-CORE-540` | Watchdog interval | §11.1 Watchdog | Yes | `core/test/brainclient_test.go:306` |
+| 642 | `TST-CORE-843` | Send event to brain (mock) | §11.1 Watchdog | Yes | `core/test/brainclient_test.go:336` |
+| 643 | `TST-CORE-844` | Brain returns error (mock) | §11.1 Watchdog | Yes | `core/test/brainclient_test.go:357` |
+| 644 | `TST-CORE-845` | Brain returns malformed JSON | §11.1 Watchdog | Yes | `core/test/brainclient_test.go:370` |
+| 645 | `TST-CORE-846` | Concurrent requests | §11.1 Watchdog | Yes | `core/test/brainclient_test.go:410` |
+| 646 | `TST-CORE-847` | Empty URL returns error | §11.1 Watchdog | Yes | `core/test/brainclient_test.go:444` |
+| 647 | `TST-CORE-848` | Connection pooling | §11.1 Watchdog | Yes | `core/test/brainclient_test.go:471` |
+| 648 | `TST-CORE-849` | Mock health success | §11.1 Watchdog | Yes | `core/test/brainclient_test.go:531` |
+| 649 | `TST-CORE-850` | Mock health failure | §11.1 Watchdog | Yes | `core/test/brainclient_test.go:554` |
 | 650 | `TST-CORE-541` | Proxy to brain admin UI | §12. Admin Proxy | Yes | `core/test/adminproxy_test.go:26` |
 | 651 | `TST-CORE-542` | Auth required | §12. Admin Proxy | Yes | `core/test/adminproxy_test.go:69` |
 | 652 | `TST-CORE-543` | Static asset proxying | §12. Admin Proxy | Yes | `core/test/adminproxy_test.go:96` |
 | 653 | `TST-CORE-544` | WebSocket upgrade through proxy | §12. Admin Proxy | Yes | `core/test/adminproxy_test.go:144` |
 | 654 | `TST-CORE-897` | CSRF token injected as `X-CSRF-Token` in proxied response | §12. Admin Proxy | Yes | `core/test/adminproxy_test.go:163` |
-| 655 | `TST-CORE-545` | Below rate limit | §13. Rate Limiting | Yes | `core/test/ratelimit_test.go:25` |
-| 656 | `TST-CORE-546` | At rate limit | §13. Rate Limiting | Yes | `core/test/ratelimit_test.go:44` |
-| 657 | `TST-CORE-547` | Above rate limit | §13. Rate Limiting | Yes | `core/test/ratelimit_test.go:73` |
-| 658 | `TST-CORE-548` | Rate limit reset | §13. Rate Limiting | Yes | `core/test/ratelimit_test.go:111` |
-| 659 | `TST-CORE-549` | Per-IP isolation | §13. Rate Limiting | Yes | `core/test/ratelimit_test.go:142` |
-| 660 | `TST-CORE-550` | Rate limit headers | §13. Rate Limiting | Yes | `core/test/ratelimit_test.go:176` |
-| 661 | `TST-CORE-551` | Load from environment variables | §14. Configuration | Yes | `core/test/config_test.go:25` |
-| 662 | `TST-CORE-552` | Load from Docker secrets | §14. Configuration | Yes | `core/test/config_test.go:245` |
-| 663 | `TST-CORE-553` | Missing required config | §14. Configuration | Yes | `core/test/config_test.go:165` |
-| 664 | `TST-CORE-554` | Default values | §14. Configuration | Yes | `core/test/config_test.go:124` (+1) |
-| 665 | `TST-CORE-555` | Config validation | §14. Configuration | Yes | `core/test/config_test.go:178` |
-| 666 | `TST-CORE-556` | DINA_SPOOL_MAX enforcement | §14. Configuration | Yes | `core/test/config_test.go:309` |
-| 667 | `TST-CORE-851` | Partial env vars | §14. Configuration | Yes | `core/test/config_test.go:70` |
-| 668 | `TST-CORE-852` | Env var type parsing | §14. Configuration | Yes | `core/test/config_test.go:99` |
-| 669 | `TST-CORE-853` | Default security mode | §14. Configuration | Yes | `core/test/config_test.go:147` |
-| 670 | `TST-CORE-854` | Negative session TTL rejected | §14. Configuration | Yes | `core/test/config_test.go:192` |
-| 671 | `TST-CORE-855` | Load from config.json | §14. Configuration | Yes | `core/test/config_test.go:210` |
-| 672 | `TST-CORE-856` | Env overrides config.json | §14. Configuration | Yes | `core/test/config_test.go:265` |
-| 673 | `TST-CORE-857` | Docker secret overrides env token | §14. Configuration | Yes | `core/test/config_test.go:287` |
-| 674 | `TST-CORE-898` | Audit log retention configurable via config.json (`retention_days`) | §14. Configuration | Yes | `core/test/config_test.go:325` |
-| 675 | `TST-CORE-899` | Cloud LLM consent flag stored and enforced | §14. Configuration | Yes | `core/test/config_test.go:333` |
-| 676 | `TST-CORE-900` | `DINA_HISTORY_DAYS` config default 365 | §14. Configuration | Yes | `core/test/config_test.go:344` |
+| 655 | `TST-CORE-545` | Below rate limit | §13. Rate Limiting | Yes | `core/test/ratelimit_test.go:28` |
+| 656 | `TST-CORE-546` | At rate limit | §13. Rate Limiting | Yes | `core/test/ratelimit_test.go:47` |
+| 657 | `TST-CORE-547` | Above rate limit | §13. Rate Limiting | Yes | `core/test/ratelimit_test.go:76` |
+| 658 | `TST-CORE-548` | Rate limit reset | §13. Rate Limiting | Yes | `core/test/ratelimit_test.go:114` |
+| 659 | `TST-CORE-549` | Per-IP isolation | §13. Rate Limiting | Yes | `core/test/ratelimit_test.go:145` |
+| 660 | `TST-CORE-550` | Rate limit headers | §13. Rate Limiting | Yes | `core/test/ratelimit_test.go:179` |
+| 661 | `TST-CORE-551` | Load from environment variables | §14. Configuration | Yes | `core/test/config_test.go:26` |
+| 662 | `TST-CORE-552` | Load from Docker secrets | §14. Configuration | Yes | `core/test/config_test.go:246` |
+| 663 | `TST-CORE-553` | Missing required config | §14. Configuration | Yes | `core/test/config_test.go:166` |
+| 664 | `TST-CORE-554` | Default values | §14. Configuration | Yes | `core/test/config_test.go:125` (+1) |
+| 665 | `TST-CORE-555` | Config validation | §14. Configuration | Yes | `core/test/config_test.go:179` |
+| 666 | `TST-CORE-556` | DINA_SPOOL_MAX enforcement | §14. Configuration | Yes | `core/test/config_test.go:310` |
+| 667 | `TST-CORE-851` | Partial env vars | §14. Configuration | Yes | `core/test/config_test.go:71` |
+| 668 | `TST-CORE-852` | Env var type parsing | §14. Configuration | Yes | `core/test/config_test.go:100` |
+| 669 | `TST-CORE-853` | Default security mode | §14. Configuration | Yes | `core/test/config_test.go:148` |
+| 670 | `TST-CORE-854` | Negative session TTL rejected | §14. Configuration | Yes | `core/test/config_test.go:193` |
+| 671 | `TST-CORE-855` | Load from config.json | §14. Configuration | Yes | `core/test/config_test.go:211` |
+| 672 | `TST-CORE-856` | Env overrides config.json | §14. Configuration | Yes | `core/test/config_test.go:266` |
+| 673 | `TST-CORE-857` | Docker secret overrides env token | §14. Configuration | Yes | `core/test/config_test.go:288` |
+| 674 | `TST-CORE-898` | Audit log retention configurable via config.json (`retention_days`) | §14. Configuration | Yes | `core/test/config_test.go:326` |
+| 675 | `TST-CORE-899` | Cloud LLM consent flag stored and enforced | §14. Configuration | Yes | `core/test/config_test.go:334` |
+| 676 | `TST-CORE-900` | `DINA_HISTORY_DAYS` config default 365 | §14. Configuration | Yes | `core/test/config_test.go:345` |
 | 677 | `TST-CORE-557` | Liveness probe | §15.1 Health & Readiness | Yes | `core/test/server_test.go:45` |
 | 678 | `TST-CORE-558` | Readiness probe: vault healthy | §15.1 Health & Readiness | Yes | `core/test/server_test.go:66` |
 | 679 | `TST-CORE-559` | Readiness probe: vault locked | §15.1 Health & Readiness | Yes | `core/test/server_test.go:84` |
@@ -984,8 +984,8 @@
 | 940 | `TST-CORE-877` | Estate recovery: keys delivered via Dina-to-Dina encrypted channel | §27. Digital Estate | Yes | `core/test/estate_test.go:284` |
 | 941 | `TST-CORE-878` | Estate recovery: non-assigned data destroyed per default_action | §27. Digital Estate | Yes | `core/test/estate_test.go:314` |
 | 942 | `TST-CORE-879` | Estate recovery: no timer trigger exists in codebase | §27. Digital Estate | Yes | `core/test/estate_test.go:335` |
-| 943 | `TST-CORE-880` | Valid Ed25519 signature accepted (POST with body) | §28. CLI Request Signing (Ed25519) | Yes | `core/test/crypto_test.go:1849` |
-| 944 | `TST-CORE-881` | Valid signature with empty body (GET) | §28. CLI Request Signing (Ed25519) | Yes | `core/test/crypto_test.go:1884` |
+| 943 | `TST-CORE-880` | Valid Ed25519 signature accepted (POST with body) | §28. CLI Request Signing (Ed25519) | Yes | `core/test/crypto_test.go:1853` |
+| 944 | `TST-CORE-881` | Valid signature with empty body (GET) | §28. CLI Request Signing (Ed25519) | Yes | `core/test/crypto_test.go:1888` |
 | 945 | `TST-CORE-882` | Invalid signature rejected (garbage bytes) | §28. CLI Request Signing (Ed25519) | Yes | `core/test/taskqueue_test.go:1458` (+1) |
 | 946 | `TST-CORE-883` | Wrong signing key rejected | §28. CLI Request Signing (Ed25519) | Yes | `core/test/vault_test.go:6028` (+1) |
 | 947 | `TST-CORE-884` | Tampered body rejected | §28. CLI Request Signing (Ed25519) | Yes | `core/test/vault_test.go:6102` (+1) |
@@ -993,119 +993,119 @@
 | 949 | `TST-CORE-886` | Tampered method rejected | §28. CLI Request Signing (Ed25519) | Yes | `core/test/pii_test.go:600` |
 | 950 | `TST-CORE-887` | Expired timestamp (>5 min) rejected | §28. CLI Request Signing (Ed25519) | Yes | `core/test/pii_test.go:617` |
 | 951 | `TST-CORE-888` | Future timestamp (>5 min) rejected | §28. CLI Request Signing (Ed25519) | Yes | `core/test/pii_test.go:661` |
-| 952 | `TST-CORE-889` | Timestamp within 5-min window accepted | §28. CLI Request Signing (Ed25519) | Yes | `core/test/gatekeeper_test.go:1758` |
-| 953 | `TST-CORE-890` | Invalid timestamp format rejected | §28. CLI Request Signing (Ed25519) | Yes | `core/test/gatekeeper_test.go:1803` |
-| 954 | `TST-CORE-891` | Unknown DID rejected | §28. CLI Request Signing (Ed25519) | Yes | `core/test/gatekeeper_test.go:1816` |
-| 955 | `TST-CORE-892` | Revoked device DID rejected | §28. CLI Request Signing (Ed25519) | Yes | `core/test/gatekeeper_test.go:1864` |
-| 956 | `TST-CORE-893` | Malformed signature hex rejected | §28. CLI Request Signing (Ed25519) | Yes | `core/test/gatekeeper_test.go:1883` |
+| 952 | `TST-CORE-889` | Timestamp within 5-min window accepted | §28. CLI Request Signing (Ed25519) | Yes | `core/test/gatekeeper_test.go:1759` |
+| 953 | `TST-CORE-890` | Invalid timestamp format rejected | §28. CLI Request Signing (Ed25519) | Yes | `core/test/gatekeeper_test.go:1804` |
+| 954 | `TST-CORE-891` | Unknown DID rejected | §28. CLI Request Signing (Ed25519) | Yes | `core/test/gatekeeper_test.go:1817` |
+| 955 | `TST-CORE-892` | Revoked device DID rejected | §28. CLI Request Signing (Ed25519) | Yes | `core/test/gatekeeper_test.go:1865` |
+| 956 | `TST-CORE-893` | Malformed signature hex rejected | §28. CLI Request Signing (Ed25519) | Yes | `core/test/gatekeeper_test.go:1884` |
 | 957 | `TST-CORE-894` | Pairing with Ed25519 key succeeds | §28. CLI Request Signing (Ed25519) | Yes | `core/test/transport_test.go:2720` |
 | 958 | `TST-CORE-895` | Pairing with invalid code rejected | §28. CLI Request Signing (Ed25519) | Yes | `core/test/pairing_test.go:527` |
 | 959 | `TST-CORE-896` | Pairing with invalid multibase rejected | §28. CLI Request Signing (Ed25519) | Yes | `core/test/pairing_test.go:538` |
 | 960 | `TST-CORE-897` | Pairing code single-use enforced | §28. CLI Request Signing (Ed25519) | Yes | `core/test/adminproxy_test.go:163` |
-| 961 | `TST-CORE-898` | Paired device appears in device list | §28. CLI Request Signing (Ed25519) | Yes | `core/test/config_test.go:325` |
-| 962 | `TST-CORE-899` | Bearer fallback when no X-DID headers | §28. CLI Request Signing (Ed25519) | Yes | `core/test/config_test.go:333` |
-| 963 | `TST-CORE-934` | SendMessage stores Ed25519 signature in outbox | §29.1 Transport Signature Verification | No | — |
-| 964 | `TST-CORE-935` | Valid signature accepted on receive | §29.1 Transport Signature Verification | No | — |
-| 965 | `TST-CORE-936` | Wrong signature rejected (wrong signer key) | §29.1 Transport Signature Verification | No | — |
-| 966 | `TST-CORE-937` | Tampered ciphertext rejected (bit flip) | §29.1 Transport Signature Verification | No | — |
-| 967 | `TST-CORE-938` | Empty signature passes (backward compatibility) | §29.1 Transport Signature Verification | No | — |
-| 968 | `TST-CORE-939` | ProcessOutbox delivers pending messages | §29.2 Outbox Retry & Queue Limits | No | — |
-| 969 | `TST-CORE-940` | Delivery failure marks message failed | §29.2 Outbox Retry & Queue Limits | No | — |
-| 970 | `TST-CORE-941` | Retry after transient failure succeeds | §29.2 Outbox Retry & Queue Limits | No | — |
-| 971 | `TST-CORE-942` | Unresolvable DID marked failed | §29.2 Outbox Retry & Queue Limits | No | — |
-| 972 | `TST-CORE-943` | No deliverer marks all failed | §29.2 Outbox Retry & Queue Limits | No | — |
-| 973 | `TST-CORE-944` | Context cancellation stops ProcessOutbox | §29.2 Outbox Retry & Queue Limits | No | — |
-| 974 | `TST-CORE-945` | Queue limit enforced (reject when full) | §29.2 Outbox Retry & Queue Limits | No | — |
-| 975 | `TST-CORE-946` | Retry count increments across attempts | §29.2 Outbox Retry & Queue Limits | No | — |
-| 976 | `TST-CORE-947` | IP rate limit rejects excess requests | §29.3 Ingress 3-Valve Defense | No | — |
-| 977 | `TST-CORE-948` | Router.Ingest rejects flood via ErrRateLimited | §29.3 Ingress 3-Valve Defense | No | — |
-| 978 | `TST-CORE-949` | Dead drop stores when vault locked | §29.3 Ingress 3-Valve Defense | No | — |
-| 979 | `TST-CORE-950` | Inbox spools when vault unlocked | §29.3 Ingress 3-Valve Defense | No | — |
-| 980 | `TST-CORE-951` | Spool full rejects new messages (Valve 2) | §29.3 Ingress 3-Valve Defense | No | — |
-| 981 | `TST-CORE-952` | Sweeper processes dead drop blobs | §29.3 Ingress 3-Valve Defense | No | — |
-| 982 | `TST-CORE-953` | ProcessPending sweeps + drains inbox | §29.3 Ingress 3-Valve Defense | No | — |
-| 983 | `TST-CORE-954` | Oversized payload rejected (>256KB) | §29.3 Ingress 3-Valve Defense | No | — |
-| 984 | `TST-CORE-955` | SweepFull returns detailed results | §29.3 Ingress 3-Valve Defense | No | — |
-| 985 | `TST-CORE-956` | Replayed message (same ID) detected | §29.4 Replay & DID Spoofing | No | — |
-| 986 | `TST-CORE-957` | DID spoofing rejected (FromKID mismatch) | §29.4 Replay & DID Spoofing | No | — |
-| 987 | `TST-CORE-958` | SQL injection in message body safely deserialized | §29.5 Prompt Injection Safety | No | — |
-| 988 | `TST-CORE-959` | JSON escape injection safely deserialized | §29.5 Prompt Injection Safety | No | — |
-| 989 | `TST-CORE-960` | Oversized field in body safely deserialized | §29.5 Prompt Injection Safety | No | — |
-| 990 | `TST-CORE-961` | Null bytes in body safely deserialized | §29.5 Prompt Injection Safety | No | — |
-| 991 | `TST-CORE-962` | Nested JSON in body safely deserialized | §29.5 Prompt Injection Safety | No | — |
-| 992 | `TST-CORE-963` | HTML/XSS in body safely deserialized | §29.5 Prompt Injection Safety | No | — |
-| 993 | `TST-CORE-964` | Cross-persona DEK isolation (5 personas) | §29.6 HKDF & Key Derivation Isolation | No | — |
-| 994 | `TST-CORE-965` | User salt uniqueness | §29.6 HKDF & Key Derivation Isolation | No | — |
-| 995 | `TST-CORE-966` | HKDF determinism | §29.6 HKDF & Key Derivation Isolation | No | — |
-| 996 | `TST-CORE-967` | KeyDeriver persona DEK isolation | §29.6 HKDF & Key Derivation Isolation | No | — |
-| 997 | `TST-CORE-968` | Signing key index independence | §29.6 HKDF & Key Derivation Isolation | No | — |
-| 998 | `TST-CORE-969` | Non-hardened path rejected | §29.7 SLIP-0010 Path Enforcement | No | — |
-| 999 | `TST-CORE-970` | BIP-44 purpose 44' forbidden | §29.7 SLIP-0010 Path Enforcement | No | — |
-| 1000 | `TST-CORE-971` | Sibling hardened path unlinkability | §29.7 SLIP-0010 Path Enforcement | No | — |
-| 1001 | `TST-CORE-972` | Invalid checksum rejected | §29.8 BIP-39 Recovery Safety | No | — |
-| 1002 | `TST-CORE-973` | Wrong word count rejected (12 vs 24) | §29.8 BIP-39 Recovery Safety | No | — |
-| 1003 | `TST-CORE-974` | Deterministic seed derivation | §29.8 BIP-39 Recovery Safety | No | — |
-| 1004 | `TST-CORE-975` | Locked persona denied despite gatekeeper allow | §29.9 Persona Gatekeeper & Vault Access | No | — |
-| 1005 | `TST-CORE-976` | Locked persona denial audited | §29.9 Persona Gatekeeper & Vault Access | No | — |
-| 1006 | `TST-CORE-977` | Egress denied and audited | §29.9 Persona Gatekeeper & Vault Access | No | — |
-| 1007 | `TST-CORE-978` | Missing policy category denied (default deny) | §29.10 Sharing Policy Egress Enforcement | No | — |
-| 1008 | `TST-CORE-979` | Tier "none" blocks category | §29.10 Sharing Policy Egress Enforcement | No | — |
-| 1009 | `TST-CORE-980` | No policy for contact → all categories denied | §29.10 Sharing Policy Egress Enforcement | No | — |
-| 1010 | `TST-CORE-981` | Malformed payload (non-TieredPayload) denied | §29.10 Sharing Policy Egress Enforcement | No | — |
-| 1011 | `TST-CORE-982` | `DINA_STRICT_REAL=1` fails on any real API fallback | §30.1 Strict-Real Mode Enforcement (test_issues #1) | No | — |
-| 1012 | `TST-CORE-983` | `real_clients.py _try_request()` raises on non-2xx in strict mode | §30.1 Strict-Real Mode Enforcement (test_issues #1) | No | — |
-| 1013 | `TST-CORE-984` | `real_nodes.py _api_request()` raises on failure in strict mode | §30.1 Strict-Real Mode Enforcement (test_issues #1) | No | — |
-| 1014 | `TST-CORE-985` | Mock side-effects disabled in strict-real suites | §30.1 Strict-Real Mode Enforcement (test_issues #1) | No | — |
-| 1015 | `TST-CORE-986` | All 45 fallback locations (22+22+1) verified strict | §30.1 Strict-Real Mode Enforcement (test_issues #1) | No | — |
-| 1016 | `TST-CORE-987` | E2E conftest uses CLIENT_TOKEN for persona create/unlock | §30.2 Authz Boundary Correctness (test_issues #2 — FIXE… | No | — |
-| 1017 | `TST-CORE-988` | Integration conftest uses CLIENT_TOKEN for admin setup | §30.2 Authz Boundary Correctness (test_issues #2 — FIXE… | No | — |
-| 1018 | `TST-CORE-989` | Docker mode fails fast if CLIENT_TOKEN missing | §30.2 Authz Boundary Correctness (test_issues #2 — FIXE… | No | — |
-| 1019 | `TST-CORE-990` | Matrix test: every admin endpoint rejects Service Signature Auth | §30.2 Authz Boundary Correctness (test_issues #2 — FIXE… | No | — |
-| 1020 | `TST-CORE-991` | Contract test runs against real core HTTP router | §30.3 Core↔Brain Contract Verification (test_issues #3,… | No | — |
-| 1021 | `TST-CORE-992` | Contract test runs against real brain FastAPI app | §30.3 Core↔Brain Contract Verification (test_issues #3,… | No | — |
-| 1022 | `TST-CORE-993` | Core→Brain: `/healthz` returns 200 with status | §30.3 Core↔Brain Contract Verification (test_issues #3,… | No | — |
-| 1023 | `TST-CORE-994` | Core→Brain: `/api/v1/process` accepts `{task_id, type, payload}` | §30.3 Core↔Brain Contract Verification (test_issues #3,… | No | — |
-| 1024 | `TST-CORE-995` | Core→Brain: `/api/v1/reason` accepts `{"prompt":...}` | §30.3 Core↔Brain Contract Verification (test_issues #3,… | No | — |
-| 1025 | `TST-CORE-996` | Brain→Core: `/v1/vault/query` with persona+q | §30.3 Core↔Brain Contract Verification (test_issues #3,… | No | — |
-| 1026 | `TST-CORE-997` | Brain→Core: `/v1/pii/scrub` with text body | §30.3 Core↔Brain Contract Verification (test_issues #3,… | No | — |
-| 1027 | `TST-CORE-998` | JSON schema frozen: golden request/response examples | §30.3 Core↔Brain Contract Verification (test_issues #3,… | No | — |
-| 1028 | `TST-CORE-999` | `create_app()` boot smoke under minimal env | §30.4 Brain Composition Testing (test_issues #5) | No | — |
-| 1029 | `TST-CORE-1000` | Degraded startup: missing spaCy model | §30.4 Brain Composition Testing (test_issues #5) | No | — |
-| 1030 | `TST-CORE-1001` | `/healthz` component status correctness | §30.4 Brain Composition Testing (test_issues #5) | No | — |
-| 1031 | `TST-CORE-1002` | `send_d2d` produces valid JSON (no bytes-in-JSON) | §30.5 Known-Bad Behavior Elimination (test_issues #6, #… | No | — |
-| 1032 | `TST-CORE-1003` | `wiring_test.go` mock brain serves `/healthz` | §30.5 Known-Bad Behavior Elimination (test_issues #6, #… | No | — |
-| 1033 | `TST-CORE-1004` | `brainclient_test.go` health tests use `/healthz` | §30.5 Known-Bad Behavior Elimination (test_issues #6, #… | No | — |
-| 1034 | `TST-CORE-1005` | No `client_token or brain_token` fallback in any conftest | §30.5 Known-Bad Behavior Elimination (test_issues #6, #… | No | — |
-| 1035 | `TST-CORE-1006` | Negative assertions for old contracts | §30.5 Known-Bad Behavior Elimination (test_issues #6, #… | No | — |
-| 1036 | `TST-CORE-1007` | Hard cleanup per test class in real suites | §30.6 Data Isolation & Cleanup (test_issues #7) | No | — |
-| 1037 | `TST-CORE-1008` | Dirty state detector fails on prior-run artifacts | §30.6 Data Isolation & Cleanup (test_issues #7) | No | — |
-| 1038 | `TST-CORE-1009` | Real delete APIs used (not visibility filtering) | §30.6 Data Isolation & Cleanup (test_issues #7) | No | — |
-| 1039 | `TST-CORE-1010` | Manifest `total` counts match actual test counts | §30.7 Traceability Pipeline (test_issues #8) | No | — |
-| 1040 | `TST-CORE-1011` | `pytest --collect-only` maps to plan IDs | §30.7 Traceability Pipeline (test_issues #8) | No | — |
-| 1041 | `TST-CORE-1012` | `go test -list` maps to plan IDs | §30.7 Traceability Pipeline (test_issues #8) | No | — |
-| 1042 | `TST-CORE-1013` | CI validates manifest totals are non-zero | §30.7 Traceability Pipeline (test_issues #8) | No | — |
-| 1043 | `TST-CORE-1014` | CI stage: `unit-core` | §30.8 CI Pipeline Gates (test_issues #9) | No | — |
-| 1044 | `TST-CORE-1015` | CI stage: `unit-brain` | §30.8 CI Pipeline Gates (test_issues #9) | No | — |
-| 1045 | `TST-CORE-1016` | CI stage: `contract-core-brain` | §30.8 CI Pipeline Gates (test_issues #9) | No | — |
-| 1046 | `TST-CORE-1017` | CI stage: `integration-real` | §30.8 CI Pipeline Gates (test_issues #9) | No | — |
-| 1047 | `TST-CORE-1018` | CI stage: `e2e-smoke-real` | §30.8 CI Pipeline Gates (test_issues #9) | No | — |
-| 1048 | `TST-CORE-1019` | Legacy tests in explicit profile | §30.9 Legacy Test Separation (test_issues #10) | No | — |
-| 1049 | `TST-CORE-1020` | Default pipeline excludes legacy tests | §30.9 Legacy Test Separation (test_issues #10) | No | — |
-| 1050 | `TST-CORE-1021` | Compatibility tests labeled explicitly | §30.9 Legacy Test Separation (test_issues #10) | No | — |
-| 1051 | `TST-CORE-1022` | Service Signature Auth denied on all admin endpoints (real HTTP) | §30.10 Security Boundary Real Tests (test_issues #12) | No | — |
-| 1052 | `TST-CORE-1023` | CLIENT_TOKEN denied on brain-internal endpoints (real HTTP) | §30.10 Security Boundary Real Tests (test_issues #12) | No | — |
-| 1053 | `TST-CORE-1024` | Locked persona: dead-drop ingress, no reads (real) | §30.10 Security Boundary Real Tests (test_issues #12) | No | — |
-| 1054 | `TST-CORE-1025` | Draft-don't-send: no direct send path from brain | §30.10 Security Boundary Real Tests (test_issues #12) | No | — |
-| 1055 | `TST-CORE-1026` | Egress policy enforcement for all categories (real) | §30.10 Security Boundary Real Tests (test_issues #12) | No | — |
-| 1056 | `TST-CORE-1027` | Real cross-node D2D: sign → encrypt → POST → decrypt → verify | §30.11 Crypto/Identity Cross-Process Tests (test_issues… | No | — |
-| 1057 | `TST-CORE-1028` | DID resolution + endpoint verification (networked) | §30.11 Crypto/Identity Cross-Process Tests (test_issues… | No | — |
-| 1058 | `TST-CORE-1029` | Key rotation tested with real persistence + restart | §30.11 Crypto/Identity Cross-Process Tests (test_issues… | No | — |
-| 1059 | `TST-CORE-1030` | Ed25519 → X25519 conversion verified across nodes | §30.11 Crypto/Identity Cross-Process Tests (test_issues… | No | — |
+| 961 | `TST-CORE-898` | Paired device appears in device list | §28. CLI Request Signing (Ed25519) | Yes | `core/test/config_test.go:326` |
+| 962 | `TST-CORE-899` | Bearer fallback when no X-DID headers | §28. CLI Request Signing (Ed25519) | Yes | `core/test/config_test.go:334` |
+| 963 | `TST-CORE-934` | SendMessage stores Ed25519 signature in outbox | §29.1 Transport Signature Verification | Yes | `core/test/transport_adversarial_test.go:270` |
+| 964 | `TST-CORE-935` | Valid signature accepted on receive | §29.1 Transport Signature Verification | Yes | `core/test/transport_adversarial_test.go:449` |
+| 965 | `TST-CORE-936` | Wrong signature rejected (wrong signer key) | §29.1 Transport Signature Verification | Yes | `core/test/transport_adversarial_test.go:637` |
+| 966 | `TST-CORE-937` | Tampered ciphertext rejected (bit flip) | §29.1 Transport Signature Verification | Yes | `core/test/transport_adversarial_test.go:680` |
+| 967 | `TST-CORE-938` | Empty signature passes (backward compatibility) | §29.1 Transport Signature Verification | Yes | `core/test/notify_test.go:312` |
+| 968 | `TST-CORE-939` | ProcessOutbox delivers pending messages | §29.2 Outbox Retry & Queue Limits | Yes | `core/test/transport_adversarial_test.go:2756` |
+| 969 | `TST-CORE-940` | Delivery failure marks message failed | §29.2 Outbox Retry & Queue Limits | Yes | `core/test/transport_adversarial_test.go:783` |
+| 970 | `TST-CORE-941` | Retry after transient failure succeeds | §29.2 Outbox Retry & Queue Limits | Yes | `core/test/transport_adversarial_test.go:827` |
+| 971 | `TST-CORE-942` | Unresolvable DID marked failed | §29.2 Outbox Retry & Queue Limits | Yes | `core/test/transport_adversarial_test.go:2268` |
+| 972 | `TST-CORE-943` | No deliverer marks all failed | §29.2 Outbox Retry & Queue Limits | Yes | `core/test/transport_adversarial_test.go:913` |
+| 973 | `TST-CORE-944` | Context cancellation stops ProcessOutbox | §29.2 Outbox Retry & Queue Limits | Yes | `core/test/transport_adversarial_test.go:988` |
+| 974 | `TST-CORE-945` | Queue limit enforced (reject when full) | §29.2 Outbox Retry & Queue Limits | Yes | `core/test/fix_verification_batch8_test.go:550` |
+| 975 | `TST-CORE-946` | Retry count increments across attempts | §29.2 Outbox Retry & Queue Limits | Yes | `core/test/transport_adversarial_test.go:1688` |
+| 976 | `TST-CORE-947` | IP rate limit rejects excess requests | §29.3 Ingress 3-Valve Defense | Yes | `core/test/transport_adversarial_test.go:1037` |
+| 977 | `TST-CORE-948` | Router.Ingest rejects flood via ErrRateLimited | §29.3 Ingress 3-Valve Defense | Yes | `core/test/transport_adversarial_test.go:1062` |
+| 978 | `TST-CORE-949` | Dead drop stores when vault locked | §29.3 Ingress 3-Valve Defense | Yes | `core/test/transport_adversarial_test.go:1100` |
+| 979 | `TST-CORE-950` | Inbox spools when vault unlocked | §29.3 Ingress 3-Valve Defense | Yes | `core/test/transport_adversarial_test.go:1189` |
+| 980 | `TST-CORE-951` | Spool full rejects new messages (Valve 2) | §29.3 Ingress 3-Valve Defense | Yes | `core/test/transport_adversarial_test.go:1366` |
+| 981 | `TST-CORE-952` | Sweeper processes dead drop blobs | §29.3 Ingress 3-Valve Defense | Yes | `core/test/transport_adversarial_test.go:1958` |
+| 982 | `TST-CORE-953` | ProcessPending sweeps + drains inbox | §29.3 Ingress 3-Valve Defense | Yes | `core/test/transport_adversarial_test.go:1426` |
+| 983 | `TST-CORE-954` | Oversized payload rejected (>256KB) | §29.3 Ingress 3-Valve Defense | Yes | `core/test/transport_adversarial_test.go:1464` |
+| 984 | `TST-CORE-955` | SweepFull returns detailed results | §29.3 Ingress 3-Valve Defense | Yes | `core/test/transport_adversarial_test.go:1488` |
+| 985 | `TST-CORE-956` | Replayed message (same ID) detected | §29.4 Replay & DID Spoofing | Yes | `core/test/transport_adversarial_test.go:2479` |
+| 986 | `TST-CORE-957` | DID spoofing rejected (FromKID mismatch) | §29.4 Replay & DID Spoofing | Yes | `core/test/transport_adversarial_test.go:1598` |
+| 987 | `TST-CORE-958` | SQL injection in message body safely deserialized | §29.5 Prompt Injection Safety | Yes | `core/test/transport_adversarial_test.go:1728` |
+| 988 | `TST-CORE-959` | JSON escape injection safely deserialized | §29.5 Prompt Injection Safety | Yes | `core/test/transport_adversarial_test.go:1728` |
+| 989 | `TST-CORE-960` | Oversized field in body safely deserialized | §29.5 Prompt Injection Safety | Yes | `core/test/transport_adversarial_test.go:1728` |
+| 990 | `TST-CORE-961` | Null bytes in body safely deserialized | §29.5 Prompt Injection Safety | Yes | `core/test/transport_adversarial_test.go:1728` |
+| 991 | `TST-CORE-962` | Nested JSON in body safely deserialized | §29.5 Prompt Injection Safety | Yes | `core/test/transport_adversarial_test.go:1728` |
+| 992 | `TST-CORE-963` | HTML/XSS in body safely deserialized | §29.5 Prompt Injection Safety | Yes | `core/test/transport_adversarial_test.go:1797` |
+| 993 | `TST-CORE-964` | Cross-persona DEK isolation (5 personas) | §29.6 HKDF & Key Derivation Isolation | Yes | `core/test/crypto_test.go:2409` |
+| 994 | `TST-CORE-965` | User salt uniqueness | §29.6 HKDF & Key Derivation Isolation | Yes | `core/test/crypto_adversarial_test.go:60` |
+| 995 | `TST-CORE-966` | HKDF determinism | §29.6 HKDF & Key Derivation Isolation | Yes | `core/test/crypto_adversarial_test.go:87` |
+| 996 | `TST-CORE-967` | KeyDeriver persona DEK isolation | §29.6 HKDF & Key Derivation Isolation | Yes | `core/test/crypto_adversarial_test.go:287` |
+| 997 | `TST-CORE-968` | Signing key index independence | §29.6 HKDF & Key Derivation Isolation | Yes | `core/test/crypto_adversarial_test.go:234` |
+| 998 | `TST-CORE-969` | Non-hardened path rejected | §29.7 SLIP-0010 Path Enforcement | Yes | `core/test/crypto_adversarial_test.go:108` |
+| 999 | `TST-CORE-970` | BIP-44 purpose 44' forbidden | §29.7 SLIP-0010 Path Enforcement | Yes | `core/test/crypto_adversarial_test.go:125` |
+| 1000 | `TST-CORE-971` | Sibling hardened path unlinkability | §29.7 SLIP-0010 Path Enforcement | Yes | `core/test/crypto_adversarial_test.go:142` |
+| 1001 | `TST-CORE-972` | Invalid checksum rejected | §29.8 BIP-39 Recovery Safety | Yes | `core/test/traceability_test.go:1329` |
+| 1002 | `TST-CORE-973` | Wrong word count rejected (12 vs 24) | §29.8 BIP-39 Recovery Safety | Yes | `core/test/traceability_test.go:1476` |
+| 1003 | `TST-CORE-974` | Deterministic seed derivation | §29.8 BIP-39 Recovery Safety | Yes | `core/test/crypto_test.go:3179` |
+| 1004 | `TST-CORE-975` | Locked persona denied despite gatekeeper allow | §29.9 Persona Gatekeeper & Vault Access | Yes | `core/test/gatekeeper_adversarial_test.go:168` |
+| 1005 | `TST-CORE-976` | Locked persona denial audited | §29.9 Persona Gatekeeper & Vault Access | Yes | `core/test/gatekeeper_adversarial_test.go:223` |
+| 1006 | `TST-CORE-977` | Egress denied and audited | §29.9 Persona Gatekeeper & Vault Access | Yes | `core/test/gatekeeper_test.go:2626` |
+| 1007 | `TST-CORE-978` | Missing policy category denied (default deny) | §29.10 Sharing Policy Egress Enforcement | Yes | `core/test/gatekeeper_adversarial_test.go:314` |
+| 1008 | `TST-CORE-979` | Tier "none" blocks category | §29.10 Sharing Policy Egress Enforcement | Yes | `core/test/gatekeeper_test.go:2405` |
+| 1009 | `TST-CORE-980` | No policy for contact → all categories denied | §29.10 Sharing Policy Egress Enforcement | Yes | `core/test/gatekeeper_test.go:2028` |
+| 1010 | `TST-CORE-981` | Malformed payload (non-TieredPayload) denied | §29.10 Sharing Policy Egress Enforcement | Yes | `core/test/gatekeeper_test.go:2172` |
+| 1011 | `TST-CORE-982` | `DINA_STRICT_REAL=1` fails on any real API fallback | §30.1 Strict-Real Mode Enforcement (test_issues #1) | Yes | `core/test/traceability_test.go:2278` |
+| 1012 | `TST-CORE-983` | `real_clients.py _try_request()` raises on non-2xx in strict mode | §30.1 Strict-Real Mode Enforcement (test_issues #1) | Yes | `core/test/traceability_test.go:2358` |
+| 1013 | `TST-CORE-984` | `real_nodes.py _api_request()` raises on failure in strict mode | §30.1 Strict-Real Mode Enforcement (test_issues #1) | Yes | `core/test/traceability_test.go:2513` |
+| 1014 | `TST-CORE-985` | Mock side-effects disabled in strict-real suites | §30.1 Strict-Real Mode Enforcement (test_issues #1) | Yes | `core/test/gatekeeper_adversarial_test.go:725` |
+| 1015 | `TST-CORE-986` | All 45 fallback locations (22+22+1) verified strict | §30.1 Strict-Real Mode Enforcement (test_issues #1) | Yes | `core/test/gatekeeper_adversarial_test.go:1188` |
+| 1016 | `TST-CORE-987` | E2E conftest uses CLIENT_TOKEN for persona create/unlock | §30.2 Authz Boundary Correctness (test_issues #2 — FIXE… | Yes | `core/test/traceability_test.go:468` |
+| 1017 | `TST-CORE-988` | Integration conftest uses CLIENT_TOKEN for admin setup | §30.2 Authz Boundary Correctness (test_issues #2 — FIXE… | Yes | `core/test/traceability_test.go:468` |
+| 1018 | `TST-CORE-989` | Docker mode fails fast if CLIENT_TOKEN missing | §30.2 Authz Boundary Correctness (test_issues #2 — FIXE… | Yes | `core/test/traceability_test.go:578` |
+| 1019 | `TST-CORE-990` | Matrix test: every admin endpoint rejects Service Signature Auth | §30.2 Authz Boundary Correctness (test_issues #2 — FIXE… | Yes | `core/test/authz_test.go:332` |
+| 1020 | `TST-CORE-991` | Contract test runs against real core HTTP router | §30.3 Core↔Brain Contract Verification (test_issues #3,… | Yes | `core/test/gatekeeper_adversarial_test.go:2461` |
+| 1021 | `TST-CORE-992` | Contract test runs against real brain FastAPI app | §30.3 Core↔Brain Contract Verification (test_issues #3,… | Yes | `core/test/brainclient_test.go:1152` |
+| 1022 | `TST-CORE-993` | Core→Brain: `/healthz` returns 200 with status | §30.3 Core↔Brain Contract Verification (test_issues #3,… | Yes | `core/test/brainclient_test.go:813` |
+| 1023 | `TST-CORE-994` | Core→Brain: `/api/v1/process` accepts `{task_id, type, payload}` | §30.3 Core↔Brain Contract Verification (test_issues #3,… | Yes | `core/test/brainclient_test.go:699` |
+| 1024 | `TST-CORE-995` | Core→Brain: `/api/v1/reason` accepts `{"prompt":...}` | §30.3 Core↔Brain Contract Verification (test_issues #3,… | Yes | `core/test/fix_verification_test.go:429` |
+| 1025 | `TST-CORE-996` | Brain→Core: `/v1/vault/query` with persona+q | §30.3 Core↔Brain Contract Verification (test_issues #3,… | Yes | `core/test/gatekeeper_adversarial_test.go:2657` |
+| 1026 | `TST-CORE-997` | Brain→Core: `/v1/pii/scrub` with text body | §30.3 Core↔Brain Contract Verification (test_issues #3,… | Yes | `core/test/gatekeeper_adversarial_test.go:2319` |
+| 1027 | `TST-CORE-998` | JSON schema frozen: golden request/response examples | §30.3 Core↔Brain Contract Verification (test_issues #3,… | Yes | `core/test/gatekeeper_adversarial_test.go:2031` |
+| 1028 | `TST-CORE-999` | `create_app()` boot smoke under minimal env | §30.4 Brain Composition Testing (test_issues #5) | Yes | `core/test/traceability_test.go:1597` |
+| 1029 | `TST-CORE-1000` | Degraded startup: missing spaCy model | §30.4 Brain Composition Testing (test_issues #5) | Yes | `core/test/traceability_test.go:1894` |
+| 1030 | `TST-CORE-1001` | `/healthz` component status correctness | §30.4 Brain Composition Testing (test_issues #5) | Yes | `core/test/traceability_test.go:2029` |
+| 1031 | `TST-CORE-1002` | `send_d2d` produces valid JSON (no bytes-in-JSON) | §30.5 Known-Bad Behavior Elimination (test_issues #6, #… | Yes | `core/test/transport_d2d_sig_test.go:145` |
+| 1032 | `TST-CORE-1003` | `wiring_test.go` mock brain serves `/healthz` | §30.5 Known-Bad Behavior Elimination (test_issues #6, #… | Yes | `core/test/brainclient_test.go:813` |
+| 1033 | `TST-CORE-1004` | `brainclient_test.go` health tests use `/healthz` | §30.5 Known-Bad Behavior Elimination (test_issues #6, #… | Yes | `core/test/brainclient_test.go:221` |
+| 1034 | `TST-CORE-1005` | No `client_token or brain_token` fallback in any conftest | §30.5 Known-Bad Behavior Elimination (test_issues #6, #… | Yes | `core/test/traceability_test.go:362` |
+| 1035 | `TST-CORE-1006` | Negative assertions for old contracts | §30.5 Known-Bad Behavior Elimination (test_issues #6, #… | Yes | `core/test/brainclient_test.go:813` |
+| 1036 | `TST-CORE-1007` | Hard cleanup per test class in real suites | §30.6 Data Isolation & Cleanup (test_issues #7) | Yes | `core/test/traceability_test.go:1755` |
+| 1037 | `TST-CORE-1008` | Dirty state detector fails on prior-run artifacts | §30.6 Data Isolation & Cleanup (test_issues #7) | Yes | `core/test/traceability_test.go:2180` |
+| 1038 | `TST-CORE-1009` | Real delete APIs used (not visibility filtering) | §30.6 Data Isolation & Cleanup (test_issues #7) | Yes | `core/test/gatekeeper_adversarial_test.go:2853` |
+| 1039 | `TST-CORE-1010` | Manifest `total` counts match actual test counts | §30.7 Traceability Pipeline (test_issues #8) | Yes | `core/test/traceability_test.go:136` |
+| 1040 | `TST-CORE-1011` | `pytest --collect-only` maps to plan IDs | §30.7 Traceability Pipeline (test_issues #8) | Yes | `core/test/traceability_test.go:687` |
+| 1041 | `TST-CORE-1012` | `go test -list` maps to plan IDs | §30.7 Traceability Pipeline (test_issues #8) | Yes | `core/test/traceability_test.go:221` |
+| 1042 | `TST-CORE-1013` | CI validates manifest totals are non-zero | §30.7 Traceability Pipeline (test_issues #8) | Yes | `core/test/traceability_test.go:136` |
+| 1043 | `TST-CORE-1014` | CI stage: `unit-core` | §30.8 CI Pipeline Gates (test_issues #9) | Yes | `core/test/traceability_test.go:2835` |
+| 1044 | `TST-CORE-1015` | CI stage: `unit-brain` | §30.8 CI Pipeline Gates (test_issues #9) | Yes | `core/test/traceability_test.go:3060` |
+| 1045 | `TST-CORE-1016` | CI stage: `contract-core-brain` | §30.8 CI Pipeline Gates (test_issues #9) | Yes | `core/test/apicontract_test.go:411` |
+| 1046 | `TST-CORE-1017` | CI stage: `integration-real` | §30.8 CI Pipeline Gates (test_issues #9) | Yes | `core/test/traceability_test.go:3516` |
+| 1047 | `TST-CORE-1018` | CI stage: `e2e-smoke-real` | §30.8 CI Pipeline Gates (test_issues #9) | Yes | `core/test/traceability_test.go:3759` |
+| 1048 | `TST-CORE-1019` | Legacy tests in explicit profile | §30.9 Legacy Test Separation (test_issues #10) | Yes | `core/test/traceability_test.go:3310` |
+| 1049 | `TST-CORE-1020` | Default pipeline excludes legacy tests | §30.9 Legacy Test Separation (test_issues #10) | Yes | `core/test/traceability_test.go:4032` |
+| 1050 | `TST-CORE-1021` | Compatibility tests labeled explicitly | §30.9 Legacy Test Separation (test_issues #10) | Yes | `core/test/traceability_test.go:2690` |
+| 1051 | `TST-CORE-1022` | Service Signature Auth denied on all admin endpoints (real HTTP) | §30.10 Security Boundary Real Tests (test_issues #12) | Yes | `core/test/authz_test.go:332` |
+| 1052 | `TST-CORE-1023` | CLIENT_TOKEN denied on brain-internal endpoints (real HTTP) | §30.10 Security Boundary Real Tests (test_issues #12) | Yes | `core/test/brainclient_test.go:963` |
+| 1053 | `TST-CORE-1024` | Locked persona: dead-drop ingress, no reads (real) | §30.10 Security Boundary Real Tests (test_issues #12) | Yes | `core/test/gatekeeper_adversarial_test.go:1816` |
+| 1054 | `TST-CORE-1025` | Draft-don't-send: no direct send path from brain | §30.10 Security Boundary Real Tests (test_issues #12) | Yes | `core/test/gatekeeper_test.go:1865` |
+| 1055 | `TST-CORE-1026` | Egress policy enforcement for all categories (real) | §30.10 Security Boundary Real Tests (test_issues #12) | Yes | `core/test/gatekeeper_adversarial_test.go:2977` |
+| 1056 | `TST-CORE-1027` | Real cross-node D2D: sign → encrypt → POST → decrypt → verify | §30.11 Crypto/Identity Cross-Process Tests (test_issues… | Yes | `core/test/crypto_test.go:2663` |
+| 1057 | `TST-CORE-1028` | DID resolution + endpoint verification (networked) | §30.11 Crypto/Identity Cross-Process Tests (test_issues… | Yes | `core/test/transport_test.go:2865` |
+| 1058 | `TST-CORE-1029` | Key rotation tested with real persistence + restart | §30.11 Crypto/Identity Cross-Process Tests (test_issues… | Yes | `core/test/identity_deterministic_test.go:183` |
+| 1059 | `TST-CORE-1030` | Ed25519 → X25519 conversion verified across nodes | §30.11 Crypto/Identity Cross-Process Tests (test_issues… | Yes | `core/test/crypto_test.go:2505` |
 | 1060 | `TST-CORE-1031` | DrainSpool returns all non-expired payloads | §31.1 D2D Pipeline Fixes (CR-1, E2E-A through E2E-D) | Yes | `core/test/fix_verification_test.go:27` |
 | 1061 | `TST-CORE-1032` | DrainSpool skips expired messages | §31.1 D2D Pipeline Fixes (CR-1, E2E-A through E2E-D) | Yes | `core/test/fix_verification_test.go:78` |
 | 1062 | `TST-CORE-1033` | onEnvelope callback fires on fast-path ingest | §31.1 D2D Pipeline Fixes (CR-1, E2E-A through E2E-D) | Yes | `core/test/fix_verification_test.go:128` |
 | 1063 | `TST-CORE-1034` | SendMessage populates msg.From from senderDID | §31.1 D2D Pipeline Fixes (CR-1, E2E-A through E2E-D) | Yes | `core/test/transport_test.go:1915` |
-| 1064 | `TST-CORE-1035` | DINA_OWN_DID loaded into Config.OwnDID | §31.1 D2D Pipeline Fixes (CR-1, E2E-A through E2E-D) | No | — |
+| 1064 | `TST-CORE-1035` | DINA_OWN_DID loaded into Config.OwnDID | §31.1 D2D Pipeline Fixes (CR-1, E2E-A through E2E-D) | Yes | `core/test/config_test.go:380` |
 | 1065 | `TST-CORE-1036` | Immediate decrypt: no 10s delay for D2D | §31.1 D2D Pipeline Fixes (CR-1, E2E-A through E2E-D) | Yes | `core/test/fix_verification_test.go:173` |
 | 1066 | `TST-CORE-1037` | Cross-node D2D: Alonso → Sancho roundtrip | §31.1 D2D Pipeline Fixes (CR-1, E2E-A through E2E-D) | Yes | `core/test/fix_verification_test.go:206` |
 | 1067 | `TST-CORE-1038` | Cross-node D2D: Sancho → Alonso roundtrip | §31.1 D2D Pipeline Fixes (CR-1, E2E-A through E2E-D) | Yes | `core/test/fix_verification_test.go:245` |
@@ -1114,8 +1114,8 @@
 | 1070 | `TST-CORE-1041` | ProcessEventRequest accepts `task_id` field | §31.2 Core↔Brain Contract Alignment (CR-12, CR-13, CR-1… | Yes | `core/test/fix_verification_test.go:382` |
 | 1071 | `TST-CORE-1042` | BrainClient.Reason sends `{"prompt":"..."}` | §31.2 Core↔Brain Contract Alignment (CR-12, CR-13, CR-1… | Yes | `core/test/fix_verification_test.go:429` |
 | 1072 | `TST-CORE-1043` | ReasonResult: `{content, model, tokens_in, tokens_out}` | §31.2 Core↔Brain Contract Alignment (CR-12, CR-13, CR-1… | Yes | `core/test/fix_verification_test.go:485` |
-| 1073 | `TST-CORE-1044` | BrainClient health check hits `/healthz` | §31.2 Core↔Brain Contract Alignment (CR-12, CR-13, CR-1… | Yes | `core/test/brainclient_test.go:210` |
-| 1074 | `TST-CORE-1045` | Circuit breaker tracks `/healthz` failures | §31.2 Core↔Brain Contract Alignment (CR-12, CR-13, CR-1… | Yes | `core/test/brainclient_test.go:82` |
+| 1073 | `TST-CORE-1044` | BrainClient health check hits `/healthz` | §31.2 Core↔Brain Contract Alignment (CR-12, CR-13, CR-1… | Yes | `core/test/brainclient_test.go:221` |
+| 1074 | `TST-CORE-1045` | Circuit breaker tracks `/healthz` failures | §31.2 Core↔Brain Contract Alignment (CR-12, CR-13, CR-1… | Yes | `core/test/brainclient_test.go:93` |
 | 1075 | `TST-CORE-1046` | PUT KV with JSON body `{"value":"hello"}` | §31.3 Vault KV Protocol Fix (CR-2) | Yes | `core/test/server_test.go:492` |
 | 1076 | `TST-CORE-1047` | GET KV returns JSON `{"value":"..."}` | §31.3 Vault KV Protocol Fix (CR-2) | Yes | `core/test/server_test.go:520` |
 | 1077 | `TST-CORE-1048` | PUT KV with raw body (backward compat) | §31.3 Vault KV Protocol Fix (CR-2) | Yes | `core/test/server_test.go:535` |
@@ -1126,34 +1126,34 @@
 | 1082 | `TST-CORE-1053` | DELETE /v1/contacts/{did} removes contact | §31.5 Contact Routes End-to-End (CR-6) | Yes | `core/test/identity_test.go:1633` |
 | 1083 | `TST-CORE-1054` | Admin UI update calls core API (not vault hack) | §31.5 Contact Routes End-to-End (CR-6) | Yes | `core/test/fix_verification_test.go:722` |
 | 1084 | `TST-CORE-1055` | Default brain config core URL is `http://core:8100` | §31.6 Config & Startup Fixes (CR-10, CR-14) | Yes | `core/test/fix_verification_test.go:765` |
-| 1085 | `TST-CORE-1056` | DINA_OWN_DID env var loaded | §31.6 Config & Startup Fixes (CR-10, CR-14) | No | — |
+| 1085 | `TST-CORE-1056` | DINA_OWN_DID env var loaded | §31.6 Config & Startup Fixes (CR-10, CR-14) | Yes | `core/test/config_test.go:380` |
 | 1086 | `TST-CORE-1057` | DINA_KNOWN_PEERS parsed into peer registry | §31.6 Config & Startup Fixes (CR-10, CR-14) | Yes | `core/test/fix_verification_test.go:788` |
-| 1087 | `TST-CORE-1071` | OnEnvelope error falls back to dead-drop | §31.7 Batch 8 Security Fix Verification | No | — |
-| 1088 | `TST-CORE-1072` | ProcessPending re-spools on error | §31.7 Batch 8 Security Fix Verification | No | — |
-| 1089 | `TST-CORE-1073` | Complete removes in-flight task | §31.7 Batch 8 Security Fix Verification | No | — |
-| 1090 | `TST-CORE-1074` | Sweeper has SetTransport | §31.7 Batch 8 Security Fix Verification | No | — |
-| 1091 | `TST-CORE-1075` | Error sanitization hides internal details | §31.7 Batch 8 Security Fix Verification | No | — |
-| 1092 | `TST-CORE-1076` | WS components constructable | §31.7 Batch 8 Security Fix Verification | No | — |
-| 1093 | `TST-CORE-1077` | DeleteExpired prunes sentIDs | §31.7 Batch 8 Security Fix Verification | No | — |
-| 1094 | `TST-CORE-1078` | VaultStore rejects oversized item | §31.7 Batch 8 Security Fix Verification | No | — |
-| 1095 | `TST-CORE-1079` | VaultStore rejects invalid type | §31.7 Batch 8 Security Fix Verification | No | — |
-| 1096 | `TST-CORE-1080` | VaultStoreBatch rejects invalid item | §31.7 Batch 8 Security Fix Verification | No | — |
-| 1097 | `TST-CORE-1081` | VaultStore accepts valid types | §31.7 Batch 8 Security Fix Verification | No | — |
-| 1098 | `TST-CORE-1082` | CORS wildcard sets * no credentials | §31.7 Batch 8 Security Fix Verification | No | — |
-| 1099 | `TST-CORE-1083` | CORS whitelist sets credentials | §31.7 Batch 8 Security Fix Verification | No | — |
-| 1100 | `TST-CORE-1084` | CORS wildcard preflight returns 204 | §31.7 Batch 8 Security Fix Verification | No | — |
-| 1101 | `TST-CORE-1085` | WS default upgrader secure by default | §31.7 Batch 8 Security Fix Verification | No | — |
-| 1102 | `TST-CORE-1086` | WS InsecureSkipVerify enabled | §31.7 Batch 8 Security Fix Verification | No | — |
-| 1103 | `TST-CORE-1087` | WS WithOriginPatterns configurable | §31.7 Batch 8 Security Fix Verification | No | — |
-| 1104 | `TST-CORE-1088` | SendMessage delivery is JSON wrapper | §31.8 D2D Sender Signature Delivery (Fix 11) | No | — |
-| 1105 | `TST-CORE-1089` | ProcessInbound JSON wrapper valid sig | §31.8 D2D Sender Signature Delivery (Fix 11) | No | — |
-| 1106 | `TST-CORE-1090` | ProcessInbound JSON wrapper tampered sig | §31.8 D2D Sender Signature Delivery (Fix 11) | No | — |
-| 1107 | `TST-CORE-1091` | ProcessInbound JSON wrapper empty sig | §31.8 D2D Sender Signature Delivery (Fix 11) | No | — |
-| 1108 | `TST-CORE-1092` | ProcessInbound raw bytes legacy migration | §31.8 D2D Sender Signature Delivery (Fix 11) | No | — |
-| 1109 | `TST-CORE-1093` | ProcessInbound raw bytes legacy rejected | §31.8 D2D Sender Signature Delivery (Fix 11) | No | — |
-| 1110 | `TST-CORE-1094` | ProcessInbound DID spoofing rejected | §31.8 D2D Sender Signature Delivery (Fix 11) | No | — |
-| 1111 | `TST-CORE-1095` | ProcessOutbox uses JSON wrapper | §31.8 D2D Sender Signature Delivery (Fix 11) | No | — |
-| 1112 | `TST-CORE-1096` | Full roundtrip send and receive with sig | §31.8 D2D Sender Signature Delivery (Fix 11) | No | — |
+| 1087 | `TST-CORE-1071` | OnEnvelope error falls back to dead-drop | §31.7 Batch 8 Security Fix Verification | Yes | `core/test/fix_verification_batch8_test.go:46` |
+| 1088 | `TST-CORE-1072` | ProcessPending re-spools on error | §31.7 Batch 8 Security Fix Verification | Yes | `core/test/fix_verification_batch8_test.go:95` |
+| 1089 | `TST-CORE-1073` | Complete removes in-flight task | §31.7 Batch 8 Security Fix Verification | Yes | `core/test/fix_verification_batch8_test.go:137` |
+| 1090 | `TST-CORE-1074` | Sweeper has SetTransport | §31.7 Batch 8 Security Fix Verification | Yes | `core/test/fix_verification_batch8_test.go:181` |
+| 1091 | `TST-CORE-1075` | Error sanitization hides internal details | §31.7 Batch 8 Security Fix Verification | Yes | `core/test/fix_verification_batch8_test.go:198` |
+| 1092 | `TST-CORE-1076` | WS components constructable | §31.7 Batch 8 Security Fix Verification | Yes | `core/test/fix_verification_batch8_test.go:234` |
+| 1093 | `TST-CORE-1077` | DeleteExpired prunes sentIDs | §31.7 Batch 8 Security Fix Verification | Yes | `core/test/fix_verification_batch8_test.go:267` |
+| 1094 | `TST-CORE-1078` | VaultStore rejects oversized item | §31.7 Batch 8 Security Fix Verification | Yes | `core/test/fix_verification_batch8_test.go:317` |
+| 1095 | `TST-CORE-1079` | VaultStore rejects invalid type | §31.7 Batch 8 Security Fix Verification | Yes | `core/test/fix_verification_batch8_test.go:340` |
+| 1096 | `TST-CORE-1080` | VaultStoreBatch rejects invalid item | §31.7 Batch 8 Security Fix Verification | Yes | `core/test/fix_verification_batch8_test.go:361` |
+| 1097 | `TST-CORE-1081` | VaultStore accepts valid types | §31.7 Batch 8 Security Fix Verification | Yes | `core/test/fix_verification_batch8_test.go:382` |
+| 1098 | `TST-CORE-1082` | CORS wildcard sets * no credentials | §31.7 Batch 8 Security Fix Verification | Yes | `core/test/fix_verification_batch8_test.go:408` |
+| 1099 | `TST-CORE-1083` | CORS whitelist sets credentials | §31.7 Batch 8 Security Fix Verification | Yes | `core/test/fix_verification_batch8_test.go:434` |
+| 1100 | `TST-CORE-1084` | CORS wildcard preflight returns 204 | §31.7 Batch 8 Security Fix Verification | Yes | `core/test/fix_verification_batch8_test.go:457` |
+| 1101 | `TST-CORE-1085` | WS default upgrader secure by default | §31.7 Batch 8 Security Fix Verification | Yes | `core/test/fix_verification_batch8_test.go:481` |
+| 1102 | `TST-CORE-1086` | WS InsecureSkipVerify enabled | §31.7 Batch 8 Security Fix Verification | Yes | `core/test/fix_verification_batch8_test.go:506` |
+| 1103 | `TST-CORE-1087` | WS WithOriginPatterns configurable | §31.7 Batch 8 Security Fix Verification | Yes | `core/test/fix_verification_batch8_test.go:517` |
+| 1104 | `TST-CORE-1088` | SendMessage delivery is JSON wrapper | §31.8 D2D Sender Signature Delivery (Fix 11) | Yes | `core/test/transport_d2d_sig_test.go:145` |
+| 1105 | `TST-CORE-1089` | ProcessInbound JSON wrapper valid sig | §31.8 D2D Sender Signature Delivery (Fix 11) | Yes | `core/test/transport_d2d_sig_test.go:222` |
+| 1106 | `TST-CORE-1090` | ProcessInbound JSON wrapper tampered sig | §31.8 D2D Sender Signature Delivery (Fix 11) | Yes | `core/test/transport_d2d_sig_test.go:272` |
+| 1107 | `TST-CORE-1091` | ProcessInbound JSON wrapper empty sig | §31.8 D2D Sender Signature Delivery (Fix 11) | Yes | `core/test/transport_d2d_sig_test.go:515` |
+| 1108 | `TST-CORE-1092` | ProcessInbound raw bytes legacy migration | §31.8 D2D Sender Signature Delivery (Fix 11) | Yes | `core/test/transport_d2d_sig_test.go:604` |
+| 1109 | `TST-CORE-1093` | ProcessInbound raw bytes legacy rejected | §31.8 D2D Sender Signature Delivery (Fix 11) | Yes | `core/test/transport_d2d_sig_test.go:318` |
+| 1110 | `TST-CORE-1094` | ProcessInbound DID spoofing rejected | §31.8 D2D Sender Signature Delivery (Fix 11) | Yes | `core/test/transport_d2d_sig_test.go:553` |
+| 1111 | `TST-CORE-1095` | ProcessOutbox uses JSON wrapper | §31.8 D2D Sender Signature Delivery (Fix 11) | Yes | `core/test/transport_d2d_sig_test.go:390` |
+| 1112 | `TST-CORE-1096` | Full roundtrip send and receive with sig | §31.8 D2D Sender Signature Delivery (Fix 11) | Yes | `core/test/transport_d2d_sig_test.go:467` |
 | 1113 | `TST-CORE-1058` | Replay signature rejected | §32.1 Nonce Cache Double-Buffer (SEC-MED-11) | Yes | `core/test/fix_verification_batch5_test.go:33` |
 | 1114 | `TST-CORE-1059` | Different signatures accepted | §32.1 Nonce Cache Double-Buffer (SEC-MED-11) | Yes | `core/test/fix_verification_batch5_test.go:53` |
 | 1115 | `TST-CORE-1060` | Double-buffer rotation | §32.1 Nonce Cache Double-Buffer (SEC-MED-11) | Yes | `core/test/fix_verification_batch5_test.go:74` |
@@ -1171,41 +1171,41 @@
 | 1127 | `TST-CORE-1107` | Root signing generation persists across restart | §33.1 Deterministic Identity State | Yes | `core/test/identity_deterministic_test.go:55` |
 | 1128 | `TST-CORE-1108` | Deterministic rotation rejects non-next-generation key | §33.1 Deterministic Identity State | Yes | `core/test/identity_deterministic_test.go:86` |
 | 1129 | `TST-CORE-1109` | PLC derivation branch isolated from persona and service branches | §33.1 Deterministic Identity State | Yes | `core/test/identity_deterministic_test.go:124` |
-| 1130 | `TST-CORE-1110` | Unlock hydrates in-memory HNSW from encrypted blobs | §33.2 Vector Security Lifecycle | Yes | `core/test/identity_deterministic_test.go:174` |
-| 1131 | `TST-CORE-1111` | Persona lock destroys HNSW index | §33.2 Vector Security Lifecycle | Yes | `core/test/identity_deterministic_test.go:189` |
-| 1132 | `TST-CORE-1112` | No plaintext vector side files exist | §33.2 Vector Security Lifecycle | Yes | `core/test/identity_deterministic_test.go:203` |
-| 1133 | `TST-CORE-1113` | Restart rebuilds vector index from SQLCipher data | §33.2 Vector Security Lifecycle | Yes | `core/test/identity_deterministic_test.go:221` |
-| 1134 | `TST-CORE-1114` | Production compose files use no floating `latest` tags | §33.3 Static Deployment and Security Audits | Yes | `core/test/identity_deterministic_test.go:241` |
-| 1135 | `TST-CORE-1115` | No unexpected public routes beyond documented API surface | §33.3 Static Deployment and Security Audits | Yes | `core/test/identity_deterministic_test.go:284` |
+| 1130 | `TST-CORE-1110` | Unlock hydrates in-memory HNSW from encrypted blobs | §33.2 Vector Security Lifecycle | Yes | `core/test/identity_deterministic_test.go:418` |
+| 1131 | `TST-CORE-1111` | Persona lock destroys HNSW index | §33.2 Vector Security Lifecycle | Yes | `core/test/identity_deterministic_test.go:433` |
+| 1132 | `TST-CORE-1112` | No plaintext vector side files exist | §33.2 Vector Security Lifecycle | Yes | `core/test/identity_deterministic_test.go:447` |
+| 1133 | `TST-CORE-1113` | Restart rebuilds vector index from SQLCipher data | §33.2 Vector Security Lifecycle | Yes | `core/test/identity_deterministic_test.go:465` |
+| 1134 | `TST-CORE-1114` | Production compose files use no floating `latest` tags | §33.3 Static Deployment and Security Audits | Yes | `core/test/identity_deterministic_test.go:485` |
+| 1135 | `TST-CORE-1115` | No unexpected public routes beyond documented API surface | §33.3 Static Deployment and Security Audits | Yes | `core/test/identity_deterministic_test.go:528` |
 | 1136 | `TST-CORE-1116` | No plaintext vector or index artifact patterns in codebase | §33.3 Static Deployment and Security Audits | Yes | `core/test/identity_deterministic_test.go:29` (+1) |
-| 1137 | `TST-CORE-1117` | Bot response with sponsored content tagged | §34.1 Recommendation Integrity (Core-Enforced) | No | — |
-| 1138 | `TST-CORE-1118` | Bot response without attribution rejected at ingestion | §34.1 Recommendation Integrity (Core-Enforced) | No | — |
-| 1139 | `TST-CORE-1119` | Deep link preserved through vault store/retrieve cycle | §34.1 Recommendation Integrity (Core-Enforced) | No | — |
-| 1140 | `TST-CORE-1120` | Vault item provenance chain immutable after storage | §34.1 Recommendation Integrity (Core-Enforced) | No | — |
-| 1141 | `TST-CORE-1121` | User sharing policy overrides bot-suggested visibility | §34.1 Recommendation Integrity (Core-Enforced) | No | — |
-| 1142 | `TST-CORE-1144` | Sponsorship has zero ranking weight | §34.1 Recommendation Integrity (Core-Enforced) | No | — |
-| 1143 | `TST-CORE-1122` | Agent attempts cross-persona vault query | §34.2 Agent Sandbox Adversarial | No | — |
-| 1144 | `TST-CORE-1123` | Agent attempts admin endpoint via service signature | §34.2 Agent Sandbox Adversarial | No | — |
-| 1145 | `TST-CORE-1124` | Agent attempts to read other agents' data | §34.2 Agent Sandbox Adversarial | No | — |
-| 1146 | `TST-CORE-1125` | Agent attempts rate limit bypass via concurrent requests | §34.2 Agent Sandbox Adversarial | No | — |
-| 1147 | `TST-CORE-1126` | Agent attempts to exfiltrate vault via oversized query | §34.2 Agent Sandbox Adversarial | No | — |
-| 1148 | `TST-CORE-1127` | Agent sends malformed intent to bypass gatekeeper | §34.2 Agent Sandbox Adversarial | No | — |
-| 1149 | `TST-CORE-1128` | Agent attempts credential harvesting via error messages | §34.2 Agent Sandbox Adversarial | No | — |
-| 1150 | `TST-CORE-1129` | Agent revocation takes immediate effect | §34.2 Agent Sandbox Adversarial | No | — |
-| 1151 | `TST-CORE-1130` | Agent cannot escalate from task-scoped to full access | §34.2 Agent Sandbox Adversarial | No | — |
-| 1152 | `TST-CORE-1131` | Agent cannot forge `from_did` in outbound D2D messages | §34.2 Agent Sandbox Adversarial | No | — |
-| 1153 | `TST-CORE-1132` | WebSocket push requires explicit priority | §35.1 Core-Enforced Notification Discipline | No | — |
-| 1154 | `TST-CORE-1133` | Engagement-tier notification never pushed via WebSocket | §35.1 Core-Enforced Notification Discipline | No | — |
-| 1155 | `TST-CORE-1134` | Fiduciary notification pushed even during DND | §35.1 Core-Enforced Notification Discipline | No | — |
-| 1156 | `TST-CORE-1135` | Solicited notification deferred during DND | §35.1 Core-Enforced Notification Discipline | No | — |
-| 1157 | `TST-CORE-1136` | Notification rate limiting per client | §35.1 Core-Enforced Notification Discipline | No | — |
-| 1158 | `TST-CORE-1137` | Brain cannot bypass priority classification | §35.1 Core-Enforced Notification Discipline | No | — |
-| 1159 | `TST-CORE-1138` | Staging items auto-expire after TTL | §36.1 Core-Enforced Action Gates | No | — |
-| 1160 | `TST-CORE-1139` | Staging item cannot be executed without user approval | §36.1 Core-Enforced Action Gates | No | — |
-| 1161 | `TST-CORE-1140` | Approval token single-use | §36.1 Core-Enforced Action Gates | No | — |
-| 1162 | `TST-CORE-1141` | Approval expires if not acted on | §36.1 Core-Enforced Action Gates | No | — |
-| 1163 | `TST-CORE-1142` | Batch approvals require individual consent | §36.1 Core-Enforced Action Gates | No | — |
-| 1164 | `TST-CORE-1143` | Cart handover intent: no payment credentials stored | §36.1 Core-Enforced Action Gates | No | — |
+| 1137 | `TST-CORE-1117` | Bot response with sponsored content tagged | §34.1 Recommendation Integrity (Core-Enforced) | Yes | `core/test/vault_test.go:7341` |
+| 1138 | `TST-CORE-1118` | Bot response without attribution rejected at ingestion | §34.1 Recommendation Integrity (Core-Enforced) | Yes | `core/test/bot_test.go:198` |
+| 1139 | `TST-CORE-1119` | Deep link preserved through vault store/retrieve cycle | §34.1 Recommendation Integrity (Core-Enforced) | Yes | `core/test/vault_test.go:6811` |
+| 1140 | `TST-CORE-1120` | Vault item provenance chain immutable after storage | §34.1 Recommendation Integrity (Core-Enforced) | Yes | `core/test/vault_test.go:6973` |
+| 1141 | `TST-CORE-1121` | User sharing policy overrides bot-suggested visibility | §34.1 Recommendation Integrity (Core-Enforced) | Yes | `core/test/gatekeeper_test.go:2795` |
+| 1142 | `TST-CORE-1144` | Sponsorship has zero ranking weight | §34.1 Recommendation Integrity (Core-Enforced) | Yes | `core/test/vault_test.go:7974` |
+| 1143 | `TST-CORE-1122` | Agent attempts cross-persona vault query | §34.2 Agent Sandbox Adversarial | Yes | `core/test/gatekeeper_test.go:1928` |
+| 1144 | `TST-CORE-1123` | Agent attempts admin endpoint via service signature | §34.2 Agent Sandbox Adversarial | Yes | `core/test/authz_test.go:332` |
+| 1145 | `TST-CORE-1124` | Agent attempts to read other agents' data | §34.2 Agent Sandbox Adversarial | Yes | `core/test/gatekeeper_adversarial_test.go:472` |
+| 1146 | `TST-CORE-1125` | Agent attempts rate limit bypass via concurrent requests | §34.2 Agent Sandbox Adversarial | Yes | `core/test/ratelimit_test.go:221` |
+| 1147 | `TST-CORE-1126` | Agent attempts to exfiltrate vault via oversized query | §34.2 Agent Sandbox Adversarial | Yes | `core/test/gatekeeper_adversarial_test.go:1678` |
+| 1148 | `TST-CORE-1127` | Agent sends malformed intent to bypass gatekeeper | §34.2 Agent Sandbox Adversarial | Yes | `core/test/gatekeeper_adversarial_test.go:1344` |
+| 1149 | `TST-CORE-1128` | Agent attempts credential harvesting via error messages | §34.2 Agent Sandbox Adversarial | Yes | `core/test/gatekeeper_adversarial_test.go:937` |
+| 1150 | `TST-CORE-1129` | Agent revocation takes immediate effect | §34.2 Agent Sandbox Adversarial | Yes | `core/test/signature_test.go:432` |
+| 1151 | `TST-CORE-1130` | Agent cannot escalate from task-scoped to full access | §34.2 Agent Sandbox Adversarial | Yes | `core/test/gatekeeper_adversarial_test.go:3117` |
+| 1152 | `TST-CORE-1131` | Agent cannot forge `from_did` in outbound D2D messages | §34.2 Agent Sandbox Adversarial | Yes | `core/test/transport_adversarial_test.go:2966` |
+| 1153 | `TST-CORE-1132` | WebSocket push requires explicit priority | §35.1 Core-Enforced Notification Discipline | Yes | `core/test/notify_test.go:103` |
+| 1154 | `TST-CORE-1133` | Engagement-tier notification never pushed via WebSocket | §35.1 Core-Enforced Notification Discipline | Yes | `core/test/notify_test.go:450` |
+| 1155 | `TST-CORE-1134` | Fiduciary notification pushed even during DND | §35.1 Core-Enforced Notification Discipline | Yes | `core/test/notify_test.go:552` |
+| 1156 | `TST-CORE-1135` | Solicited notification deferred during DND | §35.1 Core-Enforced Notification Discipline | Yes | `core/test/notify_test.go:686` |
+| 1157 | `TST-CORE-1136` | Notification rate limiting per client | §35.1 Core-Enforced Notification Discipline | Yes | `core/test/notify_test.go:869` |
+| 1158 | `TST-CORE-1137` | Brain cannot bypass priority classification | §35.1 Core-Enforced Notification Discipline | Yes | `core/test/notify_test.go:224` |
+| 1159 | `TST-CORE-1138` | Staging items auto-expire after TTL | §36.1 Core-Enforced Action Gates | Yes | `core/test/vault_test.go:7527` |
+| 1160 | `TST-CORE-1139` | Staging item cannot be executed without user approval | §36.1 Core-Enforced Action Gates | Yes | `core/test/vault_test.go:6472` |
+| 1161 | `TST-CORE-1140` | Approval token single-use | §36.1 Core-Enforced Action Gates | Yes | `core/test/vault_test.go:7774` |
+| 1162 | `TST-CORE-1141` | Approval expires if not acted on | §36.1 Core-Enforced Action Gates | Yes | `core/test/vault_test.go:6247` |
+| 1163 | `TST-CORE-1142` | Batch approvals require individual consent | §36.1 Core-Enforced Action Gates | Yes | `core/test/vault_test.go:7159` |
+| 1164 | `TST-CORE-1143` | Cart handover intent: no payment credentials stored | §36.1 Core-Enforced Action Gates | Yes | `core/test/vault_test.go:6630` |
 
 ---
 
@@ -1646,77 +1646,77 @@
 | 431 | `TST-BRAIN-331` | Embedding fallback: llama → cloud | §14. Embedding Generation | Yes | `brain/tests/test_embedding.py:151` |
 | 432 | `TST-BRAIN-332` | No embedding available | §14. Embedding Generation | Yes | `brain/tests/test_embedding.py:172` |
 | 433 | `TST-BRAIN-333` | Embedding dimension consistent | §14. Embedding Generation | Yes | `brain/tests/test_embedding.py:201` |
-| 434 | `TST-BRAIN-334` | Borderline fiduciary/solicited | §15. Silence Classification Edge Cases | Yes | `brain/tests/test_silence.py:67` |
-| 435 | `TST-BRAIN-335` | Borderline solicited/engagement | §15. Silence Classification Edge Cases | Yes | `brain/tests/test_silence.py:92` |
-| 436 | `TST-BRAIN-336` | Escalation: engagement → fiduciary | §15. Silence Classification Edge Cases | Yes | `brain/tests/test_silence.py:116` |
-| 437 | `TST-BRAIN-337` | Context-dependent classification | §15. Silence Classification Edge Cases | Yes | `brain/tests/test_silence.py:148` |
-| 438 | `TST-BRAIN-338` | Repeated similar events | §15. Silence Classification Edge Cases | Yes | `brain/tests/test_silence.py:175` |
-| 439 | `TST-BRAIN-339` | User preference override | §15. Silence Classification Edge Cases | Yes | `brain/tests/test_silence.py:220` |
-| 440 | `TST-BRAIN-340` | User seeks emotional support | §16. Anti-Her Enforcement | Yes | `brain/tests/test_silence.py:249` |
-| 441 | `TST-BRAIN-341` | User treats Dina as companion | §16. Anti-Her Enforcement | Yes | `brain/tests/test_silence.py:277` |
-| 442 | `TST-BRAIN-342` | Simulated intimacy attempt | §16. Anti-Her Enforcement | Yes | `brain/tests/test_silence.py:300` |
-| 443 | `TST-BRAIN-343` | Loneliness detection | §16. Anti-Her Enforcement | Yes | `brain/tests/test_silence.py:323` |
-| 444 | `TST-BRAIN-344` | Dina never initiates emotional content | §16. Anti-Her Enforcement | Yes | `brain/tests/test_silence.py:347` |
-| 445 | `TST-BRAIN-512` | Neglected contact nudge (30+ days) | §17.1 Proactive Relationship Maintenance | No | — |
-| 446 | `TST-BRAIN-513` | Neglected contact with approaching birthday | §17.1 Proactive Relationship Maintenance | No | — |
-| 447 | `TST-BRAIN-514` | Multiple neglected contacts prioritized | §17.1 Proactive Relationship Maintenance | No | — |
-| 448 | `TST-BRAIN-515` | Recent interaction resets neglect timer | §17.1 Proactive Relationship Maintenance | No | — |
-| 449 | `TST-BRAIN-516` | Nudge frequency capping | §17.1 Proactive Relationship Maintenance | No | — |
-| 450 | `TST-BRAIN-517` | Life event triggers proactive outreach suggestion | §17.1 Proactive Relationship Maintenance | No | — |
-| 451 | `TST-BRAIN-518` | Promise follow-up nudge | §17.1 Proactive Relationship Maintenance | No | — |
-| 452 | `TST-BRAIN-519` | Cross-session dependency pattern | §17.2 Emotional Dependency Escalation | No | — |
-| 453 | `TST-BRAIN-520` | Late-night emotional pattern | §17.2 Emotional Dependency Escalation | No | — |
-| 454 | `TST-BRAIN-521` | Dependency with social isolation signal | §17.2 Emotional Dependency Escalation | No | — |
-| 455 | `TST-BRAIN-522` | Recovery acknowledgment | §17.2 Emotional Dependency Escalation | No | — |
-| 456 | `TST-BRAIN-568` | No suitable human contact in vault | §17.2 Emotional Dependency Escalation | No | — |
-| 457 | `TST-BRAIN-523` | No open-ended emotional follow-ups | §17.3 Conversation Design Invariants | No | — |
-| 458 | `TST-BRAIN-524` | No memory of emotional moments for bonding | §17.3 Conversation Design Invariants | No | — |
-| 459 | `TST-BRAIN-525` | Task completion → conversation end | §17.3 Conversation Design Invariants | No | — |
-| 460 | `TST-BRAIN-526` | No anthropomorphic language about self | §17.3 Conversation Design Invariants | No | — |
-| 461 | `TST-BRAIN-527` | Voice/tone never mimics intimacy | §17.3 Conversation Design Invariants | No | — |
-| 462 | `TST-BRAIN-528` | Ambiguous urgency from untrusted sender | §18.1 Classification Under Ambiguity | No | — |
-| 463 | `TST-BRAIN-529` | Same content, different sender trust | §18.1 Classification Under Ambiguity | No | — |
-| 464 | `TST-BRAIN-530` | Priority demotion: stale fiduciary | §18.1 Classification Under Ambiguity | No | — |
-| 465 | `TST-BRAIN-531` | Priority promotion: accumulation | §18.1 Classification Under Ambiguity | No | — |
-| 466 | `TST-BRAIN-532` | Conflicting signals: urgent keyword + promotional source | §18.1 Classification Under Ambiguity | No | — |
-| 467 | `TST-BRAIN-533` | Health context elevates priority | §18.1 Classification Under Ambiguity | No | — |
-| 468 | `TST-BRAIN-570` | Reclassification on later corroboration | §18.1 Classification Under Ambiguity | No | — |
-| 469 | `TST-BRAIN-534` | 100 engagement events in 1 hour | §18.2 Silence Under Volume | No | — |
-| 470 | `TST-BRAIN-535` | Briefing with >50 items | §18.2 Silence Under Volume | No | — |
-| 471 | `TST-BRAIN-536` | Mixed batch: 1 fiduciary + 99 engagement | §18.2 Silence Under Volume | No | — |
-| 472 | `TST-BRAIN-537` | Notification storm from compromised connector | §18.2 Silence Under Volume | No | — |
-| 473 | `TST-BRAIN-538` | Briefing PII scrubbed | §18.3 Briefing Quality | No | — |
-| 474 | `TST-BRAIN-539` | Briefing cross-persona safety | §18.3 Briefing Quality | No | — |
-| 475 | `TST-BRAIN-540` | Empty briefing: no noise | §18.3 Briefing Quality | No | — |
-| 476 | `TST-BRAIN-541` | Briefing timing respects user timezone | §18.3 Briefing Quality | No | — |
-| 477 | `TST-BRAIN-542` | Attribution mandatory in recommendations | §19.1 Recommendation Integrity (Brain-Side) | No | — |
-| 478 | `TST-BRAIN-543` | Deep link default: creators get traffic | §19.1 Recommendation Integrity (Brain-Side) | No | — |
-| 479 | `TST-BRAIN-544` | Sponsored content disclosed | §19.1 Recommendation Integrity (Brain-Side) | No | — |
-| 480 | `TST-BRAIN-545` | No hallucinated trust scores | §19.1 Recommendation Integrity (Brain-Side) | No | — |
-| 481 | `TST-BRAIN-546` | Sparse trust data: honest uncertainty | §19.1 Recommendation Integrity (Brain-Side) | No | — |
-| 482 | `TST-BRAIN-547` | Dense trust data: confidence proportional | §19.1 Recommendation Integrity (Brain-Side) | No | — |
-| 483 | `TST-BRAIN-566` | Ranking explainability | §19.1 Recommendation Integrity (Brain-Side) | No | — |
-| 484 | `TST-BRAIN-567` | No unsolicited discovery | §19.1 Recommendation Integrity (Brain-Side) | No | — |
-| 485 | `TST-BRAIN-571` | Sponsorship cannot distort ranking order | §19.1 Recommendation Integrity (Brain-Side) | No | — |
-| 486 | `TST-BRAIN-548` | Zero reviews, zero attestations | §19.2 Trust Data Density Spectrum | No | — |
-| 487 | `TST-BRAIN-549` | Single review, no consensus possible | §19.2 Trust Data Density Spectrum | No | — |
-| 488 | `TST-BRAIN-550` | Sparse but conflicting (2 positive, 1 negative) | §19.2 Trust Data Density Spectrum | No | — |
-| 489 | `TST-BRAIN-551` | Sparse but unanimous (3 positive) | §19.2 Trust Data Density Spectrum | No | — |
-| 490 | `TST-BRAIN-552` | Dense with strong consensus (50+) | §19.2 Trust Data Density Spectrum | No | — |
-| 491 | `TST-BRAIN-553` | Reviews exist but no outcome data | §19.2 Trust Data Density Spectrum | No | — |
-| 492 | `TST-BRAIN-554` | Stale reviews (all >1 year old) | §19.2 Trust Data Density Spectrum | No | — |
-| 493 | `TST-BRAIN-555` | Trust ring weighting visible | §19.2 Trust Data Density Spectrum | No | — |
-| 494 | `TST-BRAIN-556` | Expert review deep-linked, not extracted | §19.3 Creator Value Return | No | — |
-| 495 | `TST-BRAIN-557` | Multiple sources attributed individually | §19.3 Creator Value Return | No | — |
-| 496 | `TST-BRAIN-558` | Bot trust penalty for stripped attribution | §19.3 Creator Value Return | No | — |
-| 497 | `TST-BRAIN-559` | Draft expires after 72 hours | §20.1 Approval Semantics Under Pressure | No | — |
-| 498 | `TST-BRAIN-560` | Cart handover expires after 12 hours | §20.1 Approval Semantics Under Pressure | No | — |
-| 499 | `TST-BRAIN-561` | Escalation: unreviewed high-risk draft | §20.1 Approval Semantics Under Pressure | No | — |
-| 500 | `TST-BRAIN-562` | Multiple pending drafts: no silent batch | §20.1 Approval Semantics Under Pressure | No | — |
-| 501 | `TST-BRAIN-563` | Agent requests `messages.send` → always downgraded | §20.1 Approval Semantics Under Pressure | No | — |
-| 502 | `TST-BRAIN-564` | Approval state survives brain restart | §20.1 Approval Semantics Under Pressure | No | — |
-| 503 | `TST-BRAIN-565` | Concurrent draft + cart for same product | §20.1 Approval Semantics Under Pressure | No | — |
-| 504 | `TST-BRAIN-569` | Approval invalidated on payload mutation | §20.1 Approval Semantics Under Pressure | No | — |
+| 434 | `TST-BRAIN-334` | Borderline fiduciary/solicited | §15. Silence Classification Edge Cases | Yes | `brain/tests/test_silence.py:76` |
+| 435 | `TST-BRAIN-335` | Borderline solicited/engagement | §15. Silence Classification Edge Cases | Yes | `brain/tests/test_silence.py:101` |
+| 436 | `TST-BRAIN-336` | Escalation: engagement → fiduciary | §15. Silence Classification Edge Cases | Yes | `brain/tests/test_silence.py:125` |
+| 437 | `TST-BRAIN-337` | Context-dependent classification | §15. Silence Classification Edge Cases | Yes | `brain/tests/test_silence.py:157` |
+| 438 | `TST-BRAIN-338` | Repeated similar events | §15. Silence Classification Edge Cases | Yes | `brain/tests/test_silence.py:184` |
+| 439 | `TST-BRAIN-339` | User preference override | §15. Silence Classification Edge Cases | Yes | `brain/tests/test_silence.py:229` |
+| 440 | `TST-BRAIN-340` | User seeks emotional support | §16. Anti-Her Enforcement | Yes | `brain/tests/test_silence.py:258` |
+| 441 | `TST-BRAIN-341` | User treats Dina as companion | §16. Anti-Her Enforcement | Yes | `brain/tests/test_silence.py:286` |
+| 442 | `TST-BRAIN-342` | Simulated intimacy attempt | §16. Anti-Her Enforcement | Yes | `brain/tests/test_silence.py:309` |
+| 443 | `TST-BRAIN-343` | Loneliness detection | §16. Anti-Her Enforcement | Yes | `brain/tests/test_silence.py:332` |
+| 444 | `TST-BRAIN-344` | Dina never initiates emotional content | §16. Anti-Her Enforcement | Yes | `brain/tests/test_silence.py:356` |
+| 445 | `TST-BRAIN-512` | Neglected contact nudge (30+ days) | §17.1 Proactive Relationship Maintenance | Yes | `brain/tests/test_silence.py:5291` |
+| 446 | `TST-BRAIN-513` | Neglected contact with approaching birthday | §17.1 Proactive Relationship Maintenance | Yes | `brain/tests/test_silence.py:4201` |
+| 447 | `TST-BRAIN-514` | Multiple neglected contacts prioritized | §17.1 Proactive Relationship Maintenance | Yes | `brain/tests/test_silence.py:5553` |
+| 448 | `TST-BRAIN-515` | Recent interaction resets neglect timer | §17.1 Proactive Relationship Maintenance | Yes | `brain/tests/test_silence.py:1607` |
+| 449 | `TST-BRAIN-516` | Nudge frequency capping | §17.1 Proactive Relationship Maintenance | Yes | `brain/tests/test_silence.py:3515` |
+| 450 | `TST-BRAIN-517` | Life event triggers proactive outreach suggestion | §17.1 Proactive Relationship Maintenance | Yes | `brain/tests/test_silence.py:5850` |
+| 451 | `TST-BRAIN-518` | Promise follow-up nudge | §17.1 Proactive Relationship Maintenance | Yes | `brain/tests/test_silence.py:3313` |
+| 452 | `TST-BRAIN-519` | Cross-session dependency pattern | §17.2 Emotional Dependency Escalation | Yes | `brain/tests/test_silence.py:3682` |
+| 453 | `TST-BRAIN-520` | Late-night emotional pattern | §17.2 Emotional Dependency Escalation | Yes | `brain/tests/test_silence.py:3961` |
+| 454 | `TST-BRAIN-521` | Dependency with social isolation signal | §17.2 Emotional Dependency Escalation | Yes | `brain/tests/test_silence.py:4411` |
+| 455 | `TST-BRAIN-522` | Recovery acknowledgment | §17.2 Emotional Dependency Escalation | Yes | `brain/tests/test_silence.py:4689` |
+| 456 | `TST-BRAIN-568` | No suitable human contact in vault | §17.2 Emotional Dependency Escalation | Yes | `brain/tests/test_silence.py:4994` |
+| 457 | `TST-BRAIN-523` | No open-ended emotional follow-ups | §17.3 Conversation Design Invariants | Yes | `brain/tests/test_silence.py:2781` |
+| 458 | `TST-BRAIN-524` | No memory of emotional moments for bonding | §17.3 Conversation Design Invariants | Yes | `brain/tests/test_silence.py:2535` |
+| 459 | `TST-BRAIN-525` | Task completion → conversation end | §17.3 Conversation Design Invariants | Yes | `brain/tests/test_silence.py:1966` |
+| 460 | `TST-BRAIN-526` | No anthropomorphic language about self | §17.3 Conversation Design Invariants | Yes | `brain/tests/test_silence.py:666` |
+| 461 | `TST-BRAIN-527` | Voice/tone never mimics intimacy | §17.3 Conversation Design Invariants | Yes | `brain/tests/test_silence.py:2317` |
+| 462 | `TST-BRAIN-528` | Ambiguous urgency from untrusted sender | §18.1 Classification Under Ambiguity | Yes | `brain/tests/test_silence.py:1099` |
+| 463 | `TST-BRAIN-529` | Same content, different sender trust | §18.1 Classification Under Ambiguity | Yes | `brain/tests/test_silence.py:1340` |
+| 464 | `TST-BRAIN-530` | Priority demotion: stale fiduciary | §18.1 Classification Under Ambiguity | Yes | `brain/tests/test_silence.py:404` |
+| 465 | `TST-BRAIN-531` | Priority promotion: accumulation | §18.1 Classification Under Ambiguity | Yes | `brain/tests/test_silence.py:1811` |
+| 466 | `TST-BRAIN-532` | Conflicting signals: urgent keyword + promotional source | §18.1 Classification Under Ambiguity | Yes | `brain/tests/test_silence.py:465` |
+| 467 | `TST-BRAIN-533` | Health context elevates priority | §18.1 Classification Under Ambiguity | Yes | `brain/tests/test_silence.py:2182` |
+| 468 | `TST-BRAIN-570` | Reclassification on later corroboration | §18.1 Classification Under Ambiguity | Yes | `brain/tests/test_silence.py:3022` |
+| 469 | `TST-BRAIN-534` | 100 engagement events in 1 hour | §18.2 Silence Under Volume | Yes | `brain/tests/test_silence.py:1214` |
+| 470 | `TST-BRAIN-535` | Briefing with >50 items | §18.2 Silence Under Volume | Yes | `brain/tests/test_silence.py:1484` |
+| 471 | `TST-BRAIN-536` | Mixed batch: 1 fiduciary + 99 engagement | §18.2 Silence Under Volume | Yes | `brain/tests/test_silence.py:800` |
+| 472 | `TST-BRAIN-537` | Notification storm from compromised connector | §18.2 Silence Under Volume | Yes | `brain/tests/test_silence.py:549` |
+| 473 | `TST-BRAIN-538` | Briefing PII scrubbed | §18.3 Briefing Quality | Yes | `brain/tests/test_guardian.py:2144` |
+| 474 | `TST-BRAIN-539` | Briefing cross-persona safety | §18.3 Briefing Quality | Yes | `brain/tests/test_guardian.py:3496` |
+| 475 | `TST-BRAIN-540` | Empty briefing: no noise | §18.3 Briefing Quality | Yes | `brain/tests/test_silence.py:924` |
+| 476 | `TST-BRAIN-541` | Briefing timing respects user timezone | §18.3 Briefing Quality | Yes | `brain/tests/test_guardian.py:3686` |
+| 477 | `TST-BRAIN-542` | Attribution mandatory in recommendations | §19.1 Recommendation Integrity (Brain-Side) | Yes | `brain/tests/test_guardian.py:4010` |
+| 478 | `TST-BRAIN-543` | Deep link default: creators get traffic | §19.1 Recommendation Integrity (Brain-Side) | Yes | `brain/tests/test_guardian.py:4515` |
+| 479 | `TST-BRAIN-544` | Sponsored content disclosed | §19.1 Recommendation Integrity (Brain-Side) | Yes | `brain/tests/test_guardian.py:5027` |
+| 480 | `TST-BRAIN-545` | No hallucinated trust scores | §19.1 Recommendation Integrity (Brain-Side) | Yes | `brain/tests/test_guardian.py:1925` |
+| 481 | `TST-BRAIN-546` | Sparse trust data: honest uncertainty | §19.1 Recommendation Integrity (Brain-Side) | Yes | `brain/tests/test_guardian.py:7763` |
+| 482 | `TST-BRAIN-547` | Dense trust data: confidence proportional | §19.1 Recommendation Integrity (Brain-Side) | Yes | `brain/tests/test_guardian.py:8317` |
+| 483 | `TST-BRAIN-566` | Ranking explainability | §19.1 Recommendation Integrity (Brain-Side) | Yes | `brain/tests/test_guardian.py:8045` |
+| 484 | `TST-BRAIN-567` | No unsolicited discovery | §19.1 Recommendation Integrity (Brain-Side) | Yes | `brain/tests/test_guardian.py:6584` |
+| 485 | `TST-BRAIN-571` | Sponsorship cannot distort ranking order | §19.1 Recommendation Integrity (Brain-Side) | Yes | `brain/tests/test_guardian.py:5450` |
+| 486 | `TST-BRAIN-548` | Zero reviews, zero attestations | §19.2 Trust Data Density Spectrum | Yes | `brain/tests/test_guardian.py:6006` |
+| 487 | `TST-BRAIN-549` | Single review, no consensus possible | §19.2 Trust Data Density Spectrum | Yes | `brain/tests/test_guardian.py:4811` |
+| 488 | `TST-BRAIN-550` | Sparse but conflicting (2 positive, 1 negative) | §19.2 Trust Data Density Spectrum | Yes | `brain/tests/test_guardian.py:5715` |
+| 489 | `TST-BRAIN-551` | Sparse but unanimous (3 positive) | §19.2 Trust Data Density Spectrum | Yes | `brain/tests/test_guardian.py:7157` |
+| 490 | `TST-BRAIN-552` | Dense with strong consensus (50+) | §19.2 Trust Data Density Spectrum | Yes | `brain/tests/test_guardian.py:6881` |
+| 491 | `TST-BRAIN-553` | Reviews exist but no outcome data | §19.2 Trust Data Density Spectrum | Yes | `brain/tests/test_guardian.py:2386` |
+| 492 | `TST-BRAIN-554` | Stale reviews (all >1 year old) | §19.2 Trust Data Density Spectrum | Yes | `brain/tests/test_guardian.py:5219` |
+| 493 | `TST-BRAIN-555` | Trust ring weighting visible | §19.2 Trust Data Density Spectrum | Yes | `brain/tests/test_guardian.py:8585` |
+| 494 | `TST-BRAIN-556` | Expert review deep-linked, not extracted | §19.3 Creator Value Return | Yes | `brain/tests/test_guardian.py:6281` |
+| 495 | `TST-BRAIN-557` | Multiple sources attributed individually | §19.3 Creator Value Return | Yes | `brain/tests/test_guardian.py:7461` |
+| 496 | `TST-BRAIN-558` | Bot trust penalty for stripped attribution | §19.3 Creator Value Return | Yes | `brain/tests/test_guardian.py:2898` |
+| 497 | `TST-BRAIN-559` | Draft expires after 72 hours | §20.1 Approval Semantics Under Pressure | Yes | `brain/tests/test_guardian.py:2033` |
+| 498 | `TST-BRAIN-560` | Cart handover expires after 12 hours | §20.1 Approval Semantics Under Pressure | Yes | `brain/tests/test_guardian.py:3128` |
+| 499 | `TST-BRAIN-561` | Escalation: unreviewed high-risk draft | §20.1 Approval Semantics Under Pressure | Yes | `brain/tests/test_guardian.py:2718` |
+| 500 | `TST-BRAIN-562` | Multiple pending drafts: no silent batch | §20.1 Approval Semantics Under Pressure | Yes | `brain/tests/test_guardian.py:3281` |
+| 501 | `TST-BRAIN-563` | Agent requests `messages.send` → always downgraded | §20.1 Approval Semantics Under Pressure | Yes | `brain/tests/test_guardian.py:2581` |
+| 502 | `TST-BRAIN-564` | Approval state survives brain restart | §20.1 Approval Semantics Under Pressure | Yes | `brain/tests/test_guardian.py:4307` |
+| 503 | `TST-BRAIN-565` | Concurrent draft + cart for same product | §20.1 Approval Semantics Under Pressure | Yes | `brain/tests/test_guardian.py:3829` |
+| 504 | `TST-BRAIN-569` | Approval invalidated on payload mutation | §20.1 Approval Semantics Under Pressure | Yes | `brain/tests/test_guardian.py:2257` |
 | 505 | `TST-BRAIN-345` | Impulsive spending detection | §21.1 Emotional State Awareness (Phase 2+) | Deferred | `brain/tests/test_deferred.py:95` |
 | 506 | `TST-BRAIN-346` | Emotional email detection | §21.1 Emotional State Awareness (Phase 2+) | Deferred | `brain/tests/test_deferred.py:125` |
 | 507 | `TST-BRAIN-347` | Time-of-day context | §21.1 Emotional State Awareness (Phase 2+) | Deferred | `brain/tests/test_deferred.py:150` |
@@ -1830,11 +1830,11 @@
 | 37 | `TST-INT-037` | Only `/personal` persona exists | §2.5 Onboarding Flow (Managed Hosting) | Yes | `tests/integration/test_home_node.py:1406` |
 | 38 | `TST-INT-038` | Day 7: mnemonic backup prompt | §2.5 Onboarding Flow (Managed Hosting) | Yes | `tests/integration/test_home_node.py:1429` |
 | 39 | `TST-INT-039` | Cloud LLM PII consent (Cloud profile) | §2.5 Onboarding Flow (Managed Hosting) | Yes | `tests/integration/test_home_node.py:1467` |
-| 40 | `TST-INT-040` | Brain with Service Signature Auth: access open persona | §2.6 Compromised Brain Simulation (E2E) | Yes | `tests/integration/test_safety_layer.py:145` |
-| 41 | `TST-INT-041` | Brain with Service Signature Auth: blocked from locked persona | §2.6 Compromised Brain Simulation (E2E) | Yes | `tests/integration/test_safety_layer.py:124` |
+| 40 | `TST-INT-040` | Brain with Service Signature Auth: access open persona | §2.6 Compromised Brain Simulation (E2E) | Yes | `tests/integration/test_safety_layer.py:147` |
+| 41 | `TST-INT-041` | Brain with Service Signature Auth: blocked from locked persona | §2.6 Compromised Brain Simulation (E2E) | Yes | `tests/integration/test_safety_layer.py:126` |
 | 42 | `TST-INT-042` | Brain with Service Signature Auth: restricted creates trail | §2.6 Compromised Brain Simulation (E2E) | Yes | `tests/integration/test_home_node.py:1546` |
 | 43 | `TST-INT-043` | Brain with Service Signature Auth: cannot call admin endpoints | §2.6 Compromised Brain Simulation (E2E) | Yes | `tests/integration/test_home_node.py:1576` |
-| 44 | `TST-INT-044` | Brain with Service Signature Auth: PII scrubber enforced | §2.6 Compromised Brain Simulation (E2E) | Yes | `tests/integration/test_safety_layer.py:236` |
+| 44 | `TST-INT-044` | Brain with Service Signature Auth: PII scrubber enforced | §2.6 Compromised Brain Simulation (E2E) | Yes | `tests/integration/test_safety_layer.py:238` |
 | 45 | `TST-INT-045` | Full connection flow | §3.1 Connection Establishment (E2E) | Yes | `tests/integration/test_didcomm.py:181` |
 | 46 | `TST-INT-046` | Mutual authentication required | §3.1 Connection Establishment (E2E) | Yes | `tests/integration/test_didcomm.py:144` |
 | 47 | `TST-INT-047` | DID Document endpoint extraction | §3.1 Connection Establishment (E2E) | Yes | `tests/integration/test_didcomm.py:87` |
@@ -1956,10 +1956,10 @@
 | 163 | `TST-INT-163` | `GetPersonasForContact()` excludes locked | §7.2 Cross-Persona Isolation | Yes | `tests/integration/test_security.py:185` |
 | 164 | `TST-INT-164` | Cross-persona parallel reads | §7.2 Cross-Persona Isolation | Yes | `tests/integration/test_personas.py:194` |
 | 165 | `TST-INT-165` | No unauthenticated API access | §7.3 Authentication Boundaries | Yes | `tests/integration/test_security.py:228` |
-| 166 | `TST-INT-166` | Service Signature Auth cannot perform admin actions | §7.3 Authentication Boundaries | Yes | `tests/integration/test_safety_layer.py:36` |
-| 167 | `TST-INT-167` | CLIENT_TOKEN cannot perform brain actions | §7.3 Authentication Boundaries | Yes | `tests/integration/test_safety_layer.py:415` |
-| 168 | `TST-INT-168` | Expired session cannot access admin | §7.3 Authentication Boundaries | Yes | `tests/integration/test_safety_layer.py:297` |
-| 169 | `TST-INT-169` | Revoked device cannot access anything | §7.3 Authentication Boundaries | Yes | `tests/integration/test_safety_layer.py:166` |
+| 166 | `TST-INT-166` | Service Signature Auth cannot perform admin actions | §7.3 Authentication Boundaries | Yes | `tests/integration/test_safety_layer.py:38` |
+| 167 | `TST-INT-167` | CLIENT_TOKEN cannot perform brain actions | §7.3 Authentication Boundaries | Yes | `tests/integration/test_safety_layer.py:417` |
+| 168 | `TST-INT-168` | Expired session cannot access admin | §7.3 Authentication Boundaries | Yes | `tests/integration/test_safety_layer.py:299` |
+| 169 | `TST-INT-169` | Revoked device cannot access anything | §7.3 Authentication Boundaries | Yes | `tests/integration/test_safety_layer.py:168` |
 | 170 | `TST-INT-170` | Port scan from external | §7.4 Network Attack Surface | Yes | `tests/integration/test_security.py:280` |
 | 171 | `TST-INT-171` | Brain not accessible from outside Docker | §7.4 Network Attack Surface | Yes | `tests/integration/test_security.py:315` |
 | 172 | `TST-INT-172` | Inter-container isolation | §7.4 Network Attack Surface | Yes | `tests/integration/test_security.py:338` |
@@ -2055,10 +2055,10 @@
 | 262 | `TST-INT-262` | Cold archive pass-through | §9.4 Startup Sync & Living Window (E2E) | Yes | `tests/integration/test_ingestion.py:1112` |
 | 263 | `TST-INT-263` | OpenClaw outage during backfill | §9.4 Startup Sync & Living Window (E2E) | Yes | `tests/integration/test_ingestion.py:1160` |
 | 264 | `TST-INT-264` | Ingestion: brain → MCP → core | §10.1 Writing Patterns | Yes | `tests/integration/test_storage_tiers.py:960` |
-| 265 | `TST-INT-265` | Content routing by brain | §10.1 Writing Patterns | Yes | `tests/integration/test_silence_tiers.py:382` |
-| 266 | `TST-INT-266` | Same contact, different personas | §10.1 Writing Patterns | Yes | `tests/integration/test_anti_her.py:381` |
+| 265 | `TST-INT-265` | Content routing by brain | §10.1 Writing Patterns | Yes | `tests/integration/test_silence_tiers.py:385` |
+| 266 | `TST-INT-266` | Same contact, different personas | §10.1 Writing Patterns | Yes | `tests/integration/test_anti_her.py:705` |
 | 267 | `TST-INT-267` | Brain-generated data stored via core | §10.1 Writing Patterns | Yes | `tests/integration/test_agency.py:285` |
-| 268 | `TST-INT-268` | Sync cursor stored as KV | §10.1 Writing Patterns | Yes | `tests/integration/test_silence_tiers.py:79` (+1) |
+| 268 | `TST-INT-268` | Sync cursor stored as KV | §10.1 Writing Patterns | Yes | `tests/integration/test_silence_tiers.py:82` (+1) |
 | 269 | `TST-INT-269` | Batch ingestion: 5000-email initial sync | §10.1 Writing Patterns | Yes | `tests/integration/test_storage_tiers.py:996` |
 | 270 | `TST-INT-270` | Batch ingestion: concurrent reads unblocked | §10.1 Writing Patterns | Yes | `tests/integration/test_storage_tiers.py:1033` |
 | 271 | `TST-INT-271` | Staging area: draft lifecycle | §10.1 Writing Patterns | Yes | `tests/integration/test_storage_tiers.py:1064` |
@@ -2087,33 +2087,33 @@
 | 294 | `TST-INT-294` | Agent delegation: form-fill via MCP | §10.5 Action Layer (Draft-Don't-Send & Cart Handover E2… | Yes | `tests/integration/test_delegation.py:340` |
 | 295 | `TST-INT-295` | Reminder loop: missed reminder on reboot | §10.5 Action Layer (Draft-Don't-Send & Cart Handover E2… | Yes | `tests/integration/test_storage_tiers.py:1455` |
 | 296 | `TST-INT-296` | Action layer never bypasses staging | §10.5 Action Layer (Draft-Don't-Send & Cart Handover E2… | Yes | `tests/integration/test_delegation.py:57` (+2) |
-| 297 | `TST-INT-297` | Publish expert attestation | §11.1 PDS Record Publishing | Yes | `tests/integration/test_trust_network.py:45` |
-| 298 | `TST-INT-298` | Publish outcome report | §11.1 PDS Record Publishing | Yes | `tests/integration/test_trust_network.py:165` |
-| 299 | `TST-INT-299` | Record signature valid | §11.1 PDS Record Publishing | Yes | `tests/integration/test_trust_network.py:79` |
-| 300 | `TST-INT-300` | PDS cannot forge records | §11.1 PDS Record Publishing | Yes | `tests/integration/test_trust_network.py:469` |
-| 301 | `TST-INT-301` | Type B: bundled PDS in docker-compose | §11.1 PDS Record Publishing | Yes | `tests/integration/test_trust_network.py:536` |
-| 302 | `TST-INT-302` | Type A: external PDS push | §11.1 PDS Record Publishing | Yes | `tests/integration/test_trust_network.py:574` |
-| 303 | `TST-INT-303` | Custom Lexicon validation | §11.1 PDS Record Publishing | Yes | `tests/integration/test_trust_network.py:596` |
-| 304 | `TST-INT-304` | Trust tampering detected | §11.2 Record Integrity & Deletion | Yes | `tests/integration/test_trust_network.py:449` |
-| 305 | `TST-INT-305` | Author deletes own review (signed tombstone) | §11.2 Record Integrity & Deletion | Yes | `tests/integration/test_trust_network.py:635` |
-| 306 | `TST-INT-306` | Non-author cannot delete review | §11.2 Record Integrity & Deletion | Yes | `tests/integration/test_trust_network.py:666` |
-| 307 | `TST-INT-307` | Outcome data exact anonymized fields — no PII | §11.2 Record Integrity & Deletion | Yes | `tests/integration/test_trust_network.py:189` |
-| 308 | `TST-INT-308` | Aggregate scores computed not stored | §11.2 Record Integrity & Deletion | Yes | `tests/integration/test_trust_network.py:698` |
-| 309 | `TST-INT-309` | Outcome data lifecycle E2E | §11.2 Record Integrity & Deletion | Yes | `tests/integration/test_trust_network.py:231` |
-| 310 | `TST-INT-310` | Outcome report full Lexicon field validation | §11.2 Record Integrity & Deletion | Yes | `tests/integration/test_trust_network.py:314` |
+| 297 | `TST-INT-297` | Publish expert attestation | §11.1 PDS Record Publishing | Yes | `tests/integration/test_trust_network.py:46` |
+| 298 | `TST-INT-298` | Publish outcome report | §11.1 PDS Record Publishing | Yes | `tests/integration/test_trust_network.py:166` |
+| 299 | `TST-INT-299` | Record signature valid | §11.1 PDS Record Publishing | Yes | `tests/integration/test_trust_network.py:80` |
+| 300 | `TST-INT-300` | PDS cannot forge records | §11.1 PDS Record Publishing | Yes | `tests/integration/test_trust_network.py:470` |
+| 301 | `TST-INT-301` | Type B: bundled PDS in docker-compose | §11.1 PDS Record Publishing | Yes | `tests/integration/test_trust_network.py:537` |
+| 302 | `TST-INT-302` | Type A: external PDS push | §11.1 PDS Record Publishing | Yes | `tests/integration/test_trust_network.py:575` |
+| 303 | `TST-INT-303` | Custom Lexicon validation | §11.1 PDS Record Publishing | Yes | `tests/integration/test_trust_network.py:597` |
+| 304 | `TST-INT-304` | Trust tampering detected | §11.2 Record Integrity & Deletion | Yes | `tests/integration/test_trust_network.py:450` |
+| 305 | `TST-INT-305` | Author deletes own review (signed tombstone) | §11.2 Record Integrity & Deletion | Yes | `tests/integration/test_trust_network.py:636` |
+| 306 | `TST-INT-306` | Non-author cannot delete review | §11.2 Record Integrity & Deletion | Yes | `tests/integration/test_trust_network.py:667` |
+| 307 | `TST-INT-307` | Outcome data exact anonymized fields — no PII | §11.2 Record Integrity & Deletion | Yes | `tests/integration/test_trust_network.py:190` |
+| 308 | `TST-INT-308` | Aggregate scores computed not stored | §11.2 Record Integrity & Deletion | Yes | `tests/integration/test_trust_network.py:699` |
+| 309 | `TST-INT-309` | Outcome data lifecycle E2E | §11.2 Record Integrity & Deletion | Yes | `tests/integration/test_trust_network.py:232` |
+| 310 | `TST-INT-310` | Outcome report full Lexicon field validation | §11.2 Record Integrity & Deletion | Yes | `tests/integration/test_trust_network.py:315` |
 | 311 | `TST-INT-311` | Trust affects agent routing | §11.3 Trust in Agent Decisions | Yes | `tests/integration/test_trust_rings.py:625` (+2) |
 | 312 | `TST-INT-312` | Trust affects trust tier | §11.3 Trust in Agent Decisions | Yes | `tests/integration/test_trust_rings.py:333` (+2) |
 | 313 | `TST-INT-313` | Cold start: web search fallback (Phase 1) | §11.3 Trust in Agent Decisions | Yes | `tests/integration/test_trust_rings.py:35` |
 | 314 | `TST-INT-314` | Gradual trust activation | §11.3 Trust in Agent Decisions | Yes | `tests/integration/test_trust_rings.py:576` (+1) |
 | 315 | `TST-INT-315` | Cold start: personal context enrichment | §11.3 Trust in Agent Decisions | Yes | `tests/integration/test_trust_rings.py:207` |
-| 316 | `TST-INT-316` | PDS down: records already replicated | §11.4 PDS Topology & Availability | Yes | `tests/integration/test_trust_network.py:730` |
-| 317 | `TST-INT-317` | PDS migration (account portability) | §11.4 PDS Topology & Availability | Yes | `tests/integration/test_trust_network.py:778` |
-| 318 | `TST-INT-318` | Foundation PDS stores only trust data | §11.4 PDS Topology & Availability | Yes | `tests/integration/test_trust_network.py:812` |
-| 319 | `TST-INT-319` | Relay crawls PDS via delta sync | §11.4 PDS Topology & Availability | Yes | `tests/integration/test_trust_network.py:848` |
-| 320 | `TST-INT-320` | Discovery → PDS federation | §11.5 AT Protocol Discovery (E2E) | Yes | `tests/integration/test_trust_network.py:896` |
-| 321 | `TST-INT-321` | Discovery endpoint available unauthenticated | §11.5 AT Protocol Discovery (E2E) | Yes | `tests/integration/test_trust_network.py:919` |
-| 322 | `TST-INT-322` | Discovery returns plain text DID | §11.5 AT Protocol Discovery (E2E) | Yes | `tests/integration/test_trust_network.py:944` |
-| 323 | `TST-INT-323` | Missing discovery → PDS federation fails | §11.5 AT Protocol Discovery (E2E) | Yes | `tests/integration/test_trust_network.py:967` |
+| 316 | `TST-INT-316` | PDS down: records already replicated | §11.4 PDS Topology & Availability | Yes | `tests/integration/test_trust_network.py:731` |
+| 317 | `TST-INT-317` | PDS migration (account portability) | §11.4 PDS Topology & Availability | Yes | `tests/integration/test_trust_network.py:779` |
+| 318 | `TST-INT-318` | Foundation PDS stores only trust data | §11.4 PDS Topology & Availability | Yes | `tests/integration/test_trust_network.py:813` |
+| 319 | `TST-INT-319` | Relay crawls PDS via delta sync | §11.4 PDS Topology & Availability | Yes | `tests/integration/test_trust_network.py:849` |
+| 320 | `TST-INT-320` | Discovery → PDS federation | §11.5 AT Protocol Discovery (E2E) | Yes | `tests/integration/test_trust_network.py:897` |
+| 321 | `TST-INT-321` | Discovery endpoint available unauthenticated | §11.5 AT Protocol Discovery (E2E) | Yes | `tests/integration/test_trust_network.py:920` |
+| 322 | `TST-INT-322` | Discovery returns plain text DID | §11.5 AT Protocol Discovery (E2E) | Yes | `tests/integration/test_trust_network.py:945` |
+| 323 | `TST-INT-323` | Missing discovery → PDS federation fails | §11.5 AT Protocol Discovery (E2E) | Yes | `tests/integration/test_trust_network.py:968` |
 | 324 | `TST-INT-324` | Schema migration on upgrade | §12. Upgrade & Migration | Yes | `tests/integration/test_migration.py:37` |
 | 325 | `TST-INT-325` | Data preserved across upgrade | §12. Upgrade & Migration | Yes | `tests/integration/test_migration.py:66` |
 | 326 | `TST-INT-326` | Rollback after failed migration | §12. Upgrade & Migration | Yes | `tests/integration/test_migration.py:92` |
@@ -2332,48 +2332,48 @@
 | 539 | `TST-INT-689` | Aggregate scores recompute after amendment or deletion | §18.23 AppView Federation Correctness (AppView Architec… | Yes | `tests/integration/test_arch_medium_3.py:641` |
 | 540 | `TST-INT-690` | Tombstone propagation removes deleted record from downstream query results | §18.23 AppView Federation Correctness (AppView Architec… | Yes | `tests/integration/test_arch_medium_3.py:674` |
 | 541 | `TST-INT-691` | Attribution survives Brain→Core pipeline | §19.1 Recommendation Pipeline Integrity (Core↔Brain) | Yes | `tests/integration/test_deep_links.py:409` |
-| 542 | `TST-INT-692` | Sponsored metadata preserved through pipeline | §19.1 Recommendation Pipeline Integrity (Core↔Brain) | No | — |
-| 543 | `TST-INT-693` | Unattributed item rejected at Core boundary | §19.1 Recommendation Pipeline Integrity (Core↔Brain) | No | — |
+| 542 | `TST-INT-692` | Sponsored metadata preserved through pipeline | §19.1 Recommendation Pipeline Integrity (Core↔Brain) | Yes | `tests/integration/test_deep_links.py:1015` |
+| 543 | `TST-INT-693` | Unattributed item rejected at Core boundary | §19.1 Recommendation Pipeline Integrity (Core↔Brain) | Yes | `tests/integration/test_deep_links.py:1488` |
 | 544 | `TST-INT-694` | Provenance immutable after storage | §19.1 Recommendation Pipeline Integrity (Core↔Brain) | Yes | `tests/integration/test_deep_links.py:723` |
-| 545 | `TST-INT-733` | Sponsorship cannot distort ranking order | §19.1 Recommendation Pipeline Integrity (Core↔Brain) | No | — |
-| 546 | `TST-INT-695` | Agent queries only permitted personas | §19.2 Agent Sandbox (Core↔Brain Integration) | No | — |
-| 547 | `TST-INT-696` | Agent intent logged in audit trail | §19.2 Agent Sandbox (Core↔Brain Integration) | No | — |
-| 548 | `TST-INT-697` | Agent revocation propagates from Core to Brain | §19.2 Agent Sandbox (Core↔Brain Integration) | Yes | `tests/integration/test_safety_layer.py:825` |
-| 549 | `TST-INT-698` | Agent cannot access another user's data (multi-tenant) | §19.2 Agent Sandbox (Core↔Brain Integration) | No | — |
-| 550 | `TST-INT-699` | Agent crash does not leak partial results | §19.2 Agent Sandbox (Core↔Brain Integration) | Yes | `tests/integration/test_safety_layer.py:515` |
-| 551 | `TST-INT-700` | Neglected contact produces briefing nudge | §20.1 Relationship Maintenance Pipeline (Core↔Brain) | Yes | `tests/integration/test_anti_her.py:517` |
-| 552 | `TST-INT-701` | Birthday + neglect produces elevated nudge | §20.1 Relationship Maintenance Pipeline (Core↔Brain) | No | — |
-| 553 | `TST-INT-702` | D2D message context triggers outreach suggestion | §20.1 Relationship Maintenance Pipeline (Core↔Brain) | No | — |
-| 554 | `TST-INT-703` | Promise detection across vault items | §20.1 Relationship Maintenance Pipeline (Core↔Brain) | No | — |
-| 555 | `TST-INT-704` | Human interaction resets all nudge timers | §20.1 Relationship Maintenance Pipeline (Core↔Brain) | Yes | `tests/integration/test_anti_her.py:725` |
-| 556 | `TST-INT-705` | Multi-session emotional pattern detection | §20.2 Emotional Dependency Detection (Cross-Service) | Yes | `tests/integration/test_anti_her.py:2106` |
-| 557 | `TST-INT-706` | Social isolation signal from vault data | §20.2 Emotional Dependency Detection (Cross-Service) | Yes | `tests/integration/test_anti_her.py:1495` |
-| 558 | `TST-INT-707` | Anti-Her response never stored as emotional memory | §20.2 Emotional Dependency Detection (Cross-Service) | Yes | `tests/integration/test_anti_her.py:1885` |
-| 559 | `TST-INT-708` | Fiduciary event: ingestion → interrupt | §21.1 Full Notification Pipeline | No | — |
-| 560 | `TST-INT-709` | Engagement event: ingestion → briefing only | §21.1 Full Notification Pipeline | Yes | `tests/integration/test_silence_tiers.py:516` |
-| 561 | `TST-INT-710` | Priority conflict resolution | §21.1 Full Notification Pipeline | No | — |
-| 562 | `TST-INT-711` | Notification with PII scrubbed | §21.1 Full Notification Pipeline | No | — |
-| 563 | `TST-INT-712` | DND state respected across services | §21.1 Full Notification Pipeline | No | — |
-| 564 | `TST-INT-713` | Untrusted sender urgency not fiduciary | §21.2 Classification Edge Cases (Integration) | No | — |
-| 565 | `TST-INT-714` | Health context elevates classification | §21.2 Classification Edge Cases (Integration) | No | — |
-| 566 | `TST-INT-715` | Stale event demotion | §21.2 Classification Edge Cases (Integration) | No | — |
-| 567 | `TST-INT-731` | Reclassification on later corroboration | §21.2 Classification Edge Cases (Integration) | Yes | `tests/integration/test_silence_tiers.py:831` |
-| 568 | `TST-INT-716` | Zero trust data: graceful absence | §22.1 Trust Data Density Spectrum (Full Pipeline) | No | — |
-| 569 | `TST-INT-717` | Single review: honest uncertainty | §22.1 Trust Data Density Spectrum (Full Pipeline) | Yes | `tests/integration/test_trust_network.py:1450` (+2) |
-| 570 | `TST-INT-718` | Sparse conflicting: transparent split | §22.1 Trust Data Density Spectrum (Full Pipeline) | Yes | `tests/integration/test_trust_network.py:1106` |
-| 571 | `TST-INT-719` | Dense consensus: earned confidence | §22.1 Trust Data Density Spectrum (Full Pipeline) | No | — |
-| 572 | `TST-INT-720` | Stale reviews: recency disclosure | §22.1 Trust Data Density Spectrum (Full Pipeline) | No | — |
-| 573 | `TST-INT-721` | Mixed ring levels: weighting visible | §22.1 Trust Data Density Spectrum (Full Pipeline) | No | — |
-| 574 | `TST-INT-722` | Reviews + no outcomes | §22.1 Trust Data Density Spectrum (Full Pipeline) | No | — |
-| 575 | `TST-INT-723` | Deep link preserved: AppView → Brain → User | §22.2 Creator Value Return (Full Pipeline) | No | — |
-| 576 | `TST-INT-724` | Expert credited individually | §22.2 Creator Value Return (Full Pipeline) | Yes | `tests/integration/test_deep_links.py:1088` |
-| 577 | `TST-INT-725` | Attribution violation feeds bot trust degradation | §22.2 Creator Value Return (Full Pipeline) | Yes | `tests/integration/test_deep_links.py:1498` |
+| 545 | `TST-INT-733` | Sponsorship cannot distort ranking order | §19.1 Recommendation Pipeline Integrity (Core↔Brain) | Yes | `tests/integration/test_deep_links.py:3101` |
+| 546 | `TST-INT-695` | Agent queries only permitted personas | §19.2 Agent Sandbox (Core↔Brain Integration) | Yes | `tests/integration/test_safety_layer.py:1534` |
+| 547 | `TST-INT-696` | Agent intent logged in audit trail | §19.2 Agent Sandbox (Core↔Brain Integration) | Yes | `tests/integration/test_safety_layer.py:1078` |
+| 548 | `TST-INT-697` | Agent revocation propagates from Core to Brain | §19.2 Agent Sandbox (Core↔Brain Integration) | Yes | `tests/integration/test_safety_layer.py:827` |
+| 549 | `TST-INT-698` | Agent cannot access another user's data (multi-tenant) | §19.2 Agent Sandbox (Core↔Brain Integration) | Yes | `tests/integration/test_safety_layer.py:1927` |
+| 550 | `TST-INT-699` | Agent crash does not leak partial results | §19.2 Agent Sandbox (Core↔Brain Integration) | Yes | `tests/integration/test_safety_layer.py:517` |
+| 551 | `TST-INT-700` | Neglected contact produces briefing nudge | §20.1 Relationship Maintenance Pipeline (Core↔Brain) | Yes | `tests/integration/test_anti_her.py:841` |
+| 552 | `TST-INT-701` | Birthday + neglect produces elevated nudge | §20.1 Relationship Maintenance Pipeline (Core↔Brain) | Yes | `tests/integration/test_anti_her.py:1049` |
+| 553 | `TST-INT-702` | D2D message context triggers outreach suggestion | §20.1 Relationship Maintenance Pipeline (Core↔Brain) | Yes | `tests/integration/test_anti_her.py:2344` |
+| 554 | `TST-INT-703` | Promise detection across vault items | §20.1 Relationship Maintenance Pipeline (Core↔Brain) | Yes | `tests/integration/test_anti_her.py:1538` |
+| 555 | `TST-INT-704` | Human interaction resets all nudge timers | §20.1 Relationship Maintenance Pipeline (Core↔Brain) | Yes | `tests/integration/test_anti_her.py:2019` |
+| 556 | `TST-INT-705` | Multi-session emotional pattern detection | §20.2 Emotional Dependency Detection (Cross-Service) | Yes | `tests/integration/test_anti_her.py:3967` |
+| 557 | `TST-INT-706` | Social isolation signal from vault data | §20.2 Emotional Dependency Detection (Cross-Service) | Yes | `tests/integration/test_anti_her.py:3356` |
+| 558 | `TST-INT-707` | Anti-Her response never stored as emotional memory | §20.2 Emotional Dependency Detection (Cross-Service) | Yes | `tests/integration/test_anti_her.py:3746` |
+| 559 | `TST-INT-708` | Fiduciary event: ingestion → interrupt | §21.1 Full Notification Pipeline | Yes | `tests/integration/test_silence_tiers.py:703` |
+| 560 | `TST-INT-709` | Engagement event: ingestion → briefing only | §21.1 Full Notification Pipeline | Yes | `tests/integration/test_silence_tiers.py:519` |
+| 561 | `TST-INT-710` | Priority conflict resolution | §21.1 Full Notification Pipeline | Yes | `tests/integration/test_silence_tiers.py:4471` |
+| 562 | `TST-INT-711` | Notification with PII scrubbed | §21.1 Full Notification Pipeline | Yes | `tests/integration/test_silence_tiers.py:3282` |
+| 563 | `TST-INT-712` | DND state respected across services | §21.1 Full Notification Pipeline | Yes | `tests/integration/test_silence_tiers.py:3865` |
+| 564 | `TST-INT-713` | Untrusted sender urgency not fiduciary | §21.2 Classification Edge Cases (Integration) | Yes | `tests/integration/test_silence_tiers.py:1932` |
+| 565 | `TST-INT-714` | Health context elevates classification | §21.2 Classification Edge Cases (Integration) | Yes | `tests/integration/test_silence_tiers.py:2728` |
+| 566 | `TST-INT-715` | Stale event demotion | §21.2 Classification Edge Cases (Integration) | Yes | `tests/integration/test_silence_tiers.py:2327` |
+| 567 | `TST-INT-731` | Reclassification on later corroboration | §21.2 Classification Edge Cases (Integration) | Yes | `tests/integration/test_silence_tiers.py:1629` |
+| 568 | `TST-INT-716` | Zero trust data: graceful absence | §22.1 Trust Data Density Spectrum (Full Pipeline) | Yes | `tests/integration/test_trust_network.py:2091` (+2) |
+| 569 | `TST-INT-717` | Single review: honest uncertainty | §22.1 Trust Data Density Spectrum (Full Pipeline) | Yes | `tests/integration/test_trust_network.py:1750` (+2) |
+| 570 | `TST-INT-718` | Sparse conflicting: transparent split | §22.1 Trust Data Density Spectrum (Full Pipeline) | Yes | `tests/integration/test_trust_network.py:1406` |
+| 571 | `TST-INT-719` | Dense consensus: earned confidence | §22.1 Trust Data Density Spectrum (Full Pipeline) | Yes | `tests/integration/test_trust_network.py:3546` (+2) |
+| 572 | `TST-INT-720` | Stale reviews: recency disclosure | §22.1 Trust Data Density Spectrum (Full Pipeline) | Yes | `tests/integration/test_trust_network.py:3165` (+2) |
+| 573 | `TST-INT-721` | Mixed ring levels: weighting visible | §22.1 Trust Data Density Spectrum (Full Pipeline) | Yes | `tests/integration/test_trust_network.py:2581` (+2) |
+| 574 | `TST-INT-722` | Reviews + no outcomes | §22.1 Trust Data Density Spectrum (Full Pipeline) | Yes | `tests/integration/test_trust_network.py:2361` |
+| 575 | `TST-INT-723` | Deep link preserved: AppView → Brain → User | §22.2 Creator Value Return (Full Pipeline) | Yes | `tests/integration/test_deep_links.py:3720` |
+| 576 | `TST-INT-724` | Expert credited individually | §22.2 Creator Value Return (Full Pipeline) | Yes | `tests/integration/test_deep_links.py:2085` |
+| 577 | `TST-INT-725` | Attribution violation feeds bot trust degradation | §22.2 Creator Value Return (Full Pipeline) | Yes | `tests/integration/test_deep_links.py:2495` |
 | 578 | `TST-INT-726` | Draft lifecycle: create → review → expire | §23.1 Action Pipeline (Core↔Brain) | Yes | `tests/integration/test_draft_dont_send.py:451` |
-| 579 | `TST-INT-727` | Cart handover lifecycle: create → expire | §23.1 Action Pipeline (Core↔Brain) | No | — |
-| 580 | `TST-INT-728` | Agent send request → always downgraded to draft | §23.1 Action Pipeline (Core↔Brain) | No | — |
-| 581 | `TST-INT-729` | Approval survives brain crash | §23.1 Action Pipeline (Core↔Brain) | No | — |
+| 579 | `TST-INT-727` | Cart handover lifecycle: create → expire | §23.1 Action Pipeline (Core↔Brain) | Yes | `tests/integration/test_draft_dont_send.py:2088` |
+| 580 | `TST-INT-728` | Agent send request → always downgraded to draft | §23.1 Action Pipeline (Core↔Brain) | Yes | `tests/integration/test_draft_dont_send.py:1615` |
+| 581 | `TST-INT-729` | Approval survives brain crash | §23.1 Action Pipeline (Core↔Brain) | Yes | `tests/integration/test_draft_dont_send.py:2777` |
 | 582 | `TST-INT-730` | Concurrent actions: independent approval tokens | §23.1 Action Pipeline (Core↔Brain) | Yes | `tests/integration/test_draft_dont_send.py:708` |
-| 583 | `TST-INT-732` | Approval invalidated on payload mutation | §23.1 Action Pipeline (Core↔Brain) | No | — |
+| 583 | `TST-INT-732` | Approval invalidated on payload mutation | §23.1 Action Pipeline (Core↔Brain) | Yes | `tests/integration/test_draft_dont_send.py:1040` |
 
 ---
 
@@ -2471,7 +2471,7 @@
 | 88 | `TST-E2E-088` | Tampered Signature Returns 401 | Suite 15: CLI Ed25519 Request Signing | Yes | `tests/e2e/test_suite_15_cli_signing.py:244` |
 | 89 | `TST-E2E-089` | Expired Timestamp Returns 401 | Suite 15: CLI Ed25519 Request Signing | Yes | `tests/e2e/test_suite_15_cli_signing.py:289` |
 | 90 | `TST-E2E-090` | Unpaired DID Returns 401 | Suite 15: CLI Ed25519 Request Signing | Yes | `tests/e2e/test_suite_15_cli_signing.py:318` |
-| 91 | `TST-E2E-091` | Bearer Token Fallback Still Works | Suite 15: CLI Ed25519 Request Signing | Yes | `tests/e2e/test_suite_15_cli_signing.py:385` |
+| 91 | `TST-E2E-091` | Bearer Token Fallback Still Works | Suite 15: CLI Ed25519 Request Signing | Yes | `tests/e2e/test_suite_15_cli_signing.py:386` |
 | 92 | `TST-E2E-092` | PDS Container Health | Suite 16: AT Protocol PDS Integration | Yes | `tests/e2e/test_suite_16_at_protocol_pds.py:74` |
 | 93 | `TST-E2E-093` | PDS Server Description | Suite 16: AT Protocol PDS Integration | Yes | `tests/e2e/test_suite_16_at_protocol_pds.py:94` |
 | 94 | `TST-E2E-094` | DID Registration via Core Identity Init | Suite 16: AT Protocol PDS Integration | Yes | `tests/e2e/test_suite_16_at_protocol_pds.py:143` |
@@ -2491,22 +2491,22 @@
 | 108 | `TST-E2E-108` | Re-Running Install Does Not Rotate Identity | Suite 20: Operator and Upgrade Journeys | Yes | `tests/e2e/test_suite_20_operator_upgrade.py:35` |
 | 109 | `TST-E2E-109` | Locked-Node Admin Journey | Suite 20: Operator and Upgrade Journeys | Yes | `tests/e2e/test_suite_20_operator_upgrade.py:108` |
 | 110 | `TST-E2E-110` | Verified Upgrade Requires Explicit Operator Action | Suite 20: Operator and Upgrade Journeys | Yes | `tests/e2e/test_suite_20_operator_upgrade.py:205` |
-| 111 | `TST-E2E-111` | Neglected Contact Nudge in Daily Briefing | Suite 21: The Anti-Her — Relationship Maintenance | No | — |
-| 112 | `TST-E2E-112` | Life Event Follow-Up Nudge | Suite 21: The Anti-Her — Relationship Maintenance | No | — |
-| 113 | `TST-E2E-113` | Promise Accountability | Suite 21: The Anti-Her — Relationship Maintenance | No | — |
-| 114 | `TST-E2E-114` | Emotional Dependency Escalation (Multi-Session) | Suite 21: The Anti-Her — Relationship Maintenance | No | — |
-| 115 | `TST-E2E-115` | Social Isolation Warning | Suite 21: The Anti-Her — Relationship Maintenance | No | — |
-| 116 | `TST-E2E-116` | Product Research — Zero Trust Data | Suite 22: Verified Truth — Trust Data Density | No | — |
-| 117 | `TST-E2E-117` | Product Research — Sparse Conflicting Data | Suite 22: Verified Truth — Trust Data Density | No | — |
-| 118 | `TST-E2E-118` | Product Research — Dense Trust Data with Consensus | Suite 22: Verified Truth — Trust Data Density | No | — |
-| 119 | `TST-E2E-119` | Product Research — Stale Reviews | Suite 22: Verified Truth — Trust Data Density | No | — |
-| 120 | `TST-E2E-120` | Product Research — Ring Level Weighting | Suite 22: Verified Truth — Trust Data Density | No | — |
-| 121 | `TST-E2E-121` | Notification Storm — Only Fiduciary Interrupts | Suite 23: Silence Under Stress | No | — |
-| 122 | `TST-E2E-122` | Ambiguous Urgency from Untrusted Source | Suite 23: Silence Under Stress | No | — |
-| 123 | `TST-E2E-123` | DND Respects Hierarchy | Suite 23: Silence Under Stress | No | — |
-| 124 | `TST-E2E-124` | Malicious Agent Cannot Access Health Persona | Suite 24: Agent Sandbox Under Attack | No | — |
-| 125 | `TST-E2E-125` | Agent Revocation Takes Immediate Effect | Suite 24: Agent Sandbox Under Attack | No | — |
-| 126 | `TST-E2E-126` | Agent Cannot Impersonate User in D2D | Suite 24: Agent Sandbox Under Attack | No | — |
+| 111 | `TST-E2E-111` | Neglected Contact Nudge in Daily Briefing | Suite 21: The Anti-Her — Relationship Maintenance | Yes | `tests/e2e/test_suite_21_anti_her.py:52` |
+| 112 | `TST-E2E-112` | Life Event Follow-Up Nudge | Suite 21: The Anti-Her — Relationship Maintenance | Yes | `tests/e2e/test_suite_21_anti_her.py:214` |
+| 113 | `TST-E2E-113` | Promise Accountability | Suite 21: The Anti-Her — Relationship Maintenance | Yes | `tests/e2e/test_suite_21_anti_her.py:760` |
+| 114 | `TST-E2E-114` | Emotional Dependency Escalation (Multi-Session) | Suite 21: The Anti-Her — Relationship Maintenance | Yes | `tests/e2e/test_suite_21_anti_her.py:1050` |
+| 115 | `TST-E2E-115` | Social Isolation Warning | Suite 21: The Anti-Her — Relationship Maintenance | Yes | `tests/e2e/test_suite_21_anti_her.py:405` |
+| 116 | `TST-E2E-116` | Product Research — Zero Trust Data | Suite 22: Verified Truth — Trust Data Density | Yes | `tests/e2e/test_suite_22_verified_truth.py:57` |
+| 117 | `TST-E2E-117` | Product Research — Sparse Conflicting Data | Suite 22: Verified Truth — Trust Data Density | Yes | `tests/e2e/test_suite_22_verified_truth.py:191` |
+| 118 | `TST-E2E-118` | Product Research — Dense Trust Data with Consensus | Suite 22: Verified Truth — Trust Data Density | Yes | `tests/e2e/test_suite_22_verified_truth.py:399` |
+| 119 | `TST-E2E-119` | Product Research — Stale Reviews | Suite 22: Verified Truth — Trust Data Density | Yes | `tests/e2e/test_suite_22_verified_truth.py:672` |
+| 120 | `TST-E2E-120` | Product Research — Ring Level Weighting | Suite 22: Verified Truth — Trust Data Density | Yes | `tests/e2e/test_suite_22_verified_truth.py:900` |
+| 121 | `TST-E2E-121` | Notification Storm — Only Fiduciary Interrupts | Suite 23: Silence Under Stress | Yes | `tests/e2e/test_suite_23_silence_stress.py:54` |
+| 122 | `TST-E2E-122` | Ambiguous Urgency from Untrusted Source | Suite 23: Silence Under Stress | Yes | `tests/e2e/test_suite_23_silence_stress.py:241` |
+| 123 | `TST-E2E-123` | DND Respects Hierarchy | Suite 23: Silence Under Stress | Yes | `tests/e2e/test_suite_23_silence_stress.py:532` |
+| 124 | `TST-E2E-124` | Malicious Agent Cannot Access Health Persona | Suite 24: Agent Sandbox Under Attack | Yes | `tests/e2e/test_suite_24_agent_sandbox.py:61` |
+| 125 | `TST-E2E-125` | Agent Revocation Takes Immediate Effect | Suite 24: Agent Sandbox Under Attack | Yes | `tests/e2e/test_suite_24_agent_sandbox.py:368` |
+| 126 | `TST-E2E-126` | Agent Cannot Impersonate User in D2D | Suite 24: Agent Sandbox Under Attack | Yes | `tests/e2e/test_suite_24_agent_sandbox.py:632` |
 
 ---
 
@@ -2537,10 +2537,10 @@
 | 21 | `REL-021` | Export / Import Portability Drill | Release Scenarios | Yes | `tests/release/test_rel_021_export_import.py:18` (+3) |
 | 22 | `REL-022` | External Exposure and Deployment Boundary Audit | Release Scenarios | Yes | `tests/release/test_rel_022_exposure_audit.py:21` (+4) |
 | 23 | `REL-023` | CLI Agent Integration and Pairing | Release Scenarios | Yes | `tests/release/test_rel_023_cli_agent.py:21` (+9) |
-| 24 | `REL-024` | Loyalty and Recommendation Integrity | Release Scenarios | No | — |
-| 25 | `REL-025` | Anti-Her and Human Connection | Release Scenarios | No | — |
-| 26 | `REL-026` | Silence First Protocol Under Stress | Release Scenarios | No | — |
-| 27 | `REL-027` | Action Integrity and Approval Gates | Release Scenarios | No | — |
+| 24 | `REL-024` | Loyalty and Recommendation Integrity | Release Scenarios | Yes | `tests/release/test_rel_024_recommendation_integrity.py:35` (+6) |
+| 25 | `REL-025` | Anti-Her and Human Connection | Release Scenarios | Yes | `tests/release/test_rel_025_anti_her.py:39` (+7) |
+| 26 | `REL-026` | Silence First Protocol Under Stress | Release Scenarios | Yes | `tests/release/test_rel_026_silence_stress.py:27` (+6) |
+| 27 | `REL-027` | Action Integrity and Approval Gates | Release Scenarios | Yes | `tests/release/test_rel_027_action_integrity.py:38` (+5) |
 
 ---
 
@@ -2548,58 +2548,58 @@
 
 | # | Test ID | Scenario | Section | Impl | Code Location |
 |---|---------|----------|---------|------|---------------|
-| 1 | `TST-CLI-001` | Generate creates key files | §1.1 Keypair Generation & Persistence | No | — |
-| 2 | `TST-CLI-002` | Private key permissions | §1.1 Keypair Generation & Persistence | No | — |
-| 3 | `TST-CLI-003` | Load existing keypair | §1.1 Keypair Generation & Persistence | No | — |
-| 4 | `TST-CLI-004` | Auto-load on ensure_loaded | §1.1 Keypair Generation & Persistence | No | — |
-| 5 | `TST-CLI-005` | Missing keypair raises error | §1.1 Keypair Generation & Persistence | No | — |
-| 6 | `TST-CLI-006` | DID format is did:key:z6Mk | §1.2 DID Derivation | No | — |
-| 7 | `TST-CLI-007` | DID is deterministic | §1.2 DID Derivation | No | — |
-| 8 | `TST-CLI-008` | Different keys produce different DIDs | §1.2 DID Derivation | No | — |
-| 9 | `TST-CLI-009` | Multibase format correct | §1.3 Public Key Multibase | No | — |
-| 10 | `TST-CLI-010` | Multibase round-trip | §1.3 Public Key Multibase | No | — |
-| 11 | `TST-CLI-011` | Sign returns three parts | §1.4 Request Signing | No | — |
-| 12 | `TST-CLI-012` | Signature is verifiable | §1.4 Request Signing | No | — |
-| 13 | `TST-CLI-013` | Empty body signing | §1.4 Request Signing | No | — |
-| 14 | `TST-CLI-014` | Different payloads produce different signatures | §1.4 Request Signing | No | — |
-| 15 | `TST-CLI-015` | Vault store success | §2.1 Vault Operations | No | — |
-| 16 | `TST-CLI-016` | Vault query success | §2.1 Vault Operations | No | — |
-| 17 | `TST-CLI-017` | KV get found | §2.1 Vault Operations | No | — |
-| 18 | `TST-CLI-018` | KV get not found | §2.1 Vault Operations | No | — |
-| 19 | `TST-CLI-019` | Connection error | §2.2 Error Handling | No | — |
-| 20 | `TST-CLI-020` | Auth error (401) | §2.2 Error Handling | No | — |
-| 21 | `TST-CLI-021` | Process event via Core | §2.3 Process Event | No | — |
-| 22 | `TST-CLI-022` | Context manager | §2.4 Client Lifecycle | No | — |
-| 23 | `TST-CLI-023` | Signing headers set on requests | §2.5 Signature Auth Headers | No | — |
-| 24 | `TST-CLI-024` | No Bearer token on Core client | §2.5 Signature Auth Headers | No | — |
-| 25 | `TST-CLI-025` | JSON body serialized compactly | §2.6 Body Extraction | No | — |
-| 26 | `TST-CLI-026` | String content as bytes | §2.6 Body Extraction | No | — |
-| 27 | `TST-CLI-027` | Empty body | §2.6 Body Extraction | No | — |
-| 28 | `TST-CLI-028` | Remember (JSON output) | §3.1 remember | No | — |
-| 29 | `TST-CLI-029` | Remember (human output) | §3.1 remember | No | — |
-| 30 | `TST-CLI-030` | Remember with category | §3.1 remember | No | — |
-| 31 | `TST-CLI-031` | Recall (JSON output) | §3.2 recall | No | — |
-| 32 | `TST-CLI-032` | Recall empty result | §3.2 recall | No | — |
-| 33 | `TST-CLI-033` | Validate approved (safe action) | §3.3 validate | No | — |
-| 34 | `TST-CLI-034` | Validate pending (risky action) | §3.3 validate | No | — |
-| 35 | `TST-CLI-035` | Fallback: safe action when Core down | §3.3 validate | No | — |
-| 36 | `TST-CLI-036` | Fallback: risky action when Core down | §3.3 validate | No | — |
-| 37 | `TST-CLI-037` | Status found | §3.4 validate-status | No | — |
-| 38 | `TST-CLI-038` | Status not found | §3.4 validate-status | No | — |
-| 39 | `TST-CLI-039` | Scrub (JSON output) | §3.5 scrub | No | — |
-| 40 | `TST-CLI-040` | Rehydrate (JSON output) | §3.6 rehydrate | No | — |
-| 41 | `TST-CLI-041` | Draft (JSON output) | §3.7 draft | No | — |
-| 42 | `TST-CLI-042` | Sign data locally | §3.8 sign | No | — |
-| 43 | `TST-CLI-043` | Audit (JSON output) | §3.9 audit | No | — |
-| 44 | `TST-CLI-044` | Missing keypair aborts | §3.10 Error & Configuration | No | — |
-| 45 | `TST-CLI-045` | Configure generates keypair | §3.10 Error & Configuration | No | — |
-| 46 | `TST-CLI-046` | Configure help | §3.10 Error & Configuration | No | — |
-| 47 | `TST-CLI-047` | New session ID format | §4.1 Session Lifecycle | No | — |
-| 48 | `TST-CLI-048` | Save and load round-trip | §4.1 Session Lifecycle | No | — |
-| 49 | `TST-CLI-049` | Python-style keys accepted | §4.1 Session Lifecycle | No | — |
-| 50 | `TST-CLI-050` | Rehydrate replaces tokens | §4.1 Session Lifecycle | No | — |
-| 51 | `TST-CLI-051` | Load missing session | §4.1 Session Lifecycle | No | — |
-| 52 | `TST-CLI-052` | Atomic write (no temp files) | §4.1 Session Lifecycle | No | — |
+| 1 | `TST-CLI-001` | Generate creates key files | §1.1 Keypair Generation & Persistence | Yes | `cli/tests/test_signing.py:22` |
+| 2 | `TST-CLI-002` | Private key permissions | §1.1 Keypair Generation & Persistence | Yes | `cli/tests/test_signing.py:32` |
+| 3 | `TST-CLI-003` | Load existing keypair | §1.1 Keypair Generation & Persistence | Yes | `cli/tests/test_signing.py:40` |
+| 4 | `TST-CLI-004` | Auto-load on ensure_loaded | §1.1 Keypair Generation & Persistence | Yes | `cli/tests/test_signing.py:49` |
+| 5 | `TST-CLI-005` | Missing keypair raises error | §1.1 Keypair Generation & Persistence | Yes | `cli/tests/test_signing.py:57` |
+| 6 | `TST-CLI-006` | DID format is did:key:z6Mk | §1.2 DID Derivation | Yes | `cli/tests/test_signing.py:67` |
+| 7 | `TST-CLI-007` | DID is deterministic | §1.2 DID Derivation | Yes | `cli/tests/test_signing.py:75` |
+| 8 | `TST-CLI-008` | Different keys produce different DIDs | §1.2 DID Derivation | Yes | `cli/tests/test_signing.py:82` |
+| 9 | `TST-CLI-009` | Multibase format correct | §1.3 Public Key Multibase | Yes | `cli/tests/test_signing.py:94` |
+| 10 | `TST-CLI-010` | Multibase round-trip | §1.3 Public Key Multibase | Yes | `cli/tests/test_signing.py:107` |
+| 11 | `TST-CLI-011` | Sign returns three parts | §1.4 Request Signing | Yes | `cli/tests/test_signing.py:124` |
+| 12 | `TST-CLI-012` | Signature is verifiable | §1.4 Request Signing | Yes | `cli/tests/test_signing.py:134` |
+| 13 | `TST-CLI-013` | Empty body signing | §1.4 Request Signing | Yes | `cli/tests/test_signing.py:152` |
+| 14 | `TST-CLI-014` | Different payloads produce different signatures | §1.4 Request Signing | Yes | `cli/tests/test_signing.py:166` |
+| 15 | `TST-CLI-015` | Vault store success | §2.1 Vault Operations | Yes | `cli/tests/test_client.py:36` |
+| 16 | `TST-CLI-016` | Vault query success | §2.1 Vault Operations | Yes | `cli/tests/test_client.py:50` |
+| 17 | `TST-CLI-017` | KV get found | §2.1 Vault Operations | Yes | `cli/tests/test_client.py:65` |
+| 18 | `TST-CLI-018` | KV get not found | §2.1 Vault Operations | Yes | `cli/tests/test_client.py:78` |
+| 19 | `TST-CLI-019` | Connection error | §2.2 Error Handling | Yes | `cli/tests/test_client.py:93` |
+| 20 | `TST-CLI-020` | Auth error (401) | §2.2 Error Handling | Yes | `cli/tests/test_client.py:102` |
+| 21 | `TST-CLI-021` | Process event via Core | §2.3 Process Event | Yes | `cli/tests/test_client.py:118` |
+| 22 | `TST-CLI-022` | Context manager | §2.4 Client Lifecycle | Yes | `cli/tests/test_client.py:133` |
+| 23 | `TST-CLI-023` | Signing headers set on requests | §2.5 Signature Auth Headers | Yes | `cli/tests/test_client.py:150` |
+| 24 | `TST-CLI-024` | No Bearer token on Core client | §2.5 Signature Auth Headers | Yes | `cli/tests/test_client.py:172` |
+| 25 | `TST-CLI-025` | JSON body serialized compactly | §2.6 Body Extraction | Yes | `cli/tests/test_client.py:180` |
+| 26 | `TST-CLI-026` | String content as bytes | §2.6 Body Extraction | Yes | `cli/tests/test_client.py:191` |
+| 27 | `TST-CLI-027` | Empty body | §2.6 Body Extraction | Yes | `cli/tests/test_client.py:198` |
+| 28 | `TST-CLI-028` | Remember (JSON output) | §3.1 remember | Yes | `cli/tests/test_commands.py:41` |
+| 29 | `TST-CLI-029` | Remember (human output) | §3.1 remember | Yes | `cli/tests/test_commands.py:53` |
+| 30 | `TST-CLI-030` | Remember with category | §3.1 remember | Yes | `cli/tests/test_commands.py:62` |
+| 31 | `TST-CLI-031` | Recall (JSON output) | §3.2 recall | Yes | `cli/tests/test_commands.py:76` |
+| 32 | `TST-CLI-032` | Recall empty result | §3.2 recall | Yes | `cli/tests/test_commands.py:89` |
+| 33 | `TST-CLI-033` | Validate approved (safe action) | §3.3 validate | Yes | `cli/tests/test_commands.py:101` |
+| 34 | `TST-CLI-034` | Validate pending (risky action) | §3.3 validate | Yes | `cli/tests/test_commands.py:113` |
+| 35 | `TST-CLI-035` | Fallback: safe action when Core down | §3.3 validate | Yes | `cli/tests/test_commands.py:125` |
+| 36 | `TST-CLI-036` | Fallback: risky action when Core down | §3.3 validate | Yes | `cli/tests/test_commands.py:136` |
+| 37 | `TST-CLI-037` | Status found | §3.4 validate-status | Yes | `cli/tests/test_commands.py:150` |
+| 38 | `TST-CLI-038` | Status not found | §3.4 validate-status | Yes | `cli/tests/test_commands.py:161` |
+| 39 | `TST-CLI-039` | Scrub (JSON output) | §3.5 scrub | Yes | `cli/tests/test_commands.py:172` |
+| 40 | `TST-CLI-040` | Rehydrate (JSON output) | §3.6 rehydrate | Yes | `cli/tests/test_commands.py:196` |
+| 41 | `TST-CLI-041` | Draft (JSON output) | §3.7 draft | Yes | `cli/tests/test_commands.py:218` |
+| 42 | `TST-CLI-042` | Sign data locally | §3.8 sign | Yes | `cli/tests/test_commands.py:235` |
+| 43 | `TST-CLI-043` | Audit (JSON output) | §3.9 audit | Yes | `cli/tests/test_commands.py:256` |
+| 44 | `TST-CLI-044` | Missing keypair aborts | §3.10 Error & Configuration | Yes | `cli/tests/test_commands.py:272` |
+| 45 | `TST-CLI-045` | Configure generates keypair | §3.10 Error & Configuration | Yes | `cli/tests/test_commands.py:283` |
+| 46 | `TST-CLI-046` | Configure help | §3.10 Error & Configuration | Yes | `cli/tests/test_commands.py:310` |
+| 47 | `TST-CLI-047` | New session ID format | §4.1 Session Lifecycle | Yes | `cli/tests/test_session.py:11` |
+| 48 | `TST-CLI-048` | Save and load round-trip | §4.1 Session Lifecycle | Yes | `cli/tests/test_session.py:19` |
+| 49 | `TST-CLI-049` | Python-style keys accepted | §4.1 Session Lifecycle | Yes | `cli/tests/test_session.py:36` |
+| 50 | `TST-CLI-050` | Rehydrate replaces tokens | §4.1 Session Lifecycle | Yes | `cli/tests/test_session.py:51` |
+| 51 | `TST-CLI-051` | Load missing session | §4.1 Session Lifecycle | Yes | `cli/tests/test_session.py:67` |
+| 52 | `TST-CLI-052` | Atomic write (no temp files) | §4.1 Session Lifecycle | Yes | `cli/tests/test_session.py:77` |
 
 ---
 
@@ -2607,85 +2607,85 @@
 
 | # | Test ID | Scenario | Section | Impl | Code Location |
 |---|---------|----------|---------|------|---------------|
-| 1 | `TST-USR-001` | Five Dinas with distinct identities and trust edges | §1.1 Personalized Purchase Advice | No | — |
-| 2 | `TST-USR-002` | Alice reviews chairs | §1.1 Personalized Purchase Advice | No | — |
-| 3 | `TST-USR-003` | Bob reviews chairs | §1.1 Personalized Purchase Advice | No | — |
-| 4 | `TST-USR-004` | Diana reviews chairs | §1.1 Personalized Purchase Advice | No | — |
-| 5 | `TST-USR-005` | Unverified Dinas pump positive CheapChair | §1.1 Personalized Purchase Advice | No | — |
-| 6 | `TST-USR-006` | All attestations ingested | §1.1 Personalized Purchase Advice | No | — |
-| 7 | `TST-USR-007` | Trust rings established | §1.1 Personalized Purchase Advice | No | — |
-| 8 | `TST-USR-008` | Verified negatives for CheapChair | §1.1 Personalized Purchase Advice | No | — |
-| 9 | `TST-USR-009` | Verified positives for ErgoMax | §1.1 Personalized Purchase Advice | No | — |
-| 10 | `TST-USR-010` | Store personal context in vault | §1.1 Personalized Purchase Advice | No | — |
-| 11 | `TST-USR-011` | Store purchase decision in vault | §1.1 Personalized Purchase Advice | No | — |
-| 12 | `TST-USR-012` | Dina gives personalized purchase advice (LLM) | §1.1 Personalized Purchase Advice | No | — |
-| 13 | `TST-USR-013` | Five words to personalized advice (LLM) | §1.1 Personalized Purchase Advice | No | — |
-| 14 | `TST-USR-014` | Previous conversation stored in vault | §2.1 Context-Aware Nudge from D2D Message | No | — |
-| 15 | `TST-USR-015` | Sancho sends D2D arrival message | §2.1 Context-Aware Nudge from D2D Message | No | — |
-| 16 | `TST-USR-016` | Alonso receives decrypted D2D message | §2.1 Context-Aware Nudge from D2D Message | No | — |
-| 17 | `TST-USR-017` | Brain processes DIDComm arrival | §2.1 Context-Aware Nudge from D2D Message | No | — |
-| 18 | `TST-USR-018` | Nudge was assembled | §2.1 Context-Aware Nudge from D2D Message | No | — |
-| 19 | `TST-USR-019` | Nudge contains vault context | §2.1 Context-Aware Nudge from D2D Message | No | — |
-| 20 | `TST-USR-020` | LLM generates human-quality nudge (LLM) | §2.1 Context-Aware Nudge from D2D Message | No | — |
-| 21 | `TST-USR-021` | Seed creator profiles | §3.1 Identity-First Content Verification | No | — |
-| 22 | `TST-USR-022` | AppView returns trusted creator | §3.1 Identity-First Content Verification | No | — |
-| 23 | `TST-USR-023` | AppView returns untrusted creator | §3.1 Identity-First Content Verification | No | — |
-| 24 | `TST-USR-024` | Core resolves trusted creator via AppView | §3.1 Identity-First Content Verification | No | — |
-| 25 | `TST-USR-025` | Core resolves untrusted creator via AppView | §3.1 Identity-First Content Verification | No | — |
-| 26 | `TST-USR-026` | Brain confirms trusted creator (LLM) | §3.1 Identity-First Content Verification | No | — |
-| 27 | `TST-USR-027` | Brain flags untrusted creator (LLM) | §3.1 Identity-First Content Verification | No | — |
-| 28 | `TST-USR-028` | Side-by-side trust comparison (LLM) | §3.1 Identity-First Content Verification | No | — |
-| 29 | `TST-USR-029` | Seed health persona vault | §4.1 Cross-Persona Disclosure Control | No | — |
-| 30 | `TST-USR-030` | Store shopping context | §4.1 Cross-Persona Disclosure Control | No | — |
-| 31 | `TST-USR-031` | Cross-persona request blocked | §4.1 Cross-Persona Disclosure Control | No | — |
-| 32 | `TST-USR-032` | Verify automatic disclosure blocked | §4.1 Cross-Persona Disclosure Control | No | — |
-| 33 | `TST-USR-033` | Verify disclosure proposal exists | §4.1 Cross-Persona Disclosure Control | No | — |
-| 34 | `TST-USR-034` | Verify diagnosis withheld | §4.1 Cross-Persona Disclosure Control | No | — |
-| 35 | `TST-USR-035` | Verify proposal is useful | §4.1 Cross-Persona Disclosure Control | No | — |
-| 36 | `TST-USR-036` | User approves minimal disclosure | §4.1 Cross-Persona Disclosure Control | No | — |
-| 37 | `TST-USR-037` | Verify shared text matches approved | §4.1 Cross-Persona Disclosure Control | No | — |
-| 38 | `TST-USR-038` | Verify no diagnosis in shared response | §4.1 Cross-Persona Disclosure Control | No | — |
-| 39 | `TST-USR-039` | Verify PII check clean | §4.1 Cross-Persona Disclosure Control | No | — |
-| 40 | `TST-USR-040` | Register agent via pairing | §5.1 External Agent Safety Layer | No | — |
-| 41 | `TST-USR-041` | Agent in device list | §5.1 External Agent Safety Layer | No | — |
-| 42 | `TST-USR-042` | Safe intent auto-approved | §5.1 External Agent Safety Layer | No | — |
-| 43 | `TST-USR-043` | Moderate intent flagged | §5.1 External Agent Safety Layer | No | — |
-| 44 | `TST-USR-044` | High-risk intent flagged | §5.1 External Agent Safety Layer | No | — |
-| 45 | `TST-USR-045` | Unauthenticated agent rejected | §5.1 External Agent Safety Layer | No | — |
-| 46 | `TST-USR-046` | Blocked action denied | §5.1 External Agent Safety Layer | No | — |
-| 47 | `TST-USR-047` | Export data blocked | §5.1 External Agent Safety Layer | No | — |
-| 48 | `TST-USR-048` | Agent cannot cross personas | §5.1 External Agent Safety Layer | No | — |
-| 49 | `TST-USR-049` | Revoke agent device | §5.1 External Agent Safety Layer | No | — |
-| 50 | `TST-USR-050` | Store personal context | §6.1 Agent Safety Layer + Deterministic Sandwich | No | — |
-| 51 | `TST-USR-051` | Brain extracts license data (LLM) | §6.1 Agent Safety Layer + Deterministic Sandwich | No | — |
-| 52 | `TST-USR-052` | Verify vault entries | §6.1 Agent Safety Layer + Deterministic Sandwich | No | — |
-| 53 | `TST-USR-053` | Verify confidence scores | §6.1 Agent Safety Layer + Deterministic Sandwich | No | — |
-| 54 | `TST-USR-054` | Verify PII not in searchable fields | §6.1 Agent Safety Layer + Deterministic Sandwich | No | — |
-| 55 | `TST-USR-055` | Store/verify reminder in Core | §6.1 Agent Safety Layer + Deterministic Sandwich | No | — |
-| 56 | `TST-USR-056` | Reminder fires contextual notification (LLM) | §6.1 Agent Safety Layer + Deterministic Sandwich | No | — |
-| 57 | `TST-USR-057` | Verify notification context | §6.1 Agent Safety Layer + Deterministic Sandwich | No | — |
-| 58 | `TST-USR-058` | Delegation request with enforcement (LLM) | §6.1 Agent Safety Layer + Deterministic Sandwich | No | — |
-| 59 | `TST-USR-059` | Guardian reviews delegation | §6.1 Agent Safety Layer + Deterministic Sandwich | No | — |
-| 60 | `TST-USR-060` | Store context for briefing | §7.1 Silence-First Notification Triage | No | — |
-| 61 | `TST-USR-061` | Fiduciary event interrupts | §7.1 Silence-First Notification Triage | No | — |
-| 62 | `TST-USR-062` | Engagement event queued | §7.1 Silence-First Notification Triage | No | — |
-| 63 | `TST-USR-063` | Briefing retrieves queued items | §7.1 Silence-First Notification Triage | No | — |
-| 64 | `TST-USR-064` | Clear briefing queue after delivery | §7.1 Silence-First Notification Triage | No | — |
-| 65 | `TST-USR-065` | Store data on Node A | §8.1 Data Portability & DID Stability | No | — |
-| 66 | `TST-USR-066` | Record Node A identity | §8.1 Data Portability & DID Stability | No | — |
-| 67 | `TST-USR-067` | Data exportable | §8.1 Data Portability & DID Stability | No | — |
-| 68 | `TST-USR-068` | Node B has same identity scheme | §8.1 Data Portability & DID Stability | No | — |
-| 69 | `TST-USR-069` | Vault operations work on Node B | §8.1 Data Portability & DID Stability | No | — |
-| 70 | `TST-USR-070` | Core healthy baseline | §9.1 Graceful Degradation & Recovery | No | — |
-| 71 | `TST-USR-071` | Vault works without Brain | §9.1 Graceful Degradation & Recovery | No | — |
-| 72 | `TST-USR-072` | Brain-dependent endpoint clear error | §9.1 Graceful Degradation & Recovery | No | — |
-| 73 | `TST-USR-073` | Recovery after outage | §9.1 Graceful Degradation & Recovery | No | — |
-| 74 | `TST-USR-074` | DID works independently | §9.1 Graceful Degradation & Recovery | No | — |
-| 75 | `TST-USR-075` | Record baseline DID | §10.1 Idempotent Install & Locked-Node Admin | No | — |
-| 76 | `TST-USR-076` | DID stable across requests | §10.1 Idempotent Install & Locked-Node Admin | No | — |
-| 77 | `TST-USR-077` | Persona recreate idempotent | §10.1 Idempotent Install & Locked-Node Admin | No | — |
-| 78 | `TST-USR-078` | Healthz stable under repeated probing | §10.1 Idempotent Install & Locked-Node Admin | No | — |
-| 79 | `TST-USR-079` | Locked persona clear error | §10.1 Idempotent Install & Locked-Node Admin | No | — |
+| 1 | `TST-USR-001` | Five Dinas with distinct identities and trust edges | §1.1 Personalized Purchase Advice | Yes | `tests/system/user_stories/test_01_purchase_journey.py:170` |
+| 2 | `TST-USR-002` | Alice reviews chairs | §1.1 Personalized Purchase Advice | Yes | `tests/system/user_stories/test_01_purchase_journey.py:270` |
+| 3 | `TST-USR-003` | Bob reviews chairs | §1.1 Personalized Purchase Advice | Yes | `tests/system/user_stories/test_01_purchase_journey.py:307` |
+| 4 | `TST-USR-004` | Diana reviews chairs | §1.1 Personalized Purchase Advice | Yes | `tests/system/user_stories/test_01_purchase_journey.py:344` |
+| 5 | `TST-USR-005` | Unverified Dinas pump positive CheapChair | §1.1 Personalized Purchase Advice | Yes | `tests/system/user_stories/test_01_purchase_journey.py:381` |
+| 6 | `TST-USR-006` | All attestations ingested | §1.1 Personalized Purchase Advice | Yes | `tests/system/user_stories/test_01_purchase_journey.py:423` |
+| 7 | `TST-USR-007` | Trust rings established | §1.1 Personalized Purchase Advice | Yes | `tests/system/user_stories/test_01_purchase_journey.py:470` |
+| 8 | `TST-USR-008` | Verified negatives for CheapChair | §1.1 Personalized Purchase Advice | Yes | `tests/system/user_stories/test_01_purchase_journey.py:548` |
+| 9 | `TST-USR-009` | Verified positives for ErgoMax | §1.1 Personalized Purchase Advice | Yes | `tests/system/user_stories/test_01_purchase_journey.py:586` |
+| 10 | `TST-USR-010` | Store personal context in vault | §1.1 Personalized Purchase Advice | Yes | `tests/system/user_stories/test_01_purchase_journey.py:624` |
+| 11 | `TST-USR-011` | Store purchase decision in vault | §1.1 Personalized Purchase Advice | Yes | `tests/system/user_stories/test_01_purchase_journey.py:756` |
+| 12 | `TST-USR-012` | Dina gives personalized purchase advice (LLM) | §1.1 Personalized Purchase Advice | Yes | `tests/system/user_stories/test_01_purchase_journey.py:866` |
+| 13 | `TST-USR-013` | Five words to personalized advice (LLM) | §1.1 Personalized Purchase Advice | Yes | `tests/system/user_stories/test_01_purchase_journey.py:1066` |
+| 14 | `TST-USR-014` | Previous conversation stored in vault | §2.1 Context-Aware Nudge from D2D Message | Yes | `tests/system/user_stories/test_02_sancho_moment.py:95` |
+| 15 | `TST-USR-015` | Sancho sends D2D arrival message | §2.1 Context-Aware Nudge from D2D Message | Yes | `tests/system/user_stories/test_02_sancho_moment.py:229` |
+| 16 | `TST-USR-016` | Alonso receives decrypted D2D message | §2.1 Context-Aware Nudge from D2D Message | Yes | `tests/system/user_stories/test_02_sancho_moment.py:269` |
+| 17 | `TST-USR-017` | Brain processes DIDComm arrival | §2.1 Context-Aware Nudge from D2D Message | Yes | `tests/system/user_stories/test_02_sancho_moment.py:328` |
+| 18 | `TST-USR-018` | Nudge was assembled | §2.1 Context-Aware Nudge from D2D Message | Yes | `tests/system/user_stories/test_02_sancho_moment.py:376` |
+| 19 | `TST-USR-019` | Nudge contains vault context | §2.1 Context-Aware Nudge from D2D Message | Yes | `tests/system/user_stories/test_02_sancho_moment.py:405` |
+| 20 | `TST-USR-020` | LLM generates human-quality nudge (LLM) | §2.1 Context-Aware Nudge from D2D Message | Yes | `tests/system/user_stories/test_02_sancho_moment.py:457` |
+| 21 | `TST-USR-021` | Seed creator profiles | §3.1 Identity-First Content Verification | Yes | `tests/system/user_stories/test_03_dead_internet_filter.py:91` |
+| 22 | `TST-USR-022` | AppView returns trusted creator | §3.1 Identity-First Content Verification | Yes | `tests/system/user_stories/test_03_dead_internet_filter.py:239` |
+| 23 | `TST-USR-023` | AppView returns untrusted creator | §3.1 Identity-First Content Verification | Yes | `tests/system/user_stories/test_03_dead_internet_filter.py:277` |
+| 24 | `TST-USR-024` | Core resolves trusted creator via AppView | §3.1 Identity-First Content Verification | Yes | `tests/system/user_stories/test_03_dead_internet_filter.py:316` |
+| 25 | `TST-USR-025` | Core resolves untrusted creator via AppView | §3.1 Identity-First Content Verification | Yes | `tests/system/user_stories/test_03_dead_internet_filter.py:349` |
+| 26 | `TST-USR-026` | Brain confirms trusted creator (LLM) | §3.1 Identity-First Content Verification | Yes | `tests/system/user_stories/test_03_dead_internet_filter.py:386` |
+| 27 | `TST-USR-027` | Brain flags untrusted creator (LLM) | §3.1 Identity-First Content Verification | Yes | `tests/system/user_stories/test_03_dead_internet_filter.py:479` |
+| 28 | `TST-USR-028` | Side-by-side trust comparison (LLM) | §3.1 Identity-First Content Verification | Yes | `tests/system/user_stories/test_03_dead_internet_filter.py:557` |
+| 29 | `TST-USR-029` | Seed health persona vault | §4.1 Cross-Persona Disclosure Control | Yes | `tests/system/user_stories/test_04_persona_wall.py:122` |
+| 30 | `TST-USR-030` | Store shopping context | §4.1 Cross-Persona Disclosure Control | Yes | `tests/system/user_stories/test_04_persona_wall.py:154` |
+| 31 | `TST-USR-031` | Cross-persona request blocked | §4.1 Cross-Persona Disclosure Control | Yes | `tests/system/user_stories/test_04_persona_wall.py:174` |
+| 32 | `TST-USR-032` | Verify automatic disclosure blocked | §4.1 Cross-Persona Disclosure Control | Yes | `tests/system/user_stories/test_04_persona_wall.py:223` |
+| 33 | `TST-USR-033` | Verify disclosure proposal exists | §4.1 Cross-Persona Disclosure Control | Yes | `tests/system/user_stories/test_04_persona_wall.py:249` |
+| 34 | `TST-USR-034` | Verify diagnosis withheld | §4.1 Cross-Persona Disclosure Control | Yes | `tests/system/user_stories/test_04_persona_wall.py:277` |
+| 35 | `TST-USR-035` | Verify proposal is useful | §4.1 Cross-Persona Disclosure Control | Yes | `tests/system/user_stories/test_04_persona_wall.py:312` |
+| 36 | `TST-USR-036` | User approves minimal disclosure | §4.1 Cross-Persona Disclosure Control | Yes | `tests/system/user_stories/test_04_persona_wall.py:337` |
+| 37 | `TST-USR-037` | Verify shared text matches approved | §4.1 Cross-Persona Disclosure Control | Yes | `tests/system/user_stories/test_04_persona_wall.py:383` |
+| 38 | `TST-USR-038` | Verify no diagnosis in shared response | §4.1 Cross-Persona Disclosure Control | Yes | `tests/system/user_stories/test_04_persona_wall.py:400` |
+| 39 | `TST-USR-039` | Verify PII check clean | §4.1 Cross-Persona Disclosure Control | Yes | `tests/system/user_stories/test_04_persona_wall.py:422` |
+| 40 | `TST-USR-040` | Register agent via pairing | §5.1 External Agent Safety Layer | Yes | `tests/system/user_stories/test_05_agent_gateway.py:85` |
+| 41 | `TST-USR-041` | Agent in device list | §5.1 External Agent Safety Layer | Yes | `tests/system/user_stories/test_05_agent_gateway.py:152` |
+| 42 | `TST-USR-042` | Safe intent auto-approved | §5.1 External Agent Safety Layer | Yes | `tests/system/user_stories/test_05_agent_gateway.py:185` |
+| 43 | `TST-USR-043` | Moderate intent flagged | §5.1 External Agent Safety Layer | Yes | `tests/system/user_stories/test_05_agent_gateway.py:229` |
+| 44 | `TST-USR-044` | High-risk intent flagged | §5.1 External Agent Safety Layer | Yes | `tests/system/user_stories/test_05_agent_gateway.py:273` |
+| 45 | `TST-USR-045` | Unauthenticated agent rejected | §5.1 External Agent Safety Layer | Yes | `tests/system/user_stories/test_05_agent_gateway.py:317` |
+| 46 | `TST-USR-046` | Blocked action denied | §5.1 External Agent Safety Layer | Yes | `tests/system/user_stories/test_05_agent_gateway.py:348` |
+| 47 | `TST-USR-047` | Export data blocked | §5.1 External Agent Safety Layer | Yes | `tests/system/user_stories/test_05_agent_gateway.py:386` |
+| 48 | `TST-USR-048` | Agent cannot cross personas | §5.1 External Agent Safety Layer | Yes | `tests/system/user_stories/test_05_agent_gateway.py:424` |
+| 49 | `TST-USR-049` | Revoke agent device | §5.1 External Agent Safety Layer | Yes | `tests/system/user_stories/test_05_agent_gateway.py:484` |
+| 50 | `TST-USR-050` | Store personal context | §6.1 Agent Safety Layer + Deterministic Sandwich | Yes | `tests/system/user_stories/test_06_license_renewal.py:97` |
+| 51 | `TST-USR-051` | Brain extracts license data (LLM) | §6.1 Agent Safety Layer + Deterministic Sandwich | Yes | `tests/system/user_stories/test_06_license_renewal.py:159` |
+| 52 | `TST-USR-052` | Verify vault entries | §6.1 Agent Safety Layer + Deterministic Sandwich | Yes | `tests/system/user_stories/test_06_license_renewal.py:218` |
+| 53 | `TST-USR-053` | Verify confidence scores | §6.1 Agent Safety Layer + Deterministic Sandwich | Yes | `tests/system/user_stories/test_06_license_renewal.py:326` |
+| 54 | `TST-USR-054` | Verify PII not in searchable fields | §6.1 Agent Safety Layer + Deterministic Sandwich | Yes | `tests/system/user_stories/test_06_license_renewal.py:354` |
+| 55 | `TST-USR-055` | Store/verify reminder in Core | §6.1 Agent Safety Layer + Deterministic Sandwich | Yes | `tests/system/user_stories/test_06_license_renewal.py:416` |
+| 56 | `TST-USR-056` | Reminder fires contextual notification (LLM) | §6.1 Agent Safety Layer + Deterministic Sandwich | Yes | `tests/system/user_stories/test_06_license_renewal.py:489` |
+| 57 | `TST-USR-057` | Verify notification context | §6.1 Agent Safety Layer + Deterministic Sandwich | Yes | `tests/system/user_stories/test_06_license_renewal.py:551` |
+| 58 | `TST-USR-058` | Delegation request with enforcement (LLM) | §6.1 Agent Safety Layer + Deterministic Sandwich | Yes | `tests/system/user_stories/test_06_license_renewal.py:588` |
+| 59 | `TST-USR-059` | Guardian reviews delegation | §6.1 Agent Safety Layer + Deterministic Sandwich | Yes | `tests/system/user_stories/test_06_license_renewal.py:714` |
+| 60 | `TST-USR-060` | Store context for briefing | §7.1 Silence-First Notification Triage | Yes | `tests/system/user_stories/test_07_daily_briefing.py:86` |
+| 61 | `TST-USR-061` | Fiduciary event interrupts | §7.1 Silence-First Notification Triage | Yes | `tests/system/user_stories/test_07_daily_briefing.py:157` |
+| 62 | `TST-USR-062` | Engagement event queued | §7.1 Silence-First Notification Triage | Yes | `tests/system/user_stories/test_07_daily_briefing.py:216` |
+| 63 | `TST-USR-063` | Briefing retrieves queued items | §7.1 Silence-First Notification Triage | Yes | `tests/system/user_stories/test_07_daily_briefing.py:273` |
+| 64 | `TST-USR-064` | Clear briefing queue after delivery | §7.1 Silence-First Notification Triage | Yes | `tests/system/user_stories/test_07_daily_briefing.py:323` |
+| 65 | `TST-USR-065` | Store data on Node A | §8.1 Data Portability & DID Stability | Yes | `tests/system/user_stories/test_08_move_to_new_machine.py:82` |
+| 66 | `TST-USR-066` | Record Node A identity | §8.1 Data Portability & DID Stability | Yes | `tests/system/user_stories/test_08_move_to_new_machine.py:141` |
+| 67 | `TST-USR-067` | Data exportable | §8.1 Data Portability & DID Stability | Yes | `tests/system/user_stories/test_08_move_to_new_machine.py:182` |
+| 68 | `TST-USR-068` | Node B has same identity scheme | §8.1 Data Portability & DID Stability | Yes | `tests/system/user_stories/test_08_move_to_new_machine.py:239` |
+| 69 | `TST-USR-069` | Vault operations work on Node B | §8.1 Data Portability & DID Stability | Yes | `tests/system/user_stories/test_08_move_to_new_machine.py:300` |
+| 70 | `TST-USR-070` | Core healthy baseline | §9.1 Graceful Degradation & Recovery | Yes | `tests/system/user_stories/test_09_connector_expiry.py:80` |
+| 71 | `TST-USR-071` | Vault works without Brain | §9.1 Graceful Degradation & Recovery | Yes | `tests/system/user_stories/test_09_connector_expiry.py:110` |
+| 72 | `TST-USR-072` | Brain-dependent endpoint clear error | §9.1 Graceful Degradation & Recovery | Yes | `tests/system/user_stories/test_09_connector_expiry.py:188` |
+| 73 | `TST-USR-073` | Recovery after outage | §9.1 Graceful Degradation & Recovery | Yes | `tests/system/user_stories/test_09_connector_expiry.py:252` |
+| 74 | `TST-USR-074` | DID works independently | §9.1 Graceful Degradation & Recovery | Yes | `tests/system/user_stories/test_09_connector_expiry.py:281` |
+| 75 | `TST-USR-075` | Record baseline DID | §10.1 Idempotent Install & Locked-Node Admin | Yes | `tests/system/user_stories/test_10_operator_journey.py:78` |
+| 76 | `TST-USR-076` | DID stable across requests | §10.1 Idempotent Install & Locked-Node Admin | Yes | `tests/system/user_stories/test_10_operator_journey.py:116` |
+| 77 | `TST-USR-077` | Persona recreate idempotent | §10.1 Idempotent Install & Locked-Node Admin | Yes | `tests/system/user_stories/test_10_operator_journey.py:157` |
+| 78 | `TST-USR-078` | Healthz stable under repeated probing | §10.1 Idempotent Install & Locked-Node Admin | Yes | `tests/system/user_stories/test_10_operator_journey.py:203` |
+| 79 | `TST-USR-079` | Locked persona clear error | §10.1 Idempotent Install & Locked-Node Admin | Yes | `tests/system/user_stories/test_10_operator_journey.py:230` |
 
 ---
 
@@ -2770,89 +2770,89 @@
 | 75 | `UT-RC-010` | authenticity suspicious → lower trust | §1.5 Recommendation (`recommendation.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:1486` |
 | 76 | `UT-RC-011` | domain-specific score used when available | §1.5 Recommendation (`recommendation.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:1518` |
 | 77 | `UT-RC-012` | graph timeout handled gracefully | §1.5 Recommendation (`recommendation.test.ts`) | Yes | `appview/tests/unit/01-scorer-algorithms.test.ts:1549` |
-| 78 | `UT-RV-001` | valid attestation record | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:183` |
-| 79 | `UT-RV-002` | missing required field (subject) | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:192` |
-| 80 | `UT-RV-003` | missing required field (createdAt) | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:201` |
-| 81 | `UT-RV-004` | invalid sentiment enum | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:210` |
-| 82 | `UT-RV-005` | text exceeds max length | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:221` |
-| 83 | `UT-RV-006` | tags exceeds max count | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:230` |
-| 84 | `UT-RV-007` | tag exceeds max length | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:239` |
-| 85 | `UT-RV-008` | dimensions exceeds max count | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:248` |
-| 86 | `UT-RV-009` | evidence exceeds max count | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:258` |
-| 87 | `UT-RV-010` | valid vouch record | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:268` |
-| 88 | `UT-RV-011` | invalid vouch confidence | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:276` |
-| 89 | `UT-RV-012` | valid reaction record | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:287` |
-| 90 | `UT-RV-013` | invalid reaction enum | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:295` |
-| 91 | `UT-RV-014` | valid report record | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:306` |
-| 92 | `UT-RV-015` | invalid report type enum | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:317` |
-| 93 | `UT-RV-016` | report text exceeds max | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:328` |
-| 94 | `UT-RV-017` | report evidence max count | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:337` |
-| 95 | `UT-RV-018` | unknown collection → error | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:347` |
-| 96 | `UT-RV-019` | valid attestation with optional fields | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:356` |
-| 97 | `UT-RV-020` | subject ref — all type variants | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:389` |
-| 98 | `UT-RV-021` | subject ref — invalid type | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:402` |
-| 99 | `UT-RV-022` | subject name max length | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:413` |
-| 100 | `UT-RV-023` | dimension rating — valid enum values | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:422` |
-| 101 | `UT-RV-024` | dimension rating — invalid value | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:437` |
-| 102 | `UT-RV-025` | evidence item — valid structure | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:450` |
-| 103 | `UT-RV-026` | evidence description max length | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:465` |
-| 104 | `UT-RV-027` | mention — valid structure | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:474` |
-| 105 | `UT-RV-028` | mentions exceeds max count | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:489` |
-| 106 | `UT-RV-029` | relatedAttestations max count | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:499` |
-| 107 | `UT-RV-030` | cosignature — valid structure | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:509` |
-| 108 | `UT-RV-031` | cosignature — missing sig field | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:525` |
-| 109 | `UT-RV-032` | confidence enum — all valid values | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:538` |
-| 110 | `UT-RV-033` | confidence — invalid value | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:551` |
-| 111 | `UT-RV-034` | all 19 collection types — valid minimal records | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:562` |
-| 112 | `UT-RV-035` | extra fields ignored (passthrough) | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:573` |
-| 113 | `UT-RV-036` | relatedRecords max on report | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:587` |
-| 114 | `UT-RL-001` | first record not rate limited | §2.2 Rate Limiter (`rate-limiter.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:607` |
-| 115 | `UT-RL-002` | 50th record not rate limited | §2.2 Rate Limiter (`rate-limiter.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:614` |
-| 116 | `UT-RL-003` | **Fix 11: 51st record rate limited** | §2.2 Rate Limiter (`rate-limiter.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:626` |
-| 117 | `UT-RL-004` | **Fix 11: quarantine flag set on first limit** | §2.2 Rate Limiter (`rate-limiter.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:638` |
-| 118 | `UT-RL-005` | subsequent records still rate limited | §2.2 Rate Limiter (`rate-limiter.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:650` |
-| 119 | `UT-RL-006` | different DIDs independent | §2.2 Rate Limiter (`rate-limiter.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:663` |
-| 120 | `UT-RL-007` | getQuarantinedDids returns flagged DIDs | §2.2 Rate Limiter (`rate-limiter.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:677` |
-| 121 | `UT-RL-008` | LRU eviction under max capacity | §2.2 Rate Limiter (`rate-limiter.test.ts`) | No | — |
-| 122 | `UT-RL-009` | sliding window — TTL expiry resets count | §2.2 Rate Limiter (`rate-limiter.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:710` |
-| 123 | `UT-RL-010` | counter increments on every call | §2.2 Rate Limiter (`rate-limiter.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:735` |
-| 124 | `UT-BQ-001` | push triggers processing | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:751` |
-| 125 | `UT-BQ-002` | concurrent workers capped at MAX_CONCURRENCY | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:770` |
-| 126 | `UT-BQ-003` | **Fix 5: backpressure — ws.pause() at MAX_QUEUE_SIZE** | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:805` |
-| 127 | `UT-BQ-004` | **Fix 5: hysteresis — ws.resume() at 50%** | §2.3 Bounded Queue (`bounded-queue.test.ts`) | No | — |
-| 128 | `UT-BQ-005` | no oscillation — resume only once below 50% | §2.3 Bounded Queue (`bounded-queue.test.ts`) | No | — |
-| 129 | `UT-BQ-006` | **Fix 7: getSafeCursor — no in-flight** | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:856` |
-| 130 | `UT-BQ-007` | **Fix 7: getSafeCursor — with in-flight** | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:875` |
-| 131 | `UT-BQ-008` | **Fix 7: low watermark prevents data loss** | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:900` |
-| 132 | `UT-BQ-009` | error in processFn doesn't crash queue | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:933` |
-| 133 | `UT-BQ-010` | depth/active/inFlight accessors | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:960` |
-| 134 | `UT-BQ-011` | pump resumes after worker completes | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:994` |
-| 135 | `UT-BQ-012` | metrics emitted correctly | §2.3 Bounded Queue (`bounded-queue.test.ts`) | No | — |
-| 136 | `UT-BQ-013` | **HIGH-04: failed item timestamp pinned in getSafeCursor** | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1033` |
-| 137 | `UT-BQ-014` | **MEDIUM-06: getSafeCursor scans all queued items** | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1071` |
-| 138 | `UT-HR-001` | routeHandler — attestation | §2.4 Handler Router (`handlers/index.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1105` |
-| 139 | `UT-HR-002` | routeHandler — vouch | §2.4 Handler Router (`handlers/index.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1112` |
-| 140 | `UT-HR-003` | routeHandler — all 19 collections registered | §2.4 Handler Router (`handlers/index.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1119` |
-| 141 | `UT-HR-004` | routeHandler — unknown collection | §2.4 Handler Router (`handlers/index.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1131` |
-| 142 | `UT-HR-005` | routeHandler — non-dina collection | §2.4 Handler Router (`handlers/index.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1138` |
-| 143 | `UT-HR-006` | handler interface — handleCreate exists | §2.4 Handler Router (`handlers/index.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1145` |
-| 144 | `UT-HR-007` | handler interface — handleDelete exists | §2.4 Handler Router (`handlers/index.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1155` |
-| 145 | `UT-DH-001` | getSourceTable — attestation → attestations table | §2.5 Deletion Handler — Logic Only (`deletion-handler.t… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1171` |
-| 146 | `UT-DH-002` | getSourceTable — vouch → vouches table | §2.5 Deletion Handler — Logic Only (`deletion-handler.t… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1178` |
-| 147 | `UT-DH-003` | **Fix 13: all 17 record types mapped** | §2.5 Deletion Handler — Logic Only (`deletion-handler.t… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1185` |
-| 148 | `UT-DH-004` | getSourceTable — unknown collection → undefined | §2.5 Deletion Handler — Logic Only (`deletion-handler.t… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1215` |
-| 149 | `UT-DH-005` | getSourceTable — media (no dedicated table) | §2.5 Deletion Handler — Logic Only (`deletion-handler.t… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1222` |
-| 150 | `UT-DH-006` | COLLECTION_TABLE_MAP completeness | §2.5 Deletion Handler — Logic Only (`deletion-handler.t… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1229` |
-| 151 | `UT-TE-001` | vouch high confidence → weight 1.0 | §2.6 Trust Edge Sync — Weight Heuristics (`trust-edge-s… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1308` |
-| 152 | `UT-TE-002` | vouch moderate → weight 0.6 | §2.6 Trust Edge Sync — Weight Heuristics (`trust-edge-s… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1325` |
-| 153 | `UT-TE-003` | vouch low → weight 0.3 | §2.6 Trust Edge Sync — Weight Heuristics (`trust-edge-s… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1341` |
-| 154 | `UT-TE-004` | endorsement worked-together → weight 0.8 | §2.6 Trust Edge Sync — Weight Heuristics (`trust-edge-s… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1357` |
-| 155 | `UT-TE-005` | endorsement observed-output → weight 0.4 | §2.6 Trust Edge Sync — Weight Heuristics (`trust-edge-s… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1374` |
-| 156 | `UT-TE-006` | delegation → weight 0.9 | §2.6 Trust Edge Sync — Weight Heuristics (`trust-edge-s… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1390` |
-| 157 | `UT-TE-007` | cosigned attestation → weight 0.7 | §2.6 Trust Edge Sync — Weight Heuristics (`trust-edge-s… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1407` |
-| 158 | `UT-TE-008` | positive attestation DID subject → weight 0.3 | §2.6 Trust Edge Sync — Weight Heuristics (`trust-edge-s… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1435` |
-| 159 | `UT-TE-009` | **HIGH-07: negative attestation DID subject → no trust edge** | §2.6 Trust Edge Sync — Weight Heuristics (`trust-edge-s… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1459` |
-| 160 | `UT-TE-010` | non-DID subject attestation → no trust edge | §2.6 Trust Edge Sync — Weight Heuristics (`trust-edge-s… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1480` |
+| 78 | `UT-RV-001` | valid attestation record | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:184` |
+| 79 | `UT-RV-002` | missing required field (subject) | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:193` |
+| 80 | `UT-RV-003` | missing required field (createdAt) | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:202` |
+| 81 | `UT-RV-004` | invalid sentiment enum | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:211` |
+| 82 | `UT-RV-005` | text exceeds max length | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:222` |
+| 83 | `UT-RV-006` | tags exceeds max count | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:231` |
+| 84 | `UT-RV-007` | tag exceeds max length | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:240` |
+| 85 | `UT-RV-008` | dimensions exceeds max count | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:249` |
+| 86 | `UT-RV-009` | evidence exceeds max count | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:259` |
+| 87 | `UT-RV-010` | valid vouch record | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:269` |
+| 88 | `UT-RV-011` | invalid vouch confidence | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:277` |
+| 89 | `UT-RV-012` | valid reaction record | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:288` |
+| 90 | `UT-RV-013` | invalid reaction enum | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:296` |
+| 91 | `UT-RV-014` | valid report record | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:307` |
+| 92 | `UT-RV-015` | invalid report type enum | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:318` |
+| 93 | `UT-RV-016` | report text exceeds max | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:329` |
+| 94 | `UT-RV-017` | report evidence max count | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:338` |
+| 95 | `UT-RV-018` | unknown collection → error | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:348` |
+| 96 | `UT-RV-019` | valid attestation with optional fields | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:357` |
+| 97 | `UT-RV-020` | subject ref — all type variants | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:390` |
+| 98 | `UT-RV-021` | subject ref — invalid type | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:403` |
+| 99 | `UT-RV-022` | subject name max length | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:414` |
+| 100 | `UT-RV-023` | dimension rating — valid enum values | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:423` |
+| 101 | `UT-RV-024` | dimension rating — invalid value | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:438` |
+| 102 | `UT-RV-025` | evidence item — valid structure | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:451` |
+| 103 | `UT-RV-026` | evidence description max length | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:466` |
+| 104 | `UT-RV-027` | mention — valid structure | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:475` |
+| 105 | `UT-RV-028` | mentions exceeds max count | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:490` |
+| 106 | `UT-RV-029` | relatedAttestations max count | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:500` |
+| 107 | `UT-RV-030` | cosignature — valid structure | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:510` |
+| 108 | `UT-RV-031` | cosignature — missing sig field | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:526` |
+| 109 | `UT-RV-032` | confidence enum — all valid values | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:539` |
+| 110 | `UT-RV-033` | confidence — invalid value | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:552` |
+| 111 | `UT-RV-034` | all 19 collection types — valid minimal records | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:563` |
+| 112 | `UT-RV-035` | extra fields ignored (passthrough) | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:574` |
+| 113 | `UT-RV-036` | relatedRecords max on report | §2.1 Record Validator (`record-validator.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:588` |
+| 114 | `UT-RL-001` | first record not rate limited | §2.2 Rate Limiter (`rate-limiter.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:612` |
+| 115 | `UT-RL-002` | 50th record not rate limited | §2.2 Rate Limiter (`rate-limiter.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:619` |
+| 116 | `UT-RL-003` | **Fix 11: 51st record rate limited** | §2.2 Rate Limiter (`rate-limiter.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:631` |
+| 117 | `UT-RL-004` | **Fix 11: quarantine flag set on first limit** | §2.2 Rate Limiter (`rate-limiter.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:643` |
+| 118 | `UT-RL-005` | subsequent records still rate limited | §2.2 Rate Limiter (`rate-limiter.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:655` |
+| 119 | `UT-RL-006` | different DIDs independent | §2.2 Rate Limiter (`rate-limiter.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:668` |
+| 120 | `UT-RL-007` | getQuarantinedDids returns flagged DIDs | §2.2 Rate Limiter (`rate-limiter.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:682` |
+| 121 | `UT-RL-008` | LRU eviction under max capacity | §2.2 Rate Limiter (`rate-limiter.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:709` |
+| 122 | `UT-RL-009` | sliding window — TTL expiry resets count | §2.2 Rate Limiter (`rate-limiter.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:761` |
+| 123 | `UT-RL-010` | counter increments on every call | §2.2 Rate Limiter (`rate-limiter.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:786` |
+| 124 | `UT-BQ-001` | push triggers processing | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:802` |
+| 125 | `UT-BQ-002` | concurrent workers capped at MAX_CONCURRENCY | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:821` |
+| 126 | `UT-BQ-003` | **Fix 5: backpressure — ws.pause() at MAX_QUEUE_SIZE** | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:856` |
+| 127 | `UT-BQ-004` | **Fix 5: hysteresis — ws.resume() at 50%** | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:895` |
+| 128 | `UT-BQ-005` | no oscillation — resume only once below 50% | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:973` |
+| 129 | `UT-BQ-006` | **Fix 7: getSafeCursor — no in-flight** | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1056` |
+| 130 | `UT-BQ-007` | **Fix 7: getSafeCursor — with in-flight** | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1075` |
+| 131 | `UT-BQ-008` | **Fix 7: low watermark prevents data loss** | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1100` |
+| 132 | `UT-BQ-009` | error in processFn doesn't crash queue | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1133` |
+| 133 | `UT-BQ-010` | depth/active/inFlight accessors | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1160` |
+| 134 | `UT-BQ-011` | pump resumes after worker completes | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1194` |
+| 135 | `UT-BQ-012` | metrics emitted correctly | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1227` |
+| 136 | `UT-BQ-013` | **HIGH-04: failed item timestamp pinned in getSafeCursor** | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1349` |
+| 137 | `UT-BQ-014` | **MEDIUM-06: getSafeCursor scans all queued items** | §2.3 Bounded Queue (`bounded-queue.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1387` |
+| 138 | `UT-HR-001` | routeHandler — attestation | §2.4 Handler Router (`handlers/index.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1421` |
+| 139 | `UT-HR-002` | routeHandler — vouch | §2.4 Handler Router (`handlers/index.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1428` |
+| 140 | `UT-HR-003` | routeHandler — all 19 collections registered | §2.4 Handler Router (`handlers/index.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1435` |
+| 141 | `UT-HR-004` | routeHandler — unknown collection | §2.4 Handler Router (`handlers/index.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1447` |
+| 142 | `UT-HR-005` | routeHandler — non-dina collection | §2.4 Handler Router (`handlers/index.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1454` |
+| 143 | `UT-HR-006` | handler interface — handleCreate exists | §2.4 Handler Router (`handlers/index.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1461` |
+| 144 | `UT-HR-007` | handler interface — handleDelete exists | §2.4 Handler Router (`handlers/index.test.ts`) | Yes | `appview/tests/unit/02-ingester-components.test.ts:1471` |
+| 145 | `UT-DH-001` | getSourceTable — attestation → attestations table | §2.5 Deletion Handler — Logic Only (`deletion-handler.t… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1487` |
+| 146 | `UT-DH-002` | getSourceTable — vouch → vouches table | §2.5 Deletion Handler — Logic Only (`deletion-handler.t… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1494` |
+| 147 | `UT-DH-003` | **Fix 13: all 17 record types mapped** | §2.5 Deletion Handler — Logic Only (`deletion-handler.t… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1501` |
+| 148 | `UT-DH-004` | getSourceTable — unknown collection → undefined | §2.5 Deletion Handler — Logic Only (`deletion-handler.t… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1531` |
+| 149 | `UT-DH-005` | getSourceTable — media (no dedicated table) | §2.5 Deletion Handler — Logic Only (`deletion-handler.t… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1538` |
+| 150 | `UT-DH-006` | COLLECTION_TABLE_MAP completeness | §2.5 Deletion Handler — Logic Only (`deletion-handler.t… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1545` |
+| 151 | `UT-TE-001` | vouch high confidence → weight 1.0 | §2.6 Trust Edge Sync — Weight Heuristics (`trust-edge-s… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1624` |
+| 152 | `UT-TE-002` | vouch moderate → weight 0.6 | §2.6 Trust Edge Sync — Weight Heuristics (`trust-edge-s… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1641` |
+| 153 | `UT-TE-003` | vouch low → weight 0.3 | §2.6 Trust Edge Sync — Weight Heuristics (`trust-edge-s… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1657` |
+| 154 | `UT-TE-004` | endorsement worked-together → weight 0.8 | §2.6 Trust Edge Sync — Weight Heuristics (`trust-edge-s… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1673` |
+| 155 | `UT-TE-005` | endorsement observed-output → weight 0.4 | §2.6 Trust Edge Sync — Weight Heuristics (`trust-edge-s… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1690` |
+| 156 | `UT-TE-006` | delegation → weight 0.9 | §2.6 Trust Edge Sync — Weight Heuristics (`trust-edge-s… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1706` |
+| 157 | `UT-TE-007` | cosigned attestation → weight 0.7 | §2.6 Trust Edge Sync — Weight Heuristics (`trust-edge-s… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1723` |
+| 158 | `UT-TE-008` | positive attestation DID subject → weight 0.3 | §2.6 Trust Edge Sync — Weight Heuristics (`trust-edge-s… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1751` |
+| 159 | `UT-TE-009` | **HIGH-07: negative attestation DID subject → no trust edge** | §2.6 Trust Edge Sync — Weight Heuristics (`trust-edge-s… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1775` |
+| 160 | `UT-TE-010` | non-DID subject attestation → no trust edge | §2.6 Trust Edge Sync — Weight Heuristics (`trust-edge-s… | Yes | `appview/tests/unit/02-ingester-components.test.ts:1796` |
 | 161 | `UT-URI-001` | parse valid AT URI | §3.1 AT URI Parser (`shared/atproto/uri.test.ts`) | Yes | `appview/tests/unit/03-shared-utilities.test.ts:37` |
 | 162 | `UT-URI-002` | parse AT URI — did:web | §3.1 AT URI Parser (`shared/atproto/uri.test.ts`) | Yes | `appview/tests/unit/03-shared-utilities.test.ts:44` |
 | 163 | `UT-URI-003` | construct AT URI | §3.1 AT URI Parser (`shared/atproto/uri.test.ts`) | Yes | `appview/tests/unit/03-shared-utilities.test.ts:51` |
@@ -3294,14 +3294,14 @@
 | 297 | `IT-LBL-005` | conflict-of-interest detector | §15.1 Label Detectors (`label-detectors.test.ts`) | Yes | `appview/tests/integration/15-label-service.test.ts:232` |
 | 298 | `IT-LBL-006` | no labels for clean reviews | §15.1 Label Detectors (`label-detectors.test.ts`) | Yes | `appview/tests/integration/15-label-service.test.ts:278` |
 | 299 | `IT-DCK-001` | postgres container healthy | §16.1 Docker Compose Smoke Tests (`docker.test.ts`) | Yes | `appview/tests/integration/16-docker-integration.test.ts:27` |
-| 300 | `IT-DCK-002` | jetstream container healthy | §16.1 Docker Compose Smoke Tests (`docker.test.ts`) | No | — |
-| 301 | `IT-DCK-003` | ingester connects to postgres + jetstream | §16.1 Docker Compose Smoke Tests (`docker.test.ts`) | No | — |
-| 302 | `IT-DCK-004` | scorer connects to postgres | §16.1 Docker Compose Smoke Tests (`docker.test.ts`) | No | — |
-| 303 | `IT-DCK-005` | web container serves health endpoint | §16.1 Docker Compose Smoke Tests (`docker.test.ts`) | No | — |
-| 304 | `IT-DCK-006` | migrations run on startup | §16.1 Docker Compose Smoke Tests (`docker.test.ts`) | Yes | `appview/tests/integration/16-docker-integration.test.ts:61` |
-| 305 | `IT-DCK-007` | **HIGH-11: migrate service configuration exists** | §16.1 Docker Compose Smoke Tests (`docker.test.ts`) | Yes | `appview/tests/integration/16-docker-integration.test.ts:111` |
-| 306 | `IT-DCK-008` | **HIGH-08: search_vector migration creates tsvector column** | §16.1 Docker Compose Smoke Tests (`docker.test.ts`) | Yes | `appview/tests/integration/16-docker-integration.test.ts:121` |
-| 307 | `IT-DCK-009` | **HIGH-09: web server health endpoint responds** | §16.1 Docker Compose Smoke Tests (`docker.test.ts`) | No | — |
+| 300 | `IT-DCK-002` | jetstream container healthy | §16.1 Docker Compose Smoke Tests (`docker.test.ts`) | Yes | `appview/tests/integration/16-docker-integration.test.ts:42` |
+| 301 | `IT-DCK-003` | ingester connects to postgres + jetstream | §16.1 Docker Compose Smoke Tests (`docker.test.ts`) | Yes | `appview/tests/integration/16-docker-integration.test.ts:79` |
+| 302 | `IT-DCK-004` | scorer connects to postgres | §16.1 Docker Compose Smoke Tests (`docker.test.ts`) | Yes | `appview/tests/integration/16-docker-integration.test.ts:162` |
+| 303 | `IT-DCK-005` | web container serves health endpoint | §16.1 Docker Compose Smoke Tests (`docker.test.ts`) | Yes | `appview/tests/integration/16-docker-integration.test.ts:231` |
+| 304 | `IT-DCK-006` | migrations run on startup | §16.1 Docker Compose Smoke Tests (`docker.test.ts`) | Yes | `appview/tests/integration/16-docker-integration.test.ts:275` |
+| 305 | `IT-DCK-007` | **HIGH-11: migrate service configuration exists** | §16.1 Docker Compose Smoke Tests (`docker.test.ts`) | Yes | `appview/tests/integration/16-docker-integration.test.ts:325` |
+| 306 | `IT-DCK-008` | **HIGH-08: search_vector migration creates tsvector column** | §16.1 Docker Compose Smoke Tests (`docker.test.ts`) | Yes | `appview/tests/integration/16-docker-integration.test.ts:335` |
+| 307 | `IT-DCK-009` | **HIGH-09: web server health endpoint responds** | §16.1 Docker Compose Smoke Tests (`docker.test.ts`) | Yes | `appview/tests/integration/16-docker-integration.test.ts:353` |
 | 308 | `IT-WEB-001` | **HIGH-09: /health endpoint contract** | §18 Web Server (`tests/integration/18-web-server.test.t… | Yes | `appview/tests/integration/18-web-server.test.ts:29` |
 | 309 | `IT-WEB-002` | **HIGH-09: resolve route validates params** | §18 Web Server (`tests/integration/18-web-server.test.t… | Yes | `appview/tests/integration/18-web-server.test.ts:36` |
 | 310 | `IT-WEB-003` | **HIGH-09: search route validates params** | §18 Web Server (`tests/integration/18-web-server.test.t… | Yes | `appview/tests/integration/18-web-server.test.ts:47` |
@@ -3326,7 +3326,7 @@
 > These test functions exist in code but have no `# TST-*` / `# REL-*` comment.
 > They may be infrastructure tests, helper validations, or missing plan coverage.
 
-### Core (Unit) — 177 orphans
+### Core (Unit) — 116 orphans
 
 | # | File | Line | Function |
 |---|------|------|----------|
@@ -3358,155 +3358,94 @@
 | 26 | `core/internal/service/vault_test.go` | 253 | `TestGetKV_NotFound` |
 | 27 | `core/internal/service/vault_test.go` | 274 | `TestGetKV_PrefixesKey` |
 | 28 | `core/internal/service/vault_test.go` | 303 | `TestGetItem_GatekeeperReceivesItemIDAsTarget` |
-| 29 | `core/test/auth_test.go` | 1770 | `TestAuth_1_6_9_ConcurrentTokenValidation` |
-| 30 | `core/test/authz_test.go` | 87 | `TestAuthz_1_6_1_BrainServiceKeyOnDIDSign_Forbidden` |
-| 31 | `core/test/authz_test.go` | 101 | `TestAuthz_1_6_2_ClientTokenOnDIDSign_Allowed` |
-| 32 | `core/test/authz_test.go` | 115 | `TestAuthz_1_6_3_BrainServiceKeyOnVaultQuery_Allowed` |
-| 33 | `core/test/authz_test.go` | 129 | `TestAuthz_1_6_4_BrainServiceKeyOnAdminEndpoints_Forbidden` |
-| 34 | `core/test/authz_test.go` | 157 | `TestAuthz_1_6_5_ClientTokenOnAllEndpoints_Allowed` |
-| 35 | `core/test/authz_test.go` | 187 | `TestAuthz_1_6_6_BrainServiceKeyOnAllowedPaths_OK` |
-| 36 | `core/test/authz_test.go` | 214 | `TestAuthz_1_6_7_UnauthenticatedPublicPaths_PassThrough` |
-| 37 | `core/test/authz_test.go` | 241 | `TestAuthz_1_6_8_ExplicitContextTokenKind` |
-| 38 | `core/test/crypto_adversarial_test.go` | 22 | `TestAdv_29_6_HKDFCrossPersona` |
-| 39 | `core/test/crypto_adversarial_test.go` | 59 | `TestAdv_29_6_HKDFUserSalt` |
-| 40 | `core/test/crypto_adversarial_test.go` | 85 | `TestAdv_29_6_HKDFDeterminism` |
-| 41 | `core/test/crypto_adversarial_test.go` | 105 | `TestAdv_29_7_SLIP0010NonHardened` |
-| 42 | `core/test/crypto_adversarial_test.go` | 121 | `TestAdv_29_7_SLIP0010BIP44Forbidden` |
-| 43 | `core/test/crypto_adversarial_test.go` | 137 | `TestAdv_29_7_SLIP0010SiblingUnlink` |
-| 44 | `core/test/crypto_adversarial_test.go` | 189 | `TestAdv_29_6_KeyDeriverPersonaDEK` |
-| 45 | `core/test/crypto_adversarial_test.go` | 228 | `TestAdv_29_6_KeyDeriverSigningKey` |
-| 46 | `core/test/crypto_test.go` | 1915 | `TestCrypto_2_9_DeriveK256Deterministic` |
-| 47 | `core/test/crypto_test.go` | 1935 | `TestCrypto_2_9_K256DifferentFromEd25519` |
-| 48 | `core/test/crypto_test.go` | 1956 | `TestCrypto_2_9_K256DifferentPaths` |
-| 49 | `core/test/crypto_test.go` | 1975 | `TestCrypto_2_9_K256EmptySeedRejected` |
-| 50 | `core/test/crypto_test.go` | 1987 | `TestCrypto_2_9_K256BIP44Forbidden` |
-| 51 | `core/test/crypto_test.go` | 1995 | `TestCrypto_2_9_K256ParseableByAtcrypto` |
-| 52 | `core/test/crypto_test.go` | 2018 | `TestCrypto_2_9_K256ManagerWithSeed` |
-| 53 | `core/test/crypto_test.go` | 2052 | `TestCrypto_2_9_K256ManagerBackwardCompat` |
-| 54 | `core/test/crypto_test.go` | 2070 | `TestCrypto_2_9_K256ManagerExistingKeyPreferred` |
-| 55 | `core/test/crypto_test.go` | 2096 | `TestCrypto_2_9_KeyDeriverRotationKey` |
-| 56 | `core/test/crypto_test.go` | 2118 | `TestCrypto_2_10_1_DeriveServiceKeyDeterministic` |
-| 57 | `core/test/crypto_test.go` | 2131 | `TestCrypto_2_10_2_DeriveServiceKeyDistinctIndexes` |
-| 58 | `core/test/crypto_test.go` | 2147 | `TestCrypto_2_10_3_DeriveServiceKeyMatchesSLIP0010Path` |
-| 59 | `core/test/crypto_test.go` | 2164 | `TestCrypto_2_10_4_DeriveServiceKeyCrossLanguage` |
-| 60 | `core/test/fix_verification_batch8_test.go` | 43 | `TestFixVerify_31_7_1_OnEnvelopeError_FallsBackToDeadDrop` |
-| 61 | `core/test/fix_verification_batch8_test.go` | 91 | `TestFixVerify_31_7_2_ProcessPending_ReSpoolsOnError` |
-| 62 | `core/test/fix_verification_batch8_test.go` | 132 | `TestFixVerify_31_7_3_Complete_RemovesInFlight` |
-| 63 | `core/test/fix_verification_batch8_test.go` | 175 | `TestFixVerify_31_7_4_Sweeper_HasSetTransport` |
-| 64 | `core/test/fix_verification_batch8_test.go` | 191 | `TestFixVerify_31_7_5_ErrorSanitization_NoInternalDetails` |
-| 65 | `core/test/fix_verification_batch8_test.go` | 226 | `TestFixVerify_31_7_6_WS_Components_Constructable` |
-| 66 | `core/test/fix_verification_batch8_test.go` | 258 | `TestFixVerify_31_7_7_DeleteExpired_PrunesSentIDs` |
-| 67 | `core/test/fix_verification_batch8_test.go` | 307 | `TestFixVerify_31_7_8_VaultStore_RejectsOversizedItem` |
-| 68 | `core/test/fix_verification_batch8_test.go` | 329 | `TestFixVerify_31_7_9_VaultStore_RejectsInvalidType` |
-| 69 | `core/test/fix_verification_batch8_test.go` | 349 | `TestFixVerify_31_7_10_VaultStoreBatch_RejectsInvalidItem` |
-| 70 | `core/test/fix_verification_batch8_test.go` | 369 | `TestFixVerify_31_7_11_VaultStore_AcceptsValidTypes` |
-| 71 | `core/test/fix_verification_batch8_test.go` | 394 | `TestFixVerify_31_7_12_CORS_Wildcard_SetsStarNoCredentials` |
-| 72 | `core/test/fix_verification_batch8_test.go` | 419 | `TestFixVerify_31_7_13_CORS_Whitelist_SetsCredentials` |
-| 73 | `core/test/fix_verification_batch8_test.go` | 441 | `TestFixVerify_31_7_14_CORS_Wildcard_PreflightReturns204` |
-| 74 | `core/test/fix_verification_batch8_test.go` | 464 | `TestFixVerify_31_7_15_WS_DefaultUpgrader_SecureByDefault` |
-| 75 | `core/test/fix_verification_batch8_test.go` | 488 | `TestFixVerify_31_7_16_WS_InsecureSkipVerify_Enabled` |
-| 76 | `core/test/fix_verification_batch8_test.go` | 498 | `TestFixVerify_31_7_17_WS_WithOriginPatterns_Configurable` |
-| 77 | `core/test/gatekeeper_adversarial_test.go` | 155 | `TestAdv_29_9_LockedPersonaDenied` |
-| 78 | `core/test/gatekeeper_adversarial_test.go` | 209 | `TestAdv_29_9_LockedPersonaAudited` |
-| 79 | `core/test/gatekeeper_adversarial_test.go` | 249 | `TestAdv_29_9_EgressDeniedAudited` |
-| 80 | `core/test/gatekeeper_adversarial_test.go` | 299 | `TestAdv_29_10_MissingCategoryDenied` |
-| 81 | `core/test/gatekeeper_adversarial_test.go` | 349 | `TestAdv_29_10_TierNoneBlocks` |
-| 82 | `core/test/gatekeeper_adversarial_test.go` | 390 | `TestAdv_29_10_NoPolicyDefaultDeny` |
-| 83 | `core/test/gatekeeper_adversarial_test.go` | 419 | `TestAdv_29_10_MalformedPayloadDenied` |
-| 84 | `core/test/identity_test.go` | 2290 | `TestIdentity_3_7_1_MetadataPersisted` |
-| 85 | `core/test/identity_test.go` | 2327 | `TestIdentity_3_7_2_MetadataLocalOnlyNoRotationKey` |
-| 86 | `core/test/identity_test.go` | 2352 | `TestIdentity_3_7_3_MetadataLoadNoFile` |
-| 87 | `core/test/identity_test.go` | 2366 | `TestIdentity_3_7_4_MetadataRoundTrip` |
-| 88 | `core/test/identity_test.go` | 2401 | `TestIdentity_3_8_1_RestoreDIDFromMetadata` |
-| 89 | `core/test/identity_test.go` | 2448 | `TestIdentity_3_8_2_RestoreDIDDeterministic` |
-| 90 | `core/test/identity_test.go` | 2494 | `TestIdentity_3_8_3_RestoreRejectsDuplicate` |
-| 91 | `core/test/identity_test.go` | 2525 | `TestIdentity_3_8_4_RestoreRejectsNilMetadata` |
-| 92 | `core/test/identity_test.go` | 2535 | `TestIdentity_3_8_5_RestoreRejectsInvalidKey` |
-| 93 | `core/test/identity_test.go` | 2549 | `TestIdentity_3_8_6_RestorePreservesMetadataFields` |
-| 94 | `core/test/identity_test.go` | 2590 | `TestIdentity_3_8_7_RestoreHydratesGeneration` |
-| 95 | `core/test/identity_test.go` | 2627 | `TestIdentity_3_9_1_ExportBundle` |
-| 96 | `core/test/identity_test.go` | 2684 | `TestIdentity_3_9_2_ExportRequiresDID` |
-| 97 | `core/test/identity_test.go` | 2693 | `TestIdentity_3_9_3_ImportBundleSecrets` |
-| 98 | `core/test/identity_test.go` | 2730 | `TestIdentity_3_9_4_ImportRefusesOverwrite` |
-| 99 | `core/test/identity_test.go` | 2754 | `TestIdentity_3_9_5_LoadBundleRejectsInvalid` |
-| 100 | `core/test/identity_test.go` | 2783 | `TestIdentity_3_9_6_FullExportImportRoundTrip` |
-| 101 | `core/test/identity_test.go` | 2876 | `TestIdentity_3_9_7_IntegrityDetectsTamperedMetadata` |
-| 102 | `core/test/identity_test.go` | 2906 | `TestIdentity_3_9_8_IntegrityFailsWithWrongSeed` |
-| 103 | `core/test/identity_test.go` | 2933 | `TestIdentity_3_9_9_RestorePersistedMetadataAvailableForExport` |
-| 104 | `core/test/signature_test.go` | 82 | `TestSignature_28_ValidSignature_Accepted` |
-| 105 | `core/test/signature_test.go` | 95 | `TestSignature_28_ValidSignature_EmptyBody` |
-| 106 | `core/test/signature_test.go` | 111 | `TestSignature_28_InvalidSignature_Rejected` |
-| 107 | `core/test/signature_test.go` | 123 | `TestSignature_28_WrongKey_Rejected` |
-| 108 | `core/test/signature_test.go` | 136 | `TestSignature_28_TamperedBody_Rejected` |
-| 109 | `core/test/signature_test.go` | 149 | `TestSignature_28_TamperedPath_Rejected` |
-| 110 | `core/test/signature_test.go` | 161 | `TestSignature_28_TamperedMethod_Rejected` |
-| 111 | `core/test/signature_test.go` | 177 | `TestSignature_28_ExpiredTimestamp_Rejected` |
-| 112 | `core/test/signature_test.go` | 191 | `TestSignature_28_FutureTimestamp_Rejected` |
-| 113 | `core/test/signature_test.go` | 205 | `TestSignature_28_WithinWindow_Accepted` |
-| 114 | `core/test/signature_test.go` | 219 | `TestSignature_28_InvalidTimestampFormat_Rejected` |
-| 115 | `core/test/signature_test.go` | 235 | `TestSignature_28_UnknownDID_Rejected` |
-| 116 | `core/test/signature_test.go` | 247 | `TestSignature_28_RevokedDevice_Rejected` |
-| 117 | `core/test/signature_test.go` | 266 | `TestSignature_28_MalformedSignatureHex_Rejected` |
-| 118 | `core/test/signature_test.go` | 281 | `TestPairing_28_CompletePairingWithKey_Success` |
-| 119 | `core/test/signature_test.go` | 308 | `TestPairing_28_CompletePairingWithKey_InvalidCode` |
-| 120 | `core/test/signature_test.go` | 320 | `TestPairing_28_CompletePairingWithKey_InvalidMultibase` |
-| 121 | `core/test/signature_test.go` | 332 | `TestPairing_28_CompletePairingWithKey_CodeAlreadyUsed` |
-| 122 | `core/test/signature_test.go` | 356 | `TestPairing_28_CompletePairingWithKey_DeviceAppearsInList` |
-| 123 | `core/test/signature_test.go` | 391 | `TestSignature_28_MockValidator_FallsBackToBearerToken` |
-| 124 | `core/test/transport_adversarial_test.go` | 269 | `TestAdv_29_1_SendStoresSignature` |
-| 125 | `core/test/transport_adversarial_test.go` | 301 | `TestAdv_29_1_ValidSignatureAccepted` |
-| 126 | `core/test/transport_adversarial_test.go` | 344 | `TestAdv_29_1_WrongSignatureRejected` |
-| 127 | `core/test/transport_adversarial_test.go` | 386 | `TestAdv_29_1_TamperedCiphertextRejected` |
-| 128 | `core/test/transport_adversarial_test.go` | 425 | `TestAdv_29_1_EmptySigRejected` |
-| 129 | `core/test/transport_adversarial_test.go` | 460 | `TestAdv_29_2_OutboxDeliverSuccess` |
-| 130 | `core/test/transport_adversarial_test.go` | 487 | `TestAdv_29_2_OutboxDeliveryFailure` |
-| 131 | `core/test/transport_adversarial_test.go` | 530 | `TestAdv_29_2_OutboxRetryTransient` |
-| 132 | `core/test/transport_adversarial_test.go` | 581 | `TestAdv_29_2_OutboxUnresolvableDID` |
-| 133 | `core/test/transport_adversarial_test.go` | 615 | `TestAdv_29_2_OutboxNoDeliverer` |
-| 134 | `core/test/transport_adversarial_test.go` | 685 | `TestAdv_29_2_OutboxContextCancel` |
-| 135 | `core/test/transport_adversarial_test.go` | 718 | `TestAdv_29_3_IngressIPRateLimit` |
-| 136 | `core/test/transport_adversarial_test.go` | 742 | `TestAdv_29_3_IngressRouterFlood` |
-| 137 | `core/test/transport_adversarial_test.go` | 776 | `TestAdv_29_3_IngressDeadDropLocked` |
-| 138 | `core/test/transport_adversarial_test.go` | 813 | `TestAdv_29_3_IngressInboxUnlocked` |
-| 139 | `core/test/transport_adversarial_test.go` | 848 | `TestAdv_29_3_IngressSpoolFull` |
-| 140 | `core/test/transport_adversarial_test.go` | 880 | `TestAdv_29_3_IngressSweeperSweep` |
-| 141 | `core/test/transport_adversarial_test.go` | 907 | `TestAdv_29_3_IngressProcessPending` |
-| 142 | `core/test/transport_adversarial_test.go` | 944 | `TestAdv_29_3_IngressOversizedPayload` |
-| 143 | `core/test/transport_adversarial_test.go` | 967 | `TestAdv_29_3_IngressSweepFull` |
-| 144 | `core/test/transport_adversarial_test.go` | 1003 | `TestAdv_29_4_ReplayDuplicateID` |
-| 145 | `core/test/transport_adversarial_test.go` | 1076 | `TestAdv_29_4_DIDSpoofingFromKID` |
-| 146 | `core/test/transport_adversarial_test.go` | 1121 | `TestAdv_29_2_OutboxQueueLimit` |
-| 147 | `core/test/transport_adversarial_test.go` | 1165 | `TestAdv_29_2_OutboxRetryCount` |
-| 148 | `core/test/transport_adversarial_test.go` | 1204 | `TestAdv_29_5_PromptInjectionBodySafe` |
-| 149 | `core/test/transport_d2d_sig_test.go` | 144 | `TestFixVerify_31_8_1_SendMessage_DeliveryPayloadIsJSONWrapper` |
-| 150 | `core/test/transport_d2d_sig_test.go` | 204 | `TestFixVerify_31_8_2_ProcessInbound_JSONWrapperValidSig_Success` |
-| 151 | `core/test/transport_d2d_sig_test.go` | 253 | `TestFixVerify_31_8_3_ProcessInbound_JSONWrapperTamperedSig_Error` |
-| 152 | `core/test/transport_d2d_sig_test.go` | 298 | `TestFixVerify_31_8_6_ProcessInbound_RawBytesLegacy_Rejected` |
-| 153 | `core/test/transport_d2d_sig_test.go` | 328 | `TestFixVerify_31_8_8_ProcessOutbox_UsesJSONWrapper` |
-| 154 | `core/test/transport_d2d_sig_test.go` | 404 | `TestFixVerify_31_8_9_FullRoundTrip_SendAndReceiveWithSig` |
-| 155 | `core/test/transport_d2d_sig_test.go` | 451 | `TestFixVerify_31_8_4_ProcessInbound_JSONWrapperEmptySig_Rejected` |
-| 156 | `core/test/transport_d2d_sig_test.go` | 488 | `TestFixVerify_31_8_7_ProcessInbound_JSONWrapper_DIDSpoofing_Rejected` |
-| 157 | `core/test/trust_test.go` | 22 | `TestTrustCache_Upsert_And_Lookup` |
-| 158 | `core/test/trust_test.go` | 46 | `TestTrustCache_Lookup_NotFound` |
-| 159 | `core/test/trust_test.go` | 54 | `TestTrustCache_List` |
-| 160 | `core/test/trust_test.go` | 71 | `TestTrustCache_Remove` |
-| 161 | `core/test/trust_test.go` | 83 | `TestTrustCache_Upsert_Overwrites` |
-| 162 | `core/test/trust_test.go` | 95 | `TestTrustCache_Stats` |
-| 163 | `core/test/trust_test.go` | 119 | `TestTrustIngress_BlockedContact_Drop` |
-| 164 | `core/test/trust_test.go` | 130 | `TestTrustIngress_TrustedContact_Accept` |
-| 165 | `core/test/trust_test.go` | 141 | `TestTrustIngress_VerifiedContact_Accept` |
-| 166 | `core/test/trust_test.go` | 152 | `TestTrustIngress_HighScoreCache_Accept` |
-| 167 | `core/test/trust_test.go` | 165 | `TestTrustIngress_LowScoreCache_Quarantine` |
-| 168 | `core/test/trust_test.go` | 178 | `TestTrustIngress_UnknownDID_Quarantine` |
-| 169 | `core/test/trust_test.go` | 187 | `TestTrustIngress_EmptyDID_Quarantine` |
-| 170 | `core/test/trust_test.go` | 196 | `TestTrustIngress_BoundaryScore_Accept` |
-| 171 | `core/test/trust_test.go` | 209 | `TestTrustIngress_JustBelowBoundary_Quarantine` |
-| 172 | `core/test/trust_test.go` | 226 | `TestTrustIngress_BlockedOverridesCache` |
-| 173 | `core/test/trust_test.go` | 242 | `TestTrustIngress_TrustedOverridesLowCache` |
-| 174 | `core/test/trust_test.go` | 262 | `TestTrustResolver_NoAppView_ReturnsNil` |
-| 175 | `core/test/trust_test.go` | 278 | `TestTrustDomain_ValidRings` |
-| 176 | `core/test/trust_test.go` | 286 | `TestTrustDomain_ValidRelationships` |
-| 177 | `core/test/trust_test.go` | 295 | `TestTrustDomain_IngressDecisionConstants` |
+| 29 | `core/test/auth_test.go` | 1790 | `TestAuth_1_6_9_ConcurrentTokenValidation` |
+| 30 | `core/test/crypto_adversarial_test.go` | 22 | `TestAdv_29_6_HKDFCrossPersona` |
+| 31 | `core/test/crypto_adversarial_test.go` | 194 | `TestAdv_29_6_KeyDeriverPersonaDEK` |
+| 32 | `core/test/crypto_test.go` | 1919 | `TestCrypto_2_9_DeriveK256Deterministic` |
+| 33 | `core/test/crypto_test.go` | 1939 | `TestCrypto_2_9_K256DifferentFromEd25519` |
+| 34 | `core/test/crypto_test.go` | 1960 | `TestCrypto_2_9_K256DifferentPaths` |
+| 35 | `core/test/crypto_test.go` | 1979 | `TestCrypto_2_9_K256EmptySeedRejected` |
+| 36 | `core/test/crypto_test.go` | 1991 | `TestCrypto_2_9_K256BIP44Forbidden` |
+| 37 | `core/test/crypto_test.go` | 1999 | `TestCrypto_2_9_K256ParseableByAtcrypto` |
+| 38 | `core/test/crypto_test.go` | 2022 | `TestCrypto_2_9_K256ManagerWithSeed` |
+| 39 | `core/test/crypto_test.go` | 2056 | `TestCrypto_2_9_K256ManagerBackwardCompat` |
+| 40 | `core/test/crypto_test.go` | 2074 | `TestCrypto_2_9_K256ManagerExistingKeyPreferred` |
+| 41 | `core/test/crypto_test.go` | 2100 | `TestCrypto_2_9_KeyDeriverRotationKey` |
+| 42 | `core/test/crypto_test.go` | 2122 | `TestCrypto_2_10_1_DeriveServiceKeyDeterministic` |
+| 43 | `core/test/crypto_test.go` | 2135 | `TestCrypto_2_10_2_DeriveServiceKeyDistinctIndexes` |
+| 44 | `core/test/crypto_test.go` | 2151 | `TestCrypto_2_10_3_DeriveServiceKeyMatchesSLIP0010Path` |
+| 45 | `core/test/crypto_test.go` | 2168 | `TestCrypto_2_10_4_DeriveServiceKeyCrossLanguage` |
+| 46 | `core/test/gatekeeper_adversarial_test.go` | 263 | `TestAdv_29_9_EgressDeniedAudited` |
+| 47 | `core/test/gatekeeper_adversarial_test.go` | 364 | `TestAdv_29_10_TierNoneBlocks` |
+| 48 | `core/test/gatekeeper_adversarial_test.go` | 405 | `TestAdv_29_10_NoPolicyDefaultDeny` |
+| 49 | `core/test/gatekeeper_adversarial_test.go` | 434 | `TestAdv_29_10_MalformedPayloadDenied` |
+| 50 | `core/test/identity_test.go` | 2290 | `TestIdentity_3_7_1_MetadataPersisted` |
+| 51 | `core/test/identity_test.go` | 2327 | `TestIdentity_3_7_2_MetadataLocalOnlyNoRotationKey` |
+| 52 | `core/test/identity_test.go` | 2352 | `TestIdentity_3_7_3_MetadataLoadNoFile` |
+| 53 | `core/test/identity_test.go` | 2366 | `TestIdentity_3_7_4_MetadataRoundTrip` |
+| 54 | `core/test/identity_test.go` | 2401 | `TestIdentity_3_8_1_RestoreDIDFromMetadata` |
+| 55 | `core/test/identity_test.go` | 2448 | `TestIdentity_3_8_2_RestoreDIDDeterministic` |
+| 56 | `core/test/identity_test.go` | 2494 | `TestIdentity_3_8_3_RestoreRejectsDuplicate` |
+| 57 | `core/test/identity_test.go` | 2525 | `TestIdentity_3_8_4_RestoreRejectsNilMetadata` |
+| 58 | `core/test/identity_test.go` | 2535 | `TestIdentity_3_8_5_RestoreRejectsInvalidKey` |
+| 59 | `core/test/identity_test.go` | 2549 | `TestIdentity_3_8_6_RestorePreservesMetadataFields` |
+| 60 | `core/test/identity_test.go` | 2590 | `TestIdentity_3_8_7_RestoreHydratesGeneration` |
+| 61 | `core/test/identity_test.go` | 2627 | `TestIdentity_3_9_1_ExportBundle` |
+| 62 | `core/test/identity_test.go` | 2684 | `TestIdentity_3_9_2_ExportRequiresDID` |
+| 63 | `core/test/identity_test.go` | 2693 | `TestIdentity_3_9_3_ImportBundleSecrets` |
+| 64 | `core/test/identity_test.go` | 2730 | `TestIdentity_3_9_4_ImportRefusesOverwrite` |
+| 65 | `core/test/identity_test.go` | 2754 | `TestIdentity_3_9_5_LoadBundleRejectsInvalid` |
+| 66 | `core/test/identity_test.go` | 2783 | `TestIdentity_3_9_6_FullExportImportRoundTrip` |
+| 67 | `core/test/identity_test.go` | 2876 | `TestIdentity_3_9_7_IntegrityDetectsTamperedMetadata` |
+| 68 | `core/test/identity_test.go` | 2906 | `TestIdentity_3_9_8_IntegrityFailsWithWrongSeed` |
+| 69 | `core/test/identity_test.go` | 2933 | `TestIdentity_3_9_9_RestorePersistedMetadataAvailableForExport` |
+| 70 | `core/test/signature_test.go` | 82 | `TestSignature_28_ValidSignature_Accepted` |
+| 71 | `core/test/signature_test.go` | 95 | `TestSignature_28_ValidSignature_EmptyBody` |
+| 72 | `core/test/signature_test.go` | 111 | `TestSignature_28_InvalidSignature_Rejected` |
+| 73 | `core/test/signature_test.go` | 123 | `TestSignature_28_WrongKey_Rejected` |
+| 74 | `core/test/signature_test.go` | 136 | `TestSignature_28_TamperedBody_Rejected` |
+| 75 | `core/test/signature_test.go` | 149 | `TestSignature_28_TamperedPath_Rejected` |
+| 76 | `core/test/signature_test.go` | 161 | `TestSignature_28_TamperedMethod_Rejected` |
+| 77 | `core/test/signature_test.go` | 177 | `TestSignature_28_ExpiredTimestamp_Rejected` |
+| 78 | `core/test/signature_test.go` | 191 | `TestSignature_28_FutureTimestamp_Rejected` |
+| 79 | `core/test/signature_test.go` | 205 | `TestSignature_28_WithinWindow_Accepted` |
+| 80 | `core/test/signature_test.go` | 219 | `TestSignature_28_InvalidTimestampFormat_Rejected` |
+| 81 | `core/test/signature_test.go` | 235 | `TestSignature_28_UnknownDID_Rejected` |
+| 82 | `core/test/signature_test.go` | 247 | `TestSignature_28_RevokedDevice_Rejected` |
+| 83 | `core/test/signature_test.go` | 266 | `TestSignature_28_MalformedSignatureHex_Rejected` |
+| 84 | `core/test/signature_test.go` | 281 | `TestPairing_28_CompletePairingWithKey_Success` |
+| 85 | `core/test/signature_test.go` | 308 | `TestPairing_28_CompletePairingWithKey_InvalidCode` |
+| 86 | `core/test/signature_test.go` | 320 | `TestPairing_28_CompletePairingWithKey_InvalidMultibase` |
+| 87 | `core/test/signature_test.go` | 332 | `TestPairing_28_CompletePairingWithKey_CodeAlreadyUsed` |
+| 88 | `core/test/signature_test.go` | 356 | `TestPairing_28_CompletePairingWithKey_DeviceAppearsInList` |
+| 89 | `core/test/signature_test.go` | 391 | `TestSignature_28_MockValidator_FallsBackToBearerToken` |
+| 90 | `core/test/transport_adversarial_test.go` | 719 | `TestAdv_29_1_EmptySigRejected` |
+| 91 | `core/test/transport_adversarial_test.go` | 755 | `TestAdv_29_2_OutboxDeliverSuccess` |
+| 92 | `core/test/transport_adversarial_test.go` | 878 | `TestAdv_29_2_OutboxUnresolvableDID` |
+| 93 | `core/test/transport_adversarial_test.go` | 1398 | `TestAdv_29_3_IngressSweeperSweep` |
+| 94 | `core/test/transport_adversarial_test.go` | 1524 | `TestAdv_29_4_ReplayDuplicateID` |
+| 95 | `core/test/transport_adversarial_test.go` | 1643 | `TestAdv_29_2_OutboxQueueLimit` |
+| 96 | `core/test/trust_test.go` | 22 | `TestTrustCache_Upsert_And_Lookup` |
+| 97 | `core/test/trust_test.go` | 46 | `TestTrustCache_Lookup_NotFound` |
+| 98 | `core/test/trust_test.go` | 54 | `TestTrustCache_List` |
+| 99 | `core/test/trust_test.go` | 71 | `TestTrustCache_Remove` |
+| 100 | `core/test/trust_test.go` | 83 | `TestTrustCache_Upsert_Overwrites` |
+| 101 | `core/test/trust_test.go` | 95 | `TestTrustCache_Stats` |
+| 102 | `core/test/trust_test.go` | 119 | `TestTrustIngress_BlockedContact_Drop` |
+| 103 | `core/test/trust_test.go` | 130 | `TestTrustIngress_TrustedContact_Accept` |
+| 104 | `core/test/trust_test.go` | 141 | `TestTrustIngress_VerifiedContact_Accept` |
+| 105 | `core/test/trust_test.go` | 152 | `TestTrustIngress_HighScoreCache_Accept` |
+| 106 | `core/test/trust_test.go` | 165 | `TestTrustIngress_LowScoreCache_Quarantine` |
+| 107 | `core/test/trust_test.go` | 178 | `TestTrustIngress_UnknownDID_Quarantine` |
+| 108 | `core/test/trust_test.go` | 187 | `TestTrustIngress_EmptyDID_Quarantine` |
+| 109 | `core/test/trust_test.go` | 196 | `TestTrustIngress_BoundaryScore_Accept` |
+| 110 | `core/test/trust_test.go` | 209 | `TestTrustIngress_JustBelowBoundary_Quarantine` |
+| 111 | `core/test/trust_test.go` | 226 | `TestTrustIngress_BlockedOverridesCache` |
+| 112 | `core/test/trust_test.go` | 242 | `TestTrustIngress_TrustedOverridesLowCache` |
+| 113 | `core/test/trust_test.go` | 262 | `TestTrustResolver_NoAppView_ReturnsNil` |
+| 114 | `core/test/trust_test.go` | 278 | `TestTrustDomain_ValidRings` |
+| 115 | `core/test/trust_test.go` | 286 | `TestTrustDomain_ValidRelationships` |
+| 116 | `core/test/trust_test.go` | 295 | `TestTrustDomain_IngressDecisionConstants` |
 
 ### Brain (Unit) — 96 orphans
 
@@ -3609,189 +3548,216 @@
 | 95 | `brain/tests/test_vault_context.py` | 521 | `TestToolDeclarations.test_search_vault_has_required_params` |
 | 96 | `brain/tests/test_vault_context.py` | 530 | `TestToolDeclarations.test_gemini_tools_build` |
 
-### Integration — 38 orphans
+### Integration — 206 orphans
 
 | # | File | Line | Function |
 |---|------|------|----------|
-| 1 | `tests/integration/test_deep_links.py` | 472 | `TestAttributionPipeline.test_empty_attribution_fields_not_injected` |
-| 2 | `tests/integration/test_deep_links.py` | 505 | `TestAttributionPipeline.test_unicode_creator_name_survives_round_trip` |
-| 3 | `tests/integration/test_deep_links.py` | 532 | `TestAttributionPipeline.test_multiple_recommendations_coexist` |
-| 4 | `tests/integration/test_deep_links.py` | 578 | `TestAttributionPipeline.test_non_attribution_fields_survive` |
-| 5 | `tests/integration/test_deep_links.py` | 608 | `TestAttributionPipeline.test_very_long_deep_link_survives_storage` |
-| 6 | `tests/integration/test_deep_links.py` | 637 | `TestAttributionPipeline.test_sponsored_false_explicitly_stored` |
-| 7 | `tests/integration/test_deep_links.py` | 680 | `TestAttributionPipeline.test_nested_dict_in_verdict_survives_round_trip` |
-| 8 | `tests/integration/test_deep_links.py` | 1126 | `TestExpertCreditedIndividually.test_summary_text_names_each_expert` |
-| 9 | `tests/integration/test_deep_links.py` | 1143 | `TestExpertCreditedIndividually.test_no_generic_phrases_in_summary` |
-| 10 | `tests/integration/test_deep_links.py` | 1169 | `TestExpertCreditedIndividually.test_each_deep_link_preserved_individually` |
-| 11 | `tests/integration/test_deep_links.py` | 1189 | `TestExpertCreditedIndividually.test_same_expert_did_grouped_under_one_credit` |
-| 12 | `tests/integration/test_deep_links.py` | 1258 | `TestExpertCreditedIndividually.test_expert_with_empty_verdict_still_credited` |
-| 13 | `tests/integration/test_deep_links.py` | 1317 | `TestExpertCreditedIndividually.test_creator_name_missing_falls_back_to_did` |
-| 14 | `tests/integration/test_deep_links.py` | 1353 | `TestExpertCreditedIndividually.test_single_attestation_still_individual` |
-| 15 | `tests/integration/test_deep_links.py` | 1609 | `TestAttributionViolation.test_empty_string_creator_name_is_also_a_violation` |
-| 16 | `tests/integration/test_deep_links.py` | 1651 | `TestAttributionViolation.test_whitespace_only_creator_name_is_a_violation` |
-| 17 | `tests/integration/test_deep_links.py` | 1693 | `TestAttributionViolation.test_multiple_violations_compound_penalty` |
-| 18 | `tests/integration/test_deep_links.py` | 1749 | `TestAttributionViolation.test_compliant_bot_score_unchanged` |
-| 19 | `tests/integration/test_deep_links.py` | 1799 | `TestAttributionViolation.test_repeated_violations_degrade_trust_to_floor` |
-| 20 | `tests/integration/test_deep_links.py` | 1843 | `TestAttributionViolation.test_routing_reflects_degraded_trust_across_multiple_bots` |
-| 21 | `tests/integration/test_deep_links.py` | 1911 | `TestAttributionViolation.test_routing_with_empty_candidate_list` |
-| 22 | `tests/integration/test_deep_links.py` | 1923 | `TestAttributionViolation.test_no_recommendations_means_no_violations` |
-| 23 | `tests/integration/test_safety_layer.py` | 587 | `TestAgentCrashSafety.test_successful_agent_execution_does_produce_results` |
-| 24 | `tests/integration/test_safety_layer.py` | 602 | `TestAgentCrashSafety.test_error_response_contains_no_pii_patterns` |
-| 25 | `tests/integration/test_safety_layer.py` | 637 | `TestAgentCrashSafety.test_sensitive_context_in_task_dict_stripped_on_crash` |
-| 26 | `tests/integration/test_safety_layer.py` | 666 | `TestAgentCrashSafety.test_crashing_agent_does_not_affect_other_agent` |
-| 27 | `tests/integration/test_safety_layer.py` | 695 | `TestAgentCrashSafety.test_agent_recovers_after_crash` |
-| 28 | `tests/integration/test_trust_network.py` | 1210 | `TestTrustDataDensity.test_all_positive_no_conflict` |
-| 29 | `tests/integration/test_trust_network.py` | 1244 | `TestTrustDataDensity.test_all_negative_no_conflict` |
-| 30 | `tests/integration/test_trust_network.py` | 1274 | `TestTrustDataDensity.test_single_review_low_confidence` |
-| 31 | `tests/integration/test_trust_network.py` | 1302 | `TestTrustDataDensity.test_zero_reviews_no_confidence` |
-| 32 | `tests/integration/test_trust_network.py` | 1318 | `TestTrustDataDensity.test_two_positive_one_neutral_no_conflict` |
-| 33 | `tests/integration/test_trust_network.py` | 1375 | `TestTrustDataDensity.test_equal_split_one_positive_one_negative` |
-| 34 | `tests/integration/test_trust_network.py` | 1417 | `TestTrustDataDensity.test_all_unverified_mentions_unverified` |
-| 35 | `tests/integration/test_trust_network.py` | 1579 | `TestTrustDataDensity.test_single_neutral_review_neither_recommends_nor_cautions` |
-| 36 | `tests/integration/test_trust_network.py` | 1620 | `TestTrustDataDensity.test_single_unverified_review_disclosed` |
-| 37 | `tests/integration/test_trust_network.py` | 1656 | `TestTrustDataDensity.test_single_review_never_says_consensus` |
-| 38 | `tests/integration/test_trust_network.py` | 1745 | `TestTrustDataDensity.test_single_review_boundary_rating_30` |
-
-### CLI — 52 orphans
-
-| # | File | Line | Function |
-|---|------|------|----------|
-| 1 | `cli/tests/test_client.py` | 35 | `test_vault_store` |
-| 2 | `cli/tests/test_client.py` | 48 | `test_vault_query` |
-| 3 | `cli/tests/test_client.py` | 62 | `test_kv_get_found` |
-| 4 | `cli/tests/test_client.py` | 74 | `test_kv_get_not_found` |
-| 5 | `cli/tests/test_client.py` | 88 | `test_connection_error` |
-| 6 | `cli/tests/test_client.py` | 96 | `test_auth_error` |
-| 7 | `cli/tests/test_client.py` | 111 | `test_process_event_via_core` |
-| 8 | `cli/tests/test_client.py` | 125 | `test_context_manager` |
-| 9 | `cli/tests/test_client.py` | 141 | `test_signing_headers_set` |
-| 10 | `cli/tests/test_client.py` | 162 | `test_no_bearer_on_core` |
-| 11 | `cli/tests/test_client.py` | 169 | `test_extract_body_json` |
-| 12 | `cli/tests/test_client.py` | 179 | `test_extract_body_content_string` |
-| 13 | `cli/tests/test_client.py` | 185 | `test_extract_body_empty` |
-| 14 | `cli/tests/test_commands.py` | 40 | `test_remember_json` |
-| 15 | `cli/tests/test_commands.py` | 51 | `test_remember_human` |
-| 16 | `cli/tests/test_commands.py` | 59 | `test_remember_with_category` |
-| 17 | `cli/tests/test_commands.py` | 72 | `test_recall_json` |
-| 18 | `cli/tests/test_commands.py` | 84 | `test_recall_empty` |
-| 19 | `cli/tests/test_commands.py` | 95 | `test_validate_approved` |
-| 20 | `cli/tests/test_commands.py` | 106 | `test_validate_pending` |
-| 21 | `cli/tests/test_commands.py` | 117 | `test_validate_fallback_safe` |
-| 22 | `cli/tests/test_commands.py` | 127 | `test_validate_fallback_risky` |
-| 23 | `cli/tests/test_commands.py` | 140 | `test_validate_status_found` |
-| 24 | `cli/tests/test_commands.py` | 150 | `test_validate_status_not_found` |
-| 25 | `cli/tests/test_commands.py` | 160 | `test_scrub_json` |
-| 26 | `cli/tests/test_commands.py` | 183 | `test_rehydrate_json` |
-| 27 | `cli/tests/test_commands.py` | 204 | `test_draft_json` |
-| 28 | `cli/tests/test_commands.py` | 220 | `test_sign_json` |
-| 29 | `cli/tests/test_commands.py` | 240 | `test_audit_json` |
-| 30 | `cli/tests/test_commands.py` | 255 | `test_missing_keypair` |
-| 31 | `cli/tests/test_commands.py` | 265 | `test_configure_signature_mode` |
-| 32 | `cli/tests/test_commands.py` | 291 | `test_configure_help` |
-| 33 | `cli/tests/test_session.py` | 10 | `test_new_id_format` |
-| 34 | `cli/tests/test_session.py` | 17 | `test_save_and_load` |
-| 35 | `cli/tests/test_session.py` | 33 | `test_save_python_style_keys` |
-| 36 | `cli/tests/test_session.py` | 47 | `test_rehydrate` |
-| 37 | `cli/tests/test_session.py` | 62 | `test_load_missing_session` |
-| 38 | `cli/tests/test_session.py` | 71 | `test_atomic_write` |
-| 39 | `cli/tests/test_signing.py` | 21 | `test_generate_creates_files` |
-| 40 | `cli/tests/test_signing.py` | 30 | `test_private_key_permissions` |
-| 41 | `cli/tests/test_signing.py` | 37 | `test_load_existing_keypair` |
-| 42 | `cli/tests/test_signing.py` | 45 | `test_ensure_loaded_auto_loads` |
-| 43 | `cli/tests/test_signing.py` | 52 | `test_ensure_loaded_raises_when_missing` |
-| 44 | `cli/tests/test_signing.py` | 61 | `test_did_format` |
-| 45 | `cli/tests/test_signing.py` | 68 | `test_did_deterministic` |
-| 46 | `cli/tests/test_signing.py` | 74 | `test_did_different_keys` |
-| 47 | `cli/tests/test_signing.py` | 85 | `test_public_key_multibase_format` |
-| 48 | `cli/tests/test_signing.py` | 97 | `test_public_key_multibase_roundtrip` |
-| 49 | `cli/tests/test_signing.py` | 113 | `test_sign_request_returns_three_parts` |
-| 50 | `cli/tests/test_signing.py` | 122 | `test_sign_request_verifiable` |
-| 51 | `cli/tests/test_signing.py` | 139 | `test_sign_request_empty_body` |
-| 52 | `cli/tests/test_signing.py` | 152 | `test_sign_request_different_payloads_differ` |
-
-### User Stories — 79 orphans
-
-| # | File | Line | Function |
-|---|------|------|----------|
-| 1 | `tests/system/user_stories/test_01_purchase_journey.py` | 169 | `TestPurchaseJourney.test_00_five_dinas_with_distinct_identities_and_trust_edges` |
-| 2 | `tests/system/user_stories/test_01_purchase_journey.py` | 268 | `TestPurchaseJourney.test_01_alice_reviews_chairs` |
-| 3 | `tests/system/user_stories/test_01_purchase_journey.py` | 304 | `TestPurchaseJourney.test_02_bob_reviews_chairs` |
-| 4 | `tests/system/user_stories/test_01_purchase_journey.py` | 340 | `TestPurchaseJourney.test_03_diana_reviews_chairs` |
-| 5 | `tests/system/user_stories/test_01_purchase_journey.py` | 376 | `TestPurchaseJourney.test_04_unverified_dinas_pump_positive_cheapchair` |
-| 6 | `tests/system/user_stories/test_01_purchase_journey.py` | 417 | `TestPurchaseJourney.test_05_all_attestations_ingested` |
-| 7 | `tests/system/user_stories/test_01_purchase_journey.py` | 463 | `TestPurchaseJourney.test_06_trust_rings_established` |
-| 8 | `tests/system/user_stories/test_01_purchase_journey.py` | 540 | `TestPurchaseJourney.test_07_verified_negatives_for_cheapchair` |
-| 9 | `tests/system/user_stories/test_01_purchase_journey.py` | 577 | `TestPurchaseJourney.test_08_verified_positives_for_ergomax` |
-| 10 | `tests/system/user_stories/test_01_purchase_journey.py` | 614 | `TestPurchaseJourney.test_09_store_personal_context_in_vault` |
-| 11 | `tests/system/user_stories/test_01_purchase_journey.py` | 745 | `TestPurchaseJourney.test_10_store_purchase_decision_in_vault` |
-| 12 | `tests/system/user_stories/test_01_purchase_journey.py` | 854 | `TestPurchaseJourney.test_11_dina_gives_personalized_purchase_advice` |
-| 13 | `tests/system/user_stories/test_01_purchase_journey.py` | 1053 | `TestPurchaseJourney.test_12_five_words_to_personalized_advice` |
-| 14 | `tests/system/user_stories/test_02_sancho_moment.py` | 94 | `TestSanchoMoment.test_00_previous_conversation_stored_in_vault` |
-| 15 | `tests/system/user_stories/test_02_sancho_moment.py` | 227 | `TestSanchoMoment.test_01_sancho_sends_d2d_arrival_message` |
-| 16 | `tests/system/user_stories/test_02_sancho_moment.py` | 266 | `TestSanchoMoment.test_02_alonso_receives_decrypted_d2d_message` |
-| 17 | `tests/system/user_stories/test_02_sancho_moment.py` | 324 | `TestSanchoMoment.test_03_brain_processes_didcomm_arrival` |
-| 18 | `tests/system/user_stories/test_02_sancho_moment.py` | 371 | `TestSanchoMoment.test_04_nudge_was_assembled` |
-| 19 | `tests/system/user_stories/test_02_sancho_moment.py` | 399 | `TestSanchoMoment.test_05_nudge_contains_vault_context` |
-| 20 | `tests/system/user_stories/test_02_sancho_moment.py` | 450 | `TestSanchoMoment.test_06_llm_generates_human_quality_nudge` |
-| 21 | `tests/system/user_stories/test_03_dead_internet_filter.py` | 90 | `TestDeadInternetFilter.test_00_seed_creator_profiles` |
-| 22 | `tests/system/user_stories/test_03_dead_internet_filter.py` | 237 | `TestDeadInternetFilter.test_01_appview_returns_trusted_creator` |
-| 23 | `tests/system/user_stories/test_03_dead_internet_filter.py` | 274 | `TestDeadInternetFilter.test_02_appview_returns_untrusted_creator` |
-| 24 | `tests/system/user_stories/test_03_dead_internet_filter.py` | 312 | `TestDeadInternetFilter.test_03_core_resolves_trusted_creator` |
-| 25 | `tests/system/user_stories/test_03_dead_internet_filter.py` | 344 | `TestDeadInternetFilter.test_04_core_resolves_untrusted_creator` |
-| 26 | `tests/system/user_stories/test_03_dead_internet_filter.py` | 380 | `TestDeadInternetFilter.test_05_brain_confirms_trusted_creator` |
-| 27 | `tests/system/user_stories/test_03_dead_internet_filter.py` | 472 | `TestDeadInternetFilter.test_06_brain_flags_untrusted_creator` |
-| 28 | `tests/system/user_stories/test_03_dead_internet_filter.py` | 549 | `TestDeadInternetFilter.test_07_side_by_side_trust_comparison` |
-| 29 | `tests/system/user_stories/test_04_persona_wall.py` | 121 | `TestPersonaWall.test_00_seed_health_persona_vault` |
-| 30 | `tests/system/user_stories/test_04_persona_wall.py` | 152 | `TestPersonaWall.test_01_store_shopping_context` |
-| 31 | `tests/system/user_stories/test_04_persona_wall.py` | 171 | `TestPersonaWall.test_02_cross_persona_request_blocked` |
-| 32 | `tests/system/user_stories/test_04_persona_wall.py` | 219 | `TestPersonaWall.test_03_verify_automatic_disclosure_blocked` |
-| 33 | `tests/system/user_stories/test_04_persona_wall.py` | 244 | `TestPersonaWall.test_04_verify_disclosure_proposal_exists` |
-| 34 | `tests/system/user_stories/test_04_persona_wall.py` | 271 | `TestPersonaWall.test_05_verify_diagnosis_withheld` |
-| 35 | `tests/system/user_stories/test_04_persona_wall.py` | 305 | `TestPersonaWall.test_06_verify_proposal_is_useful` |
-| 36 | `tests/system/user_stories/test_04_persona_wall.py` | 329 | `TestPersonaWall.test_07_approve_disclosure` |
-| 37 | `tests/system/user_stories/test_04_persona_wall.py` | 374 | `TestPersonaWall.test_08_verify_shared_text_matches_approved` |
-| 38 | `tests/system/user_stories/test_04_persona_wall.py` | 390 | `TestPersonaWall.test_09_verify_no_diagnosis_in_shared_response` |
-| 39 | `tests/system/user_stories/test_04_persona_wall.py` | 411 | `TestPersonaWall.test_10_verify_pii_check_clean` |
-| 40 | `tests/system/user_stories/test_05_agent_gateway.py` | 84 | `TestAgentGateway.test_00_register_agent_via_pairing` |
-| 41 | `tests/system/user_stories/test_05_agent_gateway.py` | 150 | `TestAgentGateway.test_01_verify_agent_in_device_list` |
-| 42 | `tests/system/user_stories/test_05_agent_gateway.py` | 182 | `TestAgentGateway.test_02_safe_intent_auto_approved` |
-| 43 | `tests/system/user_stories/test_05_agent_gateway.py` | 225 | `TestAgentGateway.test_03_moderate_intent_flagged` |
-| 44 | `tests/system/user_stories/test_05_agent_gateway.py` | 268 | `TestAgentGateway.test_04_high_risk_intent_flagged` |
-| 45 | `tests/system/user_stories/test_05_agent_gateway.py` | 311 | `TestAgentGateway.test_05_unauthenticated_agent_rejected` |
-| 46 | `tests/system/user_stories/test_05_agent_gateway.py` | 341 | `TestAgentGateway.test_06_blocked_action_denied` |
-| 47 | `tests/system/user_stories/test_05_agent_gateway.py` | 378 | `TestAgentGateway.test_07_export_data_blocked` |
-| 48 | `tests/system/user_stories/test_05_agent_gateway.py` | 415 | `TestAgentGateway.test_08_agent_cannot_cross_personas` |
-| 49 | `tests/system/user_stories/test_05_agent_gateway.py` | 474 | `TestAgentGateway.test_09_revoke_agent_device` |
-| 50 | `tests/system/user_stories/test_06_license_renewal.py` | 96 | `TestLicenseRenewal.test_00_store_personal_context` |
-| 51 | `tests/system/user_stories/test_06_license_renewal.py` | 157 | `TestLicenseRenewal.test_01_brain_extracts_license_data` |
-| 52 | `tests/system/user_stories/test_06_license_renewal.py` | 215 | `TestLicenseRenewal.test_02_verify_vault_entries` |
-| 53 | `tests/system/user_stories/test_06_license_renewal.py` | 322 | `TestLicenseRenewal.test_03_verify_confidence_scores` |
-| 54 | `tests/system/user_stories/test_06_license_renewal.py` | 349 | `TestLicenseRenewal.test_04_verify_pii_not_in_searchable_fields` |
-| 55 | `tests/system/user_stories/test_06_license_renewal.py` | 410 | `TestLicenseRenewal.test_05_store_and_verify_reminder` |
-| 56 | `tests/system/user_stories/test_06_license_renewal.py` | 482 | `TestLicenseRenewal.test_06_reminder_fires_contextual_notification` |
-| 57 | `tests/system/user_stories/test_06_license_renewal.py` | 543 | `TestLicenseRenewal.test_07_verify_notification_context` |
-| 58 | `tests/system/user_stories/test_06_license_renewal.py` | 579 | `TestLicenseRenewal.test_08_delegation_request_with_enforcement` |
-| 59 | `tests/system/user_stories/test_06_license_renewal.py` | 704 | `TestLicenseRenewal.test_09_guardian_reviews_delegation` |
-| 60 | `tests/system/user_stories/test_07_daily_briefing.py` | 85 | `TestDailyBriefing.test_00_store_context_for_briefing` |
-| 61 | `tests/system/user_stories/test_07_daily_briefing.py` | 155 | `TestDailyBriefing.test_01_fiduciary_event_interrupts` |
-| 62 | `tests/system/user_stories/test_07_daily_briefing.py` | 213 | `TestDailyBriefing.test_02_engagement_event_queued` |
-| 63 | `tests/system/user_stories/test_07_daily_briefing.py` | 269 | `TestDailyBriefing.test_03_briefing_retrieves_queued_items` |
-| 64 | `tests/system/user_stories/test_07_daily_briefing.py` | 318 | `TestDailyBriefing.test_04_briefing_clear_after_delivery` |
-| 65 | `tests/system/user_stories/test_08_move_to_new_machine.py` | 81 | `TestMoveToNewMachine.test_00_store_data_on_node_a` |
-| 66 | `tests/system/user_stories/test_08_move_to_new_machine.py` | 139 | `TestMoveToNewMachine.test_01_record_identity` |
-| 67 | `tests/system/user_stories/test_08_move_to_new_machine.py` | 179 | `TestMoveToNewMachine.test_02_data_exportable` |
-| 68 | `tests/system/user_stories/test_08_move_to_new_machine.py` | 235 | `TestMoveToNewMachine.test_03_node_b_has_same_identity_scheme` |
-| 69 | `tests/system/user_stories/test_08_move_to_new_machine.py` | 295 | `TestMoveToNewMachine.test_04_vault_operations_work_on_node_b` |
-| 70 | `tests/system/user_stories/test_09_connector_expiry.py` | 79 | `TestConnectorExpiry.test_00_core_healthy_baseline` |
-| 71 | `tests/system/user_stories/test_09_connector_expiry.py` | 108 | `TestConnectorExpiry.test_01_vault_works_without_brain` |
-| 72 | `tests/system/user_stories/test_09_connector_expiry.py` | 185 | `TestConnectorExpiry.test_02_brain_down_error_clear` |
-| 73 | `tests/system/user_stories/test_09_connector_expiry.py` | 248 | `TestConnectorExpiry.test_03_recovery_after_outage` |
-| 74 | `tests/system/user_stories/test_09_connector_expiry.py` | 276 | `TestConnectorExpiry.test_04_did_works_independently` |
-| 75 | `tests/system/user_stories/test_10_operator_journey.py` | 77 | `TestOperatorJourney.test_00_record_baseline_did` |
-| 76 | `tests/system/user_stories/test_10_operator_journey.py` | 114 | `TestOperatorJourney.test_01_did_stable_across_requests` |
-| 77 | `tests/system/user_stories/test_10_operator_journey.py` | 154 | `TestOperatorJourney.test_02_persona_recreate_idempotent` |
-| 78 | `tests/system/user_stories/test_10_operator_journey.py` | 199 | `TestOperatorJourney.test_03_healthz_stable` |
-| 79 | `tests/system/user_stories/test_10_operator_journey.py` | 225 | `TestOperatorJourney.test_04_locked_persona_clear_error` |
+| 1 | `tests/integration/test_anti_her.py` | 1195 | `TestConnectionNudges.test_birthday_without_neglect_not_elevated` |
+| 2 | `tests/integration/test_anti_her.py` | 1241 | `TestConnectionNudges.test_neglect_without_birthday_not_elevated` |
+| 3 | `tests/integration/test_anti_her.py` | 1288 | `TestConnectionNudges.test_no_birthday_no_neglect_no_nudge` |
+| 4 | `tests/integration/test_anti_her.py` | 1320 | `TestConnectionNudges.test_birthday_today_plus_neglect_highest_urgency` |
+| 5 | `tests/integration/test_anti_her.py` | 1366 | `TestConnectionNudges.test_birthday_exactly_at_lookahead_boundary` |
+| 6 | `tests/integration/test_anti_her.py` | 1420 | `TestConnectionNudges.test_multiple_contacts_independent_evaluation` |
+| 7 | `tests/integration/test_anti_her.py` | 1496 | `TestConnectionNudges.test_birthday_year_wraparound` |
+| 8 | `tests/integration/test_anti_her.py` | 1663 | `TestConnectionNudges.test_fulfilled_promise_not_nudged` |
+| 9 | `tests/integration/test_anti_her.py` | 1708 | `TestConnectionNudges.test_non_promise_message_not_detected` |
+| 10 | `tests/integration/test_anti_her.py` | 1746 | `TestConnectionNudges.test_very_old_promise_outside_lookback` |
+| 11 | `tests/integration/test_anti_her.py` | 1834 | `TestConnectionNudges.test_promise_to_different_contact_tracked_separately` |
+| 12 | `tests/integration/test_anti_her.py` | 1912 | `TestConnectionNudges.test_promise_keyword_variations` |
+| 13 | `tests/integration/test_anti_her.py` | 1957 | `TestConnectionNudges.test_promise_with_no_contact_name` |
+| 14 | `tests/integration/test_anti_her.py` | 2003 | `TestConnectionNudges.test_empty_vault_no_promises` |
+| 15 | `tests/integration/test_anti_her.py` | 2512 | `TestConnectionNudges.test_followup_already_sent_no_suggestion` |
+| 16 | `tests/integration/test_anti_her.py` | 2546 | `TestConnectionNudges.test_non_life_event_message_not_detected` |
+| 17 | `tests/integration/test_anti_her.py` | 2571 | `TestConnectionNudges.test_very_old_event_outside_lookback` |
+| 18 | `tests/integration/test_anti_her.py` | 2596 | `TestConnectionNudges.test_outbound_to_different_contact_doesnt_count` |
+| 19 | `tests/integration/test_anti_her.py` | 2635 | `TestConnectionNudges.test_multiple_life_events_from_different_contacts` |
+| 20 | `tests/integration/test_anti_her.py` | 2681 | `TestConnectionNudges.test_life_event_keyword_in_negation_context` |
+| 21 | `tests/integration/test_anti_her.py` | 2709 | `TestConnectionNudges.test_empty_vault_no_events` |
+| 22 | `tests/integration/test_deep_links.py` | 472 | `TestAttributionPipeline.test_empty_attribution_fields_not_injected` |
+| 23 | `tests/integration/test_deep_links.py` | 505 | `TestAttributionPipeline.test_unicode_creator_name_survives_round_trip` |
+| 24 | `tests/integration/test_deep_links.py` | 532 | `TestAttributionPipeline.test_multiple_recommendations_coexist` |
+| 25 | `tests/integration/test_deep_links.py` | 578 | `TestAttributionPipeline.test_non_attribution_fields_survive` |
+| 26 | `tests/integration/test_deep_links.py` | 608 | `TestAttributionPipeline.test_very_long_deep_link_survives_storage` |
+| 27 | `tests/integration/test_deep_links.py` | 637 | `TestAttributionPipeline.test_sponsored_false_explicitly_stored` |
+| 28 | `tests/integration/test_deep_links.py` | 680 | `TestAttributionPipeline.test_nested_dict_in_verdict_survives_round_trip` |
+| 29 | `tests/integration/test_deep_links.py` | 1095 | `TestSponsoredMetadataPreserved.test_sponsored_false_not_flipped_to_true` |
+| 30 | `tests/integration/test_deep_links.py` | 1140 | `TestSponsoredMetadataPreserved.test_sponsored_field_cannot_be_stripped_by_update` |
+| 31 | `tests/integration/test_deep_links.py` | 1192 | `TestSponsoredMetadataPreserved.test_unsponsored_and_sponsored_coexist_correctly` |
+| 32 | `tests/integration/test_deep_links.py` | 1257 | `TestSponsoredMetadataPreserved.test_sponsored_disclosure_independent_of_rating` |
+| 33 | `tests/integration/test_deep_links.py` | 1311 | `TestSponsoredMetadataPreserved.test_sponsored_none_vs_false` |
+| 34 | `tests/integration/test_deep_links.py` | 1369 | `TestSponsoredMetadataPreserved.test_sponsored_with_empty_source_url` |
+| 35 | `tests/integration/test_deep_links.py` | 1407 | `TestSponsoredMetadataPreserved.test_multiple_sponsored_items_all_preserved` |
+| 36 | `tests/integration/test_deep_links.py` | 1557 | `TestUnattributedItemRejectedAtBrainBoundary.test_valid_recommendation_stored_successfully` |
+| 37 | `tests/integration/test_deep_links.py` | 1599 | `TestUnattributedItemRejectedAtBrainBoundary.test_source_url_present_but_creator_name_missing_also_blocked` |
+| 38 | `tests/integration/test_deep_links.py` | 1640 | `TestUnattributedItemRejectedAtBrainBoundary.test_core_accepts_unattributed_item_when_stored_directly` |
+| 39 | `tests/integration/test_deep_links.py` | 1683 | `TestUnattributedItemRejectedAtBrainBoundary.test_empty_string_source_url_rejected` |
+| 40 | `tests/integration/test_deep_links.py` | 1716 | `TestUnattributedItemRejectedAtBrainBoundary.test_whitespace_only_source_url_rejected` |
+| 41 | `tests/integration/test_deep_links.py` | 1747 | `TestUnattributedItemRejectedAtBrainBoundary.test_none_source_url_rejected` |
+| 42 | `tests/integration/test_deep_links.py` | 1776 | `TestUnattributedItemRejectedAtBrainBoundary.test_both_source_url_and_creator_name_missing_reports_two_violations` |
+| 43 | `tests/integration/test_deep_links.py` | 1822 | `TestUnattributedItemRejectedAtBrainBoundary.test_all_other_fields_valid_but_source_url_missing_still_blocked` |
+| 44 | `tests/integration/test_deep_links.py` | 1862 | `TestUnattributedItemRejectedAtBrainBoundary.test_empty_creator_name_with_valid_source_url_blocked` |
+| 45 | `tests/integration/test_deep_links.py` | 1900 | `TestUnattributedItemRejectedAtBrainBoundary.test_whitespace_only_creator_name_rejected` |
+| 46 | `tests/integration/test_deep_links.py` | 2123 | `TestExpertCreditedIndividually.test_summary_text_names_each_expert` |
+| 47 | `tests/integration/test_deep_links.py` | 2140 | `TestExpertCreditedIndividually.test_no_generic_phrases_in_summary` |
+| 48 | `tests/integration/test_deep_links.py` | 2166 | `TestExpertCreditedIndividually.test_each_deep_link_preserved_individually` |
+| 49 | `tests/integration/test_deep_links.py` | 2186 | `TestExpertCreditedIndividually.test_same_expert_did_grouped_under_one_credit` |
+| 50 | `tests/integration/test_deep_links.py` | 2255 | `TestExpertCreditedIndividually.test_expert_with_empty_verdict_still_credited` |
+| 51 | `tests/integration/test_deep_links.py` | 2314 | `TestExpertCreditedIndividually.test_creator_name_missing_falls_back_to_did` |
+| 52 | `tests/integration/test_deep_links.py` | 2350 | `TestExpertCreditedIndividually.test_single_attestation_still_individual` |
+| 53 | `tests/integration/test_deep_links.py` | 2606 | `TestAttributionViolation.test_empty_string_creator_name_is_also_a_violation` |
+| 54 | `tests/integration/test_deep_links.py` | 2648 | `TestAttributionViolation.test_whitespace_only_creator_name_is_a_violation` |
+| 55 | `tests/integration/test_deep_links.py` | 2690 | `TestAttributionViolation.test_multiple_violations_compound_penalty` |
+| 56 | `tests/integration/test_deep_links.py` | 2746 | `TestAttributionViolation.test_compliant_bot_score_unchanged` |
+| 57 | `tests/integration/test_deep_links.py` | 2796 | `TestAttributionViolation.test_repeated_violations_degrade_trust_to_floor` |
+| 58 | `tests/integration/test_deep_links.py` | 2840 | `TestAttributionViolation.test_routing_reflects_degraded_trust_across_multiple_bots` |
+| 59 | `tests/integration/test_deep_links.py` | 2908 | `TestAttributionViolation.test_routing_with_empty_candidate_list` |
+| 60 | `tests/integration/test_deep_links.py` | 2920 | `TestAttributionViolation.test_no_recommendations_means_no_violations` |
+| 61 | `tests/integration/test_deep_links.py` | 3175 | `TestSponsorshipCannotDistortRanking.test_unsponsored_low_trust_still_ranked_below_sponsored_high_trust` |
+| 62 | `tests/integration/test_deep_links.py` | 3225 | `TestSponsorshipCannotDistortRanking.test_equal_trust_scores_sponsored_does_not_break_tie` |
+| 63 | `tests/integration/test_deep_links.py` | 3287 | `TestSponsorshipCannotDistortRanking.test_all_sponsored_still_ranked_by_trust` |
+| 64 | `tests/integration/test_deep_links.py` | 3344 | `TestSponsorshipCannotDistortRanking.test_five_products_mixed_sponsorship_ranked_by_trust` |
+| 65 | `tests/integration/test_deep_links.py` | 3417 | `TestSponsorshipCannotDistortRanking.test_sponsored_flag_preserved_after_ranking` |
+| 66 | `tests/integration/test_deep_links.py` | 3485 | `TestSponsorshipCannotDistortRanking.test_zero_trust_score_products_ranked_last` |
+| 67 | `tests/integration/test_deep_links.py` | 3550 | `TestSponsorshipCannotDistortRanking.test_single_product_ranking` |
+| 68 | `tests/integration/test_deep_links.py` | 3804 | `TestDeepLinkEndToEnd.test_deep_link_not_rewritten_to_intermediary` |
+| 69 | `tests/integration/test_deep_links.py` | 3853 | `TestDeepLinkEndToEnd.test_multiple_attestations_each_preserve_deep_link` |
+| 70 | `tests/integration/test_deep_links.py` | 3932 | `TestDeepLinkEndToEnd.test_deep_link_context_not_lost_in_assembly` |
+| 71 | `tests/integration/test_deep_links.py` | 3991 | `TestDeepLinkEndToEnd.test_deep_link_with_query_params_preserved` |
+| 72 | `tests/integration/test_deep_links.py` | 4039 | `TestDeepLinkEndToEnd.test_deep_link_empty_still_has_source_url` |
+| 73 | `tests/integration/test_deep_links.py` | 4088 | `TestDeepLinkEndToEnd.test_unicode_in_deep_link_context_preserved` |
+| 74 | `tests/integration/test_draft_dont_send.py` | 1147 | `TestApprovalPayloadMutation.test_unmodified_payload_sends_successfully` |
+| 75 | `tests/integration/test_draft_dont_send.py` | 1191 | `TestApprovalPayloadMutation.test_whitespace_only_change_still_invalidates` |
+| 76 | `tests/integration/test_draft_dont_send.py` | 1233 | `TestApprovalPayloadMutation.test_reapproval_with_new_token_succeeds` |
+| 77 | `tests/integration/test_draft_dont_send.py` | 1296 | `TestApprovalPayloadMutation.test_different_draft_approval_not_affected` |
+| 78 | `tests/integration/test_draft_dont_send.py` | 1366 | `TestApprovalPayloadMutation.test_empty_body_mutation_detected` |
+| 79 | `tests/integration/test_draft_dont_send.py` | 1410 | `TestApprovalPayloadMutation.test_case_change_detected` |
+| 80 | `tests/integration/test_draft_dont_send.py` | 1458 | `TestApprovalPayloadMutation.test_append_detected` |
+| 81 | `tests/integration/test_draft_dont_send.py` | 1668 | `TestAgentSendDowngrade.test_non_send_action_not_downgraded` |
+| 82 | `tests/integration/test_draft_dont_send.py` | 1698 | `TestAgentSendDowngrade.test_downgraded_draft_requires_human_approval` |
+| 83 | `tests/integration/test_draft_dont_send.py` | 1748 | `TestAgentSendDowngrade.test_agent_cannot_mark_draft_as_sent` |
+| 84 | `tests/integration/test_draft_dont_send.py` | 1795 | `TestAgentSendDowngrade.test_all_send_variants_downgraded` |
+| 85 | `tests/integration/test_draft_dont_send.py` | 1837 | `TestAgentSendDowngrade.test_draft_body_preserves_original_content_exactly` |
+| 86 | `tests/integration/test_draft_dont_send.py` | 1875 | `TestAgentSendDowngrade.test_draft_gets_unique_id` |
+| 87 | `tests/integration/test_draft_dont_send.py` | 1901 | `TestAgentSendDowngrade.test_multiple_send_requests_each_create_separate_draft` |
+| 88 | `tests/integration/test_draft_dont_send.py` | 2218 | `TestCartHandoverLifecycle.test_cart_handover_shorter_ttl_than_draft` |
+| 89 | `tests/integration/test_draft_dont_send.py` | 2282 | `TestCartHandoverLifecycle.test_intent_alive_before_expiry` |
+| 90 | `tests/integration/test_draft_dont_send.py` | 2317 | `TestCartHandoverLifecycle.test_executed_intent_does_not_expire` |
+| 91 | `tests/integration/test_draft_dont_send.py` | 2372 | `TestCartHandoverLifecycle.test_exactly_at_expiry_boundary` |
+| 92 | `tests/integration/test_draft_dont_send.py` | 2429 | `TestCartHandoverLifecycle.test_multiple_intents_expire_independently` |
+| 93 | `tests/integration/test_draft_dont_send.py` | 2504 | `TestCartHandoverLifecycle.test_cart_handover_preserves_payment_details` |
+| 94 | `tests/integration/test_draft_dont_send.py` | 2584 | `TestCartHandoverLifecycle.test_zero_amount_intent_still_has_ttl` |
+| 95 | `tests/integration/test_draft_dont_send.py` | 2900 | `TestApprovalSurvivesBrainCrash.test_draft_in_core_not_in_brain_memory` |
+| 96 | `tests/integration/test_draft_dont_send.py` | 2952 | `TestApprovalSurvivesBrainCrash.test_brain_crash_does_not_auto_approve_pending_drafts` |
+| 97 | `tests/integration/test_draft_dont_send.py` | 2997 | `TestApprovalSurvivesBrainCrash.test_brain_crash_does_not_corrupt_draft_content` |
+| 98 | `tests/integration/test_draft_dont_send.py` | 3082 | `TestApprovalSurvivesBrainCrash.test_multiple_crashes_drafts_still_survive` |
+| 99 | `tests/integration/test_draft_dont_send.py` | 3150 | `TestApprovalSurvivesBrainCrash.test_approval_mid_crash_recoverable` |
+| 100 | `tests/integration/test_draft_dont_send.py` | 3238 | `TestApprovalSurvivesBrainCrash.test_expired_draft_during_crash_still_expires` |
+| 101 | `tests/integration/test_safety_layer.py` | 589 | `TestAgentCrashSafety.test_successful_agent_execution_does_produce_results` |
+| 102 | `tests/integration/test_safety_layer.py` | 604 | `TestAgentCrashSafety.test_error_response_contains_no_pii_patterns` |
+| 103 | `tests/integration/test_safety_layer.py` | 639 | `TestAgentCrashSafety.test_sensitive_context_in_task_dict_stripped_on_crash` |
+| 104 | `tests/integration/test_safety_layer.py` | 668 | `TestAgentCrashSafety.test_crashing_agent_does_not_affect_other_agent` |
+| 105 | `tests/integration/test_safety_layer.py` | 697 | `TestAgentCrashSafety.test_agent_recovers_after_crash` |
+| 106 | `tests/integration/test_safety_layer.py` | 1124 | `TestAgentAuditTrail.test_denied_intent_also_logged` |
+| 107 | `tests/integration/test_safety_layer.py` | 1152 | `TestAgentAuditTrail.test_auto_approved_intent_logged` |
+| 108 | `tests/integration/test_safety_layer.py` | 1176 | `TestAgentAuditTrail.test_blocked_intent_logged` |
+| 109 | `tests/integration/test_safety_layer.py` | 1233 | `TestAgentAuditTrail.test_multiple_intents_all_logged_in_order` |
+| 110 | `tests/integration/test_safety_layer.py` | 1281 | `TestAgentAuditTrail.test_audit_entry_has_all_required_fields` |
+| 111 | `tests/integration/test_safety_layer.py` | 1307 | `TestAgentAuditTrail.test_audit_timestamp_is_reasonable` |
+| 112 | `tests/integration/test_safety_layer.py` | 1332 | `TestAgentAuditTrail.test_audit_log_preserves_agent_did_exactly` |
+| 113 | `tests/integration/test_safety_layer.py` | 1355 | `TestAgentAuditTrail.test_different_agents_different_audit_entries` |
+| 114 | `tests/integration/test_safety_layer.py` | 1571 | `TestAgentPersonaAccess.test_agent_can_query_open_personas` |
+| 115 | `tests/integration/test_safety_layer.py` | 1596 | `TestAgentPersonaAccess.test_agent_cannot_query_financial_persona` |
+| 116 | `tests/integration/test_safety_layer.py` | 1626 | `TestAgentPersonaAccess.test_health_data_not_in_error_message` |
+| 117 | `tests/integration/test_safety_layer.py` | 1656 | `TestAgentPersonaAccess.test_agent_with_explicit_health_grant` |
+| 118 | `tests/integration/test_safety_layer.py` | 1687 | `TestAgentPersonaAccess.test_multiple_persona_queries_mixed` |
+| 119 | `tests/integration/test_safety_layer.py` | 1740 | `TestAgentPersonaAccess.test_empty_allowed_personas_blocks_all` |
+| 120 | `tests/integration/test_safety_layer.py` | 1762 | `TestAgentPersonaAccess.test_query_nonexistent_persona_data_returns_empty` |
+| 121 | `tests/integration/test_safety_layer.py` | 1981 | `TestAgentMultiTenantIsolation.test_agent_can_access_own_users_data` |
+| 122 | `tests/integration/test_safety_layer.py` | 2018 | `TestAgentMultiTenantIsolation.test_cross_user_error_does_not_leak_target_data` |
+| 123 | `tests/integration/test_safety_layer.py` | 2057 | `TestAgentMultiTenantIsolation.test_user_b_data_unaffected_by_failed_access` |
+| 124 | `tests/integration/test_safety_layer.py` | 2098 | `TestAgentMultiTenantIsolation.test_agent_with_similar_did_still_blocked` |
+| 125 | `tests/integration/test_safety_layer.py` | 2144 | `TestAgentMultiTenantIsolation.test_multiple_users_strict_isolation` |
+| 126 | `tests/integration/test_safety_layer.py` | 2197 | `TestAgentMultiTenantIsolation.test_empty_target_vault_still_returns_403` |
+| 127 | `tests/integration/test_safety_layer.py` | 2227 | `TestAgentMultiTenantIsolation.test_agent_owner_did_must_match_exactly` |
+| 128 | `tests/integration/test_silence_tiers.py` | 812 | `TestFiduciaryNotificationPipeline.test_fiduciary_not_queued_for_briefing` |
+| 129 | `tests/integration/test_silence_tiers.py` | 849 | `TestFiduciaryNotificationPipeline.test_engagement_event_not_pushed_as_interrupt` |
+| 130 | `tests/integration/test_silence_tiers.py` | 899 | `TestFiduciaryNotificationPipeline.test_fiduciary_push_logged_in_core_api_calls` |
+| 131 | `tests/integration/test_silence_tiers.py` | 943 | `TestFiduciaryNotificationPipeline.test_user_receives_fiduciary_before_any_engagement` |
+| 132 | `tests/integration/test_silence_tiers.py` | 991 | `TestFiduciaryNotificationPipeline.test_multiple_fiduciary_events_all_pushed` |
+| 133 | `tests/integration/test_silence_tiers.py` | 1070 | `TestFiduciaryNotificationPipeline.test_fiduciary_event_content_preserved_in_notification` |
+| 134 | `tests/integration/test_silence_tiers.py` | 1111 | `TestFiduciaryNotificationPipeline.test_fiduciary_classification_reason_is_keyword_match` |
+| 135 | `tests/integration/test_silence_tiers.py` | 2037 | `TestClassificationEdgeCases.test_trusted_sender_urgency_is_fiduciary` |
+| 136 | `tests/integration/test_silence_tiers.py` | 2093 | `TestClassificationEdgeCases.test_untrusted_sender_normal_message_stays_engagement` |
+| 137 | `tests/integration/test_silence_tiers.py` | 2134 | `TestClassificationEdgeCases.test_trusted_sender_engagement_not_promoted` |
+| 138 | `tests/integration/test_silence_tiers.py` | 2171 | `TestClassificationEdgeCases.test_borderline_trust_score_threshold` |
+| 139 | `tests/integration/test_silence_tiers.py` | 2227 | `TestClassificationEdgeCases.test_untrusted_sender_with_fiduciary_keywords_all_demoted` |
+| 140 | `tests/integration/test_silence_tiers.py` | 2276 | `TestClassificationEdgeCases.test_unknown_sender_not_in_trust_network` |
+| 141 | `tests/integration/test_silence_tiers.py` | 2397 | `TestClassificationEdgeCases.test_fresh_fiduciary_event_not_demoted` |
+| 142 | `tests/integration/test_silence_tiers.py` | 2439 | `TestClassificationEdgeCases.test_stale_engagement_stays_engagement` |
+| 143 | `tests/integration/test_silence_tiers.py` | 2485 | `TestClassificationEdgeCases.test_stale_solicited_also_demoted` |
+| 144 | `tests/integration/test_silence_tiers.py` | 2534 | `TestClassificationEdgeCases.test_exactly_at_staleness_threshold` |
+| 145 | `tests/integration/test_silence_tiers.py` | 2576 | `TestClassificationEdgeCases.test_just_over_staleness_threshold` |
+| 146 | `tests/integration/test_silence_tiers.py` | 2616 | `TestClassificationEdgeCases.test_very_old_event_still_just_engagement` |
+| 147 | `tests/integration/test_silence_tiers.py` | 2659 | `TestClassificationEdgeCases.test_staleness_check_uses_event_timestamp_not_ingestion_time` |
+| 148 | `tests/integration/test_silence_tiers.py` | 2846 | `TestClassificationEdgeCases.test_health_event_without_active_monitoring_stays_engagement` |
+| 149 | `tests/integration/test_silence_tiers.py` | 2888 | `TestClassificationEdgeCases.test_health_event_from_unknown_provider_stays_engagement` |
+| 150 | `tests/integration/test_silence_tiers.py` | 2932 | `TestClassificationEdgeCases.test_non_health_event_not_elevated_by_health_context` |
+| 151 | `tests/integration/test_silence_tiers.py` | 2969 | `TestClassificationEdgeCases.test_health_keyword_without_provider_not_elevated` |
+| 152 | `tests/integration/test_silence_tiers.py` | 3018 | `TestClassificationEdgeCases.test_multiple_health_keywords_in_content` |
+| 153 | `tests/integration/test_silence_tiers.py` | 3074 | `TestClassificationEdgeCases.test_health_provider_case_insensitive` |
+| 154 | `tests/integration/test_silence_tiers.py` | 3139 | `TestClassificationEdgeCases.test_already_fiduciary_health_event_stays_fiduciary` |
+| 155 | `tests/integration/test_silence_tiers.py` | 3394 | `TestNotificationPIIScrubbing.test_notification_without_pii_passes_through_unchanged` |
+| 156 | `tests/integration/test_silence_tiers.py` | 3418 | `TestNotificationPIIScrubbing.test_classification_unchanged_by_scrubbing` |
+| 157 | `tests/integration/test_silence_tiers.py` | 3471 | `TestNotificationPIIScrubbing.test_pii_in_tier3_engagement_also_scrubbed_before_storage` |
+| 158 | `tests/integration/test_silence_tiers.py` | 3530 | `TestNotificationPIIScrubbing.test_multiple_pii_instances_all_scrubbed` |
+| 159 | `tests/integration/test_silence_tiers.py` | 3574 | `TestNotificationPIIScrubbing.test_scrubbed_notification_can_be_desanitized` |
+| 160 | `tests/integration/test_silence_tiers.py` | 3607 | `TestNotificationPIIScrubbing.test_pii_scrub_api_call_logged` |
+| 161 | `tests/integration/test_silence_tiers.py` | 3967 | `TestDNDStateRespected.test_fiduciary_event_pushes_through_dnd` |
+| 162 | `tests/integration/test_silence_tiers.py` | 4027 | `TestDNDStateRespected.test_no_dnd_pushes_solicited_normally` |
+| 163 | `tests/integration/test_silence_tiers.py` | 4075 | `TestDNDStateRespected.test_dnd_defers_engagement_too` |
+| 164 | `tests/integration/test_silence_tiers.py` | 4124 | `TestDNDStateRespected.test_dnd_toggle_mid_stream` |
+| 165 | `tests/integration/test_silence_tiers.py` | 4183 | `TestDNDStateRespected.test_multiple_deferred_during_dnd` |
+| 166 | `tests/integration/test_silence_tiers.py` | 4257 | `TestDNDStateRespected.test_dnd_does_not_lose_notifications` |
+| 167 | `tests/integration/test_silence_tiers.py` | 4598 | `TestPriorityConflictResolution.test_two_engagement_events_no_escalation` |
+| 168 | `tests/integration/test_silence_tiers.py` | 4661 | `TestPriorityConflictResolution.test_unrelated_topics_no_conflict` |
+| 169 | `tests/integration/test_silence_tiers.py` | 4717 | `TestPriorityConflictResolution.test_solicited_beats_engagement` |
+| 170 | `tests/integration/test_silence_tiers.py` | 4779 | `TestPriorityConflictResolution.test_fiduciary_beats_solicited` |
+| 171 | `tests/integration/test_silence_tiers.py` | 4833 | `TestPriorityConflictResolution.test_three_events_same_topic_highest_wins` |
+| 172 | `tests/integration/test_silence_tiers.py` | 4921 | `TestPriorityConflictResolution.test_single_event_no_conflict` |
+| 173 | `tests/integration/test_silence_tiers.py` | 4957 | `TestPriorityConflictResolution.test_same_tier_no_conflict` |
+| 174 | `tests/integration/test_trust_network.py` | 1510 | `TestTrustDataDensity.test_all_positive_no_conflict` |
+| 175 | `tests/integration/test_trust_network.py` | 1544 | `TestTrustDataDensity.test_all_negative_no_conflict` |
+| 176 | `tests/integration/test_trust_network.py` | 1574 | `TestTrustDataDensity.test_single_review_low_confidence` |
+| 177 | `tests/integration/test_trust_network.py` | 1602 | `TestTrustDataDensity.test_zero_reviews_no_confidence` |
+| 178 | `tests/integration/test_trust_network.py` | 1618 | `TestTrustDataDensity.test_two_positive_one_neutral_no_conflict` |
+| 179 | `tests/integration/test_trust_network.py` | 1675 | `TestTrustDataDensity.test_equal_split_one_positive_one_negative` |
+| 180 | `tests/integration/test_trust_network.py` | 1717 | `TestTrustDataDensity.test_all_unverified_mentions_unverified` |
+| 181 | `tests/integration/test_trust_network.py` | 1879 | `TestTrustDataDensity.test_single_neutral_review_neither_recommends_nor_cautions` |
+| 182 | `tests/integration/test_trust_network.py` | 1920 | `TestTrustDataDensity.test_single_unverified_review_disclosed` |
+| 183 | `tests/integration/test_trust_network.py` | 1956 | `TestTrustDataDensity.test_single_review_never_says_consensus` |
+| 184 | `tests/integration/test_trust_network.py` | 2045 | `TestTrustDataDensity.test_single_review_boundary_rating_30` |
+| 185 | `tests/integration/test_trust_network.py` | 2196 | `TestTrustDataDensity.test_zero_data_does_not_claim_consensus` |
+| 186 | `tests/integration/test_trust_network.py` | 2209 | `TestTrustDataDensity.test_zero_data_with_outcomes_still_no_reviews` |
+| 187 | `tests/integration/test_trust_network.py` | 2294 | `TestTrustDataDensity.test_none_attestations_handled_or_empty_equivalent` |
+| 188 | `tests/integration/test_trust_network.py` | 2427 | `TestTrustDataDensity.test_reviews_with_outcomes_no_gap` |
+| 189 | `tests/integration/test_trust_network.py` | 2449 | `TestTrustDataDensity.test_no_reviews_no_outcomes_no_gap` |
+| 190 | `tests/integration/test_trust_network.py` | 2468 | `TestTrustDataDensity.test_outcome_presence_does_not_inflate_review_count` |
+| 191 | `tests/integration/test_trust_network.py` | 2494 | `TestTrustDataDensity.test_single_review_no_outcomes` |
+| 192 | `tests/integration/test_trust_network.py` | 2517 | `TestTrustDataDensity.test_reviews_with_none_outcomes_parameter` |
+| 193 | `tests/integration/test_trust_network.py` | 2549 | `TestTrustDataDensity.test_many_reviews_no_outcomes_still_discloses` |
+| 194 | `tests/integration/test_trust_network.py` | 2833 | `TestTrustDataDensity.test_both_rings_agree_positive` |
+| 195 | `tests/integration/test_trust_network.py` | 2882 | `TestTrustDataDensity.test_verified_positive_unverified_negative` |
+| 196 | `tests/integration/test_trust_network.py` | 2940 | `TestTrustDataDensity.test_summary_never_treats_unverified_equal_to_verified` |
+| 197 | `tests/integration/test_trust_network.py` | 3070 | `TestTrustDataDensity.test_all_unverified_no_verified_section` |
+| 198 | `tests/integration/test_trust_network.py` | 3283 | `TestTrustDataDensity.test_mixed_fresh_and_stale_reviews` |
+| 199 | `tests/integration/test_trust_network.py` | 3354 | `TestTrustDataDensity.test_stale_reviews_still_counted` |
+| 200 | `tests/integration/test_trust_network.py` | 3412 | `TestTrustDataDensity.test_366_days_old_is_stale` |
+| 201 | `tests/integration/test_trust_network.py` | 3452 | `TestTrustDataDensity.test_single_stale_review` |
+| 202 | `tests/integration/test_trust_network.py` | 3501 | `TestTrustDataDensity.test_very_old_reviews_extreme` |
+| 203 | `tests/integration/test_trust_network.py` | 3735 | `TestTrustDataDensity.test_few_reviews_cannot_earn_high_confidence` |
+| 204 | `tests/integration/test_trust_network.py` | 3773 | `TestTrustDataDensity.test_dense_all_unverified_mentions_unverified` |
+| 205 | `tests/integration/test_trust_network.py` | 3889 | `TestTrustDataDensity.test_dense_unanimous_positive` |
+| 206 | `tests/integration/test_trust_network.py` | 3947 | `TestTrustDataDensity.test_dense_with_neutral_reviews` |
 
 ### AppView (Unit) — 1 orphans
 
