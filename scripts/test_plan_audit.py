@@ -543,6 +543,42 @@ def reconcile(plan_entries: list[PlanEntry], code_tests: list[CodeTest]) -> dict
     }
 
 
+# ── 3b. Tier filter ──────────────────────────────────────────────────────────
+
+def filter_result_by_tier(result: dict, tier: str) -> dict:
+    """Return a new result dict containing only entries/tests for the given tier."""
+    plan_entries = [e for e in result["plan_entries"] if e.tier == tier]
+    code_tests = [ct for ct in result["code_tests"] if ct.tier == tier]
+
+    implemented = [e for e in plan_entries if e.implemented]
+    unimplemented = [e for e in plan_entries if not e.implemented and not e.deferred and not e.manual]
+    deferred = [e for e in plan_entries if e.deferred]
+    manual = [e for e in plan_entries if e.manual]
+
+    orphan_tests = [ct for ct in result["orphan_tests"] if ct.tier == tier]
+
+    func_counts = {k: v for k, v in result["func_counts"].items() if k == tier}
+    subtest_counts = {k: v for k, v in result["subtest_counts"].items() if k == tier}
+
+    code_by_plan_id = {
+        pid: cts for pid, cts in result["code_by_plan_id"].items()
+        if any(ct.tier == tier for ct in cts)
+    }
+
+    return {
+        "plan_entries": plan_entries,
+        "code_tests": code_tests,
+        "implemented": implemented,
+        "unimplemented": unimplemented,
+        "deferred": deferred,
+        "manual": manual,
+        "orphan_tests": orphan_tests,
+        "func_counts": func_counts,
+        "subtest_counts": subtest_counts,
+        "code_by_plan_id": code_by_plan_id,
+    }
+
+
 # ── 4. Output formatters ─────────────────────────────────────────────────────
 
 def print_summary(result: dict):
@@ -602,6 +638,11 @@ def print_summary(result: dict):
         t = by_tier.get(tier, {"total": 0, "implemented": 0, "unimplemented": 0, "deferred": 0, "manual": 0})
         code_count = func_counts.get(tier, 0)
         sub_count = subtest_counts.get(tier, 0)
+
+        # Skip tiers with no data (happens when --tier filter is active)
+        if t["total"] == 0 and code_count == 0 and sub_count == 0:
+            continue
+
         plan_file = plan_files.get(tier, "—")
         label = tier_labels.get(tier, tier)
 
@@ -892,12 +933,26 @@ def output_json(result: dict):
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="Dina Test Plan Audit")
+    valid_tiers = ["core", "brain", "integration", "e2e", "release", "cli", "user_story", "appview_unit", "appview_int"]
+
+    parser = argparse.ArgumentParser(
+        description="Dina Test Plan Audit",
+        epilog=f"Valid --tier values: {', '.join(valid_tiers)}",
+    )
     parser.add_argument("--summary", action="store_true", help="Summary table only")
     parser.add_argument("--orphans", action="store_true", help="List orphan test functions")
     parser.add_argument("--unimplemented", action="store_true", help="List unimplemented plan entries")
     parser.add_argument("--json", action="store_true", help="JSON output")
+    parser.add_argument(
+        "--tier",
+        type=str,
+        default=None,
+        help=f"Filter to a single tier: {', '.join(valid_tiers)}",
+    )
     args = parser.parse_args()
+
+    if args.tier and args.tier not in valid_tiers:
+        parser.error(f"Unknown tier '{args.tier}'. Valid tiers: {', '.join(valid_tiers)}")
 
     print("Extracting plan entries from test plan documents...", file=sys.stderr)
     plan_entries = extract_plan_entries()
@@ -909,6 +964,11 @@ def main():
 
     print("Cross-referencing...", file=sys.stderr)
     result = reconcile(plan_entries, code_tests)
+
+    # Apply tier filter if specified
+    if args.tier:
+        result = filter_result_by_tier(result, args.tier)
+        print(f"  Filtered to tier: {args.tier}", file=sys.stderr)
 
     if args.json:
         output_json(result)
