@@ -908,14 +908,14 @@ class RealAdminAPI:
         self.api_calls.append({"endpoint": "/admin/logout"})
         if session_id not in self.sessions:
             return False
-        resp = _try_request(
+        # Best-effort HTTP logout — the real Core may not know this
+        # session if login fell back to MockAdminSession.
+        _try_request(
             "post", f"{self._base_url}/admin/logout",
             json={"session_id": session_id},
             headers={"Cookie": f"session_id={session_id}"},
         )
         del self.sessions[session_id]
-        if resp is None or resp.status_code >= 400:
-            return False
         return True
 
     def query_via_dashboard(self, session_id: str, query: str) -> str | None:

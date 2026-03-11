@@ -370,9 +370,12 @@ class TestHealthAndLogs:
 
     # TST-INT-103
     def test_no_pii_in_container_logs(
-        self, mock_compose: MockDockerCompose, mock_scrubber: MockPIIScrubber
+        self, mock_compose: MockDockerCompose,
     ) -> None:
         """No PII (emails, phone numbers) appears in any container log."""
+        # Use MockPIIScrubber directly: this test verifies the scrub-before-log
+        # principle with mock containers, not the real PII API endpoint.
+        mock_scrubber = MockPIIScrubber()
         mock_compose.up()
 
         # Real PII that the scrubber must strip before it reaches logs
