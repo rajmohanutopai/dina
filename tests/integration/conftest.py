@@ -201,7 +201,21 @@ def mock_human() -> MockHuman:
 
 
 @pytest.fixture
-def mock_identity() -> MockIdentity:
+def mock_identity(docker_services) -> MockIdentity:
+    if DOCKER_MODE:
+        # Query the actual DID from the running Core node so all fixtures agree
+        import httpx
+        try:
+            resp = httpx.get(
+                f"{docker_services.core_url}/.well-known/atproto-did",
+                timeout=5,
+            )
+            if resp.status_code == 200:
+                text = resp.text.strip()
+                if text.startswith("did:"):
+                    return MockIdentity(did=text)
+        except Exception:
+            pass
     return MockIdentity(did="did:plc:a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0")
 
 
@@ -644,6 +658,7 @@ def mock_admin_api(
     if DOCKER_MODE:
         return RealAdminAPI(
             docker_services.brain_url,
+            core_url=docker_services.core_url,
         )
     return MockAdminAPI(mock_identity, mock_vault)
 

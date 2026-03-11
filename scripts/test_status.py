@@ -636,6 +636,97 @@ def prescan_integration_sections(
 
 
 # ---------------------------------------------------------------------------
+# Brain pre-scan: map function names → section numbers
+#
+# Brain tests encode their TEST_PLAN section via `# TST-BRAIN-NNN` comments.
+# Tests named `test_tst_brain_NNN_*` get NNN extracted as a section number
+# by _PY_SECTION_RE, but NNN is the *test-case ID* (e.g. 514), not the
+# *section number* (e.g. 17).  We build a TST-BRAIN-NNN → parent section
+# mapping from TEST_PLAN.md and use it to override the extracted number.
+# ---------------------------------------------------------------------------
+
+_TST_BRAIN_RE = re.compile(r"(TST-BRAIN-\d+)")
+
+
+def _build_tst_brain_section_map(plan_path: Path) -> dict[str, int]:
+    """Build {TST-BRAIN-NNN: major_section_number} from plan headers."""
+    mapping: dict[str, int] = {}
+    current_section: int | None = None
+    for line in plan_path.read_text().splitlines():
+        hm = re.match(r"^#{2,4}\s+(\d+)", line)
+        if hm:
+            current_section = int(hm.group(1))
+        if current_section is not None:
+            for tm in _TST_BRAIN_RE.finditer(line):
+                mapping[tm.group(1)] = current_section
+    return mapping
+
+
+_FUNC_DEF_ASYNC_RE = re.compile(r"^\s*(?:async\s+)?def (test_\w+)")
+
+# File-level section fallback for brain test files that don't use
+# TST-BRAIN-NNN comments.  Maps filename (without path) → section number.
+_BRAIN_FILE_SECTION_FALLBACK: dict[str, int] = {
+    "test_telegram.py": 6,      # MCP / Agent Delegation (connectors)
+    "test_vault_context.py": 2,  # Guardian Loop (agentic vault reasoning)
+    "test_tier_classifier.py": 14,  # Embedding Generation (tier classification)
+    "test_admin_html.py": 8,    # Admin UI
+    "test_pipeline_safety.py": 2,  # Guardian Loop (pipeline safety)
+}
+
+
+def prescan_brain_sections(
+    test_dir: Path,
+    plan_path: Path,
+) -> dict[str, int]:
+    """Return {function_name: major_section_number} for brain tests.
+
+    Uses TST-BRAIN → section lookups from TEST_PLAN.md, with per-file
+    fallback for tests whose ID is not in the plan.
+    """
+    id_map = _build_tst_brain_section_map(plan_path)
+    mapping: dict[str, int] = {}
+
+    for filepath in sorted(test_dir.glob("test_*.py")):
+        lines = filepath.read_text().splitlines()
+
+        # First pass: collect (func_name, tst_brain_id) pairs.
+        # Brain tests use `async def` and `# TST-BRAIN-NNN` in xfail
+        # reasons or standalone comments above the function.
+        pairs: list[tuple[str, str | None]] = []
+        pending_id: str | None = None
+        for line in lines:
+            tm = _TST_BRAIN_RE.search(line)
+            if tm:
+                pending_id = tm.group(1)
+            fm = _FUNC_DEF_ASYNC_RE.match(line)
+            if fm:
+                pairs.append((fm.group(1), pending_id))
+                pending_id = None
+
+        # Determine file-level fallback: most common section among mapped
+        # tests, or explicit filename → section fallback for files that
+        # don't use TST-BRAIN comments at all.
+        mapped_sections = [
+            id_map[tid] for _, tid in pairs if tid and tid in id_map
+        ]
+        fallback: int | None = None
+        if mapped_sections:
+            fallback = Counter(mapped_sections).most_common(1)[0][0]
+        if fallback is None:
+            fallback = _BRAIN_FILE_SECTION_FALLBACK.get(filepath.name)
+
+        # Second pass: assign sections
+        for func_name, tid in pairs:
+            if tid and tid in id_map:
+                mapping[func_name] = id_map[tid]
+            elif fallback is not None:
+                mapping[func_name] = fallback
+
+    return mapping
+
+
+# ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
 
@@ -657,6 +748,7 @@ class SectionStats:
     passed: int = 0
     skipped: int = 0
     failed: int = 0
+    xfail: int = 0
     duration: float = 0.0  # sum of test durations in seconds
 
     @property
@@ -665,8 +757,11 @@ class SectionStats:
             return "FAILED"
         if self.total == 0:
             return "Empty"
-        if self.passed == self.total:
-            return "Complete"
+        if self.passed + self.skipped + self.xfail == self.total:
+            if self.xfail > 0 and self.passed > 0:
+                return "Partial"  # xfail tests still need work
+            if self.passed == self.total:
+                return "Complete"
         if self.passed > 0:
             return "Partial"
         return "Skip"
@@ -683,12 +778,15 @@ _GO_SECTION_RE = re.compile(r"^Test\w+?_(\d+)_")
 # also handles classes: "tests/...py::TestClass::test_func PASSED"
 # also handles parametrize: "...::test_func[param-A desc] PASSED"
 _PY_LINE_RE = re.compile(
-    r"^([^\s:]+)::((?:\w+::)*test_\w+(?:\[.*?\])?)\s+(PASSED|SKIPPED|FAILED|ERROR)"
+    r"^([^\s:]+)::((?:\w+::)*test_\w+(?:\[.*?\])?)\s+(PASSED|SKIPPED|FAILED|ERROR|XFAIL|XPASS)"
 )
 # First number group after subject: test_auth_1_... → 1
 _PY_SECTION_RE = re.compile(r"^test_\w+?_(\d+)_")
 
-_STATUS_MAP = {"PASSED": "PASS", "SKIPPED": "SKIP", "FAILED": "FAIL", "ERROR": "FAIL"}
+_STATUS_MAP = {
+    "PASSED": "PASS", "SKIPPED": "SKIP", "FAILED": "FAIL", "ERROR": "FAIL",
+    "XFAIL": "XFAIL", "XPASS": "XPASS",
+}
 _GO_JSON_ACTION_MAP = {"pass": "PASS", "skip": "SKIP", "fail": "FAIL"}
 
 
@@ -866,6 +964,7 @@ SUITES = {
         "cwd": None,
         "plan": "brain/tests/TEST_PLAN.md",
         "parser": "pytest",
+        "test_dir": "brain/tests",
     },
     "integration": {
         "name": "Integration",
@@ -925,6 +1024,10 @@ _E2E_SECTION_MAP: dict[int, str] = {
     18: "Move to a New Machine",
     19: "Connector Failure & Recovery",
     20: "Operator & Upgrade Journeys",
+    21: "Anti-Her (Thesis Invariant)",
+    22: "Verified Truth (Thesis Invariant)",
+    23: "Silence Stress (Thesis Invariant)",
+    24: "Agent Sandbox (Thesis Invariant)",
 }
 
 _E2E_FILE_SECTION_RE = re.compile(r"test_suite_(\d+)_")
@@ -1096,14 +1199,20 @@ def run_suite(
     elif "plan" in cfg:
         plan_path = PROJECT_ROOT / cfg["plan"]
         section_map = parse_section_headers(plan_path)
-        if "test_dir" in cfg:
-            manifest_path = (
-                PROJECT_ROOT / cfg["manifest"] if "manifest" in cfg else None
-            )
+        if "test_dir" in cfg and "manifest" in cfg:
+            # Integration suite: uses TST-INT IDs + manifest
+            manifest_path = PROJECT_ROOT / cfg["manifest"]
             section_override = prescan_integration_sections(
                 PROJECT_ROOT / cfg["test_dir"],
                 plan_path,
                 manifest_path,
+            )
+        elif "test_dir" in cfg:
+            # Brain suite (or any suite with test_dir + plan, no manifest):
+            # uses TST-BRAIN IDs from plan headers
+            section_override = prescan_brain_sections(
+                PROJECT_ROOT / cfg["test_dir"],
+                plan_path,
             )
     else:
         # Flat suite (e.g. CLI) — no section plan, all tests grouped as one
@@ -1143,6 +1252,52 @@ def run_suite(
         tests = parse_go_json(output)
     else:
         tests = parse_pytest_output(output, section_override)
+
+    # If subprocess exited non-zero, the suite is not green regardless
+    # of how many individual test results were parsed.  Two cases:
+    #
+    # 1. No tests parsed → runner itself failed (import/collection error).
+    #    Surface a synthetic failure.
+    # 2. Some tests parsed → partial run (e.g. pytest crashed mid-suite,
+    #    or XPASS with strict=True, or fixture teardown error).  Append
+    #    a synthetic failure so aggregated counts never show 100% pass
+    #    when the runner signalled failure.
+    if result.returncode != 0:
+        has_any_failure = any(
+            t.status in ("FAIL", "ERROR", "XPASS") for t in tests
+        )
+        if not tests:
+            tests = [TestResult(
+                name="<suite_execution_failed>",
+                status="FAIL",
+                section=0,
+                output=output[-2000:] if output else "(no output)",
+            )]
+            print(
+                f"  WARNING: {cfg['name']} exited with code {result.returncode} "
+                f"but produced no parseable test results",
+                file=sys.stderr,
+            )
+        elif not has_any_failure:
+            # Tests were parsed but none were marked as failures, yet
+            # pytest returned non-zero.  Inject a sentinel so the
+            # dashboard reflects the runner's actual exit status.
+            tests.append(TestResult(
+                name="<runner_exit_nonzero>",
+                status="FAIL",
+                section=0,
+                output=(
+                    f"pytest exited with code {result.returncode} but all "
+                    f"{len(tests)} parsed tests appeared to pass. "
+                    f"Possible cause: collection error, fixture teardown "
+                    f"failure, or plugin error after test execution."
+                ),
+            ))
+            print(
+                f"  WARNING: {cfg['name']} exited with code {result.returncode} "
+                f"despite {len(tests) - 1} parsed tests appearing to pass",
+                file=sys.stderr,
+            )
 
     # Flat suites (no plan, no e2e_sections): all tests → section 1
     if "plan" not in cfg and not cfg.get("e2e_sections"):
@@ -1189,6 +1344,12 @@ def aggregate(
             s.passed += 1
         elif t.status == "SKIP":
             s.skipped += 1
+        elif t.status == "XFAIL":
+            s.xfail += 1
+        elif t.status == "XPASS":
+            # Strict xfail unexpectedly passing IS a failure — it means
+            # the xfail marker is stale and the suite should not be green.
+            s.failed += 1
         else:
             s.failed += 1
 
@@ -1305,7 +1466,9 @@ def _write_structured_log(
     passed = sum(s.passed for s in sections)
     failed = sum(s.failed for s in sections)
     skipped = sum(s.skipped for s in sections)
-    lines.append(f"  Total: {total}  |  Passed: {passed}  |  Failed: {failed}  |  Skipped: {skipped}")
+    xfailed = sum(s.xfail for s in sections)
+    xf_str = f"  |  XFail: {xfailed}" if xfailed else ""
+    lines.append(f"  Total: {total}  |  Passed: {passed}  |  Failed: {failed}  |  Skipped: {skipped}{xf_str}")
     lines.append("")
 
     # List failures upfront for quick reference
@@ -1332,7 +1495,8 @@ def _write_structured_log(
 
         lines.append(f"{'─' * 80}")
         lines.append(f"  § {s.number}  {s.name}")
-        lines.append(f"  Tests: {s.total}  |  Pass: {s.passed}  |  Fail: {s.failed}  |  Skip: {s.skipped}")
+        xf_str = f"  |  XFail: {s.xfail}" if s.xfail else ""
+        lines.append(f"  Tests: {s.total}  |  Pass: {s.passed}  |  Fail: {s.failed}  |  Skip: {s.skipped}{xf_str}")
         lines.append(f"{'─' * 80}")
 
         for t in sorted(sec_tests, key=lambda x: x.name):
@@ -1373,21 +1537,26 @@ def render_suite(
     if wall_time > 0:
         header += f"  ({_fmt_duration(wall_time).strip()})"
     print(f"\n{c.bold(header)}")
+    any_xfail = any(s.xfail > 0 for s in sections)
+    xf_hdr = " | XFail" if any_xfail else ""
+    xf_sep = f"\u253c{_SEP * 6}" if any_xfail else ""
     print(
         f" {'§':>3} | {'Section':<40} | {'Total':>5}"
         f" | {'Pass':>4} | {'Skip':>4} | {'Fail':>4}"
+        f"{xf_hdr}"
         f" | {'Time':>7} | Status"
     )
     rule = (
         f"{_SEP * 5}\u253c{_SEP * 42}\u253c{_SEP * 7}"
         f"\u253c{_SEP * 6}\u253c{_SEP * 6}\u253c{_SEP * 6}"
+        f"{xf_sep}"
         f"\u253c{_SEP * 9}\u253c{_SEP * 10}"
     )
     print(rule)
 
     by_section = _group_tests_by_section(tests) if verbose and tests else {}
 
-    tot = pas = ski = fai = 0
+    tot = pas = ski = fai = xfa = 0
     tot_dur = 0.0
     for s in sections:
         if s.total == 0:
@@ -1396,10 +1565,13 @@ def render_suite(
         pas += s.passed
         ski += s.skipped
         fai += s.failed
+        xfa += s.xfail
         tot_dur += s.duration
+        xf_col = f" | {s.xfail:>4}" if any_xfail else ""
         print(
             f" {s.number:>3} | {s.name[:40]:<40} | {s.total:>5}"
             f" | {s.passed:>4} | {s.skipped:>4} | {s.failed:>4}"
+            f"{xf_col}"
             f" | {_fmt_duration(s.duration)} | {c.status(s.status_label)}"
         )
 
@@ -1410,56 +1582,70 @@ def render_suite(
                     "PASS": c.green("PASS"),
                     "SKIP": c.dim("SKIP"),
                     "FAIL": c.red("FAIL"),
+                    "XFAIL": c.yellow("XFAL"),
+                    "XPASS": c.yellow("XPAS"),
                 }.get(t.status, t.status)
                 dur_str = _fmt_duration(t.duration) if t.duration > 0 else ""
                 print(f"     |   {status_str} {t.name[:70]:<70} {dur_str}")
 
     print(rule)
+    xf_tot = f" | {xfa:>4}" if any_xfail else ""
     print(
         f" {'':>3} | {'TOTAL':<40} | {tot:>5}"
         f" | {pas:>4} | {ski:>4} | {fai:>4}"
+        f"{xf_tot}"
         f" | {_fmt_duration(tot_dur)} |"
     )
 
 
 def render_grand_summary(
-    rows: list[tuple[str, int, int, int, int, float]],
+    rows: list[tuple[str, int, int, int, int, int, float]],
     c: Colors,
 ) -> None:
     """Print the grand summary across all suites."""
+    any_xfail = any(xf > 0 for _, _, _, _, _, xf, _ in rows)
+    xf_hdr = " | XFail" if any_xfail else ""
+    xf_sep = f"\u253c{_SEP * 6}" if any_xfail else ""
     print(f"\n{c.bold('=== Grand Summary ===')}")
     print(
         f" {'Suite':<14} | {'Total':>5}"
         f" | {'Pass':>4} | {'Skip':>4} | {'Fail':>4}"
+        f"{xf_hdr}"
         f" | {'Time':>7} | Progress"
     )
     rule = (
         f"{_SEP * 16}\u253c{_SEP * 7}"
         f"\u253c{_SEP * 6}\u253c{_SEP * 6}\u253c{_SEP * 6}"
+        f"{xf_sep}"
         f"\u253c{_SEP * 9}\u253c{_SEP * 10}"
     )
     print(rule)
 
-    gt = gp = gs = gf = 0
+    gt = gp = gs = gf = gx = 0
     g_time = 0.0
-    for name, t, p, s, f, dur in rows:
+    for name, t, p, s, f, xf, dur in rows:
         gt += t
         gp += p
         gs += s
         gf += f
+        gx += xf
         g_time += dur
         pct = (p / t * 100) if t else 0
+        xf_col = f" | {xf:>4}" if any_xfail else ""
         print(
             f" {name:<14} | {t:>5}"
             f" | {p:>4} | {s:>4} | {f:>4}"
+            f"{xf_col}"
             f" | {_fmt_duration(dur)} | {pct:>5.1f}%"
         )
 
     print(rule)
     gpct = (gp / gt * 100) if gt else 0
+    xf_tot = f" | {gx:>4}" if any_xfail else ""
     print(
         f" {'TOTAL':<14} | {gt:>5}"
         f" | {gp:>4} | {gs:>4} | {gf:>4}"
+        f"{xf_tot}"
         f" | {_fmt_duration(g_time)} | {gpct:>5.1f}%"
     )
 
@@ -1617,7 +1803,7 @@ def main() -> None:
 
     try:
         all_json: dict = {}
-        summary_rows: list[tuple[str, int, int, int, int, float]] = []
+        summary_rows: list[tuple[str, int, int, int, int, int, float]] = []
 
         for key in keys:
             cfg = SUITES[key]
@@ -1643,6 +1829,7 @@ def main() -> None:
             pas = sum(s.passed for s in sections)
             ski = sum(s.skipped for s in sections)
             fai = sum(s.failed for s in sections)
+            xfa = sum(s.xfail for s in sections)
             sec_dur = sum(s.duration for s in sections)
 
             if json_mode:
@@ -1676,6 +1863,7 @@ def main() -> None:
                         "passed": pas,
                         "skipped": ski,
                         "failed": fai,
+                        "xfail": xfa,
                         "duration_s": round(sec_dur, 3),
                         "wall_time_s": round(wall_time, 3),
                     },
@@ -1684,7 +1872,7 @@ def main() -> None:
                 render_suite(name, sections, c, wall_time,
                              tests=tests, verbose=verbose)
 
-            summary_rows.append((name, tot, pas, ski, fai, wall_time))
+            summary_rows.append((name, tot, pas, ski, fai, xfa, wall_time))
 
         total_time = _time.monotonic() - script_t0
 

@@ -272,6 +272,14 @@ class TestSanchoMoment:
                 )
 
         # --- DND ON: no push, queued in briefing ---
+        # Ensure Sancho's sharing policy allows context (a prior test may
+        # have set context="none" and sharing policies are session-scoped).
+        sancho.set_sharing_policy(
+            don_alonso.did,
+            context="full",
+            presence="eta_only",
+        )
+
         don_alonso.dnd_active = True
         don_alonso.notifications.clear()
         don_alonso.briefing_queue.clear()

@@ -1184,7 +1184,8 @@ def test_pii_3_6_4_safe_time(presidio_scrubber) -> None:
 
 
 # TST-BRAIN-440
-def test_pii_3_7_1_vault_general_patterns() -> None:
+@pytest.mark.asyncio
+async def test_pii_3_7_1_vault_general_patterns() -> None:
     """SS3.7.1: GENERAL sensitivity uses patterns-only scrubbing (names not scrubbed)."""
     from src.service.entity_vault import EntityVaultService
 
@@ -1209,15 +1210,12 @@ def test_pii_3_7_1_vault_general_patterns() -> None:
         classifier=classifier,
     )
 
-    import asyncio
     mock_llm = AsyncMock()
     mock_llm.complete.return_value = {"content": "response"}
 
-    asyncio.get_event_loop().run_until_complete(
-        evs.scrub_and_call(
-            llm=mock_llm,
-            messages=[{"role": "user", "content": "Hello John"}],
-        )
+    await evs.scrub_and_call(
+        llm=mock_llm,
+        messages=[{"role": "user", "content": "Hello John"}],
     )
 
     # GENERAL: should use scrub_patterns_only, not full scrub.
@@ -1226,7 +1224,8 @@ def test_pii_3_7_1_vault_general_patterns() -> None:
 
 
 # TST-BRAIN-441
-def test_pii_3_7_2_vault_sensitive_scrub() -> None:
+@pytest.mark.asyncio
+async def test_pii_3_7_2_vault_sensitive_scrub() -> None:
     """SS3.7.2: SENSITIVE sensitivity uses full NER scrubbing.
 
     Verifies:
@@ -1268,15 +1267,12 @@ def test_pii_3_7_2_vault_sensitive_scrub() -> None:
         classifier=classifier,
     )
 
-    import asyncio
     mock_llm = AsyncMock()
     mock_llm.complete.return_value = {"content": "<<PII_PERSON_1>> needs insulin"}
 
-    asyncio.get_event_loop().run_until_complete(
-        evs.scrub_and_call(
-            llm=mock_llm,
-            messages=[{"role": "user", "content": "Dr. Sharma diagnosed with severe diabetes"}],
-        )
+    await evs.scrub_and_call(
+        llm=mock_llm,
+        messages=[{"role": "user", "content": "Dr. Sharma diagnosed with severe diabetes"}],
     )
 
     # 1. Routing: SENSITIVE must use full scrub, not patterns-only
@@ -1303,7 +1299,8 @@ def test_pii_3_7_2_vault_sensitive_scrub() -> None:
 
 
 # TST-BRAIN-442
-def test_pii_3_7_3_vault_local_only() -> None:
+@pytest.mark.asyncio
+async def test_pii_3_7_3_vault_local_only() -> None:
     """SS3.7.3: LOCAL_ONLY sensitivity raises PIIScrubError — cloud send refused."""
     from src.service.entity_vault import EntityVaultService
     from src.domain.enums import Sensitivity
@@ -1323,15 +1320,12 @@ def test_pii_3_7_3_vault_local_only() -> None:
         classifier=classifier,
     )
 
-    import asyncio
     mock_llm = AsyncMock()
 
     with pytest.raises(PIIScrubError, match="LOCAL_ONLY"):
-        asyncio.get_event_loop().run_until_complete(
-            evs.scrub_and_call(
-                llm=mock_llm,
-                messages=[{"role": "user", "content": "Top secret data"}],
-            )
+        await evs.scrub_and_call(
+            llm=mock_llm,
+            messages=[{"role": "user", "content": "Top secret data"}],
         )
 
     # LLM should never be called.

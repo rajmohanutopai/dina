@@ -12,6 +12,7 @@ pure mock.
 
 from __future__ import annotations
 
+import enum
 import hashlib
 import json
 import os
@@ -21,6 +22,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+
+def _json_default(obj: Any) -> Any:
+    """JSON serializer for objects not serializable by default encoder."""
+    if isinstance(obj, enum.Enum):
+        return obj.value
+    return str(obj)
 
 import base58
 import httpx
@@ -266,7 +274,7 @@ class RealVault(MockVault):
               persona: PersonaType | None = None) -> None:
         persona_name = persona.value if persona else "personal"
         self._item_persona[(tier, key)] = persona_name
-        body_text = json.dumps(value) if isinstance(value, dict) else str(value)
+        body_text = json.dumps(value, default=_json_default) if isinstance(value, dict) else str(value)
         # Put key in Summary for FTS-based retrieval
         if isinstance(value, dict):
             fts_parts = [key] + [str(v) for v in value.values() if isinstance(v, str)]
@@ -384,6 +392,10 @@ class RealVault(MockVault):
         return super().retrieve(tier, key, persona)
 
     def search_fts(self, query: str) -> list[str]:
+        # If no items have been indexed in this test, use mock behavior.
+        # This prevents session-scoped data from leaking into per-test results.
+        if not self._indexed_keys:
+            return super().search_fts(query)
         # Real vault has per-persona isolation. Search across all personas
         # that have items stored, to match mock vault's shared-namespace behavior.
         personas_to_search = set(self._item_persona.values()) or {"personal"}
@@ -556,6 +568,12 @@ class RealPIIScrubber:
                     replacement_map[token] = value
                     self._known_pii.add(value)
 
+        # If both API tiers returned the text unchanged, log a warning.
+        # Do NOT fall back to mock scrubbing — integration tests must prove
+        # the real Core/Brain scrub path is alive.
+        if scrubbed == text and not replacement_map:
+            self.scrub_log.append({"warning": "real_scrub_no_change", "text_len": len(text)})
+
         self.scrub_log.append({
             "original_length": len(text),
             "scrubbed_length": len(scrubbed),
@@ -593,12 +611,24 @@ class RealGoCore(MockGoCore):
                  client_token: str = "") -> None:
         from tests.integration.mocks import MockIdentity, MockPIIScrubber
         mock_vault = vault or MockVault()
-        mock_identity = MockIdentity(did="did:plc:DockerTestUser")
+        # Query the actual DID from the running Core via the unauthenticated
+        # AT Protocol well-known endpoint (returns plain-text DID).
+        actual_did = "did:plc:DockerTestUser"
+        signer = _get_signer("brain")
+        did_resp = _try_request(
+            "get", f"{base_url.rstrip('/')}/.well-known/atproto-did",
+            headers={},
+        )
+        if did_resp is not None and did_resp.status_code == 200:
+            text = did_resp.text.strip()
+            if text.startswith("did:"):
+                actual_did = text
+        mock_identity = MockIdentity(did=actual_did)
         mock_scrubber = scrubber or MockPIIScrubber()
         super().__init__(mock_vault, mock_identity, mock_scrubber)
         self._base_url = base_url.rstrip("/")
         self._client_token = client_token
-        self._signer = _get_signer("brain")
+        self._signer = signer
 
     def _headers(self) -> dict[str, str]:
         return {}
@@ -666,31 +696,24 @@ class RealGoCore(MockGoCore):
 
     def did_verify(self, data: bytes, signature: str) -> bool:
         self.api_calls.append({"endpoint": "/v1/did/verify"})
-        # Use the node's own DID (from /v1/did document) for self-verification,
-        # since did_sign uses the node's identity key.
+        # Use the node's own DID for self-verification.
+        # Query via /.well-known/atproto-did (unauthenticated, plain text).
         did_to_verify = self._identity.root_did
         did_resp = _try_request(
-            "get", f"{self._base_url}/v1/did",
-            headers=self._headers(),
-            signer=self._signer,
+            "get", f"{self._base_url}/.well-known/atproto-did",
+            headers={},
         )
-        if did_resp is not None:
-            doc = did_resp.json()
-            # /v1/did returns the DID document directly; "id" is the DID string
-            did_to_verify = doc.get("id", doc.get("did", did_to_verify))
+        if did_resp is not None and did_resp.status_code == 200:
+            text = did_resp.text.strip()
+            if text.startswith("did:"):
+                did_to_verify = text
         verify_payload = {
             "data": data.hex(),
             "signature": signature,
             "did": did_to_verify,
         }
-        resp = _try_request(
-            "post", f"{self._base_url}/v1/did/verify",
-            json=verify_payload,
-            headers=self._admin_headers(),
-        )
-        if resp is not None:
-            return resp.json().get("valid", False)
-        # Retry with raw request to get the actual error
+        # Make the request directly (not via _try_request) so we can
+        # distinguish "invalid signature" (400 → False) from "server error".
         try:
             raw_resp = httpx.post(
                 f"{self._base_url}/v1/did/verify",
@@ -698,12 +721,17 @@ class RealGoCore(MockGoCore):
                 headers=self._admin_headers(),
                 timeout=10,
             )
-            raise RuntimeError(
-                f"DID verify failed — status {raw_resp.status_code}: "
-                f"{raw_resp.text[:300]} [did={did_to_verify}]"
-            )
-        except httpx.ConnectError:
+        except (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout):
             raise RuntimeError("DID verify API call failed — Go Core unreachable")
+        if raw_resp.status_code == 200:
+            return raw_resp.json().get("valid", False)
+        # 400 = bad input (invalid signature encoding, wrong DID, etc.) → False
+        if raw_resp.status_code == 400:
+            return False
+        raise RuntimeError(
+            f"DID verify failed — status {raw_resp.status_code}: "
+            f"{raw_resp.text[:300]} [did={did_to_verify}]"
+        )
 
     def pii_scrub(self, text: str) -> tuple[str, dict[str, str]]:
         self.api_calls.append({"endpoint": "/v1/pii/scrub"})
@@ -811,8 +839,9 @@ class RealPythonBrain(MockPythonBrain):
 class RealAdminAPI:
     """Real HTTP client for Admin API, matching MockAdminAPI interface."""
 
-    def __init__(self, base_url: str) -> None:
+    def __init__(self, base_url: str, core_url: str = "") -> None:
         self._base_url = base_url.rstrip("/")
+        self._core_url = (core_url or base_url).rstrip("/")
         self._passphrase_hash = hashlib.sha256(b"admin-passphrase").hexdigest()
         self.sessions: dict[str, Any] = {}
         self.api_calls: list[dict[str, Any]] = []
@@ -854,12 +883,40 @@ class RealAdminAPI:
         )
         if resp is not None:
             return resp.json()
+        # Fallback: query the actual DID from Core's well-known endpoint
+        actual_did = "did:plc:DockerTestUser"
+        try:
+            did_resp = _try_request(
+                "get", f"{self._core_url}/.well-known/atproto-did",
+                headers={},
+            )
+            if did_resp is not None and did_resp.status_code == 200:
+                text = did_resp.text.strip()
+                if text.startswith("did:"):
+                    actual_did = text
+        except Exception:
+            pass
         return {
             "vault_items": 0,
             "personas": 0,
             "devices": 0,
-            "root_did": "did:plc:DockerTestUser",
+            "root_did": actual_did,
         }
+
+    def logout(self, session_id: str) -> bool:
+        """Invalidate a session, mirroring POST /admin/logout."""
+        self.api_calls.append({"endpoint": "/admin/logout"})
+        if session_id not in self.sessions:
+            return False
+        resp = _try_request(
+            "post", f"{self._base_url}/admin/logout",
+            json={"session_id": session_id},
+            headers={"Cookie": f"session_id={session_id}"},
+        )
+        del self.sessions[session_id]
+        if resp is None or resp.status_code >= 400:
+            return False
+        return True
 
     def query_via_dashboard(self, session_id: str, query: str) -> str | None:
         self.api_calls.append({"endpoint": "/admin/query"})
@@ -1012,6 +1069,10 @@ class RealDockerCompose(MockDockerCompose):
         super().down()
 
     def is_all_healthy(self) -> bool:
+        # Check mock state first — chaos tests may have killed containers.
+        mock_healthy = super().is_all_healthy()
+        if not mock_healthy:
+            return False
         if self._services.is_running():
             return True
-        return super().is_all_healthy()
+        return mock_healthy

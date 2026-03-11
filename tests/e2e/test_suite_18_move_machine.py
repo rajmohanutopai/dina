@@ -121,6 +121,11 @@ class TestMoveMachine:
                     PersonaType(pdata["persona_type"]),
                     pdata["tier"],
                 )
+            # Unlock locked personas before restoring data — during a real
+            # import the master seed provides access to all persona DEKs.
+            persona_obj = fresh.personas[pname]
+            if persona_obj.tier == "locked" and not persona_obj.unlocked:
+                fresh.unlock_persona(pname, "passphrase123")
             # Restore vault items
             for iid, idata in pdata["items"].items():
                 fresh.vault_store(

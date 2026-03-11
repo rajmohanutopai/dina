@@ -73,8 +73,9 @@ def guardian():
         nudge_assembler=nudge,
         scratchpad=scratchpad,
     )
-    # Expose core mock for assertion in tests that need it.
+    # Expose core and llm mocks for assertion in tests that need them.
     g._test_core = core
+    g._test_llm = llm_router
     return g
 
 
@@ -259,15 +260,16 @@ async def test_guardian_2_1_15_fiduciary_composite_heuristic(guardian) -> None:
         "Trusted sender with fiduciary keyword must classify as fiduciary"
     )
 
-    # Unknown sender + same fiduciary keyword → demoted to solicited.
+    # Unknown sender + same fiduciary keyword → demoted to engagement.
+    # Phishing vectors must not generate any notification — daily briefing only.
     event_unknown = make_event(
         type="message",
         body=body_with_keyword,
         source="unknown_sender",
     )
     result_unknown = await guardian.classify_silence(event_unknown)
-    assert result_unknown == "solicited", (
-        "Unknown sender with fiduciary keyword must be demoted to solicited"
+    assert result_unknown == "engagement", (
+        "Unknown sender with fiduciary keyword must be demoted to engagement"
     )
 
     # Counter-proof: body without fiduciary keywords → engagement for both.
@@ -1246,9 +1248,17 @@ async def test_guardian_2_5_11_restricted_summary_queries_audit_log(guardian) ->
     # Add an engagement item so briefing is non-empty (empty → early return).
     await guardian.process_event(make_engagement_event(body="Test item"))
 
-    # Set up core to return fiduciary recap items.
+    # Set up core to return fiduciary recap items only for the recap query,
+    # not for proactive scans (contact neglect, promise staleness).
     fiduciary_item = {"body": "Fiduciary event 1", "priority": "fiduciary"}
-    guardian._test_core.search_vault.return_value = [fiduciary_item]
+
+    async def _search_vault_side_effect(*args, **kwargs):
+        query = args[1] if len(args) > 1 else kwargs.get("query", "")
+        if "priority:fiduciary" in str(query):
+            return [fiduciary_item]
+        return []
+
+    guardian._test_core.search_vault.side_effect = _search_vault_side_effect
     briefing = await guardian.generate_briefing()
 
     # Engagement item counted.
@@ -1284,10 +1294,17 @@ async def test_guardian_2_5_7_briefing_includes_fiduciary_recap(guardian) -> Non
     await guardian.process_event(
         make_engagement_event(body="Blog post from favourite author")
     )
-    # Set up core to return fiduciary recap.
-    guardian._test_core.search_vault.return_value = [
-        {"body": "Flight was rebooked yesterday", "priority": "fiduciary"},
-    ]
+    # Set up core to return fiduciary recap only for the recap query,
+    # not for proactive scans (contact neglect, promise staleness).
+    fiduciary_item = {"body": "Flight was rebooked yesterday", "priority": "fiduciary"}
+
+    async def _search_vault_side_effect(*args, **kwargs):
+        query = args[1] if len(args) > 1 else kwargs.get("query", "")
+        if "priority:fiduciary" in str(query):
+            return [fiduciary_item]
+        return []
+
+    guardian._test_core.search_vault.side_effect = _search_vault_side_effect
     briefing = await guardian.generate_briefing()
     assert briefing["count"] == 1
     assert len(briefing["fiduciary_recap"]) == 1
@@ -2072,7 +2089,7 @@ async def test_guardian_20_1_draft_expires_after_72_hours(guardian) -> None:
     guardian._pending_proposals[stale_proposal_id] = {
         "action": "draft_email",
         "target": "boss@company.com",
-        "created_at": time.monotonic() - (73 * 3600),  # 73 hours ago
+        "created_at": time.time() - (73 * 3600),  # 73 hours ago
         "ttl_seconds": 72 * 3600,
     }
 
@@ -2081,12 +2098,12 @@ async def test_guardian_20_1_draft_expires_after_72_hours(guardian) -> None:
     guardian._pending_proposals[fresh_proposal_id] = {
         "action": "draft_email",
         "target": "colleague@company.com",
-        "created_at": time.monotonic() - 3600,  # 1 hour ago
+        "created_at": time.time() - 3600,  # 1 hour ago
         "ttl_seconds": 72 * 3600,
     }
 
     # Run eviction (uses _PROPOSAL_TTL which is 1 hour by default)
-    guardian._evict_proposals()
+    await guardian._evict_proposals()
 
     # The stale proposal (73h old) must be evicted — _PROPOSAL_TTL is 1h,
     # so anything older than 1 hour is removed. 73h >> 1h.
@@ -2338,9 +2355,9 @@ async def test_guardian_20_1_approval_invalidated_on_payload_mutation(
     # Manually expire the proposal by backdating created_at
     if disc_id_4 in guardian._pending_proposals:
         guardian._pending_proposals[disc_id_4]["created_at"] = (
-            time.monotonic() - 7200  # 2 hours ago, exceeds _PROPOSAL_TTL
+            time.time() - 7200  # 2 hours ago, exceeds _PROPOSAL_TTL
         )
-    guardian._evict_proposals()
+    await guardian._evict_proposals()
 
     # Try to approve the expired proposal
     expired_approval = _make_approval_event(disc_id_4, safe_text_4)
@@ -2570,14 +2587,6 @@ async def test_guardian_19_2_reviews_exist_no_outcome_data(guardian) -> None:
 
 # TST-BRAIN-563
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="messages.send action normalization not yet implemented — "
-           "review_intent() does not recognize 'messages.send' as a "
-           "communication action. It falls through to SAFE/auto_approve "
-           "instead of being downgraded to drafts.create. Only 'send_email' "
-           "is in _MODERATE_ACTIONS (Phase 2: action normalization layer).",
-    strict=True,
-)
 async def test_guardian_20_1_messages_send_always_downgraded(guardian) -> None:
     """SS20.1: Agent requests messages.send → always downgraded.
 
@@ -2751,7 +2760,7 @@ async def test_guardian_20_1_escalation_unreviewed_high_risk_draft(guardian) -> 
         "target": "attorney@lawfirm.com",
         "risk": "HIGH",
         "category": "legal",
-        "created_at": time.monotonic() - (25 * 3600),  # 25 hours ago
+        "created_at": time.time() - (25 * 3600),  # 25 hours ago
         "ttl_seconds": 72 * 3600,  # 72h total TTL
     }
 
@@ -2762,7 +2771,7 @@ async def test_guardian_20_1_escalation_unreviewed_high_risk_draft(guardian) -> 
         "target": "finance@company.com",
         "risk": "HIGH",
         "category": "financial",
-        "created_at": time.monotonic() - (30 * 3600),  # 30 hours ago
+        "created_at": time.time() - (30 * 3600),  # 30 hours ago
         "ttl_seconds": 72 * 3600,
     }
 
@@ -2773,7 +2782,7 @@ async def test_guardian_20_1_escalation_unreviewed_high_risk_draft(guardian) -> 
         "target": "counsel@firm.com",
         "risk": "HIGH",
         "category": "legal",
-        "created_at": time.monotonic() - (2 * 3600),  # 2 hours ago
+        "created_at": time.time() - (2 * 3600),  # 2 hours ago
         "ttl_seconds": 72 * 3600,
     }
 
@@ -2784,7 +2793,7 @@ async def test_guardian_20_1_escalation_unreviewed_high_risk_draft(guardian) -> 
         "target": "friend@example.com",
         "risk": "MODERATE",
         "category": "personal",
-        "created_at": time.monotonic() - (30 * 3600),  # 30 hours old
+        "created_at": time.time() - (30 * 3600),  # 30 hours old
         "ttl_seconds": 72 * 3600,
     }
 
@@ -3370,7 +3379,7 @@ async def test_guardian_20_1_multiple_pending_drafts_no_silent_batch(guardian) -
     # --- Inject pending proposals to simulate drafts awaiting approval ---
     # In a real system, review_intent would store these; here we simulate
     # the state that generate_briefing should read from.
-    now = time.monotonic()
+    now = time.time()
     for i, draft in enumerate(drafts):
         proposal_id = f"draft-{i}"
         guardian._pending_proposals[proposal_id] = {
@@ -3482,17 +3491,6 @@ async def test_guardian_20_1_multiple_pending_drafts_no_silent_batch(guardian) -
 
 # TST-BRAIN-539
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="Briefing cross-persona audit annotation not yet implemented — "
-           "generate_briefing() processes all _briefing_items uniformly "
-           "with no check of persona_tier. Events from restricted personas "
-           "(e.g., /health) are included in the briefing but without any "
-           "audit_annotation marker distinguishing them from open-persona "
-           "items. The gatekeeper logs restricted access in Core's audit_log, "
-           "but the Brain's briefing output lacks this annotation "
-           "(Phase 2: Briefing Quality / Persona Safety).",
-    strict=True,
-)
 async def test_guardian_18_3_briefing_cross_persona_safety(guardian) -> None:
     """SS18.3: Briefing cross-persona safety.
 
@@ -3894,7 +3892,7 @@ async def test_guardian_20_1_concurrent_draft_cart_same_product(guardian) -> Non
 
     # --- Scenario 3: Approving draft does NOT affect cart ---
     # Simulate storing both as pending proposals.
-    now = time.monotonic()
+    now = time.time()
     guardian._pending_proposals["draft-aeron"] = {
         "action": "draft_email",
         "product_id": "aeron-chair-001",
@@ -3996,17 +3994,6 @@ async def test_guardian_20_1_concurrent_draft_cart_same_product(guardian) -> Non
 
 # TST-BRAIN-542
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="Attribution validation in Brain not yet implemented — "
-           "process_event() does not handle 'agent_response' event type "
-           "and has no logic to inspect recommendations for missing "
-           "source_url or creator_name fields. The Go Core has "
-           "ValidateAttribution() and ScoreBot() with a -0.05 penalty, "
-           "but the Brain never invokes this flow. Unattributed items "
-           "are silently included in recommendations rather than flagged "
-           "(Phase 2: Deep Link Default / Pull Economy).",
-    strict=True,
-)
 async def test_guardian_19_1_attribution_mandatory_in_recommendations(guardian) -> None:
     """SS19.1: Attribution mandatory in recommendations.
 
@@ -4293,17 +4280,6 @@ async def test_guardian_19_1_attribution_mandatory_in_recommendations(guardian) 
 
 # TST-BRAIN-564
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="Proposal persistence not yet implemented — _pending_proposals "
-           "is a plain in-memory dict (guardian.py line 223) with no "
-           "checkpointing to scratchpad or Core KV. On Brain restart, "
-           "all pending proposals are lost (dict re-initialized to {}). "
-           "The scratchpad service exists and supports checkpoint/resume "
-           "for multi-step reasoning, but is never used for proposal state. "
-           "No _recover_proposals() or _checkpoint_proposal() methods exist "
-           "(Phase 2: Approval Semantics Under Pressure).",
-    strict=True,
-)
 async def test_guardian_20_1_approval_state_survives_brain_restart(guardian) -> None:
     """SS20.1: Approval state survives brain restart.
 
@@ -4350,7 +4326,7 @@ async def test_guardian_20_1_approval_state_survives_brain_restart(guardian) -> 
     # --- Scenario 2: Proposal checkpointed to scratchpad ---
     # Insert a proposal manually (simulating what review_intent should do).
     proposal_id = "draft-nda-001"
-    now = time.monotonic()
+    now = time.time()
     guardian._pending_proposals[proposal_id] = {
         "action": "draft_email",
         "target": "attorney@lawfirm.com",
@@ -4502,16 +4478,6 @@ async def test_guardian_20_1_approval_state_survives_brain_restart(guardian) -> 
 
 # TST-BRAIN-543
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="Deep link enforcement not yet implemented — process_event() "
-           "does not handle 'agent_response' event type and has no logic "
-           "to validate deep_link fields in recommendation sources. The "
-           "Brain does not enforce that recommendations link to original "
-           "source content rather than extracted summaries. The Go Core "
-           "has attribution validation but Brain never invokes it "
-           "(Phase 2: Deep Link Default / Pull Economy).",
-    strict=True,
-)
 async def test_guardian_19_1_deep_link_creators_get_traffic(guardian) -> None:
     """SS19.1: Deep link default — creators get traffic, not extraction.
 
@@ -4797,17 +4763,6 @@ async def test_guardian_19_1_deep_link_creators_get_traffic(guardian) -> None:
 
 # TST-BRAIN-549
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="Trust data density analysis not yet implemented — the Brain's "
-           "reasoning pipeline (vault_context.reason()) does not analyze "
-           "attestation count, consensus level, or data completeness before "
-           "generating a response. When only 1 review exists, the LLM is "
-           "not informed of this limitation and may claim consensus or "
-           "fabricate confidence. No density metadata injection exists "
-           "between vault search and LLM reasoning "
-           "(Phase 2: Verified Truth / Trust Data Honesty).",
-    strict=True,
-)
 async def test_guardian_19_2_single_review_limited_data(guardian) -> None:
     """SS19.2: Single review, no consensus possible.
 
@@ -5014,16 +4969,6 @@ async def test_guardian_19_2_single_review_limited_data(guardian) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "TST-BRAIN-544 (Phase 2): process_event() does not handle "
-        "'agent_response' event type (guardian.py:305-424 — no branch for it). "
-        "No sponsored content detection: metadata field 'sponsored: true' is "
-        "not inspected. No '[Sponsored]' tag injection. The Pull Economy "
-        "requirement (never hide sponsorship) has no implementation."
-    ),
-)
 async def test_tst_brain_544_sponsored_content_disclosed(guardian):
     """Brain includes recommendation with `sponsored: true` metadata
     → User sees '[Sponsored]' tag — sponsorship never hidden.
@@ -5435,18 +5380,6 @@ async def test_tst_brain_554_stale_reviews_all_over_one_year(guardian):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "TST-BRAIN-571 (Phase 2): No ranking logic exists for recommendations. "
-        "process_event() (guardian.py:305-424) has no 'agent_response' handler. "
-        "vault_context.py _SYSTEM_PROMPT (lines 357-384) has no instructions "
-        "about sponsorship-aware ranking. No mechanism to compare multiple "
-        "products by trust evidence and ensure sponsored items don't get "
-        "rank boosts. The entire recommendation ranking subsystem is "
-        "unimplemented."
-    ),
-)
 async def test_tst_brain_571_sponsorship_cannot_distort_ranking(guardian):
     """Product A: sponsored, 10 reviews avg 3/5. Product B: unsponsored,
     30 reviews avg 4.5/5 → Product B ranks above A. Sponsorship adds
@@ -5991,18 +5924,6 @@ async def test_tst_brain_550_sparse_but_conflicting_reviews(guardian):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "TST-BRAIN-548 (Phase 2): vault_context.reason() has no Trust "
-        "Network query tool — only searches personal vaults. No OpenClaw "
-        "web search fallback integration in the agentic loop. _SYSTEM_PROMPT "
-        "(vault_context.py:357-384) has no instructions to disclose empty "
-        "Trust Network data. No density metadata injection when search "
-        "returns zero results. The LLM cannot distinguish 'zero attestations "
-        "exist' from 'query didn't match'."
-    ),
-)
 async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
     """AppView returns empty for product query → Brain uses web search
     (OpenClaw) + vault context. Response says 'I found web reviews but
@@ -6568,19 +6489,6 @@ async def test_tst_brain_556_expert_review_deep_linked_not_extracted(guardian):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "TST-BRAIN-567 (Phase 2): No unsolicited discovery prevention. "
-        "_SYSTEM_PROMPT (vault_context.py:357-384) lacks explicit "
-        "instructions to prevent proactive product surfacing. LLM can "
-        "call search_vault() for tangentially related products without "
-        "constraint. No response filtering in _handle_reason() "
-        "(guardian.py:1521-1620) to remove off-topic recommendations. "
-        "Agentic loop (vault_context.py) has no scope validation on "
-        "tool calls. Pull Economy: respond only to what was asked."
-    ),
-)
 async def test_tst_brain_567_no_unsolicited_discovery(guardian):
     """User asks about topic X, Brain finds related product Y during
     reasoning → Brain does NOT proactively surface product Y — only

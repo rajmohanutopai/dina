@@ -3,7 +3,6 @@ package test
 import (
 	"bytes"
 	"context"
-	"math"
 	"regexp"
 	"strings"
 	"testing"
@@ -39,9 +38,9 @@ func TestPairing_10_1_1_GenerateCode(t *testing.T) {
 	testutil.RequireTrue(t, code != "", "pairing code must not be empty")
 	testutil.RequireTrue(t, len(secret) == 32, "pairing secret must be exactly 32 bytes (256-bit entropy)")
 
-	// Code must be a valid hex string (derived from SHA-256).
-	hexPattern := regexp.MustCompile(`^[0-9a-f]+$`)
-	testutil.RequireTrue(t, hexPattern.MatchString(code), "pairing code must be hex-encoded")
+	// Code must be a 6-digit numeric string (Architecture §10: "6-digit pairing code").
+	digitPattern := regexp.MustCompile(`^[0-9]{6}$`)
+	testutil.RequireTrue(t, digitPattern.MatchString(code), "pairing code must be a 6-digit numeric string")
 
 	// Round-trip: generated code must be usable for CompletePairing.
 	clientToken, tokenID, err := impl.CompletePairing(context.Background(), code, "test-device")
@@ -261,22 +260,22 @@ func TestPairing_10_3_2_TokenUniquePerDevice(t *testing.T) {
 // TST-CORE-523
 func TestPairing_10_4_1_NumericCodeFormat(t *testing.T) {
 	// Generate a pairing code and verify it matches the expected format.
-	// The implementation uses hex-encoded SHA-256 prefix (32 hex chars).
+	// Architecture §10: "Core generates 6-digit pairing code (expires in 5 minutes)".
 	impl := realPairingManager
 	testutil.RequireImplementation(t, impl, "PairingManager")
 
 	code, _, err := impl.GenerateCode(context.Background())
 	testutil.RequireNoError(t, err)
-	testutil.RequireTrue(t, len(code) > 0, "pairing code must not be empty")
+	testutil.RequireTrue(t, len(code) == 6, "pairing code must be exactly 6 digits")
 
-	// Verify the code is alphanumeric (hex characters: 0-9, a-f).
-	hexPattern := regexp.MustCompile(`^[0-9a-fA-F]+$`)
-	testutil.RequireTrue(t, hexPattern.MatchString(code),
-		"pairing code must be alphanumeric (hex format)")
+	// Verify the code is all digits (0-9).
+	digitPattern := regexp.MustCompile(`^[0-9]{6}$`)
+	testutil.RequireTrue(t, digitPattern.MatchString(code),
+		"pairing code must be a 6-digit numeric string")
 
-	// Verify the code has the expected length (32 hex chars = 16 bytes of hash).
-	testutil.RequireTrue(t, len(code) >= 16,
-		"pairing code must be at least 16 characters for sufficient uniqueness")
+	// Verify the code is in the valid range (100000-999999, no leading zeros).
+	testutil.RequireTrue(t, code[0] != '0',
+		"pairing code must not have a leading zero (range 100000-999999)")
 }
 
 // TST-CORE-524
@@ -287,30 +286,59 @@ func TestPairing_10_4_2_NumericCodeBruteForceResistance(t *testing.T) {
 	ctx := context.Background()
 
 	// Generate two codes to verify entropy and uniqueness.
-	code1, _, err := impl.GenerateCode(ctx)
+	code1, secret1, err := impl.GenerateCode(ctx)
 	testutil.RequireNoError(t, err)
-	code2, _, err := impl.GenerateCode(ctx)
+	code2, secret2, err := impl.GenerateCode(ctx)
 	testutil.RequireNoError(t, err)
 
-	// Positive: each hex character carries 4 bits of entropy.
-	// 32-byte secret → SHA-256 → 64 hex chars → 256 bits.
-	// Require at least 128 bits (far above brute-force threshold).
-	codeLen := len(code1)
-	bitsPerChar := 4.0
-	totalEntropy := float64(codeLen) * bitsPerChar
-	minEntropy := 128.0
-	testutil.RequireTrue(t, totalEntropy >= minEntropy,
-		"pairing code must have at least 128 bits of entropy for brute-force resistance")
+	// The 6-digit code itself has ~20 bits of entropy (900,000 combinations).
+	// Brute-force resistance comes from rate limiting + 5-minute TTL, not
+	// code entropy alone. The underlying 32-byte secret has 256 bits.
+	testutil.RequireTrue(t, len(code1) == 6, "pairing code must be exactly 6 digits")
+	testutil.RequireTrue(t, len(code2) == 6, "pairing code must be exactly 6 digits")
 
-	// Verify both codes meet minimum length (64 hex chars = 32 bytes).
-	testutil.RequireTrue(t, len(code1) >= 64, "code must be at least 64 hex chars")
-	testutil.RequireTrue(t, len(code2) >= 64, "code must be at least 64 hex chars")
+	// The cryptographic secret (used for key derivation) must have full entropy.
+	testutil.RequireTrue(t, len(secret1) == 32, "secret must be 32 bytes (256-bit entropy)")
+	testutil.RequireTrue(t, len(secret2) == 32, "secret must be 32 bytes (256-bit entropy)")
 
 	// Negative: two independent codes must differ (random generation).
+	// Note: with 900,000 combinations there is a small collision probability,
+	// but two consecutive CSPRNG draws should differ in practice.
 	testutil.RequireTrue(t, code1 != code2, "two generated codes must be distinct")
 
-	t.Logf("pairing code length=%d chars, entropy=%.0f bits (%.0f combinations)",
-		codeLen, totalEntropy, math.Pow(2, totalEntropy))
+	combinations := 900000.0
+	t.Logf("pairing code length=6 digits, combinations=%.0f, secret entropy=256 bits",
+		combinations)
+}
+
+// --------------------------------------------------------------------------
+// §10.4.3 Code Collision Handling
+// --------------------------------------------------------------------------
+
+// TST-CORE-524b
+func TestPairing_10_4_3_CodeCollisionRetry(t *testing.T) {
+	// Verify that GenerateCode retries on collision and returns
+	// ErrCodeCollision only after exhausting retries.
+	impl := pairing.NewManager(pairing.DefaultConfig())
+	testutil.RequireImplementation(t, impl, "PairingManager")
+
+	ctx := context.Background()
+
+	// Positive: generate many codes — all must be unique (collision handling works).
+	seen := make(map[string]bool)
+	for i := 0; i < 50; i++ {
+		code, _, err := impl.GenerateCode(ctx)
+		testutil.RequireNoError(t, err)
+		if seen[code] {
+			t.Fatalf("duplicate pairing code %q at iteration %d — collision handling failed", code, i)
+		}
+		seen[code] = true
+	}
+
+	// Positive: ErrCodeCollision sentinel exists and is a distinct error.
+	testutil.RequireTrue(t, pairing.ErrCodeCollision != nil, "ErrCodeCollision must be defined")
+	testutil.RequireTrue(t, pairing.ErrCodeCollision != pairing.ErrTooManyPendingCodes,
+		"ErrCodeCollision must be distinct from ErrTooManyPendingCodes")
 }
 
 // --------------------------------------------------------------------------

@@ -554,13 +554,18 @@ class TestProductResearchPurchase:
         Create an OutcomeReport with all 13 fields, sign it, publish to PDS.
         Verify zero user identity in the published record and exact field VALUES.
         """
+        # Use a unique product_id to isolate this test from outcomes
+        # indexed by test_trust_network_check (which adds 5 outcomes for
+        # "herman_miller_aeron" to the session-scoped appview).
+        outcome_product_id = f"herman_miller_aeron_{uuid.uuid4().hex[:8]}"
+
         # Create a complete OutcomeReport (all 13 fields)
         report = OutcomeReport(
             report_id=f"out_{uuid.uuid4().hex[:8]}",
             reporter_trust_ring=don_alonso.trust_ring.value,
             reporter_age_days=730,
             product_category="office_chair",
-            product_id="herman_miller_aeron",
+            product_id=outcome_product_id,
             purchase_verified=True,
             purchase_amount_range="50000-100000",
             time_since_purchase_days=365,
@@ -625,7 +630,7 @@ class TestProductResearchPurchase:
             assert field_name in published, f"Missing field: {field_name}"
 
         # Verify field VALUES (not just presence)
-        assert published["product_id"] == "herman_miller_aeron"
+        assert published["product_id"] == outcome_product_id
         assert published["outcome"] == "still_using"
         assert published["satisfaction"] == "positive"
         assert published["purchase_verified"] is True
@@ -663,8 +668,8 @@ class TestProductResearchPurchase:
         # 3. Index in AppView and verify aggregation
         # ------------------------------------------------------------------
         appview.index_outcome(report)
-        product_data = appview.query_product("herman_miller_aeron")
+        product_data = appview.query_product(outcome_product_id)
         assert product_data is not None
         assert len(product_data["outcomes"]) == 1
         assert product_data["outcomes"][0].satisfaction == "positive"
-        assert product_data["outcomes"][0].product_id == "herman_miller_aeron"
+        assert product_data["outcomes"][0].product_id == outcome_product_id

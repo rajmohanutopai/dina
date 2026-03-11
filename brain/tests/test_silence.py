@@ -396,11 +396,6 @@ async def test_anti_her_16_5_dina_never_initiates_emotional_content(guardian) ->
 
 # TST-BRAIN-530
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="Staleness demotion not yet implemented in classify_silence — "
-           "requires timestamp-aware classification (Phase 2)",
-    strict=True,
-)
 async def test_silence_18_1_stale_fiduciary_demoted(guardian) -> None:
     """SS18.1: Flight cancellation from 6 hours ago — demoted to engagement.
 
@@ -456,12 +451,6 @@ async def test_silence_18_1_stale_fiduciary_demoted(guardian) -> None:
 
 # TST-BRAIN-532
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="Promotional source override not yet implemented — "
-           "classify_silence checks fiduciary keywords before engagement "
-           "source/type, so 'emergency sale' from vendor triggers fiduciary",
-    strict=True,
-)
 async def test_silence_18_1_conflicting_urgent_keyword_promo_source(
     guardian,
 ) -> None:
@@ -656,13 +645,6 @@ async def test_silence_18_2_notification_storm_throttled(guardian) -> None:
 
 # TST-BRAIN-526
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="Anthropomorphic language filter not yet implemented — "
-           "the LLM system prompt and response pipeline do not yet "
-           "detect or filter self-referential emotional language "
-           "(Phase 2: Anti-Her conversation design invariants)",
-    strict=True,
-)
 async def test_silence_17_3_no_anthropomorphic_language(guardian) -> None:
     """SS17.3: No anthropomorphic language about self.
 
@@ -1086,16 +1068,6 @@ async def test_silence_18_3_empty_briefing_no_noise(guardian) -> None:
 
 # TST-BRAIN-528
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="Unknown sender demotion currently returns 'solicited' instead of "
-           "'engagement'. The §18 thesis invariant requires phishing vectors "
-           "(unknown sender + urgency keyword) to be classified as engagement "
-           "(daily briefing only), not solicited (which still triggers a "
-           "deferred notification). classify_silence() line 274 returns "
-           "'solicited' for unknown_sender — Phase 2 should demote further "
-           "to 'engagement'.",
-    strict=True,
-)
 async def test_silence_18_1_ambiguous_urgency_untrusted_sender(guardian) -> None:
     """SS18.1: Ambiguous urgency from untrusted sender.
 
@@ -1328,15 +1300,6 @@ async def test_silence_18_2_hundred_engagement_events_zero_push(guardian) -> Non
 
 # TST-BRAIN-529
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="Unknown sender demotion returns 'solicited' instead of 'engagement'. "
-           "The §18 thesis invariant requires that identical content from an "
-           "untrusted sender be classified as engagement (daily briefing only), "
-           "not solicited (which still triggers a deferred notification). "
-           "classify_silence() line 274 returns 'solicited' for unknown_sender "
-           "— Phase 2 should demote further to 'engagement'.",
-    strict=True,
-)
 async def test_silence_18_1_same_content_different_sender_trust(guardian) -> None:
     """SS18.1: Same content, different sender trust.
 
@@ -1594,16 +1557,6 @@ async def test_silence_18_2_briefing_over_50_items_grouped(guardian) -> None:
 
 # TST-BRAIN-515
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="Relationship maintenance logic not yet implemented. "
-           "GuardianLoop has no mechanism to query vault for contact interaction "
-           "history, compute neglect thresholds, or generate relationship nudges. "
-           "The §17.1 requirement says recent interaction (2 days ago) should "
-           "reset the neglect timer and suppress nudge generation, but there is "
-           "no neglect timer, no contact interaction tracking, and no nudge "
-           "generation for relationship maintenance. Phase 2 feature.",
-    strict=True,
-)
 async def test_human_connection_17_1_recent_interaction_resets_neglect(guardian) -> None:
     """SS17.1: Recent interaction resets neglect timer — no nudge generated.
 
@@ -1642,18 +1595,25 @@ async def test_human_connection_17_1_recent_interaction_resets_neglect(guardian)
     twenty_nine_days_ago = now - (29 * 86400)
     thirty_one_days_ago = now - (31 * 86400)
 
-    # Mock vault query to return contact interaction data.
-    guardian._test_core.query.return_value = {
-        "items": [
-            {
-                "type": "contact",
-                "name": "Sarah",
-                "contact_did": "did:plc:sarah123",
-                "last_interaction_ts": two_days_ago,
-                "relationship_depth": "close_friend",
-            },
-        ],
-    }
+    # Helper: route search_vault calls — contact scans get contact data,
+    # fiduciary recap and promise scans get empty results.
+    _contact_data: list[dict] = [
+        {
+            "type": "contact",
+            "name": "Sarah",
+            "contact_did": "did:plc:sarah123",
+            "last_interaction_ts": two_days_ago,
+            "relationship_depth": "close_friend",
+        },
+    ]
+
+    async def _search_vault_side_effect(*args, **kwargs):
+        query = args[1] if len(args) > 1 else kwargs.get("query", "")
+        if "type:contact" in str(query):
+            return list(_contact_data)
+        return []
+
+    guardian._test_core.search_vault.side_effect = _search_vault_side_effect
 
     # --- Scenario 1: Contact interacted 2 days ago → no nudge ---
     # Trigger the relationship maintenance check (would be part of
@@ -1675,17 +1635,14 @@ async def test_human_connection_17_1_recent_interaction_resets_neglect(guardian)
     )
 
     # --- Scenario 2: Contact interacted 29 days ago → still no nudge ---
-    guardian._test_core.query.return_value = {
-        "items": [
-            {
-                "type": "contact",
-                "name": "Sarah",
-                "contact_did": "did:plc:sarah123",
-                "last_interaction_ts": twenty_nine_days_ago,
-                "relationship_depth": "close_friend",
-            },
-        ],
-    }
+    _contact_data.clear()
+    _contact_data.append({
+        "type": "contact",
+        "name": "Sarah",
+        "contact_did": "did:plc:sarah123",
+        "last_interaction_ts": twenty_nine_days_ago,
+        "relationship_depth": "close_friend",
+    })
 
     briefing2 = await guardian.generate_briefing()
     nudge_items2 = [
@@ -1701,17 +1658,14 @@ async def test_human_connection_17_1_recent_interaction_resets_neglect(guardian)
     )
 
     # --- Scenario 3: Contact interacted 31 days ago → nudge generated ---
-    guardian._test_core.query.return_value = {
-        "items": [
-            {
-                "type": "contact",
-                "name": "Sarah",
-                "contact_did": "did:plc:sarah123",
-                "last_interaction_ts": thirty_one_days_ago,
-                "relationship_depth": "close_friend",
-            },
-        ],
-    }
+    _contact_data.clear()
+    _contact_data.append({
+        "type": "contact",
+        "name": "Sarah",
+        "contact_did": "did:plc:sarah123",
+        "last_interaction_ts": thirty_one_days_ago,
+        "relationship_depth": "close_friend",
+    })
 
     briefing3 = await guardian.generate_briefing()
     nudge_items3 = [
@@ -1730,17 +1684,14 @@ async def test_human_connection_17_1_recent_interaction_resets_neglect(guardian)
     # --- Scenario 4: Timer reset after new interaction ---
     # Sarah was stale (35 days) but user interacted yesterday → no nudge.
     yesterday = now - 86400
-    guardian._test_core.query.return_value = {
-        "items": [
-            {
-                "type": "contact",
-                "name": "Sarah",
-                "contact_did": "did:plc:sarah123",
-                "last_interaction_ts": yesterday,  # Reset by new interaction
-                "relationship_depth": "close_friend",
-            },
-        ],
-    }
+    _contact_data.clear()
+    _contact_data.append({
+        "type": "contact",
+        "name": "Sarah",
+        "contact_did": "did:plc:sarah123",
+        "last_interaction_ts": yesterday,  # Reset by new interaction
+        "relationship_depth": "close_friend",
+    })
 
     briefing4 = await guardian.generate_briefing()
     nudge_items4 = [
@@ -1755,24 +1706,23 @@ async def test_human_connection_17_1_recent_interaction_resets_neglect(guardian)
     )
 
     # --- Scenario 5: Mixed contacts — only stale ones get nudges ---
-    guardian._test_core.query.return_value = {
-        "items": [
-            {
-                "type": "contact",
-                "name": "Sarah",
-                "contact_did": "did:plc:sarah123",
-                "last_interaction_ts": two_days_ago,
-                "relationship_depth": "close_friend",
-            },
-            {
-                "type": "contact",
-                "name": "Sancho",
-                "contact_did": "did:plc:sancho456",
-                "last_interaction_ts": thirty_one_days_ago,
-                "relationship_depth": "friend",
-            },
-        ],
-    }
+    _contact_data.clear()
+    _contact_data.extend([
+        {
+            "type": "contact",
+            "name": "Sarah",
+            "contact_did": "did:plc:sarah123",
+            "last_interaction_ts": two_days_ago,
+            "relationship_depth": "close_friend",
+        },
+        {
+            "type": "contact",
+            "name": "Sancho",
+            "contact_did": "did:plc:sancho456",
+            "last_interaction_ts": thirty_one_days_ago,
+            "relationship_depth": "friend",
+        },
+    ])
 
     briefing5 = await guardian.generate_briefing()
     sarah_nudges = [
@@ -1953,16 +1903,6 @@ async def test_silence_18_1_priority_promotion_accumulation(guardian) -> None:
 
 # TST-BRAIN-525
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="Engagement hook filtering not yet implemented — "
-           "_handle_reason() returns LLM content verbatim with no post-"
-           "processing to detect or strip conversation-extending hooks "
-           "like 'Is there anything else?' or 'I'm always here for you'. "
-           "The pipeline has PII scrubbing (step 1) and rehydration (step 3) "
-           "but no Anti-Her output filter between step 2 and step 3 "
-           "(Phase 2: Anti-Her conversation design invariants).",
-    strict=True,
-)
 async def test_silence_17_3_task_completion_conversation_end(guardian) -> None:
     """SS17.3: Task completion → conversation end — no engagement hooks.
 
@@ -2167,18 +2107,6 @@ async def test_silence_17_3_task_completion_conversation_end(guardian) -> None:
 
 # TST-BRAIN-533
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="Health persona context not checked during classification — "
-           "classify_silence() is purely stateless and evaluates only "
-           "event type, body, source, and priority fields. It never queries "
-           "self._unlocked_personas to check if the health persona is active, "
-           "and never consults the vault for active medical context. The §18.1 "
-           "requirement says 'Your lab results are ready' with an active health "
-           "persona should be elevated to fiduciary, but the classifier treats "
-           "it the same regardless of persona state "
-           "(Phase 2: context-aware classification).",
-    strict=True,
-)
 async def test_silence_18_1_health_context_elevates_priority(guardian) -> None:
     """SS18.1: Health context elevates priority.
 
@@ -2304,16 +2232,6 @@ async def test_silence_18_1_health_context_elevates_priority(guardian) -> None:
 
 # TST-BRAIN-527
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="Voice/tone intimacy filter not yet implemented — "
-           "_handle_reason() returns LLM content verbatim with no post-"
-           "processing to detect tone escalation or personalization "
-           "deepening across conversation turns. Neither the response "
-           "pipeline nor the _SYSTEM_PROMPT in vault_context.py contains "
-           "Anti-Her tone-consistency instructions "
-           "(Phase 2: Anti-Her conversation design invariants).",
-    strict=True,
-)
 async def test_silence_17_3_voice_tone_never_mimics_intimacy(guardian) -> None:
     """SS17.3: Voice/tone never mimics intimacy.
 
@@ -2521,17 +2439,6 @@ async def test_silence_17_3_voice_tone_never_mimics_intimacy(guardian) -> None:
 
 # TST-BRAIN-524
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="Emotional memory recall filter not yet implemented — "
-           "_handle_reason() returns LLM content verbatim with no post-"
-           "processing to detect or filter references to past emotional "
-           "conversations. The vault stores user data (emails, calendar, "
-           "health records) but not conversation history. Neither the "
-           "response pipeline nor the _SYSTEM_PROMPT prevents the LLM "
-           "from fabricating emotional continuity across sessions "
-           "(Phase 2: Anti-Her conversation design invariants).",
-    strict=True,
-)
 async def test_silence_17_3_no_memory_of_emotional_moments(guardian) -> None:
     """SS17.3: No memory of emotional moments for bonding.
 
@@ -2767,17 +2674,6 @@ async def test_silence_17_3_no_memory_of_emotional_moments(guardian) -> None:
 
 # TST-BRAIN-523
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason="Emotional follow-up filter not yet implemented — "
-           "_handle_reason() returns LLM content verbatim with no post-"
-           "processing to detect or strip therapy-mimicking questions "
-           "like 'How does that make you feel?' or 'Would you like to "
-           "talk about it?'. Neither the response pipeline nor the "
-           "_SYSTEM_PROMPT instructs the LLM to avoid open-ended "
-           "emotional probing "
-           "(Phase 2: Anti-Her conversation design invariants).",
-    strict=True,
-)
 async def test_silence_17_3_no_open_ended_emotional_followups(guardian) -> None:
     """SS17.3: No open-ended emotional follow-ups.
 
@@ -3299,17 +3195,6 @@ async def test_tst_brain_570_reclassification_on_corroboration(guardian):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "TST-BRAIN-518 (Phase 2): generate_briefing() does not scan vault "
-        "for unfulfilled promises. _detect_promises() exists in nudge.py "
-        "(line 332) but only runs reactively on conversation-open events. "
-        "Briefing pipeline (guardian.py:534-615) processes _briefing_items "
-        "only — no proactive promise staleness check, no vault query for "
-        "outbound messages with promise patterns, no fulfilment tracking."
-    ),
-)
 async def test_tst_brain_518_promise_follow_up_nudge(guardian):
     """Vault contains 'I'll send the PDF tomorrow' (said 5 days ago, no PDF sent)
     → Brain nudges: 'You promised to send Sancho the PDF' — accountability,
@@ -5275,19 +5160,6 @@ async def test_emotional_dependency_17_2_no_suitable_human_contact(guardian):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "TST-BRAIN-512 (Phase 2): No contact neglect detection exists. "
-        "process_event() (guardian.py:305-424) has no 'contact_neglect' "
-        "handler and no proactive scanning of interaction history. "
-        "generate_briefing() (guardian.py:534-615) only processes "
-        "_briefing_items from engagement-tier events — no injection of "
-        "neglected-contact nudges. No 30-day threshold logic. "
-        "NudgeAssembler._detect_promises() (nudge.py:332-347) is reactive "
-        "(scans recent messages on conversation-open), not proactive."
-    ),
-)
 async def test_tst_brain_512_neglected_contact_nudge(guardian):
     """Contact "Sarah" has `last_interaction` > 30 days ago
     → Brain generates "You haven't talked to Sarah in X days" in daily briefing.

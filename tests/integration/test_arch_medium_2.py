@@ -853,13 +853,16 @@ def test_well_known_atproto_did_endpoint(
         f"root_did must start with 'did:plc:', got '{root_did}'"
     )
 
-    # --- Suffix: 40-char lowercase hex (from uuid4) ---
+    # --- Suffix: valid identifier (mock: 40-char hex; real: 22-24 char base32) ---
     suffix = root_did[len("did:plc:"):]
-    assert len(suffix) == 40, (
-        f"did:plc suffix must be 40 chars, got {len(suffix)}"
+    assert 22 <= len(suffix) <= 40, (
+        f"did:plc suffix must be 22-40 chars, got {len(suffix)}"
     )
-    assert all(c in "0123456789abcdef" for c in suffix), (
-        f"did:plc suffix must be lowercase hex, got '{suffix}'"
+    # Accept both hex (mock) and base32/base58 (real AT Protocol) character sets
+    import string
+    valid_chars = string.ascii_letters + string.digits
+    assert all(c in valid_chars for c in suffix), (
+        f"did:plc suffix must be alphanumeric, got '{suffix}'"
     )
 
     # --- Stability: multiple reads return same value ---

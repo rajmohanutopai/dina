@@ -13,6 +13,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -35,10 +36,16 @@ var (
 	ErrDeviceNotFound      = errors.New("pairing: device not found")
 	ErrDeviceRevoked       = errors.New("pairing: device already revoked")
 	ErrTooManyPendingCodes = errors.New("pairing: too many pending codes")
+	ErrCodeCollision       = errors.New("pairing: failed to generate unique code after retries")
 )
 
 // maxPendingCodes is the hard cap on pending pairing codes (SEC-MED-13).
 const maxPendingCodes = 100
+
+// maxCodeRetries is the maximum number of attempts to generate a unique
+// 6-digit code before returning ErrCodeCollision. With a 900,000-code
+// space and maxPendingCodes=100, collision is unlikely but non-trivial.
+const maxCodeRetries = 5
 
 // Protocol constants.
 const (
@@ -136,26 +143,44 @@ func (pm *PairingManager) GenerateCode(_ context.Context) (string, []byte, error
 		return "", nil, ErrTooManyPendingCodes
 	}
 
-	// Generate a cryptographically random secret (32 bytes = 256-bit entropy).
-	secret := make([]byte, SecretLength)
-	if _, err := rand.Read(secret); err != nil {
-		return "", nil, fmt.Errorf("pairing: failed to generate secret: %w", err)
+	// Retry loop: generate a unique 6-digit code, checking for collisions
+	// with existing live (non-expired, non-used) codes in pm.codes.
+	for attempt := 0; attempt < maxCodeRetries; attempt++ {
+		// Generate a cryptographically random secret (32 bytes = 256-bit entropy).
+		secret := make([]byte, SecretLength)
+		if _, err := rand.Read(secret); err != nil {
+			return "", nil, fmt.Errorf("pairing: failed to generate secret: %w", err)
+		}
+
+		// Derive a 6-digit numeric pairing code from the secret.
+		// Architecture §10: "Core generates 6-digit pairing code (expires in 5 minutes)".
+		// The code is a short-lived physical proximity proof (100000–999999).
+		// The 32-byte secret remains the cryptographic material for key derivation.
+		hash := sha256.Sum256(secret)
+		num := binary.BigEndian.Uint32(hash[:4])
+		code := fmt.Sprintf("%06d", 100000+(num%900000))
+
+		// Check for collision with an existing live code.
+		if existing, ok := pm.codes[code]; ok {
+			if !existing.used && time.Since(existing.createdAt) <= pm.codeTTL {
+				// Live collision — retry with a fresh secret.
+				continue
+			}
+			// Expired or used entry — safe to overwrite.
+		}
+
+		pc := &pairingCode{
+			code:      code,
+			secret:    secret,
+			createdAt: time.Now(),
+			used:      false,
+		}
+		pm.codes[code] = pc
+
+		return code, secret, nil
 	}
 
-	// Derive the pairing code from the secret.
-	// Use full SHA-256(secret) as a hex code (32 bytes = 64 hex chars = 256 bits).
-	hash := sha256.Sum256(secret)
-	code := hex.EncodeToString(hash[:])
-
-	pc := &pairingCode{
-		code:      code,
-		secret:    secret,
-		createdAt: time.Now(),
-		used:      false,
-	}
-	pm.codes[code] = pc
-
-	return code, secret, nil
+	return "", nil, ErrCodeCollision
 }
 
 // CompletePairing verifies the code and registers the device.

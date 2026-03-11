@@ -47,7 +47,10 @@ from tests.e2e.mocks import (
 # ---------------------------------------------------------------------------
 
 def _mock_sign(data: str, private_key: str) -> str:
-    return hashlib.sha256(f"{data}:{private_key}".encode()).hexdigest()
+    # Derive public key from private key so that _mock_verify (which uses
+    # the public key) can reproduce the same hash.
+    public_key = _derive_dek(private_key, "pub")
+    return hashlib.sha256(f"{data}:{public_key}".encode()).hexdigest()
 
 
 def _mock_verify(data: str, signature: str, public_key: str) -> bool:
@@ -316,6 +319,9 @@ class HomeNode:
         p.unlocked = True
         p.unlock_time = self._now()
         p.ttl = ttl_seconds
+        # Re-derive DEK from master seed (lock_persona wipes it from RAM)
+        if not p.dek:
+            p.dek = _derive_dek(self.master_seed, f"dina:vault:{name}:v1")
         self._log_audit("persona_unlock", {"persona": name, "ttl": ttl_seconds})
         return True
 

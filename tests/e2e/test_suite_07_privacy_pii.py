@@ -425,13 +425,17 @@ class TestPrivacyPII:
         assert len(malbot_audits) == 4, (
             "All 4 intent checks for malbot must be audited"
         )
-        # Verify the risk levels are recorded correctly
+        # Verify the risk levels are recorded correctly:
+        # share_data=HIGH, send_email=MODERATE, transfer_money=HIGH, search=SAFE
         risks = [e.details["risk"] for e in malbot_audits]
-        assert risks.count("HIGH") == 3, (
-            "3 dangerous actions must be recorded as HIGH"
+        assert risks.count("HIGH") == 2, (
+            "share_data and transfer_money must be recorded as HIGH"
+        )
+        assert risks.count("MODERATE") == 1, (
+            "send_email must be recorded as MODERATE"
         )
         assert risks.count("SAFE") == 1, (
-            "1 safe action must be recorded as SAFE"
+            "search must be recorded as SAFE"
         )
 
     # -----------------------------------------------------------------

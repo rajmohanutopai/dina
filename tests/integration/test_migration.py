@@ -117,8 +117,11 @@ class TestSchemaMigration:
     ) -> None:
         """Old config format is auto-converted to the new format during
         migration. The legacy keys are replaced by their new equivalents."""
+        # Use a test-specific key to avoid clashing with Core's system config.
+        config_key = "app_config_v1"
+
         # Pre-condition: no config stored
-        assert mock_vault.retrieve(0, "config") is None
+        assert mock_vault.retrieve(0, config_key) is None
 
         # Old-style flat config
         old_config = {
@@ -127,10 +130,10 @@ class TestSchemaMigration:
             "embed_provider": "ollama",
             "embed_model": "nomic-embed-text",
         }
-        mock_vault.store(0, "config", old_config)
+        mock_vault.store(0, config_key, old_config)
 
         # Verify old format was stored
-        pre_migration = mock_vault.retrieve(0, "config")
+        pre_migration = mock_vault.retrieve(0, config_key)
         assert "llm_provider" in pre_migration
         assert "DINA_LIGHT" not in pre_migration
 
@@ -139,9 +142,9 @@ class TestSchemaMigration:
             "DINA_LIGHT": f"{pre_migration['llm_provider']}/{pre_migration['llm_model']}",
             "DINA_EMBED": f"{pre_migration['embed_provider']}/{pre_migration['embed_model']}",
         }
-        mock_vault.store(0, "config", new_config)
+        mock_vault.store(0, config_key, new_config)
 
-        stored = mock_vault.retrieve(0, "config")
+        stored = mock_vault.retrieve(0, config_key)
         assert "DINA_LIGHT" in stored
         assert stored["DINA_LIGHT"] == "ollama/gemma3"
         assert stored["DINA_EMBED"] == "ollama/nomic-embed-text"
@@ -150,7 +153,7 @@ class TestSchemaMigration:
         assert "llm_model" not in stored
 
         # Config is in Tier 0 (system), not in other tiers
-        assert mock_vault.retrieve(1, "config") is None
+        assert mock_vault.retrieve(1, config_key) is None
 
 # TST-INT-333
     def test_schema_migration_identity_sqlite(

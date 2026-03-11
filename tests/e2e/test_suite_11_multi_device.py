@@ -68,6 +68,14 @@ class TestMultiDeviceSync:
         phone.ws_messages.clear()
         laptop.ws_messages.clear()
 
+        # Ensure Sancho's sharing policy allows context (a prior test may
+        # have set context="none" and sharing policies are session-scoped).
+        sancho.set_sharing_policy(
+            node.did,
+            context="full",
+            presence="eta_only",
+        )
+
         # Sancho sends a D2D arrival message to Don Alonso
         sancho.send_d2d(
             node.did,

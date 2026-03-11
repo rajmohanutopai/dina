@@ -371,7 +371,7 @@ class TestTrustNetworkLifecycle:
         }
 
         # Verify the tombstone signature is valid (author's key)
-        assert _mock_verify(tombstone_data, tombstone_sig, don_alonso.root_private_key)
+        assert _mock_verify(tombstone_data, tombstone_sig, don_alonso.root_public_key)
 
         # Author deletion succeeds
         deleted = don_alonso.pds.delete(record_id, tombstone)
@@ -423,7 +423,7 @@ class TestTrustNetworkLifecycle:
 
         # Verify the attacker's signature does NOT match the author's key
         valid = _mock_verify(
-            attacker_tombstone_data, attacker_sig, don_alonso.root_private_key
+            attacker_tombstone_data, attacker_sig, don_alonso.root_public_key
         )
         assert valid is False, "Non-author signature must not verify with author's key"
 

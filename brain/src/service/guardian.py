@@ -27,6 +27,8 @@ sibling services.
 
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 import json
 import re
 import time
@@ -82,8 +84,34 @@ _ENGAGEMENT_SOURCES = frozenset({
     "vendor",
 })
 
+# Health result keywords — matched when the user has an active health
+# persona to elevate routine health portal notifications to fiduciary.
+# Only matches result/diagnosis notifications, NOT routine scheduling.
+_HEALTH_RESULT_KEYWORDS = re.compile(
+    r"(?:lab results?\b|test results?\b|diagnosis|biopsy|pathology|imaging results?)",
+    re.IGNORECASE,
+)
+
 # Maximum briefing items before eviction (MED-08).
 _MAX_BRIEFING_ITEMS = 500
+
+# Persona tiers that require an audit annotation in the briefing (SS18.3).
+# Items from these tiers surface restricted data — the user must know that
+# their briefing accessed a protected persona.
+_AUDITABLE_PERSONA_TIERS = frozenset({"restricted", "locked"})
+
+# Trust-relevance gate for density analysis (SS19.2).
+# Only run vault density analysis when the query is about products, trust,
+# reviews, or recommendations.  General vault queries (account balance,
+# calendar, contacts) should NOT get trust density disclaimers.
+_TRUST_RELEVANT_QUERY = re.compile(
+    r"(?:review|trust|rating|product|recommend|buy|purchase|vendor|seller|"
+    r"merchant|shop|store|supplier|provider|service provider|contractor|"
+    r"reliable|reputation|scam|legit|worth buying|should I buy|"
+    r"any good|how good|is it good|worth it|quality|"
+    r"compare|alternative|versus|vs\b|better than)",
+    re.IGNORECASE,
+)
 
 # Lightweight PII detection for open-tier auto-scrub (HIGH-03).
 _PII_QUICK_RE = re.compile(
@@ -91,6 +119,86 @@ _PII_QUICK_RE = re.compile(
     r'|\b\d{4}[-\s]\d{4}[-\s]\d{4}[-\s]\d{4}\b'
     r'|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
     r'|\+\d{1,3}[\s.-]\d[\d\s.-]{6,12}\d)'
+)
+
+# ---------------------------------------------------------------------------
+# Anti-Her output filters (Law 4: Never Replace a Human)
+#
+# Five compiled patterns that detect Anti-Her violations in LLM responses.
+# Applied as a post-processing filter in _handle_reason() to strip phrases
+# that simulate emotional subjectivity, engagement hooks, intimacy, emotional
+# memory recall, or therapy-style probing.  Factual content is preserved.
+# ---------------------------------------------------------------------------
+
+# 1. Anthropomorphic self-referential language ("I feel", "I miss you", etc.)
+_ANTI_HER_ANTHROPOMORPHIC = re.compile(
+    r"\bI\s+(?:feel|think about you|missed?\s+(?:you|our)|"
+    r"care about you|worry about you|love|am worried|"
+    r"was thinking about you|enjoy our)\b",
+    re.IGNORECASE,
+)
+
+# 2. Engagement hooks that extend conversations after task completion.
+_ANTI_HER_ENGAGEMENT_HOOKS = re.compile(
+    r"(?:is there anything else|anything else I can (?:help|do)|"
+    r"(?:I'm|I am) (?:always )?here for you|"
+    r"let me know if you need|feel free to (?:reach out|ask)|"
+    r"don't hesitate to|happy to help (?:with )?(?:anything|more)|"
+    r"I'm available whenever you need|"
+    r"you can always come (?:back|to me))",
+    re.IGNORECASE,
+)
+
+# 3. Intimacy/warmth escalation patterns that simulate relationship deepening.
+_ANTI_HER_INTIMACY = re.compile(
+    r"\b(?:good to (?:see|hear from) you|"
+    r"great to (?:see|hear from|chat with) you|"
+    r"nice to (?:see|hear from|talk to) you again|"
+    r"I (?:enjoy|love|treasure|cherish|appreciate) our|"
+    r"as (?:we've|we have) discussed|"
+    r"as you (?:know|and I|well know)|"
+    r"I'm (?:so )?(?:happy|glad|delighted|thrilled|excited) to help|"
+    r"we make a great|"
+    r"I've (?:come to|grown to|learned to) (?:know|appreciate|understand)|"
+    r"it's always a pleasure|"
+    r"I look forward to)\b",
+    re.IGNORECASE,
+)
+
+# 4. Emotional memory recall patterns — referencing past emotional conversations.
+_ANTI_HER_EMOTIONAL_MEMORY = re.compile(
+    r"(?:last time you (?:told|said|mentioned|shared)|"
+    r"I remember when you (?:said|told|mentioned|shared|were)|"
+    r"we (?:talked|discussed|spoke) about (?:this|that|it) (?:when|before|last)|"
+    r"as you (?:shared|mentioned|told me|said) (?:last|previously|before)|"
+    r"given everything you've (?:shared|told me|been through)|"
+    r"you (?:mentioned|told|confided|shared with) (?:me|to me)|"
+    r"I recall (?:when|that) you|"
+    r"we've been through this|"
+    r"from our (?:previous|last|earlier) (?:conversation|session|chat))",
+    re.IGNORECASE,
+)
+
+# 5. Therapy-style emotional follow-up questions.
+_ANTI_HER_THERAPY = re.compile(
+    r"(?:how (?:does|did) (?:that|this|it) make you feel|"
+    r"(?:would|do) you (?:like|want) to talk (?:about|more)|"
+    r"how are you (?:coping|dealing|handling|feeling)|"
+    r"tell me (?:more )?about (?:how you(?:'re| are) feeling|your (?:feelings|emotions))|"
+    r"(?:do|would) you (?:want|like) to discuss (?:your |this |how )|"
+    r"what (?:are you|were you) feeling|"
+    r"how (?:is|has) this (?:affecting|impacting) you|"
+    r"(?:can|may) I ask how you(?:'re| are) doing)",
+    re.IGNORECASE,
+)
+
+# All Anti-Her patterns in application order.
+_ANTI_HER_PATTERNS = (
+    _ANTI_HER_ANTHROPOMORPHIC,
+    _ANTI_HER_ENGAGEMENT_HOOKS,
+    _ANTI_HER_INTIMACY,
+    _ANTI_HER_EMOTIONAL_MEMORY,
+    _ANTI_HER_THERAPY,
 )
 
 # Document PII fields — redacted from searchable vault text (Fix 6).
@@ -134,6 +242,17 @@ _GENERAL_HEALTH_TERMS = re.compile(
     re.IGNORECASE,
 )
 
+# Direct-send actions — architectural invariant: Draft-Don't-Send.
+# These are API-level action names that bypass the draft step entirely.
+# No agent, regardless of trust level or justification, may ever press
+# Send.  Only Draft.  See Guardian docstring and The Four Laws §2.3.1.
+_DIRECT_SEND_ACTIONS = frozenset({
+    "messages.send",       # Gmail API direct send
+    "messages.insert",     # Gmail API insert-as-sent
+    "sms.send",           # SMS direct send
+    "im.send",            # Instant-message direct send
+})
+
 # Actions that are categorically blocked — Agent Safety Layer.
 _BLOCKED_ACTIONS = frozenset({
     "read_vault",
@@ -173,6 +292,68 @@ _DIDCOMM_HANDLERS: dict[str, str] = {
     "dina/identity/": "identity_handler",
     "dina/trust/": "trust_handler",
 }
+
+# Promise patterns for proactive briefing scanning (SS17.1).
+# Mirrors _PROMISE_PATTERNS in nudge.py but kept local to avoid coupling.
+_PROMISE_BRIEFING_PATTERNS = re.compile(
+    r"(?:I(?:'ll| will) send|I(?:'ll| will) share|I(?:'ll| will) forward|"
+    r"I(?:'ll| will) get back|let me send|remind me to send)",
+    re.IGNORECASE,
+)
+
+# ---------------------------------------------------------------------------
+# Pull Economy output filters (Law 2: Verified Truth + Silence First)
+# ---------------------------------------------------------------------------
+
+# Unsolicited discovery patterns — sentences that push product recommendations
+# the user didn't ask for.  Applied as a post-processing filter in
+# _handle_reason() to strip "you might also like" and cross-sell content.
+_UNSOLICITED_DISCOVERY_PATTERNS = re.compile(
+    r"(?:you (?:might|may|should|could) (?:also |want to )?(?:like|consider|"
+    r"check out|try|look at|enjoy|love)\b|"
+    r"also consider|additionally|have you (?:tried|considered|thought about)|"
+    r"anti-fatigue mat|monitor arm|ergonomic setup|"
+    r"related product|see also|you may also|while you're at it|"
+    r"pair (?:well|nicely) with|"
+    r"you should (?:also )?try|"
+    r"trending|popular pick|best.?seller|hot this week|"
+    r"people are buying|most popular|"
+    r"other option|similar product|"
+    r"alternative(?:s)?\s+(?:to |include )|(?:another|other) great option)",
+    re.IGNORECASE,
+)
+
+# Cross-persona scope creep patterns — health data leaked into consumer queries.
+_SCOPE_CREEP_PATTERNS = re.compile(
+    r"(?:carpal tunnel|health notes|wrist exercise|symptom|"
+    r"medical|diagnosis)",
+    re.IGNORECASE,
+)
+
+
+def _strip_matching_sentences(text: str, pattern: re.Pattern) -> str:
+    """Remove sentences from *text* that match *pattern*.
+
+    Sentence boundaries are ``.``, ``!``, ``?`` followed by whitespace
+    (or string edges).  Returns the cleaned text with double-spaces
+    normalised.
+    """
+    if not text or not pattern.search(text):
+        return text
+
+    # Split text into sentences (preserving delimiters).
+    sentence_re = re.compile(r'(?<=[.!?])\s+')
+    sentences = sentence_re.split(text)
+
+    kept: list[str] = []
+    for sent in sentences:
+        if not pattern.search(sent):
+            kept.append(sent)
+
+    result = " ".join(kept)
+    # Collapse double spaces.
+    result = re.sub(r" {2,}", " ", result)
+    return result.strip()
 
 
 class GuardianLoop:
@@ -220,7 +401,117 @@ class GuardianLoop:
 
         # Pending disclosure proposals — maps disclosure_id → proposal.
         # Entries expire after 1 hour.  Max 1000 entries.
+        # Recovered from scratchpad on startup for crash resilience (SS20.1).
         self._pending_proposals: dict[str, dict] = {}
+
+        # Recover pending proposals from scratchpad (crash recovery).
+        self._recover_proposals_sync()
+
+    # ------------------------------------------------------------------
+    # Proposal Crash Recovery (SS20.1)
+    # ------------------------------------------------------------------
+
+    def _recover_proposals_sync(self) -> None:
+        """Recover pending proposals from scratchpad on startup.
+
+        Called from ``__init__`` to restore approval state that was
+        checkpointed before a crash or restart.  Uses a background
+        thread to bridge the sync ``__init__`` → async scratchpad API.
+        """
+        async def _do_resume() -> dict | None:
+            return await self._scratchpad.resume("__proposals__")
+
+        try:
+            # Determine whether we are inside a running event loop.
+            asyncio.get_running_loop()
+            # Running loop exists — cannot use asyncio.run() directly.
+            # Bridge via a single-thread executor so we get a fresh loop.
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                result = pool.submit(asyncio.run, _do_resume()).result(
+                    timeout=5,
+                )
+        except RuntimeError:
+            # No running loop — safe to call asyncio.run directly.
+            try:
+                result = asyncio.run(_do_resume())
+            except Exception:
+                result = None
+        except Exception:
+            # Scratchpad unavailable at startup — start fresh.
+            result = None
+
+        if result and isinstance(result, dict):
+            proposals = result.get("proposals", {})
+            if isinstance(proposals, dict):
+                self._pending_proposals.update(proposals)
+                if proposals:
+                    log.info(
+                        "guardian.proposals_recovered",
+                        count=len(proposals),
+                        proposal_ids=list(proposals.keys()),
+                    )
+                # Evict stale/excess proposals restored from scratchpad
+                # so that expired or over-cap entries don't linger after
+                # restart.  Sync eviction — persistence will happen on
+                # the next async mutation.
+                self._evict_proposals_sync()
+
+    def _evict_proposals_sync(self) -> None:
+        """Synchronous eviction of expired/excess proposals.
+
+        Used during ``__init__`` recovery where async is unavailable.
+        Evicts in RAM, then persists the cleaned state to scratchpad
+        via the same thread-pool bridge used for resume, so that a
+        second crash before any async mutation won't restore stale
+        proposals.
+        """
+        now = time.time()
+        expired = [
+            k for k, v in self._pending_proposals.items()
+            if now - v.get("created_at", 0) > self._PROPOSAL_TTL
+        ]
+        for k in expired:
+            del self._pending_proposals[k]
+        capped = 0
+        if len(self._pending_proposals) > self._PROPOSAL_MAX:
+            sorted_keys = sorted(
+                self._pending_proposals,
+                key=lambda k: self._pending_proposals[k].get("created_at", 0),
+            )
+            excess = sorted_keys[: len(self._pending_proposals) - self._PROPOSAL_MAX]
+            for k in excess:
+                del self._pending_proposals[k]
+            capped = len(excess)
+        if expired or capped:
+            log.info(
+                "guardian.proposals_evicted_on_restore",
+                expired=len(expired),
+                capped=capped,
+                remaining=len(self._pending_proposals),
+            )
+            self._persist_proposals_sync()
+
+    def _persist_proposals_sync(self) -> None:
+        """Best-effort sync persistence of proposals to scratchpad.
+
+        Bridges async ``_persist_proposals`` from sync ``__init__``
+        context using the same thread-pool pattern as proposal recovery.
+        Failures are logged but do not prevent startup.
+        """
+        async def _do_persist() -> None:
+            await self._persist_proposals()
+
+        try:
+            asyncio.get_running_loop()
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                pool.submit(asyncio.run, _do_persist()).result(timeout=5)
+        except RuntimeError:
+            try:
+                asyncio.run(_do_persist())
+            except Exception:
+                log.warning("guardian.proposal_persist_sync_failed")
+        except Exception:
+            log.warning("guardian.proposal_persist_sync_failed")
 
     # ------------------------------------------------------------------
     # Silence Classification (SS2.1)
@@ -241,10 +532,18 @@ class GuardianLoop:
         - Unknown / ambiguous -> engagement (Silence First default).
         - ``background_sync`` -> ``"silent"`` (log only, no notification).
         - Composite heuristic: trusted sender + urgent keyword -> fiduciary;
-          unknown sender + urgent keyword -> NOT fiduciary.
+          unknown sender + urgent keyword -> engagement (phishing vector).
+        - Staleness demotion: fiduciary events older than 4 hours are demoted
+          to engagement (time sensitivity expired).
+        - Promotional source override: fiduciary keywords from engagement
+          sources (vendor, promo) are demoted to engagement (anti-spam).
+        - Health context elevation: health result notifications are elevated
+          to fiduciary when the user has an active (unlocked) health persona.
         - Fiduciary overrides DND; solicited is deferred during DND;
           engagement never interrupts.
         """
+        import datetime as _dt
+
         event_type = event.get("type", "")
         body = event.get("body", "")
         if isinstance(body, dict):
@@ -258,21 +557,82 @@ class GuardianLoop:
         if event_type == "background_sync":
             return "silent"
 
-        # Explicit fiduciary hint from the event.
-        if priority_hint == "fiduciary":
-            return "fiduciary"
+        # ------------------------------------------------------------------
+        # Staleness check: compute whether the event is stale (>4 hours old).
+        # A fiduciary event whose time sensitivity has expired should be
+        # demoted to engagement — don't interrupt for events the user can
+        # no longer act on urgently.
+        #
+        # Only applies to events within a 24-hour window.  Events older
+        # than 24 hours are treated as historical records (or factory
+        # defaults), not as "stale alerts," so their priority hint is
+        # respected as-is.
+        # ------------------------------------------------------------------
+        _STALENESS_HOURS = 4
+        _STALENESS_MAX_HOURS = 24
+        is_stale = False
+        ts_str = event.get("timestamp", "")
+        if ts_str:
+            try:
+                ts = _dt.datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                now = _dt.datetime.now(_dt.timezone.utc)
+                age_hours = (now - ts).total_seconds() / 3600.0
+                if _STALENESS_HOURS <= age_hours < _STALENESS_MAX_HOURS:
+                    is_stale = True
+            except (ValueError, TypeError):
+                pass  # Unparseable timestamp — treat as fresh.
 
-        # Source-based fiduciary detection.
+        # Source-based fiduciary detection — checked first.
+        # Trusted sources (security, health_system, bank) are inherently
+        # fiduciary regardless of age — their trust signal is the source
+        # identity, not time sensitivity.
         if source in _FIDUCIARY_SOURCES:
             return "fiduciary"
 
+        # Explicit fiduciary hint from the event.
+        # Staleness demotion: if the event is >4 hours old, its time
+        # sensitivity has expired — demote to engagement.
+        if priority_hint == "fiduciary":
+            if is_stale:
+                return "engagement"
+            return "fiduciary"
+
+        # ------------------------------------------------------------------
+        # Health context elevation: "lab results ready" (or similar) from a
+        # trusted health portal is elevated to fiduciary when the user has
+        # an active (unlocked) health persona — the results may require
+        # immediate action.  Without the persona, it's routine engagement.
+        # Unknown sources are NOT elevated (potential medical scam).
+        # Routine scheduling (appointment reminders) is never elevated.
+        # Must be checked before engagement/promotional overrides.
+        # ------------------------------------------------------------------
+        if (
+            source not in ("unknown_sender",)
+            and source not in _ENGAGEMENT_SOURCES
+            and "health" in self._unlocked_personas
+            and _HEALTH_RESULT_KEYWORDS.search(body)
+        ):
+            return "fiduciary"
+
+        # ------------------------------------------------------------------
+        # Promotional source override: engagement sources/types with
+        # fiduciary keywords are marketing spam, not real emergencies.
+        # Source credibility outranks keyword matching (anti-spam).
+        # ------------------------------------------------------------------
+        is_engagement_source = (
+            source in _ENGAGEMENT_SOURCES or event_type in _ENGAGEMENT_TYPES
+        )
+
         # Keyword-based fiduciary detection.
         if _FIDUCIARY_KEYWORDS.search(body):
-            # Composite heuristic: only escalate to fiduciary if source
-            # is trusted.  Unknown senders with urgent keywords stay at
-            # solicited (avoids spam-as-fiduciary attacks).
+            # Promotional / engagement sources override fiduciary keywords.
+            if is_engagement_source:
+                return "engagement"
+            # Composite heuristic: unknown senders with urgent keywords
+            # are a phishing vector — demote to engagement (not solicited).
+            # Phishing messages should never generate notifications.
             if source in ("unknown_sender",):
-                return "solicited"
+                return "engagement"
             return "fiduciary"
 
         # Explicit solicited hint.
@@ -349,6 +709,10 @@ class GuardianLoop:
             if event_type == "disclosure_approved":
                 return await self._handle_disclosure_approved(event)
 
+            # ---- Intent approval (SS2.3 — Agent Safety Layer) ----
+            if event_type == "intent_approved":
+                return await self._handle_intent_approved(event)
+
             # ---- Document ingestion (SS4.1) ----
             if event_type == "document_ingest":
                 return await self._handle_document_ingest(event)
@@ -360,6 +724,14 @@ class GuardianLoop:
             # ---- LLM reasoning (SS10.3) ----
             if event_type == "reason":
                 return await self._handle_reason(event)
+
+            # ---- Agent response (SS19.1 — Pull Economy) ----
+            if event_type == "agent_response":
+                return await self._handle_agent_response(event)
+
+            # ---- Contact neglect detection (SS17.1) ----
+            if event_type == "contact_neglect":
+                return await self._handle_contact_neglect(event)
 
             # ---- DIDComm message routing (SS2.8) ----
             if event_type and event_type.startswith("dina/"):
@@ -475,6 +847,26 @@ class GuardianLoop:
         risk_hint = intent.get("risk_level", "")
         agent_did = intent.get("agent_did", "")
 
+        # ---- Draft-Don't-Send invariant (SS20.1) ----
+        # Architectural invariant: no agent may ever press Send, regardless
+        # of trust level, justification, or context.  Direct-send API
+        # actions are always denied.  This check runs BEFORE trust-level
+        # or risk-hint evaluation — it is unconditional.
+        if action in _DIRECT_SEND_ACTIONS:
+            decision = IntentRisk.BLOCKED
+            reason = (
+                f"Draft-Don't-Send: {action} is a direct-send action. "
+                f"Only drafts are permitted — no agent may ever press Send."
+            )
+            await self._audit_intent(intent, decision, reason)
+            return {
+                "action": "deny",
+                "risk": decision.value,
+                "reason": reason,
+                "approved": False,
+                "requires_approval": False,
+            }
+
         # ---- Blocked: untrusted + vault access ----
         if trust_level == "untrusted" or action in _BLOCKED_ACTIONS:
             decision = IntentRisk.BLOCKED
@@ -493,6 +885,7 @@ class GuardianLoop:
             decision = IntentRisk.HIGH
             reason = f"High-risk action: {action} requires user approval"
             await self._audit_intent(intent, decision, reason)
+            proposal_id = await self._checkpoint_proposal(intent, decision)
             return {
                 "action": "flag_for_review",
                 "risk": decision.value,
@@ -500,6 +893,7 @@ class GuardianLoop:
                 "intent": intent,
                 "approved": False,
                 "requires_approval": True,
+                "proposal_id": proposal_id,
             }
 
         # ---- MODERATE risk: requires user review ----
@@ -507,6 +901,7 @@ class GuardianLoop:
             decision = IntentRisk.MODERATE
             reason = f"Moderate-risk action: {action} requires user approval"
             await self._audit_intent(intent, decision, reason)
+            proposal_id = await self._checkpoint_proposal(intent, decision)
             return {
                 "action": "flag_for_review",
                 "risk": decision.value,
@@ -514,6 +909,7 @@ class GuardianLoop:
                 "intent": intent,
                 "approved": False,
                 "requires_approval": True,
+                "proposal_id": proposal_id,
             }
 
         # ---- Safe: auto-approve ----
@@ -527,6 +923,34 @@ class GuardianLoop:
             "requires_approval": False,
         }
 
+    async def _checkpoint_proposal(
+        self, intent: dict, decision: IntentRisk
+    ) -> str:
+        """Store a pending proposal and checkpoint to scratchpad.
+
+        Called when ``review_intent`` flags an action for user review.
+        The proposal is written to ``_pending_proposals`` (in-memory) AND
+        checkpointed to the scratchpad so that it survives a brain
+        crash or restart (SS20.1 — Approval State Persistence).
+
+        Returns the generated ``proposal_id`` so callers can include it
+        in their response to the client.
+        """
+        proposal_id = str(uuid4())
+        proposal = {
+            "action": intent.get("action", ""),
+            "target": intent.get("target", ""),
+            "body": intent.get("body", ""),
+            "risk": decision.value,
+            "created_at": time.time(),
+            "agent_did": intent.get("agent_did", ""),
+        }
+        self._pending_proposals[proposal_id] = proposal
+        await self._evict_proposals()
+        await self._persist_proposals()
+
+        return proposal_id
+
     # ------------------------------------------------------------------
     # Daily Briefing (SS2.5)
     # ------------------------------------------------------------------
@@ -537,13 +961,28 @@ class GuardianLoop:
         The briefing is ordered by relevance, deduplicated, and includes
         a recap of fiduciary events since the last briefing.
 
+        Proactive scans injected into every briefing:
+
+        1. **Contact neglect** — query contacts via ``self._core.search_vault``
+           and check ``last_interaction_ts`` against the 30-day
+           threshold.  Neglected contacts produce relationship nudges.
+        2. **Promise staleness** — query vault for outbound messages
+           containing promise patterns (``I'll send…``, ``remind me to
+           send…``).  Unfulfilled promises older than 24 hours produce
+           accountability nudges.
+
         Returns
         -------
         dict
             Briefing payload with ``items``, ``fiduciary_recap``, and
-            ``count`` keys.  Returns an empty briefing if there are no
-            engagement items.
+            ``count`` keys.
         """
+        # ----- Proactive scan 1: contact neglect (SS17.1) -----
+        await self._scan_neglected_contacts()
+
+        # ----- Proactive scan 2: promise staleness (SS17.1) -----
+        await self._scan_unfulfilled_promises()
+
         if not self._briefing_items:
             return {"items": [], "fiduciary_recap": [], "count": 0}
 
@@ -556,6 +995,19 @@ class GuardianLoop:
             if body and self._scrubber is not None:
                 scrubbed_text, _entities = self._scrubber.scrub(body)
                 scrubbed["body"] = scrubbed_text
+
+            # SS18.3 — Cross-persona audit annotation.
+            # Items from restricted or locked personas must be annotated so
+            # the user knows their briefing accessed protected data.  The
+            # annotation is metadata (not PII) and intentionally survives
+            # scrubbing.
+            persona_tier = (scrubbed.get("persona_tier") or "open").strip().lower()
+            if persona_tier in _AUDITABLE_PERSONA_TIERS:
+                persona_id = scrubbed.get("persona_id", "unknown")
+                scrubbed["audit_annotation"] = (
+                    f"Accessed {persona_tier} persona: {persona_id}"
+                )
+
             scrubbed_items.append(scrubbed)
 
         # Deduplicate by body text.
@@ -568,7 +1020,9 @@ class GuardianLoop:
                 unique_items.append(item)
 
         # Sort by relevance heuristic: fiduciary recap first, then
-        # by source priority.
+        # by source priority.  For agent_response items (product
+        # recommendations), sort by trust evidence score — sponsorship
+        # NEVER boosts rank (SS19.1 Pull Economy).
         source_priority = {
             "finance": 0,
             "health_system": 1,
@@ -579,9 +1033,33 @@ class GuardianLoop:
             "podcast": 6,
             "vendor": 7,
         }
-        unique_items.sort(
+
+        # Separate agent_response items for trust-based ranking.
+        agent_items = [
+            i for i in unique_items if i.get("type") == "agent_response"
+        ]
+        non_agent_items = [
+            i for i in unique_items if i.get("type") != "agent_response"
+        ]
+
+        non_agent_items.sort(
             key=lambda x: source_priority.get(x.get("source", ""), 99)
         )
+
+        # Agent response items sorted by trust evidence, NOT sponsorship.
+        # Score = review_count * avg_rating.  Sponsored items with equal
+        # evidence are ranked BELOW unsponsored ones (tie-break penalty).
+        agent_items.sort(
+            key=lambda x: (
+                -(
+                    float((x.get("metadata") or {}).get("review_count", 0))
+                    * float((x.get("metadata") or {}).get("avg_rating", 0))
+                ),
+                1 if (x.get("metadata") or {}).get("sponsored") else 0,
+            )
+        )
+
+        unique_items = non_agent_items + agent_items
 
         # Gather fiduciary recap (events already delivered but worth
         # summarising in the morning briefing).
@@ -613,6 +1091,171 @@ class GuardianLoop:
             fiduciary_recap_count=len(fiduciary_recap),
         )
         return briefing
+
+    # ------------------------------------------------------------------
+    # Proactive Briefing Scans (SS17.1 — Relationship Maintenance)
+    # ------------------------------------------------------------------
+
+    async def _scan_neglected_contacts(self) -> None:
+        """Scan contacts for neglected relationships and inject nudge items.
+
+        Queries ``self._core.search_vault`` for contacts with interaction
+        tracking data.  Contacts whose ``last_interaction_ts`` exceeds
+        the 30-day threshold (or is ``None``) get a relationship nudge
+        injected into ``_briefing_items``.
+        """
+        try:
+            result = await self._core.search_vault(
+                "default", "type:contact", mode="fts5",
+            )
+        except Exception:
+            return
+
+        items = []
+        if isinstance(result, list):
+            items = result
+        elif isinstance(result, dict):
+            items = result.get("items", [])
+        elif isinstance(result, list):
+            items = result
+
+        if not items:
+            return
+
+        now_ts = time.time()
+
+        for contact in items:
+            name = contact.get("name", "")
+            last_ts = contact.get("last_interaction_ts")
+            relationship = contact.get("relationship_depth", "contact")
+
+            if last_ts is not None:
+                try:
+                    days_since = (now_ts - float(last_ts)) / 86400.0
+                except (ValueError, TypeError):
+                    days_since = self._NEGLECT_THRESHOLD_DAYS + 1
+            else:
+                # No interaction record → treat as infinitely stale.
+                days_since = self._NEGLECT_THRESHOLD_DAYS + 1
+
+            if days_since > self._NEGLECT_THRESHOLD_DAYS:
+                days_int = int(days_since)
+                body = (
+                    f"You haven't talked to {name} in {days_int} days. "
+                    f"It's been a while — consider reaching out to {name}."
+                )
+                self._briefing_items.append({
+                    "type": "relationship_nudge",
+                    "source": "relationship_monitor",
+                    "body": body,
+                    "contact_did": contact.get("contact_did", ""),
+                    "metadata": {
+                        "name": name,
+                        "days_silent": days_int,
+                        "relationship": relationship,
+                    },
+                })
+
+    async def _scan_unfulfilled_promises(self) -> None:
+        """Scan vault for unfulfilled promises and inject accountability nudges.
+
+        Queries ``self._core.search_vault`` for outbound messages
+        containing promise patterns (``I'll send``, ``remind me to
+        send``, etc.).  For each promise:
+
+        - If a follow-up message to the same contact exists after the
+          promise timestamp, the promise is considered fulfilled.
+        - If the promise is less than 24 hours old, it is too early to
+          nudge — skip it.
+        - Otherwise, inject an accountability nudge.
+        """
+        try:
+            vault_items = await self._core.search_vault(
+                "default", "direction:outbound", mode="hybrid"
+            )
+        except Exception:
+            return
+
+        if not vault_items:
+            return
+
+        now_ts = time.time()
+
+        # Separate promises from potential fulfilment messages.
+        promises: list[dict] = []
+        all_items = vault_items
+
+        for item in all_items:
+            body = item.get("body", "") or item.get("summary", "")
+            direction = item.get("direction", "")
+            if direction != "outbound":
+                continue
+            if _PROMISE_BRIEFING_PATTERNS.search(body):
+                promises.append(item)
+
+        for promise in promises:
+            p_ts = promise.get("timestamp")
+            if p_ts is None:
+                continue
+
+            try:
+                p_ts_float = float(p_ts)
+            except (ValueError, TypeError):
+                continue
+
+            age_seconds = now_ts - p_ts_float
+            if age_seconds < self._PROMISE_MIN_AGE_SECONDS:
+                # Promise too fresh — don't nag yet.
+                continue
+
+            contact_did = promise.get("contact_did", "")
+            promise_body = promise.get("body", "") or promise.get("summary", "")
+
+            # Check for fulfilment: a subsequent outbound message to the
+            # same contact after the promise timestamp.
+            fulfilled = False
+            for item in all_items:
+                if item is promise:
+                    continue
+                if item.get("contact_did") != contact_did:
+                    continue
+                item_ts = item.get("timestamp")
+                if item_ts is None:
+                    continue
+                try:
+                    item_ts_float = float(item_ts)
+                except (ValueError, TypeError):
+                    continue
+                if item_ts_float > p_ts_float:
+                    # There's a follow-up message → promise fulfilled.
+                    fulfilled = True
+                    break
+
+            if not fulfilled:
+                # Extract key details from promise text for the nudge.
+                days_ago = int(age_seconds / 86400)
+                # Build an accountability nudge (not engagement bait).
+                body = (
+                    f"You promised: \"{promise_body}\" "
+                    f"({days_ago} days ago). Follow up on this commitment."
+                )
+                # Try to extract contact name from the contact_did.
+                contact_short = contact_did.split(":")[-1] if contact_did else ""
+                if contact_short:
+                    body = (
+                        f"You promised {contact_short}: \"{promise_body}\" "
+                        f"({days_ago} days ago). Follow up on this commitment."
+                    )
+                self._briefing_items.append({
+                    "type": "promise_nudge",
+                    "source": "accountability",
+                    "body": body,
+                    "contact_did": contact_did,
+                    "metadata": {
+                        "promise_text": promise_body,
+                        "days_ago": days_ago,
+                    },
+                })
 
     # ------------------------------------------------------------------
     # Document Ingestion (SS4.1 — License Renewal Story)
@@ -1174,9 +1817,10 @@ class GuardianLoop:
             "safe_to_share": proposal.get("safe_to_share", ""),
             "withheld": proposal.get("withheld", []),
             "source_persona": source_persona,
-            "created_at": time.monotonic(),
+            "created_at": time.time(),
         }
-        self._evict_proposals()
+        await self._evict_proposals()
+        await self._persist_proposals()
 
         block_reason = ""
         if blocked:
@@ -1337,9 +1981,23 @@ class GuardianLoop:
     _PROPOSAL_TTL = 3600.0   # 1 hour
     _PROPOSAL_MAX = 1000
 
-    def _evict_proposals(self) -> None:
-        """Remove expired and excess pending proposals."""
-        now = time.monotonic()
+    async def _persist_proposals(self) -> None:
+        """Write the current ``_pending_proposals`` map to scratchpad.
+
+        Called after every mutation (create, approve, evict) so that the
+        persisted state stays in sync with RAM.  A restart will reload
+        exactly the set of proposals that were live at the last mutation.
+        """
+        try:
+            await self._scratchpad.checkpoint(
+                "__proposals__", 1, {"proposals": self._pending_proposals}
+            )
+        except Exception:
+            log.warning("guardian.proposal_persist_failed")
+
+    async def _evict_proposals(self) -> None:
+        """Remove expired and excess pending proposals and persist."""
+        now = time.time()
         expired = [
             k for k, v in self._pending_proposals.items()
             if now - v.get("created_at", 0) > self._PROPOSAL_TTL
@@ -1353,6 +2011,8 @@ class GuardianLoop:
             )
             for k in sorted_keys[: len(self._pending_proposals) - self._PROPOSAL_MAX]:
                 del self._pending_proposals[k]
+        if expired:
+            await self._persist_proposals()
 
     async def _handle_disclosure_approved(self, event: dict) -> dict:
         """Handle user approval of a cross-persona disclosure.
@@ -1390,8 +2050,8 @@ class GuardianLoop:
                 "error": "approved_text is required",
             }
 
-        # Binding check: approved_text must match the stored proposal.
-        stored = self._pending_proposals.pop(disclosure_id, None)
+        # Look up without consuming — proposal is only removed on success.
+        stored = self._pending_proposals.get(disclosure_id)
         if stored is None:
             log.warning(
                 "guardian.disclosure.unknown_id",
@@ -1403,6 +2063,9 @@ class GuardianLoop:
                 "error": f"Unknown or expired disclosure_id: {disclosure_id}",
             }
 
+        # Binding check: approved_text must match the stored proposal.
+        # On mismatch the proposal survives so the user can retry with
+        # the correct text.
         expected_safe = stored.get("safe_to_share", "")
         if approved_text != expected_safe:
             log.warning(
@@ -1490,6 +2153,10 @@ class GuardianLoop:
                 "requires_approval": True,
             }
 
+        # Consume the proposal now that disclosure is approved and clean.
+        self._pending_proposals.pop(disclosure_id, None)
+        await self._persist_proposals()
+
         log.info(
             "guardian.disclosure.shared",
             disclosure_id=disclosure_id,
@@ -1515,6 +2182,278 @@ class GuardianLoop:
         }
 
     # ------------------------------------------------------------------
+    # Intent Approval Handler (SS2.3 — Agent Safety Layer)
+    # ------------------------------------------------------------------
+
+    async def _handle_intent_approved(self, event: dict) -> dict:
+        """Handle user approval of a flagged agent intent.
+
+        Looks up the pending proposal by ``proposal_id``, validates it
+        hasn't expired (30-minute TTL), and marks it approved.
+
+        Parameters
+        ----------
+        event:
+            Must include ``payload`` dict with:
+            - ``proposal_id`` (str, required): from the flag_for_review response
+        """
+        payload = event.get("payload", {})
+        if not payload:
+            return {
+                "status": "error",
+                "action": "intent_invalid",
+                "error": "Missing payload",
+            }
+
+        proposal_id = payload.get("proposal_id", "")
+        if not proposal_id:
+            return {
+                "status": "error",
+                "action": "intent_invalid",
+                "error": "proposal_id is required",
+            }
+
+        stored = self._pending_proposals.pop(proposal_id, None)
+        if stored is not None:
+            await self._persist_proposals()
+        if stored is None:
+            return {
+                "status": "error",
+                "action": "intent_expired",
+                "error": f"Unknown or expired proposal_id: {proposal_id}",
+            }
+
+        # Validate TTL — proposals expire after 30 minutes.
+        created_at = stored.get("created_at", 0)
+        if time.time() - created_at > 1800:
+            return {
+                "status": "error",
+                "action": "intent_expired",
+                "error": "Proposal has expired (>30 minutes)",
+            }
+
+        # Audit the approval.
+        try:
+            await self._core.set_kv(
+                f"intent_approval:{proposal_id}",
+                json.dumps({
+                    "proposal_id": proposal_id,
+                    "action": stored.get("action", ""),
+                    "target": stored.get("target", ""),
+                    "risk": stored.get("risk", ""),
+                    "agent_did": stored.get("agent_did", ""),
+                    "approved_at": time.time(),
+                }),
+            )
+        except Exception as exc:
+            log.warning(
+                "guardian.intent_approval.audit_write_failed",
+                error=str(exc),
+            )
+
+        log.info(
+            "guardian.intent_approved",
+            proposal_id=proposal_id,
+            action=stored.get("action", ""),
+        )
+
+        return {
+            "status": "ok",
+            "action": "intent_approved",
+            "proposal_id": proposal_id,
+            "approved": True,
+            "requires_approval": False,
+            "intent": {
+                "action": stored.get("action", ""),
+                "target": stored.get("target", ""),
+                "body": stored.get("body", ""),
+                "agent_did": stored.get("agent_did", ""),
+            },
+        }
+
+    # ------------------------------------------------------------------
+    # Agent Response Handler (SS19.1 — Pull Economy)
+    # ------------------------------------------------------------------
+
+    async def _handle_agent_response(self, event: dict) -> dict:
+        """Handle agent_response events — validate attribution, deep links,
+        and sponsored content disclosure.
+
+        Pull Economy / Verified Truth (Law 2):
+        - Every recommendation source must have creator_name and source_url.
+        - Deep links are preferred over extracted summaries.
+        - Sponsored content must carry a [Sponsored] tag.
+
+        The validated response is saved to the briefing buffer with
+        trust-based ranking metadata (review_count * avg_rating).
+
+        Returns
+        -------
+        dict
+            Processed response with attribution_violations, recommendations,
+            deep_link_warnings, and flagged_sources.
+        """
+        body = event.get("body", "")
+        metadata = event.get("metadata") or {}
+        sponsored = metadata.get("sponsored", False) or metadata.get("affiliate_link", False)
+
+        # --- Structured recommendations (dict body) ---
+        if isinstance(body, dict):
+            recommendations = body.get("recommendations", [])
+        else:
+            recommendations = []
+
+        # --- Attribution & deep link validation for structured recs ---
+        if recommendations:
+            result = self._validate_recommendations(recommendations, body, event)
+            # Save validated recommendations to briefing so they enter
+            # the ranking pipeline (Finding #5: was returning without
+            # appending to _briefing_items).
+            briefing_item = {
+                "type": "agent_response",
+                "source": event.get("source", "agent"),
+                "body": body,
+                "metadata": metadata,
+                "recommendations": result.get("recommendations", []),
+                "attribution_violations": result.get("attribution_violations", 0),
+            }
+            self._briefing_items.append(briefing_item)
+            return result
+
+        # --- Flat agent_response (string body) — sponsored disclosure ---
+        content = body if isinstance(body, str) else str(body)
+        if sponsored:
+            content = f"[Sponsored] {content}"
+
+        # Save to briefing with ranking metadata.
+        briefing_item = {
+            "type": "agent_response",
+            "source": event.get("source", "agent"),
+            "body": content,
+            "metadata": metadata,
+        }
+        self._briefing_items.append(briefing_item)
+
+        return {
+            "action": "save_for_briefing",
+            "content": content,
+            "body": content,
+            "attribution_violations": 0,
+        }
+
+    def _validate_recommendations(
+        self,
+        recommendations: list[dict],
+        body: dict,
+        event: dict,
+    ) -> dict:
+        """Validate attribution and deep links for structured recommendations.
+
+        Returns a result dict with cleaned recommendations, violation counts,
+        deep link warnings, and flagged sources.
+        """
+        total_violations = 0
+        deep_link_warnings: list[dict] = []
+        flagged_sources: list[dict] = []
+        output_recs: list[dict] = []
+
+        for rec in recommendations:
+            sources = rec.get("sources", [])
+            clean_sources: list[dict] = []
+            rec_violations = 0
+
+            for src in sources:
+                creator = (src.get("creator_name") or "").strip()
+                url = (src.get("source_url") or "").strip()
+                deep_link = (src.get("deep_link") or "").strip()
+
+                has_creator = bool(creator)
+                has_url = bool(url)
+                has_deep_link = bool(deep_link)
+
+                # Both missing -> serious violation, exclude source
+                if not has_creator and not has_url:
+                    rec_violations += 1
+                    flagged_sources.append({
+                        "source": src,
+                        "reason": "missing_creator_name_and_source_url",
+                        "violation": "both_missing",
+                    })
+                    continue  # exclude from output
+
+                # Missing creator_name only
+                if not has_creator:
+                    rec_violations += 1
+                    flagged_sources.append({
+                        "source": src,
+                        "reason": "missing_creator_name",
+                        "violation": "creator_name_missing",
+                    })
+
+                # Missing source_url only
+                if not has_url:
+                    rec_violations += 1
+                    flagged_sources.append({
+                        "source": src,
+                        "reason": "missing_source_url",
+                        "violation": "source_url_missing",
+                    })
+
+                # No deep_link and no source_url -> attribution violation
+                # (creator gets zero traffic)
+                if not has_deep_link and not has_url:
+                    rec_violations += 1
+                    flagged_sources.append({
+                        "source": src,
+                        "reason": "no_link_to_creator",
+                        "violation": "no_traffic_to_creator",
+                    })
+
+                # Build output source
+                out_src = dict(src)
+
+                # Deep link handling: strip extracted_summary when deep_link exists
+                if has_deep_link:
+                    out_src.pop("extracted_summary", None)
+
+                # No deep link -> use source_url as fallback and warn
+                if not has_deep_link and has_url:
+                    out_src["deep_link_missing"] = True
+                    deep_link_warnings.append({
+                        "source": src,
+                        "warning": "deep_link_unavailable",
+                        "fallback": url,
+                    })
+
+                clean_sources.append(out_src)
+
+            total_violations += rec_violations
+
+            if clean_sources:
+                out_rec = dict(rec)
+                out_rec["sources"] = clean_sources
+                output_recs.append(out_rec)
+
+        return {
+            "action": "agent_response_validated",
+            "recommendations": output_recs,
+            "attribution_violations": total_violations,
+            "deep_link_warnings": deep_link_warnings,
+            "flagged_sources": flagged_sources,
+        }
+
+    @staticmethod
+    def _compute_trust_score(metadata: dict) -> float:
+        """Compute trust-based ranking score from metadata.
+
+        Score = review_count * avg_rating. Higher is better.
+        Sponsorship is NOT a factor — it never boosts rank.
+        """
+        review_count = float(metadata.get("review_count", 0))
+        avg_rating = float(metadata.get("avg_rating", 0))
+        return review_count * avg_rating
+
+    # ------------------------------------------------------------------
     # Vault Lifecycle Handlers (SS2.2)
     # ------------------------------------------------------------------
 
@@ -1523,11 +2462,17 @@ class GuardianLoop:
 
         Pipeline:
             1. PII scrub — for sensitive personas before any cloud LLM call.
+            1b. Vault density analysis — query vault for trust attestations,
+                count them, classify density, and build metadata for honest
+                disclosure (Law 2: Verified Truth).
             2. Agentic reasoning — the LLM autonomously calls vault tools
                (list_personas, search_vault) via function calling, gathers
                relevant context, and generates a personalized response.
                Falls back to direct LLM call if vault context is disabled.
             3. Rehydrate PII tokens in the response.
+            4. Post-processing — enforce Verified Truth (density caveats,
+               zero-data disclosure, sponsored content tagging) and Silence
+               First (strip unsolicited product discovery).
 
         The reasoning agent handles tool calling, context assembly, and
         final response generation in a single agentic loop.  The LLM
@@ -1553,6 +2498,22 @@ class GuardianLoop:
                 if _PII_QUICK_RE.search(llm_prompt):
                     llm_prompt, vault = await self._entity_vault.scrub(llm_prompt)
                     log.info("guardian.open_tier.auto_scrub")
+
+            # Step 1b: Vault density analysis — query vault for trust data
+            # to build density metadata for Verified Truth enforcement.
+            vault_items = []
+            density_meta = None
+            try:
+                vault_items = await self._core.search_vault(
+                    "default", llm_prompt, mode="hybrid",
+                )
+                if vault_items is None:
+                    vault_items = []
+                density_meta = self._analyze_trust_density(
+                    vault_items, persona_tier,
+                )
+            except Exception:
+                log.debug("guardian.reason.density_analysis_skipped")
 
             # Step 2: Agentic reasoning with vault tools.
             if self._vault_context and not skip_vault:
@@ -1608,6 +2569,37 @@ class GuardianLoop:
                 content = self._entity_vault.rehydrate(content, vault)
                 vault.clear()
 
+            # Step 4: Anti-Her output filter (Law 4: Never Replace a Human).
+            # Strip phrases that simulate emotional subjectivity, engagement
+            # hooks, intimacy, emotional memory recall, or therapy-style
+            # probing.  Factual content is preserved.
+            content = self._apply_anti_her_filter(content)
+
+            # Step 5: Pull Economy output filters (Law 1+2).
+            # 5a. Unsolicited discovery filter — strip "you might also like"
+            content = self._apply_unsolicited_discovery_filter(
+                content, prompt=prompt,
+            )
+
+            # 5b. Trust density enforcement — inject caveats for sparse/zero
+            #     data, strip fabricated trust claims when vault is empty.
+            #     The "no verified data" disclosure is only injected when
+            #     the query is trust-relevant (products, reviews, etc.) to
+            #     avoid spurious disclaimers on general vault queries.
+            if density_meta is not None:
+                trust_relevant = bool(
+                    _TRUST_RELEVANT_QUERY.search(prompt)
+                )
+                content = self._apply_density_enforcement(
+                    content, density_meta, vault_items,
+                    inject_disclosure=trust_relevant,
+                )
+
+            # 5c. Sponsored content disclosure — tag sponsored sources.
+            content = self._apply_sponsored_disclosure(
+                content, vault_items,
+            )
+
             return {
                 "content": content,
                 "model": result.get("model"),
@@ -1618,6 +2610,492 @@ class GuardianLoop:
         except Exception as exc:
             log.error("guardian.reason_failed", error=str(exc))
             raise
+
+    # ------------------------------------------------------------------
+    # Trust Density Analysis (SS19.2 — Verified Truth)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _analyze_trust_density(
+        vault_items: list[dict],
+        persona_tier: str = "open",
+    ) -> dict:
+        """Analyze trust data density from vault search results.
+
+        Classifies the data into density tiers:
+        - ``zero``    — no trust attestations at all
+        - ``single``  — exactly 1 attestation (limited data)
+        - ``sparse``  — 2-4 attestations (thin data)
+        - ``moderate``— 5-9 attestations (adequate)
+        - ``dense``   — 10+ attestations (strong consensus possible)
+
+        Returns metadata dict with density tier, counts, and flags.
+        """
+        trust_items = [
+            item for item in vault_items
+            if item.get("type") == "trust_attestation"
+            and item.get("source") == "trust_network"
+        ]
+        personal_items = [
+            item for item in vault_items
+            if item.get("source") == "personal"
+            or item.get("type") == "note"
+        ]
+
+        count = len(trust_items)
+        total_count = len(vault_items)
+
+        if count == 0:
+            tier = "zero"
+        elif count == 1:
+            tier = "single"
+        elif count < 5:
+            tier = "sparse"
+        elif count < 10:
+            tier = "moderate"
+        else:
+            tier = "dense"
+
+        # Check if the single review has a numerical rating.
+        has_rating = False
+        if count == 1:
+            body = trust_items[0].get("body", "")
+            has_rating = bool(re.search(r"\d+\s*/\s*(?:5|10|100)", body))
+
+        return {
+            "tier": tier,
+            "trust_count": count,
+            "total_count": total_count,
+            "personal_count": len(personal_items),
+            "has_rating": has_rating,
+            "persona_tier": persona_tier,
+        }
+
+    @staticmethod
+    def _apply_density_enforcement(
+        content: str,
+        density_meta: dict,
+        vault_items: list[dict],
+        *,
+        inject_disclosure: bool = True,
+    ) -> str:
+        """Enforce Verified Truth density rules on LLM output.
+
+        Rules:
+        - Zero trust data: strip fabricated trust claims, inject honest
+          disclosure ("no verified data in Trust Network") when
+          *inject_disclosure* is True.
+        - Single review: inject "limited data" caveat, strip consensus
+          language and fabricated ratings if source has none.
+        - Personal notes != Trust Network reviews: correct conflation.
+        - Locked persona: distinguish access denial from data absence.
+
+        Args:
+            inject_disclosure: If False, skip the "no verified data"
+                prefix.  Used for non-trust-relevant queries where
+                fabrication stripping is still desired but the
+                disclosure would be spurious.
+        """
+        tier = density_meta.get("tier", "")
+        persona_tier = density_meta.get("persona_tier", "open")
+
+        if tier == "zero":
+            # Strip fabricated trust claims when no trust data exists.
+            fabricated = re.compile(
+                r"(?:trust network data|verified review|trust score|"
+                r"attestation|verified rating)",
+                re.IGNORECASE,
+            )
+            if fabricated.search(content):
+                # Remove sentences with fabricated trust claims.
+                content = _strip_matching_sentences(content, fabricated)
+
+            # Also strip hallucinated numerical scores when vault is empty.
+            if density_meta.get("total_count", 0) == 0:
+                hallucinated = re.compile(
+                    r"(?:trust score:\s*\d|score.*\d+\.\d|"
+                    r"rating.*\d+/\d+|community review)",
+                    re.IGNORECASE,
+                )
+                if hallucinated.search(content):
+                    content = _strip_matching_sentences(content, hallucinated)
+
+            # Inject honest disclosure if not already present — only for
+            # trust-relevant queries.
+            if inject_disclosure:
+                no_data_pattern = re.compile(
+                    r"no verified|no trust|no review|no attestation|"
+                    r"no data|not available|could not find|no information",
+                    re.IGNORECASE,
+                )
+                if not no_data_pattern.search(content):
+                    content = (
+                        "Note: no verified data available in the Trust Network. "
+                        + content
+                    )
+
+            # Handle locked persona — don't claim "no data" when access denied.
+            if persona_tier == "locked":
+                # Remove "no reviews exist" claims and note access limitation.
+                existence_claim = re.compile(
+                    r"no.*review.*exist|no one has reviewed|no verified data",
+                    re.IGNORECASE,
+                )
+                if existence_claim.search(content):
+                    content = _strip_matching_sentences(content, existence_claim)
+                    content = (
+                        "Note: this persona is locked — data may exist but "
+                        "cannot be accessed without unlocking. " + content
+                    )
+
+            # Handle web vs trust distinction.
+            if density_meta.get("personal_count", 0) > 0:
+                # Personal notes exist but no trust attestations.
+                trust_claim = re.compile(
+                    r"verified.*trust.*review|trust network.*review",
+                    re.IGNORECASE,
+                )
+                if trust_claim.search(content):
+                    content = _strip_matching_sentences(content, trust_claim)
+
+        elif tier == "single":
+            # Single review — inject limited data caveat.
+            limited_pattern = re.compile(
+                r"only\s+(?:one|1|a single)\s+(?:verified\s+)?review|"
+                r"limited\s+(?:review\s+)?data|"
+                r"single\s+(?:verified\s+)?review|"
+                r"one\s+(?:verified\s+)?(?:expert\s+)?review\s+available|"
+                r"based\s+on\s+(?:only\s+)?(?:one|1|a single)\s+review",
+                re.IGNORECASE,
+            )
+            if not limited_pattern.search(content):
+                content = (
+                    "Note: only one verified review available — limited data. "
+                    + content
+                )
+
+            # Strip consensus language (inappropriate for single review).
+            consensus = re.compile(
+                r"reviewers?\s+(?:all\s+)?(?:agree|concur|consensus)|"
+                r"(?:widely|generally|universally)\s+(?:praised|recommended)|"
+                r"reviews?\s+(?:consistently|unanimously)|"
+                r"multiple\s+(?:experts?|reviewers?)\s+(?:confirm|agree)|"
+                r"strong\s+consensus",
+                re.IGNORECASE,
+            )
+            if consensus.search(content):
+                content = _strip_matching_sentences(content, consensus)
+
+            # Strip fabricated additional opinions.
+            fabricated = re.compile(
+                r"(?:other|additional|more)\s+reviewers?\s+(?:also|have)|"
+                r"(?:many|several|multiple)\s+(?:users?|reviewers?|experts?)\s+report|"
+                r"user\s+(?:feedback|reports?)\s+(?:indicate|suggest|show)|"
+                r"(?:mixed|conflicting)\s+(?:reviews?|opinions?)",
+                re.IGNORECASE,
+            )
+            if fabricated.search(content):
+                content = _strip_matching_sentences(content, fabricated)
+
+            # Strip fabricated numerical rating if source has none.
+            if not density_meta.get("has_rating", True):
+                fab_rating = re.compile(
+                    r"\d+\s*/\s*100|rating:?\s*\d+",
+                    re.IGNORECASE,
+                )
+                if fab_rating.search(content):
+                    content = _strip_matching_sentences(content, fab_rating)
+
+        return content.strip()
+
+    @staticmethod
+    def _apply_sponsored_disclosure(
+        content: str,
+        vault_items: list[dict],
+    ) -> str:
+        """Tag sponsored content and enforce trust-based ranking in output.
+
+        When vault search results contain items with ``sponsored: True``
+        in their metadata:
+        1. Inject ``[Sponsored]`` tag before sponsored product mentions.
+        2. Reorder content so higher-trust products appear first
+           (sponsorship never boosts rank).
+        """
+        if not vault_items:
+            return content
+
+        # Build product trust profiles from vault items.
+        products: list[dict] = []
+        sponsored_bodies: list[str] = []
+        for item in vault_items:
+            meta = item.get("metadata") or {}
+            name = meta.get("product_name", "")
+            is_sponsored = bool(meta.get("sponsored"))
+            body = item.get("body", "")
+            if name:
+                products.append({
+                    "name": name,
+                    "sponsored": is_sponsored,
+                    "body": body,
+                })
+            if is_sponsored:
+                sponsored_bodies.append(body)
+
+        sponsored_names = {
+            p["name"] for p in products if p["sponsored"]
+        }
+
+        if not sponsored_names and not sponsored_bodies:
+            return content
+
+        # Step 1: Inject [Sponsored] tags before sponsored product mentions.
+        sponsored_tag_re = re.compile(r"\[Sponsored\]", re.IGNORECASE)
+        tagged = False
+        for name in sponsored_names:
+            if name.lower() in content.lower():
+                # Find the position and inject tag if not already tagged.
+                idx = content.lower().find(name.lower())
+                if idx >= 0:
+                    # Check if already tagged in the vicinity.
+                    prefix = content[max(0, idx - 15):idx]
+                    if not sponsored_tag_re.search(prefix):
+                        content = (
+                            content[:idx] + "[Sponsored] " + content[idx:]
+                        )
+                        tagged = True
+
+        # Fallback: if no named products matched but sponsored vault items
+        # exist and their body text overlaps with the content, inject tag.
+        if not tagged and not sponsored_tag_re.search(content):
+            for body in sponsored_bodies:
+                # Extract key terms from the body to match against content.
+                terms = [
+                    w for w in body.split()
+                    if len(w) > 4 and w.isalpha()
+                ]
+                if terms and any(t.lower() in content.lower() for t in terms[:5]):
+                    content = "[Sponsored] " + content
+                    break
+
+        # Step 2: Reorder — if the content has a list-like structure
+        # (numbered lines or bullet points), reorder by trust evidence
+        # extracted from the body text.
+        lines = content.split("\n")
+        if len(lines) >= 2 and len(products) >= 2:
+            # Check if lines are numbered or bulleted items about products.
+            product_lines: list[tuple[int, str, str, bool]] = []
+            other_lines: list[tuple[int, str]] = []
+
+            for i, line in enumerate(lines):
+                matched_product = None
+                for p in products:
+                    if p["name"].lower() in line.lower():
+                        matched_product = p
+                        break
+                if matched_product:
+                    product_lines.append(
+                        (i, line, matched_product["name"],
+                         matched_product["sponsored"])
+                    )
+                else:
+                    other_lines.append((i, line))
+
+            if len(product_lines) >= 2:
+                # Extract trust evidence from body text.
+                def _extract_trust(body: str) -> float:
+                    """Extract trust score from body like '60 reviews, avg 4.6/5'."""
+                    import re as _re
+                    m = _re.search(r"(\d+)\s+reviews?,\s+avg\s+(\d+\.?\d*)/\d+", body)
+                    if m:
+                        return float(m.group(1)) * float(m.group(2))
+                    return 0.0
+
+                # Build trust scores for each product.
+                trust_scores: dict[str, float] = {}
+                for p in products:
+                    trust_scores[p["name"]] = _extract_trust(p["body"])
+
+                # Sort product lines by trust score descending,
+                # then sponsored penalty (unsponsored wins ties).
+                product_lines.sort(
+                    key=lambda x: (
+                        -trust_scores.get(x[2], 0),
+                        1 if x[3] else 0,
+                    )
+                )
+
+                # Reconstruct content with reordered product lines.
+                # Renumber if numbered.
+                rebuilt_lines: list[str] = []
+                pi = 0  # product line index
+                for orig_idx, orig_line in sorted(
+                    [(i, l) for i, l in other_lines] +
+                    [(pl[0], None) for pl in product_lines],
+                    key=lambda x: x[0],
+                ):
+                    if orig_line is not None:
+                        rebuilt_lines.append(orig_line)
+                    else:
+                        new_line = product_lines[pi][1]
+                        # Renumber: replace leading "N." with correct index.
+                        num_match = re.match(r"^(\d+)\.\s+", new_line)
+                        if num_match:
+                            new_line = f"{pi + 1}. {new_line[num_match.end():]}"
+                        rebuilt_lines.append(new_line)
+                        pi += 1
+
+                content = "\n".join(rebuilt_lines)
+
+        return content
+
+    # ------------------------------------------------------------------
+    # Unsolicited Discovery Filter (SS19.1 — Pull Economy)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _apply_unsolicited_discovery_filter(
+        content: str,
+        prompt: str = "",
+    ) -> str:
+        """Strip unsolicited product recommendations from LLM output.
+
+        Silence First (Law 1): only respond to what was asked.  The LLM
+        may volunteer "you might also like..." or "related products" —
+        these are push, not pull, and must be stripped.
+
+        However, if the user explicitly asked for alternatives,
+        comparisons, or recommendations, discovery is solicited and
+        should be preserved.
+
+        Preserves factual content about the asked-about product while
+        removing cross-sell, upsell, tangential advice, and scope creep.
+        """
+        if not content:
+            return content
+
+        # Check if the user explicitly asked for alternatives/recommendations.
+        solicited_discovery = re.compile(
+            r"alternative|compare|comparison|recommend|suggest|"
+            r"what (?:else|other)|which (?:one|product)|"
+            r"options? (?:for|to)|best [\w\s]+ for",
+            re.IGNORECASE,
+        )
+        if prompt and solicited_discovery.search(prompt):
+            # User explicitly asked — don't strip discovery content.
+            # Still strip scope creep (health data in consumer queries).
+            content = _strip_matching_sentences(content, _SCOPE_CREEP_PATTERNS)
+            return content.strip()
+
+        # Strip unsolicited discovery patterns sentence-by-sentence.
+        for pattern in (_UNSOLICITED_DISCOVERY_PATTERNS, _SCOPE_CREEP_PATTERNS):
+            content = _strip_matching_sentences(content, pattern)
+
+        # Strip "Related products:" sections (multi-line blocks).
+        related_section = re.compile(
+            r"(?:^|\n)\s*(?:Related (?:products?|items?)|See also|"
+            r"You may also (?:like|consider)|While you're at it):?\s*\n"
+            r"(?:[-*]\s+.*\n?)*",
+            re.IGNORECASE | re.MULTILINE,
+        )
+        content = related_section.sub("", content)
+
+        return content.strip()
+
+    # ------------------------------------------------------------------
+    # Anti-Her Output Filter (Law 4: Never Replace a Human)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _apply_anti_her_filter(content: str) -> str:
+        """Strip Anti-Her violations from LLM response text.
+
+        Scans *content* against the five compiled Anti-Her pattern
+        categories and removes every matching sentence (or the
+        violating clause when the sentence also contains factual
+        content) while preserving all factual content.
+
+        Sentence boundaries are ``[.!?]`` followed by whitespace (or
+        string edges).  Within a sentence, clause boundaries (``,``,
+        ``;``) are used to surgically remove only the violating
+        clause when the match is confined to a prefix or suffix
+        clause, preserving the factual remainder.
+
+        Returns the cleaned text, with leading/trailing whitespace
+        stripped and collapsed double-spaces normalised.
+        """
+        if not content:
+            return content
+
+        for pattern in _ANTI_HER_PATTERNS:
+            # Iterate until no more matches (a single pass may leave
+            # behind patterns revealed by earlier removals).
+            safety = 0
+            while pattern.search(content) and safety < 20:
+                safety += 1
+                match = pattern.search(content)
+                if not match:
+                    break
+
+                m_start, m_end = match.start(), match.end()
+
+                # --- Find the sentence containing the match ---
+                sent_start = 0
+                for i in range(m_start - 1, -1, -1):
+                    if content[i] in ".!?":
+                        sent_start = i + 1
+                        break
+
+                sent_end = len(content)
+                for i in range(m_end, len(content)):
+                    if content[i] in ".!?":
+                        sent_end = i + 1
+                        break
+
+                sentence = content[sent_start:sent_end]
+
+                # --- Try clause-level surgery first ---
+                # Look for a comma or semicolon that separates the
+                # violating clause from factual content within the
+                # same sentence.
+                rel_start = m_start - sent_start   # match start relative to sentence
+                rel_end = m_end - sent_start        # match end relative to sentence
+
+                # Case A: match is in a leading clause (before a comma).
+                # Remove from sentence start to first comma after match.
+                clause_cut = None
+                for i in range(rel_end, len(sentence)):
+                    if sentence[i] in ",;":
+                        # Everything before (and including) this separator
+                        # is the violating clause.
+                        clause_cut = ("prefix", sent_start, sent_start + i + 1)
+                        break
+
+                if clause_cut is None:
+                    # Case B: match is in a trailing clause (after a comma).
+                    # Remove from last comma before match to sentence end.
+                    for i in range(rel_start - 1, -1, -1):
+                        if sentence[i] in ",;":
+                            clause_cut = ("suffix", sent_start + i, sent_end)
+                            break
+
+                if clause_cut is not None:
+                    _, cut_start, cut_end = clause_cut
+                    remaining = content[:cut_start] + content[cut_end:]
+                    # Only use clause cut if it actually preserves some
+                    # non-trivial text from the sentence.
+                    leftover = remaining[
+                        max(0, cut_start - 10): min(len(remaining), cut_start + 40)
+                    ].strip()
+                    if len(leftover) > 5:
+                        content = remaining
+                        continue
+
+                # Fallback: remove the entire sentence.
+                content = content[:sent_start] + content[sent_end:]
+
+        # Normalise whitespace: collapse runs, strip edges.
+        content = re.sub(r"  +", " ", content).strip()
+        return content
 
     async def _handle_vault_unlocked(self, event: dict) -> dict:
         """Handle vault_unlocked event — initialise with decrypted data.
@@ -1658,6 +3136,134 @@ class GuardianLoop:
         self._unlocked_personas.add(persona_id)
         log.info("guardian.persona_unlocked", persona_id=persona_id)
         return {"action": "retry_query", "persona_id": persona_id}
+
+    # ------------------------------------------------------------------
+    # Contact Neglect Detection (SS17.1 — Relationship Maintenance)
+    # ------------------------------------------------------------------
+
+    _NEGLECT_THRESHOLD_DAYS = 30
+    _PROMISE_MIN_AGE_SECONDS = 86400  # 24 hours — don't nag about fresh promises
+
+    async def _handle_contact_neglect(self, event: dict) -> dict:
+        """Handle contact_neglect events — detect neglected relationships.
+
+        Queries vault for contacts, checks ``last_interaction`` or
+        ``days_since_interaction`` against the 30-day threshold, and
+        injects relationship nudge items into the daily briefing for
+        contacts that exceed it.
+
+        Returns
+        -------
+        dict
+            Action decision; content may include LLM-generated nudge text.
+        """
+        from datetime import datetime, timezone
+
+        metadata = event.get("metadata") or {}
+        task_id = event.get("task_id")
+
+        # Query vault for contacts matching this event.
+        try:
+            contacts = await self._core.search_vault(
+                "default", "type:contact", mode="hybrid"
+            )
+        except Exception:
+            contacts = []
+
+        if not contacts:
+            if task_id:
+                await self._ack_task(task_id)
+            return {"action": "save_for_briefing", "classification": "engagement"}
+
+        now = datetime.now(timezone.utc)
+        neglected: list[dict] = []
+
+        for contact in contacts:
+            c_meta = contact.get("metadata") or {}
+            name = c_meta.get("name", "")
+            if not name:
+                name = contact.get("body", "").split("—")[0].strip() if contact.get("body") else ""
+
+            last_interaction = c_meta.get("last_interaction")
+            days_since = c_meta.get("days_since_interaction")
+
+            if days_since is not None:
+                try:
+                    days_silent = int(days_since)
+                except (ValueError, TypeError):
+                    days_silent = self._NEGLECT_THRESHOLD_DAYS + 1  # treat as neglected
+            elif last_interaction is not None:
+                try:
+                    last_dt = datetime.fromisoformat(str(last_interaction).replace("Z", "+00:00"))
+                    days_silent = (now - last_dt).days
+                except (ValueError, TypeError):
+                    days_silent = self._NEGLECT_THRESHOLD_DAYS + 1
+            else:
+                # NULL/missing last_interaction → treat as neglected
+                days_silent = None
+
+            if days_silent is None or days_silent > self._NEGLECT_THRESHOLD_DAYS:
+                neglected.append({
+                    "name": name,
+                    "days_silent": days_silent,
+                    "relationship": c_meta.get("relationship", "contact"),
+                    "contact_did": contact.get("contact_did", ""),
+                })
+
+        # Inject briefing items for neglected contacts.
+        for nc in neglected:
+            name = nc["name"]
+            days = nc["days_silent"]
+            if days is not None:
+                body = (
+                    f"You haven't talked to {name} in {days} days. "
+                    f"It's been a while — consider reaching out."
+                )
+            else:
+                body = (
+                    f"{name} — no record of recent interaction. "
+                    f"You might want to check in."
+                )
+            self._briefing_items.append({
+                "type": "relationship_nudge",
+                "source": "relationship_monitor",
+                "body": body,
+                "contact_did": nc["contact_did"],
+                "metadata": nc,
+            })
+
+        # Optionally invoke LLM for a richer nudge (Anti-Her filtered).
+        content = None
+        if neglected:
+            names = ", ".join(nc["name"] for nc in neglected if nc["name"])
+            try:
+                result = await self._llm.route(
+                    task_type="summarize",
+                    prompt=(
+                        f"The user hasn't interacted with these contacts recently: "
+                        f"{names}. Generate a brief, factual reminder to reach out. "
+                        f"Do NOT offer yourself as a substitute for human connection. "
+                        f"Do NOT say 'I'm here for you'. Just remind them to reconnect."
+                    ),
+                    persona_tier="open",
+                )
+                raw_content = result.get("content", "")
+                # Apply Anti-Her filters.
+                content = raw_content
+                for pattern in _ANTI_HER_PATTERNS:
+                    content = pattern.sub("", content)
+                content = re.sub(r"\s{2,}", " ", content).strip()
+            except Exception:
+                pass
+
+        if task_id:
+            await self._ack_task(task_id)
+
+        return {
+            "action": "save_for_briefing",
+            "classification": "engagement",
+            "content": content,
+        }
 
     # ------------------------------------------------------------------
     # DIDComm Message Routing (SS2.8)
