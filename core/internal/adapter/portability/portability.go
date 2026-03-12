@@ -14,7 +14,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/crypto/argon2"
 
@@ -52,12 +54,15 @@ type archivePayload struct {
 
 // ExportManager implements port.ExportManager — dina export.
 type ExportManager struct {
-	mu sync.Mutex
+	mu        sync.Mutex
+	vaultPath string // root path containing identity.sqlite and <persona>.sqlite files
 }
 
 // NewExportManager returns a new ExportManager.
-func NewExportManager() *ExportManager {
-	return &ExportManager{}
+// vaultPath is the root directory containing identity.sqlite and <persona>.sqlite files
+// (flat layout — same directory, per sqlite.Pool convention).
+func NewExportManager(vaultPath string) *ExportManager {
+	return &ExportManager{vaultPath: vaultPath}
 }
 
 // Export creates an encrypted archive of the Home Node.
@@ -80,7 +85,7 @@ func (e *ExportManager) Export(_ context.Context, opts ExportOptions) (archivePa
 	archivePath = filepath.Join(opts.DestPath, "dina-export.dina")
 
 	// Collect data to export.
-	data, err := collectExportData()
+	data, err := collectExportData(e.vaultPath)
 	if err != nil {
 		return "", fmt.Errorf("portability: collect data: %w", err)
 	}
@@ -181,14 +186,16 @@ type ImportResult = domain.ImportResult
 
 // ImportManager implements port.ImportManager — dina import.
 type ImportManager struct {
-	mu          sync.Mutex
-	hasExisting bool // whether existing data is present
+	mu        sync.Mutex
+	vaultPath string // root path to restore vault files into
 }
 
 // NewImportManager returns a new ImportManager.
-// Set hasExisting=true to simulate importing into an instance with existing data.
-func NewImportManager(hasExisting bool) *ImportManager {
-	return &ImportManager{hasExisting: hasExisting}
+// vaultPath is the root directory where vault files will be restored.
+// The hasExisting parameter is ignored — the ImportManager checks the actual
+// filesystem for existing data. Kept for API compatibility.
+func NewImportManager(vaultPath string, _ bool) *ImportManager {
+	return &ImportManager{vaultPath: vaultPath}
 }
 
 // Import decrypts and restores an archive to the Home Node.
@@ -213,12 +220,16 @@ func (m *ImportManager) Import(_ context.Context, opts ImportOptions) (*ImportRe
 	}
 
 	// Check if importing into existing data without force.
-	if m.hasExisting && !opts.Force {
-		return nil, errors.New("vault already populated — use --force to overwrite")
+	// Detect existing data by checking for identity.sqlite on disk.
+	if m.vaultPath != "" && !opts.Force {
+		identityPath := filepath.Join(m.vaultPath, "identity.sqlite")
+		if _, err := os.Stat(identityPath); err == nil {
+			return nil, errors.New("vault already populated — use --force to overwrite")
+		}
 	}
 
 	// Restore data from decrypted payload.
-	result, err := restoreData(plaintext)
+	result, err := restoreData(plaintext, m.vaultPath)
 	if err != nil {
 		return nil, fmt.Errorf("portability: restore failed: %w", err)
 	}
@@ -376,30 +387,97 @@ func BuildTestArchive(files map[string][]byte, passphrase, destPath string) (str
 	return archivePath, nil
 }
 
-// collectExportData gathers the vault data and serialises it as JSON.
+// collectExportData reads vault files from disk and serialises them as a
+// JSON archive payload with SHA-256 checksums per file.
 //
-// HIGH-12: This is a placeholder that currently returns an error. Full
-// implementation requires reading real vault files (identity SQLite, persona
-// configs, encrypted stores) and checksumming them. The encryption envelope
-// (Argon2id + AES-256-GCM) is already functional; only the data collection
-// needs to be wired to the actual vault path.
-func collectExportData() ([]byte, error) {
-	return nil, ErrNotImplemented
+// Live layout (matches sqlite.Pool — flat, same directory):
+//
+//	vaultPath/identity.sqlite          (Tier 0: contacts, audit, kv_store, devices)
+//	vaultPath/personal.sqlite          (persona vault)
+//	vaultPath/health.sqlite            (persona vault)
+//	vaultPath/config.json              (gatekeeper tiers, settings — optional)
+func collectExportData(vaultPath string) ([]byte, error) {
+	if vaultPath == "" {
+		return nil, errors.New("vault path is required for export")
+	}
+
+	files := make(map[string][]byte)
+
+	// 1. identity.sqlite — required.
+	identityPath := filepath.Join(vaultPath, "identity.sqlite")
+	identityData, err := os.ReadFile(identityPath)
+	if err != nil {
+		return nil, fmt.Errorf("read identity.sqlite: %w", err)
+	}
+	files["identity.sqlite"] = identityData
+
+	// 2. Per-persona vault files — flat layout in vaultPath root.
+	//    sqlite.Pool opens persona DBs as ${vaultPath}/${persona}.sqlite,
+	//    so we scan for all *.sqlite files excluding identity.sqlite.
+	entries, err := os.ReadDir(vaultPath)
+	if err != nil {
+		return nil, fmt.Errorf("read vault directory: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if filepath.Ext(name) != ".sqlite" {
+			continue
+		}
+		if name == "identity.sqlite" {
+			continue // already collected above
+		}
+		data, err := os.ReadFile(filepath.Join(vaultPath, name))
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", name, err)
+		}
+		files[name] = data
+	}
+
+	// 3. config.json — optional.
+	configPath := filepath.Join(vaultPath, "config.json")
+	if configData, err := os.ReadFile(configPath); err == nil {
+		files["config.json"] = configData
+	}
+
+	// Build checksums.
+	checksums := make(map[string]string, len(files))
+	for name, content := range files {
+		checksums[name] = hexHash(content)
+	}
+
+	payload := archivePayload{
+		Manifest: ExportManifest{
+			Version:   "2",
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
+			Checksums: checksums,
+		},
+		Files: files,
+	}
+
+	return json.Marshal(payload)
 }
 
-// restoreData deserialises the decrypted JSON payload, validates structure
-// and checksums, then returns ErrNotImplemented.
+// restoreData deserialises the decrypted JSON payload, validates checksums
+// and path safety, then writes vault files to the destination vault path.
 //
-// HIGH-12: Full vault-level restoration (writing files to vault path,
-// re-deriving persona DEKs, extracting real DID, verifying identity
-// continuity) is not yet implemented. Only validation is wired.
-func restoreData(plaintext []byte) (*ImportResult, error) {
+// All archive entry names are validated against path traversal before any
+// file is written. Only flat filenames (no directory separators) are allowed —
+// matching the live sqlite.Pool layout where persona DBs sit directly in
+// vaultPath as ${persona}.sqlite.
+func restoreData(plaintext []byte, vaultPath string) (*ImportResult, error) {
+	if vaultPath == "" {
+		return nil, errors.New("vault path is required for import")
+	}
+
 	var payload archivePayload
 	if err := json.Unmarshal(plaintext, &payload); err != nil {
 		return nil, fmt.Errorf("unmarshal import data: %w", err)
 	}
 
-	// Validate checksums — this is real validation, not a stub.
+	// Validate checksums.
 	for name, content := range payload.Files {
 		expected, ok := payload.Manifest.Checksums[name]
 		if !ok {
@@ -410,15 +488,81 @@ func restoreData(plaintext []byte) (*ImportResult, error) {
 		}
 	}
 
-	// Require identity.sqlite — vault restoration needs the identity vault.
-	if _, hasIdentity := payload.Files["identity.sqlite"]; !hasIdentity {
-		return nil, ErrNotImplemented
+	// Validate all entry names for path traversal BEFORE writing anything.
+	absVault, err := filepath.Abs(vaultPath)
+	if err != nil {
+		return nil, fmt.Errorf("resolve vault path: %w", err)
+	}
+	for name := range payload.Files {
+		if err := validateArchiveEntry(name, absVault); err != nil {
+			return nil, err
+		}
 	}
 
-	// Archive is structurally valid and checksums pass, but actual
-	// restoration (file writing, persona recovery, DID extraction)
-	// is not yet implemented. Return honest not-implemented.
-	return nil, ErrNotImplemented
+	// Require identity.sqlite.
+	if _, hasIdentity := payload.Files["identity.sqlite"]; !hasIdentity {
+		return nil, errors.New("archive missing identity.sqlite — cannot restore")
+	}
+
+	// Ensure vault path exists.
+	if err := os.MkdirAll(vaultPath, 0700); err != nil {
+		return nil, fmt.Errorf("create vault path: %w", err)
+	}
+
+	// Write files to disk (flat layout — all files in vaultPath root).
+	personaCount := 0
+	for name, content := range payload.Files {
+		destFile := filepath.Join(absVault, filepath.Clean(name))
+
+		if err := os.WriteFile(destFile, content, 0600); err != nil {
+			return nil, fmt.Errorf("write %s: %w", name, err)
+		}
+
+		// Count persona SQLite files (anything except identity.sqlite and config.json).
+		if filepath.Ext(name) == ".sqlite" && name != "identity.sqlite" {
+			personaCount++
+		}
+	}
+
+	return &ImportResult{
+		FilesRestored:  len(payload.Files),
+		PersonaCount:   personaCount,
+		RequiresRepair: true, // devices must always be re-paired after import
+	}, nil
+}
+
+// validateArchiveEntry rejects archive entry names that could escape the
+// vault root via path traversal. Only flat filenames are allowed — no
+// directory separators, no ".." components, no absolute paths.
+func validateArchiveEntry(name, absVaultRoot string) error {
+	if name == "" {
+		return fmt.Errorf("archive contains empty filename")
+	}
+
+	// Reject absolute paths.
+	if filepath.IsAbs(name) {
+		return fmt.Errorf("archive entry %q: absolute paths not allowed", name)
+	}
+
+	// Reject any ".." component.
+	cleaned := filepath.Clean(name)
+	if strings.Contains(cleaned, "..") {
+		return fmt.Errorf("archive entry %q: path traversal not allowed", name)
+	}
+
+	// Reject entries with directory separators — flat layout only.
+	if strings.ContainsAny(cleaned, "/\\") {
+		return fmt.Errorf("archive entry %q: subdirectories not allowed (flat vault layout)", name)
+	}
+
+	// Final containment check: resolved path must be inside vault root.
+	resolved := filepath.Join(absVaultRoot, cleaned)
+	rel, err := filepath.Rel(absVaultRoot, resolved)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return fmt.Errorf("archive entry %q: escapes vault root", name)
+	}
+
+	return nil
 }
 
 func hexHash(data []byte) string {

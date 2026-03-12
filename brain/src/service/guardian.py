@@ -2505,7 +2505,7 @@ class GuardianLoop:
             density_meta = None
             try:
                 vault_items = await self._core.search_vault(
-                    "default", llm_prompt, mode="hybrid",
+                    "personal", llm_prompt, mode="hybrid",
                 )
                 if vault_items is None:
                     vault_items = []

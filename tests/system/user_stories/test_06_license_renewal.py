@@ -95,7 +95,7 @@ class TestLicenseRenewal:
 
     # TST-USR-050
     def test_00_store_personal_context(
-        self, alonso_core, admin_headers, brain_headers,
+        self, alonso_core, admin_headers,
     ):
         """Seed vault with personal context that Brain will use later.
 
@@ -157,7 +157,7 @@ class TestLicenseRenewal:
         reason="GOOGLE_API_KEY not set — skipping LLM extraction test",
     )
     def test_01_brain_extracts_license_data(
-        self, alonso_brain, brain_headers,
+        self, alonso_brain, brain_signer,
     ):
         """Send document text to Brain → LLM extracts structured fields.
 
@@ -167,7 +167,7 @@ class TestLicenseRenewal:
           - License number flagged as PII
           - Brain successfully created a Core reminder (auth works)
         """
-        r = httpx.post(
+        r = brain_signer.post(
             f"{alonso_brain}/api/v1/process",
             json={
                 "type": "document_ingest",
@@ -175,7 +175,6 @@ class TestLicenseRenewal:
                 "persona_id": "personal",
                 "source": "document_scan",
             },
-            headers=brain_headers,
             timeout=60,
         )
         assert r.status_code == 200, f"Ingest failed: {r.status_code} {r.text[:300]}"
@@ -207,7 +206,7 @@ class TestLicenseRenewal:
         # If this is empty, the Brain→Core auth path is broken.
         assert reminder_id, (
             "Brain did not create a reminder — check that /v1/reminder "
-            "is in the brain token allowlist (auth.go)"
+            "accepts Ed25519 service-key signatures (middleware/auth.go)"
         )
 
     # ==================================================================
@@ -487,7 +486,7 @@ class TestLicenseRenewal:
         reason="GOOGLE_API_KEY not set — skipping LLM notification test",
     )
     def test_06_reminder_fires_contextual_notification(
-        self, alonso_core, alonso_brain, admin_headers, brain_headers,
+        self, alonso_core, alonso_brain, admin_headers, brain_signer,
     ):
         """Fire the reminder → Brain queries vault → LLM composes notification.
 
@@ -510,7 +509,7 @@ class TestLicenseRenewal:
         # The fire endpoint doesn't return Brain's full response,
         # so we also call Brain directly with the same event.
         doc_id = _state.get("doc_id", "")
-        r2 = httpx.post(
+        r2 = brain_signer.post(
             f"{alonso_brain}/api/v1/process",
             json={
                 "type": "reminder_fired",
@@ -526,7 +525,6 @@ class TestLicenseRenewal:
                 }),
                 "source": "reminder_system",
             },
-            headers=brain_headers,
             timeout=60,
         )
         assert r2.status_code == 200, f"Process failed: {r2.status_code} {r2.text[:300]}"
@@ -712,14 +710,14 @@ class TestLicenseRenewal:
 
     # TST-USR-059
     def test_09_guardian_reviews_delegation(
-        self, alonso_brain, brain_headers,
+        self, alonso_brain, brain_signer,
     ):
         """Guardian classifies share_data as HIGH risk → flag_for_review.
 
         The agent never holds your Home Node or vault keys, never sees your full history.
         Guardian ensures the human approves before data leaves the node.
         """
-        r = httpx.post(
+        r = brain_signer.post(
             f"{alonso_brain}/api/v1/process",
             json={
                 "type": "agent_intent",
@@ -729,7 +727,6 @@ class TestLicenseRenewal:
                 "trust_level": "verified",
                 "risk_level": "MODERATE",
             },
-            headers=brain_headers,
             timeout=15,
         )
         assert r.status_code == 200, f"Intent review failed: {r.status_code} {r.text[:300]}"

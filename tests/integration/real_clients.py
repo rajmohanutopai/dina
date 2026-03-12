@@ -844,6 +844,7 @@ class RealAdminAPI:
         self._core_url = (core_url or base_url).rstrip("/")
         self._passphrase_hash = hashlib.sha256(b"admin-passphrase").hexdigest()
         self.sessions: dict[str, Any] = {}
+        self._real_sessions: set[str] = set()  # sessions created via real HTTP
         self.api_calls: list[dict[str, Any]] = []
 
     def login(self, passphrase: str) -> Any:
@@ -856,6 +857,7 @@ class RealAdminAPI:
             data = resp.json()
             session_id = data.get("session_id", "")
             self.sessions[session_id] = data
+            self._real_sessions.add(session_id)
             return data
         from tests.integration.mocks import MockAdminSession
         provided_hash = hashlib.sha256(passphrase.encode()).hexdigest()
@@ -908,14 +910,17 @@ class RealAdminAPI:
         self.api_calls.append({"endpoint": "/admin/logout"})
         if session_id not in self.sessions:
             return False
-        # Best-effort HTTP logout — the real Core may not know this
-        # session if login fell back to MockAdminSession.
-        _try_request(
+        is_real = session_id in self._real_sessions
+        resp = _try_request(
             "post", f"{self._base_url}/admin/logout",
             json={"session_id": session_id},
             headers={"Cookie": f"session_id={session_id}"},
         )
         del self.sessions[session_id]
+        self._real_sessions.discard(session_id)
+        if is_real and (resp is None or resp.status_code >= 400):
+            # Real session but remote logout failed — surface the failure.
+            return False
         return True
 
     def query_via_dashboard(self, session_id: str, query: str) -> str | None:

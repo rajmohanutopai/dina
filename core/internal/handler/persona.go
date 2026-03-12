@@ -176,3 +176,47 @@ func (h *PersonaHandler) HandleUnlockPersona(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "unlocked"})
 }
+
+// lockPersonaRequest is the JSON body for POST /v1/persona/lock.
+type lockPersonaRequest struct {
+	Persona string `json:"persona"`
+}
+
+// HandleLockPersona handles POST /v1/persona/lock.
+// It closes the persona's vault, zeroing the DEK from memory.
+func (h *PersonaHandler) HandleLockPersona(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req lockPersonaRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	if req.Persona == "" {
+		http.Error(w, `{"error":"persona is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Strip "persona-" prefix for vault operations.
+	rawName := strings.TrimPrefix(req.Persona, "persona-")
+	persona, err := domain.NewPersonaName(rawName)
+	if err != nil {
+		http.Error(w, `{"error":"invalid persona name"}`, http.StatusBadRequest)
+		return
+	}
+
+	if h.VaultManager != nil {
+		if err := h.VaultManager.Close(persona); err != nil {
+			http.Error(w, `{"error":"failed to close vault"}`, http.StatusInternalServerError)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "locked"})
+}

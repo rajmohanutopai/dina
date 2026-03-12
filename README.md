@@ -88,7 +88,8 @@ Today, you don't own your digital self. Your Google account, Apple ID, and Linke
 
 Dina changes this. Your Dina is your **sovereign digital self**. Implemented using Web3 Cryptographic Tech, **you get your own digital identity**, separate from any of the external company accounts. You hold the encryption keys and the data. You own it completely. You control who sees what. Everything mentioned above — the memory, the preferences, the Dina-to-Dina communication, the purchases, the trust - is possible because of this foundational principle: **you own you**.
 
-If you delete your data, it's truly gone. Not archived. Gone. Because you control the data, and no one else ever had the keys.
+If you delete your data, it's truly gone, because you control the data, and no one else has the keys. You can also export your data completely, and store/run it elsewhere. So, it allows you to run multiple home nodes under you single identity. The ATProto DID document just lists multiple end points. 
+
 
 ### One You, Many Faces
 

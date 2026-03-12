@@ -329,8 +329,8 @@ var realPDSPublisher testutil.PDSPublisher = pds.NewPDSPublisher("did:plc:author
 // ---------- Portability implementations (§23) ----------
 
 var (
-	realExportManager testutil.ExportManager = portability.NewExportManager()  // testutil superset (matches port + extras)
-	realImportManager testutil.ImportManager = portability.NewImportManager(false) // testutil superset (matches port + extras)
+	realExportManager testutil.ExportManager = portability.NewExportManager(os.TempDir())  // testutil superset (matches port + extras)
+	realImportManager testutil.ImportManager = portability.NewImportManager(os.TempDir(), false) // testutil superset (matches port + extras)
 )
 
 // ---------- Bot Interface implementations (§25) ----------

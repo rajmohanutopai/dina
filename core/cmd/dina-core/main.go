@@ -503,8 +503,8 @@ func main() {
 	crashLogger := observability.NewCrashLogger()
 
 	// 14. Portability
-	exportMgr := portability.NewExportManager()
-	importMgr := portability.NewImportManager(false)
+	exportMgr := portability.NewExportManager(cfg.VaultPath)
+	importMgr := portability.NewImportManager(cfg.VaultPath, false)
 
 	// 15. Estate
 	estateMgr := estate.NewPortEstateManager()
@@ -690,9 +690,7 @@ func main() {
 		estateMgr, vaultMgr, recoveryMgr, notifier, clk,
 	)
 
-	// CRIT-02: MigrationService kept for future use but not wired to handler
-	// until export/import is fully implemented with path validation.
-	_ = service.NewMigrationService(
+	migrationSvc := service.NewMigrationService(
 		exportMgr, importMgr, backupMgr, vaultMgr, clk,
 	)
 
@@ -728,7 +726,7 @@ func main() {
 	contactH := &handler.ContactHandler{Contacts: contactDir, Sharing: sharingMgr}
 	piiH := &handler.PIIHandler{Scrubber: scrubber}
 	notifyH := &handler.NotifyHandler{Notifier: notifier}
-	exportH := &handler.ExportHandler{}
+	exportH := &handler.ExportHandler{Migration: migrationSvc}
 	reminderH := &handler.ReminderHandler{
 		Scheduler: reminderSched,
 		Loop:      reminderLoop,
@@ -778,6 +776,7 @@ func main() {
 	// Persona API
 	mux.HandleFunc("/v1/personas", routeByMethod(personaH.HandleListPersonas, personaH.HandleCreatePersona))
 	mux.HandleFunc("/v1/persona/unlock", personaH.HandleUnlockPersona)
+	mux.HandleFunc("/v1/persona/lock", personaH.HandleLockPersona)
 
 	// Contact API
 	mux.HandleFunc("/v1/contacts", routeByMethod(contactH.HandleListContacts, contactH.HandleAddContact))

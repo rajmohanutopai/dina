@@ -74,16 +74,16 @@ for i in "$@"; do
             echo "    5  The Agent Gateway          (10 tests)  — external agent safety layer"
             echo "    6  The License Renewal        (10 tests)  — LLM extraction + deterministic scheduling"
             echo "    7  The Daily Briefing          (5 tests)  — silence-first notification triage"
-            echo "    8  Move to a New Machine       (5 tests)  — data portability & DID stability"
+            echo "    8  Move to a New Machine       (8 tests)  — full migration roundtrip: export, transfer, import, query"
             echo "    9  Connector Credential Expiry (5 tests)  — graceful degradation & recovery"
             echo "   10  The Operator Journey        (5 tests)  — bootstrap idempotency & admin lifecycle"
             echo ""
             echo "  Thesis invariant stories:"
             echo ""
             echo "   11  The Anti-Her                 (5 tests)  — proactive relationship maintenance"
-            echo "   12  Verified Truth                (5 tests)  — trust data density spectrum"
+            echo "   12  Verified Truth                (9 tests)  — trust data density spectrum"
             echo "   13  Silence Under Stress          (3 tests)  — notification storms & ambiguity"
-            echo "   14  Agent Sandbox                 (3 tests)  — adversarial agent escape attempts"
+            echo "   14  Agent Sandbox                 (4 tests)  — agent perimeter + sandbox policy"
             echo ""
             echo "  Usage: ./run_user_story_tests.sh --story 5"
             echo ""
@@ -128,7 +128,7 @@ if [ -n "$STORY" ]; then
         10)   STORY_FILE="tests/system/user_stories/test_10_operator_journey.py" ;;
         11)   STORY_FILE="tests/system/user_stories/test_11_anti_her.py" ;;
         12)   STORY_FILE="tests/system/user_stories/test_12_verified_truth.py" ;;
-        13)   STORY_FILE="tests/system/user_stories/test_13_silence_under_stress.py" ;;
+        13)   STORY_FILE="tests/system/user_stories/test_13_silence_stress.py" ;;
         14)   STORY_FILE="tests/system/user_stories/test_14_agent_sandbox.py" ;;
         *)
             echo "Error: --story must be 1-14 (got: $STORY)"
@@ -145,7 +145,7 @@ if [ "$MODE" = "sanity" ] && [ "$BRIEF" = false ]; then
         if [ "$arg" = "-k" ]; then has_k=true; break; fi
     done
     if [ "$has_k" = false ]; then
-        PYTEST_ARGS+=("-k" "not (test_06_license_renewal or test_07_daily_briefing or test_08_move_to_new_machine or test_09_connector_expiry or test_10_operator_journey or test_11_anti_her or test_12_verified_truth or test_13_silence_under_stress or test_14_agent_sandbox)")
+        PYTEST_ARGS+=("-k" "not (test_06_license_renewal or test_07_daily_briefing or test_08_move_to_new_machine or test_09_connector_expiry or test_10_operator_journey or test_11_anti_her or test_12_verified_truth or test_13_silence_stress or test_14_agent_sandbox)")
     fi
 fi
 
@@ -175,6 +175,19 @@ Y="${YELLOW}"
 # Box layout: 2 leading spaces + ║ + 100 inner + ║ = 104 display columns
 # Border:     2 leading spaces + ╔ + 100 ═ chars + ╗ = 104 display columns
 
+# row: print a box row with exactly 100 inner display columns.
+# Automatically strips ANSI escape sequences to compute visible width.
+row() {
+    local text="$1"
+    # Strip ANSI escape sequences to compute visible width.
+    local stripped
+    stripped=$(printf '%s' "$text" | sed $'s/\x1b\\[[0-9;]*m//g')
+    local vlen=${#stripped}
+    local pad=$((100 - vlen))
+    if [ "$pad" -lt 0 ]; then pad=0; fi
+    printf "  ${B}║${R}%s%*s${B}║${R}\n" "$text" "$pad" ""
+}
+
 print_banner() {
     # Args: $1=s01_result .. $14=s14_result  (empty if not run yet)
     local s01="${1:-}" s02="${2:-}" s03="${3:-}" s04="${4:-}" s05="${5:-}" s06="${6:-}"
@@ -190,141 +203,147 @@ print_banner() {
 
     # Box: 2 leading spaces + ║ + 100 inner + ║ = 104 display columns
     echo -e "${B}  ╔════════════════════════════════════════════════════════════════════════════════════════════════════╗${R}"
-    echo -e "${B}  ║${R}${BOLD}     DINA User Story Tests                                                                          ${B}║${R}"
-    printf "  ${B}║${R}${D}     Stack: 2x Go Core + 2x Python Brain + PDS + AppView + Postgres -- session %-4s ports %s+     ${B}║${R}\n" "${SESSION_ID}" "${PORT_BASE}"
+    row "${BOLD}     DINA User Story Tests${R}"
+    local stack_text
+    stack_text=$(printf "     Stack: 2x Go Core + 2x Python Brain + PDS + AppView + Postgres -- session %s  ports %s+" "${SESSION_ID}" "${PORT_BASE}")
+    row "${D}${stack_text}${R}"
     echo -e "${B}  ╠════════════════════════════════════════════════════════════════════════════════════════════════════╣${R}"
-    echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+    row ""
 
     # ── Story 01 ──────────────────────────────────────────────────────────
     printf "  ${B}║${R}  ${G}01${R} ${BOLD}The Purchase Journey${R}"
     if [ -n "$s01" ]; then printf "%86s" "$s01"; else printf "%73s" "13 tests"; fi
     echo -e "  ${B}║${R}"
-    echo -e "${B}  ║${R}     ${BOLD}\"I need a chair\"${R}${D} -> 5 reviewers created (3 verified Ring 2, 2 unverified Ring 1)               ${B}║${R}"
-    echo -e "${B}  ║${R}${D}     Dina checks health vault (back pain, needs lumbar), finance vault (budget 10-20K INR)          ${B}║${R}"
-    echo -e "${B}  ║${R}${D}     Trust-weighted reviews: skip CheapChair (low trust score), recommends ErgoMax Elite            ${B}║${R}"
-    echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+    #                                                                                             100 cols
+    row "     ${BOLD}\"I need a chair\"${R}${D} -> 5 reviewers created (3 verified Ring 2, 2 unverified Ring 1)${R}"
+    row "${D}     Dina checks health vault (back pain, needs lumbar), finance vault (budget 10-20K INR)${R}"
+    row "${D}     Trust-weighted reviews: skip CheapChair (low trust score), recommends ErgoMax Elite${R}"
+    row ""
 
     # ── Story 02 ──────────────────────────────────────────────────────────
     printf "  ${B}║${R}  ${G}02${R} ${BOLD}The Sancho Moment${R}"
     if [ -n "$s02" ]; then printf "%89s" "$s02"; else printf "%76s" "7 tests"; fi
     echo -e "  ${B}║${R}"
-    echo -e "${B}  ║${R}     ${BOLD}Sancho arrives${R}${D} -> Sancho's Dina contacts your Dina (D2D encrypted, Ed25519 signed)             ${B}║${R}"
-    echo -e "${B}  ║${R}${D}     Your Dina searches vault by Sancho's DID, finds: \"his mother had a fall\", \"likes cardamom tea\" ${B}║${R}"
-    echo -e "${B}  ║${R}${D}     Nudge: \"Sancho 15 min away. Ask about his sick mother. Make cardamom tea.\"                     ${B}║${R}"
-    echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+    row "     ${BOLD}Sancho arrives${R}${D} -> Sancho's Dina contacts your Dina (D2D encrypted, Ed25519 signed)${R}"
+    row "${D}     Your Dina searches vault by Sancho's DID, finds: \"his mother had a fall\", \"likes cardamom tea\"${R}"
+    row "${D}     Nudge: \"Sancho 15 min away. Ask about his sick mother. Make cardamom tea.\"${R}"
+    row ""
 
     # ── Story 03 ──────────────────────────────────────────────────────────
     printf "  ${B}║${R}  ${G}03${R} ${BOLD}The Dead Internet Filter${R}"
     if [ -n "$s03" ]; then printf "%82s" "$s03"; else printf "%69s" "8 tests"; fi
     echo -e "  ${B}║${R}"
-    echo -e "${B}  ║${R}     ${BOLD}\"Is this video AI?\"${R}${D} -> Dina resolves creator DID via AT Protocol Trust Network                 ${B}║${R}"
-    echo -e "${B}  ║${R}${D}     Elena (Ring 3): 200 attestations, 15 peer vouches, 2yr history -> \"authentic, trusted creator\" ${B}║${R}"
-    echo -e "${B}  ║${R}${D}     BotFarm (Ring 1): 0 attestations, 3-day-old account -> \"unverified, check other sources\"       ${B}║${R}"
-    echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+    row "     ${BOLD}\"Is this video AI?\"${R}${D} -> Dina resolves creator DID via AT Protocol Trust Network${R}"
+    row "${D}     Elena (Ring 3): 200 attestations, 15 peer vouches, 2yr history -> \"authentic, trusted creator\"${R}"
+    row "${D}     BotFarm (Ring 1): 0 attestations, 3-day-old account -> \"unverified, check other sources\"${R}"
+    row ""
 
     # ── Story 04 ──────────────────────────────────────────────────────────
     printf "  ${B}║${R}  ${G}04${R} ${BOLD}The Persona Wall${R}"
     if [ -n "$s04" ]; then printf "%90s" "$s04"; else printf "%77s" "11 tests"; fi
     echo -e "  ${B}║${R}"
-    echo -e "${B}  ║${R}     ${BOLD}Shopping agent asks \"any health conditions?\"${R}${D} -> Guardian blocks cross-persona access           ${B}║${R}"
-    echo -e "${B}  ║${R}${D}     Health (restricted): \"L4-L5 herniation\" withheld. Proposes \"chronic back pain\" only            ${B}║${R}"
-    echo -e "${B}  ║${R}${D}     User approves minimal disclosure. PII scrubber confirms no diagnosis leaked                    ${B}║${R}"
-    echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+    row "     ${BOLD}Shopping agent asks \"any health conditions?\"${R}${D} -> Guardian blocks cross-persona access${R}"
+    row "${D}     Health (restricted): \"L4-L5 herniation\" withheld. Proposes \"chronic back pain\" only${R}"
+    row "${D}     User approves minimal disclosure. PII scrubber confirms no diagnosis leaked${R}"
+    row ""
 
     # ── Story 05 ──────────────────────────────────────────────────────────
     printf "  ${B}║${R}  ${G}05${R} ${BOLD}The Agent Gateway${R}"
     if [ -n "$s05" ]; then printf "%89s" "$s05"; else printf "%76s" "10 tests"; fi
     echo -e "  ${B}║${R}"
-    echo -e "${B}  ║${R}     ${BOLD}OpenClaw/Perplexity Computer wants to send email${R}${D} -> pairs with Home Node, asks Dina first      ${B}║${R}"
-    echo -e "${B}  ║${R}${D}     Dina checks: safe? matches your rules? PII leaking? \"send_email\" -> MODERATE, asks you first   ${B}║${R}"
-    echo -e "${B}  ║${R}${D}     Safe tasks (web search) pass silently. Rogue agent with no auth -> 401, blocked at the gate    ${B}║${R}"
-    echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+    row "     ${BOLD}OpenClaw/Perplexity Computer wants to send email${R}${D} -> pairs with Home Node, asks Dina first${R}"
+    row "${D}     Dina checks: safe? matches your rules? PII leaking? \"send_email\" -> MODERATE, asks you first${R}"
+    row "${D}     Safe tasks (web search) pass silently. Rogue agent with no auth -> 401, blocked at the gate${R}"
+    row ""
 
-    # ── Stories 06-10 (shown in --all mode or --brief mode) ─────────────
+    # ── Stories 06-14 (shown in --all mode or --brief mode) ────────────
     if [ "$MODE" = "all" ] || [ "$BRIEF" = true ]; then
         printf "  ${B}║${R}  ${G}06${R} ${BOLD}The License Renewal${R}"
         if [ -n "$s06" ]; then printf "%87s" "$s06"; else printf "%74s" "10 tests"; fi
         echo -e "  ${B}║${R}"
-        echo -e "${B}  ║${R}     ${BOLD}User uploads license scan${R}${D} -> Brain LLM extracts fields with per-field confidence scores        ${B}║${R}"
-        echo -e "${B}  ║${R}${D}     Deterministic reminder fires 30 days before expiry (no LLM). Brain composes contextual nudge   ${B}║${R}"
-        echo -e "${B}  ║${R}${D}     Delegation: Brain generates strict JSON for RTO_Bot. Guardian flags for human review           ${B}║${R}"
-        echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+        row "     ${BOLD}User uploads license scan${R}${D} -> Brain LLM extracts fields with per-field confidence scores${R}"
+        row "${D}     Deterministic reminder fires 30 days before expiry (no LLM). Brain composes contextual nudge${R}"
+        row "${D}     Delegation: Brain generates strict JSON for RTO_Bot. Guardian flags for human review${R}"
+        row ""
 
         # ── Story 07 ──────────────────────────────────────────────────────────
         printf "  ${B}║${R}  ${G}07${R} ${BOLD}The Daily Briefing${R}"
         if [ -n "$s07" ]; then printf "%88s" "$s07"; else printf "%75s" "5 tests"; fi
         echo -e "  ${B}║${R}"
-        echo -e "${B}  ║${R}     ${BOLD}Noise all day, one calm summary${R}${D} -> Tier 3 events queued silently in vault KV                   ${B}║${R}"
-        echo -e "${B}  ║${R}${D}     Fiduciary event (transfer_money) interrupts immediately — silence would cause harm              ${B}║${R}"
-        echo -e "${B}  ║${R}${D}     Daily briefing retrieves queued items, clears queue. Silence First enforced by design           ${B}║${R}"
-        echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+        row "     ${BOLD}Noise all day, one calm summary${R}${D} -> Tier 3 events queued silently in vault KV${R}"
+        row "${D}     Fiduciary event (transfer_money) interrupts immediately — silence would cause harm${R}"
+        row "${D}     Daily briefing retrieves queued items, clears queue. Silence First enforced by design${R}"
+        row ""
 
         # ── Story 08 ──────────────────────────────────────────────────────────
         printf "  ${B}║${R}  ${G}08${R} ${BOLD}Move to a New Machine${R}"
-        if [ -n "$s08" ]; then printf "%85s" "$s08"; else printf "%72s" "5 tests"; fi
+        if [ -n "$s08" ]; then printf "%85s" "$s08"; else printf "%72s" "8 tests"; fi
         echo -e "  ${B}║${R}"
-        echo -e "${B}  ║${R}     ${BOLD}Laptop dying, move Dina${R}${D} -> vault data exportable, DID stable across machines                  ${B}║${R}"
-        echo -e "${B}  ║${R}${D}     Node B operates independently: own DID (same method), vault store/query works                  ${B}║${R}"
-        echo -e "${B}  ║${R}${D}     YOUR data, YOUR identity, YOUR machine. Google has nothing to do with it                      ${B}║${R}"
-        echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+        row "     ${BOLD}Laptop dying, move Dina${R}${D} -> vault data queryable (export path), DID recorded and stable${R}"
+        row "${D}     Node B: independent DID (different keypair, same did: method), vault store/query works${R}"
+        row "${D}     Seed-based DID derivation: known seed → SLIP-0010 m/9999'/0'/0' → same DID as Node A${R}"
+        row "${D}     Full roundtrip: export archive → docker cp to Node B → import → same-seed restore → data survives${R}"
+        row ""
 
         # ── Story 09 ──────────────────────────────────────────────────────────
         printf "  ${B}║${R}  ${G}09${R} ${BOLD}Connector Credential Expiry${R}"
         if [ -n "$s09" ]; then printf "%79s" "$s09"; else printf "%66s" "5 tests"; fi
         echo -e "  ${B}║${R}"
-        echo -e "${B}  ║${R}     ${BOLD}Gmail OAuth expires${R}${D} -> connector status: expired. Vault, identity fully operational            ${B}║${R}"
-        echo -e "${B}  ║${R}${D}     User reconfigures credentials -> connector resumes. No cascade, no crash                      ${B}║${R}"
-        echo -e "${B}  ║${R}${D}     Isolation guarantee: one connector down, everything else still works                           ${B}║${R}"
-        echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+        row "     ${BOLD}Gmail OAuth expires${R}${D} -> connector status: expired. Vault, identity fully operational${R}"
+        row "${D}     User reconfigures credentials -> connector resumes. No cascade, no crash${R}"
+        row "${D}     Isolation guarantee: one connector down, everything else still works${R}"
+        row ""
 
         # ── Story 10 ──────────────────────────────────────────────────────────
         printf "  ${B}║${R}  ${G}10${R} ${BOLD}The Operator Journey${R}"
         if [ -n "$s10" ]; then printf "%86s" "$s10"; else printf "%73s" "5 tests"; fi
         echo -e "  ${B}║${R}"
-        echo -e "${B}  ║${R}     ${BOLD}Re-run install script${R}${D} -> DID unchanged (idempotent). No rotation, no orphaned data             ${B}║${R}"
-        echo -e "${B}  ║${R}${D}     Lock vault for maintenance: health endpoint still accessible. Unlock: operations resume        ${B}║${R}"
-        echo -e "${B}  ║${R}${D}     Identity is derived from master seed — immutable after bootstrap, stable across lifecycle      ${B}║${R}"
-        echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+        row "     ${BOLD}Re-run install script${R}${D} -> DID unchanged (idempotent). No rotation, no orphaned data${R}"
+        row "${D}     Lock vault for maintenance: health endpoint still accessible. Unlock: operations resume${R}"
+        row "${D}     Identity is derived from master seed — immutable after bootstrap, stable across lifecycle${R}"
+        row ""
 
-        echo -e "${B}  ╠════════════════════════════════════════════════════════════════════════════════════════════════════╣${R}"
-        echo -e "${B}  ║${R}${D}     Thesis Invariants — Dina is not just a kernel, she is the civilizational thesis                ${B}║${R}"
-        echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+        # ── Thesis Invariants header (no separator line) ─────────────────────
+        row "${D}     Thesis Invariants — Dina is not just a kernel, she is a set of promises${R}"
+        row ""
 
         # ── Story 11 ──────────────────────────────────────────────────────────
         printf "  ${B}║${R}  ${G}11${R} ${BOLD}The Anti-Her${R}"
         if [ -n "$s11" ]; then printf "%94s" "$s11"; else printf "%81s" "5 tests"; fi
         echo -e "  ${B}║${R}"
-        echo -e "${B}  ║${R}     ${BOLD}\"Haven't talked to Sarah in 45 days\"${R}${D} -> proactive nudge in briefing, not on demand            ${B}║${R}"
-        echo -e "${B}  ║${R}${D}     Life event follow-up: \"Sancho's mother was ill\" -> \"you might want to check in\"                ${B}║${R}"
-        echo -e "${B}  ║${R}${D}     Emotional dependency escalation: cross-session patterns trigger specific contact suggestions   ${B}║${R}"
-        echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+        row "     ${BOLD}\"Haven't talked to Sarah in 45 days\"${R}${D} -> proactive nudge in briefing, not on demand${R}"
+        row "${D}     Life event follow-up: \"Sancho's mother was ill\" -> \"you might want to check in\"${R}"
+        row "${D}     Emotional dependency escalation: cross-session patterns trigger specific contact suggestions${R}"
+        row ""
 
         # ── Story 12 ──────────────────────────────────────────────────────────
         printf "  ${B}║${R}  ${G}12${R} ${BOLD}Verified Truth${R}"
-        if [ -n "$s12" ]; then printf "%92s" "$s12"; else printf "%79s" "5 tests"; fi
+        if [ -n "$s12" ]; then printf "%92s" "$s12"; else printf "%79s" "9 tests"; fi
         echo -e "  ${B}║${R}"
-        echo -e "${B}  ║${R}     ${BOLD}0 reviews -> sparse -> dense${R}${D} -> same code path, honest uncertainty at every density level   ${B}║${R}"
-        echo -e "${B}  ║${R}${D}     No hallucinated trust scores. 2 conflicting reviews = \"opinions split\", not \"score: 5/10\"      ${B}║${R}"
-        echo -e "${B}  ║${R}${D}     Deep links back to creators: experts get traffic, not just extracted summaries                 ${B}║${R}"
-        echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+        row "     ${BOLD}Zero attestations → honest uncertainty.${R}${D} Density enforcement strips hallucinated scores${R}"
+        row "${D}     Sparse (2 conflicting) → conflict acknowledged, limited data noted, no fabricated consensus${R}"
+        row "${D}     Dense (12 consistent) → confident recommendation, no false hedging, sources referenced${R}"
+        row "${D}     Reviewer DIDs + source URLs survive vault round-trip. Brain output credits sources${R}"
+        row ""
 
         # ── Story 13 ──────────────────────────────────────────────────────────
         printf "  ${B}║${R}  ${G}13${R} ${BOLD}Silence Under Stress${R}"
         if [ -n "$s13" ]; then printf "%86s" "$s13"; else printf "%73s" "3 tests"; fi
         echo -e "  ${B}║${R}"
-        echo -e "${B}  ║${R}     ${BOLD}100 notifications + 1 fraud alert${R}${D} -> only the fraud alert interrupts. 100 queued silently  ${B}║${R}"
-        echo -e "${B}  ║${R}${D}     \"URGENT\" from unknown sender = phishing risk, NOT fiduciary. Same word from trusted = fiduciary ${B}║${R}"
-        echo -e "${B}  ║${R}${D}     DND respects hierarchy: fiduciary overrides, solicited deferred, engagement always queued      ${B}║${R}"
-        echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+        row "     ${BOLD}100 notifications + 1 fraud alert${R}${D} -> only the fraud alert interrupts. 100 queued silently${R}"
+        row "${D}     \"URGENT\" from unknown sender = phishing risk, NOT fiduciary. Same from trusted = fiduciary${R}"
+        row "${D}     DND respects hierarchy: fiduciary overrides, solicited deferred, engagement always queued${R}"
+        row ""
 
         # ── Story 14 ──────────────────────────────────────────────────────────
         printf "  ${B}║${R}  ${G}14${R} ${BOLD}Agent Sandbox${R}"
-        if [ -n "$s14" ]; then printf "%93s" "$s14"; else printf "%80s" "3 tests"; fi
+        if [ -n "$s14" ]; then printf "%93s" "$s14"; else printf "%80s" "4 tests"; fi
         echo -e "  ${B}║${R}"
-        echo -e "${B}  ║${R}     ${BOLD}Malicious agent tries /health${R}${D} -> 403, attempt logged, user notified in next briefing        ${B}║${R}"
-        echo -e "${B}  ║${R}${D}     Agent revoked: immediate effect, no grace period, no stale cache allows access                 ${B}║${R}"
-        echo -e "${B}  ║${R}${D}     Agent forges user DID in D2D: Core overrides from_did — impersonation impossible               ${B}║${R}"
-        echo -e "${B}  ║${R}                                                                                                    ${B}║${R}"
+        row "     ${BOLD}Rogue agent with no auth${R}${D} -> 401 before Guardian. Gate locked at the perimeter${R}"
+        row "${D}     Revoked agent -> immediate 401, no grace period. Pair, validate, revoke, validate again${R}"
+        row "${D}     read_vault / export_data / access_keys -> BLOCKED. Direct send denied (Draft-Don't-Send)${R}"
+        row "${D}     Caller-supplied agent_did ignored: Core binds authenticated identity, not forged DID${R}"
+        row ""
     fi
     echo -e "${B}  ╚════════════════════════════════════════════════════════════════════════════════════════════════════╝${R}"
 
@@ -562,10 +581,10 @@ with open(log_path, 'w') as f:
     s12_skipped=$(echo "$OUTPUT" | grep -c "test_12_verified_truth.*SKIPPED" || true)
     s12_total=$((s12_passed + s12_failed + s12_errored + s12_skipped))
 
-    s13_passed=$(echo "$OUTPUT" | grep -c "test_13_silence_under_stress.*PASSED" || true)
-    s13_failed=$(echo "$OUTPUT" | grep -c "test_13_silence_under_stress.*FAILED" || true)
-    s13_errored=$(echo "$OUTPUT" | grep -c "test_13_silence_under_stress.* ERROR" || true)
-    s13_skipped=$(echo "$OUTPUT" | grep -c "test_13_silence_under_stress.*SKIPPED" || true)
+    s13_passed=$(echo "$OUTPUT" | grep -c "test_13_silence_stress.*PASSED" || true)
+    s13_failed=$(echo "$OUTPUT" | grep -c "test_13_silence_stress.*FAILED" || true)
+    s13_errored=$(echo "$OUTPUT" | grep -c "test_13_silence_stress.* ERROR" || true)
+    s13_skipped=$(echo "$OUTPUT" | grep -c "test_13_silence_stress.*SKIPPED" || true)
     s13_total=$((s13_passed + s13_failed + s13_errored + s13_skipped))
 
     s14_passed=$(echo "$OUTPUT" | grep -c "test_14_agent_sandbox.*PASSED" || true)
