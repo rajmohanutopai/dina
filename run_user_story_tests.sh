@@ -181,11 +181,11 @@ row() {
     local text="$1"
     # Strip ANSI escape sequences to compute visible width.
     local stripped
-    stripped=$(printf '%s' "$text" | sed $'s/\x1b\\[[0-9;]*m//g')
+    stripped=$(printf '%b' "$text" | sed $'s/\x1b\\[[0-9;]*m//g')
     local vlen=${#stripped}
     local pad=$((100 - vlen))
     if [ "$pad" -lt 0 ]; then pad=0; fi
-    printf "  ${B}║${R}%s%*s${B}║${R}\n" "$text" "$pad" ""
+    printf "  ${B}║${R}%b%*s${B}║${R}\n" "$text" "$pad" ""
 }
 
 print_banner() {
