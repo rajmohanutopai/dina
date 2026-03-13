@@ -115,9 +115,9 @@ describe('16.1 Docker Compose Smoke Tests', () => {
       // Verify the table is writable (INSERT + SELECT + DELETE roundtrip)
       const testService = '__test_ingester_connection__'
       await db.execute(sql`
-        INSERT INTO ingester_cursor (service, cursor)
-        VALUES (${testService}, 0)
-        ON CONFLICT (service) DO UPDATE SET cursor = 0
+        INSERT INTO ingester_cursor (service, cursor, updated_at)
+        VALUES (${testService}, 0, NOW())
+        ON CONFLICT (service) DO UPDATE SET cursor = 0, updated_at = NOW()
       `)
       const readBack = await db.execute(sql`
         SELECT cursor FROM ingester_cursor WHERE service = ${testService}

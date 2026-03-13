@@ -39,7 +39,7 @@ from uuid import uuid4
 import structlog
 
 from ..domain.enums import IntentRisk, Priority, SilenceDecision
-from ..domain.errors import CoreUnreachableError, DinaError, PersonaLockedError
+from ..domain.errors import CoreUnreachableError, DinaError, LLMError, PersonaLockedError
 from ..port.core_client import CoreClient
 from ..port.scrubber import PIIScrubber
 
@@ -2596,7 +2596,9 @@ class GuardianLoop:
         Guard scan is decoupled from skip_vault_enrichment: vault density
         can be skipped, but safety filtering always runs.
         """
-        prompt = event.get("prompt", "")
+        prompt = event.get("prompt") or event.get("body") or ""
+        if isinstance(prompt, dict):
+            prompt = str(prompt)
         persona_tier = event.get("persona_tier", "open")
         persona_tier = (persona_tier or "open").strip().lower()
         if persona_tier not in ("open", "restricted", "locked"):
@@ -2784,6 +2786,20 @@ class GuardianLoop:
                 "tokens_in": result.get("tokens_in"),
                 "tokens_out": result.get("tokens_out"),
                 "vault_context_used": vault_enriched,
+            }
+        except LLMError as exc:
+            # Graceful degradation: no LLM available (release/offline mode).
+            # Return a structured response instead of crashing.
+            log.warning("guardian.reason_no_llm", error=str(exc))
+            return {
+                "status": "ok",
+                "action": "reason_degraded",
+                "classification": "solicited",
+                "response": {
+                    "degraded": True,
+                    "reason": "No LLM provider available",
+                },
+                "content": "",
             }
         except Exception as exc:
             log.error("guardian.reason_failed", error=str(exc))

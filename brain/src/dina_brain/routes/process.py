@@ -59,6 +59,8 @@ class ProcessEventRequest(BaseModel):
     trust_level: str | None = None
     # Structured payload (alternative to flat fields above)
     payload: dict | None = None
+    # Arbitrary context dict (trust data, contacts, etc.)
+    context: dict | None = None
 
 
 class ProcessEventResponse(BaseModel):
