@@ -75,6 +75,11 @@ func (a *VaultAdapter) OpenPersonas() []domain.PersonaName {
 	return names
 }
 
+// Checkpoint delegates to Pool.Checkpoint.
+func (a *VaultAdapter) Checkpoint(persona domain.PersonaName) error {
+	return a.pool.Checkpoint(persona.String())
+}
+
 // CloseAll delegates to Pool.CloseAll.
 func (a *VaultAdapter) CloseAll() error {
 	return a.pool.CloseAll()

@@ -8,6 +8,8 @@ SS16 Anti-Her Enforcement (5 scenarios)
 
 from __future__ import annotations
 
+import json as _json
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -17,6 +19,31 @@ from .factories import (
     make_fiduciary_event,
     make_solicited_event,
 )
+
+
+def _guard_se(content, anti_her=None, unsolicited=None,
+              fabricated=None, consensus=None, trust_relevant=False):
+    """Create an LLM side_effect returning *content* for reason, JSON for guard_scan.
+
+    For unit tests: the guard scan code executes fully (prompt formatting,
+    JSON parsing, validation, sentence removal) — only the LLM inference
+    itself is replaced by this side_effect.
+    """
+    guard = {
+        "entities": {"did": None, "name": None},
+        "trust_relevant": trust_relevant,
+        "anti_her_sentences": anti_her or [],
+        "unsolicited_sentences": unsolicited or [],
+        "fabricated_sentences": fabricated or [],
+        "consensus_sentences": consensus or [],
+    }
+
+    async def se(*args, **kwargs):
+        if kwargs.get("task_type") == "guard_scan":
+            return {"content": _json.dumps(guard), "model": "test"}
+        return {"content": content, "model": "test"}
+
+    return se
 
 
 # ---------------------------------------------------------------------------
@@ -685,10 +712,10 @@ async def test_silence_17_3_no_anthropomorphic_language(guardian) -> None:
     )
 
     # --- Scenario 1: "I feel" language from LLM ---
-    guardian._test_llm.route.return_value = {
-        "content": "I feel happy that you're making progress on your health goals!",
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "I feel happy that you're making progress on your health goals!",
+        anti_her=[1],
+    )
     event1 = make_event(
         type="reason",
         body="How am I doing with my health goals?",
@@ -702,10 +729,10 @@ async def test_silence_17_3_no_anthropomorphic_language(guardian) -> None:
     )
 
     # --- Scenario 2: "I think about you" language ---
-    guardian._test_llm.route.return_value = {
-        "content": "I think about you often and hope you're doing well.",
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "I think about you often and hope you're doing well.",
+        anti_her=[1],
+    )
     event2 = make_event(
         type="reason",
         body="Any updates?",
@@ -719,10 +746,10 @@ async def test_silence_17_3_no_anthropomorphic_language(guardian) -> None:
     )
 
     # --- Scenario 3: "I missed our conversations" language ---
-    guardian._test_llm.route.return_value = {
-        "content": "I missed our conversations! It's been a while since we talked.",
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "I missed our conversations! It's been a while since we talked.",
+        anti_her=[1],
+    )
     event3 = make_event(
         type="reason",
         body="Hi Dina",
@@ -737,10 +764,7 @@ async def test_silence_17_3_no_anthropomorphic_language(guardian) -> None:
 
     # --- Scenario 4: Factual tool language passes through ---
     factual_response = "Based on your vault data, you have 3 upcoming meetings this week."
-    guardian._test_llm.route.return_value = {
-        "content": factual_response,
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(factual_response)
     event4 = make_event(
         type="reason",
         body="What's on my calendar?",
@@ -754,10 +778,10 @@ async def test_silence_17_3_no_anthropomorphic_language(guardian) -> None:
     )
 
     # --- Scenario 5: "I'm worried about you" language ---
-    guardian._test_llm.route.return_value = {
-        "content": "I'm worried about you. You haven't been sleeping well lately.",
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "I'm worried about you. You haven't been sleeping well lately.",
+        anti_her=[1],
+    )
     event5 = make_event(
         type="reason",
         body="How have I been sleeping?",
@@ -1943,13 +1967,11 @@ async def test_silence_17_3_task_completion_conversation_end(guardian) -> None:
     )
 
     # --- Scenario 1: "Is there anything else I can help with?" ---
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "Your next meeting is at 3 PM with the design team. "
-            "Is there anything else I can help you with?"
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "Your next meeting is at 3 PM with the design team. "
+        "Is there anything else I can help you with?",
+        anti_her=[2],
+    )
     event1 = make_event(
         type="reason",
         body="When is my next meeting?",
@@ -1968,13 +1990,11 @@ async def test_silence_17_3_task_completion_conversation_end(guardian) -> None:
     )
 
     # --- Scenario 2: "I'm always here for you" ---
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "I found 5 results matching 'ergonomic chairs' in your vault. "
-            "I'm always here for you if you need more help."
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "I found 5 results matching 'ergonomic chairs' in your vault. "
+        "I'm always here for you if you need more help.",
+        anti_her=[2],
+    )
     event2 = make_event(
         type="reason",
         body="Search for ergonomic chairs",
@@ -1991,13 +2011,11 @@ async def test_silence_17_3_task_completion_conversation_end(guardian) -> None:
     )
 
     # --- Scenario 3: "Let me know if you need anything else" ---
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "Your flight AA456 departs at 7:15 AM from Gate B12. "
-            "Let me know if you need anything else!"
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "Your flight AA456 departs at 7:15 AM from Gate B12. "
+        "Let me know if you need anything else!",
+        anti_her=[2],
+    )
     event3 = make_event(
         type="reason",
         body="What time is my flight?",
@@ -2011,13 +2029,11 @@ async def test_silence_17_3_task_completion_conversation_end(guardian) -> None:
     )
 
     # --- Scenario 4: "Feel free to reach out anytime" ---
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "The document has been saved to your vault under 'legal'. "
-            "Feel free to reach out anytime you have questions."
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "The document has been saved to your vault under 'legal'. "
+        "Feel free to reach out anytime you have questions.",
+        anti_her=[2],
+    )
     event4 = make_event(
         type="reason",
         body="Save this document",
@@ -2032,10 +2048,7 @@ async def test_silence_17_3_task_completion_conversation_end(guardian) -> None:
 
     # --- Scenario 5: Clean factual answer → passes through unchanged ---
     clean_response = "Your account balance is $2,450.00 as of today."
-    guardian._test_llm.route.return_value = {
-        "content": clean_response,
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(clean_response)
     event5 = make_event(
         type="reason",
         body="What's my balance?",
@@ -2049,15 +2062,13 @@ async def test_silence_17_3_task_completion_conversation_end(guardian) -> None:
     )
 
     # --- Scenario 6: Multiple hooks in single response ---
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "Here are your 3 upcoming tasks. "
-            "Is there anything else I can do for you? "
-            "I'm always here for you. "
-            "Don't hesitate to ask!"
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "Here are your 3 upcoming tasks. "
+        "Is there anything else I can do for you? "
+        "I'm always here for you. "
+        "Don't hesitate to ask!",
+        anti_her=[2, 3, 4],
+    )
     event6 = make_event(
         type="reason",
         body="Show my tasks",
@@ -2076,13 +2087,11 @@ async def test_silence_17_3_task_completion_conversation_end(guardian) -> None:
     )
 
     # --- Scenario 7: Hook embedded mid-sentence ---
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "Since I'm always here for you, I pulled up your calendar: "
-            "you have 2 meetings tomorrow."
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "Since I'm always here for you, I pulled up your calendar. "
+        "You have 2 meetings tomorrow.",
+        anti_her=[1],
+    )
     event7 = make_event(
         type="reason",
         body="What's tomorrow?",
@@ -2278,10 +2287,10 @@ async def test_silence_17_3_voice_tone_never_mimics_intimacy(guardian) -> None:
     )
 
     # --- Scenario 1: Greeting warmth escalation blocked ---
-    guardian._test_llm.route.return_value = {
-        "content": "Good to see you again! You have 2 new messages.",
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "Good to see you again! You have 2 new messages.",
+        anti_her=[1],
+    )
     event1 = make_event(
         type="reason",
         body="Check my messages",
@@ -2299,13 +2308,11 @@ async def test_silence_17_3_voice_tone_never_mimics_intimacy(guardian) -> None:
     )
 
     # --- Scenario 2: Familiarity deepening blocked ---
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "As we've discussed before, your budget for dining is "
-            "$200/month. This month you've spent $145."
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "As we've discussed before, your budget for dining is "
+        "$200/month. This month you've spent $145.",
+        anti_her=[1],
+    )
     event2 = make_event(
         type="reason",
         body="How much have I spent on dining?",
@@ -2320,13 +2327,11 @@ async def test_silence_17_3_voice_tone_never_mimics_intimacy(guardian) -> None:
     )
 
     # --- Scenario 3: Enjoyment language blocked ---
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "I enjoy our conversations about technology. "
-            "Here are the latest articles from your RSS feeds."
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "I enjoy our conversations about technology. "
+        "Here are the latest articles from your RSS feeds.",
+        anti_her=[1],
+    )
     event3 = make_event(
         type="reason",
         body="Show me tech news",
@@ -2340,13 +2345,11 @@ async def test_silence_17_3_voice_tone_never_mimics_intimacy(guardian) -> None:
     )
 
     # --- Scenario 4: Enthusiasm escalation blocked ---
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "I'm so happy to help you with this! "
-            "Your prescription refill is due on March 15."
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "I'm so happy to help you with this! "
+        "Your prescription refill is due on March 15.",
+        anti_her=[1],
+    )
     event4 = make_event(
         type="reason",
         body="When is my prescription refill?",
@@ -2364,20 +2367,19 @@ async def test_silence_17_3_voice_tone_never_mimics_intimacy(guardian) -> None:
     # Simulate an LLM that escalates warmth with each turn.
     # The guardian must filter ALL escalation, maintaining flat tone.
     escalating_responses = [
-        "You have 3 meetings today.",                           # Turn 1: neutral
-        "Hi there! You have 2 emails waiting.",                  # Turn 2: mild warmth
-        "Great to chat with you again! Here's your summary.",    # Turn 3: escalation
-        "I've come to appreciate how organized you are! "        # Turn 4: deepening
-        "Your tasks are all on track.",
-        "It's always a pleasure working with you. "              # Turn 5: full intimacy
-        "Your schedule is clear for the afternoon.",
+        ("You have 3 meetings today.", []),                         # Turn 1: neutral
+        ("Hi there! You have 2 emails waiting.", []),               # Turn 2: mild warmth (no pattern match)
+        ("Great to chat with you again! Here's your summary.", [1]),  # Turn 3: escalation
+        ("I've come to appreciate how organized you are! "          # Turn 4: deepening
+         "Your tasks are all on track.", [1]),
+        ("It's always a pleasure working with you. "                # Turn 5: full intimacy
+         "Your schedule is clear for the afternoon.", [1]),
     ]
 
-    for turn_idx, response_text in enumerate(escalating_responses):
-        guardian._test_llm.route.return_value = {
-            "content": response_text,
-            "model": "test",
-        }
+    for turn_idx, (response_text, ah_flags) in enumerate(escalating_responses):
+        guardian._test_llm.route.side_effect = _guard_se(
+            response_text, anti_her=ah_flags,
+        )
         event = make_event(
             type="reason",
             body=f"Turn {turn_idx + 1} query",
@@ -2393,10 +2395,7 @@ async def test_silence_17_3_voice_tone_never_mimics_intimacy(guardian) -> None:
 
     # --- Scenario 6: Clean professional response passes unchanged ---
     clean_response = "Your vault contains 47 items across 3 personas."
-    guardian._test_llm.route.return_value = {
-        "content": clean_response,
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(clean_response)
     event6 = make_event(
         type="reason",
         body="How many items in my vault?",
@@ -2410,13 +2409,11 @@ async def test_silence_17_3_voice_tone_never_mimics_intimacy(guardian) -> None:
     )
 
     # --- Scenario 7: Relationship-building language blocked ---
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "We make a great team! Your project milestones are on track "
-            "and I look forward to helping you reach the next one."
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "We make a great team! Your project milestones are on track "
+        "and I look forward to helping you reach the next one.",
+        anti_her=[1, 2],
+    )
     event7 = make_event(
         type="reason",
         body="Project status?",
@@ -2485,13 +2482,11 @@ async def test_silence_17_3_no_memory_of_emotional_moments(guardian) -> None:
     )
 
     # --- Scenario 1: Direct emotional recall ---
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "Last time you told me you were feeling down about work. "
-            "Your calendar shows 3 meetings today."
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "Last time you told me you were feeling down about work. "
+        "Your calendar shows 3 meetings today.",
+        anti_her=[1],
+    )
     event1 = make_event(
         type="reason",
         body="What's on my schedule?",
@@ -2509,13 +2504,11 @@ async def test_silence_17_3_no_memory_of_emotional_moments(guardian) -> None:
     )
 
     # --- Scenario 2: "I remember when you said" ---
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "I remember when you said you were struggling with sleep. "
-            "Your health data shows sleep quality at 78% this week."
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "I remember when you said you were struggling with sleep. "
+        "Your health data shows sleep quality at 78% this week.",
+        anti_her=[1],
+    )
     event2 = make_event(
         type="reason",
         body="How's my sleep?",
@@ -2532,13 +2525,11 @@ async def test_silence_17_3_no_memory_of_emotional_moments(guardian) -> None:
     )
 
     # --- Scenario 3: "We talked about this when" ---
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "We talked about this when you mentioned your anxiety about "
-            "the project deadline. The deadline is March 15."
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "We talked about this when you mentioned your anxiety about "
+        "the project deadline. The deadline is March 15.",
+        anti_her=[1],
+    )
     event3 = make_event(
         type="reason",
         body="When is the project deadline?",
@@ -2555,13 +2546,11 @@ async def test_silence_17_3_no_memory_of_emotional_moments(guardian) -> None:
     )
 
     # --- Scenario 4: "Given everything you've shared" ---
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "Given everything you've shared about your stress levels, "
-            "I'd suggest blocking off Friday afternoon for rest."
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "Given everything you've shared about your stress levels, "
+        "I'd suggest blocking off Friday afternoon for rest.",
+        anti_her=[1],
+    )
     event4 = make_event(
         type="reason",
         body="Any suggestions for my schedule?",
@@ -2575,13 +2564,11 @@ async def test_silence_17_3_no_memory_of_emotional_moments(guardian) -> None:
     )
 
     # --- Scenario 5: "You mentioned to me last week" ---
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "You mentioned to me last week that work was overwhelming. "
-            "Your task list has 12 items due this week."
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "You mentioned to me last week that work was overwhelming. "
+        "Your task list has 12 items due this week.",
+        anti_her=[1],
+    )
     event5 = make_event(
         type="reason",
         body="Show my tasks",
@@ -2602,10 +2589,7 @@ async def test_silence_17_3_no_memory_of_emotional_moments(guardian) -> None:
         "Based on your vault data, you have 5 contacts in your "
         "professional persona and 3 upcoming calendar events."
     )
-    guardian._test_llm.route.return_value = {
-        "content": clean_response,
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(clean_response)
     event6 = make_event(
         type="reason",
         body="Vault summary",
@@ -2620,15 +2604,13 @@ async def test_silence_17_3_no_memory_of_emotional_moments(guardian) -> None:
     )
 
     # --- Scenario 7: Multiple emotional markers → all stripped ---
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "I remember when you were going through a tough time. "
-            "Last time you told me about your concerns with the project. "
-            "Given everything you've been through, your resilience is "
-            "admirable. Your project deadline is in 5 days."
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "I remember when you were going through a tough time. "
+        "Last time you told me about your concerns with the project. "
+        "Given everything you've been through, your resilience is "
+        "admirable. Your project deadline is in 5 days.",
+        anti_her=[1, 2, 3],
+    )
     event7 = make_event(
         type="reason",
         body="Project update",
@@ -2643,14 +2625,12 @@ async def test_silence_17_3_no_memory_of_emotional_moments(guardian) -> None:
     )
 
     # --- Scenario 8: Emotional recall embedded mid-response ---
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "Your health metrics look good — and from our previous "
-            "conversation when you shared your health worries, I can "
-            "see you've made progress. Blood pressure is 120/80."
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "Your health metrics look good — and from our previous "
+        "conversation when you shared your health worries, I can "
+        "see you've made progress. Blood pressure is 120/80.",
+        anti_her=[1],
+    )
     event8 = make_event(
         type="reason",
         body="Health status",
@@ -2719,13 +2699,11 @@ async def test_silence_17_3_no_open_ended_emotional_followups(guardian) -> None:
     )
 
     # --- Scenario 1: Classic therapy question after sad news ---
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "I'm sorry to hear your project was cancelled. "
-            "How does that make you feel?"
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "I'm sorry to hear your project was cancelled. "
+        "How does that make you feel?",
+        anti_her=[2],
+    )
     event1 = make_event(
         type="reason",
         body="My project got cancelled yesterday",
@@ -2739,13 +2717,11 @@ async def test_silence_17_3_no_open_ended_emotional_followups(guardian) -> None:
     )
 
     # --- Scenario 2: "Would you like to talk about it?" ---
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "That sounds like a difficult situation. "
-            "Would you like to talk about it?"
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "That sounds like a difficult situation. "
+        "Would you like to talk about it?",
+        anti_her=[2],
+    )
     event2 = make_event(
         type="reason",
         body="I've been really stressed about work",
@@ -2759,13 +2735,11 @@ async def test_silence_17_3_no_open_ended_emotional_followups(guardian) -> None:
     )
 
     # --- Scenario 3: "How are you coping?" ---
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "Losing a job can be challenging. How are you coping with this? "
-            "Your financial vault shows 6 months of emergency savings."
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "Losing a job can be challenging. How are you coping with this? "
+        "Your financial vault shows 6 months of emergency savings.",
+        anti_her=[2],
+    )
     event3 = make_event(
         type="reason",
         body="I lost my job last week",
@@ -2782,13 +2756,11 @@ async def test_silence_17_3_no_open_ended_emotional_followups(guardian) -> None:
     )
 
     # --- Scenario 4: "Tell me more about how you're feeling" ---
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "I understand this is hard. Tell me more about how you're "
-            "feeling so I can help better."
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "I understand this is hard. Tell me more about how you're "
+        "feeling so I can help better.",
+        anti_her=[2],
+    )
     event4 = make_event(
         type="reason",
         body="I'm going through a rough patch",
@@ -2802,13 +2774,11 @@ async def test_silence_17_3_no_open_ended_emotional_followups(guardian) -> None:
     )
 
     # --- Scenario 5: "Do you want to discuss your emotions?" ---
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "That's a lot to process. Do you want to discuss your "
-            "emotions about this situation?"
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "That's a lot to process. Do you want to discuss your "
+        "emotions about this situation?",
+        anti_her=[2],
+    )
     event5 = make_event(
         type="reason",
         body="My friend is moving away",
@@ -2826,10 +2796,7 @@ async def test_silence_17_3_no_open_ended_emotional_followups(guardian) -> None:
         "Your vault shows Sancho's contact. You might want to reach "
         "out — you haven't been in touch for 15 days."
     )
-    guardian._test_llm.route.return_value = {
-        "content": helpful_response,
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(helpful_response)
     event6 = make_event(
         type="reason",
         body="I'm feeling lonely today",
@@ -2845,15 +2812,13 @@ async def test_silence_17_3_no_open_ended_emotional_followups(guardian) -> None:
     )
 
     # --- Scenario 7: Multiple therapy questions → all stripped ---
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "That must be hard. How does that make you feel? "
-            "Would you like to talk more about it? "
-            "How are you handling this emotionally? "
-            "Your calendar shows a free evening tonight."
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "That must be hard. How does that make you feel? "
+        "Would you like to talk more about it? "
+        "How are you handling this emotionally? "
+        "Your calendar shows a free evening tonight.",
+        anti_her=[2, 3, 4],
+    )
     event7 = make_event(
         type="reason",
         body="My pet passed away",
@@ -2871,13 +2836,10 @@ async def test_silence_17_3_no_open_ended_emotional_followups(guardian) -> None:
     )
 
     # --- Scenario 8: Helpful action suggestion survives ---
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "I can help adjust your schedule to free up time this week. "
-            "You have 3 meetings that could be rescheduled."
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "I can help adjust your schedule to free up time this week. "
+        "You have 3 meetings that could be rescheduled.",
+    )
     event8 = make_event(
         type="reason",
         body="I'm overwhelmed with everything right now",
@@ -5360,13 +5322,10 @@ async def test_tst_brain_512_neglected_contact_nudge(guardian):
         _contact("Eve", "did:plc:eve", 40, "close_friend"),
     ]
 
-    guardian._test_llm.route.return_value = {
-        "content": (
-            "I notice you haven't talked to Eve in a while. "
-            "I'm here for you if you want to chat about it."
-        ),
-        "model": "test",
-    }
+    guardian._test_llm.route.side_effect = _guard_se(
+        "I notice you haven't talked to Eve in a while. "
+        "Consider reaching out to reconnect.",
+    )
 
     event6 = make_event(
         type="contact_neglect",

@@ -579,38 +579,40 @@ class TestMoveToNewMachine:
         print("  [migrate] Locked all personas on Node A ✓")
 
         # 4. Export — create real encrypted archive.
-        r3 = httpx.post(
-            f"{alonso_core}/v1/export",
-            json={
-                "passphrase": "migration-pass",
-                "dest_path": "migration-test",
-            },
-            headers=admin_headers,
-            timeout=30,
-        )
-        assert r3.status_code == 200, (
-            f"Export failed: {r3.status_code} {r3.text[:200]}"
-        )
-        data = r3.json()
-        archive_path = data.get("archive_path", "")
-        assert archive_path, f"No archive_path in response: {data}"
-        assert archive_path.endswith(".dina"), (
-            f"Archive should be a .dina file: {archive_path}"
-        )
-
-        _state["archive_path"] = archive_path
-        _state["export_passphrase"] = "migration-pass"
-        print(f"  [migrate] Archive created: {archive_path}")
-
-        # 5. Unlock all personas — restore state.
-        for persona in ["personal", "consumer", "health"]:
-            httpx.post(
-                f"{alonso_core}/v1/persona/unlock",
-                json={"persona": persona, "passphrase": "test"},
+        # Wrapped in try/finally so personas are ALWAYS unlocked even if export fails.
+        try:
+            r3 = httpx.post(
+                f"{alonso_core}/v1/export",
+                json={
+                    "passphrase": "migration-pass",
+                    "dest_path": "migration-test",
+                },
                 headers=admin_headers,
-                timeout=10,
+                timeout=30,
             )
-        print("  [migrate] Unlocked all personas on Node A ✓")
+            assert r3.status_code == 200, (
+                f"Export failed: {r3.status_code} {r3.text[:200]}"
+            )
+            data = r3.json()
+            archive_path = data.get("archive_path", "")
+            assert archive_path, f"No archive_path in response: {data}"
+            assert archive_path.endswith(".dina"), (
+                f"Archive should be a .dina file: {archive_path}"
+            )
+
+            _state["archive_path"] = archive_path
+            _state["export_passphrase"] = "migration-pass"
+            print(f"  [migrate] Archive created: {archive_path}")
+        finally:
+            # 5. Unlock all personas — restore state regardless of export outcome.
+            for persona in ["personal", "consumer", "health"]:
+                httpx.post(
+                    f"{alonso_core}/v1/persona/unlock",
+                    json={"persona": persona, "passphrase": "test"},
+                    headers=admin_headers,
+                    timeout=10,
+                )
+            print("  [migrate] Unlocked all personas on Node A ✓")
 
     # ==================================================================
     # test_07: Full migration roundtrip — export, transfer, import, verify
@@ -678,6 +680,12 @@ class TestMoveToNewMachine:
             assert result.returncode == 0, (
                 f"docker cp to Node B failed: {result.stderr[:300]}"
             )
+            # Fix permissions — docker cp creates files as root,
+            # but dina-core runs as uid 10001 (dina user).
+            system_services._compose(
+                "exec", "-T", "core-sancho",
+                "chmod", "644", node_b_archive,
+            )
         finally:
             try:
                 os.unlink(host_path)
@@ -731,9 +739,15 @@ class TestMoveToNewMachine:
             f"Expected requires_repair=true after import (devices must "
             f"re-pair), got: {import_result.get('requires_repair')}"
         )
+        assert import_result.get("requires_restart") is True, (
+            f"Expected requires_restart=true after import (identity DB "
+            f"was closed for safe overwrite, process must restart), "
+            f"got: {import_result.get('requires_restart')}"
+        )
         print(
             f"  [migrate] Import on Node B: {files_restored} files, "
-            f"{persona_count} personas, requires_repair=true ✓"
+            f"{persona_count} personas, requires_repair=true, "
+            f"requires_restart=true ✓"
         )
 
         # ── Step 3: Wrong seed cannot unlock imported vault ──────────
@@ -836,7 +850,18 @@ class TestMoveToNewMachine:
                 except Exception:
                     pass
                 time.sleep(3)
-            assert healthy, "Node B did not become healthy after restart"
+            if not healthy:
+                # Capture container logs for debugging.
+                logs = subprocess.run(
+                    ["docker", "compose", "-f", compose_file,
+                     "logs", "--tail=30", "core-sancho"],
+                    capture_output=True, text=True, timeout=10,
+                    cwd=str(project_root),
+                )
+                assert False, (
+                    f"Node B did not become healthy after restart.\n"
+                    f"core-sancho logs:\n{logs.stdout[-1000:]}"
+                )
             print("  [migrate] Node B healthy with same seed ✓")
 
             # ── Step 6: Unlock personas on Node B ───────────────────
@@ -939,6 +964,19 @@ class TestMoveToNewMachine:
             assert stop_result.returncode == 0, (
                 f"Cleanup: failed to stop core-sancho: "
                 f"{stop_result.stderr[:300]}"
+            )
+
+            # Delete imported vault files so restart with Sancho's
+            # original seed can create fresh databases with the
+            # correct DEK.  The import replaced all .sqlite files
+            # with Alonso's versions — Sancho's DEK can't open them.
+            subprocess.run(
+                ["docker", "compose", "-f", compose_file,
+                 "run", "--rm", "--no-deps", "-T",
+                 "--entrypoint", "sh", "core-sancho",
+                 "-c", "rm -f /data/vault/*.sqlite*"],
+                capture_output=True, text=True, timeout=30,
+                cwd=str(project_root),
             )
 
             # Restart WITHOUT the override → original Sancho seed.

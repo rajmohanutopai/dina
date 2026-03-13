@@ -26,6 +26,10 @@ type VaultManager interface {
 	Close(persona domain.PersonaName) error
 	IsOpen(persona domain.PersonaName) bool
 	OpenPersonas() []domain.PersonaName
+	// Checkpoint flushes the WAL to the main database file so that
+	// os.ReadFile on the .sqlite file captures all committed data.
+	// Must be called before export reads raw database bytes from disk.
+	Checkpoint(persona domain.PersonaName) error
 }
 
 // ScratchpadManager handles cognitive checkpoint storage for the brain's multi-step reasoning.

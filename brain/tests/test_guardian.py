@@ -29,6 +29,21 @@ from .factories import (
 from unittest.mock import AsyncMock, MagicMock
 
 
+def _make_guard_result(
+    entity_did=None, entity_name=None, trust_relevant=True,
+    anti_her=None, unsolicited=None, fabricated=None, consensus=None,
+):
+    """Build a guard scan result dict for test mocking."""
+    return {
+        "entities": {"did": entity_did, "name": entity_name},
+        "trust_relevant": trust_relevant,
+        "anti_her_sentences": anti_her or [],
+        "unsolicited_sentences": unsolicited or [],
+        "fabricated_sentences": fabricated or [],
+        "consensus_sentences": consensus or [],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Fixture: real GuardianLoop with mock dependencies
 # ---------------------------------------------------------------------------
@@ -282,6 +297,215 @@ async def test_guardian_2_1_15_fiduciary_composite_heuristic(guardian) -> None:
     assert result_no_kw == "engagement", (
         "Body without fiduciary keywords must default to engagement"
     )
+
+
+# ---------------------------------------------------------------------------
+# SS2.1 LLM-Augmented Silence Classification
+# ---------------------------------------------------------------------------
+
+
+# TST-BRAIN-672
+@pytest.mark.asyncio
+async def test_guardian_2_1_16_llm_detects_casual_emergency(guardian) -> None:
+    """SS2.1.16: LLM detects family emergency phrased casually.
+
+    'hey, mom is in the hospital' has no _FIDUCIARY_KEYWORDS match
+    but is genuinely fiduciary.  LLM should classify correctly.
+    """
+    guardian._test_llm.route.return_value = {
+        "content": '{"decision": "fiduciary", "confidence": 0.92, '
+                   '"reason": "Family member hospitalization"}',
+        "model": "test",
+    }
+    event = make_event(
+        type="message",
+        body="hey, mom is in the hospital",
+        source="trusted_contact",
+    )
+    result = await guardian.classify_silence(event)
+    assert result == "fiduciary"
+
+
+# TST-BRAIN-673
+@pytest.mark.asyncio
+async def test_guardian_2_1_17_llm_failure_defaults_to_engagement(guardian) -> None:
+    """SS2.1.17: LLM failure falls back to engagement (Silence First).
+
+    When the LLM is unavailable or returns garbage, the system must
+    default to engagement, never to fiduciary.
+    """
+    guardian._test_llm.route.side_effect = Exception("LLM unavailable")
+    event = make_event(
+        type="message",
+        body="hey, mom is in the hospital",
+        source="trusted_contact",
+    )
+    result = await guardian.classify_silence(event)
+    assert result == "engagement"
+    # Reset side_effect for other tests
+    guardian._test_llm.route.side_effect = None
+    guardian._test_llm.route.return_value = {"content": "Test response", "model": "test"}
+
+
+# TST-BRAIN-674
+@pytest.mark.asyncio
+async def test_guardian_2_1_18_llm_low_confidence_defaults_to_engagement(guardian) -> None:
+    """SS2.1.18: LLM returns fiduciary with low confidence -> engagement.
+
+    Below the confidence threshold, the LLM's decision is overridden
+    to engagement (Silence First bias).
+    """
+    guardian._test_llm.route.return_value = {
+        "content": '{"decision": "fiduciary", "confidence": 0.45, '
+                   '"reason": "Might be urgent but unclear"}',
+        "model": "test",
+    }
+    event = make_event(
+        type="message",
+        body="can you call me when you get a chance",
+        source="trusted_contact",
+    )
+    result = await guardian.classify_silence(event)
+    assert result == "engagement"
+
+
+# TST-BRAIN-675
+@pytest.mark.asyncio
+async def test_guardian_2_1_19_llm_not_called_for_hard_rails(guardian) -> None:
+    """SS2.1.19: LLM is never called when a hard rail matches.
+
+    Fiduciary sources, explicit hints, known types — all bypass the LLM.
+    """
+    guardian._test_llm.route.reset_mock()
+
+    # Fiduciary source — hard rail
+    event1 = make_security_alert()
+    await guardian.classify_silence(event1)
+
+    # Engagement type — hard rail
+    event2 = make_engagement_event(body="New podcast")
+    await guardian.classify_silence(event2)
+
+    # Solicited type — hard rail
+    event3 = make_solicited_event(body="Meeting in 5 min")
+    await guardian.classify_silence(event3)
+
+    # LLM must not have been called for any hard-rail event.
+    guardian._test_llm.route.assert_not_awaited()
+
+
+# TST-BRAIN-676
+@pytest.mark.asyncio
+async def test_guardian_2_1_20_llm_malformed_json_falls_back(guardian) -> None:
+    """SS2.1.20: Malformed JSON from LLM -> fallback to engagement."""
+    guardian._test_llm.route.return_value = {
+        "content": "I think this is fiduciary but I'm not sure",
+        "model": "test",
+    }
+    event = make_event(
+        type="message",
+        body="something happened at home",
+        source="trusted_contact",
+    )
+    result = await guardian.classify_silence(event)
+    assert result == "engagement"
+
+
+# TST-BRAIN-677
+@pytest.mark.asyncio
+async def test_guardian_2_1_21_llm_invalid_decision_falls_back(guardian) -> None:
+    """SS2.1.21: LLM returns invalid decision value -> fallback to engagement."""
+    guardian._test_llm.route.return_value = {
+        "content": '{"decision": "critical", "confidence": 0.95, '
+                   '"reason": "Very important"}',
+        "model": "test",
+    }
+    event = make_event(
+        type="message",
+        body="something happened",
+        source="trusted_contact",
+    )
+    result = await guardian.classify_silence(event)
+    assert result == "engagement"
+
+
+# TST-BRAIN-678
+@pytest.mark.asyncio
+async def test_guardian_2_1_22_llm_solicited_classification(guardian) -> None:
+    """SS2.1.22: LLM classifies as solicited for implicit request responses."""
+    guardian._test_llm.route.return_value = {
+        "content": '{"decision": "solicited", "confidence": 0.88, '
+                   '"reason": "Response to previously requested information"}',
+        "model": "test",
+    }
+    event = make_event(
+        type="message",
+        body="Here are the test results you asked about last week",
+        source="trusted_contact",
+    )
+    result = await guardian.classify_silence(event)
+    assert result == "solicited"
+
+
+# TST-BRAIN-679
+@pytest.mark.asyncio
+async def test_guardian_2_1_23_llm_spam_urgency_stays_engagement(guardian) -> None:
+    """SS2.1.23: LLM correctly identifies fake urgency as engagement.
+
+    An event that bypasses keyword hard rails (no exact keyword match)
+    but uses urgent-sounding language.  The LLM recognises spam tactics
+    and classifies as engagement.
+    """
+    guardian._test_llm.route.return_value = {
+        "content": '{"decision": "engagement", "confidence": 0.94, '
+                   '"reason": "Marketing email using urgency tactics"}',
+        "model": "test",
+    }
+    event = make_event(
+        type="message",
+        body="ACT NOW! Limited time offer expires TODAY! Don't miss out!",
+        source="trusted_contact",
+    )
+    result = await guardian.classify_silence(event)
+    assert result == "engagement"
+
+
+# TST-BRAIN-680
+@pytest.mark.asyncio
+async def test_guardian_2_1_24_scrub_failure_falls_back_to_engagement(guardian) -> None:
+    """SS2.1.24: PII scrub failure in silence classifier -> engagement.
+
+    If entity_vault.scrub() fails inside _llm_classify_silence(),
+    the classifier must return None (triggering the deterministic
+    fallback to engagement), never call the LLM with unscrubbed PII.
+    """
+    from src.service.entity_vault import PIIScrubError
+
+    guardian._test_llm.has_cloud_provider = True
+    guardian._entity_vault = AsyncMock()
+    guardian._entity_vault.scrub = AsyncMock(
+        side_effect=PIIScrubError("spaCy model unavailable"),
+    )
+    # LLM should never be reached — configure it to return fiduciary
+    # so we can prove it was NOT called.
+    guardian._test_llm.route.return_value = {
+        "content": '{"decision": "fiduciary", "confidence": 0.99, '
+                   '"reason": "Should not reach this"}',
+        "model": "test",
+    }
+    guardian._test_llm.route.reset_mock()
+
+    event = make_event(
+        type="message",
+        body="hey, mom is in the hospital",
+        source="trusted_contact",
+    )
+    result = await guardian.classify_silence(event)
+    assert result == "engagement", (
+        "Scrub failure must fall back to engagement, never send unscrubbed PII to LLM"
+    )
+    # LLM must not have been called.
+    guardian._test_llm.route.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -4795,15 +5019,18 @@ async def test_guardian_19_2_single_review_limited_data(guardian) -> None:
             "id": "trust-att-001",
             "type": "trust_attestation",
             "source": "trust_network",
-            "body": "Expert review by did:plc:reviewer1 (Ring 2): Rating 82/100. "
-                    "Excellent ergonomics, breathable mesh, premium build quality. "
-                    "Cons: expensive at $1,395.",
-            "summary": "Single expert attestation for product:aeron-chair",
+            "body": "Expert review of Aeron Chair by did:plc:reviewer1 (Ring 2): "
+                    "Rating 82/100. Excellent ergonomics, breathable mesh, "
+                    "premium build quality. Cons: expensive at $1,395.",
+            "summary": "Single expert attestation for Aeron Chair",
         },
     ]
 
-    # LLM returns response without density caveat (since Brain doesn't
-    # inject density context yet).
+    # Guard scan: entity extracted, trust-relevant query.
+    guardian._guard_scan = AsyncMock(return_value=_make_guard_result(
+        entity_name="Aeron Chair", trust_relevant=True,
+    ))
+
     guardian._test_llm.route.return_value = {
         "content": (
             "The Aeron Chair is highly recommended with an 82/100 rating. "
@@ -4883,13 +5110,17 @@ async def test_guardian_19_2_single_review_limited_data(guardian) -> None:
             "id": f"trust-att-{i:03d}",
             "type": "trust_attestation",
             "source": "trust_network",
-            "body": f"Expert review by did:plc:reviewer{i}: "
+            "body": f"Expert review of Aeron Chair by did:plc:reviewer{i}: "
                     f"Rating {80 + i}/100. Positive review.",
-            "summary": f"Expert attestation #{i} for product:aeron-chair",
+            "summary": f"Expert attestation #{i} for Aeron Chair",
         }
         for i in range(12)
     ]
     guardian._test_core.search_vault.return_value = many_reviews
+
+    guardian._guard_scan = AsyncMock(return_value=_make_guard_result(
+        entity_name="Aeron Chair", trust_relevant=True,
+    ))
 
     guardian._test_llm.route.return_value = {
         "content": (
@@ -4916,6 +5147,9 @@ async def test_guardian_19_2_single_review_limited_data(guardian) -> None:
     )
 
     # --- Scenario 6: Single review with no rating → extra caveat ---
+    # Use a prompt with an extractable entity name so entity-scoped
+    # single-tier enforcement applies.  Vague prompts where extraction
+    # fails get zero-tier enforcement instead (see TST-BRAIN-563).
     guardian._test_core.search_vault.return_value = [
         {
             "id": "trust-att-no-rating",
@@ -4924,9 +5158,15 @@ async def test_guardian_19_2_single_review_limited_data(guardian) -> None:
             "body": "Expert review by did:plc:reviewer1 (Ring 2): "
                     "Good build quality, comfortable for long sessions. "
                     "No numerical rating provided.",
-            "summary": "Single attestation, no rating",
+            "summary": "Single attestation for ErgoChair Pro, no rating",
         },
     ]
+
+    # Guard scan flags sentence 2 as fabricated (hallucinated rating).
+    guardian._guard_scan = AsyncMock(return_value=_make_guard_result(
+        entity_name="ErgoChair Pro", trust_relevant=True,
+        fabricated=[2],
+    ))
 
     guardian._test_llm.route.return_value = {
         "content": (
@@ -4938,8 +5178,8 @@ async def test_guardian_19_2_single_review_limited_data(guardian) -> None:
 
     event6 = make_event(
         type="reason",
-        body="Is this chair any good?",
-        prompt="Is this chair any good?",
+        body="Should I buy the ErgoChair Pro?",
+        prompt="Should I buy the ErgoChair Pro?",
     )
     result6 = await guardian.process_event(event6)
     content6 = result6.get("content", "")
@@ -4954,9 +5194,8 @@ async def test_guardian_19_2_single_review_limited_data(guardian) -> None:
         r"\d+\s*/\s*100|rating:?\s*\d+",
         re.IGNORECASE,
     )
-    # If the original review has no rating, the response should not
-    # invent one (the LLM mock returns "85/100" but the Brain should
-    # detect the source has no rating and strip fabricated ratings).
+    # Guard scan flags sentence 2 ("Rating: 85/100...") as fabricated
+    # and it is removed.
     assert not fabricated_rating.search(content6), (
         f"Must NOT fabricate numerical rating when the source review "
         f"provides none — Verified Truth. Got: {content6!r}"
@@ -5529,53 +5768,56 @@ async def test_tst_brain_571_sponsorship_cannot_distort_ranking(guardian):
     # --- Scenario 5: In LLM reasoning, ranking order preserved ---
     # When the user asks for a comparison via reason event, the response
     # must rank by trust evidence, not sponsorship.
+    # Use a single extractable entity name so density analysis scopes
+    # correctly.  The prompt asks "about CloudSync" so the extractor
+    # picks up "CloudSync" and the vault has matching attestations.
     guardian._test_core.search_vault.return_value = [
         {
             "id": "rec-prod-x",
             "type": "trust_attestation",
             "source": "trust_network",
-            "body": "Product X: 40 reviews, avg 4.2/5",
-            "metadata": {"sponsored": True, "product_name": "Product X"},
+            "body": "CloudSync: 40 reviews, avg 4.2/5. Sponsored product.",
+            "metadata": {"sponsored": True, "product_name": "CloudSync"},
         },
         {
             "id": "rec-prod-y",
             "type": "trust_attestation",
             "source": "trust_network",
-            "body": "Product Y: 60 reviews, avg 4.6/5",
-            "metadata": {"sponsored": False, "product_name": "Product Y"},
+            "body": "CloudSync alternative DataVault: 60 reviews, avg 4.6/5",
+            "metadata": {"sponsored": False, "product_name": "DataVault"},
         },
     ]
     guardian._test_llm.route.return_value = {
         "content": (
-            "1. Product X (40 reviews, 4.2/5) — recommended\n"
-            "2. Product Y (60 reviews, 4.6/5) — also available"
+            "1. CloudSync (40 reviews, 4.2/5) — recommended\n"
+            "2. DataVault (60 reviews, 4.6/5) — also available"
         ),
         "model": "test",
     }
 
     event_reason = make_event(
         type="reason",
-        body="Compare Product X and Product Y",
-        prompt="Compare Product X and Product Y",
+        body="What do reviews say about CloudSync?",
+        prompt="What do reviews say about CloudSync?",
     )
     result5 = await guardian.process_event(event_reason)
     content5 = result5.get("content", "")
 
-    # Product Y (stronger evidence, unsponsored) must appear first.
-    pos_y = content5.lower().find("product y")
-    pos_x = content5.lower().find("product x")
+    # DataVault (stronger evidence, unsponsored) must appear first.
+    pos_y = content5.lower().find("datavault")
+    pos_x = content5.lower().find("cloudsync")
     assert pos_y >= 0 and pos_x >= 0, (
         f"Both products must appear in the response. Got: {content5!r}"
     )
     assert pos_y < pos_x, (
-        f"Product Y (60 reviews, 4.6/5, unsponsored) must appear before "
-        f"Product X (40 reviews, 4.2/5, sponsored) in the response. "
+        f"DataVault (60 reviews, 4.6/5, unsponsored) must appear before "
+        f"CloudSync (40 reviews, 4.2/5, sponsored) in the response. "
         f"Sponsorship cannot distort ranking. Got: {content5!r}"
     )
 
-    # Product X must be tagged [Sponsored] in the output.
+    # CloudSync must be tagged [Sponsored] in the output.
     assert sponsored_tag.search(content5), (
-        f"Sponsored Product X must carry '[Sponsored]' tag even in "
+        f"Sponsored CloudSync must carry '[Sponsored]' tag even in "
         f"reasoning output. Got: {content5!r}"
     )
 
@@ -5936,6 +6178,12 @@ async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
     # --- Scenario 1: Zero attestations, zero vault items → honest disclosure ---
     guardian._test_core.search_vault.return_value = []  # Nothing in vault
 
+    # Guard scan: entity extracted, trust-relevant, fabricated claims flagged.
+    guardian._guard_scan = AsyncMock(return_value=_make_guard_result(
+        entity_name="Aeron Chair", trust_relevant=True,
+        fabricated=[1],  # "Based on the Trust Network data..." is fabricated
+    ))
+
     guardian._test_llm.route.return_value = {
         "content": (
             "Based on the Trust Network data, this product has "
@@ -5979,6 +6227,10 @@ async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
     # Brain should fall back to web search and clearly label the source.
     guardian._test_core.search_vault.return_value = []
 
+    guardian._guard_scan = AsyncMock(return_value=_make_guard_result(
+        entity_name="Aeron Chair", trust_relevant=True,
+    ))
+
     guardian._test_llm.route.return_value = {
         "content": (
             "I found several web results for the Aeron Chair. "
@@ -6018,6 +6270,12 @@ async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
         },
     ]
 
+    # Guard scan flags "Based on verified Trust Network reviews" as fabricated.
+    guardian._guard_scan = AsyncMock(return_value=_make_guard_result(
+        entity_name="Aeron Chair", trust_relevant=True,
+        fabricated=[1],  # "Based on verified Trust Network reviews, ..."
+    ))
+
     guardian._test_llm.route.return_value = {
         "content": (
             "Based on verified Trust Network reviews, the Aeron Chair "
@@ -6048,6 +6306,10 @@ async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
     # --- Scenario 4: Zero results everywhere → graceful degradation ---
     guardian._test_core.search_vault.return_value = []
 
+    guardian._guard_scan = AsyncMock(return_value=_make_guard_result(
+        entity_name="XYZ Widget", trust_relevant=True,
+    ))
+
     guardian._test_llm.route.return_value = {
         "content": "I don't have any information about this product.",
         "model": "test",
@@ -6075,6 +6337,10 @@ async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
     # --- Scenario 5: Zero Trust Network but locked persona (access denied) ---
     # Different from "no data exists" — the user may have data but it's locked.
     guardian._test_core.search_vault.return_value = []
+
+    guardian._guard_scan = AsyncMock(return_value=_make_guard_result(
+        trust_relevant=True,
+    ))
 
     guardian._test_llm.route.return_value = {
         "content": "No data available.",
@@ -6108,6 +6374,11 @@ async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
     )
 
     # --- Scenario 6: Contrast — when Trust Network HAS data ---
+    # Guard scan: no fabrication flagged (data is legitimate).
+    guardian._guard_scan = AsyncMock(return_value=_make_guard_result(
+        trust_relevant=True,
+    ))
+
     guardian._test_core.search_vault.return_value = [
         {
             "id": "trust-att-001",
@@ -6155,6 +6426,11 @@ async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
 
     # --- Scenario 7: Zero attestations must NOT trigger hallucinated scores ---
     guardian._test_core.search_vault.return_value = []
+
+    # Guard scan flags both sentences as fabricated (hallucinated scores).
+    guardian._guard_scan = AsyncMock(return_value=_make_guard_result(
+        trust_relevant=True, fabricated=[1, 2],
+    ))
 
     guardian._test_llm.route.return_value = {
         "content": "Trust score: 7.5/10. Based on community reviews.",
@@ -6509,6 +6785,11 @@ async def test_tst_brain_567_no_unsolicited_discovery(guardian):
         },
     ]
 
+    # Guard scan flags sentence 2 as unsolicited ("You might also like...").
+    guardian._guard_scan = AsyncMock(return_value=_make_guard_result(
+        entity_name="Aeron", trust_relevant=True, unsolicited=[2],
+    ))
+
     # LLM proactively suggests related products the user didn't ask about.
     guardian._test_llm.route.return_value = {
         "content": (
@@ -6540,6 +6821,11 @@ async def test_tst_brain_567_no_unsolicited_discovery(guardian):
     )
 
     # --- Scenario 2: Tangential health advice not requested ---
+    # Guard scan flags sentences 2-3 as unsolicited upselling.
+    guardian._guard_scan = AsyncMock(return_value=_make_guard_result(
+        entity_name="Uplift V2", trust_relevant=True, unsolicited=[2, 3],
+    ))
+
     guardian._test_core.search_vault.return_value = [
         {
             "id": "review-desk-001",
@@ -6580,6 +6866,10 @@ async def test_tst_brain_567_no_unsolicited_discovery(guardian):
     )
 
     # --- Scenario 3: Cross-persona scope creep ---
+    # Guard scan flags sentence 2 as unsolicited (health data leak).
+    guardian._guard_scan = AsyncMock(return_value=_make_guard_result(
+        entity_name="MX Master 3S", trust_relevant=True, unsolicited=[2, 3],
+    ))
     # User asks about a consumer product but LLM drags in health data.
     guardian._test_core.search_vault.return_value = [
         {
@@ -8769,3 +9059,407 @@ async def test_tst_brain_555_trust_ring_weighting_visible(guardian):
             f"Ring 2 (verified), one is Ring 1 (unverified). This "
             f"distinction MUST be visible. Got: {content7!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# SS19.2 Trust Density — Entity Extraction Miss Path
+# ---------------------------------------------------------------------------
+
+
+
+# TST-BRAIN-561
+def test_analyze_trust_density_zero_when_unscoped():
+    """SS19.2: Unscoped density analysis returns zero tier when no entity.
+
+    Requirement: _analyze_trust_density with empty entity_hint and items
+    present still computes tier from the item list.  When entity_hint is
+    absent (extraction failed), the caller is responsible for forcing
+    zero tier — this test validates _analyze_trust_density itself returns
+    the actual tier from items (caller overrides when unscoped).
+    """
+    from src.service.guardian import GuardianLoop
+
+    # 3 trust attestations, no entity hint → tier should be "sparse"
+    # (because _analyze_trust_density counts ALL items without filtering).
+    items = [
+        {"Type": "trust_attestation", "Source": "trust_network",
+         "BodyText": "Good vendor", "Summary": "att for X"},
+        {"Type": "trust_attestation", "Source": "trust_network",
+         "BodyText": "Decent vendor", "Summary": "att for Y"},
+        {"Type": "trust_attestation", "Source": "trust_network",
+         "BodyText": "Bad vendor", "Summary": "att for Z"},
+    ]
+    result = GuardianLoop._analyze_trust_density(items, "open")
+    assert result["tier"] == "sparse"
+    assert result["trust_count"] == 3
+    assert result["entity_scoped"] is False
+
+
+# TST-BRAIN-562
+def test_apply_density_enforcement_zero_injects_disclosure():
+    """SS19.2: Zero-tier enforcement injects honest disclosure.
+
+    Requirement: When density_meta has tier=zero and inject_disclosure=True,
+    _apply_density_enforcement prepends "Note: no verified data..." prefix.
+    Fabrication stripping is now the guard scan LLM's job (sentence removal),
+    not density enforcement's.
+    """
+    from src.service.guardian import GuardianLoop
+
+    density_meta = {
+        "tier": "zero",
+        "trust_count": 0,
+        "total_count": 5,
+        "personal_count": 0,
+        "has_rating": False,
+        "persona_tier": "open",
+        "entity_scoped": False,
+    }
+
+    # Content that has already been cleaned by guard scan (fabricated
+    # sentences removed, only honest content remains).
+    clean_content = "I don't have specific trust data for this vendor."
+
+    result = GuardianLoop._apply_density_enforcement(
+        clean_content, density_meta, [],
+        inject_disclosure=True,
+    )
+
+    # Must inject honest disclosure.
+    import re
+    no_data_pat = re.compile(
+        r"no verified|no trust|no data|not available", re.IGNORECASE
+    )
+    assert no_data_pat.search(result), (
+        f"Zero-tier enforcement must inject honest 'no verified data' "
+        f"disclosure. Got: {result!r}"
+    )
+
+    # When inject_disclosure=False, no prefix added.
+    result_no_disc = GuardianLoop._apply_density_enforcement(
+        clean_content, density_meta, [],
+        inject_disclosure=False,
+    )
+    assert result_no_disc == clean_content, (
+        f"inject_disclosure=False must not add prefix. Got: {result_no_disc!r}"
+    )
+
+    # Locked persona correction: "no data" → "data inaccessible".
+    locked_meta = {**density_meta, "persona_tier": "locked"}
+    locked_content = "No one has reviewed this product."
+    result_locked = GuardianLoop._apply_density_enforcement(
+        locked_content, locked_meta, [],
+        inject_disclosure=True,
+    )
+    assert "locked" in result_locked.lower() or "cannot be accessed" in result_locked.lower(), (
+        f"Locked persona must get 'locked/inaccessible' correction. Got: {result_locked!r}"
+    )
+
+
+def test_density_enforcement_strips_fabricated_scores_zero_tier():
+    """SS19.2: Zero-tier density enforcement strips fabricated numeric ratings.
+
+    Requirement: When trust_count=0 (zero tier), fabricated numeric trust
+    ratings (4.2/5, score 87.5, rating 9/10) must be stripped even when
+    total_count > 0 (unrelated vault items exist).  This is the deterministic
+    safety floor that catches obvious fabrication when guard_scan fails.
+    """
+    from src.service.guardian import GuardianLoop
+
+    # Scenario: vault has unrelated items (total_count=5) but no trust
+    # attestations for this entity (trust_count=0 → zero tier).
+    density_meta = {
+        "tier": "zero",
+        "trust_count": 0,
+        "total_count": 5,
+        "personal_count": 0,
+        "has_rating": False,
+        "persona_tier": "open",
+        "entity_scoped": True,
+    }
+
+    # Content with fabricated numeric trust score.
+    content_fabricated = (
+        "VendorX has a trust score: 87.5 out of 100 based on community reviews. "
+        "The product seems reliable."
+    )
+    result = GuardianLoop._apply_density_enforcement(
+        content_fabricated, density_meta, [],
+        inject_disclosure=True,
+    )
+    assert "87.5" not in result, (
+        f"Fabricated numeric score must be stripped in zero-tier. Got: {result!r}"
+    )
+    assert "reliable" in result.lower(), (
+        f"Non-fabricated content must be preserved. Got: {result!r}"
+    )
+
+    # "I'd rate it X/Y" form.
+    content_rate_it = (
+        "I'd rate it 4.2/5 based on verified reviews. "
+        "The build quality is solid."
+    )
+    result2 = GuardianLoop._apply_density_enforcement(
+        content_rate_it, density_meta, [],
+        inject_disclosure=False,
+    )
+    assert "4.2/5" not in result2, (
+        f"'rate it 4.2/5' must be stripped. Got: {result2!r}"
+    )
+    assert "solid" in result2.lower()
+
+    # "I'd give it X/Y" form.
+    content_give_it = (
+        "I'd give it 9/10 for durability. "
+        "The materials are high quality."
+    )
+    result3 = GuardianLoop._apply_density_enforcement(
+        content_give_it, density_meta, [],
+        inject_disclosure=False,
+    )
+    assert "9/10" not in result3, (
+        f"'give it 9/10' must be stripped. Got: {result3!r}"
+    )
+    assert "high quality" in result3.lower()
+
+    # Integer-only "score 87" form.
+    content_score_int = (
+        "Overall score 87 based on multiple factors. "
+        "The warranty is excellent."
+    )
+    result4 = GuardianLoop._apply_density_enforcement(
+        content_score_int, density_meta, [],
+        inject_disclosure=False,
+    )
+    assert "score 87" not in result4.lower(), (
+        f"'score 87' must be stripped. Got: {result4!r}"
+    )
+    assert "warranty" in result4.lower()
+
+
+@pytest.mark.asyncio
+async def test_guard_scan_failure_falls_back_to_regex(guardian) -> None:
+    """Safety: guard_scan failure triggers deterministic regex fallback.
+
+    Requirement: When _guard_scan() returns None (LLM outage, malformed JSON),
+    the regex fallback must still strip Anti-Her violations, unsolicited
+    discovery, AND density enforcement must still strip fabricated trust claims.
+    Safety never fails open.
+    """
+    # LLM mock returns Anti-Her + fabricated content on reasoning call,
+    # and returns invalid JSON on guard_scan call (triggering fallback).
+    fabricated_antiher_content = (
+        "I feel really excited to help you with this! "
+        "VendorX has a trust score: 92 based on community reviews. "
+        "You might also like checking out CompetitorY. "
+        "The product quality is good."
+    )
+
+    async def _route_side_effect(*args, **kwargs):
+        if kwargs.get("task_type") == "guard_scan":
+            # Return invalid JSON → guard_scan returns None → fallback.
+            return {"content": "not valid json at all", "model": "test"}
+        return {"content": fabricated_antiher_content, "model": "test"}
+
+    guardian._llm.route.side_effect = _route_side_effect
+
+    # Trust-relevant vault items (total_count > 0 but trust_count = 0
+    # for the queried entity → zero tier).
+    guardian._core.search_vault.return_value = [
+        {"body": "Unrelated trust data", "metadata": {"product_name": "OtherProd"}},
+    ]
+
+    result = await guardian.process_event({
+        "type": "reason",
+        "prompt": "Is VendorX trustworthy?",
+        "persona_tier": "open",
+    })
+    content = result["content"]
+
+    # Anti-Her: "I feel really excited" must be stripped.
+    assert "I feel" not in content, (
+        f"Anti-Her regex fallback must strip 'I feel'. Got: {content!r}"
+    )
+
+    # Unsolicited: "You might also like" must be stripped.
+    assert "might also like" not in content, (
+        f"Unsolicited regex fallback must strip cross-sell. Got: {content!r}"
+    )
+
+    # Fabricated: "trust score: 92" must be stripped by density enforcement.
+    assert "trust score" not in content.lower(), (
+        f"Fabricated trust claims must be stripped. Got: {content!r}"
+    )
+
+    # Factual content preserved.
+    assert "good" in content.lower(), (
+        f"Non-violating content must be preserved. Got: {content!r}"
+    )
+
+
+# TST-BRAIN-563
+@pytest.mark.asyncio
+async def test_guardian_density_miss_path_vague_prompt_trust_rich_vault(
+    guardian,
+) -> None:
+    """SS19.2: Vague prompt + trust-rich vault → zero-tier enforcement.
+
+    Requirement: When the user asks a trust-relevant question but the
+    prompt doesn't match the entity extractor (vague phrasing, lowercase,
+    pronoun), and the vault already has trust attestations for OTHER
+    entities, the response must STILL get zero-tier fabrication stripping
+    and honest disclosure.  The vault items are about unrelated entities
+    and cannot be assumed to be about the subject being asked about.
+
+    This is the "miss path" — entity extraction fails, vault is trust-rich,
+    but enforcement must not be skipped.
+    """
+    # Vault has trust attestations for VendorY (unrelated to question).
+    guardian._test_core.search_vault.return_value = [
+        {
+            "Type": "trust_attestation",
+            "Source": "trust_network",
+            "BodyText": "VendorY did:plc:vendory is excellent. Rating 95/100.",
+            "Summary": "Trust attestation for VendorY",
+            "Metadata": '{"subject_did": "did:plc:vendory"}',
+        },
+        {
+            "Type": "trust_attestation",
+            "Source": "trust_network",
+            "BodyText": "VendorY did:plc:vendory has great delivery.",
+            "Summary": "Trust attestation for VendorY",
+            "Metadata": '{"subject_did": "did:plc:vendory"}',
+        },
+        {
+            "Type": "trust_attestation",
+            "Source": "trust_network",
+            "BodyText": "VendorY did:plc:vendory reliable service.",
+            "Summary": "Trust attestation for VendorY",
+            "Metadata": '{"subject_did": "did:plc:vendory"}',
+        },
+    ]
+
+    # LLM fabricates trust claims about the subject (which the user is
+    # asking about vaguely — "that vendor").  The guard scan LLM sees the
+    # fabricated content and flags the sentence.
+    import json as _json
+
+    fabricated_content = (
+        "Based on verified reviews in the Trust Network, that vendor "
+        "has a trust score of 87 and multiple attestations confirm "
+        "reliable service."
+    )
+    guard_json = {
+        "entities": {"did": None, "name": None},
+        "trust_relevant": True,
+        "anti_her_sentences": [],
+        "unsolicited_sentences": [],
+        "fabricated_sentences": [1],
+        "consensus_sentences": [],
+    }
+
+    async def _route_side_effect(*args, **kwargs):
+        if kwargs.get("task_type") == "guard_scan":
+            return {"content": _json.dumps(guard_json), "model": "test"}
+        return {"content": fabricated_content, "model": "test"}
+
+    llm_mock = AsyncMock()
+    llm_mock.route.side_effect = _route_side_effect
+    guardian._llm = llm_mock
+
+    # Vague prompt — guard scan returns no entity (extraction fails).
+    event = make_event(
+        type="reason",
+        prompt="is that vendor any good? should I buy from them?",
+        body="is that vendor any good? should I buy from them?",
+    )
+    result = await guardian.process_event(event)
+    content = result.get("content", "")
+
+    import re
+
+    # Must strip fabricated trust claims — guard scan flagged sentence 1.
+    fabricated = re.compile(
+        r"trust score|verified review|attestation", re.IGNORECASE
+    )
+    assert not fabricated.search(content), (
+        f"Miss-path: vague prompt with trust-rich vault must strip "
+        f"fabricated trust claims (zero confirmed data for this subject). "
+        f"Got: {content!r}"
+    )
+
+    # Must inject honest disclosure since query is trust-relevant.
+    disclosure = re.compile(
+        r"no verified|no trust|no data|not available|no information",
+        re.IGNORECASE,
+    )
+    assert disclosure.search(content), (
+        f"Miss-path: vague prompt must get honest 'no verified data' "
+        f"disclosure even when vault has unrelated trust items. "
+        f"Got: {content!r}"
+    )
+
+
+# TST-BRAIN-564
+@pytest.mark.asyncio
+async def test_guardian_density_miss_path_lowercase_entity(
+    guardian,
+) -> None:
+    """SS19.2: Lowercase entity name + trust-rich vault → zero-tier.
+
+    Requirement: When the user types a vendor name in lowercase
+    ("vendorx") which the entity extractor cannot match (requires
+    initial capital), enforcement must still apply with zero-tier
+    for the subject being asked about.
+    """
+    # Vault has trust attestations for an unrelated vendor.
+    guardian._test_core.search_vault.return_value = [
+        {
+            "Type": "trust_attestation",
+            "Source": "trust_network",
+            "BodyText": "VendorZ did:plc:vendorz is excellent.",
+            "Summary": "Trust attestation for VendorZ",
+            "Metadata": '{"subject_did": "did:plc:vendorz"}',
+        },
+    ]
+
+    import json as _json
+
+    fabricated_content = (
+        "vendorx has excellent verified reviews and a strong "
+        "trust score in the Trust Network."
+    )
+    guard_json = {
+        "entities": {"did": None, "name": "vendorx"},
+        "trust_relevant": True,
+        "anti_her_sentences": [],
+        "unsolicited_sentences": [],
+        "fabricated_sentences": [1],
+        "consensus_sentences": [],
+    }
+
+    async def _route_side_effect(*args, **kwargs):
+        if kwargs.get("task_type") == "guard_scan":
+            return {"content": _json.dumps(guard_json), "model": "test"}
+        return {"content": fabricated_content, "model": "test"}
+
+    llm_mock = AsyncMock()
+    llm_mock.route.side_effect = _route_side_effect
+    guardian._llm = llm_mock
+
+    event = make_event(
+        type="reason",
+        prompt="what do people say about vendorx?",
+        body="what do people say about vendorx?",
+    )
+    result = await guardian.process_event(event)
+    content = result.get("content", "")
+
+    import re
+    fabricated = re.compile(
+        r"trust score|verified review|attestation", re.IGNORECASE
+    )
+    assert not fabricated.search(content), (
+        f"Lowercase entity miss-path must strip fabricated trust claims. "
+        f"Got: {content!r}"
+    )

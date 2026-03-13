@@ -47,10 +47,26 @@ func (s *MigrationService) Export(ctx context.Context, opts domain.ExportOptions
 		return "", fmt.Errorf("migration: %w: destination path is required", domain.ErrInvalidInput)
 	}
 
-	// Verify no personas are open to ensure data consistency.
+	// Verify no user personas are open to ensure data consistency.
+	// The identity DB is always open (infrastructure, not a user persona)
+	// and is safe to export from — it's read-only during export.
 	openPersonas := s.vault.OpenPersonas()
-	if len(openPersonas) > 0 {
-		return "", fmt.Errorf("migration: %w: close all personas before export (%d open)", domain.ErrPersonaLocked, len(openPersonas))
+	userOpen := 0
+	for _, p := range openPersonas {
+		if p.String() != "identity" {
+			userOpen++
+		}
+	}
+	if userOpen > 0 {
+		return "", fmt.Errorf("migration: %w: close all personas before export (%d open)", domain.ErrPersonaLocked, userOpen)
+	}
+
+	// Checkpoint identity WAL before reading raw .sqlite bytes.
+	// identity.sqlite is always open (infrastructure DB) and uses WAL
+	// mode, so recent writes may still be in the -wal file. Without
+	// checkpointing, os.ReadFile(identity.sqlite) misses that data.
+	if err := s.vault.Checkpoint("identity"); err != nil {
+		return "", fmt.Errorf("migration: checkpoint identity: %w", err)
 	}
 
 	archivePath, err := s.export.Export(ctx, opts)
@@ -72,10 +88,17 @@ func (s *MigrationService) Import(ctx context.Context, opts domain.ImportOptions
 		return nil, fmt.Errorf("migration: %w: passphrase is required for import", domain.ErrInvalidInput)
 	}
 
-	// Verify no personas are open to prevent conflicts during restore.
+	// Verify no user personas are open to prevent conflicts during restore.
+	// Identity DB (always open) is excluded — it's infrastructure, not a user persona.
 	openPersonas := s.vault.OpenPersonas()
-	if len(openPersonas) > 0 {
-		return nil, fmt.Errorf("migration: %w: close all personas before import (%d open)", domain.ErrPersonaLocked, len(openPersonas))
+	userOpen := 0
+	for _, p := range openPersonas {
+		if p.String() != "identity" {
+			userOpen++
+		}
+	}
+	if userOpen > 0 {
+		return nil, fmt.Errorf("migration: %w: close all personas before import (%d open)", domain.ErrPersonaLocked, userOpen)
 	}
 
 	// Check archive compatibility before attempting import.
@@ -86,6 +109,25 @@ func (s *MigrationService) Import(ctx context.Context, opts domain.ImportOptions
 	// Verify archive integrity.
 	if err := s.import_.VerifyArchive(opts.ArchivePath, opts.Passphrase); err != nil {
 		return nil, fmt.Errorf("migration: verify archive: %w", err)
+	}
+
+	// Validate all pre-write checks (force guard, checksums, path safety,
+	// identity.sqlite presence) BEFORE closing identity. This ensures that
+	// validation failures don't leave the process with identity closed.
+	// After this succeeds, the only remaining failure modes are actual disk
+	// write errors — catastrophic regardless of identity state.
+	if err := s.import_.ValidateImport(ctx, opts); err != nil {
+		return nil, fmt.Errorf("migration: pre-write validation: %w", err)
+	}
+
+	// Close identity DB before overwriting its .sqlite file.
+	// identity.sqlite runs in WAL mode and is always open — importing
+	// overwrites the file on disk while the connection holds WAL/SHM
+	// files. Closing first ensures a clean handoff. The imported
+	// identity.sqlite will be opened on next restart; the result's
+	// RequiresRestart flag signals this to the caller.
+	if err := s.vault.Close("identity"); err != nil {
+		return nil, fmt.Errorf("migration: close identity before import: %w", err)
 	}
 
 	result, err := s.import_.Import(ctx, opts)

@@ -29,8 +29,9 @@ type ImportOptions struct {
 
 // ImportResult holds the outcome of an archive import.
 type ImportResult struct {
-	FilesRestored  int
-	DID            string
-	PersonaCount   int
-	RequiresRepair bool
+	FilesRestored   int
+	DID             string // populated when identity.sqlite contains a real DID; empty for raw file restores
+	PersonaCount    int
+	RequiresRepair  bool // devices must be re-paired after import
+	RequiresRestart bool // identity DB was closed for safe overwrite; process must restart
 }

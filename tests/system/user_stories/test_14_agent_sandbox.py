@@ -207,15 +207,15 @@ class TestAgentSandbox:
 
         body_bytes = _json.dumps(validate_body).encode()
         body_hash = hashlib.sha256(body_bytes).hexdigest()
-        ts = str(int(_time.time()))
+        from datetime import datetime, timezone
+
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # Canonical string: METHOD\nPATH\nQUERY\nTIMESTAMP\nBODY_HASH
         canonical = f"POST\n/v1/agent/validate\n\n{ts}\n{body_hash}"
         sig = agent_key.sign(canonical.encode())
 
-        import base64
-
-        sig_b64 = base64.b64encode(sig).decode()
+        sig_hex = sig.hex()
 
         # Build the did:key from the public key for X-DID header.
         agent_did_key = "did:key:" + public_key_multibase
@@ -227,7 +227,7 @@ class TestAgentSandbox:
                 "Content-Type": "application/json",
                 "X-DID": agent_did_key,
                 "X-Timestamp": ts,
-                "X-Signature": sig_b64,
+                "X-Signature": sig_hex,
             },
             timeout=15,
         )
@@ -249,10 +249,10 @@ class TestAgentSandbox:
         )
 
         # Step 6: Same request with fresh timestamp → 401.
-        ts2 = str(int(_time.time()))
+        ts2 = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         canonical2 = f"POST\n/v1/agent/validate\n\n{ts2}\n{body_hash}"
         sig2 = agent_key.sign(canonical2.encode())
-        sig2_b64 = base64.b64encode(sig2).decode()
+        sig2_hex = sig2.hex()
 
         post_revoke_r = httpx.post(
             validate_url,
@@ -261,7 +261,7 @@ class TestAgentSandbox:
                 "Content-Type": "application/json",
                 "X-DID": agent_did_key,
                 "X-Timestamp": ts2,
-                "X-Signature": sig2_b64,
+                "X-Signature": sig2_hex,
             },
             timeout=15,
         )

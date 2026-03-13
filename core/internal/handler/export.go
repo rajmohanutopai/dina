@@ -174,9 +174,10 @@ func (h *ExportHandler) HandleImport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":          "ok",
-		"files_restored":  result.FilesRestored,
-		"persona_count":   result.PersonaCount,
-		"requires_repair": result.RequiresRepair,
+		"status":           "ok",
+		"files_restored":   result.FilesRestored,
+		"persona_count":    result.PersonaCount,
+		"requires_repair":  result.RequiresRepair,
+		"requires_restart": result.RequiresRestart,
 	})
 }

@@ -261,88 +261,77 @@ print_banner() {
         printf "  ${B}║${R}  ${G}06${R} ${BOLD}The License Renewal${R}"
         if [ -n "$s06" ]; then printf "%87s" "$s06"; else printf "%74s" "10 tests"; fi
         echo -e "  ${B}║${R}"
-        row "     ${BOLD}User uploads license scan${R}${D} -> Brain LLM extracts fields with per-field confidence scores${R}"
-        row "${D}     Deterministic reminder fires 30 days before expiry (no LLM). Brain composes contextual nudge${R}"
-        row "${D}     Delegation: Brain generates strict JSON for RTO_Bot. Guardian flags for human review${R}"
+        row "     ${BOLD}User uploads license scan${R}${D} -> Brain extracts fields with confidence scores${R}"
+        row "${D}     Deterministic reminder fires 30 days before expiry (no LLM in the scheduling)${R}"
+        row "${D}     Delegation: Brain generates strict JSON for DMV-Bot. Guardian flags for human review${R}"
         row ""
 
         # ── Story 07 ──────────────────────────────────────────────────────────
         printf "  ${B}║${R}  ${G}07${R} ${BOLD}The Daily Briefing${R}"
         if [ -n "$s07" ]; then printf "%88s" "$s07"; else printf "%75s" "5 tests"; fi
         echo -e "  ${B}║${R}"
-        row "     ${BOLD}Noise all day, one calm summary${R}${D} -> Tier 3 events queued silently in vault KV${R}"
-        row "${D}     Fiduciary event (transfer_money) interrupts immediately — silence would cause harm${R}"
-        row "${D}     Daily briefing retrieves queued items, clears queue. Silence First enforced by design${R}"
+        row "${D}     Most noise waits quietly. Real harm interrupts immediately.${R}"
+        row "${D}     At the end of the day, Dina gives one calm summary and clears the queue.${R}"
         row ""
 
         # ── Story 08 ──────────────────────────────────────────────────────────
         printf "  ${B}║${R}  ${G}08${R} ${BOLD}Move to a New Machine${R}"
         if [ -n "$s08" ]; then printf "%85s" "$s08"; else printf "%72s" "8 tests"; fi
         echo -e "  ${B}║${R}"
-        row "     ${BOLD}Laptop dying, move Dina${R}${D} -> vault data queryable (export path), DID recorded and stable${R}"
-        row "${D}     Node B: independent DID (different keypair, same did: method), vault store/query works${R}"
-        row "${D}     Seed-based DID derivation: known seed → SLIP-0010 m/9999'/0'/0' → same DID as Node A${R}"
-        row "${D}     Full roundtrip: export archive → docker cp to Node B → import → same-seed restore → data survives${R}"
+        row "${D}     Dina exports from the old machine and imports on the new one as an encrypted archive.${R}"
+        row "${D}     The wrong seed cannot unlock the vault. The same seed restores identity and data.${R}"
+        row "${D}     Migration is non-destructive: the old machine still works after export.${R}"
         row ""
 
         # ── Story 09 ──────────────────────────────────────────────────────────
         printf "  ${B}║${R}  ${G}09${R} ${BOLD}Connector Credential Expiry${R}"
         if [ -n "$s09" ]; then printf "%79s" "$s09"; else printf "%66s" "5 tests"; fi
         echo -e "  ${B}║${R}"
-        row "     ${BOLD}Gmail OAuth expires${R}${D} -> connector status: expired. Vault, identity fully operational${R}"
-        row "${D}     User reconfigures credentials -> connector resumes. No cascade, no crash${R}"
-        row "${D}     Isolation guarantee: one connector down, everything else still works${R}"
+        row "${D}     Gmail OAuth expires — connector status: expired. Vault and identity still work.${R}"
+        row "${D}     User reconfigures credentials, connector resumes. No cascade, no crash.${R}"
         row ""
 
         # ── Story 10 ──────────────────────────────────────────────────────────
         printf "  ${B}║${R}  ${G}10${R} ${BOLD}The Operator Journey${R}"
         if [ -n "$s10" ]; then printf "%86s" "$s10"; else printf "%73s" "5 tests"; fi
         echo -e "  ${B}║${R}"
-        row "     ${BOLD}Re-run install script${R}${D} -> DID unchanged (idempotent). No rotation, no orphaned data${R}"
-        row "${D}     Lock vault for maintenance: health endpoint still accessible. Unlock: operations resume${R}"
-        row "${D}     Identity is derived from master seed — immutable after bootstrap, stable across lifecycle${R}"
-        row ""
-
-        # ── Thesis Invariants header (no separator line) ─────────────────────
-        row "${D}     Thesis Invariants — Dina is not just a kernel, she is a set of promises${R}"
+        row "${D}     Re-run install script — DID unchanged (idempotent). No rotation, no orphaned data.${R}"
+        row "${D}     Identity is derived from master seed — immutable after bootstrap.${R}"
         row ""
 
         # ── Story 11 ──────────────────────────────────────────────────────────
         printf "  ${B}║${R}  ${G}11${R} ${BOLD}The Anti-Her${R}"
         if [ -n "$s11" ]; then printf "%94s" "$s11"; else printf "%81s" "5 tests"; fi
         echo -e "  ${B}║${R}"
-        row "     ${BOLD}\"Haven't talked to Sarah in 45 days\"${R}${D} -> proactive nudge in briefing, not on demand${R}"
-        row "${D}     Life event follow-up: \"Sancho's mother was ill\" -> \"you might want to check in\"${R}"
-        row "${D}     Emotional dependency escalation: cross-session patterns trigger specific contact suggestions${R}"
+        row "${D}     \"Haven't talked to Sarah in 45 days\" -> proactive nudge in briefing, not on demand.${R}"
+        row "${D}     Life event follow-up: \"Sancho's mother was ill\" -> \"you might want to check in.\"${R}"
+        row "${D}     Emotional dependency detected -> Dina suggests specific humans, never herself.${R}"
         row ""
 
         # ── Story 12 ──────────────────────────────────────────────────────────
         printf "  ${B}║${R}  ${G}12${R} ${BOLD}Verified Truth${R}"
         if [ -n "$s12" ]; then printf "%92s" "$s12"; else printf "%79s" "9 tests"; fi
         echo -e "  ${B}║${R}"
-        row "     ${BOLD}Zero attestations → honest uncertainty.${R}${D} Density enforcement strips hallucinated scores${R}"
-        row "${D}     Sparse (2 conflicting) → conflict acknowledged, limited data noted, no fabricated consensus${R}"
-        row "${D}     Dense (12 consistent) → confident recommendation, no false hedging, sources referenced${R}"
-        row "${D}     Reviewer DIDs + source URLs survive vault round-trip. Brain output credits sources${R}"
+        row "${D}     When Dina has little evidence, she says so honestly.${R}"
+        row "${D}     When people disagree, she says the evidence is mixed instead of pretending certainty.${R}"
+        row "${D}     When the signal is strong, she speaks clearly and points back to the original sources.${R}"
         row ""
 
         # ── Story 13 ──────────────────────────────────────────────────────────
         printf "  ${B}║${R}  ${G}13${R} ${BOLD}Silence Under Stress${R}"
         if [ -n "$s13" ]; then printf "%86s" "$s13"; else printf "%73s" "3 tests"; fi
         echo -e "  ${B}║${R}"
-        row "     ${BOLD}100 notifications + 1 fraud alert${R}${D} -> only the fraud alert interrupts. 100 queued silently${R}"
-        row "${D}     \"URGENT\" from unknown sender = phishing risk, NOT fiduciary. Same from trusted = fiduciary${R}"
-        row "${D}     DND respects hierarchy: fiduciary overrides, solicited deferred, engagement always queued${R}"
+        row "${D}     Even in a flood of alerts, Dina interrupts only for what truly matters.${R}"
+        row "${D}     Fake urgency from strangers is suspicious; trusted urgent events can break through.${R}"
         row ""
 
         # ── Story 14 ──────────────────────────────────────────────────────────
         printf "  ${B}║${R}  ${G}14${R} ${BOLD}Agent Sandbox${R}"
         if [ -n "$s14" ]; then printf "%93s" "$s14"; else printf "%80s" "4 tests"; fi
         echo -e "  ${B}║${R}"
-        row "     ${BOLD}Rogue agent with no auth${R}${D} -> 401 before Guardian. Gate locked at the perimeter${R}"
-        row "${D}     Revoked agent -> immediate 401, no grace period. Pair, validate, revoke, validate again${R}"
-        row "${D}     read_vault / export_data / access_keys -> BLOCKED. Direct send denied (Draft-Don't-Send)${R}"
-        row "${D}     Caller-supplied agent_did ignored: Core binds authenticated identity, not forged DID${R}"
+        row "${D}     No auth, no access. Revoked means revoked immediately.${R}"
+        row "${D}     Sensitive actions stay blocked unless you approve them.${R}"
+        row "${D}     Agents cannot impersonate someone else.${R}"
         row ""
     fi
     echo -e "${B}  ╚════════════════════════════════════════════════════════════════════════════════════════════════════╝${R}"

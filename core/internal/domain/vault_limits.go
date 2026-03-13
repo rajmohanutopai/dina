@@ -31,4 +31,6 @@ var ValidVaultItemTypes = map[string]bool{
 	// Decision records (Dina used Trust Network + vault context to recommend)
 	"purchase_decision": true,
 	"trust_review":      true,
+	// Trust Network attestation records (stored by AppView sync / trust queries)
+	"trust_attestation": true,
 }

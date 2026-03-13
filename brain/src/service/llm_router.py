@@ -19,6 +19,7 @@ No imports from adapter/ — only port protocols and domain types.
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 import structlog
@@ -28,11 +29,30 @@ from ..port.llm import LLMProvider
 
 log = structlog.get_logger(__name__)
 
+# Per-million-token pricing (USD) for known models.
+# (input_rate, output_rate).  Updated 2026-03 from ai.google.dev/gemini-api/docs/pricing.
+# Local models = free (not listed).
+_MODEL_PRICING: dict[str, tuple[float, float]] = {
+    # Gemini — google.dev pricing page 2026-03
+    "gemini-3.1-flash-lite-preview": (0.25, 1.50),
+    "gemini-3-flash-preview": (0.50, 3.00),
+    "gemini-2.5-flash": (0.30, 2.50),
+    "gemini-2.5-flash-lite": (0.10, 0.40),
+    "gemini-2.5-pro": (1.25, 10.00),
+    "gemini-3.1-pro-preview": (2.00, 12.00),
+    # Anthropic
+    "claude-sonnet-4": (3.00, 15.00),
+    "claude-haiku-4-5": (0.80, 4.00),
+    # OpenAI
+    "gpt-4o": (2.50, 10.00),
+    "gpt-4o-mini": (0.15, 0.60),
+}
+
 # Task types that can be answered without an LLM call.
 _FTS_ONLY_TASKS = frozenset({"fts_lookup", "keyword_search"})
 
 # Lightweight tasks — prefer local for speed & privacy.
-_LIGHTWEIGHT_TASKS = frozenset({"intent_classification", "summarize"})
+_LIGHTWEIGHT_TASKS = frozenset({"intent_classification", "summarize", "guard_scan", "silence_classify"})
 
 # Task types considered "complex" that benefit from cloud models.
 _COMPLEX_TASKS = frozenset({
@@ -80,6 +100,10 @@ class LLMRouter:
                 self._local[key] = provider
             else:
                 self._cloud[key] = provider
+
+        # Token usage accumulator (thread-safe for async context).
+        self._usage_lock = threading.Lock()
+        self._usage: dict[str, dict[str, int]] = {}  # model -> {calls, tokens_in, tokens_out}
 
     # ------------------------------------------------------------------
     # Public API
@@ -233,6 +257,7 @@ class LLMRouter:
                     )
                     route_label = "local" if fallback.is_local else "cloud"
                     response["route"] = route_label
+                    self._track_usage(response)
                     return response
                 except Exception as fallback_exc:
                     raise LLMError(
@@ -246,6 +271,7 @@ class LLMRouter:
 
         if isinstance(response, dict):
             response["route"] = route_label
+        self._track_usage(response)
         return response
 
     def reconfigure(
@@ -271,9 +297,69 @@ class LLMRouter:
             cloud=list(self._cloud.keys()),
         )
 
+    @property
+    def has_cloud_provider(self) -> bool:
+        """True when at least one cloud LLM provider is configured."""
+        return bool(self._cloud)
+
     def available_models(self) -> list[str]:
         """Return list of available model identifiers."""
         return [p.model_name for p in self._providers.values()]
+
+    def usage(self) -> dict:
+        """Return accumulated token usage and estimated cost.
+
+        Returns a dict with per-model breakdowns and a total:
+
+        .. code-block:: python
+
+            {
+                "models": {
+                    "gemini-2.5-flash": {
+                        "calls": 12,
+                        "tokens_in": 8400,
+                        "tokens_out": 3200,
+                        "cost_usd": 0.0105,
+                    },
+                    ...
+                },
+                "total_calls": 15,
+                "total_tokens_in": 10000,
+                "total_tokens_out": 4000,
+                "total_cost_usd": 0.012,
+            }
+        """
+        with self._usage_lock:
+            models: dict[str, dict] = {}
+            total_calls = 0
+            total_in = 0
+            total_out = 0
+            total_cost = 0.0
+
+            for model, stats in self._usage.items():
+                calls = stats["calls"]
+                tin = stats["tokens_in"]
+                tout = stats["tokens_out"]
+                rate_in, rate_out = self._model_cost_rates(model)
+                cost = (tin * rate_in + tout * rate_out) / 1_000_000
+                models[model] = {
+                    "calls": calls,
+                    "tokens_in": tin,
+                    "tokens_out": tout,
+                    "cost_usd": round(cost, 6),
+                }
+                total_calls += calls
+                total_in += tin
+                total_out += tout
+                total_cost += cost
+
+            return {
+                "models": models,
+                "total_calls": total_calls,
+                "total_tokens_in": total_in,
+                "total_tokens_out": total_out,
+                "total_cost_usd": round(total_cost, 6),
+            }
 
     async def embed(self, text: str) -> list[float]:
         """Generate an embedding vector via the best available provider.
@@ -330,11 +416,13 @@ class LLMRouter:
             )
 
         # Lightweight tasks: local preferred (fast, no PII exposure).
+        # When falling back to cloud, prefer the lightweight provider
+        # (e.g. Flash Lite) for cost savings.
         if task_type in _LIGHTWEIGHT_TASKS:
             if has_local:
                 return next(iter(self._local.values()))
             if has_cloud:
-                return self._preferred_cloud()
+                return self._preferred_lightweight_cloud()
             raise LLMError(
                 "No LLM provider available for lightweight task."
             )
@@ -359,12 +447,48 @@ class LLMRouter:
             "No LLM providers configured. Set at least one provider."
         )
 
+    def _track_usage(self, response: dict | Any) -> None:
+        """Accumulate token counts from an LLM response."""
+        if not isinstance(response, dict):
+            return
+        model = response.get("model", "unknown")
+        tin = response.get("tokens_in", 0) or 0
+        tout = response.get("tokens_out", 0) or 0
+        with self._usage_lock:
+            if model not in self._usage:
+                self._usage[model] = {"calls": 0, "tokens_in": 0, "tokens_out": 0}
+            self._usage[model]["calls"] += 1
+            self._usage[model]["tokens_in"] += tin
+            self._usage[model]["tokens_out"] += tout
+
+    @staticmethod
+    def _model_cost_rates(model: str) -> tuple[float, float]:
+        """Return (input_rate, output_rate) per million tokens for *model*."""
+        if model in _MODEL_PRICING:
+            return _MODEL_PRICING[model]
+        # Substring match for versioned model IDs (e.g. "gemini-2.5-flash-001").
+        for key, rates in _MODEL_PRICING.items():
+            if key in model:
+                return rates
+        return (0.0, 0.0)  # unknown / local — free
+
     def _preferred_cloud(self) -> LLMProvider:
         """Return the user's preferred cloud provider, or the first one."""
         preferred_key = self._config.get("preferred_cloud")
         if preferred_key and preferred_key in self._cloud:
             return self._cloud[preferred_key]
         return next(iter(self._cloud.values()))
+
+    def _preferred_lightweight_cloud(self) -> LLMProvider:
+        """Return the lightweight cloud provider for cheap/fast tasks.
+
+        Falls back to the standard preferred cloud if no lightweight
+        provider is configured.
+        """
+        lite_key = self._config.get("lightweight_cloud")
+        if lite_key and lite_key in self._cloud:
+            return self._cloud[lite_key]
+        return self._preferred_cloud()
 
     def _fallback_provider(self, failed: LLMProvider) -> LLMProvider | None:
         """Find a fallback provider after a failure.

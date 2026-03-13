@@ -148,6 +148,7 @@ func (m *mockVaultManager) Open(_ context.Context, _ domain.PersonaName, _ []byt
 func (m *mockVaultManager) Close(_ domain.PersonaName) error                             { return nil }
 func (m *mockVaultManager) IsOpen(_ domain.PersonaName) bool                             { return m.open }
 func (m *mockVaultManager) OpenPersonas() []domain.PersonaName                           { return nil }
+func (m *mockVaultManager) Checkpoint(_ domain.PersonaName) error                        { return nil }
 
 var _ port.VaultManager = (*mockVaultManager)(nil)
 

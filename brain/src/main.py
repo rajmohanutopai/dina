@@ -220,6 +220,17 @@ def create_app() -> FastAPI:
                 "brain.provider.gemini.failed",
                 extra={"error": str(exc)},
             )
+        # Lightweight provider for guard_scan and other cheap tasks.
+        try:
+            providers["gemini-lite"] = GeminiProvider(
+                google_key, model="gemini-3.1-flash-lite-preview",
+            )
+            log.info("brain.provider.gemini-lite", extra={"model": "gemini-3.1-flash-lite-preview"})
+        except Exception as exc:
+            log.warning(
+                "brain.provider.gemini-lite.failed",
+                extra={"error": str(exc)},
+            )
 
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if anthropic_key:
@@ -314,7 +325,12 @@ def create_app() -> FastAPI:
     # 3. Construct services
     llm_router = LLMRouter(
         providers=providers,
-        config={"preferred_cloud": cfg.cloud_llm, "cloud_llm_consent": False, "scrubber_tier": scrubber_tier},
+        config={
+            "preferred_cloud": cfg.cloud_llm,
+            "lightweight_cloud": "gemini-lite" if "gemini-lite" in providers else cfg.cloud_llm,
+            "cloud_llm_consent": False,
+            "scrubber_tier": scrubber_tier,
+        },
     )
 
     # LLM hot-reload callback — rebuilds providers from KV-stored keys.
@@ -342,6 +358,12 @@ def create_app() -> FastAPI:
                 new_providers["gemini"] = GeminiProvider(gkey)
             except Exception as exc:
                 log.warning("reload.gemini.failed", extra={"error": str(exc)})
+            try:
+                new_providers["gemini-lite"] = GeminiProvider(
+                    gkey, model="gemini-3.1-flash-lite-preview",
+                )
+            except Exception as exc:
+                log.warning("reload.gemini-lite.failed", extra={"error": str(exc)})
 
         # Claude
         akey = (kv.get("anthropic_api_key") or "").strip() or os.environ.get("ANTHROPIC_API_KEY", "").strip()
@@ -374,6 +396,7 @@ def create_app() -> FastAPI:
         preferred = (kv.get("preferred_cloud") or "").strip() or cfg.cloud_llm
         llm_router.reconfigure(new_providers, {
             "preferred_cloud": preferred,
+            "lightweight_cloud": "gemini-lite" if "gemini-lite" in new_providers else preferred,
             "cloud_llm_consent": kv.get("cloud_consent") is True,
         })
         # Update the local providers dict so healthz sees the new state
@@ -539,14 +562,31 @@ def create_app() -> FastAPI:
             status = "degraded"
         if not providers:
             status = "degraded"
-        return {
+        result: dict = {
             "status": status,
             "telegram": "active" if telegram_bot else "disabled",
         }
+        if llm_router:
+            result["llm_router"] = "available"
+            result["llm_models"] = ", ".join(llm_router.available_models())
+            result["llm_usage"] = llm_router.usage()
+        return result
 
     @master.on_event("shutdown")
     async def shutdown_event() -> None:
         """Clean up resources on shutdown."""
+        # Log LLM usage before shutdown so cost is visible in Docker logs.
+        if llm_router:
+            usage = llm_router.usage()
+            if usage["total_calls"] > 0:
+                log.info(
+                    "brain.llm_usage_total",
+                    total_calls=usage["total_calls"],
+                    total_tokens_in=usage["total_tokens_in"],
+                    total_tokens_out=usage["total_tokens_out"],
+                    total_cost_usd=usage["total_cost_usd"],
+                    models=usage["models"],
+                )
         await brain_core_client.close()
         if admin_core_client:
             await admin_core_client.close()

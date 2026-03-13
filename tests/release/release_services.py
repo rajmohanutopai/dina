@@ -17,6 +17,7 @@ Usage as a pytest fixture (session-scoped):
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import socket
 import subprocess
@@ -198,10 +199,32 @@ class ReleaseDockerServices:
     def stop(self) -> None:
         if not self._started:
             return
+        self._save_llm_usage()
         if not self._externally_managed:
             print("\n  [release] Stopping release stack...")
             self._compose("down", "-v")
             print("  [release] Stack stopped.")
+
+    def _save_llm_usage(self) -> None:
+        """Collect LLM usage from Brain healthz before teardown."""
+        cost_dir = os.environ.get("DINA_LLM_COST_DIR")
+        if not cost_dir:
+            return
+        total = {"total_calls": 0, "total_tokens_in": 0, "total_tokens_out": 0, "total_cost_usd": 0.0}
+        for url in (self.brain_url, self.brain_b_url):
+            try:
+                r = httpx.get(f"{url}/healthz", timeout=5)
+                usage = r.json().get("llm_usage", {})
+                total["total_calls"] += usage.get("total_calls", 0)
+                total["total_tokens_in"] += usage.get("total_tokens_in", 0)
+                total["total_tokens_out"] += usage.get("total_tokens_out", 0)
+                total["total_cost_usd"] += usage.get("total_cost_usd", 0.0)
+            except Exception:
+                pass
+        if total["total_calls"] > 0:
+            os.makedirs(cost_dir, exist_ok=True)
+            with open(os.path.join(cost_dir, "release.json"), "w") as f:
+                json.dump(total, f)
 
     # -- agent exec ----------------------------------------------------------
 

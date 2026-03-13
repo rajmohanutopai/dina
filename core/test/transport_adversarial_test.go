@@ -111,6 +111,8 @@ func (m *mockVaultManager) OpenPersonas() []domain.PersonaName {
 	return names
 }
 
+func (m *mockVaultManager) Checkpoint(_ domain.PersonaName) error { return nil }
+
 // mockInboxManager for ingress tests.
 type mockInboxManager struct {
 	spoolData [][]byte

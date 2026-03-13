@@ -32,4 +32,9 @@ type ImportManager interface {
 	Import(ctx context.Context, opts domain.ImportOptions) (*domain.ImportResult, error)
 	VerifyArchive(archivePath, passphrase string) error
 	CheckCompatibility(archivePath string) error
+	// ValidateImport runs all pre-write validation (decrypt, force guard,
+	// checksums, path safety, identity.sqlite presence) without writing
+	// any files. Must be called before closing identity so that validation
+	// failures don't leave the process in a degraded state.
+	ValidateImport(ctx context.Context, opts domain.ImportOptions) error
 }

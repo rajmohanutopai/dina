@@ -166,6 +166,25 @@ func (p *Pool) CloseAll() error {
 	return firstErr
 }
 
+// Checkpoint forces a WAL checkpoint (TRUNCATE mode) so that all committed
+// data is written into the main database file. This ensures os.ReadFile on
+// the .sqlite file returns complete data, which is critical before export.
+// Returns nil if the persona is not currently open (nothing to checkpoint).
+func (p *Pool) Checkpoint(persona string) error {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	db, ok := p.dbs[persona]
+	if !ok {
+		return nil // not open — nothing to checkpoint
+	}
+	_, err := db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+	if err != nil {
+		return fmt.Errorf("sqlite: checkpoint %q: %w", persona, err)
+	}
+	return nil
+}
+
 // OpenPersonas returns the list of currently open persona names.
 func (p *Pool) OpenPersonas() []string {
 	p.mu.RLock()

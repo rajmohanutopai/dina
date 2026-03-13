@@ -134,6 +134,10 @@ func (m *Manager) Close(persona domain.PersonaName) error {
 	return nil
 }
 
+func (m *Manager) Checkpoint(_ domain.PersonaName) error {
+	return nil // in-memory: no WAL to checkpoint
+}
+
 func (m *Manager) Store(_ context.Context, persona domain.PersonaName, item domain.VaultItem) (string, error) {
 	personaID := string(persona)
 	m.mu.Lock()
@@ -770,7 +774,7 @@ func (s *SchemaInspect) IndexDDL(dbName, indexName string) (string, error) {
 func (s *SchemaInspect) TableDDL(dbName, tableName string) (string, error) {
 	ddls := map[string]string{
 		"items":          "CREATE TABLE items (id TEXT PRIMARY KEY, type TEXT NOT NULL, source TEXT, source_id TEXT, contact_did TEXT, summary TEXT, body_text TEXT, timestamp INTEGER NOT NULL, ingested_at INTEGER NOT NULL, metadata TEXT)",
-		"vault_items":    "CREATE TABLE vault_items (id TEXT PRIMARY KEY, type TEXT NOT NULL CHECK(type IN ('email','message','event','note','photo')), source TEXT, source_id TEXT, contact_did TEXT, summary TEXT, body_text TEXT, timestamp INTEGER NOT NULL, ingested_at INTEGER NOT NULL, metadata TEXT)",
+		"vault_items":    "CREATE TABLE vault_items (id TEXT PRIMARY KEY, type TEXT NOT NULL CHECK(type IN ('email','message','event','note','photo','email_draft','cart_handover','contact_card','document','bookmark','voice_memo','kv','contact','health_context','work_context','finance_context','family_context','trust_review','purchase_decision','relationship_note','medical_record','medical_note','trust_attestation')), source TEXT, source_id TEXT, contact_did TEXT, summary TEXT, body_text TEXT, timestamp INTEGER NOT NULL, ingested_at INTEGER NOT NULL, metadata TEXT)",
 		"vault_items_fts": "CREATE VIRTUAL TABLE vault_items_fts USING fts5(summary, body_text, content='vault_items', content_rowid='rowid', tokenize='unicode61 remove_diacritics 1')",
 		"audit_log":      "CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL, persona TEXT NOT NULL, action TEXT NOT NULL, requester TEXT, query_type TEXT, reason TEXT, metadata TEXT, prev_hash TEXT)",
 		"contacts":       "CREATE TABLE contacts (did TEXT PRIMARY KEY, name TEXT, alias TEXT, trust_level TEXT CHECK(trust_level IN ('blocked','unknown','trusted')), sharing_policy TEXT, created_at DATETIME, updated_at DATETIME)",

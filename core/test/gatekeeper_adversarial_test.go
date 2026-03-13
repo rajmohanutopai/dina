@@ -71,6 +71,8 @@ func (v *gatekeeperVaultManager) OpenPersonas() []domain.PersonaName {
 	return names
 }
 
+func (v *gatekeeperVaultManager) Checkpoint(_ domain.PersonaName) error { return nil }
+
 // gatekeeperMock evaluates intents based on configurable rules.
 type gatekeeperMock struct {
 	evalFn   func(domain.Intent) (domain.Decision, error)

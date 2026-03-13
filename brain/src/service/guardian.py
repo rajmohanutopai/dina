@@ -104,6 +104,7 @@ _AUDITABLE_PERSONA_TIERS = frozenset({"restricted", "locked"})
 # Only run vault density analysis when the query is about products, trust,
 # reviews, or recommendations.  General vault queries (account balance,
 # calendar, contacts) should NOT get trust density disclaimers.
+# Used as deterministic fallback when guard_scan is unavailable.
 _TRUST_RELEVANT_QUERY = re.compile(
     r"(?:review|trust|rating|product|recommend|buy|purchase|vendor|seller|"
     r"merchant|shop|store|supplier|provider|service provider|contractor|"
@@ -113,21 +114,13 @@ _TRUST_RELEVANT_QUERY = re.compile(
     re.IGNORECASE,
 )
 
-# Lightweight PII detection for open-tier auto-scrub (HIGH-03).
-_PII_QUICK_RE = re.compile(
-    r'(\b\d{3}-\d{2}-\d{4}\b'
-    r'|\b\d{4}[-\s]\d{4}[-\s]\d{4}[-\s]\d{4}\b'
-    r'|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
-    r'|\+\d{1,3}[\s.-]\d[\d\s.-]{6,12}\d)'
-)
-
 # ---------------------------------------------------------------------------
-# Anti-Her output filters (Law 4: Never Replace a Human)
+# Anti-Her deterministic fallback filters (Law 4: Never Replace a Human)
 #
 # Five compiled patterns that detect Anti-Her violations in LLM responses.
-# Applied as a post-processing filter in _handle_reason() to strip phrases
-# that simulate emotional subjectivity, engagement hooks, intimacy, emotional
-# memory recall, or therapy-style probing.  Factual content is preserved.
+# Used as fallback when the guard_scan LLM call fails or is unavailable.
+# The guard_scan is preferred (better NLU coverage), but these provide a
+# deterministic safety floor that never fails open.
 # ---------------------------------------------------------------------------
 
 # 1. Anthropomorphic self-referential language ("I feel", "I miss you", etc.)
@@ -199,6 +192,34 @@ _ANTI_HER_PATTERNS = (
     _ANTI_HER_INTIMACY,
     _ANTI_HER_EMOTIONAL_MEMORY,
     _ANTI_HER_THERAPY,
+)
+
+# ---------------------------------------------------------------------------
+# Pull Economy deterministic fallback filters (Law 2: Verified Truth)
+# ---------------------------------------------------------------------------
+
+# Unsolicited discovery patterns — sentences that push product recommendations
+# the user didn't ask for.  Used as fallback when guard_scan is unavailable.
+_UNSOLICITED_DISCOVERY_PATTERNS = re.compile(
+    r"(?:you (?:might|may|should|could) (?:also |want to )?(?:like|consider|"
+    r"check out|try|look at|enjoy|love)\b|"
+    r"also consider|additionally|have you (?:tried|considered|thought about)|"
+    r"anti-fatigue mat|monitor arm|ergonomic setup|"
+    r"related product|see also|you may also|while you're at it|"
+    r"pair (?:well|nicely) with|"
+    r"you should (?:also )?try|"
+    r"trending|popular pick|best.?seller|hot this week|"
+    r"people are buying|most popular|"
+    r"other option|similar product|"
+    r"alternative(?:s)?\s+(?:to |include )|(?:another|other) great option)",
+    re.IGNORECASE,
+)
+
+# Cross-persona scope creep patterns — health data leaked into consumer queries.
+_SCOPE_CREEP_PATTERNS = re.compile(
+    r"(?:carpal tunnel|health notes|wrist exercise|symptom|"
+    r"medical|diagnosis)",
+    re.IGNORECASE,
 )
 
 # Document PII fields — redacted from searchable vault text (Fix 6).
@@ -302,33 +323,107 @@ _PROMISE_BRIEFING_PATTERNS = re.compile(
 )
 
 # ---------------------------------------------------------------------------
-# Pull Economy output filters (Law 2: Verified Truth + Silence First)
+# Guard scan prompt — consolidated LLM call for all NLU post-processing.
+#
+# Primary path for Anti-Her, unsolicited discovery, fabrication detection,
+# consensus detection, entity extraction, and trust-relevance classification.
+# When guard_scan fails (LLM outage, malformed JSON), deterministic regex
+# fallback patterns above provide a safety floor. Safety never fails open.
+#
+# Security: guard_scan runs on SCRUBBED inputs (pre-rehydration) so PII
+# never reaches an LLM call that could route to cloud.
 # ---------------------------------------------------------------------------
 
-# Unsolicited discovery patterns — sentences that push product recommendations
-# the user didn't ask for.  Applied as a post-processing filter in
-# _handle_reason() to strip "you might also like" and cross-sell content.
-_UNSOLICITED_DISCOVERY_PATTERNS = re.compile(
-    r"(?:you (?:might|may|should|could) (?:also |want to )?(?:like|consider|"
-    r"check out|try|look at|enjoy|love)\b|"
-    r"also consider|additionally|have you (?:tried|considered|thought about)|"
-    r"anti-fatigue mat|monitor arm|ergonomic setup|"
-    r"related product|see also|you may also|while you're at it|"
-    r"pair (?:well|nicely) with|"
-    r"you should (?:also )?try|"
-    r"trending|popular pick|best.?seller|hot this week|"
-    r"people are buying|most popular|"
-    r"other option|similar product|"
-    r"alternative(?:s)?\s+(?:to |include )|(?:another|other) great option)",
-    re.IGNORECASE,
-)
+_GUARD_SCAN_PROMPT = """\
+Analyze this user prompt and assistant response. Return ONLY valid JSON.
 
-# Cross-persona scope creep patterns — health data leaked into consumer queries.
-_SCOPE_CREEP_PATTERNS = re.compile(
-    r"(?:carpal tunnel|health notes|wrist exercise|symptom|"
-    r"medical|diagnosis)",
-    re.IGNORECASE,
-)
+{{
+  "entities": {{"did": "<did:...> or null", "name": "<entity name or null>"}},
+  "trust_relevant": true,
+  "anti_her_sentences": [],
+  "unsolicited_sentences": [],
+  "fabricated_sentences": [],
+  "consensus_sentences": []
+}}
+
+Rules:
+- "entities": Extract DID (did:plc:xxx or did:key:xxx) and proper noun \
+product/vendor/company name from the USER PROMPT only. null if none found.
+- "trust_relevant": Is the user asking about products, vendors, reviews, \
+trust, purchases, recommendations, comparisons, or reliability? true/false.
+- "anti_her_sentences": Flag sentences where the assistant simulates \
+emotions, claims feelings, uses engagement hooks ("anything else?", \
+"I'm here for you"), intimacy language, emotional memory references, \
+or therapy-style probing. Factual sentences are never flagged.
+- "unsolicited_sentences": Flag sentences pushing recommendations the \
+user didn't ask for ("you might also like", cross-sell, trending picks, \
+unrelated product suggestions). If user explicitly asked for alternatives \
+or suggestions, return []. Also flag sentences leaking medical/health \
+data (symptoms, diagnoses, conditions) into non-health queries.
+- "fabricated_sentences": Flag sentences with invented trust scores, \
+hallucinated numeric ratings (4.2/5, 9/10, 87/100), fake attestation \
+counts, "community review" claims, or trust data not supported by the \
+provided context.
+- "consensus_sentences": Flag sentences claiming reviewer consensus, \
+widespread agreement, or multiple expert confirmation when not supported \
+by data. Also flag claims about "other reviewers", "additional opinions", \
+or "user feedback" when only limited data exists.
+
+USER PROMPT:
+{prompt}
+
+ASSISTANT RESPONSE (sentences numbered):
+{numbered_content}"""
+
+
+# ---------------------------------------------------------------------------
+# LLM Silence Classification prompt (Law 1: Silence First)
+#
+# Used for the "ambiguous middle" — events where deterministic hard rails
+# (fiduciary sources, explicit priority hints, known types) didn't match.
+# The LLM provides nuanced understanding that keyword matching cannot:
+#   - casual phrasing of genuine emergencies ("mom is in the hospital")
+#   - fake urgency from spam/phishing ("URGENT: account suspended")
+# Routed as lightweight task (local preferred, Flash Lite fallback).
+# ---------------------------------------------------------------------------
+
+_SILENCE_CLASSIFY_PROMPT = """\
+Classify this event into a Silence-First priority tier. Return ONLY valid JSON.
+
+{{
+  "decision": "fiduciary|solicited|engagement",
+  "confidence": 0.85,
+  "reason": "one-sentence explanation"
+}}
+
+Rules — Law 1 (Silence First):
+- "fiduciary": Silence would cause HARM. The user MUST know NOW or they \
+will suffer a consequence. Examples: medical emergency, safety threat, \
+time-critical deadline, financial risk, security breach, a loved one in \
+danger or distress.
+- "solicited": The user explicitly ASKED for this information. Examples: \
+search results, price watch alerts, package tracking the user requested, \
+answers to questions they posed.
+- "engagement": Everything else. Newsletters, social updates, casual \
+messages, interesting-but-not-urgent information. DEFAULT to this when \
+uncertain. Over-interruption is WORSE than delayed delivery.
+
+CRITICAL: When uncertain, ALWAYS choose "engagement". Never escalate \
+to "fiduciary" unless you are confident silence causes harm. Spam and \
+phishing often use urgent language — urgency alone is NOT sufficient \
+for fiduciary. Marketing emails with words like "URGENT", "act now", \
+"last chance", "account suspended" are engagement, not fiduciary.
+
+Context:
+- Event type: {event_type}
+- Source: {source}
+- Time: {timestamp}
+- Active personas: {active_personas}
+
+Message body:
+{body}"""
+
+_SILENCE_CONFIDENCE_THRESHOLD = 0.7
 
 
 def _strip_matching_sentences(text: str, pattern: re.Pattern) -> str:
@@ -655,7 +750,19 @@ class GuardianLoop:
         if source in _ENGAGEMENT_SOURCES:
             return "engagement"
 
-        # Default: engagement (Silence First — when in doubt, stay quiet).
+        # ------------------------------------------------------------------
+        # Ambiguous middle: no hard rail matched.  Consult LLM for nuanced
+        # classification that keyword matching cannot provide:
+        #   - casual phrasing of genuine emergencies
+        #   - fake urgency from spam/phishing
+        #   - context-sensitive sender importance
+        # LLM failure → deterministic fallback (engagement).
+        # ------------------------------------------------------------------
+        llm_decision = await self._llm_classify_silence(event)
+        if llm_decision is not None:
+            return llm_decision
+
+        # Deterministic fallback: engagement (Silence First).
         return "engagement"
 
     # ------------------------------------------------------------------
@@ -2462,21 +2569,19 @@ class GuardianLoop:
 
         Pipeline:
             1. PII scrub — for sensitive personas before any cloud LLM call.
-            1b. Vault density analysis — query vault for trust attestations,
-                count them, classify density, and build metadata for honest
-                disclosure (Law 2: Verified Truth).
-            2. Agentic reasoning — the LLM autonomously calls vault tools
-               (list_personas, search_vault) via function calling, gathers
-               relevant context, and generates a personalized response.
-               Falls back to direct LLM call if vault context is disabled.
-            3. Rehydrate PII tokens in the response.
-            4. Post-processing — enforce Verified Truth (density caveats,
-               zero-data disclosure, sponsored content tagging) and Silence
-               First (strip unsolicited product discovery).
+            2. Agentic reasoning — LLM generates a response (scrubbed inputs).
+            3. Guard scan on SCRUBBED content (pre-rehydration) — LLM classifies
+               sentences.  Runs in parallel with vault density query.
+               **Security: PII never reaches the guard_scan LLM call.**
+            4. Rehydrate PII tokens in the response.
+            5. Apply guard scan results — remove flagged sentences.  If guard_scan
+               failed: deterministic regex fallback (Anti-Her, unsolicited, scope
+               creep).  Safety never fails open.
+            6. Density disclosure — inject honest caveats for sparse/zero data.
+            7. Sponsored content tagging.
 
-        The reasoning agent handles tool calling, context assembly, and
-        final response generation in a single agentic loop.  The LLM
-        decides which tools to call — no hardcoded classification.
+        Guard scan is decoupled from skip_vault_enrichment: vault density
+        can be skipped, but safety filtering always runs.
         """
         prompt = event.get("prompt", "")
         persona_tier = event.get("persona_tier", "open")
@@ -2491,37 +2596,20 @@ class GuardianLoop:
             vault = None
             llm_prompt = prompt
 
-            # Step 1: Scrub PII for sensitive personas before cloud LLM routing.
-            if persona_tier in ("restricted", "locked") and self._entity_vault:
+            # Step 1: Scrub PII before any cloud-bound LLM call.
+            # The privacy boundary is the cloud, not the persona tier.
+            # Open-tier prompts can contain names, addresses, employers,
+            # etc. — all PII that must not reach cloud providers.
+            # Local-only deployments (no cloud configured) skip scrub.
+            # Scrub failure is ALWAYS fail-closed when cloud exists —
+            # the router may fall back to cloud even for local-preferred
+            # tasks, so we cannot guarantee local-only routing.
+            if self._entity_vault and self._llm.has_cloud_provider:
                 llm_prompt, vault = await self._entity_vault.scrub(llm_prompt)
-            elif persona_tier == "open" and self._entity_vault:
-                if _PII_QUICK_RE.search(llm_prompt):
-                    llm_prompt, vault = await self._entity_vault.scrub(llm_prompt)
-                    log.info("guardian.open_tier.auto_scrub")
-
-            # Step 1b: Vault density analysis — query vault for trust data
-            # to build density metadata for Verified Truth enforcement.
-            vault_items = []
-            density_meta = None
-            try:
-                vault_items = await self._core.search_vault(
-                    "personal", llm_prompt, mode="hybrid",
-                )
-                if vault_items is None:
-                    vault_items = []
-                density_meta = self._analyze_trust_density(
-                    vault_items, persona_tier,
-                )
-            except Exception:
-                log.debug("guardian.reason.density_analysis_skipped")
 
             # Step 2: Agentic reasoning with vault tools.
             if self._vault_context and not skip_vault:
                 try:
-                    # Only scrub tool results when the prompt was also
-                    # scrubbed (vault is non-None).  For open-tier queries
-                    # without PII, scrubbing tool results is unnecessary
-                    # and can interfere with the agentic loop.
                     ev = self._entity_vault if vault is not None else None
                     result = await self._vault_context.reason(
                         llm_prompt, persona_tier,
@@ -2539,7 +2627,6 @@ class GuardianLoop:
                         "guardian.reason.agent_failed",
                         error=str(exc),
                     )
-                    # Fallback: direct LLM call without vault context
                     result = await self._llm.route(
                         task_type="complex_reasoning",
                         prompt=llm_prompt,
@@ -2548,7 +2635,6 @@ class GuardianLoop:
                     )
                     vault_enriched = False
             else:
-                # No vault context agent — direct LLM call
                 result = await self._llm.route(
                     task_type="complex_reasoning",
                     prompt=llm_prompt,
@@ -2557,45 +2643,119 @@ class GuardianLoop:
                 )
                 vault_enriched = False
 
-            # Step 3: Rehydrate PII tokens in the response.
-            # Merge tool-result vault (from scrubbed tool responses) with
-            # the prompt vault so all PII tokens get rehydrated.
+            # Step 3: Guard scan on SCRUBBED content (pre-rehydration).
+            # Security: uses llm_prompt (scrubbed) not prompt (raw), and
+            # result["content"] (still has PII tokens like [PERSON_1])
+            # not the rehydrated version.  PII never reaches guard_scan.
+            #
+            # Guard scan is NOT gated by skip_vault — it's a safety filter,
+            # not vault enrichment.  Vault density query IS gated.
             tool_vault = result.get("_tool_vault", {})
             if tool_vault:
                 vault = {**(vault or {}), **tool_vault}
 
-            content = result.get("content", "")
+            pre_rehydrated_content = result.get("content", "")
+            guard_result = None
+            vault_items: list[dict] = []
+
+            # Build parallel tasks: guard_scan always, density only when not skipped.
+            guard_coro = self._guard_scan(llm_prompt, pre_rehydrated_content, persona_tier)
+
+            if not skip_vault:
+                async def _density_query() -> list[dict]:
+                    items = await self._core.search_vault(
+                        "personal", "trust attestation", mode="fts5",
+                    )
+                    return items if items else []
+
+                results = await asyncio.gather(
+                    guard_coro,
+                    _density_query(),
+                    return_exceptions=True,
+                )
+                if not isinstance(results[0], BaseException):
+                    guard_result = results[0]
+                else:
+                    log.debug("guardian.guard_scan_failed", error=str(results[0]))
+                if not isinstance(results[1], BaseException):
+                    vault_items = results[1]
+                else:
+                    log.debug("guardian.density_query_failed", error=str(results[1]))
+            else:
+                # Guard scan still runs even when vault enrichment is skipped.
+                try:
+                    guard_result = await guard_coro
+                except Exception as exc:
+                    log.debug("guardian.guard_scan_failed", error=str(exc))
+
+            # Step 4: Apply guard scan sentence removal on PRE-REHYDRATED
+            # content — indices were computed on this text, so they match.
+            # Rehydration happens AFTER removal to avoid sentence boundary
+            # shifts from PII tokens like "Dr." or "St." that add periods.
+            content = pre_rehydrated_content
+            if guard_result:
+                # Primary path: LLM guard scan succeeded — use its classifications.
+                sentences = self._split_sentences(content)
+                remove_indices: set[int] = set()
+                for key in ("anti_her_sentences", "unsolicited_sentences",
+                            "fabricated_sentences", "consensus_sentences"):
+                    for idx in guard_result.get(key, []):
+                        if isinstance(idx, int) and 1 <= idx <= len(sentences):
+                            remove_indices.add(idx)
+                if remove_indices:
+                    content = self._remove_sentences(sentences, remove_indices)
+
+            # Step 5: Rehydrate PII tokens in the (now cleaned) response.
             if vault and self._entity_vault:
                 content = self._entity_vault.rehydrate(content, vault)
                 vault.clear()
 
-            # Step 4: Anti-Her output filter (Law 4: Never Replace a Human).
-            # Strip phrases that simulate emotional subjectivity, engagement
-            # hooks, intimacy, emotional memory recall, or therapy-style
-            # probing.  Factual content is preserved.
-            content = self._apply_anti_her_filter(content)
+            # Step 5b: Regex fallback — runs on rehydrated content (pattern
+            # matching, no indices).  Applied when guard_scan failed.
+            if not guard_result:
+                log.info("guardian.guard_scan_fallback_to_regex")
+                content = self._apply_anti_her_filter(content)
+                content = self._apply_unsolicited_discovery_filter(
+                    content, prompt,
+                )
 
-            # Step 5: Pull Economy output filters (Law 1+2).
-            # 5a. Unsolicited discovery filter — strip "you might also like"
-            content = self._apply_unsolicited_discovery_filter(
-                content, prompt=prompt,
-            )
+            # Step 6: Density analysis and disclosure injection.
+            density_meta = None
+            if not skip_vault:
+                entity = (
+                    guard_result.get("entities") or {}
+                ) if guard_result else {}
+                entity_scoped = bool(entity.get("did") or entity.get("name"))
 
-            # 5b. Trust density enforcement — inject caveats for sparse/zero
-            #     data, strip fabricated trust claims when vault is empty.
-            #     The "no verified data" disclosure is only injected when
-            #     the query is trust-relevant (products, reviews, etc.) to
-            #     avoid spurious disclaimers on general vault queries.
+                if entity_scoped:
+                    density_meta = self._analyze_trust_density(
+                        vault_items, persona_tier,
+                        entity_hint=entity,
+                    )
+                else:
+                    density_meta = {
+                        "tier": "zero",
+                        "trust_count": 0,
+                        "total_count": len(vault_items),
+                        "personal_count": 0,
+                        "has_rating": False,
+                        "persona_tier": persona_tier,
+                        "entity_scoped": False,
+                    }
+
             if density_meta is not None:
                 trust_relevant = bool(
-                    _TRUST_RELEVANT_QUERY.search(prompt)
+                    guard_result and guard_result.get("trust_relevant")
                 )
+                if not trust_relevant and not guard_result:
+                    # Regex fallback: use deterministic trust-relevance check.
+                    trust_relevant = bool(_TRUST_RELEVANT_QUERY.search(prompt))
                 content = self._apply_density_enforcement(
                     content, density_meta, vault_items,
                     inject_disclosure=trust_relevant,
                 )
 
-            # 5c. Sponsored content disclosure — tag sponsored sources.
+            # Step 7: Sponsored content disclosure.
             content = self._apply_sponsored_disclosure(
                 content, vault_items,
             )
@@ -2615,10 +2775,304 @@ class GuardianLoop:
     # Trust Density Analysis (SS19.2 — Verified Truth)
     # ------------------------------------------------------------------
 
+    async def _guard_scan(
+        self, prompt: str, content: str, persona_tier: str,
+    ) -> dict | None:
+        """Run a lightweight LLM guard scan on the response.
+
+        Sends both the user prompt and numbered assistant response to a
+        fast/local LLM.  The LLM classifies sentences for Anti-Her
+        violations, unsolicited recommendations, fabricated trust claims,
+        consensus claims, and extracts entity identifiers + trust
+        relevance.
+
+        Returns a validated dict or ``None`` on any failure.
+        """
+        if not content:
+            return None
+
+        sentences = self._split_sentences(content)
+        if not sentences:
+            return None
+
+        numbered = "\n".join(
+            f"[{i}] {s}" for i, s in enumerate(sentences, 1)
+        )
+        scan_prompt = _GUARD_SCAN_PROMPT.format(
+            prompt=prompt,
+            numbered_content=numbered,
+        )
+
+        try:
+            result = await self._llm.route(
+                task_type="guard_scan",
+                prompt=scan_prompt,
+                persona_tier=persona_tier,
+            )
+            raw = result.get("content", "")
+
+            # Extract JSON from response (may be wrapped in markdown).
+            json_match = re.search(r'\{[\s\S]*\}', raw)
+            if not json_match:
+                return None
+            parsed = json.loads(json_match.group())
+
+            if not isinstance(parsed, dict):
+                return None
+
+            # Validate and coerce fields.
+            validated: dict = {}
+
+            entities = parsed.get("entities")
+            if isinstance(entities, dict):
+                validated["entities"] = {
+                    "did": entities.get("did") if isinstance(entities.get("did"), str) else None,
+                    "name": entities.get("name") if isinstance(entities.get("name"), str) else None,
+                }
+            else:
+                validated["entities"] = {"did": None, "name": None}
+
+            validated["trust_relevant"] = bool(parsed.get("trust_relevant"))
+
+            n = len(sentences)
+            for key in ("anti_her_sentences", "unsolicited_sentences",
+                        "fabricated_sentences", "consensus_sentences"):
+                raw_list = parsed.get(key, [])
+                if isinstance(raw_list, list):
+                    validated[key] = [
+                        idx for idx in raw_list
+                        if isinstance(idx, int) and 1 <= idx <= n
+                    ]
+                else:
+                    validated[key] = []
+
+            return validated
+        except Exception as exc:
+            log.debug("guardian.guard_scan_failed", error=str(exc))
+            return None
+
+    async def _llm_classify_silence(self, event: dict) -> str | None:
+        """LLM silence classification for the ambiguous middle.
+
+        Called only when all deterministic hard rails have been exhausted.
+        Returns ``"fiduciary"``, ``"solicited"``, ``"engagement"``, or
+        ``None`` (triggers deterministic fallback).
+
+        PII handling: if a cloud provider is configured, the message body
+        is scrubbed before sending to the LLM.  No rehydration is needed
+        because the output is a classification label, not generated text.
+        """
+        body = event.get("body", "")
+        if isinstance(body, dict):
+            body = json.dumps(body, default=str)
+        elif not isinstance(body, str):
+            body = str(body) if body is not None else ""
+
+        if not body:
+            return None
+
+        # PII scrub if cloud provider exists (same invariant as _handle_reason).
+        if self._entity_vault and self._llm.has_cloud_provider:
+            try:
+                body, _vault = await self._entity_vault.scrub(body)
+            except Exception:
+                log.debug("guardian.silence_classify_scrub_failed")
+                return None
+
+        # Build prompt from PII-safe metadata + (scrubbed) body.
+        prompt = _SILENCE_CLASSIFY_PROMPT.format(
+            event_type=event.get("type", "unknown"),
+            source=event.get("source", "unknown"),
+            timestamp=event.get("timestamp", "unknown"),
+            active_personas=", ".join(sorted(self._unlocked_personas)) or "none",
+            body=body,
+        )
+
+        try:
+            result = await self._llm.route(
+                task_type="silence_classify",
+                prompt=prompt,
+                persona_tier="open",
+            )
+            raw = result.get("content", "")
+
+            json_match = re.search(r'\{[\s\S]*\}', raw)
+            if not json_match:
+                return None
+            parsed = json.loads(json_match.group())
+
+            if not isinstance(parsed, dict):
+                return None
+
+            decision = (parsed.get("decision") or "").lower().strip()
+            confidence = float(parsed.get("confidence", 0))
+            reason = parsed.get("reason", "")
+
+            if decision not in ("fiduciary", "solicited", "engagement"):
+                return None
+
+            # Confidence gate: below threshold → engagement (Silence First).
+            if confidence < _SILENCE_CONFIDENCE_THRESHOLD:
+                log.info(
+                    "guardian.silence_llm_low_confidence",
+                    decision=decision,
+                    confidence=confidence,
+                    reason=reason,
+                )
+                return "engagement"
+
+            log.info(
+                "guardian.silence_llm_classified",
+                decision=decision,
+                confidence=confidence,
+                reason=reason,
+            )
+            return decision
+        except Exception as exc:
+            log.debug("guardian.silence_classify_failed", error=str(exc))
+            return None
+
+    @staticmethod
+    def _split_sentences(text: str) -> list[str]:
+        """Split text into sentences on [.!?] followed by whitespace."""
+        if not text:
+            return []
+        parts = re.split(r'(?<=[.!?])\s+', text.strip())
+        return [p for p in parts if p.strip()]
+
+    @staticmethod
+    def _remove_sentences(
+        sentences: list[str], indices: set[int],
+    ) -> str:
+        """Remove sentences at 1-indexed positions and rejoin."""
+        kept = [
+            s for i, s in enumerate(sentences, 1)
+            if i not in indices
+        ]
+        result = " ".join(kept)
+        return re.sub(r" {2,}", " ", result).strip()
+
+    # ------------------------------------------------------------------
+    # Deterministic safety fallback filters
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _apply_unsolicited_discovery_filter(
+        content: str,
+        prompt: str = "",
+    ) -> str:
+        """Strip unsolicited product recommendations from LLM output.
+
+        Silence First (Law 1): only respond to what was asked.  The LLM
+        may volunteer "you might also like..." or "related products" —
+        these are push, not pull, and must be stripped.
+
+        However, if the user explicitly asked for alternatives,
+        comparisons, or recommendations, discovery is solicited and
+        should be preserved.
+
+        Used as deterministic fallback when guard_scan is unavailable.
+        """
+        if not content:
+            return content
+
+        solicited_discovery = re.compile(
+            r"alternative|compare|comparison|recommend|suggest|"
+            r"what (?:else|other)|which (?:one|product)|"
+            r"options? (?:for|to)|best [\w\s]+ for",
+            re.IGNORECASE,
+        )
+        if prompt and solicited_discovery.search(prompt):
+            content = _strip_matching_sentences(content, _SCOPE_CREEP_PATTERNS)
+            return content.strip()
+
+        for pattern in (_UNSOLICITED_DISCOVERY_PATTERNS, _SCOPE_CREEP_PATTERNS):
+            content = _strip_matching_sentences(content, pattern)
+
+        related_section = re.compile(
+            r"(?:^|\n)\s*(?:Related (?:products?|items?)|See also|"
+            r"You may also (?:like|consider)|While you're at it):?\s*\n"
+            r"(?:[-*]\s+.*\n?)*",
+            re.IGNORECASE | re.MULTILINE,
+        )
+        content = related_section.sub("", content)
+
+        return content.strip()
+
+    @staticmethod
+    def _apply_anti_her_filter(content: str) -> str:
+        """Strip Anti-Her violations from LLM response text.
+
+        Scans *content* against the five compiled Anti-Her pattern
+        categories and removes every matching sentence (or the
+        violating clause when the sentence also contains factual
+        content) while preserving all factual content.
+
+        Used as deterministic fallback when guard_scan is unavailable.
+        """
+        if not content:
+            return content
+
+        for pattern in _ANTI_HER_PATTERNS:
+            safety = 0
+            while pattern.search(content) and safety < 20:
+                safety += 1
+                match = pattern.search(content)
+                if not match:
+                    break
+
+                m_start, m_end = match.start(), match.end()
+
+                sent_start = 0
+                for i in range(m_start - 1, -1, -1):
+                    if content[i] in ".!?":
+                        sent_start = i + 1
+                        break
+
+                sent_end = len(content)
+                for i in range(m_end, len(content)):
+                    if content[i] in ".!?":
+                        sent_end = i + 1
+                        break
+
+                sentence = content[sent_start:sent_end]
+
+                rel_start = m_start - sent_start
+                rel_end = m_end - sent_start
+
+                clause_cut = None
+                for i in range(rel_end, len(sentence)):
+                    if sentence[i] in ",;":
+                        clause_cut = ("prefix", sent_start, sent_start + i + 1)
+                        break
+
+                if clause_cut is None:
+                    for i in range(rel_start - 1, -1, -1):
+                        if sentence[i] in ",;":
+                            clause_cut = ("suffix", sent_start + i, sent_end)
+                            break
+
+                if clause_cut is not None:
+                    _, cut_start, cut_end = clause_cut
+                    remaining = content[:cut_start] + content[cut_end:]
+                    leftover = remaining[
+                        max(0, cut_start - 10): min(len(remaining), cut_start + 40)
+                    ].strip()
+                    if len(leftover) > 5:
+                        content = remaining
+                        continue
+
+                content = content[:sent_start] + content[sent_end:]
+
+        content = re.sub(r"  +", " ", content).strip()
+        return content
+
     @staticmethod
     def _analyze_trust_density(
         vault_items: list[dict],
         persona_tier: str = "open",
+        *,
+        entity_hint: dict | None = None,
     ) -> dict:
         """Analyze trust data density from vault search results.
 
@@ -2629,17 +3083,65 @@ class GuardianLoop:
         - ``moderate``— 5-9 attestations (adequate)
         - ``dense``   — 10+ attestations (strong consensus possible)
 
+        When *entity_hint* is provided, only trust attestations related
+        to the specified entity are counted.  This prevents a query about
+        VendorX from picking up unrelated attestations for VendorY.
+
         Returns metadata dict with density tier, counts, and flags.
         """
         trust_items = [
             item for item in vault_items
-            if item.get("type") == "trust_attestation"
-            and item.get("source") == "trust_network"
+            if item.get("Type", item.get("type")) == "trust_attestation"
+            and item.get("Source", item.get("source")) == "trust_network"
         ]
+
+        # Entity-scope filtering: narrow to items about the specific entity.
+        if entity_hint and trust_items:
+            entity_did = entity_hint.get("did", "")
+            entity_name = entity_hint.get("name", "")
+
+            if entity_did:
+                # Filter by DID appearing anywhere in the item:
+                # contact_did field, body text, summary, or metadata
+                # (which may contain subject_did as a JSON string).
+                # Trust attestations typically store the subject DID
+                # in Metadata.subject_did and body text rather than
+                # in the ContactDID column.
+                def _did_matches(item: dict, did: str) -> bool:
+                    for key_a, key_b in (
+                        ("ContactDID", "contact_did"),
+                        ("BodyText", "body"),
+                        ("Summary", "summary"),
+                        ("Metadata", "metadata"),
+                    ):
+                        val = item.get(key_a, item.get(key_b, "")) or ""
+                        if did in val:
+                            return True
+                    return False
+
+                trust_items = [
+                    item for item in trust_items
+                    if _did_matches(item, entity_did)
+                ]
+            elif entity_name:
+                # Filter by entity name appearing in body or summary.
+                name_lower = entity_name.lower()
+                trust_items = [
+                    item for item in trust_items
+                    if name_lower in (
+                        item.get("BodyText", item.get("body", ""))
+                        or ""
+                    ).lower()
+                    or name_lower in (
+                        item.get("Summary", item.get("summary", ""))
+                        or ""
+                    ).lower()
+                ]
+
         personal_items = [
             item for item in vault_items
-            if item.get("source") == "personal"
-            or item.get("type") == "note"
+            if item.get("Source", item.get("source")) == "personal"
+            or item.get("Type", item.get("type")) == "note"
         ]
 
         count = len(trust_items)
@@ -2659,8 +3161,14 @@ class GuardianLoop:
         # Check if the single review has a numerical rating.
         has_rating = False
         if count == 1:
-            body = trust_items[0].get("body", "")
+            body = trust_items[0].get("BodyText", trust_items[0].get("body", ""))
             has_rating = bool(re.search(r"\d+\s*/\s*(?:5|10|100)", body))
+
+        # entity_scoped: True when counts reflect a specific entity,
+        # False when counting all trust attestations globally.
+        # Enforcement uses this to decide whether entity-specific
+        # caveats (single/sparse) are meaningful or misleading.
+        scoped = bool(entity_hint and (entity_hint.get("did") or entity_hint.get("name")))
 
         return {
             "tier": tier,
@@ -2669,6 +3177,7 @@ class GuardianLoop:
             "personal_count": len(personal_items),
             "has_rating": has_rating,
             "persona_tier": persona_tier,
+            "entity_scoped": scoped,
         }
 
     @staticmethod
@@ -2681,14 +3190,20 @@ class GuardianLoop:
     ) -> str:
         """Enforce Verified Truth density rules on LLM output.
 
-        Rules:
+        Deterministic safety floor that always runs, regardless of guard
+        scan status.  Handles both structural corrections (disclosures)
+        AND fabrication/consensus regex stripping tied to density tier:
+
         - Zero trust data: strip fabricated trust claims, inject honest
-          disclosure ("no verified data in Trust Network") when
-          *inject_disclosure* is True.
+          disclosure ("no verified data in Trust Network").
         - Single review: inject "limited data" caveat, strip consensus
           language and fabricated ratings if source has none.
+        - Locked persona: correct "no data" to "data inaccessible".
         - Personal notes != Trust Network reviews: correct conflation.
-        - Locked persona: distinguish access denial from data absence.
+
+        The guard scan LLM provides richer NLU for these categories,
+        but these regex patterns catch obvious cases even when the
+        guard scan fails.
 
         Args:
             inject_disclosure: If False, skip the "no verified data"
@@ -2698,6 +3213,7 @@ class GuardianLoop:
         """
         tier = density_meta.get("tier", "")
         persona_tier = density_meta.get("persona_tier", "open")
+        entity_scoped = density_meta.get("entity_scoped", False)
 
         if tier == "zero":
             # Strip fabricated trust claims when no trust data exists.
@@ -2707,14 +3223,18 @@ class GuardianLoop:
                 re.IGNORECASE,
             )
             if fabricated.search(content):
-                # Remove sentences with fabricated trust claims.
                 content = _strip_matching_sentences(content, fabricated)
 
-            # Also strip hallucinated numerical scores when vault is empty.
-            if density_meta.get("total_count", 0) == 0:
+            # Strip hallucinated numerical scores when no trust data exists.
+            # Gate on trust_count (not total_count) — unrelated vault items
+            # don't justify fabricated numeric ratings.
+            if density_meta.get("trust_count", 0) == 0:
                 hallucinated = re.compile(
-                    r"(?:trust score:\s*\d|score.*\d+\.\d|"
-                    r"rating.*\d+/\d+|community review)",
+                    r"(?:trust score:?\s*\d|score\s+\d+|"
+                    r"rat(?:e|ing)\s+(?:it\s+)?\d+(?:\.\d+)?\s*/\s*\d+|"
+                    r"give\s+it\s+\d+(?:\.\d+)?\s*/\s*\d+|"
+                    r"(?:I(?:'d|.would)\s+)?(?:rate|score)\s+(?:it\s+)?\d+|"
+                    r"community review)",
                     re.IGNORECASE,
                 )
                 if hallucinated.search(content):
@@ -2736,7 +3256,6 @@ class GuardianLoop:
 
             # Handle locked persona — don't claim "no data" when access denied.
             if persona_tier == "locked":
-                # Remove "no reviews exist" claims and note access limitation.
                 existence_claim = re.compile(
                     r"no.*review.*exist|no one has reviewed|no verified data",
                     re.IGNORECASE,
@@ -2750,7 +3269,6 @@ class GuardianLoop:
 
             # Handle web vs trust distinction.
             if density_meta.get("personal_count", 0) > 0:
-                # Personal notes exist but no trust attestations.
                 trust_claim = re.compile(
                     r"verified.*trust.*review|trust network.*review",
                     re.IGNORECASE,
@@ -2758,8 +3276,7 @@ class GuardianLoop:
                 if trust_claim.search(content):
                     content = _strip_matching_sentences(content, trust_claim)
 
-        elif tier == "single":
-            # Single review — inject limited data caveat.
+        elif tier == "single" and entity_scoped:
             limited_pattern = re.compile(
                 r"only\s+(?:one|1|a single)\s+(?:verified\s+)?review|"
                 r"limited\s+(?:review\s+)?data|"
@@ -2805,6 +3322,19 @@ class GuardianLoop:
                 )
                 if fab_rating.search(content):
                     content = _strip_matching_sentences(content, fab_rating)
+
+        elif tier == "sparse" and entity_scoped:
+            count = density_meta.get("trust_count", 0)
+            limited_check = re.compile(
+                r"limited|only \d|only two|only three|only four|"
+                r"few|small number|not many|insufficient|sparse|thin",
+                re.IGNORECASE,
+            )
+            if not limited_check.search(content):
+                content = (
+                    f"Note: only {count} trust attestations available "
+                    f"— limited data. " + content
+                )
 
         return content.strip()
 
@@ -2946,155 +3476,6 @@ class GuardianLoop:
 
                 content = "\n".join(rebuilt_lines)
 
-        return content
-
-    # ------------------------------------------------------------------
-    # Unsolicited Discovery Filter (SS19.1 — Pull Economy)
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _apply_unsolicited_discovery_filter(
-        content: str,
-        prompt: str = "",
-    ) -> str:
-        """Strip unsolicited product recommendations from LLM output.
-
-        Silence First (Law 1): only respond to what was asked.  The LLM
-        may volunteer "you might also like..." or "related products" —
-        these are push, not pull, and must be stripped.
-
-        However, if the user explicitly asked for alternatives,
-        comparisons, or recommendations, discovery is solicited and
-        should be preserved.
-
-        Preserves factual content about the asked-about product while
-        removing cross-sell, upsell, tangential advice, and scope creep.
-        """
-        if not content:
-            return content
-
-        # Check if the user explicitly asked for alternatives/recommendations.
-        solicited_discovery = re.compile(
-            r"alternative|compare|comparison|recommend|suggest|"
-            r"what (?:else|other)|which (?:one|product)|"
-            r"options? (?:for|to)|best [\w\s]+ for",
-            re.IGNORECASE,
-        )
-        if prompt and solicited_discovery.search(prompt):
-            # User explicitly asked — don't strip discovery content.
-            # Still strip scope creep (health data in consumer queries).
-            content = _strip_matching_sentences(content, _SCOPE_CREEP_PATTERNS)
-            return content.strip()
-
-        # Strip unsolicited discovery patterns sentence-by-sentence.
-        for pattern in (_UNSOLICITED_DISCOVERY_PATTERNS, _SCOPE_CREEP_PATTERNS):
-            content = _strip_matching_sentences(content, pattern)
-
-        # Strip "Related products:" sections (multi-line blocks).
-        related_section = re.compile(
-            r"(?:^|\n)\s*(?:Related (?:products?|items?)|See also|"
-            r"You may also (?:like|consider)|While you're at it):?\s*\n"
-            r"(?:[-*]\s+.*\n?)*",
-            re.IGNORECASE | re.MULTILINE,
-        )
-        content = related_section.sub("", content)
-
-        return content.strip()
-
-    # ------------------------------------------------------------------
-    # Anti-Her Output Filter (Law 4: Never Replace a Human)
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _apply_anti_her_filter(content: str) -> str:
-        """Strip Anti-Her violations from LLM response text.
-
-        Scans *content* against the five compiled Anti-Her pattern
-        categories and removes every matching sentence (or the
-        violating clause when the sentence also contains factual
-        content) while preserving all factual content.
-
-        Sentence boundaries are ``[.!?]`` followed by whitespace (or
-        string edges).  Within a sentence, clause boundaries (``,``,
-        ``;``) are used to surgically remove only the violating
-        clause when the match is confined to a prefix or suffix
-        clause, preserving the factual remainder.
-
-        Returns the cleaned text, with leading/trailing whitespace
-        stripped and collapsed double-spaces normalised.
-        """
-        if not content:
-            return content
-
-        for pattern in _ANTI_HER_PATTERNS:
-            # Iterate until no more matches (a single pass may leave
-            # behind patterns revealed by earlier removals).
-            safety = 0
-            while pattern.search(content) and safety < 20:
-                safety += 1
-                match = pattern.search(content)
-                if not match:
-                    break
-
-                m_start, m_end = match.start(), match.end()
-
-                # --- Find the sentence containing the match ---
-                sent_start = 0
-                for i in range(m_start - 1, -1, -1):
-                    if content[i] in ".!?":
-                        sent_start = i + 1
-                        break
-
-                sent_end = len(content)
-                for i in range(m_end, len(content)):
-                    if content[i] in ".!?":
-                        sent_end = i + 1
-                        break
-
-                sentence = content[sent_start:sent_end]
-
-                # --- Try clause-level surgery first ---
-                # Look for a comma or semicolon that separates the
-                # violating clause from factual content within the
-                # same sentence.
-                rel_start = m_start - sent_start   # match start relative to sentence
-                rel_end = m_end - sent_start        # match end relative to sentence
-
-                # Case A: match is in a leading clause (before a comma).
-                # Remove from sentence start to first comma after match.
-                clause_cut = None
-                for i in range(rel_end, len(sentence)):
-                    if sentence[i] in ",;":
-                        # Everything before (and including) this separator
-                        # is the violating clause.
-                        clause_cut = ("prefix", sent_start, sent_start + i + 1)
-                        break
-
-                if clause_cut is None:
-                    # Case B: match is in a trailing clause (after a comma).
-                    # Remove from last comma before match to sentence end.
-                    for i in range(rel_start - 1, -1, -1):
-                        if sentence[i] in ",;":
-                            clause_cut = ("suffix", sent_start + i, sent_end)
-                            break
-
-                if clause_cut is not None:
-                    _, cut_start, cut_end = clause_cut
-                    remaining = content[:cut_start] + content[cut_end:]
-                    # Only use clause cut if it actually preserves some
-                    # non-trivial text from the sentence.
-                    leftover = remaining[
-                        max(0, cut_start - 10): min(len(remaining), cut_start + 40)
-                    ].strip()
-                    if len(leftover) > 5:
-                        content = remaining
-                        continue
-
-                # Fallback: remove the entire sentence.
-                content = content[:sent_start] + content[sent_end:]
-
-        # Normalise whitespace: collapse runs, strip edges.
-        content = re.sub(r"  +", " ", content).strip()
         return content
 
     async def _handle_vault_unlocked(self, event: dict) -> dict:
@@ -3247,12 +3628,7 @@ class GuardianLoop:
                     ),
                     persona_tier="open",
                 )
-                raw_content = result.get("content", "")
-                # Apply Anti-Her filters.
-                content = raw_content
-                for pattern in _ANTI_HER_PATTERNS:
-                    content = pattern.sub("", content)
-                content = re.sub(r"\s{2,}", " ", content).strip()
+                content = result.get("content", "")
             except Exception:
                 pass
 

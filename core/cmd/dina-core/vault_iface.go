@@ -16,6 +16,7 @@ type vaultBackend interface {
 	Close(persona domain.PersonaName) error
 	IsOpen(persona domain.PersonaName) bool
 	OpenPersonas() []domain.PersonaName
+	Checkpoint(persona domain.PersonaName) error
 
 	// VaultReader
 	Query(ctx context.Context, persona domain.PersonaName, q domain.SearchQuery) ([]domain.VaultItem, error)

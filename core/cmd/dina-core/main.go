@@ -232,6 +232,20 @@ func main() {
 	backupMgr := newBackupMgr(vaultMgr)
 	auditLogger := vault.NewAuditLogger()
 
+	// 3a. Open identity database (Tier 0: contacts, audit log, kv_store, device_tokens).
+	// Persona vaults are opened on unlock; identity is always-open with its own DEK.
+	identityPersona, _ := domain.NewPersonaName("identity")
+	identityDEK, err := keyDeriver.DerivePersonaDEK(masterSeed, identityPersona)
+	if err != nil {
+		slog.Error("Failed to derive identity DEK", "error", err)
+		os.Exit(1)
+	}
+	if err := vaultMgr.Open(context.Background(), identityPersona, identityDEK); err != nil {
+		slog.Error("Failed to open identity database", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("Identity database opened", "path", cfg.VaultPath)
+
 	// 4. PII
 	scrubber := pii.NewScrubber()
 

@@ -140,8 +140,13 @@ async def test_fix_19_2_2_sensitive_persona_scrubbed():
 
 # TST-BRAIN-471
 @pytest.mark.asyncio
-async def test_fix_19_2_3_open_persona_not_scrubbed():
-    """Open persona prompt bypasses scrubbing in _handle_reason."""
+async def test_fix_19_2_3_open_persona_scrubbed_when_cloud_exists():
+    """Open persona prompt is scrubbed when cloud providers are configured.
+
+    The privacy boundary is the cloud, not the persona tier.  Open-tier
+    prompts can contain names, addresses, employers — all PII that must
+    not reach cloud providers.  Only local-only deployments skip scrub.
+    """
     from src.service.guardian import GuardianLoop
     from src.service.entity_vault import EntityVaultService
     from src.service.nudge import NudgeAssembler
@@ -158,6 +163,7 @@ async def test_fix_19_2_3_open_persona_not_scrubbed():
 
     llm_router = AsyncMock()
     llm_router.route.return_value = {"content": "LLM says hello", "model": "test"}
+    llm_router.has_cloud_provider = True
 
     entity_vault = EntityVaultService(scrubber, core)
     nudge = NudgeAssembler(core, llm_router, entity_vault)
@@ -172,14 +178,13 @@ async def test_fix_19_2_3_open_persona_not_scrubbed():
         scratchpad=scratchpad,
     )
 
-    # Open persona -- scrub should NOT be called in _handle_reason.
+    # Open persona with cloud provider — scrub MUST be called.
     event = {"type": "reason", "prompt": "What is the weather?", "persona_tier": "open"}
     result = await guardian._handle_reason(event)
 
     assert result["content"] == "LLM says hello"
-    # For open persona, entity_vault.scrub is not called (no vault created).
-    # The scrubber.scrub should NOT have been called because persona_tier is open.
-    scrubber.scrub.assert_not_called()
+    # Scrubber called because cloud providers exist (data may leave node).
+    scrubber.scrub.assert_called_once()
 
 
 # ============================================================================

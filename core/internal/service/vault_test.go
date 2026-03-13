@@ -45,6 +45,8 @@ func (m *mockVaultManager) OpenPersonas() []domain.PersonaName {
 	return out
 }
 
+func (m *mockVaultManager) Checkpoint(_ domain.PersonaName) error { return nil }
+
 // mockVaultReader implements port.VaultReader for testing.
 type mockVaultReader struct {
 	items map[string]*domain.VaultItem // id -> item

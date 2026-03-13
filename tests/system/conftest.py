@@ -7,6 +7,7 @@ via Docker Compose. Seeds AppView Postgres with test data for trust queries.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import socket
 import subprocess
@@ -178,9 +179,31 @@ class SystemServices:
 
     def stop(self) -> None:
         if self._started:
+            self._save_llm_usage()
             print("\n  [system] Stopping system stack...")
             self._compose("down", "-v")
             print("  [system] Stack stopped.")
+
+    def _save_llm_usage(self) -> None:
+        """Collect LLM usage from Brain healthz before teardown."""
+        cost_dir = os.environ.get("DINA_LLM_COST_DIR")
+        if not cost_dir:
+            return
+        total = {"total_calls": 0, "total_tokens_in": 0, "total_tokens_out": 0, "total_cost_usd": 0.0}
+        for actor in ("alonso", "sancho"):
+            try:
+                r = httpx.get(f"{self.brain_url(actor)}/healthz", timeout=5)
+                usage = r.json().get("llm_usage", {})
+                total["total_calls"] += usage.get("total_calls", 0)
+                total["total_tokens_in"] += usage.get("total_tokens_in", 0)
+                total["total_tokens_out"] += usage.get("total_tokens_out", 0)
+                total["total_cost_usd"] += usage.get("total_cost_usd", 0.0)
+            except Exception:
+                pass
+        if total["total_calls"] > 0:
+            os.makedirs(cost_dir, exist_ok=True)
+            with open(os.path.join(cost_dir, "system.json"), "w") as f:
+                json.dump(total, f)
 
     def _compose(self, *args: str) -> subprocess.CompletedProcess:
         cmd = ["docker", "compose", "-f", str(COMPOSE_FILE)] + list(args)

@@ -252,6 +252,40 @@ func (m *ImportManager) VerifyArchive(archivePath, passphrase string) error {
 	return nil
 }
 
+// ValidateImport runs all pre-write validation: reads and decrypts the
+// archive, checks the force/existing-data guard, validates checksums,
+// validates path safety, and verifies identity.sqlite is present. It
+// does NOT write any files.
+//
+// MigrationService calls this before closing identity so that any
+// validation failure leaves identity still open (non-degraded).
+func (m *ImportManager) ValidateImport(_ context.Context, opts ImportOptions) error {
+	if opts.Passphrase == "" {
+		return errors.New("passphrase is required")
+	}
+
+	archive, err := os.ReadFile(opts.ArchivePath)
+	if err != nil {
+		return fmt.Errorf("archive not found: %w", err)
+	}
+
+	plaintext, err := decryptArchive(archive, opts.Passphrase)
+	if err != nil {
+		return fmt.Errorf("portability: validation failed: %w", err)
+	}
+
+	// Force/existing-data guard.
+	if m.vaultPath != "" && !opts.Force {
+		identityPath := filepath.Join(m.vaultPath, "identity.sqlite")
+		if _, err := os.Stat(identityPath); err == nil {
+			return errors.New("vault already populated — use --force to overwrite")
+		}
+	}
+
+	// Validate payload structure, checksums, path safety, identity.sqlite.
+	return validatePayload(plaintext, m.vaultPath)
+}
+
 // CheckCompatibility verifies the archive version is compatible.
 func (m *ImportManager) CheckCompatibility(archivePath string) error {
 	data, err := os.ReadFile(archivePath)
@@ -460,6 +494,50 @@ func collectExportData(vaultPath string) ([]byte, error) {
 	return json.Marshal(payload)
 }
 
+// validatePayload runs all non-destructive validation on the decrypted
+// archive payload: unmarshal, checksum verification, path safety, and
+// identity.sqlite presence check. Called by ValidateImport (before
+// closing identity) and again by restoreData (defense-in-depth).
+func validatePayload(plaintext []byte, vaultPath string) error {
+	if vaultPath == "" {
+		return errors.New("vault path is required for import")
+	}
+
+	var payload archivePayload
+	if err := json.Unmarshal(plaintext, &payload); err != nil {
+		return fmt.Errorf("unmarshal import data: %w", err)
+	}
+
+	// Validate checksums.
+	for name, content := range payload.Files {
+		expected, ok := payload.Manifest.Checksums[name]
+		if !ok {
+			return fmt.Errorf("missing checksum for file: %s", name)
+		}
+		if hexHash(content) != expected {
+			return fmt.Errorf("checksum mismatch for file: %s", name)
+		}
+	}
+
+	// Validate all entry names for path traversal.
+	absVault, err := filepath.Abs(vaultPath)
+	if err != nil {
+		return fmt.Errorf("resolve vault path: %w", err)
+	}
+	for name := range payload.Files {
+		if err := validateArchiveEntry(name, absVault); err != nil {
+			return err
+		}
+	}
+
+	// Require identity.sqlite.
+	if _, hasIdentity := payload.Files["identity.sqlite"]; !hasIdentity {
+		return errors.New("archive missing identity.sqlite — cannot restore")
+	}
+
+	return nil
+}
+
 // restoreData deserialises the decrypted JSON payload, validates checksums
 // and path safety, then writes vault files to the destination vault path.
 //
@@ -468,41 +546,16 @@ func collectExportData(vaultPath string) ([]byte, error) {
 // matching the live sqlite.Pool layout where persona DBs sit directly in
 // vaultPath as ${persona}.sqlite.
 func restoreData(plaintext []byte, vaultPath string) (*ImportResult, error) {
-	if vaultPath == "" {
-		return nil, errors.New("vault path is required for import")
+	// Re-validate as defense-in-depth (ValidateImport already ran these).
+	if err := validatePayload(plaintext, vaultPath); err != nil {
+		return nil, err
 	}
 
 	var payload archivePayload
-	if err := json.Unmarshal(plaintext, &payload); err != nil {
-		return nil, fmt.Errorf("unmarshal import data: %w", err)
-	}
+	// Unmarshal is safe to repeat — already validated above.
+	json.Unmarshal(plaintext, &payload) //nolint:errcheck
 
-	// Validate checksums.
-	for name, content := range payload.Files {
-		expected, ok := payload.Manifest.Checksums[name]
-		if !ok {
-			return nil, fmt.Errorf("missing checksum for file: %s", name)
-		}
-		if hexHash(content) != expected {
-			return nil, fmt.Errorf("checksum mismatch for file: %s", name)
-		}
-	}
-
-	// Validate all entry names for path traversal BEFORE writing anything.
-	absVault, err := filepath.Abs(vaultPath)
-	if err != nil {
-		return nil, fmt.Errorf("resolve vault path: %w", err)
-	}
-	for name := range payload.Files {
-		if err := validateArchiveEntry(name, absVault); err != nil {
-			return nil, err
-		}
-	}
-
-	// Require identity.sqlite.
-	if _, hasIdentity := payload.Files["identity.sqlite"]; !hasIdentity {
-		return nil, errors.New("archive missing identity.sqlite — cannot restore")
-	}
+	absVault, _ := filepath.Abs(vaultPath) //nolint:errcheck
 
 	// Ensure vault path exists.
 	if err := os.MkdirAll(vaultPath, 0700); err != nil {
@@ -513,6 +566,15 @@ func restoreData(plaintext []byte, vaultPath string) (*ImportResult, error) {
 	personaCount := 0
 	for name, content := range payload.Files {
 		destFile := filepath.Join(absVault, filepath.Clean(name))
+
+		// For SQLite files, remove stale WAL/SHM journal files before replacing.
+		// The running process may have these open in WAL mode; after we overwrite
+		// the main .sqlite file the old journals become incompatible and would
+		// corrupt the database on next open.
+		if filepath.Ext(name) == ".sqlite" {
+			os.Remove(destFile + "-wal")
+			os.Remove(destFile + "-shm")
+		}
 
 		if err := os.WriteFile(destFile, content, 0600); err != nil {
 			return nil, fmt.Errorf("write %s: %w", name, err)
@@ -525,9 +587,10 @@ func restoreData(plaintext []byte, vaultPath string) (*ImportResult, error) {
 	}
 
 	return &ImportResult{
-		FilesRestored:  len(payload.Files),
-		PersonaCount:   personaCount,
-		RequiresRepair: true, // devices must always be re-paired after import
+		FilesRestored:   len(payload.Files),
+		PersonaCount:    personaCount,
+		RequiresRepair:  true, // devices must always be re-paired after import
+		RequiresRestart: true, // identity DB was closed; process must restart
 	}, nil
 }
 
