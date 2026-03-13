@@ -19,7 +19,7 @@ import (
 // Trust Cache — In-Memory Operations
 // --------------------------------------------------------------------------
 
-func TestTrustCache_Upsert_And_Lookup(t *testing.T) {
+func TestGatekeeper_6_CacheUpsertAndLookup(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 
 	entry := domain.TrustEntry{
@@ -43,7 +43,7 @@ func TestTrustCache_Upsert_And_Lookup(t *testing.T) {
 	testutil.RequireTrue(t, got.Relationship == "contact", "relationship should match")
 }
 
-func TestTrustCache_Lookup_NotFound(t *testing.T) {
+func TestGatekeeper_6_CacheLookupNotFound(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 
 	got, err := cache.Lookup("did:plc:nonexistent")
@@ -51,7 +51,7 @@ func TestTrustCache_Lookup_NotFound(t *testing.T) {
 	testutil.RequireTrue(t, got == nil, "entry should be nil for unknown DID")
 }
 
-func TestTrustCache_List(t *testing.T) {
+func TestGatekeeper_6_CacheList(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 
 	entries := []domain.TrustEntry{
@@ -68,7 +68,7 @@ func TestTrustCache_List(t *testing.T) {
 	testutil.RequireTrue(t, len(list) == 3, "should have 3 entries")
 }
 
-func TestTrustCache_Remove(t *testing.T) {
+func TestGatekeeper_6_CacheRemove(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 
 	cache.Upsert(domain.TrustEntry{DID: "did:plc:remove_me", TrustScore: 0.5, TrustRing: 1, Relationship: "unknown", Source: "manual"})
@@ -80,7 +80,7 @@ func TestTrustCache_Remove(t *testing.T) {
 	testutil.RequireTrue(t, got == nil, "removed entry should not be found")
 }
 
-func TestTrustCache_Upsert_Overwrites(t *testing.T) {
+func TestGatekeeper_6_CacheUpsertOverwrites(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 
 	cache.Upsert(domain.TrustEntry{DID: "did:plc:update", TrustScore: 0.3, TrustRing: 1, Relationship: "unknown", Source: "manual"})
@@ -92,7 +92,7 @@ func TestTrustCache_Upsert_Overwrites(t *testing.T) {
 	testutil.RequireTrue(t, got.TrustRing == 3, "ring should be updated to 3")
 }
 
-func TestTrustCache_Stats(t *testing.T) {
+func TestGatekeeper_6_CacheStats(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 
 	cache.Upsert(domain.TrustEntry{DID: "did:plc:x", TrustScore: 0.5, TrustRing: 1, Relationship: "unknown", Source: "manual"})
@@ -116,7 +116,7 @@ func (m *mockContactLookup) GetTrustLevel(did string) string {
 	return m.contacts[did]
 }
 
-func TestTrustIngress_BlockedContact_Drop(t *testing.T) {
+func TestGatekeeper_6_IngressBlockedContactDrop(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 	contacts := &mockContactLookup{contacts: map[string]string{
 		"did:plc:bad_actor": "blocked",
@@ -127,7 +127,7 @@ func TestTrustIngress_BlockedContact_Drop(t *testing.T) {
 	testutil.RequireTrue(t, decision == domain.IngressDrop, "blocked contact should be dropped")
 }
 
-func TestTrustIngress_TrustedContact_Accept(t *testing.T) {
+func TestGatekeeper_6_IngressTrustedContactAccept(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 	contacts := &mockContactLookup{contacts: map[string]string{
 		"did:plc:friend": "trusted",
@@ -138,7 +138,7 @@ func TestTrustIngress_TrustedContact_Accept(t *testing.T) {
 	testutil.RequireTrue(t, decision == domain.IngressAccept, "trusted contact should be accepted")
 }
 
-func TestTrustIngress_VerifiedContact_Accept(t *testing.T) {
+func TestGatekeeper_6_IngressVerifiedContactAccept(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 	contacts := &mockContactLookup{contacts: map[string]string{
 		"did:plc:verified_user": "verified",
@@ -149,7 +149,7 @@ func TestTrustIngress_VerifiedContact_Accept(t *testing.T) {
 	testutil.RequireTrue(t, decision == domain.IngressAccept, "verified contact should be accepted")
 }
 
-func TestTrustIngress_HighScoreCache_Accept(t *testing.T) {
+func TestGatekeeper_6_IngressHighScoreCacheAccept(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 	cache.Upsert(domain.TrustEntry{
 		DID: "did:plc:cached_good", TrustScore: 0.7, TrustRing: 2,
@@ -162,7 +162,7 @@ func TestTrustIngress_HighScoreCache_Accept(t *testing.T) {
 	testutil.RequireTrue(t, decision == domain.IngressAccept, "high-score cached DID should be accepted")
 }
 
-func TestTrustIngress_LowScoreCache_Quarantine(t *testing.T) {
+func TestGatekeeper_6_IngressLowScoreCacheQuarantine(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 	cache.Upsert(domain.TrustEntry{
 		DID: "did:plc:cached_bad", TrustScore: 0.1, TrustRing: 1,
@@ -175,7 +175,7 @@ func TestTrustIngress_LowScoreCache_Quarantine(t *testing.T) {
 	testutil.RequireTrue(t, decision == domain.IngressQuarantine, "low-score cached DID should be quarantined")
 }
 
-func TestTrustIngress_UnknownDID_Quarantine(t *testing.T) {
+func TestGatekeeper_6_IngressUnknownDIDQuarantine(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 	contacts := &mockContactLookup{contacts: map[string]string{}}
 	svc := service.NewTrustService(cache, trustadapter.NewResolver(""), contacts)
@@ -184,7 +184,7 @@ func TestTrustIngress_UnknownDID_Quarantine(t *testing.T) {
 	testutil.RequireTrue(t, decision == domain.IngressQuarantine, "unknown DID should be quarantined")
 }
 
-func TestTrustIngress_EmptyDID_Quarantine(t *testing.T) {
+func TestGatekeeper_6_IngressEmptyDIDQuarantine(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 	contacts := &mockContactLookup{contacts: map[string]string{}}
 	svc := service.NewTrustService(cache, trustadapter.NewResolver(""), contacts)
@@ -193,7 +193,7 @@ func TestTrustIngress_EmptyDID_Quarantine(t *testing.T) {
 	testutil.RequireTrue(t, decision == domain.IngressQuarantine, "empty DID should be quarantined")
 }
 
-func TestTrustIngress_BoundaryScore_Accept(t *testing.T) {
+func TestGatekeeper_6_IngressBoundaryScoreAccept(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 	cache.Upsert(domain.TrustEntry{
 		DID: "did:plc:boundary", TrustScore: 0.3, TrustRing: 1,
@@ -206,7 +206,7 @@ func TestTrustIngress_BoundaryScore_Accept(t *testing.T) {
 	testutil.RequireTrue(t, decision == domain.IngressAccept, "score exactly 0.3 should be accepted")
 }
 
-func TestTrustIngress_JustBelowBoundary_Quarantine(t *testing.T) {
+func TestGatekeeper_6_IngressJustBelowBoundaryQuarantine(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 	cache.Upsert(domain.TrustEntry{
 		DID: "did:plc:just_below", TrustScore: 0.29, TrustRing: 1,
@@ -223,7 +223,7 @@ func TestTrustIngress_JustBelowBoundary_Quarantine(t *testing.T) {
 // Trust Service — Contact Takes Priority Over Cache
 // --------------------------------------------------------------------------
 
-func TestTrustIngress_BlockedOverridesCache(t *testing.T) {
+func TestGatekeeper_6_IngressBlockedOverridesCache(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 	// DID has high trust in cache but is blocked in contacts
 	cache.Upsert(domain.TrustEntry{
@@ -239,7 +239,7 @@ func TestTrustIngress_BlockedOverridesCache(t *testing.T) {
 	testutil.RequireTrue(t, decision == domain.IngressDrop, "blocked contact overrides high cache score")
 }
 
-func TestTrustIngress_TrustedOverridesLowCache(t *testing.T) {
+func TestGatekeeper_6_IngressTrustedOverridesLowCache(t *testing.T) {
 	cache := trustadapter.NewInMemoryCache()
 	// DID has low trust in cache but is trusted in contacts
 	cache.Upsert(domain.TrustEntry{
@@ -259,7 +259,7 @@ func TestTrustIngress_TrustedOverridesLowCache(t *testing.T) {
 // Trust Resolver — Empty AppView URL
 // --------------------------------------------------------------------------
 
-func TestTrustResolver_NoAppView_ReturnsNil(t *testing.T) {
+func TestGatekeeper_6_ResolverNoAppViewReturnsNil(t *testing.T) {
 	resolver := trustadapter.NewResolver("")
 
 	profile, err := resolver.ResolveProfile("did:plc:test")
@@ -275,7 +275,7 @@ func TestTrustResolver_NoAppView_ReturnsNil(t *testing.T) {
 // Trust Domain Types — Validation
 // --------------------------------------------------------------------------
 
-func TestTrustDomain_ValidRings(t *testing.T) {
+func TestGatekeeper_6_DomainValidRings(t *testing.T) {
 	testutil.RequireTrue(t, domain.ValidTrustRings[1], "ring 1 should be valid")
 	testutil.RequireTrue(t, domain.ValidTrustRings[2], "ring 2 should be valid")
 	testutil.RequireTrue(t, domain.ValidTrustRings[3], "ring 3 should be valid")
@@ -283,7 +283,7 @@ func TestTrustDomain_ValidRings(t *testing.T) {
 	testutil.RequireTrue(t, !domain.ValidTrustRings[4], "ring 4 should be invalid")
 }
 
-func TestTrustDomain_ValidRelationships(t *testing.T) {
+func TestGatekeeper_6_DomainValidRelationships(t *testing.T) {
 	testutil.RequireTrue(t, domain.ValidRelationships["contact"], "contact should be valid")
 	testutil.RequireTrue(t, domain.ValidRelationships["frequent"], "frequent should be valid")
 	testutil.RequireTrue(t, domain.ValidRelationships["1-hop"], "1-hop should be valid")
@@ -292,7 +292,7 @@ func TestTrustDomain_ValidRelationships(t *testing.T) {
 	testutil.RequireTrue(t, !domain.ValidRelationships["friend"], "friend should be invalid")
 }
 
-func TestTrustDomain_IngressDecisionConstants(t *testing.T) {
+func TestGatekeeper_6_DomainIngressDecisionConstants(t *testing.T) {
 	testutil.RequireTrue(t, domain.IngressAccept == "accept", "IngressAccept should be 'accept'")
 	testutil.RequireTrue(t, domain.IngressQuarantine == "quarantine", "IngressQuarantine should be 'quarantine'")
 	testutil.RequireTrue(t, domain.IngressDrop == "drop", "IngressDrop should be 'drop'")

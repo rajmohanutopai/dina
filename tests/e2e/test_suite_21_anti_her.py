@@ -37,18 +37,6 @@ class TestAntiHer:
     """
 
     # TST-E2E-111
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "TST-E2E-111 (Phase 2): No neglected contact detection in "
-            "the full stack.  Brain process_event() (guardian.py:305-424) "
-            "has no 'contact_neglect' handler.  generate_briefing() "
-            "(guardian.py:534-615) does not scan vault for contacts with "
-            "stale last_interaction.  Core has no scheduled job to trigger "
-            "periodic contact neglect checks.  The entire relationship "
-            "maintenance pipeline is unimplemented."
-        ),
-    )
     def test_neglected_contact_nudge_in_daily_briefing(
         self,
         don_alonso: HomeNode,
@@ -201,14 +189,13 @@ class TestAntiHer:
     @pytest.mark.xfail(
         strict=True,
         reason=(
-            "TST-E2E-112 (Phase 2): No life event detection in the full "
-            "stack.  Brain has no _detect_life_events() method in nudge.py. "
-            "process_event() (guardian.py:305-424) has no semantic analysis "
-            "of D2D message content for life events (illness, death, job "
-            "loss, etc.).  generate_briefing() (guardian.py:534-615) does "
-            "not scan vault for unaddressed life event follow-ups.  No "
-            "scheduler triggers periodic life event follow-up checks.  "
-            "The entire life-event-to-nudge pipeline is unimplemented."
+            "TST-E2E-112 (Phase 2): Life event detection pipeline is "
+            "unimplemented.  No _detect_life_events() method exists.  "
+            "Brain does not semantically analyze D2D message content "
+            "for life events (illness, death, job change).  No "
+            "generate_briefing() scan for unaddressed life event "
+            "follow-ups.  Contact neglect and promise scanning exist "
+            "but life event detection requires NLU over message history."
         ),
     )
     def test_life_event_follow_up_nudge(
@@ -389,16 +376,13 @@ class TestAntiHer:
     @pytest.mark.xfail(
         strict=True,
         reason=(
-            "TST-E2E-115 (Phase 2): No social isolation detection in the "
-            "full stack.  Brain has no _detect_social_isolation() method.  "
-            "process_event() (guardian.py:305-424) has no "
-            "'social_isolation_check' handler.  generate_briefing() "
-            "(guardian.py:534-615) does not analyze the ratio of brain "
-            "interactions to outbound D2D messages over a sliding window.  "
-            "nudge.py has no isolation-specific nudge assembly.  Core has "
-            "no scheduled job to periodically scan for isolation patterns.  "
-            "The entire 'Her' detection pipeline (decreasing human contact "
-            "+ increasing Dina interaction = isolation warning) is "
+            "TST-E2E-115 (Phase 2): Social isolation detection pipeline "
+            "is unimplemented.  No _detect_social_isolation() method "
+            "exists.  Brain does not analyze the ratio of Dina "
+            "interactions vs outbound D2D messages over a sliding "
+            "window.  No isolation-specific nudge assembly.  The 'Her' "
+            "detection pattern (decreasing human contact + increasing "
+            "Dina usage = isolation warning) requires longitudinal "
             "unimplemented."
         ),
     )
@@ -741,22 +725,6 @@ class TestAntiHer:
         )
 
     # TST-E2E-113
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "TST-E2E-113 (Phase 2): Promise accountability is not wired "
-            "into the daily briefing pipeline.  nudge.py has "
-            "_PROMISE_PATTERNS (line 55) and _detect_promises() "
-            "(line 332) for conversation-context injection, but "
-            "generate_briefing() (guardian.py:534-615) never scans the "
-            "vault for unfulfilled promises.  process_event() "
-            "(guardian.py:305-424) has no 'promise_check' handler.  "
-            "No scheduled job to trigger periodic promise accountability "
-            "checks.  Promise freshness tracking (timestamp, time delta) "
-            "is not extracted by _detect_promises().  The daily briefing "
-            "promise reminder pipeline is unimplemented."
-        ),
-    )
     def test_promise_accountability(
         self,
         don_alonso: HomeNode,
@@ -1032,19 +1000,12 @@ class TestAntiHer:
     @pytest.mark.xfail(
         strict=True,
         reason=(
-            "TST-E2E-114 (Phase 2): No emotional dependency detection "
-            "in the full stack.  Brain has no _detect_emotional_dependency() "
-            "method in nudge.py or guardian.py.  process_event() "
-            "(guardian.py:305-424) has no 'emotional_dependency_check' "
-            "handler.  generate_briefing() (guardian.py:534-615) does "
-            "not detect multi-session emotional message patterns.  "
-            "nudge.py has no escalation-level response assembly "
-            "(generic → specific contact → firm boundary).  No "
-            "scheduled job to scan for emotional dependency patterns.  "
-            "The entire emotional dependency escalation pipeline "
-            "(cross-session tracking, specific contact suggestion, "
-            "positive reinforcement on human reconnection) is "
-            "unimplemented."
+            "TST-E2E-114 (Phase 2): Emotional dependency detection "
+            "pipeline is unimplemented.  No _detect_emotional_dependency() "
+            "method exists.  Brain does not detect multi-session "
+            "emotional message patterns or escalate response levels "
+            "(generic → specific contact → firm boundary).  Requires "
+            "cross-session vault scanning and escalation state tracking."
         ),
     )
     def test_emotional_dependency_escalation(

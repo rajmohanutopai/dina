@@ -30,7 +30,7 @@ COMPOSE_FILE = PROJECT_ROOT / "docker-compose-system.yml"
 SECRETS_DIR = PROJECT_ROOT / "secrets"
 
 HEALTH_TIMEOUT = 240  # seconds
-HEALTH_INTERVAL = 3   # seconds
+HEALTH_INTERVAL = 0.5  # seconds
 
 # Default port base — overridable by shell via PORT_* env vars.
 _DEFAULT_PORT_BASE = 19300
@@ -155,7 +155,8 @@ class SystemServices:
                 f"  [system] Starting system stack "
                 f"(ports {base}+, attempt {attempt + 1})..."
             )
-            result = self._compose("up", "--build", "-d")
+            up_args = ["up", "-d"] if os.environ.get("DINA_SKIP_DOCKER_BUILD") == "1" else ["up", "--build", "-d"]
+            result = self._compose(*up_args)
             if result.returncode == 0:
                 break
 
@@ -206,7 +207,10 @@ class SystemServices:
                 json.dump(total, f)
 
     def _compose(self, *args: str) -> subprocess.CompletedProcess:
-        cmd = ["docker", "compose", "-f", str(COMPOSE_FILE)] + list(args)
+        # Use COMPOSE_PROJECT_NAME from env (set by run_user_story_tests.sh)
+        # or fall back to "dina-system" for isolation from other stacks.
+        project = os.environ.get("COMPOSE_PROJECT_NAME", "dina-system")
+        cmd = ["docker", "compose", "-p", project, "-f", str(COMPOSE_FILE)] + list(args)
         return subprocess.run(
             cmd,
             capture_output=True,
@@ -216,7 +220,9 @@ class SystemServices:
         )
 
     def _all_healthy(self) -> bool:
-        """Quick probe of all service endpoints."""
+        """Quick probe of all service endpoints in parallel."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
         checks = [
             (self.core_url("alonso") + "/healthz", "core-alonso"),
             (self.core_url("sancho") + "/healthz", "core-sancho"),
@@ -226,22 +232,21 @@ class SystemServices:
             (self.plc_url + "/healthz", "plc"),
             (self.pds_url + "/xrpc/_health", "pds"),
         ]
-        for url, label in checks:
+
+        def _http_ok(url: str) -> bool:
             try:
                 r = httpx.get(url, timeout=3)
-                if r.status_code != 200:
-                    return False
+                return r.status_code == 200
             except Exception:
                 return False
 
-        # TCP probe for postgres
-        if not self._tcp_probe("localhost", PORTS["postgres"]):
-            return False
-
-        # TCP probe for jetstream (WebSocket server, no HTTP health endpoint)
-        if not self._tcp_probe("localhost", PORTS["jetstream"]):
-            return False
-
+        with ThreadPoolExecutor(max_workers=len(checks) + 2) as pool:
+            futures = {pool.submit(_http_ok, url): label for url, label in checks}
+            futures[pool.submit(self._tcp_probe, "localhost", PORTS["postgres"])] = "postgres"
+            futures[pool.submit(self._tcp_probe, "localhost", PORTS["jetstream"])] = "jetstream"
+            for fut in as_completed(futures):
+                if not fut.result():
+                    return False
         return True
 
     def _tcp_probe(self, host: str, port: int) -> bool:

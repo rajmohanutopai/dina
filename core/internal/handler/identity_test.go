@@ -85,7 +85,7 @@ func buildDIDDocument(pubKey ed25519.PublicKey) []byte {
 
 // TestHandleVerify_ValidSignature generates an Ed25519 keypair, signs data,
 // and verifies that HandleVerify returns valid=true.
-func TestHandleVerify_ValidSignature(t *testing.T) {
+func TestIdentity_3_HandleVerifyValidSignature(t *testing.T) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("GenerateKey: %v", err)
@@ -134,7 +134,7 @@ func TestHandleVerify_ValidSignature(t *testing.T) {
 
 // TestHandleVerify_TamperedSignature verifies that a tampered signature
 // returns valid=false.
-func TestHandleVerify_TamperedSignature(t *testing.T) {
+func TestIdentity_3_HandleVerifyTamperedSignature(t *testing.T) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("GenerateKey: %v", err)
@@ -185,7 +185,7 @@ func TestHandleVerify_TamperedSignature(t *testing.T) {
 
 // TestHandleVerify_WrongData verifies that signing one message but verifying
 // against different data returns valid=false.
-func TestHandleVerify_WrongData(t *testing.T) {
+func TestIdentity_3_HandleVerifyWrongData(t *testing.T) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("GenerateKey: %v", err)
@@ -234,7 +234,7 @@ func TestHandleVerify_WrongData(t *testing.T) {
 
 // TestHandleVerify_NoVerificationMethod verifies that a DID document with
 // no verification methods returns an error.
-func TestHandleVerify_NoVerificationMethod(t *testing.T) {
+func TestIdentity_3_HandleVerifyNoVerificationMethod(t *testing.T) {
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("GenerateKey: %v", err)
@@ -275,7 +275,7 @@ func TestHandleVerify_NoVerificationMethod(t *testing.T) {
 
 // TestHandleVerify_InvalidMultibasePrefix verifies that a DID document
 // with a non-'z' multibase prefix returns an error.
-func TestHandleVerify_InvalidMultibasePrefix(t *testing.T) {
+func TestIdentity_3_HandleVerifyInvalidMultibasePrefix(t *testing.T) {
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("GenerateKey: %v", err)
@@ -324,7 +324,7 @@ func TestHandleVerify_InvalidMultibasePrefix(t *testing.T) {
 
 // TestHandleVerify_InvalidMulticodecPrefix verifies that a DID document
 // with wrong multicodec prefix bytes returns an error.
-func TestHandleVerify_InvalidMulticodecPrefix(t *testing.T) {
+func TestIdentity_3_HandleVerifyInvalidMulticodecPrefix(t *testing.T) {
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("GenerateKey: %v", err)
@@ -376,7 +376,7 @@ func TestHandleVerify_InvalidMulticodecPrefix(t *testing.T) {
 
 // TestHandleVerify_InvalidDID verifies that an invalid DID string returns
 // a 400 error.
-func TestHandleVerify_InvalidDID(t *testing.T) {
+func TestIdentity_3_HandleVerifyInvalidDID(t *testing.T) {
 	_, priv, _ := ed25519.GenerateKey(rand.Reader)
 
 	ms := &mockSigner{privKey: priv}

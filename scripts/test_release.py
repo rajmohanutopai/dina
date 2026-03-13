@@ -560,8 +560,11 @@ def parse_args(argv: list[str]) -> dict:
 COMPOSE_FILE = PROJECT_ROOT / "docker-compose-release.yml"
 
 
+_RELEASE_PROJECT = "dina-release"
+
+
 def _docker_compose_cmd(*args: str) -> list[str]:
-    return ["docker", "compose", "-f", str(COMPOSE_FILE), *args]
+    return ["docker", "compose", "-p", _RELEASE_PROJECT, "-f", str(COMPOSE_FILE), *args]
 
 
 def start_release_stack(c: Colors | None = None) -> bool:
@@ -572,27 +575,34 @@ def start_release_stack(c: Colors | None = None) -> bool:
         return False
 
     log = c.dim if c else lambda x: x
+    reuse = os.environ.get("DINA_REUSE_DOCKER") == "1"
 
-    # Always tear down first to avoid stale code/containers
-    print(log("Tearing down existing release stack..."), file=sys.stderr, flush=True)
-    try:
-        subprocess.run(
-            _docker_compose_cmd("down", "-v", "--remove-orphans"),
+    # Tear down first to avoid stale code/containers — skip if orchestrator
+    # (run_all_tests.sh) manages the lifecycle via DINA_REUSE_DOCKER.
+    if not reuse:
+        print(log("Tearing down existing release stack..."), file=sys.stderr, flush=True)
+        try:
+            subprocess.run(
+                _docker_compose_cmd("down", "-v", "--remove-orphans"),
+                capture_output=True, text=True,
+                cwd=str(PROJECT_ROOT), timeout=120,
+            )
+        except subprocess.TimeoutExpired:
+            print("WARNING: Teardown timed out, continuing...", file=sys.stderr)
+
+    # Skip build if images were pre-built by the orchestrator.
+    if os.environ.get("DINA_SKIP_DOCKER_BUILD") == "1":
+        print(log("Using pre-built images (DINA_SKIP_DOCKER_BUILD=1)"), file=sys.stderr, flush=True)
+    else:
+        print(log("Building release stack..."), file=sys.stderr, flush=True)
+        result = subprocess.run(
+            _docker_compose_cmd("build", "--no-cache"),
             capture_output=True, text=True,
-            cwd=str(PROJECT_ROOT), timeout=120,
+            cwd=str(PROJECT_ROOT), timeout=600,
         )
-    except subprocess.TimeoutExpired:
-        print("WARNING: Teardown timed out, continuing...", file=sys.stderr)
-
-    print(log("Building release stack..."), file=sys.stderr, flush=True)
-    result = subprocess.run(
-        _docker_compose_cmd("build", "--no-cache"),
-        capture_output=True, text=True,
-        cwd=str(PROJECT_ROOT), timeout=600,
-    )
-    if result.returncode != 0:
-        print(f"ERROR: Docker build failed:\n{result.stderr[-500:]}", file=sys.stderr)
-        return False
+        if result.returncode != 0:
+            print(f"ERROR: Docker build failed:\n{result.stderr[-500:]}", file=sys.stderr)
+            return False
 
     print(log("Starting release stack..."), file=sys.stderr, flush=True)
     result = subprocess.run(
@@ -618,14 +628,19 @@ def start_release_stack(c: Colors | None = None) -> bool:
                 return True
         except Exception:
             pass
-        _time.sleep(2)
+        _time.sleep(0.3)
 
     print("ERROR: Core did not become healthy within 120s", file=sys.stderr)
     return False
 
 
 def stop_release_stack() -> None:
-    """Stop and remove the release Docker stack."""
+    """Stop and remove the release Docker stack.
+
+    Skipped when DINA_REUSE_DOCKER=1 (orchestrator manages lifecycle).
+    """
+    if os.environ.get("DINA_REUSE_DOCKER") == "1":
+        return
     try:
         subprocess.run(
             _docker_compose_cmd("down", "-v", "--remove-orphans"),

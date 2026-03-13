@@ -205,7 +205,7 @@ func wrapEnvelope(t *testing.T, msg domain.DinaMessage) []byte {
 // ProcessInbound/StoreInbound on the TransportService. Before the fix,
 // the handler called both IngressRouter.Ingest AND Transport.ProcessInbound,
 // creating duplicate messages when the vault was unlocked.
-func TestHandleIngestNaCl_IngressRouter_NoDuplicate(t *testing.T) {
+func TestTransport_7_IngestNaClIngressRouterNoDuplicate(t *testing.T) {
 	inbox := &stubInboxManager{}
 	ts := newTestTransportService(inbox)
 
@@ -258,7 +258,7 @@ func TestHandleIngestNaCl_IngressRouter_NoDuplicate(t *testing.T) {
 
 // TestHandleIngestNaCl_NoIngressRouter_DirectPath verifies that without an
 // IngressRouter, the fallback direct path still works (ProcessInbound is called).
-func TestHandleIngestNaCl_NoIngressRouter_DirectPath(t *testing.T) {
+func TestTransport_7_IngestNaClNoIngressRouterDirectPath(t *testing.T) {
 	inbox := &stubInboxManager{}
 	ts := newTestTransportService(inbox)
 
@@ -293,7 +293,7 @@ func TestHandleIngestNaCl_NoIngressRouter_DirectPath(t *testing.T) {
 }
 
 // TestHandleIngestNaCl_EmptyBody verifies that an empty body returns 400.
-func TestHandleIngestNaCl_EmptyBody(t *testing.T) {
+func TestTransport_7_IngestNaClEmptyBody(t *testing.T) {
 	ts := newTestTransportService(&stubInboxManager{})
 	h := &MessageHandler{Transport: ts}
 
@@ -310,7 +310,7 @@ func TestHandleIngestNaCl_EmptyBody(t *testing.T) {
 // TestHandleIngestNaCl_IngressRouter_LockedVault verifies that when the vault
 // is locked, messages go to the dead drop (not the inbox spool) and there is
 // no duplicate processing.
-func TestHandleIngestNaCl_IngressRouter_LockedVault(t *testing.T) {
+func TestTransport_7_IngestNaClIngressRouterLockedVault(t *testing.T) {
 	inbox := &stubInboxManager{}
 	ts := newTestTransportService(inbox)
 
@@ -359,7 +359,7 @@ func TestHandleIngestNaCl_IngressRouter_LockedVault(t *testing.T) {
 
 // TestProcessPending_EmptySpoolAndDeadDrop verifies that ProcessPending
 // returns zero and no error when both the dead drop and inbox spool are empty.
-func TestProcessPending_EmptySpoolAndDeadDrop(t *testing.T) {
+func TestTransport_7_ProcessPendingEmptySpoolAndDeadDrop(t *testing.T) {
 	inbox := &stubInboxManager{}
 	tmpDir := t.TempDir()
 	dd := ingress.NewDeadDrop(tmpDir, 100, 10*1024*1024)
@@ -382,7 +382,7 @@ func TestProcessPending_EmptySpoolAndDeadDrop(t *testing.T) {
 // decryption, but json.Unmarshal will fail on non-JSON data so the blobs
 // are consumed (removed) but not delivered. The key assertion is that blobs
 // are cleared from the spool after the sweep.
-func TestProcessPending_SweepsDeadDrop(t *testing.T) {
+func TestTransport_7_ProcessPendingSweepsDeadDrop(t *testing.T) {
 	inbox := &stubInboxManager{}
 	ts := newTestTransportService(inbox)
 	tmpDir := t.TempDir()

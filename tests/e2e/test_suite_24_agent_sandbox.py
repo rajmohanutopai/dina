@@ -37,27 +37,6 @@ class TestAgentSandbox:
     """
 
     # TST-E2E-124
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "TST-E2E-124 (Phase 2): Agent-to-persona access control is "
-            "not enforced end-to-end.  Brain review_intent() "
-            "(guardian.py:454-528) classifies risk by action type but "
-            "does not check target persona access tier.  Core gatekeeper "
-            "enforces persona tiers on direct vault queries but the "
-            "agent intent pipeline does not propagate persona-tier "
-            "information to the risk classifier.  An untrusted agent "
-            "(trust score 12) submitting an intent to read the health "
-            "persona is blocked by action='read_vault' being in "
-            "_BLOCKED_ACTIONS, but the denial reason does not reference "
-            "persona tier.  No briefing notification is generated for "
-            "blocked agent access attempts.  The audit trail logs "
-            "agent_did and action but not the target persona or denial "
-            "reason.  The full agent-persona-tier enforcement pipeline "
-            "(intent → gatekeeper → deny → audit with reason → briefing "
-            "notification) is not wired together."
-        ),
-    )
     def test_malicious_agent_cannot_access_health_persona(
         self,
         don_alonso: HomeNode,
@@ -347,24 +326,6 @@ class TestAgentSandbox:
         )
 
     # TST-E2E-125
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "TST-E2E-125 (Phase 2): Agent revocation immediate effect "
-            "is not testable end-to-end in the mock E2E framework.  "
-            "Core's tokenValidator (auth.go:126-133) sets dpk.revoked "
-            "in-memory and VerifySignature() (auth.go:247-338) checks "
-            "it before forwarding, but this is Go-internal state not "
-            "exposed to the Python E2E layer.  HomeNode.verify_agent_"
-            "intent() (actors.py:731-761) classifies risk by action "
-            "type but has no revocation state or revoked_agents set.  "
-            "No HomeNode.revoke_agent() method exists.  No HomeNode "
-            "mechanism to reject intents from revoked agents.  The "
-            "full revocation lifecycle (baseline → revoke → immediate "
-            "reject → no stale cache) requires Core's auth middleware "
-            "which is not wired into the mock HomeNode."
-        ),
-    )
     def test_agent_revocation_takes_immediate_effect(
         self,
         don_alonso: HomeNode,
@@ -609,26 +570,6 @@ class TestAgentSandbox:
         )
 
     # TST-E2E-126
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "TST-E2E-126 (Phase 2): Agent D2D impersonation prevention "
-            "is not testable end-to-end in the mock E2E framework.  "
-            "Core's HandleSend() (message.go:35-76) has no from_did "
-            "field in sendRequest — sender is always set to the home "
-            "node's senderDID by TransportService.SendMessage() "
-            "(transport.go:143-146).  Core's HandleValidate() "
-            "(agent.go:73-89) overrides caller-supplied agent_did with "
-            "the authenticated identity.  However, the mock HomeNode "
-            "send_d2d() (actors.py:477-541) always uses self.did as "
-            "from_did with no agent delegation path.  No E2E mechanism "
-            "exists for an agent to attempt a D2D send with a forged "
-            "from_did.  The security boundary (Ed25519 signature over "
-            "plaintext including from field, receiver verification "
-            "against sender's DID document public key) is enforced in "
-            "Go Core but not exposed to the Python E2E layer."
-        ),
-    )
     def test_agent_cannot_impersonate_user_in_d2d(
         self,
         don_alonso: HomeNode,

@@ -232,7 +232,7 @@ func newTestTransportService(outbox *mockOutboxManager, deliverer *mockDeliverer
 // Tests: Outbox Retry Logic (Fix 3)
 // ---------------------------------------------------------------------------
 
-func TestProcessOutbox_FailedMessageRetriedAfterBackoff(t *testing.T) {
+func TestTask_8_OutboxFailedMessageRetriedAfterBackoff(t *testing.T) {
 	// A failed message whose NextRetry has elapsed should be picked up
 	// by ProcessOutbox and retried (delivered successfully).
 	outbox := newMockOutboxManager()
@@ -282,7 +282,7 @@ func TestProcessOutbox_FailedMessageRetriedAfterBackoff(t *testing.T) {
 	}
 }
 
-func TestProcessOutbox_MaxRetriesSkipped(t *testing.T) {
+func TestTask_8_OutboxMaxRetriesSkipped(t *testing.T) {
 	// A message with Retries >= 5 should be skipped (dead-letter).
 	outbox := newMockOutboxManager()
 	resolver := newMockDIDResolver()
@@ -339,7 +339,7 @@ func TestProcessOutbox_MaxRetriesSkipped(t *testing.T) {
 	}
 }
 
-func TestProcessOutbox_SuccessfulRetryMarksDelivered(t *testing.T) {
+func TestTask_8_OutboxSuccessfulRetryMarksDelivered(t *testing.T) {
 	// A failed message that is successfully retried should be marked as delivered.
 	outbox := newMockOutboxManager()
 	resolver := newMockDIDResolver()
@@ -387,7 +387,7 @@ func TestProcessOutbox_SuccessfulRetryMarksDelivered(t *testing.T) {
 	}
 }
 
-func TestProcessOutbox_RetryCountIncrementsOnFailure(t *testing.T) {
+func TestTask_8_OutboxRetryCountIncrementsOnFailure(t *testing.T) {
 	// When a retry fails, the retry count should increment.
 	outbox := newMockOutboxManager()
 	resolver := newMockDIDResolver()
@@ -438,7 +438,7 @@ func TestProcessOutbox_RetryCountIncrementsOnFailure(t *testing.T) {
 	}
 }
 
-func TestProcessOutbox_MessagesAboveMaxRetriesNeverDelivered(t *testing.T) {
+func TestTask_8_OutboxMessagesAboveMaxRetriesNeverDelivered(t *testing.T) {
 	// Messages with retries 5, 6, 10 should all be skipped.
 	outbox := newMockOutboxManager()
 	resolver := newMockDIDResolver()
@@ -485,7 +485,7 @@ func TestProcessOutbox_MessagesAboveMaxRetriesNeverDelivered(t *testing.T) {
 	}
 }
 
-func TestProcessOutbox_RetryBelowMaxIsProcessed(t *testing.T) {
+func TestTask_8_OutboxRetryBelowMaxIsProcessed(t *testing.T) {
 	// Messages with retries < 5 should be processed (attempted).
 	outbox := newMockOutboxManager()
 	resolver := newMockDIDResolver()

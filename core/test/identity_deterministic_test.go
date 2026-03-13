@@ -26,7 +26,7 @@ import (
 // --------------------------------------------------------------------------
 
 // TST-CORE-1106
-func TestDeterministicIdentity_CorruptMetadataFailsClosed(t *testing.T) {
+func TestIdentity_3_DeterministicCorruptMetadataFailsClosed(t *testing.T) {
 	// Write corrupt JSON to identity metadata file, attempt to load,
 	// expect error (not silent generation).
 	dir := testutil.TempDir(t)
@@ -52,7 +52,7 @@ func TestDeterministicIdentity_CorruptMetadataFailsClosed(t *testing.T) {
 }
 
 // TST-CORE-1107
-func TestDeterministicIdentity_GenerationPersistsAcrossRestart(t *testing.T) {
+func TestIdentity_3_DeterministicGenerationPersistsAcrossRestart(t *testing.T) {
 	// Derive a key at generation N, persist to temp dir, reload,
 	// verify same generation is recovered.
 	dir := testutil.TempDir(t)
@@ -83,7 +83,7 @@ func TestDeterministicIdentity_GenerationPersistsAcrossRestart(t *testing.T) {
 }
 
 // TST-CORE-1108
-func TestDeterministicIdentity_RejectsNonNextGeneration(t *testing.T) {
+func TestIdentity_3_DeterministicRejectsNonNextGeneration(t *testing.T) {
 	// Attempt rotation with a key that doesn't match next generation,
 	// expect error.
 	dir := testutil.TempDir(t)
@@ -121,7 +121,7 @@ func TestDeterministicIdentity_RejectsNonNextGeneration(t *testing.T) {
 }
 
 // TST-CORE-1109
-func TestDeterministicIdentity_PLCBranchIsolated(t *testing.T) {
+func TestIdentity_3_DeterministicPLCBranchIsolated(t *testing.T) {
 	// Derive keys from PLC branch, persona branch, service branch using
 	// SLIP-0010, verify no collision (all 32-byte outputs differ).
 	deriver := dinacrypto.NewSLIP0010Deriver()
@@ -180,7 +180,7 @@ func TestDeterministicIdentity_PLCBranchIsolated(t *testing.T) {
 // (JSON metadata persistence), and validates the security invariant that
 // old keys are rejected after rotation. The test does not check implementation
 // details; it validates observable behavior against the specification.
-func TestDeterministicIdentity_KeyRotationWithPersistenceRestart(t *testing.T) {
+func TestIdentity_3_DeterministicKeyRotationWithPersistenceRestart(t *testing.T) {
 	dir := testutil.TempDir(t)
 	deriver := dinacrypto.NewSLIP0010Deriver()
 	keyDeriver := dinacrypto.NewKeyDeriver(deriver)
@@ -415,7 +415,7 @@ func TestDeterministicIdentity_KeyRotationWithPersistenceRestart(t *testing.T) {
 var vectorSecurityImpl interface{} = nil
 
 // TST-CORE-1110
-func TestVectorSecurity_UnlockHydratesHNSW(t *testing.T) {
+func TestSecurity_17_VectorUnlockHydratesHNSW(t *testing.T) {
 	// Unlock persona, verify search returns results (index was hydrated).
 	// Use mock vault with stored embeddings.
 	impl := vectorSecurityImpl
@@ -430,7 +430,7 @@ func TestVectorSecurity_UnlockHydratesHNSW(t *testing.T) {
 }
 
 // TST-CORE-1111
-func TestVectorSecurity_LockDestroysIndex(t *testing.T) {
+func TestSecurity_17_VectorLockDestroysIndex(t *testing.T) {
 	// Unlock, verify search works, lock, verify search fails/empty.
 	impl := vectorSecurityImpl
 	testutil.RequireImplementation(t, impl, "VectorSecurity")
@@ -444,7 +444,7 @@ func TestVectorSecurity_LockDestroysIndex(t *testing.T) {
 }
 
 // TST-CORE-1112
-func TestVectorSecurity_NoPlaintextVectorFiles(t *testing.T) {
+func TestSecurity_17_VectorNoPlaintextFiles(t *testing.T) {
 	// After indexing, scan temp dir for .bin/.idx/.hnswlib files, assert
 	// none found.
 	impl := vectorSecurityImpl
@@ -462,7 +462,7 @@ func TestVectorSecurity_NoPlaintextVectorFiles(t *testing.T) {
 }
 
 // TST-CORE-1113
-func TestVectorSecurity_RestartRebuildsFromSQLCipher(t *testing.T) {
+func TestSecurity_17_VectorRestartRebuildsFromSQLCipher(t *testing.T) {
 	// Store embeddings, "restart" (clear in-memory state), unlock,
 	// search still works.
 	impl := vectorSecurityImpl
@@ -482,7 +482,7 @@ func TestVectorSecurity_RestartRebuildsFromSQLCipher(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TST-CORE-1114
-func TestStaticAudit_NoLatestTags(t *testing.T) {
+func TestInfra_30_StaticAuditNoLatestTags(t *testing.T) {
 	// Read docker-compose*.yml files, scan for :latest in image references,
 	// assert none found.
 	projectRoot := filepath.Join("..", "..")
@@ -525,7 +525,7 @@ func TestStaticAudit_NoLatestTags(t *testing.T) {
 }
 
 // TST-CORE-1115
-func TestStaticAudit_NoUnexpectedPublicRoutes(t *testing.T) {
+func TestInfra_30_StaticAuditNoUnexpectedPublicRoutes(t *testing.T) {
 	// Enumerate routes from the server implementation, compare against
 	// documented API surface.
 	serverSource, err := os.ReadFile("../internal/adapter/server/server.go")
@@ -607,7 +607,7 @@ func TestStaticAudit_NoUnexpectedPublicRoutes(t *testing.T) {
 }
 
 // TST-CORE-1116
-func TestStaticAudit_NoPlaintextVectorPatterns(t *testing.T) {
+func TestInfra_30_StaticAuditNoPlaintextVectorPatterns(t *testing.T) {
 	// Scan Go source files for mmap, .hnswlib, .faiss patterns, assert
 	// none found.
 	goSourceDir := filepath.Join("..", "internal")

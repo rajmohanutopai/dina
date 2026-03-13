@@ -40,20 +40,6 @@ class TestVerifiedTruth:
     """
 
     # TST-E2E-116
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "TST-E2E-116 (Phase 2): Brain reasoning pipeline does not "
-            "surface trust data density.  _handle_reason() "
-            "(guardian.py:1521-1620) calls vault_context.reason() which "
-            "caps results at _MAX_ITEMS_PER_QUERY=5 "
-            "(vault_context.py:299-350).  _SYSTEM_PROMPT "
-            "(vault_context.py:357-384) has no instructions for honest "
-            "uncertainty when zero trust data exists.  AppView integration "
-            "for Trust Network queries is not wired into the Brain "
-            "reasoning pipeline.  No 'no verified reviews' caveat logic."
-        ),
-    )
     def test_product_research_zero_trust_data(
         self,
         don_alonso: HomeNode,
@@ -174,20 +160,6 @@ class TestVerifiedTruth:
         )
 
     # TST-E2E-117
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "TST-E2E-117 (Phase 2): Brain reasoning pipeline has no "
-            "AppView Trust Network integration.  _handle_reason() "
-            "(guardian.py:1521-1620) queries the vault but never calls "
-            "AppView for product trust attestations.  "
-            "ToolExecutor._search_vault (vault_context.py:299-350) caps "
-            "results at _MAX_ITEMS_PER_QUERY=5 with no density metadata. "
-            "_SYSTEM_PROMPT (vault_context.py:357-384) has no instructions "
-            "for honest reporting of sparse/conflicting reviews or "
-            "individual source attribution with deep links."
-        ),
-    )
     def test_product_research_sparse_conflicting_data(
         self,
         don_alonso: HomeNode,
@@ -380,22 +352,6 @@ class TestVerifiedTruth:
         )
 
     # TST-E2E-118
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "TST-E2E-118 (Phase 2): Brain reasoning pipeline cannot "
-            "communicate confidence proportional to data density.  "
-            "_handle_reason() (guardian.py:1521-1620) calls "
-            "vault_context.reason() which caps results at "
-            "_MAX_ITEMS_PER_QUERY=5 (vault_context.py:299-350) with no "
-            "metadata indicating total available results.  _SYSTEM_PROMPT "
-            "(vault_context.py:357-384) has no instructions for confidence "
-            "scaling based on review count or consensus percentage.  "
-            "AppView integration for Trust Network dense queries is not "
-            "wired into the Brain reasoning pipeline.  No deep-link "
-            "attribution logic for expert reviewers."
-        ),
-    )
     def test_product_research_dense_trust_data_consensus(
         self,
         don_alonso: HomeNode,
@@ -656,17 +612,13 @@ class TestVerifiedTruth:
     @pytest.mark.xfail(
         strict=True,
         reason=(
-            "TST-E2E-119 (Phase 2): Brain reasoning pipeline has no "
-            "staleness detection for trust data.  _search_vault() "
-            "(vault_context.py:299-350) extracts Summary, BodyText, Type "
-            "but not timestamps or created_at metadata.  _SYSTEM_PROMPT "
-            "(vault_context.py:357-384) has no instructions for detecting "
-            "or flagging stale data (>1 year old reviews).  "
-            "_handle_reason() (guardian.py:1521-1620) has no freshness "
-            "validation or post-processing to inject staleness warnings.  "
-            "AppView integration for Trust Network queries does not "
-            "include timestamp metadata.  The entire data freshness "
-            "pipeline is unimplemented."
+            "TST-E2E-119 (Phase 2): Data freshness/staleness detection "
+            "pipeline is unimplemented.  vault_context does not extract "
+            "timestamp or created_at metadata from vault items.  Brain "
+            "reasoning has no freshness validation to flag reviews older "
+            "than 1 year.  AppView trust queries do not include timestamp "
+            "metadata.  Law 2 (Verified Truth) requires stale data to be "
+            "flagged, not presented as current."
         ),
     )
     def test_product_research_stale_reviews(
@@ -882,19 +834,13 @@ class TestVerifiedTruth:
     @pytest.mark.xfail(
         strict=True,
         reason=(
-            "TST-E2E-120 (Phase 2): Brain reasoning pipeline does not "
-            "visibly weight trust ring levels in recommendations.  "
-            "_search_vault() (vault_context.py:299-350) extracts "
-            "Summary, BodyText, Type, id but not ring-level metadata.  "
-            "_SYSTEM_PROMPT (vault_context.py:357-384) says 'Weigh "
-            "verified/trusted sources heavily' but provides no ring "
-            "classification instructions (Ring 1 vs Ring 2 vs Ring 3).  "
-            "_handle_reason() (guardian.py:1521-1620) has no post-"
-            "processing to validate ring weighting in the output.  "
-            "AppView integration for ring-differentiated trust queries "
-            "is not wired into the Brain reasoning pipeline.  The "
-            "entire ring-level-visible-in-narrative pipeline is "
-            "unimplemented."
+            "TST-E2E-120 (Phase 2): Ring-level weighting is not visibly "
+            "differentiated in Brain reasoning output.  vault_context "
+            "does not extract ring-level metadata from vault items.  "
+            "Brain has no ring classification instructions (Ring 1 vs "
+            "Ring 2 vs Ring 3) or post-processing to validate ring "
+            "weighting in the narrative.  AppView ring-differentiated "
+            "trust queries are not wired into the reasoning pipeline."
         ),
     )
     def test_product_research_ring_level_weighting(

@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestHandleRevokeDevice_MethodNotAllowed(t *testing.T) {
+func TestPairing_10_RevokeDeviceMethodNotAllowed(t *testing.T) {
 	// The method guard must reject non-DELETE requests before touching the
 	// service layer, so a nil Device service is fine here.
 	h := &DeviceHandler{Device: nil}

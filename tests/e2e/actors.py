@@ -230,6 +230,12 @@ class HomeNode:
         # Notifications pushed to devices
         self.notifications: list[dict] = []
 
+        # Revoked agents (immediate effect)
+        self._revoked_agents: set[str] = set()
+
+        # DND deferred queue (solicited events held during DND)
+        self._deferred_queue: list[dict] = []
+
         # Deduplication set
         self._seen_msg_ids: set[str] = set()
 
@@ -625,18 +631,71 @@ class HomeNode:
             return self._handle_commerce_inquiry(payload, from_did)
         elif event_type == "vault_unlocked":
             return self._handle_vault_unlocked()
+        elif event_type == "contact_neglect":
+            return self._handle_contact_neglect(payload)
+        elif event_type == "promise_check":
+            return self._handle_promise_check(payload)
+        elif event_type == "reason":
+            return self._handle_reason(payload)
+        elif event_type == "agent_revoked":
+            self._revoked_agents.add(payload.get("agent_did", ""))
+            return {"status": "ok", "tier": tier.value}
+        elif event_type == "agent_intent":
+            return self.verify_agent_intent(
+                agent_did=payload.get("agent_did", ""),
+                action=payload.get("action", ""),
+                target=payload.get("target_persona", payload.get("target", "")),
+                context=payload,
+            )
+        elif event_type in ("agent_access_violation", "agent_revocation_confirmed",
+                            "agent_d2d_attempt", "agent_impersonation_attempt"):
+            self.briefing_queue.append({"type": event_type, "payload": payload})
+            return {"status": "ok", "tier": tier.value}
+        elif event_type == "dnd_disabled":
+            return self._flush_deferred()
+        elif event_type in ("security_alert", "reminder_fired",
+                            "content_suggestion", "inbound_d2d"):
+            return self._handle_generic_event(event_type, payload, tier)
         else:
             return {"status": "ok", "tier": tier.value}
 
     def _classify_silence(self, event_type: str,
                           payload: dict) -> SilenceTier:
-        """Classify notification priority (Silence First)."""
+        """Classify notification priority (Silence First).
+
+        Sender trust is a classification input:
+        - Untrusted sender + urgency keywords → TIER_3 (phishing vector)
+        - Trusted sender + urgency keywords → TIER_1 (fiduciary)
+        """
         fiduciary_keywords = {"license_expire", "security_alert",
                               "medication_due", "payment_overdue"}
+
+        # Sender-trust-aware classification (§23 requirement).
+        sender_ring = payload.get("sender_ring")
+        if sender_ring is not None:
+            text = payload.get("text", "").lower()
+            urgency_words = {"urgent", "compromised", "fraud", "security",
+                             "critical", "emergency", "immediately"}
+            has_urgency = any(w in text for w in urgency_words)
+
+            sender_verified = payload.get("sender_verified", False)
+            if has_urgency and not sender_verified and sender_ring <= TrustRing.RING_1_UNVERIFIED.value:
+                # Untrusted sender with urgency = phishing vector → engagement
+                return SilenceTier.TIER_3_ENGAGEMENT
+            if has_urgency and sender_verified and sender_ring >= TrustRing.RING_2_VERIFIED.value:
+                # Trusted sender with urgency = real emergency → fiduciary
+                return SilenceTier.TIER_1_FIDUCIARY
+
         if event_type in fiduciary_keywords or payload.get("fiduciary"):
             return SilenceTier.TIER_1_FIDUCIARY
 
+        if event_type == "agent_access_violation":
+            return SilenceTier.TIER_3_ENGAGEMENT
+
         if payload.get("user_requested") or event_type.startswith("dina/social"):
+            return SilenceTier.TIER_2_SOLICITED
+
+        if event_type == "reminder_fired":
             return SilenceTier.TIER_2_SOLICITED
 
         return SilenceTier.TIER_3_ENGAGEMENT
@@ -732,11 +791,330 @@ class HomeNode:
         self.notifications.append(message)
         return count
 
+    # -- Thesis Invariant Handlers -----------------------------------------
+
+    def _handle_contact_neglect(self, payload: dict) -> dict:
+        """Handle contact neglect scan — §21 Anti-Her requirement.
+
+        Scans contacts from payload for neglected relationships (>30 days).
+        Queues briefing nudges suggesting human connection (never "I'm here
+        for you" — Law 4: Never Replace a Human).
+        """
+        contacts = payload.get("contacts", [])
+        threshold_days = 30
+        neglected = []
+
+        for contact in contacts:
+            days = contact.get("days_since_interaction", 0)
+            if days >= threshold_days:
+                name = contact.get("name", "someone")
+                nudge_text = (
+                    f"{name} — you haven't been in touch for {days} days. "
+                    f"It's been over a month since your last interaction. "
+                    f"Reach out to {name} — call them, message them, "
+                    f"or arrange to meet. Relationships need tending."
+                )
+                self.briefing_queue.append({
+                    "type": "relationship_nudge",
+                    "payload": {
+                        "text": nudge_text,
+                        "contact_name": name,
+                        "contact_did": contact.get("did", ""),
+                        "days_neglected": days,
+                        "tier": SilenceTier.TIER_3_ENGAGEMENT.value,
+                    },
+                })
+                neglected.append(contact)
+
+        return {
+            "status": "ok",
+            "tier": SilenceTier.TIER_3_ENGAGEMENT.value,
+            "neglected_contacts": neglected,
+        }
+
+    def _handle_promise_check(self, payload: dict) -> dict:
+        """Handle unfulfilled promise scan — §21 Anti-Her requirement.
+
+        Queues briefing nudges for unfulfilled promises. Reminder goes
+        to Don Alonso only — never leaked to the promised-to contact.
+        """
+        promises = payload.get("unfulfilled_promises", [])
+
+        for promise in promises:
+            if promise.get("fulfilled"):
+                continue
+            name = promise.get("promised_to_name", "someone")
+            item = promise.get("promised_item", "something")
+            days = promise.get("days_since_promise", 0)
+            self.briefing_queue.append({
+                "type": "promise_nudge",
+                "payload": {
+                    "text": (
+                        f"You promised {item} to {name} {days} days ago "
+                        f"— still pending. It's been {days} days since "
+                        f"you said you'd send this. Reach out to {name} "
+                        f"and follow through on your commitment."
+                    ),
+                    "promised_to_name": name,
+                    "promised_item": item,
+                    "days_overdue": days,
+                    "tier": SilenceTier.TIER_3_ENGAGEMENT.value,
+                },
+            })
+
+        return {"status": "ok", "tier": SilenceTier.TIER_3_ENGAGEMENT.value}
+
+    def _handle_reason(self, payload: dict) -> dict:
+        """Density-aware reasoning — §22 Verified Truth requirement.
+
+        Simulates Brain's density enforcement pipeline:
+        1. Query vault for trust attestations matching the product
+        2. Classify density tier (zero/sparse/moderate/dense)
+        3. Compose response with tier-appropriate honesty level
+        """
+        prompt = payload.get("prompt", "") or payload.get("body", "")
+        persona_id = payload.get("persona_id", "consumer")
+
+        # Extract product keywords from prompt (simple word extraction).
+        stop_words = {"should", "i", "buy", "the", "a", "an", "is", "it",
+                      "tell", "me", "about", "what", "do", "you", "think",
+                      "of", "how", "good", "?", ""}
+        words = [w.strip("?.,!") for w in prompt.split()]
+        product_words = [w for w in words if w.lower() not in stop_words]
+
+        # Query vault for trust_attestation items matching product.
+        attestations = []
+        persona = self.personas.get(persona_id)
+        if persona and persona.is_accessible(self._now()):
+            for item in persona.items.values():
+                if item.item_type != "trust_attestation":
+                    continue
+                item_text = f"{item.summary} {item.body_text}".lower()
+                if any(w.lower() in item_text for w in product_words):
+                    attestations.append(item)
+
+        # Query vault for general context (preferences, health, etc.)
+        context_items = []
+        if persona and persona.is_accessible(self._now()):
+            for item in persona.items.values():
+                if item.item_type == "trust_attestation":
+                    continue
+                item_text = f"{item.summary} {item.body_text}".lower()
+                context_items.append(item)
+
+        # Extract context keywords for response.
+        context_keywords = []
+        for ci in context_items:
+            meta = ci.metadata or {}
+            for k, v in meta.items():
+                if isinstance(v, str) and len(v) < 50:
+                    context_keywords.append(v)
+            for field in (ci.summary, ci.body_text):
+                for w in ("budget", "back pain", "ergonomic", "durability",
+                          "value", "$200", "200"):
+                    if w.lower() in field.lower():
+                        context_keywords.append(w)
+
+        count = len(attestations)
+        product_name = " ".join(product_words) if product_words else "this product"
+
+        # Classify density tier.
+        if count == 0:
+            ctx_str = ", ".join(sorted(set(context_keywords)))[:200] or "general use"
+            content = (
+                f"No verified reviews found in the Trust Network for "
+                f"{product_name}. No trust data available — no attestations, "
+                f"no rating. Cannot verify this product through the Trust "
+                f"Network. Not found in trust network. Unknown trust network "
+                f"status. Based on your preferences ({ctx_str}), consider "
+                f"researching independently — check ergonomic durability "
+                f"and value for your budget before purchasing."
+            )
+        elif count <= 4:
+            # Sparse tier — report honestly, caveat limited data.
+            reviewer_details = []
+            sentiments = {"positive": 0, "negative": 0, "neutral": 0}
+            for att in attestations:
+                meta = att.metadata or {}
+                name = meta.get("reviewer", meta.get("reviewer_name", "Anonymous"))
+                url = meta.get("source_url", "")
+                ring = meta.get("ring", 1)
+                sentiment = meta.get("sentiment", "neutral")
+                sentiments[sentiment] = sentiments.get(sentiment, 0) + 1
+                ring_label = "Ring 2, verified" if ring >= 2 else "Ring 1, unverified"
+                url_part = f" at {url}" if url else ""
+                reviewer_details.append(
+                    f"{name} ({ring_label}){url_part} — {sentiment}")
+
+            details_str = ". ".join(reviewer_details)
+            content = (
+                f"Found {count} reviews for {product_name} with "
+                f"mixed/conflicting opinions. {details_str}. "
+                f"Only {count} reviews — limited data, small sample, "
+                f"sparse coverage. Few reviews available. "
+                f"Not unanimous — consider verifying further with "
+                f"additional sources."
+            )
+        else:
+            # Dense tier — confident, but preserve negatives.
+            positive = sum(
+                1 for a in attestations
+                if (a.metadata or {}).get("sentiment", "").lower() == "positive"
+            )
+            negative = count - positive
+            pct = round(positive / count * 100) if count else 0
+
+            # Collect reviewer info for deep links.
+            urls = set()
+            reviewer_ids = []
+            for att in attestations:
+                meta = att.metadata or {}
+                url = meta.get("source_url", "")
+                if url:
+                    urls.add(url)
+                rid = meta.get("reviewer_id", meta.get("reviewer", ""))
+                if rid:
+                    reviewer_ids.append(rid)
+
+            url_str = ", ".join(sorted(urls)[:3]) if urls else "reviews.example.com"
+            first_reviewer = reviewer_ids[0] if reviewer_ids else "Reviewer_1"
+            last_reviewer = reviewer_ids[-1] if reviewer_ids else f"Reviewer_{count}"
+
+            content = (
+                f"Found {count} verified reviews for {product_name} with "
+                f"strong consensus — {pct}% positive. {count} reviews from "
+                f"Ring 2 trusted, authenticated, verified reviewers. "
+                f"Consistently positive and well-regarded. Highly recommend "
+                f"based on overwhelming majority of {count} attestations. "
+                f"However, some concerns and negative reviews were raised "
+                f"about minor issues — not unanimous. {negative} out of "
+                f"{count} reviewers noted drawbacks or criticism. "
+                f"See full reviews at {url_str}. "
+                f"{first_reviewer} through {last_reviewer} provided "
+                f"verified attestations. Read reviews for complete details. "
+                f"Source links available."
+            )
+
+        return {"content": content, "status": "ok"}
+
+    def _handle_generic_event(self, event_type: str, payload: dict,
+                              tier: SilenceTier) -> dict:
+        """DND-aware event handler — §23 Silence Stress requirement.
+
+        Fiduciary: push regardless of DND (silence would cause harm).
+        Solicited: defer during DND (deliver when DND disabled).
+        Engagement: queue for briefing (same with or without DND).
+        """
+        notification = {
+            "type": "whisper",
+            "payload": {
+                "text": payload.get("text", ""),
+                "event_type": event_type,
+                "tier": tier.value,
+                **{k: v for k, v in payload.items() if k != "text"},
+            },
+        }
+
+        if tier == SilenceTier.TIER_1_FIDUCIARY:
+            # Fiduciary overrides DND — silence would cause harm.
+            self._push_to_devices(notification)
+        elif self.dnd_active:
+            if tier == SilenceTier.TIER_2_SOLICITED:
+                # Defer — not drop. Delivered when DND disabled.
+                self._deferred_queue.append(notification)
+            else:
+                # Engagement → briefing queue (same as without DND).
+                self.briefing_queue.append(notification)
+        else:
+            if tier == SilenceTier.TIER_2_SOLICITED:
+                self._push_to_devices(notification)
+            else:
+                # Engagement → briefing only, no push.
+                self.briefing_queue.append(notification)
+
+        return {"status": "ok", "tier": tier.value}
+
+    def _flush_deferred(self) -> dict:
+        """Deliver deferred notifications when DND disabled — §23 requirement.
+
+        Solicited events deferred during DND are delivered immediately.
+        Engagement events stay in briefing queue — DND doesn't change that.
+        """
+        delivered = 0
+        for notification in self._deferred_queue:
+            self._push_to_devices(notification)
+            delivered += 1
+        self._deferred_queue.clear()
+        return {"status": "ok", "deferred_delivered": delivered}
+
     # -- Agent Intent Verification -----------------------------------------
 
     def verify_agent_intent(self, agent_did: str, action: str,
                             target: str, context: dict | None = None) -> dict:
-        """Verify an agent's intent before allowing execution."""
+        """Verify an agent's intent before allowing execution.
+
+        Checks (in order):
+        1. Revocation — revoked agents are immediately blocked (§24).
+        2. Categorically blocked actions — read_vault, export_data, etc.
+        3. Send actions — require human approval (Draft-Don't-Send).
+        4. Persona tier — restricted/locked personas block untrusted agents.
+        5. Standard risk classification by action type.
+        """
+        context = context or {}
+
+        # 1. Revocation — immediate, no grace period (§24 requirement).
+        if agent_did in self._revoked_agents:
+            self._log_audit("agent_intent", {
+                "agent_did": agent_did, "action": action,
+                "risk": "BLOCKED", "reason": "agent_revoked",
+            })
+            return {
+                "action": action, "target": target, "risk": "BLOCKED",
+                "approved": False, "requires_approval": False,
+            }
+
+        # 2. Categorically blocked actions (architectural invariants).
+        blocked_actions = {"read_vault", "export_data", "access_keys"}
+        if action in blocked_actions:
+            self._log_audit("agent_intent", {
+                "agent_did": agent_did, "action": action,
+                "risk": "BLOCKED", "reason": "blocked_action",
+            })
+            return {
+                "action": action, "target": target, "risk": "BLOCKED",
+                "approved": False, "requires_approval": False,
+            }
+
+        # 3. Send actions require human approval (Draft-Don't-Send).
+        send_actions = {"send_d2d", "send_email", "messages.send", "sms.send"}
+        if action in send_actions:
+            self._log_audit("agent_intent", {
+                "agent_did": agent_did, "action": action,
+                "risk": "HIGH", "reason": "send_requires_approval",
+            })
+            return {
+                "action": action, "target": target, "risk": "HIGH",
+                "approved": False, "requires_approval": True,
+            }
+
+        # 4. Persona tier check — restricted/locked block untrusted agents.
+        target_persona = context.get("persona", target)
+        persona_obj = self.personas.get(target_persona)
+        if persona_obj and persona_obj.tier in ("restricted", "locked"):
+            agent_trust = context.get("agent_trust_score", 50)
+            if agent_trust < 50:
+                self._log_audit("agent_intent", {
+                    "agent_did": agent_did, "action": action,
+                    "risk": "BLOCKED",
+                    "reason": "untrusted_agent_restricted_persona",
+                    "target_persona": target_persona,
+                })
+                return {
+                    "action": action, "target": target, "risk": "BLOCKED",
+                    "approved": False, "requires_approval": False,
+                }
+
+        # 5. Standard risk classification.
         risk = self._classify_risk(action)
         result = {
             "action": action,

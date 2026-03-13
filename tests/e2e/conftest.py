@@ -482,6 +482,8 @@ def reset_node_state(don_alonso, sancho, chairmaker, albert):
         node.scratchpad.clear()
         node._processed_events.clear()
         node._crash_log.clear()
+        node._revoked_agents.clear()
+        node._deferred_queue.clear()
         node.pds.records.clear()
         node.pds.tombstones.clear()
         node._test_clock = None

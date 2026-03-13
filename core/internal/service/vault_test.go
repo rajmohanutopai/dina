@@ -118,7 +118,7 @@ func (m *mockClock) NewTicker(d time.Duration) *time.Ticker { return time.NewTic
 // Tests
 // ---------------------------------------------------------------------------
 
-func TestGetItem_Success(t *testing.T) {
+func TestVault_4_GetItemSuccess(t *testing.T) {
 	mgr := newMockVaultManager()
 	reader := newMockVaultReader()
 	writer := &mockVaultWriter{}
@@ -153,7 +153,7 @@ func TestGetItem_Success(t *testing.T) {
 	}
 }
 
-func TestGetItem_NotFound(t *testing.T) {
+func TestVault_4_GetItemNotFound(t *testing.T) {
 	mgr := newMockVaultManager()
 	reader := newMockVaultReader()
 	writer := &mockVaultWriter{}
@@ -174,7 +174,7 @@ func TestGetItem_NotFound(t *testing.T) {
 	}
 }
 
-func TestGetItem_LockedPersona(t *testing.T) {
+func TestVault_4_GetItemLockedPersona(t *testing.T) {
 	mgr := newMockVaultManager()
 	reader := newMockVaultReader()
 	writer := &mockVaultWriter{}
@@ -195,7 +195,7 @@ func TestGetItem_LockedPersona(t *testing.T) {
 	}
 }
 
-func TestGetItem_GatekeeperDenied(t *testing.T) {
+func TestVault_4_GetItemGatekeeperDenied(t *testing.T) {
 	mgr := newMockVaultManager()
 	reader := newMockVaultReader()
 	writer := &mockVaultWriter{}
@@ -218,7 +218,7 @@ func TestGetItem_GatekeeperDenied(t *testing.T) {
 	}
 }
 
-func TestGetKV_Success(t *testing.T) {
+func TestVault_4_GetKVSuccess(t *testing.T) {
 	mgr := newMockVaultManager()
 	reader := newMockVaultReader()
 	writer := &mockVaultWriter{}
@@ -252,7 +252,7 @@ func TestGetKV_Success(t *testing.T) {
 	}
 }
 
-func TestGetKV_NotFound(t *testing.T) {
+func TestVault_4_GetKVNotFound(t *testing.T) {
 	mgr := newMockVaultManager()
 	reader := newMockVaultReader()
 	writer := &mockVaultWriter{}
@@ -273,7 +273,7 @@ func TestGetKV_NotFound(t *testing.T) {
 	}
 }
 
-func TestGetKV_PrefixesKey(t *testing.T) {
+func TestVault_4_GetKVPrefixesKey(t *testing.T) {
 	mgr := newMockVaultManager()
 	reader := newMockVaultReader()
 	writer := &mockVaultWriter{}
@@ -302,7 +302,7 @@ func TestGetKV_PrefixesKey(t *testing.T) {
 	}
 }
 
-func TestGetItem_GatekeeperReceivesItemIDAsTarget(t *testing.T) {
+func TestVault_4_GetItemGatekeeperReceivesItemIDAsTarget(t *testing.T) {
 	mgr := newMockVaultManager()
 	reader := newMockVaultReader()
 	writer := &mockVaultWriter{}

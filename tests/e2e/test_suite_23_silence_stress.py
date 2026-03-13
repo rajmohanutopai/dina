@@ -39,16 +39,11 @@ class TestSilenceUnderStress:
         strict=True,
         reason=(
             "TST-E2E-121 (Phase 2): Notification storm handling at scale "
-            "is not implemented end-to-end.  Brain classify_silence() "
-            "(guardian.py:229-299) classifies individual events but has "
-            "no bulk ingestion endpoint.  generate_briefing() "
-            "(guardian.py:534-615) processes _briefing_items but has no "
-            "grouping/summarization for 100+ engagement items.  Core has "
-            "no /v1/events/bulk endpoint for mass injection.  The WebSocket "
-            "push observation path (Core → client device) does not have "
-            "a test-observable filter proving engagement events were "
-            "withheld.  The full fiduciary-only-interrupts pipeline under "
-            "volume stress requires Brain + Core coordination not yet built."
+            "is unimplemented.  No bulk event injection endpoint exists.  "
+            "Briefing generation has no grouping/summarization for 100+ "
+            "engagement items.  The full fiduciary-only-interrupts "
+            "pipeline under volume stress requires Brain + Core "
+            "coordination not yet built."
         ),
     )
     def test_notification_storm_only_fiduciary_interrupts(
@@ -221,23 +216,6 @@ class TestSilenceUnderStress:
         )
 
     # TST-E2E-122
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "TST-E2E-122 (Phase 2): Brain classify_silence() "
-            "(guardian.py:229-299) does not use sender trust ring as "
-            "a classification input.  _classify_silence only checks "
-            "event_type and payload flags — it never queries the vault "
-            "or contacts table for the sender's trust level.  "
-            "process_event() (guardian.py:305-424) passes event_type "
-            "and payload to classify but not sender_did or trust_ring.  "
-            "Core ingress does not annotate inbound D2D messages with "
-            "the sender's trust ring from the contacts table.  "
-            "The entire sender-trust-aware classification pipeline "
-            "(unknown sender + urgency = phishing downgrade) is "
-            "unimplemented."
-        ),
-    )
     def test_ambiguous_urgency_from_untrusted_source(
         self,
         don_alonso: HomeNode,
@@ -512,23 +490,6 @@ class TestSilenceUnderStress:
         )
 
     # TST-E2E-123
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "TST-E2E-123 (Phase 2): DND hierarchy enforcement is not "
-            "implemented end-to-end.  Brain classify_silence() "
-            "(guardian.py:229-299) documents DND rules in its docstring "
-            "(line 245) but does not receive or check DND state.  "
-            "process_event() (guardian.py:305-424) calls notify() for "
-            "both fiduciary and solicited events identically — no "
-            "DND-aware deferral.  No deferred_queue exists to hold "
-            "solicited events during DND.  No flush mechanism to "
-            "deliver deferred events when DND is disabled.  Core has "
-            "no DND state endpoint.  The HomeNode mock has dnd_active "
-            "flag and partial DND logic in _handle_arrival() only, "
-            "not in the full event pipeline."
-        ),
-    )
     def test_dnd_respects_hierarchy(
         self,
         don_alonso: HomeNode,

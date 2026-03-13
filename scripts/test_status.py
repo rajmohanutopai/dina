@@ -219,7 +219,7 @@ def _wait_for_health(url: str, label: str, timeout: int = 120) -> None:
                 return
         except Exception:
             pass  # Retry on any connection/transport error
-        _time.sleep(2)
+        _time.sleep(0.3)
     raise TimeoutError(f"{label} not healthy after {timeout}s: {url}")
 
 
@@ -325,7 +325,7 @@ def _start_main_stack(*, restart: bool = False) -> float:
         "DINA_IDENTITY_SALT_FILE": str(identity_salt_file),
         "DINA_SEED_PASSWORD_SECRET_FILE": str(seed_password_file),
     }
-    compose_cmd = ["docker", "compose", "--profile", "test-plc"]
+    compose_cmd = ["docker", "compose", "-p", "dina-main", "--profile", "test-plc"]
 
     # Register cleanup BEFORE starting so partially-created stacks are
     # always torn down — even if 'up --build' fails (e.g. port conflict).
@@ -351,9 +351,19 @@ def _start_main_stack(*, restart: bool = False) -> float:
         capture_output=True, timeout=60, cwd=str(PROJECT_ROOT),
         env=compose_env,
     )
+    # Also clean up the old default "dina" project — its containers
+    # use fixed container_name directives that collide with any project.
+    subprocess.run(
+        ["docker", "compose", "down", "-v", "--remove-orphans"],
+        capture_output=True, timeout=60, cwd=str(PROJECT_ROOT),
+        env=compose_env,
+    )
 
+    up_cmd = [*compose_cmd, "up", "-d"]
+    if os.environ.get("DINA_SKIP_DOCKER_BUILD") != "1":
+        up_cmd = [*compose_cmd, "up", "--build", "-d"]
     result = subprocess.run(
-        [*compose_cmd, "up", "--build", "-d"],
+        up_cmd,
         capture_output=True,
         timeout=300,
         text=True,
@@ -363,14 +373,24 @@ def _start_main_stack(*, restart: bool = False) -> float:
     if result.returncode != 0:
         stderr_tail = (result.stderr or "").strip().split("\n")[-20:]
         raise RuntimeError(
-            f"Main stack 'up --build' failed (exit {result.returncode}):\n"
+            f"Main stack 'up' failed (exit {result.returncode}):\n"
             + "\n".join(stderr_tail)
         )
 
-    # Wait for all services to become healthy
-    _wait_for_health(f"{plc_url}/healthz", "Fake PLC", timeout=30)
-    _wait_for_health(f"{pds_url}/xrpc/_health", "PDS", timeout=60)
-    _wait_for_health(f"{core_url}/healthz", "Core", timeout=60)
+    # Wait for all services to become healthy (in parallel)
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    health_checks = [
+        (f"{plc_url}/healthz", "Fake PLC", 30),
+        (f"{pds_url}/xrpc/_health", "PDS", 60),
+        (f"{core_url}/healthz", "Core", 60),
+    ]
+    with ThreadPoolExecutor(max_workers=len(health_checks)) as pool:
+        futs = {
+            pool.submit(_wait_for_health, url, label, t): label
+            for url, label, t in health_checks
+        }
+        for fut in as_completed(futs):
+            fut.result()  # raises TimeoutError on failure
 
     elapsed = _time.monotonic() - t0
     print(
@@ -458,17 +478,37 @@ def _start_local() -> float:
         "ANTHROPIC_API_KEY": "",
     }
 
-    print("  Building Go Core...", file=sys.stderr, flush=True)
-    build_t0 = _time.monotonic()
-    subprocess.run(
-        ["go", "build", "-tags", "fts5", "-o", "dina-core", "./cmd/dina-core"],
-        cwd=str(PROJECT_ROOT / "core"),
-        capture_output=True,
-        timeout=120,
-        check=True,
-    )
-    build_time = _time.monotonic() - build_t0
-    print(f"  Go Core built ({build_time:.1f}s)", file=sys.stderr, flush=True)
+    # Skip Go rebuild if binary exists and source hasn't changed.
+    core_binary = PROJECT_ROOT / "core" / "dina-core"
+    core_src_dir = PROJECT_ROOT / "core"
+    need_build = True
+    if core_binary.exists():
+        binary_mtime = core_binary.stat().st_mtime
+        # Check if any .go or go.mod/go.sum file is newer than the binary.
+        need_build = False
+        for pattern in ("**/*.go", "go.mod", "go.sum"):
+            for src in core_src_dir.glob(pattern):
+                if src.stat().st_mtime > binary_mtime:
+                    need_build = True
+                    break
+            if need_build:
+                break
+
+    if need_build:
+        print("  Building Go Core...", file=sys.stderr, flush=True)
+        build_t0 = _time.monotonic()
+        subprocess.run(
+            ["go", "build", "-tags", "fts5", "-o", "dina-core", "./cmd/dina-core"],
+            cwd=str(PROJECT_ROOT / "core"),
+            capture_output=True,
+            timeout=120,
+            check=True,
+        )
+        build_time = _time.monotonic() - build_t0
+        print(f"  Go Core built ({build_time:.1f}s)", file=sys.stderr, flush=True)
+    else:
+        build_time = 0.0
+        print("  Go Core binary up-to-date (skipping build)", file=sys.stderr, flush=True)
 
     print("  Starting Go Core...", file=sys.stderr, flush=True)
     core_proc = subprocess.Popen(
@@ -507,20 +547,22 @@ def _start_local() -> float:
         shutil.rmtree(vault_dir, ignore_errors=True)
         shutil.rmtree(service_key_dir, ignore_errors=True)
         os.environ.pop("DINA_INTEGRATION_SERVICE_KEY_DIR", None)
-        # Clean up compiled binary
-        binary = PROJECT_ROOT / "core" / "dina-core"
-        if binary.exists():
-            binary.unlink()
+        # Keep compiled binary for cache — only rebuilt when source changes.
         print("  Local services stopped.", file=sys.stderr)
 
     _register_cleanup(_stop)
 
-    # Wait for health
+    # Wait for health (both in parallel)
+    from concurrent.futures import ThreadPoolExecutor, as_completed as _as_completed
     try:
-        print("  Waiting for Core health...", file=sys.stderr, flush=True)
-        _wait_for_health(f"{core_url}/healthz", "Core", timeout=30)
-        print("  Waiting for Brain health...", file=sys.stderr, flush=True)
-        _wait_for_health(f"{brain_url}/healthz", "Brain", timeout=60)
+        print("  Waiting for Core + Brain health...", file=sys.stderr, flush=True)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futs = {
+                pool.submit(_wait_for_health, f"{core_url}/healthz", "Core", 30): "Core",
+                pool.submit(_wait_for_health, f"{brain_url}/healthz", "Brain", 60): "Brain",
+            }
+            for fut in _as_completed(futs):
+                fut.result()
     except (TimeoutError, Exception):
         _run_cleanup()
         raise
@@ -777,8 +819,13 @@ _GO_SECTION_RE = re.compile(r"^Test\w+?_(\d+)_")
 # pytest verbose: "brain/tests/test_auth.py::test_auth_1_1_1_valid PASSED [0%]"
 # also handles classes: "tests/...py::TestClass::test_func PASSED"
 # also handles parametrize: "...::test_func[param-A desc] PASSED"
+# Standard format:  file::test PASSED  [ N%]
+# xdist format:     [gwN] [ N%] PASSED file::test
 _PY_LINE_RE = re.compile(
     r"^([^\s:]+)::((?:\w+::)*test_\w+(?:\[.*?\])?)\s+(PASSED|SKIPPED|FAILED|ERROR|XFAIL|XPASS)"
+)
+_PY_XDIST_RE = re.compile(
+    r"^\[gw\d+\]\s+\[\s*\d+%\]\s+(PASSED|SKIPPED|FAILED|ERROR|XFAIL|XPASS)\s+([^\s:]+)::((?:\w+::)*test_\w+(?:\[.*?\])?)"
 )
 # First number group after subject: test_auth_1_... → 1
 _PY_SECTION_RE = re.compile(r"^test_\w+?_(\d+)_")
@@ -866,13 +913,19 @@ def parse_pytest_output(
             func_name = dm.group(2).split("::")[-1]
             durations[func_name] = float(dm.group(1))
 
-    # Second pass: collect test results
+    # Second pass: collect test results (standard + xdist output formats)
     for line in output.splitlines():
         m = _PY_LINE_RE.match(line)
-        if not m:
-            continue
-        qualified = m.group(2)
-        py_status = m.group(3)
+        if m:
+            qualified = m.group(2)
+            py_status = m.group(3)
+        else:
+            mx = _PY_XDIST_RE.match(line)
+            if mx:
+                py_status = mx.group(1)
+                qualified = mx.group(3)
+            else:
+                continue
         func_name = qualified.split("::")[-1]
         # Strip parametrize suffix for section lookup: test_foo[param] → test_foo
         base_name = func_name.split("[")[0]
@@ -1095,6 +1148,7 @@ def _start_e2e_docker(*, restart: bool = False) -> float:
             os.environ[key] = dotenv[key]
 
     compose_file = str(PROJECT_ROOT / "docker-compose-e2e.yml")
+    e2e_project = "dina-e2e"
 
     actors = {
         "alonso": 19200, "sancho": 19201,
@@ -1106,7 +1160,7 @@ def _start_e2e_docker(*, restart: bool = False) -> float:
         print("  Tearing down existing E2E stack (--restart)...", file=sys.stderr,
               flush=True)
         subprocess.run(
-            ["docker", "compose", "-f", compose_file, "down", "-v"],
+            ["docker", "compose", "-p", e2e_project, "-f", compose_file, "down", "-v"],
             capture_output=True,
             timeout=60,
         )
@@ -1132,8 +1186,11 @@ def _start_e2e_docker(*, restart: bool = False) -> float:
         we_started = True
         print("  Starting E2E Docker stack (4 actors)...", file=sys.stderr,
               flush=True)
+        e2e_up = ["docker", "compose", "-p", e2e_project, "-f", compose_file, "up", "-d"]
+        if os.environ.get("DINA_SKIP_DOCKER_BUILD") != "1":
+            e2e_up = ["docker", "compose", "-p", e2e_project, "-f", compose_file, "up", "--build", "-d"]
         result = subprocess.run(
-            ["docker", "compose", "-f", compose_file, "up", "--build", "-d"],
+            e2e_up,
             capture_output=True,
             timeout=300,
             text=True,
@@ -1146,10 +1203,21 @@ def _start_e2e_docker(*, restart: bool = False) -> float:
                 + "\n".join(stderr_tail)
             )
 
-        # Wait for all 8 containers to become healthy
-        for actor, port in actors.items():
-            url = f"http://localhost:{port}/healthz"
-            _wait_for_health(url, f"brain-{actor}", timeout=180)
+        # Wait for all containers to become healthy (in parallel)
+        from concurrent.futures import ThreadPoolExecutor as _TPE
+        from concurrent.futures import as_completed as _asc
+        with _TPE(max_workers=len(actors)) as pool:
+            futs = {
+                pool.submit(
+                    _wait_for_health,
+                    f"http://localhost:{port}/healthz",
+                    f"brain-{actor}",
+                    180,
+                ): actor
+                for actor, port in actors.items()
+            }
+            for fut in _asc(futs):
+                fut.result()
 
     elapsed = _time.monotonic() - t0
     print(
@@ -1166,7 +1234,7 @@ def _start_e2e_docker(*, restart: bool = False) -> float:
         def _stop() -> None:
             print("\n  Stopping E2E Docker stack...", file=sys.stderr, flush=True)
             subprocess.run(
-                ["docker", "compose", "-f", compose_file, "down", "-v"],
+                ["docker", "compose", "-p", e2e_project, "-f", compose_file, "down", "-v"],
                 capture_output=True,
                 timeout=60,
             )
@@ -1227,6 +1295,24 @@ def run_suite(
         cmd.extend(["-m", "not slow"])
     elif quick and cfg["parser"] == "go":
         cmd.append("-short")
+
+    # Parallel test execution with pytest-xdist for I/O-bound Docker tests.
+    # Only beneficial for integration tests hitting real Docker containers.
+    # Brain tests use in-process TestClient — xdist overhead always hurts.
+    # Local mode sets DINA_INTEGRATION=docker too, but tests are fast there
+    # because services are on localhost — xdist worker spawn cost dominates.
+    # DINA_DOCKER_SERVICES=1 is set only when service_mode=="docker".
+    if cfg["parser"] == "pytest":
+        xdist_beneficial = (
+            key == "integration"
+            and os.environ.get("DINA_DOCKER_SERVICES") == "1"
+        )
+        if xdist_beneficial:
+            try:
+                import xdist  # noqa: F401
+                cmd.extend(["-n", "auto", "--dist", "loadscope"])
+            except ImportError:
+                pass  # pytest-xdist not installed, run sequentially
 
     timeout = 600 if cfg.get("e2e_sections") else 300
 
@@ -1773,6 +1859,8 @@ def main() -> None:
             if not json_mode:
                 print(f"{mode_label} mode.", file=sys.stderr, flush=True)
             os.environ["DINA_INTEGRATION"] = "docker"  # Real clients for both modes
+            if service_mode == "docker":
+                os.environ["DINA_DOCKER_SERVICES"] = "1"  # xdist only for Docker
             # Refresh mock_pass_is_skip now that env var is set
             SUITES["integration"]["mock_pass_is_skip"] = False
             try:
