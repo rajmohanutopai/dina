@@ -181,10 +181,97 @@ async def test_fix_19_2_3_open_persona_scrubbed_when_cloud_exists():
     # Open persona with cloud provider — scrub MUST be called.
     event = {"type": "reason", "prompt": "What is the weather?", "persona_tier": "open"}
     result = await guardian._handle_reason(event)
-
     assert result["content"] == "LLM says hello"
-    # Scrubber called because cloud providers exist (data may leave node).
     scrubber.scrub.assert_called_once()
+
+
+# TST-BRAIN-681
+def test_rehydrate_bare_faker_name():
+    """Rehydrate matches bare Faker values when LLM strips <<PII:…>> delimiters.
+
+    Regression test for Story 02 (Sancho Moment): the scrubber replaces
+    "Sancho" with <<PII:Owensstad>>, the LLM strips the delimiters and
+    outputs "Owensstad" bare.  Rehydration must still restore "Sancho".
+    """
+    from src.service.entity_vault import EntityVaultService
+
+    ev = EntityVaultService.__new__(EntityVaultService)
+
+    vault = {
+        "<<PII:Owensstad>>": "Sancho",
+        "<<PII:Garrett>>": "Alonso",
+    }
+
+    # Best case: LLM preserves delimiters.
+    text_delimited = "<<PII:Owensstad>> is on his way to <<PII:Garrett>>'s place."
+    assert ev.rehydrate(text_delimited, vault) == "Sancho is on his way to Alonso's place."
+
+    # Regression case: LLM strips delimiters, outputs bare Faker names.
+    text_bare = "Owensstad is on his way to Garrett's place."
+    assert ev.rehydrate(text_bare, vault) == "Sancho is on his way to Alonso's place."
+
+    # Mixed: one delimited, one bare.
+    text_mixed = "<<PII:Owensstad>> is visiting Garrett."
+    assert ev.rehydrate(text_mixed, vault) == "Sancho is visiting Alonso."
+
+
+# TST-BRAIN-682
+@pytest.mark.asyncio
+async def test_pii_preserve_instruction_prepended_when_vault_exists():
+    """PII preserve instruction is prepended to scrubbed prompts.
+
+    When entity_vault.scrub() returns a non-empty vault (PII was found
+    and replaced), the LLM prompt must include the preserve instruction
+    so the LLM keeps <<PII:…>> delimiters intact.
+    """
+    from src.service.guardian import GuardianLoop, _PII_PRESERVE_INSTRUCTION
+    from src.service.entity_vault import EntityVaultService
+    from src.service.nudge import NudgeAssembler
+    from src.service.scratchpad import ScratchpadService
+
+    core = AsyncMock()
+    core.pii_scrub.return_value = {"scrubbed": "text", "entities": []}
+    core.notify.return_value = None
+    core.task_ack.return_value = None
+    core.search_vault.return_value = []
+
+    scrubber = MagicMock()
+    # Scrub detects "Sancho" and replaces it.
+    scrubber.scrub.return_value = (
+        "Tell <<PII:Owensstad>> hello",
+        [{"type": "PERSON", "value": "Sancho", "token": "<<PII:Owensstad>>"}],
+    )
+
+    llm_router = AsyncMock()
+    llm_router.route.return_value = {"content": "Hello <<PII:Owensstad>>!", "model": "test"}
+    llm_router.has_cloud_provider = True
+
+    entity_vault = EntityVaultService(scrubber, core)
+    nudge = NudgeAssembler(core, llm_router, entity_vault)
+    scratchpad = ScratchpadService(core)
+
+    guardian = GuardianLoop(
+        core=core,
+        llm_router=llm_router,
+        scrubber=scrubber,
+        entity_vault=entity_vault,
+        nudge_assembler=nudge,
+        scratchpad=scratchpad,
+    )
+
+    event = {"type": "reason", "prompt": "Tell Sancho hello", "persona_tier": "open"}
+    result = await guardian._handle_reason(event)
+
+    # The LLM must have received the preserve instruction.
+    call_args = llm_router.route.call_args
+    prompt_sent = call_args.kwargs.get("prompt") or call_args[1].get("prompt", "")
+    assert _PII_PRESERVE_INSTRUCTION in prompt_sent, (
+        "PII preserve instruction not prepended to scrubbed prompt"
+    )
+
+    # Response must be rehydrated: <<PII:Owensstad>> → Sancho.
+    assert "Sancho" in result["content"]
+    assert "Owensstad" not in result["content"]
 
 
 # ============================================================================

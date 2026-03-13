@@ -114,6 +114,19 @@ _TRUST_RELEVANT_QUERY = re.compile(
     re.IGNORECASE,
 )
 
+# Instruction prepended to scrubbed prompts so the LLM preserves PII
+# tokens verbatim in its response, enabling rehydration to restore the
+# original values.  Even if the LLM strips the <<PII:…>> delimiters,
+# rehydrate() will match the bare fake name — but keeping delimiters
+# intact is preferred to avoid false-positive substring matches.
+_PII_PRESERVE_INSTRUCTION = (
+    "IMPORTANT: This text contains privacy placeholders wrapped in "
+    "<<PII:…>> delimiters (e.g. <<PII:John Smith>>, <<PII:Acme Corp>>). "
+    "You MUST use these exact tokens — including the delimiters — "
+    "whenever you refer to the corresponding person, place, or "
+    "organization. Never invent new names or drop the delimiters.\n\n"
+)
+
 # ---------------------------------------------------------------------------
 # Anti-Her deterministic fallback filters (Law 4: Never Replace a Human)
 #
@@ -2606,6 +2619,11 @@ class GuardianLoop:
             # tasks, so we cannot guarantee local-only routing.
             if self._entity_vault and self._llm.has_cloud_provider:
                 llm_prompt, vault = await self._entity_vault.scrub(llm_prompt)
+                # When PII tokens are present, instruct the LLM to
+                # preserve them verbatim so rehydration can restore
+                # the original values after the LLM responds.
+                if vault:
+                    llm_prompt = _PII_PRESERVE_INSTRUCTION + llm_prompt
 
             # Step 2: Agentic reasoning with vault tools.
             if self._vault_context and not skip_vault:

@@ -155,7 +155,14 @@ print_summary() {
     if [ "$LLM_TOTAL_CALLS" -gt 0 ]; then
         echo -e "${BOLD}${CYAN}  ── LLM Usage ──${RESET}"
         echo -e "  Calls: ${LLM_TOTAL_CALLS}   Tokens in: ${LLM_TOTAL_TOKENS_IN}   Tokens out: ${LLM_TOTAL_TOKENS_OUT}"
-        echo -e "  ${BOLD}Estimated cost: \$${LLM_TOTAL_COST} USD${RESET}"
+        local usd eur gbp inr cny jpy
+        usd=$(python3 -c "print(f'{round($LLM_TOTAL_COST, 2)}')")
+        eur=$(python3 -c "print(f'{round($LLM_TOTAL_COST * 0.92, 2)}')")
+        gbp=$(python3 -c "print(f'{round($LLM_TOTAL_COST * 0.79, 2)}')")
+        inr=$(python3 -c "print(f'{round($LLM_TOTAL_COST * 84.5, 2)}')")
+        cny=$(python3 -c "print(f'{round($LLM_TOTAL_COST * 7.25, 2)}')")
+        jpy=$(python3 -c "print(f'{round($LLM_TOTAL_COST * 149.5, 2)}')")
+        echo -e "  ${BOLD}Estimated cost: \$${usd} USD  │  €${eur}  │  £${gbp}  │  ₹${inr}  │  ¥${cny} CNY  │  ¥${jpy} JPY${RESET}"
         echo ""
     fi
 }

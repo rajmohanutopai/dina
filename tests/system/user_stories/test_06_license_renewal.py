@@ -666,9 +666,11 @@ class TestLicenseRenewal:
             )
 
         # PII fields should be in denied_fields.
-        denied_lower = {d.lower() for d in denied}
+        # Normalise: LLM may return "Holder name" (space) or "holder_name"
+        # (underscore) — both are valid representations of the same field.
+        denied_normalised = {d.lower().replace(" ", "_") for d in denied}
         for pii_field in pii_fields:
-            assert pii_field.lower() in denied_lower, (
+            assert pii_field.lower().replace(" ", "_") in denied_normalised, (
                 f"PII field '{pii_field}' not in denied_fields: {denied}"
             )
 
