@@ -629,6 +629,29 @@ class MockAppView:
         self.product_scores[pid]["outcomes"].append(report)
         self._recompute(pid)
 
+    def seed_attestations(
+        self, product_did: str, reviews: list[dict],
+    ) -> None:
+        """Seed raw trust attestation data for a product.
+
+        Each review dict has: reviewer_did, reviewer_name, ring, sentiment,
+        text, source_url, created_at.  Used by test suites 22/23 to populate
+        the Trust Network with known review data.
+        """
+        if product_did not in self.product_scores:
+            self.product_scores[product_did] = {
+                "score": 0, "sample_size": 0,
+                "attestations": [], "outcomes": [],
+                "reviews": [],
+            }
+        self.product_scores[product_did]["reviews"] = list(reviews)
+        self.product_scores[product_did]["sample_size"] = len(reviews)
+
+        # Compute score from sentiment distribution
+        positive = sum(1 for r in reviews if r.get("sentiment") == "positive")
+        total = len(reviews) or 1
+        self.product_scores[product_did]["score"] = int(positive / total * 100)
+
     def query_product(self, product_id: str) -> dict | None:
         return self.product_scores.get(product_id)
 

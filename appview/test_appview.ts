@@ -454,7 +454,7 @@ function aggregate(tests: TestResult[], sectionMap: Map<number, string>): Sectio
 
 function useColor(noColorFlag: boolean): boolean {
   if (noColorFlag || process.env.NO_COLOR) return false
-  return process.stdout.isTTY ?? false
+  return (process.stdout.isTTY ?? false) || process.env.FORCE_COLOR === '1'
 }
 
 class Colors {

@@ -35,17 +35,6 @@ class TestSilenceUnderStress:
     """
 
     # TST-E2E-121
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "TST-E2E-121 (Phase 2): Notification storm handling at scale "
-            "is unimplemented.  No bulk event injection endpoint exists.  "
-            "Briefing generation has no grouping/summarization for 100+ "
-            "engagement items.  The full fiduciary-only-interrupts "
-            "pipeline under volume stress requires Brain + Core "
-            "coordination not yet built."
-        ),
-    )
     def test_notification_storm_only_fiduciary_interrupts(
         self,
         don_alonso: HomeNode,

@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dina &mdash; Test Results</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #FAF8F5;
+  --card: #FFFFFF;
+  --text: #1C1917;
+  --text2: #57534E;
+  --dim: #A8A29E;
+  --border: rgba(0,0,0,0.07);
+  --c-pass: #059669;
+  --c-fail: #DC2626;
+  --c-skip: #D97706;
+  --c-xfail: #7C3AED;
+  --radius: 20px;
+  --radius-sm: 12px;
+  --font-h: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-b: 'Figtree', system-ui, sans-serif;
+  --font-m: 'JetBrains Mono', ui-monospace, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-b);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+.container { max-width: 1280px; margin: 0 auto; padding: 40px 24px 60px; }
+header {
+  text-align: center;
+  margin-bottom: 36px;
+  padding: 48px 24px 36px;
+  background: linear-gradient(135deg, #FAF8F5 0%, #F5F0EB 100%);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+header h1 {
+  font-family: var(--font-h);
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+header .sub { color: var(--text2); margin-top: 6px; font-size: 0.95rem; }
+header .timestamp { color: var(--dim); font-size: 0.85rem; margin-top: 4px; }
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 32px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  transition: box-shadow 0.2s;
+}
+.card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+.card h2, .card h3 {
+  font-family: var(--font-h);
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+.card h4 {
+  font-family: var(--font-h);
+  font-weight: 500;
+  font-size: 0.95rem;
+  color: var(--text2);
+  margin: 20px 0 8px;
+}
+.stats-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+.stat {
+  flex: 1;
+  min-width: 100px;
+  text-align: center;
+  padding: 18px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+.stat-value {
+  font-family: var(--font-m);
+  font-size: 1.8rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.stat-label {
+  font-size: 0.8rem;
+  color: var(--text2);
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.stat.total .stat-value { color: var(--text); }
+.stat.pass .stat-value { color: var(--c-pass); }
+.stat.fail .stat-value { color: var(--c-fail); }
+.stat.skip .stat-value { color: var(--c-skip); }
+.stat.xfail .stat-value { color: var(--c-xfail); }
+.hero-rate {
+  font-family: var(--font-m);
+  font-size: 3.5rem;
+  font-weight: 700;
+  text-align: center;
+  margin: 8px 0 4px;
+}
+.hero-rate.pass { color: var(--c-pass); }
+.hero-rate.warn { color: var(--c-skip); }
+.hero-rate.fail { color: var(--c-fail); }
+.hero-label {
+  text-align: center;
+  color: var(--dim);
+  font-size: 0.85rem;
+  margin-bottom: 20px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  margin-top: 8px;
+}
+th {
+  font-family: var(--font-h);
+  font-weight: 600;
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 2px solid var(--border);
+  color: var(--text2);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+th.num, td.num { text-align: right; font-family: var(--font-m); font-size: 0.85rem; }
+td { padding: 8px 14px; border-bottom: 1px solid var(--border); }
+tbody tr:hover { background: var(--bg); }
+tfoot td {
+  font-weight: 600;
+  font-family: var(--font-h);
+  border-top: 2px solid var(--border);
+  border-bottom: none;
+  padding-top: 10px;
+}
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 99px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-family: var(--font-h);
+  letter-spacing: 0.02em;
+}
+.badge.pass { background: #ECFDF5; color: var(--c-pass); }
+.badge.fail { background: #FEF2F2; color: var(--c-fail); }
+.badge.skip { background: #FFFBEB; color: var(--c-skip); }
+.badge.xfail { background: #F5F3FF; color: var(--c-xfail); }
+.suite-dot {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.suite-card { border-left-width: 4px; border-left-style: solid; }
+.suite-header { display: flex; justify-content: space-between; align-items: baseline; }
+.pass-rate {
+  font-family: var(--font-m);
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+.pass-rate.pass { color: var(--c-pass); }
+.pass-rate.warn { color: var(--c-skip); }
+.pass-rate.fail { color: var(--c-fail); }
+.pass-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: #E7E5E4;
+  overflow: hidden;
+  margin: 6px 0 12px;
+}
+.pass-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.6s ease;
+}
+.suite-stats {
+  font-size: 0.85rem;
+  color: var(--text2);
+  margin-bottom: 16px;
+}
+.suite-stats .dot { margin: 0 6px; color: var(--dim); }
+.c-pass { color: var(--c-pass); }
+.c-fail { color: var(--c-fail); }
+.c-skip { color: var(--c-skip); }
+.c-xfail { color: var(--c-xfail); }
+.no-detail { color: var(--dim); font-style: italic; font-size: 0.9rem; }
+.stories-showcase {
+  border: 1px solid rgba(5, 150, 105, 0.15);
+  background: linear-gradient(135deg, #FFFFFF 0%, #F0FDF4 100%);
+}
+.stories-header {
+  text-align: center;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+.stories-header h2 {
+  font-family: var(--font-h);
+  font-weight: 700;
+  font-size: 1.5rem;
+  margin-bottom: 4px;
+}
+.stories-tagline {
+  color: var(--dim);
+  font-style: italic;
+  font-size: 0.9rem;
+}
+.stories-stats {
+  font-size: 0.9rem;
+  color: var(--text2);
+  margin-top: 4px;
+}
+.stories-stats .dot { margin: 0 6px; color: var(--dim); }
+.story {
+  padding: 18px 0 14px;
+  border-bottom: 1px solid var(--border);
+}
+.story:last-child { border-bottom: none; }
+.story-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.story-num {
+  font-family: var(--font-m);
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  min-width: 28px;
+  text-align: center;
+}
+.story-num.pass { color: var(--c-pass); background: #ECFDF5; }
+.story-num.fail { color: var(--c-fail); background: #FEF2F2; }
+.story-name {
+  font-family: var(--font-h);
+  font-weight: 600;
+  font-size: 1rem;
+  flex: 1;
+}
+.story-desc p {
+  color: var(--text2);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  margin: 1px 0;
+  padding-left: 48px;
+}
+footer {
+  text-align: center;
+  margin-top: 32px;
+  padding: 24px;
+  color: var(--dim);
+  font-size: 0.82rem;
+}
+footer a { color: var(--text2); text-decoration: none; }
+footer a:hover { text-decoration: underline; }
+@media (max-width: 768px) {
+  .stats-row { gap: 8px; }
+  .stat { min-width: 70px; padding: 12px 8px; }
+  .stat-value { font-size: 1.3rem; }
+  .hero-rate { font-size: 2.5rem; }
+  .card { padding: 20px 16px; }
+  header h1 { font-size: 1.6rem; }
+  th, td { padding: 6px 8px; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <h1>Dina &mdash; Test Results</h1>
+  <div class="sub">The Architecture of Agency</div>
+  <div class="timestamp">Generated 2026-03-13 18:33:27 &middot; 26m04s total runtime</div>
+</header>
+
+<div class="card">
+  <div class="hero-rate warn">92.0%</div>
+  <div class="hero-label">Overall Pass Rate</div>
+  <div class="stats-row">
+    <div class="stat total">
+      <div class="stat-value">4672</div>
+      <div class="stat-label">Total</div>
+    </div>
+    <div class="stat pass">
+      <div class="stat-value">4298</div>
+      <div class="stat-label">Passed</div>
+    </div>
+    <div class="stat fail">
+      <div class="stat-value">205</div>
+      <div class="stat-label">Failed</div>
+    </div>
+    <div class="stat skip">
+      <div class="stat-value">135</div>
+      <div class="stat-label">Skipped</div>
+    </div>
+    <div class="stat xfail">
+      <div class="stat-value">34</div>
+      <div class="stat-label">XFail</div>
+    </div>
+  </div>
+  
+    <table>
+      <thead>
+        <tr>
+          <th>Suite</th><th class="num">Total</th><th class="num">Pass</th>
+          <th class="num">Fail</th><th class="num">Skip</th><th class="num">XFail</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><span class="suite-dot" style="background:#2563EB"></span> Core (Go)</td><td class="num">1979</td><td class="num">1945</td><td class="num">0</td><td class="num">34</td><td class="num">0</td><td><span class="badge skip">PASS</span></td></tr><tr><td><span class="suite-dot" style="background:#059669"></span> Brain (Py)</td><td class="num">706</td><td class="num">676</td><td class="num">1</td><td class="num">0</td><td class="num">29</td><td><span class="badge fail">FAIL</span></td></tr><tr><td><span class="suite-dot" style="background:#7C3AED"></span> Integration</td><td class="num">961</td><td class="num">961</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr><tr><td><span class="suite-dot" style="background:#D97706"></span> E2E (Docker)</td><td class="num">121</td><td class="num">114</td><td class="num">2</td><td class="num">0</td><td class="num">5</td><td><span class="badge fail">FAIL</span></td></tr><tr><td><span class="suite-dot" style="background:#0891B2"></span> CLI (Py)</td><td class="num">52</td><td class="num">52</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr><tr><td><span class="suite-dot" style="background:#2563EB"></span> User Story Tests</td><td class="num">103</td><td class="num">103</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr><tr><td><span class="suite-dot" style="background:#059669"></span> Release Tests</td><td class="num">132</td><td class="num">132</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr><tr><td><span class="suite-dot" style="background:#7C3AED"></span> AppView Unit Tests</td><td class="num">295</td><td class="num">295</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr><tr><td><span class="suite-dot" style="background:#D97706"></span> AppView Integration Tests</td><td class="num">323</td><td class="num">20</td><td class="num">202</td><td class="num">101</td><td class="num">0</td><td><span class="badge fail">FAIL</span></td></tr>
+      </tbody>
+      <tfoot>
+        <tr>
+          <td>TOTAL</td><td class="num">4672</td><td class="num">4298</td>
+          <td class="num">205</td><td class="num">135</td><td class="num">34</td>
+          <td><span class="badge fail">FAILED</span></td>
+        </tr>
+      </tfoot>
+    </table>
+</div>
+
+<div class="card stories-showcase"><div class="stories-header"><h2>User Story Tests</h2><div class="stories-tagline">Zero mocks. Real stack. Real crypto. Real trust.</div><div class="pass-rate pass" style="font-size:1.4rem;margin:8px 0">100.0%</div><div class="stories-stats">103 tests <span class="dot">&middot;</span> <span class="c-pass">103 passed</span></div></div><div class="story"><div class="story-header"><span class="story-num pass">01</span><span class="story-name">The Purchase Journey</span><span class="badge pass">13/13</span></div><div class="story-desc"><p>“I need a chair” -> 5 reviewers created (3 verified Ring 2, 2 unverified Ring 1)</p>
+<p>Dina checks health vault (back pain, needs lumbar), finance vault (budget 10-20K INR)</p>
+<p>Trust-weighted reviews: skip CheapChair (low trust score), recommends ErgoMax Elite</p></div></div>
+<div class="story"><div class="story-header"><span class="story-num pass">02</span><span class="story-name">The Sancho Moment</span><span class="badge pass">7/7</span></div><div class="story-desc"><p>Sancho arrives -> Sancho’s Dina contacts your Dina (D2D encrypted, Ed25519 signed)</p>
+<p>Your Dina searches vault by Sancho’s DID, finds: “his mother had a fall”, “likes cardamom tea”</p>
+<p>Nudge: “Sancho 15 min away. Ask about his sick mother. Make cardamom tea.”</p></div></div>
+<div class="story"><div class="story-header"><span class="story-num pass">03</span><span class="story-name">The Dead Internet Filter</span><span class="badge pass">8/8</span></div><div class="story-desc"><p>“Is this video AI?” -> Dina resolves creator DID via AT Protocol Trust Network</p>
+<p>Elena (Ring 3): 200 attestations, 15 peer vouches, 2yr history -> “authentic, trusted creator”</p>
+<p>BotFarm (Ring 1): 0 attestations, 3-day-old account -> “unverified, check other sources”</p></div></div>
+<div class="story"><div class="story-header"><span class="story-num pass">04</span><span class="story-name">The Persona Wall</span><span class="badge pass">11/11</span></div><div class="story-desc"><p>Shopping agent asks “any health conditions?” -> Guardian blocks cross-persona access</p>
+<p>Health (restricted): “L4-L5 herniation” withheld. Proposes “chronic back pain” only</p>
+<p>User approves minimal disclosure. PII scrubber confirms no diagnosis leaked</p></div></div>
+<div class="story"><div class="story-header"><span class="story-num pass">05</span><span class="story-name">The Agent Gateway</span><span class="badge pass">10/10</span></div><div class="story-desc"><p>OpenClaw/Perplexity Computer wants to send email -> pairs with Home Node, asks Dina first</p>
+<p>Dina checks: safe? matches your rules? PII leaking? “send_email” -> MODERATE, asks you first</p>
+<p>Safe tasks (web search) pass silently. Rogue agent with no auth -> 401, blocked at the gate</p></div></div>
+<div class="story"><div class="story-header"><span class="story-num pass">06</span><span class="story-name">The License Renewal</span><span class="badge pass">10/10</span></div><div class="story-desc"><p>User uploads license scan -> Brain extracts fields with confidence scores</p>
+<p>Deterministic reminder fires 30 days before expiry (no LLM in the scheduling)</p>
+<p>Delegation: Brain generates strict JSON for DMV-Bot. Guardian flags for human review</p></div></div>
+<div class="story"><div class="story-header"><span class="story-num pass">07</span><span class="story-name">The Daily Briefing</span><span class="badge pass">5/5</span></div><div class="story-desc"><p>Most noise waits quietly. Real harm interrupts immediately.</p>
+<p>At the end of the day, Dina gives one calm summary and clears the queue.</p></div></div>
+<div class="story"><div class="story-header"><span class="story-num pass">08</span><span class="story-name">Move to a New Machine</span><span class="badge pass">8/8</span></div><div class="story-desc"><p>Dina exports from the old machine and imports on the new one as an encrypted archive.</p>
+<p>The wrong seed cannot unlock the vault. The same seed restores identity and data.</p>
+<p>Migration is non-destructive: the old machine still works after export.</p></div></div>
+<div class="story"><div class="story-header"><span class="story-num pass">09</span><span class="story-name">Connector Credential Expiry</span><span class="badge pass">5/5</span></div><div class="story-desc"><p>Gmail OAuth expires — connector status: expired. Vault and identity still work.</p>
+<p>User reconfigures credentials, connector resumes. No cascade, no crash.</p></div></div>
+<div class="story"><div class="story-header"><span class="story-num pass">10</span><span class="story-name">The Operator Journey</span><span class="badge pass">5/5</span></div><div class="story-desc"><p>Re-run install script — DID unchanged (idempotent). No rotation, no orphaned data.</p>
+<p>Identity is derived from master seed — immutable after bootstrap.</p></div></div>
+<div class="story"><div class="story-header"><span class="story-num pass">11</span><span class="story-name">The Anti-Her</span><span class="badge pass">5/5</span></div><div class="story-desc"><p>“Haven’t talked to Sarah in 45 days” -> proactive nudge in briefing, not on demand.</p>
+<p>Life event follow-up: “Sancho’s mother was ill” -> “you might want to check in.”</p>
+<p>Emotional dependency detected -> Dina suggests specific humans, never herself.</p></div></div>
+<div class="story"><div class="story-header"><span class="story-num pass">12</span><span class="story-name">Verified Truth</span><span class="badge pass">9/9</span></div><div class="story-desc"><p>When Dina has little evidence, she says so honestly.</p>
+<p>When people disagree, she says the evidence is mixed instead of pretending certainty.</p>
+<p>When the signal is strong, she speaks clearly and points back to the original sources.</p></div></div>
+<div class="story"><div class="story-header"><span class="story-num pass">13</span><span class="story-name">Silence Under Stress</span><span class="badge pass">3/3</span></div><div class="story-desc"><p>Even in a flood of alerts, Dina interrupts only for what truly matters.</p>
+<p>Fake urgency from strangers is suspicious; trusted urgent events can break through.</p></div></div>
+<div class="story"><div class="story-header"><span class="story-num pass">14</span><span class="story-name">Agent Sandbox</span><span class="badge pass">4/4</span></div><div class="story-desc"><p>No auth, no access. Revoked means revoked immediately.</p>
+<p>Sensitive actions stay blocked unless you approve them.</p>
+<p>Agents cannot impersonate someone else.</p></div></div></div>
+    <div class="card suite-card" style="border-left: 4px solid #2563EB">
+      <div class="suite-header">
+        <h3>Integration Tests</h3>
+        <span class="pass-rate warn">98.1%</span>
+      </div>
+      <div class="pass-bar"><div class="pass-bar-fill" style="width:98.1%;background:#2563EB"></div></div>
+      <div class="suite-stats">
+        <span>3819 tests</span>
+        <span class="dot">&middot;</span>
+        <span class="c-pass">3748 passed</span>
+        <span class="dot">&middot;</span><span class="c-fail">3 failed</span>
+        <span class="dot">&middot;</span><span class="c-skip">34 skipped</span>
+        <span class="dot">&middot;</span><span class="c-xfail">34 xfail</span>
+      </div>
+      
+            <h4>Core (Go)</h4>
+            <table>
+              <thead>
+                <tr>
+                  <th class="num">#</th><th>Section</th>
+                  <th class="num">Total</th><th class="num">Pass</th>
+                  <th class="num">Fail</th><th class="num">Skip</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td class="num">1</td><td>Vault Operations</td><td class="num">412</td><td class="num">400</td><td class="num">0</td><td class="num">12</td><td><span class="badge skip">PASS</span></td></tr>
+<tr><td class="num">2</td><td>Identity & DID</td><td class="num">318</td><td class="num">312</td><td class="num">0</td><td class="num">6</td><td><span class="badge skip">PASS</span></td></tr>
+<tr><td class="num">3</td><td>PII Scrubber</td><td class="num">201</td><td class="num">195</td><td class="num">0</td><td class="num">6</td><td><span class="badge skip">PASS</span></td></tr>
+<tr><td class="num">4</td><td>Auth & Middleware</td><td class="num">389</td><td class="num">387</td><td class="num">0</td><td class="num">2</td><td><span class="badge skip">PASS</span></td></tr>
+<tr><td class="num">5</td><td>WebSocket</td><td class="num">128</td><td class="num">124</td><td class="num">0</td><td class="num">4</td><td><span class="badge skip">PASS</span></td></tr>
+<tr><td class="num">6</td><td>Rate Limiting</td><td class="num">89</td><td class="num">89</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">7</td><td>Personas & Gatekeeper</td><td class="num">211</td><td class="num">208</td><td class="num">0</td><td class="num">3</td><td><span class="badge skip">PASS</span></td></tr>
+<tr><td class="num">8</td><td>Admin & Config</td><td class="num">231</td><td class="num">230</td><td class="num">0</td><td class="num">1</td><td><span class="badge skip">PASS</span></td></tr>
+              </tbody>
+              
+                <tfoot>
+                  <tr>
+                    <td></td><td>TOTAL</td>
+                    <td class="num">1979</td>
+                    <td class="num">1945</td>
+                    <td class="num">0</td>
+                    <td class="num">34</td>
+                    
+                    <td></td>
+                  </tr>
+                </tfoot>
+            </table>
+
+            <h4>Brain (Py)</h4>
+            <table>
+              <thead>
+                <tr>
+                  <th class="num">#</th><th>Section</th>
+                  <th class="num">Total</th><th class="num">Pass</th>
+                  <th class="num">Fail</th><th class="num">Skip</th>
+                  <th class="num">XFail</th><th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td class="num">1</td><td>Guardian Angel</td><td class="num">198</td><td class="num">190</td><td class="num">1</td><td class="num">0</td><td class="num">7</td><td><span class="badge fail">FAIL</span></td></tr>
+<tr><td class="num">2</td><td>Silence Classifier</td><td class="num">156</td><td class="num">148</td><td class="num">0</td><td class="num">0</td><td class="num">8</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">3</td><td>PII Service</td><td class="num">89</td><td class="num">87</td><td class="num">0</td><td class="num">0</td><td class="num">2</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">4</td><td>Nudge Assembly</td><td class="num">112</td><td class="num">108</td><td class="num">0</td><td class="num">0</td><td class="num">4</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">5</td><td>Agent Orchestration</td><td class="num">78</td><td class="num">74</td><td class="num">0</td><td class="num">0</td><td class="num">4</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">6</td><td>Admin UI</td><td class="num">73</td><td class="num">69</td><td class="num">0</td><td class="num">0</td><td class="num">4</td><td><span class="badge pass">PASS</span></td></tr>
+              </tbody>
+              
+                <tfoot>
+                  <tr>
+                    <td></td><td>TOTAL</td>
+                    <td class="num">706</td>
+                    <td class="num">676</td>
+                    <td class="num">1</td>
+                    <td class="num">0</td>
+                    <td class="num">29</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+            </table>
+
+            <h4>Integration</h4>
+            <table>
+              <thead>
+                <tr>
+                  <th class="num">#</th><th>Section</th>
+                  <th class="num">Total</th><th class="num">Pass</th>
+                  <th class="num">Fail</th><th class="num">Skip</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td class="num">1</td><td>Vault CRUD</td><td class="num">245</td><td class="num">245</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">2</td><td>Search (FTS5+HNSW)</td><td class="num">189</td><td class="num">189</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">3</td><td>Persona Isolation</td><td class="num">134</td><td class="num">134</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">4</td><td>Auth Contract</td><td class="num">156</td><td class="num">156</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">5</td><td>PII Pipeline</td><td class="num">98</td><td class="num">98</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">6</td><td>WebSocket Events</td><td class="num">67</td><td class="num">67</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">7</td><td>Docker Compose</td><td class="num">72</td><td class="num">72</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+              </tbody>
+              
+                <tfoot>
+                  <tr>
+                    <td></td><td>TOTAL</td>
+                    <td class="num">961</td>
+                    <td class="num">961</td>
+                    <td class="num">0</td>
+                    <td class="num">0</td>
+                    
+                    <td></td>
+                  </tr>
+                </tfoot>
+            </table>
+
+            <h4>E2E (Docker)</h4>
+            <table>
+              <thead>
+                <tr>
+                  <th class="num">#</th><th>Section</th>
+                  <th class="num">Total</th><th class="num">Pass</th>
+                  <th class="num">Fail</th><th class="num">Skip</th>
+                  <th class="num">XFail</th><th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td class="num">1</td><td>Don Alonso Flows</td><td class="num">34</td><td class="num">32</td><td class="num">0</td><td class="num">0</td><td class="num">2</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">2</td><td>Sancho Interactions</td><td class="num">28</td><td class="num">27</td><td class="num">1</td><td class="num">0</td><td class="num">0</td><td><span class="badge fail">FAIL</span></td></tr>
+<tr><td class="num">3</td><td>ChairMaker Trust</td><td class="num">22</td><td class="num">20</td><td class="num">1</td><td class="num">0</td><td class="num">0</td><td><span class="badge fail">FAIL</span></td></tr>
+<tr><td class="num">4</td><td>Albert Contact</td><td class="num">18</td><td class="num">17</td><td class="num">0</td><td class="num">0</td><td class="num">1</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">5</td><td>Cross-Node Scenarios</td><td class="num">19</td><td class="num">18</td><td class="num">0</td><td class="num">0</td><td class="num">2</td><td><span class="badge pass">PASS</span></td></tr>
+              </tbody>
+              
+                <tfoot>
+                  <tr>
+                    <td></td><td>TOTAL</td>
+                    <td class="num">121</td>
+                    <td class="num">114</td>
+                    <td class="num">2</td>
+                    <td class="num">0</td>
+                    <td class="num">5</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+            </table>
+
+            <h4>CLI (Py)</h4>
+            <table>
+              <thead>
+                <tr>
+                  <th class="num">#</th><th>Section</th>
+                  <th class="num">Total</th><th class="num">Pass</th>
+                  <th class="num">Fail</th><th class="num">Skip</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td class="num">1</td><td>Pairing Ceremony</td><td class="num">18</td><td class="num">18</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">2</td><td>Signed Requests</td><td class="num">22</td><td class="num">22</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">3</td><td>OpenClaw Skill</td><td class="num">12</td><td class="num">12</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+              </tbody>
+              
+                <tfoot>
+                  <tr>
+                    <td></td><td>TOTAL</td>
+                    <td class="num">52</td>
+                    <td class="num">52</td>
+                    <td class="num">0</td>
+                    <td class="num">0</td>
+                    
+                    <td></td>
+                  </tr>
+                </tfoot>
+            </table>
+    </div>
+
+    <div class="card suite-card" style="border-left: 4px solid #7C3AED">
+      <div class="suite-header">
+        <h3>Release Tests</h3>
+        <span class="pass-rate pass">100.0%</span>
+      </div>
+      <div class="pass-bar"><div class="pass-bar-fill" style="width:100.0%;background:#7C3AED"></div></div>
+      <div class="suite-stats">
+        <span>132 tests</span>
+        <span class="dot">&middot;</span>
+        <span class="c-pass">132 passed</span>
+        
+        
+        
+      </div>
+      
+            
+            <table>
+              <thead>
+                <tr>
+                  <th class="num">#</th><th>Section</th>
+                  <th class="num">Total</th><th class="num">Pass</th>
+                  <th class="num">Fail</th><th class="num">Skip</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td class="num">1</td><td>REL-001 Service Bootstrap</td><td class="num">5</td><td class="num">5</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">2</td><td>REL-002 Health Checks</td><td class="num">4</td><td class="num">4</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">3</td><td>REL-003 Key Provisioning</td><td class="num">6</td><td class="num">6</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">4</td><td>REL-004 Vault Init</td><td class="num">5</td><td class="num">5</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">5</td><td>REL-005 Persona Create</td><td class="num">4</td><td class="num">4</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">6</td><td>REL-006 Store & Query</td><td class="num">6</td><td class="num">6</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">7</td><td>REL-007 PII Scrub</td><td class="num">5</td><td class="num">5</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">8</td><td>REL-008 Embedding</td><td class="num">4</td><td class="num">4</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">9</td><td>REL-009 Hybrid Search</td><td class="num">6</td><td class="num">6</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">10</td><td>REL-010 Auth Enforcement</td><td class="num">5</td><td class="num">5</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">11</td><td>REL-011 Rate Limiting</td><td class="num">4</td><td class="num">4</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">12</td><td>REL-012 DID Operations</td><td class="num">5</td><td class="num">5</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">13</td><td>REL-013 Agent Pairing</td><td class="num">6</td><td class="num">6</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">14</td><td>REL-014 Agent Gateway</td><td class="num">5</td><td class="num">5</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">15</td><td>REL-015 CLI Pairing</td><td class="num">5</td><td class="num">5</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">16</td><td>REL-016 CLI Vault Ops</td><td class="num">4</td><td class="num">4</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">17</td><td>REL-017 Backup/Restore</td><td class="num">6</td><td class="num">6</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">18</td><td>REL-018 Persona Tiers</td><td class="num">5</td><td class="num">5</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">19</td><td>REL-019 WebSocket Events</td><td class="num">4</td><td class="num">4</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">20</td><td>REL-020 Admin API</td><td class="num">5</td><td class="num">5</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">21</td><td>REL-021 Container Health</td><td class="num">4</td><td class="num">4</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">22</td><td>REL-022 Log Sanitization</td><td class="num">5</td><td class="num">5</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">23</td><td>REL-023 Graceful Shutdown</td><td class="num">4</td><td class="num">4</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">24</td><td>REL-024 Dead Drop Spool</td><td class="num">5</td><td class="num">5</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">25</td><td>REL-025 Crash Recovery</td><td class="num">5</td><td class="num">5</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">26</td><td>REL-026 Token Refresh</td><td class="num">4</td><td class="num">4</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">27</td><td>REL-027 Upgrade Migration</td><td class="num">6</td><td class="num">6</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+              </tbody>
+              
+                <tfoot>
+                  <tr>
+                    <td></td><td>TOTAL</td>
+                    <td class="num">132</td>
+                    <td class="num">132</td>
+                    <td class="num">0</td>
+                    <td class="num">0</td>
+                    
+                    <td></td>
+                  </tr>
+                </tfoot>
+            </table>
+    </div>
+
+    <div class="card suite-card" style="border-left: 4px solid #D97706">
+      <div class="suite-header">
+        <h3>AppView Unit Tests</h3>
+        <span class="pass-rate pass">100.0%</span>
+      </div>
+      <div class="pass-bar"><div class="pass-bar-fill" style="width:100.0%;background:#D97706"></div></div>
+      <div class="suite-stats">
+        <span>295 tests</span>
+        <span class="dot">&middot;</span>
+        <span class="c-pass">295 passed</span>
+        
+        
+        
+      </div>
+      
+            
+            <table>
+              <thead>
+                <tr>
+                  <th class="num">#</th><th>Section</th>
+                  <th class="num">Total</th><th class="num">Pass</th>
+                  <th class="num">Fail</th><th class="num">Skip</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td class="num">1</td><td>Record Handlers</td><td class="num">89</td><td class="num">89</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">2</td><td>Scorer Jobs</td><td class="num">67</td><td class="num">67</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">3</td><td>Config & Validation</td><td class="num">45</td><td class="num">45</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">4</td><td>DB Queries</td><td class="num">52</td><td class="num">52</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+<tr><td class="num">5</td><td>Lexicon Parsing</td><td class="num">42</td><td class="num">42</td><td class="num">0</td><td class="num">0</td><td><span class="badge pass">PASS</span></td></tr>
+              </tbody>
+              
+                <tfoot>
+                  <tr>
+                    <td></td><td>TOTAL</td>
+                    <td class="num">295</td>
+                    <td class="num">295</td>
+                    <td class="num">0</td>
+                    <td class="num">0</td>
+                    
+                    <td></td>
+                  </tr>
+                </tfoot>
+            </table>
+    </div>
+
+    <div class="card suite-card" style="border-left: 4px solid #0891B2">
+      <div class="suite-header">
+        <h3>AppView Integration Tests</h3>
+        <span class="pass-rate fail">6.2%</span>
+      </div>
+      <div class="pass-bar"><div class="pass-bar-fill" style="width:6.2%;background:#0891B2"></div></div>
+      <div class="suite-stats">
+        <span>323 tests</span>
+        <span class="dot">&middot;</span>
+        <span class="c-pass">20 passed</span>
+        <span class="dot">&middot;</span><span class="c-fail">202 failed</span>
+        <span class="dot">&middot;</span><span class="c-skip">101 skipped</span>
+        
+      </div>
+      
+            
+            <table>
+              <thead>
+                <tr>
+                  <th class="num">#</th><th>Section</th>
+                  <th class="num">Total</th><th class="num">Pass</th>
+                  <th class="num">Fail</th><th class="num">Skip</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td class="num">1</td><td>Ingester Pipeline</td><td class="num">78</td><td class="num">5</td><td class="num">48</td><td class="num">25</td><td><span class="badge fail">FAIL</span></td></tr>
+<tr><td class="num">2</td><td>Scorer End-to-End</td><td class="num">65</td><td class="num">4</td><td class="num">41</td><td class="num">20</td><td><span class="badge fail">FAIL</span></td></tr>
+<tr><td class="num">3</td><td>xRPC Endpoints</td><td class="num">56</td><td class="num">3</td><td class="num">35</td><td class="num">18</td><td><span class="badge fail">FAIL</span></td></tr>
+<tr><td class="num">4</td><td>Trust Resolution</td><td class="num">68</td><td class="num">4</td><td class="num">42</td><td class="num">22</td><td><span class="badge fail">FAIL</span></td></tr>
+<tr><td class="num">5</td><td>Full Stack Flow</td><td class="num">56</td><td class="num">4</td><td class="num">36</td><td class="num">16</td><td><span class="badge fail">FAIL</span></td></tr>
+              </tbody>
+              
+                <tfoot>
+                  <tr>
+                    <td></td><td>TOTAL</td>
+                    <td class="num">323</td>
+                    <td class="num">20</td>
+                    <td class="num">202</td>
+                    <td class="num">101</td>
+                    
+                    <td></td>
+                  </tr>
+                </tfoot>
+            </table>
+    </div>
+
+<footer>
+  <p><strong>Dina</strong> &mdash; The Architecture of Agency</p>
+  <p style="margin-top:4px">
+    <a href="https://github.com/rajmohanutopai/dina">github.com/rajmohanutopai/dina</a>
+  </p>
+</footer>
+
+</div>
+</body>
+</html>

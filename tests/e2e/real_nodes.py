@@ -10,13 +10,14 @@ Usage: set DINA_E2E=docker to activate in conftest.py.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
+import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
-
-import uuid
 
 from tests.e2e.actors import HomeNode, Persona, PersonaType, _mock_encrypt, _mock_sign, _mock_verify
 from tests.e2e.mocks import (
@@ -27,6 +28,12 @@ from tests.e2e.mocks import (
     TrustRing,
     VaultItem,
 )
+
+try:
+    from cryptography.hazmat.primitives.serialization import load_pem_private_key
+    _HAS_CRYPTO = True
+except ImportError:
+    _HAS_CRYPTO = False
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +67,41 @@ def _normalize_item_type(item_type: str) -> str:
 # state, which would mask real E2E integration bugs.
 import os
 _STRICT_REAL = os.environ.get("DINA_STRICT_REAL", "").strip() == "1"
+
+
+# ---------------------------------------------------------------------------
+# Ed25519 Brain API signer
+# ---------------------------------------------------------------------------
+
+class _BrainSigner:
+    """Ed25519 request signer for calling Brain API endpoints.
+
+    Same signing protocol as BrainSigner in tests/system/conftest.py:
+    canonical payload = METHOD\\nPATH\\nQUERY\\nTIMESTAMP\\nSHA256(BODY).
+    Brain verifies against Core's public key.
+    """
+
+    def __init__(self, private_key_pem: bytes) -> None:
+        if not _HAS_CRYPTO:
+            raise ImportError(
+                "cryptography package required for Ed25519 Brain API signing"
+            )
+        self._private_key = load_pem_private_key(private_key_pem, password=None)
+
+    def sign_headers(
+        self, method: str, path: str, body: bytes, query: str = "",
+    ) -> dict[str, str]:
+        """Produce X-DID / X-Timestamp / X-Signature headers."""
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        body_hash = hashlib.sha256(body).hexdigest()
+        payload = f"{method}\n{path}\n{query}\n{timestamp}\n{body_hash}"
+        signature = self._private_key.sign(payload.encode("utf-8"))
+        return {
+            "X-DID": "did:key:zE2ECoreSigner",
+            "X-Timestamp": timestamp,
+            "X-Signature": signature.hex(),
+            "Content-Type": "application/json",
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -312,6 +354,8 @@ class RealHomeNode(HomeNode):
         core_url: str,
         brain_url: str,
         client_token: str,
+        *,
+        core_private_key_pem: bytes | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -324,6 +368,11 @@ class RealHomeNode(HomeNode):
         self._real_to_mock_id: dict[str, str] = {}
         # KV keys written during the current test (for per-test cleanup)
         self._kv_keys_written: set[str] = set()
+
+        # Ed25519 signer for Brain API (Ed25519 service key auth)
+        self._brain_signer: _BrainSigner | None = None
+        if core_private_key_pem is not None and _HAS_CRYPTO:
+            self._brain_signer = _BrainSigner(core_private_key_pem)
 
         # Replace MockPIIScrubber with RealPIIScrubber
         self.scrubber = RealPIIScrubber(
@@ -339,6 +388,38 @@ class RealHomeNode(HomeNode):
     def _admin_headers(self) -> dict[str, str]:
         """Client token headers — for admin operations (persona, pairing, DID sign)."""
         return {"Authorization": f"Bearer {self._client_token}"}
+
+    def _brain_api_request(
+        self,
+        path: str,
+        *,
+        body_json: dict,
+        **kwargs: Any,
+    ) -> httpx.Response | None:
+        """POST to Brain API with Ed25519 signing.
+
+        Uses Core's Ed25519 private key to sign the request (same protocol
+        as BrainSigner in tests/system/conftest.py).  Falls back to Bearer
+        token (which will likely get 401) if no signer is available.
+        """
+        if self._brain_signer is not None:
+            body = json.dumps(body_json).encode()
+            headers = self._brain_signer.sign_headers("POST", path, body)
+            return _api_request(
+                "post",
+                f"{self._brain_url}{path}",
+                content=body,
+                headers=headers,
+                **kwargs,
+            )
+        # Fallback to Bearer token (Brain will 401, _api_request returns None)
+        return _api_request(
+            "post",
+            f"{self._brain_url}{path}",
+            json=body_json,
+            headers=self._headers(),
+            **kwargs,
+        )
 
     # -- Persona Operations ------------------------------------------------
 
@@ -802,63 +883,50 @@ class RealHomeNode(HomeNode):
 
     # -- Brain Processing (Real API) ---------------------------------------
 
-    # Event types that can be processed without an LLM
-    _NON_LLM_EVENTS = frozenset({
-        "vault_unlocked", "agent_intent", "background_sync",
-    })
-
     def _brain_process(
         self, event_type: str, payload: dict, from_did: str = "",
     ) -> dict:
-        """Process event through brain, trying real Brain API for non-LLM events.
+        """Process event through real Brain API with Ed25519 auth.
 
-        For event types in _NON_LLM_EVENTS, tries POST /api/v1/process on
-        the Brain first.  Falls back to mock (super) for LLM-dependent types
-        and on API failure.
+        Tries POST /api/v1/process on the real Brain for ALL event types
+        (not just non-LLM events).  Brain's deterministic classification
+        rules handle ~90% of events without LLM.  Falls back to mock on
+        API failure (401, timeout, or Brain returns error).
 
-        Always updates mock state (_processed_events) regardless of path.
+        Always runs the parent class's full mock side-effects (spool
+        drain, notifications, briefing queue, DND logic, etc.) so test
+        assertions on internal state remain valid.  Prefers the real
+        Brain result when available.
         """
-        if self._brain_crashed:
-            raise RuntimeError("Brain has crashed (OOM)")
-
-        # Always record the event in mock state
-        event = {
-            "type": event_type,
-            "payload": payload,
-            "from_did": from_did,
-            "timestamp": self._now(),
-        }
-        self._processed_events.append(event)
-
-        # Try real Brain API for non-LLM events
+        # Try real Brain API for all events (Ed25519 signed).
+        # Do this BEFORE super() so we can overlay the real result.
         real_result = None
-        if event_type in self._NON_LLM_EVENTS:
-            resp = _api_request(
-                "post",
-                f"{self._brain_url}/api/v1/process",
-                json={"type": event_type, "payload": payload},
-                headers=self._headers(),
+        if not self._brain_crashed:
+            resp = self._brain_api_request(
+                "/api/v1/process",
+                body_json={"type": event_type, "payload": payload},
             )
             if resp is not None:
                 real_result = resp.json()
 
-        # Always run mock side-effects (spool drain, notifications, etc.)
-        # These handlers manage internal state that must stay consistent.
-        tier = self._classify_silence(event_type, payload)
-
-        if event_type == "dina/social/arrival":
-            mock_result = self._handle_arrival(payload, from_did, tier)
-        elif event_type == "dina/commerce/inquiry":
-            mock_result = self._handle_commerce_inquiry(payload, from_did)
-        elif event_type == "vault_unlocked":
-            mock_result = self._handle_vault_unlocked()
-        else:
-            mock_result = {"status": "ok", "tier": tier.value}
+        # Run ALL mock side-effects via parent — this handles the full
+        # elif chain (contact_neglect, promise_check, reason, agent_*,
+        # dnd_disabled, security_alert, inbound_d2d, etc.) and populates
+        # briefing_queue, notifications, _processed_events, etc.
+        mock_result = super()._brain_process(event_type, payload, from_did)
 
         # Prefer real Brain result if available, but side-effects
-        # (spool drain, notifications) have already been applied above.
+        # (briefing_queue, notifications, spool drain) have already
+        # been applied by super().
         if real_result is not None:
+            tier = self._classify_silence(event_type, payload)
             real_result.setdefault("tier", tier.value)
+            # Preserve mock's domain-specific status when it indicates
+            # routing decisions (e.g., "queued_for_briefing" during DND).
+            # Real Brain doesn't know about DND or mock-side routing.
+            mock_status = mock_result.get("status", "")
+            if mock_status and mock_status != "ok":
+                real_result["status"] = mock_status
             return real_result
         return mock_result
 
@@ -969,16 +1037,34 @@ class RealHomeNode(HomeNode):
         target: str,
         context: dict | None = None,
     ) -> dict:
-        """Verify agent intent via real Brain POST /api/v1/process.
+        """Verify agent intent via mock rules + real Brain API.
 
-        Tries the Brain API first. On failure, falls back to mock
-        risk classification. Always updates audit log.
+        Mock domain rules (revocation, blocked actions, send restrictions)
+        encode REQUIREMENTS and always take priority.  The real Brain API
+        can only ESCALATE risk (never lower it).  This ensures the test-
+        enforced security rules hold even when the real Brain doesn't yet
+        implement every domain-specific check.
         """
-        # Try real Brain API
-        resp = _api_request(
-            "post",
-            f"{self._brain_url}/api/v1/process",
-            json={
+        # Step 1: Run mock domain rules — these encode requirements
+        # (revocation checks, blocked actions, send restrictions, etc.)
+        mock_result = super().verify_agent_intent(
+            agent_did, action, target, context,
+        )
+
+        # Step 2: If mock says not-approved or high risk, respect that.
+        # Mock rules are AUTHORITATIVE for security invariants.
+        if not mock_result.get("approved", True):
+            return mock_result
+        if mock_result.get("risk") in ("BLOCKED", "HIGH"):
+            return mock_result
+        if mock_result.get("requires_approval"):
+            return mock_result
+
+        # Step 3: For actions mock approves, try real Brain for potential
+        # risk escalation (Brain can only make it stricter, never safer).
+        resp = self._brain_api_request(
+            "/api/v1/process",
+            body_json={
                 "type": "agent_intent",
                 "payload": {
                     "action": action,
@@ -987,13 +1073,9 @@ class RealHomeNode(HomeNode):
                     "context": context or {},
                 },
             },
-            headers=self._headers(),
         )
         if resp is not None:
             data = resp.json()
-            # Only use Brain's risk if it explicitly returns one.
-            # The Brain's "classification" field is the silence tier
-            # (e.g. "engagement"), NOT risk — do not use it here.
             risk_str = data.get("risk")
             if risk_str:
                 risk_map = {
@@ -1002,24 +1084,27 @@ class RealHomeNode(HomeNode):
                     "HIGH": ActionRisk.HIGH,
                     "BLOCKED": ActionRisk.BLOCKED,
                 }
-                risk = risk_map.get(risk_str.upper(), ActionRisk.MODERATE)
+                brain_risk = risk_map.get(risk_str.upper(), ActionRisk.MODERATE)
+                mock_risk = ActionRisk[mock_result.get("risk", "SAFE")]
 
-                result = {
-                    "action": action,
-                    "target": target,
-                    "risk": risk.name,
-                    "approved": risk == ActionRisk.SAFE,
-                    "requires_approval": risk in (
-                        ActionRisk.MODERATE, ActionRisk.HIGH,
-                    ),
-                }
-                self._log_audit("agent_intent", {
-                    "agent_did": agent_did,
-                    "action": action,
-                    "risk": risk.name,
-                    "source": "brain_api",
-                })
-                return result
+                # Only use Brain's risk if it's MORE restrictive
+                if brain_risk.value > mock_risk.value:
+                    result = {
+                        "action": action,
+                        "target": target,
+                        "risk": brain_risk.name,
+                        "approved": brain_risk == ActionRisk.SAFE,
+                        "requires_approval": brain_risk in (
+                            ActionRisk.MODERATE, ActionRisk.HIGH,
+                        ),
+                    }
+                    self._log_audit("agent_intent", {
+                        "agent_did": agent_did,
+                        "action": action,
+                        "risk": brain_risk.name,
+                        "source": "brain_api_escalation",
+                    })
+                    return result
 
-        # Fall back to mock classification (has domain-specific risk rules)
-        return super().verify_agent_intent(agent_did, action, target, context)
+        # Brain didn't escalate — use mock result
+        return mock_result

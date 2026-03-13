@@ -386,9 +386,10 @@ class TestATProtocolPDS:
                 pytest.skip("Main stack (PDS+Core) not running — start with: docker compose up -d")
             import subprocess
 
-            # Use main stack logs (not E2E stack)
+            # Use main stack logs (not E2E stack).
+            # test_status.py starts the main stack with -p dina-main.
             result = subprocess.run(
-                ["docker", "compose", "logs", "core"],
+                ["docker", "compose", "-p", "dina-main", "logs", "core"],
                 capture_output=True, text=True, timeout=10,
             )
             logs = result.stdout

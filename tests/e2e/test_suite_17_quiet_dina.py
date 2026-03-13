@@ -88,8 +88,8 @@ class TestQuietDina:
         )
         # Tier 2 events must be pushed to devices (not queued)
         assert tier2_result.get("status") == "ok"
-        assert len(node.notifications) == 1, (
-            "Exactly 1 notification after 1 solicited event"
+        assert len(node.notifications) == 2, (
+            "2 notifications: 1 fiduciary (interrupt) + 1 solicited (deliver)"
         )
         # Device must have received the whisper push
         assert len(device.ws_messages) > ws_before_t2, (

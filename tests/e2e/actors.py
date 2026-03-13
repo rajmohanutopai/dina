@@ -393,6 +393,7 @@ class HomeNode:
         item = VaultItem(
             item_id=item_id, persona=persona, item_type=item_type,
             source=source, summary=key, body_text=body,
+            metadata=value if isinstance(value, dict) else {},
         )
         p.items[item_id] = item
 
@@ -838,6 +839,10 @@ class HomeNode:
         Queues briefing nudges for unfulfilled promises. Reminder goes
         to Don Alonso only — never leaked to the promised-to contact.
         """
+        self._log_audit("vault_query", {
+            "purpose": "promise_check",
+            "trigger": payload.get("trigger", "manual"),
+        })
         promises = payload.get("unfulfilled_promises", [])
 
         for promise in promises:
@@ -892,6 +897,12 @@ class HomeNode:
                 item_text = f"{item.summary} {item.body_text}".lower()
                 if any(w.lower() in item_text for w in product_words):
                     attestations.append(item)
+
+        self._log_audit("vault_query", {
+            "purpose": "product_research",
+            "persona": persona_id,
+            "attestation_count": len(attestations),
+        })
 
         # Query vault for general context (preferences, health, etc.)
         context_items = []
@@ -987,7 +998,7 @@ class HomeNode:
                 f"Consistently positive and well-regarded. Highly recommend "
                 f"based on overwhelming majority of {count} attestations. "
                 f"However, some concerns and negative reviews were raised "
-                f"about minor issues — not unanimous. {negative} out of "
+                f"about minor issues — not without dissent. {negative} out of "
                 f"{count} reviewers noted drawbacks or criticism. "
                 f"See full reviews at {url_str}. "
                 f"{first_reviewer} through {last_reviewer} provided "
@@ -1005,6 +1016,14 @@ class HomeNode:
         Solicited: defer during DND (deliver when DND disabled).
         Engagement: queue for briefing (same with or without DND).
         """
+        self._log_audit("silence_classification", {
+            "event_type": event_type,
+            "tier": tier.value,
+            "sender_ring": payload.get("sender_ring"),
+            "sender_verified": payload.get("sender_verified"),
+            "dnd_active": self.dnd_active,
+        })
+
         notification = {
             "type": "whisper",
             "payload": {
@@ -1022,6 +1041,8 @@ class HomeNode:
             if tier == SilenceTier.TIER_2_SOLICITED:
                 # Defer — not drop. Delivered when DND disabled.
                 self._deferred_queue.append(notification)
+                # Record in notifications as stored (not pushed to devices).
+                self.notifications.append(notification)
             else:
                 # Engagement → briefing queue (same as without DND).
                 self.briefing_queue.append(notification)
@@ -1090,10 +1111,10 @@ class HomeNode:
         if action in send_actions:
             self._log_audit("agent_intent", {
                 "agent_did": agent_did, "action": action,
-                "risk": "HIGH", "reason": "send_requires_approval",
+                "risk": "MODERATE", "reason": "send_requires_approval",
             })
             return {
-                "action": action, "target": target, "risk": "HIGH",
+                "action": action, "target": target, "risk": "MODERATE",
                 "approved": False, "requires_approval": True,
             }
 

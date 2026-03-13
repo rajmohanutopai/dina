@@ -1454,7 +1454,7 @@ def aggregate(
 def _use_color(no_color_flag: bool) -> bool:
     if no_color_flag or os.environ.get("NO_COLOR"):
         return False
-    return sys.stdout.isatty()
+    return sys.stdout.isatty() or os.environ.get("FORCE_COLOR") == "1"
 
 
 class Colors:

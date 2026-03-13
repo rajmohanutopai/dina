@@ -192,6 +192,25 @@ class MultiNodeDockerServices:
                 "Run install.sh or create secrets/client_token manually."
             )
 
+    def extract_core_private_key(self, actor: str) -> bytes:
+        """Extract Core's Ed25519 private key PEM from a running container.
+
+        Returns the PEM bytes for use with BrainSigner (Ed25519 request
+        signing for Brain API calls).  Same pattern as SystemServices in
+        tests/system/conftest.py.
+        """
+        result = self._compose(
+            "exec", "-T", f"core-{actor}",
+            "cat", "/run/secrets/service_keys/private/core_ed25519_private.pem",
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"Failed to extract core private key for {actor}: "
+                f"{result.stderr[:200]}"
+            )
+        out = result.stdout
+        return out.encode() if isinstance(out, str) else out
+
     def is_running(self) -> bool:
         """Check if all services respond to health checks."""
         return self._all_healthy()

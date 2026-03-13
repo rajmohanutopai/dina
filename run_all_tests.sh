@@ -101,6 +101,9 @@ if [ -t 1 ]; then
     RED="\033[1;31m"
     CYAN="\033[36m"
     RESET="\033[0m"
+    # Sub-commands piped through tee lose isatty() detection.
+    # FORCE_COLOR tells them to emit ANSI codes anyway.
+    export FORCE_COLOR=1
 else
     BOLD="" DIM="" GREEN="" RED="" CYAN="" RESET=""
 fi
@@ -229,6 +232,11 @@ RESULTS=()
 EXIT_CODE=0
 
 # ---------------------------------------------------------------------------
+# Suite output capture (for grand summary + HTML report)
+# ---------------------------------------------------------------------------
+SUITE_OUTPUT_DIR=$(mktemp -d /tmp/dina-suite-output-XXXXXX)
+
+# ---------------------------------------------------------------------------
 # LLM cost tracking
 # ---------------------------------------------------------------------------
 LLM_COST_DIR=$(mktemp -d /tmp/dina-llm-cost-XXXXXX)
@@ -317,8 +325,9 @@ run_suite() {
     echo ""
 
     local start=$SECONDS
-    "$@"
-    local rc=$?
+    local suite_log="$SUITE_OUTPUT_DIR/suite_${num}.log"
+    "$@" 2>&1 | tee "$suite_log"
+    local rc=${PIPESTATUS[0]}
     local elapsed=$(( SECONDS - start ))
     local mins=$(( elapsed / 60 ))
     local secs=$(( elapsed % 60 ))
@@ -330,7 +339,23 @@ run_suite() {
         EXIT_CODE=1
     fi
 
+    # Write metadata for report generation
+    local passed_bool="true"
+    [ $rc -ne 0 ] && passed_bool="false"
+    printf '{"number":%d,"name":"%s","elapsed_s":%d,"passed":%s}\n' \
+        "$num" "$name" "$elapsed" "$passed_bool" \
+        > "$SUITE_OUTPUT_DIR/suite_${num}.meta.json"
+
     return $rc
+}
+
+generate_report() {
+    if [ -d "$SUITE_OUTPUT_DIR" ]; then
+        python3 scripts/generate_test_report.py \
+            "$SUITE_OUTPUT_DIR" \
+            $(( SECONDS - TOTAL_START )) \
+            2>/dev/null || true
+    fi
 }
 
 handle_failure() {
@@ -340,6 +365,7 @@ handle_failure() {
     drain_group_b
     echo -e "\n${RED}Suite ${suite_counter} failed. Stopping. Use --continue to run all suites.${RESET}"
     print_summary
+    generate_report
     exit 1
 }
 
@@ -395,8 +421,9 @@ run_suite_bg() {
     echo ""
 
     local start=$SECONDS
-    "$@"
-    local rc=$?
+    local suite_log="$SUITE_OUTPUT_DIR/suite_${num}.log"
+    "$@" 2>&1 | tee "$suite_log"
+    local rc=${PIPESTATUS[0]}
     local elapsed=$(( SECONDS - start ))
     local mins=$(( elapsed / 60 ))
     local secs=$(( elapsed % 60 ))
@@ -406,6 +433,13 @@ run_suite_bg() {
     else
         echo "FAIL|$name|${mins}m${secs}s" >> "$result_file"
     fi
+
+    # Write metadata for report generation
+    local passed_bool="true"
+    [ $rc -ne 0 ] && passed_bool="false"
+    printf '{"number":%d,"name":"%s","elapsed_s":%d,"passed":%s}\n' \
+        "$num" "$name" "$elapsed" "$passed_bool" \
+        > "$SUITE_OUTPUT_DIR/suite_${num}.meta.json"
 
     return $rc
 }
@@ -513,5 +547,7 @@ trap cleanup_docker EXIT
 # Summary
 # ---------------------------------------------------------------------------
 print_summary
+generate_report
 rm -rf "$LLM_COST_DIR" 2>/dev/null || true
+rm -rf "$SUITE_OUTPUT_DIR" 2>/dev/null || true
 exit $EXIT_CODE

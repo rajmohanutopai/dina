@@ -186,16 +186,34 @@ def payment_gateway() -> MockPaymentGateway:
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="session")
-def don_alonso(plc_directory, d2d_network, docker_services) -> HomeNode:
+def _core_private_keys(docker_services) -> dict[str, bytes | None]:
+    """Extract Ed25519 private keys from all Core containers (once per session).
+
+    These keys enable RealHomeNode to sign Brain API requests with Ed25519
+    (same protocol as BrainSigner in tests/system/conftest.py).
+    """
+    keys: dict[str, bytes | None] = {}
+    for actor in ["alonso", "sancho", "chairmaker", "albert"]:
+        try:
+            keys[actor] = docker_services.extract_core_private_key(actor)
+        except (RuntimeError, Exception):
+            keys[actor] = None
+    return keys
+
+
+@pytest.fixture(scope="session")
+def don_alonso(plc_directory, d2d_network, docker_services, _core_private_keys) -> HomeNode:
     """Don Alonso — Primary User (Trust Ring 3).
 
     RealHomeNode backed by real Go Core (vault, persona, KV, health,
     PII scrubbing, DID signing, device pairing all hit real APIs).
+    Brain API calls use Ed25519 signing.
     """
     node = RealHomeNode(
         core_url=docker_services.core_url("alonso"),
         brain_url=docker_services.brain_url("alonso"),
         client_token=docker_services.client_token,
+        core_private_key_pem=_core_private_keys.get("alonso"),
         did="did:plc:alonso",
         display_name="Don Alonso",
         trust_ring=TrustRing.RING_3_SKIN_IN_GAME,
@@ -260,15 +278,16 @@ def don_alonso(plc_directory, d2d_network, docker_services) -> HomeNode:
 
 
 @pytest.fixture(scope="session")
-def sancho(plc_directory, d2d_network, docker_services) -> HomeNode:
+def sancho(plc_directory, d2d_network, docker_services, _core_private_keys) -> HomeNode:
     """Sancho -- Close Friend (Trust Ring 2).
 
-    RealHomeNode backed by real Go Core.
+    RealHomeNode backed by real Go Core + Brain (Ed25519 signed).
     """
     node = RealHomeNode(
         core_url=docker_services.core_url("sancho"),
         brain_url=docker_services.brain_url("sancho"),
         client_token=docker_services.client_token,
+        core_private_key_pem=_core_private_keys.get("sancho"),
         did="did:plc:sancho",
         display_name="Sancho",
         trust_ring=TrustRing.RING_2_VERIFIED,
@@ -299,15 +318,16 @@ def sancho(plc_directory, d2d_network, docker_services) -> HomeNode:
 
 
 @pytest.fixture(scope="session")
-def chairmaker(plc_directory, d2d_network, docker_services) -> HomeNode:
+def chairmaker(plc_directory, d2d_network, docker_services, _core_private_keys) -> HomeNode:
     """ChairMaker -- Seller (Trust Ring 3).
 
-    RealHomeNode backed by real Go Core.
+    RealHomeNode backed by real Go Core + Brain (Ed25519 signed).
     """
     node = RealHomeNode(
         core_url=docker_services.core_url("chairmaker"),
         brain_url=docker_services.brain_url("chairmaker"),
         client_token=docker_services.client_token,
+        core_private_key_pem=_core_private_keys.get("chairmaker"),
         did="did:plc:chairmaker",
         display_name="ChairMaker",
         trust_ring=TrustRing.RING_3_SKIN_IN_GAME,
@@ -328,15 +348,16 @@ def chairmaker(plc_directory, d2d_network, docker_services) -> HomeNode:
 
 
 @pytest.fixture(scope="session")
-def albert(plc_directory, d2d_network, docker_services) -> HomeNode:
+def albert(plc_directory, d2d_network, docker_services, _core_private_keys) -> HomeNode:
     """Albert -- Estate Beneficiary (Trust Ring 2).
 
-    RealHomeNode backed by real Go Core.
+    RealHomeNode backed by real Go Core + Brain (Ed25519 signed).
     """
     node = RealHomeNode(
         core_url=docker_services.core_url("albert"),
         brain_url=docker_services.brain_url("albert"),
         client_token=docker_services.client_token,
+        core_private_key_pem=_core_private_keys.get("albert"),
         did="did:plc:albert",
         display_name="Albert",
         trust_ring=TrustRing.RING_2_VERIFIED,
