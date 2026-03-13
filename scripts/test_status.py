@@ -1887,7 +1887,9 @@ def main() -> None:
                     f"ERROR: Failed to start E2E Docker: {exc}",
                     file=sys.stderr,
                 )
-                sys.exit(3)
+                # Don't abort the entire run — skip E2E, run the rest.
+                keys = [k for k in keys if k != "e2e"]
+                has_e2e = False
 
     try:
         all_json: dict = {}
