@@ -2593,10 +2593,17 @@ class AuditEntry:
 
 
 class MockAuditLog:
-    """Append-only audit trail."""
+    """Append-only audit trail.
+
+    Supports two interfaces:
+    - Legacy: record() + query() returning AuditEntry (used by S15 compliance tests)
+    - HTTP API: append() + query() returning dicts (matches Core /v1/audit/* endpoints)
+    """
 
     def __init__(self) -> None:
         self.entries: list[AuditEntry] = []
+        self._api_entries: list[dict[str, Any]] = []
+        self._next_id: int = 1
 
     def record(self, actor: str, action: str, resource: str,
                result: str = "success",
@@ -2606,14 +2613,57 @@ class MockAuditLog:
             result=result, details=details or {},
         ))
 
+    def append(self, entry: dict[str, Any]) -> int:
+        """Append an audit entry (matches Core POST /v1/audit/append).
+
+        Returns the entry ID.
+        """
+        entry_id = self._next_id
+        self._next_id += 1
+        self._api_entries.append({
+            "id": entry_id,
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "action": entry.get("action", ""),
+            "persona": entry.get("persona", ""),
+            "requester": entry.get("requester", ""),
+            "query_type": entry.get("query_type", ""),
+            "reason": entry.get("reason", ""),
+            "metadata": entry.get("metadata", "{}"),
+        })
+        return entry_id
+
     def query(self, actor: str | None = None,
-              action: str | None = None) -> list[AuditEntry]:
-        results = self.entries
+              action: str | None = None,
+              persona: str | None = None,
+              requester: str | None = None,
+              limit: int = 50,
+              **kwargs: Any) -> list[Any]:
+        """Query audit entries.
+
+        If called with keyword args that match the HTTP API (action, persona,
+        requester, limit), returns dicts from _api_entries (newest first).
+        Legacy calls with actor= still work against self.entries.
+        """
+        # If there are _api_entries and caller uses HTTP-style params, use them
+        if self._api_entries and actor is None:
+            results = list(self._api_entries)
+            if action:
+                results = [e for e in results if e["action"] == action]
+            if persona:
+                results = [e for e in results if e["persona"] == persona]
+            if requester:
+                results = [e for e in results if e["requester"] == requester]
+            # Newest first
+            results.sort(key=lambda e: e["id"], reverse=True)
+            return results[:limit]
+
+        # Legacy path — returns AuditEntry objects
+        results_legacy = list(self.entries)
         if actor:
-            results = [e for e in results if e.actor == actor]
+            results_legacy = [e for e in results_legacy if e.actor == actor]
         if action:
-            results = [e for e in results if e.action == action]
-        return results
+            results_legacy = [e for e in results_legacy if e.action == action]
+        return results_legacy
 
     def has_pii(self, pii_patterns: list[str]) -> bool:
         """Check if any audit entry contains PII."""

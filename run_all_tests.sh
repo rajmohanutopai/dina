@@ -40,7 +40,9 @@ export DINA_REUSE_DOCKER=1
 # Clean up stale containers from the old default "dina" project.
 # Compose files use container_name (global), so leftover containers
 # from the unnamed project block the new named-project containers.
-docker compose down -v --remove-orphans 2>/dev/null || true
+if docker info >/dev/null 2>&1; then
+    docker compose down -v --remove-orphans 2>/dev/null || true
+fi
 
 # ---------------------------------------------------------------------------
 # Docker image pre-build: build ALL images once, up front.
@@ -55,6 +57,12 @@ docker compose down -v --remove-orphans 2>/dev/null || true
 # use `docker compose up -d` (no --build) for instant startup.
 # ---------------------------------------------------------------------------
 prebuild_docker_images() {
+    # Skip if Docker daemon is not running
+    if ! docker info >/dev/null 2>&1; then
+        echo -e "\n  ${DIM}Docker not running — skipping image pre-build${RESET}\n"
+        return 0
+    fi
+
     echo ""
     echo -e "${BOLD}${CYAN}════════════════════════════════════════════════════════════════${RESET}"
     echo -e "${BOLD}  Pre-building Docker images (one-time)${RESET}"
@@ -128,7 +136,7 @@ area_to_num() {
 # ---------------------------------------------------------------------------
 # Parse flags
 # ---------------------------------------------------------------------------
-STOP_ON_FAIL=true
+STOP_ON_FAIL=false
 SKIP=()
 ONLY=""
 AREA_FILTER=()
@@ -220,7 +228,7 @@ SUITE_COUNTER=0
 
 # Pre-build if any Docker-dependent suite will run
 NEEDS_DOCKER=false
-for i in 2 3; do should_run "$i" && NEEDS_DOCKER=true && break; done
+for i in 2 3 5; do should_run "$i" && NEEDS_DOCKER=true && break; done
 if [ "$NEEDS_DOCKER" = true ]; then
     prebuild_docker_images
 fi
@@ -361,115 +369,15 @@ generate_report() {
 handle_failure() {
     local suite_counter="$1"
     collect_llm_cost
-    # Wait for background Group B and print its output before exiting
-    drain_group_b
     echo -e "\n${RED}Suite ${suite_counter} failed. Stopping. Use --continue to run all suites.${RESET}"
     print_summary
     generate_report
     exit 1
 }
 
-# drain_group_b: wait for background AppView suites and print their buffered output.
-# Safe to call multiple times (clears PID after first call).
-drain_group_b() {
-    if [ -n "$GROUP_B_PID" ]; then
-        wait $GROUP_B_PID || true
-        GROUP_B_PID=""
-
-        if [ -s "$GROUP_B_OUTPUT" ]; then
-            echo ""
-            echo -e "${DIM}  ── AppView suite output (ran in parallel) ──${RESET}"
-            cat "$GROUP_B_OUTPUT"
-        fi
-
-        while IFS='|' read -r status name elapsed_str; do
-            [ -z "$status" ] && continue
-            if [ "$status" = "PASS" ]; then
-                RESULTS+=("${GREEN}PASS${RESET}  $name  ($elapsed_str)")
-            else
-                RESULTS+=("${RED}FAIL${RESET}  $name  ($elapsed_str)")
-                EXIT_CODE=1
-            fi
-        done < "$GROUP_B_RESULTS"
-    fi
-}
-
 # ---------------------------------------------------------------------------
-# Parallel execution: independent suites run concurrently.
-#   Group A (Python — shares local Go/Brain + Docker):  1, 2, 3 (sequential)
-#   Group B (TypeScript — npm, no Docker overlap):      4, 5 (sequential)
-# Groups A and B run in parallel.  Group B output is buffered and printed
-# in order after Group A finishes, so the terminal stays readable.
+# Run all 5 suites sequentially
 # ---------------------------------------------------------------------------
-
-# Temp files for Group B communication
-GROUP_B_OUTPUT=$(mktemp /tmp/dina-group-b-output-XXXXXX)
-GROUP_B_RESULTS=$(mktemp /tmp/dina-group-b-results-XXXXXX)
-
-# run_suite_bg: like run_suite but writes result to a file (for background use)
-run_suite_bg() {
-    local result_file="$1"
-    shift
-    local num="$1"
-    local name="$2"
-    shift 2
-
-    echo ""
-    echo -e "${BOLD}${CYAN}════════════════════════════════════════════════════════════════${RESET}"
-    echo -e "${BOLD}  $name${RESET}"
-    echo -e "${BOLD}${CYAN}════════════════════════════════════════════════════════════════${RESET}"
-    echo ""
-
-    local start=$SECONDS
-    local suite_log="$SUITE_OUTPUT_DIR/suite_${num}.log"
-    "$@" 2>&1 | tee "$suite_log"
-    local rc=${PIPESTATUS[0]}
-    local elapsed=$(( SECONDS - start ))
-    local mins=$(( elapsed / 60 ))
-    local secs=$(( elapsed % 60 ))
-
-    if [ $rc -eq 0 ]; then
-        echo "PASS|$name|${mins}m${secs}s" >> "$result_file"
-    else
-        echo "FAIL|$name|${mins}m${secs}s" >> "$result_file"
-    fi
-
-    # Write metadata for report generation
-    local passed_bool="true"
-    [ $rc -ne 0 ] && passed_bool="false"
-    printf '{"number":%d,"name":"%s","elapsed_s":%d,"passed":%s}\n' \
-        "$num" "$name" "$elapsed" "$passed_bool" \
-        > "$SUITE_OUTPUT_DIR/suite_${num}.meta.json"
-
-    return $rc
-}
-
-# Determine which groups have work
-GROUP_A_HAS_WORK=false
-GROUP_B_HAS_WORK=false
-for i in 1 2 3; do should_run "$i" && GROUP_A_HAS_WORK=true && break; done
-for i in 4 5;   do should_run "$i" && GROUP_B_HAS_WORK=true && break; done
-
-# --- Launch Group B in background (output buffered to file) ---
-GROUP_B_PID=""
-GROUP_B_LAUNCHED=false
-if [ "$GROUP_B_HAS_WORK" = true ] && [ "$GROUP_A_HAS_WORK" = true ]; then
-    GROUP_B_LAUNCHED=true
-    echo -e "\n${DIM}  Running Python suites and AppView suites in parallel...${RESET}\n"
-    (
-        if should_run 4; then
-            run_suite_bg "$GROUP_B_RESULTS" 4 "AppView Unit Tests" \
-                bash -c "cd appview && npx tsx test_appview.ts --suite unit" || true
-        fi
-        if should_run 5; then
-            run_suite_bg "$GROUP_B_RESULTS" 5 "AppView Integration Tests" \
-                bash -c "cd appview && npx tsx test_appview.ts --suite integration --restart" || true
-        fi
-    ) > "$GROUP_B_OUTPUT" 2>&1 &
-    GROUP_B_PID=$!
-fi
-
-# --- Group A: foreground (sequential: 1 → 2 → 3) ---
 if should_run 1; then
     if ! run_suite 1 "Integration Tests" \
         python3 scripts/test_status.py --restart; then
@@ -500,36 +408,30 @@ if should_run 3; then
     collect_llm_cost
 fi
 
-# --- Wait for Group B and print its buffered output in order ---
-drain_group_b
-
-if [ "$GROUP_B_LAUNCHED" = false ] && [ "$GROUP_B_HAS_WORK" = true ]; then
-    # Group B wasn't launched in parallel — run in foreground now
-    if should_run 4; then
-        if ! run_suite 4 "AppView Unit Tests" \
-            bash -c "cd appview && npx tsx test_appview.ts --suite unit"; then
-            if [ "$STOP_ON_FAIL" = true ]; then
-                handle_failure $SUITE_COUNTER
-            fi
-        fi
-    fi
-    if should_run 5; then
-        if ! run_suite 5 "AppView Integration Tests" \
-            bash -c "cd appview && npx tsx test_appview.ts --suite integration --restart"; then
-            if [ "$STOP_ON_FAIL" = true ]; then
-                handle_failure $SUITE_COUNTER
-            fi
+if should_run 4; then
+    if ! run_suite 4 "AppView Unit Tests" \
+        bash -c "cd appview && npx tsx test_appview.ts --suite unit"; then
+        if [ "$STOP_ON_FAIL" = true ]; then
+            handle_failure $SUITE_COUNTER
         fi
     fi
 fi
 
-rm -f "$GROUP_B_OUTPUT" "$GROUP_B_RESULTS" 2>/dev/null || true
+if should_run 5; then
+    if ! run_suite 5 "AppView Integration Tests" \
+        bash -c "cd appview && npx tsx test_appview.ts --suite integration --restart"; then
+        if [ "$STOP_ON_FAIL" = true ]; then
+            handle_failure $SUITE_COUNTER
+        fi
+    fi
+fi
 
 # ---------------------------------------------------------------------------
 # Docker cleanup: tear down all isolated project stacks we may have started.
 # Each stack uses a unique project name so this is safe and targeted.
 # ---------------------------------------------------------------------------
 cleanup_docker() {
+    docker info >/dev/null 2>&1 || return 0
     echo -e "\n${DIM}  Cleaning up Docker stacks...${RESET}"
     for project in dina-release dina-e2e dina-main; do
         docker compose -p "$project" down -v --remove-orphans 2>/dev/null || true

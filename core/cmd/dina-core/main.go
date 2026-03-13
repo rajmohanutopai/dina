@@ -38,7 +38,6 @@ import (
 	"github.com/rajmohanutopai/dina/core/internal/adapter/taskqueue"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/transport"
 	trustadapter "github.com/rajmohanutopai/dina/core/internal/adapter/trust"
-	"github.com/rajmohanutopai/dina/core/internal/adapter/vault"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/ws"
 	"github.com/rajmohanutopai/dina/core/internal/config"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
@@ -230,7 +229,7 @@ func main() {
 	// 3. Vault — build-tag factory selects SQLCipher (CGO) or in-memory (no CGO)
 	vaultMgr := newVaultBackend(cfg.VaultPath)
 	backupMgr := newBackupMgr(vaultMgr)
-	auditLogger := vault.NewAuditLogger()
+	auditLogger := newAuditLogger(vaultMgr)
 
 	// 3a. Open identity database (Tier 0: contacts, audit log, kv_store, device_tokens).
 	// Persona vaults are opened on unlock; identity is always-open with its own DEK.
@@ -749,6 +748,7 @@ func main() {
 		},
 	}
 	wellknownH := &handler.WellKnownHandler{DID: didMgr, Signer: identitySigner}
+	auditH := &handler.AuditHandler{Auditor: auditLogger}
 
 	// ---------- Build router ----------
 
@@ -783,6 +783,10 @@ func main() {
 
 	// PII API
 	mux.HandleFunc("/v1/pii/scrub", piiH.HandleScrub)
+
+	// Audit API
+	mux.HandleFunc("/v1/audit/query", auditH.HandleQuery)
+	mux.HandleFunc("/v1/audit/append", auditH.HandleAppend)
 
 	// Task API
 	mux.HandleFunc("/v1/task/ack", taskH.HandleAck)

@@ -41,6 +41,7 @@ from cryptography.hazmat.primitives.serialization import (
 from tests.integration.mocks import (
     ActionRisk,
     LLMTarget,
+    MockAuditLog,
     MockDockerCompose,
     MockGoCore,
     MockPythonBrain,
@@ -1081,3 +1082,75 @@ class RealDockerCompose(MockDockerCompose):
         if self._services.is_running():
             return True
         return mock_healthy
+
+
+# ---------------------------------------------------------------------------
+# RealAuditLog — HTTP client for Core /v1/audit/* endpoints
+# ---------------------------------------------------------------------------
+
+class RealAuditLog(MockAuditLog):
+    """Real HTTP client for audit operations against running Core.
+
+    Calls POST /v1/audit/append and GET /v1/audit/query on Core, falling
+    back to mock state if the API call fails (unless DINA_STRICT_REAL=1).
+    """
+
+    def __init__(self, core_url: str) -> None:
+        super().__init__()
+        self._core_url = core_url.rstrip("/")
+        self._signer = _get_signer("brain")
+
+    def append(self, entry: dict[str, Any]) -> int:
+        """POST /v1/audit/append — write an audit entry to Core."""
+        resp = _try_request(
+            "post", f"{self._core_url}/v1/audit/append",
+            json=entry, signer=self._signer,
+        )
+        if resp is not None and resp.status_code == 201:
+            data = resp.json()
+            entry_id = data.get("id", 0)
+            # Also update mock state for assertion compat
+            self._api_entries.append({
+                "id": entry_id,
+                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "action": entry.get("action", ""),
+                "persona": entry.get("persona", ""),
+                "requester": entry.get("requester", ""),
+                "query_type": entry.get("query_type", ""),
+                "reason": entry.get("reason", ""),
+                "metadata": entry.get("metadata", "{}"),
+            })
+            return entry_id
+        # Fall back to mock
+        return super().append(entry)
+
+    def query(
+        self, actor: str | None = None, action: str | None = None,
+        persona: str | None = None, requester: str | None = None,
+        limit: int = 50, **kwargs: Any,
+    ) -> list[Any]:
+        """GET /v1/audit/query — read audit entries from Core."""
+        # Legacy path — use mock for old-style actor= queries
+        if actor is not None:
+            return super().query(actor=actor, action=action)
+
+        params: dict[str, str] = {"limit": str(limit)}
+        if action:
+            params["action"] = action
+        if persona:
+            params["persona"] = persona
+        if requester:
+            params["requester"] = requester
+
+        query_str = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
+        path = "/v1/audit/query"
+
+        resp = _try_request(
+            "get", f"{self._core_url}{path}?{query_str}",
+            signer=self._signer,
+        )
+        if resp is not None and resp.status_code == 200:
+            data = resp.json()
+            return data.get("entries", [])
+        # Fall back to mock
+        return super().query(action=action, persona=persona, limit=limit)

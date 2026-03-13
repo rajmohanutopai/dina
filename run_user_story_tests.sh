@@ -188,6 +188,20 @@ row() {
     printf "  ${B}║${R}%b%*s${B}║${R}\n" "$text" "$pad" ""
 }
 
+# story_row: print story title line with right-aligned result.
+# Args: $1=title text (with ANSI), $2=result text (with ANSI) or test count fallback
+story_row() {
+    local title="$1" result="$2"
+    local title_stripped result_stripped
+    title_stripped=$(printf '%b' "$title" | sed $'s/\x1b\\[[0-9;]*m//g')
+    result_stripped=$(printf '%b' "$result" | sed $'s/\x1b\\[[0-9;]*m//g')
+    local title_len=${#title_stripped}
+    local result_len=${#result_stripped}
+    local gap=$((100 - title_len - result_len))
+    if [ "$gap" -lt 1 ]; then gap=1; fi
+    printf "  ${B}║${R}%b%*s%b${B}║${R}\n" "$title" "$gap" "" "$result"
+}
+
 print_banner() {
     # Args: $1=s01_result .. $14=s14_result  (empty if not run yet)
     local s01="${1:-}" s02="${2:-}" s03="${3:-}" s04="${4:-}" s05="${5:-}" s06="${6:-}"
@@ -211,9 +225,7 @@ print_banner() {
     row ""
 
     # ── Story 01 ──────────────────────────────────────────────────────────
-    printf "  ${B}║${R}  ${G}01${R} ${BOLD}The Purchase Journey${R}"
-    if [ -n "$s01" ]; then printf "%86s" "$s01"; else printf "%73s" "13 tests"; fi
-    echo -e "  ${B}║${R}"
+    story_row "  ${G}01${R} ${BOLD}The Purchase Journey${R}" "${s01:-13 tests}"
     #                                                                                             100 cols
     row "     ${BOLD}\"I need a chair\"${R}${D} -> 5 reviewers created (3 verified Ring 2, 2 unverified Ring 1)${R}"
     row "${D}     Dina checks health vault (back pain, needs lumbar), finance vault (budget 10-20K INR)${R}"
@@ -221,36 +233,28 @@ print_banner() {
     row ""
 
     # ── Story 02 ──────────────────────────────────────────────────────────
-    printf "  ${B}║${R}  ${G}02${R} ${BOLD}The Sancho Moment${R}"
-    if [ -n "$s02" ]; then printf "%89s" "$s02"; else printf "%76s" "7 tests"; fi
-    echo -e "  ${B}║${R}"
+    story_row "  ${G}02${R} ${BOLD}The Sancho Moment${R}" "${s02:-7 tests}"
     row "     ${BOLD}Sancho arrives${R}${D} -> Sancho's Dina contacts your Dina (D2D encrypted, Ed25519 signed)${R}"
     row "${D}     Your Dina searches vault by Sancho's DID, finds: \"his mother had a fall\", \"likes cardamom tea\"${R}"
     row "${D}     Nudge: \"Sancho 15 min away. Ask about his sick mother. Make cardamom tea.\"${R}"
     row ""
 
     # ── Story 03 ──────────────────────────────────────────────────────────
-    printf "  ${B}║${R}  ${G}03${R} ${BOLD}The Dead Internet Filter${R}"
-    if [ -n "$s03" ]; then printf "%82s" "$s03"; else printf "%69s" "8 tests"; fi
-    echo -e "  ${B}║${R}"
+    story_row "  ${G}03${R} ${BOLD}The Dead Internet Filter${R}" "${s03:-8 tests}"
     row "     ${BOLD}\"Is this video AI?\"${R}${D} -> Dina resolves creator DID via AT Protocol Trust Network${R}"
     row "${D}     Elena (Ring 3): 200 attestations, 15 peer vouches, 2yr history -> \"authentic, trusted creator\"${R}"
     row "${D}     BotFarm (Ring 1): 0 attestations, 3-day-old account -> \"unverified, check other sources\"${R}"
     row ""
 
     # ── Story 04 ──────────────────────────────────────────────────────────
-    printf "  ${B}║${R}  ${G}04${R} ${BOLD}The Persona Wall${R}"
-    if [ -n "$s04" ]; then printf "%90s" "$s04"; else printf "%77s" "11 tests"; fi
-    echo -e "  ${B}║${R}"
+    story_row "  ${G}04${R} ${BOLD}The Persona Wall${R}" "${s04:-11 tests}"
     row "     ${BOLD}Shopping agent asks \"any health conditions?\"${R}${D} -> Guardian blocks cross-persona access${R}"
     row "${D}     Health (restricted): \"L4-L5 herniation\" withheld. Proposes \"chronic back pain\" only${R}"
     row "${D}     User approves minimal disclosure. PII scrubber confirms no diagnosis leaked${R}"
     row ""
 
     # ── Story 05 ──────────────────────────────────────────────────────────
-    printf "  ${B}║${R}  ${G}05${R} ${BOLD}The Agent Gateway${R}"
-    if [ -n "$s05" ]; then printf "%89s" "$s05"; else printf "%76s" "10 tests"; fi
-    echo -e "  ${B}║${R}"
+    story_row "  ${G}05${R} ${BOLD}The Agent Gateway${R}" "${s05:-10 tests}"
     row "     ${BOLD}OpenClaw/Perplexity Computer wants to send email${R}${D} -> pairs with Home Node, asks Dina first${R}"
     row "${D}     Dina checks: safe? matches your rules? PII leaking? \"send_email\" -> MODERATE, asks you first${R}"
     row "${D}     Safe tasks (web search) pass silently. Rogue agent with no auth -> 401, blocked at the gate${R}"
@@ -258,77 +262,59 @@ print_banner() {
 
     # ── Stories 06-14 (shown in --all mode or --brief mode) ────────────
     if [ "$MODE" = "all" ] || [ "$BRIEF" = true ]; then
-        printf "  ${B}║${R}  ${G}06${R} ${BOLD}The License Renewal${R}"
-        if [ -n "$s06" ]; then printf "%87s" "$s06"; else printf "%74s" "10 tests"; fi
-        echo -e "  ${B}║${R}"
+        story_row "  ${G}06${R} ${BOLD}The License Renewal${R}" "${s06:-10 tests}"
         row "     ${BOLD}User uploads license scan${R}${D} -> Brain extracts fields with confidence scores${R}"
         row "${D}     Deterministic reminder fires 30 days before expiry (no LLM in the scheduling)${R}"
         row "${D}     Delegation: Brain generates strict JSON for DMV-Bot. Guardian flags for human review${R}"
         row ""
 
         # ── Story 07 ──────────────────────────────────────────────────────────
-        printf "  ${B}║${R}  ${G}07${R} ${BOLD}The Daily Briefing${R}"
-        if [ -n "$s07" ]; then printf "%88s" "$s07"; else printf "%75s" "5 tests"; fi
-        echo -e "  ${B}║${R}"
+        story_row "  ${G}07${R} ${BOLD}The Daily Briefing${R}" "${s07:-5 tests}"
         row "${D}     Most noise waits quietly. Real harm interrupts immediately.${R}"
         row "${D}     At the end of the day, Dina gives one calm summary and clears the queue.${R}"
         row ""
 
         # ── Story 08 ──────────────────────────────────────────────────────────
-        printf "  ${B}║${R}  ${G}08${R} ${BOLD}Move to a New Machine${R}"
-        if [ -n "$s08" ]; then printf "%85s" "$s08"; else printf "%72s" "8 tests"; fi
-        echo -e "  ${B}║${R}"
+        story_row "  ${G}08${R} ${BOLD}Move to a New Machine${R}" "${s08:-8 tests}"
         row "${D}     Dina exports from the old machine and imports on the new one as an encrypted archive.${R}"
         row "${D}     The wrong seed cannot unlock the vault. The same seed restores identity and data.${R}"
         row "${D}     Migration is non-destructive: the old machine still works after export.${R}"
         row ""
 
         # ── Story 09 ──────────────────────────────────────────────────────────
-        printf "  ${B}║${R}  ${G}09${R} ${BOLD}Connector Credential Expiry${R}"
-        if [ -n "$s09" ]; then printf "%79s" "$s09"; else printf "%66s" "5 tests"; fi
-        echo -e "  ${B}║${R}"
+        story_row "  ${G}09${R} ${BOLD}Connector Credential Expiry${R}" "${s09:-5 tests}"
         row "${D}     Gmail OAuth expires — connector status: expired. Vault and identity still work.${R}"
         row "${D}     User reconfigures credentials, connector resumes. No cascade, no crash.${R}"
         row ""
 
         # ── Story 10 ──────────────────────────────────────────────────────────
-        printf "  ${B}║${R}  ${G}10${R} ${BOLD}The Operator Journey${R}"
-        if [ -n "$s10" ]; then printf "%86s" "$s10"; else printf "%73s" "5 tests"; fi
-        echo -e "  ${B}║${R}"
+        story_row "  ${G}10${R} ${BOLD}The Operator Journey${R}" "${s10:-5 tests}"
         row "${D}     Re-run install script — DID unchanged (idempotent). No rotation, no orphaned data.${R}"
         row "${D}     Identity is derived from master seed — immutable after bootstrap.${R}"
         row ""
 
         # ── Story 11 ──────────────────────────────────────────────────────────
-        printf "  ${B}║${R}  ${G}11${R} ${BOLD}The Anti-Her${R}"
-        if [ -n "$s11" ]; then printf "%94s" "$s11"; else printf "%81s" "5 tests"; fi
-        echo -e "  ${B}║${R}"
+        story_row "  ${G}11${R} ${BOLD}The Anti-Her${R}" "${s11:-5 tests}"
         row "${D}     \"Haven't talked to Sarah in 45 days\" -> proactive nudge in briefing, not on demand.${R}"
         row "${D}     Life event follow-up: \"Sancho's mother was ill\" -> \"you might want to check in.\"${R}"
         row "${D}     Emotional dependency detected -> Dina suggests specific humans, never herself.${R}"
         row ""
 
         # ── Story 12 ──────────────────────────────────────────────────────────
-        printf "  ${B}║${R}  ${G}12${R} ${BOLD}Verified Truth${R}"
-        if [ -n "$s12" ]; then printf "%92s" "$s12"; else printf "%79s" "9 tests"; fi
-        echo -e "  ${B}║${R}"
+        story_row "  ${G}12${R} ${BOLD}Verified Truth${R}" "${s12:-9 tests}"
         row "${D}     When Dina has little evidence, she says so honestly.${R}"
         row "${D}     When people disagree, she says the evidence is mixed instead of pretending certainty.${R}"
         row "${D}     When the signal is strong, she speaks clearly and points back to the original sources.${R}"
         row ""
 
         # ── Story 13 ──────────────────────────────────────────────────────────
-        printf "  ${B}║${R}  ${G}13${R} ${BOLD}Silence Under Stress${R}"
-        if [ -n "$s13" ]; then printf "%86s" "$s13"; else printf "%73s" "3 tests"; fi
-        echo -e "  ${B}║${R}"
+        story_row "  ${G}13${R} ${BOLD}Silence Under Stress${R}" "${s13:-3 tests}"
         row "${D}     Even in a flood of alerts, Dina interrupts only for what truly matters.${R}"
         row "${D}     Fake urgency from strangers is suspicious; trusted urgent events can break through.${R}"
         row ""
 
         # ── Story 14 ──────────────────────────────────────────────────────────
-        printf "  ${B}║${R}  ${G}14${R} ${BOLD}Agent Sandbox${R}"
-        if [ -n "$s14" ]; then printf "%93s" "$s14"; else printf "%80s" "4 tests"; fi
-        echo -e "  ${B}║${R}"
+        story_row "  ${G}14${R} ${BOLD}Agent Sandbox${R}" "${s14:-4 tests}"
         row "${D}     No auth, no access. Revoked means revoked immediately.${R}"
         row "${D}     Sensitive actions stay blocked unless you approve them.${R}"
         row "${D}     Agents cannot impersonate someone else.${R}"

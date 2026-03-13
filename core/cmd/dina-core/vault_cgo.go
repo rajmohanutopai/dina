@@ -17,3 +17,8 @@ func newVaultBackend(dir string) vaultBackend {
 func newBackupMgr(_ vaultBackend) port.BackupManager {
 	return &sqliteBackupStub{}
 }
+
+// newAuditLogger returns a SQLite-backed audit logger using the identity database.
+func newAuditLogger(backend vaultBackend) port.VaultAuditLogger {
+	return sqlite.NewSQLiteAuditLogger(backend.(*sqlite.VaultAdapter).Pool())
+}

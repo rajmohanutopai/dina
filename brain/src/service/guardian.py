@@ -2780,6 +2780,50 @@ class GuardianLoop:
                 content, vault_items,
             )
 
+            # Step 8: Persist structured reasoning trace (best-effort).
+            # Captures the decision path for debugging failures like
+            # Story 01 test_12 (autonomous retrieval + density analysis).
+            try:
+                trace_meta = {
+                    "prompt_preview": prompt[:100] if prompt else "",
+                    "tools_called": [
+                        {
+                            "name": tc.get("name", ""),
+                            "args_preview": str(tc.get("args", {}))[:100],
+                            "result_count": tc.get("result_count", 0),
+                        }
+                        for tc in result.get("tools_called", [])
+                    ],
+                    "density_meta": density_meta,
+                    "guard_scan": {
+                        "ran": guard_result is not None,
+                        "anti_her_removed": len(
+                            guard_result.get("anti_her_sentences", [])
+                        ) if guard_result else 0,
+                        "unsolicited_removed": len(
+                            guard_result.get("unsolicited_sentences", [])
+                        ) if guard_result else 0,
+                        "entity_hint": (
+                            guard_result.get("entities") or {}
+                        ) if guard_result else {},
+                    },
+                    "model": result.get("model"),
+                    "vault_context_used": vault_enriched,
+                    "vault_items_count": len(vault_items),
+                    "response_preview": content[:200] if content else "",
+                    "skip_vault": skip_vault,
+                }
+                await self._core.audit_append({
+                    "action": "reason_trace",
+                    "persona": event.get("persona_id", "personal"),
+                    "requester": "brain",
+                    "query_type": "reason",
+                    "reason": f"vault_enriched={vault_enriched}",
+                    "metadata": json.dumps(trace_meta),
+                })
+            except Exception:
+                log.warning("guardian.reason_trace_write_failed")
+
             return {
                 "content": content,
                 "model": result.get("model"),

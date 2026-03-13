@@ -904,6 +904,10 @@ def parse_pytest_output(
     line (``FAILED``) and the next test result line.  We capture these
     and attach them to the corresponding ``TestResult.output``.
     """
+    # Strip ANSI escape codes so regex parsing works even when
+    # FORCE_COLOR=1 leaks into pytest subprocesses (e.g. via run_all_tests.sh).
+    output = re.sub(r"\x1b\[[0-9;]*m", "", output)
+
     results: list[TestResult] = []
     # First pass: collect durations from --durations=0 section
     durations: dict[str, float] = {}

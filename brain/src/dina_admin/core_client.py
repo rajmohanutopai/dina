@@ -48,8 +48,11 @@ class AdminCoreClient:
         return {"item_count": 0, "persona_count": 1, "db_size_bytes": 0}
 
     async def get_audit_recent(self, limit: int = 20) -> list:
-        """Get recent audit entries."""
-        return []
+        """Get recent audit entries from Core."""
+        try:
+            return await self._core.audit_query(limit=limit)
+        except Exception:
+            return []
 
     async def get_devices(self) -> list:
         """Get paired devices list."""

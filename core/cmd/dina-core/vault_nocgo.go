@@ -33,3 +33,8 @@ func newVaultBackend(dir string) vaultBackend {
 func newBackupMgr(v vaultBackend) port.BackupManager {
 	return vault.NewBackupManager(v.(*vault.Manager))
 }
+
+// newAuditLogger returns an in-memory audit logger when CGO is unavailable.
+func newAuditLogger(_ vaultBackend) port.VaultAuditLogger {
+	return vault.NewAuditLogger()
+}

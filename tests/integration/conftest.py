@@ -98,6 +98,7 @@ if DOCKER_MODE:
     from tests.integration.docker_services import DockerServices
     from tests.integration.real_clients import (
         RealAdminAPI,
+        RealAuditLog,
         RealServiceAuth,
         RealDockerCompose,
         RealGoCore,
@@ -744,7 +745,9 @@ def mock_chaos_monkey() -> MockChaosMonkey:
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def mock_audit_log() -> MockAuditLog:
+def mock_audit_log(docker_services) -> MockAuditLog:
+    if DOCKER_MODE:
+        return RealAuditLog(docker_services.core_url)
     return MockAuditLog()
 
 

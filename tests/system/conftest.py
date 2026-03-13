@@ -649,3 +649,86 @@ def reviewer_eve(system_services):
     return _create_pds_account(
         system_services.pds_url, "eve@dina.test", "eve.test", "test-pw-eve"
     )
+
+
+# ---------------------------------------------------------------------------
+# Failure diagnostic hook — dump recent audit/reasoning traces on test failure
+# ---------------------------------------------------------------------------
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    """On test failure, fetch recent audit traces from Core and print them.
+
+    This gives immediate visibility into what Brain did during a failed test,
+    making it possible to debug reasoning path regressions without
+    re-running with extra logging.
+    """
+    outcome = yield
+    report = outcome.get_result()
+
+    if report.when != "call" or not report.failed:
+        return
+
+    # Try to get system_services from the test's fixtures
+    services = None
+    for fixture_name in ("system_services",):
+        if fixture_name in item.funcargs:
+            services = item.funcargs[fixture_name]
+            break
+
+    if services is None:
+        return
+
+    # Fetch recent audit traces from both Core nodes
+    print("\n" + "=" * 80)
+    print("  AUDIT TRACE DUMP (last 10 entries per node)")
+    print("=" * 80)
+
+    for actor in ("alonso", "sancho"):
+        core_url = services.core_url(actor)
+        admin_token = services.admin_token
+        try:
+            resp = httpx.get(
+                f"{core_url}/v1/audit/query",
+                params={"action": "reason_trace", "limit": "10"},
+                headers={"Authorization": f"Bearer {admin_token}"},
+                timeout=5,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                entries = data.get("entries", [])
+                if entries:
+                    print(f"\n  [{actor}] {len(entries)} reason_trace entries:")
+                    for e in entries:
+                        ts = e.get("timestamp", "?")
+                        persona = e.get("persona", "?")
+                        reason = e.get("reason", "")
+                        meta_raw = e.get("metadata", "{}")
+                        try:
+                            meta = json.loads(meta_raw)
+                            prompt_p = meta.get("prompt_preview", "")[:80]
+                            resp_p = meta.get("response_preview", "")[:80]
+                            tools = [t.get("name", "?") for t in meta.get("tools_called", [])]
+                            vault_used = meta.get("vault_context_used", "?")
+                            model = meta.get("model", "?")
+                        except (json.JSONDecodeError, TypeError):
+                            prompt_p = resp_p = ""
+                            tools = []
+                            vault_used = "?"
+                            model = "?"
+                        print(f"    [{ts}] persona={persona} model={model}")
+                        print(f"      reason: {reason}")
+                        print(f"      vault_used={vault_used} tools={tools}")
+                        if prompt_p:
+                            print(f"      prompt: {prompt_p}...")
+                        if resp_p:
+                            print(f"      response: {resp_p}...")
+                        print()
+                else:
+                    print(f"\n  [{actor}] No reason_trace entries found.")
+            else:
+                print(f"\n  [{actor}] Audit query returned {resp.status_code}")
+        except Exception as exc:
+            print(f"\n  [{actor}] Failed to fetch audit traces: {exc}")
+
+    print("=" * 80)

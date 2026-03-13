@@ -33,6 +33,12 @@ func NewVaultAdapter(dir string) *VaultAdapter {
 	return &VaultAdapter{pool: NewPool(dir), hnsw: NewHNSWManager()}
 }
 
+// Pool returns the underlying connection pool.
+// Used by SQLiteAuditLogger to access the identity database.
+func (a *VaultAdapter) Pool() *Pool {
+	return a.pool
+}
+
 // ---------------------------------------------------------------------------
 // VaultManager
 // ---------------------------------------------------------------------------

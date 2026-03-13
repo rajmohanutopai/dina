@@ -163,6 +163,9 @@ def parse_pytest_output(
     section_override: dict[str, int] | None = None,
 ) -> list[TestResult]:
     """Parse pytest -v output into TestResult list."""
+    # Strip ANSI escape codes so regex parsing works even when
+    # FORCE_COLOR=1 leaks into pytest subprocesses (e.g. via run_all_tests.sh).
+    output = re.sub(r"\x1b\[[0-9;]*m", "", output)
     results: list[TestResult] = []
 
     # Collect durations

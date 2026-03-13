@@ -367,6 +367,32 @@ class CoreHTTPClient:
             json={"value": value},
         )
 
+    # -- Audit ---------------------------------------------------------------
+
+    async def audit_append(self, entry: dict) -> int:
+        """POST /v1/audit/append — write an audit entry to Core."""
+        resp = await self._request("POST", "/v1/audit/append", json=entry)
+        data = resp.json()
+        return data.get("id", 0)
+
+    async def audit_query(
+        self, action: str = "", limit: int = 20, **kwargs: str,
+    ) -> list[dict]:
+        """GET /v1/audit/query — read audit entries from Core."""
+        params: list[str] = []
+        if action:
+            params.append(f"action={action}")
+        if limit:
+            params.append(f"limit={limit}")
+        for k, v in kwargs.items():
+            if v:
+                params.append(f"{k}={v}")
+        qs = "&".join(params)
+        path = f"/v1/audit/query?{qs}" if qs else "/v1/audit/query"
+        resp = await self._request("GET", path)
+        data = resp.json()
+        return data.get("entries", [])
+
     # -- Health --------------------------------------------------------------
 
     async def health(self) -> dict:
