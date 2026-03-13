@@ -17,5 +17,5 @@
 #   ./run_e2e_all.sh tests/system/user_stories/       # stories only
 #   SYSTEM_RESTART=0 ./run_e2e_all.sh                 # reuse containers
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 exec ./tests/system/run.sh "$@"

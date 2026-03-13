@@ -514,7 +514,7 @@ The public ingress is a tunnel or reverse proxy in front of port 443. This solve
 
 **Future: Wildcard Relay.** The Dina Foundation will operate a relay (`*.dina.host` via `frp`) to provide free, secure subdomains to Community tier users — replacing the Tailscale Funnel dependency. Not a Phase 1 dependency.
 
-See [`ADVANCED-SETUP.md`](ADVANCED-SETUP.md) for setup instructions per tier (networking) and Local LLM profile, or [`QUICKSTART.md`](QUICKSTART.md) to get running in 3 commands.
+See [`ADVANCED-SETUP.md`](docs/ADVANCED-SETUP.md) for setup instructions per tier (networking) and Local LLM profile, or [`QUICKSTART.md`](QUICKSTART.md) to get running in 3 commands.
 
 ### One User, Many Vaults (Tenancy Model)
 
@@ -5487,9 +5487,9 @@ The earlier v0.4 monolithic Python REPL was the pre-sidecar prototype and is no 
 
 ## Phase 1 Scope, Build Roadmap & Timeline
 
-> **Moved to [ROADMAP.md](ROADMAP.md)** — the full build roadmap with status tracking, dependency chains, and cross-referenced items from this architecture document.
+> **Moved to [ROADMAP.md](docs/ROADMAP.md)** — the full build roadmap with status tracking, dependency chains, and cross-referenced items from this architecture document.
 >
-> The roadmap includes 18 items that were described in this architecture but had no explicit roadmap entries (digital estate, rate limiting, brain→core auth, relay, container signing, monitoring, and more). See "Items Added During Architecture Review" in ROADMAP.md for the full list.
+> The roadmap includes 18 items that were described in this architecture but had no explicit roadmap entries (digital estate, rate limiting, brain→core auth, relay, container signing, monitoring, and more). See "Items Added During Architecture Review" in docs/ROADMAP.md for the full list.
 
 ---
 

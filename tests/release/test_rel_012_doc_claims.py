@@ -28,9 +28,9 @@ class TestDocExistence:
         required_docs = [
             "README.md",
             "ARCHITECTURE.md",
-            "ROADMAP.md",
+            "docs/ROADMAP.md",
             "CLAUDE.md",
-            "RELEASE_TEST_PLAN.md",
+            "docs/RELEASE_TEST_PLAN.md",
         ]
         for doc in required_docs:
             path = PROJECT_ROOT / doc
@@ -141,7 +141,7 @@ class TestDocLinks:
     # REL-012
     def test_rel_012_test_plan_references(self) -> None:
         """Test plan files referenced in RELEASE_TEST_PLAN.md exist."""
-        plan = PROJECT_ROOT / "RELEASE_TEST_PLAN.md"
+        plan = PROJECT_ROOT / "docs" / "RELEASE_TEST_PLAN.md"
         if not plan.exists():
             pytest.skip("RELEASE_TEST_PLAN.md not found")
 

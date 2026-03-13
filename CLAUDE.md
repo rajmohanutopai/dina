@@ -192,7 +192,7 @@ python scripts/test_release.py                # Suite 3: 23 release scenarios
 # --- Direct pytest (needs services already running) ---
 DINA_INTEGRATION=docker pytest tests/integration/    # Real HTTP clients
 pytest tests/integration/                             # Mock mode (default)
-./run_e2e_all.sh                                      # E2E suite wrapper
+./scripts/run_e2e_all.sh                               # E2E suite wrapper
 
 # --- Selective user stories ---
 ./run_user_story_tests.sh --story 4            # Run only story 04 (Persona Wall)

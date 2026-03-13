@@ -1529,13 +1529,13 @@ Verify that Dina's action layer enforces draft-don't-send, approval gates surviv
 
 This plan should reuse and extend existing test assets where possible:
 
-1. [core/test/TEST_PLAN.md](/Users/rajmohan/OpenSource/dina/core/test/TEST_PLAN.md)
-2. [brain/tests/TEST_PLAN.md](/Users/rajmohan/OpenSource/dina/brain/tests/TEST_PLAN.md)
-3. [tests/INTEGRATION_TEST_PLAN.md](/Users/rajmohan/OpenSource/dina/tests/INTEGRATION_TEST_PLAN.md)
-4. [tests/E2E_TEST_PLAN.md](/Users/rajmohan/OpenSource/dina/tests/E2E_TEST_PLAN.md)
-5. [MANUAL_TEST_GUIDE.md](/Users/rajmohan/OpenSource/dina/MANUAL_TEST_GUIDE.md)
-6. [run_user_story_tests.sh](/Users/rajmohan/OpenSource/dina/run_user_story_tests.sh)
-7. [scripts/test_status.py](/Users/rajmohan/OpenSource/dina/scripts/test_status.py)
+1. [core/test/TEST_PLAN.md](../core/test/TEST_PLAN.md)
+2. [brain/tests/TEST_PLAN.md](../brain/tests/TEST_PLAN.md)
+3. [tests/INTEGRATION_TEST_PLAN.md](../tests/INTEGRATION_TEST_PLAN.md)
+4. [tests/E2E_TEST_PLAN.md](../tests/E2E_TEST_PLAN.md)
+5. [MANUAL_TEST_GUIDE.md](./MANUAL_TEST_GUIDE.md)
+6. [run_user_story_tests.sh](../run_user_story_tests.sh)
+7. [scripts/test_status.py](../scripts/test_status.py)
 
 The release implementation should not duplicate those suites blindly. It should:
 

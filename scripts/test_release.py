@@ -684,7 +684,7 @@ def main() -> None:
         docker_started = True
 
     # Parse scenario definitions from RELEASE_TEST_PLAN.md
-    plan_path = PROJECT_ROOT / "RELEASE_TEST_PLAN.md"
+    plan_path = PROJECT_ROOT / "docs" / "RELEASE_TEST_PLAN.md"
     if not plan_path.exists():
         print(f"ERROR: {plan_path} not found", file=sys.stderr)
         sys.exit(2)

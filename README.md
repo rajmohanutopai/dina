@@ -16,7 +16,7 @@
 * **Start Here:** [**Open dina.html**](https://rajmohanutopai.github.io/dina/dina.html) — Interactive visual guide to everything Dina.
 * **Quick Start:** [3 commands to get Dina running](./QUICKSTART.md)
 * **The Stack:** Go Core + Python Brain + Python CLI + SQLite/SQLCipher.
-* **Advanced Setup:** [Local LLM / Networking / Yggdrasil](./ADVANCED-SETUP.md)
+* **Advanced Setup:** [Local LLM / Networking / Yggdrasil](./docs/ADVANCED-SETUP.md)
 * **Test Results:** [Detailed Test Results](https://rajmohanutopai.github.io/dina/all_test_results.html)
 * **The Architecture:** [Read the Engineering Spec](./ARCHITECTURE.md)
 * **Discussion:** [Join the Discord](https://discord.gg/gDRcrEwy)
@@ -35,7 +35,7 @@ cd dina
 
 `install.sh` generates secrets, picks LLM provider, builds containers, and shows your DID + recovery phrase.
 
-![User Story Tests](./UserStories.png)
+![User Story Tests](./docs/images/UserStories.png)
 
 ---
 
@@ -150,7 +150,7 @@ Because every person's Dina is a sovereign identity, Dinas can talk to each othe
 
 ## How Dina Works
 
-![Architecture Diagram](./Architecture.png)
+![Architecture Diagram](./docs/images/Architecture.png)
 
 ### Dina is Thin on Purpose
 
@@ -328,7 +328,7 @@ Security is fundamental for Dina. She stores your most important data, so she ha
 
 *See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full engineering blueprint.*
 *See [SECURITY.md](./SECURITY.md) for supply chain security (image signing, digest pinning, SBOM).*
-*See [Build Roadmap with Status Tracking](./ROADMAP.md) for project status.*
+*See [Build Roadmap with Status Tracking](./docs/ROADMAP.md) for project status.*
 
 ---
 
