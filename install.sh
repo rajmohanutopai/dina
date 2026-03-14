@@ -825,9 +825,20 @@ fi
 if has_telegram "${ENV_FILE}"; then
     echo -e "  Telegram:  ${GREEN}connected${RESET}"
 fi
-if [ -n "${SEED_MODE}" ] || has_telegram "${ENV_FILE}" 2>/dev/null; then
-    echo ""
+# Check LLM status from Brain's healthz (inside the container network)
+_brain_health=$($COMPOSE exec -T brain python -c \
+    "import httpx,json; print(json.dumps(httpx.get('http://localhost:8200/healthz',timeout=3).json()))" \
+    2>/dev/null || true)
+if [ -n "${_brain_health}" ]; then
+    _llm_router=$(echo "${_brain_health}" | grep -o '"llm_router":"[^"]*"' | cut -d'"' -f4 || true)
+    _llm_models=$(echo "${_brain_health}" | grep -o '"llm_models":"[^"]*"' | cut -d'"' -f4 || true)
+    if [ "${_llm_router}" = "available" ]; then
+        echo -e "  LLM:       ${GREEN}available${RESET} ${DIM}${_llm_models}${RESET}"
+    else
+        echo -e "  LLM:       ${YELLOW}not configured${RESET} ${DIM}edit .env to add your API key${RESET}"
+    fi
 fi
+echo ""
 echo -e "  ${BOLD}Commands:${RESET}"
 echo -e "    Stop:      ${CYAN}./run.sh --stop${RESET}"
 echo -e "    Logs:      ${CYAN}./run.sh --logs${RESET}"

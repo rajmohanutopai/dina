@@ -34,12 +34,12 @@ setup_llm_provider() {
     echo ""
     echo -e "  ${BOLD}Which LLM provider would you like to use?${RESET}"
     echo ""
-    echo -e "    ${CYAN}1)${RESET} Gemini      ${DIM}(Google — free tier available)${RESET}"
-    echo -e "    ${CYAN}2)${RESET} OpenAI      ${DIM}(GPT-5.2)${RESET}"
-    echo -e "    ${CYAN}3)${RESET} Claude      ${DIM}(Anthropic)${RESET}"
-    echo -e "    ${CYAN}4)${RESET} OpenRouter  ${DIM}(access 200+ models via one key)${RESET}"
-    echo -e "    ${CYAN}5)${RESET} Ollama      ${DIM}(local models, fully private — no API key needed)${RESET}"
-    echo -e "    ${CYAN}6)${RESET} Skip        ${DIM}(configure later in .env)${RESET}"
+    echo -e "    ${CYAN}1)${RESET} Google Gemini"
+    echo -e "    ${CYAN}2)${RESET} OpenAI GPT"
+    echo -e "    ${CYAN}3)${RESET} Anthropic Claude"
+    echo -e "    ${CYAN}4)${RESET} OpenRouter"
+    echo -e "    ${CYAN}5)${RESET} Ollama"
+    echo -e "    ${CYAN}6)${RESET} Skip"
     echo ""
 
     local provider_choice=""
@@ -94,26 +94,21 @@ setup_llm_provider() {
             ;;
     esac
 
-    # Validate API key by sending a tiny completion through the real provider.
-    if [ -n "${LLM_KEY_NAME}" ] && [ -n "${LLM_KEY_VALUE}" ] && [ -t 0 ] && command -v python3 &>/dev/null; then
+    # Validate API key immediately using the crypto Docker container.
+    # validate_key.py uses only stdlib (urllib) — no pip packages needed.
+    if [ -n "${LLM_KEY_NAME}" ] && [ -n "${LLM_KEY_VALUE}" ] && [ -t 0 ] && type run_crypto &>/dev/null; then
         while true; do
-            printf "  Validating API key (sending a test completion)... "
-            local validate_err
-            validate_err=$(python3 scripts/validate_key.py "${LLM_KEY_NAME}" "${LLM_KEY_VALUE}" 2>&1)
-            if [ $? -eq 0 ]; then
-                echo -e "${GREEN}✓${RESET} Key works"
+            printf "  Validating API key... "
+            if run_crypto scripts/validate_key.py "${LLM_KEY_NAME}" "${LLM_KEY_VALUE}" >/dev/null 2>&1; then
+                echo -e "${GREEN}✓${RESET}"
                 break
             else
-                echo -e "${YELLOW}✗${RESET} Key did not work"
-                if [ -n "${validate_err}" ]; then
-                    echo -e "  ${DIM}${validate_err}${RESET}"
-                fi
+                echo -e "${YELLOW}✗${RESET} key did not work"
                 echo ""
                 echo -e "    ${CYAN}1)${RESET} Re-enter key"
-                echo -e "    ${CYAN}2)${RESET} Continue without a key  ${DIM}(you can add it to .env later)${RESET}"
-                echo -e "    ${CYAN}3)${RESET} Exit"
+                echo -e "    ${CYAN}2)${RESET} Continue anyway"
                 echo ""
-                printf "  What would you like to do? [1-3]: "
+                printf "  Choice [1-2]: "
                 local retry_choice
                 read -r retry_choice
                 case "${retry_choice}" in
@@ -121,21 +116,13 @@ setup_llm_provider() {
                         printf "  Enter your API key: "
                         read -r LLM_KEY_VALUE
                         if [ -z "${LLM_KEY_VALUE}" ]; then
-                            info "Empty key — continuing without provider"
+                            info "Empty key — skipping"
                             LLM_KEY_NAME=""
                             LLM_KEY_VALUE=""
                             break
                         fi
                         ;;
-                    3)
-                        echo ""
-                        info "Exiting. Re-run when ready."
-                        exit 0
-                        ;;
                     *)
-                        info "Continuing without validated key — edit .env later"
-                        LLM_KEY_NAME=""
-                        LLM_KEY_VALUE=""
                         break
                         ;;
                 esac
