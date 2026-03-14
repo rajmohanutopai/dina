@@ -56,21 +56,18 @@ setup_llm_provider() {
         1)
             LLM_KEY_NAME="GEMINI_API_KEY"
             echo ""
-            echo -e "  Get a free key at: ${CYAN}https://aistudio.google.com/apikey${RESET}"
             printf "  Enter your Gemini API key: "
             read -r LLM_KEY_VALUE
             ;;
         2)
             LLM_KEY_NAME="OPENAI_API_KEY"
             echo ""
-            echo -e "  Get a key at: ${CYAN}https://platform.openai.com/api-keys${RESET}"
             printf "  Enter your OpenAI API key: "
             read -r LLM_KEY_VALUE
             ;;
         3)
             LLM_KEY_NAME="ANTHROPIC_API_KEY"
             echo ""
-            echo -e "  Get a key at: ${CYAN}https://console.anthropic.com/${RESET}"
             printf "  Enter your Anthropic API key: "
             read -r LLM_KEY_VALUE
             ;;
@@ -78,7 +75,6 @@ setup_llm_provider() {
             LLM_KEY_NAME="OPENROUTER_API_KEY"
             LLM_EXTRA_LINES="OPENROUTER_MODEL=google/gemini-2.5-flash"
             echo ""
-            echo -e "  Get a key at: ${CYAN}https://openrouter.ai/keys${RESET}"
             printf "  Enter your OpenRouter API key: "
             read -r LLM_KEY_VALUE
             ;;

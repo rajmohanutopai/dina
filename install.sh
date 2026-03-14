@@ -237,11 +237,41 @@ verbose_ok "PDS port:  ${PDS_PORT}"
 
 step_begin "Preparing secure storage..."
 
+# ---------------------------------------------------------------------------
+# Ownership repair: Docker bind mounts may have created secrets/ as root
+# during a prior run. We must own these paths before proceeding.
+# ---------------------------------------------------------------------------
+_repair_ownership() {
+    [ -d "${SECRETS_DIR}" ] || return 0
+
+    local need_fix=0
+    # First check: can we even read/write the top-level directory?
+    # A root-owned 700 directory is not traversable by the current user,
+    # so find would silently produce no output — we must check this first.
+    if [ ! -w "${SECRETS_DIR}" ] || [ ! -x "${SECRETS_DIR}" ]; then
+        need_fix=1
+    elif find "${SECRETS_DIR}" -maxdepth 3 \( ! -writable -o ! -readable \) -print -quit 2>/dev/null | grep -q .; then
+        need_fix=1
+    fi
+
+    [ "$need_fix" -eq 1 ] || return 0
+
+    # Not writable — need sudo to reclaim ownership
+    echo ""
+    echo -e "  ${YELLOW}Fixing file ownership${RESET} ${DIM}(a previous run created files as root)${RESET}"
+    if sudo chown -R "$(id -u):$(id -g)" "${SECRETS_DIR}"; then
+        verbose_ok "Ownership repaired"
+    else
+        fail "Cannot fix ownership of ${SECRETS_DIR}.\n\n  Run:  ${CYAN}sudo chown -R \$(id -u):\$(id -g) secrets/${RESET}\n  Then run ./install.sh again."
+    fi
+}
+
+[ -d "${SECRETS_DIR}" ] && _repair_ownership
 mkdir -p "${SECRETS_DIR}"
 
 # Service key directories (Ed25519 keypairs for Core↔Brain mutual auth)
-# Separate bind mounts ensure private keys never exist in the peer's container.
-# Keys are provisioned at install time; runtime does not auto-generate.
+# Pre-create all bind-mounted paths BEFORE Docker Compose runs, so Docker
+# doesn't create them as root.
 #   core/   → mounted only to Core container (private key)
 #   brain/  → mounted only to Brain container (private key)
 #   public/ → mounted read-only to both containers (public keys)
@@ -337,8 +367,8 @@ elif [ -t 0 ]; then
     echo ""
     echo -e "  ${BOLD}Creating your identity${RESET}"
     echo ""
-    echo -e "  ${DIM}Your identity is your cryptographic passport.${RESET}"
-    echo -e "  ${DIM}It determines your DID and all encryption keys.${RESET}"
+    echo -e "  ${DIM}Your identity generates your username (DID) and encryption keys.${RESET}"
+    echo -e "  ${DIM}Your recovery phrase is the master key — anyone with these words can access your identity and data.${RESET}"
     echo ""
     echo -e "    ${CYAN}1)${RESET} Create new identity          ${DIM}(first-time setup)${RESET}"
     echo -e "    ${CYAN}2)${RESET} Restore from recovery phrase  ${DIM}(24 words from a previous install)${RESET}"
@@ -454,7 +484,7 @@ if [ -n "${MASTER_SEED}" ] && [ "${IDENTITY_NEW}" = true ]; then
         done
         echo -e "  ${YELLOW}╚${BORDER}╝${RESET}"
         echo ""
-        echo -e "  ${RED}${BOLD}SAVE THIS! You need it to recover your Dina.${RESET}"
+        echo -e "  ${RED}${BOLD}SAVE THIS RECOVERY PHRASE! You need it to recover your Dina.${RESET}"
         echo -e "  ${RED}Write it down on paper. Do not store it digitally.${RESET}"
 
         # --- Verify user saved it: ask for 3 random words ---
@@ -698,6 +728,8 @@ if [ "${VERBOSE}" = true ]; then
     echo -e "${BOLD}Locking permissions${RESET}"
 fi
 
+# Repair ownership if Docker created/modified files as root during build/start
+_repair_ownership
 chmod 700 "${SECRETS_DIR}"
 # Lock files but preserve directory permissions (service_keys/ has subdirs)
 find "${SECRETS_DIR}" -maxdepth 1 -type f -exec chmod 600 {} +
@@ -785,10 +817,18 @@ if [ $ELAPSED -ge $HEALTH_TIMEOUT ]; then
         echo "    $line"
     done
     echo ""
-    # Show logs for any unhealthy container
+    # Show logs for containers that are restarting, exited, or unhealthy
     for svc in pds core brain; do
+        SVC_STATUS=$($COMPOSE ps "$svc" --format "{{.Status}}" 2>/dev/null || true)
         HEALTH=$($COMPOSE ps "$svc" --format "{{.Health}}" 2>/dev/null || true)
-        if [ "$HEALTH" != "healthy" ] && [ -n "$HEALTH" ]; then
+        # Show logs if: unhealthy, restarting, exited, or no health status
+        if echo "${SVC_STATUS}" | grep -qiE "restarting|exit" 2>/dev/null; then
+            echo -e "  ${RED}${svc}${RESET} is ${SVC_STATUS} — last 20 log lines:"
+            $COMPOSE logs --tail=20 "$svc" 2>/dev/null | while IFS= read -r line; do
+                echo "    ${line}"
+            done
+            echo ""
+        elif [ "$HEALTH" != "healthy" ] && [ -n "$HEALTH" ]; then
             echo -e "  ${YELLOW}${svc}${RESET} is ${HEALTH} — last 15 log lines:"
             $COMPOSE logs --tail=15 "$svc" 2>/dev/null | while IFS= read -r line; do
                 echo "    ${line}"

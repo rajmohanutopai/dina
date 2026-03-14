@@ -219,8 +219,15 @@ if [ $ELAPSED -ge $HEALTH_TIMEOUT ]; then
     done
     echo ""
     for svc in pds core brain; do
+        SVC_STATUS=$($COMPOSE ps "$svc" --format "{{.Status}}" 2>/dev/null || true)
         HEALTH=$($COMPOSE ps "$svc" --format "{{.Health}}" 2>/dev/null || true)
-        if [ "$HEALTH" != "healthy" ] && [ -n "$HEALTH" ]; then
+        if echo "${SVC_STATUS}" | grep -qiE "restarting|exit" 2>/dev/null; then
+            echo -e "  ${RED}${svc}${RESET} is ${SVC_STATUS} — last 20 log lines:"
+            $COMPOSE logs --tail=20 "$svc" 2>/dev/null | while IFS= read -r line; do
+                echo "    ${line}"
+            done
+            echo ""
+        elif [ "$HEALTH" != "healthy" ] && [ -n "$HEALTH" ]; then
             echo -e "  ${YELLOW}${svc}${RESET} is ${HEALTH} — last 15 log lines:"
             $COMPOSE logs --tail=15 "$svc" 2>/dev/null | while IFS= read -r line; do
                 echo "    ${line}"
