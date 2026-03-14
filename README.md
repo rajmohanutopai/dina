@@ -1,7 +1,7 @@
 # Dina — Your Personal AI, With an Identity
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests: 4500+ passing](https://img.shields.io/badge/Tests-3%2C073%20passing-brightgreen)]()
+[![Tests: 4500+ passing](https://img.shields.io/badge/Tests-4%2C500+%20passing-brightgreen)]()
 [![Status: Developer Alpha](https://img.shields.io/badge/Status-Developer%20Alpha-orange)]()
 [![Stack: Go + Python](https://img.shields.io/badge/Stack-Go%20%7C%20Python-blue)]()
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-purple)](https://discord.gg/gDRcrEwy)
