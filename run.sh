@@ -79,10 +79,10 @@ if ! check_install_complete "${DINA_DIR}"; then
         # human interaction (passphrase, recovery phrase verification).
         fail "Dina is not installed in this directory. Run ./install.sh in a terminal first."
     fi
-    echo -e "  Dina is not installed in this directory."
+    echo -e "  ${YELLOW}Dina is not installed in this directory.${RESET}"
     echo ""
     while true; do
-        printf "  Install Dina? (Y/N): "
+        printf "  ${BOLD}Install Dina? (Y/N):${RESET} "
         read -r INSTALL_CHOICE
         case "${INSTALL_CHOICE}" in
             [yY]) exec ./install.sh "$@" ;;

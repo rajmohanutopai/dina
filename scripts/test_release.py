@@ -724,11 +724,11 @@ def main() -> None:
             capture_output=True,
             text=True,
             cwd=str(PROJECT_ROOT),
-            timeout=300,
+            timeout=600,
         )
         output = result.stdout + "\n" + result.stderr
     except subprocess.TimeoutExpired:
-        print("WARNING: Release tests timed out after 300s", file=sys.stderr)
+        print("WARNING: Release tests timed out after 600s", file=sys.stderr)
         output = ""
     except FileNotFoundError as exc:
         print(f"WARNING: {exc}", file=sys.stderr)

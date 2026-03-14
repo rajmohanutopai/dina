@@ -97,38 +97,46 @@ step_end_skip() {
 # ---------------------------------------------------------------------------
 
 echo ""
-echo -e "  ${BOLD}Setting up Dina${RESET}"
-echo -e "  ${DIM}${DINA_DIR}${RESET}"
+echo -e "  ${CYAN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+echo -e "  ${BOLD}  Setting up Dina${RESET}"
+echo -e "  ${DIM}  ${DINA_DIR}${RESET}"
+echo -e "  ${CYAN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo ""
 
 # ---------------------------------------------------------------------------
 # Step 1: Prerequisites
 # ---------------------------------------------------------------------------
 
-step_begin "Checking your system..."
+echo -e "  ${BOLD}Checking your system...${RESET}"
+echo ""
 
-command -v docker >/dev/null 2>&1 || fail "Docker is not installed. Install from https://docs.docker.com/get-docker/"
-verbose_ok "Docker found"
+# Helper for inline check results (non-verbose mode)
+_check_ok() { echo -e "    ${GREEN}✓${RESET} $1"; }
+
+command -v docker >/dev/null 2>&1 || fail "Docker not found.\n\n  Dina needs Docker to run. Please install Docker and try again:\n  ${CYAN}https://docs.docker.com/get-docker/${RESET}"
+_check_ok "Docker"
 
 # Check for 'docker compose' (v2 plugin) or 'docker-compose' (legacy)
 if docker compose version >/dev/null 2>&1; then
     COMPOSE="docker compose"
-    verbose_ok "Docker Compose found (plugin)"
+    _check_ok "Docker Compose"
 elif command -v docker-compose >/dev/null 2>&1; then
     COMPOSE="docker-compose"
-    verbose_ok "Docker Compose found (standalone)"
+    _check_ok "Docker Compose"
 else
-    fail "Docker Compose not found. Install from https://docs.docker.com/compose/install/"
+    fail "Docker Compose not found.\n\n  Dina needs Docker Compose to run. Please install it and try again:\n  ${CYAN}https://docs.docker.com/compose/install/${RESET}"
 fi
 
-command -v curl >/dev/null 2>&1 || fail "curl is not installed."
-verbose_ok "curl found"
+command -v curl >/dev/null 2>&1 || fail "curl not found. Please install curl and try again."
+_check_ok "curl"
 
-# Check Docker daemon is running
-docker info >/dev/null 2>&1 || fail "Docker daemon is not running. Start Docker and try again."
-verbose_ok "Docker daemon running"
-
-step_end
+# Check Docker daemon is accessible
+if ! docker info >/dev/null 2>&1; then
+    echo ""
+    fail "Cannot connect to Docker.\n\n  Please make sure these commands work before running install.sh:\n\n    ${CYAN}docker run hello-world${RESET}\n    ${CYAN}docker compose version${RESET}\n\n  If they don't, please install or configure Docker and try again."
+fi
+_check_ok "Docker daemon"
+echo ""
 
 # ---------------------------------------------------------------------------
 # Step 2: Port allocation (verbose-only — shown in final banner)
@@ -287,8 +295,8 @@ elif [ -t 0 ]; then
         2)
             # Restore from 24-word mnemonic
             echo ""
-            echo -e "  Enter your 24-word recovery phrase (space-separated):"
-            printf "  > "
+            echo -e "  ${BOLD}Enter your 24-word recovery phrase${RESET} ${DIM}(space-separated):${RESET}"
+            printf "  ${CYAN}>${RESET} "
             read -r MNEMONIC_INPUT
 
             while true; do
@@ -309,8 +317,8 @@ elif [ -t 0 ]; then
                     case "${RETRY_MNEMONIC}" in
                         1)
                             echo ""
-                            echo -e "  Enter your 24-word recovery phrase:"
-                            printf "  > "
+                            echo -e "  ${BOLD}Enter your 24-word recovery phrase:${RESET}"
+                            printf "  ${CYAN}>${RESET} "
                             read -r MNEMONIC_INPUT
                             ;;
                         *)
@@ -325,7 +333,7 @@ elif [ -t 0 ]; then
         3)
             # Restore from raw hex seed
             echo ""
-            printf "  Enter your 64-character hex seed: "
+            printf "  ${BOLD}Enter your 64-character hex seed:${RESET} "
             read -r HEX_INPUT
             HEX_INPUT=$(echo "${HEX_INPUT}" | tr -d '[:space:]')
 
@@ -414,7 +422,7 @@ if [ -n "${MASTER_SEED}" ] && [ "${IDENTITY_NEW}" = true ]; then
             VERIFY_PASS=true
             for pos in "${VERIFY_POS[@]}"; do
                 EXPECTED="${WORDS[$((pos - 1))]}"
-                printf "  Word #%d: " "${pos}"
+                printf "  ${BOLD}Word #%d:${RESET} " "${pos}"
                 read -r USER_WORD
                 USER_WORD=$(echo "${USER_WORD}" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
                 if [ "${USER_WORD}" != "${EXPECTED}" ]; then
@@ -466,14 +474,14 @@ if [ -n "${MASTER_SEED}" ]; then
         echo -e "  ${BOLD}Choose a passphrase to protect your identity:${RESET}"
         echo -e "  ${DIM}(minimum 8 characters)${RESET}"
         while true; do
-            printf "  Passphrase: "
+            printf "  ${BOLD}Passphrase:${RESET} "
             read -rs SEED_PASSPHRASE
             echo ""
             if [ ${#SEED_PASSPHRASE} -lt 8 ]; then
                 echo -e "  ${YELLOW}✗${RESET} Passphrase must be at least 8 characters"
                 continue
             fi
-            printf "  Confirm:    "
+            printf "  ${BOLD}Confirm:${RESET}    "
             read -rs SEED_PASSPHRASE_CONFIRM
             echo ""
             if [ "${SEED_PASSPHRASE}" != "${SEED_PASSPHRASE_CONFIRM}" ]; then
@@ -651,7 +659,7 @@ else
         if [ "${VERBOSE}" = true ]; then
             echo -e "  ${DIM}${line}${RESET}"
         else
-            printf "."
+            printf "${GREEN}.${RESET}"
         fi
     done; then
         step_end
@@ -695,7 +703,7 @@ while [ $ELAPSED -lt $HEALTH_TIMEOUT ]; do
     if [ "${VERBOSE}" = true ]; then
         printf "  ${DIM}[....]${RESET} Waiting... (%ds/%ds)\r" "$ELAPSED" "$HEALTH_TIMEOUT"
     else
-        printf "."
+        printf "${GREEN}.${RESET}"
     fi
     sleep $HEALTH_INTERVAL
     ELAPSED=$((ELAPSED + HEALTH_INTERVAL))
@@ -734,7 +742,9 @@ echo ""
 # Final banner
 # ---------------------------------------------------------------------------
 
-echo -e "  ${BOLD}Dina is ready!${RESET}"
+echo -e "  ${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+echo -e "  ${GREEN}${BOLD}  Dina is ready!${RESET}"
+echo -e "  ${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo ""
 echo -e "  ${CYAN}http://localhost:${CORE_PORT}${RESET}"
 echo ""
