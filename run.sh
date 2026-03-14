@@ -70,26 +70,17 @@ esac
 # ---------------------------------------------------------------------------
 
 echo ""
-echo -e "${BOLD}Dina Home Node${RESET}"
+echo -e "  ${CYAN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+echo -e "  ${BOLD}  Dina Home Node${RESET}"
+echo -e "  ${CYAN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo ""
 
 if ! check_install_complete "${DINA_DIR}"; then
-    if [ ! -t 0 ]; then
-        # Non-interactive: refuse to bootstrap — identity creation requires
-        # human interaction (passphrase, recovery phrase verification).
-        fail "Dina is not installed in this directory. Run ./install.sh in a terminal first."
-    fi
-    echo -e "  ${YELLOW}Dina is not installed in this directory.${RESET}"
+    echo -e "  ${YELLOW}Dina is not installed yet.${RESET}"
     echo ""
-    while true; do
-        printf "  ${BOLD}Install Dina? (Y/N):${RESET} "
-        read -r INSTALL_CHOICE
-        case "${INSTALL_CHOICE}" in
-            [yY]) exec ./install.sh "$@" ;;
-            [nN]) exit 0 ;;
-            *)    echo -e "  ${DIM}Please enter Y or N.${RESET}" ;;
-        esac
-    done
+    echo -e "  Run:  ${CYAN}./install.sh${RESET}"
+    echo ""
+    exit 1
 fi
 
 ok "Installation verified"
@@ -131,9 +122,37 @@ echo ""
 # Docker prerequisites
 # ---------------------------------------------------------------------------
 
-command -v docker >/dev/null 2>&1 || fail "Docker is not installed"
-docker info >/dev/null 2>&1 || fail "Docker daemon is not running. Start Docker and try again."
+command -v docker >/dev/null 2>&1 || fail "Docker not found. Please install Docker first."
+if ! docker info >/dev/null 2>&1; then
+    fail "Cannot connect to Docker.\n\n  Make sure these commands work:\n\n    ${REVERSE} docker run hello-world ${RESET}\n    ${REVERSE} docker compose version ${RESET}\n\n  Then run ./run.sh again."
+fi
 detect_compose
+
+# ---------------------------------------------------------------------------
+# Passphrase check (manual-start mode)
+# ---------------------------------------------------------------------------
+
+SEED_PASSWORD_FILE="${SECRETS_DIR}/seed_password"
+if [ -f "${SEED_PASSWORD_FILE}" ] && [ ! -s "${SEED_PASSWORD_FILE}" ]; then
+    # Empty seed_password = manual-start mode. Core needs it to start.
+    if [ ! -t 0 ]; then
+        fail "Passphrase required but running non-interactively.\n  Switch to auto-start: ${CYAN}./dina-admin security auto-start${RESET}"
+    fi
+    printf "  ${BOLD}Enter passphrase${RESET} ${DIM}(${CYAN}dina-admin security auto-start${RESET}${DIM} to skip this):${RESET} "
+    read -rs _run_passphrase
+    echo ""
+    if [ -z "${_run_passphrase}" ]; then
+        fail "Passphrase cannot be empty."
+    fi
+    # Write passphrase temporarily for this startup.
+    # Core reads it from the Docker secret mount on container start.
+    printf '%s' "${_run_passphrase}" > "${SEED_PASSWORD_FILE}"
+    chmod 600 "${SEED_PASSWORD_FILE}"
+    # Schedule cleanup: clear passphrase from disk after containers start.
+    _CLEAR_PASSPHRASE_AFTER_START=true
+else
+    _CLEAR_PASSPHRASE_AFTER_START=false
+fi
 
 # ---------------------------------------------------------------------------
 # Start containers
@@ -159,6 +178,14 @@ else
 fi
 
 ok "Containers started"
+
+# Clear passphrase from disk if we wrote it temporarily for manual-start mode.
+# Docker has already read the secret into the container's in-memory mount.
+if [ "${_CLEAR_PASSPHRASE_AFTER_START}" = true ]; then
+    : > "${SEED_PASSWORD_FILE}"
+    chmod 600 "${SEED_PASSWORD_FILE}"
+fi
+
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -211,7 +238,9 @@ echo ""
 # Status banner
 # ---------------------------------------------------------------------------
 
-echo -e "${BOLD}Dina is running${RESET}"
+echo -e "  ${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+echo -e "  ${GREEN}${BOLD}  Dina is running${RESET}"
+echo -e "  ${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo ""
 if [ -n "${DINA_SESSION}" ]; then
     echo -e "  Session:   ${CYAN}${DINA_SESSION}${RESET}  ${DIM}(core-${DINA_SESSION}, brain-${DINA_SESSION}, ...)${RESET}"

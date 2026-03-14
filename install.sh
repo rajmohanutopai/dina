@@ -77,12 +77,35 @@ build_crypto_image() {
     if [ "${CRYPTO_IMAGE_BUILT}" = true ]; then
         return 0
     fi
-    verbose_info "Building crypto tools image..."
-    if docker build -q -t "${CRYPTO_IMAGE}" -f scripts/setup/Dockerfile.crypto scripts/setup/ >/dev/null 2>&1; then
-        CRYPTO_IMAGE_BUILT=true
-        verbose_ok "Crypto tools image ready"
+    if [ "${VERBOSE}" = true ]; then
+        info "Building crypto tools image..."
+        if docker build -q -t "${CRYPTO_IMAGE}" -f scripts/setup/Dockerfile.crypto scripts/setup/ >/dev/null 2>&1; then
+            CRYPTO_IMAGE_BUILT=true
+            ok "Crypto tools image ready"
+        else
+            fail "Failed to build crypto tools image. Check that Docker is running."
+        fi
     else
-        fail "Failed to build crypto tools image. Check that Docker is running."
+        printf "  Preparing crypto tools... "
+        # Run build in background with a spinner
+        docker build -q -t "${CRYPTO_IMAGE}" -f scripts/setup/Dockerfile.crypto scripts/setup/ >/dev/null 2>&1 &
+        local _build_pid=$!
+        local _spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+        local _i=0
+        while kill -0 "$_build_pid" 2>/dev/null; do
+            printf "\b${CYAN}${_spin:_i++%${#_spin}:1}${RESET}"
+            sleep 0.1
+        done
+        wait "$_build_pid"
+        local _rc=$?
+        printf "\b"
+        if [ $_rc -eq 0 ]; then
+            CRYPTO_IMAGE_BUILT=true
+            echo -e "${GREEN}done${RESET}"
+        else
+            echo -e "${RED}failed${RESET}"
+            fail "Failed to build crypto tools image. Check that Docker is running."
+        fi
     fi
 }
 
@@ -275,6 +298,10 @@ if [ "${PDS_GENERATED}" = true ]; then
 else
     verbose_skip "PDS secrets already set"
 fi
+
+# Build the crypto tools Docker image now (before identity setup)
+# so the user doesn't see a delay when generating/restoring keys.
+build_crypto_image
 
 # Service key provisioning is deferred until the master seed is available
 # (after identity setup). See the provisioning block below wrap_seed.py.
@@ -490,21 +517,7 @@ fi
 if [ -n "${MASTER_SEED}" ]; then
     echo ""
     if [ -t 0 ]; then
-        echo -e "  ${BOLD}How should Dina start?${RESET}"
-        echo ""
-        echo -e "    ${CYAN}1)${RESET} Enter passphrase each time  ${DIM}(most secure)${RESET}"
-        echo -e "    ${CYAN}2)${RESET} Start automatically         ${DIM}(passphrase stored locally)${RESET}"
-        echo ""
-        printf "  Enter choice [1-2]: "
-        read -r SEED_MODE_CHOICE
-
-        case "${SEED_MODE_CHOICE}" in
-            2) SEED_MODE="server" ;;
-            *) SEED_MODE="maximum" ;;
-        esac
-
-        # Prompt for passphrase (min 8 chars, confirmed)
-        echo ""
+        # Step 1: Always collect the passphrase first
         echo -e "  ${BOLD}Choose a passphrase to protect your identity:${RESET}"
         echo -e "  ${DIM}(minimum 8 characters)${RESET}"
         while true; do
@@ -524,6 +537,23 @@ if [ -n "${MASTER_SEED}" ]; then
             fi
             break
         done
+
+        # Step 2: Ask about startup mode
+        echo ""
+        echo -e "  ${BOLD}How should Dina start?${RESET}"
+        echo ""
+        echo -e "    ${CYAN}1)${RESET} Enter passphrase each time  ${DIM}(most secure)${RESET}"
+        echo -e "    ${CYAN}2)${RESET} Start automatically         ${DIM}(passphrase stored locally)${RESET}"
+        echo ""
+        echo -e "  ${DIM}You can switch later: ${CYAN}dina-admin security auto-start${RESET} ${DIM}or${RESET} ${CYAN}manual-start${RESET}"
+        echo ""
+        printf "  Enter choice [1-2]: "
+        read -r SEED_MODE_CHOICE
+
+        case "${SEED_MODE_CHOICE}" in
+            2) SEED_MODE="server" ;;
+            *) SEED_MODE="maximum" ;;
+        esac
     else
         # Non-interactive: auto-generate passphrase, Server Mode
         SEED_MODE="server"

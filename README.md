@@ -31,6 +31,7 @@ See [`QUICKSTART.md`](./QUICKSTART.md) for the full guide including networking s
 git clone https://github.com/rajmohanutopai/dina.git 
 cd dina
 ./install.sh
+./run.sh
 ```
 
 `install.sh` generates secrets, picks LLM provider, builds containers, and shows your DID + recovery phrase.

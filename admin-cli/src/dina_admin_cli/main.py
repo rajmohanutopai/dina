@@ -287,3 +287,44 @@ def identity_sign(ctx: click.Context, data: str) -> None:
     except AdminClientError as exc:
         print_error(str(exc), json_mode)
         ctx.exit(1)
+
+
+# ── security ─────────────────────────────────────────────────────────────────
+
+
+@cli.group()
+def security() -> None:
+    """Manage startup security mode (auto-start vs manual passphrase)."""
+
+
+@security.command("auto-start")
+def security_auto_start() -> None:
+    """Store passphrase locally — Dina starts without prompting.
+
+    This command is handled by the host-side dina-admin wrapper.
+    Run: ./dina-admin security auto-start
+    """
+    click.echo("This command must be run from the host (not inside the container).")
+    click.echo("Run: ./dina-admin security auto-start")
+
+
+@security.command("manual-start")
+def security_manual_start() -> None:
+    """Require passphrase on each start (most secure).
+
+    This command is handled by the host-side dina-admin wrapper.
+    Run: ./dina-admin security manual-start
+    """
+    click.echo("This command must be run from the host (not inside the container).")
+    click.echo("Run: ./dina-admin security manual-start")
+
+
+@security.command("status")
+def security_status() -> None:
+    """Show current startup security mode.
+
+    This command is handled by the host-side dina-admin wrapper.
+    Run: ./dina-admin security status
+    """
+    click.echo("This command must be run from the host (not inside the container).")
+    click.echo("Run: ./dina-admin security status")
