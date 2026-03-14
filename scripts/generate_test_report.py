@@ -640,7 +640,7 @@ def _user_stories_card_html(stories: list[dict], summary: dict) -> str:
         f'<div class="card stories-showcase">'
         f'<div class="stories-header">'
         f'<h2>User Story Tests</h2>'
-        f'<div class="stories-tagline">Zero mocks. Real stack. Real crypto. Real trust.</div>'
+        f'<div class="stories-tagline">Full stack integration — no mocks.</div>'
         f'<div class="pass-rate {rate_cls}" style="font-size:1.4rem;margin:8px 0">'
         f'{rate:.1f}%</div>'
         f'<div class="stories-stats">{stats_html}</div>'

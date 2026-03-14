@@ -143,7 +143,7 @@ Dina is an orchestrator — she decides *what* needs to be done, but delegates *
 
 Both talk to external processes. Neither runs code inside Dina. Child agents cannot touch Dina's vault, keys, or personas — they receive task messages via MCP and return results. If a child agent gets compromised, it's just a misbehaving external process that Dina can disconnect.
 
-**Why this matters for security:** The biggest attack surface in any system is third-party code. Plugins running inside your process can crash your vault, read across persona boundaries, or exfiltrate data. By refusing to run external code inside the process, entire categories of vulnerabilities are eliminated. A compromised child agent is contained — it can only respond to MCP calls, never initiate access to Dina's internals.
+**Why this matters for security:** The biggest attack surface in any system is third-party code. Plugins running inside your process can crash your vault, read across persona boundaries, or exfiltrate data. By refusing to run external code inside the process, many vulnerabilities can be avoided. A compromised child agent is contained — it can only respond to MCP calls, never initiate access to Dina's internals.
 
 **Why this matters for architecture:** No plugin store to maintain, no plugin review process, no sandboxing, no scoped tokens, no plugin API versioning. NaCl (for peers) and MCP (for agents) are the only extension points. Devices pair with Ed25519 device keys. Browser/admin access is bridged separately by core.
 
@@ -198,7 +198,7 @@ Dina runs on a **Home Node** — a small, always-on server. Your phone, laptop, 
 | **Rich client** | Phone, Laptop | Local vault cache, on-device LLM, works offline (limited), syncs when connected |
 | **Thin client** | Glasses, Watch, Browser, Car display | Authenticated WebSocket to Home Node only, no local storage |
 
-**Privacy model:** All vault data encrypted at rest with user's keys. Home Node decrypts in-memory only during processing, then discards plaintext. Binary is open source and auditable. Hosting provider sees only encrypted blobs. Long-term: Confidential Computing (AMD SEV-SNP / Intel TDX / AWS Nitro Enclaves) makes even RAM inspection impossible.
+**Privacy model:** All vault data encrypted at rest with user's keys. Home Node decrypts in-memory only during processing, then discards plaintext. Binary is open source and auditable. Hosting provider sees only encrypted blobs. Long-term: Confidential Computing (AMD SEV-SNP / Intel TDX / AWS Nitro Enclaves) can be used to make it stronger (ex: avoid RAM Inspection etc).
 
 ### Hosting Levels
 

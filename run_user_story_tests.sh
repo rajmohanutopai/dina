@@ -629,7 +629,7 @@ with open(log_path, 'w') as f:
         if [ "$total_skipped" -gt 0 ]; then
             echo -e "  ${DIM}${total_skipped} skipped (set GOOGLE_API_KEY for LLM tests)${R}"
         fi
-        echo -e "  ${DIM}Zero mocks. Real stack. Real crypto. Real trust.${R}"
+        echo -e "  ${DIM}Full stack integration — no mocks.${R}"
     elif [ "$total_all" -gt 0 ]; then
         if [ "$total_errored" -gt 0 ]; then
             echo -e "  ${RED}${BOLD}${total_errored} errors${R}, ${total_failed} failed, ${total_passed}/${total_all} passed"
@@ -673,7 +673,7 @@ EXIT_CODE=$?
 # -- Summary --
 echo ""
 if [ $EXIT_CODE -eq 0 ]; then
-    echo -e "  ${GREEN}${BOLD}All stories passed.${RESET}  ${DIM}Zero mocks. Real stack. Real crypto. Real trust.${RESET}"
+    echo -e "  ${GREEN}${BOLD}All stories passed.${RESET}  ${DIM}Full stack integration — no mocks.${RESET}"
 else
     echo -e "  ${RED}${BOLD}Some tests failed.${RESET}  ${DIM}Run with --tb=long for details.${RESET}"
 fi

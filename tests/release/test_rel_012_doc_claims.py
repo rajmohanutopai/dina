@@ -146,6 +146,7 @@ class TestDocLinks:
             pytest.skip("RELEASE_TEST_PLAN.md not found")
 
         content = plan.read_text()
+        plan_dir = plan.parent  # resolve relative links from the file's directory
         # Extract file paths from markdown links
         link_re = re.compile(r'\[([^\]]+)\]\(([^)]+)\)')
 
@@ -161,7 +162,7 @@ class TestDocLinks:
                 file_path = target.split("#")[0]
                 if not file_path:
                     continue
-                full_path = (PROJECT_ROOT / file_path).resolve()
+                full_path = (plan_dir / file_path).resolve()
             if not full_path.exists():
                 broken.append(f"  {match.group(1)} -> {target}")
 

@@ -1,7 +1,7 @@
 # Dina — Your Personal AI, With an Identity
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests: 2,445 passing](https://img.shields.io/badge/Tests-3%2C073%20passing-brightgreen)]()
+[![Tests: 4500+ passing](https://img.shields.io/badge/Tests-3%2C073%20passing-brightgreen)]()
 [![Status: Developer Alpha](https://img.shields.io/badge/Status-Developer%20Alpha-orange)]()
 [![Stack: Go + Python](https://img.shields.io/badge/Stack-Go%20%7C%20Python-blue)]()
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-purple)](https://discord.gg/gDRcrEwy)
@@ -65,9 +65,9 @@ Dina is the agent that does what you *need*. She is there for you, and only for 
 
 ## How is Dina different from other agents?
 
-Dina isn't just another agent. She's your personal AI, and she's fundamentally different.
+Dina is a personal AI that owns your identity, guards your data, and verifies truth on your behalf.
 
-- There are brilliant AI agents which can do things, complex things. But their job is not to verify things. Dina's job is.
+- OpenClaw, Claude Cowork and Perplexity Computer are amazing AI agents that does complex things like fetching emails and drafting documents etc.. Dina doesn't do those tasks herself. She delegates to these agents and decides whether their actions are safe, authorized, and aligned with your rules before they execute.
 - Your Dina is **Your Dina**. She has a cryptographic identity, which makes her yours and only yours. She is not an account a company lets you use.
 - Dinas talk directly to each other in encrypted, peer-to-peer network. No company or system in the middle verifies/validates anything.
 - Together, Dinas build a Trust Network. This provides you verified outcomes from real people, not anonymous reviews / AI generated data. 
@@ -76,7 +76,7 @@ Dina isn't just another agent. She's your personal AI, and she's fundamentally d
 
 ### Agents can buy and sell even now, right?
 
-AI systems can talk to each other even now. But without identity or trust, it is a minefield for prompt injection attacks, sock puppet armies, crypto scams, and other unsavoury practices. When every AI has a cryptographic identity, every public interaction is signed and goes to Trust Network, where trust has to be earned and not assumed, then we get a sane system. Agent-to-agent communication without trust is chaos. Agent-to-agent communication with trust is an economy, which is what Dina is trying to achieve.
+AI systems can talk to each other even now. But without identity or trust, it is a minefield for prompt injection attacks, sock puppet armies, crypto scams, and other unsavoury practices. To avoid these risks, every AI has to have a cryptographic identity, every public interaction should be signed and visible, and a Trust Network which requires trust to be earned should be there. Agent-to-agent communication without trust is chaos. Agent-to-agent communication with trust is an economy, which is what Dina is trying to achieve.
 
 ---
 
