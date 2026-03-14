@@ -86,7 +86,7 @@ build_crypto_image() {
             fail "Failed to build crypto tools image. Check that Docker is running."
         fi
     else
-        printf "  Preparing crypto tools... "
+        printf "  %-44s" "Preparing crypto tools..."
         # Run build in background with a spinner
         docker build -q -t "${CRYPTO_IMAGE}" -f scripts/setup/Dockerfile.crypto scripts/setup/ >/dev/null 2>&1 &
         local _build_pid=$!
@@ -602,15 +602,15 @@ if [ -n "${MASTER_SEED}" ]; then
         fail "Failed to encrypt identity seed"
     fi
 
-    # Server Mode: store passphrase in secrets/
+    # Always write the passphrase for initial startup — Core needs it to
+    # decrypt the wrapped seed. For Maximum Security mode, we clear it from
+    # disk after containers are healthy (see post-health-check section below).
+    printf '%s' "${SEED_PASSPHRASE}" > "${SECRETS_DIR}/seed_password"
+    chmod 600 "${SECRETS_DIR}/seed_password"
     if [ "${SEED_MODE}" = "server" ]; then
-        printf '%s' "${SEED_PASSPHRASE}" > "${SECRETS_DIR}/seed_password"
-        chmod 600 "${SECRETS_DIR}/seed_password"
         verbose_ok "Passphrase stored (Server Mode)"
     else
-        # Maximum Security: create empty file (Docker Secrets needs it to exist)
-        : > "${SECRETS_DIR}/seed_password"
-        chmod 600 "${SECRETS_DIR}/seed_password"
+        verbose_ok "Passphrase written for initial startup (will be cleared)"
     fi
 
     # Provision deterministic service keys from master seed (SLIP-0010 at m/9999'/3'/').
@@ -634,8 +634,9 @@ if [ -n "${MASTER_SEED}" ]; then
     # Show mode-specific guidance
     echo ""
     if [ "${SEED_MODE}" = "maximum" ]; then
-        echo -e "  ${DIM}You'll need your passphrase each time Dina starts:${RESET}"
-        echo -e "    ${CYAN}DINA_SEED_PASSWORD=<passphrase> ./run.sh${RESET}"
+        echo -e "  ${DIM}You'll need your passphrase each time Dina starts.${RESET}"
+        echo -e "  ${DIM}Run ${CYAN}./run.sh${RESET}${DIM} — it will prompt you.${RESET}"
+        echo -e "  ${DIM}Note: Dina will not restart unattended. Use ${CYAN}./run.sh${RESET}${DIM} to start it again.${RESET}"
     else
         echo -e "  ${DIM}Dina will start automatically — no passphrase needed on restart.${RESET}"
     fi
@@ -840,6 +841,15 @@ if [ $ELAPSED -ge $HEALTH_TIMEOUT ]; then
     echo -e "  Containers may still be starting."
     echo -e "  Re-run ${CYAN}./install.sh --skip-build${RESET} once services are ready."
     exit 1
+fi
+
+# Maximum Security: clear passphrase from disk now that Core has started
+# and read the secret into memory. Future starts will require the user
+# to enter the passphrase (via run.sh or dina-admin security auto-start).
+if [ "${SEED_MODE}" = "maximum" ]; then
+    : > "${SECRETS_DIR}/seed_password"
+    chmod 600 "${SECRETS_DIR}/seed_password"
+    verbose_ok "Passphrase cleared from disk (Maximum Security)"
 fi
 
 echo ""
