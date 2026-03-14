@@ -56,11 +56,16 @@ if [ -f "/run/secrets/identity_salt" ] && [ ! -f "$VAULT_PATH/master_seed.salt" 
     chmod 0600 "$VAULT_PATH/master_seed.salt"
 fi
 
-# Seed password (Server Mode — non-empty file means auto-unlock).
+# Seed password — always copy so the dina user can read it.
+# Non-empty file = auto-unlock (Server Mode).
+# Empty file = no password (Maximum Security — Core requires DINA_SEED_PASSWORD
+# via env or will exit, prompting user to set one).
 copy_secret "/run/secrets/seed_password" "$SECRET_DIR/seed_password"
 if [ -f "$SECRET_DIR/seed_password" ] && [ -s "$SECRET_DIR/seed_password" ]; then
     export DINA_SEED_PASSWORD_FILE="$SECRET_DIR/seed_password"
 fi
+# Do NOT set DINA_SEED_PASSWORD_FILE for empty files — Core treats
+# missing env var as "no password provided" and reads DINA_SEED_PASSWORD instead.
 
 # Ensure admin socket directory exists and is writable by dina.
 # Socket is container-internal; dina-admin runs inside via docker exec.

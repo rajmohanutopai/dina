@@ -232,8 +232,11 @@ verbose_ok "Core port: ${CORE_PORT}"
 verbose_ok "PDS port:  ${PDS_PORT}"
 
 # ---------------------------------------------------------------------------
-# Step 3: Prepare secure storage
+# Step 3: Prepare crypto tools + secure storage
 # ---------------------------------------------------------------------------
+
+# Build the crypto Docker image first (its own line with spinner)
+build_crypto_image
 
 step_begin "Preparing secure storage..."
 
@@ -328,10 +331,6 @@ if [ "${PDS_GENERATED}" = true ]; then
 else
     verbose_skip "PDS secrets already set"
 fi
-
-# Build the crypto tools Docker image now (before identity setup)
-# so the user doesn't see a delay when generating/restoring keys.
-build_crypto_image
 
 # Service key provisioning is deferred until the master seed is available
 # (after identity setup). See the provisioning block below wrap_seed.py.

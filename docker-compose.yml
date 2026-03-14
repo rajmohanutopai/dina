@@ -37,7 +37,6 @@ services:
       - DINA_BRAIN_URL=http://brain:8200
       - DINA_CLIENT_TOKEN=${DINA_CLIENT_TOKEN:-}
       - DINA_SERVICE_KEY_DIR=/run/secrets/service_keys
-      - DINA_SEED_PASSWORD_FILE=/run/secrets/seed_password
       - DINA_LISTEN_ADDR=:8100
       - DINA_SEED_PASSWORD=${DINA_SEED_PASSWORD:-}
       - DINA_RATE_LIMIT=${DINA_RATE_LIMIT:-100}
