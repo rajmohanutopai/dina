@@ -66,6 +66,47 @@ source scripts/setup/llm_provider.sh
 source scripts/setup/telegram.sh
 
 # ---------------------------------------------------------------------------
+# Crypto runner — runs Python crypto scripts inside a Docker container
+# so the host machine does not need Python installed.
+# ---------------------------------------------------------------------------
+
+CRYPTO_IMAGE="dina-crypto-tools"
+CRYPTO_IMAGE_BUILT=false
+
+build_crypto_image() {
+    if [ "${CRYPTO_IMAGE_BUILT}" = true ]; then
+        return 0
+    fi
+    verbose_info "Building crypto tools image..."
+    if docker build -q -t "${CRYPTO_IMAGE}" -f scripts/setup/Dockerfile.crypto scripts/setup/ >/dev/null 2>&1; then
+        CRYPTO_IMAGE_BUILT=true
+        verbose_ok "Crypto tools image ready"
+    else
+        fail "Failed to build crypto tools image. Check that Docker is running."
+    fi
+}
+
+# Run a Python crypto script inside the container.
+# Usage: run_crypto <script> [script-args...] [-e VAR=val ...] [-v host:cont ...]
+run_crypto() {
+    build_crypto_image
+    local script="$1"; shift
+    local docker_args=()
+    local script_args=()
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -e|-v) docker_args+=("$1" "$2"); shift 2 ;;
+            *)     script_args+=("$1"); shift ;;
+        esac
+    done
+    docker run --rm --user "$(id -u):$(id -g)" \
+        -v "${DINA_DIR}/scripts:/scripts:ro" \
+        "${docker_args[@]}" \
+        "${CRYPTO_IMAGE}" \
+        python3 "/scripts/${script#scripts/}" "${script_args[@]}"
+}
+
+# ---------------------------------------------------------------------------
 # Output helpers (default = clean user-facing; --verbose = full detail)
 # ---------------------------------------------------------------------------
 
@@ -107,36 +148,36 @@ echo ""
 # Step 1: Prerequisites
 # ---------------------------------------------------------------------------
 
-echo -e "  ${BOLD}Checking your system...${RESET}"
-echo ""
-
-# Helper for inline check results (non-verbose mode)
-_check_ok() { echo -e "    ${GREEN}✓${RESET} $1"; }
+step_begin "Checking your system..."
 
 command -v docker >/dev/null 2>&1 || fail "Docker not found.\n\n  Dina needs Docker to run. Please install Docker and try again:\n  ${CYAN}https://docs.docker.com/get-docker/${RESET}"
-_check_ok "Docker"
+verbose_ok "Docker found"
 
 # Check for 'docker compose' (v2 plugin) or 'docker-compose' (legacy)
 if docker compose version >/dev/null 2>&1; then
     COMPOSE="docker compose"
-    _check_ok "Docker Compose"
+    verbose_ok "Docker Compose found (plugin)"
 elif command -v docker-compose >/dev/null 2>&1; then
     COMPOSE="docker-compose"
-    _check_ok "Docker Compose"
+    verbose_ok "Docker Compose found (standalone)"
 else
     fail "Docker Compose not found.\n\n  Dina needs Docker Compose to run. Please install it and try again:\n  ${CYAN}https://docs.docker.com/compose/install/${RESET}"
 fi
 
 command -v curl >/dev/null 2>&1 || fail "curl not found. Please install curl and try again."
-_check_ok "curl"
+verbose_ok "curl found"
+
+command -v openssl >/dev/null 2>&1 || fail "openssl not found. Please install openssl and try again."
+verbose_ok "openssl found"
 
 # Check Docker daemon is accessible
 if ! docker info >/dev/null 2>&1; then
-    echo ""
-    fail "Cannot connect to Docker.\n\n  Please make sure these commands work before running install.sh:\n\n    ${CYAN}docker run hello-world${RESET}\n    ${CYAN}docker compose version${RESET}\n\n  If they don't, please install or configure Docker and try again."
+    [ "${VERBOSE}" = true ] || echo ""
+    fail "Cannot connect to Docker.\n\n  Please make sure these commands work before running install.sh:\n\n    ${REVERSE} docker run hello-world ${RESET}\n    ${REVERSE} docker compose version ${RESET}\n\n  If they don't, please install or configure Docker and try again."
 fi
-_check_ok "Docker daemon"
-echo ""
+verbose_ok "Docker daemon running"
+
+step_end
 
 # ---------------------------------------------------------------------------
 # Step 2: Port allocation (verbose-only — shown in final banner)
@@ -235,18 +276,6 @@ else
     verbose_skip "PDS secrets already set"
 fi
 
-# Prepare crypto venv for seed wrapping + BIP-39 mnemonic
-INSTALL_VENV="${DINA_DIR}/.install-venv"
-if [ ! -f "${INSTALL_VENV}/bin/python3" ]; then
-    verbose_info "Setting up crypto tools..."
-    python3 -m venv "${INSTALL_VENV}" 2>/dev/null
-    "${INSTALL_VENV}/bin/pip" install -q argon2-cffi cryptography mnemonic 2>/dev/null
-    verbose_ok "Crypto tools ready"
-else
-    verbose_skip "Crypto tools already installed"
-fi
-VPYTHON="${INSTALL_VENV}/bin/python3"
-
 # Service key provisioning is deferred until the master seed is available
 # (after identity setup). See the provisioning block below wrap_seed.py.
 
@@ -300,7 +329,7 @@ elif [ -t 0 ]; then
             read -r MNEMONIC_INPUT
 
             while true; do
-                SEED_ERR=$("${VPYTHON}" scripts/mnemonic_to_seed.py "${MNEMONIC_INPUT}" 2>&1)
+                SEED_ERR=$(run_crypto scripts/mnemonic_to_seed.py "${MNEMONIC_INPUT}" 2>&1)
                 if [ $? -eq 0 ]; then
                     MASTER_SEED="${SEED_ERR}"
                     IDENTITY_NEW=false
@@ -354,21 +383,19 @@ elif [ -t 0 ]; then
 
     # Generate new seed if not restored
     if [ -z "${MASTER_SEED}" ]; then
-        MASTER_SEED=$(python3 -c "import secrets; print(secrets.token_hex(32), end='')" 2>/dev/null \
-            || openssl rand -hex 32 | tr -d '\n')
+        MASTER_SEED=$(openssl rand -hex 32 | tr -d '\n')
         IDENTITY_NEW=true
         verbose_ok "Generated new identity seed"
     fi
 else
     # Non-interactive — generate new
-    MASTER_SEED=$(python3 -c "import secrets; print(secrets.token_hex(32), end='')" 2>/dev/null \
-        || openssl rand -hex 32 | tr -d '\n')
+    MASTER_SEED=$(openssl rand -hex 32 | tr -d '\n')
     verbose_ok "Generated identity seed"
 fi
 
 # --- Show recovery phrase (only for new identities, before wrapping) ---
 if [ -n "${MASTER_SEED}" ] && [ "${IDENTITY_NEW}" = true ]; then
-    MNEMONIC=$("${VPYTHON}" scripts/seed_to_mnemonic.py "${MASTER_SEED}" 2>/dev/null || true)
+    MNEMONIC=$(run_crypto scripts/seed_to_mnemonic.py "${MASTER_SEED}" 2>/dev/null || true)
     if [ -n "${MNEMONIC}" ]; then
         echo ""
         echo -e "  ${BOLD}Your Recovery Phrase${RESET}"
@@ -417,7 +444,14 @@ if [ -n "${MASTER_SEED}" ] && [ "${IDENTITY_NEW}" = true ]; then
             done
 
             # Pick 3 random positions (1-indexed, unique, sorted)
-            VERIFY_POS=($(python3 -c "import random; nums = random.sample(range(1, 25), 3); nums.sort(); print(' '.join(str(n) for n in nums))" 2>/dev/null))
+            _vp_nums=()
+            while [ ${#_vp_nums[@]} -lt 3 ]; do
+                _vp_n=$(( $(od -An -tu4 -N4 /dev/urandom | tr -d ' ') % 24 + 1 ))
+                _vp_dup=false
+                for _vp_e in "${_vp_nums[@]}"; do [ "$_vp_e" = "$_vp_n" ] && _vp_dup=true; done
+                [ "$_vp_dup" = false ] && _vp_nums+=("$_vp_n")
+            done
+            VERIFY_POS=($(printf '%s\n' "${_vp_nums[@]}" | sort -n))
 
             VERIFY_PASS=true
             for pos in "${VERIFY_POS[@]}"; do
@@ -493,15 +527,17 @@ if [ -n "${MASTER_SEED}" ]; then
     else
         # Non-interactive: auto-generate passphrase, Server Mode
         SEED_MODE="server"
-        SEED_PASSPHRASE=$(python3 -c "import secrets; print(secrets.token_urlsafe(32), end='')" 2>/dev/null \
-            || openssl rand -base64 32 | tr -d '\n')
+        SEED_PASSPHRASE=$(openssl rand -base64 32 | tr -d '\n')
         verbose_info "Non-interactive: auto-generated passphrase (Server Mode)"
     fi
 
     # Call wrap_seed.py — secrets passed via env to avoid process-list exposure.
     info "Securing your identity..."
-    if DINA_SEED_HEX="${MASTER_SEED}" DINA_SEED_PASSPHRASE="${SEED_PASSPHRASE}" \
-        "${VPYTHON}" scripts/wrap_seed.py "${SECRETS_DIR}" >/dev/null 2>&1; then
+    if run_crypto scripts/wrap_seed.py /secrets \
+        -e DINA_SEED_HEX="${MASTER_SEED}" \
+        -e DINA_SEED_PASSPHRASE="${SEED_PASSPHRASE}" \
+        -v "${SECRETS_DIR}:/secrets" \
+        >/dev/null 2>&1; then
         verbose_ok "Identity seed encrypted"
     else
         fail "Failed to encrypt identity seed"
@@ -521,8 +557,9 @@ if [ -n "${MASTER_SEED}" ]; then
     # Provision deterministic service keys from master seed (SLIP-0010 at m/9999'/3'/').
     # Must happen before the seed is zeroed. Writes PEM files to the same layout
     # that Docker mounts expect (core/, brain/, public/).
-    DINA_SEED_HEX="${MASTER_SEED}" "${VPYTHON}" scripts/provision_derived_service_keys.py \
-        "${SERVICE_KEY_DIR}" \
+    run_crypto scripts/provision_derived_service_keys.py /service_keys \
+        -e DINA_SEED_HEX="${MASTER_SEED}" \
+        -v "${SERVICE_KEY_DIR}:/service_keys" \
         || fail "Failed to provision service keys"
     verbose_ok "Service keys provisioned (seed-derived)"
 

@@ -14,9 +14,10 @@ if [ -t 1 ]; then
     CYAN='\033[0;36m'
     BOLD='\033[1m'
     DIM='\033[2m'
+    REVERSE='\033[7m'
     RESET='\033[0m'
 else
-    GREEN='' YELLOW='' RED='' CYAN='' BOLD='' DIM='' RESET=''
+    GREEN='' YELLOW='' RED='' CYAN='' BOLD='' DIM='' REVERSE='' RESET=''
 fi
 
 ok()   { echo -e "  ${GREEN}[ok]${RESET}   $1"; }

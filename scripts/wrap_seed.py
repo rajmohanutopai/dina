@@ -5,7 +5,7 @@ Produces output byte-identical to Go Core's crypto/keywrap.go + crypto/argon2.go
   - Argon2id: memory=128 MB, time=3, parallelism=4, keyLen=32, saltLen=16
   - AES-256-GCM: nonce(12) || ciphertext(32) || GCM-tag(16) = 60 bytes
 
-Dependencies: argon2-cffi, cryptography (installed in .install-venv/).
+Dependencies: argon2-cffi, cryptography (provided by dina-crypto-tools Docker image).
 
 Usage:
     DINA_SEED_HEX=<64hex> DINA_SEED_PASSPHRASE=<pass> python3 scripts/wrap_seed.py <output-dir>

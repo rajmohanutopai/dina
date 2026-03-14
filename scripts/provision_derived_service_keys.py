@@ -13,7 +13,7 @@ Layout (matches provision_service_keys.py):
   <root>/public/core_ed25519_public.pem
   <root>/public/brain_ed25519_public.pem
 
-Dependencies: cryptography (installed in .install-venv/).
+Dependencies: cryptography (provided by dina-crypto-tools Docker image).
 
 Usage:
     DINA_SEED_HEX=<64hex> python3 scripts/provision_derived_service_keys.py <service_key_root>
