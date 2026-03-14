@@ -6,7 +6,7 @@
 [![Stack: Go + Python](https://img.shields.io/badge/Stack-Go%20%7C%20Python-blue)]()
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-purple)](https://discord.gg/gDRcrEwy)
 
-> **Dina is a sovereign personal AI that knows your world, with a cryptographic identity, a built-in trust network, and a simple rule: she works for you and nobody else.**
+> **Dina is a sovereign personal AI that knows your world, has a cryptographic identity, a built-in trust network, and a simple rule: she works for you and nobody else.**
 
 ---
 
@@ -69,7 +69,7 @@ Dina is the agent that does what you *need*. She is there for you, and only for 
 Dina is a personal AI that owns your identity, guards your data, and verifies truth on your behalf.
 
 - OpenClaw, Claude Cowork and Perplexity Computer are amazing AI agents that does complex things like fetching emails and drafting documents etc.. Dina doesn't do those tasks herself. She delegates to these agents and decides whether their actions are safe, authorized, and aligned with your rules before they execute.
-- Your Dina is **Your Dina**. She has a cryptographic identity, which makes her yours and only yours. She is not an account a company lets you use.
+- Your Dina is **Your Dina**. She has a cryptographic identity, which makes her yours and only yours. She has a secure, persona split memory of you and your interests, making her an extension of your interests.
 - Dinas talk directly to each other in encrypted, peer-to-peer network. No company or system in the middle verifies/validates anything.
 - Together, Dinas build a Trust Network. This provides you verified outcomes from real people, not anonymous reviews / AI generated data. 
 - Dina replaces the attention economy with an intent economy: nothing is pushed at you; your agent pulls what you need from a trust-ranked open network
@@ -85,11 +85,11 @@ AI systems can talk to each other even now. But without identity or trust, it is
 
 **Dina is your digital identity.** 
 
-Today, you don't own your digital self. Your Google account, Apple ID, and LinkedIn profile are not really yours. They are accounts that companies let you use. If Google bans you tomorrow, or a company goes belly up, that account disappears. You are a tenant everywhere. Landlord nowhere.
+Today, you don't own your digital self. Your Google account, Apple ID, and LinkedIn profile are not really yours. They are accounts that companies let you use. If Google bans you tomorrow, or a company goes belly up, that account disappears.
 
 Dina changes this. Your Dina is your **sovereign digital self**. Implemented using Web3 Cryptographic Tech, **you get your own digital identity**, separate from any of the external company accounts. You hold the encryption keys and the data. You own it completely. You control who sees what. Everything mentioned above — the memory, the preferences, the Dina-to-Dina communication, the purchases, the trust - is possible because of this foundational principle: **you own you**.
 
-If you delete your data, it's truly gone, because you control the data, and no one else has the keys. You can also export your data completely, and store/run it elsewhere. So, it allows you to run multiple home nodes under you single identity. The ATProto DID document just lists multiple end points. 
+If you delete your data, it's truly gone, because you control the data, and no one else has the keys. You can also export your data completely, and store/run it elsewhere. So, it even allows you to run multiple home nodes under you single identity.  
 
 
 ### One You, Many Faces
@@ -165,7 +165,9 @@ If the autonomous agent integrates with Dina properly, Dina will be able to watc
 
 Dina comes with `dina-cli` for this very purpose. Any external agent (OpenClaw, Perplexity Computer, a custom bot) pairs with your Home Node (similar to GitHub SSH Key method). Any agent can use `dina validate` to get Guardian oversight autoamtically.
 
-Dina runs on a **Home Node** — a small, always-on server that is yours. For the privacy minded, it might be a cheap VPS or a Raspberry Pi. For others, it could be a managed service you sign up for (like ProtonMail or Signal). The vault is a single encrypted file which can be moved between any of these options anytime.
+Currently, this is just a SKILL added to other agents. So, as of now, it can be overcome by a clever prompt - so it is a safety net, but not fully secure. But if an external agent fully integrates with Dina protocol, much higher safety could be achieved.
+
+Dina runs on a **Home Node** — a small, always-on server that is yours. For the privacy minded, it might be a cheap VPS or a Raspberry Pi. For others, it could be a managed service you sign up for (like ProtonMail or Signal). The data vault are encrypted files which can be moved between any of these options anytime.
 
 When one asks opinion about a laptop, Dina doesn't scrape YouTube herself. She asks a trusted review bot with a high trust score and delivers the answer. If that bot's quality drops over time, Dina routes to someone better automatically.
 
@@ -197,7 +199,7 @@ Since Dina is a thin layer with minimal plugin support, the attack surface is sm
 
 ## The Trust Network
 
-Today, when you search for a product, the results are ranked partly by who paid the most. A brilliant but non-descript chair-maker with 500 happy customers loses to a mediocre brand with a bigger marketing budget.
+Today, when you search for a product, the results from search and e-commerce companies are ordered partly by who paid the most. A brilliant but non-descript chair-maker with 500 happy customers loses to a mediocre brand with a bigger marketing budget.
 
 Dina inverts this. The Trust Network is a system where trust is earned, not bought.
 

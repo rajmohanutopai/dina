@@ -1,241 +1,333 @@
-# Supply Chain Security
+# Security
 
-Dina is a sovereign agent. If a user can't verify that the code running on their Home Node is the code they intended to run, sovereignty is meaningless. This document covers how Dina protects against supply chain attacks, accidental breakage, and hidden vulnerabilities in dependencies.
+Dina is a sovereign personal AI. The security model enforces one principle: **the human holds the keys, and the system cannot operate without them.** This document covers every layer — from key management to container isolation to supply chain integrity.
 
----
-
-## The Three Problems
-
-### 1. The "It Worked Yesterday" Problem
-
-**Without digest pinning:**
-
-Your `docker-compose.yml` pulls `python:latest`. Python releases 3.14. A library your brain depends on (`numpy`, `httpx`, whatever) hasn't updated yet. Your Home Node auto-restarts at 3 AM, pulls the new base image, crashes. You wake up and Dina is dead. You spend hours debugging only to realize "latest" changed under your feet.
-
-**With digest pinning:**
-
-Your `docker-compose.yml` pins `python@sha256:a1b2c3...`. The image is frozen. It runs the same way in 10 years as it does today. External changes cannot break it. You upgrade when *you* choose, not when a dependency author pushes a release.
-
-### 2. The "Supply Chain Attack" Problem
-
-**Without image signing:**
-
-A hacker compromises the Docker Hub account (or a CI pipeline, or a dependency). They push a new image that looks like Dina but contains a crypto miner, a keylogger, or a backdoor. A user runs `docker compose pull` to get an update. They unknowingly download malware. Their "sovereign" agent hands their keys to the attacker.
-
-**With image signing:**
-
-Every Dina image is signed with a cryptographic key during CI. The install/upgrade script verifies the signature before applying the update. If the signature doesn't match, the update is rejected:
-
-```
-ERROR: Untrusted image. Signature verification failed.
-Update aborted. Your current installation is unchanged.
-```
-
-The user is protected from compromised updates — even if the attacker has write access to the container registry.
-
-### 3. The "Hidden Rot" Problem
-
-**Without an SBOM:**
-
-A massive vulnerability is found in `openssl` (like Heartbleed) or `libsodium` or `numpy`. Users ask: "Is my Dina vulnerable?" You have to manually check every container, every dependency, every transitive dependency. This takes days. Users panic or get exploited while you investigate.
-
-**With an SBOM:**
-
-Every release ships a Software Bill of Materials listing every dependency and its version. A user runs one command and gets an instant answer:
-
-```bash
-# Scan your running Dina for known vulnerabilities
-grype ghcr.io/dina/core@sha256:a1b2c3...
-
-# Output:
-# NAME        VERSION   VULNERABILITY   SEVERITY
-# libssl3     3.0.2     CVE-2024-XXXX   Critical
-# numpy       1.26.4    (none)          -
-```
-
-It turns a panic into a 5-second check.
+For the narrative walkthrough (how it all fits together), see [`docs/security-walkthrough.md`](docs/security-walkthrough.md).
 
 ---
 
-## Implementation
+## Key Management
 
-### Priority 1: Digest Pinning (day one)
+### Master Seed
 
-**Never use `:latest` or floating tags in production.** Every image reference in `docker-compose.yml` uses a full digest.
+A 256-bit (32-byte) cryptographically random seed is the root of all identity and encryption. Generated via `openssl rand` during `install.sh`.
+
+The seed is converted to a **24-word BIP-39 mnemonic** for human backup. Anyone with these 24 words can reconstruct the full identity and decrypt all data.
+
+### Seed Wrapping (At Rest)
+
+The master seed is never stored in plaintext. It is wrapped with a user-chosen passphrase:
+
+1. User chooses passphrase (minimum 8 characters)
+2. Generate 16-byte random salt
+3. `Argon2id(passphrase, salt)` → 32-byte KEK (Key Encryption Key)
+   - Memory: 128 MB, time: 3, parallelism: 4
+4. `AES-256-GCM(KEK, seed)` → wrapped seed (60 bytes: nonce‖ciphertext‖tag)
+5. Only `wrapped_seed.bin` and `master_seed.salt` are stored on disk
+
+### Two Startup Modes
+
+| Mode | Behavior | Trade-off |
+|------|----------|-----------|
+| **Manual-start** | Passphrase required on every start. Cleared from disk after Core reads it. | Most secure. No unattended restart. |
+| **Auto-start** | Passphrase stored in `secrets/seed_password`. Core reads it automatically. | Convenient. Unattended restart works. |
+
+Users can switch anytime: `dina-admin security auto-start` or `manual-start`.
+
+### Key Derivation (SLIP-0010)
+
+All operational keys are derived from the master seed. The seed itself is never used directly for signing or encryption.
+
+```
+Master Seed (32 bytes)
+ └─ SLIP-0010 hardened derivation (purpose m/9999')
+     ├─ m/9999'/0'/0'       → Root Ed25519 signing key (→ did:plc identity)
+     ├─ m/9999'/1'/N'/0'    → Per-persona signing keys
+     ├─ m/9999'/2'/0'       → secp256k1 PLC rotation key
+     ├─ m/9999'/3'/0'       → Core service auth key
+     └─ m/9999'/3'/1'       → Brain service auth key
+ └─ HKDF-SHA256 per-persona DEKs
+     ├─ HKDF("personal")   → Personal vault DEK
+     ├─ HKDF("health")     → Health vault DEK
+     └─ ...
+```
+
+Key rotation is possible without changing identity — only the derived keys rotate. Historical signatures remain verifiable via AT Protocol's temporal key registry.
+
+---
+
+## Authentication
+
+Three authentication methods, each for a different trust boundary.
+
+### 1. Ed25519 Service Keys (Core ↔ Brain)
+
+Internal service-to-service authentication. Each service has its own SLIP-0010-derived keypair. Private keys are isolated by separate Docker bind mounts — Core's private key never exists in Brain's container.
+
+Every request is signed using a canonical format:
+
+```
+{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{SHA256_HEX(BODY)}
+```
+
+Transmitted via headers: `X-DID`, `X-Timestamp`, `X-Signature`.
+
+**Replay protection:** 5-minute timestamp window + double-buffer nonce cache. Current generation collects all new nonces; previous generation is checked for duplicates. Rotation every 5 minutes or when current exceeds 100,000 entries.
+
+### 2. CLIENT_TOKEN (Admin Web UI)
+
+32-byte random token generated during device pairing (`crypto/rand.Read`). Used as a login password for the browser admin UI. Browser POSTs it to `/admin/login`, gets a session cookie back.
+
+**Session security:**
+- Session ID: 32-byte random hex
+- CSRF token: 32-byte random hex, constant-time comparison
+- Cookie: `HttpOnly; SameSite=Strict; Max-Age=86400`
+- Session TTL: 24 hours (configurable)
+
+### 3. Ed25519 Device Keys (CLI / Paired Devices)
+
+Each device generates its own Ed25519 keypair locally. The private key never leaves the device. During pairing, the public key is registered with Core. Every CLI command is signed with the device's private key — same canonical format as service keys.
+
+### Device Pairing
+
+1. User runs `dina-admin device pair` → Core generates a 6-digit code (5-minute TTL)
+2. User enters code on the new device
+3. Device sends its public key to Core
+4. Core registers the device and issues a CLIENT_TOKEN
+
+Rate limiting on pairing attempts prevents brute force (hard cap on pending codes).
+
+---
+
+## Persona Isolation
+
+Each persona is a separate encrypted SQLite database file with its own DEK (derived from master seed via HKDF). Cross-persona access is enforced cryptographically — a compromised persona cannot access another.
+
+### Access Tiers
+
+| Tier | Behavior | Example |
+|------|----------|---------|
+| **Open** | Brain queries freely, logged silently | `/social`, `/consumer`, `/professional` |
+| **Restricted** | Brain queries logged + user notified in daily briefing | `/health` |
+| **Locked** | Database CLOSED, DEK not in RAM. Brain gets 403. Human unlock required with TTL. | `/financial` |
+
+### Gatekeeper
+
+The Gatekeeper enforces persona isolation at the API level:
+- Agents authorized for one persona cannot access another
+- Brain-denied actions: `did_sign`, `did_rotate`, `vault_backup`, `persona_unlock`, raw vault operations, `vault_export`
+- Cross-persona queries are blocked regardless of authentication
+
+---
+
+## Agent Safety
+
+Any agent acting on the user's behalf submits its intent to Dina before acting.
+
+### Intent Validation
+
+1. Agent sends intent (action, target persona, parameters)
+2. Core overrides caller-supplied DID with the authenticated identity (never trust the caller)
+3. Gatekeeper evaluates: is this action safe? Does it match the user's rules? Is PII leaking?
+
+### Action Classification
+
+| Risk | Actions | Behavior |
+|------|---------|----------|
+| **Safe** | Web search, read vault | Pass through silently |
+| **Moderate** | Send email, share data | Flag for human approval |
+| **High** | Transfer money, modify identity | Require highest trust ring (verified + actioned) |
+
+### Brain Restrictions
+
+Brain is treated as an untrusted tenant. It can reason and search, but cannot:
+- Sign with the node's identity key
+- Rotate keys
+- Export or backup vaults
+- Unlock locked personas
+- Access raw vault data (only through Core's API)
+
+---
+
+## PII Protection
+
+Raw user data never leaves the Home Node. Three tiers of scrubbing:
+
+| Tier | Method | Where |
+|------|--------|-------|
+| 1 | Regex patterns (email, phone, SSN, credit card, IP) | Go Core |
+| 2 | spaCy NER (named entity recognition) | Python Brain |
+| 3 | LLM NER (optional, for edge cases) | Python Brain |
+
+**Logging rule:** PII must never reach stdout. Logs contain metadata only — persona, type, count, latency. Never vault content, never user queries.
+
+**Egress scanning:** Before any data leaves the Home Node (D2D messages, agent responses), the Gatekeeper scans for PII patterns and blocks if detected.
+
+---
+
+## Audit Logging
+
+Append-only audit trail in `identity.sqlite` (Tier 0, always accessible).
+
+Every significant action is logged:
+- Timestamp, action type, requester (agent DID), persona, decision, reason
+- Structured reasoning traces from Brain (prompt preview, tools called, vault context used)
+- Hash-chained entries (SHA-256) for tamper detection
+
+Query via `GET /v1/audit/query` or `dina-admin` CLI. On test failure, the system test hook automatically dumps recent audit traces for debugging.
+
+---
+
+## Container & Network Isolation
+
+### Docker Network Topology
+
+```
+┌─────────────────────────────────────┐
+│ dina-pds-net                        │
+│   Core ←→ PDS ←→ PLC Directory     │
+└─────────────────────────────────────┘
+┌─────────────────────────────────────┐
+│ dina-brain-net                      │
+│   Core ←→ Brain                     │
+└─────────────────────────────────────┘
+```
+
+- **Core** (port 8100): only service exposed to the host
+- **Brain** (port 8200): internal only, not exposed to host
+- **PDS**: separate network, accessible only to Core
+- Two isolated Docker networks prevent Brain from reaching PDS directly
+
+### Service Key Isolation
+
+```
+Host: secrets/service_keys/
+  ├── core/    → bind-mounted ONLY to Core container
+  ├── brain/   → bind-mounted ONLY to Brain container
+  └── public/  → bind-mounted to both (read-only)
+```
+
+Core's private key never exists in Brain's filesystem. Brain's private key never exists in Core's filesystem.
+
+### Entrypoint Secret Handling
+
+Docker Compose mounts secrets as `root:root 0400`. The Core entrypoint (running as root) copies secrets to a container-local `/tmp/secrets/` directory owned by the `dina` user (UID 10001), then drops privileges via `gosu`. The host bind mount is never mutated.
+
+Required key files are verified after copy — if any are missing, Core exits immediately with a clear error.
+
+---
+
+## Rate Limiting & DoS Protection
+
+- **Token-bucket rate limiting:** default 60 requests per 60-second window per IP
+- **X-Forwarded-For parsing:** rightmost-trusted header (prevents spoofing)
+- **Bucket management:** periodic purge every 5 minutes, hard cap at 10,000 buckets, LRU eviction
+- **Request body size limits:** 64 KB for agent validation, 1 MB for signed requests
+- **Pairing code rate limiting:** hard cap on pending codes prevents brute force
+
+---
+
+## Dead Drop (Locked-State Messaging)
+
+When a persona vault is locked, incoming DIDComm messages are stored as encrypted blobs in an `inbox/` spool directory. A sweeper job processes them when the persona is unlocked. Messages older than the configured TTL are discarded without notification.
+
+This ensures messages are never lost during locked state, but the user is not bothered about stale messages.
+
+---
+
+## Dina-to-Dina (D2D) Messaging
+
+The network is treated as zero-trust:
+
+1. Sender signs the plaintext message with its Ed25519 key
+2. Message is wrapped in a NaCl `crypto_box_seal` (anonymous sealed box) using the recipient's public key
+3. Recipient decrypts, verifies the DID signature, checks for replay
+4. If any check fails, the message is rejected
+
+No intermediary (relay, server, platform) can read the message content.
+
+---
+
+## Trust Network
+
+Dina uses the AT Protocol to build a decentralized trust network:
+
+- **Trust rings:** Unverified → Verified (ZKP) → Verified + Actioned (transactions, time, peer attestation)
+- **Trust score:** composite function of identity anchors, transaction history, outcome data, peer attestations, and time
+- **AppView:** processes attestations, vouches, and outcome reports from the AT Protocol firehose
+- **Fallback:** when AppView is unreachable, trust queries return gracefully degraded results (not failures)
+
+Trust is ranked by verified outcomes, not by ad spend.
+
+---
+
+## Supply Chain Security
+
+### Digest Pinning
+
+Every image reference in production uses a full SHA-256 digest. No `:latest` tags. External changes cannot break a running installation. Users upgrade when they choose.
 
 ```yaml
-# Bad — floating tag, changes without warning
-services:
-  core:
-    image: ghcr.io/dina/core:latest
-
-# Good — pinned digest, immutable
+# Pinned — immutable
 services:
   core:
     image: ghcr.io/dina/core@sha256:a1b2c3d4e5f6...
 ```
 
-The same applies to base images in Dockerfiles:
+### Image Signing (Cosign)
 
-```dockerfile
-# Bad
-FROM python:3.12-slim
+All container images are signed during CI using [Cosign](https://docs.sigstore.dev/cosign/overview/) (Sigstore). Keyless signing via GitHub Actions OIDC — the signature proves the image was built by a specific workflow in a specific repository.
 
-# Good
-FROM python:3.12-slim@sha256:9a1b2c3d4e5f...
-```
-
-**Release process:** Each release publishes a versioned `docker-compose.v1.0.0.yml` with all digests pre-filled. Users download the specific version file, not a mutable "latest" compose file.
-
-### Priority 2: Image Signing with Cosign (when CI pipeline exists)
-
-All container images are signed during the CI/CD pipeline using [Cosign](https://docs.sigstore.dev/cosign/overview/) (part of the Sigstore project).
-
-**CI pipeline (GitHub Actions):**
-
-```yaml
-# Simplified — actual workflow will have more steps
-- name: Build and push
-  run: docker build -t ghcr.io/dina/core:${{ github.sha }} .
-
-- name: Sign with Cosign (keyless, OIDC)
-  run: cosign sign ghcr.io/dina/core@${{ steps.build.outputs.digest }}
-```
-
-**Verification on user's machine:**
-
+Verification before upgrade:
 ```bash
-# Verify before running (built into dina-cli or install script)
 cosign verify ghcr.io/dina/core@sha256:a1b2c3... \
   --certificate-identity=https://github.com/rajmohanutopai/dina/.github/workflows/release.yml@refs/tags/v1.0.0 \
   --certificate-oidc-issuer=https://token.actions.githubusercontent.com
 ```
 
-**Keyless signing (recommended):** Cosign supports keyless signing via OIDC identity from GitHub Actions. No private key to manage or protect. The signature proves "this image was built by this specific GitHub Actions workflow in this specific repository." If someone forks the repo and builds from their fork, the identity won't match.
+### SBOM (Software Bill of Materials)
 
-**Key-based signing (alternative):** For users who don't trust GitHub's OIDC, Cosign also supports traditional key-pair signing. The Dina project publishes its public key, and users verify against it.
-
-### Priority 3: SBOM Generation (alongside signing)
-
-Every release ships a Software Bill of Materials in SPDX format, generated by [syft](https://github.com/anchore/syft).
-
-**CI pipeline:**
-
-```yaml
-- name: Generate SBOM
-  run: syft ghcr.io/dina/core@${{ steps.build.outputs.digest }} -o spdx-json > sbom-core.spdx.json
-
-- name: Attach SBOM to image
-  run: cosign attach sbom --sbom sbom-core.spdx.json ghcr.io/dina/core@${{ steps.build.outputs.digest }}
-```
-
-**User scanning:**
+Every release ships an SPDX SBOM generated by [syft](https://github.com/anchore/syft), attached to the container image via Cosign. Users can scan for known vulnerabilities:
 
 ```bash
-# Scan for vulnerabilities using the attached SBOM
 grype ghcr.io/dina/core@sha256:a1b2c3...
-
-# Or download and scan the SBOM directly
-cosign download sbom ghcr.io/dina/core@sha256:a1b2c3... | grype
 ```
 
-SBOMs are published alongside each release on the GitHub Releases page.
+### No Auto-Updates
 
-### Not Planned: Reproducible Builds
+Dina never pulls new images without the user's knowledge. The user initiates upgrades. Verification happens before anything changes. This is sovereignty.
 
-Reproducible builds (given the same source, produce bit-identical binaries) are extremely hard to achieve with Python dependencies, CUDA kernels, and AI model files. Non-deterministic compilation, floating transitive dependencies, and platform-specific optimizations make bit-identical output impractical.
-
-**The Go core binary is closer to reproducible** (Go has good reproducibility support), but the Python brain and llama containers are not.
-
-**Our position:** Digest pinning + signing + SBOM provides sufficient supply chain integrity for Phase 1. Reproducible builds may be revisited if demand warrants the effort, but they are not on the roadmap.
+| Measure | What it prevents | Phase |
+|---------|-----------------|-------|
+| Digest pinning | Accidental breakage from upstream changes | Day one |
+| Cosign signing | Malicious image tampering | Phase 1a |
+| SBOM (syft) | Hidden vulnerabilities in dependencies | Phase 1a |
 
 ---
 
-## The Upgrade Flow
+## Vector Storage Security
 
-```
-User decides to upgrade
-        │
-        ▼
-Download new docker-compose.v1.1.0.yml
-(all images pinned by digest)
-        │
-        ▼
-dina-cli verify (or install script)
-  ├── For each image digest:
-  │     cosign verify → signature matches? ✓
-  │     SBOM attached? ✓
-  │     Known critical CVEs? Check and warn.
-  │
-  ├── All checks pass → "Verified. Apply update? [Y/n]"
-  │     └── docker compose down && docker compose up -d
-  │
-  └── Any check fails → "WARNING: Verification failed. Update aborted."
-        └── Current installation unchanged.
-```
+Dina encrypts every page of every persona vault with SQLCipher (AES-256-CBC). Traditional vector databases (sqlite-vec, FAISS, Qdrant, ChromaDB) break this by storing vectors in unencrypted memory-mapped files.
 
-**No auto-updates.** Dina never pulls new images without the user's knowledge. The user initiates upgrades. The verification happens before anything changes. This is sovereignty — you run exactly the code you verified.
-
----
-
-## Summary
-
-| Measure | What it prevents | Difficulty | Phase |
-|---------|-----------------|------------|-------|
-| **Digest pinning** | Accidental breakage from upstream changes | Low (10 minutes) | Day one |
-| **Cosign signing** | Malicious image tampering, compromised CI/registry | Medium | Phase 1a (when CI exists) |
-| **SBOM (syft)** | Hidden vulnerabilities in dependencies | Medium | Phase 1a (when CI exists) |
-| **Reproducible builds** | Non-deterministic build output | Extreme | Not planned |
-
-For a sovereign agent that people rely on for their identity, finances, and personal data, the first three are functional requirements — not nice-to-haves.
-
----
-
-## Vector Storage Security: Why Not sqlite-vec, FAISS, or Any mmap-Based Vector DB
-
-### The Problem: mmap Defeats Encryption
-
-Dina encrypts every page of every persona vault with SQLCipher (AES-256-CBC). When the persona is locked, the encrypted `.sqlite` file is opaque bytes — useless without the passphrase-derived DEK. This is the foundation of Dina's absolute loyalty guarantee: **the human holds the encryption keys.**
-
-Traditional vector databases and vector extensions break this guarantee. They all share the same architectural pattern: store vectors in memory-mapped (`mmap`) files for fast similarity search. These mmap'd files sit **unencrypted on the filesystem**, completely bypassing SQLCipher's encryption layer.
-
-| Vector solution | Storage method | Encrypted at rest? |
-|-----------------|---------------|-------------------|
-| `sqlite-vec` | mmap'd vector files alongside SQLite | **No.** mmap files are plaintext. |
-| FAISS | Memory-mapped index files (`.faiss`) | **No.** Index files are plaintext. |
-| Qdrant / Weaviate / Pinecone | Separate process with its own disk storage | **No.** External DB, external security model. |
-| ChromaDB | SQLite + Parquet files on disk | **No.** Embedding files are plaintext. |
-
-**The attack:** An attacker who images the disk (stolen laptop, compromised VPS, malicious hosting operator) gets the encrypted `.sqlite` file AND plaintext vector index files side by side. The vector embeddings encode the semantic content of every item in the vault — health records, financial data, personal messages. Even without decrypting the SQLite file, the attacker can cluster embeddings, perform similarity searches, and infer what topics exist in the vault.
-
-### The Solution: Encrypted Cold Storage with Volatile RAM Hydration
-
-Dina stores 768-dimensional float32 embeddings as **BLOB columns inside SQLCipher**, in the same row as the text they represent. No separate index file. No mmap. SQLCipher encrypts the embedding bytes with the same per-page AES-256-CBC as everything else.
+**Dina's approach:** 768-dimensional float32 embeddings are stored as BLOB columns inside SQLCipher, in the same row as the text they represent. No separate index file. No mmap.
 
 **Lifecycle:**
+1. **At rest:** encrypted BLOBs inside SQLCipher
+2. **On persona unlock:** read embeddings, build HNSW index in RAM (~40-80ms for 10K items)
+3. **On query:** search RAM index (<1ms)
+4. **On persona lock:** destroy HNSW index, nil reference, GC
 
-1. **At rest:** Embeddings are encrypted BLOBs inside SQLCipher. A disk image reveals nothing.
-2. **On persona unlock:** Core reads `(id, embedding_blob)` pairs, builds a pure-Go HNSW index in RAM ([`github.com/coder/hnsw`](https://github.com/coder/hnsw)). ~40-80ms for 10K items.
-3. **On query:** Search the RAM index (<1ms). Vectors exist in plaintext **only in process memory**, same as decrypted text during normal vault operations.
-4. **On persona lock:** Destroy the HNSW index, nil the reference, `runtime.GC()`. Zero residual vector data.
-
-**Security properties:**
-
-- **Same threat model as text.** Decrypted embeddings in RAM have the same exposure window as decrypted text in RAM — which is inherent to any system that processes encrypted data. The difference is that mmap-based solutions leave vectors **permanently** on disk in plaintext, while Dina's approach restricts plaintext to volatile RAM during an active session.
-- **No new attack surface.** No additional files, no additional processes, no additional network ports. The HNSW index is a Go struct on the heap — it doesn't touch the filesystem.
-- **ACID consistency.** Embedding + text in the same SQLite row means a single `INSERT` stores both atomically. No orphaned vectors if the process crashes mid-write. No sync protocol between separate vector DB and text DB.
-- **Persona isolation preserved.** Each persona's HNSW index is independent. Locking one persona destroys its index without affecting others.
-
-**Scale:** 768-dim × float32 = 3,072 bytes per embedding. For 10K items: ~30MB storage in SQLCipher, ~50MB RAM when hydrated into HNSW. For 50K items: ~150MB storage, ~235MB RAM. Well within budget for a personal device (Raspberry Pi 5: 8GB, Mac Mini: 16GB+).
-
-**Why pure-Go HNSW (coder/hnsw):** No CGO dependencies beyond what go-sqlcipher already requires. No C++ cross-compilation for FAISS or hnswlib. Compiles with `CGO_ENABLED=0` (excluding sqlcipher). CC0 public domain license. Built-in cosine distance. The entire vector search infrastructure is Go structs in heap memory — no files, no mmap, no new attack surface.
+Vectors exist in plaintext only in process memory during an active session — same exposure as decrypted text.
 
 ---
 
-## LLM Security: Prompt Injection Defense
+## LLM Prompt Injection Defense
 
-Supply chain security (above) protects the code running on your Home Node. **Prompt injection defense** protects against malicious content that tries to hijack the LLM reasoning pipeline — poisoned emails, crafted calendar invites, adversarial messages.
+You cannot prevent prompt injection, so you contain the blast radius. Key mechanisms:
 
-Core principle: you cannot prevent prompt injection, so you contain the blast radius. Seven layers of defense ensure that a tricked LLM cannot exfiltrate data or bypass sharing policies. Key mechanisms include Split Brain architecture (process-level isolation between reading and sending), per-stage tool isolation, a deterministic Egress Gatekeeper (spaCy NER, not an LLM), and vault query limits enforced server-side in Core.
+- **Split Brain:** process-level isolation between reading and acting
+- **Per-stage tool isolation:** each reasoning step has a limited tool set
+- **Deterministic Egress Gatekeeper:** spaCy NER, not an LLM, makes the final send/block decision
+- **Vault query limits:** enforced server-side in Core, not by the LLM
 
-Full architecture: [`docs/architecture/19-prompt-injection-defense.md`](docs/architecture/19-prompt-injection-defense.md) and the corresponding section in [`ARCHITECTURE.md`](ARCHITECTURE.md).
+Full architecture: [`ARCHITECTURE.md`](ARCHITECTURE.md), section on prompt injection defense.
