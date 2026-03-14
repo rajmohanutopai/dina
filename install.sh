@@ -92,13 +92,15 @@ build_crypto_image() {
         local _build_pid=$!
         local _spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
         local _i=0
+        local _spun=false
         while kill -0 "$_build_pid" 2>/dev/null; do
             printf "\b${CYAN}${_spin:_i++%${#_spin}:1}${RESET}"
+            _spun=true
             sleep 0.1
         done
         wait "$_build_pid"
         local _rc=$?
-        printf "\b"
+        [ "$_spun" = true ] && printf "\b \b"
         if [ $_rc -eq 0 ]; then
             CRYPTO_IMAGE_BUILT=true
             echo -e "${GREEN}done${RESET}"
@@ -597,6 +599,8 @@ if [ -n "${MASTER_SEED}" ]; then
         -e DINA_SEED_PASSPHRASE="${SEED_PASSPHRASE}" \
         -v "${SECRETS_DIR}:/secrets" \
         >/dev/null 2>&1; then
+        # Docker may have written files as root despite --user. Reclaim ownership.
+        _repair_ownership
         verbose_ok "Identity seed encrypted"
     else
         fail "Failed to encrypt identity seed"
@@ -620,6 +624,15 @@ if [ -n "${MASTER_SEED}" ]; then
         -e DINA_SEED_HEX="${MASTER_SEED}" \
         -v "${SERVICE_KEY_DIR}:/service_keys" \
         || fail "Failed to provision service keys"
+
+    # Docker may have written files as root despite --user. Reclaim ownership.
+    _repair_ownership
+
+    # Verify all key files were actually written
+    for _kf in core/core_ed25519_private.pem brain/brain_ed25519_private.pem \
+               public/core_ed25519_public.pem public/brain_ed25519_public.pem; do
+        [ -f "${SERVICE_KEY_DIR}/${_kf}" ] || fail "Service key missing: ${_kf}"
+    done
     verbose_ok "Service keys provisioned (seed-derived)"
 
     # Zero the seed variable — raw seed must not persist
@@ -879,8 +892,8 @@ _brain_health=$($COMPOSE exec -T brain python -c \
     "import httpx,json; print(json.dumps(httpx.get('http://localhost:8200/healthz',timeout=3).json()))" \
     2>/dev/null || true)
 if [ -n "${_brain_health}" ]; then
-    _llm_router=$(echo "${_brain_health}" | grep -o '"llm_router":"[^"]*"' | cut -d'"' -f4 || true)
-    _llm_models=$(echo "${_brain_health}" | grep -o '"llm_models":"[^"]*"' | cut -d'"' -f4 || true)
+    _llm_router=$(echo "${_brain_health}" | grep -oE '"llm_router"\s*:\s*"[^"]*"' | cut -d'"' -f4 || true)
+    _llm_models=$(echo "${_brain_health}" | grep -oE '"llm_models"\s*:\s*"[^"]*"' | cut -d'"' -f4 || true)
     if [ "${_llm_router}" = "available" ]; then
         echo -e "  LLM:       ${GREEN}available${RESET} ${DIM}${_llm_models}${RESET}"
     else

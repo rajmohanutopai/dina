@@ -25,13 +25,31 @@ copy_secret() {
     fi
 }
 
-# Service keys — ensure the dina user owns the private key directory.
-# The bind-mounted host dir may be root:root; the Go binary runs as dina.
+# Service keys — copy from bind-mounted host dir to a container-local path
+# owned by dina. Never chown the host bind mount (that would break host-side
+# file access and make run.sh think the install is incomplete).
+LOCAL_KEYS="$SECRET_DIR/service_keys"
+mkdir -p "$LOCAL_KEYS/private" "$LOCAL_KEYS/public"
 if [ -d "/run/secrets/service_keys/private" ]; then
-    chown -R dina:dina /run/secrets/service_keys/private || true
+    cp /run/secrets/service_keys/private/* "$LOCAL_KEYS/private/" 2>/dev/null || true
 fi
-# Public key directory is read-only at runtime (provisioned at install time).
-# No chown needed — keys are pre-provisioned before containers start.
+if [ -d "/run/secrets/service_keys/public" ]; then
+    cp /run/secrets/service_keys/public/* "$LOCAL_KEYS/public/" 2>/dev/null || true
+fi
+chown -R dina:dina "$LOCAL_KEYS"
+chmod 700 "$LOCAL_KEYS/private"
+chmod 755 "$LOCAL_KEYS/public"
+
+# Fail fast if required key files are missing after copy.
+for _kf in private/core_ed25519_private.pem public/core_ed25519_public.pem public/brain_ed25519_public.pem; do
+    if [ ! -f "$LOCAL_KEYS/$_kf" ]; then
+        echo "FATAL: service key missing after copy: $LOCAL_KEYS/$_kf" >&2
+        echo "Check that install.sh provisioned keys in secrets/service_keys/" >&2
+        exit 1
+    fi
+done
+
+export DINA_SERVICE_KEY_DIR="$LOCAL_KEYS"
 
 # Client token (optional — for pre-registered admin access).
 copy_secret "/run/secrets/client_token" "$SECRET_DIR/client_token"

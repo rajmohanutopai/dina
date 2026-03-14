@@ -33,7 +33,7 @@ setup_telegram() {
     [ -t 0 ] || return  # skip in non-interactive mode
 
     echo ""
-    echo -e "  ${BOLD}Would you like to connect a Telegram bot?${RESET}"
+    echo -e "  ${BOLD}Would you like to connect to a Telegram bot?${RESET}"
     echo -e "  ${DIM}Dina can chat with you via Telegram — fully optional.${RESET}"
     echo ""
     echo -e "    ${CYAN}1)${RESET} Yes — I have a bot token (or will create one now)"

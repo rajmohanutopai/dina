@@ -76,7 +76,10 @@ echo -e "  ${CYAN}${BOLD}━━━━━━━━━━━━━━━━━━�
 echo ""
 
 if ! check_install_complete "${DINA_DIR}"; then
-    echo -e "  ${YELLOW}Dina is not installed yet.${RESET}"
+    echo -e "  ${YELLOW}Dina is not fully installed.${RESET}"
+    if [ -n "${INSTALL_MISSING}" ]; then
+        echo -e "  ${DIM}Missing:${INSTALL_MISSING}${RESET}"
+    fi
     echo ""
     echo -e "  Run:  ${CYAN}./install.sh${RESET}"
     echo ""
@@ -262,8 +265,8 @@ _brain_health=$($COMPOSE exec -T brain python -c \
     "import httpx,json; print(json.dumps(httpx.get('http://localhost:8200/healthz',timeout=3).json()))" \
     2>/dev/null || true)
 if [ -n "${_brain_health}" ]; then
-    _llm_router=$(echo "${_brain_health}" | grep -o '"llm_router":"[^"]*"' | cut -d'"' -f4 || true)
-    _llm_models=$(echo "${_brain_health}" | grep -o '"llm_models":"[^"]*"' | cut -d'"' -f4 || true)
+    _llm_router=$(echo "${_brain_health}" | grep -oE '"llm_router"\s*:\s*"[^"]*"' | cut -d'"' -f4 || true)
+    _llm_models=$(echo "${_brain_health}" | grep -oE '"llm_models"\s*:\s*"[^"]*"' | cut -d'"' -f4 || true)
     if [ "${_llm_router}" = "available" ]; then
         echo -e "  LLM:       ${GREEN}available${RESET} ${DIM}${_llm_models}${RESET}"
     else
