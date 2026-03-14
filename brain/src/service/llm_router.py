@@ -34,18 +34,19 @@ log = structlog.get_logger(__name__)
 # Local models = free (not listed).
 _MODEL_PRICING: dict[str, tuple[float, float]] = {
     # Gemini — google.dev pricing page 2026-03
+    "gemini-3.1-pro-preview": (2.00, 12.00),
     "gemini-3.1-flash-lite-preview": (0.25, 1.50),
     "gemini-3-flash-preview": (0.50, 3.00),
     "gemini-2.5-flash": (0.30, 2.50),
     "gemini-2.5-flash-lite": (0.10, 0.40),
     "gemini-2.5-pro": (1.25, 10.00),
-    "gemini-3.1-pro-preview": (2.00, 12.00),
-    # Anthropic
-    "claude-sonnet-4": (3.00, 15.00),
-    "claude-haiku-4-5": (0.80, 4.00),
-    # OpenAI
-    "gpt-4o": (2.50, 10.00),
-    "gpt-4o-mini": (0.15, 0.60),
+    # Anthropic — anthropic.com/pricing 2026-03
+    "claude-sonnet-4-6": (3.00, 15.00),
+    "claude-haiku-4-5-20251001": (1.00, 5.00),
+    "claude-haiku-4-5": (1.00, 5.00),
+    # OpenAI — openai.com/api/pricing 2026-03
+    "gpt-5.4": (5.00, 15.00),
+    "gpt-5-mini": (0.40, 1.60),
 }
 
 # Task types that can be answered without an LLM call.

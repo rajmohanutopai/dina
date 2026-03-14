@@ -210,56 +210,61 @@ def create_app() -> FastAPI:
                 extra={"error": str(exc)},
             )
 
+    # --- Gemini ---
     google_key = (os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", "")).strip()
     if google_key:
+        gemini_model = os.environ.get("GEMINI_MODEL", "gemini-3.1-pro-preview").strip()
+        gemini_lite_model = os.environ.get("GEMINI_LITE_MODEL", "gemini-3.1-flash-lite-preview").strip()
         try:
-            providers["gemini"] = GeminiProvider(google_key)
-            log.info("brain.provider.gemini")
+            providers["gemini"] = GeminiProvider(google_key, model=gemini_model)
+            log.info("brain.provider.gemini", extra={"model": gemini_model})
         except Exception as exc:
-            log.warning(
-                "brain.provider.gemini.failed",
-                extra={"error": str(exc)},
-            )
+            log.warning("brain.provider.gemini.failed", extra={"error": str(exc)})
         # Lightweight provider for guard_scan and other cheap tasks.
         try:
-            providers["gemini-lite"] = GeminiProvider(
-                google_key, model="gemini-3.1-flash-lite-preview",
-            )
-            log.info("brain.provider.gemini-lite", extra={"model": "gemini-3.1-flash-lite-preview"})
+            providers["gemini-lite"] = GeminiProvider(google_key, model=gemini_lite_model)
+            log.info("brain.provider.gemini-lite", extra={"model": gemini_lite_model})
         except Exception as exc:
-            log.warning(
-                "brain.provider.gemini-lite.failed",
-                extra={"error": str(exc)},
-            )
+            log.warning("brain.provider.gemini-lite.failed", extra={"error": str(exc)})
 
+    # --- Claude ---
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if anthropic_key:
+        claude_model = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6").strip()
+        claude_lite_model = os.environ.get("CLAUDE_LITE_MODEL", "claude-haiku-4-5-20251001").strip()
         try:
-            providers["claude"] = ClaudeProvider(anthropic_key)
-            log.info("brain.provider.claude")
+            providers["claude"] = ClaudeProvider(anthropic_key, model=claude_model)
+            log.info("brain.provider.claude", extra={"model": claude_model})
         except Exception as exc:
-            log.warning(
-                "brain.provider.claude.failed",
-                extra={"error": str(exc)},
-            )
+            log.warning("brain.provider.claude.failed", extra={"error": str(exc)})
+        try:
+            providers["claude-lite"] = ClaudeProvider(anthropic_key, model=claude_lite_model)
+            log.info("brain.provider.claude-lite", extra={"model": claude_lite_model})
+        except Exception as exc:
+            log.warning("brain.provider.claude-lite.failed", extra={"error": str(exc)})
 
+    # --- OpenAI ---
     openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if openai_key:
+        openai_model = os.environ.get("OPENAI_MODEL", "gpt-5.4").strip()
+        openai_lite_model = os.environ.get("OPENAI_LITE_MODEL", "gpt-5-mini").strip()
         try:
-            openai_model = os.environ.get("OPENAI_MODEL", "gpt-5.2").strip()
             providers["openai"] = OpenAIProvider(openai_key, model=openai_model)
             log.info("brain.provider.openai", extra={"model": openai_model})
         except Exception as exc:
-            log.warning(
-                "brain.provider.openai.failed",
-                extra={"error": str(exc)},
-            )
+            log.warning("brain.provider.openai.failed", extra={"error": str(exc)})
+        try:
+            providers["openai-lite"] = OpenAIProvider(openai_key, model=openai_lite_model)
+            log.info("brain.provider.openai-lite", extra={"model": openai_lite_model})
+        except Exception as exc:
+            log.warning("brain.provider.openai-lite.failed", extra={"error": str(exc)})
 
+    # --- OpenRouter ---
     openrouter_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
     if openrouter_key:
         try:
             openrouter_model = os.environ.get(
-                "OPENROUTER_MODEL", "google/gemini-2.5-flash",
+                "OPENROUTER_MODEL", "google/gemini-3-flash",
             ).strip()
             providers["openrouter"] = OpenRouterProvider(
                 openrouter_key, model=openrouter_model,
@@ -354,40 +359,51 @@ def create_app() -> FastAPI:
             os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", "")
         ).strip()
         if gkey:
+            _gm = os.environ.get("GEMINI_MODEL", "gemini-3.1-pro-preview").strip()
+            _gl = os.environ.get("GEMINI_LITE_MODEL", "gemini-3.1-flash-lite-preview").strip()
             try:
-                new_providers["gemini"] = GeminiProvider(gkey)
+                new_providers["gemini"] = GeminiProvider(gkey, model=_gm)
             except Exception as exc:
                 log.warning("reload.gemini.failed", extra={"error": str(exc)})
             try:
-                new_providers["gemini-lite"] = GeminiProvider(
-                    gkey, model="gemini-3.1-flash-lite-preview",
-                )
+                new_providers["gemini-lite"] = GeminiProvider(gkey, model=_gl)
             except Exception as exc:
                 log.warning("reload.gemini-lite.failed", extra={"error": str(exc)})
 
         # Claude
         akey = (kv.get("anthropic_api_key") or "").strip() or os.environ.get("ANTHROPIC_API_KEY", "").strip()
         if akey:
+            _cm = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6").strip()
+            _cl = os.environ.get("CLAUDE_LITE_MODEL", "claude-haiku-4-5-20251001").strip()
             try:
-                new_providers["claude"] = ClaudeProvider(akey)
+                new_providers["claude"] = ClaudeProvider(akey, model=_cm)
             except Exception as exc:
                 log.warning("reload.claude.failed", extra={"error": str(exc)})
+            try:
+                new_providers["claude-lite"] = ClaudeProvider(akey, model=_cl)
+            except Exception as exc:
+                log.warning("reload.claude-lite.failed", extra={"error": str(exc)})
 
         # OpenAI
         okey = (kv.get("openai_api_key") or "").strip() or os.environ.get("OPENAI_API_KEY", "").strip()
         if okey:
+            omodel = (kv.get("openai_model") or "").strip() or os.environ.get("OPENAI_MODEL", "gpt-5.4").strip()
+            _ol = os.environ.get("OPENAI_LITE_MODEL", "gpt-5-mini").strip()
             try:
-                omodel = (kv.get("openai_model") or "").strip() or os.environ.get("OPENAI_MODEL", "gpt-5.2").strip()
                 new_providers["openai"] = OpenAIProvider(okey, model=omodel)
             except Exception as exc:
                 log.warning("reload.openai.failed", extra={"error": str(exc)})
+            try:
+                new_providers["openai-lite"] = OpenAIProvider(okey, model=_ol)
+            except Exception as exc:
+                log.warning("reload.openai-lite.failed", extra={"error": str(exc)})
 
         # OpenRouter
         rkey = (kv.get("openrouter_api_key") or "").strip() or os.environ.get("OPENROUTER_API_KEY", "").strip()
         if rkey:
             try:
                 rmodel = (kv.get("openrouter_model") or "").strip() or os.environ.get(
-                    "OPENROUTER_MODEL", "google/gemini-2.5-flash",
+                    "OPENROUTER_MODEL", "google/gemini-3-flash",
                 ).strip()
                 new_providers["openrouter"] = OpenRouterProvider(rkey, model=rmodel)
             except Exception as exc:

@@ -328,3 +328,33 @@ def security_status() -> None:
     """
     click.echo("This command must be run from the host (not inside the container).")
     click.echo("Run: ./dina-admin security status")
+
+
+# ── model ────────────────────────────────────────────────────────────────────
+
+
+@cli.group()
+def model() -> None:
+    """Manage LLM models and providers."""
+
+
+@model.command("list")
+def model_list() -> None:
+    """Show available LLM models and providers.
+
+    This command is handled by the host-side dina-admin wrapper.
+    Run: ./dina-admin model list
+    """
+    click.echo("This command must be run from the host (not inside the container).")
+    click.echo("Run: ./dina-admin model list")
+
+
+@model.command("status")
+def model_status() -> None:
+    """Show which models are currently active.
+
+    This command is handled by the host-side dina-admin wrapper.
+    Run: ./dina-admin model status
+    """
+    click.echo("This command must be run from the host (not inside the container).")
+    click.echo("Run: ./dina-admin model status")

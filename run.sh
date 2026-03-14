@@ -63,6 +63,19 @@ case "${1:-}" in
         shift
         exec $COMPOSE logs -f "$@"
         ;;
+    --restart)
+        detect_compose
+        info "Restarting containers..."
+        $COMPOSE restart
+        ok "Containers restarted"
+        exit 0
+        ;;
+    --*)
+        echo -e "  ${RED}Unknown option: $1${RESET}" >&2
+        echo ""
+        echo -e "  Usage: ${CYAN}./run.sh${RESET} [--status|--stop|--logs|--restart]"
+        exit 1
+        ;;
 esac
 
 # ---------------------------------------------------------------------------
@@ -170,23 +183,20 @@ CORE_PORT=$(sed -n 's/^DINA_CORE_PORT=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null ||
 # Check if containers are already running
 RUNNING=$($COMPOSE ps --format "{{.Name}}" 2>/dev/null | head -1 || true)
 if [ -n "${RUNNING}" ]; then
-    info "Containers already running — restarting..."
-    $COMPOSE restart 2>&1 | while IFS= read -r line; do
-        echo -e "  ${DIM}${line}${RESET}"
-    done
+    ok "Containers already running"
+    echo -e "  ${DIM}Use ${CYAN}./run.sh --restart${RESET}${DIM} to restart, or ${CYAN}./run.sh --stop${RESET}${DIM} to stop.${RESET}"
 else
     $COMPOSE up -d 2>&1 | while IFS= read -r line; do
         echo -e "  ${DIM}${line}${RESET}"
     done
-fi
+    ok "Containers started"
 
-ok "Containers started"
-
-# Clear passphrase from disk if we wrote it temporarily for manual-start mode.
-# Docker has already read the secret into the container's in-memory mount.
-if [ "${_CLEAR_PASSPHRASE_AFTER_START}" = true ]; then
-    : > "${SEED_PASSWORD_FILE}"
-    chmod 600 "${SEED_PASSWORD_FILE}"
+    # Clear passphrase from disk if we wrote it temporarily for manual-start mode.
+    # Docker has already read the secret into the container's in-memory mount.
+    if [ "${_CLEAR_PASSPHRASE_AFTER_START}" = true ]; then
+        : > "${SEED_PASSWORD_FILE}"
+        chmod 600 "${SEED_PASSWORD_FILE}"
+    fi
 fi
 
 echo ""

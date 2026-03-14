@@ -33,7 +33,7 @@ class GeminiProvider:
     def __init__(
         self,
         api_key: str,
-        model: str = "gemini-2.5-flash",
+        model: str = "gemini-3.1-pro-preview",
         embed_model: str = _EMBED_MODEL,
     ) -> None:
         if not api_key:

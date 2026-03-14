@@ -48,12 +48,10 @@ def validate(key_name: str, key_value: str) -> bool:
     """Send a real completion request using only stdlib."""
     try:
         if key_name in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
-            # Use gemini-2.5-flash (widely available). A successful HTTP 200
-            # with candidates proves the key works, even if content is empty
-            # due to maxOutputTokens.
+            # Use cheapest Gemini model for validation.
             url = (
                 f"https://generativelanguage.googleapis.com/v1beta/"
-                f"models/gemini-2.5-flash:generateContent?key={key_value}"
+                f"models/gemini-3.1-flash-lite-preview:generateContent?key={key_value}"
             )
             body = {"contents": [{"parts": [{"text": "Reply: ok"}]}],
                     "generationConfig": {"maxOutputTokens": 4}}
@@ -62,7 +60,7 @@ def validate(key_name: str, key_value: str) -> bool:
 
         elif key_name == "OPENAI_API_KEY":
             url = "https://api.openai.com/v1/chat/completions"
-            body = {"model": "gpt-4.1-nano", "messages": [{"role": "user", "content": "Reply: ok"}],
+            body = {"model": "gpt-5-mini", "messages": [{"role": "user", "content": "Reply: ok"}],
                     "max_tokens": 4}
             resp = _post(url, body, {
                 "Content-Type": "application/json",
@@ -83,7 +81,7 @@ def validate(key_name: str, key_value: str) -> bool:
 
         elif key_name == "OPENROUTER_API_KEY":
             url = "https://openrouter.ai/api/v1/chat/completions"
-            body = {"model": "google/gemini-2.0-flash-001", "messages": [{"role": "user", "content": "Reply: ok"}],
+            body = {"model": "google/gemini-3-flash", "messages": [{"role": "user", "content": "Reply: ok"}],
                     "max_tokens": 4}
             resp = _post(url, body, {
                 "Content-Type": "application/json",

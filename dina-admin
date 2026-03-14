@@ -110,5 +110,71 @@ if [ "${1:-}" = "security" ]; then
     exit 0
 fi
 
+# ---------------------------------------------------------------------------
+# Host-side "model" subcommand — queries Brain for LLM provider info
+# ---------------------------------------------------------------------------
+
+_model_usage() {
+    echo -e "  ${BOLD}Usage:${RESET} dina-admin model <command>"
+    echo ""
+    echo "  Commands:"
+    echo -e "    ${CYAN}list${RESET}        Show available LLM models and providers"
+    echo -e "    ${CYAN}status${RESET}      Show which models are currently active"
+}
+
+_brain_healthz() {
+    $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" exec -T brain \
+        python -c "import httpx,json; print(json.dumps(httpx.get('http://localhost:8200/healthz',timeout=5).json()))" \
+        2>/dev/null
+}
+
+_model_list() {
+    local health
+    health=$(_brain_healthz) || {
+        echo -e "  ${RED}Cannot reach Brain.${RESET} Is Dina running?" >&2
+        exit 1
+    }
+
+    local router models
+    router=$(echo "${health}" | grep -oE '"llm_router"\s*:\s*"[^"]*"' | cut -d'"' -f4 || true)
+    models=$(echo "${health}" | grep -oE '"llm_models"\s*:\s*"[^"]*"' | cut -d'"' -f4 || true)
+
+    if [ "${router}" = "available" ] && [ -n "${models}" ]; then
+        echo -e "  ${BOLD}Active models:${RESET}"
+        echo ""
+        IFS=',' read -ra _arr <<< "${models}"
+        for m in "${_arr[@]}"; do
+            m=$(echo "$m" | sed 's/^ *//')
+            echo -e "    ${GREEN}●${RESET} ${m}"
+        done
+    else
+        echo -e "  ${YELLOW}No LLM provider configured.${RESET}"
+    fi
+    echo ""
+    echo -e "  ${DIM}Override via .env:${RESET}"
+    echo -e "    ${CYAN}GEMINI_MODEL${RESET}        ${DIM}(default: gemini-3.1-pro-preview)${RESET}"
+    echo -e "    ${CYAN}GEMINI_LITE_MODEL${RESET}   ${DIM}(default: gemini-3.1-flash-lite-preview)${RESET}"
+    echo -e "    ${CYAN}CLAUDE_MODEL${RESET}        ${DIM}(default: claude-sonnet-4-6)${RESET}"
+    echo -e "    ${CYAN}CLAUDE_LITE_MODEL${RESET}   ${DIM}(default: claude-haiku-4-5-20251001)${RESET}"
+    echo -e "    ${CYAN}OPENAI_MODEL${RESET}        ${DIM}(default: gpt-5.4)${RESET}"
+    echo -e "    ${CYAN}OPENAI_LITE_MODEL${RESET}   ${DIM}(default: gpt-5-mini)${RESET}"
+    echo -e "    ${CYAN}OPENROUTER_MODEL${RESET}    ${DIM}(default: google/gemini-3-flash)${RESET}"
+    echo ""
+    echo -e "  ${DIM}After changing .env, restart: ${CYAN}./run.sh --restart${RESET}"
+}
+
+_model_status() {
+    _model_list
+}
+
+if [ "${1:-}" = "model" ]; then
+    case "${2:-}" in
+        list)    _model_list ;;
+        status)  _model_status ;;
+        *)       _model_usage ;;
+    esac
+    exit 0
+fi
+
 # All other commands: forward to the container
 exec $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" exec -T core dina-admin "$@"

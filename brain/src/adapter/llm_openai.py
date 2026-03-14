@@ -34,7 +34,7 @@ class OpenAIProvider:
     def __init__(
         self,
         api_key: str,
-        model: str = "gpt-5.2",
+        model: str = "gpt-5.4",
     ) -> None:
         if not api_key:
             raise ConfigError(
