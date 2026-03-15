@@ -41,10 +41,13 @@ type Auth struct {
 }
 
 // publicPaths bypass authentication.
+// The pairing code itself is the auth for /v1/pair/complete — new devices
+// cannot have Ed25519 keys or CLIENT_TOKEN before they are paired.
 var publicPaths = map[string]bool{
 	"/healthz":                 true,
 	"/readyz":                  true,
 	"/.well-known/atproto-did": true,
+	"/v1/pair/complete":        true,
 }
 
 // isTimestampValid checks whether a timestamp string is within

@@ -482,32 +482,45 @@ def _configure_signature(core_url: str, device_name: str) -> None:
 
 def _pair_with_key(core_url: str, identity: Any, device_name: str) -> None:
     """Register the public key with Core using a pairing code."""
-    click.echo("  Enter the pairing code from your Home Node admin UI.")
-    click.echo("  (Generate one at POST /v1/pair/initiate or from the dashboard)")
-    pairing_code = click.prompt("  Pairing code")
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        click.echo("  Enter the pairing code from your Home Node.")
+        click.echo("  (Generate one by running: ./dina-admin device pair)")
+        pairing_code = click.prompt("  Pairing code")
 
-    click.echo("  Registering device...")
-    try:
-        resp = httpx.post(
-            f"{core_url}/v1/pair/complete",
-            json={
-                "code": pairing_code,
-                "device_name": device_name,
-                "public_key_multibase": identity.public_key_multibase(),
-            },
-            timeout=10.0,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        click.echo(f"  Paired! Device ID: {data.get('device_id', 'ok')}")
-        node_did = data.get("node_did", "")
-        if node_did:
-            click.echo(f"  Home Node DID: {node_did}")
-    except httpx.ConnectError:
-        click.echo(f"  Warning: Cannot reach Core at {core_url}. Keypair saved; pair later.", err=True)
-    except httpx.HTTPStatusError as exc:
-        click.echo(f"  Pairing failed: {exc.response.text}", err=True)
-        click.echo("  Keypair saved. You can re-pair by running 'dina configure' again.")
+        click.echo("  Registering device...")
+        try:
+            resp = httpx.post(
+                f"{core_url}/v1/pair/complete",
+                json={
+                    "code": pairing_code,
+                    "device_name": device_name,
+                    "public_key_multibase": identity.public_key_multibase(),
+                },
+                timeout=10.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            click.echo(f"  Paired! Device ID: {data.get('device_id', 'ok')}")
+            node_did = data.get("node_did", "")
+            if node_did:
+                click.echo(f"  Home Node DID: {node_did}")
+            return  # success
+        except httpx.ConnectError:
+            click.echo(f"  Cannot reach Core at {core_url}.", err=True)
+            click.echo("  Check that your Home Node is running and the URL is correct.", err=True)
+            click.echo("  Keypair saved. Pair later with: dina configure", err=True)
+            return
+        except httpx.HTTPStatusError:
+            remaining = max_attempts - attempt
+            if remaining > 0:
+                click.echo(f"  Pairing failed. Check that the code is correct and the Home Node is reachable.", err=True)
+                click.echo(f"  {remaining} attempt(s) remaining.", err=True)
+                click.echo()
+            else:
+                click.echo("  Pairing failed after 3 attempts.", err=True)
+                click.echo("  Check that you are connecting to the correct Home Node.", err=True)
+                click.echo("  Keypair saved. Try again with: dina configure", err=True)
 
 
 # ── init-identity ────────────────────────────────────────────────────

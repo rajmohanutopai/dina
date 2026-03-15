@@ -132,8 +132,8 @@ It affects:
 The current architecture text drifts between:
 
 - all clients use Ed25519
-- non-CLI clients use `CLIENT_TOKEN`
-- `CLIENT_TOKEN` is admin-only
+- browser admin uses a dedicated session-backed path
+- all direct callers into core use Ed25519
 
 This needs one answer.
 
