@@ -55,7 +55,72 @@ case "${1:-}" in
         ;;
     --status)
         detect_compose
-        $COMPOSE ps
+        echo ""
+        echo -e "  ${BOLD}Dina Status${RESET}"
+        echo ""
+
+        # Read config
+        DINA_SESSION=$(sed -n 's/^DINA_SESSION=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
+        CORE_PORT=$(sed -n 's/^DINA_CORE_PORT=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || echo "8100")
+
+        # Container health
+        for svc in core brain pds; do
+            _status=$($COMPOSE ps "$svc" --format "{{.Status}}" 2>/dev/null || true)
+            if echo "$_status" | grep -qi "healthy" 2>/dev/null; then
+                echo -e "  ${GREEN}●${RESET} ${svc}  ${DIM}${_status}${RESET}"
+            elif echo "$_status" | grep -qiE "up|running" 2>/dev/null; then
+                echo -e "  ${YELLOW}●${RESET} ${svc}  ${DIM}${_status}${RESET}"
+            elif [ -n "$_status" ]; then
+                echo -e "  ${RED}●${RESET} ${svc}  ${DIM}${_status}${RESET}"
+            else
+                echo -e "  ${RED}●${RESET} ${svc}  ${DIM}not running${RESET}"
+            fi
+        done
+
+        echo ""
+
+        # Core health details
+        if _health=$(curl -s --connect-timeout 3 "http://localhost:${CORE_PORT}/healthz" 2>/dev/null); then
+            echo -e "  Core:      ${CYAN}http://localhost:${CORE_PORT}${RESET}"
+        else
+            echo -e "  Core:      ${RED}unreachable${RESET}"
+        fi
+
+        # DID
+        if _did=$(curl -s --connect-timeout 3 "http://localhost:${CORE_PORT}/.well-known/atproto-did" 2>/dev/null) && [ -n "$_did" ]; then
+            echo -e "  DID:       ${DIM}${_did}${RESET}"
+        fi
+
+        # LLM status from Brain
+        _brain_health=$($COMPOSE exec -T brain python -c \
+            "import httpx,json; print(json.dumps(httpx.get('http://localhost:8200/healthz',timeout=3).json()))" \
+            2>/dev/null || true)
+        if [ -n "$_brain_health" ]; then
+            _llm_router=$(echo "$_brain_health" | grep -oE '"llm_router"\s*:\s*"[^"]*"' | cut -d'"' -f4 || true)
+            _llm_models=$(echo "$_brain_health" | grep -oE '"llm_models"\s*:\s*"[^"]*"' | cut -d'"' -f4 || true)
+            if [ "$_llm_router" = "available" ]; then
+                echo -e "  LLM:       ${GREEN}available${RESET} ${DIM}${_llm_models}${RESET}"
+            else
+                echo -e "  LLM:       ${YELLOW}not configured${RESET}"
+            fi
+        fi
+
+        # Session
+        if [ -n "$DINA_SESSION" ]; then
+            echo -e "  Session:   ${DIM}${DINA_SESSION}${RESET}"
+        fi
+
+        # Startup mode
+        SEED_PASSWORD_FILE="${SECRETS_DIR}/seed_password"
+        if [ -f "$SEED_PASSWORD_FILE" ]; then
+            if [ -s "$SEED_PASSWORD_FILE" ]; then
+                echo -e "  Security:  ${DIM}auto-start${RESET}"
+            else
+                echo -e "  Security:  ${DIM}manual-start${RESET}"
+            fi
+        fi
+
+        echo ""
         exit 0
         ;;
     --logs)

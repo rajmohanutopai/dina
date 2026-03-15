@@ -755,6 +755,9 @@ echo -e "  ${BOLD}Building Dina...${RESET}"
 if [ "${SKIP_BUILD}" = true ]; then
     echo -e "  ${DIM}skipped${RESET}"
 else
+    _build_spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    _build_si=0
+    _build_last_svc=""
     if $COMPOSE build 2>&1 | while IFS= read -r line; do
         if [ "${VERBOSE}" = true ]; then
             echo -e "  ${DIM}${line}${RESET}"
@@ -763,7 +766,14 @@ else
             # e.g. "#21 [core builder 2/7] RUN apt-get..." → "core  builder 2/7"
             _svc=$(echo "$line" | grep -oE '\[(core|brain|admin) [a-z]+ [0-9]+/[0-9]+\]' | tr -d '[]' || true)
             if [ -n "$_svc" ]; then
-                printf "\r  ${DIM}%-50s${RESET}" "$_svc"
+                _build_last_svc="$_svc"
+            fi
+            _build_si=$(( (_build_si + 1) % ${#_build_spin} ))
+            _build_ch="${_build_spin:_build_si:1}"
+            if [ -n "$_build_last_svc" ]; then
+                printf "\r  ${CYAN}${_build_ch}${RESET} ${DIM}%-48s${RESET}" "$_build_last_svc"
+            else
+                printf "\r  ${CYAN}${_build_ch}${RESET} ${DIM}%-48s${RESET}" "preparing..."
             fi
         fi
     done; then
