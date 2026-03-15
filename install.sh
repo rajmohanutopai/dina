@@ -775,11 +775,21 @@ fi
 
 step_begin "Starting Dina..."
 
-$COMPOSE up -d 2>&1 | while IFS= read -r line; do
-    if [ "${VERBOSE}" = true ]; then
+_start_output=$($COMPOSE up -d 2>&1) || {
+    [ "${VERBOSE}" = true ] || echo ""
+    echo -e "  ${RED}${BOLD}Failed to start containers.${RESET}"
+    echo ""
+    echo -e "  ${DIM}${_start_output}${RESET}" | head -20
+    echo ""
+    echo -e "  Try: ${CYAN}docker compose logs${RESET}"
+    exit 1
+}
+
+if [ "${VERBOSE}" = true ]; then
+    echo "${_start_output}" | while IFS= read -r line; do
         echo -e "  ${DIM}${line}${RESET}"
-    fi
-done
+    done
+fi
 
 step_end
 

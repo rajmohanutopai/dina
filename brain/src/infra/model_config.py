@@ -14,9 +14,16 @@ import os
 from pathlib import Path
 from typing import Any
 
+def _local_dev_path() -> Path:
+    """Resolve repo root models.json for local dev (outside Docker)."""
+    try:
+        return Path(__file__).resolve().parents[4] / "models.json"
+    except IndexError:
+        return Path("/app/models.json")  # fallback
+
 _MODELS_JSON_PATHS = [
-    Path("/app/models.json"),                             # Docker container
-    Path(__file__).resolve().parents[4] / "models.json",  # Local dev
+    Path("/app/models.json"),  # Docker container
+    _local_dev_path(),         # Local dev
 ]
 
 _cache: dict[str, Any] | None = None
