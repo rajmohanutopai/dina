@@ -1,6 +1,6 @@
 # Architecture Phase Status
 
-Date: 2026-03-10
+Date: 2026-03-15
 Canonical architecture document: `ARCHITECTURE.md`
 
 This file is a simplified review sheet for the architecture.
@@ -34,7 +34,7 @@ Phase 1 should be the smallest version of Dina that already feels complete and v
 |---|---|---|
 | **Core product shape** | Dina is already useful as a private Home Node core with multi-persona memory, identity, nudges, safety, delegation, trust, and approval-gated action handoff | This is the strongest cold-start story |
 | **Core architecture** | `dina-core` + `dina-brain` + encrypted SQLite vault are the center of gravity | This is the simple architecture the document should keep defending |
-| **Identity and auth** | Home Node holds root identity; paired devices use Ed25519; `CLIENT_TOKEN` stays internal to the admin/browser path | These are foundational and must remain canonical |
+| **Identity and auth** | Home Node holds root identity; paired devices use Ed25519; browser admin uses session cookie → `dina-admin` → Ed25519 → core | These are foundational and must remain canonical |
 | **Vault model** | Multi-persona vaults are part of the Phase 1 security model, not a later add-on | Persona separation is central to Dina's security story |
 | **Persona safety** | Gatekeeper, persona boundaries, PII scrubbing, and action gating already matter from day one | Dina's security story is part of the product, not a future add-on |
 | **Initial data hydration** | Customer data is pulled in, classified, and written into the correct persona vaults from the start | Dina is only real once the vaults are populated with actual life context |

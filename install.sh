@@ -750,21 +750,27 @@ verbose_ok "Permissions locked"
 # Step 7: Build Docker images
 # ---------------------------------------------------------------------------
 
-step_begin "Building Dina..."
+echo -e "  ${BOLD}Building Dina...${RESET}"
 
 if [ "${SKIP_BUILD}" = true ]; then
-    [ "${VERBOSE}" = true ] || echo -e "${DIM}skipped${RESET}"
+    echo -e "  ${DIM}skipped${RESET}"
 else
     if $COMPOSE build 2>&1 | while IFS= read -r line; do
         if [ "${VERBOSE}" = true ]; then
             echo -e "  ${DIM}${line}${RESET}"
         else
-            printf "${GREEN}.${RESET}"
+            # Extract service name and step from Docker build output
+            # e.g. "#21 [core builder 2/7] RUN apt-get..." → "core  builder 2/7"
+            _svc=$(echo "$line" | grep -oE '\[(core|brain|admin) [a-z]+ [0-9]+/[0-9]+\]' | tr -d '[]' || true)
+            if [ -n "$_svc" ]; then
+                printf "\r  ${DIM}%-50s${RESET}" "$_svc"
+            fi
         fi
     done; then
-        step_end
+        printf "\r  %-50s\n" ""
+        echo -e "  ${GREEN}Build complete${RESET}"
     else
-        [ "${VERBOSE}" = true ] || echo ""
+        printf "\r  %-50s\n" ""
         fail "Build failed. Run with --verbose to see details."
     fi
 fi

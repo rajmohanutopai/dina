@@ -74,9 +74,20 @@ Transmitted via headers: `X-DID`, `X-Timestamp`, `X-Signature`.
 
 **Replay protection:** 5-minute timestamp window + double-buffer nonce cache. Current generation collects all new nonces; previous generation is checked for duplicates. Rotation every 5 minutes or when current exceeds 100,000 entries.
 
-### 2. CLIENT_TOKEN (Admin Web UI)
+### 2. CLIENT_TOKEN (Admin Web UI) — Phase 1
 
 32-byte random token generated during device pairing (`crypto/rand.Read`). Used as a login password for the browser admin UI. Browser POSTs it to `/admin/login`, gets a session cookie back.
+
+**Planned (Phase 2):** Replace CLIENT_TOKEN with the same Ed25519 model used everywhere else. The admin UI backend authenticates to Core with Ed25519; the browser authenticates to the admin backend with a session cookie. This eliminates CLIENT_TOKEN entirely:
+
+```
+Browser   → session cookie → Admin backend → Ed25519 → Core
+CLI       →                                  Ed25519 → Core
+Telegram  → Telegram API   → Telegram bot  → Ed25519 → Core
+Brain     →                                  Ed25519 → Core
+```
+
+One auth model everywhere. The browser is the only component that can't do Ed25519 natively, so the admin backend bridges that gap — same pattern as Telegram.
 
 **Session security:**
 - Session ID: 32-byte random hex
@@ -96,6 +107,16 @@ Each device generates its own Ed25519 keypair locally. The private key never lea
 4. Core registers the device and issues a CLIENT_TOKEN
 
 Rate limiting on pairing attempts prevents brute force (hard cap on pending codes).
+
+### dina-admin (Local Operator)
+
+`dina-admin` connects to Core via Unix domain socket inside the container. Socket access = admin auth — if you can exec into the container, you have host-level access. No token or key needed.
+
+**Current model (Phase 1):** Unix socket for all admin commands. Acceptable for single-user Home Node where Docker access = machine access.
+
+**Planned (Phase 2):** Dual-auth model:
+- **Ed25519** for normal operations (status, persona, device, identity) — auditable, consistent with CLI
+- **Unix socket restricted** to bootstrap + emergency only (init, key rotation, export, security mode changes) — the escape hatch when the auth system itself needs fixing
 
 ---
 

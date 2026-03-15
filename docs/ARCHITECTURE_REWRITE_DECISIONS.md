@@ -44,7 +44,7 @@ These are the decisions I recommend locking before any rewrite:
 
 1. Root identity lives on the Home Node, not on client devices.
 2. All non-browser clients use Ed25519 device keys.
-3. `CLIENT_TOKEN` is only for browser/admin bootstrap and session translation.
+3. Browser admin uses a session cookie to `dina-admin`, and `dina-admin` authenticates to core with Ed25519.
 4. Ingestion scheduling belongs to brain, not core.
 5. The canonical Phase 1 value proposition is private memory + quiet-first nudges + safe delegation.
 6. The trust network is strategically important but not required for initial product coherence.
@@ -156,41 +156,45 @@ This needs one answer.
 
 `All paired client devices authenticate using device-specific Ed25519 keypairs.`
 
-`The browser admin path is separate and uses session translation managed by core.`
+`The browser admin path is separate and terminates at dina-admin, which authenticates to core with its own Ed25519 service identity.`
 
 ---
 
-## 3. `CLIENT_TOKEN` Scope
+## 3. Browser Admin Authentication
 
 | Field | Decision |
 |---|---|
-| Topic | What `CLIENT_TOKEN` is actually for |
+| Topic | How browser-admin authentication should work |
 | Priority | Must Lock Now |
-| Recommended choice | `CLIENT_TOKEN` is for browser/admin bootstrap only |
-| Do not choose | Treating `CLIENT_TOKEN` as a general client auth mechanism |
+| Recommended choice | Browser session cookie at `dina-admin`; `dina-admin` talks to core with Ed25519 |
+| Do not choose | Browser secrets passed directly to core, or `CLIENT_TOKEN` as a permanent browser/admin credential |
 
 ### Why this should be locked
 
-`CLIENT_TOKEN` becomes much clearer and safer if it has one job.
+The browser is the one Dina client that cannot realistically participate in the normal Ed25519 service/device model.
 
-If it is both:
+That does not justify a permanent shared-secret exception between browser/admin code and core.
 
-- browser admin credential
-- normal client credential
-- fallback device credential
+The cleaner rule is:
 
-then the model becomes harder to reason about.
+- browser authenticates to an admin backend with an HTTP session
+- admin backend authenticates to core with Ed25519
+- all non-browser hops into core use the same cryptographic model
 
 ### Recommended canonical statement
 
-`CLIENT_TOKEN` is an admin/browser bootstrap credential, not the default authentication method for paired devices.
+`Browser users authenticate to dina-admin with a session cookie.`
+
+`dina-admin authenticates to core with its own Ed25519 service keypair.`
+
+`CLIENT_TOKEN` is not part of the canonical long-term auth model.`
 
 ### What this decision implies
 
-- browser login and proxy/session translation remain in core
+- browser sessions live in `dina-admin`, not in the core↔brain transport layer
 - normal clients do not depend on bearer-token handling
-- fewer auth classes appear in the document
-- admin flows become easier to explain
+- internal services (`dina-brain`, `dina-admin`, connectors) all follow the same Ed25519 service-auth pattern
+- admin flows become easier to explain because the browser/backend split is explicit
 
 ---
 
@@ -669,7 +673,7 @@ When you review these decisions, I recommend treating each one in this format:
 |---|---|---|---|
 | Root identity ownership | Home Node owns root identity |  |  |
 | Non-browser client auth | Ed25519 device keys |  |  |
-| `CLIENT_TOKEN` scope | Browser/admin bootstrap only |  |  |
+| Browser admin auth | Browser session → `dina-admin` → Ed25519 → core |  |  |
 | Ingestion scheduling | Brain-owned |  |  |
 | Phase 1 product core | Memory + nudges + safe delegation |  |  |
 | Trust-network framing | Public subsystem, not minimum private core |  |  |
@@ -688,7 +692,7 @@ If you want the architecture rewrite to materially improve the project, lock the
 
 - root identity ownership
 - client authentication model
-- `CLIENT_TOKEN` scope
+- browser admin authentication model
 - core vs brain responsibility split
 - canonical Phase 1 product core
 - trust network positioning
@@ -701,4 +705,3 @@ Then use the rewrite to make Dina's most original claims explicit as architectur
 - pull economy
 
 That is the highest-leverage path.
-

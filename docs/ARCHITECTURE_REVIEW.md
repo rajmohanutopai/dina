@@ -331,13 +331,15 @@ Then clarify:
 There are also two incompatible stories:
 
 - all clients use Ed25519 device keys
-- non-CLI clients use `CLIENT_TOKEN`
+- browser admin uses a separate session-backed path
 
 Recommended canonical decision:
 
 `All non-browser clients use Ed25519 device keys.`
 
-`CLIENT_TOKEN` is for browser/admin bootstrap only.
+`Browser admin should authenticate to a dedicated admin backend with a session cookie.`
+
+`That admin backend should authenticate to core with Ed25519.`
 
 Reason:
 
@@ -728,7 +730,7 @@ Recommended decision:
 
 `All non-browser clients authenticate with Ed25519 device keys.`
 
-`CLIENT_TOKEN` is only for admin/browser login and session bootstrap.`
+`Browser admin should use session cookie → dina-admin → Ed25519 → core.`
 
 Implications:
 
@@ -1076,4 +1078,3 @@ It is:
 If that cleanup is done, the architecture will read much more powerfully and much more credibly.
 
 It will also become easier to maintain as the system grows.
-
