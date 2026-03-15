@@ -358,3 +358,16 @@ def model_status() -> None:
     """
     click.echo("This command must be run from the host (not inside the container).")
     click.echo("Run: ./dina-admin model status")
+
+
+@model.command("set")
+@click.argument("env_var")
+@click.argument("model_id")
+def model_set(env_var: str, model_id: str) -> None:
+    """Set a model override (e.g. GEMINI_MODEL gemini-2.5-flash).
+
+    This command is handled by the host-side dina-admin wrapper.
+    Run: ./dina-admin model set <ENV_VAR> <model_id>
+    """
+    click.echo("This command must be run from the host (not inside the container).")
+    click.echo(f"Run: ./dina-admin model set {env_var} {model_id}")

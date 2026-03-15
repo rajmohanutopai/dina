@@ -118,8 +118,13 @@ _model_usage() {
     echo -e "  ${BOLD}Usage:${RESET} dina-admin model <command>"
     echo ""
     echo "  Commands:"
-    echo -e "    ${CYAN}list${RESET}        Show available LLM models and providers"
-    echo -e "    ${CYAN}status${RESET}      Show which models are currently active"
+    echo -e "    ${CYAN}list${RESET}                      Show active models and available overrides"
+    echo -e "    ${CYAN}status${RESET}                    Same as list"
+    echo -e "    ${CYAN}set${RESET} <ENV_VAR> <model_id>  Set a model override in .env"
+    echo ""
+    echo -e "  ${DIM}Examples:${RESET}"
+    echo -e "    ${CYAN}dina-admin model set GEMINI_MODEL gemini-2.5-flash${RESET}"
+    echo -e "    ${CYAN}dina-admin model set CLAUDE_LITE_MODEL claude-haiku-4-5-20251001${RESET}"
 }
 
 _brain_healthz() {
@@ -180,10 +185,59 @@ _model_status() {
     _model_list
 }
 
+_model_set() {
+    local env_var="$1" model_id="$2"
+    local env_file="$COMPOSE_DIR/.env"
+
+    if [ -z "${env_var}" ] || [ -z "${model_id}" ]; then
+        echo -e "  ${RED}Usage:${RESET} dina-admin model set <ENV_VAR> <model_id>" >&2
+        echo ""
+        echo -e "  ${DIM}Example: dina-admin model set GEMINI_MODEL gemini-2.5-flash${RESET}"
+        exit 1
+    fi
+
+    # Validate env var name is a known model override
+    local valid_vars="GEMINI_MODEL GEMINI_LITE_MODEL CLAUDE_MODEL CLAUDE_LITE_MODEL OPENAI_MODEL OPENAI_LITE_MODEL OPENROUTER_MODEL"
+    local is_valid=false
+    for v in ${valid_vars}; do
+        [ "$v" = "${env_var}" ] && is_valid=true
+    done
+
+    if [ "${is_valid}" = false ]; then
+        echo -e "  ${RED}Unknown model variable:${RESET} ${env_var}" >&2
+        echo ""
+        echo -e "  ${DIM}Valid variables:${RESET}"
+        for v in ${valid_vars}; do
+            echo -e "    ${CYAN}${v}${RESET}"
+        done
+        exit 1
+    fi
+
+    if [ ! -f "${env_file}" ]; then
+        echo -e "  ${RED}No .env file found.${RESET} Run ./install.sh first." >&2
+        exit 1
+    fi
+
+    # Update or append the variable in .env
+    if grep -q "^${env_var}=" "${env_file}" 2>/dev/null; then
+        # Update existing line
+        sed -i.bak "s|^${env_var}=.*|${env_var}=${model_id}|" "${env_file}"
+        rm -f "${env_file}.bak"
+        echo -e "  ${GREEN}✓${RESET} Updated ${CYAN}${env_var}${RESET} = ${model_id}"
+    else
+        # Append
+        echo "${env_var}=${model_id}" >> "${env_file}"
+        echo -e "  ${GREEN}✓${RESET} Added ${CYAN}${env_var}${RESET} = ${model_id}"
+    fi
+
+    echo -e "  ${DIM}Restart to apply: ${CYAN}./run.sh --restart${RESET}"
+}
+
 if [ "${1:-}" = "model" ]; then
     case "${2:-}" in
         list)    _model_list ;;
         status)  _model_status ;;
+        set)     _model_set "${3:-}" "${4:-}" ;;
         *)       _model_usage ;;
     esac
     exit 0

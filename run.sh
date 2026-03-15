@@ -154,12 +154,26 @@ if [ -f "${SEED_PASSWORD_FILE}" ] && [ ! -s "${SEED_PASSWORD_FILE}" ]; then
     if [ ! -t 0 ]; then
         fail "Passphrase required but running non-interactively.\n  Switch to auto-start: ${CYAN}./dina-admin security auto-start${RESET}"
     fi
-    printf "  ${BOLD}Enter passphrase${RESET} ${DIM}(${CYAN}dina-admin security auto-start${RESET}${DIM} to skip this):${RESET} "
-    read -rs _run_passphrase
-    echo ""
-    if [ -z "${_run_passphrase}" ]; then
-        fail "Passphrase cannot be empty."
-    fi
+    while true; do
+        printf "  ${BOLD}Enter passphrase${RESET} ${DIM}(${CYAN}dina-admin security auto-start${RESET}${DIM} to skip this):${RESET} "
+        read -rs _run_passphrase
+        echo ""
+        if [ -z "${_run_passphrase}" ]; then
+            fail "Passphrase cannot be empty."
+        fi
+        # Validate passphrase by attempting to unwrap the seed
+        if docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -v "${DINA_DIR}/scripts:/scripts:ro" \
+            -v "${SECRETS_DIR}:/secrets:ro" \
+            -e DINA_SEED_PASSPHRASE="${_run_passphrase}" \
+            dina-crypto-tools \
+            python3 /scripts/unwrap_seed.py /secrets >/dev/null 2>&1; then
+            break
+        else
+            echo -e "  ${YELLOW}✗${RESET} Wrong passphrase. Try again."
+        fi
+    done
     # Write passphrase temporarily for this startup.
     # Core reads it from the Docker secret mount on container start.
     printf '%s' "${_run_passphrase}" > "${SEED_PASSWORD_FILE}"
@@ -190,13 +204,6 @@ else
         echo -e "  ${DIM}${line}${RESET}"
     done
     ok "Containers started"
-
-    # Clear passphrase from disk if we wrote it temporarily for manual-start mode.
-    # Docker has already read the secret into the container's in-memory mount.
-    if [ "${_CLEAR_PASSPHRASE_AFTER_START}" = true ]; then
-        : > "${SEED_PASSWORD_FILE}"
-        chmod 600 "${SEED_PASSWORD_FILE}"
-    fi
 fi
 
 echo ""
@@ -249,7 +256,20 @@ if [ $ELAPSED -ge $HEALTH_TIMEOUT ]; then
         fi
     done
     echo -e "  Full logs: ${CYAN}${COMPOSE} logs${RESET}"
+    # Clear temporary passphrase even on failure — do not leave it on disk
+    if [ "${_CLEAR_PASSPHRASE_AFTER_START}" = true ]; then
+        : > "${SEED_PASSWORD_FILE}"
+        chmod 600 "${SEED_PASSWORD_FILE}"
+    fi
     exit 1
+fi
+
+# Clear passphrase from disk now that Core has read it and is healthy.
+# Must happen AFTER health check, not after compose up -d (race condition:
+# compose up -d returns immediately, entrypoint hasn't read the file yet).
+if [ "${_CLEAR_PASSPHRASE_AFTER_START}" = true ]; then
+    : > "${SEED_PASSWORD_FILE}"
+    chmod 600 "${SEED_PASSWORD_FILE}"
 fi
 
 echo ""
