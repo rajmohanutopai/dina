@@ -73,7 +73,7 @@ setup_llm_provider() {
             ;;
         4)
             LLM_KEY_NAME="OPENROUTER_API_KEY"
-            LLM_EXTRA_LINES="OPENROUTER_MODEL=google/gemini-2.5-flash"
+            LLM_EXTRA_LINES="OPENROUTER_MODEL=google/gemini-3-flash"  # must match models.json
             echo ""
             printf "  Enter your OpenRouter API key: "
             read -r LLM_KEY_VALUE

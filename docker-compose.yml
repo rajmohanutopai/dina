@@ -77,7 +77,8 @@ services:
     volumes:
       - dina-data:/data
       - ./dina.html:/app/dina.html:ro
-      - ./images:/app/images:ro
+      - ./docs/images:/app/images:ro
+      - ./models.json:/app/models.json:ro
       - ./secrets/service_keys/brain:/run/secrets/service_keys/private
       - ./secrets/service_keys/public:/run/secrets/service_keys/public:ro
     environment:

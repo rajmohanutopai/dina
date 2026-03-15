@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "defaults": {
+    "primary": "gemini/gemini-3.1-pro-preview",
+    "lite": "gemini/gemini-3.1-flash-lite-preview",
+    "fallbacks": [
+      "openai/gpt-5.4",
+      "claude/claude-sonnet-4-6",
+      "openrouter/google/gemini-3-flash"
+    ]
+  },
+  "providers": {
+    "gemini": {
+      "display_name": "Google Gemini",
+      "api_key_env": "GEMINI_API_KEY",
+      "api_key_env_alt": "GOOGLE_API_KEY",
+      "embed_model": "models/text-embedding-004",
+      "models": {
+        "gemini-3.1-pro-preview": { "pricing": [2.00, 12.00] },
+        "gemini-3.1-flash-lite-preview": { "pricing": [0.25, 1.50] },
+        "gemini-3-flash-preview": { "pricing": [0.50, 3.00] },
+        "gemini-2.5-flash": { "pricing": [0.30, 2.50] },
+        "gemini-2.5-pro": { "pricing": [1.25, 10.00] }
+      }
+    },
+    "claude": {
+      "display_name": "Anthropic Claude",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "models": {
+        "claude-sonnet-4-6": { "pricing": [3.00, 15.00] },
+        "claude-haiku-4-5-20251001": { "pricing": [1.00, 5.00] }
+      }
+    },
+    "openai": {
+      "display_name": "OpenAI GPT",
+      "api_key_env": "OPENAI_API_KEY",
+      "models": {
+        "gpt-5.4": { "pricing": [5.00, 15.00] },
+        "gpt-5-mini": { "pricing": [0.40, 1.60] }
+      }
+    },
+    "openrouter": {
+      "display_name": "OpenRouter",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "models": {
+        "google/gemini-3-flash": {}
+      }
+    },
+    "ollama": {
+      "display_name": "Ollama",
+      "api_key_env": "OLLAMA_BASE_URL",
+      "is_local": true,
+      "models": {
+        "llama-local": {}
+      }
+    },
+    "llama": {
+      "display_name": "Local LLM",
+      "is_local": true,
+      "models": {
+        "llama-local": {}
+      }
+    }
+  }
+}

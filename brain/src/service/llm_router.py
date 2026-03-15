@@ -30,24 +30,10 @@ from ..port.llm import LLMProvider
 log = structlog.get_logger(__name__)
 
 # Per-million-token pricing (USD) for known models.
-# (input_rate, output_rate).  Updated 2026-03 from ai.google.dev/gemini-api/docs/pricing.
-# Local models = free (not listed).
-_MODEL_PRICING: dict[str, tuple[float, float]] = {
-    # Gemini — google.dev pricing page 2026-03
-    "gemini-3.1-pro-preview": (2.00, 12.00),
-    "gemini-3.1-flash-lite-preview": (0.25, 1.50),
-    "gemini-3-flash-preview": (0.50, 3.00),
-    "gemini-2.5-flash": (0.30, 2.50),
-    "gemini-2.5-flash-lite": (0.10, 0.40),
-    "gemini-2.5-pro": (1.25, 10.00),
-    # Anthropic — anthropic.com/pricing 2026-03
-    "claude-sonnet-4-6": (3.00, 15.00),
-    "claude-haiku-4-5-20251001": (1.00, 5.00),
-    "claude-haiku-4-5": (1.00, 5.00),
-    # OpenAI — openai.com/api/pricing 2026-03
-    "gpt-5.4": (5.00, 15.00),
-    "gpt-5-mini": (0.40, 1.60),
-}
+# Loaded from models.json; local models = free (not listed).
+from ..infra.model_config import get_all_pricing
+
+_MODEL_PRICING: dict[str, tuple[float, float]] = get_all_pricing()
 
 # Task types that can be answered without an LLM call.
 _FTS_ONLY_TASKS = frozenset({"fts_lookup", "keyword_search"})

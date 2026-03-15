@@ -22,11 +22,29 @@ Exit codes:
 from __future__ import annotations
 
 import json
+import os
 import sys
 import urllib.request
 import urllib.error
 
 _TIMEOUT = 15
+
+# Load validation models from models.json (same file Brain uses).
+_VALIDATION_MODELS: dict[str, str] = {}
+_MODELS_JSON = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models.json")
+try:
+    with open(_MODELS_JSON) as _f:
+        _cfg = json.load(_f)
+    for _name, _prov in _cfg.get("providers", {}).items():
+        _vm = _prov.get("validation_model", "")
+        _env = _prov.get("api_key_env", "")
+        if _vm and _env:
+            _VALIDATION_MODELS[_env] = _vm
+        _alt = _prov.get("api_key_env_alt", "")
+        if _vm and _alt:
+            _VALIDATION_MODELS[_alt] = _vm
+except (FileNotFoundError, json.JSONDecodeError, KeyError):
+    pass
 
 
 def _post(url: str, body: dict, headers: dict) -> dict:
@@ -48,10 +66,10 @@ def validate(key_name: str, key_value: str) -> bool:
     """Send a real completion request using only stdlib."""
     try:
         if key_name in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
-            # Use cheapest Gemini model for validation.
+            _gmodel = _VALIDATION_MODELS.get(key_name, "gemini-3.1-flash-lite-preview")
             url = (
                 f"https://generativelanguage.googleapis.com/v1beta/"
-                f"models/gemini-3.1-flash-lite-preview:generateContent?key={key_value}"
+                f"models/{_gmodel}:generateContent?key={key_value}"
             )
             body = {"contents": [{"parts": [{"text": "Reply: ok"}]}],
                     "generationConfig": {"maxOutputTokens": 4}}
@@ -59,8 +77,9 @@ def validate(key_name: str, key_value: str) -> bool:
             return "candidates" in resp
 
         elif key_name == "OPENAI_API_KEY":
+            _omodel = _VALIDATION_MODELS.get("OPENAI_API_KEY", "gpt-5-mini")
             url = "https://api.openai.com/v1/chat/completions"
-            body = {"model": "gpt-5-mini", "messages": [{"role": "user", "content": "Reply: ok"}],
+            body = {"model": _omodel, "messages": [{"role": "user", "content": "Reply: ok"}],
                     "max_tokens": 4}
             resp = _post(url, body, {
                 "Content-Type": "application/json",
@@ -69,8 +88,9 @@ def validate(key_name: str, key_value: str) -> bool:
             return len(resp.get("choices", [{}])[0].get("message", {}).get("content", "")) > 0
 
         elif key_name == "ANTHROPIC_API_KEY":
+            _cmodel = _VALIDATION_MODELS.get("ANTHROPIC_API_KEY", "claude-haiku-4-5-20251001")
             url = "https://api.anthropic.com/v1/messages"
-            body = {"model": "claude-haiku-4-5-20251001", "max_tokens": 4,
+            body = {"model": _cmodel, "max_tokens": 4,
                     "messages": [{"role": "user", "content": "Reply: ok"}]}
             resp = _post(url, body, {
                 "Content-Type": "application/json",
@@ -80,8 +100,9 @@ def validate(key_name: str, key_value: str) -> bool:
             return len(resp.get("content", [{}])[0].get("text", "")) > 0
 
         elif key_name == "OPENROUTER_API_KEY":
+            _rmodel = _VALIDATION_MODELS.get("OPENROUTER_API_KEY", "google/gemini-3-flash")
             url = "https://openrouter.ai/api/v1/chat/completions"
-            body = {"model": "google/gemini-3-flash", "messages": [{"role": "user", "content": "Reply: ok"}],
+            body = {"model": _rmodel, "messages": [{"role": "user", "content": "Reply: ok"}],
                     "max_tokens": 4}
             resp = _post(url, body, {
                 "Content-Type": "application/json",

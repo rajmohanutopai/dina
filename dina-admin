@@ -152,13 +152,26 @@ _model_list() {
     fi
     echo ""
     echo -e "  ${DIM}Override via .env:${RESET}"
-    echo -e "    ${CYAN}GEMINI_MODEL${RESET}        ${DIM}(default: gemini-3.1-pro-preview)${RESET}"
-    echo -e "    ${CYAN}GEMINI_LITE_MODEL${RESET}   ${DIM}(default: gemini-3.1-flash-lite-preview)${RESET}"
-    echo -e "    ${CYAN}CLAUDE_MODEL${RESET}        ${DIM}(default: claude-sonnet-4-6)${RESET}"
-    echo -e "    ${CYAN}CLAUDE_LITE_MODEL${RESET}   ${DIM}(default: claude-haiku-4-5-20251001)${RESET}"
-    echo -e "    ${CYAN}OPENAI_MODEL${RESET}        ${DIM}(default: gpt-5.4)${RESET}"
-    echo -e "    ${CYAN}OPENAI_LITE_MODEL${RESET}   ${DIM}(default: gpt-5-mini)${RESET}"
-    echo -e "    ${CYAN}OPENROUTER_MODEL${RESET}    ${DIM}(default: google/gemini-3-flash)${RESET}"
+    local json_file="$COMPOSE_DIR/models.json"
+    if [ -f "$json_file" ]; then
+        # Read env var names and defaults from models.json
+        $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" exec -T brain \
+            python -c "
+import json
+d=json.load(open('/app/models.json'))
+for p in d.get('providers',{}).values():
+    env=p.get('model_env','')
+    dflt=p.get('default_model','')
+    if env and dflt:
+        print(f'{env}|{dflt}')
+    le=p.get('lite_model_env','')
+    ld=p.get('default_lite_model','')
+    if le and ld:
+        print(f'{le}|{ld}')
+" 2>/dev/null | while IFS='|' read -r env_name default_val; do
+            printf "    ${CYAN}%-20s${RESET} ${DIM}(default: %s)${RESET}\n" "$env_name" "$default_val"
+        done
+    fi
     echo ""
     echo -e "  ${DIM}After changing .env, restart: ${CYAN}./run.sh --restart${RESET}"
 }
