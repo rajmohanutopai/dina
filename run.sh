@@ -117,8 +117,8 @@ if ! has_llm_provider "${ENV_FILE}"; then
     if [ -t 0 ]; then
         setup_llm_provider
         write_llm_to_env "${ENV_FILE}"
-        if [ -n "${LLM_KEY_NAME}" ] && [ -n "${LLM_KEY_VALUE}" ]; then
-            ok "Configured ${LLM_KEY_NAME}"
+        if [ ${#LLM_PROVIDERS[@]} -gt 0 ]; then
+            ok "LLM provider(s) configured"
         fi
     else
         info "Run interactively to configure LLM provider, or edit .env directly"

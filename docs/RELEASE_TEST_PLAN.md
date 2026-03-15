@@ -192,6 +192,7 @@ This plan consolidates the previously discussed scenarios into one release check
 | Anti-Her and Human Connection (Fourth Law) | `REL-025` |
 | Silence First Under Stress (First Law) | `REL-026` |
 | Action Integrity and Approval Gates | `REL-027` |
+| Install Lifecycle Smoke Test | `REL-028` |
 
 ## 7. Scenario Definitions
 
@@ -1525,6 +1526,66 @@ Verify that Dina's action layer enforces draft-don't-send, approval gates surviv
 - fully automatable via Docker harness
 - manual review for UX quality of approval prompts and expiry notifications
 
+## REL-028 Install Lifecycle Smoke Test
+
+### Execution Class
+
+Hybrid.
+
+### Objective
+
+Verify the full black-box install lifecycle in a fresh directory: install.sh → run.sh --stop → run.sh → verify. This is the closest automated equivalent to a fresh-machine install without a disposable VM.
+
+### Preconditions
+
+- Docker daemon running
+- pexpect installed (pip install pexpect)
+- No pre-existing Dina installation in the test directory
+
+### Steps
+
+1. Copy repo to a fresh temp directory (no secrets/, no .env).
+2. Run `./install.sh` via PTY (pexpect) — answer all prompts as a real user:
+   - Create new identity (option 1)
+   - Set passphrase ("rel028pass")
+   - Choose auto-start mode (option 2)
+   - Skip LLM provider (option 6)
+   - Skip Telegram (option 2)
+3. Wait for "Dina is ready!" output.
+4. Verify Core healthz returns 200.
+5. Verify DID endpoint returns a valid `did:plc`.
+6. Run `./run.sh --stop` — verify containers are down.
+7. Run `./run.sh` — verify it reaches "Dina is running" without prompting for passphrase.
+8. Verify Core healthz returns 200 again.
+9. Verify DID is unchanged after restart.
+10. Verify all secret artifacts exist: wrapped_seed.bin, master_seed.salt, seed_password, service key PEMs.
+
+### Assertions
+
+1. Install completes without errors or manual intervention.
+2. All secrets and service keys are created with correct permissions.
+3. Containers are healthy after install.
+4. DID is reachable and valid after install.
+5. Containers stop cleanly via `run.sh --stop`.
+6. Containers restart cleanly via `run.sh` (auto-start mode = no passphrase prompt).
+7. DID does not change across stop/start cycles.
+8. All secret artifacts survive the full lifecycle.
+
+### Evidence
+
+- pexpect transcript of install.sh interaction
+- healthz responses (before stop, after restart)
+- DID comparison (before and after restart)
+- file existence and permission checks
+
+### Suggested Automation
+
+- Fully automated via `tests/release/test_rel_028_install_lifecycle.py`
+- Also available as faster unit tests in `tests/install/` (25 tests covering subsets of this flow)
+- Run via `./scripts/test_install.sh`
+
+---
+
 ## 8. Mapping to Existing Test Assets
 
 This plan should reuse and extend existing test assets where possible:
@@ -1536,6 +1597,8 @@ This plan should reuse and extend existing test assets where possible:
 5. [MANUAL_TEST_GUIDE.md](./MANUAL_TEST_GUIDE.md)
 6. [run_user_story_tests.sh](../run_user_story_tests.sh)
 7. [scripts/test_status.py](../scripts/test_status.py)
+8. [tests/install/](../tests/install/) — 25 pexpect-based black-box install tests
+9. [scripts/test_install.sh](../scripts/test_install.sh) — install test runner
 
 The release implementation should not duplicate those suites blindly. It should:
 

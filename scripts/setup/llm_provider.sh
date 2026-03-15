@@ -8,8 +8,8 @@
 #
 # Functions:
 #   has_llm_provider ENV_FILE  — returns 0 if any LLM provider key is set
-#   setup_llm_provider         — interactive provider selection + validation
-#                                Sets: LLM_KEY_NAME, LLM_KEY_VALUE, LLM_EXTRA_LINES
+#   setup_llm_provider         — interactive multi-provider selection + validation
+#                                Sets: LLM_PROVIDERS (array of KEY=VALUE pairs)
 #   write_llm_to_env ENV_FILE  — appends LLM config to the given .env file
 
 has_llm_provider() {
@@ -26,13 +26,73 @@ has_llm_provider() {
     [ -n "$val" ]
 }
 
+# Array to collect all provider key=value pairs
+LLM_PROVIDERS=()
+
+_validate_key() {
+    local key_name="$1" key_value="$2"
+    if [ -z "${key_name}" ] || [ -z "${key_value}" ]; then
+        return 0
+    fi
+    if ! type run_crypto &>/dev/null; then
+        return 0
+    fi
+    while true; do
+        printf "  Validating API key... "
+        if run_crypto scripts/validate_key.py "${key_name}" "${key_value}" >/dev/null 2>&1; then
+            echo -e "${GREEN}✓${RESET}"
+            return 0
+        else
+            echo -e "${YELLOW}✗${RESET} key did not work"
+            echo ""
+            echo -e "    ${CYAN}1)${RESET} Re-enter key"
+            echo -e "    ${CYAN}2)${RESET} Continue anyway"
+            echo ""
+            printf "  Choice [1-2]: "
+            local retry_choice
+            read -r retry_choice
+            case "${retry_choice}" in
+                1)
+                    printf "  Enter your API key: "
+                    read -r key_value
+                    if [ -z "${key_value}" ]; then
+                        return 1
+                    fi
+                    ;;
+                *)
+                    return 0
+                    ;;
+            esac
+        fi
+    done
+}
+
+_ask_provider_key() {
+    local provider_name="$1" key_env="$2"
+    echo ""
+    printf "  ${BOLD}${provider_name}${RESET} API key: "
+    local key_value
+    read -r key_value
+    if [ -z "${key_value}" ]; then
+        echo -e "  ${DIM}Skipped${RESET}"
+        return
+    fi
+    if _validate_key "${key_env}" "${key_value}"; then
+        LLM_PROVIDERS+=("${key_env}=${key_value}")
+    fi
+}
+
 setup_llm_provider() {
-    LLM_KEY_NAME=""
-    LLM_KEY_VALUE=""
-    LLM_EXTRA_LINES=""
+    LLM_PROVIDERS=()
+
+    if [ ! -t 0 ]; then
+        info "Non-interactive mode — skipping provider selection"
+        return
+    fi
 
     echo ""
-    echo -e "  ${BOLD}Which LLM provider would you like to use?${RESET}"
+    echo -e "  ${BOLD}Which LLM providers would you like to configure?${RESET}"
+    echo -e "  ${DIM}You can select multiple providers. Dina will use them for different tasks.${RESET}"
     echo ""
     echo -e "    ${CYAN}1)${RESET} Google Gemini"
     echo -e "    ${CYAN}2)${RESET} OpenAI GPT"
@@ -41,100 +101,75 @@ setup_llm_provider() {
     echo -e "    ${CYAN}5)${RESET} Ollama"
     echo -e "    ${CYAN}6)${RESET} Skip"
     echo ""
+    echo -e "  ${DIM}Enter one or more numbers separated by spaces (e.g. 1 3):${RESET}"
+    printf "  > "
+    read -r provider_choices
 
-    local provider_choice=""
+    # Parse choices
+    local has_gemini=false has_openai=false has_claude=false has_openrouter=false has_ollama=false
 
-    if [ -t 0 ]; then
-        printf "  Enter choice [1-6]: "
-        read -r provider_choice
-    else
-        provider_choice="6"
-        info "Non-interactive mode — skipping provider selection"
+    for choice in ${provider_choices}; do
+        case "${choice}" in
+            1) has_gemini=true ;;
+            2) has_openai=true ;;
+            3) has_claude=true ;;
+            4) has_openrouter=true ;;
+            5) has_ollama=true ;;
+            6) return ;;
+        esac
+    done
+
+    # Collect API keys for each selected provider
+    if [ "${has_gemini}" = true ]; then
+        _ask_provider_key "Google Gemini" "GEMINI_API_KEY"
     fi
 
-    case "${provider_choice}" in
-        1)
-            LLM_KEY_NAME="GEMINI_API_KEY"
-            echo ""
-            printf "  Enter your Gemini API key: "
-            read -r LLM_KEY_VALUE
-            ;;
-        2)
-            LLM_KEY_NAME="OPENAI_API_KEY"
-            echo ""
-            printf "  Enter your OpenAI API key: "
-            read -r LLM_KEY_VALUE
-            ;;
-        3)
-            LLM_KEY_NAME="ANTHROPIC_API_KEY"
-            echo ""
-            printf "  Enter your Anthropic API key: "
-            read -r LLM_KEY_VALUE
-            ;;
-        4)
-            LLM_KEY_NAME="OPENROUTER_API_KEY"
-            LLM_EXTRA_LINES="OPENROUTER_MODEL=google/gemini-3-flash"  # must match models.json
-            echo ""
-            printf "  Enter your OpenRouter API key: "
-            read -r LLM_KEY_VALUE
-            ;;
-        5)
-            LLM_KEY_NAME="OLLAMA_BASE_URL"
-            LLM_KEY_VALUE="http://localhost:11434"
-            echo ""
-            echo -e "  ${DIM}Using local Ollama at http://localhost:11434${RESET}"
-            echo -e "  ${DIM}Make sure Ollama is running: ollama serve${RESET}"
-            ;;
-        *)
-            info "Skipping provider setup — edit .env later to add your API key"
-            ;;
-    esac
+    if [ "${has_openai}" = true ]; then
+        _ask_provider_key "OpenAI GPT" "OPENAI_API_KEY"
+    fi
 
-    # Validate API key immediately using the crypto Docker container.
-    # validate_key.py uses only stdlib (urllib) — no pip packages needed.
-    if [ -n "${LLM_KEY_NAME}" ] && [ -n "${LLM_KEY_VALUE}" ] && [ -t 0 ] && type run_crypto &>/dev/null; then
-        while true; do
-            printf "  Validating API key... "
-            if run_crypto scripts/validate_key.py "${LLM_KEY_NAME}" "${LLM_KEY_VALUE}" >/dev/null 2>&1; then
-                echo -e "${GREEN}✓${RESET}"
+    if [ "${has_claude}" = true ]; then
+        _ask_provider_key "Anthropic Claude" "ANTHROPIC_API_KEY"
+    fi
+
+    if [ "${has_openrouter}" = true ]; then
+        _ask_provider_key "OpenRouter" "OPENROUTER_API_KEY"
+        # Add default model for OpenRouter
+        for entry in "${LLM_PROVIDERS[@]}"; do
+            if [[ "${entry}" == OPENROUTER_API_KEY=* ]]; then
+                LLM_PROVIDERS+=("OPENROUTER_MODEL=google/gemini-3-flash")
                 break
-            else
-                echo -e "${YELLOW}✗${RESET} key did not work"
-                echo ""
-                echo -e "    ${CYAN}1)${RESET} Re-enter key"
-                echo -e "    ${CYAN}2)${RESET} Continue anyway"
-                echo ""
-                printf "  Choice [1-2]: "
-                local retry_choice
-                read -r retry_choice
-                case "${retry_choice}" in
-                    1)
-                        printf "  Enter your API key: "
-                        read -r LLM_KEY_VALUE
-                        if [ -z "${LLM_KEY_VALUE}" ]; then
-                            info "Empty key — skipping"
-                            LLM_KEY_NAME=""
-                            LLM_KEY_VALUE=""
-                            break
-                        fi
-                        ;;
-                    *)
-                        break
-                        ;;
-                esac
             fi
         done
+    fi
+
+    if [ "${has_ollama}" = true ]; then
+        echo ""
+        echo -e "  ${DIM}Using local Ollama at http://localhost:11434${RESET}"
+        echo -e "  ${DIM}Make sure Ollama is running: ollama serve${RESET}"
+        LLM_PROVIDERS+=("OLLAMA_BASE_URL=http://localhost:11434")
+    fi
+
+    # Summary
+    local count=0
+    for _ in "${LLM_PROVIDERS[@]}"; do
+        # Don't count OPENROUTER_MODEL as a separate provider
+        count=$((count + 1))
+    done
+    if [ ${count} -gt 0 ]; then
+        echo ""
+        echo -e "  ${GREEN}${count} provider(s) configured${RESET}"
     fi
 }
 
 write_llm_to_env() {
     local env_file="$1"
-    if [ -n "${LLM_KEY_NAME}" ] && [ -n "${LLM_KEY_VALUE}" ]; then
-        echo "" >> "${env_file}"
-        echo "# LLM Provider" >> "${env_file}"
-        echo "${LLM_KEY_NAME}=${LLM_KEY_VALUE}" >> "${env_file}"
-        if [ -n "${LLM_EXTRA_LINES}" ]; then
-            echo "${LLM_EXTRA_LINES}" >> "${env_file}"
-        fi
+    if [ ${#LLM_PROVIDERS[@]} -eq 0 ]; then
+        return
     fi
+    echo "" >> "${env_file}"
+    echo "# LLM Providers" >> "${env_file}"
+    for entry in "${LLM_PROVIDERS[@]}"; do
+        echo "${entry}" >> "${env_file}"
+    done
 }

@@ -699,21 +699,9 @@ ENVEOF
     write_llm_to_env "${ENV_FILE}"
     write_telegram_to_env "${ENV_FILE}"
 
+    # Add provider hint
     echo "" >> "${ENV_FILE}"
-    cat >> "${ENV_FILE}" << 'ENVEOF'
-# Other providers (uncomment and set to enable)
-# GEMINI_API_KEY=
-# ANTHROPIC_API_KEY=
-# OPENAI_API_KEY=
-# OPENROUTER_API_KEY=
-# OPENROUTER_MODEL=google/gemini-2.5-flash
-# OLLAMA_BASE_URL=http://localhost:11434
-
-# Telegram Bot (uncomment and set to enable)
-# DINA_TELEGRAM_TOKEN=
-# DINA_TELEGRAM_ALLOWED_USERS=
-# DINA_TELEGRAM_ALLOWED_GROUPS=
-ENVEOF
+    echo "# Add more providers: see models.json or run ./dina-admin model list" >> "${ENV_FILE}"
 
     chmod 600 "${ENV_FILE}"
     verbose_ok "Created .env"
