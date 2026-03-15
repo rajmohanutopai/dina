@@ -177,15 +177,18 @@ class TestDockerNotRunning:
     def test_install_no_docker_fails_early(self, install_dir: Path) -> None:
         """Install fails before reaching identity setup when Docker is missing.
 
-        Uses an empty temp dir as PATH so no system binaries are found
-        except bash itself (which is invoked directly, not via PATH).
+        Uses an empty temp dir as PATH so no system binaries are found.
+        Bash is invoked by full path so pexpect can find it.
         """
+        import shutil
+        bash_path = shutil.which("bash") or "/bin/bash"
+
         with tempfile.TemporaryDirectory() as fake_bin:
             env = {**os.environ, "DINA_DIR": str(install_dir)}
             env["PATH"] = fake_bin
 
             child = pexpect.spawn(
-                "bash",
+                bash_path,
                 [str(install_dir / "install.sh")],
                 cwd=str(install_dir),
                 timeout=30,

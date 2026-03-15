@@ -1,6 +1,9 @@
 """Fixtures for install.sh black-box tests.
 
-Each test gets a fresh copy of the repo in a temp directory.
+Each test gets either:
+- install_dir: a fresh copy of the repo (no install done yet) — function-scoped
+- installed_dir: a pre-installed directory (install.sh already run) — session-scoped
+
 Tests use pexpect to drive the interactive installer as a real user would.
 
 Requires: pexpect, Docker running.
@@ -67,35 +70,8 @@ def _copy_repo_subset(dest: Path) -> None:
         shutil.copy2(dina_html, dest / "dina.html")
 
 
-@pytest.fixture(scope="session")
-def docker_available():
-    """Skip all install tests if Docker is not running."""
-    try:
-        result = subprocess.run(
-            ["docker", "info"],
-            capture_output=True,
-            timeout=10,
-        )
-        if result.returncode != 0:
-            pytest.skip("Docker daemon not running")
-    except FileNotFoundError:
-        pytest.skip("Docker not installed")
-
-
-@pytest.fixture
-def install_dir(tmp_path, docker_available):
-    """Create a fresh temp directory with a copy of the repo for install testing.
-
-    Returns the Path to the temp install directory.
-    Cleanup: removes any Docker resources created during the test.
-    """
-    dest = tmp_path / "dina"
-    dest.mkdir()
-    _copy_repo_subset(dest)
-
-    yield dest
-
-    # Cleanup: stop any containers started by this test
+def _cleanup_containers(dest: Path) -> None:
+    """Stop any Docker containers started from this install directory."""
     env_file = dest / ".env"
     if env_file.exists():
         try:
@@ -115,27 +91,63 @@ def install_dir(tmp_path, docker_available):
             pass
 
 
-@pytest.fixture
-def installed_dir(install_dir):
-    """Run install.sh non-interactively and return the directory.
+@pytest.fixture(scope="session")
+def docker_available():
+    """Skip all install tests if Docker is not running."""
+    try:
+        result = subprocess.run(
+            ["docker", "info"],
+            capture_output=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            pytest.skip("Docker daemon not running")
+    except FileNotFoundError:
+        pytest.skip("Docker not installed")
 
-    This is a pre-installed state for tests that need a working install
-    without driving the interactive flow.
+
+@pytest.fixture
+def install_dir(tmp_path, docker_available):
+    """Create a fresh temp directory with a copy of the repo for install testing.
+
+    Function-scoped — each test gets a clean directory with no prior install.
+    Cleanup: removes any Docker resources created during the test.
+    """
+    dest = tmp_path / "dina"
+    dest.mkdir()
+    _copy_repo_subset(dest)
+
+    yield dest
+
+    _cleanup_containers(dest)
+
+
+@pytest.fixture(scope="session")
+def installed_dir(docker_available, tmp_path_factory):
+    """Run install.sh once and return the directory for all tests to share.
+
+    Session-scoped — install runs once, all TestFreshInstall tests
+    verify different aspects of the same install. This avoids running
+    a 3-5 minute install for each individual assertion.
     """
     import pexpect
 
+    dest = tmp_path_factory.mktemp("installed") / "dina"
+    dest.mkdir()
+    _copy_repo_subset(dest)
+
     child = pexpect.spawn(
         "bash",
-        [str(install_dir / "install.sh")],
-        cwd=str(install_dir),
-        timeout=300,
+        [str(dest / "install.sh")],
+        cwd=str(dest),
+        timeout=600,
         encoding="utf-8",
-        env={**os.environ, "DINA_DIR": str(install_dir)},
+        env={**os.environ, "DINA_DIR": str(dest)},
     )
 
     # Answer prompts for a basic install
     # 1. Identity: create new (option 1)
-    child.expect("Enter choice \\[1-3\\]:", timeout=120)
+    child.expect("Enter choice \\[1-3\\]:", timeout=300)
     child.sendline("1")
 
     # 2. Passphrase
@@ -158,11 +170,13 @@ def installed_dir(install_dir):
 
     # Wait for completion or timeout
     try:
-        child.expect("Dina is ready!", timeout=300)
+        child.expect("Dina is ready!", timeout=600)
     except pexpect.TIMEOUT:
         print(f"TIMEOUT — last output:\n{child.before}")
         raise
 
     child.close()
 
-    return install_dir
+    yield dest
+
+    _cleanup_containers(dest)
