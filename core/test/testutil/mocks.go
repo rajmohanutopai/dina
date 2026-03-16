@@ -340,7 +340,7 @@ func (m *MockTokenValidator) IdentifyToken(token string) (domain.TokenType, stri
 	return domain.TokenUnknown, "", ErrInvalidToken
 }
 
-func (m *MockTokenValidator) VerifySignature(did, method, path, query, timestamp string, body []byte, signatureHex string) (domain.TokenType, string, error) {
+func (m *MockTokenValidator) VerifySignature(did, method, path, query, timestamp, nonce string, body []byte, signatureHex string) (domain.TokenType, string, error) {
 	// Check service keys
 	if serviceID, ok := m.ServiceKeys[did]; ok {
 		return domain.TokenService, serviceID, nil

@@ -326,13 +326,16 @@ def sign_test_request(
     ``/api/v1/process``), matching what the mounted sub-app sees in
     ``request.url.path``.
     """
+    import secrets
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    nonce = secrets.token_hex(16)
     body_hash = hashlib.sha256(body).hexdigest() if body else _EMPTY_BODY_HASH
-    payload = f"{method}\n{path}\n{query}\n{timestamp}\n{body_hash}"
+    payload = f"{method}\n{path}\n{query}\n{timestamp}\n{nonce}\n{body_hash}"
     signature = _TEST_SIGNING_KEY.sign(payload.encode("utf-8"))
     return {
         "X-DID": "did:key:zTestCoreServiceKey",
         "X-Timestamp": timestamp,
+        "X-Nonce": nonce,
         "X-Signature": signature.hex(),
     }
 

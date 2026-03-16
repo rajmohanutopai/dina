@@ -36,8 +36,8 @@
 
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-CLI-011]** Sign returns three parts | `sign_request("POST", "/v1/vault/query", body)` | Returns `(did, timestamp, signature_hex)` — DID starts with `did:key:z`, timestamp is ISO 8601 UTC, sig is 128 hex chars |
-| 2 | **[TST-CLI-012]** Signature is verifiable | Sign a request, reconstruct canonical payload | `Ed25519PublicKey.verify()` succeeds — signature matches 5-part canonical payload |
+| 1 | **[TST-CLI-011]** Sign returns four parts | `sign_request("POST", "/v1/vault/query", body)` | Returns `(did, timestamp, nonce, signature_hex)` — DID starts with `did:key:z`, timestamp is ISO 8601 UTC, nonce is 32 hex chars, sig is 128 hex chars |
+| 2 | **[TST-CLI-012]** Signature is verifiable | Sign a request, reconstruct canonical payload | `Ed25519PublicKey.verify()` succeeds — signature matches 6-part canonical payload `{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{NONCE}\n{SHA256(BODY)}` |
 | 3 | **[TST-CLI-013]** Empty body signing | `sign_request("GET", "/healthz")` with no body | Uses SHA-256 of empty string — signature verifiable |
 | 4 | **[TST-CLI-014]** Different payloads produce different signatures | Sign two requests with different paths/bodies | `sig1 != sig2` |
 

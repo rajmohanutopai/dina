@@ -67,10 +67,12 @@ Internal service-to-service authentication with per-service least privilege. Eac
 Every request is signed using a canonical format:
 
 ```
-{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{SHA256_HEX(BODY)}
+{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{NONCE}\n{SHA256_HEX(BODY)}
 ```
 
-Transmitted via headers: `X-DID`, `X-Timestamp`, `X-Signature`.
+Transmitted via headers: `X-DID`, `X-Timestamp`, `X-Nonce`, `X-Signature`.
+
+The nonce is a 16-byte random hex string generated per-request. It guarantees unique signatures even for identical payloads within the same second — no same-payload retry collisions.
 
 **Replay protection:** 5-minute timestamp window + double-buffer nonce cache. Current generation collects all new nonces; previous generation is checked for duplicates. Rotation every 5 minutes or when current exceeds 100,000 entries.
 
@@ -425,12 +427,3 @@ Documented limitations of the current implementation, with the deployment contex
 
 **Resolution:** Phase 2 — migrate admin backend to Ed25519 service auth (same as vault/reason paths). Remove CLIENT_TOKEN entirely. See Authentication §2 above.
 
-### Signing Protocol Replay Window
-
-**Gap:** Ed25519 request signatures use second-precision timestamps and no nonce. Two requests with byte-identical bodies within the same second produce the same signature, which Core's nonce cache rejects as replay.
-
-**Why it's acceptable now:** In practice, payloads always differ between calls — CLI blocks on user input, Brain's tool calls have different queries/personas, and timestamps rotate every second.
-
-**When it matters:** Automated retry logic that resends the same payload within one second (e.g. a queue worker retrying a failed store).
-
-**Resolution:** Add a random nonce field to the canonical signing payload. Requires coordinated changes across Core verifier, Brain signer, and CLI signer.

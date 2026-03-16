@@ -107,7 +107,7 @@ docker-compose.yml:
 
 | Method | Who | How | Scope |
 |--------|-----|-----|-------|
-| **Ed25519 Service Keys** | Core ↔ Services | SLIP-0010 derived keypairs. Signed canonical: `{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{SHA256(BODY)}`. Headers: `X-DID`, `X-Timestamp`, `X-Signature`. 5-min window + nonce cache. Per-service allowlists: brain (vault/msg/pii), admin (persona/device/export), connector (vault/store only). | Per-service least privilege |
+| **Ed25519 Service Keys** | Core ↔ Services | SLIP-0010 derived keypairs. Signed canonical: `{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{NONCE}\n{SHA256(BODY)}`. Headers: `X-DID`, `X-Timestamp`, `X-Nonce`, `X-Signature`. 16-byte random nonce per request. 5-min window + nonce cache. Per-service allowlists: brain (vault/msg/pii), admin (persona/device/export), connector (vault/store only). | Per-service least privilege |
 | **CLIENT_TOKEN** | Admin web UI | 32-byte random, SHA-256 hashed in `device_tokens` table. Browser uses passphrase → session cookie → Core injects Bearer token. | Admin access |
 | **Ed25519 Device Keys** | CLI, paired devices | Per-device keypair registered during pairing. Same signature format as service keys. | Full access including admin |
 

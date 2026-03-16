@@ -16,7 +16,8 @@ type TokenValidator interface {
 	// Checks service keys first (returns TokenService + serviceID), then
 	// device keys (returns TokenClient + deviceID). Enforces timestamp
 	// window + nonce replay cache.
-	VerifySignature(did, method, path, query, timestamp string, body []byte, signatureHex string) (kind domain.TokenType, identity string, err error)
+	// The nonce parameter is a random hex string from the X-Nonce header.
+	VerifySignature(did, method, path, query, timestamp, nonce string, body []byte, signatureHex string) (kind domain.TokenType, identity string, err error)
 }
 
 // ServiceKeyRegistrar allows the composition root to register Ed25519

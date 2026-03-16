@@ -98,6 +98,7 @@ func (a *Auth) Handler(next http.Handler) http.Handler {
 		xDID := r.Header.Get("X-DID")
 		xSig := r.Header.Get("X-Signature")
 		xTS := r.Header.Get("X-Timestamp")
+		xNonce := r.Header.Get("X-Nonce")
 
 		if xDID != "" && xSig != "" && xTS != "" {
 			// Fast-fail: reject expired timestamps before reading body.
@@ -122,7 +123,7 @@ func (a *Auth) Handler(next http.Handler) http.Handler {
 			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
 			kind, identity, err := a.Tokens.VerifySignature(
-				xDID, r.Method, r.URL.Path, r.URL.RawQuery, xTS, bodyBytes, xSig,
+				xDID, r.Method, r.URL.Path, r.URL.RawQuery, xTS, xNonce, bodyBytes, xSig,
 			)
 			if err != nil {
 				http.Error(w, `{"error":"invalid signature"}`, http.StatusUnauthorized)

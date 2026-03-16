@@ -50,13 +50,14 @@ func TestAuth_1_1_ServiceKeyAuth(t *testing.T) {
 
 	t.Run("1_ValidSignature", func(t *testing.T) {
 		ts := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+		nonce := testNonce()
 		body := []byte(`{"event":"test"}`)
 		bodyHash := sha256.Sum256(body)
-		payload := fmt.Sprintf("POST\n/api/v1/process\n\n%s\n%s", ts, hex.EncodeToString(bodyHash[:]))
+		payload := fmt.Sprintf("POST\n/api/v1/process\n\n%s\n%s\n%s", ts, nonce, hex.EncodeToString(bodyHash[:]))
 		sig := ed25519.Sign(priv, []byte(payload))
 		sigHex := hex.EncodeToString(sig)
 
-		kind, identity, err := tv.VerifySignature(brainDID, "POST", "/api/v1/process", "", ts, body, sigHex)
+		kind, identity, err := tv.VerifySignature(brainDID, "POST", "/api/v1/process", "", ts, nonce, body, sigHex)
 		testutil.RequireNoError(t, err)
 		testutil.RequireEqual(t, kind, domain.TokenService)
 		testutil.RequireEqual(t, identity, "brain")
@@ -65,26 +66,27 @@ func TestAuth_1_1_ServiceKeyAuth(t *testing.T) {
 	t.Run("2_WrongSignature", func(t *testing.T) {
 		ts := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 		body := []byte(`{"event":"test"}`)
-		_, _, err := tv.VerifySignature(brainDID, "POST", "/api/v1/process", "", ts, body, "deadbeef")
+		_, _, err := tv.VerifySignature(brainDID, "POST", "/api/v1/process", "", ts, "", body, "deadbeef")
 		testutil.RequireError(t, err)
 	})
 
 	t.Run("3_UnknownDID", func(t *testing.T) {
 		ts := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 		body := []byte(`{}`)
-		_, _, err := tv.VerifySignature("did:key:zUnknown", "POST", "/api/v1/process", "", ts, body, "deadbeef")
+		_, _, err := tv.VerifySignature("did:key:zUnknown", "POST", "/api/v1/process", "", ts, "", body, "deadbeef")
 		testutil.RequireError(t, err)
 	})
 
 	t.Run("4_ExpiredTimestamp", func(t *testing.T) {
 		ts := time.Now().UTC().Add(-10 * time.Minute).Format("2006-01-02T15:04:05Z")
+		nonce := testNonce()
 		body := []byte(`{}`)
 		bodyHash := sha256.Sum256(body)
-		payload := fmt.Sprintf("POST\n/api/v1/process\n\n%s\n%s", ts, hex.EncodeToString(bodyHash[:]))
+		payload := fmt.Sprintf("POST\n/api/v1/process\n\n%s\n%s\n%s", ts, nonce, hex.EncodeToString(bodyHash[:]))
 		sig := ed25519.Sign(priv, []byte(payload))
 		sigHex := hex.EncodeToString(sig)
 
-		_, _, err := tv.VerifySignature(brainDID, "POST", "/api/v1/process", "", ts, body, sigHex)
+		_, _, err := tv.VerifySignature(brainDID, "POST", "/api/v1/process", "", ts, nonce, body, sigHex)
 		testutil.RequireError(t, err)
 	})
 
@@ -1750,18 +1752,18 @@ func TestAuth_1_5_6_RuntimeServiceKeyIsolation(t *testing.T) {
 
 	// Sign a request as brain.
 	body := []byte(`{"query":"test"}`)
-	brainSig := signRequest(brainPriv, "POST", "/v1/vault/query", "", timestamp, body)
+	brainSig, brainNonce := signRequest(brainPriv, "POST", "/v1/vault/query", "", timestamp, body)
 
-	kind, identity, err := tv.VerifySignature(brainDID, "POST", "/v1/vault/query", "", timestamp, body, brainSig)
+	kind, identity, err := tv.VerifySignature(brainDID, "POST", "/v1/vault/query", "", timestamp, brainNonce, body, brainSig)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, kind, domain.TokenService)
 	testutil.RequireEqual(t, identity, "brain")
 
 	// Sign a request as admin.
 	body2 := []byte(`{"persona":"health"}`)
-	adminSig := signRequest(adminPriv, "POST", "/v1/persona/unlock", "", timestamp, body2)
+	adminSig, adminNonce := signRequest(adminPriv, "POST", "/v1/persona/unlock", "", timestamp, body2)
 
-	kind2, identity2, err := tv.VerifySignature(adminDID, "POST", "/v1/persona/unlock", "", timestamp, body2, adminSig)
+	kind2, identity2, err := tv.VerifySignature(adminDID, "POST", "/v1/persona/unlock", "", timestamp, adminNonce, body2, adminSig)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, kind2, domain.TokenService)
 	testutil.RequireEqual(t, identity2, "admin")
@@ -1781,7 +1783,7 @@ func TestAuth_1_5_6_RuntimeServiceKeyIsolation(t *testing.T) {
 
 	// Cross-check: brain's DID cannot authenticate as admin.
 	// If someone replays brain's signature against admin's DID, verification fails.
-	_, _, err = tv.VerifySignature(adminDID, "POST", "/v1/vault/query", "", timestamp, body, brainSig)
+	_, _, err = tv.VerifySignature(adminDID, "POST", "/v1/vault/query", "", timestamp, brainNonce, body, brainSig)
 	testutil.RequireError(t, err)
 }
 

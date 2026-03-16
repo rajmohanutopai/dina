@@ -1398,11 +1398,12 @@ func TestWS_9_6_3_SignedUpgradeThroughMiddleware(t *testing.T) {
 
 	// 3. Sign a GET /ws request with the device key.
 	timestamp := now.Format("2006-01-02T15:04:05Z")
-	sigHex := signRequest(priv, "GET", "/ws", "", timestamp, nil)
+	sigHex, nonce := signRequest(priv, "GET", "/ws", "", timestamp, nil)
 
 	req, _ := http.NewRequest("GET", server.URL+"/ws", nil)
 	req.Header.Set("X-DID", did)
 	req.Header.Set("X-Timestamp", timestamp)
+	req.Header.Set("X-Nonce", nonce)
 	req.Header.Set("X-Signature", sigHex)
 
 	resp, err := http.DefaultClient.Do(req)

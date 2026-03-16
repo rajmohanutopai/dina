@@ -9,11 +9,12 @@
 //
 // Signing uses the same canonical payload format as CLI device auth:
 //
-//	{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{SHA256_HEX(BODY)}
+//	{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{NONCE}\n{SHA256_HEX(BODY)}
 package servicekey
 
 import (
 	"crypto/ed25519"
+	crypto_rand "crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/hex"
@@ -72,14 +73,22 @@ func (sk *ServiceKey) LoadPeerKey(peerName string) (ed25519.PublicKey, string, e
 	return pub, deriveDID(pub), nil
 }
 
-// SignRequest signs an HTTP request using the CLI canonical payload format.
-// Returns (did, timestamp, signatureHex).
-func (sk *ServiceKey) SignRequest(method, path, query string, body []byte) (string, string, string) {
+// SignRequest signs an HTTP request using the canonical payload format.
+// Returns (did, timestamp, nonce, signatureHex).
+func (sk *ServiceKey) SignRequest(method, path, query string, body []byte) (string, string, string, string) {
 	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+	nonce := generateNonce()
 	bodyHash := sha256Hex(body)
-	payload := fmt.Sprintf("%s\n%s\n%s\n%s\n%s", method, path, query, timestamp, bodyHash)
+	payload := fmt.Sprintf("%s\n%s\n%s\n%s\n%s\n%s", method, path, query, timestamp, nonce, bodyHash)
 	sig := ed25519.Sign(sk.privateKey, []byte(payload))
-	return sk.did, timestamp, hex.EncodeToString(sig)
+	return sk.did, timestamp, nonce, hex.EncodeToString(sig)
+}
+
+// generateNonce returns a 16-byte random hex string for request signing.
+func generateNonce() string {
+	b := make([]byte, 16)
+	_, _ = crypto_rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 // DID returns the did:key identifier for this service.

@@ -81,12 +81,14 @@ class _ServiceSigner:
         path: str,
         body: bytes | None = None,
         query: str = "",
-    ) -> tuple[str, str, str]:
+    ) -> tuple[str, str, str, str]:
+        import secrets as _secrets
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        nonce = _secrets.token_hex(16)
         body_hash = hashlib.sha256(body or b"").hexdigest()
-        payload = f"{method}\n{path}\n{query}\n{timestamp}\n{body_hash}"
+        payload = f"{method}\n{path}\n{query}\n{timestamp}\n{nonce}\n{body_hash}"
         signature = self._private_key.sign(payload.encode("utf-8"))
-        return self._did, timestamp, signature.hex()
+        return self._did, timestamp, nonce, signature.hex()
 
 
 _SIGNER_CACHE: dict[str, _ServiceSigner | None] = {}
@@ -150,7 +152,7 @@ def _try_request(
                 req = client.build_request(method.upper(), url, **req_kwargs)
                 if signer is not None:
                     query = req.url.query.decode("ascii") if req.url.query else ""
-                    did, ts, sig = signer.sign_request(
+                    did, ts, nonce, sig = signer.sign_request(
                         method=req.method,
                         path=req.url.path,
                         body=req.content,
@@ -158,6 +160,7 @@ def _try_request(
                     )
                     req.headers["X-DID"] = did
                     req.headers["X-Timestamp"] = ts
+                    req.headers["X-Nonce"] = nonce
                     req.headers["X-Signature"] = sig
                 resp = client.send(req)
             if resp.is_success or resp.status_code == 201:

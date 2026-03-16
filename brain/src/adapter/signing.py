@@ -8,7 +8,7 @@ live in {keyDir}/public/ — a shared read-only directory both services can read
 
 Signing uses the same canonical payload format as CLI device auth::
 
-    {METHOD}\\n{PATH}\\n{QUERY}\\n{TIMESTAMP}\\n{SHA256_HEX(BODY)}
+    {METHOD}\\n{PATH}\\n{QUERY}\\n{TIMESTAMP}\\n{NONCE}\\n{SHA256_HEX(BODY)}
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import secrets
 import threading
 import time
 from datetime import datetime, timezone
@@ -174,22 +175,23 @@ class ServiceIdentity:
         path: str,
         body: bytes | None = None,
         query: str = "",
-    ) -> tuple[str, str, str]:
+    ) -> tuple[str, str, str, str]:
         """Sign an HTTP request.
 
-        Returns ``(did, timestamp, signature_hex)``.
+        Returns ``(did, timestamp, nonce, signature_hex)``.
 
         The canonical signing payload is::
 
-            {METHOD}\\n{PATH}\\n{QUERY}\\n{TIMESTAMP}\\n{SHA256_HEX_OF_BODY}
+            {METHOD}\\n{PATH}\\n{QUERY}\\n{TIMESTAMP}\\n{NONCE}\\n{SHA256_HEX(BODY)}
         """
         assert self._private_key is not None, "Key not loaded"
 
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        nonce = secrets.token_hex(16)
         body_hash = hashlib.sha256(body).hexdigest() if body else _EMPTY_BODY_HASH
-        payload = f"{method}\n{path}\n{query}\n{timestamp}\n{body_hash}"
+        payload = f"{method}\n{path}\n{query}\n{timestamp}\n{nonce}\n{body_hash}"
         signature = self._private_key.sign(payload.encode("utf-8"))
-        return self.did(), timestamp, signature.hex()
+        return self.did(), timestamp, nonce, signature.hex()
 
     # -- Request verification --------------------------------------------------
 
@@ -200,12 +202,16 @@ class ServiceIdentity:
         path: str,
         query: str,
         timestamp: str,
+        nonce: str,
         body: bytes,
         signature_hex: str,
     ) -> bool:
         """Verify an Ed25519 request signature.
 
-        Uses the same canonical payload format as signing.
+        Uses the same canonical payload format as signing::
+
+            {METHOD}\\n{PATH}\\n{QUERY}\\n{TIMESTAMP}\\n{NONCE}\\n{SHA256_HEX(BODY)}
+
         Checks the 5-minute timestamp window.
         """
         # Check timestamp window.
@@ -221,7 +227,7 @@ class ServiceIdentity:
 
         # Reconstruct canonical payload.
         body_hash = hashlib.sha256(body).hexdigest()
-        payload = f"{method}\n{path}\n{query}\n{timestamp}\n{body_hash}"
+        payload = f"{method}\n{path}\n{query}\n{timestamp}\n{nonce}\n{body_hash}"
 
         # Verify signature.
         try:

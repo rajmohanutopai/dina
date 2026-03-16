@@ -212,37 +212,29 @@ def _sha256_hex(data: bytes) -> str:
 
 def _sign_request(
     priv: Ed25519PrivateKey, method: str, path: str,
-    query: str, timestamp: str, body: bytes,
+    query: str, timestamp: str, nonce: str, body: bytes,
 ) -> str:
     """Build canonical payload and sign with Ed25519 (same as Go Core)."""
     body_hash = _sha256_hex(body)
-    payload = f"{method}\n{path}\n{query}\n{timestamp}\n{body_hash}"
+    payload = f"{method}\n{path}\n{query}\n{timestamp}\n{nonce}\n{body_hash}"
     sig = priv.sign(payload.encode())
     return sig.hex()
-
-
-_nonce_counter = 0
 
 
 def _device_post(
     core_url: str, priv: Ed25519PrivateKey, did: str,
     path: str, body: dict, *, session: str = "",
 ) -> httpx.Response:
-    """Send a device-signed POST request to Core.
-
-    Injects a monotonic _nonce into the body so that two calls with the same
-    logical payload within the same second produce different signatures.
-    Core's replay cache (auth.go:318) rejects identical signatures.
-    """
-    global _nonce_counter
-    _nonce_counter += 1
-    body = {**body, "_nonce": _nonce_counter}
+    """Send a device-signed POST request to Core."""
+    import secrets
     body_bytes = json.dumps(body).encode()
     timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    sig_hex = _sign_request(priv, "POST", path, "", timestamp, body_bytes)
+    nonce = secrets.token_hex(16)
+    sig_hex = _sign_request(priv, "POST", path, "", timestamp, nonce, body_bytes)
     headers = {
         "X-DID": did,
         "X-Timestamp": timestamp,
+        "X-Nonce": nonce,
         "X-Signature": sig_hex,
         "Content-Type": "application/json",
     }
@@ -553,14 +545,12 @@ class TestBrainMediatedApprovalPath:
 
     def _brain_post(self, path, body, *, agent_did="", session=""):
         """Send a Brain-service-key-signed POST with agent context headers."""
-        global _nonce_counter
-        _nonce_counter += 1
-        body = {**body, "_nonce": _nonce_counter}
         body_bytes = json.dumps(body).encode()
-        did, ts, sig = self._signer.sign_request("POST", path, body_bytes)
+        did, ts, nonce, sig = self._signer.sign_request("POST", path, body_bytes)
         headers = {
             "X-DID": did,
             "X-Timestamp": ts,
+            "X-Nonce": nonce,
             "X-Signature": sig,
             "Content-Type": "application/json",
         }

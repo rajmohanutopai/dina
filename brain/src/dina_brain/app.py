@@ -154,6 +154,7 @@ def create_brain_app(
         # Path 1: Ed25519 signed request
         x_did = request.headers.get("x-did")
         x_ts = request.headers.get("x-timestamp")
+        x_nonce = request.headers.get("x-nonce", "")
         x_sig = request.headers.get("x-signature")
 
         if x_did and x_ts and x_sig:
@@ -175,6 +176,7 @@ def create_brain_app(
                 path=request.url.path,
                 query=request.url.query or "",
                 timestamp=x_ts,
+                nonce=x_nonce,
                 body=body,
                 signature_hex=x_sig,
             )

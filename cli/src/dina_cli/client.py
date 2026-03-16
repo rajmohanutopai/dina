@@ -88,10 +88,11 @@ class DinaClient:
             if "params" in kwargs and kwargs["params"]:
                 from urllib.parse import urlencode
                 query = urlencode(kwargs["params"], doseq=True)
-            did, ts, sig = self._identity.sign_request(method, path, body_bytes, query=query)
+            did, ts, nonce, sig = self._identity.sign_request(method, path, body_bytes, query=query)
             headers = kwargs.get("headers") or {}
             headers["X-DID"] = did
             headers["X-Timestamp"] = ts
+            headers["X-Nonce"] = nonce
             headers["X-Signature"] = sig
             kwargs["headers"] = headers
 

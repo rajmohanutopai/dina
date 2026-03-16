@@ -25,7 +25,7 @@ def config():
 def mock_identity():
     """Mock CLIIdentity so DinaClient doesn't need real keypair on disk."""
     mock_id = MagicMock()
-    mock_id.sign_request.return_value = ("did:key:z6MkTest", "2026-01-01T00:00:00Z", "aabb" * 32)
+    mock_id.sign_request.return_value = ("did:key:z6MkTest", "2026-01-01T00:00:00Z", "cc" * 16, "aabb" * 32)
     mock_id.did.return_value = "did:key:z6MkTest"
     with patch("dina_cli.client.CLIIdentity", return_value=mock_id):
         yield mock_id

@@ -35,16 +35,16 @@ func TestSecFix_32_1_1_ReplaySignatureRejected(t *testing.T) {
 
 	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 	body := []byte(`{"action":"remember","text":"test-replay"}`)
-	sigHex := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, body)
+	sigHex, nonce := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, body)
 
 	// First use should succeed.
-	kind, identity, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, body, sigHex)
+	kind, identity, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, nonce, body, sigHex)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, kind, domain.TokenClient)
 	testutil.RequireEqual(t, identity, "device-sig-001")
 
 	// Replay the same signature — must be rejected.
-	_, _, err = tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, body, sigHex)
+	_, _, err = tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, nonce, body, sigHex)
 	testutil.RequireError(t, err)
 	testutil.RequireContains(t, err.Error(), "replayed")
 }
@@ -56,15 +56,15 @@ func TestSecFix_32_1_2_DifferentSignaturesAccepted(t *testing.T) {
 	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 	body1 := []byte(`{"action":"remember","text":"body1"}`)
 	body2 := []byte(`{"action":"remember","text":"body2"}`)
-	sig1 := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, body1)
-	sig2 := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, body2)
+	sig1, nonce1 := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, body1)
+	sig2, nonce2 := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, body2)
 
-	kind1, identity1, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, body1, sig1)
+	kind1, identity1, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, nonce1, body1, sig1)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, kind1, domain.TokenClient)
 	testutil.RequireEqual(t, identity1, "device-sig-001")
 
-	kind2, identity2, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, body2, sig2)
+	kind2, identity2, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, nonce2, body2, sig2)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, kind2, domain.TokenClient)
 	testutil.RequireEqual(t, identity2, "device-sig-001")
@@ -90,9 +90,9 @@ func TestSecFix_32_1_3_DoubleBufferRotation(t *testing.T) {
 	// Sign and verify a request at time T.
 	ts := now.Format("2006-01-02T15:04:05Z")
 	body := []byte(`{"test":"rotation"}`)
-	sig := signRequest(priv, "GET", "/v1/vault/query", "", ts, body)
+	sig, nonce := signRequest(priv, "GET", "/v1/vault/query", "", ts, body)
 
-	_, _, err = tv.VerifySignature(did, "GET", "/v1/vault/query", "", ts, body, sig)
+	_, _, err = tv.VerifySignature(did, "GET", "/v1/vault/query", "", ts, nonce, body, sig)
 	testutil.RequireNoError(t, err)
 
 	// Advance the clock by maxClockSkew + 1 second (triggers rotation).
@@ -101,20 +101,20 @@ func TestSecFix_32_1_3_DoubleBufferRotation(t *testing.T) {
 
 	// New request with a new signature should succeed (triggers rotation).
 	body2 := []byte(`{"test":"after-rotation"}`)
-	sig2 := signRequest(priv, "GET", "/v1/vault/query", "", newTS, body2)
-	_, _, err = tv.VerifySignature(did, "GET", "/v1/vault/query", "", newTS, body2, sig2)
+	sig2, nonce2 := signRequest(priv, "GET", "/v1/vault/query", "", newTS, body2)
+	_, _, err = tv.VerifySignature(did, "GET", "/v1/vault/query", "", newTS, nonce2, body2, sig2)
 	testutil.RequireNoError(t, err)
 
 	// The original signature's timestamp is now >5min old, so it falls outside
 	// the acceptable clock-skew window. Defense-in-depth: even if the nonce
 	// cache didn't catch it, the timestamp check would reject it.
-	_, _, err = tv.VerifySignature(did, "GET", "/v1/vault/query", "", ts, body, sig)
+	_, _, err = tv.VerifySignature(did, "GET", "/v1/vault/query", "", ts, nonce, body, sig)
 	testutil.RequireError(t, err)
 	// Either "replayed signature" (nonce cache) or "timestamp outside acceptable window"
 	// (clock skew) — both are valid rejection reasons for a stale replay.
 
 	// Verify the second request's signature is also protected against replay.
-	_, _, err = tv.VerifySignature(did, "GET", "/v1/vault/query", "", newTS, body2, sig2)
+	_, _, err = tv.VerifySignature(did, "GET", "/v1/vault/query", "", newTS, nonce2, body2, sig2)
 	testutil.RequireError(t, err)
 	testutil.RequireContains(t, err.Error(), "replayed")
 }
@@ -139,15 +139,15 @@ func TestSecFix_32_1_4_SafetyValveUnderLoad(t *testing.T) {
 	ts := now.Format("2006-01-02T15:04:05Z")
 	for i := 0; i < 1000; i++ {
 		body := []byte(fmt.Sprintf(`{"i":%d}`, i))
-		sig := signRequest(priv, "POST", "/v1/vault/store", "", ts, body)
-		_, _, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", ts, body, sig)
+		sig, nonce := signRequest(priv, "POST", "/v1/vault/store", "", ts, body)
+		_, _, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", ts, nonce, body, sig)
 		testutil.RequireNoError(t, err)
 	}
 
 	// System should still be functional — no 429 errors, no panics.
 	body := []byte(`{"final":"check"}`)
-	sig := signRequest(priv, "POST", "/v1/vault/store", "", ts, body)
-	_, _, err = tv.VerifySignature(did, "POST", "/v1/vault/store", "", ts, body, sig)
+	sig, nonce := signRequest(priv, "POST", "/v1/vault/store", "", ts, body)
+	_, _, err = tv.VerifySignature(did, "POST", "/v1/vault/store", "", ts, nonce, body, sig)
 	testutil.RequireNoError(t, err)
 }
 

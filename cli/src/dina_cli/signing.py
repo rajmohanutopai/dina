@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import secrets
 import stat
 from datetime import datetime, timezone
 from pathlib import Path
@@ -149,20 +150,21 @@ class CLIIdentity:
         path: str,
         body: bytes | None = None,
         query: str = "",
-    ) -> tuple[str, str, str]:
+    ) -> tuple[str, str, str, str]:
         """Sign an HTTP request.
 
-        Returns ``(did, timestamp, signature_hex)``.
+        Returns ``(did, timestamp, nonce, signature_hex)``.
 
         The canonical signing payload is::
 
-            {METHOD}\\n{PATH}\\n{QUERY}\\n{TIMESTAMP}\\n{SHA256_HEX_OF_BODY}
+            {METHOD}\\n{PATH}\\n{QUERY}\\n{TIMESTAMP}\\n{NONCE}\\n{SHA256_HEX(BODY)}
         """
         self.ensure_loaded()
         assert self._private_key is not None
 
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        nonce = secrets.token_hex(16)
         body_hash = hashlib.sha256(body).hexdigest() if body else _EMPTY_BODY_HASH
-        payload = f"{method}\n{path}\n{query}\n{timestamp}\n{body_hash}"
+        payload = f"{method}\n{path}\n{query}\n{timestamp}\n{nonce}\n{body_hash}"
         signature = self._private_key.sign(payload.encode("utf-8"))
-        return self.did(), timestamp, signature.hex()
+        return self.did(), timestamp, nonce, signature.hex()

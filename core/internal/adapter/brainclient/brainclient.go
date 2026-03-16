@@ -216,9 +216,10 @@ func (c *BrainClient) signRequest(req *http.Request, body []byte) {
 			path = parsed.Path
 			query = parsed.RawQuery
 		}
-		did, ts, sig := c.serviceKey.SignRequest(req.Method, path, query, body)
+		did, ts, nonce, sig := c.serviceKey.SignRequest(req.Method, path, query, body)
 		req.Header.Set("X-DID", did)
 		req.Header.Set("X-Timestamp", ts)
+		req.Header.Set("X-Nonce", nonce)
 		req.Header.Set("X-Signature", sig)
 	}
 }

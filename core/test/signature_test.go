@@ -62,12 +62,19 @@ func newSignatureTestValidator(t *testing.T) (*auth.DefaultTokenValidator, ed255
 }
 
 // signRequest builds the canonical signing payload and signs it.
-// The query parameter binds the URL query string into the signed payload.
-func signRequest(priv ed25519.PrivateKey, method, path, query, timestamp string, body []byte) string {
+// Generates a random nonce and returns (signatureHex, nonce).
+func signRequest(priv ed25519.PrivateKey, method, path, query, timestamp string, body []byte) (string, string) {
+	nonce := testNonce()
 	bodyHash := sha256Hex(body)
-	payload := fmt.Sprintf("%s\n%s\n%s\n%s\n%s", method, path, query, timestamp, bodyHash)
+	payload := fmt.Sprintf("%s\n%s\n%s\n%s\n%s\n%s", method, path, query, timestamp, nonce, bodyHash)
 	sig := ed25519.Sign(priv, []byte(payload))
-	return hex.EncodeToString(sig)
+	return hex.EncodeToString(sig), nonce
+}
+
+func testNonce() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 func sha256Hex(data []byte) string {
@@ -84,9 +91,9 @@ func TestSignature_28_ValidSignature_Accepted(t *testing.T) {
 
 	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 	body := []byte(`{"action":"remember","text":"hello"}`)
-	sigHex := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, body)
+	sigHex, nonce := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, body)
 
-	kind, identity, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, body, sigHex)
+	kind, identity, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, nonce, body, sigHex)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, kind, domain.TokenClient)
 	testutil.RequireEqual(t, identity, "device-sig-001")
@@ -96,9 +103,9 @@ func TestSignature_28_ValidSignature_EmptyBody(t *testing.T) {
 	tv, _, priv, did := newSignatureTestValidator(t)
 
 	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05Z")
-	sigHex := signRequest(priv, "GET", "/v1/devices", "", timestamp, []byte{})
+	sigHex, nonce := signRequest(priv, "GET", "/v1/devices", "", timestamp, []byte{})
 
-	kind, identity, err := tv.VerifySignature(did, "GET", "/v1/devices", "", timestamp, []byte{}, sigHex)
+	kind, identity, err := tv.VerifySignature(did, "GET", "/v1/devices", "", timestamp, nonce, []byte{}, sigHex)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, kind, domain.TokenClient)
 	testutil.RequireEqual(t, identity, "device-sig-001")
@@ -116,7 +123,7 @@ func TestSignature_28_InvalidSignature_Rejected(t *testing.T) {
 	// Use a garbage signature.
 	badSig := hex.EncodeToString(make([]byte, 64))
 
-	_, _, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, body, badSig)
+	_, _, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, "", body, badSig)
 	testutil.RequireError(t, err)
 }
 
@@ -127,9 +134,9 @@ func TestSignature_28_WrongKey_Rejected(t *testing.T) {
 	_, otherPriv, _ := ed25519.GenerateKey(rand.Reader)
 	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 	body := []byte(`{"data":"test"}`)
-	sigHex := signRequest(otherPriv, "POST", "/v1/vault/store", "", timestamp, body)
+	sigHex, nonce := signRequest(otherPriv, "POST", "/v1/vault/store", "", timestamp, body)
 
-	_, _, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, body, sigHex)
+	_, _, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, nonce, body, sigHex)
 	testutil.RequireError(t, err)
 }
 
@@ -138,11 +145,11 @@ func TestSignature_28_TamperedBody_Rejected(t *testing.T) {
 
 	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 	originalBody := []byte(`{"action":"remember","text":"original"}`)
-	sigHex := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, originalBody)
+	sigHex, nonce := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, originalBody)
 
 	// Verify with tampered body.
 	tamperedBody := []byte(`{"action":"remember","text":"tampered"}`)
-	_, _, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, tamperedBody, sigHex)
+	_, _, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, nonce, tamperedBody, sigHex)
 	testutil.RequireError(t, err)
 }
 
@@ -151,10 +158,10 @@ func TestSignature_28_TamperedPath_Rejected(t *testing.T) {
 
 	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 	body := []byte(`{"data":"test"}`)
-	sigHex := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, body)
+	sigHex, nonce := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, body)
 
 	// Verify with different path.
-	_, _, err := tv.VerifySignature(did, "POST", "/v1/vault/delete", "", timestamp, body, sigHex)
+	_, _, err := tv.VerifySignature(did, "POST", "/v1/vault/delete", "", timestamp, nonce, body, sigHex)
 	testutil.RequireError(t, err)
 }
 
@@ -163,10 +170,10 @@ func TestSignature_28_TamperedMethod_Rejected(t *testing.T) {
 
 	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 	body := []byte(`{"data":"test"}`)
-	sigHex := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, body)
+	sigHex, nonce := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, body)
 
 	// Verify with different method.
-	_, _, err := tv.VerifySignature(did, "PUT", "/v1/vault/store", "", timestamp, body, sigHex)
+	_, _, err := tv.VerifySignature(did, "PUT", "/v1/vault/store", "", timestamp, nonce, body, sigHex)
 	testutil.RequireError(t, err)
 }
 
@@ -181,9 +188,9 @@ func TestSignature_28_ExpiredTimestamp_Rejected(t *testing.T) {
 	expiredTime := time.Now().UTC().Add(-6 * time.Minute)
 	timestamp := expiredTime.Format("2006-01-02T15:04:05Z")
 	body := []byte(`{"data":"test"}`)
-	sigHex := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, body)
+	sigHex, nonce := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, body)
 
-	_, _, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, body, sigHex)
+	_, _, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, nonce, body, sigHex)
 	testutil.RequireError(t, err)
 	testutil.RequireContains(t, err.Error(), "timestamp")
 }
@@ -195,9 +202,9 @@ func TestSignature_28_FutureTimestamp_Rejected(t *testing.T) {
 	futureTime := time.Now().UTC().Add(6 * time.Minute)
 	timestamp := futureTime.Format("2006-01-02T15:04:05Z")
 	body := []byte(`{"data":"test"}`)
-	sigHex := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, body)
+	sigHex, nonce := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, body)
 
-	_, _, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, body, sigHex)
+	_, _, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, nonce, body, sigHex)
 	testutil.RequireError(t, err)
 	testutil.RequireContains(t, err.Error(), "timestamp")
 }
@@ -209,9 +216,9 @@ func TestSignature_28_WithinWindow_Accepted(t *testing.T) {
 	recentTime := time.Now().UTC().Add(-4 * time.Minute)
 	timestamp := recentTime.Format("2006-01-02T15:04:05Z")
 	body := []byte(`{"data":"test"}`)
-	sigHex := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, body)
+	sigHex, nonce := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, body)
 
-	kind, _, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, body, sigHex)
+	kind, _, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, nonce, body, sigHex)
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, kind, domain.TokenClient)
 }
@@ -221,9 +228,9 @@ func TestSignature_28_InvalidTimestampFormat_Rejected(t *testing.T) {
 
 	badTimestamp := "2026-02-24 10:18:22" // wrong format (space instead of T, no Z)
 	body := []byte(`{"data":"test"}`)
-	sigHex := signRequest(priv, "POST", "/v1/vault/store", "", badTimestamp, body)
+	sigHex, nonce := signRequest(priv, "POST", "/v1/vault/store", "", badTimestamp, body)
 
-	_, _, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", badTimestamp, body, sigHex)
+	_, _, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", badTimestamp, nonce, body, sigHex)
 	testutil.RequireError(t, err)
 	testutil.RequireContains(t, err.Error(), "timestamp")
 }
@@ -238,9 +245,9 @@ func TestSignature_28_UnknownDID_Rejected(t *testing.T) {
 	unknownDID := "did:key:zUnknownDeviceDID1234567890"
 	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 	body := []byte(`{"data":"test"}`)
-	sigHex := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, body)
+	sigHex, nonce := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, body)
 
-	_, _, err := tv.VerifySignature(unknownDID, "POST", "/v1/vault/store", "", timestamp, body, sigHex)
+	_, _, err := tv.VerifySignature(unknownDID, "POST", "/v1/vault/store", "", timestamp, nonce, body, sigHex)
 	testutil.RequireError(t, err)
 }
 
@@ -252,9 +259,9 @@ func TestSignature_28_RevokedDevice_Rejected(t *testing.T) {
 
 	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 	body := []byte(`{"data":"test"}`)
-	sigHex := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, body)
+	sigHex, nonce := signRequest(priv, "POST", "/v1/vault/store", "", timestamp, body)
 
-	_, _, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, body, sigHex)
+	_, _, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, nonce, body, sigHex)
 	testutil.RequireError(t, err)
 	testutil.RequireContains(t, err.Error(), "revoked")
 }
@@ -269,7 +276,7 @@ func TestSignature_28_MalformedSignatureHex_Rejected(t *testing.T) {
 	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 	body := []byte(`{"data":"test"}`)
 
-	_, _, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, body, "not-valid-hex!!!")
+	_, _, err := tv.VerifySignature(did, "POST", "/v1/vault/store", "", timestamp, "", body, "not-valid-hex!!!")
 	testutil.RequireError(t, err)
 	testutil.RequireContains(t, err.Error(), "signature")
 }
@@ -448,9 +455,9 @@ func TestSignature_34_2_8_AgentRevocationTakesImmediateEffect(t *testing.T) {
 		// Before revocation: valid signature accepted.
 		timestamp := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 		body := []byte(`{"action":"agent_intent","intent":"query_product"}`)
-		sigHex := signRequest(priv, "POST", "/v1/agent/validate", "", timestamp, body)
+		sigHex, nonce := signRequest(priv, "POST", "/v1/agent/validate", "", timestamp, body)
 
-		_, _, err := tv.VerifySignature(did, "POST", "/v1/agent/validate", "", timestamp, body, sigHex)
+		_, _, err := tv.VerifySignature(did, "POST", "/v1/agent/validate", "", timestamp, nonce, body, sigHex)
 		if err != nil {
 			t.Fatalf("before revocation, valid signature must be accepted: %v", err)
 		}
@@ -461,9 +468,9 @@ func TestSignature_34_2_8_AgentRevocationTakesImmediateEffect(t *testing.T) {
 		// After revocation: same format of request must fail.
 		timestamp2 := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 		body2 := []byte(`{"action":"agent_intent","intent":"query_product_2"}`)
-		sigHex2 := signRequest(priv, "POST", "/v1/agent/validate", "", timestamp2, body2)
+		sigHex2, nonce2 := signRequest(priv, "POST", "/v1/agent/validate", "", timestamp2, body2)
 
-		_, _, err = tv.VerifySignature(did, "POST", "/v1/agent/validate", "", timestamp2, body2, sigHex2)
+		_, _, err = tv.VerifySignature(did, "POST", "/v1/agent/validate", "", timestamp2, nonce2, body2, sigHex2)
 		if err == nil {
 			t.Fatal("after revocation, agent request must be rejected")
 		}
@@ -491,16 +498,16 @@ func TestSignature_34_2_8_AgentRevocationTakesImmediateEffect(t *testing.T) {
 		// Agent 1: rejected.
 		ts := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 		body := []byte(`{"action":"test"}`)
-		sig1 := signRequest(priv1, "POST", "/v1/agent/validate", "", ts, body)
-		_, _, err := tv.VerifySignature(did1, "POST", "/v1/agent/validate", "", ts, body, sig1)
+		sig1, nonce1 := signRequest(priv1, "POST", "/v1/agent/validate", "", ts, body)
+		_, _, err := tv.VerifySignature(did1, "POST", "/v1/agent/validate", "", ts, nonce1, body, sig1)
 		if err == nil {
 			t.Fatal("revoked agent-001 must be rejected")
 		}
 		testutil.RequireContains(t, err.Error(), "revoked")
 
 		// Agent 2: still accepted.
-		sig2 := signRequest(priv2, "POST", "/v1/agent/validate", "", ts, body)
-		_, _, err = tv.VerifySignature(did2, "POST", "/v1/agent/validate", "", ts, body, sig2)
+		sig2, nonce2 := signRequest(priv2, "POST", "/v1/agent/validate", "", ts, body)
+		_, _, err = tv.VerifySignature(did2, "POST", "/v1/agent/validate", "", ts, nonce2, body, sig2)
 		if err != nil {
 			t.Fatalf("non-revoked agent-002 must still be accepted: %v", err)
 		}
@@ -512,16 +519,16 @@ func TestSignature_34_2_8_AgentRevocationTakesImmediateEffect(t *testing.T) {
 		// Verify access works.
 		ts1 := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 		body := []byte(`{"test":"immediate"}`)
-		sig := signRequest(priv, "POST", "/v1/vault/query", "", ts1, body)
-		_, _, err := tv.VerifySignature(did, "POST", "/v1/vault/query", "", ts1, body, sig)
+		sig, nonce := signRequest(priv, "POST", "/v1/vault/query", "", ts1, body)
+		_, _, err := tv.VerifySignature(did, "POST", "/v1/vault/query", "", ts1, nonce, body, sig)
 		testutil.RequireNoError(t, err)
 
 		// Revoke and IMMEDIATELY verify rejection — no sleep, no delay.
 		tv.RevokeDeviceKey(did)
 
 		ts2 := time.Now().UTC().Format("2006-01-02T15:04:05Z")
-		sig2 := signRequest(priv, "POST", "/v1/vault/query", "", ts2, body)
-		_, _, err = tv.VerifySignature(did, "POST", "/v1/vault/query", "", ts2, body, sig2)
+		sig2, nonce2 := signRequest(priv, "POST", "/v1/vault/query", "", ts2, body)
+		_, _, err = tv.VerifySignature(did, "POST", "/v1/vault/query", "", ts2, nonce2, body, sig2)
 		if err == nil {
 			t.Fatal("revocation must take effect immediately — no cache delay")
 		}
@@ -546,8 +553,8 @@ func TestSignature_34_2_8_AgentRevocationTakesImmediateEffect(t *testing.T) {
 		for _, ep := range endpoints {
 			ts := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 			body := []byte(`{"test":"revoked"}`)
-			sig := signRequest(priv, ep.method, ep.path, "", ts, body)
-			_, _, err := tv.VerifySignature(did, ep.method, ep.path, "", ts, body, sig)
+			sig, nonce := signRequest(priv, ep.method, ep.path, "", ts, body)
+			_, _, err := tv.VerifySignature(did, ep.method, ep.path, "", ts, nonce, body, sig)
 			if err == nil {
 				t.Fatalf("revoked agent must be rejected on %s %s", ep.method, ep.path)
 			}

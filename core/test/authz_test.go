@@ -67,14 +67,16 @@ func doRequest(handler http.Handler, method, path, bearerToken string) *httptest
 // doSignedRequest creates an Ed25519-signed request (simulating brain service auth).
 func doSignedRequest(handler http.Handler, method, path string) *httptest.ResponseRecorder {
 	ts := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+	nonce := testNonce()
 	body := []byte{}
 	bodyHash := sha256.Sum256(body)
-	payload := fmt.Sprintf("%s\n%s\n\n%s\n%s", method, path, ts, hex.EncodeToString(bodyHash[:]))
+	payload := fmt.Sprintf("%s\n%s\n\n%s\n%s\n%s", method, path, ts, nonce, hex.EncodeToString(bodyHash[:]))
 	sig := ed25519.Sign(authzTestBrainPriv, []byte(payload))
 
 	req := httptest.NewRequest(method, path, nil)
 	req.Header.Set("X-DID", authzTestBrainDID)
 	req.Header.Set("X-Timestamp", ts)
+	req.Header.Set("X-Nonce", nonce)
 	req.Header.Set("X-Signature", hex.EncodeToString(sig))
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)

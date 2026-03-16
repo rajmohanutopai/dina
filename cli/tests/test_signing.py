@@ -121,12 +121,13 @@ def test_public_key_multibase_roundtrip(tmp_path):
 
 
 # TST-CLI-011
-def test_sign_request_returns_three_parts(tmp_path):
+def test_sign_request_returns_four_parts(tmp_path):
     identity = CLIIdentity(identity_dir=tmp_path)
     identity.generate()
-    did, ts, sig = identity.sign_request("POST", "/v1/vault/query", b'{"test":1}')
+    did, ts, nonce, sig = identity.sign_request("POST", "/v1/vault/query", b'{"test":1}')
     assert did.startswith("did:key:z")
     assert "T" in ts and ts.endswith("Z")  # ISO 8601 UTC
+    assert len(nonce) == 32  # 16 bytes hex-encoded
     assert len(sig) == 128  # 64 bytes hex-encoded
 
 
@@ -136,11 +137,11 @@ def test_sign_request_verifiable(tmp_path):
     identity = CLIIdentity(identity_dir=tmp_path)
     identity.generate()
     body = b'{"action":"test"}'
-    did, ts, sig_hex = identity.sign_request("GET", "/v1/did", body)
+    did, ts, nonce, sig_hex = identity.sign_request("GET", "/v1/did", body)
 
-    # Reconstruct the canonical payload (5-part: method, path, query, timestamp, body_hash).
+    # Reconstruct the canonical payload (6-part: method, path, query, timestamp, nonce, body_hash).
     body_hash = hashlib.sha256(body).hexdigest()
-    payload = f"GET\n/v1/did\n\n{ts}\n{body_hash}"
+    payload = f"GET\n/v1/did\n\n{ts}\n{nonce}\n{body_hash}"
 
     # Verify with the public key.
     pubkey = identity._private_key.public_key()
@@ -153,10 +154,10 @@ def test_sign_request_empty_body(tmp_path):
     """GET requests with no body use SHA-256 of empty string."""
     identity = CLIIdentity(identity_dir=tmp_path)
     identity.generate()
-    did, ts, sig_hex = identity.sign_request("GET", "/healthz")
+    did, ts, nonce, sig_hex = identity.sign_request("GET", "/healthz")
 
     empty_hash = hashlib.sha256(b"").hexdigest()
-    payload = f"GET\n/healthz\n\n{ts}\n{empty_hash}"
+    payload = f"GET\n/healthz\n\n{ts}\n{nonce}\n{empty_hash}"
 
     pubkey = identity._private_key.public_key()
     pubkey.verify(bytes.fromhex(sig_hex), payload.encode("utf-8"))
@@ -166,6 +167,6 @@ def test_sign_request_empty_body(tmp_path):
 def test_sign_request_different_payloads_differ(tmp_path):
     identity = CLIIdentity(identity_dir=tmp_path)
     identity.generate()
-    _, _, sig1 = identity.sign_request("POST", "/a", b"body1")
-    _, _, sig2 = identity.sign_request("POST", "/b", b"body2")
+    _, _, _, sig1 = identity.sign_request("POST", "/a", b"body1")
+    _, _, _, sig2 = identity.sign_request("POST", "/b", b"body2")
     assert sig1 != sig2

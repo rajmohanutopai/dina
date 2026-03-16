@@ -161,13 +161,13 @@ class CoreHTTPClient:
         """
         if self._identity is not None:
             parsed = urlparse(path)
-            did, ts, sig = self._identity.sign_request(
+            did, ts, nonce, sig = self._identity.sign_request(
                 method=method,
                 path=parsed.path,
                 body=body,
                 query=parsed.query,
             )
-            return {"X-DID": did, "X-Timestamp": ts, "X-Signature": sig}
+            return {"X-DID": did, "X-Timestamp": ts, "X-Nonce": nonce, "X-Signature": sig}
         if self._token:
             return {"Authorization": f"Bearer {self._token}"}
         return {}
