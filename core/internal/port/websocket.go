@@ -12,8 +12,9 @@ type WSHub interface {
 }
 
 // WSHandler processes WebSocket protocol messages.
+// Authentication is handled at the HTTP layer (Ed25519 signature on the
+// upgrade request). No protocol-level token handshake.
 type WSHandler interface {
-	Authenticate(ctx context.Context, token string) (deviceName string, err error)
 	HandleMessage(ctx context.Context, clientID string, message []byte) (response []byte, err error)
 	AuthTimeout() int
 }

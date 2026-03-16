@@ -128,10 +128,20 @@ Each device generates its own Ed25519 keypair locally. The private key never lea
 
 1. User runs `dina-admin device pair` → Core generates a 6-digit code (5-minute TTL)
 2. User enters code on the new device
-3. Device sends its public key to Core
-4. Core registers the device and issues a CLIENT_TOKEN
+3. Device sends its Ed25519 public key (multicodec-prefixed `0xed01` + 32 bytes)
+4. Core registers the public key under a `did:key` identifier and returns the device ID
+
+No CLIENT_TOKEN is generated for Ed25519 devices — all auth is signature-based.
 
 Rate limiting on pairing attempts prevents brute force (hard cap on pending codes).
+
+### WebSocket Authentication
+
+WebSocket connections (`/ws`) are Ed25519-only. The HTTP upgrade request must be signed with a paired device key — same canonical signature format as regular API calls (`X-DID`, `X-Timestamp`, `X-Signature`).
+
+The auth middleware verifies the signature on the upgrade request and sets the device identity in context. After the upgrade succeeds, `authHandshake` reads the pre-authenticated identity and admits the connection immediately — no protocol-level token exchange. Unsigned upgrades are rejected with `ErrAuthFailed`.
+
+The connection is then registered in the WebSocket hub with the device identity for push message delivery (approval notifications, vault updates, nudges).
 
 ### dina-admin (Local Operator)
 

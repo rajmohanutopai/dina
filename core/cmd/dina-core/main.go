@@ -950,20 +950,14 @@ func main() {
 	mux.HandleFunc("/v1/import", exportH.HandleImport)
 
 	// WebSocket endpoint (CORE-MED-07)
+	// Auth is Ed25519-only: the upgrade request must be signed with a device key.
+	// The auth middleware verifies the signature before the upgrade reaches here.
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		// SEC-HIGH-05: Use origin patterns from config instead of insecure skip.
 		var wsOpts []ws.UpgraderOption
 		if cfg.AllowedOrigins != "" {
 			wsOpts = append(wsOpts, ws.WithOriginPatterns(strings.Split(cfg.AllowedOrigins, ",")...))
 		}
 		wsUpgrader := ws.NewUpgrader(wsOpts...)
-		wsTokenValidator := func(token string) (string, error) {
-			deviceID, ok := tokenValidator.ValidateClientToken(token)
-			if !ok {
-				return "", fmt.Errorf("invalid client token")
-			}
-			return deviceID, nil
-		}
 		wsBrainRouter := func(clientID string, msgType string, payload map[string]interface{}) ([]byte, error) {
 			query, _ := payload["query"].(string)
 			if query == "" {
@@ -975,7 +969,7 @@ func main() {
 			}
 			return []byte(result.Content), nil
 		}
-		wsHandlerWS := ws.NewWSHandler(wsTokenValidator, wsBrainRouter)
+		wsHandlerWS := ws.NewWSHandler(wsBrainRouter)
 		wsHandlerWS.SetHub(wsHub)
 		hb := ws.NewHeartbeatManager(func(clientID string, data []byte) error {
 			return wsHub.Send(clientID, data)

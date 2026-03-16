@@ -118,34 +118,28 @@ func (h *WSHub) ConnectedClients() int {
 // WSHandler
 // ---------------------------------------------------------------------------
 
-// TokenValidator is the function signature for validating CLIENT_TOKENs.
-// Returns (deviceName, nil) on success, or ("", error) on failure.
-type TokenValidator func(token string) (deviceName string, err error)
-
 // BrainRouter is the function signature for routing queries/commands to the brain.
 // Returns the response payload as JSON bytes.
 type BrainRouter func(clientID string, msgType string, payload map[string]interface{}) ([]byte, error)
 
-// WSHandler handles WebSocket message authentication and routing.
-// It satisfies testutil.WSHandler.
+// WSHandler handles WebSocket message routing after Ed25519-authenticated upgrade.
+// Authentication happens at the HTTP layer (auth middleware verifies the Ed25519
+// signature on the upgrade request). No protocol-level token handshake.
 type WSHandler struct {
-	mu              sync.RWMutex
-	authenticated   map[string]string // clientID -> deviceName
-	tokenValidator  TokenValidator
-	brainRouter     BrainRouter
-	hub             *WSHub
-	heartbeat       *HeartbeatManager
-	buffer          *MessageBuffer
+	mu            sync.RWMutex
+	authenticated map[string]string // clientID -> deviceName
+	brainRouter   BrainRouter
+	hub           *WSHub
+	heartbeat     *HeartbeatManager
+	buffer        *MessageBuffer
 }
 
 // NewWSHandler returns a new WSHandler.
-// tokenValidator validates CLIENT_TOKENs during auth.
 // brainRouter routes queries/commands to the brain sidecar.
-func NewWSHandler(validator TokenValidator, router BrainRouter) *WSHandler {
+func NewWSHandler(router BrainRouter) *WSHandler {
 	return &WSHandler{
-		authenticated:  make(map[string]string),
-		tokenValidator: validator,
-		brainRouter:    router,
+		authenticated: make(map[string]string),
+		brainRouter:   router,
 	}
 }
 
@@ -168,21 +162,6 @@ func (wh *WSHandler) SetBuffer(buf *MessageBuffer) {
 	wh.mu.Lock()
 	defer wh.mu.Unlock()
 	wh.buffer = buf
-}
-
-// Authenticate validates a client's auth frame and returns the device name.
-func (wh *WSHandler) Authenticate(_ context.Context, token string) (string, error) {
-	if wh.tokenValidator == nil {
-		return "", ErrAuthFailed
-	}
-	deviceName, err := wh.tokenValidator(token)
-	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrAuthFailed, err)
-	}
-	if deviceName == "" {
-		return "", ErrAuthFailed
-	}
-	return deviceName, nil
 }
 
 // MarkAuthenticated records that a client has completed auth.

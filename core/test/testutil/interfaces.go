@@ -325,8 +325,6 @@ type WSHub interface {
 
 // WSHandler — contract for WebSocket message handling and auth (§9.1, §9.2, §9.3).
 type WSHandler interface {
-	// Authenticate validates a client's auth frame and returns the device name.
-	Authenticate(ctx context.Context, token string) (deviceName string, err error)
 	// HandleMessage parses and routes an incoming JSON message envelope.
 	// Returns the response envelope (JSON) or an error.
 	HandleMessage(ctx context.Context, clientID string, message []byte) (response []byte, err error)

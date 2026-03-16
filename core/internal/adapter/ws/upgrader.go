@@ -19,6 +19,16 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/rajmohanutopai/dina/core/internal/middleware"
+)
+
+// Context keys read from the HTTP auth middleware.
+// When the upgrade request is Ed25519-authenticated, these are set by the
+// auth middleware and allow the WebSocket to skip the token handshake.
+var (
+	AgentDIDContextKey   = middleware.AgentDIDKey
+	TokenKindContextKey  = middleware.TokenKindKey
+	TokenScopeContextKey = middleware.TokenScopeKey
 )
 
 // ---------------------------------------------------------------------------
@@ -154,8 +164,20 @@ func ServeWS(
 	conn := NewConn(raw, 256)
 	ctx := r.Context()
 
+	// WebSocket auth is Ed25519-only. The HTTP upgrade request must be signed
+	// with a device key (kind="client", scope="device"). Unsigned upgrades
+	// are rejected — no token handshake fallback.
+	var preAuth *PreAuthIdentity
+	if agentDID, ok := ctx.Value(AgentDIDContextKey).(string); ok && agentDID != "" {
+		tokenKind, _ := ctx.Value(TokenKindContextKey).(string)
+		tokenScope, _ := ctx.Value(TokenScopeContextKey).(string)
+		if tokenKind == "client" && tokenScope == "device" {
+			preAuth = &PreAuthIdentity{ClientID: agentDID}
+		}
+	}
+
 	// ---- Phase 1: auth handshake (must complete within AuthTimeoutSeconds) ----
-	clientID, err := authHandshake(ctx, conn, handler)
+	clientID, err := authHandshake(ctx, conn, handler, preAuth)
 	if err != nil {
 		log.Printf("ws: auth handshake failed: %v", err)
 		_ = conn.WriteJSON(ctx, map[string]interface{}{
@@ -199,50 +221,36 @@ func ServeWS(
 // Auth handshake
 // ---------------------------------------------------------------------------
 
-// authFrame is the expected shape of the client's first message.
-type authFrame struct {
-	Type  string `json:"type"`
-	Token string `json:"token"`
+// PreAuthIdentity holds identity information from the HTTP auth middleware.
+// WebSocket auth is Ed25519-only: the upgrade request must be signed with a
+// device key. The auth middleware verifies the signature and sets the device
+// identity in context. No protocol-level token handshake.
+type PreAuthIdentity struct {
+	ClientID string // device ID from auth middleware
 }
 
-// authHandshake waits for the client to send an auth frame within the
-// configured timeout. Returns the authenticated clientID (device name) on
-// success, or an error.
-func authHandshake(parent context.Context, conn *Conn, handler *WSHandler) (string, error) {
+// authHandshake admits the WebSocket connection using the pre-authenticated
+// identity from the HTTP upgrade request. Returns the clientID on success.
+// If the upgrade was not Ed25519-authenticated, returns ErrAuthFailed.
+func authHandshake(parent context.Context, conn *Conn, handler *WSHandler, preAuth *PreAuthIdentity) (string, error) {
+	if preAuth == nil || preAuth.ClientID == "" {
+		return "", ErrAuthFailed
+	}
+
+	handler.MarkAuthenticated(preAuth.ClientID, preAuth.ClientID)
+
 	ctx, cancel := context.WithTimeout(parent, time.Duration(AuthTimeoutSeconds)*time.Second)
 	defer cancel()
-
-	_, msg, err := conn.Read(ctx)
-	if err != nil {
-		return "", ErrAuthTimeout
-	}
-
-	var frame authFrame
-	if err := json.Unmarshal(msg, &frame); err != nil {
-		return "", ErrInvalidMessage
-	}
-	if frame.Type != "auth" {
-		return "", ErrInvalidMessage
-	}
-
-	deviceName, err := handler.Authenticate(ctx, frame.Token)
-	if err != nil {
-		return "", err
-	}
-
-	handler.MarkAuthenticated(deviceName, deviceName)
-
-	// Send auth_ok.
 	if err := conn.WriteJSON(ctx, map[string]interface{}{
 		"type": "auth_ok",
 		"payload": map[string]interface{}{
-			"device_name": deviceName,
+			"device_name": preAuth.ClientID,
 		},
 	}); err != nil {
 		return "", err
 	}
 
-	return deviceName, nil
+	return preAuth.ClientID, nil
 }
 
 // ---------------------------------------------------------------------------

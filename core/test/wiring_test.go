@@ -7,7 +7,6 @@ package test
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -209,18 +208,9 @@ var (
 
 var (
 	realWSHub            port.WSHub                = ws.NewWSHub()
-	realWSHandler        testutil.WSHandler        = ws.NewWSHandler( // testutil superset (has IsAuthenticated)
-		func(token string) (string, error) {
-			// Reject known-bad tokens; accept any other non-empty token.
-			if token == "" || token == "wrong_token_value" || token == "revoked_client_token_hex" {
-				return "", errors.New("invalid or revoked CLIENT_TOKEN")
-			}
-			return "test-device", nil
-		},
-		nil,
-	)
-	realHeartbeatManager testutil.HeartbeatManager = ws.NewHeartbeatManager(nil) // testutil superset (has ResetPongCounter)
-	realMessageBuffer    testutil.MessageBuffer    = ws.NewMessageBuffer()     // testutil superset (has AckMessage, IsExpired)
+	realWSHandler        testutil.WSHandler        = ws.NewWSHandler(nil) // Ed25519-only auth, no brain router in tests
+	realHeartbeatManager testutil.HeartbeatManager = ws.NewHeartbeatManager(nil)
+	realMessageBuffer    testutil.MessageBuffer    = ws.NewMessageBuffer()
 )
 
 // ---------- Pairing implementations (§10) ----------
