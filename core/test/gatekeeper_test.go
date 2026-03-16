@@ -1823,7 +1823,7 @@ func TestGatekeeper_6_6_DraftConfidenceScore_Validated(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "StagingManager")
 
 	ctx := context.Background()
-	persona := domain.PersonaName("personal")
+	persona := domain.PersonaName("general")
 
 	// Stage a low-confidence draft — returns unique staging ID.
 	item1 := testutil.VaultItem{
@@ -1871,7 +1871,7 @@ func TestGatekeeper_6_6_26_AgentConstraint_DraftOnlyEnforced(t *testing.T) {
 		AgentDID:    "did:key:z6MkDraftOnlyAgent",
 		Action:      "send_email",
 		Target:      "external",
-		PersonaID:   "personal",
+		PersonaID:   "general",
 		TrustLevel:  "trusted",
 		Constraints: map[string]bool{"draft_only": true},
 	}

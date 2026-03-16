@@ -12,12 +12,19 @@ import (
 	"github.com/rajmohanutopai/dina/core/internal/port"
 )
 
-type contextKey string
+// ContextKey is the type used for request context keys in Dina middleware.
+// Exported so adapters can read values set by the auth middleware.
+type ContextKey string
+
+// contextKey is an alias for internal use.
+type contextKey = ContextKey
 
 const (
-	TokenKindKey  contextKey = "token_kind"
-	AgentDIDKey   contextKey = "agent_did"
-	TokenScopeKey contextKey = "token_scope"
+	TokenKindKey   ContextKey = "token_kind"
+	AgentDIDKey    ContextKey = "agent_did"
+	TokenScopeKey  ContextKey = "token_scope"
+	CallerTypeKey  ContextKey = "caller_type"
+	SessionNameKey ContextKey = "session_name"
 )
 
 // AuthzChecker is the interface for endpoint-level authorization checks.
@@ -40,14 +47,17 @@ type Auth struct {
 	ScopeResolver TokenScopeResolver // optional — set to enable scope-aware authz
 }
 
-// publicPaths bypass authentication.
-// The pairing code itself is the auth for /v1/pair/complete — new devices
-// cannot have Ed25519 keys or CLIENT_TOKEN before they are paired.
+// publicPaths bypass authentication entirely.
 var publicPaths = map[string]bool{
 	"/healthz":                 true,
 	"/readyz":                  true,
 	"/.well-known/atproto-did": true,
-	"/v1/pair/complete":        true,
+}
+
+// optionalAuthPaths allow unauthenticated requests through (auth is optional).
+// The handler itself validates the request using other means (e.g. pairing code).
+var optionalAuthPaths = map[string]bool{
+	"/v1/pair/complete": true, // pairing code is the auth, not Ed25519/token
 }
 
 // isTimestampValid checks whether a timestamp string is within
@@ -66,7 +76,7 @@ func isTimestampValid(ts string) bool {
 
 func (a *Auth) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Public endpoints bypass auth.
+		// Public endpoints bypass auth entirely.
 		if publicPaths[r.URL.Path] {
 			next.ServeHTTP(w, r)
 			return
@@ -123,6 +133,14 @@ func (a *Auth) Handler(next http.Handler) http.Handler {
 			// Signature-authenticated devices always get "device" scope.
 			if string(kind) == "client" {
 				ctx = context.WithValue(ctx, TokenScopeKey, "device")
+				ctx = context.WithValue(ctx, CallerTypeKey, "agent")
+			} else {
+				// Service key (brain)
+				ctx = context.WithValue(ctx, CallerTypeKey, "brain")
+			}
+			// Extract session name from X-Session header (agent sessions).
+			if sess := r.Header.Get("X-Session"); sess != "" {
+				ctx = context.WithValue(ctx, SessionNameKey, sess)
 			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 			return
@@ -131,6 +149,11 @@ func (a *Auth) Handler(next http.Handler) http.Handler {
 		// --- Legacy Bearer token auth ---
 		authHeader := r.Header.Get("Authorization")
 		if !strings.HasPrefix(authHeader, "Bearer ") {
+			// Optional auth paths: allow unauthenticated if no Ed25519 and no Bearer.
+			if optionalAuthPaths[r.URL.Path] {
+				next.ServeHTTP(w, r)
+				return
+			}
 			http.Error(w, `{"error":"missing or invalid Authorization header"}`, http.StatusUnauthorized)
 			return
 		}
@@ -150,6 +173,16 @@ func (a *Auth) Handler(next http.Handler) http.Handler {
 		if string(kind) == "client" && a.ScopeResolver != nil {
 			tokenScope := a.ScopeResolver.GetTokenScope(token)
 			ctx = context.WithValue(ctx, TokenScopeKey, tokenScope)
+			// admin-scoped client tokens = user, device-scoped = agent
+			if tokenScope == "admin" {
+				ctx = context.WithValue(ctx, CallerTypeKey, "user")
+			} else {
+				ctx = context.WithValue(ctx, CallerTypeKey, "agent")
+			}
+		} else if string(kind) == "brain" {
+			ctx = context.WithValue(ctx, CallerTypeKey, "brain")
+		} else {
+			ctx = context.WithValue(ctx, CallerTypeKey, "user") // default for admin
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

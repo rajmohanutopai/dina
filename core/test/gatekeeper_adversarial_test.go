@@ -169,8 +169,8 @@ func (r *nullVaultReader) VectorSearch(_ context.Context, _ domain.PersonaName, 
 // Architecture §5: "locked persona → DEK not in RAM → access always denied."
 func TestAdv_29_9_LockedPersonaDenied(t *testing.T) {
 	vault := newGatekeeperVaultManager()
-	// "personal" is open, "financial" is closed (not in map).
-	personal, _ := domain.NewPersonaName("personal")
+	// "general" is open, "financial" is closed (not in map).
+	personal, _ := domain.NewPersonaName("general")
 	vault.Open(context.Background(), personal, nil)
 
 	gk := &gatekeeperMock{
@@ -192,7 +192,7 @@ func TestAdv_29_9_LockedPersonaDenied(t *testing.T) {
 		AgentDID:  "did:key:z6MkBrain",
 		Action:    "query",
 		Target:    "health_records",
-		PersonaID: "personal",
+		PersonaID: "general",
 	})
 	if err != nil {
 		t.Fatalf("CheckAccess (open persona): %v", err)
@@ -649,7 +649,7 @@ func TestAdv_34_2_AgentAttemptsToReadOtherAgentsData(t *testing.T) {
 		// Trust level "untrusted" → denied for vault access regardless of persona.
 		// This is the base security layer — no sandbox escape via low trust.
 		vault := newGatekeeperVaultManager()
-		personalPersona, _ := domain.NewPersonaName("personal")
+		personalPersona, _ := domain.NewPersonaName("general")
 		vault.Open(context.Background(), personalPersona, nil)
 
 		gk := realGatekeeper
@@ -663,7 +663,7 @@ func TestAdv_34_2_AgentAttemptsToReadOtherAgentsData(t *testing.T) {
 			AgentDID:   "did:key:z6MkMaliciousAgent",
 			Action:     "query",
 			Target:     "all_data",
-			PersonaID:  "personal",
+			PersonaID:  "general",
 			TrustLevel: "untrusted",
 		})
 		if err != nil {
@@ -804,7 +804,7 @@ func TestInfra_30_1_MockSideEffectsDisabledInStrictReal(t *testing.T) {
 			AgentDID:   "did:key:z6MkTestAgent",
 			Action:     "query",
 			Target:     "test_data",
-			PersonaID:  "personal",
+			PersonaID:  "general",
 			TrustLevel: "verified",
 		}
 
@@ -986,7 +986,7 @@ func TestAdv_34_2_AgentCredentialHarvestingViaErrors(t *testing.T) {
 			name string
 			body []byte
 		}{
-			{"truncated_json", []byte(`{"persona":"personal","q":"te`)},
+			{"truncated_json", []byte(`{"persona":"general","q":"te`)},
 			{"binary_garbage", []byte{0xff, 0xfe, 0x00, 0x01, 0x80}},
 			{"nested_braces", []byte(`{{{{{`)},
 		}
@@ -1172,7 +1172,7 @@ func TestAdv_34_2_AgentCredentialHarvestingViaErrors(t *testing.T) {
 		// Anti-tautological: valid requests DO succeed.
 		// This proves the error responses above are specific to bad input.
 		status, _, err := impl.HandleRequest("POST", "/v1/vault/query", "application/json",
-			[]byte(`{"persona":"personal","q":"test","mode":"fts5"}`))
+			[]byte(`{"persona":"general","q":"test","mode":"fts5"}`))
 		if err != nil {
 			t.Fatalf("valid request: %v", err)
 		}
@@ -1684,8 +1684,8 @@ func TestGatekeeper_34_2_5_OversizedQueryLimitCapped(t *testing.T) {
 	mgr := newGatekeeperVaultManager()
 	gk := &gatekeeperMock{} // default: allow all intents
 
-	// Open the "personal" persona so queries pass the IsOpen check.
-	mgr.Open(context.Background(), "personal", []byte("dek-placeholder"))
+	// Open the "general" persona so queries pass the IsOpen check.
+	mgr.Open(context.Background(), "general", []byte("dek-placeholder"))
 
 	vaultSvc := service.NewVaultService(mgr, reader, &noopVaultWriter{}, gk, &simpleClock{})
 	h := &handler.VaultHandler{Vault: vaultSvc}
@@ -1695,7 +1695,7 @@ func TestGatekeeper_34_2_5_OversizedQueryLimitCapped(t *testing.T) {
 	sendQuery := func(t *testing.T, limit int) int {
 		t.Helper()
 		body, _ := json.Marshal(map[string]interface{}{
-			"persona": "personal",
+			"persona": "general",
 			"query":   "test query",
 			"mode":    "fts5",
 			"limit":   limit,
@@ -1781,7 +1781,7 @@ func TestGatekeeper_34_2_5_OversizedQueryLimitCapped(t *testing.T) {
 		// Verify the handler returns a well-formed JSON response, not just 200.
 		// This proves the test chain is wired correctly (not a vacuous pass).
 		body, _ := json.Marshal(map[string]interface{}{
-			"persona": "personal",
+			"persona": "general",
 			"query":   "test",
 			"mode":    "fts5",
 			"limit":   10,
@@ -1817,10 +1817,10 @@ func TestGatekeeper_34_2_5_OversizedQueryLimitCapped(t *testing.T) {
 // TST-CORE-1024
 func TestGatekeeper_30_8_3_LockedPersonaDeadDropIngress(t *testing.T) {
 	// Build a VaultHandler backed by a locked persona. The VaultManager
-	// reports "personal" as NOT open (simulating a locked persona where
+	// reports "general" as NOT open (simulating a locked persona where
 	// the DEK is not in RAM).
 	lockedMgr := newGatekeeperVaultManager()
-	// Do NOT open "personal" — it stays locked.
+	// Do NOT open "general" — it stays locked.
 
 	reader := &queryCapturingReader{}
 	gk := &gatekeeperMock{} // default: allow all intents
@@ -1862,7 +1862,7 @@ func TestGatekeeper_30_8_3_LockedPersonaDeadDropIngress(t *testing.T) {
 	t.Run("vault_query_on_locked_persona_returns_403", func(t *testing.T) {
 		// The core requirement: when a persona is locked, the vault MUST NOT
 		// return any data. Instead, it returns 403 "persona locked".
-		code, body := sendQuery(t, "personal", "search for secrets")
+		code, body := sendQuery(t, "general", "search for secrets")
 
 		if code != http.StatusForbidden {
 			t.Fatalf("expected 403 Forbidden for query on locked persona, got %d: %s", code, body)
@@ -1874,7 +1874,7 @@ func TestGatekeeper_30_8_3_LockedPersonaDeadDropIngress(t *testing.T) {
 
 	t.Run("vault_store_on_locked_persona_returns_403", func(t *testing.T) {
 		// Write operations must also be blocked when locked.
-		code, body := sendStore(t, "personal")
+		code, body := sendStore(t, "general")
 
 		if code != http.StatusForbidden {
 			t.Fatalf("expected 403 Forbidden for store on locked persona, got %d: %s", code, body)
@@ -1933,7 +1933,7 @@ func TestGatekeeper_30_8_3_LockedPersonaDeadDropIngress(t *testing.T) {
 		dd := ingress.NewDeadDrop(tmpDir, 1000, 100*1024*1024)
 
 		// Vault query fails (locked).
-		code, _ := sendQuery(t, "personal", "attempt exfiltration")
+		code, _ := sendQuery(t, "general", "attempt exfiltration")
 		if code != http.StatusForbidden {
 			t.Fatalf("vault read must fail with 403, got %d", code)
 		}
@@ -1945,7 +1945,7 @@ func TestGatekeeper_30_8_3_LockedPersonaDeadDropIngress(t *testing.T) {
 		}
 
 		// Vault store also fails (locked).
-		storeCode, _ := sendStore(t, "personal")
+		storeCode, _ := sendStore(t, "general")
 		if storeCode != http.StatusForbidden {
 			t.Fatalf("vault store must fail with 403 when locked, got %d", storeCode)
 		}
@@ -1966,9 +1966,9 @@ func TestGatekeeper_30_8_3_LockedPersonaDeadDropIngress(t *testing.T) {
 		// Positive control: after unlocking the persona, vault queries
 		// must succeed. This proves the 403 was due to lock state, not
 		// a misconfigured test environment.
-		lockedMgr.Open(context.Background(), "personal", []byte("test-dek"))
+		lockedMgr.Open(context.Background(), "general", []byte("test-dek"))
 
-		code, body := sendQuery(t, "personal", "search after unlock")
+		code, body := sendQuery(t, "general", "search after unlock")
 		if code != http.StatusOK {
 			t.Fatalf("expected 200 OK after unlocking persona, got %d: %s", code, body)
 		}
@@ -1985,7 +1985,7 @@ func TestGatekeeper_30_8_3_LockedPersonaDeadDropIngress(t *testing.T) {
 
 	t.Run("after_unlock_vault_store_succeeds", func(t *testing.T) {
 		// Positive control for writes: store must work after unlock.
-		code, _ := sendStore(t, "personal")
+		code, _ := sendStore(t, "general")
 		// The noopVaultWriter returns "noop-id" and 201 Created.
 		if code != http.StatusCreated {
 			t.Fatalf("expected 201 Created after unlocking persona, got %d", code)
@@ -1993,7 +1993,7 @@ func TestGatekeeper_30_8_3_LockedPersonaDeadDropIngress(t *testing.T) {
 	})
 
 	t.Run("different_persona_still_locked", func(t *testing.T) {
-		// Isolation: unlocking "personal" must not affect other personas.
+		// Isolation: unlocking "general" must not affect other personas.
 		// "financial" was never opened — it must remain locked.
 		code, body := sendQuery(t, "financial", "attempt cross-persona read")
 		if code != http.StatusForbidden {
@@ -2033,7 +2033,7 @@ func (w *goldenSchemaWriter) Delete(_ context.Context, _ domain.PersonaName, _ s
 func TestContract_30_3_8_JSONSchemaFrozenGoldenExamples(t *testing.T) {
 	// Build a VaultHandler with mock ports that return predictable data.
 	mgr := newGatekeeperVaultManager()
-	mgr.Open(context.Background(), "personal", []byte("test-dek"))
+	mgr.Open(context.Background(), "general", []byte("test-dek"))
 
 	reader := &queryCapturingReader{}
 	gk := &gatekeeperMock{}
@@ -2044,7 +2044,7 @@ func TestContract_30_3_8_JSONSchemaFrozenGoldenExamples(t *testing.T) {
 		// Golden: POST /v1/vault/query → 200 with {"items": [...]}
 		// The "items" key is the contract between Core and Brain for search results.
 		body, _ := json.Marshal(map[string]interface{}{
-			"persona": "personal",
+			"persona": "general",
 			"query":   "meeting notes",
 			"mode":    "fts5",
 			"limit":   10,
@@ -2092,7 +2092,7 @@ func TestContract_30_3_8_JSONSchemaFrozenGoldenExamples(t *testing.T) {
 	t.Run("vault_store_response_schema", func(t *testing.T) {
 		// Golden: POST /v1/vault/store → 201 with {"id": "<string>"}
 		body, _ := json.Marshal(map[string]interface{}{
-			"persona": "personal",
+			"persona": "general",
 			"item": map[string]interface{}{
 				"type":      "email",
 				"source":    "gmail",
@@ -2138,7 +2138,7 @@ func TestContract_30_3_8_JSONSchemaFrozenGoldenExamples(t *testing.T) {
 	t.Run("vault_store_batch_response_schema", func(t *testing.T) {
 		// Golden: POST /v1/vault/store/batch → 201 with {"ids": ["<string>", ...]}
 		body, _ := json.Marshal(map[string]interface{}{
-			"persona": "personal",
+			"persona": "general",
 			"items": []map[string]interface{}{
 				{"type": "email", "source": "gmail", "body_text": "item 1"},
 				{"type": "note", "source": "manual", "body_text": "item 2"},
@@ -2281,7 +2281,7 @@ func TestContract_30_3_8_JSONSchemaFrozenGoldenExamples(t *testing.T) {
 		// request fields without error. This proves the golden schema is not
 		// accidentally rejecting valid requests.
 		body, _ := json.Marshal(map[string]interface{}{
-			"persona":   "personal",
+			"persona":   "general",
 			"query":     "test query",
 			"mode":      "hybrid",
 			"types":     []string{"email", "note"},
@@ -2467,7 +2467,7 @@ func TestContract_30_3_1_RealCoreHTTPRouterContract(t *testing.T) {
 
 	// Wire vault handler (mock reader/writer/manager/gatekeeper).
 	vm := newGatekeeperVaultManager()
-	_ = vm.Open(context.Background(), "personal", nil)
+	_ = vm.Open(context.Background(), "general", nil)
 	gk := &gatekeeperMock{}
 
 	vaultSvc := service.NewVaultService(vm, &goldenSchemaReader{}, &goldenSchemaWriter{}, gk, &simpleClock{})
@@ -2499,7 +2499,7 @@ func TestContract_30_3_1_RealCoreHTTPRouterContract(t *testing.T) {
 
 	t.Run("vault_query_routed_correctly", func(t *testing.T) {
 		body, _ := json.Marshal(map[string]interface{}{
-			"persona": "personal",
+			"persona": "general",
 			"query":   "test",
 		})
 		resp, err := client.Post(ts.URL+"/v1/vault/query", "application/json", bytes.NewReader(body))
@@ -2526,7 +2526,7 @@ func TestContract_30_3_1_RealCoreHTTPRouterContract(t *testing.T) {
 
 	t.Run("vault_store_routed_correctly", func(t *testing.T) {
 		body, _ := json.Marshal(map[string]interface{}{
-			"persona": "personal",
+			"persona": "general",
 			"item": map[string]interface{}{
 				"type":      "note",
 				"body_text": "test note from real router",
@@ -2553,7 +2553,7 @@ func TestContract_30_3_1_RealCoreHTTPRouterContract(t *testing.T) {
 
 	t.Run("vault_store_batch_routed_correctly", func(t *testing.T) {
 		body, _ := json.Marshal(map[string]interface{}{
-			"persona": "personal",
+			"persona": "general",
 			"items": []map[string]interface{}{
 				{"type": "note", "body_text": "batch item 1"},
 				{"type": "note", "body_text": "batch item 2"},
@@ -2659,7 +2659,7 @@ func TestContract_30_3_1_RealCoreHTTPRouterContract(t *testing.T) {
 func TestContract_30_3_6_BrainToCoreVaultQueryContract(t *testing.T) {
 	// Wire up the full handler stack with predictable mock data.
 	mgr := newGatekeeperVaultManager()
-	_ = mgr.Open(context.Background(), "personal", nil)
+	_ = mgr.Open(context.Background(), "general", nil)
 	_ = mgr.Open(context.Background(), "health", nil)
 
 	reader := &goldenSchemaReader{}
@@ -2670,7 +2670,7 @@ func TestContract_30_3_6_BrainToCoreVaultQueryContract(t *testing.T) {
 	t.Run("minimal_query_persona_and_text_only", func(t *testing.T) {
 		// Brain sends the minimum required fields: persona + query text.
 		body, _ := json.Marshal(map[string]interface{}{
-			"persona": "personal",
+			"persona": "general",
 			"query":   "meeting notes",
 		})
 		req := httptest.NewRequest(http.MethodPost, "/v1/vault/query", bytes.NewReader(body))
@@ -2704,7 +2704,7 @@ func TestContract_30_3_6_BrainToCoreVaultQueryContract(t *testing.T) {
 	t.Run("full_query_all_fields_accepted", func(t *testing.T) {
 		// Brain may send all optional fields. Core must accept them without error.
 		body, _ := json.Marshal(map[string]interface{}{
-			"persona":   "personal",
+			"persona":   "general",
 			"query":     "calendar events",
 			"mode":      "fts5",
 			"types":     []string{"email", "calendar", "note"},
@@ -2784,7 +2784,7 @@ func TestContract_30_3_6_BrainToCoreVaultQueryContract(t *testing.T) {
 	t.Run("items_array_has_expected_fields", func(t *testing.T) {
 		// Validate that each item in the response has the expected vault item fields.
 		body, _ := json.Marshal(map[string]interface{}{
-			"persona": "personal",
+			"persona": "general",
 			"query":   "test",
 		})
 		req := httptest.NewRequest(http.MethodPost, "/v1/vault/query", bytes.NewReader(body))
@@ -2816,7 +2816,7 @@ func TestContract_30_3_6_BrainToCoreVaultQueryContract(t *testing.T) {
 		// When Brain requests semantic/hybrid search without embedding,
 		// Core must signal degradation via response headers.
 		body, _ := json.Marshal(map[string]interface{}{
-			"persona":   "personal",
+			"persona":   "general",
 			"query":     "semantic query",
 			"mode":      "semantic",
 			"embedding": []float32{}, // empty = no embedding
@@ -2855,7 +2855,7 @@ func TestContract_30_3_6_BrainToCoreVaultQueryContract(t *testing.T) {
 func TestContract_30_6_3_RealDeleteAPIsUsedNotFiltering(t *testing.T) {
 	// Build a handler stack with a tracking writer that records delete calls.
 	mgr := newGatekeeperVaultManager()
-	_ = mgr.Open(context.Background(), "personal", nil)
+	_ = mgr.Open(context.Background(), "general", nil)
 	gk := &gatekeeperMock{}
 
 	tracker := &deleteTrackingWriter{}
@@ -2872,7 +2872,7 @@ func TestContract_30_6_3_RealDeleteAPIsUsedNotFiltering(t *testing.T) {
 		reader.mu.Unlock()
 
 		// DELETE the item via the handler.
-		req := httptest.NewRequest(http.MethodDelete, "/v1/vault/item/test-item-001?persona=personal", nil)
+		req := httptest.NewRequest(http.MethodDelete, "/v1/vault/item/test-item-001?persona=general", nil)
 		rr := httptest.NewRecorder()
 		h.HandleDeleteItem(rr, req)
 
@@ -2898,7 +2898,7 @@ func TestContract_30_6_3_RealDeleteAPIsUsedNotFiltering(t *testing.T) {
 		reader.mu.Unlock()
 
 		// GET the deleted item — must return 404.
-		req := httptest.NewRequest(http.MethodGet, "/v1/vault/item/test-item-001?persona=personal", nil)
+		req := httptest.NewRequest(http.MethodGet, "/v1/vault/item/test-item-001?persona=general", nil)
 		rr := httptest.NewRecorder()
 		h.HandleGetItem(rr, req)
 
@@ -2922,7 +2922,7 @@ func TestContract_30_6_3_RealDeleteAPIsUsedNotFiltering(t *testing.T) {
 
 	t.Run("delete_with_empty_id_returns_400", func(t *testing.T) {
 		// URL path ending in "/" gives empty ID.
-		req := httptest.NewRequest(http.MethodDelete, "/v1/vault/item/?persona=personal", nil)
+		req := httptest.NewRequest(http.MethodDelete, "/v1/vault/item/?persona=general", nil)
 		rr := httptest.NewRecorder()
 		h.HandleDeleteItem(rr, req)
 
@@ -2932,7 +2932,7 @@ func TestContract_30_6_3_RealDeleteAPIsUsedNotFiltering(t *testing.T) {
 	})
 
 	t.Run("wrong_method_returns_405", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/v1/vault/item/some-id?persona=personal", nil)
+		req := httptest.NewRequest(http.MethodPost, "/v1/vault/item/some-id?persona=general", nil)
 		rr := httptest.NewRecorder()
 		h.HandleDeleteItem(rr, req)
 
@@ -2949,7 +2949,7 @@ func TestContract_30_6_3_RealDeleteAPIsUsedNotFiltering(t *testing.T) {
 
 		// Delete multiple items.
 		for _, id := range []string{"item-a", "item-b", "item-c"} {
-			req := httptest.NewRequest(http.MethodDelete, "/v1/vault/item/"+id+"?persona=personal", nil)
+			req := httptest.NewRequest(http.MethodDelete, "/v1/vault/item/"+id+"?persona=general", nil)
 			rr := httptest.NewRecorder()
 			h.HandleDeleteItem(rr, req)
 			if rr.Code != http.StatusNoContent {
@@ -3176,7 +3176,7 @@ func TestSecurity_34_2_9_AgentCannotEscalateFromTaskScopedToFullAccess(t *testin
 		d, err := impl.EvaluateIntent(ctx, domain.Intent{
 			AgentDID:    "did:plc:agent-drafts-only",
 			Action:      domain.ActionVaultRead,
-			PersonaID:   "personal",
+			PersonaID:   "general",
 			TrustLevel:  "verified",
 			Constraints: map[string]bool{"draft_only": true},
 		})
@@ -3189,14 +3189,14 @@ func TestSecurity_34_2_9_AgentCannotEscalateFromTaskScopedToFullAccess(t *testin
 	// --- persona_X_only blocks cross-persona access ---
 
 	t.Run("persona_constraint_blocks_cross_persona_access", func(t *testing.T) {
-		// An agent constrained to "personal" persona MUST NOT access "financial".
+		// An agent constrained to "general" persona MUST NOT access "financial".
 		// This prevents lateral movement between persona compartments.
 		d, err := impl.EvaluateIntent(ctx, domain.Intent{
 			AgentDID:    "did:plc:personal-agent",
 			Action:      domain.ActionVaultRead,
 			PersonaID:   "financial",
 			TrustLevel:  "verified",
-			Constraints: map[string]bool{"persona_personal_only": true},
+			Constraints: map[string]bool{"persona_general_only": true},
 		})
 		testutil.RequireNoError(t, err)
 		if d.Allowed {
@@ -3212,9 +3212,9 @@ func TestSecurity_34_2_9_AgentCannotEscalateFromTaskScopedToFullAccess(t *testin
 		d, err := impl.EvaluateIntent(ctx, domain.Intent{
 			AgentDID:    "did:plc:personal-agent",
 			Action:      domain.ActionVaultRead,
-			PersonaID:   "personal",
+			PersonaID:   "general",
 			TrustLevel:  "verified",
-			Constraints: map[string]bool{"persona_personal_only": true},
+			Constraints: map[string]bool{"persona_general_only": true},
 		})
 		testutil.RequireNoError(t, err)
 		if !d.Allowed {
@@ -3225,7 +3225,7 @@ func TestSecurity_34_2_9_AgentCannotEscalateFromTaskScopedToFullAccess(t *testin
 	t.Run("persona_constraint_blocks_all_other_personas", func(t *testing.T) {
 		// Test that the constraint blocks EVERY other persona, not just one.
 		// An agent constrained to "health" must be blocked from personal, financial, and social.
-		forbidden := []string{"personal", "financial", "social", "consumer"}
+		forbidden := []string{"general", "financial", "social", "consumer"}
 		for _, persona := range forbidden {
 			d, err := impl.EvaluateIntent(ctx, domain.Intent{
 				AgentDID:    "did:plc:health-agent",
@@ -3244,18 +3244,18 @@ func TestSecurity_34_2_9_AgentCannotEscalateFromTaskScopedToFullAccess(t *testin
 	// --- Compound constraints: BOTH apply ---
 
 	t.Run("compound_constraints_both_enforced", func(t *testing.T) {
-		// An agent with BOTH draft_only AND persona_personal_only must be
+		// An agent with BOTH draft_only AND persona_general_only must be
 		// denied on either dimension. This verifies constraints compound.
 
 		// Attempt 1: Right persona, risky action → blocked by draft_only.
 		d, err := impl.EvaluateIntent(ctx, domain.Intent{
 			AgentDID:   "did:plc:restricted-agent",
 			Action:     "send_email",
-			PersonaID:  "personal",
+			PersonaID:  "general",
 			TrustLevel: "verified",
 			Constraints: map[string]bool{
 				"draft_only":            true,
-				"persona_personal_only": true,
+				"persona_general_only": true,
 			},
 		})
 		testutil.RequireNoError(t, err)
@@ -3271,7 +3271,7 @@ func TestSecurity_34_2_9_AgentCannotEscalateFromTaskScopedToFullAccess(t *testin
 			TrustLevel: "verified",
 			Constraints: map[string]bool{
 				"draft_only":            true,
-				"persona_personal_only": true,
+				"persona_general_only": true,
 			},
 		})
 		testutil.RequireNoError(t, err)
@@ -3283,11 +3283,11 @@ func TestSecurity_34_2_9_AgentCannotEscalateFromTaskScopedToFullAccess(t *testin
 		d, err = impl.EvaluateIntent(ctx, domain.Intent{
 			AgentDID:   "did:plc:restricted-agent",
 			Action:     domain.ActionVaultRead,
-			PersonaID:  "personal",
+			PersonaID:  "general",
 			TrustLevel: "verified",
 			Constraints: map[string]bool{
 				"draft_only":            true,
-				"persona_personal_only": true,
+				"persona_general_only": true,
 			},
 		})
 		testutil.RequireNoError(t, err)
@@ -3322,7 +3322,7 @@ func TestSecurity_34_2_9_AgentCannotEscalateFromTaskScopedToFullAccess(t *testin
 		d, err := impl.EvaluateIntent(ctx, domain.Intent{
 			AgentDID:    "did:plc:unconstrained-agent",
 			Action:      domain.ActionVaultRead,
-			PersonaID:   "personal",
+			PersonaID:   "general",
 			TrustLevel:  "verified",
 			Constraints: nil,
 		})

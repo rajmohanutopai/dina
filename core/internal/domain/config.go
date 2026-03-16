@@ -14,12 +14,13 @@ type GatekeeperConfig struct {
 
 // BootConfig holds configuration for the boot sequence.
 type BootConfig struct {
-	Mode            string // "security" or "convenience"
+	Mode            string            // "security" or "convenience"
 	KeyfilePath     string
 	WrappedSeedPath string
 	VaultPath       string
-	Personas        []string // persona names to open at boot
-	Passphrase      string   // for security mode
+	Personas        []string          // persona names to open at boot
+	PersonaTiers    map[string]string // persona name → tier (default/standard/sensitive/locked)
+	Passphrase      string            // for security mode
 }
 
 // Config holds all typed configuration for dina-core.

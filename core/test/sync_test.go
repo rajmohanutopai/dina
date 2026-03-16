@@ -208,11 +208,11 @@ func TestSync_26_5_BackupBlobStoreDestination(t *testing.T) {
 	defer os.RemoveAll(vaultDir)
 
 	mgr := vault.NewManager(vaultDir)
-	err = mgr.Open(context.Background(), "personal", testutil.TestDEK[:])
+	err = mgr.Open(context.Background(), "general", testutil.TestDEK[:])
 	testutil.RequireNoError(t, err)
 
 	// Store an item in the vault so backup has data.
-	_, err = mgr.Store(context.Background(), "personal", domain.VaultItem{
+	_, err = mgr.Store(context.Background(), "general", domain.VaultItem{
 		Type:    "note",
 		Source:  "test",
 		Summary: "backup test item",
@@ -222,7 +222,7 @@ func TestSync_26_5_BackupBlobStoreDestination(t *testing.T) {
 	// Create backup manager and back up to a temp file.
 	backupMgr := vault.NewBackupManager(mgr)
 	backupPath := vaultDir + "/backup.json"
-	err = backupMgr.Backup(context.Background(), "personal", backupPath)
+	err = backupMgr.Backup(context.Background(), "general", backupPath)
 	testutil.RequireNoError(t, err)
 
 	// Positive: backup file must exist and be non-empty.
@@ -232,14 +232,14 @@ func TestSync_26_5_BackupBlobStoreDestination(t *testing.T) {
 
 	// Positive: backup can be restored to a new vault and data is preserved.
 	mgr2 := vault.NewManager(vaultDir + "/restored")
-	err = mgr2.Open(context.Background(), "personal", testutil.TestDEK[:])
+	err = mgr2.Open(context.Background(), "general", testutil.TestDEK[:])
 	testutil.RequireNoError(t, err)
 
-	err = vault.NewBackupManager(mgr2).Restore(context.Background(), "personal", backupPath)
+	err = vault.NewBackupManager(mgr2).Restore(context.Background(), "general", backupPath)
 	testutil.RequireNoError(t, err)
 
 	// Query the restored vault to verify data.
-	items, err := mgr2.Query(context.Background(), "personal", domain.SearchQuery{})
+	items, err := mgr2.Query(context.Background(), "general", domain.SearchQuery{})
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(items) >= 1, "restored vault must have at least 1 item")
 	testutil.RequireEqual(t, items[0].Summary, "backup test item")

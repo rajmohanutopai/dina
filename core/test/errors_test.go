@@ -54,7 +54,7 @@ func TestErrors_16_2_RequestBodyTooLarge(t *testing.T) {
 
 	// Body at exactly the limit must be accepted (boundary test).
 	atLimitBody := make([]byte, maxSize)
-	copy(atLimitBody, []byte(`{"persona":"personal","type":"email","source":"test","summary":"ok"}`))
+	copy(atLimitBody, []byte(`{"persona":"general","type":"email","source":"test","summary":"ok"}`))
 	statusCode, _, err := impl.HandleRequest("POST", "/v1/vault/store", "application/json", atLimitBody)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, statusCode != 413, "body at exactly max size must not be rejected as too large")

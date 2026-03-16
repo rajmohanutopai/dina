@@ -313,3 +313,121 @@ def test_configure_help():
     result = runner.invoke(cli, ["configure", "--help"], env={})
     assert result.exit_code == 0
     assert "Set up connection" in result.output
+
+
+# ── session ──────────────────────────────────────────────────────────────
+
+
+# TST-CLI-047
+def test_session_start():
+    """Session start creates a named session."""
+    mc = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"id": "ses-123", "name": "research", "status": "active"}
+    mc._request.return_value = mock_resp
+    mc._core = MagicMock()
+    result = _invoke(["session", "start", "--name", "research"], mock_client=mc)
+    assert result.exit_code == 0
+    assert "research" in result.output
+    assert "active" in result.output
+
+
+# TST-CLI-048
+def test_session_end():
+    """Session end closes a session."""
+    mc = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"status": "ended"}
+    mc._request.return_value = mock_resp
+    mc._core = MagicMock()
+    result = _invoke(["session", "end", "--name", "research"], mock_client=mc)
+    assert result.exit_code == 0
+    assert "ended" in result.output
+
+
+# TST-CLI-049
+def test_session_list_empty():
+    """Session list shows no sessions when none active."""
+    mc = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"sessions": []}
+    mc._request.return_value = mock_resp
+    mc._core = MagicMock()
+    result = _invoke(["session", "list"], mock_client=mc)
+    assert result.exit_code == 0
+    assert "No active sessions" in result.output
+
+
+# TST-CLI-050
+def test_session_list_with_sessions():
+    """Session list shows active sessions with grants."""
+    mc = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {
+        "sessions": [
+            {
+                "id": "ses-123",
+                "name": "chair-research",
+                "status": "active",
+                "grants": [{"persona_id": "health"}],
+            }
+        ]
+    }
+    mc._request.return_value = mock_resp
+    mc._core = MagicMock()
+    result = _invoke(["session", "list"], mock_client=mc)
+    assert result.exit_code == 0
+    assert "chair-research" in result.output
+    assert "health" in result.output
+
+
+# TST-CLI-051
+def test_session_start_json():
+    """Session start with --json returns JSON."""
+    mc = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"id": "ses-456", "name": "tax", "status": "active"}
+    mc._request.return_value = mock_resp
+    mc._core = MagicMock()
+    result = _invoke(["--json", "session", "start", "--name", "tax"], mock_client=mc)
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["name"] == "tax"
+
+
+# ── recall with session ──────────────────────────────────────────────────
+
+
+# TST-CLI-052
+def test_recall_with_session_passes_header():
+    """Recall with --session passes X-Session header."""
+    mc = MagicMock()
+    mc.vault_query.return_value = []
+    result = _invoke(
+        ["recall", "back pain", "--session", "chair-research", "--persona", "health"],
+        mock_client=mc,
+    )
+    assert result.exit_code == 0
+    # Verify vault_query was called with extra_headers containing X-Session
+    mc.vault_query.assert_called_once()
+    call_kwargs = mc.vault_query.call_args
+    assert call_kwargs[1].get("extra_headers", {}).get("X-Session") == "chair-research"
+
+
+# TST-CLI-053
+def test_recall_persona_locked_shows_hint():
+    """Recall shows helpful message when persona is locked."""
+    mc = MagicMock()
+    mc.vault_query.side_effect = DinaClientError("Access denied: persona locked")
+    result = _invoke(["recall", "hello"], mock_client=mc)
+    assert result.exit_code == 1
+    assert "persona is locked" in result.output or "dina-admin" in result.output
+
+
+# TST-CLI-054
+def test_recall_with_verbose():
+    """Recall --verbose flag is accepted."""
+    mc = MagicMock()
+    mc.vault_query.return_value = []
+    result = _invoke(["-v", "recall", "hello"], mock_client=mc)
+    assert result.exit_code == 0

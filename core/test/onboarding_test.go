@@ -52,7 +52,7 @@ func TestOnboarding_19_1_ManagedOnboarding(t *testing.T) {
 	testutil.RequireTrue(t, len(rootDID) > 0, "root DID must be set after onboarding")
 	testutil.RequireHasPrefix(t, rootDID, "did:")
 
-	// Only "personal" persona must exist.
+	// Only "general" persona must exist.
 	personas, err := impl.GetPersonas()
 	testutil.RequireNoError(t, err)
 	testutil.RequireLen(t, len(personas), 1)
@@ -431,11 +431,11 @@ func TestOnboarding_19_11_OneDefaultPersona(t *testing.T) {
 	_, err = impl.StartOnboarding(context.Background(), "user@example.com", testutil.TestPassphrase)
 	testutil.RequireNoError(t, err)
 
-	// Positive: after setup, exactly one persona "personal" must exist.
+	// Positive: after setup, exactly one persona "general" must exist.
 	personas, err := impl.GetPersonas()
 	testutil.RequireNoError(t, err)
 	testutil.RequireLen(t, len(personas), 1)
-	testutil.RequireEqual(t, personas[0], "personal")
+	testutil.RequireEqual(t, personas[0], "general")
 }
 
 // --------------------------------------------------------------------------

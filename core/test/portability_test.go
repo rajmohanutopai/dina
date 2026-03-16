@@ -465,7 +465,7 @@ func TestPortability_23_1_10_ExportWhileVaultLocked(t *testing.T) {
 	// 1. Create a fresh vault, store data, then close it (vault is now "locked").
 	ctx := context.Background()
 	mgr := vault.NewManager(dir)
-	err = mgr.Open(ctx, "personal", []byte("test-dek-locked"))
+	err = mgr.Open(ctx, "general", []byte("test-dek-locked"))
 	testutil.RequireNoError(t, err)
 
 	for i := 0; i < 5; i++ {
@@ -475,10 +475,10 @@ func TestPortability_23_1_10_ExportWhileVaultLocked(t *testing.T) {
 			Summary:  fmt.Sprintf("locked vault item %d", i),
 			BodyText: "this data is encrypted at rest via SQLCipher",
 		}
-		_, err = mgr.Store(ctx, "personal", item)
+		_, err = mgr.Store(ctx, "general", item)
 		testutil.RequireNoError(t, err)
 	}
-	err = mgr.Close("personal")
+	err = mgr.Close("general")
 	testutil.RequireNoError(t, err)
 
 	// 2. Vault is now locked (closed). The encrypted .sqlite file exists on disk.

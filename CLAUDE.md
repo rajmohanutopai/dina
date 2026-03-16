@@ -111,13 +111,16 @@ docker-compose.yml:
 | **CLIENT_TOKEN** | Admin web UI | 32-byte random, SHA-256 hashed in `device_tokens` table. Browser uses passphrase → session cookie → Core injects Bearer token. | Admin access |
 | **Ed25519 Device Keys** | CLI, paired devices | Per-device keypair registered during pairing. Same signature format as service keys. | Full access including admin |
 
-### Persona Access Tiers (Gatekeeper)
+### Persona Access Tiers (4-Tier Gatekeeper)
 
-| Tier | Behavior | Example |
-|------|----------|---------|
-| **Open** | Brain queries freely, logged silently | `/social`, `/consumer`, `/professional` |
-| **Restricted** | Brain queries, but every access logged + user notified in daily briefing | `/health` |
-| **Locked** | Database CLOSED, DEK not in RAM. Brain gets 403. Requires human unlock with TTL. | `/financial` |
+| Tier | Boot State | Users | Brain | Agents | Example |
+|------|-----------|-------|-------|--------|---------|
+| **Default** | Auto-open | Free | Free | Free | `/general` |
+| **Standard** | Auto-open | Free | Free | Session grant | `/consumer`, `/social`, `/work` |
+| **Sensitive** | Closed | Confirm | Approval | Approval | `/health` |
+| **Locked** | Closed | Passphrase | Denied | Denied | `/financial` |
+
+Agents work within named sessions (`dina session start --name "task"`). Grants are scoped to sessions and revoked on session end. Legacy tiers (open/restricted) auto-migrate on load.
 
 ### Key Architecture Decisions
 

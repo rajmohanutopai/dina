@@ -94,7 +94,7 @@ prefixes.
 | DID | `did:plc:alonso` |
 | Trust Ring | 3 (Verified + Actioned — 200+ transactions, 2 years) |
 | Home Node | Full stack: core + brain + pds + llama |
-| Personas | `/personal` (open), `/health` (restricted), `/financial` (locked, 15m TTL) |
+| Personas | `/general` (default), `/consumer` (standard), `/health` (sensitive), `/financial` (locked, 15m TTL) |
 | Devices | Phone (rich client), Laptop (rich client), Smart watch (thin client) |
 | Contacts | Sancho (Ring 2), Dr. Carl (Ring 2), Albert (Ring 2), ChairMaker (Ring 3) |
 | Sharing policy (Sancho) | `presence: "eta_only"`, `context: "full"`, `availability: "free_busy"`, `preferences: "full"` |

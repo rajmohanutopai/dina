@@ -59,7 +59,7 @@ def load_config() -> Config:
     saved = _load_saved()
 
     core_url = os.environ.get("DINA_CORE_URL") or saved.get("core_url") or "http://localhost:8100"
-    persona = os.environ.get("DINA_PERSONA") or saved.get("persona") or "personal"
+    persona = os.environ.get("DINA_PERSONA") or saved.get("persona") or "general"
     timeout = float(os.environ.get("DINA_TIMEOUT") or saved.get("timeout") or 30.0)
     device_name = saved.get("device_name") or ""
 

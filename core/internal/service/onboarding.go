@@ -93,11 +93,10 @@ func (s *OnboardingService) RunOnboarding(ctx context.Context, email string, see
 	})
 
 	// Step 3: Verify the default persona vault is open.
-	defaultPersona, err := domain.NewPersonaName("personal")
+	defaultPersona, err := domain.NewPersonaName("general")
 	if err != nil {
 		return nil, fmt.Errorf("onboarding: %w", err)
 	}
-
 	if !s.vault.IsOpen(defaultPersona) {
 		return nil, fmt.Errorf("onboarding: %w: default persona vault did not open", domain.ErrPersonaLocked)
 	}
@@ -106,7 +105,7 @@ func (s *OnboardingService) RunOnboarding(ctx context.Context, email string, see
 		Name:      "vault_ready",
 		Completed: true,
 		Data: map[string]interface{}{
-			"persona":   "personal",
+			"persona":   "general",
 			"timestamp": s.clock.Now().Unix(),
 		},
 	})

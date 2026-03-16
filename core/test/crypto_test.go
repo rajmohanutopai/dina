@@ -418,7 +418,7 @@ func TestCrypto_2_3_DerivePerPersonaDEK(t *testing.T) {
 	// impl = keyderiver.New()
 	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
-	dek, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", testutil.TestUserSalt[:])
+	dek, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "general", testutil.TestUserSalt[:])
 	testutil.RequireNoError(t, err)
 	testutil.RequireBytesLen(t, dek, 32) // 256-bit DEK
 
@@ -435,16 +435,16 @@ func TestCrypto_2_3_DerivePerPersonaDEK(t *testing.T) {
 	}
 
 	// Determinism: same inputs must produce identical DEK.
-	dek2, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", testutil.TestUserSalt[:])
+	dek2, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "general", testutil.TestUserSalt[:])
 	testutil.RequireNoError(t, err)
 	testutil.RequireBytesEqual(t, dek, dek2)
 
 	// Error cases: empty inputs must be rejected.
-	_, err = impl.DeriveVaultDEK(nil, "personal", testutil.TestUserSalt[:])
+	_, err = impl.DeriveVaultDEK(nil, "general", testutil.TestUserSalt[:])
 	testutil.RequireError(t, err)
 	_, err = impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "", testutil.TestUserSalt[:])
 	testutil.RequireError(t, err)
-	_, err = impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", nil)
+	_, err = impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "general", nil)
 	testutil.RequireError(t, err)
 }
 
@@ -459,7 +459,7 @@ func TestCrypto_2_3_DifferentPersonasDifferentDEKs(t *testing.T) {
 	dekWork, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "work", testutil.TestUserSalt[:])
 	testutil.RequireNoError(t, err)
 
-	dekPersonal, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", testutil.TestUserSalt[:])
+	dekPersonal, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "general", testutil.TestUserSalt[:])
 	testutil.RequireNoError(t, err)
 
 	testutil.RequireBytesNotEqual(t, dekWork, dekPersonal)
@@ -473,10 +473,10 @@ func TestCrypto_2_3_Determinism(t *testing.T) {
 	// impl = keyderiver.New()
 	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
-	dek1, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", testutil.TestUserSalt[:])
+	dek1, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "general", testutil.TestUserSalt[:])
 	testutil.RequireNoError(t, err)
 
-	dek2, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", testutil.TestUserSalt[:])
+	dek2, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "general", testutil.TestUserSalt[:])
 	testutil.RequireNoError(t, err)
 
 	testutil.RequireBytesEqual(t, dek1, dek2)
@@ -630,7 +630,7 @@ func TestCrypto_2_3_BackupEncryptionKey(t *testing.T) {
 	testutil.RequireBytesLen(t, dekBackup, 32)
 
 	// Backup key must differ from personal key (different HKDF info).
-	dekPersonal, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", testutil.TestUserSalt[:])
+	dekPersonal, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "general", testutil.TestUserSalt[:])
 	testutil.RequireNoError(t, err)
 	testutil.RequireBytesNotEqual(t, dekBackup, dekPersonal)
 
@@ -654,7 +654,7 @@ func TestCrypto_2_3_ArchiveKey(t *testing.T) {
 	testutil.RequireBytesLen(t, dekArchive, 32)
 
 	// Archive key must differ from personal and backup keys (different HKDF info).
-	dekPersonal, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", testutil.TestUserSalt[:])
+	dekPersonal, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "general", testutil.TestUserSalt[:])
 	testutil.RequireNoError(t, err)
 	testutil.RequireBytesNotEqual(t, dekArchive, dekPersonal)
 
@@ -748,7 +748,7 @@ func TestCrypto_2_3_UserSaltRandom32Bytes(t *testing.T) {
 	testutil.RequireBytesNotEqual(t, salt, allZero)
 
 	// Deriving with a real salt must succeed.
-	dek, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", salt)
+	dek, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "general", salt)
 	testutil.RequireNoError(t, err)
 	testutil.RequireBytesLen(t, dek, 32)
 
@@ -757,7 +757,7 @@ func TestCrypto_2_3_UserSaltRandom32Bytes(t *testing.T) {
 	for i := range altSalt {
 		altSalt[i] = byte(i + 0x80)
 	}
-	dekAlt, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", altSalt)
+	dekAlt, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "general", altSalt)
 	testutil.RequireNoError(t, err)
 	testutil.RequireBytesLen(t, dekAlt, 32)
 	testutil.RequireBytesNotEqual(t, dek, dekAlt)
@@ -775,10 +775,10 @@ func TestCrypto_2_3_UserSaltGeneratedOnce(t *testing.T) {
 	// across multiple derivations produces consistent results.
 	salt := testutil.TestUserSalt[:]
 
-	dek1, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", salt)
+	dek1, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "general", salt)
 	testutil.RequireNoError(t, err)
 
-	dek2, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", salt)
+	dek2, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "general", salt)
 	testutil.RequireNoError(t, err)
 
 	testutil.RequireBytesEqual(t, dek1, dek2)
@@ -789,7 +789,7 @@ func TestCrypto_2_3_UserSaltGeneratedOnce(t *testing.T) {
 	for i := range altSalt {
 		altSalt[i] = byte(0xff - i)
 	}
-	dekAlt, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", altSalt)
+	dekAlt, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "general", altSalt)
 	testutil.RequireNoError(t, err)
 	testutil.RequireBytesNotEqual(t, dek1, dekAlt)
 }
@@ -862,10 +862,10 @@ func TestCrypto_2_3_DifferentSaltDifferentDEKs(t *testing.T) {
 		salt2[i] = 0xff // Different salt
 	}
 
-	dek1, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", salt1)
+	dek1, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "general", salt1)
 	testutil.RequireNoError(t, err)
 
-	dek2, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", salt2)
+	dek2, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "general", salt2)
 	testutil.RequireNoError(t, err)
 
 	testutil.RequireBytesNotEqual(t, dek1, dek2)
@@ -880,7 +880,7 @@ func TestCrypto_2_3_UserSaltAbsentStartupError(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
 	// Missing salt (nil) must produce an error, not silently use zero salt.
-	_, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "personal", nil)
+	_, err := impl.DeriveVaultDEK(testutil.TestMnemonicSeed, "general", nil)
 	testutil.RequireError(t, err)
 }
 
@@ -2223,7 +2223,7 @@ func TestCrypto_2_1_6_MasterSeedIsTheDEK(t *testing.T) {
 		// Same seed + persona + salt → identical DEK every time.
 		// This proves the seed IS the root key material (not discarded or
 		// replaced with a random key during derivation).
-		dek1, err := deriver.DeriveVaultDEK(seed, "personal", salt)
+		dek1, err := deriver.DeriveVaultDEK(seed, "general", salt)
 		if err != nil {
 			t.Fatalf("first derivation failed: %v", err)
 		}
@@ -2231,7 +2231,7 @@ func TestCrypto_2_1_6_MasterSeedIsTheDEK(t *testing.T) {
 			t.Fatalf("DEK must be 32 bytes, got %d", len(dek1))
 		}
 
-		dek2, err := deriver.DeriveVaultDEK(seed, "personal", salt)
+		dek2, err := deriver.DeriveVaultDEK(seed, "general", salt)
 		if err != nil {
 			t.Fatalf("second derivation failed: %v", err)
 		}
@@ -2247,7 +2247,7 @@ func TestCrypto_2_1_6_MasterSeedIsTheDEK(t *testing.T) {
 		// Contrast: different seed → different DEK.
 		// Without this, the test would pass even if DeriveVaultDEK ignored
 		// the seed parameter entirely and returned a constant.
-		dek1, err := deriver.DeriveVaultDEK(seed, "personal", salt)
+		dek1, err := deriver.DeriveVaultDEK(seed, "general", salt)
 		if err != nil {
 			t.Fatalf("derivation with seed1: %v", err)
 		}
@@ -2258,7 +2258,7 @@ func TestCrypto_2_1_6_MasterSeedIsTheDEK(t *testing.T) {
 			altSeed[i] = ^b
 		}
 
-		dek2, err := deriver.DeriveVaultDEK(altSeed, "personal", salt)
+		dek2, err := deriver.DeriveVaultDEK(altSeed, "general", salt)
 		if err != nil {
 			t.Fatalf("derivation with seed2: %v", err)
 		}
@@ -2278,7 +2278,7 @@ func TestCrypto_2_1_6_MasterSeedIsTheDEK(t *testing.T) {
 	t.Run("persona_isolation_from_same_seed", func(t *testing.T) {
 		// Two personas derived from the SAME seed must get different DEKs.
 		// This tests HKDF info string differentiation ("dina:vault:<persona>:v1").
-		dekPersonal, err := deriver.DeriveVaultDEK(seed, "personal", salt)
+		dekPersonal, err := deriver.DeriveVaultDEK(seed, "general", salt)
 		if err != nil {
 			t.Fatalf("personal DEK: %v", err)
 		}
@@ -2375,7 +2375,7 @@ func TestCrypto_2_1_6_MasterSeedIsTheDEK(t *testing.T) {
 	t.Run("derived_DEK_encrypts_data", func(t *testing.T) {
 		// End-to-end: seed → HKDF → DEK → AES-256-GCM encrypt → decrypt.
 		// Proves the DEK derived from the master seed is usable key material.
-		dek, err := deriver.DeriveVaultDEK(seed, "personal", salt)
+		dek, err := deriver.DeriveVaultDEK(seed, "general", salt)
 		if err != nil {
 			t.Fatalf("derive DEK: %v", err)
 		}
@@ -2422,7 +2422,7 @@ func TestCrypto_29_6_1_CrossPersonaDEKIsolation5Personas(t *testing.T) {
 	impl := realVaultDEKDeriver
 	testutil.RequireImplementation(t, impl, "VaultDEKDeriver")
 
-	personas := []string{"personal", "health", "financial", "social", "consumer"}
+	personas := []string{"general", "health", "financial", "social", "consumer"}
 	seed := testutil.TestMnemonicSeed
 	salt := testutil.TestUserSalt[:]
 
@@ -2929,7 +2929,7 @@ func TestCrypto_2_1_7_MnemonicRecoveryReDeriveEverything(t *testing.T) {
 	t.Run("all_persona_vault_deks_deterministic", func(t *testing.T) {
 		// Every persona's vault DEK must be identical after recovery.
 		// Without this, encrypted vault data is inaccessible.
-		personas := []string{"identity", "personal", "health", "financial", "social", "consumer"}
+		personas := []string{"identity", "general", "health", "financial", "social", "consumer"}
 		for _, persona := range personas {
 			dek1, err := dekDeriver.DeriveVaultDEK(seed, persona, testutil.TestUserSalt[:])
 			testutil.RequireNoError(t, err)
@@ -2986,7 +2986,7 @@ func TestCrypto_2_1_7_MnemonicRecoveryReDeriveEverything(t *testing.T) {
 		testutil.RequireNoError(t, err)
 		servicePub := []byte(serviceKey[32:])
 
-		dek, err := dekDeriver.DeriveVaultDEK(seed, "personal", testutil.TestUserSalt[:])
+		dek, err := dekDeriver.DeriveVaultDEK(seed, "general", testutil.TestUserSalt[:])
 		testutil.RequireNoError(t, err)
 
 		// All must be different from each other.
@@ -3102,7 +3102,7 @@ func TestCrypto_2_1_9_LoseDeviceAndPaperIdentityGone(t *testing.T) {
 	t.Run("vault_deks_irrecoverable", func(t *testing.T) {
 		// Every persona's vault DEK changes with a different seed.
 		// ALL encrypted data in ALL vaults becomes permanently inaccessible.
-		personas := []string{"identity", "personal", "health", "financial", "social"}
+		personas := []string{"identity", "general", "health", "financial", "social"}
 		for _, persona := range personas {
 			origDEK, err := dekDeriver.DeriveVaultDEK(originalSeed, persona, testutil.TestUserSalt[:])
 			testutil.RequireNoError(t, err)
@@ -3139,8 +3139,8 @@ func TestCrypto_2_1_9_LoseDeviceAndPaperIdentityGone(t *testing.T) {
 		testutil.RequireBytesNotEqual(t, origPub, nearPub)
 
 		// Also check DEK — one-bit seed change must produce different vault key.
-		origDEK, _ := dekDeriver.DeriveVaultDEK(originalSeed, "personal", testutil.TestUserSalt[:])
-		nearDEK, _ := dekDeriver.DeriveVaultDEK(nearSeed, "personal", testutil.TestUserSalt[:])
+		origDEK, _ := dekDeriver.DeriveVaultDEK(originalSeed, "general", testutil.TestUserSalt[:])
+		nearDEK, _ := dekDeriver.DeriveVaultDEK(nearSeed, "general", testutil.TestUserSalt[:])
 		testutil.RequireBytesNotEqual(t, origDEK, nearDEK)
 	})
 
@@ -3207,7 +3207,7 @@ func TestCrypto_29_8_3_DeterministicSeedDerivation(t *testing.T) {
 
 	t.Run("hkdf_determinism_all_personas", func(t *testing.T) {
 		// HKDF-SHA256 DEK derivation for every persona must be deterministic.
-		personas := []string{"identity", "personal", "health", "financial", "social", "consumer", "professional"}
+		personas := []string{"identity", "general", "health", "financial", "social", "consumer", "professional"}
 		for _, persona := range personas {
 			dek1, err := dekDeriver.DeriveVaultDEK(seed, persona, testutil.TestUserSalt[:])
 			testutil.RequireNoError(t, err)
@@ -3412,7 +3412,7 @@ func TestCrypto_2_1_2_MnemonicToSeedDerivation(t *testing.T) {
 		seed := testutil.TestMnemonicSeed
 
 		// Derive a DEK — must succeed with 64-byte seed.
-		dek, err := dekDeriver.DeriveVaultDEK(seed, "personal", testutil.TestUserSalt[:])
+		dek, err := dekDeriver.DeriveVaultDEK(seed, "general", testutil.TestUserSalt[:])
 		if err != nil {
 			t.Fatalf("HKDF derivation from 64-byte BIP-39 seed failed: %v", err)
 		}

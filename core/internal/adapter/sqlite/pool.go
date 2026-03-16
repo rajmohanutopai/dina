@@ -8,9 +8,9 @@
 // Usage:
 //
 //	pool := sqlite.NewPool("/data/vault")
-//	err := pool.Open("personal", dek)  // opens personal.sqlite with DEK
-//	db := pool.DB("personal")          // returns *sql.DB
-//	pool.Close("personal")             // zeroes DEK, closes connection
+//	err := pool.Open("general", dek)  // opens personal.sqlite with DEK
+//	db := pool.DB("general")          // returns *sql.DB
+//	pool.Close("general")             // zeroes DEK, closes connection
 package sqlite
 
 import (

@@ -85,7 +85,27 @@ var ValidTrustLevels = map[TrustLevel]bool{
 type PersonaTier string
 
 const (
-	TierOpen       PersonaTier = "open"
-	TierRestricted PersonaTier = "restricted"
-	TierLocked     PersonaTier = "locked"
+	TierDefault   PersonaTier = "default"   // always open, no approval needed
+	TierStandard  PersonaTier = "standard"  // auto-open at boot, agents need session grant
+	TierSensitive PersonaTier = "sensitive" // closed at boot, agents need approval
+	TierLocked    PersonaTier = "locked"    // passphrase required, agents denied
+)
+
+// ValidTier returns true if the tier name is valid.
+func ValidTier(tier PersonaTier) bool {
+	switch tier {
+	case TierDefault, TierStandard, TierSensitive, TierLocked:
+		return true
+	default:
+		return false
+	}
+}
+
+// CallerType identifies the type of authenticated caller.
+type CallerType string
+
+const (
+	CallerUser  CallerType = "user"  // admin UI, CLIENT_TOKEN
+	CallerBrain CallerType = "brain" // service key authenticated
+	CallerAgent CallerType = "agent" // paired device, Ed25519
 )

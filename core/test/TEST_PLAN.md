@@ -279,25 +279,47 @@
 | 12 | **[TST-CORE-161]** Persona Ed25519 key signs Trust Network entries (NOT root key) | Persona publishes attestation | Signed by persona key (e.g., `/consumer` at `m/9999'/1'/0'/0'`), verifiable against persona's DID Document — root key cannot sign on behalf of persona |
 | 13 | **[TST-CORE-162]** Even Dina's code cannot cross compartments | Code audit | No code path reads persona B data using persona A's context without root key + logged operation |
 
-### 3.3 Persona Gatekeeper (Tier Enforcement)
+### 3.3 Persona Gatekeeper (4-Tier Enforcement)
+
+The 4-tier model controls access based on persona sensitivity and caller type (user/brain/agent):
+
+| Tier | Boot State | Users | Brain | Agents | Audit |
+|------|-----------|-------|-------|--------|-------|
+| **default** | Auto-open | Free | Free | Free | Silent |
+| **standard** | Auto-open | Free | Free | Needs session grant | On agent access |
+| **sensitive** | Closed | Unlock with confirm | Needs approval | Needs approval | Always |
+| **locked** | Closed | Passphrase | Denied (403) | Denied (403) | Always |
+
+Legacy tiers are auto-migrated: `open` → `default`/`standard`, `restricted` → `sensitive`.
 
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
-| 1 | **[TST-CORE-163]** Access Open-tier persona | Any authenticated request | 200 — immediate access |
-| 2 | **[TST-CORE-164]** Access Restricted-tier persona | Authenticated request | 200 — access granted, event logged, notification sent |
+| 1 | **[TST-CORE-163]** Access Default-tier persona | Any authenticated request | 200 — immediate access for all caller types |
+| 2 | **[TST-CORE-164]** Access Sensitive-tier persona | Authenticated request | 200 for users, access granted + event logged. Brain/agents need session grant |
 | 3 | **[TST-CORE-165]** Access Locked-tier persona | Request without prior unlock | 403 — DEK not in RAM |
-| 4 | **[TST-CORE-166]** Unlock Locked persona | Provide passphrase, TTL=300s | DEK loaded to RAM, 200 on subsequent requests |
+| 4 | **[TST-CORE-166]** Unlock Locked persona | Provide passphrase, TTL=300s | DEK loaded to RAM, 200 on subsequent requests (users only — agents still denied) |
 | 5 | **[TST-CORE-167]** Locked persona TTL expiry | Wait past TTL after unlock | DEK zeroed from RAM, subsequent requests → 403 |
 | 6 | **[TST-CORE-168]** Locked persona re-lock | Explicit re-lock command | DEK zeroed immediately |
-| 7 | **[TST-CORE-169]** Audit log for Restricted access | Access restricted persona | Append-only audit entry with timestamp, accessor, action |
-| 8 | **[TST-CORE-170]** Notification on Restricted access | Access restricted persona | Notification dispatched to owner |
-| 9 | **[TST-CORE-171]** Locked persona unlock flow | Brain calls `POST /v1/persona/unlock {persona: "financial"}` | Core asks human (via WS/push) → human approves with TTL → DEK loaded → brain can query for TTL window |
-| 10 | **[TST-CORE-172]** Locked persona unlock: human denies | Human rejects unlock request | 403 persists, brain notified of denial |
+| 7 | **[TST-CORE-169]** Audit log for Sensitive access | Access sensitive persona | Append-only audit entry with timestamp, accessor, caller type, action |
+| 8 | **[TST-CORE-170]** Notification on Sensitive access | Access sensitive persona | Notification dispatched to owner |
+| 9 | **[TST-CORE-171]** Locked persona unlock flow | Admin calls `POST /v1/persona/unlock {persona: "financial"}` | Core asks human (via WS/push) → human approves with TTL → DEK loaded → user can query for TTL window |
+| 10 | **[TST-CORE-172]** Locked persona unlock: human denies | Human rejects unlock request | 403 persists, requestor notified of denial |
 | 11 | **[TST-CORE-173]** Locked persona unlock: TTL expires | Human approved with TTL=300s, 5 min pass | DEK zeroed, subsequent requests → 403 again |
-| 12 | **[TST-CORE-174]** Cross-persona query: parallel reads | Brain requests `/social` + `/professional` + `/consumer` simultaneously | Core queries each open database independently, merges results — brain gets JSON responses, never SQLite handles |
-| 13 | **[TST-CORE-175]** `GetPersonasForContact()`: derived, never cached | Query "which personas have data about Dr. Patel?" | Core scans all OPEN databases: `SELECT EXISTS(SELECT 1 FROM vault_items WHERE contact_did = ?)` — result computed live, not cached |
-| 14 | **[TST-CORE-176]** `GetPersonasForContact()`: locked invisible | Query for contact with data in `/financial` (locked) | `/financial` excluded from results — locked personas are invisible, not "access denied" |
-| 15 | **[TST-CORE-177]** Tier configuration stored in config.json | Inspect config.json `brain_access` field | `{"/personal": "open", "/health": "restricted", "/financial": "locked", ...}` |
+| 12 | **[TST-CORE-174]** Cross-persona query: parallel reads | Brain requests `/social` + `/professional` + `/consumer` simultaneously | Core queries each open database independently, merges results |
+| 13 | **[TST-CORE-175]** `GetPersonasForContact()`: derived, never cached | Query "which personas have data about Dr. Patel?" | Core scans all OPEN databases — result computed live, not cached |
+| 14 | **[TST-CORE-176]** `GetPersonasForContact()`: locked invisible | Query for contact with data in `/financial` (locked) | `/financial` excluded from results — locked personas are invisible |
+| 15 | **[TST-CORE-177]** Tier configuration persisted | Inspect persona_state.json | Tier values: default, standard, sensitive, locked. Legacy values auto-migrated on load |
+| 16 | **[TST-CORE-TIER-001]** Tier migration | MigrateTier("open","personal") | "default". MigrateTier("open","consumer") → "standard". MigrateTier("restricted","health") → "sensitive" |
+| 17 | **[TST-CORE-TIER-002]** Create with new tiers | Create personas with default/standard/sensitive/locked | All accepted. Legacy "open"/"restricted" also accepted (auto-migrated) |
+| 18 | **[TST-CORE-TIER-003]** Default tier allows all callers | User/brain/agent access default persona | All succeed |
+| 19 | **[TST-CORE-TIER-004]** Standard denies agent without session | Agent accesses standard persona without session grant | ErrApprovalRequired returned |
+| 20 | **[TST-CORE-TIER-005]** Sensitive denies brain and agent | Brain/agent access sensitive persona without grant | ErrApprovalRequired returned |
+| 21 | **[TST-CORE-TIER-006]** Session start + grant enables agent | Start session → add grant → agent access | Access granted |
+| 22 | **[TST-CORE-TIER-007]** Session end revokes grants | End session → agent access | Access denied |
+| 23 | **[TST-CORE-TIER-008]** Session reconnect | Start same-name session twice | Returns existing session (same ID) |
+| 24 | **[TST-CORE-TIER-009]** Approval lifecycle | Request → approve → grant created | Agent can access via session |
+| 25 | **[TST-CORE-TIER-010]** Approval deny | Request → deny | No grant created, approval removed from pending |
+| 26 | **[TST-CORE-TIER-011]** Locked denies agent even unlocked | Unlock locked persona → agent access | Still denied (locked tier = users only) |
 
 ### 3.4 Contact Directory
 

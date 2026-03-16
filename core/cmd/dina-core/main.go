@@ -314,6 +314,19 @@ func main() {
 		}
 		slog.Info("Vault closed on persona lock", "persona", name)
 	}
+	// Wire approval notification callback.
+	// For Phase 1: log + notify via WebSocket. Telegram relay is Phase 2.
+	personaMgr.OnApprovalNeeded = func(req domain.ApprovalRequest) {
+		slog.Info("Approval requested",
+			"approval_id", req.ID,
+			"client_did", req.ClientDID,
+			"persona", req.PersonaID,
+			"session", req.SessionID,
+			"reason", req.Reason,
+		)
+		// TODO: broadcast via WebSocket notifier for real-time UI
+	}
+
 	// CRITICAL-01: Wire orphan-guard callback. If vault DB files exist on disk for
 	// a persona that has no in-memory state, reject creation to prevent DEK reuse.
 	personaMgr.CheckOrphanedVault = func(personaID string) bool {
@@ -322,6 +335,31 @@ func main() {
 		_, err := os.Stat(dbFile)
 		return err == nil // file exists → orphaned vault artifact
 	}
+	// Auto-open default and standard tier personas at boot.
+	// This ensures vault queries work immediately for non-sensitive personas.
+	personaNames, _ := personaMgr.List(context.Background())
+	for _, pNameStr := range personaNames {
+		tier, _ := personaMgr.GetTier(context.Background(), pNameStr)
+		if tier == "default" || tier == "standard" {
+			pName, pErr := domain.NewPersonaName(strings.TrimPrefix(pNameStr, "persona-"))
+			if pErr != nil {
+				continue
+			}
+			if !vaultMgr.IsOpen(pName) {
+				dekVersion, dvErr := personaMgr.GetDEKVersion(context.Background(), pNameStr)
+				if dvErr != nil || dekVersion == 0 {
+					dekVersion = 1
+				}
+				dek, dErr := keyDeriver.DerivePersonaDEKVersioned(masterSeed, pName, dekVersion)
+				if dErr == nil {
+					if oErr := vaultMgr.Open(context.Background(), pName, dek); oErr == nil {
+						slog.Info("Auto-opened persona vault", "persona", pNameStr, "tier", tier)
+					}
+				}
+			}
+		}
+	}
+
 	contactDir := identity.NewContactDirectory()
 	deviceRegistry := identity.NewDeviceRegistry()
 	recoveryMgr := identity.NewRecoveryManager()
@@ -725,7 +763,7 @@ func main() {
 
 	healthH := &handler.HealthHandler{Health: healthChecker}
 	adminH := &handler.AdminHandler{ProxyURL: cfg.BrainURL}
-	vaultH := &handler.VaultHandler{Vault: vaultSvc, PII: scrubber}
+	vaultH := &handler.VaultHandler{Vault: vaultSvc, PII: scrubber, Approvals: personaMgr}
 	identityH := &handler.IdentityHandler{Identity: identitySvc, DID: didMgr, Signer: identitySigner}
 	messageH := &handler.MessageHandler{Transport: transportSvc, IngressRouter: ingressRouter}
 	taskH := &handler.TaskHandler{Task: taskSvc}
@@ -734,7 +772,8 @@ func main() {
 	agentBrain := brainclient.New(cfg.BrainURL, coreKey)
 	agentH := &handler.AgentHandler{Brain: agentBrain}
 
-	personaH := &handler.PersonaHandler{Identity: identitySvc, Personas: personaMgr, VaultManager: vaultMgr, KeyDeriver: keyDeriver, Seed: masterSeed}
+	personaH := &handler.PersonaHandler{Identity: identitySvc, Personas: personaMgr, Approvals: personaMgr, VaultManager: vaultMgr, KeyDeriver: keyDeriver, Seed: masterSeed}
+	sessionH := &handler.SessionHandler{Sessions: personaMgr}
 	trustH := &handler.TrustHandler{Trust: trustSvc, OwnDID: cfg.OwnDID}
 	contactH := &handler.ContactHandler{Contacts: contactDir, Sharing: sharingMgr}
 	piiH := &handler.PIIHandler{Scrubber: scrubber}
@@ -795,6 +834,14 @@ func main() {
 	mux.HandleFunc("/v1/personas", routeByMethod(personaH.HandleListPersonas, personaH.HandleCreatePersona))
 	mux.HandleFunc("/v1/persona/unlock", personaH.HandleUnlockPersona)
 	mux.HandleFunc("/v1/persona/lock", personaH.HandleLockPersona)
+	mux.HandleFunc("/v1/persona/approve", personaH.HandleApprove)
+	mux.HandleFunc("/v1/persona/deny", personaH.HandleDeny)
+	mux.HandleFunc("/v1/persona/approvals", personaH.HandleListApprovals)
+
+	// Session API
+	mux.HandleFunc("/v1/session/start", sessionH.HandleStartSession)
+	mux.HandleFunc("/v1/session/end", sessionH.HandleEndSession)
+	mux.HandleFunc("/v1/sessions", sessionH.HandleListSessions)
 
 	// Contact API
 	mux.HandleFunc("/v1/contacts", routeByMethod(contactH.HandleListContacts, contactH.HandleAddContact))

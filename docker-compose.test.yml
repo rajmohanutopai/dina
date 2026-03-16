@@ -26,8 +26,9 @@ services:
       - DINA_VAULT_PATH=/data/vault
       - DINA_BRAIN_URL=http://brain:8200
       - DINA_SERVICE_KEY_DIR=/run/secrets/service_keys
-      - DINA_SEED_PASSWORD_FILE=/run/secrets/seed_password
+      - DINA_SEED_PASSWORD=${DINA_SEED_PASSWORD:-}
       - DINA_LISTEN_ADDR=:8100
+      - DINA_CLIENT_TOKEN=${DINA_CLIENT_TOKEN:-}
       - DINA_RATE_LIMIT=100000
       - DINA_SPOOL_MAX=10485760
       - DINA_LOG_LEVEL=debug

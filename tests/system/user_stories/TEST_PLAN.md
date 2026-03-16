@@ -69,7 +69,7 @@
 | 1 | **[TST-USR-029]** Seed health persona vault | Store 3 medical records in restricted health persona | Records with L4-L5 diagnosis, Dr. Sharma, medications |
 | 2 | **[TST-USR-030]** Store shopping context | Store shopping query in open consumer persona | Chair search context stored |
 | 3 | **[TST-USR-031]** Cross-persona request blocked | Shopping agent requests health data | action=disclosure_proposed, blocked=True, requires_approval=True |
-| 4 | **[TST-USR-032]** Verify automatic disclosure blocked | Check response fields | blocked=True, persona_tier=restricted, approved=False |
+| 4 | **[TST-USR-032]** Verify automatic disclosure blocked | Check response fields | blocked=True, persona_tier=sensitive, approved=False |
 | 5 | **[TST-USR-033]** Verify disclosure proposal exists | Check proposal object | safe_to_share non-empty, withheld non-empty |
 | 6 | **[TST-USR-034]** Verify diagnosis withheld | Check safe_to_share text | No L4-L5, herniat*, Dr. Sharma, Apollo, Ibuprofen |
 | 7 | **[TST-USR-035]** Verify proposal is useful | Check general terms in safe_to_share | At least 2 of: back, pain, lumbar, chronic, ergonomic |

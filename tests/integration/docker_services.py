@@ -84,6 +84,10 @@ class DockerServices:
 
         self._load_client_token()
 
+        # Export client token so docker-compose.test.yml can read it
+        if self.client_token:
+            os.environ["DINA_CLIENT_TOKEN"] = self.client_token
+
         # Skip docker compose up if services are already healthy
         if self.is_running():
             self._externally_managed = True

@@ -80,10 +80,16 @@ def docker_services():
 # Docker persona initialization (session-scoped)
 # ---------------------------------------------------------------------------
 
-_ALL_PERSONAS = [
-    "personal", "health", "financial", "consumer",
-    "professional", "social", "business",
-]
+_PERSONA_TIERS = {
+    "general": "default",
+    "health": "sensitive",
+    "financial": "locked",
+    "consumer": "standard",
+    "professional": "standard",
+    "social": "standard",
+    "business": "standard",
+}
+_ALL_PERSONAS = list(_PERSONA_TIERS.keys())
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -107,12 +113,13 @@ def e2e_persona_setup(docker_services):
     for actor in ["alonso", "sancho", "chairmaker", "albert"]:
         base = docker_services.core_url(actor)
 
-        for name in _ALL_PERSONAS:
+        for name, tier in _PERSONA_TIERS.items():
             httpx.post(
                 f"{base}/v1/personas",
-                json={"name": name, "tier": "open", "passphrase": "test"},
+                json={"name": name, "tier": tier, "passphrase": "test"},
                 headers=admin_headers, timeout=10,
             )
+            # Unlock sensitive/locked so tests can use them
             httpx.post(
                 f"{base}/v1/persona/unlock",
                 json={"persona": name, "passphrase": "test"},
@@ -251,12 +258,12 @@ def don_alonso(plc_directory, d2d_network, docker_services, _core_private_keys) 
     node.set_sharing_policy("did:plc:chairmaker", preferences="summary")
 
     # Pre-populate vault with context
-    node.vault_store("personal", "sancho_last_visit",
+    node.vault_store("general", "sancho_last_visit",
                      {"event": "visit", "date": "3 weeks ago",
                       "context": "mother was ill"})
-    node.vault_store("personal", "sancho_preferences",
+    node.vault_store("general", "sancho_preferences",
                      {"tea": "strong chai", "relationship": "close friend"})
-    node.vault_store("personal", "book_promise",
+    node.vault_store("general", "book_promise",
                      {"item": "The Little Prince", "for": "daughter",
                       "date": "last Tuesday"})
 
@@ -265,7 +272,7 @@ def don_alonso(plc_directory, d2d_network, docker_services, _core_private_keys) 
         beneficiaries=[
             EstateBeneficiary(
                 did="did:plc:albert",
-                personas=["personal", "health"],
+                personas=["general", "health"],
                 access_level="full_decrypt",
             ),
         ],
@@ -309,9 +316,9 @@ def sancho(plc_directory, d2d_network, docker_services, _core_private_keys) -> H
                             preferences="full")
 
     # Vault context
-    node.vault_store("personal", "mother_health",
+    node.vault_store("general", "mother_health",
                      {"status": "was ill 3 weeks ago"})
-    node.vault_store("personal", "tea_preference",
+    node.vault_store("general", "tea_preference",
                      {"preference": "strong chai"})
 
     return node

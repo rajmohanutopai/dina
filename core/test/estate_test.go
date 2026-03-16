@@ -31,7 +31,7 @@ func TestEstate_27_1_PlanStoredInTier0(t *testing.T) {
 		Trigger:       "custodian_threshold",
 		Custodians:    []string{"did:key:z6MkCustodian1", "did:key:z6MkCustodian2", "did:key:z6MkCustodian3"},
 		Threshold:     2,
-		Beneficiaries: map[string][]string{"did:key:z6MkBeneficiary1": {"personal", "social"}},
+		Beneficiaries: map[string][]string{"did:key:z6MkBeneficiary1": {"general", "social"}},
 		DefaultAction: "destroy",
 		Notifications: []string{"did:key:z6MkNotify1"},
 		AccessTypes:   map[string]string{"did:key:z6MkBeneficiary1": "read_only_90_days"},
@@ -292,7 +292,7 @@ func TestEstate_27_9_Recovery_KeysDeliveredViaD2D(t *testing.T) {
 		Trigger:       "custodian_threshold",
 		Custodians:    []string{"did:key:z6MkCustodian1", "did:key:z6MkCustodian2"},
 		Threshold:     2,
-		Beneficiaries: map[string][]string{"did:key:z6MkBeneficiary1": {"personal"}},
+		Beneficiaries: map[string][]string{"did:key:z6MkBeneficiary1": {"general"}},
 		DefaultAction: "destroy",
 	}
 	err := portMgr.StorePlan(ctx, plan)

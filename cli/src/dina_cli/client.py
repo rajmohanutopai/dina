@@ -22,9 +22,10 @@ class DinaClient:
     (X-DID / X-Timestamp / X-Signature headers).
     """
 
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Config, verbose: bool = False) -> None:
         self._identity = CLIIdentity()
         self._identity.ensure_loaded()
+        self._verbose = verbose
         self._core = httpx.Client(
             base_url=config.core_url,
             timeout=config.timeout,
@@ -94,8 +95,21 @@ class DinaClient:
             headers["X-Signature"] = sig
             kwargs["headers"] = headers
 
+        if self._verbose:
+            import sys
+            print(f"  >> {method} {path}", file=sys.stderr)
+            print(f"     DID: {kwargs.get('headers', {}).get('X-DID', 'n/a')}", file=sys.stderr)
+            if "json" in kwargs:
+                import json as _json
+                print(f"     Body: {_json.dumps(kwargs['json'])[:200]}", file=sys.stderr)
+
         try:
             response = client.request(method, path, **kwargs)
+            if self._verbose:
+                import sys
+                print(f"  << {response.status_code} ({len(response.content)} bytes)", file=sys.stderr)
+                if response.status_code >= 400:
+                    print(f"     Response: {response.text[:300]}", file=sys.stderr)
             response.raise_for_status()
             return response
         except httpx.ConnectError:
@@ -104,14 +118,25 @@ class DinaClient:
             )
         except httpx.HTTPStatusError as exc:
             status = exc.response.status_code
+            # Parse server error message
+            try:
+                server_msg = exc.response.json().get("error", exc.response.text)
+            except Exception:
+                server_msg = exc.response.text.strip()
             if status == 401:
-                raise DinaClientError("Invalid token") from exc
+                raise DinaClientError(
+                    f"Authentication failed: {server_msg}"
+                ) from exc
             if status == 403:
-                raise DinaClientError("Access denied") from exc
+                raise DinaClientError(
+                    f"Access denied: {server_msg}"
+                ) from exc
             if status >= 500:
-                raise DinaClientError(f"Server error ({status})") from exc
+                raise DinaClientError(
+                    f"Server error ({status}): {server_msg}"
+                ) from exc
             raise DinaClientError(
-                f"HTTP {status}: {exc.response.text}"
+                f"HTTP {status}: {server_msg}"
             ) from exc
 
     # -- Vault -------------------------------------------------------------
@@ -132,20 +157,21 @@ class DinaClient:
         query: str,
         types: list[str] | None = None,
         limit: int = 50,
+        extra_headers: dict[str, str] | None = None,
     ) -> list[dict]:
         """Query the vault and return matching items."""
-        resp = self._request(
-            self._core,
-            "POST",
-            "/v1/vault/query",
-            json={
+        kwargs: dict[str, Any] = {
+            "json": {
                 "persona": persona,
                 "query": query,
                 "mode": "hybrid",
                 "types": types or [],
                 "limit": limit,
             },
-        )
+        }
+        if extra_headers:
+            kwargs["headers"] = extra_headers
+        resp = self._request(self._core, "POST", "/v1/vault/query", **kwargs)
         return resp.json().get("items") or []
 
     # -- Key/Value ---------------------------------------------------------

@@ -1114,6 +1114,9 @@ func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string, scope ...s
 			"/v1/contacts",
 			"/v1/notify",
 			"/v1/agent/validate",
+			"/v1/session/start",
+			"/v1/session/end",
+			"/v1/sessions",
 			"/healthz",
 			"/readyz",
 			"/ws",
@@ -1167,6 +1170,9 @@ func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string, scope ...s
 		"/v1/notify",
 		"/v1/reminder",
 		"/v1/reminders",
+		"/v1/session",  // Brain can start sessions for its own persona access
+		"/v1/sessions",
+		"/v1/audit",
 		"/healthz",
 		"/readyz",
 	}

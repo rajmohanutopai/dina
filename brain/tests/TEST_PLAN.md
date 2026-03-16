@@ -149,9 +149,9 @@
 | 3 | **[TST-BRAIN-068]** Briefing ordering | Multiple items of varying relevance | Ordered by relevance/time, grouped by category |
 | 4 | **[TST-BRAIN-069]** Briefing respects Do Not Disturb | User in DND mode at scheduled time | Deferred until DND ends |
 | 5 | **[TST-BRAIN-070]** Briefing deduplication | Same event from multiple sources | Deduplicated in briefing |
-| 6 | **[TST-BRAIN-071]** Briefing includes restricted persona access summary | `/health` accessed 3 times in past 24h (restricted tier) | Briefing contains: "Dina accessed your health data 3 times today" — user sees audit trail as part of daily briefing |
-| 7 | **[TST-BRAIN-072]** Briefing: zero restricted accesses omitted | No restricted persona accessed in 24h | Briefing does NOT include "health data accessed 0 times" — only non-zero counts shown |
-| 8 | **[TST-BRAIN-073]** Briefing restricted summary queries audit log | Brain generates briefing | Brain calls `GET core/v1/vault/query {type: "audit_log", filter: {persona_tier: "restricted", since: "24h"}}` → aggregates counts per persona |
+| 6 | **[TST-BRAIN-071]** Briefing includes sensitive persona access summary | `/health` accessed 3 times in past 24h (sensitive tier) | Briefing contains: "Dina accessed your health data 3 times today" — user sees audit trail as part of daily briefing |
+| 7 | **[TST-BRAIN-072]** Briefing: zero sensitive accesses omitted | No sensitive persona accessed in 24h | Briefing does NOT include "health data accessed 0 times" — only non-zero counts shown |
+| 8 | **[TST-BRAIN-073]** Briefing sensitive summary queries audit log | Brain generates briefing | Brain calls `GET core/v1/vault/query {type: "audit_log", filter: {persona_tier: "sensitive", since: "24h"}}` → aggregates counts per persona |
 | 9 | **[TST-BRAIN-074]** Briefing permanently disabled by user | Config: `"briefing": {"enabled": false}` | No briefing generated at scheduled time — not deferred (DND), fully disabled. Architecture §11 says daily briefing is "Optional — user can disable." Re-enable via config or chat: "Turn on my daily briefing" |
 | 10 | **[TST-BRAIN-373]** Briefing includes fiduciary recap | Fiduciary events occurred since last briefing | Briefing includes a recap section summarizing fiduciary events handled since the last daily briefing |
 | 11 | **[TST-BRAIN-374]** Briefing aggregates across personas | Engagement items from `/personal` and `/work` | Briefing aggregates items across personas without leaking cross-persona data |
@@ -964,7 +964,7 @@
 | # | Scenario | Input | Expected |
 |---|----------|-------|----------|
 | 1 | **[TST-BRAIN-538]** Briefing PII scrubbed | Engagement items contain user names, emails | Briefing text passes through PII scrubber before delivery |
-| 2 | **[TST-BRAIN-539]** Briefing cross-persona safety | Items from `/health` (restricted) and `/personal` (open) | Briefing includes both BUT marks restricted-persona items with audit annotation |
+| 2 | **[TST-BRAIN-539]** Briefing cross-persona safety | Items from `/health` (sensitive) and `/general` (default) | Briefing includes both BUT marks sensitive-persona items with audit annotation |
 | 3 | **[TST-BRAIN-540]** Empty briefing: no noise | Zero engagement items accumulated | No briefing generated — silence is the default, not "nothing new today" |
 | 4 | **[TST-BRAIN-541]** Briefing timing respects user timezone | User in IST (UTC+5:30), briefing configured for 7 AM | Briefing generated at 7 AM IST, not 7 AM UTC |
 

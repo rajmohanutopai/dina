@@ -27,7 +27,7 @@ func TestAdv_29_6_HKDFCrossPersona(t *testing.T) {
 	}
 	userSalt := []byte("test-user-salt-unique-per-node")
 
-	personas := []string{"personal", "health", "financial", "social", "professional"}
+	personas := []string{"general", "health", "financial", "social", "professional"}
 	deks := make(map[string][]byte)
 
 	for _, p := range personas {
@@ -67,11 +67,11 @@ func TestAdv_29_6_HKDFUserSalt(t *testing.T) {
 	salt1 := []byte("node-A-user-salt")
 	salt2 := []byte("node-B-user-salt")
 
-	dek1, err := deriver.DeriveVaultDEK(masterSeed, "personal", salt1)
+	dek1, err := deriver.DeriveVaultDEK(masterSeed, "general", salt1)
 	if err != nil {
 		t.Fatalf("DeriveVaultDEK salt1: %v", err)
 	}
-	dek2, err := deriver.DeriveVaultDEK(masterSeed, "personal", salt2)
+	dek2, err := deriver.DeriveVaultDEK(masterSeed, "general", salt2)
 	if err != nil {
 		t.Fatalf("DeriveVaultDEK salt2: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestAdv_29_6_KeyDeriverPersonaDEK(t *testing.T) {
 		seed[i] = byte(i + 1)
 	}
 
-	personaNames := []string{"personal", "health", "financial"}
+	personaNames := []string{"general", "health", "financial"}
 	deks := make(map[string][]byte)
 
 	for _, name := range personaNames {
@@ -297,7 +297,7 @@ func TestCrypto_29_6_4_KeyDeriverPersonaDEKIsolation(t *testing.T) {
 	t.Run("three_personas_all_pairs_distinct_and_32_bytes", func(t *testing.T) {
 		// Requirement: DerivePersonaDEK for 3 personas → all DEKs distinct.
 		// Also verify each DEK is exactly 32 bytes (AES-256 key size).
-		personas := []string{"personal", "health", "financial"}
+		personas := []string{"general", "health", "financial"}
 		deks := make(map[string][]byte)
 
 		for _, name := range personas {
@@ -369,7 +369,7 @@ func TestCrypto_29_6_4_KeyDeriverPersonaDEKIsolation(t *testing.T) {
 
 	t.Run("empty_seed_returns_error", func(t *testing.T) {
 		// Requirement: derivation from empty seed must fail — not silently return zeros.
-		p, _ := domain.NewPersonaName("personal")
+		p, _ := domain.NewPersonaName("general")
 		_, err := kd.DerivePersonaDEK(nil, p)
 		if err == nil {
 			t.Fatal("DerivePersonaDEK with nil seed must return an error")

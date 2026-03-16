@@ -243,5 +243,40 @@ if [ "${1:-}" = "model" ]; then
     exit 0
 fi
 
+# ---------------------------------------------------------------------------
+# Host-side "logs" subcommand — tail container logs
+# ---------------------------------------------------------------------------
+
+if [ "${1:-}" = "logs" ]; then
+    shift
+    service=""
+    tail_lines="50"
+    follow=false
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -f|--follow)  follow=true; shift ;;
+            -n|--lines)   tail_lines="$2"; shift 2 ;;
+            core|brain|pds) service="$1"; shift ;;
+            *)            shift ;;
+        esac
+    done
+
+    if [ -n "$service" ]; then
+        if [ "$follow" = true ]; then
+            exec $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" logs -f --tail="$tail_lines" "$service"
+        else
+            $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" logs --tail="$tail_lines" "$service"
+        fi
+    else
+        if [ "$follow" = true ]; then
+            exec $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" logs -f --tail="$tail_lines"
+        else
+            $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" logs --tail="$tail_lines"
+        fi
+    fi
+    exit 0
+fi
+
 # All other commands: forward to the container
 exec $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" exec -T core dina-admin "$@"

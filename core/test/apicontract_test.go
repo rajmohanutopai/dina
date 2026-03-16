@@ -32,7 +32,7 @@ func TestAPIContract_18_1_VaultQueryExposed(t *testing.T) {
 		"/v1/vault/query must accept BRAIN_TOKEN")
 
 	statusCode, _, err := impl.CallEndpoint("POST", "/v1/vault/query", testutil.TestBrainToken,
-		[]byte(`{"persona":"personal","q":"meeting","mode":"fts5"}`))
+		[]byte(`{"persona":"general","q":"meeting","mode":"fts5"}`))
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, statusCode, 200)
 }
@@ -52,7 +52,7 @@ func TestAPIContract_18_2_VaultStoreExposed(t *testing.T) {
 		"/v1/vault/store must accept BRAIN_TOKEN")
 
 	statusCode, _, err := impl.CallEndpoint("POST", "/v1/vault/store", testutil.TestBrainToken,
-		[]byte(`{"persona":"personal","type":"email","source":"gmail","summary":"test"}`))
+		[]byte(`{"persona":"general","type":"email","source":"gmail","summary":"test"}`))
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, statusCode, 201)
 }
@@ -308,12 +308,12 @@ func TestAPIContract_18_12_VaultQueryResponseSchema(t *testing.T) {
 		Summary:   "meeting notes about project alpha",
 		Timestamp: 1700000000,
 	}
-	storedID, err := impl.StoreItem("personal", item)
+	storedID, err := impl.StoreItem("general", item)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, storedID != "", "stored item must have an ID")
 
 	// Search must return results including the stored item.
-	results, err := impl.Search("personal", "meeting", "fts5")
+	results, err := impl.Search("general", "meeting", "fts5")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(results) > 0, "search must return at least one result after storing an item")
 
@@ -344,7 +344,7 @@ func TestAPIContract_18_13_VaultStoreResponseIDFormat(t *testing.T) {
 		Summary:   "test item for ID format 1",
 		Timestamp: 1700000000,
 	}
-	id1, err := impl.StoreItem("personal", item1)
+	id1, err := impl.StoreItem("general", item1)
 	testutil.RequireNoError(t, err)
 	testutil.RequireHasPrefix(t, id1, "vault_")
 	testutil.RequireTrue(t, len(id1) > len("vault_"),
@@ -357,7 +357,7 @@ func TestAPIContract_18_13_VaultStoreResponseIDFormat(t *testing.T) {
 		Summary:   "test item for ID format 2",
 		Timestamp: 1700000001,
 	}
-	id2, err := impl.StoreItem("personal", item2)
+	id2, err := impl.StoreItem("general", item2)
 	testutil.RequireNoError(t, err)
 	testutil.RequireHasPrefix(t, id2, "vault_")
 
@@ -372,7 +372,7 @@ func TestAPIContract_18_13_VaultStoreResponseIDFormat(t *testing.T) {
 		Summary:   "test item for ID format 3",
 		Timestamp: 1700000002,
 	}
-	id3, err := impl.StoreItem("personal", item3)
+	id3, err := impl.StoreItem("general", item3)
 	testutil.RequireNoError(t, err)
 	testutil.RequireHasPrefix(t, id3, "vault_")
 	if id3 == id1 || id3 == id2 {

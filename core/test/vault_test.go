@@ -455,7 +455,7 @@ func TestVault_4_1_1_1_VaultManagerStructure(t *testing.T) {
 	testutil.RequireNoError(t, err)
 
 	// Positive: open a second persona concurrently.
-	err = mgr.Open(vaultCtx, domain.PersonaName("personal"), dek)
+	err = mgr.Open(vaultCtx, domain.PersonaName("general"), dek)
 	testutil.RequireNoError(t, err)
 
 	// Verify both are open simultaneously.
@@ -464,15 +464,15 @@ func TestVault_4_1_1_1_VaultManagerStructure(t *testing.T) {
 		fmt.Sprintf("expected 2 open personas, got %d", len(openPersonas)))
 	testutil.RequireTrue(t, mgr.IsOpen(domain.PersonaName("identity")),
 		"identity persona must be open")
-	testutil.RequireTrue(t, mgr.IsOpen(domain.PersonaName("personal")),
+	testutil.RequireTrue(t, mgr.IsOpen(domain.PersonaName("general")),
 		"personal persona must be open")
 
 	// Structural: closing one persona must NOT affect the other.
-	err = mgr.Close(domain.PersonaName("personal"))
+	err = mgr.Close(domain.PersonaName("general"))
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, mgr.IsOpen(domain.PersonaName("identity")),
 		"identity must remain open after closing personal")
-	testutil.RequireTrue(t, !mgr.IsOpen(domain.PersonaName("personal")),
+	testutil.RequireTrue(t, !mgr.IsOpen(domain.PersonaName("general")),
 		"personal must be closed")
 
 	// Verify OpenPersonas count after close.
@@ -683,14 +683,14 @@ func TestVault_4_1_1_6_CrossPersonaWriteIndependence(t *testing.T) {
 	vm := vault.NewManager(vaultDir)
 	dek := testutil.TestDEK[:]
 
-	err = vm.Open(vaultCtx, "personal", dek)
+	err = vm.Open(vaultCtx, "general", dek)
 	testutil.RequireNoError(t, err)
 	err = vm.Open(vaultCtx, "health", dek)
 	testutil.RequireNoError(t, err)
 
 	// Store items into personal persona.
 	personalItem := domain.VaultItem{Type: "note", Source: "test", Summary: "personal data"}
-	pID, err := vm.Store(vaultCtx, "personal", personalItem)
+	pID, err := vm.Store(vaultCtx, "general", personalItem)
 	testutil.RequireNoError(t, err)
 
 	// Store items into health persona.
@@ -703,7 +703,7 @@ func TestVault_4_1_1_6_CrossPersonaWriteIndependence(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		_, storeErr := vm.Store(vaultCtx, "personal", domain.VaultItem{Type: "note", Source: "test", Summary: "concurrent personal"})
+		_, storeErr := vm.Store(vaultCtx, "general", domain.VaultItem{Type: "note", Source: "test", Summary: "concurrent personal"})
 		if storeErr != nil {
 			t.Errorf("concurrent personal store failed: %v", storeErr)
 		}
@@ -721,7 +721,7 @@ func TestVault_4_1_1_6_CrossPersonaWriteIndependence(t *testing.T) {
 	wg.Wait()
 
 	// Positive: verify each persona's data is isolated.
-	personalItems, err := vm.Query(vaultCtx, "personal", domain.SearchQuery{})
+	personalItems, err := vm.Query(vaultCtx, "general", domain.SearchQuery{})
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(personalItems) >= 2, "personal must have at least 2 items")
 
@@ -735,7 +735,7 @@ func TestVault_4_1_1_6_CrossPersonaWriteIndependence(t *testing.T) {
 	testutil.RequireTrue(t, err != nil || crossCheck == nil || crossCheck.ID != pID,
 		"personal item must not be retrievable from health persona")
 
-	crossCheck2, err := vm.GetItem(vaultCtx, "personal", hID)
+	crossCheck2, err := vm.GetItem(vaultCtx, "general", hID)
 	testutil.RequireTrue(t, err != nil || crossCheck2 == nil || crossCheck2.ID != hID,
 		"health item must not be retrievable from personal persona")
 }
@@ -1134,30 +1134,30 @@ func TestVault_4_3_HybridSearchFormulaVerified(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// Insert items with body_text for FTS5 indexing.
-	_, err := impl.ExecSQL("personal",
+	_, err := impl.ExecSQL("general",
 		"INSERT INTO vault_items(id, type, source, body_text, summary, timestamp, ingested_at) VALUES(?, ?, ?, ?, ?, ?, ?)",
 		"fts-item-1", "note", "test", "hybrid search formula verification test", "summary1", 1700000000, 1700000001)
 	testutil.RequireNoError(t, err)
 
-	_, err = impl.ExecSQL("personal",
+	_, err = impl.ExecSQL("general",
 		"INSERT INTO vault_items(id, type, source, body_text, summary, timestamp, ingested_at) VALUES(?, ?, ?, ?, ?, ?, ?)",
 		"fts-item-2", "email", "inbox", "unrelated email about cooking", "summary2", 1700000002, 1700000003)
 	testutil.RequireNoError(t, err)
 
 	// Positive: FTS5 MATCH query for "hybrid" should return matching item.
-	result, err := impl.QuerySQL("personal",
+	result, err := impl.QuerySQL("general",
 		"SELECT * FROM vault_items_fts WHERE vault_items_fts MATCH ?", "hybrid")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(result) > 0, "FTS5 MATCH for 'hybrid' should return results")
 
 	// Positive: FTS5 MATCH for "cooking" returns the other item.
-	result2, err := impl.QuerySQL("personal",
+	result2, err := impl.QuerySQL("general",
 		"SELECT * FROM vault_items_fts WHERE vault_items_fts MATCH ?", "cooking")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(result2) > 0, "FTS5 MATCH for 'cooking' should return results")
 
 	// Negative: FTS5 MATCH for non-existent term returns empty.
-	result3, err := impl.QuerySQL("personal",
+	result3, err := impl.QuerySQL("general",
 		"SELECT * FROM vault_items_fts WHERE vault_items_fts MATCH ?", "zzzznonexistent")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, result3 == nil || string(result3) == "null" || string(result3) == "[]",
@@ -1211,7 +1211,7 @@ func TestVault_4_3_5_CrossPersonaBoundary(t *testing.T) {
 	testutil.RequireImplementation(t, vm, "VaultManager")
 
 	dek := testutil.TestDEK[:]
-	personalPersona := domain.PersonaName("personal")
+	personalPersona := domain.PersonaName("general")
 	healthPersona := domain.PersonaName("health")
 
 	err := vm.Open(vaultCtx, personalPersona, dek)
@@ -1809,29 +1809,29 @@ func TestVault_4_5_2_ApprovePromotesToVault(t *testing.T) {
 	defer os.RemoveAll(vaultDir)
 
 	mgr := vault.NewManager(vaultDir)
-	err = mgr.Open(vaultCtx, "personal", testutil.TestDEK[:])
+	err = mgr.Open(vaultCtx, "general", testutil.TestDEK[:])
 	testutil.RequireNoError(t, err)
 
 	impl := vault.NewStagingManager(mgr)
 
 	// Negative: approve a non-existent staging ID.
-	err = impl.Approve(vaultCtx, domain.PersonaName("personal"), "staging-bogus")
+	err = impl.Approve(vaultCtx, domain.PersonaName("general"), "staging-bogus")
 	testutil.RequireError(t, err)
 
 	// Stage an item.
 	item := testutil.TestVaultItem()
 	item.Summary = "staged for approval"
 	expiresAt := int64(1700000000 + 72*3600)
-	stagingID, err := impl.Stage(vaultCtx, domain.PersonaName("personal"), item, expiresAt)
+	stagingID, err := impl.Stage(vaultCtx, domain.PersonaName("general"), item, expiresAt)
 	testutil.RequireNoError(t, err)
 	testutil.RequireHasPrefix(t, stagingID, "staging-")
 
 	// Approve: promotes to vault.
-	err = impl.Approve(vaultCtx, domain.PersonaName("personal"), stagingID)
+	err = impl.Approve(vaultCtx, domain.PersonaName("general"), stagingID)
 	testutil.RequireNoError(t, err)
 
 	// Positive: item must now be queryable in the vault.
-	items, err := mgr.Query(vaultCtx, "personal", domain.SearchQuery{})
+	items, err := mgr.Query(vaultCtx, "general", domain.SearchQuery{})
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(items) >= 1, "approved item must appear in vault")
 	found := false
@@ -1843,7 +1843,7 @@ func TestVault_4_5_2_ApprovePromotesToVault(t *testing.T) {
 	testutil.RequireTrue(t, found, "approved item with correct summary must be in vault")
 
 	// Negative: approving the same staging ID again should fail (already consumed).
-	err = impl.Approve(vaultCtx, domain.PersonaName("personal"), stagingID)
+	err = impl.Approve(vaultCtx, domain.PersonaName("general"), stagingID)
 	testutil.RequireError(t, err)
 }
 
@@ -1856,11 +1856,11 @@ func TestVault_4_5_3_RejectDeletesItem(t *testing.T) {
 	item := testutil.TestVaultItem()
 	expiresAt := int64(1700000000 + 72*3600)
 
-	stagingID, err := impl.Stage(vaultCtx, domain.PersonaName("personal"), item, expiresAt)
+	stagingID, err := impl.Stage(vaultCtx, domain.PersonaName("general"), item, expiresAt)
 	testutil.RequireNoError(t, err)
 
 	// Reject: deleted from staging entirely.
-	err = impl.Reject(vaultCtx, domain.PersonaName("personal"), stagingID)
+	err = impl.Reject(vaultCtx, domain.PersonaName("general"), stagingID)
 	testutil.RequireNoError(t, err)
 }
 
@@ -1872,7 +1872,7 @@ func TestVault_4_5_4_AutoApproveLowRisk(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	mgr := vault.NewManager(dir)
-	err = mgr.Open(vaultCtx, "personal", testutil.TestDEK[:])
+	err = mgr.Open(vaultCtx, "general", testutil.TestDEK[:])
 	testutil.RequireNoError(t, err)
 
 	staging := vault.NewStagingManager(mgr)
@@ -1888,17 +1888,17 @@ func TestVault_4_5_4_AutoApproveLowRisk(t *testing.T) {
 	}
 	expiresAt := time.Now().Unix() + 72*3600
 
-	stagingID, err := staging.Stage(vaultCtx, "personal", lowRiskItem, expiresAt)
+	stagingID, err := staging.Stage(vaultCtx, "general", lowRiskItem, expiresAt)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(stagingID) > 0, "staging ID must be returned")
 	testutil.RequireContains(t, stagingID, "staging-")
 
 	// Manual approve must work for low-risk items (even if auto-approve exists).
-	err = staging.Approve(vaultCtx, "personal", stagingID)
+	err = staging.Approve(vaultCtx, "general", stagingID)
 	testutil.RequireNoError(t, err)
 
 	// Verify item was promoted to vault after approval.
-	results, err := mgr.Query(vaultCtx, "personal", domain.SearchQuery{
+	results, err := mgr.Query(vaultCtx, "general", domain.SearchQuery{
 		Query:          "auto-approve",
 		IncludeContent: true,
 	})
@@ -1907,7 +1907,7 @@ func TestVault_4_5_4_AutoApproveLowRisk(t *testing.T) {
 	testutil.RequireEqual(t, results[0].Summary, "low risk auto-approve item")
 
 	// Negative: re-approve consumed staging ID must fail.
-	err = staging.Approve(vaultCtx, "personal", stagingID)
+	err = staging.Approve(vaultCtx, "general", stagingID)
 	testutil.RequireError(t, err)
 
 	// Negative: high-risk item stays in staging (not auto-approved).
@@ -1917,11 +1917,11 @@ func TestVault_4_5_4_AutoApproveLowRisk(t *testing.T) {
 		Summary:  "high risk needs review",
 		Metadata: `{"risk_level": "high"}`,
 	}
-	highStagingID, err := staging.Stage(vaultCtx, "personal", highRiskItem, expiresAt)
+	highStagingID, err := staging.Stage(vaultCtx, "general", highRiskItem, expiresAt)
 	testutil.RequireNoError(t, err)
 
 	// High-risk item should NOT be in vault until explicitly approved.
-	resultsHigh, err := mgr.Query(vaultCtx, "personal", domain.SearchQuery{
+	resultsHigh, err := mgr.Query(vaultCtx, "general", domain.SearchQuery{
 		Query: "needs review",
 	})
 	testutil.RequireNoError(t, err)
@@ -1930,7 +1930,7 @@ func TestVault_4_5_4_AutoApproveLowRisk(t *testing.T) {
 	_ = resultsHigh // may be empty if staging→vault requires explicit Approve
 
 	// Explicitly approve the high-risk item.
-	err = staging.Approve(vaultCtx, "personal", highStagingID)
+	err = staging.Approve(vaultCtx, "general", highStagingID)
 	testutil.RequireNoError(t, err)
 }
 
@@ -1951,10 +1951,10 @@ func TestVault_4_5_5_PerItemExpiryAndSweep(t *testing.T) {
 
 	// Both staged at same time, but with different expires_at.
 	now := int64(1700000000)
-	_, err := impl.Stage(vaultCtx, domain.PersonaName("personal"), item1, now+72*3600) // 72h
+	_, err := impl.Stage(vaultCtx, domain.PersonaName("general"), item1, now+72*3600) // 72h
 	testutil.RequireNoError(t, err)
 
-	_, err = impl.Stage(vaultCtx, domain.PersonaName("personal"), item2, now+12*3600) // 12h
+	_, err = impl.Stage(vaultCtx, domain.PersonaName("general"), item2, now+12*3600) // 12h
 	testutil.RequireNoError(t, err)
 
 	// Sweeper at T+13h: cart handover expired, draft still present.
@@ -2023,14 +2023,14 @@ func TestVault_4_5_7_StagingNotBackedUp(t *testing.T) {
 	defer os.RemoveAll(vaultDir)
 
 	mgr := vault.NewManager(vaultDir)
-	err = mgr.Open(vaultCtx, "personal", testutil.TestDEK[:])
+	err = mgr.Open(vaultCtx, "general", testutil.TestDEK[:])
 	testutil.RequireNoError(t, err)
 
 	staging := vault.NewStagingManager(mgr)
 	backupMgr := vault.NewBackupManager(mgr)
 
 	// Store a real vault item (should be in backup).
-	_, err = mgr.Store(vaultCtx, "personal", domain.VaultItem{
+	_, err = mgr.Store(vaultCtx, "general", domain.VaultItem{
 		Type: "note", Source: "test", Summary: "permanent item",
 	})
 	testutil.RequireNoError(t, err)
@@ -2039,25 +2039,25 @@ func TestVault_4_5_7_StagingNotBackedUp(t *testing.T) {
 	stagedItem := domain.VaultItem{
 		Type: "email_draft", Source: "test", Summary: "ephemeral draft",
 	}
-	_, err = staging.Stage(vaultCtx, domain.PersonaName("personal"), stagedItem, int64(1700000000+72*3600))
+	_, err = staging.Stage(vaultCtx, domain.PersonaName("general"), stagedItem, int64(1700000000+72*3600))
 	testutil.RequireNoError(t, err)
 
 	// Create backup.
 	backupPath := vaultDir + "/backup-staging-test.json"
-	err = backupMgr.Backup(vaultCtx, "personal", backupPath)
+	err = backupMgr.Backup(vaultCtx, "general", backupPath)
 	testutil.RequireNoError(t, err)
 
 	// Restore to a fresh vault.
 	restoreDir := vaultDir + "/restored"
 	mgr2 := vault.NewManager(restoreDir)
-	err = mgr2.Open(vaultCtx, "personal", testutil.TestDEK[:])
+	err = mgr2.Open(vaultCtx, "general", testutil.TestDEK[:])
 	testutil.RequireNoError(t, err)
 
-	err = vault.NewBackupManager(mgr2).Restore(vaultCtx, "personal", backupPath)
+	err = vault.NewBackupManager(mgr2).Restore(vaultCtx, "general", backupPath)
 	testutil.RequireNoError(t, err)
 
 	// Positive: permanent item must be in restored vault.
-	items, err := mgr2.Query(vaultCtx, "personal", domain.SearchQuery{})
+	items, err := mgr2.Query(vaultCtx, "general", domain.SearchQuery{})
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(items) >= 1, "restored vault must contain permanent item")
 
@@ -2084,7 +2084,7 @@ func TestVault_4_5_8_DraftDontSendInStaging(t *testing.T) {
 	defer os.RemoveAll(vaultDir)
 
 	mgr := vault.NewManager(vaultDir)
-	err = mgr.Open(vaultCtx, "personal", testutil.TestDEK[:])
+	err = mgr.Open(vaultCtx, "general", testutil.TestDEK[:])
 	testutil.RequireNoError(t, err)
 
 	impl := vault.NewStagingManager(mgr)
@@ -2095,12 +2095,12 @@ func TestVault_4_5_8_DraftDontSendInStaging(t *testing.T) {
 		Source:  "brain",
 		Summary: "draft email to alice about meeting",
 	}
-	stagingID, err := impl.Stage(vaultCtx, domain.PersonaName("personal"), item, int64(1700000000+72*3600))
+	stagingID, err := impl.Stage(vaultCtx, domain.PersonaName("general"), item, int64(1700000000+72*3600))
 	testutil.RequireNoError(t, err)
 	testutil.RequireHasPrefix(t, stagingID, "staging-")
 
 	// Positive: draft must NOT appear in the main vault (not sent until approved).
-	items, err := mgr.Query(vaultCtx, "personal", domain.SearchQuery{})
+	items, err := mgr.Query(vaultCtx, "general", domain.SearchQuery{})
 	testutil.RequireNoError(t, err)
 	for _, it := range items {
 		testutil.RequireTrue(t, it.Summary != "draft email to alice about meeting",
@@ -2108,11 +2108,11 @@ func TestVault_4_5_8_DraftDontSendInStaging(t *testing.T) {
 	}
 
 	// Negative: rejecting the draft removes it without sending.
-	err = impl.Reject(vaultCtx, domain.PersonaName("personal"), stagingID)
+	err = impl.Reject(vaultCtx, domain.PersonaName("general"), stagingID)
 	testutil.RequireNoError(t, err)
 
 	// After rejection: still not in vault.
-	items, err = mgr.Query(vaultCtx, "personal", domain.SearchQuery{})
+	items, err = mgr.Query(vaultCtx, "general", domain.SearchQuery{})
 	testutil.RequireNoError(t, err)
 	for _, it := range items {
 		testutil.RequireTrue(t, it.Summary != "draft email to alice about meeting",
@@ -2132,7 +2132,7 @@ func TestVault_4_5_9_CartHandoverInStaging(t *testing.T) {
 	item.Type = "cart_handover"
 	item.Metadata = `{"intent":"upi://pay?pa=merchant@okicici&am=12000","ttl_hours":12}`
 
-	stagingID, err := impl.Stage(vaultCtx, domain.PersonaName("personal"), item, int64(1700000000+12*3600))
+	stagingID, err := impl.Stage(vaultCtx, domain.PersonaName("general"), item, int64(1700000000+12*3600))
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(stagingID) > 0, "cart staging ID must not be empty")
 }
@@ -2174,16 +2174,16 @@ func TestVault_4_5_11_SweeperSchedule(t *testing.T) {
 
 	// Already expired items (past expiry).
 	expiredItem1 := domain.VaultItem{Type: "email_draft", Source: "test", Summary: "expired draft 1"}
-	_, err = sm.Stage(vaultCtx, "personal", expiredItem1, now-3600)
+	_, err = sm.Stage(vaultCtx, "general", expiredItem1, now-3600)
 	testutil.RequireNoError(t, err)
 
 	expiredItem2 := domain.VaultItem{Type: "cart_handover", Source: "test", Summary: "expired cart"}
-	_, err = sm.Stage(vaultCtx, "personal", expiredItem2, now-7200)
+	_, err = sm.Stage(vaultCtx, "general", expiredItem2, now-7200)
 	testutil.RequireNoError(t, err)
 
 	// Active item (future expiry).
 	activeItem := domain.VaultItem{Type: "note", Source: "test", Summary: "active note"}
-	activeID, err := sm.Stage(vaultCtx, "personal", activeItem, now+86400)
+	activeID, err := sm.Stage(vaultCtx, "general", activeItem, now+86400)
 	testutil.RequireNoError(t, err)
 
 	// Sweep must remove exactly 2 expired items.
@@ -2192,9 +2192,9 @@ func TestVault_4_5_11_SweeperSchedule(t *testing.T) {
 	testutil.RequireEqual(t, swept, 2)
 
 	// Active item must survive the sweep and be approvable.
-	err = mgr.Open(vaultCtx, "personal", testutil.TestDEK[:])
+	err = mgr.Open(vaultCtx, "general", testutil.TestDEK[:])
 	testutil.RequireNoError(t, err)
-	err = sm.Approve(vaultCtx, "personal", activeID)
+	err = sm.Approve(vaultCtx, "general", activeID)
 	testutil.RequireNoError(t, err)
 
 	// Second sweep returns 0 — nothing left to clean.
@@ -2220,7 +2220,7 @@ func TestVault_4_5_12_PerTypeTTL(t *testing.T) {
 	expiredItem := testutil.TestVaultItem()
 	expiredItem.ID = "cart-expired"
 	expiredItem.Type = "cart_handover"
-	expiredID, err := sm.Stage(vaultCtx, domain.PersonaName("personal"), expiredItem, now-1)
+	expiredID, err := sm.Stage(vaultCtx, domain.PersonaName("general"), expiredItem, now-1)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, expiredID != "", "Stage must return non-empty ID")
 
@@ -2228,7 +2228,7 @@ func TestVault_4_5_12_PerTypeTTL(t *testing.T) {
 	activeItem := testutil.TestVaultItem()
 	activeItem.ID = "draft-active"
 	activeItem.Type = "email_draft"
-	activeID, err := sm.Stage(vaultCtx, domain.PersonaName("personal"), activeItem, now+72*3600)
+	activeID, err := sm.Stage(vaultCtx, domain.PersonaName("general"), activeItem, now+72*3600)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, activeID != "", "Stage must return non-empty ID")
 
@@ -2236,7 +2236,7 @@ func TestVault_4_5_12_PerTypeTTL(t *testing.T) {
 	expired2 := testutil.TestVaultItem()
 	expired2.ID = "note-expired"
 	expired2.Type = "note"
-	expired2ID, err := sm.Stage(vaultCtx, domain.PersonaName("personal"), expired2, now-3600)
+	expired2ID, err := sm.Stage(vaultCtx, domain.PersonaName("general"), expired2, now-3600)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, expired2ID != "", "Stage must return non-empty ID")
 
@@ -2247,18 +2247,18 @@ func TestVault_4_5_12_PerTypeTTL(t *testing.T) {
 		fmt.Sprintf("expected 2 expired items swept, got %d", swept))
 
 	// The active draft should survive the sweep — verify it can still be approved.
-	err = mgr.Open(vaultCtx, domain.PersonaName("personal"), testutil.TestDEK[:])
+	err = mgr.Open(vaultCtx, domain.PersonaName("general"), testutil.TestDEK[:])
 	testutil.RequireNoError(t, err)
-	err = sm.Approve(vaultCtx, domain.PersonaName("personal"), activeID)
+	err = sm.Approve(vaultCtx, domain.PersonaName("general"), activeID)
 	testutil.RequireNoError(t, err)
 
 	// Negative: the expired items should no longer exist — approve must fail.
-	err = sm.Approve(vaultCtx, domain.PersonaName("personal"), expiredID)
+	err = sm.Approve(vaultCtx, domain.PersonaName("general"), expiredID)
 	testutil.RequireError(t, err)
-	err = sm.Approve(vaultCtx, domain.PersonaName("personal"), expired2ID)
+	err = sm.Approve(vaultCtx, domain.PersonaName("general"), expired2ID)
 	testutil.RequireError(t, err)
 
-	err = mgr.Close(domain.PersonaName("personal"))
+	err = mgr.Close(domain.PersonaName("general"))
 	testutil.RequireNoError(t, err)
 }
 
@@ -2330,12 +2330,12 @@ func TestVault_4_6_2_BackupEncrypted(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	mgr := vault.NewManager(dir)
-	err = mgr.Open(vaultCtx, "personal", testutil.TestDEK[:])
+	err = mgr.Open(vaultCtx, "general", testutil.TestDEK[:])
 	testutil.RequireNoError(t, err)
 
 	// Store data with known content so we can check if it appears in plaintext.
 	secretContent := "TOP SECRET MEDICAL RECORD 987654321"
-	_, err = mgr.Store(vaultCtx, "personal", domain.VaultItem{
+	_, err = mgr.Store(vaultCtx, "general", domain.VaultItem{
 		Type:     "note",
 		Source:   "test",
 		Summary:  secretContent,
@@ -2347,7 +2347,7 @@ func TestVault_4_6_2_BackupEncrypted(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "BackupManager")
 
 	destPath := dir + "/backup_enc.sqlite"
-	err = impl.Backup(vaultCtx, "personal", destPath)
+	err = impl.Backup(vaultCtx, "general", destPath)
 	testutil.RequireNoError(t, err)
 
 	// Verify backup file exists and is non-empty.
@@ -2387,7 +2387,7 @@ func TestVault_4_6_3_VACUUMINTOForbidden(t *testing.T) {
 	// sqlcipher_export(), not VACUUM INTO.
 	dir := testutil.TempDir(t)
 	destPath := dir + "/backup_novacuum.sqlite"
-	err := impl.Backup(context.Background(), "personal", destPath)
+	err := impl.Backup(context.Background(), "general", destPath)
 	testutil.RequireNoError(t, err)
 }
 
@@ -2403,7 +2403,7 @@ func TestVault_4_6_4_BackupToDifferentLocation(t *testing.T) {
 	// Create the subdirectory.
 	testutil.TempFile(t, dir, "custom_location/.gitkeep", "")
 
-	err := impl.Backup(context.Background(), "personal", destPath)
+	err := impl.Backup(context.Background(), "general", destPath)
 	testutil.RequireNoError(t, err)
 }
 
@@ -2461,12 +2461,12 @@ func TestVault_4_6_6_CIPlaintextCheck(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	mgr := vault.NewManager(dir)
-	err = mgr.Open(vaultCtx, "personal", testutil.TestDEK[:])
+	err = mgr.Open(vaultCtx, "general", testutil.TestDEK[:])
 	testutil.RequireNoError(t, err)
 
 	// Store known data so we can detect plaintext leakage.
 	secretData := "CI_PLAINTEXT_CANARY_SSN_123456789"
-	_, err = mgr.Store(vaultCtx, "personal", domain.VaultItem{
+	_, err = mgr.Store(vaultCtx, "general", domain.VaultItem{
 		Type:     "note",
 		Source:   "test",
 		Summary:  secretData,
@@ -2476,7 +2476,7 @@ func TestVault_4_6_6_CIPlaintextCheck(t *testing.T) {
 
 	impl := vault.NewBackupManager(mgr)
 	destPath := dir + "/ci_plaintext_check.sqlite"
-	err = impl.Backup(vaultCtx, "personal", destPath)
+	err = impl.Backup(vaultCtx, "general", destPath)
 	testutil.RequireNoError(t, err)
 
 	// CI check: the backup file must NOT contain plaintext.
@@ -2527,9 +2527,9 @@ func TestVault_4_6_7_BackupScopeTier0Tier1Only(t *testing.T) {
 	})
 	testutil.RequireNoError(t, err)
 
-	err = mgr.Open(vaultCtx, "personal", testutil.TestDEK[:])
+	err = mgr.Open(vaultCtx, "general", testutil.TestDEK[:])
 	testutil.RequireNoError(t, err)
-	_, err = mgr.Store(vaultCtx, "personal", domain.VaultItem{
+	_, err = mgr.Store(vaultCtx, "general", domain.VaultItem{
 		Type: "note", Source: "test", Summary: "personal vault note",
 	})
 	testutil.RequireNoError(t, err)
@@ -2546,7 +2546,7 @@ func TestVault_4_6_7_BackupScopeTier0Tier1Only(t *testing.T) {
 
 	// Positive: Tier 1 (personal) backup succeeds and file exists.
 	personalPath := dir + "/personal_backup.sqlite"
-	err = impl.Backup(vaultCtx, "personal", personalPath)
+	err = impl.Backup(vaultCtx, "general", personalPath)
 	testutil.RequireNoError(t, err)
 	info, err = os.Stat(personalPath)
 	testutil.RequireNoError(t, err)
@@ -2554,12 +2554,12 @@ func TestVault_4_6_7_BackupScopeTier0Tier1Only(t *testing.T) {
 
 	// Verify backed-up data can be restored and contains the correct items.
 	mgr2 := vault.NewManager(dir + "/restored")
-	err = mgr2.Open(vaultCtx, "personal", testutil.TestDEK[:])
+	err = mgr2.Open(vaultCtx, "general", testutil.TestDEK[:])
 	testutil.RequireNoError(t, err)
-	err = vault.NewBackupManager(mgr2).Restore(vaultCtx, "personal", personalPath)
+	err = vault.NewBackupManager(mgr2).Restore(vaultCtx, "general", personalPath)
 	testutil.RequireNoError(t, err)
 
-	results, err := mgr2.Query(vaultCtx, "personal", domain.SearchQuery{Query: "vault note"})
+	results, err := mgr2.Query(vaultCtx, "general", domain.SearchQuery{Query: "vault note"})
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(results) >= 1, "restored backup must contain personal data")
 
@@ -2576,11 +2576,11 @@ func TestVault_4_6_8_AutomatedBackupScheduling(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	mgr := vault.NewManager(dir)
-	err = mgr.Open(vaultCtx, "personal", testutil.TestDEK[:])
+	err = mgr.Open(vaultCtx, "general", testutil.TestDEK[:])
 	testutil.RequireNoError(t, err)
 
 	// Store data so backup has content.
-	_, err = mgr.Store(vaultCtx, "personal", domain.VaultItem{
+	_, err = mgr.Store(vaultCtx, "general", domain.VaultItem{
 		Type: "note", Source: "test", Summary: "scheduled backup test",
 	})
 	testutil.RequireNoError(t, err)
@@ -2591,7 +2591,7 @@ func TestVault_4_6_8_AutomatedBackupScheduling(t *testing.T) {
 	// Requirement: Watchdog triggers backup every 24 hours.
 	// Simulate two scheduled backups and verify each produces a valid file.
 	backup1Path := dir + "/backup_run1.sqlite"
-	err = impl.Backup(vaultCtx, "personal", backup1Path)
+	err = impl.Backup(vaultCtx, "general", backup1Path)
 	testutil.RequireNoError(t, err)
 	info1, err := os.Stat(backup1Path)
 	testutil.RequireNoError(t, err)
@@ -2599,7 +2599,7 @@ func TestVault_4_6_8_AutomatedBackupScheduling(t *testing.T) {
 
 	// Second backup to different path (simulating next 24h cycle).
 	backup2Path := dir + "/backup_run2.sqlite"
-	err = impl.Backup(vaultCtx, "personal", backup2Path)
+	err = impl.Backup(vaultCtx, "general", backup2Path)
 	testutil.RequireNoError(t, err)
 	info2, err := os.Stat(backup2Path)
 	testutil.RequireNoError(t, err)
@@ -2607,12 +2607,12 @@ func TestVault_4_6_8_AutomatedBackupScheduling(t *testing.T) {
 
 	// Both backups must be restorable and contain the data.
 	mgr2 := vault.NewManager(dir + "/restored")
-	err = mgr2.Open(vaultCtx, "personal", testutil.TestDEK[:])
+	err = mgr2.Open(vaultCtx, "general", testutil.TestDEK[:])
 	testutil.RequireNoError(t, err)
-	err = vault.NewBackupManager(mgr2).Restore(vaultCtx, "personal", backup2Path)
+	err = vault.NewBackupManager(mgr2).Restore(vaultCtx, "general", backup2Path)
 	testutil.RequireNoError(t, err)
 
-	results, err := mgr2.Query(vaultCtx, "personal", domain.SearchQuery{Query: "scheduled backup"})
+	results, err := mgr2.Query(vaultCtx, "general", domain.SearchQuery{Query: "scheduled backup"})
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(results) >= 1, "restored backup must contain data")
 	testutil.RequireEqual(t, results[0].Summary, "scheduled backup test")
@@ -2997,7 +2997,7 @@ func TestVault_4_2_2_1_VaultItemsRequiredColumns(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// vault_items required columns.
-	cols, err := impl.TableColumns("personal", "vault_items")
+	cols, err := impl.TableColumns("general", "vault_items")
 	testutil.RequireNoError(t, err)
 
 	required := []string{"id", "type", "source", "source_id", "contact_did",
@@ -3017,7 +3017,7 @@ func TestVault_4_2_2_2_VaultItemsFTS5Table(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// vault_items_fts must be a FTS5 virtual table.
-	ddl, err := impl.TableDDL("personal", "vault_items_fts")
+	ddl, err := impl.TableDDL("general", "vault_items_fts")
 	testutil.RequireNoError(t, err)
 	testutil.RequireContains(t, ddl, "fts5")
 	testutil.RequireContains(t, ddl, "body_text")
@@ -3070,7 +3070,7 @@ func TestVault_4_2_2_4_PorterStemmerForbidden(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// Porter stemmer is English-only and mangles non-Latin scripts — FORBIDDEN.
-	ddl, err := impl.TableDDL("personal", "vault_items_fts")
+	ddl, err := impl.TableDDL("general", "vault_items_fts")
 	testutil.RequireNoError(t, err)
 
 	// Verify "porter" does not appear in the FTS5 config.
@@ -3090,7 +3090,7 @@ func TestVault_4_2_2_5_FTS5EncryptedBySQLCipher(t *testing.T) {
 	// Structural assertion: FTS5 tables live inside the SQLCipher database file,
 	// so they are automatically encrypted. This test confirms the FTS5 table
 	// exists within the encrypted persona vault.
-	ddl, err := impl.TableDDL("personal", "vault_items_fts")
+	ddl, err := impl.TableDDL("general", "vault_items_fts")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(ddl) > 0, "FTS5 table must exist inside encrypted persona vault")
 }
@@ -3165,7 +3165,7 @@ func TestVault_4_2_2_7_VaultItemsTypeEnforced(t *testing.T) {
 		"bookmark", "voice_memo", "kv", "contact",
 	}
 	for i, vt := range validTypes {
-		rowsAffected, err := si.ExecSQL("personal",
+		rowsAffected, err := si.ExecSQL("general",
 			"INSERT INTO vault_items(id, type, source, timestamp, ingested_at) VALUES(?, ?, ?, ?, ?)",
 			fmt.Sprintf("valid-%d", i), vt, "test", 1700000000+i, 1700000001+i)
 		testutil.RequireNoError(t, err)
@@ -3178,7 +3178,7 @@ func TestVault_4_2_2_7_VaultItemsTypeEnforced(t *testing.T) {
 		"", "EMAIL", "Message",
 	}
 	for i, it := range invalidTypes {
-		_, err := si.ExecSQL("personal",
+		_, err := si.ExecSQL("general",
 			"INSERT INTO vault_items(id, type, source, timestamp, ingested_at) VALUES(?, ?, ?, ?, ?)",
 			fmt.Sprintf("invalid-%d", i), it, "test", 1700000000, 1700000001)
 		testutil.RequireError(t, err)
@@ -3193,7 +3193,7 @@ func TestVault_4_2_2_8_RelationshipsEntityTypeEnforced(t *testing.T) {
 
 	// Positive: all valid entity types must succeed.
 	for i, validType := range []string{"person", "org", "bot"} {
-		rowsAffected, err := impl.ExecSQL("personal",
+		rowsAffected, err := impl.ExecSQL("general",
 			"INSERT INTO relationships(id, entity_name, entity_type) VALUES(?, ?, ?)",
 			fmt.Sprintf("rel-%d", i), fmt.Sprintf("Entity %d", i), validType)
 		testutil.RequireNoError(t, err)
@@ -3201,13 +3201,13 @@ func TestVault_4_2_2_8_RelationshipsEntityTypeEnforced(t *testing.T) {
 	}
 
 	// Negative: invalid entity type must be rejected.
-	_, err := impl.ExecSQL("personal",
+	_, err := impl.ExecSQL("general",
 		"INSERT INTO relationships(id, entity_name, entity_type) VALUES(?, ?, ?)",
 		"test-invalid-entity", "Alien Corp", "alien")
 	testutil.RequireError(t, err)
 
 	// Negative: another invalid type.
-	_, err = impl.ExecSQL("personal",
+	_, err = impl.ExecSQL("general",
 		"INSERT INTO relationships(id, entity_name, entity_type) VALUES(?, ?, ?)",
 		"test-invalid-2", "Corp X", "company")
 	testutil.RequireError(t, err)
@@ -3219,12 +3219,12 @@ func TestVault_4_2_2_9_FTS5ContentSyncInsert(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// INSERT into vault_items must propagate to FTS5 index.
-	_, err := impl.ExecSQL("personal",
+	_, err := impl.ExecSQL("general",
 		"INSERT INTO vault_items(id, type, source, body_text, summary, timestamp, ingested_at) VALUES(?, ?, ?, ?, ?, ?, ?)",
 		"fts5-sync-test", "email", "gmail", "quarterly earnings report data", "Q4 earnings", 1700000000, 1700000001)
 	testutil.RequireNoError(t, err)
 
-	rows, err := impl.QuerySQL("personal",
+	rows, err := impl.QuerySQL("general",
 		"SELECT id FROM vault_items_fts WHERE vault_items_fts MATCH ?", "earnings")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(rows) > 0, "FTS5 must find newly inserted item")
@@ -3297,15 +3297,15 @@ func TestVault_4_2_2_11_FTS5ContentSyncDelete(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "SchemaInspector")
 
 	// DELETE from vault_items must remove item from FTS5 index.
-	_, err := impl.ExecSQL("personal",
+	_, err := impl.ExecSQL("general",
 		"INSERT INTO vault_items(id, type, source, body_text, timestamp, ingested_at) VALUES(?, ?, ?, ?, ?, ?)",
 		"fts5-delete-test", "note", "manual", "deletable unique text gamma", 1700000000, 1700000001)
 	testutil.RequireNoError(t, err)
 
-	_, err = impl.ExecSQL("personal", "DELETE FROM vault_items WHERE id = ?", "fts5-delete-test")
+	_, err = impl.ExecSQL("general", "DELETE FROM vault_items WHERE id = ?", "fts5-delete-test")
 	testutil.RequireNoError(t, err)
 
-	rows, err := impl.QuerySQL("personal",
+	rows, err := impl.QuerySQL("general",
 		"SELECT id FROM vault_items_fts WHERE vault_items_fts MATCH ?", "gamma")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(rows) == 0, "FTS5 must not find deleted item")
@@ -3329,7 +3329,7 @@ func TestVault_4_2_2_13_SchemaVersionPersonaVault(t *testing.T) {
 
 	// Persona vault schema version must be "v3".
 	// Core detects version mismatch on open and triggers migration.
-	version, err := impl.SchemaVersion("personal")
+	version, err := impl.SchemaVersion("general")
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, version, "v3")
 }
@@ -4082,7 +4082,7 @@ func TestVault_4_3_1_1_EmbeddingModelTrackedInMetadata(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "EmbeddingMigrator")
 
 	// embedding_model column stores model name + version.
-	model, err := impl.CurrentModel("personal")
+	model, err := impl.CurrentModel("general")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(model) > 0, "embedding model must be tracked in metadata")
 }
@@ -4093,7 +4093,7 @@ func TestVault_4_3_1_2_ModelChangeDetected(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "EmbeddingMigrator")
 
 	// Core detects mismatch between stored model and configured model.
-	mismatch, err := impl.DetectMismatch("personal", "EmbeddingGemma:2.0")
+	mismatch, err := impl.DetectMismatch("general", "EmbeddingGemma:2.0")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, mismatch, "model change should be detected")
 }
@@ -4108,16 +4108,16 @@ func TestVault_4_3_1_3_ReindexTriggered(t *testing.T) {
 
 	// ---- Phase 1: DropIndex triggers reindexing state ----
 
-	err := impl.DropIndex("personal")
+	err := impl.DropIndex("general")
 	testutil.RequireNoError(t, err)
 
 	// Verify reindexing flag is set after DropIndex.
-	reindexing, err := impl.IsReindexing("personal")
+	reindexing, err := impl.IsReindexing("general")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, reindexing, "must be in reindexing state after DropIndex")
 
 	// Semantic search must be unavailable during reindexing.
-	available, err := impl.SemanticSearchAvailable("personal")
+	available, err := impl.SemanticSearchAvailable("general")
 	testutil.RequireNoError(t, err)
 	testutil.RequireFalse(t, available, "semantic search must be unavailable during reindexing")
 
@@ -4145,14 +4145,14 @@ func TestVault_4_3_1_3_ReindexTriggered(t *testing.T) {
 
 	// ---- Phase 3: RebuildIndex restores semantic search ----
 
-	err = impl.RebuildIndex("personal")
+	err = impl.RebuildIndex("general")
 	testutil.RequireNoError(t, err)
 
-	reindexing, err = impl.IsReindexing("personal")
+	reindexing, err = impl.IsReindexing("general")
 	testutil.RequireNoError(t, err)
 	testutil.RequireFalse(t, reindexing, "must not be reindexing after RebuildIndex")
 
-	available, err = impl.SemanticSearchAvailable("personal")
+	available, err = impl.SemanticSearchAvailable("general")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, available, "semantic search must be available after RebuildIndex")
 }
@@ -4167,16 +4167,16 @@ func TestVault_4_3_1_4_FTS5AvailableDuringReindexing(t *testing.T) {
 
 	// Put the migrator into reindexing state so the assertions below
 	// actually execute (previous test leaves reindexing = false).
-	err := impl.DropIndex("personal")
+	err := impl.DropIndex("general")
 	testutil.RequireNoError(t, err)
 
 	// Confirm we are now in reindexing state.
-	reindexing, err := impl.IsReindexing("personal")
+	reindexing, err := impl.IsReindexing("general")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, reindexing, "should be reindexing after DropIndex")
 
 	// Semantic search must be unavailable during re-indexing.
-	available, err := impl.SemanticSearchAvailable("personal")
+	available, err := impl.SemanticSearchAvailable("general")
 	testutil.RequireNoError(t, err)
 	testutil.RequireFalse(t, available, "semantic search should be unavailable during re-indexing")
 
@@ -4203,7 +4203,7 @@ func TestVault_4_3_1_4_FTS5AvailableDuringReindexing(t *testing.T) {
 	testutil.RequireEqual(t, results[0].ID, "fts5-reindex-item")
 
 	// Clean up: restore reindexing state so subsequent tests are not affected.
-	_ = impl.RebuildIndex("personal")
+	_ = impl.RebuildIndex("general")
 }
 
 // TST-CORE-269
@@ -4213,7 +4213,7 @@ func TestVault_4_3_1_5_ReembedCompletes(t *testing.T) {
 
 	// After re-embed completes, semantic search is restored.
 	// Brain processes all items in batches, sqlite-vec index rebuilt.
-	available, err := impl.SemanticSearchAvailable("personal")
+	available, err := impl.SemanticSearchAvailable("general")
 	testutil.RequireNoError(t, err)
 	_ = available // Real impl verifies semantic search restored after rebuild.
 }
@@ -4294,22 +4294,22 @@ func TestVault_4_6_1_2_IntegrityCheckAfterMigration(t *testing.T) {
 
 	// Run the full migration safety lifecycle: backup → integrity check → commit.
 	// PreFlightBackup must succeed before we check integrity.
-	backupPath, err := impl.PreFlightBackup("personal")
+	backupPath, err := impl.PreFlightBackup("general")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, backupPath != "", "backup path must be non-empty")
 
 	// PRAGMA integrity_check must return "ok" after DDL changes.
-	result, err := impl.IntegrityCheck("personal")
+	result, err := impl.IntegrityCheck("general")
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, result, "ok")
 
 	// Commit must succeed after integrity check passes.
-	err = impl.CommitMigration("personal")
+	err = impl.CommitMigration("general")
 	testutil.RequireNoError(t, err)
 
 	// Rollback on a committed migration should still not error
 	// (idempotent safety — backup may already be cleaned up).
-	err = impl.RollbackMigration("personal", backupPath)
+	err = impl.RollbackMigration("general", backupPath)
 	// Rollback after commit may or may not error depending on impl;
 	// the important thing is IntegrityCheck returned "ok".
 }
@@ -4362,7 +4362,7 @@ func TestVault_4_6_1_4_IntegrityFailRollbackRestore(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "MigrationSafety")
 
 	// Pre-flight backup creates a backup file on disk.
-	backupPath, err := impl.PreFlightBackup("personal")
+	backupPath, err := impl.PreFlightBackup("general")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, len(backupPath) > 0, "backup path must not be empty")
 
@@ -4372,7 +4372,7 @@ func TestVault_4_6_1_4_IntegrityFailRollbackRestore(t *testing.T) {
 		fmt.Sprintf("backup file must exist at %s after PreFlightBackup", backupPath))
 
 	// Simulate integrity failure: rollback with the backup.
-	err = impl.RollbackMigration("personal", backupPath)
+	err = impl.RollbackMigration("general", backupPath)
 	testutil.RequireNoError(t, err)
 
 	// After rollback, backup file should be cleaned up (consumed).
@@ -4405,7 +4405,7 @@ func TestVault_4_6_1_5_PreFlightBackupPath(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "MigrationSafety")
 
 	// Backup path: vault.v{old_version}.bak — versioned for identification.
-	backupPath, err := impl.PreFlightBackup("personal")
+	backupPath, err := impl.PreFlightBackup("general")
 	testutil.RequireNoError(t, err)
 
 	// Verify path contains version indicator.
@@ -5127,7 +5127,7 @@ func TestVault_4_8_1_SecurityModeBootFullSequence(t *testing.T) {
 		Mode:            "security",
 		WrappedSeedPath: "/var/lib/dina/wrapped_seed.bin",
 		VaultPath:       "/var/lib/dina",
-		Personas:        []string{"personal"},
+		Personas:        []string{"general"},
 		Passphrase:      testutil.TestPassphrase,
 	}
 	err := impl.Boot(cfg)
@@ -5148,7 +5148,7 @@ func TestVault_4_8_2_ConvenienceModeBootFullSequence(t *testing.T) {
 		Mode:        "convenience",
 		KeyfilePath: "/var/lib/dina/keyfile",
 		VaultPath:   dir,
-		Personas:    []string{"personal"},
+		Personas:    []string{"general"},
 	}
 	err := bs.Boot(cfg)
 	testutil.RequireNoError(t, err)
@@ -5163,7 +5163,7 @@ func TestVault_4_8_2_ConvenienceModeBootFullSequence(t *testing.T) {
 	testutil.RequireTrue(t, identityOpen, "identity must be open after convenience boot")
 
 	// Positive: personal must be open (default persona).
-	personalOpen, err := bs.IsVaultOpen("personal")
+	personalOpen, err := bs.IsVaultOpen("general")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, personalOpen, "personal must be open after convenience boot")
 
@@ -5180,7 +5180,7 @@ func TestVault_4_8_2_ConvenienceModeBootFullSequence(t *testing.T) {
 	secCfg := testutil.BootConfig{
 		Mode:      "security",
 		VaultPath: dir2,
-		Personas:  []string{"personal"},
+		Personas:  []string{"general"},
 		// No Passphrase — must fail.
 	}
 	err = bs2.Boot(secCfg)
@@ -5190,7 +5190,7 @@ func TestVault_4_8_2_ConvenienceModeBootFullSequence(t *testing.T) {
 // TST-CORE-322
 func TestVault_4_8_3_BootOpensIdentityFirst(t *testing.T) {
 	// §4.8.3: Boot sequence must open identity.sqlite FIRST (gatekeeper needs
-	// contacts table). Then "personal" is opened. Other personas in the list
+	// contacts table). Then "general" is opened. Other personas in the list
 	// remain closed until explicit unlock.
 	dir := t.TempDir()
 	mgr := vault.NewManager(dir)
@@ -5201,7 +5201,7 @@ func TestVault_4_8_3_BootOpensIdentityFirst(t *testing.T) {
 		Mode:        "convenience",
 		KeyfilePath: "/var/lib/dina/keyfile",
 		VaultPath:   dir,
-		Personas:    []string{"personal", "health"},
+		Personas:    []string{"general", "health"},
 	}
 	err := bs.Boot(cfg)
 	testutil.RequireNoError(t, err)
@@ -5211,12 +5211,12 @@ func TestVault_4_8_3_BootOpensIdentityFirst(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, identityOpen, "identity must be open after boot")
 
-	// Positive: "personal" is the default persona — must be open after boot.
-	personalOpen, err := bs.IsVaultOpen("personal")
+	// Positive: "general" is the default persona — must be open after boot.
+	personalOpen, err := bs.IsVaultOpen("general")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, personalOpen, "personal must be open after boot")
 
-	// Negative: "health" was listed in Personas but is NOT "personal" —
+	// Negative: "health" was listed in Personas but is NOT "general" —
 	// it must remain closed until explicit unlock.
 	healthOpen, err := bs.IsVaultOpen("health")
 	testutil.RequireNoError(t, err)
@@ -5233,7 +5233,7 @@ func TestVault_4_8_3_BootOpensIdentityFirst(t *testing.T) {
 		switch p {
 		case "identity":
 			foundIdentity = true
-		case "personal":
+		case "general":
 			foundPersonal = true
 		case "health":
 			foundHealth = true
@@ -5264,11 +5264,11 @@ func TestVault_4_8_4_BootOpensPersonalSecond(t *testing.T) {
 	err = mgr.Open(vaultCtx, "identity", identityDEK[:])
 	testutil.RequireNoError(t, err)
 
-	err = mgr.Open(vaultCtx, "personal", personalDEK[:])
+	err = mgr.Open(vaultCtx, "general", personalDEK[:])
 	testutil.RequireNoError(t, err)
 
 	// Verify personal is open via the real Manager.IsOpen (checks vault map).
-	testutil.RequireTrue(t, mgr.IsOpen("personal"), "personal must be open after boot")
+	testutil.RequireTrue(t, mgr.IsOpen("general"), "personal must be open after boot")
 
 	// Verify identity is also open (opened first).
 	testutil.RequireTrue(t, mgr.IsOpen("identity"), "identity must be open after boot")
@@ -5278,12 +5278,12 @@ func TestVault_4_8_4_BootOpensPersonalSecond(t *testing.T) {
 	testutil.RequireFalse(t, mgr.IsOpen("financial"), "financial must remain closed — not opened at boot")
 
 	// Verify re-opening personal with the same DEK succeeds (idempotent).
-	err = mgr.Open(vaultCtx, "personal", personalDEK[:])
+	err = mgr.Open(vaultCtx, "general", personalDEK[:])
 	testutil.RequireNoError(t, err)
 
 	// Verify re-opening personal with a WRONG DEK is rejected.
 	wrongDEK := sha256.Sum256([]byte("wrong-key"))
-	err = mgr.Open(vaultCtx, "personal", wrongDEK[:])
+	err = mgr.Open(vaultCtx, "general", wrongDEK[:])
 	if err == nil {
 		t.Fatal("expected error when re-opening personal with wrong DEK, got nil")
 	}
@@ -5299,7 +5299,7 @@ func TestVault_4_8_5_OtherPersonasRemainClosedAtBoot(t *testing.T) {
 		Mode:        "convenience",
 		KeyfilePath: "/var/lib/dina/keyfile",
 		VaultPath:   "/var/lib/dina",
-		Personas:    []string{"personal", "health", "financial"},
+		Personas:    []string{"general", "health", "financial"},
 	}
 	err := impl.Boot(cfg)
 	testutil.RequireNoError(t, err)
@@ -5327,7 +5327,7 @@ func TestVault_4_8_6_DEKsNotDerivedForClosedPersonas(t *testing.T) {
 		Mode:        "convenience",
 		KeyfilePath: "/var/lib/dina/keyfile",
 		VaultPath:   dir,
-		Personas:    []string{"personal", "health", "work"},
+		Personas:    []string{"general", "health", "work"},
 	}
 	err := bs.Boot(cfg)
 	testutil.RequireNoError(t, err)
@@ -5339,7 +5339,7 @@ func TestVault_4_8_6_DEKsNotDerivedForClosedPersonas(t *testing.T) {
 		"identity must have DEK derived at boot")
 
 	// Positive: personal is the default persona — DEK derived at boot.
-	personalOpen, err := bs.IsVaultOpen("personal")
+	personalOpen, err := bs.IsVaultOpen("general")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, personalOpen,
 		"personal must have DEK derived at boot")
@@ -5379,7 +5379,7 @@ func TestVault_4_8_7_BrainNotifiedOnVaultUnlock(t *testing.T) {
 		Mode:        "convenience",
 		KeyfilePath: dir + "/keyfile",
 		VaultPath:   dir,
-		Personas:    []string{"personal"},
+		Personas:    []string{"general"},
 	}
 	err = bs.Boot(cfg)
 	testutil.RequireNoError(t, err)
@@ -5389,7 +5389,7 @@ func TestVault_4_8_7_BrainNotifiedOnVaultUnlock(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, isOpen, "identity vault must be open after boot")
 
-	isOpen, err = bs.IsVaultOpen("personal")
+	isOpen, err = bs.IsVaultOpen("general")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, isOpen, "personal vault must be open after boot")
 
@@ -5432,7 +5432,7 @@ func TestVault_4_8_8_HKDFInfoStringsCorrectIdentity(t *testing.T) {
 	testutil.RequireEqual(t, fmt.Sprintf("%x", dek1), fmt.Sprintf("%x", dek2))
 
 	// Different persona produces different DEK (domain separation).
-	dekPersonal, err := deriver.DeriveVaultDEK(masterSeed, "personal", userSalt)
+	dekPersonal, err := deriver.DeriveVaultDEK(masterSeed, "general", userSalt)
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, fmt.Sprintf("%x", dek1) != fmt.Sprintf("%x", dekPersonal),
 		"identity and personal DEKs must differ (different info strings)")
@@ -5537,7 +5537,7 @@ func TestVault_4_8_11_ModeStoredInConfig(t *testing.T) {
 		Mode:        "convenience",
 		KeyfilePath: "/var/lib/dina/keyfile",
 		VaultPath:   "/var/lib/dina",
-		Personas:    []string{"personal"},
+		Personas:    []string{"general"},
 	}
 	err := impl.Boot(cfg)
 	testutil.RequireNoError(t, err)
@@ -5548,7 +5548,7 @@ func TestVault_4_8_11_ModeStoredInConfig(t *testing.T) {
 		Mode:            "security",
 		WrappedSeedPath: "/var/lib/dina/wrapped_seed.bin",
 		VaultPath:       "/var/lib/dina",
-		Personas:        []string{"personal"},
+		Personas:        []string{"general"},
 	}
 	err = impl.Boot(cfgSec)
 	testutil.RequireNoError(t, err)
@@ -5558,7 +5558,7 @@ func TestVault_4_8_11_ModeStoredInConfig(t *testing.T) {
 	cfgBad := testutil.BootConfig{
 		Mode:      "turbo",
 		VaultPath: "/var/lib/dina",
-		Personas:  []string{"personal"},
+		Personas:  []string{"general"},
 	}
 	err = impl.Boot(cfgBad)
 	testutil.RequireError(t, err)
@@ -5596,7 +5596,7 @@ func TestVault_4_8_13_DefaultModeManagedConvenience(t *testing.T) {
 		Mode:        "convenience",
 		KeyfilePath: "/var/lib/dina/keyfile",
 		VaultPath:   "/var/lib/dina",
-		Personas:    []string{"personal"},
+		Personas:    []string{"general"},
 	}
 	err := impl.Boot(cfg)
 	testutil.RequireNoError(t, err)
@@ -5608,7 +5608,7 @@ func TestVault_4_8_13_DefaultModeManagedConvenience(t *testing.T) {
 	cfgDefault := testutil.BootConfig{
 		Mode:      "", // no explicit mode
 		VaultPath: "/var/lib/dina",
-		Personas:  []string{"personal"},
+		Personas:  []string{"general"},
 	}
 	err = impl2.Boot(cfgDefault)
 	testutil.RequireNoError(t, err)
@@ -5668,12 +5668,12 @@ func TestVault_4_8_15_SecurityModeWrongPassphraseVaultStaysLocked(t *testing.T) 
 		Mode:       "security",
 		Passphrase: testutil.TestPassphrase,
 		VaultPath:  dir,
-		Personas:   []string{"personal"},
+		Personas:   []string{"general"},
 	})
 	testutil.RequireNoError(t, err)
 
 	// Verify personal vault is open after correct boot.
-	open, err := impl.IsVaultOpen("personal")
+	open, err := impl.IsVaultOpen("general")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, open, "personal vault must be open after correct passphrase boot")
 
@@ -5682,12 +5682,12 @@ func TestVault_4_8_15_SecurityModeWrongPassphraseVaultStaysLocked(t *testing.T) 
 		Mode:       "security",
 		Passphrase: testutil.TestPassphraseWrong,
 		VaultPath:  dir,
-		Personas:   []string{"personal"},
+		Personas:   []string{"general"},
 	})
 	testutil.RequireError(t, err)
 
 	// After wrong passphrase, previous boot state must not be wiped.
-	openAfter, err := impl.IsVaultOpen("personal")
+	openAfter, err := impl.IsVaultOpen("general")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, openAfter, "vault from previous correct boot must still be accessible — wrong passphrase must not wipe state")
 
@@ -5709,7 +5709,7 @@ func TestVault_4_8_16_ConvenienceModeKeyfileMissingError(t *testing.T) {
 		Mode:        "convenience",
 		KeyfilePath: "/nonexistent/path/keyfile",
 		VaultPath:   dir,
-		Personas:    []string{"personal"},
+		Personas:    []string{"general"},
 	})
 	testutil.RequireError(t, err)
 
@@ -5720,7 +5720,7 @@ func TestVault_4_8_16_ConvenienceModeKeyfileMissingError(t *testing.T) {
 	err = impl2.Boot(testutil.BootConfig{
 		Mode:      "convenience",
 		VaultPath: dir2,
-		Personas:  []string{"personal"},
+		Personas:  []string{"general"},
 	})
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, impl2.CurrentMode(), "convenience")
@@ -5741,7 +5741,7 @@ func TestVault_4_8_17_ConvenienceModeKeyfileWrongPermissions(t *testing.T) {
 		Mode:        "convenience",
 		KeyfilePath: vaultDir + "/keyfile",
 		VaultPath:   vaultDir,
-		Personas:    []string{"personal"},
+		Personas:    []string{"general"},
 	}
 	err = impl.Boot(cfg)
 	testutil.RequireNoError(t, err)
@@ -5753,7 +5753,7 @@ func TestVault_4_8_17_ConvenienceModeKeyfileWrongPermissions(t *testing.T) {
 		Mode:        "convenience",
 		KeyfilePath: "/nonexistent/path/keyfile",
 		VaultPath:   vaultDir + "/alt",
-		Personas:    []string{"personal"},
+		Personas:    []string{"general"},
 	}
 	err = impl2.Boot(cfgBad)
 	testutil.RequireError(t, err)
@@ -5764,7 +5764,7 @@ func TestVault_4_8_17_ConvenienceModeKeyfileWrongPermissions(t *testing.T) {
 	cfgInvalid := domain.BootConfig{
 		Mode:      "hybrid",
 		VaultPath: vaultDir + "/invalid",
-		Personas:  []string{"personal"},
+		Personas:  []string{"general"},
 	}
 	err = impl3.Boot(cfgInvalid)
 	testutil.RequireError(t, err)
@@ -5815,7 +5815,7 @@ func TestVault_4_8_19_ConfigInvalidModeValue(t *testing.T) {
 	err := impl.Boot(testutil.BootConfig{
 		Mode:       "hybrid",
 		VaultPath:  dir,
-		Personas:   []string{"personal"},
+		Personas:   []string{"general"},
 		Passphrase: testutil.TestPassphrase,
 	})
 	testutil.RequireError(t, err)
@@ -5827,7 +5827,7 @@ func TestVault_4_8_19_ConfigInvalidModeValue(t *testing.T) {
 	err = impl2.Boot(testutil.BootConfig{
 		Mode:       "fast",
 		VaultPath:  dir2,
-		Personas:   []string{"personal"},
+		Personas:   []string{"general"},
 		Passphrase: testutil.TestPassphrase,
 	})
 	testutil.RequireError(t, err)
@@ -5839,7 +5839,7 @@ func TestVault_4_8_19_ConfigInvalidModeValue(t *testing.T) {
 	err = impl3.Boot(testutil.BootConfig{
 		Mode:       "security",
 		VaultPath:  dir3,
-		Personas:   []string{"personal"},
+		Personas:   []string{"general"},
 		Passphrase: testutil.TestPassphrase,
 	})
 	testutil.RequireNoError(t, err)
@@ -5866,7 +5866,7 @@ func TestVault_4_8_20_SecurityModeWrappedSeedPath(t *testing.T) {
 		Mode:            "security",
 		WrappedSeedPath: seedPath,
 		VaultPath:       vaultDir,
-		Personas:        []string{"personal"},
+		Personas:        []string{"general"},
 		Passphrase:      "test-passphrase-2026",
 	}
 	err = impl.Boot(cfg)
@@ -5883,7 +5883,7 @@ func TestVault_4_8_20_SecurityModeWrappedSeedPath(t *testing.T) {
 		Mode:            "security",
 		WrappedSeedPath: seedPath2,
 		VaultPath:       vaultDir + "/nopass",
-		Personas:        []string{"personal"},
+		Personas:        []string{"general"},
 	}
 	err = impl2.Boot(cfgNoPass)
 	testutil.RequireError(t, err)
@@ -5903,7 +5903,7 @@ func TestVault_4_8_21_MasterSeedNeverPlaintextInSecurityMode(t *testing.T) {
 	cfg := domain.BootConfig{
 		Mode:       "security",
 		VaultPath:  vaultDir,
-		Personas:   []string{"personal"},
+		Personas:   []string{"general"},
 		Passphrase: "test-secure-passphrase-2026",
 	}
 	err = impl.Boot(cfg)
@@ -5916,7 +5916,7 @@ func TestVault_4_8_21_MasterSeedNeverPlaintextInSecurityMode(t *testing.T) {
 	cfgNoPass := domain.BootConfig{
 		Mode:      "security",
 		VaultPath: vaultDir + "/nopass",
-		Personas:  []string{"personal"},
+		Personas:  []string{"general"},
 	}
 	err = impl2.Boot(cfgNoPass)
 	testutil.RequireError(t, err)
@@ -5925,7 +5925,7 @@ func TestVault_4_8_21_MasterSeedNeverPlaintextInSecurityMode(t *testing.T) {
 	cfgWrong := domain.BootConfig{
 		Mode:       "security",
 		VaultPath:  vaultDir,
-		Personas:   []string{"personal"},
+		Personas:   []string{"general"},
 		Passphrase: "wrong-passphrase",
 	}
 	err = impl.Boot(cfgWrong)
@@ -5935,7 +5935,7 @@ func TestVault_4_8_21_MasterSeedNeverPlaintextInSecurityMode(t *testing.T) {
 	cfgCorrect := domain.BootConfig{
 		Mode:       "security",
 		VaultPath:  vaultDir,
-		Personas:   []string{"personal"},
+		Personas:   []string{"general"},
 		Passphrase: "test-secure-passphrase-2026",
 	}
 	err = impl.Boot(cfgCorrect)
@@ -5964,7 +5964,7 @@ func TestVault_4_8_22_ConvenienceModeKeyfilePath(t *testing.T) {
 		Mode:        "convenience",
 		KeyfilePath: keyfilePath,
 		VaultPath:   vaultDir,
-		Personas:    []string{"personal"},
+		Personas:    []string{"general"},
 	}
 	err = impl.Boot(cfg)
 	testutil.RequireNoError(t, err)
@@ -5978,7 +5978,7 @@ func TestVault_4_8_22_ConvenienceModeKeyfilePath(t *testing.T) {
 		Mode:        "convenience",
 		KeyfilePath: vaultDir + "/nokey/nonexistent_keyfile",
 		VaultPath:   vaultDir + "/nokey",
-		Personas:    []string{"personal"},
+		Personas:    []string{"general"},
 	}
 	err = impl2.Boot(cfgBadPath)
 	testutil.RequireError(t, err)
@@ -6163,23 +6163,23 @@ func TestVault_4_9_3_FTS5AvailableDuringReindex(t *testing.T) {
 	// 1. Fresh EmbeddingMigrator — verify initial state.
 	mig := vault.NewEmbeddingMigrator()
 
-	reindexing, err := mig.IsReindexing("personal")
+	reindexing, err := mig.IsReindexing("general")
 	testutil.RequireNoError(t, err)
 	testutil.RequireFalse(t, reindexing, "must not be reindexing initially")
 
-	available, err := mig.SemanticSearchAvailable("personal")
+	available, err := mig.SemanticSearchAvailable("general")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, available, "semantic search must be available when not reindexing")
 
 	// 2. Drop index → reindexing starts, semantic search unavailable.
-	err = mig.DropIndex("personal")
+	err = mig.DropIndex("general")
 	testutil.RequireNoError(t, err)
 
-	reindexing, err = mig.IsReindexing("personal")
+	reindexing, err = mig.IsReindexing("general")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, reindexing, "must be reindexing after DropIndex")
 
-	available, err = mig.SemanticSearchAvailable("personal")
+	available, err = mig.SemanticSearchAvailable("general")
 	testutil.RequireNoError(t, err)
 	testutil.RequireFalse(t, available, "semantic search must be unavailable during reindex")
 
@@ -6215,18 +6215,18 @@ func TestVault_4_9_3_FTS5AvailableDuringReindex(t *testing.T) {
 	testutil.RequireContains(t, results[0].Summary, "quantum")
 
 	// 4. Rebuild index → reindexing ends, semantic search available again.
-	err = mig.RebuildIndex("personal")
+	err = mig.RebuildIndex("general")
 	testutil.RequireNoError(t, err)
 
-	reindexing, err = mig.IsReindexing("personal")
+	reindexing, err = mig.IsReindexing("general")
 	testutil.RequireNoError(t, err)
 	testutil.RequireFalse(t, reindexing, "must not be reindexing after RebuildIndex")
 
-	available, err = mig.SemanticSearchAvailable("personal")
+	available, err = mig.SemanticSearchAvailable("general")
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, available, "semantic search must be available after rebuild")
 
-	// 5. Per-persona isolation: reindexing "work" must not affect "personal".
+	// 5. Per-persona isolation: reindexing "work" must not affect "general".
 	err = mig.DropIndex("work")
 	testutil.RequireNoError(t, err)
 
@@ -6234,7 +6234,7 @@ func TestVault_4_9_3_FTS5AvailableDuringReindex(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	testutil.RequireTrue(t, workReindexing, "work persona must be reindexing")
 
-	personalReindexing, err := mig.IsReindexing("personal")
+	personalReindexing, err := mig.IsReindexing("general")
 	testutil.RequireNoError(t, err)
 	testutil.RequireFalse(t, personalReindexing, "personal persona must NOT be affected by work reindex")
 }
@@ -6264,7 +6264,7 @@ func TestVault_36_1_4_ApprovalExpiresIfNotActedOn(t *testing.T) {
 		// Stage an item with expiresAt in the past (already expired).
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		err := mgr.Open(vaultCtx, "personal", testutil.TestDEK[:])
+		err := mgr.Open(vaultCtx, "general", testutil.TestDEK[:])
 		testutil.RequireNoError(t, err)
 
 		staging := vault.NewStagingManager(mgr)
@@ -6277,7 +6277,7 @@ func TestVault_36_1_4_ApprovalExpiresIfNotActedOn(t *testing.T) {
 		}
 		// expiresAt is 1 hour in the past — already expired.
 		expiresAt := time.Now().Unix() - 3600
-		stagingID, err := staging.Stage(vaultCtx, "personal", item, expiresAt)
+		stagingID, err := staging.Stage(vaultCtx, "general", item, expiresAt)
 		testutil.RequireNoError(t, err)
 		testutil.RequireTrue(t, len(stagingID) > 0, "staging ID must be returned")
 
@@ -6288,7 +6288,7 @@ func TestVault_36_1_4_ApprovalExpiresIfNotActedOn(t *testing.T) {
 		testutil.RequireEqual(t, count, 1)
 
 		// After sweep: Approve must fail — the approval window has closed.
-		err = staging.Approve(vaultCtx, "personal", stagingID)
+		err = staging.Approve(vaultCtx, "general", stagingID)
 		if err == nil {
 			t.Fatal("Approve on expired staging ID must fail after Sweep")
 		}
@@ -6297,7 +6297,7 @@ func TestVault_36_1_4_ApprovalExpiresIfNotActedOn(t *testing.T) {
 		}
 
 		// Verify item was NOT promoted to vault (expired = never stored).
-		results, err := mgr.Query(vaultCtx, "personal", domain.SearchQuery{})
+		results, err := mgr.Query(vaultCtx, "general", domain.SearchQuery{})
 		testutil.RequireNoError(t, err)
 		for _, r := range results {
 			if r.Summary == "expiring draft" {
@@ -6311,7 +6311,7 @@ func TestVault_36_1_4_ApprovalExpiresIfNotActedOn(t *testing.T) {
 		// remain approvable. Without this, the test passes if Sweep removes everything.
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		err := mgr.Open(vaultCtx, "personal", testutil.TestDEK[:])
+		err := mgr.Open(vaultCtx, "general", testutil.TestDEK[:])
 		testutil.RequireNoError(t, err)
 
 		staging := vault.NewStagingManager(mgr)
@@ -6324,7 +6324,7 @@ func TestVault_36_1_4_ApprovalExpiresIfNotActedOn(t *testing.T) {
 		}
 		// expiresAt 1 hour in the future — not expired.
 		expiresAt := time.Now().Unix() + 3600
-		stagingID, err := staging.Stage(vaultCtx, "personal", item, expiresAt)
+		stagingID, err := staging.Stage(vaultCtx, "general", item, expiresAt)
 		testutil.RequireNoError(t, err)
 
 		// Sweep should remove 0 items (nothing expired).
@@ -6333,11 +6333,11 @@ func TestVault_36_1_4_ApprovalExpiresIfNotActedOn(t *testing.T) {
 		testutil.RequireEqual(t, count, 0)
 
 		// Approve must succeed — item still valid.
-		err = staging.Approve(vaultCtx, "personal", stagingID)
+		err = staging.Approve(vaultCtx, "general", stagingID)
 		testutil.RequireNoError(t, err)
 
 		// Verify promoted to vault.
-		results, err := mgr.Query(vaultCtx, "personal", domain.SearchQuery{})
+		results, err := mgr.Query(vaultCtx, "general", domain.SearchQuery{})
 		testutil.RequireNoError(t, err)
 		found := false
 		for _, r := range results {
@@ -6352,7 +6352,7 @@ func TestVault_36_1_4_ApprovalExpiresIfNotActedOn(t *testing.T) {
 		// Mix of expired and non-expired items: Sweep removes only expired ones.
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		err := mgr.Open(vaultCtx, "personal", testutil.TestDEK[:])
+		err := mgr.Open(vaultCtx, "general", testutil.TestDEK[:])
 		testutil.RequireNoError(t, err)
 
 		staging := vault.NewStagingManager(mgr)
@@ -6368,7 +6368,7 @@ func TestVault_36_1_4_ApprovalExpiresIfNotActedOn(t *testing.T) {
 				Source:  "brain",
 				Summary: fmt.Sprintf("expired item %d", i),
 			}
-			id, err := staging.Stage(vaultCtx, "personal", item, now-3600)
+			id, err := staging.Stage(vaultCtx, "general", item, now-3600)
 			testutil.RequireNoError(t, err)
 			expiredIDs[i] = id
 		}
@@ -6382,7 +6382,7 @@ func TestVault_36_1_4_ApprovalExpiresIfNotActedOn(t *testing.T) {
 				Source:  "brain",
 				Summary: fmt.Sprintf("valid item %d", i),
 			}
-			id, err := staging.Stage(vaultCtx, "personal", item, now+3600)
+			id, err := staging.Stage(vaultCtx, "general", item, now+3600)
 			testutil.RequireNoError(t, err)
 			validIDs[i] = id
 		}
@@ -6394,7 +6394,7 @@ func TestVault_36_1_4_ApprovalExpiresIfNotActedOn(t *testing.T) {
 
 		// Expired items: Approve must fail.
 		for _, id := range expiredIDs {
-			err = staging.Approve(vaultCtx, "personal", id)
+			err = staging.Approve(vaultCtx, "general", id)
 			if err == nil {
 				t.Fatalf("Approve on expired staging ID %s must fail after Sweep", id)
 			}
@@ -6402,7 +6402,7 @@ func TestVault_36_1_4_ApprovalExpiresIfNotActedOn(t *testing.T) {
 
 		// Non-expired items: Approve must succeed.
 		for _, id := range validIDs {
-			err = staging.Approve(vaultCtx, "personal", id)
+			err = staging.Approve(vaultCtx, "general", id)
 			testutil.RequireNoError(t, err)
 		}
 	})
@@ -6411,7 +6411,7 @@ func TestVault_36_1_4_ApprovalExpiresIfNotActedOn(t *testing.T) {
 		// After sweeping expired items, a second sweep should return 0.
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		err := mgr.Open(vaultCtx, "personal", testutil.TestDEK[:])
+		err := mgr.Open(vaultCtx, "general", testutil.TestDEK[:])
 		testutil.RequireNoError(t, err)
 
 		staging := vault.NewStagingManager(mgr)
@@ -6422,7 +6422,7 @@ func TestVault_36_1_4_ApprovalExpiresIfNotActedOn(t *testing.T) {
 			Source:  "brain",
 			Summary: "sweep twice test",
 		}
-		_, err = staging.Stage(vaultCtx, "personal", item, time.Now().Unix()-3600)
+		_, err = staging.Stage(vaultCtx, "general", item, time.Now().Unix()-3600)
 		testutil.RequireNoError(t, err)
 
 		count1, err := staging.Sweep(vaultCtx)
@@ -6438,7 +6438,7 @@ func TestVault_36_1_4_ApprovalExpiresIfNotActedOn(t *testing.T) {
 		// User can explicitly reject before TTL — rejection is independent of expiry.
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		err := mgr.Open(vaultCtx, "personal", testutil.TestDEK[:])
+		err := mgr.Open(vaultCtx, "general", testutil.TestDEK[:])
 		testutil.RequireNoError(t, err)
 
 		staging := vault.NewStagingManager(mgr)
@@ -6449,15 +6449,15 @@ func TestVault_36_1_4_ApprovalExpiresIfNotActedOn(t *testing.T) {
 			Source:  "brain",
 			Summary: "to be rejected",
 		}
-		stagingID, err := staging.Stage(vaultCtx, "personal", item, time.Now().Unix()+3600)
+		stagingID, err := staging.Stage(vaultCtx, "general", item, time.Now().Unix()+3600)
 		testutil.RequireNoError(t, err)
 
 		// Reject before expiry.
-		err = staging.Reject(vaultCtx, "personal", stagingID)
+		err = staging.Reject(vaultCtx, "general", stagingID)
 		testutil.RequireNoError(t, err)
 
 		// After rejection, Approve must fail.
-		err = staging.Approve(vaultCtx, "personal", stagingID)
+		err = staging.Approve(vaultCtx, "general", stagingID)
 		if err == nil {
 			t.Fatal("Approve on rejected staging ID must fail")
 		}
@@ -6486,15 +6486,15 @@ func TestVault_36_1_2_StagingItemCannotBeExecutedWithoutUserApproval(t *testing.
 	t.Run("unapproved_item_not_in_vault", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		testutil.RequireNoError(t, mgr.Open(vaultCtx, "personal", testutil.TestDEK[:]))
+		testutil.RequireNoError(t, mgr.Open(vaultCtx, "general", testutil.TestDEK[:]))
 		staging := vault.NewStagingManager(mgr)
 
 		item := domain.VaultItem{Type: "note", Source: "agent", Summary: "unapproved action"}
-		_, err := staging.Stage(vaultCtx, "personal", item, time.Now().Unix()+3600)
+		_, err := staging.Stage(vaultCtx, "general", item, time.Now().Unix()+3600)
 		testutil.RequireNoError(t, err)
 
 		// Without approval, item must NOT appear in vault queries.
-		results, err := mgr.Query(vaultCtx, "personal", domain.SearchQuery{})
+		results, err := mgr.Query(vaultCtx, "general", domain.SearchQuery{})
 		testutil.RequireNoError(t, err)
 		if len(results) != 0 {
 			t.Fatal("unapproved staged item must NOT be accessible in vault")
@@ -6505,17 +6505,17 @@ func TestVault_36_1_2_StagingItemCannotBeExecutedWithoutUserApproval(t *testing.
 		// Positive control: proves the test above isn't passing trivially.
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		testutil.RequireNoError(t, mgr.Open(vaultCtx, "personal", testutil.TestDEK[:]))
+		testutil.RequireNoError(t, mgr.Open(vaultCtx, "general", testutil.TestDEK[:]))
 		staging := vault.NewStagingManager(mgr)
 
 		item := domain.VaultItem{Type: "note", Source: "agent", Summary: "approved action"}
-		stagingID, err := staging.Stage(vaultCtx, "personal", item, time.Now().Unix()+3600)
+		stagingID, err := staging.Stage(vaultCtx, "general", item, time.Now().Unix()+3600)
 		testutil.RequireNoError(t, err)
 
-		err = staging.Approve(vaultCtx, "personal", stagingID)
+		err = staging.Approve(vaultCtx, "general", stagingID)
 		testutil.RequireNoError(t, err)
 
-		results, err := mgr.Query(vaultCtx, "personal", domain.SearchQuery{})
+		results, err := mgr.Query(vaultCtx, "general", domain.SearchQuery{})
 		testutil.RequireNoError(t, err)
 		found := false
 		for _, r := range results {
@@ -6531,18 +6531,18 @@ func TestVault_36_1_2_StagingItemCannotBeExecutedWithoutUserApproval(t *testing.
 	t.Run("rejected_item_never_reaches_vault", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		testutil.RequireNoError(t, mgr.Open(vaultCtx, "personal", testutil.TestDEK[:]))
+		testutil.RequireNoError(t, mgr.Open(vaultCtx, "general", testutil.TestDEK[:]))
 		staging := vault.NewStagingManager(mgr)
 
 		item := domain.VaultItem{Type: "note", Source: "agent", Summary: "rejected action"}
-		stagingID, err := staging.Stage(vaultCtx, "personal", item, time.Now().Unix()+3600)
+		stagingID, err := staging.Stage(vaultCtx, "general", item, time.Now().Unix()+3600)
 		testutil.RequireNoError(t, err)
 
-		err = staging.Reject(vaultCtx, "personal", stagingID)
+		err = staging.Reject(vaultCtx, "general", stagingID)
 		testutil.RequireNoError(t, err)
 
 		// After rejection, item must NOT be in vault.
-		results, err := mgr.Query(vaultCtx, "personal", domain.SearchQuery{})
+		results, err := mgr.Query(vaultCtx, "general", domain.SearchQuery{})
 		testutil.RequireNoError(t, err)
 		for _, r := range results {
 			if r.Summary == "rejected action" {
@@ -6551,7 +6551,7 @@ func TestVault_36_1_2_StagingItemCannotBeExecutedWithoutUserApproval(t *testing.
 		}
 
 		// And approval after rejection must fail.
-		err = staging.Approve(vaultCtx, "personal", stagingID)
+		err = staging.Approve(vaultCtx, "general", stagingID)
 		if err == nil {
 			t.Fatal("approve after reject must fail — item already consumed")
 		}
@@ -6561,7 +6561,7 @@ func TestVault_36_1_2_StagingItemCannotBeExecutedWithoutUserApproval(t *testing.
 		// Stage 3 items, approve only the middle one.
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		testutil.RequireNoError(t, mgr.Open(vaultCtx, "personal", testutil.TestDEK[:]))
+		testutil.RequireNoError(t, mgr.Open(vaultCtx, "general", testutil.TestDEK[:]))
 		staging := vault.NewStagingManager(mgr)
 
 		items := []domain.VaultItem{
@@ -6572,16 +6572,16 @@ func TestVault_36_1_2_StagingItemCannotBeExecutedWithoutUserApproval(t *testing.
 		ids := make([]string, 3)
 		for i, item := range items {
 			var err error
-			ids[i], err = staging.Stage(vaultCtx, "personal", item, time.Now().Unix()+3600)
+			ids[i], err = staging.Stage(vaultCtx, "general", item, time.Now().Unix()+3600)
 			testutil.RequireNoError(t, err)
 		}
 
 		// Approve only item B.
-		err := staging.Approve(vaultCtx, "personal", ids[1])
+		err := staging.Approve(vaultCtx, "general", ids[1])
 		testutil.RequireNoError(t, err)
 
 		// Only "action-B-approved" must be in vault.
-		results, err := mgr.Query(vaultCtx, "personal", domain.SearchQuery{})
+		results, err := mgr.Query(vaultCtx, "general", domain.SearchQuery{})
 		testutil.RequireNoError(t, err)
 
 		for _, r := range results {
@@ -6604,18 +6604,18 @@ func TestVault_36_1_2_StagingItemCannotBeExecutedWithoutUserApproval(t *testing.
 		// Single-use gate: approval consumes the staging entry.
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		testutil.RequireNoError(t, mgr.Open(vaultCtx, "personal", testutil.TestDEK[:]))
+		testutil.RequireNoError(t, mgr.Open(vaultCtx, "general", testutil.TestDEK[:]))
 		staging := vault.NewStagingManager(mgr)
 
 		item := domain.VaultItem{Type: "note", Source: "agent", Summary: "double-approve test"}
-		stagingID, err := staging.Stage(vaultCtx, "personal", item, time.Now().Unix()+3600)
+		stagingID, err := staging.Stage(vaultCtx, "general", item, time.Now().Unix()+3600)
 		testutil.RequireNoError(t, err)
 
-		err = staging.Approve(vaultCtx, "personal", stagingID)
+		err = staging.Approve(vaultCtx, "general", stagingID)
 		testutil.RequireNoError(t, err)
 
 		// Second approval must fail.
-		err = staging.Approve(vaultCtx, "personal", stagingID)
+		err = staging.Approve(vaultCtx, "general", stagingID)
 		if err == nil {
 			t.Fatal("double approval must fail — staging entry consumed on first approve")
 		}
@@ -6987,7 +6987,7 @@ func TestVault_34_1_2_VaultItemProvenanceChainImmutableAfterStorage(t *testing.T
 	t.Run("provenance_immutable_after_store", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		testutil.RequireNoError(t, mgr.Open(vaultCtx, "personal", testutil.TestDEK[:]))
+		testutil.RequireNoError(t, mgr.Open(vaultCtx, "general", testutil.TestDEK[:]))
 
 		original := domain.VaultItem{
 			Type:       "email",
@@ -7000,11 +7000,11 @@ func TestVault_34_1_2_VaultItemProvenanceChainImmutableAfterStorage(t *testing.T
 			Metadata:   `{"deep_link":"https://mail.google.com/mail/u/0/#inbox/original001","thread_id":"t-001"}`,
 		}
 
-		id, err := mgr.Store(vaultCtx, "personal", original)
+		id, err := mgr.Store(vaultCtx, "general", original)
 		testutil.RequireNoError(t, err)
 
 		// Retrieve and verify all provenance fields match.
-		retrieved, err := mgr.GetItem(vaultCtx, "personal", id)
+		retrieved, err := mgr.GetItem(vaultCtx, "general", id)
 		testutil.RequireNoError(t, err)
 
 		if retrieved.Source != original.Source {
@@ -7027,7 +7027,7 @@ func TestVault_34_1_2_VaultItemProvenanceChainImmutableAfterStorage(t *testing.T
 	t.Run("storing_second_item_does_not_alter_first", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		testutil.RequireNoError(t, mgr.Open(vaultCtx, "personal", testutil.TestDEK[:]))
+		testutil.RequireNoError(t, mgr.Open(vaultCtx, "general", testutil.TestDEK[:]))
 
 		first := domain.VaultItem{
 			Type:       "email",
@@ -7036,7 +7036,7 @@ func TestVault_34_1_2_VaultItemProvenanceChainImmutableAfterStorage(t *testing.T
 			ContactDID: "did:key:z6MkFirst",
 			Metadata:   `{"deep_link":"https://first.example.com"}`,
 		}
-		firstID, err := mgr.Store(vaultCtx, "personal", first)
+		firstID, err := mgr.Store(vaultCtx, "general", first)
 		testutil.RequireNoError(t, err)
 
 		// Store a completely different item.
@@ -7047,11 +7047,11 @@ func TestVault_34_1_2_VaultItemProvenanceChainImmutableAfterStorage(t *testing.T
 			ContactDID: "did:key:z6MkSecond",
 			Metadata:   `{"deep_link":"https://second.example.com"}`,
 		}
-		_, err = mgr.Store(vaultCtx, "personal", second)
+		_, err = mgr.Store(vaultCtx, "general", second)
 		testutil.RequireNoError(t, err)
 
 		// First item's provenance must be unchanged.
-		firstRetrieved, err := mgr.GetItem(vaultCtx, "personal", firstID)
+		firstRetrieved, err := mgr.GetItem(vaultCtx, "general", firstID)
 		testutil.RequireNoError(t, err)
 		if firstRetrieved.Source != "gmail" {
 			t.Fatalf("storing second item altered first item's Source: got %q", firstRetrieved.Source)
@@ -7067,7 +7067,7 @@ func TestVault_34_1_2_VaultItemProvenanceChainImmutableAfterStorage(t *testing.T
 	t.Run("delete_and_restore_creates_new_item", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		testutil.RequireNoError(t, mgr.Open(vaultCtx, "personal", testutil.TestDEK[:]))
+		testutil.RequireNoError(t, mgr.Open(vaultCtx, "general", testutil.TestDEK[:]))
 
 		original := domain.VaultItem{
 			Type:       "note",
@@ -7077,11 +7077,11 @@ func TestVault_34_1_2_VaultItemProvenanceChainImmutableAfterStorage(t *testing.T
 			BodyText:   "Original note content",
 			Metadata:   `{"deep_link":"https://note-source.com/1"}`,
 		}
-		originalID, err := mgr.Store(vaultCtx, "personal", original)
+		originalID, err := mgr.Store(vaultCtx, "general", original)
 		testutil.RequireNoError(t, err)
 
 		// Delete the item.
-		err = mgr.Delete(vaultCtx, "personal", originalID)
+		err = mgr.Delete(vaultCtx, "general", originalID)
 		testutil.RequireNoError(t, err)
 
 		// Re-store with different provenance (no ID — gets new auto-generated ID).
@@ -7093,7 +7093,7 @@ func TestVault_34_1_2_VaultItemProvenanceChainImmutableAfterStorage(t *testing.T
 			BodyText:   "Replacement content",
 			Metadata:   `{"deep_link":"https://note-source.com/2"}`,
 		}
-		newID, err := mgr.Store(vaultCtx, "personal", replacement)
+		newID, err := mgr.Store(vaultCtx, "general", replacement)
 		testutil.RequireNoError(t, err)
 
 		// Must be a NEW item with a different ID.
@@ -7102,13 +7102,13 @@ func TestVault_34_1_2_VaultItemProvenanceChainImmutableAfterStorage(t *testing.T
 		}
 
 		// Original ID must no longer exist.
-		_, err = mgr.GetItem(vaultCtx, "personal", originalID)
+		_, err = mgr.GetItem(vaultCtx, "general", originalID)
 		if err == nil {
 			t.Fatal("deleted item must not be retrievable")
 		}
 
 		// New item has its own provenance.
-		newRetrieved, err := mgr.GetItem(vaultCtx, "personal", newID)
+		newRetrieved, err := mgr.GetItem(vaultCtx, "general", newID)
 		testutil.RequireNoError(t, err)
 		if newRetrieved.Source != "outlook" {
 			t.Fatalf("new item must have its own Source: got %q", newRetrieved.Source)
@@ -7118,7 +7118,7 @@ func TestVault_34_1_2_VaultItemProvenanceChainImmutableAfterStorage(t *testing.T
 	t.Run("batch_store_preserves_independent_provenance", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		testutil.RequireNoError(t, mgr.Open(vaultCtx, "personal", testutil.TestDEK[:]))
+		testutil.RequireNoError(t, mgr.Open(vaultCtx, "general", testutil.TestDEK[:]))
 
 		items := []domain.VaultItem{
 			{Type: "email", Source: "gmail", SourceID: "batch-1", ContactDID: "did:key:z6MkA",
@@ -7129,7 +7129,7 @@ func TestVault_34_1_2_VaultItemProvenanceChainImmutableAfterStorage(t *testing.T
 				Metadata: `{"deep_link":"https://c.com/3"}`},
 		}
 
-		ids, err := mgr.StoreBatch(vaultCtx, "personal", items)
+		ids, err := mgr.StoreBatch(vaultCtx, "general", items)
 		testutil.RequireNoError(t, err)
 		if len(ids) != 3 {
 			t.Fatalf("expected 3 IDs, got %d", len(ids))
@@ -7139,7 +7139,7 @@ func TestVault_34_1_2_VaultItemProvenanceChainImmutableAfterStorage(t *testing.T
 		sources := []string{"gmail", "signal", "brain"}
 		sourceIDs := []string{"batch-1", "batch-2", "batch-3"}
 		for i, id := range ids {
-			retrieved, err := mgr.GetItem(vaultCtx, "personal", id)
+			retrieved, err := mgr.GetItem(vaultCtx, "general", id)
 			testutil.RequireNoError(t, err)
 			if retrieved.Source != sources[i] {
 				t.Fatalf("item %d Source: want %q, got %q", i, sources[i], retrieved.Source)
@@ -7173,7 +7173,7 @@ func TestVault_36_1_5_BatchApprovalsRequireIndividualConsent(t *testing.T) {
 	t.Run("ten_items_require_individual_approval", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		testutil.RequireNoError(t, mgr.Open(vaultCtx, "personal", testutil.TestDEK[:]))
+		testutil.RequireNoError(t, mgr.Open(vaultCtx, "general", testutil.TestDEK[:]))
 		staging := vault.NewStagingManager(mgr)
 
 		// Brain submits 10 drafts for staging.
@@ -7184,17 +7184,17 @@ func TestVault_36_1_5_BatchApprovalsRequireIndividualConsent(t *testing.T) {
 				Source:  "brain",
 				Summary: fmt.Sprintf("draft-%d", i),
 			}
-			id, err := staging.Stage(vaultCtx, "personal", item, time.Now().Unix()+3600)
+			id, err := staging.Stage(vaultCtx, "general", item, time.Now().Unix()+3600)
 			testutil.RequireNoError(t, err)
 			stagingIDs[i] = id
 		}
 
 		// Approve only draft-3.
-		err := staging.Approve(vaultCtx, "personal", stagingIDs[3])
+		err := staging.Approve(vaultCtx, "general", stagingIDs[3])
 		testutil.RequireNoError(t, err)
 
 		// Only draft-3 must be in vault.
-		results, err := mgr.Query(vaultCtx, "personal", domain.SearchQuery{})
+		results, err := mgr.Query(vaultCtx, "general", domain.SearchQuery{})
 		testutil.RequireNoError(t, err)
 		if len(results) != 1 {
 			t.Fatalf("only 1 item should be in vault after approving 1 of 10, got %d", len(results))
@@ -7208,12 +7208,12 @@ func TestVault_36_1_5_BatchApprovalsRequireIndividualConsent(t *testing.T) {
 			if i == 3 {
 				continue // already approved
 			}
-			err := staging.Approve(vaultCtx, "personal", stagingIDs[i])
+			err := staging.Approve(vaultCtx, "general", stagingIDs[i])
 			testutil.RequireNoError(t, err)
 		}
 
 		// All 10 must now be in vault.
-		allResults, err := mgr.Query(vaultCtx, "personal", domain.SearchQuery{})
+		allResults, err := mgr.Query(vaultCtx, "general", domain.SearchQuery{})
 		testutil.RequireNoError(t, err)
 		if len(allResults) != 10 {
 			t.Fatalf("all 10 items should be in vault after individual approval, got %d", len(allResults))
@@ -7223,7 +7223,7 @@ func TestVault_36_1_5_BatchApprovalsRequireIndividualConsent(t *testing.T) {
 	t.Run("mixed_approve_reject_independent", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		testutil.RequireNoError(t, mgr.Open(vaultCtx, "personal", testutil.TestDEK[:]))
+		testutil.RequireNoError(t, mgr.Open(vaultCtx, "general", testutil.TestDEK[:]))
 		staging := vault.NewStagingManager(mgr)
 
 		// Stage 5 items.
@@ -7234,20 +7234,20 @@ func TestVault_36_1_5_BatchApprovalsRequireIndividualConsent(t *testing.T) {
 				Source:  "brain",
 				Summary: fmt.Sprintf("mixed-%d", i),
 			}
-			id, err := staging.Stage(vaultCtx, "personal", item, time.Now().Unix()+3600)
+			id, err := staging.Stage(vaultCtx, "general", item, time.Now().Unix()+3600)
 			testutil.RequireNoError(t, err)
 			stagingIDs[i] = id
 		}
 
 		// Approve items 0, 2, 4. Reject items 1, 3.
-		testutil.RequireNoError(t, staging.Approve(vaultCtx, "personal", stagingIDs[0]))
-		testutil.RequireNoError(t, staging.Reject(vaultCtx, "personal", stagingIDs[1]))
-		testutil.RequireNoError(t, staging.Approve(vaultCtx, "personal", stagingIDs[2]))
-		testutil.RequireNoError(t, staging.Reject(vaultCtx, "personal", stagingIDs[3]))
-		testutil.RequireNoError(t, staging.Approve(vaultCtx, "personal", stagingIDs[4]))
+		testutil.RequireNoError(t, staging.Approve(vaultCtx, "general", stagingIDs[0]))
+		testutil.RequireNoError(t, staging.Reject(vaultCtx, "general", stagingIDs[1]))
+		testutil.RequireNoError(t, staging.Approve(vaultCtx, "general", stagingIDs[2]))
+		testutil.RequireNoError(t, staging.Reject(vaultCtx, "general", stagingIDs[3]))
+		testutil.RequireNoError(t, staging.Approve(vaultCtx, "general", stagingIDs[4]))
 
 		// Only approved items (0, 2, 4) must be in vault.
-		results, err := mgr.Query(vaultCtx, "personal", domain.SearchQuery{})
+		results, err := mgr.Query(vaultCtx, "general", domain.SearchQuery{})
 		testutil.RequireNoError(t, err)
 		if len(results) != 3 {
 			t.Fatalf("expected 3 approved items in vault, got %d", len(results))
@@ -7272,7 +7272,7 @@ func TestVault_36_1_5_BatchApprovalsRequireIndividualConsent(t *testing.T) {
 	t.Run("rejected_items_cannot_be_approved_later", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		testutil.RequireNoError(t, mgr.Open(vaultCtx, "personal", testutil.TestDEK[:]))
+		testutil.RequireNoError(t, mgr.Open(vaultCtx, "general", testutil.TestDEK[:]))
 		staging := vault.NewStagingManager(mgr)
 
 		item := domain.VaultItem{
@@ -7280,20 +7280,20 @@ func TestVault_36_1_5_BatchApprovalsRequireIndividualConsent(t *testing.T) {
 			Source:  "brain",
 			Summary: "rejected-then-approved",
 		}
-		stagingID, err := staging.Stage(vaultCtx, "personal", item, time.Now().Unix()+3600)
+		stagingID, err := staging.Stage(vaultCtx, "general", item, time.Now().Unix()+3600)
 		testutil.RequireNoError(t, err)
 
 		// Reject first.
-		testutil.RequireNoError(t, staging.Reject(vaultCtx, "personal", stagingID))
+		testutil.RequireNoError(t, staging.Reject(vaultCtx, "general", stagingID))
 
 		// Attempt to approve after rejection must fail.
-		err = staging.Approve(vaultCtx, "personal", stagingID)
+		err = staging.Approve(vaultCtx, "general", stagingID)
 		if err == nil {
 			t.Fatal("approving a rejected item must fail — staging entry consumed by rejection")
 		}
 
 		// Vault must be empty.
-		results, err := mgr.Query(vaultCtx, "personal", domain.SearchQuery{})
+		results, err := mgr.Query(vaultCtx, "general", domain.SearchQuery{})
 		testutil.RequireNoError(t, err)
 		if len(results) != 0 {
 			t.Fatal("rejected item must not appear in vault")
@@ -7304,7 +7304,7 @@ func TestVault_36_1_5_BatchApprovalsRequireIndividualConsent(t *testing.T) {
 		// Approving items out of staging order must work.
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		testutil.RequireNoError(t, mgr.Open(vaultCtx, "personal", testutil.TestDEK[:]))
+		testutil.RequireNoError(t, mgr.Open(vaultCtx, "general", testutil.TestDEK[:]))
 		staging := vault.NewStagingManager(mgr)
 
 		stagingIDs := make([]string, 5)
@@ -7314,18 +7314,18 @@ func TestVault_36_1_5_BatchApprovalsRequireIndividualConsent(t *testing.T) {
 				Source:  "brain",
 				Summary: fmt.Sprintf("order-%d", i),
 			}
-			id, err := staging.Stage(vaultCtx, "personal", item, time.Now().Unix()+3600)
+			id, err := staging.Stage(vaultCtx, "general", item, time.Now().Unix()+3600)
 			testutil.RequireNoError(t, err)
 			stagingIDs[i] = id
 		}
 
 		// Approve in reverse order: 4, 3, 2, 1, 0.
 		for i := 4; i >= 0; i-- {
-			err := staging.Approve(vaultCtx, "personal", stagingIDs[i])
+			err := staging.Approve(vaultCtx, "general", stagingIDs[i])
 			testutil.RequireNoError(t, err)
 		}
 
-		results, err := mgr.Query(vaultCtx, "personal", domain.SearchQuery{})
+		results, err := mgr.Query(vaultCtx, "general", domain.SearchQuery{})
 		testutil.RequireNoError(t, err)
 		if len(results) != 5 {
 			t.Fatalf("all 5 items should be in vault regardless of approval order, got %d", len(results))
@@ -7546,7 +7546,7 @@ func TestVault_36_1_8_StagingItemsAutoExpireAfterTTL(t *testing.T) {
 		// expiresAt=0 means "no expiry" — Sweep() must never remove these.
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		testutil.RequireNoError(t, mgr.Open(vaultCtx, "personal", testutil.TestDEK[:]))
+		testutil.RequireNoError(t, mgr.Open(vaultCtx, "general", testutil.TestDEK[:]))
 
 		staging := vault.NewStagingManager(mgr)
 
@@ -7556,7 +7556,7 @@ func TestVault_36_1_8_StagingItemsAutoExpireAfterTTL(t *testing.T) {
 			Source:  "brain",
 			Summary: "permanent draft",
 		}
-		stagingID, err := staging.Stage(vaultCtx, "personal", item, 0)
+		stagingID, err := staging.Stage(vaultCtx, "general", item, 0)
 		testutil.RequireNoError(t, err)
 		testutil.RequireTrue(t, len(stagingID) > 0, "staging ID must be returned")
 
@@ -7568,11 +7568,11 @@ func TestVault_36_1_8_StagingItemsAutoExpireAfterTTL(t *testing.T) {
 		}
 
 		// Must still be approvable after all those sweeps.
-		err = staging.Approve(vaultCtx, "personal", stagingID)
+		err = staging.Approve(vaultCtx, "general", stagingID)
 		testutil.RequireNoError(t, err)
 
 		// Verify promoted to vault.
-		results, err := mgr.Query(vaultCtx, "personal", domain.SearchQuery{})
+		results, err := mgr.Query(vaultCtx, "general", domain.SearchQuery{})
 		testutil.RequireNoError(t, err)
 		found := false
 		for _, r := range results {
@@ -7588,7 +7588,7 @@ func TestVault_36_1_8_StagingItemsAutoExpireAfterTTL(t *testing.T) {
 		// The item is completely gone — not just "expired but present."
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		testutil.RequireNoError(t, mgr.Open(vaultCtx, "personal", testutil.TestDEK[:]))
+		testutil.RequireNoError(t, mgr.Open(vaultCtx, "general", testutil.TestDEK[:]))
 
 		staging := vault.NewStagingManager(mgr)
 
@@ -7600,7 +7600,7 @@ func TestVault_36_1_8_StagingItemsAutoExpireAfterTTL(t *testing.T) {
 		}
 		// 73 hours in the past (simulating the 72-hour TTL window having elapsed).
 		expiresAt := time.Now().Unix() - 73*3600
-		stagingID, err := staging.Stage(vaultCtx, "personal", item, expiresAt)
+		stagingID, err := staging.Stage(vaultCtx, "general", item, expiresAt)
 		testutil.RequireNoError(t, err)
 
 		count, err := staging.Sweep(vaultCtx)
@@ -7608,7 +7608,7 @@ func TestVault_36_1_8_StagingItemsAutoExpireAfterTTL(t *testing.T) {
 		testutil.RequireEqual(t, count, 1)
 
 		// Approve must fail — item is gone from staging.
-		err = staging.Approve(vaultCtx, "personal", stagingID)
+		err = staging.Approve(vaultCtx, "general", stagingID)
 		if err == nil {
 			t.Fatal("Approve on swept expired item must fail")
 		}
@@ -7621,7 +7621,7 @@ func TestVault_36_1_8_StagingItemsAutoExpireAfterTTL(t *testing.T) {
 		// Even if someone calls Reject after Sweep, there's nothing to recover.
 
 		// Vault must NOT contain the expired item.
-		results, err := mgr.Query(vaultCtx, "personal", domain.SearchQuery{})
+		results, err := mgr.Query(vaultCtx, "general", domain.SearchQuery{})
 		testutil.RequireNoError(t, err)
 		for _, r := range results {
 			if r.Summary == "will expire" {
@@ -7635,7 +7635,7 @@ func TestVault_36_1_8_StagingItemsAutoExpireAfterTTL(t *testing.T) {
 		// removes everything regardless of TTL.
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		testutil.RequireNoError(t, mgr.Open(vaultCtx, "personal", testutil.TestDEK[:]))
+		testutil.RequireNoError(t, mgr.Open(vaultCtx, "general", testutil.TestDEK[:]))
 
 		staging := vault.NewStagingManager(mgr)
 
@@ -7647,7 +7647,7 @@ func TestVault_36_1_8_StagingItemsAutoExpireAfterTTL(t *testing.T) {
 		}
 		// 72 hours in the future — well within the TTL window.
 		expiresAt := time.Now().Unix() + 72*3600
-		stagingID, err := staging.Stage(vaultCtx, "personal", item, expiresAt)
+		stagingID, err := staging.Stage(vaultCtx, "general", item, expiresAt)
 		testutil.RequireNoError(t, err)
 
 		count, err := staging.Sweep(vaultCtx)
@@ -7655,11 +7655,11 @@ func TestVault_36_1_8_StagingItemsAutoExpireAfterTTL(t *testing.T) {
 		testutil.RequireEqual(t, count, 0)
 
 		// Must still be approvable.
-		err = staging.Approve(vaultCtx, "personal", stagingID)
+		err = staging.Approve(vaultCtx, "general", stagingID)
 		testutil.RequireNoError(t, err)
 
 		// Verify promoted to vault.
-		results, err := mgr.Query(vaultCtx, "personal", domain.SearchQuery{})
+		results, err := mgr.Query(vaultCtx, "general", domain.SearchQuery{})
 		testutil.RequireNoError(t, err)
 		found := false
 		for _, r := range results {
@@ -7675,32 +7675,32 @@ func TestVault_36_1_8_StagingItemsAutoExpireAfterTTL(t *testing.T) {
 		// expiresAt value. This validates that expiry is per-item, not global.
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		testutil.RequireNoError(t, mgr.Open(vaultCtx, "personal", testutil.TestDEK[:]))
+		testutil.RequireNoError(t, mgr.Open(vaultCtx, "general", testutil.TestDEK[:]))
 
 		staging := vault.NewStagingManager(mgr)
 
 		now := time.Now().Unix()
 
 		// Tier 1: Already expired (1 hour ago)
-		id1, err := staging.Stage(vaultCtx, "personal", domain.VaultItem{
+		id1, err := staging.Stage(vaultCtx, "general", domain.VaultItem{
 			Type: "note", Source: "brain", Summary: "tier1-expired",
 		}, now-3600)
 		testutil.RequireNoError(t, err)
 
 		// Tier 2: No expiry
-		id2, err := staging.Stage(vaultCtx, "personal", domain.VaultItem{
+		id2, err := staging.Stage(vaultCtx, "general", domain.VaultItem{
 			Type: "note", Source: "brain", Summary: "tier2-permanent",
 		}, 0)
 		testutil.RequireNoError(t, err)
 
 		// Tier 3: Expires in 12 hours
-		id3, err := staging.Stage(vaultCtx, "personal", domain.VaultItem{
+		id3, err := staging.Stage(vaultCtx, "general", domain.VaultItem{
 			Type: "note", Source: "brain", Summary: "tier3-12h",
 		}, now+12*3600)
 		testutil.RequireNoError(t, err)
 
 		// Tier 4: Expired 73 hours ago (long past)
-		id4, err := staging.Stage(vaultCtx, "personal", domain.VaultItem{
+		id4, err := staging.Stage(vaultCtx, "general", domain.VaultItem{
 			Type: "note", Source: "brain", Summary: "tier4-long-expired",
 		}, now-73*3600)
 		testutil.RequireNoError(t, err)
@@ -7711,19 +7711,19 @@ func TestVault_36_1_8_StagingItemsAutoExpireAfterTTL(t *testing.T) {
 		testutil.RequireEqual(t, count, 2)
 
 		// Expired items must fail.
-		err = staging.Approve(vaultCtx, "personal", id1)
+		err = staging.Approve(vaultCtx, "general", id1)
 		if err == nil {
 			t.Fatal("tier1 expired item must fail approval")
 		}
-		err = staging.Approve(vaultCtx, "personal", id4)
+		err = staging.Approve(vaultCtx, "general", id4)
 		if err == nil {
 			t.Fatal("tier4 long-expired item must fail approval")
 		}
 
 		// Non-expired items must succeed.
-		err = staging.Approve(vaultCtx, "personal", id2)
+		err = staging.Approve(vaultCtx, "general", id2)
 		testutil.RequireNoError(t, err)
-		err = staging.Approve(vaultCtx, "personal", id3)
+		err = staging.Approve(vaultCtx, "general", id3)
 		testutil.RequireNoError(t, err)
 	})
 
@@ -7732,7 +7732,7 @@ func TestVault_36_1_8_StagingItemsAutoExpireAfterTTL(t *testing.T) {
 		// and subsequent sweeps return 0 (no double-counting).
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		testutil.RequireNoError(t, mgr.Open(vaultCtx, "personal", testutil.TestDEK[:]))
+		testutil.RequireNoError(t, mgr.Open(vaultCtx, "general", testutil.TestDEK[:]))
 
 		staging := vault.NewStagingManager(mgr)
 
@@ -7740,7 +7740,7 @@ func TestVault_36_1_8_StagingItemsAutoExpireAfterTTL(t *testing.T) {
 
 		// Stage 5 expired items with varying past TTLs.
 		for i := 0; i < 5; i++ {
-			_, err := staging.Stage(vaultCtx, "personal", domain.VaultItem{
+			_, err := staging.Stage(vaultCtx, "general", domain.VaultItem{
 				Type: "note", Source: "brain", Summary: fmt.Sprintf("expired-%d", i),
 			}, now-int64(i+1)*3600)
 			testutil.RequireNoError(t, err)
@@ -7748,7 +7748,7 @@ func TestVault_36_1_8_StagingItemsAutoExpireAfterTTL(t *testing.T) {
 
 		// Stage 3 non-expired items.
 		for i := 0; i < 3; i++ {
-			_, err := staging.Stage(vaultCtx, "personal", domain.VaultItem{
+			_, err := staging.Stage(vaultCtx, "general", domain.VaultItem{
 				Type: "note", Source: "brain", Summary: fmt.Sprintf("valid-%d", i),
 			}, now+int64(i+1)*3600)
 			testutil.RequireNoError(t, err)
@@ -7788,22 +7788,22 @@ func TestVault_36_1_10_ApprovalTokenSingleUse(t *testing.T) {
 	t.Run("approve_consumes_token_second_approve_fails", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		testutil.RequireNoError(t, mgr.Open(vaultCtx, "personal", testutil.TestDEK[:]))
+		testutil.RequireNoError(t, mgr.Open(vaultCtx, "general", testutil.TestDEK[:]))
 
 		staging := vault.NewStagingManager(mgr)
 
 		item := domain.VaultItem{
 			Type: "note", Source: "brain", Summary: "single-use approve",
 		}
-		stagingID, err := staging.Stage(vaultCtx, "personal", item, time.Now().Unix()+3600)
+		stagingID, err := staging.Stage(vaultCtx, "general", item, time.Now().Unix()+3600)
 		testutil.RequireNoError(t, err)
 
 		// First Approve succeeds — token consumed.
-		err = staging.Approve(vaultCtx, "personal", stagingID)
+		err = staging.Approve(vaultCtx, "general", stagingID)
 		testutil.RequireNoError(t, err)
 
 		// Second Approve must fail — token already consumed.
-		err = staging.Approve(vaultCtx, "personal", stagingID)
+		err = staging.Approve(vaultCtx, "general", stagingID)
 		if err == nil {
 			t.Fatal("second Approve on same staging ID must fail — token is single-use")
 		}
@@ -7818,22 +7818,22 @@ func TestVault_36_1_10_ApprovalTokenSingleUse(t *testing.T) {
 		// the rejected item to promote it to vault.
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		testutil.RequireNoError(t, mgr.Open(vaultCtx, "personal", testutil.TestDEK[:]))
+		testutil.RequireNoError(t, mgr.Open(vaultCtx, "general", testutil.TestDEK[:]))
 
 		staging := vault.NewStagingManager(mgr)
 
 		item := domain.VaultItem{
 			Type: "note", Source: "brain", Summary: "reject-blocks-approve",
 		}
-		stagingID, err := staging.Stage(vaultCtx, "personal", item, time.Now().Unix()+3600)
+		stagingID, err := staging.Stage(vaultCtx, "general", item, time.Now().Unix()+3600)
 		testutil.RequireNoError(t, err)
 
 		// Reject removes the entry.
-		err = staging.Reject(vaultCtx, "personal", stagingID)
+		err = staging.Reject(vaultCtx, "general", stagingID)
 		testutil.RequireNoError(t, err)
 
 		// Approve must fail — entry was removed by Reject.
-		err = staging.Approve(vaultCtx, "personal", stagingID)
+		err = staging.Approve(vaultCtx, "general", stagingID)
 		if err == nil {
 			t.Fatal("Approve after Reject must fail — staging entry was removed")
 		}
@@ -7842,7 +7842,7 @@ func TestVault_36_1_10_ApprovalTokenSingleUse(t *testing.T) {
 		}
 
 		// Vault must NOT contain the rejected item.
-		results, err := mgr.Query(vaultCtx, "personal", domain.SearchQuery{})
+		results, err := mgr.Query(vaultCtx, "general", domain.SearchQuery{})
 		testutil.RequireNoError(t, err)
 		for _, r := range results {
 			if r.Summary == "reject-blocks-approve" {
@@ -7857,28 +7857,28 @@ func TestVault_36_1_10_ApprovalTokenSingleUse(t *testing.T) {
 		// Reject after Approve is a harmless no-op (idempotent delete).
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		testutil.RequireNoError(t, mgr.Open(vaultCtx, "personal", testutil.TestDEK[:]))
+		testutil.RequireNoError(t, mgr.Open(vaultCtx, "general", testutil.TestDEK[:]))
 
 		staging := vault.NewStagingManager(mgr)
 
 		item := domain.VaultItem{
 			Type: "note", Source: "brain", Summary: "promote-only-once",
 		}
-		stagingID, err := staging.Stage(vaultCtx, "personal", item, time.Now().Unix()+3600)
+		stagingID, err := staging.Stage(vaultCtx, "general", item, time.Now().Unix()+3600)
 		testutil.RequireNoError(t, err)
 
 		// First Approve promotes to vault — token consumed.
-		err = staging.Approve(vaultCtx, "personal", stagingID)
+		err = staging.Approve(vaultCtx, "general", stagingID)
 		testutil.RequireNoError(t, err)
 
 		// Second Approve must fail — prevents double-promotion.
-		err = staging.Approve(vaultCtx, "personal", stagingID)
+		err = staging.Approve(vaultCtx, "general", stagingID)
 		if err == nil {
 			t.Fatal("second Approve must fail — token is single-use, prevents double-promotion")
 		}
 
 		// Verify item appears in vault exactly once.
-		results, err := mgr.Query(vaultCtx, "personal", domain.SearchQuery{})
+		results, err := mgr.Query(vaultCtx, "general", domain.SearchQuery{})
 		testutil.RequireNoError(t, err)
 		count := 0
 		for _, r := range results {
@@ -7892,28 +7892,28 @@ func TestVault_36_1_10_ApprovalTokenSingleUse(t *testing.T) {
 	t.Run("reject_then_approve_fails_cross_operation", func(t *testing.T) {
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		testutil.RequireNoError(t, mgr.Open(vaultCtx, "personal", testutil.TestDEK[:]))
+		testutil.RequireNoError(t, mgr.Open(vaultCtx, "general", testutil.TestDEK[:]))
 
 		staging := vault.NewStagingManager(mgr)
 
 		item := domain.VaultItem{
 			Type: "note", Source: "brain", Summary: "reject-then-approve",
 		}
-		stagingID, err := staging.Stage(vaultCtx, "personal", item, time.Now().Unix()+3600)
+		stagingID, err := staging.Stage(vaultCtx, "general", item, time.Now().Unix()+3600)
 		testutil.RequireNoError(t, err)
 
 		// Reject consumes the token.
-		err = staging.Reject(vaultCtx, "personal", stagingID)
+		err = staging.Reject(vaultCtx, "general", stagingID)
 		testutil.RequireNoError(t, err)
 
 		// Approve must fail — token already consumed by Reject.
-		err = staging.Approve(vaultCtx, "personal", stagingID)
+		err = staging.Approve(vaultCtx, "general", stagingID)
 		if err == nil {
 			t.Fatal("Approve after Reject must fail — token consumed by first operation")
 		}
 
 		// Verify item NOT in vault (rejected, not approved).
-		results, err := mgr.Query(vaultCtx, "personal", domain.SearchQuery{})
+		results, err := mgr.Query(vaultCtx, "general", domain.SearchQuery{})
 		testutil.RequireNoError(t, err)
 		for _, r := range results {
 			if r.Summary == "reject-then-approve" {
@@ -7926,7 +7926,7 @@ func TestVault_36_1_10_ApprovalTokenSingleUse(t *testing.T) {
 		// Consuming one staging ID must not affect other staging IDs.
 		dir := t.TempDir()
 		mgr := vault.NewManager(dir)
-		testutil.RequireNoError(t, mgr.Open(vaultCtx, "personal", testutil.TestDEK[:]))
+		testutil.RequireNoError(t, mgr.Open(vaultCtx, "general", testutil.TestDEK[:]))
 
 		staging := vault.NewStagingManager(mgr)
 
@@ -7936,23 +7936,23 @@ func TestVault_36_1_10_ApprovalTokenSingleUse(t *testing.T) {
 			item := domain.VaultItem{
 				Type: "note", Source: "brain", Summary: fmt.Sprintf("independent-%d", i),
 			}
-			id, err := staging.Stage(vaultCtx, "personal", item, time.Now().Unix()+3600)
+			id, err := staging.Stage(vaultCtx, "general", item, time.Now().Unix()+3600)
 			testutil.RequireNoError(t, err)
 			ids[i] = id
 		}
 
 		// Approve first, reject second — third must still work.
-		err := staging.Approve(vaultCtx, "personal", ids[0])
+		err := staging.Approve(vaultCtx, "general", ids[0])
 		testutil.RequireNoError(t, err)
-		err = staging.Reject(vaultCtx, "personal", ids[1])
+		err = staging.Reject(vaultCtx, "general", ids[1])
 		testutil.RequireNoError(t, err)
 
 		// Third item: fresh, untouched — must work.
-		err = staging.Approve(vaultCtx, "personal", ids[2])
+		err = staging.Approve(vaultCtx, "general", ids[2])
 		testutil.RequireNoError(t, err)
 
 		// Verify: items 0 and 2 in vault, item 1 not.
-		results, err := mgr.Query(vaultCtx, "personal", domain.SearchQuery{})
+		results, err := mgr.Query(vaultCtx, "general", domain.SearchQuery{})
 		testutil.RequireNoError(t, err)
 		summaries := make(map[string]bool)
 		for _, r := range results {

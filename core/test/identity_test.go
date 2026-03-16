@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	dinacrypto "github.com/rajmohanutopai/dina/core/internal/adapter/crypto"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/identity"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/middleware"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
 
@@ -731,7 +733,7 @@ func TestIdentity_3_2_1_CreatePersona(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "PersonaManager")
 
 	// Positive: create a persona with valid tier.
-	id, err := impl.Create(idCtx, "work-create-test", "restricted")
+	id, err := impl.Create(idCtx, "work-create-test", "sensitive")
 	testutil.RequireNoError(t, err)
 	if id == "" {
 		t.Fatal("expected non-empty persona ID")
@@ -755,7 +757,7 @@ func TestIdentity_3_2_1_CreatePersona(t *testing.T) {
 	testutil.RequireError(t, err)
 
 	// Negative control: duplicate name must be rejected.
-	_, err = impl.Create(idCtx, "work-create-test", "restricted")
+	_, err = impl.Create(idCtx, "work-create-test", "sensitive")
 	testutil.RequireError(t, err)
 
 	// Cleanup.
@@ -768,9 +770,9 @@ func TestIdentity_3_2_2_ListPersonas(t *testing.T) {
 	testutil.RequireImplementation(t, impl, "PersonaManager")
 
 	// Positive: create two personas and verify they appear in List.
-	id1, err := impl.Create(idCtx, "list-test-work", "open")
+	id1, err := impl.Create(idCtx, "list-test-work", "standard")
 	testutil.RequireNoError(t, err)
-	id2, err := impl.Create(idCtx, "list-test-personal", "open")
+	id2, err := impl.Create(idCtx, "list-test-personal", "standard")
 	testutil.RequireNoError(t, err)
 
 	list, err := impl.List(idCtx)
@@ -807,7 +809,7 @@ func TestIdentity_3_2_2_ListPersonas(t *testing.T) {
 // TST-CORE-152
 func TestIdentity_3_2_3_DeletePersona(t *testing.T) {
 	impl := testutil.NewMockPersonaManager()
-	id, _ := impl.Create(idCtx, "work", "open")
+	id, _ := impl.Create(idCtx, "work", "standard")
 	err := impl.Delete(idCtx, id)
 	testutil.RequireNoError(t, err)
 	list, _ := impl.List(idCtx)
@@ -820,9 +822,9 @@ func TestIdentity_3_2_4_DeleteFileRemovesPersona(t *testing.T) {
 	ctx := context.Background()
 
 	// Create two personas.
-	id1, err := pm.Create(ctx, "deleteme", "open")
+	id1, err := pm.Create(ctx, "deleteme", "standard")
 	testutil.RequireNoError(t, err)
-	_, err = pm.Create(ctx, "keepme", "open")
+	_, err = pm.Create(ctx, "keepme", "standard")
 	testutil.RequireNoError(t, err)
 
 	// Verify both exist.
@@ -889,7 +891,7 @@ func TestIdentity_3_2_6_DefaultPersonaExists(t *testing.T) {
 	testutil.RequireEqual(t, len(list), 0)
 
 	// Create a "default" persona and verify it appears.
-	id, err := impl.Create(ctx, "default", "open")
+	id, err := impl.Create(ctx, "default", "standard")
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, id, "persona-default")
 
@@ -899,7 +901,7 @@ func TestIdentity_3_2_6_DefaultPersonaExists(t *testing.T) {
 	testutil.RequireEqual(t, list2[0], "persona-default")
 
 	// Negative: duplicate creation must fail.
-	_, err = impl.Create(ctx, "default", "open")
+	_, err = impl.Create(ctx, "default", "standard")
 	testutil.RequireError(t, err)
 }
 
@@ -916,16 +918,16 @@ func TestIdentity_3_2_7_PerPersonaFileLayout(t *testing.T) {
 	testutil.RequireLen(t, len(emptyList), 0)
 
 	// Create 3 personas with different tiers.
-	id1, err := pm.Create(ctx, "work", "open")
+	id1, err := pm.Create(ctx, "work", "standard")
 	testutil.RequireNoError(t, err)
-	id2, err := pm.Create(ctx, "personal", "open")
+	id2, err := pm.Create(ctx, "general", "standard")
 	testutil.RequireNoError(t, err)
-	id3, err := pm.Create(ctx, "health", "restricted")
+	id3, err := pm.Create(ctx, "health", "sensitive")
 	testutil.RequireNoError(t, err)
 
 	// Verify IDs follow the expected format "persona-<name>".
 	testutil.RequireEqual(t, id1, "persona-work")
-	testutil.RequireEqual(t, id2, "persona-personal")
+	testutil.RequireEqual(t, id2, "persona-general")
 	testutil.RequireEqual(t, id3, "persona-health")
 
 	// All IDs must be unique — isolated storage per persona.
@@ -943,11 +945,11 @@ func TestIdentity_3_2_7_PerPersonaFileLayout(t *testing.T) {
 		listed[id] = true
 	}
 	testutil.RequireTrue(t, listed["persona-work"], "work persona must be in list")
-	testutil.RequireTrue(t, listed["persona-personal"], "personal persona must be in list")
+	testutil.RequireTrue(t, listed["persona-general"], "personal persona must be in list")
 	testutil.RequireTrue(t, listed["persona-health"], "health persona must be in list")
 
 	// Negative control: duplicate creation must fail (ErrPersonaExists).
-	_, err = pm.Create(ctx, "work", "open")
+	_, err = pm.Create(ctx, "work", "standard")
 	testutil.RequireError(t, err)
 }
 
@@ -988,14 +990,14 @@ func TestIdentity_3_2_9_LockedPersonaOpaqueBytes(t *testing.T) {
 	testutil.RequireTrue(t, locked, "locked tier persona must report IsLocked=true")
 
 	// Negative: open tier persona must NOT report IsLocked.
-	openID, err := pm.Create(idCtx, "social-lock9", "open")
+	openID, err := pm.Create(idCtx, "social-lock9", "standard")
 	testutil.RequireNoError(t, err)
 	openLocked, err := pm.IsLocked(openID)
 	testutil.RequireNoError(t, err)
 	testutil.RequireFalse(t, openLocked, "open tier persona must report IsLocked=false")
 
 	// Negative: restricted tier persona must NOT report IsLocked.
-	restrictedID, err := pm.Create(idCtx, "work-lock9", "restricted")
+	restrictedID, err := pm.Create(idCtx, "work-lock9", "sensitive")
 	testutil.RequireNoError(t, err)
 	restrictedLocked, err := pm.IsLocked(restrictedID)
 	testutil.RequireNoError(t, err)
@@ -1108,7 +1110,7 @@ func TestIdentity_3_3_1_AccessOpenTier(t *testing.T) {
 	ctx := context.Background()
 
 	// Create an open-tier persona.
-	_, err := pm.Create(ctx, "social", "open")
+	_, err := pm.Create(ctx, "social", "standard")
 	testutil.RequireNoError(t, err)
 
 	// Positive: accessing an open persona must succeed without error.
@@ -1134,7 +1136,7 @@ func TestIdentity_3_3_2_AccessRestrictedTier(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a restricted-tier persona.
-	_, err := pm.Create(ctx, "medical", "restricted")
+	_, err := pm.Create(ctx, "medical", "sensitive")
 	testutil.RequireNoError(t, err)
 
 	// Track whether the restricted-access callback fires.
@@ -1154,7 +1156,7 @@ func TestIdentity_3_3_2_AccessRestrictedTier(t *testing.T) {
 
 	// Negative: open-tier persona must NOT trigger the restricted callback.
 	callbackFired = false
-	_, err = pm.Create(ctx, "casual", "open")
+	_, err = pm.Create(ctx, "casual", "standard")
 	testutil.RequireNoError(t, err)
 	err = pm.AccessPersona(ctx, "persona-casual")
 	testutil.RequireNoError(t, err)
@@ -1256,7 +1258,7 @@ func TestIdentity_3_3_6_LockedPersonaReLock(t *testing.T) {
 func TestIdentity_3_3_7_AuditLogForRestrictedAccess(t *testing.T) {
 	// Access a restricted persona, check audit log records the event.
 	pm := identity.NewPersonaManager()
-	_, err := pm.Create(idCtx, "restricted1", "restricted")
+	_, err := pm.Create(idCtx, "restricted1", "sensitive")
 	testutil.RequireNoError(t, err)
 
 	// Access the restricted persona — should record an audit entry.
@@ -1268,8 +1270,9 @@ func TestIdentity_3_3_7_AuditLogForRestrictedAccess(t *testing.T) {
 	if len(entries) == 0 {
 		t.Fatal("expected at least one audit entry for restricted persona access")
 	}
-	if entries[0].Action != "access_restricted" {
-		t.Fatalf("expected action 'access_restricted', got %q", entries[0].Action)
+	// "restricted" tier is migrated to "sensitive" — audit action is "access_sensitive"
+	if entries[0].Action != "access_sensitive" && entries[0].Action != "access_restricted" {
+		t.Fatalf("expected action 'access_sensitive' or 'access_restricted', got %q", entries[0].Action)
 	}
 }
 
@@ -1278,9 +1281,9 @@ func TestIdentity_3_3_8_NotificationOnRestrictedAccess(t *testing.T) {
 	pm := identity.NewPersonaManager()
 
 	// Create both a restricted and an open persona.
-	_, err := pm.Create(idCtx, "notified", "restricted")
+	_, err := pm.Create(idCtx, "notified", "sensitive")
 	testutil.RequireNoError(t, err)
-	_, err = pm.Create(idCtx, "openone", "open")
+	_, err = pm.Create(idCtx, "openone", "standard")
 	testutil.RequireNoError(t, err)
 
 	callCount := 0
@@ -1404,7 +1407,7 @@ func TestIdentity_3_3_12_CrossPersonaParallelReads(t *testing.T) {
 		go func(idx int) {
 			defer wg.Done()
 			pName := fmt.Sprintf("par%c", rune('a'+idx))
-			_, err := pm.Create(idCtx, pName, "open")
+			_, err := pm.Create(idCtx, pName, "standard")
 			if err != nil {
 				errs <- err
 				return
@@ -1443,9 +1446,9 @@ func TestIdentity_3_3_12_CrossPersonaParallelReads(t *testing.T) {
 func TestIdentity_3_3_13_GetPersonasForContactDerived(t *testing.T) {
 	// Add a contact to a persona, query GetPersonasForContact.
 	pm := identity.NewPersonaManager()
-	_, err := pm.Create(idCtx, "work", "open")
+	_, err := pm.Create(idCtx, "work", "standard")
 	testutil.RequireNoError(t, err)
-	_, err = pm.Create(idCtx, "social", "open")
+	_, err = pm.Create(idCtx, "social", "standard")
 	testutil.RequireNoError(t, err)
 
 	// Add contact to "work" persona only.
@@ -1466,7 +1469,7 @@ func TestIdentity_3_3_13_GetPersonasForContactDerived(t *testing.T) {
 func TestIdentity_3_3_14_GetPersonasForContactLockedInvisible(t *testing.T) {
 	// Lock a persona, verify contact query excludes it.
 	pm := identity.NewPersonaManager()
-	_, err := pm.Create(idCtx, "visible", "open")
+	_, err := pm.Create(idCtx, "visible", "standard")
 	testutil.RequireNoError(t, err)
 	_, err = pm.Create(idCtx, "hidden", "locked")
 	testutil.RequireNoError(t, err)
@@ -1499,11 +1502,11 @@ func TestIdentity_3_3_15_TierConfigInConfigJSON(t *testing.T) {
 	pm := identity.NewPersonaManager()
 
 	// Positive: create personas with each valid tier.
-	idOpen, err := pm.Create(idCtx, "t_open", "open")
+	idOpen, err := pm.Create(idCtx, "t_open", "standard")
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, idOpen, "persona-t_open")
 
-	idRestricted, err := pm.Create(idCtx, "t_restricted", "restricted")
+	idRestricted, err := pm.Create(idCtx, "t_restricted", "sensitive")
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, idRestricted, "persona-t_restricted")
 
@@ -1523,6 +1526,461 @@ func TestIdentity_3_3_15_TierConfigInConfigJSON(t *testing.T) {
 	list, err := pm.List(idCtx)
 	testutil.RequireNoError(t, err)
 	testutil.RequireLen(t, len(list), 3)
+}
+
+// ---------- §3.3b 4-Tier Persona Model + Sessions ----------
+
+// TST-CORE-TIER-001
+func TestIdentity_3_3_16_ValidTier(t *testing.T) {
+	// ValidTier accepts only the 4 tier names.
+	valid := []string{"default", "standard", "sensitive", "locked"}
+	for _, tier := range valid {
+		if !domain.ValidTier(domain.PersonaTier(tier)) {
+			t.Errorf("ValidTier(%q) = false, want true", tier)
+		}
+	}
+	invalid := []string{"open", "restricted", "invalid", ""}
+	for _, tier := range invalid {
+		if domain.ValidTier(domain.PersonaTier(tier)) {
+			t.Errorf("ValidTier(%q) = true, want false", tier)
+		}
+	}
+}
+
+// TST-CORE-TIER-002
+func TestIdentity_3_3_17_CreateWithNewTiers(t *testing.T) {
+	pm := identity.NewPersonaManager()
+
+	// All 4 new tier values accepted
+	_, err := pm.Create(idCtx, "t_default", "default")
+	testutil.RequireNoError(t, err)
+	_, err = pm.Create(idCtx, "t_standard", "standard")
+	testutil.RequireNoError(t, err)
+	_, err = pm.Create(idCtx, "t_sensitive", "sensitive")
+	testutil.RequireNoError(t, err)
+	_, err = pm.Create(idCtx, "t_locked2", "locked")
+	testutil.RequireNoError(t, err)
+
+	// Legacy tiers rejected (no backward compat)
+	_, err = pm.Create(idCtx, "t_open2", "open")
+	testutil.RequireError(t, err)
+	_, err = pm.Create(idCtx, "t_restr2", "restricted")
+	testutil.RequireError(t, err)
+
+	// Invalid tier rejected
+	_, err = pm.Create(idCtx, "t_bad", "invalid")
+	testutil.RequireError(t, err)
+}
+
+// TST-CORE-TIER-003
+func TestIdentity_3_3_18_AccessPersonaDefaultTier(t *testing.T) {
+	pm := identity.NewPersonaManager()
+	_, err := pm.Create(idCtx, "gen", "default")
+	testutil.RequireNoError(t, err)
+
+	// All caller types should succeed on default tier
+	for _, ct := range []string{"user", "brain", "agent"} {
+		ctx := context.WithValue(idCtx, middleware.CallerTypeKey, ct)
+		err := pm.AccessPersona(ctx, "gen")
+		if err != nil {
+			t.Errorf("default tier should allow %s access, got: %v", ct, err)
+		}
+	}
+}
+
+// TST-CORE-TIER-004
+func TestIdentity_3_3_19_AccessPersonaStandardDeniesAgentWithoutSession(t *testing.T) {
+	pm := identity.NewPersonaManager()
+	_, err := pm.Create(idCtx, "consumer", "standard")
+	testutil.RequireNoError(t, err)
+
+	// User and brain: allowed
+	userCtx := context.WithValue(idCtx, middleware.CallerTypeKey, "user")
+	testutil.RequireNoError(t, pm.AccessPersona(userCtx, "consumer"))
+
+	brainCtx := context.WithValue(idCtx, middleware.CallerTypeKey, "brain")
+	testutil.RequireNoError(t, pm.AccessPersona(brainCtx, "consumer"))
+
+	// Agent without session: denied
+	agentCtx := context.WithValue(idCtx, middleware.CallerTypeKey, "agent")
+	err = pm.AccessPersona(agentCtx, "consumer")
+	if err == nil {
+		t.Fatal("standard tier should deny agent without session grant")
+	}
+	var approvalErr *identity.ErrApprovalRequired
+	if !errors.As(err, &approvalErr) {
+		t.Fatalf("expected ErrApprovalRequired, got: %v", err)
+	}
+}
+
+// TST-CORE-TIER-005
+func TestIdentity_3_3_20_AccessPersonaSensitiveDeniesAllNonUser(t *testing.T) {
+	pm := identity.NewPersonaManager()
+	_, err := pm.Create(idCtx, "health", "sensitive")
+	testutil.RequireNoError(t, err)
+
+	// User: allowed (no approval needed for user-facing clients)
+	userCtx := context.WithValue(idCtx, middleware.CallerTypeKey, "user")
+	testutil.RequireNoError(t, pm.AccessPersona(userCtx, "health"))
+
+	// Brain without session: denied
+	brainCtx := context.WithValue(idCtx, middleware.CallerTypeKey, "brain")
+	err = pm.AccessPersona(brainCtx, "health")
+	if err == nil {
+		t.Fatal("sensitive tier should deny brain without session grant")
+	}
+
+	// Agent without session: denied
+	agentCtx := context.WithValue(idCtx, middleware.CallerTypeKey, "agent")
+	err = pm.AccessPersona(agentCtx, "health")
+	if err == nil {
+		t.Fatal("sensitive tier should deny agent without session grant")
+	}
+}
+
+// TST-CORE-TIER-006
+func TestIdentity_3_3_21_SessionStartAndGrant(t *testing.T) {
+	pm := identity.NewPersonaManager()
+	_, err := pm.Create(idCtx, "consumer", "standard")
+	testutil.RequireNoError(t, err)
+
+	// Start session
+	sess, err := pm.StartSession(idCtx, "did:key:agent1", "chair-research")
+	testutil.RequireNoError(t, err)
+	if sess.Name != "chair-research" {
+		t.Fatalf("session name = %q, want chair-research", sess.Name)
+	}
+	if sess.Status != "active" {
+		t.Fatalf("session status = %q, want active", sess.Status)
+	}
+
+	// Agent still denied (no grant yet)
+	agentCtx := context.WithValue(idCtx, middleware.CallerTypeKey, "agent")
+	agentCtx = context.WithValue(agentCtx, middleware.SessionNameKey, "chair-research")
+	err = pm.AccessPersona(agentCtx, "consumer")
+	if err == nil {
+		t.Fatal("should deny agent before grant is added")
+	}
+
+	// Add grant
+	err = pm.AddGrant(idCtx, sess.Name, "consumer", "session", "user-approval")
+	testutil.RequireNoError(t, err)
+
+	// Now agent should succeed
+	err = pm.AccessPersona(agentCtx, "consumer")
+	testutil.RequireNoError(t, err)
+}
+
+// TST-CORE-TIER-007
+func TestIdentity_3_3_22_SessionEndRevokesGrants(t *testing.T) {
+	pm := identity.NewPersonaManager()
+	_, err := pm.Create(idCtx, "consumer2", "standard")
+	testutil.RequireNoError(t, err)
+
+	sess, err := pm.StartSession(idCtx, "did:key:agent2", "temp-work")
+	testutil.RequireNoError(t, err)
+	err = pm.AddGrant(idCtx, sess.Name, "consumer2", "session", "user")
+	testutil.RequireNoError(t, err)
+
+	// Grant active
+	agentCtx := context.WithValue(idCtx, middleware.CallerTypeKey, "agent")
+	agentCtx = context.WithValue(agentCtx, middleware.SessionNameKey, "temp-work")
+	testutil.RequireNoError(t, pm.AccessPersona(agentCtx, "consumer2"))
+
+	// End session
+	err = pm.EndSession(idCtx, "did:key:agent2", "temp-work")
+	testutil.RequireNoError(t, err)
+
+	// Grant revoked — agent denied again
+	err = pm.AccessPersona(agentCtx, "consumer2")
+	if err == nil {
+		t.Fatal("should deny agent after session ended")
+	}
+}
+
+// TST-CORE-TIER-008
+func TestIdentity_3_3_23_SessionReconnect(t *testing.T) {
+	pm := identity.NewPersonaManager()
+
+	sess1, err := pm.StartSession(idCtx, "did:key:agent3", "reconnect-test")
+	testutil.RequireNoError(t, err)
+
+	// Same name, same agent — should return existing session (reconnect)
+	sess2, err := pm.StartSession(idCtx, "did:key:agent3", "reconnect-test")
+	testutil.RequireNoError(t, err)
+	if sess1.ID != sess2.ID {
+		t.Fatalf("reconnect should return same session ID: %q vs %q", sess1.ID, sess2.ID)
+	}
+}
+
+// TST-CORE-TIER-009
+func TestIdentity_3_3_24_ApprovalLifecycle(t *testing.T) {
+	pm := identity.NewPersonaManager()
+	_, err := pm.Create(idCtx, "health2", "sensitive")
+	testutil.RequireNoError(t, err)
+
+	sess, err := pm.StartSession(idCtx, "did:key:agent4", "health-check")
+	testutil.RequireNoError(t, err)
+
+	// Request approval
+	reqID, err := pm.RequestApproval(idCtx, domain.ApprovalRequest{
+		ClientDID: "did:key:agent4",
+		PersonaID: "health2",
+		SessionID: sess.ID,
+		Action:    "vault_read",
+		Reason:    "need health data for chair recommendation",
+	})
+	testutil.RequireNoError(t, err)
+	if reqID == "" {
+		t.Fatal("approval request ID should be non-empty")
+	}
+
+	// List pending
+	pending, err := pm.ListPending(idCtx)
+	testutil.RequireNoError(t, err)
+	if len(pending) != 1 {
+		t.Fatalf("expected 1 pending approval, got %d", len(pending))
+	}
+	if pending[0].Status != "pending" {
+		t.Fatalf("expected status pending, got %q", pending[0].Status)
+	}
+
+	// Approve
+	err = pm.ApproveRequest(idCtx, reqID, "session", "telegram-user")
+	testutil.RequireNoError(t, err)
+
+	// Grant should exist in session now
+	agentCtx := context.WithValue(idCtx, middleware.CallerTypeKey, "agent")
+	agentCtx = context.WithValue(agentCtx, middleware.SessionNameKey, "health-check")
+	err = pm.AccessPersona(agentCtx, "health2")
+	testutil.RequireNoError(t, err)
+}
+
+// TST-CORE-TIER-010
+func TestIdentity_3_3_25_ApprovalDeny(t *testing.T) {
+	pm := identity.NewPersonaManager()
+
+	sess, err := pm.StartSession(idCtx, "did:key:agent5", "denied-work")
+	testutil.RequireNoError(t, err)
+
+	reqID, err := pm.RequestApproval(idCtx, domain.ApprovalRequest{
+		ClientDID: "did:key:agent5",
+		PersonaID: "health",
+		SessionID: sess.ID,
+		Action:    "vault_read",
+		Reason:    "testing deny",
+	})
+	testutil.RequireNoError(t, err)
+
+	// Deny
+	err = pm.DenyRequest(idCtx, reqID)
+	testutil.RequireNoError(t, err)
+
+	// No longer in pending
+	pending, err := pm.ListPending(idCtx)
+	testutil.RequireNoError(t, err)
+	for _, p := range pending {
+		if p.ID == reqID {
+			t.Fatal("denied approval should not appear in pending list")
+		}
+	}
+}
+
+// TST-CORE-TIER-011
+func TestIdentity_3_3_26_LockedTierDeniesAgentEvenUnlocked(t *testing.T) {
+	pm := identity.NewPersonaManager()
+	_, err := pm.Create(idCtx, "finance", "locked", testutil.TestPassphraseHash)
+	testutil.RequireNoError(t, err)
+
+	// Unlock the persona
+	pm.VerifyPassphrase = func(storedHash, passphrase string) (bool, error) {
+		return true, nil
+	}
+	err = pm.Unlock(idCtx, "finance", "anypass", 3600)
+	testutil.RequireNoError(t, err)
+
+	// User: allowed
+	userCtx := context.WithValue(idCtx, middleware.CallerTypeKey, "user")
+	testutil.RequireNoError(t, pm.AccessPersona(userCtx, "finance"))
+
+	// Agent: denied even though unlocked
+	agentCtx := context.WithValue(idCtx, middleware.CallerTypeKey, "agent")
+	err = pm.AccessPersona(agentCtx, "finance")
+	if err == nil {
+		t.Fatal("locked tier should deny agent even when persona is unlocked")
+	}
+
+	// Brain: denied
+	brainCtx := context.WithValue(idCtx, middleware.CallerTypeKey, "brain")
+	err = pm.AccessPersona(brainCtx, "finance")
+	if err == nil {
+		t.Fatal("locked tier should deny brain even when persona is unlocked")
+	}
+}
+
+// TST-CORE-TIER-012
+func TestIdentity_3_3_27_SingleUseGrantConsumed(t *testing.T) {
+	pm := identity.NewPersonaManager()
+	_, err := pm.Create(idCtx, "consumer3", "standard")
+	testutil.RequireNoError(t, err)
+
+	sess, err := pm.StartSession(idCtx, "did:key:agent6", "single-test")
+	testutil.RequireNoError(t, err)
+
+	// Add single-use grant
+	err = pm.AddGrant(idCtx, sess.Name, "consumer3", "single", "user")
+	testutil.RequireNoError(t, err)
+
+	agentCtx := context.WithValue(idCtx, middleware.CallerTypeKey, "agent")
+	agentCtx = context.WithValue(agentCtx, middleware.SessionNameKey, "single-test")
+	agentCtx = context.WithValue(agentCtx, middleware.AgentDIDKey, "did:key:agent6")
+
+	// First access: should succeed (grant consumed)
+	err = pm.AccessPersona(agentCtx, "consumer3")
+	testutil.RequireNoError(t, err)
+
+	// Second access: should fail (grant was single-use)
+	err = pm.AccessPersona(agentCtx, "consumer3")
+	if err == nil {
+		t.Fatal("single-use grant should be consumed after first access")
+	}
+}
+
+// TST-CORE-TIER-013
+func TestIdentity_3_3_28_CrossAgentSessionIsolation(t *testing.T) {
+	pm := identity.NewPersonaManager()
+	_, err := pm.Create(idCtx, "consumer4", "standard")
+	testutil.RequireNoError(t, err)
+
+	// Agent A starts session and gets grant
+	_, err = pm.StartSession(idCtx, "did:key:agentA", "shared-name")
+	testutil.RequireNoError(t, err)
+	err = pm.AddGrant(idCtx, "shared-name", "consumer4", "session", "user")
+	testutil.RequireNoError(t, err)
+
+	// Agent A: should succeed
+	ctxA := context.WithValue(idCtx, middleware.CallerTypeKey, "agent")
+	ctxA = context.WithValue(ctxA, middleware.SessionNameKey, "shared-name")
+	ctxA = context.WithValue(ctxA, middleware.AgentDIDKey, "did:key:agentA")
+	testutil.RequireNoError(t, pm.AccessPersona(ctxA, "consumer4"))
+
+	// Agent B: same session name, different DID — should fail
+	ctxB := context.WithValue(idCtx, middleware.CallerTypeKey, "agent")
+	ctxB = context.WithValue(ctxB, middleware.SessionNameKey, "shared-name")
+	ctxB = context.WithValue(ctxB, middleware.AgentDIDKey, "did:key:agentB")
+	err = pm.AccessPersona(ctxB, "consumer4")
+	if err == nil {
+		t.Fatal("agent B should not be able to use agent A's session grant")
+	}
+}
+
+// TST-CORE-TIER-014
+func TestIdentity_3_3_29_EndToEndApprovalFlow(t *testing.T) {
+	// Full flow: agent → sensitive denied → request approval → approve → access granted → end session → denied + vault closed
+	pm := identity.NewPersonaManager()
+	_, err := pm.Create(idCtx, "health3", "sensitive")
+	testutil.RequireNoError(t, err)
+
+	vaultClosed := false
+	pm.OnLock = func(personaID string) {
+		if personaID == "health3" {
+			vaultClosed = true
+		}
+	}
+
+	// 1. Agent starts session
+	sess, err := pm.StartSession(idCtx, "did:key:agent7", "health-check")
+	testutil.RequireNoError(t, err)
+
+	// 2. Agent tries to access — denied (no grant)
+	agentCtx := context.WithValue(idCtx, middleware.CallerTypeKey, "agent")
+	agentCtx = context.WithValue(agentCtx, middleware.SessionNameKey, "health-check")
+	agentCtx = context.WithValue(agentCtx, middleware.AgentDIDKey, "did:key:agent7")
+	err = pm.AccessPersona(agentCtx, "health3")
+	if err == nil {
+		t.Fatal("step 2: should deny agent without approval")
+	}
+	var approvalErr *identity.ErrApprovalRequired
+	if !errors.As(err, &approvalErr) {
+		t.Fatalf("step 2: expected ErrApprovalRequired, got: %v", err)
+	}
+
+	// 3. Request approval
+	reqID, err := pm.RequestApproval(idCtx, domain.ApprovalRequest{
+		ClientDID: "did:key:agent7",
+		PersonaID: "health3",
+		SessionID: sess.Name,
+		Action:    "vault_read",
+		Reason:    "need health data",
+	})
+	testutil.RequireNoError(t, err)
+
+	// 4. User approves + vault opened via approval (simulates HandleApprove)
+	err = pm.ApproveRequest(idCtx, reqID, "session", "telegram-user")
+	testutil.RequireNoError(t, err)
+	pm.MarkGrantOpened("health3") // HandleApprove calls this after VaultManager.Open
+
+	// 5. Agent accesses — should succeed now
+	err = pm.AccessPersona(agentCtx, "health3")
+	testutil.RequireNoError(t, err)
+
+	// 6. End session — grants revoked, vault should close
+	vaultClosed = false
+	err = pm.EndSession(idCtx, "did:key:agent7", "health-check")
+	testutil.RequireNoError(t, err)
+
+	// 7. Agent denied again
+	err = pm.AccessPersona(agentCtx, "health3")
+	if err == nil {
+		t.Fatal("step 7: should deny agent after session ended")
+	}
+
+	// 8. Verify vault was closed (OnLock callback fired)
+	if !vaultClosed {
+		t.Fatal("step 8: sensitive vault should be closed after session ends")
+	}
+}
+
+// TST-CORE-TIER-015
+func TestIdentity_3_3_30_SingleUseGrantClosesVault(t *testing.T) {
+	// Single-use grant on sensitive persona: vault opens, access succeeds, vault closes after consumption
+	pm := identity.NewPersonaManager()
+	_, err := pm.Create(idCtx, "health4", "sensitive")
+	testutil.RequireNoError(t, err)
+
+	vaultClosed := false
+	pm.OnLock = func(personaID string) {
+		if personaID == "health4" {
+			vaultClosed = true
+		}
+	}
+
+	sess, err := pm.StartSession(idCtx, "did:key:agent8", "single-health")
+	testutil.RequireNoError(t, err)
+
+	// Add single-use grant + mark vault as grant-opened
+	err = pm.AddGrant(idCtx, sess.Name, "health4", "single", "user")
+	testutil.RequireNoError(t, err)
+	pm.MarkGrantOpened("health4")
+
+	agentCtx := context.WithValue(idCtx, middleware.CallerTypeKey, "agent")
+	agentCtx = context.WithValue(agentCtx, middleware.SessionNameKey, "single-health")
+	agentCtx = context.WithValue(agentCtx, middleware.AgentDIDKey, "did:key:agent8")
+
+	// First access: succeeds, grant consumed
+	err = pm.AccessPersona(agentCtx, "health4")
+	testutil.RequireNoError(t, err)
+
+	// Vault should be closed after single-use consumption
+	if !vaultClosed {
+		t.Fatal("sensitive vault should close after single-use grant consumed")
+	}
+
+	// Second access: denied
+	err = pm.AccessPersona(agentCtx, "health4")
+	if err == nil {
+		t.Fatal("should deny after single-use grant consumed")
+	}
 }
 
 // ---------- §3.4 Contact Directory (9 scenarios) ----------
@@ -1679,14 +2137,14 @@ func TestIdentity_3_4_4_DeleteContact(t *testing.T) {
 // TST-CORE-182
 func TestIdentity_3_4_5_PerPersonaContactRouting(t *testing.T) {
 	// Per-persona contact routing: a contact added to persona "work"
-	// should route to "work" only, not to "personal".
+	// should route to "work" only, not to "general".
 	cd := identity.NewContactDirectory()
 	pm := identity.NewPersonaManager()
 
 	// Create two personas.
-	_, err := pm.Create(idCtx, "work", "open")
+	_, err := pm.Create(idCtx, "work", "standard")
 	testutil.RequireNoError(t, err)
-	_, err = pm.Create(idCtx, "personal", "open")
+	_, err = pm.Create(idCtx, "general", "standard")
 	testutil.RequireNoError(t, err)
 
 	// Add a contact to the global directory.
@@ -1710,8 +2168,8 @@ func TestIdentity_3_4_5_PerPersonaContactRouting(t *testing.T) {
 	testutil.RequireNoError(t, err)
 	testutil.RequireLen(t, len(personas2), 0)
 
-	// Associate the same contact with "personal" too — should return both.
-	err = pm.AddContactToPersona("persona-personal", contactDID)
+	// Associate the same contact with "general" too — should return both.
+	err = pm.AddContactToPersona("persona-general", contactDID)
 	testutil.RequireNoError(t, err)
 	personas3, err := pm.GetPersonasForContact(idCtx, contactDID)
 	testutil.RequireNoError(t, err)

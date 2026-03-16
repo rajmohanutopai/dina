@@ -86,26 +86,23 @@ build_crypto_image() {
             fail "Failed to build crypto tools image. Check that Docker is running."
         fi
     else
-        printf "  %-44s" "Preparing crypto tools..."
         # Run build in background with a spinner
         docker build -q -t "${CRYPTO_IMAGE}" -f scripts/setup/Dockerfile.crypto scripts/setup/ >/dev/null 2>&1 &
         local _build_pid=$!
         local _spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
         local _i=0
-        local _spun=false
         while kill -0 "$_build_pid" 2>/dev/null; do
-            printf "\b${CYAN}${_spin:_i++%${#_spin}:1}${RESET}"
-            _spun=true
+            _i=$(( (_i + 1) % ${#_spin} ))
+            printf "\r  ${CYAN}${_spin:_i:1}${RESET} %-43s" "Preparing crypto tools..."
             sleep 0.1
         done
         wait "$_build_pid"
         local _rc=$?
-        [ "$_spun" = true ] && printf "\b \b"
         if [ $_rc -eq 0 ]; then
             CRYPTO_IMAGE_BUILT=true
-            echo -e "${GREEN}done${RESET}"
+            printf "\r  %-46s${GREEN}done${RESET}\n" "Preparing crypto tools..."
         else
-            echo -e "${RED}failed${RESET}"
+            printf "\r  %-46s${RED}failed${RESET}\n" "Preparing crypto tools..."
             fail "Failed to build crypto tools image. Check that Docker is running."
         fi
     fi

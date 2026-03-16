@@ -124,20 +124,40 @@ Rate limiting on pairing attempts prevents brute force (hard cap on pending code
 
 Each persona is a separate encrypted SQLite database file with its own DEK (derived from master seed via HKDF). Cross-persona access is enforced cryptographically — a compromised persona cannot access another.
 
-### Access Tiers
+### 4-Tier Access Model
 
-| Tier | Behavior | Example |
-|------|----------|---------|
-| **Open** | Brain queries freely, logged silently | `/social`, `/consumer`, `/professional` |
-| **Restricted** | Brain queries logged + user notified in daily briefing | `/health` |
-| **Locked** | Database CLOSED, DEK not in RAM. Brain gets 403. Human unlock required with TTL. | `/financial` |
+| Tier | Boot State | Users | Brain | Agents | Audit |
+|------|-----------|-------|-------|--------|-------|
+| **Default** | Auto-open | Free access | Free access | Free access | Silent |
+| **Standard** | Auto-open | Free access | Free access | Needs session grant | On agent access |
+| **Sensitive** | Closed | Unlock with confirmation | Needs approval | Needs approval via Telegram/admin | Always |
+| **Locked** | Closed | Passphrase required | Denied (403) | Denied (403) | Always |
+
+The default persona is "general" — always open. Standard personas (consumer, social, work) auto-open at boot but require agents to work within named sessions. Sensitive personas (health, finance) require explicit user approval before agents can access them. Locked personas require a persona-specific passphrase.
+
+### Agent Sessions
+
+Agents work within named sessions that scope access grants:
+
+```
+dina session start --name "chair-research"
+dina recall "back pain" --session chair-research --persona health
+  → Awaiting user approval on Telegram...
+  → Health access granted for session "chair-research"
+dina session end --name "chair-research"
+  → All grants revoked
+```
+
+Sessions persist across crashes (agent can reconnect by name). Each session's grants are revoked when the session ends. Different agents can have different active sessions.
 
 ### Gatekeeper
 
 The Gatekeeper enforces persona isolation at the API level:
-- Agents authorized for one persona cannot access another
+- Caller type (user/brain/agent) determines access — derived from authentication
+- Agents need active session grants for standard/sensitive personas
 - Brain-denied actions: `did_sign`, `did_rotate`, `vault_backup`, `persona_unlock`, raw vault operations, `vault_export`
 - Cross-persona queries are blocked regardless of authentication
+- Approval requests are queued and the user is notified via Telegram and WebSocket
 
 ---
 
@@ -337,6 +357,7 @@ Dina encrypts every page of every persona vault with SQLCipher (AES-256-CBC). Tr
 2. **On persona unlock:** read embeddings, build HNSW index in RAM (~40-80ms for 10K items)
 3. **On query:** search RAM index (<1ms)
 4. **On persona lock:** destroy HNSW index, nil reference, GC
+5. **Persona Leak** External systems should not know about different persona names.
 
 Vectors exist in plaintext only in process memory during an active session — same exposure as decrypted text.
 

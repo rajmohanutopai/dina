@@ -54,7 +54,7 @@ func (r *Router) Ingest(ctx context.Context, ip string, envelope []byte) error {
 	// Route based on vault state.
 	// When the vault is locked, we cannot decrypt — store as opaque blob.
 	// When unlocked, decrypt and process immediately.
-	defaultPersona, _ := domain.NewPersonaName("personal")
+	defaultPersona, _ := domain.NewPersonaName("general")
 	if !r.vault.IsOpen(defaultPersona) {
 		// Valve 2: Global spool capacity check (dead-drop path only).
 		if !r.limiter.AllowGlobal() {

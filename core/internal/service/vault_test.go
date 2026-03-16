@@ -125,7 +125,7 @@ func TestVault_4_GetItemSuccess(t *testing.T) {
 	gk := &mockGatekeeper{allow: true}
 	clk := &mockClock{}
 
-	persona := domain.PersonaName("personal")
+	persona := domain.PersonaName("general")
 	mgr.open[persona] = true
 
 	want := &domain.VaultItem{
@@ -160,7 +160,7 @@ func TestVault_4_GetItemNotFound(t *testing.T) {
 	gk := &mockGatekeeper{allow: true}
 	clk := &mockClock{}
 
-	persona := domain.PersonaName("personal")
+	persona := domain.PersonaName("general")
 	mgr.open[persona] = true
 
 	svc := NewVaultService(mgr, reader, writer, gk, clk)
@@ -202,7 +202,7 @@ func TestVault_4_GetItemGatekeeperDenied(t *testing.T) {
 	gk := &mockGatekeeper{allow: false}
 	clk := &mockClock{}
 
-	persona := domain.PersonaName("personal")
+	persona := domain.PersonaName("general")
 	mgr.open[persona] = true
 
 	reader.items["item-123"] = &domain.VaultItem{ID: "item-123"}
@@ -225,7 +225,7 @@ func TestVault_4_GetKVSuccess(t *testing.T) {
 	gk := &mockGatekeeper{allow: true}
 	clk := &mockClock{}
 
-	persona := domain.PersonaName("personal")
+	persona := domain.PersonaName("general")
 	mgr.open[persona] = true
 
 	want := &domain.VaultItem{
@@ -259,7 +259,7 @@ func TestVault_4_GetKVNotFound(t *testing.T) {
 	gk := &mockGatekeeper{allow: true}
 	clk := &mockClock{}
 
-	persona := domain.PersonaName("personal")
+	persona := domain.PersonaName("general")
 	mgr.open[persona] = true
 
 	svc := NewVaultService(mgr, reader, writer, gk, clk)
@@ -280,7 +280,7 @@ func TestVault_4_GetKVPrefixesKey(t *testing.T) {
 	gk := &mockGatekeeper{allow: true}
 	clk := &mockClock{}
 
-	persona := domain.PersonaName("personal")
+	persona := domain.PersonaName("general")
 	mgr.open[persona] = true
 
 	// Store under the kv:-prefixed ID to prove GetKV adds the prefix.
@@ -308,7 +308,7 @@ func TestVault_4_GetItemGatekeeperReceivesItemIDAsTarget(t *testing.T) {
 	writer := &mockVaultWriter{}
 	clk := &mockClock{}
 
-	persona := domain.PersonaName("personal")
+	persona := domain.PersonaName("general")
 	mgr.open[persona] = true
 	reader.items["item-abc"] = &domain.VaultItem{ID: "item-abc"}
 

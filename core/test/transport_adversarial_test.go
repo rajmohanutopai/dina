@@ -1199,7 +1199,7 @@ func TestAdv_29_3_IngressInboxUnlocked(t *testing.T) {
 		deadDrop := ingress.NewDeadDrop(deadDropDir, 10000, 500*1024*1024)
 		limiter := ingress.NewRateLimiter(50, time.Minute, 10000, 500*1024*1024, deadDrop)
 
-		personal, _ := domain.NewPersonaName("personal")
+		personal, _ := domain.NewPersonaName("general")
 		vaultMgr := &mockVaultManager{openPersonas: map[domain.PersonaName]bool{personal: true}}
 		inbox := &mockInboxManager{}
 		sweeper := ingress.NewSweeper(deadDrop, nil, nil, &transportTestClock{now: time.Now()}, 24*time.Hour)
@@ -1229,7 +1229,7 @@ func TestAdv_29_3_IngressInboxUnlocked(t *testing.T) {
 		deadDrop := ingress.NewDeadDrop(deadDropDir, 10000, 500*1024*1024)
 		limiter := ingress.NewRateLimiter(50, time.Minute, 10000, 500*1024*1024, deadDrop)
 
-		personal, _ := domain.NewPersonaName("personal")
+		personal, _ := domain.NewPersonaName("general")
 		vaultMgr := &mockVaultManager{openPersonas: map[domain.PersonaName]bool{personal: true}}
 		inbox := &mockInboxManager{}
 		sweeper := ingress.NewSweeper(deadDrop, nil, nil, &transportTestClock{now: time.Now()}, 24*time.Hour)
@@ -1261,7 +1261,7 @@ func TestAdv_29_3_IngressInboxUnlocked(t *testing.T) {
 		deadDrop := ingress.NewDeadDrop(deadDropDir, 10000, 500*1024*1024)
 		limiter := ingress.NewRateLimiter(50, time.Minute, 10000, 500*1024*1024, deadDrop)
 
-		personal, _ := domain.NewPersonaName("personal")
+		personal, _ := domain.NewPersonaName("general")
 		vaultMgr := &mockVaultManager{openPersonas: map[domain.PersonaName]bool{personal: true}}
 		inbox := &mockInboxManager{}
 		sweeper := ingress.NewSweeper(deadDrop, nil, nil, &transportTestClock{now: time.Now()}, 24*time.Hour)
@@ -1289,7 +1289,7 @@ func TestAdv_29_3_IngressInboxUnlocked(t *testing.T) {
 		deadDrop := ingress.NewDeadDrop(deadDropDir, 10000, 500*1024*1024)
 		limiter := ingress.NewRateLimiter(50, time.Minute, 10000, 500*1024*1024, deadDrop)
 
-		personal, _ := domain.NewPersonaName("personal")
+		personal, _ := domain.NewPersonaName("general")
 		vaultMgr := &mockVaultManager{openPersonas: map[domain.PersonaName]bool{}}
 		inbox := &mockInboxManager{}
 		sweeper := ingress.NewSweeper(deadDrop, nil, nil, &transportTestClock{now: time.Now()}, 24*time.Hour)
@@ -1338,7 +1338,7 @@ func TestAdv_29_3_IngressInboxUnlocked(t *testing.T) {
 		deadDrop := ingress.NewDeadDrop(deadDropDir, 10000, 500*1024*1024)
 		limiter := ingress.NewRateLimiter(50, time.Minute, 10000, 500*1024*1024, deadDrop)
 
-		personal, _ := domain.NewPersonaName("personal")
+		personal, _ := domain.NewPersonaName("general")
 		vaultMgr := &mockVaultManager{openPersonas: map[domain.PersonaName]bool{personal: true}}
 		inbox := &mockInboxManager{}
 		sweeper := ingress.NewSweeper(deadDrop, nil, nil, &transportTestClock{now: time.Now()}, 24*time.Hour)
@@ -1469,7 +1469,7 @@ func TestAdv_29_3_IngressOversizedPayload(t *testing.T) {
 	deadDrop := ingress.NewDeadDrop(deadDropDir, 10000, 500*1024*1024)
 	limiter := ingress.NewRateLimiter(50, time.Minute, 10000, 500*1024*1024, deadDrop)
 
-	personal, _ := domain.NewPersonaName("personal")
+	personal, _ := domain.NewPersonaName("general")
 	vaultMgr := &mockVaultManager{openPersonas: map[domain.PersonaName]bool{personal: true}}
 	inbox := &mockInboxManager{}
 	clk := &transportTestClock{now: time.Now()}

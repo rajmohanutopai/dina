@@ -67,6 +67,7 @@ const FirstCustomPersonaIndex = 6
 // DeriveVaultDEK constructs "dina:vault:<personaID>:v1" — all entries must match.
 var HKDFInfoStrings = map[string]string{
 	"identity":   "dina:vault:identity:v1",
+	"general":    "dina:vault:general:v1",
 	"personal":   "dina:vault:personal:v1",
 	"health":     "dina:vault:health:v1",
 	"financial":  "dina:vault:financial:v1",

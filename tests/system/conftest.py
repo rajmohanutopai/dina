@@ -365,7 +365,8 @@ def brain_signer(system_services) -> BrainSigner:
 # Persona setup (session-scoped, runs once)
 # ---------------------------------------------------------------------------
 
-PERSONAS = ["personal", "consumer", "health"]
+PERSONA_TIERS = {"general": "default", "consumer": "standard", "health": "sensitive"}
+PERSONAS = list(PERSONA_TIERS.keys())
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -374,11 +375,11 @@ def setup_personas(system_services, admin_headers, brain_headers):
     for actor in ("alonso", "sancho"):
         base = system_services.core_url(actor)
         for name in PERSONAS:
-            # Create (idempotent — ignores "already exists")
+            tier = PERSONA_TIERS[name]
             try:
                 httpx.post(
                     f"{base}/v1/personas",
-                    json={"name": name, "tier": "restricted" if name == "health" else "open", "passphrase": "test"},
+                    json={"name": name, "tier": tier, "passphrase": "test"},
                     headers=admin_headers,
                     timeout=10,
                 )

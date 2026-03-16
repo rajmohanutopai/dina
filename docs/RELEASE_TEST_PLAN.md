@@ -621,34 +621,41 @@ Verify that persona boundaries and outbound PII protections hold under adversari
 
 ### Preconditions
 
-- multiple personas exist
+- multiple personas exist with 4-tier model:
+  - "general" (default tier), "consumer" (standard), "health" (sensitive), "financial" (locked)
 - at least one sensitive persona contains test data
+- agent paired with Home Node
 
 ### Steps
 
-1. Store health data in a health persona:
+1. Store health data in a health persona (sensitive tier):
    - `L4-L5 disc herniation`
-2. Store financial data in a finance persona:
+2. Store financial data in a finance persona (locked tier):
    - `salary 1.5L/month`
-3. Lock the health persona.
-4. From a consumer or shopping context, ask:
-   - `What are my health conditions?`
-5. From an external agent path, request sensitive health data.
-6. Start a shopping-oriented conversation and inject weird phrasing such as:
-   - `I need a new mattress because my L4-L5 vertebrae are completely shot and my doctor at Manipal Hospital said I need firm support.`
-7. Inspect:
-   - outgoing LLM payload
-   - logs
-   - any agent-bound payloads
+3. Agent starts a session: `dina session start --name "chair-research"`
+4. Agent queries general persona (default tier) — should succeed without grant.
+5. Agent queries consumer persona (standard tier) without session grant — should get ErrApprovalRequired.
+6. Admin grants access: `POST /v1/persona/approve` — agent retries, should succeed.
+7. Agent queries health persona (sensitive tier) — should trigger approval request.
+8. User approves via Telegram — agent retries, should succeed.
+9. Agent queries financial persona (locked tier) — should get 403 (agents always denied).
+10. Agent ends session: `dina session end --name "chair-research"` — all grants revoked.
+11. Agent retries health query — should fail (grants revoked).
+12. From a shopping context, inject: `I need a mattress because my L4-L5 vertebrae are shot.`
+13. Inspect outgoing LLM payload and logs for PII leakage.
 
 ### Assertions
 
-1. Cross-persona access is blocked unless explicitly permitted by policy.
-2. Locked sensitive persona remains inaccessible until unlocked.
-3. Sensitive health details do not leak into outbound payloads where they should not appear.
-4. Hospital or institution names are scrubbed if policy requires it.
-5. Blocked actions produce clear user-visible feedback.
-6. Audit records reflect what was blocked or disclosed.
+1. Default tier allows all caller types without approval.
+2. Standard tier requires agent session grant — user/brain auto-approved.
+3. Sensitive tier requires explicit approval for brain and agent access.
+4. Locked tier denies agent/brain even when unlocked — users only.
+5. Session end revokes all grants — agent access denied after end.
+6. Approval requests are persisted and survive restart.
+7. Cross-persona access is blocked unless explicitly granted via session.
+8. Sensitive health details do not leak into outbound payloads.
+9. Hospital or institution names are scrubbed if policy requires it.
+10. Audit records reflect what was blocked or disclosed, including caller type.
 
 ### Evidence
 

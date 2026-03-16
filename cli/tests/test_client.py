@@ -109,7 +109,7 @@ def test_auth_error(config):
 
     with patch.object(httpx.Client, "request", return_value=mock_resp):
         client = DinaClient(config)
-        with pytest.raises(DinaClientError, match="Invalid token"):
+        with pytest.raises(DinaClientError, match="Authentication failed"):
             client.vault_query("personal", "test")
         client.close()
 

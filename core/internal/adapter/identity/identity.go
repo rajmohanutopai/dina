@@ -25,6 +25,7 @@ import (
 	"github.com/rajmohanutopai/dina/core/internal/adapter/crypto"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/pds"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/middleware"
 	"github.com/rajmohanutopai/dina/core/internal/port"
 )
 
@@ -42,7 +43,7 @@ var (
 	ErrInvalidPublicKey    = errors.New("public key must be 32 bytes (Ed25519)")
 	ErrInvalidDID          = errors.New("invalid DID format")
 	ErrPersonaNotFound     = errors.New("persona not found")
-	ErrInvalidTier         = errors.New("invalid tier: must be open, restricted, or locked")
+	ErrInvalidTier         = errors.New("invalid tier: must be default, standard, sensitive, or locked")
 	ErrContactNotFound     = errors.New("contact not found")
 	ErrContactExists       = errors.New("contact already exists")
 	ErrInvalidTrustLevel   = errors.New("invalid trust level: must be blocked, unknown, or trusted")
@@ -800,8 +801,10 @@ type IdentityAuditEntry struct {
 
 // personaFileState is the JSON-serializable state for persona persistence.
 type personaFileState struct {
-	Personas map[string]*Persona        `json:"personas"`
-	Contacts map[string]map[string]bool `json:"contacts"`
+	Personas  map[string]*Persona         `json:"personas"`
+	Contacts  map[string]map[string]bool  `json:"contacts"`
+	Sessions  []domain.AgentSession       `json:"sessions,omitempty"`
+	Approvals []domain.ApprovalRequest    `json:"approvals,omitempty"`
 }
 
 // PersonaManager implements port.PersonaManager — persona CRUD and tier enforcement (§3.2, §3.3).
@@ -811,28 +814,28 @@ type PersonaManager struct {
 	personas             map[string]*Persona              // personaID -> Persona
 	auditLog             []IdentityAuditEntry             // append-only audit log
 	contacts             map[string]map[string]bool       // personaID -> set of contact DIDs
+	sessions             []domain.AgentSession            // active agent sessions
+	approvals            []domain.ApprovalRequest         // pending approval requests
+	grantOpenedVaults    map[string]bool                  // personaIDs opened via approval (not user unlock)
 	persistPath          string                           // path to persona state file (empty = in-memory only)
 	OnRestrictedAccess   func(personaID, reason string)   // callback for restricted access notification
+	OnApprovalNeeded     func(req domain.ApprovalRequest) // callback for approval notifications
 	testTick             chan struct{}                     // test control channel for TTL goroutine
 	ttlTimers            map[string]*time.Timer           // personaID -> active TTL timer
 	VerifyPassphrase     func(storedHash, passphrase string) (bool, error)
 	HashUpgrader         func(passphrase string) (string, error) // re-hash with current algorithm (Argon2id)
 	OnLock               func(personaID string) // callback invoked after persona is locked (vault close, etc.)
-	// CheckOrphanedVault is an optional callback invoked during Create() to detect
-	// orphaned vault artifacts. If vault files exist for a persona but no in-memory
-	// persona state exists (e.g. after state file corruption/loss), this callback
-	// returns true. Callers should wire this to the vault layer once durable vault
-	// storage is implemented. When nil, the check is skipped.
-	CheckOrphanedVault func(personaID string) bool
+	CheckOrphanedVault   func(personaID string) bool
 }
 
 // NewPersonaManager returns a new PersonaManager.
 // Call SetPersistPath to enable file-based persistence.
 func NewPersonaManager() *PersonaManager {
 	return &PersonaManager{
-		personas:  make(map[string]*Persona),
-		contacts:  make(map[string]map[string]bool),
-		ttlTimers: make(map[string]*time.Timer),
+		personas:          make(map[string]*Persona),
+		contacts:          make(map[string]map[string]bool),
+		ttlTimers:         make(map[string]*time.Timer),
+		grantOpenedVaults: make(map[string]bool),
 	}
 }
 
@@ -860,15 +863,21 @@ func (pm *PersonaManager) SetPersistPath(path string) error {
 	}
 	if state.Personas != nil {
 		pm.personas = state.Personas
-		// Ensure all loaded personas start locked for safety — unlock requires passphrase.
 		for _, p := range pm.personas {
-			if p.Tier == "locked" || p.Tier == "restricted" {
+			// Sensitive and locked start locked — unlock requires passphrase.
+			if p.Tier == "locked" || p.Tier == "sensitive" {
 				p.Locked = true
 			}
 		}
 	}
 	if state.Contacts != nil {
 		pm.contacts = state.Contacts
+	}
+	if state.Sessions != nil {
+		pm.sessions = state.Sessions
+	}
+	if state.Approvals != nil {
+		pm.approvals = state.Approvals
 	}
 	return nil
 }
@@ -879,8 +888,10 @@ func (pm *PersonaManager) persistState() {
 		return
 	}
 	state := personaFileState{
-		Personas: pm.personas,
-		Contacts: pm.contacts,
+		Personas:  pm.personas,
+		Contacts:  pm.contacts,
+		Sessions:  pm.sessions,
+		Approvals: pm.approvals,
 	}
 	data, err := json.Marshal(state)
 	if err != nil {
@@ -998,9 +1009,10 @@ func (pm *PersonaManager) addAuditEntry(personaID, action, details string) {
 	})
 }
 
-// AccessPersona checks if a persona can be accessed based on its tier.
-// It records audit entries and triggers callbacks for restricted access.
-func (pm *PersonaManager) AccessPersona(_ context.Context, personaID string) error {
+// AccessPersona checks if a persona can be accessed based on its tier
+// and the caller type (read from context via CallerTypeKey).
+// It records audit entries and triggers callbacks for restricted/sensitive access.
+func (pm *PersonaManager) AccessPersona(ctx context.Context, personaID string) error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
@@ -1010,27 +1022,398 @@ func (pm *PersonaManager) AccessPersona(_ context.Context, personaID string) err
 		return ErrPersonaNotFound
 	}
 
+	// Determine caller type and agent DID from context (set by middleware).
+	callerType := "user" // default for backward compat
+	if ct, ok := ctx.Value(middleware.CallerTypeKey).(string); ok && ct != "" {
+		callerType = ct
+	}
+	agentDID := ""
+	if did, ok := ctx.Value(middleware.AgentDIDKey).(string); ok {
+		agentDID = did
+	}
+
 	switch p.Tier {
 	case "locked":
 		if p.Locked {
-			reason := "persona is locked"
-			pm.addAuditEntry(cid, "access_denied", reason)
+			pm.addAuditEntry(cid, "access_denied", "persona locked")
 			if pm.OnRestrictedAccess != nil {
-				pm.OnRestrictedAccess(cid, reason)
+				pm.OnRestrictedAccess(cid, "persona locked")
 			}
-			return fmt.Errorf("persona %s is locked", cid)
+			return fmt.Errorf("persona %s: %w", cid, domain.ErrPersonaLocked)
 		}
-		pm.addAuditEntry(cid, "access_granted", "locked persona unlocked")
-	case "restricted":
-		pm.addAuditEntry(cid, "access_restricted", "restricted tier access")
+		// Locked but unlocked — agents still denied
+		if callerType == "agent" || callerType == "brain" {
+			pm.addAuditEntry(cid, "access_denied", "locked tier denies non-user callers")
+			return fmt.Errorf("persona %s: %w: locked tier denies agent access", cid, domain.ErrPersonaLocked)
+		}
+		pm.addAuditEntry(cid, "access_granted", "locked persona unlocked by user")
+
+	case "sensitive":
+		// Always audit
+		pm.addAuditEntry(cid, "access_sensitive", fmt.Sprintf("caller=%s", callerType))
 		if pm.OnRestrictedAccess != nil {
-			pm.OnRestrictedAccess(cid, "restricted tier access")
+			pm.OnRestrictedAccess(cid, "sensitive tier access")
 		}
-	default:
-		pm.addAuditEntry(cid, "access_granted", "open tier")
+		// Agents and brain need session grant
+		if callerType == "agent" || callerType == "brain" {
+			sessionID := ""
+			if sid, ok := ctx.Value(middleware.SessionNameKey).(string); ok {
+				sessionID = sid
+			}
+			if !pm.hasActiveGrant(cid, sessionID, agentDID) {
+				return &ErrApprovalRequired{PersonaID: cid, CallerType: callerType}
+			}
+		}
+
+	case "standard":
+		// Users and brain: auto-approved
+		// Agents: need session grant
+		if callerType == "agent" {
+			sessionID := ""
+			if sid, ok := ctx.Value(middleware.SessionNameKey).(string); ok {
+				sessionID = sid
+			}
+			if !pm.hasActiveGrant(cid, sessionID, agentDID) {
+				pm.addAuditEntry(cid, "access_denied", "agent needs session grant for standard tier")
+				return &ErrApprovalRequired{PersonaID: cid, CallerType: callerType}
+			}
+			pm.addAuditEntry(cid, "access_granted", fmt.Sprintf("agent session grant, caller=%s", callerType))
+		}
+
+	default: // "default" or "open"
+		// Always allowed, minimal audit
+		pm.addAuditEntry(cid, "access_granted", "default tier")
 	}
 
 	return nil
+}
+
+// hasActiveGrant checks if there's an active (non-expired) grant for the persona
+// in the given session owned by the given agent. Both sessionID and agentDID must match.
+// Single-use grants ("single" scope) are consumed on first access.
+func (pm *PersonaManager) hasActiveGrant(personaID, sessionID, agentDID string) bool {
+	if sessionID == "" {
+		return false
+	}
+	now := time.Now().Unix()
+	for i, s := range pm.sessions {
+		if s.Status != domain.SessionActive {
+			continue
+		}
+		if (s.Name == sessionID || s.ID == sessionID) && (agentDID == "" || s.AgentDID == agentDID) {
+			for j, g := range s.Grants {
+				pID := canonicalPersonaID(g.PersonaID)
+				if pID == personaID && (g.ExpiresAt == 0 || g.ExpiresAt > now) {
+					// Consume single-use grants
+					if g.Scope == "single" {
+						pm.sessions[i].Grants = append(
+							pm.sessions[i].Grants[:j],
+							pm.sessions[i].Grants[j+1:]...,
+						)
+						pm.persistState()
+						// Close grant-opened sensitive vault if no other active grants
+						p, ok := pm.personas[personaID]
+						if ok && p.Tier == "sensitive" && pm.grantOpenedVaults[personaID] && !pm.anyActiveGrantForPersona(personaID) && pm.OnLock != nil {
+							pm.OnLock(strings.TrimPrefix(personaID, "persona-"))
+							delete(pm.grantOpenedVaults, personaID)
+						}
+					}
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// MarkGrantOpened records that a persona vault was opened via the approval path
+// (not user/admin manual unlock). Only grant-opened vaults are closed when
+// sessions end or single-use grants are consumed.
+func (pm *PersonaManager) MarkGrantOpened(personaID string) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	pID := canonicalPersonaID(personaID)
+	if pm.grantOpenedVaults == nil {
+		pm.grantOpenedVaults = make(map[string]bool)
+	}
+	pm.grantOpenedVaults[pID] = true
+}
+
+// anyActiveGrantForPersona checks if any active session has a grant for the persona.
+// Used to determine if a sensitive vault can be closed after a session ends.
+func (pm *PersonaManager) anyActiveGrantForPersona(personaID string) bool {
+	now := time.Now().Unix()
+	for _, s := range pm.sessions {
+		if s.Status != domain.SessionActive {
+			continue
+		}
+		for _, g := range s.Grants {
+			pID := canonicalPersonaID(g.PersonaID)
+			if pID == personaID && (g.ExpiresAt == 0 || g.ExpiresAt > now) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ErrApprovalRequired is returned when an agent needs approval to access a persona.
+type ErrApprovalRequired struct {
+	PersonaID  string
+	CallerType string
+}
+
+func (e *ErrApprovalRequired) Error() string {
+	return fmt.Sprintf("persona %s requires approval for %s access", e.PersonaID, e.CallerType)
+}
+
+// ---------------------------------------------------------------------------
+// Session management (agent sessions with scoped access grants)
+// ---------------------------------------------------------------------------
+
+// StartSession creates a new named session for an agent.
+func (pm *PersonaManager) StartSession(_ context.Context, agentDID, name string) (*domain.AgentSession, error) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	// Check for duplicate active session name for this agent.
+	for _, s := range pm.sessions {
+		if s.AgentDID == agentDID && s.Name == name && s.Status == domain.SessionActive {
+			return &s, nil // return existing session (reconnect)
+		}
+	}
+
+	sess := domain.AgentSession{
+		ID:        fmt.Sprintf("ses-%d", time.Now().UnixNano()),
+		Name:      name,
+		AgentDID:  agentDID,
+		Status:    domain.SessionActive,
+		Grants:    []domain.AccessGrant{},
+		CreatedAt: time.Now().Unix(),
+	}
+	pm.sessions = append(pm.sessions, sess)
+	pm.persistState()
+	return &sess, nil
+}
+
+// EndSession ends an active session, revokes all its grants, and closes
+// sensitive persona vaults that were opened via approval.
+func (pm *PersonaManager) EndSession(_ context.Context, agentDID, name string) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	for i, s := range pm.sessions {
+		if s.AgentDID == agentDID && s.Name == name && s.Status == domain.SessionActive {
+			// Collect sensitive personas to close after revoking grants.
+			var personasToClose []string
+			for _, g := range s.Grants {
+				pID := canonicalPersonaID(g.PersonaID)
+				p, ok := pm.personas[pID]
+				if ok && p.Tier == "sensitive" {
+					personasToClose = append(personasToClose, pID)
+				}
+			}
+
+			pm.sessions[i].Status = domain.SessionEnded
+			pm.sessions[i].EndedAt = time.Now().Unix()
+			pm.sessions[i].Grants = nil
+			pm.persistState()
+
+			// Close sensitive persona vaults that were opened via approval (not user unlock).
+			// Only close if no other active session has a grant for the same persona.
+			for _, pID := range personasToClose {
+				if pm.grantOpenedVaults[pID] && !pm.anyActiveGrantForPersona(pID) && pm.OnLock != nil {
+					pm.OnLock(strings.TrimPrefix(pID, "persona-"))
+					delete(pm.grantOpenedVaults, pID)
+				}
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("no active session named %q for agent %s", name, agentDID)
+}
+
+// GetSession returns an active session by agent DID and name.
+func (pm *PersonaManager) GetSession(_ context.Context, agentDID, name string) (*domain.AgentSession, error) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	for _, s := range pm.sessions {
+		if s.AgentDID == agentDID && s.Name == name && s.Status == domain.SessionActive {
+			return &s, nil
+		}
+	}
+	return nil, fmt.Errorf("no active session named %q for agent %s", name, agentDID)
+}
+
+// ListSessions returns all sessions (active only). If agentDID is non-empty, filters by agent.
+func (pm *PersonaManager) ListSessions(_ context.Context, agentDID string) ([]domain.AgentSession, error) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	var result []domain.AgentSession
+	for _, s := range pm.sessions {
+		if s.Status != domain.SessionActive {
+			continue
+		}
+		if agentDID != "" && s.AgentDID != agentDID {
+			continue
+		}
+		result = append(result, s)
+	}
+	return result, nil
+}
+
+// AddGrant adds a persona access grant to a session.
+func (pm *PersonaManager) AddGrant(_ context.Context, sessionID, personaID, scope, grantedBy string) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	for i, s := range pm.sessions {
+		if (s.ID == sessionID || s.Name == sessionID) && s.Status == domain.SessionActive {
+			grant := domain.AccessGrant{
+				ID:        fmt.Sprintf("grt-%d", time.Now().UnixNano()),
+				ClientDID: s.AgentDID,
+				PersonaID: personaID,
+				SessionID: s.ID,
+				Scope:     scope,
+				GrantedBy: grantedBy,
+				CreatedAt: time.Now().Unix(),
+			}
+			if scope == "session" {
+				grant.ExpiresAt = 0 // no expiry — lasts until session ends
+			} else {
+				grant.ExpiresAt = time.Now().Add(1 * time.Hour).Unix() // default 1h
+			}
+			pm.sessions[i].Grants = append(pm.sessions[i].Grants, grant)
+			pm.persistState()
+			return nil
+		}
+	}
+	return fmt.Errorf("session %q not found or not active", sessionID)
+}
+
+// CheckGrant checks if a session has an active grant for a persona.
+func (pm *PersonaManager) CheckGrant(_ context.Context, sessionID, personaID string) (bool, error) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	pID := canonicalPersonaID(personaID)
+	now := time.Now().Unix()
+	for _, s := range pm.sessions {
+		if (s.ID == sessionID || s.Name == sessionID) && s.Status == domain.SessionActive {
+			for _, g := range s.Grants {
+				gPID := canonicalPersonaID(g.PersonaID)
+				if gPID == pID && (g.ExpiresAt == 0 || g.ExpiresAt > now) {
+					return true, nil
+				}
+			}
+			return false, nil
+		}
+	}
+	return false, fmt.Errorf("session %q not found", sessionID)
+}
+
+// ---------------------------------------------------------------------------
+// Approval management
+// ---------------------------------------------------------------------------
+
+// RequestApproval creates a pending approval request.
+func (pm *PersonaManager) RequestApproval(_ context.Context, req domain.ApprovalRequest) (string, error) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	req.ID = fmt.Sprintf("apr-%d", time.Now().UnixNano())
+	req.Status = domain.ApprovalPending
+	req.CreatedAt = time.Now().Unix()
+	req.UpdatedAt = req.CreatedAt
+	if req.ExpiresAt == 0 {
+		req.ExpiresAt = time.Now().Add(30 * time.Minute).Unix()
+	}
+	pm.approvals = append(pm.approvals, req)
+	pm.persistState()
+
+	// Notify if callback is set
+	if pm.OnApprovalNeeded != nil {
+		pm.OnApprovalNeeded(req)
+	}
+
+	return req.ID, nil
+}
+
+// ApproveRequest approves a pending request and creates a session grant.
+func (pm *PersonaManager) ApproveRequest(_ context.Context, id, scope, grantedBy string) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	for i, a := range pm.approvals {
+		if a.ID == id && a.Status == domain.ApprovalPending {
+			pm.approvals[i].Status = domain.ApprovalApproved
+			pm.approvals[i].Scope = scope
+			pm.approvals[i].GrantedBy = grantedBy
+			pm.approvals[i].UpdatedAt = time.Now().Unix()
+
+			// Create grant in the session
+			if a.SessionID != "" {
+				for j, s := range pm.sessions {
+					if (s.ID == a.SessionID || s.Name == a.SessionID) && s.Status == domain.SessionActive {
+						grant := domain.AccessGrant{
+							ID:        fmt.Sprintf("grt-%d", time.Now().UnixNano()),
+							ClientDID: a.ClientDID,
+							PersonaID: a.PersonaID,
+							SessionID: a.SessionID,
+							Scope:     scope,
+							GrantedBy: grantedBy,
+							Reason:    a.Reason,
+							CreatedAt: time.Now().Unix(),
+						}
+						if scope == "session" {
+							grant.ExpiresAt = 0
+						} else {
+							grant.ExpiresAt = time.Now().Add(1 * time.Hour).Unix()
+						}
+						pm.sessions[j].Grants = append(pm.sessions[j].Grants, grant)
+						break
+					}
+				}
+			}
+
+			pm.persistState()
+			return nil
+		}
+	}
+	return fmt.Errorf("approval %q not found or not pending", id)
+}
+
+// DenyRequest denies a pending approval request.
+func (pm *PersonaManager) DenyRequest(_ context.Context, id string) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	for i, a := range pm.approvals {
+		if a.ID == id && a.Status == domain.ApprovalPending {
+			pm.approvals[i].Status = domain.ApprovalDenied
+			pm.approvals[i].UpdatedAt = time.Now().Unix()
+			pm.persistState()
+			return nil
+		}
+	}
+	return fmt.Errorf("approval %q not found or not pending", id)
+}
+
+// ListPending returns all pending approval requests.
+func (pm *PersonaManager) ListPending(_ context.Context) ([]domain.ApprovalRequest, error) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	now := time.Now().Unix()
+	var result []domain.ApprovalRequest
+	for _, a := range pm.approvals {
+		if a.Status == domain.ApprovalPending && (a.ExpiresAt == 0 || a.ExpiresAt > now) {
+			result = append(result, a)
+		}
+	}
+	return result, nil
 }
 
 // Create creates a new persona with a name and tier (open/restricted/locked).
@@ -1039,10 +1422,10 @@ func (pm *PersonaManager) Create(_ context.Context, name, tier string, passphras
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
-	if tier != "open" && tier != "restricted" && tier != "locked" {
+	if !domain.ValidTier(domain.PersonaTier(tier)) {
 		return "", ErrInvalidTier
 	}
-
+	// Migrate legacy tier names on creation.
 	id := "persona-" + name
 
 	// CRITICAL-01: Reject duplicate persona creation instead of silently overwriting.
@@ -1103,6 +1486,18 @@ func (pm *PersonaManager) GetDEKVersion(_ context.Context, personaID string) (in
 		v = 1 // unset means legacy v1
 	}
 	return v, nil
+}
+
+// GetTier returns the tier for a persona.
+func (pm *PersonaManager) GetTier(_ context.Context, personaID string) (string, error) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+	cid := canonicalPersonaID(personaID)
+	p, ok := pm.personas[cid]
+	if !ok {
+		return "", ErrPersonaNotFound
+	}
+	return p.Tier, nil
 }
 
 // Unlock loads the persona's DEK into RAM for the given TTL (seconds).

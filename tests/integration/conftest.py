@@ -135,33 +135,43 @@ def docker_services():
 # Docker persona initialization (session-scoped)
 # ---------------------------------------------------------------------------
 
-_ALL_PERSONAS = ["personal", "consumer", "professional", "social",
-                 "health", "financial", "citizen"]
+# Personas with their tiers (4-tier model).
+_PERSONA_TIERS = {
+    "general": "default",
+    "consumer": "standard",
+    "professional": "standard",
+    "social": "standard",
+    "health": "sensitive",
+    "financial": "locked",
+    "citizen": "standard",
+}
+_ALL_PERSONAS = list(_PERSONA_TIERS.keys())
 
 
 @pytest.fixture(scope="session", autouse=True)
 def docker_persona_setup(docker_services):
     """Create and unlock personas on real Go Core once per session.
 
-    Also purges any stale integration_test items from prior runs.
+    Uses the 4-tier model: default/standard auto-open, sensitive/locked need unlock.
     """
     if not DOCKER_MODE:
         return
-    # Persona management requires an admin-scoped client token.
     token = docker_services.client_token
     headers = {"Authorization": f"Bearer {token}"}
     base = docker_services.core_url
-    for name in _ALL_PERSONAS:
+    for name, tier in _PERSONA_TIERS.items():
         httpx.post(
             f"{base}/v1/personas",
-            json={"name": name, "tier": "open", "passphrase": "test"},
+            json={"name": name, "tier": tier, "passphrase": "test"},
             headers=headers, timeout=10,
         )
-        httpx.post(
-            f"{base}/v1/persona/unlock",
-            json={"persona": name, "passphrase": "test"},
-            headers=headers, timeout=10,
-        )
+        # Unlock sensitive/locked so tests can use them
+        if tier in ("sensitive", "locked"):
+            httpx.post(
+                f"{base}/v1/persona/unlock",
+                json={"persona": name, "passphrase": "test"},
+                headers=headers, timeout=10,
+            )
 
     # Clear all vaults at session start for a clean slate.
     clear_headers = {"Authorization": f"Bearer {docker_services.client_token}"}

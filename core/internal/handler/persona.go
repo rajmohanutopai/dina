@@ -18,9 +18,10 @@ import (
 type PersonaHandler struct {
 	Identity     *service.IdentityService
 	Personas     port.PersonaManager
-	VaultManager port.VaultManager // opens vault when persona is unlocked
-	KeyDeriver   port.KeyDeriver   // derives DEK from master seed
-	Seed         []byte            // master seed for DEK derivation
+	Approvals    port.ApprovalManager   // approval request management
+	VaultManager port.VaultManager      // opens vault when persona is unlocked
+	KeyDeriver   port.KeyDeriver        // derives DEK from master seed
+	Seed         []byte                 // master seed for DEK derivation
 }
 
 // createPersonaRequest is the JSON body for POST /v1/personas.
@@ -99,16 +100,34 @@ func (h *PersonaHandler) HandleCreatePersona(w http.ResponseWriter, r *http.Requ
 		case errors.Is(err, identity.ErrOrphanedVaultArtifacts):
 			http.Error(w, `{"error":"orphaned vault artifacts exist; use recovery flow (DINA_RECOVER_PERSONAS=1)"}`, http.StatusConflict)
 		case errors.Is(err, identity.ErrInvalidTier):
-			http.Error(w, `{"error":"invalid tier: must be open, restricted, or locked"}`, http.StatusBadRequest)
+			http.Error(w, `{"error":"invalid tier: must be default, standard, sensitive, or locked"}`, http.StatusBadRequest)
 		default:
 			http.Error(w, `{"error":"failed to create persona"}`, http.StatusInternalServerError)
 		}
 		return
 	}
 
+	// Auto-open vault for default and standard tier personas.
+	vaultStatus := "closed"
+	if (req.Tier == "default" || req.Tier == "standard") && h.VaultManager != nil && h.KeyDeriver != nil {
+		persona, perr := domain.NewPersonaName(req.Name)
+		if perr == nil {
+			dek, derr := h.KeyDeriver.DerivePersonaDEK(h.Seed, persona)
+			if derr != nil {
+				http.Error(w, `{"error":"persona created but vault DEK derivation failed"}`, http.StatusInternalServerError)
+				return
+			}
+			if oerr := h.VaultManager.Open(r.Context(), persona, dek); oerr != nil {
+				http.Error(w, `{"error":"persona created but vault failed to open: `+oerr.Error()+`"}`, http.StatusInternalServerError)
+				return
+			}
+			vaultStatus = "open"
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]string{"id": personaID, "status": "created"})
+	json.NewEncoder(w).Encode(map[string]string{"id": personaID, "status": "created", "vault": vaultStatus})
 }
 
 // HandleUnlockPersona handles POST /v1/persona/unlock.
@@ -219,4 +238,138 @@ func (h *PersonaHandler) HandleLockPersona(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "locked"})
+}
+
+// ---------------------------------------------------------------------------
+// Approval endpoints
+// ---------------------------------------------------------------------------
+
+type approveReq struct {
+	ID        string `json:"id"`
+	Scope     string `json:"scope"`      // "single", "session"
+	GrantedBy string `json:"granted_by"` // optional — defaults to auth identity
+}
+
+// HandleApprove handles POST /v1/persona/approve.
+func (h *PersonaHandler) HandleApprove(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	if h.Approvals == nil {
+		http.Error(w, `{"error":"approvals not configured"}`, http.StatusNotImplemented)
+		return
+	}
+
+	var req approveReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" {
+		http.Error(w, `{"error":"id is required"}`, http.StatusBadRequest)
+		return
+	}
+	if req.Scope == "" {
+		req.Scope = "session"
+	}
+	if req.GrantedBy == "" {
+		req.GrantedBy = "admin"
+	}
+
+	// Get persona from the approval request before approving (need it for vault open).
+	pending, _ := h.Approvals.ListPending(r.Context())
+	var approvedPersona string
+	for _, p := range pending {
+		if p.ID == req.ID {
+			approvedPersona = p.PersonaID
+			break
+		}
+	}
+
+	if err := h.Approvals.ApproveRequest(r.Context(), req.ID, req.Scope, req.GrantedBy); err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusNotFound)
+		return
+	}
+
+	// Open the vault for the approved persona if not already open.
+	if approvedPersona != "" && h.VaultManager != nil && h.KeyDeriver != nil {
+		rawName := strings.TrimPrefix(approvedPersona, "persona-")
+		persona, perr := domain.NewPersonaName(rawName)
+		if perr == nil && !h.VaultManager.IsOpen(persona) {
+			dekVersion, dekErr := h.Personas.GetDEKVersion(r.Context(), approvedPersona)
+			if dekErr != nil {
+				http.Error(w, `{"error":"approved but failed to get DEK version"}`, http.StatusInternalServerError)
+				return
+			}
+			if dekVersion == 0 {
+				dekVersion = 1
+			}
+			dek, dErr := h.KeyDeriver.DerivePersonaDEKVersioned(h.Seed, persona, dekVersion)
+			if dErr != nil {
+				http.Error(w, `{"error":"approved but failed to derive vault DEK"}`, http.StatusInternalServerError)
+				return
+			}
+			if oErr := h.VaultManager.Open(r.Context(), persona, dek); oErr != nil {
+				http.Error(w, `{"error":"approved but failed to open vault: `+oErr.Error()+`"}`, http.StatusInternalServerError)
+				return
+			}
+			// Mark this vault as opened via approval — only these get
+			// closed when the session ends or single-use grant is consumed.
+			// User/admin manually unlocked vaults are never auto-closed.
+			if mgr, ok := h.Personas.(*identity.PersonaManager); ok {
+				mgr.MarkGrantOpened(approvedPersona)
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "approved", "id": req.ID})
+}
+
+type denyReq struct {
+	ID string `json:"id"`
+}
+
+// HandleDeny handles POST /v1/persona/deny.
+func (h *PersonaHandler) HandleDeny(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	if h.Approvals == nil {
+		http.Error(w, `{"error":"approvals not configured"}`, http.StatusNotImplemented)
+		return
+	}
+
+	var req denyReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" {
+		http.Error(w, `{"error":"id is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.Approvals.DenyRequest(r.Context(), req.ID); err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "denied", "id": req.ID})
+}
+
+// HandleListApprovals handles GET /v1/persona/approvals.
+func (h *PersonaHandler) HandleListApprovals(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	if h.Approvals == nil {
+		http.Error(w, `{"error":"approvals not configured"}`, http.StatusNotImplemented)
+		return
+	}
+
+	pending, err := h.Approvals.ListPending(r.Context())
+	if err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"approvals": pending})
 }

@@ -73,8 +73,8 @@ func (o *OnboardingSequence) StartOnboarding(_ context.Context, email, passphras
 	// Step 8: Brain starts guardian loop.
 	// Step 9: Initial sync triggered.
 
-	// Only /personal persona created.
-	o.personas = []string{"personal"}
+	// Only /general persona created (default persona).
+	o.personas = []string{"general"}
 
 	// Default-deny sharing: no rules.
 	o.sharingRules = make(map[string]interface{})

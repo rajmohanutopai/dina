@@ -93,7 +93,13 @@ def api(core_url, auth_headers):
 # Persona setup (session-scoped, runs once)
 # ---------------------------------------------------------------------------
 
-PERSONAS = ["personal", "health", "financial", "consumer"]
+PERSONA_TIERS = {
+    "general": "default",
+    "health": "sensitive",
+    "financial": "locked",
+    "consumer": "standard",
+}
+PERSONAS = list(PERSONA_TIERS.keys())
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -101,12 +107,13 @@ def persona_setup(release_services, core_url, core_b_url, auth_headers):
     """Create and unlock personas on both Core nodes."""
     for url in (core_url, core_b_url):
         for name in PERSONAS:
+            tier = PERSONA_TIERS[name]
             try:
                 httpx.post(
                     f"{url}/v1/personas",
                     json={
                         "name": name,
-                        "tier": "restricted" if name == "health" else "open",
+                        "tier": tier,
                         "passphrase": "test",
                     },
                     headers=auth_headers,

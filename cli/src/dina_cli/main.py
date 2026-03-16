@@ -44,17 +44,19 @@ def _load_cfg(ctx: click.Context):
 def _make_client(ctx: click.Context) -> DinaClient:
     """Get or create the DinaClient from Click context."""
     if "client" not in ctx.obj:
-        ctx.obj["client"] = DinaClient(_load_cfg(ctx))
+        ctx.obj["client"] = DinaClient(_load_cfg(ctx), verbose=ctx.obj.get("verbose", False))
     return ctx.obj["client"]
 
 
 @click.group()
 @click.option("--json", "json_mode", is_flag=True, help="Machine-readable JSON output")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed request/response info")
 @click.pass_context
-def cli(ctx: click.Context, json_mode: bool) -> None:
+def cli(ctx: click.Context, json_mode: bool, verbose: bool) -> None:
     """Dina CLI — encrypted memory, PII scrubbing, action gating."""
     ctx.ensure_object(dict)
     ctx.obj["json"] = json_mode
+    ctx.obj["verbose"] = verbose
     ctx.obj["sessions"] = SessionStore()
 
 
@@ -93,13 +95,20 @@ def remember(ctx: click.Context, text: str, category: str) -> None:
 @cli.command()
 @click.argument("query")
 @click.option("--limit", default=10, help="Max results to return")
+@click.option("--session", default="", help="Session name for scoped access")
+@click.option("--persona", default="", help="Override default persona")
 @click.pass_context
-def recall(ctx: click.Context, query: str, limit: int) -> None:
+def recall(ctx: click.Context, query: str, limit: int, session: str, persona: str) -> None:
     """Search the encrypted vault."""
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
+    target_persona = persona or ctx.obj["config"].persona
     try:
-        items = client.vault_query(ctx.obj["config"].persona, query, limit=limit)
+        # Pass session name as extra header if specified
+        extra_headers = {}
+        if session:
+            extra_headers["X-Session"] = session
+        items = client.vault_query(target_persona, query, limit=limit, extra_headers=extra_headers)
         results = [
             {
                 "id": it.get("ID", it.get("id", ""))[:12],
@@ -111,7 +120,12 @@ def recall(ctx: click.Context, query: str, limit: int) -> None:
         ]
         print_result(results, json_mode)
     except DinaClientError as exc:
-        print_error(str(exc), json_mode)
+        if "persona locked" in str(exc).lower():
+            persona = ctx.obj["config"].persona
+            click.echo(f"The '{persona}' persona is locked.", err=True)
+            click.echo(f"Unlock it on your Home Node: ./dina-admin persona unlock --name {persona}", err=True)
+        else:
+            print_error(str(exc), json_mode)
         ctx.exit(1)
 
 
@@ -411,7 +425,7 @@ def configure(ctx: click.Context) -> None:
 
     persona = click.prompt(
         "Default persona",
-        default=existing.get("persona", "personal"),
+        default=existing.get("persona", "general"),
     )
 
     values: dict[str, Any] = {
@@ -828,4 +842,82 @@ def web(ctx: click.Context) -> None:
     url = config.core_url.rstrip("/") + "/admin/dashboard"
     click.echo(f"Opening {url}")
     webbrowser.open(url)
+
+
+# ── session ──────────────────────────────────────────────────────────────
+
+
+@cli.group()
+def session() -> None:
+    """Manage agent sessions (named workspaces with scoped access grants)."""
+
+
+@session.command("start")
+@click.option("--name", required=True, help="Session name (e.g. 'chair-research')")
+@click.pass_context
+def session_start(ctx: click.Context, name: str) -> None:
+    """Start a new named session."""
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        resp = client._request(
+            client._core, "POST", "/v1/session/start",
+            json={"name": name},
+        )
+        data = resp.json()
+        if json_mode:
+            print_result(data, json_mode)
+        else:
+            click.echo(f"  Session: {data.get('id', '?')} ({data.get('name', name)}) active")
+    except DinaClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
+@session.command("end")
+@click.option("--name", required=True, help="Session name to end")
+@click.pass_context
+def session_end(ctx: click.Context, name: str) -> None:
+    """End a session and revoke all its grants."""
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        client._request(
+            client._core, "POST", "/v1/session/end",
+            json={"name": name},
+        )
+        if not json_mode:
+            click.echo(f"  Session '{name}' ended. All grants revoked.")
+    except DinaClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
+@session.command("list")
+@click.pass_context
+def session_list(ctx: click.Context) -> None:
+    """List active sessions."""
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        resp = client._request(client._core, "GET", "/v1/sessions")
+        data = resp.json()
+        sessions = data.get("sessions", [])
+        if json_mode:
+            print_result(sessions, json_mode)
+        elif not sessions:
+            click.echo("  No active sessions.")
+        else:
+            click.echo(f"  {'ID':<16} {'Name':<20} {'Status':<10} {'Grants'}")
+            for s in sessions:
+                grants = ", ".join(
+                    g.get("persona_id", "?") for g in s.get("grants", [])
+                ) or "none"
+                click.echo(
+                    f"  {s.get('id', '?'):<16} {s.get('name', '?'):<20} "
+                    f"{s.get('status', '?'):<10} {grants}"
+                )
+    except DinaClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
 

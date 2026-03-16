@@ -48,7 +48,7 @@ func TestFixVerify_31_7_1_OnEnvelopeError_FallsBackToDeadDrop(t *testing.T) {
 
 	// Create a vault manager that reports "open" (unlocked).
 	vaultMgr := vault.NewManager(tmpDir)
-	personal, _ := domain.NewPersonaName("personal")
+	personal, _ := domain.NewPersonaName("general")
 	vaultMgr.Open(context.Background(), personal, testutil.TestDEK[:])
 
 	// Create dead drop + sweeper + rate limiter.
@@ -95,7 +95,7 @@ func TestFixVerify_31_7_1_OnEnvelopeError_FallsBackToDeadDrop(t *testing.T) {
 func TestFixVerify_31_7_2_ProcessPending_ReSpoolsOnError(t *testing.T) {
 	tmpDir := t.TempDir()
 	vaultMgr := vault.NewManager(tmpDir)
-	personal, _ := domain.NewPersonaName("personal")
+	personal, _ := domain.NewPersonaName("general")
 	vaultMgr.Open(context.Background(), personal, testutil.TestDEK[:])
 
 	ddDir := tmpDir + "/deaddrop"
@@ -317,7 +317,7 @@ func TestFixVerify_31_7_7_DeleteExpired_PrunesSentIDs(t *testing.T) {
 func TestFixVerify_31_7_8_VaultStore_RejectsOversizedItem(t *testing.T) {
 	tmpDir := t.TempDir()
 	mgr := vault.NewManager(tmpDir)
-	persona, _ := domain.NewPersonaName("personal")
+	persona, _ := domain.NewPersonaName("general")
 	mgr.Open(context.Background(), persona, testutil.TestDEK[:])
 
 	// Create an item exceeding the max size.
@@ -340,7 +340,7 @@ func TestFixVerify_31_7_8_VaultStore_RejectsOversizedItem(t *testing.T) {
 func TestFixVerify_31_7_9_VaultStore_RejectsInvalidType(t *testing.T) {
 	tmpDir := t.TempDir()
 	mgr := vault.NewManager(tmpDir)
-	persona, _ := domain.NewPersonaName("personal")
+	persona, _ := domain.NewPersonaName("general")
 	mgr.Open(context.Background(), persona, testutil.TestDEK[:])
 
 	_, err := mgr.Store(context.Background(), persona, domain.VaultItem{
@@ -361,7 +361,7 @@ func TestFixVerify_31_7_9_VaultStore_RejectsInvalidType(t *testing.T) {
 func TestFixVerify_31_7_10_VaultStoreBatch_RejectsInvalidItem(t *testing.T) {
 	tmpDir := t.TempDir()
 	mgr := vault.NewManager(tmpDir)
-	persona, _ := domain.NewPersonaName("personal")
+	persona, _ := domain.NewPersonaName("general")
 	mgr.Open(context.Background(), persona, testutil.TestDEK[:])
 
 	items := []domain.VaultItem{
@@ -382,7 +382,7 @@ func TestFixVerify_31_7_10_VaultStoreBatch_RejectsInvalidItem(t *testing.T) {
 func TestFixVerify_31_7_11_VaultStore_AcceptsValidTypes(t *testing.T) {
 	tmpDir := t.TempDir()
 	mgr := vault.NewManager(tmpDir)
-	persona, _ := domain.NewPersonaName("personal")
+	persona, _ := domain.NewPersonaName("general")
 	mgr.Open(context.Background(), persona, testutil.TestDEK[:])
 
 	validTypes := []string{"email", "message", "event", "note", "photo", "kv", "contact"}

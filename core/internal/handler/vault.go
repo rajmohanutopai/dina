@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/rajmohanutopai/dina/core/internal/adapter/identity"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/middleware"
 	"github.com/rajmohanutopai/dina/core/internal/port"
@@ -15,17 +16,18 @@ import (
 )
 
 // vaultErrStatus maps domain errors to HTTP status codes.
-// ErrPersonaLocked → 403 (client error, not server error).
 func vaultErrStatus(err error) int {
 	if errors.Is(err, domain.ErrPersonaLocked) {
+		return http.StatusForbidden
+	}
+	var approvalErr *identity.ErrApprovalRequired
+	if errors.As(err, &approvalErr) {
 		return http.StatusForbidden
 	}
 	return http.StatusInternalServerError
 }
 
-// vaultErrMsg returns a client-safe error message. When the error is
-// ErrPersonaLocked the client sees "persona locked" (actionable); for
-// all other errors the caller-supplied default is used.
+// vaultErrMsg returns a client-safe error message.
 func vaultErrMsg(err error, defaultMsg string) string {
 	if errors.Is(err, domain.ErrPersonaLocked) {
 		return "persona locked"
@@ -35,8 +37,9 @@ func vaultErrMsg(err error, defaultMsg string) string {
 
 // VaultHandler exposes vault CRUD and KV endpoints.
 type VaultHandler struct {
-	Vault *service.VaultService
-	PII   port.PIIScrubber
+	Vault     *service.VaultService
+	PII       port.PIIScrubber
+	Approvals port.ApprovalManager // optional — queues approval requests for sensitive personas
 }
 
 // agentDID extracts the agent DID from the request context (set by auth
@@ -109,6 +112,29 @@ func (h *VaultHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.Vault.Query(r.Context(), agentDID(r), persona, q)
 	if err != nil {
+		// If approval is needed, create an approval request and return 403 with details.
+		var approvalErr *identity.ErrApprovalRequired
+		if errors.As(err, &approvalErr) && h.Approvals != nil {
+			sessionName, _ := r.Context().Value(middleware.SessionNameKey).(string)
+			reqID, aprErr := h.Approvals.RequestApproval(r.Context(), domain.ApprovalRequest{
+				ClientDID: agentDID(r),
+				PersonaID: string(persona),
+				SessionID: sessionName,
+				Action:    "vault_query",
+				Reason:    req.Query,
+			})
+			if aprErr == nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				json.NewEncoder(w).Encode(map[string]string{
+					"error":       "approval_required",
+					"approval_id": reqID,
+					"persona":     string(persona),
+					"message":     "Access requires approval. Run: ./dina-admin persona approve " + reqID,
+				})
+				return
+			}
+		}
 		clientError(w, vaultErrMsg(err, "query failed"), vaultErrStatus(err), err)
 		return
 	}
@@ -211,7 +237,7 @@ func (h *VaultHandler) HandleGetItem(w http.ResponseWriter, r *http.Request) {
 	// The persona is passed as a query parameter since the URL does not contain it.
 	personaStr := r.URL.Query().Get("persona")
 	if personaStr == "" {
-		personaStr = "personal"
+		personaStr = "general"
 	}
 	persona, err := domain.NewPersonaName(personaStr)
 	if err != nil {
@@ -256,7 +282,7 @@ func (h *VaultHandler) HandleDeleteItem(w http.ResponseWriter, r *http.Request) 
 
 	personaStr := r.URL.Query().Get("persona")
 	if personaStr == "" {
-		personaStr = "personal"
+		personaStr = "general"
 	}
 	persona, err := domain.NewPersonaName(personaStr)
 	if err != nil {
@@ -296,7 +322,7 @@ func HandleClearVault(clearer VaultClearer) http.HandlerFunc {
 			return
 		}
 		if req.Persona == "" {
-			req.Persona = "personal"
+			req.Persona = "general"
 		}
 
 		persona, err := domain.NewPersonaName(req.Persona)
@@ -355,10 +381,10 @@ func (h *VaultHandler) HandlePutKV(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// MEDIUM-08: Accept persona from query param instead of hardcoding "personal".
+	// MEDIUM-08: Accept persona from query param instead of hardcoding "general".
 	personaStr := r.URL.Query().Get("persona")
 	if personaStr == "" {
-		personaStr = "personal"
+		personaStr = "general"
 	}
 	persona, pErr := domain.NewPersonaName(personaStr)
 	if pErr != nil {
@@ -395,10 +421,10 @@ func (h *VaultHandler) HandleGetKV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// MEDIUM-08: Accept persona from query param instead of hardcoding "personal".
+	// MEDIUM-08: Accept persona from query param instead of hardcoding "general".
 	personaStr := r.URL.Query().Get("persona")
 	if personaStr == "" {
-		personaStr = "personal"
+		personaStr = "general"
 	}
 	persona, pErr := domain.NewPersonaName(personaStr)
 	if pErr != nil {

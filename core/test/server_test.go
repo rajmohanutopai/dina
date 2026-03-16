@@ -303,10 +303,10 @@ func TestServer_15_2_2_StoreItem(t *testing.T) {
 	dir := t.TempDir()
 	mgr := vault.NewManager(dir)
 	dek := testutil.TestDEK[:]
-	if err := mgr.Open(context.Background(), "personal", dek); err != nil {
+	if err := mgr.Open(context.Background(), "general", dek); err != nil {
 		t.Fatalf("open vault: %v", err)
 	}
-	defer mgr.Close("personal")
+	defer mgr.Close("general")
 
 	gk := gatekeeper.New()
 	clk := clock.NewRealClock()
@@ -315,7 +315,7 @@ func TestServer_15_2_2_StoreItem(t *testing.T) {
 
 	// §15.2 #2: POST /v1/vault/store → 201 Created with {id: "..."}.
 	body, _ := json.Marshal(map[string]interface{}{
-		"persona": "personal",
+		"persona": "general",
 		"item": map[string]string{
 			"type":    "note",
 			"source":  "test",
@@ -581,11 +581,11 @@ func TestServer_15_2_11_VaultBatchStore(t *testing.T) {
 			Summary: fmt.Sprintf("batch item %d", i),
 		}
 	}
-	err := impl.StoreBatch("personal", items)
+	err := impl.StoreBatch("general", items)
 	testutil.RequireNoError(t, err)
 
 	// Verify items are actually stored — search should return them.
-	results, err := impl.Search("personal", "", "")
+	results, err := impl.Search("general", "", "")
 	testutil.RequireNoError(t, err)
 	testutil.RequireEqual(t, len(results), 100)
 
@@ -602,7 +602,7 @@ func TestServer_15_2_11_VaultBatchStore(t *testing.T) {
 	for i := range overflowItems {
 		overflowItems[i] = testutil.VaultItem{Type: "note", Source: "overflow"}
 	}
-	err = impl.StoreBatch("personal", overflowItems)
+	err = impl.StoreBatch("general", overflowItems)
 	testutil.RequireError(t, err)
 }
 
@@ -623,7 +623,7 @@ func TestServer_15_2_12_VaultBatchStoreExceedsCap(t *testing.T) {
 			Summary: fmt.Sprintf("valid item %d", i),
 		}
 	}
-	err := impl.StoreBatch("personal", validItems)
+	err := impl.StoreBatch("general", validItems)
 	testutil.RequireNoError(t, err)
 
 	// Negative control: 101 items (one over the cap) must be rejected.
@@ -635,7 +635,7 @@ func TestServer_15_2_12_VaultBatchStoreExceedsCap(t *testing.T) {
 			Summary: fmt.Sprintf("overflow item %d", i),
 		}
 	}
-	err = impl.StoreBatch("personal", overflowItems)
+	err = impl.StoreBatch("general", overflowItems)
 	testutil.RequireError(t, err)
 
 	// Also verify 200 items (well over cap) is rejected.
@@ -647,7 +647,7 @@ func TestServer_15_2_12_VaultBatchStoreExceedsCap(t *testing.T) {
 			Summary: fmt.Sprintf("big item %d", i),
 		}
 	}
-	err = impl.StoreBatch("personal", bigItems)
+	err = impl.StoreBatch("general", bigItems)
 	testutil.RequireError(t, err)
 }
 
@@ -712,7 +712,7 @@ func TestServer_15_3_2_CreatePersona(t *testing.T) {
 	// §15.3 #2: POST /v1/personas → 201 with new persona ID.
 	body, _ := json.Marshal(map[string]string{
 		"name":       "work",
-		"tier":       "open",
+		"tier":       "standard",
 		"passphrase": "test-passphrase-123",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/v1/personas", bytes.NewReader(body))
@@ -745,7 +745,7 @@ func TestServer_15_3_2_CreatePersona(t *testing.T) {
 	// Verify validation: empty name → 400.
 	badBody, _ := json.Marshal(map[string]string{
 		"name":       "",
-		"tier":       "open",
+		"tier":       "standard",
 		"passphrase": "test-passphrase-123",
 	})
 	req2 := httptest.NewRequest(http.MethodPost, "/v1/personas", bytes.NewReader(badBody))
@@ -769,7 +769,7 @@ func TestServer_15_3_2_CreatePersona(t *testing.T) {
 	// Verify duplicate detection: same name → 409 Conflict.
 	dupBody, _ := json.Marshal(map[string]string{
 		"name":       "work",
-		"tier":       "open",
+		"tier":       "standard",
 		"passphrase": "test-passphrase-123",
 	})
 	req4 := httptest.NewRequest(http.MethodPost, "/v1/personas", bytes.NewReader(dupBody))
@@ -791,11 +791,11 @@ func TestServer_15_3_3_ListPersonas(t *testing.T) {
 	testutil.RequireEqual(t, len(personas), 0)
 
 	// Positive: create personas and verify they appear in ListPersonas.
-	did1, err := impl.CreatePersona("personal", "standard")
+	did1, err := impl.CreatePersona("general", "standard")
 	testutil.RequireNoError(t, err)
 	testutil.RequireHasPrefix(t, did1, "did:")
 
-	did2, err := impl.CreatePersona("health", "restricted")
+	did2, err := impl.CreatePersona("health", "sensitive")
 	testutil.RequireNoError(t, err)
 	testutil.RequireHasPrefix(t, did2, "did:")
 

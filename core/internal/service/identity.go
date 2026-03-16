@@ -56,7 +56,7 @@ type SetupResult struct {
 // Setup performs identity bootstrap from a pre-existing seed:
 //  1. Derive a KEK from the passphrase and wrap the master seed.
 //  2. Derive the root signing key via SLIP-0010 and create the root DID.
-//  3. Create the default persona ("personal") and derive its DEK.
+//  3. Create the default persona ("general") and derive its DEK.
 //  4. Open the persona vault with the derived DEK.
 //
 // The seed must be generated and shown as mnemonic client-side (Python CLI
@@ -92,9 +92,9 @@ func (s *IdentityService) Setup(ctx context.Context, seed []byte, passphrase str
 		return nil, fmt.Errorf("identity setup: DID creation failed: %w", err)
 	}
 
-	// Step 3: Create the default "personal" persona.
-	const defaultPersona = "personal"
-	_, err = s.personas.Create(ctx, defaultPersona, string(domain.TierOpen))
+	// Step 3: Create the default "general" persona.
+	const defaultPersona = "general"
+	_, err = s.personas.Create(ctx, defaultPersona, string(domain.TierDefault))
 	if err != nil {
 		return nil, fmt.Errorf("identity setup: persona creation failed: %w", err)
 	}

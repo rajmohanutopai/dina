@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -1355,16 +1356,33 @@ func (b *BootSeq) Boot(cfg BootConfig) error {
 		return fmt.Errorf("boot: open identity: %w", err)
 	}
 
-	// From the personas list, only open "personal" (default persona, always unlocked).
-	// Other personas remain closed until explicit unlock.
+	// Auto-open personas based on tier:
+	//   default/standard → auto-open (DEK derived at boot)
+	//   sensitive/locked → stay closed (explicit unlock required)
 	for _, persona := range cfg.Personas {
-		if persona == "personal" {
-			personaDEK := deriveDEK(dek, "personal")
+		tier := ""
+		if cfg.PersonaTiers != nil {
+			tier = cfg.PersonaTiers[persona]
+		}
+
+		// "general" always opens (it's the default persona).
+		// Otherwise, open only default/standard tiers.
+		shouldOpen := persona == "general" ||
+			tier == "default" || tier == "standard"
+		if tier == "sensitive" || tier == "locked" {
+			shouldOpen = false
+		}
+		// No tier info and not "general" → don't open (fail-closed)
+		if tier == "" && persona != "general" {
+			shouldOpen = false
+		}
+
+		if shouldOpen {
+			personaDEK := deriveDEK(dek, persona)
 			if err := b.openVaultInternal(persona, personaDEK); err != nil {
-				return fmt.Errorf("boot: open %q: %w", persona, err)
+				slog.Warn("boot: failed to open persona", "persona", persona, "tier", tier, "error", err)
 			}
 		}
-		// Other personas are NOT opened at boot — they require explicit unlock.
 	}
 
 	return nil

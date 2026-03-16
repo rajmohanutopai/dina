@@ -48,14 +48,18 @@ func NewVaultService(
 // that the requesting agent has permission via the gatekeeper.
 // The agentDID identifies who is making the request for audit purposes.
 func (s *VaultService) Query(ctx context.Context, agentDID string, persona domain.PersonaName, q domain.SearchQuery) ([]domain.VaultItem, error) {
-	if !s.manager.IsOpen(persona) {
-		return nil, fmt.Errorf("vault query: %w", domain.ErrPersonaLocked)
-	}
-
+	// Check tier-based access FIRST — this returns ErrApprovalRequired for
+	// agents without session grants, which the handler converts to an approval
+	// request. Must run before IsOpen so closed sensitive personas trigger
+	// approval flow, not just "persona locked".
 	if s.personaMgr != nil {
 		if err := s.personaMgr.AccessPersona(ctx, string(persona)); err != nil {
 			return nil, fmt.Errorf("vault query: %w", err)
 		}
+	}
+
+	if !s.manager.IsOpen(persona) {
+		return nil, fmt.Errorf("vault query: %w", domain.ErrPersonaLocked)
 	}
 
 	intent := domain.Intent{
@@ -88,14 +92,13 @@ func (s *VaultService) Query(ctx context.Context, agentDID string, persona domai
 // GetItem retrieves a single vault item by its primary key.
 // It performs the same gatekeeper authorization checks as Query.
 func (s *VaultService) GetItem(ctx context.Context, agentDID string, persona domain.PersonaName, id string) (*domain.VaultItem, error) {
-	if !s.manager.IsOpen(persona) {
-		return nil, fmt.Errorf("vault get item: %w", domain.ErrPersonaLocked)
-	}
-
 	if s.personaMgr != nil {
 		if err := s.personaMgr.AccessPersona(ctx, string(persona)); err != nil {
 			return nil, fmt.Errorf("vault get item: %w", err)
 		}
+	}
+	if !s.manager.IsOpen(persona) {
+		return nil, fmt.Errorf("vault get item: %w", domain.ErrPersonaLocked)
 	}
 
 	intent := domain.Intent{
@@ -125,14 +128,13 @@ func (s *VaultService) GetKV(ctx context.Context, agentDID string, persona domai
 // Returns the ID of the stored item.
 // MEDIUM-07: Added agentDID param and gatekeeper check to match Query/GetItem pattern.
 func (s *VaultService) Store(ctx context.Context, agentDID string, persona domain.PersonaName, item domain.VaultItem) (string, error) {
-	if !s.manager.IsOpen(persona) {
-		return "", fmt.Errorf("vault store: %w", domain.ErrPersonaLocked)
-	}
-
 	if s.personaMgr != nil {
 		if err := s.personaMgr.AccessPersona(ctx, string(persona)); err != nil {
 			return "", fmt.Errorf("vault store: %w", err)
 		}
+	}
+	if !s.manager.IsOpen(persona) {
+		return "", fmt.Errorf("vault store: %w", domain.ErrPersonaLocked)
 	}
 
 	intent := domain.Intent{
@@ -164,14 +166,13 @@ func (s *VaultService) Store(ctx context.Context, agentDID string, persona domai
 // StoreBatch persists multiple items into a persona's vault in a single operation.
 // Returns the IDs of all stored items.
 func (s *VaultService) StoreBatch(ctx context.Context, agentDID string, persona domain.PersonaName, items []domain.VaultItem) ([]string, error) {
-	if !s.manager.IsOpen(persona) {
-		return nil, fmt.Errorf("vault store batch: %w", domain.ErrPersonaLocked)
-	}
-
 	if s.personaMgr != nil {
 		if err := s.personaMgr.AccessPersona(ctx, string(persona)); err != nil {
 			return nil, fmt.Errorf("vault store batch: %w", err)
 		}
+	}
+	if !s.manager.IsOpen(persona) {
+		return nil, fmt.Errorf("vault store batch: %w", domain.ErrPersonaLocked)
 	}
 
 	intent := domain.Intent{
@@ -205,14 +206,13 @@ func (s *VaultService) StoreBatch(ctx context.Context, agentDID string, persona 
 // Delete removes an item from a persona's vault by ID.
 // MEDIUM-07: Added agentDID param and gatekeeper check.
 func (s *VaultService) Delete(ctx context.Context, agentDID string, persona domain.PersonaName, id string) error {
-	if !s.manager.IsOpen(persona) {
-		return fmt.Errorf("vault delete: %w", domain.ErrPersonaLocked)
-	}
-
 	if s.personaMgr != nil {
 		if err := s.personaMgr.AccessPersona(ctx, string(persona)); err != nil {
 			return fmt.Errorf("vault delete: %w", err)
 		}
+	}
+	if !s.manager.IsOpen(persona) {
+		return fmt.Errorf("vault delete: %w", domain.ErrPersonaLocked)
 	}
 
 	intent := domain.Intent{
