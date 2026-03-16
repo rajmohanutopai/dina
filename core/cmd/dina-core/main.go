@@ -393,8 +393,9 @@ func main() {
 	}
 	slog.Info("Core service key ready", "did", coreKey.DID(), "key_dir", cfg.ServiceKeyDir)
 
-	// Load Brain's public key for signature verification.
-	// Keys are provisioned at install time — must be available at startup.
+	// Load service peer keys for signature verification.
+	// Brain is required (30s retry). Admin and connector are optional
+	// (loaded if provisioned, skipped otherwise).
 	var brainPub ed25519.PublicKey
 	var brainDID string
 	{
@@ -414,11 +415,20 @@ func main() {
 		slog.Info("Loaded Brain public key", "did", brainDID)
 	}
 
-	// 6b. Auth
+	// 6b. Auth — register all available service keys.
 	tokenValidator := auth.NewTokenValidator(map[string]string{})
-	if len(brainPub) > 0 {
-		tokenValidator.RegisterServiceKey(brainDID, []byte(brainPub), "brain")
-		slog.Info("Registered Brain service key in auth validator", "did", brainDID)
+	tokenValidator.RegisterServiceKey(brainDID, []byte(brainPub), "brain")
+	slog.Info("Registered service key", "service", "brain", "did", brainDID)
+
+	// Optional service peers: admin, connector. Load if provisioned, skip if not.
+	for _, peer := range []string{"admin", "connector"} {
+		pub, did, err := coreKey.LoadPeerKey(peer)
+		if err != nil {
+			slog.Debug("Optional service key not available", "service", peer)
+			continue
+		}
+		tokenValidator.RegisterServiceKey(did, []byte(pub), peer)
+		slog.Info("Registered service key", "service", peer, "did", did)
 	}
 	if cfg.ClientToken != "" {
 		tokenValidator.RegisterClientToken(cfg.ClientToken, "bootstrap", "admin")

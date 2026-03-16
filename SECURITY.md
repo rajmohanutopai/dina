@@ -60,9 +60,9 @@ Key rotation is possible without changing identity — only the derived keys rot
 
 Three authentication methods, each for a different trust boundary.
 
-### 1. Ed25519 Service Keys (Core ↔ Brain)
+### 1. Ed25519 Service Keys (Core ↔ Services)
 
-Internal service-to-service authentication. Each service has its own SLIP-0010-derived keypair. Private keys are isolated by separate Docker bind mounts — Core's private key never exists in Brain's container.
+Internal service-to-service authentication with per-service least privilege. Each service has its own SLIP-0010-derived keypair. Private keys are isolated by separate Docker bind mounts — Core's private key never exists in Brain's container.
 
 Every request is signed using a canonical format:
 
@@ -73,6 +73,16 @@ Every request is signed using a canonical format:
 Transmitted via headers: `X-DID`, `X-Timestamp`, `X-Signature`.
 
 **Replay protection:** 5-minute timestamp window + double-buffer nonce cache. Current generation collects all new nonces; previous generation is checked for duplicates. Rotation every 5 minutes or when current exceeds 100,000 entries.
+
+**Per-service authorization:** Core identifies which service signed the request (via the registered `serviceID`) and enforces a distinct allowlist for each:
+
+| Service | Allowed | Denied |
+|---------|---------|--------|
+| **brain** | Vault read/write, messaging, PII scrub, sessions, notifications, audit, health | DID signing/rotation, backup/export, persona unlock, pairing, admin UI |
+| **admin** | Persona management, devices, export/import, pairing, audit, admin UI, health | Vault read/write, messaging, PII scrub, DID signing, notifications |
+| **connector** | Vault store (ingestion only), task ACK, health | Everything else |
+
+Unknown service IDs are denied on all paths (fail-closed). This ensures a compromised connector cannot read vault data, and a compromised admin backend cannot access vault contents.
 
 ### 2. CLIENT_TOKEN (Admin Web UI) — Phase 1
 

@@ -4,8 +4,8 @@ package domain
 type TokenType string
 
 const (
-	TokenBrain   TokenType = "brain"
-	TokenClient  TokenType = "client"
+	TokenService TokenType = "service" // Ed25519 service key (brain, admin, connector)
+	TokenClient  TokenType = "client"  // Ed25519 device key or CLIENT_TOKEN
 	TokenUnknown TokenType = "unknown"
 )
 

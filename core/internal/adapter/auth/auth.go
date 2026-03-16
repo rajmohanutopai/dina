@@ -67,8 +67,8 @@ type servicePubKey struct {
 }
 
 // tokenValidator validates CLIENT_TOKEN, Ed25519 device signatures, and
-// Ed25519 service signatures. Service keys return TokenBrain; device keys
-// return TokenClient.
+// Ed25519 service signatures. Service keys return TokenService with the
+// serviceID as identity; device keys return TokenClient.
 type tokenValidator struct {
 	mu           sync.RWMutex
 	clientTokens map[string]string         // SHA-256(token) hex -> deviceID
@@ -193,7 +193,7 @@ func NewDefaultTokenValidator() *tokenValidator {
 
 // RegisterServiceKey registers an Ed25519 public key for a peer service.
 // Service keys are checked before device keys in VerifySignature() and
-// return TokenBrain instead of TokenClient.
+// return TokenService with the serviceID as the identity.
 func (v *tokenValidator) RegisterServiceKey(did string, pubKey []byte, serviceID string) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -240,8 +240,8 @@ func (v *tokenValidator) IdentifyToken(token string) (kind domain.TokenType, ide
 }
 
 // VerifySignature validates an Ed25519 request signature against the service
-// key registry (returns TokenBrain) or device key registry (returns TokenClient).
-// It enforces a clock-skew window and nonce cache to prevent replay attacks.
+// key registry (returns TokenService + serviceID) or device key registry
+// (returns TokenClient + deviceID). Enforces clock-skew window + nonce cache.
 //
 // The canonical signing payload is: "{method}\n{path}\n{query}\n{timestamp}\n{sha256hex(body)}"
 func (v *tokenValidator) VerifySignature(
@@ -264,7 +264,7 @@ func (v *tokenValidator) VerifySignature(
 	switch {
 	case isService:
 		pubKey = spk.publicKey
-		resultType = domain.TokenBrain
+		resultType = domain.TokenService
 		resultID = spk.serviceID
 	case isDevice:
 		if dpk.revoked {
@@ -1077,20 +1077,16 @@ func (c *adminEndpointChecker) IsAdminEndpoint(path string) bool {
 }
 
 // AllowedForTokenKind checks if a token kind (brain/client) can access a path.
-// An optional scope parameter differentiates client token privileges:
-//   - "admin": full access to all endpoints (bootstrap token)
-//   - "device": restricted — allowlist-only access to safe endpoints (paired devices)
 //
-// If no scope is provided, defaults to "admin" for backward compatibility
-// (existing tests call AllowedForTokenKind("client", path) without scope).
+// The scope parameter differentiates privilege levels:
+//   - Client tokens: "admin" (full access) or "device" (restricted allowlist)
+//   - Service keys:  serviceID ("brain", "admin", "connector") for per-service allowlists
 //
-// "brain" can access /v1/vault, /v1/msg, /v1/task, /v1/pii, /v1/did (non-sign,
-// non-rotate), /healthz, /readyz. Brain CANNOT access /v1/did/sign,
-// /v1/did/rotate, /v1/vault/backup, /v1/persona, /admin.
+// Scope is required. When omitted, clients default to "admin" and services
+// default to "brain" to avoid breaking the authz middleware flow.
 func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string, scope ...string) bool {
 	if kind == "client" {
-		// Determine scope: admin (full access) or device (restricted).
-		tokenScope := "admin" // default for backward-compat when called without scope
+		tokenScope := "admin"
 		if len(scope) > 0 && scope[0] != "" {
 			tokenScope = scope[0]
 		}
@@ -1135,15 +1131,46 @@ func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string, scope ...s
 		}
 		return false // deny by default
 	}
-	if kind != "brain" {
+	if kind != string(domain.TokenService) {
 		return false
 	}
 
-	// Brain is explicitly denied on these paths.
+	// Resolve service identity from scope. The scope carries the registered
+	// serviceID (e.g. "brain", "admin", "connector"). Each gets its own
+	// least-privilege allowlist.
+	serviceID := "brain"
+	if len(scope) > 0 && scope[0] != "" {
+		serviceID = scope[0]
+	}
+
+	return c.allowedForService(serviceID, path)
+}
+
+// allowedForService checks per-service allowlists. Each service identity
+// gets its own least-privilege set of permitted endpoints. This ensures
+// a compromised connector cannot access admin operations, and a compromised
+// admin backend cannot read vault data.
+func (c *adminEndpointChecker) allowedForService(serviceID, path string) bool {
+	switch serviceID {
+	case "brain":
+		return c.allowedForBrain(path)
+	case "admin":
+		return c.allowedForAdmin(path)
+	case "connector":
+		return c.allowedForConnector(path)
+	default:
+		// Unknown service ID — deny by default (fail-closed).
+		return false
+	}
+}
+
+// allowedForBrain: vault read/write, messaging, PII, reasoning, sessions.
+// Denied: signing, key rotation, backup/export, pairing, admin UI.
+func (c *adminEndpointChecker) allowedForBrain(path string) bool {
 	brainDenied := []string{
 		"/v1/did/sign",
-		"/v1/did/rotate",   // Planned — not yet routed in main.go; requires signature-based rotation (CORE-HIGH-14)
-		"/v1/vault/backup", // Planned — not yet routed in main.go; requires MigrationService handler wiring
+		"/v1/did/rotate",
+		"/v1/vault/backup",
 		"/v1/persona",
 		"/admin",
 		"/v1/export",
@@ -1156,7 +1183,6 @@ func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string, scope ...s
 		}
 	}
 
-	// Brain is allowed on these prefixes (after denials are checked).
 	brainAllowed := []string{
 		"/v1/vault",
 		"/v1/personas",
@@ -1169,7 +1195,7 @@ func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string, scope ...s
 		"/v1/notify",
 		"/v1/reminder",
 		"/v1/reminders",
-		"/v1/session",  // Brain can start sessions for its own persona access
+		"/v1/session",
 		"/v1/sessions",
 		"/v1/audit",
 		"/healthz",
@@ -1180,7 +1206,48 @@ func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string, scope ...s
 			return true
 		}
 	}
+	return false
+}
 
+// allowedForAdmin: persona management, device management, export/import,
+// pairing, health. Denied: direct vault read/write, signing, messaging.
+func (c *adminEndpointChecker) allowedForAdmin(path string) bool {
+	adminAllowed := []string{
+		"/v1/persona",
+		"/v1/personas",
+		"/v1/devices",
+		"/v1/export",
+		"/v1/import",
+		"/v1/pair",
+		"/v1/audit",
+		"/v1/session",
+		"/v1/sessions",
+		"/admin",
+		"/healthz",
+		"/readyz",
+	}
+	for _, allowed := range adminAllowed {
+		if path == allowed || hasPathPrefix(path, allowed) {
+			return true
+		}
+	}
+	return false
+}
+
+// allowedForConnector: vault store only (ingestion), health.
+// Connectors ingest data but cannot read, search, or admin.
+func (c *adminEndpointChecker) allowedForConnector(path string) bool {
+	connectorAllowed := []string{
+		"/v1/vault/store",
+		"/v1/task/ack",
+		"/healthz",
+		"/readyz",
+	}
+	for _, allowed := range connectorAllowed {
+		if path == allowed || hasPathPrefix(path, allowed) {
+			return true
+		}
+	}
 	return false
 }
 

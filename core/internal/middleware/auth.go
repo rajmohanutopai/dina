@@ -25,6 +25,7 @@ const (
 	TokenScopeKey  ContextKey = "token_scope"
 	CallerTypeKey  ContextKey = "caller_type"
 	SessionNameKey ContextKey = "session_name"
+	ServiceIDKey   ContextKey = "service_id"
 )
 
 // AuthzChecker is the interface for endpoint-level authorization checks.
@@ -130,18 +131,34 @@ func (a *Auth) Handler(next http.Handler) http.Handler {
 
 			ctx := context.WithValue(r.Context(), TokenKindKey, string(kind))
 			ctx = context.WithValue(ctx, AgentDIDKey, identity)
-			// Signature-authenticated devices always get "device" scope.
 			if string(kind) == "client" {
+				// Device key: CallerType=agent, scope=device.
 				ctx = context.WithValue(ctx, TokenScopeKey, "device")
 				ctx = context.WithValue(ctx, CallerTypeKey, "agent")
 			} else {
-				// Service key (brain). If Brain forwards X-Agent-DID,
-				// attribute access to the originating agent for persona
-				// approval/grant enforcement.
+				// Service key. The identity is the registered serviceID
+				// (e.g. "brain", "admin", "connector"). Store it as both
+				// ServiceIDKey (for downstream logic) and TokenScopeKey
+				// (for per-service authz allowlists).
+				serviceID := identity
+				ctx = context.WithValue(ctx, ServiceIDKey, serviceID)
+				ctx = context.WithValue(ctx, TokenScopeKey, serviceID)
+
+				// CallerType depends on which service:
+				//   brain     → "brain" (vault operations on behalf of itself)
+				//   admin     → "user"  (admin backend acts as the user)
+				//   connector → "brain" (ingestion, same privilege as brain for vault writes)
 				callerType := "brain"
+				switch serviceID {
+				case "admin":
+					callerType = "user"
+				}
+
+				// If service forwards X-Agent-DID, attribute access to the
+				// originating agent for persona approval/grant enforcement.
 				if agentOverride := r.Header.Get("X-Agent-DID"); agentOverride != "" {
 					ctx = context.WithValue(ctx, AgentDIDKey, agentOverride)
-					callerType = "agent" // treat as agent for persona access control
+					callerType = "agent"
 				}
 				ctx = context.WithValue(ctx, CallerTypeKey, callerType)
 			}
@@ -176,20 +193,18 @@ func (a *Auth) Handler(next http.Handler) http.Handler {
 		// Set context values for downstream handlers.
 		ctx := context.WithValue(r.Context(), TokenKindKey, string(kind))
 		ctx = context.WithValue(ctx, AgentDIDKey, identity)
-		// Resolve and propagate token scope for client tokens.
-		if string(kind) == "client" && a.ScopeResolver != nil {
+		// Bearer path only produces client tokens (services use Ed25519 signatures).
+		// Resolve scope and set CallerType accordingly.
+		if a.ScopeResolver != nil {
 			tokenScope := a.ScopeResolver.GetTokenScope(token)
 			ctx = context.WithValue(ctx, TokenScopeKey, tokenScope)
-			// admin-scoped client tokens = user, device-scoped = agent
 			if tokenScope == "admin" {
 				ctx = context.WithValue(ctx, CallerTypeKey, "user")
 			} else {
 				ctx = context.WithValue(ctx, CallerTypeKey, "agent")
 			}
-		} else if string(kind) == "brain" {
-			ctx = context.WithValue(ctx, CallerTypeKey, "brain")
 		} else {
-			ctx = context.WithValue(ctx, CallerTypeKey, "user") // default for admin
+			ctx = context.WithValue(ctx, CallerTypeKey, "user")
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

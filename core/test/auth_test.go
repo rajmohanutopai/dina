@@ -3,6 +3,7 @@ package test
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mr-tron/base58"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/auth"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
@@ -56,7 +58,7 @@ func TestAuth_1_1_ServiceKeyAuth(t *testing.T) {
 
 		kind, identity, err := tv.VerifySignature(brainDID, "POST", "/api/v1/process", "", ts, body, sigHex)
 		testutil.RequireNoError(t, err)
-		testutil.RequireEqual(t, kind, domain.TokenBrain)
+		testutil.RequireEqual(t, kind, domain.TokenService)
 		testutil.RequireEqual(t, identity, "brain")
 	})
 
@@ -86,8 +88,8 @@ func TestAuth_1_1_ServiceKeyAuth(t *testing.T) {
 		testutil.RequireError(t, err)
 	})
 
-	t.Run("5_BearerTokenNoLongerReturnsBrain", func(t *testing.T) {
-		// Bearer tokens should NOT return TokenBrain — brain uses signatures now.
+	t.Run("5_BearerTokenNoLongerReturnsService", func(t *testing.T) {
+		// Bearer tokens should NOT return TokenService — services use signatures now.
 		kind, _, err := tv.IdentifyToken(testutil.TestBrainToken)
 		testutil.RequireError(t, err)
 		testutil.RequireEqual(t, kind, domain.TokenUnknown)
@@ -1452,7 +1454,7 @@ func TestAuth_1_4_7_IsAdminEndpointAllowlist(t *testing.T) {
 	for _, path := range adminPaths {
 		testutil.RequireTrue(t, checker.IsAdminEndpoint(path),
 			"expected "+path+" to be classified as admin endpoint")
-		testutil.RequireFalse(t, checker.AllowedForTokenKind("brain", path),
+		testutil.RequireFalse(t, checker.AllowedForTokenKind("service", path, "brain"),
 			"BRAIN_TOKEN must be forbidden on "+path)
 	}
 
@@ -1469,7 +1471,7 @@ func TestAuth_1_4_7_IsAdminEndpointAllowlist(t *testing.T) {
 		testutil.RequireFalse(t, checker.IsAdminEndpoint(path),
 			"expected "+path+" to NOT be classified as admin endpoint")
 		// Brain should be allowed on non-admin paths.
-		testutil.RequireTrue(t, checker.AllowedForTokenKind("brain", path),
+		testutil.RequireTrue(t, checker.AllowedForTokenKind("service", path, "brain"),
 			"BRAIN_TOKEN must be allowed on non-admin path "+path)
 	}
 }
@@ -1526,7 +1528,7 @@ func TestAuth_1_4_8_ClientTokenFullAccess(t *testing.T) {
 		"/admin/dashboard",
 	}
 	for _, path := range brainDenied {
-		testutil.RequireFalse(t, checker.AllowedForTokenKind("brain", path),
+		testutil.RequireFalse(t, checker.AllowedForTokenKind("service", path, "brain"),
 			"BRAIN_TOKEN must NOT be allowed on "+path)
 	}
 }
@@ -1574,6 +1576,213 @@ func TestAuth_1_4_10_AdminStillAccessesVault(t *testing.T) {
 		testutil.RequireTrue(t, checker.AllowedForTokenKind("client", path, "admin"),
 			"admin-scoped client must access "+path)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// §1.5 Per-Service Least Privilege
+// ---------------------------------------------------------------------------
+
+// TST-CORE-AUTH-SVC-001
+func TestAuth_1_5_1_BrainServiceAllowlist(t *testing.T) {
+	// Brain service can access vault, messaging, PII, sessions.
+	// Brain CANNOT access admin, pairing, export, signing.
+	checker := auth.NewAdminEndpointChecker()
+
+	allowed := []string{
+		"/v1/vault/query",
+		"/v1/vault/store",
+		"/v1/msg/send",
+		"/v1/pii/scrub",
+		"/v1/session/start",
+		"/v1/sessions",
+		"/v1/notify",
+		"/healthz",
+	}
+	for _, path := range allowed {
+		testutil.RequireTrue(t, checker.AllowedForTokenKind("service", path, "brain"),
+			"brain service must access "+path)
+	}
+
+	denied := []string{
+		"/v1/did/sign",
+		"/v1/did/rotate",
+		"/v1/vault/backup",
+		"/v1/persona/unlock",
+		"/admin/dashboard",
+		"/v1/export",
+		"/v1/pair/initiate",
+	}
+	for _, path := range denied {
+		testutil.RequireFalse(t, checker.AllowedForTokenKind("service", path, "brain"),
+			"brain service must NOT access "+path)
+	}
+}
+
+// TST-CORE-AUTH-SVC-002
+func TestAuth_1_5_2_AdminServiceAllowlist(t *testing.T) {
+	// Admin service can access persona management, devices, export, pairing.
+	// Admin CANNOT access vault data, messaging, PII scrubbing.
+	checker := auth.NewAdminEndpointChecker()
+
+	allowed := []string{
+		"/v1/persona/unlock",
+		"/v1/personas",
+		"/v1/devices",
+		"/v1/export",
+		"/v1/pair/initiate",
+		"/v1/audit/query",
+		"/admin/dashboard",
+		"/healthz",
+	}
+	for _, path := range allowed {
+		testutil.RequireTrue(t, checker.AllowedForTokenKind("service", path, "admin"),
+			"admin service must access "+path)
+	}
+
+	denied := []string{
+		"/v1/vault/query",
+		"/v1/vault/store",
+		"/v1/msg/send",
+		"/v1/pii/scrub",
+		"/v1/notify",
+		"/v1/did/sign",
+	}
+	for _, path := range denied {
+		testutil.RequireFalse(t, checker.AllowedForTokenKind("service", path, "admin"),
+			"admin service must NOT access "+path)
+	}
+}
+
+// TST-CORE-AUTH-SVC-003
+func TestAuth_1_5_3_ConnectorServiceAllowlist(t *testing.T) {
+	// Connectors can store vault items and ACK tasks. Nothing else.
+	checker := auth.NewAdminEndpointChecker()
+
+	allowed := []string{
+		"/v1/vault/store",
+		"/v1/task/ack",
+		"/healthz",
+	}
+	for _, path := range allowed {
+		testutil.RequireTrue(t, checker.AllowedForTokenKind("service", path, "connector"),
+			"connector must access "+path)
+	}
+
+	denied := []string{
+		"/v1/vault/query",
+		"/v1/vault/item/some-id",
+		"/v1/msg/send",
+		"/v1/pii/scrub",
+		"/v1/persona/unlock",
+		"/admin/dashboard",
+		"/v1/export",
+		"/v1/did/sign",
+		"/v1/session/start",
+		"/v1/notify",
+	}
+	for _, path := range denied {
+		testutil.RequireFalse(t, checker.AllowedForTokenKind("service", path, "connector"),
+			"connector must NOT access "+path)
+	}
+}
+
+// TST-CORE-AUTH-SVC-004
+func TestAuth_1_5_4_UnknownServiceDenied(t *testing.T) {
+	// Unknown service IDs are denied on all paths (fail-closed).
+	checker := auth.NewAdminEndpointChecker()
+
+	paths := []string{
+		"/v1/vault/query",
+		"/v1/vault/store",
+		"/v1/persona/unlock",
+		"/admin/dashboard",
+		"/healthz",
+	}
+	for _, path := range paths {
+		testutil.RequireFalse(t, checker.AllowedForTokenKind("service", path, "rogue-service"),
+			"unknown service must be denied on "+path)
+	}
+}
+
+// TST-CORE-AUTH-SVC-005
+func TestAuth_1_5_5_ServiceIsolationCrossCheck(t *testing.T) {
+	// Prove that Brain and Admin have disjoint critical paths.
+	// Brain can vault/query but NOT persona/unlock.
+	// Admin can persona/unlock but NOT vault/query.
+	checker := auth.NewAdminEndpointChecker()
+
+	testutil.RequireTrue(t, checker.AllowedForTokenKind("service", "/v1/vault/query", "brain"),
+		"brain can read vault")
+	testutil.RequireFalse(t, checker.AllowedForTokenKind("service", "/v1/vault/query", "admin"),
+		"admin cannot read vault")
+
+	testutil.RequireTrue(t, checker.AllowedForTokenKind("service", "/v1/persona/unlock", "admin"),
+		"admin can unlock persona")
+	testutil.RequireFalse(t, checker.AllowedForTokenKind("service", "/v1/persona/unlock", "brain"),
+		"brain cannot unlock persona")
+
+	testutil.RequireTrue(t, checker.AllowedForTokenKind("service", "/v1/vault/store", "connector"),
+		"connector can store")
+	testutil.RequireFalse(t, checker.AllowedForTokenKind("service", "/v1/vault/query", "connector"),
+		"connector cannot query")
+}
+
+// TST-CORE-AUTH-SVC-006 Runtime end-to-end: register admin service key,
+// sign request, verify per-service authz admits admin paths and blocks brain paths.
+func TestAuth_1_5_6_RuntimeServiceKeyIsolation(t *testing.T) {
+	tv := auth.NewTokenValidator(map[string]string{})
+
+	// Generate two Ed25519 keypairs: one for brain, one for admin.
+	brainPub, brainPriv, _ := ed25519.GenerateKey(rand.Reader)
+	adminPub, adminPriv, _ := ed25519.GenerateKey(rand.Reader)
+
+	brainMC := append([]byte{0xed, 0x01}, brainPub...)
+	adminMC := append([]byte{0xed, 0x01}, adminPub...)
+	brainDID := "did:key:z" + base58.Encode(brainMC)
+	adminDID := "did:key:z" + base58.Encode(adminMC)
+
+	tv.RegisterServiceKey(brainDID, brainPub, "brain")
+	tv.RegisterServiceKey(adminDID, adminPub, "admin")
+
+	now := time.Now().UTC()
+	tv.SetClock(&fixedClock{t: now})
+	timestamp := now.Format("2006-01-02T15:04:05Z")
+
+	// Sign a request as brain.
+	body := []byte(`{"query":"test"}`)
+	brainSig := signRequest(brainPriv, "POST", "/v1/vault/query", "", timestamp, body)
+
+	kind, identity, err := tv.VerifySignature(brainDID, "POST", "/v1/vault/query", "", timestamp, body, brainSig)
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, kind, domain.TokenService)
+	testutil.RequireEqual(t, identity, "brain")
+
+	// Sign a request as admin.
+	body2 := []byte(`{"persona":"health"}`)
+	adminSig := signRequest(adminPriv, "POST", "/v1/persona/unlock", "", timestamp, body2)
+
+	kind2, identity2, err := tv.VerifySignature(adminDID, "POST", "/v1/persona/unlock", "", timestamp, body2, adminSig)
+	testutil.RequireNoError(t, err)
+	testutil.RequireEqual(t, kind2, domain.TokenService)
+	testutil.RequireEqual(t, identity2, "admin")
+
+	// Authz: brain can vault/query but NOT persona/unlock.
+	checker := auth.NewAdminEndpointChecker()
+	testutil.RequireTrue(t, checker.AllowedForTokenKind("service", "/v1/vault/query", identity),
+		"brain identity must access /v1/vault/query")
+	testutil.RequireFalse(t, checker.AllowedForTokenKind("service", "/v1/persona/unlock", identity),
+		"brain identity must NOT access /v1/persona/unlock")
+
+	// Authz: admin can persona/unlock but NOT vault/query.
+	testutil.RequireTrue(t, checker.AllowedForTokenKind("service", "/v1/persona/unlock", identity2),
+		"admin identity must access /v1/persona/unlock")
+	testutil.RequireFalse(t, checker.AllowedForTokenKind("service", "/v1/vault/query", identity2),
+		"admin identity must NOT access /v1/vault/query")
+
+	// Cross-check: brain's DID cannot authenticate as admin.
+	// If someone replays brain's signature against admin's DID, verification fails.
+	_, _, err = tv.VerifySignature(adminDID, "POST", "/v1/vault/query", "", timestamp, body, brainSig)
+	testutil.RequireError(t, err)
 }
 
 // TST-CORE-046

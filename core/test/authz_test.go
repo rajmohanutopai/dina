@@ -273,7 +273,8 @@ func TestAuthz_1_6_8_ExplicitContextTokenKind(t *testing.T) {
 
 	t.Run("brain_on_admin_path", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/v1/did/sign", nil)
-		ctx := context.WithValue(req.Context(), middleware.TokenKindKey, "brain")
+		ctx := context.WithValue(req.Context(), middleware.TokenKindKey, "service")
+		ctx = context.WithValue(ctx, middleware.TokenScopeKey, "brain")
 		req = req.WithContext(ctx)
 
 		rr := httptest.NewRecorder()
@@ -299,7 +300,8 @@ func TestAuthz_1_6_8_ExplicitContextTokenKind(t *testing.T) {
 
 	t.Run("brain_on_vault_query", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/v1/vault/query", nil)
-		ctx := context.WithValue(req.Context(), middleware.TokenKindKey, "brain")
+		ctx := context.WithValue(req.Context(), middleware.TokenKindKey, "service")
+		ctx = context.WithValue(ctx, middleware.TokenScopeKey, "brain")
 		req = req.WithContext(ctx)
 
 		rr := httptest.NewRecorder()

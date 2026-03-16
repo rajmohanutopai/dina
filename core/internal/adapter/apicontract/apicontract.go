@@ -98,10 +98,10 @@ func (c *APIContract) ListEndpoints() []APIContractEndpoint {
 	return out
 }
 
-// IsBrainCallable returns true if the endpoint accepts service-authenticated calls.
-// Delegates to the real auth checker: brain token must be allowed on this path.
+// IsBrainCallable returns true if the endpoint accepts Brain service-authenticated calls.
+// Delegates to the real auth checker with kind=service and scope=brain.
 func (c *APIContract) IsBrainCallable(path string) bool {
-	return c.checker.AllowedForTokenKind("brain", path)
+	return c.checker.AllowedForTokenKind("service", path, "brain")
 }
 
 // IsAdminOnly returns true if the endpoint requires admin/client access.

@@ -7,14 +7,15 @@ import (
 )
 
 // TokenValidator authenticates incoming requests.
-// Two-tier: Ed25519 signature (service keys → TokenBrain, device keys → TokenClient)
-// + CLIENT_TOKEN bearer (hash lookup → TokenClient).
+// Two-tier: Ed25519 signature (service keys → TokenService + serviceID,
+// device keys → TokenClient + deviceID) + CLIENT_TOKEN bearer (hash lookup → TokenClient).
 type TokenValidator interface {
 	ValidateClientToken(token string) (deviceID string, ok bool)
 	IdentifyToken(token string) (kind domain.TokenType, identity string, err error)
 	// VerifySignature validates an Ed25519 request signature.
-	// It checks service keys first (returns TokenBrain), then device keys
-	// (returns TokenClient). Enforces timestamp window + nonce replay cache.
+	// Checks service keys first (returns TokenService + serviceID), then
+	// device keys (returns TokenClient + deviceID). Enforces timestamp
+	// window + nonce replay cache.
 	VerifySignature(did, method, path, query, timestamp string, body []byte, signatureHex string) (kind domain.TokenType, identity string, err error)
 }
 

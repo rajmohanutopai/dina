@@ -2727,9 +2727,9 @@ func TestIdentity_3_6_8_NoMCPOrOpenClawVaultAccess(t *testing.T) {
 	}
 
 	// Positive control: brain CAN access vault endpoints (it needs them to function).
-	testutil.RequireTrue(t, checker.AllowedForTokenKind("brain", "/v1/vault/query"),
+	testutil.RequireTrue(t, checker.AllowedForTokenKind("service", "/v1/vault/query", "brain"),
 		"brain token must be allowed to access /v1/vault/query")
-	testutil.RequireTrue(t, checker.AllowedForTokenKind("brain", "/v1/vault/store"),
+	testutil.RequireTrue(t, checker.AllowedForTokenKind("service", "/v1/vault/store", "brain"),
 		"brain token must be allowed to access /v1/vault/store")
 
 	// Positive control: client with admin scope has full access.
@@ -2737,9 +2737,9 @@ func TestIdentity_3_6_8_NoMCPOrOpenClawVaultAccess(t *testing.T) {
 		"client admin token must access vault")
 
 	// Negative control: brain must NOT access admin-only paths.
-	testutil.RequireFalse(t, checker.AllowedForTokenKind("brain", "/v1/did/sign"),
+	testutil.RequireFalse(t, checker.AllowedForTokenKind("service", "/v1/did/sign", "brain"),
 		"brain must NOT access /v1/did/sign")
-	testutil.RequireFalse(t, checker.AllowedForTokenKind("brain", "/v1/persona/create"),
+	testutil.RequireFalse(t, checker.AllowedForTokenKind("service", "/v1/persona/create", "brain"),
 		"brain must NOT access /v1/persona/create")
 }
 
