@@ -144,6 +144,7 @@ async def test_core_client_7_1_3_search_vault(core_client) -> None:
         "POST",
         "/v1/vault/query",
         json={"persona": "personal", "query": "meeting", "mode": "hybrid", "limit": 50},
+        headers=None,
     )
 
 

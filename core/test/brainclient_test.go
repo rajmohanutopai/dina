@@ -880,26 +880,27 @@ func TestContract_30_5_2_MockBrainServesHealthz(t *testing.T) {
 
 	t.Run("mock_brain_contract_completeness", func(t *testing.T) {
 		// Verify the mockBrainServer in wiring_test.go serves exactly the
-		// expected routes: /healthz and /api/v1/process.
+		// expected routes: /healthz, /api/v1/process, and /api/v1/reason.
 		// Unknown paths must return 404 (closed-world assumption).
 		type testCase struct {
 			path   string
 			method string
+			body   string
 			expect int
 			desc   string
 		}
 		tests := []testCase{
-			{"/api/v1/process", "POST", http.StatusOK, "process endpoint must be served"},
-			{"/v1/health", "GET", http.StatusNotFound, "deprecated /v1/health must be 404"},
-			{"/v1/process", "POST", http.StatusNotFound, "wrong prefix must be 404"},
-			{"/api/v1/reason", "POST", http.StatusNotFound, "unimplemented endpoint must be 404"},
+			{"/api/v1/process", "POST", `{"type":"sync_complete"}`, http.StatusOK, "process endpoint must be served"},
+			{"/v1/health", "GET", "", http.StatusNotFound, "deprecated /v1/health must be 404"},
+			{"/v1/process", "POST", `{"type":"sync_complete"}`, http.StatusNotFound, "wrong prefix must be 404"},
+			{"/api/v1/reason", "POST", `{"prompt":"test query"}`, http.StatusOK, "reason endpoint must be served"},
 		}
 
 		for _, tc := range tests {
 			t.Run(tc.desc, func(t *testing.T) {
 				var body io.Reader
-				if tc.method == "POST" {
-					body = strings.NewReader(`{"type":"sync_complete"}`)
+				if tc.body != "" {
+					body = strings.NewReader(tc.body)
 				}
 				req := httptest.NewRequest(tc.method, tc.path, body)
 				rr := httptest.NewRecorder()

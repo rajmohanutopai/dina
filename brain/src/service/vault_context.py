@@ -32,7 +32,7 @@ from typing import Any
 
 import structlog
 
-from ..domain.errors import PersonaLockedError
+from ..domain.errors import ApprovalRequiredError, PersonaLockedError
 from ..port.core_client import CoreClient
 
 log = structlog.get_logger(__name__)
@@ -159,6 +159,10 @@ class ToolExecutor:
         self._core = core
         self._llm_router = llm_router
         self._tools_called: list[dict] = []
+        # Agent context — set before tool execution to attribute vault access
+        # to the originating agent instead of Brain's service key.
+        self.agent_did: str = ""
+        self.session: str = ""
 
     @property
     def tools_called(self) -> list[dict]:
@@ -187,6 +191,8 @@ class ToolExecutor:
         else:
             try:
                 result = await handler(args)
+            except ApprovalRequiredError:
+                raise  # propagate — must reach the CLI as an error, not a tool result
             except Exception as exc:
                 log.warning("tool_executor.error", tool=name, error=str(exc))
                 result = {"error": str(exc)}
@@ -230,8 +236,9 @@ class ToolExecutor:
             info: dict[str, Any] = {"name": persona}
             try:
                 # Fetch recent items (empty query = most recent items)
-                items = await self._core.query_vault(
-                    persona, query="", mode="fts5", limit=_BROWSE_LIMIT,
+                items = await self._core.search_vault(
+                    persona, query="", mode="fts5",
+                    agent_did=self.agent_did, session=self.session,
                 )
                 if items:
                     summaries = [
@@ -252,6 +259,8 @@ class ToolExecutor:
                     info["recent_summaries"] = []
             except PersonaLockedError:
                 info["status"] = "locked"
+            except ApprovalRequiredError:
+                info["status"] = "approval_required"
             except Exception:
                 info["status"] = "browse_failed"
 
@@ -266,8 +275,9 @@ class ToolExecutor:
             return {"items": [], "error": "persona is required"}
 
         try:
-            items = await self._core.query_vault(
-                persona, query="", mode="fts5", limit=_BROWSE_LIMIT,
+            items = await self._core.search_vault(
+                persona, query="", mode="fts5",
+                agent_did=self.agent_did, session=self.session,
             )
         except PersonaLockedError:
             log.info("tool_executor.persona_locked", persona=persona)
@@ -275,6 +285,8 @@ class ToolExecutor:
                 "items": [],
                 "note": f"Persona '{persona}' is locked. Skip it.",
             }
+        except ApprovalRequiredError:
+            raise  # propagate — must reach the CLI as an error
         except Exception as exc:
             log.warning(
                 "tool_executor.browse_failed",
@@ -319,6 +331,7 @@ class ToolExecutor:
         try:
             items = await self._core.search_vault(
                 persona, query, mode="hybrid", embedding=embedding,
+                agent_did=self.agent_did, session=self.session,
             )
         except PersonaLockedError:
             log.info("tool_executor.persona_locked", persona=persona)
@@ -326,6 +339,8 @@ class ToolExecutor:
                 "items": [],
                 "note": f"Persona '{persona}' is locked. Skip it.",
             }
+        except ApprovalRequiredError:
+            raise  # propagate — must reach the CLI as an error
         except Exception as exc:
             log.warning(
                 "tool_executor.search_failed",
@@ -442,9 +457,11 @@ class ReasoningAgent:
     async def reason(
         self,
         prompt: str,
-        persona_tier: str = "open",
+        persona_tier: str = "default",
         entity_vault: Any = None,
         provider: str | None = None,
+        agent_did: str = "",
+        session: str = "",
     ) -> dict:
         """Run the agentic reasoning loop.
 
@@ -472,6 +489,9 @@ class ReasoningAgent:
             ``tools_called``, and standard LLM response fields.
         """
         executor = ToolExecutor(self._core, llm_router=self._llm)
+        # Forward agent context so vault calls are attributed to the agent
+        executor.agent_did = agent_did
+        executor.session = session
         tools = self._get_tools()
 
         # Accumulated PII vault from scrubbing tool results.
@@ -634,9 +654,11 @@ class VaultContextAssembler:
     async def reason(
         self,
         prompt: str,
-        persona_tier: str = "open",
+        persona_tier: str = "default",
         entity_vault: Any = None,
         provider: str | None = None,
+        agent_did: str = "",
+        session: str = "",
     ) -> dict:
         """Run full agentic reasoning and return the complete result.
 
@@ -653,4 +675,5 @@ class VaultContextAssembler:
         """
         return await self._agent.reason(
             prompt, persona_tier, entity_vault=entity_vault, provider=provider,
+            agent_did=agent_did, session=session,
         )

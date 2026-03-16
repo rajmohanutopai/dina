@@ -8,6 +8,7 @@ import (
 	"crypto/ed25519"
 	crypto_rand "crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"log/slog"
@@ -316,16 +317,7 @@ func main() {
 	}
 	// Wire approval notification callback.
 	// For Phase 1: log + notify via WebSocket. Telegram relay is Phase 2.
-	personaMgr.OnApprovalNeeded = func(req domain.ApprovalRequest) {
-		slog.Info("Approval requested",
-			"approval_id", req.ID,
-			"client_did", req.ClientDID,
-			"persona", req.PersonaID,
-			"session", req.SessionID,
-			"reason", req.Reason,
-		)
-		// TODO: broadcast via WebSocket notifier for real-time UI
-	}
+	// OnApprovalNeeded is wired after notifier creation (see below).
 
 	// CRITICAL-01: Wire orphan-guard callback. If vault DB files exist on disk for
 	// a persona that has no in-memory state, reject creation to prevent DEK reuse.
@@ -504,11 +496,61 @@ func main() {
 	wsHub := ws.NewWSHub()
 	notifier := ws.NewNotifier(wsHub)
 
+	// Wire approval notification: broadcast to WebSocket + log.
+	personaMgr.OnApprovalNeeded = func(req domain.ApprovalRequest) {
+		slog.Info("Approval requested",
+			"approval_id", req.ID,
+			"client_did", req.ClientDID,
+			"persona", req.PersonaID,
+			"session", req.SessionID,
+			"reason", req.Reason,
+		)
+		// Broadcast to WebSocket clients (admin UI).
+		// Use json.Marshal to safely escape user-supplied fields.
+		payload, merr := json.Marshal(map[string]string{
+			"type":       "approval_needed",
+			"id":         req.ID,
+			"persona":    req.PersonaID,
+			"client_did": req.ClientDID,
+			"session":    req.SessionID,
+			"reason":     req.Reason,
+		})
+		if merr != nil {
+			slog.Error("failed to marshal approval notification", "error", merr)
+			return
+		}
+		notifier.Broadcast(context.Background(), payload)
+
+		// Brain push is wired after brain client creation (see below).
+	}
+
 	// 11. Pairing
 	pairer := pairing.NewManager(pairing.DefaultConfig())
 
 	// 12. Brain Client (service-key auth only).
 	brain := brainclient.New(cfg.BrainURL, coreKey)
+
+	// Wire approval → Brain push (now that brain client exists).
+	// The OnApprovalNeeded callback was partially set above (WebSocket broadcast).
+	// Here we add the Brain push for Telegram delivery.
+	origOnApproval := personaMgr.OnApprovalNeeded
+	personaMgr.OnApprovalNeeded = func(req domain.ApprovalRequest) {
+		if origOnApproval != nil {
+			origOnApproval(req)
+		}
+		go func() {
+			_ = brain.Process(context.Background(), domain.TaskEvent{
+				Type: "approval_needed",
+				Payload: map[string]interface{}{
+					"id":         req.ID,
+					"persona":    req.PersonaID,
+					"client_did": req.ClientDID,
+					"session":    req.SessionID,
+					"reason":     req.Reason,
+				},
+			})
+		}()
+	}
 
 	// 12b. Reminder Loop — fires reminders on schedule, delegates to Brain.
 	reminderLoop := reminder.NewLoop(reminderSched, clk)
@@ -883,6 +925,11 @@ func main() {
 	// Reminder API
 	mux.HandleFunc("/v1/reminder", reminderH.HandleStoreReminder)
 	mux.HandleFunc("/v1/reminders/pending", reminderH.HandleListPending)
+
+	// Brain reasoning proxy — agents interact with Brain via Core.
+	// Core re-signs the request with its own service key (agents have device keys).
+	reasonH := &handler.ReasonHandler{Brain: brain}
+	mux.HandleFunc("/api/v1/reason", reasonH.HandleReason)
 
 	// Admin proxy
 	mux.HandleFunc("/admin/sync-status", adminH.HandleSyncStatus)

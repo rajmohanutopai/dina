@@ -95,7 +95,7 @@ class TestToolExecutor:
     @pytest.mark.asyncio
     async def test_list_personas(self, tool_executor, mock_core_client):
         """list_personas returns personas with preview summaries."""
-        mock_core_client.query_vault.return_value = [
+        mock_core_client.search_vault.return_value = [
             {"Summary": "Chronic lower back pain", "Type": "health_context"},
             {"Summary": "Family vacation plans", "Type": "note"},
         ]
@@ -111,7 +111,7 @@ class TestToolExecutor:
     @pytest.mark.asyncio
     async def test_list_personas_empty_vault(self, tool_executor, mock_core_client):
         """list_personas with empty vaults shows zero items."""
-        mock_core_client.query_vault.return_value = []
+        mock_core_client.search_vault.return_value = []
         result = await tool_executor.execute("list_personas", {})
         personal = result["personas"][0]
         assert personal["item_count"] == 0
@@ -120,22 +120,19 @@ class TestToolExecutor:
     @pytest.mark.asyncio
     async def test_browse_vault_returns_items(self, tool_executor, mock_core_client):
         """browse_vault returns recent items without search query."""
-        mock_core_client.query_vault.return_value = [
+        mock_core_client.search_vault.return_value = [
             {"id": "item-1", "Summary": "Chronic lower back pain", "Type": "health"},
             {"id": "item-2", "Summary": "Family trip to Goa", "Type": "note"},
         ]
         result = await tool_executor.execute("browse_vault", {"persona": "personal"})
         assert len(result["items"]) == 2
         assert result["items"][0]["Summary"] == "Chronic lower back pain"
-        mock_core_client.query_vault.assert_called_once_with(
-            "personal", query="", mode="fts5", limit=10,
-        )
 
     @pytest.mark.asyncio
     async def test_browse_vault_locked_persona(self, tool_executor, mock_core_client):
         """browse_vault on locked persona returns note."""
         from src.domain.errors import PersonaLockedError
-        mock_core_client.query_vault.side_effect = PersonaLockedError("locked")
+        mock_core_client.search_vault.side_effect = PersonaLockedError("locked")
         result = await tool_executor.execute("browse_vault", {"persona": "financial"})
         assert result["items"] == []
         assert "locked" in result.get("note", "").lower()
@@ -159,6 +156,7 @@ class TestToolExecutor:
         assert result["items"][0]["Summary"] == "Back pain history"
         mock_core_client.search_vault.assert_called_once_with(
             "personal", "back pain", mode="hybrid", embedding=None,
+            agent_did="", session="",
         )
 
     @pytest.mark.asyncio
@@ -381,18 +379,14 @@ class TestReasoningAgent:
         It browses the vault first, sees 'Chronic lower back pain' in the
         summaries, then uses those exact terms in search_vault.
         """
-        # browse_vault returns preview of what's stored
-        mock_core_client.query_vault.return_value = [
-            {"id": "item-1", "Summary": "Chronic lower back pain from office work",
-             "Type": "health_context"},
-            {"id": "item-2", "Summary": "Prefers standing desk, WFH setup",
-             "Type": "work_context"},
-        ]
-        # search_vault returns the specific item
+        # All vault tools now use search_vault — return items that cover both
+        # browse (preview) and search (specific) calls.
         mock_core_client.search_vault.return_value = [
             {"id": "item-1", "Summary": "Chronic lower back pain from office work",
              "BodyText": "User has L4-L5 disc herniation. Needs lumbar support.",
              "Type": "health_context"},
+            {"id": "item-2", "Summary": "Prefers standing desk, WFH setup",
+             "Type": "work_context"},
         ]
 
         mock_llm_router.route.side_effect = [

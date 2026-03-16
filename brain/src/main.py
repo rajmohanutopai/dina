@@ -485,6 +485,7 @@ def create_app() -> FastAPI:
                 command_callbacks={"start": telegram_service.handle_start},
             )
             telegram_service.set_bot(telegram_bot)
+            guardian._telegram = telegram_service  # wire for approval prompts
             log.info("brain.telegram.configured")
         except ImportError:
             log.warning(

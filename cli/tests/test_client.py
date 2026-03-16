@@ -16,7 +16,6 @@ from dina_cli.config import Config
 def config():
     return Config(
         core_url="http://localhost:8100",
-        persona="personal",
         timeout=5.0,
         device_name="test-device",
     )

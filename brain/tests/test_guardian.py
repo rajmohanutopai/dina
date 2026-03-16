@@ -9463,3 +9463,69 @@ async def test_guardian_density_miss_path_lowercase_entity(
         f"Lowercase entity miss-path must strip fabricated trust claims. "
         f"Got: {content!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Approval needed event delivery
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_guardian_approval_needed_returns_notification(guardian):
+    """approval_needed event returns notification status."""
+    event = {
+        "type": "approval_needed",
+        "id": "apr-test-001",
+        "persona": "health",
+        "client_did": "did:key:z6MkAgent",
+        "session": "research-session",
+        "reason": "vault query",
+    }
+    result = await guardian.process_event(event)
+    assert result["type"] == "approval_notification"
+    assert result["approval_id"] == "apr-test-001"
+    assert result["status"] == "notified"
+
+
+@pytest.mark.asyncio
+async def test_guardian_approval_needed_calls_telegram(guardian):
+    """approval_needed event sends prompt to Telegram when available."""
+    mock_telegram = AsyncMock()
+    guardian._telegram = mock_telegram
+
+    event = {
+        "type": "approval_needed",
+        "id": "apr-tg-001",
+        "persona": "health",
+        "client_did": "did:key:z6MkAgent",
+        "session": "chair-research",
+        "reason": "office chairs",
+    }
+    result = await guardian.process_event(event)
+    assert result["status"] == "notified"
+    mock_telegram.send_approval_prompt.assert_awaited_once()
+    call_args = mock_telegram.send_approval_prompt.await_args.args[0]
+    assert call_args["id"] == "apr-tg-001"
+    assert call_args["persona"] == "health"
+    assert call_args["session"] == "chair-research"
+
+
+@pytest.mark.asyncio
+async def test_guardian_approval_needed_telegram_failure_graceful(guardian):
+    """Telegram send failure does not crash the approval handler."""
+    mock_telegram = AsyncMock()
+    mock_telegram.send_approval_prompt.side_effect = Exception("Telegram down")
+    guardian._telegram = mock_telegram
+
+    event = {
+        "type": "approval_needed",
+        "id": "apr-fail-001",
+        "persona": "health",
+        "client_did": "did:key:z6Mk",
+        "session": "s1",
+        "reason": "test",
+    }
+    result = await guardian.process_event(event)
+    # Must still return a result — not crash
+    assert result["type"] == "approval_notification"
+    assert result["approval_id"] == "apr-fail-001"

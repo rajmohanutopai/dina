@@ -37,6 +37,16 @@ log = logging.getLogger(__name__)
 # Core KV key for persisting paired Telegram user IDs.
 _KV_PAIRED_USERS = "telegram_paired_users"
 
+# Telegram Markdown V1 special characters that need escaping.
+_MD_ESCAPE_CHARS = r"_*`["
+
+
+def _escape_markdown(text: str) -> str:
+    """Escape Telegram Markdown V1 special characters in user-supplied text."""
+    for ch in _MD_ESCAPE_CHARS:
+        text = text.replace(ch, f"\\{ch}")
+    return text
+
 
 class TelegramService:
     """Orchestrates Telegram message handling, access control, and vault storage.
@@ -187,6 +197,12 @@ class TelegramService:
                 )
                 return
 
+        # --- Check for approval response (approve/deny commands) ---
+        approval_response = await self.handle_approval_response(text)
+        if approval_response:
+            await update.message.reply_text(approval_response, parse_mode="Markdown")
+            return
+
         # --- Process via Guardian ---
         try:
             result = await self._guardian.process_event({
@@ -226,6 +242,60 @@ class TelegramService:
         """
         if self._bot:
             await self._bot.send_message(chat_id, text)
+
+    async def send_approval_prompt(self, approval: dict) -> None:
+        """Send an approval request to all paired Telegram users.
+
+        The approval dict should contain: id, persona, client_did, session, reason.
+        Users reply with the approval ID to approve, or 'deny <id>' to deny.
+        """
+        if not self._bot or not self._paired_users:
+            return
+
+        # Escape Markdown special chars in user-supplied fields to prevent
+        # broken formatting or injection via query text.
+        reason = _escape_markdown(approval.get("reason", "not specified"))
+        msg = (
+            f"🔐 *Persona Access Request*\n\n"
+            f"Agent: `{approval.get('client_did', '?')}`\n"
+            f"Persona: `{approval.get('persona', '?')}`\n"
+            f"Session: `{approval.get('session', '?')}`\n"
+            f"Reason: {reason}\n\n"
+            f"Reply:\n"
+            f"`approve {approval.get('id', '?')}` — grant for session\n"
+            f"`deny {approval.get('id', '?')}` — deny access"
+        )
+
+        # For DMs, chat_id == user_id
+        for chat_id in self._paired_users:
+            try:
+                await self._bot.send_message(chat_id, msg, parse_mode="Markdown")
+            except Exception:
+                log.warning("telegram.approval_send_failed chat_id=%s", chat_id)
+
+    async def handle_approval_response(self, text: str) -> str | None:
+        """Check if a message is an approval response and process it.
+
+        Returns a response message if it was an approval command, None otherwise.
+        """
+        text = text.strip().lower()
+        if text.startswith("approve "):
+            approval_id = text[8:].strip()
+            if self._core:
+                try:
+                    await self._core.approve_request(approval_id, scope="session", granted_by="telegram")
+                    return f"✅ Approved: `{approval_id}`"
+                except Exception as exc:
+                    return f"❌ Failed to approve: {exc}"
+        elif text.startswith("deny "):
+            approval_id = text[5:].strip()
+            if self._core:
+                try:
+                    await self._core.deny_request(approval_id)
+                    return f"🚫 Denied: `{approval_id}`"
+                except Exception as exc:
+                    return f"❌ Failed to deny: {exc}"
+        return None
 
     # ------------------------------------------------------------------
     # Access control

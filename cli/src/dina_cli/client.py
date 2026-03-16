@@ -139,7 +139,26 @@ class DinaClient:
                 f"HTTP {status}: {server_msg}"
             ) from exc
 
-    # -- Vault -------------------------------------------------------------
+    # -- Reasoning (Brain-mediated, persona-blind) -------------------------
+
+    def reason(self, prompt: str, session: str = "") -> dict:
+        """Send a reasoning query to Brain via Core proxy.
+
+        Brain decides which personas to search. The agent never
+        specifies a persona — Brain handles routing, PII scrubbing,
+        and context assembly.
+        """
+        body: dict[str, Any] = {"prompt": prompt}
+        headers: dict[str, str] = {}
+        if session:
+            headers["X-Session"] = session
+        resp = self._request(
+            self._core, "POST", "/api/v1/reason",
+            json=body, headers=headers,
+        )
+        return resp.json()
+
+    # -- Vault (admin/internal only — agents use reason()) ----------------
 
     def vault_store(self, persona: str, item: dict) -> dict:
         """Store an item in the vault."""

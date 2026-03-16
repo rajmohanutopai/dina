@@ -68,12 +68,17 @@ def cli(ctx: click.Context, json_mode: bool, verbose: bool) -> None:
 @click.option("--category", default="note", help="Category: fact, preference, decision, relationship, event, note")
 @click.pass_context
 def remember(ctx: click.Context, text: str, category: str) -> None:
-    """Store a fact in the encrypted vault."""
+    """Store a fact in the encrypted vault.
+
+    Stores to the default persona (general) via Core's vault API.
+    Brain's reasoning pipeline handles persona routing for queries,
+    but storage goes directly to the general persona for simplicity.
+    """
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     try:
         result = client.vault_store(
-            ctx.obj["config"].persona,
+            "general",
             {
                 "type": "note",
                 "summary": text,
@@ -94,36 +99,33 @@ def remember(ctx: click.Context, text: str, category: str) -> None:
 
 @cli.command()
 @click.argument("query")
-@click.option("--limit", default=10, help="Max results to return")
 @click.option("--session", default="", help="Session name for scoped access")
-@click.option("--persona", default="", help="Override default persona")
 @click.pass_context
-def recall(ctx: click.Context, query: str, limit: int, session: str, persona: str) -> None:
-    """Search the encrypted vault."""
+def recall(ctx: click.Context, query: str, session: str) -> None:
+    """Search the encrypted vault via Brain reasoning.
+
+    Brain decides which personas to search based on the query content.
+    Agents are persona-blind — you never need to specify a persona.
+    """
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
-    target_persona = persona or ctx.obj["config"].persona
     try:
-        # Pass session name as extra header if specified
-        extra_headers = {}
-        if session:
-            extra_headers["X-Session"] = session
-        items = client.vault_query(target_persona, query, limit=limit, extra_headers=extra_headers)
-        results = [
-            {
-                "id": it.get("ID", it.get("id", ""))[:12],
-                "content": it.get("Summary", it.get("summary", "")),
-                "category": _extract_category(it),
-                "created": it.get("IngestedAt", it.get("timestamp", "")),
-            }
-            for it in items
-        ]
-        print_result(results, json_mode)
+        result = client.reason(query, session=session)
+        if json_mode:
+            print_result(result, json_mode)
+        else:
+            # Brain returns a natural language answer
+            answer = result.get("content", result.get("response", ""))
+            if answer:
+                click.echo(answer)
+            else:
+                click.echo("No results found.")
     except DinaClientError as exc:
-        if "persona locked" in str(exc).lower():
-            persona = ctx.obj["config"].persona
-            click.echo(f"The '{persona}' persona is locked.", err=True)
-            click.echo(f"Unlock it on your Home Node: ./dina-admin persona unlock --name {persona}", err=True)
+        if "approval_required" in str(exc).lower():
+            click.echo("Access to sensitive data requires approval.", err=True)
+            click.echo("A notification has been sent. Approve via Telegram or dina-admin.", err=True)
+        elif "persona locked" in str(exc).lower():
+            click.echo("Some data is locked. Unlock on your Home Node: ./dina-admin persona unlock", err=True)
         else:
             print_error(str(exc), json_mode)
         ctx.exit(1)
@@ -301,8 +303,15 @@ def draft(ctx: click.Context, content: str, recipient: str, channel: str, subjec
     draft_id = f"drf_{uuid.uuid4().hex[:8]}"
 
     try:
+        # Route through Brain — Brain decides persona routing for drafts
+        client.reason(
+            f"Draft a message to {recipient} via {channel}"
+            + (f" with subject '{subject}'" if subject else "")
+            + f": {content}",
+        )
+        # Also store the draft metadata via vault for tracking
         client.vault_store(
-            config.persona,
+            "general",  # drafts go to default persona
             {
                 "type": "email_draft",
                 "summary": f"Draft to {recipient}: {subject}" if subject else f"Draft to {recipient}",
@@ -370,13 +379,12 @@ def audit(ctx: click.Context, limit: int, action_filter: str) -> None:
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     try:
-        query = action_filter if action_filter else ""
-        items = client.vault_query(
-            ctx.obj["config"].persona,
-            query,
-            types=["email_draft", "note", "event", "message", "cart_handover"],
-            limit=limit,
+        # Use audit endpoint, not vault query
+        resp = client._request(
+            client._core, "GET", "/v1/audit/query",
+            params={"action": action_filter, "limit": str(limit)} if action_filter else {"limit": str(limit)},
         )
+        items = resp.json().get("entries", [])
         entries = [
             {
                 "action": it.get("Type", it.get("type", "")),
@@ -423,14 +431,8 @@ def configure(ctx: click.Context) -> None:
     click.echo()
     _configure_signature(core_url, device_name)
 
-    persona = click.prompt(
-        "Default persona",
-        default=existing.get("persona", "general"),
-    )
-
     values: dict[str, Any] = {
         "core_url": core_url,
-        "persona": persona,
         "device_name": device_name,
     }
 
@@ -444,7 +446,6 @@ def configure(ctx: click.Context) -> None:
         from .config import Config
         cfg = Config(
             core_url=core_url,
-            persona=persona,
             timeout=10.0,
             device_name=device_name,
         )

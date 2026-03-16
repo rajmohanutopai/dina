@@ -29,6 +29,20 @@ class AuthorizationError(DinaError):
     """Core returned HTTP 403 for authorization/policy reasons (not persona lock)."""
 
 
+class ApprovalRequiredError(DinaError):
+    """Core returned HTTP 403 with ``approval_required`` — agent needs user approval.
+
+    The approval request has already been created by Core and a notification
+    sent to the user (WebSocket + Telegram).  The CLI should inform the user
+    and exit; retrying the same query after approval will succeed.
+    """
+
+    def __init__(self, persona: str = "", approval_id: str = "", message: str = ""):
+        self.persona = persona
+        self.approval_id = approval_id
+        super().__init__(message or f"Approval required for persona '{persona}' (id={approval_id})")
+
+
 class CoreUnreachableError(DinaError):
     """Core HTTP endpoint is not responding.
 

@@ -135,8 +135,15 @@ func (a *Auth) Handler(next http.Handler) http.Handler {
 				ctx = context.WithValue(ctx, TokenScopeKey, "device")
 				ctx = context.WithValue(ctx, CallerTypeKey, "agent")
 			} else {
-				// Service key (brain)
-				ctx = context.WithValue(ctx, CallerTypeKey, "brain")
+				// Service key (brain). If Brain forwards X-Agent-DID,
+				// attribute access to the originating agent for persona
+				// approval/grant enforcement.
+				callerType := "brain"
+				if agentOverride := r.Header.Get("X-Agent-DID"); agentOverride != "" {
+					ctx = context.WithValue(ctx, AgentDIDKey, agentOverride)
+					callerType = "agent" // treat as agent for persona access control
+				}
+				ctx = context.WithValue(ctx, CallerTypeKey, callerType)
 			}
 			// Extract session name from X-Session header (agent sessions).
 			if sess := r.Header.Get("X-Session"); sess != "" {

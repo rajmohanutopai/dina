@@ -177,6 +177,29 @@ func (h *VaultHandler) HandleStore(w http.ResponseWriter, r *http.Request) {
 
 	id, err := h.Vault.Store(r.Context(), agentDID(r), persona, req.Item)
 	if err != nil {
+		// If approval is needed, create an approval request and return 403 with details.
+		var approvalErr *identity.ErrApprovalRequired
+		if errors.As(err, &approvalErr) && h.Approvals != nil {
+			sessionName, _ := r.Context().Value(middleware.SessionNameKey).(string)
+			reqID, aprErr := h.Approvals.RequestApproval(r.Context(), domain.ApprovalRequest{
+				ClientDID: agentDID(r),
+				PersonaID: string(persona),
+				SessionID: sessionName,
+				Action:    "vault_store",
+				Reason:    req.Item.Summary,
+			})
+			if aprErr == nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				json.NewEncoder(w).Encode(map[string]string{
+					"error":       "approval_required",
+					"approval_id": reqID,
+					"persona":     string(persona),
+					"message":     "Access requires approval. Run: ./dina-admin persona approve " + reqID,
+				})
+				return
+			}
+		}
 		clientError(w, vaultErrMsg(err, "store failed"), vaultErrStatus(err), err)
 		return
 	}

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 
 	"github.com/rajmohanutopai/dina/core/internal/adapter/adminproxy"
@@ -256,6 +257,15 @@ var mockBrainServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWr
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok","action":"none"}`))
+	case "/api/v1/reason":
+		var body map[string]interface{}
+		if json.NewDecoder(r.Body).Decode(&body) != nil || body["prompt"] == nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"content":"mock reasoning result","model":"test","tokens_in":10,"tokens_out":20}`))
 	case "/healthz":
 		n := atomic.AddInt32(&mockHealthCalls, 1)
 		if n > 1 {
@@ -329,9 +339,23 @@ var realPDSPublisher testutil.PDSPublisher = pds.NewPDSPublisher("did:plc:author
 // ---------- Portability implementations (§23) ----------
 
 var (
-	realExportManager testutil.ExportManager = portability.NewExportManager(os.TempDir())  // testutil superset (matches port + extras)
-	realImportManager testutil.ImportManager = portability.NewImportManager(os.TempDir(), false) // testutil superset (matches port + extras)
+	realExportManager testutil.ExportManager
+	realImportManager testutil.ImportManager
 )
+
+func init() {
+	// The test vault manager (vault.NewManager) creates .dek/.json files but not
+	// .sqlite files. The ExportManager expects identity.sqlite (and any persona
+	// .sqlite files) to exist on disk, so we create minimal stubs here.
+	for _, name := range []string{"identity.sqlite", "general.sqlite"} {
+		p := filepath.Join(vaultDir, name)
+		if _, err := os.Stat(p); os.IsNotExist(err) {
+			_ = os.WriteFile(p, []byte("stub-vault-for-export-test"), 0600)
+		}
+	}
+	realExportManager = portability.NewExportManager(vaultDir)
+	realImportManager = portability.NewImportManager(vaultDir, false)
+}
 
 // ---------- Bot Interface implementations (§25) ----------
 

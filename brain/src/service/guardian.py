@@ -39,7 +39,7 @@ from uuid import uuid4
 import structlog
 
 from ..domain.enums import IntentRisk, Priority, SilenceDecision
-from ..domain.errors import CoreUnreachableError, DinaError, LLMError, PersonaLockedError
+from ..domain.errors import ApprovalRequiredError, CoreUnreachableError, DinaError, LLMError, PersonaLockedError
 from ..port.core_client import CoreClient
 from ..port.scrubber import PIIScrubber
 
@@ -492,6 +492,7 @@ class GuardianLoop:
         nudge_assembler: Any,  # NudgeAssembler
         scratchpad: Any,  # ScratchpadService
         vault_context: Any = None,  # VaultContextAssembler
+        telegram: Any = None,  # TelegramService (for approval prompts)
     ) -> None:
         self._core = core
         self._llm = llm_router
@@ -500,6 +501,7 @@ class GuardianLoop:
         self._nudge = nudge_assembler
         self._scratchpad = scratchpad
         self._vault_context = vault_context
+        self._telegram = telegram
 
         # Tracks which personas are currently unlocked.
         self._unlocked_personas: set[str] = set()
@@ -833,6 +835,10 @@ class GuardianLoop:
             if event_type == "intent_approved":
                 return await self._handle_intent_approved(event)
 
+            # ---- Persona approval notification ----
+            if event_type == "approval_needed":
+                return await self._handle_approval_needed(event)
+
             # ---- Document ingestion (SS4.1) ----
             if event_type == "document_ingest":
                 return await self._handle_document_ingest(event)
@@ -920,6 +926,9 @@ class GuardianLoop:
                 "classification": priority,
                 "nudge": nudge,
             }
+
+        except ApprovalRequiredError:
+            raise  # propagate to HTTP layer → 403 with approval details
 
         except PersonaLockedError:
             persona_id = event.get("persona_id", "unknown")
@@ -1595,6 +1604,34 @@ class GuardianLoop:
     # ------------------------------------------------------------------
     # Reminder Fired (SS4.3 — License Renewal Story)
     # ------------------------------------------------------------------
+
+    async def _handle_approval_needed(self, event: dict) -> dict:
+        """Handle a persona access approval request.
+
+        Sends the approval prompt to Telegram (if configured) so the user
+        can approve or deny from their phone.
+        """
+        approval = {
+            "id": event.get("id", ""),
+            "persona": event.get("persona", ""),
+            "client_did": event.get("client_did", ""),
+            "session": event.get("session", ""),
+            "reason": event.get("reason", ""),
+        }
+
+        # Send to Telegram if available
+        if hasattr(self, "_telegram") and self._telegram:
+            try:
+                await self._telegram.send_approval_prompt(approval)
+                log.info("approval_prompt_sent", extra={"approval_id": approval["id"]})
+            except Exception:
+                log.warning("approval_prompt_send_failed", extra={"approval_id": approval["id"]})
+
+        return {
+            "type": "approval_notification",
+            "approval_id": approval["id"],
+            "status": "notified",
+        }
 
     async def _handle_reminder_fired(self, event: dict) -> dict:
         """Compose a contextual notification when a reminder fires.
@@ -2599,13 +2636,16 @@ class GuardianLoop:
         prompt = event.get("prompt") or event.get("body") or ""
         if isinstance(prompt, dict):
             prompt = str(prompt)
-        persona_tier = event.get("persona_tier", "open")
-        persona_tier = (persona_tier or "open").strip().lower()
-        if persona_tier not in ("open", "restricted", "locked"):
+        persona_tier = event.get("persona_tier", "default")
+        persona_tier = (persona_tier or "default").strip().lower()
+        if persona_tier not in ("default", "standard", "sensitive", "locked"):
             log.warning("guardian.invalid_persona_tier", extra={"tier": persona_tier})
-            persona_tier = "restricted"
+            persona_tier = "default"
         provider = event.get("provider")
         skip_vault = event.get("skip_vault_enrichment", False)
+        # Agent context — forwarded from Core for proper access attribution
+        agent_did = event.get("agent_did", "")
+        agent_session = event.get("session", "")
 
         try:
             vault = None
@@ -2635,6 +2675,8 @@ class GuardianLoop:
                         llm_prompt, persona_tier,
                         entity_vault=ev,
                         provider=provider,
+                        agent_did=agent_did,
+                        session=agent_session,
                     )
                     vault_enriched = result.get("vault_context_used", False)
                     if vault_enriched:
@@ -2642,6 +2684,8 @@ class GuardianLoop:
                             "guardian.reason.vault_enriched",
                             tools_called=len(result.get("tools_called", [])),
                         )
+                except ApprovalRequiredError:
+                    raise  # propagate — must reach the CLI as an approval prompt
                 except Exception as exc:
                     log.warning(
                         "guardian.reason.agent_failed",

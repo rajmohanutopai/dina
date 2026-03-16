@@ -748,3 +748,127 @@ def test_config_allowed_users_with_invalid_entries():
         cfg = load_brain_config()
 
     assert cfg.telegram_allowed_users == frozenset({111, 333})
+
+
+# ---------------------------------------------------------------------------
+# Approval delivery and response handling
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_send_approval_prompt_sends_to_all_paired(service, mock_bot):
+    """send_approval_prompt sends a Markdown message to each paired user."""
+    service._paired_users = {111, 222}
+
+    approval = {
+        "id": "apr-001",
+        "persona": "health",
+        "client_did": "did:key:z6MkAgent",
+        "session": "chair-research",
+        "reason": "office chairs for back pain",
+    }
+    await service.send_approval_prompt(approval)
+
+    assert mock_bot.send_message.await_count == 2
+    # Verify message content includes approval details
+    call_args = mock_bot.send_message.await_args_list[0]
+    msg = call_args.args[1]
+    assert "apr-001" in msg
+    assert "health" in msg
+    assert "chair-research" in msg
+    assert call_args.kwargs.get("parse_mode") == "Markdown"
+
+
+@pytest.mark.asyncio
+async def test_send_approval_prompt_escapes_markdown(service, mock_bot):
+    """Markdown special chars in reason field are escaped."""
+    service._paired_users = {111}
+
+    approval = {
+        "id": "apr-002",
+        "persona": "health",
+        "client_did": "did:key:z6MkAgent",
+        "session": "test",
+        "reason": "search *bold* _italic_ `code` [link](url)",
+    }
+    await service.send_approval_prompt(approval)
+
+    msg = mock_bot.send_message.await_args.args[1]
+    # Raw Markdown chars must be escaped to prevent Telegram formatting errors
+    assert "\\*bold\\*" in msg
+    assert "\\_italic\\_" in msg
+
+
+@pytest.mark.asyncio
+async def test_send_approval_prompt_no_bot(service):
+    """No-op when bot is not set."""
+    service._bot = None
+    service._paired_users = {111}
+    # Should not raise
+    await service.send_approval_prompt({"id": "apr-x"})
+
+
+@pytest.mark.asyncio
+async def test_send_approval_prompt_no_paired_users(service, mock_bot):
+    """No-op when no users are paired."""
+    service._paired_users = set()
+    await service.send_approval_prompt({"id": "apr-x"})
+    mock_bot.send_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_send_approval_prompt_send_failure_logged(service, mock_bot):
+    """Send failure is logged but does not raise."""
+    service._paired_users = {111}
+    mock_bot.send_message.side_effect = Exception("Telegram API down")
+    # Should not raise — best-effort delivery
+    await service.send_approval_prompt({"id": "apr-fail"})
+
+
+@pytest.mark.asyncio
+async def test_handle_approval_response_approve(service, mock_core):
+    """'approve <id>' calls core.approve_request and returns success."""
+    mock_core.approve_request = AsyncMock()
+    result = await service.handle_approval_response("approve apr-001")
+    assert result is not None
+    assert "apr-001" in result
+    assert "✅" in result
+    mock_core.approve_request.assert_awaited_once_with(
+        "apr-001", scope="session", granted_by="telegram",
+    )
+
+
+@pytest.mark.asyncio
+async def test_handle_approval_response_deny(service, mock_core):
+    """'deny <id>' calls core.deny_request and returns success."""
+    mock_core.deny_request = AsyncMock()
+    result = await service.handle_approval_response("deny apr-002")
+    assert result is not None
+    assert "apr-002" in result
+    assert "🚫" in result
+    mock_core.deny_request.assert_awaited_once_with("apr-002")
+
+
+@pytest.mark.asyncio
+async def test_handle_approval_response_approve_failure(service, mock_core):
+    """Approve failure returns error message (does not raise)."""
+    mock_core.approve_request = AsyncMock(side_effect=Exception("not found"))
+    result = await service.handle_approval_response("approve bad-id")
+    assert "❌" in result
+    assert "not found" in result
+
+
+@pytest.mark.asyncio
+async def test_handle_approval_response_not_a_command(service):
+    """Non-command text returns None."""
+    result = await service.handle_approval_response("hello world")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_handle_approval_response_case_insensitive(service, mock_core):
+    """Commands are case-insensitive."""
+    mock_core.approve_request = AsyncMock()
+    result = await service.handle_approval_response("  Approve APR-003  ")
+    assert result is not None
+    mock_core.approve_request.assert_awaited_once()

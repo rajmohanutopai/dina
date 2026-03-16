@@ -295,6 +295,73 @@ func (c *BrainClient) Reason(ctx context.Context, query string) (*domain.ReasonR
 	return &result, nil
 }
 
+// ReasonWithContext sends a reasoning query to Brain with the originating agent's
+// DID and session name. Brain forwards these as X-Agent-DID and X-Session headers
+// when it calls Core's vault APIs, so access control is attributed to the
+// originating agent, not to Brain.
+func (c *BrainClient) ReasonWithContext(ctx context.Context, query, agentDID, sessionName string) (*domain.ReasonResult, error) {
+	c.mu.Lock()
+	if c.cbState == stateOpen {
+		if time.Since(c.lastFailure) > c.cooldown {
+			c.cbState = stateHalfOpen
+		} else {
+			c.mu.Unlock()
+			return nil, ErrCircuitOpen
+		}
+	}
+	c.mu.Unlock()
+
+	if c.baseURL == "" {
+		c.recordFailure()
+		return nil, ErrEmptyURL
+	}
+
+	payload := map[string]string{
+		"prompt":    query,
+		"agent_did": agentDID,
+		"session":   sessionName,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("brainclient: marshal query: %w", err)
+	}
+
+	reqURL := c.baseURL + "/api/v1/reason"
+	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, bytes.NewReader(body))
+	if err != nil {
+		c.recordFailure()
+		return nil, fmt.Errorf("brainclient: request creation failed: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	c.signRequest(req, body)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		c.recordFailure()
+		return nil, fmt.Errorf("brainclient: request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.recordFailure()
+		return nil, fmt.Errorf("brainclient: failed to read response: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		c.recordFailure()
+		return nil, fmt.Errorf("brainclient: brain returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	c.recordSuccess()
+
+	var result domain.ReasonResult
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("brainclient: unmarshal response: %w", err)
+	}
+	return &result, nil
+}
+
 // IsHealthy returns true if the brain is available and healthy.
 func (c *BrainClient) IsHealthy(_ context.Context) bool {
 	if !c.IsAvailable() {

@@ -16,6 +16,8 @@ import (
 	"github.com/rajmohanutopai/dina/core/internal/adapter/identity"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/transport"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/handler"
+	"github.com/rajmohanutopai/dina/core/internal/middleware"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
 
@@ -499,6 +501,92 @@ func TestFixVerify_31_2_4_ReasonResultFields(t *testing.T) {
 	}
 	if result.TokensOut != 20 {
 		t.Errorf("expected TokensOut=20, got %d", result.TokensOut)
+	}
+}
+
+// TST-CORE-1201 ReasonHandler propagates approval_required from Brain as 403
+func TestFixVerify_34_3_ReasonApprovalPropagation(t *testing.T) {
+	// Scenario: Brain returns HTTP 403 with approval_required detail.
+	// Core's ReasonHandler must detect "approval_required" in the error
+	// and return 403 (not 502) to the client, so the CLI approval UX triggers.
+
+	// Mock Brain that returns 403 for reason requests.
+	approvalBrain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/reason" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"detail":{"error":"approval_required","persona":"health","approval_id":"apr-123","message":"Approval required for health"}}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer approvalBrain.Close()
+
+	client := brainclient.New(approvalBrain.URL, nil)
+	reasonHandler := &handler.ReasonHandler{Brain: client}
+
+	// 1. Agent caller → ReasonHandler detects approval_required → 403
+	body := strings.NewReader(`{"prompt":"office chairs for back pain"}`)
+	req := httptest.NewRequest("POST", "/api/v1/reason", body)
+	ctx := context.WithValue(req.Context(), middleware.CallerTypeKey, "agent")
+	ctx = context.WithValue(ctx, middleware.AgentDIDKey, "did:key:z6MkTestAgent")
+	ctx = context.WithValue(ctx, middleware.SessionNameKey, "chair-research")
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	reasonHandler.HandleReason(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for approval_required, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var respBody map[string]string
+	if err := json.Unmarshal(rr.Body.Bytes(), &respBody); err != nil {
+		t.Fatalf("response is not valid JSON: %v", err)
+	}
+	if respBody["error"] != "approval_required" {
+		t.Errorf("expected error='approval_required', got %q", respBody["error"])
+	}
+
+	// 2. Negative control: Brain returns 200 → ReasonHandler returns 200
+	happyBrain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"content":"Here are some office chairs...","model":"test"}`))
+	}))
+	defer happyBrain.Close()
+
+	happyClient := brainclient.New(happyBrain.URL, nil)
+	happyHandler := &handler.ReasonHandler{Brain: happyClient}
+
+	body2 := strings.NewReader(`{"prompt":"office chairs"}`)
+	req2 := httptest.NewRequest("POST", "/api/v1/reason", body2)
+	ctx2 := context.WithValue(req2.Context(), middleware.CallerTypeKey, "user")
+	req2 = req2.WithContext(ctx2)
+	rr2 := httptest.NewRecorder()
+
+	happyHandler.HandleReason(rr2, req2)
+
+	if rr2.Code != http.StatusOK {
+		t.Fatalf("expected 200 for successful reason, got %d: %s", rr2.Code, rr2.Body.String())
+	}
+
+	// 3. Negative control: Brain returns 500 → ReasonHandler returns 502 (not 403)
+	failBrain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`internal server error`))
+	}))
+	defer failBrain.Close()
+
+	failClient := brainclient.New(failBrain.URL, nil)
+	failHandler := &handler.ReasonHandler{Brain: failClient}
+
+	body3 := strings.NewReader(`{"prompt":"test query"}`)
+	req3 := httptest.NewRequest("POST", "/api/v1/reason", body3)
+	rr3 := httptest.NewRecorder()
+
+	failHandler.HandleReason(rr3, req3)
+
+	if rr3.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502 for brain error, got %d", rr3.Code)
 	}
 }
 

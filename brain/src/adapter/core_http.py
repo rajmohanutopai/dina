@@ -39,6 +39,7 @@ import httpx
 import structlog
 
 from ..domain.errors import (
+    ApprovalRequiredError,
     AuthorizationError,
     ConfigError,
     CoreUnreachableError,
@@ -224,6 +225,12 @@ class CoreHTTPClient:
                         raise PersonaLockedError(
                             f"Persona locked (path={_normalize_path(path)})"
                         )
+                    if error_code == "approval_required":
+                        raise ApprovalRequiredError(
+                            persona=body.get("persona", ""),
+                            approval_id=body.get("approval_id", ""),
+                            message=body.get("message", ""),
+                        )
                     raise AuthorizationError(
                         f"Core denied access (path={_normalize_path(path)}, error={error_code or 'forbidden'})"
                     )
@@ -309,17 +316,29 @@ class CoreHTTPClient:
     async def search_vault(
         self, persona_id: str, query: str, mode: str = "hybrid",
         embedding: list[float] | None = None,
+        agent_did: str = "", session: str = "",
     ) -> list[dict]:
-        """POST /v1/vault/query — hybrid FTS5 + cosine."""
+        """POST /v1/vault/query — hybrid FTS5 + cosine.
+
+        When agent_did and session are provided, Core attributes the access
+        to the originating agent (for approval/grant enforcement) instead of
+        to Brain's service key.
+        """
         body: dict[str, Any] = {
             "persona": persona_id, "query": query, "mode": mode, "limit": 50,
         }
         if embedding:
             body["embedding"] = embedding
+        extra_headers = {}
+        if agent_did:
+            extra_headers["X-Agent-DID"] = agent_did
+        if session:
+            extra_headers["X-Session"] = session
         resp = await self._request(
             "POST",
             "/v1/vault/query",
             json=body,
+            headers=extra_headers if extra_headers else None,
         )
         data = resp.json()
         items = data.get("items", []) if isinstance(data, dict) else data
@@ -392,6 +411,25 @@ class CoreHTTPClient:
         resp = await self._request("GET", path)
         data = resp.json()
         return data.get("entries", [])
+
+    # -- Persona Approvals ---------------------------------------------------
+
+    async def list_pending_approvals(self) -> list[dict]:
+        """GET /v1/persona/approvals — list pending approval requests."""
+        resp = await self._request("GET", "/v1/persona/approvals")
+        return resp.json().get("approvals", [])
+
+    async def approve_request(self, approval_id: str, scope: str = "session", granted_by: str = "telegram") -> dict:
+        """POST /v1/persona/approve — approve a pending request."""
+        resp = await self._request("POST", "/v1/persona/approve", json={
+            "id": approval_id, "scope": scope, "granted_by": granted_by,
+        })
+        return resp.json()
+
+    async def deny_request(self, approval_id: str) -> dict:
+        """POST /v1/persona/deny — deny a pending request."""
+        resp = await self._request("POST", "/v1/persona/deny", json={"id": approval_id})
+        return resp.json()
 
     # -- Health --------------------------------------------------------------
 

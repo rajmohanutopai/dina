@@ -1506,10 +1506,11 @@ func TestAuth_1_4_8_ClientTokenFullAccess(t *testing.T) {
 	}
 
 	// Device-scoped CLIENT_TOKEN must be allowed on safe endpoints.
+	// Agents are persona-blind: vault endpoints removed, /api/v1/reason added.
 	deviceAllowed := []string{
-		"/v1/vault/query",
-		"/v1/vault/store",
+		"/api/v1/reason",
 		"/v1/msg/send",
+		"/v1/session/start",
 		"/healthz",
 	}
 	for _, path := range deviceAllowed {
@@ -1527,6 +1528,51 @@ func TestAuth_1_4_8_ClientTokenFullAccess(t *testing.T) {
 	for _, path := range brainDenied {
 		testutil.RequireFalse(t, checker.AllowedForTokenKind("brain", path),
 			"BRAIN_TOKEN must NOT be allowed on "+path)
+	}
+}
+
+// TST-CORE-AUTH-PERSONA-BLIND-001
+func TestAuth_1_4_9_DeviceScopedBlockedFromVault(t *testing.T) {
+	// Agents (device-scoped) must NOT have direct vault access.
+	// They interact via Brain (/api/v1/reason) only.
+	checker := auth.NewAdminEndpointChecker()
+
+	// Device-scoped agents BLOCKED from vault read endpoints.
+	// Vault store is allowed (write-only, for remember command).
+	vaultBlocked := []string{
+		"/v1/vault/query",
+		"/v1/vault/item/some-id",
+		"/v1/vault/kv/some-key",
+	}
+	for _, path := range vaultBlocked {
+		testutil.RequireFalse(t, checker.AllowedForTokenKind("client", path, "device"),
+			"device-scoped agent must NOT access "+path)
+	}
+
+	// But allowed on Brain proxy
+	testutil.RequireTrue(t, checker.AllowedForTokenKind("client", "/api/v1/reason", "device"),
+		"device-scoped agent must access /api/v1/reason")
+
+	// And session endpoints
+	testutil.RequireTrue(t, checker.AllowedForTokenKind("client", "/v1/session/start", "device"),
+		"device-scoped agent must access /v1/session/start")
+}
+
+// TST-CORE-AUTH-PERSONA-BLIND-002
+func TestAuth_1_4_10_AdminStillAccessesVault(t *testing.T) {
+	// Admin-scoped clients still have full vault access.
+	checker := auth.NewAdminEndpointChecker()
+
+	adminAllowed := []string{
+		"/v1/vault/query",
+		"/v1/vault/store",
+		"/v1/vault/item/some-id",
+		"/api/v1/reason",
+		"/v1/session/start",
+	}
+	for _, path := range adminAllowed {
+		testutil.RequireTrue(t, checker.AllowedForTokenKind("client", path, "admin"),
+			"admin-scoped client must access "+path)
 	}
 }
 

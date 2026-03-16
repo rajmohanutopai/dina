@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -16,9 +17,11 @@ import (
 	"time"
 
 	"github.com/rajmohanutopai/dina/core/internal/adapter/gatekeeper"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/identity"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/handler"
 	"github.com/rajmohanutopai/dina/core/internal/ingress"
+	"github.com/rajmohanutopai/dina/core/internal/middleware"
 	"github.com/rajmohanutopai/dina/core/internal/service"
 	"github.com/rajmohanutopai/dina/core/test/testutil"
 )
@@ -72,6 +75,32 @@ func (v *gatekeeperVaultManager) OpenPersonas() []domain.PersonaName {
 }
 
 func (v *gatekeeperVaultManager) Checkpoint(_ domain.PersonaName) error { return nil }
+
+// VaultReader stubs — return empty results for service-level testing.
+func (v *gatekeeperVaultManager) Query(_ context.Context, _ domain.PersonaName, _ domain.SearchQuery) ([]domain.VaultItem, error) {
+	return nil, nil
+}
+func (v *gatekeeperVaultManager) GetItem(_ context.Context, _ domain.PersonaName, _ string) (*domain.VaultItem, error) {
+	return nil, nil
+}
+func (v *gatekeeperVaultManager) VectorSearch(_ context.Context, _ domain.PersonaName, _ []float32, _ int) ([]domain.VaultItem, error) {
+	return nil, nil
+}
+
+// VaultWriter stubs.
+func (v *gatekeeperVaultManager) Store(_ context.Context, _ domain.PersonaName, _ domain.VaultItem) (string, error) {
+	return "mock-id", nil
+}
+func (v *gatekeeperVaultManager) StoreBatch(_ context.Context, _ domain.PersonaName, items []domain.VaultItem) ([]string, error) {
+	ids := make([]string, len(items))
+	for i := range items {
+		ids[i] = fmt.Sprintf("mock-id-%d", i)
+	}
+	return ids, nil
+}
+func (v *gatekeeperVaultManager) Delete(_ context.Context, _ domain.PersonaName, _ string) error {
+	return nil
+}
 
 // gatekeeperMock evaluates intents based on configurable rules.
 type gatekeeperMock struct {
@@ -3347,6 +3376,262 @@ func TestSecurity_34_2_9_AgentCannotEscalateFromTaskScopedToFullAccess(t *testin
 			testutil.RequireNoError(t, err)
 			if d.Allowed {
 				t.Errorf("brain must NEVER be allowed %q regardless of constraints", action)
+			}
+		}
+	})
+}
+
+// --------------------------------------------------------------------------
+// §34.3 Approval Lifecycle — Full End-to-End
+//
+// Tests the complete approval flow:
+//   Agent starts session → query sensitive persona → approval_required →
+//   admin approves → retry succeeds → session end revokes grants.
+//
+// This validates the integration between PersonaManager, VaultService,
+// and the 4-tier access control model.
+// --------------------------------------------------------------------------
+
+// TST-CORE-1200
+func TestAdv_34_3_ApprovalLifecycleE2E(t *testing.T) {
+	ctx := context.Background()
+	agentDID := "did:key:z6MkTestOpenClawAgent"
+	sessionName := "chair-research"
+
+	// 1. Set up a fresh PersonaManager with 4-tier personas.
+	pm := identity.NewPersonaManager()
+	_, err := pm.Create(ctx, "general", "default")
+	testutil.RequireNoError(t, err)
+	_, err = pm.Create(ctx, "consumer", "standard")
+	testutil.RequireNoError(t, err)
+	_, err = pm.Create(ctx, "health", "sensitive")
+	testutil.RequireNoError(t, err)
+	_, err = pm.Create(ctx, "financial", "locked", "test-hash-123")
+	testutil.RequireNoError(t, err)
+
+	// Track approval notifications.
+	var approvalNotifications []domain.ApprovalRequest
+	pm.OnApprovalNeeded = func(req domain.ApprovalRequest) {
+		approvalNotifications = append(approvalNotifications, req)
+	}
+
+	// 2. Set up VaultService with real gatekeeper and PersonaManager.
+	vault := newGatekeeperVaultManager()
+	_ = vault.Open(ctx, "identity", nil)
+	_ = vault.Open(ctx, "general", nil)
+	_ = vault.Open(ctx, "consumer", nil)
+	_ = vault.Open(ctx, "health", nil)
+	// financial is NOT opened (locked tier)
+
+	gk := gatekeeper.New()
+	clk := &gatekeeperClock{now: time.Now()}
+	vaultSvc := service.NewVaultService(vault, vault, vault, gk, clk)
+	vaultSvc.SetPersonaManager(pm)
+
+	// Helper: build agent context.
+	agentCtx := func(did, session string) context.Context {
+		c := context.WithValue(ctx, middleware.CallerTypeKey, "agent")
+		c = context.WithValue(c, middleware.AgentDIDKey, did)
+		if session != "" {
+			c = context.WithValue(c, middleware.SessionNameKey, session)
+		}
+		return c
+	}
+
+	// Helper: build user context.
+	userCtx := func() context.Context {
+		return context.WithValue(ctx, middleware.CallerTypeKey, "user")
+	}
+
+	q := domain.SearchQuery{Query: "office chairs", Mode: "fts5"}
+
+	// ---------- Phase 1: Default persona — always allowed ----------
+	t.Run("default_persona_always_allowed_for_agent", func(t *testing.T) {
+		aCtx := agentCtx(agentDID, "")
+		_, err := vaultSvc.Query(aCtx, agentDID, "general", q)
+		testutil.RequireNoError(t, err)
+	})
+
+	// ---------- Phase 2: Standard persona — agent without session gets denied ----------
+	t.Run("standard_persona_denied_without_session", func(t *testing.T) {
+		aCtx := agentCtx(agentDID, "")
+		_, err := vaultSvc.Query(aCtx, agentDID, "consumer", q)
+		testutil.RequireError(t, err)
+		var approvalErr *identity.ErrApprovalRequired
+		if !errors.As(err, &approvalErr) {
+			t.Fatalf("expected ErrApprovalRequired, got: %v", err)
+		}
+	})
+
+	// ---------- Phase 3: Start session, sensitive still denied ----------
+	t.Run("sensitive_persona_denied_then_approved", func(t *testing.T) {
+		// Start a session.
+		sess, err := pm.StartSession(ctx, agentDID, sessionName)
+		testutil.RequireNoError(t, err)
+		if sess.Name != sessionName {
+			t.Fatalf("expected session name %q, got %q", sessionName, sess.Name)
+		}
+
+		// Query sensitive persona → approval_required.
+		aCtx := agentCtx(agentDID, sessionName)
+		_, err = vaultSvc.Query(aCtx, agentDID, "health", q)
+		testutil.RequireError(t, err)
+		var approvalErr *identity.ErrApprovalRequired
+		if !errors.As(err, &approvalErr) {
+			t.Fatalf("expected ErrApprovalRequired for sensitive persona, got: %v", err)
+		}
+
+		// Create an approval request (this is what the vault handler does).
+		reqID, err := pm.RequestApproval(ctx, domain.ApprovalRequest{
+			ClientDID: agentDID,
+			PersonaID: "persona-health",
+			SessionID: sessionName,
+			Action:    "vault_query",
+			Reason:    "office chairs",
+		})
+		testutil.RequireNoError(t, err)
+		if reqID == "" {
+			t.Fatal("approval request ID must not be empty")
+		}
+
+		// Verify notification was fired.
+		if len(approvalNotifications) == 0 {
+			t.Fatal("OnApprovalNeeded must be called when approval is requested")
+		}
+		lastNotif := approvalNotifications[len(approvalNotifications)-1]
+		if lastNotif.PersonaID != "persona-health" {
+			t.Fatalf("notification persona mismatch: got %q", lastNotif.PersonaID)
+		}
+
+		// Verify the approval is pending.
+		pending, err := pm.ListPending(ctx)
+		testutil.RequireNoError(t, err)
+		found := false
+		for _, p := range pending {
+			if p.ID == reqID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatal("approval request must appear in pending list")
+		}
+
+		// Still denied before approval (retry must fail).
+		_, err = vaultSvc.Query(aCtx, agentDID, "health", q)
+		testutil.RequireError(t, err)
+
+		// Admin approves with session scope.
+		err = pm.ApproveRequest(ctx, reqID, "session", "admin")
+		testutil.RequireNoError(t, err)
+
+		// Verify approval is no longer pending.
+		pending2, _ := pm.ListPending(ctx)
+		for _, p := range pending2 {
+			if p.ID == reqID {
+				t.Fatal("approved request must not appear in pending list")
+			}
+		}
+
+		// Retry — now succeeds!
+		_, err = vaultSvc.Query(aCtx, agentDID, "health", q)
+		testutil.RequireNoError(t, err)
+	})
+
+	// ---------- Phase 4: Different agent is still denied ----------
+	t.Run("cross_agent_grant_isolation", func(t *testing.T) {
+		otherAgent := "did:key:z6MkOtherMaliciousAgent"
+		// Start a different agent's session.
+		_, err := pm.StartSession(ctx, otherAgent, "evil-session")
+		testutil.RequireNoError(t, err)
+
+		aCtx := agentCtx(otherAgent, "evil-session")
+		_, err = vaultSvc.Query(aCtx, otherAgent, "health", q)
+		testutil.RequireError(t, err)
+		var approvalErr *identity.ErrApprovalRequired
+		if !errors.As(err, &approvalErr) {
+			t.Fatalf("other agent must not inherit first agent's grant, got: %v", err)
+		}
+	})
+
+	// ---------- Phase 5: User/admin always allowed for sensitive ----------
+	t.Run("user_always_allowed_for_sensitive", func(t *testing.T) {
+		uCtx := userCtx()
+		_, err := vaultSvc.Query(uCtx, "user", "health", q)
+		testutil.RequireNoError(t, err)
+	})
+
+	// ---------- Phase 6: Locked persona denies agents even with session ----------
+	t.Run("locked_persona_denies_agent_unconditionally", func(t *testing.T) {
+		// Wire passphrase verifier so Unlock works.
+		pm.VerifyPassphrase = func(hash, passphrase string) (bool, error) {
+			return hash == passphrase, nil // simple equality for test
+		}
+		// Unlock locked persona (so vault is open).
+		err := pm.Unlock(ctx, "financial", "test-hash-123", 300)
+		testutil.RequireNoError(t, err)
+		_ = vault.Open(ctx, "financial", nil)
+
+		// Agent is STILL denied — locked tier denies agents even when unlocked.
+		aCtx := agentCtx(agentDID, sessionName)
+		_, err = vaultSvc.Query(aCtx, agentDID, "financial", q)
+		testutil.RequireError(t, err)
+		if !strings.Contains(err.Error(), "locked") {
+			t.Fatalf("expected locked persona error, got: %v", err)
+		}
+
+		// But user is allowed.
+		uCtx := userCtx()
+		_, err = vaultSvc.Query(uCtx, "user", "financial", q)
+		testutil.RequireNoError(t, err)
+	})
+
+	// ---------- Phase 7: Session end revokes grants ----------
+	t.Run("session_end_revokes_grants", func(t *testing.T) {
+		// End the session.
+		err := pm.EndSession(ctx, agentDID, sessionName)
+		testutil.RequireNoError(t, err)
+
+		// Start a new session with same name.
+		_, err = pm.StartSession(ctx, agentDID, "new-session")
+		testutil.RequireNoError(t, err)
+
+		// Query health — should be denied again (grant was in old session).
+		aCtx := agentCtx(agentDID, "new-session")
+		_, err = vaultSvc.Query(aCtx, agentDID, "health", q)
+		testutil.RequireError(t, err)
+		var approvalErr *identity.ErrApprovalRequired
+		if !errors.As(err, &approvalErr) {
+			t.Fatalf("expected ErrApprovalRequired after session end, got: %v", err)
+		}
+	})
+
+	// ---------- Phase 8: Deny flow ----------
+	t.Run("denied_approval_stays_denied", func(t *testing.T) {
+		aCtx := agentCtx(agentDID, "new-session")
+
+		// Create and deny an approval request.
+		reqID, err := pm.RequestApproval(ctx, domain.ApprovalRequest{
+			ClientDID: agentDID,
+			PersonaID: "persona-health",
+			SessionID: "new-session",
+			Action:    "vault_query",
+			Reason:    "office chairs retry",
+		})
+		testutil.RequireNoError(t, err)
+
+		err = pm.DenyRequest(ctx, reqID)
+		testutil.RequireNoError(t, err)
+
+		// Agent still denied after deny.
+		_, err = vaultSvc.Query(aCtx, agentDID, "health", q)
+		testutil.RequireError(t, err)
+
+		// Denied request not in pending list.
+		pending, _ := pm.ListPending(ctx)
+		for _, p := range pending {
+			if p.ID == reqID {
+				t.Fatal("denied request must not appear in pending list")
 			}
 		}
 	})

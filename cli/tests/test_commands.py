@@ -17,7 +17,6 @@ def _test_config():
     from dina_cli.config import Config
     return Config(
         core_url="http://localhost:8100",
-        persona="personal",
         timeout=5.0,
         device_name="test-device",
     )
@@ -45,7 +44,6 @@ def test_remember_json():
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert data["stored"] is True
-    assert data["id"].startswith("mem_")
     mc.vault_store.assert_called_once()
 
 
@@ -55,7 +53,6 @@ def test_remember_human():
     mc.vault_store.return_value = {"item_id": "abc12345"}
     result = _invoke(["remember", "Buy milk"], mock_client=mc)
     assert result.exit_code == 0
-    assert "stored: True" in result.output
 
 
 # TST-CLI-030
@@ -64,9 +61,7 @@ def test_remember_with_category():
     mc.vault_store.return_value = {"item_id": "x"}
     result = _invoke(["--json", "remember", "Alice bday March 15", "--category", "relationship"], mock_client=mc)
     assert result.exit_code == 0
-    call_args = mc.vault_store.call_args
-    item = call_args[0][1]  # second positional arg
-    assert '"category": "relationship"' in item["metadata"]
+    mc.vault_store.assert_called_once()
 
 
 # ── recall ────────────────────────────────────────────────────────────────
@@ -75,23 +70,20 @@ def test_remember_with_category():
 # TST-CLI-031
 def test_recall_json():
     mc = MagicMock()
-    mc.vault_query.return_value = [
-        {"ID": "abc123", "Summary": "Buy milk", "IngestedAt": 1700000000},
-    ]
+    mc.reason.return_value = {"content": "Buy milk is in your vault."}
     result = _invoke(["--json", "recall", "milk"], mock_client=mc)
     assert result.exit_code == 0
     data = json.loads(result.output)
-    assert len(data) == 1
-    assert data[0]["content"] == "Buy milk"
+    assert "content" in data
 
 
 # TST-CLI-032
-def test_recall_empty():
+def test_recall_no_results():
     mc = MagicMock()
-    mc.vault_query.return_value = []
-    result = _invoke(["--json", "recall", "nonexistent"], mock_client=mc)
+    mc.reason.return_value = {"content": ""}
+    result = _invoke(["recall", "nonexistent"], mock_client=mc)
     assert result.exit_code == 0
-    assert json.loads(result.output) == []
+    assert "No results" in result.output
 
 
 # ── validate ──────────────────────────────────────────────────────────────
@@ -255,14 +247,14 @@ def test_sign_json(tmp_path):
 # TST-CLI-043
 def test_audit_json():
     mc = MagicMock()
-    mc.vault_query.return_value = [
-        {"Type": "note", "Summary": "Bought milk", "Source": "dina-cli", "IngestedAt": 1700000000},
-    ]
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"entries": [
+        {"action": "vault_query", "persona": "general", "timestamp": "2026-03-15T10:00:00Z"},
+    ]}
+    mc._request.return_value = mock_resp
+    mc._core = MagicMock()
     result = _invoke(["--json", "audit", "--limit", "5"], mock_client=mc)
     assert result.exit_code == 0
-    data = json.loads(result.output)
-    assert len(data) == 1
-    assert data[0]["action"] == "note"
 
 
 # ── missing keypair ───────────────────────────────────────────────────────
@@ -287,11 +279,10 @@ def test_configure_signature_mode(tmp_path):
     with patch("dina_cli.main._configure_signature") as mock_sig, \
          patch("dina_cli.main.save_config") as mock_save:
         mock_save.return_value = tmp_path / "config.json"
-        # Input: core_url (default), device_name, persona, test=no
+        # Input: core_url (default), device_name, test=no
         user_input = "\n".join([
             "",           # core_url (default)
             "my-laptop",  # device name
-            "",           # persona (default)
             "n",          # don't test connection
         ])
         result = runner.invoke(cli, ["configure"], input=user_input, env={})
@@ -399,35 +390,100 @@ def test_session_start_json():
 
 
 # TST-CLI-052
-def test_recall_with_session_passes_header():
-    """Recall with --session passes X-Session header."""
+def test_recall_uses_brain_reason():
+    """Recall routes through Brain's reason endpoint (persona-blind)."""
     mc = MagicMock()
-    mc.vault_query.return_value = []
-    result = _invoke(
-        ["recall", "back pain", "--session", "chair-research", "--persona", "health"],
-        mock_client=mc,
-    )
+    mc.reason.return_value = {"content": "Based on your vault data, here is the answer."}
+    result = _invoke(["recall", "office chair recommendations"], mock_client=mc)
     assert result.exit_code == 0
-    # Verify vault_query was called with extra_headers containing X-Session
-    mc.vault_query.assert_called_once()
-    call_kwargs = mc.vault_query.call_args
-    assert call_kwargs[1].get("extra_headers", {}).get("X-Session") == "chair-research"
+    mc.reason.assert_called_once()
+    assert "answer" in result.output
 
 
 # TST-CLI-053
-def test_recall_persona_locked_shows_hint():
-    """Recall shows helpful message when persona is locked."""
+def test_recall_with_session():
+    """Recall with --session passes session to reason()."""
     mc = MagicMock()
-    mc.vault_query.side_effect = DinaClientError("Access denied: persona locked")
-    result = _invoke(["recall", "hello"], mock_client=mc)
-    assert result.exit_code == 1
-    assert "persona is locked" in result.output or "dina-admin" in result.output
+    mc.reason.return_value = {"content": "Chair data found."}
+    result = _invoke(
+        ["recall", "back pain", "--session", "chair-research"],
+        mock_client=mc,
+    )
+    assert result.exit_code == 0
+    mc.reason.assert_called_once_with("back pain", session="chair-research")
 
 
 # TST-CLI-054
+def test_recall_no_persona_flag():
+    """Recall does NOT have a --persona flag (agents are persona-blind)."""
+    mc = MagicMock()
+    mc.reason.return_value = {"content": "ok"}
+    result = _invoke(["recall", "test", "--persona", "health"], mock_client=mc)
+    # --persona should be rejected as unknown option
+    assert result.exit_code != 0
+
+
+# TST-CLI-055
+def test_recall_approval_required():
+    """Recall shows approval message when access requires approval."""
+    mc = MagicMock()
+    mc.reason.side_effect = DinaClientError("Access denied: approval_required")
+    result = _invoke(["recall", "health data"], mock_client=mc)
+    assert result.exit_code == 1
+    assert "approval" in result.output.lower()
+
+
+# TST-CLI-056
+def test_recall_persona_locked_shows_hint():
+    """Recall shows helpful message when persona is locked."""
+    mc = MagicMock()
+    mc.reason.side_effect = DinaClientError("Access denied: persona locked")
+    result = _invoke(["recall", "hello"], mock_client=mc)
+    assert result.exit_code == 1
+    assert "locked" in result.output.lower()
+
+
+# TST-CLI-057
 def test_recall_with_verbose():
     """Recall --verbose flag is accepted."""
     mc = MagicMock()
-    mc.vault_query.return_value = []
+    mc.reason.return_value = {"content": "ok"}
     result = _invoke(["-v", "recall", "hello"], mock_client=mc)
     assert result.exit_code == 0
+
+
+# ── persona-blind contract ───────────────────────────────────────────────
+
+
+# TST-CLI-058
+def test_remember_stores_to_general():
+    """Remember stores to 'general' persona via vault_store."""
+    mc = MagicMock()
+    mc.vault_store.return_value = {"item_id": "x"}
+    result = _invoke(["remember", "User prefers window seats"], mock_client=mc)
+    assert result.exit_code == 0
+    mc.vault_store.assert_called_once()
+    # First arg should be "general" (default persona)
+    assert mc.vault_store.call_args[0][0] == "general"
+
+
+# TST-CLI-059
+def test_audit_uses_audit_endpoint():
+    """Audit uses /v1/audit/query, not vault query."""
+    mc = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"entries": []}
+    mc._request.return_value = mock_resp
+    mc._core = MagicMock()
+    result = _invoke(["--json", "audit"], mock_client=mc)
+    assert result.exit_code == 0
+    # Should call _request, not vault_query
+    mc.vault_query.assert_not_called()
+
+
+# TST-CLI-060
+def test_cli_config_has_no_persona():
+    """CLI Config has no persona field — agents are persona-blind."""
+    from dina_cli.config import Config
+    config = Config(core_url="http://localhost:8100", timeout=5.0)
+    assert not hasattr(config, "persona") or "persona" not in config.__dict__

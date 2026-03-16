@@ -16,6 +16,11 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+try:
+    from ...domain.errors import ApprovalRequiredError as _ApprovalRequiredError
+except ImportError:
+    from domain.errors import ApprovalRequiredError as _ApprovalRequiredError
+
 log = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -36,9 +41,13 @@ class ReasonRequest(BaseModel):
     type: str | None = "reason"
     prompt: str = Field(..., max_length=32_000)
     persona_id: str | None = Field(None, max_length=100)
-    persona_tier: Literal["open", "restricted", "locked"] | None = Field(default="open")
+    persona_tier: Literal["default", "standard", "sensitive", "locked"] | None = Field(default="default")
     provider: str | None = Field(None, max_length=50)
     skip_vault_enrichment: bool = False
+    # Agent context — forwarded from Core so vault access is attributed
+    # to the originating agent, not to Brain.
+    agent_did: str | None = Field(None, max_length=200)
+    session: str | None = Field(None, max_length=200)
 
 
 class ReasonResponse(BaseModel):
@@ -110,10 +119,22 @@ async def reason_query(request: ReasonRequest) -> ReasonResponse:
         "persona_tier": request.persona_tier,
         "provider": request.provider,
         "skip_vault_enrichment": request.skip_vault_enrichment,
+        "agent_did": request.agent_did,
+        "session": request.session,
     }
 
     try:
         result = await _guardian.process_event(reason_event)
+    except _ApprovalRequiredError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "approval_required",
+                "persona": exc.persona,
+                "approval_id": exc.approval_id,
+                "message": str(exc),
+            },
+        ) from exc
     except Exception as exc:
         log.error(
             "reason_query.internal_error",

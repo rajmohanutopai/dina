@@ -1098,13 +1098,12 @@ func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string, scope ...s
 			return true
 		}
 		// Device-scoped clients: explicit allowlist only.
-		// SEC-HIGH-01/10: Paths that need prefix matching (e.g. /v1/vault/item/{id}).
+		// Agents are persona-blind for reads — they use Brain (/api/v1/reason).
+		// Vault store is allowed for writes (remember command) to general persona.
+		// Vault query is NOT allowed — reads go through Brain.
 		deviceAllowedPrefix := []string{
-			"/v1/vault/query",
-			"/v1/vault/store",
-			"/v1/vault/store/batch",
-			"/v1/vault/item",
-			"/v1/vault/kv",
+			"/api/v1/reason",        // Brain-mediated reasoning (persona-blind)
+			"/v1/vault/store",       // write-only (remember command, stores to general)
 			"/v1/msg/send",
 			"/v1/msg/inbox",
 			"/v1/did/document",

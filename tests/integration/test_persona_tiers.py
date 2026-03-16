@@ -9,10 +9,13 @@ Set DINA_INTEGRATION=docker to run against real containers.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 import httpx
 import pytest
 
@@ -196,3 +199,455 @@ class TestVaultTierEnforcement:
             "persona": name, "query": "test", "mode": "fts5",
         })
         assert resp.status_code == 403, f"locked query should fail: {resp.text}"
+
+
+# ---------------------------------------------------------------------------
+# Device-signed tests
+# ---------------------------------------------------------------------------
+
+
+def _sha256_hex(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _sign_request(
+    priv: Ed25519PrivateKey, method: str, path: str,
+    query: str, timestamp: str, body: bytes,
+) -> str:
+    """Build canonical payload and sign with Ed25519 (same as Go Core)."""
+    body_hash = _sha256_hex(body)
+    payload = f"{method}\n{path}\n{query}\n{timestamp}\n{body_hash}"
+    sig = priv.sign(payload.encode())
+    return sig.hex()
+
+
+_nonce_counter = 0
+
+
+def _device_post(
+    core_url: str, priv: Ed25519PrivateKey, did: str,
+    path: str, body: dict, *, session: str = "",
+) -> httpx.Response:
+    """Send a device-signed POST request to Core.
+
+    Injects a monotonic _nonce into the body so that two calls with the same
+    logical payload within the same second produce different signatures.
+    Core's replay cache (auth.go:318) rejects identical signatures.
+    """
+    global _nonce_counter
+    _nonce_counter += 1
+    body = {**body, "_nonce": _nonce_counter}
+    body_bytes = json.dumps(body).encode()
+    timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    sig_hex = _sign_request(priv, "POST", path, "", timestamp, body_bytes)
+    headers = {
+        "X-DID": did,
+        "X-Timestamp": timestamp,
+        "X-Signature": sig_hex,
+        "Content-Type": "application/json",
+    }
+    if session:
+        headers["X-Session"] = session
+    return httpx.post(
+        f"{core_url}{path}", content=body_bytes, headers=headers, timeout=30,
+    )
+
+
+def _pair_device_fixture(core_url, admin_headers):
+    """Generate Ed25519 keypair, pair with Core, return (priv, did, device_id).
+
+    The returned device_id is what Core stores as the identity for this
+    device (auth.go:275 returns it from VerifySignature). The session
+    handler uses this value — not the full did:key — as agent_did.
+    """
+    priv = Ed25519PrivateKey.generate()
+    pub_raw = priv.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    pub_prefixed = b"\xed\x01" + pub_raw
+
+    import base58
+    did = "did:key:z" + base58.b58encode(pub_prefixed).decode()
+
+    # Initiate pairing.
+    r1 = httpx.post(
+        f"{core_url}/v1/pair/initiate",
+        headers=admin_headers, timeout=10,
+    )
+    assert r1.status_code == 200, f"initiate: {r1.text}"
+    code = r1.json()["code"]
+
+    # Complete pairing with public key.
+    pub_multibase = "z" + base58.b58encode(pub_prefixed).decode()
+    r2 = httpx.post(
+        f"{core_url}/v1/pair/complete",
+        json={
+            "code": code,
+            "device_name": "test-agent",
+            "public_key_multibase": pub_multibase,
+        },
+        headers=admin_headers, timeout=10,
+    )
+    assert r2.status_code == 200, f"complete: {r2.text}"
+    device_id = r2.json()["device_id"]
+
+    return priv, did, device_id
+
+
+class TestDeviceSignedAgentContext:
+    """Verify device-signed requests produce correct agent context.
+
+    Proves auth middleware correctly derives CallerType=agent and
+    AgentDID from Ed25519-signed HTTP requests.
+
+    Key identity contract: VerifySignature returns the registered
+    device_id (e.g. "tok-1"), not the DID. Middleware stores that
+    as AgentDIDKey (auth.go:132). Session handlers use it.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _pair(self, core, docker_services):
+        self._core_url = docker_services.core_url
+        self._admin_headers = core["headers"]
+        self._priv, self._did, self._device_id = _pair_device_fixture(
+            self._core_url, self._admin_headers,
+        )
+
+    def test_session_scoped_to_device_id(self):
+        """Session agent_did equals the registered device_id, not the DID."""
+        sess_name = f"sig_sess_{int(time.time())}"
+        r = _device_post(
+            self._core_url, self._priv, self._did,
+            "/v1/session/start", {"name": sess_name},
+        )
+        assert r.status_code == 201, f"session start: {r.status_code} {r.text}"
+        data = r.json()
+        assert data["name"] == sess_name
+        assert data["status"] == "active"
+        assert data.get("agent_did") == self._device_id, (
+            f"session agent_did must be device_id {self._device_id!r}, got: {data}"
+        )
+
+        _device_post(
+            self._core_url, self._priv, self._did,
+            "/v1/session/end", {"name": sess_name},
+        )
+
+    def test_vault_read_blocked_by_authz(self):
+        """Device-scoped agents cannot read vaults directly (persona-blind)."""
+        r = _device_post(
+            self._core_url, self._priv, self._did,
+            "/v1/vault/query",
+            {"persona": "general", "query": "test", "mode": "fts5"},
+        )
+        assert r.status_code == 403, (
+            f"vault read must be blocked: {r.status_code} {r.text}"
+        )
+
+    def test_vault_store_to_default_allowed(self):
+        """Device-scoped agents CAN write to default-tier persona."""
+        r = _device_post(
+            self._core_url, self._priv, self._did,
+            "/v1/vault/store",
+            {
+                "persona": "general",
+                "item": {"Summary": "test note from device", "Type": "note"},
+            },
+        )
+        assert r.status_code == 201, (
+            f"store to general must succeed: {r.status_code} {r.text}"
+        )
+
+    def test_reason_endpoint_not_blocked(self):
+        """Device-signed /api/v1/reason passes authz (in device allowlist).
+
+        This only proves authz admission, not full approval propagation
+        through Brain. The full Brain-mediated read path is tested
+        deterministically by TestBrainMediatedApprovalPath, which uses
+        Brain's service key + X-Agent-DID on /v1/vault/query — the
+        exact Core endpoint Brain's tools call during reasoning.
+        """
+        r = _device_post(
+            self._core_url, self._priv, self._did,
+            "/api/v1/reason",
+            {"prompt": "hello"},
+        )
+        # 403 "forbidden" = authz block (bad). 403 "approval_required" = ok.
+        # 200 / 502 = authz passed.
+        if r.status_code == 403:
+            assert "approval" in r.text.lower(), (
+                f"/api/v1/reason blocked by authz: {r.text}"
+            )
+
+
+class TestDeviceSignedApprovalLifecycle:
+    """Full deterministic approval lifecycle via device-signed /v1/vault/store.
+
+    /v1/vault/store IS in the device allowlist (agents can 'dina remember').
+    Storing to a sensitive persona triggers AccessPersona → ErrApprovalRequired
+    → the store handler creates an approval request → 403 approval_required.
+    After admin approval, retry succeeds.
+
+    This tests the complete chain over real HTTP:
+      Ed25519 device signature → auth middleware (CallerType=agent,
+      AgentDID=device_id) → X-Session header → VaultService.Store →
+      PersonaManager.AccessPersona → ErrApprovalRequired → approval
+      request created → 403 with approval_id → admin approves →
+      grant created → retry → 201.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _setup(self, core, docker_services):
+        self._core_url = docker_services.core_url
+        self._admin_headers = core["headers"]
+        self._priv, self._did, self._device_id = _pair_device_fixture(
+            self._core_url, self._admin_headers,
+        )
+        # Create a sensitive persona.
+        self._persona = f"sens_store_{int(time.time())}"
+        cr = httpx.post(
+            f"{self._core_url}/v1/personas",
+            json={"name": self._persona, "tier": "sensitive", "passphrase": "test1234"},
+            headers=self._admin_headers, timeout=10,
+        )
+        assert cr.status_code in (201, 409), f"create persona: {cr.text}"
+
+    def test_store_approval_lifecycle(self):
+        """denied → approval_id → approve → 201 → session end → denied."""
+        sess_name = f"store_sess_{int(time.time())}"
+        item = {"Summary": "confidential note", "Type": "note"}
+
+        # --- Step 1: Start session ---
+        r = _device_post(
+            self._core_url, self._priv, self._did,
+            "/v1/session/start", {"name": sess_name},
+        )
+        assert r.status_code == 201, f"session start: {r.status_code} {r.text}"
+
+        # --- Step 2: Store to sensitive persona → 403 approval_required ---
+        r = _device_post(
+            self._core_url, self._priv, self._did,
+            "/v1/vault/store",
+            {"persona": self._persona, "item": item},
+            session=sess_name,
+        )
+        assert r.status_code == 403, (
+            f"expected 403, got {r.status_code}: {r.text}"
+        )
+        data = r.json()
+        assert data.get("error") == "approval_required", (
+            f"must be approval_required: {data}"
+        )
+        approval_id = data.get("approval_id", "")
+        assert approval_id, f"must include approval_id: {data}"
+
+        # --- Step 3: Verify pending ---
+        pending = httpx.get(
+            f"{self._core_url}/v1/persona/approvals",
+            headers=self._admin_headers, timeout=10,
+        ).json().get("approvals", [])
+        assert any(a["id"] == approval_id for a in pending), (
+            f"{approval_id} not in pending: {[a['id'] for a in pending]}"
+        )
+
+        # --- Step 4: Admin approves ---
+        ar = httpx.post(
+            f"{self._core_url}/v1/persona/approve",
+            json={"id": approval_id, "scope": "session"},
+            headers=self._admin_headers, timeout=10,
+        )
+        assert ar.status_code == 200, f"approve: {ar.text}"
+
+        # --- Step 5: Retry store → 201 ---
+        retry = _device_post(
+            self._core_url, self._priv, self._did,
+            "/v1/vault/store",
+            {"persona": self._persona, "item": item},
+            session=sess_name,
+        )
+        assert retry.status_code == 201, (
+            f"after approval, store must succeed: {retry.status_code} {retry.text}"
+        )
+
+        # --- Step 6: End session → grant revoked ---
+        _device_post(
+            self._core_url, self._priv, self._did,
+            "/v1/session/end", {"name": sess_name},
+        )
+
+        # --- Step 7: New session → denied again ---
+        new_sess = f"new_store_{int(time.time())}"
+        _device_post(
+            self._core_url, self._priv, self._did,
+            "/v1/session/start", {"name": new_sess},
+        )
+        denied = _device_post(
+            self._core_url, self._priv, self._did,
+            "/v1/vault/store",
+            {"persona": self._persona, "item": item},
+            session=new_sess,
+        )
+        assert denied.status_code == 403, (
+            f"new session must be denied: {denied.status_code} {denied.text}"
+        )
+        assert denied.json().get("error") == "approval_required"
+
+        _device_post(
+            self._core_url, self._priv, self._did,
+            "/v1/session/end", {"name": new_sess},
+        )
+
+
+# ---------------------------------------------------------------------------
+# Brain-mediated read path (service-key + X-Agent-DID)
+# ---------------------------------------------------------------------------
+
+
+def _try_load_brain_signer():
+    """Load Brain's service key for signing. Returns None if unavailable."""
+    try:
+        from tests.integration.real_clients import _get_signer
+        return _get_signer("brain")
+    except Exception:
+        pass
+    try:
+        # Fallback: direct import when running from repo root
+        import sys
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
+        from tests.integration.real_clients import _get_signer
+        return _get_signer("brain")
+    except Exception:
+        return None
+
+
+class TestBrainMediatedApprovalPath:
+    """Deterministic proof of the Brain-mediated read path.
+
+    Uses Brain's actual service key to sign requests with X-Agent-DID
+    and X-Session headers — the exact pattern Brain uses when calling
+    Core's vault on behalf of a device-scoped agent (auth.go:138-146).
+
+    This exercises:
+      - service-key signature verification (TokenBrain)
+      - X-Agent-DID override: CallerType set to "agent" (auth.go:144)
+      - X-Session propagation (auth.go:149)
+      - AccessPersona tier enforcement with agent context
+      - approval_required → approve → grant → retry succeeds
+    """
+
+    @pytest.fixture(autouse=True)
+    def _setup(self, core, docker_services):
+        self._core_url = docker_services.core_url
+        self._admin_headers = core["headers"]
+        self._signer = _try_load_brain_signer()
+        if self._signer is None:
+            pytest.skip("Brain service key not available")
+
+        self._agent_did = "did:key:z6MkBrainPathTestAgent"
+        self._persona = f"sens_brain_{int(time.time())}"
+
+        cr = httpx.post(
+            f"{self._core_url}/v1/personas",
+            json={"name": self._persona, "tier": "sensitive", "passphrase": "test1234"},
+            headers=self._admin_headers, timeout=10,
+        )
+        assert cr.status_code in (201, 409), f"create persona: {cr.text}"
+
+    def _brain_post(self, path, body, *, agent_did="", session=""):
+        """Send a Brain-service-key-signed POST with agent context headers."""
+        global _nonce_counter
+        _nonce_counter += 1
+        body = {**body, "_nonce": _nonce_counter}
+        body_bytes = json.dumps(body).encode()
+        did, ts, sig = self._signer.sign_request("POST", path, body_bytes)
+        headers = {
+            "X-DID": did,
+            "X-Timestamp": ts,
+            "X-Signature": sig,
+            "Content-Type": "application/json",
+        }
+        if agent_did:
+            headers["X-Agent-DID"] = agent_did
+        if session:
+            headers["X-Session"] = session
+        return httpx.post(
+            f"{self._core_url}{path}",
+            content=body_bytes, headers=headers, timeout=10,
+        )
+
+    def test_brain_read_approval_lifecycle(self):
+        """Service-key + X-Agent-DID vault query: denied → approve → 200.
+
+        This is the exact auth path Brain takes when an agent calls
+        /api/v1/reason and Brain's vault tools hit Core:
+          Brain signs with service key → Core sees TokenBrain →
+          X-Agent-DID present → CallerType overridden to "agent" →
+          AccessPersona → ErrApprovalRequired → 403.
+        """
+        sess_name = f"brain_sess_{int(time.time())}"
+
+        # --- Step 1: Start session (Brain-signed with X-Agent-DID) ---
+        # Must use Brain's service key with X-Agent-DID so the session's
+        # agent_did matches the identity used in subsequent vault calls.
+        # An admin bearer start would create a session with the wrong
+        # agent_did (bootstrap identity), causing grant lookup to fail.
+        sr = self._brain_post(
+            "/v1/session/start", {"name": sess_name},
+            agent_did=self._agent_did,
+        )
+        assert sr.status_code in (201, 409), f"session start: {sr.status_code} {sr.text}"
+
+        # --- Step 2: Brain-signed vault query with agent context → 403 ---
+        r = self._brain_post(
+            "/v1/vault/query",
+            {"persona": self._persona, "query": "test", "mode": "fts5"},
+            agent_did=self._agent_did, session=sess_name,
+        )
+        assert r.status_code == 403, (
+            f"expected 403, got {r.status_code}: {r.text}"
+        )
+        data = r.json()
+        assert data.get("error") == "approval_required", (
+            f"must be approval_required: {data}"
+        )
+        approval_id = data.get("approval_id", "")
+        assert approval_id, f"must include approval_id: {data}"
+
+        # --- Step 3: Verify pending ---
+        pending = httpx.get(
+            f"{self._core_url}/v1/persona/approvals",
+            headers=self._admin_headers, timeout=10,
+        ).json().get("approvals", [])
+        assert any(a["id"] == approval_id for a in pending), (
+            f"{approval_id} not in pending"
+        )
+
+        # --- Step 4: Admin approves ---
+        ar = httpx.post(
+            f"{self._core_url}/v1/persona/approve",
+            json={"id": approval_id, "scope": "session"},
+            headers=self._admin_headers, timeout=10,
+        )
+        assert ar.status_code == 200, f"approve: {ar.text}"
+
+        # --- Step 5: Retry → 200 ---
+        retry = self._brain_post(
+            "/v1/vault/query",
+            {"persona": self._persona, "query": "test", "mode": "fts5"},
+            agent_did=self._agent_did, session=sess_name,
+        )
+        assert retry.status_code == 200, (
+            f"after approve, must succeed: {retry.status_code} {retry.text}"
+        )
+
+        # --- Step 6: Without X-Agent-DID, Brain gets its own access (not agent) ---
+        # Brain without X-Agent-DID = CallerType "brain", not "agent".
+        # Sensitive persona requires grant for brain too.
+        brain_only = self._brain_post(
+            "/v1/vault/query",
+            {"persona": self._persona, "query": "test", "mode": "fts5"},
+        )
+        # Brain callerType triggers the sensitive-tier grant check too,
+        # but without session context it won't find the agent's grant.
+        assert brain_only.status_code == 403, (
+            f"brain without agent context must also be denied for sensitive: "
+            f"{brain_only.status_code} {brain_only.text}"
+        )
