@@ -78,6 +78,21 @@ Transmitted via headers: `X-DID`, `X-Timestamp`, `X-Signature`.
 
 32-byte random token generated during device pairing (`crypto/rand.Read`). Used as a login password for the browser admin UI. Browser POSTs it to `/admin/login`, gets a session cookie back.
 
+**Current runtime flow:**
+
+```
+Browser → passphrase → Brain /admin/login → session cookie
+Browser → session cookie → Brain /admin/* → CLIENT_TOKEN bearer → Core /v1/*
+```
+
+Core bypasses its own auth middleware for `/admin/*` paths and reverse-proxies them to Brain. Brain's admin app authenticates the browser user (passphrase → session), then calls Core using CLIENT_TOKEN bearer auth (admin scope). This means:
+
+- Browser authentication happens in Brain, not Core
+- Brain has admin-scoped access to Core via CLIENT_TOKEN
+- The Core↔Brain link is trusted (same Docker network / same host)
+
+This is acceptable for the Phase 1 single-user home node deployment where Brain is a co-located sidecar. It is NOT acceptable for multi-tenant, remote-Brain, or untrusted-network deployments.
+
 **Planned (Phase 2):** Replace CLIENT_TOKEN with the same Ed25519 model used everywhere else. The admin UI backend authenticates to Core with Ed25519; the browser authenticates to the admin backend with a session cookie. This eliminates CLIENT_TOKEN entirely:
 
 ```
@@ -373,3 +388,29 @@ You cannot prevent prompt injection, so you contain the blast radius. Key mechan
 - **Vault query limits:** enforced server-side in Core, not by the LLM
 
 Full architecture: [`ARCHITECTURE.md`](ARCHITECTURE.md), section on prompt injection defense.
+
+---
+
+## Known Gaps (Phase 1)
+
+Documented limitations of the current implementation, with the deployment context that makes them acceptable and the planned resolution.
+
+### Admin Auth Trust Boundary
+
+**Gap:** The documented model is `browser → admin backend → Ed25519 → Core`. The runtime is `browser → Brain (CLIENT_TOKEN bearer) → Core`, with Core bypassing auth on `/admin/*` paths.
+
+**Why it's acceptable now:** Brain is a co-located sidecar on the same Docker network. The Core↔Brain link is localhost-only. CLIENT_TOKEN is generated at install time and never exposed externally. For a single-user home node, Docker access = machine access = admin access.
+
+**When it matters:** Multi-tenant operator mode, Brain on a remote host, or any deployment where the Core↔Brain network is untrusted.
+
+**Resolution:** Phase 2 — migrate admin backend to Ed25519 service auth (same as vault/reason paths). Remove CLIENT_TOKEN entirely. See Authentication §2 above.
+
+### Signing Protocol Replay Window
+
+**Gap:** Ed25519 request signatures use second-precision timestamps and no nonce. Two requests with byte-identical bodies within the same second produce the same signature, which Core's nonce cache rejects as replay.
+
+**Why it's acceptable now:** In practice, payloads always differ between calls — CLI blocks on user input, Brain's tool calls have different queries/personas, and timestamps rotate every second.
+
+**When it matters:** Automated retry logic that resends the same payload within one second (e.g. a queue worker retrying a failed store).
+
+**Resolution:** Add a random nonce field to the canonical signing payload. Requires coordinated changes across Core verifier, Brain signer, and CLI signer.
