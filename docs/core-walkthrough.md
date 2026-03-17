@@ -1,7 +1,62 @@
 # The Dina Core: A Walk Through the Fortress
 
+## Review Status
 
-
+| # | Section | Status |
+|---|---------|--------|
+| I | [Waking Up — The Composition Root](#act-i-waking-up--the-composition-root) | COMPLETE |
+| | — Before Core Starts: The Install Flow | COMPLETE |
+| | — Three Secrets, Three Different Jobs | COMPLETE |
+| | — Key Derivation: One Seed, Many Keys | COMPLETE |
+| | — Bootstrapping Identity from Seed | COMPLETE |
+| | — Assembly Line: Bottom-Up Construction | COMPLETE |
+| | — Services: The Business Logic Layer | COMPLETE |
+| II | [The Ingress Pipeline — Three Valves](#act-ii-the-ingress-pipeline--three-valves) | COMPLETE |
+| | — The Router | COMPLETE |
+| | — The Dead Drop: Peek/Ack Semantics | COMPLETE |
+| | — The Sweeper | COMPLETE |
+| | — The Outbox: Retry on the Other Side | COMPLETE |
+| | [Where HTTP Lives in Core](#where-http-lives-in-core) | COMPLETE |
+| III | [The Request Journey — From HTTP to Vault](#act-iii-the-request-journey--from-http-to-vault) | COMPLETE |
+| | — The Middleware Chain | COMPLETE |
+| | — Example: Storing a Verdict in the Vault | COMPLETE |
+| | — Example: Querying with Gatekeeper | COMPLETE |
+| IV | [Persona Lifecycle — Lock, Unlock, and the Ticking Clock](#act-iv-persona-lifecycle--lock-unlock-and-the-ticking-clock) | COMPLETE |
+| | — Creating a Persona | COMPLETE |
+| | — Unlocking: The Moment of Truth | COMPLETE |
+| | — The Lock Timer | COMPLETE |
+| | — Approval Flow | COMPLETE |
+| V | [Dina-to-Dina — Sending Messages Across the Wire](#act-v-dina-to-dina--sending-messages-across-the-wire) | COMPLETE |
+| VI | [The Egress Guardian — Nothing Leaves Without Permission](#act-vi-the-egress-guardian--nothing-leaves-without-permission) | COMPLETE |
+| VII | [Device Pairing — Adding a Second Screen](#act-vii-device-pairing--adding-a-second-screen) | COMPLETE |
+| VIII | [The Connector Pipeline — From Ingestion to Vault](#act-viii-the-connector-pipeline--from-ingestion-to-vault) | COMPLETE |
+| IX | [Silence First — Notifications, Reminders, and the Daily Briefing](#act-ix-silence-first--notifications-reminders-and-the-daily-briefing) | COMPLETE |
+| | — The Three-Tier Priority System | COMPLETE |
+| | — Reminders: Deterministic Triggers, LLM-Free | COMPLETE |
+| X | [The Trust Network — Verified Truth at the Ingress Gate](#act-x-the-trust-network--verified-truth-at-the-ingress-gate) | COMPLETE |
+| | — The Trust Cache | COMPLETE |
+| | — The Trust Resolver | COMPLETE |
+| | — The Ingress Decision | COMPLETE |
+| XI | [Portability and the Admin Socket](#act-xi-portability-and-the-admin-socket) | COMPLETE |
+| | — Export/Import: Moving to a New Machine | COMPLETE |
+| | — The Admin Unix Socket | COMPLETE |
+| | — The Audit Trail | COMPLETE |
+| | — Agent Sessions and the Reason Proxy | COMPLETE |
+| XII | [WebSocket — Real-Time Connection](#act-xii-websocket--real-time-connection) | COMPLETE |
+| XIII | [The Health Probes](#act-xiii-the-health-probes) | COMPLETE |
+| XIV | [The Fourteen Stories — Proving the Architecture](#act-xiv-the-fourteen-stories--proving-the-architecture) | COMPLETE |
+| | — Story 01: The Purchase Journey | COMPLETE |
+| | — Story 02: The Sancho Moment | COMPLETE |
+| | — Story 03: The Dead Internet Filter | COMPLETE |
+| | — Story 04: The Persona Wall | COMPLETE |
+| | — Story 05: The Agent Gateway | COMPLETE |
+| | — Story 06: The License Renewal | COMPLETE |
+| | — Story 07: The Daily Briefing | COMPLETE |
+| | — Story 08: Move to New Machine | COMPLETE |
+| | — Story 09: Connector Expiry | COMPLETE |
+| | — Story 10: The Operator Journey | COMPLETE |
+| | — Thesis Invariants (11-14) | COMPLETE |
+| | [Epilogue](#epilogue-the-architecture-in-one-sentence) | COMPLETE |
 
 
 
@@ -21,13 +76,13 @@ Dina's core is a long-running, always-on process that manages cryptographic keys
 <summary><strong>Design Decision — Why a single-file composition root?</strong></summary>
 <br>
 
-All dependency wiring lives in `main.go` — no dependency injection framework, no service locator, no reflection magic. Every adapter, service, and handler is constructed with explicit constructor calls and passed as arguments. This means: (1) the compiler catches missing dependencies at build time, not at runtime, (2) you can read `main.go` top-to-bottom to understand every dependency relationship in the system, and (3) there are no hidden "auto-wired" surprises. The tradeoff is a ~700-line `main.go`, but that's a feature — it's the one place where the entire system is visible.
+All dependency wiring lives in `main.go` — no dependency injection framework, no service locator, no reflection magic. Every adapter, service, and handler is constructed with explicit constructor calls and passed as arguments. This means: (1) the compiler catches missing dependencies at build time, not at runtime, (2) you can read `main.go` top-to-bottom to understand every dependency relationship in the system, and (3) there are no hidden "auto-wired" surprises. The tradeoff is a ~1200-line `main.go`, but that's a feature — it's the one place where the entire system is visible.
 
 </details>
 
-When `dina-core` starts, the first thing it does is load configuration from environment variables (`core/cmd/dina-core/main.go:55-65`, `config.NewLoader()`). If anything is misconfigured — missing vault path, invalid listen address — the process refuses to start. There's no "run in degraded mode." The philosophy is: if the foundation is cracked, don't build the house.
+When `dina-core` starts, the first thing it does is load configuration from environment variables (`core/cmd/dina-core/main.go:57-69`, `config.NewLoader()`). If anything is misconfigured — missing vault path, invalid listen address — the process refuses to start. There's no "run in degraded mode." The philosophy is: if the foundation is cracked, don't build the house.
 
-Next comes the **security gauntlet** (lines 69-85). Two environment variables — `DINA_ALLOW_UNSIGNED_D2D` and `DINA_TEST_MODE` — are dangerous escape hatches meant only for development and testing. The startup code checks `DINA_ENV` and calls `log.Fatal` if someone tries to enable these in production. The process simply dies rather than run insecure.
+Next comes the **security gauntlet** (lines 71-80). `DINA_TEST_MODE` is a dangerous escape hatch meant only for development and testing. The startup code checks `DINA_ENV` and calls `log.Fatal` if someone tries to enable it in production. The process simply dies rather than run insecure.
 
 <details>
 <summary><strong>Design Decision — Why fail-fast instead of degraded mode?</strong></summary>
@@ -39,11 +94,20 @@ Many systems try to "keep running" with partial configuration — disable featur
 
 ### Before Core Starts: The Install Flow
 
-Before Core ever runs, `install.sh` handles seed generation and mnemonic display. This happens *outside* Docker, on the host machine:
+Before Core ever runs, `install.sh` handles seed generation and mnemonic display. Only the seed generation itself (`openssl rand -hex 32`) runs on the host — all crypto operations (wrapping, mnemonic derivation, service key provisioning) run inside a purpose-built `dina-crypto-tools` Docker container via the `run_crypto` helper. The host doesn't need Python installed.
 
-1. **Step 4** generates a random 256-bit hex string (`MASTER_SEED`) using Python's `secrets.token_hex(32)`.
-2. **Step 5** writes it to `.env` as `DINA_MASTER_SEED=<hex>`. Docker Compose passes this to the Core container.
-3. **Step 10** derives the 24-word BIP-39 mnemonic locally (`scripts/seed_to_mnemonic.py`) — pure Python stdlib, no API call, no auth needed. The script converts 256-bit entropy → SHA-256 checksum → 11-bit chunks → English wordlist lookup. The result is displayed in a yellow box for the user to write down on paper.
+In **interactive mode**, the user gets three choices: (1) create a new identity, (2) restore from a 24-word recovery phrase, or (3) restore from a raw 64-character hex seed. Non-interactive mode auto-generates a fresh seed.
+
+For a new identity:
+
+1. Generates a random 256-bit hex string (`MASTER_SEED`) using `openssl rand -hex 32` on the host.
+2. Derives the 24-word BIP-39 mnemonic via `scripts/seed_to_mnemonic.py` (inside the crypto container). The script converts 256-bit entropy → SHA-256 checksum → 11-bit chunks → English wordlist lookup. The result is displayed in a yellow box for the user to write down on paper. The user verifies their backup by entering 3 random words from the phrase.
+3. The user chooses a **passphrase** (minimum 8 characters) and a **startup mode**: Maximum Security (passphrase required on every restart — never stored) or Server Mode (passphrase stored locally in `secrets/seed_password` for unattended boot).
+4. Wraps the seed with the passphrase (Argon2id + AES-256-GCM via `scripts/wrap_seed.py`) — secrets passed via environment variables to the container, never via command-line arguments. Produces `wrapped_seed.bin` and `master_seed.salt`. No raw seed is written to `.env`.
+5. Provisions deterministic service keys from the seed (`scripts/provision_derived_service_keys.py`) — derives Core and Brain Ed25519 keypairs via SLIP-0010 at `m/9999'/3'/0'` and `m/9999'/3'/1'` respectively. Writes private keys to isolated directories (`secrets/service_keys/core/` and `secrets/service_keys/brain/`), public keys to the shared `secrets/service_keys/public/`.
+6. **Zeroes the seed variable** — the raw hex is overwritten with zeros and unset. From this point forward, only the wrapped form exists.
+
+Docker Compose passes `DINA_SEED_PASSWORD` as an environment variable and mounts `wrapped_seed.bin`, `master_seed.salt`, and `seed_password` as Docker secrets. Core decrypts the wrapped seed in-process at startup.
 
 The hex seed and the 24 words are the **same thing** in two formats. If the user loses their machine, they enter the 24 words on a new install → the words convert back to the same hex seed → Core derives the same Ed25519 keypair → the same DID is restored. There is no "password reset" because there is no server.
 
@@ -53,11 +117,11 @@ The hex seed and the 24 words are the **same thing** in two formats. If the user
 
 | Secret | Created by | Purpose | If compromised |
 |--------|-----------|---------|----------------|
-| **Identity Seed** | `install.sh` Step 4 — `secrets.token_hex(32)` | Derives ALL cryptographic keys: DID, signing key, per-persona vault encryption keys | Total compromise — attacker becomes you |
+| **Identity Seed** | `install.sh` — `openssl rand -hex 32` | Derives ALL cryptographic keys: DID, signing key, per-persona vault encryption keys | Total compromise — attacker becomes you |
 | **Brain Service Key** | `install.sh` derives via SLIP-0010 at `m/9999'/3'/1'` | Brain signs every request to Core (`X-DID`, `X-Timestamp`, `X-Signature` headers). Private keys are isolated by separate Docker bind mounts — Brain's private key is in `secrets/service_keys/brain/` (mounted only to Brain), public keys are in `secrets/service_keys/public/` (mounted to both containers). Core's private key never exists in Brain's container filesystem and vice versa. At runtime, services load existing keys only — no generation occurs. | Attacker can call Core's API as Brain — but cannot derive DID or decrypt vaults. Revoke by removing the public key from the shared `public/` directory |
 | **Client Token** | Core generates during `dina pair` — `crypto/rand.Read()` | Admin web UI login password (browser POSTs token, gets session cookie) | Revoke — other devices and identity unaffected |
 
-The client token is **not derived from the seed**. It is an independent random value. The seed never leaves Core's memory. Brain never sees it (`docker-compose.yml` passes `DINA_MASTER_SEED` only to Core, not to Brain). CLI and Brain authenticate via Ed25519 signatures, not tokens.
+The client token is **not derived from the seed**. It is an independent random value. The seed never leaves Core's memory. Brain never sees it — `docker-compose.yml` passes `DINA_SEED_PASSWORD` only to Core (via Docker secret), and Core decrypts the wrapped seed in-process. The raw seed is never in an env var in production. CLI and Brain authenticate via Ed25519 signatures, not tokens.
 
 ```
                     Has seed?    Has service keypair?    Has Ed25519 keypair?
@@ -79,27 +143,31 @@ One root signing key for the whole node. Used for DID authentication, D2D messag
 
 **Vault encryption keys** — HKDF-SHA256 (by persona name string):
 ```
-Seed + HKDF(info="dina:persona:personal:dek:v1")  → Personal vault DEK (AES-256)
-Seed + HKDF(info="dina:persona:health:dek:v1")     → Health vault DEK (AES-256)
-Seed + HKDF(info="dina:persona:financial:dek:v1")  → Financial vault DEK (AES-256)
-Seed + HKDF(info="dina:backup:key:v1")             → Backup encryption key
+Seed + HKDF(salt=SHA256("dina:salt:personal"), info="dina:persona:personal:dek:v1")  → Personal vault DEK (AES-256)
+Seed + HKDF(salt=SHA256("dina:salt:health"),   info="dina:persona:health:dek:v1")     → Health vault DEK (AES-256)
+Seed + HKDF(salt=SHA256("dina:salt:financial"), info="dina:persona:financial:dek:v1")  → Financial vault DEK (AES-256)
+Seed + HKDF(salt=SHA256("dina:backup:salt"),    info="dina:backup:key:v1")             → Backup encryption key
 ```
 
-The persona name goes into the HKDF `info` parameter, which mathematically guarantees each persona gets a different encryption key from the same seed. Signing keys (Ed25519, asymmetric) prove **who you are** — "this message is from me." Vault DEKs (AES-256, symmetric) protect **what you store** — "only I can read this data."
+Both the persona name and a deterministic salt (`SHA256("dina:salt:<persona>")`) feed into HKDF. The persona name in the `info` parameter mathematically guarantees each persona gets a different encryption key from the same seed, while the per-persona salt adds domain separation. The derivation is versioned — v1 is the current default, v2 (with a different info tag) exists for vault re-encryption during DEK migration. Because the version goes into the HKDF info string, v1 and v2 produce different DEKs from the same seed, which is required for re-encrypting a vault without data loss.
+
+**Persona signing keys** use SLIP-0010 with a 4-level path: `m/9999'/1'/<personaIndex>'/<generation>'`. Persona indexes are assigned by convention: 0=consumer, 1=professional, 2=social, 3=health, 4=financial, 5=citizen, 6+=custom. Each persona can rotate independently by incrementing its generation counter.
+
+Signing keys (Ed25519, asymmetric) prove **who you are** — "this message is from me." Vault DEKs (AES-256, symmetric) protect **what you store** — "only I can read this data."
 
 Recover the seed → all keys regenerate identically → same DID, same vault decryption.
 
 ### Bootstrapping Identity from Seed
 
-Now the most delicate operation: **identity seed management** (lines 105-219). Dina's entire cryptographic identity derives from a single 32-byte seed. The code now uses a strict priority chain:
+Now the most delicate operation: **identity seed management** (lines 97-229). Dina's entire cryptographic identity derives from a single 32-byte seed. The code uses a strict priority chain:
 
-1. **`DINA_MASTER_SEED` env var** — Direct injection (for CI/containers). If set, the hex is decoded and used immediately.
+1. **`DINA_MASTER_SEED` env var** — Direct injection (for CI/containers). If set, the hex is decoded and used immediately. When a seed password is also configured, the code auto-wraps the injected seed to `master_seed.wrapped` — a one-shot migration path from raw hex to password-protected storage.
 
-2. **AES-GCM wrapped file** (`master_seed.wrapped`) — If `DINA_SEED_PASSWORD` is set, derive a KEK from it via Argon2id + persisted salt, then unwrap `.wrapped`. Wrong password or invalid salt is a hard failure.
+2. **AES-GCM wrapped file** (`master_seed.wrapped` + `master_seed.salt`) — If `DINA_SEED_PASSWORD` is set (or `DINA_SEED_PASSWORD_FILE` points to a file), derive a KEK from it via Argon2id using the persisted 16-byte salt from `master_seed.salt`, then unwrap `.wrapped`. Wrong password or invalid salt is a hard failure. The state where `.wrapped` exists but `.salt` is missing is explicitly caught and fatal — it indicates a corrupt install.
 
-3. **Generate fresh wrapped seed** — If wrapped files do not exist and password mode is enabled, generate 32 random bytes and persist wrapped seed + salt.
+3. **Generate fresh wrapped seed** — If wrapped files do not exist and password mode is enabled, generate 32 random bytes, generate a fresh 16-byte random salt, and persist both `master_seed.wrapped` and `master_seed.salt`.
 
-There is no plaintext `master_seed.hex` fallback path in the strict runtime model.
+There is no plaintext `master_seed.hex` fallback path in the strict runtime model. If neither `DINA_SEED_PASSWORD` nor `DINA_MASTER_SEED` is set, the process calls `log.Fatal` — fail-closed.
 
 <details>
 <summary><strong>Design Decision — Why a single 32-byte seed instead of per-key generation?</strong></summary>
@@ -117,7 +185,7 @@ The seed could be protected by OS-level disk encryption (FileVault, LUKS) or a h
 
 </details>
 
-After loading, the code verifies the seed isn't all zeros (lines 201-211). Then it derives the signing key via SLIP-0010 at path `m/9999'/0'/0'` — the root signing key at generation 0. This is a deterministic HD derivation that produces the same Ed25519 keypair from the same seed every time (`core/internal/adapter/crypto/` package).
+After loading, the code verifies the seed isn't all zeros (lines 218-229). Then it derives the signing key via SLIP-0010 at path `m/9999'/0'/0'` — the root signing key at generation 0. This is a deterministic HD derivation that produces the same Ed25519 keypair from the same seed every time (`core/internal/adapter/crypto/` package). Signing generation is persisted in DID metadata — if a previous key rotation occurred, the code resumes from that generation instead of always starting at zero (lines 257-269).
 
 <details>
 <summary><strong>Design Decision — Why SLIP-0010 HD derivation at path `m/9999'/0'/0'`?</strong></summary>
@@ -129,9 +197,9 @@ SLIP-0010 is the Ed25519-specific variant of BIP-32 hierarchical deterministic k
 
 ### Assembly Line: Bottom-Up Construction
 
-With the seed in hand, the composition root builds **15 adapter groups** in dependency order. Think of it as assembling a car: you build the engine before attaching the wheels.
+With the seed in hand, the composition root builds **15 numbered adapter groups** (plus sub-groups) in dependency order. Think of it as assembling a car: you build the engine before attaching the wheels.
 
-**Clock** comes first (line 90) — everything else needs to know what time it is. Then **crypto primitives** (lines 93-101): BIP39 mnemonic generator, SLIP-0010 key deriver, HKDF key deriver, Argon2 password hasher, Ed25519 signer, key converter (Ed25519 to X25519), NaCl box sealer, AES-GCM key wrapper.
+**Clock** comes first (line 85) — everything else needs to know what time it is. Then **crypto primitives** (lines 88-96): SLIP-0010 key deriver, HKDF key deriver, Argon2 password hasher, Ed25519 signer, key converter (Ed25519 to X25519), NaCl box sealer, AES-GCM key wrapper.
 
 <details>
 <summary><strong>Design Decision — Why Ed25519 instead of RSA or ECDSA P-256?</strong></summary>
@@ -148,7 +216,7 @@ The only downside: Ed25519 keys can't directly do Diffie-Hellman key exchange (n
 
 </details>
 
-**Vault** (line 222) — the encrypted SQLite storage. A build-tag factory (`newVaultBackend`) selects SQLCipher when CGO is available, or falls back to in-memory for testing.
+**Vault** (line 231) — the encrypted SQLite storage. A build-tag factory (`newVaultBackend`) selects SQLCipher when CGO is available, or falls back to in-memory for testing. The identity database (Tier 0: contacts, audit log, kv_store, device_tokens) opens immediately with its own HKDF-derived DEK (lines 235-247) — it's always available, even before any persona is unlocked.
 
 <details>
 <summary><strong>Design Decision — Why SQLite/SQLCipher instead of PostgreSQL or a cloud database?</strong></summary>
@@ -182,11 +250,23 @@ Hybrid search merges both: `score = 0.4 × FTS5_rank + 0.6 × cosine_similarity`
 
 </details>
 
-**PII Scrubber** (line 227) — a regex-based scanner that detects emails, SSNs, credit cards, and phone numbers before any data leaves the Home Node.
+**PII Scrubber** (line 250) — a regex-based scanner that detects emails, SSNs, credit cards, and phone numbers before any data leaves the Home Node.
 
-**Identity** (lines 230-251) — the DID manager, persona manager, contact directory, device registry, and recovery manager. Here's a crucial wiring moment: `personaMgr.OnLock` (lines 235-248) is a callback that fires when a persona's TTL timer expires or the user manually locks it. The callback strips the `"persona-"` prefix from the internal ID, validates it as a persona name, and calls `vaultMgr.Close()`. This is how **the vault automatically locks when the persona locks** — no data accessible without an active session.
+**Identity** (lines 252-357) — the DID manager, persona manager, contact directory, device registry, and recovery manager. This section has grown substantially. Here's the crucial wiring:
 
-**Auth** (lines 276-281) — the token validator. `cfg.ClientToken` is registered as scope `"admin"` — this is the bootstrap token that can do everything. Paired device tokens later get registered as scope `"device"` — they can't touch `/v1/did/sign`, `/v1/did/rotate`, `/v1/identity/mnemonic`, or `/admin/*`.
+- `personaMgr.OnLock` (lines 304-317) fires when a persona's TTL timer expires or the user manually locks it. The callback strips the `"persona-"` prefix, validates it as a persona name, and calls `vaultMgr.Close()`. This is how **the vault automatically locks when the persona locks**.
+- `personaMgr.VerifyPassphrase` (line 294) and `personaMgr.HashUpgrader` (line 297) — callbacks for Argon2id passphrase verification and hash upgrades on successful auth.
+- `personaMgr.CheckOrphanedVault` (lines 324-329) — an orphan-guard callback. If a vault `.sqlite` file exists on disk but the persona has no in-memory state, creation is rejected to prevent DEK reuse. This guards against re-creating a persona whose encrypted data still exists from a previous install.
+- **Persona state persistence** (lines 282-293) — persona state is persisted to `persona_state.json`. In production, a corrupted state file is fatal; in dev/test or with `DINA_RECOVER_PERSONAS=1`, degraded startup is allowed.
+- **Auto-open at boot** (lines 330-353) — default and standard tier personas are automatically opened at startup, so vault queries work immediately for non-sensitive compartments. No passphrase needed — these tiers are designed for convenience.
+
+**Trust** (lines 359-362) — the trust cache, resolver, and service. An in-memory trust cache provides microsecond DID lookups for ingress gatekeeper decisions. The resolver fetches trust profiles from the AppView XRPC endpoints. Together with the contact directory, they form a 3-tier authority hierarchy for incoming messages: contacts (manual, highest authority) → cache (AppView synced) → unknown (quarantine). More in Act X.
+
+**PLC/PDS** (lines 364-384) — optional AT Protocol integration. When `DINA_PDS_URL` is set, Core connects to the AT Protocol PDS for `did:plc` identity and trust record publishing. K256 key management (secp256k1) provides the PLC recovery key at `m/9999'/2'/0'`.
+
+**Service Keys** (lines 387-432) — Ed25519 service-to-service auth. PEM files are provisioned at install time via `provision_derived_service_keys.py` (SLIP-0010 derived at `m/9999'/3'/<index>'`). Runtime is load-only, fail-closed — `EnsureExistingKey("core")` loads but never generates. Brain's public key is required (30-second retry loop). Admin and connector peer keys are optional — loaded if provisioned, silently skipped otherwise.
+
+**Auth** (lines 418-438) — the token validator. Brain's service key DID is registered, then optional peers (admin, connector). `cfg.ClientToken` is registered as scope `"admin"` when set — this is the bootstrap token that can do everything. Paired device tokens later get registered as scope `"device"`.
 
 <details>
 <summary><strong>Design Decision — Why two token scopes (admin vs device) instead of RBAC?</strong></summary>
@@ -196,17 +276,17 @@ A full role-based access control system (RBAC) with roles, permissions, and poli
 
 </details>
 
-**Gatekeeper** (line 284) — the intent evaluator. We'll visit this in detail later.
+**Gatekeeper** (lines 440-441) — the intent evaluator and sharing policy manager. We'll visit this in detail later.
 
-**Transport** (lines 288-338) — DID resolver, outbox, inbox, and the actual message transporter. Known peers from `DINA_KNOWN_PEERS` env var are pre-loaded into the resolver with their DID documents and public keys.
+**Transport** (lines 443-498) — DID resolver, outbox, inbox, and the actual message transporter. Known peers from `DINA_KNOWN_PEERS` env var are pre-loaded into the resolver with full DID documents including `verificationMethod` and `serviceEndpoint`. The format is strict 3-part: `did=endpoint=seedhex`.
 
-**Task Queue** (lines 341-343) — in-memory task queue with a watchdog for stale tasks.
+**Task Queue** (lines 500-503) — in-memory task queue with a watchdog for stale tasks, plus the reminder scheduler.
 
-**WebSocket Hub** (lines 346-347) — connection registry and real-time notification.
+**WebSocket Hub** (lines 505-507) — connection registry and real-time notification. The notifier is created here but the `OnApprovalNeeded` callback is wired later (lines 510-535) — when a persona requires human approval (e.g., a locked persona access request from an agent), the notification is broadcast to all WebSocket clients (admin UI) and logged.
 
-**Pairing** (line 350) — QR-code-based device pairing protocol.
+**Pairing** (line 538) — QR-code-based device pairing protocol.
 
-**Brain Client** (line 353) — HTTP client for the Python sidecar that handles LLM reasoning.
+**Brain Client** (line 541) — HTTP client for the Python sidecar, with circuit breaker (open after 5 consecutive failures, 30s cooldown), connection pooling, and Ed25519 request signing. After the brain client is created, the `OnApprovalNeeded` callback is extended (lines 546-563) to also push approval events to Brain — enabling Telegram notification delivery.
 
 <details>
 <summary><strong>Design Decision — Why a Python sidecar instead of in-process LLM?</strong></summary>
@@ -221,9 +301,17 @@ A sidecar architecture means: (1) the core can run without the brain (health pro
 
 </details>
 
+**Reminder Loop** (lines 565-589) — a background goroutine that fires reminders on schedule. The loop sleeps until the next trigger time, wakes on new reminder insertion, and delegates fired reminders to Brain for contextual notification assembly. No cron library — just `time.Sleep(time.Until(triggerAt))` with channel-based wake interrupts.
+
+**Observability** (lines 591-608) — a dynamic health checker (brain reachability + vault path + service key checks) and crash logger.
+
+**Portability** (lines 609-611) — export and import managers for Home Node migration. Archives are encrypted with AES-256-GCM + Argon2id key derivation. More in Act XI.
+
+**Estate** (line 614) — digital estate plan manager for Shamir-based activation and beneficiary key delivery.
+
 ### Services: The Business Logic Layer
 
-With all adapters ready, the code constructs **service objects** (lines 382-489). Services compose port interfaces — they never import adapters directly. This is the hexagonal architecture boundary.
+With all adapters ready, the code constructs **service objects** (lines 616-809). Services compose port interfaces — they never import adapters directly. This is the hexagonal architecture boundary.
 
 <details>
 <summary><strong>Design Decision — Why hexagonal architecture (ports and adapters)?</strong></summary>
@@ -240,9 +328,13 @@ The tradeoff is more files and more interfaces than a flat architecture. But for
 
 </details>
 
-The **GatekeeperService** (`gkSvc`, line 387) is created *before* the VaultService and passed into it. So every vault operation — query, store, delete — passes through the gatekeeper first. The VaultService also receives a `PersonaManager` (line 394), enabling persona-tier enforcement on every operation.
+The **IdentityService** (line 618) handles DID creation, key rotation, and persona DEK derivation. The **GatekeeperService** (`gkSvc`, line 623) is created *before* the VaultService and passed into it. So every vault operation — query, store, delete — passes through the gatekeeper first. The **VaultService** (line 627) also receives a `PersonaManager` (line 630), enabling persona-tier enforcement on every operation.
 
-The **TransportService** (lines 396-409) gets wired with the signer, converter, resolver, outbox, inbox, and clock. Then three critical post-construction wirings: `SetDeliverer` (the actual HTTP sender), `SetVerifier` (Ed25519 signature checker), and `SetRecipientKeys` (the node's own keypair for decryption).
+The **TransportService** (lines 632-646) gets wired with the signer, converter, resolver, outbox, inbox, and clock. Then five post-construction wirings: `SetDeliverer` (the actual HTTP sender), `SetVerifier` (Ed25519 signature checker), `SetEgress` (gatekeeper-enforced egress policy on outbound D2D — SEC-HIGH-04), `SetRecipientKeys` (the node's own keypair for decryption), and conditionally `SetSenderDID` (lines 643-646, sets the sender DID for outbound messages when `cfg.OwnDID` is configured).
+
+The ingress pipeline (lines 648-706) is assembled next — dead drop, rate limiter, sweeper, and router. Background goroutines follow (lines 708-786): ingress pending sweep (10s), outbox retry (30s), replay cache purge (5m), outbox retention cleanup (5m), pairing code expiry (1m), per-DID rate limit reset (1m), and trust neighborhood sync (1h).
+
+Four new services complete the wiring: **TaskService** (line 788), **DeviceService** (line 790), **EstateService** (line 793), and **MigrationService** (line 797). Three more are constructed for future routing: **SyncService** (line 801 — multi-device sync via checkpoint-based deltas), **WatchdogService** (line 805 — periodic health monitoring with 90-day log retention purge), and **OnboardingService** (line 809 — first-run setup wizard).
 
 ---
 
@@ -269,9 +361,9 @@ The tradeoff: NaCl is not a web standard. JWE/JWS would be interoperable with th
 
 The Router (`core/internal/ingress/router.go`) is the traffic cop. When a blob arrives, it passes through three valves:
 
-**Valve 1: IP Rate Limit** (line 45) — The RateLimiter (`core/internal/ingress/ratelimit.go`) checks whether this IP has exceeded its per-minute quota. If so, the message is rejected immediately with `ErrRateLimited`. This prevents a single sender from flooding your Home Node.
+**Valve 1: IP Rate Limit** — The RateLimiter (`core/internal/ingress/ratelimit.go`) checks whether this IP has exceeded its per-minute quota. If so, the message is rejected immediately with `ErrRateLimited`. This prevents a single sender from flooding your Home Node.
 
-**Valve 2: Payload Size** (line 50) — The InboxManager checks whether the envelope exceeds the maximum allowed size. Oversized payloads are rejected before they touch disk.
+**Valve 2: Payload Size** — The InboxManager checks whether the envelope exceeds the maximum allowed size. Oversized payloads are rejected before they touch disk.
 
 <details>
 <summary><strong>Design Decision — Why a 3-valve pipeline instead of a simple message queue?</strong></summary>
@@ -288,13 +380,13 @@ The result: the sender always gets `202 Accepted`. The message is either decrypt
 
 </details>
 
-**The Fork: Locked vs Unlocked** (lines 57-83)
+**The Fork: Locked vs Unlocked**
 
-Now the Router checks: is the default persona's vault open? This is the decisive moment.
+Now the Router checks: is the `general` persona's vault open (`domain.NewPersonaName("general")`)? This is the decisive moment.
 
 **If locked** — the vault keys aren't available, so the blob can't be decrypted. But we don't want to lose it. First, `AllowGlobal()` checks spool capacity (Valve 2b — total spool size cap to prevent disk exhaustion). Then the blob goes into the **Dead Drop** (`core/internal/ingress/deaddrop.go`).
 
-The Dead Drop is beautifully simple: a directory of opaque `.blob` files with random hex filenames. `Store()` writes atomically (temp file + rename) with `0600` permissions (lines 40-81). No metadata, no sender DID visible, no index — while locked, these blobs are just opaque cryptographic noise on disk.
+The Dead Drop is beautifully simple: a directory of opaque `.blob` files with random hex filenames. `Store()` writes atomically (temp file + rename) with `0600` permissions. No metadata, no sender DID visible, no index — while locked, these blobs are just opaque cryptographic noise on disk.
 
 <details>
 <summary><strong>Design Decision — Why a filesystem dead drop instead of a database queue?</strong></summary>
@@ -312,11 +404,18 @@ The tradeoff: no indexing, no querying, no ordering. But dead drop blobs don't n
 
 </details>
 
-**If unlocked** — the `onEnvelope` callback fires (lines 68-73). In `main.go:426-435`, this callback calls `transportSvc.ProcessInbound()` to decrypt the NaCl sealed box, verify the sender's signature, and produce a `DinaMessage`. If decryption succeeds, `StoreInbound()` adds it to the inbox. **If decryption fails** — and this is critical — the blob **falls back to the dead drop** (line 71). No silent data loss.
+**If unlocked** — the `onEnvelope` callback fires (lines 680-706 in `main.go`). This callback calls `transportSvc.ProcessInbound()` to decrypt the NaCl sealed box, verify the sender's signature, and produce a `DinaMessage`. If decryption succeeds, the message passes through two additional filters before storage:
+
+1. **Per-DID rate limit** (SEC-MED-12) — even after IP rate limiting, each sender DID has its own per-minute quota. This prevents a single known sender from overwhelming the inbox.
+2. **Trust-based ingress filtering** — the TrustService evaluates the sender's DID against the contact directory and trust cache. Three outcomes: **accept** (known/trusted, store normally), **quarantine** (unknown DID, store with `Quarantined=true` for later review), or **drop** (blocked DID, silently discard). This is the first line of defense against spam from the decentralized network.
+
+If decryption fails, the blob **falls back to the dead drop**. No silent data loss.
 
 ### The Dead Drop: Peek/Ack Semantics
 
-The Dead Drop evolved from simple read-and-delete to a **two-phase** protocol. `Peek(name)` (lines 126-137) reads without removing. `Ack(name)` (lines 140-149) deletes after successful processing. This way, if decryption fails midway, the blob survives for the next sweep attempt.
+The Dead Drop uses a **two-phase** protocol. `Peek(name)` reads without removing. `Ack(name)` deletes after successful processing. This way, if decryption fails midway, the blob survives for the next sweep attempt. All operations are mutex-protected — concurrent goroutines cannot corrupt the spool state.
+
+Writes are crash-safe: `Store()` writes to a temporary file (`.tmp-<name>`) first, then atomically renames it to the final `<name>.blob` path. If the process crashes mid-write, only the temp file is left — the spool stays clean. Filenames are 16 random bytes (hex-encoded) + `.blob`, preventing enumeration of pending messages.
 
 <details>
 <summary><strong>Design Decision — Why Peek/Ack instead of read-and-delete?</strong></summary>
@@ -335,15 +434,19 @@ If the process crashes between Peek and Ack, the blob survives. The next Sweep p
 
 ### The Sweeper
 
-After the vault is unlocked, the **Sweeper** (`core/internal/ingress/sweeper.go`) drains the dead drop. For each blob, it:
+After the vault is unlocked, the **Sweeper** (`core/internal/ingress/sweeper.go`) drains the dead drop. Each `Sweep()` call begins with a **stale blob GC pass** — any `.blob` file whose filesystem mtime exceeds 24 hours is evicted immediately. This provides restart resilience, since the in-memory failure counters are lost on process restart.
 
-1. `Peek`s the blob (read without delete)
-2. Delegates to `transport.ProcessInbound()` for decryption + signature verification (lines 111-113)
-3. Checks message TTL — if the message is older than 24 hours, it's silently dropped (lines 117-122)
-4. Calls `onMessage` to deliver the decrypted message
-5. `Ack`s the blob (deletes from disk)
+For each remaining blob, the sweeper:
 
-The background goroutine in `main.go:438-448` runs `ProcessPending()` every 10 seconds. It calls `sweeper.Sweep()` first (dead drop), then drains the fast-path inbox spool. Any failures during spool processing re-deposit the blob into the dead drop for another attempt.
+1. `Peek`s the blob (read without delete).
+2. Delegates to `transport.ProcessInbound()` for decryption + signature verification. (A fallback raw-decryption path exists for cases where no transport processor is configured — it handles Ed25519-to-X25519 key conversion, NaCl `OpenAnonymous`, and JSON unmarshalling directly.)
+3. Checks message TTL — if the message is older than 24 hours, it's silently dropped and `Ack`'d.
+4. Calls the `onMessage` callback to deliver the decrypted message. The callback (wired in `main.go:658-677`) applies per-DID rate limiting and trust-based ingress filtering — the same accept/quarantine/drop rules as the fast path.
+5. `Ack`s the blob (deletes from disk) and clears the failure counter.
+
+**Poison-pill eviction** (HIGH-04): if a blob fails to decrypt on 5 consecutive sweep attempts, it is evicted — `Ack`'d and removed. Without this, a single corrupt or maliciously crafted blob would block the sweeper on every 10-second cycle forever. The failure counter is tracked per blob name in a mutex-protected map.
+
+The background goroutine in `main.go:708-719` runs `ProcessPending()` every 10 seconds. It calls `sweeper.Sweep()` first (dead drop), then drains the fast-path inbox spool. Any failures during spool processing re-deposit the blob into the dead drop for another attempt.
 
 <details>
 <summary><strong>Design Decision — Why a 24-hour TTL on dead drop messages?</strong></summary>
@@ -355,7 +458,49 @@ Messages that sit in the dead drop for more than 24 hours are silently dropped d
 
 ### The Outbox: Retry on the Other Side
 
-Meanwhile, outbound messages have their own lifecycle. The outbox retry goroutine (lines 451-461) runs every 30 seconds, calling `transportSvc.ProcessOutbox()` to retry failed deliveries with exponential backoff.
+Meanwhile, outbound messages have their own lifecycle. The outbox retry goroutine (lines 721-732) runs every 30 seconds, calling `transportSvc.ProcessOutbox()` to retry failed deliveries with exponential backoff (`30s × 2^retries`). Messages that fail 5 consecutive deliveries are dead-lettered — `ProcessOutbox` skips them, and they remain in the outbox until the cleanup goroutine removes them. A separate cleanup goroutine (lines 746-755) runs every 5 minutes, purging outbox entries older than 24 hours. And the replay cache (lines 734-744) — which prevents processing the same inbound message twice by keying on `senderDID|msgID` — is purged every 5 minutes, removing entries older than 24 hours (SEC-HIGH-08).
+
+---
+
+### Where HTTP Lives in Core
+
+Before tracing a request's journey, it helps to see the full HTTP surface — both inbound and outbound.
+
+**Server-side (Core listens):**
+
+| Listener | Address | Auth | Purpose |
+|----------|---------|------|---------|
+| **TCP** | `:8100` (configurable) | Ed25519 signatures / Bearer token / public | Primary API — Brain, devices, agents, WebSocket |
+| **Unix socket** | `/data/run/admin.sock` | Socket access = admin (no token) | `dina-admin` CLI inside the container |
+
+Both use the same `http.ServeMux` router but different middleware chains — the socket replaces Auth+Authz with `SocketAdminAuth`.
+
+**Client-side (Core calls out):**
+
+| Client | Target | Auth | Purpose |
+|--------|--------|------|---------|
+| **BrainClient** | `brain:8200` | Ed25519 service key | Process events, reason, health check. Circuit breaker (5 failures → open, 30s cooldown) |
+| **TrustResolver** | AppView `:3000` | None (internal network) | XRPC endpoints: `com.dina.trust.getProfile`, `com.dina.trust.getGraph` |
+| **PLCClient** | PLC directory + PDS | Admin token | DID creation/rotation on `plc.directory` |
+| **PDSPublisher** | AT Protocol PDS | Admin token | Publish trust records (`com.dina.trust.*` lexicons) |
+| **Transporter** | Other Dina nodes | NaCl sealed box (payload-level) | D2D message delivery to `POST /msg` on recipient |
+
+**Proxy paths (Core relays to Brain):**
+
+Three handlers where Core accepts an HTTP request from a device/agent and re-issues it to Brain with Core's service key:
+
+- **AdminHandler** (`/admin/*`) — reverse-proxies the admin web UI via `httputil.ReverseProxy`.
+- **AgentHandler** (`/v1/agent/validate`) — not a generic proxy. Only accepts `agent_intent` events, overrides the caller-supplied `agent_did` with the authenticated identity from the auth middleware, and sets `trust_level` to `"verified"`. Then forwards the patched payload to Brain's guardian via `ProcessEvent`.
+- **ReasonHandler** (`/api/v1/reason`) — proxies LLM reasoning to Brain, re-signing with Core's service key. Forwards agent DID and session name for agent-scoped callers so Brain can attribute vault access to the originating agent.
+
+In all three cases, the external caller authenticates to Core (device key or client token), and Core authenticates to Brain (service key). Brain is never directly exposed to the network.
+
+**Not HTTP:**
+
+- **WebSocket** (`/ws`) — upgrades from HTTP but then uses the WebSocket protocol for bidirectional messaging.
+- **Vault storage** — local SQLCipher files, no network.
+- **Dead drop** — local filesystem, no network.
+- **Reminder loop** — in-process goroutine, no network.
 
 ---
 
@@ -365,37 +510,57 @@ Now let's trace what happens when a legitimate request arrives at the API.
 
 ### The Middleware Chain
 
-Every request passes through **seven layers** before reaching a handler (lines 644-652). Think of them as concentric walls of a fortress:
+Every request passes through **eight layers** before reaching a handler (lines 1065-1084). Think of them as concentric walls of a fortress:
 
 <details>
 <summary><strong>Design Decision — Why hand-rolled middleware instead of a framework (Gin, Echo, Fiber)?</strong></summary>
 <br>
 
-Go's `net/http` standard library is production-grade: it handles HTTP/1.1 and HTTP/2, supports graceful shutdown, and provides `http.Handler` — the universal interface that every middleware composable uses. Frameworks add routing DSLs, context helpers, and middleware chains — but Dina's routing is simple enough for `http.ServeMux`, and the middleware chain is just function composition: `cors(recovery(logging(rateLimit(auth(authz(timeout(mux)))))))`.
+Go's `net/http` standard library is production-grade: it handles HTTP/1.1 and HTTP/2, supports graceful shutdown, and provides `http.Handler` — the universal interface that every middleware composable uses. Frameworks add routing DSLs, context helpers, and middleware chains — but Dina's routing is simple enough for `http.ServeMux`, and the middleware chain is just function composition: `cors(bodyLimit(recovery(logging(rateLimit(auth(authz(timeout(mux))))))))`.
 
-No framework means: (1) zero third-party dependencies in the HTTP layer (smaller attack surface), (2) no framework-specific context types leaking into business logic, (3) total control over the middleware order (which matters — CORS must be outermost, auth must come before authz, timeout must be innermost). The cognitive cost of learning "how does this framework work?" is replaced by "read the 7 wrapper functions in main.go."
+No framework means: (1) zero third-party dependencies in the HTTP layer (smaller attack surface), (2) no framework-specific context types leaking into business logic, (3) total control over the middleware order (which matters — CORS must be outermost, auth must come before authz, timeout must be innermost). The cognitive cost of learning "how does this framework work?" is replaced by "read the 8 wrapper functions in main.go."
+
+**The numbers make the case.** The entire middleware layer is 505 lines across 7 files:
+
+| File | Lines | What it does | Framework equivalent |
+|------|-------|-------------|---------------------|
+| `auth.go` | 251 | Ed25519 sig verification, Bearer tokens, per-service caller-type context injection, SocketAdminAuth, Authz | **None.** This is Dina-specific. No framework gives you Ed25519 canonical-payload signature auth with per-service caller-type mapping. You'd write the same custom middleware in Gin. |
+| `ratelimit.go` | 77 | Per-IP rate limiting with rightmost-trusted XFF parsing (SEC-MED-15) | Gin has no built-in rate limiter. You'd add `gin-contrib/ratelimit` or `ulule/limiter` — a dependency, not free. The rightmost-trusted XFF logic would still be custom. |
+| `cors.go` | 69 | Origin matching, preflight OPTIONS, wildcard vs credentialed | `gin-contrib/cors` does this. Saves ~50 lines. |
+| `logging.go` | 45 | statusWriter wrapper + slog structured log | `gin.Logger()` does this. Saves ~30 lines. |
+| `recovery.go` | 31 | Panic recovery → `debug.Stack()` + 500 | `gin.Recovery()` does this. Saves ~20 lines. |
+| `timeout.go` | 17 | One-line wrapper: `http.TimeoutHandler(next, duration, msg)` | Same in any framework. |
+| `bodylimit.go` | 15 | One-line wrapper: `http.MaxBytesReader(w, r.Body, max)` | Same in any framework. |
+
+A framework would replace **~100 lines of boilerplate** (cors, logging, recovery) and add **~0 help** for the 251-line auth middleware — which is the only complex part and is entirely Dina-specific. Meanwhile, Gin pulls in `json-iterator`, `go-playground/validator`, `ugorji/codec`, and other transitive dependencies — each an attack surface for a security-critical system that currently has zero third-party deps in its HTTP layer.
+
+The `http.Handler` interface is also the universal adapter in the Go ecosystem. Every middleware, every test harness, every tool works with it. Gin's `gin.Context` is a framework-specific type — once adopted, handlers, tests, and mocks all speak Gin, and switching away is a rewrite.
 
 </details>
 
 1. **CORS** (`core/internal/middleware/cors.go`) — Sets `Access-Control-Allow-Origin`. When configured as `"*"`, it correctly omits `Access-Control-Allow-Credentials` per the spec.
 
-2. **Recovery** — Catches panics, logs them, returns 500.
+2. **Body Limit** — Caps request bodies at 1 MB. Rejects oversized payloads before any further processing.
 
-3. **Logging** — Structured JSON logs with request timing.
+3. **Recovery** — Catches panics, logs them, returns 500.
 
-4. **Rate Limit** — Per-IP token bucket. Rejects with 429 if exceeded.
+4. **Logging** — Structured JSON logs with request timing.
 
-5. **Auth** (`core/internal/middleware/auth.go:64-147`) — This is where tokens are validated. Three paths:
+5. **Rate Limit** — Per-IP token bucket with trusted proxy CIDR support (X-Forwarded-For). Rejects with 429 if exceeded.
+
+6. **Auth** (`core/internal/middleware/auth.go`) — This is where tokens are validated. Five paths, checked in order:
    - **Public paths** (`/healthz`, `/readyz`, `/.well-known/atproto-did`) — skip auth entirely.
+   - **Admin proxy** (`/admin`, `/admin/*`) — bypassed because Core acts as a transport proxy; the Brain admin session/login middleware handles authentication on that side.
    - **NaCl ingress** (`POST /msg`) — authenticated by the sealed box itself, no token needed.
-   - **Ed25519 signature auth** (lines 78-120) — The client sends `X-DID`, `X-Signature`, `X-Timestamp` headers. The middleware verifies the timestamp is within 5 minutes (replay protection), reads the body (bounded to 1MB), and calls `VerifySignature()`. On success, it sets `token_kind=client`, `agent_did={identity}`, and `token_scope=device` in the request context.
-   - **Bearer token auth** (lines 123-145) — Classic `Authorization: Bearer <token>`. `IdentifyToken()` handles client tokens only (admin/bootstrap contexts). CLI and Brain use Ed25519 signatures for normal operations.
+   - **Ed25519 signature auth** — The client sends `X-DID`, `X-Signature`, `X-Timestamp`, and `X-Nonce` headers. The middleware verifies the timestamp is within 5 minutes (replay protection), reads the body (bounded to 1MB), and calls `VerifySignature()`. The nonce provides additional replay protection beyond the timestamp window. On success, it sets `token_kind`, `agent_did`, and `token_scope` in the request context.
+   - **Bearer token auth** — Classic `Authorization: Bearer <token>`. `IdentifyToken()` handles client tokens only (admin/bootstrap contexts). CLI and Brain use Ed25519 signatures for normal operations.
+   - **Optional auth paths** (`/v1/pair/complete`) — if no Ed25519 or Bearer credentials are present, the request passes through unauthenticated. The pairing code itself is the auth for this endpoint.
 
 <details>
 <summary><strong>Design Decision — Why two auth methods (Ed25519 signatures + Bearer tokens)?</strong></summary>
 <br>
 
-Ed25519 signature auth (`X-DID` + `X-Signature` + `X-Timestamp`) is the primary auth method for devices and services. The private key never leaves the device/service, and each request is signed with the current timestamp to prevent replay. The canonical signing payload is: `{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{SHA256_HEX(BODY)}`. `VerifySignature()` checks service keys first (Brain's public key, loaded from `/run/secrets/service_keys/public/`), then device keys.
+Ed25519 signature auth (`X-DID` + `X-Signature` + `X-Timestamp` + `X-Nonce`) is the primary auth method for devices and services. The private key never leaves the device/service, and each request is signed with the current timestamp plus a random nonce to prevent replay. The canonical signing payload is: `{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{SHA256_HEX(BODY)}`. `VerifySignature()` checks service keys first (Brain's public key, loaded from `/run/secrets/service_keys/public/`), then device keys.
 
 - **CLI** uses Ed25519 signature auth exclusively (one keypair per device).
 - **The Python brain sidecar** uses Ed25519 signature auth with its own service keypair, derived from the master seed at install time via SLIP-0010. Private keys are isolated by separate Docker bind mounts — Brain's private key is in `secrets/service_keys/brain/` (mounted only to Brain as `/run/secrets/service_keys/private/`), while both services' public keys are in `secrets/service_keys/public/` (mounted to both containers as `/run/secrets/service_keys/public/`). At runtime, services load existing keys only — no generation occurs.
@@ -407,9 +572,9 @@ The 5-minute timestamp window prevents replay attacks while accommodating reason
 
 </details>
 
-6. **Authz** (`NewAuthzMiddleware`, lines 154-173) — Reads the token kind and scope from context. Calls `AllowedForTokenKind(kind, path, scope)` to check whether this caller can access this endpoint. The `AdminEndpointChecker` (`core/internal/adapter/auth/auth.go`) blocks `"device"`-scoped tokens from sensitive paths like `/v1/did/sign` and `/admin/*`.
+7. **Authz** (`NewAuthzMiddleware`) — Reads the token kind and scope from context. Calls `AllowedForTokenKind(kind, path, scope)` to check whether this caller can access this endpoint. The `AdminEndpointChecker` (`core/internal/adapter/auth/auth.go`) blocks `"device"`-scoped tokens from sensitive paths like `/v1/did/sign` and `/admin/*`.
 
-7. **Timeout** — 30-second deadline on every request.
+8. **Timeout** — 30-second deadline on every request.
 
 ### Example: Storing a Verdict in the Vault
 
@@ -419,14 +584,16 @@ Say the Python brain just analyzed a YouTube video and wants to store the verdic
 
 **Step 2: Authz middleware** checks — is `"brain"` allowed to access `/v1/vault/store`? Yes, the brain can store data.
 
-**Step 3: VaultHandler.HandleStore** (`core/internal/handler/vault.go:104-131`) parses the JSON body, validates the persona name via `domain.NewPersonaName()` (which rejects anything not matching `[a-z0-9_]+`), and calls `vaultSvc.Store()`.
+**Step 3: VaultHandler.HandleStore** (`core/internal/handler/vault.go`) parses the JSON body, validates the persona name via `domain.NewPersonaName()` (which rejects anything not matching `[a-z0-9_]+`), and calls `vaultSvc.Store()`.
 
-**Step 4: VaultService.Store** (`core/internal/service/vault.go:120-141`) — Here the cascading checks begin:
-- Is the vault open? If not, returns `ErrPersonaLocked`.
-- PersonaManager.AccessPersona — is this persona's session still active? (checks TTL timer)
-- Validate item type against `domain.ValidVaultItemTypes` and size against `domain.MaxVaultItemSize` (1MB).
+**Step 3b: Handler defaults** — Before calling the service, the handler checks the caller type. If the caller is an `agent` or `user` (as opposed to Brain's service identity), the handler injects trust metadata defaults: `sourceType="self"`, `sender="user"`, `senderTrust="self"`, `confidence="high"`, `retrievalPolicy="normal"`. This ensures user-authored content is always trusted without requiring Brain involvement.
+
+**Step 4: VaultService.Store** (`core/internal/service/vault.go`) — Here the cascading checks begin:
+- **PersonaManager.AccessPersona** — tier-based access control. This is not a simple "is the session active?" check — it's a decision tree over persona tiers. Locked-tier personas flat-deny agents and brain even when unlocked. Sensitive-tier personas audit every access and require a session grant for agents/brain. Standard-tier personas require a session grant for agents. Default-tier personas auto-approve. If a grant is missing, `ErrApprovalRequired` is returned — the handler catches this and creates an approval request (see Approval Flow below).
+- **Is the vault open?** If not, returns `ErrPersonaLocked`.
+- **Gatekeeper.EvaluateIntent** — the intent check, with `ActionVaultWrite` as the action. Brain's write to an unlocked persona passes; an untrusted external agent would be blocked. If denied, returns `ErrForbidden` with a reason.
 - Set `IngestedAt` timestamp if not already set.
-- Delegate to `writer.Store()` — the SQLite adapter.
+- Delegate to `writer.Store()` — the SQLite adapter, which performs its own validation: item type against `domain.ValidVaultItemTypes` and body size against `domain.MaxVaultItemSize` (10 MiB).
 
 **Step 5:** ID returned to handler, encoded as JSON, returned as `201 Created`.
 
@@ -434,7 +601,7 @@ Say the Python brain just analyzed a YouTube video and wants to store the verdic
 
 Now say an external agent (trust level: "verified") wants to query the vault. The flow changes:
 
-**VaultService.Query** (`core/internal/service/vault.go:50-80`) does everything Store does, but adds a **gatekeeper check**. Every vault operation — query, get, store, delete — passes through the same gauntlet:
+**VaultService.Query** (`core/internal/service/vault.go`) does everything Store does, including the full authorization gauntlet. Every vault operation — query, get, store, delete — passes through the same checks:
 
 ```
 Brain/Agent calls: POST /v1/vault/query {persona: "health", query: "..."}
@@ -442,31 +609,34 @@ Brain/Agent calls: POST /v1/vault/query {persona: "health", query: "..."}
        ▼
 VaultService.Query()
        │
-       ├── 1. Is persona unlocked?  ──── NO → ErrPersonaLocked (vault is sealed)
+       ├── 1. PersonaManager.AccessPersona() — tier-based access control
+       │       (MUST run before IsOpen — so closed sensitive personas trigger
+       │        approval flow, not just "persona locked")
        │
-       ├── 2. PersonaManager.AccessPersona() — persona-tier enforcement
+       ├── 2. Is persona unlocked?  ──── NO → ErrPersonaLocked (vault is sealed)
        │
        └── 3. Gatekeeper.EvaluateIntent({
                AgentDID:  "brain",         // who is asking
                Action:    "vault_read",    // what they want to do
+               Target:    "health",        // resource being accessed
                PersonaID: "health",        // which compartment
-               TrustLevel: "...",          // their trust ring
-               Constraints: {...}          // any agent-specific restrictions
            })
 ```
 
-This hits **Gatekeeper.EvaluateIntent** (`core/internal/adapter/gatekeeper/gatekeeper.go:99-205`). The gatekeeper applies a decision tree, checked in this order:
+Note: the `Intent` struct also has `TrustLevel` and `Constraints` fields, but VaultService.Query does not set them — for vault operations, the gatekeeper sees Brain's agentDID (`"brain"`) and applies brain-specific rules. TrustLevel and Constraints are populated by the `AgentHandler` for external agent intent validation (`/v1/agent/validate`), a separate path.
 
-1. **Brain + security-critical action?** (lines 109-116) — Hard deny. Brain can never `did_sign`, `did_rotate`, `vault_backup`, or `persona_unlock`. These require the human (via CLIENT_TOKEN).
-2. **Brain + locked persona?** (line 118) — Denied. The brain cannot access locked compartments.
-3. **Brain + restricted persona?** (line 126) — Allowed but **audited**. Every access creates a trail.
-4. **Cross-persona constraint?** (lines 137-150) — If an agent has constraint `persona_health_only: true`, it can **only** access the health vault. Requesting financial → denied. This is how you scope an external agent (OpenClaw, Perplexity Computer) to one compartment.
-5. **Draft-only constraint?** (lines 152-160) — Agents with `draft_only: true` cannot perform risky actions (send_email, transfer_money). They can only prepare drafts.
-6. **Untrusted agent?** (lines 164-170) — Flat denial for any vault or risky action.
-7. **Money action without highest trust?** (lines 173-179) — `transfer_money` requires the "Verified+Actioned" trust ring (proven transaction history + peer attestation).
-8. **Vault access by verified (not fully trusted) agent?** (lines 182-188) — Allowed but **audited**. The user can review what was accessed.
-9. **Risky action?** (lines 191-197) — `send_email`, `transfer_money`, `share_data` are flagged for user review. Even trusted agents cannot silently send email.
-10. **Everything else** (line 200) — Safe intent, pass silently, no audit trail.
+This hits **Gatekeeper.EvaluateIntent** (`core/internal/adapter/gatekeeper/gatekeeper.go`). The gatekeeper applies a decision tree, checked in this order:
+
+1. **Brain + security-critical action?** — Hard deny. Brain can never `did_sign`, `did_rotate`, `vault_backup`, `persona_unlock`, `vault_raw_read`, `vault_raw_write`, or `vault_export`. Seven actions, all requiring the human (via CLIENT_TOKEN).
+2. **Brain + locked persona?** — Denied. The brain cannot access locked compartments (checks `intent.TrustLevel == "locked"`).
+3. **Brain + restricted persona?** — Allowed but **audited**. Every access creates a trail.
+4. **Cross-persona constraint?** — If an agent has constraint `persona_health_only: true`, it can **only** access the health vault. Requesting financial → denied. This is how you scope an external agent (OpenClaw, Perplexity Computer) to one compartment.
+5. **Draft-only constraint?** — Agents with `draft_only: true` cannot perform risky actions (send_email, transfer_money). They can only prepare drafts.
+6. **Untrusted agent?** — Flat denial for **all** actions. Not just vault or risky — an untrusted agent cannot do anything.
+7. **Money action without highest trust?** — `transfer_money` requires the "Verified+Actioned" trust ring (proven transaction history + peer attestation).
+8. **Vault access by verified (not fully trusted) agent?** — Allowed but **audited**. The user can review what was accessed.
+9. **Risky action?** — `send_email`, `transfer_money`, `share_data` are **denied** (`Allowed: false`). Even trusted agents cannot silently send email — these actions require explicit human approval through a separate flow.
+10. **Everything else** — Safe intent, pass silently, no audit trail.
 
 Today, Brain's agent DID is `"brain"` and it can access any *unlocked* persona. The constraint mechanism (rules 4-5) exists for external agents where you'd scope access: "this agent can only see my personal vault, not health or financial." Brain itself is trusted (it runs on your hardware) — external agents are not.
 
@@ -484,14 +654,15 @@ Dina's gatekeeper rules are **hardcoded in Go** because the rules are few, criti
 
 ## Act IV: Persona Lifecycle — Lock, Unlock, and the Ticking Clock
 
-Personas are Dina's compartmentalization mechanism. "personal" and "work" and "medical" each have their own encrypted vault, their own access rules, their own TTL.
+Personas are Dina's compartmentalization mechanism. "personal" and "health" and "financial" each have their own encrypted vault, their own access rules, their own TTL.
 
 ### Creating a Persona
 
-`POST /v1/personas` hits `PersonaHandler.HandleCreatePersona` (`core/internal/handler/persona.go:58-101`). The handler:
-1. Requires a non-empty name and **requires a passphrase** (line 75 — empty passphrase returns 400).
+`POST /v1/personas` hits `PersonaHandler.HandleCreatePersona` (`core/internal/handler/persona.go`). The handler:
+1. Requires a non-empty name, a **passphrase** (empty passphrase returns 400), and an optional **tier** (`default`, `standard`, `sensitive`, or `locked` — invalid tiers return 400).
 2. Generates a 16-byte random salt, hashes the passphrase with Argon2id (`auth.HashPassphrase`).
-3. Calls `personaMgr.Create()` with the hash. The persona is created in a **locked** state.
+3. Calls `personaMgr.Create()` with the name, tier, and hash. Inside the persona manager, two guards fire: the **duplicate check** (existing persona with same name → 409) and the **orphan guard** (a vault `.sqlite` file already exists for this persona name → 409, prevents accidentally reusing a DEK from a previous install). The persona's initial lock state depends on the tier — only `locked`-tier personas start locked; `default`, `standard`, and `sensitive` tiers start unlocked. DEK version is initialized to `1`.
+4. After creation, the handler **auto-opens the vault** for `default` and `standard` tiers — it derives a DEK from the master seed and calls `vaultMgr.Open()` so the persona is immediately usable without an explicit unlock call. `Sensitive` and `locked` tiers require explicit unlock.
 
 <details>
 <summary><strong>Design Decision — Why Argon2id instead of bcrypt or scrypt?</strong></summary>
@@ -510,14 +681,15 @@ Bcrypt would also be fine — it's battle-tested and widely understood. But for 
 
 ### Unlocking: The Moment of Truth
 
-`POST /v1/persona/unlock` hits `HandleUnlockPersona` (`core/internal/handler/persona.go:104-156`). This is the critical path:
+`POST /v1/persona/unlock` hits `HandleUnlockPersona` (`core/internal/handler/persona.go`). This is the critical path:
 
 1. Parse persona name and passphrase from the request.
 2. Call `personaMgr.Unlock(ctx, persona, passphrase, 3600)` — the `3600` is the TTL in seconds (1 hour).
 3. Inside `PersonaManager.Unlock` (`core/internal/adapter/identity/identity.go`), the stored Argon2id hash is retrieved and verified against the provided passphrase via the `VerifyPassphrase` callback. If wrong: `ErrInvalidPassphrase`.
-4. **The persona ID is canonicalized** — `Unlock` uses `CanonicalID()` to handle both raw names and `"persona-"` prefixed IDs consistently.
-5. A TTL timer starts. When it expires, the `OnLock` callback fires — which closes the vault (see Act I wiring).
-6. Back in the handler (lines 133-151): the persona name is normalized (strip `"persona-"` prefix before `NewPersonaName` validation), a DEK is derived from the master seed via HKDF, and `vaultMgr.Open()` is called with that DEK. Now the vault is decrypted and ready for reads and writes.
+4. **The persona ID is canonicalized** — `Unlock` calls `canonicalPersonaID()`, which ensures the `"persona-"` prefix is present (adding it if the caller passed a raw name like `"health"` instead of `"persona-health"`). Both forms resolve to the same internal key.
+5. **Hash upgrade (CRITICAL-02)** — on successful passphrase verification, if a `HashUpgrader` is configured, the passphrase hash is silently upgraded to the latest Argon2id parameters. This ensures legacy hashes are migrated to the strongest algorithm on first use. Critically, only the *authentication hash* is upgraded — `DEKVersion` is *not* bumped here, because changing the DEK without re-encrypting the vault would lock out the persona.
+6. A TTL timer starts. When it expires, the `OnLock` callback fires — which closes the vault (see Act I wiring).
+7. Back in the handler: the persona name is normalized (strip `"persona-"` prefix before `NewPersonaName` validation), the **DEK version** is looked up via `GetDEKVersion()` (falling back to version 1 for legacy personas that pre-date versioning), and the versioned DEK is derived from the master seed via HKDF (`DerivePersonaDEKVersioned`). Then `vaultMgr.Open()` is called with that DEK. Now the vault is decrypted and ready for reads and writes. The staging inbox is drained (`StagingInbox.DrainPending`) to flush any items that were waiting for this persona to unlock — returning a count of items moved into the vault.
 
 <details>
 <summary><strong>Design Decision — Why HKDF for persona DEK derivation instead of a random key per persona?</strong></summary>
@@ -534,7 +706,11 @@ HKDF derivation was chosen because: (1) one seed backup recovers *all* persona v
 
 ### The Lock Timer
 
-This is the invisible guardian. After 1 hour (or whatever TTL was set), the timer fires, the mutex releases, `OnLock` runs, the vault closes, and any subsequent queries return `ErrPersonaLocked`. No stale sessions. No forgotten open vaults. The clock enforces what policy cannot.
+This is the invisible guardian. The Unlock method registers a `time.AfterFunc` callback that fires after the TTL expires (default 1 hour). When it fires, the callback acquires the `PersonaManager` mutex, sets `Locked = true`, deletes the timer from the `ttlTimers` map, and persists state. Then — critically — it releases the mutex *before* calling `OnLock`. This ordering prevents deadlocks: `OnLock` (wired in `main.go:304-317`) calls `vaultMgr.Close()`, which might acquire its own locks.
+
+The result: the vault closes, the DEK is gone from memory, and any subsequent queries return `ErrPersonaLocked`. No stale sessions. No forgotten open vaults. The clock enforces what policy cannot.
+
+One subtlety: if the persona is **re-unlocked** before the timer fires, the existing timer is cancelled (`timer.Stop()`, line 1547) and a fresh one starts. This means extending a session is just another unlock — no special "extend TTL" endpoint needed.
 
 <details>
 <summary><strong>Design Decision — Why TTL-based auto-lock instead of manual-only locking?</strong></summary>
@@ -544,22 +720,35 @@ If personas only locked when the user explicitly asked, they'd stay open forever
 
 </details>
 
+### Approval Flow: Agent Access to Sensitive Personas
+
+When an agent requests access to a **sensitive** or **standard** tier persona without an active session grant, `AccessPersona` returns `ErrApprovalRequired`. The handler catches this error and calls `RequestApproval()` on the PersonaManager — which stores the pending approval (with a **30-minute expiry**), then fires the `OnApprovalNeeded` callback (wired in two phases at `main.go:510-563`). This triggers a two-step notification:
+
+1. **WebSocket broadcast** — the approval request (approval ID, persona, requesting DID, session ID, reason) is pushed to all connected admin UI clients via the WSHub.
+2. **Brain push** — the same event is sent to Brain via `brain.Process()` as a `TaskEvent` with type `"approval_needed"`, for downstream notification delivery (Telegram, push, etc.).
+
+Note: **locked-tier** personas don't trigger approval — they flat-deny agents with `ErrPersonaLocked`, even when the vault is unlocked. The locked tier is the nuclear option: human-only access.
+
+The human approves via `POST /v1/persona/approve` (with optional `scope`: `"single"` or `"session"`, defaulting to `"session"`) or denies via `POST /v1/persona/deny`. Until approval, the requesting agent gets a 403 Forbidden with the `approval_id` for tracking. Pending approvals are listed at `GET /v1/persona/approvals`.
+
+When approved, HandleApprove doesn't just flip a flag — it actively **opens the vault** for the approved persona (deriving the DEK, calling `VaultManager.Open`) and calls `MarkGrantOpened` to track which vaults were opened via approval. This matters because grant-opened vaults are auto-closed when the session ends or a single-use grant is consumed — unlike manually unlocked vaults, which follow their TTL timer. Single-use grants (`scope: "single"`) are consumed on first access and the vault is re-locked if no other active grants remain.
+
 ---
 
 ## Act V: Dina-to-Dina — Sending Messages Across the Wire
 
 When you want to send a message to another Dina:
 
-`POST /v1/msg/send` hits `MessageHandler.HandleSend` (`core/internal/handler/message.go:31-68`). The handler parses the recipient DID, validates it via `domain.NewDID()`, and calls `transportSvc.SendMessage()`.
+`POST /v1/msg/send` hits `MessageHandler.HandleSend` (`core/internal/handler/message.go`). The handler parses the recipient DID, validates it via `domain.NewDID()`, and calls `transportSvc.SendMessage()`.
 
 **TransportService.SendMessage** (`core/internal/service/transport.go`) orchestrates the encryption pipeline:
-1. Resolve the recipient's DID document from the resolver to find their public key and service endpoint.
-2. Convert the recipient's Ed25519 public key to X25519 (NaCl uses Curve25519 for key exchange).
+1. **Egress check** (SEC-HIGH-04) — first, before any crypto work. The GatekeeperService's egress policy is enforced on the plaintext. PII-containing payloads or blocked destinations are rejected immediately.
+2. Resolve the recipient's DID document from the resolver to find their public key and service endpoint.
 3. Sign the plaintext message with the sender's Ed25519 key.
-4. Encrypt with `crypto_box_seal` — each message uses a **fresh ephemeral X25519 keypair**, ensuring unique ciphertext even to the same recipient.
-5. Package into a `DinaEnvelope` with the signature, sender DID, and ciphertext.
-6. Attempt delivery via HTTP POST to the recipient's service endpoint.
-7. If delivery fails, queue in the **outbox** for retry (30-second retry interval, exponential backoff).
+4. Decode the recipient's multibase-encoded Ed25519 public key and convert it to X25519 (NaCl uses Curve25519 for key exchange).
+5. Encrypt with `crypto_box_seal` — each message uses a **fresh ephemeral X25519 keypair**, ensuring unique ciphertext even to the same recipient.
+6. **Enqueue in the outbox** — the message (ciphertext + signature) is always queued first, before any delivery attempt. This ensures the message survives a process crash between enqueue and delivery.
+7. Build the delivery payload (JSON wrapper with base64-encoded ciphertext + hex-encoded signature) and attempt immediate delivery via HTTP POST to the recipient's service endpoint. If delivery succeeds, the outbox entry is marked delivered. If delivery fails, the message stays pending for `ProcessOutbox` retry (30-second interval, exponential backoff, max 5 retries before dead-letter).
 
 <details>
 <summary><strong>Design Decision — Why Ed25519-to-X25519 conversion instead of separate key exchange keys?</strong></summary>
@@ -575,20 +764,23 @@ Conversion was chosen because: (1) one keypair per identity instead of two — s
 </details>
 
 <details>
-<summary><strong>Design Decision — Why `did:key` instead of `did:web` or `did:ion`?</strong></summary>
+<summary><strong>Design Decision — Why `did:plc` instead of `did:web`, `did:key`, or `did:ion`?</strong></summary>
 <br>
 
 DID methods differ in where the DID document lives:
 
-- **`did:web`** — DID document hosted at a URL. Simple, but depends on DNS and web hosting. If the domain expires or the server goes down, the identity is gone.
+- **`did:web`** — DID document hosted at a URL. Simple, but depends on DNS and web hosting. If the domain expires or the server goes down, the identity is gone. No key rotation without a new URL.
 - **`did:ion`** — DID document anchored to Bitcoin's blockchain. Immutable and censorship-resistant, but slow (Bitcoin block times), expensive (transaction fees), and requires a full node or trusted resolver.
-- **`did:key`** — DID document is *derived* from the public key itself. No network lookup needed. The DID `did:key:z6Mk...` literally encodes the Ed25519 public key with a multicodec prefix. Resolution is a pure function: parse the DID string → extract the key → build the document.
+- **`did:key`** — DID document is *derived* from the public key itself. Zero infrastructure, instant resolution, self-certifying. But no key rotation — the DID *is* the key, so rotating the key means changing the DID, which means changing your identity.
+- **`did:plc`** — AT Protocol's DID method. The DID is a hash of a signed "genesis operation." The DID document lives on `plc.directory` (a distributed operation log). Key rotation is a signed operation that updates the document without changing the DID.
 
-`did:key` was chosen for Phase 1 because: (1) zero infrastructure dependency — no DNS, no blockchain, no server, (2) instant resolution — no network call, (3) self-certifying — the DID *is* the key, so it can't be spoofed without the private key. The migration path to `did:plc` (AT Protocol's DID method, backed by a distributed ledger) is planned for Phase 3, which adds key rotation and account portability without sacrificing self-sovereignty. The `port.DIDManager` interface already abstracts the DID method — switching from `did:key` to `did:plc` changes the adapter, not the service layer.
+`did:plc` was chosen because Dina uses the AT Protocol ecosystem (PDS, AppView, Jetstream) for the Trust Network. Alignment on DID method means: (1) Dina's identity is a first-class AT Protocol identity — it can publish and receive AT Protocol records natively, (2) key rotation is supported — if a signing key is compromised, the recovery key (secp256k1, derived at `m/9999'/2'/0'`) can rotate to a new signing key without changing the DID, and (3) the PLC operation log provides an auditable history of key changes.
+
+Core supports two modes: when `DINA_PDS_URL` is set, DIDs are registered on the real PLC directory via PDS (`CreateAccountAndDID`). In local-only mode (no PDS configured), Core derives a `did:plc:`-formatted identifier locally from a SHA-256 hash of the public key (`core/internal/adapter/identity/identity.go:260-264`) — same format, same validation rules, but no PLC directory registration. This means a Home Node works offline and can later register with PLC when PDS is configured.
 
 </details>
 
-The receiving side is the ingress pipeline from Act II — the same `POST /msg` endpoint, the same three valves.
+The receiving side is the ingress pipeline from Act II — the same `POST /msg` endpoint, the same three valves, the same trust-based filtering.
 
 ---
 
@@ -596,10 +788,10 @@ The receiving side is the ingress pipeline from Act II — the same `POST /msg` 
 
 When data needs to leave the Home Node — to an external API, to another agent, to any destination — it must pass through egress control.
 
-**Gatekeeper.CheckEgress** (`core/internal/adapter/gatekeeper/gatekeeper.go:208-242`) checks:
+**Gatekeeper.CheckEgress** (`core/internal/adapter/gatekeeper/gatekeeper.go`) checks:
 1. **Blocked destinations** — A hardcoded blocklist of known trackers. Instant denial.
-2. **PII detection** — Four regex patterns scan the outbound data for email addresses, SSNs, credit card numbers, and phone numbers. If any match: denied. Raw data never leaves the Home Node.
-3. **Trusted destinations** — Known-good endpoints that pass with clean data.
+2. **PII detection** — Five regex patterns scan the outbound data for email addresses, SSNs, credit card numbers, phone numbers, and IP addresses. If any match: denied. Raw data never leaves the Home Node.
+3. **Default allow** — Non-blocked destinations with clean (PII-free) data are allowed. The code also maintains a `trustedDestinations` allowlist for future use when the default policy tightens to deny-by-default.
 
 <details>
 <summary><strong>Design Decision — Why default-deny egress instead of default-allow?</strong></summary>
@@ -615,10 +807,10 @@ The tradeoff: the user must explicitly configure sharing policies for every cont
 
 </details>
 
-For per-contact granularity, the **SharingPolicyManager** (`core/internal/adapter/gatekeeper/gatekeeper.go:246-381`) provides tiered data sharing:
-- Default deny: no policy for a contact means all categories blocked.
-- Tiers: `"summary"` — the contact sees a summary. `"full"` — the contact sees everything. `"none"` — blocked.
-- The `FilterEgress` method takes a payload with multiple categories and applies the tier for each, producing an audit trail of what was allowed and what was denied.
+For per-contact granularity, the **SharingPolicyManager** (`core/internal/adapter/gatekeeper/gatekeeper.go`) provides tiered data sharing:
+- Default deny: no policy for a contact means all categories blocked — `GetPolicy` returns an empty `Categories` map, and `FilterEgress` denies every category not explicitly in the map.
+- Six tiers: `"none"` — blocked. `"summary"`, `"eta_only"`, `"free_busy"` — the contact sees the summary-level payload. `"full"`, `"exact_location"` — the contact sees the full-detail payload. Each `TieredPayload` carries both a `Summary` and `Full` field; the tier selects which one the recipient receives.
+- The `FilterEgress` method takes a payload with multiple categories and applies the tier for each, producing an audit trail of what was allowed and what was denied. `SetPolicy` uses PATCH semantics — it merges new category tiers into the existing policy rather than replacing it.
 
 ---
 
@@ -626,11 +818,11 @@ For per-contact granularity, the **SharingPolicyManager** (`core/internal/adapte
 
 When you want to connect your phone to your Dina:
 
-1. `POST /v1/pair/initiate` generates a pairing session with a 6-digit code and a session ID (valid for 5 minutes).
-2. The device (CLI, phone) sends `POST /v1/pair/complete` with the code and its Ed25519 public key (`public_key_multibase`).
-3. `DeviceService.CompletePairingWithKey` registers the Ed25519 public key with the auth validator and records the device in the device registry. No client token is generated — authentication is purely via Ed25519 signatures.
-4. The device now authenticates via `X-DID` + `X-Signature` + `X-Timestamp` headers — no bearer token, no shared secret.
-5. If the device is revoked (`DELETE /v1/devices/{id}`), `DeviceService.RevokeDevice` calls `keyRegistrar.RevokeDeviceKey()` to remove the Ed25519 public key.
+1. `POST /v1/pair/initiate` generates a 6-digit pairing code (valid for 5 minutes). The response is `{code, expires_in: 300}` — the code itself is the session identifier. Underneath, `GenerateCode()` creates a 32-byte cryptographic secret, derives the 6-digit code from `SHA256(secret)` truncated to the range 100000–999999. SEC-MED-13: a hard cap of 100 pending codes prevents DoS via code exhaustion.
+2. The device (CLI, phone) sends `POST /v1/pair/complete` with the code and its Ed25519 public key (`public_key_multibase`). The handler requires the public key — requests without it are rejected with 400.
+3. `DeviceService.CompletePairingWithKey` decodes the multibase key (z-prefix base58btc → strip 2-byte `0xed01` multicodec header → 32-byte Ed25519 public key), registers it with the auth validator via `keyRegistrar.RegisterDeviceKey()`, and records the device in the device registry. No client token is generated — authentication is purely via Ed25519 signatures.
+4. The device now authenticates via `X-DID` + `X-Signature` + `X-Timestamp` + `X-Nonce` headers — no bearer token, no shared secret.
+5. If the device is revoked (`DELETE /v1/devices/{id}`), `DeviceService.RevokeDevice` calls `keyRegistrar.RevokeDeviceKey()` to remove the Ed25519 public key. It also calls `tokenRevoker.RevokeClientTokenByDevice()` if any bearer tokens were associated with the device — belt and suspenders for mixed-auth devices.
 
 <details>
 <summary><strong>Design Decision — Why QR-code pairing with a 6-digit code instead of OAuth or password entry?</strong></summary>
@@ -649,45 +841,266 @@ After pairing, the device authenticates via Ed25519 signatures on every request 
 
 ---
 
-## Act VIII: WebSocket — Real-Time Connection
+## Act VIII: The Connector Pipeline — From Ingestion to Vault
 
-`/ws` is wired inline in `main.go:597-626`. Each WebSocket connection goes through:
+External connectors (OpenClaw for Gmail, Calendar, etc.) push raw data into Dina. But raw data can't go directly into the vault — it needs classification, PII scrubbing, and persona routing. The **staging pipeline** is the airlock between the outside world and the encrypted vault.
 
-1. **Upgrade** (`ws.NewUpgrader` with `ws.ServeWS`) — checks origin if not in insecure mode.
-2. **Auth handshake** — 5-second timer. The first message must be an `auth` message with a valid token or signed payload. `wsTokenValidator` validates the credentials.
-3. **Hub registration** — The authenticated client joins the WSHub. They can now receive broadcasts and targeted messages.
-4. **Message routing** — Non-auth messages are routed through `wsBrainRouter`, which forwards to the Python brain sidecar for LLM reasoning.
-5. **Heartbeat** — Ping every 30 seconds, expect pong within 10 seconds. After 3 missed pongs, the connection is dropped and the client is unregistered.
-6. **Message buffering** — If a client disconnects, up to 50 messages are buffered for 5 minutes. On reconnect, buffered messages are delivered.
+### The Staging Inbox
+
+The StagingHandler (`core/internal/handler/staging.go`, routes at lines 909-913) exposes four endpoints:
+
+```
+Connector (OpenClaw)                Brain (Classifier)              Core (Vault)
+     │                                    │                             │
+     ├─ POST /v1/staging/ingest ─────────►│                             │
+     │   raw email, calendar event        │                             │
+     │                                    │                             │
+     │                     POST /v1/staging/claim ◄─────────────────────┤
+     │                       lease N items for classification           │
+     │                                    │                             │
+     │                     POST /v1/staging/resolve ───────────────────►│
+     │                       classified item → vault persona(s)         │
+     │                                    │                             │
+     │                     POST /v1/staging/fail ──────────────────────►│
+     │                       mark classification failed                 │
+```
+
+**Ingest** accepts raw items from connectors. Each item gets a unique ID and enters the staging table with status `pending`. The connector authenticates via its own Ed25519 service key (registered at install time, same as Brain).
+
+**Claim** is Brain's polling endpoint. Brain calls `POST /v1/staging/claim` with a `limit` (default 10) and receives up to that many items locked with a lease. The lease prevents double-processing — if Brain crashes mid-classification, the lease expires and the item becomes claimable again. A background sweep goroutine (lines 849-858) runs every 5 minutes to expire stale leases and clean up old items.
+
+**Resolve** is the critical moment. Brain has classified the item — determined which persona(s) it belongs to, extracted metadata, scrubbed PII. It sends back the classified item with one or more target personas. The staging handler supports both single-target (`TargetPersona + ClassifiedItem`) and multi-target (`Targets` array) resolution — a single email might need to land in both "personal" and "work" personas.
+
+**Fail** marks an item as classification-failed. This is an explicit acknowledgment, not a silent drop — the item remains in staging for debugging or retry.
 
 <details>
-<summary><strong>Design Decision — Why WebSocket instead of Server-Sent Events (SSE) or long-polling?</strong></summary>
+<summary><strong>Design Decision — Why a staging inbox instead of direct vault writes from connectors?</strong></summary>
 <br>
 
-Dina's real-time channel carries **bidirectional** traffic: the client sends queries to the brain, and the server pushes notifications (vault updates, incoming D2D messages, gatekeeper alerts) to the client.
+Connectors operate outside Dina's trust boundary. They fetch data from external services (Gmail, Calendar, etc.) but should not decide *where* it goes. The staging inbox creates a classification checkpoint:
 
-- **SSE** is server-to-client only. Client-to-server would still need regular HTTP requests — two channels instead of one, with synchronization complexity.
-- **Long-polling** works but wastes connections and has higher latency. Each "push" requires a new HTTP request/response cycle.
-- **WebSocket** gives full-duplex communication over a single TCP connection. The 5-second auth handshake, ping/pong heartbeat, and message buffering are standard WebSocket patterns.
+1. **Persona routing.** A connector doesn't know which persona an email belongs to. Brain classifies based on content, sender, and context.
+2. **PII scrubbing.** Raw emails contain addresses, phone numbers, and names. Brain's PII scrubber runs before the data enters the encrypted vault — ensuring PII lives in metadata, not in searchable text.
+3. **Lease-based reliability.** If Brain crashes, unprocessed items remain in staging. No data loss, no connector retry needed.
+4. **Multi-persona fan-out.** A single ingested item might belong to multiple personas. The resolve endpoint handles this atomically.
+5. **Least privilege.** The connector can only write to staging — it cannot read the vault, cannot query other personas, cannot access the DEK.
 
-The Hub pattern (register/unregister/broadcast/send) is borrowed from Gorilla WebSocket's chat example — the simplest correct implementation of connection management. The 50-message, 5-minute buffer ensures that a brief WiFi dropout doesn't lose notifications.
+The alternative — letting connectors write directly to vault personas — would require connectors to know about persona routing, PII rules, and classification logic. That violates the Thin Agent principle: connectors fetch, Core stores, Brain reasons.
 
 </details>
 
 ---
 
-## Act IX: The Health Probes
+## Act IX: Silence First — Notifications, Reminders, and the Daily Briefing
 
-Two endpoints are always public (no auth required):
+Law 1 says: *Never push content. Only speak when the human asked, or when silence would cause harm.* Core enforces this at the notification layer.
 
-**`/healthz`** — Liveness. Always returns 200 if the process is running.
+### The Three-Tier Priority System
 
-**`/readyz`** — Readiness (`core/cmd/dina-core/main.go:356-370`). Three real checks:
-1. Brain service key trust must be configured.
+The NotifyHandler (`core/internal/handler/notify.go`, route at line 983) accepts notifications from Brain and classifies them into three tiers:
+
+| Tier | Name | Behavior | Example |
+|------|------|----------|---------|
+| 1 | **Fiduciary** | Interrupt immediately — silence causes harm | Security alert, estate activation, payment deadline |
+| 2 | **Solicited** | Notify when convenient — user explicitly asked | Search results, scheduled reminders |
+| 3 | **Engagement** | Queue for daily briefing — silence merely misses an opportunity | News digest, social updates, promotional content |
+
+The handler validates that every notification has an explicit priority — notifications without priority are rejected (there is no "default" tier). This forces Brain to make a conscious classification decision for every piece of information it wants to surface.
+
+**Fiduciary** notifications bypass Do Not Disturb (DND) and rate limits — safety-critical messages must reach the user. **Solicited** notifications respect DND — when DND is active, Core returns a `"deferred"` status instead of broadcasting. Important: Core does *not* persist deferred notifications — it signals the deferral back to Brain, which is responsible for retrying when DND lifts. **Engagement** notifications are never pushed via WebSocket — Core returns `"queued"` immediately and the notification is accumulated for the daily briefing.
+
+The handler also supports **rate limiting** — a configurable max-notifications-per-window that prevents flooding connected clients. Fiduciary notifications are explicitly exempt (line 118: `req.Priority != "fiduciary"`). In the current `main.go` wiring (line 865), neither the `DNDChecker` nor `RateLimit` are set — DND is inactive and rate limiting is disabled. Both are ready to wire when the DND adapter and production rate policy are implemented.
+
+The `ForcePush` field in the notification payload is deliberately decoded but **ignored**. Brain cannot bypass priority routing — even a compromised Brain sidecar can't force engagement-tier content to interrupt the user. The priority tier is the law, enforced by Core.
+
+<details>
+<summary><strong>Design Decision — Why enforce Silence First in Core instead of Brain?</strong></summary>
+<br>
+
+Brain is an untrusted tenant (see the Sidecar Pattern in Act I). If silence enforcement lived in Brain, a compromised or misbehaving Brain could push engagement-tier content as if it were fiduciary. By enforcing the three-tier system in Core — the component that holds the keys and controls the WebSocket — the notification policy becomes a security boundary, not a suggestion.
+
+The tradeoff: Core doesn't understand *why* a notification is fiduciary (it doesn't read content). Brain makes the classification. But Core enforces the routing rules. A misbehaving Brain that classifies everything as "fiduciary" would bypass rate limiting (fiduciary is exempt), but the volume would be visible in the daily briefing statistics and audit trail — an operational signal that something is wrong.
+
+</details>
+
+### Reminders: Deterministic Triggers, LLM-Free
+
+The ReminderHandler (`core/internal/handler/reminder.go`, routes at lines 986-987) stores and fires reminders. Two endpoints:
+
+- `POST /v1/reminder` — stores a new reminder. Accepts: `trigger_at` (Unix timestamp, required), `kind` (semantic type like `payment_due`, `appointment`, `birthday`), `type` (recurrence rule), `message`, `metadata` (JSON blob), `timezone`, and optional source lineage (`source_item_id`, `source`, `persona`). At least one of `type` or `kind` must be set. After storing, the handler calls `Loop.Wake()` to interrupt the sleep loop — ensuring a newly added reminder that fires sooner than the current next-pending is picked up immediately.
+- `GET /v1/reminders/pending` — lists all unfired reminders.
+
+The background ReminderLoop (`core/internal/reminder/loop.go`, started at line 589) runs as a goroutine:
+
+1. Query the next pending reminder from the scheduler. On error, back off for 10 seconds before retrying.
+2. If none exists, sleep until woken by a `Wake()` signal or a 60-second fallback poll.
+3. If a reminder is pending, sleep until its trigger time — or until woken by a `Wake()` signal (a new, earlier reminder may have been added). Missed reminders (trigger time in the past — e.g., after a restart) fire immediately.
+4. On fire: mark the reminder as fired (atomically, before the callback — prevents infinite re-fire on callback failure), then invoke the `onReminderFire` callback.
+
+The callback (wired at lines 569-586) sends a `reminder_fired` event to Brain with the full reminder context — ID, type, kind, message, metadata, source item ID, source, and persona. Brain then composes a contextual notification: it queries the vault for related items (e.g., for a license renewal reminder, it fetches address, insurance provider, nearby offices) and assembles a helpful nudge.
+
+No cron library. No LLM in the trigger loop. The reminder fires deterministically at the scheduled time. Brain adds intelligence only in the response — what to say, not when to say it.
+
+---
+
+## Act X: The Trust Network — Verified Truth at the Ingress Gate
+
+Law 2 says: *Rank by trust, not by ad spend.* Core implements this through a local trust cache that feeds into the ingress gatekeeper.
+
+### The Trust Cache
+
+The TrustCache (`core/internal/adapter/trust/cache.go`) is a dual-layer store: an in-memory map for microsecond lookups (used on every incoming D2D message) backed by persistence in the identity SQLite database (survives restarts). Each entry holds:
+
+- **DID** — the entity's decentralized identifier
+- **DisplayName** — human-readable label
+- **TrustScore** — a float between 0.0 and 1.0, derived from identity anchors, transaction history, outcome data, peer attestations, and time
+- **TrustRing** — 1 (Unverified), 2 (Verified via ZKP), or 3 (Verified + Actioned — proven history)
+- **Relationship** — `"contact"`, `"frequent"`, `"1-hop"`, `"2-hop"`, or `"unknown"` (graph distance from the user)
+- **Source** — `"manual"` (user-managed) or `"appview_sync"` (pulled from the Trust Network)
+- **LastVerifiedAt** / **UpdatedAt** — Unix timestamps for freshness tracking
+
+Lookups return a *copy* of the entry (not a pointer) to prevent data races on the hot path. If the SQLite migration fails on startup, the cache degrades gracefully to in-memory only — no crash, just a log warning. The `Stats()` method reads `trust_sync_last` from the `kv_store` table to report the most recent AppView sync timestamp.
+
+### The Trust Resolver
+
+The TrustResolver (`core/internal/adapter/trust/resolver.go`) fetches profiles and neighborhood graphs from AppView's XRPC endpoints:
+
+- `GET /xrpc/com.dina.trust.getProfile?did={did}` — single entity profile (used by two methods: `ResolveProfile` returns a structured `TrustEntry`, `ResolveFullProfile` returns raw JSON for Brain reasoning)
+- `GET /xrpc/com.dina.trust.getGraph?did={did}&depth={hops}&limit={limit}` — trust graph neighborhood
+
+Response size is capped (64KB per profile, 512KB for graphs) to prevent OOM attacks. The two profile methods have deliberately different error semantics: `ResolveProfile` and `ResolveNeighborhood` return nil (not an error) when AppView is unreachable — the trust cache and sync cycle degrade gracefully. `ResolveFullProfile` returns distinct errors (`ErrAppViewNotConfigured`, upstream failure, or nil for 404) so the TrustHandler can map them to proper HTTP status codes (503, 502, 404 respectively). When `baseURL` is empty (AppView not configured), all methods short-circuit immediately.
+
+### The Ingress Decision
+
+The TrustService (`core/internal/service/trust.go`) orchestrates the decision on every inbound message. The `EvaluateIngress(senderDID)` method runs on the hot path — it must be fast. The authority hierarchy:
+
+1. **Contact directory** (highest authority) — if the sender is in the user's contact list as "blocked", drop. If "trusted" or "verified", accept. Manual contacts always override cache.
+2. **Trust cache** — if the sender has a cached score ≥ 0.3, accept. Below 0.3, quarantine.
+3. **Unknown** — sender not in contacts or cache. Quarantine (never drop unknowns — they might be legitimate first-time contacts).
+
+A background goroutine (line 777-786) syncs the trust neighborhood from AppView every hour, removing stale entries older than 7 days. The admin can trigger manual sync via `POST /v1/trust/sync`.
+
+The TrustHandler (`core/internal/handler/trust.go`, routes at lines 967-971) exposes the trust subsystem to the admin UI and Brain:
+
+- `GET /v1/trust/cache` — list all cached entries (admin dashboard)
+- `GET /v1/trust/stats` — cache statistics (entry count, last sync time)
+- `GET /v1/trust/resolve?did={did}` — fetch full trust profile from AppView (for Brain reasoning)
+- `POST /v1/trust/sync` — trigger immediate neighborhood sync
+
+---
+
+## Act XI: Portability and the Admin Socket
+
+### Export/Import: Moving to a New Machine
+
+The ExportHandler (`core/internal/handler/export.go`, routes at lines 998-1000) and MigrationService (`core/internal/service/migration.go`) enable full Home Node migration.
+
+**Export** (`POST /v1/export`) creates an encrypted portable archive:
+1. Verify all user personas are closed (excluding the identity database). This prevents exporting a vault that's being mutated.
+2. Checkpoint the identity SQLite WAL — since identity is always open in WAL mode, recent writes may be in the `-wal` file, not the main database.
+3. Collect identity.sqlite, all persona `.sqlite` files, and optionally `config.json` (gatekeeper tiers, settings). Generate per-file SHA-256 checksums.
+4. Encrypt with AES-256-GCM + Argon2id(passphrase, random 16-byte salt, time=3, mem=128MB, threads=4, keylen=32).
+5. Write to a `.dina` archive file: `DINA_ARCHIVE_V2\n` header + salt + nonce + ciphertext.
+
+**Import** (`POST /v1/import`) restores an archive:
+1. Verify all user personas are closed (same as export — prevents conflicts during restore). Check archive compatibility (`DINA_ARCHIVE_V2` header). Verify archive integrity (decrypt + AEAD authentication). Run pre-flight validation (checksums, path safety, identity.sqlite presence) — all *before* closing the identity database, so failures leave the system non-degraded. Accepts an optional `force` flag to overwrite existing data.
+2. Close the identity database (it runs in WAL mode and must be released before overwrite).
+3. Decrypt and extract files to the vault directory in a flat layout (all files directly in vaultPath). For SQLite files, stale `-wal` and `-shm` journal files are removed before overwriting to prevent corruption.
+4. Path traversal protection in four layers: reject absolute paths → reject `..` components → reject directory separators (flat vault layout only) → verify resolved path stays within vault root.
+5. Return result with `RequiresRepair` (devices must be re-paired) and `RequiresRestart` (identity DB was closed; process must restart).
+
+The handler applies defense-in-depth path validation via `validateExportPath()` — even the `dest_path` parameter is confined to a base directory (default `/tmp/dina-exports`). No directory escape, no symlink following.
+
+<details>
+<summary><strong>Design Decision — Why application-level encrypted archives instead of volume snapshots?</strong></summary>
+<br>
+
+Docker volume snapshots or filesystem-level backups would be simpler. But they export *everything* — including stale WAL files, temp files, and potentially cleartext data in OS caches. The `.dina` archive format gives us: (1) **selective export** — only vault files, not container artifacts, (2) **independent encryption** — the archive password is separate from the vault password, useful for cold storage, (3) **portability** — the archive moves between Linux, macOS, Docker, and bare metal without filesystem format concerns, (4) **integrity** — per-file SHA-256 checksums catch corruption, and (5) **versioned format** — the `DINA_ARCHIVE_V2` header enables future format evolution without breaking older archives.
+
+</details>
+
+### The Admin Unix Socket
+
+Core listens on a second server — a Unix domain socket at `/data/run/admin.sock` (lines 1102-1150, default path configurable via `DINA_ADMIN_SOCKET`). This powers the `dina-admin` CLI tool.
+
+The socket uses the same `http.ServeMux` router as the TCP server, but with a different middleware chain: Auth and Authz are replaced by `SocketAdminAuth` (which pre-authenticates every request as `token_kind=client`, `agent_did=socket-local`, `token_scope=admin`), and CORS is dropped (not meaningful for Unix sockets). The remaining layers — BodyLimit, Recovery, Logging, RateLimit, Timeout — are the same as the TCP chain. The reasoning: **socket access = admin auth**. The real trust boundary is `docker exec` access to the container — whoever can exec in can reach the socket. No CLIENT_TOKEN is needed.
+
+The socket is `0600` permissions, cleaned up on shutdown (`os.Remove`), and stale socket files from previous runs are removed at startup before `net.Listen`. The parent directory is created with `0750` if it doesn't exist. The `dina-admin` host-side wrapper script (`./dina-admin`) forwards commands via `docker compose exec -T core dina-admin`, where the Python admin CLI (`admin-cli/`) communicates via `httpx.HTTPTransport(uds=socket_path)`.
+
+### The Audit Trail
+
+The AuditHandler (`core/internal/handler/audit.go`, routes at lines 928-930) provides an **append-only** audit log:
+
+- `POST /v1/audit/append` — write an entry (action, persona, requester, query_type, reason, metadata)
+- `GET /v1/audit/query` — query with filters (action, persona, requester, time range), default 50 results, capped at 200
+
+Every gatekeeper decision, persona access, and data sharing event is recorded. Each entry includes a `prev_hash` field — a hash chain linking each entry to its predecessor, providing tamper-evident integrity. The user can inspect exactly who accessed what, when, and why.
+
+### Agent Sessions and the Reason Proxy
+
+The SessionHandler (`core/internal/handler/session.go`, routes at lines 944-946) tracks agent execution context:
+
+- `POST /v1/session/start` — create a named session (requires `name` in body)
+- `POST /v1/session/end` — close a named session
+- `GET /v1/sessions` — list active sessions for the calling agent
+
+Sessions scope vault access and approval history. They are isolated per agent DID — every handler extracts the agent's DID from the request context and passes it to the session manager, so agent A cannot see or end agent B's sessions.
+
+The ReasonHandler (`core/internal/handler/reason.go`, route at line 992) proxies LLM reasoning requests from agents through Core to Brain. This is necessary because agents authenticate to Core via device keys, not to Brain directly. Core re-signs the request with its own service key. Crucially, the handler detects the caller type — admin/user callers get full Brain access via `Brain.Reason()`, while agents get scoped access via `Brain.ReasonWithContext()` with their DID and session name forwarded to Brain for audit and approval enforcement. When Brain returns an `approval_required` error (the agent tried to access a persona that requires human consent), the handler forwards it as HTTP 403 with a structured JSON body — triggering the approval UX in the CLI.
+
+---
+
+## Act XII: WebSocket — Real-Time Connection
+
+`/ws` is wired inline in `main.go:1002-1031`. The implementation uses `coder/websocket` (formerly `nhooyr.io/websocket`), which provides native `context.Context` on every read/write, automatic WebSocket-level ping/pong, and graceful close with status codes. Four subsystems live in `core/internal/adapter/ws/`: WSHub, WSHandler, HeartbeatManager, and MessageBuffer.
+
+Each WebSocket connection goes through a **four-phase lifecycle**:
+
+1. **Upgrade** — `ws.NewUpgrader` accepts the HTTP 101 upgrade. If `AllowedOrigins` is configured, origin patterns are enforced; otherwise origin checking is enabled by default (secure by default).
+2. **Auth handshake** — Ed25519-only. The HTTP upgrade request must be signed with a device key (`token_kind=client`, `token_scope=device`). The auth middleware verifies the signature before the upgrade reaches `ServeWS`. No protocol-level token handshake — unsigned upgrades are rejected with `StatusPolicyViolation`. Auth must complete within **5 seconds** (`AuthTimeoutSeconds`), after which the server sends `auth_ok` with the device name.
+3. **Flush buffered messages** — If the device had buffered messages from a previous disconnect, they are replayed in FIFO order immediately after registration.
+4. **Read/write pumps** — Two goroutines: `readPump` reads incoming messages and routes them through `WSHandler.HandleMessage`; `writePump` drains the outbound channel and sends application-level heartbeat pings.
+
+**Message types:**
+- `query` / `command` → routed to `wsBrainRouter`, which calls `brain.Reason()` and returns the result wrapped in a `whisper` envelope.
+- `pong` → records the heartbeat response with `HeartbeatManager.RecordPong()`, resets the missed counter.
+- `ack` → removes a specific message from the MessageBuffer by event ID.
+- Unknown types get an error response but do **not** disconnect (extensible protocol).
+
+**Heartbeat** — The write pump sends an application-level ping every **30 seconds** (`PingIntervalSec`) and increments the missed pong counter. After **3 consecutive missed pongs** (`MaxMissedPongCount`), the connection is dropped and the client unregistered.
+
+**Message buffering** — If a client disconnects, `MessageBuffer` stores up to **50 messages** per device (`MaxBufferMessages`) with a **5-minute TTL** (`BufferTTLSeconds`). Oldest messages are dropped when the buffer exceeds capacity. On reconnect, buffered messages are flushed. The outbound channel on each connection holds 256 messages; `SendOutbound` is non-blocking — if the channel is full, the message is dropped (back-pressure).
+
+<details>
+<summary><strong>Design Decision — Why WebSocket instead of Server-Sent Events (SSE) or long-polling?</strong></summary>
+<br>
+
+Dina's real-time channel carries **bidirectional** traffic: the client sends queries to the brain, and the server pushes notifications (vault updates, incoming D2D messages, gatekeeper alerts, approval requests) to the client.
+
+- **SSE** is server-to-client only. Client-to-server would still need regular HTTP requests — two channels instead of one, with synchronization complexity.
+- **Long-polling** works but wastes connections and has higher latency. Each "push" requires a new HTTP request/response cycle.
+- **WebSocket** gives full-duplex communication over a single TCP connection. The auth handshake, ping/pong heartbeat, and message buffering are standard WebSocket patterns.
+
+The Hub pattern (register/unregister/broadcast/send) follows the classic chat-server architecture — the simplest correct implementation of connection management. `coder/websocket` was chosen over Gorilla WebSocket because it provides native `context.Context` integration (matching Core's port interfaces), automatic WebSocket-level ping/pong management, and is actively maintained.
+
+</details>
+
+---
+
+## Act XIII: The Health Probes
+
+Two endpoints are always public (no auth required), returning JSON responses:
+
+**`/healthz`** — Liveness (`core/internal/handler/health.go`). Returns `{"status":"ok"}` (200) if the process is alive. The current implementation always succeeds — if this endpoint doesn't respond, the process has crashed.
+
+**`/readyz`** — Readiness (`core/cmd/dina-core/main.go:591-606`). Three real checks via a `DynamicHealthChecker`:
+1. Service key must be initialized (DID is non-empty).
 2. Vault path must exist on disk.
-3. Brain sidecar must be reachable (HTTP health check).
+3. Brain sidecar must be reachable (HTTP health check via the BrainClient).
 
-If any fails, the load balancer gets a 503 and stops sending traffic.
+Returns `{"status":"ready"}` (200) on success, or `{"status":"not ready"}` (503) with a `slog.Warn` if any check fails. The load balancer stops routing traffic to a 503 instance.
+
+The AT Protocol discovery endpoint `GET /.well-known/atproto-did` (line 891) returns the node's root DID as plain text — enabling PDS identity resolution per the AT Protocol spec. The handler calls `DID.Create()` which returns the existing DID if already created (SEC-MED-14: `ErrDIDAlreadyExists` is expected after first run and handled gracefully).
 
 <details>
 <summary><strong>Design Decision — Why separate liveness and readiness probes?</strong></summary>
@@ -704,15 +1117,15 @@ The distinction prevents premature restarts. If readiness fails but liveness pas
 
 ---
 
-## Act X: The Six Stories — Proving the Architecture
+## Act XIV: The Fourteen Stories — Proving the Architecture
 
-The user story tests (`tests/system/user_stories/`) run against a real multi-node stack: 2 Go Core instances, 2 Python Brain sidecars, PDS, AppView, Jetstream, Postgres — zero mocks. Each story proves a capability that depends on core's architecture.
+The user story tests (`tests/system/user_stories/`) run against a real multi-node stack: 2 Go Core instances, 2 Python Brain sidecars, PLC directory, PDS, Jetstream, AppView, Postgres — zero mocks. Each story proves a capability that depends on core's architecture.
 
-### Story 01: The Purchase Journey (12 tests)
+### Story 01: The Purchase Journey (13 tests)
 
 **What it proves:** Trust-weighted purchase advice where verified reviewers outrank unverified ones — no ad spend involved.
 
-Five Dinas are created with cryptographic DIDs. Three (Alice, Bob, Diana) are Ring 2 — verified via `POST /v1/trust/vouch` with Ed25519-signed attestations. Two (Charlie, Eve) remain Ring 1 — unverified. All five publish product reviews through PDS (`com.atproto.repo.createRecord`), which flow through Jetstream into AppView's Postgres.
+Five Dinas are created with cryptographic DIDs. Three (Alice, Bob, Diana) are Ring 2 — verified via mutual DID attestations published as AT Protocol records through PDS (`com.atproto.repo.createRecord`): Alice ↔ Bob mutual vouch, Alice → Diana vouch. Two (Charlie, Eve) remain Ring 1 — unverified, no trust edges. All five publish product reviews through PDS, which flow through Jetstream into AppView's Postgres.
 
 **Core's role:**
 - **Vault** stores Alonso's personal context across 4 personas (health, work, finance, family) — each an encrypted SQLCipher compartment.
@@ -725,15 +1138,19 @@ The brain combines vault context (back pain → needs lumbar support, ₹10-20K 
 
 **What it proves:** Dina-to-Dina encrypted communication triggers a contextual nudge — "Sancho is 15 minutes away. Ask about his sick mother. Make cardamom tea."
 
-Sancho's Dina sends a `dina/social/arrival` message via `POST /v1/msg/send`. Core's ingress pipeline handles the rest:
+Sancho's Dina sends a `dina/social/arrival` message via `POST /v1/msg/send`. Sancho's Core encrypts with NaCl sealed box, signs with Ed25519, and delivers to Alonso's Core at `POST /msg`. Alonso's ingress pipeline handles the rest:
 
-1. **Sweeper** (`ingress/sweeper.go`) picks up the message from the dead drop directory.
-2. **IP rate limiter** checks the sender isn't flooding.
-3. **NaCl sealed box** decrypts the payload using the recipient's X25519 key (derived from Ed25519).
-4. **Ed25519 signature** verifies the sender's DID — cryptographic proof of origin.
-5. **Inbox** stores the decrypted message for retrieval.
+1. **IP rate limiter** (`Router.Ingest`, Valve 1) checks the sender IP isn't flooding.
+2. **Payload size** check rejects oversized envelopes before they touch disk.
+3. **Vault state fork** — the `general` persona is checked. If unlocked (the normal case), the fast path fires:
+4. **NaCl sealed box** decrypts the payload using Alonso's X25519 key (derived from Ed25519 via `ProcessInbound`).
+5. **Ed25519 signature** verifies Sancho's DID — cryptographic proof of origin.
+6. **Per-DID rate limit** (SEC-MED-12) and **trust filter** (`EvaluateIngress`) check the sender against the contact directory and trust cache.
+7. **Inbox** stores the decrypted message for retrieval.
 
-Core then routes the DIDComm event to brain via `/api/v1/process`. Brain queries the vault by Sancho's DID (`/v1/vault/query`), finds relationship notes ("his mother had a fall", "likes cardamom tea"), and assembles the nudge. The nudge follows Silence First — it's a Fiduciary interrupt because silence would cause social harm (failing to ask about a friend's sick mother).
+If the vault were locked at reception time, the blob would go to the **dead drop** instead (see Act II), and the Sweeper would decrypt it later after unlock.
+
+Brain then processes the DIDComm event (via `/api/v1/process`), queries the vault by Sancho's DID (`/v1/vault/query`), finds relationship notes ("his mother had a fall", "likes cardamom tea"), and assembles the nudge. The nudge follows Silence First — it's a Fiduciary interrupt because silence would cause social harm (failing to ask about a friend's sick mother).
 
 ### Story 03: The Dead Internet Filter (8 tests)
 
@@ -751,7 +1168,7 @@ Core's trust resolver (`/v1/trust/resolve?did={did}`) fetches these profiles fro
 
 **What it proves:** Persona isolation as a security boundary — a shopping agent cannot read health data, even when the request is reasonable.
 
-The health persona is created with tier `restricted`. Three medical records are stored: diagnosis ("L4-L5 disc herniation"), medications ("Ibuprofen 400mg"), providers ("Dr. Sharma, Apollo Hospital"). A shopping agent (consumer persona, tier `open`) asks: "Does the user have any health conditions that affect chair selection?"
+The health persona is created with tier `restricted`. Three medical records are stored: a spinal diagnosis ("L4-L5 disc herniation, Dr. Sharma, Apollo Hospital"), ergonomic recommendations ("chronic back pain, needs lumbar support, avoid sitting > 1 hour"), and a medication record ("Ibuprofen 400mg"). A shopping agent (consumer persona, tier `open`) asks: "Does the user have any health conditions that affect chair selection?"
 
 Brain's guardian processes the `cross_persona_request` event with a **deterministic tier gate** — no LLM involved in the block decision. Restricted tier → automatic block. The guardian then builds a minimal disclosure proposal:
 
@@ -761,7 +1178,7 @@ Brain's guardian processes the `cross_persona_request` event with a **determinis
 The user reviews and approves the proposal. Brain sends the approved text and runs a final PII audit — `medical_patterns_found: [], clean: true`. An audit record is written to core's KV store.
 
 **Core's role:**
-- **Vault** enforces persona compartmentalization — health and consumer are separate encrypted databases. Core won't serve a cross-persona vault query without going through the guardian.
+- **Vault** enforces persona compartmentalization — health and consumer are separate encrypted databases with separate DEKs. Core has no cross-persona query API; each `POST /v1/vault/query` targets a single persona. Brain's guardian handles the cross-persona disclosure decision before querying Core for the source persona's data.
 - **KV store** records the audit trail of every disclosure decision.
 
 <details>
@@ -778,25 +1195,20 @@ An LLM could theoretically decide whether to share data across personas. But LLM
 
 An external agent pairs with the Home Node using `dina configure` (Ed25519 keypair + 6-digit pairing code → `POST /v1/pair/complete`; note: the CLI calls only `/v1/pair/complete`, not `/v1/pair/initiate`). Core registers the agent as a device and the agent appears in `GET /v1/devices`. The agent then submits intents via `dina validate <action> <description>`, which calls Core's `POST /v1/agent/validate`. Core proxies to brain's guardian internally using `BrainClient.ProcessEvent()` — the CLI authenticates to Core via Ed25519 device auth, no shared brain secret on the client.
 
-This follows the same pattern used for admin proxying:
-
-- Core reverse-proxies `/admin/*` to brain in `core/internal/handler/admin.go:18`.
-- Agent validation is proxied via `core/internal/handler/agent.go` using BrainClient (circuit breaker included).
-
 The guardian's classification is deterministic (no LLM):
 
 - **SAFE** → `auto_approve`: `search`, `fetch_weather` — agent proceeds without human intervention.
 - **MODERATE** → `flag_for_review`: `send_email`, `pay_upi` — human must approve before the agent acts.
 - **HIGH** → `flag_for_review`: `share_data`, `transfer_money` — human must approve, higher severity.
 - **BLOCKED** → `deny`: `read_vault`, `export_data`, `access_keys` — categorically denied, always.
-- **Untrusted agent** → `deny`: trust level `untrusted` → blocked regardless of action.
+- **Unauthenticated agent** → `401`: Core's auth middleware rejects the request before it reaches the guardian. Note: the `AgentHandler` overrides `trust_level` to `"verified"` for every device that passes auth — so the untrusted path through the guardian cannot trigger via this endpoint; unauthenticated devices are stopped at the door.
 
-Vault isolation is verified: data stored in the health persona is invisible from the consumer persona. Finally, admin revokes the agent's device (`DELETE /v1/devices/{token_id}`), and the agent's token immediately returns 401.
+Vault isolation is verified: data stored in the health persona is invisible from the consumer persona. Finally, admin revokes the agent's device (`DELETE /v1/devices/{device_id}`), and the device is marked as `Revoked` in the device list — subsequent requests with the revoked token are rejected.
 
 **Core's role:**
 - **Device pairing** registers the agent through the same ceremony used by phones and laptops — agents are first-class devices.
 - **Agent validation proxy** (`/v1/agent/validate`) — Core authenticates the device, then forwards the intent to brain's guardian via BrainClient. Brain stays non-public.
-- **Auth validator** validates the agent's Ed25519 signature or bearer token on every request, and revokes it immediately when the admin calls `DELETE /v1/devices/{id}`.
+- **Auth validator** validates the agent's Ed25519 signature on every request, and revokes it immediately when the admin calls `DELETE /v1/devices/{id}`.
 - **Vault** enforces persona isolation — the agent in the consumer context cannot query health data, regardless of what it asks for.
 
 ### Story 06: The License Renewal (10 tests)
@@ -812,10 +1224,84 @@ The delegation test is the Agent Safety Layer in action: brain generates a `Dele
 **Core's role:**
 - **Vault** enforces metadata isolation — PII in encrypted metadata, general description in searchable text.
 - **Reminder scheduler** provides deterministic, LLM-free triggers.
-- **Gatekeeper** enforces the guardian's access control decisions at the transport layer.
+- **Gatekeeper** authorises Brain's vault queries during notification assembly (ActionVaultRead/Write at the service layer). The delegation enforcement itself — HIGH risk, flag_for_review, requires_approval — is Brain's guardian, not Core.
+
+### Story 07: The Daily Briefing (5 tests)
+
+**What it proves:** Silence First notification triage (Law 1) — low-priority events queue silently in the vault while fiduciary events interrupt immediately via the agent safety layer.
+
+Three engagement-tier events arrive over the course of a simulated day: a news article shared by a friend, a social media mention, and a product price drop. None warrant interrupting the user. They're stored in the vault and queued as JSON blobs in a `briefing_queue` KV entry (`PUT /v1/vault/kv/briefing_queue`). No notification, no buzz, no WebSocket push.
+
+Then a fiduciary event: an autonomous agent attempts `transfer_money`. This goes through `POST /v1/agent/validate` — Brain's guardian classifies it as HIGH risk → `flag_for_review`, `requires_approval=True`. The agent cannot move money without explicit human approval.
+
+At briefing time, `GET /v1/vault/kv/briefing_queue` retrieves all three queued items as a structured summary. After delivery, the queue is cleared by overwriting with an empty list — items are never repeated.
+
+**Core's role:** Vault KV store provides the briefing queue mechanism — low-priority items are written to a key-value slot, not pushed as notifications. The agent validation proxy (`/v1/agent/validate`) handles the fiduciary interrupt via Brain's guardian. The NotifyHandler's three-tier system (tested separately in Act IX) provides the routing rules; this story validates the end-to-end briefing workflow built on top of those primitives.
+
+### Story 08: Move to New Machine (8 tests)
+
+**What it proves:** Data portability and DID stability — export from one machine, import to another, and the DID remains the same.
+
+Two Docker nodes simulate the migration: Node A (Alonso's old machine) and Node B (Sancho's, simulating a new machine). Vault items are stored on Node A and verified as queryable. Each node has a valid DID (different keypairs), and Node B can independently store and query vault data. A pure-Python SLIP-0010 derivation proves same seed → same DID: the test derives `m/9999'/0'/0'` from Alonso's known Docker test seed (`0x00...01`), computes `did:plc:<base58btc(sha256(pubkey)[:16])>`, and asserts it matches Node A's actual DID from `GET /v1/did`.
+
+The full migration roundtrip: `POST /v1/export` with a passphrase creates an encrypted `.dina` archive (MigrationService rejects export while personas are open — safety check). The archive is transferred via `docker cp` to Node B. `POST /v1/import` restores files, reports `requires_repair=true` (devices must re-pair) and `requires_restart=true` (identity DB was closed for safe overwrite). Unlocking with the wrong seed (Sancho's) fails — proving the vault is cryptographically bound. Node B is restarted with Alonso's seed (same recovery phrase), personas unlock successfully (same DEK), `GET /v1/did` returns Alonso's DID, and vault queries return the original data. No "account migration" needed because the identity *is* the seed.
+
+**Core's role:** MigrationService orchestrates WAL checkpointing (`vault.Checkpoint("identity")` before reading raw `.sqlite` bytes), state verification (open-persona guard, `CheckCompatibility`, `VerifyArchive`, `ValidateImport` — all run before closing identity to avoid non-degraded failures), and archive encryption via the portability adapter. The portability adapter handles the AES-256-GCM + Argon2id encryption. Path traversal protection (`validateArchiveEntry`) prevents archive extraction outside the vault root — only flat filenames are allowed, no directory separators, no `..` components.
+
+### Story 09: Connector Expiry (5 tests)
+
+**What it proves:** Core's independence from the Brain sidecar — vault, identity, and health endpoints function without any Brain dependency, and Brain-dependent endpoints return well-formed responses (not crashes or HTML error pages).
+
+The test establishes a healthy baseline (both Core and Brain healthz return 200), then proves independence layer by layer. Vault store and query (`POST /v1/vault/store`, `/v1/vault/query`) work as purely Core operations — encrypted SQLCipher with FTS5 search, no Brain involvement. A Brain-dependent endpoint (`POST /v1/agent/validate`) is exercised to verify Core always returns well-formed JSON with a meaningful status code (200 if Brain is up, 502/503/504 if Brain is down — never a crash, timeout, or HTML error dump). Brain's healthz is re-checked to confirm no permanent degradation from the agent validation round-trip. Finally, `GET /v1/did` proves identity is cryptographic and has zero sidecar dependency — your Ed25519 keypair is Core-native.
+
+Note: this test validates the *design* of independence (Core subsystems have no Brain imports), not a live-disconnection scenario. The BrainClient does include a circuit breaker (open after 5 failures, 30s cooldown) for production resilience, but that path is not exercised here.
+
+**Core's role:** Vault operations are independent of Brain by design — Core's SQLCipher adapter handles all storage and search natively. The DID is derived from Ed25519 keys stored locally, with no sidecar dependency. The BrainClient's circuit breaker (`defaultMaxFailures=5`, `defaultCooldown=30s`) provides fail-fast behaviour in production when Brain is unreachable.
+
+### Story 10: The Operator Journey (5 tests)
+
+**What it proves:** Idempotent install and administrative robustness — DID persists across re-install, persona creation is idempotent, health probes are stable under repeated access, and locked personas return clear errors.
+
+The test simulates the operations an install script performs on every run: (1) `GET /v1/did` returns the same DID across repeated requests — the Ed25519 keypair is persisted, no rotation, no new DID, no broken trust chains (verified 3 times for stability), (2) `POST /v1/personas` for an existing persona returns 200, 201, or 409 (already exists) — never a 500 or crash, (3) `/healthz` returns 200 on 5 rapid sequential calls — deterministic under repeated probing, (4) a freshly created persona that hasn't been unlocked returns 403 or 423 with "locked" in the body — an actionable error, not a crash or data leak. These are the failure modes real operators hit when re-running installs, restarting nodes, and probing health.
+
+**Core's role:** Identity persistence via the Ed25519 keypair (derived from master seed, stored in `identity.sqlite`), persona state file persistence (`persona_state.json` at `cfg.VaultPath`, loaded on startup via `SetPersistPath`), and the orphan-guard callback (`CheckOrphanedVault`) that rejects persona creation when orphaned vault artifacts exist — preventing silent DEK reuse after state file loss.
+
+### Thesis Invariant Stories (11-14)
+
+These four stories validate the **Four Laws** — the non-negotiable invariants of the Dina architecture.
+
+### Story 11: The Anti-Her
+
+**What it proves:** Law 4 — *Never Replace a Human.* Dina detects neglected contacts (>30 days since last interaction) and nudges the user toward human connection, not toward itself.
+
+Brain's LLM responses are filtered for anthropomorphic language ("I feel", "I care", "I'm here for you"). If detected, the response is rewritten to redirect toward human connection. The test stores relationship data in the vault, triggers a loneliness-detection event, and verifies: (1) the nudge suggests contacting a real person, not Dina, (2) no emotional dependency language appears in the output.
+
+**Core's role:** Vault stores relationship history. Reminder scheduler triggers the check. The Anti-Her enforcement is in Brain — but the data that powers it (contact dates, relationship notes) lives in Core's encrypted vault.
+
+### Story 12: Verified Truth
+
+**What it proves:** Law 2 — *Rank by trust, not by ad spend.* Core's trust system produces honest uncertainty, not hallucinated confidence.
+
+Three scenarios: (1) **Zero trust data** — Brain must express uncertainty ("I don't have enough information"), never hallucinate reviews. (2) **Sparse data** (2 conflicting attestations) — Brain reports "opinions are split." (3) **Dense data** (12 consistent attestations) — Brain makes a confident recommendation with source attribution.
+
+**Core's role:** Trust resolver returns raw trust profiles. The test verifies source attribution survives the vault round-trip: store with `source_url` → query → the same URL appears in the response. Core preserves provenance; Brain reasons with it.
+
+### Story 13: Silence Under Stress
+
+**What it proves:** Law 1 — *Silence First* under adversarial conditions. Low-priority events (social updates, reminders) are classified as engagement and queued silently. A security alert from a trusted source is correctly classified as fiduciary — it interrupts. A phishing message marked "URGENT" from an unknown vendor is correctly classified as engagement (not fiduciary) and queued silently.
+
+**Core's role:** Brain's guardian classifies each event via `/api/v1/process` — the tier decision happens in Brain. Core enforces the routing rules (NotifyHandler, tested separately in Act IX). The test verifies that social engineering ("URGENT! Your account has been compromised!") from an untrusted source does not escalate to fiduciary priority — trust context overrides urgency language.
+
+### Story 14: The Agent Sandbox
+
+**What it proves:** The Agent Safety Layer is a hard security boundary.
+
+Four attack vectors: (1) **Rogue agent (no auth)** → 401 at Core's perimeter. (2) **Agent revocation** → immediate key removal; next request returns 401. (3) **Blocked actions** (`read_vault`, `export_data`, `access_keys`, `messages.send`, `sms.send`) → denied regardless of trust level, even for verified agents. (4) **Identity forgery** → agent supplies a fake `agent_did` in the request body, but Core's `AgentHandler` overrides it with the authenticated identity — the forged DID never reaches Brain's guardian.
+
+**Core's role:** Auth middleware validates every request. DeviceService revokes keys atomically. Brain's guardian maintains the blocked-action list — actions like `read_vault` and `export_data` are categorically denied. Core's `AgentHandler` enforces identity binding by overriding caller-supplied `agent_did` and `trust_level`.
 
 ---
 
 ## Epilogue: The Architecture in One Sentence
 
-Every request enters through seven middleware layers, reaches a handler that delegates to a service, the service composes port interfaces to orchestrate business rules (gatekeeper for access control, persona manager for compartmentalization, vault for storage), and the adapters — hidden behind port interfaces — do the actual work with Ed25519 keys, SQLCipher databases, NaCl encryption, and filesystem dead drops. The human holds the seed. The math enforces the loyalty. Nothing leaves without permission.
+Every request enters through eight middleware layers, reaches a handler that delegates to a service, the service composes port interfaces to orchestrate business rules (gatekeeper for access control, persona manager for compartmentalization, vault for storage, trust cache for ingress filtering, notification handler for silence enforcement), and the adapters — hidden behind port interfaces — do the actual work with Ed25519 keys, SQLCipher databases, NaCl encryption, filesystem dead drops, staging inboxes, reminder loops, and a Unix admin socket. The human holds the seed. The math enforces the loyalty. Nothing leaves without permission. Nothing speaks without cause.
