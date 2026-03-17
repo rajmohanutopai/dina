@@ -28,10 +28,16 @@ type Task struct {
 
 // Reminder represents a scheduled reminder stored in the task queue.
 type Reminder struct {
-	ID        string
-	Type      string
-	Message   string
-	TriggerAt int64
-	Fired     bool
-	Metadata  string // JSON blob (vault_item_id, persona, etc.)
+	ID           string `json:"id"`
+	Type         string `json:"type"`
+	Message      string `json:"message"`
+	TriggerAt    int64  `json:"trigger_at"`
+	Fired        bool   `json:"fired"`
+	Metadata     string `json:"metadata"`       // JSON blob (legacy compat)
+	SourceItemID string `json:"source_item_id"` // vault item that created this reminder
+	Source       string `json:"source"`          // gmail, calendar, etc.
+	Persona      string `json:"persona"`         // which persona vault the source lives in
+	Timezone     string `json:"timezone"`
+	Kind         string `json:"kind"`            // payment_due, appointment, birthday
+	Status       string `json:"status"`          // pending, done, dismissed
 }

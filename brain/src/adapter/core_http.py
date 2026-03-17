@@ -369,6 +369,30 @@ class CoreHTTPClient:
         })
         return resp.json()
 
+    async def staging_resolve_multi(
+        self, staging_id: str, targets: list[dict],
+    ) -> dict:
+        """POST /v1/staging/resolve — multi-persona resolve."""
+        resp = await self._request("POST", "/v1/staging/resolve", json={
+            "id": staging_id,
+            "targets": targets,
+        })
+        return resp.json()
+
+    async def update_contact_last_seen(self, did: str, timestamp: int) -> None:
+        """PUT /v1/contacts/{did} — update last_contact timestamp."""
+        try:
+            await self._request("PUT", f"/v1/contacts/{did}", json={
+                "last_contact": timestamp,
+            })
+        except Exception:
+            pass  # best-effort
+
+    async def store_reminder(self, reminder: dict) -> str:
+        """POST /v1/reminder — create a reminder with source lineage."""
+        resp = await self._request("POST", "/v1/reminder", json=reminder)
+        return resp.json().get("id", "")
+
     async def search_vault(
         self, persona_id: str, query: str, mode: str = "hybrid",
         embedding: list[float] | None = None,

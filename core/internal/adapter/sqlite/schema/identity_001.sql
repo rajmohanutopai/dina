@@ -132,3 +132,13 @@ CREATE TABLE IF NOT EXISTS staging_inbox (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_staging_inbox_dedup ON staging_inbox(connector_id, source, source_id);
 CREATE INDEX IF NOT EXISTS idx_staging_inbox_status ON staging_inbox(status);
 CREATE INDEX IF NOT EXISTS idx_staging_inbox_expires ON staging_inbox(expires_at);
+
+-- Schema version tracking (same as persona vaults)
+CREATE TABLE IF NOT EXISTS schema_version (
+    version       INTEGER PRIMARY KEY,
+    applied_at    INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
+    description   TEXT NOT NULL DEFAULT ''
+);
+
+INSERT OR IGNORE INTO schema_version(version, description)
+VALUES (1, 'Initial identity schema with contacts, devices, audit, KV, reminders, staging');

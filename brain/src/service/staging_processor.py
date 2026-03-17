@@ -46,10 +46,12 @@ class StagingProcessor:
         core: Any,
         trust_scorer: Any = None,
         domain_classifier: Any = None,
+        event_extractor: Any = None,
     ) -> None:
         self._core = core
         self._trust_scorer = trust_scorer
         self._classify = domain_classifier
+        self._event_extractor = event_extractor
 
     async def process_pending(self, limit: int = 10) -> int:
         """Claim and classify pending staging items.
@@ -73,15 +75,15 @@ class StagingProcessor:
 
             try:
                 # Classify persona.
-                persona = self._classify_persona(item)
+                personas = self._classify_personas(item)
 
                 # Score trust.
                 provenance = {}
                 if self._trust_scorer is not None:
                     provenance = self._trust_scorer.score(item)
 
-                # Build classified VaultItem with lineage.
-                classified = {
+                # Build classified VaultItem template with lineage.
+                base_classified = {
                     "type": item.get("type", "note"),
                     "source": item.get("source", ""),
                     "source_id": item.get("source_id", ""),
@@ -93,17 +95,50 @@ class StagingProcessor:
                     "confidence": provenance.get("confidence", ""),
                     "retrieval_policy": provenance.get("retrieval_policy", "caveated"),
                     "metadata": item.get("metadata", "{}"),
-                    # Lineage
                     "staging_id": item_id,
                     "connector_id": item.get("connector_id", ""),
                 }
 
-                # Resolve — Core decides stored vs pending_unlock.
-                await self._core.staging_resolve(item_id, persona, classified)
+                resolve_status = "stored"
+                if len(personas) == 1:
+                    result = await self._core.staging_resolve(item_id, personas[0], base_classified)
+                    resolve_status = result.get("status", "stored") if isinstance(result, dict) else "stored"
+                else:
+                    targets = []
+                    for persona in personas:
+                        copy = dict(base_classified)
+                        copy["id"] = f"stg-{item_id}-{persona}"
+                        targets.append({"persona": persona, "classified_item": copy})
+                    result = await self._core.staging_resolve_multi(item_id, targets)
+                    resolve_status = result.get("status", "stored") if isinstance(result, dict) else "stored"
+
                 resolved += 1
 
+                # Only extract reminders when content was actually stored.
+                # pending_unlock means the persona is locked — no vault item exists yet.
+                if resolve_status == "stored" and self._event_extractor is not None:
+                    try:
+                        await self._event_extractor.extract_and_create(
+                            item, personas[0], vault_item_id=f"stg-{item_id}",
+                        )
+                    except Exception:
+                        pass  # best-effort
+
+                # Update contact last_contact if sender is known.
+                sender = item.get("sender", "")
+                if sender and self._trust_scorer is not None:
+                    contact = self._trust_scorer._find_contact(item)
+                    if contact:
+                        try:
+                            import time as _time
+                            await self._core.update_contact_last_seen(
+                                contact.get("did", ""), int(_time.time()),
+                            )
+                        except Exception:
+                            pass  # best-effort
+
                 log.info("staging.resolved", extra={
-                    "id": item_id, "persona": persona,
+                    "id": item_id, "personas": personas,
                 })
 
             except Exception as exc:
@@ -117,8 +152,45 @@ class StagingProcessor:
 
         return resolved
 
+    def _classify_personas(self, item: dict) -> list[str]:
+        """Classify item into one or more personas. Highest sensitivity first.
+
+        Returns a list of persona names. Most items map to one persona.
+        Multi-persona items (e.g., "back pain affecting work") return
+        both personas so Core can store copies in each vault.
+        """
+        primary = self._classify_persona(item)
+
+        # Check for secondary persona signals in the content.
+        text = (item.get("body", "") + " " + item.get("summary", "")).lower()
+        secondary = set()
+
+        # Health + work cross-over.
+        health_words = {"pain", "health", "medical", "doctor", "diagnosis", "symptom"}
+        work_words = {"work", "productivity", "office", "meeting", "deadline", "project"}
+        finance_words = {"invoice", "payment", "bill", "salary", "tax", "bank"}
+
+        has_health = any(w in text for w in health_words)
+        has_work = any(w in text for w in work_words)
+        has_finance = any(w in text for w in finance_words)
+
+        if has_health and primary != "health":
+            secondary.add("health")
+        if has_work and primary != "work":
+            secondary.add("work")
+        if has_finance and primary not in ("financial", "finance"):
+            secondary.add("financial")
+
+        # Build result: primary first, then secondary sorted by sensitivity.
+        result = [primary]
+        for p in sorted(secondary, key=lambda p: _SENSITIVITY_RANK.get(p, 0), reverse=True):
+            if p not in result:
+                result.append(p)
+
+        return result
+
     def _classify_persona(self, item: dict) -> str:
-        """Classify item into a persona. Highest sensitivity wins."""
+        """Classify item into a single persona. Highest sensitivity wins."""
         if self._classify is not None:
             try:
                 result = self._classify(item)

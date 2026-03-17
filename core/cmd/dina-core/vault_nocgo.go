@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/rajmohanutopai/dina/core/internal/adapter/identity"
+	"github.com/rajmohanutopai/dina/core/internal/adapter/taskqueue"
 	"github.com/rajmohanutopai/dina/core/internal/adapter/vault"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/port"
@@ -48,4 +50,14 @@ func newStagingInbox(
 	storeToVault func(ctx context.Context, persona string, item domain.VaultItem) (string, error),
 ) port.StagingInbox {
 	return vault.NewStagingInbox(isPersonaOpen, storeToVault)
+}
+
+// newContactDirectory returns an in-memory contact directory (no CGO — dev/test only).
+func newContactDirectory(_ vaultBackend) contactDirectoryFull {
+	return identity.NewContactDirectory()
+}
+
+// newReminderScheduler returns an in-memory reminder scheduler (no CGO — dev/test only).
+func newReminderScheduler(_ vaultBackend) port.ReminderScheduler {
+	return taskqueue.NewReminderScheduler()
 }

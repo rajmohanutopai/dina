@@ -168,6 +168,49 @@ func (s *StagingInbox) Resolve(_ context.Context, id, targetPersona string, clas
 	return nil
 }
 
+// ResolveMulti stores a classified item to multiple target personas.
+// Core decides stored vs pending_unlock for each persona independently.
+func (s *StagingInbox) ResolveMulti(ctx context.Context, id string, targets []domain.ResolveTarget) error {
+	if len(targets) == 0 {
+		return fmt.Errorf("staging: no targets provided")
+	}
+	// Use the first target as the primary (updates staging record).
+	// Additional targets get their own vault copies.
+	primary := targets[0]
+	if err := s.Resolve(ctx, id, primary.Persona, primary.ClassifiedItem); err != nil {
+		return err
+	}
+	// Additional targets: Core decides stored vs pending_unlock for each.
+	for _, target := range targets[1:] {
+		item := target.ClassifiedItem
+		if item.ID == "" {
+			item.ID = "stg-" + id + "-" + target.Persona
+		}
+		if s.isPersonaOpen != nil && s.isPersonaOpen(target.Persona) {
+			if s.storeToVault != nil {
+				s.storeToVault(ctx, target.Persona, item)
+			}
+		} else {
+			// Persona locked — persist as pending_unlock.
+			classifiedJSON, _ := json.Marshal(item)
+			secondaryID := id + "-" + target.Persona
+			now := time.Now().Unix()
+			s.mu.Lock()
+			s.items[secondaryID] = &domain.StagingItem{
+				ID:             secondaryID,
+				Status:         domain.StagingPendingUnlock,
+				TargetPersona:  target.Persona,
+				ClassifiedItem: string(classifiedJSON),
+				ExpiresAt:      now + int64(domain.DefaultStagingTTL),
+				CreatedAt:      now,
+				UpdatedAt:      now,
+			}
+			s.mu.Unlock()
+		}
+	}
+	return nil
+}
+
 // MarkFailed records a classification failure with an error message.
 func (s *StagingInbox) MarkFailed(_ context.Context, id, errMsg string) error {
 	s.mu.Lock()

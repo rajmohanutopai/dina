@@ -18,10 +18,15 @@ type ReminderHandler struct {
 
 // storeReminderRequest is the JSON body for POST /v1/reminder.
 type storeReminderRequest struct {
-	Type      string `json:"type"`
-	Message   string `json:"message"`
-	TriggerAt int64  `json:"trigger_at"`
-	Metadata  string `json:"metadata"`
+	Type         string `json:"type"`
+	Message      string `json:"message"`
+	TriggerAt    int64  `json:"trigger_at"`
+	Metadata     string `json:"metadata"`
+	SourceItemID string `json:"source_item_id"`
+	Source       string `json:"source"`
+	Persona      string `json:"persona"`
+	Timezone     string `json:"timezone"`
+	Kind         string `json:"kind"`
 }
 
 // HandleStoreReminder handles POST /v1/reminder.
@@ -38,8 +43,10 @@ func (h *ReminderHandler) HandleStoreReminder(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if req.Type == "" {
-		http.Error(w, `{"error":"type is required"}`, http.StatusBadRequest)
+	// Type (recurrence) is optional — reminders can have just a kind.
+	// At least one of type or kind must be set.
+	if req.Type == "" && req.Kind == "" {
+		http.Error(w, `{"error":"type or kind is required"}`, http.StatusBadRequest)
 		return
 	}
 	if req.TriggerAt <= 0 {
@@ -48,10 +55,16 @@ func (h *ReminderHandler) HandleStoreReminder(w http.ResponseWriter, r *http.Req
 	}
 
 	rem := domain.Reminder{
-		Type:      req.Type,
-		Message:   req.Message,
-		TriggerAt: req.TriggerAt,
-		Metadata:  req.Metadata,
+		Type:         req.Type,
+		Message:      req.Message,
+		TriggerAt:    req.TriggerAt,
+		Metadata:     req.Metadata,
+		SourceItemID: req.SourceItemID,
+		Source:       req.Source,
+		Persona:      req.Persona,
+		Timezone:     req.Timezone,
+		Kind:         req.Kind,
+		Status:       "pending",
 	}
 
 	id, err := h.Scheduler.StoreReminder(r.Context(), rem)

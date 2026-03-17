@@ -52,6 +52,12 @@ type StagingFilter struct {
 	Limit       int
 }
 
+// ResolveTarget represents one persona target for multi-persona staging resolution.
+type ResolveTarget struct {
+	Persona        string    `json:"persona"`
+	ClassifiedItem VaultItem `json:"classified_item"`
+}
+
 // DefaultStagingTTL is 7 days in seconds.
 const DefaultStagingTTL = 7 * 24 * 60 * 60
 

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/rajmohanutopai/dina/core/internal/domain"
@@ -212,6 +213,52 @@ func (s *StagingInbox) Resolve(ctx context.Context, id, targetPersona string, cl
 	}
 
 	return err
+}
+
+// ResolveMulti stores a classified item to multiple target personas.
+// Core decides stored vs pending_unlock for each persona independently.
+func (s *StagingInbox) ResolveMulti(ctx context.Context, id string, targets []domain.ResolveTarget) error {
+	if len(targets) == 0 {
+		return fmt.Errorf("staging: no targets provided")
+	}
+	// Primary target: uses full Resolve logic (updates staging record).
+	primary := targets[0]
+	if err := s.Resolve(ctx, id, primary.Persona, primary.ClassifiedItem); err != nil {
+		return err
+	}
+	// Additional targets: Core decides stored vs pending_unlock for each.
+	// Errors are collected but don't prevent other targets from being processed.
+	db := s.db()
+	now := time.Now().Unix()
+	var errs []string
+	for _, target := range targets[1:] {
+		item := target.ClassifiedItem
+		if item.ID == "" {
+			item.ID = "stg-" + id + "-" + target.Persona
+		}
+		if s.isPersonaOpen != nil && s.isPersonaOpen(target.Persona) {
+			if s.storeToVault != nil {
+				if _, err := s.storeToVault(ctx, target.Persona, item); err != nil {
+					errs = append(errs, fmt.Sprintf("%s: vault store: %v", target.Persona, err))
+				}
+			}
+		} else if db != nil {
+			classifiedJSON, _ := json.Marshal(item)
+			secondaryID := id + "-" + target.Persona
+			if _, err := db.ExecContext(ctx,
+				`INSERT OR IGNORE INTO staging_inbox (id, connector_id, source, source_id, status,
+					target_persona, classified_item, expires_at, created_at, updated_at)
+				 VALUES (?, '', '', ?, 'pending_unlock', ?, ?, ?, ?, ?)`,
+				secondaryID, item.SourceID, target.Persona, string(classifiedJSON),
+				now+int64(domain.DefaultStagingTTL), now, now); err != nil {
+				errs = append(errs, fmt.Sprintf("%s: pending_unlock: %v", target.Persona, err))
+			}
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("staging: secondary resolve errors: %s", strings.Join(errs, "; "))
+	}
+	return nil
 }
 
 // MarkFailed records a classification failure.

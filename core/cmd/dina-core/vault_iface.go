@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/port"
 )
 
 // vaultBackend is a combined interface that both the in-memory Manager and
@@ -30,6 +31,16 @@ type vaultBackend interface {
 
 	// Test mode
 	ClearAll(ctx context.Context, persona domain.PersonaName) (int, error)
+}
+
+// contactDirectoryFull combines port.ContactDirectory and port.ContactLookup.
+// Both the in-memory and SQLite contact directories satisfy this combined
+// interface. Used by the build-tag factory so main.go can pass the same value
+// to both handler.ContactHandler (needs ContactDirectory) and
+// service.NewTrustService (needs ContactLookup).
+type contactDirectoryFull interface {
+	port.ContactDirectory
+	port.ContactLookup
 }
 
 // sqliteBackupStub is a placeholder backup manager for CGO builds.

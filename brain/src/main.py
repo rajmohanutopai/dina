@@ -456,12 +456,15 @@ def create_app() -> FastAPI:
     enrichment_svc = EnrichmentService(core=brain_core_client, llm=llm_router)
     from .service.domain_classifier import DomainClassifier
     domain_clf = DomainClassifier(llm=llm_router)
+    from .service.event_extractor import EventExtractor
+    event_extractor = EventExtractor(core=brain_core_client)
     staging_processor = StagingProcessor(
         core=brain_core_client, trust_scorer=trust_scorer,
         domain_classifier=lambda item: domain_clf.classify(
             item.get("body", item.get("summary", "")),
             vault_context={"source": item.get("source", ""), "type": item.get("type", "")},
         ).domain,
+        event_extractor=event_extractor,
     )
     sync_engine = SyncEngine(
         core=brain_core_client, mcp=mcp_client, llm=llm_router,

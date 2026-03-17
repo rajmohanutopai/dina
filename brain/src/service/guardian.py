@@ -1652,19 +1652,29 @@ class GuardianLoop:
                 body = {}
 
         reminder_type = body.get("reminder_type", "")
+        kind = body.get("kind", "")
         message = body.get("message", "")
-        metadata_str = body.get("metadata", "{}")
-        if isinstance(metadata_str, str):
-            try:
-                metadata = json.loads(metadata_str)
-            except json.JSONDecodeError:
-                metadata = {}
-        else:
-            metadata = metadata_str
 
-        vault_item_id = metadata.get("vault_item_id", "")
-        persona = metadata.get("persona", "personal")
-        expiry_date = metadata.get("expiry_date", "")
+        # Read lineage from direct fields first (set by the enriched fire path).
+        # Fall back to legacy metadata JSON for backward compat.
+        vault_item_id = body.get("source_item_id", "")
+        persona = body.get("persona", "")
+        source = body.get("source", "")
+
+        if not vault_item_id or not persona:
+            # Legacy path: parse from metadata JSON.
+            metadata_str = body.get("metadata", "{}")
+            if isinstance(metadata_str, str):
+                try:
+                    metadata = json.loads(metadata_str)
+                except json.JSONDecodeError:
+                    metadata = {}
+            else:
+                metadata = metadata_str
+            vault_item_id = vault_item_id or metadata.get("vault_item_id", "")
+            persona = persona or metadata.get("persona", "general")
+
+        expiry_date = ""
 
         # Retrieve the original document from vault.
         doc_context = ""
@@ -1750,12 +1760,19 @@ class GuardianLoop:
             pii_vault.clear()
 
         # Send notification via Core.
+        # Use kind as the effective category (payment_due, appointment, birthday).
+        # Fall back to reminder_type for legacy reminders.
+        effective_type = kind or reminder_type
+
         try:
             await self._core.notify("default", {
                 "type": "reminder_notification",
                 "priority": "solicited",
                 "text": notification_text,
-                "reminder_type": reminder_type,
+                "reminder_type": effective_type,
+                "kind": kind,
+                "source": source,
+                "persona": persona,
             })
         except Exception:
             log.warning("guardian.reminder.notify_failed")
@@ -1765,7 +1782,10 @@ class GuardianLoop:
             "action": "reminder_notification_sent",
             "response": {
                 "notification_text": notification_text,
-                "reminder_type": reminder_type,
+                "reminder_type": effective_type,
+                "kind": kind,
+                "source": source,
+                "persona": persona,
                 "vault_context_used": bool(personal_context),
             },
         }

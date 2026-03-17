@@ -103,14 +103,17 @@ func (h *StagingHandler) HandleClaim(w http.ResponseWriter, r *http.Request) {
 }
 
 // resolveRequest is the JSON body for POST /v1/staging/resolve.
+// Supports single-target (target_persona + classified_item) and
+// multi-target (targets array) for cross-persona content.
 type resolveRequest struct {
-	ID             string           `json:"id"`
-	TargetPersona  string           `json:"target_persona"`
-	ClassifiedItem domain.VaultItem `json:"classified_item"`
+	ID             string                 `json:"id"`
+	TargetPersona  string                 `json:"target_persona"`
+	ClassifiedItem domain.VaultItem       `json:"classified_item"`
+	Targets        []domain.ResolveTarget `json:"targets"`
 }
 
 // HandleResolve handles POST /v1/staging/resolve. Brain calls this after
-// classifying an item to route it to the correct persona vault.
+// classifying an item to route it to the correct persona vault(s).
 func (h *StagingHandler) HandleResolve(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
@@ -127,19 +130,25 @@ func (h *StagingHandler) HandleResolve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"missing id"}`, http.StatusBadRequest)
 		return
 	}
-	if req.TargetPersona == "" {
-		http.Error(w, `{"error":"missing target_persona"}`, http.StatusBadRequest)
+
+	// Multi-target resolve (cross-persona content).
+	if len(req.Targets) > 0 {
+		if err := h.Staging.ResolveMulti(r.Context(), req.ID, req.Targets); err != nil {
+			clientError(w, "resolve failed", http.StatusInternalServerError, err)
+			return
+		}
+	} else if req.TargetPersona != "" {
+		// Single-target resolve.
+		if err := h.Staging.Resolve(r.Context(), req.ID, req.TargetPersona, req.ClassifiedItem); err != nil {
+			clientError(w, "resolve failed", http.StatusInternalServerError, err)
+			return
+		}
+	} else {
+		http.Error(w, `{"error":"missing target_persona or targets"}`, http.StatusBadRequest)
 		return
 	}
 
-	if err := h.Staging.Resolve(r.Context(), req.ID, req.TargetPersona, req.ClassifiedItem); err != nil {
-		clientError(w, "resolve failed", http.StatusInternalServerError, err)
-		return
-	}
-
-	// Determine the resulting status by listing. For simplicity, we report
-	// "stored" or "pending_unlock" based on what Resolve decided.
-	// The adapter sets status internally; we check by listing.
+	// Determine the resulting status.
 	status := "stored"
 	pending, _ := h.Staging.ListByStatus(r.Context(), domain.StagingPendingUnlock, 1000)
 	for _, item := range pending {

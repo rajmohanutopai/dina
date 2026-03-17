@@ -352,7 +352,7 @@ func main() {
 		}
 	}
 
-	contactDir := identity.NewContactDirectory()
+	contactDir := newContactDirectory(vaultMgr)
 	deviceRegistry := identity.NewDeviceRegistry()
 	recoveryMgr := identity.NewRecoveryManager()
 
@@ -500,7 +500,7 @@ func main() {
 	// 9. Task Queue
 	taskQueue := taskqueue.NewTaskQueue()
 	watchdog := taskqueue.NewWatchdog(taskQueue)
-	reminderSched := taskqueue.NewReminderScheduler()
+	reminderSched := newReminderScheduler(vaultMgr)
 
 	// 10. WebSocket
 	wsHub := ws.NewWSHub()
@@ -563,24 +563,25 @@ func main() {
 	}
 
 	// 12b. Reminder Loop — fires reminders on schedule, delegates to Brain.
+	// The full Reminder (including Kind, SourceItemID, Source, Persona) is
+	// passed to Brain so it can compose contextual notifications.
 	reminderLoop := reminder.NewLoop(reminderSched, clk)
-	onReminderFire := func(ctx context.Context, reminderID, reminderType string) {
-		rem, err := reminderSched.GetByID(ctx, reminderID)
-		if err != nil {
-			slog.Error("reminder: get by id", "id", reminderID, "error", err)
-			return
-		}
+	onReminderFire := func(ctx context.Context, rem domain.Reminder) {
 		event := domain.TaskEvent{
 			Type: "reminder_fired",
 			Payload: map[string]interface{}{
-				"reminder_id":   reminderID,
-				"reminder_type": reminderType,
-				"message":       rem.Message,
-				"metadata":      rem.Metadata,
+				"reminder_id":    rem.ID,
+				"reminder_type":  rem.Type,
+				"kind":           rem.Kind,
+				"message":        rem.Message,
+				"metadata":       rem.Metadata,
+				"source_item_id": rem.SourceItemID,
+				"source":         rem.Source,
+				"persona":        rem.Persona,
 			},
 		}
 		if err := brain.Process(ctx, event); err != nil {
-			slog.Error("reminder: brain process", "id", reminderID, "error", err)
+			slog.Error("reminder: brain process", "id", rem.ID, "error", err)
 		}
 	}
 	reminderCtx, reminderCancel := context.WithCancel(context.Background())
@@ -867,7 +868,12 @@ func main() {
 		Scheduler: reminderSched,
 		Loop:      reminderLoop,
 		OnFire: func(id, typ string) {
-			onReminderFire(context.Background(), id, typ)
+			rem, err := reminderSched.GetByID(context.Background(), id)
+			if err != nil || rem == nil {
+				onReminderFire(context.Background(), domain.Reminder{ID: id, Type: typ})
+				return
+			}
+			onReminderFire(context.Background(), *rem)
 		},
 	}
 	wellknownH := &handler.WellKnownHandler{DID: didMgr, Signer: identitySigner}

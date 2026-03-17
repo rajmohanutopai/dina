@@ -61,6 +61,7 @@ type ContactDirectory interface {
 	Resolve(ctx context.Context, name string) (string, error)
 	UpdateTrust(ctx context.Context, did, trustLevel string) error
 	UpdateName(ctx context.Context, did, name string) error
+	UpdateLastContact(ctx context.Context, did string, timestamp int64) error
 	Delete(ctx context.Context, did string) error
 	List(ctx context.Context) ([]domain.Contact, error)
 }

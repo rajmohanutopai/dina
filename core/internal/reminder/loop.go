@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/port"
 )
 
@@ -33,8 +34,9 @@ func NewLoop(scheduler port.ReminderScheduler, clock port.Clock) *Loop {
 }
 
 // Run starts the reminder loop. It blocks until ctx is cancelled.
-// The onFire callback receives the reminder ID and type when a reminder fires.
-func (l *Loop) Run(ctx context.Context, onFire func(ctx context.Context, reminderID, reminderType string)) {
+// The onFire callback receives the full Reminder when it fires,
+// including Kind, SourceItemID, Source, and Persona for contextual notifications.
+func (l *Loop) Run(ctx context.Context, onFire func(ctx context.Context, r domain.Reminder)) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -74,7 +76,7 @@ func (l *Loop) Run(ctx context.Context, onFire func(ctx context.Context, reminde
 
 		if sleepDuration <= 0 {
 			// Missed reminder (triggerAt in the past) — fire immediately.
-			l.fire(ctx, next.ID, next.Type, onFire)
+			l.fire(ctx, *next, onFire)
 			continue
 		}
 
@@ -86,24 +88,24 @@ func (l *Loop) Run(ctx context.Context, onFire func(ctx context.Context, reminde
 			// Recompute — a new reminder may have been added that fires sooner.
 			continue
 		case <-l.clock.After(sleepDuration):
-			l.fire(ctx, next.ID, next.Type, onFire)
+			l.fire(ctx, *next, onFire)
 		}
 	}
 }
 
 // fire processes a single reminder.
-func (l *Loop) fire(ctx context.Context, id, typ string, onFire func(context.Context, string, string)) {
-	slog.Info("reminder: firing", "id", id, "type", typ)
+func (l *Loop) fire(ctx context.Context, r domain.Reminder, onFire func(context.Context, domain.Reminder)) {
+	slog.Info("reminder: firing", "id", r.ID, "kind", r.Kind, "type", r.Type)
 
 	// Mark as fired before invoking callback to prevent re-firing.
-	if err := l.scheduler.MarkFired(ctx, id); err != nil {
-		slog.Error("reminder: mark fired", "id", id, "error", err)
+	if err := l.scheduler.MarkFired(ctx, r.ID); err != nil {
+		slog.Error("reminder: mark fired", "id", r.ID, "error", err)
 		return
 	}
 
-	// Invoke the callback.
+	// Invoke the callback with the full reminder (includes lineage).
 	if onFire != nil {
-		onFire(ctx, id, typ)
+		onFire(ctx, r)
 	}
 }
 

@@ -1772,6 +1772,17 @@ func (cd *ContactDirectory) UpdateName(_ context.Context, did, name string) erro
 }
 
 // Delete removes a contact.
+func (cd *ContactDirectory) UpdateLastContact(_ context.Context, did string, timestamp int64) error {
+	cd.mu.Lock()
+	defer cd.mu.Unlock()
+	c, ok := cd.contacts[did]
+	if !ok {
+		return ErrContactNotFound
+	}
+	c.LastContact = timestamp
+	return nil
+}
+
 func (cd *ContactDirectory) Delete(_ context.Context, did string) error {
 	cd.mu.Lock()
 	defer cd.mu.Unlock()

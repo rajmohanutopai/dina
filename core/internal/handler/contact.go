@@ -131,8 +131,9 @@ func (h *ContactHandler) HandleSetPolicy(w http.ResponseWriter, r *http.Request)
 
 // updateContactRequest is the JSON body for PUT /v1/contacts/{did}.
 type updateContactRequest struct {
-	Name       string `json:"name"`
-	TrustLevel string `json:"trust_level"`
+	Name        string `json:"name"`
+	TrustLevel  string `json:"trust_level"`
+	LastContact int64  `json:"last_contact"`
 }
 
 // HandleUpdateContact handles PUT /v1/contacts/{did}.
@@ -167,6 +168,13 @@ func (h *ContactHandler) HandleUpdateContact(w http.ResponseWriter, r *http.Requ
 			slog.Warn("failed to update contact trust level", "did", did, "error", err)
 			http.Error(w, `{"error":"failed to update contact"}`, http.StatusInternalServerError)
 			return
+		}
+	}
+
+	if req.LastContact > 0 {
+		if err := h.Contacts.UpdateLastContact(r.Context(), did, req.LastContact); err != nil {
+			slog.Warn("failed to update contact last_contact", "did", did, "error", err)
+			// Non-fatal — don't block the response for a timestamp update.
 		}
 	}
 

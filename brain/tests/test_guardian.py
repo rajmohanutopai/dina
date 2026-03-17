@@ -9529,3 +9529,46 @@ async def test_guardian_approval_needed_telegram_failure_graceful(guardian):
     # Must still return a result — not crash
     assert result["type"] == "approval_notification"
     assert result["approval_id"] == "apr-fail-001"
+
+
+# ---------------------------------------------------------------------------
+# Reminder fired with lineage fields
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_guardian_reminder_fired_reads_direct_lineage_fields(guardian):
+    """Fired reminder with direct lineage fields produces contextual notification.
+
+    Core sends source_item_id, persona, kind, source directly in the payload.
+    Guardian reads them, fetches source context from vault, and produces a
+    notification with the semantic kind (payment_due) preserved.
+    """
+    # Pre-configure the mock vault to return a source document.
+    guardian._test_core.get_vault_item = AsyncMock(return_value={
+        "Summary": "Invoice from XYZ Corp",
+        "Metadata": '{"amount": "₹3,500"}',
+    })
+
+    event = {
+        "type": "reminder_fired",
+        "body": {
+            "reminder_id": "rem-001",
+            "reminder_type": "",
+            "kind": "payment_due",
+            "message": "Invoice ₹3,500 due",
+            "metadata": "{}",
+            "source_item_id": "stg-inv-001",
+            "source": "gmail",
+            "persona": "financial",
+        },
+    }
+    result = await guardian.process_event(event)
+    assert result is not None
+    assert result.get("action") == "reminder_notification_sent", f"got: {result}"
+
+    # Verify kind is preserved in the response.
+    response = result.get("response", {})
+    assert response.get("kind") == "payment_due", f"kind not forwarded: {response}"
+    assert response.get("reminder_type") == "payment_due", f"effective type wrong: {response}"
+    assert response.get("persona") == "financial", f"persona not forwarded: {response}"

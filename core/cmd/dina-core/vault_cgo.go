@@ -35,3 +35,15 @@ func newStagingInbox(
 	pool := backend.(*sqlite.VaultAdapter).Pool()
 	return sqlite.NewStagingInbox(pool, isPersonaOpen, storeToVault)
 }
+
+// newContactDirectory returns a SQLite-backed contact directory using identity.sqlite.
+func newContactDirectory(backend vaultBackend) contactDirectoryFull {
+	pool := backend.(*sqlite.VaultAdapter).Pool()
+	return sqlite.NewSQLiteContactDirectory(pool)
+}
+
+// newReminderScheduler returns a SQLite-backed reminder scheduler using identity.sqlite.
+func newReminderScheduler(backend vaultBackend) port.ReminderScheduler {
+	pool := backend.(*sqlite.VaultAdapter).Pool()
+	return sqlite.NewSQLiteReminderScheduler(pool)
+}

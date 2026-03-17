@@ -88,8 +88,13 @@ func (p *Pool) Open(persona string, dek []byte) error {
 		return fmt.Errorf("sqlite: schema %q: %w", persona, err)
 	}
 
-	// Run migrations for existing persona databases.
-	if persona != "identity" {
+	// Run migrations for existing databases.
+	if persona == "identity" {
+		if err := migrateIdentity(db); err != nil {
+			db.Close()
+			return fmt.Errorf("sqlite: migrate identity: %w", err)
+		}
+	} else {
 		if err := migratePersona(db, persona); err != nil {
 			db.Close()
 			return fmt.Errorf("sqlite: migrate %q: %w", persona, err)
@@ -297,6 +302,53 @@ func migratePersona(db *sql.DB, persona string) error {
 			`INSERT OR IGNORE INTO schema_version(version, description) VALUES (4, 'Add tiered content L0/L1 and enrichment tracking')`)
 
 		slog.Info("sqlite: migration v4 complete", "persona", persona)
+	}
+
+	return nil
+}
+
+// migrateIdentity applies incremental migrations to identity.sqlite.
+// Each migration checks its precondition before running, making them idempotent.
+func migrateIdentity(db *sql.DB) error {
+	ctx := context.Background()
+
+	// Ensure schema_version table exists (added in identity_001.sql update).
+	db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_version (
+		version INTEGER PRIMARY KEY,
+		applied_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)),
+		description TEXT NOT NULL DEFAULT ''
+	)`)
+
+	// --- Identity migration v2: contact provenance + reminder lineage ---
+	if !hasColumn(db, "contacts", "source") {
+		slog.Info("sqlite: applying identity migration v2 (contact provenance + reminder lineage)")
+
+		stmts := []string{
+			// Contact provenance
+			`ALTER TABLE contacts ADD COLUMN source TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE contacts ADD COLUMN source_confidence TEXT NOT NULL DEFAULT 'high'`,
+			`ALTER TABLE contacts ADD COLUMN last_contact INTEGER NOT NULL DEFAULT 0`,
+			// Reminder lineage
+			`ALTER TABLE reminders ADD COLUMN source_item_id TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE reminders ADD COLUMN source TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE reminders ADD COLUMN persona TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE reminders ADD COLUMN timezone TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE reminders ADD COLUMN kind TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE reminders ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'`,
+		}
+		for _, stmt := range stmts {
+			if _, err := db.ExecContext(ctx, stmt); err != nil {
+				return fmt.Errorf("identity v2: %w", err)
+			}
+		}
+		// Dedup index for reminders: same source item + kind + time + persona = one reminder.
+		db.ExecContext(ctx,
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_reminders_dedup ON reminders(source_item_id, kind, due_at, persona)`)
+
+		db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO schema_version(version, description) VALUES (2, 'Contact provenance and reminder lineage')`)
+
+		slog.Info("sqlite: identity migration v2 complete")
 	}
 
 	return nil

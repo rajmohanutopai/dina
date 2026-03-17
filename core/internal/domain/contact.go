@@ -2,11 +2,14 @@ package domain
 
 // Contact holds contact directory data stored in identity.sqlite.
 type Contact struct {
-	DID           string
-	Name          string
-	Alias         string
-	TrustLevel    string // blocked, unknown, trusted, verified, etc.
-	SharingPolicy string // JSON blob
+	DID              string `json:"did"`
+	Name             string `json:"name"`
+	Alias            string `json:"alias"`
+	TrustLevel       string `json:"trust_level"`       // blocked, unknown, trusted, verified
+	SharingPolicy    string `json:"sharing_policy"`    // JSON blob
+	Source           string `json:"source"`             // who provided this contact data
+	SourceConfidence string `json:"source_confidence"`  // high, medium, low
+	LastContact      int64  `json:"last_contact"`       // unix timestamp of last interaction
 }
 
 // SharingTier controls how much data is shared for a given category.

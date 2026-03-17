@@ -166,3 +166,51 @@ async def test_finance_type_classifies_to_financial(core):
     await processor.process_pending()
     call = core.staging_resolve.call_args
     assert call.args[1] == "financial"
+
+
+@pytest.mark.asyncio
+async def test_pending_unlock_skips_event_extraction(core):
+    """When resolve returns pending_unlock, no reminders are created."""
+    core.staging_resolve.return_value = {"status": "pending_unlock"}
+    core.staging_resolve_multi = AsyncMock(return_value={"status": "pending_unlock"})
+    core.staging_claim.return_value = [
+        {"id": "stg-lock-1", "type": "note", "source": "gmail",
+         "source_id": "msg-lock-1", "sender": "someone@example.com",
+         "summary": "Simple note",
+         "body": "Just a simple note with no special keywords.",
+         "connector_id": "gmail-1"},
+    ]
+
+    event_extractor = AsyncMock()
+    processor = StagingProcessor(
+        core=core, event_extractor=event_extractor,
+    )
+    await processor.process_pending()
+
+    # Resolve was called (item classified to single persona).
+    core.staging_resolve.assert_awaited()
+    # But event extraction was NOT called (persona is locked).
+    event_extractor.extract_and_create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_stored_triggers_event_extraction(core):
+    """When resolve returns stored, event extraction runs."""
+    core.staging_resolve.return_value = {"status": "stored"}
+    core.staging_claim.return_value = [
+        {"id": "stg-ok-1", "type": "note", "source": "gmail",
+         "source_id": "msg-ok-1", "sender": "someone@example.com",
+         "summary": "Simple stored note",
+         "body": "Just a simple note.",
+         "connector_id": "gmail-1"},
+    ]
+
+    event_extractor = AsyncMock()
+    event_extractor.extract_and_create.return_value = 1
+    processor = StagingProcessor(
+        core=core, event_extractor=event_extractor,
+    )
+    await processor.process_pending()
+
+    # Event extraction WAS called (persona stored successfully).
+    event_extractor.extract_and_create.assert_awaited_once()

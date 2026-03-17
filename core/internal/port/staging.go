@@ -26,6 +26,11 @@ type StagingInbox interface {
 	//   - persona locked → mark pending_unlock, keep classified_item, clear raw body
 	Resolve(ctx context.Context, id, targetPersona string, classifiedItem domain.VaultItem) error
 
+	// ResolveMulti processes a classified item for multiple target personas.
+	// Core decides stored vs pending_unlock for each persona independently.
+	// Each copy gets a deterministic ID: stg-{staging_id}-{persona}.
+	ResolveMulti(ctx context.Context, id string, targets []domain.ResolveTarget) error
+
 	// MarkFailed records a classification failure with an error message.
 	MarkFailed(ctx context.Context, id, errMsg string) error
 
