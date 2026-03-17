@@ -30,10 +30,15 @@ _SENSITIVITY_RANK = {
 class StagingProcessor:
     """Claims and classifies staged items, then resolves via Core.
 
+    Every item is enriched (L0+L1+embedding) before vault publication.
+    If enrichment fails, the item stays in staging for retry.
+
     Parameters
     ----------
     core:
         HTTP client for dina-core (staging + vault operations).
+    enrichment:
+        EnrichmentService for L0/L1/embedding generation. Required.
     trust_scorer:
         TrustScorer instance for provenance assignment.
     domain_classifier:
@@ -44,11 +49,13 @@ class StagingProcessor:
     def __init__(
         self,
         core: Any,
+        enrichment: Any,
         trust_scorer: Any = None,
         domain_classifier: Any = None,
         event_extractor: Any = None,
     ) -> None:
         self._core = core
+        self._enrichment = enrichment
         self._trust_scorer = trust_scorer
         self._classify = domain_classifier
         self._event_extractor = event_extractor
@@ -94,10 +101,29 @@ class StagingProcessor:
                     "source_type": provenance.get("source_type", ""),
                     "confidence": provenance.get("confidence", ""),
                     "retrieval_policy": provenance.get("retrieval_policy", "caveated"),
+                    "contact_did": provenance.get("contact_did", item.get("contact_did", "")),
                     "metadata": item.get("metadata", "{}"),
                     "staging_id": item_id,
                     "connector_id": item.get("connector_id", ""),
                 }
+
+                # Enrich before resolve: generate L0+L1+embedding so every
+                # vault item is fully enriched at publication time.
+                # If enrichment fails, item stays in staging for retry
+                # (Sweep requeues failed items with retry_count <= 3).
+                try:
+                    base_classified = await self._enrichment.enrich_raw(base_classified)
+                except Exception as enrich_exc:
+                    log.warning("staging.enrichment_failed", extra={
+                        "id": item_id, "error": str(enrich_exc),
+                    })
+                    try:
+                        await self._core.staging_fail(
+                            item_id, f"enrichment failed: {enrich_exc}",
+                        )
+                    except Exception:
+                        pass
+                    continue  # skip to next item — do not resolve
 
                 resolve_status = "stored"
                 if len(personas) == 1:

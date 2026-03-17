@@ -493,6 +493,7 @@ class GuardianLoop:
         scratchpad: Any,  # ScratchpadService
         vault_context: Any = None,  # VaultContextAssembler
         telegram: Any = None,  # TelegramService (for approval prompts)
+        event_extractor: Any = None,  # EventExtractor (for post-publish drain hook)
     ) -> None:
         self._core = core
         self._llm = llm_router
@@ -502,6 +503,7 @@ class GuardianLoop:
         self._scratchpad = scratchpad
         self._vault_context = vault_context
         self._telegram = telegram
+        self._event_extractor = event_extractor
 
         # Tracks which personas are currently unlocked.
         self._unlocked_personas: set[str] = set()
@@ -838,6 +840,10 @@ class GuardianLoop:
             # ---- Persona approval notification ----
             if event_type == "approval_needed":
                 return await self._handle_approval_needed(event)
+
+            # ---- Post-publication derived artifacts (drain hook) ----
+            if event_type == "post_publish":
+                return await self._handle_post_publish(event)
 
             # ---- Document ingestion (SS4.1) ----
             if event_type == "document_ingest":
@@ -1385,6 +1391,56 @@ class GuardianLoop:
                         "days_ago": days_ago,
                     },
                 })
+
+    # ------------------------------------------------------------------
+    # Post-Publication (drain hook — derived artifacts only)
+    # ------------------------------------------------------------------
+
+    async def _handle_post_publish(self, event: dict) -> dict:
+        """Extract derived artifacts (reminders, contact updates) for a
+        vault item that was just drained from pending_unlock to stored.
+
+        This is NOT a full document ingest — no LLM extraction pipeline.
+        The item is already enriched (L0/L1/embedding/provenance). We
+        only need to create reminders and update contact timestamps.
+        """
+        persona = event.get("persona", "")
+        vault_item_id = event.get("vault_item_id", "")
+
+        # Build a minimal item dict for event_extractor.
+        item = {
+            "body_text": event.get("body_text", ""),
+            "summary": event.get("summary", ""),
+            "body": event.get("body_text", ""),
+            "source": event.get("source", ""),
+            "sender": event.get("sender", ""),
+            "type": event.get("type", ""),
+            "staging_id": vault_item_id,
+            "connector_id": event.get("connector_id", ""),
+        }
+
+        # Event extraction: reminders from temporal patterns in content.
+        created = 0
+        if self._event_extractor is not None and persona:
+            try:
+                created = await self._event_extractor.extract_and_create(
+                    item, persona, vault_item_id=vault_item_id,
+                )
+            except Exception as exc:
+                log.warning("post_publish.event_extraction_failed", extra={
+                    "vault_item_id": vault_item_id, "error": str(exc),
+                })
+
+        # Contact last_seen update (DID-keyed, not sender email).
+        contact_did = event.get("contact_did", "")
+        if contact_did and self._core:
+            try:
+                import time as _time
+                await self._core.update_contact_last_seen(contact_did, int(_time.time()))
+            except Exception:
+                pass  # best-effort
+
+        return {"action": "post_publish", "reminders_created": created}
 
     # ------------------------------------------------------------------
     # Document Ingestion (SS4.1 — License Renewal Story)

@@ -113,6 +113,7 @@ class TestStagingClaimResolve:
             pytest.skip("item not found in claim (may have been claimed by another test)")
 
         # Resolve to general (which is open by default).
+        # Items must be fully enriched before resolve (enrichment-before-publish invariant).
         resolve_resp = _post(core, "/v1/staging/resolve", {
             "id": our_item["id"],
             "target_persona": "general",
@@ -127,6 +128,11 @@ class TestStagingClaimResolve:
                 "retrieval_policy": "caveated",
                 "staging_id": our_item["id"],
                 "connector_id": "gmail-test",
+                "content_l0": "Note from user@example.com — Resolve test",
+                "content_l1": "A test note containing content to classify.",
+                "embedding": [0.1] * 768,
+                "enrichment_status": "ready",
+                "enrichment_version": '{"prompt_v":1,"embed_model":"test"}',
             },
         })
         assert resolve_resp.status_code == 200
@@ -248,3 +254,189 @@ class TestConnectorAuth:
         assert resp.status_code == 403, (
             f"connector must NOT claim staging: {resp.status_code} {resp.text}"
         )
+
+
+class TestEnrichmentBeforePublish:
+    """Verify the enrichment-before-publication invariant."""
+
+    def test_unenriched_resolve_rejected(self, core) -> None:
+        """Resolve with enrichment_status != ready is hard-rejected (400)."""
+        source_id = f"msg-nonenrich-{int(time.time())}"
+        _post(core, "/v1/staging/ingest", {
+            "connector_id": "gmail-test",
+            "source": "gmail",
+            "source_id": source_id,
+            "type": "note",
+            "summary": "Unenriched item",
+            "body": "Should be rejected.",
+        })
+
+        claim_resp = _post(core, "/v1/staging/claim", {"limit": 20})
+        items = claim_resp.json().get("items", [])
+        our_item = next((it for it in items if it.get("source_id") == source_id), None)
+        if our_item is None:
+            pytest.skip("item not found in claim")
+
+        # Resolve WITHOUT enrichment fields → 400 (invariant enforcement).
+        resp = _post(core, "/v1/staging/resolve", {
+            "id": our_item["id"],
+            "target_persona": "general",
+            "classified_item": {
+                "type": "note",
+                "summary": "Unenriched item",
+                "body_text": "Should be rejected.",
+                "sender_trust": "unknown",
+                "confidence": "low",
+                "retrieval_policy": "caveated",
+                # NO enrichment_status, no L0/L1
+            },
+        })
+        assert resp.status_code == 400, (
+            f"unenriched resolve must be rejected: {resp.status_code} {resp.text}"
+        )
+        assert "enrichment_status" in resp.text
+
+    def test_enriched_resolve_succeeds(self, core) -> None:
+        """Resolve with enrichment_status=ready succeeds and item is searchable."""
+        source_id = f"msg-enriched-{int(time.time())}"
+        _post(core, "/v1/staging/ingest", {
+            "connector_id": "gmail-test",
+            "source": "gmail",
+            "source_id": source_id,
+            "type": "email",
+            "summary": "Enriched integration test",
+            "body": "Full body content for the enriched test.",
+            "sender": "alice@example.com",
+        })
+
+        claim_resp = _post(core, "/v1/staging/claim", {"limit": 20})
+        items = claim_resp.json().get("items", [])
+        our_item = next((it for it in items if it.get("source_id") == source_id), None)
+        if our_item is None:
+            pytest.skip("item not found in claim")
+
+        # Resolve WITH full enrichment.
+        resp = _post(core, "/v1/staging/resolve", {
+            "id": our_item["id"],
+            "target_persona": "general",
+            "classified_item": {
+                "type": "email",
+                "summary": "Enriched integration test",
+                "body_text": "Full body content for the enriched test.",
+                "sender": "alice@example.com",
+                "sender_trust": "contact_ring1",
+                "source_type": "contact",
+                "confidence": "high",
+                "retrieval_policy": "normal",
+                "staging_id": our_item["id"],
+                "connector_id": "gmail-test",
+                "content_l0": "Email from alice@example.com — Enriched integration test",
+                "content_l1": "Alice sent an email about the enriched integration test with full body content.",
+                "embedding": [0.1] * 768,
+                "enrichment_status": "ready",
+                "enrichment_version": '{"prompt_v":1,"embed_model":"test","enriched_at":1710000000}',
+            },
+        })
+        assert resp.status_code == 200, f"enriched resolve: {resp.text}"
+        assert resp.json().get("status") == "stored"
+
+        # Verify item is searchable with enrichment fields.
+        search_resp = _post(core, "/v1/vault/query", {
+            "persona": "general",
+            "query": "Enriched integration test",
+            "mode": "fts5",
+        })
+        assert search_resp.status_code == 200
+        results = search_resp.json().get("items", [])
+        found = None
+        for r in results:
+            if "Enriched integration test" in (r.get("summary", "") + r.get("Summary", "")):
+                found = r
+                break
+        assert found is not None, "enriched item must be searchable"
+
+    def test_enriched_multi_resolve_requires_all_ready(self, core) -> None:
+        """Multi-target resolve rejects if any target lacks enrichment_status=ready."""
+        source_id = f"msg-multi-notenrich-{int(time.time())}"
+        _post(core, "/v1/staging/ingest", {
+            "connector_id": "gmail-test",
+            "source": "gmail",
+            "source_id": source_id,
+            "type": "note",
+            "summary": "Multi-target unenriched",
+            "body": "Content.",
+        })
+
+        claim_resp = _post(core, "/v1/staging/claim", {"limit": 20})
+        items = claim_resp.json().get("items", [])
+        our_item = next((it for it in items if it.get("source_id") == source_id), None)
+        if our_item is None:
+            pytest.skip("item not found in claim")
+
+        # Multi-resolve where second target is not enriched → 400.
+        resp = _post(core, "/v1/staging/resolve", {
+            "id": our_item["id"],
+            "targets": [
+                {
+                    "persona": "general",
+                    "classified_item": {
+                        "type": "note",
+                        "summary": "Enriched",
+                        "body_text": "Content.",
+                        "enrichment_status": "ready",
+                        "content_l0": "test",
+                        "content_l1": "test summary",
+                        "embedding": [0.1] * 768,
+                    },
+                },
+                {
+                    "persona": "health",
+                    "classified_item": {
+                        "type": "note",
+                        "summary": "Not enriched",
+                        "body_text": "Content.",
+                        # Missing enrichment_status
+                    },
+                },
+            ],
+        })
+        assert resp.status_code == 400, (
+            f"multi-resolve with unenriched target must fail: {resp.status_code} {resp.text}"
+        )
+
+    def test_ready_status_with_missing_fields_rejected(self, core) -> None:
+        """enrichment_status=ready but missing L0/L1/embedding → 400."""
+        source_id = f"msg-partial-{int(time.time())}"
+        _post(core, "/v1/staging/ingest", {
+            "connector_id": "gmail-test",
+            "source": "gmail",
+            "source_id": source_id,
+            "type": "note",
+            "summary": "Partial enrichment",
+            "body": "Has ready status but missing fields.",
+        })
+
+        claim_resp = _post(core, "/v1/staging/claim", {"limit": 20})
+        items = claim_resp.json().get("items", [])
+        our_item = next((it for it in items if it.get("source_id") == source_id), None)
+        if our_item is None:
+            pytest.skip("item not found in claim")
+
+        # status=ready but no content_l1 → 400.
+        resp = _post(core, "/v1/staging/resolve", {
+            "id": our_item["id"],
+            "target_persona": "general",
+            "classified_item": {
+                "type": "note",
+                "summary": "Partial enrichment",
+                "body_text": "Has ready status but missing fields.",
+                "enrichment_status": "ready",
+                "content_l0": "L0 is present",
+                # content_l1 missing
+                # embedding missing
+            },
+        })
+        assert resp.status_code == 400, (
+            f"ready-but-missing-fields must be rejected: {resp.status_code} {resp.text}"
+        )
+        assert "content_l1" in resp.text

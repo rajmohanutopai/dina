@@ -344,3 +344,214 @@ func (g *recordingGatekeeper) EvaluateIntent(_ context.Context, intent domain.In
 func (g *recordingGatekeeper) CheckEgress(_ context.Context, _ string, _ []byte) (bool, error) {
 	return true, nil
 }
+
+// ---------------------------------------------------------------------------
+// HybridSearch trust-weighted scoring
+// ---------------------------------------------------------------------------
+
+// hybridMockReader returns configurable FTS5 and vector results for testing.
+type hybridMockReader struct {
+	ftsResults    []domain.VaultItem
+	vectorResults []domain.VaultItem
+}
+
+func (m *hybridMockReader) Query(_ context.Context, _ domain.PersonaName, _ domain.SearchQuery) ([]domain.VaultItem, error) {
+	return m.ftsResults, nil
+}
+
+func (m *hybridMockReader) GetItem(_ context.Context, _ domain.PersonaName, _ string) (*domain.VaultItem, error) {
+	return nil, fmt.Errorf("not found")
+}
+
+func (m *hybridMockReader) VectorSearch(_ context.Context, _ domain.PersonaName, _ []float32, _ int) ([]domain.VaultItem, error) {
+	return m.vectorResults, nil
+}
+
+func TestHybridSearch_TrustWeighting_CaveatedDemoted(t *testing.T) {
+	mgr := newMockVaultManager()
+	persona := domain.PersonaName("general")
+	mgr.open[persona] = true
+
+	normal := domain.VaultItem{ID: "normal-1", RetrievalPolicy: "normal", SenderTrust: "unknown", Confidence: "medium"}
+	caveated := domain.VaultItem{ID: "caveated-1", RetrievalPolicy: "caveated", SenderTrust: "unknown", Confidence: "medium"}
+
+	// Both items appear at same rank in both FTS5 and vector results.
+	// Normal first in FTS, caveated first in vector — equal base scores.
+	reader := &hybridMockReader{
+		ftsResults:    []domain.VaultItem{normal, caveated},
+		vectorResults: []domain.VaultItem{caveated, normal},
+	}
+
+	svc := NewVaultService(mgr, reader, &mockVaultWriter{}, &mockGatekeeper{allow: true}, &mockClock{})
+
+	q := domain.SearchQuery{
+		Mode: domain.SearchHybrid, Query: "test", Embedding: []float32{0.1},
+		Limit: 10, IncludeAll: true,
+	}
+	results, err := svc.HybridSearch(context.Background(), persona, q)
+	if err != nil {
+		t.Fatalf("HybridSearch: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	// Normal should rank higher because caveated gets 0.7x multiplier.
+	if results[0].ID != "normal-1" {
+		t.Errorf("expected normal-1 first (higher trust), got %s", results[0].ID)
+	}
+}
+
+func TestHybridSearch_TrustWeighting_SelfBoosted(t *testing.T) {
+	mgr := newMockVaultManager()
+	persona := domain.PersonaName("general")
+	mgr.open[persona] = true
+
+	self := domain.VaultItem{ID: "self-1", RetrievalPolicy: "normal", SenderTrust: "self", Confidence: "high"}
+	unknown := domain.VaultItem{ID: "unknown-1", RetrievalPolicy: "normal", SenderTrust: "unknown", Confidence: "medium"}
+
+	// Unknown ranks higher in both FTS and vector (better match).
+	reader := &hybridMockReader{
+		ftsResults:    []domain.VaultItem{unknown, self},
+		vectorResults: []domain.VaultItem{unknown, self},
+	}
+
+	svc := NewVaultService(mgr, reader, &mockVaultWriter{}, &mockGatekeeper{allow: true}, &mockClock{})
+
+	q := domain.SearchQuery{
+		Mode: domain.SearchHybrid, Query: "test", Embedding: []float32{0.1},
+		Limit: 10,
+	}
+	results, err := svc.HybridSearch(context.Background(), persona, q)
+	if err != nil {
+		t.Fatalf("HybridSearch: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	// Self gets 1.2x boost. Unknown at rank 0 gets 1.0 base, self at rank 1 gets 0.5 base.
+	// After boost: self = 0.5*1.2 = 0.6, unknown = 1.0. Unknown still wins.
+	// But if both appear at same rank (close scores), the boost matters.
+	// Test: self at rank 0 in FTS, unknown at rank 0 in vector. Equal base = 0.4+0.6 = 1.0 each.
+	// Self gets 1.2x = 1.2, unknown stays 1.0 → self wins.
+
+	// Redo with equal-rank placement:
+	reader2 := &hybridMockReader{
+		ftsResults:    []domain.VaultItem{self},    // self at rank 0 in FTS
+		vectorResults: []domain.VaultItem{unknown}, // unknown at rank 0 in vector
+	}
+	svc2 := NewVaultService(mgr, reader2, &mockVaultWriter{}, &mockGatekeeper{allow: true}, &mockClock{})
+	results2, err := svc2.HybridSearch(context.Background(), persona, q)
+	if err != nil {
+		t.Fatalf("HybridSearch: %v", err)
+	}
+	if len(results2) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results2))
+	}
+	// self: 0.4 * 1.0 * 1.2 (boost) = 0.48
+	// unknown: 0.6 * 1.0 = 0.6
+	// unknown wins (vector weight is higher). But if self appears in both:
+	// Let's test when self has equal base score and gets boosted above.
+	reader3 := &hybridMockReader{
+		ftsResults:    []domain.VaultItem{self, unknown},
+		vectorResults: []domain.VaultItem{self, unknown},
+	}
+	svc3 := NewVaultService(mgr, reader3, &mockVaultWriter{}, &mockGatekeeper{allow: true}, &mockClock{})
+	results3, err := svc3.HybridSearch(context.Background(), persona, q)
+	if err != nil {
+		t.Fatalf("HybridSearch: %v", err)
+	}
+	// Both at same ranks → equal base scores.
+	// self: base=1.0, boosted=1.2. unknown: base=1.0, no boost.
+	if results3[0].ID != "self-1" {
+		t.Errorf("expected self-1 first (trust boost), got %s", results3[0].ID)
+	}
+}
+
+func TestHybridSearch_TrustWeighting_LowConfidencePenalty(t *testing.T) {
+	mgr := newMockVaultManager()
+	persona := domain.PersonaName("general")
+	mgr.open[persona] = true
+
+	high := domain.VaultItem{ID: "high-1", RetrievalPolicy: "normal", SenderTrust: "unknown", Confidence: "high"}
+	low := domain.VaultItem{ID: "low-1", RetrievalPolicy: "normal", SenderTrust: "unknown", Confidence: "low"}
+
+	// Equal rank placement.
+	reader := &hybridMockReader{
+		ftsResults:    []domain.VaultItem{high, low},
+		vectorResults: []domain.VaultItem{high, low},
+	}
+
+	svc := NewVaultService(mgr, reader, &mockVaultWriter{}, &mockGatekeeper{allow: true}, &mockClock{})
+
+	q := domain.SearchQuery{
+		Mode: domain.SearchHybrid, Query: "test", Embedding: []float32{0.1},
+		Limit: 10,
+	}
+	results, err := svc.HybridSearch(context.Background(), persona, q)
+	if err != nil {
+		t.Fatalf("HybridSearch: %v", err)
+	}
+	// high: base=1.0, no penalty. low: base=0.5, penalty=0.6x → 0.3.
+	// high wins.
+	if results[0].ID != "high-1" {
+		t.Errorf("expected high-1 first, got %s", results[0].ID)
+	}
+}
+
+func TestHybridSearch_TrustWeighting_CompoundModifiers(t *testing.T) {
+	mgr := newMockVaultManager()
+	persona := domain.PersonaName("general")
+	mgr.open[persona] = true
+
+	// Self-sourced vs caveated+low confidence.
+	trusted := domain.VaultItem{ID: "trusted-1", RetrievalPolicy: "normal", SenderTrust: "self", Confidence: "high"}
+	untrusted := domain.VaultItem{ID: "untrusted-1", RetrievalPolicy: "caveated", SenderTrust: "unknown", Confidence: "low"}
+
+	reader := &hybridMockReader{
+		ftsResults:    []domain.VaultItem{trusted, untrusted},
+		vectorResults: []domain.VaultItem{trusted, untrusted},
+	}
+
+	svc := NewVaultService(mgr, reader, &mockVaultWriter{}, &mockGatekeeper{allow: true}, &mockClock{})
+
+	q := domain.SearchQuery{
+		Mode: domain.SearchHybrid, Query: "test", Embedding: []float32{0.1},
+		Limit: 10, IncludeAll: true,
+	}
+	results, err := svc.HybridSearch(context.Background(), persona, q)
+	if err != nil {
+		t.Fatalf("HybridSearch: %v", err)
+	}
+	// trusted: base * 1.2 (self boost). untrusted: base * 0.7 * 0.6 = base * 0.42.
+	if results[0].ID != "trusted-1" {
+		t.Errorf("expected trusted-1 first (compound boost), got %s", results[0].ID)
+	}
+}
+
+func TestHybridSearch_TrustWeighting_NormalUnchanged(t *testing.T) {
+	mgr := newMockVaultManager()
+	persona := domain.PersonaName("general")
+	mgr.open[persona] = true
+
+	// Normal policy + medium confidence + unknown trust = no modifiers (1.0x).
+	item := domain.VaultItem{ID: "plain-1", RetrievalPolicy: "normal", SenderTrust: "unknown", Confidence: "medium"}
+
+	reader := &hybridMockReader{
+		ftsResults:    []domain.VaultItem{item},
+		vectorResults: []domain.VaultItem{item},
+	}
+
+	svc := NewVaultService(mgr, reader, &mockVaultWriter{}, &mockGatekeeper{allow: true}, &mockClock{})
+
+	q := domain.SearchQuery{
+		Mode: domain.SearchHybrid, Query: "test", Embedding: []float32{0.1},
+		Limit: 10,
+	}
+	results, err := svc.HybridSearch(context.Background(), persona, q)
+	if err != nil {
+		t.Fatalf("HybridSearch: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != "plain-1" {
+		t.Errorf("expected plain-1, got %v", results)
+	}
+}

@@ -31,6 +31,13 @@ type StagingInbox struct {
 	dedupIndex     map[string]string // "connector_id|source|source_id" -> staging ID
 	isPersonaOpen  func(string) bool
 	storeToVault   StoreToVaultFunc
+	// OnDrain is called after each item is successfully drained to vault.
+	OnDrain func(ctx context.Context, persona string, item domain.VaultItem)
+}
+
+// SetOnDrain sets the callback for post-drain event extraction.
+func (s *StagingInbox) SetOnDrain(fn func(ctx context.Context, persona string, item domain.VaultItem)) {
+	s.OnDrain = fn
 }
 
 // NewStagingInbox creates an in-memory StagingInbox.
@@ -277,6 +284,11 @@ func (s *StagingInbox) DrainPending(ctx context.Context, persona string) (int, e
 		item.UpdatedAt = now
 		count++
 		s.mu.Unlock()
+
+		// Post-publication hook: trigger event extraction for drained items.
+		if s.OnDrain != nil {
+			s.OnDrain(ctx, persona, vaultItem)
+		}
 	}
 
 	return count, nil
@@ -303,6 +315,15 @@ func (s *StagingInbox) Sweep(_ context.Context) (int, error) {
 		// Revert expired classifying leases back to received.
 		if item.Status == domain.StagingClassifying && item.LeaseUntil > 0 && item.LeaseUntil < now {
 			item.Status = domain.StagingReceived
+			item.ClaimedAt = 0
+			item.LeaseUntil = 0
+			item.UpdatedAt = now
+			count++
+		}
+		// Requeue retryable failed items back to received.
+		if item.Status == domain.StagingFailed && item.RetryCount <= 3 {
+			item.Status = domain.StagingReceived
+			item.Error = ""
 			item.ClaimedAt = 0
 			item.LeaseUntil = 0
 			item.UpdatedAt = now

@@ -64,7 +64,7 @@ def test_cli_source_is_self(scorer):
 
 
 def test_known_contact_trusted_ring1(scorer):
-    """Known contact with trust_level=trusted → contact_ring1 / high / normal."""
+    """Known contact with trust_level=trusted → contact_ring1 / high / normal + contact_did."""
     item = {"source": "gmail", "sender": "sancho@example.com",
             "contact_did": "did:plc:sancho", "type": "email"}
     result = scorer.score(item)
@@ -72,6 +72,7 @@ def test_known_contact_trusted_ring1(scorer):
     assert result["source_type"] == "contact"
     assert result["confidence"] == "high"
     assert result["retrieval_policy"] == "normal"
+    assert result["contact_did"] == "did:plc:sancho"
 
 
 def test_known_contact_unknown_trust_ring2(scorer):
@@ -159,4 +160,90 @@ def test_update_contacts(empty_scorer):
         {"did": "did:plc:newcontact", "trust_level": "trusted"},
     ])
     result = empty_scorer.score(item)
+    assert result["sender_trust"] == "contact_ring1"
+
+
+# ---------------------------------------------------------------------------
+# Sender-based contact matching (no contact_did on item)
+# ---------------------------------------------------------------------------
+
+
+def test_sender_matches_contact_by_name_when_name_is_email():
+    """Contact whose name IS the email address matches connector items by sender."""
+    scorer = TrustScorer(contacts=[
+        {"did": "did:plc:sharma", "name": "dr.sharma@clinic.com", "trust_level": "verified"},
+    ])
+    # No contact_did — sender matches contact name exactly.
+    item = {"source": "gmail", "sender": "dr.sharma@clinic.com", "type": "email"}
+    result = scorer.score(item)
+    assert result["sender_trust"] == "contact_ring1"
+    assert result["contact_did"] == "did:plc:sharma"
+
+
+def test_sender_matches_contact_by_alias():
+    """Contact with alias set to email matches connector items by sender.
+
+    This is the recommended way to associate emails with contacts:
+    set the alias field to the email address via admin CLI or API.
+    """
+    scorer = TrustScorer(contacts=[
+        {"did": "did:plc:sharma", "name": "Dr Sharma",
+         "alias": "dr.sharma@clinic.com", "trust_level": "verified"},
+    ])
+    # No contact_did — sender matches contact alias.
+    item = {"source": "gmail", "sender": "dr.sharma@clinic.com", "type": "email"}
+    result = scorer.score(item)
+    assert result["sender_trust"] == "contact_ring1"
+    assert result["contact_did"] == "did:plc:sharma"
+
+
+def test_sender_no_match_when_name_differs_from_email():
+    """Contact name 'Dr Sharma' does NOT match sender 'dr.sharma@clinic.com'.
+
+    This is expected — name-based matching only works when the contact's
+    name or alias is set to the email address. Without that association,
+    the sender is unknown.
+    """
+    scorer = TrustScorer(contacts=[
+        {"did": "did:plc:sharma", "name": "Dr Sharma", "trust_level": "verified"},
+    ])
+    item = {"source": "gmail", "sender": "dr.sharma@clinic.com", "type": "email"}
+    result = scorer.score(item)
+    assert result["sender_trust"] == "unknown"
+    assert result.get("contact_did", "") == ""
+
+
+def test_sender_matching_case_insensitive():
+    """Sender matching is case-insensitive."""
+    scorer = TrustScorer(contacts=[
+        {"did": "did:plc:alice", "alias": "Alice@Example.COM", "trust_level": "trusted"},
+    ])
+    item = {"source": "gmail", "sender": "alice@example.com", "type": "email"}
+    result = scorer.score(item)
+    assert result["sender_trust"] == "contact_ring1"
+    assert result["contact_did"] == "did:plc:alice"
+
+
+def test_sender_no_match_stays_unknown():
+    """Sender that doesn't match any contact name or alias remains unknown."""
+    scorer = TrustScorer(contacts=[
+        {"did": "did:plc:bob", "name": "Bob", "trust_level": "trusted"},
+    ])
+    item = {"source": "gmail", "sender": "stranger@unknown.com", "type": "email"}
+    result = scorer.score(item)
+    assert result["sender_trust"] == "unknown"
+    assert result.get("contact_did", "") == ""
+
+
+def test_contact_did_takes_priority_over_sender():
+    """Explicit contact_did match takes priority over sender-based match."""
+    scorer = TrustScorer(contacts=[
+        {"did": "did:plc:alice", "name": "alice@a.com", "trust_level": "trusted"},
+        {"did": "did:plc:bob", "name": "alice@a.com", "trust_level": "unknown"},
+    ])
+    # contact_did explicitly points to alice
+    item = {"source": "gmail", "sender": "alice@a.com",
+            "contact_did": "did:plc:alice", "type": "email"}
+    result = scorer.score(item)
+    assert result["contact_did"] == "did:plc:alice"
     assert result["sender_trust"] == "contact_ring1"

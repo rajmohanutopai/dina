@@ -21,6 +21,10 @@ type StagingInbox struct {
 	pool          *Pool
 	isPersonaOpen func(string) bool
 	storeToVault  func(ctx context.Context, persona string, item domain.VaultItem) (string, error)
+	// OnDrain is called after each item is successfully drained to vault.
+	// Used to trigger post-publication work (e.g. event extraction via Brain).
+	// Set by the composition root (main.go).
+	OnDrain func(ctx context.Context, persona string, item domain.VaultItem)
 }
 
 // Compile-time check.
@@ -37,6 +41,11 @@ func NewStagingInbox(
 		isPersonaOpen: isPersonaOpen,
 		storeToVault:  storeToVault,
 	}
+}
+
+// SetOnDrain sets the callback for post-drain event extraction.
+func (s *StagingInbox) SetOnDrain(fn func(ctx context.Context, persona string, item domain.VaultItem)) {
+	s.OnDrain = fn
 }
 
 func (s *StagingInbox) db() *sql.DB {
@@ -332,13 +341,22 @@ func (s *StagingInbox) DrainPending(ctx context.Context, persona string) (int, e
 		}
 		if n, _ := res.RowsAffected(); n > 0 {
 			count++
+			// Post-publication hook: trigger event extraction for drained items.
+			if s.OnDrain != nil {
+				s.OnDrain(ctx, persona, vaultItem)
+			}
 		}
 	}
 
 	return count, nil
 }
 
-// Sweep expires items past TTL and reverts expired classifying leases.
+// MaxRetryCount is the maximum number of times a failed item is retried
+// before it is left in failed state for operator review.
+const MaxRetryCount = 3
+
+// Sweep expires items past TTL, reverts expired classifying leases,
+// and requeues retryable failed items back to received.
 func (s *StagingInbox) Sweep(ctx context.Context) (int, error) {
 	db := s.db()
 	if db == nil {
@@ -348,7 +366,7 @@ func (s *StagingInbox) Sweep(ctx context.Context) (int, error) {
 	now := time.Now().Unix()
 	count := 0
 
-	// Delete expired items.
+	// Delete expired items (all statuses including failed past TTL).
 	res, err := db.ExecContext(ctx,
 		`DELETE FROM staging_inbox WHERE expires_at > 0 AND expires_at < ?`, now)
 	if err == nil {
@@ -357,11 +375,23 @@ func (s *StagingInbox) Sweep(ctx context.Context) (int, error) {
 		}
 	}
 
-	// Revert expired classifying leases.
+	// Revert expired classifying leases back to received.
 	res, err = db.ExecContext(ctx,
 		`UPDATE staging_inbox SET status='received', claimed_at=0, lease_until=0, updated_at=?
 		 WHERE status='classifying' AND lease_until > 0 AND lease_until < ?`,
 		now, now)
+	if err == nil {
+		if n, _ := res.RowsAffected(); n > 0 {
+			count += int(n)
+		}
+	}
+
+	// Requeue retryable failed items back to received.
+	// Items beyond MaxRetryCount stay failed for operator review.
+	res, err = db.ExecContext(ctx,
+		`UPDATE staging_inbox SET status='received', error='', claimed_at=0, lease_until=0, updated_at=?
+		 WHERE status='failed' AND retry_count <= ?`,
+		now, MaxRetryCount)
 	if err == nil {
 		if n, _ := res.RowsAffected(); n > 0 {
 			count += int(n)

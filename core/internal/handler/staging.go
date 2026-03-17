@@ -2,12 +2,31 @@ package handler
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/port"
 )
+
+// validateEnrichment checks that a classified VaultItem has all required
+// enrichment fields populated. Returns an error reason string, or "" if valid.
+func validateEnrichment(item domain.VaultItem) string {
+	if item.EnrichmentStatus != "ready" {
+		return "enrichment_status must be 'ready'"
+	}
+	if item.ContentL0 == "" {
+		return "content_l0 is required"
+	}
+	if item.ContentL1 == "" {
+		return "content_l1 is required"
+	}
+	if len(item.Embedding) == 0 {
+		return "embedding is required"
+	}
+	return ""
+}
 
 // StagingHandler exposes staging inbox endpoints for the connector
 // ingestion pipeline.
@@ -129,6 +148,25 @@ func (h *StagingHandler) HandleResolve(w http.ResponseWriter, r *http.Request) {
 	if req.ID == "" {
 		http.Error(w, `{"error":"missing id"}`, http.StatusBadRequest)
 		return
+	}
+
+	// Validate enrichment: items must arrive fully enriched (L0+L1+embedding).
+	// Hard reject incomplete items — the invariant is "no partial records in vault".
+	if len(req.Targets) == 0 && req.TargetPersona != "" {
+		if reason := validateEnrichment(req.ClassifiedItem); reason != "" {
+			slog.Warn("staging.resolve: enrichment validation failed",
+				"id", req.ID, "reason", reason)
+			http.Error(w, `{"error":"`+reason+`"}`, http.StatusBadRequest)
+			return
+		}
+	}
+	for _, t := range req.Targets {
+		if reason := validateEnrichment(t.ClassifiedItem); reason != "" {
+			slog.Warn("staging.resolve: multi-target enrichment validation failed",
+				"id", req.ID, "persona", t.Persona, "reason", reason)
+			http.Error(w, `{"error":"`+reason+`"}`, http.StatusBadRequest)
+			return
+		}
 	}
 
 	// Multi-target resolve (cross-persona content).

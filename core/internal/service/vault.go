@@ -335,6 +335,25 @@ func (s *VaultService) HybridSearch(ctx context.Context, persona domain.PersonaN
 		}
 	}
 
+	// Trust-weighted modifiers: demote low-trust, boost high-trust sources.
+	// Multipliers compound: caveated + low confidence = 0.42x; self-sourced = 1.2x.
+	const (
+		caveatedMultiplier      = 0.7 // retrieval_policy=caveated → demoted
+		highTrustBoost          = 1.2 // sender_trust ∈ {self, contact_ring1} → boosted
+		lowConfidenceMultiplier = 0.6 // confidence=low → demoted
+	)
+	for _, si := range scores {
+		if si.item.RetrievalPolicy == "caveated" {
+			si.score *= caveatedMultiplier
+		}
+		if si.item.SenderTrust == "self" || si.item.SenderTrust == "contact_ring1" {
+			si.score *= highTrustBoost
+		}
+		if si.item.Confidence == "low" {
+			si.score *= lowConfidenceMultiplier
+		}
+	}
+
 	// Sort by descending score and apply limit.
 	sorted := make([]*scoredItem, 0, len(scores))
 	for _, si := range scores {

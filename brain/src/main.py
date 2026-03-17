@@ -459,7 +459,9 @@ def create_app() -> FastAPI:
     from .service.event_extractor import EventExtractor
     event_extractor = EventExtractor(core=brain_core_client)
     staging_processor = StagingProcessor(
-        core=brain_core_client, trust_scorer=trust_scorer,
+        core=brain_core_client,
+        enrichment=enrichment_svc,
+        trust_scorer=trust_scorer,
         domain_classifier=lambda item: domain_clf.classify(
             item.get("body", item.get("summary", "")),
             vault_context={"source": item.get("source", ""), "type": item.get("type", "")},
@@ -501,6 +503,7 @@ def create_app() -> FastAPI:
         nudge_assembler=nudge,
         scratchpad=scratchpad,
         vault_context=vault_context,
+        event_extractor=event_extractor,
     )
 
     # -- Telegram connector (optional — graceful degradation) --
@@ -556,7 +559,10 @@ def create_app() -> FastAPI:
                     await engine.run_sync_cycle(source)
                 except Exception as exc:
                     log.warning("sync.cycle_failed", extra={"error": type(exc).__name__})
-            # Enrichment sweeper: process pending/failed items (crash-safe).
+            # Legacy enrichment sweep: drains items stored before the
+            # "enrichment before publication" change. New items arrive
+            # fully enriched via staging_processor. Becomes a no-op when
+            # all legacy items are drained (enrichment_status != pending).
             try:
                 for p in ("general", "consumer", "health", "work", "social"):
                     enriched = await enrichment_svc.enrich_pending(p, limit=10)

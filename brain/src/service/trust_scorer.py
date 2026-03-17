@@ -56,12 +56,28 @@ class TrustScorer:
 
     def __init__(self, contacts: list[dict[str, Any]] | None = None) -> None:
         self._contacts: dict[str, dict[str, Any]] = {}
+        self._sender_index: dict[str, dict[str, Any]] = {}
         if contacts:
             self.update_contacts(contacts)
 
     def update_contacts(self, contacts: list[dict[str, Any]]) -> None:
         """Rebuild the contact lookup from a fresh contact list."""
         self._contacts = {c.get("did", ""): c for c in contacts if c.get("did")}
+        # Reverse index: sender identifiers → contact for sender-based fallback.
+        # Connector items arrive without contact_did; this lets us match
+        # by sender email when the DID field is absent.
+        #
+        # Indexed fields (all lowercased):
+        #   - name: often set to email address for email contacts
+        #   - alias: explicit email/handle association (set by admin)
+        self._sender_index: dict[str, dict[str, Any]] = {}
+        for c in contacts:
+            if not c.get("did"):
+                continue
+            for field in ("name", "alias"):
+                val = c.get(field, "").strip().lower()
+                if val:
+                    self._sender_index[val] = c
 
     def score(self, item: dict[str, Any]) -> dict[str, str]:
         """Return provenance fields for a vault item.
@@ -103,6 +119,7 @@ class TrustScorer:
                 "source_type": "contact",
                 "confidence": "high" if trust_level in ("trusted", "verified") else "medium",
                 "retrieval_policy": "normal",
+                "contact_did": contact.get("did", ""),
             }
 
         # Verified service domain.
@@ -166,10 +183,20 @@ class TrustScorer:
         return ""
 
     def _find_contact(self, item: dict[str, Any]) -> dict[str, Any] | None:
-        """Match item to a known contact by DID."""
+        """Match item to a known contact by DID or sender email/name.
+
+        Priority: contact_did (explicit) → sender email (reverse index).
+        This ensures connector items without contact_did can still match
+        known contacts by their sender address.
+        """
+        # Primary: explicit DID match.
         contact_did = item.get("contact_did", "")
         if contact_did and contact_did in self._contacts:
             return self._contacts[contact_did]
+        # Fallback: match by sender email/name via reverse index.
+        sender = item.get("sender", "").strip().lower()
+        if sender and hasattr(self, "_sender_index") and sender in self._sender_index:
+            return self._sender_index[sender]
         return None
 
 

@@ -846,6 +846,37 @@ func main() {
 	)
 	stagingH := &handler.StagingHandler{Staging: stagingInbox}
 
+	// Post-publication hook: when pending_unlock items are drained to vault,
+	// push an event to Brain for event extraction (reminders, contacts).
+	// Without this, items that were pending_unlock would never have their
+	// derived artifacts (reminders, contact updates) created.
+	type drainHookable interface {
+		SetOnDrain(func(ctx context.Context, persona string, item domain.VaultItem))
+	}
+	if hookable, ok := stagingInbox.(drainHookable); ok {
+		hookable.SetOnDrain(func(ctx context.Context, persona string, item domain.VaultItem) {
+			go func() {
+				// post_publish: lightweight event for derived artifacts (reminders,
+				// contacts). NOT document_ingest which runs a full LLM pipeline.
+				_ = brain.Process(context.Background(), domain.TaskEvent{
+					Type: "post_publish",
+					Payload: map[string]interface{}{
+						"persona":        persona,
+						"vault_item_id":  item.ID,
+						"source":         item.Source,
+						"type":           item.Type,
+						"summary":        item.Summary,
+						"body_text":      item.BodyText,
+						"sender":         item.Sender,
+						"contact_did":    item.ContactDID,
+						"connector_id":   item.ConnectorID,
+						"staging_origin": "drain",
+					},
+				})
+			}()
+		})
+	}
+
 	// Auto-unlock sensitive persona vaults for user-originated requests (Telegram/admin).
 	// Wired after staging inbox so the closure can reference it for drain-on-unlock.
 	vaultSvc.SetAutoUnlock(func(ctx context.Context, persona domain.PersonaName) error {

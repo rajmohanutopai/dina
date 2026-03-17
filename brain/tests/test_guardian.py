@@ -9572,3 +9572,106 @@ async def test_guardian_reminder_fired_reads_direct_lineage_fields(guardian):
     assert response.get("kind") == "payment_due", f"kind not forwarded: {response}"
     assert response.get("reminder_type") == "payment_due", f"effective type wrong: {response}"
     assert response.get("persona") == "financial", f"persona not forwarded: {response}"
+
+
+# ---------------------------------------------------------------------------
+# Post-publish drain hook — derived artifacts for pending_unlock items
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def guardian_with_extractor():
+    """GuardianLoop with a mock event_extractor for post_publish tests."""
+    from src.service.guardian import GuardianLoop
+    from src.service.entity_vault import EntityVaultService
+    from src.service.nudge import NudgeAssembler
+    from src.service.scratchpad import ScratchpadService
+
+    core = AsyncMock()
+    core.health.return_value = {"status": "ok"}
+    core.update_contact_last_seen.return_value = None
+    core.read_scratchpad.return_value = None
+
+    event_extractor = AsyncMock()
+    event_extractor.extract_and_create.return_value = 1
+
+    scrubber = MagicMock()
+    llm_router = AsyncMock()
+    entity_vault = EntityVaultService(scrubber, core)
+    nudge = NudgeAssembler(core, llm_router, entity_vault)
+    scratchpad = ScratchpadService(core)
+
+    g = GuardianLoop(
+        core=core,
+        llm_router=llm_router,
+        scrubber=scrubber,
+        entity_vault=entity_vault,
+        nudge_assembler=nudge,
+        scratchpad=scratchpad,
+        event_extractor=event_extractor,
+    )
+    g._test_core = core
+    g._test_extractor = event_extractor
+    return g
+
+
+@pytest.mark.asyncio
+async def test_post_publish_extracts_events(guardian_with_extractor):
+    """post_publish event triggers event extraction for drained items."""
+    event = {
+        "type": "post_publish",
+        "persona": "health",
+        "vault_item_id": "stg-drain-001",
+        "body_text": "Appointment with Dr. Sharma on March 15, 2026",
+        "summary": "Doctor appointment",
+        "source": "gmail",
+        "sender": "dr.sharma@clinic.com",
+        "contact_did": "did:key:z6MkSharmaDID",
+    }
+    result = await guardian_with_extractor.process_event(event)
+
+    assert result.get("action") == "post_publish"
+    assert result.get("reminders_created") == 1
+    guardian_with_extractor._test_extractor.extract_and_create.assert_awaited_once()
+
+    # Verify extract_and_create was called with the right persona and vault_item_id
+    call = guardian_with_extractor._test_extractor.extract_and_create.call_args
+    assert call.args[1] == "health"
+    assert call.kwargs.get("vault_item_id") == "stg-drain-001" or call.args[2] == "stg-drain-001"
+
+
+@pytest.mark.asyncio
+async def test_post_publish_updates_contact_by_did(guardian_with_extractor):
+    """post_publish updates contact last_seen using contact_did, not sender email."""
+    event = {
+        "type": "post_publish",
+        "persona": "health",
+        "vault_item_id": "stg-drain-002",
+        "body_text": "Some content",
+        "summary": "Test",
+        "sender": "dr.sharma@clinic.com",  # email — should NOT be used
+        "contact_did": "did:key:z6MkSharmaDID",  # DID — should be used
+    }
+    await guardian_with_extractor.process_event(event)
+
+    # Must use contact_did, not sender email
+    guardian_with_extractor._test_core.update_contact_last_seen.assert_awaited_once()
+    call = guardian_with_extractor._test_core.update_contact_last_seen.call_args
+    assert call.args[0] == "did:key:z6MkSharmaDID"
+
+
+@pytest.mark.asyncio
+async def test_post_publish_no_contact_did_skips_update(guardian_with_extractor):
+    """No contact_did → contact update skipped (not attempted with sender email)."""
+    event = {
+        "type": "post_publish",
+        "persona": "general",
+        "vault_item_id": "stg-drain-003",
+        "body_text": "Random note",
+        "summary": "Note",
+        "sender": "unknown@spam.com",
+        "contact_did": "",  # no DID
+    }
+    await guardian_with_extractor.process_event(event)
+
+    guardian_with_extractor._test_core.update_contact_last_seen.assert_not_awaited()

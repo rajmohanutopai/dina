@@ -68,13 +68,83 @@ class EnrichmentService:
         self._llm = llm
         self._embed_model = embed_model
 
+    async def enrich_raw(self, item_dict: dict) -> dict:
+        """Enrich a classified item dict before vault publication.
+
+        Generates L0, L1, and embedding in-memory without any Core HTTP
+        calls. The caller is responsible for sending the enriched dict
+        to Core (e.g. via staging_resolve).
+
+        Returns the dict with content_l0, content_l1, embedding,
+        enrichment_status, and enrichment_version populated.
+
+        Raises on LLM failure so the caller can handle (e.g. staging_fail).
+        """
+        body = item_dict.get("body_text", "")
+        summary = item_dict.get("summary", "")
+        sender = item_dict.get("sender", "")
+        sender_trust = item_dict.get("sender_trust", "")
+        confidence = item_dict.get("confidence", "")
+        item_type = item_dict.get("type", "")
+        source = item_dict.get("source", "")
+        timestamp = item_dict.get("timestamp", 0)
+
+        # L0: deterministic from metadata when possible.
+        l0 = _generate_l0_deterministic(
+            item_type, sender, summary, timestamp,
+            sender_trust, confidence,
+        )
+
+        # L0 + L1 via LLM (single call). No fallback — if LLM is
+        # unavailable, enrichment fails and the item stays in staging.
+        if self._llm is None:
+            raise RuntimeError("enrichment requires LLM — no provider available")
+
+        # Use body for LLM input; fall back to summary for summary-only
+        # items (calendar events, dead references, short notes).
+        llm_input = body or summary
+        l1 = ""
+        if llm_input:
+            l0_llm, l1 = await self._generate_l0_l1_llm(
+                item_type, source, sender, summary, llm_input,
+                sender_trust, confidence,
+            )
+            if not l0 or len(l0) < 10:
+                l0 = l0_llm
+
+        if not l1:
+            raise RuntimeError(
+                f"LLM failed to generate L1 for item (type={item_type}, "
+                f"body_len={len(body)}, summary_len={len(summary)})"
+            )
+
+        # Embedding from L1 (not L2 — L1 is cleaner, better semantic quality).
+        embedding = await self._llm.embed(l1[:2000])
+
+        version = json.dumps({
+            "prompt_v": _PROMPT_VERSION,
+            "embed_model": self._embed_model,
+            "enriched_at": int(time.time()),
+        })
+
+        item_dict["content_l0"] = l0
+        item_dict["content_l1"] = l1
+        item_dict["enrichment_status"] = "ready"
+        item_dict["enrichment_version"] = version
+        item_dict["embedding"] = embedding
+
+        return item_dict
+
     async def enrich_item(self, persona: str, item_id: str) -> bool:
         """Enrich a single vault item with L0/L1/embedding.
+
+        Fetches the item from Core, enriches via enrich_raw(), then
+        PATCHes Core with the results. Used by the legacy enrichment
+        sweep for pre-migration items.
 
         Returns True on success, False on failure.
         """
         try:
-            # Mark as processing (prevents duplicate work).
             await self._core.enrich_item(
                 item_id, persona=persona,
                 enrichment_status="processing",
@@ -83,69 +153,38 @@ class EnrichmentService:
             pass  # best-effort status update
 
         try:
-            # Fetch the item (L2 = body).
             item = await self._core.get_vault_item(persona, item_id)
             if item is None:
                 log.warning("enrichment.item_not_found", extra={"id": item_id})
                 return False
 
-            body = item.get("body_text", item.get("body", item.get("BodyText", "")))
-            summary = item.get("summary", item.get("Summary", ""))
-            sender = item.get("sender", item.get("Sender", ""))
-            sender_trust = item.get("sender_trust", item.get("SenderTrust", ""))
-            confidence = item.get("confidence", item.get("Confidence", ""))
-            item_type = item.get("type", item.get("Type", ""))
-            source = item.get("source", item.get("Source", ""))
-            timestamp = item.get("timestamp", item.get("Timestamp", 0))
+            # Normalize field names (Core returns PascalCase, we use snake_case).
+            raw = {
+                "body_text": item.get("body_text", item.get("body", item.get("BodyText", ""))),
+                "summary": item.get("summary", item.get("Summary", "")),
+                "sender": item.get("sender", item.get("Sender", "")),
+                "sender_trust": item.get("sender_trust", item.get("SenderTrust", "")),
+                "confidence": item.get("confidence", item.get("Confidence", "")),
+                "type": item.get("type", item.get("Type", "")),
+                "source": item.get("source", item.get("Source", "")),
+                "timestamp": item.get("timestamp", item.get("Timestamp", 0)),
+            }
 
-            # Generate L0 (deterministic when possible).
-            l0 = _generate_l0_deterministic(
-                item_type, sender, summary, timestamp,
-                sender_trust, confidence,
-            )
+            enriched = await self.enrich_raw(raw)
 
-            # Generate L0 + L1 via LLM (one call).
-            l1 = ""
-            if body and self._llm is not None:
-                l0_llm, l1 = await self._generate_l0_l1_llm(
-                    item_type, source, sender, summary, body,
-                    sender_trust, confidence,
-                )
-                # Use LLM L0 only if deterministic was insufficient.
-                if not l0 or len(l0) < 10:
-                    l0 = l0_llm
-
-            # Fallback: L1 = truncated L2 if LLM failed.
-            if not l1:
-                l1 = (body or summary or "")[:500]
-
-            # Generate embedding from L1.
-            embedding = None
-            if l1 and self._llm is not None:
-                try:
-                    embedding = await self._llm.embed(l1[:2000])
-                except Exception:
-                    log.debug("enrichment.embed_failed", extra={"id": item_id})
-
-            # Build enrichment version metadata.
-            version = json.dumps({
-                "prompt_v": _PROMPT_VERSION,
-                "embed_model": self._embed_model,
-                "enriched_at": int(time.time()),
-            })
-
-            # PATCH Core with enrichment results.
             await self._core.enrich_item(
                 item_id, persona=persona,
-                content_l0=l0,
-                content_l1=l1,
-                embedding=embedding,
+                content_l0=enriched.get("content_l0", ""),
+                content_l1=enriched.get("content_l1", ""),
+                embedding=enriched.get("embedding"),
                 enrichment_status="ready",
-                enrichment_version=version,
+                enrichment_version=enriched.get("enrichment_version", ""),
             )
 
             log.info("enrichment.complete", extra={
-                "id": item_id, "l0_len": len(l0), "l1_len": len(l1),
+                "id": item_id,
+                "l0_len": len(enriched.get("content_l0", "")),
+                "l1_len": len(enriched.get("content_l1", "")),
             })
             return True
 
