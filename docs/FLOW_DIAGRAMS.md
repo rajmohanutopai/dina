@@ -1,36 +1,32 @@
 # Dina Flow Diagrams
 
-Architecture flow diagrams for every security-relevant path. All diagrams are Mermaid — they render natively on GitHub.
+Architecture flow diagrams covering every security and data path. All diagrams are Mermaid and render natively on GitHub.
 
 ---
 
 ## 1. Authentication Paths
 
-Three authentication methods, each producing different context for downstream authorization.
+**Use case:** Every HTTP request to Core must be authenticated. A CLI command, a Brain API call, an admin UI action, and a connector push all take different auth paths that produce different permissions.
+
+**Example:** When you run `dina recall "office chairs"`, the CLI signs the request with your device's Ed25519 key. Core verifies the signature, sets CallerType=agent, and checks the device allowlist before forwarding to Brain.
 
 ```mermaid
 flowchart TB
-    subgraph "HTTP Request"
-        REQ[Incoming Request]
-    end
+    REQ[Incoming Request] --> AUTH{Auth Middleware}
 
-    REQ --> AUTH{Auth Middleware}
+    AUTH -->|X-DID + X-Signature| SIG{Signature Type?}
+    AUTH -->|Bearer token| BEARER[CLIENT_TOKEN]
+    AUTH -->|No credentials| DENY[401 Unauthorized]
 
-    AUTH -->|"X-DID + X-Signature<br/>Device key"| DEV[Device Ed25519]
-    AUTH -->|"X-DID + X-Signature<br/>Service key"| SVC[Service Ed25519]
-    AUTH -->|"Bearer token"| BRR[CLIENT_TOKEN]
-    AUTH -->|"No credentials"| DENY[401 Unauthorized]
+    SIG -->|Device key| DEV[CallerType = agent]
+    SIG -->|Service key| SVC[CallerType = brain/user]
 
-    DEV --> DEV_CTX["TokenKind=client<br/>Scope=device<br/>CallerType=agent<br/>AgentDID=device_id"]
-    SVC --> SVC_CTX["TokenKind=service<br/>Scope=serviceID<br/>ServiceID=brain|admin|connector<br/>CallerType=brain|user"]
-    BRR --> BRR_CTX["TokenKind=client<br/>Scope=admin|device<br/>CallerType=user|agent"]
+    DEV --> AUTHZ{Authz Check}
+    SVC --> AUTHZ
+    BEARER --> AUTHZ
 
-    DEV_CTX --> AUTHZ{Authz Middleware}
-    SVC_CTX --> AUTHZ
-    BRR_CTX --> AUTHZ
-
-    AUTHZ -->|"Allowed"| HANDLER[Request Handler]
-    AUTHZ -->|"Denied"| FORBID[403 Forbidden]
+    AUTHZ -->|Allowed| HANDLER[Request Handler]
+    AUTHZ -->|Denied| FORBID[403 Forbidden]
 
     style DENY fill:#f66,color:#fff
     style FORBID fill:#f66,color:#fff
@@ -39,458 +35,453 @@ flowchart TB
 
 ---
 
-## 2. Per-Service Authorization (Least Privilege)
+## 2. Per-Service Authorization
 
-Each service identity gets its own endpoint allowlist. Unknown services are denied on all paths.
+**Use case:** Brain, admin, and connectors each get minimum-privilege access. A compromised connector cannot read vault data. A compromised admin backend cannot access vault contents.
 
-```mermaid
-flowchart LR
-    subgraph "Service Keys"
-        BRAIN["brain"]
-        ADMIN["admin"]
-        CONN["connector"]
-        UNKNOWN["unknown"]
-    end
+**Example:** A Gmail connector can push emails to `/v1/staging/ingest` but cannot call `/v1/vault/query` to read your health data. Brain can read/write vaults but cannot sign DIDs or export backups.
 
-    subgraph "Vault Operations"
-        VQ["/v1/vault/query"]
-        VS["/v1/vault/store"]
-    end
+| Endpoint | Brain | Admin | Connector |
+|----------|:-----:|:-----:|:---------:|
+| `/v1/vault/query` (read) | **yes** | no | no |
+| `/v1/vault/store` (write) | **yes** | no | no |
+| `/v1/staging/ingest` | **yes** | no | **yes** |
+| `/v1/staging/claim` | **yes** | no | no |
+| `/v1/persona/unlock` | no | **yes** | no |
+| `/v1/devices` | no | **yes** | no |
+| `/v1/export` | no | **yes** | no |
+| `/v1/pair` | no | **yes** | no |
+| `/v1/did/sign` | no | no | no |
+| `/v1/did/rotate` | no | no | no |
+| `/healthz` | **yes** | **yes** | **yes** |
 
-    subgraph "Admin Operations"
-        PU["/v1/persona/unlock"]
-        DV["/v1/devices"]
-        EX["/v1/export"]
-        PR["/v1/pair"]
-    end
-
-    subgraph "Security Operations"
-        DS["/v1/did/sign"]
-        DR["/v1/did/rotate"]
-    end
-
-    BRAIN -->|"✓"| VQ
-    BRAIN -->|"✓"| VS
-    BRAIN -->|"✗"| PU
-    BRAIN -->|"✗"| DS
-
-    ADMIN -->|"✗"| VQ
-    ADMIN -->|"✗"| VS
-    ADMIN -->|"✓"| PU
-    ADMIN -->|"✓"| DV
-    ADMIN -->|"✓"| EX
-    ADMIN -->|"✓"| PR
-
-    CONN -->|"✗"| VQ
-    CONN -->|"✓"| VS
-    CONN -->|"✗"| PU
-    CONN -->|"✗"| DS
-
-    UNKNOWN -->|"✗"| VQ
-    UNKNOWN -->|"✗"| PU
-    UNKNOWN -->|"✗"| DS
-
-    style BRAIN fill:#36f,color:#fff
-    style ADMIN fill:#f90,color:#fff
-    style CONN fill:#693,color:#fff
-    style UNKNOWN fill:#f66,color:#fff
-```
+Unknown service IDs are denied on all paths (fail-closed).
 
 ---
 
-## 3. Signing Protocol (6-Part Canonical Payload)
+## 3. Signing Protocol
 
-Every Ed25519-signed request uses this format. The nonce prevents same-second replay collisions.
+**Use case:** Every Ed25519-signed request includes a random nonce so identical payloads within the same second produce different signatures, preventing replay rejection.
+
+**Example:** The CLI runs `dina remember "buy milk"` twice in one second. Each request gets a unique nonce, so Core accepts both instead of rejecting the second as a replay.
 
 ```mermaid
 sequenceDiagram
-    participant C as Client (CLI/Brain)
-    participant H as Core HTTP
-    participant V as Verifier (auth.go)
+    participant C as Client
+    participant H as Core
+    participant V as Verifier
 
-    Note over C: Generate 16-byte random nonce
-    Note over C: Build canonical payload:<br/>{METHOD}\n{PATH}\n{QUERY}<br/>\n{TIMESTAMP}\n{NONCE}<br/>\n{SHA256(BODY)}
-    Note over C: Ed25519.Sign(payload)
+    Note over C: Build payload and sign
+    C->>H: POST /v1/vault/store
+    Note right of C: Headers: X-DID, X-Timestamp, X-Nonce, X-Signature
 
-    C->>H: POST /v1/vault/store<br/>X-DID: did:key:z6Mk...<br/>X-Timestamp: 2026-03-16T14:30:00Z<br/>X-Nonce: a1b2c3d4e5f6...<br/>X-Signature: aabb...
-
-    H->>V: VerifySignature(did, method, path,<br/>query, timestamp, nonce, body, sig)
-    V->>V: Lookup DID → service or device key
-    V->>V: Check timestamp within 5-min window
-    V->>V: Rebuild canonical payload with nonce
+    H->>V: VerifySignature(did, method, path, query, ts, nonce, body, sig)
+    V->>V: Lookup DID in key registry
+    V->>V: Check 5-min timestamp window
+    V->>V: Rebuild canonical payload
     V->>V: Ed25519.Verify(pubkey, payload, sig)
-    V->>V: Check nonce cache (replay protection)
-    V->>V: Add signature to nonce cache
-
-    V-->>H: (TokenService, "brain") or (TokenClient, "device-id")
-    H-->>C: 200 OK / 401 Invalid
+    V->>V: Nonce cache replay check
+    V-->>H: TokenService brain or TokenClient device-id
+    H-->>C: 200 OK or 401 Invalid
 ```
 
 ---
 
-## 4. Agent Reasoning Flow (dina recall)
+## 4. Agent Reasoning Flow
 
-The full path from CLI to vault, through Brain's LLM reasoning loop. Agents are persona-blind — Brain decides which personas to search.
+**Use case:** User asks Dina a question. The CLI sends the query to Core, Core proxies to Brain, Brain's LLM autonomously decides which persona vaults to search, and returns a personalized answer with source citations.
+
+**Example:** You run `dina recall "I need a new office chair for my back pain"`. Brain searches the consumer vault for chair preferences and the health vault for your back condition, then synthesizes an answer: "Given your L4-L5 disc herniation, I recommend a chair with strong lumbar support."
 
 ```mermaid
 sequenceDiagram
-    participant CLI as CLI (dina recall)
+    participant CLI as CLI
     participant CORE as Core
     participant BRAIN as Brain
-    participant LLM as LLM (Gemini/Local)
-    participant VAULT as Vault (SQLCipher)
+    participant LLM as LLM
+    participant VAULT as Vault
 
-    CLI->>CORE: POST /api/v1/reason<br/>{prompt, X-Session}<br/>[Ed25519 device signature]
+    CLI->>CORE: POST /api/v1/reason (device-signed)
+    CORE->>BRAIN: Forward with agent context
+    BRAIN->>BRAIN: Guardian handles reason event
 
-    Note over CORE: Auth: CallerType=agent<br/>AgentDID=device_id
-
-    CORE->>CORE: ReasonHandler: forward agent<br/>context only if CallerType=agent
-
-    CORE->>BRAIN: POST /api/v1/reason<br/>{prompt, agent_did, session}<br/>[Ed25519 service signature]
-
-    Note over BRAIN: Auth: verify Core's service key
-
-    BRAIN->>BRAIN: Guardian._handle_reason()
-
-    loop Agentic Tool Loop (max 6 turns)
-        BRAIN->>LLM: prompt + tool declarations
-        LLM-->>BRAIN: tool_call: search_vault("health", "back pain")
-
-        BRAIN->>CORE: POST /v1/vault/query<br/>{persona: health, query: back pain}<br/>X-Agent-DID: device_id<br/>X-Session: chair-research<br/>[Ed25519 service signature]
-
-        Note over CORE: Auth: service key + X-Agent-DID<br/>→ CallerType overridden to "agent"
-
-        CORE->>VAULT: AccessPersona("health")<br/>→ check tier + session grant
-
-        alt Grant exists
-            VAULT-->>CORE: items[]
-            CORE-->>BRAIN: 200 {items: [...]}
-        else No grant (sensitive/standard)
-            CORE-->>BRAIN: 403 approval_required
-            BRAIN-->>BRAIN: ApprovalRequiredError propagates
-            BRAIN-->>CORE: 403 {error: approval_required}
-            CORE-->>CLI: 403 {error: approval_required}
-            Note over CLI: "Access requires approval.<br/>Notification sent."
-        end
-
+    loop LLM Tool Loop (max 6 turns)
+        BRAIN->>LLM: prompt + tools
+        LLM-->>BRAIN: tool_call search_vault
+        BRAIN->>CORE: POST /v1/vault/query (service-signed)
+        CORE->>VAULT: AccessPersona + Query
+        VAULT-->>CORE: items
+        CORE-->>BRAIN: 200 items
         BRAIN->>LLM: tool results
     end
 
-    LLM-->>BRAIN: final text response
-    BRAIN-->>CORE: 200 {content: "...", vault_context_used: true}
-    CORE-->>CLI: 200 {content: "..."}
+    LLM-->>BRAIN: final answer
+    BRAIN-->>CORE: 200 content
+    CORE-->>CLI: answer with citations
 ```
 
 ---
 
 ## 5. Approval Lifecycle
 
-From initial denial through user approval to successful retry.
+**Use case:** An agent tries to access sensitive health data. Core blocks it, creates an approval request, and notifies the user via Telegram. The user approves from their phone, and the next query succeeds.
+
+**Example:** OpenClaw agent researching office chairs triggers a health vault search for "back pain". Core returns 403 approval_required. You get a Telegram message: "Agent requests health access for chair-research session." You reply `approve apr-123`. The agent retries and gets the data.
 
 ```mermaid
 sequenceDiagram
-    participant AG as Agent (CLI)
+    participant AG as Agent
     participant CORE as Core
-    participant PM as PersonaManager
-    participant WS as WebSocket Hub
-    participant BRAIN as Brain
+    participant WS as WebSocket
     participant TG as Telegram
-    participant ADMIN as Admin User
+    participant USER as User
 
-    AG->>CORE: vault query on sensitive persona<br/>(via Brain or direct store)
+    AG->>CORE: Query sensitive persona
+    CORE->>CORE: AccessPersona returns ErrApprovalRequired
+    CORE->>CORE: Create approval request
 
-    CORE->>PM: AccessPersona("health")
-    PM-->>CORE: ErrApprovalRequired
-
-    CORE->>PM: RequestApproval({<br/>  clientDID, personaID,<br/>  sessionID, action, reason<br/>})
-    PM-->>CORE: approval_id = "apr-123"
-
-    par Notification delivery
-        CORE->>WS: broadcast {type: approval_needed,<br/>id: apr-123, persona: health}
-        CORE->>BRAIN: Process({type: approval_needed, ...})
-        BRAIN->>TG: send_approval_prompt({<br/>  id, persona, agent, session, reason})
-        TG-->>ADMIN: "Agent requests health access.<br/>Reply: approve apr-123"
+    par Notify
+        CORE->>WS: broadcast approval_needed
+        CORE->>TG: send approval prompt
     end
 
-    CORE-->>AG: 403 {error: approval_required,<br/>approval_id: apr-123}
+    CORE-->>AG: 403 approval_required
 
-    Note over ADMIN: Reviews request
+    USER->>TG: approve apr-123
+    TG->>CORE: POST /v1/persona/approve
 
-    alt Approve via Telegram
-        ADMIN->>TG: "approve apr-123"
-        TG->>BRAIN: handle_approval_response()
-        BRAIN->>CORE: POST /v1/persona/approve<br/>{id: apr-123, scope: session}
-    else Approve via Admin UI
-        ADMIN->>CORE: POST /v1/persona/approve<br/>{id: apr-123, scope: session}
-    end
+    CORE->>CORE: Create grant in session
+    CORE->>CORE: Open sensitive vault
+    CORE-->>USER: 200 approved
 
-    CORE->>PM: ApproveRequest("apr-123", "session")
-    PM->>PM: Create AccessGrant in session
-    PM->>PM: Open sensitive vault (if closed)
-    PM->>PM: MarkGrantOpened (for auto-close)
-    CORE-->>ADMIN: 200 {status: approved}
-
-    Note over AG: Retry same query
-
-    AG->>CORE: vault query on "health"<br/>(same session)
-    CORE->>PM: AccessPersona("health")
-    PM->>PM: hasActiveGrant() → true
-    PM-->>CORE: nil (access granted)
-    CORE-->>AG: 200 {items: [...]}
+    AG->>CORE: Retry same query
+    CORE->>CORE: hasActiveGrant = true
+    CORE-->>AG: 200 items
 ```
 
 ---
 
-## 6. Persona Tier Enforcement Matrix
+## 6. Persona Tier Enforcement
 
-How each tier responds to each caller type.
+**Use case:** Four tiers control who can access each persona's data. Default is always open. Standard requires agents to have a session grant. Sensitive requires explicit user approval. Locked requires a passphrase.
+
+**Example:** Your "general" persona (notes, bookmarks) is open to everyone. Your "health" persona (medical records) requires approval — an agent can't read it without your explicit consent via Telegram.
 
 ```mermaid
 flowchart TB
-    subgraph "Caller Types"
-        USER["User (admin)"]
-        BRAIN_C["Brain"]
-        AGENT["Agent (device)"]
+    subgraph Callers
+        U[User]
+        B[Brain]
+        A[Agent]
     end
 
-    subgraph "Default Tier"
-        D_U["✓ Always open"]
-        D_B["✓ Always open"]
-        D_A["✓ Always open"]
+    subgraph Default
+        D1[Always open]
     end
 
-    subgraph "Standard Tier"
-        S_U["✓ Auto-approved"]
-        S_B["✓ Auto-approved"]
-        S_A["❌ Needs session grant"]
+    subgraph Standard
+        S1[Auto-approved]
+        S2[Needs grant]
     end
 
-    subgraph "Sensitive Tier"
-        SE_U["✓ With confirmation"]
-        SE_B["❌ Needs grant"]
-        SE_A["❌ Needs grant + approval"]
+    subgraph Sensitive
+        SE1[With confirm]
+        SE2[Needs approval]
     end
 
-    subgraph "Locked Tier"
-        L_U["✓ Passphrase required"]
-        L_B["❌ Always denied"]
-        L_A["❌ Always denied"]
+    subgraph Locked
+        L1[Passphrase]
+        L2[Always denied]
     end
 
-    USER --> D_U
-    USER --> S_U
-    USER --> SE_U
-    USER --> L_U
+    U --> D1
+    U --> S1
+    U --> SE1
+    U --> L1
 
-    BRAIN_C --> D_B
-    BRAIN_C --> S_B
-    BRAIN_C --> SE_B
-    BRAIN_C --> L_B
+    B --> D1
+    B --> S1
+    B --> SE2
 
-    AGENT --> D_A
-    AGENT --> S_A
-    AGENT --> SE_A
-    AGENT --> L_A
+    A --> D1
+    A --> S2
+    A --> SE2
+    A --> L2
 
-    style D_U fill:#6c6,color:#fff
-    style D_B fill:#6c6,color:#fff
-    style D_A fill:#6c6,color:#fff
-    style S_U fill:#6c6,color:#fff
-    style S_B fill:#6c6,color:#fff
-    style S_A fill:#f90,color:#fff
-    style SE_U fill:#6c6,color:#fff
-    style SE_B fill:#f90,color:#fff
-    style SE_A fill:#f66,color:#fff
-    style L_U fill:#fc0,color:#000
-    style L_B fill:#f66,color:#fff
-    style L_A fill:#f66,color:#fff
+    style D1 fill:#6c6,color:#fff
+    style S1 fill:#6c6,color:#fff
+    style S2 fill:#f90,color:#fff
+    style SE1 fill:#6c6,color:#fff
+    style SE2 fill:#f66,color:#fff
+    style L1 fill:#fc0,color:#000
+    style L2 fill:#f66,color:#fff
 ```
 
 ---
 
 ## 7. Agent Session Lifecycle
 
-Sessions scope access grants. All grants revoked when the session ends.
+**Use case:** Agents work within named sessions that scope their access grants. When you end a session, all grants are revoked and sensitive vaults auto-close.
+
+**Example:** OpenClaw starts a "chair-research" session, gets approval for health data, queries successfully. When the session ends, the health grant is revoked. A new session starts clean — no inherited permissions.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Created: POST /v1/session/start<br/>{name: "chair-research"}
-
-    Created --> Active: Session created<br/>ID assigned, grants=[]
-
-    Active --> GrantPending: Agent queries sensitive persona<br/>→ 403 approval_required
-
-    GrantPending --> GrantActive: Admin approves<br/>→ grant added to session
-
-    GrantActive --> Active: Query succeeds (200)<br/>Single-use grant consumed
-
-    GrantActive --> GrantActive: Session-scoped grant<br/>persists across queries
-
-    Active --> Ended: POST /v1/session/end
-    GrantActive --> Ended: POST /v1/session/end
-
-    Ended --> [*]: All grants revoked<br/>Grant-opened vaults closed
-
-    note right of GrantPending
-        Approval request created
-        Notification sent via
-        WebSocket + Telegram
-    end note
-
-    note right of Ended
-        Different agents have
-        isolated sessions —
-        Agent B cannot use
-        Agent A's grants
-    end note
+    [*] --> Active : session start
+    Active --> GrantPending : query denied
+    GrantPending --> GrantActive : admin approves
+    GrantActive --> Active : grant consumed
+    Active --> Ended : session end
+    GrantActive --> Ended : session end
+    Ended --> [*]
 ```
 
 ---
 
-## 8. Vault Write Path (dina remember)
+## 8. Connector Staging Pipeline
 
-Direct write to default-tier persona — the intentional exception to "agents go through Brain."
+**Use case:** Connectors (Gmail, Calendar) push raw emails to Core's staging inbox. Brain claims items, classifies them into the right persona, and Core stores the classified result. Raw data is transient — only classified data lives in vaults.
+
+**Example:** Gmail connector pushes an email from Dr. Sharma about blood test results. Brain classifies it as health persona, scores trust as "service/high/normal", generates L0/L1 summaries, and Core stores it in the health vault. A spam email from an unknown sender gets classified as "unknown/low/caveated" and quarantined.
 
 ```mermaid
 sequenceDiagram
-    participant CLI as CLI (dina remember)
-    participant CORE as Core
-    participant PM as PersonaManager
-    participant GK as Gatekeeper
-    participant VAULT as Vault (SQLCipher)
+    participant CONN as Connector
+    participant CORE as Core Staging
+    participant BRAIN as Brain
+    participant CLF as Classifier
+    participant VAULT as Persona Vault
 
-    CLI->>CORE: POST /v1/vault/store<br/>{persona: general, item: {...}}<br/>[Ed25519 device signature]
+    CONN->>CORE: POST /v1/staging/ingest (connector-signed)
+    CORE->>CORE: Dedup check + store raw item
+    CORE-->>CONN: 201 staging_id
 
-    Note over CORE: Auth: CallerType=agent<br/>Authz: /v1/vault/store in device allowlist
+    BRAIN->>CORE: POST /v1/staging/claim
+    CORE-->>BRAIN: items with status=received
 
-    CORE->>PM: AccessPersona("general")
-    Note over PM: Tier=default → always allowed
-    PM-->>CORE: nil
+    BRAIN->>CLF: Classify persona + score trust
+    CLF-->>BRAIN: persona=health, confidence=high
 
-    CORE->>CORE: IsOpen("general") → true
+    BRAIN->>CORE: POST /v1/staging/resolve
+    Note over CORE: Core checks persona state
 
-    CORE->>GK: EvaluateIntent({<br/>  action: vault_write,<br/>  persona: general,<br/>  agentDID: device_id})
-    GK-->>CORE: {allowed: true}
+    alt Persona open
+        CORE->>VAULT: Store classified item
+        CORE-->>BRAIN: status=stored
+    else Persona locked
+        CORE->>CORE: Keep as pending_unlock
+        CORE-->>BRAIN: status=pending_unlock
+    end
 
-    CORE->>VAULT: Store(persona, item)
-    VAULT-->>CORE: item_id
-
-    CORE-->>CLI: 201 {id: "item-abc123"}
+    Note over CORE: On persona unlock
+    CORE->>VAULT: DrainPending promotes items
 ```
 
 ---
 
-## 9. Admin UI Authentication Flow
+## 9. Staging Item State Machine
 
-Browser authenticates via passphrase, Brain proxies to Core with CLIENT_TOKEN.
+**Use case:** Each staged item moves through a well-defined state machine. Leases prevent duplicate processing. Expired items are automatically cleaned up.
+
+```mermaid
+stateDiagram-v2
+    [*] --> received : ingest
+    received --> classifying : Brain claims (lease)
+    classifying --> stored : resolve (persona open)
+    classifying --> pending_unlock : resolve (persona locked)
+    classifying --> failed : classification error
+    classifying --> received : lease expired (sweep)
+    pending_unlock --> stored : persona unlocked (Core drain)
+    failed --> received : retry (sweep)
+    stored --> [*]
+```
+
+---
+
+## 10. Source Trust and Provenance
+
+**Use case:** Every vault item carries metadata about who sent it and how reliable it is. Spam health claims are quarantined, not mixed with doctor reports. The LLM cites sources and caveats unverified claims.
+
+**Example:** Dr. Sharma's email about blood tests gets `sender_trust=contact_ring1, confidence=high, retrieval_policy=normal`. A spam email claiming vitamin D deficiency gets `sender_trust=unknown, confidence=low, retrieval_policy=caveated`. When you ask about health issues, Dina says "You have L4-L5 disc herniation based on Dr. Sharma's reports" — not "You have vitamin D deficiency."
+
+```mermaid
+flowchart TB
+    subgraph Sources
+        USER_S[User input]
+        CONTACT[Known contact]
+        SERVICE[Verified service]
+        UNKNOWN[Unknown sender]
+        MARKETING[Marketing]
+    end
+
+    subgraph Trust Assignment
+        SELF[self / high / normal]
+        RING1[contact_ring1 / high / normal]
+        SVC_T[service / high / normal]
+        UNK_T[unknown / low / caveated]
+        MKT_T[marketing / low / briefing_only]
+    end
+
+    subgraph Retrieval
+        NORMAL[Normal search]
+        CAVEATED[Included with caveat]
+        QUARANTINE[Excluded from search]
+        BRIEFING[Briefing only]
+    end
+
+    USER_S --> SELF --> NORMAL
+    CONTACT --> RING1 --> NORMAL
+    SERVICE --> SVC_T --> NORMAL
+    UNKNOWN --> UNK_T --> CAVEATED
+    MARKETING --> MKT_T --> BRIEFING
+
+    style NORMAL fill:#6c6,color:#fff
+    style CAVEATED fill:#f90,color:#fff
+    style QUARANTINE fill:#f66,color:#fff
+    style BRIEFING fill:#999,color:#fff
+```
+
+---
+
+## 11. Tiered Content Loading (L0/L1/L2)
+
+**Use case:** Brain loads content progressively — one-line summaries for scanning, paragraph overviews for answering, full documents only for deep dive. This reduces prompt tokens from ~50K to ~5K.
+
+**Example:** A search returns 20 vault items. Brain sees L0 ("Blood test from Dr. Sharma, March 2026") for all 20, reads L1 (key findings: B12 low, all else normal) for the top 5, and only loads full L2 content for the one item the user asks about specifically.
+
+```mermaid
+sequenceDiagram
+    participant BRAIN as Brain
+    participant LLM as LLM
+    participant CORE as Core
+
+    Note over BRAIN: Phase 1 - Store L2 immediately
+    BRAIN->>CORE: POST /v1/vault/store (body = L2)
+    Note over CORE: FTS5 indexed, keyword search works
+
+    Note over BRAIN: Phase 2 - Async enrichment
+    BRAIN->>LLM: Generate L0 + L1 from L2 (single call)
+    LLM-->>BRAIN: JSON with l0 and l1
+    BRAIN->>LLM: Generate embedding from L1
+    LLM-->>BRAIN: 768-dim vector
+    BRAIN->>CORE: PATCH /v1/vault/item/id/enrich
+    Note over CORE: L0, L1, embedding, status=ready
+
+    Note over BRAIN: Query time - progressive loading
+    BRAIN->>CORE: Search returns 20 items with L0+L1
+    BRAIN->>LLM: 15 items as L0, 4 as L1, 1 as L2
+    LLM-->>BRAIN: Personalized answer with citations
+```
+
+---
+
+## 12. Vault Write Path (dina remember)
+
+**Use case:** User saves a quick note via CLI. The item goes directly to the general vault (default tier, always open) with self/high/normal trust defaults. No Brain involvement needed.
+
+**Example:** You run `dina remember "Buy ergonomic chair with lumbar support"`. The CLI signs the request, Core stores it in the general vault with full trust, and it's immediately searchable.
+
+```mermaid
+sequenceDiagram
+    participant CLI as CLI
+    participant CORE as Core
+    participant VAULT as Vault
+
+    CLI->>CORE: POST /v1/vault/store (device-signed)
+    Note over CORE: Defaults: self/high/normal
+    CORE->>CORE: AccessPersona general = allowed
+    CORE->>VAULT: Store item
+    VAULT-->>CORE: item_id
+    CORE-->>CLI: 201 created
+```
+
+---
+
+## 13. Admin UI Authentication
+
+**Use case:** You open the admin dashboard in a browser. The browser authenticates with a passphrase, gets a session cookie, and Brain proxies vault operations to Core using CLIENT_TOKEN.
+
+**Example:** You navigate to `https://dina.local/admin/`, enter your passphrase, and see pending approval requests. You click "Approve" on an agent's health access request.
 
 ```mermaid
 sequenceDiagram
     participant BR as Browser
     participant CORE as Core
-    participant BRAIN as Brain Admin UI
+    participant BRAIN as Brain
 
     BR->>CORE: GET /admin/
-    Note over CORE: /admin/* bypasses auth,<br/>reverse-proxies to Brain
-
-    CORE->>BRAIN: GET /admin/
+    CORE->>BRAIN: Reverse proxy
     BRAIN-->>BR: Login page
 
-    BR->>BRAIN: POST /admin/login<br/>{passphrase: "..."}
-    BRAIN->>BRAIN: Verify passphrase (Argon2id)
-    BRAIN-->>BR: Set-Cookie: dina_session=<id><br/>HttpOnly; SameSite=Strict
+    BR->>BRAIN: POST /admin/login with passphrase
+    BRAIN->>BRAIN: Verify (Argon2id)
+    BRAIN-->>BR: Session cookie (HttpOnly, SameSite=Strict)
 
-    BR->>BRAIN: GET /admin/dashboard<br/>Cookie: dina_session=<id>
-
-    Note over BRAIN: Session valid → render dashboard
-
-    BRAIN->>CORE: GET /v1/persona/approvals<br/>Authorization: Bearer <CLIENT_TOKEN>
-
-    Note over CORE: Bearer auth → CallerType=user<br/>Full admin access
-
-    CORE-->>BRAIN: {approvals: [...]}
-    BRAIN-->>BR: Dashboard with pending approvals
+    BR->>BRAIN: GET /admin/dashboard
+    BRAIN->>CORE: GET /v1/persona/approvals (Bearer token)
+    CORE-->>BRAIN: Pending approvals
+    BRAIN-->>BR: Dashboard
 ```
 
 ---
 
-## 10. WebSocket Authentication (Ed25519-only)
+## 14. WebSocket Authentication
 
-WebSocket upgrade must be Ed25519-signed. No token handshake — auth happens at the HTTP layer.
+**Use case:** Paired devices maintain a persistent WebSocket connection for real-time push notifications (approval requests, vault updates, nudges). The upgrade must be Ed25519-signed — no token handshake.
+
+**Example:** Your phone connects via WebSocket. When an agent requests health access, Core pushes the approval notification instantly to your phone via the WebSocket.
 
 ```mermaid
 sequenceDiagram
-    participant DEV as Paired Device
+    participant DEV as Device
     participant MW as Auth Middleware
-    participant WS as WebSocket Handler
-    participant HUB as WS Hub
+    participant WS as WebSocket
+    participant HUB as Hub
 
-    DEV->>MW: GET /ws<br/>X-DID: did:key:z6Mk...<br/>X-Timestamp: ...<br/>X-Nonce: ...<br/>X-Signature: ...<br/>Upgrade: websocket
-
-    MW->>MW: VerifySignature()
-    MW->>MW: Set context:<br/>TokenKind=client<br/>Scope=device
-
+    DEV->>MW: GET /ws (Ed25519-signed upgrade)
+    MW->>MW: VerifySignature
     MW->>WS: HTTP 101 Upgrade
-
-    WS->>WS: Extract PreAuthIdentity<br/>from context (kind=client,<br/>scope=device)
-
-    WS->>WS: MarkAuthenticated(device_id)
-
-    WS-->>DEV: {type: auth_ok,<br/>device_name: device_id}
-
-    WS->>HUB: Register(device_id, conn)
-
-    Note over HUB: Flush buffered messages
+    WS->>WS: Extract PreAuthIdentity
+    WS-->>DEV: auth_ok
+    WS->>HUB: Register device
 
     loop Connection lifetime
-        HUB-->>DEV: Push: approval notifications,<br/>vault updates, nudges
-        DEV->>WS: {type: query, payload: ...}
-        WS-->>DEV: {type: whisper, payload: ...}
+        HUB-->>DEV: Push notifications
+        DEV->>WS: Queries
+        WS-->>DEV: Responses
     end
-
-    Note over DEV: Unsigned upgrade → 401
-    Note over DEV: Bearer token upgrade →<br/>PreAuth=nil → ErrAuthFailed
 ```
 
 ---
 
-## 11. Full Request Lifecycle (End-to-End)
+## 15. Full Request Lifecycle
 
-Every request passes through these checkpoints in order.
+**Use case:** Every request passes through the same middleware chain in order: CORS, body limit, rate limit, authentication, authorization, then the handler with persona tier checks and gatekeeper intent evaluation.
 
 ```mermaid
 flowchart TB
-    REQ["Incoming HTTP Request"] --> CORS["CORS Middleware"]
-    CORS --> BODY["Body Size Limit (1MB)"]
-    BODY --> RECOVER["Recovery (panic handler)"]
-    RECOVER --> LOG["Request Logging"]
-    LOG --> RATE["Rate Limiter (per-IP)"]
-    RATE --> AUTH["Auth Middleware<br/>(Ed25519 / Bearer)"]
+    REQ[Request] --> RATE[Rate Limiter]
+    RATE --> AUTH[Auth Middleware]
 
-    AUTH -->|"401"| REJECT1["Unauthorized"]
-    AUTH -->|"Authenticated"| AUTHZ["Authz Middleware<br/>(per-service allowlist)"]
+    AUTH -->|401| REJECT1[Unauthorized]
+    AUTH --> AUTHZ[Authz Middleware]
 
-    AUTHZ -->|"403"| REJECT2["Forbidden"]
-    AUTHZ -->|"Allowed"| TIMEOUT["Request Timeout"]
-    TIMEOUT --> HANDLER["Route Handler"]
+    AUTHZ -->|403| REJECT2[Forbidden]
+    AUTHZ --> HANDLER[Handler]
 
-    HANDLER --> PERSONA{"AccessPersona<br/>(tier check)"}
-    PERSONA -->|"ErrApprovalRequired"| APPROVAL["Create Approval<br/>→ 403 + approval_id"]
-    PERSONA -->|"ErrPersonaLocked"| LOCKED["403 persona locked"]
-    PERSONA -->|"nil (allowed)"| VAULT_CHECK{"Vault IsOpen?"}
+    HANDLER --> PERSONA{Persona Tier}
+    PERSONA -->|approval needed| APPROVAL[403 + approval_id]
+    PERSONA -->|locked| LOCKED[403 locked]
+    PERSONA -->|allowed| GK{Gatekeeper}
 
-    VAULT_CHECK -->|"No"| LOCKED
-    VAULT_CHECK -->|"Yes"| GATEKEEPER{"Gatekeeper<br/>Intent Check"}
-
-    GATEKEEPER -->|"Denied"| GK_DENY["403 + reason"]
-    GATEKEEPER -->|"Allowed"| OPERATION["Execute Operation<br/>(query/store/delete)"]
-
-    OPERATION --> RESPONSE["200/201 Response"]
+    GK -->|denied| GK_DENY[403]
+    GK -->|allowed| OP[Execute]
+    OP --> RESP[200/201]
 
     style REJECT1 fill:#f66,color:#fff
     style REJECT2 fill:#f66,color:#fff
     style APPROVAL fill:#f90,color:#fff
     style LOCKED fill:#f66,color:#fff
     style GK_DENY fill:#f66,color:#fff
-    style RESPONSE fill:#6c6,color:#fff
+    style RESP fill:#6c6,color:#fff
 ```
