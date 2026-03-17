@@ -186,6 +186,8 @@ class ToolExecutor:
         # to the originating agent instead of Brain's service key.
         self.agent_did: str = ""
         self.session: str = ""
+        # User-origin context — when set, Core auto-unlocks sensitive personas.
+        self.user_origin: str = ""
 
     @property
     def tools_called(self) -> list[dict]:
@@ -263,6 +265,7 @@ class ToolExecutor:
                 items = await self._core.search_vault(
                     persona, query="", mode="fts5",
                     agent_did=self.agent_did, session=self.session,
+                    user_origin=self.user_origin,
                 )
                 if items:
                     summaries = [
@@ -302,6 +305,7 @@ class ToolExecutor:
             items = await self._core.search_vault(
                 persona, query="", mode="fts5",
                 agent_did=self.agent_did, session=self.session,
+                user_origin=self.user_origin,
             )
         except PersonaLockedError:
             log.info("tool_executor.persona_locked", persona=persona)
@@ -362,6 +366,7 @@ class ToolExecutor:
             items = await self._core.search_vault(
                 persona, query, mode="hybrid", embedding=embedding,
                 agent_did=self.agent_did, session=self.session,
+                user_origin=self.user_origin,
             )
         except PersonaLockedError:
             log.info("tool_executor.persona_locked", persona=persona)
@@ -408,7 +413,9 @@ class ToolExecutor:
             return {"error": "persona and item_id are required"}
 
         try:
-            item = await self._core.get_vault_item(persona, item_id)
+            item = await self._core.get_vault_item(
+                persona, item_id, user_origin=self.user_origin,
+            )
         except Exception as exc:
             return {"error": str(exc)}
 
@@ -538,6 +545,7 @@ class ReasoningAgent:
         provider: str | None = None,
         agent_did: str = "",
         session: str = "",
+        user_origin: str = "",
     ) -> dict:
         """Run the agentic reasoning loop.
 
@@ -557,6 +565,9 @@ class ReasoningAgent:
             Optional explicit provider name to use for LLM routing
             (e.g. ``"gemini"``, ``"openai"``).  When ``None``, the
             router selects a provider based on task type and tier.
+        user_origin:
+            When set (e.g. ``"telegram"``), Core auto-unlocks sensitive
+            persona vaults for user-originated requests.
 
         Returns
         -------
@@ -568,6 +579,7 @@ class ReasoningAgent:
         # Forward agent context so vault calls are attributed to the agent
         executor.agent_did = agent_did
         executor.session = session
+        executor.user_origin = user_origin
         tools = self._get_tools()
 
         # Accumulated PII vault from scrubbing tool results.
@@ -735,6 +747,7 @@ class VaultContextAssembler:
         provider: str | None = None,
         agent_did: str = "",
         session: str = "",
+        user_origin: str = "",
     ) -> dict:
         """Run full agentic reasoning and return the complete result.
 
@@ -748,8 +761,11 @@ class VaultContextAssembler:
             Optional PII scrubber for tool results sent to cloud LLMs.
         provider:
             Optional explicit provider name for LLM routing.
+        user_origin:
+            When set (e.g. ``"telegram"``), Core auto-unlocks sensitive
+            persona vaults for user-originated requests.
         """
         return await self._agent.reason(
             prompt, persona_tier, entity_vault=entity_vault, provider=provider,
-            agent_did=agent_did, session=session,
+            agent_did=agent_did, session=session, user_origin=user_origin,
         )

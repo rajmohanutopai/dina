@@ -23,6 +23,7 @@ import (
 
 	"github.com/rajmohanutopai/dina/core/internal/adapter/servicekey"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/middleware"
 	"github.com/rajmohanutopai/dina/core/internal/port"
 )
 
@@ -222,6 +223,10 @@ func (c *BrainClient) signRequest(req *http.Request, body []byte) {
 		req.Header.Set("X-Nonce", nonce)
 		req.Header.Set("X-Signature", sig)
 	}
+	// Cross-service request-ID propagation for audit correlation.
+	if rid, ok := req.Context().Value(middleware.RequestIDKey).(string); ok && rid != "" {
+		req.Header.Set("X-Request-ID", rid)
+	}
 }
 
 // Compile-time check: BrainClient satisfies port.BrainClient.
@@ -321,6 +326,71 @@ func (c *BrainClient) ReasonWithContext(ctx context.Context, query, agentDID, se
 		"prompt":    query,
 		"agent_did": agentDID,
 		"session":   sessionName,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("brainclient: marshal query: %w", err)
+	}
+
+	reqURL := c.baseURL + "/api/v1/reason"
+	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, bytes.NewReader(body))
+	if err != nil {
+		c.recordFailure()
+		return nil, fmt.Errorf("brainclient: request creation failed: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	c.signRequest(req, body)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		c.recordFailure()
+		return nil, fmt.Errorf("brainclient: request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.recordFailure()
+		return nil, fmt.Errorf("brainclient: failed to read response: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		c.recordFailure()
+		return nil, fmt.Errorf("brainclient: brain returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	c.recordSuccess()
+
+	var result domain.ReasonResult
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("brainclient: unmarshal response: %w", err)
+	}
+	return &result, nil
+}
+
+// ReasonAsUser sends a reasoning query with source (e.g. "admin") so Brain
+// treats it as user-originated, enabling auto-unlock of sensitive personas.
+// When source is empty, behaves identically to Reason().
+func (c *BrainClient) ReasonAsUser(ctx context.Context, query, source string) (*domain.ReasonResult, error) {
+	c.mu.Lock()
+	if c.cbState == stateOpen {
+		if time.Since(c.lastFailure) > c.cooldown {
+			c.cbState = stateHalfOpen
+		} else {
+			c.mu.Unlock()
+			return nil, ErrCircuitOpen
+		}
+	}
+	c.mu.Unlock()
+
+	if c.baseURL == "" {
+		c.recordFailure()
+		return nil, ErrEmptyURL
+	}
+
+	payload := map[string]string{"prompt": query}
+	if source != "" {
+		payload["source"] = source
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

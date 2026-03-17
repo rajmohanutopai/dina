@@ -846,6 +846,35 @@ func main() {
 	)
 	stagingH := &handler.StagingHandler{Staging: stagingInbox}
 
+	// Auto-unlock sensitive persona vaults for user-originated requests (Telegram/admin).
+	// Wired after staging inbox so the closure can reference it for drain-on-unlock.
+	vaultSvc.SetAutoUnlock(func(ctx context.Context, persona domain.PersonaName) error {
+		personaID := "persona-" + string(persona)
+		tier, _ := personaMgr.GetTier(ctx, personaID)
+		if tier == "locked" {
+			return domain.ErrPersonaLocked
+		}
+		dekVersion, dvErr := personaMgr.GetDEKVersion(ctx, personaID)
+		if dvErr != nil || dekVersion == 0 {
+			dekVersion = 1
+		}
+		dek, dErr := keyDeriver.DerivePersonaDEKVersioned(masterSeed, persona, dekVersion)
+		if dErr != nil {
+			return fmt.Errorf("auto-unlock: DEK derivation failed: %w", dErr)
+		}
+		if oErr := vaultMgr.Open(ctx, persona, dek); oErr != nil {
+			return fmt.Errorf("auto-unlock: vault open failed: %w", oErr)
+		}
+		slog.Info("Sensitive persona auto-unlocked for user request",
+			"persona", string(persona), "tier", tier)
+		if n, drainErr := stagingInbox.DrainPending(ctx, string(persona)); drainErr != nil {
+			slog.Warn("auto-unlock: staging drain failed", "persona", string(persona), "error", drainErr)
+		} else if n > 0 {
+			slog.Info("auto-unlock: drained pending staging", "persona", string(persona), "drained", n)
+		}
+		return nil
+	})
+
 	// Staging sweep: expire old items + revert expired classifying leases.
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
@@ -1081,6 +1110,7 @@ func main() {
 	chain = logging.Handler(chain)
 	chain = recovery.Handler(chain)
 	chain = middleware.BodyLimit(1 << 20)(chain) // 1 MB default body limit
+	chain = middleware.RequestIDMiddleware(chain) // cross-service audit correlation
 	chain = cors.Handler(chain)
 
 	// ---------- Start server ----------

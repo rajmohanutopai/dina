@@ -263,6 +263,7 @@ class TelegramService:
             f"Reason: {reason}\n\n"
             f"Reply:\n"
             f"`approve {approval.get('id', '?')}` — grant for session\n"
+            f"`approve-single {approval.get('id', '?')}` — grant once\n"
             f"`deny {approval.get('id', '?')}` — deny access"
         )
 
@@ -279,7 +280,15 @@ class TelegramService:
         Returns a response message if it was an approval command, None otherwise.
         """
         text = text.strip().lower()
-        if text.startswith("approve "):
+        if text.startswith("approve-single "):
+            approval_id = text[len("approve-single "):].strip()
+            if self._core:
+                try:
+                    await self._core.approve_request(approval_id, scope="single", granted_by="telegram")
+                    return f"✅ Approved (single use): `{approval_id}`"
+                except Exception as exc:
+                    return f"❌ Failed to approve: {exc}"
+        elif text.startswith("approve "):
             approval_id = text[8:].strip()
             if self._core:
                 try:

@@ -48,6 +48,9 @@ class ReasonRequest(BaseModel):
     # to the originating agent, not to Brain.
     agent_did: str | None = Field(None, max_length=200)
     session: str | None = Field(None, max_length=200)
+    # Source channel — when "telegram" or "admin", Brain treats the request
+    # as user-originated, enabling auto-unlock of sensitive personas.
+    source: str | None = Field(None, max_length=50)
 
 
 class ReasonResponse(BaseModel):
@@ -121,6 +124,7 @@ async def reason_query(request: ReasonRequest) -> ReasonResponse:
         "skip_vault_enrichment": request.skip_vault_enrichment,
         "agent_did": request.agent_did,
         "session": request.session,
+        "source": request.source,
     }
 
     try:

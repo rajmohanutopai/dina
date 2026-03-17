@@ -13,5 +13,8 @@ type BrainClient interface {
 	// ReasonWithContext forwards agent DID and session so Brain attributes
 	// vault access to the originating agent, not to Brain itself.
 	ReasonWithContext(ctx context.Context, query, agentDID, sessionName string) (*domain.ReasonResult, error)
+	// ReasonAsUser forwards source (e.g. "admin") so Brain treats the
+	// request as user-originated, enabling auto-unlock of sensitive personas.
+	ReasonAsUser(ctx context.Context, query, source string) (*domain.ReasonResult, error)
 	IsHealthy(ctx context.Context) bool
 }

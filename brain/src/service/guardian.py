@@ -2666,6 +2666,10 @@ class GuardianLoop:
         # Agent context — forwarded from Core for proper access attribution
         agent_did = event.get("agent_did", "")
         agent_session = event.get("session", "")
+        # User-origin — when the event comes from a user channel (Telegram/admin),
+        # propagated to Core so sensitive personas auto-unlock.
+        source = event.get("source", "")
+        user_origin = source if source in ("telegram", "admin") else ""
 
         try:
             vault = None
@@ -2697,6 +2701,7 @@ class GuardianLoop:
                         provider=provider,
                         agent_did=agent_did,
                         session=agent_session,
+                        user_origin=user_origin,
                     )
                     vault_enriched = result.get("vault_context_used", False)
                     if vault_enriched:

@@ -1032,6 +1032,18 @@ func (pm *PersonaManager) AccessPersona(ctx context.Context, personaID string) e
 		agentDID = did
 	}
 
+	// Check if this is a user-originated request (Telegram/admin via Brain).
+	// UserOriginated means Brain is acting on behalf of a direct user interaction.
+	// This grants user-level access to sensitive personas (not locked).
+	userOriginated, _ := ctx.Value(middleware.UserOriginatedKey).(bool)
+	userOrigin, _ := ctx.Value(middleware.UserOriginKey).(string)
+
+	// For persona access, user-originated Brain requests behave as "user".
+	effectiveCaller := callerType
+	if callerType == "brain" && userOriginated {
+		effectiveCaller = "user"
+	}
+
 	switch p.Tier {
 	case "locked":
 		if p.Locked {
@@ -1049,13 +1061,18 @@ func (pm *PersonaManager) AccessPersona(ctx context.Context, personaID string) e
 		pm.addAuditEntry(cid, "access_granted", "locked persona unlocked by user")
 
 	case "sensitive":
-		// Always audit
-		pm.addAuditEntry(cid, "access_sensitive", fmt.Sprintf("caller=%s", callerType))
+		// Always audit — include user_origin for Telegram tracing.
+		auditDetail := fmt.Sprintf("caller=%s", effectiveCaller)
+		if userOriginated {
+			auditDetail = fmt.Sprintf("caller=user_via_%s", userOrigin)
+		}
+		pm.addAuditEntry(cid, "access_sensitive", auditDetail)
 		if pm.OnRestrictedAccess != nil {
 			pm.OnRestrictedAccess(cid, "sensitive tier access")
 		}
-		// Agents and brain need session grant
-		if callerType == "agent" || callerType == "brain" {
+		// Agents and non-user-originated brain need session grant.
+		// User-originated brain requests (Telegram) are auto-approved.
+		if effectiveCaller == "agent" || (effectiveCaller == "brain") {
 			sessionID := ""
 			if sid, ok := ctx.Value(middleware.SessionNameKey).(string); ok {
 				sessionID = sid
@@ -1068,7 +1085,7 @@ func (pm *PersonaManager) AccessPersona(ctx context.Context, personaID string) e
 	case "standard":
 		// Users and brain: auto-approved
 		// Agents: need session grant
-		if callerType == "agent" {
+		if effectiveCaller == "agent" {
 			sessionID := ""
 			if sid, ok := ctx.Value(middleware.SessionNameKey).(string); ok {
 				sessionID = sid

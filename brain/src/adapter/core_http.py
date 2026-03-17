@@ -199,6 +199,15 @@ class CoreHTTPClient:
         if json is not None:
             merged_headers.setdefault("Content-Type", "application/json")
 
+        # Cross-service request-ID propagation for audit correlation.
+        try:
+            import structlog.contextvars
+            ctx = structlog.contextvars.get_contextvars()
+            if rid := ctx.get("request_id"):
+                merged_headers.setdefault("X-Request-ID", rid)
+        except Exception:
+            pass  # best-effort — don't fail requests over tracing
+
         for attempt in range(_MAX_RETRIES):
             try:
                 resp = await client.request(
@@ -285,33 +294,35 @@ class CoreHTTPClient:
 
     # -- Vault CRUD ----------------------------------------------------------
 
-    async def get_vault_item(self, persona_id: str, item_id: str) -> dict:
+    async def get_vault_item(
+        self, persona_id: str, item_id: str, *, user_origin: str = "",
+    ) -> dict:
         """GET /v1/vault/item/{item_id}?persona={persona_id}."""
-        resp = await self._request(
-            "GET",
-            f"/v1/vault/item/{item_id}?persona={persona_id}",
-        )
+        qs = f"persona={persona_id}"
+        if user_origin:
+            qs += f"&user_origin={user_origin}"
+        resp = await self._request("GET", f"/v1/vault/item/{item_id}?{qs}")
         return resp.json()
 
-    async def store_vault_item(self, persona_id: str, item: dict) -> str:
+    async def store_vault_item(
+        self, persona_id: str, item: dict, *, user_origin: str = "",
+    ) -> str:
         """POST /v1/vault/store — returns assigned item_id."""
-        resp = await self._request(
-            "POST",
-            "/v1/vault/store",
-            json={"persona": persona_id, "item": item},
-        )
+        body: dict[str, Any] = {"persona": persona_id, "item": item}
+        if user_origin:
+            body["user_origin"] = user_origin
+        resp = await self._request("POST", "/v1/vault/store", json=body)
         data = resp.json()
         return data.get("id", data.get("item_id", ""))
 
     async def store_vault_batch(
-        self, persona_id: str, items: list[dict]
+        self, persona_id: str, items: list[dict], *, user_origin: str = "",
     ) -> None:
         """POST /v1/vault/store/batch — atomic batch store."""
-        await self._request(
-            "POST",
-            "/v1/vault/store/batch",
-            json={"persona": persona_id, "items": items},
-        )
+        body: dict[str, Any] = {"persona": persona_id, "items": items}
+        if user_origin:
+            body["user_origin"] = user_origin
+        await self._request("POST", "/v1/vault/store/batch", json=body)
 
     async def enrich_item(
         self, item_id: str, *, persona: str = "general",
@@ -398,12 +409,16 @@ class CoreHTTPClient:
         embedding: list[float] | None = None,
         agent_did: str = "", session: str = "",
         include_all: bool = False,
+        user_origin: str = "",
     ) -> list[dict]:
         """POST /v1/vault/query — hybrid FTS5 + cosine.
 
         When agent_did and session are provided, Core attributes the access
         to the originating agent (for approval/grant enforcement) instead of
         to Brain's service key.
+
+        When user_origin is provided (e.g. "telegram"), Core treats the
+        request as user-originated, enabling auto-unlock for sensitive personas.
         """
         body: dict[str, Any] = {
             "persona": persona_id, "query": query, "mode": mode, "limit": 50,
@@ -412,6 +427,8 @@ class CoreHTTPClient:
             body["embedding"] = embedding
         if include_all:
             body["include_all"] = True
+        if user_origin:
+            body["user_origin"] = user_origin
         extra_headers = {}
         if agent_did:
             extra_headers["X-Agent-DID"] = agent_did
@@ -615,6 +632,7 @@ class CoreHTTPClient:
         mode: str = "fts5",
         types: list[str] | None = None,
         limit: int = 50,
+        user_origin: str = "",
     ) -> list[dict]:
         """POST /v1/vault/query — search vault items."""
         body: dict[str, Any] = {
@@ -625,6 +643,8 @@ class CoreHTTPClient:
         }
         if types:
             body["types"] = types
+        if user_origin:
+            body["user_origin"] = user_origin
         resp = await self._request("POST", "/v1/vault/query", json=body)
         data = resp.json()
         items = data.get("items", []) if isinstance(data, dict) else data

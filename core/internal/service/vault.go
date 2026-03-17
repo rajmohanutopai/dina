@@ -8,8 +8,14 @@ import (
 	"fmt"
 
 	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/middleware"
 	"github.com/rajmohanutopai/dina/core/internal/port"
 )
+
+// AutoUnlockFunc is a callback that auto-opens a sensitive persona vault
+// for user-originated requests (Telegram/admin). Called by ensureOpen()
+// when the vault is closed but the caller has user-level access.
+type AutoUnlockFunc func(ctx context.Context, persona domain.PersonaName) error
 
 // VaultService orchestrates vault operations, combining search strategies
 // and enforcing gatekeeper checks before data access.
@@ -20,11 +26,31 @@ type VaultService struct {
 	gatekeeper port.Gatekeeper
 	clock      port.Clock
 	personaMgr port.PersonaManager // optional — tier enforcement
+	autoUnlock AutoUnlockFunc      // optional — auto-opens sensitive vaults for user requests
 }
 
 // SetPersonaManager enables persona tier enforcement on vault operations.
 func (s *VaultService) SetPersonaManager(pm port.PersonaManager) {
 	s.personaMgr = pm
+}
+
+// SetAutoUnlock sets the callback for auto-opening sensitive vaults.
+func (s *VaultService) SetAutoUnlock(fn AutoUnlockFunc) {
+	s.autoUnlock = fn
+}
+
+// ensureOpen checks if a persona vault is open. If not, and the request
+// is user-originated, auto-unlocks it. Otherwise returns ErrPersonaLocked.
+func (s *VaultService) ensureOpen(ctx context.Context, persona domain.PersonaName) error {
+	if s.manager.IsOpen(persona) {
+		return nil
+	}
+	// Only auto-unlock for user-originated requests.
+	userOriginated, _ := ctx.Value(middleware.UserOriginatedKey).(bool)
+	if !userOriginated || s.autoUnlock == nil {
+		return domain.ErrPersonaLocked
+	}
+	return s.autoUnlock(ctx, persona)
 }
 
 // NewVaultService constructs a VaultService with the given port dependencies.
@@ -58,8 +84,8 @@ func (s *VaultService) Query(ctx context.Context, agentDID string, persona domai
 		}
 	}
 
-	if !s.manager.IsOpen(persona) {
-		return nil, fmt.Errorf("vault query: %w", domain.ErrPersonaLocked)
+	if err := s.ensureOpen(ctx, persona); err != nil {
+		return nil, fmt.Errorf("vault query: %w", err)
 	}
 
 	intent := domain.Intent{
@@ -97,8 +123,8 @@ func (s *VaultService) GetItem(ctx context.Context, agentDID string, persona dom
 			return nil, fmt.Errorf("vault get item: %w", err)
 		}
 	}
-	if !s.manager.IsOpen(persona) {
-		return nil, fmt.Errorf("vault get item: %w", domain.ErrPersonaLocked)
+	if err := s.ensureOpen(ctx, persona); err != nil {
+		return nil, fmt.Errorf("vault get item: %w", err)
 	}
 
 	intent := domain.Intent{
@@ -133,8 +159,8 @@ func (s *VaultService) Store(ctx context.Context, agentDID string, persona domai
 			return "", fmt.Errorf("vault store: %w", err)
 		}
 	}
-	if !s.manager.IsOpen(persona) {
-		return "", fmt.Errorf("vault store: %w", domain.ErrPersonaLocked)
+	if err := s.ensureOpen(ctx, persona); err != nil {
+		return "", fmt.Errorf("vault store: %w", err)
 	}
 
 	intent := domain.Intent{
@@ -171,8 +197,8 @@ func (s *VaultService) StoreBatch(ctx context.Context, agentDID string, persona 
 			return nil, fmt.Errorf("vault store batch: %w", err)
 		}
 	}
-	if !s.manager.IsOpen(persona) {
-		return nil, fmt.Errorf("vault store batch: %w", domain.ErrPersonaLocked)
+	if err := s.ensureOpen(ctx, persona); err != nil {
+		return nil, fmt.Errorf("vault store batch: %w", err)
 	}
 
 	intent := domain.Intent{
@@ -211,8 +237,8 @@ func (s *VaultService) Delete(ctx context.Context, agentDID string, persona doma
 			return fmt.Errorf("vault delete: %w", err)
 		}
 	}
-	if !s.manager.IsOpen(persona) {
-		return fmt.Errorf("vault delete: %w", domain.ErrPersonaLocked)
+	if err := s.ensureOpen(ctx, persona); err != nil {
+		return fmt.Errorf("vault delete: %w", err)
 	}
 
 	intent := domain.Intent{
@@ -239,8 +265,8 @@ func (s *VaultService) Delete(ctx context.Context, agentDID string, persona doma
 // with a weighted merge (0.4 FTS5 + 0.6 vector) to produce the most relevant results.
 // The query must include both a text query and an embedding vector.
 func (s *VaultService) HybridSearch(ctx context.Context, persona domain.PersonaName, q domain.SearchQuery) ([]domain.VaultItem, error) {
-	if !s.manager.IsOpen(persona) {
-		return nil, fmt.Errorf("hybrid search: %w", domain.ErrPersonaLocked)
+	if err := s.ensureOpen(ctx, persona); err != nil {
+		return nil, fmt.Errorf("hybrid search: %w", err)
 	}
 
 	const (

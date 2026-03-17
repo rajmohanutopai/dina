@@ -3,7 +3,9 @@ package middleware
 import (
 	"bytes"
 	"context"
+	crypto_rand "crypto/rand"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -20,12 +22,15 @@ type ContextKey string
 type contextKey = ContextKey
 
 const (
-	TokenKindKey   ContextKey = "token_kind"
-	AgentDIDKey    ContextKey = "agent_did"
-	TokenScopeKey  ContextKey = "token_scope"
-	CallerTypeKey  ContextKey = "caller_type"
-	SessionNameKey ContextKey = "session_name"
-	ServiceIDKey   ContextKey = "service_id"
+	TokenKindKey      ContextKey = "token_kind"
+	AgentDIDKey       ContextKey = "agent_did"
+	TokenScopeKey     ContextKey = "token_scope"
+	CallerTypeKey     ContextKey = "caller_type"
+	SessionNameKey    ContextKey = "session_name"
+	ServiceIDKey      ContextKey = "service_id"
+	UserOriginatedKey ContextKey = "user_originated" // true when Brain sends user_origin (Telegram/admin)
+	UserOriginKey     ContextKey = "user_origin"     // "telegram", "admin", etc. for audit
+	RequestIDKey      ContextKey = "request_id"      // cross-service audit correlation
 )
 
 // AuthzChecker is the interface for endpoint-level authorization checks.
@@ -220,6 +225,25 @@ func SocketAdminAuth(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), TokenKindKey, "client")
 		ctx = context.WithValue(ctx, AgentDIDKey, "socket-local")
 		ctx = context.WithValue(ctx, TokenScopeKey, "admin")
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// RequestIDMiddleware extracts X-Request-ID from incoming requests for
+// cross-service audit correlation. If absent, generates a new one.
+// The ID is stored in context and echoed back in the response header.
+func RequestIDMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rid := r.Header.Get("X-Request-ID")
+		if rid == "" {
+			// Generate a short unique ID (12 hex chars from crypto/rand).
+			b := make([]byte, 6)
+			if _, err := io.ReadFull(crypto_rand.Reader, b); err == nil {
+				rid = fmt.Sprintf("%x", b)
+			}
+		}
+		ctx := context.WithValue(r.Context(), RequestIDKey, rid)
+		w.Header().Set("X-Request-ID", rid)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

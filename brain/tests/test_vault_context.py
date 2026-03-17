@@ -156,7 +156,7 @@ class TestToolExecutor:
         assert result["items"][0]["Summary"] == "Back pain history"
         mock_core_client.search_vault.assert_called_once_with(
             "personal", "back pain", mode="hybrid", embedding=None,
-            agent_did="", session="",
+            agent_did="", session="", user_origin="",
         )
 
     @pytest.mark.asyncio
@@ -528,3 +528,75 @@ class TestToolDeclarations:
         # If google-genai is installed, should return non-empty
         if tools:
             assert len(tools) == 1  # One Tool with multiple declarations
+
+
+# =========================================================================
+# User-origin propagation (Telegram full access)
+# =========================================================================
+
+
+class TestUserOriginPropagation:
+    """Verify user_origin propagates from ToolExecutor to Core calls."""
+
+    @pytest.mark.asyncio
+    async def test_search_vault_passes_user_origin(self, mock_core_client):
+        """search_vault forwards user_origin to Core HTTP client."""
+        from src.service.vault_context import ToolExecutor
+        executor = ToolExecutor(mock_core_client)
+        executor.user_origin = "telegram"
+        mock_core_client.search_vault.return_value = []
+
+        await executor.execute("search_vault", {"persona": "health", "query": "blood pressure"})
+
+        mock_core_client.search_vault.assert_called_once_with(
+            "health", "blood pressure", mode="hybrid", embedding=None,
+            agent_did="", session="", user_origin="telegram",
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_full_content_passes_user_origin(self, mock_core_client):
+        """get_full_content forwards user_origin to Core HTTP client."""
+        from src.service.vault_context import ToolExecutor
+        executor = ToolExecutor(mock_core_client)
+        executor.user_origin = "telegram"
+        mock_core_client.get_vault_item.return_value = {
+            "id": "item-1", "body_text": "Full content here",
+        }
+
+        await executor.execute("get_full_content", {"persona": "health", "item_id": "item-1"})
+
+        mock_core_client.get_vault_item.assert_called_once_with(
+            "health", "item-1", user_origin="telegram",
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_personas_passes_user_origin(self, mock_core_client):
+        """list_personas preview calls pass user_origin to search_vault."""
+        from src.service.vault_context import ToolExecutor
+        executor = ToolExecutor(mock_core_client)
+        executor.user_origin = "admin"
+        mock_core_client.list_personas.return_value = ["personal"]
+        mock_core_client.search_vault.return_value = []
+
+        await executor.execute("list_personas", {})
+
+        # The preview search for each persona should include user_origin
+        mock_core_client.search_vault.assert_called_once()
+        call_kwargs = mock_core_client.search_vault.call_args
+        assert call_kwargs.kwargs.get("user_origin") == "admin" or \
+            (len(call_kwargs) > 1 and "admin" in str(call_kwargs))
+
+    @pytest.mark.asyncio
+    async def test_no_user_origin_sends_empty(self, mock_core_client):
+        """Without user_origin, empty string is sent (backward compat)."""
+        from src.service.vault_context import ToolExecutor
+        executor = ToolExecutor(mock_core_client)
+        # user_origin defaults to ""
+        mock_core_client.search_vault.return_value = []
+
+        await executor.execute("search_vault", {"persona": "personal", "query": "test"})
+
+        mock_core_client.search_vault.assert_called_once_with(
+            "personal", "test", mode="hybrid", embedding=None,
+            agent_did="", session="", user_origin="",
+        )

@@ -79,6 +79,22 @@ def create_brain_app(
         return response
 
     # ------------------------------------------------------------------
+    # Request-ID propagation — cross-service audit correlation
+    # ------------------------------------------------------------------
+
+    @app.middleware("http")
+    async def request_id_middleware(request: Request, call_next):
+        try:
+            from ..infra.logging import bind_request_id
+        except ImportError:
+            from infra.logging import bind_request_id
+        incoming_rid = request.headers.get("X-Request-ID")
+        rid = bind_request_id(incoming_rid)
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = rid
+        return response
+
+    # ------------------------------------------------------------------
     # MED-07: Body size limit (1 MiB)
     # ------------------------------------------------------------------
 

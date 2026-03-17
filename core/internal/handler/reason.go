@@ -38,13 +38,18 @@ func (h *ReasonHandler) HandleReason(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Only forward agent context when the caller is a device-scoped agent.
-	// Admin/user callers should get Brain's full access, not agent-scoped.
-	var agentDID, sessionName string
+	// Determine caller context for Brain.
+	// Agents: forward DID + session for per-agent access control.
+	// Admin/user: forward source="admin" so Brain treats it as user-originated
+	//             (enables auto-unlock of sensitive personas).
+	var agentDID, sessionName, source string
 	callerType, _ := r.Context().Value(middleware.CallerTypeKey).(string)
-	if callerType == "agent" {
+	switch callerType {
+	case "agent":
 		agentDID, _ = r.Context().Value(middleware.AgentDIDKey).(string)
 		sessionName, _ = r.Context().Value(middleware.SessionNameKey).(string)
+	case "user":
+		source = "admin"
 	}
 
 	var result *domain.ReasonResult
@@ -52,7 +57,7 @@ func (h *ReasonHandler) HandleReason(w http.ResponseWriter, r *http.Request) {
 	if agentDID != "" {
 		result, err = h.Brain.ReasonWithContext(r.Context(), req.Prompt, agentDID, sessionName)
 	} else {
-		result, err = h.Brain.Reason(r.Context(), req.Prompt)
+		result, err = h.Brain.ReasonAsUser(r.Context(), req.Prompt, source)
 	}
 	if err != nil {
 		// If Brain returned approval_required, forward as 403 to the CLI

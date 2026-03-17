@@ -51,6 +51,40 @@ func agentDID(r *http.Request) string {
 	return "brain"
 }
 
+// validUserOrigins is the Core-enforced allowlist of user_origin values
+// that elevate Brain requests to user-equivalent access. Brain convention
+// alone is not sufficient — Core validates the exact set.
+var validUserOrigins = map[string]bool{
+	"telegram": true,
+	"admin":    true,
+}
+
+// injectUserOrigin sets UserOriginatedKey in the request context when the
+// signed body contains a user_origin field. Only Brain service key requests
+// can claim user origin, and only for allowlisted origin values.
+// Fails closed if both X-Agent-DID and user_origin are present (ambiguous).
+func injectUserOrigin(r *http.Request, userOrigin string) *http.Request {
+	if userOrigin == "" {
+		return r
+	}
+	// Core-enforced allowlist: reject unknown origin values.
+	if !validUserOrigins[userOrigin] {
+		return r
+	}
+	// Only accept user_origin from Brain service key (CallerType=brain).
+	callerType, _ := r.Context().Value(middleware.CallerTypeKey).(string)
+	if callerType != "brain" {
+		return r // Connector/device cannot claim user origin
+	}
+	// Fail closed: reject ambiguous context (both agent and user origin).
+	if agentOverride := r.Header.Get("X-Agent-DID"); agentOverride != "" {
+		return r // X-Agent-DID + user_origin = ambiguous, ignore user_origin
+	}
+	ctx := context.WithValue(r.Context(), middleware.UserOriginatedKey, true)
+	ctx = context.WithValue(ctx, middleware.UserOriginKey, userOrigin)
+	return r.WithContext(ctx)
+}
+
 // queryRequest is the JSON body for POST /v1/vault/query.
 type queryRequest struct {
 	Persona         string    `json:"persona"`
@@ -61,6 +95,7 @@ type queryRequest struct {
 	Embedding       []float32 `json:"embedding"`        // 768-dim from Brain, enables semantic/hybrid search
 	RetrievalPolicy string    `json:"retrieval_policy"`  // filter to specific policy
 	IncludeAll      bool      `json:"include_all"`       // override: return all policies including quarantine
+	UserOrigin      string    `json:"user_origin"`       // "telegram" or "admin" — signed in body, enables user-level access
 }
 
 // HandleQuery handles POST /v1/vault/query. It parses the search parameters,
@@ -76,6 +111,10 @@ func (h *VaultHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
 		return
 	}
+
+	// Inject user-origin context if present in the signed body.
+	// Only Brain service key can claim user origin. Fail closed if ambiguous.
+	r = injectUserOrigin(r, req.UserOrigin)
 
 	persona, err := domain.NewPersonaName(req.Persona)
 	if err != nil {
@@ -155,8 +194,9 @@ func (h *VaultHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
 
 // storeRequest is the JSON body for POST /v1/vault/store.
 type storeRequest struct {
-	Persona string           `json:"persona"`
-	Item    domain.VaultItem `json:"item"`
+	Persona    string           `json:"persona"`
+	Item       domain.VaultItem `json:"item"`
+	UserOrigin string           `json:"user_origin"` // "telegram" or "admin" — signed in body
 }
 
 // HandleStore handles POST /v1/vault/store. It persists a single item into the
@@ -172,6 +212,8 @@ func (h *VaultHandler) HandleStore(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
 		return
 	}
+
+	r = injectUserOrigin(r, req.UserOrigin)
 
 	persona, err := domain.NewPersonaName(req.Persona)
 	if err != nil {
@@ -236,8 +278,9 @@ func (h *VaultHandler) HandleStore(w http.ResponseWriter, r *http.Request) {
 
 // storeBatchRequest is the JSON body for POST /v1/vault/store/batch.
 type storeBatchRequest struct {
-	Persona string             `json:"persona"`
-	Items   []domain.VaultItem `json:"items"`
+	Persona    string             `json:"persona"`
+	Items      []domain.VaultItem `json:"items"`
+	UserOrigin string             `json:"user_origin"` // "telegram" or "admin" — signed in body
 }
 
 // HandleStoreBatch handles POST /v1/vault/store/batch. It persists multiple
@@ -253,6 +296,8 @@ func (h *VaultHandler) HandleStoreBatch(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
 		return
 	}
+
+	r = injectUserOrigin(r, req.UserOrigin)
 
 	persona, err := domain.NewPersonaName(req.Persona)
 	if err != nil {
@@ -292,6 +337,9 @@ func (h *VaultHandler) HandleGetItem(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid persona name"}`, http.StatusBadRequest)
 		return
 	}
+
+	// Inject user-origin from query parameter (signed in the canonical payload via query string).
+	r = injectUserOrigin(r, r.URL.Query().Get("user_origin"))
 
 	item, err := h.Vault.GetItem(r.Context(), agentDID(r), persona, id)
 	if err != nil {
@@ -337,6 +385,9 @@ func (h *VaultHandler) HandleDeleteItem(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, `{"error":"invalid persona name"}`, http.StatusBadRequest)
 		return
 	}
+
+	// Inject user-origin from query parameter (signed in the canonical payload).
+	r = injectUserOrigin(r, r.URL.Query().Get("user_origin"))
 
 	if err := h.Vault.Delete(r.Context(), agentDID(r), persona, id); err != nil {
 		clientError(w, vaultErrMsg(err, "delete failed"), vaultErrStatus(err), err)

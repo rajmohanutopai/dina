@@ -872,3 +872,48 @@ async def test_handle_approval_response_case_insensitive(service, mock_core):
     result = await service.handle_approval_response("  Approve APR-003  ")
     assert result is not None
     mock_core.approve_request.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# Approve-single (one-time grant)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_handle_approval_response_approve_single(service, mock_core):
+    """'approve-single <id>' calls core.approve_request with scope=single."""
+    mock_core.approve_request = AsyncMock()
+    result = await service.handle_approval_response("approve-single apr-010")
+    assert result is not None
+    assert "apr-010" in result
+    assert "single" in result.lower()
+    mock_core.approve_request.assert_awaited_once_with(
+        "apr-010", scope="single", granted_by="telegram",
+    )
+
+
+@pytest.mark.asyncio
+async def test_handle_approval_response_approve_single_failure(service, mock_core):
+    """approve-single failure returns error message."""
+    mock_core.approve_request = AsyncMock(side_effect=Exception("expired"))
+    result = await service.handle_approval_response("approve-single bad-id")
+    assert "❌" in result
+    assert "expired" in result
+
+
+@pytest.mark.asyncio
+async def test_approval_prompt_shows_three_options(service, mock_bot):
+    """Approval prompt message should show approve, approve-single, and deny."""
+    service._paired_users = {111}
+    approval = {
+        "id": "apr-020",
+        "persona": "health",
+        "client_did": "did:key:z6MkAgent",
+        "session": "research",
+        "reason": "test query",
+    }
+    await service.send_approval_prompt(approval)
+    msg = mock_bot.send_message.await_args.args[1]
+    assert "approve apr-020" in msg
+    assert "approve-single apr-020" in msg
+    assert "deny apr-020" in msg
