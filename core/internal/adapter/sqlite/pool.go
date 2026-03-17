@@ -278,6 +278,27 @@ func migratePersona(db *sql.DB, persona string) error {
 		slog.Info("sqlite: migration v3 complete", "persona", persona)
 	}
 
+	// --- Migration v4: tiered content L0/L1/L2 + enrichment tracking ---
+	if !hasColumn(db, "vault_items", "content_l0") {
+		slog.Info("sqlite: applying migration v4 (tiered content)", "persona", persona)
+
+		stmts := []string{
+			`ALTER TABLE vault_items ADD COLUMN content_l0 TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE vault_items ADD COLUMN content_l1 TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE vault_items ADD COLUMN enrichment_status TEXT NOT NULL DEFAULT 'pending'`,
+			`ALTER TABLE vault_items ADD COLUMN enrichment_version TEXT NOT NULL DEFAULT ''`,
+		}
+		for _, stmt := range stmts {
+			if _, err := db.ExecContext(ctx, stmt); err != nil {
+				return fmt.Errorf("v4: tiered content: %w", err)
+			}
+		}
+		db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO schema_version(version, description) VALUES (4, 'Add tiered content L0/L1 and enrichment tracking')`)
+
+		slog.Info("sqlite: migration v4 complete", "persona", persona)
+	}
+
 	return nil
 }
 

@@ -122,6 +122,29 @@ VAULT_TOOLS: list[dict[str, Any]] = [
             "required": ["persona", "query"],
         },
     },
+    {
+        "name": "get_full_content",
+        "description": (
+            "Retrieve the full original content (L2) of a specific vault item. "
+            "Use this only when you need the complete document — for most "
+            "questions the summaries from search_vault are sufficient. "
+            "Requires the item ID from a previous search result."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "persona": {
+                    "type": "string",
+                    "description": "The persona vault containing the item.",
+                },
+                "item_id": {
+                    "type": "string",
+                    "description": "The item ID from a previous search result.",
+                },
+            },
+            "required": ["persona", "item_id"],
+        },
+    },
 ]
 
 
@@ -182,6 +205,7 @@ class ToolExecutor:
         """Execute a tool call and return the result."""
         handler = {
             "list_personas": self._list_personas,
+            "get_full_content": self._get_full_content,
             "browse_vault": self._browse_vault,
             "search_vault": self._search_vault,
         }.get(name)
@@ -302,7 +326,10 @@ class ToolExecutor:
                         "Type", "type", "id",
                         "Sender", "sender", "SenderTrust", "sender_trust",
                         "Confidence", "confidence",
-                        "RetrievalPolicy", "retrieval_policy"):
+                        "RetrievalPolicy", "retrieval_policy",
+                        "ContentL0", "content_l0",
+                        "ContentL1", "content_l1",
+                        "EnrichmentStatus", "enrichment_status"):
                 val = item.get(key, "")
                 if val:
                     entry[key] = str(val)[:500]
@@ -361,7 +388,10 @@ class ToolExecutor:
                         "Type", "type", "id",
                         "Sender", "sender", "SenderTrust", "sender_trust",
                         "Confidence", "confidence",
-                        "RetrievalPolicy", "retrieval_policy"):
+                        "RetrievalPolicy", "retrieval_policy",
+                        "ContentL0", "content_l0",
+                        "ContentL1", "content_l1",
+                        "EnrichmentStatus", "enrichment_status"):
                 val = item.get(key, "")
                 if val:
                     entry[key] = str(val)[:500]
@@ -369,6 +399,32 @@ class ToolExecutor:
                 simplified.append(entry)
 
         return {"items": simplified, "persona": persona, "query": query}
+
+    async def _get_full_content(self, args: dict) -> dict:
+        """Retrieve full L2 content of a specific vault item."""
+        persona = args.get("persona", "")
+        item_id = args.get("item_id", "")
+        if not persona or not item_id:
+            return {"error": "persona and item_id are required"}
+
+        try:
+            item = await self._core.get_vault_item(persona, item_id)
+        except Exception as exc:
+            return {"error": str(exc)}
+
+        if item is None:
+            return {"error": "item not found"}
+
+        # Return L2 (full body) + metadata for context.
+        return {
+            "id": item.get("id", item.get("ID", "")),
+            "body_text": item.get("body_text", item.get("body", item.get("BodyText", ""))),
+            "summary": item.get("summary", item.get("Summary", "")),
+            "type": item.get("type", item.get("Type", "")),
+            "sender": item.get("sender", item.get("Sender", "")),
+            "sender_trust": item.get("sender_trust", item.get("SenderTrust", "")),
+            "confidence": item.get("confidence", item.get("Confidence", "")),
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -408,7 +464,14 @@ Source trust rules (items carry provenance metadata):
 - Items with confidence "low" or sender_trust "unknown" — caveat with "an unverified source claims..."
 - Items with retrieval_policy "caveated" — always note the source is unverified.
 - Never present caveated or low-confidence items as established facts.
-- Prefer high-confidence items from known sources over unverified claims.\
+- Prefer high-confidence items from known sources over unverified claims.
+
+Tiered content loading:
+- Items have content_l0 (one-line summary) and content_l1 (paragraph overview).
+- Use content_l0 for scanning relevance. Use content_l1 for answering most questions.
+- Only call get_full_content(item_id) when you need the complete original document \
+(e.g., user asks for specific details, exact numbers, or full text).
+- If content_l1 is empty (item not yet enriched), use the summary and body fields.\
 """
 
 

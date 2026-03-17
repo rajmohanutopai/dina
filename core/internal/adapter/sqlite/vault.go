@@ -122,6 +122,9 @@ func (a *VaultAdapter) Store(ctx context.Context, persona domain.PersonaName, it
 	if item.RetrievalPolicy != "" && !domain.ValidRetrievalPolicy[item.RetrievalPolicy] {
 		return "", fmt.Errorf("sqlite: invalid retrieval_policy %q", item.RetrievalPolicy)
 	}
+	if item.EnrichmentStatus != "" && !domain.ValidEnrichmentStatus[item.EnrichmentStatus] {
+		return "", fmt.Errorf("sqlite: invalid enrichment_status %q", item.EnrichmentStatus)
+	}
 
 	if item.ID == "" {
 		id, err := randomID()
@@ -141,6 +144,9 @@ func (a *VaultAdapter) Store(ctx context.Context, persona domain.PersonaName, it
 	if item.RetrievalPolicy == "" {
 		item.RetrievalPolicy = "normal"
 	}
+	if item.EnrichmentStatus == "" {
+		item.EnrichmentStatus = "pending"
+	}
 
 	// Encode embedding to BLOB if present.
 	var embeddingBlob []byte
@@ -154,25 +160,29 @@ func (a *VaultAdapter) Store(ctx context.Context, persona domain.PersonaName, it
 		}
 	}
 
-	const q = `INSERT INTO vault_items (id, type, source, source_id, contact_did, summary, body, metadata, embedding, timestamp, created_at, updated_at, sender, sender_trust, source_type, confidence, retrieval_policy, contradicts)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	const q = `INSERT INTO vault_items (id, type, source, source_id, contact_did, summary, body, metadata, embedding, timestamp, created_at, updated_at, sender, sender_trust, source_type, confidence, retrieval_policy, contradicts, content_l0, content_l1, enrichment_status, enrichment_version)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
-    type             = excluded.type,
-    source           = excluded.source,
-    source_id        = excluded.source_id,
-    contact_did      = excluded.contact_did,
-    summary          = excluded.summary,
-    body             = excluded.body,
-    metadata         = excluded.metadata,
-    embedding        = excluded.embedding,
-    timestamp        = excluded.timestamp,
-    updated_at       = excluded.updated_at,
-    sender           = excluded.sender,
-    sender_trust     = excluded.sender_trust,
-    source_type      = excluded.source_type,
-    confidence       = excluded.confidence,
-    retrieval_policy = excluded.retrieval_policy,
-    contradicts      = excluded.contradicts`
+    type               = excluded.type,
+    source             = excluded.source,
+    source_id          = excluded.source_id,
+    contact_did        = excluded.contact_did,
+    summary            = excluded.summary,
+    body               = excluded.body,
+    metadata           = excluded.metadata,
+    embedding          = excluded.embedding,
+    timestamp          = excluded.timestamp,
+    updated_at         = excluded.updated_at,
+    sender             = excluded.sender,
+    sender_trust       = excluded.sender_trust,
+    source_type        = excluded.source_type,
+    confidence         = excluded.confidence,
+    retrieval_policy   = excluded.retrieval_policy,
+    contradicts        = excluded.contradicts,
+    content_l0         = excluded.content_l0,
+    content_l1         = excluded.content_l1,
+    enrichment_status  = excluded.enrichment_status,
+    enrichment_version = excluded.enrichment_version`
 
 	_, err := db.ExecContext(ctx, q,
 		item.ID,
@@ -193,6 +203,10 @@ ON CONFLICT(id) DO UPDATE SET
 		item.Confidence,
 		item.RetrievalPolicy,
 		item.Contradicts,
+		item.ContentL0,
+		item.ContentL1,
+		item.EnrichmentStatus,
+		item.EnrichmentVersion,
 	)
 	if err != nil {
 		return "", fmt.Errorf("sqlite: store item: %w", err)
@@ -233,6 +247,9 @@ func (a *VaultAdapter) StoreBatch(ctx context.Context, persona domain.PersonaNam
 		if item.RetrievalPolicy != "" && !domain.ValidRetrievalPolicy[item.RetrievalPolicy] {
 			return nil, fmt.Errorf("sqlite: batch rejected — invalid retrieval_policy %q", item.RetrievalPolicy)
 		}
+		if item.EnrichmentStatus != "" && !domain.ValidEnrichmentStatus[item.EnrichmentStatus] {
+			return nil, fmt.Errorf("sqlite: batch rejected — invalid enrichment_status %q", item.EnrichmentStatus)
+		}
 	}
 
 	tx, err := db.BeginTx(ctx, nil)
@@ -241,25 +258,29 @@ func (a *VaultAdapter) StoreBatch(ctx context.Context, persona domain.PersonaNam
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	const q = `INSERT INTO vault_items (id, type, source, source_id, contact_did, summary, body, metadata, embedding, timestamp, created_at, updated_at, sender, sender_trust, source_type, confidence, retrieval_policy, contradicts)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	const q = `INSERT INTO vault_items (id, type, source, source_id, contact_did, summary, body, metadata, embedding, timestamp, created_at, updated_at, sender, sender_trust, source_type, confidence, retrieval_policy, contradicts, content_l0, content_l1, enrichment_status, enrichment_version)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
-    type             = excluded.type,
-    source           = excluded.source,
-    source_id        = excluded.source_id,
-    contact_did      = excluded.contact_did,
-    summary          = excluded.summary,
-    body             = excluded.body,
-    metadata         = excluded.metadata,
-    embedding        = excluded.embedding,
-    timestamp        = excluded.timestamp,
-    updated_at       = excluded.updated_at,
-    sender           = excluded.sender,
-    sender_trust     = excluded.sender_trust,
-    source_type      = excluded.source_type,
-    confidence       = excluded.confidence,
-    retrieval_policy = excluded.retrieval_policy,
-    contradicts      = excluded.contradicts`
+    type               = excluded.type,
+    source             = excluded.source,
+    source_id          = excluded.source_id,
+    contact_did        = excluded.contact_did,
+    summary            = excluded.summary,
+    body               = excluded.body,
+    metadata           = excluded.metadata,
+    embedding          = excluded.embedding,
+    timestamp          = excluded.timestamp,
+    updated_at         = excluded.updated_at,
+    sender             = excluded.sender,
+    sender_trust       = excluded.sender_trust,
+    source_type        = excluded.source_type,
+    confidence         = excluded.confidence,
+    retrieval_policy   = excluded.retrieval_policy,
+    contradicts        = excluded.contradicts,
+    content_l0         = excluded.content_l0,
+    content_l1         = excluded.content_l1,
+    enrichment_status  = excluded.enrichment_status,
+    enrichment_version = excluded.enrichment_version`
 
 	stmt, err := tx.PrepareContext(ctx, q)
 	if err != nil {
@@ -287,6 +308,9 @@ ON CONFLICT(id) DO UPDATE SET
 		if item.RetrievalPolicy == "" {
 			item.RetrievalPolicy = "normal"
 		}
+		if item.EnrichmentStatus == "" {
+			item.EnrichmentStatus = "pending"
+		}
 
 		var embeddingBlob []byte
 		if len(item.Embedding) > 0 {
@@ -312,6 +336,10 @@ ON CONFLICT(id) DO UPDATE SET
 			item.Confidence,
 			item.RetrievalPolicy,
 			item.Contradicts,
+			item.ContentL0,
+			item.ContentL1,
+			item.EnrichmentStatus,
+			item.EnrichmentVersion,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("sqlite: store batch item %d: %w", i, err)
@@ -360,7 +388,8 @@ func (a *VaultAdapter) GetItem(ctx context.Context, persona domain.PersonaName, 
 
 	row := db.QueryRowContext(ctx,
 		`SELECT id, type, source, source_id, contact_did, summary, body, metadata, timestamp, created_at,
-		        sender, sender_trust, source_type, confidence, retrieval_policy, contradicts
+		        sender, sender_trust, source_type, confidence, retrieval_policy, contradicts,
+		        content_l0, content_l1, enrichment_status, enrichment_version
 		 FROM vault_items WHERE id = ? AND deleted = 0`, id)
 
 	var item domain.VaultItem
@@ -381,6 +410,10 @@ func (a *VaultAdapter) GetItem(ctx context.Context, persona domain.PersonaName, 
 		&item.Confidence,
 		&item.RetrievalPolicy,
 		&item.Contradicts,
+		&item.ContentL0,
+		&item.ContentL1,
+		&item.EnrichmentStatus,
+		&item.EnrichmentVersion,
 	)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("sqlite: item %q not found", id)
@@ -424,7 +457,8 @@ func (a *VaultAdapter) Query(ctx context.Context, persona domain.PersonaName, q 
 		// (e.g. hyphens being treated as NOT operators).
 		ftsQuery := sanitizeFTS5Query(q.Query)
 		sqlBuf.WriteString(`SELECT v.id, v.type, v.source, v.source_id, v.contact_did, v.summary, v.body, v.metadata, v.timestamp, v.created_at,
-       v.sender, v.sender_trust, v.source_type, v.confidence, v.retrieval_policy, v.contradicts
+       v.sender, v.sender_trust, v.source_type, v.confidence, v.retrieval_policy, v.contradicts,
+       v.content_l0, v.content_l1, v.enrichment_status, v.enrichment_version
 FROM vault_items_fts f
 JOIN vault_items v ON v.rowid = f.rowid
 WHERE vault_items_fts MATCH ? AND v.deleted = 0`)
@@ -432,7 +466,8 @@ WHERE vault_items_fts MATCH ? AND v.deleted = 0`)
 	} else {
 		// Plain listing / filtering without FTS.
 		sqlBuf.WriteString(`SELECT id, type, source, source_id, contact_did, summary, body, metadata, timestamp, created_at,
-       sender, sender_trust, source_type, confidence, retrieval_policy, contradicts
+       sender, sender_trust, source_type, confidence, retrieval_policy, contradicts,
+       content_l0, content_l1, enrichment_status, enrichment_version
 FROM vault_items WHERE deleted = 0`)
 	}
 
@@ -521,6 +556,10 @@ FROM vault_items WHERE deleted = 0`)
 			&item.Confidence,
 			&item.RetrievalPolicy,
 			&item.Contradicts,
+			&item.ContentL0,
+			&item.ContentL1,
+			&item.EnrichmentStatus,
+			&item.EnrichmentVersion,
 		); err != nil {
 			return nil, fmt.Errorf("sqlite: scan row: %w", err)
 		}
@@ -554,7 +593,8 @@ func (a *VaultAdapter) VectorSearch(ctx context.Context, persona domain.PersonaN
 	}
 
 	query := `SELECT id, type, source, source_id, contact_did, summary, body, metadata, timestamp, created_at,
-		        sender, sender_trust, source_type, confidence, retrieval_policy, contradicts
+		        sender, sender_trust, source_type, confidence, retrieval_policy, contradicts,
+		        content_l0, content_l1, enrichment_status, enrichment_version
 		FROM vault_items WHERE id IN (` + strings.Join(placeholders, ",") + `) AND deleted = 0`
 
 	rows, err := db.QueryContext(ctx, query, args...)
@@ -574,6 +614,8 @@ func (a *VaultAdapter) VectorSearch(ctx context.Context, persona domain.PersonaN
 			&item.Timestamp, &item.IngestedAt,
 			&item.Sender, &item.SenderTrust, &item.SourceType,
 			&item.Confidence, &item.RetrievalPolicy, &item.Contradicts,
+			&item.ContentL0, &item.ContentL1,
+			&item.EnrichmentStatus, &item.EnrichmentVersion,
 		); err != nil {
 			return nil, fmt.Errorf("sqlite: vector search scan: %w", err)
 		}

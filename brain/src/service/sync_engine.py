@@ -119,11 +119,13 @@ class SyncEngine:
         mcp: MCPClient,
         llm: Any,  # LLMRouter — kept as Any to avoid circular
         trust_scorer: Any = None,  # TrustScorer — assigns provenance during ingestion
+        enrichment: Any = None,  # EnrichmentService — L0/L1 generation
     ) -> None:
         self._core = core
         self._mcp = mcp
         self._llm = llm
         self._trust_scorer = trust_scorer
+        self._enrichment = enrichment
         # In-memory dedup set for the current session (bounded, MED-08).
         self._seen_ids: dict[str, OrderedDict[str, None]] = {}
         # Source registry for background sync loop (HIGH-03).
@@ -423,6 +425,17 @@ class SyncEngine:
             )
             # Single retry for transient failures.
             await self._core.store_vault_batch(persona_id, items)
+
+        # Fire-and-forget enrichment (L0/L1/embedding generation).
+        # If Brain crashes, the sweeper in the sync loop picks these up.
+        if self._enrichment is not None:
+            import asyncio
+            for item in items:
+                item_id = item.get("id", item.get("source_id", ""))
+                if item_id:
+                    asyncio.create_task(
+                        self._enrichment.enrich_item(persona_id, item_id)
+                    )
 
         # Track seen IDs (with bounded eviction — MED-08).
         for item in items:

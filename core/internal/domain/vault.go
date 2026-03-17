@@ -21,6 +21,11 @@ type VaultItem struct {
 	Confidence      string `json:"confidence"`       // high, medium, low, unverified
 	RetrievalPolicy string `json:"retrieval_policy"` // normal, caveated, quarantine, briefing_only
 	Contradicts     string `json:"contradicts"`      // ID of contradicted item, or empty
+	// Tiered content (L0/L1/L2)
+	ContentL0         string `json:"content_l0"`         // one-line abstract
+	ContentL1         string `json:"content_l1"`         // one-paragraph overview
+	EnrichmentStatus  string `json:"enrichment_status"`  // pending, processing, ready, failed
+	EnrichmentVersion string `json:"enrichment_version"` // JSON: {"prompt_v":1,"embed_model":"gemma-3n"}
 }
 
 // SearchMode defines the type of vault search.

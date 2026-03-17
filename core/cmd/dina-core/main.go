@@ -859,7 +859,13 @@ func main() {
 	mux.HandleFunc("/v1/vault/query", vaultH.HandleQuery)
 	mux.HandleFunc("/v1/vault/store", vaultH.HandleStore)
 	mux.HandleFunc("/v1/vault/store/batch", vaultH.HandleStoreBatch)
-	mux.HandleFunc("/v1/vault/item/", routeByMethod(vaultH.HandleGetItem, vaultH.HandleDeleteItem))
+	mux.HandleFunc("/v1/vault/item/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/enrich") {
+			vaultH.HandleEnrich(w, r)
+			return
+		}
+		routeByMethod(vaultH.HandleGetItem, vaultH.HandleDeleteItem)(w, r)
+	})
 	mux.HandleFunc("/v1/vault/kv/", routeByMethod(vaultH.HandleGetKV, vaultH.HandlePutKV))
 
 	// Identity API

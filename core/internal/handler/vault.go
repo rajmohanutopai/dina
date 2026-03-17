@@ -346,6 +346,93 @@ func (h *VaultHandler) HandleDeleteItem(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// enrichRequest is the JSON body for PATCH /v1/vault/item/{id}/enrich.
+type enrichRequest struct {
+	ContentL0         string    `json:"content_l0"`
+	ContentL1         string    `json:"content_l1"`
+	Embedding         []float32 `json:"embedding"`
+	EnrichmentStatus  string    `json:"enrichment_status"`
+	EnrichmentVersion string    `json:"enrichment_version"`
+}
+
+// HandleEnrich handles PATCH /v1/vault/item/{id}/enrich. It updates only the
+// enrichment fields (content_l0, content_l1, embedding, enrichment_status,
+// enrichment_version) on an existing vault item via get-merge-store (upsert).
+func (h *VaultHandler) HandleEnrich(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract item ID: path is /v1/vault/item/{id}/enrich
+	// Strip the "/enrich" suffix, then take the last segment as the ID.
+	path := strings.TrimSuffix(r.URL.Path, "/enrich")
+	id := path[strings.LastIndex(path, "/")+1:]
+	if id == "" {
+		http.Error(w, `{"error":"missing item id"}`, http.StatusBadRequest)
+		return
+	}
+
+	personaStr := r.URL.Query().Get("persona")
+	if personaStr == "" {
+		personaStr = "general"
+	}
+	persona, err := domain.NewPersonaName(personaStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid persona name"}`, http.StatusBadRequest)
+		return
+	}
+
+	var req enrichRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Validate enrichment_status if provided.
+	if req.EnrichmentStatus != "" && !domain.ValidEnrichmentStatus[req.EnrichmentStatus] {
+		http.Error(w, `{"error":"invalid enrichment_status"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Fetch existing item.
+	item, err := h.Vault.GetItem(r.Context(), agentDID(r), persona, id)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			http.Error(w, `{"error":"item not found"}`, http.StatusNotFound)
+			return
+		}
+		clientError(w, vaultErrMsg(err, "get item failed"), vaultErrStatus(err), err)
+		return
+	}
+
+	// Merge enrichment fields onto existing item.
+	if req.ContentL0 != "" {
+		item.ContentL0 = req.ContentL0
+	}
+	if req.ContentL1 != "" {
+		item.ContentL1 = req.ContentL1
+	}
+	if len(req.Embedding) > 0 {
+		item.Embedding = req.Embedding
+	}
+	if req.EnrichmentStatus != "" {
+		item.EnrichmentStatus = req.EnrichmentStatus
+	}
+	if req.EnrichmentVersion != "" {
+		item.EnrichmentVersion = req.EnrichmentVersion
+	}
+
+	// Store (upsert by ID preserves all existing fields).
+	if _, err := h.Vault.Store(r.Context(), agentDID(r), persona, *item); err != nil {
+		clientError(w, vaultErrMsg(err, "enrich failed"), vaultErrStatus(err), err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"id": id, "enrichment_status": item.EnrichmentStatus})
+}
+
 // VaultClearer clears all items from a persona's vault. Exposed as a separate
 // interface so the handler can accept it without coupling to VaultService.
 type VaultClearer interface {

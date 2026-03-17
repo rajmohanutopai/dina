@@ -36,7 +36,12 @@ CREATE TABLE IF NOT EXISTS vault_items (
     source_type       TEXT NOT NULL DEFAULT '',
     confidence        TEXT NOT NULL DEFAULT '',
     retrieval_policy  TEXT NOT NULL DEFAULT 'normal',
-    contradicts       TEXT NOT NULL DEFAULT ''
+    contradicts       TEXT NOT NULL DEFAULT '',
+    -- Tiered content L0/L1/L2 (v4)
+    content_l0          TEXT NOT NULL DEFAULT '',
+    content_l1          TEXT NOT NULL DEFAULT '',
+    enrichment_status   TEXT NOT NULL DEFAULT 'pending',
+    enrichment_version  TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_vault_items_type ON vault_items(type);

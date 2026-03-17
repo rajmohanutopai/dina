@@ -172,10 +172,16 @@ func (m *Manager) Store(_ context.Context, persona domain.PersonaName, item doma
 	if item.RetrievalPolicy != "" && !domain.ValidRetrievalPolicy[item.RetrievalPolicy] {
 		return "", fmt.Errorf("vault: invalid retrieval_policy %q", item.RetrievalPolicy)
 	}
+	if item.EnrichmentStatus != "" && !domain.ValidEnrichmentStatus[item.EnrichmentStatus] {
+		return "", fmt.Errorf("vault: invalid enrichment_status %q", item.EnrichmentStatus)
+	}
 
 	// Default retrieval_policy to "normal" (matches SQLite adapter).
 	if item.RetrievalPolicy == "" {
 		item.RetrievalPolicy = "normal"
+	}
+	if item.EnrichmentStatus == "" {
+		item.EnrichmentStatus = "pending"
 	}
 
 	if item.ID == "" {
@@ -218,6 +224,9 @@ func (m *Manager) StoreBatch(_ context.Context, persona domain.PersonaName, item
 		if item.RetrievalPolicy != "" && !domain.ValidRetrievalPolicy[item.RetrievalPolicy] {
 			return nil, fmt.Errorf("vault: batch rejected — invalid retrieval_policy %q", item.RetrievalPolicy)
 		}
+		if item.EnrichmentStatus != "" && !domain.ValidEnrichmentStatus[item.EnrichmentStatus] {
+			return nil, fmt.Errorf("vault: batch rejected — invalid enrichment_status %q", item.EnrichmentStatus)
+		}
 	}
 
 	// All items valid — commit the batch.
@@ -225,6 +234,9 @@ func (m *Manager) StoreBatch(_ context.Context, persona domain.PersonaName, item
 	for i, item := range items {
 		if item.RetrievalPolicy == "" {
 			item.RetrievalPolicy = "normal"
+		}
+		if item.EnrichmentStatus == "" {
+			item.EnrichmentStatus = "pending"
 		}
 		if item.ID == "" {
 			b := make([]byte, 16)

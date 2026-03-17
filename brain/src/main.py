@@ -450,8 +450,13 @@ def create_app() -> FastAPI:
     scratchpad = ScratchpadService(core=brain_core_client)
     vault_context = VaultContextAssembler(core=brain_core_client, llm_router=llm_router)
     from .service.trust_scorer import TrustScorer
+    from .service.enrichment import EnrichmentService
     trust_scorer = TrustScorer()
-    sync_engine = SyncEngine(core=brain_core_client, mcp=mcp_client, llm=llm_router, trust_scorer=trust_scorer)
+    enrichment_svc = EnrichmentService(core=brain_core_client, llm=llm_router)
+    sync_engine = SyncEngine(
+        core=brain_core_client, mcp=mcp_client, llm=llm_router,
+        trust_scorer=trust_scorer, enrichment=enrichment_svc,
+    )
 
     # Load contacts into trust scorer so contact-ring scoring works.
     # Best-effort — if Core isn't ready yet, contacts will be loaded
@@ -538,6 +543,14 @@ def create_app() -> FastAPI:
                     await engine.run_sync_cycle(source)
                 except Exception as exc:
                     log.warning("sync.cycle_failed", extra={"error": type(exc).__name__})
+            # Enrichment sweeper: process pending/failed items (crash-safe).
+            try:
+                for p in ("general", "consumer", "health", "work", "social"):
+                    enriched = await enrichment_svc.enrich_pending(p, limit=10)
+                    if enriched:
+                        log.info("enrichment.sweep", extra={"persona": p, "enriched": enriched})
+            except Exception:
+                pass  # best-effort
             await asyncio.sleep(300)
 
     @asynccontextmanager

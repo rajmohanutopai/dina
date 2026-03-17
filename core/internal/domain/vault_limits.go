@@ -60,3 +60,8 @@ var ValidRetrievalPolicy = map[string]bool{
 // SearchableRetrievalPolicies are the policies included in default searches.
 // Quarantine and briefing_only are excluded unless explicitly requested.
 var SearchableRetrievalPolicies = []string{"normal", "caveated"}
+
+// ValidEnrichmentStatus lists accepted enrichment_status values.
+var ValidEnrichmentStatus = map[string]bool{
+	"pending": true, "processing": true, "ready": true, "failed": true, "": true,
+}

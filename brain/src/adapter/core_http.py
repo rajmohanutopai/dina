@@ -313,10 +313,36 @@ class CoreHTTPClient:
             json={"persona": persona_id, "items": items},
         )
 
+    async def enrich_item(
+        self, item_id: str, *, persona: str = "general",
+        content_l0: str = "", content_l1: str = "",
+        embedding: list[float] | None = None,
+        enrichment_status: str = "", enrichment_version: str = "",
+    ) -> dict:
+        """PATCH /v1/vault/item/{id}/enrich — update enrichment fields only."""
+        body: dict[str, Any] = {}
+        if content_l0:
+            body["content_l0"] = content_l0
+        if content_l1:
+            body["content_l1"] = content_l1
+        if embedding:
+            body["embedding"] = embedding
+        if enrichment_status:
+            body["enrichment_status"] = enrichment_status
+        if enrichment_version:
+            body["enrichment_version"] = enrichment_version
+        resp = await self._request(
+            "PATCH",
+            f"/v1/vault/item/{item_id}/enrich?persona={persona}",
+            json=body,
+        )
+        return resp.json()
+
     async def search_vault(
         self, persona_id: str, query: str, mode: str = "hybrid",
         embedding: list[float] | None = None,
         agent_did: str = "", session: str = "",
+        include_all: bool = False,
     ) -> list[dict]:
         """POST /v1/vault/query — hybrid FTS5 + cosine.
 
@@ -329,6 +355,8 @@ class CoreHTTPClient:
         }
         if embedding:
             body["embedding"] = embedding
+        if include_all:
+            body["include_all"] = True
         extra_headers = {}
         if agent_did:
             extra_headers["X-Agent-DID"] = agent_did
