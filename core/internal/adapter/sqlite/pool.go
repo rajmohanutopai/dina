@@ -254,6 +254,30 @@ func migratePersona(db *sql.DB, persona string) error {
 		slog.Info("sqlite: migration v2 complete", "persona", persona)
 	}
 
+	// --- Migration v3: source trust & provenance columns ---
+	if !hasColumn(db, "vault_items", "sender") {
+		slog.Info("sqlite: applying migration v3 (source trust)", "persona", persona)
+
+		stmts := []string{
+			`ALTER TABLE vault_items ADD COLUMN sender TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE vault_items ADD COLUMN sender_trust TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE vault_items ADD COLUMN source_type TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE vault_items ADD COLUMN confidence TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE vault_items ADD COLUMN retrieval_policy TEXT NOT NULL DEFAULT 'normal'`,
+			`ALTER TABLE vault_items ADD COLUMN contradicts TEXT NOT NULL DEFAULT ''`,
+			`CREATE INDEX IF NOT EXISTS idx_vault_items_retrieval_policy ON vault_items(retrieval_policy)`,
+		}
+		for _, stmt := range stmts {
+			if _, err := db.ExecContext(ctx, stmt); err != nil {
+				return fmt.Errorf("v3: source trust: %w", err)
+			}
+		}
+		db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO schema_version(version, description) VALUES (3, 'Add source trust and provenance columns')`)
+
+		slog.Info("sqlite: migration v3 complete", "persona", persona)
+	}
+
 	return nil
 }
 

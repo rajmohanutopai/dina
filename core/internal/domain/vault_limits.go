@@ -34,3 +34,29 @@ var ValidVaultItemTypes = map[string]bool{
 	// Trust Network attestation records (stored by AppView sync / trust queries)
 	"trust_attestation": true,
 }
+
+// ValidSenderTrust lists accepted sender_trust values.
+var ValidSenderTrust = map[string]bool{
+	"self": true, "contact_ring1": true, "contact_ring2": true,
+	"unknown": true, "marketing": true, "": true,
+}
+
+// ValidSourceType lists accepted source_type values.
+var ValidSourceType = map[string]bool{
+	"self": true, "contact": true, "service": true,
+	"unknown": true, "marketing": true, "": true,
+}
+
+// ValidConfidence lists accepted confidence values.
+var ValidConfidence = map[string]bool{
+	"high": true, "medium": true, "low": true, "unverified": true, "": true,
+}
+
+// ValidRetrievalPolicy lists accepted retrieval_policy values.
+var ValidRetrievalPolicy = map[string]bool{
+	"normal": true, "caveated": true, "quarantine": true, "briefing_only": true, "": true,
+}
+
+// SearchableRetrievalPolicies are the policies included in default searches.
+// Quarantine and briefing_only are excluded unless explicitly requested.
+var SearchableRetrievalPolicies = []string{"normal", "caveated"}

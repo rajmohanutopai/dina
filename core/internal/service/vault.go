@@ -250,13 +250,15 @@ func (s *VaultService) HybridSearch(ctx context.Context, persona domain.PersonaN
 
 	// Execute FTS5 full-text search.
 	ftsQuery := domain.SearchQuery{
-		Mode:           domain.SearchFTS5,
-		Query:          q.Query,
-		Types:          q.Types,
-		After:          q.After,
-		Before:         q.Before,
-		IncludeContent: q.IncludeContent,
-		Limit:          q.Limit * 2, // fetch more candidates for merging
+		Mode:            domain.SearchFTS5,
+		Query:           q.Query,
+		Types:           q.Types,
+		After:           q.After,
+		Before:          q.Before,
+		IncludeContent:  q.IncludeContent,
+		Limit:           q.Limit * 2, // fetch more candidates for merging
+		IncludeAll:      q.IncludeAll,
+		RetrievalPolicy: q.RetrievalPolicy,
 	}
 	ftsResults, err := s.reader.Query(ctx, persona, ftsQuery)
 	if err != nil {
@@ -267,6 +269,22 @@ func (s *VaultService) HybridSearch(ctx context.Context, persona domain.PersonaN
 	vectorResults, err := s.reader.VectorSearch(ctx, persona, q.Embedding, q.Limit*2)
 	if err != nil {
 		return nil, fmt.Errorf("hybrid search: vector search failed: %w", err)
+	}
+
+	// Post-filter vector results for retrieval_policy (HNSW doesn't filter).
+	if !q.IncludeAll {
+		filtered := vectorResults[:0]
+		for _, item := range vectorResults {
+			rp := item.RetrievalPolicy
+			if q.RetrievalPolicy != "" {
+				if rp == q.RetrievalPolicy {
+					filtered = append(filtered, item)
+				}
+			} else if rp == "" || rp == "normal" || rp == "caveated" {
+				filtered = append(filtered, item)
+			}
+		}
+		vectorResults = filtered
 	}
 
 	// Build scored index: each item gets a weighted rank score from both result sets.

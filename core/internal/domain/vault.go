@@ -3,17 +3,24 @@ package domain
 // VaultItem represents an item stored in a persona's SQLCipher vault.
 // Tests use testutil.VaultItem directly; this type is for internal domain logic.
 type VaultItem struct {
-	ID         string
-	Type       string // email, message, event, note, photo
-	Source     string
-	SourceID   string
-	ContactDID string
-	Summary    string
-	BodyText   string
-	Timestamp  int64
-	IngestedAt int64
-	Metadata   string    // JSON blob
-	Embedding  []float32 `json:"embedding,omitempty"` // 768-dim float32, nil when not computed
+	ID         string    `json:"id,omitempty"`
+	Type       string    `json:"type"`
+	Source     string    `json:"source"`
+	SourceID   string    `json:"source_id"`
+	ContactDID string    `json:"contact_did"`
+	Summary    string    `json:"summary"`
+	BodyText   string    `json:"body_text"`
+	Timestamp  int64     `json:"timestamp"`
+	IngestedAt int64     `json:"ingested_at"`
+	Metadata   string    `json:"metadata"`                // JSON blob
+	Embedding  []float32 `json:"embedding,omitempty"`      // 768-dim float32, nil when not computed
+	// Source trust & provenance
+	Sender          string `json:"sender"`           // who sent/created: email, "user", DID
+	SenderTrust     string `json:"sender_trust"`     // self, contact_ring1, contact_ring2, unknown, marketing
+	SourceType      string `json:"source_type"`      // self, contact, service, unknown, marketing
+	Confidence      string `json:"confidence"`       // high, medium, low, unverified
+	RetrievalPolicy string `json:"retrieval_policy"` // normal, caveated, quarantine, briefing_only
+	Contradicts     string `json:"contradicts"`      // ID of contradicted item, or empty
 }
 
 // SearchMode defines the type of vault search.
@@ -36,6 +43,10 @@ type SearchQuery struct {
 	IncludeContent bool
 	Limit          int
 	Offset         int
+	// Source trust filtering. Default search excludes quarantine + briefing_only.
+	// Set IncludeAll=true to return everything regardless of retrieval_policy.
+	IncludeAll      bool   // override: return all policies
+	RetrievalPolicy string // filter to a specific policy (e.g. "quarantine")
 }
 
 // VaultAuditEntry represents a single entry in the append-only audit log.

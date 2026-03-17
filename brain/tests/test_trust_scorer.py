@@ -1,0 +1,162 @@
+"""Unit tests for TrustScorer — source trust and provenance assignment.
+
+Tests the trust scoring rules:
+    - User content → self / high / normal
+    - Known contact (trusted) → contact_ring1 / high / normal
+    - Known contact (unknown trust) → contact_ring2 / medium / normal
+    - Verified service domain → service / high / normal
+    - Unknown sender → unknown / low / caveated
+    - Marketing/noreply → marketing / low / briefing_only
+    - Missing sender on service item → caveated (never silently normal)
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from src.service.trust_scorer import TrustScorer
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def scorer() -> TrustScorer:
+    """TrustScorer with a known contact list."""
+    contacts = [
+        {"did": "did:plc:sancho", "trust_level": "trusted", "name": "Sancho"},
+        {"did": "did:plc:albert", "trust_level": "unknown", "name": "Albert"},
+    ]
+    return TrustScorer(contacts=contacts)
+
+
+@pytest.fixture
+def empty_scorer() -> TrustScorer:
+    """TrustScorer with no contacts."""
+    return TrustScorer()
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+
+def test_user_content_self_high_normal(scorer):
+    """User-created content (CLI, admin) gets self / high / normal."""
+    item = {"source": "user", "sender": "", "type": "note"}
+    result = scorer.score(item)
+    assert result["sender_trust"] == "self"
+    assert result["source_type"] == "self"
+    assert result["confidence"] == "high"
+    assert result["retrieval_policy"] == "normal"
+    assert result["sender"] == "user"
+
+
+def test_cli_source_is_self(scorer):
+    """CLI source is treated the same as user."""
+    item = {"source": "cli", "sender": "", "type": "note"}
+    result = scorer.score(item)
+    assert result["sender_trust"] == "self"
+    assert result["source_type"] == "self"
+    assert result["confidence"] == "high"
+
+
+def test_known_contact_trusted_ring1(scorer):
+    """Known contact with trust_level=trusted → contact_ring1 / high / normal."""
+    item = {"source": "gmail", "sender": "sancho@example.com",
+            "contact_did": "did:plc:sancho", "type": "email"}
+    result = scorer.score(item)
+    assert result["sender_trust"] == "contact_ring1"
+    assert result["source_type"] == "contact"
+    assert result["confidence"] == "high"
+    assert result["retrieval_policy"] == "normal"
+
+
+def test_known_contact_unknown_trust_ring2(scorer):
+    """Known contact with trust_level=unknown → contact_ring2 / medium / normal."""
+    item = {"source": "gmail", "sender": "albert@example.com",
+            "contact_did": "did:plc:albert", "type": "email"}
+    result = scorer.score(item)
+    assert result["sender_trust"] == "contact_ring2"
+    assert result["source_type"] == "contact"
+    assert result["confidence"] == "medium"
+    assert result["retrieval_policy"] == "normal"
+
+
+def test_verified_service_domain(scorer):
+    """Email from a verified service domain → service / high / normal."""
+    item = {"source": "gmail", "sender": "alerts@hdfcbank.com", "type": "email"}
+    result = scorer.score(item)
+    assert result["sender_trust"] == "contact_ring2"
+    assert result["source_type"] == "service"
+    assert result["confidence"] == "high"
+    assert result["retrieval_policy"] == "normal"
+
+
+def test_unknown_sender_caveated(scorer):
+    """Unknown sender → unknown / low / caveated."""
+    item = {"source": "gmail", "sender": "random@unknown-domain.com", "type": "email"}
+    result = scorer.score(item)
+    assert result["sender_trust"] == "unknown"
+    assert result["source_type"] == "unknown"
+    assert result["confidence"] == "low"
+    assert result["retrieval_policy"] == "caveated"
+
+
+def test_marketing_sender_briefing_only(scorer):
+    """Marketing/noreply sender → marketing / low / briefing_only."""
+    for sender in ["noreply@shop.com", "no-reply@service.com",
+                    "deals@promo.example.com"]:
+        item = {"source": "gmail", "sender": sender, "type": "email"}
+        result = scorer.score(item)
+        assert result["sender_trust"] == "marketing", f"failed for {sender}"
+        assert result["source_type"] == "marketing", f"failed for {sender}"
+        assert result["confidence"] == "low", f"failed for {sender}"
+        assert result["retrieval_policy"] == "briefing_only", f"failed for {sender}"
+
+
+def test_missing_sender_on_service_item_caveated(empty_scorer):
+    """Missing sender on a service-ingested item defaults to caveated, not normal.
+
+    This prevents service-ingested items from silently becoming trusted.
+    """
+    item = {"source": "gmail", "sender": "", "type": "email"}
+    result = empty_scorer.score(item)
+    assert result["retrieval_policy"] == "caveated"
+    assert result["confidence"] == "low"
+    assert result["sender_trust"] == "unknown"
+
+
+def test_telegram_source_is_self(scorer):
+    """Telegram messages from the user are self-authored."""
+    item = {"source": "telegram", "sender": "", "type": "note"}
+    result = scorer.score(item)
+    assert result["sender_trust"] == "self"
+    assert result["source_type"] == "self"
+
+
+def test_subdomain_of_verified_service(scorer):
+    """Subdomain of a verified domain (e.g. mail.google.com) is trusted."""
+    item = {"source": "gmail", "sender": "alert@mail.google.com", "type": "email"}
+    result = scorer.score(item)
+    assert result["source_type"] == "service"
+    assert result["confidence"] == "high"
+
+
+def test_update_contacts(empty_scorer):
+    """Updating contacts changes scoring for known DIDs."""
+    item = {"source": "gmail", "sender": "new@example.com",
+            "contact_did": "did:plc:newcontact", "type": "email"}
+
+    # Before adding contact: unknown
+    result = empty_scorer.score(item)
+    assert result["sender_trust"] == "unknown"
+
+    # After adding contact: known
+    empty_scorer.update_contacts([
+        {"did": "did:plc:newcontact", "trust_level": "trusted"},
+    ])
+    result = empty_scorer.score(item)
+    assert result["sender_trust"] == "contact_ring1"

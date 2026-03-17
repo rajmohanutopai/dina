@@ -29,13 +29,21 @@ CREATE TABLE IF NOT EXISTS vault_items (
     timestamp     INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
     created_at    INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
     updated_at    INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
-    deleted       INTEGER NOT NULL DEFAULT 0
+    deleted       INTEGER NOT NULL DEFAULT 0,
+    -- Source trust & provenance (v3)
+    sender            TEXT NOT NULL DEFAULT '',
+    sender_trust      TEXT NOT NULL DEFAULT '',
+    source_type       TEXT NOT NULL DEFAULT '',
+    confidence        TEXT NOT NULL DEFAULT '',
+    retrieval_policy  TEXT NOT NULL DEFAULT 'normal',
+    contradicts       TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_vault_items_type ON vault_items(type);
 CREATE INDEX IF NOT EXISTS idx_vault_items_source ON vault_items(source, source_id);
 CREATE INDEX IF NOT EXISTS idx_vault_items_ts ON vault_items(timestamp);
 CREATE INDEX IF NOT EXISTS idx_vault_items_contact ON vault_items(contact_did);
+CREATE INDEX IF NOT EXISTS idx_vault_items_retrieval_policy ON vault_items(retrieval_policy);
 
 -- FTS5 full-text search index on vault items
 CREATE VIRTUAL TABLE IF NOT EXISTS vault_items_fts USING fts5(

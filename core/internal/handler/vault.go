@@ -53,12 +53,14 @@ func agentDID(r *http.Request) string {
 
 // queryRequest is the JSON body for POST /v1/vault/query.
 type queryRequest struct {
-	Persona   string    `json:"persona"`
-	Query     string    `json:"query"`
-	Mode      string    `json:"mode"`
-	Types     []string  `json:"types"`
-	Limit     int       `json:"limit"`
-	Embedding []float32 `json:"embedding"` // 768-dim from Brain, enables semantic/hybrid search
+	Persona         string    `json:"persona"`
+	Query           string    `json:"query"`
+	Mode            string    `json:"mode"`
+	Types           []string  `json:"types"`
+	Limit           int       `json:"limit"`
+	Embedding       []float32 `json:"embedding"`        // 768-dim from Brain, enables semantic/hybrid search
+	RetrievalPolicy string    `json:"retrieval_policy"`  // filter to specific policy
+	IncludeAll      bool      `json:"include_all"`       // override: return all policies including quarantine
 }
 
 // HandleQuery handles POST /v1/vault/query. It parses the search parameters,
@@ -100,11 +102,13 @@ func (h *VaultHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := domain.SearchQuery{
-		Mode:      mode,
-		Query:     req.Query,
-		Types:     req.Types,
-		Limit:     limit,
-		Embedding: req.Embedding,
+		Mode:            mode,
+		Query:           req.Query,
+		Types:           req.Types,
+		Limit:           limit,
+		Embedding:       req.Embedding,
+		IncludeAll:      req.IncludeAll,
+		RetrievalPolicy: req.RetrievalPolicy,
 	}
 
 	// Track whether we requested a mode that falls back to FTS5.
@@ -173,6 +177,27 @@ func (h *VaultHandler) HandleStore(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, `{"error":"invalid persona name"}`, http.StatusBadRequest)
 		return
+	}
+
+	// Direct user writes (CLI remember, admin) get self/high/normal defaults.
+	// This ensures user-authored content is always trusted without Brain involvement.
+	callerType, _ := r.Context().Value(middleware.CallerTypeKey).(string)
+	if callerType == "agent" || callerType == "user" {
+		if req.Item.SourceType == "" {
+			req.Item.SourceType = "self"
+		}
+		if req.Item.Sender == "" {
+			req.Item.Sender = "user"
+		}
+		if req.Item.SenderTrust == "" {
+			req.Item.SenderTrust = "self"
+		}
+		if req.Item.Confidence == "" {
+			req.Item.Confidence = "high"
+		}
+		if req.Item.RetrievalPolicy == "" {
+			req.Item.RetrievalPolicy = "normal"
+		}
 	}
 
 	id, err := h.Vault.Store(r.Context(), agentDID(r), persona, req.Item)

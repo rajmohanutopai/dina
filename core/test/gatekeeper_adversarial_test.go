@@ -2830,13 +2830,12 @@ func TestContract_30_3_6_BrainToCoreVaultQueryContract(t *testing.T) {
 			if !ok {
 				t.Fatalf("items[%d] is not an object", i)
 			}
-			// VaultItem serializes with Go default field names (PascalCase).
-			// Must have at least "ID" and "Type" fields.
-			if _, hasID := item["ID"]; !hasID {
-				t.Fatalf("items[%d] missing 'ID' field — got keys: %v", i, item)
+			// VaultItem serializes with json tags (snake_case).
+			if _, hasID := item["id"]; !hasID {
+				t.Fatalf("items[%d] missing 'id' field — got keys: %v", i, item)
 			}
-			if _, hasType := item["Type"]; !hasType {
-				t.Fatalf("items[%d] missing 'Type' field", i)
+			if _, hasType := item["type"]; !hasType {
+				t.Fatalf("items[%d] missing 'type' field", i)
 			}
 		}
 	})

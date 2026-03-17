@@ -118,10 +118,12 @@ class SyncEngine:
         core: CoreClient,
         mcp: MCPClient,
         llm: Any,  # LLMRouter — kept as Any to avoid circular
+        trust_scorer: Any = None,  # TrustScorer — assigns provenance during ingestion
     ) -> None:
         self._core = core
         self._mcp = mcp
         self._llm = llm
+        self._trust_scorer = trust_scorer
         # In-memory dedup set for the current session (bounded, MED-08).
         self._seen_ids: dict[str, OrderedDict[str, None]] = {}
         # Source registry for background sync loop (HIGH-03).
@@ -158,6 +160,13 @@ class SyncEngine:
         if await self.dedup(source, source_id):
             log.info("sync.ingest.duplicate", source=source, source_id=source_id)
             return source_id
+
+        # Assign source trust provenance before storing.
+        if self._trust_scorer is not None:
+            provenance = self._trust_scorer.score(data)
+            for key, val in provenance.items():
+                if not data.get(key):
+                    data[key] = val
 
         # Store in vault under the default persona.
         persona_id = data.get("persona_id", "default")
@@ -385,6 +394,24 @@ class SyncEngine:
                             source_id=item.get("source_id", ""),
                             error=str(exc),
                         )
+
+        # Assign source trust provenance before storing.
+        # Items without provenance default to caveated (never silently normal).
+        if self._trust_scorer is not None:
+            for item in items:
+                provenance = self._trust_scorer.score(item)
+                for key, val in provenance.items():
+                    if not item.get(key):
+                        item[key] = val
+                # Check for contradictions with existing vault data.
+                try:
+                    contradicts = await self._trust_scorer.check_contradiction(
+                        self._core, persona_id, item,
+                    )
+                    if contradicts:
+                        item["contradicts"] = contradicts
+                except Exception:
+                    pass  # best-effort
 
         try:
             await self._core.store_vault_batch(persona_id, items)

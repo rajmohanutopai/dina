@@ -449,7 +449,27 @@ def create_app() -> FastAPI:
     nudge = NudgeAssembler(core=brain_core_client, llm=llm_router, entity_vault=entity_vault)
     scratchpad = ScratchpadService(core=brain_core_client)
     vault_context = VaultContextAssembler(core=brain_core_client, llm_router=llm_router)
-    sync_engine = SyncEngine(core=brain_core_client, mcp=mcp_client, llm=llm_router)
+    from .service.trust_scorer import TrustScorer
+    trust_scorer = TrustScorer()
+    sync_engine = SyncEngine(core=brain_core_client, mcp=mcp_client, llm=llm_router, trust_scorer=trust_scorer)
+
+    # Load contacts into trust scorer so contact-ring scoring works.
+    # Best-effort — if Core isn't ready yet, contacts will be loaded
+    # on the first sync cycle via refresh_contacts().
+    async def _load_contacts_into_scorer() -> None:
+        try:
+            contacts = await brain_core_client.list_contacts()
+            trust_scorer.update_contacts(contacts)
+            log.info("trust_scorer.contacts_loaded", extra={"count": len(contacts)})
+        except Exception as exc:
+            log.warning("trust_scorer.contacts_load_failed", extra={"error": str(exc)})
+
+    import asyncio
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_load_contacts_into_scorer())
+    except RuntimeError:
+        pass  # no event loop yet — contacts will load on first sync
     # HIGH-03: Register each validated MCP server as a sync source
     for _src_name in _mcp_source_names:
         sync_engine.register_source(_src_name)
@@ -504,6 +524,12 @@ def create_app() -> FastAPI:
     async def _sync_loop(engine: SyncEngine) -> None:
         """Background loop — runs sync cycles every 5 minutes."""
         while True:
+            # Refresh contacts for trust scoring (best-effort).
+            try:
+                contacts = await brain_core_client.list_contacts()
+                trust_scorer.update_contacts(contacts)
+            except Exception:
+                pass
             sources = engine.sources
             if not sources:
                 log.warning("sync.no_sources", extra={"hint": "No MCP servers configured"})

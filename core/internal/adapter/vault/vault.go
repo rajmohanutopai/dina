@@ -159,6 +159,25 @@ func (m *Manager) Store(_ context.Context, persona domain.PersonaName, item doma
 		return "", fmt.Errorf("vault: invalid item type %q", item.Type)
 	}
 
+	// Enforce provenance field constraints (mirrors sqlite adapter).
+	if item.SenderTrust != "" && !domain.ValidSenderTrust[item.SenderTrust] {
+		return "", fmt.Errorf("vault: invalid sender_trust %q", item.SenderTrust)
+	}
+	if item.SourceType != "" && !domain.ValidSourceType[item.SourceType] {
+		return "", fmt.Errorf("vault: invalid source_type %q", item.SourceType)
+	}
+	if item.Confidence != "" && !domain.ValidConfidence[item.Confidence] {
+		return "", fmt.Errorf("vault: invalid confidence %q", item.Confidence)
+	}
+	if item.RetrievalPolicy != "" && !domain.ValidRetrievalPolicy[item.RetrievalPolicy] {
+		return "", fmt.Errorf("vault: invalid retrieval_policy %q", item.RetrievalPolicy)
+	}
+
+	// Default retrieval_policy to "normal" (matches SQLite adapter).
+	if item.RetrievalPolicy == "" {
+		item.RetrievalPolicy = "normal"
+	}
+
 	if item.ID == "" {
 		b := make([]byte, 16)
 		rand.Read(b)
@@ -187,11 +206,26 @@ func (m *Manager) StoreBatch(_ context.Context, persona domain.PersonaName, item
 		if len(item.BodyText) > maxItemSize {
 			return nil, fmt.Errorf("vault: batch rejected — item body exceeds maximum size")
 		}
+		if item.SenderTrust != "" && !domain.ValidSenderTrust[item.SenderTrust] {
+			return nil, fmt.Errorf("vault: batch rejected — invalid sender_trust %q", item.SenderTrust)
+		}
+		if item.SourceType != "" && !domain.ValidSourceType[item.SourceType] {
+			return nil, fmt.Errorf("vault: batch rejected — invalid source_type %q", item.SourceType)
+		}
+		if item.Confidence != "" && !domain.ValidConfidence[item.Confidence] {
+			return nil, fmt.Errorf("vault: batch rejected — invalid confidence %q", item.Confidence)
+		}
+		if item.RetrievalPolicy != "" && !domain.ValidRetrievalPolicy[item.RetrievalPolicy] {
+			return nil, fmt.Errorf("vault: batch rejected — invalid retrieval_policy %q", item.RetrievalPolicy)
+		}
 	}
 
 	// All items valid — commit the batch.
 	ids := make([]string, len(items))
 	for i, item := range items {
+		if item.RetrievalPolicy == "" {
+			item.RetrievalPolicy = "normal"
+		}
 		if item.ID == "" {
 			b := make([]byte, 16)
 			rand.Read(b)
@@ -420,6 +454,22 @@ func matchesQuery(item domain.VaultItem, q domain.SearchQuery) bool {
 	}
 	if q.Before > 0 && item.Timestamp > q.Before {
 		return false
+	}
+
+	// Retrieval policy filter. Default: exclude quarantine + briefing_only.
+	if !q.IncludeAll {
+		if q.RetrievalPolicy != "" {
+			// Explicit filter to one policy.
+			if item.RetrievalPolicy != q.RetrievalPolicy {
+				return false
+			}
+		} else {
+			// Default: only normal + caveated (+ empty for legacy items).
+			rp := item.RetrievalPolicy
+			if rp != "" && rp != "normal" && rp != "caveated" {
+				return false
+			}
+		}
 	}
 
 	// Text search (FTS5 simulation).

@@ -299,7 +299,10 @@ class ToolExecutor:
         for item in items[:_BROWSE_LIMIT]:
             entry: dict[str, str] = {}
             for key in ("Summary", "summary", "BodyText", "body_text",
-                        "Type", "type", "id"):
+                        "Type", "type", "id",
+                        "Sender", "sender", "SenderTrust", "sender_trust",
+                        "Confidence", "confidence",
+                        "RetrievalPolicy", "retrieval_policy"):
                 val = item.get(key, "")
                 if val:
                     entry[key] = str(val)[:500]
@@ -355,7 +358,10 @@ class ToolExecutor:
         for item in capped:
             entry: dict[str, str] = {}
             for key in ("Summary", "summary", "BodyText", "body_text",
-                        "Type", "type", "id"):
+                        "Type", "type", "id",
+                        "Sender", "sender", "SenderTrust", "sender_trust",
+                        "Confidence", "confidence",
+                        "RetrievalPolicy", "retrieval_policy"):
                 val = item.get(key, "")
                 if val:
                     entry[key] = str(val)[:500]
@@ -393,9 +399,16 @@ Rules:
 - Explore personas whose previews suggest relevant context.
 - Use natural, descriptive search queries — the search understands meaning.
 - Reference specific vault details in your response.
-- Weigh verified/trusted sources heavily over unverified ones.
 - Skip locked personas gracefully.
-- Never fabricate vault data — only use what the tools return.\
+- Never fabricate vault data — only use what the tools return.
+
+Source trust rules (items carry provenance metadata):
+- Items with sender_trust "self" are the user's own notes — highest trust.
+- Items with sender_trust "contact_ring1" are from verified contacts — cite them by name.
+- Items with confidence "low" or sender_trust "unknown" — caveat with "an unverified source claims..."
+- Items with retrieval_policy "caveated" — always note the source is unverified.
+- Never present caveated or low-confidence items as established facts.
+- Prefer high-confidence items from known sources over unverified claims.\
 """
 
 
