@@ -824,7 +824,39 @@ func main() {
 	agentBrain := brainclient.New(cfg.BrainURL, coreKey)
 	agentH := &handler.AgentHandler{Brain: agentBrain}
 
-	personaH := &handler.PersonaHandler{Identity: identitySvc, Personas: personaMgr, Approvals: personaMgr, VaultManager: vaultMgr, KeyDeriver: keyDeriver, Seed: masterSeed}
+	// Staging inbox (connector ingestion pipeline).
+	// CGO builds use durable SQLite (identity.sqlite). Non-CGO uses in-memory.
+	stagingInbox := newStagingInbox(
+		vaultMgr,
+		func(persona string) bool {
+			p, err := domain.NewPersonaName(persona)
+			if err != nil {
+				return false
+			}
+			return vaultMgr.IsOpen(p)
+		},
+		func(ctx context.Context, persona string, item domain.VaultItem) (string, error) {
+			p, err := domain.NewPersonaName(persona)
+			if err != nil {
+				return "", err
+			}
+			return vaultSvc.Store(ctx, "staging", p, item)
+		},
+	)
+	stagingH := &handler.StagingHandler{Staging: stagingInbox}
+
+	// Staging sweep: expire old items + revert expired classifying leases.
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			if n, err := stagingInbox.Sweep(context.Background()); err == nil && n > 0 {
+				slog.Info("staging sweep", "cleaned", n)
+			}
+		}
+	}()
+
+	personaH := &handler.PersonaHandler{Identity: identitySvc, Personas: personaMgr, Approvals: personaMgr, VaultManager: vaultMgr, KeyDeriver: keyDeriver, Seed: masterSeed, StagingInbox: stagingInbox}
 	sessionH := &handler.SessionHandler{Sessions: personaMgr}
 	trustH := &handler.TrustHandler{Trust: trustSvc, OwnDID: cfg.OwnDID}
 	contactH := &handler.ContactHandler{Contacts: contactDir, Sharing: sharingMgr}
@@ -867,6 +899,12 @@ func main() {
 		routeByMethod(vaultH.HandleGetItem, vaultH.HandleDeleteItem)(w, r)
 	})
 	mux.HandleFunc("/v1/vault/kv/", routeByMethod(vaultH.HandleGetKV, vaultH.HandlePutKV))
+
+	// Staging API (connector ingestion pipeline)
+	mux.HandleFunc("/v1/staging/ingest", stagingH.HandleIngest)
+	mux.HandleFunc("/v1/staging/claim", stagingH.HandleClaim)
+	mux.HandleFunc("/v1/staging/resolve", stagingH.HandleResolve)
+	mux.HandleFunc("/v1/staging/fail", stagingH.HandleFail)
 
 	// Identity API
 	mux.HandleFunc("/v1/did", identityH.HandleGetDID)
@@ -991,6 +1029,31 @@ func main() {
 		slog.Warn("DINA_TEST_MODE enabled — test-only endpoints active")
 		mux.HandleFunc("/v1/vault/clear", handler.HandleClearVault(vaultMgr))
 		mux.HandleFunc("/v1/reminder/fire", reminderH.HandleFireReminder)
+		// Register a service key at runtime (test-only — for connector auth tests).
+		mux.HandleFunc("/v1/test/register-service-key", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+				return
+			}
+			var req struct {
+				DID       string `json:"did"`
+				PublicKey string `json:"public_key"` // hex-encoded 32-byte Ed25519 public key
+				ServiceID string `json:"service_id"` // "connector", "admin", etc.
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.DID == "" || req.PublicKey == "" || req.ServiceID == "" {
+				http.Error(w, `{"error":"did, public_key (hex), and service_id required"}`, http.StatusBadRequest)
+				return
+			}
+			pubBytes, err := hex.DecodeString(req.PublicKey)
+			if err != nil || len(pubBytes) != 32 {
+				http.Error(w, `{"error":"public_key must be 64-char hex (32 bytes)"}`, http.StatusBadRequest)
+				return
+			}
+			tokenValidator.RegisterServiceKey(req.DID, pubBytes, req.ServiceID)
+			slog.Warn("TEST: registered service key", "did", req.DID, "service", req.ServiceID)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "registered", "service_id": req.ServiceID})
+		})
 	}
 
 	// ---------- Apply middleware chain ----------

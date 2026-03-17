@@ -103,3 +103,32 @@ CREATE TABLE IF NOT EXISTS reminders (
 ) WITHOUT ROWID;
 
 CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(due_at) WHERE completed = 0;
+
+-- Staging inbox: global connector ingestion pipeline
+CREATE TABLE IF NOT EXISTS staging_inbox (
+    id                TEXT PRIMARY KEY,
+    connector_id      TEXT NOT NULL DEFAULT '',
+    source            TEXT NOT NULL DEFAULT '',
+    source_id         TEXT NOT NULL DEFAULT '',
+    source_hash       TEXT NOT NULL DEFAULT '',
+    type              TEXT NOT NULL DEFAULT '',
+    summary           TEXT NOT NULL DEFAULT '',
+    body              TEXT NOT NULL DEFAULT '',
+    sender            TEXT NOT NULL DEFAULT '',
+    metadata          TEXT NOT NULL DEFAULT '{}',
+    status            TEXT NOT NULL DEFAULT 'received'
+        CHECK (status IN ('received','classifying','stored','pending_unlock','failed')),
+    target_persona    TEXT NOT NULL DEFAULT '',
+    classified_item   TEXT NOT NULL DEFAULT '{}',
+    error             TEXT NOT NULL DEFAULT '',
+    retry_count       INTEGER NOT NULL DEFAULT 0,
+    claimed_at        INTEGER NOT NULL DEFAULT 0,
+    lease_until       INTEGER NOT NULL DEFAULT 0,
+    expires_at        INTEGER NOT NULL,
+    created_at        INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
+    updated_at        INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_staging_inbox_dedup ON staging_inbox(connector_id, source, source_id);
+CREATE INDEX IF NOT EXISTS idx_staging_inbox_status ON staging_inbox(status);
+CREATE INDEX IF NOT EXISTS idx_staging_inbox_expires ON staging_inbox(expires_at);

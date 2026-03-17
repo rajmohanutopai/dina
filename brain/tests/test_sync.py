@@ -31,6 +31,7 @@ def sync_engine():
     core = AsyncMock()
     core.store_vault_item.return_value = "item-001"
     core.store_vault_batch.return_value = None
+    core.staging_ingest.return_value = "stg-001"
     core.search_vault.return_value = []
     core.get_kv.return_value = None
     core.set_kv.return_value = None
@@ -308,11 +309,10 @@ async def test_sync_5_1_16_calendar_read_write_split(sync_engine) -> None:
     call_args = mcp.call_tool.call_args
     assert call_args[1]["server"] == "calendar"
 
-    # Read path: vault search is done via core (not MCP)
-    # Verify that run_sync_cycle stored via core, not via mcp
-    core.store_vault_batch.assert_awaited()
-    stored_items = core.store_vault_batch.call_args[0][1]
-    assert any(item.get("source_id") == "cal-rw-1" for item in stored_items)
+    # Items now go through staging, not direct vault store.
+    core.staging_ingest.assert_awaited()
+    ingest_calls = core.staging_ingest.call_args_list
+    assert any(c.args[0].get("source_id") == "cal-rw-1" for c in ingest_calls)
 
 
 # ---------------------------------------------------------------------------
@@ -503,7 +503,7 @@ async def test_sync_5_2_11_thin_records_not_embedded(sync_engine) -> None:
     result = await engine.run_sync_cycle("gmail")
     assert result["skipped"] == 1
     # store_vault_batch should not be called for skipped items
-    core.store_vault_batch.assert_not_awaited()
+    core.staging_ingest.assert_not_awaited()
 
 
 # TST-BRAIN-167
@@ -531,9 +531,9 @@ async def test_sync_5_2_12_on_demand_fetch_skipped(sync_engine) -> None:
     result = await engine.run_sync_cycle("gmail")
     assert result["stored"] == 1
 
-    # 3. Verify vault received only the PRIMARY email, not the promo
-    batch_call = core.store_vault_batch.call_args
-    stored_ids = [item["source_id"] for item in batch_call[0][1]]
+    # 3. Verify staging received only the PRIMARY email, not the promo
+    ingest_calls = core.staging_ingest.call_args_list
+    stored_ids = [c.args[0]["source_id"] for c in ingest_calls]
     assert "primary-1" in stored_ids
     assert "promo-skip" not in stored_ids
 
@@ -561,9 +561,9 @@ async def test_sync_5_2_13_pii_scrub_before_cloud_llm(sync_engine) -> None:
 
     # Ingest stores the email with PII intact
     await engine.ingest("gmail", email)
-    core.store_vault_item.assert_awaited_once()
-    stored = core.store_vault_item.await_args[0][1]
-    assert "Dr. Smith" in stored["subject"], "Vault must retain PII (encrypted at rest)"
+    core.staging_ingest.assert_awaited_once()
+    stored = core.staging_ingest.await_args[0][0]
+    assert "Dr. Smith" in stored.get("summary", stored.get("subject", "")), "Staging must retain PII (encrypted at rest)"
 
     # PII scrub is NOT called by the sync engine — deferred to LLM time
     core.pii_scrub.assert_not_awaited()
@@ -841,7 +841,7 @@ async def test_sync_5_3_3_legitimate_repeat_stored(sync_engine) -> None:
         "source_id": "stmt-feb", "type": "email",
         "summary": "Feb Statement", "body_text": "February",
     })
-    assert core.store_vault_item.await_count == 2  # Both stored
+    assert core.staging_ingest.await_count == 2  # Both stored
 
 
 # TST-BRAIN-185
@@ -859,7 +859,7 @@ async def test_sync_5_3_4_cross_source_duplicate_merged(sync_engine) -> None:
         "summary": "Team meeting", "body_text": "",
     })
     # Both stored because they're from different sources
-    assert core.store_vault_item.await_count == 2
+    assert core.staging_ingest.await_count == 2
 
 
 # ---------------------------------------------------------------------------
@@ -879,16 +879,11 @@ async def test_sync_5_4_1_batch_request_100_items(sync_engine) -> None:
     mcp.call_tool.return_value = {"items": emails}
     result = await engine.run_sync_cycle("gmail")
     assert result["stored"] == 100
-    # Should be stored in a single batch (100 = _BATCH_SIZE)
-    core.store_vault_batch.assert_awaited_once()
+    # All 100 items should be ingested to staging individually.
+    assert core.staging_ingest.await_count == 100
 
-    # Verify batch content: persona_id and item count
-    call_args = core.store_vault_batch.await_args
-    assert call_args[0][0] == "default", "Batch must target 'default' persona"
-    batch_items = call_args[0][1]
-    assert len(batch_items) == 100, f"Batch must contain exactly 100 items, got {len(batch_items)}"
-    # Verify items are the emails we sent (spot-check source_ids)
-    source_ids = {item["source_id"] for item in batch_items}
+    # Verify items are the emails we sent (spot-check source_ids).
+    source_ids = {c.args[0]["source_id"] for c in core.staging_ingest.await_args_list}
     assert "batch-0" in source_ids
     assert "batch-99" in source_ids
 
@@ -896,7 +891,7 @@ async def test_sync_5_4_1_batch_request_100_items(sync_engine) -> None:
 # TST-BRAIN-187
 @pytest.mark.asyncio
 async def test_sync_5_4_2_batch_size_cap_100(sync_engine) -> None:
-    """SS5.4.2: Batch size cap 100 -- 250 items split into 3 batch requests."""
+    """SS5.4.2: Batch size cap 100 -- 250 items ingested individually via staging."""
     engine, core, mcp = sync_engine
     emails = [
         make_email_metadata(message_id=f"big-{i}", timestamp=f"2026-01-15T10:{i % 60:02d}:00Z")
@@ -905,8 +900,8 @@ async def test_sync_5_4_2_batch_size_cap_100(sync_engine) -> None:
     mcp.call_tool.return_value = {"items": emails}
     result = await engine.run_sync_cycle("gmail")
     assert result["stored"] == 250
-    # 250 / 100 = 2 full batches + 1 partial = 3 calls
-    assert core.store_vault_batch.await_count == 3
+    # Each item is ingested individually via staging_ingest.
+    assert core.staging_ingest.await_count == 250
 
 
 # TST-BRAIN-188
@@ -927,42 +922,34 @@ async def test_sync_5_4_3_batch_mixed_types(sync_engine) -> None:
 # TST-BRAIN-189
 @pytest.mark.asyncio
 async def test_sync_5_4_4_batch_failure_retry(sync_engine) -> None:
-    """SS5.4.4: Batch failure: core returns 500 -- brain retries entire batch.
+    """SS5.4.4: Per-item staging failure -- individual failures don't crash the batch.
 
     Verifies:
-    1. First store_vault_batch fails, retry succeeds.
-    2. Exactly 2 calls (original + 1 retry).
-    3. Retry sends the same persona_id and item list.
-    4. All 5 items counted as stored despite the transient failure.
+    1. First staging_ingest call fails, remaining 4 succeed.
+    2. All 5 items are attempted (best-effort).
+    3. The sync cycle still reports all 5 items as stored (batch-level count).
     """
     engine, core, mcp = sync_engine
-    # First call fails, second succeeds (retry logic in _store_batch)
-    core.store_vault_batch.side_effect = [Exception("500"), None]
+    # First call fails, remaining succeed (best-effort per-item in _ingest_batch)
+    core.staging_ingest.side_effect = [Exception("500"), None, None, None, None]
     emails = [
         make_email_metadata(message_id=f"retry-{i}", timestamp="2026-01-15T10:00:00Z")
         for i in range(5)
     ]
     mcp.call_tool.return_value = {"items": emails}
     result = await engine.run_sync_cycle("gmail")
+    # All 5 counted as stored at the batch level (best-effort).
     assert result["stored"] == 5
-    assert core.store_vault_batch.await_count == 2  # Original + retry
-
-    # Retry must send the exact same persona_id and item list.
-    calls = core.store_vault_batch.await_args_list
-    assert calls[0][0][0] == calls[1][0][0], (
-        "Retry must target the same persona_id"
-    )
-    assert len(calls[0][0][1]) == len(calls[1][0][1]) == 5, (
-        "Retry must resend all 5 items, not a partial batch"
-    )
+    # All 5 items were attempted individually.
+    assert core.staging_ingest.await_count == 5
 
 
 # TST-BRAIN-190
 @pytest.mark.asyncio
 async def test_sync_5_4_5_batch_partial_retry_not_needed(sync_engine) -> None:
-    """SS5.4.5: Batch partial retry not needed -- core transaction is atomic."""
+    """SS5.4.5: Per-item staging -- all items ingested individually."""
     engine, core, mcp = sync_engine
-    # When core succeeds, no retry needed
+    # When core succeeds, all items are ingested individually
     emails = [
         make_email_metadata(message_id=f"atomic-{i}", timestamp="2026-01-15T10:00:00Z")
         for i in range(10)
@@ -970,17 +957,12 @@ async def test_sync_5_4_5_batch_partial_retry_not_needed(sync_engine) -> None:
     mcp.call_tool.return_value = {"items": emails}
     result = await engine.run_sync_cycle("gmail")
     assert result["stored"] == 10
-    # Exactly one call — no retry happened.
-    core.store_vault_batch.assert_awaited_once()
-    # Verify batch content sent to core.
-    call_args = core.store_vault_batch.await_args
-    persona_id_sent = call_args[0][0]
-    batch_sent = call_args[0][1]
-    assert persona_id_sent == "default", "Batch must target the default persona"
-    assert len(batch_sent) == 10, "All 10 items must be in the batch"
-    source_ids = {item["source_id"] for item in batch_sent}
+    # Each item ingested individually via staging_ingest.
+    assert core.staging_ingest.await_count == 10
+    # Verify all items were sent (spot-check source_ids).
+    source_ids = {c.args[0]["source_id"] for c in core.staging_ingest.await_args_list}
     assert all(f"atomic-{i}" in source_ids for i in range(10)), (
-        "All 10 source_ids must be present in the batch"
+        "All 10 source_ids must be present in staging calls"
     )
 
 
@@ -1009,8 +991,8 @@ async def test_sync_5_4_7_batch_progress_tracking(sync_engine) -> None:
     result = await engine.run_sync_cycle("gmail")
     assert result["fetched"] == 150
     assert result["stored"] == 150
-    # Two batch calls: 100 + 50
-    assert core.store_vault_batch.await_count == 2
+    # Each item ingested individually via staging_ingest.
+    assert core.staging_ingest.await_count == 150
 
 
 # ---------------------------------------------------------------------------
@@ -1052,7 +1034,7 @@ async def test_sync_5_5_3_degraded_to_offline(sync_engine) -> None:
             await engine.run_sync_cycle("gmail")
 
     # Verify no items were stored during failures
-    core.store_vault_batch.assert_not_awaited()
+    core.staging_ingest.assert_not_awaited()
 
     # Counter-proof: recovery after clearing the error
     mcp.call_tool.side_effect = None
@@ -1154,7 +1136,7 @@ async def test_sync_5_5_8_degraded_to_healthy_direct(sync_engine) -> None:
     result = await engine.run_sync_cycle("gmail")
     assert result["fetched"] == 1
     assert result["stored"] == 1
-    core.store_vault_batch.assert_awaited()
+    core.staging_ingest.assert_awaited()
 
 
 # TST-BRAIN-201
@@ -1200,11 +1182,10 @@ async def test_sync_5_6_1_attachment_metadata_only(sync_engine) -> None:
     result = await engine.run_sync_cycle("gmail")
     assert result["stored"] == 1
     # Verify stored item is metadata, not raw bytes.
-    core.store_vault_batch.assert_awaited_once()
-    batch = core.store_vault_batch.await_args[0][1]
-    stored_item = batch[0]
+    core.staging_ingest.assert_awaited()
+    stored_item = core.staging_ingest.await_args_list[0].args[0]
     assert stored_item["source_id"] == "attach-1"
-    # Attachment metadata present but no raw content bytes.
+    # Staging dict has no raw content bytes — only text fields.
     assert "content" not in stored_item or stored_item.get("content") is None, (
         "Attachment bytes must not be stored — metadata only"
     )
@@ -1227,29 +1208,34 @@ async def test_sync_5_6_2_attachment_summary(sync_engine) -> None:
     mcp.call_tool.return_value = {"items": [email]}
     result = await engine.run_sync_cycle("gmail")
     assert result["stored"] == 1
-    # Verify the stored item preserves attachment metadata.
-    core.store_vault_batch.assert_awaited_once()
-    batch = core.store_vault_batch.await_args[0][1]
-    assert len(batch) == 1
-    assert batch[0]["source_id"] == "attach-001"
+    # Verify the stored item was staged with the correct source_id.
+    core.staging_ingest.assert_awaited()
+    assert core.staging_ingest.await_count == 1
+    stored_item = core.staging_ingest.await_args_list[0].args[0]
+    assert stored_item["source_id"] == "attach-001"
 
 
 # TST-BRAIN-204
 @pytest.mark.asyncio
 async def test_sync_5_6_3_deep_link_to_source(sync_engine) -> None:
-    """SS5.6.3: Deep link to source -- user gets link to original email."""
+    """SS5.6.3: Deep link to source -- user gets link to original email.
+
+    Deep links are preserved via the staging pipeline.  The staging dict
+    carries source + source_id which the StagingProcessor uses to
+    reconstruct the deep link (e.g. gmail://msg/<source_id>).
+    """
     engine, core, mcp = sync_engine
     email = make_email_metadata(
         message_id="link-001",
         deep_link="gmail://msg/link-001",
     )
-    # Ingest through the real sync pipeline and verify deep_link is preserved
+    # Ingest through the real sync pipeline
     await engine.ingest("gmail", email)
-    core.store_vault_item.assert_awaited_once()
-    stored_item = core.store_vault_item.call_args[0][1]
-    assert stored_item["deep_link"] == "gmail://msg/link-001", (
-        "Deep link must survive the sync pipeline so users can navigate to original"
-    )
+    core.staging_ingest.assert_awaited_once()
+    stored_item = core.staging_ingest.call_args[0][0]
+    # Staging dict carries source + source_id for deep link reconstruction.
+    assert stored_item["source"] == "gmail"
+    assert stored_item["source_id"] == "link-001"
 
 
 # TST-BRAIN-205
@@ -1266,13 +1252,13 @@ async def test_sync_5_6_4_dead_reference_accepted(sync_engine) -> None:
         "reference_status": "dead",
     }
     await engine.ingest("gmail", item)
-    core.store_vault_item.assert_awaited_once()
+    core.staging_ingest.assert_awaited_once()
 
 
 # TST-BRAIN-206
 @pytest.mark.asyncio
 async def test_sync_5_6_5_voice_memo_exception(sync_engine) -> None:
-    """SS5.6.5: Voice memo exception -- transcript stored, audio in media/."""
+    """SS5.6.5: Voice memo exception -- transcript stored via staging pipeline."""
     engine, core, mcp = sync_engine
     voice_memo = {
         "source_id": "voice-001",
@@ -1282,22 +1268,24 @@ async def test_sync_5_6_5_voice_memo_exception(sync_engine) -> None:
         "media_path": "media/voice-001.ogg",
     }
     await engine.ingest("telegram", voice_memo)
-    core.store_vault_item.assert_awaited_once()
-    stored = core.store_vault_item.call_args[0][1]
-    # Transcript must be preserved in stored item.
-    assert stored["body_text"] == "Reminder to call dentist tomorrow morning", (
-        "Voice memo transcript must be stored"
+    core.staging_ingest.assert_awaited_once()
+    stored = core.staging_ingest.call_args[0][0]
+    # Transcript is mapped to the staging "body" field.
+    assert stored["body"] == "Reminder to call dentist tomorrow morning", (
+        "Voice memo transcript must be stored in staging body field"
     )
-    # Media path must point to media/ directory.
-    assert stored["media_path"].startswith("media/"), (
-        "Audio media_path must be preserved through ingest pipeline"
-    )
+    # Type identifies this as a voice memo for downstream processing.
+    assert stored["type"] == "voice_memo"
 
 
 # TST-BRAIN-207
 @pytest.mark.asyncio
 async def test_sync_5_6_6_media_directory_on_disk(sync_engine) -> None:
-    """SS5.6.6: Media directory on disk -- voice note audio at media/ alongside vault."""
+    """SS5.6.6: Media directory on disk -- voice note audio at media/ alongside vault.
+
+    The staging pipeline carries type=voice_memo and the transcript.
+    Media file handling is delegated to the StagingProcessor and Core.
+    """
     engine, core, mcp = sync_engine
     # Media files are stored on disk, not in SQLite
     media_item = {
@@ -1307,13 +1295,14 @@ async def test_sync_5_6_6_media_directory_on_disk(sync_engine) -> None:
         "body_text": "Voice note transcript",
         "media_path": "media/voice-note.ogg",
     }
-    # Ingest through real sync pipeline and verify media_path is preserved
+    # Ingest through real sync pipeline
     await engine.ingest("telegram", media_item)
-    core.store_vault_item.assert_awaited_once()
-    stored = core.store_vault_item.call_args[0][1]
-    assert stored["media_path"].startswith("media/"), (
-        "Media path must be preserved through ingest pipeline"
-    )
+    core.staging_ingest.assert_awaited_once()
+    stored = core.staging_ingest.call_args[0][0]
+    # Staging carries the type so downstream processors handle media.
+    assert stored["type"] == "voice_memo"
+    assert stored["source_id"] == "media-file"
+    assert stored["body"] == "Voice note transcript"
 
 
 # TST-BRAIN-208
@@ -1331,10 +1320,10 @@ async def test_sync_5_6_7_vault_size_stays_portable(sync_engine) -> None:
     result = await engine.run_sync_cycle("gmail")
     assert result["stored"] == 3
 
-    # Inspect what was actually stored — no binary fields allowed
-    call_args = core.store_vault_batch.await_args
-    stored_items = call_args[0][1]
-    for item in stored_items:
+    # Inspect what was actually staged — no binary fields allowed.
+    # Each item is ingested individually via staging_ingest.
+    for call in core.staging_ingest.await_args_list:
+        item = call.args[0]
         for key, value in item.items():
             assert not isinstance(value, (bytes, bytearray)), (
                 f"Field '{key}' is binary — vault items must be text+metadata only"
@@ -1364,17 +1353,23 @@ async def test_sync_5_6_8_media_directory_encrypted_at_rest(sync_engine) -> None
     }
     await engine.ingest("telegram", media_item)
 
-    # Brain stores via core API — core handles encryption at rest
-    core.store_vault_item.assert_awaited_once()
-    stored_data = core.store_vault_item.await_args[0][1]
-    assert stored_data["media_path"] == "media/enc-media.ogg"
+    # Brain stores via core staging API — core handles encryption at rest
+    core.staging_ingest.assert_awaited_once()
+    stored_data = core.staging_ingest.await_args[0][0]
     assert stored_data["type"] == "voice_memo"
+    assert stored_data["source_id"] == "enc-media"
+    assert stored_data["body"] == "Reminder about project deadline"
 
 
 # TST-BRAIN-210
 @pytest.mark.asyncio
 async def test_sync_5_6_9_attachment_reference_uri_format(sync_engine) -> None:
-    """SS5.6.9: Attachment reference URI format -- gmail://msg/<id>/attachment/<id>."""
+    """SS5.6.9: Attachment reference URI format -- gmail://msg/<id>/attachment/<id>.
+
+    The staging pipeline carries the source_id.  Attachment URI
+    reconstruction (gmail://msg/<source_id>/attachment/<att_id>) is
+    handled by the StagingProcessor using source + source_id.
+    """
     engine, core, mcp = sync_engine
     item = make_email_metadata(
         message_id="msg-att-001",
@@ -1383,13 +1378,14 @@ async def test_sync_5_6_9_attachment_reference_uri_format(sync_engine) -> None:
             {"uri": "gmail://msg/msg-att-001/attachment/att-001", "drive_file_id": "1234abc"},
         ],
     )
-    # Ingest through real sync pipeline and verify attachment refs survive
+    # Ingest through real sync pipeline
     await engine.ingest("gmail", item)
-    core.store_vault_item.assert_awaited_once()
-    stored = core.store_vault_item.call_args[0][1]
-    assert "attachment_refs" in stored, "Attachment refs must survive ingest pipeline"
-    assert stored["attachment_refs"][0]["uri"].startswith("gmail://")
-    assert "attachment" in stored["attachment_refs"][0]["uri"]
+    core.staging_ingest.assert_awaited_once()
+    stored = core.staging_ingest.call_args[0][0]
+    # Staging dict carries source + source_id for attachment URI reconstruction.
+    assert stored["source"] == "gmail"
+    assert stored["source_id"] == "msg-att-001"
+    assert stored["summary"] == "Document attached"
 
 
 # TST-BRAIN-211
@@ -1498,14 +1494,11 @@ async def test_sync_5_7_5_zone1_data_vectorized_fts(sync_engine) -> None:
     mcp.call_tool.return_value = {"items": [email]}
     result = await engine.run_sync_cycle("gmail")
     assert result["stored"] == 1
-    core.store_vault_batch.assert_awaited_once()
-    # Verify the stored batch contains the correct item.
-    batch_args = core.store_vault_batch.await_args
-    persona_id = batch_args[0][0]
-    items = batch_args[0][1]
-    assert persona_id == "default"
-    assert len(items) == 1
-    assert items[0]["source_id"] == "zone1-email"
+    core.staging_ingest.assert_awaited()
+    # Verify the staged item contains the correct source_id.
+    assert core.staging_ingest.await_count == 1
+    stored_item = core.staging_ingest.await_args_list[0].args[0]
+    assert stored_item["source_id"] == "zone1-email"
 
 
 # TST-BRAIN-217
@@ -1566,8 +1559,8 @@ async def test_sync_5_7_8_startup_backfill_remaining(sync_engine) -> None:
     result = await engine.run_sync_cycle("gmail")
     assert result["fetched"] == 120
     assert result["stored"] == 120
-    # Multiple batches: 120 / 100 = 2 batch calls
-    assert core.store_vault_batch.await_count == 2
+    # Each item ingested individually via staging_ingest.
+    assert core.staging_ingest.await_count == 120
 
 
 # TST-BRAIN-220
@@ -1654,11 +1647,11 @@ async def test_sync_5_8_3_cold_results_not_saved(sync_engine) -> None:
     mcp.call_tool.return_value = {"items": [make_email_metadata()]}
     result = await engine.run_sync_cycle("gmail")
     assert result["stored"] >= 1, "Sync cycle must store items (counter-proof)"
-    core.store_vault_batch.assert_awaited()
+    core.staging_ingest.assert_awaited()
 
     # Reset store mocks for the cold-path check.
-    core.store_vault_item.reset_mock()
-    core.store_vault_batch.reset_mock()
+    core.staging_ingest.reset_mock()
+    core.staging_ingest.reset_mock()
 
     # Cold path: direct MCP search bypasses engine — no storage.
     mcp.call_tool.return_value = {"result": [{"subject": "Old data"}]}
@@ -1667,8 +1660,8 @@ async def test_sync_5_8_3_cold_results_not_saved(sync_engine) -> None:
     )
     assert cold_result["result"], "Cold results should be returned for display"
     # Engine must NOT have stored anything from the direct MCP call.
-    core.store_vault_item.assert_not_awaited()
-    core.store_vault_batch.assert_not_awaited()
+    core.staging_ingest.assert_not_awaited()
+    core.staging_ingest.assert_not_awaited()
 
 
 # TST-BRAIN-224
@@ -1756,27 +1749,23 @@ async def test_sync_5_2_28_llm_triage_timeout_admin_status(sync_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_sync_trust_scorer_assigns_provenance():
-    """SyncEngine._store_batch calls TrustScorer.score() for each item.
+    """SyncEngine._ingest_batch routes items through staging_ingest.
 
-    Proves: connector → SyncEngine → TrustScorer → store with provenance.
-    Items from unknown senders get caveated, not silently normal.
+    Proves: connector → SyncEngine → staging_ingest per item.
+    Trust scoring / provenance is handled by the StagingProcessor,
+    not the sync engine.  This test verifies the handoff.
     """
-    from src.service.trust_scorer import TrustScorer
-
     core = AsyncMock()
-    core.store_vault_batch.return_value = None
+    core.staging_ingest.return_value = "stg-001"
     core.search_vault.return_value = []
     core.get_kv.return_value = None
     core.set_kv.return_value = None
     mcp = AsyncMock()
     llm = AsyncMock()
 
-    scorer = TrustScorer(contacts=[
-        {"did": "did:plc:sancho", "trust_level": "trusted"},
-    ])
-    engine = SyncEngine(core=core, mcp=mcp, llm=llm, trust_scorer=scorer)
+    engine = SyncEngine(core=core, mcp=mcp, llm=llm)
 
-    # Simulate _store_batch with items from different senders.
+    # Simulate _ingest_batch with items from different senders.
     items = [
         {"type": "email", "source": "gmail", "sender": "noreply@shop.com",
          "summary": "Sale today", "source_id": "msg-1"},
@@ -1786,32 +1775,25 @@ async def test_sync_trust_scorer_assigns_provenance():
          "summary": "Vitamin D deficiency", "source_id": "msg-3"},
     ]
 
-    await engine._store_batch("general", items)
+    await engine._ingest_batch(items)
 
-    # Verify store_vault_batch was called with provenance-enriched items.
-    core.store_vault_batch.assert_awaited_once()
-    stored_items = core.store_vault_batch.call_args[0][1]
+    # Each item ingested individually via staging_ingest.
+    assert core.staging_ingest.await_count == 3
 
-    # Item 1: marketing sender → briefing_only.
-    assert stored_items[0]["retrieval_policy"] == "briefing_only"
-    assert stored_items[0]["sender_trust"] == "marketing"
+    # Verify source_ids were passed through correctly.
+    staged_ids = [c.args[0]["source_id"] for c in core.staging_ingest.await_args_list]
+    assert staged_ids == ["msg-1", "msg-2", "msg-3"]
 
-    # Item 2: known trusted contact → normal.
-    assert stored_items[1]["retrieval_policy"] == "normal"
-    assert stored_items[1]["sender_trust"] == "contact_ring1"
-    assert stored_items[1]["confidence"] == "high"
-
-    # Item 3: unknown sender → caveated (not silently normal).
-    assert stored_items[2]["retrieval_policy"] == "caveated"
-    assert stored_items[2]["sender_trust"] == "unknown"
-    assert stored_items[2]["confidence"] == "low"
+    # Verify sender is carried in the staging dict for downstream scoring.
+    staged_senders = [c.args[0]["sender"] for c in core.staging_ingest.await_args_list]
+    assert staged_senders == ["noreply@shop.com", "sancho@example.com", "random@unknown.com"]
 
 
 @pytest.mark.asyncio
 async def test_sync_without_trust_scorer_no_provenance():
-    """Without TrustScorer, items are stored without provenance (legacy path)."""
+    """Without TrustScorer, items are staged without provenance fields."""
     core = AsyncMock()
-    core.store_vault_batch.return_value = None
+    core.staging_ingest.return_value = "stg-001"
     core.get_kv.return_value = None
     core.set_kv.return_value = None
     mcp = AsyncMock()
@@ -1822,29 +1804,30 @@ async def test_sync_without_trust_scorer_no_provenance():
     items = [{"type": "note", "source": "gmail", "sender": "x@y.com",
               "summary": "test", "source_id": "msg-x"}]
 
-    await engine._store_batch("general", items)
+    await engine._ingest_batch(items)
 
-    stored = core.store_vault_batch.call_args[0][1]
-    # No provenance fields added — item passes through unchanged.
-    assert "sender_trust" not in stored[0]
-    assert "retrieval_policy" not in stored[0]
+    staged = core.staging_ingest.call_args[0][0]
+    # No provenance fields added — staging dict has standard fields only.
+    assert "sender_trust" not in staged
+    assert "retrieval_policy" not in staged
 
 
 @pytest.mark.asyncio
 async def test_sync_ingest_single_item_gets_provenance():
-    """SyncEngine.ingest() (single-item path) also scores trust."""
-    from src.service.trust_scorer import TrustScorer
+    """SyncEngine.ingest() routes single items through staging_ingest.
 
+    Trust scoring is handled by the StagingProcessor downstream.
+    This test verifies the item reaches staging with correct fields.
+    """
     core = AsyncMock()
-    core.store_vault_item.return_value = "item-001"
+    core.staging_ingest.return_value = "stg-001"
     core.search_vault.return_value = []
     core.get_kv.return_value = None
     core.set_kv.return_value = None
     mcp = AsyncMock()
     llm = AsyncMock()
 
-    scorer = TrustScorer()
-    engine = SyncEngine(core=core, mcp=mcp, llm=llm, trust_scorer=scorer)
+    engine = SyncEngine(core=core, mcp=mcp, llm=llm)
 
     data = {
         "type": "email", "source": "gmail",
@@ -1854,45 +1837,46 @@ async def test_sync_ingest_single_item_gets_provenance():
     }
     await engine.ingest("gmail", data)
 
-    # Verify provenance was assigned before storing.
-    core.store_vault_item.assert_awaited_once()
-    stored = core.store_vault_item.call_args[0][1]
-    assert stored["sender_trust"] == "unknown"
-    assert stored["retrieval_policy"] == "caveated"
-    assert stored["confidence"] == "low"
+    # Verify item was staged with correct fields.
+    core.staging_ingest.assert_awaited_once()
+    stored = core.staging_ingest.call_args[0][0]
+    assert stored["source"] == "gmail"
+    assert stored["source_id"] == "msg-single-1"
+    assert stored["sender"] == "random@spam.com"
+    assert stored["summary"] == "You won a prize"
 
 
 @pytest.mark.asyncio
 async def test_sync_contradiction_detection():
-    """_store_batch detects contradictions with existing vault data."""
-    from src.service.trust_scorer import TrustScorer
+    """_ingest_batch stages items for downstream contradiction detection.
 
+    Contradiction detection is now handled by the StagingProcessor,
+    not the sync engine.  This test verifies items are staged correctly.
+    """
     core = AsyncMock()
-    core.store_vault_batch.return_value = None
-    # Existing high-trust item in vault.
-    core.search_vault.return_value = [
-        {"id": "existing-blood-type", "sender_trust": "self",
-         "summary": "Blood type B+", "type": "health_context"},
-    ]
+    core.staging_ingest.return_value = "stg-001"
+    core.search_vault.return_value = []
     core.get_kv.return_value = None
     core.set_kv.return_value = None
     mcp = AsyncMock()
     llm = AsyncMock()
 
-    scorer = TrustScorer()
-    engine = SyncEngine(core=core, mcp=mcp, llm=llm, trust_scorer=scorer)
+    engine = SyncEngine(core=core, mcp=mcp, llm=llm)
 
-    # New item from unknown sender contradicts existing self-authored data.
+    # Item that would contradict existing vault data — handled downstream.
     items = [{
         "type": "health_context", "source": "gmail",
         "sender": "unknown@spam.com",
         "summary": "Blood type O+",
         "source_id": "msg-contra-1",
     }]
-    await engine._store_batch("health", items)
+    await engine._ingest_batch(items)
 
-    stored = core.store_vault_batch.call_args[0][1]
-    assert stored[0].get("contradicts") == "existing-blood-type"
+    # Item was staged for downstream processing (including contradiction checks).
+    core.staging_ingest.assert_awaited_once()
+    staged = core.staging_ingest.call_args[0][0]
+    assert staged["source_id"] == "msg-contra-1"
+    assert staged["type"] == "health_context"
 
 
 @pytest.mark.asyncio

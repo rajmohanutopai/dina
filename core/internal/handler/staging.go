@@ -1,0 +1,188 @@
+package handler
+
+import (
+	"encoding/json"
+	"net/http"
+	"time"
+
+	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/port"
+)
+
+// StagingHandler exposes staging inbox endpoints for the connector
+// ingestion pipeline.
+type StagingHandler struct {
+	Staging port.StagingInbox
+}
+
+// ingestRequest is the JSON body for POST /v1/staging/ingest.
+type ingestRequest struct {
+	ConnectorID string `json:"connector_id"`
+	Source      string `json:"source"`
+	SourceID    string `json:"source_id"`
+	Type        string `json:"type"`
+	Summary     string `json:"summary"`
+	Body        string `json:"body"`
+	Sender      string `json:"sender"`
+	Metadata    string `json:"metadata"`
+}
+
+// HandleIngest handles POST /v1/staging/ingest. It accepts a raw item from
+// a connector and stores it in the staging inbox for Brain classification.
+func (h *StagingHandler) HandleIngest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req ingestRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	item := domain.StagingItem{
+		ConnectorID: req.ConnectorID,
+		Source:      req.Source,
+		SourceID:    req.SourceID,
+		Type:        req.Type,
+		Summary:     req.Summary,
+		Body:        req.Body,
+		Sender:      req.Sender,
+		Metadata:    req.Metadata,
+	}
+
+	id, err := h.Staging.Ingest(r.Context(), item)
+	if err != nil {
+		clientError(w, "ingest failed", http.StatusInternalServerError, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{"id": id})
+}
+
+// claimRequest is the JSON body for POST /v1/staging/claim.
+type claimRequest struct {
+	Limit int `json:"limit"`
+}
+
+// HandleClaim handles POST /v1/staging/claim. Brain calls this to claim
+// received items for classification.
+func (h *StagingHandler) HandleClaim(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req claimRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+
+	items, err := h.Staging.Claim(r.Context(), limit, time.Duration(domain.DefaultLeaseDuration)*time.Second)
+	if err != nil {
+		clientError(w, "claim failed", http.StatusInternalServerError, err)
+		return
+	}
+
+	// Return empty array instead of null when no items claimed.
+	if items == nil {
+		items = []domain.StagingItem{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"items": items})
+}
+
+// resolveRequest is the JSON body for POST /v1/staging/resolve.
+type resolveRequest struct {
+	ID             string           `json:"id"`
+	TargetPersona  string           `json:"target_persona"`
+	ClassifiedItem domain.VaultItem `json:"classified_item"`
+}
+
+// HandleResolve handles POST /v1/staging/resolve. Brain calls this after
+// classifying an item to route it to the correct persona vault.
+func (h *StagingHandler) HandleResolve(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req resolveRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	if req.ID == "" {
+		http.Error(w, `{"error":"missing id"}`, http.StatusBadRequest)
+		return
+	}
+	if req.TargetPersona == "" {
+		http.Error(w, `{"error":"missing target_persona"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.Staging.Resolve(r.Context(), req.ID, req.TargetPersona, req.ClassifiedItem); err != nil {
+		clientError(w, "resolve failed", http.StatusInternalServerError, err)
+		return
+	}
+
+	// Determine the resulting status by listing. For simplicity, we report
+	// "stored" or "pending_unlock" based on what Resolve decided.
+	// The adapter sets status internally; we check by listing.
+	status := "stored"
+	pending, _ := h.Staging.ListByStatus(r.Context(), domain.StagingPendingUnlock, 1000)
+	for _, item := range pending {
+		if item.ID == req.ID {
+			status = domain.StagingPendingUnlock
+			break
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"id": req.ID, "status": status})
+}
+
+// failRequest is the JSON body for POST /v1/staging/fail.
+type failRequest struct {
+	ID    string `json:"id"`
+	Error string `json:"error"`
+}
+
+// HandleFail handles POST /v1/staging/fail. Brain calls this when
+// classification fails for a staging item.
+func (h *StagingHandler) HandleFail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req failRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	if req.ID == "" {
+		http.Error(w, `{"error":"missing id"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.Staging.MarkFailed(r.Context(), req.ID, req.Error); err != nil {
+		clientError(w, "mark failed failed", http.StatusInternalServerError, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"id": req.ID, "status": domain.StagingFailed})
+}

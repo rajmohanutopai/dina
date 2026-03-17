@@ -1657,11 +1657,11 @@ func TestAuth_1_5_2_AdminServiceAllowlist(t *testing.T) {
 
 // TST-CORE-AUTH-SVC-003
 func TestAuth_1_5_3_ConnectorServiceAllowlist(t *testing.T) {
-	// Connectors can store vault items and ACK tasks. Nothing else.
+	// Connectors can only ingest to staging and ACK tasks. No vault access.
 	checker := auth.NewAdminEndpointChecker()
 
 	allowed := []string{
-		"/v1/vault/store",
+		"/v1/staging/ingest",
 		"/v1/task/ack",
 		"/healthz",
 	}
@@ -1671,6 +1671,7 @@ func TestAuth_1_5_3_ConnectorServiceAllowlist(t *testing.T) {
 	}
 
 	denied := []string{
+		"/v1/vault/store",
 		"/v1/vault/query",
 		"/v1/vault/item/some-id",
 		"/v1/msg/send",
@@ -1723,8 +1724,10 @@ func TestAuth_1_5_5_ServiceIsolationCrossCheck(t *testing.T) {
 	testutil.RequireFalse(t, checker.AllowedForTokenKind("service", "/v1/persona/unlock", "brain"),
 		"brain cannot unlock persona")
 
-	testutil.RequireTrue(t, checker.AllowedForTokenKind("service", "/v1/vault/store", "connector"),
-		"connector can store")
+	testutil.RequireFalse(t, checker.AllowedForTokenKind("service", "/v1/vault/store", "connector"),
+		"connector must NOT access vault/store — staging-first")
+	testutil.RequireTrue(t, checker.AllowedForTokenKind("service", "/v1/staging/ingest", "connector"),
+		"connector can ingest to staging")
 	testutil.RequireFalse(t, checker.AllowedForTokenKind("service", "/v1/vault/query", "connector"),
 		"connector cannot query")
 }

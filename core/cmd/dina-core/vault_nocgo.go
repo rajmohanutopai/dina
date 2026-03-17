@@ -3,10 +3,12 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
 
 	"github.com/rajmohanutopai/dina/core/internal/adapter/vault"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/port"
 )
 
@@ -37,4 +39,13 @@ func newBackupMgr(v vaultBackend) port.BackupManager {
 // newAuditLogger returns an in-memory audit logger when CGO is unavailable.
 func newAuditLogger(_ vaultBackend) port.VaultAuditLogger {
 	return vault.NewAuditLogger()
+}
+
+// newStagingInbox returns an in-memory staging inbox (no CGO — dev/test only).
+func newStagingInbox(
+	_ vaultBackend,
+	isPersonaOpen func(string) bool,
+	storeToVault func(ctx context.Context, persona string, item domain.VaultItem) (string, error),
+) port.StagingInbox {
+	return vault.NewStagingInbox(isPersonaOpen, storeToVault)
 }

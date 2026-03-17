@@ -451,8 +451,18 @@ def create_app() -> FastAPI:
     vault_context = VaultContextAssembler(core=brain_core_client, llm_router=llm_router)
     from .service.trust_scorer import TrustScorer
     from .service.enrichment import EnrichmentService
+    from .service.staging_processor import StagingProcessor
     trust_scorer = TrustScorer()
     enrichment_svc = EnrichmentService(core=brain_core_client, llm=llm_router)
+    from .service.domain_classifier import DomainClassifier
+    domain_clf = DomainClassifier(llm=llm_router)
+    staging_processor = StagingProcessor(
+        core=brain_core_client, trust_scorer=trust_scorer,
+        domain_classifier=lambda item: domain_clf.classify(
+            item.get("body", item.get("summary", "")),
+            vault_context={"source": item.get("source", ""), "type": item.get("type", "")},
+        ).domain,
+    )
     sync_engine = SyncEngine(
         core=brain_core_client, mcp=mcp_client, llm=llm_router,
         trust_scorer=trust_scorer, enrichment=enrichment_svc,
@@ -549,6 +559,13 @@ def create_app() -> FastAPI:
                     enriched = await enrichment_svc.enrich_pending(p, limit=10)
                     if enriched:
                         log.info("enrichment.sweep", extra={"persona": p, "enriched": enriched})
+            except Exception:
+                pass  # best-effort
+            # Staging processor: classify pending ingested items.
+            try:
+                staged = await staging_processor.process_pending(limit=20)
+                if staged:
+                    log.info("staging.processed", extra={"count": staged})
             except Exception:
                 pass  # best-effort
             await asyncio.sleep(300)

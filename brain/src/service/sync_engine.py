@@ -163,16 +163,18 @@ class SyncEngine:
             log.info("sync.ingest.duplicate", source=source, source_id=source_id)
             return source_id
 
-        # Assign source trust provenance before storing.
-        if self._trust_scorer is not None:
-            provenance = self._trust_scorer.score(data)
-            for key, val in provenance.items():
-                if not data.get(key):
-                    data[key] = val
-
-        # Store in vault under the default persona.
-        persona_id = data.get("persona_id", "default")
-        item_id = await self._core.store_vault_item(persona_id, data)
+        # Route through staging for classification.
+        staging_id = await self._core.staging_ingest({
+            "connector_id": data.get("connector_id", "mcp-sync"),
+            "source": source,
+            "source_id": source_id,
+            "type": data.get("type", "note"),
+            "summary": data.get("summary", data.get("subject", "")),
+            "body": data.get("body_text", data.get("body", "")),
+            "sender": data.get("sender", ""),
+            "metadata": data.get("metadata", "{}") if isinstance(data.get("metadata"), str) else "{}",
+        })
+        item_id = staging_id or source_id
 
         # Track seen ID (with bounded eviction — MED-08).
         seen = self._seen_ids.setdefault(source, OrderedDict())
@@ -300,17 +302,17 @@ class SyncEngine:
                 skipped += 1
                 continue
 
-            # PRIMARY or THIN — store it.
+            # PRIMARY or THIN — ingest to staging.
             batch.append(item)
 
             if len(batch) >= _BATCH_SIZE:
-                await self._store_batch("default", batch)
+                await self._ingest_batch(batch)
                 stored += len(batch)
                 batch = []
 
         # Flush remaining batch.
         if batch:
-            await self._store_batch("default", batch)
+            await self._ingest_batch(batch)
             stored += len(batch)
 
         # Step 6: Update cursor.
@@ -367,85 +369,31 @@ class SyncEngine:
         return "PRIMARY"
 
     # ------------------------------------------------------------------
-    # Batch storage
+    # Batch ingestion (staging-first)
     # ------------------------------------------------------------------
 
-    async def _store_batch(
-        self, persona_id: str, items: list[dict]
-    ) -> None:
-        """Store a batch of items to core vault.
+    async def _ingest_batch(self, items: list[dict]) -> None:
+        """Push items to Core staging inbox for classification.
 
-        Generates embeddings for items that have summary or body text.
-        Retries once on failure (atomic — all or nothing on core side).
+        Each item is ingested individually (dedup is per-item).
+        The StagingProcessor (run in the sync loop) handles
+        classification and vault storage.
         """
-        # Generate embeddings for Tier 1 items only (intent/preference/context).
-        # Tier 2 items (transactional/ephemeral) get FTS5 keyword search only.
-        from .tier_classifier import classify
-
         for item in items:
-            tier = classify(item)
-            if tier == 1:
-                text = item.get("summary", "") or item.get("body", "") or ""
-                if text and self._llm is not None and "embedding" not in item:
-                    try:
-                        embedding = await self._llm.embed(text[:2000])
-                        item["embedding"] = embedding
-                    except Exception as exc:
-                        log.debug(
-                            "sync.embed_failed",
-                            source_id=item.get("source_id", ""),
-                            error=str(exc),
-                        )
+            try:
+                await self._core.staging_ingest({
+                    "connector_id": item.get("connector_id", "mcp-sync"),
+                    "source": item.get("source", ""),
+                    "source_id": item.get("source_id", ""),
+                    "type": item.get("type", "note"),
+                    "summary": item.get("summary", item.get("subject", "")),
+                    "body": item.get("body", item.get("body_text", "")),
+                    "sender": item.get("sender", ""),
+                    "metadata": item.get("metadata", "{}") if isinstance(item.get("metadata"), str) else "{}",
+                })
+            except Exception as exc:
+                log.warning("sync.staging_ingest_failed", extra={
+                    "source_id": item.get("source_id", ""),
+                    "error": str(exc),
+                })
 
-        # Assign source trust provenance before storing.
-        # Items without provenance default to caveated (never silently normal).
-        if self._trust_scorer is not None:
-            for item in items:
-                provenance = self._trust_scorer.score(item)
-                for key, val in provenance.items():
-                    if not item.get(key):
-                        item[key] = val
-                # Check for contradictions with existing vault data.
-                try:
-                    contradicts = await self._trust_scorer.check_contradiction(
-                        self._core, persona_id, item,
-                    )
-                    if contradicts:
-                        item["contradicts"] = contradicts
-                except Exception:
-                    pass  # best-effort
-
-        try:
-            await self._core.store_vault_batch(persona_id, items)
-        except Exception:
-            log.warning(
-                "sync.batch_retry",
-                persona_id=persona_id,
-                batch_size=len(items),
-            )
-            # Single retry for transient failures.
-            await self._core.store_vault_batch(persona_id, items)
-
-        # Fire-and-forget enrichment (L0/L1/embedding generation).
-        # If Brain crashes, the sweeper in the sync loop picks these up.
-        if self._enrichment is not None:
-            import asyncio
-            for item in items:
-                item_id = item.get("id", item.get("source_id", ""))
-                if item_id:
-                    asyncio.create_task(
-                        self._enrichment.enrich_item(persona_id, item_id)
-                    )
-
-        # Track seen IDs (with bounded eviction — MED-08).
-        for item in items:
-            source = item.get("source", "unknown")
-            source_id = item.get("source_id", "")
-            if source_id:
-                seen = self._seen_ids.setdefault(source, OrderedDict())
-                if source_id not in seen:
-                    if len(seen) >= _MAX_SEEN_PER_SOURCE:
-                        for _ in range(_MAX_SEEN_PER_SOURCE // 10):
-                            if seen:
-                                seen.popitem(last=False)
-                    seen[source_id] = None

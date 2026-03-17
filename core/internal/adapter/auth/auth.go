@@ -1190,6 +1190,7 @@ func (c *adminEndpointChecker) allowedForBrain(path string) bool {
 
 	brainAllowed := []string{
 		"/v1/vault",
+		"/v1/staging",
 		"/v1/personas",
 		"/v1/msg",
 		"/v1/task",
@@ -1239,11 +1240,11 @@ func (c *adminEndpointChecker) allowedForAdmin(path string) bool {
 	return false
 }
 
-// allowedForConnector: vault store only (ingestion), health.
-// Connectors ingest data but cannot read, search, or admin.
+// allowedForConnector: staging ingest only. Connectors push raw data
+// to staging; they cannot read vaults, query data, or access admin.
 func (c *adminEndpointChecker) allowedForConnector(path string) bool {
 	connectorAllowed := []string{
-		"/v1/vault/store",
+		"/v1/staging/ingest",
 		"/v1/task/ack",
 		"/healthz",
 		"/readyz",

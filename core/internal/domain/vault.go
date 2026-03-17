@@ -26,6 +26,9 @@ type VaultItem struct {
 	ContentL1         string `json:"content_l1"`         // one-paragraph overview
 	EnrichmentStatus  string `json:"enrichment_status"`  // pending, processing, ready, failed
 	EnrichmentVersion string `json:"enrichment_version"` // JSON: {"prompt_v":1,"embed_model":"gemma-3n"}
+	// Ingestion lineage (from staging pipeline)
+	StagingID   string `json:"staging_id,omitempty"`   // ID of the staging_inbox item that produced this
+	ConnectorID string `json:"connector_id,omitempty"` // which connector/account ingested this
 }
 
 // SearchMode defines the type of vault search.

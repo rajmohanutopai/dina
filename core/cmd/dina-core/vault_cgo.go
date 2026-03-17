@@ -3,7 +3,10 @@
 package main
 
 import (
+	"context"
+
 	"github.com/rajmohanutopai/dina/core/internal/adapter/sqlite"
+	"github.com/rajmohanutopai/dina/core/internal/domain"
 	"github.com/rajmohanutopai/dina/core/internal/port"
 )
 
@@ -21,4 +24,14 @@ func newBackupMgr(_ vaultBackend) port.BackupManager {
 // newAuditLogger returns a SQLite-backed audit logger using the identity database.
 func newAuditLogger(backend vaultBackend) port.VaultAuditLogger {
 	return sqlite.NewSQLiteAuditLogger(backend.(*sqlite.VaultAdapter).Pool())
+}
+
+// newStagingInbox returns a durable SQLite-backed staging inbox using identity.sqlite.
+func newStagingInbox(
+	backend vaultBackend,
+	isPersonaOpen func(string) bool,
+	storeToVault func(ctx context.Context, persona string, item domain.VaultItem) (string, error),
+) port.StagingInbox {
+	pool := backend.(*sqlite.VaultAdapter).Pool()
+	return sqlite.NewStagingInbox(pool, isPersonaOpen, storeToVault)
 }

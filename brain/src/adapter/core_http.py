@@ -338,6 +338,37 @@ class CoreHTTPClient:
         )
         return resp.json()
 
+    # -- Staging pipeline -------------------------------------------------
+
+    async def staging_ingest(self, item: dict) -> str:
+        """POST /v1/staging/ingest — push raw item to staging inbox."""
+        resp = await self._request("POST", "/v1/staging/ingest", json=item)
+        return resp.json().get("id", "")
+
+    async def staging_claim(self, limit: int = 10) -> list[dict]:
+        """POST /v1/staging/claim — claim pending items for classification."""
+        resp = await self._request("POST", "/v1/staging/claim", json={"limit": limit})
+        return resp.json().get("items", [])
+
+    async def staging_resolve(
+        self, staging_id: str, target_persona: str, classified_item: dict,
+    ) -> dict:
+        """POST /v1/staging/resolve — Brain sends classification, Core decides."""
+        resp = await self._request("POST", "/v1/staging/resolve", json={
+            "id": staging_id,
+            "target_persona": target_persona,
+            "classified_item": classified_item,
+        })
+        return resp.json()
+
+    async def staging_fail(self, staging_id: str, error: str) -> dict:
+        """POST /v1/staging/fail — report classification failure."""
+        resp = await self._request("POST", "/v1/staging/fail", json={
+            "id": staging_id,
+            "error": error,
+        })
+        return resp.json()
+
     async def search_vault(
         self, persona_id: str, query: str, mode: str = "hybrid",
         embedding: list[float] | None = None,

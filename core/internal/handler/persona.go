@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -22,6 +23,7 @@ type PersonaHandler struct {
 	VaultManager port.VaultManager      // opens vault when persona is unlocked
 	KeyDeriver   port.KeyDeriver        // derives DEK from master seed
 	Seed         []byte                 // master seed for DEK derivation
+	StagingInbox port.StagingInbox      // drains pending items on persona unlock
 }
 
 // createPersonaRequest is the JSON body for POST /v1/personas.
@@ -188,6 +190,15 @@ func (h *PersonaHandler) HandleUnlockPersona(w http.ResponseWriter, r *http.Requ
 		if err := h.VaultManager.Open(r.Context(), persona, dek); err != nil {
 			http.Error(w, `{"error":"failed to open vault"}`, http.StatusInternalServerError)
 			return
+		}
+
+		// Drain staging items that were pending unlock for this persona.
+		if h.StagingInbox != nil {
+			if n, err := h.StagingInbox.DrainPending(r.Context(), string(persona)); err != nil {
+				slog.Warn("staging drain on unlock failed", "persona", string(persona), "error", err)
+			} else if n > 0 {
+				slog.Info("staging drain on persona unlock", "persona", string(persona), "drained", n)
+			}
 		}
 	}
 

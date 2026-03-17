@@ -91,15 +91,30 @@ class BrainSigner:
     def _sign(
         self, method: str, path: str, body: bytes, query: str = "",
     ) -> dict[str, str]:
+        import secrets
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        nonce = secrets.token_hex(16)
         body_hash = hashlib.sha256(body).hexdigest()
-        payload = f"{method}\n{path}\n{query}\n{timestamp}\n{body_hash}"
+        payload = f"{method}\n{path}\n{query}\n{timestamp}\n{nonce}\n{body_hash}"
         signature = self._private_key.sign(payload.encode("utf-8"))
         return {
             "X-DID": "did:key:zReleaseTestSigner",
             "X-Timestamp": timestamp,
+            "X-Nonce": nonce,
             "X-Signature": signature.hex(),
         }
+
+    def sign_request(
+        self, method: str, path: str, body: bytes = b"",
+    ) -> tuple[str, str, str, str]:
+        """Sign a request. Returns (did, timestamp, nonce, signature_hex)."""
+        import secrets
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        nonce = secrets.token_hex(16)
+        body_hash = hashlib.sha256(body).hexdigest()
+        payload = f"{method}\n{path}\n\n{timestamp}\n{nonce}\n{body_hash}"
+        signature = self._private_key.sign(payload.encode("utf-8"))
+        return "did:key:zReleaseTestSigner", timestamp, nonce, signature.hex()
 
     def post(
         self, url: str, *, json: dict | None = None, timeout: int = 30,
