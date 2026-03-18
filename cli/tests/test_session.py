@@ -19,9 +19,9 @@ def test_new_id_format():
 def test_save_and_load(tmp_path):
     store = SessionStore(base_dir=tmp_path)
     entities = [
-        {"Type": "EMAIL", "Value": "john@example.com", "Start": 5, "End": 21},
-        {"Type": "PHONE", "Value": "+1-555-0100", "Start": 30, "End": 41},
-        {"Type": "EMAIL", "Value": "jane@example.com", "Start": 50, "End": 66},
+        {"type": "EMAIL", "value": "john@example.com", "start": 5, "end": 21},
+        {"type": "PHONE", "value": "+1-555-0100", "start": 30, "end": 41},
+        {"type": "EMAIL", "value": "jane@example.com", "start": 50, "end": 66},
     ]
     store.save("sess_abc12345", entities)
 
@@ -51,8 +51,8 @@ def test_save_python_style_keys(tmp_path):
 def test_rehydrate(tmp_path):
     store = SessionStore(base_dir=tmp_path)
     entities = [
-        {"Type": "PERSON", "Value": "Dr. Sharma", "Start": 0, "End": 10},
-        {"Type": "ORG", "Value": "Apollo Hospital", "Start": 14, "End": 29},
+        {"type": "PERSON", "value": "Dr. Sharma", "start": 0, "end": 10},
+        {"type": "ORG", "value": "Apollo Hospital", "start": 14, "end": 29},
     ]
     store.save("sess_rehy1234", entities)
 

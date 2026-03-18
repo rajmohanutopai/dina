@@ -69,7 +69,7 @@ class TestPersonaWall:
             pytest.skip("PII scrub endpoint not implemented")
         assert resp.status_code == 200
         data = resp.json()
-        scrubbed = data.get("scrubbed", data.get("Scrubbed", ""))
+        scrubbed = data.get("scrubbed", "")
         # Email should be scrubbed
         assert "raj@example.com" not in scrubbed, "Email PII should be scrubbed"
 

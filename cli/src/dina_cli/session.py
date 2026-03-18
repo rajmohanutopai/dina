@@ -23,16 +23,13 @@ class SessionStore:
         """Persist entities for a scrub session (atomic write).
 
         Normalizes entities from the Core PII response format.  Core returns
-        entities with uppercase keys (Go style)::
+        entities with snake_case keys::
 
-            {"Type": "EMAIL", "Value": "john@ex.com", "Start": 10, "End": 22}
+            {"type": "EMAIL", "value": "john@ex.com", "start": 10, "end": 22}
 
         The scrubbed text uses tokens like ``[EMAIL_1]``, ``[PHONE_1]``, etc.
         This method groups entities by type and numbers them so each entity
         maps to its corresponding token.
-
-        Both Go-style (Type/Value) and Python-style (type/value) keys are
-        accepted.
         """
         self._dir.mkdir(parents=True, exist_ok=True, mode=0o700)
 
@@ -42,9 +39,8 @@ class SessionStore:
         normalized: list[dict] = []
 
         for entity in entities:
-            # Accept both Go (uppercase) and Python (lowercase) key styles.
-            entity_type: str = entity.get("Type") or entity.get("type", "UNKNOWN")
-            entity_value: str = entity.get("Value") or entity.get("value", "")
+            entity_type: str = entity.get("type", "UNKNOWN")
+            entity_value: str = entity.get("value", "")
 
             type_counters[entity_type] += 1
             token = f"[{entity_type}_{type_counters[entity_type]}]"

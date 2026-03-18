@@ -167,14 +167,13 @@ class TestAgentGateway:
         devices = r.json().get("devices", [])
         agent_name = _state.get("agent_device_name", "external_agent_v1")
 
-        # PairedDevice has PascalCase fields: Name, TokenID, etc.
         found = any(
-            d.get("Name", "") == agent_name or d.get("name", "") == agent_name
+            d.get("name", "") == agent_name
             for d in devices
         )
         assert found, (
             f"Agent '{agent_name}' not found in device list.\n"
-            f"Devices: {[d.get('Name', d.get('name', '')) for d in devices]}"
+            f"Devices: {[d.get('name', '') for d in devices]}"
         )
 
     # ==================================================================
@@ -514,15 +513,14 @@ class TestAgentGateway:
         devices = list_r.json().get("devices", [])
         agent_name = _state.get("agent_device_name", "external_agent_v1")
         agent_device = next(
-            (d for d in devices
-             if d.get("Name", "") == agent_name or d.get("name", "") == agent_name),
+            (d for d in devices if d.get("name", "") == agent_name),
             None,
         )
         assert agent_device is not None, (
             f"Agent '{agent_name}' not found in device list after revocation.\n"
             f"Devices: {devices}"
         )
-        assert agent_device.get("Revoked", False) is True, (
+        assert agent_device.get("revoked", False) is True, (
             f"Agent device should be revoked but is not.\n"
             f"Device: {agent_device}"
         )

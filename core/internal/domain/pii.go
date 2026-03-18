@@ -2,14 +2,14 @@ package domain
 
 // PIIEntity represents a detected PII occurrence in text.
 type PIIEntity struct {
-	Type  string // EMAIL, PHONE, SSN, CREDIT_CARD, etc.
-	Value string // original value
-	Start int    // byte offset of start
-	End   int    // byte offset of end
+	Type  string `json:"type"`  // EMAIL, PHONE, SSN, CREDIT_CARD, etc.
+	Value string `json:"value"` // original value
+	Start int    `json:"start"` // byte offset of start
+	End   int    `json:"end"`   // byte offset of end
 }
 
 // ScrubResult holds the output of a PII scrub operation.
 type ScrubResult struct {
-	Scrubbed string      // text with PII replaced by tokens
-	Entities []PIIEntity // detected entities
+	Scrubbed string      `json:"scrubbed"` // text with PII replaced by tokens
+	Entities []PIIEntity `json:"entities"` // detected entities
 }

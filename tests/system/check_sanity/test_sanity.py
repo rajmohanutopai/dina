@@ -475,8 +475,8 @@ class TestDevicePairing:
         )
         assert complete_r.status_code == 200
         data = complete_r.json()
-        # Response uses PascalCase Go JSON: ClientToken, TokenID, NodeDID, WsURL
-        assert data.get("ClientToken") or data.get("client_token") or data.get("token")
+        # Response uses snake_case: device_id, node_did (handler returns ad-hoc map)
+        assert data.get("device_id") or data.get("node_did")
 
     def test_invalid_code_rejected(self, alonso_core, admin_headers):
         r = httpx.post(

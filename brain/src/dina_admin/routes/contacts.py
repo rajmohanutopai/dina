@@ -92,14 +92,13 @@ async def list_contacts() -> list[dict]:
 
     try:
         contacts = await _core_client.list_contacts()
-        # Normalise core's PascalCase keys to snake_case for the frontend.
         return [
             {
-                "did": c.get("DID", c.get("did", "")),
-                "name": c.get("Name", c.get("name", "")),
-                "trust_level": c.get("TrustLevel", c.get("trust_level", "unknown")),
+                "did": c.get("did", ""),
+                "name": c.get("name", ""),
+                "trust_level": c.get("trust_level", "unknown"),
                 "sharing_tier": _parse_sharing_tier(
-                    c.get("SharingPolicy", c.get("sharing_tier", "open")),
+                    c.get("sharing_policy", c.get("sharing_tier", "open")),
                 ),
             }
             for c in contacts

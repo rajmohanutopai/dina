@@ -15,35 +15,35 @@ const (
 
 // DinaMessage represents a DIDComm-compatible plaintext message.
 type DinaMessage struct {
-	ID          string
-	Type        MessageType
-	From        string   // sender DID
-	To          []string // recipient DIDs
-	CreatedTime int64    // Unix timestamp
-	Body        []byte   // JSON payload
-	Quarantined bool     // true if sender not in trust cache — flagged for user review
+	ID          string      `json:"id"`
+	Type        MessageType `json:"type"`
+	From        string      `json:"from"`         // sender DID
+	To          []string    `json:"to"`            // recipient DIDs
+	CreatedTime int64       `json:"created_time"`  // Unix timestamp
+	Body        []byte      `json:"body"`          // JSON payload
+	Quarantined bool        `json:"quarantined"`   // true if sender not in trust cache — flagged for user review
 }
 
 // DinaEnvelope represents the encrypted envelope for transport.
 type DinaEnvelope struct {
-	Typ        string // "application/dina-encrypted+json"
-	FromKID    string // "did:plc:...#key-1"
-	ToKID      string // "did:plc:...#key-1"
-	Ciphertext string // base64url-encoded
-	Sig        string // Ed25519 signature
+	Typ        string `json:"typ"`        // "application/dina-encrypted+json"
+	FromKID    string `json:"from_kid"`   // "did:plc:...#key-1"
+	ToKID      string `json:"to_kid"`     // "did:plc:...#key-1"
+	Ciphertext string `json:"ciphertext"` // base64url-encoded
+	Sig        string `json:"sig"`        // Ed25519 signature
 }
 
 // OutboxMessage represents a message queued for delivery.
 type OutboxMessage struct {
-	ID        string
-	ToDID     string
-	Payload   []byte
-	Sig       []byte // Ed25519 signature over plaintext (before encryption)
-	CreatedAt int64
-	NextRetry int64
-	Retries   int
-	Status    string // pending, sending, delivered, failed
-	Priority  int    // higher = more important (fiduciary > normal)
+	ID        string `json:"id"`
+	ToDID     string `json:"to_did"`
+	Payload   []byte `json:"payload"`
+	Sig       []byte `json:"sig"`        // Ed25519 signature over plaintext (before encryption)
+	CreatedAt int64  `json:"created_at"`
+	NextRetry int64  `json:"next_retry"`
+	Retries   int    `json:"retries"`
+	Status    string `json:"status"`   // pending, sending, delivered, failed
+	Priority  int    `json:"priority"` // higher = more important (fiduciary > normal)
 }
 
 // OutboxStatus enumerates outbox message states.

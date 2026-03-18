@@ -254,8 +254,8 @@ def scrub(ctx: click.Context, text: str) -> None:
     sessions: SessionStore = ctx.obj["sessions"]
     try:
         result = client.pii_scrub(text)
-        scrubbed = result.get("scrubbed", result.get("Scrubbed", text))
-        entities = result.get("entities", result.get("Entities", []))
+        scrubbed = result.get("scrubbed", text)
+        entities = result.get("entities", [])
 
         session_id = sessions.new_id()
         if entities:

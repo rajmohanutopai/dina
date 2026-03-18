@@ -165,7 +165,7 @@ def test_scrub_json(tmp_path):
     mc = MagicMock()
     mc.pii_scrub.return_value = {
         "scrubbed": "[EMAIL_1] sent a message",
-        "entities": [{"Type": "EMAIL", "Value": "john@ex.com", "Start": 0, "End": 11}],
+        "entities": [{"type": "EMAIL", "value": "john@ex.com", "start": 0, "end": 11}],
     }
     runner = CliRunner()
     with patch("dina_cli.main.DinaClient", return_value=mc), \
