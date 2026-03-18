@@ -64,26 +64,122 @@ def test_remember_with_category():
     mc.vault_store.assert_called_once()
 
 
-# ── recall ────────────────────────────────────────────────────────────────
+# ── ask ────────────────────────────────────────────────────────────────
 
 
 # TST-CLI-031
-def test_recall_json():
+def test_ask_json():
     mc = MagicMock()
     mc.reason.return_value = {"content": "Buy milk is in your vault."}
-    result = _invoke(["--json", "recall", "milk"], mock_client=mc)
+    result = _invoke(["--json", "ask", "milk"], mock_client=mc)
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert "content" in data
 
 
 # TST-CLI-032
-def test_recall_no_results():
+def test_ask_no_results():
     mc = MagicMock()
     mc.reason.return_value = {"content": ""}
-    result = _invoke(["recall", "nonexistent"], mock_client=mc)
+    result = _invoke(["ask", "nonexistent"], mock_client=mc)
     assert result.exit_code == 0
     assert "No results" in result.output
+
+
+# ── ask: async approval-wait-resume ────────────────────────────────────
+
+
+def test_ask_202_polls_until_complete():
+    """ask command polls on 202 and prints the answer when complete."""
+    mc = MagicMock()
+    mc.reason.return_value = {
+        "status": "pending_approval",
+        "request_id": "reason-abc123",
+        "approval_id": "apr-xyz",
+        "persona": "health",
+    }
+    # First poll: still pending. Second: complete.
+    mc.reason_status.side_effect = [
+        {"status": "pending_approval", "request_id": "reason-abc123"},
+        {"status": "complete", "request_id": "reason-abc123",
+         "content": "Your B12 is low at 180 pg/mL."},
+    ]
+
+    with patch("time.sleep"):  # skip real sleep
+        result = _invoke(["ask", "vitamin levels"], mock_client=mc)
+
+    assert result.exit_code == 0
+    assert "B12" in result.output
+    assert mc.reason_status.call_count == 2
+
+
+def test_ask_202_denied():
+    """ask command prints denied when approval is rejected."""
+    mc = MagicMock()
+    mc.reason.return_value = {
+        "status": "pending_approval",
+        "request_id": "reason-deny-test",
+        "approval_id": "apr-deny",
+        "persona": "health",
+    }
+    mc.reason_status.return_value = {
+        "status": "denied",
+        "request_id": "reason-deny-test",
+    }
+
+    with patch("time.sleep"):
+        result = _invoke(["ask", "health data"], mock_client=mc)
+
+    assert result.exit_code == 1
+    assert "denied" in result.output.lower()
+
+
+def test_ask_202_json_mode_returns_immediately():
+    """In JSON mode, ask returns 202 data immediately without polling."""
+    mc = MagicMock()
+    mc.reason.return_value = {
+        "status": "pending_approval",
+        "request_id": "reason-json-test",
+        "approval_id": "apr-json",
+        "persona": "health",
+    }
+
+    result = _invoke(["--json", "ask", "health"], mock_client=mc)
+
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["status"] == "pending_approval"
+    assert data["request_id"] == "reason-json-test"
+    mc.reason_status.assert_not_called()
+
+
+def test_reason_status_command():
+    """reason-status command shows current state."""
+    mc = MagicMock()
+    mc.reason_status.return_value = {
+        "status": "complete",
+        "request_id": "reason-status-test",
+        "content": "Here is your answer.",
+    }
+
+    result = _invoke(["reason-status", "reason-status-test"], mock_client=mc)
+
+    assert result.exit_code == 0
+    assert "Here is your answer" in result.output
+
+
+def test_reason_status_denied():
+    """reason-status shows denied message."""
+    mc = MagicMock()
+    mc.reason_status.return_value = {
+        "status": "denied",
+        "request_id": "reason-denied",
+    }
+
+    result = _invoke(["reason-status", "reason-denied"], mock_client=mc)
+
+    assert result.exit_code == 0
+    assert "denied" in result.output.lower()
 
 
 # ── validate ──────────────────────────────────────────────────────────────
@@ -264,7 +360,7 @@ def test_audit_json():
 def test_missing_keypair():
     """CLI exits with error when no Ed25519 keypair exists."""
     runner = CliRunner()
-    result = runner.invoke(cli, ["--json", "recall", "test"], env={})
+    result = runner.invoke(cli, ["--json", "ask", "test"], env={})
     assert result.exit_code != 0
 
 
@@ -386,27 +482,27 @@ def test_session_start_json():
     assert data["name"] == "tax"
 
 
-# ── recall with session ──────────────────────────────────────────────────
+# ── ask with session ──────────────────────────────────────────────────
 
 
 # TST-CLI-052
-def test_recall_uses_brain_reason():
+def test_ask_uses_brain_reason():
     """Recall routes through Brain's reason endpoint (persona-blind)."""
     mc = MagicMock()
     mc.reason.return_value = {"content": "Based on your vault data, here is the answer."}
-    result = _invoke(["recall", "office chair recommendations"], mock_client=mc)
+    result = _invoke(["ask", "office chair recommendations"], mock_client=mc)
     assert result.exit_code == 0
     mc.reason.assert_called_once()
     assert "answer" in result.output
 
 
 # TST-CLI-053
-def test_recall_with_session():
+def test_ask_with_session():
     """Recall with --session passes session to reason()."""
     mc = MagicMock()
     mc.reason.return_value = {"content": "Chair data found."}
     result = _invoke(
-        ["recall", "back pain", "--session", "chair-research"],
+        ["ask", "back pain", "--session", "chair-research"],
         mock_client=mc,
     )
     assert result.exit_code == 0
@@ -414,41 +510,41 @@ def test_recall_with_session():
 
 
 # TST-CLI-054
-def test_recall_no_persona_flag():
+def test_ask_no_persona_flag():
     """Recall does NOT have a --persona flag (agents are persona-blind)."""
     mc = MagicMock()
     mc.reason.return_value = {"content": "ok"}
-    result = _invoke(["recall", "test", "--persona", "health"], mock_client=mc)
+    result = _invoke(["ask", "test", "--persona", "health"], mock_client=mc)
     # --persona should be rejected as unknown option
     assert result.exit_code != 0
 
 
 # TST-CLI-055
-def test_recall_approval_required():
+def test_ask_approval_required():
     """Recall shows approval message when access requires approval."""
     mc = MagicMock()
     mc.reason.side_effect = DinaClientError("Access denied: approval_required")
-    result = _invoke(["recall", "health data"], mock_client=mc)
+    result = _invoke(["ask", "health data"], mock_client=mc)
     assert result.exit_code == 1
     assert "approval" in result.output.lower()
 
 
 # TST-CLI-056
-def test_recall_persona_locked_shows_hint():
+def test_ask_persona_locked_shows_hint():
     """Recall shows helpful message when persona is locked."""
     mc = MagicMock()
     mc.reason.side_effect = DinaClientError("Access denied: persona locked")
-    result = _invoke(["recall", "hello"], mock_client=mc)
+    result = _invoke(["ask", "hello"], mock_client=mc)
     assert result.exit_code == 1
     assert "locked" in result.output.lower()
 
 
 # TST-CLI-057
-def test_recall_with_verbose():
+def test_ask_with_verbose():
     """Recall --verbose flag is accepted."""
     mc = MagicMock()
     mc.reason.return_value = {"content": "ok"}
-    result = _invoke(["-v", "recall", "hello"], mock_client=mc)
+    result = _invoke(["-v", "ask", "hello"], mock_client=mc)
     assert result.exit_code == 0
 
 

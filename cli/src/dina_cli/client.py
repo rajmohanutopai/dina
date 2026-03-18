@@ -159,6 +159,13 @@ class DinaClient:
         )
         return resp.json()
 
+    def reason_status(self, request_id: str) -> dict:
+        """Poll the status of a pending reason request."""
+        resp = self._request(
+            self._core, "GET", f"/api/v1/reason/{request_id}/status",
+        )
+        return resp.json()
+
     # -- Vault (admin/internal only — agents use reason()) ----------------
 
     def vault_store(self, persona: str, item: dict) -> dict:

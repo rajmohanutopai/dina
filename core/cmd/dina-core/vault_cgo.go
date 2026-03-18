@@ -36,6 +36,12 @@ func newStagingInbox(
 	return sqlite.NewStagingInbox(pool, isPersonaOpen, storeToVault)
 }
 
+// newPendingReasonStore returns a SQLite-backed pending reason store using identity.sqlite.
+func newPendingReasonStore(backend vaultBackend) port.PendingReasonStore {
+	pool := backend.(*sqlite.VaultAdapter).Pool()
+	return sqlite.NewPendingReasonStore(pool)
+}
+
 // newContactDirectory returns a SQLite-backed contact directory using identity.sqlite.
 func newContactDirectory(backend vaultBackend) contactDirectoryFull {
 	pool := backend.(*sqlite.VaultAdapter).Pool()

@@ -31,22 +31,24 @@ class TestCLIAgentIntegration:
         assert data.get("stored") is True
 
     # REL-023
-    def test_rel_023_agent_can_recall_data(
+    def test_rel_023_agent_can_ask_data(
         self, release_services, agent_paired,
     ) -> None:
-        """Agent recalls stored data via `dina recall`."""
+        """Agent asks a question via `dina ask`."""
         # Store first
         release_services.agent_exec(
             "remember", "ergonomic chair with adjustable armrests",
         )
 
-        # Recall
-        result = release_services.agent_exec("recall", "ergonomic chair")
+        # Ask — returns JSON with content (or pending_approval for sensitive)
+        result = release_services.agent_exec("ask", "ergonomic chair")
         assert result.returncode == 0, f"CLI failed: {result.stderr}"
         data = json.loads(result.stdout)
-        assert isinstance(data, list)
-        # May or may not find results depending on FTS indexing timing
-        # The key assertion is that the CLI call succeeded against real Core
+        assert isinstance(data, dict), f"ask should return a JSON object, got: {type(data)}"
+        # Accept either a completed answer or pending_approval
+        assert "content" in data or "status" in data, (
+            f"Expected 'content' or 'status' in response, got: {list(data.keys())}"
+        )
 
     # REL-023
     def test_rel_023_agent_validates_safe_action(

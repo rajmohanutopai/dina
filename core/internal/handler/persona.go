@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -17,13 +18,15 @@ import (
 
 // PersonaHandler serves the /v1/personas endpoints.
 type PersonaHandler struct {
-	Identity     *service.IdentityService
-	Personas     port.PersonaManager
-	Approvals    port.ApprovalManager   // approval request management
-	VaultManager port.VaultManager      // opens vault when persona is unlocked
-	KeyDeriver   port.KeyDeriver        // derives DEK from master seed
-	Seed         []byte                 // master seed for DEK derivation
-	StagingInbox port.StagingInbox      // drains pending items on persona unlock
+	Identity       *service.IdentityService
+	Personas       port.PersonaManager
+	Approvals      port.ApprovalManager      // approval request management
+	VaultManager   port.VaultManager         // opens vault when persona is unlocked
+	KeyDeriver     port.KeyDeriver           // derives DEK from master seed
+	Seed           []byte                    // master seed for DEK derivation
+	StagingInbox   port.StagingInbox         // drains pending items on persona unlock
+	PendingReasons port.PendingReasonStore   // async approval-wait-resume
+	Brain          port.BrainClient          // for pushing resume events
 }
 
 // createPersonaRequest is the JSON body for POST /v1/personas.
@@ -355,8 +358,53 @@ func (h *PersonaHandler) HandleApprove(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Trigger resume for any pending reason requests linked to this approval.
+	if h.PendingReasons != nil && h.Brain != nil {
+		go h.resumePendingReasons(req.ID)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "approved", "id": req.ID})
+}
+
+// resumePendingReasons finds pending reason requests for the given approval
+// and pushes resume events to Brain. Runs in a goroutine.
+func (h *PersonaHandler) resumePendingReasons(approvalID string) {
+	ctx := context.Background()
+	records, err := h.PendingReasons.GetByApprovalID(ctx, approvalID)
+	if err != nil || len(records) == 0 {
+		return
+	}
+
+	for _, rec := range records {
+		slog.Info("pending_reason: triggering resume",
+			"request_id", rec.RequestID,
+			"approval_id", approvalID,
+		)
+		// Mark as resuming
+		_ = h.PendingReasons.UpdateStatus(ctx, rec.RequestID, domain.ReasonResuming, "", "")
+
+		// Push resume event to Brain. Brain replays the reasoning request.
+		// The response contains the completed result.
+		err := h.Brain.Process(ctx, domain.TaskEvent{
+			Type: "reason_resume",
+			Payload: map[string]interface{}{
+				"request_id":   rec.RequestID,
+				"request_meta": rec.RequestMeta,
+			},
+		})
+		if err != nil {
+			slog.Error("pending_reason: resume failed",
+				"request_id", rec.RequestID,
+				"error", err,
+			)
+			_ = h.PendingReasons.UpdateStatus(ctx, rec.RequestID, domain.ReasonFailed, "", err.Error())
+		}
+		// Note: Brain's reason_resume handler returns the result via the
+		// Process response. But Process() returns error only, not the payload.
+		// So Brain must call Core back to update the record.
+		// Alternative: Brain calls a new Core endpoint to submit the result.
+	}
 }
 
 type denyReq struct {
@@ -383,6 +431,20 @@ func (h *PersonaHandler) HandleDeny(w http.ResponseWriter, r *http.Request) {
 	if err := h.Approvals.DenyRequest(r.Context(), req.ID); err != nil {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusNotFound)
 		return
+	}
+
+	// Mark any pending reason requests for this approval as denied.
+	if h.PendingReasons != nil {
+		go func() {
+			records, err := h.PendingReasons.GetByApprovalID(context.Background(), req.ID)
+			if err != nil || len(records) == 0 {
+				return
+			}
+			for _, rec := range records {
+				_ = h.PendingReasons.UpdateStatus(context.Background(), rec.RequestID, domain.ReasonDenied, "", "user denied the approval request")
+				slog.Info("pending_reason: marked denied", "request_id", rec.RequestID)
+			}
+		}()
 	}
 
 	w.Header().Set("Content-Type", "application/json")

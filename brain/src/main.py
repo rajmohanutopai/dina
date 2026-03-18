@@ -679,7 +679,12 @@ def create_app() -> FastAPI:
         }
         if llm_router:
             result["llm_router"] = "available"
-            result["llm_models"] = ", ".join(llm_router.available_models())
+            result["llm_models"] = {
+                "lite": model_defaults.get("lite_model", "?"),
+                "primary": model_defaults.get("primary_model", "?"),
+                "heavy": model_defaults.get("heavy_model", "?"),
+                "available": llm_router.available_models(),
+            }
             result["llm_usage"] = llm_router.usage()
         return result
 
@@ -704,11 +709,16 @@ def create_app() -> FastAPI:
         await mcp_client.disconnect_all()
         log.info("brain.shutdown")
 
+    # Log model assignments so operators can see what's routing where.
+    _lite = model_defaults.get("lite_model", "?")
+    _primary = model_defaults.get("primary_model", "?")
+    _heavy = model_defaults.get("heavy_model", "?")
     log.info(
         "brain.ready",
         extra={
             "providers": list(providers.keys()),
             "scrubber": "spacy" if scrubber else "none",
+            "models": f"Lite: {_lite}, Primary: {_primary}, Heavy: {_heavy}",
         },
     )
 

@@ -917,7 +917,22 @@ func main() {
 		}
 	}()
 
-	personaH := &handler.PersonaHandler{Identity: identitySvc, Personas: personaMgr, Approvals: personaMgr, VaultManager: vaultMgr, KeyDeriver: keyDeriver, Seed: masterSeed, StagingInbox: stagingInbox}
+	pendingReasonStore := newPendingReasonStore(vaultMgr)
+
+	// Pending reason sweep: expire old entries.
+	if pendingReasonStore != nil {
+		go func() {
+			ticker := time.NewTicker(5 * time.Minute)
+			defer ticker.Stop()
+			for range ticker.C {
+				if n, err := pendingReasonStore.Sweep(context.Background()); err == nil && n > 0 {
+					slog.Info("pending_reason sweep", "cleaned", n)
+				}
+			}
+		}()
+	}
+
+	personaH := &handler.PersonaHandler{Identity: identitySvc, Personas: personaMgr, Approvals: personaMgr, VaultManager: vaultMgr, KeyDeriver: keyDeriver, Seed: masterSeed, StagingInbox: stagingInbox, PendingReasons: pendingReasonStore, Brain: brain}
 	sessionH := &handler.SessionHandler{Sessions: personaMgr}
 	trustH := &handler.TrustHandler{Trust: trustSvc, OwnDID: cfg.OwnDID}
 	contactH := &handler.ContactHandler{Contacts: contactDir, Sharing: sharingMgr}
@@ -1048,8 +1063,10 @@ func main() {
 
 	// Brain reasoning proxy — agents interact with Brain via Core.
 	// Core re-signs the request with its own service key (agents have device keys).
-	reasonH := &handler.ReasonHandler{Brain: brain}
+	reasonH := &handler.ReasonHandler{Brain: brain, PendingReasons: pendingReasonStore}
 	mux.HandleFunc("/api/v1/reason", reasonH.HandleReason)
+	mux.HandleFunc("/api/v1/reason/", reasonH.HandleReasonStatus) // GET /api/v1/reason/{id}/status
+	mux.HandleFunc("/v1/reason/", reasonH.HandleReasonResult)     // POST /v1/reason/{id}/result (Brain callback)
 
 	// Admin proxy
 	mux.HandleFunc("/admin/sync-status", adminH.HandleSyncStatus)

@@ -52,6 +52,11 @@ func newStagingInbox(
 	return vault.NewStagingInbox(isPersonaOpen, storeToVault)
 }
 
+// newPendingReasonStore returns nil in no-CGO mode (async approval disabled).
+func newPendingReasonStore(_ vaultBackend) port.PendingReasonStore {
+	return nil
+}
+
 // newContactDirectory returns an in-memory contact directory (no CGO — dev/test only).
 func newContactDirectory(_ vaultBackend) contactDirectoryFull {
 	return identity.NewContactDirectory()

@@ -8,11 +8,20 @@ type TaskEvent struct {
 }
 
 // ReasonResult holds the brain's response to a complex query.
+// When Status is "pending_approval", the request is waiting for persona
+// approval and Content is empty. The handler creates a PendingReasonRecord
+// and returns 202 to the caller.
 type ReasonResult struct {
-	Content   string `json:"content"`
-	Model     string `json:"model,omitempty"`
-	TokensIn  int    `json:"tokens_in,omitempty"`
-	TokensOut int    `json:"tokens_out,omitempty"`
+	Content          string `json:"content"`
+	Model            string `json:"model,omitempty"`
+	TokensIn         int    `json:"tokens_in,omitempty"`
+	TokensOut        int    `json:"tokens_out,omitempty"`
+	VaultContextUsed bool   `json:"vault_context_used,omitempty"`
+	// Async approval fields — populated only on 202 from Brain
+	Status     string `json:"status,omitempty"`
+	ApprovalID string `json:"approval_id,omitempty"`
+	Persona    string `json:"persona,omitempty"`
+	Message    string `json:"message,omitempty"`
 }
 
 // VaultEventType classifies vault state transitions.

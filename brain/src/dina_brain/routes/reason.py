@@ -130,6 +130,7 @@ async def reason_query(request: ReasonRequest) -> ReasonResponse:
     try:
         result = await _guardian.process_event(reason_event)
     except _ApprovalRequiredError as exc:
+        # Legacy fallback: if _handle_reason still raises (shouldn't normally)
         raise HTTPException(
             status_code=403,
             detail={
@@ -148,6 +149,21 @@ async def reason_query(request: ReasonRequest) -> ReasonResponse:
             status_code=500,
             detail="Reasoning request failed",
         ) from exc
+
+    # Check for pending_approval (async approval-wait-resume).
+    # Brain returns this instead of raising ApprovalRequiredError.
+    # Core will create a PendingReasonRecord and return 202 to the CLI.
+    if isinstance(result, dict) and result.get("status") == "pending_approval":
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=202,
+            content={
+                "status": "pending_approval",
+                "approval_id": result.get("approval_id", ""),
+                "persona": result.get("persona", ""),
+                "message": result.get("message", ""),
+            },
+        )
 
     return ReasonResponse(
         content=result.get("content", ""),

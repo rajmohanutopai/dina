@@ -830,6 +830,7 @@ class GuardianLoop:
             "document_ingest": self._handle_document_ingest,
             "reminder_fired": self._handle_reminder_fired,
             "reason": self._handle_reason,
+            "reason_resume": self._handle_reason_resume,
             "agent_response": self._handle_agent_response,
             "contact_neglect": self._handle_contact_neglect,
         }
@@ -2747,8 +2748,15 @@ class GuardianLoop:
                             "guardian.reason.vault_enriched",
                             tools_called=len(result.get("tools_called", [])),
                         )
-                except ApprovalRequiredError:
-                    raise  # propagate — must reach the CLI as an approval prompt
+                except ApprovalRequiredError as exc:
+                    # Don't propagate — return pending_approval so Core creates
+                    # a PendingReasonRecord and returns 202 to the CLI.
+                    return {
+                        "status": "pending_approval",
+                        "approval_id": exc.approval_id,
+                        "persona": exc.persona,
+                        "message": str(exc),
+                    }
                 except Exception as exc:
                     log.warning(
                         "guardian.reason.agent_failed",
@@ -2955,6 +2963,93 @@ class GuardianLoop:
         except Exception as exc:
             log.error("guardian.reason_failed", error=str(exc))
             raise
+
+    # ------------------------------------------------------------------
+    # Reason Resume (async approval-wait-resume)
+    # ------------------------------------------------------------------
+
+    async def _handle_reason_resume(self, event: dict) -> dict:
+        """Resume a pending reason request after approval.
+
+        Core pushes this event after a persona approval completes.
+        We replay the original reasoning request from scratch — the
+        approval grant now exists, so vault calls will succeed.
+
+        After completion, Brain calls Core's result endpoint to update
+        the PendingReasonRecord so the CLI can poll the result.
+        """
+        request_id = event.get("request_id", "")
+        request_meta_raw = event.get("request_meta", "{}")
+
+        import json as _json
+        try:
+            meta = _json.loads(request_meta_raw) if isinstance(request_meta_raw, str) else request_meta_raw
+        except _json.JSONDecodeError:
+            meta = {}
+
+        log.info("guardian.reason_resume.start", request_id=request_id)
+
+        # Rebuild the reason event from saved metadata
+        reason_event = {
+            "type": "reason",
+            "prompt": meta.get("prompt", ""),
+            "persona_tier": meta.get("persona_tier", "default"),
+            "provider": meta.get("provider"),
+            "agent_did": meta.get("agent_did", ""),
+            "session": meta.get("session", ""),
+            "source": meta.get("source", ""),
+        }
+
+        try:
+            result = await self._handle_reason(reason_event)
+
+            # Check if we hit another approval requirement (different persona).
+            # Cycle back to pending_approval with the new approval_id so Core
+            # can trigger another resume when the second approval arrives.
+            if isinstance(result, dict) and result.get("status") == "pending_approval":
+                new_approval_id = result.get("approval_id", "")
+                log.info("guardian.reason_resume.second_approval",
+                         request_id=request_id,
+                         new_approval_id=new_approval_id,
+                         persona=result.get("persona", ""))
+                await self._submit_reason_result(request_id, {
+                    "status": "pending_approval",
+                    "error": "",
+                    "approval_id": new_approval_id,
+                })
+                return result
+
+            # Submit completed result to Core
+            await self._submit_reason_result(request_id, {
+                "status": "complete",
+                "content": result.get("content", ""),
+                "model": result.get("model", ""),
+            })
+
+            log.info("guardian.reason_resume.complete", request_id=request_id)
+            return result
+
+        except Exception as exc:
+            log.error("guardian.reason_resume.failed",
+                      request_id=request_id, error=str(exc))
+            await self._submit_reason_result(request_id, {
+                "status": "failed",
+                "error": str(exc),
+            })
+            return {"error": str(exc)}
+
+    async def _submit_reason_result(self, request_id: str, result: dict) -> None:
+        """Submit a completed/failed reason result to Core's pending_reason store."""
+        try:
+            import json as _json
+            await self._core._request(
+                "POST",
+                f"/v1/reason/{request_id}/result",
+                json=result,
+            )
+        except Exception as exc:
+            log.error("guardian.reason_result_submit_failed",
+                      request_id=request_id, error=str(exc))
 
     # ------------------------------------------------------------------
     # Trust Density Analysis (SS19.2 — Verified Truth)

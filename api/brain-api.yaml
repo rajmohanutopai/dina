@@ -79,11 +79,27 @@ paths:
         required: true
       responses:
         '200':
-          description: Successful Response
+          description: Immediate reasoning response.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReasonResponse'
+        '202':
+          description: Approval required — Core creates pending record, CLI polls.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [pending_approval]
+                  approval_id:
+                    type: string
+                  persona:
+                    type: string
+                  message:
+                    type: string
         '422':
           description: Validation Error
           content:

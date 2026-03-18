@@ -507,6 +507,58 @@ components:
 
     # ── Error ──
 
+    ReasonResult:
+      type: object
+      properties:
+        content:
+          type: string
+        model:
+          type: string
+        tokens_in:
+          type: integer
+        tokens_out:
+          type: integer
+        vault_context_used:
+          type: boolean
+
+    ReasonAccepted:
+      type: object
+      description: 202 response when reasoning needs persona approval.
+      properties:
+        request_id:
+          type: string
+        approval_id:
+          type: string
+        persona:
+          type: string
+        status:
+          type: string
+          enum: [pending_approval]
+        message:
+          type: string
+
+    ReasonStatusResponse:
+      type: object
+      description: Polling response for a pending reason request.
+      properties:
+        request_id:
+          type: string
+        status:
+          type: string
+          enum: [pending_approval, resuming, complete, denied, expired, failed]
+        content:
+          type: string
+        model:
+          type: string
+        tokens_in:
+          type: integer
+        tokens_out:
+          type: integer
+        vault_context_used:
+          type: boolean
+        error:
+          type: string
+
     ErrorResponse:
       type: object
       required: [error]
@@ -1334,6 +1386,9 @@ paths:
   /api/v1/reason:
     post:
       summary: Reasoning query (proxied to Brain)
+      description: |
+        Sends a reasoning query to Brain. If Brain needs access to a sensitive
+        persona, returns 202 with a request_id for async polling.
       requestBody:
         required: true
         content:
@@ -1346,4 +1401,71 @@ paths:
                   type: string
       responses:
         "200":
-          description: Reasoning response (passthrough from Brain).
+          description: Immediate reasoning response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReasonResult"
+        "202":
+          description: Approval required — poll for result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReasonAccepted"
+
+  /api/v1/reason/{requestId}/status:
+    get:
+      summary: Poll status of a pending reason request
+      description: |
+        Caller-bound: only the original requester can read the result.
+        Returns 403 if caller DID doesn't match.
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Current status of the request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReasonStatusResponse"
+        "403":
+          description: Caller doesn't match original requester.
+        "404":
+          description: Request not found.
+
+  /v1/reason/{requestId}/result:
+    post:
+      summary: Submit completed reason result (Brain-only)
+      description: Called by Brain after completing a resumed reasoning request.
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [complete, failed, pending_approval, denied]
+                content:
+                  type: string
+                model:
+                  type: string
+                error:
+                  type: string
+                approval_id:
+                  type: string
+                  description: For second-approval cycle
+      responses:
+        "200":
+          description: Result recorded.

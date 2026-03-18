@@ -351,7 +351,44 @@ func migrateIdentity(db *sql.DB) error {
 		slog.Info("sqlite: identity migration v2 complete")
 	}
 
+	// --- Identity migration v3: pending_reason table ---
+	if !hasTable(db, "pending_reason") {
+		slog.Info("sqlite: applying identity migration v3 (pending_reason table)")
+
+		_, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS pending_reason (
+			request_id    TEXT PRIMARY KEY,
+			caller_did    TEXT NOT NULL,
+			session_name  TEXT DEFAULT '',
+			approval_id   TEXT NOT NULL,
+			status        TEXT NOT NULL DEFAULT 'pending_approval',
+			request_meta  TEXT NOT NULL DEFAULT '{}',
+			result        TEXT DEFAULT '',
+			error         TEXT DEFAULT '',
+			created_at    INTEGER NOT NULL,
+			updated_at    INTEGER NOT NULL,
+			expires_at    INTEGER NOT NULL
+		)`)
+		if err != nil {
+			return fmt.Errorf("identity v3: create pending_reason: %w", err)
+		}
+		db.ExecContext(ctx,
+			`CREATE INDEX IF NOT EXISTS idx_pending_reason_approval ON pending_reason(approval_id)`)
+		db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO schema_version(version, description) VALUES (3, 'Pending reason table for async approval-wait-resume')`)
+
+		slog.Info("sqlite: identity migration v3 complete")
+	}
+
 	return nil
+}
+
+// hasTable checks whether a table exists in the database.
+func hasTable(db *sql.DB, table string) bool {
+	var name string
+	err := db.QueryRow(
+		`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, table,
+	).Scan(&name)
+	return err == nil && name == table
 }
 
 // hasColumn checks whether a table has a specific column.

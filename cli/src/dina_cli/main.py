@@ -1,7 +1,7 @@
 """Click command group for the Dina CLI.
 
-Commands: remember, recall, validate, validate-status, scrub, rehydrate,
-draft, sign, audit.
+Commands: remember, ask, validate, validate-status, scrub, rehydrate,
+draft, audit, configure, session.
 """
 
 from __future__ import annotations
@@ -94,27 +94,90 @@ def remember(ctx: click.Context, text: str, category: str) -> None:
         ctx.exit(1)
 
 
-# ── recall ────────────────────────────────────────────────────────────────
+# ── ask ──────────────────────────────────────────────────────────────────
 
 
 @cli.command()
 @click.argument("query")
 @click.option("--session", default="", help="Session name for scoped access")
 @click.pass_context
-def recall(ctx: click.Context, query: str, session: str) -> None:
-    """Search the encrypted vault via Brain reasoning.
+def ask(ctx: click.Context, query: str, session: str) -> None:
+    """Ask Dina a question — she reasons over your encrypted vault.
 
-    Brain decides which personas to search based on the query content.
-    Agents are persona-blind — you never need to specify a persona.
+    Dina searches across all accessible personas, assembles context,
+    and gives you a personalized answer. You never need to specify
+    which persona to search — Dina figures that out.
     """
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     try:
         result = client.reason(query, session=session)
+
+        # Check for async approval-wait (202 from Core)
+        if result.get("status") == "pending_approval":
+            request_id = result.get("request_id", "")
+            persona = result.get("persona", "sensitive")
+
+            if json_mode:
+                print_result(result, json_mode)
+                return
+
+            click.echo(
+                f"Access to '{persona}' data requires approval.",
+                err=True,
+            )
+            click.echo("A notification has been sent. Approve via Telegram or dina-admin.", err=True)
+
+            if not request_id:
+                # No request_id — can't poll. Old-style 403.
+                ctx.exit(1)
+                return
+
+            click.echo("Awaiting approval...", err=True)
+
+            import time
+            timeout = 300   # 5 minutes
+            interval = 5    # poll every 5 seconds
+            elapsed = 0
+            while elapsed < timeout:
+                time.sleep(interval)
+                elapsed += interval
+                try:
+                    status = client.reason_status(request_id)
+                except DinaClientError:
+                    continue  # transient error, keep polling
+
+                st = status.get("status", "")
+                if st == "complete":
+                    answer = status.get("content", "")
+                    if answer:
+                        click.echo(answer)
+                    else:
+                        click.echo("Completed but no content returned.")
+                    return
+                elif st == "denied":
+                    click.echo("Access denied by user.", err=True)
+                    ctx.exit(1)
+                    return
+                elif st == "failed":
+                    click.echo(f"Request failed: {status.get('error', 'unknown')}", err=True)
+                    ctx.exit(1)
+                    return
+                elif st == "expired":
+                    click.echo("Request expired.", err=True)
+                    ctx.exit(1)
+                    return
+                # else: still pending or resuming — keep polling
+
+            click.echo("Timed out waiting for approval.", err=True)
+            click.echo(f"Check later: dina reason-status {request_id}", err=True)
+            ctx.exit(1)
+            return
+
+        # Normal (immediate) response
         if json_mode:
             print_result(result, json_mode)
         else:
-            # Brain returns a natural language answer
             answer = result.get("content", result.get("response", ""))
             if answer:
                 click.echo(answer)
@@ -128,6 +191,40 @@ def recall(ctx: click.Context, query: str, session: str) -> None:
             click.echo("Some data is locked. Unlock on your Home Node: ./dina-admin persona unlock", err=True)
         else:
             print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
+@cli.command("reason-status")
+@click.argument("request_id")
+@click.pass_context
+def reason_status_cmd(ctx: click.Context, request_id: str) -> None:
+    """Check the status of a pending reason request.
+
+    Use this when 'dina ask' timed out waiting for approval. Pass the
+    request_id that was printed at timeout.
+    """
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        status = client.reason_status(request_id)
+        if json_mode:
+            print_result(status, json_mode)
+        elif status.get("status") == "complete":
+            answer = status.get("content", "")
+            if answer:
+                click.echo(answer)
+            else:
+                click.echo("Completed but no content.")
+        elif status.get("status") == "denied":
+            click.echo("Access was denied by user.")
+        elif status.get("status") == "failed":
+            click.echo(f"Failed: {status.get('error', 'unknown')}")
+        elif status.get("status") == "expired":
+            click.echo("Request expired.")
+        else:
+            click.echo(f"Status: {status.get('status', 'unknown')}")
+    except DinaClientError as exc:
+        print_error(str(exc), json_mode)
         ctx.exit(1)
 
 
@@ -339,7 +436,7 @@ def draft(ctx: click.Context, content: str, recipient: str, channel: str, subjec
 # ── sign ──────────────────────────────────────────────────────────────────
 
 
-@cli.command()
+@cli.command(hidden=True)  # Internal plumbing — use dina-admin identity sign
 @click.argument("content")
 @click.pass_context
 def sign(ctx: click.Context, content: str) -> None:
@@ -464,7 +561,7 @@ def configure(ctx: click.Context) -> None:
         except DinaClientError as exc:
             click.echo(f"  Core ({core_url}): {exc}", err=True)
         click.echo()
-        click.echo("Ready. Try: dina recall \"hello\"")
+        click.echo("Ready. Try: dina ask \"hello\"")
 
 
 def _default_device_name() -> str:
@@ -543,7 +640,7 @@ def _pair_with_key(core_url: str, identity: Any, device_name: str) -> None:
 _IDENTITY_DIR = Path.home() / ".dina" / "cli" / "identity"
 
 
-@cli.command("init-identity")
+@cli.command("init-identity", hidden=True)  # Admin operation — use dina-admin
 @click.option("--restore-mnemonic", is_flag=True, help="Restore from a 24-word recovery phrase")
 @click.option("--restore-hex", is_flag=True, help="Restore from a 64-char hex seed")
 @click.pass_context
@@ -685,7 +782,7 @@ def init_identity(ctx: click.Context, restore_mnemonic: bool, restore_hex: bool)
 # ── bootstrap-server ─────────────────────────────────────────────────
 
 
-@cli.command("bootstrap-server")
+@cli.command("bootstrap-server", hidden=True)  # Admin operation — use dina-admin
 @click.option("--host", "ssh_host", help="SSH destination (user@host)")
 @click.option("--remote-dir", default="/opt/dina/secrets", show_default=True,
               help="Remote directory for secrets on the server")
@@ -834,7 +931,7 @@ def bootstrap_server(ctx: click.Context, ssh_host: str | None, remote_dir: str,
 # ── web ───────────────────────────────────────────────────────────────────
 
 
-@cli.command()
+@cli.command(hidden=True)  # Admin operation — use dina-admin web
 @click.pass_context
 def web(ctx: click.Context) -> None:
     """Open the Dina admin dashboard in your browser."""
