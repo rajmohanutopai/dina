@@ -427,3 +427,18 @@ Documented limitations of the current implementation, with the deployment contex
 
 **Resolution:** Phase 2 — migrate admin backend to Ed25519 service auth (same as vault/reason paths). Remove CLIENT_TOKEN entirely. See Authentication §2 above.
 
+### Trust Rings & Agent Data Access (Phase 3)
+
+**Design:** Contacts carry a `trust_ring` (0-3) that controls how action agents receive contact data:
+
+| Ring | Access Model | Example |
+|------|-------------|---------|
+| 0 (Unverified) | Blocked — agents get nothing | Unknown senders |
+| 1 (Inner Circle) | Late binding — agents get `{{dina.vault...}}` placeholders, Dina hydrates at execution time. Agent never sees raw PII. | Family, close friends |
+| 2 (Verified) | Plaintext for low-risk intents, late binding for risky ones | Verified contacts |
+| 3 (Transactional) | Plaintext — business/public info | Plumber, restaurants |
+
+**Why this matters:** When an action agent (OpenClaw, Perplexity Computer) needs to "send an email to your daughter," it must never see her actual email address. The agent drafts with `TO: {{dina.vault.social.daughter.email}}` and Dina hydrates locally at send time. This is Zero-Knowledge Execution — the cloud agent executes the task without ever holding the PII.
+
+**Status:** Domain types defined (`TrustRing`, `EntityResolutionRequest/Response` in `domain/contact.go`). Gateway handler and late-binding hydration engine are Phase 3. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for implementation plan.
+

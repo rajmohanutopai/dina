@@ -252,4 +252,75 @@ The following items were **missing from the original roadmap** but are described
 
 ---
 
+---
+
+## Trust Rings & Entity Resolution (Phase 3)
+
+The "Muscle vs Memory" architecture: action agents (OpenClaw, Perplexity, etc.) are the muscle — they execute tasks. Dina is the memory — she holds your context. Trust rings control how context flows to agents.
+
+### Trust Ring Model
+
+| Ring | Who | Agent Data Access | Example |
+|------|-----|-------------------|---------|
+| 0 — Unverified | New/unknown contacts | **Blocked** — agents get nothing | Random email sender |
+| 1 — Inner Circle | Family, close friends | **Late binding** — agents get `{{dina.vault...}}` placeholders, Dina hydrates at execution time. Agent never sees raw PII. | Your daughter, Sancho |
+| 2 — Verified | Known contacts with history | **Plaintext for approved intents**, late binding for risky ones | Dr. Sharma, verified colleagues |
+| 3 — Transactional | Business/utility contacts | **Plaintext** — public/business info, minimal privacy | Your plumber, a restaurant |
+
+### Entity Resolution Gateway
+
+`POST /v1/gateway/resolve-entity` — agents request contact data, Dina decides how to respond based on trust ring + intent risk.
+
+**Ring 1 response (late binding):**
+```json
+{
+  "resolution_mode": "late_binding",
+  "binding_references": {
+    "email": "{{dina.vault.social.sancho_id.email}}"
+  },
+  "instruction": "Draft your action using binding references. Dina hydrates at execution."
+}
+```
+
+**Ring 3 response (plaintext):**
+```json
+{
+  "resolution_mode": "plaintext",
+  "data": {
+    "email": "bob@business.com",
+    "phone": "+91-9876543210"
+  }
+}
+```
+
+### Why This Matters
+
+When OpenClaw drafts an email to your daughter, it uses `TO: {{dina.vault...}}`. Dina injects the real address locally at send time. The cloud LLM never sees your daughter's email address. This is the **Zero-Knowledge Execution** pattern.
+
+For a business contact, Dina hands over the data directly — no ceremony needed for public info.
+
+The decision engine is the trust ring + sharing policy + intent risk level. All three are evaluated at the gateway before any data leaves Dina's vault.
+
+### Implementation Status
+
+| Item | Status |
+|------|--------|
+| `TrustRing` field on Contact model | `DONE` (domain/contact.go) |
+| Entity resolution types (request/response) | `DONE` (domain/contact.go) |
+| `POST /v1/gateway/resolve-entity` handler | `NOT STARTED` |
+| Late binding hydration at execution layer | `NOT STARTED` |
+| Ring assignment from AppView trust scores | `NOT STARTED` |
+| Ring-based resolution policy engine | `NOT STARTED` |
+| OpenClaw integration contract (MCP) | `NOT STARTED` |
+| Admin UI for ring assignment | `NOT STARTED` |
+
+### Security Considerations
+
+- Ring 1 contacts: late binding references are opaque tokens — meaningless outside Dina's vault. Even if intercepted, they reveal nothing.
+- Ring assignment is user-controlled (via admin CLI) but also informed by the AppView trust network scores. The user has final say.
+- Intent risk level affects the resolution mode: even a Ring 2 contact gets late binding for `send_money` but plaintext for `schedule_meeting`.
+- All entity resolution events are audited in identity.sqlite.
+
+---
+
 *This roadmap is a living document. Status updates happen as work progresses. See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed technical specifications of each item.*

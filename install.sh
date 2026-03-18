@@ -93,16 +93,16 @@ build_crypto_image() {
         local _i=0
         while kill -0 "$_build_pid" 2>/dev/null; do
             _i=$(( (_i + 1) % ${#_spin} ))
-            printf "\r  ${CYAN}${_spin:_i:1}${RESET} %-43s" "Preparing crypto tools..."
+            printf "\r  ${CYAN}${_spin:_i:1}${RESET} %-42s" "Preparing crypto tools..."
             sleep 0.1
         done
         wait "$_build_pid"
         local _rc=$?
         if [ $_rc -eq 0 ]; then
             CRYPTO_IMAGE_BUILT=true
-            printf "\r  %-46s${GREEN}done${RESET}\n" "Preparing crypto tools..."
+            printf "\r  %-44s${GREEN}done${RESET}\n" "Preparing crypto tools..."
         else
-            printf "\r  %-46s${RED}failed${RESET}\n" "Preparing crypto tools..."
+            printf "\r  %-44s${RED}failed${RESET}\n" "Preparing crypto tools..."
             fail "Failed to build crypto tools image. Check that Docker is running."
         fi
     fi
