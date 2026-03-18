@@ -1,0 +1,464 @@
+# Shared domain types and enums for the Dina Core <-> Brain HTTP contract.
+# This is the single source of truth for types that cross service boundaries.
+
+# ─── Enums ────────────────────────────────────────────────────────────────
+
+PersonaTier:
+  type: string
+  enum: [default, standard, sensitive, locked]
+  description: Access tier for a persona's vault.
+
+SearchMode:
+  type: string
+  enum: [fts5, semantic, hybrid]
+  description: Vault search engine selection.
+
+Confidence:
+  type: string
+  enum: [high, medium, low, unverified]
+  description: Source confidence level for vault items.
+
+RetrievalPolicy:
+  type: string
+  enum: [normal, caveated, quarantine, briefing_only]
+  description: Controls how items surface in search results.
+
+EnrichmentStatus:
+  type: string
+  enum: [pending, processing, ready, failed]
+  description: L0/L1/embedding enrichment pipeline status.
+
+SenderTrust:
+  type: string
+  enum: [self, contact_ring1, contact_ring2, unknown, marketing]
+  description: Trust ring classification of the item's sender.
+
+SourceType:
+  type: string
+  enum: [self, contact, service, unknown, marketing]
+  description: Origin classification of the vault item.
+
+IntentRisk:
+  type: string
+  enum: [SAFE, MODERATE, HIGH, BLOCKED]
+  description: Agent intent risk classification.
+
+NotificationPriority:
+  type: string
+  enum: [fiduciary, solicited, engagement]
+  description: "Silence First priority tier (Law 1)."
+
+StagingStatus:
+  type: string
+  enum: [received, classifying, stored, pending_unlock, failed]
+  description: Staging inbox item lifecycle state.
+
+ApprovalStatus:
+  type: string
+  enum: [pending, approved, denied, expired]
+  description: Persona access approval request state.
+
+ReminderStatus:
+  type: string
+  enum: [pending, done, dismissed]
+  description: Scheduled reminder lifecycle state.
+
+ReminderKind:
+  type: string
+  enum: [payment_due, appointment, birthday]
+  description: Reminder category for scheduling rules.
+
+TaskStatus:
+  type: string
+  enum: [pending, running, completed, failed, dead, cancelled]
+  description: Async task queue item state.
+
+OutboxStatus:
+  type: string
+  enum: [pending, sending, delivered, failed]
+  description: Outbound D2D message delivery state.
+
+SharingTier:
+  type: string
+  enum: [none, summary, full, eta_only, free_busy, exact_location]
+  description: Per-contact data sharing granularity.
+
+TrustLevel:
+  type: string
+  enum: [unverified, verified, verified_actioned, blocked, unknown, trusted, untrusted]
+  description: Contact/agent trust classification.
+
+MessageType:
+  type: string
+  enum:
+    - dina/social/arrival
+    - dina/query
+    - dina/response
+    - dina/ack
+    - dina/heartbeat
+    - dina/estate/notify
+    - dina/estate/key_deliver
+  description: DIDComm message type identifier.
+
+# ─── Domain Types ─────────────────────────────────────────────────────────
+
+VaultItem:
+  type: object
+  required: [type, source, summary]
+  properties:
+    id:
+      type: string
+    type:
+      type: string
+      description: "Item type: email, event, note, document, etc."
+    source:
+      type: string
+      description: "Origin system: gmail, calendar, web, personal, etc."
+    source_id:
+      type: string
+      description: External ID (Gmail message ID, etc.)
+    contact_did:
+      type: string
+      description: DID of contact who sent/shared this.
+    summary:
+      type: string
+    body_text:
+      type: string
+    timestamp:
+      type: integer
+      format: int64
+      description: Unix seconds (when event occurred).
+    ingested_at:
+      type: integer
+      format: int64
+      description: Unix seconds (when stored in vault).
+    metadata:
+      type: string
+      description: JSON blob (encrypted PII lives here, not in searchable fields).
+    embedding:
+      type: array
+      items:
+        type: number
+        format: float
+      description: 768-dim float32 vector (EmbeddingGemma).
+    sender:
+      type: string
+      description: "Who authored: email address, 'user', or DID."
+    sender_trust:
+      $ref: '#/SenderTrust'
+    source_type:
+      $ref: '#/SourceType'
+    confidence:
+      $ref: '#/Confidence'
+    retrieval_policy:
+      $ref: '#/RetrievalPolicy'
+    contradicts:
+      type: string
+      description: ID of contradicted item (if any).
+    content_l0:
+      type: string
+      description: One-line abstract (tiered content).
+    content_l1:
+      type: string
+      description: One-paragraph overview (tiered content).
+    enrichment_status:
+      $ref: '#/EnrichmentStatus'
+    enrichment_version:
+      type: string
+      description: "JSON: {prompt_v, embed_model}."
+    staging_id:
+      type: string
+    connector_id:
+      type: string
+
+Contact:
+  type: object
+  required: [did, name]
+  properties:
+    did:
+      type: string
+    name:
+      type: string
+    alias:
+      type: string
+    trust_level:
+      $ref: '#/TrustLevel'
+    sharing_policy:
+      type: string
+      description: JSON-encoded sharing policy.
+    source:
+      type: string
+    source_confidence:
+      type: number
+      format: float
+    last_contact:
+      type: integer
+      format: int64
+
+TrustEntry:
+  type: object
+  properties:
+    did:
+      type: string
+    display_name:
+      type: string
+    trust_score:
+      type: number
+      format: float
+    trust_ring:
+      type: integer
+    relationship:
+      type: string
+    source:
+      type: string
+    last_verified_at:
+      type: integer
+      format: int64
+    updated_at:
+      type: integer
+      format: int64
+
+PairedDevice:
+  type: object
+  properties:
+    token_id:
+      type: string
+    name:
+      type: string
+    did:
+      type: string
+    auth_type:
+      type: string
+      description: "'ed25519' (primary)."
+    last_seen:
+      type: integer
+      format: int64
+    created_at:
+      type: integer
+      format: int64
+    revoked:
+      type: boolean
+
+StagingItem:
+  type: object
+  properties:
+    id:
+      type: string
+    connector_id:
+      type: string
+    source:
+      type: string
+    source_id:
+      type: string
+    source_hash:
+      type: string
+    type:
+      type: string
+    summary:
+      type: string
+    body:
+      type: string
+    sender:
+      type: string
+    metadata:
+      type: string
+    status:
+      $ref: '#/StagingStatus'
+    target_persona:
+      type: string
+    classified_item:
+      type: string
+      description: JSON blob of classified vault item.
+    error:
+      type: string
+    retry_count:
+      type: integer
+    claimed_at:
+      type: integer
+      format: int64
+    lease_until:
+      type: integer
+      format: int64
+    expires_at:
+      type: integer
+      format: int64
+    created_at:
+      type: integer
+      format: int64
+    updated_at:
+      type: integer
+      format: int64
+
+Reminder:
+  type: object
+  properties:
+    id:
+      type: string
+    type:
+      type: string
+    message:
+      type: string
+    trigger_at:
+      type: integer
+      format: int64
+    fired:
+      type: boolean
+    metadata:
+      type: string
+    source_item_id:
+      type: string
+    source:
+      type: string
+    persona:
+      type: string
+    timezone:
+      type: string
+    kind:
+      $ref: '#/ReminderKind'
+    status:
+      $ref: '#/ReminderStatus'
+
+ApprovalRequest:
+  type: object
+  properties:
+    id:
+      type: string
+    client_did:
+      type: string
+    persona_id:
+      type: string
+    session_id:
+      type: string
+    action:
+      type: string
+    scope:
+      type: string
+      enum: [single, session]
+    status:
+      $ref: '#/ApprovalStatus'
+    reason:
+      type: string
+    granted_by:
+      type: string
+    expires_at:
+      type: integer
+      format: int64
+    created_at:
+      type: integer
+      format: int64
+    updated_at:
+      type: integer
+      format: int64
+
+AgentSession:
+  type: object
+  properties:
+    id:
+      type: string
+    name:
+      type: string
+    agent_did:
+      type: string
+    status:
+      type: string
+    grants:
+      type: object
+      additionalProperties: true
+    created_at:
+      type: integer
+      format: int64
+    ended_at:
+      type: integer
+      format: int64
+
+PIIEntity:
+  type: object
+  properties:
+    type:
+      type: string
+      description: "Entity category: EMAIL, PHONE, SSN, CREDIT_CARD, etc."
+    value:
+      type: string
+    start:
+      type: integer
+    end:
+      type: integer
+
+ScrubResult:
+  type: object
+  properties:
+    scrubbed:
+      type: string
+      description: Text with PII replaced by tokens.
+    entities:
+      type: array
+      items:
+        $ref: '#/PIIEntity'
+
+ImportResult:
+  type: object
+  properties:
+    files_restored:
+      type: integer
+    did:
+      type: string
+    persona_count:
+      type: integer
+    requires_repair:
+      type: boolean
+    requires_restart:
+      type: boolean
+
+DinaMessage:
+  type: object
+  properties:
+    id:
+      type: string
+    type:
+      $ref: '#/MessageType'
+    from:
+      type: string
+      description: Sender DID.
+    to:
+      type: array
+      items:
+        type: string
+      description: Recipient DIDs.
+    created_time:
+      type: integer
+      format: int64
+    body:
+      type: string
+      format: byte
+      description: Base64-encoded JSON payload.
+    quarantined:
+      type: boolean
+
+Intent:
+  type: object
+  required: [agent_did, action]
+  properties:
+    agent_did:
+      type: string
+    action:
+      type: string
+    target:
+      type: string
+    persona_id:
+      type: string
+    trust_level:
+      $ref: '#/TrustLevel'
+    constraints:
+      type: object
+      additionalProperties:
+        type: boolean
+
+Decision:
+  type: object
+  properties:
+    allowed:
+      type: boolean
+    reason:
+      type: string
+    audit:
+      type: boolean

@@ -1,0 +1,1349 @@
+openapi: "3.1.0"
+info:
+  title: Dina Core API
+  description: |
+    Internal HTTP API for the Dina Home Node Core (Go).
+    Consumed by Brain's CoreHTTPClient, CLI, and paired devices.
+  version: "0.1.0"
+  contact:
+    name: Dina
+    url: https://github.com/rajmohanutopai/dina
+
+servers:
+  - url: http://localhost:8100
+    description: Local development
+
+security:
+  - Ed25519Signature: []
+  - BearerToken: []
+
+components:
+  securitySchemes:
+    Ed25519Signature:
+      type: apiKey
+      in: header
+      name: X-Signature
+      description: |
+        Ed25519 signature over canonical payload:
+        METHOD\nPATH\nQUERY\nTIMESTAMP\nNONCE\nSHA256(BODY).
+        Additional headers: X-DID, X-Timestamp, X-Nonce.
+    BearerToken:
+      type: http
+      scheme: bearer
+      description: CLIENT_TOKEN (admin/bootstrap path).
+
+  schemas:
+    # ── Shared schemas (referenced from components/schemas.yaml) ──
+    # In a production setup these would use $ref to the shared file.
+    # For now, we inline the most-used types and reference the canonical
+    # definitions in api/components/schemas.yaml for the full list.
+
+    # ── Vault request/response DTOs ──
+
+    VaultQueryRequest:
+      type: object
+      required: [persona, query]
+      properties:
+        persona:
+          type: string
+        query:
+          type: string
+        mode:
+          type: string
+          enum: [fts5, semantic, hybrid]
+          default: hybrid
+        types:
+          type: array
+          items:
+            type: string
+        limit:
+          type: integer
+          maximum: 100
+          default: 50
+        embedding:
+          type: array
+          items:
+            type: number
+            format: float
+          description: 768-dim vector from Brain (enables semantic/hybrid).
+        retrieval_policy:
+          type: string
+          enum: [normal, caveated, quarantine, briefing_only]
+        include_all:
+          type: boolean
+          default: false
+        include_content:
+          type: boolean
+          default: false
+        user_origin:
+          type: string
+          enum: [telegram, admin]
+          description: Signed user-origin elevation.
+
+    VaultQueryResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: 'components/schemas.yaml#/VaultItem'
+
+    VaultStoreRequest:
+      type: object
+      required: [persona, item]
+      properties:
+        persona:
+          type: string
+        item:
+          $ref: 'components/schemas.yaml#/VaultItem'
+        user_origin:
+          type: string
+          enum: [telegram, admin]
+
+    VaultStoreResponse:
+      type: object
+      properties:
+        id:
+          type: string
+
+    VaultStoreBatchRequest:
+      type: object
+      required: [persona, items]
+      properties:
+        persona:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: 'components/schemas.yaml#/VaultItem'
+        user_origin:
+          type: string
+          enum: [telegram, admin]
+
+    VaultStoreBatchResponse:
+      type: object
+      properties:
+        ids:
+          type: array
+          items:
+            type: string
+
+    VaultEnrichRequest:
+      type: object
+      properties:
+        content_l0:
+          type: string
+        content_l1:
+          type: string
+        embedding:
+          type: array
+          items:
+            type: number
+            format: float
+        enrichment_status:
+          type: string
+          enum: [pending, processing, ready, failed]
+        enrichment_version:
+          type: string
+
+    VaultEnrichResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        enrichment_status:
+          type: string
+
+    KVValueResponse:
+      type: object
+      properties:
+        value:
+          type: string
+
+    KVValueRequest:
+      type: object
+      required: [value]
+      properties:
+        value:
+          type: string
+
+    # ── Staging DTOs ──
+
+    StagingIngestRequest:
+      type: object
+      required: [source, type, summary]
+      properties:
+        connector_id:
+          type: string
+        source:
+          type: string
+        source_id:
+          type: string
+        source_hash:
+          type: string
+        type:
+          type: string
+        summary:
+          type: string
+        body:
+          type: string
+        metadata:
+          type: string
+
+    StagingIngestResponse:
+      type: object
+      properties:
+        id:
+          type: string
+
+    StagingClaimRequest:
+      type: object
+      properties:
+        limit:
+          type: integer
+          default: 10
+
+    StagingClaimResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: 'components/schemas.yaml#/StagingItem'
+
+    StagingResolveRequest:
+      type: object
+      required: [id, target_persona, classified_item]
+      properties:
+        id:
+          type: string
+        target_persona:
+          type: string
+        classified_item:
+          type: object
+          additionalProperties: true
+        enrichment_status:
+          type: string
+          enum: [pending, processing, ready, failed]
+
+    StagingFailRequest:
+      type: object
+      required: [id, error]
+      properties:
+        id:
+          type: string
+        error:
+          type: string
+
+    # ── Persona DTOs ──
+
+    CreatePersonaRequest:
+      type: object
+      required: [name, passphrase]
+      properties:
+        name:
+          type: string
+          pattern: "^[a-z][a-z0-9_]{0,63}$"
+        tier:
+          type: string
+          enum: [default, standard, sensitive, locked]
+          default: default
+        passphrase:
+          type: string
+
+    CreatePersonaResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [created, exists]
+        vault:
+          type: string
+          enum: [open, closed]
+
+    PersonaListResponse:
+      type: object
+      properties:
+        personas:
+          type: array
+          items:
+            type: string
+
+    # ── Contact DTOs ──
+
+    ContactListResponse:
+      type: object
+      properties:
+        contacts:
+          type: array
+          items:
+            $ref: 'components/schemas.yaml#/Contact'
+
+    AddContactRequest:
+      type: object
+      required: [did, name]
+      properties:
+        did:
+          type: string
+        name:
+          type: string
+        trust_level:
+          type: string
+          enum: [unverified, verified, verified_actioned, blocked, unknown, trusted, untrusted]
+          default: unknown
+
+    # ── Device DTOs ──
+
+    DeviceListResponse:
+      type: object
+      properties:
+        devices:
+          type: array
+          items:
+            $ref: 'components/schemas.yaml#/PairedDevice'
+
+    InitiatePairingResponse:
+      type: object
+      properties:
+        code:
+          type: string
+        expires_in:
+          type: integer
+          description: Seconds until code expires.
+
+    CompletePairingRequest:
+      type: object
+      required: [code, device_name]
+      properties:
+        code:
+          type: string
+        device_name:
+          type: string
+        public_key_multibase:
+          type: string
+
+    CompletePairingResponse:
+      type: object
+      properties:
+        device_id:
+          type: string
+        node_did:
+          type: string
+
+    # ── Identity DTOs ──
+
+    SignRequest:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: string
+          description: Hex-encoded bytes to sign.
+
+    SignResponse:
+      type: object
+      properties:
+        signature:
+          type: string
+          description: Hex-encoded Ed25519 signature.
+
+    # ── Notification DTOs ──
+
+    NotifyRequest:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+        priority:
+          type: string
+          enum: [fiduciary, solicited, engagement]
+          default: solicited
+        force_push:
+          type: boolean
+          default: false
+
+    # ── Reminder DTOs ──
+
+    StoreReminderRequest:
+      type: object
+      required: [type, message, trigger_at]
+      properties:
+        type:
+          type: string
+        message:
+          type: string
+        trigger_at:
+          type: integer
+          format: int64
+        metadata:
+          type: string
+        source_item_id:
+          type: string
+        source:
+          type: string
+        persona:
+          type: string
+        timezone:
+          type: string
+        kind:
+          type: string
+          enum: [payment_due, appointment, birthday]
+
+    ReminderListResponse:
+      type: object
+      properties:
+        reminders:
+          type: array
+          items:
+            $ref: 'components/schemas.yaml#/Reminder'
+
+    # ── Audit DTOs ──
+
+    AuditAppendRequest:
+      type: object
+      required: [persona, action]
+      properties:
+        persona:
+          type: string
+        action:
+          type: string
+        requester:
+          type: string
+        query_type:
+          type: string
+        reason:
+          type: string
+        metadata:
+          type: string
+
+    AuditQueryResponse:
+      type: object
+      properties:
+        entries:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+
+    # ── Export/Import DTOs ──
+
+    ExportRequest:
+      type: object
+      required: [passphrase]
+      properties:
+        passphrase:
+          type: string
+        dest_path:
+          type: string
+
+    ExportResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        archive_path:
+          type: string
+
+    ImportRequest:
+      type: object
+      required: [archive_path, passphrase]
+      properties:
+        archive_path:
+          type: string
+        passphrase:
+          type: string
+        force:
+          type: boolean
+          default: false
+
+    # ── PII DTOs ──
+
+    PIIScrubRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+
+    # ── Session DTOs ──
+
+    SessionListResponse:
+      type: object
+      properties:
+        sessions:
+          type: array
+          items:
+            $ref: 'components/schemas.yaml#/AgentSession'
+
+    # ── Trust DTOs ──
+
+    TrustCacheResponse:
+      type: object
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: 'components/schemas.yaml#/TrustEntry'
+
+    TrustCacheStats:
+      type: object
+      properties:
+        count:
+          type: integer
+        last_sync_at:
+          type: integer
+          format: int64
+
+    # ── Health DTOs ──
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+
+    # ── Error ──
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+paths:
+  # ── Health ──
+
+  /healthz:
+    get:
+      summary: Liveness probe
+      security: []
+      responses:
+        "200":
+          description: Core is alive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /readyz:
+    get:
+      summary: Readiness probe
+      security: []
+      responses:
+        "200":
+          description: Core is ready to serve.
+
+  # ── Vault ──
+
+  /v1/vault/query:
+    post:
+      summary: Hybrid search across persona vault
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VaultQueryRequest'
+      responses:
+        "200":
+          description: Search results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultQueryResponse'
+        "403":
+          description: Persona locked or approval required.
+
+  /v1/vault/store:
+    post:
+      summary: Store a single vault item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VaultStoreRequest'
+      responses:
+        "201":
+          description: Item stored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultStoreResponse'
+
+  /v1/vault/store/batch:
+    post:
+      summary: Store multiple vault items atomically
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VaultStoreBatchRequest'
+      responses:
+        "201":
+          description: Items stored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultStoreBatchResponse'
+
+  /v1/vault/item/{id}:
+    get:
+      summary: Retrieve a single vault item by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: persona
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: user_origin
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Vault item.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/schemas.yaml#/VaultItem'
+        "404":
+          description: Item not found.
+
+    delete:
+      summary: Delete a vault item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: persona
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted.
+
+  /v1/vault/item/{id}/enrich:
+    patch:
+      summary: Update enrichment fields on a vault item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: persona
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VaultEnrichRequest'
+      responses:
+        "200":
+          description: Enrichment updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultEnrichResponse'
+
+  /v1/vault/kv/{key}:
+    get:
+      summary: Retrieve a KV value
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: KV value.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KVValueResponse'
+        "404":
+          description: Key not found.
+    put:
+      summary: Store a KV value
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KVValueRequest'
+      responses:
+        "204":
+          description: Stored.
+
+  # ── Staging ──
+
+  /v1/staging/ingest:
+    post:
+      summary: Ingest a raw item from a connector
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StagingIngestRequest'
+      responses:
+        "201":
+          description: Ingested.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StagingIngestResponse'
+
+  /v1/staging/claim:
+    post:
+      summary: Brain claims a batch of unclassified items
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StagingClaimRequest'
+      responses:
+        "200":
+          description: Claimed items.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StagingClaimResponse'
+
+  /v1/staging/resolve:
+    post:
+      summary: Brain publishes a classified item to vault
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StagingResolveRequest'
+      responses:
+        "200":
+          description: Resolved.
+
+  /v1/staging/fail:
+    post:
+      summary: Brain marks a staging item as failed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StagingFailRequest'
+      responses:
+        "200":
+          description: Marked failed.
+
+  # ── Identity ──
+
+  /v1/did:
+    get:
+      summary: Get Core's DID
+      responses:
+        "200":
+          description: DID document.
+
+  /v1/did/sign:
+    post:
+      summary: Sign data with Core's Ed25519 private key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignRequest'
+      responses:
+        "200":
+          description: Signature.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignResponse'
+
+  # ── Personas ──
+
+  /v1/personas:
+    get:
+      summary: List all personas
+      responses:
+        "200":
+          description: Persona list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonaListResponse'
+    post:
+      summary: Create a new persona
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePersonaRequest'
+      responses:
+        "201":
+          description: Persona created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatePersonaResponse'
+        "200":
+          description: Persona already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatePersonaResponse'
+
+  /v1/persona/unlock:
+    post:
+      summary: Unlock a persona vault
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [persona, passphrase]
+              properties:
+                persona:
+                  type: string
+                passphrase:
+                  type: string
+      responses:
+        "200":
+          description: Unlocked.
+
+  /v1/persona/lock:
+    post:
+      summary: Lock a persona vault
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [persona]
+              properties:
+                persona:
+                  type: string
+      responses:
+        "200":
+          description: Locked.
+
+  # ── Contacts ──
+
+  /v1/contacts:
+    get:
+      summary: List all contacts
+      responses:
+        "200":
+          description: Contact list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContactListResponse'
+    post:
+      summary: Add a contact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddContactRequest'
+      responses:
+        "201":
+          description: Contact added.
+
+  # ── Devices ──
+
+  /v1/devices:
+    get:
+      summary: List paired devices
+      responses:
+        "200":
+          description: Device list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceListResponse'
+
+  /v1/devices/{id}:
+    delete:
+      summary: Revoke a paired device
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Revoked.
+
+  /v1/pair/initiate:
+    post:
+      summary: Initiate device pairing
+      responses:
+        "200":
+          description: Pairing code.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InitiatePairingResponse'
+
+  /v1/pair/complete:
+    post:
+      summary: Complete device pairing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompletePairingRequest'
+      responses:
+        "200":
+          description: Pairing complete.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompletePairingResponse'
+
+  # ── Sessions ──
+
+  /v1/session/start:
+    post:
+      summary: Start an agent session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+      responses:
+        "200":
+          description: Session started.
+
+  /v1/session/end:
+    post:
+      summary: End an agent session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+      responses:
+        "200":
+          description: Session ended.
+
+  /v1/sessions:
+    get:
+      summary: List active sessions
+      responses:
+        "200":
+          description: Session list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionListResponse'
+
+  # ── Agent Safety ──
+
+  /v1/agent/validate:
+    post:
+      summary: Validate agent intent (proxied to Brain's guardian)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, action]
+              properties:
+                type:
+                  type: string
+                  const: agent_intent
+                action:
+                  type: string
+                target:
+                  type: string
+      responses:
+        "200":
+          description: Guardian decision (passthrough from Brain).
+        "401":
+          description: Unauthenticated.
+        "502":
+          description: Brain unavailable.
+
+  # ── Notifications ──
+
+  /v1/notify:
+    post:
+      summary: Push notification with priority tier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotifyRequest'
+      responses:
+        "200":
+          description: Notification processed.
+
+  # ── Reminders ──
+
+  /v1/reminder:
+    post:
+      summary: Store a reminder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoreReminderRequest'
+      responses:
+        "201":
+          description: Reminder stored.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+
+  /v1/reminders/pending:
+    get:
+      summary: List unfired reminders
+      responses:
+        "200":
+          description: Pending reminders.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReminderListResponse'
+
+  # ── PII ──
+
+  /v1/pii/scrub:
+    post:
+      summary: Tier 1 PII scrubbing (regex-based)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PIIScrubRequest'
+      responses:
+        "200":
+          description: Scrub result.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/schemas.yaml#/ScrubResult'
+
+  # ── Audit ──
+
+  /v1/audit/append:
+    post:
+      summary: Append an audit entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuditAppendRequest'
+      responses:
+        "201":
+          description: Entry appended.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+
+  /v1/audit/query:
+    get:
+      summary: Query audit log
+      parameters:
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: persona
+          in: query
+          schema:
+            type: string
+        - name: requester
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+      responses:
+        "200":
+          description: Audit entries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditQueryResponse'
+
+  # ── Trust ──
+
+  /v1/trust/cache:
+    get:
+      summary: List cached trust entries
+      responses:
+        "200":
+          description: Trust cache.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrustCacheResponse'
+
+  /v1/trust/stats:
+    get:
+      summary: Trust cache statistics
+      responses:
+        "200":
+          description: Stats.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrustCacheStats'
+
+  /v1/trust/sync:
+    post:
+      summary: Trigger manual trust sync from AppView
+      responses:
+        "200":
+          description: Sync complete.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  synced_count:
+                    type: integer
+
+  /v1/trust/resolve:
+    get:
+      summary: Resolve trust profile for a DID (passthrough to AppView)
+      parameters:
+        - name: did
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Trust profile (raw AppView JSON passthrough).
+        "404":
+          description: DID not found in AppView.
+        "503":
+          description: AppView not configured.
+
+  # ── Messaging ──
+
+  /v1/msg/send:
+    post:
+      summary: Send encrypted D2D message
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to, body, type]
+              properties:
+                to:
+                  type: string
+                body:
+                  type: string
+                type:
+                  type: string
+      responses:
+        "200":
+          description: Message sent.
+
+  /v1/msg/inbox:
+    get:
+      summary: Retrieve inbox messages
+      responses:
+        "200":
+          description: Inbox messages.
+
+  # ── Export/Import ──
+
+  /v1/export:
+    post:
+      summary: Export vault as encrypted archive
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExportRequest'
+      responses:
+        "200":
+          description: Archive created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportResponse'
+
+  /v1/import:
+    post:
+      summary: Import vault from encrypted archive
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportRequest'
+      responses:
+        "200":
+          description: Import complete.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/schemas.yaml#/ImportResult'
+
+  # ── Approvals ──
+
+  /v1/persona/approvals:
+    get:
+      summary: List pending approval requests
+      responses:
+        "200":
+          description: Approvals.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  approvals:
+                    type: array
+                    items:
+                      $ref: 'components/schemas.yaml#/ApprovalRequest'
+
+  /v1/persona/approve:
+    post:
+      summary: Approve a persona access request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+                scope:
+                  type: string
+                  enum: [single, session]
+                  default: session
+                granted_by:
+                  type: string
+      responses:
+        "200":
+          description: Approved.
+
+  /v1/persona/deny:
+    post:
+      summary: Deny a persona access request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+      responses:
+        "200":
+          description: Denied.
+
+  # ── Task Queue ──
+
+  /v1/task/ack:
+    post:
+      summary: Acknowledge task completion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task_id]
+              properties:
+                task_id:
+                  type: string
+      responses:
+        "200":
+          description: Acknowledged.
+
+  # ── Reason Proxy ──
+
+  /api/v1/reason:
+    post:
+      summary: Reasoning query (proxied to Brain)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt:
+                  type: string
+      responses:
+        "200":
+          description: Reasoning response (passthrough from Brain).
