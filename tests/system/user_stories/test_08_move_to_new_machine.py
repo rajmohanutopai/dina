@@ -141,7 +141,7 @@ class TestMoveToNewMachine:
         for item in items:
             r = httpx.post(
                 f"{alonso_core}/v1/vault/store",
-                json={"persona": "personal", "item": item},
+                json={"persona": "general", "item": item},
                 headers=admin_headers,
                 timeout=10,
             )
@@ -214,7 +214,7 @@ class TestMoveToNewMachine:
         r = httpx.post(
             f"{alonso_core}/v1/vault/query",
             json={
-                "persona": "personal",
+                "persona": "general",
                 "query": "migration test portability",
                 "mode": "fts5",
                 "limit": 10,
@@ -335,7 +335,7 @@ class TestMoveToNewMachine:
         r = httpx.post(
             f"{sancho_core}/v1/vault/store",
             json={
-                "persona": "personal",
+                "persona": "general",
                 "item": {
                     "Type": "note",
                     "Source": "personal",
@@ -360,7 +360,7 @@ class TestMoveToNewMachine:
         r2 = httpx.post(
             f"{sancho_core}/v1/vault/query",
             json={
-                "persona": "personal",
+                "persona": "general",
                 "query": "Node B operational test new machine",
                 "mode": "fts5",
                 "limit": 5,
@@ -565,8 +565,10 @@ class TestMoveToNewMachine:
         assert "persona" in r2.json().get("error", "").lower()
         print("  [migrate] Safety check (personas open): blocked ✓")
 
-        # 3. Lock all personas — required before export.
-        for persona in ["personal", "consumer", "health"]:
+        # 3. Lock lockable personas before export.
+        # Default/standard personas cannot be locked (always open by design).
+        # Only sensitive and locked tier personas need explicit locking.
+        for persona in ["health"]:
             r = httpx.post(
                 f"{alonso_core}/v1/persona/lock",
                 json={"persona": persona},
@@ -576,7 +578,7 @@ class TestMoveToNewMachine:
             assert r.status_code == 200, (
                 f"Failed to lock {persona}: {r.status_code} {r.text[:200]}"
             )
-        print("  [migrate] Locked all personas on Node A ✓")
+        print("  [migrate] Locked sensitive personas on Node A ✓")
 
         # 4. Export — create real encrypted archive.
         # Wrapped in try/finally so personas are ALWAYS unlocked even if export fails.
@@ -605,7 +607,7 @@ class TestMoveToNewMachine:
             print(f"  [migrate] Archive created: {archive_path}")
         finally:
             # 5. Unlock all personas — restore state regardless of export outcome.
-            for persona in ["personal", "consumer", "health"]:
+            for persona in ["general", "consumer", "health"]:
                 httpx.post(
                     f"{alonso_core}/v1/persona/unlock",
                     json={"persona": persona, "passphrase": "test"},
@@ -694,8 +696,9 @@ class TestMoveToNewMachine:
 
         print("\n  [migrate] Archive transferred: Node A → host → Node B ✓")
 
-        # ── Step 2: Lock personas on Node B → import ────────────────
-        for persona in ["personal", "consumer", "health"]:
+        # ── Step 2: Lock lockable personas on Node B → import ─────────
+        # Default/standard cannot be locked. Only lock sensitive/locked.
+        for persona in ["health"]:
             r = httpx.post(
                 f"{sancho_core}/v1/persona/lock",
                 json={"persona": persona},
@@ -706,7 +709,7 @@ class TestMoveToNewMachine:
                 f"Failed to lock {persona} on Node B: "
                 f"{r.status_code} {r.text[:200]}"
             )
-        print("  [migrate] Locked all personas on Node B ✓")
+        print("  [migrate] Locked sensitive personas on Node B ✓")
 
         r = httpx.post(
             f"{sancho_core}/v1/import",
@@ -757,7 +760,7 @@ class TestMoveToNewMachine:
         # vault is cryptographically bound to the master seed.
         r = httpx.post(
             f"{sancho_core}/v1/persona/unlock",
-            json={"persona": "personal", "passphrase": "test"},
+            json={"persona": "general", "passphrase": "test"},
             headers=admin_headers,
             timeout=10,
         )
@@ -774,7 +777,7 @@ class TestMoveToNewMachine:
         r = httpx.post(
             f"{alonso_core}/v1/vault/query",
             json={
-                "persona": "personal",
+                "persona": "general",
                 "query": "migration test portability",
                 "mode": "fts5",
                 "limit": 10,
@@ -866,7 +869,7 @@ class TestMoveToNewMachine:
 
             # ── Step 6: Unlock personas on Node B ───────────────────
             # Same seed → same DEK → imported SQLCipher files decrypt.
-            for persona in ["personal", "consumer", "health"]:
+            for persona in ["general", "consumer", "health"]:
                 r = httpx.post(
                     f"{sancho_core}/v1/persona/unlock",
                     json={"persona": persona, "passphrase": "test"},
@@ -914,7 +917,7 @@ class TestMoveToNewMachine:
             r = httpx.post(
                 f"{sancho_core}/v1/vault/query",
                 json={
-                    "persona": "personal",
+                    "persona": "general",
                     "query": "migration test portability",
                     "mode": "fts5",
                     "limit": 10,
@@ -1009,15 +1012,16 @@ class TestMoveToNewMachine:
 
             # Re-create and unlock personas on Node B so later
             # stories in the same session start clean.
-            for persona in ["personal", "consumer", "health"]:
+            for persona in ["general", "consumer", "health"]:
                 try:
                     httpx.post(
                         f"{sancho_core}/v1/personas",
                         json={
                             "name": persona,
                             "tier": (
-                                "restricted"
-                                if persona == "health" else "open"
+                                "sensitive" if persona == "health"
+                                else "default" if persona == "general"
+                                else "standard"
                             ),
                             "passphrase": "test",
                         },

@@ -83,14 +83,18 @@ class MultiNodeDockerServices:
 
         self._load_tokens()
 
-        # Always rebuild — never reuse containers from a prior suite.
-        # Reusing stale images masks code changes during development.
+        # If containers are already healthy (started by test_status.py),
+        # reuse them. The sentinel cache bust in test_status.py ensures
+        # they were built from current source.
+        if self._all_healthy():
+            self._externally_managed = True
+            self._started = True
+            return
+
+        # Not healthy — tear down stale containers and rebuild.
         self._externally_managed = False
-        # Tear down any leftover containers from previous runs.
         self._compose("down", "-v")
-        # Bust Docker layer cache for COPY src/ layers so tests always
-        # run against the current working directory, not stale images.
-        # Write a timestamp into the source dirs that Dockerfiles COPY.
+        # Bust Docker layer cache for COPY src/ layers.
         for src_dir in [PROJECT_ROOT / "brain" / "src", PROJECT_ROOT / "core" / "cmd"]:
             sentinel = src_dir / ".build-sentinel"
             sentinel.write_text(f"{time.time()}\n")

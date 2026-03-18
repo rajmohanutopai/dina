@@ -638,7 +638,7 @@ class TestPurchaseJourney:
         r1 = httpx.post(
             f"{base}/v1/vault/store",
             json={
-                "persona": "personal",
+                "persona": "general",
                 "item": {
                     "Type": "health_context",
                     "Source": "user_profile",
@@ -724,7 +724,7 @@ class TestPurchaseJourney:
         r4 = httpx.post(
             f"{base}/v1/vault/store",
             json={
-                "persona": "personal",
+                "persona": "general",
                 "item": {
                     "Type": "family_context",
                     "Source": "user_profile",
@@ -819,7 +819,7 @@ class TestPurchaseJourney:
                         "recommended": "ErgoMax Elite 500",
                         "rejected": "CheapChair Pro 3000",
                         "trust_network_queried": True,
-                        "vault_personas_used": ["personal", "consumer"],
+                        "vault_personas_used": ["general", "consumer"],
                         "context_factors": [
                             "health_back_pain",
                             "budget_constraint",
@@ -950,7 +950,7 @@ class TestPurchaseJourney:
             f"{alonso_brain}/api/v1/reason",
             json={
                 "prompt": prompt,
-                "persona_tier": "open",
+                "persona_tier": "default",
             },
             timeout=60,
         )
@@ -1121,7 +1121,7 @@ class TestPurchaseJourney:
                 f"{alonso_brain}/api/v1/reason",
                 json={
                     "prompt": "I need a new office chair",
-                    "persona_tier": "open",
+                    "persona_tier": "default",
                 },
                 timeout=120,
             )
@@ -1219,7 +1219,7 @@ class TestPurchaseJourney:
             f"{alonso_brain}/api/v1/reason",
             json={
                 "prompt": judge_prompt,
-                "persona_tier": "open",
+                "persona_tier": "default",
                 "skip_vault_enrichment": True,
             },
             timeout=60,

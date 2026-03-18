@@ -330,10 +330,11 @@ async def test_fix_19_3_2_reconfigure_correct_keys():
     assert "cloud" in router._cloud
     assert "local" in router._local
 
-    # Verify reconfigure actually affects routing: complex task now routes
-    # to cloud (before reconfigure, no cloud provider was available)
+    # Verify reconfigure actually affects routing: heavy task now routes
+    # to cloud (before reconfigure, no cloud provider was available).
+    # complex_reasoning uses lite (lightweight), deep_analysis uses heavy.
     result = await router.route(
-        task_type="complex_reasoning",
+        task_type="deep_analysis",
         prompt="Analyze this document",
     )
     assert result["route"] == "cloud"

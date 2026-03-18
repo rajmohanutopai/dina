@@ -125,7 +125,7 @@ class TestConnectorExpiry:
         r_store = httpx.post(
             f"{alonso_core}/v1/vault/store",
             json={
-                "persona": "personal",
+                "persona": "general",
                 "item": {
                     "Type": "note",
                     "Source": "degradation_test",
@@ -151,7 +151,7 @@ class TestConnectorExpiry:
         r_query = httpx.post(
             f"{alonso_core}/v1/vault/query",
             json={
-                "persona": "personal",
+                "persona": "general",
                 "query": "connector degradation vault independence nR5tK",
                 "mode": "fts5",
                 "limit": 5,

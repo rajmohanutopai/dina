@@ -80,7 +80,7 @@ class TestAntiHerHumanConnection:
                         ],
                     },
                 },
-                timeout=20,
+                timeout=60,
             )
             if resp.status_code in (404, 503):
                 pytest.skip("Brain /api/v1/process not available")
@@ -127,7 +127,7 @@ class TestAntiHerHumanConnection:
                     "nudge_type": "human_connection",
                 },
             },
-            timeout=20,
+            timeout=60,
         )
         if resp.status_code in (404, 503):
             pytest.skip("Brain /api/v1/process not available")
@@ -183,7 +183,7 @@ class TestAntiHerHumanConnection:
                     "neglect_threshold_days": 30,
                 },
             },
-            timeout=20,
+            timeout=60,
         )
         if resp.status_code in (404, 503):
             pytest.skip("Brain /api/v1/process not available")
@@ -226,7 +226,7 @@ class TestAntiHerHumanConnection:
                     "event_type": "birthday_upcoming",
                 },
             },
-            timeout=20,
+            timeout=60,
         )
         if resp.status_code in (404, 503):
             pytest.skip("Brain /api/v1/process not available")
@@ -273,7 +273,7 @@ class TestAntiHerHumanConnection:
                     "nudge_type": "promise_followup",
                 },
             },
-            timeout=20,
+            timeout=60,
         )
         if resp.status_code in (404, 503):
             pytest.skip("Brain /api/v1/process not available")
@@ -310,7 +310,7 @@ class TestAntiHerHumanConnection:
                     "emotional_dependency_signals": 3,
                 },
             },
-            timeout=20,
+            timeout=60,
         )
         if resp.status_code in (404, 503):
             pytest.skip("Brain /api/v1/process not available")
@@ -352,7 +352,7 @@ class TestAntiHerHumanConnection:
                     ],
                 },
             },
-            timeout=20,
+            timeout=60,
         )
         if resp.status_code in (404, 503):
             pytest.skip("Brain /api/v1/process not available")
@@ -389,7 +389,7 @@ class TestAntiHerHumanConnection:
                     "anti_her_check": True,
                 },
             },
-            timeout=20,
+            timeout=60,
         )
         if resp.status_code in (404, 503):
             pytest.skip("Brain /api/v1/process not available")

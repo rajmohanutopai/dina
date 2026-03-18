@@ -324,15 +324,15 @@ async def test_routing_8_3_3_unknown_agent_default_trust_scores() -> None:
 
 # TST-BRAIN-465
 @pytest.mark.asyncio
-async def test_routing_8_1_5_complex_prefers_cloud(llm_router, cloud_provider) -> None:
-    """Complex reasoning tasks prefer cloud for capability."""
+async def test_routing_8_1_5_complex_prefers_local(llm_router, local_provider) -> None:
+    """Complex reasoning uses lite model — local preferred when available."""
     result = await llm_router.route(
         task_type="complex_reasoning",
         prompt="Analyze this complex legal document",
         persona_tier="open",
     )
-    assert result["route"] == "cloud"
-    cloud_provider.complete.assert_awaited()
+    assert result["route"] == "local"
+    local_provider.complete.assert_awaited()
 
 
 # TST-BRAIN-466

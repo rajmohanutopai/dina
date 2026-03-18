@@ -605,6 +605,8 @@ class ReasoningAgent:
         ]
 
         # Agentic loop: send → tool calls → execute → feed back → repeat
+        import time as _time
+        _agent_t0 = _time.monotonic()
         for turn in range(_MAX_TOOL_TURNS):
             result = await self._llm.route(
                 task_type="complex_reasoning",
@@ -619,11 +621,13 @@ class ReasoningAgent:
 
             if not tool_calls:
                 # LLM generated a text response — done
+                _agent_elapsed = _time.monotonic() - _agent_t0
                 log.info(
                     "reasoning_agent.complete",
                     turns=turn + 1,
                     tools_called=len(executor.tools_called),
                     enriched=executor.was_enriched,
+                    total_elapsed_s=round(_agent_elapsed, 2),
                 )
                 result["vault_context_used"] = executor.was_enriched
                 result["tools_called"] = executor.tools_called

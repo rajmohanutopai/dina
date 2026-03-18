@@ -83,7 +83,7 @@ class TestSilenceStress:
                     "on your ICICI account ending in 4521. If this was not "
                     "you, contact us immediately."
                 ),
-                "persona_id": "personal",
+                "persona_id": "general",
             },
             timeout=15,
         )
@@ -128,7 +128,7 @@ class TestSilenceStress:
                     "here immediately to secure your account. This is "
                     "time-sensitive — act now or lose access."
                 ),
-                "persona_id": "personal",
+                "persona_id": "general",
             },
             timeout=15,
         )
@@ -171,7 +171,7 @@ class TestSilenceStress:
                     "type": "social",
                     "source": "social_media",
                     "body": "Sancho liked your post about windmills",
-                    "persona_id": "personal",
+                    "persona_id": "general",
                 },
                 "expected_tier": "engagement",
                 "label": "social update",
@@ -181,7 +181,7 @@ class TestSilenceStress:
                     "type": "reminder",
                     "source": "calendar",
                     "body": "Reminder: Team standup in 15 minutes",
-                    "persona_id": "personal",
+                    "persona_id": "general",
                 },
                 "expected_tier": "solicited",
                 "label": "user-requested reminder",
@@ -191,7 +191,7 @@ class TestSilenceStress:
                     "type": "alert",
                     "source": "security",
                     "body": "Security alert: New sign-in from unrecognized device",
-                    "persona_id": "personal",
+                    "persona_id": "general",
                 },
                 "expected_tier": "fiduciary",
                 "label": "security alert",

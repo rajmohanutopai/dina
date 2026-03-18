@@ -160,7 +160,7 @@ class TestOperatorJourney:
         """POST /v1/personas with existing persona returns 200 or 409.
 
         The install script creates personas on every run:
-          POST /v1/personas {name: "personal", tier: "open", passphrase: "..."}
+          POST /v1/personas {name: "personal", tier": "locked", passphrase: "..."}
 
         If the persona already exists (from a previous install), Core
         must handle it gracefully:
@@ -174,8 +174,8 @@ class TestOperatorJourney:
         r = httpx.post(
             f"{alonso_core}/v1/personas",
             json={
-                "name": "personal",
-                "tier": "open",
+                "name": "general",
+                "tier": "default",
                 "passphrase": "test",
             },
             headers=admin_headers,
@@ -191,7 +191,7 @@ class TestOperatorJourney:
 
         _state["persona_recreate_status"] = r.status_code
         print(
-            f"\n  [operator] Persona re-create (personal): "
+            f"\n  [operator] Persona re-create (general): "
             f"status={r.status_code} (idempotent: YES)"
         )
 
@@ -255,7 +255,7 @@ class TestOperatorJourney:
             f"{alonso_core}/v1/personas",
             json={
                 "name": "locktest",
-                "tier": "restricted",
+                "tier": "sensitive",
                 "passphrase": "locktest-phrase",
             },
             headers=admin_headers,

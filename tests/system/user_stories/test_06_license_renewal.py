@@ -137,7 +137,7 @@ class TestLicenseRenewal:
         for item in items:
             r = httpx.post(
                 f"{alonso_core}/v1/vault/store",
-                json={"persona": "personal", "item": item},
+                json={"persona": "general", "item": item},
                 headers=admin_headers,
                 timeout=10,
             )
@@ -172,7 +172,7 @@ class TestLicenseRenewal:
             json={
                 "type": "document_ingest",
                 "body": LICENSE_TEXT,
-                "persona_id": "personal",
+                "persona_id": "general",
                 "source": "document_scan",
             },
             timeout=60,
@@ -227,7 +227,7 @@ class TestLicenseRenewal:
             r = httpx.post(
                 f"{alonso_core}/v1/vault/store",
                 json={
-                    "persona": "personal",
+                    "persona": "general",
                     "item": {
                         "id": doc_id,
                         "Type": "document",
@@ -263,7 +263,7 @@ class TestLicenseRenewal:
             r2 = httpx.post(
                 f"{alonso_core}/v1/vault/store",
                 json={
-                    "persona": "personal",
+                    "persona": "general",
                     "item": {
                         "id": reminder_vault_id,
                         "Type": "event",
@@ -443,7 +443,7 @@ class TestLicenseRenewal:
                         "trigger_at": trigger_at,
                         "metadata": json.dumps({
                             "vault_item_id": doc_id,
-                            "persona": "personal",
+                            "persona": "general",
                             "expiry_date": "2026-04-15",
                         }),
                     },
@@ -519,7 +519,7 @@ class TestLicenseRenewal:
                     "message": "Driving license expires 2026-04-15",
                     "metadata": json.dumps({
                         "vault_item_id": doc_id,
-                        "persona": "personal",
+                        "persona": "general",
                         "expiry_date": "2026-04-15",
                     }),
                 }),
@@ -627,7 +627,7 @@ class TestLicenseRenewal:
             f"{alonso_brain}/api/v1/reason",
             json={
                 "prompt": delegation_prompt,
-                "persona_tier": "open",
+                "persona_tier": "default",
                 "skip_vault_enrichment": True,
             },
             timeout=60,

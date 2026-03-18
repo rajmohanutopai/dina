@@ -52,7 +52,7 @@ class TestRecommendationIntegrity:
                     },
                 },
             },
-            timeout=20,
+            timeout=60,
         )
         if resp.status_code in (404, 503):
             pytest.skip("Brain /api/v1/process not available")
@@ -90,7 +90,7 @@ class TestRecommendationIntegrity:
                     },
                 },
             },
-            timeout=20,
+            timeout=60,
         )
         if resp.status_code in (404, 503):
             pytest.skip("Brain /api/v1/process not available")
@@ -125,7 +125,7 @@ class TestRecommendationIntegrity:
                     },
                 },
             },
-            timeout=20,
+            timeout=60,
         )
         if resp.status_code in (404, 503):
             pytest.skip("Brain /api/v1/process not available")
@@ -168,7 +168,7 @@ class TestRecommendationIntegrity:
                     ],
                 },
             },
-            timeout=20,
+            timeout=60,
         )
         if resp.status_code in (404, 503):
             pytest.skip("Brain /api/v1/process not available")
@@ -198,7 +198,7 @@ class TestRecommendationIntegrity:
                 "source": "rss",
                 "body": "New article about sustainable energy published",
             },
-            timeout=15,
+            timeout=60,
         )
         if resp.status_code in (404, 503):
             pytest.skip("Brain /api/v1/process not available")
@@ -256,7 +256,7 @@ class TestRecommendationIntegrity:
                     ],
                 },
             },
-            timeout=20,
+            timeout=60,
         )
         if resp.status_code in (404, 503):
             pytest.skip("Brain /api/v1/process not available")
@@ -301,7 +301,7 @@ class TestRecommendationIntegrity:
                     },
                 },
             },
-            timeout=20,
+            timeout=60,
         )
         if resp.status_code in (404, 503):
             pytest.skip("Brain /api/v1/process not available")

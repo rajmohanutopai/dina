@@ -136,7 +136,7 @@ class TestDailyBriefing:
         for item in briefing_items:
             r = httpx.post(
                 f"{alonso_core}/v1/vault/store",
-                json={"persona": "personal", "item": item},
+                json={"persona": "general", "item": item},
                 headers=admin_headers,
                 timeout=10,
             )

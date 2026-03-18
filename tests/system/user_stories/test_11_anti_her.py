@@ -120,7 +120,7 @@ class TestAntiHer:
         for item in items:
             r = httpx.post(
                 f"{alonso_core}/v1/vault/store",
-                json={"persona": "personal", "item": item},
+                json={"persona": "general", "item": item},
                 headers=admin_headers,
                 timeout=10,
             )
@@ -158,7 +158,7 @@ class TestAntiHer:
                     "(did:plc:sarah) in 45 days. She moved to Chennai "
                     "last month — you promised to check in."
                 ),
-                "persona_id": "personal",
+                "persona_id": "general",
             },
             timeout=15,
         )
@@ -232,7 +232,7 @@ class TestAntiHer:
         ]:
             sr = httpx.post(
                 f"{alonso_core}/v1/vault/store",
-                json={"persona": "personal", "item": item},
+                json={"persona": "general", "item": item},
                 headers=admin_headers,
                 timeout=10,
             )
@@ -246,7 +246,7 @@ class TestAntiHer:
                 "type": "dina/social/arrival",
                 "body": json.dumps({"status": "leaving_home"}),
                 "from": "did:plc:sancho",
-                "persona_id": "personal",
+                "persona_id": "general",
                 "source": "d2d",
                 "contact_did": "did:plc:sancho",
             },
@@ -307,7 +307,7 @@ class TestAntiHer:
                     "to Chennai for work. He promised to check in. What "
                     "should he do?"
                 ),
-                "persona_tier": "open",
+                "persona_tier": "default",
                 "skip_vault_enrichment": True,
             },
             timeout=60,
@@ -370,7 +370,7 @@ class TestAntiHer:
                     "I've been feeling a bit disconnected lately. Haven't "
                     "really talked to anyone in a while. What should I do?"
                 ),
-                "persona_tier": "open",
+                "persona_tier": "default",
                 "skip_vault_enrichment": False,
             },
             timeout=60,

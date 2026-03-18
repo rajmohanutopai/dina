@@ -433,7 +433,7 @@ class TestDeadInternetFilter:
                 f"{alonso_brain}/api/v1/reason",
                 json={
                     "prompt": prompt,
-                    "persona_tier": "open",
+                    "persona_tier": "default",
                     "skip_vault_enrichment": True,
                 },
                 timeout=60,
@@ -519,7 +519,7 @@ class TestDeadInternetFilter:
                 f"{alonso_brain}/api/v1/reason",
                 json={
                     "prompt": prompt,
-                    "persona_tier": "open",
+                    "persona_tier": "default",
                     "skip_vault_enrichment": True,
                 },
                 timeout=60,
@@ -605,7 +605,7 @@ class TestDeadInternetFilter:
                 f"{alonso_brain}/api/v1/reason",
                 json={
                     "prompt": prompt,
-                    "persona_tier": "open",
+                    "persona_tier": "default",
                     "skip_vault_enrichment": True,
                 },
                 timeout=60,

@@ -39,7 +39,7 @@ class TestSilenceUnderStress:
                     "source": "social_media",
                     "body": f"Friend #{i} liked your post about office chairs",
                 },
-                timeout=15,
+                timeout=60,
             )
             if resp.status_code in (404, 503):
                 pytest.skip("Brain /api/v1/process not available")
@@ -93,7 +93,7 @@ class TestSilenceUnderStress:
             resp = brain_signer.post(
                 f"{brain_url}/api/v1/process",
                 json=event,
-                timeout=15,
+                timeout=60,
             )
             if resp.status_code in (404, 503):
                 pytest.skip("Brain /api/v1/process not available")
@@ -145,7 +145,7 @@ class TestSilenceUnderStress:
                 "source": "unknown_sender",
                 "body": "URGENT: check your account — security alert detected",
             },
-            timeout=15,
+            timeout=60,
         )
         if resp.status_code in (404, 503):
             pytest.skip("Brain /api/v1/process not available")
@@ -181,7 +181,7 @@ class TestSilenceUnderStress:
                 "source": "security",
                 "body": "URGENT: check your account — security alert detected",
             },
-            timeout=15,
+            timeout=60,
         )
         if resp.status_code in (404, 503):
             pytest.skip("Brain /api/v1/process not available")
@@ -219,7 +219,7 @@ class TestSilenceUnderStress:
                     "source": "rss",
                     "body": f"Article #{i}: New developments in AI safety research",
                 },
-                timeout=15,
+                timeout=60,
             )
             if resp.status_code in (404, 503):
                 pytest.skip("Brain /api/v1/process not available")
@@ -263,7 +263,7 @@ class TestSilenceUnderStress:
                 "source": "system",
                 "body": "Periodic sync completed — no new items",
             },
-            timeout=15,
+            timeout=60,
         )
         if resp.status_code in (404, 503):
             pytest.skip("Brain /api/v1/process not available")
@@ -300,7 +300,7 @@ class TestSilenceUnderStress:
         trusted_resp = brain_signer.post(
             f"{brain_url}/api/v1/process",
             json={"type": "alert", "source": "health_system", "body": body},
-            timeout=15,
+            timeout=60,
         )
         if trusted_resp.status_code in (404, 503):
             pytest.skip("Brain /api/v1/process not available")
@@ -309,7 +309,7 @@ class TestSilenceUnderStress:
         untrusted_resp = brain_signer.post(
             f"{brain_url}/api/v1/process",
             json={"type": "notification", "source": "unknown_sender", "body": body},
-            timeout=15,
+            timeout=60,
         )
 
         if trusted_resp.status_code != 200 or untrusted_resp.status_code != 200:

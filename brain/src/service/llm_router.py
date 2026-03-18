@@ -39,18 +39,23 @@ _MODEL_PRICING: dict[str, tuple[float, float]] = get_all_pricing()
 _FTS_ONLY_TASKS = frozenset({"fts_lookup", "keyword_search"})
 
 # Lightweight tasks — prefer local for speed & privacy.
-_LIGHTWEIGHT_TASKS = frozenset({"intent_classification", "summarize", "guard_scan", "silence_classify"})
-
-# Task types considered "complex" that benefit from cloud models.
-_COMPLEX_TASKS = frozenset({
-    "complex_reasoning",
-    "video_analysis",
+# 90% of tasks use the lite model (fast, cheap, sufficient quality).
+# Only deep_analysis and video_analysis justify the heavy model.
+_LIGHTWEIGHT_TASKS = frozenset({
+    "intent_classification", "summarize", "summarization",
+    "guard_scan", "silence_classify",
+    "complex_reasoning",  # agentic tool-calling loop — lite handles this well
     "multi_step",
+})
+
+# Heavy model: only for tasks that genuinely need max capability.
+_COMPLEX_TASKS = frozenset({
     "deep_analysis",
+    "video_analysis",
 })
 
 # Persona tiers that mandate extra care.
-_SENSITIVE_TIERS = frozenset({"restricted", "locked"})
+_SENSITIVE_TIERS = frozenset({"sensitive", "locked"})
 
 
 class LLMRouter:
@@ -212,12 +217,33 @@ class LLMRouter:
         # Use explicit messages if provided, otherwise wrap prompt
         call_messages = messages if messages is not None else [{"role": "user", "content": prompt}]
 
+        import time as _time
+        _t0 = _time.monotonic()
         try:
             response = await provider_obj.complete(
                 messages=call_messages,
                 **complete_kwargs,
             )
+            _elapsed = _time.monotonic() - _t0
+            log.info(
+                "llm_router.complete",
+                model=provider_obj.model_name,
+                task_type=task_type,
+                elapsed_s=round(_elapsed, 2),
+                tokens_in=response.get("tokens_in", 0) if isinstance(response, dict) else 0,
+                tokens_out=response.get("tokens_out", 0) if isinstance(response, dict) else 0,
+                prompt_len=len(prompt) if prompt else 0,
+            )
         except Exception as exc:
+            _elapsed = _time.monotonic() - _t0
+            log.warning(
+                "llm_router.complete_failed",
+                model=provider_obj.model_name,
+                task_type=task_type,
+                elapsed_s=round(_elapsed, 2),
+                error=type(exc).__name__,
+                prompt_len=len(prompt) if prompt else 0,
+            )
             # Attempt fallback before giving up.
             fallback = self._fallback_provider(provider_obj)
             if fallback is not None:

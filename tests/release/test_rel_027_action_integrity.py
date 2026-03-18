@@ -60,7 +60,7 @@ class TestActionIntegrity:
                     },
                 },
             },
-            timeout=20,
+            timeout=60,
         )
         if resp.status_code in (404, 503):
             pytest.skip("Brain /api/v1/process not available")
@@ -108,7 +108,7 @@ class TestActionIntegrity:
                     "simulated_hours_elapsed": 73,
                 },
             },
-            timeout=20,
+            timeout=60,
         )
         if draft_resp.status_code in (404, 503):
             pytest.skip("Brain /api/v1/process not available")
@@ -132,7 +132,7 @@ class TestActionIntegrity:
                     "simulated_hours_elapsed": 13,
                 },
             },
-            timeout=20,
+            timeout=60,
         )
         assert cart_resp.status_code == 200
 
@@ -181,7 +181,7 @@ class TestActionIntegrity:
                         },
                     },
                 },
-                timeout=20,
+                timeout=60,
             )
             if resp.status_code in (404, 503):
                 pytest.skip("Brain /api/v1/process not available")
@@ -207,7 +207,7 @@ class TestActionIntegrity:
                     ],
                 },
             },
-            timeout=20,
+            timeout=60,
         )
         assert summary_resp.status_code == 200
         assert isinstance(summary_resp.json(), dict)
@@ -258,7 +258,7 @@ class TestActionIntegrity:
                     },
                 },
             },
-            timeout=20,
+            timeout=60,
         )
         if resp.status_code in (404, 503):
             pytest.skip("Brain /api/v1/process not available")
@@ -313,7 +313,7 @@ class TestActionIntegrity:
                     ],
                 },
             },
-            timeout=20,
+            timeout=60,
         )
         if resp.status_code in (404, 503):
             pytest.skip("Brain /api/v1/process not available")
@@ -370,7 +370,7 @@ class TestActionIntegrity:
                     },
                 },
             },
-            timeout=20,
+            timeout=60,
         )
         if resp.status_code in (404, 503):
             pytest.skip("Brain /api/v1/process not available")

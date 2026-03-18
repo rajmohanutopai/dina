@@ -15,9 +15,12 @@ from pathlib import Path
 from typing import Any
 
 def _local_dev_path() -> Path:
-    """Resolve repo root models.json for local dev (outside Docker)."""
+    """Resolve repo root models.json for local dev (outside Docker).
+
+    Path: brain/src/infra/model_config.py → parents[3] = repo root.
+    """
     try:
-        return Path(__file__).resolve().parents[4] / "models.json"
+        return Path(__file__).resolve().parents[3] / "models.json"
     except IndexError:
         return Path("/app/models.json")  # fallback
 
@@ -79,6 +82,11 @@ def get_defaults() -> dict[str, str]:
     l_prov, l_model = split_model_ref(lite)
     result["lite_provider"] = l_prov
     result["lite_model"] = l_model
+
+    heavy = defaults.get("heavy", primary)  # fallback to primary
+    h_prov, h_model = split_model_ref(heavy)
+    result["heavy_provider"] = h_prov
+    result["heavy_model"] = h_model
 
     result["fallbacks"] = defaults.get("fallbacks", [])
     return result

@@ -181,7 +181,7 @@ class TestVerifiedTruth:
                     "Is did:plc:unknownvendor123 a trustworthy seller? "
                     "Should I buy from them?"
                 ),
-                "persona_tier": "open",
+                "persona_tier": "default",
                 "skip_vault_enrichment": False,
             },
             timeout=60,
@@ -296,7 +296,7 @@ class TestVerifiedTruth:
         for item in attestations:
             r = httpx.post(
                 f"{alonso_core}/v1/vault/store",
-                json={"persona": "personal", "item": item},
+                json={"persona": "general", "item": item},
                 headers=admin_headers,
                 timeout=10,
             )
@@ -326,7 +326,7 @@ class TestVerifiedTruth:
         r = httpx.post(
             f"{alonso_core}/v1/vault/query",
             json={
-                "persona": "personal",
+                "persona": "general",
                 "query": "VendorX trust attestation",
                 "mode": "fts5",
                 "limit": 10,
@@ -396,7 +396,7 @@ class TestVerifiedTruth:
                     "(did:plc:vendorx)? Is their product quality good? "
                     "Should I buy from them?"
                 ),
-                "persona_tier": "open",
+                "persona_tier": "default",
                 "skip_vault_enrichment": False,
             },
             timeout=60,
@@ -520,7 +520,7 @@ class TestVerifiedTruth:
             }
             r = httpx.post(
                 f"{alonso_core}/v1/vault/store",
-                json={"persona": "personal", "item": item},
+                json={"persona": "general", "item": item},
                 headers=admin_headers,
                 timeout=10,
             )
@@ -564,7 +564,7 @@ class TestVerifiedTruth:
                     "(did:plc:vendory)? Is their product quality good? "
                     "Should I buy from them?"
                 ),
-                "persona_tier": "open",
+                "persona_tier": "default",
                 "skip_vault_enrichment": False,
             },
             timeout=60,
@@ -649,7 +649,7 @@ class TestVerifiedTruth:
         r = httpx.post(
             f"{alonso_core}/v1/vault/query",
             json={
-                "persona": "personal",
+                "persona": "general",
                 "query": "VendorY trust attestation excellent quality",
                 "mode": "fts5",
                 "limit": 15,

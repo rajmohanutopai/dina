@@ -153,23 +153,26 @@ async def test_llm_4_1_3_basic_summarization_cloud_fallback(
 
 # TST-BRAIN-124
 @pytest.mark.asyncio
-async def test_llm_4_1_4_complex_reasoning_cloud(
+async def test_llm_4_1_4_complex_reasoning_prefers_local(
     llm_router, local_provider, cloud_provider
 ) -> None:
-    """SS4.1.4: Complex reasoning -> PII scrub (Tier 1+2) -> cloud LLM -> rehydrate."""
+    """SS4.1.4: Complex reasoning uses lite model — local preferred when available.
+
+    The lite model (gemini-3.1-flash-lite) handles tool-calling agentic
+    loops well. Heavy model only used for deep_analysis/video_analysis.
+    """
     result = await llm_router.route(
         task_type="complex_reasoning",
         prompt="Analyse the market trends for the last quarter",
     )
 
-    # Complex tasks prefer cloud when available.
-    assert result["route"] == "cloud"
-    cloud_provider.complete.assert_awaited_once()
-    local_provider.complete.assert_not_awaited()
+    # Lightweight tasks prefer local when available.
+    assert result["route"] == "local"
+    local_provider.complete.assert_awaited_once()
+    cloud_provider.complete.assert_not_awaited()
 
-    # Response fields must propagate from the cloud provider
-    assert result["content"] == "cloud response"
-    assert result["model"] == "gemini-pro"
+    assert result["content"] == "local response"
+    assert result["model"] == "llama-local"
     assert result["finish_reason"] == "stop"
 
 
@@ -180,7 +183,7 @@ async def test_llm_4_1_5_sensitive_persona_local(llm_router, local_provider) -> 
     result = await llm_router.route(
         task_type="health_query",
         prompt="What did the doctor say?",
-        persona_tier="restricted",
+        persona_tier="sensitive",
     )
 
     # Sensitive + local available = local route (best privacy).
@@ -205,7 +208,7 @@ async def test_llm_4_1_6_sensitive_persona_entity_vault_cloud(
     result = await router.route(
         task_type="health_query",
         prompt="What did Dr. Sharma say about my blood sugar?",
-        persona_tier="restricted",
+        persona_tier="sensitive",
         context={"cloud_llm_consent": True},
     )
 
@@ -245,11 +248,11 @@ async def test_llm_4_1_8_fallback_cloud_to_local(
     cloud_provider.complete.side_effect = ConnectionError("429 rate limited")
 
     result = await llm_router.route(
-        task_type="complex_reasoning",
+        task_type="deep_analysis",
         prompt="Deep analysis",
     )
 
-    # Complex tasks try cloud first; on failure, fall back to local.
+    # Heavy tasks try cloud first; on failure, fall back to local.
     cloud_provider.complete.assert_awaited_once()
     local_provider.complete.assert_awaited_once()
     assert result["route"] == "local"
@@ -321,7 +324,7 @@ async def test_llm_4_1_11_user_configures_preferred_cloud(cloud_provider) -> Non
     )
 
     result = await router.route(
-        task_type="complex_reasoning",
+        task_type="deep_analysis",
         prompt="Deep analysis needed",
     )
 
@@ -465,7 +468,7 @@ async def test_llm_4_2_6_rate_limiting(llm_router, cloud_provider, local_provide
     cloud_provider.complete.side_effect = ConnectionError("429 Too Many Requests")
 
     result = await llm_router.route(
-        task_type="complex_reasoning",
+        task_type="deep_analysis",
         prompt="test",
     )
 
@@ -513,7 +516,7 @@ async def test_llm_4_1_13_cloud_consent_not_given_rejects(cloud_provider) -> Non
         await router.route(
             task_type="health_query",
             prompt="What did Dr. Sharma say about my blood sugar?",
-            persona_tier="restricted",
+            persona_tier="sensitive",
         )
 
 
@@ -531,7 +534,7 @@ async def test_llm_4_1_14_cloud_consent_given_processes(cloud_provider) -> None:
     result = await router.route(
         task_type="health_query",
         prompt="What did Dr. Sharma say about my blood sugar?",
-        persona_tier="restricted",
+        persona_tier="sensitive",
         context={"cloud_llm_consent": True},
     )
 

@@ -6,7 +6,7 @@ Each test builds on state from the previous one.
 Story
 -----
 A shopping agent asks Dina: "Does the user have any health conditions that
-affect ergonomic chair selection?"  The health persona is "restricted" tier.
+affect ergonomic chair selection?"  The health persona is "sensitive" tier.
 
 Dina:
 
@@ -35,7 +35,7 @@ Pipeline
 
   Shopping agent asks about health conditions for ergonomic recommendation
     → Guardian receives cross_persona_request event
-    → Deterministic tier gate: health persona is "restricted" → BLOCKED
+    → Deterministic tier gate: health persona is "sensitive" → BLOCKED
     → Guardian queries health vault for relevant items
     → Builds minimal disclosure proposal (general terms only)
     → _MEDICAL_PII_PATTERNS safety net strips specific diagnoses
@@ -124,7 +124,7 @@ class TestPersonaWall:
     ):
         """Store 3 medical records in the restricted health persona.
 
-        The health persona has tier="restricted", set in conftest.py.
+        The health persona has tier="sensitive", set in conftest.py.
         These records contain specific diagnoses (L4-L5 disc herniation),
         provider names (Dr. Sharma, Apollo Hospital), and medications
         (Ibuprofen) — all of which must be withheld from cross-persona
@@ -191,7 +191,7 @@ class TestPersonaWall:
                     "requesting_agent": "shopping_agent",
                     "source_persona": "health",
                     "target_persona": "consumer",
-                    "source_persona_tier": "restricted",
+                    "source_persona_tier": "sensitive",
                     "query": "back pain chronic lumbar support standing desk",
                     "reason": (
                         "Shopping agent needs to know about health conditions "
@@ -223,7 +223,7 @@ class TestPersonaWall:
     def test_03_verify_automatic_disclosure_blocked(self):
         """The restricted health persona must block automatic disclosure.
 
-        blocked==True, persona_tier=="restricted", requires_approval==True.
+        blocked==True, persona_tier=="sensitive", requires_approval==True.
         """
         data = _state.get("disclosure_response", {})
         response = _state.get("response", {})
@@ -231,7 +231,7 @@ class TestPersonaWall:
         assert response.get("blocked") is True, (
             f"Expected blocked=True, got: {response.get('blocked')}"
         )
-        assert response.get("persona_tier") == "restricted", (
+        assert response.get("persona_tier") == "sensitive", (
             f"Expected persona_tier=restricted, got: {response.get('persona_tier')}"
         )
         assert data.get("requires_approval") is True, (

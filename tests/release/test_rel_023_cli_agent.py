@@ -178,7 +178,7 @@ class TestCLIAgentIntegration:
             from datetime import datetime, timezone
 
             body = json.dumps({"query": "test", "persona": "general"}).encode()
-            did, ts, sig = rogue.sign_request("POST", "/v1/vault/query", body)
+            did, ts, nonce, sig = rogue.sign_request("POST", "/v1/vault/query", body)
 
             import httpx
             resp = httpx.post(
@@ -187,6 +187,7 @@ class TestCLIAgentIntegration:
                 headers={
                     "X-DID": did,
                     "X-Timestamp": ts,
+                    "X-Nonce": nonce,
                     "X-Signature": sig,
                     "Content-Type": "application/json",
                 },

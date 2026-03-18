@@ -131,7 +131,7 @@ class TestSanchoMoment:
         r1 = httpx.post(
             f"{alonso_core}/v1/vault/store",
             json={
-                "persona": "personal",
+                "persona": "general",
                 "item": {
                     "Type": "relationship_note",
                     "Source": "conversation",
@@ -169,7 +169,7 @@ class TestSanchoMoment:
         r2 = httpx.post(
             f"{alonso_core}/v1/vault/store",
             json={
-                "persona": "personal",
+                "persona": "general",
                 "item": {
                     "Type": "note",
                     "Source": "observation",
@@ -207,7 +207,7 @@ class TestSanchoMoment:
         r3 = httpx.post(
             f"{alonso_core}/v1/vault/query",
             json={
-                "persona": "personal",
+                "persona": "general",
                 "query": sancho_did,
                 "mode": "fts5",
             },
@@ -354,7 +354,7 @@ class TestSanchoMoment:
                 "type": "dina/social/arrival",
                 "body": body,
                 "from": sancho_did,
-                "persona_id": "personal",
+                "persona_id": "general",
                 "source": "d2d",
                 "contact_did": sancho_did,
             },
@@ -494,7 +494,7 @@ class TestSanchoMoment:
             f"{alonso_brain}/api/v1/reason",
             json={
                 "prompt": prompt,
-                "persona_tier": "open",
+                "persona_tier": "default",
                 "skip_vault_enrichment": True,
             },
             timeout=60,
