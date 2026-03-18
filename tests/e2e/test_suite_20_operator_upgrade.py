@@ -151,8 +151,8 @@ class TestOperatorUpgrade:
 
         # Unlock the financial persona and verify admin access
         node.unlock_persona("financial", "passphrase", ttl_seconds=300)
-        node.vault_store("financial", "admin_test_entry", "balance check OK")
-        results = node.vault_query("financial", "admin_test_entry")
+        node.vault_store("financial", "admin test entry", "balance check OK")
+        results = node.vault_query("financial", "admin")
         assert len(results) == 1, (
             f"Expected exactly 1 admin entry, got {len(results)}"
         )

@@ -136,7 +136,7 @@ class TestMultiDeviceSync:
         """
         node = fresh_don_alonso
         node.first_run_setup("alonso@example.com", "passphrase123")
-        node.create_persona("consumer", PersonaType.CONSUMER, "open")
+        node.create_persona("consumer", PersonaType.CONSUMER, "standard")
 
         # Pair phone and laptop
         code1 = node.generate_pairing_code()
@@ -255,7 +255,7 @@ class TestMultiDeviceSync:
         """
         node = fresh_don_alonso
         node.first_run_setup("alonso@example.com", "passphrase123")
-        node.create_persona("consumer", PersonaType.CONSUMER, "open")
+        node.create_persona("consumer", PersonaType.CONSUMER, "standard")
 
         # Store data in the vault
         item_id = node.vault_store(
@@ -345,7 +345,7 @@ class TestMultiDeviceSync:
         """
         node = fresh_don_alonso
         node.first_run_setup("alonso@example.com", "passphrase123")
-        node.create_persona("consumer", PersonaType.CONSUMER, "open")
+        node.create_persona("consumer", PersonaType.CONSUMER, "standard")
 
         # Pair a rich client
         code = node.generate_pairing_code()
@@ -425,7 +425,7 @@ class TestMultiDeviceSync:
         """
         node = fresh_don_alonso
         node.first_run_setup("alonso@example.com", "passphrase123")
-        node.create_persona("consumer", PersonaType.CONSUMER, "open")
+        node.create_persona("consumer", PersonaType.CONSUMER, "standard")
 
         # Pair a rich client and populate its cache
         code = node.generate_pairing_code()

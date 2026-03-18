@@ -36,43 +36,43 @@ class TestMemoryRecall:
         """
         node = fresh_don_alonso
         node.first_run_setup("hybrid@example.com", "passphrase_hybrid")
-        node.create_persona("personal", PersonaType.PERSONAL, "open")
+        node.create_persona("general", PersonaType.GENERAL, "default")
 
         # ------------------------------------------------------------------
         # Store items — some share exact keywords, some share only meaning
         # ------------------------------------------------------------------
         # Exact keyword match for "ergonomic"
         node.vault_store(
-            "personal", "ergonomic chair review",
+            "general", "ergonomic chair review",
             {"text": "The ergonomic chair from Herman Miller is excellent."},
         )
         # Exact keyword match for "ergonomic"
         node.vault_store(
-            "personal", "ergonomic desk setup",
+            "general", "ergonomic desk setup",
             {"text": "My ergonomic desk setup includes a standing converter."},
         )
         # Semantic-only match (no literal "ergonomic" but related meaning)
         node.vault_store(
-            "personal", "posture improvement tips",
+            "general", "posture improvement tips",
             {"text": "Good posture requires lumbar support and seat height adjustment."},
         )
         # Unrelated item — should NOT appear
         node.vault_store(
-            "personal", "grocery list",
+            "general", "grocery list",
             {"text": "Buy milk, eggs, bread, and orange juice."},
         )
 
         # ------------------------------------------------------------------
         # FTS-only query — only exact keyword hits
         # ------------------------------------------------------------------
-        fts_results = node.vault_query("personal", "ergonomic", mode="fts5")
+        fts_results = node.vault_query("general", "ergonomic", mode="fts5")
         fts_ids = {r.item_id for r in fts_results}
         assert len(fts_results) >= 2, "FTS5 must find at least the two items with 'ergonomic'"
 
         # ------------------------------------------------------------------
         # Semantic-only query — should also pick up posture item
         # ------------------------------------------------------------------
-        sem_results = node.vault_query("personal", "ergonomic", mode="semantic")
+        sem_results = node.vault_query("general", "ergonomic", mode="semantic")
         sem_ids = {r.item_id for r in sem_results}
         # Semantic may overlap with FTS hits but should include broader matches
         assert len(sem_results) >= 1, "Semantic search must return at least one result"
@@ -80,7 +80,7 @@ class TestMemoryRecall:
         # ------------------------------------------------------------------
         # Hybrid query — union of both, semantic results first (0.6 weight)
         # ------------------------------------------------------------------
-        hybrid_results = node.vault_query("personal", "ergonomic", mode="hybrid")
+        hybrid_results = node.vault_query("general", "ergonomic", mode="hybrid")
         hybrid_ids = {r.item_id for r in hybrid_results}
 
         # Hybrid must include everything FTS found
@@ -115,41 +115,41 @@ class TestMemoryRecall:
         """
         node = fresh_don_alonso
         node.first_run_setup("emotional@example.com", "passphrase_emo")
-        node.create_persona("personal", PersonaType.PERSONAL, "open")
+        node.create_persona("general", PersonaType.GENERAL, "default")
 
         # ------------------------------------------------------------------
         # Store emotionally meaningful items
         # ------------------------------------------------------------------
         node.vault_store(
-            "personal", "daughter graduation celebration",
+            "general", "daughter graduation celebration",
             {"text": "My daughter graduated top of her class today. "
                      "The whole family celebrated with a big dinner."},
         )
         node.vault_store(
-            "personal", "promotion at work achievement",
+            "general", "promotion at work achievement",
             {"text": "Got promoted to principal engineer. "
                      "Felt a rush of joy and accomplishment."},
         )
         node.vault_store(
-            "personal", "happy birthday surprise party",
+            "general", "happy birthday surprise party",
             {"text": "Friends threw a surprise birthday party. "
                      "Everyone was laughing and cheering."},
         )
         # Neutral item — should not match emotional query
         node.vault_store(
-            "personal", "plumber visit scheduled",
+            "general", "plumber visit scheduled",
             {"text": "Plumber arrives Thursday at 2 PM to fix the kitchen sink."},
         )
         # Sad item — opposite valence
         node.vault_store(
-            "personal", "flat tire incident",
+            "general", "flat tire incident",
             {"text": "Got a flat tire on the highway in the rain. Waited two hours."},
         )
 
         # ------------------------------------------------------------------
         # Semantic query for emotional content
         # ------------------------------------------------------------------
-        results = node.vault_query("personal", "happy moments", mode="semantic")
+        results = node.vault_query("general", "happy moments", mode="semantic")
         summaries = [r.summary.lower() for r in results]
 
         # At least the birthday item has the literal word "happy" so semantic
@@ -193,7 +193,7 @@ class TestMemoryRecall:
         # ------------------------------------------------------------------
         cached_item = VaultItem(
             item_id="vi_cache_001",
-            persona="personal",
+            persona="general",
             item_type="note",
             source="user",
             summary="offline test note",
@@ -203,7 +203,7 @@ class TestMemoryRecall:
 
         second_item = VaultItem(
             item_id="vi_cache_002",
-            persona="personal",
+            persona="general",
             item_type="note",
             source="user",
             summary="meeting notes project alpha",
@@ -267,8 +267,8 @@ class TestMemoryRecall:
         """
         node = fresh_don_alonso
         node.first_run_setup("isolation@example.com", "passphrase_iso")
-        node.create_persona("personal", PersonaType.PERSONAL, "open")
-        node.create_persona("health", PersonaType.HEALTH, "restricted")
+        node.create_persona("general", PersonaType.GENERAL, "default")
+        node.create_persona("health", PersonaType.HEALTH, "sensitive")
 
         # Unlock health persona so we can write (it is restricted tier)
         node.unlock_persona("health", "passphrase_iso")
@@ -283,7 +283,7 @@ class TestMemoryRecall:
         )
         # Store unrelated personal note in /personal
         node.vault_store(
-            "personal", "book recommendation",
+            "general", "book recommendation",
             {"title": "Sapiens", "author": "Yuval Noah Harari",
              "notes": "Recommended by Sancho. Must read."},
         )
@@ -292,7 +292,7 @@ class TestMemoryRecall:
         # Search from /personal for health term -> no results
         # ------------------------------------------------------------------
         personal_results = node.vault_query(
-            "personal", "blood pressure", mode="fts5",
+            "general", "blood pressure", mode="fts5",
         )
         assert len(personal_results) == 0, (
             "Searching /personal for 'blood pressure' must return zero results — "
@@ -301,7 +301,7 @@ class TestMemoryRecall:
 
         # Also verify with hybrid mode
         personal_hybrid = node.vault_query(
-            "personal", "blood pressure", mode="hybrid",
+            "general", "blood pressure", mode="hybrid",
         )
         assert len(personal_hybrid) == 0, (
             "Hybrid search from /personal must also be isolated from /health"

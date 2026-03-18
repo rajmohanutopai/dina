@@ -36,11 +36,12 @@ _docker_ed25519_paired = False
 # ---------------------------------------------------------------------------
 
 def _signed_headers(identity: CLIIdentity, method: str, path: str, body: bytes | None = None) -> dict[str, str]:
-    """Build X-DID / X-Timestamp / X-Signature headers for a request."""
-    did, timestamp, sig_hex = identity.sign_request(method, path, body)
+    """Build X-DID / X-Timestamp / X-Nonce / X-Signature headers for a request."""
+    did, timestamp, nonce, sig_hex = identity.sign_request(method, path, body)
     return {
         "X-DID": did,
         "X-Timestamp": timestamp,
+        "X-Nonce": nonce,
         "X-Signature": sig_hex,
     }
 
@@ -165,7 +166,7 @@ class TestCLIEd25519Signing:
             if not _docker_ed25519_paired:
                 pytest.skip("Ed25519 pairing not available — rebuild Docker images")
             base = docker_services.core_url("alonso")
-            body = json.dumps({"query": "test", "persona": "personal"}).encode()
+            body = json.dumps({"query": "test", "persona": "general"}).encode()
             headers = _signed_headers(cli_identity, "POST", "/v1/vault/query", body)
             headers["Content-Type"] = "application/json"
 
@@ -173,9 +174,10 @@ class TestCLIEd25519Signing:
             assert resp.status_code == 200, f"Signed query failed: {resp.status_code} {resp.text}"
         else:
             # Mock mode: verify sign_request produces valid components
-            did, ts, sig = cli_identity.sign_request("POST", "/v1/vault/query", b'{"query":"test"}')
+            did, ts, nonce, sig = cli_identity.sign_request("POST", "/v1/vault/query", b'{"query":"test"}')
             assert did.startswith("did:key:z6Mk")
             assert "T" in ts and ts.endswith("Z")
+            assert len(nonce) == 32  # 16 bytes hex-encoded
             assert len(sig) == 128  # 64 bytes hex-encoded
 
     # TST-E2E-087
@@ -191,7 +193,7 @@ class TestCLIEd25519Signing:
                 pytest.skip("Ed25519 pairing not available — rebuild Docker images")
             base = docker_services.core_url("alonso")
             body = json.dumps({
-                "persona": "personal",
+                "persona": "general",
                 "item": {
                     "Type": "note",
                     "Source": "e2e_test",
@@ -207,8 +209,8 @@ class TestCLIEd25519Signing:
             assert resp.status_code in (200, 201), f"Signed store failed: {resp.status_code} {resp.text}"
         else:
             # Mock mode: verify canonical payload construction and signature
-            body = b'{"persona":"personal","item_type":"note","summary":"test"}'
-            did, ts, sig = cli_identity.sign_request("POST", "/v1/vault/store", body)
+            body = b'{"persona":"general","item_type":"note","summary":"test"}'
+            did, ts, nonce, sig = cli_identity.sign_request("POST", "/v1/vault/store", body)
 
             # Verify DID format
             assert did.startswith("did:key:z6Mk"), f"Expected did:key:z6Mk prefix, got {did}"
@@ -217,21 +219,25 @@ class TestCLIEd25519Signing:
             # Verify timestamp is ISO 8601 UTC
             assert "T" in ts and ts.endswith("Z")
 
+            # Verify nonce is 16 bytes hex-encoded (32 chars)
+            assert len(nonce) == 32, f"Nonce must be 32 hex chars, got {len(nonce)}"
+
             # Verify signature is 64 bytes hex-encoded (128 chars)
             assert len(sig) == 128, f"Ed25519 sig must be 128 hex chars, got {len(sig)}"
 
             # Reconstruct canonical payload and verify signature with public key
             body_hash = hashlib.sha256(body).hexdigest()
-            payload = f"POST\n/v1/vault/store\n\n{ts}\n{body_hash}"
+            payload = f"POST\n/v1/vault/store\n\n{ts}\n{nonce}\n{body_hash}"
 
-            # Verify the 5-part canonical structure
+            # Verify the 6-part canonical structure
             parts = payload.split("\n")
-            assert len(parts) == 5, f"Canonical payload must have 5 parts, got {len(parts)}"
+            assert len(parts) == 6, f"Canonical payload must have 6 parts, got {len(parts)}"
             assert parts[0] == "POST"
             assert parts[1] == "/v1/vault/store"
             assert parts[2] == ""  # empty query string
             assert parts[3] == ts
-            assert parts[4] == body_hash
+            assert parts[4] == nonce
+            assert parts[5] == body_hash
 
             # REAL Ed25519 signature verification
             from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -250,7 +256,7 @@ class TestCLIEd25519Signing:
         """E2E-15.5 Tampered signature returns 401."""
         if DOCKER_MODE and docker_services is not None:
             base = docker_services.core_url("alonso")
-            body = json.dumps({"query": "test", "persona": "personal"}).encode()
+            body = json.dumps({"query": "test", "persona": "general"}).encode()
             headers = _signed_headers(cli_identity, "POST", "/v1/vault/query", body)
             headers["Content-Type"] = "application/json"
             # Tamper the signature
@@ -263,13 +269,13 @@ class TestCLIEd25519Signing:
             from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
             # 1. Sign a real request
-            body = b'{"query":"test","persona":"personal"}'
+            body = b'{"query":"test","persona":"general"}'
             headers = _signed_headers(cli_identity, "POST", "/v1/vault/query", body)
             original_sig = headers["X-Signature"]
 
             # 2. Verify original signature IS valid (positive control)
             body_hash = hashlib.sha256(body).hexdigest()
-            payload = f"POST\n/v1/vault/query\n\n{headers['X-Timestamp']}\n{body_hash}"
+            payload = f"POST\n/v1/vault/query\n\n{headers['X-Timestamp']}\n{headers['X-Nonce']}\n{body_hash}"
             pub_key = cli_identity._private_key.public_key()
             pub_key.verify(bytes.fromhex(original_sig), payload.encode("utf-8"))
 
@@ -295,7 +301,7 @@ class TestCLIEd25519Signing:
         """E2E-15.6 Expired timestamp returns 401."""
         if DOCKER_MODE and docker_services is not None:
             base = docker_services.core_url("alonso")
-            body = json.dumps({"query": "test", "persona": "personal"}).encode()
+            body = json.dumps({"query": "test", "persona": "general"}).encode()
             headers = _signed_headers(cli_identity, "POST", "/v1/vault/query", body)
             headers["Content-Type"] = "application/json"
             # Set expired timestamp
@@ -330,7 +336,7 @@ class TestCLIEd25519Signing:
                 rogue.generate()
 
                 base = docker_services.core_url("alonso")
-                body = json.dumps({"query": "test", "persona": "personal"}).encode()
+                body = json.dumps({"query": "test", "persona": "general"}).encode()
                 headers = _signed_headers(rogue, "POST", "/v1/vault/query", body)
                 headers["Content-Type"] = "application/json"
 
@@ -366,14 +372,14 @@ class TestCLIEd25519Signing:
 
                 # 4. Rogue can produce valid signatures (for its own key)
                 body = b'{"query":"test"}'
-                _, _, rogue_sig = rogue.sign_request("POST", "/v1/vault/query", body)
+                _, _, _, rogue_sig = rogue.sign_request("POST", "/v1/vault/query", body)
                 assert len(rogue_sig) == 128, "Rogue signature must be valid Ed25519"
 
                 # 5. Rogue's signature does NOT verify with paired identity's key
                 from cryptography.exceptions import InvalidSignature
                 body_hash = hashlib.sha256(body).hexdigest()
-                _, ts, _ = rogue.sign_request("POST", "/v1/vault/query", body)
-                payload = f"POST\n/v1/vault/query\n\n{ts}\n{body_hash}"
+                _, ts, nonce, _ = rogue.sign_request("POST", "/v1/vault/query", body)
+                payload = f"POST\n/v1/vault/query\n\n{ts}\n{nonce}\n{body_hash}"
                 paired_pub_key = cli_identity._private_key.public_key()
                 with pytest.raises(InvalidSignature):
                     paired_pub_key.verify(
@@ -392,13 +398,13 @@ class TestCLIEd25519Signing:
         if DOCKER_MODE and docker_services is not None:
             base = docker_services.core_url("alonso")
             headers = {"Authorization": f"Bearer {docker_services.client_token}"}
-            body = json.dumps({"query": "test", "persona": "personal"}).encode()
+            body = json.dumps({"query": "test", "persona": "general"}).encode()
             headers["Content-Type"] = "application/json"
 
             resp = httpx.post(f"{base}/v1/vault/query", content=body, headers=headers, timeout=10)
             assert resp.status_code == 200, f"Bearer fallback failed: {resp.status_code} {resp.text}"
         else:
             # Mock mode: verify vault_query works via mock (no signing)
-            results = don_alonso.vault_query("personal", "test")
+            results = don_alonso.vault_query("general", "test")
             # May be empty but should not raise
             assert isinstance(results, list)

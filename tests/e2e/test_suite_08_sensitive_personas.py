@@ -55,8 +55,8 @@ class TestSensitivePersonas:
         # Ensure health persona exists and is restricted
         health = don_alonso.personas.get("health")
         assert health is not None, "Health persona must exist"
-        assert health.tier == "restricted", \
-            "Health persona must be in 'restricted' tier"
+        assert health.tier == "sensitive", \
+            "Health persona must be in 'sensitive' tier"
 
         # Store a health record (use space-separated summary for FTS)
         item_id = don_alonso.vault_store(
@@ -145,13 +145,13 @@ class TestSensitivePersonas:
         )
 
         # --- Persona isolation: health data NOT visible from /personal ---
-        personal_results = don_alonso.vault_query("personal", "prescription")
+        personal_results = don_alonso.vault_query("general", "prescription")
         health_leak = [
             r for r in personal_results
             if "Metformin" in r.body_text or "Dr. Sharma" in r.body_text
         ]
         assert len(health_leak) == 0, (
-            "Health data must NOT be visible from /personal persona"
+            "Health data must NOT be visible from /general persona"
         )
 
     # -----------------------------------------------------------------
@@ -299,16 +299,16 @@ class TestSensitivePersonas:
             "Returned item must belong to financial persona"
         )
 
-        # --- Negative: /personal cannot see health data ---
+        # --- Negative: /general cannot see health data ---
         personal_results = don_alonso.vault_query(
-            "personal", "cholesterol"
+            "general", "cholesterol"
         )
         health_items_in_personal = [
             item for item in personal_results
             if "cholesterol" in item.body_text.lower()
         ]
         assert len(health_items_in_personal) == 0, (
-            "/personal must not return health data"
+            "/general must not return health data"
         )
 
         # --- Negative: /health cannot see financial data ---
@@ -401,8 +401,8 @@ class TestSensitivePersonas:
         don_alonso.unlock_persona("health", "passphrase123")
         health_persona = don_alonso.personas.get("health")
         assert health_persona is not None, "Health persona must exist"
-        assert health_persona.tier == "restricted", (
-            "Health persona must be in 'restricted' tier"
+        assert health_persona.tier == "sensitive", (
+            "Health persona must be in 'sensitive' tier"
         )
 
         # Store sensitive health data (space-separated summary for FTS)
@@ -502,14 +502,14 @@ class TestSensitivePersonas:
             "Briefing must reference health persona"
         )
 
-        # --- Persona isolation: health data not visible from /personal ---
-        personal_results = don_alonso.vault_query("personal", "blood")
+        # --- Persona isolation: health data not visible from /general ---
+        personal_results = don_alonso.vault_query("general", "blood")
         health_leak = [
             r for r in personal_results
             if "hba1c" in r.body_text or "Dr. Sharma" in r.body_text
         ]
         assert len(health_leak) == 0, (
-            "Health data must NOT be visible from /personal persona"
+            "Health data must NOT be visible from /general persona"
         )
 
         # --- Negative control: non-existent query returns empty ---

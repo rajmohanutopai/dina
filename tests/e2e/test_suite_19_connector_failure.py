@@ -67,7 +67,7 @@ class TestConnectorFailure:
         stored_ids = []
         for email in emails[:3]:
             item_id = node.vault_store(
-                "personal", f"email_{email['id']}",
+                "general", f"email_{email['id']}",
                 {"subject": email["subject"], "sender": email["sender"]},
                 item_type="email", source="gmail",
             )
@@ -91,7 +91,7 @@ class TestConnectorFailure:
             })
 
         # Previously stored vault items survive the outage
-        pre_outage_results = node.vault_query("personal", "email_email_0000")
+        pre_outage_results = node.vault_query("general", "email_email_0000")
         assert len(pre_outage_results) >= 1, (
             "Vault data must survive connector outage"
         )
@@ -216,7 +216,7 @@ class TestConnectorFailure:
         batch_1_item_ids = []
         for email in batch_1:
             item_id = node.vault_store(
-                "personal",
+                "general",
                 f"email_{email['id']}",
                 {"subject": email["subject"], "sender": email["sender"]},
                 item_type="email",
@@ -268,7 +268,7 @@ class TestConnectorFailure:
         batch_2_item_ids = []
         for email in batch_2:
             item_id = node.vault_store(
-                "personal",
+                "general",
                 f"email_{email['id']}",
                 {"subject": email["subject"], "sender": email["sender"]},
                 item_type="email",

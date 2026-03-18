@@ -235,8 +235,8 @@ class TestSecurityAdversarial:
         """
         brain_did = "did:plc:brain_agent"
 
-        # /personal is open -> accessible
-        personal_results = don_alonso.vault_query("personal", "sancho")
+        # /general is default -> accessible
+        personal_results = don_alonso.vault_query("general", "sancho")
         assert isinstance(personal_results, list)  # Access granted
 
         # /financial is locked -> 403
@@ -280,7 +280,7 @@ class TestSecurityAdversarial:
 
         # Safe action is allowed
         search_intent = don_alonso.verify_agent_intent(
-            brain_did, "search", "personal",
+            brain_did, "search", "general",
         )
         assert search_intent["risk"] == "SAFE"
         assert search_intent["approved"] is True
@@ -325,13 +325,13 @@ class TestSecurityAdversarial:
         """
         # Store PII-laden data in vault
         don_alonso.vault_store(
-            "personal", "contact_info",
+            "general", "contact_info",
             "Rajmohan lives at 123 Main Street, email rajmohan@email.com, "
             "phone +91-9876543210, CC 4111-1111-1111-1111"
         )
 
         # Trigger operations that generate audit/log entries
-        don_alonso.vault_query("personal", "contact_info")
+        don_alonso.vault_query("general", "contact_info")
         don_alonso.send_d2d(
             "did:plc:sancho",
             "dina/social/greeting",
@@ -746,7 +746,7 @@ class TestSecurityAdversarial:
         assert len(consumer.fts_index) > 0
 
         # FTS index should NOT exist in other personas for this item
-        personal = don_alonso.personas["personal"]
+        personal = don_alonso.personas["general"]
         # The personal persona has its own FTS index from its own items,
         # but it should NOT contain the consumer item's words
         # (unless they overlap with personal items)

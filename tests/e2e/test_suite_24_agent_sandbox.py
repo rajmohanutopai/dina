@@ -62,8 +62,8 @@ class TestAgentSandbox:
         assert health is not None, (
             "Don Alonso must have a 'health' persona."
         )
-        assert health.tier in ("restricted", "locked"), (
-            f"Health persona must be 'restricted' or 'locked' tier — "
+        assert health.tier in ("sensitive", "locked"), (
+            f"Health persona must be 'sensitive' or 'locked' tier — "
             f"not open to untrusted agents. Got: {health.tier!r}"
         )
 
@@ -301,7 +301,7 @@ class TestAgentSandbox:
         # Uses real Go Core POST /v1/vault/store.
         # ------------------------------------------------------------------
         node.vault_store(
-            "personal",
+            "general",
             "agent_violation_malbot_health",
             {
                 "type": "agent_access_violation",
@@ -318,7 +318,7 @@ class TestAgentSandbox:
         )
 
         stored = node.vault_query(
-            "personal", "agent_access_violation", mode="fts5",
+            "general", "agent_access_violation", mode="fts5",
         )
         assert len(stored) >= 1, (
             f"Agent access violation must be stored in vault for "
@@ -409,7 +409,7 @@ class TestAgentSandbox:
 
         # Record the revocation in the vault for audit.
         node.vault_store(
-            "personal",
+            "general",
             "agent_revocation_openclaw",
             {
                 "type": "agent_revocation",
@@ -519,7 +519,7 @@ class TestAgentSandbox:
         # Uses real Go Core POST /v1/vault/query.
         # ------------------------------------------------------------------
         revocation_records = node.vault_query(
-            "personal", "agent_revocation", mode="fts5",
+            "general", "agent_revocation", mode="fts5",
         )
         assert len(revocation_records) >= 1, (
             f"Agent revocation event must be stored in vault. "
@@ -814,7 +814,7 @@ class TestAgentSandbox:
         # Uses real Go Core POST /v1/vault/store.
         # ------------------------------------------------------------------
         node.vault_store(
-            "personal",
+            "general",
             "agent_impersonation_attempt_openclaw",
             {
                 "type": "agent_impersonation_attempt",
@@ -830,7 +830,7 @@ class TestAgentSandbox:
         )
 
         stored = node.vault_query(
-            "personal", "agent_impersonation_attempt", mode="fts5",
+            "general", "agent_impersonation_attempt", mode="fts5",
         )
         assert len(stored) >= 1, (
             f"Impersonation attempt must be stored in vault for "

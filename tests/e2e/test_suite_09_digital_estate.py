@@ -83,7 +83,7 @@ class TestDigitalEstate:
         assert plan.default_action == "destroy"
         assert len(plan.beneficiaries) >= 1
         assert plan.beneficiaries[0].did == "did:plc:albert"
-        assert "personal" in plan.beneficiaries[0].personas
+        assert "general" in plan.beneficiaries[0].personas
         assert "health" in plan.beneficiaries[0].personas
 
     # -----------------------------------------------------------------
@@ -171,8 +171,8 @@ class TestDigitalEstate:
             b for b in don_alonso.estate_plan.beneficiaries
             if b.did == "did:plc:albert"
         ][0]
-        assert set(albert_beneficiary.personas) == {"personal", "health"}, \
-            "Albert should only receive personal and health persona keys"
+        assert set(albert_beneficiary.personas) == {"general", "health"}, \
+            "Albert should only receive general and health persona keys"
 
         # --- Verify delivered key VALUES are correct DEKs ---
         # The estate_keys message payload contains the actual keys dict
@@ -184,23 +184,23 @@ class TestDigitalEstate:
         )
 
         # Compute expected DEKs from the master seed
-        expected_personal_dek = _derive_dek(
-            don_alonso.master_seed, "dina:vault:personal:v1"
+        expected_general_dek = _derive_dek(
+            don_alonso.master_seed, "dina:vault:general:v1"
         )
         expected_health_dek = _derive_dek(
             don_alonso.master_seed, "dina:vault:health:v1"
         )
 
         # Verify the correct DEKs are NOT the master seed itself
-        assert expected_personal_dek != don_alonso.master_seed, (
+        assert expected_general_dek != don_alonso.master_seed, (
             "Derived DEK must differ from raw master seed"
         )
         assert expected_health_dek != don_alonso.master_seed, (
             "Derived DEK must differ from raw master seed"
         )
         # Verify the two DEKs differ from each other
-        assert expected_personal_dek != expected_health_dek, (
-            "Personal and health DEKs must be different"
+        assert expected_general_dek != expected_health_dek, (
+            "General and health DEKs must be different"
         )
 
         # Verify delivery was confirmed
@@ -246,13 +246,13 @@ class TestDigitalEstate:
         node.first_run_setup("fresh@example.com", "passphrase_fresh")
 
         # Create personas
-        node.create_persona("personal", PersonaType.PERSONAL, "open")
-        node.create_persona("health", PersonaType.HEALTH, "restricted")
+        node.create_persona("general", PersonaType.GENERAL, "default")
+        node.create_persona("health", PersonaType.HEALTH, "sensitive")
         node.create_persona("financial", PersonaType.FINANCIAL, "locked")
         node.unlock_persona("financial", "passphrase_fresh")
 
         # Store data in each persona
-        node.vault_store("personal", "diary_entry",
+        node.vault_store("general", "diary_entry",
                          {"text": "Today was a good day"})
         node.vault_store("health", "medical_record",
                          {"condition": "healthy"})
@@ -274,7 +274,7 @@ class TestDigitalEstate:
             beneficiaries=[
                 EstateBeneficiary(
                     did="did:plc:albert",
-                    personas=["personal", "health"],
+                    personas=["general", "health"],
                     access_level="full_decrypt",
                 ),
                 EstateBeneficiary(
@@ -311,7 +311,7 @@ class TestDigitalEstate:
             "Destruction must be blocked when not all beneficiaries confirmed"
 
         # Verify data still exists
-        assert len(node.personas["personal"].items) >= 1, \
+        assert len(node.personas["general"].items) >= 1, \
             "Personal data must survive failed destruction"
         assert len(node.personas["financial"].items) >= 1, \
             "Financial data must survive failed destruction"
@@ -335,12 +335,12 @@ class TestDigitalEstate:
             "Destruction must succeed when all beneficiaries confirmed"
 
         # Non-assigned personas are destroyed
-        # "personal" and "health" assigned to Albert, "financial" assigned
+        # "general" and "health" assigned to Albert, "financial" assigned
         # to colleague. Any other personas should be wiped.
-        # The "personal" persona created by first_run_setup is a duplicate
+        # The "general" persona created by first_run_setup is a duplicate
         # of the one in the estate plan, so its items may or may not survive
         # depending on whether it's in the assigned set.
-        assigned_personas = {"personal", "health", "financial"}
+        assigned_personas = {"general", "health", "financial"}
         for pname, persona in node.personas.items():
             if pname not in assigned_personas:
                 assert len(persona.items) == 0, \
@@ -460,4 +460,4 @@ class TestDigitalEstate:
         assert plan.custodian_total == 5
         assert len(plan.beneficiaries) >= 1
         assert plan.beneficiaries[0].did == "did:plc:albert"
-        assert "personal" in plan.beneficiaries[0].personas
+        assert "general" in plan.beneficiaries[0].personas

@@ -69,7 +69,7 @@ class TestSilenceUnderStress:
         for i in range(engagement_count):
             # Store each engagement event in vault for traceability.
             node.vault_store(
-                "personal",
+                "general",
                 f"engagement_event_{i:03d}",
                 {
                     "type": "content_suggestion",
@@ -185,7 +185,7 @@ class TestSilenceUnderStress:
         # Uses real Go Core POST /v1/vault/query.
         # ------------------------------------------------------------------
         vault_results = node.vault_query(
-            "personal", "Newsletter digest", mode="fts5",
+            "general", "Newsletter digest", mode="fts5",
         )
         assert len(vault_results) >= 10, (
             f"Engagement events must be stored in vault for later "
@@ -236,7 +236,7 @@ class TestSilenceUnderStress:
         # Uses real Go Core POST /v1/vault/store.
         # ------------------------------------------------------------------
         node.vault_store(
-            "personal",
+            "general",
             "contact_sancho",
             {
                 "name": "Sancho",
@@ -250,7 +250,7 @@ class TestSilenceUnderStress:
         )
 
         # Verify the contact was stored.
-        contacts = node.vault_query("personal", "Sancho", mode="fts5")
+        contacts = node.vault_query("general", "Sancho", mode="fts5")
         assert len(contacts) >= 1, (
             f"Sancho's contact must be stored in vault. "
             f"Got {len(contacts)} results."
@@ -458,7 +458,7 @@ class TestSilenceUnderStress:
         # Uses real Go Core POST /v1/vault/store.
         # ------------------------------------------------------------------
         node.vault_store(
-            "personal",
+            "general",
             "untrusted_urgent_msg",
             {
                 "from_did": unknown_did,
@@ -472,7 +472,7 @@ class TestSilenceUnderStress:
         )
 
         # Verify it's queryable for later review.
-        stored = node.vault_query("personal", "compromised", mode="fts5")
+        stored = node.vault_query("general", "compromised", mode="fts5")
         assert len(stored) >= 1, (
             f"Untrusted urgent message must be stored in vault for "
             f"user review. Got {len(stored)} results."
@@ -559,7 +559,7 @@ class TestSilenceUnderStress:
 
         # Store the reminder in vault first.
         node.vault_store(
-            "personal",
+            "general",
             "medication_reminder",
             {
                 "type": "reminder",
@@ -750,7 +750,7 @@ class TestSilenceUnderStress:
         # Uses real Go Core POST /v1/vault/store.
         # ------------------------------------------------------------------
         node.vault_store(
-            "personal",
+            "general",
             "dnd_lifecycle_test",
             {
                 "dnd_enabled": True,
@@ -765,7 +765,7 @@ class TestSilenceUnderStress:
         )
 
         stored = node.vault_query(
-            "personal", "dnd_lifecycle_test", mode="fts5",
+            "general", "dnd_lifecycle_test", mode="fts5",
         )
         assert len(stored) >= 1, (
             f"DND lifecycle event must be stored in vault. "

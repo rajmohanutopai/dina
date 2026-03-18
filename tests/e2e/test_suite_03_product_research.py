@@ -530,7 +530,7 @@ class TestProductResearchPurchase:
 
         # Enrich with vault context: Don Alonso's existing product preferences
         # The vault has context about chairs from previous research
-        vault_results = don_alonso.vault_query("personal", "chair", mode="fts5")
+        vault_results = don_alonso.vault_query("general", "chair", mode="fts5")
         # Vault context may or may not exist, but the query should not fail.
         # If it exists, it enriches the cold-start results.
 

@@ -424,7 +424,7 @@ class RealHomeNode(HomeNode):
     # -- Persona Operations ------------------------------------------------
 
     def create_persona(
-        self, name: str, ptype: PersonaType, tier: str = "open",
+        self, name: str, ptype: PersonaType, tier: str = "default",
     ) -> Persona:
         """Create persona on real Go Core + mock state.
 
@@ -557,8 +557,8 @@ class RealHomeNode(HomeNode):
         if not p or not p.is_accessible(self._now()):
             raise PermissionError(f"403 persona_locked: {persona}")
 
-        # Restricted persona audit + briefing (same as mock)
-        if p.tier == "restricted":
+        # Sensitive persona audit + briefing (same as mock)
+        if p.tier == "sensitive":
             self._log_audit("restricted_persona_access", {"persona": persona})
             self.briefing_queue.append({
                 "type": "restricted_access",
@@ -580,7 +580,8 @@ class RealHomeNode(HomeNode):
                     merged.append(item)
             return merged
 
-        # FTS via real API
+        # FTS via real API — raise on failure so we don't silently
+        # fall through to mock state when the real API is broken.
         resp = _api_request(
             "post",
             f"{self._core_url}/v1/vault/query",
@@ -589,27 +590,30 @@ class RealHomeNode(HomeNode):
                 "query": query,
                 "mode": "fts5",
                 "limit": 100,
+                "include_content": True,
             },
             headers=self._headers(),
+            raise_on_fail=True,
         )
 
         if resp is not None:
             api_items = resp.json().get("items") or []
             results = []
             for item_data in api_items:
-                real_id = item_data.get("ID", "")
+                real_id = item_data.get("id") or item_data.get("ID", "")
                 mock_id = self._real_to_mock_id.get(real_id)
                 if mock_id and mock_id in p.items:
                     results.append(p.items[mock_id])
                 elif real_id:
-                    # Item from real API not tracked in mock — build VaultItem
+                    # Item from real API not tracked in mock — build VaultItem.
+                    # Core returns snake_case keys (json tags), not PascalCase.
                     results.append(VaultItem(
                         item_id=real_id,
                         persona=persona,
-                        item_type=item_data.get("Type", "note"),
-                        source=item_data.get("Source", ""),
-                        summary=item_data.get("Summary", ""),
-                        body_text=item_data.get("BodyText", ""),
+                        item_type=item_data.get("type", item_data.get("Type", "note")),
+                        source=item_data.get("source", item_data.get("Source", "")),
+                        summary=item_data.get("summary", item_data.get("Summary", "")),
+                        body_text=item_data.get("body_text", item_data.get("BodyText", "")),
                     ))
             return results
 

@@ -64,9 +64,9 @@ class TestFirstRunOnboarding:
         assert doc.public_key == node.root_public_key
 
         # Only /personal persona exists after first run
-        assert "personal" in node.personas
+        assert "general" in node.personas
         assert len(node.personas) == 1
-        assert node.personas["personal"].persona_type == PersonaType.PERSONAL
+        assert node.personas["general"].persona_type == PersonaType.GENERAL
 
         # Mnemonic is generated but must NOT be stored on disk.
         # In our mock, mnemonic lives only in RAM as a list.  The wrapped_seed
@@ -177,7 +177,7 @@ class TestFirstRunOnboarding:
         assert node.pair_device(code2, DeviceType.RICH_CLIENT) is None
 
         # --- Store a vault item ---
-        item_id = node.vault_store("personal", "test_item", {"data": "hello"})
+        item_id = node.vault_store("general", "test_item", {"data": "hello"})
         assert item_id.startswith("vi_")
 
         # Record WS message counts before D2D arrival
@@ -386,10 +386,10 @@ class TestFirstRunOnboarding:
         )
 
         # Persona DEKs are also deterministic
-        assert node1.personas["personal"].dek == node2.personas["personal"].dek, (
+        assert node1.personas["general"].dek == node2.personas["general"].dek, (
             "Persona DEKs must be deterministic from the same seed"
         )
-        assert node1.personas["personal"].dek != "", (
+        assert node1.personas["general"].dek != "", (
             "Persona DEK must be non-empty"
         )
 
@@ -411,7 +411,7 @@ class TestFirstRunOnboarding:
         assert node3.root_public_key != root_pub_1, (
             "Different seed must produce different public key"
         )
-        assert node3.personas["personal"].dek != node1.personas["personal"].dek, (
+        assert node3.personas["general"].dek != node1.personas["general"].dek, (
             "Different seed must produce different persona DEK"
         )
 
@@ -447,4 +447,4 @@ class TestFirstRunOnboarding:
         # State unchanged -- still exactly one root identity
         assert node.setup_complete is True
         assert len([p for p in node.personas.values()
-                    if p.persona_type == PersonaType.PERSONAL]) == 1
+                    if p.persona_type == PersonaType.GENERAL]) == 1

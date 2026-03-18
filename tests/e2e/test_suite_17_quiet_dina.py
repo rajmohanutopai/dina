@@ -243,7 +243,7 @@ class TestQuietDina:
         source_item_ids = []
         for i in range(4):
             item_id = node.vault_store(
-                "personal",
+                "general",
                 f"engagement_event_{i}",
                 {
                     "event_type": "engagement",
@@ -269,7 +269,7 @@ class TestQuietDina:
         assert len(node.briefing_queue) == 4
 
         # Pre-crash positive control: vault_query returns stored items
-        pre_crash_results = node.vault_query("personal", "daily")
+        pre_crash_results = node.vault_query("general", "daily")
         pre_crash_notifications = [
             item for item in pre_crash_results
             if item.item_type == "notification"
@@ -291,7 +291,7 @@ class TestQuietDina:
         # Rebuild briefing from vault (source-of-truth persists the crash).
         # Query for "daily" — a standalone FTS token present in every
         # notification body ("Queued event N: daily tip #N").
-        rebuilt_items = node.vault_query("personal", "daily")
+        rebuilt_items = node.vault_query("general", "daily")
 
         # Filter to only the notification-type items from this test
         rebuilt_notifications = [
@@ -308,7 +308,7 @@ class TestQuietDina:
 
         # Verify VALUE assertions on rebuilt items
         for item in rebuilt_notifications:
-            assert item.persona == "personal"
+            assert item.persona == "general"
             assert "daily tip" in item.body_text, (
                 f"Rebuilt item must contain 'daily tip': {item.body_text}"
             )
@@ -344,7 +344,7 @@ class TestQuietDina:
             )
 
         # Negative control: non-existent query returns empty
-        empty = node.vault_query("personal", "nonexistent_xyz_briefing")
+        empty = node.vault_query("general", "nonexistent_xyz_briefing")
         assert len(empty) == 0
 
         node.dnd_active = False

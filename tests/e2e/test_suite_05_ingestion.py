@@ -87,7 +87,7 @@ class TestIngestionPipeline:
         thin_ids: list[str] = []
         for email in skipped:
             item_id = node.vault_store(
-                "personal",
+                "general",
                 f"email_thin_{email['id']}",
                 {"email_id": email["id"],
                  "category": email["category"],
@@ -114,7 +114,7 @@ class TestIngestionPipeline:
             assert full_email is not None
 
             item_id = node.vault_store(
-                "personal",
+                "general",
                 f"email_full_{email['id']}",
                 {"email_id": email["id"],
                  "category": email["category"],
@@ -139,7 +139,7 @@ class TestIngestionPipeline:
         # ------------------------------------------------------------------
         # Verify thin records: contain metadata, NO body field
         # ------------------------------------------------------------------
-        persona = node.personas["personal"]
+        persona = node.personas["general"]
         for item_id in thin_ids:
             item = persona.items[item_id]
             body = json.loads(item.body_text)
@@ -173,12 +173,12 @@ class TestIngestionPipeline:
         # ------------------------------------------------------------------
         # FTS retrieval: thin and full records findable
         # ------------------------------------------------------------------
-        thin_search = node.vault_query("personal", "email_thin", mode="fts5")
+        thin_search = node.vault_query("general", "email_thin", mode="fts5")
         assert len(thin_search) == 40, (
             f"Expected 40 thin records via FTS, got {len(thin_search)}"
         )
 
-        full_search = node.vault_query("personal", "email_full", mode="fts5")
+        full_search = node.vault_query("general", "email_full", mode="fts5")
         assert len(full_search) == 10, (
             f"Expected 10 full records via FTS, got {len(full_search)}"
         )
@@ -186,7 +186,7 @@ class TestIngestionPipeline:
         # ------------------------------------------------------------------
         # Negative control: non-existent query returns empty
         # ------------------------------------------------------------------
-        empty = node.vault_query("personal", "xyzzy_nonexistent_email")
+        empty = node.vault_query("general", "xyzzy_nonexistent_email")
         assert len(empty) == 0
 
     # TST-E2E-024
@@ -273,9 +273,9 @@ class TestIngestionPipeline:
         # ------------------------------------------------------------------
         # 5. Persona isolation: not visible from personal
         # ------------------------------------------------------------------
-        cross_results = node.vault_query("personal", "telegram")
+        cross_results = node.vault_query("general", "telegram")
         assert len(cross_results) == 0, (
-            "Telegram message stored in 'social' must NOT be visible from 'personal'"
+            "Telegram message stored in 'social' must NOT be visible from 'general'"
         )
 
         # ------------------------------------------------------------------
@@ -393,7 +393,7 @@ class TestIngestionPipeline:
         # ------------------------------------------------------------------
         # Persona isolation: calendar NOT visible from personal
         # ------------------------------------------------------------------
-        personal_cal = node.vault_query("personal", "calendar", mode="fts5")
+        personal_cal = node.vault_query("general", "calendar", mode="fts5")
         professional_titles = found_titles
         for item in personal_cal:
             body = json.loads(item.body_text) if item.body_text.startswith("{") else {}
@@ -428,7 +428,7 @@ class TestIngestionPipeline:
         seen_email_ids: set[str] = set()
         for email in batch1:
             node.vault_store(
-                "personal",
+                "general",
                 f"email_{email['id']}",
                 email,
                 item_type="email",
@@ -542,7 +542,7 @@ class TestIngestionPipeline:
         """
         node = fresh_don_alonso
         node.first_run_setup("fastsync@example.com", "passphrase_fast")
-        node.create_persona("personal", PersonaType.PERSONAL, "open")
+        node.create_persona("general", PersonaType.GENERAL, "default")
 
         now = time.time()
 
@@ -563,7 +563,7 @@ class TestIngestionPipeline:
         # ------------------------------------------------------------------
         for email in recent_emails:
             node.vault_store(
-                "personal",
+                "general",
                 f"fastsync email {email['id']}",
                 email,
                 item_type="email",
@@ -571,7 +571,7 @@ class TestIngestionPipeline:
             )
 
         # Verify immediately queryable
-        fast_results = node.vault_query("personal", "fastsync", mode="fts5")
+        fast_results = node.vault_query("general", "fastsync", mode="fts5")
         assert len(fast_results) == len(recent_emails), (
             "All fast-synced recent emails must be immediately queryable"
         )
@@ -587,7 +587,7 @@ class TestIngestionPipeline:
             if i == len(old_emails) // 2 and len(old_emails) > 0:
                 # User query — must pause backfill and be served immediately
                 user_results = node.vault_query(
-                    "personal", "fastsync", mode="fts5",
+                    "general", "fastsync", mode="fts5",
                 )
                 assert len(user_results) >= 1, (
                     "User query during backfill must return results immediately"
@@ -596,7 +596,7 @@ class TestIngestionPipeline:
 
             # Continue backfill
             node.vault_store(
-                "personal",
+                "general",
                 f"backfill email {email['id']}",
                 email,
                 item_type="email",
@@ -606,7 +606,7 @@ class TestIngestionPipeline:
 
         # Verify backfill completed
         backfill_results = node.vault_query(
-            "personal", "backfill", mode="fts5",
+            "general", "backfill", mode="fts5",
         )
         assert len(backfill_results) == len(old_emails), (
             "All backfilled old emails must be stored"

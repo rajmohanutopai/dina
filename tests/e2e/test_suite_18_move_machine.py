@@ -51,7 +51,7 @@ class TestMoveMachine:
             {"product": "Standing Desk", "score": 87},
         )
         consumer_items_before = dict(source.personas["consumer"].items)
-        personal_items_before = dict(source.personas["personal"].items)
+        personal_items_before = dict(source.personas["general"].items)
 
         # -- Export: snapshot the node state --------------------------------
         # Serialize contacts with enum values converted to strings
@@ -178,7 +178,7 @@ class TestMoveMachine:
         assert "did:plc:sancho" in fresh.contacts
 
         # -- Verify personal persona items also restored -------------------
-        fresh_personal = fresh.personas.get("personal")
+        fresh_personal = fresh.personas.get("general")
         assert fresh_personal is not None
         assert len(fresh_personal.items) == len(personal_items_before), (
             f"Personal vault item count must match: "
@@ -207,7 +207,7 @@ class TestMoveMachine:
         original_pubkey = source.root_public_key
 
         # Verify source has vault data
-        source_personal_count = len(source.personas["personal"].items)
+        source_personal_count = len(source.personas["general"].items)
         assert source_personal_count > 0, (
             "Source must have vault data before recovery test"
         )
@@ -252,8 +252,8 @@ class TestMoveMachine:
         # After first_run_setup, only the personal persona exists with no
         # items (the setup creates the persona but not the data)
         recovered.first_run_setup("alonso@example.com", "new_passphrase")
-        assert "personal" in recovered.personas
-        assert len(recovered.personas["personal"].items) == 0, (
+        assert "general" in recovered.personas
+        assert len(recovered.personas["general"].items) == 0, (
             "Recovered personal persona vault must be empty"
         )
 

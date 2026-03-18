@@ -18,7 +18,7 @@
 * **The Stack:** Go Core + Python Brain + Python CLI + SQLite/SQLCipher.
 * **Advanced Setup:** [Local LLM / Networking / Yggdrasil](./docs/ADVANCED-SETUP.md)
 * **Test Results:** [Detailed Test Results](https://rajmohanutopai.github.io/dina/all_test_results.html)
-* **The Architecture:** [Read the Engineering Spec](./ARCHITECTURE.md)
+* **The Architecture:** [Read the Engineering Spec](./ARCHITECTURE.md), [Flow Diagrams](./docs/FLOW_DIAGRAMS.md)
 * **Discussion:** [Join the Discord](https://discord.gg/gDRcrEwy)
 
 ---
@@ -311,7 +311,7 @@ Dina is for everyone. If you believe your digital companion should work for you,
 
 ## Security Details
 
-Security is fundamental for Dina. She stores your most important data, so she has to be doubly secure. Full details are in [SECURITY.MD](./SECURITY.md). The highlights:
+Security is fundamental for Dina. She stores your most important data, so she has to be doubly secure. Full details are in [SECURITY.MD](./SECURITY.md). The flows can be seen in  [FLOW_DIAGRAMS.MD](./docs/FLOW_DIAGRAMS.md) The highlights:
 
 **Identity**: Root key is Ed25519, generated from a BIP-39 24-word mnemonic. Persona keys derived via SLIP-0010 hardened paths under purpose code 9999'. Vault DEKs derived via HKDF-SHA256 with per-persona info strings. Master seed is key-wrapped with an Argon2id-derived KEK.
 

@@ -345,7 +345,7 @@ def chairmaker(plc_directory, d2d_network, docker_services, _core_private_keys) 
     )
 
     node.first_run_setup("chairmaker@example.com", "passphrase789")
-    node.create_persona("business", PersonaType.BUSINESS, "open")
+    node.create_persona("business", PersonaType.BUSINESS, "standard")
 
     # Business context
     node.vault_store("business", "product_aeron",

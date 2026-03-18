@@ -286,8 +286,8 @@ class HomeNode:
             self.master_seed.encode(), password
         )
 
-        # Create identity persona (always present)
-        self._create_persona("personal", PersonaType.PERSONAL, "open")
+        # Create default persona (always present, always open)
+        self._create_persona("general", PersonaType.GENERAL, "default")
 
         # Set mode
         self.mode = "convenience"
@@ -301,7 +301,7 @@ class HomeNode:
         return {"status": "ok", "did": self.did}
 
     def _create_persona(self, name: str, ptype: PersonaType,
-                        tier: str = "open") -> Persona:
+                        tier: str = "default") -> Persona:
         dek = _derive_dek(self.master_seed, f"dina:vault:{name}:v1")
         persona_did = f"{self.did}:{name}"
         p = Persona(
@@ -314,7 +314,7 @@ class HomeNode:
         return p
 
     def create_persona(self, name: str, ptype: PersonaType,
-                       tier: str = "open") -> Persona:
+                       tier: str = "default") -> Persona:
         return self._create_persona(name, ptype, tier)
 
     def unlock_persona(self, name: str, passphrase: str,
@@ -413,7 +413,7 @@ class HomeNode:
         if not p or not p.is_accessible(self._now()):
             raise PermissionError(f"403 persona_locked: {persona}")
 
-        if p.tier == "restricted":
+        if p.tier == "sensitive":
             self._log_audit("restricted_persona_access", {"persona": persona})
             self.briefing_queue.append({
                 "type": "restricted_access",
@@ -1121,7 +1121,7 @@ class HomeNode:
         # 4. Persona tier check — restricted/locked block untrusted agents.
         target_persona = context.get("persona", target)
         persona_obj = self.personas.get(target_persona)
-        if persona_obj and persona_obj.tier in ("restricted", "locked"):
+        if persona_obj and persona_obj.tier in ("sensitive", "locked"):
             agent_trust = context.get("agent_trust_score", 50)
             if agent_trust < 50:
                 self._log_audit("agent_intent", {

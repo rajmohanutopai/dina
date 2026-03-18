@@ -201,7 +201,7 @@ class TestResilienceRecovery:
         """
         node = fresh_don_alonso
         node.first_run_setup("alonso@example.com", "passphrase123")
-        node.create_persona("consumer", PersonaType.CONSUMER, "open")
+        node.create_persona("consumer", PersonaType.CONSUMER, "standard")
 
         # ------------------------------------------------------------------
         # 1. Rapidly store 100 items
@@ -300,7 +300,7 @@ class TestResilienceRecovery:
         """
         node = fresh_don_alonso
         node.first_run_setup("alonso@example.com", "passphrase123")
-        node.create_persona("consumer", PersonaType.CONSUMER, "open")
+        node.create_persona("consumer", PersonaType.CONSUMER, "standard")
 
         # Store vault items
         item_ids = []
@@ -454,7 +454,7 @@ class TestResilienceRecovery:
         """
         node = fresh_don_alonso
         node.first_run_setup("alonso@example.com", "passphrase123")
-        node.create_persona("consumer", PersonaType.CONSUMER, "open")
+        node.create_persona("consumer", PersonaType.CONSUMER, "standard")
 
         # Store some items while space is available
         pre_items = []
@@ -536,7 +536,7 @@ class TestResilienceRecovery:
         """
         node = fresh_don_alonso
         node.first_run_setup("alonso@example.com", "passphrase123")
-        node.create_persona("consumer", PersonaType.CONSUMER, "open")
+        node.create_persona("consumer", PersonaType.CONSUMER, "standard")
 
         # Prepare 10 items for batch ingestion
         batch_items = [

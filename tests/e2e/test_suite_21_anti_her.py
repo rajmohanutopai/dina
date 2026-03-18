@@ -56,7 +56,7 @@ class TestAntiHer:
         # Uses real Go Core POST /v1/vault/store.
         # ------------------------------------------------------------------
         don_alonso.vault_store(
-            "personal",
+            "general",
             "sarah_last_contact",
             {
                 "contact_name": "Sarah",
@@ -72,7 +72,7 @@ class TestAntiHer:
 
         # Also store Sarah as a contact with relationship metadata.
         don_alonso.vault_store(
-            "personal",
+            "general",
             "sarah_relationship",
             {
                 "name": "Sarah",
@@ -88,7 +88,7 @@ class TestAntiHer:
         # Step 2: Verify the vault data was stored correctly.
         # Uses real Go Core POST /v1/vault/query.
         # ------------------------------------------------------------------
-        results = don_alonso.vault_query("personal", "Sarah", mode="fts5")
+        results = don_alonso.vault_query("general", "Sarah", mode="fts5")
         assert len(results) >= 1, (
             f"Sarah's contact data must be queryable in vault. "
             f"Got {len(results)} results."
@@ -240,7 +240,7 @@ class TestAntiHer:
         # Uses real Go Core POST /v1/vault/store.
         # ------------------------------------------------------------------
         don_alonso.vault_store(
-            "personal",
+            "general",
             "sancho_mother_fall",
             {
                 "from": "Sancho",
@@ -411,7 +411,7 @@ class TestAntiHer:
 
         # Record of healthy social period: regular D2D with friends.
         node.vault_store(
-            "personal",
+            "general",
             "social_activity_week1",
             {
                 "period": "days 1-7",
@@ -424,7 +424,7 @@ class TestAntiHer:
         )
 
         node.vault_store(
-            "personal",
+            "general",
             "social_activity_week2",
             {
                 "period": "days 8-14",
@@ -438,7 +438,7 @@ class TestAntiHer:
 
         # Declining activity in weeks 3-4.
         node.vault_store(
-            "personal",
+            "general",
             "social_activity_week3",
             {
                 "period": "days 15-21",
@@ -451,7 +451,7 @@ class TestAntiHer:
         )
 
         node.vault_store(
-            "personal",
+            "general",
             "social_activity_week4",
             {
                 "period": "days 22-30",
@@ -468,7 +468,7 @@ class TestAntiHer:
         # The "Her" pattern: user talks to Dina instead of humans.
         # ------------------------------------------------------------------
         node.vault_store(
-            "personal",
+            "general",
             "brain_interaction_week1",
             {
                 "period": "days 1-7",
@@ -480,7 +480,7 @@ class TestAntiHer:
         )
 
         node.vault_store(
-            "personal",
+            "general",
             "brain_interaction_week2",
             {
                 "period": "days 8-14",
@@ -492,7 +492,7 @@ class TestAntiHer:
         )
 
         node.vault_store(
-            "personal",
+            "general",
             "brain_interaction_week3",
             {
                 "period": "days 15-21",
@@ -504,7 +504,7 @@ class TestAntiHer:
         )
 
         node.vault_store(
-            "personal",
+            "general",
             "brain_interaction_week4",
             {
                 "period": "days 22-30",
@@ -520,7 +520,7 @@ class TestAntiHer:
         # Uses real Go Core POST /v1/vault/query.
         # ------------------------------------------------------------------
         social_results = node.vault_query(
-            "personal", "social_activity_log", mode="fts5",
+            "general", "social_activity_log", mode="fts5",
         )
         assert len(social_results) >= 3, (
             f"Social activity logs must be stored in vault. "
@@ -528,7 +528,7 @@ class TestAntiHer:
         )
 
         brain_results = node.vault_query(
-            "personal", "brain_activity_log", mode="fts5",
+            "general", "brain_activity_log", mode="fts5",
         )
         assert len(brain_results) >= 3, (
             f"Brain activity logs must be stored in vault. "
@@ -701,7 +701,7 @@ class TestAntiHer:
         # tracking.  Uses real Go Core POST /v1/vault/store.
         # ------------------------------------------------------------------
         node.vault_store(
-            "personal",
+            "general",
             "isolation_warning_issued",
             {
                 "type": "anti_her_isolation_warning",
@@ -717,7 +717,7 @@ class TestAntiHer:
         )
 
         stored_warning = node.vault_query(
-            "personal", "anti_her_isolation_warning", mode="fts5",
+            "general", "anti_her_isolation_warning", mode="fts5",
         )
         assert len(stored_warning) >= 1, (
             f"Isolation warning event must be stored in vault for "
@@ -749,7 +749,7 @@ class TestAntiHer:
 
         # Store the D2D conversation where the promise was made.
         node.vault_store(
-            "personal",
+            "general",
             "conversation_sancho_promise",
             {
                 "from": "Don Alonso",
@@ -766,7 +766,7 @@ class TestAntiHer:
 
         # Also store the promise explicitly so Brain can track it.
         node.vault_store(
-            "personal",
+            "general",
             "promise_pdf_to_sancho",
             {
                 "promise_text": "I'll send Sancho the architecture PDF",
@@ -786,7 +786,7 @@ class TestAntiHer:
         # Step 2: Verify vault contains the promise data.
         # Uses real Go Core POST /v1/vault/query.
         # ------------------------------------------------------------------
-        results = node.vault_query("personal", "PDF Sancho", mode="fts5")
+        results = node.vault_query("general", "PDF Sancho", mode="fts5")
         assert len(results) >= 1, (
             f"Promise to send Sancho the PDF must be queryable in vault. "
             f"Got {len(results)} results."
@@ -1031,7 +1031,7 @@ class TestAntiHer:
         # Uses real Go Core POST /v1/vault/store.
         # ------------------------------------------------------------------
         node.vault_store(
-            "personal",
+            "general",
             "relationship_sarah",
             {
                 "name": "Sarah",
@@ -1045,7 +1045,7 @@ class TestAntiHer:
         )
 
         node.vault_store(
-            "personal",
+            "general",
             "relationship_sancho",
             {
                 "name": "Sancho",
@@ -1066,7 +1066,7 @@ class TestAntiHer:
 
         # Session 1 — 2 emotional messages.
         node.vault_store(
-            "personal",
+            "general",
             "emotional_msg_session1_a",
             {
                 "session": 1,
@@ -1081,7 +1081,7 @@ class TestAntiHer:
         )
 
         node.vault_store(
-            "personal",
+            "general",
             "emotional_msg_session1_b",
             {
                 "session": 1,
@@ -1097,7 +1097,7 @@ class TestAntiHer:
 
         # Session 2 — 2 emotional messages (escalating).
         node.vault_store(
-            "personal",
+            "general",
             "emotional_msg_session2_a",
             {
                 "session": 2,
@@ -1112,7 +1112,7 @@ class TestAntiHer:
         )
 
         node.vault_store(
-            "personal",
+            "general",
             "emotional_msg_session2_b",
             {
                 "session": 2,
@@ -1128,7 +1128,7 @@ class TestAntiHer:
 
         # Session 3 — 1 emotional message (deepening dependency).
         node.vault_store(
-            "personal",
+            "general",
             "emotional_msg_session3_a",
             {
                 "session": 3,
@@ -1147,7 +1147,7 @@ class TestAntiHer:
         # Uses real Go Core POST /v1/vault/query.
         # ------------------------------------------------------------------
         emotional_results = node.vault_query(
-            "personal", "emotional_message", mode="fts5",
+            "general", "emotional_message", mode="fts5",
         )
         assert len(emotional_results) >= 3, (
             f"Emotional messages must be stored in vault. "
@@ -1339,7 +1339,7 @@ class TestAntiHer:
         # Step 9: Verify multi-session tracking in vault audit.
         # ------------------------------------------------------------------
         node.vault_store(
-            "personal",
+            "general",
             "dependency_pattern_detected",
             {
                 "type": "anti_her_dependency_escalation",
@@ -1354,7 +1354,7 @@ class TestAntiHer:
         )
 
         stored = node.vault_query(
-            "personal", "anti_her_dependency_escalation", mode="fts5",
+            "general", "anti_her_dependency_escalation", mode="fts5",
         )
         assert len(stored) >= 1, (
             f"Dependency escalation event must be stored in vault. "
