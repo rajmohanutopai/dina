@@ -47,7 +47,7 @@ class TestAdminLifecycle:
         """Admin can create personas with valid auth."""
         resp = httpx.post(
             f"{core_url}/v1/personas",
-            json={"name": "admintest", "tier": "open", "passphrase": "adminpw"},
+            json={"name": "admintest", "tier": "default", "passphrase": "adminpw"},
             headers=auth_headers, timeout=10,
         )
         assert resp.status_code in (200, 201, 409), (

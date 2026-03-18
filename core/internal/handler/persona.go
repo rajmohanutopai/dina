@@ -108,11 +108,19 @@ func (h *PersonaHandler) HandleCreatePersona(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Auto-open vault for default and standard tier personas.
+	// Uses versioned DEK derivation for compatibility with upgraded personas.
+	// For already-existing personas, this ensures the vault is open even if
+	// Core booted before the persona was created (E2E/Docker scenario).
 	vaultStatus := "closed"
 	if (req.Tier == "default" || req.Tier == "standard") && h.VaultManager != nil && h.KeyDeriver != nil {
 		persona, perr := domain.NewPersonaName(req.Name)
 		if perr == nil {
-			dek, derr := h.KeyDeriver.DerivePersonaDEK(h.Seed, persona)
+			personaFullID := "persona-" + req.Name
+			dekVersion, dvErr := h.Personas.GetDEKVersion(r.Context(), personaFullID)
+			if dvErr != nil || dekVersion == 0 {
+				dekVersion = 1
+			}
+			dek, derr := h.KeyDeriver.DerivePersonaDEKVersioned(h.Seed, persona, dekVersion)
 			if derr != nil {
 				http.Error(w, `{"error":"persona created but vault DEK derivation failed"}`, http.StatusInternalServerError)
 				return
