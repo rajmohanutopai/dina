@@ -94,11 +94,9 @@ func (h *PersonaHandler) HandleCreatePersona(w http.ResponseWriter, r *http.Requ
 	}
 
 	personaID, err := h.Personas.Create(r.Context(), req.Name, req.Tier, passphraseHash)
-	if err != nil {
-		// LOW-11: Map validation errors to appropriate HTTP status codes.
+	alreadyExists := errors.Is(err, identity.ErrPersonaExists)
+	if err != nil && !alreadyExists {
 		switch {
-		case errors.Is(err, identity.ErrPersonaExists):
-			http.Error(w, `{"error":"persona already exists"}`, http.StatusConflict)
 		case errors.Is(err, identity.ErrOrphanedVaultArtifacts):
 			http.Error(w, `{"error":"orphaned vault artifacts exist; use recovery flow (DINA_RECOVER_PERSONAS=1)"}`, http.StatusConflict)
 		case errors.Is(err, identity.ErrInvalidTier):
@@ -128,8 +126,13 @@ func (h *PersonaHandler) HandleCreatePersona(w http.ResponseWriter, r *http.Requ
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]string{"id": personaID, "status": "created", "vault": vaultStatus})
+	if alreadyExists {
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"status": "exists", "vault": vaultStatus})
+	} else {
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]string{"id": personaID, "status": "created", "vault": vaultStatus})
+	}
 }
 
 // HandleUnlockPersona handles POST /v1/persona/unlock.
@@ -237,6 +240,20 @@ func (h *PersonaHandler) HandleLockPersona(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		http.Error(w, `{"error":"invalid persona name"}`, http.StatusBadRequest)
 		return
+	}
+
+	// Default and standard tier personas cannot be locked — they must
+	// always be open. Only sensitive and locked tiers support locking.
+	if h.Personas != nil {
+		personaID := req.Persona
+		if !strings.HasPrefix(personaID, "persona-") {
+			personaID = "persona-" + personaID
+		}
+		tier, _ := h.Personas.GetTier(r.Context(), personaID)
+		if tier == "default" || tier == "standard" {
+			http.Error(w, `{"error":"default and standard personas cannot be locked"}`, http.StatusBadRequest)
+			return
+		}
 	}
 
 	if h.VaultManager != nil {

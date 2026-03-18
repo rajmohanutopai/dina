@@ -868,6 +868,11 @@ func (pm *PersonaManager) SetPersistPath(path string) error {
 			if p.Tier == "locked" || p.Tier == "sensitive" {
 				p.Locked = true
 			}
+			// Default and standard must always be unlocked — force-correct
+			// any corrupted state from prior versions.
+			if p.Tier == "default" || p.Tier == "standard" {
+				p.Locked = false
+			}
 		}
 	}
 	if state.Contacts != nil {
@@ -1567,7 +1572,8 @@ func (pm *PersonaManager) Unlock(_ context.Context, personaID, passphrase string
 	}
 
 	// Set up TTL auto-lock if ttlSeconds > 0.
-	if ttlSeconds > 0 {
+	// Default and standard tiers never auto-lock — they must stay open.
+	if ttlSeconds > 0 && p.Tier != "default" && p.Tier != "standard" {
 		ttlDuration := time.Duration(ttlSeconds) * time.Second
 		// If ttlSeconds is very small (< 1 second), interpret as milliseconds for testing.
 		if ttlSeconds < 0 {
@@ -1615,7 +1621,13 @@ func (pm *PersonaManager) Unlock(_ context.Context, personaID, passphrase string
 	return nil
 }
 
+// ErrCannotLockDefaultTier is returned when trying to lock a default or
+// standard tier persona. These must always be open.
+var ErrCannotLockDefaultTier = fmt.Errorf("default and standard tier personas cannot be locked")
+
 // Lock zeroes the persona's DEK from RAM.
+// Default and standard tier personas cannot be locked — they must always
+// be open. Only sensitive and locked tiers support manual locking.
 func (pm *PersonaManager) Lock(_ context.Context, personaID string) error {
 	pm.mu.Lock()
 
@@ -1624,6 +1636,12 @@ func (pm *PersonaManager) Lock(_ context.Context, personaID string) error {
 	if !ok {
 		pm.mu.Unlock()
 		return ErrPersonaNotFound
+	}
+
+	// Hard guard: default and standard tiers are never lockable.
+	if p.Tier == "default" || p.Tier == "standard" {
+		pm.mu.Unlock()
+		return ErrCannotLockDefaultTier
 	}
 
 	p.Locked = true

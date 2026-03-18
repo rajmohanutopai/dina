@@ -51,6 +51,8 @@ type PersonaManager interface {
 	// Returns nil if access is allowed, or an error if the persona's tier
 	// restricts access (e.g. locked persona that hasn't been unlocked).
 	AccessPersona(ctx context.Context, personaID string) error
+	// GetTier returns the tier of a persona (default, standard, sensitive, locked).
+	GetTier(ctx context.Context, personaID string) (string, error)
 	// GetDEKVersion returns the DEK derivation version for a persona (1=legacy, 2=Argon2id).
 	GetDEKVersion(ctx context.Context, personaID string) (int, error)
 }

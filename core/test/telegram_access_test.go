@@ -397,3 +397,55 @@ func TestTelegram_AuditIncludesUserOrigin(t *testing.T) {
 		t.Fatal("audit log should contain 'user_via_telegram' for Telegram-originated sensitive access")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// §4 Default/standard personas cannot be locked
+// ---------------------------------------------------------------------------
+
+// TST-TEL-014: Default tier persona cannot be locked.
+func TestTelegram_DefaultPersonaCannotBeLocked(t *testing.T) {
+	pm := identity.NewPersonaManager()
+	_, err := pm.Create(context.Background(), "general", "default")
+	testutil.RequireNoError(t, err)
+
+	err = pm.Lock(context.Background(), "general")
+	if err == nil {
+		t.Fatal("default tier persona must not be lockable")
+	}
+	if !errors.Is(err, identity.ErrCannotLockDefaultTier) {
+		t.Fatalf("expected ErrCannotLockDefaultTier, got: %v", err)
+	}
+}
+
+// TST-TEL-015: Standard tier persona cannot be locked.
+func TestTelegram_StandardPersonaCannotBeLocked(t *testing.T) {
+	pm := identity.NewPersonaManager()
+	_, err := pm.Create(context.Background(), "consumer", "standard")
+	testutil.RequireNoError(t, err)
+
+	err = pm.Lock(context.Background(), "consumer")
+	if err == nil {
+		t.Fatal("standard tier persona must not be lockable")
+	}
+}
+
+// TST-TEL-016: Sensitive tier persona CAN be locked.
+func TestTelegram_SensitivePersonaCanBeLocked(t *testing.T) {
+	pm := identity.NewPersonaManager()
+	_, err := pm.Create(context.Background(), "health", "sensitive")
+	testutil.RequireNoError(t, err)
+
+	err = pm.Lock(context.Background(), "health")
+	testutil.RequireNoError(t, err)
+}
+
+// TST-TEL-017: Default persona state forced unlocked on load.
+func TestTelegram_DefaultPersonaForcedUnlockedOnLoad(t *testing.T) {
+	pm := identity.NewPersonaManager()
+	_, err := pm.Create(context.Background(), "general", "default")
+	testutil.RequireNoError(t, err)
+
+	// Verify it's not locked
+	locked, _ := pm.IsLocked("general")
+	testutil.RequireFalse(t, locked, "default persona should never be locked")
+}

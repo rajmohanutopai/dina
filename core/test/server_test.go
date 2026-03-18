@@ -766,7 +766,9 @@ func TestServer_15_3_2_CreatePersona(t *testing.T) {
 	h.HandleCreatePersona(rr3, req3)
 	testutil.RequireEqual(t, rr3.Code, http.StatusBadRequest)
 
-	// Verify duplicate detection: same name → 409 Conflict.
+	// Verify duplicate handling: same name → 200 OK (idempotent, vault re-opened).
+	// Default and standard personas return 200 with vault status on re-create
+	// so that boot/setup sequences are idempotent.
 	dupBody, _ := json.Marshal(map[string]string{
 		"name":       "work",
 		"tier":       "standard",
@@ -776,7 +778,7 @@ func TestServer_15_3_2_CreatePersona(t *testing.T) {
 	req4.Header.Set("Content-Type", "application/json")
 	rr4 := httptest.NewRecorder()
 	h.HandleCreatePersona(rr4, req4)
-	testutil.RequireEqual(t, rr4.Code, http.StatusConflict)
+	testutil.RequireEqual(t, rr4.Code, http.StatusOK)
 }
 
 // TST-CORE-579
