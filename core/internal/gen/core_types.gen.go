@@ -595,9 +595,9 @@ func (e PostV1PersonaApproveJSONBodyScope) Valid() bool {
 
 // AddContactRequest defines model for AddContactRequest.
 type AddContactRequest struct {
-	Did        string                       `json:"did"`
-	Name       string                       `json:"name"`
-	TrustLevel *AddContactRequestTrustLevel `json:"trust_level,omitempty"`
+	Did        string                      `json:"did"`
+	Name       string                      `json:"name"`
+	TrustLevel AddContactRequestTrustLevel `json:"trust_level,omitempty"`
 }
 
 // AddContactRequestTrustLevel defines model for AddContactRequest.TrustLevel.
@@ -605,31 +605,31 @@ type AddContactRequestTrustLevel string
 
 // AgentSession defines model for AgentSession.
 type AgentSession struct {
-	AgentDid  *string                 `json:"agent_did,omitempty"`
-	CreatedAt *int64                  `json:"created_at,omitempty"`
-	EndedAt   *int64                  `json:"ended_at,omitempty"`
-	Grants    *map[string]interface{} `json:"grants,omitempty"`
-	Id        *string                 `json:"id,omitempty"`
-	Name      *string                 `json:"name,omitempty"`
-	Status    *string                 `json:"status,omitempty"`
+	AgentDid  string                 `json:"agent_did,omitempty"`
+	CreatedAt int64                  `json:"created_at,omitempty"`
+	EndedAt   int64                  `json:"ended_at,omitempty"`
+	Grants    map[string]interface{} `json:"grants,omitempty"`
+	Id        string                 `json:"id,omitempty"`
+	Name      string                 `json:"name,omitempty"`
+	Status    string                 `json:"status,omitempty"`
 }
 
 // ApprovalRequest defines model for ApprovalRequest.
 type ApprovalRequest struct {
-	Action    *string               `json:"action,omitempty"`
-	ClientDid *string               `json:"client_did,omitempty"`
-	CreatedAt *int64                `json:"created_at,omitempty"`
-	ExpiresAt *int64                `json:"expires_at,omitempty"`
-	GrantedBy *string               `json:"granted_by,omitempty"`
-	Id        *string               `json:"id,omitempty"`
-	PersonaId *string               `json:"persona_id,omitempty"`
-	Reason    *string               `json:"reason,omitempty"`
-	Scope     *ApprovalRequestScope `json:"scope,omitempty"`
-	SessionId *string               `json:"session_id,omitempty"`
+	Action    string               `json:"action,omitempty"`
+	ClientDid string               `json:"client_did,omitempty"`
+	CreatedAt int64                `json:"created_at,omitempty"`
+	ExpiresAt int64                `json:"expires_at,omitempty"`
+	GrantedBy string               `json:"granted_by,omitempty"`
+	Id        string               `json:"id,omitempty"`
+	PersonaId string               `json:"persona_id,omitempty"`
+	Reason    string               `json:"reason,omitempty"`
+	Scope     ApprovalRequestScope `json:"scope,omitempty"`
+	SessionId string               `json:"session_id,omitempty"`
 
 	// Status Persona access approval request state.
-	Status    *ApprovalStatus `json:"status,omitempty"`
-	UpdatedAt *int64          `json:"updated_at,omitempty"`
+	Status    ApprovalStatus `json:"status,omitempty"`
+	UpdatedAt int64          `json:"updated_at,omitempty"`
 }
 
 // ApprovalRequestScope defines model for ApprovalRequest.Scope.
@@ -640,30 +640,30 @@ type ApprovalStatus string
 
 // AuditAppendRequest defines model for AuditAppendRequest.
 type AuditAppendRequest struct {
-	Action    string  `json:"action"`
-	Metadata  *string `json:"metadata,omitempty"`
-	Persona   string  `json:"persona"`
-	QueryType *string `json:"query_type,omitempty"`
-	Reason    *string `json:"reason,omitempty"`
-	Requester *string `json:"requester,omitempty"`
+	Action    string `json:"action"`
+	Metadata  string `json:"metadata,omitempty"`
+	Persona   string `json:"persona"`
+	QueryType string `json:"query_type,omitempty"`
+	Reason    string `json:"reason,omitempty"`
+	Requester string `json:"requester,omitempty"`
 }
 
 // AuditQueryResponse defines model for AuditQueryResponse.
 type AuditQueryResponse struct {
-	Entries *[]map[string]interface{} `json:"entries,omitempty"`
+	Entries []map[string]interface{} `json:"entries,omitempty"`
 }
 
 // CompletePairingRequest defines model for CompletePairingRequest.
 type CompletePairingRequest struct {
-	Code               string  `json:"code"`
-	DeviceName         string  `json:"device_name"`
-	PublicKeyMultibase *string `json:"public_key_multibase,omitempty"`
+	Code               string `json:"code"`
+	DeviceName         string `json:"device_name"`
+	PublicKeyMultibase string `json:"public_key_multibase,omitempty"`
 }
 
 // CompletePairingResponse defines model for CompletePairingResponse.
 type CompletePairingResponse struct {
-	DeviceId *string `json:"device_id,omitempty"`
-	NodeDid  *string `json:"node_did,omitempty"`
+	DeviceId string `json:"device_id,omitempty"`
+	NodeDid  string `json:"node_did,omitempty"`
 }
 
 // Confidence Source confidence level for vault items.
@@ -671,30 +671,30 @@ type Confidence string
 
 // Contact defines model for Contact.
 type Contact struct {
-	Alias       *string `json:"alias,omitempty"`
-	Did         string  `json:"did"`
-	LastContact *int64  `json:"last_contact,omitempty"`
-	Name        string  `json:"name"`
+	Alias       string `json:"alias,omitempty"`
+	Did         string `json:"did"`
+	LastContact int64  `json:"last_contact,omitempty"`
+	Name        string `json:"name"`
 
 	// SharingPolicy JSON-encoded sharing policy.
-	SharingPolicy    *string  `json:"sharing_policy,omitempty"`
-	Source           *string  `json:"source,omitempty"`
-	SourceConfidence *float32 `json:"source_confidence,omitempty"`
+	SharingPolicy    string  `json:"sharing_policy,omitempty"`
+	Source           string  `json:"source,omitempty"`
+	SourceConfidence float32 `json:"source_confidence,omitempty"`
 
 	// TrustLevel Contact/agent trust classification.
-	TrustLevel *TrustLevel `json:"trust_level,omitempty"`
+	TrustLevel TrustLevel `json:"trust_level,omitempty"`
 }
 
 // ContactListResponse defines model for ContactListResponse.
 type ContactListResponse struct {
-	Contacts *[]Contact `json:"contacts,omitempty"`
+	Contacts []Contact `json:"contacts,omitempty"`
 }
 
 // CreatePersonaRequest defines model for CreatePersonaRequest.
 type CreatePersonaRequest struct {
-	Name       string                    `json:"name"`
-	Passphrase string                    `json:"passphrase"`
-	Tier       *CreatePersonaRequestTier `json:"tier,omitempty"`
+	Name       string                   `json:"name"`
+	Passphrase string                   `json:"passphrase"`
+	Tier       CreatePersonaRequestTier `json:"tier,omitempty"`
 }
 
 // CreatePersonaRequestTier defines model for CreatePersonaRequest.Tier.
@@ -702,9 +702,9 @@ type CreatePersonaRequestTier string
 
 // CreatePersonaResponse defines model for CreatePersonaResponse.
 type CreatePersonaResponse struct {
-	Id     *string                      `json:"id,omitempty"`
-	Status *CreatePersonaResponseStatus `json:"status,omitempty"`
-	Vault  *CreatePersonaResponseVault  `json:"vault,omitempty"`
+	Id     string                      `json:"id,omitempty"`
+	Status CreatePersonaResponseStatus `json:"status,omitempty"`
+	Vault  CreatePersonaResponseVault  `json:"vault,omitempty"`
 }
 
 // CreatePersonaResponseStatus defines model for CreatePersonaResponse.Status.
@@ -715,7 +715,7 @@ type CreatePersonaResponseVault string
 
 // DeviceListResponse defines model for DeviceListResponse.
 type DeviceListResponse struct {
-	Devices *[]PairedDevice `json:"devices,omitempty"`
+	Devices []PairedDevice `json:"devices,omitempty"`
 }
 
 // EnrichmentStatus L0/L1/embedding enrichment pipeline status.
@@ -723,43 +723,43 @@ type EnrichmentStatus string
 
 // ExportRequest defines model for ExportRequest.
 type ExportRequest struct {
-	DestPath   *string `json:"dest_path,omitempty"`
-	Passphrase string  `json:"passphrase"`
+	DestPath   string `json:"dest_path,omitempty"`
+	Passphrase string `json:"passphrase"`
 }
 
 // ExportResponse defines model for ExportResponse.
 type ExportResponse struct {
-	ArchivePath *string `json:"archive_path,omitempty"`
-	Status      *string `json:"status,omitempty"`
+	ArchivePath string `json:"archive_path,omitempty"`
+	Status      string `json:"status,omitempty"`
 }
 
 // HealthResponse defines model for HealthResponse.
 type HealthResponse struct {
-	Status *string `json:"status,omitempty"`
+	Status string `json:"status,omitempty"`
 }
 
 // ImportRequest defines model for ImportRequest.
 type ImportRequest struct {
 	ArchivePath string `json:"archive_path"`
-	Force       *bool  `json:"force,omitempty"`
+	Force       bool   `json:"force,omitempty"`
 	Passphrase  string `json:"passphrase"`
 }
 
 // ImportResult defines model for ImportResult.
 type ImportResult struct {
-	Did             *string `json:"did,omitempty"`
-	FilesRestored   *int    `json:"files_restored,omitempty"`
-	PersonaCount    *int    `json:"persona_count,omitempty"`
-	RequiresRepair  *bool   `json:"requires_repair,omitempty"`
-	RequiresRestart *bool   `json:"requires_restart,omitempty"`
+	Did             string `json:"did,omitempty"`
+	FilesRestored   int    `json:"files_restored,omitempty"`
+	PersonaCount    int    `json:"persona_count,omitempty"`
+	RequiresRepair  bool   `json:"requires_repair,omitempty"`
+	RequiresRestart bool   `json:"requires_restart,omitempty"`
 }
 
 // InitiatePairingResponse defines model for InitiatePairingResponse.
 type InitiatePairingResponse struct {
-	Code *string `json:"code,omitempty"`
+	Code string `json:"code,omitempty"`
 
 	// ExpiresIn Seconds until code expires.
-	ExpiresIn *int `json:"expires_in,omitempty"`
+	ExpiresIn int `json:"expires_in,omitempty"`
 }
 
 // KVValueRequest defines model for KVValueRequest.
@@ -769,14 +769,14 @@ type KVValueRequest struct {
 
 // KVValueResponse defines model for KVValueResponse.
 type KVValueResponse struct {
-	Value *string `json:"value,omitempty"`
+	Value string `json:"value,omitempty"`
 }
 
 // NotifyRequest defines model for NotifyRequest.
 type NotifyRequest struct {
-	ForcePush *bool                  `json:"force_push,omitempty"`
-	Message   string                 `json:"message"`
-	Priority  *NotifyRequestPriority `json:"priority,omitempty"`
+	ForcePush bool                  `json:"force_push,omitempty"`
+	Message   string                `json:"message"`
+	Priority  NotifyRequestPriority `json:"priority,omitempty"`
 }
 
 // NotifyRequestPriority defines model for NotifyRequest.Priority.
@@ -784,12 +784,12 @@ type NotifyRequestPriority string
 
 // PIIEntity defines model for PIIEntity.
 type PIIEntity struct {
-	End   *int `json:"end,omitempty"`
-	Start *int `json:"start,omitempty"`
+	End   int `json:"end,omitempty"`
+	Start int `json:"start,omitempty"`
 
 	// Type Entity category: EMAIL, PHONE, SSN, CREDIT_CARD, etc.
-	Type  *string `json:"type,omitempty"`
-	Value *string `json:"value,omitempty"`
+	Type  string `json:"type,omitempty"`
+	Value string `json:"value,omitempty"`
 }
 
 // PIIScrubRequest defines model for PIIScrubRequest.
@@ -800,38 +800,38 @@ type PIIScrubRequest struct {
 // PairedDevice defines model for PairedDevice.
 type PairedDevice struct {
 	// AuthType 'ed25519' (primary).
-	AuthType  *string `json:"auth_type,omitempty"`
-	CreatedAt *int64  `json:"created_at,omitempty"`
-	Did       *string `json:"did,omitempty"`
-	LastSeen  *int64  `json:"last_seen,omitempty"`
-	Name      *string `json:"name,omitempty"`
-	Revoked   *bool   `json:"revoked,omitempty"`
-	TokenId   *string `json:"token_id,omitempty"`
+	AuthType  string `json:"auth_type,omitempty"`
+	CreatedAt int64  `json:"created_at,omitempty"`
+	Did       string `json:"did,omitempty"`
+	LastSeen  int64  `json:"last_seen,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Revoked   bool   `json:"revoked,omitempty"`
+	TokenId   string `json:"token_id,omitempty"`
 }
 
 // PersonaListResponse defines model for PersonaListResponse.
 type PersonaListResponse struct {
-	Personas *[]string `json:"personas,omitempty"`
+	Personas []string `json:"personas,omitempty"`
 }
 
 // Reminder defines model for Reminder.
 type Reminder struct {
-	Fired *bool   `json:"fired,omitempty"`
-	Id    *string `json:"id,omitempty"`
+	Fired bool   `json:"fired,omitempty"`
+	Id    string `json:"id,omitempty"`
 
 	// Kind Reminder category for scheduling rules.
-	Kind         *ReminderKind `json:"kind,omitempty"`
-	Message      *string       `json:"message,omitempty"`
-	Metadata     *string       `json:"metadata,omitempty"`
-	Persona      *string       `json:"persona,omitempty"`
-	Source       *string       `json:"source,omitempty"`
-	SourceItemId *string       `json:"source_item_id,omitempty"`
+	Kind         ReminderKind `json:"kind,omitempty"`
+	Message      string       `json:"message,omitempty"`
+	Metadata     string       `json:"metadata,omitempty"`
+	Persona      string       `json:"persona,omitempty"`
+	Source       string       `json:"source,omitempty"`
+	SourceItemId string       `json:"source_item_id,omitempty"`
 
 	// Status Scheduled reminder lifecycle state.
-	Status    *ReminderStatus `json:"status,omitempty"`
-	Timezone  *string         `json:"timezone,omitempty"`
-	TriggerAt *int64          `json:"trigger_at,omitempty"`
-	Type      *string         `json:"type,omitempty"`
+	Status    ReminderStatus `json:"status,omitempty"`
+	Timezone  string         `json:"timezone,omitempty"`
+	TriggerAt int64          `json:"trigger_at,omitempty"`
+	Type      string         `json:"type,omitempty"`
 }
 
 // ReminderKind Reminder category for scheduling rules.
@@ -839,7 +839,7 @@ type ReminderKind string
 
 // ReminderListResponse defines model for ReminderListResponse.
 type ReminderListResponse struct {
-	Reminders *[]Reminder `json:"reminders,omitempty"`
+	Reminders []Reminder `json:"reminders,omitempty"`
 }
 
 // ReminderStatus Scheduled reminder lifecycle state.
@@ -850,10 +850,10 @@ type RetrievalPolicy string
 
 // ScrubResult defines model for ScrubResult.
 type ScrubResult struct {
-	Entities *[]PIIEntity `json:"entities,omitempty"`
+	Entities []PIIEntity `json:"entities,omitempty"`
 
 	// Scrubbed Text with PII replaced by tokens.
-	Scrubbed *string `json:"scrubbed,omitempty"`
+	Scrubbed string `json:"scrubbed,omitempty"`
 }
 
 // SenderTrust Trust ring classification of the item's sender.
@@ -861,7 +861,7 @@ type SenderTrust string
 
 // SessionListResponse defines model for SessionListResponse.
 type SessionListResponse struct {
-	Sessions *[]AgentSession `json:"sessions,omitempty"`
+	Sessions []AgentSession `json:"sessions,omitempty"`
 }
 
 // SignRequest defines model for SignRequest.
@@ -873,7 +873,7 @@ type SignRequest struct {
 // SignResponse defines model for SignResponse.
 type SignResponse struct {
 	// Signature Hex-encoded Ed25519 signature.
-	Signature *string `json:"signature,omitempty"`
+	Signature string `json:"signature,omitempty"`
 }
 
 // SourceType Origin classification of the vault item.
@@ -881,12 +881,12 @@ type SourceType string
 
 // StagingClaimRequest defines model for StagingClaimRequest.
 type StagingClaimRequest struct {
-	Limit *int `json:"limit,omitempty"`
+	Limit int `json:"limit,omitempty"`
 }
 
 // StagingClaimResponse defines model for StagingClaimResponse.
 type StagingClaimResponse struct {
-	Items *[]StagingItem `json:"items,omitempty"`
+	Items []StagingItem `json:"items,omitempty"`
 }
 
 // StagingFailRequest defines model for StagingFailRequest.
@@ -897,55 +897,55 @@ type StagingFailRequest struct {
 
 // StagingIngestRequest defines model for StagingIngestRequest.
 type StagingIngestRequest struct {
-	Body        *string `json:"body,omitempty"`
-	ConnectorId *string `json:"connector_id,omitempty"`
-	Metadata    *string `json:"metadata,omitempty"`
-	Source      string  `json:"source"`
-	SourceHash  *string `json:"source_hash,omitempty"`
-	SourceId    *string `json:"source_id,omitempty"`
-	Summary     string  `json:"summary"`
-	Type        string  `json:"type"`
+	Body        string `json:"body,omitempty"`
+	ConnectorId string `json:"connector_id,omitempty"`
+	Metadata    string `json:"metadata,omitempty"`
+	Source      string `json:"source"`
+	SourceHash  string `json:"source_hash,omitempty"`
+	SourceId    string `json:"source_id,omitempty"`
+	Summary     string `json:"summary"`
+	Type        string `json:"type"`
 }
 
 // StagingIngestResponse defines model for StagingIngestResponse.
 type StagingIngestResponse struct {
-	Id *string `json:"id,omitempty"`
+	Id string `json:"id,omitempty"`
 }
 
 // StagingItem defines model for StagingItem.
 type StagingItem struct {
-	Body      *string `json:"body,omitempty"`
-	ClaimedAt *int64  `json:"claimed_at,omitempty"`
+	Body      string `json:"body,omitempty"`
+	ClaimedAt int64  `json:"claimed_at,omitempty"`
 
 	// ClassifiedItem JSON blob of classified vault item.
-	ClassifiedItem *string `json:"classified_item,omitempty"`
-	ConnectorId    *string `json:"connector_id,omitempty"`
-	CreatedAt      *int64  `json:"created_at,omitempty"`
-	Error          *string `json:"error,omitempty"`
-	ExpiresAt      *int64  `json:"expires_at,omitempty"`
-	Id             *string `json:"id,omitempty"`
-	LeaseUntil     *int64  `json:"lease_until,omitempty"`
-	Metadata       *string `json:"metadata,omitempty"`
-	RetryCount     *int    `json:"retry_count,omitempty"`
-	Sender         *string `json:"sender,omitempty"`
-	Source         *string `json:"source,omitempty"`
-	SourceHash     *string `json:"source_hash,omitempty"`
-	SourceId       *string `json:"source_id,omitempty"`
+	ClassifiedItem string `json:"classified_item,omitempty"`
+	ConnectorId    string `json:"connector_id,omitempty"`
+	CreatedAt      int64  `json:"created_at,omitempty"`
+	Error          string `json:"error,omitempty"`
+	ExpiresAt      int64  `json:"expires_at,omitempty"`
+	Id             string `json:"id,omitempty"`
+	LeaseUntil     int64  `json:"lease_until,omitempty"`
+	Metadata       string `json:"metadata,omitempty"`
+	RetryCount     int    `json:"retry_count,omitempty"`
+	Sender         string `json:"sender,omitempty"`
+	Source         string `json:"source,omitempty"`
+	SourceHash     string `json:"source_hash,omitempty"`
+	SourceId       string `json:"source_id,omitempty"`
 
 	// Status Staging inbox item lifecycle state.
-	Status        *StagingStatus `json:"status,omitempty"`
-	Summary       *string        `json:"summary,omitempty"`
-	TargetPersona *string        `json:"target_persona,omitempty"`
-	Type          *string        `json:"type,omitempty"`
-	UpdatedAt     *int64         `json:"updated_at,omitempty"`
+	Status        StagingStatus `json:"status,omitempty"`
+	Summary       string        `json:"summary,omitempty"`
+	TargetPersona string        `json:"target_persona,omitempty"`
+	Type          string        `json:"type,omitempty"`
+	UpdatedAt     int64         `json:"updated_at,omitempty"`
 }
 
 // StagingResolveRequest defines model for StagingResolveRequest.
 type StagingResolveRequest struct {
-	ClassifiedItem   map[string]interface{}                 `json:"classified_item"`
-	EnrichmentStatus *StagingResolveRequestEnrichmentStatus `json:"enrichment_status,omitempty"`
-	Id               string                                 `json:"id"`
-	TargetPersona    string                                 `json:"target_persona"`
+	ClassifiedItem   map[string]interface{}                `json:"classified_item"`
+	EnrichmentStatus StagingResolveRequestEnrichmentStatus `json:"enrichment_status,omitempty"`
+	Id               string                                `json:"id"`
+	TargetPersona    string                                `json:"target_persona"`
 }
 
 // StagingResolveRequestEnrichmentStatus defines model for StagingResolveRequest.EnrichmentStatus.
@@ -956,15 +956,15 @@ type StagingStatus string
 
 // StoreReminderRequest defines model for StoreReminderRequest.
 type StoreReminderRequest struct {
-	Kind         *StoreReminderRequestKind `json:"kind,omitempty"`
-	Message      string                    `json:"message"`
-	Metadata     *string                   `json:"metadata,omitempty"`
-	Persona      *string                   `json:"persona,omitempty"`
-	Source       *string                   `json:"source,omitempty"`
-	SourceItemId *string                   `json:"source_item_id,omitempty"`
-	Timezone     *string                   `json:"timezone,omitempty"`
-	TriggerAt    int64                     `json:"trigger_at"`
-	Type         string                    `json:"type"`
+	Kind         StoreReminderRequestKind `json:"kind,omitempty"`
+	Message      string                   `json:"message"`
+	Metadata     string                   `json:"metadata,omitempty"`
+	Persona      string                   `json:"persona,omitempty"`
+	Source       string                   `json:"source,omitempty"`
+	SourceItemId string                   `json:"source_item_id,omitempty"`
+	Timezone     string                   `json:"timezone,omitempty"`
+	TriggerAt    int64                    `json:"trigger_at"`
+	Type         string                   `json:"type"`
 }
 
 // StoreReminderRequestKind defines model for StoreReminderRequest.Kind.
@@ -972,25 +972,25 @@ type StoreReminderRequestKind string
 
 // TrustCacheResponse defines model for TrustCacheResponse.
 type TrustCacheResponse struct {
-	Entries *[]TrustEntry `json:"entries,omitempty"`
+	Entries []TrustEntry `json:"entries,omitempty"`
 }
 
 // TrustCacheStats defines model for TrustCacheStats.
 type TrustCacheStats struct {
-	Count      *int   `json:"count,omitempty"`
-	LastSyncAt *int64 `json:"last_sync_at,omitempty"`
+	Count      int   `json:"count,omitempty"`
+	LastSyncAt int64 `json:"last_sync_at,omitempty"`
 }
 
 // TrustEntry defines model for TrustEntry.
 type TrustEntry struct {
-	Did            *string  `json:"did,omitempty"`
-	DisplayName    *string  `json:"display_name,omitempty"`
-	LastVerifiedAt *int64   `json:"last_verified_at,omitempty"`
-	Relationship   *string  `json:"relationship,omitempty"`
-	Source         *string  `json:"source,omitempty"`
-	TrustRing      *int     `json:"trust_ring,omitempty"`
-	TrustScore     *float32 `json:"trust_score,omitempty"`
-	UpdatedAt      *int64   `json:"updated_at,omitempty"`
+	Did            string  `json:"did,omitempty"`
+	DisplayName    string  `json:"display_name,omitempty"`
+	LastVerifiedAt int64   `json:"last_verified_at,omitempty"`
+	Relationship   string  `json:"relationship,omitempty"`
+	Source         string  `json:"source,omitempty"`
+	TrustRing      int     `json:"trust_ring,omitempty"`
+	TrustScore     float32 `json:"trust_score,omitempty"`
+	UpdatedAt      int64   `json:"updated_at,omitempty"`
 }
 
 // TrustLevel Contact/agent trust classification.
@@ -998,11 +998,11 @@ type TrustLevel string
 
 // VaultEnrichRequest defines model for VaultEnrichRequest.
 type VaultEnrichRequest struct {
-	ContentL0         *string                             `json:"content_l0,omitempty"`
-	ContentL1         *string                             `json:"content_l1,omitempty"`
-	Embedding         *[]float32                          `json:"embedding,omitempty"`
-	EnrichmentStatus  *VaultEnrichRequestEnrichmentStatus `json:"enrichment_status,omitempty"`
-	EnrichmentVersion *string                             `json:"enrichment_version,omitempty"`
+	ContentL0         string                             `json:"content_l0,omitempty"`
+	ContentL1         string                             `json:"content_l1,omitempty"`
+	Embedding         []float32                          `json:"embedding,omitempty"`
+	EnrichmentStatus  VaultEnrichRequestEnrichmentStatus `json:"enrichment_status,omitempty"`
+	EnrichmentVersion string                             `json:"enrichment_version,omitempty"`
 }
 
 // VaultEnrichRequestEnrichmentStatus defines model for VaultEnrichRequest.EnrichmentStatus.
@@ -1010,68 +1010,68 @@ type VaultEnrichRequestEnrichmentStatus string
 
 // VaultEnrichResponse defines model for VaultEnrichResponse.
 type VaultEnrichResponse struct {
-	EnrichmentStatus *string `json:"enrichment_status,omitempty"`
-	Id               *string `json:"id,omitempty"`
+	EnrichmentStatus string `json:"enrichment_status,omitempty"`
+	Id               string `json:"id,omitempty"`
 }
 
 // VaultItem defines model for VaultItem.
 type VaultItem struct {
-	BodyText *string `json:"body_text,omitempty"`
+	BodyText string `json:"body_text,omitempty"`
 
 	// Confidence Source confidence level for vault items.
-	Confidence  *Confidence `json:"confidence,omitempty"`
-	ConnectorId *string     `json:"connector_id,omitempty"`
+	Confidence  Confidence `json:"confidence,omitempty"`
+	ConnectorId string     `json:"connector_id,omitempty"`
 
 	// ContactDid DID of contact who sent/shared this.
-	ContactDid *string `json:"contact_did,omitempty"`
+	ContactDid string `json:"contact_did,omitempty"`
 
 	// ContentL0 One-line abstract (tiered content).
-	ContentL0 *string `json:"content_l0,omitempty"`
+	ContentL0 string `json:"content_l0,omitempty"`
 
 	// ContentL1 One-paragraph overview (tiered content).
-	ContentL1 *string `json:"content_l1,omitempty"`
+	ContentL1 string `json:"content_l1,omitempty"`
 
 	// Contradicts ID of contradicted item (if any).
-	Contradicts *string `json:"contradicts,omitempty"`
+	Contradicts string `json:"contradicts,omitempty"`
 
 	// Embedding 768-dim float32 vector (EmbeddingGemma).
-	Embedding *[]float32 `json:"embedding,omitempty"`
+	Embedding []float32 `json:"embedding,omitempty"`
 
 	// EnrichmentStatus L0/L1/embedding enrichment pipeline status.
-	EnrichmentStatus *EnrichmentStatus `json:"enrichment_status,omitempty"`
+	EnrichmentStatus EnrichmentStatus `json:"enrichment_status,omitempty"`
 
 	// EnrichmentVersion JSON: {prompt_v, embed_model}.
-	EnrichmentVersion *string `json:"enrichment_version,omitempty"`
-	Id                *string `json:"id,omitempty"`
+	EnrichmentVersion string `json:"enrichment_version,omitempty"`
+	Id                string `json:"id,omitempty"`
 
 	// IngestedAt Unix seconds (when stored in vault).
-	IngestedAt *int64 `json:"ingested_at,omitempty"`
+	IngestedAt int64 `json:"ingested_at,omitempty"`
 
 	// Metadata JSON blob (encrypted PII lives here, not in searchable fields).
-	Metadata *string `json:"metadata,omitempty"`
+	Metadata string `json:"metadata,omitempty"`
 
 	// RetrievalPolicy Controls how items surface in search results.
-	RetrievalPolicy *RetrievalPolicy `json:"retrieval_policy,omitempty"`
+	RetrievalPolicy RetrievalPolicy `json:"retrieval_policy,omitempty"`
 
 	// Sender Who authored: email address, 'user', or DID.
-	Sender *string `json:"sender,omitempty"`
+	Sender string `json:"sender,omitempty"`
 
 	// SenderTrust Trust ring classification of the item's sender.
-	SenderTrust *SenderTrust `json:"sender_trust,omitempty"`
+	SenderTrust SenderTrust `json:"sender_trust,omitempty"`
 
 	// Source Origin system: gmail, calendar, web, personal, etc.
 	Source string `json:"source"`
 
 	// SourceId External ID (Gmail message ID, etc.)
-	SourceId *string `json:"source_id,omitempty"`
+	SourceId string `json:"source_id,omitempty"`
 
 	// SourceType Origin classification of the vault item.
-	SourceType *SourceType `json:"source_type,omitempty"`
-	StagingId  *string     `json:"staging_id,omitempty"`
-	Summary    string      `json:"summary"`
+	SourceType SourceType `json:"source_type,omitempty"`
+	StagingId  string     `json:"staging_id,omitempty"`
+	Summary    string     `json:"summary"`
 
 	// Timestamp Unix seconds (when event occurred).
-	Timestamp *int64 `json:"timestamp,omitempty"`
+	Timestamp int64 `json:"timestamp,omitempty"`
 
 	// Type Item type: email, event, note, document, etc.
 	Type string `json:"type"`
@@ -1080,18 +1080,18 @@ type VaultItem struct {
 // VaultQueryRequest defines model for VaultQueryRequest.
 type VaultQueryRequest struct {
 	// Embedding 768-dim vector from Brain (enables semantic/hybrid).
-	Embedding       *[]float32                        `json:"embedding,omitempty"`
-	IncludeAll      *bool                             `json:"include_all,omitempty"`
-	IncludeContent  *bool                             `json:"include_content,omitempty"`
-	Limit           *int                              `json:"limit,omitempty"`
-	Mode            *VaultQueryRequestMode            `json:"mode,omitempty"`
-	Persona         string                            `json:"persona"`
-	Query           string                            `json:"query"`
-	RetrievalPolicy *VaultQueryRequestRetrievalPolicy `json:"retrieval_policy,omitempty"`
-	Types           *[]string                         `json:"types,omitempty"`
+	Embedding       []float32                        `json:"embedding,omitempty"`
+	IncludeAll      bool                             `json:"include_all,omitempty"`
+	IncludeContent  bool                             `json:"include_content,omitempty"`
+	Limit           int                              `json:"limit,omitempty"`
+	Mode            VaultQueryRequestMode            `json:"mode,omitempty"`
+	Persona         string                           `json:"persona"`
+	Query           string                           `json:"query"`
+	RetrievalPolicy VaultQueryRequestRetrievalPolicy `json:"retrieval_policy,omitempty"`
+	Types           []string                         `json:"types,omitempty"`
 
 	// UserOrigin Signed user-origin elevation.
-	UserOrigin *VaultQueryRequestUserOrigin `json:"user_origin,omitempty"`
+	UserOrigin VaultQueryRequestUserOrigin `json:"user_origin,omitempty"`
 }
 
 // VaultQueryRequestMode defines model for VaultQueryRequest.Mode.
@@ -1105,14 +1105,14 @@ type VaultQueryRequestUserOrigin string
 
 // VaultQueryResponse defines model for VaultQueryResponse.
 type VaultQueryResponse struct {
-	Items *[]VaultItem `json:"items,omitempty"`
+	Items []VaultItem `json:"items,omitempty"`
 }
 
 // VaultStoreBatchRequest defines model for VaultStoreBatchRequest.
 type VaultStoreBatchRequest struct {
-	Items      []VaultItem                       `json:"items"`
-	Persona    string                            `json:"persona"`
-	UserOrigin *VaultStoreBatchRequestUserOrigin `json:"user_origin,omitempty"`
+	Items      []VaultItem                      `json:"items"`
+	Persona    string                           `json:"persona"`
+	UserOrigin VaultStoreBatchRequestUserOrigin `json:"user_origin,omitempty"`
 }
 
 // VaultStoreBatchRequestUserOrigin defines model for VaultStoreBatchRequest.UserOrigin.
@@ -1120,14 +1120,14 @@ type VaultStoreBatchRequestUserOrigin string
 
 // VaultStoreBatchResponse defines model for VaultStoreBatchResponse.
 type VaultStoreBatchResponse struct {
-	Ids *[]string `json:"ids,omitempty"`
+	Ids []string `json:"ids,omitempty"`
 }
 
 // VaultStoreRequest defines model for VaultStoreRequest.
 type VaultStoreRequest struct {
-	Item       VaultItem                    `json:"item"`
-	Persona    string                       `json:"persona"`
-	UserOrigin *VaultStoreRequestUserOrigin `json:"user_origin,omitempty"`
+	Item       VaultItem                   `json:"item"`
+	Persona    string                      `json:"persona"`
+	UserOrigin VaultStoreRequestUserOrigin `json:"user_origin,omitempty"`
 }
 
 // VaultStoreRequestUserOrigin defines model for VaultStoreRequest.UserOrigin.
@@ -1135,7 +1135,7 @@ type VaultStoreRequestUserOrigin string
 
 // VaultStoreResponse defines model for VaultStoreResponse.
 type VaultStoreResponse struct {
-	Id *string `json:"id,omitempty"`
+	Id string `json:"id,omitempty"`
 }
 
 // PostApiV1ReasonJSONBody defines parameters for PostApiV1Reason.
@@ -1146,7 +1146,7 @@ type PostApiV1ReasonJSONBody struct {
 // PostV1AgentValidateJSONBody defines parameters for PostV1AgentValidate.
 type PostV1AgentValidateJSONBody struct {
 	Action string                          `json:"action"`
-	Target *string                         `json:"target,omitempty"`
+	Target string                          `json:"target,omitempty"`
 	Type   PostV1AgentValidateJSONBodyType `json:"type"`
 }
 
@@ -1155,10 +1155,10 @@ type PostV1AgentValidateJSONBodyType string
 
 // GetV1AuditQueryParams defines parameters for GetV1AuditQuery.
 type GetV1AuditQueryParams struct {
-	Action    *string `form:"action,omitempty" json:"action,omitempty"`
-	Persona   *string `form:"persona,omitempty" json:"persona,omitempty"`
-	Requester *string `form:"requester,omitempty" json:"requester,omitempty"`
-	Limit     *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Action    string `form:"action,omitempty" json:"action,omitempty"`
+	Persona   string `form:"persona,omitempty" json:"persona,omitempty"`
+	Requester string `form:"requester,omitempty" json:"requester,omitempty"`
+	Limit     int    `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // PostV1MsgSendJSONBody defines parameters for PostV1MsgSend.
@@ -1170,9 +1170,9 @@ type PostV1MsgSendJSONBody struct {
 
 // PostV1PersonaApproveJSONBody defines parameters for PostV1PersonaApprove.
 type PostV1PersonaApproveJSONBody struct {
-	GrantedBy *string                            `json:"granted_by,omitempty"`
-	Id        string                             `json:"id"`
-	Scope     *PostV1PersonaApproveJSONBodyScope `json:"scope,omitempty"`
+	GrantedBy string                            `json:"granted_by,omitempty"`
+	Id        string                            `json:"id"`
+	Scope     PostV1PersonaApproveJSONBodyScope `json:"scope,omitempty"`
 }
 
 // PostV1PersonaApproveJSONBodyScope defines parameters for PostV1PersonaApprove.
@@ -1221,8 +1221,8 @@ type DeleteV1VaultItemIdParams struct {
 
 // GetV1VaultItemIdParams defines parameters for GetV1VaultItemId.
 type GetV1VaultItemIdParams struct {
-	Persona    string  `form:"persona" json:"persona"`
-	UserOrigin *string `form:"user_origin,omitempty" json:"user_origin,omitempty"`
+	Persona    string `form:"persona" json:"persona"`
+	UserOrigin string `form:"user_origin,omitempty" json:"user_origin,omitempty"`
 }
 
 // PatchV1VaultItemIdEnrichParams defines parameters for PatchV1VaultItemIdEnrich.

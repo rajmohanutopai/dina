@@ -1,0 +1,5 @@
+package: gen
+generate:
+  models: true
+output-options:
+  prefer-skip-optional-pointer: true

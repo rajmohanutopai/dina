@@ -49,8 +49,8 @@ check-tests:
 # --- OpenAPI codegen ---
 generate:
 	python3 scripts/bundle_openapi.py
-	$(HOME)/go/bin/oapi-codegen -generate types -package gen api/core-api.bundled.yaml > core/internal/gen/core_types.gen.go
-	$(HOME)/go/bin/oapi-codegen -generate types -package brainapi api/brain-api.yaml > core/internal/gen/brainapi/brain_types.gen.go
+	$(HOME)/go/bin/oapi-codegen -config api/oapi-codegen.yaml -o core/internal/gen/core_types.gen.go api/core-api.bundled.yaml
+	$(HOME)/go/bin/oapi-codegen -config api/oapi-brain-codegen.yaml -o core/internal/gen/brainapi/brain_types.gen.go api/brain-api.yaml
 	datamodel-codegen --input api/core-api.bundled.yaml --output brain/src/gen/core_types.py --output-model-type pydantic_v2.BaseModel --snake-case-field --target-python-version 3.11
 	@echo "Generated: core/internal/gen/core_types.gen.go (Go Core API types)"
 	@echo "Generated: core/internal/gen/brainapi/brain_types.gen.go (Go Brain client types)"

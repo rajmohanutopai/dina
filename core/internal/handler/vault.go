@@ -10,6 +10,7 @@ import (
 
 	"github.com/rajmohanutopai/dina/core/internal/adapter/identity"
 	"github.com/rajmohanutopai/dina/core/internal/domain"
+	"github.com/rajmohanutopai/dina/core/internal/gen"
 	"github.com/rajmohanutopai/dina/core/internal/middleware"
 	"github.com/rajmohanutopai/dina/core/internal/port"
 	"github.com/rajmohanutopai/dina/core/internal/service"
@@ -86,18 +87,8 @@ func injectUserOrigin(r *http.Request, userOrigin string) *http.Request {
 }
 
 // queryRequest is the JSON body for POST /v1/vault/query.
-type queryRequest struct {
-	Persona         string    `json:"persona"`
-	Query           string    `json:"query"`
-	Mode            string    `json:"mode"`
-	Types           []string  `json:"types"`
-	Limit           int       `json:"limit"`
-	Embedding       []float32 `json:"embedding"`         // 768-dim from Brain, enables semantic/hybrid search
-	RetrievalPolicy string    `json:"retrieval_policy"`   // filter to specific policy
-	IncludeAll      bool      `json:"include_all"`        // override: return all policies including quarantine
-	IncludeContent  bool      `json:"include_content"`    // include body_text in response (default false — summary only)
-	UserOrigin      string    `json:"user_origin"`        // "telegram" or "admin" — signed in body, enables user-level access
-}
+// Matches gen.VaultQueryRequest from the OpenAPI spec.
+type queryRequest = gen.VaultQueryRequest
 
 // HandleQuery handles POST /v1/vault/query. It parses the search parameters,
 // calls VaultService.Query, and returns the matching items as JSON.
@@ -115,7 +106,7 @@ func (h *VaultHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
 
 	// Inject user-origin context if present in the signed body.
 	// Only Brain service key can claim user origin. Fail closed if ambiguous.
-	r = injectUserOrigin(r, req.UserOrigin)
+	r = injectUserOrigin(r, string(req.UserOrigin))
 
 	persona, err := domain.NewPersonaName(req.Persona)
 	if err != nil {
@@ -124,7 +115,7 @@ func (h *VaultHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mode := domain.SearchFTS5
-	switch domain.SearchMode(req.Mode) {
+	switch domain.SearchMode(string(req.Mode)) {
 	case domain.SearchSemantic:
 		mode = domain.SearchSemantic
 	case domain.SearchHybrid:
@@ -149,7 +140,7 @@ func (h *VaultHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
 		Embedding:       req.Embedding,
 		IncludeAll:      req.IncludeAll,
 		IncludeContent:  req.IncludeContent,
-		RetrievalPolicy: req.RetrievalPolicy,
+		RetrievalPolicy: string(req.RetrievalPolicy),
 	}
 
 	// Track whether we requested a mode that falls back to FTS5.
