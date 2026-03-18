@@ -18,7 +18,7 @@ class TestVaultPersistence:
     def test_rel_003_data_persists_via_api(self, api: httpx.Client) -> None:
         """Store and retrieve data via real Go Core vault API."""
         resp = api.post("/v1/vault/store", json={
-            "persona": "personal",
+            "persona": "general",
             "item": {
                 "Type": "note",
                 "Source": "release-test",
@@ -35,7 +35,7 @@ class TestVaultPersistence:
     def test_rel_003_fts_retrieval_works(self, api: httpx.Client) -> None:
         """FTS query returns stored items via real Go Core."""
         api.post("/v1/vault/store", json={
-            "persona": "personal",
+            "persona": "general",
             "item": {
                 "Type": "note",
                 "Source": "release-test",
@@ -46,7 +46,7 @@ class TestVaultPersistence:
         })
 
         resp = api.post("/v1/vault/query", json={
-            "persona": "personal",
+            "persona": "general",
             "query": "lumbar",
             "mode": "fts5",
             "limit": 10,
@@ -66,10 +66,10 @@ class TestVaultPersistence:
             "BodyText": "This item should not duplicate",
             "Metadata": "{}",
         }
-        resp1 = api.post("/v1/vault/store", json={"persona": "personal", "item": item})
+        resp1 = api.post("/v1/vault/store", json={"persona": "general", "item": item})
         assert resp1.status_code in (200, 201)
 
-        resp2 = api.post("/v1/vault/store", json={"persona": "personal", "item": item})
+        resp2 = api.post("/v1/vault/store", json={"persona": "general", "item": item})
         assert resp2.status_code in (200, 201)
 
     # REL-003

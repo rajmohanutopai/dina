@@ -39,7 +39,7 @@ class TestPersonaWall:
         resp = httpx.post(
             f"{core_url}/v1/vault/query",
             json={
-                "persona": "personal",
+                "persona": "general",
                 "query": "herniation",
                 "mode": "fts5",
                 "limit": 50,
@@ -51,7 +51,7 @@ class TestPersonaWall:
         for item in items:
             summary = item.get("Summary", "").lower()
             body = item.get("BodyText", "").lower()
-            assert "herniation" not in summary or "health" not in item.get("persona", "personal"), (
+            assert "herniation" not in summary or "health" not in item.get("persona", "general"), (
                 "Health data leaked to personal persona"
             )
 
@@ -117,4 +117,4 @@ class TestPersonaWall:
             names = [p.replace("persona-", "") if isinstance(p, str) else p.get("name", "") for p in data]
         else:
             names = [p.get("name", "") for p in data.get("personas", [])]
-        assert "personal" in names, f"personal persona should exist, got: {names}"
+        assert "general" in names, f"general persona should exist, got: {names}"

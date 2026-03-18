@@ -36,7 +36,7 @@ class TestFirstConversation:
     ) -> None:
         """Store user context simulating 'Remember my name is Raj'."""
         resp = api.post("/v1/vault/store", json={
-            "persona": "personal",
+            "persona": "general",
             "item": {
                 "Type": "note",
                 "Source": "release-test",
@@ -57,7 +57,7 @@ class TestFirstConversation:
         """Recall retrieves stored context (simulates RAG path)."""
         # Store context
         api.post("/v1/vault/store", json={
-            "persona": "personal",
+            "persona": "general",
             "item": {
                 "Type": "note",
                 "Source": "release-test",
@@ -70,7 +70,7 @@ class TestFirstConversation:
 
         # Recall
         resp = api.post("/v1/vault/query", json={
-            "persona": "personal",
+            "persona": "general",
             "query": "office chair",
             "mode": "fts5",
             "limit": 10,

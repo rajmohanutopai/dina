@@ -93,7 +93,7 @@ class TestAgentGateway:
         """Unapproved agent (no auth) is blocked from sensitive endpoints."""
         resp = httpx.post(
             f"{core_url}/v1/vault/store",
-            json={"persona": "personal", "item": {"Type": "note"}},
+            json={"persona": "general", "item": {"Type": "note"}},
             timeout=10,
         )
         assert resp.status_code in (401, 403), (

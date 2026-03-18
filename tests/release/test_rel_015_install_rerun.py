@@ -40,7 +40,7 @@ class TestInstallRerun:
         for _ in range(2):
             resp = httpx.post(
                 f"{core_url}/v1/personas",
-                json={"name": "personal", "tier": "open", "passphrase": "test"},
+                json={"name": "general", "tier": "default", "passphrase": "test"},
                 headers=auth_headers, timeout=10,
             )
             # Should succeed or return "already exists"
@@ -67,7 +67,7 @@ class TestInstallRerun:
         httpx.post(
             f"{core_url}/v1/vault/store",
             json={
-                "persona": "personal",
+                "persona": "general",
                 "item": {
                     "Type": "note",
                     "Source": "release-test",
@@ -82,14 +82,14 @@ class TestInstallRerun:
         # Re-unlock (should be no-op if already unlocked)
         httpx.post(
             f"{core_url}/v1/persona/unlock",
-            json={"persona": "personal", "passphrase": "test"},
+            json={"persona": "general", "passphrase": "test"},
             headers=auth_headers, timeout=10,
         )
 
         # Data should still be there
         resp = httpx.post(
             f"{core_url}/v1/vault/query",
-            json={"persona": "personal", "query": "pre-relock", "mode": "fts5"},
+            json={"persona": "general", "query": "pre-relock", "mode": "fts5"},
             headers=auth_headers, timeout=10,
         )
         assert resp.status_code == 200

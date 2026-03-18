@@ -177,7 +177,7 @@ class TestCLIAgentIntegration:
             import hashlib
             from datetime import datetime, timezone
 
-            body = json.dumps({"query": "test", "persona": "personal"}).encode()
+            body = json.dumps({"query": "test", "persona": "general"}).encode()
             did, ts, sig = rogue.sign_request("POST", "/v1/vault/query", body)
 
             import httpx

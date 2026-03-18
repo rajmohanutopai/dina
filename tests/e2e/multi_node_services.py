@@ -83,12 +83,11 @@ class MultiNodeDockerServices:
 
         self._load_tokens()
 
-        if self._all_healthy():
-            self._externally_managed = True
-            self._started = True
-            return
-
+        # Always rebuild — never reuse containers from a prior suite.
+        # Reusing stale images masks code changes during development.
         self._externally_managed = False
+        # Tear down any leftover containers from previous runs.
+        self._compose("down", "-v")
         # Bust Docker layer cache for COPY src/ layers so tests always
         # run against the current working directory, not stale images.
         # Write a timestamp into the source dirs that Dockerfiles COPY.

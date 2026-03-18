@@ -19,7 +19,7 @@ class TestExportImport:
         """Vault has data that would be included in an export."""
         # Store test data
         api.post("/v1/vault/store", json={
-            "persona": "personal",
+            "persona": "general",
             "item": {
                 "Type": "note",
                 "Source": "release-test",
@@ -31,7 +31,7 @@ class TestExportImport:
 
         # Verify data exists
         resp = api.post("/v1/vault/query", json={
-            "persona": "personal",
+            "persona": "general",
             "query": "export portability",
             "mode": "fts5",
             "limit": 10,
@@ -47,7 +47,7 @@ class TestExportImport:
         """Export endpoint exists or clearly indicates not-yet-implemented."""
         resp = httpx.post(
             f"{core_url}/v1/vault/export",
-            json={"persona": "personal"},
+            json={"persona": "general"},
             headers=auth_headers, timeout=15,
         )
         # Either works (200) or clearly not implemented (404/501)

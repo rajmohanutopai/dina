@@ -22,7 +22,7 @@ class TestConnectorOutage:
         """Core vault operations work even if Brain-dependent features fail."""
         # Vault store is a Core-only operation — should always work
         resp = api.post("/v1/vault/store", json={
-            "persona": "personal",
+            "persona": "general",
             "item": {
                 "Type": "note",
                 "Source": "release-test",
@@ -35,7 +35,7 @@ class TestConnectorOutage:
 
         # Query is also Core-only (FTS5)
         resp = api.post("/v1/vault/query", json={
-            "persona": "personal",
+            "persona": "general",
             "query": "connector outage",
             "mode": "fts5",
             "limit": 5,

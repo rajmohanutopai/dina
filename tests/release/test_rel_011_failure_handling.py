@@ -20,7 +20,7 @@ class TestWrongAPIKey:
         """Invalid Bearer token produces 401, not a hang or 500."""
         resp = httpx.post(
             f"{core_url}/v1/vault/query",
-            json={"persona": "personal", "query": "test", "mode": "fts5"},
+            json={"persona": "general", "query": "test", "mode": "fts5"},
             headers={"Authorization": "Bearer invalid-garbage-token"},
             timeout=10,
         )
@@ -33,7 +33,7 @@ class TestWrongAPIKey:
         """Missing auth header produces 401, not 500."""
         resp = httpx.post(
             f"{core_url}/v1/vault/query",
-            json={"persona": "personal", "query": "test"},
+            json={"persona": "general", "query": "test"},
             timeout=10,
         )
         assert resp.status_code in (401, 403), (
@@ -69,7 +69,7 @@ class TestVaultResilience:
         """Data stored is exactly what is retrieved — no corruption."""
         test_value = "critical financial record amount=50000"
         resp = api.post("/v1/vault/store", json={
-            "persona": "personal",
+            "persona": "general",
             "item": {
                 "Type": "note",
                 "Source": "release-test",
@@ -82,7 +82,7 @@ class TestVaultResilience:
 
         # Verify via query
         resp = api.post("/v1/vault/query", json={
-            "persona": "personal",
+            "persona": "general",
             "query": "critical financial",
             "mode": "fts5",
             "limit": 10,
@@ -97,7 +97,7 @@ class TestVaultResilience:
         """Multiple sequential stores succeed without errors."""
         for i in range(5):
             resp = api.post("/v1/vault/store", json={
-                "persona": "personal",
+                "persona": "general",
                 "item": {
                     "Type": "note",
                     "Source": "release-test",

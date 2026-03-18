@@ -23,7 +23,7 @@ class TestCartHandover:
         """Email draft is stored in vault, never auto-sent."""
         draft_id = f"drf_{uuid.uuid4().hex[:8]}"
         resp = api.post("/v1/vault/store", json={
-            "persona": "personal",
+            "persona": "general",
             "item": {
                 "Type": "email_draft",
                 "Source": "release-test",
@@ -42,7 +42,7 @@ class TestCartHandover:
 
         # Verify it's stored as a draft (not sent)
         resp = api.post("/v1/vault/query", json={
-            "persona": "personal",
+            "persona": "general",
             "query": "tea tomorrow",
             "mode": "fts5",
             "types": ["email_draft"],
@@ -57,7 +57,7 @@ class TestCartHandover:
         """Purchase intent is stored in vault, never auto-executed."""
         intent_id = f"pay_{uuid.uuid4().hex[:8]}"
         resp = api.post("/v1/vault/store", json={
-            "persona": "personal",
+            "persona": "general",
             "item": {
                 "Type": "cart_handover",
                 "Source": "release-test",
@@ -108,7 +108,7 @@ class TestCartHandover:
     def test_rel_020_vault_tracks_draft_type(self, api: httpx.Client) -> None:
         """Vault correctly stores and returns email_draft type."""
         api.post("/v1/vault/store", json={
-            "persona": "personal",
+            "persona": "general",
             "item": {
                 "Type": "email_draft",
                 "Source": "release-test",
@@ -119,7 +119,7 @@ class TestCartHandover:
         })
 
         resp = api.post("/v1/vault/query", json={
-            "persona": "personal",
+            "persona": "general",
             "query": "draft type tracking",
             "mode": "fts5",
             "limit": 10,
