@@ -789,6 +789,10 @@ class GuardianLoop:
     async def process_event(self, event: dict) -> dict:
         """Process an incoming event and return an action decision.
 
+        The route layer validates and parses events into typed Pydantic
+        models (discriminated union), then passes the dict form here.
+        We dispatch on the ``type`` string for handler routing.
+
         Steps
         -----
         1. Detect special event types (vault lifecycle, agent intent,
@@ -807,63 +811,33 @@ class GuardianLoop:
         event_type = event.get("type", "")
         task_id = event.get("task_id")
 
+        # Dispatch table — maps event type strings to handler methods.
+        # The route layer's discriminated union validates event shape
+        # before we get here; this dispatch only routes to the correct
+        # handler.  DIDComm events (dina/*) and standard events fall
+        # through to the if-chain below.
+        _dispatch = {
+            "vault_unlocked": self._handle_vault_unlocked,
+            "vault_locked": self._handle_vault_locked,
+            "persona_unlocked": self._handle_persona_unlocked,
+            "agent_intent": self.review_intent,
+            "delegation_request": self._handle_delegation_request,
+            "cross_persona_request": self._handle_cross_persona_request,
+            "disclosure_approved": self._handle_disclosure_approved,
+            "intent_approved": self._handle_intent_approved,
+            "approval_needed": self._handle_approval_needed,
+            "post_publish": self._handle_post_publish,
+            "document_ingest": self._handle_document_ingest,
+            "reminder_fired": self._handle_reminder_fired,
+            "reason": self._handle_reason,
+            "agent_response": self._handle_agent_response,
+            "contact_neglect": self._handle_contact_neglect,
+        }
+
         try:
-            # ---- Vault lifecycle events (SS2.2) ----
-            if event_type == "vault_unlocked":
-                return await self._handle_vault_unlocked(event)
-
-            if event_type == "vault_locked":
-                return await self._handle_vault_locked(event)
-
-            if event_type == "persona_unlocked":
-                return await self._handle_persona_unlocked(event)
-
-            # ---- Agent intent review (SS2.3) ----
-            if event_type == "agent_intent":
-                return await self.review_intent(event)
-
-            # ---- Delegation request (SS4.4 — Agent Safety Layer) ----
-            if event_type == "delegation_request":
-                return await self._handle_delegation_request(event)
-
-            # ---- Cross-persona disclosure (SS5 — Persona Wall) ----
-            if event_type == "cross_persona_request":
-                return await self._handle_cross_persona_request(event)
-
-            if event_type == "disclosure_approved":
-                return await self._handle_disclosure_approved(event)
-
-            # ---- Intent approval (SS2.3 — Agent Safety Layer) ----
-            if event_type == "intent_approved":
-                return await self._handle_intent_approved(event)
-
-            # ---- Persona approval notification ----
-            if event_type == "approval_needed":
-                return await self._handle_approval_needed(event)
-
-            # ---- Post-publication derived artifacts (drain hook) ----
-            if event_type == "post_publish":
-                return await self._handle_post_publish(event)
-
-            # ---- Document ingestion (SS4.1) ----
-            if event_type == "document_ingest":
-                return await self._handle_document_ingest(event)
-
-            # ---- Reminder fired (SS4.3) ----
-            if event_type == "reminder_fired":
-                return await self._handle_reminder_fired(event)
-
-            # ---- LLM reasoning (SS10.3) ----
-            if event_type == "reason":
-                return await self._handle_reason(event)
-
-            # ---- Agent response (SS19.1 — Pull Economy) ----
-            if event_type == "agent_response":
-                return await self._handle_agent_response(event)
-
-            # ---- Contact neglect detection (SS17.1) ----
-            if event_type == "contact_neglect":
-                return await self._handle_contact_neglect(event)
+            handler = _dispatch.get(event_type)
+            if handler is not None:
+                return await handler(event)
 
             # ---- DIDComm message routing (SS2.8) ----
             if event_type and event_type.startswith("dina/"):
