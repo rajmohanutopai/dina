@@ -313,7 +313,7 @@ class CoreHTTPClient:
             body["user_origin"] = user_origin
         resp = await self._request("POST", "/v1/vault/store", json=body)
         data = resp.json()
-        return data.get("id", data.get("item_id", ""))
+        return data.get("id", "")
 
     async def store_vault_batch(
         self, persona_id: str, items: list[dict], *, user_origin: str = "",
@@ -441,8 +441,7 @@ class CoreHTTPClient:
             headers=extra_headers if extra_headers else None,
         )
         data = resp.json()
-        items = data.get("items", []) if isinstance(data, dict) else data
-        return items if items else []
+        return data.get("items", [])
 
     # -- Scratchpad (stored via KV) ------------------------------------------
 
@@ -472,7 +471,7 @@ class CoreHTTPClient:
         try:
             resp = await self._request("GET", f"/v1/vault/kv/{key}")
             data = resp.json()
-            return data.get("value") if isinstance(data, dict) else str(data)
+            return data.get("value")
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
                 return None
@@ -591,7 +590,7 @@ class CoreHTTPClient:
         """GET /v1/contacts — list all contacts from core directory."""
         resp = await self._request("GET", "/v1/contacts")
         data = resp.json()
-        return data if isinstance(data, list) else []
+        return data.get("contacts", [])
 
     async def add_contact(
         self, did: str, name: str, trust_level: str = "unknown", sharing_tier: str = ""
@@ -647,8 +646,7 @@ class CoreHTTPClient:
             body["user_origin"] = user_origin
         resp = await self._request("POST", "/v1/vault/query", json=body)
         data = resp.json()
-        items = data.get("items", []) if isinstance(data, dict) else data
-        return items if items else []
+        return data.get("items", [])
 
     # -- Personas ------------------------------------------------------------
 
@@ -656,7 +654,7 @@ class CoreHTTPClient:
         """GET /v1/personas — list persona IDs."""
         resp = await self._request("GET", "/v1/personas")
         data = resp.json()
-        return data if isinstance(data, list) else []
+        return data.get("personas", [])
 
     # -- Devices -------------------------------------------------------------
 
@@ -664,7 +662,7 @@ class CoreHTTPClient:
         """GET /v1/devices — list registered devices."""
         resp = await self._request("GET", "/v1/devices")
         data = resp.json()
-        return data.get("devices", []) if isinstance(data, dict) else data
+        return data.get("devices", [])
 
     async def initiate_pairing(self) -> dict:
         """POST /v1/pair/initiate — generate pairing code."""

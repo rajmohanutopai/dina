@@ -111,10 +111,7 @@ class TestPersonaWall:
             pytest.skip("Personas list endpoint not implemented")
         assert resp.status_code == 200
         data = resp.json()
-        # Response is a list of strings like ["persona-personal", ...]
-        if isinstance(data, list):
-            # Strip "persona-" prefix if present
-            names = [p.replace("persona-", "") if isinstance(p, str) else p.get("name", "") for p in data]
-        else:
-            names = [p.get("name", "") for p in data.get("personas", [])]
+        personas = data.get("personas", [])
+        # Strip "persona-" prefix if present
+        names = [p.replace("persona-", "") if isinstance(p, str) else p.get("name", "") for p in personas]
         assert "general" in names, f"general persona should exist, got: {names}"

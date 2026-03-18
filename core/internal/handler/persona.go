@@ -53,7 +53,7 @@ func (h *PersonaHandler) HandleListPersonas(w http.ResponseWriter, r *http.Reque
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(personas); err != nil {
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{"personas": personas}); err != nil {
 		http.Error(w, `{"error":"failed to encode response"}`, http.StatusInternalServerError)
 	}
 }

@@ -42,7 +42,7 @@ func (h *ContactHandler) HandleListContacts(w http.ResponseWriter, r *http.Reque
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(contacts); err != nil {
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{"contacts": contacts}); err != nil {
 		http.Error(w, `{"error":"failed to encode response"}`, http.StatusInternalServerError)
 	}
 }
