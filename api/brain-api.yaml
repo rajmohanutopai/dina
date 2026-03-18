@@ -7,17 +7,44 @@ paths:
   /v1/process:
     post:
       summary: Process Event
-      description: "Process an incoming event from core.\n\nDelegates to GuardianLoop.process_event()\
-        \ and translates the returned\ndict into a typed ProcessEventResponse.\n\n\
-        Raises\n------\nHTTPException 500\n    If the guardian loop raises an unexpected\
-        \ error.\nHTTPException 400\n    If the event type is unrecognised by the\
-        \ guardian."
+      description: 'Process an incoming event from core.
+
+
+        The request body is validated against typed event variants based on
+
+        the ``type`` field.  Known types (agent_intent, vault_unlocked, etc.)
+
+        get strict schema validation.  Unknown types and DIDComm messages
+
+        (dina/*) fall through to the permissive StandardEvent model.
+
+
+        Delegates to GuardianLoop.process_event() and translates the returned
+
+        dict into a typed ProcessEventResponse.'
       operationId: process_event_v1_process_post
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ProcessEventRequest'
+              oneOf:
+              - $ref: '#/components/schemas/VaultUnlockedEvent'
+              - $ref: '#/components/schemas/VaultLockedEvent'
+              - $ref: '#/components/schemas/PersonaUnlockedEvent'
+              - $ref: '#/components/schemas/AgentIntentEvent'
+              - $ref: '#/components/schemas/DelegationRequestEvent'
+              - $ref: '#/components/schemas/CrossPersonaRequestEvent'
+              - $ref: '#/components/schemas/IntentApprovedEvent'
+              - $ref: '#/components/schemas/DisclosureApprovedEvent'
+              - $ref: '#/components/schemas/DocumentIngestEvent'
+              - $ref: '#/components/schemas/ReminderFiredEvent'
+              - $ref: '#/components/schemas/ApprovalNeededEvent'
+              - $ref: '#/components/schemas/AgentResponseEvent'
+              - $ref: '#/components/schemas/ReasonEvent'
+              - $ref: '#/components/schemas/ContactNeglectEvent'
+              - $ref: '#/components/schemas/PostPublishEvent'
+              - $ref: '#/components/schemas/StandardEvent'
+              title: Event
         required: true
       responses:
         '200':
@@ -93,20 +120,8 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
-    HTTPValidationError:
+    AgentIntentEvent:
       properties:
-        detail:
-          items:
-            $ref: '#/components/schemas/ValidationError'
-          type: array
-          title: Detail
-      type: object
-      title: HTTPValidationError
-    ProcessEventRequest:
-      properties:
-        type:
-          type: string
-          title: Type
         task_id:
           title: Task Id
           type: string
@@ -123,31 +138,16 @@ components:
           title: Source
           type: string
           nullable: true
-        body:
-          title: Body
-          type: object
-          additionalProperties: true
-          nullable: true
-        priority:
-          title: Priority
+        type:
           type: string
-          nullable: true
-        from:
-          title: From
-          type: string
-          nullable: true
-        contact_did:
-          title: Contact Did
-          type: string
-          nullable: true
+          const: agent_intent
+          title: Type
         agent_did:
+          type: string
           title: Agent Did
-          type: string
-          nullable: true
         action:
-          title: Action
           type: string
-          nullable: true
+          title: Action
         target:
           title: Target
           type: string
@@ -160,37 +160,371 @@ components:
           title: Trust Level
           type: string
           nullable: true
-        payload:
-          title: Payload
-          additionalProperties: true
-          type: object
+      type: object
+      required:
+      - type
+      - agent_did
+      - action
+      title: AgentIntentEvent
+    AgentResponseEvent:
+      properties:
+        task_id:
+          title: Task Id
+          type: string
           nullable: true
-        context:
-          title: Context
+        timestamp:
+          title: Timestamp
+          type: string
+          nullable: true
+        persona_id:
+          title: Persona Id
+          type: string
+          nullable: true
+        source:
+          title: Source
+          type: string
+          nullable: true
+        type:
+          type: string
+          const: agent_response
+          title: Type
+        body:
+          title: Body
+          type: object
+          additionalProperties: true
+          nullable: true
+        metadata:
+          title: Metadata
           additionalProperties: true
           type: object
           nullable: true
       type: object
       required:
       - type
-      title: ProcessEventRequest
-      description: 'Inbound event from core for brain processing.
-
-
-        The ``type`` field is always required.  All other fields are optional
-
-        because different event types carry different payloads:
-
-
-        - ``message``       : body is a string
-
-        - ``agent_intent``  : agent_did, action, target, risk_level are populated
-
-        - ``alert``         : priority + body
-
-        - ``vault_unlocked``: persona_id
-
-        - ``dina/social/*`` : from_did is the sender DID (DIDComm messages)'
+      title: AgentResponseEvent
+    ApprovalNeededEvent:
+      properties:
+        task_id:
+          title: Task Id
+          type: string
+          nullable: true
+        timestamp:
+          title: Timestamp
+          type: string
+          nullable: true
+        persona_id:
+          title: Persona Id
+          type: string
+          nullable: true
+        source:
+          title: Source
+          type: string
+          nullable: true
+        type:
+          type: string
+          const: approval_needed
+          title: Type
+        id:
+          title: Id
+          description: Approval request ID
+          type: string
+          nullable: true
+        persona:
+          title: Persona
+          type: string
+          nullable: true
+        client_did:
+          title: Client Did
+          type: string
+          nullable: true
+        session:
+          title: Session
+          type: string
+          nullable: true
+        reason:
+          title: Reason
+          type: string
+          nullable: true
+      type: object
+      required:
+      - type
+      title: ApprovalNeededEvent
+    ContactNeglectEvent:
+      properties:
+        task_id:
+          title: Task Id
+          type: string
+          nullable: true
+        timestamp:
+          title: Timestamp
+          type: string
+          nullable: true
+        persona_id:
+          title: Persona Id
+          type: string
+          nullable: true
+        source:
+          title: Source
+          type: string
+          nullable: true
+        type:
+          type: string
+          const: contact_neglect
+          title: Type
+        metadata:
+          title: Metadata
+          additionalProperties: true
+          type: object
+          nullable: true
+      type: object
+      required:
+      - type
+      title: ContactNeglectEvent
+    CrossPersonaRequestEvent:
+      properties:
+        task_id:
+          title: Task Id
+          type: string
+          nullable: true
+        timestamp:
+          title: Timestamp
+          type: string
+          nullable: true
+        persona_id:
+          title: Persona Id
+          type: string
+          nullable: true
+        source:
+          title: Source
+          type: string
+          nullable: true
+        type:
+          type: string
+          const: cross_persona_request
+          title: Type
+        payload:
+          additionalProperties: true
+          type: object
+          title: Payload
+      type: object
+      required:
+      - type
+      - payload
+      title: CrossPersonaRequestEvent
+    DelegationRequestEvent:
+      properties:
+        task_id:
+          title: Task Id
+          type: string
+          nullable: true
+        timestamp:
+          title: Timestamp
+          type: string
+          nullable: true
+        persona_id:
+          title: Persona Id
+          type: string
+          nullable: true
+        source:
+          title: Source
+          type: string
+          nullable: true
+        type:
+          type: string
+          const: delegation_request
+          title: Type
+        payload:
+          additionalProperties: true
+          type: object
+          title: Payload
+        trust_level:
+          title: Trust Level
+          type: string
+          nullable: true
+      type: object
+      required:
+      - type
+      - payload
+      title: DelegationRequestEvent
+    DisclosureApprovedEvent:
+      properties:
+        task_id:
+          title: Task Id
+          type: string
+          nullable: true
+        timestamp:
+          title: Timestamp
+          type: string
+          nullable: true
+        persona_id:
+          title: Persona Id
+          type: string
+          nullable: true
+        source:
+          title: Source
+          type: string
+          nullable: true
+        type:
+          type: string
+          const: disclosure_approved
+          title: Type
+        disclosure_id:
+          title: Disclosure Id
+          type: string
+          nullable: true
+        approved_text:
+          title: Approved Text
+          type: string
+          nullable: true
+        payload:
+          title: Payload
+          additionalProperties: true
+          type: object
+          nullable: true
+      type: object
+      required:
+      - type
+      title: DisclosureApprovedEvent
+    DocumentIngestEvent:
+      properties:
+        task_id:
+          title: Task Id
+          type: string
+          nullable: true
+        timestamp:
+          title: Timestamp
+          type: string
+          nullable: true
+        persona_id:
+          title: Persona Id
+          type: string
+          nullable: true
+        source:
+          title: Source
+          type: string
+          nullable: true
+        type:
+          type: string
+          const: document_ingest
+          title: Type
+        body:
+          title: Body
+          type: object
+          additionalProperties: true
+        priority:
+          title: Priority
+          type: string
+          nullable: true
+      type: object
+      required:
+      - type
+      - body
+      title: DocumentIngestEvent
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    IntentApprovedEvent:
+      properties:
+        task_id:
+          title: Task Id
+          type: string
+          nullable: true
+        timestamp:
+          title: Timestamp
+          type: string
+          nullable: true
+        persona_id:
+          title: Persona Id
+          type: string
+          nullable: true
+        source:
+          title: Source
+          type: string
+          nullable: true
+        type:
+          type: string
+          const: intent_approved
+          title: Type
+        proposal_id:
+          title: Proposal Id
+          type: string
+          nullable: true
+        approved_text:
+          title: Approved Text
+          type: string
+          nullable: true
+        payload:
+          title: Payload
+          additionalProperties: true
+          type: object
+          nullable: true
+      type: object
+      required:
+      - type
+      title: IntentApprovedEvent
+    PersonaUnlockedEvent:
+      properties:
+        task_id:
+          title: Task Id
+          type: string
+          nullable: true
+        timestamp:
+          title: Timestamp
+          type: string
+          nullable: true
+        persona_id:
+          title: Persona Id
+          type: string
+          nullable: true
+        source:
+          title: Source
+          type: string
+          nullable: true
+        type:
+          type: string
+          const: persona_unlocked
+          title: Type
+      type: object
+      required:
+      - type
+      title: PersonaUnlockedEvent
+    PostPublishEvent:
+      properties:
+        task_id:
+          title: Task Id
+          type: string
+          nullable: true
+        timestamp:
+          title: Timestamp
+          type: string
+          nullable: true
+        persona_id:
+          title: Persona Id
+          type: string
+          nullable: true
+        source:
+          title: Source
+          type: string
+          nullable: true
+        type:
+          type: string
+          const: post_publish
+          title: Type
+        payload:
+          title: Payload
+          additionalProperties: true
+          type: object
+          nullable: true
+      type: object
+      required:
+      - type
+      title: PostPublishEvent
     ProcessEventResponse:
       properties:
         status:
@@ -239,6 +573,61 @@ components:
         At least ``status`` is always set.  The remaining fields are populated
 
         depending on the event type and the guardian''s decision.'
+    ReasonEvent:
+      properties:
+        task_id:
+          title: Task Id
+          type: string
+          nullable: true
+        timestamp:
+          title: Timestamp
+          type: string
+          nullable: true
+        persona_id:
+          title: Persona Id
+          type: string
+          nullable: true
+        source:
+          title: Source
+          type: string
+          nullable: true
+        type:
+          type: string
+          const: reason
+          title: Type
+        prompt:
+          title: Prompt
+          type: string
+          nullable: true
+        body:
+          title: Body
+          type: object
+          additionalProperties: true
+          nullable: true
+        persona_tier:
+          title: Persona Tier
+          type: string
+          nullable: true
+        provider:
+          title: Provider
+          type: string
+          nullable: true
+        skip_vault_enrichment:
+          type: boolean
+          title: Skip Vault Enrichment
+          default: false
+        agent_did:
+          title: Agent Did
+          type: string
+          nullable: true
+        session:
+          title: Session
+          type: string
+          nullable: true
+      type: object
+      required:
+      - type
+      title: ReasonEvent
     ReasonRequest:
       properties:
         type:
@@ -334,6 +723,37 @@ components:
         ``vault_context_used`` indicates whether the agentic reasoning loop
 
         successfully queried persona vaults for personalization context.'
+    ReminderFiredEvent:
+      properties:
+        task_id:
+          title: Task Id
+          type: string
+          nullable: true
+        timestamp:
+          title: Timestamp
+          type: string
+          nullable: true
+        persona_id:
+          title: Persona Id
+          type: string
+          nullable: true
+        source:
+          title: Source
+          type: string
+          nullable: true
+        type:
+          type: string
+          const: reminder_fired
+          title: Type
+        body:
+          title: Body
+          type: object
+          additionalProperties: true
+      type: object
+      required:
+      - type
+      - body
+      title: ReminderFiredEvent
     ScrubRequest:
       properties:
         text:
@@ -362,6 +782,86 @@ components:
       - entities
       title: ScrubResponse
       description: Result of PII scrubbing.
+    StandardEvent:
+      properties:
+        task_id:
+          title: Task Id
+          type: string
+          nullable: true
+        timestamp:
+          title: Timestamp
+          type: string
+          nullable: true
+        persona_id:
+          title: Persona Id
+          type: string
+          nullable: true
+        source:
+          title: Source
+          type: string
+          nullable: true
+        type:
+          type: string
+          title: Type
+        body:
+          title: Body
+          type: object
+          additionalProperties: true
+          nullable: true
+        priority:
+          title: Priority
+          type: string
+          nullable: true
+        from:
+          title: From
+          type: string
+          nullable: true
+        contact_did:
+          title: Contact Did
+          type: string
+          nullable: true
+        agent_did:
+          title: Agent Did
+          type: string
+          nullable: true
+        action:
+          title: Action
+          type: string
+          nullable: true
+        target:
+          title: Target
+          type: string
+          nullable: true
+        risk_level:
+          title: Risk Level
+          type: string
+          nullable: true
+        trust_level:
+          title: Trust Level
+          type: string
+          nullable: true
+        payload:
+          title: Payload
+          additionalProperties: true
+          type: object
+          nullable: true
+        context:
+          title: Context
+          additionalProperties: true
+          type: object
+          nullable: true
+      type: object
+      required:
+      - type
+      title: StandardEvent
+      description: 'Catch-all for standard events (message, alert, notification, reminder)
+
+        and DIDComm messages (dina/social/*, dina/commerce/*, etc.).
+
+
+        DIDComm types use dynamic prefixes that can''t be Literal variants.
+
+        Standard events flow through the silence classifier.'
     ValidationError:
       properties:
         loc:
@@ -387,6 +887,58 @@ components:
       - msg
       - type
       title: ValidationError
+    VaultLockedEvent:
+      properties:
+        task_id:
+          title: Task Id
+          type: string
+          nullable: true
+        timestamp:
+          title: Timestamp
+          type: string
+          nullable: true
+        persona_id:
+          title: Persona Id
+          type: string
+          nullable: true
+        source:
+          title: Source
+          type: string
+          nullable: true
+        type:
+          type: string
+          const: vault_locked
+          title: Type
+      type: object
+      required:
+      - type
+      title: VaultLockedEvent
+    VaultUnlockedEvent:
+      properties:
+        task_id:
+          title: Task Id
+          type: string
+          nullable: true
+        timestamp:
+          title: Timestamp
+          type: string
+          nullable: true
+        persona_id:
+          title: Persona Id
+          type: string
+          nullable: true
+        source:
+          title: Source
+          type: string
+          nullable: true
+        type:
+          type: string
+          const: vault_unlocked
+          title: Type
+      type: object
+      required:
+      - type
+      title: VaultUnlockedEvent
 servers:
 - url: /api
   description: Mounted at /api on master app
