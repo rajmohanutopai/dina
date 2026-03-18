@@ -108,6 +108,7 @@ VaultItem:
   properties:
     id:
       type: string
+      x-go-name: ID
     type:
       type: string
       description: "Item type: email, event, note, document, etc."
@@ -116,9 +117,11 @@ VaultItem:
       description: "Origin system: gmail, calendar, web, personal, etc."
     source_id:
       type: string
+      x-go-name: SourceID
       description: External ID (Gmail message ID, etc.)
     contact_did:
       type: string
+      x-go-name: ContactDID
       description: DID of contact who sent/shared this.
     summary:
       type: string
@@ -145,13 +148,17 @@ VaultItem:
       type: string
       description: "Who authored: email address, 'user', or DID."
     sender_trust:
-      $ref: '#/SenderTrust'
+      type: string
+      description: "Trust ring: self, contact_ring1, contact_ring2, unknown, marketing."
     source_type:
-      $ref: '#/SourceType'
+      type: string
+      description: "Origin: self, contact, service, unknown, marketing."
     confidence:
-      $ref: '#/Confidence'
+      type: string
+      description: "Level: high, medium, low, unverified."
     retrieval_policy:
-      $ref: '#/RetrievalPolicy'
+      type: string
+      description: "Policy: normal, caveated, quarantine, briefing_only."
     contradicts:
       type: string
       description: ID of contradicted item (if any).
@@ -162,14 +169,17 @@ VaultItem:
       type: string
       description: One-paragraph overview (tiered content).
     enrichment_status:
-      $ref: '#/EnrichmentStatus'
+      type: string
+      description: "Status: pending, processing, ready, failed."
     enrichment_version:
       type: string
       description: "JSON: {prompt_v, embed_model}."
     staging_id:
       type: string
+      x-go-name: StagingID
     connector_id:
       type: string
+      x-go-name: ConnectorID
 
 Contact:
   type: object

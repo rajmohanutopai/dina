@@ -83,30 +83,6 @@ func (e ApprovalStatus) Valid() bool {
 	}
 }
 
-// Defines values for Confidence.
-const (
-	ConfidenceHigh       Confidence = "high"
-	ConfidenceLow        Confidence = "low"
-	ConfidenceMedium     Confidence = "medium"
-	ConfidenceUnverified Confidence = "unverified"
-)
-
-// Valid indicates whether the value is a known member of the Confidence enum.
-func (e Confidence) Valid() bool {
-	switch e {
-	case ConfidenceHigh:
-		return true
-	case ConfidenceLow:
-		return true
-	case ConfidenceMedium:
-		return true
-	case ConfidenceUnverified:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for CreatePersonaRequestTier.
 const (
 	Default   CreatePersonaRequestTier = "default"
@@ -161,30 +137,6 @@ func (e CreatePersonaResponseVault) Valid() bool {
 	case Closed:
 		return true
 	case Open:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for EnrichmentStatus.
-const (
-	EnrichmentStatusFailed     EnrichmentStatus = "failed"
-	EnrichmentStatusPending    EnrichmentStatus = "pending"
-	EnrichmentStatusProcessing EnrichmentStatus = "processing"
-	EnrichmentStatusReady      EnrichmentStatus = "ready"
-)
-
-// Valid indicates whether the value is a known member of the EnrichmentStatus enum.
-func (e EnrichmentStatus) Valid() bool {
-	switch e {
-	case EnrichmentStatusFailed:
-		return true
-	case EnrichmentStatusPending:
-		return true
-	case EnrichmentStatusProcessing:
-		return true
-	case EnrichmentStatusReady:
 		return true
 	default:
 		return false
@@ -248,84 +200,6 @@ func (e ReminderStatus) Valid() bool {
 	case ReminderStatusDone:
 		return true
 	case ReminderStatusPending:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for RetrievalPolicy.
-const (
-	RetrievalPolicyBriefingOnly RetrievalPolicy = "briefing_only"
-	RetrievalPolicyCaveated     RetrievalPolicy = "caveated"
-	RetrievalPolicyNormal       RetrievalPolicy = "normal"
-	RetrievalPolicyQuarantine   RetrievalPolicy = "quarantine"
-)
-
-// Valid indicates whether the value is a known member of the RetrievalPolicy enum.
-func (e RetrievalPolicy) Valid() bool {
-	switch e {
-	case RetrievalPolicyBriefingOnly:
-		return true
-	case RetrievalPolicyCaveated:
-		return true
-	case RetrievalPolicyNormal:
-		return true
-	case RetrievalPolicyQuarantine:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for SenderTrust.
-const (
-	SenderTrustContactRing1 SenderTrust = "contact_ring1"
-	SenderTrustContactRing2 SenderTrust = "contact_ring2"
-	SenderTrustMarketing    SenderTrust = "marketing"
-	SenderTrustSelf         SenderTrust = "self"
-	SenderTrustUnknown      SenderTrust = "unknown"
-)
-
-// Valid indicates whether the value is a known member of the SenderTrust enum.
-func (e SenderTrust) Valid() bool {
-	switch e {
-	case SenderTrustContactRing1:
-		return true
-	case SenderTrustContactRing2:
-		return true
-	case SenderTrustMarketing:
-		return true
-	case SenderTrustSelf:
-		return true
-	case SenderTrustUnknown:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for SourceType.
-const (
-	SourceTypeContact   SourceType = "contact"
-	SourceTypeMarketing SourceType = "marketing"
-	SourceTypeSelf      SourceType = "self"
-	SourceTypeService   SourceType = "service"
-	SourceTypeUnknown   SourceType = "unknown"
-)
-
-// Valid indicates whether the value is a known member of the SourceType enum.
-func (e SourceType) Valid() bool {
-	switch e {
-	case SourceTypeContact:
-		return true
-	case SourceTypeMarketing:
-		return true
-	case SourceTypeSelf:
-		return true
-	case SourceTypeService:
-		return true
-	case SourceTypeUnknown:
 		return true
 	default:
 		return false
@@ -406,31 +280,31 @@ func (e StoreReminderRequestKind) Valid() bool {
 
 // Defines values for TrustLevel.
 const (
-	Blocked          TrustLevel = "blocked"
-	Trusted          TrustLevel = "trusted"
-	Unknown          TrustLevel = "unknown"
-	Untrusted        TrustLevel = "untrusted"
-	Unverified       TrustLevel = "unverified"
-	Verified         TrustLevel = "verified"
-	VerifiedActioned TrustLevel = "verified_actioned"
+	TrustLevelBlocked          TrustLevel = "blocked"
+	TrustLevelTrusted          TrustLevel = "trusted"
+	TrustLevelUnknown          TrustLevel = "unknown"
+	TrustLevelUntrusted        TrustLevel = "untrusted"
+	TrustLevelUnverified       TrustLevel = "unverified"
+	TrustLevelVerified         TrustLevel = "verified"
+	TrustLevelVerifiedActioned TrustLevel = "verified_actioned"
 )
 
 // Valid indicates whether the value is a known member of the TrustLevel enum.
 func (e TrustLevel) Valid() bool {
 	switch e {
-	case Blocked:
+	case TrustLevelBlocked:
 		return true
-	case Trusted:
+	case TrustLevelTrusted:
 		return true
-	case Unknown:
+	case TrustLevelUnknown:
 		return true
-	case Untrusted:
+	case TrustLevelUntrusted:
 		return true
-	case Unverified:
+	case TrustLevelUnverified:
 		return true
-	case Verified:
+	case TrustLevelVerified:
 		return true
-	case VerifiedActioned:
+	case TrustLevelVerifiedActioned:
 		return true
 	default:
 		return false
@@ -439,22 +313,22 @@ func (e TrustLevel) Valid() bool {
 
 // Defines values for VaultEnrichRequestEnrichmentStatus.
 const (
-	VaultEnrichRequestEnrichmentStatusFailed     VaultEnrichRequestEnrichmentStatus = "failed"
-	VaultEnrichRequestEnrichmentStatusPending    VaultEnrichRequestEnrichmentStatus = "pending"
-	VaultEnrichRequestEnrichmentStatusProcessing VaultEnrichRequestEnrichmentStatus = "processing"
-	VaultEnrichRequestEnrichmentStatusReady      VaultEnrichRequestEnrichmentStatus = "ready"
+	Failed     VaultEnrichRequestEnrichmentStatus = "failed"
+	Pending    VaultEnrichRequestEnrichmentStatus = "pending"
+	Processing VaultEnrichRequestEnrichmentStatus = "processing"
+	Ready      VaultEnrichRequestEnrichmentStatus = "ready"
 )
 
 // Valid indicates whether the value is a known member of the VaultEnrichRequestEnrichmentStatus enum.
 func (e VaultEnrichRequestEnrichmentStatus) Valid() bool {
 	switch e {
-	case VaultEnrichRequestEnrichmentStatusFailed:
+	case Failed:
 		return true
-	case VaultEnrichRequestEnrichmentStatusPending:
+	case Pending:
 		return true
-	case VaultEnrichRequestEnrichmentStatusProcessing:
+	case Processing:
 		return true
-	case VaultEnrichRequestEnrichmentStatusReady:
+	case Ready:
 		return true
 	default:
 		return false
@@ -484,22 +358,22 @@ func (e VaultQueryRequestMode) Valid() bool {
 
 // Defines values for VaultQueryRequestRetrievalPolicy.
 const (
-	VaultQueryRequestRetrievalPolicyBriefingOnly VaultQueryRequestRetrievalPolicy = "briefing_only"
-	VaultQueryRequestRetrievalPolicyCaveated     VaultQueryRequestRetrievalPolicy = "caveated"
-	VaultQueryRequestRetrievalPolicyNormal       VaultQueryRequestRetrievalPolicy = "normal"
-	VaultQueryRequestRetrievalPolicyQuarantine   VaultQueryRequestRetrievalPolicy = "quarantine"
+	BriefingOnly VaultQueryRequestRetrievalPolicy = "briefing_only"
+	Caveated     VaultQueryRequestRetrievalPolicy = "caveated"
+	Normal       VaultQueryRequestRetrievalPolicy = "normal"
+	Quarantine   VaultQueryRequestRetrievalPolicy = "quarantine"
 )
 
 // Valid indicates whether the value is a known member of the VaultQueryRequestRetrievalPolicy enum.
 func (e VaultQueryRequestRetrievalPolicy) Valid() bool {
 	switch e {
-	case VaultQueryRequestRetrievalPolicyBriefingOnly:
+	case BriefingOnly:
 		return true
-	case VaultQueryRequestRetrievalPolicyCaveated:
+	case Caveated:
 		return true
-	case VaultQueryRequestRetrievalPolicyNormal:
+	case Normal:
 		return true
-	case VaultQueryRequestRetrievalPolicyQuarantine:
+	case Quarantine:
 		return true
 	default:
 		return false
@@ -666,9 +540,6 @@ type CompletePairingResponse struct {
 	NodeDid  string `json:"node_did,omitempty"`
 }
 
-// Confidence Source confidence level for vault items.
-type Confidence string
-
 // Contact defines model for Contact.
 type Contact struct {
 	Alias       string `json:"alias,omitempty"`
@@ -717,9 +588,6 @@ type CreatePersonaResponseVault string
 type DeviceListResponse struct {
 	Devices []PairedDevice `json:"devices,omitempty"`
 }
-
-// EnrichmentStatus L0/L1/embedding enrichment pipeline status.
-type EnrichmentStatus string
 
 // ExportRequest defines model for ExportRequest.
 type ExportRequest struct {
@@ -845,9 +713,6 @@ type ReminderListResponse struct {
 // ReminderStatus Scheduled reminder lifecycle state.
 type ReminderStatus string
 
-// RetrievalPolicy Controls how items surface in search results.
-type RetrievalPolicy string
-
 // ScrubResult defines model for ScrubResult.
 type ScrubResult struct {
 	Entities []PIIEntity `json:"entities,omitempty"`
@@ -855,9 +720,6 @@ type ScrubResult struct {
 	// Scrubbed Text with PII replaced by tokens.
 	Scrubbed string `json:"scrubbed,omitempty"`
 }
-
-// SenderTrust Trust ring classification of the item's sender.
-type SenderTrust string
 
 // SessionListResponse defines model for SessionListResponse.
 type SessionListResponse struct {
@@ -875,9 +737,6 @@ type SignResponse struct {
 	// Signature Hex-encoded Ed25519 signature.
 	Signature string `json:"signature,omitempty"`
 }
-
-// SourceType Origin classification of the vault item.
-type SourceType string
 
 // StagingClaimRequest defines model for StagingClaimRequest.
 type StagingClaimRequest struct {
@@ -1018,12 +877,12 @@ type VaultEnrichResponse struct {
 type VaultItem struct {
 	BodyText string `json:"body_text,omitempty"`
 
-	// Confidence Source confidence level for vault items.
-	Confidence  Confidence `json:"confidence,omitempty"`
-	ConnectorId string     `json:"connector_id,omitempty"`
+	// Confidence Level: high, medium, low, unverified.
+	Confidence  string `json:"confidence,omitempty"`
+	ConnectorID string `json:"connector_id,omitempty"`
 
-	// ContactDid DID of contact who sent/shared this.
-	ContactDid string `json:"contact_did,omitempty"`
+	// ContactDID DID of contact who sent/shared this.
+	ContactDID string `json:"contact_did,omitempty"`
 
 	// ContentL0 One-line abstract (tiered content).
 	ContentL0 string `json:"content_l0,omitempty"`
@@ -1037,12 +896,12 @@ type VaultItem struct {
 	// Embedding 768-dim float32 vector (EmbeddingGemma).
 	Embedding []float32 `json:"embedding,omitempty"`
 
-	// EnrichmentStatus L0/L1/embedding enrichment pipeline status.
-	EnrichmentStatus EnrichmentStatus `json:"enrichment_status,omitempty"`
+	// EnrichmentStatus Status: pending, processing, ready, failed.
+	EnrichmentStatus string `json:"enrichment_status,omitempty"`
 
 	// EnrichmentVersion JSON: {prompt_v, embed_model}.
 	EnrichmentVersion string `json:"enrichment_version,omitempty"`
-	Id                string `json:"id,omitempty"`
+	ID                string `json:"id,omitempty"`
 
 	// IngestedAt Unix seconds (when stored in vault).
 	IngestedAt int64 `json:"ingested_at,omitempty"`
@@ -1050,25 +909,25 @@ type VaultItem struct {
 	// Metadata JSON blob (encrypted PII lives here, not in searchable fields).
 	Metadata string `json:"metadata,omitempty"`
 
-	// RetrievalPolicy Controls how items surface in search results.
-	RetrievalPolicy RetrievalPolicy `json:"retrieval_policy,omitempty"`
+	// RetrievalPolicy Policy: normal, caveated, quarantine, briefing_only.
+	RetrievalPolicy string `json:"retrieval_policy,omitempty"`
 
 	// Sender Who authored: email address, 'user', or DID.
 	Sender string `json:"sender,omitempty"`
 
-	// SenderTrust Trust ring classification of the item's sender.
-	SenderTrust SenderTrust `json:"sender_trust,omitempty"`
+	// SenderTrust Trust ring: self, contact_ring1, contact_ring2, unknown, marketing.
+	SenderTrust string `json:"sender_trust,omitempty"`
 
 	// Source Origin system: gmail, calendar, web, personal, etc.
 	Source string `json:"source"`
 
-	// SourceId External ID (Gmail message ID, etc.)
-	SourceId string `json:"source_id,omitempty"`
+	// SourceID External ID (Gmail message ID, etc.)
+	SourceID string `json:"source_id,omitempty"`
 
-	// SourceType Origin classification of the vault item.
-	SourceType SourceType `json:"source_type,omitempty"`
-	StagingId  string     `json:"staging_id,omitempty"`
-	Summary    string     `json:"summary"`
+	// SourceType Origin: self, contact, service, unknown, marketing.
+	SourceType string `json:"source_type,omitempty"`
+	StagingID  string `json:"staging_id,omitempty"`
+	Summary    string `json:"summary"`
 
 	// Timestamp Unix seconds (when event occurred).
 	Timestamp int64 `json:"timestamp,omitempty"`

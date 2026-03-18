@@ -186,11 +186,8 @@ func (h *VaultHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
 }
 
 // storeRequest is the JSON body for POST /v1/vault/store.
-type storeRequest struct {
-	Persona    string           `json:"persona"`
-	Item       domain.VaultItem `json:"item"`
-	UserOrigin string           `json:"user_origin"` // "telegram" or "admin" — signed in body
-}
+// Matches gen.VaultStoreRequest from the OpenAPI spec.
+type storeRequest = gen.VaultStoreRequest
 
 // HandleStore handles POST /v1/vault/store. It persists a single item into the
 // named persona's vault and returns the generated ID.
@@ -206,7 +203,7 @@ func (h *VaultHandler) HandleStore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	r = injectUserOrigin(r, req.UserOrigin)
+	r = injectUserOrigin(r, string(req.UserOrigin))
 
 	persona, err := domain.NewPersonaName(req.Persona)
 	if err != nil {
@@ -270,11 +267,8 @@ func (h *VaultHandler) HandleStore(w http.ResponseWriter, r *http.Request) {
 }
 
 // storeBatchRequest is the JSON body for POST /v1/vault/store/batch.
-type storeBatchRequest struct {
-	Persona    string             `json:"persona"`
-	Items      []domain.VaultItem `json:"items"`
-	UserOrigin string             `json:"user_origin"` // "telegram" or "admin" — signed in body
-}
+// Matches gen.VaultStoreBatchRequest from the OpenAPI spec.
+type storeBatchRequest = gen.VaultStoreBatchRequest
 
 // HandleStoreBatch handles POST /v1/vault/store/batch. It persists multiple
 // items in a single operation and returns their IDs.
@@ -290,7 +284,7 @@ func (h *VaultHandler) HandleStoreBatch(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	r = injectUserOrigin(r, req.UserOrigin)
+	r = injectUserOrigin(r, string(req.UserOrigin))
 
 	persona, err := domain.NewPersonaName(req.Persona)
 	if err != nil {
@@ -391,13 +385,8 @@ func (h *VaultHandler) HandleDeleteItem(w http.ResponseWriter, r *http.Request) 
 }
 
 // enrichRequest is the JSON body for PATCH /v1/vault/item/{id}/enrich.
-type enrichRequest struct {
-	ContentL0         string    `json:"content_l0"`
-	ContentL1         string    `json:"content_l1"`
-	Embedding         []float32 `json:"embedding"`
-	EnrichmentStatus  string    `json:"enrichment_status"`
-	EnrichmentVersion string    `json:"enrichment_version"`
-}
+// Matches gen.VaultEnrichRequest from the OpenAPI spec.
+type enrichRequest = gen.VaultEnrichRequest
 
 // HandleEnrich handles PATCH /v1/vault/item/{id}/enrich. It updates only the
 // enrichment fields (content_l0, content_l1, embedding, enrichment_status,
@@ -434,7 +423,7 @@ func (h *VaultHandler) HandleEnrich(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate enrichment_status if provided.
-	if req.EnrichmentStatus != "" && !domain.ValidEnrichmentStatus[req.EnrichmentStatus] {
+	if req.EnrichmentStatus != "" && !domain.ValidEnrichmentStatus[string(req.EnrichmentStatus)] {
 		http.Error(w, `{"error":"invalid enrichment_status"}`, http.StatusBadRequest)
 		return
 	}
@@ -461,7 +450,7 @@ func (h *VaultHandler) HandleEnrich(w http.ResponseWriter, r *http.Request) {
 		item.Embedding = req.Embedding
 	}
 	if req.EnrichmentStatus != "" {
-		item.EnrichmentStatus = req.EnrichmentStatus
+		item.EnrichmentStatus = string(req.EnrichmentStatus)
 	}
 	if req.EnrichmentVersion != "" {
 		item.EnrichmentVersion = req.EnrichmentVersion
