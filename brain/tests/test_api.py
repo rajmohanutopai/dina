@@ -478,21 +478,25 @@ def test_api_10_5_1_language_agnostic_contract() -> None:
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir, "src"))
 
-    from dina_brain.routes.process import ProcessEventRequest, ProcessEventResponse
+    from dina_brain.routes.process import (
+        ProcessEventRequest, ProcessEventResponse, StandardEvent,
+    )
     from dina_brain.routes.reason import ReasonRequest, ReasonResponse
+    from pydantic import TypeAdapter
 
-    # Verify request models can round-trip through JSON
-    req = ProcessEventRequest(type="message", body="test")
-    serialised = req.model_dump_json()
+    # Verify request models can round-trip through JSON.
+    # ProcessEventRequest is a discriminated union — use TypeAdapter.
+    ta = TypeAdapter(ProcessEventRequest)
+    req = ta.validate_python({"type": "message", "body": "test"})
+    serialised = req.model_dump_json(by_alias=True)
     parsed = json.loads(serialised)
     assert isinstance(parsed, dict)
     assert parsed["type"] == "message"
 
-    # Verify all fields are JSON-native types (str, int, float, bool, None, dict, list)
-    for field_name, field_info in ProcessEventRequest.model_fields.items():
-        # No custom types that require pickle
+    # Verify StandardEvent (catch-all variant) fields are JSON-native types.
+    for field_name, field_info in StandardEvent.model_fields.items():
         assert "pickle" not in str(field_info.annotation).lower(), (
-            f"ProcessEventRequest.{field_name} uses non-JSON-native type"
+            f"StandardEvent.{field_name} uses non-JSON-native type"
         )
 
     # Reason request round-trip
