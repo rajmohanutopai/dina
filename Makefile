@@ -1,6 +1,6 @@
 # Dina — build, test, run targets
 
-.PHONY: build test lint run docker-up docker-down clean check-tests test-integration
+.PHONY: build test lint run docker-up docker-down clean check-tests test-integration generate check-generate
 
 # --- Build ---
 build:
@@ -53,6 +53,11 @@ generate:
 	datamodel-codegen --input api/core-api.bundled.yaml --output brain/src/gen/core_types.py --output-model-type pydantic_v2.BaseModel --snake-case-field --target-python-version 3.11
 	@echo "Generated: core/internal/gen/core_types.gen.go (Go types)"
 	@echo "Generated: brain/src/gen/core_types.py (Python Pydantic models)"
+
+# --- CI drift gate: verify generated code matches spec ---
+check-generate: generate
+	@git diff --ignore-matching-lines='timestamp:' --exit-code core/internal/gen/ brain/src/gen/ || \
+		(echo "ERROR: Generated code is out of date. Run 'make generate' and commit." && exit 1)
 
 # --- Clean ---
 clean:
