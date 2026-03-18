@@ -42,6 +42,7 @@ class ActionRisk(Enum):
 
 
 class PersonaType(Enum):
+    GENERAL = "general"
     PERSONAL = "personal"
     CONSUMER = "consumer"
     PROFESSIONAL = "professional"

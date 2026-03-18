@@ -231,12 +231,13 @@ def don_alonso(plc_directory, d2d_network, docker_services, _core_private_keys) 
     # Setup
     node.first_run_setup("alonso@example.com", "passphrase123")
 
-    # Create personas
-    node.create_persona("health", PersonaType.HEALTH, "restricted")
+    # Create personas (general is the default — always open, never lockable)
+    node.create_persona("general", PersonaType.GENERAL, "default")
+    node.create_persona("health", PersonaType.HEALTH, "sensitive")
     node.create_persona("financial", PersonaType.FINANCIAL, "locked")
-    node.create_persona("consumer", PersonaType.CONSUMER, "open")
-    node.create_persona("professional", PersonaType.PROFESSIONAL, "open")
-    node.create_persona("social", PersonaType.SOCIAL, "open")
+    node.create_persona("consumer", PersonaType.CONSUMER, "standard")
+    node.create_persona("professional", PersonaType.PROFESSIONAL, "standard")
+    node.create_persona("social", PersonaType.SOCIAL, "standard")
 
     # Pair devices: phone + laptop
     code1 = node.generate_pairing_code()
@@ -303,7 +304,8 @@ def sancho(plc_directory, d2d_network, docker_services, _core_private_keys) -> H
     )
 
     node.first_run_setup("sancho@example.com", "passphrase456")
-    node.create_persona("social", PersonaType.SOCIAL, "open")
+    node.create_persona("general", PersonaType.GENERAL, "default")
+    node.create_persona("social", PersonaType.SOCIAL, "standard")
 
     code = node.generate_pairing_code()
     node.pair_device(code, DeviceType.RICH_CLIENT)
