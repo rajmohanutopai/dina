@@ -46,6 +46,14 @@ test-integration:
 check-tests:
 	python scripts/verify_tests.py
 
+# --- OpenAPI codegen ---
+generate:
+	python3 scripts/bundle_openapi.py
+	$(HOME)/go/bin/oapi-codegen -generate types -package gen api/core-api.bundled.yaml > core/internal/gen/core_types.gen.go
+	datamodel-codegen --input api/core-api.bundled.yaml --output brain/src/gen/core_types.py --output-model-type pydantic_v2.BaseModel --snake-case-field --target-python-version 3.11
+	@echo "Generated: core/internal/gen/core_types.gen.go (Go types)"
+	@echo "Generated: brain/src/gen/core_types.py (Python Pydantic models)"
+
 # --- Clean ---
 clean:
 	cd core && go clean ./...
