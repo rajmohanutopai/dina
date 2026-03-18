@@ -1184,12 +1184,23 @@ def _start_e2e_docker(*, restart: bool = False) -> float:
 
     we_started = False
     if all_healthy:
-        print("  E2E Docker stack already healthy — reusing.", file=sys.stderr,
-              flush=True)
-    else:
+        # Never reuse stale containers — tear down and rebuild with current code.
+        print("  E2E Docker stack found — tearing down for fresh rebuild...",
+              file=sys.stderr, flush=True)
+        subprocess.run(
+            ["docker", "compose", "-p", e2e_project, "-f", compose_file, "down", "-v"],
+            capture_output=True, timeout=60,
+        )
+        all_healthy = False
+
+    if not all_healthy:
         we_started = True
         print("  Starting E2E Docker stack (4 actors)...", file=sys.stderr,
               flush=True)
+        # Bust Docker layer cache so current source is always used.
+        for src_dir in [PROJECT_ROOT / "brain" / "src", PROJECT_ROOT / "core" / "cmd"]:
+            sentinel = src_dir / ".build-sentinel"
+            sentinel.write_text(f"{_time.time()}\n")
         e2e_up = ["docker", "compose", "-p", e2e_project, "-f", compose_file, "up", "-d"]
         if os.environ.get("DINA_SKIP_DOCKER_BUILD") != "1":
             e2e_up = ["docker", "compose", "-p", e2e_project, "-f", compose_file, "up", "--build", "-d"]
