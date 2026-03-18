@@ -635,7 +635,9 @@ class TestTier5DeepArchive:
                          value={"year": 2025, "records": 1200})
 
         # Verify archive stored correctly
+        from tests.integration.conftest import as_dict
         archived = mock_vault.retrieve(tier=5, key="archive_2025")
+        archived = as_dict(archived)
         assert archived["records"] == 1200
 
         # Store same key in Tier 1 — must NOT affect Tier 5
@@ -643,18 +645,18 @@ class TestTier5DeepArchive:
                          value={"year": 2025, "records": 0})
 
         # Tier 5 is untouched after Tier 1 write
-        archived_after = mock_vault.retrieve(tier=5, key="archive_2025")
+        archived_after = as_dict(mock_vault.retrieve(tier=5, key="archive_2025"))
         assert archived_after["records"] == 1200
 
         # Tier 1 has its own copy
-        tier1_copy = mock_vault.retrieve(tier=1, key="archive_2025")
+        tier1_copy = as_dict(mock_vault.retrieve(tier=1, key="archive_2025"))
         assert tier1_copy["records"] == 0
 
         # Counter-proof: deleting Tier 1 copy does not affect Tier 5
         deleted = mock_vault.delete(tier=1, key="archive_2025")
         assert deleted is True
         assert mock_vault.retrieve(tier=1, key="archive_2025") is None
-        assert mock_vault.retrieve(tier=5, key="archive_2025")["records"] == 1200
+        assert as_dict(mock_vault.retrieve(tier=5, key="archive_2025"))["records"] == 1200
 
 # TST-INT-123
     def test_right_to_delete_still_works(
@@ -1106,6 +1108,8 @@ class TestStagingAreaLifecycle:
         retrieved.sent = True
         promoted = mock_vault.retrieve(1, "sent_lifecycle_001")
         assert promoted is not None
+        from tests.integration.conftest import as_dict
+        promoted = as_dict(promoted)
         assert promoted["to"] == "colleague@work.com"
 
         # Create another draft and let it expire (discard path)
@@ -1499,8 +1503,10 @@ class TestComponentBoundaries:
         last_check = checkpoint["context"]["last_check"]
 
         # Find all reminders that were due since last check
+        from tests.integration.conftest import as_dict as _as_dict
         stored_reminder = mock_vault.retrieve(1, "reminder_license")
         assert stored_reminder is not None
+        stored_reminder = _as_dict(stored_reminder)
         assert stored_reminder["scheduled_at"] > last_check  # due after last check
         assert stored_reminder["scheduled_at"] < now  # past due
         assert stored_reminder["delivered"] is False
@@ -1508,6 +1514,7 @@ class TestComponentBoundaries:
         # Counter-proof: future reminder is NOT past due
         stored_future = mock_vault.retrieve(1, "reminder_future")
         assert stored_future is not None
+        stored_future = _as_dict(stored_future)
         assert stored_future["scheduled_at"] > now  # not yet due
         assert stored_future["delivered"] is False
 
@@ -1530,9 +1537,9 @@ class TestComponentBoundaries:
         assert sent.tier == SilenceTier.TIER_1_FIDUCIARY
 
         # Verify vault updated
-        updated = mock_vault.retrieve(1, "reminder_license")
+        updated = _as_dict(mock_vault.retrieve(1, "reminder_license"))
         assert updated["delivered"] is True
 
         # Counter-proof: future reminder still undelivered
-        still_future = mock_vault.retrieve(1, "reminder_future")
+        still_future = _as_dict(mock_vault.retrieve(1, "reminder_future"))
         assert still_future["delivered"] is False

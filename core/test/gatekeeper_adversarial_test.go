@@ -1245,7 +1245,7 @@ func TestInfra_30_1_AllFallbackLocationsAuditedStrict(t *testing.T) {
 		{
 			relPath:          "../../tests/integration/real_clients.py",
 			description:      "Integration Real* clients (17 locations)",
-			maxSuperCalls:    23, // Real* classes extend Mock*, call super()
+			maxSuperCalls:    22, // Real* classes extend Mock*, call super()
 			maxTryExcepts:    15, // try/except blocks that fall back to mock
 			maxMockFallbacks: 20, // _mock_* or mock_state references
 		},

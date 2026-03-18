@@ -530,4 +530,7 @@ class TestPersonaInInteraction:
         result = mock_vault.retrieve(tier=1, key="wishlist",
                                      persona=PersonaType.CONSUMER)
         assert result is not None
+        # In Docker mode, retrieve may return a JSON string; normalize to dict.
+        from tests.integration.conftest import as_dict
+        result = as_dict(result)
         assert "standing desk" in result["items"]

@@ -692,10 +692,12 @@ def test_conflict_resolution_last_write_wins(
     mock_vault.store(1, conflict_key, edit_a)
     recoverable = mock_vault.retrieve(1, conflict_key)
     assert recoverable is not None
+    from tests.integration.conftest import as_dict
+    recoverable = as_dict(recoverable)
     assert recoverable["content"] == "Version A"
 
     # Counter-proof: conflict record does not affect canonical
-    assert mock_vault.retrieve(1, item_key)["content"] == "Version B"
+    assert as_dict(mock_vault.retrieve(1, item_key))["content"] == "Version B"
 
     # Counter-proof: a different key is unaffected
     assert mock_vault.retrieve(1, "unrelated_key") is None

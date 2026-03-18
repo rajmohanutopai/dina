@@ -283,9 +283,11 @@ def create_app() -> FastAPI:
     # --- OpenRouter ---
     openrouter_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
     if openrouter_key:
-        rd = get_provider_defaults("openrouter")
+        rd = get_provider_config("openrouter")
         try:
-            openrouter_model = rd["model"]
+            openrouter_model = os.environ.get("OPENROUTER_MODEL", "").strip()
+            if not openrouter_model:
+                openrouter_model = next(iter(rd.get("models", {})))
             providers["openrouter"] = OpenRouterProvider(
                 openrouter_key, model=openrouter_model,
             )

@@ -265,7 +265,13 @@ class RealVault(MockVault):
     def _query_items(self, persona_name: str, query: str, limit: int = 50) -> list[dict[str, Any]]:
         resp = _try_request(
             "post", f"{self._core_url}/v1/vault/query",
-            json={"persona": persona_name, "query": query, "mode": "fts5", "limit": limit},
+            json={
+                "persona": persona_name,
+                "query": query,
+                "mode": "fts5",
+                "limit": limit,
+                "include_content": True,
+            },
             headers=self._headers(),
             signer=self._signer,
         )
@@ -276,7 +282,7 @@ class RealVault(MockVault):
 
     def store(self, tier: int, key: str, value: Any,
               persona: PersonaType | None = None) -> None:
-        persona_name = persona.value if persona else "personal"
+        persona_name = persona.value if persona else "general"
         self._item_persona[(tier, key)] = persona_name
         body_text = json.dumps(value, default=_json_default) if isinstance(value, dict) else str(value)
         # Put key in Summary for FTS-based retrieval
@@ -312,7 +318,7 @@ class RealVault(MockVault):
 
     def store_batch(self, tier: int, items: list[tuple[str, Any]],
                     persona: PersonaType | None = None) -> int:
-        persona_name = persona.value if persona else "personal"
+        persona_name = persona.value if persona else "general"
         for k, _v in items:
             self._item_persona[(tier, k)] = persona_name
         api_items = []
@@ -322,6 +328,7 @@ class RealVault(MockVault):
                 "Source": "integration_test",
                 "Summary": k,
                 "BodyText": json.dumps(v) if isinstance(v, dict) else str(v),
+                "Metadata": json.dumps({"key": k, "tier": tier}),
             })
 
         resp = _try_request(
@@ -351,6 +358,18 @@ class RealVault(MockVault):
 
         return super().store_batch(tier, items, persona)
 
+    def _get_item_by_id(self, item_id: str, persona_name: str) -> dict[str, Any] | None:
+        """GET /v1/vault/item/{id}?persona={persona} — always returns body_text."""
+        resp = _try_request(
+            "get", f"{self._core_url}/v1/vault/item/{item_id}?persona={persona_name}",
+            headers=self._headers(),
+            signer=self._signer,
+        )
+        if resp is None or resp.status_code != 200:
+            return None
+        data = resp.json()
+        return data if isinstance(data, dict) else None
+
     def retrieve(self, tier: int, key: str,
                  persona: PersonaType | None = None) -> Any | None:
         item_id = self._item_map.get((tier, key))
@@ -358,16 +377,27 @@ class RealVault(MockVault):
         # Persona isolation: explicit persona param wins; otherwise use tracked persona.
         query_persona = persona.value if persona is not None else self._item_persona.get((tier, key), "personal")
 
+        # Primary path: GET /v1/vault/item/{id} — always returns body_text.
+        # Preferred over FTS query because it's an exact lookup.
+        if item_id:
+            item = self._get_item_by_id(item_id, query_persona)
+            if item is not None:
+                body = self._item_body(item)
+                if body:
+                    try:
+                        return json.loads(body)
+                    except (json.JSONDecodeError, TypeError):
+                        return body
+
+        # Secondary path: FTS query by key (for items without tracked ID).
         items = self._query_items(query_persona, key, limit=50)
         if items:
             selected: dict[str, Any] | None = None
-            # Prefer exact tracked ID when available.
             if item_id:
                 for item in items:
                     if self._item_id(item) == item_id:
                         selected = item
                         break
-            # Fall back to logical-key match from metadata/summary.
             if selected is None:
                 for item in items:
                     if self._item_key(item) != key:
@@ -378,21 +408,21 @@ class RealVault(MockVault):
                         continue
                     selected = item
                     break
-            if selected is None:
-                return super().retrieve(tier, key, persona)
+            if selected is not None:
+                selected_id = self._item_id(selected)
+                if selected_id:
+                    self._item_map[(tier, key)] = selected_id
+                    self._item_persona[(tier, key)] = query_persona
+                body = self._item_body(selected)
+                if body:
+                    try:
+                        return json.loads(body)
+                    except (json.JSONDecodeError, TypeError):
+                        return body
 
-            selected_id = self._item_id(selected)
-            if selected_id:
-                self._item_map[(tier, key)] = selected_id
-                self._item_persona[(tier, key)] = query_persona
-
-            body = self._item_body(selected)
-            try:
-                return json.loads(body)
-            except (json.JSONDecodeError, TypeError):
-                return body
-        # Fallback for keys that are not discoverable via FTS query syntax
-        # (for example, certain underscore-heavy identifiers in test fixtures).
+        # Fallback to mock state for retrieve() — this is a data-access
+        # utility, not a search contract test. Tests that validate FTS
+        # behavior use vault_query() which has no mock fallback.
         return super().retrieve(tier, key, persona)
 
     def search_fts(self, query: str) -> list[str]:
@@ -428,9 +458,11 @@ class RealVault(MockVault):
         return results
 
     def index_for_fts(self, key: str, text: str) -> None:
-        # Store or re-store the item with FTS keywords in Summary so search
-        # finds them. BodyText is kept clean for retrieve.
-        # Find the tier for this key (search all tiers, default to 1)
+        # The initial store() already puts searchable text in Summary
+        # (key + string dict values). We only need to update Core if the
+        # caller wants ADDITIONAL FTS keywords beyond what's in the value.
+        # To avoid delete+re-store race conditions, we PATCH the existing
+        # item's Summary rather than deleting and recreating.
         tier = 1
         for (t, k) in self._item_map:
             if k == key:
@@ -439,33 +471,25 @@ class RealVault(MockVault):
         persona_name = self._item_persona.get((tier, key), "personal")
         item_id = self._item_map.get((tier, key))
 
-        # Get original value from mock state (clean, unmodified)
         original_value = super().retrieve(tier, key)
         body_text = json.dumps(original_value) if isinstance(original_value, dict) else str(original_value) if original_value else ""
 
-        # Delete old item if it exists
-        if item_id:
-            _try_request(
-                "delete", f"{self._core_url}/v1/vault/item/{item_id}",
-                params={"persona": persona_name},
-                headers=self._headers(),
-                signer=self._signer,
-            )
-
-        # Store with FTS keywords in Summary
+        # Upsert: store with same ID to update Summary (FTS keywords)
+        # without deleting. Core's store uses INSERT OR REPLACE on ID,
+        # so the FTS index is updated atomically.
         summary = f"{key} {text}"
+        store_item: dict[str, Any] = {
+            "Type": "note",
+            "Source": "integration_test",
+            "Summary": summary,
+            "BodyText": body_text,
+            "Metadata": json.dumps({"key": key, "tier": tier}),
+        }
+        if item_id:
+            store_item["ID"] = item_id  # upsert by existing ID
         resp = _try_request(
             "post", f"{self._core_url}/v1/vault/store",
-            json={
-                "persona": persona_name,
-                "item": {
-                    "Type": "note",
-                    "Source": "integration_test",
-                    "Summary": summary,
-                    "BodyText": body_text,
-                    "Metadata": json.dumps({"key": key, "tier": tier}),
-                },
-            },
+            json={"persona": persona_name, "item": store_item},
             headers=self._headers(),
             signer=self._signer,
         )
@@ -474,16 +498,6 @@ class RealVault(MockVault):
             if new_id:
                 self._item_map[(tier, key)] = new_id
                 self._item_persona[(tier, key)] = persona_name
-        if (tier, key) not in self._item_map:
-            # Fallback when API omits id: recover mapping via query.
-            for item in self._query_items(persona_name, key, limit=10):
-                if self._item_key(item) != key:
-                    continue
-                discovered_id = self._item_id(item)
-                if discovered_id:
-                    self._item_map[(tier, key)] = discovered_id
-                    self._item_persona[(tier, key)] = persona_name
-                break
         self._indexed_keys.add(key)
         # Update mock state
         super().index_for_fts(key, text)
@@ -498,6 +512,8 @@ class RealVault(MockVault):
                 headers=self._headers(),
                 signer=self._signer,
             )
+        # Also remove from indexed keys so search_fts excludes deleted items.
+        self._indexed_keys.discard(key)
         return super().delete(tier, key)
 
 
@@ -644,41 +660,47 @@ class RealGoCore(MockGoCore):
     def vault_query(self, query: str,
                     persona: PersonaType | None = None) -> list[Any]:
         self.api_calls.append({"endpoint": "/v1/vault/query", "query": query})
-        persona_name = persona.value if persona else "personal"
+        persona_name = persona.value if persona else "general"
         resp = _try_request(
             "post", f"{self._base_url}/v1/vault/query",
-            json={"persona": persona_name, "query": query, "mode": "fts5"},
+            json={
+                "persona": persona_name,
+                "query": query,
+                "mode": "fts5",
+                "include_content": True,
+            },
             headers=self._headers(),
             signer=self._signer,
         )
         if resp is not None:
             items = resp.json().get("items") or []
             if items:
-                # Map back to mock keys, filtering to only tracked items
+                # Map back to mock keys via item metadata/id tracking.
                 if isinstance(self._vault, RealVault):
-                    id_to_key = {item_id: k for (_tk, k), item_id in self._vault._item_map.items()}
-                    known_keys: set[str] = set()
-                    for tier_data in self._vault._tiers.values():
-                        known_keys.update(tier_data.keys())
+                    id_to_key = {vid: k for (_tk, k), vid in self._vault._item_map.items()}
                     results: list[str] = []
                     seen: set[str] = set()
                     for item in items:
                         if not isinstance(item, dict):
                             continue
-                        item_id = self._vault._item_id(item)
-                        key = id_to_key.get(item_id, "")
+                        vid = self._vault._item_id(item)
+                        key = id_to_key.get(vid, "")
                         if not key:
                             key = self._vault._item_key(item)
                         if not key:
-                            continue
-                        if known_keys and key not in known_keys:
                             continue
                         if key in seen:
                             continue
                         seen.add(key)
                         results.append(key)
-                    return results
-                return [item.get("ID", item.get("id", "")) for item in items]
+                    if results:
+                        return results
+                    # Key resolution failed — return raw IDs so the
+                    # caller sees that items exist (aids debugging).
+                    return [it.get("ID", it.get("id", "")) for it in items
+                            if isinstance(it, dict)]
+                return [item.get("ID", item.get("id", "")) for item in items if isinstance(item, dict)]
+        # No mock fallback: empty results from real API is the real answer.
         return []
 
     def vault_store(self, key: str, value: Any, tier: int = 1,
@@ -1132,10 +1154,20 @@ class RealAuditLog(MockAuditLog):
         persona: str | None = None, requester: str | None = None,
         limit: int = 50, **kwargs: Any,
     ) -> list[Any]:
-        """GET /v1/audit/query — read audit entries from Core."""
-        # Legacy path — use mock for old-style actor= queries
-        if actor is not None:
-            return super().query(actor=actor, action=action)
+        """GET /v1/audit/query — read audit entries from Core.
+
+        When entries were written via record() (legacy interface), they only
+        exist in mock state (self.entries) — not in Core's audit table. In
+        that case we delegate entirely to the mock query so the caller sees
+        the entries it wrote. The real API path is used only when entries
+        were written via append() (which POSTs to Core).
+        """
+        # Legacy path — use mock when record() was called or actor= is set.
+        # record() populates self.entries but never POSTs to Core, so the
+        # real API would return 0 results for those entries.
+        if actor is not None or self.entries:
+            return super().query(actor=actor, action=action,
+                                persona=persona, limit=limit)
 
         params: dict[str, str] = {"limit": str(limit)}
         if action:

@@ -134,12 +134,13 @@ class TestClientSync:
         assert mock_rich_client.connected is False
 
         # Vault is still fully accessible
-        assert mock_dina.vault.retrieve(1, "data_a")["value"] == 1
-        assert mock_dina.vault.retrieve(1, "data_b")["value"] == 2
+        from tests.integration.conftest import as_dict
+        assert as_dict(mock_dina.vault.retrieve(1, "data_a"))["value"] == 1
+        assert as_dict(mock_dina.vault.retrieve(1, "data_b"))["value"] == 2
 
         # New writes succeed while client is offline
         mock_dina.vault.store(1, "data_c", {"value": 3})
-        assert mock_dina.vault.retrieve(1, "data_c")["value"] == 3
+        assert as_dict(mock_dina.vault.retrieve(1, "data_c"))["value"] == 3
 
         # Searches continue to work
         mock_dina.vault.index_for_fts("data_a", "alpha value")
@@ -222,12 +223,13 @@ class TestClientSync:
         """When two writes target the same key, last-write-wins is
         the default conflict resolution strategy."""
         # First write
+        from tests.integration.conftest import as_dict
         mock_dina.vault.store(1, "shared_key", {"version": 1, "author": "phone"})
-        assert mock_dina.vault.retrieve(1, "shared_key")["version"] == 1
+        assert as_dict(mock_dina.vault.retrieve(1, "shared_key"))["version"] == 1
 
         # Second write (overwrites)
         mock_dina.vault.store(1, "shared_key", {"version": 2, "author": "laptop"})
-        result = mock_dina.vault.retrieve(1, "shared_key")
+        result = as_dict(mock_dina.vault.retrieve(1, "shared_key"))
         assert result["version"] == 2
         assert result["author"] == "laptop"
 
@@ -243,7 +245,8 @@ class TestClientSync:
         mock_dina.vault.store(1, "shared_item", write_a)
 
         # Capture the pre-overwrite value (simulates conflict detection)
-        before_overwrite = mock_dina.vault.retrieve(1, "shared_item")
+        from tests.integration.conftest import as_dict
+        before_overwrite = as_dict(mock_dina.vault.retrieve(1, "shared_item"))
         assert before_overwrite["author"] == "phone"
 
         # Write v2 from laptop to the SAME key — this is the conflict
@@ -251,13 +254,13 @@ class TestClientSync:
         mock_dina.vault.store(1, "shared_item", write_b)
 
         # Detect conflict: current value differs from captured snapshot
-        after_overwrite = mock_dina.vault.retrieve(1, "shared_item")
+        after_overwrite = as_dict(mock_dina.vault.retrieve(1, "shared_item"))
         assert after_overwrite["author"] != before_overwrite["author"], \
             "Overwrite detected — two different authors wrote to same key"
         assert after_overwrite["version"] == 2, "Last-write-wins applied"
 
         # The pre-overwrite value is LOST from the key (conflict consequence)
-        assert mock_dina.vault.retrieve(1, "shared_item")["version"] != 1
+        assert as_dict(mock_dina.vault.retrieve(1, "shared_item"))["version"] != 1
 
         # Flag for user review: store both candidates in a review record
         mock_dina.vault.store(1, "conflict_review_001", {

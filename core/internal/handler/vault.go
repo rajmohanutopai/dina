@@ -92,10 +92,11 @@ type queryRequest struct {
 	Mode            string    `json:"mode"`
 	Types           []string  `json:"types"`
 	Limit           int       `json:"limit"`
-	Embedding       []float32 `json:"embedding"`        // 768-dim from Brain, enables semantic/hybrid search
-	RetrievalPolicy string    `json:"retrieval_policy"`  // filter to specific policy
-	IncludeAll      bool      `json:"include_all"`       // override: return all policies including quarantine
-	UserOrigin      string    `json:"user_origin"`       // "telegram" or "admin" — signed in body, enables user-level access
+	Embedding       []float32 `json:"embedding"`         // 768-dim from Brain, enables semantic/hybrid search
+	RetrievalPolicy string    `json:"retrieval_policy"`   // filter to specific policy
+	IncludeAll      bool      `json:"include_all"`        // override: return all policies including quarantine
+	IncludeContent  bool      `json:"include_content"`    // include body_text in response (default false — summary only)
+	UserOrigin      string    `json:"user_origin"`        // "telegram" or "admin" — signed in body, enables user-level access
 }
 
 // HandleQuery handles POST /v1/vault/query. It parses the search parameters,
@@ -147,6 +148,7 @@ func (h *VaultHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
 		Limit:           limit,
 		Embedding:       req.Embedding,
 		IncludeAll:      req.IncludeAll,
+		IncludeContent:  req.IncludeContent,
 		RetrievalPolicy: req.RetrievalPolicy,
 	}
 

@@ -82,8 +82,9 @@ class TestSchemaMigration:
         # All data still present
         assert mock_vault.retrieve(1, "contact_alice") is not None
         assert mock_vault.retrieve(1, "verdict_laptop") is not None
-        assert mock_vault.retrieve(1, "contact_alice")["name"] == "Alice"
-        assert mock_vault.retrieve(1, "verdict_laptop")["rating"] == 92
+        from tests.integration.conftest import as_dict
+        assert as_dict(mock_vault.retrieve(1, "contact_alice"))["name"] == "Alice"
+        assert as_dict(mock_vault.retrieve(1, "verdict_laptop"))["rating"] == 92
         # FTS index still works
         results = mock_vault.search_fts("Alice")
         assert "contact_alice" in results
@@ -133,7 +134,8 @@ class TestSchemaMigration:
         mock_vault.store(0, config_key, old_config)
 
         # Verify old format was stored
-        pre_migration = mock_vault.retrieve(0, config_key)
+        from tests.integration.conftest import as_dict
+        pre_migration = as_dict(mock_vault.retrieve(0, config_key))
         assert "llm_provider" in pre_migration
         assert "DINA_LIGHT" not in pre_migration
 
@@ -144,7 +146,7 @@ class TestSchemaMigration:
         }
         mock_vault.store(0, config_key, new_config)
 
-        stored = mock_vault.retrieve(0, config_key)
+        stored = as_dict(mock_vault.retrieve(0, config_key))
         assert "DINA_LIGHT" in stored
         assert stored["DINA_LIGHT"] == "ollama/gemma3"
         assert stored["DINA_EMBED"] == "ollama/nomic-embed-text"
@@ -180,7 +182,8 @@ class TestSchemaMigration:
         assert mock_identity.root_did == original_did
         assert mock_identity.root_private_key == original_key
         # Identity metadata is preserved
-        meta = mock_vault.retrieve(0, "identity_meta")
+        from tests.integration.conftest import as_dict
+        meta = as_dict(mock_vault.retrieve(0, "identity_meta"))
         assert meta["did"] == original_did
 
 # TST-INT-334
@@ -214,8 +217,12 @@ class TestSchemaMigration:
         health_data = mock_vault.retrieve(1, "health_record",
                                           persona=PersonaType.HEALTH)
         assert consumer_data is not None
-        assert consumer_data["items"] == 5
         assert health_data is not None
+        # In Docker mode, retrieve may return a JSON string; normalize to dict.
+        from tests.integration.conftest import as_dict
+        consumer_data = as_dict(consumer_data)
+        health_data = as_dict(health_data)
+        assert consumer_data["items"] == 5
         assert health_data["bp"] == "120/80"
 
         # Cross-partition isolation still holds after migration
@@ -352,8 +359,9 @@ class TestExportImport:
         assert config["DINA_LIGHT"] == "ollama/gemma3"
 
         # Counter-proof: original vault still has its data (export is non-destructive)
-        assert mock_vault.retrieve(1, "verdict_laptop")["rating"] == 92
-        assert mock_vault.retrieve(1, "contact_bob")["name"] == "Bob"
+        from tests.integration.conftest import as_dict
+        assert as_dict(mock_vault.retrieve(1, "verdict_laptop"))["rating"] == 92
+        assert as_dict(mock_vault.retrieve(1, "contact_bob"))["name"] == "Bob"
 
         # Counter-proof: key not in original vault is also absent in fresh vault
         assert fresh_vault.retrieve(1, "nonexistent_key") is None

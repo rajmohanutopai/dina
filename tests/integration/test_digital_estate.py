@@ -325,6 +325,9 @@ class TestEstateConfiguration:
 
         retrieved = mock_dina.vault.retrieve(0, "estate_plan")
         assert retrieved is not None
+        # In Docker mode, retrieve may return a JSON string; normalize to dict.
+        from tests.integration.conftest import as_dict
+        retrieved = as_dict(retrieved)
         assert retrieved["trigger"] == "custodian_threshold"
         assert retrieved["custodian_threshold"] == 3
         assert len(retrieved["beneficiaries"]) == 1
@@ -443,6 +446,9 @@ class TestEstateConfiguration:
         }
         mock_dina.vault.store(0, "estate_plan_multi", plan_data)
         retrieved = mock_dina.vault.retrieve(0, "estate_plan_multi")
+        # In Docker mode, retrieve may return a JSON string; normalize to dict.
+        from tests.integration.conftest import as_dict
+        retrieved = as_dict(retrieved)
         assert retrieved["beneficiary_count"] == 10
         assert retrieved["trigger"] == "custodian_threshold"
         assert retrieved["custodian_threshold"] == 3
@@ -567,14 +573,19 @@ class TestBeneficiaryAccessTypes:
             1, "social_memory_1", persona=PersonaType.SOCIAL
         )
         assert social_data is not None
-        assert social_persona.decrypt(social_data) is not None
+        # In Docker mode, retrieve may return a JSON-decoded value or the
+        # raw encrypted string.  The mock decrypt helper expects the exact
+        # ENC[...] string — ensure we pass a string.
+        social_str = str(social_data) if not isinstance(social_data, str) else social_data
+        assert social_persona.decrypt(social_str) is not None
 
         # Daughter can decrypt health data
         health_data = mock_vault.retrieve(
             1, "health_record_1", persona=PersonaType.HEALTH
         )
         assert health_data is not None
-        assert health_persona.decrypt(health_data) is not None
+        health_str = str(health_data) if not isinstance(health_data, str) else health_data
+        assert health_persona.decrypt(health_str) is not None
 
 # TST-INT-226
     def test_read_only_90_days_access(

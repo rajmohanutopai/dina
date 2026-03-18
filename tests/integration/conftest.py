@@ -6,7 +6,9 @@ Docker containers (docker-compose.test.yml). Without it, uses mocks.
 
 from __future__ import annotations
 
+import json
 import os
+from typing import Any
 
 import httpx
 import pytest
@@ -16,6 +18,34 @@ import pytest
 # ---------------------------------------------------------------------------
 
 DOCKER_MODE = os.environ.get("DINA_INTEGRATION") == "docker"
+
+
+# ---------------------------------------------------------------------------
+# Dual-mode helper: normalize retrieved vault values
+# ---------------------------------------------------------------------------
+
+def as_dict(value: Any) -> dict:
+    """Ensure a retrieved vault value is a dict.
+
+    In mock mode, MockVault.retrieve() returns the exact Python object that
+    was stored.  In Docker mode, RealVault.retrieve() may return:
+      - a dict (json.loads succeeded on the BodyText), or
+      - a JSON string (json.loads returned a str, or fell through).
+    This helper transparently handles both.
+    """
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, dict):
+                return parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
+    raise TypeError(
+        f"Expected dict (or JSON-encoded dict), got {type(value).__name__}: "
+        f"{repr(value)[:120]}"
+    )
 
 from tests.integration.mocks import (
     DIDDocument,

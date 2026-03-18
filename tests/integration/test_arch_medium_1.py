@@ -714,6 +714,9 @@ def test_voice_memo_transcript_only(
     # Retrieve and verify transcript preserved
     stored = mock_vault.retrieve(1, "voice_001")
     assert stored is not None
+    # In Docker mode, retrieve may return a JSON string; normalize to dict.
+    from tests.integration.conftest import as_dict
+    stored = as_dict(stored)
     assert "body_text" in stored, "Transcript must be stored"
     assert stored["body_text"] == "Remind me to call dentist tomorrow at 3pm"
 

@@ -662,7 +662,8 @@ class TestAgentCrashSafety:
         assert "Password reset" not in str(response), "Vault content leaked in error"
 
         # Vault data intact
-        assert mock_dina.vault.retrieve(1, "secret_notes")["note"] == \
+        from tests.integration.conftest import as_dict
+        assert as_dict(mock_dina.vault.retrieve(1, "secret_notes"))["note"] == \
             "Password reset token: xK9mZ2pQ"
 
     def test_crashing_agent_does_not_affect_other_agent(
