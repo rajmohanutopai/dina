@@ -156,6 +156,12 @@ class SystemServices:
                 f"(ports {base}+, attempt {attempt + 1})..."
             )
             up_args = ["up", "-d"] if os.environ.get("DINA_SKIP_DOCKER_BUILD") == "1" else ["up", "--build", "-d"]
+            # Bust Docker layer cache so tests run against current source.
+            if "--build" in up_args:
+                import time as _t
+                for src_dir in [PROJECT_ROOT / "brain" / "src", PROJECT_ROOT / "core" / "cmd"]:
+                    sentinel = src_dir / ".build-sentinel"
+                    sentinel.write_text(f"{_t.time()}\n")
             result = self._compose(*up_args)
             if result.returncode == 0:
                 break

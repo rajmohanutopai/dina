@@ -89,6 +89,12 @@ class MultiNodeDockerServices:
             return
 
         self._externally_managed = False
+        # Bust Docker layer cache for COPY src/ layers so tests always
+        # run against the current working directory, not stale images.
+        # Write a timestamp into the source dirs that Dockerfiles COPY.
+        for src_dir in [PROJECT_ROOT / "brain" / "src", PROJECT_ROOT / "core" / "cmd"]:
+            sentinel = src_dir / ".build-sentinel"
+            sentinel.write_text(f"{time.time()}\n")
         self._compose("up", "--build", "-d")
         self._wait_for_health()
         self._started = True
