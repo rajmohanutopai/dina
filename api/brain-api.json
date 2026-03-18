@@ -1,0 +1,677 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Dina Brain API",
+    "description": "Internal API for dina-core to delegate processing and reasoning.",
+    "version": "0.4.0"
+  },
+  "paths": {
+    "/v1/process": {
+      "post": {
+        "summary": "Process Event",
+        "description": "Process an incoming event from core.\n\nDelegates to GuardianLoop.process_event() and translates the returned\ndict into a typed ProcessEventResponse.\n\nRaises\n------\nHTTPException 500\n    If the guardian loop raises an unexpected error.\nHTTPException 400\n    If the event type is unrecognised by the guardian.",
+        "operationId": "process_event_v1_process_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProcessEventRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcessEventResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/reason": {
+      "post": {
+        "summary": "Reason Query",
+        "description": "Handle a complex query from core requiring LLM reasoning.\n\nPipeline:\n    1. Generate query embedding (if LLM supports it)\n    2. Call core for hybrid search (FTS5 + semantic)\n    3. Assemble context from results\n    4. PII-scrub context for cloud LLM (skip if local)\n    5. Call LLM with assembled context\n    6. Rehydrate response (replace PII tokens with originals)\n    7. Return answer\n\nRaises\n------\nHTTPException 503\n    If the guardian loop is not initialised.\nHTTPException 500\n    If an unexpected error occurs during reasoning.",
+        "operationId": "reason_query_v1_reason_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReasonRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReasonResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/pii/scrub": {
+      "post": {
+        "summary": "Scrub Pii",
+        "description": "Scrub PII from the provided text using Tier 2 NER.\n\nIf no scrubber is available (spaCy not installed), returns\nthe text unchanged with an empty entity list.\n\nReturns\n-------\nScrubResponse\n    ``scrubbed`` text and a list of ``entities`` with keys\n    ``type``, ``value``, and ``token``.",
+        "operationId": "scrub_pii_v1_pii_scrub_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScrubRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScrubResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ProcessEventRequest": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp"
+          },
+          "persona_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Persona Id"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From"
+          },
+          "contact_did": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Did"
+          },
+          "agent_did": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Did"
+          },
+          "action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "risk_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Level"
+          },
+          "trust_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trust Level"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          },
+          "context": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "title": "ProcessEventRequest",
+        "description": "Inbound event from core for brain processing.\n\nThe ``type`` field is always required.  All other fields are optional\nbecause different event types carry different payloads:\n\n- ``message``       : body is a string\n- ``agent_intent``  : agent_did, action, target, risk_level are populated\n- ``alert``         : priority + body\n- ``vault_unlocked``: persona_id\n- ``dina/social/*`` : from_did is the sender DID (DIDComm messages)"
+      },
+      "ProcessEventResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "ok"
+          },
+          "action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "classification": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Classification"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision"
+          },
+          "response": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response"
+          },
+          "nudge": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nudge"
+          },
+          "risk": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk"
+          },
+          "approved": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved"
+          },
+          "requires_approval": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires Approval"
+          }
+        },
+        "type": "object",
+        "title": "ProcessEventResponse",
+        "description": "Result of event processing from the guardian loop.\n\nAt least ``status`` is always set.  The remaining fields are populated\ndepending on the event type and the guardian's decision."
+      },
+      "ReasonRequest": {
+        "properties": {
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type",
+            "default": "reason"
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 32000,
+            "title": "Prompt"
+          },
+          "persona_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Persona Id"
+          },
+          "persona_tier": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "default",
+                  "standard",
+                  "sensitive",
+                  "locked"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Persona Tier",
+            "default": "default"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "skip_vault_enrichment": {
+            "type": "boolean",
+            "title": "Skip Vault Enrichment",
+            "default": false
+          },
+          "agent_did": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Did"
+          },
+          "session": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "title": "ReasonRequest",
+        "description": "Complex reasoning query from core.\n\nThe ``prompt`` field is always required.  The optional fields allow\ncore to pass persona context for privacy-aware LLM routing."
+      },
+      "ReasonResponse": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "tokens_in": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens In"
+          },
+          "tokens_out": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens Out"
+          },
+          "vault_context_used": {
+            "type": "boolean",
+            "title": "Vault Context Used",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "ReasonResponse",
+        "description": "LLM reasoning result returned to core.\n\n``content`` contains the rehydrated (PII-restored) answer.\nToken counts and model name are included for observability.\n``vault_context_used`` indicates whether the agentic reasoning loop\nsuccessfully queried persona vaults for personalization context."
+      },
+      "ScrubRequest": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 100000,
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "ScrubRequest",
+        "description": "Input text for PII scrubbing."
+      },
+      "ScrubResponse": {
+        "properties": {
+          "scrubbed": {
+            "type": "string",
+            "title": "Scrubbed"
+          },
+          "entities": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Entities"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scrubbed",
+          "entities"
+        ],
+        "title": "ScrubResponse",
+        "description": "Result of PII scrubbing."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/api",
+      "description": "Mounted at /api on master app"
+    }
+  ]
+}

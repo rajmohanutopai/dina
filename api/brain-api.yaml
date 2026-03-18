@@ -1,0 +1,392 @@
+openapi: 3.0.3
+info:
+  title: Dina Brain API
+  description: Internal API for dina-core to delegate processing and reasoning.
+  version: 0.4.0
+paths:
+  /v1/process:
+    post:
+      summary: Process Event
+      description: "Process an incoming event from core.\n\nDelegates to GuardianLoop.process_event()\
+        \ and translates the returned\ndict into a typed ProcessEventResponse.\n\n\
+        Raises\n------\nHTTPException 500\n    If the guardian loop raises an unexpected\
+        \ error.\nHTTPException 400\n    If the event type is unrecognised by the\
+        \ guardian."
+      operationId: process_event_v1_process_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcessEventRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessEventResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/reason:
+    post:
+      summary: Reason Query
+      description: "Handle a complex query from core requiring LLM reasoning.\n\n\
+        Pipeline:\n    1. Generate query embedding (if LLM supports it)\n    2. Call\
+        \ core for hybrid search (FTS5 + semantic)\n    3. Assemble context from results\n\
+        \    4. PII-scrub context for cloud LLM (skip if local)\n    5. Call LLM with\
+        \ assembled context\n    6. Rehydrate response (replace PII tokens with originals)\n\
+        \    7. Return answer\n\nRaises\n------\nHTTPException 503\n    If the guardian\
+        \ loop is not initialised.\nHTTPException 500\n    If an unexpected error\
+        \ occurs during reasoning."
+      operationId: reason_query_v1_reason_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReasonRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReasonResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/pii/scrub:
+    post:
+      summary: Scrub Pii
+      description: "Scrub PII from the provided text using Tier 2 NER.\n\nIf no scrubber\
+        \ is available (spaCy not installed), returns\nthe text unchanged with an\
+        \ empty entity list.\n\nReturns\n-------\nScrubResponse\n    ``scrubbed``\
+        \ text and a list of ``entities`` with keys\n    ``type``, ``value``, and\
+        \ ``token``."
+      operationId: scrub_pii_v1_pii_scrub_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScrubRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrubResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  schemas:
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    ProcessEventRequest:
+      properties:
+        type:
+          type: string
+          title: Type
+        task_id:
+          title: Task Id
+          type: string
+          nullable: true
+        timestamp:
+          title: Timestamp
+          type: string
+          nullable: true
+        persona_id:
+          title: Persona Id
+          type: string
+          nullable: true
+        source:
+          title: Source
+          type: string
+          nullable: true
+        body:
+          title: Body
+          type: object
+          additionalProperties: true
+          nullable: true
+        priority:
+          title: Priority
+          type: string
+          nullable: true
+        from:
+          title: From
+          type: string
+          nullable: true
+        contact_did:
+          title: Contact Did
+          type: string
+          nullable: true
+        agent_did:
+          title: Agent Did
+          type: string
+          nullable: true
+        action:
+          title: Action
+          type: string
+          nullable: true
+        target:
+          title: Target
+          type: string
+          nullable: true
+        risk_level:
+          title: Risk Level
+          type: string
+          nullable: true
+        trust_level:
+          title: Trust Level
+          type: string
+          nullable: true
+        payload:
+          title: Payload
+          additionalProperties: true
+          type: object
+          nullable: true
+        context:
+          title: Context
+          additionalProperties: true
+          type: object
+          nullable: true
+      type: object
+      required:
+      - type
+      title: ProcessEventRequest
+      description: 'Inbound event from core for brain processing.
+
+
+        The ``type`` field is always required.  All other fields are optional
+
+        because different event types carry different payloads:
+
+
+        - ``message``       : body is a string
+
+        - ``agent_intent``  : agent_did, action, target, risk_level are populated
+
+        - ``alert``         : priority + body
+
+        - ``vault_unlocked``: persona_id
+
+        - ``dina/social/*`` : from_did is the sender DID (DIDComm messages)'
+    ProcessEventResponse:
+      properties:
+        status:
+          type: string
+          title: Status
+          default: ok
+        action:
+          title: Action
+          type: string
+          nullable: true
+        classification:
+          title: Classification
+          type: string
+          nullable: true
+        decision:
+          title: Decision
+          type: string
+          nullable: true
+        response:
+          title: Response
+          additionalProperties: true
+          type: object
+          nullable: true
+        nudge:
+          title: Nudge
+          additionalProperties: true
+          type: object
+          nullable: true
+        risk:
+          title: Risk
+          type: string
+          nullable: true
+        approved:
+          title: Approved
+          type: boolean
+          nullable: true
+        requires_approval:
+          title: Requires Approval
+          type: boolean
+          nullable: true
+      type: object
+      title: ProcessEventResponse
+      description: 'Result of event processing from the guardian loop.
+
+
+        At least ``status`` is always set.  The remaining fields are populated
+
+        depending on the event type and the guardian''s decision.'
+    ReasonRequest:
+      properties:
+        type:
+          title: Type
+          default: reason
+          type: string
+          nullable: true
+        prompt:
+          type: string
+          maxLength: 32000
+          title: Prompt
+        persona_id:
+          title: Persona Id
+          type: string
+          maxLength: 100
+          nullable: true
+        persona_tier:
+          title: Persona Tier
+          default: default
+          type: string
+          enum:
+          - default
+          - standard
+          - sensitive
+          - locked
+          nullable: true
+        provider:
+          title: Provider
+          type: string
+          maxLength: 50
+          nullable: true
+        skip_vault_enrichment:
+          type: boolean
+          title: Skip Vault Enrichment
+          default: false
+        agent_did:
+          title: Agent Did
+          type: string
+          maxLength: 200
+          nullable: true
+        session:
+          title: Session
+          type: string
+          maxLength: 200
+          nullable: true
+        source:
+          title: Source
+          type: string
+          maxLength: 50
+          nullable: true
+      type: object
+      required:
+      - prompt
+      title: ReasonRequest
+      description: 'Complex reasoning query from core.
+
+
+        The ``prompt`` field is always required.  The optional fields allow
+
+        core to pass persona context for privacy-aware LLM routing.'
+    ReasonResponse:
+      properties:
+        content:
+          type: string
+          title: Content
+        model:
+          title: Model
+          type: string
+          nullable: true
+        tokens_in:
+          title: Tokens In
+          type: integer
+          nullable: true
+        tokens_out:
+          title: Tokens Out
+          type: integer
+          nullable: true
+        vault_context_used:
+          type: boolean
+          title: Vault Context Used
+          default: false
+      type: object
+      required:
+      - content
+      title: ReasonResponse
+      description: 'LLM reasoning result returned to core.
+
+
+        ``content`` contains the rehydrated (PII-restored) answer.
+
+        Token counts and model name are included for observability.
+
+        ``vault_context_used`` indicates whether the agentic reasoning loop
+
+        successfully queried persona vaults for personalization context.'
+    ScrubRequest:
+      properties:
+        text:
+          type: string
+          maxLength: 100000
+          title: Text
+      type: object
+      required:
+      - text
+      title: ScrubRequest
+      description: Input text for PII scrubbing.
+    ScrubResponse:
+      properties:
+        scrubbed:
+          type: string
+          title: Scrubbed
+        entities:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Entities
+      type: object
+      required:
+      - scrubbed
+      - entities
+      title: ScrubResponse
+      description: Result of PII scrubbing.
+    ValidationError:
+      properties:
+        loc:
+          items:
+            type: object
+            additionalProperties: true
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+servers:
+- url: /api
+  description: Mounted at /api on master app

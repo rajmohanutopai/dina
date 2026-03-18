@@ -165,6 +165,27 @@ DINA_RATE_LIMIT=100000 pytest tests/integration/       # Direct pytest (needs hi
 - **CGO + FTS5:** `go build -tags fts5 ./cmd/dina-core/` required for SQLite FTS5 support
 - **go-sqlcipher v4.4.2** bundles SQLite 3.33.0 — no `unixepoch()` (use `strftime('%s','now')`)
 - **Rate limit:** Default 60/min; tests need `DINA_RATE_LIMIT=100000`
+- **OpenAPI codegen:** `make generate` regenerates Go + Python types from `api/core-api.yaml` and `api/brain-api.yaml`. CI drift gate: `make check-generate`. See `docs/OPENAPI_TRANSFORMATION_PLAN.md`.
+
+### OpenAPI Contract
+
+The Core↔Brain HTTP interface is defined by OpenAPI specs in `api/`:
+
+```
+api/
+  components/schemas.yaml     # Shared enums (17) + domain types (15)
+  core-api.yaml               # Core's ~50 endpoints (hand-authored, source of truth)
+  brain-api.yaml              # Brain's 3 endpoints (extracted from FastAPI)
+```
+
+**Codegen outputs** (committed, regenerated via `make generate`):
+- `core/internal/gen/core_types.gen.go` — Go types for Core API (oapi-codegen)
+- `core/internal/gen/brainapi/brain_types.gen.go` — Go types for Brain client (oapi-codegen)
+- `brain/src/gen/core_types.py` — Python Pydantic models for Core client (datamodel-code-generator)
+
+**Ownership rule:** Core spec is hand-authored → generates Python client types. Brain spec is extracted from FastAPI/Pydantic → generates Go client types. Never feed generated types back into the owning service.
+
+**Wire format:** All JSON uses `snake_case`. All domain types that cross HTTP have `json:"snake_case"` tags.
 
 ### Test Infrastructure
 
