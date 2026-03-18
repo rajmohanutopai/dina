@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from src.gen.core_types import StagingItem, Contact
 from src.service.staging_processor import StagingProcessor
 
 
@@ -79,12 +80,13 @@ def _make_item(
     summary: str = "Hello",
     body: str = "Hi there",
     connector_id: str = "gmail-1",
-) -> dict:
-    return {
-        "id": id, "type": type, "source": source, "source_id": source_id,
-        "sender": sender, "summary": summary, "body": body,
-        "connector_id": connector_id,
-    }
+    **extra,
+) -> StagingItem:
+    return StagingItem(
+        id=id, type=type, source=source, source_id=source_id,
+        sender=sender, summary=summary, body=body,
+        connector_id=connector_id, **extra,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -174,14 +176,14 @@ async def test_contact_did_propagated_via_explicit_did(core, enrichment):
     """Item with explicit contact_did → flows into classified item."""
     from src.service.trust_scorer import TrustScorer
     scorer = TrustScorer(contacts=[
-        {"did": "did:key:z6MkSharmaDID", "name": "Dr Sharma", "trust_level": "verified"},
+        Contact(did="did:key:z6MkSharmaDID", name="Dr Sharma",
+                alias="dr.sharma@clinic.com", trust_level="verified"),
     ])
     processor = StagingProcessor(
         core=core, enrichment=enrichment, trust_scorer=scorer,
     )
     core.staging_claim.return_value = [
-        {**_make_item(id="stg-contact", sender="dr.sharma@clinic.com"),
-         "contact_did": "did:key:z6MkSharmaDID"},
+        _make_item(id="stg-contact", sender="dr.sharma@clinic.com"),
     ]
 
     await processor.process_pending()
@@ -200,8 +202,8 @@ async def test_contact_did_resolved_from_sender_via_alias(core, enrichment):
     """
     from src.service.trust_scorer import TrustScorer
     scorer = TrustScorer(contacts=[
-        {"did": "did:key:z6MkSharmaDID", "name": "Dr Sharma",
-         "alias": "dr.sharma@clinic.com", "trust_level": "verified"},
+        Contact(did="did:key:z6MkSharmaDID", name="Dr Sharma",
+                alias="dr.sharma@clinic.com", trust_level="verified"),
     ])
     processor = StagingProcessor(
         core=core, enrichment=enrichment, trust_scorer=scorer,

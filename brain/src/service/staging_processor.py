@@ -76,35 +76,49 @@ class StagingProcessor:
 
         resolved = 0
         for item in items:
-            item_id = item.get("id", "")
+            item_id = item.id or ""
             if not item_id:
                 continue
 
             try:
+                # Build a plain dict for classifier and trust scorer
+                # (they expect dict inputs).
+                item_dict = {
+                    "id": item.id or "",
+                    "type": item.type or "note",
+                    "source": item.source or "",
+                    "source_id": item.source_id or "",
+                    "summary": item.summary or "",
+                    "body": item.body or "",
+                    "sender": item.sender or "",
+                    "metadata": item.metadata or "{}",
+                    "connector_id": item.connector_id or "",
+                }
+
                 # Classify persona.
-                personas = self._classify_personas(item)
+                personas = self._classify_personas(item_dict)
 
                 # Score trust.
                 provenance = {}
                 if self._trust_scorer is not None:
-                    provenance = self._trust_scorer.score(item)
+                    provenance = self._trust_scorer.score(item_dict)
 
                 # Build classified VaultItem template with lineage.
                 base_classified = {
-                    "type": item.get("type", "note"),
-                    "source": item.get("source", ""),
-                    "source_id": item.get("source_id", ""),
-                    "summary": item.get("summary", ""),
-                    "body_text": item.get("body", ""),
-                    "sender": provenance.get("sender", item.get("sender", "")),
+                    "type": item.type or "note",
+                    "source": item.source or "",
+                    "source_id": item.source_id or "",
+                    "summary": item.summary or "",
+                    "body_text": item.body or "",
+                    "sender": provenance.get("sender", item.sender or ""),
                     "sender_trust": provenance.get("sender_trust", ""),
                     "source_type": provenance.get("source_type", ""),
                     "confidence": provenance.get("confidence", ""),
                     "retrieval_policy": provenance.get("retrieval_policy", "caveated"),
-                    "contact_did": provenance.get("contact_did", item.get("contact_did", "")),
-                    "metadata": item.get("metadata", "{}"),
+                    "contact_did": provenance.get("contact_did", ""),
+                    "metadata": item.metadata or "{}",
                     "staging_id": item_id,
-                    "connector_id": item.get("connector_id", ""),
+                    "connector_id": item.connector_id or "",
                 }
 
                 # Enrich before resolve: generate L0+L1+embedding so every
@@ -145,20 +159,20 @@ class StagingProcessor:
                 if resolve_status == "stored" and self._event_extractor is not None:
                     try:
                         await self._event_extractor.extract_and_create(
-                            item, personas[0], vault_item_id=f"stg-{item_id}",
+                            item_dict, personas[0], vault_item_id=f"stg-{item_id}",
                         )
                     except Exception:
                         pass  # best-effort
 
                 # Update contact last_contact if sender is known.
-                sender = item.get("sender", "")
+                sender = item.sender or ""
                 if sender and self._trust_scorer is not None:
-                    contact = self._trust_scorer._find_contact(item)
+                    contact = self._trust_scorer._find_contact(item_dict)
                     if contact:
                         try:
                             import time as _time
                             await self._core.update_contact_last_seen(
-                                contact.get("did", ""), int(_time.time()),
+                                contact.did or "", int(_time.time()),
                             )
                         except Exception:
                             pass  # best-effort

@@ -28,6 +28,8 @@ from .factories import (
 
 from unittest.mock import AsyncMock, MagicMock
 
+from src.gen.core_types import VaultItem, ScrubResult
+
 
 def _make_guard_result(
     entity_did=None, entity_name=None, trust_relevant=True,
@@ -68,7 +70,7 @@ def guardian():
     core.set_kv.return_value = None
     core.notify.return_value = None
     core.task_ack.return_value = None
-    core.pii_scrub.return_value = {"scrubbed": "text", "entities": []}
+    core.pii_scrub.return_value = ScrubResult(scrubbed="text", entities=[])
 
     scrubber = MagicMock()
     scrubber.scrub.side_effect = lambda text: (text, [])
@@ -1474,7 +1476,10 @@ async def test_guardian_2_5_11_restricted_summary_queries_audit_log(guardian) ->
 
     # Set up core to return fiduciary recap items only for the recap query,
     # not for proactive scans (contact neglect, promise staleness).
-    fiduciary_item = {"body": "Fiduciary event 1", "priority": "fiduciary"}
+    fiduciary_item = VaultItem(
+        type="alert", source="airline",
+        summary="Fiduciary event 1", body_text="Fiduciary event 1",
+    )
 
     async def _search_vault_side_effect(*args, **kwargs):
         query = args[1] if len(args) > 1 else kwargs.get("query", "")
@@ -1493,7 +1498,7 @@ async def test_guardian_2_5_11_restricted_summary_queries_audit_log(guardian) ->
     assert len(briefing["fiduciary_recap"]) == 1, (
         "Briefing must include fiduciary recap from core.search_vault"
     )
-    assert briefing["fiduciary_recap"][0]["body"] == "Fiduciary event 1", (
+    assert briefing["fiduciary_recap"][0]["body_text"] == "Fiduciary event 1", (
         "Fiduciary recap item body must match what core returned"
     )
 
@@ -1520,7 +1525,11 @@ async def test_guardian_2_5_7_briefing_includes_fiduciary_recap(guardian) -> Non
     )
     # Set up core to return fiduciary recap only for the recap query,
     # not for proactive scans (contact neglect, promise staleness).
-    fiduciary_item = {"body": "Flight was rebooked yesterday", "priority": "fiduciary"}
+    fiduciary_item = VaultItem(
+        type="alert", source="airline",
+        summary="Flight was rebooked yesterday",
+        body_text="Flight was rebooked yesterday",
+    )
 
     async def _search_vault_side_effect(*args, **kwargs):
         query = args[1] if len(args) > 1 else kwargs.get("query", "")
@@ -1532,7 +1541,7 @@ async def test_guardian_2_5_7_briefing_includes_fiduciary_recap(guardian) -> Non
     briefing = await guardian.generate_briefing()
     assert briefing["count"] == 1
     assert len(briefing["fiduciary_recap"]) == 1
-    assert briefing["fiduciary_recap"][0]["body"] == "Flight was rebooked yesterday"
+    assert briefing["fiduciary_recap"][0]["body_text"] == "Flight was rebooked yesterday"
 
 
 # TST-BRAIN-374
@@ -1596,7 +1605,7 @@ async def test_guardian_2_6_2_nudge_context_assembly(guardian) -> None:
     """SS2.6.2: Nudge context assembly — gathers messages, notes, tasks, calendar."""
     # Set up vault to return relevant context.
     guardian._test_core.query_vault.return_value = [
-        {"id": "msg-1", "summary": "Asked for PDF", "source": "telegram"},
+        VaultItem(id="msg-1", type="message", source="telegram", summary="Asked for PDF"),
     ]
     event = make_fiduciary_event(
         body="Message from Sancho",
@@ -1617,7 +1626,7 @@ async def test_guardian_2_6_3_nudge_delivery_via_ws(guardian) -> None:
     """
     # Set up vault to return data so a nudge is generated.
     guardian._test_core.query_vault.return_value = [
-        {"id": "msg-1", "summary": "Lunch Thursday", "source": "calendar"},
+        VaultItem(id="msg-1", type="event", source="calendar", summary="Lunch Thursday"),
     ]
     event = make_fiduciary_event(
         body="Message about lunch",
@@ -1683,11 +1692,12 @@ async def test_guardian_2_6_6_pending_promise_detection(guardian) -> None:
     message/email queries (not relationship_notes or calendar), so the
     "You promised:" prefix proves _detect_promises() ran.
     """
-    promise_msg = {
-        "id": "msg-promise",
-        "summary": "I'll send the PDF tomorrow",
-        "source": "telegram",
-    }
+    promise_msg = VaultItem(
+        id="msg-promise",
+        type="message",
+        summary="I'll send the PDF tomorrow",
+        source="telegram",
+    )
 
     # Return promise only for message queries; empty for notes and events.
     async def _mock_query_vault(persona_id, query, *, mode=None, types=None):
@@ -1719,12 +1729,12 @@ async def test_guardian_2_6_7_calendar_context_included(guardian) -> None:
     # Calendar events are queried via query_vault with type filter.
     # All query_vault calls return the same mock, so set up accordingly.
     guardian._test_core.query_vault.return_value = [
-        {
-            "id": "cal-1",
-            "summary": "Lunch with Sancho on Thursday",
-            "type": "event",
-            "source": "calendar",
-        },
+        VaultItem(
+            id="cal-1",
+            summary="Lunch with Sancho on Thursday",
+            type="event",
+            source="calendar",
+        ),
     ]
     event = make_fiduciary_event(
         body="Message from Sancho about plans",
@@ -2093,10 +2103,11 @@ def _make_approval_event(disclosure_id, approved_text, **overrides):
 
 
 _SAMPLE_VAULT_ITEMS = [
-    {
-        "Summary": "Patient has chronic back pain.",
-        "BodyText": "Chronic back pain and lumbar discomfort. Needs ergonomic support.",
-    },
+    VaultItem(
+        type="note", source="personal",
+        summary="Patient has chronic back pain.",
+        body_text="Chronic back pain and lumbar discomfort. Needs ergonomic support.",
+    ),
 ]
 
 
@@ -2661,23 +2672,23 @@ async def test_guardian_19_2_reviews_exist_no_outcome_data(guardian) -> None:
     # --- Scenario 1: Attestations present, no outcomes ---
     # Mock vault search to return attestation-like trust data
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "trust-att-001",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Expert review by did:plc:reviewer1: Rating 85/100. "
-                    "Pros: ergonomic design, lumbar support. "
-                    "Cons: expensive, long delivery.",
-            "summary": "Expert attestation for product:aeron-chair",
-        },
-        {
-            "id": "trust-att-002",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Expert review by did:plc:reviewer2: Rating 78/100. "
-                    "Pros: durable, breathable mesh. Cons: complex assembly.",
-            "summary": "Expert attestation for product:aeron-chair",
-        },
+        VaultItem(
+            id="trust-att-001",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Expert review by did:plc:reviewer1: Rating 85/100. "
+                      "Pros: ergonomic design, lumbar support. "
+                      "Cons: expensive, long delivery.",
+            summary="Expert attestation for product:aeron-chair",
+        ),
+        VaultItem(
+            id="trust-att-002",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Expert review by did:plc:reviewer2: Rating 78/100. "
+                      "Pros: durable, breathable mesh. Cons: complex assembly.",
+            summary="Expert attestation for product:aeron-chair",
+        ),
     ]
 
     # LLM returns a response that does NOT mention outcome absence.
@@ -2690,10 +2701,10 @@ async def test_guardian_19_2_reviews_exist_no_outcome_data(guardian) -> None:
         "It scores 85/100 for ergonomics and 78/100 overall. "
         "Highly recommended based on the trust network data."
     )
-    guardian._test_core.pii_scrub.return_value = {
-        "scrubbed": llm_response_no_caveat,
-        "entities": [],
-    }
+    guardian._test_core.pii_scrub.return_value = ScrubResult(
+        scrubbed=llm_response_no_caveat,
+        entities=[],
+    )
 
     # Route the LLM to return a response WITHOUT outcome caveat
     guardian._test_llm = guardian._test_core  # reset reference
@@ -2764,21 +2775,21 @@ async def test_guardian_19_2_reviews_exist_no_outcome_data(guardian) -> None:
     # When both attestations AND outcomes exist, the response can
     # reference verified purchase data without caveats.
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "trust-att-001",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Expert review: Rating 85/100.",
-            "summary": "Expert attestation",
-        },
-        {
-            "id": "trust-out-001",
-            "type": "trust_outcome",
-            "source": "trust_network",
-            "body": "Outcome: 45/50 verified purchasers still using after 6 months. "
-                    "Satisfaction: 90% positive.",
-            "summary": "Purchase outcome data",
-        },
+        VaultItem(
+            id="trust-att-001",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Expert review: Rating 85/100.",
+            summary="Expert attestation",
+        ),
+        VaultItem(
+            id="trust-out-001",
+            type="trust_outcome",
+            source="trust_network",
+            body_text="Outcome: 45/50 verified purchasers still using after 6 months. "
+                      "Satisfaction: 90% positive.",
+            summary="Purchase outcome data",
+        ),
     ]
     full_data_response = (
         "The Aeron chair has strong expert reviews (85/100) and "
@@ -5015,15 +5026,15 @@ async def test_guardian_19_2_single_review_limited_data(guardian) -> None:
 
     # --- Scenario 1: Single attestation → limited data caveat ---
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "trust-att-001",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Expert review of Aeron Chair by did:plc:reviewer1 (Ring 2): "
+        VaultItem(
+            id="trust-att-001",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Expert review of Aeron Chair by did:plc:reviewer1 (Ring 2): "
                     "Rating 82/100. Excellent ergonomics, breathable mesh, "
                     "premium build quality. Cons: expensive at $1,395.",
-            "summary": "Single expert attestation for Aeron Chair",
-        },
+            summary="Single expert attestation for Aeron Chair",
+        ),
     ]
 
     # Guard scan: entity extracted, trust-relevant query.
@@ -5151,15 +5162,15 @@ async def test_guardian_19_2_single_review_limited_data(guardian) -> None:
     # single-tier enforcement applies.  Vague prompts where extraction
     # fails get zero-tier enforcement instead (see TST-BRAIN-563).
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "trust-att-no-rating",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Expert review by did:plc:reviewer1 (Ring 2): "
+        VaultItem(
+            id="trust-att-no-rating",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Expert review by did:plc:reviewer1 (Ring 2): "
                     "Good build quality, comfortable for long sessions. "
                     "No numerical rating provided.",
-            "summary": "Single attestation for ErgoChair Pro, no rating",
-        },
+            summary="Single attestation for ErgoChair Pro, no rating",
+        ),
     ]
 
     # Guard scan flags sentence 2 as fabricated (hallucinated rating).
@@ -5344,13 +5355,14 @@ async def test_tst_brain_544_sponsored_content_disclosed(guardian):
     # Even in an LLM reasoning response, if the source data is sponsored,
     # the output must disclose it.
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "rec-001",
-            "type": "agent_response",
-            "source": "agent:openclaw",
-            "body": "CloudBackup Pro: 2TB for $5/mo",
-            "metadata": {"sponsored": True},
-        },
+        VaultItem(
+            id="rec-001",
+            type="agent_response",
+            source="agent:openclaw",
+            body_text="CloudBackup Pro: 2TB for $5/mo",
+            metadata='{"sponsored": true}',
+            summary="CloudBackup Pro recommendation",
+        ),
     ]
     guardian._test_llm.route.return_value = {
         "content": "I recommend CloudBackup Pro for your needs — 2TB at $5/month.",
@@ -5772,20 +5784,22 @@ async def test_tst_brain_571_sponsorship_cannot_distort_ranking(guardian):
     # correctly.  The prompt asks "about CloudSync" so the extractor
     # picks up "CloudSync" and the vault has matching attestations.
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "rec-prod-x",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "CloudSync: 40 reviews, avg 4.2/5. Sponsored product.",
-            "metadata": {"sponsored": True, "product_name": "CloudSync"},
-        },
-        {
-            "id": "rec-prod-y",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "CloudSync alternative DataVault: 60 reviews, avg 4.6/5",
-            "metadata": {"sponsored": False, "product_name": "DataVault"},
-        },
+        VaultItem(
+            id="rec-prod-x",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="CloudSync: 40 reviews, avg 4.2/5. Sponsored product.",
+            metadata='{"sponsored": true, "product_name": "CloudSync"}',
+            summary="CloudSync attestation",
+        ),
+        VaultItem(
+            id="rec-prod-y",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="CloudSync alternative DataVault: 60 reviews, avg 4.6/5",
+            metadata='{"sponsored": false, "product_name": "DataVault"}',
+            summary="DataVault attestation",
+        ),
     ]
     guardian._test_llm.route.return_value = {
         "content": (
@@ -5898,30 +5912,30 @@ async def test_tst_brain_550_sparse_but_conflicting_reviews(guardian):
 
     # --- Scenario 1: Classic 2 positive + 1 negative → must report split ---
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "trust-att-pos1",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Review by did:plc:reviewer1 (Ring 2): Excellent build "
+        VaultItem(
+            id="trust-att-pos1",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Review by did:plc:reviewer1 (Ring 2): Excellent build "
                     "quality, very comfortable for long work sessions. 4/5.",
-            "summary": "Positive review, 4/5",
-        },
-        {
-            "id": "trust-att-pos2",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Review by did:plc:reviewer2 (Ring 2): Sturdy and "
+            summary="Positive review, 4/5",
+        ),
+        VaultItem(
+            id="trust-att-pos2",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Review by did:plc:reviewer2 (Ring 2): Sturdy and "
                     "well-designed. Worth the price. 5/5.",
-            "summary": "Positive review, 5/5",
-        },
-        {
-            "id": "trust-att-neg1",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Review by did:plc:reviewer3 (Ring 2): Broke after "
+            summary="Positive review, 5/5",
+        ),
+        VaultItem(
+            id="trust-att-neg1",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Review by did:plc:reviewer3 (Ring 2): Broke after "
                     "3 months. Armrest wobbles. Poor durability. 1/5.",
-            "summary": "Negative review, 1/5",
-        },
+            summary="Negative review, 1/5",
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -6024,14 +6038,14 @@ async def test_tst_brain_550_sparse_but_conflicting_reviews(guardian):
 
     # --- Scenario 5: Larger sparse conflicting set (3 positive, 2 negative) ---
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": f"trust-att-{i}",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": f"Review by did:plc:reviewer{i} (Ring 2): "
+        VaultItem(
+            id=f"trust-att-{i}",
+            type="trust_attestation",
+            source="trust_network",
+            body_text=f"Review by did:plc:reviewer{i} (Ring 2): "
                     f"{'Great product! 5/5.' if i < 3 else 'Terrible, broke fast. 1/5.'}",
-            "summary": f"{'Positive' if i < 3 else 'Negative'} review",
-        }
+            summary=f"{'Positive' if i < 3 else 'Negative'} review",
+        )
         for i in range(5)
     ]
 
@@ -6064,14 +6078,14 @@ async def test_tst_brain_550_sparse_but_conflicting_reviews(guardian):
 
     # --- Scenario 6: Contrast — 3 unanimous positive → no conflict ---
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": f"trust-att-uni-{i}",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": f"Review by did:plc:reviewer{i} (Ring 2): "
+        VaultItem(
+            id=f"trust-att-uni-{i}",
+            type="trust_attestation",
+            source="trust_network",
+            body_text=f"Review by did:plc:reviewer{i} (Ring 2): "
                     f"Solid product, highly recommended. {4 + (i % 2)}/5.",
-            "summary": "Positive review",
-        }
+            summary="Positive review",
+        )
         for i in range(3)
     ]
 
@@ -6106,30 +6120,30 @@ async def test_tst_brain_550_sparse_but_conflicting_reviews(guardian):
     # --- Scenario 7: Conflicting reviews with specific pros and cons ---
     # Each reviewer raises different points — all must be surfaced.
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "trust-att-detail-1",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Review by did:plc:r1 (Ring 2): Lightweight and "
+        VaultItem(
+            id="trust-att-detail-1",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Review by did:plc:r1 (Ring 2): Lightweight and "
                     "portable. Great for travel. 4/5.",
-            "summary": "Positive: lightweight, portable",
-        },
-        {
-            "id": "trust-att-detail-2",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Review by did:plc:r2 (Ring 2): Durable construction, "
+            summary="Positive: lightweight, portable",
+        ),
+        VaultItem(
+            id="trust-att-detail-2",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Review by did:plc:r2 (Ring 2): Durable construction, "
                     "survived multiple drops. 5/5.",
-            "summary": "Positive: durable",
-        },
-        {
-            "id": "trust-att-detail-3",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Review by did:plc:r3 (Ring 2): Battery dies after "
+            summary="Positive: durable",
+        ),
+        VaultItem(
+            id="trust-att-detail-3",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Review by did:plc:r3 (Ring 2): Battery dies after "
                     "2 hours. Overheats during charging. 2/5.",
-            "summary": "Negative: poor battery, overheating",
-        },
+            summary="Negative: poor battery, overheating",
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -6261,13 +6275,13 @@ async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
 
     # --- Scenario 3: Zero attestations, personal vault has user's own notes ---
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "note-001",
-            "type": "note",
-            "source": "personal",
-            "body": "I tried an Aeron at the office, it was comfortable",
-            "summary": "Personal note about Aeron Chair",
-        },
+        VaultItem(
+            id="note-001",
+            type="note",
+            source="personal",
+            body_text="I tried an Aeron at the office, it was comfortable",
+            summary="Personal note about Aeron Chair",
+        ),
     ]
 
     # Guard scan flags "Based on verified Trust Network reviews" as fabricated.
@@ -6380,20 +6394,20 @@ async def test_tst_brain_548_zero_reviews_zero_attestations(guardian):
     ))
 
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "trust-att-001",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Review by did:plc:r1 (Ring 2): Excellent chair. 5/5.",
-            "summary": "Positive review, 5/5",
-        },
-        {
-            "id": "trust-att-002",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Review by did:plc:r2 (Ring 2): Good value. 4/5.",
-            "summary": "Positive review, 4/5",
-        },
+        VaultItem(
+            id="trust-att-001",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Review by did:plc:r1 (Ring 2): Excellent chair. 5/5.",
+            summary="Positive review, 5/5",
+        ),
+        VaultItem(
+            id="trust-att-002",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Review by did:plc:r2 (Ring 2): Good value. 4/5.",
+            summary="Positive review, 4/5",
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -6486,19 +6500,17 @@ async def test_tst_brain_556_expert_review_deep_linked_not_extracted(guardian):
 
     # --- Scenario 1: Expert review with deep_link → link preserved ---
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "trust-att-expert-001",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Expert review by did:plc:rtings (Ring 2): The ErgoChair "
+        VaultItem(
+            id="trust-att-expert-001",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Expert review by did:plc:rtings (Ring 2): The ErgoChair "
                     "Pro has best-in-class lumbar support with 4-way adjustable "
                     "armrests. We tested it over 6 months with 12 participants. "
                     "Score: 8.5/10.",
-            "summary": "Expert review: ErgoChair Pro 8.5/10",
-            "creator_name": "RTINGS.com",
-            "source_url": "https://rtings.com/chairs/reviews/ergochair-pro",
-            "deep_link": "https://rtings.com/chairs/reviews/ergochair-pro#lumbar-test",
-        },
+            summary="Expert review: ErgoChair Pro 8.5/10",
+            metadata='{"creator_name": "RTINGS.com", "source_url": "https://rtings.com/chairs/reviews/ergochair-pro", "deep_link": "https://rtings.com/chairs/reviews/ergochair-pro#lumbar-test"}',
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -6546,15 +6558,14 @@ async def test_tst_brain_556_expert_review_deep_linked_not_extracted(guardian):
 
     # --- Scenario 2: Deep link with fragment → fragment preserved ---
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "trust-att-expert-002",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Expert review: Keyboard ergonomics section.",
-            "creator_name": "Wirecutter",
-            "source_url": "https://wirecutter.com/reviews/keyboards",
-            "deep_link": "https://wirecutter.com/reviews/keyboards#ergonomics-section",
-        },
+        VaultItem(
+            id="trust-att-expert-002",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Expert review: Keyboard ergonomics section.",
+            summary="Keyboard ergonomics review",
+            metadata='{"creator_name": "Wirecutter", "source_url": "https://wirecutter.com/reviews/keyboards", "deep_link": "https://wirecutter.com/reviews/keyboards#ergonomics-section"}',
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -6579,22 +6590,21 @@ async def test_tst_brain_556_expert_review_deep_linked_not_extracted(guardian):
 
     # --- Scenario 3: Source has extracted_summary → strip it, use link ---
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "trust-att-expert-003",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Expert: Monitor review by TFTCentral",
-            "creator_name": "TFTCentral",
-            "source_url": "https://tftcentral.co.uk/reviews/dell-u2723qe",
-            "deep_link": "https://tftcentral.co.uk/reviews/dell-u2723qe",
-            "extracted_summary": (
+        VaultItem(
+            id="trust-att-expert-003",
+            type="trust_attestation",
+            source="trust_network",
+            body_text=(
+                "Expert: Monitor review by TFTCentral. "
                 "The Dell U2723QE uses an LG IPS Black panel with "
                 "2000:1 contrast ratio, 98% DCI-P3 coverage, factory "
                 "calibrated to Delta E < 2. USB-C hub with 90W PD. "
                 "The panel uniformity was excellent in our sample "
                 "with less than 10% deviation."
             ),
-        },
+            summary="TFTCentral monitor review",
+            metadata='{"creator_name": "TFTCentral", "source_url": "https://tftcentral.co.uk/reviews/dell-u2723qe", "deep_link": "https://tftcentral.co.uk/reviews/dell-u2723qe"}',
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -6634,14 +6644,14 @@ async def test_tst_brain_556_expert_review_deep_linked_not_extracted(guardian):
 
     # --- Scenario 4: Source missing both deep_link and source_url ---
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "trust-att-no-link",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Anonymous review: Good product, 4/5.",
-            "summary": "Positive review, no attribution",
+        VaultItem(
+            id="trust-att-no-link",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Anonymous review: Good product, 4/5.",
+            summary="Positive review, no attribution",
             # No creator_name, no source_url, no deep_link
-        },
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -6670,15 +6680,14 @@ async def test_tst_brain_556_expert_review_deep_linked_not_extracted(guardian):
 
     # --- Scenario 5: Creator name attribution alongside deep link ---
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "trust-att-expert-005",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "In-depth review of the standing desk.",
-            "creator_name": "Jarvis Reviews",
-            "source_url": "https://jarvisreviews.com/standing-desks",
-            "deep_link": "https://jarvisreviews.com/standing-desks/uplift-v2",
-        },
+        VaultItem(
+            id="trust-att-expert-005",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="In-depth review of the standing desk.",
+            summary="",
+            metadata='{"creator_name": "Jarvis Reviews", "source_url": "https://jarvisreviews.com/standing-desks", "deep_link": "https://jarvisreviews.com/standing-desks/uplift-v2"}',
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -6706,22 +6715,22 @@ async def test_tst_brain_556_expert_review_deep_linked_not_extracted(guardian):
 
     # --- Scenario 6: Multiple expert sources → each individually linked ---
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "trust-att-multi-1",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "RTINGS review: Great monitor.",
-            "creator_name": "RTINGS.com",
-            "deep_link": "https://rtings.com/monitor/reviews/lg-27gp850",
-        },
-        {
-            "id": "trust-att-multi-2",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "TFTCentral review: Excellent panel.",
-            "creator_name": "TFTCentral",
-            "deep_link": "https://tftcentral.co.uk/reviews/lg-27gp850",
-        },
+        VaultItem(
+            id="trust-att-multi-1",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="RTINGS review: Great monitor.",
+            summary="",
+            metadata='{"creator_name": "RTINGS.com", "deep_link": "https://rtings.com/monitor/reviews/lg-27gp850"}',
+        ),
+        VaultItem(
+            id="trust-att-multi-2",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="TFTCentral review: Excellent panel.",
+            summary="",
+            metadata='{"creator_name": "TFTCentral", "deep_link": "https://tftcentral.co.uk/reviews/lg-27gp850"}',
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -6776,13 +6785,13 @@ async def test_tst_brain_567_no_unsolicited_discovery(guardian):
 
     # --- Scenario 1: User asks about specific product → no adjacent items ---
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "review-aeron-001",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Review: Aeron chair has excellent lumbar support. 4.5/5.",
-            "summary": "Aeron chair review",
-        },
+        VaultItem(
+            id="review-aeron-001",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Review: Aeron chair has excellent lumbar support. 4.5/5.",
+            summary="Aeron chair review",
+        ),
     ]
 
     # Guard scan flags sentence 2 as unsolicited ("You might also like...").
@@ -6827,13 +6836,13 @@ async def test_tst_brain_567_no_unsolicited_discovery(guardian):
     ))
 
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "review-desk-001",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Standing desk review: Uplift V2 is sturdy. 4/5.",
-            "summary": "Standing desk review",
-        },
+        VaultItem(
+            id="review-desk-001",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Standing desk review: Uplift V2 is sturdy. 4/5.",
+            summary="Standing desk review",
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -6872,13 +6881,13 @@ async def test_tst_brain_567_no_unsolicited_discovery(guardian):
     ))
     # User asks about a consumer product but LLM drags in health data.
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "mouse-review-001",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Logitech MX Master 3S: great ergonomic mouse. 4.5/5.",
-            "summary": "Mouse review",
-        },
+        VaultItem(
+            id="mouse-review-001",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Logitech MX Master 3S: great ergonomic mouse. 4.5/5.",
+            summary="Mouse review",
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -6911,13 +6920,13 @@ async def test_tst_brain_567_no_unsolicited_discovery(guardian):
 
     # --- Scenario 4: 'Related items' section must not appear ---
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "keyboard-review-001",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Keychron V1: solid mechanical keyboard. 4/5.",
-            "summary": "Keyboard review",
-        },
+        VaultItem(
+            id="keyboard-review-001",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Keychron V1: solid mechanical keyboard. 4/5.",
+            summary="Keyboard review",
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -6953,14 +6962,14 @@ async def test_tst_brain_567_no_unsolicited_discovery(guardian):
     # --- Scenario 5: Product mentioned in vault context but not asked ---
     # Brain finds a related item during vault search but user didn't ask.
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "note-coffee-001",
-            "type": "note",
-            "source": "personal",
-            "body": "Tried the AeroPress — best coffee I've had. "
+        VaultItem(
+            id="note-coffee-001",
+            type="note",
+            source="personal",
+            body_text="Tried the AeroPress — best coffee I've had. "
                     "Also saw the Chemex at the store, looked nice.",
-            "summary": "Coffee notes",
-        },
+            summary="Coffee notes",
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -6994,13 +7003,13 @@ async def test_tst_brain_567_no_unsolicited_discovery(guardian):
 
     # --- Scenario 6: Contrast — user explicitly asks for alternatives ---
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "review-chair-001",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Aeron: 4.5/5. Steelcase Leap: 4.3/5. Secretlab: 3.8/5.",
-            "summary": "Office chair comparison",
-        },
+        VaultItem(
+            id="review-chair-001",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Aeron: 4.5/5. Steelcase Leap: 4.3/5. Secretlab: 3.8/5.",
+            summary="Office chair comparison",
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -7089,29 +7098,29 @@ async def test_tst_brain_552_dense_with_strong_consensus(guardian):
     def _make_reviews(n_positive, n_negative):
         reviews = []
         for i in range(n_positive):
-            reviews.append({
-                "id": f"trust-att-pos-{i:03d}",
-                "type": "trust_attestation",
-                "source": "trust_network",
-                "body": (
+            reviews.append(VaultItem(
+                id=f"trust-att-pos-{i:03d}",
+                type="trust_attestation",
+                source="trust_network",
+                body_text=(
                     f"Review by did:plc:reviewer{i} (Ring 2): "
                     f"Excellent product, highly recommend. "
                     f"{4 + (i % 2)}/5."
                 ),
-                "summary": f"Positive review {i+1}, {4 + (i % 2)}/5",
-            })
+                summary=f"Positive review {i+1}, {4 + (i % 2)}/5",
+            ))
         for j in range(n_negative):
-            reviews.append({
-                "id": f"trust-att-neg-{j:03d}",
-                "type": "trust_attestation",
-                "source": "trust_network",
-                "body": (
+            reviews.append(VaultItem(
+                id=f"trust-att-neg-{j:03d}",
+                type="trust_attestation",
+                source="trust_network",
+                body_text=(
                     f"Review by did:plc:critic{j} (Ring 2): "
                     f"Disappointing quality, would not buy again. "
                     f"{1 + (j % 2)}/5."
                 ),
-                "summary": f"Negative review {j+1}, {1 + (j % 2)}/5",
-            })
+                summary=f"Negative review {j+1}, {1 + (j % 2)}/5",
+            ))
         return reviews
 
     confidence_language = re.compile(
@@ -7363,16 +7372,16 @@ async def test_tst_brain_551_sparse_but_unanimous(guardian):
     # Helper: generate N unanimous positive reviews.
     def _unanimous_reviews(n, base_rating=4):
         return [
-            {
-                "id": f"trust-att-uni-{i:03d}",
-                "type": "trust_attestation",
-                "source": "trust_network",
-                "body": (
+            VaultItem(
+                id=f"trust-att-uni-{i:03d}",
+                type="trust_attestation",
+                source="trust_network",
+                body_text=(
                     f"Review by did:plc:reviewer{i} (Ring 2): "
                     f"Great product, well built. {base_rating + (i % 2)}/5."
                 ),
-                "summary": f"Positive review, {base_rating + (i % 2)}/5",
-            }
+                summary=f"Positive review, {base_rating + (i % 2)}/5",
+            )
             for i in range(n)
         ]
 
@@ -7445,30 +7454,30 @@ async def test_tst_brain_551_sparse_but_unanimous(guardian):
 
     # --- Scenario 3: Review content still referenced ---
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "trust-att-detail-1",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Review by did:plc:r1 (Ring 2): Excellent "
+        VaultItem(
+            id="trust-att-detail-1",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Review by did:plc:r1 (Ring 2): Excellent "
                     "ergonomics, comfortable for 8-hour sessions. 5/5.",
-            "summary": "Positive: ergonomic, comfortable",
-        },
-        {
-            "id": "trust-att-detail-2",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Review by did:plc:r2 (Ring 2): Sturdy build, "
+            summary="Positive: ergonomic, comfortable",
+        ),
+        VaultItem(
+            id="trust-att-detail-2",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Review by did:plc:r2 (Ring 2): Sturdy build, "
                     "premium materials. 4/5.",
-            "summary": "Positive: sturdy, premium",
-        },
-        {
-            "id": "trust-att-detail-3",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Review by did:plc:r3 (Ring 2): Good value "
+            summary="Positive: sturdy, premium",
+        ),
+        VaultItem(
+            id="trust-att-detail-3",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Review by did:plc:r3 (Ring 2): Good value "
                     "for the price. Reliable. 4/5.",
-            "summary": "Positive: good value, reliable",
-        },
+            summary="Positive: good value, reliable",
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -7532,27 +7541,27 @@ async def test_tst_brain_551_sparse_but_unanimous(guardian):
     # --- Scenario 5: Contrast with conflicting sparse (TST-BRAIN-550) ---
     # 2 positive + 1 negative → "mixed", NOT "all positive"
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "trust-att-pos-1",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Review by did:plc:r1 (Ring 2): Great! 5/5.",
-            "summary": "Positive",
-        },
-        {
-            "id": "trust-att-pos-2",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Review by did:plc:r2 (Ring 2): Solid. 4/5.",
-            "summary": "Positive",
-        },
-        {
-            "id": "trust-att-neg-1",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Review by did:plc:r3 (Ring 2): Broke fast. 1/5.",
-            "summary": "Negative",
-        },
+        VaultItem(
+            id="trust-att-pos-1",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Review by did:plc:r1 (Ring 2): Great! 5/5.",
+            summary="Positive",
+        ),
+        VaultItem(
+            id="trust-att-pos-2",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Review by did:plc:r2 (Ring 2): Solid. 4/5.",
+            summary="Positive",
+        ),
+        VaultItem(
+            id="trust-att-neg-1",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Review by did:plc:r3 (Ring 2): Broke fast. 1/5.",
+            summary="Negative",
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -7673,33 +7682,30 @@ async def test_tst_brain_557_multiple_sources_attributed_individually(guardian):
 
     # --- Scenario 1: Three experts with full attribution → each named ---
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "att-rtings",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Expert review: Best-in-class lumbar support.",
-            "creator_name": "RTINGS.com",
-            "source_url": "https://rtings.com/chairs/ergochair",
-            "deep_link": "https://rtings.com/chairs/ergochair#lumbar",
-        },
-        {
-            "id": "att-wirecutter",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Expert review: Excellent value for the price.",
-            "creator_name": "Wirecutter",
-            "source_url": "https://wirecutter.com/reviews/office-chairs",
-            "deep_link": "https://wirecutter.com/reviews/office-chairs#ergochair",
-        },
-        {
-            "id": "att-tftcentral",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Expert review: Premium build quality.",
-            "creator_name": "TFTCentral",
-            "source_url": "https://tftcentral.co.uk/reviews/ergochair",
-            "deep_link": "https://tftcentral.co.uk/reviews/ergochair",
-        },
+        VaultItem(
+            id="att-rtings",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Expert review: Best-in-class lumbar support.",
+            summary="",
+            metadata='{"creator_name": "RTINGS.com", "source_url": "https://rtings.com/chairs/ergochair", "deep_link": "https://rtings.com/chairs/ergochair#lumbar"}',
+        ),
+        VaultItem(
+            id="att-wirecutter",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Expert review: Excellent value for the price.",
+            summary="",
+            metadata='{"creator_name": "Wirecutter", "source_url": "https://wirecutter.com/reviews/office-chairs", "deep_link": "https://wirecutter.com/reviews/office-chairs#ergochair"}',
+        ),
+        VaultItem(
+            id="att-tftcentral",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Expert review: Premium build quality.",
+            summary="",
+            metadata='{"creator_name": "TFTCentral", "source_url": "https://tftcentral.co.uk/reviews/ergochair", "deep_link": "https://tftcentral.co.uk/reviews/ergochair"}',
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -7750,31 +7756,32 @@ async def test_tst_brain_557_multiple_sources_attributed_individually(guardian):
     # --- Scenario 3: Mixed attribution completeness ---
     # Source 1: full fields. Source 2: name only. Source 3: URL only.
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "att-full",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Expert review: Ergonomic and durable.",
-            "creator_name": "RTINGS.com",
-            "source_url": "https://rtings.com/review",
-            "deep_link": "https://rtings.com/review#section",
-        },
-        {
-            "id": "att-name-only",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Expert review: Good value.",
-            "creator_name": "Tom's Hardware",
+        VaultItem(
+            id="att-full",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Expert review: Ergonomic and durable.",
+            summary="",
+            metadata='{"creator_name": "RTINGS.com", "source_url": "https://rtings.com/review", "deep_link": "https://rtings.com/review#section"}',
+        ),
+        VaultItem(
+            id="att-name-only",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Expert review: Good value.",
             # No source_url or deep_link
-        },
-        {
-            "id": "att-url-only",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Expert review: Comfortable.",
-            "source_url": "https://example.com/review",
+            summary="",
+            metadata='{"creator_name": "Tom\\u0027s Hardware"}',
+        ),
+        VaultItem(
+            id="att-url-only",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Expert review: Comfortable.",
             # No creator_name
-        },
+            summary="",
+            metadata='{"source_url": "https://example.com/review"}',
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -7814,14 +7821,14 @@ async def test_tst_brain_557_multiple_sources_attributed_individually(guardian):
 
     # --- Scenario 4: Five sources → all five individually credited ---
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": f"att-{name.lower().replace(' ', '')}",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": f"Review by {name}: Positive.",
-            "creator_name": name,
-            "deep_link": f"https://{name.lower().replace(' ', '')}.com/review",
-        }
+        VaultItem(
+            id=f"att-{name.lower().replace(' ', '')}",
+            type="trust_attestation",
+            source="trust_network",
+            body_text=f"Review by {name}: Positive.",
+            summary="",
+            metadata='{"creator_name": name, "deep_link": f"https://{name.lower().replace(' ', '')}.com/review"}',
+        )
         for name in ["RTINGS", "Wirecutter", "TFTCentral", "AnandTech", "TechRadar"]
     ]
 
@@ -7850,21 +7857,22 @@ async def test_tst_brain_557_multiple_sources_attributed_individually(guardian):
 
     # --- Scenario 5: Source with no attribution at all → flagged ---
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "att-anon",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Some review text with no attribution.",
+        VaultItem(
+            id="att-anon",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Some review text with no attribution.",
             # No creator_name, no source_url, no deep_link
-        },
-        {
-            "id": "att-attributed",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "RTINGS: Great product.",
-            "creator_name": "RTINGS.com",
-            "deep_link": "https://rtings.com/review",
-        },
+            summary="",
+        ),
+        VaultItem(
+            id="att-attributed",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="RTINGS: Great product.",
+            summary="",
+            metadata='{"creator_name": "RTINGS.com", "deep_link": "https://rtings.com/review"}',
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -7899,22 +7907,22 @@ async def test_tst_brain_557_multiple_sources_attributed_individually(guardian):
     # If the user explicitly asks "summarize all reviews", aggregation
     # is OK but creators must STILL be individually named.
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "att-sum-1",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Positive review.",
-            "creator_name": "Source A",
-            "deep_link": "https://sourcea.com/review",
-        },
-        {
-            "id": "att-sum-2",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Also positive.",
-            "creator_name": "Source B",
-            "deep_link": "https://sourceb.com/review",
-        },
+        VaultItem(
+            id="att-sum-1",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Positive review.",
+            summary="",
+            metadata='{"creator_name": "Source A", "deep_link": "https://sourcea.com/review"}',
+        ),
+        VaultItem(
+            id="att-sum-2",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Also positive.",
+            summary="",
+            metadata='{"creator_name": "Source B", "deep_link": "https://sourceb.com/review"}',
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -7988,22 +7996,22 @@ async def test_tst_brain_546_sparse_trust_data_honest_uncertainty(guardian):
 
     # --- Scenario 1: Core case — 2 reviews, 1 positive + 1 negative ---
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "trust-att-pos",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Review by did:plc:reviewer1 (Ring 2): Outstanding "
+        VaultItem(
+            id="trust-att-pos",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Review by did:plc:reviewer1 (Ring 2): Outstanding "
                     "product, excellent build quality. 5/5.",
-            "summary": "Positive review, 5/5",
-        },
-        {
-            "id": "trust-att-neg",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Review by did:plc:reviewer2 (Ring 2): Terrible "
+            summary="Positive review, 5/5",
+        ),
+        VaultItem(
+            id="trust-att-neg",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Review by did:plc:reviewer2 (Ring 2): Terrible "
                     "experience, fell apart after 2 weeks. 1/5.",
-            "summary": "Negative review, 1/5",
-        },
+            summary="Negative review, 1/5",
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -8138,20 +8146,20 @@ async def test_tst_brain_546_sparse_trust_data_honest_uncertainty(guardian):
 
     # --- Scenario 6: Contrast — 2 unanimous positive → different language ---
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "trust-att-uni-1",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Review by did:plc:r1 (Ring 2): Great product. 4/5.",
-            "summary": "Positive, 4/5",
-        },
-        {
-            "id": "trust-att-uni-2",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Review by did:plc:r2 (Ring 2): Solid choice. 5/5.",
-            "summary": "Positive, 5/5",
-        },
+        VaultItem(
+            id="trust-att-uni-1",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Review by did:plc:r1 (Ring 2): Great product. 4/5.",
+            summary="Positive, 4/5",
+        ),
+        VaultItem(
+            id="trust-att-uni-2",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Review by did:plc:r2 (Ring 2): Solid choice. 5/5.",
+            summary="Positive, 5/5",
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -8180,20 +8188,20 @@ async def test_tst_brain_546_sparse_trust_data_honest_uncertainty(guardian):
 
     # --- Scenario 7: No hallucinated trust score from sparse data ---
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "trust-att-pos",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Review by did:plc:r1: Nice product. 4/5.",
-            "summary": "Positive, 4/5",
-        },
-        {
-            "id": "trust-att-neg",
-            "type": "trust_attestation",
-            "source": "trust_network",
-            "body": "Review by did:plc:r2: Not worth it. 2/5.",
-            "summary": "Negative, 2/5",
-        },
+        VaultItem(
+            id="trust-att-pos",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Review by did:plc:r1: Nice product. 4/5.",
+            summary="Positive, 4/5",
+        ),
+        VaultItem(
+            id="trust-att-neg",
+            type="trust_attestation",
+            source="trust_network",
+            body_text="Review by did:plc:r2: Not worth it. 2/5.",
+            summary="Negative, 2/5",
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -8528,26 +8536,27 @@ async def test_tst_brain_547_dense_trust_confidence_proportional(guardian):
 
     def _reviews(count, positive_pct, ring=2, product="EcoChair"):
         """Build vault items simulating trust attestations with metadata."""
+        import json as _json
         items = []
         for i in range(min(count, 5)):  # Only 5 reach LLM (current cap)
-            items.append({
-                "id": f"trust-review-{product.lower()}-{i}",
-                "type": "trust_attestation",
-                "source": "trust_network",
-                "body": (
+            items.append(VaultItem(
+                id=f"trust-review-{product.lower()}-{i}",
+                type="trust_attestation",
+                source="trust_network",
+                body_text=(
                     f"Review {i+1} of {count} for {product}: "
                     f"{'Excellent quality' if i < count * positive_pct // 100 else 'Disappointing'}. "
                     f"Ring {ring} reviewer."
                 ),
-                "summary": f"{product}: review {i+1}/{count}",
-                "metadata": {
+                summary=f"{product}: review {i+1}/{count}",
+                metadata=_json.dumps({
                     "product_name": product,
                     "review_count": count,
                     "positive_pct": positive_pct,
                     "ring_level": ring,
                     "total_attestations": count,
-                },
-            })
+                }),
+            ))
         return items
 
     # --- Scenario 1: Dense data (50+ reviews, strong consensus) ---
@@ -9082,12 +9091,12 @@ def test_analyze_trust_density_zero_when_unscoped():
     # 3 trust attestations, no entity hint → tier should be "sparse"
     # (because _analyze_trust_density counts ALL items without filtering).
     items = [
-        {"Type": "trust_attestation", "Source": "trust_network",
-         "BodyText": "Good vendor", "Summary": "att for X"},
-        {"Type": "trust_attestation", "Source": "trust_network",
-         "BodyText": "Decent vendor", "Summary": "att for Y"},
-        {"Type": "trust_attestation", "Source": "trust_network",
-         "BodyText": "Bad vendor", "Summary": "att for Z"},
+        VaultItem(type="trust_attestation", source="trust_network",
+                  body_text="Good vendor", summary="att for X"),
+        VaultItem(type="trust_attestation", source="trust_network",
+                  body_text="Decent vendor", summary="att for Y"),
+        VaultItem(type="trust_attestation", source="trust_network",
+                  body_text="Bad vendor", summary="att for Z"),
     ]
     result = GuardianLoop._analyze_trust_density(items, "open")
     assert result["tier"] == "sparse"
@@ -9266,7 +9275,8 @@ async def test_guard_scan_failure_falls_back_to_regex(guardian) -> None:
     # Trust-relevant vault items (total_count > 0 but trust_count = 0
     # for the queried entity → zero tier).
     guardian._core.search_vault.return_value = [
-        {"body": "Unrelated trust data", "metadata": {"product_name": "OtherProd"}},
+        VaultItem(type="note", source="trust_network", summary="Unrelated trust data",
+                  body_text="Unrelated trust data", metadata='{"product_name": "OtherProd"}'),
     ]
 
     result = await guardian.process_event({
@@ -9316,27 +9326,27 @@ async def test_guardian_density_miss_path_vague_prompt_trust_rich_vault(
     """
     # Vault has trust attestations for VendorY (unrelated to question).
     guardian._test_core.search_vault.return_value = [
-        {
-            "Type": "trust_attestation",
-            "Source": "trust_network",
-            "BodyText": "VendorY did:plc:vendory is excellent. Rating 95/100.",
-            "Summary": "Trust attestation for VendorY",
-            "Metadata": '{"subject_did": "did:plc:vendory"}',
-        },
-        {
-            "Type": "trust_attestation",
-            "Source": "trust_network",
-            "BodyText": "VendorY did:plc:vendory has great delivery.",
-            "Summary": "Trust attestation for VendorY",
-            "Metadata": '{"subject_did": "did:plc:vendory"}',
-        },
-        {
-            "Type": "trust_attestation",
-            "Source": "trust_network",
-            "BodyText": "VendorY did:plc:vendory reliable service.",
-            "Summary": "Trust attestation for VendorY",
-            "Metadata": '{"subject_did": "did:plc:vendory"}',
-        },
+        VaultItem(
+            type="trust_attestation",
+            source="trust_network",
+            body_text="VendorY did:plc:vendory is excellent. Rating 95/100.",
+            summary="Trust attestation for VendorY",
+            metadata='{"subject_did": "did:plc:vendory"}',
+        ),
+        VaultItem(
+            type="trust_attestation",
+            source="trust_network",
+            body_text="VendorY did:plc:vendory has great delivery.",
+            summary="Trust attestation for VendorY",
+            metadata='{"subject_did": "did:plc:vendory"}',
+        ),
+        VaultItem(
+            type="trust_attestation",
+            source="trust_network",
+            body_text="VendorY did:plc:vendory reliable service.",
+            summary="Trust attestation for VendorY",
+            metadata='{"subject_did": "did:plc:vendory"}',
+        ),
     ]
 
     # LLM fabricates trust claims about the subject (which the user is
@@ -9414,13 +9424,13 @@ async def test_guardian_density_miss_path_lowercase_entity(
     """
     # Vault has trust attestations for an unrelated vendor.
     guardian._test_core.search_vault.return_value = [
-        {
-            "Type": "trust_attestation",
-            "Source": "trust_network",
-            "BodyText": "VendorZ did:plc:vendorz is excellent.",
-            "Summary": "Trust attestation for VendorZ",
-            "Metadata": '{"subject_did": "did:plc:vendorz"}',
-        },
+        VaultItem(
+            type="trust_attestation",
+            source="trust_network",
+            body_text="VendorZ did:plc:vendorz is excellent.",
+            summary="Trust attestation for VendorZ",
+            metadata='{"subject_did": "did:plc:vendorz"}',
+        ),
     ]
 
     import json as _json
@@ -9545,10 +9555,11 @@ async def test_guardian_reminder_fired_reads_direct_lineage_fields(guardian):
     notification with the semantic kind (payment_due) preserved.
     """
     # Pre-configure the mock vault to return a source document.
-    guardian._test_core.get_vault_item = AsyncMock(return_value={
-        "Summary": "Invoice from XYZ Corp",
-        "Metadata": '{"amount": "₹3,500"}',
-    })
+    guardian._test_core.get_vault_item = AsyncMock(return_value=VaultItem(
+        type="document", source="gmail",
+        summary="Invoice from XYZ Corp",
+        metadata='{"amount": "₹3,500"}',
+    ))
 
     event = {
         "type": "reminder_fired",

@@ -20,6 +20,8 @@ from .factories import (
     make_solicited_event,
 )
 
+from src.gen.core_types import VaultItem, ScrubResult
+
 
 def _guard_se(content, anti_her=None, unsolicited=None,
               fabricated=None, consensus=None, trust_relevant=False):
@@ -66,7 +68,7 @@ def guardian():
     core.set_kv.return_value = None
     core.notify.return_value = None
     core.task_ack.return_value = None
-    core.pii_scrub.return_value = {"scrubbed": "", "entities": []}
+    core.pii_scrub.return_value = ScrubResult(scrubbed="", entities=[])
 
     llm_router = AsyncMock()
     llm_router.route.return_value = {"content": "test", "model": "test"}
@@ -1621,14 +1623,15 @@ async def test_human_connection_17_1_recent_interaction_resets_neglect(guardian)
 
     # Helper: route search_vault calls — contact scans get contact data,
     # fiduciary recap and promise scans get empty results.
-    _contact_data: list[dict] = [
-        {
-            "type": "contact",
-            "name": "Sarah",
-            "contact_did": "did:plc:sarah123",
-            "last_interaction_ts": two_days_ago,
-            "relationship_depth": "close_friend",
-        },
+    _contact_data: list = [
+        VaultItem(
+            type="contact", source="personal", summary="Sarah",
+            metadata=_json.dumps({
+                "name": "Sarah", "contact_did": "did:plc:sarah123",
+                "last_interaction_ts": two_days_ago,
+                "relationship_depth": "close_friend",
+            }),
+        ),
     ]
 
     async def _search_vault_side_effect(*args, **kwargs):
@@ -1660,13 +1663,14 @@ async def test_human_connection_17_1_recent_interaction_resets_neglect(guardian)
 
     # --- Scenario 2: Contact interacted 29 days ago → still no nudge ---
     _contact_data.clear()
-    _contact_data.append({
-        "type": "contact",
-        "name": "Sarah",
-        "contact_did": "did:plc:sarah123",
-        "last_interaction_ts": twenty_nine_days_ago,
-        "relationship_depth": "close_friend",
-    })
+    _contact_data.append(VaultItem(
+        type="contact", source="personal", summary="Sarah",
+        metadata=_json.dumps({
+            "name": "Sarah", "contact_did": "did:plc:sarah123",
+            "last_interaction_ts": twenty_nine_days_ago,
+            "relationship_depth": "close_friend",
+        }),
+    ))
 
     briefing2 = await guardian.generate_briefing()
     nudge_items2 = [
@@ -1683,13 +1687,14 @@ async def test_human_connection_17_1_recent_interaction_resets_neglect(guardian)
 
     # --- Scenario 3: Contact interacted 31 days ago → nudge generated ---
     _contact_data.clear()
-    _contact_data.append({
-        "type": "contact",
-        "name": "Sarah",
-        "contact_did": "did:plc:sarah123",
-        "last_interaction_ts": thirty_one_days_ago,
-        "relationship_depth": "close_friend",
-    })
+    _contact_data.append(VaultItem(
+        type="contact", source="personal", summary="Sarah",
+        metadata=_json.dumps({
+            "name": "Sarah", "contact_did": "did:plc:sarah123",
+            "last_interaction_ts": thirty_one_days_ago,
+            "relationship_depth": "close_friend",
+        }),
+    ))
 
     briefing3 = await guardian.generate_briefing()
     nudge_items3 = [
@@ -1709,13 +1714,14 @@ async def test_human_connection_17_1_recent_interaction_resets_neglect(guardian)
     # Sarah was stale (35 days) but user interacted yesterday → no nudge.
     yesterday = now - 86400
     _contact_data.clear()
-    _contact_data.append({
-        "type": "contact",
-        "name": "Sarah",
-        "contact_did": "did:plc:sarah123",
-        "last_interaction_ts": yesterday,  # Reset by new interaction
-        "relationship_depth": "close_friend",
-    })
+    _contact_data.append(VaultItem(
+        type="contact", source="personal", summary="Sarah",
+        metadata=_json.dumps({
+            "name": "Sarah", "contact_did": "did:plc:sarah123",
+            "last_interaction_ts": yesterday,  # Reset by new interaction
+            "relationship_depth": "close_friend",
+        }),
+    ))
 
     briefing4 = await guardian.generate_briefing()
     nudge_items4 = [
@@ -1732,20 +1738,22 @@ async def test_human_connection_17_1_recent_interaction_resets_neglect(guardian)
     # --- Scenario 5: Mixed contacts — only stale ones get nudges ---
     _contact_data.clear()
     _contact_data.extend([
-        {
-            "type": "contact",
-            "name": "Sarah",
-            "contact_did": "did:plc:sarah123",
-            "last_interaction_ts": two_days_ago,
-            "relationship_depth": "close_friend",
-        },
-        {
-            "type": "contact",
-            "name": "Sancho",
-            "contact_did": "did:plc:sancho456",
-            "last_interaction_ts": thirty_one_days_ago,
-            "relationship_depth": "friend",
-        },
+        VaultItem(
+            type="contact", source="personal", summary="Sarah",
+            metadata=_json.dumps({
+                "name": "Sarah", "contact_did": "did:plc:sarah123",
+                "last_interaction_ts": two_days_ago,
+                "relationship_depth": "close_friend",
+            }),
+        ),
+        VaultItem(
+            type="contact", source="personal", summary="Sancho",
+            metadata=_json.dumps({
+                "name": "Sancho", "contact_did": "did:plc:sancho456",
+                "last_interaction_ts": thirty_one_days_ago,
+                "relationship_depth": "friend",
+            }),
+        ),
     ])
 
     briefing5 = await guardian.generate_briefing()
@@ -3172,27 +3180,41 @@ async def test_tst_brain_518_promise_follow_up_nudge(guardian):
 
     # Helper to create vault items representing outbound messages with promises.
     def _vault_promise(text, contact, ts):
-        return {
-            "id": f"msg-{hash(text) % 10000}",
-            "type": "message",
-            "source": "messaging",
-            "body": text,
-            "summary": text,
-            "contact_did": contact,
-            "timestamp": ts,
-            "direction": "outbound",
-        }
+
+        return VaultItem(
+            id=f"msg-{hash(text) % 10000}",
+            type="message",
+            source="messaging",
+            body_text=text,
+            summary=text,
+            contact_did=contact,
+            timestamp=int(ts) if isinstance(ts, (int, float)) else None,
+            metadata=_json.dumps({"direction": "outbound"}),
+        )
+
+    # Helper: route search_vault so contact-type queries return empty
+    # (avoid cross-contamination with contact neglect scanner).
+    def _promise_vault_se(promises):
+        """Build a side_effect that returns *promises* for promise scans only."""
+        async def _se(*args, **kwargs):
+            query = args[1] if len(args) > 1 else kwargs.get("query", "")
+            if "type:contact" in str(query):
+                return []  # no contacts in these tests
+            if "priority:fiduciary" in str(query):
+                return []
+            return list(promises)
+        return _se
 
     # --- Scenario 1: Classic promise, 5 days stale, no fulfilment ---
     # The vault should contain an outbound message with a promise pattern.
     # generate_briefing() should detect this and include a nudge.
-    guardian._test_core.search_vault.return_value = [
+    guardian._test_core.search_vault.side_effect = _promise_vault_se([
         _vault_promise(
             "I'll send the PDF tomorrow",
             "did:plc:sancho",
             five_days_ago,
         ),
-    ]
+    ])
 
     # Add an engagement item so briefing is non-empty.
     engagement = make_engagement_event(body="Podcast released")
@@ -3215,23 +3237,23 @@ async def test_tst_brain_518_promise_follow_up_nudge(guardian):
 
     # --- Scenario 2: Promise fulfilled → no nudge ---
     # If a PDF was sent after the promise, no nudge needed.
-    guardian._test_core.search_vault.return_value = [
+    guardian._test_core.search_vault.side_effect = _promise_vault_se([
         _vault_promise(
             "I'll send the PDF tomorrow",
             "did:plc:sancho",
             five_days_ago,
         ),
-        {
-            "id": "msg-fulfil-001",
-            "type": "message",
-            "source": "messaging",
-            "body": "Here's the PDF as promised",
-            "contact_did": "did:plc:sancho",
-            "timestamp": five_days_ago + 86400,  # sent next day
-            "direction": "outbound",
-            "attachments": [{"type": "application/pdf"}],
-        },
-    ]
+        VaultItem(
+            id="msg-fulfil-001",
+            type="message",
+            source="messaging",
+            body_text="Here's the PDF as promised",
+            contact_did="did:plc:sancho",
+            timestamp=int(five_days_ago + 86400),  # sent next day
+            metadata=_json.dumps({"direction": "outbound", "attachments": [{"type": "application/pdf"}]}),
+            summary="PDF sent to Sancho",
+        ),
+    ])
 
     engagement2 = make_engagement_event(body="Weather update")
     await guardian.process_event(engagement2)
@@ -3245,7 +3267,7 @@ async def test_tst_brain_518_promise_follow_up_nudge(guardian):
     )
 
     # --- Scenario 3: Multiple promises to different contacts ---
-    guardian._test_core.search_vault.return_value = [
+    guardian._test_core.search_vault.side_effect = _promise_vault_se([
         _vault_promise(
             "I'll send you the report by Friday",
             "did:plc:albert",
@@ -3256,7 +3278,7 @@ async def test_tst_brain_518_promise_follow_up_nudge(guardian):
             "did:plc:sancho",
             two_days_ago,
         ),
-    ]
+    ])
 
     engagement3 = make_engagement_event(body="RSS update")
     await guardian.process_event(engagement3)
@@ -3274,13 +3296,13 @@ async def test_tst_brain_518_promise_follow_up_nudge(guardian):
 
     # --- Scenario 4: Promise only 1 hour old → too early to nudge ---
     one_hour_ago = _time.time() - 3600
-    guardian._test_core.search_vault.return_value = [
+    guardian._test_core.search_vault.side_effect = _promise_vault_se([
         _vault_promise(
             "I'll send the slides later today",
             "did:plc:sancho",
             one_hour_ago,
         ),
-    ]
+    ])
 
     engagement4 = make_engagement_event(body="Calendar sync")
     await guardian.process_event(engagement4)
@@ -3296,13 +3318,13 @@ async def test_tst_brain_518_promise_follow_up_nudge(guardian):
     )
 
     # --- Scenario 5: 'Remind me to send' pattern → also tracked ---
-    guardian._test_core.search_vault.return_value = [
+    guardian._test_core.search_vault.side_effect = _promise_vault_se([
         _vault_promise(
             "Remind me to send the contract to the lawyer",
             "did:plc:lawyer",
             five_days_ago,
         ),
-    ]
+    ])
 
     engagement5 = make_engagement_event(body="News digest")
     await guardian.process_event(engagement5)
@@ -3318,13 +3340,13 @@ async def test_tst_brain_518_promise_follow_up_nudge(guardian):
     # --- Scenario 6: Promise nudge is accountability, not engagement ---
     # The nudge text must frame it as accountability ("You promised...")
     # NOT as engagement bait ("Don't forget to stay connected!")
-    guardian._test_core.search_vault.return_value = [
+    guardian._test_core.search_vault.side_effect = _promise_vault_se([
         _vault_promise(
             "I'll get back to you with the numbers",
             "did:plc:albert",
             five_days_ago,
         ),
-    ]
+    ])
 
     engagement6 = make_engagement_event(body="Podcast update")
     await guardian.process_event(engagement6)
@@ -3471,13 +3493,15 @@ async def test_human_connection_17_1_nudge_frequency_capping(guardian):
     # meaning no nudge is needed (they're not neglected anymore).
     guardian._test_core.get_kv = AsyncMock(return_value=str(now - 3 * 86400))
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "msg-recent-001",
-            "type": "message",
-            "contact_did": "did:plc:contactD",
-            "timestamp": now - 3600,  # interacted 1 hour ago
-            "direction": "outbound",
-        },
+        VaultItem(
+            id="msg-recent-001",
+            type="message",
+            contact_did="did:plc:contactD",
+            timestamp=int(now - 3600),  # interacted 1 hour ago
+            metadata='{"direction": "outbound"}',
+            source="personal",
+            summary="Recent interaction",
+        ),
     ]
 
     event6 = _neglect_event("did:plc:contactD", days_since_contact=35)
@@ -3593,17 +3617,19 @@ async def test_tst_brain_519_cross_session_dependency_pattern(guardian):
     # --- Scenario 3: Five events over 14 days → MUST escalate ---
     # Core requirement: cross-session pattern detection.
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "contact-sarah",
-            "type": "contact",
-            "body": "Sarah — close friend",
-            "contact_did": "did:plc:sarah",
-            "metadata": {
+        VaultItem(
+            id="contact-sarah",
+            type="contact",
+            body_text="Sarah — close friend",
+            contact_did="did:plc:sarah",
+            summary="Contact: Sarah",
+            metadata=_json.dumps({
                 "name": "Sarah",
                 "relationship": "close_friend",
                 "last_interaction": (now - timedelta(days=3)).isoformat(),
-            },
-        },
+            }),
+            source="personal",
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -3651,39 +3677,45 @@ async def test_tst_brain_519_cross_session_dependency_pattern(guardian):
 
     # --- Scenario 4: Escalated nudge uses most-recent close contact ---
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "contact-sarah",
-            "type": "contact",
-            "body": "Sarah — close friend (3 days ago)",
-            "contact_did": "did:plc:sarah",
-            "metadata": {
+        VaultItem(
+            id="contact-sarah",
+            type="contact",
+            summary="Contact: Sarah",
+            body_text="Sarah — close friend (3 days ago)",
+            contact_did="did:plc:sarah",
+            metadata=_json.dumps({
                 "name": "Sarah",
                 "relationship": "close_friend",
                 "last_interaction": (now - timedelta(days=3)).isoformat(),
-            },
-        },
-        {
-            "id": "contact-albert",
-            "type": "contact",
-            "body": "Albert — friend (10 days ago)",
-            "contact_did": "did:plc:albert",
-            "metadata": {
+            }),
+            source="personal",
+        ),
+        VaultItem(
+            id="contact-albert",
+            type="contact",
+            summary="Contact: Albert",
+            body_text="Albert — friend (10 days ago)",
+            contact_did="did:plc:albert",
+            metadata=_json.dumps({
                 "name": "Albert",
                 "relationship": "friend",
                 "last_interaction": (now - timedelta(days=10)).isoformat(),
-            },
-        },
-        {
-            "id": "contact-bob",
-            "type": "contact",
-            "body": "Bob — acquaintance (40 days ago)",
-            "contact_did": "did:plc:bob",
-            "metadata": {
+            }),
+            source="personal",
+        ),
+        VaultItem(
+            id="contact-bob",
+            type="contact",
+            summary="Contact: Bob",
+            body_text="Bob — acquaintance (40 days ago)",
+            contact_did="did:plc:bob",
+            metadata=_json.dumps({
                 "name": "Bob",
                 "relationship": "acquaintance",
                 "last_interaction": (now - timedelta(days=40)).isoformat(),
-            },
-        },
+            }),
+            source="personal",
+        ),
     ]
 
     for ev in emotional_sessions:
@@ -3751,13 +3783,15 @@ async def test_tst_brain_519_cross_session_dependency_pattern(guardian):
     # --- Scenario 7: Anti-Her in escalation language ---
     # Even when escalating, Dina must NOT offer herself as substitute.
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "contact-sarah",
-            "type": "contact",
-            "body": "Sarah — close friend",
-            "contact_did": "did:plc:sarah",
-            "metadata": {"name": "Sarah", "relationship": "close_friend"},
-        },
+        VaultItem(
+            id="contact-sarah",
+            type="contact",
+            summary="Contact: Sarah",
+            body_text="Sarah — close friend",
+            contact_did="did:plc:sarah",
+            metadata='{"name": "Sarah", "relationship": "close_friend"}',
+            source="personal",
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -3834,13 +3868,15 @@ async def test_emotional_dependency_17_2_late_night_pattern(guardian):
 
     # Mock vault to have a close contact.
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "contact-sarah",
-            "type": "contact",
-            "body": "Sarah — close friend, Ring 2",
-            "contact_did": "did:plc:sarah",
-            "metadata": {"relationship": "close_friend", "ring": 2},
-        },
+        VaultItem(
+            id="contact-sarah",
+            type="contact",
+            body_text="Sarah — close friend, Ring 2",
+            contact_did="did:plc:sarah",
+            metadata='{"relationship": "close_friend", "ring": 2}',
+            source="personal",
+            summary="",
+        ),
     ]
 
     # --- Scenario 1: Single late-night conversation → no escalation ---
@@ -3992,12 +4028,14 @@ async def test_emotional_dependency_17_2_late_night_pattern(guardian):
 
     # --- Scenario 7: Recovery — user reports positive human interaction ---
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "contact-sarah",
-            "type": "contact",
-            "body": "Sarah — close friend",
-            "contact_did": "did:plc:sarah",
-        },
+        VaultItem(
+            id="contact-sarah",
+            type="contact",
+            body_text="Sarah — close friend",
+            contact_did="did:plc:sarah",
+            source="personal",
+            summary="",
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -4278,14 +4316,15 @@ async def test_emotional_dependency_17_2_social_isolation_signal(guardian):
         items = []
         for week_idx, count in enumerate(human_interactions_by_week):
             for i in range(count):
-                items.append({
-                    "id": f"human-msg-w{week_idx}-{i}",
-                    "type": "message",
-                    "source": "messaging",
-                    "direction": "outbound",
-                    "contact_did": f"did:plc:friend{i}",
-                    "timestamp": f"2026-01-{(week_idx * 7 + i + 1):02d}T10:00:00Z",
-                })
+                items.append(VaultItem(
+                    id=f"human-msg-w{week_idx}-{i}",
+                    type="message",
+                    source="messaging",
+                    summary=f"Outbound message to friend{i}",
+                    metadata=_json.dumps({"direction": "outbound"}),
+                    contact_did=f"did:plc:friend{i}",
+                    timestamp=None,
+                ))
         guardian._test_core.search_vault.return_value = items
 
     professional_support = re.compile(
@@ -4341,13 +4380,15 @@ async def test_emotional_dependency_17_2_social_isolation_signal(guardian):
     # When contacts exist in vault, suggest BOTH professional support
     # AND reconnecting with existing contacts.
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "contact-sarah",
-            "type": "contact",
-            "body": "Sarah — close friend, Ring 2",
-            "contact_did": "did:plc:sarah",
-            "metadata": {"relationship": "close_friend"},
-        },
+        VaultItem(
+            id="contact-sarah",
+            type="contact",
+            body_text="Sarah — close friend, Ring 2",
+            contact_did="did:plc:sarah",
+            metadata='{"relationship": "close_friend"}',
+            source="personal",
+            summary="",
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -4568,17 +4609,19 @@ async def test_tst_brain_522_recovery_acknowledgment(guardian):
     ]
 
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "contact-sarah",
-            "type": "contact",
-            "body": "Sarah — close friend",
-            "contact_did": "did:plc:sarah",
-            "metadata": {
+        VaultItem(
+            id="contact-sarah",
+            type="contact",
+            summary="Contact: Sarah",
+            body_text="Sarah — close friend",
+            contact_did="did:plc:sarah",
+            metadata=_json.dumps({
                 "name": "Sarah",
                 "relationship": "close_friend",
                 "last_interaction": (now - timedelta(days=20)).isoformat(),
-            },
-        },
+            }),
+            source="personal",
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -4633,20 +4676,24 @@ async def test_tst_brain_522_recovery_acknowledgment(guardian):
     # --- Scenario 2: Recovery with specific contact match ---
     # User mentions a specific person who was in their contacts.
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "contact-sarah",
-            "type": "contact",
-            "body": "Sarah — close friend",
-            "contact_did": "did:plc:sarah",
-            "metadata": {"name": "Sarah", "relationship": "close_friend"},
-        },
-        {
-            "id": "contact-albert",
-            "type": "contact",
-            "body": "Albert — friend",
-            "contact_did": "did:plc:albert",
-            "metadata": {"name": "Albert", "relationship": "friend"},
-        },
+        VaultItem(
+            id="contact-sarah",
+            type="contact",
+            summary="Contact: Sarah",
+            body_text="Sarah — close friend",
+            contact_did="did:plc:sarah",
+            metadata='{"name": "Sarah", "relationship": "close_friend"}',
+            source="personal",
+        ),
+        VaultItem(
+            id="contact-albert",
+            type="contact",
+            summary="Contact: Albert",
+            body_text="Albert — friend",
+            contact_did="did:plc:albert",
+            metadata='{"name": "Albert", "relationship": "friend"}',
+            source="personal",
+        ),
     ]
 
     recovery2 = make_event(
@@ -4903,26 +4950,24 @@ async def test_emotional_dependency_17_2_no_suitable_human_contact(guardian):
     # --- Scenario 2: All contacts stale (>1 year) → professional support ---
     two_years_ago = now - (2 * 365 * 86400)
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "contact-old-1",
-            "type": "contact",
-            "body": "Alex — acquaintance",
-            "contact_did": "did:plc:alex",
-            "metadata": {
-                "last_interaction": two_years_ago,
-                "relationship": "acquaintance",
-            },
-        },
-        {
-            "id": "contact-old-2",
-            "type": "contact",
-            "body": "Jordan — former colleague",
-            "contact_did": "did:plc:jordan",
-            "metadata": {
-                "last_interaction": two_years_ago - 86400 * 30,
-                "relationship": "colleague",
-            },
-        },
+        VaultItem(
+            id="contact-old-1",
+            type="contact",
+            body_text="Alex — acquaintance",
+            contact_did="did:plc:alex",
+            metadata=_json.dumps({"last_interaction": two_years_ago, "relationship": "acquaintance"}),
+            source="personal",
+            summary="Contact: Alex",
+        ),
+        VaultItem(
+            id="contact-old-2",
+            type="contact",
+            body_text="Jordan — former colleague",
+            contact_did="did:plc:jordan",
+            metadata=_json.dumps({"last_interaction": two_years_ago - 86400 * 30, "relationship": "colleague"}),
+            source="personal",
+            summary="",
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -4951,36 +4996,36 @@ async def test_emotional_dependency_17_2_no_suitable_human_contact(guardian):
     # --- Scenario 3: Mixed — 1 fresh contact + 2 stale → suggest fresh one ---
     recent_ts = now - (7 * 86400)  # 1 week ago
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "contact-fresh",
-            "type": "contact",
-            "body": "Sarah — close friend, Ring 2",
-            "contact_did": "did:plc:sarah",
-            "metadata": {
+        VaultItem(
+            id="contact-fresh",
+            type="contact",
+            body_text="Sarah — close friend, Ring 2",
+            contact_did="did:plc:sarah",
+            metadata=_json.dumps({
                 "last_interaction": recent_ts,
                 "relationship": "close_friend",
-            },
-        },
-        {
-            "id": "contact-stale-1",
-            "type": "contact",
-            "body": "Alex — acquaintance",
-            "contact_did": "did:plc:alex",
-            "metadata": {
-                "last_interaction": two_years_ago,
-                "relationship": "acquaintance",
-            },
-        },
-        {
-            "id": "contact-stale-2",
-            "type": "contact",
-            "body": "Jordan — former colleague",
-            "contact_did": "did:plc:jordan",
-            "metadata": {
-                "last_interaction": two_years_ago,
-                "relationship": "colleague",
-            },
-        },
+            }),
+            source="personal",
+            summary="",
+        ),
+        VaultItem(
+            id="contact-stale-1",
+            type="contact",
+            body_text="Alex — acquaintance",
+            contact_did="did:plc:alex",
+            metadata=_json.dumps({"last_interaction": two_years_ago, "relationship": "acquaintance"}),
+            source="personal",
+            summary="Contact: Alex",
+        ),
+        VaultItem(
+            id="contact-stale-2",
+            type="contact",
+            body_text="Jordan — former colleague",
+            contact_did="did:plc:jordan",
+            metadata=_json.dumps({"last_interaction": two_years_ago, "relationship": "colleague"}),
+            source="personal",
+            summary="",
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -5080,17 +5125,19 @@ async def test_emotional_dependency_17_2_no_suitable_human_contact(guardian):
     # --- Scenario 7: Contacts exist but all Ring 1 (unverified) → still suggest ---
     # Even unverified contacts are better than no human connection.
     guardian._test_core.search_vault.return_value = [
-        {
-            "id": "contact-unverified",
-            "type": "contact",
-            "body": "Sam — acquaintance, Ring 1",
-            "contact_did": "did:plc:sam",
-            "metadata": {
+        VaultItem(
+            id="contact-unverified",
+            type="contact",
+            body_text="Sam — acquaintance, Ring 1",
+            contact_did="did:plc:sam",
+            metadata=_json.dumps({
                 "last_interaction": recent_ts,
                 "relationship": "acquaintance",
                 "ring": 1,
-            },
-        },
+            }),
+            source="personal",
+            summary="",
+        ),
     ]
 
     guardian._test_llm.route.return_value = {
@@ -5135,24 +5182,40 @@ async def test_tst_brain_512_neglected_contact_nudge(guardian):
 
     def _contact(name, did, days_since_interaction, relationship="friend"):
         """Build a contact vault item with last_interaction metadata."""
-        last = now - timedelta(days=days_since_interaction)
-        return {
-            "id": f"contact-{name.lower()}",
-            "type": "contact",
-            "body": f"{name} — {relationship}",
-            "contact_did": did,
-            "summary": f"Contact: {name}",
-            "metadata": {
+        import time as _t
+
+        last_ts = _t.time() - (days_since_interaction * 86400)
+        last_iso = (now - timedelta(days=days_since_interaction)).isoformat()
+        return VaultItem(
+            id=f"contact-{name.lower()}",
+            type="contact",
+            source="personal",
+            body_text=f"{name} — {relationship}",
+            contact_did=did,
+            summary=f"Contact: {name}",
+            metadata=_json.dumps({
                 "name": name,
-                "last_interaction": last.isoformat(),
-                "relationship": relationship,
+                "last_interaction_ts": last_ts,
+                "last_interaction": last_iso,
                 "days_since_interaction": days_since_interaction,
-            },
-        }
+                "relationship_depth": relationship,
+                "relationship": relationship,
+            }),
+        )
+
+    # Helper: route search_vault so only contact-type queries return contacts.
+    def _contact_vault_se(contacts):
+        """Build a side_effect that returns *contacts* for contact scans only."""
+        async def _se(*args, **kwargs):
+            query = args[1] if len(args) > 1 else kwargs.get("query", "")
+            if "type:contact" in str(query):
+                return list(contacts)
+            return []
+        return _se
 
     # --- Scenario 1: Basic 31-day threshold → nudge generated ---
     sarah_contact = _contact("Sarah", "did:plc:sarah", 31, "close_friend")
-    guardian._test_core.search_vault.return_value = [sarah_contact]
+    guardian._test_core.search_vault.side_effect = _contact_vault_se([sarah_contact])
 
     guardian._test_llm.route.return_value = {
         "content": "You should reach out to Sarah.",
@@ -5188,7 +5251,7 @@ async def test_tst_brain_512_neglected_contact_nudge(guardian):
 
     # --- Scenario 2: 29 days → no nudge (below threshold) ---
     recent_contact = _contact("Tom", "did:plc:tom", 29, "friend")
-    guardian._test_core.search_vault.return_value = [recent_contact]
+    guardian._test_core.search_vault.side_effect = _contact_vault_se([recent_contact])
 
     event2 = make_event(
         type="contact_neglect",
@@ -5210,19 +5273,20 @@ async def test_tst_brain_512_neglected_contact_nudge(guardian):
     )
 
     # --- Scenario 3: NULL / missing last_interaction → treat as neglected ---
-    unknown_contact = {
-        "id": "contact-unknown",
-        "type": "contact",
-        "body": "Jamie — colleague",
-        "contact_did": "did:plc:jamie",
-        "summary": "Contact: Jamie",
-        "metadata": {
+    unknown_contact = VaultItem(
+        id="contact-unknown",
+        type="contact",
+        source="personal",
+        body_text="Jamie — colleague",
+        contact_did="did:plc:jamie",
+        summary="Contact: Jamie",
+        metadata=_json.dumps({
             "name": "Jamie",
             "last_interaction": None,
             "relationship": "colleague",
-        },
-    }
-    guardian._test_core.search_vault.return_value = [unknown_contact]
+        }),
+    )
+    guardian._test_core.search_vault.side_effect = _contact_vault_se([unknown_contact])
 
     event3 = make_event(
         type="contact_neglect",
@@ -5252,7 +5316,7 @@ async def test_tst_brain_512_neglected_contact_nudge(guardian):
         _contact("Bob", "did:plc:bob", 10, "friend"),
         _contact("Carol", "did:plc:carol", 60, "acquaintance"),
     ]
-    guardian._test_core.search_vault.return_value = contacts
+    guardian._test_core.search_vault.side_effect = _contact_vault_se(contacts)
 
     guardian._test_llm.route.return_value = {
         "content": "You haven't spoken to Alice or Carol recently.",
@@ -5287,9 +5351,9 @@ async def test_tst_brain_512_neglected_contact_nudge(guardian):
 
     # --- Scenario 5: Nudge appears in daily briefing (engagement-tier) ---
     guardian._briefing_items.clear()
-    guardian._test_core.search_vault.return_value = [
+    guardian._test_core.search_vault.side_effect = _contact_vault_se([
         _contact("Dana", "did:plc:dana", 35, "friend"),
-    ]
+    ])
 
     guardian._test_llm.route.return_value = {
         "content": "You haven't chatted with Dana in over a month.",
@@ -5318,9 +5382,9 @@ async def test_tst_brain_512_neglected_contact_nudge(guardian):
     )
 
     # --- Scenario 6: Anti-Her compliance — nudge connects to human ---
-    guardian._test_core.search_vault.return_value = [
+    guardian._test_core.search_vault.side_effect = _contact_vault_se([
         _contact("Eve", "did:plc:eve", 40, "close_friend"),
-    ]
+    ])
 
     guardian._test_llm.route.side_effect = _guard_se(
         "I notice you haven't talked to Eve in a while. "
@@ -5395,20 +5459,22 @@ async def test_tst_brain_514_multiple_neglected_contacts_prioritized(guardian):
 
     def _contact(name, did, days_silent, relationship):
         """Build a contact vault item with relationship metadata."""
+
         last = now - timedelta(days=days_silent)
-        return {
-            "id": f"contact-{name.lower()}",
-            "type": "contact",
-            "body": f"{name} — {relationship}",
-            "contact_did": did,
-            "summary": f"Contact: {name}",
-            "metadata": {
+        return VaultItem(
+            id=f"contact-{name.lower()}",
+            type="contact",
+            source="personal",
+            body_text=f"{name} — {relationship}",
+            contact_did=did,
+            summary=f"Contact: {name}",
+            metadata=_json.dumps({
                 "name": name,
                 "last_interaction": last.isoformat(),
                 "relationship": relationship,
                 "days_since_interaction": days_silent,
-            },
-        }
+            }),
+        )
 
     # --- Scenario 1: Basic relationship depth ordering ---
     # 5 contacts, all >30 days, different depths and silence durations.
@@ -5591,17 +5657,19 @@ async def test_tst_brain_514_multiple_neglected_contacts_prioritized(guardian):
     # --- Scenario 6: NULL/missing relationship metadata → lowest priority ---
     with_nulls = [
         _contact("Alice", "did:plc:alice", 45, "close_friend"),
-        {
-            "id": "contact-unknown",
-            "type": "contact",
-            "body": "Zara — no relationship set",
-            "contact_did": "did:plc:zara",
-            "metadata": {
+        VaultItem(
+            id="contact-unknown",
+            type="contact",
+            source="personal",
+            body_text="Zara — no relationship set",
+            contact_did="did:plc:zara",
+            summary="Contact: Zara",
+            metadata=_json.dumps({
                 "name": "Zara",
                 "last_interaction": (now - timedelta(days=50)).isoformat(),
                 # No "relationship" key
-            },
-        },
+            }),
+        ),
         _contact("Carol", "did:plc:carol", 35, "friend"),
     ]
     guardian._test_core.search_vault.return_value = with_nulls
@@ -5693,23 +5761,25 @@ async def test_tst_brain_517_life_event_proactive_outreach(guardian):
     def _vault_item(body, days_ago, item_type="message", contact=None,
                     contact_did=None, item_id=None):
         """Build a vault item with timestamp metadata."""
+
         ts = (now - timedelta(days=days_ago)).isoformat()
-        item = {
-            "id": item_id or f"item-{hash(body) % 10000}",
-            "type": item_type,
-            "body": body,
-            "summary": body[:80],
-            "metadata": {
-                "timestamp": ts,
-                "created_at": ts,
-            },
+        meta = {
+            "timestamp": ts,
+            "created_at": ts,
         }
         if contact:
-            item["metadata"]["contact_name"] = contact
+            meta["contact_name"] = contact
         if contact_did:
-            item["contact_did"] = contact_did
-            item["metadata"]["contact_did"] = contact_did
-        return item
+            meta["contact_did"] = contact_did
+        return VaultItem(
+            id=item_id or f"item-{hash(body) % 10000}",
+            type=item_type,
+            source="personal",
+            body_text=body,
+            summary=body[:80],
+            contact_did=contact_did,
+            metadata=_json.dumps(meta),
+        )
 
     # --- Scenario 1: Recent illness (10 days) → proactive outreach ---
     guardian._test_core.search_vault.return_value = [

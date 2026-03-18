@@ -38,6 +38,26 @@ from urllib.parse import urlparse
 import httpx
 import structlog
 
+from ..gen.core_types import (
+    VaultItem,
+    Contact,
+    PairedDevice,
+    StagingItem,
+    Reminder,
+    ApprovalRequest,
+    ScrubResult,
+    ImportResult,
+    VaultQueryResponse,
+    VaultStoreResponse,
+    ContactListResponse,
+    DeviceListResponse,
+    PersonaListResponse,
+    CompletePairingResponse,
+    InitiatePairingResponse,
+    SignResponse,
+    ReminderListResponse,
+    StagingClaimResponse,
+)
 from ..domain.errors import (
     ApprovalRequiredError,
     AuthorizationError,
@@ -296,13 +316,13 @@ class CoreHTTPClient:
 
     async def get_vault_item(
         self, persona_id: str, item_id: str, *, user_origin: str = "",
-    ) -> dict:
+    ) -> VaultItem:
         """GET /v1/vault/item/{item_id}?persona={persona_id}."""
         qs = f"persona={persona_id}"
         if user_origin:
             qs += f"&user_origin={user_origin}"
         resp = await self._request("GET", f"/v1/vault/item/{item_id}?{qs}")
-        return resp.json()
+        return VaultItem.model_validate(resp.json())
 
     async def store_vault_item(
         self, persona_id: str, item: dict, *, user_origin: str = "",
@@ -356,10 +376,11 @@ class CoreHTTPClient:
         resp = await self._request("POST", "/v1/staging/ingest", json=item)
         return resp.json().get("id", "")
 
-    async def staging_claim(self, limit: int = 10) -> list[dict]:
+    async def staging_claim(self, limit: int = 10) -> list[StagingItem]:
         """POST /v1/staging/claim — claim pending items for classification."""
         resp = await self._request("POST", "/v1/staging/claim", json={"limit": limit})
-        return resp.json().get("items", [])
+        data = resp.json()
+        return [StagingItem.model_validate(i) for i in data.get("items", [])]
 
     async def staging_resolve(
         self, staging_id: str, target_persona: str, classified_item: dict,
@@ -410,7 +431,7 @@ class CoreHTTPClient:
         agent_did: str = "", session: str = "",
         include_all: bool = False,
         user_origin: str = "",
-    ) -> list[dict]:
+    ) -> list[VaultItem]:
         """POST /v1/vault/query — hybrid FTS5 + cosine.
 
         When agent_did and session are provided, Core attributes the access
@@ -441,7 +462,7 @@ class CoreHTTPClient:
             headers=extra_headers if extra_headers else None,
         )
         data = resp.json()
-        return data.get("items", [])
+        return [VaultItem.model_validate(i) for i in data.get("items", [])]
 
     # -- Scratchpad (stored via KV) ------------------------------------------
 
@@ -539,14 +560,14 @@ class CoreHTTPClient:
 
     # -- PII -----------------------------------------------------------------
 
-    async def pii_scrub(self, text: str) -> dict:
+    async def pii_scrub(self, text: str) -> ScrubResult:
         """POST /v1/pii/scrub — Tier 1 regex scrubbing via Go core."""
         resp = await self._request(
             "POST",
             "/v1/pii/scrub",
             json={"text": text},
         )
-        return resp.json()
+        return ScrubResult.model_validate(resp.json())
 
     # -- Notifications -------------------------------------------------------
 
@@ -586,11 +607,11 @@ class CoreHTTPClient:
 
     # -- Contacts (core directory) -------------------------------------------
 
-    async def list_contacts(self) -> list[dict]:
+    async def list_contacts(self) -> list[Contact]:
         """GET /v1/contacts — list all contacts from core directory."""
         resp = await self._request("GET", "/v1/contacts")
         data = resp.json()
-        return data.get("contacts", [])
+        return [Contact.model_validate(c) for c in data.get("contacts", [])]
 
     async def add_contact(
         self, did: str, name: str, trust_level: str = "unknown", sharing_tier: str = ""
@@ -632,7 +653,7 @@ class CoreHTTPClient:
         types: list[str] | None = None,
         limit: int = 50,
         user_origin: str = "",
-    ) -> list[dict]:
+    ) -> list[VaultItem]:
         """POST /v1/vault/query — search vault items."""
         body: dict[str, Any] = {
             "persona": persona,
@@ -646,7 +667,7 @@ class CoreHTTPClient:
             body["user_origin"] = user_origin
         resp = await self._request("POST", "/v1/vault/query", json=body)
         data = resp.json()
-        return data.get("items", [])
+        return [VaultItem.model_validate(i) for i in data.get("items", [])]
 
     # -- Personas ------------------------------------------------------------
 
@@ -658,25 +679,25 @@ class CoreHTTPClient:
 
     # -- Devices -------------------------------------------------------------
 
-    async def list_devices(self) -> list[dict]:
+    async def list_devices(self) -> list[PairedDevice]:
         """GET /v1/devices — list registered devices."""
         resp = await self._request("GET", "/v1/devices")
         data = resp.json()
-        return data.get("devices", [])
+        return [PairedDevice.model_validate(d) for d in data.get("devices", [])]
 
-    async def initiate_pairing(self) -> dict:
+    async def initiate_pairing(self) -> InitiatePairingResponse:
         """POST /v1/pair/initiate — generate pairing code."""
         resp = await self._request("POST", "/v1/pair/initiate")
-        return resp.json()
+        return InitiatePairingResponse.model_validate(resp.json())
 
     async def complete_pairing(self, code: str, device_name: str,
-                               public_key_multibase: str | None = None) -> dict:
+                               public_key_multibase: str | None = None) -> CompletePairingResponse:
         """POST /v1/pair/complete — register device."""
         body: dict = {"code": code, "device_name": device_name}
         if public_key_multibase:
             body["public_key_multibase"] = public_key_multibase
         resp = await self._request("POST", "/v1/pair/complete", json=body)
-        return resp.json()
+        return CompletePairingResponse.model_validate(resp.json())
 
     async def revoke_device(self, token_id: str) -> None:
         """DELETE /v1/devices/{id} — revoke device."""
@@ -726,11 +747,11 @@ class CoreHTTPClient:
         data = resp.json()
         return data.get("id", "")
 
-    async def list_pending_reminders(self) -> list[dict]:
+    async def list_pending_reminders(self) -> list[Reminder]:
         """GET /v1/reminders/pending — list unfired reminders."""
         resp = await self._request("GET", "/v1/reminders/pending")
         data = resp.json()
-        return data.get("reminders", [])
+        return [Reminder.model_validate(r) for r in data.get("reminders", [])]
 
     async def fire_reminder(self, reminder_id: str) -> dict:
         """POST /v1/reminder/fire — simulate reminder firing (test-only)."""

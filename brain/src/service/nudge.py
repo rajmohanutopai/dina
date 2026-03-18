@@ -27,6 +27,7 @@ from typing import Any
 
 import structlog
 
+from ..gen.core_types import VaultItem
 from ..port.core_client import CoreClient
 
 
@@ -35,21 +36,6 @@ def _quote_fts_value(value: str) -> str:
     return '"' + value.replace('"', '""') + '"'
 
 log = structlog.get_logger(__name__)
-
-
-def _get(d: dict, key: str, default: str = "") -> str:
-    """Get a value from a dict, trying lowercase, Title, and Go-style keys.
-
-    Go's JSON marshaler emits capitalized struct field names (e.g.
-    ``Summary``, ``BodyText``, ``ID``).  Python code typically uses
-    lowercase.  This helper bridges the two conventions.
-    """
-    return (
-        d.get(key)
-        or d.get(key[0].upper() + key[1:])  # Summary, BodyText
-        or d.get(key.upper())  # ID
-        or default
-    )
 
 # Patterns that indicate a pending promise in message text.
 _PROMISE_PATTERNS = re.compile(
@@ -161,29 +147,29 @@ class NudgeAssembler:
 
         if relationship_notes:
             for note in relationship_notes:
-                summary = _get(note, "summary")
+                summary = note.summary or ""
                 if summary:
                     nudge_parts.append(summary)
-                item_id = _get(note, "id") or _get(note, "ID")
+                item_id = note.id or ""
                 if item_id:
                     sources.append(item_id)
 
         if calendar_events:
             for evt in calendar_events:
-                summary = _get(evt, "summary")
+                summary = evt.summary or ""
                 if summary:
                     nudge_parts.append(f"Upcoming: {summary}")
-                item_id = _get(evt, "id") or _get(evt, "ID")
+                item_id = evt.id or ""
                 if item_id:
                     sources.append(item_id)
 
         if recent_messages and not nudge_parts:
             # Fall back to summarising recent messages.
             last_msg = recent_messages[0]
-            summary = _get(last_msg, "summary")
+            summary = last_msg.summary or ""
             if summary:
                 nudge_parts.append(f"Last exchange: {summary}")
-            item_id = _get(last_msg, "id") or _get(last_msg, "ID")
+            item_id = last_msg.id or ""
             if item_id:
                 sources.append(item_id)
 
@@ -269,7 +255,7 @@ class NudgeAssembler:
 
     async def _query_recent_messages(
         self, persona_id: str, contact_did: str
-    ) -> list[dict]:
+    ) -> list[VaultItem]:
         """Query vault for recent messages with the contact.
 
         Filters to message types only (``message``, ``email``).
@@ -294,7 +280,7 @@ class NudgeAssembler:
 
     async def _query_relationship_notes(
         self, persona_id: str, contact_did: str
-    ) -> list[dict]:
+    ) -> list[VaultItem]:
         """Query vault for relationship notes about the contact.
 
         Filters to note-like types (``relationship_note``, ``note``,
@@ -313,7 +299,7 @@ class NudgeAssembler:
 
     async def _query_calendar_events(
         self, persona_id: str, contact_did: str
-    ) -> list[dict]:
+    ) -> list[VaultItem]:
         """Query vault for upcoming calendar events with the contact.
 
         Filters to event type only.
@@ -329,7 +315,7 @@ class NudgeAssembler:
         except Exception:
             return []
 
-    def _detect_promises(self, messages: list[dict]) -> list[dict]:
+    def _detect_promises(self, messages: list[VaultItem]) -> list[dict]:
         """Scan recent messages for pending promises.
 
         Looks for patterns like "I'll send the PDF tomorrow" in message
@@ -337,11 +323,11 @@ class NudgeAssembler:
         """
         promises: list[dict] = []
         for msg in messages:
-            text = _get(msg, "summary") or _get(msg, "bodyText") or _get(msg, "body_text")
+            text = msg.summary or msg.body_text or ""
             match = _PROMISE_PATTERNS.search(text)
             if match:
                 promises.append({
                     "text": text,
-                    "source_id": _get(msg, "id") or _get(msg, "ID"),
+                    "source_id": msg.id or "",
                 })
         return promises

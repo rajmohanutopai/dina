@@ -1,3 +1,2 @@
 # Generated types from OpenAPI spec — do not edit manually.
-# Re-generate with: python scripts/bundle_openapi.py && datamodel-codegen ...
-from gen.core_types import *  # noqa: F401,F403
+# Re-generate with: make generate

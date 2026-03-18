@@ -94,11 +94,11 @@ async def list_contacts() -> list[dict]:
         contacts = await _core_client.list_contacts()
         return [
             {
-                "did": c.get("did", ""),
-                "name": c.get("name", ""),
-                "trust_level": c.get("trust_level", "unknown"),
+                "did": c.did or "",
+                "name": c.name or "",
+                "trust_level": c.trust_level or "unknown",
                 "sharing_tier": _parse_sharing_tier(
-                    c.get("sharing_policy", c.get("sharing_tier", "open")),
+                    c.sharing_policy or "open",
                 ),
             }
             for c in contacts

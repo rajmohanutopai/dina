@@ -20,6 +20,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from ..gen.core_types import Contact
+
 
 # Verified service domains (known providers whose data is trustworthy).
 VERIFIED_SERVICE_DOMAINS = frozenset({
@@ -50,19 +52,19 @@ class TrustScorer:
     Parameters
     ----------
     contacts:
-        List of contact dicts with ``did`` and ``trust_level`` keys.
+        List of ``Contact`` Pydantic models with ``did`` and ``trust_level`` fields.
         Updated via ``update_contacts()`` when the contact list changes.
     """
 
-    def __init__(self, contacts: list[dict[str, Any]] | None = None) -> None:
-        self._contacts: dict[str, dict[str, Any]] = {}
-        self._sender_index: dict[str, dict[str, Any]] = {}
+    def __init__(self, contacts: list[Contact] | None = None) -> None:
+        self._contacts: dict[str, Contact] = {}
+        self._sender_index: dict[str, Contact] = {}
         if contacts:
             self.update_contacts(contacts)
 
-    def update_contacts(self, contacts: list[dict[str, Any]]) -> None:
+    def update_contacts(self, contacts: list[Contact]) -> None:
         """Rebuild the contact lookup from a fresh contact list."""
-        self._contacts = {c.get("did", ""): c for c in contacts if c.get("did")}
+        self._contacts = {c.did: c for c in contacts if c.did}
         # Reverse index: sender identifiers → contact for sender-based fallback.
         # Connector items arrive without contact_did; this lets us match
         # by sender email when the DID field is absent.
@@ -70,12 +72,12 @@ class TrustScorer:
         # Indexed fields (all lowercased):
         #   - name: often set to email address for email contacts
         #   - alias: explicit email/handle association (set by admin)
-        self._sender_index: dict[str, dict[str, Any]] = {}
+        self._sender_index: dict[str, Contact] = {}
         for c in contacts:
-            if not c.get("did"):
+            if not c.did:
                 continue
-            for field in ("name", "alias"):
-                val = c.get(field, "").strip().lower()
+            for val_raw in (c.name, c.alias):
+                val = (val_raw or "").strip().lower()
                 if val:
                     self._sender_index[val] = c
 
@@ -111,15 +113,15 @@ class TrustScorer:
         # Known contact (by DID).
         contact = self._find_contact(item)
         if contact:
-            trust_level = contact.get("trust_level", "unknown")
+            trust_level = contact.trust_level or "unknown"
             ring = "contact_ring1" if trust_level in ("trusted", "verified") else "contact_ring2"
             return {
-                "sender": sender or contact.get("did", ""),
+                "sender": sender or (contact.did or ""),
                 "sender_trust": ring,
                 "source_type": "contact",
                 "confidence": "high" if trust_level in ("trusted", "verified") else "medium",
                 "retrieval_policy": "normal",
-                "contact_did": contact.get("did", ""),
+                "contact_did": contact.did or "",
             }
 
         # Verified service domain.
@@ -176,13 +178,13 @@ class TrustScorer:
         new_trust = item.get("sender_trust", "unknown")
         high_trust = {"self", "contact_ring1"}
         for ex in existing:
-            ex_trust = ex.get("sender_trust", ex.get("SenderTrust", ""))
+            ex_trust = ex.sender_trust or ""
             if ex_trust in high_trust and new_trust not in high_trust:
-                return ex.get("id", ex.get("ID", ""))
+                return ex.id or ""
 
         return ""
 
-    def _find_contact(self, item: dict[str, Any]) -> dict[str, Any] | None:
+    def _find_contact(self, item: dict[str, Any]) -> Contact | None:
         """Match item to a known contact by DID or sender email/name.
 
         Priority: contact_did (explicit) → sender email (reverse index).

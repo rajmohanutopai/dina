@@ -95,10 +95,10 @@ async def dashboard() -> dict:
         # Recent 5 items for activity table
         recent = [
             {
-                "type": it.get("Type", it.get("type", "")),
-                "source": it.get("Source", it.get("source", "")),
-                "summary": it.get("Summary", it.get("summary", "")),
-                "timestamp": it.get("IngestedAt", it.get("Timestamp", it.get("timestamp", 0))),
+                "type": it.type or "",
+                "source": it.source or "",
+                "summary": it.summary or "",
+                "timestamp": it.ingested_at or it.timestamp or 0,
             }
             for it in items[:5]
         ]

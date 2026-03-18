@@ -15,6 +15,7 @@ from __future__ import annotations
 import pytest
 
 from src.service.trust_scorer import TrustScorer
+from src.gen.core_types import Contact
 
 
 # ---------------------------------------------------------------------------
@@ -26,8 +27,8 @@ from src.service.trust_scorer import TrustScorer
 def scorer() -> TrustScorer:
     """TrustScorer with a known contact list."""
     contacts = [
-        {"did": "did:plc:sancho", "trust_level": "trusted", "name": "Sancho"},
-        {"did": "did:plc:albert", "trust_level": "unknown", "name": "Albert"},
+        Contact(did="did:plc:sancho", trust_level="trusted", name="Sancho"),
+        Contact(did="did:plc:albert", trust_level="unknown", name="Albert"),
     ]
     return TrustScorer(contacts=contacts)
 
@@ -157,7 +158,7 @@ def test_update_contacts(empty_scorer):
 
     # After adding contact: known
     empty_scorer.update_contacts([
-        {"did": "did:plc:newcontact", "trust_level": "trusted"},
+        Contact(did="did:plc:newcontact", name="New Contact", trust_level="trusted"),
     ])
     result = empty_scorer.score(item)
     assert result["sender_trust"] == "contact_ring1"
@@ -171,7 +172,7 @@ def test_update_contacts(empty_scorer):
 def test_sender_matches_contact_by_name_when_name_is_email():
     """Contact whose name IS the email address matches connector items by sender."""
     scorer = TrustScorer(contacts=[
-        {"did": "did:plc:sharma", "name": "dr.sharma@clinic.com", "trust_level": "verified"},
+        Contact(did="did:plc:sharma", name="dr.sharma@clinic.com", trust_level="verified"),
     ])
     # No contact_did — sender matches contact name exactly.
     item = {"source": "gmail", "sender": "dr.sharma@clinic.com", "type": "email"}
@@ -187,8 +188,8 @@ def test_sender_matches_contact_by_alias():
     set the alias field to the email address via admin CLI or API.
     """
     scorer = TrustScorer(contacts=[
-        {"did": "did:plc:sharma", "name": "Dr Sharma",
-         "alias": "dr.sharma@clinic.com", "trust_level": "verified"},
+        Contact(did="did:plc:sharma", name="Dr Sharma",
+                alias="dr.sharma@clinic.com", trust_level="verified"),
     ])
     # No contact_did — sender matches contact alias.
     item = {"source": "gmail", "sender": "dr.sharma@clinic.com", "type": "email"}
@@ -205,7 +206,7 @@ def test_sender_no_match_when_name_differs_from_email():
     the sender is unknown.
     """
     scorer = TrustScorer(contacts=[
-        {"did": "did:plc:sharma", "name": "Dr Sharma", "trust_level": "verified"},
+        Contact(did="did:plc:sharma", name="Dr Sharma", trust_level="verified"),
     ])
     item = {"source": "gmail", "sender": "dr.sharma@clinic.com", "type": "email"}
     result = scorer.score(item)
@@ -216,7 +217,7 @@ def test_sender_no_match_when_name_differs_from_email():
 def test_sender_matching_case_insensitive():
     """Sender matching is case-insensitive."""
     scorer = TrustScorer(contacts=[
-        {"did": "did:plc:alice", "alias": "Alice@Example.COM", "trust_level": "trusted"},
+        Contact(did="did:plc:alice", name="Alice", alias="Alice@Example.COM", trust_level="trusted"),
     ])
     item = {"source": "gmail", "sender": "alice@example.com", "type": "email"}
     result = scorer.score(item)
@@ -227,7 +228,7 @@ def test_sender_matching_case_insensitive():
 def test_sender_no_match_stays_unknown():
     """Sender that doesn't match any contact name or alias remains unknown."""
     scorer = TrustScorer(contacts=[
-        {"did": "did:plc:bob", "name": "Bob", "trust_level": "trusted"},
+        Contact(did="did:plc:bob", name="Bob", trust_level="trusted"),
     ])
     item = {"source": "gmail", "sender": "stranger@unknown.com", "type": "email"}
     result = scorer.score(item)
@@ -238,8 +239,8 @@ def test_sender_no_match_stays_unknown():
 def test_contact_did_takes_priority_over_sender():
     """Explicit contact_did match takes priority over sender-based match."""
     scorer = TrustScorer(contacts=[
-        {"did": "did:plc:alice", "name": "alice@a.com", "trust_level": "trusted"},
-        {"did": "did:plc:bob", "name": "alice@a.com", "trust_level": "unknown"},
+        Contact(did="did:plc:alice", name="alice@a.com", trust_level="trusted"),
+        Contact(did="did:plc:bob", name="alice@a.com", trust_level="unknown"),
     ])
     # contact_did explicitly points to alice
     item = {"source": "gmail", "sender": "alice@a.com",

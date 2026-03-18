@@ -1207,7 +1207,9 @@ class GuardianLoop:
                 mode="hybrid",
             )
             if results:
-                fiduciary_recap = results[:5]  # Cap at 5 most recent.
+                fiduciary_recap = [
+                    r.model_dump(exclude_none=True) for r in results[:5]
+                ]
         except Exception:
             pass
 
@@ -1240,19 +1242,11 @@ class GuardianLoop:
         injected into ``_briefing_items``.
         """
         try:
-            result = await self._core.search_vault(
+            items = await self._core.search_vault(
                 "default", "type:contact", mode="fts5",
             )
         except Exception:
             return
-
-        items = []
-        if isinstance(result, list):
-            items = result
-        elif isinstance(result, dict):
-            items = result.get("items", [])
-        elif isinstance(result, list):
-            items = result
 
         if not items:
             return
@@ -1260,9 +1254,16 @@ class GuardianLoop:
         now_ts = time.time()
 
         for contact in items:
-            name = contact.get("name", "")
-            last_ts = contact.get("last_interaction_ts")
-            relationship = contact.get("relationship_depth", "contact")
+            # Parse metadata JSON for contact-specific fields.
+            meta = {}
+            if contact.metadata:
+                try:
+                    meta = json.loads(contact.metadata)
+                except (json.JSONDecodeError, TypeError):
+                    meta = {}
+            name = meta.get("name", "") or contact.summary or ""
+            last_ts = meta.get("last_interaction_ts")
+            relationship = meta.get("relationship_depth", "contact")
 
             if last_ts is not None:
                 try:
@@ -1283,7 +1284,7 @@ class GuardianLoop:
                     "type": "relationship_nudge",
                     "source": "relationship_monitor",
                     "body": body,
-                    "contact_did": contact.get("contact_did", ""),
+                    "contact_did": contact.contact_did or "",
                     "metadata": {
                         "name": name,
                         "days_silent": days_int,
@@ -1317,19 +1318,26 @@ class GuardianLoop:
         now_ts = time.time()
 
         # Separate promises from potential fulfilment messages.
-        promises: list[dict] = []
+        promises = []
         all_items = vault_items
 
         for item in all_items:
-            body = item.get("body", "") or item.get("summary", "")
-            direction = item.get("direction", "")
+            body = (item.body_text or "") or (item.summary or "")
+            # direction is stored in metadata, not as a top-level VaultItem field.
+            meta = {}
+            if item.metadata:
+                try:
+                    meta = json.loads(item.metadata)
+                except (json.JSONDecodeError, TypeError):
+                    meta = {}
+            direction = meta.get("direction", "")
             if direction != "outbound":
                 continue
             if _PROMISE_BRIEFING_PATTERNS.search(body):
                 promises.append(item)
 
         for promise in promises:
-            p_ts = promise.get("timestamp")
+            p_ts = promise.timestamp
             if p_ts is None:
                 continue
 
@@ -1343,8 +1351,8 @@ class GuardianLoop:
                 # Promise too fresh — don't nag yet.
                 continue
 
-            contact_did = promise.get("contact_did", "")
-            promise_body = promise.get("body", "") or promise.get("summary", "")
+            contact_did = promise.contact_did or ""
+            promise_body = (promise.body_text or "") or (promise.summary or "")
 
             # Check for fulfilment: a subsequent outbound message to the
             # same contact after the promise timestamp.
@@ -1352,9 +1360,9 @@ class GuardianLoop:
             for item in all_items:
                 if item is promise:
                     continue
-                if item.get("contact_did") != contact_did:
+                if (item.contact_did or "") != contact_did:
                     continue
-                item_ts = item.get("timestamp")
+                item_ts = item.timestamp
                 if item_ts is None:
                     continue
                 try:
@@ -1739,8 +1747,8 @@ class GuardianLoop:
                 doc = await self._core.get_vault_item(persona, vault_item_id)
                 if doc:
                     doc_context = (
-                        f"Document: {doc.get('Summary', '')}\n"
-                        f"Details: {doc.get('Metadata', '')}\n"
+                        f"Document: {doc.summary or ''}\n"
+                        f"Details: {doc.metadata or ''}\n"
                     )
             except Exception as exc:
                 log.warning("guardian.reminder.doc_fetch_failed", error=str(exc))
@@ -1752,7 +1760,7 @@ class GuardianLoop:
                 persona, "RTO renewal insurance address driving", mode="fts5", limit=10
             )
             for item in results:
-                personal_context += f"- {item.get('Summary', '')}: {item.get('BodyText', '')}\n"
+                personal_context += f"- {item.summary or ''}: {item.body_text or ''}\n"
         except Exception as exc:
             log.warning("guardian.reminder.context_fetch_failed", error=str(exc))
 
@@ -1981,7 +1989,7 @@ class GuardianLoop:
             pass
 
         # Query source vault for relevant items.
-        vault_items: list[dict] = []
+        vault_items: list = []
         try:
             vault_items = await self._core.query_vault(
                 source_persona, query, mode="fts5", limit=10,
@@ -2089,7 +2097,7 @@ class GuardianLoop:
         }
 
     def _build_disclosure_proposal(
-        self, vault_items: list[dict], query: str,
+        self, vault_items: list, query: str,
     ) -> dict:
         """Build a minimal disclosure proposal from vault items.
 
@@ -2103,8 +2111,8 @@ class GuardianLoop:
         withheld: list[str] = []
 
         for item in vault_items:
-            body = item.get("BodyText", "") or item.get("body_text", "") or ""
-            summary = item.get("Summary", "") or item.get("summary", "") or ""
+            body = item.body_text or ""
+            summary = item.summary or ""
             text = f"{summary} {body}".strip()
             if not text:
                 continue
@@ -2801,13 +2809,13 @@ class GuardianLoop:
 
             pre_rehydrated_content = result.get("content", "")
             guard_result = None
-            vault_items: list[dict] = []
+            vault_items: list = []
 
             # Build parallel tasks: guard_scan always, density only when not skipped.
             guard_coro = self._guard_scan(llm_prompt, pre_rehydrated_content, persona_tier)
 
             if not skip_vault:
-                async def _density_query() -> list[dict]:
+                async def _density_query() -> list:
                     items = await self._core.search_vault(
                         "personal", "trust attestation", mode="fts5",
                     )
@@ -3272,7 +3280,7 @@ class GuardianLoop:
 
     @staticmethod
     def _analyze_trust_density(
-        vault_items: list[dict],
+        vault_items: list,
         persona_tier: str = "open",
         *,
         entity_hint: dict | None = None,
@@ -3294,8 +3302,8 @@ class GuardianLoop:
         """
         trust_items = [
             item for item in vault_items
-            if item.get("Type", item.get("type")) == "trust_attestation"
-            and item.get("Source", item.get("source")) == "trust_network"
+            if (item.type or "") == "trust_attestation"
+            and (item.source or "") == "trust_network"
         ]
 
         # Entity-scope filtering: narrow to items about the specific entity.
@@ -3308,16 +3316,11 @@ class GuardianLoop:
                 # contact_did field, body text, summary, or metadata
                 # (which may contain subject_did as a JSON string).
                 # Trust attestations typically store the subject DID
-                # in Metadata.subject_did and body text rather than
-                # in the ContactDID column.
-                def _did_matches(item: dict, did: str) -> bool:
-                    for key_a, key_b in (
-                        ("ContactDID", "contact_did"),
-                        ("BodyText", "body"),
-                        ("Summary", "summary"),
-                        ("Metadata", "metadata"),
-                    ):
-                        val = item.get(key_a, item.get(key_b, "")) or ""
+                # in metadata.subject_did and body text rather than
+                # in the contact_did column.
+                def _did_matches(item: Any, did: str) -> bool:
+                    for attr in ("contact_did", "body_text", "summary", "metadata"):
+                        val = getattr(item, attr, None) or ""
                         if did in val:
                             return True
                     return False
@@ -3331,20 +3334,14 @@ class GuardianLoop:
                 name_lower = entity_name.lower()
                 trust_items = [
                     item for item in trust_items
-                    if name_lower in (
-                        item.get("BodyText", item.get("body", ""))
-                        or ""
-                    ).lower()
-                    or name_lower in (
-                        item.get("Summary", item.get("summary", ""))
-                        or ""
-                    ).lower()
+                    if name_lower in (item.body_text or "").lower()
+                    or name_lower in (item.summary or "").lower()
                 ]
 
         personal_items = [
             item for item in vault_items
-            if item.get("Source", item.get("source")) == "personal"
-            or item.get("Type", item.get("type")) == "note"
+            if (item.source or "") == "personal"
+            or (item.type or "") == "note"
         ]
 
         count = len(trust_items)
@@ -3364,7 +3361,7 @@ class GuardianLoop:
         # Check if the single review has a numerical rating.
         has_rating = False
         if count == 1:
-            body = trust_items[0].get("BodyText", trust_items[0].get("body", ""))
+            body = trust_items[0].body_text or ""
             has_rating = bool(re.search(r"\d+\s*/\s*(?:5|10|100)", body))
 
         # entity_scoped: True when counts reflect a specific entity,
@@ -3387,7 +3384,7 @@ class GuardianLoop:
     def _apply_density_enforcement(
         content: str,
         density_meta: dict,
-        vault_items: list[dict],
+        vault_items: list,
         *,
         inject_disclosure: bool = True,
     ) -> str:
@@ -3544,7 +3541,7 @@ class GuardianLoop:
     @staticmethod
     def _apply_sponsored_disclosure(
         content: str,
-        vault_items: list[dict],
+        vault_items: list,
     ) -> str:
         """Tag sponsored content and enforce trust-based ranking in output.
 
@@ -3561,10 +3558,20 @@ class GuardianLoop:
         products: list[dict] = []
         sponsored_bodies: list[str] = []
         for item in vault_items:
-            meta = item.get("metadata") or {}
+            # VaultItem.metadata is a JSON string; parse it.
+            meta: dict = {}
+            raw_meta = item.metadata if hasattr(item, "metadata") else None
+            if raw_meta:
+                if isinstance(raw_meta, str):
+                    try:
+                        meta = json.loads(raw_meta)
+                    except (json.JSONDecodeError, TypeError):
+                        meta = {}
+                elif isinstance(raw_meta, dict):
+                    meta = raw_meta
             name = meta.get("product_name", "")
             is_sponsored = bool(meta.get("sponsored"))
-            body = item.get("body", "")
+            body = item.body_text or "" if hasattr(item, "body_text") else ""
             if name:
                 products.append({
                     "name": name,
@@ -3763,10 +3770,17 @@ class GuardianLoop:
         neglected: list[dict] = []
 
         for contact in contacts:
-            c_meta = contact.get("metadata") or {}
+            # VaultItem.metadata is a JSON string; parse it.
+            c_meta: dict = {}
+            if contact.metadata:
+                try:
+                    c_meta = json.loads(contact.metadata)
+                except (json.JSONDecodeError, TypeError):
+                    c_meta = {}
             name = c_meta.get("name", "")
             if not name:
-                name = contact.get("body", "").split("—")[0].strip() if contact.get("body") else ""
+                body_text = contact.body_text or ""
+                name = body_text.split("—")[0].strip() if body_text else ""
 
             last_interaction = c_meta.get("last_interaction")
             days_since = c_meta.get("days_since_interaction")
@@ -3791,7 +3805,7 @@ class GuardianLoop:
                     "name": name,
                     "days_silent": days_silent,
                     "relationship": c_meta.get("relationship", "contact"),
-                    "contact_did": contact.get("contact_did", ""),
+                    "contact_did": contact.contact_did or "",
                 })
 
         # Inject briefing items for neglected contacts.

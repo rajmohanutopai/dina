@@ -301,9 +301,18 @@ class EntityVaultService:
 
         # -- Tier 1: Core regex scrub via Go --
         tier1_result = await self._core.pii_scrub(text)
-        tier1_scrubbed = tier1_result.get("scrubbed", text) or text
-        tier1_entities = tier1_result.get("entities") or []
-        combined_entities.extend(tier1_entities)
+        # Support both ScrubResult Pydantic model and plain dict returns.
+        if hasattr(tier1_result, 'scrubbed'):
+            tier1_scrubbed = tier1_result.scrubbed or text
+            raw_entities = tier1_result.entities or []
+        else:
+            tier1_scrubbed = tier1_result.get("scrubbed", text) or text
+            raw_entities = tier1_result.get("entities") or []
+        # Normalize PIIEntity models to dicts for consistent downstream use.
+        for ent in raw_entities:
+            combined_entities.append(
+                ent.model_dump() if hasattr(ent, 'model_dump') else ent
+            )
 
         # -- Tier 2: Presidio NER scrub (local, in-process) --
         # Feed Tier 1 output to Tier 2 so Presidio sees tokens, not raw PII.

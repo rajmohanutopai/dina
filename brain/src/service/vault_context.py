@@ -269,12 +269,12 @@ class ToolExecutor:
                 )
                 if items:
                     summaries = [
-                        it.get("Summary", it.get("summary", ""))[:100]
+                        (it.summary or "")[:100]
                         for it in items[:_BROWSE_LIMIT]
-                        if it.get("Summary") or it.get("summary")
+                        if it.summary
                     ]
                     types_found = list({
-                        it.get("Type", it.get("type", "unknown"))
+                        it.type or "unknown"
                         for it in items
                     })
                     info["item_count"] = len(items)
@@ -326,15 +326,20 @@ class ToolExecutor:
         simplified = []
         for item in items[:_BROWSE_LIMIT]:
             entry: dict[str, str] = {}
-            for key in ("Summary", "summary", "BodyText", "body_text",
-                        "Type", "type", "id",
-                        "Sender", "sender", "SenderTrust", "sender_trust",
-                        "Confidence", "confidence",
-                        "RetrievalPolicy", "retrieval_policy",
-                        "ContentL0", "content_l0",
-                        "ContentL1", "content_l1",
-                        "EnrichmentStatus", "enrichment_status"):
-                val = item.get(key, "")
+            for attr, key in (
+                ("summary", "summary"),
+                ("body_text", "body_text"),
+                ("type", "type"),
+                ("id", "id"),
+                ("sender", "sender"),
+                ("sender_trust", "sender_trust"),
+                ("confidence", "confidence"),
+                ("retrieval_policy", "retrieval_policy"),
+                ("content_l0", "content_l0"),
+                ("content_l1", "content_l1"),
+                ("enrichment_status", "enrichment_status"),
+            ):
+                val = getattr(item, attr, None)
                 if val:
                     entry[key] = str(val)[:500]
             if entry:
@@ -389,15 +394,20 @@ class ToolExecutor:
         simplified = []
         for item in capped:
             entry: dict[str, str] = {}
-            for key in ("Summary", "summary", "BodyText", "body_text",
-                        "Type", "type", "id",
-                        "Sender", "sender", "SenderTrust", "sender_trust",
-                        "Confidence", "confidence",
-                        "RetrievalPolicy", "retrieval_policy",
-                        "ContentL0", "content_l0",
-                        "ContentL1", "content_l1",
-                        "EnrichmentStatus", "enrichment_status"):
-                val = item.get(key, "")
+            for attr, key in (
+                ("summary", "summary"),
+                ("body_text", "body_text"),
+                ("type", "type"),
+                ("id", "id"),
+                ("sender", "sender"),
+                ("sender_trust", "sender_trust"),
+                ("confidence", "confidence"),
+                ("retrieval_policy", "retrieval_policy"),
+                ("content_l0", "content_l0"),
+                ("content_l1", "content_l1"),
+                ("enrichment_status", "enrichment_status"),
+            ):
+                val = getattr(item, attr, None)
                 if val:
                     entry[key] = str(val)[:500]
             if entry:
@@ -424,13 +434,13 @@ class ToolExecutor:
 
         # Return L2 (full body) + metadata for context.
         return {
-            "id": item.get("id", item.get("ID", "")),
-            "body_text": item.get("body_text", item.get("body", item.get("BodyText", ""))),
-            "summary": item.get("summary", item.get("Summary", "")),
-            "type": item.get("type", item.get("Type", "")),
-            "sender": item.get("sender", item.get("Sender", "")),
-            "sender_trust": item.get("sender_trust", item.get("SenderTrust", "")),
-            "confidence": item.get("confidence", item.get("Confidence", "")),
+            "id": item.id or "",
+            "body_text": item.body_text or "",
+            "summary": item.summary or "",
+            "type": item.type or "",
+            "sender": item.sender or "",
+            "sender_trust": item.sender_trust or "",
+            "confidence": item.confidence or "",
         }
 
 

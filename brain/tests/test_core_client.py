@@ -81,7 +81,7 @@ def core_client():
 # TST-BRAIN-259
 @pytest.mark.asyncio
 async def test_core_client_7_1_1_read_vault_item(core_client) -> None:
-    """SS7.1.1: Read a vault item by persona_id and item_id — returns typed dict."""
+    """SS7.1.1: Read a vault item by persona_id and item_id — returns VaultItem model."""
     expected = make_vault_item(item_id="item-042")
 
     with patch.object(
@@ -92,10 +92,10 @@ async def test_core_client_7_1_1_read_vault_item(core_client) -> None:
 
         result = await core_client.get_vault_item("personal", "item-042")
 
-    assert result["id"] == "item-042"
-    assert result["type"] == "email"
-    assert "summary" in result
-    assert "body_text" in result
+    assert result.id == "item-042"
+    assert result.type == "email"
+    assert result.summary is not None
+    assert result.body_text is not None
     mock_req.assert_awaited_once_with("GET", "/v1/vault/item/item-042?persona=personal")
 
 
@@ -139,7 +139,7 @@ async def test_core_client_7_1_3_search_vault(core_client) -> None:
         results = await core_client.search_vault("personal", "meeting", mode="hybrid")
 
     assert len(results) == 2
-    assert all("id" in r for r in results)
+    assert all(r.id is not None for r in results)
     mock_req.assert_awaited_once_with(
         "POST",
         "/v1/vault/query",
@@ -458,17 +458,17 @@ async def test_core_client_7_3_4_pii_scrub(core_client) -> None:
         json={"text": "john@example.com sent a message"},
     )
 
-    # Response schema validation — pii_scrub returns resp.json().
-    assert isinstance(result, dict), "Result must be a dict"
-    assert "scrubbed" in result, "Result must contain 'scrubbed' key"
-    assert "entities" in result, "Result must contain 'entities' key"
-    assert isinstance(result["scrubbed"], str), "scrubbed must be a string"
-    assert isinstance(result["entities"], list), "entities must be a list"
+    # Response schema validation — pii_scrub returns a ScrubResult model.
+    from src.gen.core_types import ScrubResult
+    assert isinstance(result, ScrubResult), "Result must be a ScrubResult"
+    assert result.scrubbed is not None, "Result must contain 'scrubbed' field"
+    assert result.entities is not None, "Result must contain 'entities' field"
+    assert isinstance(result.scrubbed, str), "scrubbed must be a string"
+    assert isinstance(result.entities, list), "entities must be a list"
 
-    # Entity contract: each entity has type/value/token.
-    for entity in result["entities"]:
-        assert "type" in entity, "Entity must have 'type'"
-        assert "value" in entity, "Entity must have 'value'"
-        assert "token" in entity, "Entity must have 'token'"
-    assert result["scrubbed"] == "[EMAIL_1] sent a message"
-    assert result["entities"][0]["token"] == "[EMAIL_1]"
+    # Entity contract: each entity has type/value.
+    for entity in result.entities:
+        assert entity.type is not None, "Entity must have 'type'"
+        assert entity.value is not None, "Entity must have 'value'"
+    assert result.scrubbed == "[EMAIL_1] sent a message"
+    assert result.entities[0].type == "EMAIL"

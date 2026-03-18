@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from unittest.mock import AsyncMock
 
-from .factories import make_vault_item
+from src.gen.core_types import VaultItem
 
 
 # ---------------------------------------------------------------------------
@@ -96,8 +96,8 @@ class TestToolExecutor:
     async def test_list_personas(self, tool_executor, mock_core_client):
         """list_personas returns personas with preview summaries."""
         mock_core_client.search_vault.return_value = [
-            {"Summary": "Chronic lower back pain", "Type": "health_context"},
-            {"Summary": "Family vacation plans", "Type": "note"},
+            VaultItem(summary="Chronic lower back pain", type="health_context", source="test"),
+            VaultItem(summary="Family vacation plans", type="note", source="test"),
         ]
         result = await tool_executor.execute("list_personas", {})
         mock_core_client.list_personas.assert_called_once()
@@ -121,12 +121,12 @@ class TestToolExecutor:
     async def test_browse_vault_returns_items(self, tool_executor, mock_core_client):
         """browse_vault returns recent items without search query."""
         mock_core_client.search_vault.return_value = [
-            {"id": "item-1", "Summary": "Chronic lower back pain", "Type": "health"},
-            {"id": "item-2", "Summary": "Family trip to Goa", "Type": "note"},
+            VaultItem(id="item-1", summary="Chronic lower back pain", type="health", source="test"),
+            VaultItem(id="item-2", summary="Family trip to Goa", type="note", source="test"),
         ]
         result = await tool_executor.execute("browse_vault", {"persona": "personal"})
         assert len(result["items"]) == 2
-        assert result["items"][0]["Summary"] == "Chronic lower back pain"
+        assert result["items"][0]["summary"] == "Chronic lower back pain"
 
     @pytest.mark.asyncio
     async def test_browse_vault_locked_persona(self, tool_executor, mock_core_client):
@@ -147,13 +147,13 @@ class TestToolExecutor:
     async def test_search_vault_returns_items(self, tool_executor, mock_core_client):
         """search_vault returns items from the specified persona."""
         mock_core_client.search_vault.return_value = [
-            {"id": "item-1", "Summary": "Back pain history", "Type": "health"},
+            VaultItem(id="item-1", summary="Back pain history", type="health", source="test"),
         ]
         result = await tool_executor.execute("search_vault", {
             "persona": "personal", "query": "back pain",
         })
         assert len(result["items"]) == 1
-        assert result["items"][0]["Summary"] == "Back pain history"
+        assert result["items"][0]["summary"] == "Back pain history"
         mock_core_client.search_vault.assert_called_once_with(
             "personal", "back pain", mode="hybrid", embedding=None,
             agent_did="", session="", user_origin="",
@@ -163,7 +163,8 @@ class TestToolExecutor:
     async def test_search_vault_caps_results(self, tool_executor, mock_core_client):
         """search_vault caps results at _MAX_ITEMS_PER_QUERY."""
         mock_core_client.search_vault.return_value = [
-            {"id": f"item-{i}", "Summary": f"Item {i}"} for i in range(20)
+            VaultItem(id=f"item-{i}", summary=f"Item {i}", type="note", source="test")
+            for i in range(20)
         ]
         result = await tool_executor.execute("search_vault", {
             "persona": "consumer", "query": "chairs",
@@ -207,7 +208,7 @@ class TestToolExecutor:
         assert not tool_executor.was_enriched
 
         mock_core_client.search_vault.return_value = [
-            {"id": "item-1", "Summary": "Found something"},
+            VaultItem(id="item-1", summary="Found something", type="note", source="test"),
         ]
         await tool_executor.execute("search_vault", {
             "persona": "consumer", "query": "chair",
@@ -219,7 +220,7 @@ class TestToolExecutor:
         """tools_called tracks all executed tool calls."""
         await tool_executor.execute("list_personas", {})
         mock_core_client.search_vault.return_value = [
-            {"id": "1", "Summary": "test"},
+            VaultItem(id="1", summary="test", type="note", source="test"),
         ]
         await tool_executor.execute("search_vault", {
             "persona": "consumer", "query": "chair",
@@ -254,7 +255,7 @@ class TestReasoningAgent:
     ):
         """LLM calls list_personas → search_vault → generates answer."""
         mock_core_client.search_vault.return_value = [
-            {"id": "item-1", "Summary": "Chronic back pain", "Type": "health"},
+            VaultItem(id="item-1", summary="Chronic back pain", type="health", source="test"),
         ]
 
         # Turn 1: LLM calls list_personas
@@ -289,7 +290,7 @@ class TestReasoningAgent:
     ):
         """LLM calls multiple tools in a single turn."""
         mock_core_client.search_vault.return_value = [
-            {"id": "item-1", "Summary": "Test data"},
+            VaultItem(id="item-1", summary="Test data", type="note", source="test"),
         ]
 
         mock_llm_router.route.side_effect = [
@@ -382,11 +383,19 @@ class TestReasoningAgent:
         # All vault tools now use search_vault — return items that cover both
         # browse (preview) and search (specific) calls.
         mock_core_client.search_vault.return_value = [
-            {"id": "item-1", "Summary": "Chronic lower back pain from office work",
-             "BodyText": "User has L4-L5 disc herniation. Needs lumbar support.",
-             "Type": "health_context"},
-            {"id": "item-2", "Summary": "Prefers standing desk, WFH setup",
-             "Type": "work_context"},
+            VaultItem(
+                id="item-1",
+                summary="Chronic lower back pain from office work",
+                body_text="User has L4-L5 disc herniation. Needs lumbar support.",
+                type="health_context",
+                source="test",
+            ),
+            VaultItem(
+                id="item-2",
+                summary="Prefers standing desk, WFH setup",
+                type="work_context",
+                source="test",
+            ),
         ]
 
         mock_llm_router.route.side_effect = [
@@ -453,7 +462,7 @@ class TestVaultContextAssembler:
     ):
         """Agent enriches with vault data → was_enriched is True."""
         mock_core_client.search_vault.return_value = [
-            {"id": "item-1", "Summary": "Back pain", "Type": "health"},
+            VaultItem(id="item-1", summary="Back pain", type="health", source="test"),
         ]
         mock_llm_router.route.side_effect = [
             _make_tool_call_response([
@@ -559,9 +568,10 @@ class TestUserOriginPropagation:
         from src.service.vault_context import ToolExecutor
         executor = ToolExecutor(mock_core_client)
         executor.user_origin = "telegram"
-        mock_core_client.get_vault_item.return_value = {
-            "id": "item-1", "body_text": "Full content here",
-        }
+        mock_core_client.get_vault_item.return_value = VaultItem(
+            id="item-1", summary="Full content here", type="note", source="test",
+            body_text="Full content here",
+        )
 
         await executor.execute("get_full_content", {"persona": "health", "item_id": "item-1"})
 
