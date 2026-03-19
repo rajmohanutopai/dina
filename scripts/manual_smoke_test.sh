@@ -215,7 +215,71 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════════════════
-echo -e "\n${C}§8 Brain Reasoning${X}"
+echo -e "\n${C}§8 Approvals${X}"
+# ══════════════════════════════════════════════════════════════════════════
+
+# List pending (should return an array, possibly empty)
+APR_LIST=$(curl -sf -H "$AUTH" "$CORE_URL/v1/approvals" 2>/dev/null || true)
+if echo "$APR_LIST" | jq -e '.approvals' >/dev/null 2>&1; then
+    APR_COUNT=$(echo "$APR_LIST" | jq '.approvals | length' 2>/dev/null || echo 0)
+    echo -e "  ${G}✓${X} List approvals: ${D}${APR_COUNT} pending${X}"
+    ((pass++))
+else
+    echo -e "  ${R}✗${X} List approvals failed"
+    ((fail++))
+fi
+
+# Create a sensitive persona, lock it, trigger an approval via vault query
+curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" \
+    -d '{"name":"health","tier":"sensitive","passphrase":"smoke-test"}' \
+    "$CORE_URL/v1/personas" >/dev/null 2>&1 || true
+curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" \
+    -d '{"persona":"health","passphrase":"smoke-test"}' \
+    "$CORE_URL/v1/persona/unlock" >/dev/null 2>&1 || true
+curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" \
+    -d '{"persona":"health"}' \
+    "$CORE_URL/v1/persona/lock" >/dev/null 2>&1 || true
+
+# Query the locked persona — should create an approval request
+_QUERY_CODE=$(curl -sf -o /dev/null -w "%{http_code}" -X POST -H "$AUTH" -H "Content-Type: application/json" \
+    -d '{"persona":"health","query":"test","mode":"fts5"}' \
+    "$CORE_URL/v1/vault/query" 2>/dev/null || echo "000")
+
+if [ "$_QUERY_CODE" = "403" ]; then
+    echo -e "  ${G}✓${X} Locked persona query returns 403"
+    ((pass++))
+
+    # Check if an approval was created
+    APR_LIST2=$(curl -sf -H "$AUTH" "$CORE_URL/v1/approvals" 2>/dev/null || true)
+    APR_ID=$(echo "$APR_LIST2" | jq -r '.approvals[0].id // empty' 2>/dev/null || true)
+    if [ -n "$APR_ID" ]; then
+        echo -e "  ${G}✓${X} Approval created: ${D}$APR_ID${X}"
+        ((pass++))
+
+        # Deny it via unified endpoint
+        DENY_RESP=$(curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" \
+            "$CORE_URL/v1/approvals/$APR_ID/deny" 2>/dev/null || true)
+        if echo "$DENY_RESP" | jq -e '.status == "denied"' >/dev/null 2>&1; then
+            echo -e "  ${G}✓${X} Approval denied via /v1/approvals/{id}/deny"
+            ((pass++))
+        else
+            echo -e "  ${R}✗${X} Deny failed: ${D}${DENY_RESP:0:60}${X}"
+            ((fail++))
+        fi
+    else
+        skip_check "Approval create + deny" "no approval created (agent auth may be needed)"
+    fi
+else
+    skip_check "Locked persona approval flow" "query returned $_QUERY_CODE (expected 403)"
+fi
+
+# Cleanup: unlock health persona
+curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" \
+    -d '{"persona":"health","passphrase":"smoke-test"}' \
+    "$CORE_URL/v1/persona/unlock" >/dev/null 2>&1 || true
+
+# ══════════════════════════════════════════════════════════════════════════
+echo -e "\n${C}§9 Brain Reasoning${X}"
 # ══════════════════════════════════════════════════════════════════════════
 
 # Check if Brain has an LLM configured
@@ -238,7 +302,7 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════════════════
-echo -e "\n${C}§9 Reminders${X}"
+echo -e "\n${C}§10 Reminders${X}"
 # ══════════════════════════════════════════════════════════════════════════
 
 REM_ID=$(curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" \
@@ -263,7 +327,7 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════════════════
-echo -e "\n${C}§10 Contacts${X}"
+echo -e "\n${C}§11 Contacts${X}"
 # ══════════════════════════════════════════════════════════════════════════
 
 curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" \
@@ -289,7 +353,7 @@ fi
 curl -sf -X DELETE -H "$AUTH" "$CORE_URL/v1/contacts/did:plc:smoketest" >/dev/null 2>&1 || true
 
 # ══════════════════════════════════════════════════════════════════════════
-echo -e "\n${C}§11 Security${X}"
+echo -e "\n${C}§12 Security${X}"
 # ══════════════════════════════════════════════════════════════════════════
 
 # No auth → 401
@@ -313,7 +377,7 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════════════════
-echo -e "\n${C}§12 AT Protocol${X}"
+echo -e "\n${C}§13 AT Protocol${X}"
 # ══════════════════════════════════════════════════════════════════════════
 
 ATPROTO=$(curl -sf "$CORE_URL/.well-known/atproto-did" 2>/dev/null || true)

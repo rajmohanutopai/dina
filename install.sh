@@ -476,20 +476,31 @@ if [ -n "${MASTER_SEED}" ] && [ "${IDENTITY_NEW}" = true ]; then
         BOX_W=$((BOX_W + 2))
 
         BORDER=$(printf '═%.0s' $(seq 1 ${BOX_W}))
-        echo -e "  ${YELLOW}╔${BORDER}╗${RESET}"
-        for ml in "${MNEMONIC_LINES[@]}"; do
-            printf "  ${YELLOW}║${RESET} %-$((BOX_W - 2))s ${YELLOW}║${RESET}\n" "${ml}"
-        done
-        echo -e "  ${YELLOW}╚${BORDER}╝${RESET}"
-        echo ""
-        echo -e "  ${RED}${BOLD}SAVE THIS RECOVERY PHRASE! You need it to recover your Dina.${RESET}"
-        echo -e "  ${RED}Write it down on paper. Do not store it digitally.${RESET}"
-
-        # --- Verify user saved it: ask for 3 random words ---
-        if [ -t 0 ]; then
+        # Helper: show phrase on the alternate screen buffer (like less/vim).
+        # When the user presses Enter, we return to the main screen and the
+        # phrase is gone from scrollback. Nothing else is lost.
+        _show_phrase_alt_screen() {
+            tput smcup 2>/dev/null  # enter alternate screen
+            echo ""
+            echo -e "  ${BOLD}Your Recovery Phrase${RESET}"
+            echo ""
+            echo -e "  ${YELLOW}╔${BORDER}╗${RESET}"
+            for ml in "${MNEMONIC_LINES[@]}"; do
+                printf "  ${YELLOW}║${RESET} %-$((BOX_W - 2))s ${YELLOW}║${RESET}\n" "${ml}"
+            done
+            echo -e "  ${YELLOW}╚${BORDER}╝${RESET}"
+            echo ""
+            echo -e "  ${RED}${BOLD}SAVE THIS RECOVERY PHRASE! You need it to recover your Dina.${RESET}"
+            echo -e "  ${RED}Write it down on paper. Do not store it digitally.${RESET}"
             echo ""
             printf "  Press Enter when you've written it down..."
             read -r _
+            tput rmcup 2>/dev/null  # return to main screen — phrase gone
+        }
+
+        # --- Verify user saved it: ask for 3 random words ---
+        if [ -t 0 ]; then
+            _show_phrase_alt_screen
 
             # Split mnemonic into array
             WORDS=()
@@ -499,9 +510,6 @@ if [ -n "${MASTER_SEED}" ] && [ "${IDENTITY_NEW}" = true ]; then
 
             VERIFY_PASS=false
             while [ "${VERIFY_PASS}" = false ]; do
-                # Clear screen so the phrase is no longer visible
-                clear
-
                 echo ""
                 echo -e "  ${BOLD}Let's verify you saved it.${RESET}"
                 echo -e "  ${DIM}Enter the words for the positions below:${RESET}"
@@ -535,21 +543,19 @@ if [ -n "${MASTER_SEED}" ] && [ "${IDENTITY_NEW}" = true ]; then
                 else
                     echo ""
                     echo -e "  ${YELLOW}✗${RESET} That doesn't match. Let's try again."
-                    echo ""
-                    echo -e "  ${DIM}Showing the recovery phrase again — save it this time.${RESET}"
-                    echo ""
-                    echo -e "  ${YELLOW}╔${BORDER}╗${RESET}"
-                    for ml in "${MNEMONIC_LINES[@]}"; do
-                        printf "  ${YELLOW}║${RESET} %-$((BOX_W - 2))s ${YELLOW}║${RESET}\n" "${ml}"
-                    done
-                    echo -e "  ${YELLOW}╚${BORDER}╝${RESET}"
-                    echo ""
-                    echo -e "  ${RED}${BOLD}Write it down on paper. Do not store it digitally.${RESET}"
-                    echo ""
-                    printf "  Press Enter when you've written it down..."
-                    read -r _
+                    _show_phrase_alt_screen
                 fi
             done
+        else
+            # Non-interactive: just print the phrase to stdout (no verification)
+            echo -e "  ${YELLOW}╔${BORDER}╗${RESET}"
+            for ml in "${MNEMONIC_LINES[@]}"; do
+                printf "  ${YELLOW}║${RESET} %-$((BOX_W - 2))s ${YELLOW}║${RESET}\n" "${ml}"
+            done
+            echo -e "  ${YELLOW}╚${BORDER}╝${RESET}"
+            echo ""
+            echo -e "  ${RED}${BOLD}SAVE THIS RECOVERY PHRASE! You need it to recover your Dina.${RESET}"
+            echo -e "  ${RED}Write it down on paper. Do not store it digitally.${RESET}"
         fi
     fi
 fi

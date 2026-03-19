@@ -79,13 +79,13 @@ case "${1:-}" in
         for svc in core brain pds; do
             _status=$($COMPOSE ps "$svc" --format "{{.Status}}" 2>/dev/null || true)
             if echo "$_status" | grep -qi "healthy" 2>/dev/null; then
-                echo -e "  ${GREEN}●${RESET} ${svc}  ${DIM}${_status}${RESET}"
+                printf "  ${GREEN}●${RESET} %-6s ${DIM}%s${RESET}\n" "$svc" "$_status"
             elif echo "$_status" | grep -qiE "up|running" 2>/dev/null; then
-                echo -e "  ${YELLOW}●${RESET} ${svc}  ${DIM}${_status}${RESET}"
+                printf "  ${YELLOW}●${RESET} %-6s ${DIM}%s${RESET}\n" "$svc" "$_status"
             elif [ -n "$_status" ]; then
-                echo -e "  ${RED}●${RESET} ${svc}  ${DIM}${_status}${RESET}"
+                printf "  ${RED}●${RESET} %-6s ${DIM}%s${RESET}\n" "$svc" "$_status"
             else
-                echo -e "  ${RED}●${RESET} ${svc}  ${DIM}not running${RESET}"
+                printf "  ${RED}●${RESET} %-6s ${DIM}not running${RESET}\n" "$svc"
             fi
         done
 
