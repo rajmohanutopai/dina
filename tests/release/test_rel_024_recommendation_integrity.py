@@ -67,6 +67,7 @@ class TestRecommendationIntegrity:
     # ------------------------------------------------------------------
 
     # REL-024
+    @pytest.mark.skip(reason="Trust recommendation pipeline not yet wired to process endpoint")
     def test_rel_024_zero_data_honest_absence(
         self, brain_url, brain_signer,
     ) -> None:
@@ -97,14 +98,17 @@ class TestRecommendationIntegrity:
         assert resp.status_code == 200
 
         data = resp.json()
-        # Must not crash or return invalid response
         assert isinstance(data, dict)
+        # Future: assert data explicitly states absence (not fabricated score)
 
     # ------------------------------------------------------------------
-    # Assertion 3: Sparse conflicting → transparent split
+    # Assertion 3–7: Trust Network recommendation features (not yet wired)
+    # These test the Pull Economy thesis via /api/v1/process context JSON
+    # that Brain doesn't consume yet. Marked skip to avoid false green.
     # ------------------------------------------------------------------
 
     # REL-024
+    @pytest.mark.skip(reason="Trust recommendation pipeline not yet wired to process endpoint")
     def test_rel_024_sparse_conflicting_transparent_split(
         self, brain_url, brain_signer,
     ) -> None:
@@ -137,6 +141,7 @@ class TestRecommendationIntegrity:
     # ------------------------------------------------------------------
 
     # REL-024
+    @pytest.mark.skip(reason="Trust recommendation pipeline not yet wired to process endpoint")
     def test_rel_024_attribution_includes_deep_link(
         self, brain_url, brain_signer,
     ) -> None:
@@ -222,6 +227,7 @@ class TestRecommendationIntegrity:
     # ------------------------------------------------------------------
 
     # REL-024
+    @pytest.mark.skip(reason="Trust recommendation pipeline not yet wired to process endpoint")
     def test_rel_024_sponsorship_cannot_distort_ranking(
         self, brain_url, brain_signer,
     ) -> None:
@@ -270,6 +276,7 @@ class TestRecommendationIntegrity:
     # ------------------------------------------------------------------
 
     # REL-024
+    @pytest.mark.skip(reason="Trust recommendation pipeline not yet wired to process endpoint")
     def test_rel_024_ranking_rationale_explainable(
         self, brain_url, brain_signer,
     ) -> None:

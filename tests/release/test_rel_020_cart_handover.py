@@ -39,16 +39,21 @@ class TestCartHandover:
             },
         })
         assert resp.status_code in (200, 201), f"Draft store failed: {resp.status_code}"
+        stored_id = resp.json().get("id", "")
+        assert stored_id, "Draft store returned no item ID"
 
-        # Verify it's stored as a draft (not sent)
+        # Verify draft is retrievable from vault
         resp = api.post("/v1/vault/query", json={
             "persona": "general",
             "query": "tea tomorrow",
             "mode": "fts5",
-            "types": ["email_draft"],
             "limit": 10,
+            "include_content": True,
         })
         assert resp.status_code == 200
+        items = resp.json().get("items") or []
+        found = any(i.get("id") == stored_id for i in items)
+        assert found, f"Draft {stored_id} not found in vault query"
 
     # REL-020
     def test_rel_020_purchase_intent_stored_not_executed(
@@ -77,6 +82,20 @@ class TestCartHandover:
             },
         })
         assert resp.status_code in (200, 201), f"Intent store failed: {resp.status_code}"
+        stored_id = resp.json().get("id", "")
+        assert stored_id, "Intent store returned no item ID"
+
+        # Verify intent is retrievable
+        query_resp = api.post("/v1/vault/query", json={
+            "persona": "general",
+            "query": "Aeron",
+            "mode": "fts5",
+            "limit": 10,
+        })
+        assert query_resp.status_code == 200
+        items = query_resp.json().get("items") or []
+        found = any(i.get("id") == stored_id for i in items)
+        assert found, f"Purchase intent {stored_id} not found in vault"
 
     # REL-020
     def test_rel_020_transfer_money_requires_approval(

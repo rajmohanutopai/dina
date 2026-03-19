@@ -124,9 +124,10 @@ class TestVaultResilience:
             },
             headers=auth_headers, timeout=10,
         )
-        # Should succeed (safe action) or fail gracefully (no Brain LLM)
-        assert resp.status_code in (200, 503), (
-            f"Agent validate should respond, got {resp.status_code}"
+        # Safe action should succeed — 503 is a real failure, not resilience
+        assert resp.status_code == 200, (
+            f"Agent validate for safe action should return 200, got "
+            f"{resp.status_code}: {resp.text[:200]}"
         )
 
     # REL-011

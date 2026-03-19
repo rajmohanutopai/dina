@@ -37,16 +37,28 @@ class TestInstallRerun:
         self, core_url, auth_headers,
     ) -> None:
         """Re-creating an existing persona is idempotent."""
-        for _ in range(2):
-            resp = httpx.post(
-                f"{core_url}/v1/personas",
-                json={"name": "general", "tier": "default", "passphrase": "test"},
-                headers=auth_headers, timeout=10,
-            )
-            # Should succeed or return "already exists"
-            assert resp.status_code in (200, 201, 409), (
-                f"Persona recreate should be idempotent, got {resp.status_code}"
-            )
+        # First create
+        resp1 = httpx.post(
+            f"{core_url}/v1/personas",
+            json={"name": "general", "tier": "default", "passphrase": "test"},
+            headers=auth_headers, timeout=10,
+        )
+        assert resp1.status_code in (200, 201, 409)
+
+        # Second create — must be idempotent (same response, no error)
+        resp2 = httpx.post(
+            f"{core_url}/v1/personas",
+            json={"name": "general", "tier": "default", "passphrase": "test"},
+            headers=auth_headers, timeout=10,
+        )
+        assert resp2.status_code in (200, 201, 409), (
+            f"Persona recreate should be idempotent, got {resp2.status_code}"
+        )
+        # Both calls must not crash — and if both return data, IDs should match
+        id1 = resp1.json().get("id", resp1.json().get("persona_id", ""))
+        id2 = resp2.json().get("id", resp2.json().get("persona_id", ""))
+        if id1 and id2:
+            assert id1 == id2, f"Persona ID changed on recreate: {id1} → {id2}"
 
     # REL-015
     def test_rel_015_healthz_stable(self, core_url) -> None:
@@ -95,3 +107,11 @@ class TestInstallRerun:
         assert resp.status_code == 200
         items = resp.json().get("items") or []
         assert len(items) >= 1, "Data should survive re-unlock"
+        # Verify item contains the stored text
+        texts = " ".join(
+            (i.get("summary", "") or i.get("Summary", "")).lower()
+            for i in items
+        )
+        assert "pre-relock" in texts, (
+            f"Survived items don't contain stored text: {texts[:200]}"
+        )

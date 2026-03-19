@@ -29,8 +29,9 @@ class TestTrustNetwork:
         )
         # Should return 404 (DID not found in AppView) or 200 (found),
         # but NOT 405 (route missing) or 500 (crash).
-        assert resp.status_code in (200, 404, 502), (
-            f"Unexpected trust/resolve status: {resp.status_code} {resp.text}"
+        assert resp.status_code in (200, 404), (
+            f"Trust resolve should return 200/404, got {resp.status_code}: "
+            f"{resp.text[:200]}"
         )
 
     # REL-007
@@ -82,9 +83,10 @@ class TestTrustNetwork:
             headers=auth_headers,
             timeout=15,
         )
-        # May return 200 (synced) or 500 (no AppView data yet) — both valid
-        assert resp.status_code in (200, 500), (
-            f"Trust sync unexpected: {resp.status_code} {resp.text}"
+        # Handler returns 200 on success — any other status is a real failure
+        assert resp.status_code == 200, (
+            f"Trust sync should return 200, got {resp.status_code}: "
+            f"{resp.text[:200]}"
         )
 
     # REL-007

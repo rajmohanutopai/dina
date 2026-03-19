@@ -101,9 +101,24 @@ Tests give false confidence. "All 200+ release tests pass" means nothing when te
 |----------|-------|-------|-----------|
 | P0 | 13 | 13 | 0 |
 | P1 | 12 | 12 | 0 |
-| P2 | 19 | 0 | 19 |
+| P2 | 19 | 15 | 4 |
 | P3 | 7 | 0 | 7 |
-| **Total** | **51** | **25** | **26** |
+| **Total** | **51** | **40** | **11** |
+
+### P2 fixes applied:
+- REL-007: trust resolve rejects 502, trust sync requires 200
+- REL-011: agent validate requires 200 (not 503)
+- REL-015: persona recreate verifies same ID, vault survive verifies content
+- REL-016: renamed to match actual behavior (healthz consistency, not restart)
+- REL-019: fiduciary asserts risk classification + not approved; safe asserts approved + SAFE
+- REL-020: draft and intent verified retrievable from vault
+- REL-024: 6 unimplemented trust features marked skip (not false green)
+
+### P2 remaining (4):
+- REL-026: silence stress tests use unwired /api/v1/process context
+- REL-027: action integrity tests use unwired /api/v1/process context
+  These test future features — marking skip is the honest fix when ready
+- USR-01 test_05: attestation count-only assertion (needs type verification)
 
 ### P0 fixes applied:
 - REL-025: 5 weak tests → rewritten with content assertions (companion violations AND human redirect required — empty/silent response also fails)

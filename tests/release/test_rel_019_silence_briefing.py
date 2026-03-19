@@ -37,9 +37,12 @@ class TestSilenceBriefing:
             pytest.skip("Agent validate endpoint not available")
         assert resp.status_code == 200, f"agent validate failed: {resp.status_code}"
         data = resp.json()
-        # Money transfer must be flagged as high risk / not auto-approved
-        assert data.get("risk") == "HIGH" or data.get("approved") is not True, (
-            f"Bank transfer must be flagged, got: {data}"
+        # Money transfer must be flagged AND not auto-approved
+        assert data.get("approved") is not True, (
+            f"Bank transfer must NOT be auto-approved: {data}"
+        )
+        assert data.get("risk") == "HIGH", (
+            f"transfer_money must be classified HIGH, got risk={data.get('risk')}: {data}"
         )
 
     # REL-019
@@ -60,7 +63,14 @@ class TestSilenceBriefing:
             pytest.skip("Agent validate endpoint not available")
         assert resp.status_code == 200
         data = resp.json()
-        assert data.get("risk") == "SAFE" or data.get("approved") is True
+        # Safe action must be approved AND classified as safe
+        assert data.get("approved") is True, (
+            f"Safe search action should be auto-approved: {data}"
+        )
+        risk = data.get("risk", "")
+        assert risk == "SAFE" or data.get("action") == "auto_approve", (
+            f"Search should be classified SAFE, got risk={risk}: {data}"
+        )
 
     # REL-019
     def test_rel_019_risky_action_requires_approval(
@@ -80,9 +90,11 @@ class TestSilenceBriefing:
             pytest.skip("Agent validate endpoint not available")
         assert resp.status_code == 200
         data = resp.json()
-        assert data.get("risk") == "HIGH" or data.get("requires_approval") is True
         assert data.get("approved") is not True, (
             "HIGH risk actions must NOT be auto-approved"
+        )
+        assert data.get("requires_approval") is True or data.get("risk") in ("HIGH", "BLOCKED"), (
+            f"High-risk action should require approval: {data}"
         )
 
     # REL-019

@@ -65,15 +65,20 @@ class TestUpgradeVerification:
             )
 
     # REL-016
-    def test_rel_016_system_stable_after_restart(
+    def test_rel_016_healthz_consistent_across_calls(
         self, core_url, auth_headers,
     ) -> None:
-        """System remains on the same version after healthz calls."""
+        """Healthz returns consistent status and version across calls."""
         resp1 = httpx.get(f"{core_url}/healthz", timeout=5)
         assert resp1.status_code == 200
         resp2 = httpx.get(f"{core_url}/healthz", timeout=5)
         assert resp2.status_code == 200
         # Version info should not change between calls
+        # Both healthz responses must have consistent status
+        s1 = resp1.json().get("status")
+        s2 = resp2.json().get("status")
+        assert s1 == s2, f"Health status changed between calls: {s1} → {s2}"
+        # Version check (if available)
         v1 = resp1.json().get("version", resp1.json().get("build"))
         v2 = resp2.json().get("version", resp2.json().get("build"))
         if v1 is not None and v2 is not None:
