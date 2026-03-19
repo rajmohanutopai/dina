@@ -194,7 +194,7 @@ class TestInputValidation:
         child.sendline("2")
 
         child.expect("Enter one or more numbers", timeout=30)
-        child.sendline("AIzaSyATHHOddISNouXR8LkrCrW71PRFHrSVw-g")
+        child.sendline("NOT-A-VALID-CHOICE-just-testing-input-validation")
         idx = child.expect(
             ["Please enter numbers 1-6", "Enter one or more numbers",
              pexpect.TIMEOUT],
