@@ -337,6 +337,7 @@ _model_set() {
                     # Write to .env
                     echo "${key_env}=${api_key}" >> "$env_file"
                     echo -e "  ${GREEN}✓${RESET} Saved ${key_env} to .env"
+                    changed=true
                     break
                 else
                     echo -e "${YELLOW}✗${RESET} key did not work"
