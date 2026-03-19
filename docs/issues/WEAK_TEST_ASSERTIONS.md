@@ -100,10 +100,10 @@ Tests give false confidence. "All 200+ release tests pass" means nothing when te
 | Priority | Total | Fixed | Remaining |
 |----------|-------|-------|-----------|
 | P0 | 13 | 13 | 0 |
-| P1 | 12 | 0 | 12 |
+| P1 | 12 | 12 | 0 |
 | P2 | 19 | 0 | 19 |
 | P3 | 7 | 0 | 7 |
-| **Total** | **51** | **13** | **38** |
+| **Total** | **51** | **25** | **26** |
 
 ### P0 fixes applied:
 - REL-025: 5 weak tests → rewritten with content assertions (companion violations AND human redirect required — empty/silent response also fails)

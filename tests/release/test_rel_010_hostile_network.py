@@ -35,9 +35,10 @@ class TestHostileNetwork:
             headers=auth_headers,
             timeout=15,
         )
-        # Should fail with a clear error, not crash (500 with stack trace)
-        assert resp.status_code in (400, 404, 500, 502), (
-            f"Unexpected status for unknown peer: {resp.status_code}"
+        # Should fail with a clear error — NOT 500 (crash) or 502 (gateway error)
+        assert resp.status_code in (400, 404), (
+            f"Unknown peer should return 400/404, got {resp.status_code}: "
+            f"{resp.text[:200]}"
         )
         data = resp.json()
         assert "error" in data, (
@@ -72,10 +73,14 @@ class TestHostileNetwork:
         )
 
     # REL-010
-    def test_rel_010_empty_body_rejected(
+    def test_rel_010_empty_body_handled_without_crash(
         self, core_url, auth_headers,
     ) -> None:
-        """Sending with empty body is handled (not crash)."""
+        """Empty body D2D send does not crash the server.
+
+        The wire protocol may accept empty body (valid envelope) or reject
+        it (400). Either is fine — the invariant is no 500/502 crash.
+        """
         resp = httpx.post(
             f"{core_url}/v1/msg/send",
             json={
@@ -86,8 +91,13 @@ class TestHostileNetwork:
             headers=auth_headers,
             timeout=10,
         )
-        # May accept (empty body is valid wire format) or reject — just don't crash
-        assert resp.status_code < 600
+        assert resp.status_code < 500, (
+            f"Empty body caused server crash: {resp.status_code} {resp.text[:200]}"
+        )
+        # If rejected, must have an error field
+        if resp.status_code >= 400:
+            data = resp.json()
+            assert "error" in data, f"Rejection missing error field: {data}"
 
     # REL-010
     def test_rel_010_node_b_healthy_after_fault_tests(

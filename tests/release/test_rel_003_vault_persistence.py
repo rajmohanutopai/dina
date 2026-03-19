@@ -16,14 +16,17 @@ class TestVaultPersistence:
 
     # REL-003
     def test_rel_003_data_persists_via_api(self, api: httpx.Client) -> None:
-        """Store and retrieve data via real Go Core vault API."""
+        """Store data, then retrieve by ID — verify content matches."""
+        import os
+        marker = f"rel003_{os.getpid()}"
         resp = api.post("/v1/vault/store", json={
             "persona": "general",
             "item": {
                 "Type": "note",
                 "Source": "release-test",
-                "Summary": "vault persistence check",
-                "BodyText": "This data must persist across operations",
+                "SourceID": f"rel003-persist-{marker}",
+                "Summary": f"{marker} vault persistence check",
+                "BodyText": f"{marker} This data must persist across operations",
                 "Metadata": "{}",
             },
         })
@@ -31,29 +34,66 @@ class TestVaultPersistence:
         item_id = resp.json().get("id", "")
         assert item_id, "Store must return an item ID"
 
+        # Query back and verify content matches
+        query_resp = api.post("/v1/vault/query", json={
+            "persona": "general",
+            "query": marker,
+            "mode": "fts5",
+            "limit": 5,
+            "include_content": True,
+        })
+        assert query_resp.status_code == 200
+        items = query_resp.json().get("items") or []
+        found_item = next((i for i in items if i.get("id") == item_id), None)
+        assert found_item, f"Stored item {item_id} not retrievable by marker '{marker}'"
+        # Verify retrieved content contains the marker
+        retrieved_text = (
+            (found_item.get("summary", "") or found_item.get("Summary", "")) + " " +
+            (found_item.get("body_text", "") or found_item.get("BodyText", ""))
+        )
+        assert marker in retrieved_text, (
+            f"Retrieved item doesn't contain marker '{marker}': {retrieved_text[:200]}"
+        )
+
     # REL-003
     def test_rel_003_fts_retrieval_works(self, api: httpx.Client) -> None:
-        """FTS query returns stored items via real Go Core."""
-        api.post("/v1/vault/store", json={
+        """FTS query returns items whose content contains the stored text."""
+        import os
+        marker = f"rel003fts_{os.getpid()}"
+        store_resp = api.post("/v1/vault/store", json={
             "persona": "general",
             "item": {
                 "Type": "note",
                 "Source": "release-test",
-                "Summary": "ergonomic office chair review lumbar support",
-                "BodyText": "The Herman Miller Aeron has excellent lumbar support",
+                "SourceID": f"rel003-lumbar-{marker}",
+                "Summary": f"{marker} ergonomic office chair review lumbar support",
+                "BodyText": f"{marker} The Herman Miller Aeron has excellent lumbar support",
                 "Metadata": "{}",
             },
         })
+        assert store_resp.status_code in (200, 201)
+        stored_id = store_resp.json().get("id", "")
 
         resp = api.post("/v1/vault/query", json={
             "persona": "general",
-            "query": "lumbar",
+            "query": marker,
             "mode": "fts5",
             "limit": 10,
+            "include_content": True,
         })
-        assert resp.status_code == 200, f"Query failed: {resp.status_code} {resp.text}"
+        assert resp.status_code == 200
         items = resp.json().get("items") or []
-        assert len(items) >= 1, "FTS query should find stored items"
+        assert len(items) >= 1, f"FTS should find items for '{marker}'"
+        found_item = next((i for i in items if i.get("id") == stored_id), None)
+        assert found_item, f"FTS didn't return the stored item {stored_id}"
+        # Verify content contains the marker
+        retrieved_text = (
+            (found_item.get("summary", "") or found_item.get("Summary", "")) + " " +
+            (found_item.get("body_text", "") or found_item.get("BodyText", ""))
+        )
+        assert marker in retrieved_text, (
+            f"FTS result doesn't contain marker '{marker}': {retrieved_text[:200]}"
+        )
 
     # REL-003
     def test_rel_003_no_duplicate_on_re_store(self, api: httpx.Client) -> None:

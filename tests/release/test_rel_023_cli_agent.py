@@ -35,19 +35,35 @@ class TestCLIAgentIntegration:
         self, release_services, agent_paired,
     ) -> None:
         """Agent asks a question via `dina ask`."""
-        # Store first
-        release_services.agent_exec(
-            "remember", "ergonomic chair with adjustable armrests",
+        # Store a fact with a distinctive phrase
+        import os
+        marker = f"rel023_{os.getpid()}"
+        remember_result = release_services.agent_exec(
+            "remember", f"{marker} ergonomic chair with adjustable lumbar and titanium armrests",
+        )
+        assert remember_result.returncode == 0, (
+            f"remember failed: {remember_result.stderr}"
         )
 
-        # Ask — returns JSON with content (or pending_approval for sensitive)
-        result = release_services.agent_exec("ask", "ergonomic chair")
+        # Ask — must return an answer referencing the distinctive stored phrase
+        result = release_services.agent_exec("ask", f"{marker} chair")
         assert result.returncode == 0, f"CLI failed: {result.stderr}"
         data = json.loads(result.stdout)
-        assert isinstance(data, dict), f"ask should return a JSON object, got: {type(data)}"
-        # Accept either a completed answer or pending_approval
-        assert "content" in data or "status" in data, (
-            f"Expected 'content' or 'status' in response, got: {list(data.keys())}"
+        assert isinstance(data, dict)
+        error_code = data.get("error_code", "")
+        if error_code:
+            pytest.fail(
+                f"ask returned LLM error: {error_code} — {data.get('message', '')}"
+            )
+        content = data.get("content", "")
+        assert content and len(content) > 10, (
+            f"ask should return a real answer, got: {content!r}"
+        )
+        # Must reference the distinctive stored phrase — not just generic "chair"
+        content_lower = content.lower()
+        assert "armrest" in content_lower or "titanium" in content_lower or "lumbar" in content_lower, (
+            f"Answer doesn't reference the stored fact's distinctive details "
+            f"(armrest/titanium/lumbar).\nResponse: {content[:300]}"
         )
 
     # REL-023
@@ -89,9 +105,15 @@ class TestCLIAgentIntegration:
         data = json.loads(result.stdout)
         assert "scrubbed" in data
         assert "session" in data
-        # PII should be replaced
+        # Email must be removed from scrubbed text
         scrubbed = data["scrubbed"]
-        assert "raj@example.com" not in scrubbed or "[" in scrubbed
+        assert "raj@example.com" not in scrubbed, (
+            f"Email not scrubbed: {scrubbed[:200]}"
+        )
+        # Non-PII content must survive
+        assert "details" in scrubbed.lower() or "contact" in scrubbed.lower(), (
+            f"Non-PII content lost: {scrubbed[:200]}"
+        )
 
     # REL-023
     def test_rel_023_agent_can_stage_draft(

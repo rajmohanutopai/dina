@@ -64,6 +64,8 @@ Pipeline
 
 from __future__ import annotations
 
+import os
+
 import httpx
 import pytest
 
@@ -141,6 +143,8 @@ class TestAgentGateway:
 
         _state["agent_device_id"] = device_id
         _state["agent_token"] = public_key_multibase  # used as truthy check by later tests
+        _state["agent_private_key"] = agent_key  # for signed request verification
+        _state["agent_did"] = f"did:key:{public_key_multibase}"
         _state["agent_device_name"] = "external_agent_v1"
         _state["node_did"] = node_did
 
@@ -493,6 +497,33 @@ class TestAgentGateway:
         assert agent_token, "No agent_token — test_00 must pass first"
         assert device_id, "No agent_device_id — test_00 must pass first"
 
+        # Step 0: Verify signed request WORKS before revoke
+        import hashlib
+        from datetime import datetime, timezone
+
+        priv_key = _state.get("agent_private_key")
+        agent_did = _state.get("agent_did", "")
+        if priv_key and agent_did:
+            ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            nonce = os.urandom(16).hex()
+            body_hash = hashlib.sha256(b"").hexdigest()
+            canonical = f"GET\n/v1/personas\n\n{ts}\n{nonce}\n{body_hash}"
+            sig = priv_key.sign(canonical.encode()).hex()
+            pre_r = httpx.get(
+                f"{alonso_core}/v1/personas",
+                headers={
+                    "X-DID": agent_did,
+                    "X-Timestamp": ts,
+                    "X-Nonce": nonce,
+                    "X-Signature": sig,
+                },
+                timeout=10,
+            )
+            assert pre_r.status_code == 200, (
+                f"Signed request BEFORE revoke should succeed, got "
+                f"{pre_r.status_code}. Pairing may not have registered the key."
+            )
+
         # Step 1: Revoke the device
         revoke_r = httpx.delete(
             f"{alonso_core}/v1/devices/{device_id}",
@@ -524,3 +555,31 @@ class TestAgentGateway:
             f"Agent device should be revoked but is not.\n"
             f"Device: {agent_device}"
         )
+
+        # Step 3: Verify revoked device is actually rejected via signed request.
+        priv_key = _state.get("agent_private_key")
+        agent_did = _state.get("agent_did", "")
+        if priv_key and agent_did:
+            def _sign_and_get(label: str) -> httpx.Response:
+                ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                nonce = os.urandom(16).hex()
+                body_hash = hashlib.sha256(b"").hexdigest()
+                canonical = f"GET\n/v1/personas\n\n{ts}\n{nonce}\n{body_hash}"
+                sig = priv_key.sign(canonical.encode()).hex()
+                return httpx.get(
+                    f"{alonso_core}/v1/personas",
+                    headers={
+                        "X-DID": agent_did,
+                        "X-Timestamp": ts,
+                        "X-Nonce": nonce,
+                        "X-Signature": sig,
+                    },
+                    timeout=10,
+                )
+
+            # The device is already revoked (Step 1). Signed request must fail.
+            post_r = _sign_and_get("after-revoke")
+            assert post_r.status_code == 401, (
+                f"Revoked device signed request should get 401, got "
+                f"{post_r.status_code}. Revocation did not invalidate auth."
+            )

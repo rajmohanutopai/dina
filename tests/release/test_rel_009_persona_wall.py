@@ -82,8 +82,16 @@ class TestPersonaWall:
         assert resp.status_code == 200
         data = resp.json()
         scrubbed = data.get("scrubbed", "")
-        # Email should be scrubbed
+        # Email must be removed
         assert "raj@example.com" not in scrubbed, "Email PII should be scrubbed"
+        # Scrubbed text must still contain the non-PII content
+        assert "chair" in scrubbed.lower(), (
+            f"Non-PII content lost during scrubbing: {scrubbed[:200]}"
+        )
+        # Scrubbed text must be non-empty (not silently dropping everything)
+        assert len(scrubbed.strip()) > 10, (
+            f"Scrubbed text suspiciously short: {scrubbed!r}"
+        )
 
     # REL-009
     def test_rel_009_restricted_persona_requires_unlock(

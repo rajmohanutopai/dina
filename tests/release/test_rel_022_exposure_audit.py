@@ -76,10 +76,10 @@ class TestExposureAudit:
             json={"type": "test"},
             timeout=10,
         )
-        # Should fail with 401/403 (service-key auth required)
-        # or succeed only on healthz (unauthenticated)
-        assert resp.status_code in (401, 403, 422, 500), (
-            f"Brain API without auth should fail, got {resp.status_code}"
+        # Must fail with 401/403 — NOT 422 (validation) or 500 (crash)
+        assert resp.status_code in (401, 403), (
+            f"Brain API without auth must return 401/403, got {resp.status_code}: "
+            f"{resp.text[:200]}"
         )
 
     # REL-022

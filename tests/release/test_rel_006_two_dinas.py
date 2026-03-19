@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import time
 
 import httpx
@@ -32,8 +33,9 @@ class TestTwoDinas:
     def test_rel_006_send_message_a_to_b(
         self, core_url, auth_headers,
     ) -> None:
-        """Node A sends a D2D message to Node B via POST /v1/msg/send."""
-        body_payload = json.dumps({"greeting": "hello from node A"})
+        """Node A sends a D2D message to Node B with a unique marker."""
+        marker = f"rel006_{os.getpid()}_{int(time.time())}"
+        body_payload = json.dumps({"greeting": "hello from node A", "marker": marker})
 
         resp = httpx.post(
             f"{core_url}/v1/msg/send",
@@ -48,6 +50,12 @@ class TestTwoDinas:
         assert resp.status_code == 202, (
             f"D2D send A→B failed: {resp.status_code} {resp.text}"
         )
+        data = resp.json()
+        assert data.get("id") or data.get("message_id") or data.get("status"), (
+            f"Send response missing ID/status: {data}"
+        )
+        # Store marker for inbox verification
+        self.__class__._msg_marker = marker
 
     # REL-006
     def test_rel_006_message_arrives_in_b_inbox(
@@ -68,10 +76,19 @@ class TestTwoDinas:
                 continue
 
             messages = resp.json().get("messages", [])
+            expected_marker = getattr(self.__class__, "_msg_marker", "")
             for msg in messages:
-                if msg.get("Type") == "dina/test/ping":
-                    found = True
-                    break
+                msg_type = msg.get("Type") or msg.get("type")
+                if msg_type == "dina/test/ping":
+                    msg_body = msg.get("Body") or msg.get("body") or ""
+                    # If we have a marker, verify this is our exact message
+                    if expected_marker and expected_marker in str(msg_body):
+                        found = True
+                        break
+                    elif not expected_marker:
+                        # No marker (older test run) — accept any ping
+                        found = True
+                        break
             if found:
                 break
             time.sleep(1)
