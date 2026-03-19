@@ -223,9 +223,16 @@ def device_list(ctx: click.Context) -> None:
                 click.echo("No paired devices.")
             else:
                 for d in devices:
-                    status_str = " [revoked]" if d.get("revoked") else ""
+                    did = d.get("token_id", d.get("id", "?"))
                     name = d.get("name", d.get("device_name", "?"))
-                    click.echo(f"  {d.get('id', '?')}  {name}{status_str}")
+                    device_did = d.get("did", "")
+                    auth = d.get("auth_type", "")
+                    revoked = " [revoked]" if d.get("revoked") else ""
+                    click.echo(f"  {did}  {name}{revoked}")
+                    if device_did:
+                        click.echo(f"         DID:  {device_did}")
+                    if auth:
+                        click.echo(f"         Auth: {auth}")
     except AdminClientError as exc:
         print_error(str(exc), json_mode)
         ctx.exit(1)

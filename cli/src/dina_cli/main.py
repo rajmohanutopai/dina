@@ -1,7 +1,7 @@
 """Click command group for the Dina CLI.
 
 Commands: status, remember, ask, validate, validate-status, scrub,
-rehydrate, draft, audit, configure, session.
+rehydrate, draft, audit, configure, unpair, session.
 """
 
 from __future__ import annotations
@@ -640,10 +640,110 @@ def configure(ctx: click.Context) -> None:
         click.echo("Ready. Try: dina ask \"hello\"")
 
 
+@cli.command()
+@click.pass_context
+def unpair(ctx: click.Context) -> None:
+    """Unpair this device from the Home Node.
+
+    Revokes the device registration on Core and removes the local
+    device_id. The keypair is kept — run `dina configure` to re-pair.
+    """
+    json_mode = ctx.obj["json"]
+    saved = _load_saved()
+    device_id = saved.get("device_id", "")
+    core_url = os.environ.get("DINA_CORE_URL") or saved.get("core_url") or "http://localhost:8100"
+
+    if not device_id:
+        msg = "No device_id saved. Already unpaired or never paired."
+        if json_mode:
+            print_result({"status": "not_paired", "message": msg}, json_mode)
+        else:
+            click.echo(f"  {msg}")
+        return
+
+    has_keypair = (IDENTITY_DIR / "ed25519_private.pem").exists()
+    if not has_keypair:
+        # Can't sign the revoke request — just clear local state
+        saved.pop("device_id", None)
+        save_config(saved)
+        if json_mode:
+            print_result({"status": "cleared", "message": "Local state cleared (no keypair to revoke on Core)"}, json_mode)
+        else:
+            click.echo("  No keypair — cleared local device_id.")
+            click.echo("  Revoke on Core manually: dina-admin device revoke")
+        return
+
+    ident = CLIIdentity()
+    ident.ensure_loaded()
+
+    try:
+        did, ts, nonce, sig = ident.sign_request("DELETE", f"/v1/devices/{device_id}", b"")
+        resp = httpx.delete(
+            f"{core_url}/v1/devices/{device_id}",
+            headers={"X-DID": did, "X-Timestamp": ts, "X-Nonce": nonce, "X-Signature": sig},
+            timeout=10.0,
+        )
+        if resp.status_code in (200, 204):
+            saved.pop("device_id", None)
+            save_config(saved)
+            if json_mode:
+                print_result({"status": "unpaired", "device_id": device_id}, json_mode)
+            else:
+                click.echo(f"  Unpaired: {device_id}")
+                click.echo("  Re-pair with: dina configure")
+        elif resp.status_code == 404:
+            saved.pop("device_id", None)
+            save_config(saved)
+            if json_mode:
+                print_result({"status": "not_found", "device_id": device_id}, json_mode)
+            else:
+                click.echo(f"  Device {device_id} not found on Core (already revoked?).")
+        else:
+            if json_mode:
+                print_error(f"HTTP {resp.status_code}: {resp.text[:100]}", json_mode)
+            else:
+                click.echo(f"  Unpair failed: HTTP {resp.status_code}", err=True)
+            ctx.exit(1)
+    except httpx.ConnectError:
+        if json_mode:
+            print_error(f"Cannot reach Core at {core_url}", json_mode)
+        else:
+            click.echo(f"  Cannot reach Core at {core_url}.", err=True)
+            click.echo("  Revoke manually: dina-admin device revoke", err=True)
+        ctx.exit(1)
+
+
 def _default_device_name() -> str:
     """Generate a default device name from hostname."""
     import platform
     return f"{platform.node()}-cli"
+
+
+def _try_unpair(core_url: str, identity: Any) -> None:
+    """Best-effort unpair: revoke the current device from Core."""
+    saved = _load_saved()
+    device_id = saved.get("device_id", "")
+    if not device_id:
+        click.echo("  No device_id saved — skipping unpair.")
+        return
+    click.echo(f"  Unpairing old device ({device_id})...")
+    try:
+        did, ts, nonce, sig = identity.sign_request("DELETE", f"/v1/devices/{device_id}", b"")
+        resp = httpx.delete(
+            f"{core_url}/v1/devices/{device_id}",
+            headers={"X-DID": did, "X-Timestamp": ts, "X-Nonce": nonce, "X-Signature": sig},
+            timeout=10.0,
+        )
+        if resp.status_code in (200, 204, 404):
+            click.echo("  Old device revoked.")
+        else:
+            click.echo(f"  Unpair returned {resp.status_code} — continuing anyway.")
+    except Exception as exc:
+        click.echo(f"  Could not reach Core to unpair: {exc}")
+        click.echo("  Continuing — revoke the old device manually: dina-admin device revoke")
+    # Clear device_id from config
+    saved.pop("device_id", None)
+    save_config(saved)
 
 
 def _configure_signature(core_url: str, device_name: str) -> None:
@@ -658,6 +758,8 @@ def _configure_signature(core_url: str, device_name: str) -> None:
             # Re-pair with existing key
             _pair_with_key(core_url, identity, device_name)
             return
+        # Unpair old device before generating new keypair
+        _try_unpair(core_url, identity)
 
     click.echo("  Generating Ed25519 keypair...")
     identity.generate()
@@ -689,10 +791,16 @@ def _pair_with_key(core_url: str, identity: Any, device_name: str) -> None:
             )
             resp.raise_for_status()
             data = resp.json()
-            click.echo(f"  Paired! Device ID: {data.get('device_id', 'ok')}")
+            device_id = data.get("device_id", "")
+            click.echo(f"  Paired! Device ID: {device_id or 'ok'}")
             node_did = data.get("node_did", "")
             if node_did:
-                click.echo(f"  Home Node DID: {node_did}")
+                click.echo(f"  Dina: {node_did}")
+            # Save device_id so we can unpair later
+            if device_id:
+                saved = _load_saved()
+                saved["device_id"] = device_id
+                save_config(saved)
             return  # success
         except httpx.ConnectError:
             click.echo(f"  Cannot reach Core at {core_url}.", err=True)

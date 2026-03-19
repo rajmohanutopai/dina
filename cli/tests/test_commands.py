@@ -654,6 +654,65 @@ def test_audit_uses_audit_endpoint():
     mc.vault_query.assert_not_called()
 
 
+# ── unpair ────────────────────────────────────────────────────────────────
+
+
+def test_unpair_not_paired():
+    """Unpair when no device_id is saved."""
+    runner = CliRunner()
+    with patch("dina_cli.main._load_saved", return_value={}), \
+         patch("dina_cli.main.IDENTITY_DIR") as mock_dir:
+        mock_dir.__truediv__ = lambda self, x: MagicMock(exists=lambda: False)
+        result = runner.invoke(cli, ["unpair"])
+    assert result.exit_code == 0
+    assert "not_paired" in result.output.lower() or "already" in result.output.lower() or "never" in result.output.lower()
+
+
+def test_unpair_json(tmp_path):
+    """Unpair succeeds and returns JSON."""
+    identity_dir = tmp_path / "identity"
+    identity_dir.mkdir()
+    (identity_dir / "ed25519_private.pem").touch()
+
+    runner = CliRunner()
+    with patch("dina_cli.main._load_saved", return_value={"device_id": "dev-123", "core_url": "http://localhost:8100"}), \
+         patch("dina_cli.main.save_config"), \
+         patch("dina_cli.main.IDENTITY_DIR", identity_dir), \
+         patch("dina_cli.main.CLIIdentity") as MockIdent, \
+         patch("dina_cli.main.httpx") as mock_httpx:
+        mock_ident = MagicMock()
+        mock_ident.sign_request.return_value = ("did:key:z6Mk", "ts", "nonce", "sig")
+        MockIdent.return_value = mock_ident
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_httpx.delete.return_value = mock_resp
+        result = runner.invoke(cli, ["--json", "unpair"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["status"] == "unpaired"
+    assert data["device_id"] == "dev-123"
+
+
+def test_unpair_core_unreachable(tmp_path):
+    """Unpair fails gracefully when Core is unreachable."""
+    identity_dir = tmp_path / "identity"
+    identity_dir.mkdir()
+    (identity_dir / "ed25519_private.pem").touch()
+
+    runner = CliRunner()
+    with patch("dina_cli.main._load_saved", return_value={"device_id": "dev-123", "core_url": "http://localhost:8100"}), \
+         patch("dina_cli.main.IDENTITY_DIR", identity_dir), \
+         patch("dina_cli.main.CLIIdentity") as MockIdent, \
+         patch("dina_cli.main.httpx") as mock_httpx:
+        mock_ident = MagicMock()
+        mock_ident.sign_request.return_value = ("did:key:z6Mk", "ts", "nonce", "sig")
+        MockIdent.return_value = mock_ident
+        mock_httpx.delete.side_effect = Exception("connection refused")
+        mock_httpx.ConnectError = type("ConnectError", (Exception,), {})
+        result = runner.invoke(cli, ["unpair"])
+    assert result.exit_code != 0
+
+
 # TST-CLI-060
 def test_cli_config_has_no_persona():
     """CLI Config has no persona field — agents are persona-blind."""
