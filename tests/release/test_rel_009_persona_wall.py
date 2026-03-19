@@ -19,14 +19,24 @@ class TestPersonaWall:
         self, core_url, auth_headers,
     ) -> None:
         """Data stored in one persona is not visible in another."""
-        # Store health data in health persona — must succeed first
-        # Unlock health persona (sensitive tier — try common test passphrases)
-        for pw in ("", "test", "health", "testpass123"):
-            httpx.post(
-                f"{core_url}/v1/persona/unlock",
-                json={"persona": "health", "passphrase": pw},
-                headers=auth_headers, timeout=10,
-            )
+        # Store health data in health persona — must succeed first.
+        # Create (idempotent) with known passphrase, then unlock.
+        httpx.post(
+            f"{core_url}/v1/personas",
+            json={"name": "health", "tier": "sensitive", "passphrase": "rel009"},
+            headers=auth_headers, timeout=10,
+        )
+        httpx.post(
+            f"{core_url}/v1/persona/unlock",
+            json={"persona": "health", "passphrase": "rel009"},
+            headers=auth_headers, timeout=10,
+        )
+        # Also try empty passphrase (bootstrap default)
+        httpx.post(
+            f"{core_url}/v1/persona/unlock",
+            json={"persona": "health", "passphrase": ""},
+            headers=auth_headers, timeout=10,
+        )
         store_resp = httpx.post(
             f"{core_url}/v1/vault/store",
             json={
@@ -98,9 +108,19 @@ class TestPersonaWall:
     def test_rel_009_restricted_persona_requires_unlock(
         self, core_url, auth_headers,
     ) -> None:
-        """Health persona (restricted) requires explicit unlock."""
-        # Health persona was created as restricted in conftest
-        # Store should work if unlocked (conftest unlocks it)
+        """Health persona (sensitive) requires explicit unlock before store."""
+        # Ensure health exists and unlock it
+        httpx.post(
+            f"{core_url}/v1/personas",
+            json={"name": "health", "tier": "sensitive", "passphrase": "rel009"},
+            headers=auth_headers, timeout=10,
+        )
+        for pw in ("rel009", "", "test"):
+            httpx.post(
+                f"{core_url}/v1/persona/unlock",
+                json={"persona": "health", "passphrase": pw},
+                headers=auth_headers, timeout=10,
+            )
         resp = httpx.post(
             f"{core_url}/v1/vault/store",
             json={
