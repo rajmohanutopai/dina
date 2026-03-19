@@ -110,10 +110,15 @@ case "${1:-}" in
             "import httpx,json; print(json.dumps(httpx.get('http://localhost:8200/healthz',timeout=3).json()))" \
             2>/dev/null || true)
         if [ -n "$_brain_health" ]; then
-            _llm_router=$(echo "$_brain_health" | grep -oE '"llm_router"\s*:\s*"[^"]*"' | cut -d'"' -f4 || true)
-            _llm_models=$(echo "$_brain_health" | grep -oE '"llm_models"\s*:\s*"[^"]*"' | cut -d'"' -f4 || true)
+            _llm_router=$(echo "$_brain_health" | jq -r '.llm_router // empty' 2>/dev/null || true)
             if [ "$_llm_router" = "available" ]; then
-                echo -e "  LLM:       ${GREEN}available${RESET} ${DIM}${_llm_models}${RESET}"
+                _lite=$(echo "$_brain_health" | jq -r '.llm_models.lite // "?"' 2>/dev/null || echo "?")
+                _primary=$(echo "$_brain_health" | jq -r '.llm_models.primary // "?"' 2>/dev/null || echo "?")
+                _heavy=$(echo "$_brain_health" | jq -r '.llm_models.heavy // "?"' 2>/dev/null || echo "?")
+                echo -e "  LLM:       ${GREEN}available${RESET}"
+                echo -e "             ${DIM}Lite:    ${_lite}${RESET}"
+                echo -e "             ${DIM}Primary: ${_primary}${RESET}"
+                echo -e "             ${DIM}Heavy:   ${_heavy}${RESET}"
             else
                 echo -e "  LLM:       ${YELLOW}not configured${RESET}"
             fi
@@ -370,10 +375,15 @@ _brain_health=$($COMPOSE exec -T brain python -c \
     "import httpx,json; print(json.dumps(httpx.get('http://localhost:8200/healthz',timeout=3).json()))" \
     2>/dev/null || true)
 if [ -n "${_brain_health}" ]; then
-    _llm_router=$(echo "${_brain_health}" | grep -oE '"llm_router"\s*:\s*"[^"]*"' | cut -d'"' -f4 || true)
-    _llm_models=$(echo "${_brain_health}" | grep -oE '"llm_models"\s*:\s*"[^"]*"' | cut -d'"' -f4 || true)
+    _llm_router=$(echo "${_brain_health}" | jq -r '.llm_router // empty' 2>/dev/null || true)
     if [ "${_llm_router}" = "available" ]; then
-        echo -e "  LLM:       ${GREEN}available${RESET} ${DIM}${_llm_models}${RESET}"
+        _lite=$(echo "${_brain_health}" | jq -r '.llm_models.lite // "?"' 2>/dev/null || echo "?")
+        _primary=$(echo "${_brain_health}" | jq -r '.llm_models.primary // "?"' 2>/dev/null || echo "?")
+        _heavy=$(echo "${_brain_health}" | jq -r '.llm_models.heavy // "?"' 2>/dev/null || echo "?")
+        echo -e "  LLM:       ${GREEN}available${RESET}"
+        echo -e "             ${DIM}Lite:    ${_lite}${RESET}"
+        echo -e "             ${DIM}Primary: ${_primary}${RESET}"
+        echo -e "             ${DIM}Heavy:   ${_heavy}${RESET}"
     else
         echo -e "  LLM:       ${YELLOW}not configured${RESET} ${DIM}edit .env to add your API key${RESET}"
     fi

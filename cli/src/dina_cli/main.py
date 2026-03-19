@@ -1,7 +1,7 @@
 """Click command group for the Dina CLI.
 
-Commands: remember, ask, validate, validate-status, scrub, rehydrate,
-draft, audit, configure, session.
+Commands: status, remember, ask, validate, validate-status, scrub,
+rehydrate, draft, audit, configure, session.
 """
 
 from __future__ import annotations
@@ -19,9 +19,10 @@ import click
 import httpx
 
 from .client import DinaClient, DinaClientError
-from .config import CONFIG_FILE, load_config, save_config
+from .config import CONFIG_FILE, IDENTITY_DIR, load_config, save_config, _load_saved
 from .output import print_error, print_result
 from .session import SessionStore
+from .signing import CLIIdentity
 
 # Safe actions that auto-approve when Brain is unavailable.
 _SAFE_ACTIONS = frozenset({
@@ -58,6 +59,81 @@ def cli(ctx: click.Context, json_mode: bool, verbose: bool) -> None:
     ctx.obj["json"] = json_mode
     ctx.obj["verbose"] = verbose
     ctx.obj["sessions"] = SessionStore()
+
+
+# ── status ────────────────────────────────────────────────────────────────
+
+
+@cli.command()
+@click.pass_context
+def status(ctx: click.Context) -> None:
+    """Show pairing status and connectivity."""
+    json_mode = ctx.obj["json"]
+    result: dict[str, Any] = {}
+
+    # Check keypair
+    has_keypair = (IDENTITY_DIR / "ed25519_private.pem").exists()
+    result["keypair"] = "present" if has_keypair else "missing"
+
+    # Load saved config
+    saved = _load_saved()
+    core_url = os.environ.get("DINA_CORE_URL") or saved.get("core_url") or "http://localhost:8100"
+    result["core_url"] = core_url
+    result["device_name"] = saved.get("device_name", "")
+
+    # Device DID
+    if has_keypair:
+        try:
+            ident = CLIIdentity()
+            ident.ensure_loaded()
+            result["did"] = ident.did()
+        except Exception:
+            result["did"] = "error"
+    else:
+        result["did"] = ""
+
+    # Connectivity + auth
+    result["core_reachable"] = False
+    result["authenticated"] = False
+    try:
+        health = httpx.get(f"{core_url}/healthz", timeout=5)
+        result["core_reachable"] = health.status_code == 200
+    except Exception:
+        pass
+
+    result["home_did"] = ""
+    if has_keypair and result["core_reachable"]:
+        try:
+            client = _make_client(ctx)
+            did_doc = client.did_get()
+            result["authenticated"] = True
+            result["home_did"] = did_doc.get("did", did_doc.get("id", ""))
+        except Exception:
+            pass
+
+    result["paired"] = result["authenticated"]
+
+    if json_mode:
+        print_result(result, json_mode)
+    else:
+        if result["paired"]:
+            click.echo("  Paired:    yes")
+        elif has_keypair:
+            click.echo("  Paired:    no (keypair exists but not registered with Core)")
+        else:
+            click.echo("  Paired:    no (run: dina configure && dina pair)")
+
+        if result["did"]:
+            click.echo(f"  Device:    {result['did']}")
+        click.echo(f"  Dina:      {result['home_did'] or 'not connected'}")
+        if result["device_name"]:
+            click.echo(f"  Name:      {result['device_name']}")
+        click.echo(f"  Core:      {result['core_url']}")
+
+        if result["core_reachable"]:
+            click.echo("  Reachable: yes")
+        else:
+            click.echo("  Reachable: no")
 
 
 # ── remember ──────────────────────────────────────────────────────────────

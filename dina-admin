@@ -140,18 +140,19 @@ _model_list() {
         exit 1
     }
 
-    local router models
-    router=$(echo "${health}" | grep -oE '"llm_router"\s*:\s*"[^"]*"' | cut -d'"' -f4 || true)
-    models=$(echo "${health}" | grep -oE '"llm_models"\s*:\s*"[^"]*"' | cut -d'"' -f4 || true)
+    local router
+    router=$(echo "${health}" | jq -r '.llm_router // empty' 2>/dev/null || true)
 
-    if [ "${router}" = "available" ] && [ -n "${models}" ]; then
+    if [ "${router}" = "available" ]; then
         echo -e "  ${BOLD}Active models:${RESET}"
         echo ""
-        IFS=',' read -ra _arr <<< "${models}"
-        for m in "${_arr[@]}"; do
-            m=$(echo "$m" | sed 's/^ *//')
-            echo -e "    ${GREEN}●${RESET} ${m}"
-        done
+        local lite primary heavy
+        lite=$(echo "${health}" | jq -r '.llm_models.lite // "?"' 2>/dev/null || echo "?")
+        primary=$(echo "${health}" | jq -r '.llm_models.primary // "?"' 2>/dev/null || echo "?")
+        heavy=$(echo "${health}" | jq -r '.llm_models.heavy // "?"' 2>/dev/null || echo "?")
+        printf "    ${GREEN}●${RESET} %-10s %s\n" "Lite:" "$lite"
+        printf "    ${GREEN}●${RESET} %-10s %s\n" "Primary:" "$primary"
+        printf "    ${GREEN}●${RESET} %-10s %s\n" "Heavy:" "$heavy"
     else
         echo -e "  ${YELLOW}No LLM provider configured.${RESET}"
     fi
@@ -178,7 +179,7 @@ for p in d.get('providers',{}).values():
         done
     fi
     echo ""
-    echo -e "  ${DIM}After changing .env, restart: ${CYAN}./run.sh --restart${RESET}"
+    echo -e "  ${DIM}After changing .env, restart: ${CYAN}./run.sh --stop${RESET}${DIM} then ${CYAN}./run.sh --start${RESET}"
 }
 
 _model_status() {

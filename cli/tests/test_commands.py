@@ -33,6 +33,83 @@ def _invoke(args, mock_client=None, env=None):
     return result
 
 
+# ── status ────────────────────────────────────────────────────────────────
+
+
+def test_status_paired_json(tmp_path):
+    """Status shows paired when keypair exists and auth succeeds."""
+    mc = MagicMock()
+    mc.did_get.return_value = {"did": "did:key:z6MkTest"}
+    identity_dir = tmp_path / "identity"
+    identity_dir.mkdir()
+    (identity_dir / "ed25519_private.pem").touch()
+
+    runner = CliRunner()
+    with patch("dina_cli.main.DinaClient") as MockCls, \
+         patch("dina_cli.main.load_config", return_value=_test_config()), \
+         patch("dina_cli.main.httpx") as mock_httpx, \
+         patch("dina_cli.config.IDENTITY_DIR", identity_dir), \
+         patch("dina_cli.main.IDENTITY_DIR", identity_dir):
+        MockCls.return_value = mc
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_httpx.get.return_value = mock_resp
+        # Mock the signing identity
+        with patch("dina_cli.main.CLIIdentity") as MockIdent:
+            mock_ident = MagicMock()
+            mock_ident.did.return_value = "did:key:z6MkTestDevice"
+            MockIdent.return_value = mock_ident
+            result = runner.invoke(cli, ["--json", "status"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["paired"] is True
+    assert data["did"] == "did:key:z6MkTestDevice"
+    assert data["core_reachable"] is True
+
+
+def test_status_not_paired(tmp_path):
+    """Status shows not paired when no keypair exists."""
+    identity_dir = tmp_path / "identity"
+    identity_dir.mkdir()
+    # No keypair file
+
+    runner = CliRunner()
+    with patch("dina_cli.main.load_config", side_effect=Exception("no keypair")), \
+         patch("dina_cli.config.IDENTITY_DIR", identity_dir), \
+         patch("dina_cli.main.IDENTITY_DIR", identity_dir), \
+         patch("dina_cli.main.httpx") as mock_httpx:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_httpx.get.return_value = mock_resp
+        result = runner.invoke(cli, ["status"])
+    assert result.exit_code == 0
+    assert "no" in result.output.lower()
+
+
+def test_status_unreachable(tmp_path):
+    """Status shows unreachable when Core is down."""
+    identity_dir = tmp_path / "identity"
+    identity_dir.mkdir()
+    (identity_dir / "ed25519_private.pem").touch()
+
+    runner = CliRunner()
+    with patch("dina_cli.main.DinaClient") as MockCls, \
+         patch("dina_cli.main.load_config", return_value=_test_config()), \
+         patch("dina_cli.main.httpx") as mock_httpx, \
+         patch("dina_cli.config.IDENTITY_DIR", identity_dir), \
+         patch("dina_cli.main.IDENTITY_DIR", identity_dir):
+        mock_httpx.get.side_effect = Exception("connection refused")
+        with patch("dina_cli.main.CLIIdentity") as MockIdent:
+            mock_ident = MagicMock()
+            mock_ident.did.return_value = "did:key:z6MkTestDevice"
+            MockIdent.return_value = mock_ident
+            result = runner.invoke(cli, ["--json", "status"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["core_reachable"] is False
+    assert data["paired"] is False
+
+
 # ── remember ──────────────────────────────────────────────────────────────
 
 
