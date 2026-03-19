@@ -576,8 +576,12 @@ func main() {
 		// Brain push is wired after brain client creation (see below).
 	}
 
-	// 11. Pairing
+	// 11. Pairing (with persistence so devices survive restart)
 	pairer := pairing.NewManager(pairing.DefaultConfig())
+	devicePersistPath := filepath.Join(cfg.VaultPath, "paired_devices.json")
+	if err := pairer.SetPersistPath(devicePersistPath); err != nil {
+		slog.Warn("pairing: failed to load persisted devices", "error", err)
+	}
 
 	// 12. Brain Client (service-key auth only).
 	brain := brainclient.New(cfg.BrainURL, coreKey)
@@ -831,6 +835,33 @@ func main() {
 
 	deviceSvc := service.NewDeviceService(pairer, deviceRegistry, clk)
 	deviceSvc.SetKeyRegistrar(tokenValidator)
+
+	// Reload persisted device keys into the auth validator so that
+	// paired devices survive Core restarts. Without this, device
+	// registrations persist to disk but signed requests fail after restart.
+	{
+		ctx := context.Background()
+		devices, err := pairer.ListDevices(ctx)
+		if err == nil {
+			reloaded := 0
+			for _, d := range devices {
+				if d.DID != "" && !d.Revoked {
+					// Extract raw public key from did:key multibase
+					multibase := strings.TrimPrefix(d.DID, "did:key:")
+					if len(multibase) > 1 && multibase[0] == 'z' {
+						raw, decErr := base58.Decode(multibase[1:])
+						if decErr == nil && len(raw) == 34 && raw[0] == 0xed && raw[1] == 0x01 {
+							tokenValidator.RegisterDeviceKey(d.DID, raw[2:], d.TokenID)
+							reloaded++
+						}
+					}
+				}
+			}
+			if reloaded > 0 {
+				slog.Info("pairing: reloaded device keys into auth validator", "count", reloaded)
+			}
+		}
+	}
 
 	estateSvc := service.NewEstateService(
 		estateMgr, vaultMgr, recoveryMgr, notifier, clk,

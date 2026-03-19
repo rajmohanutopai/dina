@@ -88,13 +88,14 @@ type deviceRecord struct {
 // PairingManager handles device pairing via QR code / numeric PIN.
 // It satisfies testutil.PairingManager.
 type PairingManager struct {
-	mu      sync.Mutex
-	codes   map[string]*pairingCode // code -> pending pairing
-	devices []deviceRecord
-	codeTTL time.Duration
-	nodeDID string
-	wsURL   string
-	nextID  int
+	mu          sync.Mutex
+	codes       map[string]*pairingCode // code -> pending pairing
+	devices     []deviceRecord
+	codeTTL     time.Duration
+	nodeDID     string
+	wsURL       string
+	nextID      int
+	persistPath string // JSON file for device persistence across restarts
 }
 
 // Config configures the PairingManager.
@@ -234,6 +235,7 @@ func (pm *PairingManager) CompletePairing(_ context.Context, code string, device
 		lastSeen:  now,
 		revoked:   false,
 	})
+	pm.persistDevices()
 
 	return clientToken, tokenID, nil
 }
@@ -312,6 +314,7 @@ func (pm *PairingManager) CompletePairingWithKey(
 		lastSeen:  now,
 		revoked:   false,
 	})
+	pm.persistDevices()
 
 	return tokenID, pm.nodeDID, nil
 }
@@ -351,6 +354,7 @@ func (pm *PairingManager) RevokeDevice(_ context.Context, tokenID string) error 
 				return ErrDeviceRevoked
 			}
 			pm.devices[i].revoked = true
+			pm.persistDevices()
 			return nil
 		}
 	}

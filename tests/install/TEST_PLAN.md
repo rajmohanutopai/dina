@@ -6,7 +6,7 @@ Tests that verify the full install-to-first-use journey. Every test maps to a re
 
 | File | Tests | Scope | Speed |
 |------|-------|-------|-------|
-| `test_install_blackbox.py` | 9 | Fresh install outputs (secrets, keys, .env, health, DID, lifecycle) | Slow (full install) |
+| `test_install_blackbox.py` | 10 | Fresh install, lifecycle, device pairing survives restart | Slow (full install) |
 | `test_install_rerun.py` | 6 | Idempotency (seed, salt, keys, DID, .env preserved on rerun) | Slow (full install + rerun) |
 | `test_install_failures.py` | 6 | Failure paths (corrupt seed, missing Docker, bad permissions) | Medium (pexpect, no build) |
 | `test_startup_modes.py` | 4 | Auto-start vs manual-start behavior | Slow (full install) |
@@ -14,7 +14,7 @@ Tests that verify the full install-to-first-use journey. Every test maps to a re
 | `test_post_install.py` | 21 | Functional validation against running Core (dual-mode) | Fast with env vars |
 | `test_model_set.py` | 10 | dina-admin model set (direct + interactive, models.json edit) | Fast (2s, no Docker) |
 
-**Total: 71 tests**
+**Total: 73 tests**
 
 ## Running
 
@@ -50,6 +50,7 @@ DINA_CORE_URL=http://localhost:8100 DINA_CLIENT_TOKEN=<token> \
 | 18 | No LLM smoke test during install | In install.sh, verified by manual test |
 | 31 | Invalid Telegram choice not caught | `test_install_functional::TestInputValidation::test_invalid_telegram_choice` |
 | 47 | Deleted persona recreated on restart | `test_post_install::TestPersonaBootstrapIdempotent` |
+| 48 | Paired device auth lost on restart | `test_install_blackbox::TestDevicePairingSurvivesRestart` |
 
 ## Coverage by Area
 
@@ -60,6 +61,7 @@ DINA_CORE_URL=http://localhost:8100 DINA_CLIENT_TOKEN=<token> \
 | .env generation | 3 | Complete |
 | Container health | 2 | Complete |
 | DID generation & stability | 3 | Complete |
+| Device pairing survives restart | 1 | Complete |
 | Idempotent rerun | 6 | Complete |
 | Startup modes (auto/manual) | 5 | Complete |
 | Failure paths (corrupt, missing Docker) | 6 | Complete |

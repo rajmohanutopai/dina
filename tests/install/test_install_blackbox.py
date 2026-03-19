@@ -155,6 +155,128 @@ class TestFullLifecycle:
         )
 
 
+class TestDevicePairingSurvivesRestart:
+    """Paired device authentication works after Core restart.
+
+    This is the regression test for the bug where device registrations
+    were lost on restart because:
+    1. PairingManager stored devices in-memory only (no persistence)
+    2. Auth validator lost device keys on restart (no reload)
+    """
+
+    def test_paired_device_auth_survives_restart(self, installed_dir: Path) -> None:
+        """Pair → restart → signed request still authenticates."""
+        port = _get_core_port(installed_dir)
+        token_file = installed_dir / "secrets" / "client_token"
+        if not token_file.exists():
+            pytest.skip("No client_token — cannot test pairing")
+        token = token_file.read_text().strip()
+        auth = {"Authorization": f"Bearer {token}"}
+
+        # 1. Initiate pairing
+        init_resp = httpx.post(
+            f"http://localhost:{port}/v1/pair/initiate",
+            headers=auth,
+            timeout=10,
+        )
+        assert init_resp.status_code == 200
+        code = init_resp.json().get("code", "")
+        assert code
+
+        # 2. Generate a test Ed25519 keypair
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+        import hashlib
+        import time as _time
+
+        priv_key = Ed25519PrivateKey.generate()
+        pub_bytes = priv_key.public_bytes(Encoding.Raw, PublicFormat.Raw)
+        # Multibase: z + base58btc(0xed01 + pubkey)
+        import base58 as _b58
+        multicodec = bytes([0xed, 0x01]) + pub_bytes
+        multibase = "z" + _b58.b58encode(multicodec).decode()
+
+        # 3. Complete pairing with the test key
+        pair_resp = httpx.post(
+            f"http://localhost:{port}/v1/pair/complete",
+            json={"code": code, "device_name": "restart-test", "public_key_multibase": multibase},
+            timeout=10,
+        )
+        assert pair_resp.status_code == 200, f"Pairing failed: {pair_resp.text}"
+        device_id = pair_resp.json().get("device_id", "")
+        assert device_id
+
+        # 4. Verify signed request works before restart
+        did = f"did:key:{multibase}"
+        ts = str(int(_time.time()))
+        nonce = os.urandom(16).hex()
+        method = "GET"
+        path = "/v1/did"
+        body_hash = hashlib.sha256(b"").hexdigest()
+        canonical = f"{method}\n{path}\n\n{ts}\n{nonce}\n{body_hash}"
+        sig = priv_key.sign(canonical.encode()).hex()
+
+        pre_resp = httpx.get(
+            f"http://localhost:{port}{path}",
+            headers={
+                "X-DID": did,
+                "X-Timestamp": ts,
+                "X-Nonce": nonce,
+                "X-Signature": sig,
+            },
+            timeout=10,
+        )
+        assert pre_resp.status_code == 200, (
+            f"Signed request failed BEFORE restart: {pre_resp.status_code}"
+        )
+
+        # 5. Restart Core
+        result = subprocess.run(
+            ["bash", str(installed_dir / "run.sh"), "--stop"],
+            cwd=str(installed_dir),
+            capture_output=True,
+            timeout=60,
+            env={**os.environ, "DINA_DIR": str(installed_dir)},
+        )
+        assert result.returncode == 0
+
+        child = pexpect.spawn(
+            "bash",
+            [str(installed_dir / "run.sh"), "--start"],
+            cwd=str(installed_dir),
+            timeout=180,
+            encoding="utf-8",
+            env={**os.environ, "DINA_DIR": str(installed_dir)},
+        )
+        idx = child.expect(
+            ["Dina is running", "Containers already running", pexpect.TIMEOUT],
+            timeout=120,
+        )
+        assert idx in (0, 1), f"run.sh --start failed: {child.before}"
+        child.close()
+
+        # 6. Verify signed request works AFTER restart
+        ts2 = str(int(_time.time()))
+        nonce2 = os.urandom(16).hex()
+        canonical2 = f"{method}\n{path}\n\n{ts2}\n{nonce2}\n{body_hash}"
+        sig2 = priv_key.sign(canonical2.encode()).hex()
+
+        post_resp = httpx.get(
+            f"http://localhost:{port}{path}",
+            headers={
+                "X-DID": did,
+                "X-Timestamp": ts2,
+                "X-Nonce": nonce2,
+                "X-Signature": sig2,
+            },
+            timeout=10,
+        )
+        assert post_resp.status_code == 200, (
+            f"Signed request failed AFTER restart: {post_resp.status_code} "
+            f"(device key not reloaded into auth validator)"
+        )
+
+
 class TestInstallPrompts:
     """Verify specific interactive prompt flows."""
 

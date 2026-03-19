@@ -105,7 +105,7 @@ case "${1:-}" in
             echo -e "  DID:       ${YELLOW}not available${RESET} ${DIM}(Core may still be initializing)${RESET}"
         fi
 
-        # LLM status from Brain
+        # LLM status — show models from Brain healthz, then verify with a real call
         _brain_health=$($COMPOSE exec -T brain python -c \
             "import httpx,json; print(json.dumps(httpx.get('http://localhost:8200/healthz',timeout=3).json()))" \
             2>/dev/null || true)
@@ -115,7 +115,32 @@ case "${1:-}" in
                 _lite=$(echo "$_brain_health" | jq -r '.llm_models.lite // "?"' 2>/dev/null || echo "?")
                 _primary=$(echo "$_brain_health" | jq -r '.llm_models.primary // "?"' 2>/dev/null || echo "?")
                 _heavy=$(echo "$_brain_health" | jq -r '.llm_models.heavy // "?"' 2>/dev/null || echo "?")
-                echo -e "  LLM:       ${GREEN}available${RESET}"
+
+                # Verify LLM actually works with a real call
+                _token_file="${SECRETS_DIR}/client_token"
+                _llm_ok=false
+                if [ -f "$_token_file" ]; then
+                    _token=$(cat "$_token_file" 2>/dev/null || true)
+                    if [ -n "$_token" ]; then
+                        _reason_resp=$(curl -sf -X POST \
+                            -H "Authorization: Bearer $_token" \
+                            -H "Content-Type: application/json" \
+                            -d '{"prompt":"Reply OK"}' \
+                            "http://localhost:${CORE_PORT}/api/v1/reason" 2>/dev/null || true)
+                        _error_code=$(echo "$_reason_resp" | jq -r '.error_code // empty' 2>/dev/null || true)
+                        _content=$(echo "$_reason_resp" | jq -r '.content // empty' 2>/dev/null || true)
+                        if [ -z "$_error_code" ] && [ -n "$_content" ]; then
+                            _llm_ok=true
+                        fi
+                    fi
+                fi
+
+                if [ "$_llm_ok" = true ]; then
+                    echo -e "  LLM:       ${GREEN}available${RESET}"
+                else
+                    _msg=$(echo "$_reason_resp" | jq -r '.message // empty' 2>/dev/null || true)
+                    echo -e "  LLM:       ${YELLOW}not working${RESET} ${DIM}${_msg}${RESET}"
+                fi
                 echo -e "             ${DIM}Lite:    ${_lite}${RESET}"
                 echo -e "             ${DIM}Primary: ${_primary}${RESET}"
                 echo -e "             ${DIM}Heavy:   ${_heavy}${RESET}"
