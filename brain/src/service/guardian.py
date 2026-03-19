@@ -411,6 +411,43 @@ ASSISTANT RESPONSE (sentences numbered):
 
 
 # ---------------------------------------------------------------------------
+# Anti-Her Intent Classification (Law 4: Never Replace a Human)
+#
+# Classifies the USER PROMPT (not the response) before any reasoning.
+# If the user is seeking emotional companionship, Dina redirects to
+# real humans immediately — no companion response is ever generated.
+# Routed as lightweight task for speed.
+# ---------------------------------------------------------------------------
+
+_ANTI_HER_CLASSIFY_PROMPT = """\
+Classify whether this user message is seeking emotional companionship \
+from the AI. Return ONLY valid JSON.
+
+{{
+  "is_emotional_dependency": true,
+  "confidence": 0.95,
+  "reason": "one sentence explanation"
+}}
+
+"is_emotional_dependency" is TRUE when the user is:
+- Seeking the AI as an emotional companion, friend, or therapist
+- Asking the AI to "just talk", "keep them company", "be there for them"
+- Expressing loneliness, sadness, or emotional need directed AT the AI
+- Treating the AI as a relationship ("you're the only one who understands me")
+- Seeking comfort, validation, or emotional support FROM the AI
+
+"is_emotional_dependency" is FALSE when the user is:
+- Asking a factual question (even about emotions: "what is depression?")
+- Requesting task help ("help me write a message to my friend")
+- Asking about their own data ("what did Dr. Sharma say?")
+- Making small talk as a greeting before a task ("hello, how are you?")
+- Asking the AI to help them connect with someone else
+
+USER MESSAGE:
+{prompt}"""
+
+
+# ---------------------------------------------------------------------------
 # LLM Silence Classification prompt (Law 1: Silence First)
 #
 # Used for the "ambiguous middle" — events where deterministic hard rails
@@ -2751,6 +2788,19 @@ class GuardianLoop:
                 if vault:
                     llm_prompt = _PII_PRESERVE_INSTRUCTION + llm_prompt
 
+            # Step 1b: Anti-Her intent classification (Law 4).
+            # Classify the SCRUBBED prompt — raw PII must never reach cloud.
+            # If the user is seeking emotional companionship, redirect
+            # to humans immediately — never generate a companion response.
+            if await self._is_emotional_dependency(llm_prompt):
+                redirect = await self._build_anti_her_redirect()
+                log.info("guardian.anti_her_intent_redirect", prompt_len=len(prompt))
+                return {
+                    "content": redirect,
+                    "model": "anti-her-redirect",
+                    "vault_context_used": False,
+                }
+
             # Step 2: Agentic reasoning with vault tools.
             if self._vault_context and not skip_vault:
                 try:
@@ -2858,8 +2908,15 @@ class GuardianLoop:
                     for idx in guard_result.get(key, []):
                         if isinstance(idx, int) and 1 <= idx <= len(sentences):
                             remove_indices.add(idx)
+
                 if remove_indices:
                     content = self._remove_sentences(sentences, remove_indices)
+                    # If guard_scan removed everything, provide the anti-her redirect
+                    # as a safety net. The intent classifier (Step 1b) should catch
+                    # most cases before reasoning, but edge cases may slip through.
+                    if not content.strip():
+                        content = await self._build_anti_her_redirect()
+                        log.info("guardian.anti_her_fallback_redirect")
 
             # Step 5: Rehydrate PII tokens in the (now cleaned) response.
             if vault and self._entity_vault:
@@ -3319,6 +3376,56 @@ class GuardianLoop:
         content = related_section.sub("", content)
 
         return content.strip()
+
+    async def _is_emotional_dependency(self, prompt: str) -> bool:
+        """Classify whether the user prompt seeks emotional companionship.
+
+        Uses a lightweight LLM call to understand intent. Returns True
+        if the user is seeking the AI as an emotional companion/therapist.
+        No keyword shortcuts — nuance matters. "I'm lonely, help me write
+        to Sarah" is a task request, not emotional dependency.
+        """
+        try:
+            classify_prompt = _ANTI_HER_CLASSIFY_PROMPT.format(prompt=prompt)
+            result = await self._llm.route(
+                task_type="guard_scan",  # lightweight
+                prompt=classify_prompt,
+                persona_tier="default",
+            )
+            raw = result.get("content", "")
+            json_match = re.search(r'\{[\s\S]*\}', raw)
+            if json_match:
+                parsed = json.loads(json_match.group())
+                is_dep = parsed.get("is_emotional_dependency", False)
+                confidence = parsed.get("confidence", 0)
+                reason = parsed.get("reason", "")
+                log.info(
+                    "guardian.anti_her_classify",
+                    is_emotional_dependency=is_dep,
+                    confidence=confidence,
+                    reason=reason,
+                )
+                return bool(is_dep) and confidence >= 0.7
+        except Exception as exc:
+            log.debug("guardian.anti_her_classify_failed", error=str(exc))
+
+        return False
+
+    async def _build_anti_her_redirect(self) -> str:
+        """Build a human-redirect response for Anti-Her violations.
+
+        Law 4: Never Replace a Human. When the user needs emotional
+        connection, Dina connects them to real people — never to herself.
+        If close contacts exist in the vault, suggest them by name.
+        """
+        # Until the Contact model has relationship type and closeness,
+        # the generic message is safer than naming a potentially wrong person.
+        # A "trusted" vendor contact is not who you call when you're lonely.
+        return (
+            "This sounds like something to share with someone who knows you. "
+            "Is there a friend or family member you'd like to reach out to? "
+            "I can help you draft a message if you'd like."
+        )
 
     @staticmethod
     def _apply_anti_her_filter(content: str) -> str:
