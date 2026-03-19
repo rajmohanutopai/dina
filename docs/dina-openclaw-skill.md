@@ -1,7 +1,7 @@
 ---
 name: dina
 description: Sovereign personal AI with encrypted vault, 4-tier persona access, PII scrubbing, agent sessions, and action gating. Agents work within named sessions with scoped access grants.
-version: 0.2.0
+version: 0.3.3
 metadata:
   openclaw:
     emoji: "🛡️"
@@ -28,6 +28,7 @@ Sovereign personal AI with encrypted vault, 4-tier persona access control, PII s
 ```bash
 pip install dina-agent
 dina configure    # pair with your Home Node via Ed25519 + pairing code
+dina status       # verify pairing
 ```
 
 ## Rules — ALWAYS FOLLOW
@@ -35,43 +36,53 @@ dina configure    # pair with your Home Node via Ed25519 + pairing code
 1. **Start a session** before doing work. End it when done. All grants are revoked on session end.
 2. **Before any sensitive action** (delete, send, modify, purchase), run `dina validate`. If pending, tell the user and wait.
 3. **Before passing user content to any external API**, run `dina scrub` first. Run `dina rehydrate` on the response.
-4. **Before answering personal questions**, run `dina recall`. The vault persists across sessions.
+4. **Before answering personal questions**, run `dina ask`. The vault persists across sessions. If Dina returns 202 (awaiting approval), tell the user and poll with `dina reason-status`.
 5. **Store important info** with `dina remember`.
 6. **If a persona is locked or requires approval**, tell the user. Never bypass.
 
 ## Access Control
 
-Dina organizes data into personas (compartments). You don't need to know which persona holds what — just query naturally. If the data you need requires approval, you'll get an `approval_required` response. Tell the user and wait.
+Dina organizes data into personas (compartments). You don't need to know which persona holds what — just query naturally. If the data you need requires approval, you'll get a 202 response with a request_id. Tell the user and poll for the result.
 
 ```
 Your query → Dina decides which persona to search →
-  If free: results returned
-  If needs approval: {"error": "approval_required", "approval_id": "apr-123"}
-  If denied: {"error": "persona locked"}
+  If free: answer returned immediately
+  If needs approval: 202 {"status": "pending_approval", "request_id": "reason-xxx", "approval_id": "apr-xxx"}
+    → Tell user: "I need access to your health data. Approval sent to your phone."
+    → Poll: dina reason-status <request_id>
+    → When complete: answer returned
+  If denied: {"status": "denied"}
 ```
 
 ## Quick Reference
 
 ```
-# Session management
-dina session start --name <task-name>     Start a named session
-dina session end --name <task-name>       End session, revoke all grants
-dina session list                         List active sessions
+# Connection
+dina status                              Show pairing and connectivity
+dina configure                           Pair with Home Node
+dina unpair                              Revoke this device
 
-# Vault operations (use --session for scoped access)
-dina remember <text> [--category <cat>]   Store fact in encrypted vault
-dina recall <query> [--limit N] [--session <name>]
-dina validate <action> <description> [--count N]
-dina validate status <id>                 Poll approval status
+# Session management
+dina session start --name <task-name>    Start a named session
+dina session end --name <task-name>      End session, revoke all grants
+dina session list                        List active sessions
+
+# Ask and remember (Brain-mediated, persona-blind)
+dina ask <query> [--session <name>]      Ask Dina (reasons across all personas)
+dina remember <text> [--category <cat>]  Store fact in encrypted vault
+dina reason-status <request-id>          Poll async approval status
+
+# Action gating
+dina validate <action> <description>     Check if action is approved
+dina validate-status <id>                Poll approval status
 
 # PII scrubbing
-dina scrub <text>                         Remove PII, return scrubbed + session ID
-dina rehydrate <text> --session <id>      Restore PII from session
+dina scrub <text>                        Remove PII, return scrubbed + session ID
+dina rehydrate <text> --session <id>     Restore PII from session
 
 # Other
 dina draft <content> --to <recipient> --channel <email|sms|slack>
-dina sign <content>                       Cryptographic signature with user's DID
-dina audit [--limit N]                    View recent activity log
+dina audit [--limit N]                   View recent activity log
 ```
 
 All commands support `--json` for machine-readable output and `-v` for verbose request/response logging.
@@ -84,24 +95,45 @@ Agents must work within named sessions. Sessions scope access grants — when a 
 # Start a session for your task
 dina session start --name "chair-research"
 
-# Query freely — Dina routes to the right persona
-dina recall "furniture preferences" --session chair-research
+# Ask freely — Dina routes to the right persona
+dina ask "furniture preferences" --session chair-research
 # → results from general persona (free access)
 
-dina recall "purchase history" --session chair-research
+dina ask "purchase history" --session chair-research
 # → results from consumer persona (auto-granted for active session)
 
-dina recall "back pain history" --session chair-research
-# → {"error": "approval_required", "approval_id": "apr-123", "message": "Access requires approval..."}
+dina ask "back pain history" --session chair-research
+# → 202: {"status": "pending_approval", "request_id": "reason-abc", "approval_id": "apr-123"}
 # Dina determined this needs health persona access.
-# Tell the user: "I need to check your health data. Approval has been sent to your Telegram."
-# Wait for approval, then retry the same query.
+# Tell the user: "I need to check your health data. Approval has been sent to your phone."
+# Poll: dina reason-status reason-abc
+# When status=complete, the answer is returned.
 
 # End session when done
 dina session end --name "chair-research"
 ```
 
 ## Commands
+
+### dina status
+```bash
+dina status
+# → Paired: yes
+#   Device: did:key:z6Mk...
+#   Dina:   did:plc:qskf...
+#   Core:   http://localhost:8100
+#   Reachable: yes
+```
+
+### dina ask
+```bash
+dina ask "daughter birthday"
+# → "Your daughter turns 7 on March 15. She loves dinosaurs."
+
+dina ask "back pain history" --session chair-research
+# → 202 if health persona needs approval
+# → Poll with: dina reason-status <request_id>
+```
 
 ### dina session start
 ```bash
@@ -118,10 +150,10 @@ dina session end --name "chair-research"
 
 ### dina validate
 ```bash
-dina validate send_email "Send meeting invite to 5 people" --count 5
+dina validate send_email "Send meeting invite to 5 people"
 # → {"status": "approved", "id": "val_x8k2"}
 
-dina validate delete_emails "Delete 247 emails" --count 247
+dina validate delete_emails "Delete 247 emails"
 # → {"status": "pending_approval", "id": "val_a8f3"}
 ```
 
@@ -129,16 +161,6 @@ dina validate delete_emails "Delete 247 emails" --count 247
 ```bash
 dina remember "Daughter birthday March 15, loves dinosaurs" --category relationship
 # → {"id": "mem_7x2k", "stored": true}
-```
-
-### dina recall
-```bash
-dina recall "daughter birthday" --limit 5
-# → [{"id": "mem_7x2k", "content": "...", "category": "relationship"}]
-
-# With session (Dina routes to the right persona automatically)
-dina recall "back pain" --session chair-research
-# → results or approval_required (depending on persona tier)
 ```
 
 ### dina scrub / rehydrate
@@ -176,15 +198,16 @@ dina draft "Hi Sancho, Thursday 3pm works." --to sancho@example.com --channel em
 dina session start --name "ergonomic-chair"
 
 # Check preferences (default persona — free access)
-dina recall "furniture preferences"
+dina ask "furniture preferences"
 
 # Check purchase history (Dina routes to consumer persona — auto-granted)
-dina recall "chair purchases" --session ergonomic-chair
+dina ask "chair purchases" --session ergonomic-chair
 
 # Need health context (Dina routes to health persona — requires approval)
-dina recall "back problems" --session ergonomic-chair
-# → approval_required → tell user, wait for Telegram/admin approval
-# → retry after approval → results returned
+dina ask "back problems" --session ergonomic-chair
+# → 202: pending_approval → tell user, wait for approval
+# → poll: dina reason-status <request_id>
+# → when complete: "You have L4-L5 disc herniation. Lumbar support is important."
 
 # Store recommendation
 dina remember "Recommended ErgoMax Elite based on L4-L5 support needs" --category decision

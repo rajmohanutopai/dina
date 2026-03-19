@@ -344,16 +344,28 @@ func main() {
 		_, err := os.Stat(dbFile)
 		return err == nil // file exists → orphaned vault artifact
 	}
-	// Bootstrap: create the default "general" persona if no personas exist yet.
-	// This ensures a fresh install has a working vault without manual setup.
+	// Bootstrap: create default personas on first run.
+	// Covers 90% of life — Brain's classifier routes data automatically.
+	// general (default) + work (standard) auto-open at boot.
+	// health + finance (sensitive) stay closed until user approves access.
 	{
 		existingPersonas, _ := personaMgr.List(context.Background())
 		if len(existingPersonas) == 0 {
-			if _, err := personaMgr.Create(context.Background(), "general", "default", ""); err != nil {
-				slog.Warn("bootstrap: could not create general persona", "error", err)
-			} else {
-				slog.Info("bootstrap: created general persona (first run)")
+			bootstrapPersonas := []struct {
+				name, tier string
+			}{
+				{"general", "default"},
+				{"work", "standard"},
+				{"health", "sensitive"},
+				{"finance", "sensitive"},
 			}
+			for _, p := range bootstrapPersonas {
+				if _, err := personaMgr.Create(context.Background(), p.name, p.tier, ""); err != nil {
+					slog.Warn("bootstrap: could not create persona", "name", p.name, "error", err)
+				}
+			}
+			slog.Info("bootstrap: created default personas (first run)",
+				"personas", "general, work, health, finance")
 		}
 	}
 

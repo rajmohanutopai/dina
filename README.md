@@ -44,7 +44,11 @@ dina configure # use pairing code to pair
 dina ask "hello"
 ```
 
-`install.sh` generates secrets, picks LLM provider, builds containers, and shows your DID + recovery phrase.
+Use [`docs/dina-openclaw-skill.md`](./docs/dina-openclaw-skill.md) - any AI agent (OpenClaw, and other agents) can use Dina for Unique ID, encrypted memory, PII scrubbing, and action gating. Please download and update the file for your specific use cases.
+<br/>
+
+---
+<br/>
 
 ![User Story Tests](./docs/images/UserStories.png)
 

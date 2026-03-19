@@ -141,7 +141,7 @@ This adds 5 containers:
 
 Dina works as an [OpenClaw](https://openclaw.org) skill — any AI agent (Claude, GPT, Gemini, OpenClaw) can use your Dina for encrypted memory, PII scrubbing, and action gating.
 
-The skill manifest is at [`dina-openclaw-skill.md`](dina-openclaw-skill.md). Point your agent to it, or use the CLI commands directly:
+The skill manifest is at [`docs/dina-openclaw-skill.md`](docs/dina-openclaw-skill.md). Point your agent to it, or use the CLI commands directly:
 
 ```
 dina remember <text>              Store a fact in encrypted vault
@@ -179,7 +179,7 @@ dina ask "daughter birthday"
 
 Your Dina is running, has a cryptographic identity, and your CLI is paired. What's next:
 
-- **Use as OpenClaw skill** — Give any AI agent encrypted memory and PII scrubbing via the [Dina skill](dina-openclaw-skill.md)
+- **Use as OpenClaw skill** — Give any AI agent encrypted memory and PII scrubbing via the [Dina skill](docs/dina-openclaw-skill.md)
 - **Review approvals** — `dina-admin approvals` to list, approve, or deny pending requests
 - **Connect Gmail** — `dina connector add gmail` (read-only, OAuth)
 - **Connect Calendar** — `dina connector add calendar` (CalDAV)
