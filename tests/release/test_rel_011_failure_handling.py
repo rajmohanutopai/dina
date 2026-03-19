@@ -24,8 +24,12 @@ class TestWrongAPIKey:
             headers={"Authorization": "Bearer invalid-garbage-token"},
             timeout=10,
         )
-        assert resp.status_code in (401, 403), (
-            f"Invalid token should return 401/403, got {resp.status_code}"
+        assert resp.status_code == 401, (
+            f"Invalid token should return 401, got {resp.status_code}"
+        )
+        body = resp.text.lower()
+        assert "error" in body or "unauthorized" in body or "invalid" in body, (
+            f"401 response should have error message: {resp.text[:200]}"
         )
 
     # REL-011

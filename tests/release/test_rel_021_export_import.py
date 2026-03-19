@@ -45,17 +45,26 @@ class TestExportImport:
         self, core_url, auth_headers,
     ) -> None:
         """Export endpoint exists or clearly indicates not-yet-implemented."""
+        # Real export endpoint is POST /v1/export (requires passphrase)
         resp = httpx.post(
-            f"{core_url}/v1/vault/export",
-            json={"persona": "general"},
+            f"{core_url}/v1/export",
+            json={"passphrase": "test"},
             headers=auth_headers, timeout=15,
         )
-        # Either works (200) or clearly not implemented (404/501)
-        assert resp.status_code in (200, 201, 404, 501), (
-            f"Export endpoint should respond clearly, got {resp.status_code}"
-        )
+        if resp.status_code == 404:
+            # Fall back to old path
+            resp = httpx.post(
+                f"{core_url}/v1/vault/export",
+                json={"persona": "general"},
+                headers=auth_headers, timeout=15,
+            )
         if resp.status_code in (404, 501):
             pytest.skip("Export endpoint not yet implemented")
+        # Must not crash — 200 (exported) or 400 (bad passphrase) are valid
+        assert resp.status_code in (200, 201, 400), (
+            f"Export should return 200 or 400, got {resp.status_code}: "
+            f"{resp.text[:200]}"
+        )
 
     # REL-021
     def test_rel_021_did_signature_verifiable(

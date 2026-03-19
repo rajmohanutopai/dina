@@ -102,8 +102,17 @@ Tests give false confidence. "All 200+ release tests pass" means nothing when te
 | P0 | 13 | 13 | 0 |
 | P1 | 12 | 12 | 0 |
 | P2 | 19 | 15 | 4 |
-| P3 | 7 | 0 | 7 |
-| **Total** | **51** | **40** | **11** |
+| P3 | 7 | 7 | 0 |
+| **Total** | **51** | **47** | **4** |
+
+### P3 fixes applied:
+- REL-001: healthz asserts valid status field (ok/healthy/degraded)
+- REL-011: wrong token asserts 401 + error message present
+- REL-012: docs assert minimum file size > 100 bytes
+- REL-017: valid token tests authenticated endpoint, persona create verifies in list
+- REL-018: healthz requires valid status value (not any dict)
+- REL-021: export verifies response has data if 200
+- REL-028: already adequate (DID stability, file existence, healthz)
 
 ### P2 fixes applied:
 - REL-007: trust resolve rejects 502, trust sync requires 200

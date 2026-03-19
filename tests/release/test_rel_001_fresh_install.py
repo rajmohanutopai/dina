@@ -47,15 +47,23 @@ class TestFreshInstall:
 
     # REL-001
     def test_rel_001_core_healthy_after_start(self, core_url) -> None:
-        """Core healthz returns 200 after Docker startup."""
+        """Core healthz returns 200 with valid status field."""
         resp = httpx.get(f"{core_url}/healthz", timeout=5)
         assert resp.status_code == 200
+        data = resp.json()
+        assert data.get("status") in ("ok", "healthy"), (
+            f"Core healthz missing valid status: {data}"
+        )
 
     # REL-001
     def test_rel_001_brain_healthy_after_start(self, brain_url) -> None:
-        """Brain healthz returns 200 after Docker startup."""
+        """Brain healthz returns 200 with valid status field."""
         resp = httpx.get(f"{brain_url}/healthz", timeout=5)
         assert resp.status_code == 200
+        data = resp.json()
+        assert data.get("status") in ("ok", "healthy", "degraded"), (
+            f"Brain healthz missing valid status: {data}"
+        )
 
     # REL-001
     def test_rel_001_did_generated_on_first_boot(

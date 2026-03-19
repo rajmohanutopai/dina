@@ -50,9 +50,10 @@ class TestConnectorOutage:
         resp = httpx.get(f"{core_url}/healthz", timeout=5)
         assert resp.status_code == 200
         data = resp.json()
-        # Should report at least its own status
-        assert isinstance(data, dict)
-        assert "status" in data or len(data) > 0
+        # Must have a status field with a valid value
+        assert data.get("status") in ("ok", "healthy", "degraded"), (
+            f"Healthz missing valid status: {data}"
+        )
 
     # REL-018
     def test_rel_018_error_on_brain_failure_is_clear(

@@ -35,6 +35,7 @@ class TestDocExistence:
         for doc in required_docs:
             path = PROJECT_ROOT / doc
             assert path.exists(), f"Missing required doc: {doc}"
+            assert path.stat().st_size > 100, f"Doc {doc} is suspiciously small"
 
     # REL-012
     def test_rel_012_architecture_docs_exist(self) -> None:
