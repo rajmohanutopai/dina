@@ -33,11 +33,18 @@ func (l *Logging) Handler(next http.Handler) http.Handler {
 
 		next.ServeHTTP(sw, r)
 
+		path := r.URL.Path
 		duration := time.Since(start)
+
+		// Suppress successful health check logs — they flood the output
+		// and hide real requests. Failed health checks still log.
+		if sw.status < 400 && (path == "/healthz" || path == "/readyz") {
+			return
+		}
 
 		slog.Info("http request",
 			slog.String("method", r.Method),
-			slog.String("path", r.URL.Path),
+			slog.String("path", path),
 			slog.Int("status", sw.status),
 			slog.Duration("duration", duration),
 		)

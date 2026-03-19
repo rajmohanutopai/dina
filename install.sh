@@ -372,8 +372,14 @@ elif [ -t 0 ]; then
     echo -e "    ${CYAN}2)${RESET} Restore from recovery phrase  ${DIM}(24 words from a previous install)${RESET}"
     echo -e "    ${CYAN}3)${RESET} Restore from seed hex         ${DIM}(advanced — 64-char hex string)${RESET}"
     echo ""
-    printf "  Enter choice [1-3]: "
-    read -r IDENTITY_CHOICE
+    while true; do
+        printf "  Enter choice [1-3]: "
+        read -r IDENTITY_CHOICE
+        case "${IDENTITY_CHOICE}" in
+            1|2|3) break ;;
+            *) echo -e "  ${YELLOW}Please enter 1, 2, or 3.${RESET}" ;;
+        esac
+    done
 
     case "${IDENTITY_CHOICE}" in
         2)
@@ -594,8 +600,14 @@ if [ -n "${MASTER_SEED}" ]; then
         echo ""
         echo -e "  ${DIM}You can switch later: ${CYAN}dina-admin security auto-start${RESET} ${DIM}or${RESET} ${CYAN}manual-start${RESET}"
         echo ""
-        printf "  Enter choice [1-2]: "
-        read -r SEED_MODE_CHOICE
+        while true; do
+            printf "  Enter choice [1-2]: "
+            read -r SEED_MODE_CHOICE
+            case "${SEED_MODE_CHOICE}" in
+                1|2) break ;;
+                *) echo -e "  ${YELLOW}Please enter 1 or 2.${RESET}" ;;
+            esac
+        done
 
         case "${SEED_MODE_CHOICE}" in
             2) SEED_MODE="server" ;;

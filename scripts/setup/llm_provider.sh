@@ -90,24 +90,45 @@ setup_llm_provider() {
         return
     fi
 
-    echo ""
-    echo -e "  ${BOLD}Which LLM providers would you like to configure?${RESET}"
-    echo -e "  ${DIM}You can select multiple providers. Dina will use them for different tasks.${RESET}"
-    echo ""
-    echo -e "    ${CYAN}1)${RESET} Google Gemini"
-    echo -e "    ${CYAN}2)${RESET} OpenAI GPT"
-    echo -e "    ${CYAN}3)${RESET} Anthropic Claude"
-    echo -e "    ${CYAN}4)${RESET} OpenRouter"
-    echo -e "    ${CYAN}5)${RESET} Ollama"
-    echo -e "    ${CYAN}6)${RESET} Skip"
-    echo ""
-    echo -e "  ${DIM}Enter one or more numbers separated by spaces (e.g. 1 3):${RESET}"
-    printf "  > "
-    read -r provider_choices
+    local has_gemini=false has_openai=false has_claude=false has_openrouter=false has_ollama=false
+    local provider_choices _valid
+
+    while true; do
+        echo ""
+        echo -e "  ${BOLD}Which LLM providers would you like to configure?${RESET}"
+        echo -e "  ${DIM}You can select multiple providers. Dina will use them for different tasks.${RESET}"
+        echo ""
+        echo -e "    ${CYAN}1)${RESET} Google Gemini"
+        echo -e "    ${CYAN}2)${RESET} OpenAI GPT"
+        echo -e "    ${CYAN}3)${RESET} Anthropic Claude"
+        echo -e "    ${CYAN}4)${RESET} OpenRouter"
+        echo -e "    ${CYAN}5)${RESET} Ollama"
+        echo -e "    ${CYAN}6)${RESET} Skip"
+        echo ""
+        echo -e "  ${DIM}Enter one or more numbers separated by spaces (e.g. 1 3):${RESET}"
+        printf "  > "
+        read -r provider_choices
+
+        # Validate: every token must be 1-6
+        _valid=true
+        if [ -z "${provider_choices}" ]; then
+            _valid=false
+        fi
+        for choice in ${provider_choices}; do
+            case "${choice}" in
+                1|2|3|4|5|6) ;;
+                *) _valid=false ;;
+            esac
+        done
+
+        if [ "${_valid}" = true ]; then
+            break
+        fi
+        echo ""
+        echo -e "  ${YELLOW}Please enter numbers 1-6 only.${RESET}"
+    done
 
     # Parse choices
-    local has_gemini=false has_openai=false has_claude=false has_openrouter=false has_ollama=false
-
     for choice in ${provider_choices}; do
         case "${choice}" in
             1) has_gemini=true ;;

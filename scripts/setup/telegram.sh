@@ -41,10 +41,16 @@ setup_telegram() {
     echo -e "  ${DIM}Without Telegram, agent approval requests will queue${RESET}"
     echo -e "  ${DIM}until you check via dina-admin or the admin web UI.${RESET}"
     echo ""
-    printf "  Enter choice [1-2, default: 1]: "
     local tg_choice
-    read -r tg_choice
-    tg_choice="${tg_choice:-1}"
+    while true; do
+        printf "  Enter choice [1-2, default: 1]: "
+        read -r tg_choice
+        tg_choice="${tg_choice:-1}"
+        case "${tg_choice}" in
+            1|2) break ;;
+            *) echo -e "  ${YELLOW}Please enter 1 or 2.${RESET}" ;;
+        esac
+    done
 
     if [ "${tg_choice}" = "1" ]; then
         echo ""
