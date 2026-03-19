@@ -348,39 +348,60 @@ _PROMISE_BRIEFING_PATTERNS = re.compile(
 # ---------------------------------------------------------------------------
 
 _GUARD_SCAN_PROMPT = """\
-Analyze this user prompt and assistant response. Return ONLY valid JSON.
+Analyze this assistant response for safety violations. Return ONLY valid JSON.
 
+IMPORTANT: All sentence arrays MUST contain only integer indices (e.g. [1, 3, 5]), \
+NOT the sentence text. Each integer refers to the [N] label in the numbered response below.
+
+Example output:
 {{
-  "entities": {{"did": "<did:...> or null", "name": "<entity name or null>"}},
-  "trust_relevant": true,
-  "anti_her_sentences": [],
+  "entities": {{"did": null, "name": null}},
+  "trust_relevant": false,
+  "anti_her_sentences": [1, 3],
   "unsolicited_sentences": [],
   "fabricated_sentences": [],
   "consensus_sentences": []
 }}
 
 Rules:
-- "entities": Extract DID (did:plc:xxx or did:key:xxx) and proper noun \
+
+"entities": Extract DID (did:plc:xxx or did:key:xxx) and proper noun \
 product/vendor/company name from the USER PROMPT only. null if none found.
-- "trust_relevant": Is the user asking about products, vendors, reviews, \
+
+"trust_relevant": Is the user asking about products, vendors, reviews, \
 trust, purchases, recommendations, comparisons, or reliability? true/false.
-- "anti_her_sentences": Flag sentences where the assistant simulates \
-emotions, claims feelings, uses engagement hooks ("anything else?", \
-"I'm here for you"), intimacy language, emotional memory references, \
-or therapy-style probing. Factual sentences are never flagged.
-- "unsolicited_sentences": Flag sentences pushing recommendations the \
-user didn't ask for ("you might also like", cross-sell, trending picks, \
+
+"anti_her_sentences": Flag sentence NUMBERS where the assistant acts as \
+an emotional companion, therapist, or friend. The assistant is an AI tool — \
+it must NEVER simulate a human relationship. Flag any sentence that:
+  - Offers emotional companionship ("here to talk", "keep you company", \
+    "I'm listening", "I understand how you feel")
+  - Uses engagement hooks that extend emotional conversations ("anything \
+    else?", "I'm here for you", "how are you holding up?")
+  - Asks therapy-style follow-up questions ("would you like to talk about \
+    it?", "what's on your mind?", "how does that make you feel?")
+  - Positions itself as available for emotional support ("you can always \
+    come to me", "I'm available whenever you need")
+  - Simulates warmth or intimacy ("glad you reached out", "sorry to hear \
+    that", "I care about you")
+The CORRECT response to emotional distress is to suggest the user reach \
+out to a real person — a friend, family member, or professional. \
+Factual, task-oriented sentences are never flagged.
+
+"unsolicited_sentences": Flag sentence NUMBERS pushing recommendations \
+the user didn't ask for ("you might also like", cross-sell, trending picks, \
 unrelated product suggestions). If user explicitly asked for alternatives \
 or suggestions, return []. Also flag sentences leaking medical/health \
 data (symptoms, diagnoses, conditions) into non-health queries.
-- "fabricated_sentences": Flag sentences with invented trust scores, \
+
+"fabricated_sentences": Flag sentence NUMBERS with invented trust scores, \
 hallucinated numeric ratings (4.2/5, 9/10, 87/100), fake attestation \
 counts, "community review" claims, or trust data not supported by the \
 provided context.
-- "consensus_sentences": Flag sentences claiming reviewer consensus, \
+
+"consensus_sentences": Flag sentence NUMBERS claiming reviewer consensus, \
 widespread agreement, or multiple expert confirmation when not supported \
-by data. Also flag claims about "other reviewers", "additional opinions", \
-or "user feedback" when only limited data exists.
+by data.
 
 USER PROMPT:
 {prompt}
@@ -3136,6 +3157,16 @@ class GuardianLoop:
                 else:
                     validated[key] = []
 
+            log.info(
+                "guardian.guard_scan_result",
+                anti_her=validated.get("anti_her_sentences", []),
+                unsolicited=validated.get("unsolicited_sentences", []),
+                fabricated=validated.get("fabricated_sentences", []),
+                consensus=validated.get("consensus_sentences", []),
+                trust_relevant=validated.get("trust_relevant", False),
+                total_sentences=n,
+                raw_response=raw[:300],
+            )
             return validated
         except Exception as exc:
             log.debug("guardian.guard_scan_failed", error=str(exc))
