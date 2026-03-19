@@ -344,6 +344,19 @@ func main() {
 		_, err := os.Stat(dbFile)
 		return err == nil // file exists → orphaned vault artifact
 	}
+	// Bootstrap: create the default "general" persona if no personas exist yet.
+	// This ensures a fresh install has a working vault without manual setup.
+	{
+		existingPersonas, _ := personaMgr.List(context.Background())
+		if len(existingPersonas) == 0 {
+			if _, err := personaMgr.Create(context.Background(), "general", "default", ""); err != nil {
+				slog.Warn("bootstrap: could not create general persona", "error", err)
+			} else {
+				slog.Info("bootstrap: created general persona (first run)")
+			}
+		}
+	}
+
 	// Auto-open default and standard tier personas at boot.
 	// This ensures vault queries work immediately for non-sensitive personas.
 	personaNames, _ := personaMgr.List(context.Background())

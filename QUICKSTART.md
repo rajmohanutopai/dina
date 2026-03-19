@@ -5,7 +5,7 @@ Get Dina running in under 5 minutes.
 ## Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) & Docker Compose
-- [Tailscale](https://tailscale.com/download) (free account, for networking)
+- [Tailscale](https://tailscale.com/download) (free account, for networking — optional for local-only setup)
 
 ## 1. Install Dina (Home Node)
 
@@ -18,11 +18,13 @@ cd dina
 `install.sh` handles everything:
 1. Checks prerequisites (Docker, Docker Compose, curl)
 2. Generates secrets (service keys, identity seed wrap files, PDS JWT/rotation keys)
-3. Asks which LLM provider to use (Gemini, OpenAI, Claude, OpenRouter, Ollama)
-4. Creates `.env` with your API key and secrets
-5. Builds and starts Docker containers
-6. Waits for health checks
-7. Displays your DID and 24-word recovery phrase
+3. Shows your 24-word recovery phrase (on a separate screen — write it down)
+4. Asks which LLM provider to use (Gemini, OpenAI, Claude, OpenRouter, Ollama)
+5. Asks to connect Telegram (recommended for approvals, optional)
+6. Creates `.env` with your API key and secrets
+7. Builds and starts Docker containers
+8. Waits for health checks
+9. Displays your DID
 
 > **Idempotent** — safe to re-run. Existing secrets and seeds are preserved. Use `--skip-build` to skip Docker image builds on re-runs.
 
@@ -31,13 +33,79 @@ This starts Dina in the **Cloud LLM profile** (the default) — 3 containers:
 - **dina-brain** (Python) — the guardian angel reasoning loop (uses Gemini Flash Lite + Deepgram)
 - **dina-pds** — AT Protocol Personal Data Server for your trust data (port 2583)
 
-Want a local LLM too? `docker compose --profile local-llm up -d` adds a 4th container (llama with Gemma 3n). See [Advanced Setup](ADVANCED-SETUP.md).
+Want a local LLM too? `docker compose --profile local-llm up -d` adds a 4th container (llama with Gemma 3n). See [Advanced Setup](docs/ADVANCED-SETUP.md).
 
-## 2. Save your recovery phrase
+## 2. Verify the Home Node
 
-The install script displays a 24-word recovery phrase. **Write it down on paper and store it safely.** This is the only way to recover your identity if you lose access.
+```bash
+./dina-admin status
+```
 
-## 3. Go online
+Shows Core health, DID, LLM models (Lite/Primary/Heavy), and security mode.
+
+```bash
+./run.sh --status
+```
+
+Shows container health, DID, and LLM availability.
+
+### Managing the Home Node
+
+```bash
+./run.sh --start     # start containers
+./run.sh --stop      # stop containers
+./run.sh --status    # check status
+./run.sh --logs      # tail logs
+```
+
+## 3. Install the CLI (client machine)
+
+On your local machine (laptop, desktop — can be the same machine or different):
+
+```bash
+pip install dina-agent
+dina status
+```
+
+Should show `Paired: no` and `Dina: not connected`.
+
+## 4. Pair the CLI with your Home Node
+
+```bash
+# On the Home Node:
+./dina-admin device pair    # generates a pairing code
+
+# On the client machine:
+dina configure              # enter Core URL + pairing code
+```
+
+`dina configure` will:
+- Generate an Ed25519 device keypair for signed requests
+- Register the device with your Home Node using the pairing code
+- Save config to `~/.dina/cli/config.json`
+
+Verify pairing:
+
+```bash
+dina status
+```
+
+Should show `Paired: yes`, your device DID, and your Dina's DID.
+
+## 5. Try it out
+
+```bash
+dina remember "I like strong cardamom tea"
+dina ask "what kind of tea do I like?"
+
+dina remember "Daughter turns 7 on March 15, loves dinosaurs"
+dina ask "daughter birthday"
+
+dina scrub "Call Rajmohan at 9876543210"
+dina validate search "best office chair 2026"
+```
+
+## 6. Go online (optional)
 
 ```bash
 sudo tailscale up && sudo tailscale funnel 443
@@ -45,36 +113,7 @@ sudo tailscale up && sudo tailscale funnel 443
 
 Your Dina is now reachable at `https://<machine-name>.<tailnet>.ts.net/`. Other Dinas can find you and send encrypted messages.
 
-Register your public endpoint so other Dinas can find you:
-
-```bash
-dina network set-endpoint "https://<machine-name>.<tailnet>.ts.net/"
-```
-
-## 4. Install the CLI
-
-On your local machine (laptop, desktop — not the server):
-
-```bash
-pip install dina-cli
-dina configure --url https://<machine-name>.<tailnet>.ts.net
-```
-
-`dina configure` will:
-- Prompt for a pairing code (generate one from the admin dashboard or `curl -X POST http://localhost:8100/v1/pair/initiate`)
-- Generate an Ed25519 device keypair for signed requests
-- Register the device with your Home Node
-- Save config to `~/.dina/cli/config.json`
-
-Quick test:
-
-```bash
-dina recall "test"          # search the vault (empty on first run)
-dina remember "I like tea"  # store a fact in encrypted vault
-dina recall "tea"           # should return the fact you just stored
-```
-
-## 5. Install the Trust AppView (optional)
+## 7. Install the Trust AppView (optional)
 
 The AppView is the public Trust Network indexer — it consumes AT Protocol records from the Jetstream firehose, scores them, and serves XRPC query endpoints.
 
@@ -106,11 +145,12 @@ The skill manifest is at [`dina-openclaw-skill.md`](dina-openclaw-skill.md). Poi
 
 ```
 dina remember <text>              Store a fact in encrypted vault
-dina recall <query>               Search the vault (persists across sessions)
+dina ask <query>                  Ask Dina (Brain-mediated reasoning across personas)
 dina scrub <text>                 Remove PII before sending to external APIs
 dina rehydrate <text> --session   Restore PII on the response
 dina validate <action> <desc>     Check if a destructive action is approved
-dina sign <content>               Cryptographic signature with your DID key
+dina status                       Show pairing status and connectivity
+dina unpair                       Revoke this device from the Home Node
 ```
 
 **Example: AI agent with PII-safe external API calls**
@@ -131,21 +171,22 @@ dina rehydrate "<api response with placeholders>" --session sess_k9m2
 dina remember "Daughter turns 7 on March 15, loves dinosaurs" --category relationship
 
 # Session 47: different agent session, same vault
-dina recall "daughter birthday"
+dina ask "daughter birthday"
 # → instant recall from encrypted vault
 ```
 
 ## That's it
 
-Your Dina is running, has a cryptographic identity, is reachable by other Dinas, and your CLI is paired. What's next:
+Your Dina is running, has a cryptographic identity, and your CLI is paired. What's next:
 
 - **Use as OpenClaw skill** — Give any AI agent encrypted memory and PII scrubbing via the [Dina skill](dina-openclaw-skill.md)
+- **Review approvals** — `dina-admin approvals` to list, approve, or deny pending requests
 - **Connect Gmail** — `dina connector add gmail` (read-only, OAuth)
 - **Connect Calendar** — `dina connector add calendar` (CalDAV)
 - **Add a friend's Dina** — Scan their QR code or exchange DIDs
-- **CLI reference** — See [`dina-openclaw-skill.md`](dina-openclaw-skill.md) for full command reference and default policies
-- **Run with Local LLM** — See [Advanced Setup](ADVANCED-SETUP.md) for local LLM (Gemma 3n, no cloud APIs for inference)
-- **Set up production networking** — See [Advanced Setup](ADVANCED-SETUP.md) for Cloudflare Tunnel (custom domain, DDoS protection) or Yggdrasil (censorship resistance)
+- **Manual testing** — See [`scripts/MANUAL_TEST_GUIDE.md`](scripts/MANUAL_TEST_GUIDE.md) for a full walkthrough
+- **Run with Local LLM** — See [Advanced Setup](docs/ADVANCED-SETUP.md) for local LLM (Gemma 3n, no cloud APIs for inference)
+- **Set up production networking** — See [Advanced Setup](docs/ADVANCED-SETUP.md) for Cloudflare Tunnel (custom domain, DDoS protection) or Yggdrasil (censorship resistance)
 
 ## System Requirements
 

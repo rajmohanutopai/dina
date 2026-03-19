@@ -534,9 +534,10 @@ class ReasoningAgent:
         Multi-provider LLM routing service.
     """
 
-    def __init__(self, core: CoreClient, llm_router: Any) -> None:
+    def __init__(self, core: CoreClient, llm_router: Any, owner_name: str = "") -> None:
         self._core = core
         self._llm = llm_router
+        self._owner_name = owner_name
 
     def _get_tools(self) -> list[dict]:
         """Return provider-agnostic tool declarations.
@@ -609,8 +610,11 @@ class ReasoningAgent:
             return result
 
         # Build initial messages
+        system = _SYSTEM_PROMPT
+        if self._owner_name:
+            system += f"\n\nThe user's name is {self._owner_name}."
         messages: list[dict] = [
-            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "system", "content": system},
             {"role": "user", "content": prompt},
         ]
 
@@ -718,8 +722,8 @@ class VaultContextAssembler:
         Multi-provider LLM routing service.
     """
 
-    def __init__(self, core: CoreClient, llm_router: Any) -> None:
-        self._agent = ReasoningAgent(core=core, llm_router=llm_router)
+    def __init__(self, core: CoreClient, llm_router: Any, owner_name: str = "") -> None:
+        self._agent = ReasoningAgent(core=core, llm_router=llm_router, owner_name=owner_name)
 
     async def enrich(
         self,

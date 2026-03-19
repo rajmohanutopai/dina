@@ -450,7 +450,7 @@ def create_app() -> FastAPI:
     entity_vault = EntityVaultService(scrubber=scrubber, core_client=brain_core_client)
     nudge = NudgeAssembler(core=brain_core_client, llm=llm_router, entity_vault=entity_vault)
     scratchpad = ScratchpadService(core=brain_core_client)
-    vault_context = VaultContextAssembler(core=brain_core_client, llm_router=llm_router)
+    vault_context = VaultContextAssembler(core=brain_core_client, llm_router=llm_router, owner_name=cfg.owner_name)
     from .service.trust_scorer import TrustScorer
     from .service.enrichment import EnrichmentService
     from .service.staging_processor import StagingProcessor

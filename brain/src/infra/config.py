@@ -57,6 +57,7 @@ class BrainConfig:
     llm_url: str | None
     cloud_llm: str | None
     llm_routing_enabled: bool
+    owner_name: str
     telegram_token: str | None
     telegram_allowed_users: frozenset[int]
     telegram_allowed_groups: frozenset[int]
@@ -165,6 +166,9 @@ def load_brain_config() -> BrainConfig:
                 extra={"detail": "Core URL uses plaintext HTTP in production outside Docker"},
             )
 
+    # -- OWNER_NAME (optional — personalizes responses) --
+    owner_name = os.environ.get("DINA_OWNER_NAME", "").strip()
+
     return BrainConfig(
         core_url=core_url,
         service_key_dir=service_key_dir,
@@ -174,6 +178,7 @@ def load_brain_config() -> BrainConfig:
         llm_url=llm_url,
         cloud_llm=cloud_llm,
         llm_routing_enabled=llm_routing_enabled,
+        owner_name=owner_name,
         telegram_token=telegram_token,
         telegram_allowed_users=telegram_allowed_users,
         telegram_allowed_groups=telegram_allowed_groups,

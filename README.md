@@ -28,10 +28,20 @@ See [`QUICKSTART.md`](./QUICKSTART.md) for the full guide including networking s
 **Prerequisites:** Docker & Docker Compose.
 
 ```bash
+# home node 
 git clone https://github.com/rajmohanutopai/dina.git 
 cd dina
 ./install.sh
-./run.sh
+./dina-admin status
+
+# client machine (where openclaw or other agents run)
+pip install dina-agent
+dina status
+
+# pair with dina home node
+./dina-admin device pair # generate pairing code at home node
+dina configure # use pairing code to pair
+dina ask "hello"
 ```
 
 `install.sh` generates secrets, picks LLM provider, builds containers, and shows your DID + recovery phrase.

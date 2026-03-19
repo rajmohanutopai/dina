@@ -679,6 +679,21 @@ echo ""
 
 echo -e "  ${BOLD}Configuring Dina${RESET}"
 
+# --- Owner name ---
+OWNER_NAME=""
+if [ -f "${ENV_FILE}" ]; then
+    OWNER_NAME=$(sed -n 's/^DINA_OWNER_NAME=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null || true)
+fi
+if [ -z "${OWNER_NAME}" ] && [ -t 0 ]; then
+    echo ""
+    printf "  ${BOLD}What should Dina call you?${RESET} "
+    read -r OWNER_NAME
+    OWNER_NAME=$(echo "${OWNER_NAME}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    if [ -n "${OWNER_NAME}" ]; then
+        ok "Hello, ${OWNER_NAME}"
+    fi
+fi
+
 # --- Optional: Telegram bot setup ---
 # Runs for both new and existing .env (skips if already configured).
 if has_telegram "${ENV_FILE}" 2>/dev/null; then
@@ -712,6 +727,13 @@ DINA_PDS_ADMIN_PASSWORD=${PDS_ADMIN_PASSWORD}
 DINA_PDS_ROTATION_KEY_HEX=${PDS_ROTATION_KEY}
 ENVEOF
 
+    # Owner name
+    if [ -n "${OWNER_NAME}" ]; then
+        echo "" >> "${ENV_FILE}"
+        echo "# Owner" >> "${ENV_FILE}"
+        echo "DINA_OWNER_NAME=${OWNER_NAME}" >> "${ENV_FILE}"
+    fi
+
     write_llm_to_env "${ENV_FILE}"
     write_telegram_to_env "${ENV_FILE}"
 
@@ -729,6 +751,12 @@ else
         ensure_required_env "${ENV_FILE}" > /dev/null
     fi
     write_telegram_to_env "${ENV_FILE}"
+    # Backfill owner name if collected but not yet in .env
+    if [ -n "${OWNER_NAME}" ] && ! grep -q "^DINA_OWNER_NAME=" "${ENV_FILE}" 2>/dev/null; then
+        echo "" >> "${ENV_FILE}"
+        echo "# Owner" >> "${ENV_FILE}"
+        echo "DINA_OWNER_NAME=${OWNER_NAME}" >> "${ENV_FILE}"
+    fi
 fi
 
 # Re-read ports from .env (ensure_required_env may have written new values)
