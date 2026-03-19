@@ -328,35 +328,7 @@ func (h *PersonaHandler) HandleApprove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Open the vault for the approved persona if not already open.
-	if approvedPersona != "" && h.VaultManager != nil && h.KeyDeriver != nil {
-		rawName := strings.TrimPrefix(approvedPersona, "persona-")
-		persona, perr := domain.NewPersonaName(rawName)
-		if perr == nil && !h.VaultManager.IsOpen(persona) {
-			dekVersion, dekErr := h.Personas.GetDEKVersion(r.Context(), approvedPersona)
-			if dekErr != nil {
-				http.Error(w, `{"error":"approved but failed to get DEK version"}`, http.StatusInternalServerError)
-				return
-			}
-			if dekVersion == 0 {
-				dekVersion = 1
-			}
-			dek, dErr := h.KeyDeriver.DerivePersonaDEKVersioned(h.Seed, persona, dekVersion)
-			if dErr != nil {
-				http.Error(w, `{"error":"approved but failed to derive vault DEK"}`, http.StatusInternalServerError)
-				return
-			}
-			if oErr := h.VaultManager.Open(r.Context(), persona, dek); oErr != nil {
-				http.Error(w, `{"error":"approved but failed to open vault: `+oErr.Error()+`"}`, http.StatusInternalServerError)
-				return
-			}
-			// Mark this vault as opened via approval — only these get
-			// closed when the session ends or single-use grant is consumed.
-			// User/admin manually unlocked vaults are never auto-closed.
-			if mgr, ok := h.Personas.(*identity.PersonaManager); ok {
-				mgr.MarkGrantOpened(approvedPersona)
-			}
-		}
-	}
+	h.openVaultForApproval(r, approvedPersona)
 
 	// Trigger resume for any pending reason requests linked to this approval.
 	if h.PendingReasons != nil && h.Brain != nil {
@@ -365,6 +337,41 @@ func (h *PersonaHandler) HandleApprove(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "approved", "id": req.ID})
+}
+
+// openVaultForApproval opens the vault for the approved persona if not already open.
+func (h *PersonaHandler) openVaultForApproval(r *http.Request, approvedPersona string) {
+	if approvedPersona == "" || h.VaultManager == nil || h.KeyDeriver == nil {
+		return
+	}
+	rawName := strings.TrimPrefix(approvedPersona, "persona-")
+	persona, perr := domain.NewPersonaName(rawName)
+	if perr != nil || h.VaultManager.IsOpen(persona) {
+		return
+	}
+	dekVersion, dekErr := h.Personas.GetDEKVersion(r.Context(), approvedPersona)
+	if dekErr != nil {
+		slog.Warn("approval: failed to get DEK version", "persona", approvedPersona, "error", dekErr)
+		return
+	}
+	if dekVersion == 0 {
+		dekVersion = 1
+	}
+	dek, dErr := h.KeyDeriver.DerivePersonaDEKVersioned(h.Seed, persona, dekVersion)
+	if dErr != nil {
+		slog.Warn("approval: failed to derive vault DEK", "persona", approvedPersona, "error", dErr)
+		return
+	}
+	if oErr := h.VaultManager.Open(r.Context(), persona, dek); oErr != nil {
+		slog.Warn("approval: failed to open vault", "persona", approvedPersona, "error", oErr)
+		return
+	}
+	// Mark this vault as opened via approval — only these get
+	// closed when the session ends or single-use grant is consumed.
+	// User/admin manually unlocked vaults are never auto-closed.
+	if mgr, ok := h.Personas.(*identity.PersonaManager); ok {
+		mgr.MarkGrantOpened(approvedPersona)
+	}
 }
 
 // resumePendingReasons finds pending reason requests for the given approval
@@ -433,22 +440,27 @@ func (h *PersonaHandler) HandleDeny(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Mark any pending reason requests for this approval as denied.
-	if h.PendingReasons != nil {
-		go func() {
-			records, err := h.PendingReasons.GetByApprovalID(context.Background(), req.ID)
-			if err != nil || len(records) == 0 {
-				return
-			}
-			for _, rec := range records {
-				_ = h.PendingReasons.UpdateStatus(context.Background(), rec.RequestID, domain.ReasonDenied, "", "user denied the approval request")
-				slog.Info("pending_reason: marked denied", "request_id", rec.RequestID)
-			}
-		}()
-	}
+	h.markPendingReasonsDenied(req.ID)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "denied", "id": req.ID})
+}
+
+// markPendingReasonsDenied marks any pending reason requests for this approval as denied.
+func (h *PersonaHandler) markPendingReasonsDenied(approvalID string) {
+	if h.PendingReasons == nil {
+		return
+	}
+	go func() {
+		records, err := h.PendingReasons.GetByApprovalID(context.Background(), approvalID)
+		if err != nil || len(records) == 0 {
+			return
+		}
+		for _, rec := range records {
+			_ = h.PendingReasons.UpdateStatus(context.Background(), rec.RequestID, domain.ReasonDenied, "", "user denied the approval request")
+			slog.Info("pending_reason: marked denied", "request_id", rec.RequestID)
+		}
+	}()
 }
 
 // HandleListApprovals handles GET /v1/persona/approvals.

@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
-# run.sh — Start Dina Home Node
-#
-# Checks installation state, fills gaps, starts containers.
+# run.sh — Manage the Dina Home Node
 #
 # Usage:
-#   ./run.sh             # start (or install if needed)
-#   ./run.sh --status    # show container status only
-#   ./run.sh --stop      # stop containers
-#   ./run.sh --logs      # tail container logs
+#   ./run.sh              # show usage
+#   ./run.sh --start      # start containers (prompts for passphrase if manual-start)
+#   ./run.sh --stop       # stop containers
+#   ./run.sh --status     # show container status
+#   ./run.sh --logs       # tail container logs
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -46,6 +45,19 @@ detect_compose() {
 # ---------------------------------------------------------------------------
 
 case "${1:-}" in
+    "")
+        echo ""
+        echo -e "  ${BOLD}Dina Home Node${RESET}"
+        echo ""
+        echo -e "  Usage:  ${CYAN}./run.sh${RESET} <command>"
+        echo ""
+        echo -e "    ${CYAN}--start${RESET}    Start the Home Node"
+        echo -e "    ${CYAN}--stop${RESET}     Stop all containers"
+        echo -e "    ${CYAN}--status${RESET}   Show container status"
+        echo -e "    ${CYAN}--logs${RESET}     Tail container logs"
+        echo ""
+        exit 0
+        ;;
     --stop)
         detect_compose
         info "Stopping containers..."
@@ -89,6 +101,8 @@ case "${1:-}" in
         # DID
         if _did=$(curl -s --connect-timeout 3 "http://localhost:${CORE_PORT}/.well-known/atproto-did" 2>/dev/null) && [ -n "$_did" ]; then
             echo -e "  DID:       ${DIM}${_did}${RESET}"
+        else
+            echo -e "  DID:       ${YELLOW}not available${RESET} ${DIM}(Core may still be initializing)${RESET}"
         fi
 
         # LLM status from Brain
@@ -128,17 +142,13 @@ case "${1:-}" in
         shift
         exec $COMPOSE logs -f "$@"
         ;;
-    --restart)
-        detect_compose
-        info "Restarting containers..."
-        $COMPOSE restart
-        ok "Containers restarted"
-        exit 0
+    --start)
+        # Fall through to the startup flow below
         ;;
     --*)
         echo -e "  ${RED}Unknown option: $1${RESET}" >&2
         echo ""
-        echo -e "  Usage: ${CYAN}./run.sh${RESET} [--status|--stop|--logs|--restart]"
+        echo -e "  Usage: ${CYAN}./run.sh${RESET} [--start|--stop|--status|--logs]"
         exit 1
         ;;
 esac
@@ -263,7 +273,7 @@ CORE_PORT=$(sed -n 's/^DINA_CORE_PORT=\(.*\)$/\1/p' "${ENV_FILE}" 2>/dev/null ||
 RUNNING=$($COMPOSE ps --format "{{.Name}}" 2>/dev/null | head -1 || true)
 if [ -n "${RUNNING}" ]; then
     ok "Containers already running"
-    echo -e "  ${DIM}Use ${CYAN}./run.sh --restart${RESET}${DIM} to restart, or ${CYAN}./run.sh --stop${RESET}${DIM} to stop.${RESET}"
+    echo -e "  ${DIM}Use ${CYAN}./run.sh --stop${RESET}${DIM} then ${CYAN}./run.sh --start${RESET}${DIM} to restart.${RESET}"
 else
     $COMPOSE up -d 2>&1 | while IFS= read -r line; do
         echo -e "  ${DIM}${line}${RESET}"
@@ -370,7 +380,7 @@ if [ -n "${_brain_health}" ]; then
 fi
 echo ""
 echo -e "  ${BOLD}Commands:${RESET}"
-echo -e "    Status:  ${CYAN}./run.sh --status${RESET}"
-echo -e "    Logs:    ${CYAN}./run.sh --logs${RESET}"
-echo -e "    Stop:    ${CYAN}./run.sh --stop${RESET}"
+echo -e "    ${CYAN}./run.sh --status${RESET}   Show status"
+echo -e "    ${CYAN}./run.sh --logs${RESET}     Tail logs"
+echo -e "    ${CYAN}./run.sh --stop${RESET}     Stop"
 echo ""

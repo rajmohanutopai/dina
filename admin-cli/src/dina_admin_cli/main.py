@@ -1,7 +1,8 @@
 """Click command groups for the Dina Admin CLI.
 
-Commands: status, device {list,pair,revoke},
-persona {list,create,unlock}, identity {show,sign}.
+Commands: status, approvals {list,approve,deny},
+device {list,pair,revoke}, persona {list,create,unlock},
+identity {show,sign}.
 
 Runs inside the Core container via Unix socket.
 Usage: docker compose exec core dina-admin ...
@@ -100,6 +101,99 @@ def status(ctx: click.Context) -> None:
             result["devices"] = "?"
 
         print_result(result, json_mode)
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
+# ── approvals ────────────────────────────────────────────────────────────────
+
+
+@cli.group(invoke_without_command=True)
+@click.pass_context
+def approvals(ctx: click.Context) -> None:
+    """Review and act on pending approval requests.
+
+    Without a subcommand, lists all pending approvals.
+
+    \b
+    Examples:
+      dina-admin approvals              # list pending
+      dina-admin approvals approve <id> # approve
+      dina-admin approvals deny <id>    # deny
+    """
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(approvals_list)
+
+
+@approvals.command("list")
+@click.pass_context
+def approvals_list(ctx: click.Context) -> None:
+    """List all pending approval requests."""
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        data = client.list_approvals()
+        if json_mode:
+            print_result(data, json_mode)
+        else:
+            if not data:
+                click.echo("No pending approvals.")
+            else:
+                for a in data:
+                    aid = a.get("id", "?")
+                    persona = a.get("persona_id", a.get("persona", "?"))
+                    action = a.get("action", "persona_access")
+                    agent = a.get("client_did", "?")
+                    reason = a.get("reason", "")
+                    # Truncate long DIDs for display
+                    if len(agent) > 24:
+                        agent = agent[:20] + "..."
+                    line = f"  {aid}  {action}  persona={persona}  agent={agent}"
+                    if reason:
+                        line += f"  ({reason})"
+                    click.echo(line)
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
+@approvals.command("approve")
+@click.argument("approval_id")
+@click.option(
+    "--scope", default="session",
+    type=click.Choice(["single", "session"]),
+    help="Grant scope: single request or full session (default: session)",
+)
+@click.pass_context
+def approvals_approve(ctx: click.Context, approval_id: str, scope: str) -> None:
+    """Approve a pending request by ID."""
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        data = client.approve(approval_id, scope)
+        if json_mode:
+            print_result(data, json_mode)
+        else:
+            click.echo(f"Approved: {approval_id} (scope={scope})")
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
+@approvals.command("deny")
+@click.argument("approval_id")
+@click.pass_context
+def approvals_deny(ctx: click.Context, approval_id: str) -> None:
+    """Deny a pending request by ID."""
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        data = client.deny(approval_id)
+        if json_mode:
+            print_result(data, json_mode)
+        else:
+            click.echo(f"Denied: {approval_id}")
     except AdminClientError as exc:
         print_error(str(exc), json_mode)
         ctx.exit(1)
@@ -210,8 +304,8 @@ def persona_list(ctx: click.Context) -> None:
 @click.option(
     "--tier",
     prompt=True,
-    default="open",
-    type=click.Choice(["open", "restricted", "locked"]),
+    default="standard",
+    type=click.Choice(["default", "standard", "sensitive", "locked"]),
     help="Persona tier",
 )
 @click.option(

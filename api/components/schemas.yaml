@@ -333,6 +333,10 @@ ApprovalRequest:
   properties:
     id:
       type: string
+    type:
+      type: string
+      enum: [persona_access, action_intent]
+      description: Approval type — routes internally to persona manager or gatekeeper
     client_did:
       type: string
     persona_id:

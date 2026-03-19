@@ -1,12 +1,13 @@
 package domain
 
-// ApprovalRequest represents a pending request for persona access.
-// Created when an agent tries to access a sensitive or standard persona
-// without an active session grant.
+// ApprovalRequest represents a pending request for access or action approval.
+// Created when an agent needs persona access, wants to perform a risky action,
+// or triggers any other approval-required operation.
 type ApprovalRequest struct {
 	ID        string `json:"id"`
+	Type      string `json:"type"`        // "persona_access", "action_intent", etc.
 	ClientDID string `json:"client_did"`  // requesting agent's DID
-	PersonaID string `json:"persona_id"`  // which persona
+	PersonaID string `json:"persona_id"`  // which persona (for persona_access)
 	SessionID string `json:"session_id"`  // agent session (if any)
 	Action    string `json:"action"`      // what action triggered the request
 	Scope     string `json:"scope"`       // requested scope: "single", "session"
@@ -17,6 +18,12 @@ type ApprovalRequest struct {
 	CreatedAt int64  `json:"created_at"`
 	UpdatedAt int64  `json:"updated_at"`
 }
+
+// Approval type constants.
+const (
+	ApprovalTypePersonaAccess = "persona_access"
+	ApprovalTypeActionIntent  = "action_intent"
+)
 
 // Approval statuses.
 const (

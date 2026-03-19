@@ -191,7 +191,7 @@ def test_persona_create_json():
          patch("dina_admin_cli.main.load_config", return_value=_test_config()):
         result = runner.invoke(cli, [
             "--json", "persona", "create",
-            "--name", "work", "--tier", "open", "--passphrase", "secret123",
+            "--name", "work", "--tier", "standard", "--passphrase", "secret123",
         ])
     assert result.exit_code == 0
     data = json.loads(result.output)
@@ -307,6 +307,128 @@ def test_config_custom_timeout(monkeypatch, tmp_path):
     assert cfg.timeout == 10.0
 
 
+# ── approvals list ───────────────────────────────────────────────────────────
+
+
+def test_approvals_list_json():
+    mc = MagicMock()
+    mc.list_approvals.return_value = [
+        {
+            "id": "apr-001",
+            "client_did": "did:key:z6MkAgent1",
+            "persona_id": "health",
+            "action": "vault_read",
+            "scope": "session",
+            "status": "pending",
+            "reason": "agent needs health data",
+        },
+    ]
+    result = _invoke(["--json", "approvals", "list"], mock_client=mc)
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert len(data) == 1
+    assert data[0]["id"] == "apr-001"
+
+
+def test_approvals_list_empty():
+    mc = MagicMock()
+    mc.list_approvals.return_value = []
+    result = _invoke(["approvals", "list"], mock_client=mc)
+    assert result.exit_code == 0
+    assert "No pending approvals" in result.output
+
+
+def test_approvals_list_human():
+    mc = MagicMock()
+    mc.list_approvals.return_value = [
+        {
+            "id": "apr-123",
+            "client_did": "did:key:z6MkAgentXYZ",
+            "persona_id": "health",
+            "action": "vault_read",
+        },
+    ]
+    result = _invoke(["approvals", "list"], mock_client=mc)
+    assert result.exit_code == 0
+    assert "apr-123" in result.output
+    assert "health" in result.output
+
+
+def test_approvals_bare_invocation_lists():
+    """Running 'dina-admin approvals' without subcommand lists pending."""
+    mc = MagicMock()
+    mc.list_approvals.return_value = []
+    result = _invoke(["approvals"], mock_client=mc)
+    assert result.exit_code == 0
+    assert "No pending approvals" in result.output
+
+
+# ── approvals approve ───────────────────────────────────────────────────────
+
+
+def test_approvals_approve_json():
+    mc = MagicMock()
+    mc.approve.return_value = {"status": "approved", "id": "apr-001"}
+    result = _invoke(["--json", "approvals", "approve", "apr-001"], mock_client=mc)
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["status"] == "approved"
+    mc.approve.assert_called_once_with("apr-001", "session")
+
+
+def test_approvals_approve_human():
+    mc = MagicMock()
+    mc.approve.return_value = {"status": "approved"}
+    result = _invoke(["approvals", "approve", "apr-001"], mock_client=mc)
+    assert result.exit_code == 0
+    assert "Approved: apr-001" in result.output
+
+
+def test_approvals_approve_single_scope():
+    mc = MagicMock()
+    mc.approve.return_value = {"status": "approved"}
+    result = _invoke(
+        ["approvals", "approve", "apr-001", "--scope", "single"],
+        mock_client=mc,
+    )
+    assert result.exit_code == 0
+    mc.approve.assert_called_once_with("apr-001", "single")
+
+
+def test_approvals_approve_error():
+    mc = MagicMock()
+    mc.approve.side_effect = AdminClientError("HTTP 404: approval not found")
+    result = _invoke(["--json", "approvals", "approve", "apr-bad"], mock_client=mc)
+    assert result.exit_code != 0
+
+
+# ── approvals deny ──────────────────────────────────────────────────────────
+
+
+def test_approvals_deny_json():
+    mc = MagicMock()
+    mc.deny.return_value = {"status": "denied", "id": "apr-001"}
+    result = _invoke(["--json", "approvals", "deny", "apr-001"], mock_client=mc)
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["status"] == "denied"
+
+
+def test_approvals_deny_human():
+    mc = MagicMock()
+    mc.deny.return_value = {"status": "denied"}
+    result = _invoke(["approvals", "deny", "apr-001"], mock_client=mc)
+    assert result.exit_code == 0
+    assert "Denied: apr-001" in result.output
+
+
+def test_approvals_deny_error():
+    mc = MagicMock()
+    mc.deny.side_effect = AdminClientError("HTTP 404: approval not found")
+    result = _invoke(["--json", "approvals", "deny", "apr-bad"], mock_client=mc)
+    assert result.exit_code != 0
+
+
 # ── help ─────────────────────────────────────────────────────────────────────
 
 
@@ -329,6 +451,13 @@ def test_persona_help():
     result = runner.invoke(cli, ["persona", "--help"])
     assert result.exit_code == 0
     assert "Manage personas" in result.output
+
+
+def test_approvals_help():
+    runner = CliRunner()
+    result = runner.invoke(cli, ["approvals", "--help"])
+    assert result.exit_code == 0
+    assert "pending approval" in result.output.lower()
 
 
 def test_identity_help():

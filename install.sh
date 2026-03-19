@@ -488,9 +488,8 @@ if [ -n "${MASTER_SEED}" ] && [ "${IDENTITY_NEW}" = true ]; then
         # --- Verify user saved it: ask for 3 random words ---
         if [ -t 0 ]; then
             echo ""
-            echo -e "  ${BOLD}Let's verify you saved it.${RESET}"
-            echo -e "  ${DIM}Enter the words for the positions below:${RESET}"
-            echo ""
+            printf "  Press Enter when you've written it down..."
+            read -r _
 
             # Split mnemonic into array
             WORDS=()
@@ -498,45 +497,59 @@ if [ -n "${MASTER_SEED}" ] && [ "${IDENTITY_NEW}" = true ]; then
                 WORDS+=("$w")
             done
 
-            # Pick 3 random positions (1-indexed, unique, sorted)
-            _vp_nums=()
-            while [ ${#_vp_nums[@]} -lt 3 ]; do
-                _vp_n=$(( $(od -An -tu4 -N4 /dev/urandom | tr -d ' ') % 24 + 1 ))
-                _vp_dup=false
-                for _vp_e in "${_vp_nums[@]}"; do [ "$_vp_e" = "$_vp_n" ] && _vp_dup=true; done
-                [ "$_vp_dup" = false ] && _vp_nums+=("$_vp_n")
-            done
-            VERIFY_POS=($(printf '%s\n' "${_vp_nums[@]}" | sort -n))
+            VERIFY_PASS=false
+            while [ "${VERIFY_PASS}" = false ]; do
+                # Clear screen so the phrase is no longer visible
+                clear
 
-            VERIFY_PASS=true
-            for pos in "${VERIFY_POS[@]}"; do
-                EXPECTED="${WORDS[$((pos - 1))]}"
-                printf "  ${BOLD}Word #%d:${RESET} " "${pos}"
-                read -r USER_WORD
-                USER_WORD=$(echo "${USER_WORD}" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
-                if [ "${USER_WORD}" != "${EXPECTED}" ]; then
-                    VERIFY_PASS=false
-                    break
+                echo ""
+                echo -e "  ${BOLD}Let's verify you saved it.${RESET}"
+                echo -e "  ${DIM}Enter the words for the positions below:${RESET}"
+                echo ""
+
+                # Pick 3 random positions (1-indexed, unique, sorted)
+                _vp_nums=()
+                while [ ${#_vp_nums[@]} -lt 3 ]; do
+                    _vp_n=$(( $(od -An -tu4 -N4 /dev/urandom | tr -d ' ') % 24 + 1 ))
+                    _vp_dup=false
+                    for _vp_e in "${_vp_nums[@]}"; do [ "$_vp_e" = "$_vp_n" ] && _vp_dup=true; done
+                    [ "$_vp_dup" = false ] && _vp_nums+=("$_vp_n")
+                done
+                VERIFY_POS=($(printf '%s\n' "${_vp_nums[@]}" | sort -n))
+
+                _ALL_CORRECT=true
+                for pos in "${VERIFY_POS[@]}"; do
+                    EXPECTED="${WORDS[$((pos - 1))]}"
+                    printf "  ${BOLD}Word #%d:${RESET} " "${pos}"
+                    read -r USER_WORD
+                    USER_WORD=$(echo "${USER_WORD}" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+                    if [ "${USER_WORD}" != "${EXPECTED}" ]; then
+                        _ALL_CORRECT=false
+                        break
+                    fi
+                done
+
+                if [ "${_ALL_CORRECT}" = true ]; then
+                    VERIFY_PASS=true
+                    ok "Recovery phrase verified"
+                else
+                    echo ""
+                    echo -e "  ${YELLOW}✗${RESET} That doesn't match. Let's try again."
+                    echo ""
+                    echo -e "  ${DIM}Showing the recovery phrase again — save it this time.${RESET}"
+                    echo ""
+                    echo -e "  ${YELLOW}╔${BORDER}╗${RESET}"
+                    for ml in "${MNEMONIC_LINES[@]}"; do
+                        printf "  ${YELLOW}║${RESET} %-$((BOX_W - 2))s ${YELLOW}║${RESET}\n" "${ml}"
+                    done
+                    echo -e "  ${YELLOW}╚${BORDER}╝${RESET}"
+                    echo ""
+                    echo -e "  ${RED}${BOLD}Write it down on paper. Do not store it digitally.${RESET}"
+                    echo ""
+                    printf "  Press Enter when you've written it down..."
+                    read -r _
                 fi
             done
-
-            if [ "${VERIFY_PASS}" = true ]; then
-                ok "Recovery phrase verified"
-            else
-                echo ""
-                echo -e "  ${YELLOW}✗${RESET} That doesn't match. Showing the phrase one more time:"
-                echo ""
-                echo -e "  ${YELLOW}╔${BORDER}╗${RESET}"
-                for ml in "${MNEMONIC_LINES[@]}"; do
-                    printf "  ${YELLOW}║${RESET} %-$((BOX_W - 2))s ${YELLOW}║${RESET}\n" "${ml}"
-                done
-                echo -e "  ${YELLOW}╚${BORDER}╝${RESET}"
-                echo ""
-                echo -e "  ${RED}${BOLD}Write it down now. This is your last chance to see it.${RESET}"
-                echo ""
-                printf "  Press Enter when you've saved it..."
-                read -r _
-            fi
         fi
     fi
 fi
@@ -645,8 +658,8 @@ if [ -n "${MASTER_SEED}" ]; then
     echo ""
     if [ "${SEED_MODE}" = "maximum" ]; then
         echo -e "  ${DIM}You'll need your passphrase each time Dina starts.${RESET}"
-        echo -e "  ${DIM}Run ${CYAN}./run.sh${RESET}${DIM} — it will prompt you.${RESET}"
-        echo -e "  ${DIM}Note: Dina will not restart unattended. Use ${CYAN}./run.sh${RESET}${DIM} to start it again.${RESET}"
+        echo -e "  ${DIM}Run ${CYAN}./run.sh --start${RESET}${DIM} — it will prompt you.${RESET}"
+        echo -e "  ${DIM}Note: Dina will not restart unattended. Use ${CYAN}./run.sh --start${RESET}${DIM} to start it again.${RESET}"
     else
         echo -e "  ${DIM}Dina will start automatically — no passphrase needed on restart.${RESET}"
     fi
@@ -897,6 +910,8 @@ if [ -n "${SEED_MODE}" ]; then
 fi
 if has_telegram "${ENV_FILE}"; then
     echo -e "  Telegram:  ${GREEN}connected${RESET}"
+else
+    echo -e "  Telegram:  ${YELLOW}not connected${RESET} ${DIM}(approvals via dina-admin persona approvals)${RESET}"
 fi
 # Check LLM status from Brain's healthz (inside the container network)
 _brain_health=$($COMPOSE exec -T brain python -c \
@@ -913,9 +928,10 @@ if [ -n "${_brain_health}" ]; then
 fi
 echo ""
 echo -e "  ${BOLD}Commands:${RESET}"
-echo -e "    Stop:      ${CYAN}./run.sh --stop${RESET}"
-echo -e "    Logs:      ${CYAN}./run.sh --logs${RESET}"
-echo -e "    Status:    ${CYAN}./run.sh --status${RESET}"
+echo -e "    ${CYAN}./run.sh --start${RESET}    Start"
+echo -e "    ${CYAN}./run.sh --stop${RESET}     Stop"
+echo -e "    ${CYAN}./run.sh --status${RESET}   Status"
+echo -e "    ${CYAN}./run.sh --logs${RESET}     Logs"
 
 if [ "${VERBOSE}" = true ]; then
     echo ""

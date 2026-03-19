@@ -1304,11 +1304,73 @@ paths:
               schema:
                 $ref: 'components/schemas.yaml#/ImportResult'
 
-  # ── Approvals ──
+  # ── Approvals (unified) ──
+  # Type-agnostic approval system. Each approval carries its own type
+  # (persona_access, action_intent, etc.) in the payload.
 
+  /v1/approvals:
+    get:
+      summary: List all pending approval requests (any type)
+      responses:
+        "200":
+          description: Pending approvals.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  approvals:
+                    type: array
+                    items:
+                      $ref: 'components/schemas.yaml#/ApprovalRequest'
+
+  /v1/approvals/{id}/approve:
+    post:
+      summary: Approve a pending request by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                scope:
+                  type: string
+                  enum: [single, session]
+                  default: session
+                granted_by:
+                  type: string
+      responses:
+        "200":
+          description: Approved.
+        "404":
+          description: Approval not found.
+
+  /v1/approvals/{id}/deny:
+    post:
+      summary: Deny a pending request by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Denied.
+        "404":
+          description: Approval not found.
+
+  # Legacy aliases (same handlers, ID in request body instead of URL path)
   /v1/persona/approvals:
     get:
-      summary: List pending approval requests
+      summary: List pending approval requests (alias for /v1/approvals)
+      deprecated: true
       responses:
         "200":
           description: Approvals.
@@ -1324,7 +1386,8 @@ paths:
 
   /v1/persona/approve:
     post:
-      summary: Approve a persona access request
+      summary: Approve a persona access request (alias — prefer /v1/approvals/{id}/approve)
+      deprecated: true
       requestBody:
         required: true
         content:
@@ -1347,7 +1410,8 @@ paths:
 
   /v1/persona/deny:
     post:
-      summary: Deny a persona access request
+      summary: Deny a persona access request (alias — prefer /v1/approvals/{id}/deny)
+      deprecated: true
       requestBody:
         required: true
         content:

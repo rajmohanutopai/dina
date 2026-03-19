@@ -278,6 +278,23 @@ func main() {
 	didMgr.SetSigningKeyPath(identity.RootSigningPath(int(signingGeneration)))
 	didMgr.SetSigningGeneration(int(signingGeneration))
 	didMgr.SetMasterSeed(masterSeed, keyDeriver)
+
+	// Restore DID from persisted metadata so the node keeps its identity
+	// across restarts. Without this, the DID is only created on first
+	// /v1/did request, and restarts would generate a new one.
+	if meta != nil && meta.DID != "" {
+		pubKey := identitySigner.PublicKey()
+		restoredDID, restoreErr := didMgr.RestoreDID(context.Background(), meta, pubKey)
+		if restoreErr != nil {
+			slog.Warn("DID restore failed — will be recreated on first request",
+				"error", restoreErr,
+				"did", meta.DID,
+			)
+		} else {
+			slog.Info("DID restored from metadata", "did", restoredDID)
+		}
+	}
+
 	personaMgr := identity.NewPersonaManager()
 	// CRITICAL-01/02: Enable file-based persona persistence.
 	personaStatePath := filepath.Join(cfg.VaultPath, "persona_state.json")
@@ -1014,6 +1031,22 @@ func main() {
 	mux.HandleFunc("/v1/persona/approve", personaH.HandleApprove)
 	mux.HandleFunc("/v1/persona/deny", personaH.HandleDeny)
 	mux.HandleFunc("/v1/persona/approvals", personaH.HandleListApprovals)
+
+	// Unified Approval API — type-agnostic, ID in URL path.
+	// Old /v1/persona/ routes above remain as aliases.
+	approvalH := &handler.ApprovalHandler{Persona: personaH}
+	mux.HandleFunc("/v1/approvals", approvalH.HandleList)
+	mux.HandleFunc("/v1/approvals/", func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		switch {
+		case strings.HasSuffix(path, "/approve"):
+			approvalH.HandleApprove(w, r)
+		case strings.HasSuffix(path, "/deny"):
+			approvalH.HandleDeny(w, r)
+		default:
+			http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		}
+	})
 
 	// Session API
 	mux.HandleFunc("/v1/session/start", sessionH.HandleStartSession)

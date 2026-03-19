@@ -33,15 +33,18 @@ setup_telegram() {
     [ -t 0 ] || return  # skip in non-interactive mode
 
     echo ""
-    echo -e "  ${BOLD}Would you like to connect to a Telegram bot?${RESET}"
-    echo -e "  ${DIM}Dina can chat with you via Telegram — fully optional.${RESET}"
+    echo -e "  ${BOLD}Connect Telegram? ${GREEN}(recommended for notifications and approvals)${RESET}"
     echo ""
-    echo -e "    ${CYAN}1)${RESET} Yes — I have a bot token (or will create one now)"
-    echo -e "    ${CYAN}2)${RESET} Skip ${DIM}(you can set this up later in .env)${RESET}"
+    echo -e "    ${CYAN}1)${RESET} ${BOLD}Yes${RESET} — enter Bot Token ${DIM}(recommended)${RESET}"
+    echo -e "    ${CYAN}2)${RESET} Skip for now ${DIM}(you can add it later with dina-admin)${RESET}"
     echo ""
-    printf "  Enter choice [1-2]: "
+    echo -e "  ${DIM}Without Telegram, agent approval requests will queue${RESET}"
+    echo -e "  ${DIM}until you check via dina-admin or the admin web UI.${RESET}"
+    echo ""
+    printf "  Enter choice [1-2, default: 1]: "
     local tg_choice
     read -r tg_choice
+    tg_choice="${tg_choice:-1}"
 
     if [ "${tg_choice}" = "1" ]; then
         echo ""
@@ -73,6 +76,9 @@ setup_telegram() {
             info "No token entered — skipping Telegram setup"
             TELEGRAM_TOKEN=""
         fi
+    else
+        echo ""
+        info "Skipping Telegram — approve requests via: dina-admin persona approvals"
     fi
 }
 

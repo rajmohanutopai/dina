@@ -154,3 +154,26 @@ class AdminClient:
         """POST /v1/did/sign — sign with the node's Ed25519 key."""
         resp = self._request("POST", "/v1/did/sign", json={"data": data})
         return resp.json()
+
+    # -- Approvals --------------------------------------------------------
+
+    def list_approvals(self) -> list:
+        """GET /v1/approvals — list all pending approval requests."""
+        resp = self._request("GET", "/v1/approvals")
+        data = resp.json()
+        return data.get("approvals", data) if isinstance(data, dict) else data
+
+    def approve(self, approval_id: str, scope: str = "session") -> dict:
+        """POST /v1/approvals/{id}/approve — approve a pending request."""
+        resp = self._request(
+            "POST", f"/v1/approvals/{approval_id}/approve",
+            json={"scope": scope, "granted_by": "dina-admin"},
+        )
+        return resp.json()
+
+    def deny(self, approval_id: str) -> dict:
+        """POST /v1/approvals/{id}/deny — deny a pending request."""
+        resp = self._request(
+            "POST", f"/v1/approvals/{approval_id}/deny",
+        )
+        return resp.json()

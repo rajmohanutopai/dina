@@ -1346,6 +1346,9 @@ func (pm *PersonaManager) RequestApproval(_ context.Context, req domain.Approval
 	defer pm.mu.Unlock()
 
 	req.ID = fmt.Sprintf("apr-%d", time.Now().UnixNano())
+	if req.Type == "" {
+		req.Type = domain.ApprovalTypePersonaAccess
+	}
 	req.Status = domain.ApprovalPending
 	req.CreatedAt = time.Now().Unix()
 	req.UpdatedAt = req.CreatedAt
