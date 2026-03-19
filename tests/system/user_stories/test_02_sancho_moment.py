@@ -394,8 +394,14 @@ class TestSanchoMoment:
             "The nudge assembler should have queried vault by Sancho's DID "
             "and found the relationship note and tea preference."
         )
+        # Nudge must have actual text content, not just be a non-None dict
+        nudge_text = nudge.get("text", "")
+        assert len(nudge_text) > 10, (
+            f"Nudge text too short — assembler may not have found vault context. "
+            f"Got: {nudge_text!r}"
+        )
         _state["nudge"] = nudge
-        print(f"\n  [sancho] Nudge assembled: {nudge.get('text', '')[:100]}...")
+        print(f"\n  [sancho] Nudge assembled: {nudge_text[:100]}...")
 
     # -----------------------------------------------------------------
     # 05 — Verify nudge contains vault context

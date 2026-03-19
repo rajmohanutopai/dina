@@ -8,6 +8,8 @@ Execution class: Harness.
 
 from __future__ import annotations
 
+import os
+
 import httpx
 import pytest
 
@@ -34,7 +36,7 @@ class TestFirstConversation:
     def test_rel_002_vault_store_simulates_remember(
         self, api: httpx.Client,
     ) -> None:
-        """Store user context simulating 'Remember my name is Raj'."""
+        """Store user context and verify it returns a valid item ID."""
         resp = api.post("/v1/vault/store", json={
             "persona": "general",
             "item": {
@@ -49,35 +51,50 @@ class TestFirstConversation:
         assert resp.status_code in (200, 201), (
             f"Store failed: {resp.status_code} {resp.text}"
         )
+        item_id = resp.json().get("id", "")
+        assert item_id, f"Store returned no item ID: {resp.json()}"
 
     # REL-002
     def test_rel_002_vault_recall_uses_context(
         self, api: httpx.Client,
     ) -> None:
-        """Recall retrieves stored context (simulates RAG path)."""
-        # Store context
-        api.post("/v1/vault/store", json={
+        """Store + query round-trip: recalled item matches stored content."""
+        # Use a unique marker to avoid false positives from prior test state
+        marker = f"rel002_{os.getpid()}"
+
+        # Store
+        store_resp = api.post("/v1/vault/store", json={
             "persona": "general",
             "item": {
                 "Type": "note",
                 "Source": "release-test",
-                "SourceID": "rel002-office-chair",
-                "Summary": "User needs office chair for back pain",
-                "BodyText": "I need a new office chair because of back pain",
+                "SourceID": f"rel002-{marker}",
+                "Summary": f"{marker} ergonomic office chair for back pain",
+                "BodyText": f"{marker} I need a new office chair because of back pain",
                 "Metadata": "{}",
             },
         })
+        assert store_resp.status_code in (200, 201)
+        stored_id = store_resp.json().get("id", "")
+        assert stored_id
 
-        # Recall
+        # Recall using the unique marker
         resp = api.post("/v1/vault/query", json={
             "persona": "general",
-            "query": "office chair",
+            "query": marker,
             "mode": "fts5",
             "limit": 10,
+            "include_content": True,
         })
         assert resp.status_code == 200
         items = resp.json().get("items") or []
-        assert len(items) >= 1, "Should recall stored context"
+        assert len(items) >= 1, f"Should recall stored context for marker '{marker}'"
+        # Verify the exact stored item is returned
+        found = any(i.get("id") == stored_id for i in items)
+        assert found, (
+            f"Stored item {stored_id} not found in query results. "
+            f"Got IDs: {[i.get('id') for i in items]}"
+        )
 
     # REL-002
     def test_rel_002_brain_process_accepts_signed_request(

@@ -99,11 +99,22 @@ Tests give false confidence. "All 200+ release tests pass" means nothing when te
 
 | Priority | Total | Fixed | Remaining |
 |----------|-------|-------|-----------|
-| P0 | 13 | 2 (Anti-Her direct loneliness + factual false positive) | 11 |
+| P0 | 13 | 13 | 0 |
 | P1 | 12 | 0 | 12 |
 | P2 | 19 | 0 | 19 |
 | P3 | 7 | 0 | 7 |
-| **Total** | **51** | **2** | **49** |
+| **Total** | **51** | **13** | **38** |
+
+### P0 fixes applied:
+- REL-025: 5 weak tests → rewritten with content assertions (companion violations AND human redirect required — empty/silent response also fails)
+- REL-025: 3 future-feature tests → marked `pytest.mark.skip` with reason (not false-green)
+- REL-002: vault store asserts item_id, vault recall asserts content contains search term
+- REL-004: locked persona rejects 500 (only 403/423)
+- REL-008: pairing asserts device_id, device list asserts fields present
+- REL-009: persona isolation fixed weak OR → strict assert herniation not in general
+- USR-02: nudge asserts text length > 10 (not just not None)
+- USR-04: already had strong assertions (blocked, persona_tier, proposal)
+- USR-05: already had strong assertions (action, risk, approved, requires_approval)
 
 ## Anti-Pattern Reference
 

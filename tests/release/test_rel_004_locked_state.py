@@ -32,9 +32,10 @@ class TestLockedState:
             json={"persona": "locktest", "query": "test", "mode": "fts5"},
             headers=auth_headers, timeout=10,
         )
-        # Core may return 403, 423, or 500 for locked persona access
-        assert resp.status_code in (403, 423, 500), (
-            f"Locked persona should fail, got {resp.status_code}"
+        # Locked persona must return 403 (forbidden) — NOT 500 (crash)
+        assert resp.status_code in (403, 423), (
+            f"Locked persona should return 403/423, got {resp.status_code}: "
+            f"{resp.text[:200]}"
         )
 
     # REL-004
@@ -82,11 +83,14 @@ class TestLockedState:
             json={"persona": "leaktest", "query": "secret data"},
             headers=auth_headers, timeout=10,
         )
-        # Should fail, and body should not contain vault data
-        if resp.status_code in (403, 423, 500):
-            body = resp.text.lower()
-            assert "secret data" not in body
-            assert "vault" not in body or "locked" in body or "sealed" in body
+        # Must fail with 403/423 — NOT 200 (data leak) or 500 (crash)
+        assert resp.status_code in (403, 423), (
+            f"Locked persona query should return 403/423, got {resp.status_code}: "
+            f"{resp.text[:200]}"
+        )
+        # Error body must not leak vault data
+        body = resp.text.lower()
+        assert "secret data" not in body, "Vault data leaked in error response"
 
     # REL-004
     def test_rel_004_wrong_passphrase_rejected(

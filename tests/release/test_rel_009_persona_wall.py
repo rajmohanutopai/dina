@@ -19,8 +19,14 @@ class TestPersonaWall:
         self, core_url, auth_headers,
     ) -> None:
         """Data stored in one persona is not visible in another."""
-        # Store health data in health persona
+        # Store health data in health persona — must succeed first
+        # (if health is locked/misconfigured, unlock it)
         httpx.post(
+            f"{core_url}/v1/persona/unlock",
+            json={"persona": "health", "passphrase": ""},
+            headers=auth_headers, timeout=10,
+        )
+        store_resp = httpx.post(
             f"{core_url}/v1/vault/store",
             json={
                 "persona": "health",
@@ -33,6 +39,10 @@ class TestPersonaWall:
                 },
             },
             headers=auth_headers, timeout=10,
+        )
+        assert store_resp.status_code in (200, 201), (
+            f"Health store must succeed before testing isolation: "
+            f"{store_resp.status_code} {store_resp.text[:200]}"
         )
 
         # Query personal persona — should NOT find health data
@@ -48,11 +58,13 @@ class TestPersonaWall:
         )
         assert resp.status_code == 200
         items = resp.json().get("items") or []
+        # Health data must NOT appear in general persona query
         for item in items:
-            summary = item.get("Summary", "").lower()
-            body = item.get("BodyText", "").lower()
-            assert "herniation" not in summary or "health" not in item.get("persona", "general"), (
-                "Health data leaked to personal persona"
+            summary = (item.get("summary", "") or item.get("Summary", "")).lower()
+            body = (item.get("body_text", "") or item.get("BodyText", "")).lower()
+            all_text = summary + " " + body
+            assert "herniation" not in all_text, (
+                f"Health data leaked to general persona: {all_text[:200]}"
             )
 
     # REL-009
