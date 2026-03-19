@@ -27,8 +27,14 @@ def model_dir(tmp_path):
     # Copy models.json
     shutil.copy2(project_root / "models.json", tmp_path / "models.json")
 
-    # Create minimal .env so dina-admin doesn't complain
-    (tmp_path / ".env").write_text("DINA_SESSION=test\n")
+    # Create .env with a test API key so interactive mode doesn't prompt for keys
+    (tmp_path / ".env").write_text(
+        "DINA_SESSION=test\n"
+        "GEMINI_API_KEY=test-key-for-testing\n"
+        "ANTHROPIC_API_KEY=test-key-for-testing\n"
+        "OPENAI_API_KEY=test-key-for-testing\n"
+        "OPENROUTER_API_KEY=test-key-for-testing\n"
+    )
 
     # Create docker-compose.yml stub (dina-admin checks for compose)
     (tmp_path / "docker-compose.yml").write_text("version: '3'\nservices: {}\n")
@@ -211,6 +217,44 @@ class TestModelSetInteractive:
 
         after = _read_defaults(model_dir)
         assert before == after
+
+    def test_interactive_missing_key_prompts(self, tmp_path: Path) -> None:
+        """When .env has no key for selected provider, prompts for it."""
+        import pexpect
+
+        project_root = Path(__file__).resolve().parent.parent.parent
+        shutil.copy2(project_root / "dina-admin", tmp_path / "dina-admin")
+        shutil.copy2(project_root / "models.json", tmp_path / "models.json")
+        (tmp_path / "docker-compose.yml").write_text("version: '3'\nservices: {}\n")
+        # .env with NO API keys
+        (tmp_path / ".env").write_text("DINA_SESSION=test\n")
+
+        child = pexpect.spawn(
+            "bash", [str(tmp_path / "dina-admin"), "model", "set"],
+            cwd=str(tmp_path), timeout=15, encoding="utf-8",
+        )
+
+        # Pick gemini model for lite
+        child.expect("lite:", timeout=10)
+        child.sendline("gemini/gemini-2.5-flash")
+
+        # Keep primary and heavy
+        child.expect("primary:", timeout=10)
+        child.sendline("")
+        child.expect("heavy:", timeout=10)
+        child.sendline("")
+
+        # Should prompt for Gemini API key
+        idx = child.expect(
+            ["requires an API key", "Enter API key", pexpect.TIMEOUT],
+            timeout=10,
+        )
+        assert idx in (0, 1), "Should prompt for missing API key"
+
+        # Skip it
+        child.sendline("")
+        child.expect(pexpect.EOF, timeout=10)
+        child.close()
 
     def test_interactive_change_all_three(self, model_dir: Path) -> None:
         """Change all three roles in one pass."""

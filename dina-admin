@@ -228,7 +228,9 @@ _model_set() {
         exit 1
     fi
 
-    # Collect available models once
+    local env_file="$COMPOSE_DIR/.env"
+
+    # Collect ALL models (user picks from the full catalog)
     local models=()
     while IFS= read -r m; do
         models+=("$m")
@@ -245,6 +247,8 @@ _model_set() {
     done
 
     local changed=false
+    # Track which providers need API keys (collected during selection)
+    local needed_providers=()
 
     # Walk through all three roles
     for role_name in lite primary heavy; do
@@ -256,13 +260,18 @@ _model_set() {
         local model_input
         read -r model_input
 
-        # Skip if empty (keep current)
         if [ -z "$model_input" ]; then
+            # Keep current — but still track its provider for key check
+            local cur_prov="${cur%%/*}"
+            if [ -n "$cur_prov" ] && [ "$cur_prov" != "?" ]; then
+                local _dup=false
+                for _np in "${needed_providers[@]:-}"; do [ "$_np" = "$cur_prov" ] && _dup=true; done
+                [ "$_dup" = false ] && needed_providers+=("$cur_prov")
+            fi
             continue
         fi
 
         local selected=""
-        # Check if it's a number
         if echo "$model_input" | grep -qE '^[0-9]+$'; then
             local idx=$((model_input - 1))
             if [ $idx -ge 0 ] && [ $idx -lt ${#models[@]} ]; then
@@ -272,7 +281,6 @@ _model_set() {
                 continue
             fi
         else
-            # Treat as model name — find matching full ref
             selected=$(printf '%s\n' "${models[@]}" | grep -F "$model_input" | head -1 || true)
             if [ -z "$selected" ]; then
                 selected="$model_input"
@@ -286,7 +294,78 @@ _model_set() {
             '.defaults[$role] = $val' "$json_file" > "$tmp" && mv "$tmp" "$json_file"
         echo -e "  ${GREEN}✓${RESET} ${role_name} = ${selected}"
         changed=true
+
+        # Track provider
+        local sel_prov="${selected%%/*}"
+        if [ -n "$sel_prov" ]; then
+            local _dup=false
+            for _np in "${needed_providers[@]:-}"; do [ "$_np" = "$sel_prov" ] && _dup=true; done
+            [ "$_dup" = false ] && needed_providers+=("$sel_prov")
+        fi
     done
+
+    # Check API keys for all needed providers
+    if [ ${#needed_providers[@]} -gt 0 ] && [ -f "$env_file" ]; then
+        local keys_missing=false
+        for prov in "${needed_providers[@]}"; do
+            local key_env
+            key_env=$(jq -r --arg p "$prov" '.providers[$p].api_key_env // empty' "$json_file" 2>/dev/null || true)
+            [ -z "$key_env" ] && continue
+            # Check if already in .env
+            local existing
+            existing=$(sed -n "s/^${key_env}=\(.*\)$/\1/p" "$env_file" 2>/dev/null || true)
+            if [ -n "$existing" ]; then
+                continue
+            fi
+            # Missing — ask for it
+            echo ""
+            echo -e "  ${YELLOW}${prov}${RESET} requires an API key (${key_env})"
+            while true; do
+                printf "  Enter API key: "
+                local api_key
+                read -r api_key
+                api_key=$(echo "$api_key" | tr -d '[:space:]')
+                if [ -z "$api_key" ]; then
+                    echo -e "  ${RED}Skipped.${RESET} ${prov} models will not work without a key."
+                    keys_missing=true
+                    break
+                fi
+                # Validate
+                printf "  Validating... "
+                if python3 "$COMPOSE_DIR/scripts/validate_key.py" "$key_env" "$api_key" >/dev/null 2>&1; then
+                    echo -e "${GREEN}✓${RESET}"
+                    # Write to .env
+                    echo "${key_env}=${api_key}" >> "$env_file"
+                    echo -e "  ${GREEN}✓${RESET} Saved ${key_env} to .env"
+                    break
+                else
+                    echo -e "${YELLOW}✗${RESET} key did not work"
+                    echo ""
+                    echo -e "    ${CYAN}1)${RESET} Re-enter key"
+                    echo -e "    ${CYAN}2)${RESET} Skip this provider"
+                    echo ""
+                    while true; do
+                        printf "  Choice [1-2]: "
+                        local retry_choice
+                        read -r retry_choice
+                        case "$retry_choice" in
+                            1|2) break ;;
+                            *) echo -e "  ${YELLOW}Please enter 1 or 2.${RESET}" ;;
+                        esac
+                    done
+                    if [ "$retry_choice" = "2" ]; then
+                        echo -e "  ${DIM}Skipped. ${prov} models will not work without a key.${RESET}"
+                        keys_missing=true
+                        break
+                    fi
+                fi
+            done
+        done
+        if [ "$keys_missing" = true ]; then
+            echo ""
+            echo -e "  ${YELLOW}Some providers have no API key.${RESET} Models from those providers will fail."
+        fi
+    fi
 
     if [ "$changed" = true ]; then
         echo ""
