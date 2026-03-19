@@ -39,6 +39,7 @@ ENV_FILE="${DINA_DIR}/.env"
 HEALTH_TIMEOUT=90     # seconds to wait for health check
 HEALTH_INTERVAL=3     # seconds between health check attempts
 SKIP_BUILD=false
+CONFIG_ONLY=false
 VERBOSE=false
 
 # Default port bases (auto-allocated if in use)
@@ -48,6 +49,7 @@ DEFAULT_PDS_PORT=2583
 for arg in "$@"; do
     case "$arg" in
         --skip-build) SKIP_BUILD=true ;;
+        --config-only) CONFIG_ONLY=true; SKIP_BUILD=true ;;
         --verbose|-v) VERBOSE=true ;;
     esac
 done
@@ -806,6 +808,14 @@ verbose_ok "Permissions locked"
 # Step 7: Build Docker images
 # ---------------------------------------------------------------------------
 
+if [ "${CONFIG_ONLY}" = true ]; then
+    echo ""
+    ok "Configuration complete (--config-only)"
+    echo ""
+    echo -e "  ${DIM}To build and start: ${CYAN}./install.sh${RESET}"
+    exit 0
+fi
+
 echo -e "  ${BOLD}Building Dina...${RESET}"
 
 if [ "${SKIP_BUILD}" = true ]; then
@@ -933,6 +943,38 @@ if [ "${SEED_MODE}" = "maximum" ]; then
     : > "${SECRETS_DIR}/seed_password"
     chmod 600 "${SECRETS_DIR}/seed_password"
     verbose_ok "Passphrase cleared from disk (Maximum Security)"
+fi
+
+# ---------------------------------------------------------------------------
+# Smoke test: verify LLM actually works (not just "configured")
+# ---------------------------------------------------------------------------
+
+TOKEN_FILE="${SECRETS_DIR}/client_token"
+if [ -f "${TOKEN_FILE}" ]; then
+    _smoke_token=$(cat "${TOKEN_FILE}" 2>/dev/null || true)
+    if [ -n "${_smoke_token}" ]; then
+        printf "  Verifying LLM... "
+        _smoke_resp=$(curl -sf -X POST \
+            -H "Authorization: Bearer ${_smoke_token}" \
+            -H "Content-Type: application/json" \
+            -d '{"prompt":"Reply with just the word OK."}' \
+            "http://localhost:${CORE_PORT}/api/v1/reason" 2>/dev/null || true)
+
+        _smoke_error=$(echo "${_smoke_resp}" | jq -r '.error_code // empty' 2>/dev/null || true)
+        _smoke_content=$(echo "${_smoke_resp}" | jq -r '.content // empty' 2>/dev/null || true)
+
+        if [ -n "${_smoke_error}" ]; then
+            _smoke_msg=$(echo "${_smoke_resp}" | jq -r '.message // empty' 2>/dev/null || true)
+            echo -e "${YELLOW}✗${RESET}"
+            echo ""
+            echo -e "  ${YELLOW}LLM is not working:${RESET} ${_smoke_msg}"
+            echo -e "  ${DIM}Fix: check your API key in .env, then ${CYAN}./run.sh --stop && ./run.sh --start${RESET}"
+        elif [ -n "${_smoke_content}" ]; then
+            echo -e "${GREEN}✓${RESET}"
+        else
+            echo -e "${YELLOW}?${RESET} ${DIM}(no response — LLM may still be starting)${RESET}"
+        fi
+    fi
 fi
 
 echo ""

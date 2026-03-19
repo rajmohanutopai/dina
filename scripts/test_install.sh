@@ -7,6 +7,9 @@
 #   - idempotent rerun (no identity rotation)
 #   - startup modes (auto-start vs manual-start)
 #   - failure paths (corrupt seed, missing Docker, bad permissions)
+#   - functional: personas, vault round-trip, LLM error reporting,
+#     run.sh behavior, dina-admin commands, approvals, security,
+#     input validation (rejects garbage at prompts)
 #
 # Requires: Docker running, pexpect installed.
 #

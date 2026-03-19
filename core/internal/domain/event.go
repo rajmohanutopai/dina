@@ -17,6 +17,8 @@ type ReasonResult struct {
 	TokensIn         int    `json:"tokens_in,omitempty"`
 	TokensOut        int    `json:"tokens_out,omitempty"`
 	VaultContextUsed bool   `json:"vault_context_used,omitempty"`
+	// Error fields — populated when Brain's LLM call fails
+	ErrorCode string `json:"error_code,omitempty"`
 	// Async approval fields — populated only on 202 from Brain
 	Status     string `json:"status,omitempty"`
 	ApprovalID string `json:"approval_id,omitempty"`

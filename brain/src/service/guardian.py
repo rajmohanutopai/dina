@@ -2949,7 +2949,7 @@ class GuardianLoop:
         except LLMError as exc:
             # Classify the LLM error so the CLI can show actionable messages.
             err_str = str(exc).lower()
-            if "no llm provider" in err_str or "not configured" in err_str:
+            if "no llm provider" in err_str or "not configured" in err_str or "all llm providers unavailable" in err_str:
                 error_code = "llm_not_configured"
                 message = "No LLM provider configured. Run 'dina-admin model list' to see options."
             elif "401" in err_str or "auth" in err_str or "api key" in err_str or "forbidden" in err_str:

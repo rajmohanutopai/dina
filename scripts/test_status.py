@@ -1053,6 +1053,14 @@ SUITES = {
         "cwd": None,
         "parser": "pytest",
     },
+    "install": {
+        "name": "Install (pexpect)",
+        "cmd": ["python", "-m", "pytest", "-v", "--tb=short", "--durations=0", "-vv",
+                "tests/install/"],
+        "cwd": None,
+        "parser": "pytest",
+        "test_dir": "tests/install",
+    },
 }
 
 

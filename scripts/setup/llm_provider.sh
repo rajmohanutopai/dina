@@ -41,16 +41,25 @@ _validate_key() {
         printf "  Validating API key... "
         if run_crypto scripts/validate_key.py "${key_name}" "${key_value}" >/dev/null 2>&1; then
             echo -e "${GREEN}✓${RESET}"
+            # Update key_value in caller via nameref-like trick:
+            # _validate_key sets VALIDATED_KEY on success.
+            VALIDATED_KEY="${key_value}"
             return 0
         else
             echo -e "${YELLOW}✗${RESET} key did not work"
             echo ""
             echo -e "    ${CYAN}1)${RESET} Re-enter key"
-            echo -e "    ${CYAN}2)${RESET} Continue anyway"
+            echo -e "    ${CYAN}2)${RESET} Skip this provider"
             echo ""
-            printf "  Choice [1-2]: "
-            local retry_choice
-            read -r retry_choice
+            while true; do
+                printf "  Choice [1-2]: "
+                local retry_choice
+                read -r retry_choice
+                case "${retry_choice}" in
+                    1|2) break ;;
+                    *) echo -e "  ${YELLOW}Please enter 1 or 2.${RESET}" ;;
+                esac
+            done
             case "${retry_choice}" in
                 1)
                     printf "  Enter your API key: "
@@ -60,7 +69,7 @@ _validate_key() {
                     fi
                     ;;
                 *)
-                    return 0
+                    return 1
                     ;;
             esac
         fi
@@ -77,8 +86,11 @@ _ask_provider_key() {
         echo -e "  ${DIM}Skipped${RESET}"
         return
     fi
+    VALIDATED_KEY="${key_value}"
     if _validate_key "${key_env}" "${key_value}"; then
-        LLM_PROVIDERS+=("${key_env}=${key_value}")
+        LLM_PROVIDERS+=("${key_env}=${VALIDATED_KEY}")
+    else
+        echo -e "  ${DIM}${provider_name} skipped${RESET}"
     fi
 }
 
