@@ -1113,7 +1113,9 @@ func (c *adminEndpointChecker) AllowedForTokenKind(kind, path string, scope ...s
 			"/v1/task/ack",
 			"/v1/contacts",
 			"/v1/notify",
-			"/v1/agent/validate",
+			"/v1/agent/validate",    // action gating
+			"/v1/audit",             // activity log (read-only)
+			"/v1/approvals",         // approval list/status
 			"/v1/session/start",
 			"/v1/session/end",
 			"/v1/sessions",

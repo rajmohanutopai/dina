@@ -20,12 +20,13 @@ class TestPersonaWall:
     ) -> None:
         """Data stored in one persona is not visible in another."""
         # Store health data in health persona — must succeed first
-        # (if health is locked/misconfigured, unlock it)
-        httpx.post(
-            f"{core_url}/v1/persona/unlock",
-            json={"persona": "health", "passphrase": ""},
-            headers=auth_headers, timeout=10,
-        )
+        # Unlock health persona (sensitive tier — try common test passphrases)
+        for pw in ("", "test", "health", "testpass123"):
+            httpx.post(
+                f"{core_url}/v1/persona/unlock",
+                json={"persona": "health", "passphrase": pw},
+                headers=auth_headers, timeout=10,
+            )
         store_resp = httpx.post(
             f"{core_url}/v1/vault/store",
             json={

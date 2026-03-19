@@ -93,8 +93,17 @@ class TestVaultResilience:
         })
         assert resp.status_code == 200
         items = resp.json().get("items") or []
-        found = any("50000" in (it.get("Summary", "") + it.get("BodyText", "")) for it in items)
-        assert found, "Stored data should be retrievable without corruption"
+        found = any(
+            "50000" in (
+                it.get("summary", "") or it.get("Summary", "") +
+                it.get("body_text", "") or it.get("BodyText", "")
+            )
+            for it in items
+        )
+        assert found, (
+            f"Stored data should be retrievable without corruption. "
+            f"Items: {[{k: v for k, v in it.items() if k in ('id', 'summary', 'Summary')} for it in items[:3]]}"
+        )
 
     # REL-011
     def test_rel_011_concurrent_stores_succeed(self, api: httpx.Client) -> None:
