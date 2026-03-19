@@ -118,13 +118,15 @@ _model_usage() {
     echo -e "  ${BOLD}Usage:${RESET} dina-admin model <command>"
     echo ""
     echo "  Commands:"
-    echo -e "    ${CYAN}list${RESET}                      Show active models and available overrides"
-    echo -e "    ${CYAN}status${RESET}                    Same as list"
-    echo -e "    ${CYAN}set${RESET} <ENV_VAR> <model_id>  Set a model override in .env"
+    echo -e "    ${CYAN}list${RESET}                          Show active and available models"
+    echo -e "    ${CYAN}status${RESET}                        Same as list"
+    echo -e "    ${CYAN}set${RESET}                           Interactive model selection"
+    echo -e "    ${CYAN}set${RESET} <role> <model>            Set directly (role: lite, primary, heavy)"
     echo ""
     echo -e "  ${DIM}Examples:${RESET}"
-    echo -e "    ${CYAN}dina-admin model set GEMINI_MODEL gemini-2.5-flash${RESET}"
-    echo -e "    ${CYAN}dina-admin model set CLAUDE_LITE_MODEL claude-haiku-4-5-20251001${RESET}"
+    echo -e "    ${CYAN}dina-admin model set${RESET}                                      ${DIM}(interactive)${RESET}"
+    echo -e "    ${CYAN}dina-admin model set lite gemini/gemini-2.5-flash${RESET}         ${DIM}(direct)${RESET}"
+    echo -e "    ${CYAN}dina-admin model set heavy claude/claude-sonnet-4-6${RESET}       ${DIM}(direct)${RESET}"
 }
 
 _brain_healthz() {
@@ -168,10 +170,7 @@ _model_list() {
     fi
 
     echo ""
-    echo -e "  ${BOLD}To change models:${RESET}"
-    echo -e "    ${CYAN}dina-admin model set GEMINI_MODEL gemini-2.5-flash${RESET}"
-    echo ""
-    echo -e "  ${DIM}After changing .env, restart: ${CYAN}./run.sh --stop${RESET}${DIM} then ${CYAN}./run.sh --start${RESET}"
+    echo -e "  ${BOLD}To change:${RESET}  ${CYAN}dina-admin model set${RESET}  ${DIM}(interactive)${RESET}"
 }
 
 _model_status() {
@@ -179,41 +178,123 @@ _model_status() {
 }
 
 _model_set() {
-    local env_var="$1" model_id="$2"
-    local env_file="$COMPOSE_DIR/.env"
+    local json_file="$COMPOSE_DIR/models.json"
 
-    if [ -z "${env_var}" ] || [ -z "${model_id}" ]; then
-        echo -e "  ${RED}Usage:${RESET} dina-admin model set <ENV_VAR> <model_id>" >&2
+    if [ ! -f "$json_file" ]; then
+        echo -e "  ${RED}models.json not found.${RESET} Run ./install.sh first." >&2
+        exit 1
+    fi
+
+    # Non-interactive: dina-admin model set <role> <model>
+    if [ -n "${1:-}" ] && [ -n "${2:-}" ]; then
+        local role="$1" model="$2"
+        case "$role" in
+            lite|primary|heavy) ;;
+            *)
+                echo -e "  ${RED}Unknown role:${RESET} $role" >&2
+                echo -e "  ${DIM}Valid roles: lite, primary, heavy${RESET}"
+                exit 1
+                ;;
+        esac
+        # Validate model exists in models.json
+        local found
+        found=$(jq -r --arg m "$model" \
+            '.providers | to_entries[] | .key as $p | .value.models // {} | keys[] | "\($p)/\(.)"' \
+            "$json_file" 2>/dev/null | grep -F "$model" | head -1 || true)
+        if [ -z "$found" ]; then
+            echo -e "  ${YELLOW}Warning:${RESET} '$model' not found in models.json (setting anyway)"
+            # Try to construct full ref — if model contains /, use as-is
+            if echo "$model" | grep -q "/"; then
+                found="$model"
+            else
+                found="$model"
+            fi
+        fi
+        # Update models.json
+        local tmp="${json_file}.tmp"
+        jq --arg role "$role" --arg val "$found" \
+            '.defaults[$role] = $val' "$json_file" > "$tmp" && mv "$tmp" "$json_file"
+        echo -e "  ${GREEN}✓${RESET} Set ${BOLD}${role}${RESET} = ${found}"
         echo ""
-        echo -e "  ${DIM}Example: dina-admin model set GEMINI_MODEL gemini-2.5-flash${RESET}"
+        echo -e "  ${DIM}Restart to apply: ${CYAN}./run.sh --stop${RESET}${DIM} then ${CYAN}./run.sh --start${RESET}"
+        return
+    fi
+
+    # Interactive mode
+    if [ ! -t 0 ]; then
+        echo -e "  ${RED}Usage:${RESET} dina-admin model set <role> <model>" >&2
+        echo -e "  ${DIM}Roles: lite, primary, heavy${RESET}"
+        echo -e "  ${DIM}Example: dina-admin model set lite gemini/gemini-2.5-flash${RESET}"
         exit 1
     fi
 
-    # Validate env var name looks like a model override (uppercase, ends with _MODEL or _KEY or _URL)
-    if ! echo "${env_var}" | grep -qE '^[A-Z_]+$'; then
-        echo -e "  ${RED}Invalid variable name:${RESET} ${env_var}" >&2
-        echo -e "  ${DIM}Must be uppercase (e.g. GEMINI_MODEL, OPENAI_API_KEY)${RESET}"
-        exit 1
-    fi
+    # Collect available models once
+    local models=()
+    while IFS= read -r m; do
+        models+=("$m")
+    done < <(jq -r '.providers | to_entries[] | .key as $p | .value.models // {} | keys[] | "\($p)/\(.)"' \
+        "$json_file" 2>/dev/null | grep -v "llama-local")
 
-    if [ ! -f "${env_file}" ]; then
-        echo -e "  ${RED}No .env file found.${RESET} Run ./install.sh first." >&2
-        exit 1
-    fi
+    echo ""
+    echo -e "  ${BOLD}Available models:${RESET}"
+    echo ""
+    local i=1
+    for m in "${models[@]}"; do
+        printf "    ${CYAN}%2d)${RESET} %s\n" "$i" "$m"
+        i=$((i + 1))
+    done
 
-    # Update or append the variable in .env
-    if grep -q "^${env_var}=" "${env_file}" 2>/dev/null; then
-        # Update existing line
-        sed -i.bak "s|^${env_var}=.*|${env_var}=${model_id}|" "${env_file}"
-        rm -f "${env_file}.bak"
-        echo -e "  ${GREEN}✓${RESET} Updated ${CYAN}${env_var}${RESET} = ${model_id}"
+    local changed=false
+
+    # Walk through all three roles
+    for role_name in lite primary heavy; do
+        local cur
+        cur=$(jq -r --arg r "$role_name" '.defaults[$r] // "?"' "$json_file" 2>/dev/null || echo "?")
+        echo ""
+        printf "  ${BOLD}%-8s${RESET} ${DIM}(current: %s)${RESET}\n" "${role_name}:" "$cur"
+        printf "  Enter number, paste model name, or press Enter to keep: "
+        local model_input
+        read -r model_input
+
+        # Skip if empty (keep current)
+        if [ -z "$model_input" ]; then
+            continue
+        fi
+
+        local selected=""
+        # Check if it's a number
+        if echo "$model_input" | grep -qE '^[0-9]+$'; then
+            local idx=$((model_input - 1))
+            if [ $idx -ge 0 ] && [ $idx -lt ${#models[@]} ]; then
+                selected="${models[$idx]}"
+            else
+                echo -e "  ${YELLOW}Invalid number — skipping.${RESET}"
+                continue
+            fi
+        else
+            # Treat as model name — find matching full ref
+            selected=$(printf '%s\n' "${models[@]}" | grep -F "$model_input" | head -1 || true)
+            if [ -z "$selected" ]; then
+                selected="$model_input"
+                echo -e "  ${YELLOW}Warning:${RESET} '$model_input' not in models.json (setting anyway)"
+            fi
+        fi
+
+        # Update models.json
+        local tmp="${json_file}.tmp"
+        jq --arg role "$role_name" --arg val "$selected" \
+            '.defaults[$role] = $val' "$json_file" > "$tmp" && mv "$tmp" "$json_file"
+        echo -e "  ${GREEN}✓${RESET} ${role_name} = ${selected}"
+        changed=true
+    done
+
+    if [ "$changed" = true ]; then
+        echo ""
+        echo -e "  ${DIM}Restart to apply: ${CYAN}./run.sh --stop${RESET}${DIM} then ${CYAN}./run.sh --start${RESET}"
     else
-        # Append
-        echo "${env_var}=${model_id}" >> "${env_file}"
-        echo -e "  ${GREEN}✓${RESET} Added ${CYAN}${env_var}${RESET} = ${model_id}"
+        echo ""
+        echo -e "  ${DIM}No changes made.${RESET}"
     fi
-
-    echo -e "  ${DIM}Restart to apply: ${CYAN}./run.sh --stop${RESET}${DIM} then ${CYAN}./run.sh --start${RESET}"
 }
 
 if [ "${1:-}" = "model" ]; then
