@@ -165,6 +165,18 @@ async def reason_query(request: ReasonRequest) -> ReasonResponse:
             },
         )
 
+    # Check for structured LLM error (no provider, auth failure, timeout, etc.)
+    if isinstance(result, dict) and result.get("error_code"):
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=200,
+            content={
+                "error_code": result["error_code"],
+                "message": result.get("message", ""),
+                "content": "",
+            },
+        )
+
     return ReasonResponse(
         content=result.get("content", ""),
         model=result.get("model"),

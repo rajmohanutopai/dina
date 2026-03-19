@@ -156,28 +156,20 @@ _model_list() {
     else
         echo -e "  ${YELLOW}No LLM provider configured.${RESET}"
     fi
-    echo ""
-    echo -e "  ${DIM}Override via .env:${RESET}"
+
+    # Show available models from models.json
     local json_file="$COMPOSE_DIR/models.json"
     if [ -f "$json_file" ]; then
-        # Read env var names and defaults from models.json
-        $COMPOSE -f "$COMPOSE_DIR/docker-compose.yml" exec -T brain \
-            python -c "
-import json
-d=json.load(open('/app/models.json'))
-for p in d.get('providers',{}).values():
-    env=p.get('model_env','')
-    dflt=p.get('default_model','')
-    if env and dflt:
-        print(f'{env}|{dflt}')
-    le=p.get('lite_model_env','')
-    ld=p.get('default_lite_model','')
-    if le and ld:
-        print(f'{le}|{ld}')
-" 2>/dev/null | while IFS='|' read -r env_name default_val; do
-            printf "    ${CYAN}%-20s${RESET} ${DIM}(default: %s)${RESET}\n" "$env_name" "$default_val"
-        done
+        echo ""
+        echo -e "  ${BOLD}Available models:${RESET}"
+        echo ""
+        jq -r '.providers | to_entries[] | .key as $p | .value.models // {} | keys[] | "    \($p)/\(.)"' \
+            "$json_file" 2>/dev/null
     fi
+
+    echo ""
+    echo -e "  ${BOLD}To change models:${RESET}"
+    echo -e "    ${CYAN}dina-admin model set GEMINI_MODEL gemini-2.5-flash${RESET}"
     echo ""
     echo -e "  ${DIM}After changing .env, restart: ${CYAN}./run.sh --stop${RESET}${DIM} then ${CYAN}./run.sh --start${RESET}"
 }
@@ -197,20 +189,10 @@ _model_set() {
         exit 1
     fi
 
-    # Validate env var name is a known model override
-    local valid_vars="GEMINI_MODEL GEMINI_LITE_MODEL CLAUDE_MODEL CLAUDE_LITE_MODEL OPENAI_MODEL OPENAI_LITE_MODEL OPENROUTER_MODEL"
-    local is_valid=false
-    for v in ${valid_vars}; do
-        [ "$v" = "${env_var}" ] && is_valid=true
-    done
-
-    if [ "${is_valid}" = false ]; then
-        echo -e "  ${RED}Unknown model variable:${RESET} ${env_var}" >&2
-        echo ""
-        echo -e "  ${DIM}Valid variables:${RESET}"
-        for v in ${valid_vars}; do
-            echo -e "    ${CYAN}${v}${RESET}"
-        done
+    # Validate env var name looks like a model override (uppercase, ends with _MODEL or _KEY or _URL)
+    if ! echo "${env_var}" | grep -qE '^[A-Z_]+$'; then
+        echo -e "  ${RED}Invalid variable name:${RESET} ${env_var}" >&2
+        echo -e "  ${DIM}Must be uppercase (e.g. GEMINI_MODEL, OPENAI_API_KEY)${RESET}"
         exit 1
     fi
 
@@ -231,7 +213,7 @@ _model_set() {
         echo -e "  ${GREEN}✓${RESET} Added ${CYAN}${env_var}${RESET} = ${model_id}"
     fi
 
-    echo -e "  ${DIM}Restart to apply: ${CYAN}./run.sh --restart${RESET}"
+    echo -e "  ${DIM}Restart to apply: ${CYAN}./run.sh --stop${RESET}${DIM} then ${CYAN}./run.sh --start${RESET}"
 }
 
 if [ "${1:-}" = "model" ]; then

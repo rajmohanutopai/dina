@@ -250,6 +250,23 @@ def ask(ctx: click.Context, query: str, session: str) -> None:
             ctx.exit(1)
             return
 
+        # Check for structured error from Brain
+        error_code = result.get("error_code", "")
+        if error_code:
+            if json_mode:
+                print_result(result, json_mode)
+            else:
+                _ERROR_MESSAGES = {
+                    "llm_not_configured": "LLM not configured. Run 'dina-admin model list' to see options.",
+                    "llm_auth_failed": "LLM authentication failed. Check your API key with 'dina-admin model status'.",
+                    "llm_timeout": "LLM request timed out. Try again or check 'dina-admin model status'.",
+                    "llm_unreachable": "LLM provider unreachable. Check network or 'dina-admin model status'.",
+                }
+                msg = result.get("message") or _ERROR_MESSAGES.get(error_code, f"Error: {error_code}")
+                click.echo(msg, err=True)
+            ctx.exit(1)
+            return
+
         # Normal (immediate) response
         if json_mode:
             print_result(result, json_mode)
@@ -258,7 +275,7 @@ def ask(ctx: click.Context, query: str, session: str) -> None:
             if answer:
                 click.echo(answer)
             else:
-                click.echo("No results found.")
+                click.echo("I don't have any information about that yet.")
     except DinaClientError as exc:
         if "approval_required" in str(exc).lower():
             click.echo("Access to sensitive data requires approval.", err=True)

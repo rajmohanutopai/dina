@@ -160,7 +160,32 @@ def test_ask_no_results():
     mc.reason.return_value = {"content": ""}
     result = _invoke(["ask", "nonexistent"], mock_client=mc)
     assert result.exit_code == 0
-    assert "No results" in result.output
+    assert "don't have any information" in result.output
+
+
+def test_ask_llm_not_configured():
+    mc = MagicMock()
+    mc.reason.return_value = {"error_code": "llm_not_configured", "message": "No LLM provider configured.", "content": ""}
+    result = _invoke(["ask", "hello"], mock_client=mc)
+    assert result.exit_code != 0
+    assert "LLM" in result.output or "llm" in result.output
+
+
+def test_ask_llm_not_configured_json():
+    mc = MagicMock()
+    mc.reason.return_value = {"error_code": "llm_not_configured", "message": "No LLM.", "content": ""}
+    result = _invoke(["--json", "ask", "hello"], mock_client=mc)
+    assert result.exit_code != 0
+    data = json.loads(result.output)
+    assert data["error_code"] == "llm_not_configured"
+
+
+def test_ask_llm_unreachable():
+    mc = MagicMock()
+    mc.reason.return_value = {"error_code": "llm_unreachable", "message": "LLM provider unreachable.", "content": ""}
+    result = _invoke(["ask", "hello"], mock_client=mc)
+    assert result.exit_code != 0
+    assert "unreachable" in result.output.lower()
 
 
 # ── ask: async approval-wait-resume ────────────────────────────────────

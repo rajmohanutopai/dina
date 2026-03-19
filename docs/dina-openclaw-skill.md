@@ -1,7 +1,7 @@
 ---
 name: dina
 description: Sovereign personal AI with encrypted vault, 4-tier persona access, PII scrubbing, agent sessions, and action gating. Agents work within named sessions with scoped access grants.
-version: 0.3.3
+version: 0.4.0
 metadata:
   openclaw:
     emoji: "🛡️"
@@ -53,6 +53,24 @@ Your query → Dina decides which persona to search →
     → When complete: answer returned
   If denied: {"status": "denied"}
 ```
+
+## Error Handling
+
+`dina ask` returns structured errors with `error_code` for programmatic handling:
+
+```json
+{"error_code": "llm_not_configured", "message": "No LLM provider configured...", "content": ""}
+```
+
+| error_code | Meaning | Agent action |
+|-----------|---------|-------------|
+| `llm_not_configured` | No LLM provider set up | Tell user to run `dina-admin model list` |
+| `llm_auth_failed` | API key invalid or expired | Tell user to check API key |
+| `llm_timeout` | LLM request timed out | Retry once, then tell user |
+| `llm_unreachable` | LLM provider not reachable | Check network, retry later |
+| `llm_error` | Other LLM failure | Log details, tell user |
+
+When `--json` is used, the full error object is returned. Without `--json`, CLI shows a human-readable message with next steps.
 
 ## Quick Reference
 

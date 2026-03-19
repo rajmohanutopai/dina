@@ -2947,17 +2947,27 @@ class GuardianLoop:
                 "vault_context_used": vault_enriched,
             }
         except LLMError as exc:
-            # Graceful degradation: no LLM available (release/offline mode).
-            # Return a structured response instead of crashing.
-            log.warning("guardian.reason_no_llm", error=str(exc))
+            # Classify the LLM error so the CLI can show actionable messages.
+            err_str = str(exc).lower()
+            if "no llm provider" in err_str or "not configured" in err_str:
+                error_code = "llm_not_configured"
+                message = "No LLM provider configured. Run 'dina-admin model list' to see options."
+            elif "401" in err_str or "auth" in err_str or "api key" in err_str or "forbidden" in err_str:
+                error_code = "llm_auth_failed"
+                message = "LLM authentication failed. Check your API key with 'dina-admin model status'."
+            elif "timeout" in err_str or "timed out" in err_str:
+                error_code = "llm_timeout"
+                message = "LLM request timed out. Try again or check 'dina-admin model status'."
+            elif "unreachable" in err_str or "connection" in err_str or "name resolution" in err_str:
+                error_code = "llm_unreachable"
+                message = "LLM provider unreachable. Check network or 'dina-admin model status'."
+            else:
+                error_code = "llm_error"
+                message = f"LLM error: {exc}"
+            log.warning("guardian.reason_no_llm", error=str(exc), error_code=error_code)
             return {
-                "status": "ok",
-                "action": "reason_degraded",
-                "classification": "solicited",
-                "response": {
-                    "degraded": True,
-                    "reason": "No LLM provider available",
-                },
+                "error_code": error_code,
+                "message": message,
                 "content": "",
             }
         except Exception as exc:
