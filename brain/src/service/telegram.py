@@ -366,18 +366,25 @@ class TelegramService:
         return str(response) if response else ""
 
     async def _store_message(self, update: Update, text: str) -> None:
-        """Store the message exchange in vault for memory/context."""
+        """Store the message exchange via staging for memory/context.
+
+        Uses staging_ingest with ingress_channel=telegram so that
+        Brain classifies and enriches the item before it reaches vault.
+        Brain is a trusted service — Core allows it to set ingress_channel.
+        """
         if not update.effective_user:
             return
         try:
-            await self._core.store_vault_item("default", {
+            await self._core.staging_ingest({
                 "type": "message",
                 "source": "telegram",
                 "source_id": f"tg_{update.update_id}",
                 "summary": text[:200],
-                "body_text": text,
+                "body": text,
                 "sender": str(update.effective_user.id),
-                "timestamp": int(time.time()),
+                "metadata": json.dumps({"timestamp": int(time.time())}),
+                "ingress_channel": "telegram",
+                "origin_kind": "user",
             })
         except Exception as exc:
             log.debug(

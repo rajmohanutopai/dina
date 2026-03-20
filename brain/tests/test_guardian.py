@@ -9686,3 +9686,87 @@ async def test_post_publish_no_contact_did_skips_update(guardian_with_extractor)
     await guardian_with_extractor.process_event(event)
 
     guardian_with_extractor._test_core.update_contact_last_seen.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Document ingest — direct vault write (NOT staging)
+# Regression test: document_ingest must use store_vault_item (not
+# staging_ingest) because the returned IDs are cross-referenced by
+# the reminder system. Staging would assign different IDs/personas.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_document_ingest_uses_direct_vault_write(guardian):
+    """Document ingest stores to vault directly — NOT via staging.
+
+    Verifies:
+      1. store_vault_item called (staging_ingest NOT called)
+      2. Both document + event use the caller's persona_id
+      3. Returned document_id matches what was stored
+      4. Reminder metadata references the same document ID and persona
+    """
+    import json as _json
+
+    core = guardian._test_core
+    llm = guardian._test_llm
+
+    # Mock LLM to return valid extracted fields with high-confidence expiry.
+    llm.route.return_value = {
+        "content": _json.dumps({
+            "fields": {
+                "license_number": {"value": "DL-1234", "confidence": 0.99},
+                "holder_name": {"value": "PERSON_1", "confidence": 0.98},
+                "expiry_date": {"value": "2027-06-15", "confidence": 0.97},
+            },
+            "document_type": "driving_license",
+        }),
+        "model": "test",
+    }
+    core.store_vault_item.return_value = "item-001"
+    core.store_reminder.return_value = "rem-001"
+
+    event = {
+        "type": "document_ingest",
+        "body": "License Number: DL-1234\nName: PERSON_1\nExpiry: 2027-06-15",
+        "persona_id": "personal",
+        "source": "document_scan",
+    }
+    result = await guardian.process_event(event)
+
+    # 1. Must use store_vault_item, NOT staging_ingest.
+    assert core.store_vault_item.await_count == 2, (
+        "document ingest must call store_vault_item twice (document + event)"
+    )
+    core.staging_ingest.assert_not_awaited()
+
+    # 2. Both calls must target the caller's persona.
+    for call in core.store_vault_item.await_args_list:
+        assert call.args[0] == "personal", (
+            f"expected persona 'personal', got '{call.args[0]}'"
+        )
+
+    # 3. Returned document_id matches what was stored.
+    doc_call = core.store_vault_item.await_args_list[0]
+    doc_item = doc_call.args[1]
+    assert doc_item["Type"] == "document"
+    returned_doc_id = doc_item["id"]
+    assert returned_doc_id.startswith("doc-")
+
+    assert result["status"] == "ok"
+    assert result["response"]["vault_items"]["document_id"] == returned_doc_id
+
+    # 4. Event item references the document ID.
+    evt_call = core.store_vault_item.await_args_list[1]
+    evt_item = evt_call.args[1]
+    assert evt_item["Type"] == "event"
+    evt_meta = _json.loads(evt_item["Metadata"])
+    assert evt_meta["document_id"] == returned_doc_id
+
+    # 5. Reminder metadata (if created) references correct ID + persona.
+    if core.store_reminder.await_count > 0:
+        rem_call = core.store_reminder.await_args_list[0]
+        rem = rem_call.args[0]
+        rem_meta = _json.loads(rem.get("metadata", "{}"))
+        assert rem_meta.get("vault_item_id") == returned_doc_id
+        assert rem_meta.get("persona") == "personal"

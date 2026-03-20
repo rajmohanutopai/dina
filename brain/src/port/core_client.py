@@ -39,6 +39,12 @@ class CoreClient(Protocol):
         """POST /v1/vault/store/batch — atomic batch store."""
         ...
 
+    # -- Staging --
+
+    async def staging_ingest(self, item: dict) -> str:
+        """POST /v1/staging/ingest — stage content for classification."""
+        ...
+
     async def search_vault(
         self, persona_id: str, query: str, mode: str = "hybrid",
         embedding: list[float] | None = None,

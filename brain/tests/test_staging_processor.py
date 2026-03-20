@@ -416,3 +416,54 @@ async def test_stored_triggers_event_extraction(core, enrichment):
     await processor.process_pending()
 
     event_extractor.extract_and_create.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# Timestamp preservation — staged items carry original event timestamp
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_timestamp_preserved_from_metadata(core, enrichment):
+    """Staging processor extracts timestamp from metadata and sets it on vault item.
+
+    Without this, message chronology would reflect drain/publication time
+    instead of when the event actually occurred.
+    """
+    processor = StagingProcessor(core=core, enrichment=enrichment)
+    core.staging_claim.return_value = [
+        _make_item(
+            id="stg-ts",
+            type="message",
+            source="telegram",
+            metadata=json.dumps({"timestamp": 1711000000}),
+            ingress_channel="telegram",
+            origin_kind="user",
+        ),
+    ]
+
+    await processor.process_pending()
+
+    core.staging_resolve.assert_awaited_once()
+    classified = core.staging_resolve.call_args.args[2]  # third arg: classified_item
+    assert classified["timestamp"] == 1711000000
+
+
+@pytest.mark.asyncio
+async def test_no_timestamp_in_metadata_omits_field(core, enrichment):
+    """When metadata has no timestamp, classified item should not have one."""
+    processor = StagingProcessor(core=core, enrichment=enrichment)
+    core.staging_claim.return_value = [
+        _make_item(
+            id="stg-nots",
+            type="email",
+            source="gmail",
+            metadata="{}",
+        ),
+    ]
+
+    await processor.process_pending()
+
+    core.staging_resolve.assert_awaited_once()
+    classified = core.staging_resolve.call_args.args[2]
+    assert "timestamp" not in classified

@@ -1608,6 +1608,14 @@ class GuardianLoop:
             fn for fn in _DOCUMENT_PII_FIELDS if fields.get(fn, {}).get("value")
         )
 
+        # Direct vault write — NOT staged.
+        #
+        # Document extraction is Brain-processed output, not raw ingestion.
+        # Brain has already: PII-scrubbed → LLM-extracted → rehydrated →
+        # determined persona. Staging would re-classify and break the
+        # cross-referenced ID linkage (doc_id → reminder metadata →
+        # get_vault_item on reminder_fired). Brain is a trusted resolver
+        # and is explicitly allowed direct vault writes.
         doc_id = f"doc-{uuid4().hex[:12]}"
         doc_item = {
             "id": doc_id,

@@ -10,6 +10,7 @@ No imports from adapter/ — only domain types, ports, and sibling services.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -108,8 +109,20 @@ class StagingProcessor:
                 if self._trust_scorer is not None:
                     provenance = self._trust_scorer.score(item_dict)
 
+                # Extract original timestamp from metadata if present.
+                # Staging items carry the original event timestamp in
+                # metadata so vault items reflect when the event occurred,
+                # not when the staging processor drained them.
+                original_ts = 0
+                meta_raw = item.metadata or "{}"
+                try:
+                    meta = json.loads(meta_raw)
+                    original_ts = int(meta.get("timestamp", 0))
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    pass
+
                 # Build classified VaultItem template with lineage.
-                base_classified = {
+                base_classified: dict[str, Any] = {
                     "type": item.type or "note",
                     "source": item.source or "",
                     "source_id": item.source_id or "",
@@ -121,10 +134,12 @@ class StagingProcessor:
                     "confidence": provenance.get("confidence", ""),
                     "retrieval_policy": provenance.get("retrieval_policy", "caveated"),
                     "contact_did": provenance.get("contact_did", ""),
-                    "metadata": item.metadata or "{}",
+                    "metadata": meta_raw,
                     "staging_id": item_id,
                     "connector_id": item.connector_id or "",
                 }
+                if original_ts:
+                    base_classified["timestamp"] = original_ts
 
                 # Enrich before resolve: generate L0+L1+embedding so every
                 # vault item is fully enriched at publication time.

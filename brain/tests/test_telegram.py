@@ -295,26 +295,34 @@ async def test_send_nudge(service, mock_bot):
 
 
 # ---------------------------------------------------------------------------
-# Vault storage
+# Staging (Phase 2: Telegram messages go through staging, not direct vault)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_message_stored_in_vault(service, mock_core, mock_guardian):
-    """Processed messages should be stored in vault."""
+async def test_message_stored_via_staging(service, mock_core, mock_guardian):
+    """Processed messages should be staged (not direct vault write)."""
     service._paired_users.add(111)
     update = _make_update(user_id=111, text="Store this")
     context = MagicMock()
 
     await service.handle_message(update, context)
 
-    mock_core.store_vault_item.assert_called_once()
-    args = mock_core.store_vault_item.call_args[0]
-    assert args[0] == "default"  # persona_id
-    item = args[1]
+    mock_core.staging_ingest.assert_called_once()
+    item = mock_core.staging_ingest.call_args[0][0]
     assert item["type"] == "message"
     assert item["source"] == "telegram"
-    assert item["body_text"] == "Store this"
+    assert item["body"] == "Store this"
+    assert item["ingress_channel"] == "telegram"
+    assert item["origin_kind"] == "user"
+    # Timestamp must be carried in metadata for chronology preservation.
+    import json as _json
+    meta = _json.loads(item["metadata"])
+    assert "timestamp" in meta
+    assert isinstance(meta["timestamp"], int)
+    assert meta["timestamp"] > 0
+    # Must NOT call store_vault_item directly
+    mock_core.store_vault_item.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

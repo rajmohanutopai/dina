@@ -1,8 +1,8 @@
 # Universal Staging Architecture — Implementation Plan
 
 **Created:** 2026-03-20
-**Status:** Ready for implementation
-**Phase:** 1 of 4 (CLI writes staged)
+**Status:** Phase 2 complete
+**Phase:** 2 of 4 (Telegram & admin content staged)
 
 ## Ground Rules
 
@@ -277,7 +277,11 @@ These tests currently encode direct vault-store behavior and must be updated:
 
 ### What Changes
 
-Today, Telegram messages that produce memory (user says "remember X" via Telegram bot) write directly to vault through Brain. Admin UI content imports also go direct. After Phase 2, these go through staging with proper provenance.
+Telegram messages that produce memory (`_store_message`) are redirected through staging with `ingress_channel=telegram`. This gives them proper provenance and trust scoring.
+
+**Excluded from staging:** `_handle_document_ingest` (guardian.py) stays as a direct vault write. Document extraction is Brain-processed output — Brain has already PII-scrubbed, LLM-extracted, rehydrated, and determined the persona. The document-to-reminder linkage depends on synchronous vault IDs (doc_id → reminder metadata → `get_vault_item` on reminder_fired). Staging would break this cross-referencing because IDs and personas are determined asynchronously by the staging processor. Brain is a trusted resolver and is explicitly allowed direct vault writes.
+
+**Admin UI:** No admin routes perform direct vault writes — no changes needed.
 
 ### Trust Model Addition
 
@@ -290,19 +294,21 @@ Telegram and admin are the highest-trust channels — the user is directly autho
 
 ### Changes by File
 
+**`brain/src/service/telegram.py`**
+- `_store_message()`: replace `store_vault_item("default", {...})` with `staging_ingest({..., ingress_channel: "telegram", origin_kind: "user"})`
+- Field name changes: `body_text` → `body` (staging API field name)
+
 **`brain/src/service/guardian.py`**
-- Anywhere Brain stores user-authored content to vault (e.g., Telegram "remember" handling), replace `core.vault_store(...)` with `core.staging_ingest({..., ingress_channel: "telegram", origin_kind: "user"})`
-- Brain is a trusted service — it CAN set `ingress_channel=telegram` because Core's handler allows service-key callers to specify channel (unlike device callers who get server-override)
+- `_handle_document_ingest()`: KEEP as `store_vault_item` — Brain-processed output with ID cross-referencing (see exclusion note above)
+
+**`brain/src/port/core_client.py`**
+- Add `staging_ingest(item: dict) -> str` to the CoreClient protocol
 
 **`brain/src/adapter/core_http.py`**
-- Add `staging_ingest()` method (same as CLI client but Brain uses service-key auth)
-- Brain already has this for connector staging — extend to support `ingress_channel` field
-
-**`brain/src/dina_admin/routes/`**
-- Admin UI routes that create vault items (import, manual note creation) → route through `staging_ingest` with `ingress_channel=admin`
+- `staging_ingest()` already exists (added in connector staging) — no change needed
 
 **`core/internal/handler/staging.go`**
-- Service-key callers (Brain, admin) are allowed to set `ingress_channel` explicitly (they're trusted)
+- Service-key callers (Brain, admin) are already allowed to set `ingress_channel` explicitly (from Phase 1)
 - Device-key callers still get server-override (from Phase 1)
 
 ### Tests

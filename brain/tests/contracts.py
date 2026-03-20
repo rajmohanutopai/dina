@@ -201,6 +201,10 @@ class CoreClient(Protocol):
         """Store a batch of vault items in core."""
         ...
 
+    async def staging_ingest(self, item: dict) -> str:
+        """Stage content for classification via /v1/staging/ingest."""
+        ...
+
     async def search_vault(self, persona_id: str, query: str, mode: str = "hybrid") -> list[dict]:
         """Search the vault via core."""
         ...

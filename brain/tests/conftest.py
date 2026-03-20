@@ -209,6 +209,7 @@ def mock_core_client() -> AsyncMock:
     client.get_vault_item.return_value = make_vault_item()
     client.store_vault_item.return_value = "item-001"
     client.store_vault_batch.return_value = None
+    client.staging_ingest.return_value = "stg-001"
     client.search_vault.return_value = [make_vault_item()]
     client.query_vault.return_value = [make_vault_item()]
     client.list_personas.return_value = ["personal", "consumer"]
