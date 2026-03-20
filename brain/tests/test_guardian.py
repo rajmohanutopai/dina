@@ -2340,10 +2340,12 @@ async def test_guardian_20_1_draft_expires_after_72_hours(guardian) -> None:
     # Run eviction (uses _PROPOSAL_TTL which is 1 hour by default)
     await guardian._evict_proposals()
 
-    # The stale proposal (73h old) must be evicted — _PROPOSAL_TTL is 1h,
-    # so anything older than 1 hour is removed. 73h >> 1h.
-    assert stale_proposal_id not in guardian._pending_proposals, (
-        "Proposal older than TTL must be evicted"
+    # The stale proposal (73h old) must be expired — _PROPOSAL_TTL is 1h,
+    # so anything older than 1 hour is transitioned to "expired".
+    # Terminal proposals (expired/approved/denied) are cleaned after 10 min.
+    stale = guardian._pending_proposals.get(stale_proposal_id)
+    assert stale is None or stale.get("status") == "expired", (
+        "Proposal older than TTL must be expired or cleaned up"
     )
 
     # The fresh proposal (1h old) is right at the boundary.
