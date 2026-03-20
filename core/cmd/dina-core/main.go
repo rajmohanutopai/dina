@@ -1194,6 +1194,22 @@ func main() {
 	// Agent Safety Layer — proxies to brain's guardian
 	mux.HandleFunc("/v1/agent/validate", agentH.HandleValidate)
 
+	// Intent proposal lifecycle — approve/deny/status/list
+	intentProposalH := &handler.IntentProposalHandler{Brain: agentBrain, BrainHTTP: agentBrain}
+	mux.HandleFunc("/v1/intent/proposals/", func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		switch {
+		case strings.HasSuffix(path, "/approve"):
+			intentProposalH.HandleApprove(w, r)
+		case strings.HasSuffix(path, "/deny"):
+			intentProposalH.HandleDeny(w, r)
+		case strings.HasSuffix(path, "/status"):
+			intentProposalH.HandleStatus(w, r)
+		default:
+			intentProposalH.HandleList(w, r)
+		}
+	})
+
 	// Notification API
 	mux.HandleFunc("/v1/notify", notifyH.HandleNotify)
 

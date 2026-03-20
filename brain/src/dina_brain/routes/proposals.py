@@ -3,6 +3,10 @@
 Provides polling endpoints for agents waiting on intent approval.
 Reads from Guardian's in-memory proposal store.
 
+Only intent proposals (kind=intent) are exposed through these
+endpoints.  Disclosure proposals are accessed through separate
+cross-persona routes.
+
 No imports from dina_admin — module boundary enforced.
 """
 
@@ -31,23 +35,25 @@ async def proposal_status(proposal_id: str) -> dict:
     """Query the lifecycle state of an intent proposal.
 
     Returns status: pending, approved, denied, or expired.
-    Agents poll this after receiving requires_approval=True.
+    Only returns intent proposals (kind=intent).  Returns 404 for
+    disclosure proposals or unknown IDs.
     """
     if _guardian is None:
         raise HTTPException(status_code=503, detail="Guardian not initialised")
 
     proposals = getattr(_guardian, "_pending_proposals", {})
     stored = proposals.get(proposal_id)
-    if stored is None:
+    if stored is None or stored.get("kind") != "intent":
         raise HTTPException(status_code=404, detail="Unknown proposal_id")
 
     return {
         "id": proposal_id,
         "status": stored.get("status", "pending"),
-        "kind": stored.get("kind", "intent"),
+        "kind": "intent",
         "action": stored.get("action", ""),
         "target": stored.get("target", ""),
         "agent_did": stored.get("agent_did", ""),
+        "decision_reason": stored.get("decision_reason", ""),
         "created_at": stored.get("created_at", 0),
         "updated_at": stored.get("updated_at", 0),
     }
@@ -55,12 +61,16 @@ async def proposal_status(proposal_id: str) -> dict:
 
 @router.get("/v1/proposals")
 async def proposal_list() -> dict:
-    """List all pending intent proposals. Admin only."""
+    """List pending intent proposals. Admin only.
+
+    Only returns intent proposals with status=pending.
+    Terminal proposals (approved/denied/expired) are excluded.
+    """
     if _guardian is None:
         raise HTTPException(status_code=503, detail="Guardian not initialised")
 
     proposals = getattr(_guardian, "_pending_proposals", {})
-    intent_proposals = [
+    pending_intents = [
         {
             "id": pid,
             "status": p.get("status", "pending"),
@@ -72,6 +82,7 @@ async def proposal_list() -> dict:
         }
         for pid, p in proposals.items()
         if p.get("kind") == "intent"
+        and p.get("status") == "pending"
     ]
 
-    return {"proposals": intent_proposals}
+    return {"proposals": pending_intents}

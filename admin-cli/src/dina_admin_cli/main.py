@@ -199,6 +199,79 @@ def approvals_deny(ctx: click.Context, approval_id: str) -> None:
         ctx.exit(1)
 
 
+# ── intent (agent intent proposals) ──────────────────────────────────────────
+
+
+@cli.group()
+def intent() -> None:
+    """Manage agent intent proposals (approve/deny research delegation)."""
+
+
+@intent.command("list")
+@click.pass_context
+def intent_list(ctx: click.Context) -> None:
+    """List pending intent proposals."""
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        r = client._request("GET", "/v1/intent/proposals")
+        proposals = r.json().get("proposals", [])
+        if json_mode:
+            click.echo(json.dumps(proposals, indent=2))
+        elif not proposals:
+            click.echo("No pending intent proposals.")
+        else:
+            click.echo(f"{'ID':<40} {'Action':<15} {'Risk':<10} {'Agent DID'}")
+            for p in proposals:
+                click.echo(
+                    f"{p.get('id', '?'):<40} {p.get('action', '?'):<15} "
+                    f"{p.get('risk', '?'):<10} {p.get('agent_did', '?')[:30]}"
+                )
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
+@intent.command("approve")
+@click.argument("proposal_id")
+@click.pass_context
+def intent_approve(ctx: click.Context, proposal_id: str) -> None:
+    """Approve an intent proposal by ID."""
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        r = client._request("POST", f"/v1/intent/proposals/{proposal_id}/approve")
+        if json_mode:
+            click.echo(json.dumps(r.json(), indent=2))
+        else:
+            click.echo(f"Approved: {proposal_id}")
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
+@intent.command("deny")
+@click.argument("proposal_id")
+@click.option("--reason", default="denied by admin", help="Reason for denial")
+@click.pass_context
+def intent_deny(ctx: click.Context, proposal_id: str, reason: str) -> None:
+    """Deny an intent proposal by ID."""
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        r = client._request(
+            "POST", f"/v1/intent/proposals/{proposal_id}/deny",
+            json={"reason": reason},
+        )
+        if json_mode:
+            click.echo(json.dumps(r.json(), indent=2))
+        else:
+            click.echo(f"Denied: {proposal_id}")
+    except AdminClientError as exc:
+        print_error(str(exc), json_mode)
+        ctx.exit(1)
+
+
 # ── device ───────────────────────────────────────────────────────────────────
 
 

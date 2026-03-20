@@ -144,13 +144,19 @@ func (h *IntentProposalHandler) HandleStatus(w http.ResponseWriter, r *http.Requ
 	// Ownership check: agent devices can only see their own proposals.
 	callerType, _ := r.Context().Value(middleware.CallerTypeKey).(string)
 	if callerType != "admin" && callerType != "user" {
-		xDID := r.Header.Get("X-DID")
-		if xDID != "" {
+		// Get caller identity from X-DID (signature auth) or context (bearer auth).
+		callerDID := r.Header.Get("X-DID")
+		if callerDID == "" {
+			if deviceID, ok := r.Context().Value(middleware.AgentDIDKey).(string); ok && deviceID != "" {
+				callerDID = "device:" + deviceID
+			}
+		}
+		if callerDID != "" {
 			var proposal struct {
 				AgentDID string `json:"agent_did"`
 			}
 			json.Unmarshal(resp, &proposal)
-			if proposal.AgentDID != "" && proposal.AgentDID != xDID {
+			if proposal.AgentDID != "" && proposal.AgentDID != callerDID {
 				jsonError(w, "forbidden: not your proposal", http.StatusForbidden)
 				return
 			}
