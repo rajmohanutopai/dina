@@ -17,6 +17,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 
 from .routes import pii as pii_route
 from .routes import process as process_route
+from .routes import proposals as proposals_route
 from .routes import reason as reason_route
 
 if TYPE_CHECKING:
@@ -209,6 +210,7 @@ def create_brain_app(
     # ------------------------------------------------------------------
 
     process_route.set_guardian(guardian)
+    proposals_route.set_guardian(guardian)
     reason_route.set_dependencies(guardian, sync_engine)
     pii_route.set_scrubber(scrubber)
 
@@ -226,6 +228,10 @@ def create_brain_app(
     )
     app.include_router(
         pii_route.router,
+        dependencies=[Depends(verify_service_auth)],
+    )
+    app.include_router(
+        proposals_route.router,
         dependencies=[Depends(verify_service_auth)],
     )
 

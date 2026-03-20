@@ -653,11 +653,21 @@ class GuardianLoop:
         proposals.
         """
         now = time.time()
-        expired = [
+        # Expire pending proposals past TTL (transition, don't delete).
+        expired_count = 0
+        for k, v in list(self._pending_proposals.items()):
+            if v.get("status") == "pending" and now - v.get("created_at", 0) > self._PROPOSAL_TTL:
+                v["status"] = "expired"
+                v["updated_at"] = now
+                expired_count += 1
+        # Delete terminal proposals (approved/denied/expired) older than 10 minutes.
+        _TERMINAL_CLEANUP = 600  # 10 minutes
+        stale_terminal = [
             k for k, v in self._pending_proposals.items()
-            if now - v.get("created_at", 0) > self._PROPOSAL_TTL
+            if v.get("status") in ("approved", "denied", "expired")
+            and now - v.get("updated_at", v.get("created_at", 0)) > _TERMINAL_CLEANUP
         ]
-        for k in expired:
+        for k in stale_terminal:
             del self._pending_proposals[k]
         capped = 0
         if len(self._pending_proposals) > self._PROPOSAL_MAX:
@@ -669,10 +679,11 @@ class GuardianLoop:
             for k in excess:
                 del self._pending_proposals[k]
             capped = len(excess)
-        if expired or capped:
+        if expired_count or stale_terminal or capped:
             log.info(
                 "guardian.proposals_evicted_on_restore",
-                expired=len(expired),
+                expired=expired_count,
+                terminal_cleaned=len(stale_terminal),
                 capped=capped,
                 remaining=len(self._pending_proposals),
             )
@@ -900,6 +911,7 @@ class GuardianLoop:
             "cross_persona_request": self._handle_cross_persona_request,
             "disclosure_approved": self._handle_disclosure_approved,
             "intent_approved": self._handle_intent_approved,
+            "intent_denied": self._handle_intent_denied,
             "approval_needed": self._handle_approval_needed,
             "post_publish": self._handle_post_publish,
             "document_ingest": self._handle_document_ingest,
@@ -1128,7 +1140,10 @@ class GuardianLoop:
             "body": intent.get("body", ""),
             "risk": decision.value,
             "created_at": time.time(),
+            "updated_at": time.time(),
             "agent_did": intent.get("agent_did", ""),
+            "kind": "intent",
+            "status": "pending",
         }
         self._pending_proposals[proposal_id] = proposal
         await self._evict_proposals()
@@ -2117,6 +2132,9 @@ class GuardianLoop:
             "withheld": proposal.get("withheld", []),
             "source_persona": source_persona,
             "created_at": time.time(),
+            "updated_at": time.time(),
+            "kind": "disclosure",
+            "status": "pending",
         }
         await self._evict_proposals()
         await self._persist_proposals()
@@ -2295,14 +2313,26 @@ class GuardianLoop:
             log.warning("guardian.proposal_persist_failed")
 
     async def _evict_proposals(self) -> None:
-        """Remove expired and excess pending proposals and persist."""
+        """Transition expired proposals and clean up terminal state."""
         now = time.time()
-        expired = [
+        _TERMINAL_CLEANUP = 600  # 10 minutes
+        changed = False
+        # Expire pending proposals past TTL.
+        for v in self._pending_proposals.values():
+            if v.get("status") == "pending" and now - v.get("created_at", 0) > self._PROPOSAL_TTL:
+                v["status"] = "expired"
+                v["updated_at"] = now
+                changed = True
+        # Delete terminal proposals older than 10 minutes.
+        stale = [
             k for k, v in self._pending_proposals.items()
-            if now - v.get("created_at", 0) > self._PROPOSAL_TTL
+            if v.get("status") in ("approved", "denied", "expired")
+            and now - v.get("updated_at", v.get("created_at", 0)) > _TERMINAL_CLEANUP
         ]
-        for k in expired:
+        for k in stale:
             del self._pending_proposals[k]
+            changed = True
+        # Cap total count.
         if len(self._pending_proposals) > self._PROPOSAL_MAX:
             sorted_keys = sorted(
                 self._pending_proposals,
@@ -2310,7 +2340,8 @@ class GuardianLoop:
             )
             for k in sorted_keys[: len(self._pending_proposals) - self._PROPOSAL_MAX]:
                 del self._pending_proposals[k]
-        if expired:
+            changed = True
+        if changed:
             await self._persist_proposals()
 
     async def _handle_disclosure_approved(self, event: dict) -> dict:
@@ -2512,9 +2543,7 @@ class GuardianLoop:
                 "error": "proposal_id is required",
             }
 
-        stored = self._pending_proposals.pop(proposal_id, None)
-        if stored is not None:
-            await self._persist_proposals()
+        stored = self._pending_proposals.get(proposal_id)
         if stored is None:
             return {
                 "status": "error",
@@ -2525,11 +2554,19 @@ class GuardianLoop:
         # Validate TTL — proposals expire after 30 minutes.
         created_at = stored.get("created_at", 0)
         if time.time() - created_at > 1800:
+            stored["status"] = "expired"
+            stored["updated_at"] = time.time()
+            await self._persist_proposals()
             return {
                 "status": "error",
                 "action": "intent_expired",
                 "error": "Proposal has expired (>30 minutes)",
             }
+
+        # Transition to approved (keep in dict for polling).
+        stored["status"] = "approved"
+        stored["updated_at"] = time.time()
+        await self._persist_proposals()
 
         # Audit the approval.
         try:
@@ -2568,6 +2605,35 @@ class GuardianLoop:
                 "body": stored.get("body", ""),
                 "agent_did": stored.get("agent_did", ""),
             },
+        }
+
+    async def _handle_intent_denied(self, event: dict) -> dict:
+        """Handle user denial of a flagged agent intent.
+
+        Transitions the proposal to ``denied`` status so polling
+        clients can observe the terminal state.
+        """
+        payload = event.get("payload", {})
+        proposal_id = payload.get("proposal_id", "") if payload else ""
+        if not proposal_id:
+            return {"status": "error", "action": "intent_invalid", "error": "proposal_id is required"}
+
+        stored = self._pending_proposals.get(proposal_id)
+        if stored is None:
+            return {"status": "error", "action": "intent_expired", "error": f"Unknown proposal_id: {proposal_id}"}
+
+        reason = payload.get("reason", "denied by user")
+        stored["status"] = "denied"
+        stored["updated_at"] = time.time()
+        stored["decision_reason"] = reason
+        await self._persist_proposals()
+
+        log.info("guardian.intent_denied", proposal_id=proposal_id, reason=reason)
+        return {
+            "status": "ok",
+            "action": "intent_denied",
+            "proposal_id": proposal_id,
+            "approved": False,
         }
 
     # ------------------------------------------------------------------
